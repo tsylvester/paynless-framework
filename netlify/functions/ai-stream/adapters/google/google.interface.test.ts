@@ -1,83 +1,101 @@
-import { describe, it, expect } from 'vitest';
-import type { NodeTokenUsage } from '../ai-adapter.interface.ts';
-import type { GoogleStreamChunk, GoogleUsageMetadata } from './google.interface.ts';
-import { mockGoogleStreamChunk, mockGoogleUsageMetadata } from './google.mock.ts';
+import { describe, expect, it } from 'vitest';
+import type {
+  GoogleCandidate,
+  GoogleContent,
+  GoogleFinalResponse,
+  GoogleFinishReason,
+  GooglePart,
+  GoogleStreamChunk,
+  GoogleUsageMetadata,
+} from './google.interface.ts';
 
 describe('google.interface contract', () => {
-  it('valid GoogleUsageMetadata: promptTokenCount, candidatesTokenCount, totalTokenCount are non-negative integers', () => {
-    const usage: GoogleUsageMetadata = mockGoogleUsageMetadata();
-    expect(Number.isInteger(usage.promptTokenCount)).toBe(true);
-    expect(usage.promptTokenCount).toBeGreaterThanOrEqual(0);
-    expect(Number.isInteger(usage.candidatesTokenCount)).toBe(true);
-    expect(usage.candidatesTokenCount).toBeGreaterThanOrEqual(0);
-    expect(Number.isInteger(usage.totalTokenCount)).toBe(true);
-    expect(usage.totalTokenCount).toBeGreaterThanOrEqual(0);
+  it('accepts GooglePart with text chunk', () => {
+    const literal: GooglePart = { text: 'chunk' };
+    expect(typeof literal.text).toBe('string');
   });
 
-  it('valid GoogleStreamChunk: has text function returning string; usageMetadata is optional GoogleUsageMetadata', () => {
-    const withUsage: GoogleStreamChunk = mockGoogleStreamChunk({
-      usageMetadata: mockGoogleUsageMetadata(),
-    });
-    const withoutUsage: GoogleStreamChunk = mockGoogleStreamChunk({
-      usageMetadata: undefined,
-    });
-    expect(typeof withUsage.text).toBe('function');
-    expect(typeof withUsage.text()).toBe('string');
-    expect(typeof withoutUsage.text).toBe('function');
-    expect(typeof withoutUsage.text()).toBe('string');
+  it('accepts GooglePart with text omitted', () => {
+    const literal: GooglePart = {};
+    expect(literal).toBeDefined();
   });
 
-  it('mapping: usageMetadata fields map to NodeTokenUsage prompt_tokens, completion_tokens, total_tokens', () => {
-    const usageMetadata: GoogleUsageMetadata = mockGoogleUsageMetadata({
+  it('accepts GoogleContent with parts array', () => {
+    const literal: GoogleContent = { parts: [{ text: 'x' }] };
+    expect(Array.isArray(literal.parts)).toBe(true);
+  });
+
+  it('accepts GoogleCandidate with finishReason STOP', () => {
+    const tag: GoogleFinishReason = 'STOP';
+    const literal: GoogleCandidate = { finishReason: tag };
+    expect(literal.finishReason).toBe(tag);
+  });
+
+  it('accepts GoogleCandidate with finishReason MAX_TOKENS', () => {
+    const tag: GoogleFinishReason = 'MAX_TOKENS';
+    const literal: GoogleCandidate = { finishReason: tag };
+    expect(literal.finishReason).toBe(tag);
+  });
+
+  it('accepts GoogleCandidate with finishReason SAFETY', () => {
+    const tag: GoogleFinishReason = 'SAFETY';
+    const literal: GoogleCandidate = { finishReason: tag };
+    expect(literal.finishReason).toBe(tag);
+  });
+
+  it('accepts GoogleCandidate with finishReason RECITATION', () => {
+    const tag: GoogleFinishReason = 'RECITATION';
+    const literal: GoogleCandidate = { finishReason: tag };
+    expect(literal.finishReason).toBe(tag);
+  });
+
+  it('accepts GoogleCandidate with content and finishReason omitted', () => {
+    const literal: GoogleCandidate = {};
+    expect(literal).toBeDefined();
+  });
+
+  it('accepts GoogleUsageMetadata with numeric token counts', () => {
+    const literal: GoogleUsageMetadata = {
       promptTokenCount: 10,
       candidatesTokenCount: 20,
       totalTokenCount: 30,
-    });
-    const mapped: NodeTokenUsage = {
-      prompt_tokens: usageMetadata.promptTokenCount,
-      completion_tokens: usageMetadata.candidatesTokenCount,
-      total_tokens: usageMetadata.totalTokenCount,
     };
-    expect(mapped.prompt_tokens).toBe(10);
-    expect(mapped.completion_tokens).toBe(20);
-    expect(mapped.total_tokens).toBe(30);
+    expect(typeof literal.promptTokenCount).toBe('number');
+    expect(typeof literal.candidatesTokenCount).toBe('number');
+    expect(typeof literal.totalTokenCount).toBe('number');
   });
 
-  it('missing usageMetadata on all chunks leaves token_usage null', () => {
-    const first: GoogleStreamChunk = mockGoogleStreamChunk({
-      usageMetadata: undefined,
-    });
-    const second: GoogleStreamChunk = mockGoogleStreamChunk({
-      usageMetadata: undefined,
-    });
-    const chunks: GoogleStreamChunk[] = [first, second];
-    let token_usage: NodeTokenUsage | null = null;
-    for (const chunk of chunks) {
-      if (chunk.usageMetadata !== undefined) {
-        const usageMetadata: GoogleUsageMetadata = chunk.usageMetadata;
-        const mapped: NodeTokenUsage = {
-          prompt_tokens: usageMetadata.promptTokenCount,
-          completion_tokens: usageMetadata.candidatesTokenCount,
-          total_tokens: usageMetadata.totalTokenCount,
-        };
-        token_usage = mapped;
-      }
-    }
-    expect(token_usage).toBe(null);
+  it('accepts GoogleStreamChunk with candidates array', () => {
+    const inner: GoogleCandidate = { finishReason: 'STOP' };
+    const literal: GoogleStreamChunk = { candidates: [inner] };
+    expect(Array.isArray(literal.candidates)).toBe(true);
   });
 
-  it('invalid: usageMetadata with negative counts violates the non-negative contract', () => {
-    const bad: GoogleUsageMetadata = mockGoogleUsageMetadata({
-      promptTokenCount: -1,
-    });
-    expect(bad.promptTokenCount).toBeLessThan(0);
+  it('accepts GoogleStreamChunk with candidates omitted', () => {
+    const literal: GoogleStreamChunk = {};
+    expect(literal).toBeDefined();
   });
 
-  it('invalid: chunk missing text function is structurally unusable as GoogleStreamChunk', () => {
-    const missingText: Record<string, unknown> = {
-      usageMetadata: mockGoogleUsageMetadata(),
+  it('accepts GoogleFinalResponse with candidates and usageMetadata', () => {
+    const usage: GoogleUsageMetadata = {
+      promptTokenCount: 10,
+      candidatesTokenCount: 20,
+      totalTokenCount: 30,
     };
-    const hasTextFunction: boolean = typeof missingText['text'] === 'function';
-    expect(hasTextFunction).toBe(false);
+    const inner: GoogleCandidate = {
+      content: { parts: [{ text: 'x' }] },
+      finishReason: 'STOP',
+    };
+    const literal: GoogleFinalResponse = {
+      candidates: [inner],
+      usageMetadata: usage,
+    };
+    expect(Array.isArray(literal.candidates)).toBe(true);
+    expect(literal.usageMetadata).toBe(usage);
+  });
+
+  it('accepts GoogleFinalResponse with usageMetadata null', () => {
+    const literal: GoogleFinalResponse = { usageMetadata: null };
+    expect(literal.usageMetadata).toBe(null);
   });
 });

@@ -1,31 +1,25 @@
-export interface AnthropicMessageStartUsage {
-  input_tokens: number;
-}
+export type AnthropicStopReason =
+  | 'end_turn'
+  | 'stop_sequence'
+  | 'max_tokens'
+  | 'tool_use';
 
-export interface AnthropicMessageStartMessage {
-  usage: AnthropicMessageStartUsage;
-}
-
-export interface AnthropicMessageStartEvent {
-  type: 'message_start';
-  message: AnthropicMessageStartMessage;
-}
-
-export interface AnthropicTextDeltaInner {
+export interface AnthropicTextDelta {
   type: 'text_delta';
   text: string;
 }
 
-export interface AnthropicTextDeltaEvent {
+export interface AnthropicContentBlockDeltaEvent {
   type: 'content_block_delta';
-  delta: AnthropicTextDeltaInner;
+  delta: AnthropicTextDelta;
 }
 
-export interface AnthropicMessageDeltaUsage {
+export interface AnthropicUsage {
+  input_tokens: number;
   output_tokens: number;
 }
 
-export interface AnthropicMessageDeltaEvent {
-  type: 'message_delta';
-  usage: AnthropicMessageDeltaUsage;
+export interface AnthropicFinalMessage {
+  usage: AnthropicUsage;
+  stop_reason: AnthropicStopReason | null;
 }

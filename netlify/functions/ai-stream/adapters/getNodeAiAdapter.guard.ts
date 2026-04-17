@@ -1,10 +1,10 @@
 import type {
   AiAdapter,
-  AiAdapterParams,
-  AiAdapterResult,
+  NodeAdapterStreamChunk,
   NodeChatApiRequest,
   NodeChatMessage,
   NodeModelConfig,
+  NodeOutboundDocument,
   NodeProviderMap,
   NodeTokenUsage,
 } from './ai-adapter.interface.ts';
@@ -13,141 +13,212 @@ import type {
   GetNodeAiAdapterParams,
 } from './getNodeAiAdapter.interface.ts';
 
+export function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+  if (Array.isArray(value)) {
+    return false;
+  }
+  return true;
+}
+
 export function isNodeChatMessage(v: unknown): v is NodeChatMessage {
-  if (v === null || typeof v !== 'object') {
+  if (!isPlainRecord(v)) {
     return false;
   }
-  if (!('role' in v) || !('content' in v)) {
+  const roleValue: unknown = v['role'];
+  const contentValue: unknown = v['content'];
+  if (
+    roleValue !== 'user' &&
+    roleValue !== 'assistant' &&
+    roleValue !== 'system'
+  ) {
     return false;
   }
-  const role: unknown = Reflect.get(v, 'role');
-  const content: unknown = Reflect.get(v, 'content');
-  if (role !== 'user' && role !== 'assistant' && role !== 'system') {
+  if (typeof contentValue !== 'string') {
     return false;
   }
-  if (typeof content !== 'string') {
+  return true;
+}
+
+export function isNodeOutboundDocument(v: unknown): v is NodeOutboundDocument {
+  if (!isPlainRecord(v)) {
     return false;
+  }
+  const idValue: unknown = v['id'];
+  const contentValue: unknown = v['content'];
+  if (typeof idValue !== 'string' || typeof contentValue !== 'string') {
+    return false;
+  }
+  if ('document_key' in v && v['document_key'] !== undefined) {
+    if (typeof v['document_key'] !== 'string') {
+      return false;
+    }
+  }
+  if ('stage_slug' in v && v['stage_slug'] !== undefined) {
+    if (typeof v['stage_slug'] !== 'string') {
+      return false;
+    }
   }
   return true;
 }
 
 export function isNodeChatApiRequest(v: unknown): v is NodeChatApiRequest {
-  if (v === null || typeof v !== 'object' || Array.isArray(v)) {
+  if (!isPlainRecord(v)) {
     return false;
   }
-  const messagesUnknown: unknown = Reflect.get(v, 'messages');
-  if (!Array.isArray(messagesUnknown) || messagesUnknown.length === 0) {
+  const messageValue: unknown = v['message'];
+  const providerIdValue: unknown = v['providerId'];
+  const promptIdValue: unknown = v['promptId'];
+  if (
+    typeof messageValue !== 'string' ||
+    typeof providerIdValue !== 'string' ||
+    typeof promptIdValue !== 'string'
+  ) {
     return false;
   }
-  for (const message of messagesUnknown) {
-    if (!isNodeChatMessage(message)) {
+  if ('messages' in v && v['messages'] !== undefined) {
+    const messagesValue: unknown = v['messages'];
+    if (!Array.isArray(messagesValue)) {
       return false;
     }
+    for (const item of messagesValue) {
+      if (!isNodeChatMessage(item)) {
+        return false;
+      }
+    }
   }
-  const modelUnknown: unknown = Reflect.get(v, 'model');
-  if (typeof modelUnknown !== 'string') {
-    return false;
+  if ('resourceDocuments' in v && v['resourceDocuments'] !== undefined) {
+    const docsValue: unknown = v['resourceDocuments'];
+    if (!Array.isArray(docsValue)) {
+      return false;
+    }
+    for (const item of docsValue) {
+      if (!isNodeOutboundDocument(item)) {
+        return false;
+      }
+    }
   }
-  const maxTokensUnknown: unknown = Reflect.get(v, 'max_tokens');
-  if (typeof maxTokensUnknown !== 'number') {
-    return false;
-  }
-  const systemUnknown: unknown = Reflect.get(v, 'system');
-  if (systemUnknown !== undefined && typeof systemUnknown !== 'string') {
-    return false;
+  if ('max_tokens_to_generate' in v && v['max_tokens_to_generate'] !== undefined) {
+    if (typeof v['max_tokens_to_generate'] !== 'number') {
+      return false;
+    }
   }
   return true;
 }
 
 export function isNodeModelConfig(v: unknown): v is NodeModelConfig {
-  if (v === null || typeof v !== 'object' || Array.isArray(v)) {
+  if (!isPlainRecord(v)) {
     return false;
   }
-  const modelIdUnknown: unknown = Reflect.get(v, 'model_identifier');
-  if (typeof modelIdUnknown !== 'string' || modelIdUnknown.length === 0) {
+  const apiIdentifierValue: unknown = v['api_identifier'];
+  if (typeof apiIdentifierValue !== 'string') {
     return false;
   }
-  const maxTokensUnknown: unknown = Reflect.get(v, 'max_tokens');
+  if (!('input_token_cost_rate' in v)) {
+    return false;
+  }
+  const inputRate: unknown = v['input_token_cost_rate'];
+  if (typeof inputRate !== 'number' && inputRate !== null) {
+    return false;
+  }
+  if (!('output_token_cost_rate' in v)) {
+    return false;
+  }
+  const outputRate: unknown = v['output_token_cost_rate'];
+  if (typeof outputRate !== 'number' && outputRate !== null) {
+    return false;
+  }
   if (
-    typeof maxTokensUnknown !== 'number' ||
-    !Number.isInteger(maxTokensUnknown) ||
-    maxTokensUnknown <= 0
+    'provider_max_input_tokens' in v &&
+    v['provider_max_input_tokens'] !== undefined
   ) {
-    return false;
+    if (typeof v['provider_max_input_tokens'] !== 'number') {
+      return false;
+    }
+  }
+  if (
+    'context_window_tokens' in v &&
+    v['context_window_tokens'] !== undefined
+  ) {
+    const cw: unknown = v['context_window_tokens'];
+    if (typeof cw !== 'number' && cw !== null) {
+      return false;
+    }
+  }
+  if (
+    'hard_cap_output_tokens' in v &&
+    v['hard_cap_output_tokens'] !== undefined
+  ) {
+    if (typeof v['hard_cap_output_tokens'] !== 'number') {
+      return false;
+    }
+  }
+  if (
+    'provider_max_output_tokens' in v &&
+    v['provider_max_output_tokens'] !== undefined
+  ) {
+    if (typeof v['provider_max_output_tokens'] !== 'number') {
+      return false;
+    }
   }
   return true;
+}
+
+function isNonNegativeInteger(value: unknown): boolean {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0;
 }
 
 export function isNodeTokenUsage(v: unknown): v is NodeTokenUsage {
-  if (v === null || typeof v !== 'object' || Array.isArray(v)) {
+  if (!isPlainRecord(v)) {
     return false;
   }
-  const promptUnknown: unknown = Reflect.get(v, 'prompt_tokens');
-  if (typeof promptUnknown !== 'number' || !Number.isInteger(promptUnknown) || promptUnknown < 0) {
-    return false;
-  }
-  const completionUnknown: unknown = Reflect.get(v, 'completion_tokens');
+  const promptTokens: unknown = v['prompt_tokens'];
+  const completionTokens: unknown = v['completion_tokens'];
+  const totalTokens: unknown = v['total_tokens'];
   if (
-    typeof completionUnknown !== 'number' ||
-    !Number.isInteger(completionUnknown) ||
-    completionUnknown < 0
+    !isNonNegativeInteger(promptTokens) ||
+    !isNonNegativeInteger(completionTokens) ||
+    !isNonNegativeInteger(totalTokens)
   ) {
     return false;
   }
-  const totalUnknown: unknown = Reflect.get(v, 'total_tokens');
-  if (typeof totalUnknown !== 'number' || !Number.isInteger(totalUnknown) || totalUnknown < 0) {
-    return false;
-  }
   return true;
 }
 
-export function isAiAdapterParams(v: unknown): v is AiAdapterParams {
-  if (v === null || typeof v !== 'object' || Array.isArray(v)) {
+export function isNodeAdapterStreamChunk(
+  v: unknown,
+): v is NodeAdapterStreamChunk {
+  if (!isPlainRecord(v)) {
     return false;
   }
-  const chatUnknown: unknown = Reflect.get(v, 'chatApiRequest');
-  if (!isNodeChatApiRequest(chatUnknown)) {
-    return false;
+  const typeValue: unknown = v['type'];
+  if (typeValue === 'text_delta') {
+    const textValue: unknown = v['text'];
+    return typeof textValue === 'string';
   }
-  const modelConfigUnknown: unknown = Reflect.get(v, 'modelConfig');
-  if (!isNodeModelConfig(modelConfigUnknown)) {
-    return false;
+  if (typeValue === 'usage') {
+    const tokenUsageValue: unknown = v['tokenUsage'];
+    return isNodeTokenUsage(tokenUsageValue);
   }
-  const apiKeyUnknown: unknown = Reflect.get(v, 'apiKey');
-  if (typeof apiKeyUnknown !== 'string' || apiKeyUnknown.length === 0) {
-    return false;
+  if (typeValue === 'done') {
+    const finishReason: unknown = v['finish_reason'];
+    return typeof finishReason === 'string';
   }
-  return true;
-}
-
-export function isAiAdapterResult(v: unknown): v is AiAdapterResult {
-  if (v === null || typeof v !== 'object' || Array.isArray(v)) {
-    return false;
-  }
-  const assembledUnknown: unknown = Reflect.get(v, 'assembled_content');
-  if (typeof assembledUnknown !== 'string') {
-    return false;
-  }
-  const tokenUsageUnknown: unknown = Reflect.get(v, 'token_usage');
-  if (tokenUsageUnknown === null) {
-    return true;
-  }
-  return isNodeTokenUsage(tokenUsageUnknown);
+  return false;
 }
 
 export function isAiAdapter(v: unknown): v is AiAdapter {
-  if (v === null || typeof v !== 'object' || Array.isArray(v)) {
+  if (!isPlainRecord(v)) {
     return false;
   }
-  const streamUnknown: unknown = Reflect.get(v, 'stream');
-  if (typeof streamUnknown !== 'function') {
-    return false;
-  }
-  return true;
+  const streamValue: unknown = v['sendMessageStream'];
+  return typeof streamValue === 'function';
 }
 
 export function isNodeProviderMap(v: unknown): v is NodeProviderMap {
-  if (v === null || typeof v !== 'object' || Array.isArray(v)) {
+  if (!isPlainRecord(v)) {
     return false;
   }
   const keys: string[] = Object.keys(v);
@@ -155,8 +226,8 @@ export function isNodeProviderMap(v: unknown): v is NodeProviderMap {
     return false;
   }
   for (const key of keys) {
-    const factoryUnknown: unknown = Reflect.get(v, key);
-    if (typeof factoryUnknown !== 'function') {
+    const factoryValue: unknown = v[key];
+    if (typeof factoryValue !== 'function') {
       return false;
     }
   }
@@ -164,27 +235,30 @@ export function isNodeProviderMap(v: unknown): v is NodeProviderMap {
 }
 
 export function isGetNodeAiAdapterDeps(v: unknown): v is GetNodeAiAdapterDeps {
-  if (v === null || typeof v !== 'object' || Array.isArray(v)) {
+  if (!isPlainRecord(v)) {
     return false;
   }
   if (!('providerMap' in v)) {
     return false;
   }
-  const providerMapUnknown: unknown = Reflect.get(v, 'providerMap');
-  return isNodeProviderMap(providerMapUnknown);
+  const mapValue: unknown = v['providerMap'];
+  return isNodeProviderMap(mapValue);
 }
 
-export function isGetNodeAiAdapterParams(v: unknown): v is GetNodeAiAdapterParams {
-  if (v === null || typeof v !== 'object' || Array.isArray(v)) {
+export function isGetNodeAiAdapterParams(
+  v: unknown,
+): v is GetNodeAiAdapterParams {
+  if (!isPlainRecord(v)) {
     return false;
   }
-  const apiIdentifierUnknown: unknown = Reflect.get(v, 'apiIdentifier');
-  if (typeof apiIdentifierUnknown !== 'string' || apiIdentifierUnknown.length === 0) {
+  const apiIdentifierValue: unknown = v['apiIdentifier'];
+  const apiKeyValue: unknown = v['apiKey'];
+  const modelConfigValue: unknown = v['modelConfig'];
+  if (typeof apiIdentifierValue !== 'string' || apiIdentifierValue.length === 0) {
     return false;
   }
-  const apiKeyUnknown: unknown = Reflect.get(v, 'apiKey');
-  if (typeof apiKeyUnknown !== 'string' || apiKeyUnknown.length === 0) {
+  if (typeof apiKeyValue !== 'string' || apiKeyValue.length === 0) {
     return false;
   }
-  return true;
+  return isNodeModelConfig(modelConfigValue);
 }

@@ -1,112 +1,136 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
-  AiAdapter,
-  AiAdapterParams,
-  AiAdapterResult,
+  NodeAdapterConstructorParams,
+  NodeAdapterStreamChunk,
   NodeChatApiRequest,
-  NodeChatMessage,
-  NodeModelConfig,
 } from '../ai-adapter.interface.ts';
-import { isAiAdapter, isAiAdapterResult } from '../getNodeAiAdapter.guard.ts';
-import type { GetNodeAiAdapterDeps, GetNodeAiAdapterParams } from '../getNodeAiAdapter.interface.ts';
-import { getNodeAiAdapter } from '../getNodeAiAdapter.ts';
-import type { GoogleStreamChunk } from './google.interface.ts';
+import {
+  isAiAdapter,
+  isNodeAdapterStreamChunk,
+} from '../getNodeAiAdapter.guard.ts';
 import { createGoogleNodeAdapter } from './google.ts';
+import type { GoogleFinalResponse, GoogleStreamChunk } from './google.interface.ts';
 
-const { mockGenerateContentStream } = vi.hoisted(() => ({
-  mockGenerateContentStream: vi.fn(),
-}));
+const googleSdk = vi.hoisted(() => {
+  return {
+    getGenerativeModel: vi.fn(),
+    startChat: vi.fn(),
+    sendMessageStream: vi.fn(),
+  };
+});
 
-vi.mock('@google/generative-ai', () => ({
-  GoogleGenerativeAI: class {
-    constructor(_opts: { apiKey: string }) {
-      void _opts;
+vi.mock('@google/generative-ai', () => {
+  class GoogleGenerativeAI {
+    public getGenerativeModel: typeof googleSdk.getGenerativeModel;
+
+    public constructor() {
+      this.getGenerativeModel = googleSdk.getGenerativeModel;
     }
-    getGenerativeModel(_config: { model: string }) {
-      void _config;
-      return {
-        generateContentStream: mockGenerateContentStream,
-      };
-    }
-  },
-}));
+  }
 
-function integrationAdapterParams(): AiAdapterParams {
-  const message: NodeChatMessage = {
-    role: 'user',
-    content: 'integration',
+  return {
+    GoogleGenerativeAI,
   };
-  const chatApiRequest: NodeChatApiRequest = {
-    messages: [message],
-    model: 'gemini-2.5-pro',
-    max_tokens: 50,
-  };
-  const modelConfig: NodeModelConfig = {
-    model_identifier: 'google-gemini-2-5-pro',
-    max_tokens: 50,
-  };
-  const params: AiAdapterParams = {
-    chatApiRequest,
-    modelConfig,
-    apiKey: 'sk-integration',
-  };
-  return params;
-}
+});
 
-async function* integrationMockGoogleStream(): AsyncIterable<GoogleStreamChunk> {
-  const first: GoogleStreamChunk = {
-    text: (): string => 'a',
-    usageMetadata: undefined,
-  };
-  const second: GoogleStreamChunk = {
-    text: (): string => 'b',
+function createIntegrationGoogleStreamResult(): {
+  stream: AsyncIterable<GoogleStreamChunk>;
+  response: Promise<GoogleFinalResponse>;
+} {
+  async function* streamGen(): AsyncGenerator<GoogleStreamChunk> {
+    const first: GoogleStreamChunk = {
+      candidates: [{ content: { parts: [{ text: 'integration' }] } }],
+    };
+    yield first;
+  }
+  const streamIterable: AsyncIterable<GoogleStreamChunk> = streamGen();
+  const responseBody: GoogleFinalResponse = {
+    candidates: [{ finishReason: 'STOP' }],
     usageMetadata: {
-      promptTokenCount: 2,
-      candidatesTokenCount: 3,
-      totalTokenCount: 5,
+      promptTokenCount: 10,
+      candidatesTokenCount: 20,
+      totalTokenCount: 30,
     },
   };
-  yield first;
-  yield second;
+  const responsePromise: Promise<GoogleFinalResponse> = Promise.resolve(responseBody);
+  return {
+    stream: streamIterable,
+    response: responsePromise,
+  };
 }
 
-describe('google adapter integration', () => {
+describe('createGoogleNodeAdapter (integration)', () => {
   beforeEach(() => {
-    mockGenerateContentStream.mockReset();
-  });
-
-  it('createGoogleNodeAdapter returns an object that satisfies isAiAdapter', () => {
-    const adapter: AiAdapter = createGoogleNodeAdapter();
-    expect(isAiAdapter(adapter)).toBe(true);
-  });
-
-  it('dispatches google-gemini-2-5-pro through getNodeAiAdapter, streams with mock params, returns AiAdapterResult', async () => {
-    mockGenerateContentStream.mockResolvedValue({
-      stream: integrationMockGoogleStream(),
+    googleSdk.getGenerativeModel.mockReset();
+    googleSdk.startChat.mockReset();
+    googleSdk.sendMessageStream.mockReset();
+    googleSdk.getGenerativeModel.mockReturnValue({
+      startChat: googleSdk.startChat,
     });
-    const deps: GetNodeAiAdapterDeps = {
-      providerMap: {
-        'google-': (_apiKey: string): AiAdapter => createGoogleNodeAdapter(),
+    googleSdk.startChat.mockReturnValue({
+      sendMessageStream: googleSdk.sendMessageStream,
+    });
+  });
+
+  it('constructs an adapter that satisfies isAiAdapter, streams through mocked SDK for google-gemini-2-5-pro, and yields NodeAdapterStreamChunk values', async () => {
+    const params: NodeAdapterConstructorParams = {
+      modelConfig: {
+        api_identifier: 'google-gemini-2-5-pro',
+        hard_cap_output_tokens: 4096,
+        input_token_cost_rate: 0.001,
+        output_token_cost_rate: 0.002,
       },
+      apiKey: 'google-integration-key',
     };
-    const workload: GetNodeAiAdapterParams = {
-      apiIdentifier: 'google-gemini-2-5-pro',
-      apiKey: 'sk-workload',
-    };
-    const adapter: AiAdapter | null = getNodeAiAdapter(deps, workload);
-    expect(adapter).not.toBe(null);
-    if (adapter === null) {
-      return;
-    }
+    const adapter = createGoogleNodeAdapter(params);
     expect(isAiAdapter(adapter)).toBe(true);
-    const result: AiAdapterResult = await adapter.stream(integrationAdapterParams());
-    expect(isAiAdapterResult(result)).toBe(true);
-    expect(result.assembled_content).toBe('ab');
-    expect(result.token_usage).not.toBe(null);
-    if (result.token_usage !== null) {
-      expect(result.token_usage.prompt_tokens).toBe(2);
-      expect(result.token_usage.completion_tokens).toBe(3);
-      expect(result.token_usage.total_tokens).toBe(5);
+
+    googleSdk.sendMessageStream.mockResolvedValue(createIntegrationGoogleStreamResult());
+
+    const request: NodeChatApiRequest = {
+      message: 'integration dispatch message',
+      providerId: 'prov-integration',
+      promptId: 'prompt-integration',
+    };
+    const apiIdentifier: string = 'google-gemini-2-5-pro';
+
+    const stream: AsyncGenerator<NodeAdapterStreamChunk> = adapter.sendMessageStream(
+      request,
+      apiIdentifier,
+    );
+
+    const collected: NodeAdapterStreamChunk[] = [];
+    for await (const chunk of stream) {
+      collected.push(chunk);
     }
+
+    expect(collected.length >= 1).toBe(true);
+    for (const chunk of collected) {
+      expect(isNodeAdapterStreamChunk(chunk)).toBe(true);
+    }
+
+    const textDeltas: string[] = collected
+      .filter((c): c is Extract<NodeAdapterStreamChunk, { type: 'text_delta' }> => {
+        return c.type === 'text_delta';
+      })
+      .map((c) => {
+        return c.text;
+      });
+    expect(textDeltas).toContain('integration');
+
+    const usageChunks: NodeAdapterStreamChunk[] = collected.filter((c) => {
+      return c.type === 'usage';
+    });
+    expect(usageChunks.length).toBe(1);
+    if (usageChunks[0] !== undefined && usageChunks[0].type === 'usage') {
+      expect(usageChunks[0].tokenUsage.prompt_tokens).toBe(10);
+      expect(usageChunks[0].tokenUsage.completion_tokens).toBe(20);
+      expect(usageChunks[0].tokenUsage.total_tokens).toBe(30);
+    }
+
+    const doneChunks: NodeAdapterStreamChunk[] = collected.filter((c) => {
+      return c.type === 'done';
+    });
+    expect(doneChunks.length).toBe(1);
   });
 });

@@ -1,72 +1,75 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import type { AiAdapter } from './ai-adapter.interface.ts';
-import type {
-  GetNodeAiAdapterDeps,
-  GetNodeAiAdapterParams,
-} from './getNodeAiAdapter.interface.ts';
+import { describe, expect, it, vi } from 'vitest';
 import { getNodeAiAdapter } from './getNodeAiAdapter.ts';
 import {
   createMockGetNodeAiAdapterDeps,
+  createMockGetNodeAiAdapterParams,
+  createMockNodeProviderMap,
   mockAiAdapter,
 } from './getNodeAiAdapter.mock.ts';
 
 describe('getNodeAiAdapter', () => {
-  let lastFactoryApiKey: string | undefined;
-
-  beforeEach(() => {
-    lastFactoryApiKey = undefined;
-  });
-
-  function createDepsWithOpenAiKeyTracking(): GetNodeAiAdapterDeps {
-    return createMockGetNodeAiAdapterDeps({
-      providerMap: {
-        'openai-': (apiKey: string): AiAdapter => {
-          lastFactoryApiKey = apiKey;
-          return mockAiAdapter;
-        },
-      },
-    });
-  }
-
-  it('dispatches known prefix openai-gpt-4o: returns adapter and calls map factory with apiKey', () => {
-    const deps: GetNodeAiAdapterDeps = createDepsWithOpenAiKeyTracking();
-    const params: GetNodeAiAdapterParams = {
+  it('returns factory result for known prefix openai-gpt-4o and calls factory with modelConfig and apiKey', () => {
+    const factorySpy = vi.fn(() => mockAiAdapter);
+    const providerMap = createMockNodeProviderMap({ 'openai-': factorySpy });
+    const deps = createMockGetNodeAiAdapterDeps({ providerMap });
+    const params = createMockGetNodeAiAdapterParams({
       apiIdentifier: 'openai-gpt-4o',
-      apiKey: 'sk-unit-test-key',
-    };
-    const result = getNodeAiAdapter(deps, params);
-    expect(result).not.toBe(null);
-    expect(lastFactoryApiKey).toBe('sk-unit-test-key');
+      apiKey: 'sk-expected',
+    });
+    const adapter = getNodeAiAdapter(deps, params);
+    expect(adapter).toBe(mockAiAdapter);
+    expect(factorySpy).toHaveBeenCalledTimes(1);
+    expect(factorySpy).toHaveBeenCalledWith({
+      modelConfig: params.modelConfig,
+      apiKey: params.apiKey,
+    });
   });
 
-  it('dispatches known prefix case-insensitive OPENAI-GPT-4O: same behavior', () => {
-    const deps: GetNodeAiAdapterDeps = createDepsWithOpenAiKeyTracking();
-    const params: GetNodeAiAdapterParams = {
+  it('matches known prefix case-insensitively for OPENAI-GPT-4O', () => {
+    const factorySpy = vi.fn(() => mockAiAdapter);
+    const providerMap = createMockNodeProviderMap({ 'openai-': factorySpy });
+    const deps = createMockGetNodeAiAdapterDeps({ providerMap });
+    const params = createMockGetNodeAiAdapterParams({
       apiIdentifier: 'OPENAI-GPT-4O',
-      apiKey: 'sk-unit-test-key',
-    };
-    const result = getNodeAiAdapter(deps, params);
-    expect(result).not.toBe(null);
-    expect(lastFactoryApiKey).toBe('sk-unit-test-key');
+      apiKey: 'sk-case',
+    });
+    const adapter = getNodeAiAdapter(deps, params);
+    expect(adapter).toBe(mockAiAdapter);
+    expect(factorySpy).toHaveBeenCalledTimes(1);
+    expect(factorySpy).toHaveBeenCalledWith({
+      modelConfig: params.modelConfig,
+      apiKey: params.apiKey,
+    });
   });
 
-  it('returns null for unknown apiIdentifier prefix', () => {
-    const deps: GetNodeAiAdapterDeps = createMockGetNodeAiAdapterDeps();
-    const params: GetNodeAiAdapterParams = {
-      apiIdentifier: 'unknown-provider-model',
-      apiKey: 'sk-unit-test-key',
-    };
-    const result = getNodeAiAdapter(deps, params);
-    expect(result).toBe(null);
+  it('returns null for unknown api_identifier prefix', () => {
+    const factorySpy = vi.fn(() => mockAiAdapter);
+    const providerMap = createMockNodeProviderMap({ 'openai-': factorySpy });
+    const deps = createMockGetNodeAiAdapterDeps({ providerMap });
+    const params = createMockGetNodeAiAdapterParams({
+      apiIdentifier: 'totally-unknown-model-id',
+    });
+    const adapter = getNodeAiAdapter(deps, params);
+    expect(adapter).toBe(null);
+    expect(factorySpy).toHaveBeenCalledTimes(0);
   });
 
   it('returns null for empty apiIdentifier', () => {
-    const deps: GetNodeAiAdapterDeps = createMockGetNodeAiAdapterDeps();
-    const params: GetNodeAiAdapterParams = {
+    const factorySpy = vi.fn(() => mockAiAdapter);
+    const providerMap = createMockNodeProviderMap({ 'openai-': factorySpy });
+    const deps = createMockGetNodeAiAdapterDeps({ providerMap });
+    const params = createMockGetNodeAiAdapterParams({
       apiIdentifier: '',
-      apiKey: 'sk-unit-test-key',
-    };
-    const result = getNodeAiAdapter(deps, params);
-    expect(result).toBe(null);
+    });
+    const adapter = getNodeAiAdapter(deps, params);
+    expect(adapter).toBe(null);
+    expect(factorySpy).toHaveBeenCalledTimes(0);
+  });
+
+  it('resolves adapter using default mock NodeProviderMap from createMockGetNodeAiAdapterDeps', () => {
+    const deps = createMockGetNodeAiAdapterDeps();
+    const params = createMockGetNodeAiAdapterParams();
+    const adapter = getNodeAiAdapter(deps, params);
+    expect(adapter).toBe(mockAiAdapter);
   });
 });

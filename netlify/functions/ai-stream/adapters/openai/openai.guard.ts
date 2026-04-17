@@ -1,60 +1,88 @@
 import type {
   OpenAIChatCompletionChunk,
-  OpenAIChoiceDelta,
+  OpenAIChoice,
+  OpenAIDelta,
+  OpenAIFinishReason,
   OpenAIUsageDelta,
 } from './openai.interface.ts';
+import { isPlainRecord } from '../getNodeAiAdapter.guard.ts';
 
-export function isOpenAIUsageDelta(v: unknown): v is OpenAIUsageDelta {
-  if (v === null || typeof v !== 'object' || Array.isArray(v)) {
+function isNonNegativeInteger(value: unknown): boolean {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0;
+}
+
+export function isOpenAIFinishReason(v: unknown): v is OpenAIFinishReason {
+  if (typeof v !== 'string') {
     return false;
   }
-  if (
-    !('prompt_tokens' in v) ||
-    !('completion_tokens' in v) ||
-    !('total_tokens' in v)
-  ) {
+  if (v === 'stop') {
+    return true;
+  }
+  if (v === 'length') {
+    return true;
+  }
+  if (v === 'tool_calls') {
+    return true;
+  }
+  if (v === 'content_filter') {
+    return true;
+  }
+  if (v === 'function_call') {
+    return true;
+  }
+  return false;
+}
+
+export function isOpenAIDelta(v: unknown): v is OpenAIDelta {
+  if (!isPlainRecord(v)) {
     return false;
   }
-  const promptTokens: unknown = Reflect.get(v, 'prompt_tokens');
-  const completionTokens: unknown = Reflect.get(v, 'completion_tokens');
-  const totalTokens: unknown = Reflect.get(v, 'total_tokens');
-  if (typeof promptTokens !== 'number') {
-    return false;
-  }
-  if (typeof completionTokens !== 'number') {
-    return false;
-  }
-  if (typeof totalTokens !== 'number') {
-    return false;
-  }
-  if (!Number.isInteger(promptTokens) || promptTokens < 0) {
-    return false;
-  }
-  if (!Number.isInteger(completionTokens) || completionTokens < 0) {
-    return false;
-  }
-  if (!Number.isInteger(totalTokens) || totalTokens < 0) {
-    return false;
+  if ('content' in v) {
+    const contentValue: unknown = v['content'];
+    if (contentValue === undefined) {
+      return false;
+    }
+    if (typeof contentValue !== 'string' && contentValue !== null) {
+      return false;
+    }
   }
   return true;
 }
 
-export function isOpenAIChoiceDelta(v: unknown): v is OpenAIChoiceDelta {
-  if (v === null || typeof v !== 'object' || Array.isArray(v)) {
+export function isOpenAIChoice(v: unknown): v is OpenAIChoice {
+  if (!isPlainRecord(v)) {
     return false;
   }
   if (!('delta' in v)) {
     return false;
   }
-  const delta: unknown = Reflect.get(v, 'delta');
-  if (delta === null || typeof delta !== 'object' || Array.isArray(delta)) {
+  if (!('finish_reason' in v)) {
     return false;
   }
-  if ('content' in delta) {
-    const content: unknown = Reflect.get(delta, 'content');
-    if (content !== null && content !== undefined && typeof content !== 'string') {
-      return false;
-    }
+  const deltaValue: unknown = v['delta'];
+  if (!isOpenAIDelta(deltaValue)) {
+    return false;
+  }
+  const finishReasonValue: unknown = v['finish_reason'];
+  if (finishReasonValue === null) {
+    return true;
+  }
+  return isOpenAIFinishReason(finishReasonValue);
+}
+
+export function isOpenAIUsageDelta(v: unknown): v is OpenAIUsageDelta {
+  if (!isPlainRecord(v)) {
+    return false;
+  }
+  const promptTokens: unknown = v['prompt_tokens'];
+  const completionTokens: unknown = v['completion_tokens'];
+  const totalTokens: unknown = v['total_tokens'];
+  if (
+    !isNonNegativeInteger(promptTokens) ||
+    !isNonNegativeInteger(completionTokens) ||
+    !isNonNegativeInteger(totalTokens)
+  ) {
+    return false;
   }
   return true;
 }
@@ -62,27 +90,27 @@ export function isOpenAIChoiceDelta(v: unknown): v is OpenAIChoiceDelta {
 export function isOpenAIChatCompletionChunk(
   v: unknown,
 ): v is OpenAIChatCompletionChunk {
-  if (v === null || typeof v !== 'object' || Array.isArray(v)) {
+  if (!isPlainRecord(v)) {
     return false;
   }
   if (!('choices' in v)) {
     return false;
   }
-  const choices: unknown = Reflect.get(v, 'choices');
-  if (!Array.isArray(choices)) {
+  const choicesValue: unknown = v['choices'];
+  if (!Array.isArray(choicesValue)) {
     return false;
   }
-  for (const choice of choices) {
-    if (!isOpenAIChoiceDelta(choice)) {
+  for (const item of choicesValue) {
+    if (!isOpenAIChoice(item)) {
       return false;
     }
   }
   if ('usage' in v) {
-    const usage: unknown = Reflect.get(v, 'usage');
-    if (usage === null || usage === undefined) {
+    const usageValue: unknown = v['usage'];
+    if (usageValue === null) {
       return true;
     }
-    if (!isOpenAIUsageDelta(usage)) {
+    if (!isOpenAIUsageDelta(usageValue)) {
       return false;
     }
   }

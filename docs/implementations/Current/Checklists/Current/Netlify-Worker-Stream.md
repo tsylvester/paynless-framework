@@ -18,7 +18,7 @@
   * `[✅]`   `objective`
     * `[✅]`   Provide the core `AiAdapter` interface all provider adapters must implement, a `getNodeAiAdapter` factory function that dispatches to the correct adapter by `api_identifier` prefix, and an exported `runAdapterConformanceTests` utility that each adapter node imports to prove interface compliance without test drift
     * `[✅]`   Functional goals:
-      * Define all shared Node.js streaming types: `NodeChatMessage`, `NodeChatApiRequest`, `NodeModelConfig`, `NodeTokenUsage`, `AiAdapterParams`, `AiAdapterResult`, `AiAdapter`
+      * Define all shared Node.js streaming types mirroring Supabase counterparts: `NodeChatMessage`, `NodeChatApiRequest`, `NodeOutboundDocument`, `NodeModelConfig`, `NodeTokenUsage`, `NodeAdapterStreamChunk`, `NodeAdapterConstructorParams`, `AiAdapter`
       * Implement `getNodeAiAdapter(deps, params)` that selects and returns the correct adapter or null for unknown providers
       * Export `runAdapterConformanceTests(factory: NodeAdapterFactory)` — shared test suite each adapter runs against its own implementation to prevent drift
     * `[✅]`   Non-functional constraints:
@@ -43,69 +43,74 @@
 
   * `[✅]`   `context_slice`
     * `[✅]`   Receives `GetNodeAiAdapterDeps`: `{ providerMap: NodeProviderMap }`
-    * `[✅]`   Receives `GetNodeAiAdapterParams`: `{ apiIdentifier: string; apiKey: string }`
+    * `[✅]`   Receives `GetNodeAiAdapterParams`: `{ apiIdentifier: string; apiKey: string; modelConfig: NodeModelConfig }`
     * `[✅]`   Returns `AiAdapter | null`
 
   * `[✅]`   `ai-adapter.interface.test.ts`
     * `[✅]`   Valid `NodeChatMessage`: `role` is `'user' | 'assistant' | 'system'`, `content` is string
-    * `[✅]`   Valid `NodeChatApiRequest`: non-empty messages array, each message is valid `NodeChatMessage`
-    * `[✅]`   Valid `NodeModelConfig`: non-empty `model_identifier`, positive integer `max_tokens`
-    * `[✅]`   Valid `AiAdapterResult`: `assembled_content` is string (may be empty), `token_usage` is `NodeTokenUsage` or `null`
+    * `[✅]`   Valid `NodeChatApiRequest`: `message` is string, optional `messages` array, optional `resourceDocuments` array, optional `max_tokens_to_generate`, required `providerId`, required `promptId`
+    * `[✅]`   Valid `NodeOutboundDocument`: `id` is string, `content` is string, optional `document_key`, optional `stage_slug`
+    * `[✅]`   Valid `NodeModelConfig`: `api_identifier` is string, optional `provider_max_input_tokens`, optional `context_window_tokens`, optional `hard_cap_output_tokens`, optional `provider_max_output_tokens`, required `input_token_cost_rate` (number or null), required `output_token_cost_rate` (number or null)
     * `[✅]`   Valid `NodeTokenUsage`: `prompt_tokens`, `completion_tokens`, `total_tokens` are non-negative integers
-    * `[✅]`   Invalid: missing `messages`, null `apiKey`, empty `model_identifier`, non-integer token counts → guard rejects
-    * `[✅]`   `AiAdapter`: object with `stream` function — guard accepts; missing `stream` → guard rejects
+    * `[✅]`   Valid `NodeAdapterStreamChunk`: discriminated union — `{ type: 'text_delta'; text: string }` or `{ type: 'usage'; tokenUsage: NodeTokenUsage }` or `{ type: 'done'; finish_reason: string }`
+    * `[✅]`   Invalid: missing `message` on `NodeChatApiRequest`, missing `api_identifier` on `NodeModelConfig`, non-integer token counts → guard rejects
+    * `[✅]`   `AiAdapter`: object with `sendMessageStream` function — guard accepts; missing `sendMessageStream` → guard rejects
 
   * `[✅]`   `ai-adapter.interface.ts`
     * `[✅]`   `NodeChatMessage`: `{ role: 'user' | 'assistant' | 'system'; content: string }`
-    * `[✅]`   `NodeChatApiRequest`: `{ messages: NodeChatMessage[]; model: string; max_tokens: number; system?: string }`
-    * `[✅]`   `NodeModelConfig`: `{ model_identifier: string; max_tokens: number }`
+    * `[✅]`   `NodeOutboundDocument`: `{ id: string; content: string; document_key?: string; stage_slug?: string }` — mirrors Supabase `OutboundDocument`
+    * `[✅]`   `NodeChatApiRequest`: `{ message: string; messages?: NodeChatMessage[]; resourceDocuments?: NodeOutboundDocument[]; max_tokens_to_generate?: number; providerId: string; promptId: string }` — mirrors adapter-consumed fields from Supabase `ChatApiRequest`
+    * `[✅]`   `NodeModelConfig`: `{ api_identifier: string; provider_max_input_tokens?: number; context_window_tokens?: number | null; hard_cap_output_tokens?: number; provider_max_output_tokens?: number; input_token_cost_rate: number | null; output_token_cost_rate: number | null }` — mirrors adapter-consumed fields from Supabase `AiModelExtendedConfig`
     * `[✅]`   `NodeTokenUsage`: `{ prompt_tokens: number; completion_tokens: number; total_tokens: number }`
-    * `[✅]`   `AiAdapterParams`: `{ chatApiRequest: NodeChatApiRequest; modelConfig: NodeModelConfig; apiKey: string }`
-    * `[✅]`   `AiAdapterResult`: `{ assembled_content: string; token_usage: NodeTokenUsage | null }`
-    * `[✅]`   `AiAdapter`: `{ stream(params: AiAdapterParams): Promise<AiAdapterResult> }`
-    * `[✅]`   `NodeAdapterFactory`: `(apiKey: string) => AiAdapter`
+    * `[✅]`   `NodeAdapterStreamChunk`: discriminated union `{ type: 'text_delta'; text: string } | { type: 'usage'; tokenUsage: NodeTokenUsage } | { type: 'done'; finish_reason: string }` — mirrors Supabase `AdapterStreamChunk`
+    * `[✅]`   `NodeAdapterConstructorParams`: `{ modelConfig: NodeModelConfig; apiKey: string }`
+    * `[✅]`   `AiAdapter`: `{ sendMessageStream(request: NodeChatApiRequest, apiIdentifier: string): AsyncGenerator<NodeAdapterStreamChunk> }` — mirrors Supabase adapter `sendMessageStream` signature
+    * `[✅]`   `NodeAdapterFactory`: `(params: NodeAdapterConstructorParams) => AiAdapter`
     * `[✅]`   `NodeProviderMap`: `Record<string, NodeAdapterFactory>`
     * `[✅]`   No `any`, no optional fields without explicit justification
 
   * `[✅]`   `getNodeAiAdapter.interface.test.ts`
     * `[✅]`   Valid `GetNodeAiAdapterDeps`: `providerMap` is a `NodeProviderMap` with at least one entry whose value is a function
-    * `[✅]`   Valid `GetNodeAiAdapterParams`: non-empty `apiIdentifier`, non-empty `apiKey`
+    * `[✅]`   Valid `GetNodeAiAdapterParams`: non-empty `apiIdentifier`, non-empty `apiKey`, valid `modelConfig`
     * `[✅]`   Invalid: missing `providerMap`, empty `providerMap`, non-function map values → guard rejects
-    * `[✅]`   Invalid: empty `apiIdentifier` → guard rejects
+    * `[✅]`   Invalid: empty `apiIdentifier`, missing `modelConfig` → guard rejects
 
   * `[✅]`   `getNodeAiAdapter.interface.ts`
     * `[✅]`   `GetNodeAiAdapterDeps`: `{ providerMap: NodeProviderMap }`
-    * `[✅]`   `GetNodeAiAdapterParams`: `{ apiIdentifier: string; apiKey: string }`
+    * `[✅]`   `GetNodeAiAdapterParams`: `{ apiIdentifier: string; apiKey: string; modelConfig: NodeModelConfig }`
     * `[✅]`   `GetNodeAiAdapterFn`: `(deps: GetNodeAiAdapterDeps, params: GetNodeAiAdapterParams) => AiAdapter | null`
-
-  * `[✅]`   `adapter-conformance.test-utils.ts` *(exported — imported by each adapter node's unit test to prove conformance without drift)*
-    * `[✅]`   Exports `runAdapterConformanceTests(factory: NodeAdapterFactory): void`
-    * `[✅]`   Conformance cases (each adapter's test provides mock SDK, factory produces adapter):
-      * `factory('test-key')` returns object satisfying `isAiAdapter`
-      * `stream()` called with valid `AiAdapterParams` resolves to `AiAdapterResult`
-      * `stream()` with provider SDK error propagates throw (does not swallow)
-      * `token_usage` is null when provider returns no usage data
 
   * `[✅]`   `getNodeAiAdapter.guard.test.ts`
     * `[✅]`   `isNodeProviderMap`: accepts valid map; rejects empty object; rejects non-function values
     * `[✅]`   `isGetNodeAiAdapterDeps`: accepts valid; rejects missing `providerMap`
     * `[✅]`   `isGetNodeAiAdapterParams`: accepts valid; rejects empty strings
-    * `[✅]`   `isAiAdapter`: accepts object with `stream` function; rejects non-function or missing `stream`
+    * `[✅]`   `isAiAdapter`: accepts object with `sendMessageStream` function; rejects non-function or missing `sendMessageStream`
+    * `[✅]`   `isNodeAdapterStreamChunk`: accepts all three discriminated variants; rejects unknown `type` values
 
   * `[✅]`   `getNodeAiAdapter.guard.ts`
     * `[✅]`   `isNodeChatMessage(v: unknown): v is NodeChatMessage`
+    * `[✅]`   `isNodeOutboundDocument(v: unknown): v is NodeOutboundDocument`
     * `[✅]`   `isNodeChatApiRequest(v: unknown): v is NodeChatApiRequest`
     * `[✅]`   `isNodeModelConfig(v: unknown): v is NodeModelConfig`
     * `[✅]`   `isNodeTokenUsage(v: unknown): v is NodeTokenUsage`
-    * `[✅]`   `isAiAdapterParams(v: unknown): v is AiAdapterParams`
-    * `[✅]`   `isAiAdapterResult(v: unknown): v is AiAdapterResult`
+    * `[✅]`   `isNodeAdapterStreamChunk(v: unknown): v is NodeAdapterStreamChunk`
     * `[✅]`   `isAiAdapter(v: unknown): v is AiAdapter`
     * `[✅]`   `isNodeProviderMap(v: unknown): v is NodeProviderMap`
     * `[✅]`   `isGetNodeAiAdapterDeps(v: unknown): v is GetNodeAiAdapterDeps`
     * `[✅]`   `isGetNodeAiAdapterParams(v: unknown): v is GetNodeAiAdapterParams`
 
+  * `[✅]`   `adapter-conformance.test-utils.ts` *(exported — imported by each adapter node's unit test to prove conformance without drift)*
+    * `[✅]`   Exports `runAdapterConformanceTests(factory: NodeAdapterFactory): void`
+    * `[✅]`   Conformance cases (each adapter's test provides mock SDK, factory produces adapter):
+      * `factory({ modelConfig, apiKey })` returns object satisfying `isAiAdapter`
+      * `sendMessageStream()` called with valid `NodeChatApiRequest` and `apiIdentifier` yields `NodeAdapterStreamChunk` values
+      * `sendMessageStream()` yields at least one `text_delta`, one `usage`, and one `done` chunk in happy path
+      * `sendMessageStream()` with provider SDK error propagates throw (does not swallow)
+      * `usage` chunk `tokenUsage` has correct `NodeTokenUsage` shape
+      * `done` chunk `finish_reason` is a non-empty string
+
   * `[✅]`   `getNodeAiAdapter.test.ts`
-    * `[✅]`   Known prefix (`'openai-gpt-4o'`) in mock provider map → factory returned and called with `apiKey`
+    * `[✅]`   Known prefix (`'openai-gpt-4o'`) in mock provider map → factory returned and called with `{ modelConfig, apiKey }`
     * `[✅]`   Known prefix case-insensitive (`'OPENAI-GPT-4O'`) → same result
     * `[✅]`   Unknown prefix → returns null
     * `[✅]`   Empty `apiIdentifier` → returns null
@@ -120,17 +125,17 @@
     * `[✅]`   Exports `getNodeAiAdapter(deps: GetNodeAiAdapterDeps, params: GetNodeAiAdapterParams): AiAdapter | null`
     * `[✅]`   Lowercases `params.apiIdentifier`
     * `[✅]`   Finds matching prefix via `Object.keys(deps.providerMap).find(prefix => lower.startsWith(prefix))`
-    * `[✅]`   Returns `deps.providerMap[prefix](params.apiKey)` or null if no prefix found
+    * `[✅]`   Returns `deps.providerMap[prefix]({ modelConfig: params.modelConfig, apiKey: params.apiKey })` or null if no prefix found
 
   * `[✅]`   `getNodeAiAdapter.mock.ts`
-    * `[✅]`   `createMockNodeProviderMap(overrides?: Partial<NodeProviderMap>): NodeProviderMap` — default: `{ 'openai-': () => mockAiAdapter, 'anthropic-': () => mockAiAdapter, 'google-': () => mockAiAdapter }`
+    * `[✅]`   `createMockNodeProviderMap(overrides?: Partial<NodeProviderMap>): NodeProviderMap` — default: `{ 'openai-': (params) => mockAiAdapter, 'anthropic-': (params) => mockAiAdapter, 'google-': (params) => mockAiAdapter }`
     * `[✅]`   `createMockGetNodeAiAdapterDeps(overrides?): GetNodeAiAdapterDeps`
-    * `[✅]`   `mockAiAdapter`: satisfies `isAiAdapter`; `stream()` resolves with mock `AiAdapterResult`
+    * `[✅]`   `mockAiAdapter`: satisfies `isAiAdapter`; `sendMessageStream()` yields mock `NodeAdapterStreamChunk` sequence (`text_delta`, `usage`, `done`)
 
   * `[✅]`   `getNodeAiAdapter.provides.ts`
     * `[✅]`   Exports: `getNodeAiAdapter`, `defaultNodeProviderMap`, `GetNodeAiAdapterFn`
-    * `[✅]`   Re-exports all shared types from `ai-adapter.interface.ts`: `AiAdapter`, `AiAdapterParams`, `AiAdapterResult`, `NodeTokenUsage`, `NodeChatApiRequest`, `NodeModelConfig`, `NodeAdapterFactory`, `NodeProviderMap`
-    * `[✅]`   Re-exports all shared guards: `isAiAdapter`, `isAiAdapterParams`, `isAiAdapterResult`, `isNodeTokenUsage`
+    * `[✅]`   Re-exports all shared types from `ai-adapter.interface.ts`: `AiAdapter`, `NodeAdapterStreamChunk`, `NodeAdapterConstructorParams`, `NodeTokenUsage`, `NodeChatApiRequest`, `NodeOutboundDocument`, `NodeModelConfig`, `NodeAdapterFactory`, `NodeProviderMap`
+    * `[✅]`   Re-exports all shared guards: `isAiAdapter`, `isNodeAdapterStreamChunk`, `isNodeTokenUsage`
     * `[✅]`   Re-exports: `runAdapterConformanceTests` from `adapter-conformance.test-utils.ts`
     * `[✅]`   No external access to factory internals bypasses this file
 
@@ -150,19 +155,18 @@
     * `[✅]`   `runAdapterConformanceTests` runs successfully in each of the three adapter test files — proven by adapter nodes
     * `[✅]`   All shared type guards reject invalid inputs — proven by guard unit tests
 
-* ` [✅]`   `netlify/functions/ai-stream/adapters/openai/openai-adapter` **[BE] OpenAI Node.js streaming adapter for Netlify Async Workload**
+* `[✅]`   `netlify/functions/ai-stream/adapters/openai/openai-adapter` **[BE] OpenAI Node.js streaming adapter — port of Supabase `openai_adapter.ts` for Netlify Async Workload**
 
   * ` [✅]`   `objective`
-    * ` [✅]`   Provide a Node.js streaming adapter that calls the OpenAI Chat Completions API, assembles the full response buffer, and returns `{ assembled_content, token_usage }` without Deno dependencies, Supabase access, or finish_reason speculation
+    * ` [✅]`   Port the existing Supabase `openai_adapter.ts` (`_prepareOpenAiStreamingRequest` + `sendMessageStream`) to a Node.js adapter that yields `NodeAdapterStreamChunk` values via `AsyncGenerator`, preserving identical message preparation, resource document injection, token cap resolution, and finish_reason mapping
     * ` [✅]`   Functional goals:
-      * Accept a fully-formed chat API request, model config, and API key
-      * Stream tokens from OpenAI until the stream closes naturally or errors
-      * Return assembled buffer and token usage to the ai-stream workload
+      * Accept `NodeChatApiRequest` and `api_identifier`; prepare the OpenAI request body identically to the Supabase adapter
+      * Yield `text_delta`, `usage`, and `done` chunks matching the Supabase `AdapterStreamChunk` discriminated union
+      * Map OpenAI finish_reason values (`stop`, `length`, `tool_calls`, `content_filter`, `function_call`) to the same FinishReason strings the Supabase adapter produces; any other/`undefined` → `unknown`
     * ` [✅]`   Non-functional constraints:
       * Runs in Node.js 18+ (Netlify runtime) — zero Deno APIs
-      * No Supabase access — API key injected per-call only
-      * No internal soft timeout — Netlify's 15-minute window is the ceiling
-      * No finish_reason speculation — raw buffer only; EMCAS back-half determines termination cause
+      * No Supabase access — model config and API key injected at construction via `NodeAdapterConstructorParams`
+      * No internal soft timeout — handler manages timeout
     * ` [✅]`   **Infrastructure prerequisite (before any Netlify node can be built or tested):**
       * `netlify/functions/ai-stream/package.json` — Node.js package with `openai`, `@anthropic-ai/sdk`, `@google/generative-ai`, `@supabase/supabase-js`, `@netlify/async-workloads`, TypeScript, and a test runner (Vitest)
       * `netlify/functions/ai-stream/tsconfig.json` — strict TypeScript config targeting Node.js
@@ -171,98 +175,129 @@
       * These are config artifacts, not source nodes; no TDD required
 
   * ` [✅]`   `role`
-    * ` [✅]`   Role: infra/adapter — wraps `openai` Node.js SDK to satisfy the shared `AiAdapter` interface
+    * ` [✅]`   Role: infra/adapter — wraps `openai` Node.js SDK to satisfy the shared `AiAdapter` interface via `sendMessageStream` AsyncGenerator
     * ` [✅]`   Why appropriate: workload dispatches to provider-specific streaming logic without owning OpenAI implementation details
-    * ` [✅]`   Must NOT: interact with Supabase, read from DB, call the back-half, manage job state, or determine finish_reason
+    * ` [✅]`   Must NOT: interact with Supabase, read from DB, call the back-half, or manage job state
 
   * ` [✅]`   `module`
     * ` [✅]`   Bounded context: `netlify/functions/ai-stream/adapters` — Netlify-side AI streaming adapter layer
-    * ` [✅]`   Inside boundary: OpenAI stream invocation, chunk accumulation, token usage extraction
-    * ` [✅]`   Outside boundary: job state, DB access, finish_reason classification, HTTP callback to back-half
+    * ` [✅]`   Inside boundary: OpenAI request preparation (message mapping, resource doc injection, token cap resolution), stream invocation, chunk yielding, finish_reason mapping
+    * ` [✅]`   Outside boundary: job state, DB access, HTTP callback to back-half, stream assembly (handler's job)
 
   * ` [✅]`   `deps`
     * ` [✅]`   `openai` npm package — external, infra layer, provides streaming chat SDK
     * ` [✅]`   `ai-adapter.interface.ts` — defined in factory node (`getNodeAiAdapter`); imported here, not owned here
-    * ` [✅]`   Shared guards (`isAiAdapterParams`, `isAiAdapterResult`, `isAiAdapter`) — imported from factory node, not redefined
+    * ` [✅]`   Shared guards (`isAiAdapter`, `isNodeAdapterStreamChunk`) — imported from factory node, not redefined
     * ` [✅]`   No reverse deps; no lateral violations
 
   * ` [✅]`   `context_slice`
-    * ` [✅]`   Receives `AiAdapterParams`: `{ chatApiRequest: NodeChatApiRequest, modelConfig: NodeModelConfig, apiKey: string }`
-    * ` [✅]`   Returns `AiAdapterResult`: `{ assembled_content: string, token_usage: NodeTokenUsage | null }`
+    * ` [✅]`   Constructed with `NodeAdapterConstructorParams`: `{ modelConfig: NodeModelConfig, apiKey: string }`
+    * ` [✅]`   `sendMessageStream` receives `NodeChatApiRequest` and `apiIdentifier: string`
+    * ` [✅]`   Yields `NodeAdapterStreamChunk` values (`text_delta`, `usage`, `done`)
     * ` [✅]`   No over-fetching — adapter does not receive job_id, user_jwt, or DB handles
 
-  * ` [✅]`   `openai.interface.test.ts`
-    * ` [✅]`   Valid `OpenAIChoiceDelta`: `delta` is an object with optional `content` string
-    * ` [✅]`   Valid `OpenAIChatCompletionChunk`: `choices` is non-empty array of `OpenAIChoiceDelta`; `usage` is optional `OpenAIUsageDelta` or null
-    * ` [✅]`   Valid `OpenAIUsageDelta`: `prompt_tokens`, `completion_tokens`, `total_tokens` are non-negative integers
-    * ` [✅]`   Mapping: chunk with `choices[0].delta.content` string → appended to `assembled_content`
-    * ` [✅]`   Mapping: chunk with `usage` present → maps to `NodeTokenUsage`; missing `usage` on all chunks → `token_usage` is null
-    * ` [✅]`   Invalid: chunk missing `choices` array → guard rejects; `usage` with negative token counts → guard rejects
+  * ` [✅]`   `openai.interface.test.ts` *(rework — missing `finish_reason`/Choice split)*
+    * ` [✅]`   Imports types ONLY from `openai.interface.ts` — no guard imports, no runtime validators; mirrors `ai-adapter.interface.test.ts` pattern
+    * ` [✅]`   Construct `OpenAIDelta` literal with `content: 'text'` — compiles; assert `typeof literal.content === 'string'`
+    * ` [✅]`   Construct `OpenAIDelta` literal with `content: null` — compiles (nullable)
+    * ` [✅]`   Construct `OpenAIDelta` literal with `content` omitted — compiles (optional)
+    * ` [✅]`   Construct `OpenAIChoice` literal for each `OpenAIFinishReason` member (`stop`, `length`, `tool_calls`, `content_filter`, `function_call`) — each compiles; assert `literal.finish_reason` equals the tag
+    * ` [✅]`   Construct `OpenAIChoice` literal with `finish_reason: null` (mid-stream choice before completion) — compiles
+    * ` [✅]`   Construct `OpenAIUsageDelta` literal with `prompt_tokens: 10, completion_tokens: 20, total_tokens: 30` — compiles; assert each field `typeof === 'number'`
+    * ` [✅]`   Construct `OpenAIChatCompletionChunk` literal with non-empty `choices: OpenAIChoice[]` and `usage: OpenAIUsageDelta` — compiles; assert `Array.isArray(literal.choices) && literal.choices.length > 0`
+    * ` [✅]`   Construct `OpenAIChatCompletionChunk` literal with empty `choices: []` — compiles (array may be empty mid-stream, e.g. final usage-only chunk)
+    * ` [✅]`   Construct `OpenAIChatCompletionChunk` literal with `usage: null` — compiles (nullable)
+    * ` [✅]`   Construct `OpenAIChatCompletionChunk` literal with `usage` omitted — compiles (optional)
+    * ` [✅]`   Pure type-shape assertions only — invalid shapes are a compile-time concern, not a test-time one; runtime accept/reject belongs in `openai.guard.test.ts`
 
-  * ` [✅]`   `openai.interface.ts`
-    * ` [✅]`   `OpenAIChoiceDelta`: `{ delta: { content?: string | null } }`
-    * ` [✅]`   `OpenAIChatCompletionChunk`: `{ choices: OpenAIChoiceDelta[]; usage?: OpenAIUsageDelta | null }`
-    * ` [✅]`   `OpenAIUsageDelta`: `{ prompt_tokens: number; completion_tokens: number; total_tokens: number }`
+  * ` [✅]`   `openai.interface.ts` *(rework — add `OpenAIFinishReason`, split Choice from Delta)*
+    * ` [✅]`   `OpenAIFinishReason`: `'stop' | 'length' | 'tool_calls' | 'content_filter' | 'function_call'` — exhaustive union of SDK-known values; adapter maps any other/`null` via `_mapOpenAiFinishReason` to `'unknown'`
+    * ` [✅]`   `OpenAIDelta`: `{ content?: string | null }` — inner delta object carried on each choice; the adapter reads `choice.delta.content`
+    * ` [✅]`   `OpenAIChoice`: `{ delta: OpenAIDelta; finish_reason: OpenAIFinishReason | null }` — the adapter reads `chunk.choices[0].finish_reason` which is `null` until the final choice
+    * ` [✅]`   `OpenAIUsageDelta`: `{ prompt_tokens: number; completion_tokens: number; total_tokens: number }` — non-negative integers required at runtime (validated by guard)
+    * ` [✅]`   `OpenAIChatCompletionChunk`: `{ choices: OpenAIChoice[]; usage?: OpenAIUsageDelta | null }` — `choices` is always an array (may be empty on usage-only tail chunk); `usage` present on final chunk only
     * ` [✅]`   No `any`, no casts
 
   * ` [✅]`   `openai.interaction.spec`
-    * ` [✅]`   Called by `ai-stream` workload when `api_identifier` prefix matches `openai-`
-    * ` [✅]`   Calls `openai.chat.completions.create({ stream: true, model, max_tokens, messages })`
-    * ` [✅]`   Iterates async stream via `for await`, appends text content deltas to buffer string
-    * ` [✅]`   Extracts `usage` from final stream chunk when present; maps to `NodeTokenUsage`
-    * ` [✅]`   On natural stream close: returns `{ assembled_content, token_usage }`
-    * ` [✅]`   On stream error: throws — caller (workload) catches; Netlify retries the event
-    * ` [✅]`   No side effects beyond buffer accumulation; no DB writes, no HTTP calls
+    * ` [✅]`   Called by `ai-stream` handler when `api_identifier` prefix matches `openai-`
+    * ` [✅]`   `sendMessageStream` ports `_prepareOpenAiStreamingRequest` from Supabase `openai_adapter.ts`:
+      * Strips `openai-` prefix from `apiIdentifier` to derive `modelApiName` (e.g. `openai-gpt-4o` → `gpt-4o`)
+      * Validates `modelApiName` matches `modelConfig.api_identifier` (also prefix-stripped); throws on mismatch
+      * Maps `request.messages` to OpenAI message format (role/content), filters empty content
+      * Injects `request.resourceDocuments` as additional user messages with formatted document content (validates `document_key` and `stage_slug` on resource documents)
+      * Appends `request.message` as final user message
+      * Resolves token cap: `request.max_tokens_to_generate` → `modelConfig.hard_cap_output_tokens` → `modelConfig.provider_max_output_tokens` (takes `Math.min` of available candidates)
+      * Branches on `modelApiName` for `max_tokens` vs `max_completion_tokens` parameter (legacy `gpt-3.5-turbo`/`gpt-4-turbo`/`gpt-4` vs newer models)
+    * ` [✅]`   Calls `openai.chat.completions.create({ stream: true, stream_options: { include_usage: true }, model: modelApiName, messages, ...tokenParam })`
+    * ` [✅]`   Iterates stream via `for await`; yields `{ type: 'text_delta', text }` for each content delta
+    * ` [✅]`   Post-stream validation: if assembled content is empty after trimming, throws (Supabase: `'OpenAI response content is empty or missing.'`)
+    * ` [✅]`   Post-stream validation: if no usage data received, throws (Supabase: `'OpenAI response did not include usage data.'`)
+    * ` [✅]`   Yields `{ type: 'usage', tokenUsage }` from final chunk usage data
+    * ` [✅]`   Yields `{ type: 'done', finish_reason }` with mapped finish_reason via `_mapOpenAiFinishReason`: `stop` → `stop`, `length` → `length`, `tool_calls` → `tool_calls`, `content_filter` → `content_filter`, `function_call` → `function_call`, any other value or `undefined` → `unknown`
+    * ` [✅]`   On stream error: throws — caller (handler) catches
+    * ` [✅]`   No side effects beyond yielding chunks; no DB writes, no HTTP calls
 
-  * ` [✅]`   `openai.guard.test.ts`
-    * ` [✅]`   `isOpenAIChoiceDelta`: accepts valid delta; rejects missing `delta` field, wrong types
-    * ` [✅]`   `isOpenAIChatCompletionChunk`: accepts valid chunk; rejects missing `choices` array, non-array `choices`
+  * ` [✅]`   `openai.guard.test.ts` *(rework — add guards for `OpenAIFinishReason`, `OpenAIDelta`, `OpenAIChoice`)*
+    * ` [✅]`   `isOpenAIFinishReason`: accepts each union member (`stop`, `length`, `tool_calls`, `content_filter`, `function_call`); rejects unrecognized strings (e.g. `'foo'`), `null`, `undefined`, non-strings
+    * ` [✅]`   `isOpenAIDelta`: accepts `{ content: 'text' }`, `{ content: null }`, `{}`; rejects `{ content: 123 }`, non-object, `null`
+    * ` [✅]`   `isOpenAIChoice`: accepts valid choice with each `OpenAIFinishReason` value and with `finish_reason: null`; rejects missing `delta`, invalid `delta`, missing `finish_reason` field, `finish_reason` set to unrecognized string
     * ` [✅]`   `isOpenAIUsageDelta`: accepts valid usage; rejects negative integers, non-integers, missing fields
+    * ` [✅]`   `isOpenAIChatCompletionChunk`: accepts valid chunk (with usage, with `usage: null`, with usage omitted, with empty `choices: []`); rejects missing `choices`, non-array `choices`, `choices` containing non-`OpenAIChoice` elements, `usage` present with invalid shape
     * ` [✅]`   No false positives or negatives against the interface test cases
 
-  * ` [✅]`   `openai.guard.ts`
-    * ` [✅]`   `isOpenAIChoiceDelta(v: unknown): v is OpenAIChoiceDelta`
-    * ` [✅]`   `isOpenAIChatCompletionChunk(v: unknown): v is OpenAIChatCompletionChunk`
+  * ` [✅]`   `openai.guard.ts` *(rework — add `isOpenAIFinishReason`, `isOpenAIDelta`, `isOpenAIChoice`)*
+    * ` [✅]`   `isOpenAIFinishReason(v: unknown): v is OpenAIFinishReason`
+    * ` [✅]`   `isOpenAIDelta(v: unknown): v is OpenAIDelta`
+    * ` [✅]`   `isOpenAIChoice(v: unknown): v is OpenAIChoice` — requires `delta: OpenAIDelta` and `finish_reason: OpenAIFinishReason | null`
     * ` [✅]`   `isOpenAIUsageDelta(v: unknown): v is OpenAIUsageDelta`
-    * ` [✅]`   Shared guards (`isAiAdapterParams`, `isAiAdapterResult`, `isAiAdapter`) imported from factory node — not redefined here
+    * ` [✅]`   `isOpenAIChatCompletionChunk(v: unknown): v is OpenAIChatCompletionChunk`
+    * ` [✅]`   Shared guards (`isAiAdapter`, `isNodeAdapterStreamChunk`) imported from factory node — not redefined here
 
   * ` [✅]`   `openai.test.ts`
-    * ` [✅]`   Mocks `openai` SDK stream: sequence of text delta chunks, then a usage chunk — asserts buffer assembles correctly
-    * ` [✅]`   Mocks stream with usage present: asserts `token_usage` is populated with correct counts
-    * ` [✅]`   Mocks stream with no usage: asserts `token_usage` is `null`
+    * ` [✅]`   Mocks `openai` SDK stream: sequence of text delta chunks — asserts `text_delta` chunks yielded with correct text
+    * ` [✅]`   Mocks stream with `stream_options: { include_usage: true }` and usage on final chunk — asserts `usage` chunk yielded with correct `NodeTokenUsage`
+    * ` [✅]`   Mocks stream with no usage: asserts adapter **throws** (Supabase throws on missing usage; conformance suite requires a `usage` chunk)
+    * ` [✅]`   Mocks stream with empty content (only whitespace deltas): asserts adapter **throws** (Supabase: `'OpenAI response content is empty or missing.'`)
+    * ` [✅]`   Asserts `done` chunk yielded with mapped `finish_reason` string for each known case (`stop`, `length`, `tool_calls`, `content_filter`, `function_call`)
+    * ` [✅]`   Asserts `done` chunk yielded with `finish_reason: 'unknown'` when provider returns an unrecognized finish reason
     * ` [✅]`   Mocks stream that throws mid-iteration: asserts error propagates (not swallowed)
-    * ` [✅]`   Does NOT test finish_reason — EMCAS back-half's responsibility
+    * ` [✅]`   Tests prefix stripping: `apiIdentifier: 'openai-gpt-4o'` → SDK called with `model: 'gpt-4o'`; mismatched `modelConfig.api_identifier` → throws
+    * ` [✅]`   Tests message preparation: `request.messages` mapped correctly, `request.resourceDocuments` injected (with format/validation), `request.message` appended as final user message
+    * ` [✅]`   Tests token cap resolution: `request.max_tokens_to_generate` → `modelConfig.hard_cap_output_tokens` → `modelConfig.provider_max_output_tokens` fallback chain (takes `Math.min` of candidates)
+    * ` [✅]`   Tests `max_tokens` vs `max_completion_tokens` branching based on stripped model name
 
   * ` [✅]`   `construction`
-    * ` [✅]`   Factory: `createOpenAINodeAdapter(): AiAdapter`
-    * ` [✅]`   Stateless — no deps at construction; API key provided per-call in `params.apiKey`
+    * ` [✅]`   Factory: `createOpenAINodeAdapter(params: NodeAdapterConstructorParams): AiAdapter`
+    * ` [✅]`   Stores `modelConfig` and `apiKey` from constructor params
     * ` [✅]`   Test framework: Vitest (Node.js); test files use `describe` / `it` / `expect`
-    * ` [✅]`   Invalid construction context: none — pure factory, no side effects at construction
 
   * ` [✅]`   `openai.ts`
-    * ` [✅]`   Exports `createOpenAINodeAdapter(): AiAdapter`
-    * ` [✅]`   Instantiates `OpenAI({ apiKey: params.apiKey })` per call
-    * ` [✅]`   Calls `client.chat.completions.create({ stream: true, model: params.modelConfig.model_identifier, max_tokens: params.modelConfig.max_tokens, messages: params.chatApiRequest.messages })`
-    * ` [✅]`   `for await` loop accumulates content deltas into `assembled_content: string`
-    * ` [✅]`   Extracts `token_usage` from stream usage event; maps to `NodeTokenUsage` or null
-    * ` [✅]`   Returns `AiAdapterResult` on stream close; throws on stream error
+    * ` [✅]`   Exports `createOpenAINodeAdapter(params: NodeAdapterConstructorParams): AiAdapter`
+    * ` [✅]`   Instantiates `OpenAI({ apiKey: params.apiKey })`
+    * ` [✅]`   `sendMessageStream(request, apiIdentifier)`: ports `_prepareOpenAiStreamingRequest` — strips `openai-` prefix to get `modelApiName`, validates against `modelConfig.api_identifier` (also stripped), maps messages, filters empty content, injects resource documents (validates `document_key`/`stage_slug`), appends current message, resolves token cap (`Math.min` of candidates), branches `max_tokens` vs `max_completion_tokens` on `modelApiName`
+    * ` [✅]`   Calls `client.chat.completions.create({ stream: true, stream_options: { include_usage: true }, model: modelApiName, messages, ...tokenParam })`
+    * ` [✅]`   `for await` loop yields `text_delta` chunks; captures `finish_reason` from choices; captures usage from final chunk
+    * ` [✅]`   Post-stream: throws if assembled content is empty after trimming
+    * ` [✅]`   Post-stream: throws if no usage data received
+    * ` [✅]`   Yields `usage` chunk, then yields `done` chunk with mapped finish_reason (including `'unknown'` default)
+    * ` [✅]`   Throws on stream error
 
   * ` [✅]`   `openai.mock.ts`
     * ` [✅]`   `createMockOpenAINodeAdapter(overrides?: Partial<AiAdapter>): AiAdapter`
-    * ` [✅]`   Default: resolves with `{ assembled_content: 'mock openai response', token_usage: { prompt_tokens: 10, completion_tokens: 20, total_tokens: 30 } }`
-    * ` [✅]`   Error override: `stream` throws `new Error('mock openai stream error')`
+    * ` [✅]`   Default: `sendMessageStream` yields `{ type: 'text_delta', text: 'mock openai response' }`, `{ type: 'usage', tokenUsage: { prompt_tokens: 10, completion_tokens: 20, total_tokens: 30 } }`, `{ type: 'done', finish_reason: 'stop' }`
+    * ` [✅]`   Error override: `sendMessageStream` throws `new Error('mock openai stream error')`
     * ` [✅]`   Conforms to `AiAdapter` interface; validated by `isAiAdapter` guard
 
   * ` [✅]`   `openai.provides.ts`
     * ` [✅]`   Exports: `createOpenAINodeAdapter`
-    * ` [✅]`   Exports OpenAI-specific types: `OpenAIChatCompletionChunk`, `OpenAIChoiceDelta`, `OpenAIUsageDelta`
-    * ` [✅]`   Exports OpenAI-specific guards: `isOpenAIChatCompletionChunk`, `isOpenAIChoiceDelta`, `isOpenAIUsageDelta`
+    * ` [✅]`   Exports OpenAI-specific types: `OpenAIChatCompletionChunk`, `OpenAIChoice`, `OpenAIDelta`, `OpenAIFinishReason`, `OpenAIUsageDelta`
+    * ` [✅]`   Exports OpenAI-specific guards: `isOpenAIChatCompletionChunk`, `isOpenAIChoice`, `isOpenAIDelta`, `isOpenAIFinishReason`, `isOpenAIUsageDelta`
     * ` [✅]`   Does NOT re-export shared factory types or guards — consumers import those from the factory node directly
     * ` [✅]`   No external access to adapter internals bypasses this file
 
   * ` [✅]`   `openai.integration.test.ts`
-    * ` [✅]`   Validates `createOpenAINodeAdapter()` result satisfies `isAiAdapter` at runtime
-    * ` [✅]`   Simulates workload dispatch: event with `api_identifier: 'openai-gpt-4o'` → adapter selected → `stream()` called with mock params → `AiAdapterResult` returned
+    * ` [✅]`   Validates `createOpenAINodeAdapter({ modelConfig, apiKey })` result satisfies `isAiAdapter` at runtime
+    * ` [✅]`   Simulates dispatch: `api_identifier: 'openai-gpt-4o'` → adapter constructed → `sendMessageStream()` called with mock `NodeChatApiRequest` → yields `NodeAdapterStreamChunk` values
     * ` [✅]`   Uses mocked `openai` SDK — no live API calls
 
   * ` [✅]`   `directionality`
@@ -272,113 +307,143 @@
     * ` [✅]`   No cycles
 
   * ` [✅]`   `requirements`
-    * ` [✅]`   `stream()` with valid params returns `AiAdapterResult` with assembled content — proven by unit test
-    * ` [✅]`   `stream()` with OpenAI error throws — proven by unit test
-    * ` [✅]`   `token_usage` is null when OpenAI returns no usage — proven by unit test
+    * ` [✅]`   `sendMessageStream()` yields correct `text_delta` chunks — proven by unit test
+    * ` [✅]`   `sendMessageStream()` yields `usage` chunk with correct `NodeTokenUsage` — proven by unit test
+    * ` [✅]`   `sendMessageStream()` yields `done` chunk with mapped finish_reason (including `'unknown'` default) — proven by unit test
+    * ` [✅]`   `sendMessageStream()` throws on empty content — proven by unit test
+    * ` [✅]`   `sendMessageStream()` throws on missing usage data — proven by unit test
+    * ` [✅]`   Prefix stripping: `apiIdentifier` → `modelApiName`; mismatch with `modelConfig.api_identifier` → throws — proven by unit test
+    * ` [✅]`   Message preparation matches Supabase `_prepareOpenAiStreamingRequest` behavior — proven by unit test
+    * ` [✅]`   Token cap resolution follows fallback chain — proven by unit test
+    * ` [✅]`   `sendMessageStream()` with OpenAI error throws — proven by unit test
     * ` [✅]`   Adapter satisfies `AiAdapter` at runtime — proven by integration test guard check
+    * ` [✅]`   Passes `runAdapterConformanceTests` — proven by conformance suite (requires `text_delta`, `usage`, and `done` chunks in happy path)
     * ` [✅]`   No Deno APIs present — proven by Node.js TypeScript build
 
-* ` [✅]`   `netlify/functions/ai-stream/adapters/anthropic/anthropic-adapter` **[BE] Anthropic Node.js streaming adapter for Netlify Async Workload**
+* `[✅]`   `netlify/functions/ai-stream/adapters/anthropic/anthropic-adapter` **[BE] Anthropic Node.js streaming adapter — port of Supabase `anthropic_adapter.ts` for Netlify Async Workload**
 
   * ` [✅]`   `objective`
-    * ` [✅]`   Provide a Node.js streaming adapter that calls the Anthropic Messages API, assembles the full response buffer, and returns `AiAdapterResult` — implementing the same `AiAdapter` contract as the OpenAI adapter
+    * ` [✅]`   Port the existing Supabase `anthropic_adapter.ts` (`_prepareAnthropicRequest` + `sendMessageStream`) to a Node.js adapter that yields `NodeAdapterStreamChunk` values via `AsyncGenerator`, preserving identical system prompt extraction, message merging, alternating role enforcement, resource document injection, and finish_reason mapping
     * ` [✅]`   Functional goals:
-      * Accept `AiAdapterParams` and stream from Anthropic until completion
-      * Map Anthropic's streaming event format to `assembled_content` and `NodeTokenUsage`
-      * Return result to the ai-stream workload
+      * Accept `NodeChatApiRequest` and `api_identifier`; prepare the Anthropic request body identically to the Supabase adapter
+      * Yield `text_delta`, `usage`, and `done` chunks matching the Supabase `AdapterStreamChunk` discriminated union
+      * Map Anthropic `stop_reason` values (`end_turn`/`stop_sequence` → `stop`, `max_tokens` → `max_tokens`, `tool_use` → `tool_use`, any other/absent → `unknown`)
     * ` [✅]`   Non-functional constraints:
       * Node.js 18+ only — no Deno APIs
-      * No Supabase access; no job state management; no finish_reason logic
-      * Anthropic streaming differs from OpenAI: input tokens come from `message_start`, output tokens from `message_delta` — must handle both
+      * No Supabase access; model config and API key injected at construction via `NodeAdapterConstructorParams`
+      * No internal soft timeout — handler manages timeout
 
   * ` [✅]`   `role`
-    * ` [✅]`   Role: infra/adapter — wraps `@anthropic-ai/sdk` to satisfy `AiAdapter`
+    * ` [✅]`   Role: infra/adapter — wraps `@anthropic-ai/sdk` to satisfy `AiAdapter` via `sendMessageStream` AsyncGenerator
     * ` [✅]`   Why appropriate: workload dispatches to this adapter for `anthropic-*` identifiers without owning Anthropic-specific streaming semantics
-    * ` [✅]`   Must NOT: interact with Supabase, manage job state, determine finish_reason, or call the back-half
+    * ` [✅]`   Must NOT: interact with Supabase, manage job state, or call the back-half
 
   * ` [✅]`   `module`
     * ` [✅]`   Bounded context: `netlify/functions/ai-stream/adapters` — same adapter layer as OpenAI
-    * ` [✅]`   Inside boundary: Anthropic stream invocation, event parsing, token usage extraction
-    * ` [✅]`   Outside boundary: job state, DB, finish_reason, HTTP callback
+    * ` [✅]`   Inside boundary: Anthropic request preparation (system prompt extraction, message merging, alternating role enforcement, resource doc injection), stream invocation, chunk yielding, finish_reason mapping
+    * ` [✅]`   Outside boundary: job state, DB, HTTP callback, stream assembly (handler's job)
 
   * ` [✅]`   `deps`
     * ` [✅]`   `@anthropic-ai/sdk` npm package — external, provides streaming Messages API
     * ` [✅]`   `ai-adapter.interface.ts` — defined in factory node (`getNodeAiAdapter`); imported here, not owned here
-    * ` [✅]`   Shared guards (`isAiAdapterParams`, `isAiAdapterResult`, `isAiAdapter`) — imported from factory node, not redefined
+    * ` [✅]`   Shared guards (`isAiAdapter`, `isNodeAdapterStreamChunk`) — imported from factory node, not redefined
     * ` [✅]`   No reverse deps
 
   * ` [✅]`   `context_slice`
-    * ` [✅]`   Receives `AiAdapterParams` — same shape as OpenAI adapter
-    * ` [✅]`   Returns `AiAdapterResult` — same shape
+    * ` [✅]`   Constructed with `NodeAdapterConstructorParams`: `{ modelConfig: NodeModelConfig, apiKey: string }`
+    * ` [✅]`   `sendMessageStream` receives `NodeChatApiRequest` and `apiIdentifier: string`
+    * ` [✅]`   Yields `NodeAdapterStreamChunk` values (`text_delta`, `usage`, `done`)
     * ` [✅]`   No over-fetching
 
   * ` [✅]`   `anthropic.interface.test.ts`
-    * ` [✅]`   Valid `AnthropicMessageStartEvent`: `type` is `'message_start'`, `message.usage.input_tokens` is non-negative integer
-    * ` [✅]`   Valid `AnthropicTextDeltaEvent`: `type` is `'content_block_delta'`, `delta.type` is `'text_delta'`, `delta.text` is string
-    * ` [✅]`   Valid `AnthropicMessageDeltaEvent`: `type` is `'message_delta'`, `usage.output_tokens` is non-negative integer
-    * ` [✅]`   Mapping: `message_start.message.usage.input_tokens` → `prompt_tokens`; `message_delta.usage.output_tokens` → `completion_tokens`; sum → `total_tokens`
-    * ` [✅]`   Missing both usage events across entire stream → `token_usage` is null (not an error)
-    * ` [✅]`   Invalid: `message_start` missing `message.usage` → guard rejects; negative `output_tokens` → guard rejects
+    * ` [✅]`   Imports types ONLY from `anthropic.interface.ts` — no guard imports, no runtime validators; mirrors `ai-adapter.interface.test.ts` pattern
+    * ` [✅]`   Construct `AnthropicTextDelta` literal with `type: 'text_delta'`, `text: 'chunk'` — compiles; assert `literal.type === 'text_delta'` and `typeof literal.text === 'string'`
+    * ` [✅]`   Construct `AnthropicContentBlockDeltaEvent` literal with `type: 'content_block_delta'` and nested `delta: AnthropicTextDelta` — compiles; assert `literal.type === 'content_block_delta'` and `literal.delta.type === 'text_delta'`
+    * ` [✅]`   Construct `AnthropicUsage` literal with `input_tokens: 10, output_tokens: 20` — compiles; assert both fields `typeof === 'number'`
+    * ` [✅]`   Construct `AnthropicFinalMessage` literal for each `AnthropicStopReason` member (`end_turn`, `stop_sequence`, `max_tokens`, `tool_use`) — each compiles; assert `literal.stop_reason` equals the tag
+    * ` [✅]`   Construct `AnthropicFinalMessage` literal with `stop_reason: null` (adapter interprets as `'unknown'`) — compiles
+    * ` [✅]`   Pure type-shape assertions only — invalid shapes are a compile-time concern, not a test-time one; runtime accept/reject belongs in `anthropic.guard.test.ts`
 
   * ` [✅]`   `anthropic.interface.ts`
-    * ` [✅]`   `AnthropicMessageStartUsage`: `{ input_tokens: number }`
-    * ` [✅]`   `AnthropicMessageStartEvent`: `{ type: 'message_start'; message: { usage: AnthropicMessageStartUsage } }`
-    * ` [✅]`   `AnthropicTextDeltaEvent`: `{ type: 'content_block_delta'; delta: { type: 'text_delta'; text: string } }`
-    * ` [✅]`   `AnthropicMessageDeltaUsage`: `{ output_tokens: number }`
-    * ` [✅]`   `AnthropicMessageDeltaEvent`: `{ type: 'message_delta'; usage: AnthropicMessageDeltaUsage }`
+    * ` [✅]`   `AnthropicStopReason`: `'end_turn' | 'stop_sequence' | 'max_tokens' | 'tool_use'` — exhaustive union of SDK-known values; adapter maps any other/`null` to `'unknown'`
+    * ` [✅]`   `AnthropicTextDelta`: `{ type: 'text_delta'; text: string }` — the only content-block delta subtype the adapter reads (per `event.delta.type === 'text_delta'` guard in Supabase adapter)
+    * ` [✅]`   `AnthropicContentBlockDeltaEvent`: `{ type: 'content_block_delta'; delta: AnthropicTextDelta }` — the only stream event the adapter consumes during `for await`
+    * ` [✅]`   `AnthropicUsage`: `{ input_tokens: number; output_tokens: number }` — non-negative integers required at runtime
+    * ` [✅]`   `AnthropicFinalMessage`: `{ usage: AnthropicUsage; stop_reason: AnthropicStopReason | null }` — returned by `stream.finalMessage()`; sole source of `usage` and `done.finish_reason` chunks
     * ` [✅]`   No `any`, no casts
+    * ` [✅]`   Dead types removed: no `AnthropicMessageStartEvent`, `AnthropicMessageStartUsage`, `AnthropicMessageDeltaEvent`, `AnthropicMessageDeltaUsage` — the streaming adapter never reads `message_start` or `message_delta` events (only `content_block_delta` and `finalMessage()`)
 
   * ` [✅]`   `anthropic.interaction.spec`
-    * ` [✅]`   Called by `ai-stream` workload when `api_identifier` prefix matches `anthropic-`
-    * ` [✅]`   Calls `anthropic.messages.stream({ model, max_tokens, messages, system? })`
-    * ` [✅]`   Listens to stream events: `text` events accumulate into buffer; `message_start` captures `input_tokens`; `message_delta` captures `output_tokens`
-    * ` [✅]`   On stream end: constructs `NodeTokenUsage` from captured counts (null if neither event fired)
+    * ` [✅]`   Called by `ai-stream` handler when `api_identifier` prefix matches `anthropic-`
+    * ` [✅]`   `sendMessageStream` ports `_prepareAnthropicRequest` from Supabase `anthropic_adapter.ts`:
+      * Strips `anthropic-` prefix from `apiIdentifier` to derive `modelApiName` (e.g. `anthropic-claude-3-5-sonnet` → `claude-3-5-sonnet`)
+      * Extracts system prompt from messages array (first `system` role message)
+      * Pushes `request.message` as final user message into combined array
+      * Merges consecutive same-role messages
+      * Enforces alternating user/assistant roles
+      * Injects `request.resourceDocuments` as document content blocks prepended to first user message (validates `document_key`/`stage_slug`)
+      * Resolves `max_tokens`: `request.max_tokens_to_generate` → `modelConfig.hard_cap_output_tokens`; throws if no `maxTokensForPayload` resolved (Anthropic requires `max_tokens`)
+    * ` [✅]`   Calls `client.messages.stream({ model: modelApiName, max_tokens: maxTokensForPayload, messages: anthropicMessages, system: systemPrompt })`
+    * ` [✅]`   Yields `{ type: 'text_delta', text }` for each `content_block_delta` text event
+    * ` [✅]`   On stream end: yields `{ type: 'usage', tokenUsage }` from `stream.finalMessage()` (`input_tokens` → `prompt_tokens`, `output_tokens` → `completion_tokens`, sum → `total_tokens`); SDK always provides `response.usage`
+    * ` [✅]`   Yields `{ type: 'done', finish_reason }` with mapped finish_reason via `stop_reason`: `end_turn`/`stop_sequence` → `stop`, `max_tokens` → `max_tokens`, `tool_use` → `tool_use`, any other value or absent → `unknown`
     * ` [✅]`   On stream error: throws
 
   * ` [✅]`   `anthropic.guard.test.ts`
-    * ` [✅]`   `isAnthropicMessageStartEvent`: accepts valid event; rejects missing `type`, missing `message.usage`, non-integer `input_tokens`
-    * ` [✅]`   `isAnthropicTextDeltaEvent`: accepts valid event; rejects wrong `type`, missing `delta`, missing `delta.text`
-    * ` [✅]`   `isAnthropicMessageDeltaEvent`: accepts valid event; rejects missing `usage`, non-integer `output_tokens`
+    * ` [✅]`   `isAnthropicStopReason`: accepts each union member (`end_turn`, `stop_sequence`, `max_tokens`, `tool_use`); rejects unrecognized strings, `null`, `undefined`, non-strings
+    * ` [✅]`   `isAnthropicTextDelta`: accepts `{ type: 'text_delta', text: 'x' }`; rejects wrong `type`, non-string `text`, missing fields
+    * ` [✅]`   `isAnthropicContentBlockDeltaEvent`: accepts valid event; rejects wrong `type`, missing `delta`, `delta` that fails `isAnthropicTextDelta`
+    * ` [✅]`   `isAnthropicUsage`: accepts valid usage; rejects negative integers, non-integers, missing fields
+    * ` [✅]`   `isAnthropicFinalMessage`: accepts valid final message for each `AnthropicStopReason` value AND for `stop_reason: null`; rejects missing `usage`, invalid `usage`, missing `stop_reason` field, `stop_reason` set to unrecognized string
     * ` [✅]`   No false positives or negatives against the interface test cases
 
   * ` [✅]`   `anthropic.guard.ts`
-    * ` [✅]`   `isAnthropicMessageStartEvent(v: unknown): v is AnthropicMessageStartEvent`
-    * ` [✅]`   `isAnthropicTextDeltaEvent(v: unknown): v is AnthropicTextDeltaEvent`
-    * ` [✅]`   `isAnthropicMessageDeltaEvent(v: unknown): v is AnthropicMessageDeltaEvent`
-    * ` [✅]`   Shared guards (`isAiAdapterParams`, `isAiAdapterResult`, `isAiAdapter`) imported from factory node — not redefined here
+    * ` [✅]`   `isAnthropicStopReason(v: unknown): v is AnthropicStopReason`
+    * ` [✅]`   `isAnthropicTextDelta(v: unknown): v is AnthropicTextDelta`
+    * ` [✅]`   `isAnthropicContentBlockDeltaEvent(v: unknown): v is AnthropicContentBlockDeltaEvent`
+    * ` [✅]`   `isAnthropicUsage(v: unknown): v is AnthropicUsage`
+    * ` [✅]`   `isAnthropicFinalMessage(v: unknown): v is AnthropicFinalMessage` — validates `usage` via `isAnthropicUsage`; requires `stop_reason` to be `null` or pass `isAnthropicStopReason`
+    * ` [✅]`   Shared guards (`isAiAdapter`, `isNodeAdapterStreamChunk`) imported from factory node — not redefined here
 
   * ` [✅]`   `anthropic.test.ts`
-    * ` [✅]`   Mocks `@anthropic-ai/sdk` stream events: `message_start` with `input_tokens`, `text` deltas, `message_delta` with `output_tokens` — asserts buffer and token_usage correct
-    * ` [✅]`   Mocks stream with no usage events: asserts `token_usage` is null
+    * ` [✅]`   Mocks `@anthropic-ai/sdk` stream: text deltas → asserts `text_delta` chunks yielded correctly
+    * ` [✅]`   Mocks `stream.finalMessage()` returning usage → asserts `usage` chunk yielded with correct `NodeTokenUsage` (`input_tokens` → `prompt_tokens`, `output_tokens` → `completion_tokens`, sum → `total_tokens`)
+    * ` [✅]`   Asserts `done` chunk yielded with mapped `finish_reason` for each known `stop_reason` (`end_turn`, `stop_sequence`, `max_tokens`, `tool_use`)
+    * ` [✅]`   Asserts `done` chunk yielded with `finish_reason: 'unknown'` when `stop_reason` is absent or unrecognized
     * ` [✅]`   Mocks stream error: asserts throws propagates
-    * ` [✅]`   Does NOT test finish_reason
+    * ` [✅]`   Tests prefix stripping: `apiIdentifier: 'anthropic-claude-3-5-sonnet'` → SDK called with `model: 'claude-3-5-sonnet'`
+    * ` [✅]`   Tests `maxTokensForPayload` required: no resolved max_tokens → throws
+    * ` [✅]`   Tests message preparation: system prompt extraction, message merging, alternating role enforcement, resource document injection (with validation), current message appending
+    * ` [✅]`   Tests `max_tokens` resolution from `request.max_tokens_to_generate` → `modelConfig.hard_cap_output_tokens`
 
   * ` [✅]`   `construction`
-    * ` [✅]`   Factory: `createAnthropicNodeAdapter(): AiAdapter`
-    * ` [✅]`   Stateless — API key provided per-call
+    * ` [✅]`   Factory: `createAnthropicNodeAdapter(params: NodeAdapterConstructorParams): AiAdapter`
+    * ` [✅]`   Stores `modelConfig` and `apiKey` from constructor params
 
   * ` [✅]`   `anthropic.ts`
-    * ` [✅]`   Exports `createAnthropicNodeAdapter(): AiAdapter`
-    * ` [✅]`   Uses `@anthropic-ai/sdk` `messages.stream()`
-    * ` [✅]`   Accumulates text from stream `text` events
-    * ` [✅]`   Captures input tokens from `message_start`, output tokens from `message_delta`
-    * ` [✅]`   Returns `AiAdapterResult`; throws on error
+    * ` [✅]`   Exports `createAnthropicNodeAdapter(params: NodeAdapterConstructorParams): AiAdapter`
+    * ` [✅]`   `sendMessageStream(request, apiIdentifier)`: ports `_prepareAnthropicRequest` — strips `anthropic-` prefix to get `modelApiName`, extracts system prompt, merges messages, enforces alternating roles, injects resource documents (validates `document_key`/`stage_slug`), resolves max_tokens; throws if no `maxTokensForPayload`
+    * ` [✅]`   Calls `client.messages.stream({ model: modelApiName, max_tokens: maxTokensForPayload, messages, system })`
+    * ` [✅]`   `for await` yields `text_delta` chunks from `content_block_delta` events
+    * ` [✅]`   Post-stream: yields `usage` chunk from `stream.finalMessage()` (`input_tokens` → `prompt_tokens`, `output_tokens` → `completion_tokens`, sum → `total_tokens`)
+    * ` [✅]`   Yields `done` chunk with mapped finish_reason (including `'unknown'` default for absent/unrecognized `stop_reason`)
+    * ` [✅]`   Throws on stream error
 
   * ` [✅]`   `anthropic.mock.ts`
     * ` [✅]`   `createMockAnthropicNodeAdapter(overrides?)`: satisfies `AiAdapter`
-    * ` [✅]`   Default: resolves with `{ assembled_content: 'mock anthropic response', token_usage: { prompt_tokens: 15, completion_tokens: 25, total_tokens: 40 } }`
+    * ` [✅]`   Default: `sendMessageStream` yields `{ type: 'text_delta', text: 'mock anthropic response' }`, `{ type: 'usage', tokenUsage: { prompt_tokens: 15, completion_tokens: 25, total_tokens: 40 } }`, `{ type: 'done', finish_reason: 'stop' }`
     * ` [✅]`   Error override supported
 
   * ` [✅]`   `anthropic.provides.ts`
     * ` [✅]`   Exports: `createAnthropicNodeAdapter`
-    * ` [✅]`   Exports Anthropic-specific types: `AnthropicMessageStartEvent`, `AnthropicTextDeltaEvent`, `AnthropicMessageDeltaEvent`, `AnthropicMessageStartUsage`, `AnthropicMessageDeltaUsage`
-    * ` [✅]`   Exports Anthropic-specific guards: `isAnthropicMessageStartEvent`, `isAnthropicTextDeltaEvent`, `isAnthropicMessageDeltaEvent`
+    * ` [✅]`   Exports Anthropic-specific types: `AnthropicStopReason`, `AnthropicTextDelta`, `AnthropicContentBlockDeltaEvent`, `AnthropicUsage`, `AnthropicFinalMessage`
+    * ` [✅]`   Exports Anthropic-specific guards: `isAnthropicStopReason`, `isAnthropicTextDelta`, `isAnthropicContentBlockDeltaEvent`, `isAnthropicUsage`, `isAnthropicFinalMessage`
     * ` [✅]`   Does NOT re-export shared factory types or guards — consumers import those from the factory node directly
     * ` [✅]`   No external access bypasses this file
 
   * ` [✅]`   `anthropic.integration.test.ts`
-    * ` [✅]`   Validates `createAnthropicNodeAdapter()` satisfies `isAiAdapter` at runtime
-    * ` [✅]`   Simulates dispatch: `api_identifier: 'anthropic-claude-3-5-sonnet'` → adapter selected → `stream()` → result returned
+    * ` [✅]`   Validates `createAnthropicNodeAdapter({ modelConfig, apiKey })` satisfies `isAiAdapter` at runtime
+    * ` [✅]`   Simulates dispatch: `api_identifier: 'anthropic-claude-3-5-sonnet'` → adapter constructed → `sendMessageStream()` called → yields `NodeAdapterStreamChunk` values
     * ` [✅]`   Mocked SDK — no live calls
 
   * ` [✅]`   `directionality`
@@ -388,104 +453,153 @@
     * ` [✅]`   No cycles
 
   * ` [✅]`   `requirements`
-    * ` [✅]`   `stream()` with valid params returns `AiAdapterResult` — proven by unit test
-    * ` [✅]`   Token usage correctly aggregated from Anthropic event model — proven by unit test
+    * ` [✅]`   `sendMessageStream()` yields correct chunk sequence (`text_delta` → `usage` → `done`) — proven by unit test
+    * ` [✅]`   Prefix stripping: `apiIdentifier` → `modelApiName` via `anthropic-` prefix removal — proven by unit test
+    * ` [✅]`   `maxTokensForPayload` required: throws if not resolved — proven by unit test
+    * ` [✅]`   Message preparation matches Supabase `_prepareAnthropicRequest` behavior — proven by unit test
+    * ` [✅]`   Token usage correctly mapped from Anthropic `finalMessage()` — proven by unit test
+    * ` [✅]`   Finish_reason correctly mapped from Anthropic `stop_reason` (including `'unknown'` default) — proven by unit test
+    * ` [✅]`   `sendMessageStream()` with SDK error throws — proven by unit test
     * ` [✅]`   Satisfies `isAiAdapter` at runtime — proven by integration test
+    * ` [✅]`   Passes `runAdapterConformanceTests` — proven by conformance suite (requires `text_delta`, `usage`, and `done` chunks in happy path)
+    * ` [✅]`   No Deno APIs present — proven by Node.js TypeScript build
 
-* ` [✅]`   `netlify/functions/ai-stream/adapters/google/google-adapter` **[BE] Google Gemini Node.js streaming adapter for Netlify Async Workload**
+* `[✅]`   `netlify/functions/ai-stream/adapters/google/google-adapter` **[BE] Google Gemini Node.js streaming adapter — port of Supabase `google_adapter.ts` for Netlify Async Workload**
 
   * ` [✅]`   `objective`
-    * ` [✅]`   Provide a Node.js streaming adapter that calls the Google Gemini API, assembles the full response buffer, and returns `AiAdapterResult` — implementing the same `AiAdapter` contract
+    * ` [✅]`   Port the existing Supabase `google_adapter.ts` (`_prepareGoogleChatAndParts` + `sendMessageStream`) to a Node.js adapter that yields `NodeAdapterStreamChunk` values via `AsyncGenerator`, preserving identical message mapping, resource document injection, token cap resolution, and finish_reason mapping
     * ` [✅]`   Functional goals:
-      * Accept `AiAdapterParams` and stream from Gemini until completion
-      * Map Google's `generateContentStream` response to `assembled_content` and `NodeTokenUsage`
+      * Accept `NodeChatApiRequest` and `api_identifier`; prepare the Gemini request identically to the Supabase adapter
+      * Yield `text_delta`, `usage`, and `done` chunks matching the Supabase `AdapterStreamChunk` discriminated union
+      * Map Google `finishReason` values (`STOP` → `stop`, `MAX_TOKENS` → `length`, `SAFETY`/`RECITATION` → `content_filter`, any other/absent → `unknown`)
     * ` [✅]`   Non-functional constraints:
       * Node.js 18+ only; no Deno APIs
-      * Google's token usage is in `usageMetadata` on the final chunk — must extract correctly
-      * `promptTokenCount` maps to `prompt_tokens`; `candidatesTokenCount` maps to `completion_tokens`
+      * No Supabase access; model config and API key injected at construction via `NodeAdapterConstructorParams`
+      * No internal soft timeout — handler manages timeout
 
   * ` [✅]`   `role`
-    * ` [✅]`   Role: infra/adapter — wraps `@google/generative-ai` to satisfy `AiAdapter`
+    * ` [✅]`   Role: infra/adapter — wraps `@google/generative-ai` to satisfy `AiAdapter` via `sendMessageStream` AsyncGenerator
     * ` [✅]`   Why appropriate: workload dispatches here for `google-*` identifiers
-    * ` [✅]`   Must NOT: interact with Supabase, manage job state, determine finish_reason, call back-half
+    * ` [✅]`   Must NOT: interact with Supabase, manage job state, or call back-half
 
   * ` [✅]`   `module`
     * ` [✅]`   Bounded context: `netlify/functions/ai-stream/adapters` — same adapter layer
-    * ` [✅]`   Inside boundary: Gemini stream invocation, text accumulation, usageMetadata extraction
-    * ` [✅]`   Outside boundary: job state, DB, finish_reason, HTTP callback
+    * ` [✅]`   Inside boundary: Gemini request preparation (message mapping, resource doc injection, token cap resolution), stream invocation, chunk yielding, finish_reason mapping
+    * ` [✅]`   Outside boundary: job state, DB, HTTP callback, stream assembly (handler's job)
 
   * ` [✅]`   `deps`
     * ` [✅]`   `@google/generative-ai` npm package — external, provides streaming generative API
     * ` [✅]`   `ai-adapter.interface.ts` — defined in factory node (`getNodeAiAdapter`); imported here, not owned here
-    * ` [✅]`   Shared guards (`isAiAdapterParams`, `isAiAdapterResult`, `isAiAdapter`) — imported from factory node, not redefined
+    * ` [✅]`   Shared guards (`isAiAdapter`, `isNodeAdapterStreamChunk`) — imported from factory node, not redefined
     * ` [✅]`   No reverse deps
 
   * ` [✅]`   `context_slice`
-    * ` [✅]`   Receives `AiAdapterParams` — same contract
-    * ` [✅]`   Returns `AiAdapterResult` — same contract
+    * ` [✅]`   Constructed with `NodeAdapterConstructorParams`: `{ modelConfig: NodeModelConfig, apiKey: string }`
+    * ` [✅]`   `sendMessageStream` receives `NodeChatApiRequest` and `apiIdentifier: string`
+    * ` [✅]`   Yields `NodeAdapterStreamChunk` values (`text_delta`, `usage`, `done`)
 
   * ` [✅]`   `google.interface.test.ts`
-    * ` [✅]`   Valid `GoogleUsageMetadata`: `promptTokenCount`, `candidatesTokenCount`, `totalTokenCount` are non-negative integers
-    * ` [✅]`   Valid `GoogleStreamChunk`: has `text` function returning string; `usageMetadata` is optional `GoogleUsageMetadata`
-    * ` [✅]`   Mapping: `usageMetadata.promptTokenCount` → `prompt_tokens`; `candidatesTokenCount` → `completion_tokens`; `totalTokenCount` → `total_tokens`
-    * ` [✅]`   Missing `usageMetadata` on all chunks → `token_usage` is null (not an error)
-    * ` [✅]`   Invalid: `usageMetadata` with negative counts → guard rejects; chunk missing `text` function → guard rejects
+    * ` [✅]`   Imports types ONLY from `google.interface.ts` — no guard imports, no runtime validators; mirrors `ai-adapter.interface.test.ts` pattern
+    * ` [✅]`   Construct `GooglePart` literal with `text: 'chunk'` — compiles; assert `typeof literal.text === 'string'`
+    * ` [✅]`   Construct `GooglePart` literal with `text` omitted (optional) — compiles
+    * ` [✅]`   Construct `GoogleContent` literal with `parts: [{ text: 'x' }]` — compiles; assert `Array.isArray(literal.parts)`
+    * ` [✅]`   Construct `GoogleCandidate` literal for each `GoogleFinishReason` member (`STOP`, `MAX_TOKENS`, `SAFETY`, `RECITATION`) — each compiles; assert `literal.finishReason` equals the tag
+    * ` [✅]`   Construct `GoogleCandidate` literal with `content` omitted and `finishReason` omitted — compiles (both optional mid-stream)
+    * ` [✅]`   Construct `GoogleUsageMetadata` literal with `promptTokenCount: 10, candidatesTokenCount: 20, totalTokenCount: 30` — compiles; assert each field `typeof === 'number'`
+    * ` [✅]`   Construct `GoogleStreamChunk` literal with `candidates: [GoogleCandidate]` — compiles
+    * ` [✅]`   Construct `GoogleStreamChunk` literal with `candidates` omitted — compiles (optional; adapter tolerates chunks with no candidates via `?.`)
+    * ` [✅]`   Construct `GoogleFinalResponse` literal with `candidates` and `usageMetadata` present — compiles
+    * ` [✅]`   Construct `GoogleFinalResponse` literal with `usageMetadata: null` — compiles (nullable; adapter throws on null at runtime)
+    * ` [✅]`   Pure type-shape assertions only — invalid shapes are a compile-time concern, not a test-time one; runtime accept/reject belongs in `google.guard.test.ts`
 
   * ` [✅]`   `google.interface.ts`
-    * ` [✅]`   `GoogleUsageMetadata`: `{ promptTokenCount: number; candidatesTokenCount: number; totalTokenCount: number }`
-    * ` [✅]`   `GoogleStreamChunk`: `{ text(): string; usageMetadata?: GoogleUsageMetadata }`
+    * ` [✅]`   `GoogleFinishReason`: `'STOP' | 'MAX_TOKENS' | 'SAFETY' | 'RECITATION'` — exhaustive union of SDK-known values; adapter maps any other/absent to `'unknown'`
+    * ` [✅]`   `GooglePart`: `{ text?: string }` — adapter reads `part.text` during stream iteration
+    * ` [✅]`   `GoogleContent`: `{ parts: GooglePart[] }` — adapter reads `chunk.candidates[0].content.parts`
+    * ` [✅]`   `GoogleCandidate`: `{ content?: GoogleContent; finishReason?: GoogleFinishReason }` — adapter reads `candidate.content.parts[].text` during stream and `candidate.finishReason` post-stream
+    * ` [✅]`   `GoogleUsageMetadata`: `{ promptTokenCount: number; candidatesTokenCount: number; totalTokenCount: number }` — non-negative integers required at runtime
+    * ` [✅]`   `GoogleStreamChunk`: `{ candidates?: GoogleCandidate[] }` — iterated via `for await (const chunk of streamResult.stream)`; adapter does NOT call `chunk.text()`
+    * ` [✅]`   `GoogleFinalResponse`: `{ candidates?: GoogleCandidate[]; usageMetadata?: GoogleUsageMetadata | null }` — `await streamResult.response`; sole source of `usage` chunk and `done.finish_reason`
     * ` [✅]`   No `any`, no casts
 
   * ` [✅]`   `google.interaction.spec`
-    * ` [✅]`   Called by `ai-stream` workload when `api_identifier` prefix matches `google-`
-    * ` [✅]`   Initializes `GoogleGenerativeAI({ apiKey })`, gets model via `getGenerativeModel({ model })`
-    * ` [✅]`   Calls `model.generateContentStream({ contents })` — iterates response stream
-    * ` [✅]`   Accumulates text from each chunk's `text()` output
-    * ` [✅]`   Extracts `usageMetadata` from final chunk for token counts
+    * ` [✅]`   Called by `ai-stream` handler when `api_identifier` prefix matches `google-`
+    * ` [✅]`   `sendMessageStream` ports `_prepareGoogleChatAndParts` from Supabase `google_adapter.ts`:
+      * Strips `google-` prefix from `apiIdentifier` to derive `modelApiName` (e.g. `google-gemini-2-5-pro` → `gemini-2-5-pro`)
+      * Maps `request.messages` to Google Content format (`assistant` → `model` role); skips `system` role messages (not currently used by Supabase adapter)
+      * Pushes `request.message` as final user message, then pops last message as `lastMessage`; validates `lastMessage` is user role
+      * Injects `request.resourceDocuments` as text parts prepended to `lastMessage` parts
+      * Resolves `maxOutputTokens`: `request.max_tokens_to_generate` → `modelConfig.hard_cap_output_tokens` (single fallback, not `Math.min`)
+    * ` [✅]`   Initializes `GoogleGenerativeAI({ apiKey })`, gets model via `getGenerativeModel({ model: modelApiName })`; starts chat with `{ history, generationConfig: { maxOutputTokens } }`
+    * ` [✅]`   Calls `chat.sendMessageStream(finalParts)` — iterates `streamResult.stream`
+    * ` [✅]`   Yields `{ type: 'text_delta', text }` from `candidates[0].content.parts` text (skips empty text, skips chunks with no parts)
+    * ` [✅]`   Post-stream: awaits `streamResult.response`; if assembled content is empty, throws (Supabase: `'Google Gemini stream completed with no assistant text.'`)
+    * ` [✅]`   Post-stream: if `response.usageMetadata` is missing or token counts are not numbers, throws (Supabase: `'Google Gemini response did not include usageMetadata.'` / `'...usageMetadata is incomplete.'`)
+    * ` [✅]`   Yields `{ type: 'usage', tokenUsage }` from `response.usageMetadata` (`promptTokenCount` → `prompt_tokens`, `candidatesTokenCount` → `completion_tokens`, `totalTokenCount` → `total_tokens`)
+    * ` [✅]`   Yields `{ type: 'done', finish_reason }` with mapped finish_reason from `candidate.finishReason`: `STOP` → `stop`, `MAX_TOKENS` → `length`, `SAFETY`/`RECITATION` → `content_filter`, any other value or absent → `unknown`
     * ` [✅]`   On stream error: throws
 
   * ` [✅]`   `google.guard.test.ts`
+    * ` [✅]`   `isGoogleFinishReason`: accepts each union member (`STOP`, `MAX_TOKENS`, `SAFETY`, `RECITATION`); rejects unrecognized strings, `null`, `undefined`, non-strings
+    * ` [✅]`   `isGooglePart`: accepts `{ text: 'x' }` and `{}`; rejects non-string `text`, non-object
+    * ` [✅]`   `isGoogleContent`: accepts `{ parts: [] }` and `{ parts: [GooglePart] }`; rejects missing `parts`, non-array `parts`, `parts` containing non-`GooglePart` elements
+    * ` [✅]`   `isGoogleCandidate`: accepts candidate with each `GoogleFinishReason` value, with `finishReason` omitted, with `content` omitted; rejects invalid `content`, invalid `finishReason` string
     * ` [✅]`   `isGoogleUsageMetadata`: accepts valid metadata; rejects negative counts, missing fields, non-integers
-    * ` [✅]`   `isGoogleStreamChunk`: accepts chunk with `text` function; rejects missing `text`, non-function `text`
+    * ` [✅]`   `isGoogleStreamChunk`: accepts chunk with `candidates` array of `GoogleCandidate` and with `candidates` omitted; rejects non-array `candidates`, `candidates` containing non-`GoogleCandidate` elements
+    * ` [✅]`   `isGoogleFinalResponse`: accepts response with and without `candidates`, with `usageMetadata`, with `usageMetadata: null`, with `usageMetadata` omitted; rejects invalid `usageMetadata` shape
     * ` [✅]`   No false positives or negatives against the interface test cases
 
   * ` [✅]`   `google.guard.ts`
+    * ` [✅]`   `isGoogleFinishReason(v: unknown): v is GoogleFinishReason`
+    * ` [✅]`   `isGooglePart(v: unknown): v is GooglePart`
+    * ` [✅]`   `isGoogleContent(v: unknown): v is GoogleContent`
+    * ` [✅]`   `isGoogleCandidate(v: unknown): v is GoogleCandidate`
     * ` [✅]`   `isGoogleUsageMetadata(v: unknown): v is GoogleUsageMetadata`
     * ` [✅]`   `isGoogleStreamChunk(v: unknown): v is GoogleStreamChunk`
-    * ` [✅]`   Shared guards (`isAiAdapterParams`, `isAiAdapterResult`, `isAiAdapter`) imported from factory node — not redefined here
+    * ` [✅]`   `isGoogleFinalResponse(v: unknown): v is GoogleFinalResponse`
+    * ` [✅]`   Shared guards (`isAiAdapter`, `isNodeAdapterStreamChunk`) imported from factory node — not redefined here
 
   * ` [✅]`   `google.test.ts`
-    * ` [✅]`   Mocks `@google/generative-ai` stream: chunks with `text()` returning strings, final chunk with `usageMetadata`
-    * ` [✅]`   Asserts buffer assembled from all text chunks
-    * ` [✅]`   Asserts `token_usage` mapped from `usageMetadata` correctly
-    * ` [✅]`   Missing `usageMetadata`: asserts `token_usage` is null
-    * ` [✅]`   Stream error: asserts throws
+    * ` [✅]`   Mocks `@google/generative-ai` stream: chunks with text content — asserts `text_delta` chunks yielded correctly
+    * ` [✅]`   Mocks `streamResult.response.usageMetadata` — asserts `usage` chunk yielded with correct `NodeTokenUsage` mapping (`promptTokenCount` → `prompt_tokens`, etc.)
+    * ` [✅]`   Missing `usageMetadata` on response: asserts adapter **throws** (Supabase: `'Google Gemini response did not include usageMetadata.'`)
+    * ` [✅]`   Incomplete `usageMetadata` (non-number token counts): asserts adapter **throws** (Supabase: `'...usageMetadata is incomplete.'`)
+    * ` [✅]`   Empty assembled content (no text parts yielded): asserts adapter **throws** (Supabase: `'Google Gemini stream completed with no assistant text.'`)
+    * ` [✅]`   Asserts `done` chunk yielded with mapped `finish_reason` for each known case (`STOP`, `MAX_TOKENS`, `SAFETY`, `RECITATION`)
+    * ` [✅]`   Asserts `done` chunk yielded with `finish_reason: 'unknown'` when `finishReason` is absent or unrecognized
+    * ` [✅]`   Stream error: asserts throws propagates
+    * ` [✅]`   Tests prefix stripping: `apiIdentifier: 'google-gemini-2-5-pro'` → `getGenerativeModel` called with `model: 'gemini-2-5-pro'`
+    * ` [✅]`   Tests message preparation: role mapping (`assistant` → `model`), system messages skipped, resource document injection as text parts, current message as final user parts, validates last message is user role
+    * ` [✅]`   Tests `maxOutputTokens` resolution from `request.max_tokens_to_generate` → `modelConfig.hard_cap_output_tokens`
 
   * ` [✅]`   `construction`
-    * ` [✅]`   Factory: `createGoogleNodeAdapter(): AiAdapter`
-    * ` [✅]`   Stateless — model name and API key provided per-call
+    * ` [✅]`   Factory: `createGoogleNodeAdapter(params: NodeAdapterConstructorParams): AiAdapter`
+    * ` [✅]`   Stores `modelConfig` and `apiKey` from constructor params
 
   * ` [✅]`   `google.ts`
-    * ` [✅]`   Exports `createGoogleNodeAdapter(): AiAdapter`
-    * ` [✅]`   Initializes `GoogleGenerativeAI` per call with `params.apiKey`
-    * ` [✅]`   Calls `generateContentStream` with mapped message contents
-    * ` [✅]`   Accumulates text, extracts usageMetadata for token counts
-    * ` [✅]`   Returns `AiAdapterResult`; throws on error
+    * ` [✅]`   Exports `createGoogleNodeAdapter(params: NodeAdapterConstructorParams): AiAdapter`
+    * ` [✅]`   `sendMessageStream(request, apiIdentifier)`: ports `_prepareGoogleChatAndParts` — strips `google-` prefix to get `modelApiName`, maps messages (`assistant` → `model`), skips `system`, pops last user message, injects resource documents as text parts, resolves `maxOutputTokens`
+    * ` [✅]`   Initializes `GoogleGenerativeAI` with `params.apiKey`; `getGenerativeModel({ model: modelApiName })`; `startChat({ history, generationConfig: { maxOutputTokens } })`
+    * ` [✅]`   `chat.sendMessageStream(finalParts)` — `for await` yields `text_delta` chunks from candidate parts
+    * ` [✅]`   Post-stream: throws if assembled content is empty
+    * ` [✅]`   Post-stream: throws if `response.usageMetadata` is missing or token counts are not numbers
+    * ` [✅]`   Yields `usage` chunk from validated `usageMetadata`, then yields `done` chunk with mapped finish_reason (including `'unknown'` default)
+    * ` [✅]`   Throws on stream error
 
   * ` [✅]`   `google.mock.ts`
     * ` [✅]`   `createMockGoogleNodeAdapter(overrides?)`: satisfies `AiAdapter`
-    * ` [✅]`   Default: resolves with `{ assembled_content: 'mock google response', token_usage: { prompt_tokens: 12, completion_tokens: 18, total_tokens: 30 } }`
+    * ` [✅]`   Default: `sendMessageStream` yields `{ type: 'text_delta', text: 'mock google response' }`, `{ type: 'usage', tokenUsage: { prompt_tokens: 12, completion_tokens: 18, total_tokens: 30 } }`, `{ type: 'done', finish_reason: 'stop' }`
 
   * ` [✅]`   `google.provides.ts`
     * ` [✅]`   Exports: `createGoogleNodeAdapter`
-    * ` [✅]`   Exports Google-specific types: `GoogleStreamChunk`, `GoogleUsageMetadata`
-    * ` [✅]`   Exports Google-specific guards: `isGoogleStreamChunk`, `isGoogleUsageMetadata`
+    * ` [✅]`   Exports Google-specific types: `GoogleFinishReason`, `GooglePart`, `GoogleContent`, `GoogleCandidate`, `GoogleUsageMetadata`, `GoogleStreamChunk`, `GoogleFinalResponse`
+    * ` [✅]`   Exports Google-specific guards: `isGoogleFinishReason`, `isGooglePart`, `isGoogleContent`, `isGoogleCandidate`, `isGoogleUsageMetadata`, `isGoogleStreamChunk`, `isGoogleFinalResponse`
     * ` [✅]`   Does NOT re-export shared factory types or guards — consumers import those from the factory node directly
     * ` [✅]`   No external access bypasses this file
 
   * ` [✅]`   `google.integration.test.ts`
-    * ` [✅]`   Validates `createGoogleNodeAdapter()` satisfies `isAiAdapter` at runtime
-    * ` [✅]`   Simulates dispatch: `api_identifier: 'google-gemini-2-5-pro'` → adapter selected → `stream()` → result returned
+    * ` [✅]`   Validates `createGoogleNodeAdapter({ modelConfig, apiKey })` satisfies `isAiAdapter` at runtime
+    * ` [✅]`   Simulates dispatch: `api_identifier: 'google-gemini-2-5-pro'` → adapter constructed → `sendMessageStream()` called → yields `NodeAdapterStreamChunk` values
 
   * ` [✅]`   `directionality`
     * ` [✅]`   Layer: infra/adapter (Netlify-side Node.js)
@@ -494,29 +608,41 @@
     * ` [✅]`   No cycles
 
   * ` [✅]`   `requirements`
-    * ` [✅]`   `stream()` returns correct `AiAdapterResult` for Gemini — proven by unit test
+    * ` [✅]`   `sendMessageStream()` yields correct chunk sequence (`text_delta` → `usage` → `done`) — proven by unit test
+    * ` [✅]`   Prefix stripping: `apiIdentifier` → `modelApiName` via `google-` prefix removal — proven by unit test
+    * ` [✅]`   `sendMessageStream()` throws on empty assembled content — proven by unit test
+    * ` [✅]`   `sendMessageStream()` throws on missing/incomplete `usageMetadata` — proven by unit test
+    * ` [✅]`   Message preparation matches Supabase `_prepareGoogleChatAndParts` behavior — proven by unit test
+    * ` [✅]`   Token usage correctly mapped from `usageMetadata` — proven by unit test
+    * ` [✅]`   Finish_reason correctly mapped from Google finish reason (including `'unknown'` default) — proven by unit test
+    * ` [✅]`   `sendMessageStream()` with SDK error throws — proven by unit test
     * ` [✅]`   Satisfies `isAiAdapter` at runtime — proven by integration test
+    * ` [✅]`   Passes `runAdapterConformanceTests` — proven by conformance suite (requires `text_delta`, `usage`, and `done` chunks in happy path)
+    * ` [✅]`   No Deno APIs present — proven by Node.js TypeScript build
 
-* `[✅]`   `netlify/functions/ai-stream/ai-stream` **[BE] Netlify Async Workload — AI streaming orchestrator**
+* `[✅]`   `netlify/functions/ai-stream/ai-stream` **[BE] Netlify Async Workload — AI streaming orchestrator with finish_reason relay and soft timeout**
 
   * `[✅]`   `objective`
-    * `[✅]`   Receive a dialectic stream event from the queue, dispatch to the correct provider adapter, stream the AI response, and POST the assembled result to the EMCAS back-half Edge Function — with no Supabase database access, no finish_reason speculation, and full Netlify retry semantics
+    * `[✅]`   Receive a dialectic stream event from the queue, dispatch to the correct provider adapter via `sendMessageStream`, iterate the async generator to collect `assembled_content`, `token_usage`, and `finish_reason`, and POST the result to the EMCAS back-half Edge Function — with sub-15-minute soft timeout and full Netlify retry semantics
     * `[✅]`   Functional goals:
-      * Validate the incoming event payload
+      * Validate the incoming `AiStreamEvent` payload (corrected wire types)
       * Select the correct `AiAdapter` by `api_identifier` prefix
       * Read provider API key from Netlify env vars
-      * Call adapter `stream()` and receive `{ assembled_content, token_usage }`
-      * POST `{ job_id, assembled_content, token_usage }` to the back-half URL with `Authorization: Bearer <user_jwt>`
+      * Construct adapter with `{ modelConfig: event.model_config, apiKey }`
+      * Call `adapter.sendMessageStream(event.chat_api_request, event.api_identifier)`
+      * Iterate async generator, collecting `assembled_content` (from `text_delta`), `token_usage` (from `usage`), `finish_reason` (from `done`)
+      * Enforce sub-15-minute soft timeout (14 min); on timeout set `finish_reason = 'length'` and break
+      * POST `{ job_id, assembled_content, token_usage, finish_reason }` to the back-half URL with `Authorization: Bearer <user_jwt>`
       * Return success; on POST failure let Netlify retry the transmission
     * `[✅]`   Non-functional constraints:
       * Event payload ≤ 500 KB (Netlify limit) — enforced by front-half at enqueue time
       * No Supabase access — workload does not read or write DB
-      * No finish_reason in POST body — back-half examines blob locally
+      * Soft timeout at 14 minutes protects against Netlify 15-minute hard ceiling
 
   * `[✅]`   `role`
     * `[✅]`   Role: app/orchestrator (Netlify Async Workload handler)
     * `[✅]`   Why appropriate: only this layer has the Netlify runtime context (`AsyncWorkloadEvent`) and bridges the AI provider adapters to the Supabase back-half
-    * `[✅]`   Must NOT: access Supabase, modify job state, classify finish_reason, send notifications, or implement streaming logic directly
+    * `[✅]`   Must NOT: access Supabase, modify job state, send notifications, or implement streaming logic directly (adapters own streaming; handler only iterates chunks)
 
   * `[✅]`   `module`
     * `[✅]`   Bounded context: `netlify/functions/ai-stream` — Netlify-side async workload
@@ -533,36 +659,43 @@
     * `[✅]`   No reverse deps; no Supabase client
 
   * `[✅]`   `context_slice`
-    * `[✅]`   From event: `{ job_id: string, api_identifier: string, extended_model_config: NodeModelConfig, chat_api_request: NodeChatApiRequest, user_jwt: string }`
-    * `[✅]`   To adapters: `AiAdapterParams`
-    * `[✅]`   To back-half: `{ job_id, assembled_content, token_usage }` with `Authorization: Bearer <user_jwt>` header
+    * `[✅]`   From event: `AiStreamEvent` — `{ job_id, api_identifier, model_config: NodeModelConfig, chat_api_request: NodeChatApiRequest, user_jwt }`
+    * `[✅]`   To adapters: constructs adapter with `{ modelConfig: event.model_config, apiKey }`, calls `sendMessageStream(event.chat_api_request, event.api_identifier)`
+    * `[✅]`   To back-half: `AiStreamPayload` — `{ job_id, assembled_content, token_usage, finish_reason }` with `Authorization: Bearer <user_jwt>` header
     * `[✅]`   No over-fetching
 
   * `[✅]`   `ai-stream.interface.test.ts`
-    * `[✅]`   Valid `AiStreamEvent`: all required fields present and typed correctly
-    * `[✅]`   Valid `AiStreamPayload`: `job_id`, `assembled_content`, `token_usage` (nullable)
-    * `[✅]`   Invalid: missing `job_id`, missing `user_jwt`, empty `api_identifier`, unknown `api_identifier` prefix → guard rejects
-    * `[✅]`   `api_identifier` dispatch: `openai-*`, `anthropic-*`, `google-*` → resolves; anything else → error
+    * `[✅]`   Imports types ONLY from `ai-stream.interface.ts` — no guard imports, no runtime validators; mirrors `ai-adapter.interface.test.ts` pattern
+    * `[✅]`   Construct `AiStreamEvent` literal with all required fields (`job_id`, `api_identifier`, `model_config: NodeModelConfig`, `chat_api_request: NodeChatApiRequest`, `user_jwt`) — compiles; assert field types
+    * `[✅]`   Construct `AiStreamPayload` literal with `assembled_content: string`, `token_usage: NodeTokenUsage | null`, `finish_reason: string | null` — compiles; assert field types
+    * `[✅]`   Construct `AiStreamPayload` literal with `token_usage: null` and `finish_reason: null` — compiles (both are nullable)
+    * `[✅]`   Construct `AiStreamDeps` literal with `providerMap`, `saveResponseUrl`, `getApiKey` — compiles; assert shape
+    * `[✅]`   Pure type-shape assertions only — invalid shapes are a compile-time concern; runtime accept/reject and `api_identifier` dispatch behavior belong in `ai-stream.guard.test.ts` / `ai-stream.test.ts`
 
   * `[✅]`   `ai-stream.interface.ts`
-    * `[✅]`   `AiStreamEvent`: `{ job_id: string; api_identifier: string; extended_model_config: NodeModelConfig; chat_api_request: NodeChatApiRequest; user_jwt: string }`
-    * `[✅]`   `AiStreamPayload`: `{ job_id: string; assembled_content: string; token_usage: NodeTokenUsage | null }`
-    * `[✅]`   `AiStreamDeps`: `{ openaiAdapter: AiAdapter; anthropicAdapter: AiAdapter; googleAdapter: AiAdapter; Url: string; getApiKey(apiIdentifier: string): string }`
+    * `[✅]`   `AiStreamEvent`: `{ job_id: string; api_identifier: string; model_config: NodeModelConfig; chat_api_request: NodeChatApiRequest; user_jwt: string }` — corrected field name and types mirroring Supabase originals
+    * `[✅]`   `AiStreamPayload`: `{ job_id: string; assembled_content: string; token_usage: NodeTokenUsage | null; finish_reason: string | null }` — `finish_reason` relayed from adapter `done` chunk; `null` if stream interrupted (no `done` received)
+    * `[✅]`   `AiStreamDeps`: `{ providerMap: NodeProviderMap; saveResponseUrl: string; getApiKey(apiIdentifier: string): string }`
 
   * `[✅]`   `ai-stream.interaction.spec`
     * `[✅]`   Netlify queue delivers event; workload receives it via `asyncWorkloadFn` handler
-    * `[✅]`   Workload validates event shape via guard; invalid event → `ErrorDoNotRetry` thrown (malformed event cannot be fixed by retry)
-    * `[✅]`   Dispatches to adapter by `api_identifier` prefix; unknown prefix → `ErrorDoNotRetry`
-    * `[✅]`   Calls `adapter.stream(params)` — on error, throws (Netlify retries the model call)
-    * `[✅]`   On stream success: POSTs `AiStreamPayload` to `DIALECTIC_SAVERESPONSE_URL` with JWT header
+    * `[✅]`   Workload validates event shape via `isAiStreamEvent` guard; invalid event → `ErrorDoNotRetry` thrown
+    * `[✅]`   Resolves API key from env by `api_identifier` prefix; missing key → `ErrorDoNotRetry`
+    * `[✅]`   Constructs adapter via `getNodeAiAdapter({ providerMap }, { apiIdentifier, apiKey, modelConfig: event.model_config })`; unknown prefix → `ErrorDoNotRetry`
+    * `[✅]`   Records `startTime = Date.now()`
+    * `[✅]`   Calls `adapter.sendMessageStream(event.chat_api_request, event.api_identifier)` — iterates async generator
+    * `[✅]`   Collects: `assembledContent` from `text_delta`, `tokenUsage` from `usage`, `finishReason` from `done`
+    * `[✅]`   **Soft timeout**: on each `text_delta` chunk, if `Date.now() - startTime > SOFT_TIMEOUT_MS` (14 min), sets `finishReason = 'length'` and breaks
+    * `[✅]`   On stream error: throws (Netlify retries the model call)
+    * `[✅]`   On stream success: POSTs `AiStreamPayload` (`{ job_id, assembled_content, token_usage, finish_reason }`) to `DIALECTIC_SAVERESPONSE_URL` with `Authorization: Bearer <user_jwt>` header
     * `[✅]`   POST success (2xx): workload completes successfully
     * `[✅]`   POST failure (non-2xx or network error): throws (Netlify retries the POST, not the model call — step boundary)
-    * `[✅]`   Two distinct retry points via `event.step.run`: step-1 wraps adapter call; step-2 wraps back-half POST
+    * `[✅]`   Two distinct retry points via `event.step.run`: step-1 wraps adapter call + stream iteration; step-2 wraps back-half POST
 
   * `[✅]`   `ai-stream.guard.test.ts`
-    * `[✅]`   `isAiStreamEvent`: valid, rejects missing fields, rejects unknown prefix
-    * `[✅]`   `isAiStreamPayload`: valid, rejects missing `job_id`, accepts null `token_usage`
-    * `[✅]`   `isAiStreamDeps`: valid, rejects missing adapters or missing `saveResponseUrl`
+    * `[✅]`   `isAiStreamEvent`: valid (with `model_config` and `chat_api_request` in corrected shapes); rejects missing fields; rejects invalid `model_config`; rejects invalid `chat_api_request`
+    * `[✅]`   `isAiStreamPayload`: valid; rejects missing `job_id`; accepts null `token_usage`; accepts null `finish_reason`; rejects missing `finish_reason` field entirely
+    * `[✅]`   `isAiStreamDeps`: valid; rejects missing `providerMap` or missing `saveResponseUrl`
 
   * `[✅]`   `ai-stream.guard.ts`
     * `[✅]`   `isAiStreamEvent(v: unknown): v is AiStreamEvent`
@@ -572,12 +705,14 @@
   * `[✅]`   `ai-stream.test.ts`
     * `[✅]`   Invalid event → `ErrorDoNotRetry` thrown, no adapter called
     * `[✅]`   Unknown `api_identifier` prefix → `ErrorDoNotRetry` thrown
-    * `[✅]`   Valid event, `openai-*` → OpenAI mock adapter called; result POSTed to back-half
+    * `[✅]`   Valid event, `openai-*` → OpenAI mock adapter's `sendMessageStream` iterated; result POSTed to back-half with `finish_reason` from `done` chunk
     * `[✅]`   Valid event, `anthropic-*` → Anthropic mock adapter called
     * `[✅]`   Valid event, `google-*` → Google mock adapter called
     * `[✅]`   Adapter stream error → throws (Netlify retries step-1)
     * `[✅]`   Adapter success, back-half POST returns 4xx → throws (Netlify retries step-2)
-    * `[✅]`   Full happy path: adapter returns result → POST body matches `AiStreamPayload` → JWT header present
+    * `[✅]`   Full happy path: adapter yields chunks → POST body matches `AiStreamPayload` including `finish_reason` → JWT header present
+    * `[✅]`   Soft timeout: mock adapter yields `text_delta` chunks with simulated delay > 14 min → `finish_reason` set to `'length'`, partial `assembled_content` POSTed
+    * `[✅]`   Stream interruption (no `done` chunk): `finish_reason` is `null` in POST body
 
   * `[✅]`   `construction`
     * `[✅]`   `createAiStreamDeps(): AiStreamDeps` — reads env vars, instantiates adapters
@@ -587,22 +722,32 @@
   * `[✅]`   `ai-stream.ts`
     * `[✅]`   Exports default `asyncWorkloadFn` handler and `asyncWorkloadConfig`
     * `[✅]`   Validates event data via `isAiStreamEvent` — `ErrorDoNotRetry` on failure
-    * `[✅]`   Dispatches adapter by prefix
-    * `[✅]`   `step.run('stream-ai', ...)` wraps adapter call
-    * `[✅]`   `step.run('post-', ...)` wraps HTTP POST with JWT header
+    * `[✅]`   Resolves API key from env; constructs adapter via `getNodeAiAdapter`
+    * `[✅]`   `step.run('stream-ai', ...)` wraps: records `startTime`, calls `adapter.sendMessageStream`, iterates async generator collecting `assembledContent`/`tokenUsage`/`finishReason`, checks soft timeout on each `text_delta` (14 min → set `finishReason = 'length'`, break)
+    * `[✅]`   `step.run('post-result', ...)` wraps: HTTP POST of `AiStreamPayload` (`{ job_id, assembled_content, token_usage, finish_reason }`) with `Authorization: Bearer <user_jwt>` header
     * `[✅]`   Throws on POST non-2xx
 
   * `[✅]`   `ai-stream.mock.ts`
     * `[✅]`   `createMockAiStreamDeps(overrides?)`: returns controllable `AiStreamDeps`
-    * `[✅]`   Default: all three adapters are mocks; `SaveResponseUrl` is `'http://localhost/mock-saveResponse'`; `getApiKey` returns `'mock-key'`
+    * `[✅]`   Default: `providerMap` with mock adapters for all three providers; `saveResponseUrl` is `'http://localhost/mock-saveResponse'`; `getApiKey` returns `'mock-key'`
 
   * `[✅]`   `ai-stream.provides.ts`
     * `[✅]`   Exports: workload handler (default), `asyncWorkloadConfig`, `createAiStreamDeps`
 
   * `[✅]`   `ai-stream.integration.test.ts`
-    * `[✅]`   Full chain: mock event → workload → mock OpenAI adapter → mock back-half POST server → asserts POST body and headers
-    * `[✅]`   Retry semantics: step-1 failure retries without re-entering step-2; step-2 failure does not re-invoke adapter
-    * `[✅]`   Uses mocked adapters and mocked HTTP server — no live calls
+    * `[✅]`   External boundary mocks (all via `vi.mock` / `vi.hoisted` / `vi.stubGlobal`):
+      * `[✅]`   `@netlify/async-workloads` — `asyncWorkloadFn` passes handler through as callable; `event.step.run` executes callback and tracks step names; `ErrorDoNotRetry` re-exported as real class; `AsyncWorkloadEvent` constructed via cast (external Netlify type)
+      * `[✅]`   `openai` — mock `OpenAI` class with controllable `chat.completions.create` returning async iterable of SDK-shaped chunks (pattern from `openai.integration.test.ts`)
+      * `[✅]`   `@anthropic-ai/sdk` — mock `Anthropic` class with controllable `messages.stream` returning async iterable + `finalMessage()` (pattern from `anthropic.integration.test.ts`)
+      * `[✅]`   `@google/generative-ai` — mock `GoogleGenerativeAI` with controllable `getGenerativeModel` → `startChat` → `sendMessageStream` chain (pattern from `google.integration.test.ts`)
+      * `[✅]`   `fetch` — stubbed global returning configurable `Response`
+      * `[✅]`   `process.env` — `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`, `DIALECTIC_SAVERESPONSE_URL` set before each test
+    * `[✅]`   Full chain — OpenAI: valid `AiStreamEvent` with `openai-gpt-4o` prefix → default export handler → real `createAiStreamDeps` → real `getNodeAiAdapter` → real `createOpenAINodeAdapter` → mocked OpenAI SDK stream → real chunk assembly → POST to mocked fetch → assert `AiStreamPayload` body (`assembled_content`, `token_usage`, `finish_reason`) and `Authorization: Bearer <user_jwt>` header
+    * `[✅]`   Full chain — Anthropic: valid event with `anthropic-claude-3-5-sonnet` prefix → same real application path → real `createAnthropicNodeAdapter` → mocked Anthropic SDK stream + `finalMessage()` → assert POST body and headers
+    * `[✅]`   Full chain — Google: valid event with `google-gemini-2-5-pro` prefix → same real application path → real `createGoogleNodeAdapter` → mocked Google SDK stream + response → assert POST body and headers
+    * `[✅]`   Step isolation — adapter error: SDK mock throws during stream → `step.run('stream-ai')` propagates error → `step.run('post-result')` never called (tracked by step mock)
+    * `[✅]`   Step isolation — POST failure: fetch returns 400 after successful stream → `step.run('post-result')` throws → adapter factory and `sendMessageStream` were each called exactly once (no re-entry into step-1)
+    * `[✅]`   No live calls — all external SDK clients and fetch are mocked; no network traffic
 
   * `[✅]`   `directionality`
     * `[✅]`   Layer: app/orchestrator (Netlify runtime)
@@ -785,91 +930,90 @@
 
 * `[ ]`   `dialectic-worker/saveResponse/saveResponse` **[BE] EMCAS back-half — post-stream processing, contribution save, token debit, and job completion**
 
-  * `[✅]`   `objective`
-    * `[✅]`   Receive the assembled AI response blob from the Netlify workload via HTTP POST, fetch the corresponding job from DB by `job_id`, execute all post-stream processing (finish_reason detection, JSON sanitization, storage upload, contribution save, token debit, continuation dispatch), and update job status from `queued` to the correct terminal or continuation state
-    * `[✅]`   Functional goals:
-      * Accept and validate `{ job_id, assembled_content, token_usage }` from Netlify with valid user JWT
+  * `[ ]`   `objective`
+    * `[ ]`   Receive the assembled AI response blob from the Netlify workload via HTTP POST, fetch the corresponding job from DB by `job_id`, execute all post-stream processing (finish_reason detection, JSON sanitization, storage upload, contribution save, token debit, continuation dispatch), and update job status from `queued` to the correct terminal or continuation state
+    * `[ ]`   Functional goals:
+      * Accept and validate `{ job_id, assembled_content, token_usage, finish_reason }` from Netlify with valid user JWT
       * Fetch full job row and derived context from Supabase
       * Execute all logic currently in EMCAS after the `for await` stream loop
       * Update job status to `completed`, `needs_continuation`, `continuation_limit_reached`, or `failed`
-    * `[✅]`   Non-functional constraints:
+    * `[ ]`   Non-functional constraints:
       * Runs in Deno (Supabase Edge Function) — same runtime as existing EMCAS
       * Authenticated via user JWT forwarded from Netlify (validated by Supabase Edge JWT gate)
       * Must complete within Supabase Edge Function limit — post-stream work is fast relative to streaming
       * `execute_completed` notification (previously in processSimpleJob) moves here since completion is now confirmed at this point
 
-  * `[✅]`   `role`
-    * `[✅]`   Role: app/domain (Supabase Edge Function handler)
-    * `[✅]`   Why appropriate: all post-stream logic requires Supabase access, Deno utilities, and existing shared deps — keeping it in Deno avoids porting the entire shared library to Node.js
-    * `[✅]`   Must NOT: invoke the AI provider, receive a stream, set job status to `queued`, or call the Netlify workload
+  * `[ ]`   `role`
+    * `[ ]`   Role: app/domain (Supabase Edge Function handler)
+    * `[ ]`   Why appropriate: all post-stream logic requires Supabase access, Deno utilities, and existing shared deps — keeping it in Deno avoids porting the entire shared library to Node.js
+    * `[ ]`   Must NOT: invoke the AI provider, receive a stream, set job status to `queued`, or call the Netlify workload
 
-  * `[✅]`   `module`
-    * `[✅]`   Bounded context: `dialectic-worker/executeModelCallAndSave` — post-stream processing half of EMCAS
-    * `[✅]`   Inside boundary: finish_reason resolution, JSON sanitization, storage upload, contribution persistence, token debit, continuation dispatch, job status update, `execute_completed` notification
-    * `[✅]`   Outside boundary: AI streaming (Netlify), job queuing (front-half), prompt assembly (prepareModelJob)
+  * `[ ]`   `module`
+    * `[ ]`   Bounded context: `dialectic-worker/executeModelCallAndSave` — post-stream processing half of EMCAS
+    * `[ ]`   Inside boundary: finish_reason resolution, JSON sanitization, storage upload, contribution persistence, token debit, continuation dispatch, job status update, `execute_completed` notification
+    * `[ ]`   Outside boundary: AI streaming (Netlify), job queuing (front-half), prompt assembly (prepareModelJob)
 
-  * `[✅]`   `deps`
-    * `[✅]`   `logger: ILogger` — from existing EMCAS deps
-    * `[✅]`   `fileManager: IFileManager` — covers `assembleAndSaveFinalDocument` (method on `IFileManager`) and upload/register operations; `assembleAndSaveFinalDocument` is NOT a separate dep
-    * `[✅]`   `notificationService: NotificationServiceType` — from existing EMCAS deps
-    * `[✅]`   `continueJob: ContinueJobFn` — from existing EMCAS deps
-    * `[✅]`   `retryJob: RetryJobFn` — from existing EMCAS deps
-    * `[✅]`   `resolveFinishReason: ResolveFinishReasonFn` — from existing EMCAS deps
-    * `[✅]`   `isIntermediateChunk: IsIntermediateChunkFn` — from existing EMCAS deps; required for continuation path
-    * `[✅]`   `determineContinuation: DetermineContinuationFn` — from existing EMCAS deps; required for continuation path
-    * `[✅]`   `buildUploadContext: BuildUploadContextFn` — from existing EMCAS deps; required for storage upload
-    * `[✅]`   `debitTokens: BoundDebitTokens` — from existing EMCAS deps; wraps `userTokenWalletService`
-    * `[✅]`   `sanitizeJsonContent: SanitizeJsonContentFn` — injected after `jsonSanitizer` node; direct import replaced by injection
-    * `[✅]`   `dialectic-worker/index.ts` — registers the new HTTP route for this function (wiring step, separate file touch; one file per turn during execution)
-    * `[✅]`   Existing type guards, interfaces, and helpers remain in Deno — no porting required
-    * `[✅]`   Note: `dbClient: SupabaseClient<Database>` constructed from JWT at request boundary — placed in `SaveResponseParams` consistent with EMCAS pattern
+  * `[ ]`   `deps`
+    * `[ ]`   `logger: ILogger` — from existing EMCAS deps
+    * `[ ]`   `fileManager: IFileManager` — covers `assembleAndSaveFinalDocument` (method on `IFileManager`) and upload/register operations; `assembleAndSaveFinalDocument` is NOT a separate dep
+    * `[ ]`   `notificationService: NotificationServiceType` — from existing EMCAS deps
+    * `[ ]`   `continueJob: ContinueJobFn` — from existing EMCAS deps
+    * `[ ]`   `retryJob: RetryJobFn` — from existing EMCAS deps
+    * `[ ]`   `resolveFinishReason: ResolveFinishReasonFn` — from existing EMCAS deps
+    * `[ ]`   `isIntermediateChunk: IsIntermediateChunkFn` — from existing EMCAS deps; required for continuation path
+    * `[ ]`   `determineContinuation: DetermineContinuationFn` — from existing EMCAS deps; required for continuation path
+    * `[ ]`   `buildUploadContext: BuildUploadContextFn` — from existing EMCAS deps; required for storage upload
+    * `[ ]`   `debitTokens: BoundDebitTokens` — from existing EMCAS deps; wraps `userTokenWalletService`
+    * `[ ]`   `sanitizeJsonContent: SanitizeJsonContentFn` — injected after `jsonSanitizer` node; direct import replaced by injection
+    * `[ ]`   `dialectic-worker/index.ts` — registers the new HTTP route for this function (wiring step, separate file touch; one file per turn during execution)
+    * `[ ]`   Existing type guards, interfaces, and helpers remain in Deno — no porting required
+    * `[ ]`   Note: `dbClient: SupabaseClient<Database>` constructed from JWT at request boundary — placed in `SaveResponseParams` consistent with EMCAS pattern
 
-  * `[✅]`   `context_slice`
-    * `[✅]`   HTTP POST body: `{ job_id: string, assembled_content: string, token_usage: NodeTokenUsage | null }`
-    * `[✅]`   HTTP header: `Authorization: Bearer <user_jwt>`
-    * `[✅]`   Fetches from DB: full job row, provider row, session data, project owner user ID
-    * `[✅]`   Does NOT receive `finish_reason` — determines it locally from `assembled_content`
+  * `[ ]`   `context_slice`
+    * `[ ]`   HTTP POST body: `{ job_id: string, assembled_content: string, token_usage: NodeTokenUsage | null, finish_reason: string | null }`
+    * `[ ]`   HTTP header: `Authorization: Bearer <user_jwt>`
+    * `[ ]`   Fetches from DB: full job row, provider row, session data, project owner user ID
+    * `[ ]`   Receives `finish_reason` from Netlify handler (explicit outer / provider stream done chunk); `null` when stream interrupted (no done chunk). Narrows to `FinishReason` via type guard with `'unknown'` fallback
 
-  * `[✅]`   `saveResponse.interface.test.ts`
-    * `[✅]`   Valid `SaveResponseParams`: non-empty `job_id` string, `dbClient` present — guard accepts
-    * `[✅]`   Invalid `SaveResponseParams`: missing `job_id` → guard rejects; missing `dbClient` → guard rejects
-    * `[✅]`   Valid `SaveResponsePayload`: non-empty `assembled_content`, `token_usage` is `NodeTokenUsage` or null — guard accepts
-    * `[✅]`   Invalid `SaveResponsePayload`: missing `assembled_content` → guard rejects; wrong type for `token_usage` → guard rejects
-    * `[✅]`   Valid `SaveResponseRequestBody` (transport only): `{ job_id, assembled_content, token_usage }` — guard accepts; used only at HTTP handler boundary
-    * `[✅]`   Invalid `SaveResponseRequestBody`: missing `job_id` → guard rejects; missing `assembled_content` → guard rejects; wrong type for `token_usage` → guard rejects
-    * `[✅]`   Valid `SaveResponseDeps`: all eleven fields present with correct types — guard accepts
-    * `[✅]`   Invalid `SaveResponseDeps`: any single field absent → guard rejects
-    * `[✅]`   Valid `SaveResponseSuccessReturn`: `{ status: 'completed' | 'needs_continuation' | 'continuation_limit_reached' }` — guard accepts
-    * `[✅]`   Valid `SaveResponseErrorReturn`: `{ error: Error; retriable: boolean }` — guard accepts
+  * `[ ]`   `saveResponse.interface.test.ts`
+    * `[ ]`   Imports types ONLY from `saveResponse.interface.ts` — no guard imports, no runtime validators; mirrors `ai-adapter.interface.test.ts` pattern
+    * `[ ]`   Construct `SaveResponseParams` literal with `job_id: string` and `dbClient: SupabaseClient<Database>` — compiles; assert `typeof job_id === 'string'`
+    * `[ ]`   Construct `SaveResponsePayload` literal with `assembled_content: string`, `token_usage: NodeTokenUsage`, `finish_reason: 'stop'` — compiles; assert field types
+    * `[ ]`   Construct `SaveResponsePayload` literal with `token_usage: null` and `finish_reason: null` — compiles (both nullable)
+    * `[ ]`   Construct `SaveResponseRequestBody` literal (transport shape) with `{ job_id, assembled_content, token_usage, finish_reason }` — compiles; assert shape
+    * `[ ]`   Construct `SaveResponseDeps` literal with all eleven fields of the declared types — compiles; assert shape
+    * `[ ]`   Construct `SaveResponseSuccessReturn` literal with each union member (`'completed'`, `'needs_continuation'`, `'continuation_limit_reached'`) — compiles for each
+    * `[ ]`   Construct `SaveResponseErrorReturn` literal with `{ error: new Error('x'), retriable: true }` — compiles; assert `error instanceof Error` and `typeof retriable === 'boolean'`
+    * `[ ]`   Pure type-shape assertions only — invalid shapes are a compile-time concern; runtime accept/reject belongs in `saveResponse.guard.test.ts`
 
-  * `[✅]`   `saveResponse.interface.ts`
-    * `[✅]`   `SaveResponseParams`: `{ job_id: string; dbClient: SupabaseClient<Database> }` — identifying information and DB handle constructed from JWT at handler boundary; consistent with EMCAS params pattern
-    * `[✅]`   `SaveResponsePayload`: `{ assembled_content: string; token_usage: NodeTokenUsage | null }` — data the function operates on
-    * `[✅]`   `SaveResponseRequestBody`: `{ job_id: string; assembled_content: string; token_usage: NodeTokenUsage | null }` — HTTP transport type only; parsed and split into `SaveResponseParams` + `SaveResponsePayload` at handler boundary; not used as function contract
-    * `[✅]`   `NodeTokenUsage` imported from shared Netlify adapter interface (or re-declared locally as identical shape to avoid cross-runtime import)
-    * `[✅]`   `SaveResponseDeps`: `{ logger: ILogger; fileManager: IFileManager; notificationService: NotificationServiceType; continueJob: ContinueJobFn; retryJob: RetryJobFn; resolveFinishReason: ResolveFinishReasonFn; isIntermediateChunk: IsIntermediateChunkFn; determineContinuation: DetermineContinuationFn; buildUploadContext: BuildUploadContextFn; debitTokens: BoundDebitTokens; sanitizeJsonContent: SanitizeJsonContentFn }`
-    * `[✅]`   `SaveResponseSuccessReturn`: `{ status: 'completed' | 'needs_continuation' | 'continuation_limit_reached' }`
-    * `[✅]`   `SaveResponseErrorReturn`: `{ error: Error; retriable: boolean }`
-    * `[✅]`   `SaveResponseReturn`: `SaveResponseSuccessReturn | SaveResponseErrorReturn`
+  * `[ ]`   `saveResponse.interface.ts`
+    * `[ ]`   `SaveResponseParams`: `{ job_id: string; dbClient: SupabaseClient<Database> }` — identifying information and DB handle constructed from JWT at handler boundary; consistent with EMCAS params pattern
+    * `[ ]`   `SaveResponsePayload`: `{ assembled_content: string; token_usage: NodeTokenUsage | null; finish_reason: string | null }` — data the function operates on; `finish_reason` relayed from Netlify handler's `done` chunk capture
+    * `[ ]`   `SaveResponseRequestBody`: `{ job_id: string; assembled_content: string; token_usage: NodeTokenUsage | null; finish_reason: string | null }` — HTTP transport type only; parsed and split into `SaveResponseParams` + `SaveResponsePayload` at handler boundary; not used as function contract
+    * `[ ]`   `NodeTokenUsage` imported from shared Netlify adapter interface (or re-declared locally as identical shape to avoid cross-runtime import)
+    * `[ ]`   `SaveResponseDeps`: `{ logger: ILogger; fileManager: IFileManager; notificationService: NotificationServiceType; continueJob: ContinueJobFn; retryJob: RetryJobFn; resolveFinishReason: ResolveFinishReasonFn; isIntermediateChunk: IsIntermediateChunkFn; determineContinuation: DetermineContinuationFn; buildUploadContext: BuildUploadContextFn; debitTokens: BoundDebitTokens; sanitizeJsonContent: SanitizeJsonContentFn }`
+    * `[ ]`   `SaveResponseSuccessReturn`: `{ status: 'completed' | 'needs_continuation' | 'continuation_limit_reached' }`
+    * `[ ]`   `SaveResponseErrorReturn`: `{ error: Error; retriable: boolean }`
+    * `[ ]`   `SaveResponseReturn`: `SaveResponseSuccessReturn | SaveResponseErrorReturn`
 
-  * `[✅]`   `saveResponse.interaction.spec`
-    * `[✅]`   Receives HTTP POST from Netlify workload with JWT; Supabase Edge validates JWT at gateway
-    * `[✅]`   Parses and validates `SaveResponseRequestBody` — invalid → 400, no DB access
-    * `[✅]`   Fetches job row by `job_id`; job not found → 404
-    * `[✅]`   Executes full post-stream logic (finish_reason, sanitize, parse, upload, save, debit)
-    * `[✅]`   Calls `retryJob` on retriable failure; updates job status accordingly
-    * `[✅]`   Calls `continueJob` when continuation required; job status → `needs_continuation`
-    * `[✅]`   Sends `execute_completed` notification on terminal success (moved from processSimpleJob)
-    * `[✅]`   Updates job status from `queued` to terminal state
-    * `[✅]`   Returns 200 on success; 500 on unretriable failure; 503 on retriable failure (Netlify retries POST on non-2xx)
+  * `[ ]`   `saveResponse.interaction.spec`
+    * `[ ]`   Receives HTTP POST from Netlify workload with JWT; Supabase Edge validates JWT at gateway
+    * `[ ]`   Parses and validates `SaveResponseRequestBody` — invalid → 400, no DB access
+    * `[ ]`   Fetches job row by `job_id`; job not found → 404
+    * `[ ]`   Executes full post-stream logic (finish_reason, sanitize, parse, upload, save, debit)
+    * `[ ]`   Calls `retryJob` on retriable failure; updates job status accordingly
+    * `[ ]`   Calls `continueJob` when continuation required; job status → `needs_continuation`
+    * `[ ]`   Sends `execute_completed` notification on terminal success (moved from processSimpleJob)
+    * `[ ]`   Updates job status from `queued` to terminal state
+    * `[ ]`   Returns 200 on success; 500 on unretriable failure; 503 on retriable failure (Netlify retries POST on non-2xx)
 
-  * `[✅]`   `saveResponse.guard.test.ts`
-    * `[✅]`   `isSaveResponseRequestBody`: valid; rejects missing `job_id`; rejects missing `assembled_content`; rejects wrong type for `token_usage`
-    * `[✅]`   `isSaveResponseParams`: valid; rejects missing `job_id`; rejects missing `dbClient`
-    * `[✅]`   `isSaveResponsePayload`: valid; rejects missing `assembled_content`; rejects wrong type for `token_usage`
-    * `[✅]`   `isSaveResponseDeps`: valid full object accepted; any single missing field → guard rejects
-    * `[✅]`   `isSaveResponseSuccessReturn`: valid; rejects unknown status values
-    * `[✅]`   `isSaveResponseErrorReturn`: valid; requires `retriable` boolean
+  * `[ ]`   `saveResponse.guard.test.ts`
+    * `[ ]`   `isSaveResponseRequestBody`: valid; rejects missing `job_id`; rejects missing `assembled_content`; rejects wrong type for `token_usage`; rejects missing `finish_reason` field
+    * `[ ]`   `isSaveResponseParams`: valid; rejects missing `job_id`; rejects missing `dbClient`
+    * `[ ]`   `isSaveResponsePayload`: valid (with `finish_reason`); rejects missing `assembled_content`; rejects wrong type for `token_usage`; rejects missing `finish_reason` field
+    * `[ ]`   `isSaveResponseDeps`: valid full object accepted; any single missing field → guard rejects
+    * `[ ]`   `isSaveResponseSuccessReturn`: valid; rejects unknown status values
+    * `[ ]`   `isSaveResponseErrorReturn`: valid; requires `retriable` boolean
 
   * `[ ]`   `saveResponse.guard.ts`
     * `[ ]`   `isSaveResponseRequestBody(v: unknown): v is SaveResponseRequestBody`
@@ -885,7 +1029,7 @@
     * `[ ]`   Modify each copied test:
       * Replace `executeModelCallAndSave(deps, params, payload)` with `saveResponse(deps, params, payload)`
       * Replace `ExecuteModelCallAndSaveParams` construction with `SaveResponseParams` (`{ job_id, dbClient }`)
-      * Replace `ExecuteModelCallAndSavePayload` construction with `SaveResponsePayload` (`{ assembled_content, token_usage }`)
+      * Replace `ExecuteModelCallAndSavePayload` construction with `SaveResponsePayload` (`{ assembled_content, token_usage, finish_reason }`)
       * Remove `getAiProviderAdapter` from deps — saveResponse does not call adapters
       * Remove adapter stream setup — blob arrives assembled
       * Replace `createMockExecuteModelCallAndSaveDeps` with `createMockSaveResponseDeps`
@@ -936,7 +1080,8 @@
     * `[ ]`   Exports `saveResponse(deps, params, payload): Promise<SaveResponseReturn>`
     * `[ ]`   Validates `SaveResponseRequestBody` via guard
     * `[ ]`   Fetches job row, provider row, session, project owner from Supabase
-    * `[ ]`   Runs all post-stream logic extracted from existing EMCAS (finish_reason → sanitize → parse → upload → save → debit → continue or complete)
+    * `[ ]`   Narrows `payload.finish_reason` (string | null) to `FinishReason` via type guard; `null` falls back to `'unknown'` (triggers continuation — correct for stream interruption)
+    * `[ ]`   Runs all post-stream logic extracted from existing `dialectic-worker/executeModelCallAndSave/executeModelCallAndSave.ts` (finish_reason → sanitize → parse → upload → save → debit → continue or complete)
     * `[ ]`   Sends `execute_completed` notification on terminal success
     * `[ ]`   Updates job status from `queued` to outcome
 
@@ -971,7 +1116,7 @@
       * Validate all params and payload (output_type, model config, adapter resolvability)
       * Resolve the provider API key
       * Write job status → `queued` in `dialectic_generation_jobs`
-      * Serialize and enqueue the Netlify event with `{ job_id, api_identifier, extended_model_config, chat_api_request, user_jwt }`
+      * Serialize and enqueue the Netlify `AiStreamEvent` with `{ job_id, api_identifier, model_config, chat_api_request, user_jwt }` — `model_config` maps from `AiModelExtendedConfig` to `NodeModelConfig`; `chat_api_request` maps from `ChatApiRequest` to `NodeChatApiRequest` (translation boundary)
       * Await queue ACK; return success or error to caller (prepareModelJob)
     * `[ ]`   Non-functional constraints:
       * Must NOT initiate the AI stream — stream is Netlify's responsibility
@@ -990,36 +1135,40 @@
     * `[ ]`   Outside boundary: AI streaming (Netlify), post-stream processing (back-half), prompt assembly (prepareModelJob)
 
   * `[ ]`   `deps`
-    * `[ ]`   `SupabaseClient<Database>` — for writing `queued` status to `dialectic_generation_jobs`
-    * `[ ]`   `AsyncWorkloadsClient` from `@netlify/async-workloads` — Node.js client called from Deno via HTTP or compatible bridge; enqueues `ai-stream` event
-    * `[ ]`   `isAiModelExtendedConfig`, `isModelContributionFileType` — existing type guards
-    * `[ ]`   `apiKeyForProvider` — existing helper (extracted from current EMCAS, or inlined here)
-    * `[ ]`   `logger` — injected dep
-    * `[ ]`   `NETLIFY_ASYNC_WORKLOADS_TOKEN` env var — for authenticating with Netlify queue API
+    * `[ ]`   `logger: ILogger` — injected dep
+    * `[ ]`   `netlifyQueueUrl: string` — the Netlify async workloads router endpoint (`SITE_ORIGIN/.netlify/functions/async-workloads-router`); injected at construction from env var
+    * `[ ]`   `netlifyApiKey: string` — the `AWL_API_KEY` value for `Authorization: Bearer` header; injected at construction from env var
+    * `[ ]`   `apiKeyForProvider: ApiKeyForProviderFn` — existing helper (extracted from current EMCAS, or inlined here)
+    * `[ ]`   `fetch` — Deno global; used directly to POST the event to Netlify router API; not injected, not in deps
+    * `[ ]`   `isAiModelExtendedConfig`, `isModelContributionFileType` — existing type guards; imported directly, not injected
 
   * `[ ]`   `context_slice`
-    * `[ ]`   Receives: all existing `ExecuteModelCallAndSaveParams` and `ExecuteModelCallAndSavePayload` as `EnqueueModelCall*` (unchanged shape)
+    * `[ ]`   Params (`EnqueueModelCallParams`): `{ dbClient: SupabaseClient<Database>; job: DialecticJobRow; providerRow: Tables<'ai_providers'>; userAuthToken: string; output_type: string }` — the minimal subset of `ExecuteModelCallAndSaveParams` needed for validation, DB write, and `AiStreamEvent` construction
+    * `[ ]`   Payload (`EnqueueModelCallPayload`): `{ chatApiRequest: ChatApiRequest; preflightInputTokens: number }` — the work data to serialize into the `AiStreamEvent`
     * `[ ]`   Returns: `EnqueueModelCallSuccessReturn` (`{ queued: true }`) or `EnqueueModelCallErrorReturn` (`{ error: Error; retriable: boolean }`)
     * `[ ]`   Writes: `{ status: 'queued' }` to `dialectic_generation_jobs` before enqueue
-    * `[ ]`   Emits: `AiStreamEvent` to Netlify queue
+    * `[ ]`   Emits: `AiStreamEvent` to Netlify queue via `fetch` POST
 
   * `[ ]`   `enqueueModelCall.interface.test.ts`
-    * `[ ]`   Valid `EnqueueModelCallSuccessReturn`: `{ queued: true }` — guard accepts
-    * `[ ]`   Valid `EnqueueModelCallErrorReturn`: `{ error: Error; retriable: boolean }` — guard accepts
-    * `[ ]`   Invalid: `queued: false` → guard rejects; missing `error` field → guard rejects; missing `retriable` → guard rejects
-    * `[ ]`   Valid `EnqueueModelCallDeps`: all three fields present — guard accepts
-    * `[ ]`   Invalid `EnqueueModelCallDeps`: missing `logger` → guard rejects; missing `enqueueNetlifyEvent` → guard rejects; missing `apiKeyForProvider` → guard rejects
-    * `[ ]`   `BoundEnqueueModelCallFn`: callable with `(params, payload) => Promise<Return>`
+    * `[ ]`   Imports types ONLY from `enqueueModelCall.interface.ts` — no guard imports, no runtime validators; mirrors `ai-adapter.interface.test.ts` pattern
+    * `[ ]`   Construct `EnqueueModelCallDeps` literal with all four fields (`logger`, `netlifyQueueUrl`, `netlifyApiKey`, `apiKeyForProvider`) of declared types — compiles; assert shape
+    * `[ ]`   Construct `EnqueueModelCallParams` literal with all five fields (`dbClient`, `job`, `providerRow`, `userAuthToken`, `output_type`) of declared types — compiles; assert shape
+    * `[ ]`   Construct `EnqueueModelCallPayload` literal with `chatApiRequest` and `preflightInputTokens: number` — compiles; assert `typeof preflightInputTokens === 'number'`
+    * `[ ]`   Construct `EnqueueModelCallSuccessReturn` literal `{ queued: true }` — compiles; assert `literal.queued === true`
+    * `[ ]`   Construct `EnqueueModelCallErrorReturn` literal `{ error: new Error('x'), retriable: false }` — compiles; assert `error instanceof Error` and `typeof retriable === 'boolean'`
+    * `[ ]`   Declare a `BoundEnqueueModelCallFn` variable and assign an `async (params, payload) => Return` function to it — compiles (signature match)
+    * `[ ]`   Pure type-shape assertions only — invalid shapes are a compile-time concern; runtime accept/reject belongs in `enqueueModelCall.guard.test.ts`
 
   * `[ ]`   `enqueueModelCall.interface.ts`
+    * `[ ]`   `EnqueueModelCallDeps`: `{ logger: ILogger; netlifyQueueUrl: string; netlifyApiKey: string; apiKeyForProvider: ApiKeyForProviderFn }`
+    * `[ ]`   `EnqueueModelCallParams`: `{ dbClient: SupabaseClient<Database>; job: DialecticJobRow; providerRow: Tables<'ai_providers'>; userAuthToken: string; output_type: string }` — new type; minimal subset of `ExecuteModelCallAndSaveParams` fields needed for validation, DB write, and event construction
+    * `[ ]`   `EnqueueModelCallPayload`: `{ chatApiRequest: ChatApiRequest; preflightInputTokens: number }` — new type; same shape as `ExecuteModelCallAndSavePayload` but independently defined
     * `[ ]`   `EnqueueModelCallSuccessReturn`: `{ queued: true }`
     * `[ ]`   `EnqueueModelCallErrorReturn`: `{ error: Error; retriable: boolean }`
-    * `[ ]`   `EnqueueModelCallReturn`: union of above
-    * `[ ]`   `EnqueueModelCallDeps`: `{ logger: ILogger; enqueueNetlifyEvent: (eventName: string, data: AiStreamEvent) => Promise<void>; apiKeyForProvider: ApiKeyForProviderFn }`
-    * `[ ]`   Note: `dbClient: SupabaseClient<Database>` is in `EnqueueModelCallParams` (re-used from `ExecuteModelCallAndSaveParams`) — no new dep required for DB write
+    * `[ ]`   `EnqueueModelCallReturn`: union of success and error
+    * `[ ]`   `EnqueueModelCallFn`: `(deps, params, payload) => Promise<EnqueueModelCallReturn>`
+    * `[ ]`   `BoundEnqueueModelCallFn`: `(params, payload) => Promise<EnqueueModelCallReturn>` — pre-bound signature used as dep in `PrepareModelJobDeps`
     * `[ ]`   `ApiKeyForProviderFn` must be located in `_shared` before this node executes — do not define a new type if one already exists
-    * `[ ]`   `BoundEnqueueModelCallFn`: pre-bound signature used as dep in `PrepareModelJobDeps`
-    * `[ ]`   Re-uses existing `EnqueueModelCallParams` (includes `dbClient`) and `EnqueueModelCallPayload` — no change to those types
 
   * `[ ]`   `enqueueModelCall.interaction.spec`
     * `[ ]`   Called by `prepareModelJob` as `deps.enqueueModelCall` (now bound to front-half)
@@ -1027,20 +1176,25 @@
     * `[ ]`   Validates `providerRow.config` via `isAiModelExtendedConfig`; invalid → `{ error, retriable: false }`
     * `[ ]`   Resolves API key via `apiKeyForProvider`; key missing → `{ error, retriable: false }`
     * `[ ]`   Writes `{ status: 'queued' }` to `dialectic_generation_jobs` via DB client
-    * `[ ]`   Constructs `AiStreamEvent` and calls `deps.enqueueNetlifyEvent('ai-stream', event)`
-    * `[ ]`   On enqueue ACK: returns `{ queued: true }`
-    * `[ ]`   On enqueue failure: returns `{ error, retriable: true }`
+    * `[ ]`   Constructs `AiStreamEvent`, serializes to JSON, enforces 500 KB size limit
+    * `[ ]`   POSTs to `deps.netlifyQueueUrl` with `Authorization: Bearer ${deps.netlifyApiKey}`, body `{ eventName: 'ai-stream', data: event }`
+    * `[ ]`   On 2xx response (`sendStatus: 'succeeded'`): returns `{ queued: true }`
+    * `[ ]`   On non-2xx or network error: returns `{ error, retriable: true }`
     * `[ ]`   Does NOT call the AI provider or await stream result
 
   * `[ ]`   `enqueueModelCall.guard.test.ts`
+    * `[ ]`   `isEnqueueModelCallDeps`: accepts valid deps object with all four fields; rejects missing `logger`; rejects missing `netlifyQueueUrl`; rejects missing `netlifyApiKey`; rejects missing `apiKeyForProvider`
+    * `[ ]`   `isEnqueueModelCallParams`: accepts valid params with all five fields; rejects missing `dbClient`; rejects missing `job`; rejects missing `providerRow`; rejects missing `userAuthToken`; rejects missing `output_type`
+    * `[ ]`   `isEnqueueModelCallPayload`: accepts valid payload with both fields; rejects missing `chatApiRequest`; rejects missing `preflightInputTokens`
     * `[ ]`   `isEnqueueModelCallSuccessReturn`: accepts `{ queued: true }`; rejects `{ queued: false }`; rejects missing field
     * `[ ]`   `isEnqueueModelCallErrorReturn`: accepts valid; rejects missing `retriable`; rejects missing `error`
-    * `[ ]`   `isEnqueueModelCallDeps`: accepts valid deps object with all three fields; rejects missing `logger`; rejects missing `enqueueNetlifyEvent`; rejects missing `apiKeyForProvider`
 
   * `[ ]`   `enqueueModelCall.guard.ts`
+    * `[ ]`   `isEnqueueModelCallDeps(v: unknown): v is EnqueueModelCallDeps`
+    * `[ ]`   `isEnqueueModelCallParams(v: unknown): v is EnqueueModelCallParams`
+    * `[ ]`   `isEnqueueModelCallPayload(v: unknown): v is EnqueueModelCallPayload`
     * `[ ]`   `isEnqueueModelCallSuccessReturn(v: unknown): v is EnqueueModelCallSuccessReturn`
     * `[ ]`   `isEnqueueModelCallErrorReturn(v: unknown): v is EnqueueModelCallErrorReturn`
-    * `[ ]`   `isEnqueueModelCallDeps(v: unknown): v is EnqueueModelCallDeps`
 
   * `[ ]`   `enqueueModelCall.test.ts` *(mostly new tests; one copy-and-modify from `executeModelCallAndSave.test.ts`)*
     * `[ ]`   Copy from `executeModelCallAndSave.test.ts`: parameter handoff test at line 74 (`executeModelCallAndSave calls adapter.sendMessageStream with payload.chatApiRequest and params.providerRow.api_identifier`)
@@ -1049,7 +1203,7 @@
       * Replace `ExecuteModelCallAndSaveParams` construction with `EnqueueModelCallParams` (re-used shape, includes `dbClient`)
       * Replace `ExecuteModelCallAndSavePayload` construction with `EnqueueModelCallPayload` (same `chatApiRequest`, `preflightInputTokens`)
       * Replace `createMockExecuteModelCallAndSaveDeps` with `createMockEnqueueModelCallDeps`
-      * Replace assertion target: instead of asserting `adapter.sendMessageStream` was called with `payload.chatApiRequest` and `params.providerRow.api_identifier`, assert `deps.enqueueNetlifyEvent` was called with an `AiStreamEvent` whose `chat_api_request` equals `payload.chatApiRequest` and whose `api_identifier` equals `params.providerRow.api_identifier`
+      * Replace assertion target: instead of asserting `adapter.sendMessageStream` was called, assert `fetch` was called with `deps.netlifyQueueUrl` and a JSON body whose `data` contains an `AiStreamEvent` with `chat_api_request` equal to `payload.chatApiRequest` and `api_identifier` equal to `params.providerRow.api_identifier`
       * Remove adapter mocking — enqueueModelCall does not receive `getAiProviderAdapter` as a dep
     * `[ ]`   Copy from `executeModelCallAndSave.test.ts`: render-job non-insertion test at line 308 (`executeModelCallAndSave does not insert a RENDER job into dialectic_generation_jobs (enqueue is external)`)
     * `[ ]`   Modify (inverse assertion):
@@ -1057,20 +1211,21 @@
       * Replace negative assertion with positive: `enqueueModelCall` MUST insert a job status update (`{ status: 'queued' }`) into `dialectic_generation_jobs` via `params.dbClient` — the row already exists, this is an update, not an insert of a new row
       * Assert the update targets the correct `job_id` from `params`
     * `[ ]`   New tests — pre-stream validation (no EMCAS equivalent as dedicated tests):
-      * Invalid `output_type` (fails `isModelContributionFileType`) → `{ error, retriable: false }`, no DB write, no enqueue, no AI provider call
-      * Invalid `providerRow.config` (fails `isAiModelExtendedConfig`) → `{ error, retriable: false }`, no DB write, no enqueue, no AI provider call
-      * Missing API key (`apiKeyForProvider` returns null/empty) → `{ error, retriable: false }`, no DB write, no enqueue, no AI provider call
-      * All three validation errors occur BEFORE any DB write or enqueue — proven by spy call order (zero calls)
+      * Invalid `output_type` (fails `isModelContributionFileType`) → `{ error, retriable: false }`, no DB write, no `fetch` call
+      * Invalid `providerRow.config` (fails `isAiModelExtendedConfig`) → `{ error, retriable: false }`, no DB write, no `fetch` call
+      * Missing API key (`apiKeyForProvider` returns null/empty) → `{ error, retriable: false }`, no DB write, no `fetch` call
+      * All three validation errors occur BEFORE any DB write or `fetch` — proven by spy call order (zero calls)
     * `[ ]`   New tests — DB write ordering and shape:
       * Valid inputs → `params.dbClient` is called with an update setting `status: 'queued'` on the row matching `params.job_id`
-      * DB write happens BEFORE `enqueueNetlifyEvent` — proven by spy call order assertion
-      * DB write failure → `{ error, retriable: true }`, no enqueue attempted
-    * `[ ]`   New tests — enqueue behavior:
-      * Valid inputs → `deps.enqueueNetlifyEvent('ai-stream', event)` called exactly once with a fully-populated `AiStreamEvent`: `job_id`, `api_identifier`, `extended_model_config`, `chat_api_request`, `user_jwt`
-      * `AiStreamEvent.user_jwt` equals `params.userAuthToken` — proven by assertion on captured event
-      * `AiStreamEvent.extended_model_config` equals `params.providerRow.config` — proven by assertion on captured event
-      * Enqueue ACK → returns `{ queued: true }`
-      * Enqueue failure (network error, non-2xx from Netlify) → returns `{ error, retriable: true }`, DB status remains `queued` (not rolled back — retriable retry path handles it)
+      * DB write happens BEFORE `fetch` POST — proven by spy call order assertion
+      * DB write failure → `{ error, retriable: true }`, no `fetch` call attempted
+    * `[ ]`   New tests — HTTP enqueue behavior:
+      * Valid inputs → `fetch` called exactly once with URL `deps.netlifyQueueUrl`, method POST, header `Authorization: Bearer ${deps.netlifyApiKey}`, header `Content-Type: application/json`, body `{ eventName: 'ai-stream', data: <AiStreamEvent> }`
+      * `AiStreamEvent` in body contains fully-populated fields: `job_id`, `api_identifier`, `model_config` (mapped from `AiModelExtendedConfig` to `NodeModelConfig`), `chat_api_request` (mapped from `ChatApiRequest` to `NodeChatApiRequest`), `user_jwt`
+      * `AiStreamEvent.user_jwt` equals `params.userAuthToken` — proven by assertion on captured body
+      * `AiStreamEvent.model_config` contains `{ api_identifier, provider_max_input_tokens, context_window_tokens, hard_cap_output_tokens, provider_max_output_tokens, input_token_cost_rate, output_token_cost_rate }` mapped from `params.providerRow.config` — proven by assertion on captured body
+      * `fetch` returns 2xx → returns `{ queued: true }`
+      * `fetch` returns non-2xx or throws network error → returns `{ error, retriable: true }`, DB status remains `queued` (not rolled back — retriable retry path handles it)
     * `[ ]`   New tests — separation of concerns:
       * `deps` object does NOT contain `getAiProviderAdapter` — structural proof that enqueueModelCall cannot call AI providers
       * No adapter stream is opened, awaited, or consumed — proven by absence of stream-related spies being called
@@ -1078,45 +1233,49 @@
       * Does NOT write any terminal job status (`completed`, `needs_continuation`, `failed`) — only `queued`
     * `[ ]`   New test — payload size constraint:
       * `AiStreamEvent` serialized size stays under 500 KB Netlify limit for a representative large-but-valid `chatApiRequest`
-      * Oversized event → `{ error, retriable: false }` with explicit size-limit error message, no enqueue attempted
+      * Oversized event → `{ error, retriable: false }` with explicit size-limit error message, no `fetch` call attempted
 
   * `[ ]`   `construction`
-    * `[ ]`   `createEnqueueNetlifyEvent(token: string, siteId: string): (eventName: string, data: AiStreamEvent) => Promise<void>`
-    * `[ ]`   Constructed at Edge Function boundary; injected into `EnqueueModelCallDeps`
+    * `[ ]`   At Edge Function boundary: read `NETLIFY_QUEUE_URL` and `AWL_API_KEY` from env vars, inject as `netlifyQueueUrl` and `netlifyApiKey` into `EnqueueModelCallDeps`
+    * `[ ]`   No factory function — deps are plain strings; `enqueueModelCall` calls `fetch` directly
 
   * `[ ]`   `enqueueModelCall.ts`
     * `[ ]`   Exports `enqueueModelCall(deps, params, payload): Promise<EnqueueModelCallReturn>`
     * `[ ]`   Validates `output_type`, model config, API key
     * `[ ]`   Writes `queued` status to DB
     * `[ ]`   Constructs `AiStreamEvent` from params, payload, and resolved config
-    * `[ ]`   Calls `deps.enqueueNetlifyEvent` and awaits ACK
-    * `[ ]`   Returns `{ queued: true }` on success; `{ error, retriable }` on failure
+    * `[ ]`   Serializes event to JSON; checks serialized size ≤ 500 KB; rejects with `{ error, retriable: false }` if oversized
+    * `[ ]`   POSTs to `deps.netlifyQueueUrl` via `fetch` with `Authorization: Bearer ${deps.netlifyApiKey}`, `Content-Type: application/json`, body `{ eventName: 'ai-stream', data: event }`
+    * `[ ]`   On 2xx response: returns `{ queued: true }`
+    * `[ ]`   On non-2xx or network error: returns `{ error, retriable: true }`
 
   * `[ ]`   `enqueueModelCall.mock.ts`
     * `[ ]`   `createMockEnqueueModelCallDeps(overrides?)`: controllable `EnqueueModelCallDeps`
-    * `[ ]`   Default: `enqueueNetlifyEvent` resolves immediately
-    * `[ ]`   Error override: `enqueueNetlifyEvent` throws
+    * `[ ]`   Default: `netlifyQueueUrl` set to `'https://test.netlify/.netlify/functions/async-workloads-router'`, `netlifyApiKey` set to `'test-awl-api-key'`
+    * `[ ]`   Tests mock `fetch` globally to control HTTP responses; no function mock on deps for enqueue behavior
 
   * `[ ]`   `enqueueModelCall.provides.ts`
     * `[ ]`   Exports: `enqueueModelCall`, `BoundEnqueueModelCallFn`, return types, guards
 
   * `[ ]`   `enqueueModelCall.integration.test.ts`
-    * `[ ]`   Chain: `prepareModelJob` (mock) calls front-half → front-half writes DB status → enqueues event → returns `{ queued: true }` → prepareModelJob receives and passes through
-    * `[ ]`   Asserts DB write precedes enqueue
-    * `[ ]`   Uses mock DB client and mock Netlify enqueue
+    * `[ ]`   Chain: `prepareModelJob` (mock) calls front-half → front-half writes DB status → POSTs to Netlify via `fetch` → returns `{ queued: true }` → prepareModelJob receives and passes through
+    * `[ ]`   Asserts DB write precedes `fetch` POST
+    * `[ ]`   Uses mock DB client and mock `fetch`
 
   * `[ ]`   `directionality`
     * `[ ]`   Layer: app/port (Deno, Supabase Edge)
-    * `[ ]`   Deps inward: existing Deno shared utilities, Supabase client, Netlify queue HTTP client
+    * `[ ]`   Deps inward: existing Deno shared utilities, Supabase client, injected config strings (`netlifyQueueUrl`, `netlifyApiKey`), Deno global `fetch`
     * `[ ]`   Provides outward: `BoundEnqueueModelCallFn` consumed by `prepareModelJob`; `queued` status and `AiStreamEvent` emitted to external systems
-    * `[ ]`   No cycles; does not call back-half or Netlify adapters
+    * `[ ]`   No cycles; no external client libraries; no Node.js dependencies
 
   * `[ ]`   `requirements`
-    * `[ ]`   Validation failures return error without DB write or enqueue — proven by unit test
-    * `[ ]`   DB status written to `queued` before enqueue — proven by unit test call order assertion
-    * `[ ]`   `AiStreamEvent` contains correct `user_jwt` — proven by unit test
-    * `[ ]`   Returns `{ queued: true }` on ACK — proven by unit test
-    * `[ ]`   Enqueue failure returns retriable error — proven by unit test
+    * `[ ]`   Validation failures return error without DB write or `fetch` call — proven by unit test
+    * `[ ]`   DB status written to `queued` before `fetch` POST — proven by unit test call order assertion
+    * `[ ]`   `fetch` called with correct URL (`deps.netlifyQueueUrl`), auth header (`Bearer ${deps.netlifyApiKey}`), and JSON body containing `AiStreamEvent` — proven by unit test
+    * `[ ]`   `AiStreamEvent` in request body contains correct `user_jwt` — proven by unit test
+    * `[ ]`   Returns `{ queued: true }` on 2xx from `fetch` — proven by unit test
+    * `[ ]`   Non-2xx or network error returns `{ error, retriable: true }` — proven by unit test
+    * `[ ]`   Oversized event (>500 KB serialized) returns `{ error, retriable: false }` without calling `fetch` — proven by unit test
 
 * `[ ]`   `dialectic-worker/prepareModelJob/prepareModelJob` **[BE] Update prepareModelJob — swap EMCAS dep to front-half, adapt return handling for queued result**
 
@@ -1153,10 +1312,12 @@
     * `[ ]`   Returns: updated `PrepareModelJobSuccessReturn` — `{ queued: true }` (contribution and continuation data removed; back-half is responsible)
 
   * `[ ]`   `prepareModelJob.interface.test.ts` *(update existing file)*
-    * `[ ]`   Updated: `PrepareModelJobSuccessReturn` valid shape is `{ queued: true }` — test asserts guard accepts it
-    * `[ ]`   Removed: test cases asserting `contribution`, `needsContinuation`, `renderJobId` in success return
-    * `[ ]`   Updated: `PrepareModelJobDeps` valid shape has `enqueueModelCall: BoundEnqueueModelCallFn`
-    * `[ ]`   Existing invalid/error case tests remain unchanged
+    * `[ ]`   File tests the type contract ONLY — no guard imports, no runtime validators; mirrors `ai-adapter.interface.test.ts` pattern
+    * `[ ]`   Updated: construct `PrepareModelJobSuccessReturn` literal `{ queued: true }` — compiles; assert `literal.queued === true`
+    * `[ ]`   Removed: literals/assertions referencing `contribution`, `needsContinuation`, `renderJobId` on the success return
+    * `[ ]`   Updated: construct `PrepareModelJobDeps` literal with `enqueueModelCall: BoundEnqueueModelCallFn` — compiles; assert shape
+    * `[ ]`   Existing error-return type-shape assertions remain unchanged
+    * `[ ]`   Any guard-behavior cases previously in this file move to `prepareModelJob.guard.test.ts` (runtime accept/reject is not the interface test's job)
 
   * `[ ]`   `prepareModelJob.interface.ts` *(update existing file)*
     * `[ ]`   `PrepareModelJobDeps.enqueueModelCall`: type changes from `BoundEnqueueModelCallFn` to `BoundEnqueueModelCallFn`
@@ -1293,7 +1454,7 @@
     * `[ ]`   Functional goals:
       * `IJobContext.prepareModelJob` dep factory wires `BoundEnqueueModelCallFn`
       * `enqueueRenderJob` removed from the prepareModelJob context slice (remains available in the back-half context slice)
-      * `createEnqueueNetlifyEvent` factory wired from env vars into the front-half deps
+      * `netlifyQueueUrl` and `netlifyApiKey` read from env vars and injected into front-half deps
       * `DIALECTIC_SAVERESPONSE_URL` env var wired into `AiStreamDeps` for Netlify workload (Netlify side only — noted but not wired here)
     * `[ ]`   Non-functional constraints:
       * IJobContext context factory must set every field explicitly — no optional fields
@@ -1312,7 +1473,7 @@
 
   * `[ ]`   `deps`
     * `[ ]`   `enqueueModelCall` — from front-half node; bound and injected
-    * `[ ]`   `createEnqueueNetlifyEvent` — from front-half node; constructed from env vars `NETLIFY_ASYNC_WORKLOADS_TOKEN`, `NETLIFY_SITE_ID`
+    * `[ ]`   `NETLIFY_QUEUE_URL` and `AWL_API_KEY` — env vars read at boundary; passed as `netlifyQueueUrl` and `netlifyApiKey` strings into front-half deps
     * `[ ]`   All existing deps unchanged
 
   * `[ ]`   `context_slice`
@@ -1332,7 +1493,7 @@
     * `[ ]`   `ApplyInputsRequiredScopeFn`, `ValidateWalletBalanceFn`, `ValidateModelCostRatesFn`: unchanged
 
   * `[ ]`   `JobContext.interaction.spec` *(update)*
-    * `[ ]`   `createJobContext` wires `enqueueModelCall` with `enqueueNetlifyEvent` constructed from env
+    * `[ ]`   `createJobContext` wires `enqueueModelCall` with `netlifyQueueUrl` and `netlifyApiKey` read from env
     * `[ ]`   `createJobContext` wires back-half deps with `enqueueRenderJob`
 
   * `[ ]`   `JobContext.guard.test.ts` *(update)*
@@ -1348,12 +1509,12 @@
     * `[ ]`   Existing tests: unchanged and GREEN
 
   * `[ ]`   `construction`
-    * `[ ]`   `createJobContext(env, supabaseClient, ...)`: updated to read `NETLIFY_ASYNC_WORKLOADS_TOKEN` and `NETLIFY_SITE_ID` from env; constructs `enqueueNetlifyEvent` and binds into front-half deps
+    * `[ ]`   `createJobContext(env, supabaseClient, ...)`: updated to read `NETLIFY_QUEUE_URL` and `AWL_API_KEY` from env; passes as `netlifyQueueUrl` and `netlifyApiKey` into front-half deps
     * `[ ]`   Context factory must set every field explicitly — no optional fields introduced
 
   * `[ ]`   `createJobContext.ts` *(update existing)*
-    * `[ ]`   Import `enqueueModelCall` and `createEnqueueNetlifyEvent`
-    * `[ ]`   In prepareModelJob deps slice: bind `enqueueModelCall` to `enqueueModelCall` (with `enqueueNetlifyEvent` constructed from env)
+    * `[ ]`   Import `enqueueModelCall`
+    * `[ ]`   In prepareModelJob deps slice: bind `enqueueModelCall` to `enqueueModelCall` (with `netlifyQueueUrl` and `netlifyApiKey` from env)
     * `[ ]`   Remove `enqueueRenderJob` from prepareModelJob deps slice
     * `[ ]`   Add back-half deps slice with `enqueueRenderJob` and back-half-specific deps
 
@@ -1366,7 +1527,7 @@
 
   * `[ ]`   `JobContext.integration.test.ts` *(update)*
     * `[ ]`   Full Phase 1 chain integration: processSimpleJob → prepareModelJob (front-half dep) → front-half writes `queued` to DB → enqueues Netlify event → returns `{ queued: true }` → processSimpleJob exits cleanly
-    * `[ ]`   Uses mock Netlify enqueue and mock DB client
+    * `[ ]`   Uses mock `fetch` and mock DB client
     * `[ ]`   Proves end-to-end that the Supabase side of Phase 1 is wired correctly
 
   * `[ ]`   `ai-stream.integration.test.ts` *(update — add cross-system chain tests)*

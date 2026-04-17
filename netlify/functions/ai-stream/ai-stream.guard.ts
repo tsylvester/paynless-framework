@@ -1,121 +1,117 @@
-import type { AiStreamDeps, AiStreamEvent, AiStreamPayload } from './ai-stream.interface.ts';
+import type {
+  AiStreamDeps,
+  AiStreamEvent,
+  AiStreamPayload,
+} from './ai-stream.interface.ts';
 import {
-  isAiAdapter,
   isNodeChatApiRequest,
   isNodeModelConfig,
   isNodeTokenUsage,
+  isPlainRecord,
 } from './adapters/getNodeAiAdapter.guard.ts';
 
-function hasSupportedApiIdentifierPrefix(apiIdentifier: string): boolean {
-  return (
-    apiIdentifier.startsWith('openai-') ||
-    apiIdentifier.startsWith('anthropic-') ||
-    apiIdentifier.startsWith('google-')
-  );
-}
-
 export function isAiStreamEvent(v: unknown): v is AiStreamEvent {
-  if (v === null || typeof v !== 'object' || Array.isArray(v)) {
+  if (!isPlainRecord(v)) {
     return false;
   }
-  if (
-    !('job_id' in v) ||
-    !('api_identifier' in v) ||
-    !('extended_model_config' in v) ||
-    !('chat_api_request' in v) ||
-    !('user_jwt' in v)
-  ) {
+  const jobIdValue: unknown = v['job_id'];
+  const apiIdentifierValue: unknown = v['api_identifier'];
+  const userJwtValue: unknown = v['user_jwt'];
+  if (typeof jobIdValue !== 'string') {
     return false;
   }
-  const jobIdUnknown: unknown = Reflect.get(v, 'job_id');
-  if (typeof jobIdUnknown !== 'string' || jobIdUnknown.length === 0) {
+  if (typeof apiIdentifierValue !== 'string') {
     return false;
   }
-  const apiIdentifierUnknown: unknown = Reflect.get(v, 'api_identifier');
-  if (
-    typeof apiIdentifierUnknown !== 'string' ||
-    apiIdentifierUnknown.length === 0
-  ) {
+  if (typeof userJwtValue !== 'string') {
     return false;
   }
-  if (!hasSupportedApiIdentifierPrefix(apiIdentifierUnknown)) {
+  if (!('model_config' in v)) {
     return false;
   }
-  const extendedModelConfigUnknown: unknown = Reflect.get(
-    v,
-    'extended_model_config',
-  );
-  if (!isNodeModelConfig(extendedModelConfigUnknown)) {
+  const modelConfigValue: unknown = v['model_config'];
+  if (!isNodeModelConfig(modelConfigValue)) {
     return false;
   }
-  const chatApiRequestUnknown: unknown = Reflect.get(v, 'chat_api_request');
-  if (!isNodeChatApiRequest(chatApiRequestUnknown)) {
+  if (!('chat_api_request' in v)) {
     return false;
   }
-  const userJwtUnknown: unknown = Reflect.get(v, 'user_jwt');
-  if (typeof userJwtUnknown !== 'string' || userJwtUnknown.length === 0) {
+  const chatApiValue: unknown = v['chat_api_request'];
+  if (!isNodeChatApiRequest(chatApiValue)) {
+    return false;
+  }
+  if (chatApiValue.message.length === 0) {
     return false;
   }
   return true;
 }
 
 export function isAiStreamPayload(v: unknown): v is AiStreamPayload {
-  if (v === null || typeof v !== 'object' || Array.isArray(v)) {
+  if (!isPlainRecord(v)) {
     return false;
   }
-  if (
-    !('job_id' in v) ||
-    !('assembled_content' in v) ||
-    !('token_usage' in v)
-  ) {
+  const jobIdValue: unknown = v['job_id'];
+  const assembledContentValue: unknown = v['assembled_content'];
+  if (typeof jobIdValue !== 'string') {
     return false;
   }
-  const jobIdUnknown: unknown = Reflect.get(v, 'job_id');
-  if (typeof jobIdUnknown !== 'string' || jobIdUnknown.length === 0) {
+  if (typeof assembledContentValue !== 'string') {
     return false;
   }
-  const assembledContentUnknown: unknown = Reflect.get(v, 'assembled_content');
-  if (typeof assembledContentUnknown !== 'string') {
+  if (!('token_usage' in v)) {
     return false;
   }
-  const tokenUsageUnknown: unknown = Reflect.get(v, 'token_usage');
-  if (tokenUsageUnknown === null) {
-    return true;
+  const tokenUsageValue: unknown = v['token_usage'];
+  if (tokenUsageValue !== null && !isNodeTokenUsage(tokenUsageValue)) {
+    return false;
   }
-  return isNodeTokenUsage(tokenUsageUnknown);
+  if (!('finish_reason' in v)) {
+    return false;
+  }
+  const finishReasonValue: unknown = v['finish_reason'];
+  if (finishReasonValue !== null && typeof finishReasonValue !== 'string') {
+    return false;
+  }
+  return true;
+}
+
+function isAiStreamDepsProviderMap(value: unknown): boolean {
+  if (!isPlainRecord(value)) {
+    return false;
+  }
+  const keys: string[] = Object.keys(value);
+  for (const key of keys) {
+    const factoryValue: unknown = value[key];
+    if (typeof factoryValue !== 'function') {
+      return false;
+    }
+  }
+  return true;
 }
 
 export function isAiStreamDeps(v: unknown): v is AiStreamDeps {
-  if (v === null || typeof v !== 'object' || Array.isArray(v)) {
+  if (!isPlainRecord(v)) {
     return false;
   }
-  if (
-    !('openaiAdapter' in v) ||
-    !('anthropicAdapter' in v) ||
-    !('googleAdapter' in v) ||
-    !('Url' in v) ||
-    !('getApiKey' in v)
-  ) {
+  if (!('providerMap' in v)) {
     return false;
   }
-  const openaiAdapterUnknown: unknown = Reflect.get(v, 'openaiAdapter');
-  if (!isAiAdapter(openaiAdapterUnknown)) {
+  const providerMapValue: unknown = v['providerMap'];
+  if (!isAiStreamDepsProviderMap(providerMapValue)) {
     return false;
   }
-  const anthropicAdapterUnknown: unknown = Reflect.get(v, 'anthropicAdapter');
-  if (!isAiAdapter(anthropicAdapterUnknown)) {
+  if (!('saveResponseUrl' in v)) {
     return false;
   }
-  const googleAdapterUnknown: unknown = Reflect.get(v, 'googleAdapter');
-  if (!isAiAdapter(googleAdapterUnknown)) {
+  const saveResponseUrlValue: unknown = v['saveResponseUrl'];
+  if (typeof saveResponseUrlValue !== 'string') {
     return false;
   }
-  const urlUnknown: unknown = Reflect.get(v, 'Url');
-  if (typeof urlUnknown !== 'string' || urlUnknown.length === 0) {
+  if (!('getApiKey' in v)) {
     return false;
   }
-  const getApiKeyUnknown: unknown = Reflect.get(v, 'getApiKey');
-  if (typeof getApiKeyUnknown !== 'function') {
+  const getApiKeyValue: unknown = v['getApiKey'];
+  if (typeof getApiKeyValue !== 'function') {
     return false;
   }
   return true;

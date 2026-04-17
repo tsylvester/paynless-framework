@@ -1,49 +1,47 @@
-import { describe, it, expect } from 'vitest';
-import type { GetNodeAiAdapterDeps, GetNodeAiAdapterParams } from './getNodeAiAdapter.interface.ts';
-import {
-  createValidGetNodeAiAdapterDeps,
-  createValidGetNodeAiAdapterParams,
-} from './getNodeAiAdapter.interface.mock.ts';
+import { describe, expect, it } from 'vitest';
+import type {
+  GetNodeAiAdapterDeps,
+  GetNodeAiAdapterParams,
+} from './getNodeAiAdapter.interface.ts';
+import type {
+  NodeAdapterStreamChunk,
+  NodeChatApiRequest,
+} from './ai-adapter.interface.ts';
 
 describe('getNodeAiAdapter.interface contract', () => {
-  it('valid GetNodeAiAdapterDeps: providerMap is a NodeProviderMap with at least one function entry', () => {
-    const deps: GetNodeAiAdapterDeps = createValidGetNodeAiAdapterDeps();
-    expect(typeof deps.providerMap).toBe('object');
-    expect(deps.providerMap).not.toBe(null);
-    const keys: string[] = Object.keys(deps.providerMap);
-    expect(keys.length).toBeGreaterThan(0);
-    const firstKey: string = keys[0];
-    const factory = deps.providerMap[firstKey];
-    expect(typeof factory).toBe('function');
-  });
-
-  it('valid GetNodeAiAdapterParams: non-empty apiIdentifier and non-empty apiKey', () => {
-    const params: GetNodeAiAdapterParams = createValidGetNodeAiAdapterParams();
-    expect(params.apiIdentifier.length).toBeGreaterThan(0);
-    expect(params.apiKey.length).toBeGreaterThan(0);
-  });
-
-  it('invalid deps shapes: missing providerMap, empty providerMap, non-function map values', () => {
-    const missingProviderMap = {};
-    expect('providerMap' in missingProviderMap).toBe(false);
-
-    const emptyProviderMap = { providerMap: {} };
-    expect(Object.keys(emptyProviderMap.providerMap).length).toBe(0);
-
-    const badFactoryMap = {
+  it('accepts GetNodeAiAdapterDeps with providerMap having at least one function entry', () => {
+    const deps: GetNodeAiAdapterDeps = {
       providerMap: {
-        'openai-': 'not-a-function',
+        'openai-': (_params) => ({
+          async *sendMessageStream(_request: NodeChatApiRequest, _apiIdentifier: string) {
+            const chunk: NodeAdapterStreamChunk = {
+              type: 'text_delta',
+              text: '',
+            };
+            yield chunk;
+          },
+        }),
       },
     };
-    const entry = badFactoryMap.providerMap['openai-'];
-    expect(typeof entry).not.toBe('function');
+    expect(typeof deps.providerMap).toBe('object');
+    expect(Object.keys(deps.providerMap).length >= 1).toBe(true);
+    expect(typeof deps.providerMap['openai-']).toBe('function');
   });
 
-  it('invalid params: empty apiIdentifier', () => {
-    const emptyIdentifier = {
-      apiIdentifier: '',
-      apiKey: 'sk-nonempty',
+  it('accepts GetNodeAiAdapterParams with non-empty apiIdentifier, non-empty apiKey, and modelConfig', () => {
+    const params: GetNodeAiAdapterParams = {
+      apiIdentifier: 'openai-gpt-4o',
+      apiKey: 'sk-test',
+      modelConfig: {
+        api_identifier: 'openai-gpt-4o',
+        input_token_cost_rate: 0.001,
+        output_token_cost_rate: 0.002,
+      },
     };
-    expect(emptyIdentifier.apiIdentifier.length).toBe(0);
+    expect(params.apiIdentifier.length >= 1).toBe(true);
+    expect(params.apiKey.length >= 1).toBe(true);
+    expect(typeof params.modelConfig).toBe('object');
+    expect(typeof params.modelConfig.api_identifier).toBe('string');
+    expect(params.modelConfig.api_identifier.length >= 1).toBe(true);
   });
 });

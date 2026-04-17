@@ -1,0 +1,11 @@
+# Netlify site configuration (repository root).
+# Functions live under netlify/functions (e.g. ai-stream async workload entry).
+# Async workloads: https://docs.netlify.com/build/async-workloads/get-started/
+# Do not set path/schedule for async workload handlers in this file; routing is event-based.
+
+[build.environment]
+  NODE_VERSION = "20"
+
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"

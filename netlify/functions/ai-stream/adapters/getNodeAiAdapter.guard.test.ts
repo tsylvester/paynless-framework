@@ -1,84 +1,115 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
+import {
+  createMockGetNodeAiAdapterDeps,
+  createMockGetNodeAiAdapterParams,
+  createMockNodeProviderMap,
+  mockAiAdapter,
+} from './getNodeAiAdapter.mock.ts';
 import {
   isAiAdapter,
   isGetNodeAiAdapterDeps,
   isGetNodeAiAdapterParams,
+  isNodeAdapterStreamChunk,
   isNodeProviderMap,
 } from './getNodeAiAdapter.guard.ts';
-import {
-  createValidAiAdapterSample,
-  createValidGetNodeAiAdapterDepsSample,
-  createValidGetNodeAiAdapterParamsSample,
-  createValidNodeProviderMapSample,
-} from './getNodeAiAdapter.guard.mock.ts';
 
 describe('getNodeAiAdapter.guard', () => {
   describe('isNodeProviderMap', () => {
-    it('accepts a valid NodeProviderMap', () => {
-      expect(isNodeProviderMap(createValidNodeProviderMapSample())).toBe(true);
+    it('accepts valid map with function values', () => {
+      const map = createMockNodeProviderMap();
+      expect(isNodeProviderMap(map)).toBe(true);
     });
 
-    it('rejects an empty object', () => {
-      const empty = {};
-      expect(isNodeProviderMap(empty)).toBe(false);
+    it('rejects empty object', () => {
+      expect(isNodeProviderMap({})).toBe(false);
     });
 
     it('rejects non-function map values', () => {
-      const nonFunctionValues = { 'openai-': 'not-a-function' };
-      expect(isNodeProviderMap(nonFunctionValues)).toBe(false);
+      const invalid = { 'openai-': 'not-a-function' };
+      expect(isNodeProviderMap(invalid)).toBe(false);
     });
   });
 
   describe('isGetNodeAiAdapterDeps', () => {
-    it('accepts valid GetNodeAiAdapterDeps', () => {
-      expect(
-        isGetNodeAiAdapterDeps(createValidGetNodeAiAdapterDepsSample()),
-      ).toBe(true);
+    it('accepts valid deps', () => {
+      const deps = createMockGetNodeAiAdapterDeps();
+      expect(isGetNodeAiAdapterDeps(deps)).toBe(true);
     });
 
     it('rejects missing providerMap', () => {
-      const missingProviderMap = {};
-      expect(isGetNodeAiAdapterDeps(missingProviderMap)).toBe(false);
+      expect(isGetNodeAiAdapterDeps({})).toBe(false);
+    });
+
+    it('rejects empty providerMap', () => {
+      const deps = createMockGetNodeAiAdapterDeps({ providerMap: {} });
+      expect(isGetNodeAiAdapterDeps(deps)).toBe(false);
     });
   });
 
   describe('isGetNodeAiAdapterParams', () => {
-    it('accepts valid GetNodeAiAdapterParams', () => {
-      expect(
-        isGetNodeAiAdapterParams(createValidGetNodeAiAdapterParamsSample()),
-      ).toBe(true);
+    it('accepts valid params', () => {
+      const params = createMockGetNodeAiAdapterParams();
+      expect(isGetNodeAiAdapterParams(params)).toBe(true);
     });
 
     it('rejects empty apiIdentifier', () => {
-      const emptyIdentifier = {
-        apiIdentifier: '',
-        apiKey: 'sk-nonempty',
-      };
-      expect(isGetNodeAiAdapterParams(emptyIdentifier)).toBe(false);
+      const params = createMockGetNodeAiAdapterParams({ apiIdentifier: '' });
+      expect(isGetNodeAiAdapterParams(params)).toBe(false);
     });
 
     it('rejects empty apiKey', () => {
-      const emptyKey = {
-        apiIdentifier: 'openai-gpt-4o',
-        apiKey: '',
-      };
-      expect(isGetNodeAiAdapterParams(emptyKey)).toBe(false);
+      const params = createMockGetNodeAiAdapterParams({ apiKey: '' });
+      expect(isGetNodeAiAdapterParams(params)).toBe(false);
+    });
+
+    it('rejects missing modelConfig', () => {
+      const params = { apiIdentifier: 'openai-gpt-4o', apiKey: 'sk-test' };
+      expect(isGetNodeAiAdapterParams(params)).toBe(false);
     });
   });
 
   describe('isAiAdapter', () => {
-    it('accepts an object with stream function', () => {
-      expect(isAiAdapter(createValidAiAdapterSample())).toBe(true);
+    it('accepts object with sendMessageStream function', () => {
+      expect(isAiAdapter(mockAiAdapter)).toBe(true);
     });
 
-    it('rejects missing stream', () => {
-      const missingStream = {};
-      expect(isAiAdapter(missingStream)).toBe(false);
+    it('rejects missing sendMessageStream', () => {
+      const invalid = {};
+      expect(isAiAdapter(invalid)).toBe(false);
     });
 
-    it('rejects non-function stream', () => {
-      const badStream = { stream: 'not-a-function' };
-      expect(isAiAdapter(badStream)).toBe(false);
+    it('rejects non-function sendMessageStream', () => {
+      const invalid = { sendMessageStream: 'not-fn' };
+      expect(isAiAdapter(invalid)).toBe(false);
+    });
+  });
+
+  describe('isNodeAdapterStreamChunk', () => {
+    it('accepts text_delta variant', () => {
+      const chunk = { type: 'text_delta', text: 'a' };
+      expect(isNodeAdapterStreamChunk(chunk)).toBe(true);
+    });
+
+    it('accepts usage variant', () => {
+      const chunk = {
+        type: 'usage',
+        tokenUsage: {
+          prompt_tokens: 0,
+          completion_tokens: 0,
+          total_tokens: 0,
+        },
+      };
+      expect(isNodeAdapterStreamChunk(chunk)).toBe(true);
+    });
+
+    it('accepts done variant', () => {
+      const chunk = { type: 'done', finish_reason: 'stop' };
+      expect(isNodeAdapterStreamChunk(chunk)).toBe(true);
+    });
+
+    it('rejects unknown type values', () => {
+      const chunk = { type: 'unknown', text: 'x' };
+      expect(isNodeAdapterStreamChunk(chunk)).toBe(false);
     });
   });
 });

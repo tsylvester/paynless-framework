@@ -1,15 +1,34 @@
 export { createGoogleNodeAdapter } from './google.ts';
-
-export type { GoogleStreamChunk, GoogleUsageMetadata } from './google.interface.ts';
-
-export { isGoogleStreamChunk, isGoogleUsageMetadata } from './google.guard.ts';
-
+export type {
+  GoogleCandidate,
+  GoogleContent,
+  GoogleFinalResponse,
+  GoogleFinishReason,
+  GooglePart,
+  GoogleStreamChunk,
+  GoogleUsageMetadata,
+} from './google.interface.ts';
 export {
+  isGoogleCandidate,
+  isGoogleContent,
+  isGoogleFinalResponse,
+  isGoogleFinishReason,
+  isGooglePart,
+  isGoogleStreamChunk,
+  isGoogleUsageMetadata,
+} from './google.guard.ts';
+export {
+  collectNodeAdapterStreamChunks,
+  createGoogleStreamResult,
+  createGoogleStreamResultWithSdkShapedResponse,
   createMockGoogleNodeAdapter,
-  mockAiAdapterParams,
-  mockGoogleAsyncIterableFromChunks,
-  mockGoogleAsyncIterableYieldThenThrow,
-  mockGoogleStreamChunk,
-  mockGoogleStreamChunks,
-  mockGoogleUsageMetadata,
+  createMockGoogleNodeAdapterConstructorParams,
+  createMockGoogleNodeChatApiRequest,
+  createMockGoogleNodeModelConfig,
+  createMockGoogleSdkFinalResponse,
+  mockGoogleNodeAdapterConstructorParams,
+  mockGoogleNodeChatApiRequest,
+  mockGoogleNodeModelConfig,
+  mockGoogleSdkFinalResponse,
 } from './google.mock.ts';
+export type { MockGoogleSendMessageStreamResult } from './google.mock.ts';

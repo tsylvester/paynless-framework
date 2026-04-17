@@ -1,131 +1,144 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
-  AiAdapter,
-  AiAdapterParams,
-  AiAdapterResult,
+  NodeAdapterConstructorParams,
+  NodeAdapterStreamChunk,
   NodeChatApiRequest,
-  NodeChatMessage,
-  NodeModelConfig,
 } from '../ai-adapter.interface.ts';
-import { isAiAdapter, isAiAdapterResult } from '../getNodeAiAdapter.guard.ts';
-import type { GetNodeAiAdapterDeps, GetNodeAiAdapterParams } from '../getNodeAiAdapter.interface.ts';
-import { getNodeAiAdapter } from '../getNodeAiAdapter.ts';
-import type {
-  AnthropicMessageDeltaEvent,
-  AnthropicMessageStartEvent,
-  AnthropicTextDeltaEvent,
-} from './anthropic.interface.ts';
+import {
+  isAiAdapter,
+  isNodeAdapterStreamChunk,
+} from '../getNodeAiAdapter.guard.ts';
 import { createAnthropicNodeAdapter } from './anthropic.ts';
 
-const { mockStream } = vi.hoisted(() => ({
-  mockStream: vi.fn(),
-}));
+const { messagesStream } = vi.hoisted(() => {
+  return {
+    messagesStream: vi.fn(),
+  };
+});
 
-vi.mock('@anthropic-ai/sdk', () => ({
-  default: class Anthropic {
-    constructor(_opts: { apiKey: string }) {
-      void _opts;
+vi.mock('@anthropic-ai/sdk', () => {
+  class APIError extends Error {
+    public status: number | undefined;
+
+    public constructor(message?: string) {
+      super(message);
+      this.name = 'APIError';
     }
-    messages = {
-      stream: mockStream,
+  }
+
+  class Anthropic {
+    public static APIError: typeof APIError = APIError;
+
+    public messages: {
+      stream: typeof messagesStream;
     };
-  },
-}));
 
-function integrationAdapterParams(): AiAdapterParams {
-  const message: NodeChatMessage = {
-    role: 'user',
-    content: 'integration',
+    public constructor() {
+      this.messages = {
+        stream: messagesStream,
+      };
+    }
+  }
+
+  return {
+    default: Anthropic,
   };
-  const chatApiRequest: NodeChatApiRequest = {
-    messages: [message],
-    model: 'claude-3-5-sonnet',
-    max_tokens: 50,
+});
+
+function createIntegrationAnthropicStream(): {
+  finalMessage: () => Promise<{
+    usage: { input_tokens: number; output_tokens: number };
+    stop_reason: string;
+  }>;
+  [Symbol.asyncIterator](): AsyncGenerator<
+    {
+      type: 'content_block_delta';
+      delta: { type: 'text_delta'; text: string };
+    },
+    void,
+    undefined
+  >;
+} {
+  return {
+    async *[Symbol.asyncIterator]() {
+      yield {
+        type: 'content_block_delta',
+        delta: { type: 'text_delta', text: 'integration' },
+      };
+    },
+    finalMessage: async () => {
+      return {
+        usage: { input_tokens: 10, output_tokens: 20 },
+        stop_reason: 'end_turn',
+      };
+    },
   };
-  const modelConfig: NodeModelConfig = {
-    model_identifier: 'claude-3-5-sonnet',
-    max_tokens: 50,
-  };
-  const params: AiAdapterParams = {
-    chatApiRequest,
-    modelConfig,
-    apiKey: 'sk-integration',
-  };
-  return params;
 }
 
-async function* integrationMockAnthropicStream(): AsyncIterable<
-  AnthropicMessageStartEvent | AnthropicTextDeltaEvent | AnthropicMessageDeltaEvent
-> {
-  const start: AnthropicMessageStartEvent = {
-    type: 'message_start',
-    message: {
-      usage: {
-        input_tokens: 2,
-      },
-    },
-  };
-  const deltaA: AnthropicTextDeltaEvent = {
-    type: 'content_block_delta',
-    delta: {
-      type: 'text_delta',
-      text: 'a',
-    },
-  };
-  const deltaB: AnthropicTextDeltaEvent = {
-    type: 'content_block_delta',
-    delta: {
-      type: 'text_delta',
-      text: 'b',
-    },
-  };
-  const end: AnthropicMessageDeltaEvent = {
-    type: 'message_delta',
-    usage: {
-      output_tokens: 3,
-    },
-  };
-  yield start;
-  yield deltaA;
-  yield deltaB;
-  yield end;
-}
-
-describe('anthropic adapter integration', () => {
+describe('createAnthropicNodeAdapter (integration)', () => {
   beforeEach(() => {
-    mockStream.mockReset();
+    messagesStream.mockReset();
   });
 
-  it('createAnthropicNodeAdapter returns an object that satisfies isAiAdapter', () => {
-    const adapter: AiAdapter = createAnthropicNodeAdapter();
-    expect(isAiAdapter(adapter)).toBe(true);
-  });
-
-  it('dispatches anthropic-claude-3-5-sonnet through getNodeAiAdapter, streams with mock params, returns AiAdapterResult', async () => {
-    mockStream.mockResolvedValue(integrationMockAnthropicStream());
-    const deps: GetNodeAiAdapterDeps = {
-      providerMap: {
-        'anthropic-': (_apiKey: string): AiAdapter => createAnthropicNodeAdapter(),
+  it('constructs an adapter that satisfies isAiAdapter, streams through mocked SDK for anthropic-claude-3-5-sonnet, and yields NodeAdapterStreamChunk values', async () => {
+    const params: NodeAdapterConstructorParams = {
+      modelConfig: {
+        api_identifier: 'anthropic-claude-3-5-sonnet',
+        hard_cap_output_tokens: 4096,
+        input_token_cost_rate: 0.001,
+        output_token_cost_rate: 0.002,
       },
+      apiKey: 'sk-integration-anthropic',
     };
-    const workload: GetNodeAiAdapterParams = {
-      apiIdentifier: 'anthropic-claude-3-5-sonnet',
-      apiKey: 'sk-workload',
-    };
-    const adapter: AiAdapter | null = getNodeAiAdapter(deps, workload);
-    expect(adapter).not.toBe(null);
-    if (adapter === null) {
-      return;
-    }
+    const adapter = createAnthropicNodeAdapter(params);
     expect(isAiAdapter(adapter)).toBe(true);
-    const result: AiAdapterResult = await adapter.stream(integrationAdapterParams());
-    expect(isAiAdapterResult(result)).toBe(true);
-    expect(result.assembled_content).toBe('ab');
-    expect(result.token_usage).not.toBe(null);
-    if (result.token_usage !== null) {
-      expect(result.token_usage.prompt_tokens).toBe(2);
-      expect(result.token_usage.completion_tokens).toBe(3);
-      expect(result.token_usage.total_tokens).toBe(5);
+
+    messagesStream.mockReturnValue(createIntegrationAnthropicStream());
+
+    const request: NodeChatApiRequest = {
+      message: 'integration dispatch message',
+      providerId: 'prov-integration',
+      promptId: 'prompt-integration',
+    };
+    const apiIdentifier: string = 'anthropic-claude-3-5-sonnet';
+
+    const stream: AsyncGenerator<NodeAdapterStreamChunk> = adapter.sendMessageStream(
+      request,
+      apiIdentifier,
+    );
+
+    const collected: NodeAdapterStreamChunk[] = [];
+    for await (const chunk of stream) {
+      collected.push(chunk);
     }
+
+    expect(collected.length >= 1).toBe(true);
+    for (const chunk of collected) {
+      expect(isNodeAdapterStreamChunk(chunk)).toBe(true);
+    }
+
+    const textDeltas: string[] = collected
+      .filter((c): c is Extract<NodeAdapterStreamChunk, { type: 'text_delta' }> => {
+        return c.type === 'text_delta';
+      })
+      .map((c) => {
+        return c.text;
+      });
+    expect(textDeltas).toContain('integration');
+
+    const usageChunks = collected.filter((c) => {
+      return c.type === 'usage';
+    });
+    expect(usageChunks.length).toBe(1);
+    if (usageChunks[0] !== undefined && usageChunks[0].type === 'usage') {
+      expect(usageChunks[0].tokenUsage.prompt_tokens).toBe(10);
+      expect(usageChunks[0].tokenUsage.completion_tokens).toBe(20);
+      expect(usageChunks[0].tokenUsage.total_tokens).toBe(30);
+    }
+
+    const doneChunks = collected.filter((c) => {
+      return c.type === 'done';
+    });
+    expect(doneChunks.length).toBe(1);
   });
 });

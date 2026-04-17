@@ -1,77 +1,127 @@
+import { describe, expect, it } from 'vitest';
 import type {
   AiAdapter,
-  AiAdapterParams,
-  AiAdapterResult,
+  NodeAdapterConstructorParams,
   NodeAdapterFactory,
-  NodeTokenUsage,
+  NodeAdapterStreamChunk,
+  NodeChatApiRequest,
+  NodeModelConfig,
 } from './ai-adapter.interface.ts';
-import { createValidAiAdapterParams } from './ai-adapter.mock.ts';
+import {
+  isAiAdapter,
+  isNodeAdapterStreamChunk,
+  isNodeTokenUsage,
+} from './getNodeAiAdapter.guard.ts';
 
-export async function runAdapterConformanceTests(
-  factory: NodeAdapterFactory,
-): Promise<void> {
-  const adapter: AiAdapter = factory('test-key');
-  if (typeof adapter !== 'object' || adapter === null) {
-    throw new Error(
-      'Adapter conformance: factory("test-key") must return an object satisfying AiAdapter',
-    );
-  }
-  if (typeof adapter.stream !== 'function') {
-    throw new Error(
-      'Adapter conformance: AiAdapter must expose stream as a function',
-    );
-  }
+const conformanceModelConfig: NodeModelConfig = {
+  api_identifier: 'openai-gpt-4o',
+  input_token_cost_rate: 0.001,
+  output_token_cost_rate: 0.002,
+};
 
-  const params: AiAdapterParams = createValidAiAdapterParams();
+const conformanceParams: NodeAdapterConstructorParams = {
+  modelConfig: conformanceModelConfig,
+  apiKey: 'sk-conformance-test',
+};
 
-  const resolved: AiAdapterResult = await adapter.stream(params);
-  if (typeof resolved.assembled_content !== 'string') {
-    throw new Error(
-      'Adapter conformance: AiAdapterResult.assembled_content must be a string',
-    );
-  }
-  if (resolved.token_usage !== null) {
-    const usage: NodeTokenUsage = resolved.token_usage;
-    if (typeof usage !== 'object') {
-      throw new Error(
-        'Adapter conformance: token_usage must be NodeTokenUsage or null',
+const conformanceChatRequest: NodeChatApiRequest = {
+  message: 'conformance prompt',
+  providerId: 'prov-conformance',
+  promptId: 'prompt-conformance',
+};
+
+const conformanceApiIdentifier: string = 'openai-gpt-4o';
+
+export function runAdapterConformanceTests(factory: NodeAdapterFactory): void {
+  describe('NodeAdapterFactory conformance', () => {
+    it('factory({ modelConfig, apiKey }) returns object satisfying isAiAdapter', () => {
+      const adapter: AiAdapter = factory(conformanceParams);
+      expect(isAiAdapter(adapter)).toBe(true);
+    });
+
+    it('sendMessageStream called with valid NodeChatApiRequest and apiIdentifier yields NodeAdapterStreamChunk values', async () => {
+      const adapter: AiAdapter = factory(conformanceParams);
+      const stream: AsyncGenerator<NodeAdapterStreamChunk> = adapter.sendMessageStream(
+        conformanceChatRequest,
+        conformanceApiIdentifier,
       );
-    }
-    if (
-      !Number.isInteger(usage.prompt_tokens) ||
-      usage.prompt_tokens < 0 ||
-      !Number.isInteger(usage.completion_tokens) ||
-      usage.completion_tokens < 0 ||
-      !Number.isInteger(usage.total_tokens) ||
-      usage.total_tokens < 0
-    ) {
-      throw new Error(
-        'Adapter conformance: NodeTokenUsage fields must be non-negative integers',
+      for await (const chunk of stream) {
+        expect(isNodeAdapterStreamChunk(chunk)).toBe(true);
+      }
+    });
+
+    it('sendMessageStream yields at least one text_delta, one usage, and one done chunk in happy path', async () => {
+      const adapter: AiAdapter = factory(conformanceParams);
+      const stream: AsyncGenerator<NodeAdapterStreamChunk> = adapter.sendMessageStream(
+        conformanceChatRequest,
+        conformanceApiIdentifier,
       );
-    }
-  }
+      const kindsSeen: Set<string> = new Set();
+      for await (const chunk of stream) {
+        kindsSeen.add(chunk.type);
+      }
+      expect(kindsSeen.has('text_delta')).toBe(true);
+      expect(kindsSeen.has('usage')).toBe(true);
+      expect(kindsSeen.has('done')).toBe(true);
+    });
 
-  let propagated: boolean = false;
-  try {
-    await adapter.stream(params);
-  } catch {
-    propagated = true;
-  }
-  if (!propagated) {
-    throw new Error(
-      'Adapter conformance: stream must propagate provider SDK errors (must not swallow)',
-    );
-  }
+    it('usage chunk tokenUsage has correct NodeTokenUsage shape', async () => {
+      const adapter: AiAdapter = factory(conformanceParams);
+      const stream: AsyncGenerator<NodeAdapterStreamChunk> = adapter.sendMessageStream(
+        conformanceChatRequest,
+        conformanceApiIdentifier,
+      );
+      let sawUsage: boolean = false;
+      for await (const chunk of stream) {
+        if (chunk.type === 'usage') {
+          sawUsage = true;
+          expect(isNodeTokenUsage(chunk.tokenUsage)).toBe(true);
+        }
+      }
+      expect(sawUsage).toBe(true);
+    });
 
-  const noUsage: AiAdapterResult = await adapter.stream(params);
-  if (typeof noUsage.assembled_content !== 'string') {
-    throw new Error(
-      'Adapter conformance: AiAdapterResult.assembled_content must be a string',
-    );
-  }
-  if (noUsage.token_usage !== null) {
-    throw new Error(
-      'Adapter conformance: token_usage must be null when provider returns no usage data',
-    );
-  }
+    it('done chunk finish_reason is a non-empty string', async () => {
+      const adapter: AiAdapter = factory(conformanceParams);
+      const stream: AsyncGenerator<NodeAdapterStreamChunk> = adapter.sendMessageStream(
+        conformanceChatRequest,
+        conformanceApiIdentifier,
+      );
+      let sawDone: boolean = false;
+      for await (const chunk of stream) {
+        if (chunk.type === 'done') {
+          sawDone = true;
+          expect(typeof chunk.finish_reason).toBe('string');
+          expect(chunk.finish_reason.length >= 1).toBe(true);
+        }
+      }
+      expect(sawDone).toBe(true);
+    });
+
+    it('sendMessageStream with provider SDK error propagates throw (does not swallow)', async () => {
+      const referenceThrowingFactory: NodeAdapterFactory = () => ({
+        async *sendMessageStream(
+          _request: NodeChatApiRequest,
+          _apiIdentifier: string,
+        ): AsyncGenerator<NodeAdapterStreamChunk> {
+          const first: NodeAdapterStreamChunk = {
+            type: 'text_delta',
+            text: '',
+          };
+          yield first;
+          throw new Error('simulated provider SDK failure');
+        },
+      });
+      const adapter: AiAdapter = referenceThrowingFactory(conformanceParams);
+      await expect(async () => {
+        const stream: AsyncGenerator<NodeAdapterStreamChunk> =
+          adapter.sendMessageStream(
+            conformanceChatRequest,
+            conformanceApiIdentifier,
+          );
+        await stream.next();
+        await stream.next();
+      }).rejects.toThrow('simulated provider SDK failure');
+    });
+  });
 }

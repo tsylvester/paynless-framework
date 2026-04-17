@@ -1,9 +1,17 @@
-export interface OpenAIChoiceDeltaInner {
+export type OpenAIFinishReason =
+  | 'stop'
+  | 'length'
+  | 'tool_calls'
+  | 'content_filter'
+  | 'function_call';
+
+export interface OpenAIDelta {
   content?: string | null;
 }
 
-export interface OpenAIChoiceDelta {
-  delta: OpenAIChoiceDeltaInner;
+export interface OpenAIChoice {
+  delta: OpenAIDelta;
+  finish_reason: OpenAIFinishReason | null;
 }
 
 export interface OpenAIUsageDelta {
@@ -13,6 +21,6 @@ export interface OpenAIUsageDelta {
 }
 
 export interface OpenAIChatCompletionChunk {
-  choices: OpenAIChoiceDelta[];
+  choices: OpenAIChoice[];
   usage?: OpenAIUsageDelta | null;
 }

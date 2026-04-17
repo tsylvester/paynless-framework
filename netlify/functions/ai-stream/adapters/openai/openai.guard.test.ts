@@ -1,96 +1,341 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
+import type { OpenAIChatCompletionChunk } from './openai.interface.ts';
+import {
+  createMockOpenAIChatCompletionChunk,
+  createMockOpenAIChoice,
+  createMockOpenAIDelta,
+  createMockOpenAIUsageDelta,
+} from './openai.mock.ts';
 import {
   isOpenAIChatCompletionChunk,
-  isOpenAIChoiceDelta,
+  isOpenAIChoice,
+  isOpenAIDelta,
+  isOpenAIFinishReason,
   isOpenAIUsageDelta,
 } from './openai.guard.ts';
-import {
-  mockOpenAIChatCompletionChunk,
-  mockOpenAIChoiceDelta,
-  mockOpenAIUsageDelta,
-} from './openai.mock.ts';
 
 describe('openai.guard', () => {
-  describe('isOpenAIChoiceDelta', () => {
-    it('accepts a valid OpenAIChoiceDelta', () => {
-      expect(isOpenAIChoiceDelta(mockOpenAIChoiceDelta())).toBe(true);
+  describe('isOpenAIFinishReason', () => {
+    it('accepts stop', () => {
+      expect(isOpenAIFinishReason('stop')).toBe(true);
     });
 
-    it('rejects missing delta field', () => {
-      const missingDelta = {
-        notDelta: true,
-      };
-      expect(isOpenAIChoiceDelta(missingDelta)).toBe(false);
+    it('accepts length', () => {
+      expect(isOpenAIFinishReason('length')).toBe(true);
     });
 
-    it('rejects delta with wrong types', () => {
-      const deltaNotObject = {
-        delta: 'not-an-object',
-      };
-      expect(isOpenAIChoiceDelta(deltaNotObject)).toBe(false);
+    it('accepts tool_calls', () => {
+      expect(isOpenAIFinishReason('tool_calls')).toBe(true);
     });
 
-    it('rejects content with wrong type when present', () => {
-      const badContent = {
-        delta: {
-          content: 123,
-        },
-      };
-      expect(isOpenAIChoiceDelta(badContent)).toBe(false);
+    it('accepts content_filter', () => {
+      expect(isOpenAIFinishReason('content_filter')).toBe(true);
+    });
+
+    it('accepts function_call', () => {
+      expect(isOpenAIFinishReason('function_call')).toBe(true);
+    });
+
+    it('rejects unrecognized string', () => {
+      expect(isOpenAIFinishReason('foo')).toBe(false);
+    });
+
+    it('rejects null', () => {
+      expect(isOpenAIFinishReason(null)).toBe(false);
+    });
+
+    it('rejects undefined', () => {
+      expect(isOpenAIFinishReason(undefined)).toBe(false);
+    });
+
+    it('rejects non-string', () => {
+      expect(isOpenAIFinishReason(1)).toBe(false);
     });
   });
 
-  describe('isOpenAIChatCompletionChunk', () => {
-    it('accepts a valid OpenAIChatCompletionChunk', () => {
-      expect(isOpenAIChatCompletionChunk(mockOpenAIChatCompletionChunk())).toBe(
-        true,
-      );
+  describe('isOpenAIDelta', () => {
+    it('accepts delta with string content', () => {
+      expect(isOpenAIDelta({ content: 'text' })).toBe(true);
     });
 
-    it('rejects missing choices array', () => {
-      const missingChoices = {
-        usage: null,
-      };
-      expect(isOpenAIChatCompletionChunk(missingChoices)).toBe(false);
+    it('accepts delta with null content', () => {
+      expect(isOpenAIDelta({ content: null })).toBe(true);
     });
 
-    it('rejects non-array choices', () => {
-      const nonArrayChoices = {
-        choices: 'not-an-array',
-        usage: null,
-      };
-      expect(isOpenAIChatCompletionChunk(nonArrayChoices)).toBe(false);
+    it('accepts empty delta object', () => {
+      expect(isOpenAIDelta({})).toBe(true);
+    });
+
+    it('accepts valid delta from default mock factory', () => {
+      expect(isOpenAIDelta(createMockOpenAIDelta())).toBe(true);
+    });
+
+    it('rejects content with wrong type', () => {
+      expect(isOpenAIDelta({ content: 123 })).toBe(false);
+    });
+
+    it('rejects non-object', () => {
+      expect(isOpenAIDelta('not-object')).toBe(false);
+    });
+
+    it('rejects null', () => {
+      expect(isOpenAIDelta(null)).toBe(false);
+    });
+  });
+
+  describe('isOpenAIChoice', () => {
+    it('accepts choice with finish_reason stop', () => {
+      expect(
+        isOpenAIChoice(
+          createMockOpenAIChoice({ finish_reason: 'stop', delta: { content: 'a' } }),
+        ),
+      ).toBe(true);
+    });
+
+    it('accepts choice with finish_reason length', () => {
+      expect(
+        isOpenAIChoice(
+          createMockOpenAIChoice({ finish_reason: 'length', delta: { content: 'a' } }),
+        ),
+      ).toBe(true);
+    });
+
+    it('accepts choice with finish_reason tool_calls', () => {
+      expect(
+        isOpenAIChoice(
+          createMockOpenAIChoice({
+            finish_reason: 'tool_calls',
+            delta: { content: 'a' },
+          }),
+        ),
+      ).toBe(true);
+    });
+
+    it('accepts choice with finish_reason content_filter', () => {
+      expect(
+        isOpenAIChoice(
+          createMockOpenAIChoice({
+            finish_reason: 'content_filter',
+            delta: { content: 'a' },
+          }),
+        ),
+      ).toBe(true);
+    });
+
+    it('accepts choice with finish_reason function_call', () => {
+      expect(
+        isOpenAIChoice(
+          createMockOpenAIChoice({
+            finish_reason: 'function_call',
+            delta: { content: 'a' },
+          }),
+        ),
+      ).toBe(true);
+    });
+
+    it('accepts choice with finish_reason null', () => {
+      expect(isOpenAIChoice(createMockOpenAIChoice({ finish_reason: null }))).toBe(true);
+    });
+
+    it('rejects object missing delta field', () => {
+      expect(isOpenAIChoice({ finish_reason: null })).toBe(false);
+    });
+
+    it('rejects invalid delta', () => {
+      expect(
+        isOpenAIChoice({
+          delta: { content: 123 },
+          finish_reason: null,
+        }),
+      ).toBe(false);
+    });
+
+    it('rejects missing finish_reason field', () => {
+      expect(isOpenAIChoice({ delta: {} })).toBe(false);
+    });
+
+    it('rejects unrecognized finish_reason string', () => {
+      expect(
+        isOpenAIChoice({
+          delta: {},
+          finish_reason: 'foo',
+        }),
+      ).toBe(false);
     });
   });
 
   describe('isOpenAIUsageDelta', () => {
-    it('accepts a valid OpenAIUsageDelta', () => {
-      expect(isOpenAIUsageDelta(mockOpenAIUsageDelta())).toBe(true);
+    it('accepts valid usage from default mock factory', () => {
+      expect(isOpenAIUsageDelta(createMockOpenAIUsageDelta())).toBe(true);
     });
 
-    it('rejects negative integers', () => {
-      const negativeTokens = {
-        prompt_tokens: -1,
-        completion_tokens: 0,
-        total_tokens: 0,
+    it('rejects usage with missing field', () => {
+      expect(
+        isOpenAIUsageDelta({
+          prompt_tokens: 1,
+          completion_tokens: 2,
+        }),
+      ).toBe(false);
+    });
+
+    it('rejects negative prompt_tokens', () => {
+      expect(
+        isOpenAIUsageDelta(
+          createMockOpenAIUsageDelta({ prompt_tokens: -1 }),
+        ),
+      ).toBe(false);
+    });
+
+    it('rejects non-integer total_tokens', () => {
+      expect(
+        isOpenAIUsageDelta(
+          createMockOpenAIUsageDelta({ total_tokens: 1.5 }),
+        ),
+      ).toBe(false);
+    });
+  });
+
+  describe('isOpenAIChatCompletionChunk', () => {
+    it('accepts valid chunk from default mock factory', () => {
+      expect(isOpenAIChatCompletionChunk(createMockOpenAIChatCompletionChunk())).toBe(
+        true,
+      );
+    });
+
+    it('accepts chunk with usage null', () => {
+      expect(
+        isOpenAIChatCompletionChunk(
+          createMockOpenAIChatCompletionChunk({ usage: null }),
+        ),
+      ).toBe(true);
+    });
+
+    it('accepts chunk with usage property omitted', () => {
+      const chunkUsageOmitted: OpenAIChatCompletionChunk = {
+        choices: [createMockOpenAIChoice({ delta: { content: 'y' }, finish_reason: null })],
       };
-      expect(isOpenAIUsageDelta(negativeTokens)).toBe(false);
+      expect(isOpenAIChatCompletionChunk(chunkUsageOmitted)).toBe(true);
     });
 
-    it('rejects non-integers', () => {
-      const fractionalTokens = {
-        prompt_tokens: 1.5,
-        completion_tokens: 0,
-        total_tokens: 0,
+    it('accepts chunk with empty choices', () => {
+      expect(
+        isOpenAIChatCompletionChunk(
+          createMockOpenAIChatCompletionChunk({ choices: [] }),
+        ),
+      ).toBe(true);
+    });
+
+    it('rejects object missing choices array', () => {
+      expect(isOpenAIChatCompletionChunk({})).toBe(false);
+    });
+
+    it('rejects non-array choices', () => {
+      expect(isOpenAIChatCompletionChunk({ choices: 'not-array' })).toBe(false);
+    });
+
+    it('rejects choices containing non-choice element', () => {
+      expect(
+        isOpenAIChatCompletionChunk({
+          choices: [{}],
+        }),
+      ).toBe(false);
+    });
+
+    it('rejects usage present with invalid shape', () => {
+      const validChoice: OpenAIChatCompletionChunk['choices'][number] =
+        createMockOpenAIChoice({ finish_reason: null });
+      expect(
+        isOpenAIChatCompletionChunk({
+          choices: [validChoice],
+          usage: { prompt_tokens: -1, completion_tokens: 0, total_tokens: 0 },
+        }),
+      ).toBe(false);
+    });
+  });
+
+  describe('guard alignment with interface contract shapes', () => {
+    it('accepts OpenAIDelta shapes exercised by openai.interface.test', () => {
+      expect(isOpenAIDelta({ content: 'text' })).toBe(true);
+      expect(isOpenAIDelta({ content: null })).toBe(true);
+      expect(isOpenAIDelta({})).toBe(true);
+    });
+
+    it('accepts OpenAIFinishReason tags exercised by openai.interface.test', () => {
+      expect(isOpenAIFinishReason('stop')).toBe(true);
+      expect(isOpenAIFinishReason('length')).toBe(true);
+      expect(isOpenAIFinishReason('tool_calls')).toBe(true);
+      expect(isOpenAIFinishReason('content_filter')).toBe(true);
+      expect(isOpenAIFinishReason('function_call')).toBe(true);
+    });
+
+    it('accepts OpenAIChoice shapes exercised by openai.interface.test', () => {
+      expect(
+        isOpenAIChoice({
+          delta: { content: 'a' },
+          finish_reason: 'stop',
+        }),
+      ).toBe(true);
+      expect(
+        isOpenAIChoice({
+          delta: {},
+          finish_reason: null,
+        }),
+      ).toBe(true);
+    });
+
+    it('accepts OpenAIUsageDelta shape exercised by openai.interface.test', () => {
+      expect(
+        isOpenAIUsageDelta(
+          createMockOpenAIUsageDelta({
+            prompt_tokens: 10,
+            completion_tokens: 20,
+            total_tokens: 30,
+          }),
+        ),
+      ).toBe(true);
+    });
+
+    it('accepts OpenAIChatCompletionChunk shapes exercised by openai.interface.test', () => {
+      const choice: OpenAIChatCompletionChunk['choices'][number] = {
+        delta: { content: 'x' },
+        finish_reason: null,
       };
-      expect(isOpenAIUsageDelta(fractionalTokens)).toBe(false);
-    });
-
-    it('rejects missing fields', () => {
-      const missingFields = {
+      const usage = createMockOpenAIUsageDelta({
         prompt_tokens: 1,
+        completion_tokens: 2,
+        total_tokens: 3,
+      });
+      expect(
+        isOpenAIChatCompletionChunk({
+          choices: [choice],
+          usage,
+        }),
+      ).toBe(true);
+      expect(
+        isOpenAIChatCompletionChunk({
+          choices: [],
+        }),
+      ).toBe(true);
+      expect(
+        isOpenAIChatCompletionChunk({
+          choices: [
+            {
+              delta: {},
+              finish_reason: null,
+            },
+          ],
+          usage: null,
+        }),
+      ).toBe(true);
+      const chunkOmitted: OpenAIChatCompletionChunk = {
+        choices: [
+          {
+            delta: { content: 'y' },
+            finish_reason: null,
+          },
+        ],
       };
-      expect(isOpenAIUsageDelta(missingFields)).toBe(false);
+      expect(isOpenAIChatCompletionChunk(chunkOmitted)).toBe(true);
     });
   });
 });

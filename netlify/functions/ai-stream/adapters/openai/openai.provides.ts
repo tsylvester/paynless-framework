@@ -1,25 +1,35 @@
 export { createOpenAINodeAdapter } from './openai.ts';
-
 export type {
   OpenAIChatCompletionChunk,
-  OpenAIChoiceDelta,
-  OpenAIChoiceDeltaInner,
+  OpenAIChoice,
+  OpenAIDelta,
+  OpenAIFinishReason,
   OpenAIUsageDelta,
 } from './openai.interface.ts';
-
 export {
   isOpenAIChatCompletionChunk,
-  isOpenAIChoiceDelta,
+  isOpenAIChoice,
+  isOpenAIDelta,
+  isOpenAIFinishReason,
   isOpenAIUsageDelta,
 } from './openai.guard.ts';
-
 export {
+  asyncIterableFromSdkChunks,
+  collectNodeAdapterStreamChunks,
+  createMockNodeAdapterConstructorParams,
+  createMockNodeChatApiRequest,
+  createMockNodeModelConfig,
+  createMockOpenAIChatCompletionChunk,
+  createMockOpenAIChoice,
+  createMockOpenAIDelta,
   createMockOpenAINodeAdapter,
-  mockAiAdapterParams,
-  mockOpenAIAsyncIterableFromChunks,
-  mockOpenAIAsyncIterableYieldThenThrow,
+  createMockOpenAIUsageDelta,
+  mockNodeAdapterConstructorParams,
+  mockNodeChatApiRequest,
+  mockNodeModelConfig,
   mockOpenAIChatCompletionChunk,
-  mockOpenAIChoiceDelta,
-  mockOpenAIStreamChunks,
+  mockOpenAIChoice,
+  mockOpenAIDelta,
   mockOpenAIUsageDelta,
 } from './openai.mock.ts';
+export type { OpenAiSdkStreamChunk } from './openai.mock.ts';

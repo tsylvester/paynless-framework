@@ -1,82 +1,110 @@
 import type {
   AiAdapter,
-  AiAdapterParams,
-  AiAdapterResult,
+  NodeAdapterConstructorParams,
   NodeAdapterFactory,
+  NodeAdapterStreamChunk,
+  NodeChatApiRequest,
+  NodeModelConfig,
   NodeProviderMap,
 } from './ai-adapter.interface.ts';
 import type {
   GetNodeAiAdapterDeps,
   GetNodeAiAdapterParams,
 } from './getNodeAiAdapter.interface.ts';
-import { createValidAiAdapterResultNullUsage } from './ai-adapter.mock.ts';
+
+export const defaultNodeChatApiRequest: NodeChatApiRequest = {
+  message: 'hello',
+  providerId: 'prov-1',
+  promptId: 'prompt-1',
+};
+
+export const defaultNodeModelConfig: NodeModelConfig = {
+  api_identifier: 'openai-gpt-4o',
+  input_token_cost_rate: 0.001,
+  output_token_cost_rate: 0.002,
+};
 
 export const mockAiAdapter: AiAdapter = {
-  stream: async (params: AiAdapterParams): Promise<AiAdapterResult> => {
-    void params;
-    return createValidAiAdapterResultNullUsage();
+  async *sendMessageStream(
+    _request: NodeChatApiRequest,
+    _apiIdentifier: string,
+  ): AsyncGenerator<NodeAdapterStreamChunk> {
+    const textDelta: NodeAdapterStreamChunk = { type: 'text_delta', text: 'x' };
+    yield textDelta;
+    const usage: NodeAdapterStreamChunk = {
+      type: 'usage',
+      tokenUsage: {
+        prompt_tokens: 1,
+        completion_tokens: 2,
+        total_tokens: 3,
+      },
+    };
+    yield usage;
+    const done: NodeAdapterStreamChunk = {
+      type: 'done',
+      finish_reason: 'stop',
+    };
+    yield done;
   },
 };
 
-const defaultProviderFactory: NodeAdapterFactory = (
-  _apiKey: string,
-): AiAdapter => mockAiAdapter;
+const defaultNodeAdapterFactory = (
+  _params: NodeAdapterConstructorParams,
+): AiAdapter => {
+  return mockAiAdapter;
+};
 
-function mergeNodeProviderMap(
-  base: NodeProviderMap,
-  overrides?: Partial<NodeProviderMap>,
-): NodeProviderMap {
-  if (overrides === undefined) {
-    return base;
-  }
-  const merged: NodeProviderMap = { ...base };
-  for (const entry of Object.entries(overrides)) {
-    const key: string = entry[0];
-    const factory: NodeAdapterFactory | undefined = entry[1];
-    if (factory !== undefined) {
-      merged[key] = factory;
-    }
-  }
-  return merged;
-}
+const defaultNodeProviderMap: NodeProviderMap = {
+  'openai-': defaultNodeAdapterFactory,
+  'anthropic-': defaultNodeAdapterFactory,
+  'google-': defaultNodeAdapterFactory,
+};
 
 export function createMockNodeProviderMap(
   overrides?: Partial<NodeProviderMap>,
 ): NodeProviderMap {
-  const defaults: NodeProviderMap = {
-    'openai-': defaultProviderFactory,
-    'anthropic-': defaultProviderFactory,
-    'google-': defaultProviderFactory,
-  };
-  return mergeNodeProviderMap(defaults, overrides);
+  const result: Record<string, NodeAdapterFactory> = { ...defaultNodeProviderMap };
+  if (overrides === undefined) {
+    return result;
+  }
+  for (const entry of Object.entries(overrides)) {
+    const key: string = entry[0];
+    const value: NodeAdapterFactory | undefined = entry[1];
+    if (value !== undefined) {
+      result[key] = value;
+    }
+  }
+  return result;
 }
 
 export function createMockGetNodeAiAdapterDeps(
   overrides?: Partial<GetNodeAiAdapterDeps>,
 ): GetNodeAiAdapterDeps {
-  const base: GetNodeAiAdapterDeps = {
-    providerMap: createMockNodeProviderMap(),
+  const providerMap: NodeProviderMap =
+    overrides?.providerMap === undefined
+      ? { ...defaultNodeProviderMap }
+      : overrides.providerMap;
+  return {
+    providerMap,
   };
-  if (overrides === undefined) {
-    return base;
-  }
-  if (overrides.providerMap !== undefined) {
-    return {
-      providerMap: mergeNodeProviderMap(base.providerMap, overrides.providerMap),
-    };
-  }
-  return base;
 }
 
 export function createMockGetNodeAiAdapterParams(
   overrides?: Partial<GetNodeAiAdapterParams>,
 ): GetNodeAiAdapterParams {
-  const defaults: GetNodeAiAdapterParams = {
-    apiIdentifier: 'openai-gpt-4o',
-    apiKey: 'sk-mock-default',
+  const apiIdentifier: string =
+    overrides?.apiIdentifier === undefined
+      ? 'openai-gpt-4o'
+      : overrides.apiIdentifier;
+  const apiKey: string =
+    overrides?.apiKey === undefined ? 'sk-test' : overrides.apiKey;
+  const modelConfig: NodeModelConfig =
+    overrides?.modelConfig === undefined
+      ? { ...defaultNodeModelConfig }
+      : overrides.modelConfig;
+  return {
+    apiIdentifier,
+    apiKey,
+    modelConfig,
   };
-  if (overrides === undefined) {
-    return defaults;
-  }
-  return { ...defaults, ...overrides };
 }

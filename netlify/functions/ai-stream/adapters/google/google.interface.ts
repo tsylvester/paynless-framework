@@ -1,3 +1,22 @@
+export type GoogleFinishReason =
+  | 'STOP'
+  | 'MAX_TOKENS'
+  | 'SAFETY'
+  | 'RECITATION';
+
+export interface GooglePart {
+  text?: string;
+}
+
+export interface GoogleContent {
+  parts: GooglePart[];
+}
+
+export interface GoogleCandidate {
+  content?: GoogleContent;
+  finishReason?: GoogleFinishReason;
+}
+
 export interface GoogleUsageMetadata {
   promptTokenCount: number;
   candidatesTokenCount: number;
@@ -5,6 +24,10 @@ export interface GoogleUsageMetadata {
 }
 
 export interface GoogleStreamChunk {
-  text(): string;
-  usageMetadata?: GoogleUsageMetadata;
+  candidates?: GoogleCandidate[];
+}
+
+export interface GoogleFinalResponse {
+  candidates?: GoogleCandidate[];
+  usageMetadata?: GoogleUsageMetadata | null;
 }

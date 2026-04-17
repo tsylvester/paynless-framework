@@ -1,105 +1,123 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
-  AiAdapter,
-  AiAdapterParams,
-  AiAdapterResult,
+  NodeAdapterConstructorParams,
+  NodeAdapterStreamChunk,
   NodeChatApiRequest,
-  NodeChatMessage,
-  NodeModelConfig,
 } from '../ai-adapter.interface.ts';
-import { isAiAdapter, isAiAdapterResult } from '../getNodeAiAdapter.guard.ts';
-import type { GetNodeAiAdapterDeps, GetNodeAiAdapterParams } from '../getNodeAiAdapter.interface.ts';
-import { getNodeAiAdapter } from '../getNodeAiAdapter.ts';
-import type { OpenAIChatCompletionChunk } from './openai.interface.ts';
+import {
+  isAiAdapter,
+  isNodeAdapterStreamChunk,
+} from '../getNodeAiAdapter.guard.ts';
 import { createOpenAINodeAdapter } from './openai.ts';
 
-const { mockCreate } = vi.hoisted(() => ({
-  mockCreate: vi.fn(),
-}));
+const { chatCompletionsCreate } = vi.hoisted(() => {
+  return {
+    chatCompletionsCreate: vi.fn(),
+  };
+});
 
-vi.mock('openai', () => ({
-  default: class {
-    constructor(_opts: { apiKey: string }) {
-      void _opts;
+vi.mock('openai', () => {
+  class APIError extends Error {
+    public status: number | undefined;
+
+    public constructor(message?: string) {
+      super(message);
+      this.name = 'APIError';
     }
-    chat = {
+  }
+
+  class OpenAI {
+    public static APIError: typeof APIError = APIError;
+
+    public chat: {
       completions: {
-        create: mockCreate,
-      },
+        create: typeof chatCompletionsCreate;
+      };
     };
-  },
-}));
 
-function integrationAdapterParams(): AiAdapterParams {
-  const message: NodeChatMessage = {
-    role: 'user',
-    content: 'integration',
+    public constructor() {
+      this.chat = {
+        completions: {
+          create: chatCompletionsCreate,
+        },
+      };
+    }
+  }
+
+  return {
+    default: OpenAI,
   };
-  const chatApiRequest: NodeChatApiRequest = {
-    messages: [message],
-    model: 'gpt-4o',
-    max_tokens: 50,
+});
+
+async function* integrationSdkStream(): AsyncGenerator<unknown, void, undefined> {
+  yield {
+    choices: [{ delta: { content: 'integration' }, finish_reason: null }],
   };
-  const modelConfig: NodeModelConfig = {
-    model_identifier: 'gpt-4o',
-    max_tokens: 50,
+  yield {
+    choices: [{ delta: {}, finish_reason: 'stop' }],
+    usage: {
+      prompt_tokens: 10,
+      completion_tokens: 20,
+      total_tokens: 30,
+    },
   };
-  const params: AiAdapterParams = {
-    chatApiRequest,
-    modelConfig,
-    apiKey: 'sk-integration',
-  };
-  return params;
 }
 
-async function* integrationMockOpenAIStream(): AsyncIterable<OpenAIChatCompletionChunk> {
-  const first: OpenAIChatCompletionChunk = {
-    choices: [{ delta: { content: 'a' } }],
-    usage: undefined,
-  };
-  const second: OpenAIChatCompletionChunk = {
-    choices: [{ delta: { content: 'b' } }],
-    usage: { prompt_tokens: 2, completion_tokens: 3, total_tokens: 5 },
-  };
-  yield first;
-  yield second;
-}
-
-describe('openai adapter integration', () => {
+describe('createOpenAINodeAdapter (integration)', () => {
   beforeEach(() => {
-    mockCreate.mockReset();
+    chatCompletionsCreate.mockReset();
   });
 
-  it('createOpenAINodeAdapter returns an object that satisfies isAiAdapter', () => {
-    const adapter: AiAdapter = createOpenAINodeAdapter();
-    expect(isAiAdapter(adapter)).toBe(true);
-  });
-
-  it('dispatches openai-gpt-4o through getNodeAiAdapter, streams with mock params, returns AiAdapterResult', async () => {
-    mockCreate.mockResolvedValue(integrationMockOpenAIStream());
-    const deps: GetNodeAiAdapterDeps = {
-      providerMap: {
-        'openai-': (_apiKey: string): AiAdapter => createOpenAINodeAdapter(),
+  it('constructs an adapter that satisfies isAiAdapter, streams through mocked SDK for openai-gpt-4o, and yields NodeAdapterStreamChunk values', async () => {
+    const params: NodeAdapterConstructorParams = {
+      modelConfig: {
+        api_identifier: 'openai-gpt-4o',
+        input_token_cost_rate: 0.001,
+        output_token_cost_rate: 0.002,
       },
+      apiKey: 'sk-integration-openai',
     };
-    const workload: GetNodeAiAdapterParams = {
-      apiIdentifier: 'openai-gpt-4o',
-      apiKey: 'sk-workload',
-    };
-    const adapter: AiAdapter | null = getNodeAiAdapter(deps, workload);
-    expect(adapter).not.toBe(null);
-    if (adapter === null) {
-      return;
-    }
+    const adapter = createOpenAINodeAdapter(params);
     expect(isAiAdapter(adapter)).toBe(true);
-    const result: AiAdapterResult = await adapter.stream(integrationAdapterParams());
-    expect(isAiAdapterResult(result)).toBe(true);
-    expect(result.assembled_content).toBe('ab');
-    expect(result.token_usage).not.toBe(null);
-    if (result.token_usage !== null) {
-      expect(result.token_usage.prompt_tokens).toBe(2);
-      expect(result.token_usage.completion_tokens).toBe(3);
-      expect(result.token_usage.total_tokens).toBe(5);
+
+    chatCompletionsCreate.mockResolvedValue(integrationSdkStream());
+
+    const request: NodeChatApiRequest = {
+      message: 'integration dispatch message',
+      providerId: 'prov-integration',
+      promptId: 'prompt-integration',
+    };
+    const apiIdentifier: string = 'openai-gpt-4o';
+
+    const stream: AsyncGenerator<NodeAdapterStreamChunk> = adapter.sendMessageStream(
+      request,
+      apiIdentifier,
+    );
+
+    const collected: NodeAdapterStreamChunk[] = [];
+    for await (const chunk of stream) {
+      collected.push(chunk);
     }
+
+    expect(collected.length >= 1).toBe(true);
+    for (const chunk of collected) {
+      expect(isNodeAdapterStreamChunk(chunk)).toBe(true);
+    }
+
+    const textDeltas: string[] = collected
+      .filter((c): c is Extract<NodeAdapterStreamChunk, { type: 'text_delta' }> => c.type === 'text_delta')
+      .map((c) => c.text);
+    expect(textDeltas).toContain('integration');
+
+    const usageChunks = collected.filter((c) => c.type === 'usage');
+    expect(usageChunks.length).toBe(1);
+    if (usageChunks[0] !== undefined && usageChunks[0].type === 'usage') {
+      expect(usageChunks[0].tokenUsage.prompt_tokens).toBe(10);
+      expect(usageChunks[0].tokenUsage.completion_tokens).toBe(20);
+      expect(usageChunks[0].tokenUsage.total_tokens).toBe(30);
+    }
+
+    const doneChunks = collected.filter((c) => c.type === 'done');
+    expect(doneChunks.length).toBe(1);
   });
 });

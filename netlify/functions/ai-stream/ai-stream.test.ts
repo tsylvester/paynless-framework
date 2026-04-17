@@ -1,224 +1,603 @@
 import { ErrorDoNotRetry } from '@netlify/async-workloads';
-import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
-import { isAiStreamPayload } from './ai-stream.guard.ts';
-import type { AiStreamPayload } from './ai-stream.interface.ts';
-import { runAiStreamWorkload } from './ai-stream.ts';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type {
+  AiAdapter,
+  NodeAdapterConstructorParams,
+  NodeAdapterStreamChunk,
+} from './adapters/ai-adapter.interface.ts';
+import { createMockAnthropicNodeAdapter } from './adapters/anthropic/anthropic.mock.ts';
+import { createMockGoogleNodeAdapter } from './adapters/google/google.mock.ts';
 import {
-  createNullUsageAdapterResult,
-  createStreamTallies,
-  createThrowingStreamAdapter,
-  createValidAiStreamEvent,
-  mockAiStreamDeps,
-  mockAiStreamDepsWithPerAdapterResults,
+  createMockOpenAINodeAdapter,
+  mockNodeChatApiRequest,
+  mockNodeModelConfig,
+} from './adapters/openai/openai.mock.ts';
+import { isAiStreamPayload } from './ai-stream.guard.ts';
+import {
+  createMockAiStreamDeps,
+  mockAiStreamSaveResponseUrl,
 } from './ai-stream.mock.ts';
+import type { AiStreamEvent } from './ai-stream.interface.ts';
+import { isAiStreamDeps } from './ai-stream.guard.ts';
+import { createAiStreamDeps, runAiStreamWorkloadForTests } from './ai-stream.ts';
 
-describe('runAiStreamWorkload', () => {
-  let originalFetch: typeof globalThis.fetch;
+function getAuthorizationFromRequestInit(
+  init: RequestInit,
+): string | undefined {
+  const headersValue: unknown = init.headers;
+  if (headersValue === undefined) {
+    return undefined;
+  }
+  if (headersValue instanceof Headers) {
+    const value: string | null = headersValue.get('Authorization');
+    if (value === null) {
+      return undefined;
+    }
+    return value;
+  }
+  if (
+    typeof headersValue !== 'object' ||
+    headersValue === null ||
+    Array.isArray(headersValue)
+  ) {
+    return undefined;
+  }
+  if (!('Authorization' in headersValue)) {
+    return undefined;
+  }
+  const auth: unknown = Reflect.get(headersValue, 'Authorization');
+  if (typeof auth !== 'string') {
+    return undefined;
+  }
+  return auth;
+}
 
-  beforeAll(() => {
-    originalFetch = globalThis.fetch;
+describe('ai-stream workload', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
   });
 
   afterEach(() => {
-    globalThis.fetch = originalFetch;
+    vi.unstubAllGlobals();
   });
 
-  it('throws ErrorDoNotRetry for an invalid event and does not call any adapter stream', async () => {
-    const tallies = createStreamTallies();
-    const deps = mockAiStreamDepsWithPerAdapterResults(
-      tallies,
-      {
-        openai: createNullUsageAdapterResult('openai'),
-        anthropic: createNullUsageAdapterResult('anthropic'),
-        google: createNullUsageAdapterResult('google'),
+  it('throws ErrorDoNotRetry for invalid event and does not invoke adapter factories', async () => {
+    let factoryCallCount: number = 0;
+    const deps = createMockAiStreamDeps({
+      providerMap: {
+        'openai-': (_params: NodeAdapterConstructorParams): AiAdapter => {
+          factoryCallCount += 1;
+          return createMockOpenAINodeAdapter();
+        },
       },
-    );
-    const invalidEvent: unknown = {};
-    await expect(runAiStreamWorkload(deps, invalidEvent)).rejects.toBeInstanceOf(
+    });
+    await expect(runAiStreamWorkloadForTests(deps, {})).rejects.toBeInstanceOf(
       ErrorDoNotRetry,
     );
-    expect(tallies.openai).toBe(0);
-    expect(tallies.anthropic).toBe(0);
-    expect(tallies.google).toBe(0);
+    expect(factoryCallCount).toBe(0);
   });
 
-  it('throws ErrorDoNotRetry for an unknown api_identifier prefix', async () => {
-    const tallies = createStreamTallies();
-    const deps = mockAiStreamDepsWithPerAdapterResults(
-      tallies,
-      {
-        openai: createNullUsageAdapterResult('openai'),
-        anthropic: createNullUsageAdapterResult('anthropic'),
-        google: createNullUsageAdapterResult('google'),
+  it('throws ErrorDoNotRetry for unknown api_identifier prefix', async () => {
+    const deps = createMockAiStreamDeps({
+      providerMap: {
+        'openai-': (_params: NodeAdapterConstructorParams): AiAdapter => {
+          return createMockOpenAINodeAdapter();
+        },
       },
-    );
-    await expect(
-      runAiStreamWorkload(
-        deps,
-        createValidAiStreamEvent({ api_identifier: 'mistral-unknown' }),
-      ),
-    ).rejects.toBeInstanceOf(ErrorDoNotRetry);
-    expect(tallies.openai).toBe(0);
-    expect(tallies.anthropic).toBe(0);
-    expect(tallies.google).toBe(0);
-  });
-
-  it('calls only the OpenAI adapter for openai-* and posts the adapter result', async () => {
-    globalThis.fetch = vi.fn(() =>
-      Promise.resolve(new Response('', { status: 200 })),
-    );
-    const tallies = createStreamTallies();
-    const openaiBody = 'openai-streamed-body';
-    const deps = mockAiStreamDepsWithPerAdapterResults(
-      tallies,
-      {
-        openai: createNullUsageAdapterResult(openaiBody),
-        anthropic: createNullUsageAdapterResult('anthropic-unused'),
-        google: createNullUsageAdapterResult('google-unused'),
-      },
-    );
-    await runAiStreamWorkload(
-      deps,
-      createValidAiStreamEvent({ api_identifier: 'openai-gpt-4' }),
-    );
-    expect(tallies.openai).toBe(1);
-    expect(tallies.anthropic).toBe(0);
-    expect(tallies.google).toBe(0);
-    expect(globalThis.fetch).toHaveBeenCalled();
-  });
-
-  it('calls only the Anthropic adapter for anthropic-*', async () => {
-    globalThis.fetch = vi.fn(() =>
-      Promise.resolve(new Response('', { status: 200 })),
-    );
-    const tallies = createStreamTallies();
-    const deps = mockAiStreamDepsWithPerAdapterResults(
-      tallies,
-      {
-        openai: createNullUsageAdapterResult('openai-unused'),
-        anthropic: createNullUsageAdapterResult('anthropic-body'),
-        google: createNullUsageAdapterResult('google-unused'),
-      },
-    );
-    await runAiStreamWorkload(
-      deps,
-      createValidAiStreamEvent({ api_identifier: 'anthropic-claude-3' }),
-    );
-    expect(tallies.openai).toBe(0);
-    expect(tallies.anthropic).toBe(1);
-    expect(tallies.google).toBe(0);
-  });
-
-  it('calls only the Google adapter for google-*', async () => {
-    globalThis.fetch = vi.fn(() =>
-      Promise.resolve(new Response('', { status: 200 })),
-    );
-    const tallies = createStreamTallies();
-    const deps = mockAiStreamDepsWithPerAdapterResults(
-      tallies,
-      {
-        openai: createNullUsageAdapterResult('openai-unused'),
-        anthropic: createNullUsageAdapterResult('anthropic-unused'),
-        google: createNullUsageAdapterResult('google-body'),
-      },
-    );
-    await runAiStreamWorkload(
-      deps,
-      createValidAiStreamEvent({ api_identifier: 'google-gemini-pro' }),
-    );
-    expect(tallies.openai).toBe(0);
-    expect(tallies.anthropic).toBe(0);
-    expect(tallies.google).toBe(1);
-  });
-
-  it('propagates an adapter stream error from the selected provider', async () => {
-    globalThis.fetch = vi.fn(() =>
-      Promise.resolve(new Response('', { status: 200 })),
-    );
-    const deps = mockAiStreamDeps({
-      openaiAdapter: createThrowingStreamAdapter('adapter-stream-boom'),
     });
-    await expect(
-      runAiStreamWorkload(
-        deps,
-        createValidAiStreamEvent({ api_identifier: 'openai-gpt-4' }),
-      ),
-    ).rejects.toThrow('adapter-stream-boom');
-  });
-
-  it('throws when the back-half POST returns a 4xx after a successful stream', async () => {
-    globalThis.fetch = vi.fn(() =>
-      Promise.resolve(new Response('', { status: 400 })),
+    const event: AiStreamEvent = {
+      job_id: 'job-1',
+      api_identifier: 'mistral-unknown-model',
+      model_config: { ...mockNodeModelConfig, api_identifier: 'mistral-unknown-model' },
+      chat_api_request: { ...mockNodeChatApiRequest },
+      user_jwt: 'jwt-token',
+    };
+    await expect(runAiStreamWorkloadForTests(deps, event)).rejects.toBeInstanceOf(
+      ErrorDoNotRetry,
     );
-    const deps = mockAiStreamDeps();
-    await expect(
-      runAiStreamWorkload(
-        deps,
-        createValidAiStreamEvent({ api_identifier: 'openai-gpt-4' }),
-      ),
-    ).rejects.toThrow();
   });
 
-  it('POSTs AiStreamPayload JSON with Authorization Bearer user_jwt on the happy path', async () => {
+  it('dispatches openai prefix, iterates mock adapter, POSTs finish_reason from done chunk', async () => {
     const fetchMock = vi.fn(
-      async (
-        _input: string | URL | Request,
-        _init?: RequestInit,
-      ): Promise<Response> => new Response('', { status: 200 }),
-    );
-    globalThis.fetch = fetchMock;
-    const tallies = createStreamTallies();
-    const assembled = 'happy-path-assembled';
-    const event = createValidAiStreamEvent({
-      api_identifier: 'openai-gpt-4',
-      user_jwt: 'unit-test-jwt-token',
-      job_id: 'job-post-1',
-    });
-    const deps = mockAiStreamDepsWithPerAdapterResults(
-      tallies,
-      {
-        openai: createNullUsageAdapterResult(assembled),
-        anthropic: createNullUsageAdapterResult('anthropic-unused'),
-        google: createNullUsageAdapterResult('google-unused'),
+      async (_input: string | URL, _init?: RequestInit): Promise<Response> => {
+        return new Response(null, { status: 200 });
       },
     );
-    await runAiStreamWorkload(deps, event);
+    vi.stubGlobal('fetch', fetchMock);
+    const deps = createMockAiStreamDeps({
+      providerMap: {
+        'openai-': (_params: NodeAdapterConstructorParams): AiAdapter => {
+          return createMockOpenAINodeAdapter();
+        },
+      },
+      getApiKey: (): string => {
+        return 'sk-openai';
+      },
+    });
+    const event: AiStreamEvent = {
+      job_id: 'job-openai',
+      api_identifier: 'openai-gpt-4o',
+      model_config: { ...mockNodeModelConfig },
+      chat_api_request: { ...mockNodeChatApiRequest },
+      user_jwt: 'jwt-openai',
+    };
+    await runAiStreamWorkloadForTests(deps, event);
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    const calls = fetchMock.mock.calls;
-    const firstCall = calls[0];
-    if (firstCall === undefined) {
-      expect(firstCall).toBeDefined();
-      return;
+    const firstCall: unknown = fetchMock.mock.calls[0];
+    if (!Array.isArray(firstCall) || firstCall.length < 2) {
+      throw new Error('expected fetch(url, init)');
     }
-    const urlCandidate: string | URL | Request = firstCall[0];
-    if (typeof urlCandidate !== 'string') {
-      expect(typeof urlCandidate).toBe('string');
-      return;
+    const urlValue: unknown = firstCall[0];
+    const initValue: unknown = firstCall[1];
+    expect(urlValue).toBe(mockAiStreamSaveResponseUrl);
+    if (typeof initValue !== 'object' || initValue === null) {
+      throw new Error('expected RequestInit');
     }
-    const requestUrl: string = urlCandidate;
-    expect(requestUrl).toBe(deps.Url);
-    const initCandidate: RequestInit | undefined = firstCall[1];
-    if (initCandidate === undefined) {
-      expect(initCandidate).toBeDefined();
-      return;
+    const init: RequestInit = initValue;
+    const authorization: string | undefined =
+      getAuthorizationFromRequestInit(init);
+    expect(authorization).toBe('Bearer jwt-openai');
+    const bodyValue: unknown = init.body;
+    if (typeof bodyValue !== 'string') {
+      throw new Error('expected string body');
     }
-    const initValue: RequestInit = initCandidate;
-    const headers: Headers = new Headers(initValue.headers);
-    expect(headers.get('Authorization')).toBe('Bearer unit-test-jwt-token');
-    const bodyCandidate = initValue.body;
-    if (typeof bodyCandidate !== 'string') {
-      expect(typeof bodyCandidate).toBe('string');
-      return;
+    const parsed: unknown = JSON.parse(bodyValue);
+    expect(isAiStreamPayload(parsed)).toBe(true);
+    if (!isAiStreamPayload(parsed)) {
+      throw new Error('POST body must satisfy AiStreamPayload');
     }
-    const bodyText: string = bodyCandidate;
-    const decoded: unknown = JSON.parse(bodyText);
-    if (!isAiStreamPayload(decoded)) {
-      expect.fail('POST body must satisfy AiStreamPayload');
-      return;
+    expect(parsed.finish_reason).toBe('stop');
+    expect(parsed.assembled_content).toContain('mock openai response');
+  });
+
+  it('dispatches anthropic prefix using anthropic mock adapter', async () => {
+    const fetchMock = vi.fn(
+      async (_input: string | URL, _init?: RequestInit): Promise<Response> => {
+        return new Response(null, { status: 200 });
+      },
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const deps = createMockAiStreamDeps({
+      providerMap: {
+        'anthropic-': (_params: NodeAdapterConstructorParams): AiAdapter => {
+          return createMockAnthropicNodeAdapter();
+        },
+      },
+      getApiKey: (): string => {
+        return 'sk-anthropic';
+      },
+    });
+    const event: AiStreamEvent = {
+      job_id: 'job-anthropic',
+      api_identifier: 'anthropic-claude-3-5-sonnet',
+      model_config: {
+        api_identifier: 'anthropic-claude-3-5-sonnet',
+        hard_cap_output_tokens: 4096,
+        input_token_cost_rate: null,
+        output_token_cost_rate: null,
+      },
+      chat_api_request: {
+        message: 'hi',
+        providerId: 'p',
+        promptId: 'q',
+      },
+      user_jwt: 'jwt-anthropic',
+    };
+    await runAiStreamWorkloadForTests(deps, event);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('dispatches google prefix using google mock adapter', async () => {
+    const fetchMock = vi.fn(
+      async (_input: string | URL, _init?: RequestInit): Promise<Response> => {
+        return new Response(null, { status: 200 });
+      },
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const deps = createMockAiStreamDeps({
+      providerMap: {
+        'google-': (_params: NodeAdapterConstructorParams): AiAdapter => {
+          return createMockGoogleNodeAdapter();
+        },
+      },
+      getApiKey: (): string => {
+        return 'google-key';
+      },
+    });
+    const event: AiStreamEvent = {
+      job_id: 'job-google',
+      api_identifier: 'google-gemini-2-5-pro',
+      model_config: {
+        api_identifier: 'google-gemini-2-5-pro',
+        hard_cap_output_tokens: 4096,
+        input_token_cost_rate: null,
+        output_token_cost_rate: null,
+      },
+      chat_api_request: {
+        message: 'hi',
+        providerId: 'p',
+        promptId: 'q',
+      },
+      user_jwt: 'jwt-google',
+    };
+    await runAiStreamWorkloadForTests(deps, event);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('propagates adapter stream errors as a retryable failure', async () => {
+    const failingAdapter: AiAdapter = {
+      async *sendMessageStream(): AsyncGenerator<NodeAdapterStreamChunk> {
+        const first: NodeAdapterStreamChunk = {
+          type: 'text_delta',
+          text: 'before-failure',
+        };
+        yield first;
+        throw new Error('stream failed');
+      },
+    };
+    const deps = createMockAiStreamDeps({
+      providerMap: {
+        'openai-': (_params: NodeAdapterConstructorParams): AiAdapter => {
+          return failingAdapter;
+        },
+      },
+      getApiKey: (): string => {
+        return 'sk-openai';
+      },
+    });
+    const event: AiStreamEvent = {
+      job_id: 'job-err',
+      api_identifier: 'openai-gpt-4o',
+      model_config: { ...mockNodeModelConfig },
+      chat_api_request: { ...mockNodeChatApiRequest },
+      user_jwt: 'jwt',
+    };
+    await expect(runAiStreamWorkloadForTests(deps, event)).rejects.toThrow('stream failed');
+  });
+
+  it('throws when back-half POST returns 4xx', async () => {
+    const fetchMock = vi.fn(
+      async (_input: string | URL, _init?: RequestInit): Promise<Response> => {
+        return new Response(null, { status: 400 });
+      },
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const deps = createMockAiStreamDeps({
+      providerMap: {
+        'openai-': (_params: NodeAdapterConstructorParams): AiAdapter => {
+          return createMockOpenAINodeAdapter();
+        },
+      },
+      getApiKey: (): string => {
+        return 'sk-openai';
+      },
+    });
+    const event: AiStreamEvent = {
+      job_id: 'job-post-err',
+      api_identifier: 'openai-gpt-4o',
+      model_config: { ...mockNodeModelConfig },
+      chat_api_request: { ...mockNodeChatApiRequest },
+      user_jwt: 'jwt',
+    };
+    await expect(runAiStreamWorkloadForTests(deps, event)).rejects.toThrow();
+  });
+
+  it('POSTs AiStreamPayload with assembled_content and JWT on full happy path', async () => {
+    const fetchMock = vi.fn(
+      async (_input: string | URL, _init?: RequestInit): Promise<Response> => {
+        return new Response(null, { status: 200 });
+      },
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const deps = createMockAiStreamDeps({
+      providerMap: {
+        'openai-': (_params: NodeAdapterConstructorParams): AiAdapter => {
+          return createMockOpenAINodeAdapter();
+        },
+      },
+      getApiKey: (): string => {
+        return 'sk-openai';
+      },
+    });
+    const event: AiStreamEvent = {
+      job_id: 'job-happy',
+      api_identifier: 'openai-gpt-4o',
+      model_config: { ...mockNodeModelConfig },
+      chat_api_request: { ...mockNodeChatApiRequest },
+      user_jwt: 'jwt-happy',
+    };
+    await runAiStreamWorkloadForTests(deps, event);
+    const firstCall: unknown = fetchMock.mock.calls[0];
+    if (!Array.isArray(firstCall) || firstCall.length < 2) {
+      throw new Error('expected fetch(url, init)');
     }
-    const postBody: AiStreamPayload = decoded;
-    expect(postBody.job_id).toBe('job-post-1');
-    expect(postBody.assembled_content).toBe(assembled);
-    expect(postBody.token_usage).toBe(null);
+    const initValue: unknown = firstCall[1];
+    if (typeof initValue !== 'object' || initValue === null) {
+      throw new Error('expected RequestInit');
+    }
+    const init: RequestInit = initValue;
+    const authorization: string | undefined =
+      getAuthorizationFromRequestInit(init);
+    expect(authorization).toBe('Bearer jwt-happy');
+    const bodyValue: unknown = init.body;
+    if (typeof bodyValue !== 'string') {
+      throw new Error('expected string body');
+    }
+    const parsed: unknown = JSON.parse(bodyValue);
+    expect(isAiStreamPayload(parsed)).toBe(true);
+    if (!isAiStreamPayload(parsed)) {
+      throw new Error('invalid payload');
+    }
+    expect(parsed.job_id).toBe('job-happy');
+    expect(parsed.assembled_content).toBe('mock openai response');
+    expect(parsed.token_usage).not.toBe(null);
+    expect(parsed.finish_reason).toBe('stop');
+  });
+
+  it('sets finish_reason to length after soft timeout while posting partial assembled_content', async () => {
+    const fetchMock = vi.fn(
+      async (_input: string | URL, _init?: RequestInit): Promise<Response> => {
+        return new Response(null, { status: 200 });
+      },
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    let nowMs: number = 0;
+    vi.spyOn(Date, 'now').mockImplementation(() => {
+      return nowMs;
+    });
+    const delayedAdapter: AiAdapter = {
+      async *sendMessageStream(): AsyncGenerator<NodeAdapterStreamChunk> {
+        const first: NodeAdapterStreamChunk = {
+          type: 'text_delta',
+          text: 'partial',
+        };
+        yield first;
+        nowMs = 15 * 60 * 1000;
+        const second: NodeAdapterStreamChunk = {
+          type: 'text_delta',
+          text: '-more',
+        };
+        yield second;
+      },
+    };
+    const deps = createMockAiStreamDeps({
+      providerMap: {
+        'openai-': (_params: NodeAdapterConstructorParams): AiAdapter => {
+          return delayedAdapter;
+        },
+      },
+      getApiKey: (): string => {
+        return 'sk-openai';
+      },
+    });
+    const event: AiStreamEvent = {
+      job_id: 'job-timeout',
+      api_identifier: 'openai-gpt-4o',
+      model_config: { ...mockNodeModelConfig },
+      chat_api_request: { ...mockNodeChatApiRequest },
+      user_jwt: 'jwt-timeout',
+    };
+    await runAiStreamWorkloadForTests(deps, event);
+    const firstCall: unknown = fetchMock.mock.calls[0];
+    if (!Array.isArray(firstCall) || firstCall.length < 2) {
+      throw new Error('expected fetch(url, init)');
+    }
+    const initValue: unknown = firstCall[1];
+    if (typeof initValue !== 'object' || initValue === null) {
+      throw new Error('expected RequestInit');
+    }
+    const init: RequestInit = initValue;
+    const bodyValue: unknown = init.body;
+    if (typeof bodyValue !== 'string') {
+      throw new Error('expected string body');
+    }
+    const parsed: unknown = JSON.parse(bodyValue);
+    expect(isAiStreamPayload(parsed)).toBe(true);
+    if (!isAiStreamPayload(parsed)) {
+      throw new Error('invalid payload');
+    }
+    expect(parsed.finish_reason).toBe('length');
+    expect(parsed.assembled_content).toBe('partial');
+  });
+
+  it('sends finish_reason null when stream ends without done chunk', async () => {
+    const fetchMock = vi.fn(
+      async (_input: string | URL, _init?: RequestInit): Promise<Response> => {
+        return new Response(null, { status: 200 });
+      },
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const adapterNoDone: AiAdapter = {
+      async *sendMessageStream(): AsyncGenerator<NodeAdapterStreamChunk> {
+        const text: NodeAdapterStreamChunk = { type: 'text_delta', text: 'only' };
+        yield text;
+        const usage: NodeAdapterStreamChunk = {
+          type: 'usage',
+          tokenUsage: {
+            prompt_tokens: 1,
+            completion_tokens: 1,
+            total_tokens: 2,
+          },
+        };
+        yield usage;
+      },
+    };
+    const deps = createMockAiStreamDeps({
+      providerMap: {
+        'openai-': (_params: NodeAdapterConstructorParams): AiAdapter => {
+          return adapterNoDone;
+        },
+      },
+      getApiKey: (): string => {
+        return 'sk-openai';
+      },
+    });
+    const event: AiStreamEvent = {
+      job_id: 'job-nodone',
+      api_identifier: 'openai-gpt-4o',
+      model_config: { ...mockNodeModelConfig },
+      chat_api_request: { ...mockNodeChatApiRequest },
+      user_jwt: 'jwt-nodone',
+    };
+    await runAiStreamWorkloadForTests(deps, event);
+    const firstCall: unknown = fetchMock.mock.calls[0];
+    if (!Array.isArray(firstCall) || firstCall.length < 2) {
+      throw new Error('expected fetch(url, init)');
+    }
+    const initValue: unknown = firstCall[1];
+    if (typeof initValue !== 'object' || initValue === null) {
+      throw new Error('expected RequestInit');
+    }
+    const init: RequestInit = initValue;
+    const bodyValue: unknown = init.body;
+    if (typeof bodyValue !== 'string') {
+      throw new Error('expected string body');
+    }
+    const parsed: unknown = JSON.parse(bodyValue);
+    expect(isAiStreamPayload(parsed)).toBe(true);
+    if (!isAiStreamPayload(parsed)) {
+      throw new Error('invalid payload');
+    }
+    expect(parsed.finish_reason).toBe(null);
+  });
+});
+
+describe('createAiStreamDeps', () => {
+  const savedEnv: {
+    DIALECTIC_SAVERESPONSE_URL: string | undefined;
+    OPENAI_API_KEY: string | undefined;
+    ANTHROPIC_API_KEY: string | undefined;
+    GOOGLE_API_KEY: string | undefined;
+  } = {
+    DIALECTIC_SAVERESPONSE_URL: undefined,
+    OPENAI_API_KEY: undefined,
+    ANTHROPIC_API_KEY: undefined,
+    GOOGLE_API_KEY: undefined,
+  };
+
+  beforeEach(() => {
+    savedEnv.DIALECTIC_SAVERESPONSE_URL =
+      process.env['DIALECTIC_SAVERESPONSE_URL'];
+    savedEnv.OPENAI_API_KEY = process.env['OPENAI_API_KEY'];
+    savedEnv.ANTHROPIC_API_KEY = process.env['ANTHROPIC_API_KEY'];
+    savedEnv.GOOGLE_API_KEY = process.env['GOOGLE_API_KEY'];
+
+    process.env['DIALECTIC_SAVERESPONSE_URL'] = 'http://test/saveResponse';
+    process.env['OPENAI_API_KEY'] = 'sk-test-openai';
+    process.env['ANTHROPIC_API_KEY'] = 'sk-test-anthropic';
+    process.env['GOOGLE_API_KEY'] = 'test-google-key';
+  });
+
+  afterEach(() => {
+    if (savedEnv.DIALECTIC_SAVERESPONSE_URL === undefined) {
+      delete process.env['DIALECTIC_SAVERESPONSE_URL'];
+    } else {
+      process.env['DIALECTIC_SAVERESPONSE_URL'] =
+        savedEnv.DIALECTIC_SAVERESPONSE_URL;
+    }
+    if (savedEnv.OPENAI_API_KEY === undefined) {
+      delete process.env['OPENAI_API_KEY'];
+    } else {
+      process.env['OPENAI_API_KEY'] = savedEnv.OPENAI_API_KEY;
+    }
+    if (savedEnv.ANTHROPIC_API_KEY === undefined) {
+      delete process.env['ANTHROPIC_API_KEY'];
+    } else {
+      process.env['ANTHROPIC_API_KEY'] = savedEnv.ANTHROPIC_API_KEY;
+    }
+    if (savedEnv.GOOGLE_API_KEY === undefined) {
+      delete process.env['GOOGLE_API_KEY'];
+    } else {
+      process.env['GOOGLE_API_KEY'] = savedEnv.GOOGLE_API_KEY;
+    }
+  });
+
+  it('throws ErrorDoNotRetry when DIALECTIC_SAVERESPONSE_URL is missing', () => {
+    delete process.env['DIALECTIC_SAVERESPONSE_URL'];
+    expect(() => createAiStreamDeps()).toThrow();
+    try {
+      createAiStreamDeps();
+    } catch (error: unknown) {
+      expect(error).toBeInstanceOf(ErrorDoNotRetry);
+    }
+  });
+
+  it('throws ErrorDoNotRetry when DIALECTIC_SAVERESPONSE_URL is empty', () => {
+    process.env['DIALECTIC_SAVERESPONSE_URL'] = '';
+    expect(() => createAiStreamDeps()).toThrow();
+    try {
+      createAiStreamDeps();
+    } catch (error: unknown) {
+      expect(error).toBeInstanceOf(ErrorDoNotRetry);
+    }
+  });
+
+  it('returns valid AiStreamDeps when all env vars are set', () => {
+    const deps = createAiStreamDeps();
+    expect(isAiStreamDeps(deps)).toBe(true);
+    expect(deps.saveResponseUrl).toBe('http://test/saveResponse');
+    expect(typeof deps.getApiKey).toBe('function');
+    expect(typeof deps.providerMap).toBe('object');
+  });
+
+  it('getApiKey returns OPENAI_API_KEY for openai- prefix', () => {
+    const deps = createAiStreamDeps();
+    const key: string = deps.getApiKey('openai-gpt-4o');
+    expect(key).toBe('sk-test-openai');
+  });
+
+  it('getApiKey returns ANTHROPIC_API_KEY for anthropic- prefix', () => {
+    const deps = createAiStreamDeps();
+    const key: string = deps.getApiKey('anthropic-claude-3-5-sonnet');
+    expect(key).toBe('sk-test-anthropic');
+  });
+
+  it('getApiKey returns GOOGLE_API_KEY for google- prefix', () => {
+    const deps = createAiStreamDeps();
+    const key: string = deps.getApiKey('google-gemini-2-5-pro');
+    expect(key).toBe('test-google-key');
+  });
+
+  it('getApiKey throws ErrorDoNotRetry when OPENAI_API_KEY is missing', () => {
+    delete process.env['OPENAI_API_KEY'];
+    const deps = createAiStreamDeps();
+    expect(() => deps.getApiKey('openai-gpt-4o')).toThrow();
+    try {
+      deps.getApiKey('openai-gpt-4o');
+    } catch (error: unknown) {
+      expect(error).toBeInstanceOf(ErrorDoNotRetry);
+    }
+  });
+
+  it('getApiKey throws ErrorDoNotRetry when ANTHROPIC_API_KEY is missing', () => {
+    delete process.env['ANTHROPIC_API_KEY'];
+    const deps = createAiStreamDeps();
+    expect(() => deps.getApiKey('anthropic-claude-3-5-sonnet')).toThrow();
+    try {
+      deps.getApiKey('anthropic-claude-3-5-sonnet');
+    } catch (error: unknown) {
+      expect(error).toBeInstanceOf(ErrorDoNotRetry);
+    }
+  });
+
+  it('getApiKey throws ErrorDoNotRetry when GOOGLE_API_KEY is missing', () => {
+    delete process.env['GOOGLE_API_KEY'];
+    const deps = createAiStreamDeps();
+    expect(() => deps.getApiKey('google-gemini-2-5-pro')).toThrow();
+    try {
+      deps.getApiKey('google-gemini-2-5-pro');
+    } catch (error: unknown) {
+      expect(error).toBeInstanceOf(ErrorDoNotRetry);
+    }
+  });
+
+  it('getApiKey throws ErrorDoNotRetry for unknown api_identifier prefix', () => {
+    const deps = createAiStreamDeps();
+    expect(() => deps.getApiKey('mistral-7b')).toThrow();
+    try {
+      deps.getApiKey('mistral-7b');
+    } catch (error: unknown) {
+      expect(error).toBeInstanceOf(ErrorDoNotRetry);
+    }
   });
 });

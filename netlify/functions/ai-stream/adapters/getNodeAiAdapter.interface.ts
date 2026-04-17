@@ -1,4 +1,8 @@
-import type { AiAdapter, NodeProviderMap } from './ai-adapter.interface.ts';
+import type {
+  AiAdapter,
+  NodeModelConfig,
+  NodeProviderMap,
+} from './ai-adapter.interface.ts';
 
 export interface GetNodeAiAdapterDeps {
   providerMap: NodeProviderMap;
@@ -7,6 +11,7 @@ export interface GetNodeAiAdapterDeps {
 export interface GetNodeAiAdapterParams {
   apiIdentifier: string;
   apiKey: string;
+  modelConfig: NodeModelConfig;
 }
 
 export type GetNodeAiAdapterFn = (

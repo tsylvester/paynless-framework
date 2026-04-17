@@ -2,86 +2,230 @@ import Anthropic from '@anthropic-ai/sdk';
 import type { MessageParam } from '@anthropic-ai/sdk/resources/messages';
 import type {
   AiAdapter,
-  AiAdapterParams,
-  AiAdapterResult,
-  NodeTokenUsage,
+  NodeAdapterConstructorParams,
+  NodeAdapterStreamChunk,
+  NodeChatApiRequest,
+  NodeChatMessage,
+  NodeModelConfig,
+  NodeOutboundDocument,
 } from '../ai-adapter.interface.ts';
-import {
-  isAnthropicMessageDeltaEvent,
-  isAnthropicMessageStartEvent,
-  isAnthropicTextDeltaEvent,
-} from './anthropic.guard.ts';
 
-export function createAnthropicNodeAdapter(): AiAdapter {
-  const adapter: AiAdapter = {
-    stream: async (params: AiAdapterParams): Promise<AiAdapterResult> => {
-      const client: Anthropic = new Anthropic({ apiKey: params.apiKey });
+function prepareAnthropicRequest(
+  request: NodeChatApiRequest,
+  modelIdentifier: string,
+  modelConfig: NodeModelConfig,
+): {
+  modelApiName: string;
+  systemPrompt: string;
+  anthropicMessages: MessageParam[];
+  maxTokensForPayload: number | undefined;
+} {
+  const modelApiName: string = modelIdentifier.replace(/^anthropic-/i, '');
 
-      const outbound: MessageParam[] = [];
-      for (const msg of params.chatApiRequest.messages) {
-        if (msg.role === 'user' || msg.role === 'assistant') {
-          const entry: MessageParam = {
-            role: msg.role,
-            content: msg.content,
+  let systemPrompt: string = '';
+  const anthropicMessages: MessageParam[] = [];
+  const combinedMessages: NodeChatMessage[] = [...(request.messages ?? [])];
+  combinedMessages.push({ role: 'user', content: request.message });
+
+  const preliminaryMessages: { role: 'user' | 'assistant'; content: string }[] = [];
+  for (const message of combinedMessages) {
+    if (message.role === 'system' && message.content) {
+      systemPrompt = message.content;
+    } else if (
+      (message.role === 'user' || message.role === 'assistant') &&
+      message.content
+    ) {
+      const lastMessage: { role: 'user' | 'assistant'; content: string } | undefined =
+        preliminaryMessages[preliminaryMessages.length - 1];
+      if (lastMessage !== undefined && lastMessage.role === message.role) {
+        lastMessage.content += `\n\n${message.content}`;
+      } else {
+        preliminaryMessages.push({ role: message.role, content: message.content });
+      }
+    }
+  }
+
+  let expectedRole: 'user' | 'assistant' = 'user';
+  for (const message of preliminaryMessages) {
+    if (message.role === expectedRole) {
+      anthropicMessages.push({
+        role: message.role,
+        content: [{ type: 'text', text: message.content }],
+      });
+      expectedRole = expectedRole === 'user' ? 'assistant' : 'user';
+    }
+  }
+
+  if (request.resourceDocuments !== undefined && request.resourceDocuments.length > 0) {
+    for (const doc of request.resourceDocuments) {
+      if (typeof doc.document_key === 'string' && typeof doc.stage_slug === 'string') {
+        const document_key: string = doc.document_key;
+        const stage_slug: string = doc.stage_slug;
+        if (document_key.length === 0 || stage_slug.length === 0) {
+          throw new Error(
+            `Invalid resource document: document_key and stage_slug must be non-empty strings (id=${doc.id})`,
+          );
+        }
+      }
+    }
+    const documentBlocks: MessageParam['content'] = request.resourceDocuments.map(
+      (doc: NodeOutboundDocument) => {
+        if (
+          typeof doc.document_key === 'string' &&
+          typeof doc.stage_slug === 'string' &&
+          doc.document_key.length > 0 &&
+          doc.stage_slug.length > 0
+        ) {
+          const document_key: string = doc.document_key;
+          const stage_slug: string = doc.stage_slug;
+          return {
+            type: 'document',
+            source: { type: 'text', media_type: 'text/plain', data: doc.content },
+            title: document_key,
+            context: stage_slug,
           };
-          outbound.push(entry);
         }
-      }
-
-      const streamPayload: {
-        model: string;
-        max_tokens: number;
-        messages: MessageParam[];
-        system?: string;
-      } = {
-        model: params.modelConfig.model_identifier,
-        max_tokens: params.modelConfig.max_tokens,
-        messages: outbound,
-      };
-      if (params.chatApiRequest.system !== undefined) {
-        streamPayload.system = params.chatApiRequest.system;
-      }
-
-      const stream = await client.messages.stream(streamPayload);
-
-      let assembled_content: string = '';
-      let inputCount: number | undefined;
-      let outputCount: number | undefined;
-
-      for await (const event of stream) {
-        if (isAnthropicMessageStartEvent(event)) {
-          const startUsage: number = event.message.usage.input_tokens;
-          inputCount = startUsage;
-          continue;
-        }
-        if (isAnthropicTextDeltaEvent(event)) {
-          const piece: string = event.delta.text;
-          assembled_content = assembled_content + piece;
-          continue;
-        }
-        if (isAnthropicMessageDeltaEvent(event)) {
-          const out: number = event.usage.output_tokens;
-          outputCount = out;
-          continue;
-        }
-      }
-
-      let token_usage: NodeTokenUsage | null = null;
-      if (inputCount !== undefined && outputCount !== undefined) {
-        const usage: NodeTokenUsage = {
-          prompt_tokens: inputCount,
-          completion_tokens: outputCount,
-          total_tokens: inputCount + outputCount,
+        return {
+          type: 'document',
+          source: { type: 'text', media_type: 'text/plain', data: doc.content },
+          title: doc.id,
         };
-        token_usage = usage;
-      }
-
-      const result: AiAdapterResult = {
-        assembled_content,
-        token_usage,
+      },
+    );
+    const firstUserIndex: number = anthropicMessages.findIndex((m) => {
+      return m.role === 'user';
+    });
+    if (firstUserIndex >= 0) {
+      const first: MessageParam = anthropicMessages[firstUserIndex];
+      const existingContent: MessageParam['content'] = Array.isArray(first.content)
+        ? first.content
+        : [{ type: 'text', text: typeof first.content === 'string' ? first.content : '' }];
+      anthropicMessages[firstUserIndex] = {
+        ...first,
+        content: [...documentBlocks, ...existingContent],
       };
-      return result;
+    }
+  }
+
+  if (anthropicMessages.length === 0) {
+    throw new Error('Cannot send request to Anthropic: No valid messages to send.');
+  }
+
+  const lastRole: MessageParam['role'] = anthropicMessages[anthropicMessages.length - 1].role;
+  if (lastRole !== 'user') {
+    throw new Error('Cannot send request to Anthropic: message history format invalid.');
+  }
+
+  const maxTokensForPayload: number | undefined =
+    typeof request.max_tokens_to_generate === 'number'
+      ? request.max_tokens_to_generate
+      : typeof modelConfig.hard_cap_output_tokens === 'number'
+        ? modelConfig.hard_cap_output_tokens
+        : undefined;
+
+  return {
+    modelApiName,
+    systemPrompt,
+    anthropicMessages,
+    maxTokensForPayload,
+  };
+}
+
+function mapAnthropicStreamStopReason(
+  stopReason: string | null | undefined,
+): string {
+  if (stopReason === null || stopReason === undefined) {
+    return 'unknown';
+  }
+  if (stopReason === 'end_turn' || stopReason === 'stop_sequence') {
+    return 'stop';
+  }
+  if (stopReason === 'max_tokens') {
+    return 'max_tokens';
+  }
+  if (stopReason === 'tool_use') {
+    return 'tool_use';
+  }
+  return 'unknown';
+}
+
+export function createAnthropicNodeAdapter(
+  params: NodeAdapterConstructorParams,
+): AiAdapter {
+  const modelConfig: NodeModelConfig = params.modelConfig;
+  const client: Anthropic = new Anthropic({ apiKey: params.apiKey });
+
+  return {
+    async *sendMessageStream(
+      request: NodeChatApiRequest,
+      apiIdentifier: string,
+    ): AsyncGenerator<NodeAdapterStreamChunk> {
+      const prepared: {
+        modelApiName: string;
+        systemPrompt: string;
+        anthropicMessages: MessageParam[];
+        maxTokensForPayload: number | undefined;
+      } = prepareAnthropicRequest(request, apiIdentifier, modelConfig);
+
+      const modelApiName: string = prepared.modelApiName;
+      const systemPrompt: string = prepared.systemPrompt;
+      const anthropicMessages: MessageParam[] = prepared.anthropicMessages;
+      const maxTokensForPayload: number | undefined = prepared.maxTokensForPayload;
+
+      try {
+        if (maxTokensForPayload === undefined) {
+          throw new Error('AnthropicAdapter: No max tokens for payload');
+        }
+
+        const stream = client.messages.stream({
+          model: modelApiName,
+          system: systemPrompt,
+          messages: anthropicMessages,
+          max_tokens: maxTokensForPayload,
+        });
+
+        for await (const event of stream) {
+          if (
+            event.type === 'content_block_delta' &&
+            event.delta.type === 'text_delta'
+          ) {
+            const textDelta: NodeAdapterStreamChunk = {
+              type: 'text_delta',
+              text: event.delta.text,
+            };
+            yield textDelta;
+          }
+        }
+
+        const response = await stream.finalMessage();
+        const inputTokens: number = response.usage.input_tokens;
+        const outputTokens: number = response.usage.output_tokens;
+        const usageChunk: NodeAdapterStreamChunk = {
+          type: 'usage',
+          tokenUsage: {
+            prompt_tokens: inputTokens,
+            completion_tokens: outputTokens,
+            total_tokens: inputTokens + outputTokens,
+          },
+        };
+        yield usageChunk;
+
+        const finishReason: string = mapAnthropicStreamStopReason(response.stop_reason);
+        const doneChunk: NodeAdapterStreamChunk = {
+          type: 'done',
+          finish_reason: finishReason,
+        };
+        yield doneChunk;
+      } catch (error) {
+        if (error instanceof Anthropic.APIError) {
+          const statusPart: string =
+            error.status === undefined ? 'unknown' : String(error.status);
+          throw new Error(
+            `Anthropic API request failed: ${statusPart} ${error.name}`,
+          );
+        }
+        throw error;
+      }
     },
   };
-  return adapter;
 }

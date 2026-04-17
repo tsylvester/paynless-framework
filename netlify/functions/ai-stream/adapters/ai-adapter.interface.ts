@@ -1,18 +1,34 @@
+export type NodeChatRole = 'user' | 'assistant' | 'system';
+
 export interface NodeChatMessage {
-  role: 'user' | 'assistant' | 'system';
+  role: NodeChatRole;
   content: string;
 }
 
+export interface NodeOutboundDocument {
+  id: string;
+  content: string;
+  document_key?: string;
+  stage_slug?: string;
+}
+
 export interface NodeChatApiRequest {
-  messages: NodeChatMessage[];
-  model: string;
-  max_tokens: number;
-  system?: string;
+  message: string;
+  messages?: NodeChatMessage[];
+  resourceDocuments?: NodeOutboundDocument[];
+  max_tokens_to_generate?: number;
+  providerId: string;
+  promptId: string;
 }
 
 export interface NodeModelConfig {
-  model_identifier: string;
-  max_tokens: number;
+  api_identifier: string;
+  provider_max_input_tokens?: number;
+  context_window_tokens?: number | null;
+  hard_cap_output_tokens?: number;
+  provider_max_output_tokens?: number;
+  input_token_cost_rate: number | null;
+  output_token_cost_rate: number | null;
 }
 
 export interface NodeTokenUsage {
@@ -21,21 +37,40 @@ export interface NodeTokenUsage {
   total_tokens: number;
 }
 
-export interface AiAdapterParams {
-  chatApiRequest: NodeChatApiRequest;
+export interface NodeAdapterStreamChunkTextDelta {
+  type: 'text_delta';
+  text: string;
+}
+
+export interface NodeAdapterStreamChunkUsage {
+  type: 'usage';
+  tokenUsage: NodeTokenUsage;
+}
+
+export interface NodeAdapterStreamChunkDone {
+  type: 'done';
+  finish_reason: string;
+}
+
+export type NodeAdapterStreamChunk =
+  | NodeAdapterStreamChunkTextDelta
+  | NodeAdapterStreamChunkUsage
+  | NodeAdapterStreamChunkDone;
+
+export interface NodeAdapterConstructorParams {
   modelConfig: NodeModelConfig;
   apiKey: string;
 }
 
-export interface AiAdapterResult {
-  assembled_content: string;
-  token_usage: NodeTokenUsage | null;
-}
-
 export interface AiAdapter {
-  stream(params: AiAdapterParams): Promise<AiAdapterResult>;
+  sendMessageStream(
+    request: NodeChatApiRequest,
+    apiIdentifier: string,
+  ): AsyncGenerator<NodeAdapterStreamChunk>;
 }
 
-export type NodeAdapterFactory = (apiKey: string) => AiAdapter;
+export type NodeAdapterFactory = (
+  params: NodeAdapterConstructorParams,
+) => AiAdapter;
 
 export type NodeProviderMap = Record<string, NodeAdapterFactory>;

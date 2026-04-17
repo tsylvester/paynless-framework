@@ -1,103 +1,105 @@
 import type {
-  AnthropicMessageDeltaEvent,
-  AnthropicMessageStartEvent,
-  AnthropicTextDeltaEvent,
+  AnthropicContentBlockDeltaEvent,
+  AnthropicFinalMessage,
+  AnthropicStopReason,
+  AnthropicTextDelta,
+  AnthropicUsage,
 } from './anthropic.interface.ts';
+import { isPlainRecord } from '../getNodeAiAdapter.guard.ts';
 
-export function isAnthropicMessageStartEvent(
-  v: unknown,
-): v is AnthropicMessageStartEvent {
-  if (v === null || typeof v !== 'object' || Array.isArray(v)) {
+function isNonNegativeInteger(value: unknown): boolean {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0;
+}
+
+export function isAnthropicStopReason(v: unknown): v is AnthropicStopReason {
+  if (typeof v !== 'string') {
     return false;
   }
-  const typeUnknown: unknown = Reflect.get(v, 'type');
-  if (typeUnknown !== 'message_start') {
+  if (v === 'end_turn') {
+    return true;
+  }
+  if (v === 'stop_sequence') {
+    return true;
+  }
+  if (v === 'max_tokens') {
+    return true;
+  }
+  if (v === 'tool_use') {
+    return true;
+  }
+  return false;
+}
+
+export function isAnthropicTextDelta(v: unknown): v is AnthropicTextDelta {
+  if (!isPlainRecord(v)) {
     return false;
   }
-  if (!('message' in v)) {
+  if (!('type' in v)) {
     return false;
   }
-  const message: unknown = Reflect.get(v, 'message');
-  if (message === null || typeof message !== 'object' || Array.isArray(message)) {
+  if (!('text' in v)) {
     return false;
   }
-  if (!('usage' in message)) {
+  const typeValue: unknown = v['type'];
+  const textValue: unknown = v['text'];
+  if (typeValue !== 'text_delta') {
     return false;
   }
-  const usage: unknown = Reflect.get(message, 'usage');
-  if (usage === null || typeof usage !== 'object' || Array.isArray(usage)) {
-    return false;
-  }
-  if (!('input_tokens' in usage)) {
-    return false;
-  }
-  const inputTokens: unknown = Reflect.get(usage, 'input_tokens');
-  if (typeof inputTokens !== 'number') {
-    return false;
-  }
-  if (!Number.isInteger(inputTokens) || inputTokens < 0) {
+  if (typeof textValue !== 'string') {
     return false;
   }
   return true;
 }
 
-export function isAnthropicTextDeltaEvent(
+export function isAnthropicContentBlockDeltaEvent(
   v: unknown,
-): v is AnthropicTextDeltaEvent {
-  if (v === null || typeof v !== 'object' || Array.isArray(v)) {
+): v is AnthropicContentBlockDeltaEvent {
+  if (!isPlainRecord(v)) {
     return false;
   }
-  const typeUnknown: unknown = Reflect.get(v, 'type');
-  if (typeUnknown !== 'content_block_delta') {
+  if (!('type' in v)) {
     return false;
   }
   if (!('delta' in v)) {
     return false;
   }
-  const delta: unknown = Reflect.get(v, 'delta');
-  if (delta === null || typeof delta !== 'object' || Array.isArray(delta)) {
+  const typeValue: unknown = v['type'];
+  if (typeValue !== 'content_block_delta') {
     return false;
   }
-  const deltaType: unknown = Reflect.get(delta, 'type');
-  if (deltaType !== 'text_delta') {
+  const deltaValue: unknown = v['delta'];
+  return isAnthropicTextDelta(deltaValue);
+}
+
+export function isAnthropicUsage(v: unknown): v is AnthropicUsage {
+  if (!isPlainRecord(v)) {
     return false;
   }
-  if (!('text' in delta)) {
-    return false;
-  }
-  const text: unknown = Reflect.get(delta, 'text');
-  if (typeof text !== 'string') {
+  const inputTokens: unknown = v['input_tokens'];
+  const outputTokens: unknown = v['output_tokens'];
+  if (!isNonNegativeInteger(inputTokens) || !isNonNegativeInteger(outputTokens)) {
     return false;
   }
   return true;
 }
 
-export function isAnthropicMessageDeltaEvent(
-  v: unknown,
-): v is AnthropicMessageDeltaEvent {
-  if (v === null || typeof v !== 'object' || Array.isArray(v)) {
-    return false;
-  }
-  const typeUnknown: unknown = Reflect.get(v, 'type');
-  if (typeUnknown !== 'message_delta') {
+export function isAnthropicFinalMessage(v: unknown): v is AnthropicFinalMessage {
+  if (!isPlainRecord(v)) {
     return false;
   }
   if (!('usage' in v)) {
     return false;
   }
-  const usage: unknown = Reflect.get(v, 'usage');
-  if (usage === null || typeof usage !== 'object' || Array.isArray(usage)) {
+  if (!('stop_reason' in v)) {
     return false;
   }
-  if (!('output_tokens' in usage)) {
+  const usageValue: unknown = v['usage'];
+  if (!isAnthropicUsage(usageValue)) {
     return false;
   }
-  const outputTokens: unknown = Reflect.get(usage, 'output_tokens');
-  if (typeof outputTokens !== 'number') {
-    return false;
+  const stopReasonValue: unknown = v['stop_reason'];
+  if (stopReasonValue === null) {
+    return true;
   }
-  if (!Number.isInteger(outputTokens) || outputTokens < 0) {
-    return false;
-  }
-  return true;
+  return isAnthropicStopReason(stopReasonValue);
 }
