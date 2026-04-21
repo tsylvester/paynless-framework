@@ -1,7 +1,6 @@
 
 import { isRecord } from '../../_shared/utils/type-guards/type_guards.common.ts';
 import {
-  isDialecticContribution,
   isDialecticJobRow,
   isDialecticSessionRow,
   isInputRuleArray,
@@ -42,8 +41,7 @@ export function isPrepareModelJobDeps(value: unknown): value is PrepareModelJobD
     'validateWalletBalance',
     'validateModelCostRates',
     'calculateAffordability',
-    'executeModelCallAndSave',
-    'enqueueRenderJob',
+    'enqueueModelCall',
   ];
   for (const key of keys) {
     if (!(key in value)) {
@@ -74,10 +72,7 @@ export function isPrepareModelJobDeps(value: unknown): value is PrepareModelJobD
   if (typeof value.calculateAffordability !== 'function') {
     return false;
   }
-  if (typeof value.executeModelCallAndSave !== 'function') {
-    return false;
-  }
-  if (typeof value.enqueueRenderJob !== 'function') {
+  if (typeof value.enqueueModelCall !== 'function') {
     return false;
   }
   return true;
@@ -175,20 +170,7 @@ export function isPrepareModelJobSuccessReturn(
   if (!isRecord(value)) {
     return false;
   }
-  if ('error' in value) {
-    return false;
-  }
-  if (!('contribution' in value) || !isDialecticContribution(value.contribution)) {
-    return false;
-  }
-  if (!('needsContinuation' in value) || typeof value.needsContinuation !== 'boolean') {
-    return false;
-  }
-  if (!('renderJobId' in value)) {
-    return false;
-  }
-  const renderJobId = value.renderJobId;
-  if (renderJobId !== null && typeof renderJobId !== 'string') {
+  if (!('queued' in value) || value.queued !== true) {
     return false;
   }
   return true;

@@ -10,6 +10,7 @@ import {
     INotificationContext,
     IExecuteModelCallContext,
     IPrepareModelJobContext,
+    ISaveResponseContext,
     IPlanJobContext,
     IRenderJobContext,
     IJobContext,
@@ -124,9 +125,16 @@ export function isIPrepareModelJobContext(value: unknown): value is IPrepareMode
         'validateModelCostRates' in value && typeof value.validateModelCostRates === 'function' &&
         'ragService' in value && typeof value.ragService === 'object' && value.ragService !== null &&
         'embeddingClient' in value && typeof value.embeddingClient === 'object' && value.embeddingClient !== null &&
-        'executeModelCallAndSave' in value && typeof value.executeModelCallAndSave === 'function' &&
-        'enqueueRenderJob' in value && typeof value.enqueueRenderJob === 'function' &&
+        'enqueueModelCall' in value && typeof value.enqueueModelCall === 'function' &&
         'calculateAffordability' in value && typeof value.calculateAffordability === 'function'
+    );
+}
+
+export function isISaveResponseContext(value: unknown): value is ISaveResponseContext {
+    if (!isRecord(value)) return false;
+
+    return (
+        'enqueueRenderJob' in value && typeof value.enqueueRenderJob === 'function'
     );
 }
 

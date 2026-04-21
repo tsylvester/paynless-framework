@@ -41,8 +41,8 @@ import {
 } from '../../_shared/utils/determineContinuation/determineContinuation.interface.ts';
 import { BuildUploadContextParams } from '../../_shared/utils/buildUploadContext/buildUploadContext.interface.ts';
 import { BoundDebitTokens, DebitTokens } from '../../_shared/utils/debitTokens.interface.ts';
-import { BoundExecuteModelCallAndSaveFn } from '../executeModelCallAndSave/executeModelCallAndSave.interface.ts';
 import { BoundEnqueueRenderJobFn } from '../enqueueRenderJob/enqueueRenderJob.interface.ts';
+import { BoundEnqueueModelCallFn } from '../enqueueModelCall/enqueueModelCall.interface.ts';
 import { BoundCalculateAffordabilityFn } from '../calculateAffordability/calculateAffordability.interface.ts';
 import { PrepareModelJobParams, PrepareModelJobPayload, PrepareModelJobReturn } from '../prepareModelJob/prepareModelJob.interface.ts';
 import { GatherArtifactsParams, GatherArtifactsPayload, GatherArtifactsReturn } from '../gatherArtifacts/gatherArtifacts.interface.ts';
@@ -227,6 +227,8 @@ export interface IExecuteModelCallContext {
  * 11 fields, no base context extensions — cherry-picks only what Zones A-D actually call
  * plus 3 pre-bound orchestrator closures (`compressPrompt` is bound only inside the slicer, not on this slice).
  * Constructed by createPrepareModelJobContext slicer from IJobContext raw fields + pre-bound closures.
+ * enqueueModelCall replaces the old executeModelCallAndSave direct invocation — the front-half
+ * enqueues to Netlify rather than executing inline; enqueueRenderJob is NOT part of this slice.
  */
 export interface IPrepareModelJobContext {
     readonly logger: ILogger;
@@ -237,9 +239,18 @@ export interface IPrepareModelJobContext {
     readonly validateModelCostRates: ValidateModelCostRatesFn;
     readonly ragService: IRagService;
     readonly embeddingClient: IEmbeddingClient;
-    readonly executeModelCallAndSave: BoundExecuteModelCallAndSaveFn;
-    readonly enqueueRenderJob: BoundEnqueueRenderJobFn;
+    readonly enqueueModelCall: BoundEnqueueModelCallFn;
     readonly calculateAffordability: BoundCalculateAffordabilityFn;
+}
+
+/**
+ * Context slice for the back-half of the split EMCAS architecture (saveResponse).
+ * The back-half receives the completed AI response from the Netlify workload and persists it.
+ * enqueueRenderJob lives here because render dispatch happens after contribution is saved,
+ * not before the AI call is issued.
+ */
+export interface ISaveResponseContext {
+    readonly enqueueRenderJob: BoundEnqueueRenderJobFn;
 }
 
 /**

@@ -20,11 +20,11 @@ import type {
   InputRule,
   PromptConstructionPayload,
 } from "../../dialectic-service/dialectic.interface.ts";
-import type { BoundExecuteModelCallAndSaveFn } from "../executeModelCallAndSave/executeModelCallAndSave.interface.ts";
-import { isExecuteModelCallAndSavePayload } from "../executeModelCallAndSave/executeModelCallAndSave.interface.guard.ts";
-import { createMockDialecticContributionRow } from "../executeModelCallAndSave/executeModelCallAndSave.mock.ts";
+import type { BoundEnqueueModelCallFn } from "../enqueueModelCall/enqueueModelCall.interface.ts";
+import {
+  isEnqueueModelCallPayload,
+} from "../enqueueModelCall/enqueueModelCall.guard.ts";
 import { buildResourceDocument } from "../compressPrompt/compressPrompt.mock.ts";
-import type { BoundEnqueueRenderJobFn } from "../enqueueRenderJob/enqueueRenderJob.interface.ts";
 import { prepareModelJob } from "./prepareModelJob.ts";
 import type {
   PrepareModelJobDeps,
@@ -33,16 +33,13 @@ import type {
 } from "./prepareModelJob.interface.ts";
 import { isPrepareModelJobSuccessReturn } from "./prepareModelJob.guard.ts";
 import {
-  buildAiProviderRow,
-  buildDefaultAiProvidersRow,
-  buildDialecticJobRow,
-  buildDialecticSessionRow,
-  buildExecuteJobPayload,
-  buildExtendedModelFixture,
-  buildPrepareModelJobDeps,
-  buildPromptConstructionPayload,
-  buildTokenWalletRow,
-  contractCompressionStrategy,
+  mockAiProvidersRow,
+  mockDialecticExecuteJobPayload,
+  mockDialecticJobRow,
+  mockDialecticSessionRow,
+  mockPrepareModelJobDeps,
+  mockPromptConstructionPayload,
+  mockTokenWalletRow,
 } from "./prepareModelJob.mock.ts";
 
 Deno.test(
@@ -53,54 +50,45 @@ Deno.test(
         ai_providers: {
           select: () =>
             Promise.resolve({
-              data: [buildAiProviderRow(buildExtendedModelFixture())],
+              data: [mockAiProvidersRow()],
               error: null,
             }),
         },
         token_wallets: {
           select: () =>
             Promise.resolve({
-              data: [buildTokenWalletRow({})],
+              data: [mockTokenWalletRow()],
               error: null,
             }),
         },
       },
     });
     const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
-    const executePayload: DialecticExecuteJobPayload = buildExecuteJobPayload();
-    const job: DialecticJobRow = buildDialecticJobRow(executePayload);
+    const executePayload: DialecticExecuteJobPayload = mockDialecticExecuteJobPayload();
+    const job: DialecticJobRow = mockDialecticJobRow(executePayload);
     const params: PrepareModelJobParams = {
       dbClient,
       authToken: "jwt.contract",
       job,
       projectOwnerUserId: "owner-contract",
-      providerRow: buildDefaultAiProvidersRow(),
-      sessionData: buildDialecticSessionRow(),
+      providerRow: mockAiProvidersRow(),
+      sessionData: mockDialecticSessionRow(),
     };
     const inputsRequiredOptionalFeedback: InputRule[] = [
       { type: "feedback", document_key: FileType.UserFeedback, required: false, slug: "thesis" },
     ];
     const preparePayload: PrepareModelJobPayload = {
-      promptConstructionPayload: buildPromptConstructionPayload(),
-      compressionStrategy: contractCompressionStrategy,
+      promptConstructionPayload: mockPromptConstructionPayload(),
+      compressionStrategy: async () => [],
       inputsRequired: inputsRequiredOptionalFeedback,
     };
-    const emcas: Spy<BoundExecuteModelCallAndSaveFn> = spy(async () => ({
-      contribution: createMockDialecticContributionRow(),
-      needsContinuation: false,
-      stageRelationshipForStage: undefined,
-      documentKey: undefined,
-      fileType: FileType.HeaderContext,
-      storageFileType: FileType.ModelContributionRawJson,
-    }));
-    const enqueue: Spy<BoundEnqueueRenderJobFn> = spy(async () => ({ renderJobId: null }));
-    const deps: PrepareModelJobDeps = buildPrepareModelJobDeps({
-      executeModelCallAndSave: emcas,
-      enqueueRenderJob: enqueue,
+    const enqueueModelCallSpy: Spy<BoundEnqueueModelCallFn> = spy(async () => ({ queued: true}));
+    const deps: PrepareModelJobDeps = mockPrepareModelJobDeps({
+      enqueueModelCall: enqueueModelCallSpy,
     });
     const result: unknown = await prepareModelJob(deps, params, preparePayload);
     assertEquals(isPrepareModelJobSuccessReturn(result), true);
-    assert(emcas.calls.length >= 1, "executeModelCallAndSave should be invoked");
+    assert(enqueueModelCallSpy.calls.length >= 1, "enqueueModelCall should be invoked");
   },
 );
 
@@ -112,29 +100,29 @@ Deno.test(
         ai_providers: {
           select: () =>
             Promise.resolve({
-              data: [buildAiProviderRow(buildExtendedModelFixture())],
+              data: [mockAiProvidersRow()],
               error: null,
             }),
         },
         token_wallets: {
           select: () =>
             Promise.resolve({
-              data: [buildTokenWalletRow({})],
+              data: [mockTokenWalletRow()],
               error: null,
             }),
         },
       },
     });
     const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
-    const executePayload: DialecticExecuteJobPayload = buildExecuteJobPayload();
-    const job: DialecticJobRow = buildDialecticJobRow(executePayload);
+    const executePayload: DialecticExecuteJobPayload = mockDialecticExecuteJobPayload();
+    const job: DialecticJobRow = mockDialecticJobRow(executePayload);
     const params: PrepareModelJobParams = {
       dbClient,
       authToken: "jwt.contract",
       job,
       projectOwnerUserId: "owner-contract",
-      providerRow: buildDefaultAiProvidersRow(),
-      sessionData: buildDialecticSessionRow(),
+      providerRow: mockAiProvidersRow(),
+      sessionData: mockDialecticSessionRow(),
     };
     const identityDoc: ResourceDocument = buildResourceDocument({
       id: "doc-identity-1",
@@ -155,30 +143,21 @@ Deno.test(
     ];
     const preparePayload: PrepareModelJobPayload = {
       promptConstructionPayload,
-      compressionStrategy: contractCompressionStrategy,
+      compressionStrategy: async () => [],
       inputsRequired: inputsRequiredRendered,
     };
-    const emcas: Spy<BoundExecuteModelCallAndSaveFn> = spy(async () => ({
-      contribution: createMockDialecticContributionRow(),
-      needsContinuation: false,
-      stageRelationshipForStage: undefined,
-      documentKey: undefined,
-      fileType: FileType.HeaderContext,
-      storageFileType: FileType.ModelContributionRawJson,
-    }));
-    const enqueue: Spy<BoundEnqueueRenderJobFn> = spy(async () => ({ renderJobId: null }));
-    const deps: PrepareModelJobDeps = buildPrepareModelJobDeps({
-      executeModelCallAndSave: emcas,
-      enqueueRenderJob: enqueue,
+    const enqueueModelCallSpy: Spy<BoundEnqueueModelCallFn> = spy(async () => ({ queued: true}));
+    const deps: PrepareModelJobDeps = mockPrepareModelJobDeps({
+      enqueueModelCall: enqueueModelCallSpy,
     });
     const result: unknown = await prepareModelJob(deps, params, preparePayload);
     assertEquals(isPrepareModelJobSuccessReturn(result), true);
-    assertEquals(emcas.calls.length, 1);
-    const first = emcas.calls[0];
+    assertEquals(enqueueModelCallSpy.calls.length, 1);
+    const first = enqueueModelCallSpy.calls[0];
     assertExists(first);
     const payloadArg: unknown = first.args[1];
-    if (!isExecuteModelCallAndSavePayload(payloadArg)) {
-      throw new Error("expected ExecuteModelCallAndSavePayload");
+    if (!isEnqueueModelCallPayload(payloadArg)) {
+      throw new Error("expected EnqueueModelCallPayload");
     }
     const sent: ChatApiRequest = payloadArg.chatApiRequest;
     if (!isChatApiRequest(sent)) {
@@ -207,29 +186,29 @@ Deno.test(
         ai_providers: {
           select: () =>
             Promise.resolve({
-              data: [buildAiProviderRow(buildExtendedModelFixture())],
+              data: [mockAiProvidersRow()],
               error: null,
             }),
         },
         token_wallets: {
           select: () =>
             Promise.resolve({
-              data: [buildTokenWalletRow({})],
+              data: [mockTokenWalletRow()],
               error: null,
             }),
         },
       },
     });
     const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
-    const executePayload: DialecticExecuteJobPayload = buildExecuteJobPayload();
-    const job: DialecticJobRow = buildDialecticJobRow(executePayload);
+    const executePayload: DialecticExecuteJobPayload = mockDialecticExecuteJobPayload();
+    const job: DialecticJobRow = mockDialecticJobRow(executePayload);
     const params: PrepareModelJobParams = {
       dbClient,
       authToken: "jwt.contract",
       job,
       projectOwnerUserId: "owner-contract",
-      providerRow: buildDefaultAiProvidersRow(),
-      sessionData: buildDialecticSessionRow(),
+      providerRow: mockAiProvidersRow(),
+      sessionData: mockDialecticSessionRow(),
     };
     const noUndefDoc: ResourceDocument = buildResourceDocument({
       id: "doc-no-undef",
@@ -250,30 +229,21 @@ Deno.test(
     ];
     const preparePayload: PrepareModelJobPayload = {
       promptConstructionPayload,
-      compressionStrategy: contractCompressionStrategy,
+      compressionStrategy: async () => [],
       inputsRequired: inputsRequiredRendered,
     };
-    const emcas: Spy<BoundExecuteModelCallAndSaveFn> = spy(async () => ({
-      contribution: createMockDialecticContributionRow(),
-      needsContinuation: false,
-      stageRelationshipForStage: undefined,
-      documentKey: undefined,
-      fileType: FileType.HeaderContext,
-      storageFileType: FileType.ModelContributionRawJson,
-    }));
-    const enqueue: Spy<BoundEnqueueRenderJobFn> = spy(async () => ({ renderJobId: null }));
-    const deps: PrepareModelJobDeps = buildPrepareModelJobDeps({
-      executeModelCallAndSave: emcas,
-      enqueueRenderJob: enqueue,
+    const enqueueModelCallSpy: Spy<BoundEnqueueModelCallFn> = spy(async () => ({ queued: true}));
+    const deps: PrepareModelJobDeps = mockPrepareModelJobDeps({
+      enqueueModelCall: enqueueModelCallSpy,
     });
     const result: unknown = await prepareModelJob(deps, params, preparePayload);
     assertEquals(isPrepareModelJobSuccessReturn(result), true);
-    assertEquals(emcas.calls.length, 1);
-    const first = emcas.calls[0];
+    assertEquals(enqueueModelCallSpy.calls.length, 1);
+    const first = enqueueModelCallSpy.calls[0];
     assertExists(first);
     const payloadArg: unknown = first.args[1];
-    if (!isExecuteModelCallAndSavePayload(payloadArg)) {
-      throw new Error("expected ExecuteModelCallAndSavePayload");
+    if (!isEnqueueModelCallPayload(payloadArg)) {
+      throw new Error("expected EnqueueModelCallPayload");
     }
     const sent: ChatApiRequest = payloadArg.chatApiRequest;
     assert(isChatApiRequest(sent), "Adapter should receive a ChatApiRequest");

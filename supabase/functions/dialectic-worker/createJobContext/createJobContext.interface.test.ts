@@ -40,10 +40,12 @@ import {
     IRagContext,
     IRenderJobContext,
     ITokenContext,
+    ISaveResponseContext,
     JobContextParams,
     BoundPrepareModelJobFn,
 } from './JobContext.interface.ts';
 import { BoundGatherArtifactsFn } from '../gatherArtifacts/gatherArtifacts.interface.ts';
+import { BoundEnqueueModelCallFn } from '../enqueueModelCall/enqueueModelCall.interface.ts';
 
 describe('JobContext.interface.ts contracts', () => {
     describe('ILoggerContext', () => {
@@ -189,10 +191,14 @@ describe('JobContext.interface.ts contracts', () => {
     });
 
     describe('IPrepareModelJobContext', () => {
-        it('requires eleven members', () => {
+        it('requires eleven members including enqueueModelCall, excluding enqueueRenderJob', () => {
             const logger = new MockLogger();
             const ragService = new MockRagService();
             const adminTokenWalletService = createMockAdminTokenWalletService().instance;
+            const enqueueModelCall: BoundEnqueueModelCallFn = async () => ({
+                error: new Error('interface test stub'),
+                retriable: false,
+            });
             const ctx: IPrepareModelJobContext = {
                 logger: logger,
                 applyInputsRequiredScope: applyInputsRequiredScope,
@@ -207,19 +213,11 @@ describe('JobContext.interface.ts contracts', () => {
                         usage: { prompt_tokens: 0, total_tokens: 0 },
                     }),
                 },
-                executeModelCallAndSave: async () => ({
-                    error: new Error('interface test stub'),
-                    retriable: false,
-                }),
-                enqueueRenderJob: async () => ({
-                    error: new Error('interface test stub'),
-                    retriable: false,
-                }),
+                enqueueModelCall: enqueueModelCall,
                 calculateAffordability: buildMockBoundCalculateAffordabilityFn(),
             };
             assertEquals(typeof ctx.calculateAffordability, 'function');
-            assertEquals(typeof ctx.executeModelCallAndSave, 'function');
-            assertEquals(typeof ctx.enqueueRenderJob, 'function');
+            assertEquals(typeof ctx.enqueueModelCall, 'function');
         });
     });
 
@@ -388,6 +386,18 @@ describe('JobContext.interface.ts contracts', () => {
             assertEquals(job.logger, params.logger);
             assertEquals(job.ragService, params.ragService);
             assertEquals(typeof job.getGranularityPlanner, 'function');
+        });
+    });
+
+    describe('ISaveResponseContext', () => {
+        it('back-half context slice includes enqueueRenderJob', () => {
+            const ctx: ISaveResponseContext = {
+                enqueueRenderJob: async () => ({
+                    error: new Error('interface test stub'),
+                    retriable: false,
+                }),
+            };
+            assertEquals(typeof ctx.enqueueRenderJob, 'function');
         });
     });
 });

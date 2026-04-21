@@ -43,16 +43,16 @@ import {
   mockJob,
   mockProviderData,
   defaultStepSlug,
-  createPrepareModelJobSuccessReturn,
+  mockPrepareModelJobSuccessReturn,
   assertPrepareModelJobTwoArgCall,
-  setupMockClient,
-  getMockDeps,
-  buildProcessSimpleJobExecutePayload,
+  mockClient,
+  mockDeps,
+  mockExecutePayload,
 } from './processSimpleJob.mock.ts';
 
 Deno.test('processSimpleJob - Happy Path', async (t) => {
-    const { client: dbClient, clearAllStubs } = setupMockClient();
-    const { promptAssembler, rootCtx } = getMockDeps();
+    const { client: dbClient, clearAllStubs } = mockClient();
+    const { promptAssembler, rootCtx } = mockDeps();
 
     const executeSpy = spy(rootCtx, 'prepareModelJob');
 
@@ -60,12 +60,12 @@ Deno.test('processSimpleJob - Happy Path', async (t) => {
         if(!isJson(mockPayload) || !isDialecticExecuteJobPayload(mockPayload)) {
             throw new Error('Test setup failed: mockPayload is not a valid DialecticExecuteJobPayload');
         }
-        await processSimpleJob(dbClient as unknown as SupabaseClient<Database>, { ...mockJob, payload: mockPayload }, 'user-789', rootCtx, 'auth-token');
+        await processSimpleJob(dbClient as unknown as SupabaseClient<Database>, mockJob({ payload: mockPayload }), 'user-789', rootCtx, 'auth-token');
 
         assertEquals(promptAssembler.assemble.calls.length, 1, 'Expected promptAssembler.assemble to be called once');
         const [assembleOptions] = promptAssembler.assemble.calls[0].args;
         assertExists(assembleOptions.job);
-        assertEquals(assembleOptions.job.id, mockJob.id);
+        assertEquals(assembleOptions.job.id, mockJob().id);
         // Ensure AssemblePromptOptions shape is correct
         assertExists(assembleOptions.project);
         assertExists(assembleOptions.session);
@@ -79,7 +79,7 @@ Deno.test('processSimpleJob - Happy Path', async (t) => {
         assertEquals(executeSpy.calls.length, 1, 'Expected prepareModelJob to be called once');
         const { params: pParams, payload: pPayload } = assertPrepareModelJobTwoArgCall(executeSpy.calls[0].args);
 
-        assertEquals(pParams.job.id, mockJob.id);
+        assertEquals(pParams.job.id, mockJob().id);
         assertEquals(pParams.providerRow.id, mockProviderData.id);
         assertEquals(pParams.authToken, 'auth-token');
         assertEquals(pParams.projectOwnerUserId, 'user-789');
@@ -94,10 +94,10 @@ Deno.test('processSimpleJob - Happy Path', async (t) => {
 
 Deno.test('processSimpleJob - emits execute_started at EXECUTE job start', async () => {
   resetMockNotificationService();
-  const { client: dbClient, clearAllStubs } = setupMockClient();
-  const { rootCtx } = getMockDeps();
+  const { client: dbClient, clearAllStubs } = mockClient();
+  const { rootCtx } = mockDeps();
 
-  const executeJob: typeof mockJob = { ...mockJob, job_type: 'EXECUTE' };
+  const executeJob: DialecticJobRow = mockJob({ job_type: 'EXECUTE' });
 
   if(!isJson(mockPayload) || !isDialecticExecuteJobPayload(mockPayload)) {
     throw new Error('Test setup failed: mockPayload is not a valid DialecticExecuteJobPayload');
@@ -128,8 +128,8 @@ Deno.test('processSimpleJob - emits execute_started at EXECUTE job start', async
 });
 
 Deno.test('processSimpleJob - Failure with Retries Remaining', async (t) => {
-    const { client: dbClient, clearAllStubs } = setupMockClient();
-    const { rootCtx } = getMockDeps();
+    const { client: dbClient, clearAllStubs } = mockClient();
+    const { rootCtx } = mockDeps();
 
     const executorStub = stub(rootCtx, 'prepareModelJob', () => {
         return Promise.resolve({ error: new Error('Executor failed'), retriable: true });
@@ -141,7 +141,7 @@ Deno.test('processSimpleJob - Failure with Retries Remaining', async (t) => {
         if(!isJson(mockPayload) || !isDialecticExecuteJobPayload(mockPayload)) {
             throw new Error('Test setup failed: mockPayload is not a valid DialecticExecuteJobPayload');
         }
-        await processSimpleJob(dbClient as unknown as SupabaseClient<Database>, { ...mockJob, payload: mockPayload }, 'user-789', rootCtx, 'auth-token');
+        await processSimpleJob(dbClient as unknown as SupabaseClient<Database>, mockJob({ payload: mockPayload }), 'user-789', rootCtx, 'auth-token');
 
         assertEquals(retryJobSpy.calls.length, 1, 'Expected retryJob to be called exactly once');
     });
@@ -151,15 +151,15 @@ Deno.test('processSimpleJob - Failure with Retries Remaining', async (t) => {
 });
 
 Deno.test('processSimpleJob - Failure with No Retries Remaining', async (t) => {
-    const { client: dbClient, spies, clearAllStubs } = setupMockClient();
-    const { rootCtx } = getMockDeps();
+    const { client: dbClient, spies, clearAllStubs } = mockClient();
+    const { rootCtx } = mockDeps();
 
     const executorStub = stub(rootCtx, 'prepareModelJob', () => {
         return Promise.resolve({ error: new Error('Executor failed consistently'), retriable: true });
     });
 
     const retryJobSpy = spy(rootCtx, 'retryJob');
-    const jobWithNoRetries: DialecticJobRow = { ...mockJob, attempt_count: 3, max_retries: 3 };
+    const jobWithNoRetries: DialecticJobRow = mockJob({ attempt_count: 3, max_retries: 3 });
 
     await t.step('should mark job as failed after exhausting all retries', async () => {
         if(!isJson(mockPayload) || !isDialecticExecuteJobPayload(mockPayload)) {
@@ -185,15 +185,15 @@ Deno.test('processSimpleJob - Failure with No Retries Remaining', async (t) => {
 
 Deno.test('processSimpleJob - emits job_failed document-centric notification on terminal failure', async () => {
   resetMockNotificationService();
-  const { client: dbClient, clearAllStubs } = setupMockClient();
-  const { rootCtx } = getMockDeps();
+  const { client: dbClient, clearAllStubs } = mockClient();
+  const { rootCtx } = mockDeps();
 
   // Force executor to fail so job reaches terminal failure path
   const executorStub = stub(rootCtx, 'prepareModelJob', () => {
     return Promise.resolve({ error: new Error('Executor failed consistently'), retriable: true });
   });
 
-  const jobWithNoRetries: DialecticJobRow = { ...mockJob, attempt_count: 3, max_retries: 3 };
+  const jobWithNoRetries: DialecticJobRow = mockJob({ attempt_count: 3, max_retries: 3 });
 
   let threw = false;
   try {
@@ -202,7 +202,7 @@ Deno.test('processSimpleJob - emits job_failed document-centric notification on 
     }
     await processSimpleJob(
       dbClient as unknown as SupabaseClient<Database>,
-      { ...jobWithNoRetries, payload: mockPayload },
+      mockJob({ ...jobWithNoRetries, payload: mockPayload }),
       'user-789',
       rootCtx,
       'auth-token',
@@ -232,21 +232,21 @@ Deno.test('processSimpleJob - emits job_failed document-centric notification on 
 
 Deno.test('processSimpleJob - emits execute_started and execute_completed when EXECUTE job finishes all chunks', async () => {
   resetMockNotificationService();
-  const { client: dbClient, clearAllStubs } = setupMockClient();
-  const { rootCtx } = getMockDeps();
+  const { client: dbClient, clearAllStubs } = mockClient();
+  const { rootCtx } = mockDeps();
 
   const executorStub = stub(rootCtx, 'prepareModelJob', () =>
-    Promise.resolve(createPrepareModelJobSuccessReturn()),
+    Promise.resolve(mockPrepareModelJobSuccessReturn()),
   );
 
-  const executeJob: typeof mockJob = { ...mockJob, job_type: 'EXECUTE' };
+  const executeJob: DialecticJobRow = mockJob({ job_type: 'EXECUTE' });
 
   if(!isJson(mockPayload) || !isDialecticExecuteJobPayload(mockPayload)) {
     throw new Error('Test setup failed: mockPayload is not a valid DialecticExecuteJobPayload');
   }
   await processSimpleJob(
     dbClient as unknown as SupabaseClient<Database>,
-    { ...executeJob, payload: mockPayload },
+    mockJob({ ...executeJob, payload: mockPayload }),
     'user-789',
     rootCtx,
     'auth-token',
@@ -278,14 +278,14 @@ Deno.test('processSimpleJob - emits execute_started and execute_completed when E
 
 Deno.test('processSimpleJob - emits internal and user-facing failure notifications when retries are exhausted', async (t) => {
     resetMockNotificationService();
-    const { client: dbClient, clearAllStubs } = setupMockClient();
-    const { rootCtx } = getMockDeps();
+    const { client: dbClient, clearAllStubs } = mockClient();
+    const { rootCtx } = mockDeps();
 
     const executorStub = stub(rootCtx, 'prepareModelJob', () => {
         return Promise.resolve({ error: new Error('Executor failed consistently'), retriable: true });
     });
 
-    const jobWithNoRetries: DialecticJobRow = { ...mockJob, attempt_count: 3, max_retries: 3 };
+    const jobWithNoRetries: DialecticJobRow = mockJob({ attempt_count: 3, max_retries: 3 });
 
     await t.step('should send both internal and user-facing failure notifications', async () => {
         if(!isJson(mockPayload) || !isDialecticExecuteJobPayload(mockPayload)) {
@@ -293,7 +293,7 @@ Deno.test('processSimpleJob - emits internal and user-facing failure notificatio
         }
         await processSimpleJob(
             dbClient as unknown as SupabaseClient<Database>,
-            { ...jobWithNoRetries, payload: mockPayload },
+            mockJob({ ...jobWithNoRetries, payload: mockPayload }),
             'user-789',
             rootCtx,
             'auth-token',
@@ -313,8 +313,8 @@ Deno.test('processSimpleJob - emits internal and user-facing failure notificatio
 });
 
 Deno.test('processSimpleJob - ContextWindowError Handling', async (t) => {
-    const { client: dbClient, spies, clearAllStubs } = setupMockClient();
-    const { rootCtx } = getMockDeps();
+    const { client: dbClient, spies, clearAllStubs } = mockClient();
+    const { rootCtx } = mockDeps();
 
     const executorStub = stub(rootCtx, 'prepareModelJob', () => {
         return Promise.resolve({
@@ -329,7 +329,7 @@ Deno.test('processSimpleJob - ContextWindowError Handling', async (t) => {
         if(!isJson(mockPayload) || !isDialecticExecuteJobPayload(mockPayload)) {
             throw new Error('Test setup failed: mockPayload is not a valid DialecticExecuteJobPayload');
         }
-        await processSimpleJob(dbClient as unknown as SupabaseClient<Database>, { ...mockJob, payload: mockPayload }, 'user-789', rootCtx, 'auth-token');
+        await processSimpleJob(dbClient as unknown as SupabaseClient<Database>, mockJob({ ...mockJob, payload: mockPayload }), 'user-789', rootCtx, 'auth-token');
 
         assertEquals(retryJobSpy.calls.length, 0, 'Expected retryJob NOT to be called for a ContextWindowError');
 
@@ -347,8 +347,8 @@ Deno.test('processSimpleJob - ContextWindowError Handling', async (t) => {
 });
 
 Deno.test('processSimpleJob - renders prompt template and omits systemInstruction when not provided (non-continuation)', async () => {
-    const { client: dbClient, clearAllStubs } = setupMockClient();
-    const { rootCtx, promptAssembler } = getMockDeps();
+    const { client: dbClient, clearAllStubs } = mockClient();
+    const { rootCtx, promptAssembler } = mockDeps();
 
     const executeSpy = spy(rootCtx, 'prepareModelJob');
 
@@ -357,7 +357,7 @@ Deno.test('processSimpleJob - renders prompt template and omits systemInstructio
     }
     await processSimpleJob(
         dbClient as unknown as SupabaseClient<Database>,
-        { ...mockJob, payload: mockPayload },
+        mockJob({ payload: mockPayload }),
         'user-789',
         rootCtx,
         'auth-token',
@@ -392,14 +392,14 @@ Deno.test('processSimpleJob - should assemble with sourceContributionId for a co
         document_relationships: { [stageSlug]: trueRootId },
     };
 
-    const { client: dbClient, clearAllStubs } = setupMockClient({
+    const { client: dbClient, clearAllStubs } = mockClient({
         dialectic_contributions: {
             select: { data: [mockContinuationChunk], error: null }
         }
     });
-    const { rootCtx, promptAssembler } = getMockDeps();
+    const { rootCtx, promptAssembler } = mockDeps();
 
-    const continuationPayload: DialecticExecuteJobPayload = buildProcessSimpleJobExecutePayload({
+    const continuationPayload: DialecticExecuteJobPayload = mockExecutePayload({
         target_contribution_id: continuationChunkId,
         stageSlug: stageSlug,
     });
@@ -408,11 +408,10 @@ Deno.test('processSimpleJob - should assemble with sourceContributionId for a co
         throw new Error("Test setup failed: continuationPayload is not a valid Json");
     }
 
-    const continuationJob: DialecticJobRow & { payload: DialecticJobPayload } = {
-        ...mockJob,
+    const continuationJob: DialecticJobRow = mockJob({
         payload: continuationPayload,
         target_contribution_id: continuationChunkId,
-    };
+    });
 
     // The mock prepareModelJob returns an error by default; continuation assembly is still asserted below.
     try {
@@ -436,8 +435,8 @@ Deno.test('processSimpleJob - should assemble with sourceContributionId for a co
 });
 
 Deno.test('processSimpleJob - should dispatch a correctly formed PromptConstructionPayload', async () => {
-    const { client: dbClient, clearAllStubs } = setupMockClient();
-    const { rootCtx, promptAssembler } = getMockDeps();
+    const { client: dbClient, clearAllStubs } = mockClient();
+    const { rootCtx, promptAssembler } = mockDeps();
     
     // Arrange
     const executeSpy = spy(rootCtx, 'prepareModelJob');
@@ -446,7 +445,7 @@ Deno.test('processSimpleJob - should dispatch a correctly formed PromptConstruct
     if(!isJson(mockPayload) || !isDialecticExecuteJobPayload(mockPayload)) {
         throw new Error('Test setup failed: mockPayload is not a valid DialecticExecuteJobPayload');
     }
-    await processSimpleJob(dbClient as unknown as SupabaseClient<Database>, { ...mockJob, payload: mockPayload }, 'user-789', rootCtx, 'auth-token');
+    await processSimpleJob(dbClient as unknown as SupabaseClient<Database>, mockJob({ payload: mockPayload }), 'user-789', rootCtx, 'auth-token');
 
     // Assert
     assertEquals(promptAssembler.assemble.calls.length, 1);
@@ -466,7 +465,7 @@ Deno.test('processSimpleJob - uses file-backed initial prompt when column empty'
     const fileBackedContent = 'Hello from file';
   
     // Arrange: project with empty initial_user_prompt and a valid resource id
-    const { client: dbClient, clearAllStubs } = setupMockClient({
+    const { client: dbClient, clearAllStubs } = mockClient({
       dialectic_projects: {
         select: () =>
           Promise.resolve({
@@ -508,7 +507,7 @@ Deno.test('processSimpleJob - uses file-backed initial prompt when column empty'
       },
     });
   
-    const { rootCtx } = getMockDeps();
+    const { rootCtx } = mockDeps();
   
     // Stub storage download to return a proper ArrayBuffer and mimeType
     const blob = new Blob([fileBackedContent], { type: 'text/markdown' });
@@ -524,7 +523,7 @@ Deno.test('processSimpleJob - uses file-backed initial prompt when column empty'
     }
     await processSimpleJob(
       dbClient as unknown as SupabaseClient<Database>,
-      { ...mockJob, payload: mockPayload },
+      mockJob({ payload: mockPayload }),
       'user-789',
       rootCtx,
       'auth-token',
@@ -543,12 +542,12 @@ Deno.test('processSimpleJob - uses file-backed initial prompt when column empty'
 
 Deno.test('processSimpleJob - fails when stage overlays are missing (no render, no model call)', async () => {
   // Arrange: explicitly override overlays to be empty to trigger fail-fast path
-  const { client: dbClient, spies, clearAllStubs } = setupMockClient({
+  const { client: dbClient, spies, clearAllStubs } = mockClient({
     domain_specific_prompt_overlays: {
       select: () => Promise.resolve({ data: [], error: null }),
     },
   });
-  const { rootCtx } = getMockDeps();
+  const { rootCtx } = mockDeps();
 
   // We do not stub the assembler; we expect failure before render
   const executeSpy = spy(rootCtx, 'prepareModelJob');
@@ -561,7 +560,7 @@ Deno.test('processSimpleJob - fails when stage overlays are missing (no render, 
     }
     await processSimpleJob(
       dbClient as unknown as SupabaseClient<Database>,
-      { ...mockJob, payload: mockPayload },
+      mockJob({ payload: mockPayload }),
       'user-789',
       rootCtx,
       'auth-token',
@@ -599,11 +598,11 @@ Deno.test('processSimpleJob - fails when stage overlays are missing (no render, 
 });
 
 Deno.test('processSimpleJob - forwards sourceContributionId for continuation uploads', async () => {
-  const { client: dbClient, clearAllStubs } = setupMockClient();
-  const { rootCtx } = getMockDeps();
+  const { client: dbClient, clearAllStubs } = mockClient();
+  const { rootCtx } = mockDeps();
 
   const continuationContributionId = 'root-contrib-123';
-  const continuationPayload: DialecticExecuteJobPayload = buildProcessSimpleJobExecutePayload({
+  const continuationPayload: DialecticExecuteJobPayload = mockExecutePayload({
     target_contribution_id: continuationContributionId,
   });
 
@@ -611,18 +610,17 @@ Deno.test('processSimpleJob - forwards sourceContributionId for continuation upl
     throw new Error('Test setup failed: continuationPayload is not valid Json.');
   }
 
-  const continuationJob: DialecticJobRow & { payload: DialecticJobPayload } = {
-    ...mockJob,
+  const continuationJob: DialecticJobRow = mockJob({
     payload: continuationPayload,
     target_contribution_id: continuationContributionId,
-  };
+  });
 
   const recordedCalls: PrepareModelJobParams[] = [];
   const recordedPayloads: PrepareModelJobPayload[] = [];
   const executorStub = stub(rootCtx, 'prepareModelJob', async (params: PrepareModelJobParams, jobPayload: PrepareModelJobPayload) => {
     recordedCalls.push(params);
     recordedPayloads.push(jobPayload);
-    return createPrepareModelJobSuccessReturn();
+    return mockPrepareModelJobSuccessReturn();
   });
 
   await processSimpleJob(
@@ -648,11 +646,11 @@ Deno.test('processSimpleJob - forwards sourceContributionId for continuation upl
 });
 
 Deno.test('processSimpleJob - continuations push sourceContributionId into FileManager path context', async () => {
-  const { client: dbClient, clearAllStubs } = setupMockClient();
-  const { rootCtx, fileManager } = getMockDeps();
+  const { client: dbClient, clearAllStubs } = mockClient();
+  const { rootCtx, fileManager } = mockDeps();
 
   const continuationContributionId = 'root-contrib-456';
-  const continuationPayload: DialecticExecuteJobPayload = buildProcessSimpleJobExecutePayload({
+  const continuationPayload: DialecticExecuteJobPayload = mockExecutePayload({
     prompt_template_id: 'prompt-123',
     output_type: FileType.business_case,
     inputs: {
@@ -670,11 +668,10 @@ Deno.test('processSimpleJob - continuations push sourceContributionId into FileM
   if (!isJson(continuationPayload)) {
     throw new Error('Test setup failed: continuationPayload is not valid Json.');
   }
-  const continuationJob = {
-    ...mockJob,
+  const continuationJob: DialecticJobRow = mockJob({
     payload: continuationPayload,
     target_contribution_id: continuationContributionId,
-  };
+  });
 
   const executorStub = stub(rootCtx, 'prepareModelJob', async (params: PrepareModelJobParams, jobPayload: PrepareModelJobPayload) => {
     if (!isDialecticJobPayload(params.job.payload)) {
@@ -743,7 +740,7 @@ Deno.test('processSimpleJob - continuations push sourceContributionId into FileM
     };
 
     await fileManager.uploadAndRegisterFile(uploadContext);
-    return createPrepareModelJobSuccessReturn();
+    return mockPrepareModelJobSuccessReturn();
   });
 
   await processSimpleJob(
@@ -771,7 +768,7 @@ Deno.test('processSimpleJob - continuations push sourceContributionId into FileM
 Deno.test('processSimpleJob - fails when no initial prompt exists', async () => {
   resetMockNotificationService();
   // Arrange: project with no direct prompt and no resource id
-  const { client: dbClient, spies, clearAllStubs } = setupMockClient({
+  const { client: dbClient, spies, clearAllStubs } = mockClient({
     dialectic_projects: {
       select: () =>
         Promise.resolve({
@@ -798,13 +795,13 @@ Deno.test('processSimpleJob - fails when no initial prompt exists', async () => 
     },
   });
 
-  const { rootCtx } = getMockDeps();
+  const { rootCtx } = mockDeps();
 
   // Spy on executor to ensure it is NOT called when prompt is missing
   const executeSpy = spy(rootCtx, 'prepareModelJob');
 
   // Force final-attempt behavior to observe terminal failure status
-  const jobNoRetries: DialecticJobRow = { ...mockJob, attempt_count: 3, max_retries: 3 };
+  const jobNoRetries: DialecticJobRow = mockJob({ attempt_count: 3, max_retries: 3 });
 
   let threw = false;
   try {
@@ -813,7 +810,7 @@ Deno.test('processSimpleJob - fails when no initial prompt exists', async () => 
     }
     await processSimpleJob(
       dbClient as unknown as SupabaseClient<Database>,
-      { ...jobNoRetries, payload: mockPayload },
+      mockJob({ ...jobNoRetries, payload: mockPayload }),
       'user-789',
       rootCtx,
       'auth-token',
@@ -857,12 +854,12 @@ Deno.test('processSimpleJob - fails when no initial prompt exists', async () => 
 // plan→execute must preserve user_jwt; missing user_jwt fails
 // =============================================================
 Deno.test('processSimpleJob - preserves payload.user_jwt when transforming plan to execute', async () => {
-  const { client: dbClient, clearAllStubs } = setupMockClient();
-  const { rootCtx } = getMockDeps();
+  const { client: dbClient, clearAllStubs } = mockClient();
+  const { rootCtx } = mockDeps();
 
   const executeSpy = spy(rootCtx, 'prepareModelJob');
 
-  const planPayloadWithJwt: DialecticExecuteJobPayload = buildProcessSimpleJobExecutePayload({
+  const planPayloadWithJwt: DialecticExecuteJobPayload = mockExecutePayload({
     user_jwt: 'jwt.token.here',
   });
   if (!isJson(planPayloadWithJwt) || !isDialecticJobPayload(planPayloadWithJwt)) {
@@ -871,7 +868,7 @@ Deno.test('processSimpleJob - preserves payload.user_jwt when transforming plan 
 
     await processSimpleJob(
       dbClient as unknown as SupabaseClient<Database>,
-      { ...mockJob, payload: planPayloadWithJwt },
+      mockJob({ payload: planPayloadWithJwt }),
       'user-789',
       rootCtx,
       'auth-token',
@@ -896,11 +893,11 @@ Deno.test('processSimpleJob - preserves payload.user_jwt when transforming plan 
 });
 
 Deno.test('processSimpleJob - missing user_jwt fails early and does not call executor', async () => {
-  const { client: dbClient, clearAllStubs } = setupMockClient();
-  const { rootCtx } = getMockDeps();
+  const { client: dbClient, clearAllStubs } = mockClient();
+  const { rootCtx } = mockDeps();
   const executeSpy = spy(rootCtx, 'prepareModelJob');
 
-  const planPayloadNoJwt: DialecticExecuteJobPayload = buildProcessSimpleJobExecutePayload({
+  const planPayloadNoJwt: DialecticExecuteJobPayload = mockExecutePayload({
     user_jwt: '',
   });
   if (!isJson(planPayloadNoJwt) || !isDialecticJobPayload(planPayloadNoJwt)) {
@@ -911,7 +908,7 @@ Deno.test('processSimpleJob - missing user_jwt fails early and does not call exe
   try {
     await processSimpleJob(
       dbClient as unknown as SupabaseClient<Database>,
-      { ...mockJob, payload: planPayloadNoJwt },
+      mockJob({ payload: planPayloadNoJwt }),
       'user-789',
       rootCtx,
       'auth-token',
@@ -928,8 +925,8 @@ Deno.test('processSimpleJob - missing user_jwt fails early and does not call exe
 
 Deno.test('processSimpleJob - Wallet missing is immediate failure (no retry)', async () => {
   resetMockNotificationService();
-  const { client: dbClient, spies, clearAllStubs } = setupMockClient();
-  const { rootCtx } = getMockDeps();
+  const { client: dbClient, spies, clearAllStubs } = mockClient();
+  const { rootCtx } = mockDeps();
 
   // Arrange: executor surfaces wallet-required error
   const executorStub = stub(rootCtx, 'prepareModelJob', () => {
@@ -946,7 +943,7 @@ Deno.test('processSimpleJob - Wallet missing is immediate failure (no retry)', a
     }
     await processSimpleJob(
       dbClient as unknown as SupabaseClient<Database>,
-      { ...mockJob, payload: mockPayload },
+      mockJob({ payload: mockPayload }),
       'user-789',
       rootCtx,
       'auth-token',
@@ -990,8 +987,8 @@ Deno.test('processSimpleJob - Wallet missing is immediate failure (no retry)', a
 
 Deno.test('processSimpleJob - Preflight dependency missing is immediate failure (no retry)', async () => {
   resetMockNotificationService();
-  const { client: dbClient, spies, clearAllStubs } = setupMockClient();
-  const { rootCtx } = getMockDeps();
+  const { client: dbClient, spies, clearAllStubs } = mockClient();
+  const { rootCtx } = mockDeps();
 
   // Arrange: executor surfaces preflight dependency error
   const executorStub = stub(rootCtx, 'prepareModelJob', () => {
@@ -1011,7 +1008,7 @@ Deno.test('processSimpleJob - Preflight dependency missing is immediate failure 
     }
     await processSimpleJob(
       dbClient as unknown as SupabaseClient<Database>,
-      { ...mockJob, payload: mockPayload },
+      mockJob({ payload: mockPayload }),
       'user-789',
       rootCtx,
       'auth-token',
@@ -1111,12 +1108,12 @@ Deno.test('processSimpleJob - forwards recipe_step inputs_relevance and inputs_r
     updated_at: new Date().toISOString(),
   };
 
-  const { client: dbClient, clearAllStubs } = setupMockClient({
+  const { client: dbClient, clearAllStubs } = mockClient({
     dialectic_recipe_template_steps: {
       select: () => Promise.resolve({ data: [customStep], error: null }),
     },
   });
-  const { rootCtx } = getMockDeps();
+  const { rootCtx } = mockDeps();
 
   const executeSpy = spy(rootCtx, 'prepareModelJob');
 
@@ -1126,7 +1123,7 @@ Deno.test('processSimpleJob - forwards recipe_step inputs_relevance and inputs_r
   }
     await processSimpleJob(
       dbClient as unknown as SupabaseClient<Database>,
-      { ...mockJob, payload: mockPayload },
+      mockJob({ payload: mockPayload }),
       'user-789',
       rootCtx,
       'auth-token',
@@ -1173,8 +1170,8 @@ const MOCK_CONTINUATION_ASSEMBLED: AssembledPrompt = {
 Deno.test('processSimpleJob - continuation message routing', async (t) => {
 
     await t.step('when assembled.messages is present with 3 messages, conversationHistory contains first two and currentUserPrompt is the third message content', async () => {
-        const { client: dbClient, clearAllStubs } = setupMockClient();
-        const { promptAssembler, rootCtx } = getMockDeps();
+        const { client: dbClient, clearAllStubs } = mockClient();
+        const { promptAssembler, rootCtx } = mockDeps();
 
         promptAssembler.assemble = spy(
             async (_options: AssemblePromptOptions): Promise<AssembledPrompt> => {
@@ -1189,7 +1186,7 @@ Deno.test('processSimpleJob - continuation message routing', async (t) => {
         }
         await processSimpleJob(
             dbClient as unknown as SupabaseClient<Database>,
-            { ...mockJob, payload: mockPayload },
+            mockJob({ payload: mockPayload }),
             'user-789',
             rootCtx,
             'auth-token',
@@ -1210,8 +1207,8 @@ Deno.test('processSimpleJob - continuation message routing', async (t) => {
     });
 
     await t.step('when assembled.messages is absent, conversationHistory is empty and currentUserPrompt is assembled.promptContent — existing behavior unchanged', async () => {
-        const { client: dbClient, clearAllStubs } = setupMockClient();
-        const { rootCtx } = getMockDeps();
+        const { client: dbClient, clearAllStubs } = mockClient();
+        const { rootCtx } = mockDeps();
         // Default mock returns MOCK_ASSEMBLED_PROMPT which has no messages field
 
         const executeSpy = spy(rootCtx, 'prepareModelJob');
@@ -1221,7 +1218,7 @@ Deno.test('processSimpleJob - continuation message routing', async (t) => {
         }
         await processSimpleJob(
             dbClient as unknown as SupabaseClient<Database>,
-            { ...mockJob, payload: mockPayload },
+            mockJob({ payload: mockPayload }),
             'user-789',
             rootCtx,
             'auth-token',
@@ -1238,8 +1235,8 @@ Deno.test('processSimpleJob - continuation message routing', async (t) => {
     });
 
     await t.step('when assembled.messages is present, source_prompt_resource_id is still populated from assembled — no regression', async () => {
-        const { client: dbClient, clearAllStubs } = setupMockClient();
-        const { promptAssembler, rootCtx } = getMockDeps();
+        const { client: dbClient, clearAllStubs } = mockClient();
+        const { promptAssembler, rootCtx } = mockDeps();
 
         promptAssembler.assemble = spy(
             async (_options: AssemblePromptOptions): Promise<AssembledPrompt> => {
@@ -1254,7 +1251,7 @@ Deno.test('processSimpleJob - continuation message routing', async (t) => {
         }
         await processSimpleJob(
             dbClient as unknown as SupabaseClient<Database>,
-            { ...mockJob, payload: mockPayload },
+            mockJob({ payload: mockPayload }),
             'user-789',
             rootCtx,
             'auth-token',
@@ -1274,8 +1271,8 @@ Deno.test('processSimpleJob - continuation message routing', async (t) => {
 
     await t.step('prepareModelJob receives correctly routed promptConstructionPayload in both continuation and non-continuation paths', async () => {
         // --- Continuation path ---
-        const { client: dbClient1, clearAllStubs: clear1 } = setupMockClient();
-        const { promptAssembler: pa1, rootCtx: ctx1 } = getMockDeps();
+        const { client: dbClient1, clearAllStubs: clear1 } = mockClient();
+        const { promptAssembler: pa1, rootCtx: ctx1 } = mockDeps();
 
         pa1.assemble = spy(
             async (_options: AssemblePromptOptions): Promise<AssembledPrompt> => {
@@ -1290,7 +1287,7 @@ Deno.test('processSimpleJob - continuation message routing', async (t) => {
         }
         await processSimpleJob(
             dbClient1 as unknown as SupabaseClient<Database>,
-            { ...mockJob, payload: mockPayload },
+            mockJob({ payload: mockPayload }),
             'user-789',
             ctx1,
             'auth-token',
@@ -1305,14 +1302,14 @@ Deno.test('processSimpleJob - continuation message routing', async (t) => {
         clear1?.();
 
         // --- Non-continuation path ---
-        const { client: dbClient2, clearAllStubs: clear2 } = setupMockClient();
-        const { rootCtx: ctx2 } = getMockDeps();
+        const { client: dbClient2, clearAllStubs: clear2 } = mockClient();
+        const { rootCtx: ctx2 } = mockDeps();
 
         const executeSpy2 = spy(ctx2, 'prepareModelJob');
 
         await processSimpleJob(
             dbClient2 as unknown as SupabaseClient<Database>,
-            { ...mockJob, payload: mockPayload },
+            mockJob({ payload: mockPayload }),
             'user-789',
             ctx2,
             'auth-token',
@@ -1338,8 +1335,8 @@ Deno.test('processSimpleJob - isPrepareModelJobErrorReturn recognizes prepareMod
 
 Deno.test('processSimpleJob - INSUFFICIENT_FUNDS from prepareModelJob PrepareModelJobErrorReturn is classified immediately', async () => {
     resetMockNotificationService();
-    const { client: dbClient, spies, clearAllStubs } = setupMockClient();
-    const { rootCtx } = getMockDeps();
+    const { client: dbClient, spies, clearAllStubs } = mockClient();
+    const { rootCtx } = mockDeps();
     const prepareStub = stub(rootCtx, 'prepareModelJob', () =>
         Promise.resolve({
             error: new Error('Insufficient funds for this operation'),
@@ -1354,7 +1351,7 @@ Deno.test('processSimpleJob - INSUFFICIENT_FUNDS from prepareModelJob PrepareMod
         }
         await processSimpleJob(
             dbClient as unknown as SupabaseClient<Database>,
-            { ...mockJob, payload: mockPayload },
+            mockJob({ payload: mockPayload }),
             'user-789',
             rootCtx,
             'auth-token',
@@ -1381,8 +1378,8 @@ Deno.test('processSimpleJob - INSUFFICIENT_FUNDS from prepareModelJob PrepareMod
 });
 
 Deno.test('processSimpleJob - gatherArtifacts is called after promptAssembler.assemble resolves', async () => {
-    const { client: dbClient, clearAllStubs } = setupMockClient();
-    const { rootCtx, promptAssembler } = getMockDeps();
+    const { client: dbClient, clearAllStubs } = mockClient();
+    const { rootCtx, promptAssembler } = mockDeps();
     const callOrder: string[] = [];
 
     promptAssembler.assemble = spy(
@@ -1403,7 +1400,7 @@ Deno.test('processSimpleJob - gatherArtifacts is called after promptAssembler.as
     }
     await processSimpleJob(
         dbClient as unknown as SupabaseClient<Database>,
-        { ...mockJob, payload: mockPayload },
+        mockJob({ payload: mockPayload }),
         'user-789',
         rootCtx,
         'auth-token',
@@ -1420,8 +1417,8 @@ Deno.test('processSimpleJob - gatherArtifacts is called after promptAssembler.as
 });
 
 Deno.test('processSimpleJob - gatherArtifacts success flows artifacts into prepareModelJob promptConstructionPayload.resourceDocuments', async () => {
-    const { client: dbClient, clearAllStubs } = setupMockClient();
-    const { rootCtx } = getMockDeps();
+    const { client: dbClient, clearAllStubs } = mockClient();
+    const { rootCtx } = mockDeps();
     const gatheredArtifacts: GatherArtifactsSuccessReturn = {
         artifacts: [
             {
@@ -1444,7 +1441,7 @@ Deno.test('processSimpleJob - gatherArtifacts success flows artifacts into prepa
     }
     await processSimpleJob(
         dbClient as unknown as SupabaseClient<Database>,
-        { ...mockJob, payload: mockPayload },
+        mockJob({ payload: mockPayload }),
         'user-789',
         rootCtx,
         'auth-token',
@@ -1465,8 +1462,8 @@ Deno.test('processSimpleJob - gatherArtifacts success flows artifacts into prepa
 
 Deno.test('processSimpleJob - gatherArtifacts required-document error skips prepareModelJob and enters retry path', async () => {
     resetMockNotificationService();
-    const { client: dbClient, clearAllStubs } = setupMockClient();
-    const { rootCtx } = getMockDeps();
+    const { client: dbClient, clearAllStubs } = mockClient();
+    const { rootCtx } = mockDeps();
     const gatherErrorResult: GatherArtifactsErrorReturn = {
         error: new Error(
             "Required rendered document for input rule type 'document' with stage 'seed' and document_key 'business_case' was not found in dialectic_project_resources.",
@@ -1486,7 +1483,7 @@ Deno.test('processSimpleJob - gatherArtifacts required-document error skips prep
         }
         await processSimpleJob(
             dbClient as unknown as SupabaseClient<Database>,
-            { ...mockJob, payload: mockPayload },
+            mockJob({ payload: mockPayload }),
             'user-789',
             rootCtx,
             'auth-token',

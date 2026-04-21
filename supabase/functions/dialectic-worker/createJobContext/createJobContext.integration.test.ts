@@ -1,4 +1,6 @@
-import { assertEquals } from 'https://deno.land/std@0.170.0/testing/asserts.ts';
+import { assert, assertEquals, assertExists } from 'https://deno.land/std@0.170.0/testing/asserts.ts';
+import { stub } from 'https://deno.land/std@0.224.0/testing/mock.ts';
+import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import {
   createJobContext,
   createExecuteModelCallContext,
@@ -8,6 +10,7 @@ import {
 } from './createJobContext.ts';
 import { createMockJobContextParams } from './JobContext.mock.ts';
 import type {
+  BoundPrepareModelJobFn,
   IExecuteModelCallContext,
   IJobContext,
   IPlanJobContext,
@@ -18,6 +21,26 @@ import { compressPrompt } from '../compressPrompt/compressPrompt.ts';
 import { calculateAffordability } from '../calculateAffordability/calculateAffordability.ts';
 import { BoundExecuteModelCallAndSaveFn } from '../executeModelCallAndSave/executeModelCallAndSave.interface.ts';
 import { BoundEnqueueRenderJobFn } from '../enqueueRenderJob/enqueueRenderJob.interface.ts';
+import { BoundEnqueueModelCallFn } from '../enqueueModelCall/enqueueModelCall.interface.ts';
+import { enqueueModelCall } from '../enqueueModelCall/enqueueModelCall.ts';
+import { prepareModelJob } from '../prepareModelJob/prepareModelJob.ts';
+import type {
+  PrepareModelJobDeps,
+  PrepareModelJobParams,
+  PrepareModelJobPayload,
+} from '../prepareModelJob/prepareModelJob.interface.ts';
+import type {
+  DialecticExecuteJobPayload,
+  DialecticJobRow,
+  DialecticSessionRow,
+} from '../../dialectic-service/dialectic.interface.ts';
+import type { ApiKeyForProviderFn } from '../../_shared/types.ts';
+import type { Database, Tables } from '../../types_db.ts';
+import { FileType } from '../../_shared/types/file_manager.types.ts';
+import { MockLogger } from '../../_shared/logger.mock.ts';
+import { createMockSupabaseClient } from '../../_shared/supabase.mock.ts';
+import { isRecord, isJson } from '../../_shared/utils/type-guards/type_guards.common.ts';
+import { getSortedCompressionCandidates } from '../../_shared/utils/vector_utils.ts';
 
 Deno.test('Integration: constructed context passes structural check against IJobContext and slicers build expected objects', () => {
   const params = createMockJobContextParams();
@@ -96,19 +119,14 @@ Deno.test('Integration: constructed context passes structural check against IJob
 Deno.test('Integration: createPrepareModelJobContext result passes structural check against updated IPrepareModelJobContext', () => {
   const params = createMockJobContextParams();
   const rootContext: IJobContext = createJobContext(params);
-  const boundEdgeEmcas: BoundExecuteModelCallAndSaveFn = async () => ({
-    error: new Error('integration boundary stub emcas'),
-    retriable: false,
-  });
-  const boundEdgeRender: BoundEnqueueRenderJobFn = async () => ({
+  const boundEnqueueModelCall: BoundEnqueueModelCallFn = async () => ({
     error: new Error('integration boundary stub render'),
     retriable: false,
   });
 
   const prepareContext: IPrepareModelJobContext = createPrepareModelJobContext(
     rootContext,
-    boundEdgeEmcas,
-    boundEdgeRender,
+    boundEnqueueModelCall,
     compressPrompt,
     calculateAffordability,
   );
@@ -121,8 +139,7 @@ Deno.test('Integration: createPrepareModelJobContext result passes structural ch
   assertEquals(prepareContext.validateModelCostRates, rootContext.validateModelCostRates);
   assertEquals(prepareContext.ragService, rootContext.ragService);
   assertEquals(prepareContext.embeddingClient, rootContext.embeddingClient);
-  assertEquals(prepareContext.executeModelCallAndSave, boundEdgeEmcas);
-  assertEquals(prepareContext.enqueueRenderJob, boundEdgeRender);
+  assertEquals(prepareContext.enqueueModelCall, boundEnqueueModelCall);
   assertEquals(typeof prepareContext.calculateAffordability, 'function');
   assertEquals('pickLatest' in prepareContext, false);
   assertEquals('downloadFromStorage' in prepareContext, false);
@@ -137,4 +154,195 @@ Deno.test('Integration: createPrepareModelJobContext result passes structural ch
   assertEquals('debitTokens' in prepareContext, false);
   assertEquals('notificationService' in prepareContext, false);
   assertEquals('prepareModelJob' in prepareContext, false);
+});
+
+Deno.test('Integration: Phase 1 chain — ctx.prepareModelJob wired through createPrepareModelJobContext calls enqueueModelCall, writes queued to DB, POSTs to Netlify, returns { queued: true }', async () => {
+  // Netlify boundary constants
+  const netlifyQueueUrl = 'https://integration-test.netlify/.netlify/functions/async-workloads-router';
+  const netlifyApiKey = 'integration-test-awl-key';
+  const apiIdentifier = 'contract-api-v1';
+  const apiKeyForProvider: ApiKeyForProviderFn = (_id: string) => 'integration-provider-api-key';
+
+  // Mock DB client — boundary; provides dialectic_generation_jobs update for enqueueModelCall
+  const mockSetup = createMockSupabaseClient(undefined, {
+    genericMockResults: {
+      dialectic_generation_jobs: {
+        update: { data: [{}], error: null },
+      },
+    },
+  });
+  const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
+
+  // Valid provider row — boundary data with full AiModelExtendedConfig
+  const providerRow: Tables<'ai_providers'> = {
+    id: 'integration-model-id',
+    provider: 'integration-provider',
+    name: 'Integration AI',
+    api_identifier: apiIdentifier,
+    config: {
+      api_identifier: apiIdentifier,
+      input_token_cost_rate: 0.001,
+      output_token_cost_rate: 0.002,
+      tokenization_strategy: { type: 'rough_char_count' },
+      context_window_tokens: 128000,
+      provider_max_input_tokens: 128000,
+      provider_max_output_tokens: 500,
+    },
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    description: null,
+    is_active: true,
+    is_enabled: true,
+    is_default_embedding: false,
+    is_default_generation: false,
+  };
+
+  // Stub fetch — boundary; returns 200 OK for the Netlify queue POST
+  const fetchStub = stub(globalThis, 'fetch', (): Promise<Response> =>
+    Promise.resolve(new Response('{}', { status: 200 })));
+
+  try {
+    // Wire real enqueueModelCall as BoundEnqueueModelCallFn (dep boundary: logger, urls)
+    const boundEnqueueModelCall: BoundEnqueueModelCallFn = (params, payload) =>
+      enqueueModelCall(
+        {
+          logger: new MockLogger(),
+          netlifyQueueUrl,
+          netlifyApiKey,
+          apiKeyForProvider,
+        },
+        params,
+        payload,
+      );
+
+    // Extract shared mock deps (wallet service, logger, etc.) via mock params
+    const sharedParams = createMockJobContextParams();
+    const tempRoot: IJobContext = createJobContext(sharedParams);
+
+    // Create IPrepareModelJobContext via the real slicer being tested
+    const prepCtx: IPrepareModelJobContext = createPrepareModelJobContext(
+      tempRoot,
+      boundEnqueueModelCall,
+      compressPrompt,
+      calculateAffordability,
+    );
+
+    // Build PrepareModelJobDeps — tokenWalletService is a boundary dep (IUserTokenWalletService)
+    const prepDeps: PrepareModelJobDeps = {
+      logger: prepCtx.logger,
+      applyInputsRequiredScope: prepCtx.applyInputsRequiredScope,
+      tokenWalletService: sharedParams.userTokenWalletService,
+      validateWalletBalance: prepCtx.validateWalletBalance,
+      validateModelCostRates: prepCtx.validateModelCostRates,
+      calculateAffordability: prepCtx.calculateAffordability,
+      enqueueModelCall: prepCtx.enqueueModelCall,
+    };
+
+    // Bind real prepareModelJob as BoundPrepareModelJobFn
+    const boundPrepareModelJob: BoundPrepareModelJobFn = (params, payload) =>
+      prepareModelJob(prepDeps, params, payload);
+
+    // Wire final IJobContext with the real BoundPrepareModelJobFn
+    const ctx: IJobContext = createJobContext(createMockJobContextParams({ prepareModelJob: boundPrepareModelJob }));
+
+    // Build the execute job payload (must pass isDialecticExecuteJobPayload)
+    const executePayload: DialecticExecuteJobPayload = {
+      sessionId: 'phase1-session-id',
+      projectId: 'phase1-project-id',
+      stageSlug: 'thesis',
+      model_id: 'integration-model-id',
+      iterationNumber: 1,
+      continueUntilComplete: false,
+      walletId: 'phase1-wallet-id',
+      user_jwt: 'integration-user-jwt',
+      prompt_template_id: 'phase1-prompt-template-id',
+      output_type: FileType.HeaderContext,
+      canonicalPathParams: { contributionType: 'thesis', stageSlug: 'thesis' },
+      inputs: {},
+      idempotencyKey: 'phase1-idem',
+    };
+
+    if (!isJson(executePayload)) {
+      throw new Error('Execute payload is not a valid JSON object');
+    }
+    const job: DialecticJobRow = {
+      id: 'integration-job-id',
+      session_id: 'phase1-session-id',
+      stage_slug: 'thesis',
+      iteration_number: 1,
+      status: 'pending',
+      user_id: 'integration-user-id',
+      attempt_count: 0,
+      completed_at: null,
+      created_at: new Date().toISOString(),
+      error_details: null,
+      max_retries: 3,
+      parent_job_id: null,
+      payload: executePayload,
+      prerequisite_job_id: null,
+      results: null,
+      started_at: null,
+      target_contribution_id: null,
+      is_test_job: false,
+      job_type: 'EXECUTE',
+      idempotency_key: 'phase1-idem',
+    };
+
+    const sessionData: DialecticSessionRow = {
+      id: 'phase1-session-id',
+      project_id: 'phase1-project-id',
+      session_description: 'phase1 integration test session',
+      user_input_reference_url: null,
+      iteration_count: 1,
+      selected_model_ids: ['integration-model-id'],
+      status: 'in-progress',
+      associated_chat_id: null,
+      current_stage_id: 'integration-stage-id',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      viewing_stage_id: null,
+      idempotency_key: null,
+    };
+
+    const prepParams: PrepareModelJobParams = {
+      dbClient,
+      authToken: 'integration-user-jwt',
+      job,
+      projectOwnerUserId: 'integration-owner-id',
+      providerRow,
+      sessionData,
+    };
+
+    const prepPayload: PrepareModelJobPayload = {
+      promptConstructionPayload: {
+        conversationHistory: [],
+        resourceDocuments: [],
+        currentUserPrompt: 'integration test user prompt',
+        source_prompt_resource_id: 'integration-source-prompt-id',
+      },
+      compressionStrategy: getSortedCompressionCandidates,
+    };
+
+    // Invoke ctx.prepareModelJob — this is the call processSimpleJob makes in Phase 1
+    const result = await ctx.prepareModelJob(prepParams, prepPayload);
+
+    // Assert: returns { queued: true } — processSimpleJob would receive this and exit cleanly
+    assertEquals(result, { queued: true });
+
+    // Assert: fetch was called once to the Netlify queue URL
+    assertEquals(fetchStub.calls.length, 1);
+    const callUrl: string = String(fetchStub.calls[0].args[0]);
+    assertEquals(callUrl, netlifyQueueUrl);
+
+    // Assert: dialectic_generation_jobs was updated with status queued before the Netlify POST
+    const updateSpy = mockSetup.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'update');
+    assertExists(updateSpy);
+    assert(updateSpy.callCount >= 1);
+    const updatePayload: unknown = updateSpy.callsArgs[0][0];
+    assert(isRecord(updatePayload));
+    assertEquals(updatePayload.status, 'queued');
+
+  } finally {
+    fetchStub.restore();
+  }
 });

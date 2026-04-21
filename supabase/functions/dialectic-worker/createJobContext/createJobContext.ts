@@ -5,10 +5,12 @@ import {
     JobContextParams,
     IExecuteModelCallContext,
     IPrepareModelJobContext,
+    ISaveResponseContext,
     IPlanJobContext,
     IRenderJobContext,
 } from './JobContext.interface.ts';
 import { BoundExecuteModelCallAndSaveFn } from '../executeModelCallAndSave/executeModelCallAndSave.interface.ts';
+import { BoundEnqueueModelCallFn } from '../enqueueModelCall/enqueueModelCall.interface.ts';
 import { BoundEnqueueRenderJobFn } from '../enqueueRenderJob/enqueueRenderJob.interface.ts';
 import { CompressPromptFn } from '../compressPrompt/compressPrompt.interface.ts';
 import { BoundCompressPromptFn } from '../compressPrompt/compressPrompt.interface.ts';
@@ -117,18 +119,18 @@ export function createExecuteModelCallContext(root: IJobContext): IExecuteModelC
  * Context slicer: Extracts IPrepareModelJobContext subset from root IJobContext.
  * Picks 8 raw fields from IJobContext and receives 2 pre-bound orchestrator closures
  * plus compressPrompt and calculateAffordability factories (bound here with root deps).
+ * enqueueModelCall replaces the old enqueueRenderJob — the front-half enqueues to
+ * Netlify rather than executing inline; enqueueRenderJob moves to the back-half slice.
  *
  * @param root - Complete IJobContext from application boundary
- * @param boundEmcas - Pre-bound executeModelCallAndSave closure
- * @param boundRender - Pre-bound enqueueRenderJob closure
+ * @param boundEnqueueModelCall - Pre-bound enqueueModelCall closure (netlifyQueueUrl and netlifyApiKey already bound)
  * @param compressPromptFn - Unbound compressPrompt implementation
  * @param calculateAffordabilityFn - Unbound calculateAffordability implementation
  * @returns IPrepareModelJobContext with only fields needed for prepareModelJob
  */
 export function createPrepareModelJobContext(
     root: IJobContext,
-    boundEmcas: BoundExecuteModelCallAndSaveFn,
-    boundRender: BoundEnqueueRenderJobFn,
+    boundEnqueueModelCall: BoundEnqueueModelCallFn,
     compressPromptFn: CompressPromptFn,
     calculateAffordabilityFn: CalculateAffordabilityFn,
 ): IPrepareModelJobContext {
@@ -165,8 +167,7 @@ export function createPrepareModelJobContext(
         validateModelCostRates: root.validateModelCostRates,
         ragService: root.ragService,
         embeddingClient: root.embeddingClient,
-        executeModelCallAndSave: boundEmcas,
-        enqueueRenderJob: boundRender,
+        enqueueModelCall: boundEnqueueModelCall,
         calculateAffordability,
     };
 }
@@ -215,5 +216,23 @@ export function createRenderJobContext(root: IJobContext): IRenderJobContext {
 
         // RENDER-specific utilities
         documentRenderer: root.documentRenderer,
+    };
+}
+
+/**
+ * Context slicer: Constructs ISaveResponseContext (back-half) from a pre-bound enqueueRenderJob closure.
+ * The back-half receives the completed AI response from the Netlify workload and persists it;
+ * render dispatch (enqueueRenderJob) happens after the contribution is saved, not before the AI call.
+ *
+ * @param _root - Complete IJobContext from application boundary (reserved for future back-half fields)
+ * @param boundEnqueueRenderJob - Pre-bound enqueueRenderJob closure
+ * @returns ISaveResponseContext with fields needed for the saveResponse back-half handler
+ */
+export function createSaveResponseContext(
+    _root: IJobContext,
+    boundEnqueueRenderJob: BoundEnqueueRenderJobFn,
+): ISaveResponseContext {
+    return {
+        enqueueRenderJob: boundEnqueueRenderJob,
     };
 }

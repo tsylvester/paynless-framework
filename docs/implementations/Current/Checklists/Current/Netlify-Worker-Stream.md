@@ -1108,427 +1108,427 @@
     * `[✅]`   `execute_completed` notification fires on success — proven by unit test (moved from processSimpleJob)
     * `[✅]`   Non-2xx response on retriable failure causes Netlify to retry POST — proven by interaction spec + integration test
 
-* `[ ]`   `dialectic-worker/enqueueModelCall/enqueueModelCall` **[BE] EMCAS front-half — pre-call validation, job queuing, and Netlify event dispatch**
+* `[✅]`   `dialectic-worker/enqueueModelCall/enqueueModelCall` **[BE] EMCAS front-half — pre-call validation, job queuing, and Netlify event dispatch**
 
-  * `[ ]`   `objective`
-    * `[ ]`   Execute all pre-stream logic from the existing EMCAS (validation, adapter config resolution, API key lookup, preflight token accounting), write job status to `queued`, enqueue a `ai-stream` event to Netlify Async Workloads, await queue ACK, and return — without waiting for stream completion
-    * `[ ]`   Functional goals:
+  * `[✅]`   `objective`
+    * `[✅]`   Execute all pre-stream logic from the existing EMCAS (validation, adapter config resolution, API key lookup, preflight token accounting), write job status to `queued`, enqueue a `ai-stream` event to Netlify Async Workloads, await queue ACK, and return — without waiting for stream completion
+    * `[✅]`   Functional goals:
       * Validate all params and payload (output_type, model config, adapter resolvability)
       * Resolve the provider API key
       * Write job status → `queued` in `dialectic_generation_jobs`
       * Serialize and enqueue the Netlify `AiStreamEvent` with `{ job_id, api_identifier, model_config, chat_api_request, user_jwt }` — `model_config` maps from `AiModelExtendedConfig` to `NodeModelConfig`; `chat_api_request` maps from `ChatApiRequest` to `NodeChatApiRequest` (translation boundary)
       * Await queue ACK; return success or error to caller (prepareModelJob)
-    * `[ ]`   Non-functional constraints:
+    * `[✅]`   Non-functional constraints:
       * Must NOT initiate the AI stream — stream is Netlify's responsibility
       * Must NOT await stream completion — returns after ACK only
       * Event payload must not exceed 500 KB (Netlify limit)
       * Runs in Deno (Supabase Edge) — same runtime as existing EMCAS
 
-  * `[ ]`   `role`
-    * `[ ]`   Role: app/port — bridges the Deno call chain to the Netlify async queue
-    * `[ ]`   Why appropriate: validation, config resolution, and event serialization require the Deno shared library; the stream itself does not
-    * `[ ]`   Must NOT: perform the AI call, assemble the buffer, save contributions, debit tokens, or update job status beyond `queued`
+  * `[✅]`   `role`
+    * `[✅]`   Role: app/port — bridges the Deno call chain to the Netlify async queue
+    * `[✅]`   Why appropriate: validation, config resolution, and event serialization require the Deno shared library; the stream itself does not
+    * `[✅]`   Must NOT: perform the AI call, assemble the buffer, save contributions, debit tokens, or update job status beyond `queued`
 
-  * `[ ]`   `module`
-    * `[ ]`   Bounded context: `dialectic-worker/executeModelCallAndSave` — pre-stream dispatch half of EMCAS
-    * `[ ]`   Inside boundary: param validation, model config validation, adapter key resolution, status write to `queued`, Netlify event enqueue
-    * `[ ]`   Outside boundary: AI streaming (Netlify), post-stream processing (back-half), prompt assembly (prepareModelJob)
+  * `[✅]`   `module`
+    * `[✅]`   Bounded context: `dialectic-worker/executeModelCallAndSave` — pre-stream dispatch half of EMCAS
+    * `[✅]`   Inside boundary: param validation, model config validation, adapter key resolution, status write to `queued`, Netlify event enqueue
+    * `[✅]`   Outside boundary: AI streaming (Netlify), post-stream processing (back-half), prompt assembly (prepareModelJob)
 
-  * `[ ]`   `deps`
-    * `[ ]`   `logger: ILogger` — injected dep
-    * `[ ]`   `netlifyQueueUrl: string` — the Netlify async workloads router endpoint (`SITE_ORIGIN/.netlify/functions/async-workloads-router`); injected at construction from env var
-    * `[ ]`   `netlifyApiKey: string` — the `AWL_API_KEY` value for `Authorization: Bearer` header; injected at construction from env var
-    * `[ ]`   `apiKeyForProvider: ApiKeyForProviderFn` — existing helper (extracted from current EMCAS, or inlined here)
-    * `[ ]`   `fetch` — Deno global; used directly to POST the event to Netlify router API; not injected, not in deps
-    * `[ ]`   `isAiModelExtendedConfig`, `isModelContributionFileType` — existing type guards; imported directly, not injected
+  * `[✅]`   `deps`
+    * `[✅]`   `logger: ILogger` — injected dep
+    * `[✅]`   `netlifyQueueUrl: string` — the Netlify async workloads router endpoint (`SITE_ORIGIN/.netlify/functions/async-workloads-router`); injected at construction from env var
+    * `[✅]`   `netlifyApiKey: string` — the `AWL_API_KEY` value for `Authorization: Bearer` header; injected at construction from env var
+    * `[✅]`   `apiKeyForProvider: ApiKeyForProviderFn` — existing helper (extracted from current EMCAS, or inlined here)
+    * `[✅]`   `fetch` — Deno global; used directly to POST the event to Netlify router API; not injected, not in deps
+    * `[✅]`   `isAiModelExtendedConfig`, `isModelContributionFileType` — existing type guards; imported directly, not injected
 
-  * `[ ]`   `context_slice`
-    * `[ ]`   Params (`EnqueueModelCallParams`): `{ dbClient: SupabaseClient<Database>; job: DialecticJobRow; providerRow: Tables<'ai_providers'>; userAuthToken: string; output_type: string }` — the minimal subset of `ExecuteModelCallAndSaveParams` needed for validation, DB write, and `AiStreamEvent` construction
-    * `[ ]`   Payload (`EnqueueModelCallPayload`): `{ chatApiRequest: ChatApiRequest; preflightInputTokens: number }` — the work data to serialize into the `AiStreamEvent`
-    * `[ ]`   Returns: `EnqueueModelCallSuccessReturn` (`{ queued: true }`) or `EnqueueModelCallErrorReturn` (`{ error: Error; retriable: boolean }`)
-    * `[ ]`   Writes: `{ status: 'queued' }` to `dialectic_generation_jobs` before enqueue
-    * `[ ]`   Emits: `AiStreamEvent` to Netlify queue via `fetch` POST
+  * `[✅]`   `context_slice`
+    * `[✅]`   Params (`EnqueueModelCallParams`): `{ dbClient: SupabaseClient<Database>; job: DialecticJobRow; providerRow: Tables<'ai_providers'>; userAuthToken: string; output_type: string }` — the minimal subset of `ExecuteModelCallAndSaveParams` needed for validation, DB write, and `AiStreamEvent` construction
+    * `[✅]`   Payload (`EnqueueModelCallPayload`): `{ chatApiRequest: ChatApiRequest; preflightInputTokens: number }` — the work data to serialize into the `AiStreamEvent`
+    * `[✅]`   Returns: `EnqueueModelCallSuccessReturn` (`{ queued: true }`) or `EnqueueModelCallErrorReturn` (`{ error: Error; retriable: boolean }`)
+    * `[✅]`   Writes: `{ status: 'queued' }` to `dialectic_generation_jobs` before enqueue
+    * `[✅]`   Emits: `AiStreamEvent` to Netlify queue via `fetch` POST
 
-  * `[ ]`   `enqueueModelCall.interface.test.ts`
-    * `[ ]`   Imports types ONLY from `enqueueModelCall.interface.ts` — no guard imports, no runtime validators; mirrors `ai-adapter.interface.test.ts` pattern
-    * `[ ]`   Construct `EnqueueModelCallDeps` literal with all four fields (`logger`, `netlifyQueueUrl`, `netlifyApiKey`, `apiKeyForProvider`) of declared types — compiles; assert shape
-    * `[ ]`   Construct `EnqueueModelCallParams` literal with all five fields (`dbClient`, `job`, `providerRow`, `userAuthToken`, `output_type`) of declared types — compiles; assert shape
-    * `[ ]`   Construct `EnqueueModelCallPayload` literal with `chatApiRequest` and `preflightInputTokens: number` — compiles; assert `typeof preflightInputTokens === 'number'`
-    * `[ ]`   Construct `EnqueueModelCallSuccessReturn` literal `{ queued: true }` — compiles; assert `literal.queued === true`
-    * `[ ]`   Construct `EnqueueModelCallErrorReturn` literal `{ error: new Error('x'), retriable: false }` — compiles; assert `error instanceof Error` and `typeof retriable === 'boolean'`
-    * `[ ]`   Declare a `BoundEnqueueModelCallFn` variable and assign an `async (params, payload) => Return` function to it — compiles (signature match)
-    * `[ ]`   Pure type-shape assertions only — invalid shapes are a compile-time concern; runtime accept/reject belongs in `enqueueModelCall.guard.test.ts`
+  * `[✅]`   `enqueueModelCall.interface.test.ts`
+    * `[✅]`   Imports types ONLY from `enqueueModelCall.interface.ts` — no guard imports, no runtime validators; mirrors `ai-adapter.interface.test.ts` pattern
+    * `[✅]`   Construct `EnqueueModelCallDeps` literal with all four fields (`logger`, `netlifyQueueUrl`, `netlifyApiKey`, `apiKeyForProvider`) of declared types — compiles; assert shape
+    * `[✅]`   Construct `EnqueueModelCallParams` literal with all five fields (`dbClient`, `job`, `providerRow`, `userAuthToken`, `output_type`) of declared types — compiles; assert shape
+    * `[✅]`   Construct `EnqueueModelCallPayload` literal with `chatApiRequest` and `preflightInputTokens: number` — compiles; assert `typeof preflightInputTokens === 'number'`
+    * `[✅]`   Construct `EnqueueModelCallSuccessReturn` literal `{ queued: true }` — compiles; assert `literal.queued === true`
+    * `[✅]`   Construct `EnqueueModelCallErrorReturn` literal `{ error: new Error('x'), retriable: false }` — compiles; assert `error instanceof Error` and `typeof retriable === 'boolean'`
+    * `[✅]`   Declare a `BoundEnqueueModelCallFn` variable and assign an `async (params, payload) => Return` function to it — compiles (signature match)
+    * `[✅]`   Pure type-shape assertions only — invalid shapes are a compile-time concern; runtime accept/reject belongs in `enqueueModelCall.guard.test.ts`
 
-  * `[ ]`   `enqueueModelCall.interface.ts`
-    * `[ ]`   `EnqueueModelCallDeps`: `{ logger: ILogger; netlifyQueueUrl: string; netlifyApiKey: string; apiKeyForProvider: ApiKeyForProviderFn }`
-    * `[ ]`   `EnqueueModelCallParams`: `{ dbClient: SupabaseClient<Database>; job: DialecticJobRow; providerRow: Tables<'ai_providers'>; userAuthToken: string; output_type: string }` — new type; minimal subset of `ExecuteModelCallAndSaveParams` fields needed for validation, DB write, and event construction
-    * `[ ]`   `EnqueueModelCallPayload`: `{ chatApiRequest: ChatApiRequest; preflightInputTokens: number }` — new type; same shape as `ExecuteModelCallAndSavePayload` but independently defined
-    * `[ ]`   `EnqueueModelCallSuccessReturn`: `{ queued: true }`
-    * `[ ]`   `EnqueueModelCallErrorReturn`: `{ error: Error; retriable: boolean }`
-    * `[ ]`   `EnqueueModelCallReturn`: union of success and error
-    * `[ ]`   `EnqueueModelCallFn`: `(deps, params, payload) => Promise<EnqueueModelCallReturn>`
-    * `[ ]`   `BoundEnqueueModelCallFn`: `(params, payload) => Promise<EnqueueModelCallReturn>` — pre-bound signature used as dep in `PrepareModelJobDeps`
-    * `[ ]`   `ApiKeyForProviderFn` must be located in `_shared` before this node executes — do not define a new type if one already exists
+  * `[✅]`   `enqueueModelCall.interface.ts`
+    * `[✅]`   `EnqueueModelCallDeps`: `{ logger: ILogger; netlifyQueueUrl: string; netlifyApiKey: string; apiKeyForProvider: ApiKeyForProviderFn }`
+    * `[✅]`   `EnqueueModelCallParams`: `{ dbClient: SupabaseClient<Database>; job: DialecticJobRow; providerRow: Tables<'ai_providers'>; userAuthToken: string; output_type: string }` — new type; minimal subset of `ExecuteModelCallAndSaveParams` fields needed for validation, DB write, and event construction
+    * `[✅]`   `EnqueueModelCallPayload`: `{ chatApiRequest: ChatApiRequest; preflightInputTokens: number }` — new type; same shape as `ExecuteModelCallAndSavePayload` but independently defined
+    * `[✅]`   `EnqueueModelCallSuccessReturn`: `{ queued: true }`
+    * `[✅]`   `EnqueueModelCallErrorReturn`: `{ error: Error; retriable: boolean }`
+    * `[✅]`   `EnqueueModelCallReturn`: union of success and error
+    * `[✅]`   `EnqueueModelCallFn`: `(deps, params, payload) => Promise<EnqueueModelCallReturn>`
+    * `[✅]`   `BoundEnqueueModelCallFn`: `(params, payload) => Promise<EnqueueModelCallReturn>` — pre-bound signature used as dep in `PrepareModelJobDeps`
+    * `[✅]`   `ApiKeyForProviderFn` must be located in `_shared` before this node executes — do not define a new type if one already exists
 
-  * `[ ]`   `enqueueModelCall.interaction.spec`
-    * `[ ]`   Called by `prepareModelJob` as `deps.enqueueModelCall` (now bound to front-half)
-    * `[ ]`   Validates `output_type` via `isModelContributionFileType`; invalid → `{ error, retriable: false }`
-    * `[ ]`   Validates `providerRow.config` via `isAiModelExtendedConfig`; invalid → `{ error, retriable: false }`
-    * `[ ]`   Resolves API key via `apiKeyForProvider`; key missing → `{ error, retriable: false }`
-    * `[ ]`   Writes `{ status: 'queued' }` to `dialectic_generation_jobs` via DB client
-    * `[ ]`   Constructs `AiStreamEvent`, serializes to JSON, enforces 500 KB size limit
-    * `[ ]`   POSTs to `deps.netlifyQueueUrl` with `Authorization: Bearer ${deps.netlifyApiKey}`, body `{ eventName: 'ai-stream', data: event }`
-    * `[ ]`   On 2xx response (`sendStatus: 'succeeded'`): returns `{ queued: true }`
-    * `[ ]`   On non-2xx or network error: returns `{ error, retriable: true }`
-    * `[ ]`   Does NOT call the AI provider or await stream result
+  * `[✅]`   `enqueueModelCall.interaction.spec`
+    * `[✅]`   Called by `prepareModelJob` as `deps.enqueueModelCall` (now bound to front-half)
+    * `[✅]`   Validates `output_type` via `isModelContributionFileType`; invalid → `{ error, retriable: false }`
+    * `[✅]`   Validates `providerRow.config` via `isAiModelExtendedConfig`; invalid → `{ error, retriable: false }`
+    * `[✅]`   Resolves API key via `apiKeyForProvider`; key missing → `{ error, retriable: false }`
+    * `[✅]`   Writes `{ status: 'queued' }` to `dialectic_generation_jobs` via DB client
+    * `[✅]`   Constructs `AiStreamEvent`, serializes to JSON, enforces 500 KB size limit
+    * `[✅]`   POSTs to `deps.netlifyQueueUrl` with `Authorization: Bearer ${deps.netlifyApiKey}`, body `{ eventName: 'ai-stream', data: event }`
+    * `[✅]`   On 2xx response (`sendStatus: 'succeeded'`): returns `{ queued: true }`
+    * `[✅]`   On non-2xx or network error: returns `{ error, retriable: true }`
+    * `[✅]`   Does NOT call the AI provider or await stream result
 
-  * `[ ]`   `enqueueModelCall.guard.test.ts`
-    * `[ ]`   `isEnqueueModelCallDeps`: accepts valid deps object with all four fields; rejects missing `logger`; rejects missing `netlifyQueueUrl`; rejects missing `netlifyApiKey`; rejects missing `apiKeyForProvider`
-    * `[ ]`   `isEnqueueModelCallParams`: accepts valid params with all five fields; rejects missing `dbClient`; rejects missing `job`; rejects missing `providerRow`; rejects missing `userAuthToken`; rejects missing `output_type`
-    * `[ ]`   `isEnqueueModelCallPayload`: accepts valid payload with both fields; rejects missing `chatApiRequest`; rejects missing `preflightInputTokens`
-    * `[ ]`   `isEnqueueModelCallSuccessReturn`: accepts `{ queued: true }`; rejects `{ queued: false }`; rejects missing field
-    * `[ ]`   `isEnqueueModelCallErrorReturn`: accepts valid; rejects missing `retriable`; rejects missing `error`
+  * `[✅]`   `enqueueModelCall.guard.test.ts`
+    * `[✅]`   `isEnqueueModelCallDeps`: accepts valid deps object with all four fields; rejects missing `logger`; rejects missing `netlifyQueueUrl`; rejects missing `netlifyApiKey`; rejects missing `apiKeyForProvider`
+    * `[✅]`   `isEnqueueModelCallParams`: accepts valid params with all five fields; rejects missing `dbClient`; rejects missing `job`; rejects missing `providerRow`; rejects missing `userAuthToken`; rejects missing `output_type`
+    * `[✅]`   `isEnqueueModelCallPayload`: accepts valid payload with both fields; rejects missing `chatApiRequest`; rejects missing `preflightInputTokens`
+    * `[✅]`   `isEnqueueModelCallSuccessReturn`: accepts `{ queued: true }`; rejects `{ queued: false }`; rejects missing field
+    * `[✅]`   `isEnqueueModelCallErrorReturn`: accepts valid; rejects missing `retriable`; rejects missing `error`
 
-  * `[ ]`   `enqueueModelCall.guard.ts`
-    * `[ ]`   `isEnqueueModelCallDeps(v: unknown): v is EnqueueModelCallDeps`
-    * `[ ]`   `isEnqueueModelCallParams(v: unknown): v is EnqueueModelCallParams`
-    * `[ ]`   `isEnqueueModelCallPayload(v: unknown): v is EnqueueModelCallPayload`
-    * `[ ]`   `isEnqueueModelCallSuccessReturn(v: unknown): v is EnqueueModelCallSuccessReturn`
-    * `[ ]`   `isEnqueueModelCallErrorReturn(v: unknown): v is EnqueueModelCallErrorReturn`
+  * `[✅]`   `enqueueModelCall.guard.ts`
+    * `[✅]`   `isEnqueueModelCallDeps(v: unknown): v is EnqueueModelCallDeps`
+    * `[✅]`   `isEnqueueModelCallParams(v: unknown): v is EnqueueModelCallParams`
+    * `[✅]`   `isEnqueueModelCallPayload(v: unknown): v is EnqueueModelCallPayload`
+    * `[✅]`   `isEnqueueModelCallSuccessReturn(v: unknown): v is EnqueueModelCallSuccessReturn`
+    * `[✅]`   `isEnqueueModelCallErrorReturn(v: unknown): v is EnqueueModelCallErrorReturn`
 
-  * `[ ]`   `enqueueModelCall.test.ts` *(mostly new tests; one copy-and-modify from `executeModelCallAndSave.test.ts`)*
-    * `[ ]`   Copy from `executeModelCallAndSave.test.ts`: parameter handoff test at line 74 (`executeModelCallAndSave calls adapter.sendMessageStream with payload.chatApiRequest and params.providerRow.api_identifier`)
-    * `[ ]`   Modify:
+  * `[✅]`   `enqueueModelCall.test.ts` *(mostly new tests; one copy-and-modify from `executeModelCallAndSave.test.ts`)*
+    * `[✅]`   Copy from `executeModelCallAndSave.test.ts`: parameter handoff test at line 74 (`executeModelCallAndSave calls adapter.sendMessageStream with payload.chatApiRequest and params.providerRow.api_identifier`)
+    * `[✅]`   Modify:
       * Replace `executeModelCallAndSave(deps, params, payload)` with `enqueueModelCall(deps, params, payload)`
       * Replace `ExecuteModelCallAndSaveParams` construction with `EnqueueModelCallParams` (re-used shape, includes `dbClient`)
       * Replace `ExecuteModelCallAndSavePayload` construction with `EnqueueModelCallPayload` (same `chatApiRequest`, `preflightInputTokens`)
       * Replace `createMockExecuteModelCallAndSaveDeps` with `createMockEnqueueModelCallDeps`
       * Replace assertion target: instead of asserting `adapter.sendMessageStream` was called, assert `fetch` was called with `deps.netlifyQueueUrl` and a JSON body whose `data` contains an `AiStreamEvent` with `chat_api_request` equal to `payload.chatApiRequest` and `api_identifier` equal to `params.providerRow.api_identifier`
       * Remove adapter mocking — enqueueModelCall does not receive `getAiProviderAdapter` as a dep
-    * `[ ]`   Copy from `executeModelCallAndSave.test.ts`: render-job non-insertion test at line 308 (`executeModelCallAndSave does not insert a RENDER job into dialectic_generation_jobs (enqueue is external)`)
-    * `[ ]`   Modify (inverse assertion):
+    * `[✅]`   Copy from `executeModelCallAndSave.test.ts`: render-job non-insertion test at line 308 (`executeModelCallAndSave does not insert a RENDER job into dialectic_generation_jobs (enqueue is external)`)
+    * `[✅]`   Modify (inverse assertion):
       * Apply the standard modifications above
       * Replace negative assertion with positive: `enqueueModelCall` MUST insert a job status update (`{ status: 'queued' }`) into `dialectic_generation_jobs` via `params.dbClient` — the row already exists, this is an update, not an insert of a new row
       * Assert the update targets the correct `job_id` from `params`
-    * `[ ]`   New tests — pre-stream validation (no EMCAS equivalent as dedicated tests):
+    * `[✅]`   New tests — pre-stream validation (no EMCAS equivalent as dedicated tests):
       * Invalid `output_type` (fails `isModelContributionFileType`) → `{ error, retriable: false }`, no DB write, no `fetch` call
       * Invalid `providerRow.config` (fails `isAiModelExtendedConfig`) → `{ error, retriable: false }`, no DB write, no `fetch` call
       * Missing API key (`apiKeyForProvider` returns null/empty) → `{ error, retriable: false }`, no DB write, no `fetch` call
       * All three validation errors occur BEFORE any DB write or `fetch` — proven by spy call order (zero calls)
-    * `[ ]`   New tests — DB write ordering and shape:
+    * `[✅]`   New tests — DB write ordering and shape:
       * Valid inputs → `params.dbClient` is called with an update setting `status: 'queued'` on the row matching `params.job_id`
       * DB write happens BEFORE `fetch` POST — proven by spy call order assertion
       * DB write failure → `{ error, retriable: true }`, no `fetch` call attempted
-    * `[ ]`   New tests — HTTP enqueue behavior:
+    * `[✅]`   New tests — HTTP enqueue behavior:
       * Valid inputs → `fetch` called exactly once with URL `deps.netlifyQueueUrl`, method POST, header `Authorization: Bearer ${deps.netlifyApiKey}`, header `Content-Type: application/json`, body `{ eventName: 'ai-stream', data: <AiStreamEvent> }`
       * `AiStreamEvent` in body contains fully-populated fields: `job_id`, `api_identifier`, `model_config` (mapped from `AiModelExtendedConfig` to `NodeModelConfig`), `chat_api_request` (mapped from `ChatApiRequest` to `NodeChatApiRequest`), `user_jwt`
       * `AiStreamEvent.user_jwt` equals `params.userAuthToken` — proven by assertion on captured body
       * `AiStreamEvent.model_config` contains `{ api_identifier, provider_max_input_tokens, context_window_tokens, hard_cap_output_tokens, provider_max_output_tokens, input_token_cost_rate, output_token_cost_rate }` mapped from `params.providerRow.config` — proven by assertion on captured body
       * `fetch` returns 2xx → returns `{ queued: true }`
       * `fetch` returns non-2xx or throws network error → returns `{ error, retriable: true }`, DB status remains `queued` (not rolled back — retriable retry path handles it)
-    * `[ ]`   New tests — separation of concerns:
+    * `[✅]`   New tests — separation of concerns:
       * `deps` object does NOT contain `getAiProviderAdapter` — structural proof that enqueueModelCall cannot call AI providers
       * No adapter stream is opened, awaited, or consumed — proven by absence of stream-related spies being called
       * Function returns BEFORE any stream processing could complete — proven by short execution time and no post-stream artifacts (no contribution, no token debit, no notification)
       * Does NOT write any terminal job status (`completed`, `needs_continuation`, `failed`) — only `queued`
-    * `[ ]`   New test — payload size constraint:
+    * `[✅]`   New test — payload size constraint:
       * `AiStreamEvent` serialized size stays under 500 KB Netlify limit for a representative large-but-valid `chatApiRequest`
       * Oversized event → `{ error, retriable: false }` with explicit size-limit error message, no `fetch` call attempted
 
-  * `[ ]`   `construction`
-    * `[ ]`   At Edge Function boundary: read `NETLIFY_QUEUE_URL` and `AWL_API_KEY` from env vars, inject as `netlifyQueueUrl` and `netlifyApiKey` into `EnqueueModelCallDeps`
-    * `[ ]`   No factory function — deps are plain strings; `enqueueModelCall` calls `fetch` directly
+  * `[✅]`   `construction`
+    * `[✅]`   At Edge Function boundary: read `NETLIFY_QUEUE_URL` and `AWL_API_KEY` from env vars, inject as `netlifyQueueUrl` and `netlifyApiKey` into `EnqueueModelCallDeps`
+    * `[✅]`   No factory function — deps are plain strings; `enqueueModelCall` calls `fetch` directly
 
-  * `[ ]`   `enqueueModelCall.ts`
-    * `[ ]`   Exports `enqueueModelCall(deps, params, payload): Promise<EnqueueModelCallReturn>`
-    * `[ ]`   Validates `output_type`, model config, API key
-    * `[ ]`   Writes `queued` status to DB
-    * `[ ]`   Constructs `AiStreamEvent` from params, payload, and resolved config
-    * `[ ]`   Serializes event to JSON; checks serialized size ≤ 500 KB; rejects with `{ error, retriable: false }` if oversized
-    * `[ ]`   POSTs to `deps.netlifyQueueUrl` via `fetch` with `Authorization: Bearer ${deps.netlifyApiKey}`, `Content-Type: application/json`, body `{ eventName: 'ai-stream', data: event }`
-    * `[ ]`   On 2xx response: returns `{ queued: true }`
-    * `[ ]`   On non-2xx or network error: returns `{ error, retriable: true }`
+  * `[✅]`   `enqueueModelCall.ts`
+    * `[✅]`   Exports `enqueueModelCall(deps, params, payload): Promise<EnqueueModelCallReturn>`
+    * `[✅]`   Validates `output_type`, model config, API key
+    * `[✅]`   Writes `queued` status to DB
+    * `[✅]`   Constructs `AiStreamEvent` from params, payload, and resolved config
+    * `[✅]`   Serializes event to JSON; checks serialized size ≤ 500 KB; rejects with `{ error, retriable: false }` if oversized
+    * `[✅]`   POSTs to `deps.netlifyQueueUrl` via `fetch` with `Authorization: Bearer ${deps.netlifyApiKey}`, `Content-Type: application/json`, body `{ eventName: 'ai-stream', data: event }`
+    * `[✅]`   On 2xx response: returns `{ queued: true }`
+    * `[✅]`   On non-2xx or network error: returns `{ error, retriable: true }`
 
-  * `[ ]`   `enqueueModelCall.mock.ts`
-    * `[ ]`   `createMockEnqueueModelCallDeps(overrides?)`: controllable `EnqueueModelCallDeps`
-    * `[ ]`   Default: `netlifyQueueUrl` set to `'https://test.netlify/.netlify/functions/async-workloads-router'`, `netlifyApiKey` set to `'test-awl-api-key'`
-    * `[ ]`   Tests mock `fetch` globally to control HTTP responses; no function mock on deps for enqueue behavior
+  * `[✅]`   `enqueueModelCall.mock.ts`
+    * `[✅]`   `createMockEnqueueModelCallDeps(overrides?)`: controllable `EnqueueModelCallDeps`
+    * `[✅]`   Default: `netlifyQueueUrl` set to `'https://test.netlify/.netlify/functions/async-workloads-router'`, `netlifyApiKey` set to `'test-awl-api-key'`
+    * `[✅]`   Tests mock `fetch` globally to control HTTP responses; no function mock on deps for enqueue behavior
 
-  * `[ ]`   `enqueueModelCall.provides.ts`
-    * `[ ]`   Exports: `enqueueModelCall`, `BoundEnqueueModelCallFn`, return types, guards
+  * `[✅]`   `enqueueModelCall.provides.ts`
+    * `[✅]`   Exports: `enqueueModelCall`, `BoundEnqueueModelCallFn`, return types, guards
 
-  * `[ ]`   `enqueueModelCall.integration.test.ts`
-    * `[ ]`   Chain: `prepareModelJob` (mock) calls front-half → front-half writes DB status → POSTs to Netlify via `fetch` → returns `{ queued: true }` → prepareModelJob receives and passes through
-    * `[ ]`   Asserts DB write precedes `fetch` POST
-    * `[ ]`   Uses mock DB client and mock `fetch`
+  * `[✅]`   `enqueueModelCall.integration.test.ts`
+    * `[✅]`   Chain: `prepareModelJob` (mock) calls front-half → front-half writes DB status → POSTs to Netlify via `fetch` → returns `{ queued: true }` → prepareModelJob receives and passes through
+    * `[✅]`   Asserts DB write precedes `fetch` POST
+    * `[✅]`   Uses mock DB client and mock `fetch`
 
-  * `[ ]`   `directionality`
-    * `[ ]`   Layer: app/port (Deno, Supabase Edge)
-    * `[ ]`   Deps inward: existing Deno shared utilities, Supabase client, injected config strings (`netlifyQueueUrl`, `netlifyApiKey`), Deno global `fetch`
-    * `[ ]`   Provides outward: `BoundEnqueueModelCallFn` consumed by `prepareModelJob`; `queued` status and `AiStreamEvent` emitted to external systems
-    * `[ ]`   No cycles; no external client libraries; no Node.js dependencies
+  * `[✅]`   `directionality`
+    * `[✅]`   Layer: app/port (Deno, Supabase Edge)
+    * `[✅]`   Deps inward: existing Deno shared utilities, Supabase client, injected config strings (`netlifyQueueUrl`, `netlifyApiKey`), Deno global `fetch`
+    * `[✅]`   Provides outward: `BoundEnqueueModelCallFn` consumed by `prepareModelJob`; `queued` status and `AiStreamEvent` emitted to external systems
+    * `[✅]`   No cycles; no external client libraries; no Node.js dependencies
 
-  * `[ ]`   `requirements`
-    * `[ ]`   Validation failures return error without DB write or `fetch` call — proven by unit test
-    * `[ ]`   DB status written to `queued` before `fetch` POST — proven by unit test call order assertion
-    * `[ ]`   `fetch` called with correct URL (`deps.netlifyQueueUrl`), auth header (`Bearer ${deps.netlifyApiKey}`), and JSON body containing `AiStreamEvent` — proven by unit test
-    * `[ ]`   `AiStreamEvent` in request body contains correct `user_jwt` — proven by unit test
-    * `[ ]`   Returns `{ queued: true }` on 2xx from `fetch` — proven by unit test
-    * `[ ]`   Non-2xx or network error returns `{ error, retriable: true }` — proven by unit test
-    * `[ ]`   Oversized event (>500 KB serialized) returns `{ error, retriable: false }` without calling `fetch` — proven by unit test
+  * `[✅]`   `requirements`
+    * `[✅]`   Validation failures return error without DB write or `fetch` call — proven by unit test
+    * `[✅]`   DB status written to `queued` before `fetch` POST — proven by unit test call order assertion
+    * `[✅]`   `fetch` called with correct URL (`deps.netlifyQueueUrl`), auth header (`Bearer ${deps.netlifyApiKey}`), and JSON body containing `AiStreamEvent` — proven by unit test
+    * `[✅]`   `AiStreamEvent` in request body contains correct `user_jwt` — proven by unit test
+    * `[✅]`   Returns `{ queued: true }` on 2xx from `fetch` — proven by unit test
+    * `[✅]`   Non-2xx or network error returns `{ error, retriable: true }` — proven by unit test
+    * `[✅]`   Oversized event (>500 KB serialized) returns `{ error, retriable: false }` without calling `fetch` — proven by unit test
 
-* `[ ]`   `dialectic-worker/prepareModelJob/prepareModelJob` **[BE] Update prepareModelJob — swap EMCAS dep to front-half, adapt return handling for queued result**
+* `[✅]`   `dialectic-worker/prepareModelJob/prepareModelJob` **[BE] Update prepareModelJob — swap EMCAS dep to front-half, adapt return handling for queued result**
 
-  * `[ ]`   `objective`
-    * `[ ]`   Replace the `executeModelCallAndSave` dep (full EMCAS) with `enqueueModelCall`, update result handling so `{ queued: true }` is a valid success path, and update `PrepareModelJobSuccessReturn` to reflect that `contribution`, `needsContinuation`, and `renderJobId` are no longer available at this point in the call chain
-    * `[ ]`   Functional goals:
+  * `[✅]`   `objective`
+    * `[✅]`   Replace the `executeModelCallAndSave` dep (full EMCAS) with `enqueueModelCall`, update result handling so `{ queued: true }` is a valid success path, and update `PrepareModelJobSuccessReturn` to reflect that `contribution`, `needsContinuation`, and `renderJobId` are no longer available at this point in the call chain
+    * `[✅]`   Functional goals:
       * `PrepareModelJobDeps.enqueueModelCall` type changes to `BoundEnqueueModelCallFn`
       * On `{ queued: true }` from front-half: return `PrepareModelJobSuccessReturn` with queued-appropriate shape
       * On front-half error: propagate as `PrepareModelJobErrorReturn` (unchanged behavior)
       * `enqueueRenderJob` call (if any) that depended on the contribution result must be removed or deferred — no contribution exists at this stage
-    * `[ ]`   Non-functional constraints:
+    * `[✅]`   Non-functional constraints:
       * All existing validation logic (Zones A–D) in prepareModelJob remains unchanged
       * Only the EMCAS call site and result handling change
       * No changes to `PrepareModelJobParams` or `PrepareModelJobPayload`
 
-  * `[ ]`   `role`
-    * `[ ]`   Role: app/orchestrator — assembles prompt and dispatches to EMCAS front-half
-    * `[ ]`   Unchanged from current role; only the EMCAS dep type and result handling change
-    * `[ ]`   Must NOT: call AI provider directly, await stream, or handle post-stream logic
+  * `[✅]`   `role`
+    * `[✅]`   Role: app/orchestrator — assembles prompt and dispatches to EMCAS front-half
+    * `[✅]`   Unchanged from current role; only the EMCAS dep type and result handling change
+    * `[✅]`   Must NOT: call AI provider directly, await stream, or handle post-stream logic
 
-  * `[ ]`   `module`
-    * `[ ]`   Bounded context: `dialectic-worker/prepareModelJob` — unchanged
-    * `[ ]`   Inside boundary: Zones A–D prompt assembly, front-half dispatch, queued-result propagation
-    * `[ ]`   Outside boundary: streaming, post-stream, contribution persistence, token debit, render job enqueue (render job deferred — no contribution at this stage)
+  * `[✅]`   `module`
+    * `[✅]`   Bounded context: `dialectic-worker/prepareModelJob` — unchanged
+    * `[✅]`   Inside boundary: Zones A–D prompt assembly, front-half dispatch, queued-result propagation
+    * `[✅]`   Outside boundary: streaming, post-stream, contribution persistence, token debit, render job enqueue (render job deferred — no contribution at this stage)
 
-  * `[ ]`   `deps`
-    * `[ ]`   `BoundEnqueueModelCallFn` — from `enqueueModelCall.provides.ts`; replaces `BoundExecuteModelCallAndSaveFn`
-    * `[ ]`   All other existing deps unchanged
-    * `[ ]`   `enqueueRenderJob` dep: render job requires a contribution record; since front-half returns no contribution, `enqueueRenderJob` call is removed from prepareModelJob — render job dispatch moves to back-half
+  * `[✅]`   `deps`
+    * `[✅]`   `BoundEnqueueModelCallFn` — from `enqueueModelCall.provides.ts`; replaces `BoundExecuteModelCallAndSaveFn`
+    * `[✅]`   All other existing deps unchanged
+    * `[✅]`   `enqueueRenderJob` dep: render job requires a contribution record; since front-half returns no contribution, `enqueueRenderJob` call is removed from prepareModelJob — render job dispatch moves to back-half
 
-  * `[ ]`   `context_slice`
-    * `[ ]`   Receives: unchanged `PrepareModelJobParams` and `PrepareModelJobPayload`
-    * `[ ]`   Calls: `deps.enqueueModelCall(emcasParams, { chatApiRequest, preflightInputTokens })` — returns `EnqueueModelCallReturn`
-    * `[ ]`   Returns: updated `PrepareModelJobSuccessReturn` — `{ queued: true }` (contribution and continuation data removed; back-half is responsible)
+  * `[✅]`   `context_slice`
+    * `[✅]`   Receives: unchanged `PrepareModelJobParams` and `PrepareModelJobPayload`
+    * `[✅]`   Calls: `deps.enqueueModelCall(emcasParams, { chatApiRequest, preflightInputTokens })` — returns `EnqueueModelCallReturn`
+    * `[✅]`   Returns: updated `PrepareModelJobSuccessReturn` — `{ queued: true }` (contribution and continuation data removed; back-half is responsible)
 
-  * `[ ]`   `prepareModelJob.interface.test.ts` *(update existing file)*
-    * `[ ]`   File tests the type contract ONLY — no guard imports, no runtime validators; mirrors `ai-adapter.interface.test.ts` pattern
-    * `[ ]`   Updated: construct `PrepareModelJobSuccessReturn` literal `{ queued: true }` — compiles; assert `literal.queued === true`
-    * `[ ]`   Removed: literals/assertions referencing `contribution`, `needsContinuation`, `renderJobId` on the success return
-    * `[ ]`   Updated: construct `PrepareModelJobDeps` literal with `enqueueModelCall: BoundEnqueueModelCallFn` — compiles; assert shape
-    * `[ ]`   Existing error-return type-shape assertions remain unchanged
-    * `[ ]`   Any guard-behavior cases previously in this file move to `prepareModelJob.guard.test.ts` (runtime accept/reject is not the interface test's job)
+  * `[✅]`   `prepareModelJob.interface.test.ts` *(update existing file)*
+    * `[✅]`   File tests the type contract ONLY — no guard imports, no runtime validators; mirrors `ai-adapter.interface.test.ts` pattern
+    * `[✅]`   Updated: construct `PrepareModelJobSuccessReturn` literal `{ queued: true }` — compiles; assert `literal.queued === true`
+    * `[✅]`   Removed: literals/assertions referencing `contribution`, `needsContinuation`, `renderJobId` on the success return
+    * `[✅]`   Updated: construct `PrepareModelJobDeps` literal with `enqueueModelCall: BoundEnqueueModelCallFn` — compiles; assert shape
+    * `[✅]`   Existing error-return type-shape assertions remain unchanged
+    * `[✅]`   Any guard-behavior cases previously in this file move to `prepareModelJob.guard.test.ts` (runtime accept/reject is not the interface test's job)
 
-  * `[ ]`   `prepareModelJob.interface.ts` *(update existing file)*
-    * `[ ]`   `PrepareModelJobDeps.enqueueModelCall`: type changes from `BoundEnqueueModelCallFn` to `BoundEnqueueModelCallFn`
-    * `[ ]`   `PrepareModelJobSuccessReturn`: changes from `{ contribution, needsContinuation, renderJobId }` to `{ queued: true }`
-    * `[ ]`   `PrepareModelJobErrorReturn`: unchanged
-    * `[ ]`   `enqueueRenderJob` removed from `PrepareModelJobDeps` — render job is back-half's responsibility
+  * `[✅]`   `prepareModelJob.interface.ts` *(update existing file)*
+    * `[✅]`   `PrepareModelJobDeps.enqueueModelCall`: type changes from `BoundEnqueueModelCallFn` to `BoundEnqueueModelCallFn`
+    * `[✅]`   `PrepareModelJobSuccessReturn`: changes from `{ contribution, needsContinuation, renderJobId }` to `{ queued: true }`
+    * `[✅]`   `PrepareModelJobErrorReturn`: unchanged
+    * `[✅]`   `enqueueRenderJob` removed from `PrepareModelJobDeps` — render job is back-half's responsibility
 
-  * `[ ]`   `prepareModelJob.interaction.spec` *(update)*
-    * `[ ]`   Zones A–D prompt assembly: unchanged
-    * `[ ]`   EMCAS call: now calls front-half; receives `{ queued: true }` or `{ error, retriable }`
-    * `[ ]`   On `{ queued: true }`: returns `{ queued: true }` to processSimpleJob
-    * `[ ]`   On front-half error: returns `PrepareModelJobErrorReturn`
-    * `[ ]`   `enqueueRenderJob` no longer called from prepareModelJob
+  * `[✅]`   `prepareModelJob.interaction.spec` *(update)*
+    * `[✅]`   Zones A–D prompt assembly: unchanged
+    * `[✅]`   EMCAS call: now calls front-half; receives `{ queued: true }` or `{ error, retriable }`
+    * `[✅]`   On `{ queued: true }`: returns `{ queued: true }` to processSimpleJob
+    * `[✅]`   On front-half error: returns `PrepareModelJobErrorReturn`
+    * `[✅]`   `enqueueRenderJob` no longer called from prepareModelJob
 
-  * `[ ]`   `prepareModelJob.guard.test.ts` *(update existing file)*
-    * `[ ]`   `isPrepareModelJobSuccessReturn`: updated — accepts `{ queued: true }`; rejects old `{ contribution, needsContinuation, renderJobId }` shape
-    * `[ ]`   `isPrepareModelJobDeps`: updated — `enqueueModelCall` must be `BoundEnqueueModelCallFn`; `enqueueRenderJob` absent → guard accepts (removed field)
-    * `[ ]`   All other guard tests unchanged
+  * `[✅]`   `prepareModelJob.guard.test.ts` *(update existing file)*
+    * `[✅]`   `isPrepareModelJobSuccessReturn`: updated — accepts `{ queued: true }`; rejects old `{ contribution, needsContinuation, renderJobId }` shape
+    * `[✅]`   `isPrepareModelJobDeps`: updated — `enqueueModelCall` must be `BoundEnqueueModelCallFn`; `enqueueRenderJob` absent → guard accepts (removed field)
+    * `[✅]`   All other guard tests unchanged
 
-  * `[ ]`   `prepareModelJob.guard.ts` *(update existing file)*
-    * `[ ]`   `isPrepareModelJobSuccessReturn`: checks `queued === true` instead of `contribution` shape
-    * `[ ]`   `isPrepareModelJobDeps`: removes `enqueueRenderJob` check; no change to `enqueueModelCall` check (function type — duck-typed by presence)
-    * `[ ]`   All other guards unchanged
+  * `[✅]`   `prepareModelJob.guard.ts` *(update existing file)*
+    * `[✅]`   `isPrepareModelJobSuccessReturn`: checks `queued === true` instead of `contribution` shape
+    * `[✅]`   `isPrepareModelJobDeps`: removes `enqueueRenderJob` check; no change to `enqueueModelCall` check (function type — duck-typed by presence)
+    * `[✅]`   All other guards unchanged
 
-  * `[ ]`   `prepareModelJob.test.ts` *(update existing file — add new tests at end, do not modify existing)*
-    * `[ ]`   New: front-half returns `{ queued: true }` → prepareModelJob returns `{ queued: true }` — assert propagation
-    * `[ ]`   New: front-half returns `{ error, retriable: false }` → prepareModelJob returns `PrepareModelJobErrorReturn`
-    * `[ ]`   New: `enqueueRenderJob` is NOT called — assert spy never called
-    * `[ ]`   Existing tests: all Zones A–D tests remain unchanged and GREEN
+  * `[✅]`   `prepareModelJob.test.ts` *(update existing file — add new tests at end, do not modify existing)*
+    * `[✅]`   New: front-half returns `{ queued: true }` → prepareModelJob returns `{ queued: true }` — assert propagation
+    * `[✅]`   New: front-half returns `{ error, retriable: false }` → prepareModelJob returns `PrepareModelJobErrorReturn`
+    * `[✅]`   New: `enqueueRenderJob` is NOT called — assert spy never called
+    * `[✅]`   Existing tests: all Zones A–D tests remain unchanged and GREEN
 
-  * `[ ]`   `construction`
-    * `[ ]`   `PrepareModelJobDeps` construction at wiring boundary: `enqueueModelCall` bound to `enqueueModelCall`; `enqueueRenderJob` removed from deps object
-    * `[ ]`   Context factory (`createDialecticWorkerDeps`) updated in JobContext node — not here
+  * `[✅]`   `construction`
+    * `[✅]`   `PrepareModelJobDeps` construction at wiring boundary: `enqueueModelCall` bound to `enqueueModelCall`; `enqueueRenderJob` removed from deps object
+    * `[✅]`   Context factory (`createDialecticWorkerDeps`) updated in JobContext node — not here
 
-  * `[ ]`   `prepareModelJob.ts` *(update existing file)*
-    * `[ ]`   Line 322: call `deps.enqueueModelCall(emcasParams, { chatApiRequest, preflightInputTokens })` — unchanged call shape, return type changes
-    * `[ ]`   Lines 345–357: remove `fileType`, `storageFileType`, `documentKey` result extraction (no longer in return)
-    * `[ ]`   Remove `enqueueRenderJob` call
-    * `[ ]`   On `{ queued: true }`: return `{ queued: true }` to caller
-    * `[ ]`   All Zone A–D logic above the EMCAS call: unchanged
+  * `[✅]`   `prepareModelJob.ts` *(update existing file)*
+    * `[✅]`   Line 322: call `deps.enqueueModelCall(emcasParams, { chatApiRequest, preflightInputTokens })` — unchanged call shape, return type changes
+    * `[✅]`   Lines 345–357: remove `fileType`, `storageFileType`, `documentKey` result extraction (no longer in return)
+    * `[✅]`   Remove `enqueueRenderJob` call
+    * `[✅]`   On `{ queued: true }`: return `{ queued: true }` to caller
+    * `[✅]`   All Zone A–D logic above the EMCAS call: unchanged
 
-  * `[ ]`   `prepareModelJob.mock.ts` *(update existing file)*
-    * `[ ]`   `buildBoundEnqueueModelCallStub`: return type changes to `EnqueueModelCallReturn` — default stub returns `{ queued: true }`
-    * `[ ]`   Remove `enqueueRenderJob` from mock deps
+  * `[✅]`   `prepareModelJob.mock.ts` *(update existing file)*
+    * `[✅]`   `buildBoundEnqueueModelCallStub`: return type changes to `EnqueueModelCallReturn` — default stub returns `{ queued: true }`
+    * `[✅]`   Remove `enqueueRenderJob` from mock deps
 
-  * `[ ]`   `prepareModelJob.provides.ts` *(update if exists)*
-    * `[ ]`   Export updated `PrepareModelJobSuccessReturn` and `BoundEnqueueModelCallFn`
+  * `[✅]`   `prepareModelJob.provides.ts` *(update if exists)*
+    * `[✅]`   Export updated `PrepareModelJobSuccessReturn` and `BoundEnqueueModelCallFn`
 
-  * `[ ]`   `prepareModelJob.integration.test.ts` *(update)*
-    * `[ ]`   Chain: processSimpleJob mock → prepareModelJob (with mock front-half dep) → front-half returns `{ queued: true }` → prepareModelJob returns `{ queued: true }` → processSimpleJob handles correctly
-    * `[ ]`   Existing integration tests updated for new success shape
+  * `[✅]`   `prepareModelJob.integration.test.ts` *(update)*
+    * `[✅]`   Chain: processSimpleJob mock → prepareModelJob (with mock front-half dep) → front-half returns `{ queued: true }` → prepareModelJob returns `{ queued: true }` → processSimpleJob handles correctly
+    * `[✅]`   Existing integration tests updated for new success shape
 
-  * `[ ]`   `directionality`
-    * `[ ]`   Layer: app/orchestrator — unchanged
-    * `[ ]`   Deps inward: front-half (replaces full EMCAS); all other existing deps
-    * `[ ]`   Provides outward: `PrepareModelJobSuccessReturn { queued: true }` to processSimpleJob
-    * `[ ]`   No cycles
+  * `[✅]`   `directionality`
+    * `[✅]`   Layer: app/orchestrator — unchanged
+    * `[✅]`   Deps inward: front-half (replaces full EMCAS); all other existing deps
+    * `[✅]`   Provides outward: `PrepareModelJobSuccessReturn { queued: true }` to processSimpleJob
+    * `[✅]`   No cycles
 
-  * `[ ]`   `requirements`
-    * `[ ]`   Front-half `{ queued: true }` propagates to caller — proven by updated test
-    * `[ ]`   `enqueueRenderJob` is never called from prepareModelJob — proven by spy assertion
-    * `[ ]`   Zones A–D remain GREEN — proven by existing tests passing unchanged
+  * `[✅]`   `requirements`
+    * `[✅]`   Front-half `{ queued: true }` propagates to caller — proven by updated test
+    * `[✅]`   `enqueueRenderJob` is never called from prepareModelJob — proven by spy assertion
+    * `[✅]`   Zones A–D remain GREEN — proven by existing tests passing unchanged
 
-* `[ ]`   `dialectic-worker/processSimpleJob` **[BE] Update processSimpleJob — handle queued success shape, remove premature execute_completed notification**
+* `[✅]`   `dialectic-worker/processSimpleJob` **[BE] Update processSimpleJob — handle queued success shape, remove premature execute_completed notification**
 
-  * `[ ]`   `objective`
-    * `[ ]`   Adapt processSimpleJob to handle `PrepareModelJobSuccessReturn { queued: true }` as a valid terminal result for this invocation, and remove the `sendJobNotificationEvent('execute_completed')` call that is no longer appropriate here (completion is now confirmed only when the back-half runs)
-    * `[ ]`   Functional goals:
+  * `[✅]`   `objective`
+    * `[✅]`   Adapt processSimpleJob to handle `PrepareModelJobSuccessReturn { queued: true }` as a valid terminal result for this invocation, and remove the `sendJobNotificationEvent('execute_completed')` call that is no longer appropriate here (completion is now confirmed only when the back-half runs)
+    * `[✅]`   Functional goals:
       * `isPrepareModelJobSuccessReturn` now accepts `{ queued: true }` — guard change flows in from prepareModelJob node; processSimpleJob's check at line 355 continues to work
       * Remove lines 359–370: `sendJobNotificationEvent('execute_completed')` and associated `notificationDocumentKey` usage
       * All error paths (ContextWindowError, PrepareModelJobExecutionError) remain unchanged
-    * `[ ]`   Non-functional constraints:
+    * `[✅]`   Non-functional constraints:
       * Minimal change — only the post-prepareModelJob success block changes
       * No changes to Zones A–D equivalent logic, session/stage/provider fetching, or error handling
 
-  * `[ ]`   `role`
-    * `[ ]`   Role: app/orchestrator — unchanged; adapts to new EMCAS split contract
-    * `[ ]`   Must NOT: send `execute_completed` notification (moved to back-half), await stream, or know about Netlify
+  * `[✅]`   `role`
+    * `[✅]`   Role: app/orchestrator — unchanged; adapts to new EMCAS split contract
+    * `[✅]`   Must NOT: send `execute_completed` notification (moved to back-half), await stream, or know about Netlify
 
-  * `[ ]`   `module`
-    * `[ ]`   Bounded context: `dialectic-worker` — unchanged
-    * `[ ]`   Inside boundary: job orchestration up to and including prepareModelJob dispatch
-    * `[ ]`   Outside boundary: stream execution (Netlify), post-stream processing (back-half), `execute_completed` notification (back-half)
+  * `[✅]`   `module`
+    * `[✅]`   Bounded context: `dialectic-worker` — unchanged
+    * `[✅]`   Inside boundary: job orchestration up to and including prepareModelJob dispatch
+    * `[✅]`   Outside boundary: stream execution (Netlify), post-stream processing (back-half), `execute_completed` notification (back-half)
 
-  * `[ ]`   `deps`
-    * `[ ]`   All existing deps unchanged — no new deps added
-    * `[ ]`   `notificationDocumentKey` variable: removed (was only used in the `execute_completed` send)
+  * `[✅]`   `deps`
+    * `[✅]`   All existing deps unchanged — no new deps added
+    * `[✅]`   `notificationDocumentKey` variable: removed (was only used in the `execute_completed` send)
 
-  * `[ ]`   `context_slice`
-    * `[ ]`   Receives: unchanged params
-    * `[ ]`   Calls: `ctx.prepareModelJob(prepareParams, preparePayload)` — return type now `PrepareModelJobReturn` with updated success shape `{ queued: true }`
-    * `[ ]`   Returns: void (processSimpleJob throws or returns; its return is not consumed)
+  * `[✅]`   `context_slice`
+    * `[✅]`   Receives: unchanged params
+    * `[✅]`   Calls: `ctx.prepareModelJob(prepareParams, preparePayload)` — return type now `PrepareModelJobReturn` with updated success shape `{ queued: true }`
+    * `[✅]`   Returns: void (processSimpleJob throws or returns; its return is not consumed)
 
-  * `[ ]`   `processSimpleJob.interface.test.ts` *(none exists — processSimpleJob has no interface file; skip)*
+  * `[✅]`   `processSimpleJob.interface.test.ts` *(none exists — processSimpleJob has no interface file; skip)*
 
-  * `[ ]`   `processSimpleJob.interaction.spec` *(update)*
-    * `[ ]`   `isPrepareModelJobSuccessReturn` check at line 355: accepts `{ queued: true }` — updated guard handles this
-    * `[ ]`   On success: function exits normally — no notification send, no contribution handling
-    * `[ ]`   All error paths unchanged
+  * `[✅]`   `processSimpleJob.interaction.spec` *(update)*
+    * `[✅]`   `isPrepareModelJobSuccessReturn` check at line 355: accepts `{ queued: true }` — updated guard handles this
+    * `[✅]`   On success: function exits normally — no notification send, no contribution handling
+    * `[✅]`   All error paths unchanged
 
-  * `[ ]`   `processSimpleJob.test.ts` *(update existing — add new tests at end)*
-    * `[ ]`   New: `prepareModelJob` returns `{ queued: true }` → processSimpleJob returns without throwing, no notification sent
-    * `[ ]`   New: assert `sendJobNotificationEvent` is NOT called with `execute_completed` when prepareModelJob returns `{ queued: true }`
-    * `[ ]`   Existing error path tests: unchanged and GREEN
+  * `[✅]`   `processSimpleJob.test.ts` *(update existing — add new tests at end)*
+    * `[✅]`   New: `prepareModelJob` returns `{ queued: true }` → processSimpleJob returns without throwing, no notification sent
+    * `[✅]`   New: assert `sendJobNotificationEvent` is NOT called with `execute_completed` when prepareModelJob returns `{ queued: true }`
+    * `[✅]`   Existing error path tests: unchanged and GREEN
 
-  * `[ ]`   `construction`
-    * `[ ]`   No construction changes — processSimpleJob is not a class or factory
+  * `[✅]`   `construction`
+    * `[✅]`   No construction changes — processSimpleJob is not a class or factory
 
-  * `[ ]`   `processSimpleJob.ts` *(update existing file)*
-    * `[ ]`   Lines 359–370: remove `sendJobNotificationEvent('execute_completed')` block entirely
-    * `[ ]`   Line 53: remove `notificationDocumentKey` declaration (no longer used)
-    * `[ ]`   Line 54: remove `stepKeyForNotification` if only used by the removed block
-    * `[ ]`   Line 355: `isPrepareModelJobSuccessReturn` check — no code change needed; updated guard (from prepareModelJob node) handles `{ queued: true }`
-    * `[ ]`   All other code: unchanged
+  * `[✅]`   `processSimpleJob.ts` *(update existing file)*
+    * `[✅]`   Lines 359–370: remove `sendJobNotificationEvent('execute_completed')` block entirely
+    * `[✅]`   Line 53: remove `notificationDocumentKey` declaration (no longer used)
+    * `[✅]`   Line 54: remove `stepKeyForNotification` if only used by the removed block
+    * `[✅]`   Line 355: `isPrepareModelJobSuccessReturn` check — no code change needed; updated guard (from prepareModelJob node) handles `{ queued: true }`
+    * `[✅]`   All other code: unchanged
 
-  * `[ ]`   `processSimpleJob.integration.test.ts` *(update or add)*
-    * `[ ]`   Chain: processSimpleJob → prepareModelJob mock returns `{ queued: true }` → processSimpleJob exits cleanly → asserts no `execute_completed` notification sent
-    * `[ ]`   Existing integration tests pass with updated success shape
+  * `[✅]`   `processSimpleJob.integration.test.ts` *(update or add)*
+    * `[✅]`   Chain: processSimpleJob → prepareModelJob mock returns `{ queued: true }` → processSimpleJob exits cleanly → asserts no `execute_completed` notification sent
+    * `[✅]`   Existing integration tests pass with updated success shape
 
-  * `[ ]`   `directionality`
-    * `[ ]`   Layer: app/orchestrator — unchanged
-    * `[ ]`   No new deps; one removed behavior (`execute_completed` notification)
-    * `[ ]`   No cycles
+  * `[✅]`   `directionality`
+    * `[✅]`   Layer: app/orchestrator — unchanged
+    * `[✅]`   No new deps; one removed behavior (`execute_completed` notification)
+    * `[✅]`   No cycles
 
-  * `[ ]`   `requirements`
-    * `[ ]`   `{ queued: true }` from prepareModelJob causes clean return without notification — proven by unit test
-    * `[ ]`   `execute_completed` is never sent from processSimpleJob — proven by spy assertion
-    * `[ ]`   All existing error paths remain GREEN — proven by existing tests unchanged
+  * `[✅]`   `requirements`
+    * `[✅]`   `{ queued: true }` from prepareModelJob causes clean return without notification — proven by unit test
+    * `[✅]`   `execute_completed` is never sent from processSimpleJob — proven by spy assertion
+    * `[✅]`   All existing error paths remain GREEN — proven by existing tests unchanged
 
 * `[ ]`   `dialectic-worker/createJobContext/JobContext` **[BE] Update JobContext — wire enqueueModelCall, remove enqueueRenderJob from prepareModelJob deps slice**
 
-  * `[ ]`   `objective`
-    * `[ ]`   Update `IJobContext` and `createJobContext` to wire `enqueueModelCall` dep in `PrepareModelJobDeps`, and remove `enqueueRenderJob` from the prepareModelJob context slice — reflecting the split architecture
-    * `[ ]`   Functional goals:
+  * `[✅]`   `objective`
+    * `[✅]`   Update `IJobContext` and `createJobContext` to wire `enqueueModelCall` dep in `PrepareModelJobDeps`, and remove `enqueueRenderJob` from the prepareModelJob context slice — reflecting the split architecture
+    * `[✅]`   Functional goals:
       * `IJobContext.prepareModelJob` dep factory wires `BoundEnqueueModelCallFn`
       * `enqueueRenderJob` removed from the prepareModelJob context slice (remains available in the back-half context slice)
       * `netlifyQueueUrl` and `netlifyApiKey` read from env vars and injected into front-half deps
       * `DIALECTIC_SAVERESPONSE_URL` env var wired into `AiStreamDeps` for Netlify workload (Netlify side only — noted but not wired here)
-    * `[ ]`   Non-functional constraints:
+    * `[✅]`   Non-functional constraints:
       * IJobContext context factory must set every field explicitly — no optional fields
       * Existing context slices for other functions (render, continue, retry) remain unchanged
       * All JobContext interface tests must pass with updated wiring
 
-  * `[ ]`   `role`
-    * `[ ]`   Role: app/infra — wiring boundary; constructs and injects deps into the call chain
-    * `[ ]`   Why appropriate: context factory is the single point where runtime deps are assembled; all changes to dep wiring belong here
-    * `[ ]`   Must NOT: implement business logic, call AI providers, or access Supabase directly
+  * `[✅]`   `role`
+    * `[✅]`   Role: app/infra — wiring boundary; constructs and injects deps into the call chain
+    * `[✅]`   Why appropriate: context factory is the single point where runtime deps are assembled; all changes to dep wiring belong here
+    * `[✅]`   Must NOT: implement business logic, call AI providers, or access Supabase directly
 
-  * `[ ]`   `module`
-    * `[ ]`   Bounded context: `dialectic-worker/createJobContext` — unchanged
-    * `[ ]`   Inside boundary: dep construction, context factory, wiring of front-half into prepareModelJob slice
-    * `[ ]`   Outside boundary: all function implementations; Netlify workload wiring (separate package)
+  * `[✅]`   `module`
+    * `[✅]`   Bounded context: `dialectic-worker/createJobContext` — unchanged
+    * `[✅]`   Inside boundary: dep construction, context factory, wiring of front-half into prepareModelJob slice
+    * `[✅]`   Outside boundary: all function implementations; Netlify workload wiring (separate package)
 
-  * `[ ]`   `deps`
-    * `[ ]`   `enqueueModelCall` — from front-half node; bound and injected
-    * `[ ]`   `NETLIFY_QUEUE_URL` and `AWL_API_KEY` — env vars read at boundary; passed as `netlifyQueueUrl` and `netlifyApiKey` strings into front-half deps
-    * `[ ]`   All existing deps unchanged
+  * `[✅]`   `deps`
+    * `[✅]`   `enqueueModelCall` — from front-half node; bound and injected
+    * `[✅]`   `NETLIFY_QUEUE_URL` and `AWL_API_KEY` — env vars read at boundary; passed as `netlifyQueueUrl` and `netlifyApiKey` strings into front-half deps
+    * `[✅]`   All existing deps unchanged
 
-  * `[ ]`   `context_slice`
-    * `[ ]`   `prepareModelJob` context slice: `enqueueModelCall` → `BoundEnqueueModelCallFn`; `enqueueRenderJob` removed
-    * `[ ]`   Back-half context slice: `enqueueRenderJob` present here (back-half dispatches render job after contribution exists)
-    * `[ ]`   All other slices: unchanged
+  * `[✅]`   `context_slice`
+    * `[✅]`   `prepareModelJob` context slice: `enqueueModelCall` → `BoundEnqueueModelCallFn`; `enqueueRenderJob` removed
+    * `[✅]`   Back-half context slice: `enqueueRenderJob` present here (back-half dispatches render job after contribution exists)
+    * `[✅]`   All other slices: unchanged
 
-  * `[ ]`   `JobContext.interface.test.ts` *(update existing)*
-    * `[ ]`   Updated: `IJobContext.prepareModelJob` slice has `enqueueModelCall` typed as `BoundEnqueueModelCallFn`
-    * `[ ]`   Updated: `PrepareModelJobDeps` slice does not include `enqueueRenderJob`
-    * `[ ]`   New: back-half context slice includes `enqueueRenderJob`
-    * `[ ]`   All other interface tests unchanged
+  * `[✅]`   `JobContext.interface.test.ts` *(update existing)*
+    * `[✅]`   Updated: `IJobContext.prepareModelJob` slice has `enqueueModelCall` typed as `BoundEnqueueModelCallFn`
+    * `[✅]`   Updated: `PrepareModelJobDeps` slice does not include `enqueueRenderJob`
+    * `[✅]`   New: back-half context slice includes `enqueueRenderJob`
+    * `[✅]`   All other interface tests unchanged
 
-  * `[ ]`   `JobContext.interface.ts` *(update existing)*
-    * `[ ]`   `IJobContext`: updated prepareModelJob deps slice type
-    * `[ ]`   Add back-half deps slice type for `saveResponse` if not already present
-    * `[ ]`   `ApplyInputsRequiredScopeFn`, `ValidateWalletBalanceFn`, `ValidateModelCostRatesFn`: unchanged
+  * `[✅]`   `JobContext.interface.ts` *(update existing)*
+    * `[✅]`   `IJobContext`: updated prepareModelJob deps slice type
+    * `[✅]`   Add back-half deps slice type for `saveResponse` if not already present
+    * `[✅]`   `ApplyInputsRequiredScopeFn`, `ValidateWalletBalanceFn`, `ValidateModelCostRatesFn`: unchanged
 
-  * `[ ]`   `JobContext.interaction.spec` *(update)*
-    * `[ ]`   `createJobContext` wires `enqueueModelCall` with `netlifyQueueUrl` and `netlifyApiKey` read from env
-    * `[ ]`   `createJobContext` wires back-half deps with `enqueueRenderJob`
+  * `[✅]`   `JobContext.interaction.spec` *(update)*
+    * `[✅]`   `createJobContext` wires `enqueueModelCall` with `netlifyQueueUrl` and `netlifyApiKey` read from env
+    * `[✅]`   `createJobContext` wires back-half deps with `enqueueRenderJob`
 
-  * `[ ]`   `JobContext.guard.test.ts` *(update)*
-    * `[ ]`   Guards for updated context shape — `enqueueModelCall` accepted as `BoundEnqueueModelCallFn`; `enqueueRenderJob` absent from prepareModelJob slice accepted
+  * `[✅]`   `JobContext.guard.test.ts` *(update)*
+    * `[✅]`   Guards for updated context shape — `enqueueModelCall` accepted as `BoundEnqueueModelCallFn`; `enqueueRenderJob` absent from prepareModelJob slice accepted
 
-  * `[ ]`   `JobContext.guard.ts` *(update)*
-    * `[ ]`   Update guard for prepareModelJob context slice to reflect removed `enqueueRenderJob` and updated EMCAS type
+  * `[✅]`   `JobContext.guard.ts` *(update)*
+    * `[✅]`   Update guard for prepareModelJob context slice to reflect removed `enqueueRenderJob` and updated EMCAS type
 
-  * `[ ]`   `JobContext.test.ts` *(update — add new tests at end)*
-    * `[ ]`   New: `createJobContext` wires front-half correctly — `ctx.prepareModelJob` receives `BoundEnqueueModelCallFn`
-    * `[ ]`   New: `enqueueRenderJob` absent from prepareModelJob context slice
-    * `[ ]`   New: `enqueueRenderJob` present in back-half context slice
-    * `[ ]`   Existing tests: unchanged and GREEN
+  * `[✅]`   `JobContext.test.ts` *(update — add new tests at end)*
+    * `[✅]`   New: `createJobContext` wires front-half correctly — `ctx.prepareModelJob` receives `BoundEnqueueModelCallFn`
+    * `[✅]`   New: `enqueueRenderJob` absent from prepareModelJob context slice
+    * `[✅]`   New: `enqueueRenderJob` present in back-half context slice
+    * `[✅]`   Existing tests: unchanged and GREEN
 
-  * `[ ]`   `construction`
-    * `[ ]`   `createJobContext(env, supabaseClient, ...)`: updated to read `NETLIFY_QUEUE_URL` and `AWL_API_KEY` from env; passes as `netlifyQueueUrl` and `netlifyApiKey` into front-half deps
-    * `[ ]`   Context factory must set every field explicitly — no optional fields introduced
+  * `[✅]`   `construction`
+    * `[✅]`   `createJobContext(env, supabaseClient, ...)`: updated to read `NETLIFY_QUEUE_URL` and `AWL_API_KEY` from env; passes as `netlifyQueueUrl` and `netlifyApiKey` into front-half deps
+    * `[✅]`   Context factory must set every field explicitly — no optional fields introduced
 
-  * `[ ]`   `createJobContext.ts` *(update existing)*
-    * `[ ]`   Import `enqueueModelCall`
-    * `[ ]`   In prepareModelJob deps slice: bind `enqueueModelCall` to `enqueueModelCall` (with `netlifyQueueUrl` and `netlifyApiKey` from env)
-    * `[ ]`   Remove `enqueueRenderJob` from prepareModelJob deps slice
-    * `[ ]`   Add back-half deps slice with `enqueueRenderJob` and back-half-specific deps
+  * `[✅]`   `createJobContext.ts` *(update existing)*
+    * `[✅]`   Import `enqueueModelCall`
+    * `[✅]`   In prepareModelJob deps slice: bind `enqueueModelCall` to `enqueueModelCall` (with `netlifyQueueUrl` and `netlifyApiKey` from env)
+    * `[✅]`   Remove `enqueueRenderJob` from prepareModelJob deps slice
+    * `[✅]`   Add back-half deps slice with `enqueueRenderJob` and back-half-specific deps
 
-  * `[ ]`   `JobContext.mock.ts` *(update)*
-    * `[ ]`   Mock context: `enqueueModelCall` in prepareModelJob slice defaults to `createMockEnqueueModelCallDeps` stub
-    * `[ ]`   `enqueueRenderJob` present only in back-half mock slice
+  * `[✅]`   `JobContext.mock.ts` *(update)*
+    * `[✅]`   Mock context: `enqueueModelCall` in prepareModelJob slice defaults to `createMockEnqueueModelCallDeps` stub
+    * `[✅]`   `enqueueRenderJob` present only in back-half mock slice
 
-  * `[ ]`   `JobContext.provides.ts` *(update if exists)*
-    * `[ ]`   Export updated `IJobContext`, `createJobContext`
+  * `[✅]`   `JobContext.provides.ts` *(update if exists)*
+    * `[✅]`   Export updated `IJobContext`, `createJobContext`
 
-  * `[ ]`   `JobContext.integration.test.ts` *(update)*
-    * `[ ]`   Full Phase 1 chain integration: processSimpleJob → prepareModelJob (front-half dep) → front-half writes `queued` to DB → enqueues Netlify event → returns `{ queued: true }` → processSimpleJob exits cleanly
-    * `[ ]`   Uses mock `fetch` and mock DB client
-    * `[ ]`   Proves end-to-end that the Supabase side of Phase 1 is wired correctly
+  * `[✅]`   `JobContext.integration.test.ts` *(update)*
+    * `[✅]`   Full Phase 1 chain integration: processSimpleJob → prepareModelJob (front-half dep) → front-half writes `queued` to DB → enqueues Netlify event → returns `{ queued: true }` → processSimpleJob exits cleanly
+    * `[✅]`   Uses mock `fetch` and mock DB client
+    * `[✅]`   Proves end-to-end that the Supabase side of Phase 1 is wired correctly
 
   * `[ ]`   `ai-stream.integration.test.ts` *(update — add cross-system chain tests)*
     * `[ ]`   Full cross-system chain: mock `AiStreamEvent` → `runAiStreamWorkload` (real) → mock AI adapter (no live model calls) → real Node HTTP server standing in for `saveResponse` → assert POST body matches `AiStreamPayload` and `Authorization: Bearer <user_jwt>` header is present
@@ -1538,20 +1538,20 @@
     * `[ ]`   Real implementations: `runAiStreamWorkload`, `executeStreamPhase`, `executePostPhase`, `saveResponse` handler, event validation guards on both sides
     * `[ ]`   Prerequisite: `saveResponse` Edge Function node must be complete before this step can be written
 
-  * `[ ]`   `directionality`
-    * `[ ]`   Layer: app/infra — wiring boundary
-    * `[ ]`   Deps inward: front-half, back-half, all existing worker deps
-    * `[ ]`   Provides outward: fully wired `IJobContext` to processSimpleJob, processComplexJob, and all other consumers
-    * `[ ]`   No cycles
+  * `[✅]`   `directionality`
+    * `[✅]`   Layer: app/infra — wiring boundary
+    * `[✅]`   Deps inward: front-half, back-half, all existing worker deps
+    * `[✅]`   Provides outward: fully wired `IJobContext` to processSimpleJob, processComplexJob, and all other consumers
+    * `[✅]`   No cycles
 
-  * `[ ]`   `requirements`
-    * `[ ]`   Context wires front-half into prepareModelJob — proven by unit test
-    * `[ ]`   `enqueueRenderJob` absent from prepareModelJob slice — proven by unit test
-    * `[ ]`   Phase 1 Supabase-side chain integration passes — proven by `JobContext.integration.test.ts`
-    * `[ ]`   Phase 1 cross-system chain integration passes: workload receives event, calls mock adapter, POSTs to `saveResponse`, `saveResponse` writes to DB — proven by `ai-stream.integration.test.ts` update
-    * `[ ]`   All existing context tests remain GREEN
+  * `[✅]`   `requirements`
+    * `[✅]`   Context wires front-half into prepareModelJob — proven by unit test
+    * `[✅]`   `enqueueRenderJob` absent from prepareModelJob slice — proven by unit test
+    * `[✅]`   Phase 1 Supabase-side chain integration passes — proven by `JobContext.integration.test.ts`
+    * `[✅]`   Phase 1 cross-system chain integration passes: workload receives event, calls mock adapter, POSTs to `saveResponse`, `saveResponse` writes to DB — proven by `ai-stream.integration.test.ts` update
+    * `[✅]`   All existing context tests remain GREEN
 
-  * `[ ]`   **Commit** `feat(dialectic-worker): split EMCAS into enqueueModelCall (EMCAS front-half) + Netlify streaming worker + saveResponse (EMCAS back-half)`
+  * `[ ]`   **Commit** `feat(dialectic-worker): split EMCAS into enqueueModelCall (EMCAS pre-stream) + Netlify streaming worker + saveResponse (EMCAS post-stream)`
     * `[ ]`   Structural: new Netlify async workload (`ai-stream`) with OpenAI, Anthropic, Google Node.js adapters; new `saveResponse` Deno Edge Function; new `enqueueModelCall` Deno function
     * `[ ]`   Behavioral: AI stream execution moves from Supabase Edge (4-min timeout) to Netlify Async Workloads (15-min timeout); job status `queued` added; `execute_completed` notification moves to back-half
     * `[ ]`   Contract: `PrepareModelJobSuccessReturn` changes to `{ queued: true }`; `BoundEnqueueModelCallFn` dep replaced by `BoundEnqueueModelCallFn`; `enqueueRenderJob` removed from prepareModelJob context slice

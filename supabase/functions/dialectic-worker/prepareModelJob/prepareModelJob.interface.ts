@@ -4,7 +4,6 @@ import type { ILogger } from '../../_shared/types.ts';
 import type { IUserTokenWalletService } from '../../_shared/services/tokenwallet/client/userTokenWalletService.interface.ts';
 import type { ICompressionStrategy } from '../../_shared/utils/vector_utils.interface.ts';
 import type {
-  DialecticContributionRow,
   DialecticJobRow,
   DialecticSessionRow,
   InputRule,
@@ -17,8 +16,7 @@ import type {
   ValidateModelCostRatesFn,
 } from '../createJobContext/JobContext.interface.ts';
 import type { BoundCalculateAffordabilityFn } from '../calculateAffordability/calculateAffordability.interface.ts';
-import type { BoundExecuteModelCallAndSaveFn } from '../executeModelCallAndSave/executeModelCallAndSave.interface.ts';
-import type { BoundEnqueueRenderJobFn } from '../enqueueRenderJob/enqueueRenderJob.interface.ts';
+import type { BoundEnqueueModelCallFn } from '../enqueueModelCall/enqueueModelCall.interface.ts';
 
 export interface PrepareModelJobDeps {
   logger: ILogger;
@@ -27,8 +25,7 @@ export interface PrepareModelJobDeps {
   validateWalletBalance: ValidateWalletBalanceFn;
   validateModelCostRates: ValidateModelCostRatesFn;
   calculateAffordability: BoundCalculateAffordabilityFn;
-  executeModelCallAndSave: BoundExecuteModelCallAndSaveFn;
-  enqueueRenderJob: BoundEnqueueRenderJobFn;
+  enqueueModelCall: BoundEnqueueModelCallFn;
 }
 
 export interface PrepareModelJobParams {
@@ -48,9 +45,7 @@ export interface PrepareModelJobPayload {
 }
 
 export type PrepareModelJobSuccessReturn = {
-  contribution: DialecticContributionRow;
-  needsContinuation: boolean;
-  renderJobId: string | null;
+  queued: true;
 };
 
 export type PrepareModelJobErrorReturn = {
