@@ -1,4 +1,4 @@
-import { assertEquals, assertExists } from "https://deno.land/std@0.224.0/assert/mod.ts";
+import { assertEquals, assertExists, assertStringIncludes } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { spy, type Spy } from "https://deno.land/std@0.224.0/testing/mock.ts";
 import type { UnifiedAIResponse, DialecticExecuteJobPayload } from "../../dialectic-service/dialectic.interface.ts";
@@ -158,50 +158,6 @@ Deno.test(
     },
 );
 
-Deno.test(
-    "saveResponse: malformed JSON after sanitization invokes retryJob and surfaces retriable error (HTTP 503 mapping)",
-    async () => {
-        const retrySpy: Spy<RetryJobFn> = spy(async () => ({}));
-        const deps = createMockSaveResponseDeps({
-            retryJob: retrySpy,
-            sanitizeJsonContent: () => ({
-                sanitized: "{",
-                wasSanitized: true,
-                wasStructurallyFixed: false,
-                hasDuplicateKeys: false,
-                duplicateKeysResolved: [],
-                originalLength: 1,
-            }),
-        });
-        const params = createMockSaveResponseParams();
-        const payload = createMockSaveResponsePayload({
-            assembled_content: "{",
-        });
-        const result: SaveResponseReturn = await saveResponse(deps, params, payload);
-        assertEquals(retrySpy.calls.length >= 0, true);
-        if ("error" in result) {
-            assertEquals(result.retriable, true);
-        }
-    },
-);
-
-Deno.test(
-    "saveResponse: error-class finish_reason from resolveFinishReason invokes retryJob (HTTP 503 mapping)",
-    async () => {
-        const retrySpy: Spy<RetryJobFn> = spy(async () => ({}));
-        const deps = createMockSaveResponseDeps({
-            retryJob: retrySpy,
-            resolveFinishReason: (_ai: UnifiedAIResponse) => "error",
-        });
-        const params = createMockSaveResponseParams();
-        const payload = createMockSaveResponsePayload();
-        const result: SaveResponseReturn = await saveResponse(deps, params, payload);
-        assertEquals(retrySpy.calls.length >= 0, true);
-        if ("error" in result) {
-            assertEquals(result.retriable, true);
-        }
-    },
-);
 
 Deno.test(
     "saveResponse: debitTokens failure yields retriable error return",
@@ -458,5 +414,101 @@ Deno.test(
                 "job should complete despite render dispatch failure",
             );
         }
+    },
+);
+
+Deno.test(
+    "saveResponse: malformed JSON after sanitization calls retryJob with exact parse error and returns success to Netlify",
+    async () => {
+        const retrySpy: Spy<RetryJobFn> = spy(async () => ({}));
+        const deps = createMockSaveResponseDeps({
+            retryJob: retrySpy,
+            sanitizeJsonContent: () => ({
+                sanitized: "{",
+                wasSanitized: true,
+                wasStructurallyFixed: false,
+                hasDuplicateKeys: false,
+                duplicateKeysResolved: [],
+                originalLength: 1,
+            }),
+        });
+        const params = createMockSaveResponseParams();
+        const payload = createMockSaveResponsePayload({ assembled_content: "{" });
+        const result: SaveResponseReturn = await saveResponse(deps, params, payload);
+        assertEquals(retrySpy.calls.length, 1, "retryJob must be called exactly once");
+        const errorDetails = retrySpy.calls[0].args[4] as Array<{ error: string }>;
+        assertExists(errorDetails[0].error, "retryJob must receive error details");
+        assertStringIncludes(
+            errorDetails[0].error,
+            "Malformed JSON response:",
+            "retryJob error must be the exact JSON.parse message prefixed with 'Malformed JSON response:'",
+        );
+        assertEquals("status" in result, true, "saveResponse must return success so Netlify releases the event");
+    },
+);
+
+Deno.test(
+    "saveResponse: error-class finish_reason calls retryJob with exact error and returns success to Netlify",
+    async () => {
+        const retrySpy: Spy<RetryJobFn> = spy(async () => ({}));
+        const deps = createMockSaveResponseDeps({
+            retryJob: retrySpy,
+            resolveFinishReason: (_ai: UnifiedAIResponse) => "error",
+        });
+        const params = createMockSaveResponseParams();
+        const payload = createMockSaveResponsePayload();
+        const result: SaveResponseReturn = await saveResponse(deps, params, payload);
+        assertEquals(retrySpy.calls.length, 1, "retryJob must be called exactly once");
+        const errorDetails = retrySpy.calls[0].args[4] as Array<{ error: string }>;
+        assertExists(errorDetails[0].error, "retryJob must receive error details");
+        assertEquals(
+            errorDetails[0].error,
+            "AI provider signaled error via finish_reason.",
+            "retryJob error must be the exact error string from the finish_reason branch",
+        );
+        assertEquals("status" in result, true, "saveResponse must return success so Netlify releases the event");
+    },
+);
+
+Deno.test(
+    "saveResponse: empty assembled content calls retryJob with exact error and returns success to Netlify",
+    async () => {
+        const retrySpy: Spy<RetryJobFn> = spy(async () => ({}));
+        const deps = createMockSaveResponseDeps({ retryJob: retrySpy });
+        const params = createMockSaveResponseParams();
+        const payload = createMockSaveResponsePayload({ assembled_content: "" });
+        const result: SaveResponseReturn = await saveResponse(deps, params, payload);
+        assertEquals(retrySpy.calls.length, 1, "retryJob must be called exactly once");
+        const errorDetails = retrySpy.calls[0].args[4] as Array<{ error: string }>;
+        assertExists(errorDetails[0].error, "retryJob must receive error details");
+        assertEquals(
+            errorDetails[0].error,
+            "AI response was empty.",
+            "retryJob error must be the exact empty-content error string",
+        );
+        assertEquals("status" in result, true, "saveResponse must return success so Netlify releases the event");
+    },
+);
+
+Deno.test(
+    "saveResponse: invalid sanitization result calls retryJob with exact error and returns success to Netlify",
+    async () => {
+        const retrySpy: Spy<RetryJobFn> = spy(async () => ({}));
+        const deps = createMockSaveResponseDeps({
+            retryJob: retrySpy,
+            sanitizeJsonContent: () => ({ broken: true } as unknown as ReturnType<SaveResponseDeps["sanitizeJsonContent"]>),
+        });
+        const params = createMockSaveResponseParams();
+        const payload = createMockSaveResponsePayload({ assembled_content: '{"ok":true}' });
+        const result: SaveResponseReturn = await saveResponse(deps, params, payload);
+        assertEquals(retrySpy.calls.length, 1, "retryJob must be called exactly once");
+        const errorDetails = retrySpy.calls[0].args[4] as Array<{ error: string }>;
+        assertExists(errorDetails[0].error, "retryJob must receive error details");
+        assertEquals(
+            errorDetails[0].error,
+            "Invalid JSON sanitization result",
+            "retryJob error must be the exact invalid-sanitization error string",
+        );
+        assertEquals("status" in result, true, "saveResponse must return success so Netlify releases the event");
     },
 );

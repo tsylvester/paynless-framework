@@ -320,9 +320,8 @@ export async function saveResponse(
       }],
       projectOwnerUserId,
     );
-    const err: Error = new Error(aiResponse.error || 'AI response was empty.');
-    const out: SaveResponseErrorReturn = { error: err, retriable: true };
-    return out;
+    const success: SaveResponseSuccessReturn = { status: 'completed' };
+    return success;
   }
 
   const resolvedFinish: FinishReason = deps.resolveFinishReason(aiResponse);
@@ -341,9 +340,8 @@ export async function saveResponse(
       }],
       projectOwnerUserId,
     );
-    const err: Error = new Error('AI provider signaled error via finish_reason.');
-    const out: SaveResponseErrorReturn = { error: err, retriable: true };
-    return out;
+    const success: SaveResponseSuccessReturn = { status: 'completed' };
+    return success;
   }
 
   let shouldContinue: boolean = isDialecticContinueReason(resolvedFinish);
@@ -383,9 +381,8 @@ export async function saveResponse(
         }],
         projectOwnerUserId,
       );
-      const err: Error = new Error('Invalid JSON sanitization result');
-      const out: SaveResponseErrorReturn = { error: err, retriable: true };
-      return out;
+      const success: SaveResponseSuccessReturn = { status: 'completed' };
+      return success;
     }
 
     if (sanitizationResult.wasSanitized) {
@@ -419,11 +416,8 @@ export async function saveResponse(
         projectOwnerUserId,
       );
 
-      const err: Error = new Error(
-        `Malformed JSON response: ${e instanceof Error ? e.message : String(e)}`,
-      );
-      const out: SaveResponseErrorReturn = { error: err, retriable: true };
-      return out;
+      const success: SaveResponseSuccessReturn = { status: 'completed' };
+      return success;
     }
 
     contentForStorage = sanitizationResult.sanitized;

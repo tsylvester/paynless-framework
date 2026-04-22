@@ -9,13 +9,14 @@
     "test:watch": "vitest --config vitest.config.ts"
   },
   "dependencies": {
-    "@netlify/async-workloads": "^0.0.106",
     "@anthropic-ai/sdk": "^0.89.0",
     "@google/generative-ai": "^0.24.1",
+    "@netlify/async-workloads": "^0.0.106",
     "openai": "^6.34.0"
   },
   "devDependencies": {
     "@types/node": "^20.11.24",
+    "netlify-cli": "^25.1.1",
     "typescript": "^5.5.3",
     "vitest": "^1.6.1"
   },

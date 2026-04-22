@@ -38,3 +38,5 @@ target/
 
 # web build stats
 apps/web/stats.html
+# Local Netlify folder
+.netlify
