@@ -261,6 +261,7 @@ Deno.test(
             "buildUploadContext",
             "debitTokens",
             "sanitizeJsonContent",
+            "enqueueRenderJob",
         ];
         for (let i = 0; i < depKeys.length; i++) {
             const key: keyof SaveResponseDeps = depKeys[i];
@@ -276,6 +277,16 @@ Deno.test(
     () => {
         assertEquals(isSaveResponseDeps(null), false);
         assertEquals(isSaveResponseDeps(undefined), false);
+    },
+);
+
+Deno.test(
+    "Type Guard: isSaveResponseDeps returns false when enqueueRenderJob is missing",
+    () => {
+        const full: SaveResponseDeps = createMockSaveResponseDeps();
+        const missingRender: Record<string, unknown> = { ...full };
+        delete missingRender["enqueueRenderJob"];
+        assertEquals(isSaveResponseDeps(missingRender), false);
     },
 );
 

@@ -5,6 +5,7 @@ import type {
   DebitTokensParams,
   DebitTokensPayload,
   DebitTokensReturn,
+  BoundDebitTokens,
 } from "./debitTokens.interface.ts";
 
 interface DebitTokensMockHolder {
@@ -78,4 +79,14 @@ export function createMockDebitTokens(
     stubs,
     clearStubs,
   };
+}
+
+export function createMockBoundDebitTokens(override?: BoundDebitTokens): BoundDebitTokens {
+  if (override !== undefined) {
+    return override;
+  }
+  return async (): Promise<DebitTokensReturn> => ({
+    error: new Error('mock bound debitTokens not implemented'),
+    retriable: false,
+  });
 }

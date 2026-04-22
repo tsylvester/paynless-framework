@@ -35,6 +35,7 @@ import {
 } from "./saveResponse.mock.ts";
 import type { DialecticExecuteJobPayload } from "../../dialectic-service/dialectic.interface.ts";
 import { isJson } from "../../_shared/utils/type_guards.ts";
+import type { BoundEnqueueRenderJobFn } from "../enqueueRenderJob/enqueueRenderJob.interface.ts";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -176,6 +177,7 @@ function buildIntegrationDeps(overrides?: Partial<SaveResponseDeps>): SaveRespon
       transactionRecordedSuccessfully: true,
     }),
     sanitizeJsonContent,
+    enqueueRenderJob: async () => ({ renderJobId: null }),
   };
   if (!overrides) return base;
   return { ...base, ...overrides };
@@ -404,4 +406,128 @@ Deno.test("Integration: saveResponse with malformed JSON triggers real retryJob"
   // Assert retry notification
   const retryCalls = mockNotificationService.sendContributionRetryingEvent.calls;
   assertEquals(retryCalls.length > 0, true, "retryJob should send retry notification on malformed JSON");
+});
+
+Deno.test("Integration: saveResponse calls enqueueRenderJob exactly once on terminal completion for document output", async () => {
+  resetMockNotificationService();
+  const contribution = createMockContributionRow({
+    id: "contrib-render-dispatch-1",
+    document_relationships: {
+      thesis: "contrib-render-dispatch-1",
+      source_group: "00000000-0000-4000-8000-000000000002",
+    },
+  });
+  const fm = createMockFileManager({ outcome: "success", contribution });
+  let enqueueRenderJobCallCount = 0;
+  const enqueueRenderJobSpy: BoundEnqueueRenderJobFn = async (_params, _payload) => {
+    enqueueRenderJobCallCount++;
+    return { renderJobId: null };
+  };
+  const deps = buildIntegrationDeps({ fileManager: fm, enqueueRenderJob: enqueueRenderJobSpy });
+  const mockSetup = buildMockSupabase(saveResponseTestPayloadDocumentArtifact);
+  const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
+  const params: SaveResponseParams = { job_id: "job-id-123", dbClient };
+  const payload: SaveResponsePayload = {
+    assembled_content: JSON.stringify({ result: "valid json content" }),
+    token_usage: { prompt_tokens: 10, completion_tokens: 20, total_tokens: 30 },
+    finish_reason: "stop",
+  };
+
+  const result: SaveResponseReturn = await saveResponse(deps, params, payload);
+
+  const successResult = result as SaveResponseSuccessReturn;
+  assertEquals(successResult.status, "completed");
+  assertEquals(enqueueRenderJobCallCount, 1, "enqueueRenderJob should be called exactly once on terminal completion");
+});
+
+Deno.test("Integration: saveResponse assembleAndSaveFinalDocument NOT called when enqueueRenderJob dispatches render job", async () => {
+  resetMockNotificationService();
+  // Final chunk of a multi-chunk sequence: target_contribution_id set, finish_reason stop.
+  // contribution.document_relationships.thesis points to the root (different from contribution.id),
+  // so assembleAndSaveFinalDocument would normally be triggered — but enqueueRenderJob returning
+  // a non-null renderJobId sets shouldRender=true, gating the inline assembly.
+  const finalContinuationPayload: DialecticExecuteJobPayload = {
+    ...saveResponseTestPayloadDocumentArtifact,
+    target_contribution_id: "root-contrib-render-test",
+    continueUntilComplete: true,
+    continuation_count: 1,
+    document_relationships: {
+      thesis: "root-contrib-render-test",
+      source_group: "00000000-0000-4000-8000-000000000002",
+    },
+  };
+  const contribution = createMockContributionRow({
+    id: "contrib-final-chunk",
+    document_relationships: {
+      thesis: "root-contrib-render-test",
+      source_group: "00000000-0000-4000-8000-000000000002",
+    },
+    target_contribution_id: "root-contrib-render-test",
+  });
+  const fm = createMockFileManager({ outcome: "success", contribution });
+  const enqueueRenderJobWithDispatch: BoundEnqueueRenderJobFn = async (_params, _payload) => ({
+    renderJobId: "render-job-1",
+  });
+  const deps = buildIntegrationDeps({
+    fileManager: fm,
+    enqueueRenderJob: enqueueRenderJobWithDispatch,
+  });
+  const mockSetup = buildMockSupabase(finalContinuationPayload, {
+    target_contribution_id: "root-contrib-render-test",
+  });
+  const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
+  const params: SaveResponseParams = { job_id: "job-id-123", dbClient };
+  const payload: SaveResponsePayload = {
+    assembled_content: JSON.stringify({ result: "final chunk content" }),
+    token_usage: { prompt_tokens: 10, completion_tokens: 20, total_tokens: 30 },
+    finish_reason: "stop",
+  };
+
+  const result: SaveResponseReturn = await saveResponse(deps, params, payload);
+
+  const successResult = result as SaveResponseSuccessReturn;
+  assertEquals(successResult.status, "completed");
+  assertEquals(
+    fm.assembleAndSaveFinalDocument.calls.length,
+    0,
+    "assembleAndSaveFinalDocument should NOT be called when enqueueRenderJob dispatches a render job (shouldRender=true gates inline assembly)",
+  );
+});
+
+Deno.test("Integration: saveResponse does NOT call enqueueRenderJob on continuation path", async () => {
+  resetMockNotificationService();
+  const continuationPayload: DialecticExecuteJobPayload = {
+    ...saveResponseTestPayloadDocumentArtifact,
+    continueUntilComplete: true,
+    user_jwt: "jwt.token.here",
+  };
+  const contribution = createMockContributionRow({
+    id: "contrib-continuation-render-1",
+    document_relationships: {
+      thesis: "contrib-continuation-render-1",
+      source_group: "00000000-0000-4000-8000-000000000002",
+    },
+  });
+  const fm = createMockFileManager({ outcome: "success", contribution });
+  let enqueueRenderJobCallCount = 0;
+  const enqueueRenderJobSpy: BoundEnqueueRenderJobFn = async (_params, _payload) => {
+    enqueueRenderJobCallCount++;
+    return { renderJobId: null };
+  };
+  const deps = buildIntegrationDeps({ fileManager: fm, enqueueRenderJob: enqueueRenderJobSpy });
+  const mockSetup = buildMockSupabase(continuationPayload);
+  const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
+  const params: SaveResponseParams = { job_id: "job-id-123", dbClient };
+  // finish_reason "length" narrows to a DialecticContinueReason, triggering the continuation path
+  const payload: SaveResponsePayload = {
+    assembled_content: JSON.stringify({ partial: "data" }),
+    token_usage: { prompt_tokens: 10, completion_tokens: 20, total_tokens: 30 },
+    finish_reason: "length",
+  };
+
+  const result: SaveResponseReturn = await saveResponse(deps, params, payload);
+
+  const successResult = result as SaveResponseSuccessReturn;
+  assertEquals(successResult.status, "needs_continuation");
+  assertEquals(enqueueRenderJobCallCount, 0, "enqueueRenderJob should NOT be called on continuation path");
 });

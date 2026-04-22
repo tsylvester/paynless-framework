@@ -3,20 +3,18 @@
 import {
     IJobContext,
     JobContextParams,
-    IExecuteModelCallContext,
     IPrepareModelJobContext,
     ISaveResponseContext,
     IPlanJobContext,
     IRenderJobContext,
 } from './JobContext.interface.ts';
-import { BoundExecuteModelCallAndSaveFn } from '../executeModelCallAndSave/executeModelCallAndSave.interface.ts';
 import { BoundEnqueueModelCallFn } from '../enqueueModelCall/enqueueModelCall.interface.ts';
 import { BoundEnqueueRenderJobFn } from '../enqueueRenderJob/enqueueRenderJob.interface.ts';
+import { BoundDebitTokens } from '../../_shared/utils/debitTokens.interface.ts';
 import { CompressPromptFn } from '../compressPrompt/compressPrompt.interface.ts';
 import { BoundCompressPromptFn } from '../compressPrompt/compressPrompt.interface.ts';
 import { CalculateAffordabilityFn } from '../calculateAffordability/calculateAffordability.interface.ts';
 import { BoundCalculateAffordabilityFn } from '../calculateAffordability/calculateAffordability.interface.ts';
-import type { BoundDebitTokens } from '../../_shared/utils/debitTokens.interface.ts';
 /**
  * Factory function to construct IJobContext at application boundary.
  * All fields are required and must be explicitly provided.
@@ -78,40 +76,7 @@ export function createJobContext(params: JobContextParams): IJobContext {
         // From IJobContext (orchestration)
         prepareModelJob: params.prepareModelJob,
         debitTokens: params.debitTokens,
-    };
-}
-
-/**
- * Context slicer: Extracts IExecuteModelCallContext subset from root IJobContext.
- * Used by processJob to pass only executeModelCallAndSave dependencies.
- *
- * @param root - Complete IJobContext from application boundary
- * @returns IExecuteModelCallContext with only fields needed for executeModelCallAndSave
- */
-export function createExecuteModelCallContext(root: IJobContext): IExecuteModelCallContext {
-    const boundDebitTokens: BoundDebitTokens = (params, payload) =>
-        root.debitTokens(
-            {
-                logger: root.logger,
-                tokenWalletService: root.adminTokenWalletService,
-            },
-            params,
-            payload,
-        );
-
-    return {
-        logger: root.logger,
-        fileManager: root.fileManager,
-        getAiProviderAdapter: root.getAiProviderAdapter,
-        userTokenWalletService: root.userTokenWalletService,
-        notificationService: root.notificationService,
-        continueJob: root.continueJob,
-        retryJob: root.retryJob,
-        resolveFinishReason: root.resolveFinishReason,
-        isIntermediateChunk: root.isIntermediateChunk,
-        determineContinuation: root.determineContinuation,
-        buildUploadContext: root.buildUploadContext,
-        debitTokens: boundDebitTokens,
+        sanitizeJsonContent: params.sanitizeJsonContent,
     };
 }
 
@@ -220,19 +185,22 @@ export function createRenderJobContext(root: IJobContext): IRenderJobContext {
 }
 
 /**
- * Context slicer: Constructs ISaveResponseContext (back-half) from a pre-bound enqueueRenderJob closure.
+ * Context slicer: Constructs ISaveResponseContext (back-half) from pre-bound closures.
  * The back-half receives the completed AI response from the Netlify workload and persists it;
  * render dispatch (enqueueRenderJob) happens after the contribution is saved, not before the AI call.
  *
  * @param _root - Complete IJobContext from application boundary (reserved for future back-half fields)
  * @param boundEnqueueRenderJob - Pre-bound enqueueRenderJob closure
+ * @param boundDebitTokens - Pre-bound debitTokens closure
  * @returns ISaveResponseContext with fields needed for the saveResponse back-half handler
  */
 export function createSaveResponseContext(
     _root: IJobContext,
     boundEnqueueRenderJob: BoundEnqueueRenderJobFn,
+    boundDebitTokens: BoundDebitTokens,
 ): ISaveResponseContext {
     return {
         enqueueRenderJob: boundEnqueueRenderJob,
+        debitTokens: boundDebitTokens,
     };
 }

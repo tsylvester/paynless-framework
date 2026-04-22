@@ -465,10 +465,6 @@ The second exception to strict typing is for intentionally malformed objects in 
     *   `[ ]` [subfolder]/`filename`. Elements in work nodes will be nested as shown. Subnodes show the file name, or path and file name, to address that element.
         *   `[ ]` [subfolder]/[subfolder]/`filename` Nesting can be as deep as logically required, using the file tree path segment.
 *   `[✅]` Represents a completed node at any depth.
-*   `[🚧]` Represents an incomplete or partially completed node.
-*   `[⏸️]` Represents a paused node where a discovery has been made that requires backtracking or further clarification.
-*   `[❓]` Represents an uncertainty that must be resolved before continuing.
-*   `[🚫]` Represents a blocked, halted, or stopped node or has an unresolved problem or prior dependency to resolve before continuing.
 
 ## Example Component Types and Labels
 

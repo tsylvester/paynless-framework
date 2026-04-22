@@ -112,6 +112,7 @@ export function isSaveResponseDeps(v: unknown): v is SaveResponseDeps {
     'buildUploadContext',
     'debitTokens',
     'sanitizeJsonContent',
+    'enqueueRenderJob',
   ];
   for (let i = 0; i < keys.length; i++) {
     const key: keyof SaveResponseDeps = keys[i];
@@ -162,6 +163,9 @@ export function isSaveResponseDeps(v: unknown): v is SaveResponseDeps {
     return false;
   }
   if (typeof v.sanitizeJsonContent !== 'function') {
+    return false;
+  }
+  if (typeof v.enqueueRenderJob !== 'function') {
     return false;
   }
   return true;

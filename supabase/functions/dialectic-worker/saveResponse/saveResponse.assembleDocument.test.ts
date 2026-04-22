@@ -11,13 +11,11 @@ import type {
 import { MockFileManagerService } from "../../_shared/services/file_manager.mock.ts";
 import { FileType } from "../../_shared/types/file_manager.types.ts";
 import { isJson } from "../../_shared/utils/type_guards.ts";
-import {
-    createMockDialecticContributionRow,
-    createMockFileManagerForEmcas,
-    testPayload,
-} from "../executeModelCallAndSave/executeModelCallAndSave.mock.ts";
 import type { SaveResponseDeps } from "./saveResponse.interface.ts";
 import {
+    createMockDialecticContributionRow,
+    testPayload,
+    createMockFileManager,
     createMockSaveResponseDeps,
     createMockSaveResponseParamsWithQueuedJob,
     createMockSaveResponsePayload,
@@ -34,7 +32,7 @@ Deno.test(
                 thesis: rootContributionId,
             },
         });
-        const fileManager: MockFileManagerService = createMockFileManagerForEmcas({
+        const fileManager: MockFileManagerService = createMockFileManager({
             outcome: "success",
             contribution: savedContribution,
         });
@@ -74,7 +72,7 @@ Deno.test(
 Deno.test(
     "saveResponse — should NOT call assembleAndSaveFinalDocument for final JSON-only chunk when rootIdFromSaved equals contribution id",
     async () => {
-        const fileManager: MockFileManagerService = createMockFileManagerForEmcas({
+        const fileManager: MockFileManagerService = createMockFileManager({
             outcome: "success",
             contribution: createMockDialecticContributionRow(),
         });
@@ -122,7 +120,7 @@ Deno.test(
             },
             target_contribution_id: rootContributionId,
         });
-        const fileManager: MockFileManagerService = createMockFileManagerForEmcas({
+        const fileManager: MockFileManagerService = createMockFileManager({
             outcome: "success",
             contribution: savedContribution,
         });
@@ -168,7 +166,7 @@ Deno.test(
         const savedContribution: DialecticContributionRow = createMockDialecticContributionRow({
             document_relationships: null,
         });
-        const fileManager: MockFileManagerService = createMockFileManagerForEmcas({
+        const fileManager: MockFileManagerService = createMockFileManager({
             outcome: "success",
             contribution: savedContribution,
         });

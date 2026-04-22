@@ -30,7 +30,6 @@ import { determineContinuation } from '../../_shared/utils/determineContinuation
 import { buildUploadContext } from '../../_shared/utils/buildUploadContext/buildUploadContext.ts';
 import type { BoundPrepareModelJobFn } from './JobContext.interface.ts';
 import type { DebitTokens } from '../../_shared/utils/debitTokens.interface.ts';
-import type { BoundExecuteModelCallAndSaveFn } from '../executeModelCallAndSave/executeModelCallAndSave.interface.ts';
 import type { BoundEnqueueModelCallFn } from '../enqueueModelCall/enqueueModelCall.interface.ts';
 import type { BoundEnqueueRenderJobFn } from '../enqueueRenderJob/enqueueRenderJob.interface.ts';
 import type { BoundGatherArtifactsFn } from '../gatherArtifacts/gatherArtifacts.interface.ts';
@@ -59,17 +58,9 @@ import {
     buildMockCalculateAffordabilityFn,
 } from '../calculateAffordability/calculateAffordability.mock.ts';
 import { createJobContext } from './createJobContext.ts';
+import { sanitizeJsonContent } from '../../_shared/utils/jsonSanitizer/jsonSanitizer.ts';
 
 type JobContextParamsOverrides = { [K in keyof JobContextParams]?: JobContextParams[K] };
-
-
-
-export function createMockBoundExecuteModelCallAndSave(): BoundExecuteModelCallAndSaveFn {
-    return async () => ({
-        error: new Error('mock bound executeModelCallAndSave not implemented'),
-        retriable: false,
-    });
-}
 
 export function createMockBoundEnqueueModelCall(): BoundEnqueueModelCallFn {
     return async () => ({
@@ -248,6 +239,7 @@ export function createMockJobContextParams(overrides?: JobContextParamsOverrides
         determineContinuation: determineContinuation,
         buildUploadContext: buildUploadContext,
         gatherArtifacts: boundGatherArtifacts,
+        sanitizeJsonContent: sanitizeJsonContent,
     };
 
     if (!overrides) {
@@ -299,6 +291,7 @@ export function buildIJobContext(): IJobContext {
         documentRenderer: params.documentRenderer,
         prepareModelJob: params.prepareModelJob,
         debitTokens: params.debitTokens,
+        sanitizeJsonContent: params.sanitizeJsonContent,
     };
 }
 

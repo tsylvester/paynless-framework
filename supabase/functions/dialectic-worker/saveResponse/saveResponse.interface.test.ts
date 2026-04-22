@@ -110,7 +110,7 @@ Deno.test(
 );
 
 Deno.test(
-    "Contract: SaveResponseDeps declares eleven dependency keys",
+    "Contract: SaveResponseDeps declares twelve dependency keys",
     () => {
         const surface: Record<keyof SaveResponseDeps, true> = {
             logger: true,
@@ -124,8 +124,9 @@ Deno.test(
             buildUploadContext: true,
             debitTokens: true,
             sanitizeJsonContent: true,
+            enqueueRenderJob: true,
         };
-        assertEquals(Object.keys(surface).length, 11);
+        assertEquals(Object.keys(surface).length, 12);
     },
 );
 

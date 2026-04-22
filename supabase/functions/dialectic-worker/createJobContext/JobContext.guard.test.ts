@@ -369,11 +369,28 @@ describe('JobContexts Type Guards', () => {
 
             assertEquals(isIJobContext(contextMissingDebitTokens), false);
         });
+
+        it('returns false when sanitizeJsonContent is missing', () => {
+            const rootContext = buildIJobContext();
+            const { sanitizeJsonContent, ...contextMissing } = rootContext;
+
+            assertEquals(isIJobContext(contextMissing), false);
+        });
+
+        it('returns false when sanitizeJsonContent is present but not a function', () => {
+            const rootContext = buildIJobContext();
+            const context = { ...rootContext, sanitizeJsonContent: 'not-a-function' };
+
+            assertEquals(isIJobContext(context), false);
+        });
     });
 
     describe('isISaveResponseContext', () => {
-        it('returns true for valid ISaveResponseContext with enqueueRenderJob as a function', () => {
-            const context = { enqueueRenderJob: async () => ({}) };
+        it('returns true for valid ISaveResponseContext with enqueueRenderJob and debitTokens as functions', () => {
+            const context = {
+                enqueueRenderJob: async () => ({}),
+                debitTokens: mockBoundDebitTokens,
+            };
 
             assertEquals(isISaveResponseContext(context), true);
         });
@@ -386,6 +403,21 @@ describe('JobContexts Type Guards', () => {
 
         it('returns false when enqueueRenderJob is not a function', () => {
             const context = { enqueueRenderJob: 'not-a-function' };
+
+            assertEquals(isISaveResponseContext(context), false);
+        });
+
+        it('returns false when debitTokens is absent', () => {
+            const context = { enqueueRenderJob: async () => ({}) };
+
+            assertEquals(isISaveResponseContext(context), false);
+        });
+
+        it('returns false when debitTokens is not a function', () => {
+            const context = {
+                enqueueRenderJob: async () => ({}),
+                debitTokens: 'not-a-function',
+            };
 
             assertEquals(isISaveResponseContext(context), false);
         });

@@ -13,6 +13,7 @@ import type {
   ResolveFinishReasonFn,
   RetryJobFn,
 } from '../createJobContext/JobContext.interface.ts';
+import type { BoundEnqueueRenderJobFn } from '../enqueueRenderJob/enqueueRenderJob.interface.ts';
 
 export interface NodeTokenUsage {
   prompt_tokens: number;
@@ -50,6 +51,7 @@ export interface SaveResponseDeps {
   buildUploadContext: BuildUploadContextFn;
   debitTokens: BoundDebitTokens;
   sanitizeJsonContent: SanitizeJsonContentFn;
+  enqueueRenderJob: BoundEnqueueRenderJobFn;
 }
 
 export type SaveResponseSuccessReturn = {

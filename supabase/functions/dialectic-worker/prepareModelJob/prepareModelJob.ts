@@ -71,7 +71,7 @@ export async function prepareModelJob(
       output_type,
     } = job.payload;
 
-    deps.logger.info('[executeModelCallAndSave] Validating payload fields', {
+    deps.logger.info('[prepareModelJob] Validating payload fields', {
       jobId,
       hasStageSlug: !!stageSlugRaw,
       stageSlugType: typeof stageSlugRaw,
@@ -136,7 +136,7 @@ export async function prepareModelJob(
       throw new Error(`Job ${jobId} is missing required model_id in its payload.`);
     }
 
-    deps.logger.info(`[dialectic-worker] [executeModelCallAndSave] Executing model call for job ID: ${jobId}`);
+    deps.logger.info(`[dialectic-worker] [prepareModelJob] Executing model call for job ID: ${jobId}`);
 
     const modelConfig = providerRow.config;
     if (!isAiModelExtendedConfig(modelConfig)) {
@@ -264,7 +264,7 @@ export async function prepareModelJob(
         }
         hasJwtKey = true;
       }
-      deps.logger.info('[executeModelCallAndSave] DIAGNOSTIC: payload user_jwt presence before guard', {
+      deps.logger.info('[prepareModelJob] DIAGNOSTIC: payload user_jwt presence before guard', {
         jobId,
         hasJwtKey,
         jwtType,

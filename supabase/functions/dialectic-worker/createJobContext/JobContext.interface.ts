@@ -46,6 +46,7 @@ import { BoundEnqueueModelCallFn } from '../enqueueModelCall/enqueueModelCall.in
 import { BoundCalculateAffordabilityFn } from '../calculateAffordability/calculateAffordability.interface.ts';
 import { PrepareModelJobParams, PrepareModelJobPayload, PrepareModelJobReturn } from '../prepareModelJob/prepareModelJob.interface.ts';
 import { GatherArtifactsParams, GatherArtifactsPayload, GatherArtifactsReturn } from '../gatherArtifacts/gatherArtifacts.interface.ts';
+import { SanitizeJsonContentFn } from '../../_shared/utils/jsonSanitizer/jsonSanitizer.interface.ts';
 
 /**
  * Function type for continueJob orchestration utility.
@@ -203,26 +204,6 @@ export interface INotificationContext {
 }
 
 /**
- * Context slice for slimmed executeModelCallAndSave (Zones E-G).
- * 12 fields, no base context extensions — cherry-picks only what Zones E-G actually call.
- * Constructed by createExecuteModelCallContext slicer from IJobContext raw fields.
- */
-export interface IExecuteModelCallContext {
-    readonly logger: ILogger;
-    readonly fileManager: IFileManager;
-    readonly getAiProviderAdapter: GetAiProviderAdapterFn;
-    readonly userTokenWalletService: IUserTokenWalletService;
-    readonly notificationService: NotificationServiceType;
-    readonly continueJob: ContinueJobFn;
-    readonly retryJob: RetryJobFn;
-    readonly resolveFinishReason: ResolveFinishReasonFn;
-    readonly isIntermediateChunk: IsIntermediateChunkFn;
-    readonly determineContinuation: DetermineContinuationFn;
-    readonly buildUploadContext: BuildUploadContextFn;
-    readonly debitTokens: BoundDebitTokens;
-}
-
-/**
  * Context slice for prepareModelJob (Zones A-D).
  * 11 fields, no base context extensions — cherry-picks only what Zones A-D actually call
  * plus 3 pre-bound orchestrator closures (`compressPrompt` is bound only inside the slicer, not on this slice).
@@ -251,6 +232,7 @@ export interface IPrepareModelJobContext {
  */
 export interface ISaveResponseContext {
     readonly enqueueRenderJob: BoundEnqueueRenderJobFn;
+    readonly debitTokens: BoundDebitTokens;
 }
 
 /**
@@ -332,6 +314,7 @@ export interface IJobContext extends
     readonly gatherArtifacts: BoundGatherArtifactsFn;
     // Top-level orchestration — pre-bound closure for job processing
     readonly prepareModelJob: BoundPrepareModelJobFn;
+    readonly sanitizeJsonContent: SanitizeJsonContentFn;
 }
 
 /**
@@ -376,4 +359,5 @@ export interface JobContextParams {
     readonly isIntermediateChunk: IsIntermediateChunkFn;
     readonly determineContinuation: DetermineContinuationFn;
     readonly buildUploadContext: BuildUploadContextFn;
+    readonly sanitizeJsonContent: SanitizeJsonContentFn;
 }

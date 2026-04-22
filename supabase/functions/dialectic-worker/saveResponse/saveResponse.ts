@@ -28,6 +28,7 @@ import {
 import {
   isDocumentKey,
   isDocumentRelated,
+  isFileType,
   isModelContributionFileType,
 } from "../../_shared/utils/type-guards/type_guards.file_manager.ts";
 import { extractSourceGroupFragment } from "../../_shared/utils/path_utils.ts";
@@ -61,6 +62,14 @@ import {
   isSaveResponsePayload,
 } from "./saveResponse.guard.ts";
 import type { TokenWallet } from "../../_shared/types/tokenWallet.types.ts";
+import type {
+  EnqueueRenderJobParams,
+  EnqueueRenderJobPayload,
+} from "../enqueueRenderJob/enqueueRenderJob.interface.ts";
+import {
+  isDialecticStageSlug,
+  isEnqueueRenderJobSuccessReturn,
+} from "../enqueueRenderJob/enqueueRenderJob.interface.guards.ts";
 
 function readOptionalPreflightInputTokens(payload: unknown): number {
   if (!isRecord(payload)) {
@@ -291,9 +300,9 @@ export async function saveResponse(
   };
 
   deps.logger.info(
-    `[dialectic-worker] [executeModelCallAndSave] AI call completed for job ${job.id} in ${processingTimeMs}ms.`,
+    `[dialectic-worker] [saveResponse] AI call completed for job ${job.id} in ${processingTimeMs}ms.`,
   );
-  deps.logger.info(`[executeModelCallAndSave] DIAGNOSTIC: Full AI Response for job ${job.id}:`, {
+  deps.logger.info(`[saveResponse] DIAGNOSTIC: Full AI Response for job ${job.id}:`, {
     aiResponse,
   });
 
@@ -351,7 +360,7 @@ export async function saveResponse(
   if (isIntermediate) {
     contentForStorage = aiResponse.content;
     deps.logger.info(
-      `[executeModelCallAndSave] Skipping sanitize/parse for intermediate continuation chunk (finish_reason: ${resolvedFinish})`,
+      `[saveResponse] Skipping sanitize/parse for intermediate continuation chunk (finish_reason: ${resolvedFinish})`,
       { jobId },
     );
   } else {
@@ -359,7 +368,7 @@ export async function saveResponse(
 
     if (!isJsonSanitizationResult(sanitizationResult)) {
       deps.logger.warn(
-        `[executeModelCallAndSave] Invalid sanitization result for job ${job.id}. Triggering retry.`,
+        `[saveResponse] Invalid sanitization result for job ${job.id}. Triggering retry.`,
       );
       await deps.retryJob(
         { logger: deps.logger, notificationService: deps.notificationService },
@@ -380,7 +389,7 @@ export async function saveResponse(
     }
 
     if (sanitizationResult.wasSanitized) {
-      deps.logger.info(`[executeModelCallAndSave] JSON content sanitized for job ${job.id}`, {
+      deps.logger.info(`[saveResponse] JSON content sanitized for job ${job.id}`, {
         originalLength: sanitizationResult.originalLength,
         sanitizedLength: sanitizationResult.sanitized.length,
         wasStructurallyFixed: sanitizationResult.wasStructurallyFixed,
@@ -392,7 +401,7 @@ export async function saveResponse(
       parsedContent = JSON.parse(sanitizationResult.sanitized);
     } catch (e: unknown) {
       deps.logger.warn(
-        `[executeModelCallAndSave] Malformed JSON response for job ${job.id} after sanitization. Triggering retry.`,
+        `[saveResponse] Malformed JSON response for job ${job.id} after sanitization. Triggering retry.`,
         { error: e instanceof Error ? e.message : String(e) },
       );
 
@@ -601,7 +610,7 @@ export async function saveResponse(
 
     if (missingValues.length > 0) {
       const err: Error = new Error(
-        `executeModelCallAndSave requires all of the following values for document file type '${output_type}': job.payload.projectId (string, non-empty), job.payload.sessionId (string, non-empty), job.payload.iterationNumber (number), job.payload.canonicalPathParams.stageSlug (string, non-empty), job.attempt_count (number), providerRow.api_identifier (string, non-empty), job.payload.document_key (string, non-empty). Missing or invalid: ${missingValues.join(', ')}`,
+        `saveResponse requires all of the following values for document file type '${output_type}': job.payload.projectId (string, non-empty), job.payload.sessionId (string, non-empty), job.payload.iterationNumber (number), job.payload.canonicalPathParams.stageSlug (string, non-empty), job.attempt_count (number), providerRow.api_identifier (string, non-empty), job.payload.document_key (string, non-empty). Missing or invalid: ${missingValues.join(', ')}`,
       );
       const out: SaveResponseErrorReturn = { error: err, retriable: false };
       return out;
@@ -680,7 +689,7 @@ export async function saveResponse(
 
   if (isRecord(restOfCanonicalPathParams) && restOfCanonicalPathParams.sourceAnchorModelSlug) {
     deps.logger.info(
-      '[executeModelCallAndSave] sourceAnchorModelSlug present in canonicalPathParams, will propagate to pathContext for antithesis pattern detection',
+      '[saveResponse] sourceAnchorModelSlug present in canonicalPathParams, will propagate to pathContext for antithesis pattern detection',
       {
         sourceAnchorModelSlug: restOfCanonicalPathParams.sourceAnchorModelSlug,
         stageSlug: restOfCanonicalPathParams.stageSlug,
@@ -826,7 +835,7 @@ const wallet: TokenWallet = {
     isIntermediate: isRecord(jobPayloadUnknown) && jobPayloadUnknown.isIntermediate === true,
   });
 
-  deps.logger.info('[executeModelCallAndSave] Saving validated JSON to raw file', {
+  deps.logger.info('[saveResponse] Saving validated JSON to raw file', {
     jobId,
     documentKey: documentKey,
     fileType: storageFileType,
@@ -976,7 +985,49 @@ const wallet: TokenWallet = {
     return out;
   }
 
-  const shouldRender: boolean = false;
+  let shouldRender: boolean = false;
+
+  if (!needsContinuation) {
+    const userAuthTokenRaw: unknown = jobPayloadUnknown.user_jwt;
+    if (typeof userAuthTokenRaw !== 'string' || userAuthTokenRaw.trim() === '') {
+      deps.logger.warn('[saveResponse] user_jwt missing from job payload; skipping render dispatch', { jobId });
+    } else if (!isDialecticStageSlug(jobStageSlug)) {
+      deps.logger.warn('[saveResponse] stageSlug is not a valid DialecticStageSlug; skipping render dispatch', { stageSlug: jobStageSlug, jobId });
+    } else {
+      const userAuthToken: string = userAuthTokenRaw;
+      let renderDocumentKey: FileType | undefined = undefined;
+      if (isFileType(documentKey)) {
+        renderDocumentKey = documentKey;
+      }
+      const renderParams: EnqueueRenderJobParams = {
+        jobId,
+        sessionId: jobSessionId,
+        stageSlug: jobStageSlug,
+        iterationNumber: jobIterationNumber,
+        outputType: fileType,
+        projectId: jobProjectId,
+        projectOwnerUserId,
+        userAuthToken,
+        modelId: jobModelId,
+        walletId,
+        isTestJob: job.is_test_job === true,
+      };
+      const renderPayload: EnqueueRenderJobPayload = {
+        contributionId: contribution.id,
+        needsContinuation,
+        documentKey: renderDocumentKey,
+        stageRelationshipForStage,
+        fileType,
+        storageFileType,
+      };
+      const renderResult = await deps.enqueueRenderJob(renderParams, renderPayload);
+      if (isEnqueueRenderJobSuccessReturn(renderResult)) {
+        shouldRender = renderResult.renderJobId !== null;
+      } else {
+        deps.logger.error('[saveResponse] Failed to dispatch RENDER job', { error: renderResult.error });
+      }
+    }
+  }
 
   if (typeof sourcePromptResourceId === 'string' && sourcePromptResourceId.trim().length > 0) {
     const { error: promptLinkUpdateError } = await dbClient
@@ -986,7 +1037,7 @@ const wallet: TokenWallet = {
 
     if (promptLinkUpdateError) {
       deps.logger.error(
-        '[executeModelCallAndSave] Failed to update source_contribution_id for originating prompt resource.',
+        '[saveResponse] Failed to update source_contribution_id for originating prompt resource.',
         {
           promptResourceId: sourcePromptResourceId,
           contributionId: contribution.id,
@@ -1027,7 +1078,7 @@ const wallet: TokenWallet = {
 
   if (needsContinuation) {
     deps.logger.info(
-      `[executeModelCallAndSave] DIAGNOSTIC: Preparing to check for continuation for job ${job.id}.`,
+      `[saveResponse] DIAGNOSTIC: Preparing to check for continuation for job ${job.id}.`,
       {
         finish_reason: aiResponse.finish_reason,
         payload_continuation_count: readOptionalContinuationCount(jobPayloadUnknown),
@@ -1045,13 +1096,13 @@ const wallet: TokenWallet = {
     );
 
     deps.logger.info(
-      `[executeModelCallAndSave] DIAGNOSTIC: Result from continueJob for job ${job.id}:`,
+      `[saveResponse] DIAGNOSTIC: Result from continueJob for job ${job.id}:`,
       { continueResult },
     );
 
     if (continueResult.error) {
       deps.logger.error(
-        `[dialectic-worker] [executeModelCallAndSave] Failed to enqueue continuation for job ${job.id}.`,
+        `[dialectic-worker] [saveResponse] Failed to enqueue continuation for job ${job.id}.`,
         { error: continueResult.error.message },
       );
     }
@@ -1060,7 +1111,7 @@ const wallet: TokenWallet = {
       continueResult.reason === 'continuation_limit_reached'
     ) {
       deps.logger.warn(
-        '[executeModelCallAndSave] Continuation limit reached for job — triggering final assembly with schema fill',
+        '[saveResponse] Continuation limit reached for job — triggering final assembly with schema fill',
         { jobId: job.id },
       );
       modelProcessingResult.status = 'continuation_limit_reached';
@@ -1167,7 +1218,7 @@ const wallet: TokenWallet = {
 
   if (finalUpdateError) {
     deps.logger.error(
-      `[dialectic-worker] [executeModelCallAndSave] CRITICAL: Failed to mark job as 'completed'.`,
+      `[dialectic-worker] [saveResponse] CRITICAL: Failed to mark job as 'completed'.`,
       { finalUpdateError },
     );
   }
@@ -1215,7 +1266,7 @@ const wallet: TokenWallet = {
   }
 
   deps.logger.info(
-    `[dialectic-worker] [executeModelCallAndSave] Job ${jobId} finished successfully. Results: ${JSON.stringify(modelProcessingResult)}. Final Status: completed`,
+    `[dialectic-worker] [saveResponse] Job ${jobId} finished successfully. Results: ${JSON.stringify(modelProcessingResult)}. Final Status: completed`,
   );
 
   let successStatus: SaveResponseSuccessReturn['status'] = 'completed';

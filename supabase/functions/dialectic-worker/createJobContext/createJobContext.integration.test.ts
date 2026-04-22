@@ -3,7 +3,6 @@ import { stub } from 'https://deno.land/std@0.224.0/testing/mock.ts';
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import {
   createJobContext,
-  createExecuteModelCallContext,
   createPrepareModelJobContext,
   createPlanJobContext,
   createRenderJobContext,
@@ -11,7 +10,6 @@ import {
 import { createMockJobContextParams } from './JobContext.mock.ts';
 import type {
   BoundPrepareModelJobFn,
-  IExecuteModelCallContext,
   IJobContext,
   IPlanJobContext,
   IPrepareModelJobContext,
@@ -19,8 +17,6 @@ import type {
 } from './JobContext.interface.ts';
 import { compressPrompt } from '../compressPrompt/compressPrompt.ts';
 import { calculateAffordability } from '../calculateAffordability/calculateAffordability.ts';
-import { BoundExecuteModelCallAndSaveFn } from '../executeModelCallAndSave/executeModelCallAndSave.interface.ts';
-import { BoundEnqueueRenderJobFn } from '../enqueueRenderJob/enqueueRenderJob.interface.ts';
 import { BoundEnqueueModelCallFn } from '../enqueueModelCall/enqueueModelCall.interface.ts';
 import { enqueueModelCall } from '../enqueueModelCall/enqueueModelCall.ts';
 import { prepareModelJob } from '../prepareModelJob/prepareModelJob.ts';
@@ -78,23 +74,6 @@ Deno.test('Integration: constructed context passes structural check against IJob
   assertEquals(rootContext.documentRenderer, params.documentRenderer);
   assertEquals(rootContext.prepareModelJob, params.prepareModelJob);
   assertEquals(rootContext.debitTokens, params.debitTokens);
-
-  const executeContext: IExecuteModelCallContext = createExecuteModelCallContext(rootContext);
-  assertEquals(executeContext.logger, rootContext.logger);
-  assertEquals(executeContext.fileManager, rootContext.fileManager);
-  assertEquals(executeContext.getAiProviderAdapter, rootContext.getAiProviderAdapter);
-  assertEquals(executeContext.userTokenWalletService, rootContext.userTokenWalletService);
-  assertEquals(executeContext.notificationService, rootContext.notificationService);
-  assertEquals(executeContext.continueJob, rootContext.continueJob);
-  assertEquals(executeContext.retryJob, rootContext.retryJob);
-  assertEquals(executeContext.resolveFinishReason, rootContext.resolveFinishReason);
-  assertEquals(executeContext.isIntermediateChunk, rootContext.isIntermediateChunk);
-  assertEquals(executeContext.determineContinuation, rootContext.determineContinuation);
-  assertEquals(executeContext.buildUploadContext, rootContext.buildUploadContext);
-  assertEquals(typeof executeContext.debitTokens, 'function');
-  assertEquals('ragService' in executeContext, false);
-  assertEquals('countTokens' in executeContext, false);
-  assertEquals('prepareModelJob' in executeContext, false);
 
   const planContext: IPlanJobContext = createPlanJobContext(rootContext);
   assertEquals(planContext.logger, rootContext.logger);

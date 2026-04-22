@@ -55,7 +55,7 @@ export async function continueJob(
     return { enqueued: false, error };
   }
 
-  // The caller (executeModelCallAndSave) has already determined that continuation
+  // The caller (saveResponse) has already determined that continuation
   // is warranted. This function enforces structural safety limits only.
   const underMaxContinuations = (job.payload.continuation_count ?? 0) < 5;
   if (!underMaxContinuations) {

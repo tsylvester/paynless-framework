@@ -928,7 +928,7 @@
     * `[✅]`   No inline ad-hoc types in `assembleChunks.interface.ts` — proven by §5 lint
     * `[✅]`   All existing tests GREEN — no behavioral regression
 
-* `[✅]`   `dialectic-worker/saveResponse/saveResponse` **[BE] EMCAS back-half — post-stream processing, contribution save, token debit, and job completion**
+* `[✅]`   `dialectic-worker/saveResponse/saveResponse` **[BE] EMCAS back-half — post-stream processing, contribution save, token debit, render dispatch, and job completion**
 
   * `[✅]`   `objective`
     * `[✅]`   Receive the assembled AI response blob from the Netlify workload via HTTP POST, fetch the corresponding job from DB by `job_id`, execute all post-stream processing (finish_reason detection, JSON sanitization, storage upload, contribution save, token debit, continuation dispatch), and update job status from `queued` to the correct terminal or continuation state
@@ -936,6 +936,7 @@
       * Accept and validate `{ job_id, assembled_content, token_usage, finish_reason }` from Netlify with valid user JWT
       * Fetch full job row and derived context from Supabase
       * Execute all logic currently in EMCAS after the `for await` stream loop
+      * On terminal completion: call `deps.enqueueRenderJob` to determine render decision and dispatch RENDER job for markdown outputs; use result to gate inline `assembleAndSaveFinalDocument` (mirrors the original `executeModelCallAndSave` render block that was dropped during the split refactor)
       * Update job status to `completed`, `needs_continuation`, `continuation_limit_reached`, or `failed`
     * `[✅]`   Non-functional constraints:
       * Runs in Deno (Supabase Edge Function) — same runtime as existing EMCAS
@@ -965,6 +966,7 @@
     * `[✅]`   `buildUploadContext: BuildUploadContextFn` — from existing EMCAS deps; required for storage upload
     * `[✅]`   `debitTokens: BoundDebitTokens` — from existing EMCAS deps; wraps `userTokenWalletService`
     * `[✅]`   `sanitizeJsonContent: SanitizeJsonContentFn` — injected after `jsonSanitizer` node; direct import replaced by injection
+    * `[✅]`   `enqueueRenderJob: BoundEnqueueRenderJobFn` — from `enqueueRenderJob/enqueueRenderJob.ts`; determines render decision and dispatches RENDER job for markdown outputs on terminal completion; gates inline `assembleAndSaveFinalDocument`
     * `[✅]`   `dialectic-worker/index.ts` — registers the new HTTP route for this function (wiring step, separate file touch; one file per turn during execution)
     * `[✅]`   Existing type guards, interfaces, and helpers remain in Deno — no porting required
     * `[✅]`   Note: `dbClient: SupabaseClient<Database>` constructed from JWT at request boundary — placed in `SaveResponseParams` consistent with EMCAS pattern
@@ -974,6 +976,7 @@
     * `[✅]`   HTTP header: `Authorization: Bearer <user_jwt>`
     * `[✅]`   Fetches from DB: full job row, provider row, session data, project owner user ID
     * `[✅]`   Receives `finish_reason` from Netlify handler (explicit outer / provider stream done chunk); `null` when stream interrupted (no done chunk). Narrows to `FinishReason` via type guard with `'unknown'` fallback
+    * `[✅]`   On terminal completion: calls `deps.enqueueRenderJob` to determine render decision and dispatch RENDER job for markdown outputs; uses result to gate inline `assembleAndSaveFinalDocument` (mirrors original EMCAS render block)
 
   * `[✅]`   `saveResponse.interface.test.ts`
     * `[✅]`   Imports types ONLY from `saveResponse.interface.ts` — no guard imports, no runtime validators; mirrors `ai-adapter.interface.test.ts` pattern
@@ -981,7 +984,7 @@
     * `[✅]`   Construct `SaveResponsePayload` literal with `assembled_content: string`, `token_usage: NodeTokenUsage`, `finish_reason: 'stop'` — compiles; assert field types
     * `[✅]`   Construct `SaveResponsePayload` literal with `token_usage: null` and `finish_reason: null` — compiles (both nullable)
     * `[✅]`   Construct `SaveResponseRequestBody` literal (transport shape) with `{ job_id, assembled_content, token_usage, finish_reason }` — compiles; assert shape
-    * `[✅]`   Construct `SaveResponseDeps` literal with all eleven fields of the declared types — compiles; assert shape
+    * `[✅]`   Construct `SaveResponseDeps` literal with all twelve fields of the declared types (including `enqueueRenderJob: BoundEnqueueRenderJobFn`) — compiles; assert shape
     * `[✅]`   Construct `SaveResponseSuccessReturn` literal with each union member (`'completed'`, `'needs_continuation'`, `'continuation_limit_reached'`) — compiles for each
     * `[✅]`   Construct `SaveResponseErrorReturn` literal with `{ error: new Error('x'), retriable: true }` — compiles; assert `error instanceof Error` and `typeof retriable === 'boolean'`
     * `[✅]`   Pure type-shape assertions only — invalid shapes are a compile-time concern; runtime accept/reject belongs in `saveResponse.guard.test.ts`
@@ -991,7 +994,7 @@
     * `[✅]`   `SaveResponsePayload`: `{ assembled_content: string; token_usage: NodeTokenUsage | null; finish_reason: string | null }` — data the function operates on; `finish_reason` relayed from Netlify handler's `done` chunk capture
     * `[✅]`   `SaveResponseRequestBody`: `{ job_id: string; assembled_content: string; token_usage: NodeTokenUsage | null; finish_reason: string | null }` — HTTP transport type only; parsed and split into `SaveResponseParams` + `SaveResponsePayload` at handler boundary; not used as function contract
     * `[✅]`   `NodeTokenUsage` imported from shared Netlify adapter interface (or re-declared locally as identical shape to avoid cross-runtime import)
-    * `[✅]`   `SaveResponseDeps`: `{ logger: ILogger; fileManager: IFileManager; notificationService: NotificationServiceType; continueJob: ContinueJobFn; retryJob: RetryJobFn; resolveFinishReason: ResolveFinishReasonFn; isIntermediateChunk: IsIntermediateChunkFn; determineContinuation: DetermineContinuationFn; buildUploadContext: BuildUploadContextFn; debitTokens: BoundDebitTokens; sanitizeJsonContent: SanitizeJsonContentFn }`
+    * `[✅]`   `SaveResponseDeps`: `{ logger: ILogger; fileManager: IFileManager; notificationService: NotificationServiceType; continueJob: ContinueJobFn; retryJob: RetryJobFn; resolveFinishReason: ResolveFinishReasonFn; isIntermediateChunk: IsIntermediateChunkFn; determineContinuation: DetermineContinuationFn; buildUploadContext: BuildUploadContextFn; debitTokens: BoundDebitTokens; sanitizeJsonContent: SanitizeJsonContentFn; enqueueRenderJob: BoundEnqueueRenderJobFn }`
     * `[✅]`   `SaveResponseSuccessReturn`: `{ status: 'completed' | 'needs_continuation' | 'continuation_limit_reached' }`
     * `[✅]`   `SaveResponseErrorReturn`: `{ error: Error; retriable: boolean }`
     * `[✅]`   `SaveResponseReturn`: `SaveResponseSuccessReturn | SaveResponseErrorReturn`
@@ -1004,6 +1007,8 @@
     * `[✅]`   Calls `retryJob` on retriable failure; updates job status accordingly
     * `[✅]`   Calls `continueJob` when continuation required; job status → `needs_continuation`
     * `[✅]`   Sends `execute_completed` notification on terminal success (moved from processSimpleJob)
+    * `[✅]`   On terminal completion (`finish_reason` resolves to `stop`): calls `deps.enqueueRenderJob` with contribution data to determine render decision and dispatch RENDER job for markdown outputs; calls `fileManager.assembleAndSaveFinalDocument` only when `renderJobId === null` (`!shouldRender` gate — no render job dispatched, local assembly required)
+    * `[✅]`   On continuation path: does NOT call `enqueueRenderJob` — render dispatch only on terminal completion
     * `[✅]`   Updates job status from `queued` to terminal state
     * `[✅]`   Returns 200 on success; 500 on unretriable failure; 503 on retriable failure (Netlify retries POST on non-2xx)
 
@@ -1011,7 +1016,7 @@
     * `[✅]`   `isSaveResponseRequestBody`: valid; rejects missing `job_id`; rejects missing `assembled_content`; rejects wrong type for `token_usage`; rejects missing `finish_reason` field
     * `[✅]`   `isSaveResponseParams`: valid; rejects missing `job_id`; rejects missing `dbClient`
     * `[✅]`   `isSaveResponsePayload`: valid (with `finish_reason`); rejects missing `assembled_content`; rejects wrong type for `token_usage`; rejects missing `finish_reason` field
-    * `[✅]`   `isSaveResponseDeps`: valid full object accepted; any single missing field → guard rejects
+    * `[✅]`   `isSaveResponseDeps`: valid full object (twelve fields including `enqueueRenderJob`) accepted; any single missing field → guard rejects; missing `enqueueRenderJob` → guard rejects
     * `[✅]`   `isSaveResponseSuccessReturn`: valid; rejects unknown status values
     * `[✅]`   `isSaveResponseErrorReturn`: valid; requires `retriable` boolean
 
@@ -1019,7 +1024,7 @@
     * `[✅]`   `isSaveResponseRequestBody(v: unknown): v is SaveResponseRequestBody`
     * `[✅]`   `isSaveResponseParams(v: unknown): v is SaveResponseParams`
     * `[✅]`   `isSaveResponsePayload(v: unknown): v is SaveResponsePayload`
-    * `[✅]`   `isSaveResponseDeps(v: unknown): v is SaveResponseDeps`
+    * `[✅]`   `isSaveResponseDeps(v: unknown): v is SaveResponseDeps` — includes `typeof deps.enqueueRenderJob === 'function'` check
     * `[✅]`   `isSaveResponseSuccessReturn(v: unknown): v is SaveResponseSuccessReturn`
     * `[✅]`   `isSaveResponseErrorReturn(v: unknown): v is SaveResponseErrorReturn`
 
@@ -1038,6 +1043,12 @@
       * Job not found in `dialectic_generation_jobs` → 404
       * Provider row not found for `job_id` → 500 unretriable
       * Session data not found → 500 unretriable
+    * `[✅]`   New tests — render dispatch (mirrors original EMCAS render block):
+      * Terminal completion (`finish_reason` resolves to `stop`, non-continuation): `deps.enqueueRenderJob` called with contribution data — assert called once with correct args
+      * Continuation path (`needs_continuation`): `deps.enqueueRenderJob` NOT called — assert spy never called
+      * `enqueueRenderJob` returns `renderJobId !== null` (render job dispatched): `fileManager.assembleAndSaveFinalDocument` NOT called — render job handles assembly
+      * `enqueueRenderJob` returns `renderJobId === null` (no render job): `fileManager.assembleAndSaveFinalDocument` IS called — local assembly required (`!shouldRender` gate)
+      * `enqueueRenderJob` failure: does not block contribution save or token debit — error logged, function continues
 
   * `[✅]`   `saveResponse.assembleDocument.test.ts` *(copy from `executeModelCallAndSave.assembleDocument.test.ts` and modify)*
     * `[✅]`   Copy all 4 tests verbatim; apply the standard modifications (function call, params/payload shape, deps, mock factory)
@@ -1082,19 +1093,22 @@
     * `[✅]`   Fetches job row, provider row, session, project owner from Supabase
     * `[✅]`   Narrows `payload.finish_reason` (string | null) to `FinishReason` via type guard; `null` falls back to `'unknown'` (triggers continuation — correct for stream interruption)
     * `[✅]`   Runs all post-stream logic extracted from existing `dialectic-worker/executeModelCallAndSave/executeModelCallAndSave.ts` (finish_reason → sanitize → parse → upload → save → debit → continue or complete)
+    * `[✅]`   On terminal completion: calls `deps.enqueueRenderJob` with contribution data; calls `fileManager.assembleAndSaveFinalDocument` only when `renderJobId === null` (`!shouldRender` gate) — replaces the hardcoded `const shouldRender: boolean = false` at line 979 with actual render decision logic mirroring the original EMCAS render block
     * `[✅]`   Sends `execute_completed` notification on terminal success
     * `[✅]`   Updates job status from `queued` to outcome
 
   * `[✅]`   `saveResponse.mock.ts`
-    * `[✅]`   `createMockSaveResponseDeps(overrides?)`: controllable `saveResponseDeps`
+    * `[✅]`   `createMockSaveResponseDeps(overrides?)`: controllable `saveResponseDeps` — includes `enqueueRenderJob: BoundEnqueueRenderJobFn` stub (default: returns `{ renderJobId: null }`)
     * `[✅]`   Mirrors the existing `executeModelCallAndSave.mock.ts` pattern for shared deps
 
   * `[✅]`   `saveResponse.provides.ts`
     * `[✅]`   Exports: `saveResponse`, `saveResponseDeps`, `SaveResponseReturn`
 
   * `[✅]`   `saveResponse.integration.test.ts`
-    * `[✅]`   Chain: mock Netlify POST → back-half → mock Supabase → mock retryJob/continueJob → asserts job status updated, notification sent
+    * `[✅]`   Chain: mock Netlify POST → back-half → mock Supabase → mock retryJob/continueJob → asserts job status updated, notification sent, render job dispatched on terminal completion
     * `[✅]`   Verifies `execute_completed` notification fires on terminal success (was processSimpleJob's responsibility)
+    * `[✅]`   Verifies `deps.enqueueRenderJob` called on terminal completion with correct contribution data; `assembleAndSaveFinalDocument` gated by render result
+    * `[✅]`   Verifies `deps.enqueueRenderJob` NOT called on continuation path
 
   * `[✅]`   `directionality`
     * `[✅]`   Layer: app/domain (Supabase Edge, Deno)
@@ -1107,6 +1121,9 @@
     * `[✅]`   Job status transitions from `queued` to correct terminal state — proven by unit test
     * `[✅]`   `execute_completed` notification fires on success — proven by unit test (moved from processSimpleJob)
     * `[✅]`   Non-2xx response on retriable failure causes Netlify to retry POST — proven by interaction spec + integration test
+    * `[✅]`   `enqueueRenderJob` called on terminal completion, not on continuation — proven by unit test
+    * `[✅]`   `assembleAndSaveFinalDocument` gated by `enqueueRenderJob` result — proven by unit test
+    * `[✅]`   Render dispatch failure does not block contribution save — proven by unit test
 
 * `[✅]`   `dialectic-worker/enqueueModelCall/enqueueModelCall` **[BE] EMCAS front-half — pre-call validation, job queuing, and Netlify event dispatch**
 
@@ -1447,7 +1464,7 @@
     * `[✅]`   `execute_completed` is never sent from processSimpleJob — proven by spy assertion
     * `[✅]`   All existing error paths remain GREEN — proven by existing tests unchanged
 
-* `[ ]`   `dialectic-worker/createJobContext/JobContext` **[BE] Update JobContext — wire enqueueModelCall, remove enqueueRenderJob from prepareModelJob deps slice**
+* `[✅]`   `dialectic-worker/createJobContext/JobContext` **[BE] Update JobContext — wire enqueueModelCall, remove enqueueRenderJob from prepareModelJob deps slice**
 
   * `[✅]`   `objective`
     * `[✅]`   Update `IJobContext` and `createJobContext` to wire `enqueueModelCall` dep in `PrepareModelJobDeps`, and remove `enqueueRenderJob` from the prepareModelJob context slice — reflecting the split architecture
@@ -1475,6 +1492,7 @@
     * `[✅]`   `enqueueModelCall` — from front-half node; bound and injected
     * `[✅]`   `NETLIFY_QUEUE_URL` and `AWL_API_KEY` — env vars read at boundary; passed as `netlifyQueueUrl` and `netlifyApiKey` strings into front-half deps
     * `[✅]`   All existing deps unchanged
+    * `[✅]`   `sanitizeJsonContent: SanitizeJsonContentFn` — imported from `_shared/utils/jsonSanitizer` at the `createDialecticWorkerDeps` composition root in `index.ts`; added to `IJobContext` and `JobContextParams` so the index handler can assemble `SaveResponseDeps` without separate imports
 
   * `[✅]`   `context_slice`
     * `[✅]`   `prepareModelJob` context slice: `enqueueModelCall` → `BoundEnqueueModelCallFn`; `enqueueRenderJob` removed
@@ -1491,6 +1509,7 @@
     * `[✅]`   `IJobContext`: updated prepareModelJob deps slice type
     * `[✅]`   Add back-half deps slice type for `saveResponse` if not already present
     * `[✅]`   `ApplyInputsRequiredScopeFn`, `ValidateWalletBalanceFn`, `ValidateModelCostRatesFn`: unchanged
+    * `[✅]`   Add `sanitizeJsonContent: SanitizeJsonContentFn` to `IJobContext` and `JobContextParams`; import `SanitizeJsonContentFn` from `_shared/utils/jsonSanitizer/jsonSanitizer.interface.ts`
 
   * `[✅]`   `JobContext.interaction.spec` *(update)*
     * `[✅]`   `createJobContext` wires `enqueueModelCall` with `netlifyQueueUrl` and `netlifyApiKey` read from env
@@ -1517,10 +1536,12 @@
     * `[✅]`   In prepareModelJob deps slice: bind `enqueueModelCall` to `enqueueModelCall` (with `netlifyQueueUrl` and `netlifyApiKey` from env)
     * `[✅]`   Remove `enqueueRenderJob` from prepareModelJob deps slice
     * `[✅]`   Add back-half deps slice with `enqueueRenderJob` and back-half-specific deps
+    * `[✅]`   Pass `sanitizeJsonContent: params.sanitizeJsonContent` through in `createJobContext` factory return object
 
   * `[✅]`   `JobContext.mock.ts` *(update)*
     * `[✅]`   Mock context: `enqueueModelCall` in prepareModelJob slice defaults to `createMockEnqueueModelCallDeps` stub
     * `[✅]`   `enqueueRenderJob` present only in back-half mock slice
+    * `[✅]`   Add `sanitizeJsonContent` to `createMockJobContextParams` defaults — stub returning the input string unchanged
 
   * `[✅]`   `JobContext.provides.ts` *(update if exists)*
     * `[✅]`   Export updated `IJobContext`, `createJobContext`
@@ -1550,11 +1571,134 @@
     * `[✅]`   Phase 1 Supabase-side chain integration passes — proven by `JobContext.integration.test.ts`
     * `[✅]`   Phase 1 cross-system chain integration passes: workload receives event, calls mock adapter, POSTs to `saveResponse`, `saveResponse` writes to DB — proven by `ai-stream.integration.test.ts` update
     * `[✅]`   All existing context tests remain GREEN
+    * `[ ]`   `sanitizeJsonContent` present on `IJobContext` and provided by `createDialecticWorkerDeps` — required for `saveResponse` dep assembly in index handler; proven by field presence assertion in `createJobContext.test.ts`
 
-  * `[ ]`   **Commit** `feat(dialectic-worker): split EMCAS into enqueueModelCall (EMCAS pre-stream) + Netlify streaming worker + saveResponse (EMCAS post-stream)`
-    * `[ ]`   Structural: new Netlify async workload (`ai-stream`) with OpenAI, Anthropic, Google Node.js adapters; new `saveResponse` Deno Edge Function; new `enqueueModelCall` Deno function
-    * `[ ]`   Behavioral: AI stream execution moves from Supabase Edge (4-min timeout) to Netlify Async Workloads (15-min timeout); job status `queued` added; `execute_completed` notification moves to back-half
-    * `[ ]`   Contract: `PrepareModelJobSuccessReturn` changes to `{ queued: true }`; `BoundEnqueueModelCallFn` dep replaced by `BoundEnqueueModelCallFn`; `enqueueRenderJob` removed from prepareModelJob context slice
+* `[✅]`   `dialectic-worker/index` **[BE] HTTP handler for saveResponse — receive Netlify POST, construct deps, dispatch to saveResponse, return HTTP status**
+
+  * `[✅]`   `objective`
+    * `[✅]`   Provide the HTTP route in `dialectic-worker/index.ts` `serve()` handler that receives the Netlify workload POST at the `saveResponse` path, extracts the JWT, creates a user-scoped `dbClient`, constructs `SaveResponseDeps`, parses the body into `SaveResponseParams` + `SaveResponsePayload`, calls `saveResponse(deps, params, payload)`, and maps the return to the appropriate HTTP status code
+    * `[✅]`   Functional goals:
+      * Add route in `serve()` handler matching POST to saveResponse path (alongside existing job-queue handler)
+      * Extract `Authorization: Bearer <user_jwt>` from request headers; missing → 401 immediately; create user-scoped `SupabaseClient<Database>` (`userDbClient`) from JWT
+      * Parse request body as `SaveResponseRequestBody`; validate via `isSaveResponseRequestBody` guard — invalid → 400
+      * Split `SaveResponseRequestBody` into `SaveResponseParams` (`{ job_id, dbClient: userDbClient }`) and `SaveResponsePayload` (`{ assembled_content, token_usage, finish_reason }`)
+      * Construct `SaveResponseDeps` by explicitly assembling: `IJobContext` fields from `createDialecticWorkerDeps(adminClient)` + `boundDebitTokens: BoundDebitTokens` (bind `IJobContext.debitTokens` to `userDbClient` in handler) + `ISaveResponseContext.enqueueRenderJob` from `createSaveResponseContext(deps, boundRender)` where `boundRender` is constructed in handler scope using `adminClient`, `deps.logger`, `shouldEnqueueRenderJob`
+      * Call `saveResponse(saveResponseDeps, params, payload)` and map `SaveResponseReturn` to HTTP status using `isSaveResponseErrorReturn` guard: `SaveResponseSuccessReturn` → 200, `SaveResponseErrorReturn` with `retriable: true` → 503, `SaveResponseErrorReturn` with `retriable: false` → 500
+    * `[✅]`   Non-functional constraints:
+      * One route addition to existing `serve()` handler — minimal change to `index.ts`
+      * Must not break existing job-queue handler route
+      * JWT validation delegated to Supabase Edge gateway — handler trusts valid JWT
+
+  * `[✅]`   `role`
+    * `[✅]`   Role: app/boundary — HTTP request handler; bridges external HTTP POST to internal `saveResponse` function
+    * `[✅]`   Why appropriate: `index.ts` is the Edge Function entry point; all HTTP routing lives here
+    * `[✅]`   Must NOT: implement post-stream business logic (that's `saveResponse`'s job), access AI providers, or manage job state directly
+
+  * `[✅]`   `module`
+    * `[✅]`   Bounded context: `dialectic-worker` — Edge Function entry point
+    * `[✅]`   Inside boundary: HTTP routing, request parsing, JWT extraction, dep construction, response mapping
+    * `[✅]`   Outside boundary: post-stream business logic (`saveResponse`), AI streaming (Netlify), job orchestration (`processSimpleJob`)
+
+  * `[✅]`   `deps`
+    * `[✅]`   `createDialecticWorkerDeps` — returns `IJobContext`; provides `logger`, `fileManager`, `notificationService`, `continueJob`, `retryJob`, `resolveFinishReason`, `isIntermediateChunk`, `determineContinuation`, `buildUploadContext`, `sanitizeJsonContent` (added to `IJobContext` in preceding JobContext node); `debitTokens` is `DebitTokens` (unbound — must be bound to `userDbClient` in handler before assembling `SaveResponseDeps`)
+    * `[✅]`   `createSaveResponseContext(deps, boundRender)` — exported slicer from `createJobContext.ts`; accepts root `IJobContext` and pre-bound `BoundEnqueueRenderJobFn`; returns `ISaveResponseContext` with `enqueueRenderJob: BoundEnqueueRenderJobFn`
+    * `[✅]`   `boundRender: BoundEnqueueRenderJobFn` — constructed in handler scope: `(params, payload) => enqueueRenderJob({ dbClient: adminClient, logger, shouldEnqueueRenderJob }, params, payload)`; `enqueueRenderJob` and `shouldEnqueueRenderJob` already imported in `index.ts`; not a reference to any factory-internal variable
+    * `[✅]`   `boundDebitTokens: BoundDebitTokens` — bound in handler scope: `(params, payload) => deps.debitTokens(userDbClient, params, payload)`; bridges `DebitTokens` on `IJobContext` to `BoundDebitTokens` required by `SaveResponseDeps`
+    * `[✅]`   `saveResponse` — from `saveResponse/saveResponse.ts`; the function being dispatched to
+    * `[✅]`   `isSaveResponseRequestBody`, `isSaveResponseErrorReturn` — from `saveResponse/saveResponse.guard.ts`; validate request body and distinguish retriable vs non-retriable error in return mapping
+    * `[✅]`   Supabase client creation utilities — `createClient` from `@supabase/supabase-js` for user-scoped `userDbClient` from JWT
+
+  * `[✅]`   `context_slice`
+    * `[✅]`   From HTTP request: `Authorization` header (JWT), JSON body (`SaveResponseRequestBody`)
+    * `[✅]`   Constructs: `SaveResponseDeps` (assembled from `IJobContext` fields + `boundDebitTokens` bound to `userDbClient` + `ISaveResponseContext.enqueueRenderJob`), `SaveResponseParams` (`{ job_id, dbClient: userDbClient }`), `SaveResponsePayload` (`{ assembled_content, token_usage, finish_reason }`)
+    * `[✅]`   Returns: HTTP `Response` — 200 on success, 400 on invalid body, 401 on missing `Authorization`, 500 on unretriable error, 503 on retriable error
+
+  * `[✅]`   `index.interface.test.ts`
+    * `[✅]`   Construct `SaveResponseRequestBody` literal — compiles; assert shape matches expected wire format
+    * `[✅]`   Construct handler response shape for each status code (200, 400, 500, 503) — compiles
+    * `[✅]`   Pure type-shape assertions only
+
+  * `[✅]`   `index.interaction.spec`
+    * `[✅]`   Route matches POST to saveResponse path — request with matching path dispatches to saveResponse handler; non-matching path falls through to existing job-queue handler
+    * `[✅]`   Missing or invalid `Authorization` header → 401
+    * `[✅]`   Invalid body (fails `isSaveResponseRequestBody`) → 400, no `saveResponse` call
+    * `[✅]`   Valid body → `saveResponse(deps, params, payload)` called with correctly split params/payload
+    * `[✅]`   `saveResponse` returns `SaveResponseSuccessReturn` → 200 with JSON body
+    * `[✅]`   `saveResponse` returns `SaveResponseErrorReturn` with `retriable: true` → 503
+    * `[✅]`   `saveResponse` returns `SaveResponseErrorReturn` with `retriable: false` → 500
+    * `[✅]`   Unhandled exception in handler → 500 with generic error
+    * `[✅]`   Existing job-queue route continues to function — no regression
+
+  * `[✅]`   `index.test.ts`
+    * `[✅]`   Valid POST with JWT and correct body → `saveResponse` called with `SaveResponseDeps` (all fields including `enqueueRenderJob` and `debitTokens`), `SaveResponseParams` (`{ job_id, dbClient: userDbClient }`), `SaveResponsePayload` (`{ assembled_content, token_usage, finish_reason }`) — assert correct argument shapes
+    * `[✅]`   Missing `Authorization` header → 401 response, `saveResponse` not called
+    * `[✅]`   Invalid body (missing `job_id`) → 400 response, `saveResponse` not called
+    * `[✅]`   `saveResponse` returns `{ status: 'completed' }` → 200 response
+    * `[✅]`   `saveResponse` returns `{ status: 'needs_continuation' }` → 200 response
+    * `[✅]`   `saveResponse` returns `{ error, retriable: true }` → 503 response
+    * `[✅]`   `saveResponse` returns `{ error, retriable: false }` → 500 response
+    * `[✅]`   `SaveResponseDeps.enqueueRenderJob` is present and typed as `BoundEnqueueRenderJobFn` — assert dep construction includes it from `ISaveResponseContext`
+    * `[✅]`   `SaveResponseDeps.debitTokens` is `BoundDebitTokens` bound to `userDbClient` — assert it is a function (not the raw `DebitTokens` from `IJobContext`)
+    * `[✅]`   Existing job-queue handler route: mock job-queue request → dispatches to existing handler, not saveResponse handler — no regression
+
+  * `[✅]`   `construction`
+    * `[✅]`   In `serve()` handler: add route matching logic (path or header check) to distinguish saveResponse POST from job-queue POST
+    * `[✅]`   Extract `Authorization` header; missing → return 401 immediately before any dep construction
+    * `[✅]`   Create `adminClient: SupabaseClient<Database>` via `createSupabaseAdminClient()` (already the pattern in `index.ts`)
+    * `[✅]`   Create `userDbClient: SupabaseClient<Database>` via `createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { global: { headers: { Authorization } } })`
+    * `[✅]`   Await `createDialecticWorkerDeps(adminClient)` → `deps: IJobContext`
+    * `[✅]`   Construct `boundRender: BoundEnqueueRenderJobFn` in handler scope: `(params, payload) => enqueueRenderJob({ dbClient: adminClient, logger, shouldEnqueueRenderJob }, params, payload)`
+    * `[✅]`   Construct `boundDebitTokens: BoundDebitTokens` in handler scope: `(params, payload) => deps.debitTokens(userDbClient, params, payload)`
+    * `[✅]`   Obtain `saveResponseCtx: ISaveResponseContext` via `createSaveResponseContext(deps, boundRender)`
+    * `[✅]`   Assemble `saveResponseDeps: SaveResponseDeps` explicitly: take `logger`, `fileManager`, `notificationService`, `continueJob`, `retryJob`, `resolveFinishReason`, `isIntermediateChunk`, `determineContinuation`, `buildUploadContext`, `sanitizeJsonContent` from `deps`; set `debitTokens: boundDebitTokens`; set `enqueueRenderJob: saveResponseCtx.enqueueRenderJob`
+    * `[✅]`   Parse body via `request.json()`, validate via `isSaveResponseRequestBody`, split into `SaveResponseParams` (`{ job_id, dbClient: userDbClient }`) and `SaveResponsePayload` (`{ assembled_content, token_usage, finish_reason }`)
+
+  * `[✅]`   `index.ts` *(update existing file)*
+    * `[✅]`   Add saveResponse route in `serve()` handler — route check before existing job-queue handler
+    * `[✅]`   Import `saveResponse` from `./saveResponse/saveResponse.ts`
+    * `[✅]`   Import `isSaveResponseRequestBody`, `isSaveResponseErrorReturn` from `./saveResponse/saveResponse.guard.ts`
+    * `[✅]`   Import `SaveResponseDeps` from `./saveResponse/saveResponse.interface.ts`
+    * `[✅]`   Import `createSaveResponseContext` from `./createJobContext/createJobContext.ts`
+    * `[✅]`   Import `ISaveResponseContext` from `./createJobContext/JobContext.interface.ts`
+    * `[✅]`   Import `BoundDebitTokens` from `../_shared/utils/debitTokens.interface.ts`
+    * `[✅]`   Add `sanitizeJsonContent` import and provision in `createDialecticWorkerDeps` (import from `_shared/utils/jsonSanitizer`; pass to `createJobContext` call)
+    * `[✅]`   `enqueueRenderJob`, `BoundEnqueueRenderJobFn`, `shouldEnqueueRenderJob` already imported — no new imports needed for `boundRender` construction
+    * `[✅]`   Construct `boundRender`, `boundDebitTokens`, `saveResponseCtx`, `saveResponseDeps` as described in `construction` step
+    * `[✅]`   Call `saveResponse(saveResponseDeps, params, payload)`; use `isSaveResponseErrorReturn(result)` to distinguish error path; map `retriable` flag to 503 vs 500
+    * `[✅]`   Existing job-queue handler: unchanged
+
+  * `[✅]`   `index.mock.ts`
+    * `[✅]`   `createMockSaveResponseRequest(overrides?)`: creates mock `Request` with valid JWT header and `SaveResponseRequestBody` JSON body
+    * `[✅]`   `createMockSharedDeps(overrides?)`: returns shared deps subset matching `createDialecticWorkerDeps` output
+
+  * `[✅]`   `index.integration.test.ts`
+    * `[✅]`   Full handler chain: mock HTTP POST with valid JWT and body → handler parses → constructs deps (with `enqueueRenderJob` from `ISaveResponseContext`) → calls real `saveResponse` with mock Supabase client → `saveResponse` executes post-stream logic → returns success → handler maps to 200
+    * `[✅]`   Render chain integration: terminal completion path → `enqueueRenderJob` called → `assembleAndSaveFinalDocument` gated by result
+    * `[✅]`   Error chain: `saveResponse` returns retriable error → handler returns 503
+    * `[✅]`   Regression: job-queue POST → dispatches to existing handler, not saveResponse handler
+    * `[✅]`   Mocked: Supabase client, `enqueueRenderJob` (external boundary), notification service
+    * `[✅]`   Real: handler routing, body parsing, dep construction, `saveResponse` function
+
+  * `[✅]`   `directionality`
+    * `[✅]`   Layer: app/boundary (Supabase Edge, Deno)
+    * `[✅]`   Deps inward: `saveResponse`, `createDialecticWorkerDeps`, `createSaveResponseContext`, Supabase client utilities
+    * `[✅]`   Provides outward: HTTP endpoint consumed by Netlify workload POST
+    * `[✅]`   No cycles; does not call Netlify or front-half
+
+  * `[✅]`   `requirements`
+    * `[✅]`   Valid POST dispatches to `saveResponse` with correctly constructed deps (including `enqueueRenderJob` and `boundDebitTokens`) — proven by unit test
+    * `[✅]`   Invalid body returns 400 without calling `saveResponse` — proven by unit test
+    * `[✅]`   Missing JWT returns 401 — proven by unit test
+    * `[✅]`   Return mapping: success → 200, retriable error → 503, unretriable error → 500 — proven by unit test
+    * `[✅]`   Existing job-queue route unaffected — proven by regression test
+    * `[✅]`   `enqueueRenderJob` wired from `ISaveResponseContext` into deps — proven by integration test
+    * `[✅]`   `SaveResponseDeps.debitTokens` is `BoundDebitTokens` bound to `userDbClient` — proven by unit test
+    * `[✅]`   `SaveResponseDeps.sanitizeJsonContent` sourced from `IJobContext` (provided by `createDialecticWorkerDeps`) — proven by unit test
+
+  * `[✅]`   **Commit** `feat(dialectic-worker): split EMCAS into enqueueModelCall (EMCAS pre-stream) + Netlify streaming worker + saveResponse (EMCAS post-stream)`
+    * `[✅]`   Structural: new Netlify async workload (`ai-stream`) with OpenAI, Anthropic, Google Node.js adapters; new `saveResponse` Deno Edge Function with HTTP handler in `index.ts`; new `enqueueModelCall` Deno function; `enqueueRenderJob` wired through `ISaveResponseContext` into `SaveResponseDeps`
+    * `[✅]`   Behavioral: AI stream execution moves from Supabase Edge (4-min timeout) to Netlify Async Workloads (15-min timeout); job status `queued` added; `execute_completed` notification moves to back-half; render dispatch moves to back-half via `enqueueRenderJob`
+    * `[✅]`   Contract: `PrepareModelJobSuccessReturn` changes to `{ queued: true }`; `SaveResponseDeps` gains `enqueueRenderJob: BoundEnqueueRenderJobFn`; `enqueueRenderJob` removed from prepareModelJob context slice
 
 ## Netlify-Worker-Stream Phase 2 and Phase 3 — deferred detail
 

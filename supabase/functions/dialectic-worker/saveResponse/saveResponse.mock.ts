@@ -32,6 +32,76 @@ import type {
     SaveResponseSuccessReturn,
 } from "./saveResponse.interface.ts";
 
+
+export type CreateMockDialecticContributionRowOverrides = {
+    [K in keyof Tables<'dialectic_contributions'>]?: Tables<'dialectic_contributions'>[K];
+  };
+  
+
+/**
+ * Full valid `dialectic_contributions` row for unit tests (fileManager success paths).
+ */
+export function createMockDialecticContributionRow(
+    overrides?: CreateMockDialecticContributionRowOverrides,
+  ): DialecticContributionRow {
+    const base: Tables<'dialectic_contributions'> = {
+      id: 'contrib-test-1',
+      citations: null,
+      contribution_type: 'thesis',
+      created_at: new Date().toISOString(),
+      document_relationships: { thesis: 'contrib-test-1' },
+      edit_version: 1,
+      error: null,
+      file_name: null,
+      is_header: false,
+      is_latest_edit: true,
+      iteration_number: 1,
+      mime_type: 'application/json',
+      model_id: 'model-def',
+      model_name: null,
+      original_model_contribution_id: null,
+      processing_time_ms: 1,
+      prompt_template_id_used: null,
+      raw_response_storage_path: null,
+      seed_prompt_url: null,
+      session_id: 'session-456',
+      size_bytes: 10,
+      source_prompt_resource_id: null,
+      stage: 'thesis',
+      storage_bucket: 'test-bucket',
+      storage_path: 'test/path.json',
+      target_contribution_id: null,
+      tokens_used_input: 1,
+      tokens_used_output: 1,
+      updated_at: new Date().toISOString(),
+      user_id: 'user-789',
+    };
+    if (!overrides) {
+      return base;
+    }
+    return { ...base, ...overrides };
+  }
+
+  export const testPayload: DialecticExecuteJobPayload = {
+    prompt_template_id: 'test-prompt',
+    inputs: {},
+    output_type: FileType.HeaderContext,
+    document_key: 'header_context',
+    projectId: 'project-abc',
+    sessionId: 'session-456',
+    stageSlug: 'thesis',
+    model_id: 'model-def',
+    iterationNumber: 1,
+    continueUntilComplete: false,
+    walletId: 'wallet-ghi',
+    user_jwt: 'jwt.token.here',
+    canonicalPathParams: {
+      contributionType: 'thesis',
+      stageSlug: 'thesis',
+    },
+    idempotencyKey: 'job-id-123_render',
+  };
+  
 export type SaveResponseDepsOverrides = {
     [K in keyof SaveResponseDeps]?: SaveResponseDeps[K];
 };
@@ -112,6 +182,7 @@ export function createMockSaveResponseDeps(
             transactionRecordedSuccessfully: true,
         }),
         sanitizeJsonContent: sanitizeJsonContent,
+        enqueueRenderJob: async () => ({ renderJobId: null }),
     };
     if (!overrides) {
         return base;

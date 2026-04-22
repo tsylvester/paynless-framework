@@ -30,7 +30,6 @@ import { createMockFindSourceDocuments } from '../findSourceDocuments.mock.ts';
 import { buildMockBoundCalculateAffordabilityFn } from '../calculateAffordability/calculateAffordability.mock.ts';
 import {
     IFileContext,
-    IExecuteModelCallContext,
     IJobContext,
     ILoggerContext,
     IModelContext,
@@ -46,6 +45,7 @@ import {
 } from './JobContext.interface.ts';
 import { BoundGatherArtifactsFn } from '../gatherArtifacts/gatherArtifacts.interface.ts';
 import { BoundEnqueueModelCallFn } from '../enqueueModelCall/enqueueModelCall.interface.ts';
+import { sanitizeJsonContent } from '../../_shared/utils/jsonSanitizer/jsonSanitizer.ts';
 
 describe('JobContext.interface.ts contracts', () => {
     describe('ILoggerContext', () => {
@@ -137,56 +137,6 @@ describe('JobContext.interface.ts contracts', () => {
             const ctx: INotificationContext = { notificationService: mockNotificationService };
             assertEquals(typeof ctx.notificationService, 'object');
             assertEquals(ctx.notificationService === null, false);
-        });
-    });
-
-    describe('IExecuteModelCallContext', () => {
-        it('requires twelve members for executeModelCallAndSave', () => {
-            const logger = new MockLogger();
-            const fileManager = new MockFileManagerService();
-            const userTokenWalletService = createMockUserTokenWalletService().instance;
-            const debitTokens: BoundDebitTokens = async () => ({
-                error: new Error('interface test stub'),
-                retriable: false,
-            });
-            const ctx: IExecuteModelCallContext = {
-                logger: logger,
-                fileManager: fileManager,
-                getAiProviderAdapter: () => ({
-                    sendMessage: async () => ({
-                        role: 'assistant',
-                        content: 'mock',
-                        ai_provider_id: null,
-                        system_prompt_id: null,
-                        token_usage: null,
-                    }),
-                    sendMessageStream: mockSendMessageStream,
-                    listModels: async () => [],
-                }),
-                userTokenWalletService: userTokenWalletService,
-                notificationService: mockNotificationService,
-                continueJob: async () => ({ enqueued: false }),
-                retryJob: async () => ({}),
-                resolveFinishReason: resolveFinishReason,
-                isIntermediateChunk: isIntermediateChunk,
-                determineContinuation: determineContinuation,
-                buildUploadContext: buildUploadContext,
-                debitTokens: debitTokens,
-            };
-            assertEquals(typeof ctx.logger, 'object');
-            assertEquals(typeof ctx.fileManager, 'object');
-            assertEquals(typeof ctx.getAiProviderAdapter, 'function');
-            assertEquals(typeof ctx.userTokenWalletService, 'object');
-            assertEquals(ctx.userTokenWalletService === null, false);
-            assertEquals(typeof ctx.notificationService, 'object');
-            assertEquals(ctx.notificationService === null, false);
-            assertEquals(typeof ctx.continueJob, 'function');
-            assertEquals(typeof ctx.retryJob, 'function');
-            assertEquals(typeof ctx.resolveFinishReason, 'function');
-            assertEquals(typeof ctx.isIntermediateChunk, 'function');
-            assertEquals(typeof ctx.determineContinuation, 'function');
-            assertEquals(typeof ctx.buildUploadContext, 'function');
-            assertEquals(typeof ctx.debitTokens, 'function');
         });
     });
 
@@ -342,6 +292,7 @@ describe('JobContext.interface.ts contracts', () => {
                 determineContinuation: determineContinuation,
                 buildUploadContext: buildUploadContext,
                 gatherArtifacts: boundGatherArtifacts,
+                sanitizeJsonContent: sanitizeJsonContent,
             };
 
             const job: IJobContext = {
@@ -377,6 +328,7 @@ describe('JobContext.interface.ts contracts', () => {
                 documentRenderer: params.documentRenderer,
                 prepareModelJob: params.prepareModelJob,
                 debitTokens: params.debitTokens,
+                sanitizeJsonContent: params.sanitizeJsonContent,
             };
 
             assertEquals(typeof params.logger, 'object');
@@ -390,14 +342,32 @@ describe('JobContext.interface.ts contracts', () => {
     });
 
     describe('ISaveResponseContext', () => {
-        it('back-half context slice includes enqueueRenderJob', () => {
+        it('back-half context slice includes enqueueRenderJob and debitTokens', () => {
+            const debitTokens: BoundDebitTokens = async () => ({
+                error: new Error('interface test stub'),
+                retriable: false,
+            });
             const ctx: ISaveResponseContext = {
                 enqueueRenderJob: async () => ({
                     error: new Error('interface test stub'),
                     retriable: false,
                 }),
+                debitTokens,
             };
             assertEquals(typeof ctx.enqueueRenderJob, 'function');
+            assertEquals(typeof ctx.debitTokens, 'function');
+        });
+    });
+
+    describe('sanitizeJsonContent', () => {
+        it('JobContextParams requires sanitizeJsonContent typed as SanitizeJsonContentFn', () => {
+            const fn: JobContextParams['sanitizeJsonContent'] = sanitizeJsonContent;
+            assertEquals(typeof fn, 'function');
+        });
+
+        it('IJobContext requires sanitizeJsonContent typed as SanitizeJsonContentFn', () => {
+            const fn: IJobContext['sanitizeJsonContent'] = sanitizeJsonContent;
+            assertEquals(typeof fn, 'function');
         });
     });
 });

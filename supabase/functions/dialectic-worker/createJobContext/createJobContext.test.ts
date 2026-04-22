@@ -11,7 +11,6 @@ import {
 } from './createJobContext.ts';
 import {
   isIJobContext,
-  isIExecuteModelCallContext,
   isIPrepareModelJobContext,
   isIPlanJobContext,
   isIRenderJobContext,
@@ -46,6 +45,8 @@ import {
   buildCompressPromptPayload,
   DbClient,
 } from '../compressPrompt/compressPrompt.mock.ts';
+import { createMockBoundDebitTokens } from '../../_shared/utils/debitTokens.mock.ts';
+
 describe('createJobContext Factory and Slicers', () => {
   describe('createJobContext', () => {
     it('updates createMockJobContextParams call sites to use prepareModelJob override', () => {
@@ -59,7 +60,6 @@ describe('createJobContext Factory and Slicers', () => {
       const result = createJobContext(params);
 
       assertEquals(result.prepareModelJob, overridePrepareModelJob);
-      assertEquals('executeModelCallAndSave' in result, false);
       assertEquals('callUnifiedAIModel' in result, false);
     });
 
@@ -68,22 +68,6 @@ describe('createJobContext Factory and Slicers', () => {
       const result = createJobContext(params);
 
       assertEquals(isIJobContext(result), true);
-    });
-
-    it('returns an object with prepareModelJob instead of executeModelCallAndSave', () => {
-      const params = createMockJobContextParams();
-      const result = createJobContext(params);
-
-      assertEquals('prepareModelJob' in result, true);
-      assertEquals(typeof result.prepareModelJob, 'function');
-      assertEquals('executeModelCallAndSave' in result, false);
-    });
-
-    it('returns an object without callUnifiedAIModel', () => {
-      const params = createMockJobContextParams();
-      const result = createJobContext(params);
-
-      assertEquals('callUnifiedAIModel' in result, false);
     });
 
     it('copies getSeedPromptForStage from params onto root IJobContext', () => {
@@ -128,6 +112,13 @@ describe('createJobContext Factory and Slicers', () => {
       assertEquals(calls[0].params, gatherParams);
       assertEquals(calls[0].payload, gatherPayload);
     });
+
+    it('sanitizeJsonContent is present and a function on the IJobContext result', () => {
+      const params = createMockJobContextParams();
+      const result = createJobContext(params);
+
+      assertEquals(typeof result.sanitizeJsonContent, 'function');
+    });
   });
 
   describe('createPrepareModelJobContext', () => {
@@ -161,7 +152,7 @@ describe('createJobContext Factory and Slicers', () => {
       assertEquals(isIPrepareModelJobContext(result), true);
     });
 
-    it('result includes logger, applyInputsRequiredScope, countTokens, tokenWalletService, validateWalletBalance, validateModelCostRates, ragService, embeddingClient, executeModelCallAndSave, enqueueRenderJob, calculateAffordability', () => {
+    it('result includes logger, applyInputsRequiredScope, countTokens, tokenWalletService, validateWalletBalance, validateModelCostRates, ragService, embeddingClient, enqueueModelCall, enqueueRenderJob, calculateAffordability', () => {
       const root = buildIJobContext();
       const boundEnqueueModelCall = createMockBoundEnqueueModelCall();
       const { compressPromptFn } = createCompressPromptFn();
@@ -337,7 +328,8 @@ describe('createJobContext Factory and Slicers', () => {
     it('result includes enqueueRenderJob from the passed BoundEnqueueRenderJobFn', () => {
       const root = buildIJobContext();
       const boundEnqueueRenderJob = createMockBoundEnqueueRenderJob();
-      const result: ISaveResponseContext = createSaveResponseContext(root, boundEnqueueRenderJob);
+      const boundDebitTokens = createMockBoundDebitTokens();
+      const result: ISaveResponseContext = createSaveResponseContext(root, boundEnqueueRenderJob, boundDebitTokens);
 
       assertEquals(result.enqueueRenderJob, boundEnqueueRenderJob);
     });

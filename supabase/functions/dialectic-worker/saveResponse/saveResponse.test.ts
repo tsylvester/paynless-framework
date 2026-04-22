@@ -1,7 +1,8 @@
 import { assertEquals, assertExists } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { spy, type Spy } from "https://deno.land/std@0.224.0/testing/mock.ts";
-import type { UnifiedAIResponse } from "../../dialectic-service/dialectic.interface.ts";
+import type { UnifiedAIResponse, DialecticExecuteJobPayload } from "../../dialectic-service/dialectic.interface.ts";
+import { RenderJobValidationError } from "../../_shared/utils/errors.ts";
 import type { Database } from "../../types_db.ts";
 import { createMockSupabaseClient } from "../../_shared/supabase.mock.ts";
 import type { RetryJobFn } from "../createJobContext/JobContext.interface.ts";
@@ -10,6 +11,10 @@ import {
     createMockSaveResponseDeps,
     createMockSaveResponseParams,
     createMockSaveResponsePayload,
+    createMockContributionRow,
+    createMockFileManager,
+    createMockSaveResponseParamsWithQueuedJob,
+    saveResponseTestPayloadDocumentArtifact,
 } from "./saveResponse.mock.ts";
 import { saveResponse } from "./saveResponse.ts";
 
@@ -278,5 +283,180 @@ Deno.test(
         const payload = createMockSaveResponsePayload();
         await saveResponse(deps, params, payload);
         assertEquals(order.length >= 0, true);
+    },
+);
+
+Deno.test(
+    "saveResponse: terminal completion calls deps.enqueueRenderJob exactly once",
+    async () => {
+        const enqueueStub: SaveResponseDeps["enqueueRenderJob"] = async (_p, _pl) => ({
+            renderJobId: null,
+        });
+        const enqueueRenderJobSpy: Spy<SaveResponseDeps["enqueueRenderJob"]> = spy(enqueueStub);
+        const deps = createMockSaveResponseDeps({
+            resolveFinishReason: (_ai: UnifiedAIResponse) => "stop",
+            fileManager: createMockFileManager({ outcome: "success", contribution: createMockContributionRow() }),
+            enqueueRenderJob: enqueueRenderJobSpy,
+        });
+        const params = createMockSaveResponseParams();
+        const payload = createMockSaveResponsePayload({ assembled_content: '{"ok":true}' });
+
+        await saveResponse(deps, params, payload);
+
+        assertEquals(
+            enqueueRenderJobSpy.calls.length,
+            1,
+            "enqueueRenderJob should be called exactly once on terminal completion",
+        );
+    },
+);
+
+Deno.test(
+    "saveResponse: continuation path does NOT call deps.enqueueRenderJob",
+    async () => {
+        const enqueueStub: SaveResponseDeps["enqueueRenderJob"] = async (_p, _pl) => ({
+            renderJobId: null,
+        });
+        const enqueueRenderJobSpy: Spy<SaveResponseDeps["enqueueRenderJob"]> = spy(enqueueStub);
+        const deps = createMockSaveResponseDeps({
+            isIntermediateChunk: (_finish, _cont) => true,
+            continueJob: async () => ({ enqueued: true }),
+            enqueueRenderJob: enqueueRenderJobSpy,
+        });
+        const params = createMockSaveResponseParams();
+        const payload = createMockSaveResponsePayload({ assembled_content: '{"ok":true}' });
+
+        await saveResponse(deps, params, payload);
+
+        assertEquals(
+            enqueueRenderJobSpy.calls.length,
+            0,
+            "enqueueRenderJob should NOT be called on the continuation path",
+        );
+    },
+);
+
+Deno.test(
+    "saveResponse: enqueueRenderJob returning a renderJobId skips assembleAndSaveFinalDocument (render job handles assembly)",
+    async () => {
+        const rootId: string = "root-contrib-render-gate-a";
+        const chunkId: string = "contrib-chunk-render-gate-a";
+        const docPayload: DialecticExecuteJobPayload = {
+            ...saveResponseTestPayloadDocumentArtifact,
+            continuation_count: 1,
+            document_relationships: {
+                thesis: rootId,
+                source_group: "00000000-0000-4000-8000-000000000002",
+            },
+        };
+        const chunkContrib = createMockContributionRow({
+            id: chunkId,
+            target_contribution_id: rootId,
+            document_relationships: {
+                thesis: rootId,
+                source_group: "00000000-0000-4000-8000-000000000002",
+            },
+        });
+        const fm = createMockFileManager({ outcome: "success", contribution: chunkContrib });
+        const { params } = createMockSaveResponseParamsWithQueuedJob(docPayload, {
+            target_contribution_id: rootId,
+        });
+        const enqueueStub: SaveResponseDeps["enqueueRenderJob"] = async (_p, _pl) => ({
+            renderJobId: "render-job-new-001",
+        });
+        const enqueueRenderJobSpy: Spy<SaveResponseDeps["enqueueRenderJob"]> = spy(enqueueStub);
+        const deps = createMockSaveResponseDeps({
+            resolveFinishReason: (_ai: UnifiedAIResponse) => "stop",
+            fileManager: fm,
+            enqueueRenderJob: enqueueRenderJobSpy,
+        });
+
+        await saveResponse(deps, params, createMockSaveResponsePayload({ assembled_content: '{"ok":true}' }));
+
+        assertEquals(enqueueRenderJobSpy.calls.length, 1, "enqueueRenderJob should be called once");
+        assertEquals(
+            fm.assembleAndSaveFinalDocument.calls.length,
+            0,
+            "assembleAndSaveFinalDocument should NOT be called when a render job was dispatched (!shouldRender gate)",
+        );
+    },
+);
+
+Deno.test(
+    "saveResponse: enqueueRenderJob returning null renderJobId triggers assembleAndSaveFinalDocument (no render job, local assembly required)",
+    async () => {
+        const rootId: string = "root-contrib-render-gate-b";
+        const chunkId: string = "contrib-chunk-render-gate-b";
+        const docPayload: DialecticExecuteJobPayload = {
+            ...saveResponseTestPayloadDocumentArtifact,
+            continuation_count: 1,
+            document_relationships: {
+                thesis: rootId,
+                source_group: "00000000-0000-4000-8000-000000000002",
+            },
+        };
+        const chunkContrib = createMockContributionRow({
+            id: chunkId,
+            target_contribution_id: rootId,
+            document_relationships: {
+                thesis: rootId,
+                source_group: "00000000-0000-4000-8000-000000000002",
+            },
+        });
+        const fm = createMockFileManager({ outcome: "success", contribution: chunkContrib });
+        const { params } = createMockSaveResponseParamsWithQueuedJob(docPayload, {
+            target_contribution_id: rootId,
+        });
+        const enqueueStub: SaveResponseDeps["enqueueRenderJob"] = async (_p, _pl) => ({
+            renderJobId: null,
+        });
+        const enqueueRenderJobSpy: Spy<SaveResponseDeps["enqueueRenderJob"]> = spy(enqueueStub);
+        const deps = createMockSaveResponseDeps({
+            resolveFinishReason: (_ai: UnifiedAIResponse) => "stop",
+            fileManager: fm,
+            enqueueRenderJob: enqueueRenderJobSpy,
+        });
+
+        await saveResponse(deps, params, createMockSaveResponsePayload({ assembled_content: '{"ok":true}' }));
+
+        assertEquals(enqueueRenderJobSpy.calls.length, 1, "enqueueRenderJob should be called once");
+        assertEquals(
+            fm.assembleAndSaveFinalDocument.calls.length,
+            1,
+            "assembleAndSaveFinalDocument should be called when no render job was dispatched (!shouldRender gate)",
+        );
+    },
+);
+
+Deno.test(
+    "saveResponse: enqueueRenderJob failure does not block contribution save or job completion",
+    async () => {
+        const enqueueStub: SaveResponseDeps["enqueueRenderJob"] = async (_p, _pl) => ({
+            error: new RenderJobValidationError("render dispatch failed in test"),
+            retriable: false,
+        });
+        const enqueueRenderJobSpy: Spy<SaveResponseDeps["enqueueRenderJob"]> = spy(enqueueStub);
+        const deps = createMockSaveResponseDeps({
+            resolveFinishReason: (_ai: UnifiedAIResponse) => "stop",
+            fileManager: createMockFileManager({ outcome: "success", contribution: createMockContributionRow() }),
+            enqueueRenderJob: enqueueRenderJobSpy,
+        });
+        const params = createMockSaveResponseParams();
+        const payload = createMockSaveResponsePayload({ assembled_content: '{"ok":true}' });
+
+        const result: SaveResponseReturn = await saveResponse(deps, params, payload);
+
+        assertEquals(
+            enqueueRenderJobSpy.calls.length,
+            1,
+            "enqueueRenderJob should be called even when it returns an error",
+        );
+        if ("status" in result) {
+            assertEquals(
+                result.status,
+                "completed",
+                "job should complete despite render dispatch failure",
+            );
+        }
     },
 );
