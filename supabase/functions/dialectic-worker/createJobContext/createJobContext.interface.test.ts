@@ -46,6 +46,7 @@ import {
 import { BoundGatherArtifactsFn } from '../gatherArtifacts/gatherArtifacts.interface.ts';
 import { BoundEnqueueModelCallFn } from '../enqueueModelCall/enqueueModelCall.interface.ts';
 import { sanitizeJsonContent } from '../../_shared/utils/jsonSanitizer/jsonSanitizer.ts';
+import type { ComputeJobSig } from '../../_shared/utils/computeJobSig/computeJobSig.interface.ts';
 
 describe('JobContext.interface.ts contracts', () => {
     describe('ILoggerContext', () => {
@@ -225,6 +226,11 @@ describe('JobContext.interface.ts contracts', () => {
             const boundGatherArtifacts: BoundGatherArtifactsFn = async () => ({
                 artifacts: [],
             });
+            const computeJobSig: ComputeJobSig = async (
+                _jobId: string,
+                _userId: string,
+                _createdAt: string,
+            ): Promise<string> => 'test-sig';
 
             const params: JobContextParams = {
                 logger: logger,
@@ -293,6 +299,7 @@ describe('JobContext.interface.ts contracts', () => {
                 buildUploadContext: buildUploadContext,
                 gatherArtifacts: boundGatherArtifacts,
                 sanitizeJsonContent: sanitizeJsonContent,
+                computeJobSig: computeJobSig,
             };
 
             const job: IJobContext = {
@@ -329,6 +336,7 @@ describe('JobContext.interface.ts contracts', () => {
                 prepareModelJob: params.prepareModelJob,
                 debitTokens: params.debitTokens,
                 sanitizeJsonContent: params.sanitizeJsonContent,
+                computeJobSig: params.computeJobSig,
             };
 
             assertEquals(typeof params.logger, 'object');
@@ -367,6 +375,28 @@ describe('JobContext.interface.ts contracts', () => {
 
         it('IJobContext requires sanitizeJsonContent typed as SanitizeJsonContentFn', () => {
             const fn: IJobContext['sanitizeJsonContent'] = sanitizeJsonContent;
+            assertEquals(typeof fn, 'function');
+        });
+    });
+
+    describe('computeJobSig', () => {
+        it('JobContextParams requires computeJobSig typed as a string-returning HMAC function', () => {
+            const computeJobSig: ComputeJobSig = async (
+                _jobId: string,
+                _userId: string,
+                _createdAt: string,
+            ): Promise<string> => 'test-sig';
+            const fn: JobContextParams['computeJobSig'] = computeJobSig;
+            assertEquals(typeof fn, 'function');
+        });
+
+        it('IJobContext requires computeJobSig typed as a string-returning HMAC function', () => {
+            const computeJobSig: ComputeJobSig = async (
+                _jobId: string,
+                _userId: string,
+                _createdAt: string,
+            ): Promise<string> => 'test-sig';
+            const fn: IJobContext['computeJobSig'] = computeJobSig;
             assertEquals(typeof fn, 'function');
         });
     });

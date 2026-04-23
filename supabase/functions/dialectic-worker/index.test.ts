@@ -15,8 +15,6 @@ import { createMockSupabaseClient, type MockQueryBuilderState } from '../_shared
 import { 
     handleJob, 
     createDialecticWorkerDeps,
-    handleSaveResponse,
-    CreateUserDbClientFn,
 } from './index.ts';
 import { MockLogger } from '../_shared/logger.mock.ts';
 import { 
@@ -579,6 +577,7 @@ Deno.test('handleJob - validates payload correctly and extracts user info', asyn
 Deno.test('createDialecticWorkerDeps: provides wallet and compression deps', async () => {
     Deno.env.set('NETLIFY_QUEUE_URL', 'https://mock-netlify-queue');
     Deno.env.set('AWL_API_KEY', 'mock-awl-key');
+    Deno.env.set('SUPABASE_HMAC_SECRET', 'mock-hmac-secret-32-chars-xxxxxxx');
     try {
         const deps = await createDialecticWorkerDeps(mockSupabaseClientDeps.client as unknown as SupabaseClient<Database>);
         
@@ -596,6 +595,7 @@ Deno.test('createDialecticWorkerDeps: provides wallet and compression deps', asy
     } finally {
         Deno.env.delete('NETLIFY_QUEUE_URL');
         Deno.env.delete('AWL_API_KEY');
+        Deno.env.delete('SUPABASE_HMAC_SECRET');
     }
 });
 
@@ -604,6 +604,7 @@ Deno.test('createDialecticWorkerDeps: provides wallet and compression deps', asy
 Deno.test('createDialecticWorkerDeps: binds pure utility deps to production implementations', async () => {
     Deno.env.set('NETLIFY_QUEUE_URL', 'https://mock-netlify-queue');
     Deno.env.set('AWL_API_KEY', 'mock-awl-key');
+    Deno.env.set('SUPABASE_HMAC_SECRET', 'mock-hmac-secret-32-chars-xxxxxxx');
     try {
         const deps = await createDialecticWorkerDeps(mockSupabaseClientDeps.client as unknown as SupabaseClient<Database>);
 
@@ -618,6 +619,7 @@ Deno.test('createDialecticWorkerDeps: binds pure utility deps to production impl
     } finally {
         Deno.env.delete('NETLIFY_QUEUE_URL');
         Deno.env.delete('AWL_API_KEY');
+        Deno.env.delete('SUPABASE_HMAC_SECRET');
     }
 });
 
@@ -655,10 +657,11 @@ Deno.test('createDialecticWorkerDeps: constructs DummyAdapter embedding client w
             }
         });
 
+        Deno.env.set('SUPABASE_HMAC_SECRET', 'mock-hmac-secret-32-chars-xxxxxxx');
         const deps = await createDialecticWorkerDeps(mockSupabaseClientDummy.client as unknown as SupabaseClient<Database>);
-        
+
         assertExists(deps.embeddingClient, 'embeddingClient should be constructed');
-        
+
         const result = await deps.embeddingClient.getEmbedding('hello world');
         assertExists(result.embedding, 'embedding should be returned');
         assert(Array.isArray(result.embedding) && result.embedding.length === 3072, 'embedding should be 3072 dimensions');
@@ -666,6 +669,7 @@ Deno.test('createDialecticWorkerDeps: constructs DummyAdapter embedding client w
     } finally {
         Deno.env.delete('NETLIFY_QUEUE_URL');
         Deno.env.delete('AWL_API_KEY');
+        Deno.env.delete('SUPABASE_HMAC_SECRET');
     }
 });
 
@@ -739,6 +743,7 @@ Deno.test('createDialecticWorkerDeps: constructs OpenAI embedding client when de
 
     Deno.env.set('NETLIFY_QUEUE_URL', 'https://mock-netlify-queue');
     Deno.env.set('AWL_API_KEY', 'mock-awl-key');
+    Deno.env.set('SUPABASE_HMAC_SECRET', 'mock-hmac-secret-32-chars-xxxxxxx');
     const getEmbeddingStub = stub(OpenAiAdapter.prototype, 'getEmbedding', async () => ({
         embedding: [0.1, 0.2, 0.3],
         usage: { prompt_tokens: 3, total_tokens: 3 },
@@ -757,6 +762,7 @@ Deno.test('createDialecticWorkerDeps: constructs OpenAI embedding client when de
         getEmbeddingStub.restore();
         Deno.env.delete('NETLIFY_QUEUE_URL');
         Deno.env.delete('AWL_API_KEY');
+        Deno.env.delete('SUPABASE_HMAC_SECRET');
     }
 });
 
@@ -984,12 +990,14 @@ Deno.test('handleJob - RENDER routes via provided processors and propagates args
 Deno.test('createDialecticWorkerDeps: returns IJobContext including findSourceDocuments', async () => {
     Deno.env.set('NETLIFY_QUEUE_URL', 'https://mock-netlify-queue');
     Deno.env.set('AWL_API_KEY', 'mock-awl-key');
+    Deno.env.set('SUPABASE_HMAC_SECRET', 'mock-hmac-secret-32-chars-xxxxxxx');
     try {
         const deps = await createDialecticWorkerDeps(mockSupabaseClientDeps.client as unknown as SupabaseClient<Database>);
         assertEquals(typeof Reflect.get(deps, 'findSourceDocuments'), 'function');
     } finally {
         Deno.env.delete('NETLIFY_QUEUE_URL');
         Deno.env.delete('AWL_API_KEY');
+        Deno.env.delete('SUPABASE_HMAC_SECRET');
     }
 });
 
@@ -1587,231 +1595,38 @@ Deno.test('createDialecticWorkerDeps: throws when AWL_API_KEY is not set', async
     }
 });
 
-// =============================================================
-// handleSaveResponse — HTTP handler unit tests
-// =============================================================
-
-function createSaveResponseRouteRequest(
-    jwt: string | null,
-    body: SaveResponseRequestBody,
-): Request {
-    const headers: Headers = new Headers({ 'Content-Type': 'application/json' });
-    if (jwt !== null) {
-        headers.set('Authorization', `Bearer ${jwt}`);
+Deno.test('createDialecticWorkerDeps: throws when SUPABASE_HMAC_SECRET is not set', async () => {
+    const savedHmacSecret = Deno.env.get('SUPABASE_HMAC_SECRET');
+    Deno.env.delete('SUPABASE_HMAC_SECRET');
+    Deno.env.set('NETLIFY_QUEUE_URL', 'https://mock-netlify-queue');
+    Deno.env.set('AWL_API_KEY', 'mock-awl-key');
+    Deno.env.set('OPENAI_API_KEY', 'mock-openai-key');
+    try {
+        await assertRejects(
+            () => createDialecticWorkerDeps(mockSupabaseClientDeps.client as unknown as SupabaseClient<Database>),
+            Error,
+            'SUPABASE_HMAC_SECRET',
+        );
+    } finally {
+        if (savedHmacSecret !== undefined) Deno.env.set('SUPABASE_HMAC_SECRET', savedHmacSecret);
+        Deno.env.delete('NETLIFY_QUEUE_URL');
+        Deno.env.delete('AWL_API_KEY');
+        Deno.env.delete('OPENAI_API_KEY');
     }
-    return new Request('https://example.com/saveResponse', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(body),
-    });
-}
-
-const validSrBody: SaveResponseRequestBody = {
-    job_id: 'handler-test-job-1',
-    assembled_content: '{"test": true}',
-    token_usage: { prompt_tokens: 10, completion_tokens: 20, total_tokens: 30 },
-    finish_reason: 'stop',
-};
-
-const mockUserDbClientFn: CreateUserDbClientFn = (_auth: string): SupabaseClient<Database> =>
-    mockSupabaseClient.client as unknown as SupabaseClient<Database>;
-
-Deno.test('handleSaveResponse - missing Authorization header returns 401 without calling saveResponse', async () => {
-    const saveResponseSpy = spy(async (
-        _deps: SaveResponseDeps,
-        _params: SaveResponseParams,
-        _payload: SaveResponsePayload,
-    ): Promise<SaveResponseReturn> => createMockSaveResponseSuccessReturn());
-    const req: Request = createSaveResponseRouteRequest(null, validSrBody);
-    const res: Response = await handleSaveResponse(
-        req,
-        mockSupabaseClient.client as unknown as SupabaseClient<Database>,
-        mockDeps,
-        saveResponseSpy,
-        mockUserDbClientFn,
-    );
-    assertEquals(res.status, 401);
-    assertEquals(saveResponseSpy.calls.length, 0, 'saveResponse must not be called when JWT is missing');
 });
 
-Deno.test('handleSaveResponse - invalid body missing job_id returns 400 without calling saveResponse', async () => {
-    const saveResponseSpy = spy(async (
-        _deps: SaveResponseDeps,
-        _params: SaveResponseParams,
-        _payload: SaveResponsePayload,
-    ): Promise<SaveResponseReturn> => createMockSaveResponseSuccessReturn());
-    const req: Request = new Request('https://example.com/saveResponse', {
-        method: 'POST',
-        headers: new Headers({
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer test-jwt',
-        }),
-        body: JSON.stringify({ assembled_content: '{}', token_usage: null, finish_reason: null }),
-    });
-    const res: Response = await handleSaveResponse(
-        req,
-        mockSupabaseClient.client as unknown as SupabaseClient<Database>,
-        mockDeps,
-        saveResponseSpy,
-        mockUserDbClientFn,
-    );
-    assertEquals(res.status, 400);
-    assertEquals(saveResponseSpy.calls.length, 0, 'saveResponse must not be called on invalid body');
-});
-
-Deno.test('handleSaveResponse - valid request calls saveResponse with correctly split params and payload', async () => {
-    const saveResponseSpy = spy(async (
-        _deps: SaveResponseDeps,
-        _params: SaveResponseParams,
-        _payload: SaveResponsePayload,
-    ): Promise<SaveResponseReturn> => createMockSaveResponseSuccessReturn());
-    const req: Request = createSaveResponseRouteRequest('test-jwt', validSrBody);
-    await handleSaveResponse(
-        req,
-        mockSupabaseClient.client as unknown as SupabaseClient<Database>,
-        mockDeps,
-        saveResponseSpy,
-        mockUserDbClientFn,
-    );
-    assertEquals(saveResponseSpy.calls.length, 1, 'saveResponse should be called exactly once');
-    const passedParams: SaveResponseParams = saveResponseSpy.calls[0].args[1];
-    const passedPayload: SaveResponsePayload = saveResponseSpy.calls[0].args[2];
-    assertEquals(passedParams.job_id, validSrBody.job_id);
-    assertExists(passedParams.dbClient, 'userDbClient must be present in SaveResponseParams');
-    assertEquals(passedPayload.assembled_content, validSrBody.assembled_content);
-    assertEquals(passedPayload.token_usage, validSrBody.token_usage);
-    assertEquals(passedPayload.finish_reason, validSrBody.finish_reason);
-});
-
-Deno.test('handleSaveResponse - saveResponse returns completed status returns 200', async () => {
-    const saveResponseSpy = spy(async (
-        _deps: SaveResponseDeps,
-        _params: SaveResponseParams,
-        _payload: SaveResponsePayload,
-    ): Promise<SaveResponseReturn> => createMockSaveResponseSuccessReturn({ status: 'completed' }));
-    const req: Request = createSaveResponseRouteRequest('test-jwt', validSrBody);
-    const res: Response = await handleSaveResponse(
-        req,
-        mockSupabaseClient.client as unknown as SupabaseClient<Database>,
-        mockDeps,
-        saveResponseSpy,
-        mockUserDbClientFn,
-    );
-    assertEquals(res.status, 200);
-});
-
-Deno.test('handleSaveResponse - saveResponse returns needs_continuation status returns 200', async () => {
-    const saveResponseSpy = spy(async (
-        _deps: SaveResponseDeps,
-        _params: SaveResponseParams,
-        _payload: SaveResponsePayload,
-    ): Promise<SaveResponseReturn> => createMockSaveResponseSuccessReturn({ status: 'needs_continuation' }));
-    const req: Request = createSaveResponseRouteRequest('test-jwt', validSrBody);
-    const res: Response = await handleSaveResponse(
-        req,
-        mockSupabaseClient.client as unknown as SupabaseClient<Database>,
-        mockDeps,
-        saveResponseSpy,
-        mockUserDbClientFn,
-    );
-    assertEquals(res.status, 200);
-});
-
-Deno.test('handleSaveResponse - saveResponse returns retriable error returns 503', async () => {
-    const saveResponseSpy = spy(async (
-        _deps: SaveResponseDeps,
-        _params: SaveResponseParams,
-        _payload: SaveResponsePayload,
-    ): Promise<SaveResponseReturn> => createMockSaveResponseErrorReturn({ error: new Error('retriable'), retriable: true }));
-    const req: Request = createSaveResponseRouteRequest('test-jwt', validSrBody);
-    const res: Response = await handleSaveResponse(
-        req,
-        mockSupabaseClient.client as unknown as SupabaseClient<Database>,
-        mockDeps,
-        saveResponseSpy,
-        mockUserDbClientFn,
-    );
-    assertEquals(res.status, 503);
-});
-
-Deno.test('handleSaveResponse - saveResponse returns non-retriable error returns 500', async () => {
-    const saveResponseSpy = spy(async (
-        _deps: SaveResponseDeps,
-        _params: SaveResponseParams,
-        _payload: SaveResponsePayload,
-    ): Promise<SaveResponseReturn> => createMockSaveResponseErrorReturn({ error: new Error('fatal'), retriable: false }));
-    const req: Request = createSaveResponseRouteRequest('test-jwt', validSrBody);
-    const res: Response = await handleSaveResponse(
-        req,
-        mockSupabaseClient.client as unknown as SupabaseClient<Database>,
-        mockDeps,
-        saveResponseSpy,
-        mockUserDbClientFn,
-    );
-    assertEquals(res.status, 500);
-});
-
-Deno.test('handleSaveResponse - SaveResponseDeps includes enqueueRenderJob as 2-arg BoundEnqueueRenderJobFn', async () => {
-    const saveResponseSpy = spy(async (
-        _deps: SaveResponseDeps,
-        _params: SaveResponseParams,
-        _payload: SaveResponsePayload,
-    ): Promise<SaveResponseReturn> => createMockSaveResponseSuccessReturn());
-    const req: Request = createSaveResponseRouteRequest('test-jwt', validSrBody);
-    await handleSaveResponse(
-        req,
-        mockSupabaseClient.client as unknown as SupabaseClient<Database>,
-        mockDeps,
-        saveResponseSpy,
-        mockUserDbClientFn,
-    );
-    assertEquals(saveResponseSpy.calls.length, 1);
-    const passedDeps: SaveResponseDeps = saveResponseSpy.calls[0].args[0];
-    assertEquals(typeof passedDeps.enqueueRenderJob, 'function', 'enqueueRenderJob must be present in SaveResponseDeps');
-    assertEquals(passedDeps.enqueueRenderJob.length, 2, 'enqueueRenderJob must be a 2-arg BoundEnqueueRenderJobFn');
-});
-
-Deno.test('handleSaveResponse - SaveResponseDeps.debitTokens is a 2-arg BoundDebitTokens not raw 3-arg DebitTokens', async () => {
-    const saveResponseSpy = spy(async (
-        _deps: SaveResponseDeps,
-        _params: SaveResponseParams,
-        _payload: SaveResponsePayload,
-    ): Promise<SaveResponseReturn> => createMockSaveResponseSuccessReturn());
-    const req: Request = createSaveResponseRouteRequest('test-jwt', validSrBody);
-    await handleSaveResponse(
-        req,
-        mockSupabaseClient.client as unknown as SupabaseClient<Database>,
-        mockDeps,
-        saveResponseSpy,
-        mockUserDbClientFn,
-    );
-    assertEquals(saveResponseSpy.calls.length, 1);
-    const passedDeps: SaveResponseDeps = saveResponseSpy.calls[0].args[0];
-    assertEquals(typeof passedDeps.debitTokens, 'function', 'debitTokens must be a function in SaveResponseDeps');
-    assertEquals(passedDeps.debitTokens.length, 2, 'debitTokens must be 2-arg BoundDebitTokens, not raw 3-arg DebitTokens');
-});
-
-Deno.test('handleSaveResponse - job-queue shaped body returns 400 proving route discrimination', async () => {
-    const saveResponseSpy = spy(async (
-        _deps: SaveResponseDeps,
-        _params: SaveResponseParams,
-        _payload: SaveResponsePayload,
-    ): Promise<SaveResponseReturn> => createMockSaveResponseSuccessReturn());
-    const req: Request = new Request('https://example.com/saveResponse', {
-        method: 'POST',
-        headers: new Headers({
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer test-jwt',
-        }),
-        body: JSON.stringify({ record: { id: 'job-queue-id', user_id: 'user-id', status: 'pending' } }),
-    });
-    const res: Response = await handleSaveResponse(
-        req,
-        mockSupabaseClient.client as unknown as SupabaseClient<Database>,
-        mockDeps,
-        saveResponseSpy,
-        mockUserDbClientFn,
-    );
-    assertEquals(res.status, 400, 'job-queue shaped body must be rejected by saveResponse handler');
-    assertEquals(saveResponseSpy.calls.length, 0, 'saveResponse must not be called for job-queue body');
+Deno.test('createDialecticWorkerDeps: wires computeJobSig as a function on the returned context', async () => {
+    Deno.env.set('NETLIFY_QUEUE_URL', 'https://mock-netlify-queue');
+    Deno.env.set('AWL_API_KEY', 'mock-awl-key');
+    Deno.env.set('SUPABASE_HMAC_SECRET', 'mock-hmac-secret-32-chars-xxxxxxx');
+    Deno.env.set('OPENAI_API_KEY', 'mock-openai-key');
+    try {
+        const deps = await createDialecticWorkerDeps(mockSupabaseClientDeps.client as unknown as SupabaseClient<Database>);
+        assertEquals(typeof deps.computeJobSig, 'function');
+    } finally {
+        Deno.env.delete('NETLIFY_QUEUE_URL');
+        Deno.env.delete('AWL_API_KEY');
+        Deno.env.delete('SUPABASE_HMAC_SECRET');
+        Deno.env.delete('OPENAI_API_KEY');
+    }
 });

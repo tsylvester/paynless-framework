@@ -123,19 +123,19 @@ async function collectAiStreamPayload(
     assembled_content: assembledContent,
     token_usage: tokenUsage,
     finish_reason: finishReason,
+    sig: event.sig,
   };
 }
 
 async function postAiStreamPayload(
   saveResponseUrl: string,
-  userJwt: string,
+  sig: string,
   payload: AiStreamPayload,
 ): Promise<void> {
   const response: Response = await fetch(saveResponseUrl, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${userJwt}`,
     },
     body: JSON.stringify(payload),
   });
@@ -157,7 +157,7 @@ export async function runAiStreamWorkloadForTests(
   const payload: AiStreamPayload = await collectAiStreamPayload(deps, validated);
   await postAiStreamPayload(
     deps.saveResponseUrl,
-    validated.user_jwt,
+    validated.sig,
     payload,
   );
 }
@@ -186,7 +186,7 @@ export default asyncWorkloadFn(
       async (): Promise<void> => {
         await postAiStreamPayload(
           deps.saveResponseUrl,
-          validated.user_jwt,
+          validated.sig,
           payload,
         );
       },

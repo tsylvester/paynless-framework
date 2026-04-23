@@ -1,5 +1,5 @@
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
-import { SupabaseClient, createClient } from 'npm:@supabase/supabase-js@2';
+import { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import { Database } from '../types_db.ts';
 import {
   DialecticJobPayload,
@@ -25,8 +25,6 @@ import { FileManagerService } from '../_shared/services/file_manager.ts';
 import { createSupabaseAdminClient, } from '../_shared/auth.ts';
 import { NotificationService } from '../_shared/utils/notification.service.ts';
 import { PromptAssembler } from '../_shared/prompt-assembler/prompt-assembler.ts';
-import { enqueueRenderJob } from './enqueueRenderJob/enqueueRenderJob.ts';
-import { BoundEnqueueRenderJobFn } from './enqueueRenderJob/enqueueRenderJob.interface.ts';
 import { prepareModelJob } from './prepareModelJob/prepareModelJob.ts';
 import { calculateAffordability, type BoundCalculateAffordabilityFn } from './calculateAffordability/calculateAffordability.provides.ts';
 import { compressPrompt, type BoundCompressPromptFn } from './compressPrompt/compressPrompt.provides.ts';
@@ -42,8 +40,8 @@ import { processRenderJob } from './processRenderJob.ts';
 import { isAiModelExtendedConfig } from '../_shared/utils/type_guards.ts';
 import { renderDocument } from '../_shared/services/document_renderer.ts';
 import { shouldEnqueueRenderJob } from '../_shared/utils/shouldEnqueueRenderJob.ts';
-import { IJobContext, ISaveResponseContext } from './createJobContext/JobContext.interface.ts';
-import { createJobContext, createSaveResponseContext } from './createJobContext/createJobContext.ts';
+import { IJobContext } from './createJobContext/JobContext.interface.ts';
+import { createJobContext } from './createJobContext/createJobContext.ts';
 import { findSourceDocuments } from './findSourceDocuments.ts';
 import { pauseJobsForNsf } from './pauseJobsForNsf.ts';
 import { assembleChunks } from '../_shared/utils/assembleChunks/assembleChunks.ts';
@@ -61,17 +59,9 @@ import { gatherArtifacts } from './gatherArtifacts/gatherArtifacts.ts';
 import { BoundEnqueueModelCallFn } from './enqueueModelCall/enqueueModelCall.interface.ts';
 import { enqueueModelCall } from './enqueueModelCall/enqueueModelCall.ts';
 import { ApiKeyForProviderFn } from '../_shared/types.ts';
-import { saveResponse } from './saveResponse/saveResponse.ts';
-import { isSaveResponseRequestBody, isSaveResponseErrorReturn } from './saveResponse/saveResponse.guard.ts';
-import {
-  SaveResponseDeps,
-  SaveResponseFn,
-  SaveResponseParams,
-  SaveResponsePayload,
-  SaveResponseReturn,
-} from './saveResponse/saveResponse.interface.ts';
-import { BoundDebitTokens } from '../_shared/utils/debitTokens.interface.ts';
 import { sanitizeJsonContent } from '../_shared/utils/jsonSanitizer/jsonSanitizer.ts';
+import { createComputeJobSig } from '../_shared/utils/computeJobSig/computeJobSig.ts';
+import type { ComputeJobSig } from '../_shared/utils/computeJobSig/computeJobSig.interface.ts';
 
 type Job = Database['public']['Tables']['dialectic_generation_jobs']['Row'];
 
@@ -127,6 +117,11 @@ export async function createDialecticWorkerDeps(
   if (!netlifyApiKey) {
     throw new Error('AWL_API_KEY is not set');
   }
+  const hmacSecret: string | undefined = Deno.env.get('SUPABASE_HMAC_SECRET');
+  if (!hmacSecret) {
+    throw new Error('SUPABASE_HMAC_SECRET is not set');
+  }
+  const computeJobSig: ComputeJobSig = await createComputeJobSig(hmacSecret);
   const apiKeyForProvider: ApiKeyForProviderFn = (apiIdentifier: string): string | null => {
     const lower: string = apiIdentifier.toLowerCase();
     if (lower.startsWith('openai-')) {
@@ -148,7 +143,7 @@ export async function createDialecticWorkerDeps(
   };
   const boundEnqueueModelCall: BoundEnqueueModelCallFn = (params, payload) =>
     enqueueModelCall(
-      { logger, netlifyQueueUrl, netlifyApiKey, apiKeyForProvider },
+      { logger, netlifyQueueUrl, netlifyApiKey, apiKeyForProvider, computeJobSig },
       params,
       payload,
     );
@@ -221,6 +216,7 @@ export async function createDialecticWorkerDeps(
     determineContinuation,
     buildUploadContext,
     sanitizeJsonContent,
+    computeJobSig,
     gatherArtifacts: boundGatherArtifacts,
   });
 }
@@ -232,34 +228,6 @@ serve(async (req: Request) => {
       headers: { 'Content-Type': 'application/json' },
     });
   }
-  const requestUrl: URL = new URL(req.url);
-  if (requestUrl.pathname.endsWith('/saveResponse')) {
-    try {
-      const supabaseUrl: string | undefined = Deno.env.get('SUPABASE_URL');
-      const supabaseAnonKey: string | undefined = Deno.env.get('SUPABASE_ANON_KEY');
-      if (!supabaseUrl || !supabaseAnonKey) {
-        return new Response(JSON.stringify({ error: 'Missing required environment variables: SUPABASE_URL, SUPABASE_ANON_KEY' }), {
-          status: 500,
-          headers: { 'Content-Type': 'application/json' },
-        });
-      }
-      const userDbClientFactory: CreateUserDbClientFn = (auth: string): SupabaseClient<Database> =>
-        createClient<Database>(supabaseUrl, supabaseAnonKey, {
-          global: { headers: { Authorization: auth } },
-        });
-      const adminClient: SupabaseClient<Database> = createSupabaseAdminClient();
-      const deps: IJobContext = await createDialecticWorkerDeps(adminClient);
-      return await handleSaveResponse(req, adminClient, deps, saveResponse, userDbClientFactory);
-    } catch (error) {
-      const err: Error = error instanceof Error ? error : new Error(String(error));
-      logger.error('[dialectic-worker-entry] Failed to process saveResponse request', { error: err });
-      return new Response(JSON.stringify({ error: `Failed to process request: ${err.message}` }), {
-        status: 500,
-        headers: { 'Content-Type': 'application/json' },
-      });
-    }
-  }
-
   //console.log('dialectic-worker serverless function called');
   try {
     const { record: job } = await req.json();
@@ -502,100 +470,4 @@ export async function handleJob(
           error_details: errorDetails,
       }).eq('id', jobId);
   }
-}
-
-export type CreateUserDbClientFn = (authorization: string) => SupabaseClient<Database>;
-
-export async function handleSaveResponse(
-  req: Request,
-  adminClient: SupabaseClient<Database>,
-  deps: IJobContext,
-  saveResponseFn: SaveResponseFn,
-  createUserDbClientFn: CreateUserDbClientFn,
-): Promise<Response> {
-  const authorization: string | null = req.headers.get('Authorization');
-  if (!authorization) {
-    return new Response(JSON.stringify({ error: 'Missing Authorization header' }), {
-      status: 401,
-      headers: { 'Content-Type': 'application/json' },
-    });
-  }
-
-  const userDbClient: SupabaseClient<Database> = createUserDbClientFn(authorization);
-
-  let body: unknown;
-  try {
-    body = await req.json();
-  } catch (_e) {
-    return new Response(JSON.stringify({ error: 'Invalid JSON body' }), {
-      status: 400,
-      headers: { 'Content-Type': 'application/json' },
-    });
-  }
-
-  if (!isSaveResponseRequestBody(body)) {
-    return new Response(JSON.stringify({ error: 'Invalid request body' }), {
-      status: 400,
-      headers: { 'Content-Type': 'application/json' },
-    });
-  }
-
-  const srParams: SaveResponseParams = {
-    job_id: body.job_id,
-    dbClient: userDbClient,
-  };
-  const srPayload: SaveResponsePayload = {
-    assembled_content: body.assembled_content,
-    token_usage: body.token_usage,
-    finish_reason: body.finish_reason,
-  };
-
-  const boundRender: BoundEnqueueRenderJobFn = (params, payload) =>
-    enqueueRenderJob(
-      { dbClient: adminClient, logger: deps.logger, shouldEnqueueRenderJob },
-      params,
-      payload,
-    );
-  const boundDebitTokens: BoundDebitTokens = (params, payload) =>
-    deps.debitTokens(
-      { logger: deps.logger, tokenWalletService: deps.adminTokenWalletService },
-      params,
-      payload,
-    );
-
-  const saveResponseCtx: ISaveResponseContext = createSaveResponseContext(
-    deps,
-    boundRender,
-    boundDebitTokens,
-  );
-
-  const srDeps: SaveResponseDeps = {
-    logger: deps.logger,
-    fileManager: deps.fileManager,
-    notificationService: deps.notificationService,
-    continueJob: deps.continueJob,
-    retryJob: deps.retryJob,
-    resolveFinishReason: deps.resolveFinishReason,
-    isIntermediateChunk: deps.isIntermediateChunk,
-    determineContinuation: deps.determineContinuation,
-    buildUploadContext: deps.buildUploadContext,
-    sanitizeJsonContent: deps.sanitizeJsonContent,
-    debitTokens: saveResponseCtx.debitTokens,
-    enqueueRenderJob: saveResponseCtx.enqueueRenderJob,
-  };
-
-  const result: SaveResponseReturn = await saveResponseFn(srDeps, srParams, srPayload);
-
-  if (isSaveResponseErrorReturn(result)) {
-    const status: number = result.retriable ? 503 : 500;
-    return new Response(JSON.stringify({ error: result.error.message }), {
-      status,
-      headers: { 'Content-Type': 'application/json' },
-    });
-  }
-
-  return new Response(JSON.stringify({ status: result.status }), {
-    status: 200,
-    headers: { 'Content-Type': 'application/json' },
-  });
 }

@@ -13,7 +13,7 @@
 
 # Work Breakdown Structure
 
-* `[ ]`   dialectic-worker/enqueueModelCall  **[BE] Replace user JWT in Netlify event with HMAC job signature**
+* `[✅]`   dialectic-worker/enqueueModelCall  **[BE] Replace user JWT in Netlify event with HMAC job signature**
 
   * `[✅]`   `objective`
     * `[✅]`   The user JWT forwarded into `AiStreamEvent` expires independently of the job lifecycle, causing 401s when Netlify calls back to Supabase. Replace it with a deterministic HMAC signature bound to the specific job so the callback can be authenticated without a user credential.
@@ -55,135 +55,240 @@
     * `[✅]`   Error: `computeJobSig` throws → non-retriable error; fetch not called
     * `[✅]`   Regression: `user_jwt` does not appear in the posted event body
 
-  * `[ ]`   `enqueueModelCall.ts`
-    * `[ ]`   Validate `params.job.user_id` is a non-empty string; return non-retriable error if not
-    * `[ ]`   `const sig: string = deps.computeJobSig(params.job.id, params.job.user_id, params.job.created_at)` wrapped in try/catch → non-retriable error on throw
-    * `[ ]`   Set `sig` in `AiStreamEventData`; remove `user_jwt` from `AiStreamEventData`
+  * `[✅]`   `enqueueModelCall.ts`
+    * `[✅]`   Validate `params.job.user_id` is a non-empty string; return non-retriable error if not
+    * `[✅]`   `const sig: string = deps.computeJobSig(params.job.id, params.job.user_id, params.job.created_at)` wrapped in try/catch → non-retriable error on throw
+    * `[✅]`   Set `sig` in `AiStreamEventData`; remove `user_jwt` from `AiStreamEventData`
 
-  * `[ ]`   `enqueueModelCall.mock.ts`
-    * `[ ]`   Add `computeJobSig` to `EnqueueModelCallDepsOverrides`
-    * `[ ]`   `createMockEnqueueModelCallDeps` default: `computeJobSig` returns `'mock-sig'`
+  * `[✅]`   `enqueueModelCall.mock.ts`
+    * `[✅]`   Add `computeJobSig` to `EnqueueModelCallDepsOverrides`
+    * `[✅]`   `createMockEnqueueModelCallDeps` default: `computeJobSig` returns `'mock-sig'`
 
-  * `[ ]`   `enqueueModelCall.provides.ts`
-    * `[ ]`   No change required
+  * `[✅]`   `enqueueModelCall.provides.ts`
+    * `[✅]`   No change required
 
-* `[ ]`   dialectic-worker/createJobContext  **[BE] Thread computeJobSig through IJobContext and JobContextParams**
+* `[✅]`   dialectic-worker/createJobContext  **[BE] Thread computeJobSig through IJobContext and JobContextParams**
 
-  * `[ ]`   `objective`
-    * `[ ]`   `computeJobSig` must be a first-class field on `IJobContext` and `JobContextParams` so it is injectable at the composition root and flows to `boundEnqueueModelCall` via the context slicer
-    * `[ ]`   Interface and factory files are exempt from TDD per rules
+  * `[✅]`   `objective`
+    * `[✅]`   `computeJobSig` must be a first-class field on `IJobContext` and `JobContextParams` so it is injectable at the composition root and flows to `boundEnqueueModelCall` via the context slicer
+    * `[✅]`   Interface and factory files are exempt from TDD per rules
 
-  * `[ ]`   `role`
-    * `[ ]`   Context factory / composition boundary — owns the shape of the root context
-    * `[ ]`   Must NOT implement `computeJobSig` — receives it from `index.ts`
+  * `[✅]`   `role`
+    * `[✅]`   Context factory / composition boundary — owns the shape of the root context
+    * `[✅]`   Must NOT implement `computeJobSig` — receives it from `index.ts`
 
-  * `[ ]`   `JobContext.interface.ts`
-    * `[ ]`   Add `readonly computeJobSig: (jobId: string, userId: string, createdAt: string) => string` to `IJobContext`
-    * `[ ]`   Add `readonly computeJobSig: (jobId: string, userId: string, createdAt: string) => string` to `JobContextParams`
+  * `[✅]`   `JobContext.interface.ts`
+    * `[✅]`   Add `readonly computeJobSig: (jobId: string, userId: string, createdAt: string) => string` to `IJobContext`
+    * `[✅]`   Add `readonly computeJobSig: (jobId: string, userId: string, createdAt: string) => string` to `JobContextParams`
 
-  * `[ ]`   `createJobContext.ts`
-    * `[ ]`   Add `computeJobSig: params.computeJobSig` to the object returned by `createJobContext`
+  * `[✅]`   `createJobContext.ts`
+    * `[✅]`   Add `computeJobSig: params.computeJobSig` to the object returned by `createJobContext`
 
-* `[ ]`   dialectic-worker/index  **[BE] Implement computeJobSig with HMAC-SHA256 and wire into composition root**
+* `[✅]`   dialectic-worker/index  **[BE] Implement computeJobSig with HMAC-SHA256 and wire into composition root**
 
-  * `[ ]`   `objective`
-    * `[ ]`   Provide the concrete `computeJobSig` implementation in `createDialecticWorkerDeps` using `SUPABASE_HMAC_SECRET` and the Web Crypto API (available in Deno); wire into `boundEnqueueModelCall` closure deps and `createJobContext` params
-    * `[ ]`   Functional goals:
+  * `[✅]`   `objective`
+    * `[✅]`   Adopt the concrete `computeJobSig` implementation in `createDialecticWorkerDeps` using `SUPABASE_HMAC_SECRET` and the Web Crypto API (available in Deno); wire into `boundEnqueueModelCall` closure deps and `createJobContext` params
+    * `[✅]`   Functional goals:
       * Reads `SUPABASE_HMAC_SECRET` from `Deno.env`; throws if missing
       * Signs `job_id + ":" + user_id + ":" + created_at` with HMAC-SHA256; returns hex string
       * `boundEnqueueModelCall` closure includes `computeJobSig` in its deps object
       * `createJobContext` receives `computeJobSig` in its params
 
-  * `[ ]`   `role`
-    * `[ ]`   Composition root / infrastructure adapter — owns secret access and wires all deps
-    * `[ ]`   Must NOT leak `SUPABASE_HMAC_SECRET`
+  * `[✅]`   `role`
+    * `[✅]`   Composition root / infrastructure adapter — owns secret access and wires all deps
+    * `[✅]`   Must NOT leak `SUPABASE_HMAC_SECRET`
 
-  * `[ ]`   `index.ts`
-    * `[ ]`   In `createDialecticWorkerDeps`: read `SUPABASE_HMAC_SECRET`; throw if missing
-    * `[ ]`   Define `computeJobSig` using `crypto.subtle.importKey` + `crypto.subtle.sign` (HMAC-SHA256); encode result as hex string
-    * `[ ]`   Add `computeJobSig` to `boundEnqueueModelCall` inline deps object
-    * `[ ]`   Add `computeJobSig` to `createJobContext` params
+  * `[✅]`   `index.ts`
+    * `[✅]`   In `createDialecticWorkerDeps`: read `SUPABASE_HMAC_SECRET`; throw if missing
+    * `[✅]`   Import `computeJobSig` 
+    * `[✅]`   Add `computeJobSig` to `boundEnqueueModelCall` inline deps object
+    * `[✅]`   Add `computeJobSig` to `createJobContext` params
 
-* `[ ]`   netlify/functions/ai-stream  **[BE] Carry HMAC sig through Netlify event and callback payload**
+* `[✅]`   netlify/functions/ai-stream  **[BE] Carry HMAC sig through Netlify event and callback payload**
 
-  * `[ ]`   `objective`
-    * `[ ]`   `AiStreamEvent.sig` replaces `AiStreamEvent.user_jwt` on the Netlify side; the sig is forwarded unchanged into `AiStreamPayload` so it reaches the `dialectic-saveResponse` handler
-    * `[ ]`   Functional goals:
+  * `[✅]`   `objective`
+    * `[✅]`   `AiStreamEvent.sig` replaces `AiStreamEvent.user_jwt` on the Netlify side; the sig is forwarded unchanged into `AiStreamPayload` so it reaches the `netlifyResponse` handler
+    * `[✅]`   Functional goals:
       * `AiStreamEvent.sig: string` replaces `user_jwt`
       * `AiStreamPayload.sig: string` is added
       * `postAiStreamPayload` forwards `sig` in the request body; no Authorization header required
-    * `[ ]`   Non-functional: no other fields in the event or payload change
+    * `[✅]`   Non-functional: no other fields in the event or payload change
 
-  * `[ ]`   `ai-stream.interface.test.ts`
-    * `[ ]`   `AiStreamEvent` valid: has `sig`; invalid: missing `sig`; invalid: has `user_jwt` (removed)
-    * `[ ]`   `AiStreamPayload` valid: has `sig`
+  * `[✅]`   `ai-stream.interface.test.ts`
+    * `[✅]`   `AiStreamEvent` valid: has `sig`; invalid: missing `sig`; invalid: has `user_jwt` (removed)
+    * `[✅]`   `AiStreamPayload` valid: has `sig`
 
-  * `[ ]`   `ai-stream.interface.ts`
-    * `[ ]`   Replace `user_jwt: string` with `sig: string` in `AiStreamEvent`
-    * `[ ]`   Add `sig: string` to `AiStreamPayload`
+  * `[✅]`   `ai-stream.interface.ts`
+    * `[✅]`   Replace `user_jwt: string` with `sig: string` in `AiStreamEvent`
+    * `[✅]`   Add `sig: string` to `AiStreamPayload`
 
-  * `[ ]`   `ai-stream.guard.test.ts`
-    * `[ ]`   `isAiStreamEvent`: rejects missing `sig`; rejects `user_jwt`-only object; accepts `sig`
-    * `[ ]`   `isAiStreamPayload` (if exists): accepts `sig`
+  * `[✅]`   `ai-stream.guard.test.ts`
+    * `[✅]`   `isAiStreamEvent`: rejects missing `sig`; rejects `user_jwt`-only object; accepts `sig`
+    * `[✅]`   `isAiStreamPayload` (if exists): accepts `sig`
 
-  * `[ ]`   `ai-stream.guard.ts`
-    * `[ ]`   Update `isAiStreamEvent` to check `sig` instead of `user_jwt`
+  * `[✅]`   `ai-stream.guard.ts`
+    * `[✅]`   Update `isAiStreamEvent` to check `sig` instead of `user_jwt`
 
-  * `[ ]`   `ai-stream.test.ts`
-    * `[ ]`   `postAiStreamPayload`: sends `sig` from payload in request body; no `Authorization` header
-    * `[ ]`   Regression: `user_jwt` does not appear in request body or headers
+  * `[✅]`   `ai-stream.test.ts`
+    * `[✅]`   `postAiStreamPayload`: sends `sig` from payload in request body; no `Authorization` header
+    * `[✅]`   Regression: `user_jwt` does not appear in request body or headers
 
-  * `[ ]`   `ai-stream.ts`
-    * `[ ]`   `postAiStreamPayload`: remove `userJwt` parameter; add `sig: string` parameter; remove `Authorization` header; include `sig` in JSON body
-    * `[ ]`   Update both call sites to pass `validated.sig` instead of `validated.user_jwt`
+  * `[✅]`   `ai-stream.ts`
+    * `[✅]`   `postAiStreamPayload`: remove `userJwt` parameter; add `sig: string` parameter; remove `Authorization` header; include `sig` in JSON body
+    * `[✅]`   Update both call sites to pass `validated.sig` instead of `validated.user_jwt`
 
-* `[ ]`   supabase/functions/dialectic-saveResponse  **[BE] Unauth HMAC-verified handler — side door for Netlify callback**
+* `[ ]`   supabase/functions/netlifyResponse  **[BE] Unauth HMAC-verified handler — side door for Netlify callback**
 
-  * `[ ]`   `objective`
-    * `[ ]`   Provide a dedicated Supabase Edge Function with `verify_jwt = false` that acts as the exclusive entry point for Netlify's `saveResponse` callback. Validates the HMAC sig and expiry before forwarding to `saveResponse` using `adminClient`. Rejects any request with an invalid or expired sig without entering the secure processing area.
-    * `[ ]`   Functional goals:
+  * `[✅]`   `objective`
+    * `[✅]`   Provide a dedicated Supabase Edge Function with `verify_jwt = false` that acts as the exclusive entry point for Netlify's `saveResponse` callback. Validates the HMAC sig and expiry before forwarding to `saveResponse` using `adminClient`. Rejects any request with an invalid or expired sig without entering the secure processing area.
+    * `[✅]`   Functional goals:
       * Accepts POST with `{ job_id, assembled_content, token_usage, finish_reason, sig }`
-      * Looks up job by `job_id` using `adminClient`
-      * Recomputes `expectedSig = HMAC-SHA256(secret, job_id + ":" + user_id + ":" + created_at)`
-      * Rejects with 401 if sig does not match
-      * Rejects with 401 if `job.created_at + 2hr < now`
-      * Calls `saveResponse` using `adminClient` for `srParams.dbClient` if sig is valid
-    * `[ ]`   Non-functional: `SUPABASE_HMAC_SECRET` and `DIALECTIC_SAVERESPONSE_URL` must be set
+      * Rejects non-POST with 405; rejects unparseable JSON body with 400
+      * Narrows the body using `isNetlifyResponseBody`; 400 on failure
+      * Fetches job row from `dialectic_generation_jobs` selecting `id, user_id, created_at` via `adminClient`; 404 if not found
+      * Calls `deps.computeJobSig(job.id, job.user_id, job.created_at)` to produce `expectedSig`
+      * Converts both `body.sig` and `expectedSig` to `Uint8Array` via `new TextEncoder().encode()`; compares element-by-element (constant-time, no short-circuit); 401 on mismatch
+      * Rejects with 401 if `new Date(job.created_at).getTime() + 2 * 60 * 60 * 1000 < Date.now()` (expired)
+      * Wires `SaveResponseParams` with `{ job_id: body.job_id, dbClient: deps.adminClient }`; calls `deps.saveResponse(deps.saveResponseDeps, params, payload)`; maps result to HTTP response
+    * `[✅]`   Non-functional:
+      * `SUPABASE_HMAC_SECRET` must be set in this function's env (read at cold-start via `createComputeJobSig`)
+      * `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` must be set (consumed by `createSupabaseAdminClient`)
+      * The caller (`ai-stream`) must point `DIALECTIC_SAVERESPONSE_URL` at this function's URL
+      * The `/saveResponse` route in `dialectic-worker/index.ts` is superseded by this function and must be removed
 
-  * `[ ]`   `role`
-    * `[ ]`   Infrastructure adapter / auth boundary — owns the unauthenticated entry point and sig verification
-    * `[ ]`   Must NOT contain business logic — delegates entirely to `saveResponse` after verification
+  * `[✅]`   `role`
+    * `[✅]`   Infrastructure adapter / auth boundary — owns the unauthenticated entry point and HMAC sig verification
+    * `[✅]`   Must NOT contain business logic — delegates entirely to `saveResponse` after verification passes
+    * `[✅]`   Must NOT accept or validate user JWTs — HMAC is the sole authentication mechanism
 
-  * `[ ]`   `deps`
-    * `[ ]`   `adminClient` — `createSupabaseAdminClient()` from `_shared/auth.ts`
-    * `[ ]`   `SUPABASE_HMAC_SECRET` — Deno env var; same secret used in `computeJobSig`
-    * `[ ]`   `saveResponse` and its full dep tree from `dialectic-worker` — imported directly
+  * `[✅]`   `module`
+    * `[✅]`   Bounded context: `netlifyResponse` owns the Netlify-to-Supabase callback boundary
+    * `[✅]`   Inside boundary: request method enforcement, body parsing and narrowing, sig recomputation, expiry check, `saveResponse` dep wiring, HTTP response mapping
+    * `[✅]`   Outside boundary: HMAC key management (`computeJobSig`), business logic (`saveResponse`), DB access beyond the single job lookup, user authentication
 
-  * `[ ]`   `index.ts` (dialectic-saveResponse)
-    * `[ ]`   `serve`: POST only; parse body; extract `job_id` and `sig`
-    * `[ ]`   Fetch job row using `adminClient`; 404 if not found
-    * `[ ]`   Recompute sig using same HMAC formula as `computeJobSig`
-    * `[ ]`   Compare received sig to expected sig using constant-time comparison; 401 on mismatch
-    * `[ ]`   Check `new Date(job.created_at).getTime() + 2 * 60 * 60 * 1000 >= Date.now()`; 401 if expired
-    * `[ ]`   Wire `saveResponse` deps using `adminClient` for `srParams.dbClient`; call `saveResponse`; return result
+  * `[✅]`   `deps`
+    * `[✅]`   `createSupabaseAdminClient` — from `_shared/auth.ts`; constructs `SupabaseClient<Database>` using service role key; used for job lookup and `SaveResponseParams.dbClient`
+    * `[✅]`   `createComputeJobSig(secret)` — from `_shared/utils/computeJobSig/computeJobSig.ts`; called once at cold-start with `SUPABASE_HMAC_SECRET`; returns the `ComputeJobSig` function bound to the HMAC key
+    * `[✅]`   `saveResponse` — from `dialectic-worker/saveResponse/saveResponse.provides.ts`; called after sig and expiry checks pass
+    * `[✅]`   Full `SaveResponseDeps` tree (wired in `index.ts`): `logger`, `fileManager`, `notificationService`, `continueJob`, `retryJob`, `resolveFinishReason`, `isIntermediateChunk`, `determineContinuation`, `buildUploadContext`, `debitTokens` (bound to `adminTokenWalletService`), `sanitizeJsonContent`, `enqueueRenderJob` (bound to `adminClient`) — same wiring strategy as `createDialecticWorkerDeps` in `dialectic-worker/index.ts`
 
-  * `[ ]`   `supabase/config.toml`
-    * `[ ]`   Add `[functions.dialectic-saveResponse]` with `verify_jwt = false`
+  * `[✅]`   `context_slice`
+    * `[✅]`   `NetlifyResponseDeps` is the minimal injection surface: `{ computeJobSig: ComputeJobSig; adminClient: SupabaseClient<Database>; saveResponse: SaveResponseFn; saveResponseDeps: SaveResponseDeps }`
+    * `[✅]`   `index.ts` constructs `NetlifyResponseDeps` at cold-start and passes it to `netlifyResponseHandler` on every request
+    * `[✅]`   No concrete types leak into `netlifyResponseHandler` — all external access is through the typed deps interface
 
-  * `[ ]`   Environment
-    * `[ ]`   Update `DIALECTIC_SAVERESPONSE_URL` in `netlify/.env` and `supabase/functions/.env` to point to `dialectic-saveResponse` function URL
-    * `[ ]`   Add `SUPABASE_HMAC_SECRET` to `supabase/functions/.env` (generate a strong random secret)
+  * `[✅]`   `netlifyResponse.interface.test.ts`
+    * `[✅]`   `NetlifyResponseBody` valid: `{ job_id, assembled_content, token_usage: NodeTokenUsage, finish_reason: string, sig: string }`
+    * `[✅]`   `NetlifyResponseBody` valid: `token_usage: null`, `finish_reason: null`
+    * `[✅]`   `NetlifyResponseBody` invalid: missing `job_id`
+    * `[✅]`   `NetlifyResponseBody` invalid: missing `sig`
+    * `[✅]`   `NetlifyResponseBody` invalid: missing `assembled_content`
+    * `[✅]`   `NetlifyResponseBody` invalid: `job_id` is not a string
+    * `[✅]`   `NetlifyResponseBody` invalid: `sig` is not a string
+    * `[✅]`   `NetlifyResponseDeps` valid: all required fields present and correctly typed
+    * `[✅]`   `NetlifyResponseDeps` invalid: missing `computeJobSig`
+    * `[✅]`   `NetlifyResponseDeps` invalid: missing `adminClient`
+    * `[✅]`   `NetlifyResponseDeps` invalid: missing `saveResponse`
+    * `[✅]`   `NetlifyResponseDeps` invalid: missing `saveResponseDeps`
 
-  * `[ ]`   `dialectic-saveResponse.integration.test.ts`
-    * `[ ]`   Valid sig + unexpired job → 200 and `saveResponse` called
-    * `[ ]`   Invalid sig → 401; `saveResponse` not called
-    * `[ ]`   Expired job (created_at > 2hr ago) → 401; `saveResponse` not called
-    * `[ ]`   Missing `job_id` → 400
+  * `[✅]`   `netlifyResponse.interface.ts`
+    * `[✅]`   `NetlifyResponseBody`: `{ job_id: string; assembled_content: string; token_usage: NodeTokenUsage | null; finish_reason: string | null; sig: string }` — import `NodeTokenUsage` from `saveResponse.interface.ts`
+    * `[✅]`   `NetlifyResponseDeps`: `{ computeJobSig: ComputeJobSig; adminClient: SupabaseClient<Database>; saveResponse: SaveResponseFn; saveResponseDeps: SaveResponseDeps }`
+    * `[✅]`   `NetlifyResponseHandlerFn`: `(deps: NetlifyResponseDeps, req: Request) => Promise<Response>`
 
-  * `[ ]`   **Commit** `feat(dialectic-saveResponse): HMAC-signed Netlify callback side door — removes user JWT dependency from saveResponse path`
-    * `[ ]`   Structural: new `dialectic-saveResponse` function group; `computeJobSig` added to `EnqueueModelCallDeps`, `IJobContext`, `JobContextParams`; `AiStreamEventData.sig` replaces `user_jwt`
-    * `[ ]`   Behavioral: Netlify carries HMAC sig instead of user JWT; sig verified before `saveResponse` is invoked; expired jobs rejected at the boundary
-    * `[ ]`   Contract: `isEnqueueModelCallDeps` and `isAiStreamEvent` guards updated; `AiStreamEventData` and `AiStreamPayload` schemas updated
+  * `[✅]`   `netlifyResponse.guard.test.ts`
+    * `[✅]`   `isNetlifyResponseBody`: accepts all valid contract cases from `interface.test.ts`
+    * `[✅]`   `isNetlifyResponseBody`: rejects all invalid contract cases from `interface.test.ts`
+    * `[✅]`   `isNetlifyResponseDeps`: accepts a fully valid deps object
+    * `[✅]`   `isNetlifyResponseDeps`: rejects missing `computeJobSig`; rejects non-function `computeJobSig`; rejects missing `adminClient`; rejects missing `saveResponse`; rejects missing `saveResponseDeps`
+
+  * `[✅]`   `netlifyResponse.guard.ts`
+    * `[✅]`   `isNetlifyResponseBody(value: unknown): value is NetlifyResponseBody` — checks `string` `job_id`, `string` `assembled_content`, `NodeTokenUsage | null` `token_usage`, `string | null` `finish_reason`, `string` `sig`
+    * `[✅]`   `isNetlifyResponseDeps(value: unknown): value is NetlifyResponseDeps` — checks all four required fields; `typeof value.computeJobSig === 'function'`
+
+  * `[✅]`   `netlifyResponseHandler.test.ts`
+    * `[✅]`   POST + valid body + valid sig + unexpired job → `saveResponse` called; returns 200 `{ status: 'completed' }`
+    * `[✅]`   POST + valid body + valid sig + unexpired job + `saveResponse` returns retriable `SaveResponseErrorReturn` → 503
+    * `[✅]`   POST + valid body + valid sig + unexpired job + `saveResponse` returns non-retriable `SaveResponseErrorReturn` → 500
+    * `[✅]`   POST + valid body + sig mismatch → 401; `saveResponse` not called
+    * `[✅]`   POST + valid body + expired job (`created_at` > 2hr ago) → 401; `saveResponse` not called
+    * `[✅]`   POST + valid body + job not found in DB → 404; `saveResponse` not called
+    * `[✅]`   POST + body missing `job_id` → 400 (guard rejects before any DB call)
+    * `[✅]`   POST + body missing `sig` → 400 (guard rejects before any DB call)
+    * `[✅]`   Non-POST request → 405; `saveResponse` not called
+    * `[✅]`   POST + invalid JSON body → 400
+
+  * `[✅]`   `construction`
+    * `[✅]`   `NetlifyResponseDeps` is constructed once at cold-start in `index.ts`, not per-request
+    * `[✅]`   `createComputeJobSig(secret)` is async; must be `await`ed before `serve()` is called; missing `SUPABASE_HMAC_SECRET` throws at startup, not at request time
+    * `[✅]`   `createSupabaseAdminClient()` is called once at cold-start; the resulting client is reused across requests
+    * `[✅]`   Full `SaveResponseDeps` wiring follows the same pattern as `createDialecticWorkerDeps` in `dialectic-worker/index.ts`; `adminTokenWalletService` is used for `debitTokens`; `enqueueRenderJob` is bound to `adminClient`
+    * `[✅]`   Missing `SUPABASE_URL` or `SUPABASE_SERVICE_ROLE_KEY` also throws at startup via `createSupabaseAdminClient`
+
+  * `[✅]`   `netlifyResponseHandler.ts`
+    * `[✅]`   Signature: `netlifyResponseHandler(deps: NetlifyResponseDeps, req: Request): Promise<Response>`
+    * `[✅]`   Enforce POST only; return 405 for other methods
+    * `[✅]`   Parse body with `req.json()` wrapped in try/catch; 400 on parse failure
+    * `[✅]`   Narrow with `isNetlifyResponseBody(body)`; 400 on failure
+    * `[✅]`   Fetch job from `dialectic_generation_jobs` selecting `id, user_id, created_at` via `deps.adminClient`; 404 if not found or DB error
+    * `[✅]`   Call `deps.computeJobSig(job.id, job.user_id, job.created_at)` to get `expectedSig`
+    * `[✅]`   Convert `body.sig` and `expectedSig` to `Uint8Array` via `new TextEncoder().encode()`; compare element-by-element in a loop (constant-time — accumulate mismatches without early return); 401 if any mismatch
+    * `[✅]`   Check `new Date(job.created_at).getTime() + 2 * 60 * 60 * 1000 < Date.now()`; 401 if expired
+    * `[✅]`   Build `SaveResponseParams` with `{ job_id: body.job_id, dbClient: deps.adminClient }` and `SaveResponsePayload` from `body`; call `deps.saveResponse(deps.saveResponseDeps, srParams, srPayload)`
+    * `[✅]`   Map `SaveResponseSuccessReturn` → 200; retriable `SaveResponseErrorReturn` → 503; non-retriable → 500
+
+  * `[✅]`   `index.ts` (netlifyResponse entry point)
+    * `[✅]`   Read `SUPABASE_HMAC_SECRET`; throw at startup if missing
+    * `[✅]`   `const computeJobSig: ComputeJobSig = await createComputeJobSig(hmacSecret)`
+    * `[✅]`   `const adminClient: SupabaseClient<Database> = createSupabaseAdminClient()` (throws at startup if env vars missing)
+    * `[✅]`   Wire full `SaveResponseDeps` following `createDialecticWorkerDeps` pattern from `dialectic-worker/index.ts`
+    * `[✅]`   Construct `NetlifyResponseDeps` from the above; `serve((req) => netlifyResponseHandler(deps, req))`
+
+  * `[✅]`   `netlifyResponse.mock.ts`
+    * `[✅]`   `createMockNetlifyResponseDeps(overrides?)`: fully typed `NetlifyResponseDeps`; `computeJobSig` returns `'mock-sig'`; stub `adminClient`; stub `saveResponse` returning `{ status: 'completed' }`; stub `saveResponseDeps`
+    * `[✅]`   `mockNetlifyResponseHandler`: a `NetlifyResponseHandlerFn` spy resolving to a 200 response by default
+
+  * `[✅]`   `netlifyResponse.provides.ts`
+    * `[✅]`   Exports: `netlifyResponseHandler`, `NetlifyResponseBody`, `NetlifyResponseDeps`, `NetlifyResponseHandlerFn`, `isNetlifyResponseBody`, `isNetlifyResponseDeps`, `createMockNetlifyResponseDeps`, `mockNetlifyResponseHandler`
+
+  * `[✅]`   `netlifyResponse.integration.test.ts`
+    * `[✅]`   Valid sig + unexpired job → 200 and `saveResponse` called (real `isNetlifyResponseBody`, real `netlifyResponseHandler`; mock `adminClient` returning a job row; real `computeJobSig` via `createComputeJobSig`; mock `saveResponse`)
+    * `[✅]`   Invalid sig → 401; `saveResponse` not called
+    * `[✅]`   Expired job (`created_at` > 2hr ago) → 401; `saveResponse` not called
+    * `[✅]`   Missing `job_id` → 400; no DB call made
+
+  * `[✅]`   `directionality`
+    * `[✅]`   Node layer: infrastructure adapter (entry-point boundary)
+    * `[✅]`   Deps are inward-facing: `_shared/auth.ts`, `_shared/utils/computeJobSig`, `dialectic-worker/saveResponse` (all lower-layer producers)
+    * `[✅]`   Provides are outward-facing: receives HTTP POST from Netlify; returns HTTP response to Netlify
+    * `[✅]`   No cycles: `netlifyResponse` does not import from `dialectic-worker/index.ts`
+
+  * `[✅]`   `requirements`
+    * `[✅]`   POST with valid HMAC sig and unexpired job → `saveResponse` called; 200 returned
+    * `[✅]`   POST with invalid HMAC sig → 401; `saveResponse` not called
+    * `[✅]`   POST with expired job → 401; `saveResponse` not called
+    * `[✅]`   POST with missing `job_id` → 400; no DB call
+    * `[✅]`   Non-POST → 405
+    * `[✅]`   `SUPABASE_HMAC_SECRET` missing at startup → function throws before serving any request
+    * `[✅]`   `saveResponse` retriable error → 503; non-retriable error → 500
+    * `[✅]`   Sig comparison is constant-time (no short-circuit on first byte mismatch)
+
+  * `[✅]`   `supabase/config.toml`
+    * `[✅]`   Add `[functions.netlifyResponse]` with `verify_jwt = false`
+
+  * `[✅]`   Environment
+    * `[✅]`   Update `DIALECTIC_SAVERESPONSE_URL` in `netlify/.env` and `supabase/functions/.env` to point to the `netlifyResponse` function URL
+    * `[✅]`   Add `SUPABASE_HMAC_SECRET` to `supabase/functions/.env` (generate a strong random secret; must match the value in `dialectic-worker`'s env)
+
+  * `[✅]`   dialectic-worker/index.ts cleanup
+    * `[✅]`   Remove the `/saveResponse` path branch (`requestUrl.pathname.endsWith('/saveResponse')`) and the `handleSaveResponse` export — superseded by `netlifyResponse`
+    * `[✅]`   Remove `CreateUserDbClientFn` type and its wiring from `handleSaveResponse`
+
+  * `[✅]`   **Commit** `feat(netlifyResponse): HMAC-signed Netlify callback side door — removes user JWT dependency from saveResponse path`
+    * `[✅]`   Structural: new `netlifyResponse` function group — `netlifyResponseHandler.ts`, `netlifyResponse.interface.ts`, `netlifyResponse.guard.ts`, `netlifyResponse.mock.ts`, `netlifyResponse.provides.ts`, `index.ts`; `[functions.netlifyResponse]` added to `supabase/config.toml`
+    * `[✅]`   Behavioral: Netlify carries HMAC sig instead of user JWT; sig verified using constant-time element-by-element comparison before `saveResponse` is invoked; expired jobs rejected at the boundary; `adminClient` used as `SaveResponseParams.dbClient`
+    * `[✅]`   Contract: `NetlifyResponseBody`, `NetlifyResponseDeps`, `NetlifyResponseHandlerFn` introduced; `isNetlifyResponseBody`, `isNetlifyResponseDeps` guards added
+    * `[✅]`   Cleanup: `/saveResponse` route, `handleSaveResponse`, and `CreateUserDbClientFn` removed from `dialectic-worker/index.ts`
 
 ## Netlify-Worker-Stream Phase 2 and Phase 3 — deferred detail
 

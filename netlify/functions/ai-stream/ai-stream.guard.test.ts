@@ -21,7 +21,7 @@ describe('ai-stream.guard', () => {
           providerId: 'prov-1',
           promptId: 'prompt-1',
         },
-        user_jwt: 'jwt-token',
+        sig: 'hmac-sig-value',
       };
       expect(isAiStreamEvent(value)).toBe(true);
     });
@@ -43,7 +43,7 @@ describe('ai-stream.guard', () => {
           providerId: 'prov-1',
           promptId: 'prompt-1',
         },
-        user_jwt: 'jwt-token',
+        sig: 'hmac-sig-value',
       };
       expect(isAiStreamEvent(value)).toBe(false);
     });
@@ -62,6 +62,43 @@ describe('ai-stream.guard', () => {
           providerId: 'prov-1',
           promptId: 'prompt-1',
         },
+        sig: 'hmac-sig-value',
+      };
+      expect(isAiStreamEvent(value)).toBe(false);
+    });
+
+    it('rejects AiStreamEvent missing sig', () => {
+      const value = {
+        job_id: 'job-1',
+        api_identifier: 'openai-gpt-4o',
+        model_config: {
+          api_identifier: 'openai-gpt-4o',
+          input_token_cost_rate: 0.001,
+          output_token_cost_rate: 0.002,
+        },
+        chat_api_request: {
+          message: 'hello',
+          providerId: 'prov-1',
+          promptId: 'prompt-1',
+        },
+      };
+      expect(isAiStreamEvent(value)).toBe(false);
+    });
+
+    it('rejects AiStreamEvent with user_jwt in place of sig', () => {
+      const value = {
+        job_id: 'job-1',
+        api_identifier: 'openai-gpt-4o',
+        model_config: {
+          api_identifier: 'openai-gpt-4o',
+          input_token_cost_rate: 0.001,
+          output_token_cost_rate: 0.002,
+        },
+        chat_api_request: {
+          message: 'hello',
+          providerId: 'prov-1',
+          promptId: 'prompt-1',
+        },
         user_jwt: 'jwt-token',
       };
       expect(isAiStreamEvent(value)).toBe(false);
@@ -69,7 +106,7 @@ describe('ai-stream.guard', () => {
   });
 
   describe('isAiStreamPayload', () => {
-    it('accepts valid payload', () => {
+    it('accepts valid payload with sig', () => {
       const value = {
         job_id: 'job-1',
         assembled_content: 'text',
@@ -79,6 +116,7 @@ describe('ai-stream.guard', () => {
           total_tokens: 3,
         },
         finish_reason: 'stop',
+        sig: 'hmac-sig-value',
       };
       expect(isAiStreamPayload(value)).toBe(true);
     });
@@ -98,6 +136,7 @@ describe('ai-stream.guard', () => {
         assembled_content: 'text',
         token_usage: null,
         finish_reason: 'stop',
+        sig: 'hmac-sig-value',
       };
       expect(isAiStreamPayload(value)).toBe(true);
     });
@@ -112,8 +151,19 @@ describe('ai-stream.guard', () => {
           total_tokens: 0,
         },
         finish_reason: null,
+        sig: 'hmac-sig-value',
       };
       expect(isAiStreamPayload(value)).toBe(true);
+    });
+
+    it('rejects AiStreamPayload missing sig', () => {
+      const value = {
+        job_id: 'job-1',
+        assembled_content: 'text',
+        token_usage: null,
+        finish_reason: 'stop',
+      };
+      expect(isAiStreamPayload(value)).toBe(false);
     });
 
     it('rejects missing finish_reason field entirely', () => {

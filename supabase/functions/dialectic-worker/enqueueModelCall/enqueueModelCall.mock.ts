@@ -21,7 +21,7 @@ import type {
     EnqueueModelCallPayload,
     EnqueueModelCallSuccessReturn,
 } from "./enqueueModelCall.interface.ts";
-
+import { mockComputeJobSig } from "../../_shared/utils/computeJobSig/computeJobSig.mock.ts";
 function createDefaultEnqueueAiProviderRow(): Tables<"ai_providers"> {
     const row: Tables<"ai_providers"> = {
         id: "model-def",
@@ -108,6 +108,7 @@ export function createMockEnqueueModelCallDeps(
         netlifyQueueUrl: defaultNetlifyQueueUrl,
         netlifyApiKey: defaultNetlifyApiKey,
         apiKeyForProvider: defaultApiKeyForProvider,
+        computeJobSig: mockComputeJobSig,
     };
     if (!overrides) {
         return base;
@@ -131,6 +132,11 @@ export function createMockEnqueueModelCallDeps(
                 overrides.apiKeyForProvider !== null
             ? overrides.apiKeyForProvider
             : base.apiKeyForProvider,
+        computeJobSig:
+            overrides.computeJobSig !== undefined &&
+                overrides.computeJobSig !== null
+            ? overrides.computeJobSig
+            : base.computeJobSig,
     };
 }
 
@@ -287,7 +293,7 @@ export function createMockAiStreamEventData(
         api_identifier: "mock-ai-v1",
         model_config: defaultAiStreamEventModelConfig,
         chat_api_request: defaultAiStreamEventChatApiRequest,
-        user_jwt: "mock-user-jwt",
+        sig: "mock-sig",
     };
     if (!overrides) {
         return base;
@@ -311,9 +317,9 @@ export function createMockAiStreamEventData(
                 overrides.chat_api_request !== null
             ? overrides.chat_api_request
             : base.chat_api_request,
-        user_jwt: overrides.user_jwt !== undefined && overrides.user_jwt !== null
-            ? overrides.user_jwt
-            : base.user_jwt,
+        sig: overrides.sig !== undefined && overrides.sig !== null
+            ? overrides.sig
+            : base.sig,
     };
 }
 

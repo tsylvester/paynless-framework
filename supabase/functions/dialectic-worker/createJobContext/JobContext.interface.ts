@@ -47,7 +47,7 @@ import { BoundCalculateAffordabilityFn } from '../calculateAffordability/calcula
 import { PrepareModelJobParams, PrepareModelJobPayload, PrepareModelJobReturn } from '../prepareModelJob/prepareModelJob.interface.ts';
 import { GatherArtifactsParams, GatherArtifactsPayload, GatherArtifactsReturn } from '../gatherArtifacts/gatherArtifacts.interface.ts';
 import { SanitizeJsonContentFn } from '../../_shared/utils/jsonSanitizer/jsonSanitizer.interface.ts';
-
+import type { ComputeJobSig } from "../../_shared/utils/computeJobSig/computeJobSig.interface.ts";
 /**
  * Function type for continueJob orchestration utility.
  * Continues processing a job by creating and enqueueing follow-up jobs.
@@ -315,6 +315,7 @@ export interface IJobContext extends
     // Top-level orchestration — pre-bound closure for job processing
     readonly prepareModelJob: BoundPrepareModelJobFn;
     readonly sanitizeJsonContent: SanitizeJsonContentFn;
+    readonly computeJobSig: ComputeJobSig;
 }
 
 /**
@@ -360,4 +361,5 @@ export interface JobContextParams {
     readonly determineContinuation: DetermineContinuationFn;
     readonly buildUploadContext: BuildUploadContextFn;
     readonly sanitizeJsonContent: SanitizeJsonContentFn;
+    readonly computeJobSig: ComputeJobSig;
 }

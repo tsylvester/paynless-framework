@@ -1,36 +1,51 @@
 // supabase/functions/dialectic-worker/index.integration.test.ts
-// Integration tests for the handleSaveResponse HTTP handler.
-// Real: handleSaveResponse routing/parsing/dep construction + saveResponse business logic.
-// Mocked at boundaries: Supabase client, enqueueRenderJob (via admin client mock), notificationService, fileManager, debitTokens.
+// Integration tests for the netlifyResponseHandler HTTP handler.
+// Real: netlifyResponseHandler routing/parsing + computeJobSig + saveResponse business logic.
+// Mocked at boundaries: Supabase client, enqueueRenderJob DB queries, notificationService, fileManager, debitTokens.
 
 import {
   assertEquals,
-  assertExists,
 } from 'https://deno.land/std@0.224.0/assert/mod.ts';
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import type { Database } from '../types_db.ts';
-import { handleSaveResponse } from './index.ts';
-import type { CreateUserDbClientFn } from './index.ts';
-import { saveResponse } from './saveResponse/saveResponse.ts';
 import { createMockSupabaseClient } from '../_shared/supabase.mock.ts';
 import {
   mockNotificationService,
   resetMockNotificationService,
 } from '../_shared/utils/notification.service.mock.ts';
-import { buildIJobContext } from './createJobContext/JobContext.mock.ts';
-import type { IJobContext } from './createJobContext/JobContext.interface.ts';
-import type { DebitTokens } from '../_shared/utils/debitTokens.interface.ts';
+import { logger } from '../_shared/logger.ts';
+import type { BoundDebitTokens } from '../_shared/utils/debitTokens.interface.ts';
+import type { BoundEnqueueRenderJobFn } from './enqueueRenderJob/enqueueRenderJob.interface.ts';
+import { enqueueRenderJob } from './enqueueRenderJob/enqueueRenderJob.ts';
+import { shouldEnqueueRenderJob } from '../_shared/utils/shouldEnqueueRenderJob.ts';
+import { continueJob } from './continueJob.ts';
+import { retryJob } from './retryJob.ts';
+import { resolveFinishReason } from '../_shared/utils/resolveFinishReason.ts';
+import { isIntermediateChunk } from '../_shared/utils/isIntermediateChunk.ts';
+import { determineContinuation } from '../_shared/utils/determineContinuation/determineContinuation.ts';
+import { buildUploadContext } from '../_shared/utils/buildUploadContext/buildUploadContext.ts';
+import { sanitizeJsonContent } from '../_shared/utils/jsonSanitizer/jsonSanitizer.ts';
+import { saveResponse } from './saveResponse/saveResponse.ts';
+import type { SaveResponseDeps } from './saveResponse/saveResponse.interface.ts';
+import type { DialecticExecuteJobPayload } from '../dialectic-service/dialectic.interface.ts';
+import { isJson } from '../_shared/utils/type_guards.ts';
 import {
   createMockContributionRow,
   createMockFileManager,
   saveResponseTestPayloadDocumentArtifact,
 } from './saveResponse/saveResponse.mock.ts';
-import type { SaveResponseRequestBody } from './saveResponse/saveResponse.interface.ts';
-import type { DialecticExecuteJobPayload } from '../dialectic-service/dialectic.interface.ts';
-import { isJson } from '../_shared/utils/type_guards.ts';
+import { createComputeJobSig } from '../_shared/utils/computeJobSig/computeJobSig.ts';
+import type { ComputeJobSig } from '../_shared/utils/computeJobSig/computeJobSig.interface.ts';
+import { netlifyResponseHandler } from '../netlifyResponse/netlifyResponseHandler.ts';
+import type { NetlifyResponseDeps } from '../netlifyResponse/netlifyResponse.interface.ts';
+
+const TEST_SECRET = 'index-integration-test-hmac-secret';
+const JOB_ID = 'job-id-123';
+const JOB_USER_ID = 'user-789';
+const JOB_CREATED_AT = new Date().toISOString();
 
 // ---------------------------------------------------------------------------
-// Row factories (mirrors saveResponse.integration.test.ts)
+// Row factories
 // ---------------------------------------------------------------------------
 
 function makeProviderRow() {
@@ -79,7 +94,7 @@ function makeSessionRow() {
 function makeWalletRow() {
   return {
     wallet_id: 'wallet-ghi',
-    user_id: 'user-789',
+    user_id: JOB_USER_ID,
     organization_id: null,
     balance: 10000,
     currency: 'AI_TOKEN',
@@ -92,15 +107,8 @@ function makeWalletRow() {
 // Helpers
 // ---------------------------------------------------------------------------
 
-/**
- * Builds an IJobContext suitable for integration tests:
- * - real utility functions (resolveFinishReason, sanitizeJsonContent, etc.) from buildIJobContext
- * - mock debitTokens that returns success
- * - mock notificationService
- * Callers may override any field via `overrides`.
- */
-function buildIntegrationDeps(overrides?: Partial<IJobContext>): IJobContext {
-  const mockDebitTokens: DebitTokens = async () => ({
+function makeMockDebitTokens(): BoundDebitTokens {
+  return async (_params, _payload) => ({
     result: {
       userMessage: {
         id: crypto.randomUUID(),
@@ -135,38 +143,61 @@ function buildIntegrationDeps(overrides?: Partial<IJobContext>): IJobContext {
     },
     transactionRecordedSuccessfully: true,
   });
-
-  const base: IJobContext = {
-    ...buildIJobContext(),
-    notificationService: mockNotificationService,
-    debitTokens: mockDebitTokens,
-  };
-
-  if (!overrides) return base;
-  return { ...base, ...overrides };
 }
 
-/**
- * Builds a mock Supabase client pre-wired with all tables that saveResponse queries
- * via the user-scoped DB client.
- */
-function buildUserMockSupabase(
+async function buildNetlifyDeps(
+  adminClient: SupabaseClient<Database>,
+  saveResponseDepsOverrides?: Partial<SaveResponseDeps>,
+): Promise<{ deps: NetlifyResponseDeps; computeJobSig: ComputeJobSig }> {
+  const computeJobSig = await createComputeJobSig(TEST_SECRET);
+
+  const boundEnqueueRenderJob: BoundEnqueueRenderJobFn = (params, payload) =>
+    enqueueRenderJob({ dbClient: adminClient, logger, shouldEnqueueRenderJob }, params, payload);
+
+  const srDeps: SaveResponseDeps = {
+    logger,
+    fileManager: createMockFileManager({ outcome: 'success', contribution: createMockContributionRow() }),
+    notificationService: mockNotificationService,
+    continueJob,
+    retryJob,
+    resolveFinishReason,
+    isIntermediateChunk,
+    determineContinuation,
+    buildUploadContext,
+    sanitizeJsonContent,
+    debitTokens: makeMockDebitTokens(),
+    enqueueRenderJob: boundEnqueueRenderJob,
+    ...saveResponseDepsOverrides,
+  };
+
+  const deps: NetlifyResponseDeps = {
+    computeJobSig,
+    adminClient,
+    saveResponse,
+    saveResponseDeps: srDeps,
+  };
+
+  return { deps, computeJobSig };
+}
+
+function buildAdminMockSupabase(
   jobPayload: DialecticExecuteJobPayload,
+  clientId: string,
   jobRowOverrides?: Record<string, unknown>,
 ): ReturnType<typeof createMockSupabaseClient> {
   if (!isJson(jobPayload)) {
     throw new Error('Test payload is not valid JSON.');
   }
   const jobRow = {
-    id: 'job-id-123',
+    id: JOB_ID,
     session_id: 'session-456',
     stage_slug: 'thesis',
     iteration_number: 1,
     status: 'queued',
-    user_id: 'user-789',
+    user_id: JOB_USER_ID,
     attempt_count: 0,
     completed_at: null,
-    created_at: new Date().toISOString(),
+    created_at: JOB_CREATED_AT,
     error_details: null,
     max_retries: 3,
     parent_job_id: null,
@@ -180,7 +211,7 @@ function buildUserMockSupabase(
     idempotency_key: null,
     ...jobRowOverrides,
   };
-  return createMockSupabaseClient('index-integration-user', {
+  return createMockSupabaseClient(clientId, {
     genericMockResults: {
       dialectic_generation_jobs: {
         select: { data: [jobRow], error: null },
@@ -206,20 +237,15 @@ function buildUserMockSupabase(
   });
 }
 
-/**
- * Creates a POST /saveResponse HTTP request with an Authorization header.
- */
-function createSaveResponseRequest(
-  body: SaveResponseRequestBody,
-  authorization: string = 'Bearer test-integration-jwt',
-): Request {
-  return new Request('http://localhost/saveResponse', {
+async function buildNetlifyRequest(
+  body: Record<string, unknown>,
+  computeJobSig: ComputeJobSig,
+): Promise<Request> {
+  const sig = await computeJobSig(JOB_ID, JOB_USER_ID, JOB_CREATED_AT);
+  return new Request('http://localhost/', {
     method: 'POST',
-    headers: {
-      Authorization: authorization,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(body),
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...body, sig }),
   });
 }
 
@@ -228,7 +254,7 @@ function createSaveResponseRequest(
 // ---------------------------------------------------------------------------
 
 Deno.test(
-  'index.integration: full handler chain - valid JWT and body → handler parses → constructs deps → calls real saveResponse → returns 200',
+  'index.integration: full handler chain - valid sig and body → handler parses → constructs deps → calls real saveResponse → returns 200',
   async () => {
     resetMockNotificationService();
 
@@ -240,36 +266,20 @@ Deno.test(
       },
     });
     const fm = createMockFileManager({ outcome: 'success', contribution });
-    const deps = buildIntegrationDeps({ fileManager: fm });
 
-    const userMockSetup = buildUserMockSupabase(saveResponseTestPayloadDocumentArtifact);
-    const userDbClient: SupabaseClient<Database> =
-      userMockSetup.client as unknown as SupabaseClient<Database>;
+    const adminMockSetup = buildAdminMockSupabase(saveResponseTestPayloadDocumentArtifact, 'admin-handler-chain-1');
+    const adminClient = adminMockSetup.client as unknown as SupabaseClient<Database>;
 
-    // Admin client: no dialectic_stages set up → shouldEnqueueRenderJob returns stage_not_found
-    // → enqueueRenderJob returns error → shouldRender = false (logged, execution continues)
-    const adminMockSetup = createMockSupabaseClient('admin-handler-chain-1');
-    const adminClient: SupabaseClient<Database> =
-      adminMockSetup.client as unknown as SupabaseClient<Database>;
+    const { deps, computeJobSig } = await buildNetlifyDeps(adminClient, { fileManager: fm });
 
-    const createUserDbClientFn: CreateUserDbClientFn = (_auth) => userDbClient;
-
-    const reqBody: SaveResponseRequestBody = {
-      job_id: 'job-id-123',
+    const req = await buildNetlifyRequest({
+      job_id: JOB_ID,
       assembled_content: JSON.stringify({ result: 'valid content' }),
       token_usage: { prompt_tokens: 10, completion_tokens: 20, total_tokens: 30 },
       finish_reason: 'stop',
-    };
-    const req = createSaveResponseRequest(reqBody);
+    }, computeJobSig);
 
-    const res = await handleSaveResponse(
-      req,
-      adminClient,
-      deps,
-      saveResponse,
-      createUserDbClientFn,
-    );
-
+    const res = await netlifyResponseHandler(deps, req);
     assertEquals(res.status, 200);
     const resBody = await res.json();
     assertEquals(resBody.status, 'completed');
@@ -281,11 +291,6 @@ Deno.test(
   async () => {
     resetMockNotificationService();
 
-    // Simulate the final chunk of a multi-chunk sequence.
-    // target_contribution_id set → isContinuationForStorage = true
-    // After the isContinuationForStorage block, contribution.document_relationships.thesis
-    // points to 'root-contrib-render-gate-test' (≠ contribution.id 'final-chunk-contrib'),
-    // so the isFinalChunk block triggers assembleAndSaveFinalDocument when shouldRender = false.
     const finalContinuationPayload: DialecticExecuteJobPayload = {
       ...saveResponseTestPayloadDocumentArtifact,
       target_contribution_id: 'root-contrib-render-gate-test',
@@ -305,39 +310,24 @@ Deno.test(
       target_contribution_id: 'root-contrib-render-gate-test',
     });
     const fm = createMockFileManager({ outcome: 'success', contribution });
-    const deps = buildIntegrationDeps({ fileManager: fm });
 
-    const userMockSetup = buildUserMockSupabase(finalContinuationPayload, {
-      target_contribution_id: 'root-contrib-render-gate-test',
-    });
-    const userDbClient: SupabaseClient<Database> =
-      userMockSetup.client as unknown as SupabaseClient<Database>;
+    const adminMockSetup = buildAdminMockSupabase(
+      finalContinuationPayload,
+      'admin-render-chain-2',
+      { target_contribution_id: 'root-contrib-render-gate-test' },
+    );
+    const adminClient = adminMockSetup.client as unknown as SupabaseClient<Database>;
 
-    // Admin client has no dialectic_stages → shouldEnqueueRenderJob returns stage_not_found
-    // → enqueueRenderJob returns { error, retriable: false } (not an isEnqueueRenderJobSuccessReturn)
-    // → shouldRender stays false → assembleAndSaveFinalDocument IS called
-    const adminMockSetup = createMockSupabaseClient('admin-render-chain-2');
-    const adminClient: SupabaseClient<Database> =
-      adminMockSetup.client as unknown as SupabaseClient<Database>;
+    const { deps, computeJobSig } = await buildNetlifyDeps(adminClient, { fileManager: fm });
 
-    const createUserDbClientFn: CreateUserDbClientFn = (_auth) => userDbClient;
-
-    const reqBody: SaveResponseRequestBody = {
-      job_id: 'job-id-123',
+    const req = await buildNetlifyRequest({
+      job_id: JOB_ID,
       assembled_content: JSON.stringify({ result: 'final chunk content' }),
       token_usage: { prompt_tokens: 10, completion_tokens: 20, total_tokens: 30 },
       finish_reason: 'stop',
-    };
-    const req = createSaveResponseRequest(reqBody);
+    }, computeJobSig);
 
-    const res = await handleSaveResponse(
-      req,
-      adminClient,
-      deps,
-      saveResponse,
-      createUserDbClientFn,
-    );
-
+    const res = await netlifyResponseHandler(deps, req);
     assertEquals(res.status, 200);
     assertEquals(
       fm.assembleAndSaveFinalDocument.calls.length,
@@ -353,81 +343,56 @@ Deno.test(
 );
 
 Deno.test(
-  'index.integration: error chain - empty assembled_content → real saveResponse returns retriable error → handler returns 503',
+  'index.integration: empty assembled_content → saveResponse calls retryJob internally → handler returns 200',
   async () => {
     resetMockNotificationService();
 
-    const deps = buildIntegrationDeps();
+    let retryJobCallCount = 0;
 
-    const userMockSetup = buildUserMockSupabase(saveResponseTestPayloadDocumentArtifact);
-    const userDbClient: SupabaseClient<Database> =
-      userMockSetup.client as unknown as SupabaseClient<Database>;
+    const adminMockSetup = buildAdminMockSupabase(saveResponseTestPayloadDocumentArtifact, 'admin-error-chain-3');
+    const adminClient = adminMockSetup.client as unknown as SupabaseClient<Database>;
 
-    const adminMockSetup = createMockSupabaseClient('admin-error-chain-3');
-    const adminClient: SupabaseClient<Database> =
-      adminMockSetup.client as unknown as SupabaseClient<Database>;
+    const { deps, computeJobSig } = await buildNetlifyDeps(adminClient, {
+      retryJob: async () => { retryJobCallCount++; return {}; },
+    });
 
-    const createUserDbClientFn: CreateUserDbClientFn = (_auth) => userDbClient;
-
-    const reqBody: SaveResponseRequestBody = {
-      job_id: 'job-id-123',
-      assembled_content: '', // empty → contentString = null → aiResponse.content = null → retriable error
+    const req = await buildNetlifyRequest({
+      job_id: JOB_ID,
+      assembled_content: '',
       token_usage: null,
       finish_reason: null,
-    };
-    const req = createSaveResponseRequest(reqBody);
+    }, computeJobSig);
 
-    const res = await handleSaveResponse(
-      req,
-      adminClient,
-      deps,
-      saveResponse,
-      createUserDbClientFn,
-    );
-
-    assertEquals(res.status, 503);
-    const resBody = await res.json();
-    assertExists(resBody.error);
+    const res = await netlifyResponseHandler(deps, req);
+    assertEquals(res.status, 200);
+    assertEquals(retryJobCallCount, 1, 'retryJob must be called once for empty assembled_content');
   },
 );
 
 Deno.test(
-  'index.integration: regression - job-queue POST body (missing saveResponse fields) rejected by isSaveResponseRequestBody guard → 400',
+  'index.integration: regression - job-queue POST body (missing sig and saveResponse fields) rejected by isNetlifyResponseBody guard → 400',
   async () => {
-    const deps = buildIntegrationDeps();
-
     const adminMockSetup = createMockSupabaseClient('admin-regression-4');
-    const adminClient: SupabaseClient<Database> =
-      adminMockSetup.client as unknown as SupabaseClient<Database>;
+    const adminClient = adminMockSetup.client as unknown as SupabaseClient<Database>;
 
-    const createUserDbClientFn: CreateUserDbClientFn = (_auth) =>
-      adminMockSetup.client as unknown as SupabaseClient<Database>;
+    const { deps } = await buildNetlifyDeps(adminClient);
 
-    // A job-queue shaped body lacks assembled_content, token_usage, and finish_reason.
-    // isSaveResponseRequestBody rejects it, proving the handler does not process job-queue payloads.
+    // A job-queue shaped body lacks assembled_content, token_usage, finish_reason, and sig.
+    // isNetlifyResponseBody rejects it, proving the handler does not process job-queue payloads.
     const jobQueueBody = {
-      job_id: 'job-id-123',
+      job_id: JOB_ID,
       session_id: 'session-456',
       model_id: 'model-def',
       stage_slug: 'thesis',
     };
-    const req = new Request('http://localhost/saveResponse', {
+    const req = new Request('http://localhost/', {
       method: 'POST',
-      headers: {
-        Authorization: 'Bearer test-jwt',
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(jobQueueBody),
     });
 
-    const res = await handleSaveResponse(
-      req,
-      adminClient,
-      deps,
-      saveResponse,
-      createUserDbClientFn,
-    );
-
+    const res = await netlifyResponseHandler(deps, req);
     assertEquals(res.status, 400);
+    assertEquals(adminMockSetup.spies.fromSpy.calls.length, 0);
   },
 );

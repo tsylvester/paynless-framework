@@ -77,6 +77,7 @@ export function createJobContext(params: JobContextParams): IJobContext {
         prepareModelJob: params.prepareModelJob,
         debitTokens: params.debitTokens,
         sanitizeJsonContent: params.sanitizeJsonContent,
+        computeJobSig: params.computeJobSig,
     };
 }
 

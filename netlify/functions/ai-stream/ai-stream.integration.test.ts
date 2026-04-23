@@ -254,7 +254,6 @@ function createMockWorkloadEvent(eventData: unknown): unknown {
 
 function extractFetchPostArgs(fetchMock: ReturnType<typeof vi.fn>): {
   url: string;
-  authorization: string;
   body: unknown;
 } {
   const firstCall: unknown = fetchMock.mock.calls[0];
@@ -270,21 +269,6 @@ function extractFetchPostArgs(fetchMock: ReturnType<typeof vi.fn>): {
     throw new Error('expected RequestInit as second argument to fetch');
   }
   const init: RequestInit = initValue;
-  const headersValue: unknown = init.headers;
-  if (
-    typeof headersValue !== 'object' ||
-    headersValue === null ||
-    Array.isArray(headersValue)
-  ) {
-    throw new Error('expected headers object in RequestInit');
-  }
-  if (!('Authorization' in headersValue)) {
-    throw new Error('expected Authorization header in fetch call');
-  }
-  const authValue: unknown = Reflect.get(headersValue, 'Authorization');
-  if (typeof authValue !== 'string') {
-    throw new Error('expected string Authorization header');
-  }
   const bodyValue: unknown = init.body;
   if (typeof bodyValue !== 'string') {
     throw new Error('expected string body in fetch call');
@@ -292,7 +276,6 @@ function extractFetchPostArgs(fetchMock: ReturnType<typeof vi.fn>): {
   const parsed: unknown = JSON.parse(bodyValue);
   return {
     url: urlValue,
-    authorization: authValue,
     body: parsed,
   };
 }
@@ -349,7 +332,7 @@ describe('ai-stream integration', () => {
         providerId: 'prov-1',
         promptId: 'prompt-1',
       },
-      user_jwt: 'jwt-openai-integration',
+      sig: 'hmac-openai-integration',
     };
     const mockEvent: unknown = createMockWorkloadEvent(eventPayload);
 
@@ -358,11 +341,11 @@ describe('ai-stream integration', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const posted = extractFetchPostArgs(fetchMock);
     expect(posted.url).toBe(TEST_SAVE_RESPONSE_URL);
-    expect(posted.authorization).toBe('Bearer jwt-openai-integration');
     expect(isAiStreamPayload(posted.body)).toBe(true);
     if (!isAiStreamPayload(posted.body)) {
       throw new Error('POST body must satisfy AiStreamPayload');
     }
+    expect(posted.body.sig).toBe('hmac-openai-integration');
     expect(posted.body.job_id).toBe('integration-openai');
     expect(posted.body.assembled_content).toBe('integration-openai');
     expect(posted.body.finish_reason).toBe('stop');
@@ -392,7 +375,7 @@ describe('ai-stream integration', () => {
         providerId: 'prov-1',
         promptId: 'prompt-1',
       },
-      user_jwt: 'jwt-anthropic-integration',
+      sig: 'hmac-anthropic-integration',
     };
     const mockEvent: unknown = createMockWorkloadEvent(eventPayload);
 
@@ -401,11 +384,11 @@ describe('ai-stream integration', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const posted = extractFetchPostArgs(fetchMock);
     expect(posted.url).toBe(TEST_SAVE_RESPONSE_URL);
-    expect(posted.authorization).toBe('Bearer jwt-anthropic-integration');
     expect(isAiStreamPayload(posted.body)).toBe(true);
     if (!isAiStreamPayload(posted.body)) {
       throw new Error('POST body must satisfy AiStreamPayload');
     }
+    expect(posted.body.sig).toBe('hmac-anthropic-integration');
     expect(posted.body.job_id).toBe('integration-anthropic');
     expect(posted.body.assembled_content).toBe('integration-anthropic');
     expect(posted.body.finish_reason).toBe('stop');
@@ -443,7 +426,7 @@ describe('ai-stream integration', () => {
         providerId: 'prov-1',
         promptId: 'prompt-1',
       },
-      user_jwt: 'jwt-google-integration',
+      sig: 'hmac-google-integration',
     };
     const mockEvent: unknown = createMockWorkloadEvent(eventPayload);
 
@@ -452,11 +435,11 @@ describe('ai-stream integration', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const posted = extractFetchPostArgs(fetchMock);
     expect(posted.url).toBe(TEST_SAVE_RESPONSE_URL);
-    expect(posted.authorization).toBe('Bearer jwt-google-integration');
     expect(isAiStreamPayload(posted.body)).toBe(true);
     if (!isAiStreamPayload(posted.body)) {
       throw new Error('POST body must satisfy AiStreamPayload');
     }
+    expect(posted.body.sig).toBe('hmac-google-integration');
     expect(posted.body.job_id).toBe('integration-google');
     expect(posted.body.assembled_content).toBe('integration-google');
     expect(posted.body.finish_reason).toBe('stop');
@@ -487,7 +470,7 @@ describe('ai-stream integration', () => {
         providerId: 'prov-1',
         promptId: 'prompt-1',
       },
-      user_jwt: 'jwt-step-error',
+      sig: 'hmac-step-error',
     };
     const mockEvent: unknown = createMockWorkloadEvent(eventPayload);
 
@@ -517,7 +500,7 @@ describe('ai-stream integration', () => {
         providerId: 'prov-1',
         promptId: 'prompt-1',
       },
-      user_jwt: 'jwt-post-failure',
+      sig: 'hmac-post-failure',
     };
     const mockEvent: unknown = createMockWorkloadEvent(eventPayload);
 

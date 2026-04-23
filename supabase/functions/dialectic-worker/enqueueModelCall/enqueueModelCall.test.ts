@@ -9,6 +9,7 @@ import type { AiModelExtendedConfig } from "../../_shared/types.ts";
 import { mockNotificationService, resetMockNotificationService } from "../../_shared/utils/notification.service.mock.ts";
 import { isAiModelExtendedConfig } from "../../_shared/utils/type-guards/type_guards.chat.ts";
 import { isRecord } from "../../_shared/utils/type-guards/type_guards.common.ts";
+import type { DialecticJobRow } from "../../dialectic-service/dialectic.interface.ts";
 import type {
     EnqueueModelCallErrorReturn,
     EnqueueModelCallReturn,
@@ -19,7 +20,7 @@ import {
     createMockEnqueueModelCallParams,
     createMockEnqueueModelCallPayload,
 } from "./enqueueModelCall.mock.ts";
-
+import { mockComputeJobSig, mockComputeJobSigThrows } from "../../_shared/utils/computeJobSig/computeJobSig.mock.ts";
 Deno.test(
     "enqueueModelCall posts to netlify with chat_api_request and api_identifier from params and payload",
     async () => {
@@ -353,7 +354,8 @@ Deno.test(
             assert(isRecord(parsed.data));
             const data = parsed.data;
             assertEquals(data.job_id, params.job.id);
-            assertEquals(data.user_jwt, params.userAuthToken);
+            assertEquals("user_jwt" in data, false);
+            assertEquals(data.sig, "mock-sig");
             assert(isRecord(data.model_config));
             assertEquals(
                 data.model_config.api_identifier,
@@ -533,6 +535,149 @@ Deno.test(
                     err.error.message.toLowerCase().includes("limit") ||
                     err.error.message.toLowerCase().includes("size"),
             );
+        } finally {
+            fetchStub.restore();
+        }
+    },
+);
+
+Deno.test(
+    "enqueueModelCall calls computeJobSig with job.id job.user_id job.created_at and posts sig in event body",
+    async () => {
+        const mockSetup = createMockSupabaseClient(undefined, {
+            genericMockResults: {
+                dialectic_generation_jobs: {
+                    update: { data: [{}], error: null },
+                },
+            },
+        });
+        const params = createMockEnqueueModelCallParams({}, { mockSetup });
+        const capturedArgs: string[] = [];
+        const mockSig: string = "test-hmac-sig-value";
+        const deps = createMockEnqueueModelCallDeps({
+            computeJobSig: async (jobId: string, userId: string, createdAt: string): Promise<string> => {
+                capturedArgs.push(jobId, userId, createdAt);
+                return mockSig;
+            },
+        });
+        const fetchStub = stub(
+            globalThis,
+            "fetch",
+            (): Promise<Response> =>
+                Promise.resolve(new Response("{}", { status: 200 })),
+        );
+        try {
+            await enqueueModelCall(deps, params, createMockEnqueueModelCallPayload());
+            assertEquals(capturedArgs.length, 3);
+            assertEquals(capturedArgs[0], params.job.id);
+            assertEquals(capturedArgs[1], params.job.user_id);
+            assertEquals(capturedArgs[2], params.job.created_at);
+            assertEquals(fetchStub.calls.length, 1);
+            const initArg = fetchStub.calls[0].args[1];
+            assert(initArg !== undefined);
+            assert(typeof initArg.body === "string");
+            const parsed = JSON.parse(initArg.body);
+            assert(isRecord(parsed));
+            assert(isRecord(parsed.data));
+            assertEquals(parsed.data.sig, mockSig);
+        } finally {
+            fetchStub.restore();
+        }
+    },
+);
+
+Deno.test(
+    "enqueueModelCall returns retriable false when job.user_id is null and does not call computeJobSig or fetch",
+    async () => {
+        const mockSetup = createMockSupabaseClient(undefined, {
+            genericMockResults: {
+                dialectic_generation_jobs: {
+                    update: { data: [{}], error: null },
+                },
+            },
+        });
+        const baseParams = createMockEnqueueModelCallParams({}, { mockSetup });
+        const nullUserIdJob: DialecticJobRow = { ...baseParams.job, user_id: null } as unknown as DialecticJobRow;
+        const deps = createMockEnqueueModelCallDeps({
+            computeJobSig: mockComputeJobSig,
+        });
+        const fetchStub = stub(globalThis, "fetch");
+        try {
+            const result: EnqueueModelCallReturn = await enqueueModelCall(
+                deps,
+                createMockEnqueueModelCallParams({ job: nullUserIdJob }, { mockSetup }),
+                createMockEnqueueModelCallPayload(),
+            );
+            assert("error" in result);
+            const err: EnqueueModelCallErrorReturn = result;
+            assertEquals(err.retriable, false);
+            assertEquals(fetchStub.calls.length, 0);
+        } finally {
+            fetchStub.restore();
+        }
+    },
+);
+
+Deno.test(
+    "enqueueModelCall returns retriable false when computeJobSig throws and does not call fetch",
+    async () => {
+        const mockSetup = createMockSupabaseClient(undefined, {
+            genericMockResults: {
+                dialectic_generation_jobs: {
+                    update: { data: [{}], error: null },
+                },
+            },
+        });
+        const deps = createMockEnqueueModelCallDeps({
+            computeJobSig: mockComputeJobSigThrows,
+        });
+        const fetchStub = stub(globalThis, "fetch");
+        try {
+            const result: EnqueueModelCallReturn = await enqueueModelCall(
+                deps,
+                createMockEnqueueModelCallParams({}, { mockSetup }),
+                createMockEnqueueModelCallPayload(),
+            );
+            assert("error" in result);
+            const err: EnqueueModelCallErrorReturn = result;
+            assertEquals(err.retriable, false);
+            assertEquals(fetchStub.calls.length, 0);
+        } finally {
+            fetchStub.restore();
+        }
+    },
+);
+
+Deno.test(
+    "enqueueModelCall regression - user_jwt does not appear in the posted event body",
+    async () => {
+        const mockSetup = createMockSupabaseClient(undefined, {
+            genericMockResults: {
+                dialectic_generation_jobs: {
+                    update: { data: [{}], error: null },
+                },
+            },
+        });
+        const fetchStub = stub(
+            globalThis,
+            "fetch",
+            (): Promise<Response> =>
+                Promise.resolve(new Response("{}", { status: 200 })),
+        );
+        try {
+            await enqueueModelCall(
+                createMockEnqueueModelCallDeps(),
+                createMockEnqueueModelCallParams({}, { mockSetup }),
+                createMockEnqueueModelCallPayload(),
+            );
+            assertEquals(fetchStub.calls.length, 1);
+            const initArg = fetchStub.calls[0].args[1];
+            assert(initArg !== undefined);
+            assert(typeof initArg.body === "string");
+            const parsed = JSON.parse(initArg.body);
+            assert(isRecord(parsed));
+            assert(isRecord(parsed.data));
+            assertEquals("user_jwt" in parsed.data, false);
         } finally {
             fetchStub.restore();
         }

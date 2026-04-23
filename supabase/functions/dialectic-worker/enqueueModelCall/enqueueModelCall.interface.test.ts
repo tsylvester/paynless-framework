@@ -10,17 +10,18 @@ import type {
     EnqueueModelCallReturn,
     EnqueueModelCallSuccessReturn,
 } from "./enqueueModelCall.interface.ts";
-
+import type { ComputeJobSig } from "../../_shared/utils/computeJobSig/computeJobSig.interface.ts";
 Deno.test(
-    "Contract: EnqueueModelCallDeps declares four dependency keys",
+    "Contract: EnqueueModelCallDeps declares five dependency keys",
     () => {
         const surface: Record<keyof EnqueueModelCallDeps, true> = {
             logger: true,
             netlifyQueueUrl: true,
             netlifyApiKey: true,
             apiKeyForProvider: true,
+            computeJobSig: true,
         };
-        assertEquals(Object.keys(surface).length, 4);
+        assertEquals(Object.keys(surface).length, 5);
     },
 );
 
@@ -75,14 +76,14 @@ Deno.test(
 );
 
 Deno.test(
-    "Contract: AiStreamEventData declares five fields",
+    "Contract: AiStreamEventData declares five fields including sig not user_jwt",
     () => {
         const surface: Record<keyof AiStreamEventData, true> = {
             job_id: true,
             api_identifier: true,
             model_config: true,
             chat_api_request: true,
-            user_jwt: true,
+            sig: true,
         };
         assertEquals(Object.keys(surface).length, 5);
     },
@@ -110,5 +111,47 @@ Deno.test(
             return ok;
         };
         assertEquals(typeof bound, "function");
+    },
+);
+
+Deno.test(
+    "Contract: EnqueueModelCallDeps computeJobSig is typed as a function",
+    () => {
+        const fn: EnqueueModelCallDeps["computeJobSig"] = async (
+            _jobId: string,
+            _userId: string,
+            _createdAt: string,
+        ): Promise<string> => "sig";
+        assertEquals(typeof fn, "function");
+    },
+);
+
+Deno.test(
+    "Contract: EnqueueModelCallDeps invalid - missing computeJobSig",
+    () => {
+        const required: (keyof EnqueueModelCallDeps)[] = [
+            "logger",
+            "netlifyQueueUrl",
+            "netlifyApiKey",
+            "apiKeyForProvider",
+            "computeJobSig",
+        ];
+        assertEquals(required.includes("computeJobSig"), true);
+        assertEquals(required.length, 5);
+    },
+);
+
+Deno.test(
+    "Contract: AiStreamEventData valid - has sig field and no user_jwt field",
+    () => {
+        const surface: Record<keyof AiStreamEventData, true> = {
+            job_id: true,
+            api_identifier: true,
+            model_config: true,
+            chat_api_request: true,
+            sig: true,
+        };
+        assertEquals("sig" in surface, true);
+        assertEquals("user_jwt" in surface, false);
     },
 );

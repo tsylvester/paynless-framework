@@ -16,14 +16,14 @@ export function isAiStreamEvent(v: unknown): v is AiStreamEvent {
   }
   const jobIdValue: unknown = v['job_id'];
   const apiIdentifierValue: unknown = v['api_identifier'];
-  const userJwtValue: unknown = v['user_jwt'];
+  const sigValue: unknown = v['sig'];
   if (typeof jobIdValue !== 'string') {
     return false;
   }
   if (typeof apiIdentifierValue !== 'string') {
     return false;
   }
-  if (typeof userJwtValue !== 'string') {
+  if (typeof sigValue !== 'string') {
     return false;
   }
   if (!('model_config' in v)) {
@@ -70,6 +70,13 @@ export function isAiStreamPayload(v: unknown): v is AiStreamPayload {
   }
   const finishReasonValue: unknown = v['finish_reason'];
   if (finishReasonValue !== null && typeof finishReasonValue !== 'string') {
+    return false;
+  }
+  if (!('sig' in v)) {
+    return false;
+  }
+  const sigValue: unknown = v['sig'];
+  if (typeof sigValue !== 'string') {
     return false;
   }
   return true;

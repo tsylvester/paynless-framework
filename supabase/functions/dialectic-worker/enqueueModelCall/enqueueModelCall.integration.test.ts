@@ -22,7 +22,8 @@ import type {
     EnqueueModelCallReturn,
 } from "./enqueueModelCall.interface.ts";
 import { enqueueModelCall } from "./enqueueModelCall.ts";
-
+import { mockComputeJobSig } from "../../_shared/utils/computeJobSig/computeJobSig.mock.ts";
+import type { ComputeJobSig } from "../../_shared/utils/computeJobSig/computeJobSig.interface.ts";
 const integrationProviderRow: Tables<"ai_providers"> = {
     id: "integration-provider-id",
     provider: "integration-provider",
@@ -65,6 +66,7 @@ Deno.test(
 
         const deps: EnqueueModelCallDeps = {
             logger: new MockLogger(),
+            computeJobSig: mockComputeJobSig,
             netlifyQueueUrl:
                 "https://integration.netlify/.netlify/functions/async-workloads-router",
             netlifyApiKey: "integration-awl-api-key",
@@ -127,7 +129,7 @@ Deno.test(
             assert(isRecord(parsed.data));
             assertEquals(parsed.data.job_id, job.id);
             assertEquals(parsed.data.api_identifier, integrationProviderRow.api_identifier);
-            assertEquals(parsed.data.user_jwt, params.userAuthToken);
+            assertEquals(parsed.data.sig, "mock-sig");
             assert(isRecord(parsed.data.chat_api_request));
             assertEquals(parsed.data.chat_api_request.message, payload.chatApiRequest.message);
 
@@ -161,6 +163,7 @@ Deno.test(
 
         const deps: EnqueueModelCallDeps = {
             logger: new MockLogger(),
+            computeJobSig: mockComputeJobSig,
             netlifyQueueUrl:
                 "https://integration.netlify/.netlify/functions/async-workloads-router",
             netlifyApiKey: "integration-awl-api-key",

@@ -21,37 +21,6 @@ import type { AiStreamEvent } from './ai-stream.interface.ts';
 import { isAiStreamDeps } from './ai-stream.guard.ts';
 import { createAiStreamDeps, runAiStreamWorkloadForTests } from './ai-stream.ts';
 
-function getAuthorizationFromRequestInit(
-  init: RequestInit,
-): string | undefined {
-  const headersValue: unknown = init.headers;
-  if (headersValue === undefined) {
-    return undefined;
-  }
-  if (headersValue instanceof Headers) {
-    const value: string | null = headersValue.get('Authorization');
-    if (value === null) {
-      return undefined;
-    }
-    return value;
-  }
-  if (
-    typeof headersValue !== 'object' ||
-    headersValue === null ||
-    Array.isArray(headersValue)
-  ) {
-    return undefined;
-  }
-  if (!('Authorization' in headersValue)) {
-    return undefined;
-  }
-  const auth: unknown = Reflect.get(headersValue, 'Authorization');
-  if (typeof auth !== 'string') {
-    return undefined;
-  }
-  return auth;
-}
-
 describe('ai-stream workload', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
@@ -90,7 +59,7 @@ describe('ai-stream workload', () => {
       api_identifier: 'mistral-unknown-model',
       model_config: { ...mockNodeModelConfig, api_identifier: 'mistral-unknown-model' },
       chat_api_request: { ...mockNodeChatApiRequest },
-      user_jwt: 'jwt-token',
+      sig: 'hmac-sig-value',
     };
     await expect(runAiStreamWorkloadForTests(deps, event)).rejects.toBeInstanceOf(
       ErrorDoNotRetry,
@@ -119,7 +88,7 @@ describe('ai-stream workload', () => {
       api_identifier: 'openai-gpt-4o',
       model_config: { ...mockNodeModelConfig },
       chat_api_request: { ...mockNodeChatApiRequest },
-      user_jwt: 'jwt-openai',
+      sig: 'hmac-openai-sig',
     };
     await runAiStreamWorkloadForTests(deps, event);
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -134,9 +103,6 @@ describe('ai-stream workload', () => {
       throw new Error('expected RequestInit');
     }
     const init: RequestInit = initValue;
-    const authorization: string | undefined =
-      getAuthorizationFromRequestInit(init);
-    expect(authorization).toBe('Bearer jwt-openai');
     const bodyValue: unknown = init.body;
     if (typeof bodyValue !== 'string') {
       throw new Error('expected string body');
@@ -146,6 +112,7 @@ describe('ai-stream workload', () => {
     if (!isAiStreamPayload(parsed)) {
       throw new Error('POST body must satisfy AiStreamPayload');
     }
+    expect(parsed.sig).toBe('hmac-openai-sig');
     expect(parsed.finish_reason).toBe('stop');
     expect(parsed.assembled_content).toContain('mock openai response');
   });
@@ -181,7 +148,7 @@ describe('ai-stream workload', () => {
         providerId: 'p',
         promptId: 'q',
       },
-      user_jwt: 'jwt-anthropic',
+      sig: 'hmac-anthropic-sig',
     };
     await runAiStreamWorkloadForTests(deps, event);
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -218,7 +185,7 @@ describe('ai-stream workload', () => {
         providerId: 'p',
         promptId: 'q',
       },
-      user_jwt: 'jwt-google',
+      sig: 'hmac-google-sig',
     };
     await runAiStreamWorkloadForTests(deps, event);
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -250,7 +217,7 @@ describe('ai-stream workload', () => {
       api_identifier: 'openai-gpt-4o',
       model_config: { ...mockNodeModelConfig },
       chat_api_request: { ...mockNodeChatApiRequest },
-      user_jwt: 'jwt',
+      sig: 'hmac-sig-value',
     };
     await expect(runAiStreamWorkloadForTests(deps, event)).rejects.toThrow('stream failed');
   });
@@ -277,7 +244,7 @@ describe('ai-stream workload', () => {
       api_identifier: 'openai-gpt-4o',
       model_config: { ...mockNodeModelConfig },
       chat_api_request: { ...mockNodeChatApiRequest },
-      user_jwt: 'jwt',
+      sig: 'hmac-sig-value',
     };
     await expect(runAiStreamWorkloadForTests(deps, event)).rejects.toThrow();
   });
@@ -304,7 +271,7 @@ describe('ai-stream workload', () => {
       api_identifier: 'openai-gpt-4o',
       model_config: { ...mockNodeModelConfig },
       chat_api_request: { ...mockNodeChatApiRequest },
-      user_jwt: 'jwt-happy',
+      sig: 'hmac-happy-sig',
     };
     await runAiStreamWorkloadForTests(deps, event);
     const firstCall: unknown = fetchMock.mock.calls[0];
@@ -316,9 +283,6 @@ describe('ai-stream workload', () => {
       throw new Error('expected RequestInit');
     }
     const init: RequestInit = initValue;
-    const authorization: string | undefined =
-      getAuthorizationFromRequestInit(init);
-    expect(authorization).toBe('Bearer jwt-happy');
     const bodyValue: unknown = init.body;
     if (typeof bodyValue !== 'string') {
       throw new Error('expected string body');
@@ -329,6 +293,7 @@ describe('ai-stream workload', () => {
       throw new Error('invalid payload');
     }
     expect(parsed.job_id).toBe('job-happy');
+    expect(parsed.sig).toBe('hmac-happy-sig');
     expect(parsed.assembled_content).toBe('mock openai response');
     expect(parsed.token_usage).not.toBe(null);
     expect(parsed.finish_reason).toBe('stop');
@@ -375,7 +340,7 @@ describe('ai-stream workload', () => {
       api_identifier: 'openai-gpt-4o',
       model_config: { ...mockNodeModelConfig },
       chat_api_request: { ...mockNodeChatApiRequest },
-      user_jwt: 'jwt-timeout',
+      sig: 'hmac-timeout-sig',
     };
     await runAiStreamWorkloadForTests(deps, event);
     const firstCall: unknown = fetchMock.mock.calls[0];
@@ -437,7 +402,7 @@ describe('ai-stream workload', () => {
       api_identifier: 'openai-gpt-4o',
       model_config: { ...mockNodeModelConfig },
       chat_api_request: { ...mockNodeChatApiRequest },
-      user_jwt: 'jwt-nodone',
+      sig: 'hmac-nodone-sig',
     };
     await runAiStreamWorkloadForTests(deps, event);
     const firstCall: unknown = fetchMock.mock.calls[0];

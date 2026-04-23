@@ -334,4 +334,20 @@ describe('createJobContext Factory and Slicers', () => {
       assertEquals(result.enqueueRenderJob, boundEnqueueRenderJob);
     });
   });
+
+  describe('createJobContext computeJobSig', () => {
+    it('copies computeJobSig from params onto root IJobContext', () => {
+      const params = createMockJobContextParams();
+      const result = createJobContext(params);
+
+      assertEquals(result.computeJobSig, params.computeJobSig);
+    });
+
+    it('computeJobSig is present and callable on the IJobContext result', () => {
+      const params = createMockJobContextParams();
+      const result = createJobContext(params);
+
+      assertEquals(typeof result.computeJobSig, 'function');
+    });
+  });
 });

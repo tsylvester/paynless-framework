@@ -240,6 +240,7 @@ export function createMockJobContextParams(overrides?: JobContextParamsOverrides
         buildUploadContext: buildUploadContext,
         gatherArtifacts: boundGatherArtifacts,
         sanitizeJsonContent: sanitizeJsonContent,
+        computeJobSig: async (_jobId: string, _userId: string, _createdAt: string): Promise<string> => 'mock-job-sig',
     };
 
     if (!overrides) {
@@ -292,6 +293,7 @@ export function buildIJobContext(): IJobContext {
         prepareModelJob: params.prepareModelJob,
         debitTokens: params.debitTokens,
         sanitizeJsonContent: params.sanitizeJsonContent,
+        computeJobSig: params.computeJobSig,
     };
 }
 

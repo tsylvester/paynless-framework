@@ -322,7 +322,7 @@ Deno.test(
 );
 
 Deno.test(
-    "Type Guard: isAiStreamEventData returns true for valid object with all five fields",
+    "Type Guard: isAiStreamEventData returns true for valid object with sig field",
     () => {
         assertEquals(
             isAiStreamEventData({
@@ -330,7 +330,7 @@ Deno.test(
                 api_identifier: "api-id",
                 model_config: { api_identifier: "api-id" },
                 chat_api_request: { message: "m", providerId: "p", promptId: "q" },
-                user_jwt: "jwt-token",
+                sig: "mock-sig",
             }),
             true,
         );
@@ -398,7 +398,7 @@ Deno.test(
 );
 
 Deno.test(
-    "Type Guard: isAiStreamEventData returns false when user_jwt is missing",
+    "Type Guard: isAiStreamEventData returns false when sig is missing",
     () => {
         assertEquals(
             isAiStreamEventData({
@@ -493,5 +493,54 @@ Deno.test(
     () => {
         assertEquals(isAiStreamEventBody(null), false);
         assertEquals(isAiStreamEventBody(0), false);
+    },
+);
+
+Deno.test(
+    "Type Guard: isEnqueueModelCallDeps returns false when computeJobSig is missing",
+    () => {
+        const full: EnqueueModelCallDeps = createMockEnqueueModelCallDeps();
+        assertEquals(
+            isEnqueueModelCallDeps({
+                logger: full.logger,
+                netlifyQueueUrl: full.netlifyQueueUrl,
+                netlifyApiKey: full.netlifyApiKey,
+                apiKeyForProvider: full.apiKeyForProvider,
+            }),
+            false,
+        );
+    },
+);
+
+Deno.test(
+    "Type Guard: isEnqueueModelCallDeps returns false when computeJobSig is not a function",
+    () => {
+        const full: EnqueueModelCallDeps = createMockEnqueueModelCallDeps();
+        assertEquals(
+            isEnqueueModelCallDeps({
+                logger: full.logger,
+                netlifyQueueUrl: full.netlifyQueueUrl,
+                netlifyApiKey: full.netlifyApiKey,
+                apiKeyForProvider: full.apiKeyForProvider,
+                computeJobSig: 42,
+            }),
+            false,
+        );
+    },
+);
+
+Deno.test(
+    "Type Guard: isAiStreamEventData returns false when user_jwt is present instead of sig",
+    () => {
+        assertEquals(
+            isAiStreamEventData({
+                job_id: "job-1",
+                api_identifier: "api-id",
+                model_config: { api_identifier: "api-id" },
+                chat_api_request: { message: "m", providerId: "p", promptId: "q" },
+                user_jwt: "jwt-token",
+            }),
+            false,
+        );
     },
 );

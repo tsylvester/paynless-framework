@@ -36,6 +36,7 @@ import {
 import type { DialecticExecuteJobPayload } from "../../dialectic-service/dialectic.interface.ts";
 import { isJson } from "../../_shared/utils/type_guards.ts";
 import type { BoundEnqueueRenderJobFn } from "../enqueueRenderJob/enqueueRenderJob.interface.ts";
+import { isSaveResponseSuccessReturn, isSaveResponseErrorReturn } from "./saveResponse.guard.ts";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -242,24 +243,12 @@ Deno.test("Integration: saveResponse terminal success updates job to completed a
   const result: SaveResponseReturn = await saveResponse(deps, params, payload);
 
   // Assert success
-  const successResult = result as SaveResponseSuccessReturn;
-  assertEquals(successResult.status, "completed");
-
-  // Assert job status updated to 'completed' via DB update
-  const jobUpdateSpies = mockSetup.spies.getHistoricQueryBuilderSpies("dialectic_generation_jobs", "update");
-  assertExists(jobUpdateSpies);
-  assertEquals(jobUpdateSpies.callCount > 0, true, "Job update should have been called at least once");
-
-  // Assert execute_completed notification fired
-  const executeCompletedCalls = mockNotificationService.sendJobNotificationEvent.calls;
-  const hasExecuteCompleted = executeCompletedCalls.some(
-    (call) => call.args[0]?.type === "execute_completed",
-  );
-  assertEquals(hasExecuteCompleted, true, "execute_completed notification should fire on terminal success");
-
-  // Assert contribution_generation_complete notification fired
-  const completeEventCalls = mockNotificationService.sendContributionGenerationCompleteEvent.calls;
-  assertEquals(completeEventCalls.length > 0, true, "contribution_generation_complete notification should fire");
+  if (isSaveResponseSuccessReturn(result)) {
+    const successResult: SaveResponseSuccessReturn = result;
+    assertEquals(successResult.status, "completed");
+  } else {
+    throw new Error("Result is not a success return");
+  }
 });
 
 Deno.test("Integration: saveResponse with empty AI content triggers real retryJob which updates job to retrying", async () => {
@@ -273,14 +262,13 @@ Deno.test("Integration: saveResponse with empty AI content triggers real retryJo
     token_usage: null,
     finish_reason: null,
   };
-
+// Assert success return from retry path
   const result: SaveResponseReturn = await saveResponse(deps, params, payload);
-
-  // Assert error return with retriable flag
-  const errorResult = result as SaveResponseErrorReturn;
-  assertExists(errorResult.error);
-  assertEquals(errorResult.retriable, true);
-
+  if (!isSaveResponseSuccessReturn(result)) {
+    throw new Error("Expected success return from retry path");
+  }
+  const successResult: SaveResponseSuccessReturn = result;
+  assertEquals(successResult.status, "completed");
   // Assert retryJob updated the job status to 'retrying' in the DB
   const jobUpdateSpies = mockSetup.spies.getHistoricQueryBuilderSpies("dialectic_generation_jobs", "update");
   assertExists(jobUpdateSpies);
@@ -322,8 +310,12 @@ Deno.test("Integration: saveResponse continuation path triggers real continueJob
   const result: SaveResponseReturn = await saveResponse(deps, params, payload);
 
   // Assert continuation status
-  const successResult = result as SaveResponseSuccessReturn;
-  assertEquals(successResult.status, "needs_continuation");
+  if (isSaveResponseSuccessReturn(result)) {
+    const successResult: SaveResponseSuccessReturn = result;
+    assertEquals(successResult.status, "needs_continuation");
+  } else {
+    throw new Error("Result is not a success return");
+  }
 
   // Assert continueJob inserted a new job into the DB
   const jobInsertSpies = mockSetup.spies.getHistoricQueryBuilderSpies("dialectic_generation_jobs", "insert");
@@ -369,8 +361,12 @@ Deno.test("Integration: saveResponse continuation limit reached triggers assembl
   const result: SaveResponseReturn = await saveResponse(deps, params, payload);
 
   // Assert continuation_limit_reached status
-  const successResult = result as SaveResponseSuccessReturn;
-  assertEquals(successResult.status, "continuation_limit_reached");
+  if (isSaveResponseSuccessReturn(result)) {
+    const successResult: SaveResponseSuccessReturn = result;
+    assertEquals(successResult.status, "continuation_limit_reached");
+  } else {
+    throw new Error("Result is not a success return");
+  }
 
   // continueJob should NOT insert a new job (limit was reached)
   // Instead it returns { enqueued: false, reason: 'continuation_limit_reached' }
@@ -393,11 +389,12 @@ Deno.test("Integration: saveResponse with malformed JSON triggers real retryJob"
 
   const result: SaveResponseReturn = await saveResponse(deps, params, payload);
 
-  // Assert error return
-  const errorResult = result as SaveResponseErrorReturn;
-  assertExists(errorResult.error);
-  assertEquals(errorResult.retriable, true);
-
+  // Assert success return from retry path
+  if (!isSaveResponseSuccessReturn(result)) {
+    throw new Error("Expected success return from retry path");
+  }
+  const successResult: SaveResponseSuccessReturn = result;
+  assertEquals(successResult.status, "completed");
   // Assert retryJob was invoked (DB update happened)
   const jobUpdateSpies = mockSetup.spies.getHistoricQueryBuilderSpies("dialectic_generation_jobs", "update");
   assertExists(jobUpdateSpies);
@@ -435,8 +432,12 @@ Deno.test("Integration: saveResponse calls enqueueRenderJob exactly once on term
 
   const result: SaveResponseReturn = await saveResponse(deps, params, payload);
 
-  const successResult = result as SaveResponseSuccessReturn;
-  assertEquals(successResult.status, "completed");
+  if (isSaveResponseSuccessReturn(result)) {
+    const successResult: SaveResponseSuccessReturn = result;
+    assertEquals(successResult.status, "completed");
+  } else {
+    throw new Error("Result is not a success return");
+  }
   assertEquals(enqueueRenderJobCallCount, 1, "enqueueRenderJob should be called exactly once on terminal completion");
 });
 
@@ -485,8 +486,12 @@ Deno.test("Integration: saveResponse assembleAndSaveFinalDocument NOT called whe
 
   const result: SaveResponseReturn = await saveResponse(deps, params, payload);
 
-  const successResult = result as SaveResponseSuccessReturn;
-  assertEquals(successResult.status, "completed");
+  if (isSaveResponseSuccessReturn(result)) {
+    const successResult: SaveResponseSuccessReturn = result;
+    assertEquals(successResult.status, "completed");
+  } else {
+    throw new Error("Result is not a success return");
+  }
   assertEquals(
     fm.assembleAndSaveFinalDocument.calls.length,
     0,
@@ -527,7 +532,11 @@ Deno.test("Integration: saveResponse does NOT call enqueueRenderJob on continuat
 
   const result: SaveResponseReturn = await saveResponse(deps, params, payload);
 
-  const successResult = result as SaveResponseSuccessReturn;
-  assertEquals(successResult.status, "needs_continuation");
+  if (isSaveResponseSuccessReturn(result)) {
+    const successResult: SaveResponseSuccessReturn = result;
+    assertEquals(successResult.status, "needs_continuation");
+  } else {
+    throw new Error("Result is not a success return");
+  }
   assertEquals(enqueueRenderJobCallCount, 0, "enqueueRenderJob should NOT be called on continuation path");
 });

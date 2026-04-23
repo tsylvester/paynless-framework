@@ -10,7 +10,7 @@ export interface AiStreamEvent {
   api_identifier: string;
   model_config: NodeModelConfig;
   chat_api_request: NodeChatApiRequest;
-  user_jwt: string;
+  sig: string;
 }
 
 export interface AiStreamPayload {
@@ -18,6 +18,7 @@ export interface AiStreamPayload {
   assembled_content: string;
   token_usage: NodeTokenUsage | null;
   finish_reason: string | null;
+  sig: string;
 }
 
 export type GetApiKeyFn = (apiIdentifier: string) => string;

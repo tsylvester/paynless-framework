@@ -7,12 +7,13 @@ import type {
   ILogger,
 } from '../../_shared/types.ts';
 import type { DialecticJobRow } from '../../dialectic-service/dialectic.interface.ts';
-
+import type { ComputeJobSig } from "../../_shared/utils/computeJobSig/computeJobSig.interface.ts";
 export interface EnqueueModelCallDeps {
   logger: ILogger;
   netlifyQueueUrl: string;
   netlifyApiKey: string;
   apiKeyForProvider: ApiKeyForProviderFn;
+  computeJobSig: ComputeJobSig;
 }
 
 export interface EnqueueModelCallParams {
@@ -46,7 +47,7 @@ export interface AiStreamEventData {
   api_identifier: string;
   model_config: AiModelExtendedConfig;
   chat_api_request: ChatApiRequest;
-  user_jwt: string;
+  sig: string;
 }
 
 export interface AiStreamEventBody {

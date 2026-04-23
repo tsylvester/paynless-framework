@@ -37,6 +37,8 @@ import { MockLogger } from '../../_shared/logger.mock.ts';
 import { createMockSupabaseClient } from '../../_shared/supabase.mock.ts';
 import { isRecord, isJson } from '../../_shared/utils/type-guards/type_guards.common.ts';
 import { getSortedCompressionCandidates } from '../../_shared/utils/vector_utils.ts';
+import { mockComputeJobSig } from '../../_shared/utils/computeJobSig/computeJobSig.mock.ts';
+import type { ComputeJobSig } from '../../_shared/utils/computeJobSig/computeJobSig.interface.ts';
 
 Deno.test('Integration: constructed context passes structural check against IJobContext and slicers build expected objects', () => {
   const params = createMockJobContextParams();
@@ -189,6 +191,7 @@ Deno.test('Integration: Phase 1 chain — ctx.prepareModelJob wired through crea
           netlifyQueueUrl,
           netlifyApiKey,
           apiKeyForProvider,
+          computeJobSig: mockComputeJobSig,
         },
         params,
         payload,

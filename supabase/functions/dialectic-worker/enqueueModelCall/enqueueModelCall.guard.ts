@@ -20,6 +20,7 @@ export function isEnqueueModelCallDeps(
     "netlifyQueueUrl",
     "netlifyApiKey",
     "apiKeyForProvider",
+    "computeJobSig",
   ];
   for (let i = 0; i < keys.length; i++) {
     const key: keyof EnqueueModelCallDeps = keys[i];
@@ -37,6 +38,9 @@ export function isEnqueueModelCallDeps(
     return false;
   }
   if (typeof v.apiKeyForProvider !== "function") {
+    return false;
+  }
+  if (typeof v.computeJobSig !== "function") {
     return false;
   }
   return true;
@@ -143,7 +147,7 @@ export function isAiStreamEventData(v: unknown): v is AiStreamEventData {
   if (!("chat_api_request" in v) || !isRecord(v.chat_api_request)) {
     return false;
   }
-  if (!("user_jwt" in v) || typeof v.user_jwt !== "string") {
+  if (!("sig" in v) || typeof v.sig !== "string") {
     return false;
   }
   return true;

@@ -6,7 +6,7 @@ import type {
 } from './ai-stream.interface.ts';
 
 describe('ai-stream.interface contract', () => {
-  it('accepts AiStreamEvent with all required fields', () => {
+  it('accepts AiStreamEvent with all required fields including sig', () => {
     const event: AiStreamEvent = {
       job_id: 'job-1',
       api_identifier: 'openai-gpt-4o',
@@ -20,16 +20,16 @@ describe('ai-stream.interface contract', () => {
         providerId: 'prov-1',
         promptId: 'prompt-1',
       },
-      user_jwt: 'jwt-token',
+      sig: 'hmac-sig-value',
     };
     expect(typeof event.job_id).toBe('string');
     expect(typeof event.api_identifier).toBe('string');
     expect(typeof event.model_config).toBe('object');
     expect(typeof event.chat_api_request).toBe('object');
-    expect(typeof event.user_jwt).toBe('string');
+    expect(typeof event.sig).toBe('string');
   });
 
-  it('accepts AiStreamPayload with assembled_content and token_usage and finish_reason', () => {
+  it('accepts AiStreamPayload with assembled_content, token_usage, finish_reason, and sig', () => {
     const payload: AiStreamPayload = {
       job_id: 'job-1',
       assembled_content: 'assembled assistant text',
@@ -39,6 +39,7 @@ describe('ai-stream.interface contract', () => {
         total_tokens: 30,
       },
       finish_reason: 'stop',
+      sig: 'hmac-sig-value',
     };
     expect(typeof payload.job_id).toBe('string');
     expect(typeof payload.assembled_content).toBe('string');
@@ -47,6 +48,7 @@ describe('ai-stream.interface contract', () => {
     expect(typeof payload.token_usage?.prompt_tokens).toBe('number');
     expect(typeof payload.token_usage?.completion_tokens).toBe('number');
     expect(typeof payload.token_usage?.total_tokens).toBe('number');
+    expect(typeof payload.sig).toBe('string');
   });
 
   it('accepts AiStreamPayload with token_usage null and finish_reason null', () => {
@@ -55,9 +57,11 @@ describe('ai-stream.interface contract', () => {
       assembled_content: '',
       token_usage: null,
       finish_reason: null,
+      sig: 'hmac-sig-value',
     };
     expect(payload.token_usage).toBe(null);
     expect(payload.finish_reason).toBe(null);
+    expect(typeof payload.sig).toBe('string');
   });
 
   it('accepts AiStreamDeps with providerMap, saveResponseUrl, and getApiKey', () => {

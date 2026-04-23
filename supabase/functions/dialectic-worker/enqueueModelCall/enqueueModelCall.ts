@@ -44,6 +44,25 @@ export const enqueueModelCall: EnqueueModelCallFn = async (
     };
   }
 
+  if (!params.job.user_id || typeof params.job.user_id !== 'string') {
+    deps.logger.error('enqueueModelCall: job.user_id is missing or not a string', { user_id: params.job.user_id });
+    return {
+      error: new Error('job.user_id is required to compute the job signature'),
+      retriable: false,
+    };
+  }
+
+  let sig: string;
+  try {
+    sig = await deps.computeJobSig(params.job.id, params.job.user_id, params.job.created_at);
+  } catch (err: unknown) {
+    deps.logger.error('enqueueModelCall: computeJobSig threw', { error: err });
+    return {
+      error: err instanceof Error ? err : new Error(String(err)),
+      retriable: false,
+    };
+  }
+
   const { error: dbError } = await params.dbClient
     .from('dialectic_generation_jobs')
     .update({ status: 'queued' })
@@ -62,7 +81,7 @@ export const enqueueModelCall: EnqueueModelCallFn = async (
     api_identifier: params.providerRow.api_identifier,
     model_config: extendedConfig,
     chat_api_request: payload.chatApiRequest,
-    user_jwt: params.userAuthToken,
+    sig,
   };
 
   const eventBody: AiStreamEventBody = {

@@ -385,6 +385,20 @@ describe('JobContexts Type Guards', () => {
         });
     });
 
+    describe('isIJobContext computeJobSig', () => {
+        it('returns false when computeJobSig is missing', () => {
+            const rootContext = buildIJobContext();
+            const { computeJobSig, ...contextMissing } = rootContext;
+            assertEquals(isIJobContext(contextMissing), false);
+        });
+
+        it('returns false when computeJobSig is not a function', () => {
+            const rootContext = buildIJobContext();
+            const context = { ...rootContext, computeJobSig: 'not-a-function' };
+            assertEquals(isIJobContext(context), false);
+        });
+    });
+
     describe('isISaveResponseContext', () => {
         it('returns true for valid ISaveResponseContext with enqueueRenderJob and debitTokens as functions', () => {
             const context = {
