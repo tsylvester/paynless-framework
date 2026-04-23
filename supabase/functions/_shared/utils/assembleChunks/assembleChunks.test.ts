@@ -1,5 +1,8 @@
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { JsonSanitizationResult } from "../../types/jsonSanitizer.interface.ts";
+import {
+    JsonSanitizationResult,
+    SanitizeJsonContentFn,
+} from "../jsonSanitizer/jsonSanitizer.interface.ts";
 import {
     AssembleChunksDeps,
     AssembleChunksParams,
@@ -26,9 +29,9 @@ function makeSanitizeResult(
     };
 }
 
-function passthroughSanitize(rawContent: string): JsonSanitizationResult {
+const passthroughSanitize: SanitizeJsonContentFn = (rawContent: string) => {
     return makeSanitizeResult(rawContent, rawContent.length);
-}
+};
 
 const emptyParams: AssembleChunksParams = {};
 
@@ -105,10 +108,11 @@ Deno.test(
 Deno.test(
     "single raw (unparseable) chunk is sanitized then parsed — `mergedObject` contains the sanitized result",
     async () => {
+        const sanitizeJsonContent: SanitizeJsonContentFn = (_raw: string) => {
+            return makeSanitizeResult('{"fromRaw":true}', _raw.length);
+        };
         const deps: AssembleChunksDeps = {
-            sanitizeJsonContent: (_raw: string): JsonSanitizationResult => {
-                return makeSanitizeResult('{"fromRaw":true}', _raw.length);
-            },
+            sanitizeJsonContent,
             isRecord,
         };
         const r = await expectAssembleSuccess(deps, {
@@ -121,11 +125,12 @@ Deno.test(
 Deno.test(
     "adjacent raw chunks are grouped, concatenated, sanitized as one string, then parsed",
     async () => {
+        const sanitizeJsonContent: SanitizeJsonContentFn = (raw: string) => {
+            assertEquals(raw, '{"mid":true}');
+            return makeSanitizeResult(raw, raw.length);
+        };
         const deps: AssembleChunksDeps = {
-            sanitizeJsonContent: (raw: string): JsonSanitizationResult => {
-                assertEquals(raw, '{"mid":true}');
-                return makeSanitizeResult(raw, raw.length);
-            },
+            sanitizeJsonContent,
             isRecord,
         };
         const r = await expectAssembleSuccess(deps, {
@@ -138,13 +143,14 @@ Deno.test(
 Deno.test(
     "mixed chain — raw fragments followed by parseable chunk — raw group is sanitized, then merged with parseable chunk in order",
     async () => {
+        const sanitizeJsonContent: SanitizeJsonContentFn = (raw: string) => {
+            if (raw === "RAW") {
+                return makeSanitizeResult('{"b":1}', raw.length);
+            }
+            return makeSanitizeResult(raw, raw.length);
+        };
         const deps: AssembleChunksDeps = {
-            sanitizeJsonContent: (raw: string): JsonSanitizationResult => {
-                if (raw === "RAW") {
-                    return makeSanitizeResult('{"b":1}', raw.length);
-                }
-                return makeSanitizeResult(raw, raw.length);
-            },
+            sanitizeJsonContent,
             isRecord,
         };
         const r = await expectAssembleSuccess(deps, {
@@ -157,13 +163,14 @@ Deno.test(
 Deno.test(
     "mixed chain — parseable chunk followed by raw fragments followed by parseable chunk — three groups merged in order",
     async () => {
-        const deps: AssembleChunksDeps = {
-            sanitizeJsonContent: (raw: string): JsonSanitizationResult => {
-                if (raw === '{"mid":true}') {
-                    return makeSanitizeResult(raw, raw.length);
-                }
+        const sanitizeJsonContent: SanitizeJsonContentFn = (raw: string) => {
+            if (raw === '{"mid":true}') {
                 return makeSanitizeResult(raw, raw.length);
-            },
+            }
+            return makeSanitizeResult(raw, raw.length);
+        };
+        const deps: AssembleChunksDeps = {
+            sanitizeJsonContent,
             isRecord,
         };
         const r = await expectAssembleSuccess(deps, {
@@ -208,10 +215,11 @@ Deno.test(
 Deno.test(
     "Sanitization of a raw group fails to produce parseable JSON — AssembleChunksError with failedAtStep sanitization",
     async () => {
+        const sanitizeJsonContent: SanitizeJsonContentFn = (_raw: string) => {
+            return makeSanitizeResult("<<<not-json>>>", _raw.length);
+        };
         const deps: AssembleChunksDeps = {
-            sanitizeJsonContent: (_raw: string): JsonSanitizationResult => {
-                return makeSanitizeResult("<<<not-json>>>", _raw.length);
-            },
+            sanitizeJsonContent,
             isRecord,
         };
         const r = await expectAssembleError(deps, {
@@ -321,16 +329,17 @@ Deno.test(
 Deno.test(
     "raw group then parseable — same-key strings concatenate across sanitized raw and following chunk",
     async () => {
+        const sanitizeJsonContent: SanitizeJsonContentFn = (raw: string) => {
+            if (raw === "RAW_PREFIX") {
+                return makeSanitizeResult(
+                    '{"body":"prefix"}',
+                    raw.length,
+                );
+            }
+            return makeSanitizeResult(raw, raw.length);
+        };
         const deps: AssembleChunksDeps = {
-            sanitizeJsonContent: (raw: string): JsonSanitizationResult => {
-                if (raw === "RAW_PREFIX") {
-                    return makeSanitizeResult(
-                        '{"body":"prefix"}',
-                        raw.length,
-                    );
-                }
-                return makeSanitizeResult(raw, raw.length);
-            },
+            sanitizeJsonContent,
             isRecord,
         };
         const r = await expectAssembleSuccess(deps, {

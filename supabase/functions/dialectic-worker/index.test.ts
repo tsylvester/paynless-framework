@@ -2,7 +2,8 @@ import {
     assertEquals, 
     assertExists, 
     assert, 
-    assertStrictEquals 
+    assertStrictEquals,
+    assertRejects,
 } from 'https://deno.land/std@0.170.0/testing/asserts.ts';
 import { spy, stub } from 'jsr:@std/testing@0.225.1/mock';
 import { 
@@ -13,7 +14,7 @@ import {
 import { createMockSupabaseClient, type MockQueryBuilderState } from '../_shared/supabase.mock.ts';
 import { 
     handleJob, 
-    createDialecticWorkerDeps 
+    createDialecticWorkerDeps,
 } from './index.ts';
 import { MockLogger } from '../_shared/logger.mock.ts';
 import { 
@@ -50,6 +51,17 @@ import {
     PrepareModelJobReturn,
 } from './prepareModelJob/prepareModelJob.interface.ts';
 import { getSortedCompressionCandidates } from '../_shared/utils/vector_utils.ts';
+import {
+    SaveResponseDeps,
+    SaveResponseParams,
+    SaveResponsePayload,
+    SaveResponseRequestBody,
+    SaveResponseReturn,
+} from './saveResponse/saveResponse.interface.ts';
+import {
+    createMockSaveResponseSuccessReturn,
+    createMockSaveResponseErrorReturn,
+} from './saveResponse/saveResponse.mock.ts';
 type MockJob = Database['public']['Tables']['dialectic_generation_jobs']['Row'];
 
 // Global mock objects
@@ -563,75 +575,102 @@ Deno.test('handleJob - validates payload correctly and extracts user info', asyn
 
 // ---  worker deps factory exists and injects wallet service for compression path ---
 Deno.test('createDialecticWorkerDeps: provides wallet and compression deps', async () => {
-    const deps = await createDialecticWorkerDeps(mockSupabaseClientDeps.client as unknown as SupabaseClient<Database>);
-    
-    // Test that wallet and compression deps are provided
-    assertExists(deps.ragService, 'RAG service should be provided');
-    assertExists(deps.indexingService, 'Indexing service should be provided');
-    assertExists(deps.embeddingClient, 'Embedding client should be provided');
-    assertExists(deps.promptAssembler, 'Prompt assembler should be provided');
-    assertEquals(typeof deps.countTokens, 'function');
-    assertEquals(typeof deps.prepareModelJob, 'function');
+    Deno.env.set('NETLIFY_QUEUE_URL', 'https://mock-netlify-queue');
+    Deno.env.set('AWL_API_KEY', 'mock-awl-key');
+    Deno.env.set('HMAC_SECRET', 'mock-hmac-secret-32-chars-xxxxxxx');
+    try {
+        const deps = await createDialecticWorkerDeps(mockSupabaseClientDeps.client as unknown as SupabaseClient<Database>);
+        
+        // Test that wallet and compression deps are provided
+        assertExists(deps.ragService, 'RAG service should be provided');
+        assertExists(deps.indexingService, 'Indexing service should be provided');
+        assertExists(deps.embeddingClient, 'Embedding client should be provided');
+        assertExists(deps.promptAssembler, 'Prompt assembler should be provided');
+        assertEquals(typeof deps.countTokens, 'function');
+        assertEquals(typeof deps.prepareModelJob, 'function');
 
-    // Wallet services must be injected
-    assertExists(deps.userTokenWalletService, 'User token wallet service should be present');
-    assertExists(deps.adminTokenWalletService, 'Admin token wallet service should be present');
+        // Wallet services must be injected
+        assertExists(deps.userTokenWalletService, 'User token wallet service should be present');
+        assertExists(deps.adminTokenWalletService, 'Admin token wallet service should be present');
+    } finally {
+        Deno.env.delete('NETLIFY_QUEUE_URL');
+        Deno.env.delete('AWL_API_KEY');
+        Deno.env.delete('HMAC_SECRET');
+    }
 });
 
 // Worker composition root must bind the same `_shared/utils` implementations as `createMockJobContextParams`
 // so execute path tests and production share one wiring contract.
-Deno.test('createDialecticWorkerDeps: binds EMCAS pure utilities to production implementations', async () => {
-    const deps = await createDialecticWorkerDeps(mockSupabaseClientDeps.client as unknown as SupabaseClient<Database>);
+Deno.test('createDialecticWorkerDeps: binds pure utility deps to production implementations', async () => {
+    Deno.env.set('NETLIFY_QUEUE_URL', 'https://mock-netlify-queue');
+    Deno.env.set('AWL_API_KEY', 'mock-awl-key');
+    Deno.env.set('HMAC_SECRET', 'mock-hmac-secret-32-chars-xxxxxxx');
+    try {
+        const deps = await createDialecticWorkerDeps(mockSupabaseClientDeps.client as unknown as SupabaseClient<Database>);
 
-    assertStrictEquals(deps.pickLatest, pickLatest);
-    assertStrictEquals(deps.applyInputsRequiredScope, applyInputsRequiredScope);
-    assertStrictEquals(deps.validateWalletBalance, validateWalletBalance);
-    assertStrictEquals(deps.validateModelCostRates, validateModelCostRates);
-    assertStrictEquals(deps.resolveFinishReason, resolveFinishReason);
-    assertStrictEquals(deps.isIntermediateChunk, isIntermediateChunk);
-    assertStrictEquals(deps.determineContinuation, determineContinuation);
-    assertStrictEquals(deps.buildUploadContext, buildUploadContext);
+        assertStrictEquals(deps.pickLatest, pickLatest);
+        assertStrictEquals(deps.applyInputsRequiredScope, applyInputsRequiredScope);
+        assertStrictEquals(deps.validateWalletBalance, validateWalletBalance);
+        assertStrictEquals(deps.validateModelCostRates, validateModelCostRates);
+        assertStrictEquals(deps.resolveFinishReason, resolveFinishReason);
+        assertStrictEquals(deps.isIntermediateChunk, isIntermediateChunk);
+        assertStrictEquals(deps.determineContinuation, determineContinuation);
+        assertStrictEquals(deps.buildUploadContext, buildUploadContext);
+    } finally {
+        Deno.env.delete('NETLIFY_QUEUE_URL');
+        Deno.env.delete('AWL_API_KEY');
+        Deno.env.delete('HMAC_SECRET');
+    }
 });
 
 Deno.test('createDialecticWorkerDeps: constructs DummyAdapter embedding client when default embedding provider is dummy', async () => {
-    const mockSupabaseClientDummy = createMockSupabaseClient(undefined, {
-        genericMockResults: {
-            'ai_providers': {
-                select: { 
-                    data: [{
-                        id: 'prov-dummy-embed-1',
-                        api_identifier: 'dummy-model-v1',
-                        name: 'Dummy Embedding',
-                        description: 'Dummy embedding model',
-                        is_active: true,
-                        provider: 'dummy',
-                        config: {
+    Deno.env.set('NETLIFY_QUEUE_URL', 'https://mock-netlify-queue');
+    Deno.env.set('AWL_API_KEY', 'mock-awl-key');
+    try {
+        const mockSupabaseClientDummy = createMockSupabaseClient(undefined, {
+            genericMockResults: {
+                'ai_providers': {
+                    select: { 
+                        data: [{
+                            id: 'prov-dummy-embed-1',
+                            api_identifier: 'dummy-model-v1',
+                            name: 'Dummy Embedding',
+                            description: 'Dummy embedding model',
+                            is_active: true,
+                            provider: 'dummy',
+                            config: {
         api_identifier: 'dummy-model-v1',
         input_token_cost_rate: 1,
         output_token_cost_rate: 1,
         tokenization_strategy: { type: 'tiktoken', tiktoken_encoding_name: 'cl100k_base' },
         context_window_tokens: 4096,
         hard_cap_output_tokens: 4096,
-                        },
+                            },
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
         is_default_embedding: true,
         is_enabled: true,
-                    }], 
-                    error: null 
+                        }], 
+                        error: null 
+                    }
                 }
             }
-        }
-    });
+        });
 
-    const deps = await createDialecticWorkerDeps(mockSupabaseClientDummy.client as unknown as SupabaseClient<Database>);
-    
-    assertExists(deps.embeddingClient, 'embeddingClient should be constructed');
-    
-    const result = await deps.embeddingClient.getEmbedding('hello world');
-    assertExists(result.embedding, 'embedding should be returned');
-    assert(Array.isArray(result.embedding) && result.embedding.length === 3072, 'embedding should be 3072 dimensions');
-    assert(typeof result.usage.total_tokens === 'number' && result.usage.total_tokens > 0, 'usage should contain valid token count');
+        Deno.env.set('HMAC_SECRET', 'mock-hmac-secret-32-chars-xxxxxxx');
+        const deps = await createDialecticWorkerDeps(mockSupabaseClientDummy.client as unknown as SupabaseClient<Database>);
+
+        assertExists(deps.embeddingClient, 'embeddingClient should be constructed');
+
+        const result = await deps.embeddingClient.getEmbedding('hello world');
+        assertExists(result.embedding, 'embedding should be returned');
+        assert(Array.isArray(result.embedding) && result.embedding.length === 3072, 'embedding should be 3072 dimensions');
+        assert(typeof result.usage.total_tokens === 'number' && result.usage.total_tokens > 0, 'usage should contain valid token count');
+    } finally {
+        Deno.env.delete('NETLIFY_QUEUE_URL');
+        Deno.env.delete('AWL_API_KEY');
+        Deno.env.delete('HMAC_SECRET');
+    }
 });
 
 // When test mode routes factory to dummy, assert factory passes selected model config verbatim
@@ -702,6 +741,9 @@ Deno.test('createDialecticWorkerDeps: constructs OpenAI embedding client when de
         }
     });
 
+    Deno.env.set('NETLIFY_QUEUE_URL', 'https://mock-netlify-queue');
+    Deno.env.set('AWL_API_KEY', 'mock-awl-key');
+    Deno.env.set('HMAC_SECRET', 'mock-hmac-secret-32-chars-xxxxxxx');
     const getEmbeddingStub = stub(OpenAiAdapter.prototype, 'getEmbedding', async () => ({
         embedding: [0.1, 0.2, 0.3],
         usage: { prompt_tokens: 3, total_tokens: 3 },
@@ -718,6 +760,9 @@ Deno.test('createDialecticWorkerDeps: constructs OpenAI embedding client when de
         assertEquals(getEmbeddingStub.calls.length, 1, 'OpenAiAdapter getEmbedding should be called');
     } finally {
         getEmbeddingStub.restore();
+        Deno.env.delete('NETLIFY_QUEUE_URL');
+        Deno.env.delete('AWL_API_KEY');
+        Deno.env.delete('HMAC_SECRET');
     }
 });
 
@@ -943,8 +988,17 @@ Deno.test('handleJob - RENDER routes via provided processors and propagates args
 });
 
 Deno.test('createDialecticWorkerDeps: returns IJobContext including findSourceDocuments', async () => {
-    const deps = await createDialecticWorkerDeps(mockSupabaseClientDeps.client as unknown as SupabaseClient<Database>);
-    assertEquals(typeof Reflect.get(deps, 'findSourceDocuments'), 'function');
+    Deno.env.set('NETLIFY_QUEUE_URL', 'https://mock-netlify-queue');
+    Deno.env.set('AWL_API_KEY', 'mock-awl-key');
+    Deno.env.set('HMAC_SECRET', 'mock-hmac-secret-32-chars-xxxxxxx');
+    try {
+        const deps = await createDialecticWorkerDeps(mockSupabaseClientDeps.client as unknown as SupabaseClient<Database>);
+        assertEquals(typeof Reflect.get(deps, 'findSourceDocuments'), 'function');
+    } finally {
+        Deno.env.delete('NETLIFY_QUEUE_URL');
+        Deno.env.delete('AWL_API_KEY');
+        Deno.env.delete('HMAC_SECRET');
+    }
 });
 
 Deno.test('handleJob - prevents concurrent processing of the same job atomically', async () => {
@@ -1503,4 +1557,76 @@ Deno.test('handleJob - EXECUTE job processing invokes prepareModelJob on root co
     );
 
     assertEquals(prepareModelJobSpy.calls.length, 1, 'prepareModelJob should be invoked once for EXECUTE path');
+});
+
+Deno.test('createDialecticWorkerDeps: throws when NETLIFY_QUEUE_URL is not set', async () => {
+    const savedNetlifyUrl = Deno.env.get('NETLIFY_QUEUE_URL');
+    Deno.env.delete('NETLIFY_QUEUE_URL');
+    Deno.env.set('AWL_API_KEY', 'mock-awl-key');
+    Deno.env.set('OPENAI_API_KEY', 'mock-openai-key');
+    try {
+        await assertRejects(
+            () => createDialecticWorkerDeps(mockSupabaseClientDeps.client as unknown as SupabaseClient<Database>),
+            Error,
+            'NETLIFY_QUEUE_URL',
+        );
+    } finally {
+        if (savedNetlifyUrl !== undefined) Deno.env.set('NETLIFY_QUEUE_URL', savedNetlifyUrl);
+        Deno.env.delete('AWL_API_KEY');
+        Deno.env.delete('OPENAI_API_KEY');
+    }
+});
+
+Deno.test('createDialecticWorkerDeps: throws when AWL_API_KEY is not set', async () => {
+    const savedAwlKey = Deno.env.get('AWL_API_KEY');
+    Deno.env.delete('AWL_API_KEY');
+    Deno.env.set('NETLIFY_QUEUE_URL', 'https://mock-netlify-queue');
+    Deno.env.set('OPENAI_API_KEY', 'mock-openai-key');
+    try {
+        await assertRejects(
+            () => createDialecticWorkerDeps(mockSupabaseClientDeps.client as unknown as SupabaseClient<Database>),
+            Error,
+            'AWL_API_KEY',
+        );
+    } finally {
+        if (savedAwlKey !== undefined) Deno.env.set('AWL_API_KEY', savedAwlKey);
+        Deno.env.delete('NETLIFY_QUEUE_URL');
+        Deno.env.delete('OPENAI_API_KEY');
+    }
+});
+
+Deno.test('createDialecticWorkerDeps: throws when HMAC_SECRET is not set', async () => {
+    const savedHmacSecret = Deno.env.get('HMAC_SECRET');
+    Deno.env.delete('HMAC_SECRET');
+    Deno.env.set('NETLIFY_QUEUE_URL', 'https://mock-netlify-queue');
+    Deno.env.set('AWL_API_KEY', 'mock-awl-key');
+    Deno.env.set('OPENAI_API_KEY', 'mock-openai-key');
+    try {
+        await assertRejects(
+            () => createDialecticWorkerDeps(mockSupabaseClientDeps.client as unknown as SupabaseClient<Database>),
+            Error,
+            'HMAC_SECRET',
+        );
+    } finally {
+        if (savedHmacSecret !== undefined) Deno.env.set('HMAC_SECRET', savedHmacSecret);
+        Deno.env.delete('NETLIFY_QUEUE_URL');
+        Deno.env.delete('AWL_API_KEY');
+        Deno.env.delete('OPENAI_API_KEY');
+    }
+});
+
+Deno.test('createDialecticWorkerDeps: wires computeJobSig as a function on the returned context', async () => {
+    Deno.env.set('NETLIFY_QUEUE_URL', 'https://mock-netlify-queue');
+    Deno.env.set('AWL_API_KEY', 'mock-awl-key');
+    Deno.env.set('HMAC_SECRET', 'mock-hmac-secret-32-chars-xxxxxxx');
+    Deno.env.set('OPENAI_API_KEY', 'mock-openai-key');
+    try {
+        const deps = await createDialecticWorkerDeps(mockSupabaseClientDeps.client as unknown as SupabaseClient<Database>);
+        assertEquals(typeof deps.computeJobSig, 'function');
+    } finally {
+        Deno.env.delete('NETLIFY_QUEUE_URL');
+        Deno.env.delete('AWL_API_KEY');
+        Deno.env.delete('HMAC_SECRET');
+        Deno.env.delete('OPENAI_API_KEY');
+    }
 });

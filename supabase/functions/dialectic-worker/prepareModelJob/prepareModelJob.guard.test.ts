@@ -7,19 +7,15 @@ import {
   isPrepareModelJobSuccessReturn,
 } from "./prepareModelJob.guard.ts";
 import {
-  buildBoundExecuteModelCallAndSaveStub,
-  buildBoundEnqueueRenderJobStub,
-  buildDialecticContributionRow,
-  buildPrepareModelJobDepsMissingCalculateAffordability,
-  buildPrepareModelJobDepsMissingEnqueueRenderJob,
-  buildPrepareModelJobDepsStructuralContract,
-  buildPrepareModelJobDepsWithInvalidCalculateAffordability,
-  buildPrepareModelJobParamsForGuard,
-  buildPrepareModelJobPayloadForGuard,
+  mockPrepareModelJobDeps,
+  mockPrepareModelJobParams,
+  mockPrepareModelJobPayload,
 } from "./prepareModelJob.mock.ts";
 
-Deno.test("isPrepareModelJobDeps accepts valid PrepareModelJobDeps from structural contract", () => {
-  assertEquals(isPrepareModelJobDeps(buildPrepareModelJobDepsStructuralContract()), true);
+// ── isPrepareModelJobDeps ─────────────────────────────────────────────────────
+
+Deno.test("isPrepareModelJobDeps accepts valid PrepareModelJobDeps with enqueueModelCall", () => {
+  assertEquals(isPrepareModelJobDeps(mockPrepareModelJobDeps()), true);
 });
 
 Deno.test("isPrepareModelJobDeps rejects null", () => {
@@ -31,84 +27,102 @@ Deno.test("isPrepareModelJobDeps rejects empty object", () => {
 });
 
 Deno.test("isPrepareModelJobDeps rejects object missing calculateAffordability", () => {
-  assertEquals(isPrepareModelJobDeps(buildPrepareModelJobDepsMissingCalculateAffordability()), false);
+  const base = mockPrepareModelJobDeps();
+  const { calculateAffordability: _, ...without } = base;
+  assertEquals(isPrepareModelJobDeps(without), false);
 });
 
 Deno.test("isPrepareModelJobDeps rejects object with non-function calculateAffordability", () => {
-  assertEquals(isPrepareModelJobDeps(buildPrepareModelJobDepsWithInvalidCalculateAffordability()), false);
+  const base = mockPrepareModelJobDeps();
+  assertEquals(isPrepareModelJobDeps({ ...base, calculateAffordability: "not-a-function" }), false);
 });
 
-Deno.test("isPrepareModelJobDeps rejects object missing enqueueRenderJob", () => {
-  assertEquals(isPrepareModelJobDeps(buildPrepareModelJobDepsMissingEnqueueRenderJob()), false);
+Deno.test("isPrepareModelJobDeps rejects object missing enqueueModelCall", () => {
+  const base = mockPrepareModelJobDeps();
+  const { enqueueModelCall: _, ...without } = base;
+  assertEquals(isPrepareModelJobDeps(without), false);
 });
 
-Deno.test("isPrepareModelJobDeps rejects partial deps", () => {
+Deno.test("isPrepareModelJobDeps rejects partial deps with only enqueueModelCall", () => {
   assertEquals(
-    isPrepareModelJobDeps({
-      executeModelCallAndSave: buildBoundExecuteModelCallAndSaveStub(),
-    }),
-    false,
-  );
-  assertEquals(
-    isPrepareModelJobDeps({
-      enqueueRenderJob: buildBoundEnqueueRenderJobStub(),
-    }),
+    isPrepareModelJobDeps({ enqueueModelCall: async () => ({ queued: true }) }),
     false,
   );
 });
 
-Deno.test("isPrepareModelJobParams accepts valid params", () => {
-  assertEquals(isPrepareModelJobParams(buildPrepareModelJobParamsForGuard()), true);
+// ── isPrepareModelJobParams ───────────────────────────────────────────────────
+
+Deno.test("isPrepareModelJobParams accepts valid PrepareModelJobParams", () => {
+  assertEquals(isPrepareModelJobParams(mockPrepareModelJobParams()), true);
 });
 
-Deno.test("isPrepareModelJobParams rejects null and empty object", () => {
+Deno.test("isPrepareModelJobParams rejects null", () => {
   assertEquals(isPrepareModelJobParams(null), false);
+});
+
+Deno.test("isPrepareModelJobParams rejects empty object", () => {
   assertEquals(isPrepareModelJobParams({}), false);
 });
 
-Deno.test("isPrepareModelJobPayload accepts valid payload", () => {
-  assertEquals(isPrepareModelJobPayload(buildPrepareModelJobPayloadForGuard()), true);
+// ── isPrepareModelJobPayload ──────────────────────────────────────────────────
+
+Deno.test("isPrepareModelJobPayload accepts valid PrepareModelJobPayload", () => {
+  assertEquals(isPrepareModelJobPayload(mockPrepareModelJobPayload()), true);
 });
 
-Deno.test("isPrepareModelJobPayload rejects null and empty object", () => {
+Deno.test("isPrepareModelJobPayload rejects null", () => {
   assertEquals(isPrepareModelJobPayload(null), false);
+});
+
+Deno.test("isPrepareModelJobPayload rejects empty object", () => {
   assertEquals(isPrepareModelJobPayload({}), false);
 });
 
-Deno.test("isPrepareModelJobSuccessReturn accepts valid success return", () => {
+// ── isPrepareModelJobSuccessReturn ────────────────────────────────────────────
+
+Deno.test("isPrepareModelJobSuccessReturn accepts { queued: true }", () => {
+  assertEquals(isPrepareModelJobSuccessReturn({ queued: true }), true);
+});
+
+Deno.test("isPrepareModelJobSuccessReturn rejects old success shape with contribution", () => {
   assertEquals(
     isPrepareModelJobSuccessReturn({
-      contribution: buildDialecticContributionRow(),
+      contribution: { id: "old-contrib-id" },
       needsContinuation: false,
-      renderJobId: "render-1",
+      renderJobId: null,
     }),
-    true,
+    false,
   );
 });
 
-Deno.test("isPrepareModelJobSuccessReturn rejects null and error-shaped object", () => {
+Deno.test("isPrepareModelJobSuccessReturn rejects null", () => {
   assertEquals(isPrepareModelJobSuccessReturn(null), false);
+});
+
+Deno.test("isPrepareModelJobSuccessReturn rejects error-shaped object", () => {
   assertEquals(
     isPrepareModelJobSuccessReturn({ error: new Error("x"), retriable: false }),
     false,
   );
 });
 
+// ── isPrepareModelJobErrorReturn ──────────────────────────────────────────────
+
 Deno.test("isPrepareModelJobErrorReturn accepts valid error return", () => {
   assertEquals(
-    isPrepareModelJobErrorReturn({
-      error: new Error("guard err"),
-      retriable: true,
-    }),
+    isPrepareModelJobErrorReturn({ error: new Error("guard-err"), retriable: true }),
     true,
   );
 });
 
-Deno.test("isPrepareModelJobErrorReturn rejects null and success-shaped object", () => {
+Deno.test("isPrepareModelJobErrorReturn rejects null", () => {
   assertEquals(isPrepareModelJobErrorReturn(null), false);
+});
+
+Deno.test("isPrepareModelJobErrorReturn rejects old success-shaped object", () => {
   assertEquals(
     isPrepareModelJobErrorReturn({
-      contribution: buildDialecticContributionRow(),
+      contribution: { id: "old-contrib-id" },
       needsContinuation: false,
       renderJobId: null,
     }),

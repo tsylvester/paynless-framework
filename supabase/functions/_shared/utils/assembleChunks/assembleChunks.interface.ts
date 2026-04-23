@@ -1,10 +1,10 @@
-import { JsonSanitizationResult } from "../../types/jsonSanitizer.interface.ts";
+import { SanitizeJsonContentFn } from "../jsonSanitizer/jsonSanitizer.interface.ts";
 
 /**
  * Injected dependencies for `assembleChunks`.
  */
 export interface AssembleChunksDeps {
-    sanitizeJsonContent: (rawContent: string) => JsonSanitizationResult;
+    sanitizeJsonContent: SanitizeJsonContentFn;
     isRecord: (item: unknown) => item is Record<PropertyKey, unknown>;
 }
 

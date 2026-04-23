@@ -22,7 +22,7 @@ function isFeedbackRow(record: unknown): record is DialecticFeedbackRow {
 }
 
 // Mapper functions to transform each row type into a valid SourceDocument.
-// Note: content is set to empty string because planners only need metadata, not content. Content is fetched later in executeModelCallAndSave.gatherArtifacts() when constructing the API call.
+// Note: content is set to empty string because planners only need metadata, not content. Content is fetched later in gatherArtifacts when constructing the API call.
 function mapContributionToSourceDocument(row: DialecticContributionRow): SourceDocument {
     const { document_relationships, ...rest } = row;
     const docRels = document_relationships && isDocumentRelationships(document_relationships) ? document_relationships : null;
@@ -33,7 +33,7 @@ function mapContributionToSourceDocument(row: DialecticContributionRow): SourceD
     return { ...rest, content: '', document_relationships: docRels, attempt_count: deconstructedPath.attemptCount, document_key: deconstructedPath.documentKey };
 }
 
-// Note: content is set to empty string because planners only need metadata, not content. Content is fetched later in executeModelCallAndSave.gatherArtifacts() when constructing the API call.
+// Note: content is set to empty string because planners only need metadata, not content. Content is fetched later in gatherArtifacts when constructing the API call.
 function mapResourceToSourceDocument(row: DialecticProjectResourceRow): SourceDocument {
     let documentRelationships: SourceDocument['document_relationships'] = null;
     
@@ -79,7 +79,7 @@ function mapResourceToSourceDocument(row: DialecticProjectResourceRow): SourceDo
     };
 }
 
-// Note: content is set to empty string because planners only need metadata, not content. Content is fetched later in executeModelCallAndSave.gatherArtifacts() when constructing the API call.
+// Note: content is set to empty string because planners only need metadata, not content. Content is fetched later in gatherArtifacts when constructing the API call.
 function mapFeedbackToSourceDocument(row: DialecticFeedbackRow): SourceDocument {
     return {
         id: row.id,

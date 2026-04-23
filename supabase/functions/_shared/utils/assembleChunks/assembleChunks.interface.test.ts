@@ -1,5 +1,5 @@
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { JsonSanitizationResult } from "../../types/jsonSanitizer.interface.ts";
+import { SanitizeJsonContentFn } from "../jsonSanitizer/jsonSanitizer.interface.ts";
 import {
     AssembleChunksDeps,
     AssembleChunksError,
@@ -9,29 +9,42 @@ import {
     AssembleChunksReturn,
     AssembleChunksSuccess,
 } from "./assembleChunks.interface.ts";
+import { createMockAssembleChunksDeps } from "./assembleChunks.mock.ts";
 import { isRecord } from "../type-guards/type_guards.common.ts";
 
 Deno.test(
-    "Contract: AssembleChunksDeps requires both sanitizeJsonContent and isRecord — neither optional",
+    "Contract: valid AssembleChunksDeps uses SanitizeJsonContentFn-shaped sanitizeJsonContent — both functions present",
     () => {
-        const sanitizeJsonContent = (
-            _rawContent: string,
-        ): JsonSanitizationResult => ({
-            sanitized: "{}",
-            wasSanitized: false,
-            wasStructurallyFixed: false,
-            hasDuplicateKeys: false,
-            duplicateKeysResolved: [],
-            originalLength: 0,
-        });
-        const deps: AssembleChunksDeps = {
-            sanitizeJsonContent,
-            isRecord,
-        };
+        const deps: AssembleChunksDeps = createMockAssembleChunksDeps();
+        const sanitizeJsonContent: SanitizeJsonContentFn = deps.sanitizeJsonContent;
         assertEquals("sanitizeJsonContent" in deps, true);
         assertEquals("isRecord" in deps, true);
         assertEquals(typeof deps.sanitizeJsonContent, "function");
         assertEquals(typeof deps.isRecord, "function");
+        const sample = sanitizeJsonContent("{}");
+        assertEquals(typeof sample.sanitized, "string");
+    },
+);
+
+Deno.test(
+    "Contract: object lacking sanitizeJsonContent is structurally incomplete for AssembleChunksDeps",
+    () => {
+        const incomplete: { isRecord: typeof isRecord } = { isRecord };
+        assertEquals("sanitizeJsonContent" in incomplete, false);
+    },
+);
+
+Deno.test(
+    "Contract: sanitizeJsonContent that is not a function is wrong shape for AssembleChunksDeps",
+    () => {
+        const wrongShape: {
+            sanitizeJsonContent: string;
+            isRecord: typeof isRecord;
+        } = {
+            sanitizeJsonContent: "not-a-function",
+            isRecord,
+        };
+        assertEquals(typeof wrongShape.sanitizeJsonContent === "function", false);
     },
 );
 

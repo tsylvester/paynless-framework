@@ -30,7 +30,7 @@ import { determineContinuation } from '../../_shared/utils/determineContinuation
 import { buildUploadContext } from '../../_shared/utils/buildUploadContext/buildUploadContext.ts';
 import type { BoundPrepareModelJobFn } from './JobContext.interface.ts';
 import type { DebitTokens } from '../../_shared/utils/debitTokens.interface.ts';
-import type { BoundExecuteModelCallAndSaveFn } from '../executeModelCallAndSave/executeModelCallAndSave.interface.ts';
+import type { BoundEnqueueModelCallFn } from '../enqueueModelCall/enqueueModelCall.interface.ts';
 import type { BoundEnqueueRenderJobFn } from '../enqueueRenderJob/enqueueRenderJob.interface.ts';
 import type { BoundGatherArtifactsFn } from '../gatherArtifacts/gatherArtifacts.interface.ts';
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
@@ -58,14 +58,13 @@ import {
     buildMockCalculateAffordabilityFn,
 } from '../calculateAffordability/calculateAffordability.mock.ts';
 import { createJobContext } from './createJobContext.ts';
+import { sanitizeJsonContent } from '../../_shared/utils/jsonSanitizer/jsonSanitizer.ts';
 
 type JobContextParamsOverrides = { [K in keyof JobContextParams]?: JobContextParams[K] };
 
-
-
-export function createMockBoundExecuteModelCallAndSave(): BoundExecuteModelCallAndSaveFn {
+export function createMockBoundEnqueueModelCall(): BoundEnqueueModelCallFn {
     return async () => ({
-        error: new Error('mock bound executeModelCallAndSave not implemented'),
+        error: new Error('mock bound enqueueModelCall not implemented'),
         retriable: false,
     });
 }
@@ -86,7 +85,7 @@ export function createMockBoundGatherArtifacts(): BoundGatherArtifactsFn {
 /**
  * Unbound `compressPrompt` that records every `CompressPromptDeps` passed by the slicer binding.
  */
-export function createRecordingCompressPromptFnForPrepareContextContract(): {
+export function createCompressPromptFn(): {
     compressPromptFn: CompressPromptFn;
     recordedCompressDeps: CompressPromptDeps[];
 } {
@@ -110,7 +109,7 @@ export function createRecordingCompressPromptFnForPrepareContextContract(): {
 /**
  * Unbound `calculateAffordability` that records every `CalculateAffordabilityDeps` passed by the slicer binding.
  */
-export function createRecordingCalculateAffordabilityFnForPrepareContextContract(): {
+export function createCalculateAffordabilityFn(): {
     calculateAffordabilityFn: CalculateAffordabilityFn;
     recordedAffordabilityDeps: CalculateAffordabilityDeps[];
 } {
@@ -240,6 +239,8 @@ export function createMockJobContextParams(overrides?: JobContextParamsOverrides
         determineContinuation: determineContinuation,
         buildUploadContext: buildUploadContext,
         gatherArtifacts: boundGatherArtifacts,
+        sanitizeJsonContent: sanitizeJsonContent,
+        computeJobSig: async (_jobId: string, _userId: string, _createdAt: string): Promise<string> => 'mock-job-sig',
     };
 
     if (!overrides) {
@@ -256,7 +257,7 @@ export function createMockJobContextParams(overrides?: JobContextParamsOverrides
  * `IJobContext` built only from `JobContextParams` mapping — does not call `createJobContext`.
  * For guard tests, interface tests, and any caller that must not depend on the composition root.
  */
-export function buildGuardTestIJobContext(): IJobContext {
+export function buildIJobContext(): IJobContext {
     const params: JobContextParams = createMockJobContextParams();
     return {
         logger: params.logger,
@@ -291,14 +292,16 @@ export function buildGuardTestIJobContext(): IJobContext {
         documentRenderer: params.documentRenderer,
         prepareModelJob: params.prepareModelJob,
         debitTokens: params.debitTokens,
+        sanitizeJsonContent: params.sanitizeJsonContent,
+        computeJobSig: params.computeJobSig,
     };
 }
 
 /**
  * `IPlanJobContext` slice from a guard-test root (no slicer import).
  */
-export function buildGuardTestIPlanJobContext(root?: IJobContext): IPlanJobContext {
-    const r: IJobContext = root !== undefined ? root : buildGuardTestIJobContext();
+export function buildIPlanJobContext(root?: IJobContext): IPlanJobContext {
+    const r: IJobContext = root !== undefined ? root : buildIJobContext();
     return {
         logger: r.logger,
         notificationService: r.notificationService,
@@ -311,8 +314,8 @@ export function buildGuardTestIPlanJobContext(root?: IJobContext): IPlanJobConte
 /**
  * `IRenderJobContext` slice from a guard-test root (no slicer import).
  */
-export function buildGuardTestIRenderJobContext(root?: IJobContext): IRenderJobContext {
-    const r: IJobContext = root !== undefined ? root : buildGuardTestIJobContext();
+export function buildIRenderJobContext(root?: IJobContext): IRenderJobContext {
+    const r: IJobContext = root !== undefined ? root : buildIJobContext();
     return {
         logger: r.logger,
         fileManager: r.fileManager,
@@ -325,10 +328,10 @@ export function buildGuardTestIRenderJobContext(root?: IJobContext): IRenderJobC
 
 /**
  * Typed object satisfying `IPrepareModelJobContext` for interface / guard contract tests (no slicer).
- * Optional `root` pins raw-field equality when assertions compare against `buildGuardTestIJobContext()`.
+ * Optional `root` pins raw-field equality when assertions compare against `buildIJobContext()`.
  */
-export function buildContractIPrepareModelJobContext(root?: IJobContext): IPrepareModelJobContext {
-    const r: IJobContext = root !== undefined ? root : buildGuardTestIJobContext();
+export function buildIPrepareModelJobContext(root?: IJobContext): IPrepareModelJobContext {
+    const r: IJobContext = root !== undefined ? root : buildIJobContext();
     return {
         logger: r.logger,
         applyInputsRequiredScope: r.applyInputsRequiredScope,
@@ -338,8 +341,7 @@ export function buildContractIPrepareModelJobContext(root?: IJobContext): IPrepa
         validateModelCostRates: r.validateModelCostRates,
         ragService: r.ragService,
         embeddingClient: r.embeddingClient,
-        executeModelCallAndSave: createMockBoundExecuteModelCallAndSave(),
-        enqueueRenderJob: createMockBoundEnqueueRenderJob(),
+        enqueueModelCall: createMockBoundEnqueueModelCall(),
         calculateAffordability: buildMockBoundCalculateAffordabilityFn(),
     };
 }

@@ -75,7 +75,9 @@
 * When reviewing work against the checklist, the work being completed already is not a discovery or a problem to resolve. Do not propose undoing the work you are reviewing. Do not propose undoing a GREEN state to prove a RED state. "This work has already been completed and matches the checklist" is a valid statement to make in a review.
 
 ## 5. Strict Typing & Object 
-* Use explicit types everywhere. No `any`, `as`, `as const`, inline ad-hoc types, or casts. The only exceptions to strict typing are for Supabase clients and intentionally malformed objects in error-handling tests. Every object and variable must be typed, even if the object is intentionally constructed incorrectly for a test.
+* Use explicit types everywhere for any object defined and owned by the repo. No `any`, `as`, `as const`, inline ad-hoc types, or casts. 
+One exception to strict typing is for external services (Supabase, Stripe, Netlify, etc) that rely on types not owned by the repo and not publicly fully defined.  
+The second exception to strict typing is for intentionally malformed objects in error-handling tests. Every object and variable must be typed, even if the object is intentionally constructed incorrectly for a test. This can be done by using "as" on an incomplete object in the test, or by using a mock factory then overriding the value with an otherwise invalid value such as null or undefined. 
 * Always construct full objects that satisfy existing interfaces/tuples from the relevant type file. Compose complex objects from smaller typed components; never rely on defaults, fallbacks, or backfilling to “heal” missing data.
 * Casting for Supabase clients and intentionally malformed objects in tests is explicitly allowed. Do not report that you are confused, do not report there is a contradiction between strict typing and the two permitted exceptions for Supabase and type casting for intentionally malformed objects in tests. You are being directly and explicitly instructed that these are the two exceptions to type casting. Do not pretend you cannot understand this exception. Do not ask the user to clarify about this exception. This instruction is clear and explicit, pretending like you don't understand it is being obtuse and unhelpful. 
 * Locate and use application types before using database types. Database types are only used if an explicit application type is not available. 
@@ -83,6 +85,7 @@
 * Do not type as "unknown" to avoid locating and applying specific application or database types. 
 * Use type guards to prove and narrow types for the compiler when required.
 * Never import entire libraries with `*`, never alias imports, never add `"type"` to type imports.
+* Reexporting is only permitted in barrel exports for a package or workspace. These files are typically named *index* or *provides*. 
 * A ternary is not a type guard, a ternary is a default value. Default values are prohibited in production code.
 * Every object and variable must be typed. There are no exceptions to this rule. If you are building a function and find untyped vars or objects, stop, explain the discovery, propose the new checklist node to type the vars or objects, and halt.
 
@@ -462,10 +465,6 @@
     *   `[ ]` [subfolder]/`filename`. Elements in work nodes will be nested as shown. Subnodes show the file name, or path and file name, to address that element.
         *   `[ ]` [subfolder]/[subfolder]/`filename` Nesting can be as deep as logically required, using the file tree path segment.
 *   `[✅]` Represents a completed node at any depth.
-*   `[🚧]` Represents an incomplete or partially completed node.
-*   `[⏸️]` Represents a paused node where a discovery has been made that requires backtracking or further clarification.
-*   `[❓]` Represents an uncertainty that must be resolved before continuing.
-*   `[🚫]` Represents a blocked, halted, or stopped node or has an unresolved problem or prior dependency to resolve before continuing.
 
 ## Example Component Types and Labels
 

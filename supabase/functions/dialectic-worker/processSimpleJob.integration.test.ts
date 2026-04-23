@@ -18,15 +18,14 @@ import { validateWalletBalance } from "../_shared/utils/validateWalletBalance.ts
 import { validateModelCostRates } from "../_shared/utils/validateModelCostRates.ts";
 import type { PrepareModelJobDeps } from "./prepareModelJob/prepareModelJob.interface.ts";
 import {
-  isExecuteModelCallAndSaveParams,
-  isExecuteModelCallAndSavePayload,
-} from "./executeModelCallAndSave/executeModelCallAndSave.interface.guard.ts";
+  isEnqueueModelCallParams,
+  isEnqueueModelCallPayload,
+} from "./enqueueModelCall/enqueueModelCall.guard.ts";
 import type {
-  BoundExecuteModelCallAndSaveFn,
-  ExecuteModelCallAndSaveParams,
-  ExecuteModelCallAndSavePayload,
-} from "./executeModelCallAndSave/executeModelCallAndSave.interface.ts";
-import type { BoundEnqueueRenderJobFn } from "./enqueueRenderJob/enqueueRenderJob.interface.ts";
+  BoundEnqueueModelCallFn,
+  EnqueueModelCallParams,
+  EnqueueModelCallPayload,
+} from "./enqueueModelCall/enqueueModelCall.interface.ts";
 import {
   gatherArtifacts,
   buildDialecticContributionRow,
@@ -41,17 +40,18 @@ import type { BoundPrepareModelJobFn } from "./createJobContext/JobContext.inter
 import { prepareModelJob } from "./prepareModelJob/prepareModelJob.ts";
 import type { PrepareModelJobPayload } from "./prepareModelJob/prepareModelJob.interface.ts";
 import { isPrepareModelJobPayload } from "./prepareModelJob/prepareModelJob.guard.ts";
+import { buildExtendedModelConfig } from "../_shared/ai_service/ai_provider.mock.ts";
 import {
-  buildAiProviderRow,
-  buildExtendedModelFixture,
-  buildTokenWalletRow,
+  mockAiProvidersRowFromConfig,
+  mockTokenWalletRow,
 } from "./prepareModelJob/prepareModelJob.mock.ts";
 import { processSimpleJob } from "./processSimpleJob.ts";
 import {
   defaultStepSlug,
+  mockClient,
+  mockExecutePayload,
   mockJob,
   mockPayload,
-  setupMockClient,
   stageInputsRequired,
   stageInputsRelevance,
   stageOutputsRequired,
@@ -78,7 +78,6 @@ import {
 import { uploadToStorage, downloadFromStorage } from "../_shared/supabase_storage_utils.ts";
 import { constructStoragePath } from "../_shared/utils/path_constructor.ts";
 import { pickLatest } from "../_shared/utils/pickLatest.ts";
-import { buildProcessSimpleJobExecutePayload } from "./processSimpleJob.mock.ts";
 import { MockPromptAssembler } from "../_shared/prompt-assembler/prompt-assembler.mock.ts";
 import { MockFileManagerService } from "../_shared/services/file_manager.mock.ts";
 import { isDialecticStageRecipeStep } from "../_shared/utils/type-guards/type_guards.dialectic.recipe.ts";
@@ -98,7 +97,7 @@ function toArrayBuffer(content: string): ArrayBuffer {
 // ---------------------------------------------------------------------------
 
 Deno.test(
-  "integration: processSimpleJob uses factories-only overrides on setupMockClient; gather once; prepare forwards resourceDocuments to EMCAS; no artifact table queries during prepare",
+  "integration: processSimpleJob uses factories-only overrides on mockClient; gather once; prepare forwards resourceDocuments to enqueueModelCall; no artifact table queries during prepare",
   async () => {
     const storageDownloadBody: string =
       "document-content-from-storage" +
@@ -145,7 +144,7 @@ Deno.test(
 
     const compressionContextWindowTokens: number = 200;
 
-    const mockSetup = setupMockClient({
+    const mockSetup = mockClient({
       dialectic_stage_recipe_steps: {
         select: (state: unknown) => {
           if (!isRecord(state)) {
@@ -208,13 +207,13 @@ Deno.test(
       ai_providers: {
         select: () => {
           const extendedFixture: AiModelExtendedConfig = {
-            ...buildExtendedModelFixture(),
+            ...buildExtendedModelConfig(),
             context_window_tokens: compressionContextWindowTokens,
             provider_max_input_tokens: 400,
             hard_cap_output_tokens: 100,
           };
           const providerRow: Tables<"ai_providers"> = {
-            ...buildAiProviderRow(extendedFixture),
+            ...mockAiProvidersRowFromConfig(extendedFixture),
             id: "model-def",
           };
           return Promise.resolve({ data: [providerRow], error: null });
@@ -226,7 +225,7 @@ Deno.test(
             return Promise.resolve({ data: [{ balance: "100000" }], error: null });
           }
           return Promise.resolve({
-            data: [buildTokenWalletRow({ wallet_id: mockPayload.walletId })],
+            data: [mockTokenWalletRow({ wallet_id: mockPayload.walletId })],
             error: null,
           });
         },
@@ -256,17 +255,11 @@ Deno.test(
       );
     };
 
-    const executeModelCallAndSave: Spy<BoundExecuteModelCallAndSaveFn> = spy(async (_p, _payload) => {
-      return {
-        contribution: buildDialecticContributionRow({ id: "psi-emcas-contrib" }),
-        needsContinuation: false,
-        stageRelationshipForStage: undefined,
-        documentKey: undefined,
-        fileType: FileType.HeaderContext,
-        storageFileType: FileType.ModelContributionRawJson,
-      };
-    });
-    const enqueueRenderJob: Spy<BoundEnqueueRenderJobFn> = spy(async () => ({ renderJobId: null }));
+    const enqueueModelCallSpy: Spy<BoundEnqueueModelCallFn> = spy(
+      async (_params: EnqueueModelCallParams, _payload: EnqueueModelCallPayload) => {
+        return { queued: true as const };
+      },
+    );
 
     const logger = new MockLogger();
     const ragService = new MockRagService();
@@ -290,8 +283,7 @@ Deno.test(
       validateWalletBalance,
       validateModelCostRates,
       calculateAffordability: boundCalculateAffordability,
-      executeModelCallAndSave,
-      enqueueRenderJob,
+      enqueueModelCall: enqueueModelCallSpy,
     };
 
     let preparePayloadCaptured: unknown = undefined;
@@ -338,7 +330,7 @@ Deno.test(
       prepareModelJob: boundPrepare,
     });
 
-    const executeJob: DialecticJobRow = { ...mockJob, job_type: "EXECUTE" };
+    const executeJob: DialecticJobRow = { ...mockJob(), job_type: "EXECUTE" };
 
     try {
       await processSimpleJob(
@@ -376,29 +368,26 @@ Deno.test(
       assertEquals(projectResourceSelectHistoric.callCount >= 1, true);
       assertEquals(artifactTableQueryDuringPrepare, 0);
 
-      assertEquals(executeModelCallAndSave.calls.length, 1);
-      assertEquals(enqueueRenderJob.calls.length, 1);
+      assertEquals(enqueueModelCallSpy.calls.length, 1);
 
-      const firstEmcasCall = executeModelCallAndSave.calls[0];
-      assertExists(firstEmcasCall);
-      assertEquals(firstEmcasCall.args.length >= 2, true);
-      const emcasParamsUnknown: unknown = firstEmcasCall.args[0];
-      const emcasPayloadUnknown: unknown = firstEmcasCall.args[1];
-      assertEquals(isExecuteModelCallAndSaveParams(emcasParamsUnknown), true);
-      assertEquals(isExecuteModelCallAndSavePayload(emcasPayloadUnknown), true);
-      if (!isExecuteModelCallAndSaveParams(emcasParamsUnknown)) {
-        throw new Error("expected ExecuteModelCallAndSaveParams");
+      const firstEnqueueCall = enqueueModelCallSpy.calls[0];
+      assertExists(firstEnqueueCall);
+      assertEquals(firstEnqueueCall.args.length >= 2, true);
+      const enqueueParamsUnknown: unknown = firstEnqueueCall.args[0];
+      const enqueuePayloadUnknown: unknown = firstEnqueueCall.args[1];
+      assertEquals(isEnqueueModelCallParams(enqueueParamsUnknown), true);
+      assertEquals(isEnqueueModelCallPayload(enqueuePayloadUnknown), true);
+      if (!isEnqueueModelCallParams(enqueueParamsUnknown)) {
+        throw new Error("expected EnqueueModelCallParams");
       }
-      if (!isExecuteModelCallAndSavePayload(emcasPayloadUnknown)) {
-        throw new Error("expected ExecuteModelCallAndSavePayload");
+      if (!isEnqueueModelCallPayload(enqueuePayloadUnknown)) {
+        throw new Error("expected EnqueueModelCallPayload");
       }
-      const emcasParams: ExecuteModelCallAndSaveParams = emcasParamsUnknown;
-      const emcasPayload: ExecuteModelCallAndSavePayload = emcasPayloadUnknown;
-      assertEquals(emcasParams.job.id, mockJob.id);
-      assertEquals(emcasParams.sessionId, mockPayload.sessionId);
-      assertEquals(emcasParams.projectId, mockPayload.projectId);
+      const enqueueParams: EnqueueModelCallParams = enqueueParamsUnknown;
+      const enqueuePayload: EnqueueModelCallPayload = enqueuePayloadUnknown;
+      assertEquals(enqueueParams.job.id, mockJob().id);
 
-      const chatApiRequest: ChatApiRequest = emcasPayload.chatApiRequest;
+      const chatApiRequest: ChatApiRequest = enqueuePayload.chatApiRequest;
       assertExists(chatApiRequest.resourceDocuments);
       assertEquals(chatApiRequest.resourceDocuments.length, 3);
       const promptDocsSorted = [...promptResourceDocuments].sort((a, b) => a.id.localeCompare(b.id));
@@ -421,7 +410,7 @@ Deno.test(
 
 // ---------------------------------------------------------------------------
 // TEST 2 — Real-DB integration: artifacts gathered from real DB rows with real
-//           storage survive the full pipeline to ChatApiRequest at EMCAS boundary
+//           storage survive the full pipeline to ChatApiRequest at enqueueModelCall boundary
 // ---------------------------------------------------------------------------
 
 Deno.test({
@@ -530,7 +519,7 @@ Deno.test({
       }
 
       // Get an AI provider whose config passes isAiModelExtendedConfig
-      // (prepareModelJob validates config before calling executeModelCallAndSave)
+      // (prepareModelJob validates config before calling enqueueModelCall)
       const { data: allProviders } = await admin
         .from("ai_providers")
         .select("*")
@@ -1004,7 +993,7 @@ Deno.test({
       );
 
       // ---------------------------------------------------------------------
-      // 6. Wire the pipeline: real gather + real prepare, spy at EMCAS boundary
+      // 6. Wire the pipeline: real gather + real prepare, spy at enqueueModelCall boundary
       // ---------------------------------------------------------------------
       const logger = new MockLogger();
       const ragService = new MockRagService();
@@ -1017,20 +1006,12 @@ Deno.test({
       const adminTokenWalletService = new AdminTokenWalletService(admin);
       const userTokenWalletService = new UserTokenWalletService(admin);
 
-      // Spy on EMCAS — capture the final ChatApiRequest
-      const emcasSpy: Spy<BoundExecuteModelCallAndSaveFn> = spy(async (_p, _payload) => {
-        return {
-          contribution: buildDialecticContributionRow({ id: "integ-emcas-contrib" }),
-          needsContinuation: false,
-          stageRelationshipForStage: undefined,
-          documentKey: undefined,
-          fileType: FileType.HeaderContext,
-          storageFileType: FileType.ModelContributionRawJson,
-        };
-      });
-      const enqueueRenderJobSpy: Spy<BoundEnqueueRenderJobFn> = spy(async () => ({
-        renderJobId: null,
-      }));
+      // Spy on enqueueModelCall — capture the final ChatApiRequest
+      const enqueueModelCallSpy: Spy<BoundEnqueueModelCallFn> = spy(
+        async (_params: EnqueueModelCallParams, _payload: EnqueueModelCallPayload) => {
+          return { queued: true as const };
+        },
+      );
 
       // Real compressPrompt + calculateAffordability chain
       const boundCompressPrompt: BoundCompressPromptFn = (cpParams, cpPayload) =>
@@ -1053,8 +1034,7 @@ Deno.test({
         validateWalletBalance,
         validateModelCostRates,
         calculateAffordability: boundCalculateAffordability,
-        executeModelCallAndSave: emcasSpy,
-        enqueueRenderJob: enqueueRenderJobSpy,
+        enqueueModelCall: enqueueModelCallSpy,
       };
 
       // Real gatherArtifacts with real DB + real storage download
@@ -1099,7 +1079,7 @@ Deno.test({
         );
       }
 
-      const jobPayload = buildProcessSimpleJobExecutePayload({
+      const jobPayload = mockExecutePayload({
         projectId: testProjectId,
         sessionId: testSessionId,
         stageSlug: stage.slug,
@@ -1119,7 +1099,7 @@ Deno.test({
       }
 
       const testJob: DialecticJobRow = {
-        ...mockJob,
+        ...mockJob(),
         id: crypto.randomUUID(),
         session_id: testSessionId,
         user_id: primaryUserId,
@@ -1147,8 +1127,8 @@ Deno.test({
       // 8a. gatherArtifacts called exactly once
       assertEquals(gatherCallCount, 1, "gatherArtifacts should be called exactly once");
 
-      // 8b. EMCAS was called
-      assertEquals(emcasSpy.calls.length, 1, "executeModelCallAndSave should be called exactly once");
+      // 8b. enqueueModelCall was called
+      assertEquals(enqueueModelCallSpy.calls.length, 1, "enqueueModelCall should be called exactly once");
 
       // 8c. Validate preparePayload captured the artifacts
       assertEquals(isPrepareModelJobPayload(preparePayloadCaptured), true);
@@ -1159,16 +1139,16 @@ Deno.test({
       const capturedDocs = capturedPayload.promptConstructionPayload.resourceDocuments;
       assertExists(capturedDocs, "resourceDocuments should exist in PrepareModelJobPayload");
 
-      // 8d. Extract the final ChatApiRequest from the EMCAS spy
-      const emcasCall = emcasSpy.calls[0];
-      assertExists(emcasCall);
-      const emcasPayloadUnknown: unknown = emcasCall.args[1];
-      assertEquals(isExecuteModelCallAndSavePayload(emcasPayloadUnknown), true);
-      if (!isExecuteModelCallAndSavePayload(emcasPayloadUnknown)) {
-        throw new Error("expected ExecuteModelCallAndSavePayload");
+      // 8d. Extract the final ChatApiRequest from the enqueueModelCall spy
+      const enqueueCall = enqueueModelCallSpy.calls[0];
+      assertExists(enqueueCall);
+      const enqueuePayloadUnknown: unknown = enqueueCall.args[1];
+      assertEquals(isEnqueueModelCallPayload(enqueuePayloadUnknown), true);
+      if (!isEnqueueModelCallPayload(enqueuePayloadUnknown)) {
+        throw new Error("expected EnqueueModelCallPayload");
       }
-      const emcasPayload: ExecuteModelCallAndSavePayload = emcasPayloadUnknown;
-      const chatApiRequest: ChatApiRequest = emcasPayload.chatApiRequest;
+      const enqueuePayload: EnqueueModelCallPayload = enqueuePayloadUnknown;
+      const chatApiRequest: ChatApiRequest = enqueuePayload.chatApiRequest;
 
       // 8e. ChatApiRequest.resourceDocuments has the expected count
       assertExists(chatApiRequest.resourceDocuments, "ChatApiRequest must have resourceDocuments");

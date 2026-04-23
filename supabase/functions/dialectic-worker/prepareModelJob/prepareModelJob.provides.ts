@@ -19,7 +19,12 @@ export {
   isPrepareModelJobSuccessReturn,
 } from "./prepareModelJob.guard.ts";
 export type {
-  CreatePrepareModelJobMockOptions,
-  PrepareModelJobMockCall,
-  createPrepareModelJobMock 
+  MockPrepareModelJobFnOptions,
+  MockPrepareModelJobFnCall,
+  mockPrepareModelJobFn,
+  mockPrepareModelJobDeps,
+  mockPrepareModelJobParams,
+  mockPrepareModelJobPayload,
+  mockPrepareModelJobSuccessReturn,
+  mockPrepareModelJobErrorReturn,
 } from "./prepareModelJob.mock.ts";

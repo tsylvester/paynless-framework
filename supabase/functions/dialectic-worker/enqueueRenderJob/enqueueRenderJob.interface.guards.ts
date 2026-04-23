@@ -14,7 +14,7 @@ import type {
   EnqueueRenderJobSuccessReturn,
 } from './enqueueRenderJob.interface.ts';
 
-function isDialecticStageSlug(value: unknown): value is DialecticStageSlug {
+export function isDialecticStageSlug(value: unknown): value is DialecticStageSlug {
   if (typeof value !== 'string') {
     return false;
   }

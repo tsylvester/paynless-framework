@@ -4,6 +4,8 @@ packages:
   - 'packages/*'
   # Apps
   - 'apps/*'
+  # Netlify functions
+  - 'netlify'
   # Supabase functions (for sharing types)
   - 'supabase/functions'
   # exclude packages that are inside test directories

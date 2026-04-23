@@ -10,7 +10,7 @@ import {
   isPostgrestError, 
   isRecord 
 } from '../utils/type_guards.ts'
-import { sanitizeJsonContent } from '../utils/jsonSanitizer.ts'
+import { sanitizeJsonContent } from '../utils/jsonSanitizer/jsonSanitizer.ts'
 import {
   FileManagerDependencies,
   FileType,

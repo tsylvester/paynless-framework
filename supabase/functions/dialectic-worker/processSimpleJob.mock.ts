@@ -1,13 +1,9 @@
-import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
-import { Tables, Database, Json } from '../types_db.ts';
+import { Tables, Database } from '../types_db.ts';
 import { createMockSupabaseClient } from '../_shared/supabase.mock.ts';
 import { MockFileManagerService } from '../_shared/services/file_manager.mock.ts';
-import {
-  isJson,
-} from '../_shared/utils/type_guards.ts';
+import { isJson } from '../_shared/utils/type_guards.ts';
 import {
   DialecticJobRow,
-  DialecticContributionRow,
   DialecticExecuteJobPayload,
   DialecticRecipeTemplateStep,
   DialecticStageRecipeStep,
@@ -42,7 +38,6 @@ const UUID_MODEL       = 'a0000003-0000-4000-a000-000000000003'; // model
 const UUID_WALLET      = 'a0000004-0000-4000-a000-000000000004'; // wallet
 const UUID_USER        = 'a0000005-0000-4000-a000-000000000005'; // user
 const UUID_JOB         = 'a0000006-0000-4000-a000-000000000006'; // job
-const UUID_CONTRIB     = 'a0000007-0000-4000-a000-000000000007'; // contribution
 const UUID_DOMAIN      = 'a0000008-0000-4000-a000-000000000008'; // domain
 const UUID_STAGE       = 'a0000009-0000-4000-a000-000000000009'; // stage
 const UUID_PROMPT      = 'a000000a-0000-4000-a000-00000000000a'; // prompt
@@ -52,6 +47,10 @@ const UUID_INSTANCE    = 'a000000d-0000-4000-a000-00000000000d'; // instance
 const UUID_STAGE_STEP  = 'a000000e-0000-4000-a000-00000000000e'; // stage-step
 const UUID_CHAT        = 'a000000f-0000-4000-a000-00000000000f'; // chat
 const UUID_IDEMPOTENCY = 'a0000010-0000-4000-a000-000000000010'; // idempotency
+
+// ---------------------------------------------------------------------------
+// Execute payload builder — mock[Object]
+// ---------------------------------------------------------------------------
 
 const processSimpleJobExecutePayloadDefault: DialecticExecuteJobPayload = {
   projectId: UUID_PROJECT,
@@ -73,7 +72,7 @@ const processSimpleJobExecutePayloadDefault: DialecticExecuteJobPayload = {
   idempotencyKey: UUID_IDEMPOTENCY,
 };
 
-export function buildProcessSimpleJobExecutePayload(
+export function mockExecutePayload(
   overrides?: Partial<DialecticExecuteJobPayload>,
 ): DialecticExecuteJobPayload {
   const payload: DialecticExecuteJobPayload = {
@@ -105,13 +104,16 @@ export function buildProcessSimpleJobExecutePayload(
   };
 }
 
-export const mockPayload: DialecticExecuteJobPayload = buildProcessSimpleJobExecutePayload();
+export const mockPayload: DialecticExecuteJobPayload = mockExecutePayload();
 
 if (!isJson(mockPayload)) {
   throw new Error('Test setup failed: mockPayload is not Json-compatible.');
 }
 
-/** Recipe fixtures used by {@link setupMockClient} — export for integration tests; do not duplicate. */
+// ---------------------------------------------------------------------------
+// Recipe step fixtures — exported for integration tests; do not duplicate.
+// ---------------------------------------------------------------------------
+
 export const templateInputsRequired: InputRule[] = [
   { type: 'document', slug: defaultStepSlug, document_key: FileType.business_case, required: true },
   { type: 'document', slug: defaultStepSlug, document_key: FileType.feature_spec, required: true },
@@ -199,28 +201,42 @@ export const stageOutputsRequired: OutputRule = {
   ],
 };
 
-export const mockJob: DialecticJobRow = {
-  id: UUID_JOB,
-  session_id: UUID_SESSION,
-  user_id: UUID_USER,
-  stage_slug: defaultStepSlug,
-  iteration_number: 1,
-  payload: mockPayload,
-  status: 'pending',
-  attempt_count: 0,
-  max_retries: 3,
-  created_at: new Date().toISOString(),
-  parent_job_id: null,
-  results: null,
-  completed_at: null,
-  error_details: null,
-  started_at: null,
-  target_contribution_id: null,
-  prerequisite_job_id: null,
-  is_test_job: false,
-  job_type: 'PLAN',
-  idempotency_key: UUID_IDEMPOTENCY,
-};
+// ---------------------------------------------------------------------------
+// Job builder — mock[Object]
+// ---------------------------------------------------------------------------
+
+export function mockJob(overrides?: Partial<DialecticJobRow>): DialecticJobRow {
+  if (!isJson(mockPayload)) {
+    throw new Error('Test setup failed: mockPayload is not Json-compatible.');
+  }
+  return {
+    id: UUID_JOB,
+    session_id: UUID_SESSION,
+    user_id: UUID_USER,
+    stage_slug: defaultStepSlug,
+    iteration_number: 1,
+    payload: mockPayload,
+    status: 'pending',
+    attempt_count: 0,
+    max_retries: 3,
+    created_at: new Date().toISOString(),
+    parent_job_id: null,
+    results: null,
+    completed_at: null,
+    error_details: null,
+    started_at: null,
+    target_contribution_id: null,
+    prerequisite_job_id: null,
+    is_test_job: false,
+    job_type: 'PLAN',
+    idempotency_key: UUID_IDEMPOTENCY,
+    ...overrides,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Database row fixtures — session and provider
+// ---------------------------------------------------------------------------
 
 export const mockSessionData: Tables<'dialectic_sessions'> = {
   id: UUID_SESSION,
@@ -253,46 +269,20 @@ export const mockProviderData: Tables<'ai_providers'> = {
   is_enabled: true,
 };
 
-export const mockContribution: DialecticContributionRow = {
-  id: UUID_CONTRIB,
-  session_id: UUID_SESSION,
-  stage: defaultStepSlug,
-  iteration_number: 1,
-  model_id: UUID_MODEL,
-  edit_version: 1,
-  is_latest_edit: true,
-  citations: null,
-  contribution_type: 'model_contribution_main',
-  created_at: new Date().toISOString(),
-  error: null,
-  file_name: 'test.txt',
-  mime_type: 'text/plain',
-  model_name: 'Mock AI',
-  original_model_contribution_id: null,
-  processing_time_ms: 100,
-  prompt_template_id_used: null,
-  raw_response_storage_path: null,
-  seed_prompt_url: null,
-  size_bytes: 100,
-  storage_bucket: 'test-bucket',
-  storage_path: 'test/path',
-  target_contribution_id: null,
-  tokens_used_input: 10,
-  tokens_used_output: 20,
-  updated_at: new Date().toISOString(),
-  user_id: UUID_USER,
-  document_relationships: null,
-  is_header: false,
-  source_prompt_resource_id: null,
-};
+// ---------------------------------------------------------------------------
+// PrepareModelJob success return builder — mock[FunctionName]
+// ---------------------------------------------------------------------------
 
-export function createPrepareModelJobSuccessReturn(): PrepareModelJobSuccessReturn {
-  return {
-    contribution: mockContribution,
-    needsContinuation: false,
-    renderJobId: null,
-  };
+export function mockPrepareModelJobSuccessReturn(
+  overrides?: Partial<PrepareModelJobSuccessReturn>,
+): PrepareModelJobSuccessReturn {
+  const defaults: PrepareModelJobSuccessReturn = { queued: true };
+  return { ...defaults, ...overrides };
 }
+
+// ---------------------------------------------------------------------------
+// Test assertion helper — not a mock; validates prepareModelJob call shape
+// ---------------------------------------------------------------------------
 
 export function assertPrepareModelJobTwoArgCall(
   callArgs: unknown[],
@@ -313,7 +303,11 @@ export function assertPrepareModelJobTwoArgCall(
   return { params, payload };
 }
 
-export const setupMockClient = (configOverrides: Record<string, any> = {}) => {
+// ---------------------------------------------------------------------------
+// DB client mock — mock[FunctionName]
+// ---------------------------------------------------------------------------
+
+export const mockClient = (configOverrides: Record<string, unknown> = {}) => {
   const mockProject: Tables<'dialectic_projects'> & { dialectic_domains: Pick<Tables<'dialectic_domains'>, 'id' | 'name' | 'description'> } = {
     id: UUID_PROJECT,
     user_id: UUID_USER,
@@ -368,7 +362,7 @@ export const setupMockClient = (configOverrides: Record<string, any> = {}) => {
         select: () => Promise.resolve({ data: [mockProviderData], error: null }),
       },
       dialectic_contributions: {
-        select: () => Promise.resolve({ data: [mockContribution], error: null }),
+        select: () => Promise.resolve({ data: [], error: null }),
       },
       domain_specific_prompt_overlays: {
         select: () => Promise.resolve({
@@ -386,7 +380,7 @@ export const setupMockClient = (configOverrides: Record<string, any> = {}) => {
         }),
       },
       dialectic_recipe_template_steps: {
-        select: (state: any) => {
+        select: (state: unknown) => {
           const defaultStep: DialecticRecipeTemplateStep = {
             id: UUID_STEP,
             template_id: UUID_TEMPLATE,
@@ -408,16 +402,27 @@ export const setupMockClient = (configOverrides: Record<string, any> = {}) => {
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
           };
-          const hasIdEq = Array.isArray(state?.filters) && state.filters.some((f: any) => f.type === 'eq' && f.column === 'id' && f.value === UUID_STEP);
+          const stateRecord = state !== null && typeof state === 'object' ? state as Record<string, unknown> : {};
+          const filters: unknown[] = Array.isArray(stateRecord['filters']) ? stateRecord['filters'] : [];
+          const hasIdEq = filters.some((f) => {
+            const fr = f !== null && typeof f === 'object' ? f as Record<string, unknown> : {};
+            return fr['type'] === 'eq' && fr['column'] === 'id' && fr['value'] === UUID_STEP;
+          });
           if (hasIdEq) return Promise.resolve({ data: [defaultStep], error: null });
-          const hasTemplate = Array.isArray(state?.filters) && state.filters.some((f: any) => f.type === 'eq' && f.column === 'template_id' && f.value === UUID_TEMPLATE);
-          const hasSlug = Array.isArray(state?.filters) && state.filters.some((f: any) => f.type === 'eq' && f.column === 'step_slug' && typeof f.value === 'string');
+          const hasTemplate = filters.some((f) => {
+            const fr = f !== null && typeof f === 'object' ? f as Record<string, unknown> : {};
+            return fr['type'] === 'eq' && fr['column'] === 'template_id' && fr['value'] === UUID_TEMPLATE;
+          });
+          const hasSlug = filters.some((f) => {
+            const fr = f !== null && typeof f === 'object' ? f as Record<string, unknown> : {};
+            return fr['type'] === 'eq' && fr['column'] === 'step_slug' && typeof fr['value'] === 'string';
+          });
           if (hasTemplate && hasSlug) return Promise.resolve({ data: [defaultStep], error: null });
           return Promise.resolve({ data: [], error: null });
         },
       },
       dialectic_stage_recipe_steps: {
-        select: (state: any) => {
+        select: (state: unknown) => {
           const defaultStageStep: DialecticStageRecipeStep = {
             id: UUID_STAGE_STEP,
             instance_id: UUID_INSTANCE,
@@ -444,12 +449,21 @@ export const setupMockClient = (configOverrides: Record<string, any> = {}) => {
             prompt_template_id: UUID_PROMPT,
             execution_order: 1,
           };
-
-          const filters = Array.isArray(state?.filters) ? state.filters : [];
-          const matchesId = filters.some((f: any) => f.type === 'eq' && f.column === 'id' && f.value === defaultStageStep.id);
+          const stateRecord = state !== null && typeof state === 'object' ? state as Record<string, unknown> : {};
+          const filters: unknown[] = Array.isArray(stateRecord['filters']) ? stateRecord['filters'] : [];
+          const matchesId = filters.some((f) => {
+            const fr = f !== null && typeof f === 'object' ? f as Record<string, unknown> : {};
+            return fr['type'] === 'eq' && fr['column'] === 'id' && fr['value'] === defaultStageStep.id;
+          });
           if (matchesId) return Promise.resolve({ data: [defaultStageStep], error: null });
-          const matchesInstance = filters.some((f: any) => f.type === 'eq' && f.column === 'instance_id' && f.value === defaultStageStep.instance_id);
-          const matchesSlug = filters.some((f: any) => f.type === 'eq' && f.column === 'step_slug' && typeof f.value === 'string');
+          const matchesInstance = filters.some((f) => {
+            const fr = f !== null && typeof f === 'object' ? f as Record<string, unknown> : {};
+            return fr['type'] === 'eq' && fr['column'] === 'instance_id' && fr['value'] === defaultStageStep.instance_id;
+          });
+          const matchesSlug = filters.some((f) => {
+            const fr = f !== null && typeof f === 'object' ? f as Record<string, unknown> : {};
+            return fr['type'] === 'eq' && fr['column'] === 'step_slug' && typeof fr['value'] === 'string';
+          });
           if (matchesInstance && matchesSlug) return Promise.resolve({ data: [defaultStageStep], error: null });
           return Promise.resolve({ data: [], error: null });
         },
@@ -459,15 +473,19 @@ export const setupMockClient = (configOverrides: Record<string, any> = {}) => {
   });
 };
 
-export const getMockDeps = (
+// ---------------------------------------------------------------------------
+// Context/deps mock — mock[FunctionName]
+// ---------------------------------------------------------------------------
+
+export const mockDeps = (
   overrideParams?: Partial<JobContextParams>,
 ): { promptAssembler: MockPromptAssembler; fileManager: MockFileManagerService; rootCtx: IJobContext } => {
   const baseParams: JobContextParams = createMockJobContextParams({
-    prepareModelJob: async () => createPrepareModelJobSuccessReturn(),
+    prepareModelJob: async () => mockPrepareModelJobSuccessReturn(),
   });
   const finalParams: JobContextParams = { ...baseParams, ...overrideParams };
 
-  const rootCtx = createJobContext(finalParams);
+  const rootCtx: IJobContext = createJobContext(finalParams);
 
   const promptAssemblerCandidate: IPromptAssembler = finalParams.promptAssembler;
   const fileManagerCandidate: IFileManager = finalParams.fileManager;

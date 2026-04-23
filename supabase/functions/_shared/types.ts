@@ -1,7 +1,7 @@
 // supabase/functions/_shared/types.ts
 // Centralized APPLICATION-LEVEL types for Supabase Edge Functions.
 // Types directly related to DB tables should be imported from ../types_db.ts
-import type { Database, Json } from '../types_db.ts';
+import type { Database } from '../types_db.ts';
 import type { createSuccessResponse, createErrorResponse } from '../_shared/cors-headers.ts';
 import { createClient, User } from "npm:@supabase/supabase-js";
 import { GenerateContentResponse } from "npm:@google/generative-ai";
@@ -11,6 +11,12 @@ import { SystemInstruction } from '../dialectic-service/dialectic.interface.ts';
 export type GetAiProviderAdapterFn = (
   deps: FactoryDependencies
 ) => AiProviderAdapterInstance | null;
+
+/**
+ * Resolves the provider API secret for a given provider API identifier.
+ * Returns null when no key is configured for that identifier.
+ */
+export type ApiKeyForProviderFn = (apiIdentifier: string) => string | null;
 
 export type ChatInsert = Tables<'chats'>;
 

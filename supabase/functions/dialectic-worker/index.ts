@@ -25,10 +25,6 @@ import { FileManagerService } from '../_shared/services/file_manager.ts';
 import { createSupabaseAdminClient, } from '../_shared/auth.ts';
 import { NotificationService } from '../_shared/utils/notification.service.ts';
 import { PromptAssembler } from '../_shared/prompt-assembler/prompt-assembler.ts';
-import { executeModelCallAndSave } from './executeModelCallAndSave/executeModelCallAndSave.ts';
-import { BoundExecuteModelCallAndSaveFn } from './executeModelCallAndSave/executeModelCallAndSave.interface.ts';
-import { enqueueRenderJob } from './enqueueRenderJob/enqueueRenderJob.ts';
-import { BoundEnqueueRenderJobFn } from './enqueueRenderJob/enqueueRenderJob.interface.ts';
 import { prepareModelJob } from './prepareModelJob/prepareModelJob.ts';
 import { calculateAffordability, type BoundCalculateAffordabilityFn } from './calculateAffordability/calculateAffordability.provides.ts';
 import { compressPrompt, type BoundCompressPromptFn } from './compressPrompt/compressPrompt.provides.ts';
@@ -60,6 +56,12 @@ import { buildUploadContext } from '../_shared/utils/buildUploadContext/buildUpl
 import { debitTokens } from '../_shared/utils/debitTokens.ts';
 import { BoundGatherArtifactsFn } from './gatherArtifacts/gatherArtifacts.interface.ts';
 import { gatherArtifacts } from './gatherArtifacts/gatherArtifacts.ts';
+import { BoundEnqueueModelCallFn } from './enqueueModelCall/enqueueModelCall.interface.ts';
+import { enqueueModelCall } from './enqueueModelCall/enqueueModelCall.ts';
+import { ApiKeyForProviderFn } from '../_shared/types.ts';
+import { sanitizeJsonContent } from '../_shared/utils/jsonSanitizer/jsonSanitizer.ts';
+import { createComputeJobSig } from '../_shared/utils/computeJobSig/computeJobSig.ts';
+import type { ComputeJobSig } from '../_shared/utils/computeJobSig/computeJobSig.interface.ts';
 
 type Job = Database['public']['Tables']['dialectic_generation_jobs']['Row'];
 
@@ -107,29 +109,41 @@ export async function createDialecticWorkerDeps(
   const documentRenderer = { renderDocument };
   const boundGatherArtifacts: BoundGatherArtifactsFn = (params, payload) =>
     gatherArtifacts({ logger, pickLatest, downloadFromStorage }, params, payload);
-  const boundEmcas: BoundExecuteModelCallAndSaveFn = (params, payload) =>
-    executeModelCallAndSave(
-      {
-        logger,
-        fileManager,
-        getAiProviderAdapter,
-        userTokenWalletService,
-        notificationService,
-        continueJob,
-        retryJob,
-        resolveFinishReason,
-        isIntermediateChunk,
-        determineContinuation,
-        buildUploadContext,
-        debitTokens: (params, payload) => debitTokens({ logger, tokenWalletService: adminTokenWalletService }, params, payload),
-      },
-      params,
-      payload,
-    );
-
-  const boundRender: BoundEnqueueRenderJobFn = (params, payload) =>
-    enqueueRenderJob(
-      { dbClient: adminClient, logger, shouldEnqueueRenderJob },
+  const netlifyQueueUrl: string | undefined = Deno.env.get('NETLIFY_QUEUE_URL');
+  if (!netlifyQueueUrl) {
+    throw new Error('NETLIFY_QUEUE_URL is not set');
+  }
+  const netlifyApiKey: string | undefined = Deno.env.get('AWL_API_KEY');
+  if (!netlifyApiKey) {
+    throw new Error('AWL_API_KEY is not set');
+  }
+  const hmacSecret: string | undefined = Deno.env.get('HMAC_SECRET');
+  if (!hmacSecret) {
+    throw new Error('HMAC_SECRET is not set');
+  }
+  const computeJobSig: ComputeJobSig = await createComputeJobSig(hmacSecret);
+  const apiKeyForProvider: ApiKeyForProviderFn = (apiIdentifier: string): string | null => {
+    const lower: string = apiIdentifier.toLowerCase();
+    if (lower.startsWith('openai-')) {
+      const key: string | undefined = Deno.env.get('OPENAI_API_KEY');
+      if (!key) throw new Error('OPENAI_API_KEY is not set');
+      return key;
+    }
+    if (lower.startsWith('anthropic-')) {
+      const key: string | undefined = Deno.env.get('ANTHROPIC_API_KEY');
+      if (!key) throw new Error('ANTHROPIC_API_KEY is not set');
+      return key;
+    }
+    if (lower.startsWith('google-')) {
+      const key: string | undefined = Deno.env.get('GOOGLE_API_KEY');
+      if (!key) throw new Error('GOOGLE_API_KEY is not set');
+      return key;
+    }
+    return null;
+  };
+  const boundEnqueueModelCall: BoundEnqueueModelCallFn = (params, payload) =>
+    enqueueModelCall(
+      { logger, netlifyQueueUrl, netlifyApiKey, apiKeyForProvider, computeJobSig },
       params,
       payload,
     );
@@ -186,8 +200,7 @@ export async function createDialecticWorkerDeps(
           validateWalletBalance,
           validateModelCostRates,
           calculateAffordability: boundCalculateAffordability,
-          executeModelCallAndSave: boundEmcas,
-          enqueueRenderJob: boundRender,
+          enqueueModelCall: boundEnqueueModelCall,
         },
         params,
         payload,
@@ -202,6 +215,8 @@ export async function createDialecticWorkerDeps(
     isIntermediateChunk,
     determineContinuation,
     buildUploadContext,
+    sanitizeJsonContent,
+    computeJobSig,
     gatherArtifacts: boundGatherArtifacts,
   });
 }

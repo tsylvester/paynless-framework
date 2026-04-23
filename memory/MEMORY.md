@@ -1,0 +1,7 @@
+- [feedback_render_jobs_not_steps.md](feedback_render_jobs_not_steps.md) — Render jobs are NOT part of steps. Never conflate them or suggest render events should carry step_key.
+- [feedback_no_skip_broken_data.md](feedback_no_skip_broken_data.md) — Never skip/log broken data — fix it or halt. Never create new scripts when user points to an existing one.
+- [feedback_stop_rereading_files.md](feedback_stop_rereading_files.md) — Never read the same file multiple times. Once is enough.
+- [feedback_stop_rushing_to_edit.md](feedback_stop_rushing_to_edit.md) — Never jump to editing code before fully understanding the problem. When corrected, STOP and THINK — do not immediately attempt another edit or revert.
+- [feedback_payload_not_empty.md](feedback_payload_not_empty.md) — Payload is NEVER empty. It's the data the function operates on. Return is ALWAYS Success|Error. Contract tests define what IS, not what ISN'T.
+- [feedback_no_mock_repo_owned.md](feedback_no_mock_repo_owned.md) — Don't mock repo-owned functions in integration tests; use the real function. Mocks only at external boundaries.
+- [feedback_do_not_touch_interface_file.md](feedback_do_not_touch_interface_file.md) — /interfaceTest: never create or edit the interface file, even as an empty placeholder. Write only the test file.
