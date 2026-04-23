@@ -530,6 +530,20 @@ export const createMockSubscription = (overrides: Partial<Stripe.Subscription> =
     };
 };
 
+export const createMockSubscriptionResponse = (
+  overrides: Partial<Stripe.Subscription> = {},
+): Stripe.Response<Stripe.Subscription> => {
+  const subscription: Stripe.Subscription = createMockSubscription(overrides);
+  return {
+    ...subscription,
+    lastResponse: {
+      headers: {},
+      requestId: `req_mock_sub_${subscription.id}`,
+      statusCode: 200,
+    },
+  };
+};
+
 export const createMockInvoiceLineItem = (overrides: Partial<Stripe.InvoiceLineItem> = {}): Stripe.InvoiceLineItem => {
   const price = createMockPrice();
   

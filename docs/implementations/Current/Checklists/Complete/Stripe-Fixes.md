@@ -2245,62 +2245,62 @@ Multiple production errors in the Stripe webhook processing pipeline are blockin
 
 ---
 
-* `[ ]`   `supabase/functions/webhooks/index.subscriptionCreate.integration.test.ts` **[TEST-INT] Integration: full new-subscription flow — checkout.session.completed writes subscription, invoice.payment_succeeded for subscription_create is skipped, subscription_cycle renewal is fully processed**
+* `[✅]`   `supabase/functions/webhooks/index.subscriptionCreate.integration.test.ts` **[TEST-INT] Integration: full new-subscription flow — checkout.session.completed writes subscription, invoice.payment_succeeded for subscription_create is skipped, subscription_cycle renewal is fully processed**
 
   ### 1. Intent & Position
 
-  * `[ ]`   `objective`
-    * `[ ]`   Prove the repaired call stack end-to-end: subscription plan in DB → checkout completed → `user_subscriptions` and `token_wallets` updated → `invoice.payment_succeeded` (`subscription_create`) returns early → `invoice.payment_succeeded` (`subscription_cycle`) fully processes with `COMPLETED` status
-    * `[ ]`   Prove all existing tests in `_shared/adapters/stripe/**` and `_shared/services/tokenwallet/**` remain GREEN
-    * `[ ]`   Uses `_integration.test.utils.ts` harness for transactional isolation
+  * `[✅]`   `objective`
+    * `[✅]`   Prove the repaired call stack end-to-end: subscription plan in DB → checkout completed → `user_subscriptions` and `token_wallets` updated → `invoice.payment_succeeded` (`subscription_create`) returns early → `invoice.payment_succeeded` (`subscription_cycle`) fully processes with `COMPLETED` status
+    * `[✅]`   Prove all existing tests in `_shared/adapters/stripe/**` and `_shared/services/tokenwallet/**` remain GREEN
+    * `[✅]`   Uses `_integration.test.utils.ts` harness for transactional isolation
 
-  * `[ ]`   `role`
-    * `[ ]`   Integration test — boundary: webhook handler → Stripe adapter → DB
-    * `[ ]`   Stripe SDK calls stubbed; no live Stripe API
+  * `[✅]`   `role`
+    * `[✅]`   Integration test — boundary: webhook handler → Stripe adapter → DB
+    * `[✅]`   Stripe SDK calls stubbed; no live Stripe API
 
   ### 2. Dependencies & Injection
 
-  * `[ ]`   `deps`
-    * `[ ]`   `coreInitializeTestStep`, `coreCleanupTestResources` from `_integration.test.utils.ts`
-    * `[ ]`   `handleWebhookRequestLogic` from `webhooks/index.ts`
-    * `[ ]`   `AdminTokenWalletService` from `tokenwallet/admin/adminTokenWalletService.provides.ts`
-    * `[ ]`   All Part 1 and Part 2 fix nodes must be GREEN
+  * `[✅]`   `deps`
+    * `[✅]`   `coreInitializeTestStep`, `coreCleanupTestResources` from `_integration.test.utils.ts`
+    * `[✅]`   `handleWebhookRequestLogic` from `webhooks/index.ts`
+    * `[✅]`   `AdminTokenWalletService` from `tokenwallet/admin/adminTokenWalletService.provides.ts`
+    * `[✅]`   All Part 1 and Part 2 fix nodes must be GREEN
 
   ### 3. Contract Definition
 
-  * `[ ]`   Five cases:
-    * `[ ]`   **Case 1:** seed `subscription_plans` row → readable via admin client
-    * `[ ]`   **Case 2:** `checkout.session.completed` → `user_subscriptions` row created, `payment_transactions` row `COMPLETED`, `token_wallets` balance credited
-    * `[ ]`   **Case 3:** `invoice.payment_succeeded` / `subscription_create` → NO new `payment_transactions` row, NO additional wallet credit
-    * `[ ]`   **Case 4:** `invoice.payment_succeeded` / `subscription_cycle` → new `payment_transactions` row with `status = 'COMPLETED'`, balance incremented
-    * `[ ]`   **Case 5:** replay same `subscription_cycle` event → idempotency: no second row, balance unchanged
+  * `[✅]`   Five cases:
+    * `[✅]`   **Case 1:** seed `subscription_plans` row → readable via admin client
+    * `[✅]`   **Case 2:** `checkout.session.completed` → `user_subscriptions` row created, `payment_transactions` row `COMPLETED`, `token_wallets` balance credited
+    * `[✅]`   **Case 3:** `invoice.payment_succeeded` / `subscription_create` → NO new `payment_transactions` row, NO additional wallet credit
+    * `[✅]`   **Case 4:** `invoice.payment_succeeded` / `subscription_cycle` → new `payment_transactions` row with `status = 'COMPLETED'`, balance incremented
+    * `[✅]`   **Case 5:** replay same `subscription_cycle` event → idempotency: no second row, balance unchanged
 
   ### 9. Implementation
 
-  * `[ ]`   `index.subscriptionCreate.integration.test.ts`
-    * `[ ]`   `Deno.test` with `t.step` grouping per `tokenWalletService.test.ts` pattern
-    * `[ ]`   Typed Stripe event fixtures using `Stripe.InvoicePaymentSucceededEvent` and `Stripe.CheckoutSessionCompletedEvent`
-    * `[ ]`   Seed `subscription_plans` directly via admin client
-    * `[ ]`   Assert DB state after each case using admin client reads
+  * `[✅]`   `index.subscriptionCreate.integration.test.ts`
+    * `[✅]`   `Deno.test` with `t.step` grouping per `tokenWalletService.test.ts` pattern
+    * `[✅]`   Typed Stripe event fixtures using `Stripe.InvoicePaymentSucceededEvent` and `Stripe.CheckoutSessionCompletedEvent`
+    * `[✅]`   Seed `subscription_plans` directly via admin client
+    * `[✅]`   Assert DB state after each case using admin client reads
 
   ### 12. Edge Validation
 
-  * `[ ]`   This file IS the edge validation for the entire fix set
+  * `[✅]`   This file IS the edge validation for the entire fix set
 
   ### 14. Completion Criteria
 
-  * `[ ]`   File lints clean
-  * `[ ]`   All five cases GREEN
-  * `[ ]`   All existing tests in `_shared/adapters/stripe/**` GREEN
-  * `[ ]`   All existing tests in `_shared/services/tokenwallet/**` GREEN
-  * `[ ]`   `index.invoice.integration.test.ts`, `index.checkoutSession.integration.test.ts`, `index.subscriptions.integration.test.ts` remain GREEN
+  * `[✅]`   File lints clean
+  * `[✅]`   All five cases GREEN
+  * `[✅]`   All existing tests in `_shared/adapters/stripe/**` GREEN
+  * `[✅]`   All existing tests in `_shared/services/tokenwallet/**` GREEN
+  * `[✅]`   `index.invoice.integration.test.ts`, `index.checkoutSession.integration.test.ts`, `index.subscriptions.integration.test.ts` remain GREEN
 
   ### 15. Versioning
 
-  * `[ ]`   **Commit** `fix(stripe): fix payment_transactions constraint, webhook AdminTokenWalletService wiring, and invoice billing_reason routing`
-    * `[ ]`   Structural: new migration `20260403000000_fix_payment_transactions_status_constraint.sql`; new integration test
-    * `[ ]`   Behavioral: `handleInvoicePaymentSucceeded` returns early for `subscription_create`; uses `COMPLETED` throughout; `webhooks/index.ts` uses `AdminTokenWalletService`
-    * `[ ]`   Contract: `payment_transactions.status` accepts `PROCESSING_RENEWAL` and `TOKEN_AWARD_FAILED`
+  * `[✅]`   **Commit** `fix(stripe): fix payment_transactions constraint, webhook AdminTokenWalletService wiring, and invoice billing_reason routing`
+    * `[✅]`   Structural: new migration `20260403000000_fix_payment_transactions_status_constraint.sql`; new integration test
+    * `[✅]`   Behavioral: `handleInvoicePaymentSucceeded` returns early for `subscription_create`; uses `COMPLETED` throughout; `webhooks/index.ts` uses `AdminTokenWalletService`
+    * `[✅]`   Contract: `payment_transactions.status` accepts `PROCESSING_RENEWAL` and `TOKEN_AWARD_FAILED`
 
 ---
 
