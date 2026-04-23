@@ -51,7 +51,7 @@ export interface AiStreamEventData {
 }
 
 export interface AiStreamEventBody {
-  eventName: 'ai-stream';
+  eventName: 'ai-stream-background';
   data: AiStreamEventData;
 }
 

@@ -85,7 +85,7 @@ export const enqueueModelCall: EnqueueModelCallFn = async (
   };
 
   const eventBody: AiStreamEventBody = {
-    eventName: 'ai-stream',
+    eventName: 'ai-stream-background',
     data: eventData,
   };
 

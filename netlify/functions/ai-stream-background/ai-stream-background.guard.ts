@@ -2,7 +2,7 @@ import type {
   AiStreamDeps,
   AiStreamEvent,
   AiStreamPayload,
-} from './ai-stream.interface.ts';
+} from './ai-stream-background.interface.ts';
 import {
   isNodeChatApiRequest,
   isNodeModelConfig,

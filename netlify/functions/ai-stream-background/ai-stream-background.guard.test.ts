@@ -3,7 +3,7 @@ import {
   isAiStreamDeps,
   isAiStreamEvent,
   isAiStreamPayload,
-} from './ai-stream.guard.ts';
+} from './ai-stream-background.guard.ts';
 
 describe('ai-stream.guard', () => {
   describe('isAiStreamEvent', () => {

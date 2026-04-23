@@ -9,3 +9,6 @@
 [functions]
   directory = "netlify/functions"
   node_bundler = "esbuild"
+
+[dev]
+  functionsTimeout = 900

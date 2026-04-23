@@ -327,14 +327,14 @@ export function createMockAiStreamEventBody(
     overrides?: AiStreamEventBodyOverrides,
 ): AiStreamEventBody {
     const base: AiStreamEventBody = {
-        eventName: "ai-stream",
+        eventName: "ai-stream-background",
         data: createMockAiStreamEventData(),
     };
     if (!overrides) {
         return base;
     }
     return {
-        eventName: "ai-stream",
+        eventName: "ai-stream-background",
         data: overrides.data !== undefined && overrides.data !== null
             ? overrides.data
             : base.data,

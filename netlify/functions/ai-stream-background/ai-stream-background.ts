@@ -9,12 +9,12 @@ import { createAnthropicNodeAdapter } from './adapters/anthropic/anthropic.ts';
 import { createGoogleNodeAdapter } from './adapters/google/google.ts';
 import { getNodeAiAdapter } from './adapters/getNodeAiAdapter.ts';
 import { createOpenAINodeAdapter } from './adapters/openai/openai.ts';
-import { isAiStreamEvent } from './ai-stream.guard.ts';
+import { isAiStreamEvent } from './ai-stream-background.guard.ts';
 import type {
   AiStreamDeps,
   AiStreamEvent,
   AiStreamPayload,
-} from './ai-stream.interface.ts';
+} from './ai-stream-background.interface.ts';
 
 const SOFT_TIMEOUT_MS: number = 14 * 60 * 1000;
 
@@ -171,7 +171,7 @@ export async function handleAiStreamWorkload(
 }
 
 export const asyncWorkloadConfig: AsyncWorkloadConfig = {
-  events: ['ai-stream'],
+  events: ['ai-stream-background'],
   maxRetries: 4,
 };
 

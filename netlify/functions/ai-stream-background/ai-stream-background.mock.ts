@@ -13,7 +13,7 @@ import {
   mockNodeModelConfig,
 } from './adapters/openai/openai.mock.ts';
 import type { AsyncWorkloadEvent } from '@netlify/async-workloads';
-import type { AiStreamDeps, AiStreamEvent, GetApiKeyFn } from './ai-stream.interface.ts';
+import type { AiStreamDeps, AiStreamEvent, GetApiKeyFn } from './ai-stream-background.interface.ts';
 
 export const mockAiStreamSaveResponseUrl: string =
   'http://localhost/mock-saveResponse';

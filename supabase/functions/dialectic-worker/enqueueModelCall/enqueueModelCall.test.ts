@@ -66,7 +66,7 @@ Deno.test(
             assert(typeof bodyRaw === "string");
             const parsed = JSON.parse(bodyRaw);
             assert(isRecord(parsed));
-            assertEquals(parsed.eventName, "ai-stream");
+            assertEquals(parsed.eventName, "ai-stream-background");
             assert(isRecord(parsed.data));
             const data = parsed.data;
             assert(isRecord(data.chat_api_request));

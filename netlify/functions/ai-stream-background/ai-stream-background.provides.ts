@@ -1,21 +1,21 @@
-export { default } from './ai-stream.ts';
+export { default } from './ai-stream-background.ts';
 export {
   asyncWorkloadConfig,
   createAiStreamDeps,
-  runAiStreamWorkloadForTests,
-} from './ai-stream.ts';
+  handleAiStreamWorkload,
+} from './ai-stream-background.ts';
 export type {
   AiStreamDeps,
   AiStreamEvent,
   AiStreamPayload,
   GetApiKeyFn,
-} from './ai-stream.interface.ts';
+} from './ai-stream-background.interface.ts';
 export {
   isAiStreamDeps,
   isAiStreamEvent,
   isAiStreamPayload,
-} from './ai-stream.guard.ts';
+} from './ai-stream-background.guard.ts';
 export {
   createMockAiStreamDeps,
   mockAiStreamSaveResponseUrl,
-} from './ai-stream.mock.ts';
+} from './ai-stream-background.mock.ts';

@@ -577,7 +577,7 @@ Deno.test('handleJob - validates payload correctly and extracts user info', asyn
 Deno.test('createDialecticWorkerDeps: provides wallet and compression deps', async () => {
     Deno.env.set('NETLIFY_QUEUE_URL', 'https://mock-netlify-queue');
     Deno.env.set('AWL_API_KEY', 'mock-awl-key');
-    Deno.env.set('SUPABASE_HMAC_SECRET', 'mock-hmac-secret-32-chars-xxxxxxx');
+    Deno.env.set('HMAC_SECRET', 'mock-hmac-secret-32-chars-xxxxxxx');
     try {
         const deps = await createDialecticWorkerDeps(mockSupabaseClientDeps.client as unknown as SupabaseClient<Database>);
         
@@ -595,7 +595,7 @@ Deno.test('createDialecticWorkerDeps: provides wallet and compression deps', asy
     } finally {
         Deno.env.delete('NETLIFY_QUEUE_URL');
         Deno.env.delete('AWL_API_KEY');
-        Deno.env.delete('SUPABASE_HMAC_SECRET');
+        Deno.env.delete('HMAC_SECRET');
     }
 });
 
@@ -604,7 +604,7 @@ Deno.test('createDialecticWorkerDeps: provides wallet and compression deps', asy
 Deno.test('createDialecticWorkerDeps: binds pure utility deps to production implementations', async () => {
     Deno.env.set('NETLIFY_QUEUE_URL', 'https://mock-netlify-queue');
     Deno.env.set('AWL_API_KEY', 'mock-awl-key');
-    Deno.env.set('SUPABASE_HMAC_SECRET', 'mock-hmac-secret-32-chars-xxxxxxx');
+    Deno.env.set('HMAC_SECRET', 'mock-hmac-secret-32-chars-xxxxxxx');
     try {
         const deps = await createDialecticWorkerDeps(mockSupabaseClientDeps.client as unknown as SupabaseClient<Database>);
 
@@ -619,7 +619,7 @@ Deno.test('createDialecticWorkerDeps: binds pure utility deps to production impl
     } finally {
         Deno.env.delete('NETLIFY_QUEUE_URL');
         Deno.env.delete('AWL_API_KEY');
-        Deno.env.delete('SUPABASE_HMAC_SECRET');
+        Deno.env.delete('HMAC_SECRET');
     }
 });
 
@@ -657,7 +657,7 @@ Deno.test('createDialecticWorkerDeps: constructs DummyAdapter embedding client w
             }
         });
 
-        Deno.env.set('SUPABASE_HMAC_SECRET', 'mock-hmac-secret-32-chars-xxxxxxx');
+        Deno.env.set('HMAC_SECRET', 'mock-hmac-secret-32-chars-xxxxxxx');
         const deps = await createDialecticWorkerDeps(mockSupabaseClientDummy.client as unknown as SupabaseClient<Database>);
 
         assertExists(deps.embeddingClient, 'embeddingClient should be constructed');
@@ -669,7 +669,7 @@ Deno.test('createDialecticWorkerDeps: constructs DummyAdapter embedding client w
     } finally {
         Deno.env.delete('NETLIFY_QUEUE_URL');
         Deno.env.delete('AWL_API_KEY');
-        Deno.env.delete('SUPABASE_HMAC_SECRET');
+        Deno.env.delete('HMAC_SECRET');
     }
 });
 
@@ -743,7 +743,7 @@ Deno.test('createDialecticWorkerDeps: constructs OpenAI embedding client when de
 
     Deno.env.set('NETLIFY_QUEUE_URL', 'https://mock-netlify-queue');
     Deno.env.set('AWL_API_KEY', 'mock-awl-key');
-    Deno.env.set('SUPABASE_HMAC_SECRET', 'mock-hmac-secret-32-chars-xxxxxxx');
+    Deno.env.set('HMAC_SECRET', 'mock-hmac-secret-32-chars-xxxxxxx');
     const getEmbeddingStub = stub(OpenAiAdapter.prototype, 'getEmbedding', async () => ({
         embedding: [0.1, 0.2, 0.3],
         usage: { prompt_tokens: 3, total_tokens: 3 },
@@ -762,7 +762,7 @@ Deno.test('createDialecticWorkerDeps: constructs OpenAI embedding client when de
         getEmbeddingStub.restore();
         Deno.env.delete('NETLIFY_QUEUE_URL');
         Deno.env.delete('AWL_API_KEY');
-        Deno.env.delete('SUPABASE_HMAC_SECRET');
+        Deno.env.delete('HMAC_SECRET');
     }
 });
 
@@ -990,14 +990,14 @@ Deno.test('handleJob - RENDER routes via provided processors and propagates args
 Deno.test('createDialecticWorkerDeps: returns IJobContext including findSourceDocuments', async () => {
     Deno.env.set('NETLIFY_QUEUE_URL', 'https://mock-netlify-queue');
     Deno.env.set('AWL_API_KEY', 'mock-awl-key');
-    Deno.env.set('SUPABASE_HMAC_SECRET', 'mock-hmac-secret-32-chars-xxxxxxx');
+    Deno.env.set('HMAC_SECRET', 'mock-hmac-secret-32-chars-xxxxxxx');
     try {
         const deps = await createDialecticWorkerDeps(mockSupabaseClientDeps.client as unknown as SupabaseClient<Database>);
         assertEquals(typeof Reflect.get(deps, 'findSourceDocuments'), 'function');
     } finally {
         Deno.env.delete('NETLIFY_QUEUE_URL');
         Deno.env.delete('AWL_API_KEY');
-        Deno.env.delete('SUPABASE_HMAC_SECRET');
+        Deno.env.delete('HMAC_SECRET');
     }
 });
 
@@ -1595,9 +1595,9 @@ Deno.test('createDialecticWorkerDeps: throws when AWL_API_KEY is not set', async
     }
 });
 
-Deno.test('createDialecticWorkerDeps: throws when SUPABASE_HMAC_SECRET is not set', async () => {
-    const savedHmacSecret = Deno.env.get('SUPABASE_HMAC_SECRET');
-    Deno.env.delete('SUPABASE_HMAC_SECRET');
+Deno.test('createDialecticWorkerDeps: throws when HMAC_SECRET is not set', async () => {
+    const savedHmacSecret = Deno.env.get('HMAC_SECRET');
+    Deno.env.delete('HMAC_SECRET');
     Deno.env.set('NETLIFY_QUEUE_URL', 'https://mock-netlify-queue');
     Deno.env.set('AWL_API_KEY', 'mock-awl-key');
     Deno.env.set('OPENAI_API_KEY', 'mock-openai-key');
@@ -1605,10 +1605,10 @@ Deno.test('createDialecticWorkerDeps: throws when SUPABASE_HMAC_SECRET is not se
         await assertRejects(
             () => createDialecticWorkerDeps(mockSupabaseClientDeps.client as unknown as SupabaseClient<Database>),
             Error,
-            'SUPABASE_HMAC_SECRET',
+            'HMAC_SECRET',
         );
     } finally {
-        if (savedHmacSecret !== undefined) Deno.env.set('SUPABASE_HMAC_SECRET', savedHmacSecret);
+        if (savedHmacSecret !== undefined) Deno.env.set('HMAC_SECRET', savedHmacSecret);
         Deno.env.delete('NETLIFY_QUEUE_URL');
         Deno.env.delete('AWL_API_KEY');
         Deno.env.delete('OPENAI_API_KEY');
@@ -1618,7 +1618,7 @@ Deno.test('createDialecticWorkerDeps: throws when SUPABASE_HMAC_SECRET is not se
 Deno.test('createDialecticWorkerDeps: wires computeJobSig as a function on the returned context', async () => {
     Deno.env.set('NETLIFY_QUEUE_URL', 'https://mock-netlify-queue');
     Deno.env.set('AWL_API_KEY', 'mock-awl-key');
-    Deno.env.set('SUPABASE_HMAC_SECRET', 'mock-hmac-secret-32-chars-xxxxxxx');
+    Deno.env.set('HMAC_SECRET', 'mock-hmac-secret-32-chars-xxxxxxx');
     Deno.env.set('OPENAI_API_KEY', 'mock-openai-key');
     try {
         const deps = await createDialecticWorkerDeps(mockSupabaseClientDeps.client as unknown as SupabaseClient<Database>);
@@ -1626,7 +1626,7 @@ Deno.test('createDialecticWorkerDeps: wires computeJobSig as a function on the r
     } finally {
         Deno.env.delete('NETLIFY_QUEUE_URL');
         Deno.env.delete('AWL_API_KEY');
-        Deno.env.delete('SUPABASE_HMAC_SECRET');
+        Deno.env.delete('HMAC_SECRET');
         Deno.env.delete('OPENAI_API_KEY');
     }
 });

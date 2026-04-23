@@ -125,7 +125,7 @@ Deno.test(
             assert(typeof initArg.body === "string");
             const parsed = JSON.parse(initArg.body);
             assert(isRecord(parsed));
-            assertEquals(parsed.eventName, "ai-stream");
+            assertEquals(parsed.eventName, "ai-stream-background");
             assert(isRecord(parsed.data));
             assertEquals(parsed.data.job_id, job.id);
             assertEquals(parsed.data.api_identifier, integrationProviderRow.api_identifier);

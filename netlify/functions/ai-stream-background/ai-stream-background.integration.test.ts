@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { AiStreamEvent } from './ai-stream.interface.ts';
-import { isAiStreamPayload } from './ai-stream.guard.ts';
+import type { AiStreamEvent } from './ai-stream-background.interface.ts';
+import { isAiStreamPayload } from './ai-stream-background.guard.ts';
 import type { OpenAIChatCompletionChunk } from './adapters/openai/openai.interface.ts';
 import type {
   AnthropicContentBlockDeltaEvent,
@@ -147,7 +147,7 @@ vi.mock('@google/generative-ai', () => {
 
 // Side-effect import: triggers module evaluation which calls asyncWorkloadFn,
 // storing the real handler in netlifyMock.handler.
-import './ai-stream.ts';
+import './ai-stream-background.ts';
 
 // ---------------------------------------------------------------------------
 // Helpers — SDK stream factories (external SDK shapes, one per provider)

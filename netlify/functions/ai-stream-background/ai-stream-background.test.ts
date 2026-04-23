@@ -11,16 +11,16 @@ import {
   createMockOpenAINodeAdapter,
   mockNodeModelConfig,
 } from './adapters/openai/openai.mock.ts';
-import { isAiStreamPayload } from './ai-stream.guard.ts';
+import { isAiStreamPayload } from './ai-stream-background.guard.ts';
 import {
   createMockAiStreamDeps,
   createMockAiStreamEvent,
   createMockAsyncWorkloadEvent,
   mockAiStreamSaveResponseUrl,
-} from './ai-stream.mock.ts';
-import type { AiStreamDeps } from './ai-stream.interface.ts';
-import { isAiStreamDeps } from './ai-stream.guard.ts';
-import { createAiStreamDeps, handleAiStreamWorkload } from './ai-stream.ts';
+} from './ai-stream-background.mock.ts';
+import type { AiStreamDeps } from './ai-stream-background.interface.ts';
+import { isAiStreamDeps } from './ai-stream-background.guard.ts';
+import { createAiStreamDeps, handleAiStreamWorkload } from './ai-stream-background.ts';
 
 describe('ai-stream workload', () => {
   let savedAnonKey: string | undefined;

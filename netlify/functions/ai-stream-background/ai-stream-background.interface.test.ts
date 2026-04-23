@@ -3,7 +3,7 @@ import type {
   AiStreamDeps,
   AiStreamEvent,
   AiStreamPayload,
-} from './ai-stream.interface.ts';
+} from './ai-stream-background.interface.ts';
 
 describe('ai-stream.interface contract', () => {
   it('accepts AiStreamEvent with all required fields including sig', () => {
