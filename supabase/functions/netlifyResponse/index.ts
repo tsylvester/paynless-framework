@@ -27,9 +27,9 @@ import type { ComputeJobSig } from '../_shared/utils/computeJobSig/computeJobSig
 import type { NetlifyResponseDeps } from './netlifyResponse.interface.ts';
 import { netlifyResponseHandler } from './netlifyResponseHandler.ts';
 
-const hmacSecret: string | undefined = Deno.env.get('SUPABASE_HMAC_SECRET');
+const hmacSecret: string | undefined = Deno.env.get('HMAC_SECRET');
 if (!hmacSecret) {
-    throw new Error('SUPABASE_HMAC_SECRET is not set');
+    throw new Error('HMAC_SECRET is not set');
 }
 
 const computeJobSig: ComputeJobSig = await createComputeJobSig(hmacSecret);

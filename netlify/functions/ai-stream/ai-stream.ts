@@ -129,13 +129,20 @@ async function collectAiStreamPayload(
 
 async function postAiStreamPayload(
   saveResponseUrl: string,
-  sig: string,
+  _sig: string,
   payload: AiStreamPayload,
 ): Promise<void> {
+  const anonKey: string | undefined = process.env['SUPABASE_ANON_KEY'];
+  if (anonKey === undefined || anonKey.length === 0) {
+    throw new ErrorDoNotRetry(
+      'SUPABASE_ANON_KEY must be set in the Netlify environment so the ai-stream workload can authenticate with the Supabase gateway.',
+    );
+  }
   const response: Response = await fetch(saveResponseUrl, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
+      Authorization: `Bearer ${anonKey}`,
     },
     body: JSON.stringify(payload),
   });
@@ -146,14 +153,15 @@ async function postAiStreamPayload(
   }
 }
 
-export async function runAiStreamWorkloadForTests(
+export async function handleAiStreamWorkload(
   deps: AiStreamDeps,
-  event: unknown,
+  event: AsyncWorkloadEvent,
 ): Promise<void> {
-  if (!isAiStreamEvent(event)) {
+  const raw: unknown = event.eventData;
+  if (!isAiStreamEvent(raw)) {
     throw new ErrorDoNotRetry('invalid AiStreamEvent payload');
   }
-  const validated: AiStreamEvent = event;
+  const validated: AiStreamEvent = raw;
   const payload: AiStreamPayload = await collectAiStreamPayload(deps, validated);
   await postAiStreamPayload(
     deps.saveResponseUrl,
@@ -170,26 +178,6 @@ export const asyncWorkloadConfig: AsyncWorkloadConfig = {
 export default asyncWorkloadFn(
   async (event: AsyncWorkloadEvent): Promise<void> => {
     const deps: AiStreamDeps = createAiStreamDeps();
-    const raw: unknown = event.eventData;
-    if (!isAiStreamEvent(raw)) {
-      throw new ErrorDoNotRetry('invalid AiStreamEvent payload');
-    }
-    const validated: AiStreamEvent = raw;
-    const payload: AiStreamPayload = await event.step.run(
-      'stream-ai',
-      async (): Promise<AiStreamPayload> => {
-        return collectAiStreamPayload(deps, validated);
-      },
-    );
-    await event.step.run(
-      'post-result',
-      async (): Promise<void> => {
-        await postAiStreamPayload(
-          deps.saveResponseUrl,
-          validated.sig,
-          payload,
-        );
-      },
-    );
+    await handleAiStreamWorkload(deps, event);
   },
 );

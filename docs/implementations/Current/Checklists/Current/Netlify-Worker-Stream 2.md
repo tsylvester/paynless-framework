@@ -137,7 +137,7 @@
     * `[✅]`   `postAiStreamPayload`: remove `userJwt` parameter; add `sig: string` parameter; remove `Authorization` header; include `sig` in JSON body
     * `[✅]`   Update both call sites to pass `validated.sig` instead of `validated.user_jwt`
 
-* `[ ]`   supabase/functions/netlifyResponse  **[BE] Unauth HMAC-verified handler — side door for Netlify callback**
+* `[✅]`   supabase/functions/netlifyResponse  **[BE] Unauth HMAC-verified handler — side door for Netlify callback**
 
   * `[✅]`   `objective`
     * `[✅]`   Provide a dedicated Supabase Edge Function with `verify_jwt = false` that acts as the exclusive entry point for Netlify's `saveResponse` callback. Validates the HMAC sig and expiry before forwarding to `saveResponse` using `adminClient`. Rejects any request with an invalid or expired sig without entering the secure processing area.

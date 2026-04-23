@@ -18,10 +18,8 @@ import type {
 const netlifyMock = vi.hoisted(() => {
   const state: {
     handler: ((event: unknown) => Promise<void>) | null;
-    stepNames: string[];
   } = {
     handler: null,
-    stepNames: [],
   };
   return state;
 });
@@ -240,15 +238,6 @@ function getHandler(): (event: unknown) => Promise<void> {
 function createMockWorkloadEvent(eventData: unknown): unknown {
   return {
     eventData,
-    step: {
-      run: async (
-        name: string,
-        fn: () => Promise<unknown>,
-      ): Promise<unknown> => {
-        netlifyMock.stepNames.push(name);
-        return fn();
-      },
-    },
   };
 }
 
@@ -291,7 +280,6 @@ describe('ai-stream integration', () => {
 
   beforeEach(() => {
     vi.restoreAllMocks();
-    netlifyMock.stepNames.length = 0;
 
     openaiSdk.chatCompletionsCreate.mockReset();
     anthropicSdk.messagesStream.mockReset();
@@ -306,6 +294,7 @@ describe('ai-stream integration', () => {
     process.env['OPENAI_API_KEY'] = 'sk-integration-openai';
     process.env['ANTHROPIC_API_KEY'] = 'sk-integration-anthropic';
     process.env['GOOGLE_API_KEY'] = 'integration-google-key';
+    process.env['SUPABASE_ANON_KEY'] = 'integration-anon-key';
   });
 
   afterEach(() => {
@@ -314,6 +303,7 @@ describe('ai-stream integration', () => {
     delete process.env['OPENAI_API_KEY'];
     delete process.env['ANTHROPIC_API_KEY'];
     delete process.env['GOOGLE_API_KEY'];
+    delete process.env['SUPABASE_ANON_KEY'];
   });
 
   it('full chain — OpenAI: real createAiStreamDeps → real getNodeAiAdapter → real createOpenAINodeAdapter → mocked SDK → POST', async () => {
@@ -355,7 +345,6 @@ describe('ai-stream integration', () => {
       expect(posted.body.token_usage.completion_tokens).toBe(20);
       expect(posted.body.token_usage.total_tokens).toBe(30);
     }
-    expect(netlifyMock.stepNames).toEqual(['stream-ai', 'post-result']);
   });
 
   it('full chain — Anthropic: real createAiStreamDeps → real getNodeAiAdapter → real createAnthropicNodeAdapter → mocked SDK → POST', async () => {
@@ -398,7 +387,6 @@ describe('ai-stream integration', () => {
       expect(posted.body.token_usage.completion_tokens).toBe(25);
       expect(posted.body.token_usage.total_tokens).toBe(40);
     }
-    expect(netlifyMock.stepNames).toEqual(['stream-ai', 'post-result']);
   });
 
   it('full chain — Google: real createAiStreamDeps → real getNodeAiAdapter → real createGoogleNodeAdapter → mocked SDK → POST', async () => {
@@ -449,10 +437,9 @@ describe('ai-stream integration', () => {
       expect(posted.body.token_usage.completion_tokens).toBe(18);
       expect(posted.body.token_usage.total_tokens).toBe(30);
     }
-    expect(netlifyMock.stepNames).toEqual(['stream-ai', 'post-result']);
   });
 
-  it('step isolation — adapter error: step.run(stream-ai) propagates, step.run(post-result) never called', async () => {
+  it('adapter error propagates and prevents POST', async () => {
     openaiSdk.chatCompletionsCreate.mockRejectedValue(
       new Error('SDK connection error'),
     );
@@ -477,11 +464,10 @@ describe('ai-stream integration', () => {
     await expect(getHandler()(mockEvent)).rejects.toThrow(
       'SDK connection error',
     );
-    expect(netlifyMock.stepNames).toEqual(['stream-ai']);
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('step isolation — POST failure: adapter called once, step.run(post-result) throws, no re-entry into step-1', async () => {
+  it('POST failure throws after adapter completes once', async () => {
     openaiSdk.chatCompletionsCreate.mockResolvedValue(openaiSdkStream());
 
     fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 400 }));
@@ -505,7 +491,6 @@ describe('ai-stream integration', () => {
     const mockEvent: unknown = createMockWorkloadEvent(eventPayload);
 
     await expect(getHandler()(mockEvent)).rejects.toThrow();
-    expect(netlifyMock.stepNames).toEqual(['stream-ai', 'post-result']);
     expect(openaiSdk.chatCompletionsCreate).toHaveBeenCalledTimes(1);
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });

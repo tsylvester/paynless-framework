@@ -117,9 +117,9 @@ export async function createDialecticWorkerDeps(
   if (!netlifyApiKey) {
     throw new Error('AWL_API_KEY is not set');
   }
-  const hmacSecret: string | undefined = Deno.env.get('SUPABASE_HMAC_SECRET');
+  const hmacSecret: string | undefined = Deno.env.get('HMAC_SECRET');
   if (!hmacSecret) {
-    throw new Error('SUPABASE_HMAC_SECRET is not set');
+    throw new Error('HMAC_SECRET is not set');
   }
   const computeJobSig: ComputeJobSig = await createComputeJobSig(hmacSecret);
   const apiKeyForProvider: ApiKeyForProviderFn = (apiIdentifier: string): string | null => {

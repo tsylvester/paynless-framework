@@ -1,4 +1,4 @@
-import { ErrorDoNotRetry } from '@netlify/async-workloads';
+import { ErrorDoNotRetry, type AsyncWorkloadEvent } from '@netlify/async-workloads';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
   AiAdapter,
@@ -9,30 +9,40 @@ import { createMockAnthropicNodeAdapter } from './adapters/anthropic/anthropic.m
 import { createMockGoogleNodeAdapter } from './adapters/google/google.mock.ts';
 import {
   createMockOpenAINodeAdapter,
-  mockNodeChatApiRequest,
   mockNodeModelConfig,
 } from './adapters/openai/openai.mock.ts';
 import { isAiStreamPayload } from './ai-stream.guard.ts';
 import {
   createMockAiStreamDeps,
+  createMockAiStreamEvent,
+  createMockAsyncWorkloadEvent,
   mockAiStreamSaveResponseUrl,
 } from './ai-stream.mock.ts';
-import type { AiStreamEvent } from './ai-stream.interface.ts';
+import type { AiStreamDeps } from './ai-stream.interface.ts';
 import { isAiStreamDeps } from './ai-stream.guard.ts';
-import { createAiStreamDeps, runAiStreamWorkloadForTests } from './ai-stream.ts';
+import { createAiStreamDeps, handleAiStreamWorkload } from './ai-stream.ts';
 
 describe('ai-stream workload', () => {
+  let savedAnonKey: string | undefined;
+
   beforeEach(() => {
     vi.restoreAllMocks();
+    savedAnonKey = process.env['SUPABASE_ANON_KEY'];
+    process.env['SUPABASE_ANON_KEY'] = 'test-anon-key';
   });
 
   afterEach(() => {
     vi.unstubAllGlobals();
+    if (savedAnonKey === undefined) {
+      delete process.env['SUPABASE_ANON_KEY'];
+    } else {
+      process.env['SUPABASE_ANON_KEY'] = savedAnonKey;
+    }
   });
 
   it('throws ErrorDoNotRetry for invalid event and does not invoke adapter factories', async () => {
     let factoryCallCount: number = 0;
-    const deps = createMockAiStreamDeps({
+    const deps: AiStreamDeps = createMockAiStreamDeps({
       providerMap: {
         'openai-': (_params: NodeAdapterConstructorParams): AiAdapter => {
           factoryCallCount += 1;
@@ -40,28 +50,30 @@ describe('ai-stream workload', () => {
         },
       },
     });
-    await expect(runAiStreamWorkloadForTests(deps, {})).rejects.toBeInstanceOf(
+    const event: AsyncWorkloadEvent = createMockAsyncWorkloadEvent({ eventData: {} });
+    await expect(handleAiStreamWorkload(deps, event)).rejects.toBeInstanceOf(
       ErrorDoNotRetry,
     );
     expect(factoryCallCount).toBe(0);
   });
 
   it('throws ErrorDoNotRetry for unknown api_identifier prefix', async () => {
-    const deps = createMockAiStreamDeps({
+    const deps: AiStreamDeps = createMockAiStreamDeps({
       providerMap: {
         'openai-': (_params: NodeAdapterConstructorParams): AiAdapter => {
           return createMockOpenAINodeAdapter();
         },
       },
     });
-    const event: AiStreamEvent = {
-      job_id: 'job-1',
-      api_identifier: 'mistral-unknown-model',
-      model_config: { ...mockNodeModelConfig, api_identifier: 'mistral-unknown-model' },
-      chat_api_request: { ...mockNodeChatApiRequest },
-      sig: 'hmac-sig-value',
-    };
-    await expect(runAiStreamWorkloadForTests(deps, event)).rejects.toBeInstanceOf(
+    const event: AsyncWorkloadEvent = createMockAsyncWorkloadEvent({
+      eventData: createMockAiStreamEvent({
+        job_id: 'job-1',
+        api_identifier: 'mistral-unknown-model',
+        model_config: { ...mockNodeModelConfig, api_identifier: 'mistral-unknown-model' },
+        sig: 'hmac-sig-value',
+      }),
+    });
+    await expect(handleAiStreamWorkload(deps, event)).rejects.toBeInstanceOf(
       ErrorDoNotRetry,
     );
   });
@@ -73,7 +85,7 @@ describe('ai-stream workload', () => {
       },
     );
     vi.stubGlobal('fetch', fetchMock);
-    const deps = createMockAiStreamDeps({
+    const deps: AiStreamDeps = createMockAiStreamDeps({
       providerMap: {
         'openai-': (_params: NodeAdapterConstructorParams): AiAdapter => {
           return createMockOpenAINodeAdapter();
@@ -83,14 +95,10 @@ describe('ai-stream workload', () => {
         return 'sk-openai';
       },
     });
-    const event: AiStreamEvent = {
-      job_id: 'job-openai',
-      api_identifier: 'openai-gpt-4o',
-      model_config: { ...mockNodeModelConfig },
-      chat_api_request: { ...mockNodeChatApiRequest },
-      sig: 'hmac-openai-sig',
-    };
-    await runAiStreamWorkloadForTests(deps, event);
+    const event: AsyncWorkloadEvent = createMockAsyncWorkloadEvent({
+      eventData: createMockAiStreamEvent({ sig: 'hmac-openai-sig' }),
+    });
+    await handleAiStreamWorkload(deps, event);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const firstCall: unknown = fetchMock.mock.calls[0];
     if (!Array.isArray(firstCall) || firstCall.length < 2) {
@@ -103,6 +111,11 @@ describe('ai-stream workload', () => {
       throw new Error('expected RequestInit');
     }
     const init: RequestInit = initValue;
+    const headersValue: unknown = init.headers;
+    if (typeof headersValue !== 'object' || headersValue === null) {
+      throw new Error('expected headers object');
+    }
+    expect((headersValue as Record<string, string>)['Authorization']).toBe('Bearer test-anon-key');
     const bodyValue: unknown = init.body;
     if (typeof bodyValue !== 'string') {
       throw new Error('expected string body');
@@ -124,7 +137,7 @@ describe('ai-stream workload', () => {
       },
     );
     vi.stubGlobal('fetch', fetchMock);
-    const deps = createMockAiStreamDeps({
+    const deps: AiStreamDeps = createMockAiStreamDeps({
       providerMap: {
         'anthropic-': (_params: NodeAdapterConstructorParams): AiAdapter => {
           return createMockAnthropicNodeAdapter();
@@ -134,23 +147,21 @@ describe('ai-stream workload', () => {
         return 'sk-anthropic';
       },
     });
-    const event: AiStreamEvent = {
-      job_id: 'job-anthropic',
-      api_identifier: 'anthropic-claude-3-5-sonnet',
-      model_config: {
+    const event: AsyncWorkloadEvent = createMockAsyncWorkloadEvent({
+      eventData: createMockAiStreamEvent({
+        job_id: 'job-anthropic',
         api_identifier: 'anthropic-claude-3-5-sonnet',
-        hard_cap_output_tokens: 4096,
-        input_token_cost_rate: null,
-        output_token_cost_rate: null,
-      },
-      chat_api_request: {
-        message: 'hi',
-        providerId: 'p',
-        promptId: 'q',
-      },
-      sig: 'hmac-anthropic-sig',
-    };
-    await runAiStreamWorkloadForTests(deps, event);
+        model_config: {
+          api_identifier: 'anthropic-claude-3-5-sonnet',
+          hard_cap_output_tokens: 4096,
+          input_token_cost_rate: null,
+          output_token_cost_rate: null,
+        },
+        chat_api_request: { message: 'hi', providerId: 'p', promptId: 'q' },
+        sig: 'hmac-anthropic-sig',
+      }),
+    });
+    await handleAiStreamWorkload(deps, event);
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
@@ -161,7 +172,7 @@ describe('ai-stream workload', () => {
       },
     );
     vi.stubGlobal('fetch', fetchMock);
-    const deps = createMockAiStreamDeps({
+    const deps: AiStreamDeps = createMockAiStreamDeps({
       providerMap: {
         'google-': (_params: NodeAdapterConstructorParams): AiAdapter => {
           return createMockGoogleNodeAdapter();
@@ -171,23 +182,21 @@ describe('ai-stream workload', () => {
         return 'google-key';
       },
     });
-    const event: AiStreamEvent = {
-      job_id: 'job-google',
-      api_identifier: 'google-gemini-2-5-pro',
-      model_config: {
+    const event: AsyncWorkloadEvent = createMockAsyncWorkloadEvent({
+      eventData: createMockAiStreamEvent({
+        job_id: 'job-google',
         api_identifier: 'google-gemini-2-5-pro',
-        hard_cap_output_tokens: 4096,
-        input_token_cost_rate: null,
-        output_token_cost_rate: null,
-      },
-      chat_api_request: {
-        message: 'hi',
-        providerId: 'p',
-        promptId: 'q',
-      },
-      sig: 'hmac-google-sig',
-    };
-    await runAiStreamWorkloadForTests(deps, event);
+        model_config: {
+          api_identifier: 'google-gemini-2-5-pro',
+          hard_cap_output_tokens: 4096,
+          input_token_cost_rate: null,
+          output_token_cost_rate: null,
+        },
+        chat_api_request: { message: 'hi', providerId: 'p', promptId: 'q' },
+        sig: 'hmac-google-sig',
+      }),
+    });
+    await handleAiStreamWorkload(deps, event);
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
@@ -202,7 +211,7 @@ describe('ai-stream workload', () => {
         throw new Error('stream failed');
       },
     };
-    const deps = createMockAiStreamDeps({
+    const deps: AiStreamDeps = createMockAiStreamDeps({
       providerMap: {
         'openai-': (_params: NodeAdapterConstructorParams): AiAdapter => {
           return failingAdapter;
@@ -212,14 +221,10 @@ describe('ai-stream workload', () => {
         return 'sk-openai';
       },
     });
-    const event: AiStreamEvent = {
-      job_id: 'job-err',
-      api_identifier: 'openai-gpt-4o',
-      model_config: { ...mockNodeModelConfig },
-      chat_api_request: { ...mockNodeChatApiRequest },
-      sig: 'hmac-sig-value',
-    };
-    await expect(runAiStreamWorkloadForTests(deps, event)).rejects.toThrow('stream failed');
+    const event: AsyncWorkloadEvent = createMockAsyncWorkloadEvent({
+      eventData: createMockAiStreamEvent({ sig: 'hmac-sig-value' }),
+    });
+    await expect(handleAiStreamWorkload(deps, event)).rejects.toThrow('stream failed');
   });
 
   it('throws when back-half POST returns 4xx', async () => {
@@ -229,7 +234,7 @@ describe('ai-stream workload', () => {
       },
     );
     vi.stubGlobal('fetch', fetchMock);
-    const deps = createMockAiStreamDeps({
+    const deps: AiStreamDeps = createMockAiStreamDeps({
       providerMap: {
         'openai-': (_params: NodeAdapterConstructorParams): AiAdapter => {
           return createMockOpenAINodeAdapter();
@@ -239,14 +244,10 @@ describe('ai-stream workload', () => {
         return 'sk-openai';
       },
     });
-    const event: AiStreamEvent = {
-      job_id: 'job-post-err',
-      api_identifier: 'openai-gpt-4o',
-      model_config: { ...mockNodeModelConfig },
-      chat_api_request: { ...mockNodeChatApiRequest },
-      sig: 'hmac-sig-value',
-    };
-    await expect(runAiStreamWorkloadForTests(deps, event)).rejects.toThrow();
+    const event: AsyncWorkloadEvent = createMockAsyncWorkloadEvent({
+      eventData: createMockAiStreamEvent({ sig: 'hmac-sig-value' }),
+    });
+    await expect(handleAiStreamWorkload(deps, event)).rejects.toThrow();
   });
 
   it('POSTs AiStreamPayload with assembled_content and JWT on full happy path', async () => {
@@ -256,7 +257,7 @@ describe('ai-stream workload', () => {
       },
     );
     vi.stubGlobal('fetch', fetchMock);
-    const deps = createMockAiStreamDeps({
+    const deps: AiStreamDeps = createMockAiStreamDeps({
       providerMap: {
         'openai-': (_params: NodeAdapterConstructorParams): AiAdapter => {
           return createMockOpenAINodeAdapter();
@@ -266,14 +267,13 @@ describe('ai-stream workload', () => {
         return 'sk-openai';
       },
     });
-    const event: AiStreamEvent = {
-      job_id: 'job-happy',
-      api_identifier: 'openai-gpt-4o',
-      model_config: { ...mockNodeModelConfig },
-      chat_api_request: { ...mockNodeChatApiRequest },
-      sig: 'hmac-happy-sig',
-    };
-    await runAiStreamWorkloadForTests(deps, event);
+    const event: AsyncWorkloadEvent = createMockAsyncWorkloadEvent({
+      eventData: createMockAiStreamEvent({
+        job_id: 'job-happy',
+        sig: 'hmac-happy-sig',
+      }),
+    });
+    await handleAiStreamWorkload(deps, event);
     const firstCall: unknown = fetchMock.mock.calls[0];
     if (!Array.isArray(firstCall) || firstCall.length < 2) {
       throw new Error('expected fetch(url, init)');
@@ -325,7 +325,7 @@ describe('ai-stream workload', () => {
         yield second;
       },
     };
-    const deps = createMockAiStreamDeps({
+    const deps: AiStreamDeps = createMockAiStreamDeps({
       providerMap: {
         'openai-': (_params: NodeAdapterConstructorParams): AiAdapter => {
           return delayedAdapter;
@@ -335,14 +335,10 @@ describe('ai-stream workload', () => {
         return 'sk-openai';
       },
     });
-    const event: AiStreamEvent = {
-      job_id: 'job-timeout',
-      api_identifier: 'openai-gpt-4o',
-      model_config: { ...mockNodeModelConfig },
-      chat_api_request: { ...mockNodeChatApiRequest },
-      sig: 'hmac-timeout-sig',
-    };
-    await runAiStreamWorkloadForTests(deps, event);
+    const event: AsyncWorkloadEvent = createMockAsyncWorkloadEvent({
+      eventData: createMockAiStreamEvent({ sig: 'hmac-timeout-sig' }),
+    });
+    await handleAiStreamWorkload(deps, event);
     const firstCall: unknown = fetchMock.mock.calls[0];
     if (!Array.isArray(firstCall) || firstCall.length < 2) {
       throw new Error('expected fetch(url, init)');
@@ -387,7 +383,7 @@ describe('ai-stream workload', () => {
         yield usage;
       },
     };
-    const deps = createMockAiStreamDeps({
+    const deps: AiStreamDeps = createMockAiStreamDeps({
       providerMap: {
         'openai-': (_params: NodeAdapterConstructorParams): AiAdapter => {
           return adapterNoDone;
@@ -397,14 +393,10 @@ describe('ai-stream workload', () => {
         return 'sk-openai';
       },
     });
-    const event: AiStreamEvent = {
-      job_id: 'job-nodone',
-      api_identifier: 'openai-gpt-4o',
-      model_config: { ...mockNodeModelConfig },
-      chat_api_request: { ...mockNodeChatApiRequest },
-      sig: 'hmac-nodone-sig',
-    };
-    await runAiStreamWorkloadForTests(deps, event);
+    const event: AsyncWorkloadEvent = createMockAsyncWorkloadEvent({
+      eventData: createMockAiStreamEvent({ sig: 'hmac-nodone-sig' }),
+    });
+    await handleAiStreamWorkload(deps, event);
     const firstCall: unknown = fetchMock.mock.calls[0];
     if (!Array.isArray(firstCall) || firstCall.length < 2) {
       throw new Error('expected fetch(url, init)');
@@ -564,5 +556,94 @@ describe('createAiStreamDeps', () => {
     } catch (error: unknown) {
       expect(error).toBeInstanceOf(ErrorDoNotRetry);
     }
+  });
+});
+
+describe('handleAiStreamWorkload (production handler without step.run)', () => {
+  let savedAnonKey: string | undefined;
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    savedAnonKey = process.env['SUPABASE_ANON_KEY'];
+    process.env['SUPABASE_ANON_KEY'] = 'test-anon-key';
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    if (savedAnonKey === undefined) {
+      delete process.env['SUPABASE_ANON_KEY'];
+    } else {
+      process.env['SUPABASE_ANON_KEY'] = savedAnonKey;
+    }
+  });
+
+  it('does not call step.run on the AsyncWorkloadEvent', async () => {
+    const fetchMock = vi.fn(
+      async (_input: string | URL, _init?: RequestInit): Promise<Response> => {
+        return new Response(null, { status: 200 });
+      },
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const stepRunSpy = vi.fn();
+    const deps: AiStreamDeps = createMockAiStreamDeps({
+      getApiKey: (): string => 'sk-openai',
+    });
+    const event: AsyncWorkloadEvent = createMockAsyncWorkloadEvent({
+      step: { run: stepRunSpy, sleep: vi.fn() },
+    });
+    await handleAiStreamWorkload(deps, event);
+    expect(stepRunSpy).not.toHaveBeenCalled();
+  });
+
+  it('collects and POSTs payload in single straight-line pass', async () => {
+    const fetchMock = vi.fn(
+      async (_input: string | URL, _init?: RequestInit): Promise<Response> => {
+        return new Response(null, { status: 200 });
+      },
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const deps: AiStreamDeps = createMockAiStreamDeps({
+      getApiKey: (): string => 'sk-openai',
+    });
+    const event: AsyncWorkloadEvent = createMockAsyncWorkloadEvent({
+      eventData: createMockAiStreamEvent({
+        job_id: 'job-straight-line',
+        sig: 'hmac-straight-sig',
+      }),
+    });
+    await handleAiStreamWorkload(deps, event);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const firstCall: unknown = fetchMock.mock.calls[0];
+    if (!Array.isArray(firstCall) || firstCall.length < 2) {
+      throw new Error('expected fetch(url, init)');
+    }
+    const urlValue: unknown = firstCall[0];
+    expect(urlValue).toBe(mockAiStreamSaveResponseUrl);
+    const initValue: unknown = firstCall[1];
+    if (typeof initValue !== 'object' || initValue === null) {
+      throw new Error('expected RequestInit');
+    }
+    const init: RequestInit = initValue;
+    const bodyValue: unknown = init.body;
+    if (typeof bodyValue !== 'string') {
+      throw new Error('expected string body');
+    }
+    const parsed: unknown = JSON.parse(bodyValue);
+    expect(isAiStreamPayload(parsed)).toBe(true);
+    if (!isAiStreamPayload(parsed)) {
+      throw new Error('POST body must satisfy AiStreamPayload');
+    }
+    expect(parsed.job_id).toBe('job-straight-line');
+    expect(parsed.sig).toBe('hmac-straight-sig');
+    expect(parsed.finish_reason).toBe('stop');
+    expect(parsed.assembled_content).toContain('mock openai response');
+  });
+
+  it('throws ErrorDoNotRetry for invalid eventData', async () => {
+    const deps: AiStreamDeps = createMockAiStreamDeps();
+    const event: AsyncWorkloadEvent = createMockAsyncWorkloadEvent({ eventData: {} });
+    await expect(
+      handleAiStreamWorkload(deps, event),
+    ).rejects.toBeInstanceOf(ErrorDoNotRetry);
   });
 });
