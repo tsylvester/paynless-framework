@@ -80,7 +80,7 @@ export interface AuthStore {
   login: (email: string, password: string) => Promise<void>
   loginWithGoogle: () => Promise<void>;
   register: (email: string, password: string) => Promise<void>
-  subscribeToNewsletter: (email: string) => Promise<void>;
+  subscribeToNewsletter: (email: string, ref?: string) => Promise<void>;
   logout: () => Promise<void>
   updateProfile: (profileData: UserProfileUpdate) => Promise<UserProfile | null> // Uses UserProfile alias
   updateEmail: (email: string) => Promise<boolean>

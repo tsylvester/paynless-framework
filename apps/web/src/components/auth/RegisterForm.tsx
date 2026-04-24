@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { Mail, Lock, AlertCircle } from 'lucide-react'
 import { logger } from '@paynless/utils'
 import { useAuthStore } from '@paynless/store'
@@ -14,6 +14,7 @@ export function RegisterForm() {
   const [subscribe, setSubscribe] = useState(true)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
 
   const register = useAuthStore((state) => state.register)
   const subscribeToNewsletter = useAuthStore((state) => state.subscribeToNewsletter)
@@ -35,7 +36,9 @@ export function RegisterForm() {
 
       if (subscribe) {
         // This is a non-blocking call
-        subscribeToNewsletter(email);
+        // Pass the ref parameter from the URL to the newsletter subscription
+        const ref = searchParams.get('ref') || undefined;
+        subscribeToNewsletter(email, ref);
       }
 
       logger.info('[RegisterForm] Register action succeeded, navigating to dashboard.')
