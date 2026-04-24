@@ -12,3 +12,6 @@
 
 [dev]
   functionsTimeout = 900
+
+[functions."*"]
+  external_node_modules = ["@netlify/async-workloads"]
