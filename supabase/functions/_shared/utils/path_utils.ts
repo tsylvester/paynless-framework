@@ -9,7 +9,7 @@ export type ExtractSourceGroupFragmentFn = (sourceGroup: string | undefined) => 
  * 
  * The function handles undefined, null, and empty string inputs gracefully by
  * returning undefined. This ensures consistent fragment extraction across
- * `path_constructor.ts`, `executeModelCallAndSave.ts`, and `document_renderer.ts`.
+ * `path_constructor.ts`, `saveResponse.ts`, and `document_renderer.ts`.
  * 
  * @param sourceGroup - The UUID string from `document_relationships.source_group`, or undefined
  * @returns The first 8 characters (sanitized) as a lowercase string, or undefined if input is invalid

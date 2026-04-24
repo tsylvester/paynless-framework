@@ -8,7 +8,7 @@ Each builder must provide a default value and accept an override for each value 
 
 Do not build mocks specific to a single override value. We do not want `mockFunctionMissingSomeDependency`. That is what the default type and override values are for. 
 
-The plain mock factory defaults must suffice for the interface test. The interface test depends only on the interface, not on specific implementation details. 
+Interface tests do not use mocks. Interface tests must not depend on any implementation detail. Do not write mocks for interface tests. 
 
 The mock factory plus selected overrides must suffice for the type guards, unit tests, and integration test boundaries. 
 

@@ -1093,7 +1093,7 @@ const baseSavedContribution: DialecticContributionRow = {
             const newPayload = newJobData.payload;
             assertExists(newPayload.document_relationships, 'continuation payload must have document_relationships');
             const rels = newPayload.document_relationships as Record<string, string | null>;
-            assertExists(rels.antithesis, 'document_relationships[stageSlug] (antithesis) is required for continuation so executeModelCallAndSave can persist and validate it');
+            assertExists(rels.antithesis, 'document_relationships[stageSlug] (antithesis) is required for continuation so saveResponse can persist and validate it');
             assertEquals(rels.antithesis, rootContribId, 'document_relationships.antithesis must be the root contribution id from saved contribution (planner only sets source_group for root jobs)');
         } else {
             assert(false, 'Payload is not a valid DialecticExecuteJobPayload');

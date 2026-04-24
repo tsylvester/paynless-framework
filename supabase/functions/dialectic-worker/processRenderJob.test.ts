@@ -17,7 +17,7 @@ import { DialecticRenderJobPayload } from "../dialectic-service/dialectic.interf
 import { isJson } from "../_shared/utils/type-guards/type_guards.common.ts";
 import { IRenderJobContext } from "./createJobContext/JobContext.interface.ts";
 import { createRenderJobContext } from "./createJobContext/createJobContext.ts";
-import { buildGuardTestIJobContext } from "./createJobContext/JobContext.mock.ts";
+import { buildIJobContext } from "./createJobContext/JobContext.mock.ts";
 
 // Helpers
 type MockJob = Database['public']['Tables']['dialectic_generation_jobs']['Row'];
@@ -78,7 +78,7 @@ Deno.test("processRenderJob - calls renderer with job signature and marks job co
   const job = makeRenderJob();
   const ownerId = job.user_id;
   assertExists(ownerId, "Expected job.user_id to be defined for test setup");
-  const rootCtx = buildGuardTestIJobContext();
+  const rootCtx = buildIJobContext();
   const renderCtx: IRenderJobContext = createRenderJobContext(rootCtx);
   const renderDocumentStub = stub(
     rootCtx.documentRenderer,
@@ -143,7 +143,7 @@ Deno.test("processRenderJob - passes originating contribution id to renderer pay
   const job = makeRenderJob({ documentIdentity, sourceContributionId });
   const ownerId = job.user_id;
   assertExists(ownerId, "Expected job.user_id to be defined for test setup");
-  const rootCtx = buildGuardTestIJobContext();
+  const rootCtx = buildIJobContext();
   const renderCtx: IRenderJobContext = createRenderJobContext(rootCtx);
   const renderDocumentStub = stub(
     rootCtx.documentRenderer,
@@ -188,7 +188,7 @@ Deno.test("processRenderJob - records failure with error_details when renderer t
   const job = makeRenderJob();
   const ownerId = job.user_id;
   assertExists(ownerId, "Expected job.user_id to be defined for test setup");
-  const rootCtx = buildGuardTestIJobContext();
+  const rootCtx = buildIJobContext();
   const renderCtx: IRenderJobContext = createRenderJobContext(rootCtx);
   const renderDocumentStub = stub(rootCtx.documentRenderer, "renderDocument", async () => {
     throw error;
@@ -236,7 +236,7 @@ Deno.test("processRenderJob - emits job_failed document-centric notification on 
   }
   const jobPayload: DialecticRenderJobPayload = rawPayload;
   resetMockNotificationService();
-  const rootCtx = buildGuardTestIJobContext();
+  const rootCtx = buildIJobContext();
   const renderCtx: IRenderJobContext = createRenderJobContext(rootCtx);
   const renderDocumentStub = stub(rootCtx.documentRenderer, "renderDocument", async () => {
     throw err;
@@ -305,7 +305,7 @@ Deno.test("processRenderJob - forwards dbClient and args unchanged; does not mut
 
   let receivedDbClient: unknown;
   let receivedParams: unknown;
-  const rootCtx = buildGuardTestIJobContext();
+  const rootCtx = buildIJobContext();
   const renderCtx: IRenderJobContext = createRenderJobContext(rootCtx);
   const renderDocumentStub = stub(
     rootCtx.documentRenderer,
@@ -355,7 +355,7 @@ Deno.test("processRenderJob - success path performs a single deterministic job u
   const job = makeRenderJob();
   const ownerId = job.user_id;
   assertExists(ownerId, "Expected job.user_id to be defined for test setup");
-  const rootCtx = buildGuardTestIJobContext();
+  const rootCtx = buildIJobContext();
   const renderCtx: IRenderJobContext = createRenderJobContext(rootCtx);
   const renderDocumentStub = stub(
     rootCtx.documentRenderer,
@@ -410,7 +410,7 @@ Deno.test("processRenderJob - persists renderer pathContext into job results", a
   const job = makeRenderJob({ sourceContributionId: expectedSourceContributionId });
   const ownerId = job.user_id;
   assertExists(ownerId, "Expected job.user_id to be defined for test setup");
-  const rootCtx = buildGuardTestIJobContext();
+  const rootCtx = buildIJobContext();
   const renderCtx: IRenderJobContext = createRenderJobContext(rootCtx);
   const renderDocumentStub = stub(
     rootCtx.documentRenderer,
@@ -474,7 +474,7 @@ Deno.test("processRenderJob - forwards notifyUserId to renderer deps", async () 
 
   let receivedNotifyUserId: unknown;
   let receivedNotificationService: unknown;
-  const rootCtx = buildGuardTestIJobContext();
+  const rootCtx = buildIJobContext();
   const renderCtx: IRenderJobContext = createRenderJobContext(rootCtx);
   const renderDocumentStub = stub(
     rootCtx.documentRenderer,
@@ -516,7 +516,7 @@ Deno.test("processRenderJob - forwards notifyUserId to renderer deps", async () 
 Deno.test("processRenderJob - converts string iterationNumber to number", async () => {
   const { client: dbClient, clearAllStubs } = createMockSupabaseClient();
   let receivedIteration: number | null = null;
-  const rootCtx = buildGuardTestIJobContext();
+  const rootCtx = buildIJobContext();
   const renderCtx: IRenderJobContext = createRenderJobContext(rootCtx);
   const renderDocumentStub = stub(
     rootCtx.documentRenderer,
@@ -561,7 +561,7 @@ Deno.test("processRenderJob - fails and does not call renderer when projectId mi
   const job = makeRenderJob({ projectId: undefined });
   const ownerId = job.user_id;
   assertExists(ownerId, "Expected job.user_id to be defined for test setup");
-  const rootCtx = buildGuardTestIJobContext();
+  const rootCtx = buildIJobContext();
   const renderCtx: IRenderJobContext = createRenderJobContext(rootCtx);
   const renderDocumentStub = stub(
     rootCtx.documentRenderer,
@@ -608,7 +608,7 @@ Deno.test("processRenderJob - fails when sessionId missing", async () => {
   const job = makeRenderJob({ sessionId: undefined });
   const ownerId = job.user_id;
   assertExists(ownerId, "Expected job.user_id to be defined for test setup");
-  const rootCtx = buildGuardTestIJobContext();
+  const rootCtx = buildIJobContext();
   const renderCtx: IRenderJobContext = createRenderJobContext(rootCtx);
   const renderDocumentStub = stub(
     rootCtx.documentRenderer,
@@ -654,7 +654,7 @@ Deno.test("processRenderJob - fails when stageSlug missing", async () => {
   const job = makeRenderJob({ stageSlug: undefined });
   const ownerId = job.user_id;
   assertExists(ownerId, "Expected job.user_id to be defined for test setup");
-  const rootCtx = buildGuardTestIJobContext();
+  const rootCtx = buildIJobContext();
   const renderCtx: IRenderJobContext = createRenderJobContext(rootCtx);
   const renderDocumentStub = stub(
     rootCtx.documentRenderer,
@@ -700,7 +700,7 @@ Deno.test("processRenderJob - fails when documentIdentity missing", async () => 
   const job = makeRenderJob({ documentIdentity: undefined });
   const ownerId = job.user_id;
   assertExists(ownerId, "Expected job.user_id to be defined for test setup");
-  const rootCtx = buildGuardTestIJobContext();
+  const rootCtx = buildIJobContext();
   const renderCtx: IRenderJobContext = createRenderJobContext(rootCtx);
   const renderDocumentStub = stub(
     rootCtx.documentRenderer,
@@ -746,7 +746,7 @@ Deno.test("processRenderJob - fails when iterationNumber missing or invalid", as
   const job = makeRenderJob({ iterationNumber: undefined });
   const ownerId = job.user_id;
   assertExists(ownerId, "Expected job.user_id to be defined for test setup");
-  const rootCtx = buildGuardTestIJobContext();
+  const rootCtx = buildIJobContext();
   const renderCtx: IRenderJobContext = createRenderJobContext(rootCtx);
   const renderDocumentStub = stub(
     rootCtx.documentRenderer,
@@ -795,7 +795,7 @@ Deno.test("processRenderJob - fails when iterationNumber is non-numeric string",
   }
   const ownerId = job.user_id;
   assertExists(ownerId, "Expected job.user_id to be defined for test setup");
-  const rootCtx = buildGuardTestIJobContext();
+  const rootCtx = buildIJobContext();
   const renderCtx: IRenderJobContext = createRenderJobContext(rootCtx);
   const renderDocumentStub = stub(
     rootCtx.documentRenderer,
@@ -844,7 +844,7 @@ Deno.test("processRenderJob - fails when documentKey is not a FileType", async (
   }
   const ownerId = job.user_id;
   assertExists(ownerId, "Expected job.user_id to be defined for test setup");
-  const rootCtx = buildGuardTestIJobContext();
+  const rootCtx = buildIJobContext();
   const renderCtx: IRenderJobContext = createRenderJobContext(rootCtx);
   const renderDocumentStub = stub(
     rootCtx.documentRenderer,
@@ -899,7 +899,7 @@ Deno.test("processRenderJob - accepts sourceContributionId that differs from doc
   });
   const ownerId = job.user_id;
   assertExists(ownerId, "Expected job.user_id to be defined for test setup");
-  const rootCtx = buildGuardTestIJobContext();
+  const rootCtx = buildIJobContext();
   const renderCtx: IRenderJobContext = createRenderJobContext(rootCtx);
   const renderDocumentStub = stub(
     rootCtx.documentRenderer,
@@ -966,7 +966,7 @@ Deno.test("processRenderJob - processes RENDER job successfully for root chunk w
   });
   const ownerId = job.user_id;
   assertExists(ownerId, "Expected job.user_id to be defined for test setup");
-  const rootCtx = buildGuardTestIJobContext();
+  const rootCtx = buildIJobContext();
   const renderCtx: IRenderJobContext = createRenderJobContext(rootCtx);
   const renderDocumentStub = stub(
     rootCtx.documentRenderer,
@@ -1037,7 +1037,7 @@ Deno.test("processRenderJob - processes RENDER job successfully for continuation
   });
   const ownerId = job.user_id;
   assertExists(ownerId, "Expected job.user_id to be defined for test setup");
-  const rootCtx = buildGuardTestIJobContext();
+  const rootCtx = buildIJobContext();
   const renderCtx: IRenderJobContext = createRenderJobContext(rootCtx);
   const renderDocumentStub = stub(
     rootCtx.documentRenderer,
@@ -1110,7 +1110,7 @@ Deno.test("processRenderJob - passes sourceContributionId and documentIdentity t
   });
   const ownerId = job.user_id;
   assertExists(ownerId, "Expected job.user_id to be defined for test setup");
-  const rootCtx = buildGuardTestIJobContext();
+  const rootCtx = buildIJobContext();
   const renderCtx: IRenderJobContext = createRenderJobContext(rootCtx);
   const renderDocumentStub = stub(
     rootCtx.documentRenderer,
@@ -1184,7 +1184,7 @@ Deno.test("processRenderJob - extracts template_filename from payload and passes
   const ownerId = job.user_id;
   assertExists(ownerId, "Expected job.user_id to be defined for test setup");
   
-  const rootCtx = buildGuardTestIJobContext();
+  const rootCtx = buildIJobContext();
   const renderCtx: IRenderJobContext = createRenderJobContext(rootCtx);
   
   // (2) Mock renderDocument function
@@ -1244,7 +1244,7 @@ Deno.test("processRenderJob - emits render_started event when RENDER job begins 
   }
   const jobPayload: DialecticRenderJobPayload = rawPayload;
   resetMockNotificationService();
-  const rootCtx = buildGuardTestIJobContext();
+  const rootCtx = buildIJobContext();
   const renderCtx: IRenderJobContext = createRenderJobContext(rootCtx);
   const renderDocumentStub = stub(
     rootCtx.documentRenderer,
@@ -1304,7 +1304,7 @@ Deno.test("processRenderJob - emits render_chunk_completed event when RENDER job
   }
   const jobPayload: DialecticRenderJobPayload = rawPayload;
   resetMockNotificationService();
-  const rootCtx = buildGuardTestIJobContext();
+  const rootCtx = buildIJobContext();
   const renderCtx: IRenderJobContext = createRenderJobContext(rootCtx);
   const renderDocumentStub = stub(
     rootCtx.documentRenderer,
@@ -1365,7 +1365,7 @@ Deno.test("processRenderJob - emits render_completed event when RENDER job finis
   const jobPayload: DialecticRenderJobPayload = rawPayload;
   const latestResourceId = "resource-rendered-123";
   resetMockNotificationService();
-  const rootCtx = buildGuardTestIJobContext();
+  const rootCtx = buildIJobContext();
   const renderCtx: IRenderJobContext = createRenderJobContext(rootCtx);
   const renderDocumentStub = stub(
     rootCtx.documentRenderer,
@@ -1426,7 +1426,7 @@ Deno.test("processRenderJob - all RENDER notification payloads include sessionId
   const ownerId = job.user_id;
   assertExists(ownerId);
   resetMockNotificationService();
-  const rootCtx = buildGuardTestIJobContext();
+  const rootCtx = buildIJobContext();
   const renderCtx: IRenderJobContext = createRenderJobContext(rootCtx);
   const renderDocumentStub = stub(
     rootCtx.documentRenderer,
@@ -1495,7 +1495,7 @@ Deno.test("processRenderJob - job_failed notification is sent to projectOwnerUse
   const ownerId = job.user_id;
   assertExists(ownerId);
   resetMockNotificationService();
-  const rootCtx = buildGuardTestIJobContext();
+  const rootCtx = buildIJobContext();
   const renderCtx: IRenderJobContext = createRenderJobContext(rootCtx);
   const renderDocumentStub = stub(rootCtx.documentRenderer, "renderDocument", async () => {
     throw new Error("terminal error");

@@ -8,8 +8,8 @@ import {
     IRagContext,
     ITokenContext,
     INotificationContext,
-    IExecuteModelCallContext,
     IPrepareModelJobContext,
+    ISaveResponseContext,
     IPlanJobContext,
     IRenderJobContext,
     IJobContext,
@@ -93,25 +93,6 @@ export function isINotificationContext(value: unknown): value is INotificationCo
     );
 }
 
-export function isIExecuteModelCallContext(value: unknown): value is IExecuteModelCallContext {
-    if (!isRecord(value)) return false;
-
-    return (
-        'logger' in value && typeof value.logger === 'object' && value.logger !== null &&
-        'fileManager' in value && typeof value.fileManager === 'object' && value.fileManager !== null &&
-        'getAiProviderAdapter' in value && typeof value.getAiProviderAdapter === 'function' &&
-        'userTokenWalletService' in value && typeof value.userTokenWalletService === 'object' && value.userTokenWalletService !== null &&
-        'notificationService' in value && typeof value.notificationService === 'object' && value.notificationService !== null &&
-        'continueJob' in value && typeof value.continueJob === 'function' &&
-        'retryJob' in value && typeof value.retryJob === 'function' &&
-        'resolveFinishReason' in value && typeof value.resolveFinishReason === 'function' &&
-        'isIntermediateChunk' in value && typeof value.isIntermediateChunk === 'function' &&
-        'determineContinuation' in value && typeof value.determineContinuation === 'function' &&
-        'buildUploadContext' in value && typeof value.buildUploadContext === 'function' &&
-        'debitTokens' in value && typeof value.debitTokens === 'function'
-    );
-}
-
 export function isIPrepareModelJobContext(value: unknown): value is IPrepareModelJobContext {
     if (!isRecord(value)) return false;
 
@@ -124,9 +105,17 @@ export function isIPrepareModelJobContext(value: unknown): value is IPrepareMode
         'validateModelCostRates' in value && typeof value.validateModelCostRates === 'function' &&
         'ragService' in value && typeof value.ragService === 'object' && value.ragService !== null &&
         'embeddingClient' in value && typeof value.embeddingClient === 'object' && value.embeddingClient !== null &&
-        'executeModelCallAndSave' in value && typeof value.executeModelCallAndSave === 'function' &&
-        'enqueueRenderJob' in value && typeof value.enqueueRenderJob === 'function' &&
+        'enqueueModelCall' in value && typeof value.enqueueModelCall === 'function' &&
         'calculateAffordability' in value && typeof value.calculateAffordability === 'function'
+    );
+}
+
+export function isISaveResponseContext(value: unknown): value is ISaveResponseContext {
+    if (!isRecord(value)) return false;
+
+    return (
+        'enqueueRenderJob' in value && typeof value.enqueueRenderJob === 'function' &&
+        'debitTokens' in value && typeof value.debitTokens === 'function'
     );
 }
 
@@ -182,6 +171,8 @@ export function isIJobContext(value: unknown): value is IJobContext {
         'debitTokens' in value && typeof value.debitTokens === 'function' &&
         'promptAssembler' in value && typeof value.promptAssembler === 'object' && value.promptAssembler !== null &&
         'getSeedPromptForStage' in value && typeof value.getSeedPromptForStage === 'function' &&
-        'prepareModelJob' in value && typeof value.prepareModelJob === 'function'
+        'prepareModelJob' in value && typeof value.prepareModelJob === 'function' &&
+        'sanitizeJsonContent' in value && typeof value.sanitizeJsonContent === 'function' &&
+        'computeJobSig' in value && typeof value.computeJobSig === 'function'
     );
 }

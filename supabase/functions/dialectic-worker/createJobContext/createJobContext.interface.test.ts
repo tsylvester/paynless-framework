@@ -30,7 +30,6 @@ import { createMockFindSourceDocuments } from '../findSourceDocuments.mock.ts';
 import { buildMockBoundCalculateAffordabilityFn } from '../calculateAffordability/calculateAffordability.mock.ts';
 import {
     IFileContext,
-    IExecuteModelCallContext,
     IJobContext,
     ILoggerContext,
     IModelContext,
@@ -40,10 +39,14 @@ import {
     IRagContext,
     IRenderJobContext,
     ITokenContext,
+    ISaveResponseContext,
     JobContextParams,
     BoundPrepareModelJobFn,
 } from './JobContext.interface.ts';
 import { BoundGatherArtifactsFn } from '../gatherArtifacts/gatherArtifacts.interface.ts';
+import { BoundEnqueueModelCallFn } from '../enqueueModelCall/enqueueModelCall.interface.ts';
+import { sanitizeJsonContent } from '../../_shared/utils/jsonSanitizer/jsonSanitizer.ts';
+import type { ComputeJobSig } from '../../_shared/utils/computeJobSig/computeJobSig.interface.ts';
 
 describe('JobContext.interface.ts contracts', () => {
     describe('ILoggerContext', () => {
@@ -138,61 +141,15 @@ describe('JobContext.interface.ts contracts', () => {
         });
     });
 
-    describe('IExecuteModelCallContext', () => {
-        it('requires twelve members for executeModelCallAndSave', () => {
-            const logger = new MockLogger();
-            const fileManager = new MockFileManagerService();
-            const userTokenWalletService = createMockUserTokenWalletService().instance;
-            const debitTokens: BoundDebitTokens = async () => ({
-                error: new Error('interface test stub'),
-                retriable: false,
-            });
-            const ctx: IExecuteModelCallContext = {
-                logger: logger,
-                fileManager: fileManager,
-                getAiProviderAdapter: () => ({
-                    sendMessage: async () => ({
-                        role: 'assistant',
-                        content: 'mock',
-                        ai_provider_id: null,
-                        system_prompt_id: null,
-                        token_usage: null,
-                    }),
-                    sendMessageStream: mockSendMessageStream,
-                    listModels: async () => [],
-                }),
-                userTokenWalletService: userTokenWalletService,
-                notificationService: mockNotificationService,
-                continueJob: async () => ({ enqueued: false }),
-                retryJob: async () => ({}),
-                resolveFinishReason: resolveFinishReason,
-                isIntermediateChunk: isIntermediateChunk,
-                determineContinuation: determineContinuation,
-                buildUploadContext: buildUploadContext,
-                debitTokens: debitTokens,
-            };
-            assertEquals(typeof ctx.logger, 'object');
-            assertEquals(typeof ctx.fileManager, 'object');
-            assertEquals(typeof ctx.getAiProviderAdapter, 'function');
-            assertEquals(typeof ctx.userTokenWalletService, 'object');
-            assertEquals(ctx.userTokenWalletService === null, false);
-            assertEquals(typeof ctx.notificationService, 'object');
-            assertEquals(ctx.notificationService === null, false);
-            assertEquals(typeof ctx.continueJob, 'function');
-            assertEquals(typeof ctx.retryJob, 'function');
-            assertEquals(typeof ctx.resolveFinishReason, 'function');
-            assertEquals(typeof ctx.isIntermediateChunk, 'function');
-            assertEquals(typeof ctx.determineContinuation, 'function');
-            assertEquals(typeof ctx.buildUploadContext, 'function');
-            assertEquals(typeof ctx.debitTokens, 'function');
-        });
-    });
-
     describe('IPrepareModelJobContext', () => {
-        it('requires eleven members', () => {
+        it('requires eleven members including enqueueModelCall, excluding enqueueRenderJob', () => {
             const logger = new MockLogger();
             const ragService = new MockRagService();
             const adminTokenWalletService = createMockAdminTokenWalletService().instance;
+            const enqueueModelCall: BoundEnqueueModelCallFn = async () => ({
+                error: new Error('interface test stub'),
+                retriable: false,
+            });
             const ctx: IPrepareModelJobContext = {
                 logger: logger,
                 applyInputsRequiredScope: applyInputsRequiredScope,
@@ -207,19 +164,11 @@ describe('JobContext.interface.ts contracts', () => {
                         usage: { prompt_tokens: 0, total_tokens: 0 },
                     }),
                 },
-                executeModelCallAndSave: async () => ({
-                    error: new Error('interface test stub'),
-                    retriable: false,
-                }),
-                enqueueRenderJob: async () => ({
-                    error: new Error('interface test stub'),
-                    retriable: false,
-                }),
+                enqueueModelCall: enqueueModelCall,
                 calculateAffordability: buildMockBoundCalculateAffordabilityFn(),
             };
             assertEquals(typeof ctx.calculateAffordability, 'function');
-            assertEquals(typeof ctx.executeModelCallAndSave, 'function');
-            assertEquals(typeof ctx.enqueueRenderJob, 'function');
+            assertEquals(typeof ctx.enqueueModelCall, 'function');
         });
     });
 
@@ -277,6 +226,11 @@ describe('JobContext.interface.ts contracts', () => {
             const boundGatherArtifacts: BoundGatherArtifactsFn = async () => ({
                 artifacts: [],
             });
+            const computeJobSig: ComputeJobSig = async (
+                _jobId: string,
+                _userId: string,
+                _createdAt: string,
+            ): Promise<string> => 'test-sig';
 
             const params: JobContextParams = {
                 logger: logger,
@@ -344,6 +298,8 @@ describe('JobContext.interface.ts contracts', () => {
                 determineContinuation: determineContinuation,
                 buildUploadContext: buildUploadContext,
                 gatherArtifacts: boundGatherArtifacts,
+                sanitizeJsonContent: sanitizeJsonContent,
+                computeJobSig: computeJobSig,
             };
 
             const job: IJobContext = {
@@ -379,6 +335,8 @@ describe('JobContext.interface.ts contracts', () => {
                 documentRenderer: params.documentRenderer,
                 prepareModelJob: params.prepareModelJob,
                 debitTokens: params.debitTokens,
+                sanitizeJsonContent: params.sanitizeJsonContent,
+                computeJobSig: params.computeJobSig,
             };
 
             assertEquals(typeof params.logger, 'object');
@@ -388,6 +346,58 @@ describe('JobContext.interface.ts contracts', () => {
             assertEquals(job.logger, params.logger);
             assertEquals(job.ragService, params.ragService);
             assertEquals(typeof job.getGranularityPlanner, 'function');
+        });
+    });
+
+    describe('ISaveResponseContext', () => {
+        it('back-half context slice includes enqueueRenderJob and debitTokens', () => {
+            const debitTokens: BoundDebitTokens = async () => ({
+                error: new Error('interface test stub'),
+                retriable: false,
+            });
+            const ctx: ISaveResponseContext = {
+                enqueueRenderJob: async () => ({
+                    error: new Error('interface test stub'),
+                    retriable: false,
+                }),
+                debitTokens,
+            };
+            assertEquals(typeof ctx.enqueueRenderJob, 'function');
+            assertEquals(typeof ctx.debitTokens, 'function');
+        });
+    });
+
+    describe('sanitizeJsonContent', () => {
+        it('JobContextParams requires sanitizeJsonContent typed as SanitizeJsonContentFn', () => {
+            const fn: JobContextParams['sanitizeJsonContent'] = sanitizeJsonContent;
+            assertEquals(typeof fn, 'function');
+        });
+
+        it('IJobContext requires sanitizeJsonContent typed as SanitizeJsonContentFn', () => {
+            const fn: IJobContext['sanitizeJsonContent'] = sanitizeJsonContent;
+            assertEquals(typeof fn, 'function');
+        });
+    });
+
+    describe('computeJobSig', () => {
+        it('JobContextParams requires computeJobSig typed as a string-returning HMAC function', () => {
+            const computeJobSig: ComputeJobSig = async (
+                _jobId: string,
+                _userId: string,
+                _createdAt: string,
+            ): Promise<string> => 'test-sig';
+            const fn: JobContextParams['computeJobSig'] = computeJobSig;
+            assertEquals(typeof fn, 'function');
+        });
+
+        it('IJobContext requires computeJobSig typed as a string-returning HMAC function', () => {
+            const computeJobSig: ComputeJobSig = async (
+                _jobId: string,
+                _userId: string,
+                _createdAt: string,
+            ): Promise<string> => 'test-sig';
+            const fn: IJobContext['computeJobSig'] = computeJobSig;
+            assertEquals(typeof fn, 'function');
         });
     });
 });

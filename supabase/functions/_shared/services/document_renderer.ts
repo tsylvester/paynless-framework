@@ -15,9 +15,9 @@ import type { DownloadFromStorageFn } from "../supabase_storage_utils.ts";
 import type { DialecticContributionRow } from "../../dialectic-service/dialectic.interface.ts";
 import { renderPrompt } from "../prompt-renderer.ts";
 import { isRecord } from "../utils/type_guards.ts";
-import { sanitizeJsonContent } from "../utils/jsonSanitizer.ts";
-import { isJsonSanitizationResult } from "../utils/type-guards/type_guards.jsonSanitizer.ts";
-import type { JsonSanitizationResult } from "../types/jsonSanitizer.interface.ts";
+import { sanitizeJsonContent } from "../utils/jsonSanitizer/jsonSanitizer.ts";
+import { isJsonSanitizationResult } from "../utils/jsonSanitizer/jsonSanitizer.guard.ts";
+import type { JsonSanitizationResult } from "../utils/jsonSanitizer/jsonSanitizer.interface.ts";
  
 function titleFromDocumentKey(documentKey: string): string {
   const withSpaces = documentKey.replace(/_/g, " ");

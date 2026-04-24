@@ -1,6 +1,6 @@
 // supabase/functions/dialectic-worker/prepareModelJob/prepareModelJob.integration.test.ts
 
-import { assert, assertEquals, assertExists } from "https://deno.land/std@0.224.0/assert/mod.ts";
+import { assert, assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { spy, type Spy } from "https://deno.land/std@0.224.0/testing/mock.ts";
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import type { Database } from "../../types_db.ts";
@@ -22,6 +22,7 @@ import type {
   PromptConstructionPayload,
   RelevanceRule,
 } from "../../dialectic-service/dialectic.interface.ts";
+import { buildExtendedModelConfig } from "../../_shared/ai_service/ai_provider.mock.ts";
 import { calculateAffordability } from "../calculateAffordability/calculateAffordability.ts";
 import type { BoundCalculateAffordabilityFn } from "../calculateAffordability/calculateAffordability.interface.ts";
 import {
@@ -37,9 +38,8 @@ import {
   buildResourceDocument,
 } from "../compressPrompt/compressPrompt.mock.ts";
 import { createMockSupabaseClient } from "../../_shared/supabase.mock.ts";
-import type { BoundExecuteModelCallAndSaveFn } from "../executeModelCallAndSave/executeModelCallAndSave.interface.ts";
-import { isExecuteModelCallAndSavePayload } from "../executeModelCallAndSave/executeModelCallAndSave.interface.guard.ts";
-import type { BoundEnqueueRenderJobFn } from "../enqueueRenderJob/enqueueRenderJob.interface.ts";
+import type { BoundEnqueueModelCallFn } from "../enqueueModelCall/enqueueModelCall.interface.ts";
+import { isEnqueueModelCallPayload } from "../enqueueModelCall/enqueueModelCall.guard.ts";
 import { prepareModelJob } from "./prepareModelJob.ts";
 import type {
   PrepareModelJobParams,
@@ -47,131 +47,112 @@ import type {
 } from "./prepareModelJob.interface.ts";
 import { isPrepareModelJobSuccessReturn, isPrepareModelJobErrorReturn } from "./prepareModelJob.guard.ts";
 import {
-  buildAiProviderRow,
-  buildDefaultAiProvidersRow,
-  buildDialecticContributionRow,
-  buildDialecticJobRow,
-  buildDialecticSessionRow,
-  buildExecuteJobPayload,
-  buildExtendedModelFixture,
-  buildPrepareModelJobDeps,
-  buildPromptConstructionPayload,
-  buildTokenWalletRow,
+  mockAiProvidersRow,
+  mockAiProvidersRowFromConfig,
+  mockDialecticExecuteJobPayload,
+  mockDialecticJobRow,
+  mockDialecticSessionRow,
+  mockPrepareModelJobDeps,
+  mockPromptConstructionPayload,
+  mockTokenWalletRow,
 } from "./prepareModelJob.mock.ts";
 
 function buildParams(dbClient: SupabaseClient<Database>): PrepareModelJobParams {
-  const executePayload: DialecticExecuteJobPayload = buildExecuteJobPayload();
-  const job: DialecticJobRow = buildDialecticJobRow(executePayload);
+  const executePayload: DialecticExecuteJobPayload = mockDialecticExecuteJobPayload();
+  const job: DialecticJobRow = mockDialecticJobRow(executePayload);
   return {
     dbClient,
     authToken: "jwt.integration",
     job,
     projectOwnerUserId: "owner-int",
-    providerRow: buildDefaultAiProvidersRow(),
-    sessionData: buildDialecticSessionRow(),
+    providerRow: mockAiProvidersRow(),
+    sessionData: mockDialecticSessionRow(),
   };
 }
 
 function buildPayload(): PrepareModelJobPayload {
   return {
-    promptConstructionPayload: buildPromptConstructionPayload(),
+    promptConstructionPayload: mockPromptConstructionPayload(),
     compressionStrategy: async () => [],
   };
 }
 
-function buildEmcasSuccessSpy(): Spy<BoundExecuteModelCallAndSaveFn> {
-  return spy(async () => ({
-    contribution: buildDialecticContributionRow(),
-    needsContinuation: false,
-    stageRelationshipForStage: undefined,
-    documentKey: undefined,
-    fileType: FileType.HeaderContext,
-    storageFileType: FileType.ModelContributionRawJson,
-  }));
+function buildEnqueueModelCallSuccessSpy(): Spy<BoundEnqueueModelCallFn> {
+  return spy(async () => ({ queued: true as const }));
 }
 
-function buildEnqueueSuccessSpy(): Spy<BoundEnqueueRenderJobFn> {
-  return spy(async () => ({ renderJobId: "render-int-1" }));
-}
-
-// Path 1: Direct return → EMCAS → enqueueRenderJob → success
+// Path 1: Direct return → enqueueModelCall → success
 Deno.test(
-  "integration: calculateAffordability direct return flows through EMCAS and enqueueRenderJob to success",
+  "integration: calculateAffordability direct return flows through enqueueModelCall to success",
   async () => {
     const mockSetup = createMockSupabaseClient("user-int", {
       genericMockResults: {
         ai_providers: {
           select: () =>
             Promise.resolve({
-              data: [buildAiProviderRow(buildExtendedModelFixture())],
+              data: [mockAiProvidersRow()],
               error: null,
             }),
         },
         token_wallets: {
           select: () =>
             Promise.resolve({
-              data: [buildTokenWalletRow({})],
+              data: [mockTokenWalletRow()],
               error: null,
             }),
         },
       },
     });
     const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
-    const emcas = buildEmcasSuccessSpy();
-    const enqueue = buildEnqueueSuccessSpy();
+    const enqueueModelCallSpy = buildEnqueueModelCallSuccessSpy();
     const directReturn = buildCalculateAffordabilityDirectReturn(200, 75);
-    const calculateAffordability: BoundCalculateAffordabilityFn =
+    const boundCalculateAffordability: BoundCalculateAffordabilityFn =
       buildMockBoundCalculateAffordabilityFn(directReturn);
 
-    const deps = buildPrepareModelJobDeps({
-      executeModelCallAndSave: emcas,
-      enqueueRenderJob: enqueue,
-      calculateAffordability,
+    const deps = mockPrepareModelJobDeps({
+      enqueueModelCall: enqueueModelCallSpy,
+      calculateAffordability: boundCalculateAffordability,
     });
 
     const result = await prepareModelJob(deps, buildParams(dbClient), buildPayload());
 
     assertEquals(isPrepareModelJobSuccessReturn(result), true);
     if (!isPrepareModelJobSuccessReturn(result)) throw new Error("expected success");
-    assertExists(result.contribution);
-    assertEquals(result.renderJobId, "render-int-1");
+    assertEquals(result.queued, true);
 
-    assertEquals(emcas.calls.length, 1);
-    const emcasPayload: unknown = emcas.calls[0].args[1];
-    assertEquals(isExecuteModelCallAndSavePayload(emcasPayload), true);
-    if (!isExecuteModelCallAndSavePayload(emcasPayload)) throw new Error("expected EMCAS payload");
-    assertEquals(emcasPayload.preflightInputTokens, 75);
-    assertEquals(emcasPayload.chatApiRequest.max_tokens_to_generate, 200);
-
-    assertEquals(enqueue.calls.length, 1);
+    assertEquals(enqueueModelCallSpy.calls.length, 1);
+    const enqueuePayload: unknown = enqueueModelCallSpy.calls[0].args[1];
+    assertEquals(isEnqueueModelCallPayload(enqueuePayload), true);
+    if (!isEnqueueModelCallPayload(enqueuePayload)) throw new Error("expected EnqueueModelCallPayload");
+    assertEquals(enqueuePayload.preflightInputTokens, 75);
+    assertEquals(enqueuePayload.chatApiRequest.max_tokens_to_generate, 200);
   },
 );
 
 // Path 2: Compressed return → chatApiRequest passed through unchanged
 Deno.test(
-  "integration: calculateAffordability compressed return passes chatApiRequest through to EMCAS unchanged",
+  "integration: calculateAffordability compressed return passes chatApiRequest through to enqueueModelCall unchanged",
   async () => {
     const mockSetup = createMockSupabaseClient("user-int", {
       genericMockResults: {
         ai_providers: {
           select: () =>
             Promise.resolve({
-              data: [buildAiProviderRow(buildExtendedModelFixture())],
+              data: [mockAiProvidersRow()],
               error: null,
             }),
         },
         token_wallets: {
           select: () =>
             Promise.resolve({
-              data: [buildTokenWalletRow({})],
+              data: [mockTokenWalletRow()],
               error: null,
             }),
         },
       },
     });
     const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
-    const emcas = buildEmcasSuccessSpy();
-    const enqueue = buildEnqueueSuccessSpy();
+    const enqueueModelCallSpy = buildEnqueueModelCallSuccessSpy();
 
     const compressedDocs = [buildResourceDocument()];
     const compressedChat: ChatApiRequest = buildChatApiRequest(compressedDocs, "compressed prompt");
@@ -181,68 +162,63 @@ Deno.test(
       chatApiRequest: compressedChat,
       resourceDocuments: compressedDocs,
     });
-    const calculateAffordability: BoundCalculateAffordabilityFn =
+    const boundCalculateAffordability: BoundCalculateAffordabilityFn =
       buildMockBoundCalculateAffordabilityFn(compressedReturn);
 
-    const deps = buildPrepareModelJobDeps({
-      executeModelCallAndSave: emcas,
-      enqueueRenderJob: enqueue,
-      calculateAffordability,
+    const deps = mockPrepareModelJobDeps({
+      enqueueModelCall: enqueueModelCallSpy,
+      calculateAffordability: boundCalculateAffordability,
     });
 
     const result = await prepareModelJob(deps, buildParams(dbClient), buildPayload());
 
     assertEquals(isPrepareModelJobSuccessReturn(result), true);
-    assertEquals(emcas.calls.length, 1);
+    assertEquals(enqueueModelCallSpy.calls.length, 1);
 
-    const emcasPayload: unknown = emcas.calls[0].args[1];
-    assertEquals(isExecuteModelCallAndSavePayload(emcasPayload), true);
-    if (!isExecuteModelCallAndSavePayload(emcasPayload)) throw new Error("expected EMCAS payload");
-    assertEquals(emcasPayload.preflightInputTokens, 42);
-    assertEquals(emcasPayload.chatApiRequest, compressedChat);
-    assertEquals(emcasPayload.chatApiRequest.max_tokens_to_generate, 999);
-
-    assertEquals(enqueue.calls.length, 1);
+    const enqueuePayload: unknown = enqueueModelCallSpy.calls[0].args[1];
+    assertEquals(isEnqueueModelCallPayload(enqueuePayload), true);
+    if (!isEnqueueModelCallPayload(enqueuePayload)) throw new Error("expected EnqueueModelCallPayload");
+    assertEquals(enqueuePayload.preflightInputTokens, 42);
+    assertEquals(enqueuePayload.chatApiRequest, compressedChat);
+    assertEquals(enqueuePayload.chatApiRequest.max_tokens_to_generate, 999);
   },
 );
 
-// Path 3: calculateAffordability error → early return, no EMCAS call
+// Path 3: calculateAffordability error → early return, no enqueueModelCall
 Deno.test(
-  "integration: calculateAffordability error return propagates without calling EMCAS or enqueueRenderJob",
+  "integration: calculateAffordability error return propagates without calling enqueueModelCall",
   async () => {
     const mockSetup = createMockSupabaseClient("user-int", {
       genericMockResults: {
         ai_providers: {
           select: () =>
             Promise.resolve({
-              data: [buildAiProviderRow(buildExtendedModelFixture())],
+              data: [mockAiProvidersRow()],
               error: null,
             }),
         },
         token_wallets: {
           select: () =>
             Promise.resolve({
-              data: [buildTokenWalletRow({})],
+              data: [mockTokenWalletRow()],
               error: null,
             }),
         },
       },
     });
     const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
-    const emcas = buildEmcasSuccessSpy();
-    const enqueue = buildEnqueueSuccessSpy();
+    const enqueueModelCallSpy = buildEnqueueModelCallSuccessSpy();
 
     const affordError = buildCalculateAffordabilityErrorReturn(
       new Error("Insufficient funds: integration test"),
       false,
     );
-    const calculateAffordability: BoundCalculateAffordabilityFn =
+    const boundCalculateAffordability: BoundCalculateAffordabilityFn =
       buildMockBoundCalculateAffordabilityFn(affordError);
 
-    const deps = buildPrepareModelJobDeps({
-      executeModelCallAndSave: emcas,
-      enqueueRenderJob: enqueue,
-      calculateAffordability,
+    const deps = mockPrepareModelJobDeps({
+      enqueueModelCall: enqueueModelCallSpy,
+      calculateAffordability: boundCalculateAffordability,
     });
 
     const result = await prepareModelJob(deps, buildParams(dbClient), buildPayload());
@@ -252,107 +228,59 @@ Deno.test(
     assertEquals(result.error.message, "Insufficient funds: integration test");
     assertEquals(result.retriable, false);
 
-    assertEquals(emcas.calls.length, 0);
-    assertEquals(enqueue.calls.length, 0);
+    assertEquals(enqueueModelCallSpy.calls.length, 0);
   },
 );
 
-// Path 4: calculateAffordability succeeds, EMCAS returns error → error propagated, no enqueueRenderJob
+// Path 4: calculateAffordability succeeds, enqueueModelCall returns error → error propagated
 Deno.test(
-  "integration: EMCAS error propagates without calling enqueueRenderJob",
+  "integration: enqueueModelCall error propagates after successful affordability check",
   async () => {
     const mockSetup = createMockSupabaseClient("user-int", {
       genericMockResults: {
         ai_providers: {
           select: () =>
             Promise.resolve({
-              data: [buildAiProviderRow(buildExtendedModelFixture())],
+              data: [mockAiProvidersRow()],
               error: null,
             }),
         },
         token_wallets: {
           select: () =>
             Promise.resolve({
-              data: [buildTokenWalletRow({})],
+              data: [mockTokenWalletRow()],
               error: null,
             }),
         },
       },
     });
     const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
-    const emcasError: BoundExecuteModelCallAndSaveFn = spy(async () => ({
-      error: new Error("EMCAS failure: integration test"),
+    const enqueueModelCallErrorSpy: Spy<BoundEnqueueModelCallFn> = spy(async () => ({
+      error: new Error("enqueueModelCall failure: integration test"),
       retriable: true,
     }));
-    const enqueue = buildEnqueueSuccessSpy();
 
-    const deps = buildPrepareModelJobDeps({
-      executeModelCallAndSave: emcasError,
-      enqueueRenderJob: enqueue,
+    const deps = mockPrepareModelJobDeps({
+      enqueueModelCall: enqueueModelCallErrorSpy,
     });
 
     const result = await prepareModelJob(deps, buildParams(dbClient), buildPayload());
 
     assertEquals(isPrepareModelJobErrorReturn(result), true);
     if (!isPrepareModelJobErrorReturn(result)) throw new Error("expected error");
-    assertEquals(result.error.message, "EMCAS failure: integration test");
+    assertEquals(result.error.message, "enqueueModelCall failure: integration test");
     assertEquals(result.retriable, true);
 
-    assertEquals(enqueue.calls.length, 0);
+    assertEquals(enqueueModelCallErrorSpy.calls.length, 1);
   },
 );
 
-// Path 5: EMCAS succeeds, enqueueRenderJob returns error → error propagated
+/** Port of `executeModelCallAndSave.test.ts` "identity after compression" (#19): post-compression countTokens payload matches enqueueModelCall `chatApiRequest` four fields. */
 Deno.test(
-  "integration: enqueueRenderJob error propagates after successful EMCAS",
-  async () => {
-    const mockSetup = createMockSupabaseClient("user-int", {
-      genericMockResults: {
-        ai_providers: {
-          select: () =>
-            Promise.resolve({
-              data: [buildAiProviderRow(buildExtendedModelFixture())],
-              error: null,
-            }),
-        },
-        token_wallets: {
-          select: () =>
-            Promise.resolve({
-              data: [buildTokenWalletRow({})],
-              error: null,
-            }),
-        },
-      },
-    });
-    const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
-    const emcas = buildEmcasSuccessSpy();
-    const enqueueError: BoundEnqueueRenderJobFn = spy(async () => ({
-      error: new Error("enqueue failure: integration test"),
-      retriable: false,
-    }));
-
-    const deps = buildPrepareModelJobDeps({
-      executeModelCallAndSave: emcas,
-      enqueueRenderJob: enqueueError,
-    });
-
-    const result = await prepareModelJob(deps, buildParams(dbClient), buildPayload());
-
-    assertEquals(isPrepareModelJobErrorReturn(result), true);
-    if (!isPrepareModelJobErrorReturn(result)) throw new Error("expected error");
-    assertEquals(result.error.message, "enqueue failure: integration test");
-    assertEquals(result.retriable, false);
-
-    assertEquals(emcas.calls.length, 1);
-  },
-);
-
-/** Port of `executeModelCallAndSave.test.ts` "identity after compression" (#19): post-compression countTokens payload matches EMCAS `chatApiRequest` four fields. */
-Deno.test(
-  "integration: identity after compression — final sized payload equals EMCAS chatApiRequest",
+  "integration: identity after compression — final sized payload equals enqueueModelCall chatApiRequest",
   async () => {
     const limitedExtended: AiModelExtendedConfig = {
-      ...buildExtendedModelFixture(),
+      ...buildExtendedModelConfig(),
       tokenization_strategy: { type: "rough_char_count" },
       context_window_tokens: 50,
       provider_max_input_tokens: 10000,
@@ -365,14 +293,14 @@ Deno.test(
         ai_providers: {
           select: () =>
             Promise.resolve({
-              data: [buildAiProviderRow(limitedExtended)],
+              data: [mockAiProvidersRowFromConfig(limitedExtended)],
               error: null,
             }),
         },
         token_wallets: {
           select: () =>
             Promise.resolve({
-              data: [buildTokenWalletRow({})],
+              data: [mockTokenWalletRow()],
               error: null,
             }),
         },
@@ -476,37 +404,35 @@ Deno.test(
       return calculateAffordability(affordDeps, params, payload);
     };
 
-    const emcas = buildEmcasSuccessSpy();
-    const enqueue = buildEnqueueSuccessSpy();
+    const enqueueModelCallSpy = buildEnqueueModelCallSuccessSpy();
 
-    const deps = buildPrepareModelJobDeps({
-      executeModelCallAndSave: emcas,
-      enqueueRenderJob: enqueue,
+    const deps = mockPrepareModelJobDeps({
+      enqueueModelCall: enqueueModelCallSpy,
       calculateAffordability: boundCalculateAffordability,
       tokenWalletService: userTokenWalletService,
     });
 
-    const executePayload: DialecticExecuteJobPayload = buildExecuteJobPayload();
-    const job: DialecticJobRow = buildDialecticJobRow(executePayload);
+    const executePayload: DialecticExecuteJobPayload = mockDialecticExecuteJobPayload();
+    const job: DialecticJobRow = mockDialecticJobRow(executePayload);
     const params: PrepareModelJobParams = {
       dbClient,
       authToken: "jwt.integration",
       job,
       projectOwnerUserId: "owner-int",
-      providerRow: buildAiProviderRow(limitedExtended),
-      sessionData: buildDialecticSessionRow(),
+      providerRow: mockAiProvidersRowFromConfig(limitedExtended),
+      sessionData: mockDialecticSessionRow(),
     };
 
     const result = await prepareModelJob(deps, params, preparePayload);
 
     assertEquals(isPrepareModelJobSuccessReturn(result), true);
-    assertEquals(emcas.calls.length, 1);
+    assertEquals(enqueueModelCallSpy.calls.length, 1);
 
-    const emcasPayload: unknown = emcas.calls[0].args[1];
-    assertEquals(isExecuteModelCallAndSavePayload(emcasPayload), true);
-    if (!isExecuteModelCallAndSavePayload(emcasPayload)) throw new Error("expected EMCAS payload");
-    const sent: ChatApiRequest = emcasPayload.chatApiRequest;
-    assert(isChatApiRequest(sent), "EMCAS should receive a ChatApiRequest");
+    const enqueuePayload: unknown = enqueueModelCallSpy.calls[0].args[1];
+    assertEquals(isEnqueueModelCallPayload(enqueuePayload), true);
+    if (!isEnqueueModelCallPayload(enqueuePayload)) throw new Error("expected EnqueueModelCallPayload");
+    const sent: ChatApiRequest = enqueuePayload.chatApiRequest;
+    assert(isChatApiRequest(sent), "enqueueModelCall should receive a ChatApiRequest");
 
     assert(sizedPayloads.length >= 2, "countTokens should have been called at least twice");
     const sizedLast: unknown = sizedPayloads[sizedPayloads.length - 1];
