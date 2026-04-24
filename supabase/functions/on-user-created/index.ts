@@ -1,20 +1,22 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts"; // Use std lib URL
-import { type User } from "npm:@supabase/supabase-js@^2.0.0"; // Use npm: prefix
+import { createClient, type SupabaseClient, type User } from "npm:@supabase/supabase-js@^2.0.0"; // Use npm: prefix
 import { logger } from "../_shared/logger.ts";
 import { getEmailMarketingService, type EmailFactoryConfig } from "../_shared/email_service/factory.ts";
-import { NoOpEmailService } from "../_shared/email_service/no_op_service.ts"; // Import NoOpEmailService
-import { type EmailMarketingService, type UserData } from "../_shared/types.ts"; // Need IEmailMarketingService type
+import { type EmailMarketingService, type UserData } from "../_shared/types.ts";
+import { getTagIdForRef } from "../_shared/email_service/kit_tags.config.ts";
 
 logger.info('`on-user-created` function starting up.');
 
 // Define the dependencies structure
 interface HandlerDependencies {
-  // The dependency is now just the service instance, which could be NoOp or Kit
-  emailService: EmailMarketingService; 
+  supabaseClient: SupabaseClient;
+  emailService: EmailMarketingService;
 }
 
 // Export the main handler logic for testing, accepting dependencies
 export async function handler(req: Request, deps: HandlerDependencies): Promise<Response> {
+  const { supabaseClient, emailService } = deps;
+  
   // 1. Extract user data from the request body (Auth Hook payload)
   let userRecord: User | null = null;
   try {
@@ -46,60 +48,122 @@ export async function handler(req: Request, deps: HandlerDependencies): Promise<
     });
   }
 
+  // 2. Add user to Kit.com newsletter in real-time
   try {
-    // 2. Get the email marketing service *from dependencies*
-    const { emailService } = deps; 
+    // Check if user metadata indicates they want newsletter subscription
+    // Default to true for new users unless explicitly opted out
+    const wantsNewsletter = userRecord.user_metadata?.newsletter !== false;
+    
+    if (wantsNewsletter) {
+      // Get ref from user metadata if present
+      const ref = userRecord.user_metadata?.ref || 'direct';
+      
+      // Prepare user data for Kit
+      const userDataForKit: UserData = {
+        id: userRecord.id,
+        email: userRecord.email!,
+        firstName: userRecord.user_metadata?.firstName || userRecord.user_metadata?.first_name || undefined,
+        lastName: userRecord.user_metadata?.lastName || userRecord.user_metadata?.last_name || undefined,
+        createdAt: userRecord.created_at,
+      };
+      
+      try {
+        // Add user to Kit.com
+        await emailService.addUserToList(userDataForKit);
+        logger.info(`Successfully added ${userRecord.email} to Kit.com newsletter`);
+        
+        // Add ref-specific tag if available
+        if (ref && ref !== 'direct') {
+          const tagId = getTagIdForRef(ref);
+          if (tagId) {
+            await emailService.addTagToSubscriber(userRecord.email!, tagId);
+            logger.info(`Added tag ${tagId} (ref: ${ref}) to subscriber ${userRecord.email}`);
+          } else {
+            logger.warn(`Unknown ref '${ref}' for subscriber ${userRecord.email}, skipping tagging`);
+          }
+        }
+        
+        // Also create a newsletter event for record-keeping
+        const { error: insertError } = await supabaseClient
+          .from('newsletter_events')
+          .insert({
+            user_id: userRecord.id,
+            event_type: 'subscribe',
+            ref: ref,
+            processed_at: new Date().toISOString(), // Mark as already processed
+          });
 
-    // The factory handles returning NoOp if not configured, so we only need to check for null/undefined if the factory itself could fail, which it shouldn't with current design.
-    // The instanceof check is still useful to explicitly log WHY we skipped.
-    if (emailService instanceof NoOpEmailService) { 
-        const reason = "service is NoOpEmailService (not configured or fallback)"; // Updated reason
-        logger.warn(`Email marketing sync skipped (${reason}).`, { userId: userRecord!.id }); // Use non-null assertion as record is checked above
-        return new Response(JSON.stringify({ message: `User processed, email sync skipped (${reason}).` }), {
-            status: 200,
-            headers: { "Content-Type": "application/json" },
+        if (insertError) {
+          logger.warn('Failed to create newsletter event record:', { 
+            error: insertError.message,
+            userId: userRecord.id 
+          });
+        }
+        
+      } catch (kitError) {
+        logger.error('Failed to add user to Kit.com:', {
+          error: kitError instanceof Error ? kitError.message : String(kitError),
+          userId: userRecord.id,
+          email: userRecord.email
         });
+        
+        // Create unprocessed newsletter event for later retry
+        const { error: insertError } = await supabaseClient
+          .from('newsletter_events')
+          .insert({
+            user_id: userRecord.id,
+            event_type: 'subscribe',
+            ref: ref,
+            processed_at: null, // Mark as unprocessed for later retry
+          });
+
+        if (insertError) {
+          logger.error('Failed to create newsletter event for retry:', { 
+            error: insertError.message,
+            userId: userRecord.id 
+          });
+        }
+      }
+    } else {
+      logger.info('User opted out of newsletter during signup.', { userId: userRecord.id });
     }
-
-    // 3. Format data for the service
-    const userData: UserData = {
-        id: userRecord!.id,
-        email: userRecord!.email,
-        firstName: userRecord!.user_metadata?.firstName || undefined, 
-        lastName: userRecord!.user_metadata?.lastName || undefined,
-        createdAt: userRecord!.created_at, 
-        lastSignInAt: userRecord!.last_sign_in_at ?? undefined,
-    };
-
-    // 4. Call the service to add the user
-    await emailService.addUserToList(userData);
-
-    logger.info('Successfully processed user signup for email marketing.', { userId: userRecord!.id });
-
-    // 5. Return success response to Supabase Auth Hook
-    return new Response(JSON.stringify({ message: "User processed for email marketing." }), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    });
-
   } catch (error) {
-    // Log the error, but return 200 OK to Supabase to prevent blocking user signup
-    logger.error('Error processing user for email marketing (addUserToList failed)', { 
-      userId: userRecord?.id, // Keep optional chaining here just in case
-      error: error instanceof Error ? error.message : String(error)
+    logger.error('Error in newsletter subscription process:', { 
+      error: error instanceof Error ? error.message : String(error),
+      userId: userRecord.id
     });
-    // Return the specific message indicating internal failure but webhook success
-    return new Response(
-      JSON.stringify({ message: "Webhook received, but failed to process user for email marketing." }),
-      { status: 200, headers: { "Content-Type": "application/json" } } // Important: Return 200 OK even on internal error
-    );
+    // Don't fail the user creation - just log the error
   }
+
+  // Log that we received the user created event
+  logger.info('User created event processed successfully.', { userId: userRecord!.id });
+
+  // Return success response to Supabase Auth Hook
+  // All Kit communication is now handled by the newsletter event queue
+  return new Response(JSON.stringify({ message: "User created event processed." }), {
+    status: 200,
+    headers: { "Content-Type": "application/json" },
+  });
 }
 
 // Define default dependencies for the actual runtime
-// This now reads env vars, creates config, and calls the factory
 const defaultDeps: HandlerDependencies = (() => {
-  // Read environment variables here
+  // Create Supabase client with service_role key for bypassing RLS
+  const supabaseUrl = Deno.env.get('SUPABASE_URL');
+  const supabaseServiceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+  
+  if (!supabaseUrl || !supabaseServiceRoleKey) {
+    throw new Error('Missing required environment variables: SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY');
+  }
+
+  const supabaseClient = createClient(supabaseUrl, supabaseServiceRoleKey, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    }
+  });
+
+  // Create email service from factory config
   const provider = Deno.env.get("EMAIL_MARKETING_PROVIDER");
   const kitApiKey = Deno.env.get("EMAIL_MARKETING_API_KEY");
   const kitBaseUrl = Deno.env.get("EMAIL_MARKETING_BASE_URL");
@@ -107,7 +171,6 @@ const defaultDeps: HandlerDependencies = (() => {
   const kitCustomUserIdField = Deno.env.get("EMAIL_MARKETING_CUSTOM_USER_ID_FIELD");
   const kitCustomCreatedAtField = Deno.env.get("EMAIL_MARKETING_CUSTOM_CREATED_AT_FIELD");
 
-  // Construct the config object for the factory
   const factoryConfig: EmailFactoryConfig = {
     provider,
     kitApiKey,
@@ -117,8 +180,8 @@ const defaultDeps: HandlerDependencies = (() => {
     kitCustomCreatedAtField,
   };
 
-  // Return the deps object, getting the service instance from the factory
   return {
+    supabaseClient,
     emailService: getEmailMarketingService(factoryConfig),
   };
 })();
