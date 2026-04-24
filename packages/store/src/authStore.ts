@@ -215,19 +215,19 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
         }
       },
 
-      subscribeToNewsletter: async (email: string): Promise<void> => {
+      subscribeToNewsletter: async (email: string, ref?: string): Promise<void> => {
         try {
           const supabase = api.getSupabaseClient();
           if (!supabase) {
             throw new Error('Supabase client not available for newsletter subscription.');
           }
           const { error } = await supabase.functions.invoke('subscribe-to-newsletter', {
-            body: { email },
+            body: { email, ref },
           });
           if (error) {
             throw error;
           }
-          logger.info('Successfully subscribed user to newsletter', { email });
+          logger.info('Successfully subscribed user to newsletter', { email, ref });
         } catch (error) {
           // Log the error but don't bubble it up or set state, as it's a non-critical background task
           const finalError = error instanceof Error ? error : new Error('Unknown newsletter subscription error');
