@@ -30,7 +30,10 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@netlify/async-workloads": "^0.0.106"
+    "@anthropic-ai/sdk": "^0.89.0",
+    "@google/generative-ai": "^0.24.1",
+    "@netlify/async-workloads": "^0.0.106",
+    "openai": "^6.34.0"
   },
   "devDependencies": {
     "@biomejs/biome": "2.1.1",
