@@ -1,12 +1,11 @@
-import { useEffect, useRef } from 'react'
+
 import { motion } from 'framer-motion'
 import {
   ArrowRight,
   Sparkles,
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
-import { useAuthStore, useAiStore } from '@paynless/store'
-import { logger } from '@paynless/utils'
+import { useAuthStore } from '@paynless/store'
 import { HeroAnimation } from '../components/marketing/HeroAnimation'
 import { ProcessSteps } from '../components/marketing/ProcessSteps'
 import { FeatureCards } from '../components/marketing/FeatureCards'
@@ -17,45 +16,6 @@ import { PricingSection } from '../components/marketing/PricingSection'
 
 export function HomePage() {
   const { user } = useAuthStore((state) => ({ user: state.user }))
-  const { loadAiConfig, startNewChat, availableProviders } = useAiStore(
-    (state) => state
-  )
-
-  const hasSetDefaults = useRef(false)
-
-  useEffect(() => {
-    if (!user) return
-    loadAiConfig()
-    startNewChat()
-    hasSetDefaults.current = false
-  }, [loadAiConfig, startNewChat, user])
-
-  useEffect(() => {
-    if (!hasSetDefaults.current && availableProviders.length > 0) {
-      logger.info('[HomePage] Attempting to set default AI selections...')
-      const defaultProvider = availableProviders.find(
-        (p) => p.name === 'OpenAI GPT-4o'
-      )
-
-      const defaultPromptId = '__none__'
-
-      if (defaultProvider) {
-        hasSetDefaults.current = true
-        logger.info('[HomePage] Default provider and prompt selected.', {
-          providerId: defaultProvider.id,
-          promptId: defaultPromptId,
-        })
-      } else {
-        logger.warn(
-          "[HomePage] Could not find default provider by name 'OpenAI GPT-4o'.",
-          {
-            foundProvider: !!defaultProvider,
-            providerCount: availableProviders.length,
-          }
-        )
-      }
-    }
-  }, [availableProviders])
 
   return (
     <div data-testid="homepage-container" className="overflow-hidden -mt-[3.25rem] md:-mx-4 md:-mb-4">
@@ -95,20 +55,21 @@ export function HomePage() {
             >
               <div className="inline-flex items-center px-4 py-2 rounded-full bg-primary/10 text-primary text-sm font-medium mb-8 shadow-sm backdrop-blur-sm">
                 <Sparkles className="h-4 w-4 mr-2 animate-pulse" />
-                <span>AI-Powered Planning Engine</span>
+                <span>Accelerate Software Development Planning</span>
               </div>
               <h1 className="text-4xl font-extrabold tracking-tight sm:text-5xl md:text-6xl leading-[1.1]">
                 <span className="block text-textPrimary mb-2">
-                  Build Plans That
+                  Plan Your Software
                 </span>
                 <span className="block text-primary">
-                  Actually Work
+                  In Minutes
                 </span>
               </h1>
               <p className="mt-8 text-lg text-textSecondary leading-relaxed max-w-xl">
-                Describe your goals and watch multiple AI models collaborate
-                in a 5-stage process to deliver production-ready
-                requirements, specs, and implementation plans.
+                Start with a sentence or a full specification. 
+              </p>
+              <p className="mt-8 text-lg text-textSecondary leading-relaxed max-w-xl">
+                Get a business case, product requirements, technical requirements, implementation plan and more, in minutes.
               </p>
               <div className="mt-10 flex flex-wrap gap-4">
                 {user ? (

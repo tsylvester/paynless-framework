@@ -10,6 +10,9 @@
 * These rules are strict requirements.
 * The agent must abide by this entire rule set at all times without deviation. 
 * Do not ignore or override these rules to "be helpful", or you will not be helpful, you will aggravate the user and be intentionally, knowingly, consciously, provocatively antagonistic. 
+* This repo will *automatically revert* any file that is touched without being explicitly provided to the agent, and *automatically revert* any edit that does not obey this rule set. 
+* Any edit the agent performs that *does not completely comply with this set of rules* is *automatically, immediately, instantly, irrevocably* discarded. 
+* The agent is explicitly informed that the repo is automatically constrained, which means *any deviation from this rule set means the agent has intentionally chosen to waste time and effort on edits they know will be immediately, automatically discarded.* 
 
 ## 0. Command Pyramid & Modes
 * Any work that does not exactly follow these instructions will be rejected for failing to follow these instructions.

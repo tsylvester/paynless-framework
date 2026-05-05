@@ -1,7 +1,7 @@
 // supabase/functions/sync-ai-models/anthropic_sync.test.ts
 import { testSyncContract, type MockProviderData } from "./sync_test_contract.ts";
 import { syncAnthropicModels, INTERNAL_MODEL_MAP, type SyncAnthropicDeps } from "./anthropic_sync.ts";
-import { type DbAiProvider } from "./index.ts";
+import { DbAiProvider } from "./sync-ai-models.interface.ts";
 import type { AiModelExtendedConfig, FinalAppModelConfig } from "../_shared/types.ts";
 import { isJson } from "../_shared/utils/type_guards.ts";
 import { assert, assertEquals, assertExists } from "jsr:@std/assert@0.225.3";
@@ -9,6 +9,11 @@ import { AiModelExtendedConfigSchema } from "../chat/zodSchema.ts";
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import type { Database } from "../types_db.ts";
 import { createMockSupabaseClient } from "../_shared/supabase.mock.ts";
+import { ConfigAssembler } from "./config_assembler.ts";
+import {
+    anthropicRates,
+    anthropicIdentifiers,
+} from "./anthropic_sync.mock.ts";
 
 const PROVIDER_NAME = 'anthropic';
 
@@ -199,5 +204,38 @@ Deno.test("[Provider-Specific] anthropic: INTERNAL_MODEL_MAP sets 200k input win
         const hcap = (cfg as { hard_cap_output_tokens?: unknown }).hard_cap_output_tokens;
         assertExists(hcap, `hard_cap_output_tokens missing for ${id}`);
         assert(typeof hcap === 'number' && (hcap === 4_096 || hcap === 8_192), `hard_cap_output_tokens should be 4,096 (or 8,192 if upgraded) for ${id}`);
+    }
+});
+
+Deno.test("every anthropic Tier-3 coverage api_identifier resolves to INTERNAL_MODEL_MAP costs via longest-prefix match", () => {
+    for (const apiId of anthropicIdentifiers) {
+        const partial: Partial<AiModelExtendedConfig> | undefined = ConfigAssembler.getLongestPrefixInternalMapPartial(
+            apiId,
+            INTERNAL_MODEL_MAP,
+        );
+        assert(partial !== undefined, `No INTERNAL_MODEL_MAP prefix matched api_identifier ${apiId}`);
+        const inputRate: number | null | undefined = partial.input_token_cost_rate;
+        const outputRate: number | null | undefined = partial.output_token_cost_rate;
+        assert(typeof inputRate === "number", `Tier-3 input cost missing for ${apiId}`);
+        assert(typeof outputRate === "number", `Tier-3 output cost missing for ${apiId}`);
+    }
+});
+
+Deno.test("official headline Anthropic rates on resolved longest-prefix partials", () => {
+    for (const rateRow of anthropicRates) {
+        const apiId: string = rateRow[0];
+        const expectedIn: number = rateRow[1];
+        const expectedOut: number = rateRow[2];
+        const partial: Partial<AiModelExtendedConfig> | undefined = ConfigAssembler.getLongestPrefixInternalMapPartial(
+            apiId,
+            INTERNAL_MODEL_MAP,
+        );
+        assert(partial !== undefined);
+        const inputRate: number | null | undefined = partial.input_token_cost_rate;
+        const outputRate: number | null | undefined = partial.output_token_cost_rate;
+        assert(typeof inputRate === "number");
+        assert(typeof outputRate === "number");
+        assertEquals(inputRate, expectedIn);
+        assertEquals(outputRate, expectedOut);
     }
 });

@@ -1,99 +1,10 @@
-import { type Json } from '../types_db.ts';
 // IMPORTANT: Supabase Edge Functions require relative paths for imports from shared modules.
 // Do not use path aliases (like @shared/) as they will cause deployment failures.
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts'
-import { createClient, type SupabaseClient } from 'npm:@supabase/supabase-js@2'
+import { SupabaseClient } from 'npm:@supabase/supabase-js@2'
 // Import shared response/error handlers
-import { 
-    handleCorsPreflightRequest, 
-    createErrorResponse, 
-    createSuccessResponse 
-} from '../_shared/cors-headers.ts'; 
 
-// Import provider-specific sync functions AND their default deps
-import {
-    syncOpenAIModels,
-    defaultSyncOpenAIDeps
-} from './openai_sync.ts';
-import {
-    syncAnthropicModels,
-    defaultSyncAnthropicDeps
-} from './anthropic_sync.ts';
-import {
-    syncGoogleModels,
-    defaultSyncGoogleDeps
-} from './google_sync.ts';
-
-// Import shared types used by this function and potentially by tests
-// DbAiProvider and SyncResult are defined below and implicitly exported when mainHandler uses them
-// Provider files should import { type DbAiProvider, type SyncResult } from './index.ts'
-
-// --- Types specific to this function ---
-
-// Structure of the DB ai_providers table
-// Exporting this so provider files can import it
-export interface DbAiProvider {
-  id: string;
-  api_identifier: string;
-  name: string;
-  description: string | null;
-  is_active: boolean;
-  provider: string; 
-  config: Json | null;
-}
-
-// Structure for sync results
-// Exporting this so provider files can import it
-export interface SyncResult {
-  provider: string;
-  inserted: number;
-  updated: number;
-  deactivated: number;
-  error?: string;
-  debug_data?: unknown;
-}
-
-type ProviderSyncFunction = (client: SupabaseClient, key: string) => Promise<SyncResult>;
-
-// --- Dependency Injection Setup ---
-export interface SyncAiModelsDeps {
-  createSupabaseClient: (url: string, key: string) => SupabaseClient;
-  getEnv: (key: string) => string | undefined;
-  handleCorsPreflightRequest: typeof handleCorsPreflightRequest;
-  createJsonResponse: typeof createSuccessResponse;
-  createErrorResponse: typeof createErrorResponse;
-  // Include the sync functions in dependencies for mocking
-  doOpenAiSync: ProviderSyncFunction;
-  doAnthropicSync: ProviderSyncFunction;
-  doGoogleSync: ProviderSyncFunction;
-}
-
-export const defaultDeps: SyncAiModelsDeps = {
-  createSupabaseClient: (url, key) => createClient(url, key),
-  getEnv: Deno.env.get,
-  handleCorsPreflightRequest,
-  createJsonResponse: createSuccessResponse,
-  createErrorResponse,
-  // Provide wrapper functions that call the actual sync functions with their default deps
-  doOpenAiSync: (client, key) => syncOpenAIModels(client, key, defaultSyncOpenAIDeps),
-  doAnthropicSync: (client, key) => syncAnthropicModels(client, key, defaultSyncAnthropicDeps),
-  doGoogleSync: (client, key) => syncGoogleModels(client, key, defaultSyncGoogleDeps),
-};
-
-// --- Provider Configuration (Internal - Uses deps) ---
-// Moved inside mainHandler or runAllSyncs if it needs deps, or keep static if not.
-// Keeping static is fine here as it only defines structure.
-interface ProviderSyncConfig {
-  providerName: string;        
-  apiKeyEnvVar: string;       
-  // We'll map the provider name to the correct function from deps later
-}
-
-const PROVIDERS_TO_SYNC: ProviderSyncConfig[] = [
-  { providerName: 'openai', apiKeyEnvVar: 'OPENAI_API_KEY' },
-  { providerName: 'anthropic', apiKeyEnvVar: 'ANTHROPIC_API_KEY' },
-  { providerName: 'google', apiKeyEnvVar: 'GOOGLE_API_KEY' },
-];
+import { DbAiProvider, SyncResult, ProviderSyncFunction, PROVIDERS_TO_SYNC, SyncAiModelsDeps, defaultDeps } from './sync-ai-models.interface.ts';
 
 // --- Shared Helper Functions (Not dependent on request-specific deps) ---
 

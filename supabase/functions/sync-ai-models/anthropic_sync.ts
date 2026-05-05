@@ -1,30 +1,33 @@
 // supabase/functions/sync-ai-models/anthropic_sync.ts
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import { AnthropicAdapter } from '../_shared/ai_service/anthropic_adapter.ts';
-import type { ProviderModelInfo, ILogger, AiModelExtendedConfig } from '../_shared/types.ts';
+import type { ProviderModelInfo, ILogger, AiModelExtendedConfig, FinalAppModelConfig } from '../_shared/types.ts';
 import type { Tables } from '../types_db.ts';
-import { getCurrentDbModels, type SyncResult, type DbAiProvider } from './index.ts';
+import { getCurrentDbModels } from './index.ts';
+import { SyncResult, DbAiProvider } from './sync-ai-models.interface.ts';
 import { ConfigAssembler } from './config_assembler.ts';
 import { diffAndPrepareDbOps, executeDbOps } from './diffAndPrepareDbOps.ts';
 import { isJson } from "../_shared/utils/type_guards.ts";
 
 const PROVIDER_NAME = 'anthropic';
 
-// Tier 3 Data Source: Hardcoded internal map as a failsafe.
-// This provides detailed configuration for known Anthropic models, as their API
-// does not return this data.
-// Source: https://docs.anthropic.com/en/docs/about-claude/models
+// Tier 3 Data Source: Hardcoded internal map as a failsafe (API does not return full pricing/caps).
+// Canonical pricing: https://platform.claude.com/docs/en/about-claude/pricing
+// Model IDs and published limits: https://docs.anthropic.com/en/docs/about-claude/models
+// This map must be updated when new models are observed from the provider API. Models without map entries will be inserted as disabled with null costs until configured.
 export const INTERNAL_MODEL_MAP: Map<string, Partial<AiModelExtendedConfig>> = new Map(Object.entries({
-    // Updated from 2025-2026 Model Config Data
-    'anthropic-claude-opus-4-6':              { input_token_cost_rate: 5.00,  output_token_cost_rate: 25.00,  context_window_tokens: 200000, hard_cap_output_tokens: 64000, provider_max_input_tokens: 200000, provider_max_output_tokens: 64000, tokenization_strategy: { type: 'anthropic_tokenizer', model: 'claude-opus-4-6' } },
+    // Claude 4.x — longest map key must be the matching prefix for api_identifier (dated snapshots extend alias keys).
+    'anthropic-claude-opus-4-7':              { input_token_cost_rate: 5.00,  output_token_cost_rate: 25.00,  context_window_tokens: 1000000, hard_cap_output_tokens: 128000, provider_max_input_tokens: 1000000, provider_max_output_tokens: 128000, tokenization_strategy: { type: 'anthropic_tokenizer', model: 'claude-opus-4-7' } },
+    'anthropic-claude-opus-4-6':              { input_token_cost_rate: 5.00,  output_token_cost_rate: 25.00,  context_window_tokens: 1000000, hard_cap_output_tokens: 128000, provider_max_input_tokens: 1000000, provider_max_output_tokens: 128000, tokenization_strategy: { type: 'anthropic_tokenizer', model: 'claude-opus-4-6' } },
     'anthropic-claude-opus-4-5':              { input_token_cost_rate: 5.00,  output_token_cost_rate: 25.00,  context_window_tokens: 200000, hard_cap_output_tokens: 64000, provider_max_input_tokens: 200000, provider_max_output_tokens: 64000, tokenization_strategy: { type: 'anthropic_tokenizer', model: 'claude-opus-4-5' } },
     'anthropic-claude-opus-4-1-20250805':     { input_token_cost_rate: 15.00, output_token_cost_rate: 75.00,  context_window_tokens: 200000, hard_cap_output_tokens: 64000, provider_max_input_tokens: 200000, provider_max_output_tokens: 64000, tokenization_strategy: { type: 'anthropic_tokenizer', model: 'claude-opus-4-1-20250805' } },
     'anthropic-claude-opus-4-20250514':       { input_token_cost_rate: 15.00, output_token_cost_rate: 75.00,  context_window_tokens: 200000, hard_cap_output_tokens: 64000, provider_max_input_tokens: 200000, provider_max_output_tokens: 64000, tokenization_strategy: { type: 'anthropic_tokenizer', model: 'claude-opus-4-20250514' } },
-    'anthropic-claude-sonnet-4-6':            { input_token_cost_rate: 3.00,  output_token_cost_rate: 15.00,  context_window_tokens: 200000, hard_cap_output_tokens: 64000, provider_max_input_tokens: 200000, provider_max_output_tokens: 64000, tokenization_strategy: { type: 'anthropic_tokenizer', model: 'claude-sonnet-4-6' } },
+    'anthropic-claude-sonnet-4-6':            { input_token_cost_rate: 3.00,  output_token_cost_rate: 15.00,  context_window_tokens: 1000000, hard_cap_output_tokens: 64000, provider_max_input_tokens: 1000000, provider_max_output_tokens: 64000, tokenization_strategy: { type: 'anthropic_tokenizer', model: 'claude-sonnet-4-6' } },
     'anthropic-claude-sonnet-4-5':            { input_token_cost_rate: 3.00,  output_token_cost_rate: 15.00,  context_window_tokens: 200000, hard_cap_output_tokens: 64000, provider_max_input_tokens: 200000, provider_max_output_tokens: 64000, tokenization_strategy: { type: 'anthropic_tokenizer', model: 'claude-sonnet-4-5' } },
     'anthropic-claude-sonnet-4-20250514':     { input_token_cost_rate: 3.00,  output_token_cost_rate: 15.00,  context_window_tokens: 200000, hard_cap_output_tokens: 64000, provider_max_input_tokens: 200000, provider_max_output_tokens: 64000, tokenization_strategy: { type: 'anthropic_tokenizer', model: 'claude-sonnet-4-20250514' } },
+    'anthropic-claude-haiku-4-5':             { input_token_cost_rate: 1.00,  output_token_cost_rate: 5.00,   context_window_tokens: 200000, hard_cap_output_tokens: 64000, provider_max_input_tokens: 200000, provider_max_output_tokens: 64000, tokenization_strategy: { type: 'anthropic_tokenizer', model: 'claude-haiku-4-5' } },
 
-    // Legacy / Other Models
+    // Claude 3.x and older
     'anthropic-claude-3-7-sonnet-20250219':   { input_token_cost_rate: 3.00,  output_token_cost_rate: 15.00,  context_window_tokens: 200000, hard_cap_output_tokens: 8192, provider_max_input_tokens: 200000, provider_max_output_tokens: 8192, tokenization_strategy: { type: 'anthropic_tokenizer', model: 'claude-3-7-sonnet-20250219' } },
     'anthropic-claude-3-5-sonnet-20241022':  { input_token_cost_rate: 3.00,  output_token_cost_rate: 15.00,  context_window_tokens: 200000, hard_cap_output_tokens: 8192, provider_max_input_tokens: 200000, provider_max_output_tokens: 8192, tokenization_strategy: { type: 'anthropic_tokenizer', model: 'claude-3.5-sonnet-20241022' } },
     'anthropic-claude-3-5-haiku-20241022':   { input_token_cost_rate: 0.80,  output_token_cost_rate: 4.00,   context_window_tokens: 200000, hard_cap_output_tokens: 8192, provider_max_input_tokens: 200000, provider_max_output_tokens: 8192, tokenization_strategy: { type: 'anthropic_tokenizer', model: 'claude-3.5-haiku-20241022' } },
@@ -118,10 +121,10 @@ export async function syncAnthropicModels(
         internalModelMap: INTERNAL_MODEL_MAP,
         logger,
     });
-    let assembledConfigs = await assembler.assemble();
+    const { models: assembledModels, costProvenance } = await assembler.assemble();
 
     // Provider-specific hardening: ensure Anthropic chat models use official tokenizer strategy
-    assembledConfigs = assembledConfigs.map((cfg) => {
+    const assembledConfigs: FinalAppModelConfig[] = assembledModels.map((cfg) => {
       const modelId = cfg.api_identifier.replace(/^anthropic-/i, '');
       const strat = cfg.config.tokenization_strategy;
       if (strat.type !== 'anthropic_tokenizer') {
@@ -137,7 +140,8 @@ export async function syncAnthropicModels(
         assembledConfigs,
         dbModels,
         PROVIDER_NAME,
-        logger
+        logger,
+        costProvenance,
     );
 
     // 4. Execute DB operations

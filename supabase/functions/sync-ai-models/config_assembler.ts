@@ -5,27 +5,14 @@ import type {
   FinalAppModelConfig,
 } from '../_shared/types.ts';
 import { ILogger } from '../_shared/types.ts';
-import { z } from "https://deno.land/x/zod@v3.23.8/mod.ts";
 import { AiModelExtendedConfigSchema, TokenizationStrategySchema } from '../chat/zodSchema.ts';
-
-type TokenizationStrategy = z.infer<typeof TokenizationStrategySchema>;
-
-// --- Interfaces & Types for the Assembler ---
-
-/**
- * Defines the sources of configuration data the assembler will use.
- * Each source is optional, allowing for a flexible cascade.
- */
-export interface ConfigDataSource {
-  /** Tier 1: Models directly from the provider's API, potentially with some config data. */
-  apiModels: ProviderModelInfo[];
-  /** Tier 2: A function that returns a map of model capabilities from an external source. */
-  externalCapabilities?: () => Promise<Map<string, Partial<AiModelExtendedConfig>>>;
-  /** Tier 3: A hardcoded map of model configurations as a failsafe. */
-  internalModelMap?: Map<string, Partial<AiModelExtendedConfig>>;
-  /** A logger instance for detailed output. */
-  logger: ILogger;
-}
+import type {
+  AssembleOutcome,
+  ConfigDataSource,
+  ModelCostProvenance,
+  TokenCostFieldSource,
+  TokenizationStrategy,
+} from './config_assembler.interface.ts';
 
 // --- Main Assembler Logic ---
 
@@ -44,11 +31,12 @@ export class ConfigAssembler {
 
   /**
    * Executes the full assembly process using a robust, single-pass, top-down strategy.
-   * @returns A promise that resolves to a list of fully and correctly configured models.
+   * @returns Models plus ephemeral per-model cost provenance for diff.
    */
-  public async assemble(): Promise<FinalAppModelConfig[]> {
+  public async assemble(): Promise<AssembleOutcome> {
     this.logger.info('[ConfigAssembler] Starting top-down configuration assembly...');
     const finalModels: FinalAppModelConfig[] = [];
+    const costProvenance: Map<string, ModelCostProvenance> = new Map();
     const externalCaps = await this.sources.externalCapabilities?.() ?? new Map();
     const failsafeStrategy: TokenizationStrategy = { type: 'rough_char_count', chars_per_token_ratio: 4 };
 
@@ -56,12 +44,17 @@ export class ConfigAssembler {
       // 1. Establish a complete, valid baseline config using dynamic defaults.
       // Use all API models (with any provided configs) as cohort context and the current id
       const baseConfig = this.calculateDynamicDefaults(this.sources.apiModels, 1, apiModel.api_identifier);
+
+      const internalMapPartial: Partial<AiModelExtendedConfig> | undefined =
+        ConfigAssembler.getLongestPrefixInternalMapPartial(apiModel.api_identifier, this.sources.internalModelMap);
+      const externalPartial: Partial<AiModelExtendedConfig> | undefined =
+        externalCaps.get(apiModel.api_identifier);
       
       // 2. Define all partial config sources in DESCENDING order of priority.
       const configSources: (Partial<AiModelExtendedConfig> | undefined)[] = [
         apiModel.config,                                      // Tier 1: API Data (Highest Priority)
-        externalCaps.get(apiModel.api_identifier),            // Tier 2: External Capabilities
-        this.sources.internalModelMap?.get(apiModel.api_identifier), // Tier 3: Internal Static Map
+        externalPartial,            // Tier 2: External Capabilities
+        internalMapPartial, // Tier 3: Internal Static Map
         baseConfig,                                           // Tier 4: Failsafe Defaults (Lowest Priority)
       ];
       
@@ -103,10 +96,84 @@ export class ConfigAssembler {
         description: apiModel.description ?? '',
         config: validatedConfig,
       });
+
+      const provenance: ModelCostProvenance = this.buildModelCostProvenance(
+        apiModel,
+        externalPartial,
+        internalMapPartial,
+      );
+      costProvenance.set(apiModel.api_identifier, provenance);
+      if (provenance.input_source === 'none' && provenance.output_source === 'none') {
+        this.logger.warn(
+          `[ConfigAssembler] Model ${apiModel.api_identifier} has no trusted cost data; requires manual configuration.`,
+        );
+      }
     }
     
     this.logger.info(`[ConfigAssembler] Assembly complete. Total models configured: ${finalModels.length}`);
-    return finalModels;
+    return { models: finalModels, costProvenance };
+  }
+
+  public static getLongestPrefixInternalMapPartial(
+    apiIdentifier: string,
+    map: Map<string, Partial<AiModelExtendedConfig>> | undefined,
+  ): Partial<AiModelExtendedConfig> | undefined {
+    if (!map || map.size === 0) {
+      return undefined;
+    }
+    let bestKey: string | undefined;
+    for (const key of map.keys()) {
+      if (key.length === 0) {
+        continue;
+      }
+      if (apiIdentifier.startsWith(key)) {
+        if (bestKey === undefined || key.length > bestKey.length) {
+          bestKey = key;
+        }
+      }
+    }
+    if (bestKey === undefined) {
+      return undefined;
+    }
+    return map.get(bestKey);
+  }
+
+  private buildModelCostProvenance(
+    apiModel: ProviderModelInfo,
+    externalPartial: Partial<AiModelExtendedConfig> | undefined,
+    internalPartial: Partial<AiModelExtendedConfig> | undefined,
+  ): ModelCostProvenance {
+    const input_source: TokenCostFieldSource = this.costFieldSource(
+      apiModel.config,
+      externalPartial,
+      internalPartial,
+      'input_token_cost_rate',
+    );
+    const output_source: TokenCostFieldSource = this.costFieldSource(
+      apiModel.config,
+      externalPartial,
+      internalPartial,
+      'output_token_cost_rate',
+    );
+    return { input_source, output_source };
+  }
+
+  private costFieldSource(
+    apiCfg: Partial<AiModelExtendedConfig> | undefined,
+    ext: Partial<AiModelExtendedConfig> | undefined,
+    internal: Partial<AiModelExtendedConfig> | undefined,
+    field: 'input_token_cost_rate' | 'output_token_cost_rate',
+  ): TokenCostFieldSource {
+    if (apiCfg !== undefined && Object.prototype.hasOwnProperty.call(apiCfg, field)) {
+      return 'api';
+    }
+    if (ext !== undefined && Object.prototype.hasOwnProperty.call(ext, field)) {
+      return 'api';
+    }
+    if (internal !== undefined && Object.prototype.hasOwnProperty.call(internal, field)) {
+      return 'static_map';
+    }
+    return 'none';
   }
 
   /**
@@ -122,10 +189,16 @@ export class ConfigAssembler {
     // Absolute failsafe values, used if no configured models are available.
     // Updated for 2026: Using rational defaults based on mid-to-high tier models (e.g. GPT-4o/Opus class)
     // to prevent dangerous under-estimation of costs or capabilities for new models.
-    const DEFAULTS: AiModelExtendedConfig = {
+    const NON_COST_DEFAULTS: Pick<
+      AiModelExtendedConfig,
+      | 'api_identifier'
+      | 'context_window_tokens'
+      | 'hard_cap_output_tokens'
+      | 'provider_max_input_tokens'
+      | 'provider_max_output_tokens'
+      | 'tokenization_strategy'
+    > = {
         api_identifier: 'default',
-        input_token_cost_rate: 15, // Rational default (~$15/1M, high-end safety margin)
-        output_token_cost_rate: 75, // Rational default (~$75/1M, high-end safety margin)
         context_window_tokens: 128000, // Modern standard baseline
         hard_cap_output_tokens: 65536,
         provider_max_input_tokens: 128000,
@@ -145,28 +218,24 @@ export class ConfigAssembler {
         const floors = this.getAdaptiveProviderFloor(currentApiIdentifier, emptyConfiguredModels);
         // If floors are available for this provider/id, use them to set realistic windows; otherwise, use generic defaults
         const flooredDefaults: Partial<AiModelExtendedConfig> = floors ? {
-          input_token_cost_rate: DEFAULTS.input_token_cost_rate,
-          output_token_cost_rate: DEFAULTS.output_token_cost_rate,
+          input_token_cost_rate: null,
+          output_token_cost_rate: null,
           context_window_tokens: floors.window,
           hard_cap_output_tokens: floors.outputCap,
           provider_max_input_tokens: floors.window,
           provider_max_output_tokens: floors.outputCap,
-          tokenization_strategy: DEFAULTS.tokenization_strategy,
-        } : DEFAULTS;
+          tokenization_strategy: NON_COST_DEFAULTS.tokenization_strategy,
+        } : {
+          input_token_cost_rate: null,
+          output_token_cost_rate: null,
+          context_window_tokens: NON_COST_DEFAULTS.context_window_tokens,
+          hard_cap_output_tokens: NON_COST_DEFAULTS.hard_cap_output_tokens,
+          provider_max_input_tokens: NON_COST_DEFAULTS.provider_max_input_tokens,
+          provider_max_output_tokens: NON_COST_DEFAULTS.provider_max_output_tokens,
+          tokenization_strategy: NON_COST_DEFAULTS.tokenization_strategy,
+        };
         return flooredDefaults;
     }
-
-    // 2. Safely calculate high-water marks by filtering out nulls before calling Math.max.
-    const inputCosts = modelsWithConfigs
-      .map(m => m.config.input_token_cost_rate)
-      .filter((v): v is number => typeof v === 'number' && v > 0);
-    const outputCosts = modelsWithConfigs
-      .map(m => m.config.output_token_cost_rate)
-      .filter((v): v is number => typeof v === 'number' && v > 0);
-
-    const highWaterMarkInput = inputCosts.length > 0 ? Math.max(...inputCosts) : DEFAULTS.input_token_cost_rate;
-    const highWaterMarkOutput = outputCosts.length > 0 ? Math.max(...outputCosts) : DEFAULTS.output_token_cost_rate;
-    // --- End of Fix ---
 
     // --- Dynamic Cohort for Window Sizes ---
     const sortedModels = [...modelsWithConfigs].sort((a, b) => {
@@ -187,12 +256,12 @@ export class ConfigAssembler {
     const avgOutputCap = Math.floor(average(recentCohort.map(m => m.config.hard_cap_output_tokens)));
 
     let defaults: Partial<AiModelExtendedConfig> = {
-        input_token_cost_rate: highWaterMarkInput ?? DEFAULTS.input_token_cost_rate,
-        output_token_cost_rate: highWaterMarkOutput ?? DEFAULTS.output_token_cost_rate,
-        context_window_tokens: avgContextWindow > 0 ? avgContextWindow : DEFAULTS.context_window_tokens,
-        hard_cap_output_tokens: avgOutputCap > 0 ? avgOutputCap : DEFAULTS.hard_cap_output_tokens,
-        provider_max_input_tokens: avgContextWindow > 0 ? avgContextWindow : DEFAULTS.provider_max_input_tokens,
-        provider_max_output_tokens: avgOutputCap > 0 ? avgOutputCap : DEFAULTS.provider_max_output_tokens,
+        input_token_cost_rate: null,
+        output_token_cost_rate: null,
+        context_window_tokens: avgContextWindow > 0 ? avgContextWindow : NON_COST_DEFAULTS.context_window_tokens,
+        hard_cap_output_tokens: avgOutputCap > 0 ? avgOutputCap : NON_COST_DEFAULTS.hard_cap_output_tokens,
+        provider_max_input_tokens: avgContextWindow > 0 ? avgContextWindow : NON_COST_DEFAULTS.provider_max_input_tokens,
+        provider_max_output_tokens: avgOutputCap > 0 ? avgOutputCap : NON_COST_DEFAULTS.provider_max_output_tokens,
         tokenization_strategy: { type: 'rough_char_count', chars_per_token_ratio: 4 }
     };
 

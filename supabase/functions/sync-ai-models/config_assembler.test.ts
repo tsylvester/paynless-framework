@@ -6,10 +6,12 @@ import {
   assertRejects,
   assertNotEquals,
 } from "https://deno.land/std@0.224.0/assert/mod.ts";
+import { ConfigAssembler } from "./config_assembler.ts";
 import {
-  ConfigAssembler,
-  type ConfigDataSource,
-} from "./config_assembler.ts";
+  AssembleOutcome,
+  ConfigDataSource,
+  ModelCostProvenance,
+} from "./config_assembler.interface.ts";
 import type {
   ProviderModelInfo,
   AiModelExtendedConfig,
@@ -18,54 +20,7 @@ import type {
 import { MockLogger } from "../_shared/logger.mock.ts";
 import { AiModelExtendedConfigSchema } from "../chat/zodSchema.ts";
 import { z } from "https://deno.land/x/zod@v3.23.8/mod.ts";
-
-// --- Mock Data ---
-
-const mockLogger = new MockLogger();
-
-const MOCK_API_MODELS: ProviderModelInfo[] = [
-    // Model 1: Almost fully configured by API, needs one value from internal map
-    {
-        api_identifier: 'provider-model-a-20240101',
-        name: 'Model A',
-        description: 'Latest and greatest',
-        config: {
-            input_token_cost_rate: 0.00001,
-            output_token_cost_rate: 0.00003,
-            context_window_tokens: 128000,
-            provider_max_input_tokens: 128000,
-            tokenization_strategy: { type: 'tiktoken', tiktoken_encoding_name: 'cl100k_base' },
-            hard_cap_output_tokens: 4096, // Initially missing provider_max_output_tokens
-        }
-    },
-    // Model 2: Only has a name from API, gets full config from internal map
-    {
-        api_identifier: 'provider-model-b-20230101',
-        name: 'Model B',
-        description: 'Old reliable',
-    },
-    // Model 3: A completely unknown model, will get dynamic defaults
-    {
-        api_identifier: 'provider-model-z-new',
-        name: 'Model Z',
-        description: 'Brand new, unknown to our system',
-    }
-];
-
-const MOCK_INTERNAL_MAP = new Map<string, Partial<AiModelExtendedConfig>>([
-    // Provides the missing piece for Model A
-    ['provider-model-a-20240101', { provider_max_output_tokens: 4096 }],
-    // Provides full config for Model B
-    ['provider-model-b-20230101', { 
-        input_token_cost_rate: 0.000005,
-        output_token_cost_rate: 0.000015,
-        context_window_tokens: 32000,
-        hard_cap_output_tokens: 2048,
-        provider_max_input_tokens: 32000,
-        provider_max_output_tokens: 2048,
-        tokenization_strategy: { type: 'tiktoken', tiktoken_encoding_name: 'cl100k_base' }
-    }]
-]);
+import { spy } from "https://deno.land/std@0.224.0/testing/mock.ts";
 
 // --- Test Suite ---
 
@@ -105,8 +60,8 @@ Deno.test({
         };
 
         const assembler = new ConfigAssembler(sources);
-        const assembledConfigs = await assembler.assemble();
-        const result = AiModelExtendedConfigSchema.safeParse(assembledConfigs[0].config);
+        const assembled: AssembleOutcome = await assembler.assemble();
+        const result = AiModelExtendedConfigSchema.safeParse(assembled.models[0].config);
 
         // This test will fail because the assembler's current shallow-merge logic will
         // cause the first `tokenization_strategy` object to be completely overwritten by the second,
@@ -155,7 +110,8 @@ Deno.test({
         };
 
         const assembler = new ConfigAssembler(sources);
-        const [assembledConfig] = await assembler.assemble();
+        const assembled: AssembleOutcome = await assembler.assemble();
+        const assembledConfig: FinalAppModelConfig = assembled.models[0];
         const result = AiModelExtendedConfigSchema.safeParse(assembledConfig.config);
 
         assertEquals(result.success, true, `Zod validation failed. Errors: ${JSON.stringify(result.error?.format(), null, 2)}`);
@@ -200,11 +156,11 @@ Deno.test({
     };
 
     const assembler = new ConfigAssembler(sources);
-    const result = await assembler.assemble();
+    const outcome: AssembleOutcome = await assembler.assemble();
 
     // Assert that one valid model was produced
-    assertEquals(result.length, 1);
-    const finalConfig = result[0];
+    assertEquals(outcome.models.length, 1);
+    const finalConfig: FinalAppModelConfig = outcome.models[0];
     
     // Assert the final object has the correct shape
     assertEquals(finalConfig.api_identifier, "valid-merge-model");
@@ -241,29 +197,31 @@ Deno.test({
     const assembler = new ConfigAssembler(sources);
 
     // 2. Action: Call the now-fixed assembler
-    const result = await assembler.assemble();
+    const outcome: AssembleOutcome = await assembler.assemble();
 
     // 3. Assertion: We now expect this to succeed.
-    assertEquals(result.length, 1, "Should have produced one valid model.");
-    const finalConfig = result[0].config;
+    assertEquals(outcome.models.length, 1, "Should have produced one valid model.");
+    const finalConfig = outcome.models[0].config;
 
     // Check that properties from the defaults were correctly applied.
     // Rational defaults for 2026:
     // - Context Window: 128k (standard modern baseline)
-    // - Input Cost: 15 (safe high default, e.g. Opus-tier)
-    // - Output Cost: 75 (safe high default)
+    // - Billing rates: null when no trusted tier supplies them (Tier-4 does not guess costs)
     // - Tokenization: rough_char_count (failsafe)
     assertEquals(finalConfig.api_identifier, "default-only-model");
     
-    // Assert rational defaults instead of legacy 8k/tiny-cost values
-    assertEquals(finalConfig.input_token_cost_rate, 15, "Default input cost should be rational ($15/1M)");
-    assertEquals(finalConfig.output_token_cost_rate, 75, "Default output cost should be rational ($75/1M)");
+    assertEquals(finalConfig.input_token_cost_rate, null);
+    assertEquals(finalConfig.output_token_cost_rate, null);
     assertEquals(finalConfig.context_window_tokens, 128000, "Default context window should be modern (128k)");
     assertEquals(finalConfig.provider_max_input_tokens, 128000, "Default max input should match context window");
     assertEquals(finalConfig.hard_cap_output_tokens, 65536, "Default hard cap output should be rational (64k)");
     assertEquals(finalConfig.provider_max_output_tokens, 65536, "Default max output should be rational (64k)");
     
     assertEquals(finalConfig.tokenization_strategy.type, 'rough_char_count');
+    const defaultProv: ModelCostProvenance | undefined = outcome.costProvenance.get("default-only-model");
+    assertExists(defaultProv);
+    assertEquals(defaultProv.input_source, "none");
+    assertEquals(defaultProv.output_source, "none");
   },
 });
 
@@ -291,12 +249,12 @@ Deno.test({
 
         // 2. Action & Assertion: In the current faulty implementation, this will throw a ZodError and fail the test.
         // A correct implementation will handle the error and return a valid, failsafe config.
-        const assembledConfigs = await assembler.assemble();
+        const assembled: AssembleOutcome = await assembler.assemble();
 
         // If we get here, the assembler didn't crash, which is the first part of the fix.
         // Now, we assert that it produced a valid failsafe configuration.
-        assertEquals(assembledConfigs.length, 1);
-        const finalConfig = assembledConfigs[0].config;
+        assertEquals(assembled.models.length, 1);
+        const finalConfig = assembled.models[0].config;
 
         const result = AiModelExtendedConfigSchema.safeParse(finalConfig);
 
@@ -332,20 +290,20 @@ Deno.test({
         const assembler = new ConfigAssembler(sources);
 
         // 2. Action: Assemble the batch. This must not crash.
-        const assembledConfigs = await assembler.assemble();
+        const assembled: AssembleOutcome = await assembler.assemble();
 
         // 3. Assertions
         // It must process all models, resulting in an array of the same length.
-        assertEquals(assembledConfigs.length, 3, "Should have processed all three models in the batch.");
+        assertEquals(assembled.models.length, 3, "Should have processed all three models in the batch.");
 
         // Every single config in the output array MUST be valid.
-        for (const finalConfig of assembledConfigs) {
+        for (const finalConfig of assembled.models) {
             const result = AiModelExtendedConfigSchema.safeParse(finalConfig.config);
             assertEquals(result.success, true, `Validation failed for model '${finalConfig.api_identifier}'. The assembler failed to repair it. Errors: ${JSON.stringify(result.error?.format(), null, 2)}`);
         }
 
         // Specifically check that the invalid model was repaired with a failsafe default.
-        const repairedModel = assembledConfigs.find(c => c.api_identifier === 'invalid-model-2');
+        const repairedModel = assembled.models.find((m: FinalAppModelConfig) => m.api_identifier === 'invalid-model-2');
         assertExists(repairedModel, "The invalid model should exist in the final output.");
         assertEquals(repairedModel.config.tokenization_strategy.type, 'rough_char_count', "The invalid model's strategy should have been replaced by a failsafe default.");
     },
@@ -436,8 +394,8 @@ Deno.test({
         logger,
       };
       const assembler = new ConfigAssembler(sources);
-      const configs = await assembler.assemble();
-      const unknownCfg = configs.find(c => c.api_identifier === unknownAnthropic.api_identifier)?.config;
+      const outcome: AssembleOutcome = await assembler.assemble();
+      const unknownCfg = outcome.models.find((m: FinalAppModelConfig) => m.api_identifier === unknownAnthropic.api_identifier)?.config;
       assertExists(unknownCfg, "Unknown Anthropic config should exist");
       assert(unknownCfg.context_window_tokens !== undefined && unknownCfg.provider_max_input_tokens !== undefined);
       assert(
@@ -453,8 +411,8 @@ Deno.test({
         logger,
       };
       const assembler = new ConfigAssembler(sources);
-      const configs = await assembler.assemble();
-      const unknownCfg = configs.find(c => c.api_identifier === unknownGoogle.api_identifier)?.config;
+      const outcome: AssembleOutcome = await assembler.assemble();
+      const unknownCfg = outcome.models.find((m: FinalAppModelConfig) => m.api_identifier === unknownGoogle.api_identifier)?.config;
       assertExists(unknownCfg, "Unknown Google config should exist");
       assert(
         (unknownCfg.context_window_tokens as number) >= 1_048_576 && (unknownCfg.provider_max_input_tokens as number) >= 1_048_576,
@@ -469,9 +427,9 @@ Deno.test({
         logger,
       };
       const assembler = new ConfigAssembler(sources);
-      const configs = await assembler.assemble();
-      const cfg41 = configs.find(c => c.api_identifier === unknownOpenAI41.api_identifier)?.config;
-      const cfg4o = configs.find(c => c.api_identifier === unknownOpenAI4o.api_identifier)?.config;
+      const outcome: AssembleOutcome = await assembler.assemble();
+      const cfg41 = outcome.models.find((m: FinalAppModelConfig) => m.api_identifier === unknownOpenAI41.api_identifier)?.config;
+      const cfg4o = outcome.models.find((m: FinalAppModelConfig) => m.api_identifier === unknownOpenAI4o.api_identifier)?.config;
       assertExists(cfg41, "Unknown OpenAI 4.1 config should exist");
       assertExists(cfg4o, "Unknown OpenAI 4o config should exist");
       assert(
@@ -483,5 +441,342 @@ Deno.test({
         "OpenAI 4o unknown/newer model should not be below 128,000"
       );
     }
+  },
+});
+
+Deno.test({
+  name:
+    "ConfigAssembler — prefix match: google-gemini-3-flash-preview uses internal map key google-gemini-3-flash",
+  fn: async () => {
+    const apiModels: ProviderModelInfo[] = [
+      {
+        api_identifier: "google-gemini-3-flash-preview",
+        name: "Gemini 3 Flash Preview",
+      },
+    ];
+    const internalModelMap: Map<string, Partial<AiModelExtendedConfig>> = new Map([
+      [
+        "google-gemini-3-flash",
+        {
+          input_token_cost_rate: 0.11,
+          output_token_cost_rate: 0.22,
+          context_window_tokens: 1_000_000,
+          hard_cap_output_tokens: 8192,
+          provider_max_input_tokens: 1_000_000,
+          provider_max_output_tokens: 8192,
+          tokenization_strategy: {
+            type: "google_gemini_tokenizer",
+            chars_per_token_ratio: 4,
+          },
+        },
+      ],
+    ]);
+    const sources: ConfigDataSource = {
+      apiModels,
+      internalModelMap,
+      logger: new MockLogger(),
+    };
+    const assembler: ConfigAssembler = new ConfigAssembler(sources);
+    const outcome: AssembleOutcome = await assembler.assemble();
+    const row: FinalAppModelConfig | undefined = outcome.models.find(
+      (m) => m.api_identifier === "google-gemini-3-flash-preview",
+    );
+    assertExists(row);
+    assertEquals(row.config.input_token_cost_rate, 0.11);
+    assertEquals(row.config.output_token_cost_rate, 0.22);
+    const prov: ModelCostProvenance | undefined = outcome.costProvenance.get(
+      "google-gemini-3-flash-preview",
+    );
+    assertExists(prov);
+    assertEquals(prov.input_source, "static_map");
+    assertEquals(prov.output_source, "static_map");
+  },
+});
+
+Deno.test({
+  name:
+    "ConfigAssembler — prefix match: openai-gpt-5-2025-08-07 uses internal map key openai-gpt-5",
+  fn: async () => {
+    const apiModels: ProviderModelInfo[] = [
+      {
+        api_identifier: "openai-gpt-5-2025-08-07",
+        name: "GPT-5 dated",
+      },
+    ];
+    const internalModelMap: Map<string, Partial<AiModelExtendedConfig>> = new Map([
+      [
+        "openai-gpt-5",
+        {
+          input_token_cost_rate: 0.33,
+          output_token_cost_rate: 0.44,
+          context_window_tokens: 256_000,
+          hard_cap_output_tokens: 8192,
+          provider_max_input_tokens: 256_000,
+          provider_max_output_tokens: 8192,
+          tokenization_strategy: {
+            type: "tiktoken",
+            tiktoken_encoding_name: "o200k_base",
+            is_chatml_model: true,
+            api_identifier_for_tokenization: "gpt-5",
+          },
+        },
+      ],
+    ]);
+    const sources: ConfigDataSource = {
+      apiModels,
+      internalModelMap,
+      logger: new MockLogger(),
+    };
+    const assembler: ConfigAssembler = new ConfigAssembler(sources);
+    const outcome: AssembleOutcome = await assembler.assemble();
+    const row: FinalAppModelConfig | undefined = outcome.models.find(
+      (m) => m.api_identifier === "openai-gpt-5-2025-08-07",
+    );
+    assertExists(row);
+    assertEquals(row.config.input_token_cost_rate, 0.33);
+    assertEquals(row.config.output_token_cost_rate, 0.44);
+    const prov: ModelCostProvenance | undefined = outcome.costProvenance.get(
+      "openai-gpt-5-2025-08-07",
+    );
+    assertExists(prov);
+    assertEquals(prov.input_source, "static_map");
+    assertEquals(prov.output_source, "static_map");
+  },
+});
+
+Deno.test({
+  name:
+    "ConfigAssembler — longest matching internal map prefix wins for google-gemini-2.5-flash-lite",
+  fn: async () => {
+    const apiModels: ProviderModelInfo[] = [
+      {
+        api_identifier: "google-gemini-2.5-flash-lite",
+        name: "Gemini 2.5 Flash Lite",
+      },
+    ];
+    const internalModelMap: Map<string, Partial<AiModelExtendedConfig>> = new Map([
+      [
+        "google-gemini-2.5-flash",
+        {
+          input_token_cost_rate: 9.99,
+          output_token_cost_rate: 9.99,
+          context_window_tokens: 100_000,
+          hard_cap_output_tokens: 8192,
+          provider_max_input_tokens: 100_000,
+          provider_max_output_tokens: 8192,
+          tokenization_strategy: {
+            type: "google_gemini_tokenizer",
+            chars_per_token_ratio: 4,
+          },
+        },
+      ],
+      [
+        "google-gemini-2.5-flash-lite",
+        {
+          input_token_cost_rate: 1.01,
+          output_token_cost_rate: 2.02,
+          context_window_tokens: 200_000,
+          hard_cap_output_tokens: 8192,
+          provider_max_input_tokens: 200_000,
+          provider_max_output_tokens: 8192,
+          tokenization_strategy: {
+            type: "google_gemini_tokenizer",
+            chars_per_token_ratio: 4,
+          },
+        },
+      ],
+    ]);
+    const sources: ConfigDataSource = {
+      apiModels,
+      internalModelMap,
+      logger: new MockLogger(),
+    };
+    const assembler: ConfigAssembler = new ConfigAssembler(sources);
+    const outcome: AssembleOutcome = await assembler.assemble();
+    const row: FinalAppModelConfig | undefined = outcome.models.find(
+      (m) => m.api_identifier === "google-gemini-2.5-flash-lite",
+    );
+    assertExists(row);
+    assertEquals(row.config.input_token_cost_rate, 1.01);
+    assertEquals(row.config.output_token_cost_rate, 2.02);
+  },
+});
+
+Deno.test({
+  name:
+    "ConfigAssembler — no internal map match: null cost rates, provenance none, flagged via warn",
+  fn: async () => {
+    const logger: MockLogger = new MockLogger();
+    const warnSpy = spy(logger, "warn");
+    const apiModels: ProviderModelInfo[] = [
+      {
+        api_identifier: "unknown-provider-model-xyz",
+        name: "Unknown",
+      },
+    ];
+    const sources: ConfigDataSource = {
+      apiModels,
+      internalModelMap: new Map(),
+      logger,
+    };
+    const assembler: ConfigAssembler = new ConfigAssembler(sources);
+    const outcome: AssembleOutcome = await assembler.assemble();
+    const row: FinalAppModelConfig | undefined = outcome.models.find(
+      (m) => m.api_identifier === "unknown-provider-model-xyz",
+    );
+    assertExists(row);
+    assertEquals(row.config.input_token_cost_rate, null);
+    assertEquals(row.config.output_token_cost_rate, null);
+    const prov: ModelCostProvenance | undefined = outcome.costProvenance.get(
+      "unknown-provider-model-xyz",
+    );
+    assertExists(prov);
+    assertEquals(prov.input_source, "none");
+    assertEquals(prov.output_source, "none");
+    assertNotEquals(warnSpy.calls.length, 0);
+    let sawManualFlag = false;
+    for (const call of warnSpy.calls) {
+      const msg: string = call.args[0];
+      if (typeof msg === "string" && msg.includes("manual configuration")) {
+        sawManualFlag = true;
+        break;
+      }
+    }
+    assert(sawManualFlag);
+  },
+});
+
+Deno.test({
+  name:
+    "ConfigAssembler — cost provenance static_map vs api vs none matches trusted tier per field",
+  fn: async () => {
+    const internalModelMap: Map<string, Partial<AiModelExtendedConfig>> = new Map([
+      [
+        "google-cost-map-only",
+        {
+          input_token_cost_rate: 5,
+          output_token_cost_rate: 6,
+          context_window_tokens: 128_000,
+          hard_cap_output_tokens: 8192,
+          provider_max_input_tokens: 128_000,
+          provider_max_output_tokens: 8192,
+          tokenization_strategy: {
+            type: "google_gemini_tokenizer",
+            chars_per_token_ratio: 4,
+          },
+        },
+      ],
+    ]);
+
+    const sourcesStatic: ConfigDataSource = {
+      apiModels: [
+        {
+          api_identifier: "google-cost-map-only",
+          name: "Map only",
+        },
+      ],
+      internalModelMap,
+      logger: new MockLogger(),
+    };
+    const outStatic: AssembleOutcome = await new ConfigAssembler(sourcesStatic).assemble();
+    const provStatic: ModelCostProvenance | undefined = outStatic.costProvenance.get(
+      "google-cost-map-only",
+    );
+    assertExists(provStatic);
+    assertEquals(provStatic.input_source, "static_map");
+    assertEquals(provStatic.output_source, "static_map");
+
+    const sourcesApi: ConfigDataSource = {
+      apiModels: [
+        {
+          api_identifier: "anthropic-cost-from-api",
+          name: "API costs",
+          config: {
+            input_token_cost_rate: 7,
+            output_token_cost_rate: 8,
+            context_window_tokens: 200_000,
+            hard_cap_output_tokens: 8192,
+            provider_max_input_tokens: 200_000,
+            provider_max_output_tokens: 8192,
+            tokenization_strategy: {
+              type: "anthropic_tokenizer",
+              model: "claude-3-5-sonnet-20241022",
+            },
+          },
+        },
+      ],
+      logger: new MockLogger(),
+    };
+    const outApi: AssembleOutcome = await new ConfigAssembler(sourcesApi).assemble();
+    const provApi: ModelCostProvenance | undefined = outApi.costProvenance.get(
+      "anthropic-cost-from-api",
+    );
+    assertExists(provApi);
+    assertEquals(provApi.input_source, "api");
+    assertEquals(provApi.output_source, "api");
+
+    const sourcesNone: ConfigDataSource = {
+      apiModels: [
+        {
+          api_identifier: "orphan-no-cost-tier",
+          name: "No trusted cost",
+        },
+      ],
+      internalModelMap: new Map(),
+      logger: new MockLogger(),
+    };
+    const outNone: AssembleOutcome = await new ConfigAssembler(sourcesNone).assemble();
+    const provNone: ModelCostProvenance | undefined = outNone.costProvenance.get(
+      "orphan-no-cost-tier",
+    );
+    assertExists(provNone);
+    assertEquals(provNone.input_source, "none");
+    assertEquals(provNone.output_source, "none");
+  },
+});
+
+Deno.test({
+  name:
+    "ConfigAssembler — cohort with 15/75 model does not assign cohort costs to unmapped model",
+  fn: async () => {
+    const apiModels: ProviderModelInfo[] = [
+      {
+        api_identifier: "openai-gpt-expensive-cohort",
+        name: "Expensive cohort member",
+        config: {
+          input_token_cost_rate: 15,
+          output_token_cost_rate: 75,
+          context_window_tokens: 128_000,
+          hard_cap_output_tokens: 8192,
+          provider_max_input_tokens: 128_000,
+          provider_max_output_tokens: 8192,
+          tokenization_strategy: {
+            type: "tiktoken",
+            tiktoken_encoding_name: "o200k_base",
+            is_chatml_model: true,
+            api_identifier_for_tokenization: "gpt",
+          },
+        },
+      },
+      {
+        api_identifier: "openai-brand-new-unmapped",
+        name: "Unmapped new model",
+      },
+    ];
+    const sources: ConfigDataSource = {
+      apiModels,
+      internalModelMap: new Map(),
+      logger: new MockLogger(),
+    };
+    const assembler: ConfigAssembler = new ConfigAssembler(sources);
+    const outcome: AssembleOutcome = await assembler.assemble();
+    const unmapped: FinalAppModelConfig | undefined = outcome.models.find(
+      (m) => m.api_identifier === "openai-brand-new-unmapped",
+    );
+    assertExists(unmapped);
+    assertEquals(unmapped.config.input_token_cost_rate, null);
+    assertEquals(unmapped.config.output_token_cost_rate, null);
+    assertNotEquals(unmapped.config.input_token_cost_rate, 15);
+    assertNotEquals(unmapped.config.output_token_cost_rate, 75);
   },
 });
