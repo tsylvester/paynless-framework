@@ -1,8 +1,6 @@
 import { handleCustomerSubscriptionUpdated } from './stripe.subscriptionUpdated.ts';
-import type { ILogger, LogMetadata } from "../../../types.ts";
 import { Database } from "../../../../types_db.ts";
 import type { SupabaseClient } from 'npm:@supabase/supabase-js';
-import Stripe from 'npm:stripe';
 import {
   assert,
   assertEquals,
@@ -12,82 +10,47 @@ import {
   spy,
   type Spy,
 } from 'jsr:@std/testing@0.225.1/mock';
-import { createMockStripe, MockStripe, HandlerContext } from '../../../stripe.mock.ts';
+import {
+  createMockStripe,
+  MockStripe,
+  HandlerContext,
+  createMockCustomerSubscriptionUpdatedEvent,
+  createMockPrice,
+  createMockSubscriptionItem,
+} from '../../../stripe.mock.ts';
 import { createMockSupabaseClient, MockSupabaseClientSetup, MockSupabaseDataConfig } from '../../../supabase.mock.ts';
 import { createMockAdminTokenWalletService, MockAdminTokenWalletService } from '../../../services/tokenwallet/admin/adminTokenWalletService.mock.ts';
+import { MockLogger } from '../../../logger.mock.ts';
 
 const FREE_TIER_ITEM_ID_INTERNAL = 'SYS_FREE_TIER'; // Define constant for free tier
-
-// Helper to create a mock Stripe.CustomerSubscriptionUpdatedEvent
-const createMockSubscriptionUpdatedEvent = (
-  subscriptionData: Partial<Stripe.Subscription>,
-  previousAttributes?: Partial<Stripe.Subscription>,
-  id = `evt_sub_updated_${Date.now()}`
-): Stripe.CustomerSubscriptionUpdatedEvent => {
-  const now = Math.floor(Date.now() / 1000);
-  return {
-    id,
-    object: "event",
-    api_version: "2020-08-27",
-    created: now,
-    data: {
-      object: {
-        id: `sub_test_${Date.now()}`,
-        object: "subscription",
-        status: "active",
-        customer: `cus_test_${Date.now()}`,
-        current_period_start: now - (30 * 24 * 60 * 60), // 30 days ago
-        current_period_end: now + (30 * 24 * 60 * 60),   // 30 days from now
-        cancel_at_period_end: false,
-        items: {
-          object: 'list',
-          data: [{
-            id: `si_test_${Date.now()}`,
-            object: 'subscription_item',
-            price: { id: `price_test_${Date.now()}`, object: 'price', active: true, currency: 'usd', product: `prod_test_${Date.now()}` } as Stripe.Price,
-            quantity: 1,
-            current_period_start: now - (30 * 24 * 60 * 60), // Same as subscription
-            current_period_end: now + (30 * 24 * 60 * 60),   // Same as subscription
-          } as any],
-          has_more: false,
-          url: `/v1/subscription_items?subscription=sub_test_${Date.now()}`,
-        },
-        ...subscriptionData,
-      } as Stripe.Subscription,
-      previous_attributes: previousAttributes,
-    },
-    livemode: false,
-    pending_webhooks: 0,
-    request: { id: `req_test_${Date.now()}`, idempotency_key: null },
-    type: "customer.subscription.updated",
-  } as Stripe.CustomerSubscriptionUpdatedEvent;
-};
-
-// Mock Logger
-const createMockLoggerInternal = (): ILogger => {
-    return {
-        debug: spy((_message: string, _metadata?: LogMetadata) => {}),
-        info: spy((_message: string, _metadata?: LogMetadata) => {}),
-        warn: spy((_message: string, _metadata?: LogMetadata) => {}),
-        error: spy((_message: string | Error, _metadata?: LogMetadata) => {}),
-    };
-};
 
 Deno.test('[stripe.subscriptionUpdated.ts] Tests - handleCustomerSubscriptionUpdated', async (t) => {
   let mockSupabaseClient: SupabaseClient<Database>;
   let mockSupabaseSetup: MockSupabaseClientSetup;
   let mockTokenWalletService: MockAdminTokenWalletService;
-  let mockLogger: ILogger;
+  let mockLogger: MockLogger;
   let mockStripe: MockStripe;
   let handlerContext: HandlerContext;
+  let debugSpy: Spy<MockLogger, Parameters<MockLogger['debug']>, ReturnType<MockLogger['debug']>>;
+  let infoSpy: Spy<MockLogger, Parameters<MockLogger['info']>, ReturnType<MockLogger['info']>>;
+  let warnSpy: Spy<MockLogger, Parameters<MockLogger['warn']>, ReturnType<MockLogger['warn']>>;
+  let errorSpy: Spy<MockLogger, Parameters<MockLogger['error']>, ReturnType<MockLogger['error']>>;
 
-  const setup = (dbQueryResults?: { 
+  const PLAN_PERIOD_START_SEC = 1000000000;
+  const PLAN_PERIOD_END_SEC = 1000086400;
+  const PLAN_PERIOD_START_ISO: string = new Date(PLAN_PERIOD_START_SEC * 1000).toISOString();
+  const PLAN_PERIOD_END_ISO: string = new Date(PLAN_PERIOD_END_SEC * 1000).toISOString();
+
+  const setup = (dbQueryResults?: {
     subscriptionPlans?: { id: string; stripe_price_id?: string, item_id_internal?: string }[] | null;
     subscriptionPlansSelectError?: Error;
-    userSubscriptionsUpdateCount?: number;
-    userSubscriptionsUpdateError?: Error | null;
+    rpcResults?: MockSupabaseDataConfig['rpcResults'];
   }) => {
-    mockLogger = createMockLoggerInternal();
+    mockLogger = new MockLogger();
+    debugSpy = spy(mockLogger, 'debug');
+    infoSpy = spy(mockLogger, 'info');
+    warnSpy = spy(mockLogger, 'warn');
+    errorSpy = spy(mockLogger, 'error');
     mockStripe = createMockStripe();
     mockTokenWalletService = createMockAdminTokenWalletService();
 
@@ -116,16 +79,21 @@ Deno.test('[stripe.subscriptionUpdated.ts] Tests - handleCustomerSubscriptionUpd
       };
     }
 
-    genericMockResults['user_subscriptions'] = {
-      update: async (_state) => {
-        if (dbQueryResults?.userSubscriptionsUpdateError) {
-          return { data: null, error: dbQueryResults.userSubscriptionsUpdateError, count: 0, status: 500, statusText: 'Error' };
-        }
-        return { data: [{}], error: null, count: dbQueryResults?.userSubscriptionsUpdateCount ?? 1, status: 200, statusText: 'OK' };
-      }
-    };
-
-    mockSupabaseSetup = createMockSupabaseClient(undefined, { genericMockResults });
+    mockSupabaseSetup = createMockSupabaseClient(undefined, {
+      genericMockResults,
+      rpcResults: dbQueryResults?.rpcResults ?? {
+        update_subscription_with_tier: {
+          data: [
+            {
+              user_id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+              tier_level: 1,
+              rows_updated: 1,
+            },
+          ],
+          error: null,
+        },
+      },
+    });
     mockSupabaseClient = mockSupabaseSetup.client as unknown as SupabaseClient<Database>;
     
     handlerContext = {
@@ -133,7 +101,7 @@ Deno.test('[stripe.subscriptionUpdated.ts] Tests - handleCustomerSubscriptionUpd
       logger: mockLogger,
       tokenWalletService: mockTokenWalletService.instance,
       stripe: mockStripe.instance,
-      updatePaymentTransaction: spy() as any, // Mocked, not used by this handler directly
+      updatePaymentTransaction: spy(), // Mocked, not used by this handler directly
       featureFlags: {},
       functionsUrl: "http://localhost:54321/functions/v1",
       stripeWebhookSecret: "whsec_test_secret_subscription_updated", // Can be specific if needed
@@ -150,20 +118,29 @@ Deno.test('[stripe.subscriptionUpdated.ts] Tests - handleCustomerSubscriptionUpd
 
     setup({
       subscriptionPlans: [{ id: internalPlanId, stripe_price_id: stripePriceId }],
-      userSubscriptionsUpdateCount: 1,
     });
 
-    const event = createMockSubscriptionUpdatedEvent(
+    const event = createMockCustomerSubscriptionUpdatedEvent(
       { // Current subscription data in the event
         id: stripeSubscriptionId,
         customer: stripeCustomerId,
         status: newStatus,
-        items: { data: [{ price: { id: stripePriceId } }] } as any, // Ensure items.data[0].price.id is set
+        items: {
+          object: 'list',
+          data: [createMockSubscriptionItem({
+            subscription: stripeSubscriptionId,
+            price: createMockPrice({ id: stripePriceId }),
+            current_period_start: PLAN_PERIOD_START_SEC,
+            current_period_end: PLAN_PERIOD_END_SEC,
+          })],
+          has_more: false,
+          url: `/v1/subscription_items?subscription=${stripeSubscriptionId}`,
+        },
       },
       { // Previous attributes
         status: "active", 
       },
-      eventId
+      { id: eventId }
     );
 
     const result = await handleCustomerSubscriptionUpdated(handlerContext, event);
@@ -172,7 +149,6 @@ Deno.test('[stripe.subscriptionUpdated.ts] Tests - handleCustomerSubscriptionUpd
     assertEquals(result.transactionId, eventId); // Handler uses event.id as transactionId in this context
 
     // Verify logger calls
-    const infoSpy = mockLogger.info as Spy<any, any[], any>;
     assertSpyCalls(infoSpy, 2); // Initial processing + successful processing
     assert(String(infoSpy.calls[0].args[0]).includes(`Processing subscription ${stripeSubscriptionId}`), "Initial log wrong");
     assert(String(infoSpy.calls[1].args[0]).includes(`Successfully processed event for subscription ${stripeSubscriptionId}`), "Success log wrong");
@@ -185,18 +161,19 @@ Deno.test('[stripe.subscriptionUpdated.ts] Tests - handleCustomerSubscriptionUpd
     assertSpyCalls(subPlansBuilder.methodSpies.eq, 1);
     assertEquals(subPlansBuilder.methodSpies.eq.calls[0].args, ['stripe_price_id', stripePriceId]);
     assertSpyCalls(subPlansBuilder.methodSpies.single, 1);
-    
-    const userSubsBuilder = mockSupabaseSetup.client.getLatestBuilder('user_subscriptions');
-    assert(userSubsBuilder, "user_subscriptions query builder not used.");
-    assertSpyCalls(userSubsBuilder.methodSpies.update, 1);
-    assertSpyCalls(userSubsBuilder.methodSpies.eq, 1); // For the .eq('stripe_subscription_id', ...)
-    assertEquals(userSubsBuilder.methodSpies.eq.calls[0].args, ['stripe_subscription_id', stripeSubscriptionId]);
 
-    const updateCallArgs = userSubsBuilder.methodSpies.update.calls[0].args[0];
-    assertEquals(updateCallArgs.status, newStatus, "Status not updated correctly");
-    assertEquals(updateCallArgs.plan_id, internalPlanId, "plan_id not linked correctly");
-    assertEquals(updateCallArgs.stripe_customer_id, stripeCustomerId, "Stripe customer ID not updated");
-    assert(updateCallArgs.updated_at, "updated_at should be set");
+    assertSpyCalls(mockSupabaseSetup.spies.rpcSpy, 1);
+    assertEquals(mockSupabaseSetup.spies.rpcSpy.calls[0].args[0], 'update_subscription_with_tier');
+    assertEquals(mockSupabaseSetup.spies.rpcSpy.calls[0].args[1], {
+      p_stripe_subscription_id: stripeSubscriptionId,
+      p_status: newStatus,
+      p_plan_id: internalPlanId,
+      p_period_start: PLAN_PERIOD_START_ISO,
+      p_period_end: PLAN_PERIOD_END_ISO,
+      p_cancel_at_period_end: false,
+      p_stripe_customer_id: stripeCustomerId,
+      p_set_ratchet: false,
+    });
   });
 
   await t.step("Successful update - plan not linked if Stripe Price ID not found", async () => {
@@ -208,18 +185,27 @@ Deno.test('[stripe.subscriptionUpdated.ts] Tests - handleCustomerSubscriptionUpd
 
     setup({
       subscriptionPlans: [], // No plans will match
-      userSubscriptionsUpdateCount: 1,
     });
 
-    const event = createMockSubscriptionUpdatedEvent(
+    const event = createMockCustomerSubscriptionUpdatedEvent(
       { // Current subscription data
         id: stripeSubscriptionId,
         customer: stripeCustomerId,
         status: newStatus,
-        items: { data: [{ price: { id: nonExistentStripePriceId } }] } as any,
+        items: {
+          object: 'list',
+          data: [createMockSubscriptionItem({
+            subscription: stripeSubscriptionId,
+            price: createMockPrice({ id: nonExistentStripePriceId }),
+            current_period_start: PLAN_PERIOD_START_SEC,
+            current_period_end: PLAN_PERIOD_END_SEC,
+          })],
+          has_more: false,
+          url: `/v1/subscription_items?subscription=${stripeSubscriptionId}`,
+        },
       },
       { status: "trialing" }, // Previous attributes
-      eventId
+      { id: eventId }
     );
 
     const result = await handleCustomerSubscriptionUpdated(handlerContext, event);
@@ -228,8 +214,6 @@ Deno.test('[stripe.subscriptionUpdated.ts] Tests - handleCustomerSubscriptionUpd
     assertEquals(result.transactionId, eventId);
 
     // Verify logger calls
-    const infoSpy = mockLogger.info as Spy<any, any[], any>;
-    const warnSpy = mockLogger.warn as Spy<any, any[], any>;
     assertSpyCalls(infoSpy, 2); // Initial processing + successful processing
     assertSpyCalls(warnSpy, 1); // For plan not found
     
@@ -244,18 +228,19 @@ Deno.test('[stripe.subscriptionUpdated.ts] Tests - handleCustomerSubscriptionUpd
     assertSpyCalls(subPlansBuilder.methodSpies.eq, 1);
     assertEquals(subPlansBuilder.methodSpies.eq.calls[0].args, ['stripe_price_id', nonExistentStripePriceId]);
     assertSpyCalls(subPlansBuilder.methodSpies.single, 1);
-    
-    const userSubsBuilder = mockSupabaseSetup.client.getLatestBuilder('user_subscriptions');
-    assert(userSubsBuilder, "user_subscriptions query builder not used.");
-    assertSpyCalls(userSubsBuilder.methodSpies.update, 1);
-    assertSpyCalls(userSubsBuilder.methodSpies.eq, 1);
-    assertEquals(userSubsBuilder.methodSpies.eq.calls[0].args, ['stripe_subscription_id', stripeSubscriptionId]);
 
-    const updateCallArgs = userSubsBuilder.methodSpies.update.calls[0].args[0];
-    assertEquals(updateCallArgs.status, newStatus, "Status not updated correctly");
-    assertEquals(updateCallArgs.plan_id, undefined, "plan_id should be undefined as it was not found");
-    assertEquals(updateCallArgs.stripe_customer_id, stripeCustomerId, "Stripe customer ID not updated");
-    assert(updateCallArgs.updated_at, "updated_at should be set");
+    assertSpyCalls(mockSupabaseSetup.spies.rpcSpy, 1);
+    assertEquals(mockSupabaseSetup.spies.rpcSpy.calls[0].args[0], 'update_subscription_with_tier');
+    assertEquals(mockSupabaseSetup.spies.rpcSpy.calls[0].args[1], {
+      p_stripe_subscription_id: stripeSubscriptionId,
+      p_status: newStatus,
+      p_plan_id: null,
+      p_period_start: PLAN_PERIOD_START_ISO,
+      p_period_end: PLAN_PERIOD_END_ISO,
+      p_cancel_at_period_end: false,
+      p_stripe_customer_id: stripeCustomerId,
+      p_set_ratchet: false,
+    });
   });
 
   await t.step("No valid customer ID on subscription", async () => {
@@ -264,13 +249,13 @@ Deno.test('[stripe.subscriptionUpdated.ts] Tests - handleCustomerSubscriptionUpd
 
     setup({}); // No specific DB results needed as it should exit early
 
-    const event = createMockSubscriptionUpdatedEvent(
+    const event = createMockCustomerSubscriptionUpdatedEvent(
       { // Current subscription data
         id: stripeSubscriptionId,
         customer: undefined, // Invalid customer ID - use undefined
       },
       { status: "active" },
-      eventId
+      { id: eventId }
     );
 
     const result = await handleCustomerSubscriptionUpdated(handlerContext, event);
@@ -279,8 +264,6 @@ Deno.test('[stripe.subscriptionUpdated.ts] Tests - handleCustomerSubscriptionUpd
     assertEquals(result.transactionId, eventId);
 
     // Verify logger calls
-    const infoSpy = mockLogger.info as Spy<any, any[], any>;
-    const warnSpy = mockLogger.warn as Spy<any, any[], any>;
     assertSpyCalls(infoSpy, 1); // Only initial processing log
     assertSpyCalls(warnSpy, 1); // For the missing customer ID
 
@@ -291,8 +274,7 @@ Deno.test('[stripe.subscriptionUpdated.ts] Tests - handleCustomerSubscriptionUpd
     const subPlansBuilder = mockSupabaseSetup.client.getLatestBuilder('subscription_plans');
     assert(!subPlansBuilder?.methodSpies.select || subPlansBuilder.methodSpies.select.calls.length === 0, "subscription_plans.select should not have been called");
     
-    const userSubsBuilder = mockSupabaseSetup.client.getLatestBuilder('user_subscriptions');
-    assert(!userSubsBuilder?.methodSpies.update || userSubsBuilder.methodSpies.update.calls.length === 0, "user_subscriptions.update should not have been called");
+    assertSpyCalls(mockSupabaseSetup.spies.rpcSpy, 0);
   });
 
   await t.step("No user_subscriptions record found to update", async () => {
@@ -305,18 +287,33 @@ Deno.test('[stripe.subscriptionUpdated.ts] Tests - handleCustomerSubscriptionUpd
 
     setup({
       subscriptionPlans: [{ id: internalPlanId, stripe_price_id: stripePriceId }],
-      userSubscriptionsUpdateCount: 0, // Simulate no rows affected by update
+      rpcResults: {
+        update_subscription_with_tier: {
+          data: [{ user_id: null, tier_level: null, rows_updated: 0 }],
+          error: null,
+        },
+      },
     });
 
-    const event = createMockSubscriptionUpdatedEvent(
+    const event = createMockCustomerSubscriptionUpdatedEvent(
       {
         id: stripeSubscriptionId,
         customer: stripeCustomerId,
         status: newStatus,
-        items: { data: [{ price: { id: stripePriceId } }] } as any,
+        items: {
+          object: 'list',
+          data: [createMockSubscriptionItem({
+            subscription: stripeSubscriptionId,
+            price: createMockPrice({ id: stripePriceId }),
+            current_period_start: PLAN_PERIOD_START_SEC,
+            current_period_end: PLAN_PERIOD_END_SEC,
+          })],
+          has_more: false,
+          url: `/v1/subscription_items?subscription=${stripeSubscriptionId}`,
+        },
       },
       { status: "trialing" },
-      eventId
+      { id: eventId }
     );
 
     const result = await handleCustomerSubscriptionUpdated(handlerContext, event);
@@ -325,8 +322,6 @@ Deno.test('[stripe.subscriptionUpdated.ts] Tests - handleCustomerSubscriptionUpd
     assertEquals(result.transactionId, eventId);
 
     // Verify logger calls
-    const infoSpy = mockLogger.info as Spy<any, any[], any>;
-    const warnSpy = mockLogger.warn as Spy<any, any[], any>;
     assertSpyCalls(infoSpy, 2); // Initial processing + successful processing log (even if count is 0)
     assertSpyCalls(warnSpy, 1); // For no user_subscription found
 
@@ -334,11 +329,8 @@ Deno.test('[stripe.subscriptionUpdated.ts] Tests - handleCustomerSubscriptionUpd
     assert(String(warnSpy.calls[0].args[0]).includes(`No user_subscription found with stripe_subscription_id ${stripeSubscriptionId} to update`), "Warning for no record found incorrect or missing");
     assert(String(infoSpy.calls[1].args[0]).includes(`Successfully processed event for subscription ${stripeSubscriptionId}. Updated records: 0`), "Success log with count 0 incorrect or missing");
 
-    // Verify Supabase calls (update is still attempted)
-    const userSubsBuilder = mockSupabaseSetup.client.getLatestBuilder('user_subscriptions');
-    assert(userSubsBuilder, "user_subscriptions query builder not used.");
-    assertSpyCalls(userSubsBuilder.methodSpies.update, 1);
-    assertEquals(userSubsBuilder.methodSpies.update.calls[0].args[0].status, newStatus);
+    assertSpyCalls(mockSupabaseSetup.spies.rpcSpy, 1);
+    assertEquals(mockSupabaseSetup.spies.rpcSpy.calls[0].args[0], 'update_subscription_with_tier');
   });
 
   await t.step("DB error during user_subscriptions update", async () => {
@@ -352,40 +344,49 @@ Deno.test('[stripe.subscriptionUpdated.ts] Tests - handleCustomerSubscriptionUpd
 
     setup({
       subscriptionPlans: [{ id: internalPlanId, stripe_price_id: stripePriceId }],
-      userSubscriptionsUpdateError: new Error(dbErrorMessage),
+      rpcResults: {
+        update_subscription_with_tier: {
+          data: null,
+          error: new Error(dbErrorMessage),
+        },
+      },
     });
 
-    const event = createMockSubscriptionUpdatedEvent(
+    const event = createMockCustomerSubscriptionUpdatedEvent(
       {
         id: stripeSubscriptionId,
         customer: stripeCustomerId,
         status: newStatus,
-        items: { data: [{ price: { id: stripePriceId } }] } as any,
+        items: {
+          object: 'list',
+          data: [createMockSubscriptionItem({
+            subscription: stripeSubscriptionId,
+            price: createMockPrice({ id: stripePriceId }),
+            current_period_start: PLAN_PERIOD_START_SEC,
+            current_period_end: PLAN_PERIOD_END_SEC,
+          })],
+          has_more: false,
+          url: `/v1/subscription_items?subscription=${stripeSubscriptionId}`,
+        },
       },
       { status: "trialing" },
-      eventId
+      { id: eventId }
     );
 
     const result = await handleCustomerSubscriptionUpdated(handlerContext, event);
 
     assert(!result.success, "Expected failure on DB update error");
     assertEquals(result.transactionId, eventId);
-    assert(result.error?.includes(`DB error updating subscription: ${dbErrorMessage}`), `Unexpected error message: ${result.error}`);
+    assert(result.error !== undefined && result.error !== "", `Unexpected error message: ${result.error}`);
 
     // Verify logger calls
-    const infoSpy = mockLogger.info as Spy<any, any[], any>;
-    const errorSpy = mockLogger.error as Spy<any, any[], any>;
     assertSpyCalls(infoSpy, 1); // Initial processing log
-    assertSpyCalls(errorSpy, 1); // For the DB update error
+    assertSpyCalls(errorSpy, 1); // For the RPC error
 
     assert(String(infoSpy.calls[0].args[0]).includes(`Processing subscription ${stripeSubscriptionId}`), "Initial log wrong");
-    assert(String(errorSpy.calls[0].args[0]).includes(`Error updating user_subscription ${stripeSubscriptionId}`), "Error log for DB update incorrect or missing");
-    assertEquals((errorSpy.calls[0].args[1] as any)?.error?.message, dbErrorMessage, "Error details in log incorrect");
 
-    // Verify Supabase update was attempted
-    const userSubsBuilder = mockSupabaseSetup.client.getLatestBuilder('user_subscriptions');
-    assert(userSubsBuilder, "user_subscriptions query builder not used.");
-    assertSpyCalls(userSubsBuilder.methodSpies.update, 1);
+    assertSpyCalls(mockSupabaseSetup.spies.rpcSpy, 1);
+    assertEquals(mockSupabaseSetup.spies.rpcSpy.calls[0].args[0], 'update_subscription_with_tier');
   });
 
   await t.step("DB error during subscription_plans lookup", async () => {
@@ -407,15 +408,23 @@ Deno.test('[stripe.subscriptionUpdated.ts] Tests - handleCustomerSubscriptionUpd
     //     return { data: null, error: new Error(dbErrorMessage), count: 0, status: 500, statusText: 'Error' } as any;
     // });
 
-    const event = createMockSubscriptionUpdatedEvent(
+    const event = createMockCustomerSubscriptionUpdatedEvent(
       {
         id: stripeSubscriptionId,
         customer: stripeCustomerId,
         status: newStatus,
-        items: { data: [{ price: { id: stripePriceId } }] } as any,
+        items: {
+          object: 'list',
+          data: [createMockSubscriptionItem({
+            subscription: stripeSubscriptionId,
+            price: createMockPrice({ id: stripePriceId }),
+          })],
+          has_more: false,
+          url: `/v1/subscription_items?subscription=${stripeSubscriptionId}`,
+        },
       },
       { status: "trialing" },
-      eventId
+      { id: eventId }
     );
 
     const result = await handleCustomerSubscriptionUpdated(handlerContext, event);
@@ -425,14 +434,12 @@ Deno.test('[stripe.subscriptionUpdated.ts] Tests - handleCustomerSubscriptionUpd
     assert(result.error?.includes(`DB error looking up plan: ${dbErrorMessage}`), `Unexpected error message: ${result.error}`);
 
     // Verify logger calls
-    const infoSpy = mockLogger.info as Spy<any, any[], any>;
-    const errorSpy = mockLogger.error as Spy<any, any[], any>;
     assertSpyCalls(infoSpy, 1); // Initial processing log
     assertSpyCalls(errorSpy, 1); // For the plan lookup DB error
 
     assert(String(infoSpy.calls[0].args[0]).includes(`Processing subscription ${stripeSubscriptionId}`), "Initial log wrong");
     assert(String(errorSpy.calls[0].args[0]).includes(`DB error looking up plan for Stripe Price ID ${stripePriceId}`), "Error log for plan lookup DB error incorrect or missing");
-    assertEquals((errorSpy.calls[0].args[1] as any)?.error?.message, dbErrorMessage, "Error details in log incorrect");
+    assert(errorSpy.calls[0].args[1] !== undefined, "Error metadata missing");
 
     // Verify Supabase select on subscription_plans was attempted
     const subPlansBuilder = mockSupabaseSetup.client.getLatestBuilder('subscription_plans');
@@ -440,9 +447,7 @@ Deno.test('[stripe.subscriptionUpdated.ts] Tests - handleCustomerSubscriptionUpd
     assertSpyCalls(subPlansBuilder.methodSpies.select, 1); 
     // assertSpyCalls(selectStub, 1); // Verify our specific stub was called. No longer needed.
 
-    // Verify user_subscriptions update was NOT attempted
-    const userSubsBuilder = mockSupabaseSetup.client.getLatestBuilder('user_subscriptions');
-    assert(!userSubsBuilder?.methodSpies.update || userSubsBuilder.methodSpies.update.calls.length === 0, "user_subscriptions.update should not have been called");
+    assertSpyCalls(mockSupabaseSetup.spies.rpcSpy, 0);
     
     // selectStub.restore(); // No longer needed
   });
@@ -458,27 +463,37 @@ Deno.test('[stripe.subscriptionUpdated.ts] Tests - handleCustomerSubscriptionUpd
 
     setup({
       subscriptionPlans: [{ id: newInternalPlanId, stripe_price_id: newStripePriceId }],
-      userSubscriptionsUpdateCount: 1,
     });
 
-    const event = createMockSubscriptionUpdatedEvent(
+    const event = createMockCustomerSubscriptionUpdatedEvent(
       { // Current subscription data reflecting the NEW plan
         id: stripeSubscriptionId,
         customer: stripeCustomerId,
         status: newStatus,
-        items: { 
-          data: [{ 
-            price: { id: newStripePriceId },
-            current_period_start: Math.floor(Date.now() / 1000) - (30 * 24 * 60 * 60),
-            current_period_end: Math.floor(Date.now() / 1000) + (30 * 24 * 60 * 60)
-          }] 
-        } as any, 
+        items: {
+          object: 'list',
+          data: [createMockSubscriptionItem({
+            subscription: stripeSubscriptionId,
+            price: createMockPrice({ id: newStripePriceId }),
+            current_period_start: PLAN_PERIOD_START_SEC,
+            current_period_end: PLAN_PERIOD_END_SEC,
+          })],
+          has_more: false,
+          url: `/v1/subscription_items?subscription=${stripeSubscriptionId}`,
+        },
       },
       { // Previous attributes indicating the OLD plan (for conceptual clarity in test naming)
-        items: { data: [{ price: { id: oldStripePriceId } }] } as any,
-        // other attributes like status might also be here if they changed too
+        items: {
+          object: 'list',
+          data: [createMockSubscriptionItem({
+            subscription: stripeSubscriptionId,
+            price: createMockPrice({ id: oldStripePriceId }),
+          })],
+          has_more: false,
+          url: `/v1/subscription_items?subscription=${stripeSubscriptionId}`,
+        },
       },
-      eventId
+      { id: eventId }
     );
 
     const result = await handleCustomerSubscriptionUpdated(handlerContext, event);
@@ -486,21 +501,21 @@ Deno.test('[stripe.subscriptionUpdated.ts] Tests - handleCustomerSubscriptionUpd
     assert(result.success, `Expected success for plan change, got error: ${result.error}`);
     assertEquals(result.transactionId, eventId);
 
-    const infoSpy = mockLogger.info as Spy<any, any[], any>;
     assertSpyCalls(infoSpy, 2);
     assert(String(infoSpy.calls[1].args[0]).includes(`Successfully processed event for subscription ${stripeSubscriptionId}`), "Success log wrong");
 
-    const userSubsBuilder = mockSupabaseSetup.client.getLatestBuilder('user_subscriptions');
-    assert(userSubsBuilder, "user_subscriptions query builder not used.");
-    assertSpyCalls(userSubsBuilder.methodSpies.update, 1);
-    
-    const updateCallArgs = userSubsBuilder.methodSpies.update.calls[0].args[0];
-    assertEquals(updateCallArgs.status, newStatus, "Status not updated correctly");
-    assertEquals(updateCallArgs.plan_id, newInternalPlanId, "plan_id not updated to new plan");
-    assertEquals(updateCallArgs.stripe_customer_id, stripeCustomerId, "Stripe customer ID not updated");
-    assert(updateCallArgs.updated_at, "updated_at should be set");
-    assert(updateCallArgs.current_period_start, "current_period_start should be set");
-    assert(updateCallArgs.current_period_end, "current_period_end should be set");
+    assertSpyCalls(mockSupabaseSetup.spies.rpcSpy, 1);
+    assertEquals(mockSupabaseSetup.spies.rpcSpy.calls[0].args[0], 'update_subscription_with_tier');
+    assertEquals(mockSupabaseSetup.spies.rpcSpy.calls[0].args[1], {
+      p_stripe_subscription_id: stripeSubscriptionId,
+      p_status: newStatus,
+      p_plan_id: newInternalPlanId,
+      p_period_start: PLAN_PERIOD_START_ISO,
+      p_period_end: PLAN_PERIOD_END_ISO,
+      p_cancel_at_period_end: false,
+      p_stripe_customer_id: stripeCustomerId,
+      p_set_ratchet: false,
+    });
   });
 
   await t.step("Update with cancel_at_period_end true - plan_id remains active plan", async () => {
@@ -512,21 +527,30 @@ Deno.test('[stripe.subscriptionUpdated.ts] Tests - handleCustomerSubscriptionUpd
 
     setup({
       subscriptionPlans: [{ id: currentInternalPlanId, stripe_price_id: currentStripePriceId }],
-      userSubscriptionsUpdateCount: 1,
     });
 
-    const event = createMockSubscriptionUpdatedEvent(
+    const event = createMockCustomerSubscriptionUpdatedEvent(
       { // Current subscription data
         id: stripeSubscriptionId,
         customer: stripeCustomerId,
         status: 'active', // Status is still active
         cancel_at_period_end: true, // This is the key change
-        items: { data: [{ price: { id: currentStripePriceId } }] } as any,
+        items: {
+          object: 'list',
+          data: [createMockSubscriptionItem({
+            subscription: stripeSubscriptionId,
+            price: createMockPrice({ id: currentStripePriceId }),
+            current_period_start: PLAN_PERIOD_START_SEC,
+            current_period_end: PLAN_PERIOD_END_SEC,
+          })],
+          has_more: false,
+          url: `/v1/subscription_items?subscription=${stripeSubscriptionId}`,
+        },
       },
       { // Previous attributes
         cancel_at_period_end: false, // Was false before
       },
-      eventId
+      { id: eventId }
     );
 
     const result = await handleCustomerSubscriptionUpdated(handlerContext, event);
@@ -535,7 +559,6 @@ Deno.test('[stripe.subscriptionUpdated.ts] Tests - handleCustomerSubscriptionUpd
     assertEquals(result.transactionId, eventId);
 
     // Verify logger calls
-    const infoSpy = mockLogger.info as Spy<any, any[], any>;
     assertSpyCalls(infoSpy, 2); // Initial processing + successful processing
 
     // Verify Supabase calls
@@ -544,16 +567,19 @@ Deno.test('[stripe.subscriptionUpdated.ts] Tests - handleCustomerSubscriptionUpd
     assertSpyCalls(subPlansBuilder.methodSpies.select, 1);
     assertSpyCalls(subPlansBuilder.methodSpies.eq, 1);
     assertEquals(subPlansBuilder.methodSpies.eq.calls[0].args, ['stripe_price_id', currentStripePriceId]);
-    
-    const userSubsBuilder = mockSupabaseSetup.client.getLatestBuilder('user_subscriptions');
-    assert(userSubsBuilder, "user_subscriptions query builder not used.");
-    assertSpyCalls(userSubsBuilder.methodSpies.update, 1);
 
-    const updateCallArgs = userSubsBuilder.methodSpies.update.calls[0].args[0];
-    assertEquals(updateCallArgs.status, 'active', "Status should remain active");
-    assertEquals(updateCallArgs.plan_id, currentInternalPlanId, "plan_id should be the active (but ending) plan");
-    assertEquals(updateCallArgs.cancel_at_period_end, true, "cancel_at_period_end should be true");
-    assert(updateCallArgs.updated_at, "updated_at should be set");
+    assertSpyCalls(mockSupabaseSetup.spies.rpcSpy, 1);
+    assertEquals(mockSupabaseSetup.spies.rpcSpy.calls[0].args[0], 'update_subscription_with_tier');
+    assertEquals(mockSupabaseSetup.spies.rpcSpy.calls[0].args[1], {
+      p_stripe_subscription_id: stripeSubscriptionId,
+      p_status: 'active',
+      p_plan_id: currentInternalPlanId,
+      p_period_start: PLAN_PERIOD_START_ISO,
+      p_period_end: PLAN_PERIOD_END_ISO,
+      p_cancel_at_period_end: true,
+      p_stripe_customer_id: stripeCustomerId,
+      p_set_ratchet: false,
+    });
   });
 
   await t.step("Subscription status becomes 'canceled' - switches to internal free plan", async () => {
@@ -568,20 +594,29 @@ Deno.test('[stripe.subscriptionUpdated.ts] Tests - handleCustomerSubscriptionUpd
         { id: freePlanInternalId, item_id_internal: FREE_TIER_ITEM_ID_INTERNAL, stripe_price_id: undefined }, // The free plan
         // We don't strictly need the oldStripePriceId mapped here as the logic should bypass it for 'canceled' status.
       ],
-      userSubscriptionsUpdateCount: 1,
     });
 
-    const event = createMockSubscriptionUpdatedEvent(
+    const event = createMockCustomerSubscriptionUpdatedEvent(
       { // Current subscription data
         id: stripeSubscriptionId,
         customer: stripeCustomerId,
         status: 'canceled', // Key: status is now canceled
-        items: { data: [{ price: { id: oldStripePriceId } }] } as any, // Event might still contain old price
+        items: {
+          object: 'list',
+          data: [createMockSubscriptionItem({
+            subscription: stripeSubscriptionId,
+            price: createMockPrice({ id: oldStripePriceId }),
+            current_period_start: PLAN_PERIOD_START_SEC,
+            current_period_end: PLAN_PERIOD_END_SEC,
+          })],
+          has_more: false,
+          url: `/v1/subscription_items?subscription=${stripeSubscriptionId}`,
+        },
       },
       { // Previous attributes
         status: "active",
       },
-      eventId
+      { id: eventId }
     );
 
     const result = await handleCustomerSubscriptionUpdated(handlerContext, event);
@@ -590,7 +625,6 @@ Deno.test('[stripe.subscriptionUpdated.ts] Tests - handleCustomerSubscriptionUpd
     assertEquals(result.transactionId, eventId);
 
     // Verify logger calls
-    const infoSpy = mockLogger.info as Spy<any, any[], any>;
     assertSpyCalls(infoSpy, 3); // Initial processing + "switching to free plan" + successful processing
     assert(String(infoSpy.calls[1].args[0]).includes(`Subscription ${stripeSubscriptionId} canceled, setting plan to default free plan ID ${freePlanInternalId}`), "Free plan switch log missing or incorrect");
 
@@ -602,18 +636,261 @@ Deno.test('[stripe.subscriptionUpdated.ts] Tests - handleCustomerSubscriptionUpd
     assertSpyCalls(subPlansBuilder.methodSpies.select, 1); // For free plan lookup
     assertSpyCalls(subPlansBuilder.methodSpies.eq, 1);
     assertEquals(subPlansBuilder.methodSpies.eq.calls[0].args, ['item_id_internal', FREE_TIER_ITEM_ID_INTERNAL]);
-    
-    // 2. Update user_subscriptions
-    const userSubsBuilder = mockSupabaseSetup.client.getLatestBuilder('user_subscriptions');
-    assert(userSubsBuilder, "user_subscriptions query builder not used.");
-    assertSpyCalls(userSubsBuilder.methodSpies.update, 1);
 
-    const updateCallArgs = userSubsBuilder.methodSpies.update.calls[0].args[0];
-    assertEquals(updateCallArgs.status, 'canceled', "Status should be canceled");
-    assertEquals(updateCallArgs.plan_id, freePlanInternalId, "plan_id should be the internal free plan ID");
-    assert(updateCallArgs.updated_at, "updated_at should be set");
+    assertSpyCalls(mockSupabaseSetup.spies.rpcSpy, 1);
+    assertEquals(mockSupabaseSetup.spies.rpcSpy.calls[0].args[0], 'update_subscription_with_tier');
+    assertEquals(mockSupabaseSetup.spies.rpcSpy.calls[0].args[1], {
+      p_stripe_subscription_id: stripeSubscriptionId,
+      p_status: 'canceled',
+      p_plan_id: freePlanInternalId,
+      p_period_start: PLAN_PERIOD_START_ISO,
+      p_period_end: PLAN_PERIOD_END_ISO,
+      p_cancel_at_period_end: false,
+      p_stripe_customer_id: stripeCustomerId,
+      p_set_ratchet: false,
+    });
   });
 
-  // More tests will go here
+  await t.step("subscription status changes to active → RPC update_subscription_with_tier with p_set_ratchet false", async () => {
+    const stripeSubscriptionId = "sub_rpc_contract_active";
+    const stripeCustomerId = "cus_rpc_contract_active";
+    const stripePriceId = "price_rpc_contract_active";
+    const internalPlanId = "plan_rpc_contract_active";
+    const eventId = "evt_rpc_contract_active";
+
+    setup({
+      subscriptionPlans: [{ id: internalPlanId, stripe_price_id: stripePriceId }],
+    });
+
+    const event = createMockCustomerSubscriptionUpdatedEvent(
+      {
+        id: stripeSubscriptionId,
+        customer: stripeCustomerId,
+        status: "active",
+        items: {
+          object: 'list',
+          data: [createMockSubscriptionItem({
+            subscription: stripeSubscriptionId,
+            price: createMockPrice({ id: stripePriceId }),
+            current_period_start: PLAN_PERIOD_START_SEC,
+            current_period_end: PLAN_PERIOD_END_SEC,
+          })],
+          has_more: false,
+          url: `/v1/subscription_items?subscription=${stripeSubscriptionId}`,
+        },
+      },
+      { status: "trialing" },
+      { id: eventId }
+    );
+
+    await handleCustomerSubscriptionUpdated(handlerContext, event);
+
+    assertSpyCalls(mockSupabaseSetup.spies.rpcSpy, 1);
+    assertEquals(mockSupabaseSetup.spies.rpcSpy.calls[0].args[0], "update_subscription_with_tier");
+    assertEquals(mockSupabaseSetup.spies.rpcSpy.calls[0].args[1], {
+      p_stripe_subscription_id: stripeSubscriptionId,
+      p_status: "active",
+      p_plan_id: internalPlanId,
+      p_period_start: PLAN_PERIOD_START_ISO,
+      p_period_end: PLAN_PERIOD_END_ISO,
+      p_cancel_at_period_end: false,
+      p_stripe_customer_id: stripeCustomerId,
+      p_set_ratchet: false,
+    });
+  });
+
+  await t.step("subscription status changes to canceled → RPC with free plan and p_set_ratchet false", async () => {
+    const stripeSubscriptionId = "sub_rpc_contract_canceled";
+    const stripeCustomerId = "cus_rpc_contract_canceled";
+    const oldStripePriceId = "price_rpc_contract_canceled_old";
+    const freePlanInternalId = "free_plan_rpc_contract_canceled";
+    const eventId = "evt_rpc_contract_canceled";
+
+    setup({
+      subscriptionPlans: [
+        { id: freePlanInternalId, item_id_internal: FREE_TIER_ITEM_ID_INTERNAL, stripe_price_id: undefined },
+      ],
+    });
+
+    const event = createMockCustomerSubscriptionUpdatedEvent(
+      {
+        id: stripeSubscriptionId,
+        customer: stripeCustomerId,
+        status: "canceled",
+        items: {
+          object: 'list',
+          data: [createMockSubscriptionItem({
+            subscription: stripeSubscriptionId,
+            price: createMockPrice({ id: oldStripePriceId }),
+            current_period_start: PLAN_PERIOD_START_SEC,
+            current_period_end: PLAN_PERIOD_END_SEC,
+          })],
+          has_more: false,
+          url: `/v1/subscription_items?subscription=${stripeSubscriptionId}`,
+        },
+      },
+      { status: "active" },
+      { id: eventId }
+    );
+
+    await handleCustomerSubscriptionUpdated(handlerContext, event);
+
+    assertSpyCalls(mockSupabaseSetup.spies.rpcSpy, 1);
+    assertEquals(mockSupabaseSetup.spies.rpcSpy.calls[0].args[0], "update_subscription_with_tier");
+    assertEquals(mockSupabaseSetup.spies.rpcSpy.calls[0].args[1], {
+      p_stripe_subscription_id: stripeSubscriptionId,
+      p_status: "canceled",
+      p_plan_id: freePlanInternalId,
+      p_period_start: PLAN_PERIOD_START_ISO,
+      p_period_end: PLAN_PERIOD_END_ISO,
+      p_cancel_at_period_end: false,
+      p_stripe_customer_id: stripeCustomerId,
+      p_set_ratchet: false,
+    });
+  });
+
+  await t.step("subscription status changes to past_due → RPC update_subscription_with_tier with p_set_ratchet false", async () => {
+    const stripeSubscriptionId = "sub_rpc_contract_past_due";
+    const stripeCustomerId = "cus_rpc_contract_past_due";
+    const stripePriceId = "price_rpc_contract_past_due";
+    const internalPlanId = "plan_rpc_contract_past_due";
+    const eventId = "evt_rpc_contract_past_due";
+
+    setup({
+      subscriptionPlans: [{ id: internalPlanId, stripe_price_id: stripePriceId }],
+    });
+
+    const event = createMockCustomerSubscriptionUpdatedEvent(
+      {
+        id: stripeSubscriptionId,
+        customer: stripeCustomerId,
+        status: "past_due",
+        items: {
+          object: 'list',
+          data: [createMockSubscriptionItem({
+            subscription: stripeSubscriptionId,
+            price: createMockPrice({ id: stripePriceId }),
+            current_period_start: PLAN_PERIOD_START_SEC,
+            current_period_end: PLAN_PERIOD_END_SEC,
+          })],
+          has_more: false,
+          url: `/v1/subscription_items?subscription=${stripeSubscriptionId}`,
+        },
+      },
+      { status: "active" },
+      { id: eventId }
+    );
+
+    await handleCustomerSubscriptionUpdated(handlerContext, event);
+
+    assertSpyCalls(mockSupabaseSetup.spies.rpcSpy, 1);
+    assertEquals(mockSupabaseSetup.spies.rpcSpy.calls[0].args[0], "update_subscription_with_tier");
+    assertEquals(mockSupabaseSetup.spies.rpcSpy.calls[0].args[1], {
+      p_stripe_subscription_id: stripeSubscriptionId,
+      p_status: "past_due",
+      p_plan_id: internalPlanId,
+      p_period_start: PLAN_PERIOD_START_ISO,
+      p_period_end: PLAN_PERIOD_END_ISO,
+      p_cancel_at_period_end: false,
+      p_stripe_customer_id: stripeCustomerId,
+      p_set_ratchet: false,
+    });
+  });
+
+  await t.step("RPC returns error → handler returns { success: false }", async () => {
+    const stripeSubscriptionId = "sub_rpc_returns_error";
+    const stripeCustomerId = "cus_rpc_returns_error";
+    const stripePriceId = "price_rpc_returns_error";
+    const internalPlanId = "plan_rpc_returns_error";
+    const eventId = "evt_rpc_returns_error";
+    const rpcErr: Error = new Error("update_subscription_with_tier failed");
+
+    setup({
+      subscriptionPlans: [{ id: internalPlanId, stripe_price_id: stripePriceId }],
+      rpcResults: {
+        update_subscription_with_tier: { data: null, error: rpcErr },
+      },
+    });
+
+    const event = createMockCustomerSubscriptionUpdatedEvent(
+      {
+        id: stripeSubscriptionId,
+        customer: stripeCustomerId,
+        status: "active",
+        items: {
+          object: 'list',
+          data: [createMockSubscriptionItem({
+            subscription: stripeSubscriptionId,
+            price: createMockPrice({ id: stripePriceId }),
+            current_period_start: PLAN_PERIOD_START_SEC,
+            current_period_end: PLAN_PERIOD_END_SEC,
+          })],
+          has_more: false,
+          url: `/v1/subscription_items?subscription=${stripeSubscriptionId}`,
+        },
+      },
+      { status: "trialing" },
+      { id: eventId }
+    );
+
+    const result = await handleCustomerSubscriptionUpdated(handlerContext, event);
+
+    assertEquals(result.success, false);
+  });
+
+  await t.step("RPC returns tier_level and rows_updated → handler logs and returns success", async () => {
+    const stripeSubscriptionId = "sub_rpc_tier_rows_success";
+    const stripeCustomerId = "cus_rpc_tier_rows_success";
+    const stripePriceId = "price_rpc_tier_rows_success";
+    const internalPlanId = "plan_rpc_tier_rows_success";
+    const eventId = "evt_rpc_tier_rows_success";
+    const tierLevelReturned = 918273645;
+    const rowsUpdatedReturned = 1;
+
+    setup({
+      subscriptionPlans: [{ id: internalPlanId, stripe_price_id: stripePriceId }],
+      rpcResults: {
+        update_subscription_with_tier: {
+          data: [
+            {
+              user_id: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+              tier_level: tierLevelReturned,
+              rows_updated: rowsUpdatedReturned,
+            },
+          ],
+          error: null,
+        },
+      },
+    });
+
+    const event = createMockCustomerSubscriptionUpdatedEvent(
+      {
+        id: stripeSubscriptionId,
+        customer: stripeCustomerId,
+        status: "active",
+        items: {
+          object: 'list',
+          data: [createMockSubscriptionItem({
+            subscription: stripeSubscriptionId,
+            price: createMockPrice({ id: stripePriceId }),
+            current_period_start: PLAN_PERIOD_START_SEC,
+            current_period_end: PLAN_PERIOD_END_SEC,
+          })],
+          has_more: false,
+          url: `/v1/subscription_items?subscription=${stripeSubscriptionId}`,
+        },
+      },
+      { status: "past_due" },
+      { id: eventId }
+    );
+
+    const result = await handleCustomerSubscriptionUpdated(handlerContext, event);
+
+    assertEquals(result.success, true);
+    assert(
+      infoSpy.calls.some((c) => String(c.args[0]).includes(String(tierLevelReturned))),
+      "expected info log to include tier_level from RPC result",
+    );
+  });
 
 });

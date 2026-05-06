@@ -91,6 +91,11 @@ The second exception to strict typing is for intentionally malformed objects in 
 * Reexporting is only permitted in barrel exports for a package or workspace. These files are typically named *index* or *provides*. 
 * A ternary is not a type guard, a ternary is a default value. Default values are prohibited in production code.
 * Every object and variable must be typed. There are no exceptions to this rule. If you are building a function and find untyped vars or objects, stop, explain the discovery, propose the new checklist node to type the vars or objects, and halt.
+* Never re-define an object's type inline in any way, for any reason. Use the exact type defined for it and declare that type when instancing the object. 
+* If an object is not primitive and you cannot find a type, EXPLAIN THE PROBLEM AND HALT. DO NOT TYPE THE OBJECT INLINE! 
+* If the imported type is object:Type, an inline union object:Type|Othertype is invalid. A union type declaration is only valid if it exists in the type definition itself, not inline. 
+* DO NOT EDIT THE DEFINED TYPE TO AVOID STRICT COMPLIANCE WITH THIS RULE! THIS RULE DOES NOT PERMIT YOU TO EDIT TYPES AT YOUR CONVENIENCE! 
+* You DO NOT edit any type you are not EXPLICITLY given permission to edit. Types are a FIXED CONTRACT TO THE APPLICATION AND USER, not renegotiable at the agent's leisure. 
 
 ## 6. Plan Fidelity & Shortcut Ban
 * Once a solution is described, implement exactly that solution and the user’s instruction. Expedient shortcuts are forbidden without explicit approval.

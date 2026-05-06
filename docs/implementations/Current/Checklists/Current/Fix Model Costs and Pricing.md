@@ -241,7 +241,7 @@
     * `[✅]` Add canonical pricing link into comment above model map so maintainer knows where to locate current pricing. 
 
 
-* ` [✅]` `[BE]` supabase/functions/sync-ai-models/anthropic_sync **Audit and update Anthropic internal model map**
+* `[✅]` `[BE]` supabase/functions/sync-ai-models/anthropic_sync **Audit and update Anthropic internal model map**
 
   * ` [✅]` `objective`
     * ` [✅]` `INTERNAL_MODEL_MAP` is missing entries for dated variants: `claude-haiku-4-5-20251001`, `claude-opus-4-5-20251101`, `claude-sonnet-4-5-20250929`, and others returned by the API
@@ -269,7 +269,7 @@
     * ` [✅]` Add canonical pricing link into comment above model map so maintainer knows where to locate current pricing. 
 
 
-* `[ ]` `[BE]` supabase/functions/sync-ai-models **Provider sync integration — re-sync, re-seed, verify**
+* `[✅]` `[BE]` supabase/functions/sync-ai-models **Provider sync integration — re-sync, re-seed, verify**
 
   * ` [✅]` `objective`
     * ` [✅]` After assembler fix + map updates, run sync locally to correct local DB values, then run update-seed.ts to regenerate seed.sql with correct values
@@ -303,50 +303,49 @@
     * ` [✅]` All tests green
 
 
-* `[ ]` `[DB]` supabase/migrations **Transactional payment RPCs — atomic subscription + payment + token + tier writes**
+* `[✅]` `[DB]` supabase/migrations **Transactional payment RPCs — atomic subscription + payment + token + tier writes**
 
-  * `[ ]` `objective`
-    * `[ ]` Current Stripe handlers make 3–5 independent Supabase client calls per webhook event. Each is a separate HTTP request → separate Postgres transaction. If any intermediate call fails, prior writes are already committed and cannot roll back. This has caused real user issues (e.g. subscription created but tokens not awarded).
-    * `[ ]` Fix: create PL/pgSQL functions that bundle all handler writes into a single atomic transaction. The handler gathers all data (including Stripe API calls) in TypeScript, then calls ONE RPC that performs ALL DB writes. If any write fails, everything rolls back. Notifications are fired after the RPC returns (outside the transaction, best-effort).
-    * `[ ]` These RPCs also integrate `refresh_user_tier` — the tier update is just another step in the atomic block, adding no extra risk.
+  * ` [✅]` `objective`
+    * ` [✅]` Current Stripe handlers make 3–5 independent Supabase client calls per webhook event. Each is a separate HTTP request → separate Postgres transaction. If any intermediate call fails, prior writes are already committed and cannot roll back. This has caused real user issues (e.g. subscription created but tokens not awarded).
+    * ` [✅]` Fix: create PL/pgSQL functions that bundle all handler writes into a single atomic transaction. The handler gathers all data (including Stripe API calls) in TypeScript, then calls ONE RPC that performs ALL DB writes. If any write fails, everything rolls back. Notifications are fired after the RPC returns (outside the transaction, best-effort).
+    * ` [✅]` These RPCs also integrate `refresh_user_tier` — the tier update is just another step in the atomic block, adding no extra risk.
 
-  * `[ ]` `role`
-    * `[ ]` Infrastructure — transactional DB functions called by payment handlers
-    * `[ ]` Must NOT contain Stripe-specific logic — parameters are adapter-agnostic
+  * ` [✅]` `role`
+    * ` [✅]` Infrastructure — transactional DB functions called by payment handlers
+    * ` [✅]` Must NOT contain Stripe-specific logic — parameters are adapter-agnostic
 
-  * `[ ]` `module`
-    * `[ ]` Database functions, cross-cutting — consumed by `_shared/adapters/stripe/handlers/`
+  * ` [✅]` `module`
+    * ` [✅]` Database functions, cross-cutting — consumed by `_shared/adapters/stripe/handlers/`
 
-  * `[ ]` `deps`
-    * `[ ]` Prior migration node — `tier_level` columns, `refresh_user_tier()`, `current_plan_tier()` must exist
-    * `[ ]` Existing `record_token_transaction()` function from migration `20250513135601` — called internally by these RPCs within the same transaction
-    * `[ ]` Read `record_token_transaction` parameters carefully (in migration `20250513135601_record_token_transaction.sql`) — the RPCs must pass identical parameter shapes
+  * ` [✅]` `deps`
+    * ` [✅]` Prior migration node — `tier_level` columns, `refresh_user_tier()`, `current_plan_tier()` must exist
+    * ` [✅]` Existing `record_token_transaction()` function from migration `20250513135601` — called internally by these RPCs within the same transaction
+    * ` [✅]` Read `record_token_transaction` parameters carefully (in migration `20250513135601_record_token_transaction.sql`) — the RPCs must pass identical parameter shapes
 
-  * `[ ]` supabase/migrations/`<timestamp>_transactional_payment_rpcs.sql`
+  * ` [✅]` supabase/migrations/`<timestamp>_transactional_payment_rpcs.sql`
 
-    * `[ ]` `CREATE OR REPLACE FUNCTION public.complete_checkout_payment(...)`:
-      * `[ ]` Used by: `handleCheckoutSessionCompleted` handler
-      * `[ ]` Parameters — all adapter-agnostic, no Stripe types:
-        * `p_user_id UUID` — the user who made the purchase
-        * `p_is_subscription_mode BOOLEAN` — true for subscription checkout, false for OTP
-        * Subscription fields (used only when `p_is_subscription_mode = true`):
-          * `p_plan_id UUID`, `p_subscription_status TEXT`, `p_stripe_customer_id TEXT`, `p_stripe_subscription_id TEXT`, `p_period_start TIMESTAMPTZ`, `p_period_end TIMESTAMPTZ`, `p_cancel_at_period_end BOOLEAN`
-        * Payment transaction fields:
+    * ` [✅]` `CREATE OR REPLACE FUNCTION public.complete_checkout_payment(...)`:
+      * ` [✅]` Used by: `handleCheckoutSessionCompleted` handler
+      * ` [✅]` Parameters — all adapter-agnostic, no Stripe types:
+        * Required first (PostgreSQL function rule: no required parameter after a defaulted one):
+          * `p_user_id UUID` — the user who made the purchase
+          * `p_is_subscription_mode BOOLEAN` — true for subscription checkout, false for OTP
           * `p_payment_transaction_id UUID` — existing payment_transactions row to update
-          * `p_gateway_transaction_id TEXT` — Stripe session ID to store
-        * Token award fields:
-          * `p_target_wallet_id UUID`, `p_tokens_to_award NUMERIC`, `p_token_idempotency_key TEXT`, `p_token_notes TEXT`
-      * `[ ]` Operations (in order, all within one transaction):
+          * `p_gateway_transaction_id TEXT` — gateway session/payment ID to store
+        * Optional/defaulted fields after required fields:
+          * Subscription fields (used only when `p_is_subscription_mode = true`): `p_plan_id UUID`, `p_subscription_status TEXT`, `p_stripe_customer_id TEXT`, `p_stripe_subscription_id TEXT`, `p_period_start TIMESTAMPTZ`, `p_period_end TIMESTAMPTZ`, `p_cancel_at_period_end BOOLEAN`
+          * Token award fields: `p_target_wallet_id UUID`, `p_tokens_to_award NUMERIC`, `p_token_idempotency_key TEXT`, `p_token_notes TEXT`
+      * ` [✅]` Operations (in order, all within one transaction):
         1. If `p_is_subscription_mode`: UPSERT `user_subscriptions` with subscription fields (ON CONFLICT user_id)
         2. UPDATE `payment_transactions` SET `status = 'COMPLETED'`, `gateway_transaction_id = p_gateway_transaction_id` WHERE `id = p_payment_transaction_id`
         3. If `p_tokens_to_award > 0`: CALL `record_token_transaction(p_target_wallet_id, 'CREDIT_PURCHASE', p_tokens_to_award::TEXT, p_user_id, p_token_idempotency_key, p_payment_transaction_id, 'payment_transactions', p_payment_transaction_id, p_token_notes)` — this is the SAME RPC that `adminTokenWalletService.recordTransaction()` calls, but invoked within the parent transaction
         4. CALL `refresh_user_tier(p_user_id, true)` — always set ratchet on checkout (any checkout = payment)
-      * `[ ]` Returns: `TABLE(status TEXT, tier_level INTEGER, token_transaction_id UUID)`
-      * `[ ]` On error: entire function rolls back, RAISE the error for the handler to catch
+      * ` [✅]` Returns: `TABLE(status TEXT, tier_level INTEGER, token_transaction_id UUID)`
+      * ` [✅]` On error: entire function rolls back, RAISE the error for the handler to catch
 
-    * `[ ]` `CREATE OR REPLACE FUNCTION public.complete_invoice_payment(...)`:
-      * `[ ]` Used by: `handleInvoicePaymentSucceeded` handler
-      * `[ ]` Parameters:
+    * ` [✅]` `CREATE OR REPLACE FUNCTION public.complete_invoice_payment(...)`:
+      * ` [✅]` Used by: `handleInvoicePaymentSucceeded` handler
+      * ` [✅]` Parameters:
         * `p_user_id UUID`
         * Payment transaction insert fields:
           * `p_target_wallet_id UUID`, `p_gateway_transaction_id TEXT` (invoice.id), `p_tokens_to_award NUMERIC`, `p_amount_fiat INTEGER`, `p_currency TEXT`, `p_metadata JSONB`
@@ -354,17 +353,17 @@
           * `p_token_idempotency_key TEXT`, `p_token_notes TEXT`
         * Subscription period update fields (nullable — not all invoices have subscription line items):
           * `p_stripe_subscription_id TEXT`, `p_period_start TIMESTAMPTZ`, `p_period_end TIMESTAMPTZ`
-      * `[ ]` Operations (in order, all within one transaction):
+      * ` [✅]` Operations (in order, all within one transaction):
         1. INSERT into `payment_transactions` with status `'PROCESSING_RENEWAL'`, RETURNING `id` into `v_payment_id`
         2. If `p_tokens_to_award > 0`: CALL `record_token_transaction(p_target_wallet_id, 'CREDIT_PURCHASE', p_tokens_to_award::TEXT, p_user_id, p_token_idempotency_key, v_payment_id, 'payment_transactions', v_payment_id, p_token_notes)`
         3. UPDATE `payment_transactions` SET `status = 'COMPLETED'` WHERE `id = v_payment_id`
         4. If `p_stripe_subscription_id IS NOT NULL`: UPDATE `user_subscriptions` SET `status = 'active'`, `current_period_start`, `current_period_end` WHERE `stripe_subscription_id = p_stripe_subscription_id`
         5. CALL `refresh_user_tier(p_user_id, true)` — always set ratchet on invoice payment
-      * `[ ]` Returns: `TABLE(payment_transaction_id UUID, tier_level INTEGER, token_transaction_id UUID)`
+      * ` [✅]` Returns: `TABLE(payment_transaction_id UUID, tier_level INTEGER, token_transaction_id UUID)`
 
-    * `[ ]` `CREATE OR REPLACE FUNCTION public.update_subscription_with_tier(...)`:
-      * `[ ]` Used by: `handleCustomerSubscriptionUpdated` and `handleCustomerSubscriptionDeleted` handlers
-      * `[ ]` Parameters:
+    * ` [✅]` `CREATE OR REPLACE FUNCTION public.update_subscription_with_tier(...)`:
+      * ` [✅]` Used by: `handleCustomerSubscriptionUpdated` and `handleCustomerSubscriptionDeleted` handlers
+      * ` [✅]` Parameters:
         * `p_stripe_subscription_id TEXT` — match field to find the user_subscriptions row
         * `p_status TEXT` — new subscription status (e.g. 'active', 'canceled', 'past_due')
         * `p_plan_id UUID` — nullable, new plan_id (set on plan change or cancellation to free plan)
@@ -372,160 +371,177 @@
         * `p_cancel_at_period_end BOOLEAN` — nullable
         * `p_stripe_customer_id TEXT` — nullable, stored if provided
         * `p_set_ratchet BOOLEAN` — false for subscription lifecycle events (not a payment), but provided for flexibility
-      * `[ ]` Operations (in order, all within one transaction):
+      * ` [✅]` Operations (in order, all within one transaction):
         1. UPDATE `user_subscriptions` matching `stripe_subscription_id = p_stripe_subscription_id` with provided fields (only set non-null parameters)
         2. GET `user_id` from the matched row (SELECT user_id FROM user_subscriptions WHERE stripe_subscription_id = p_stripe_subscription_id)
         3. CALL `refresh_user_tier(v_user_id, p_set_ratchet)`
-      * `[ ]` Returns: `TABLE(user_id UUID, tier_level INTEGER, rows_updated INTEGER)`
+      * ` [✅]` Returns: `TABLE(user_id UUID, tier_level INTEGER, rows_updated INTEGER)`
 
-* `[ ]` `[BE]` supabase/functions/_shared/adapters/stripe/handlers/stripe.checkoutSessionCompleted **Restructure to atomic gather-then-RPC pattern**
+* `[✅]` `[BE]` supabase/functions/_shared/adapters/stripe/handlers/stripe.checkoutSessionCompleted **Restructure to atomic gather-then-RPC pattern**
 
-  * `[ ]` `objective`
-    * `[ ]` Currently, `handleCheckoutSessionCompleted` (at `supabase/functions/_shared/adapters/stripe/handlers/stripe.checkoutSessionCompleted.ts`) makes 3+ independent DB writes: (1) upsert user_subscriptions, (2) update payment_transactions to COMPLETED, (3) record_token_transaction via RPC. If step 3 fails after steps 1+2 succeed, the user has a subscription and completed payment record but no tokens. The handler marks this as `TOKEN_AWARD_FAILED` but cannot roll back steps 1+2.
-    * `[ ]` Restructure: the handler gathers ALL data (Stripe API calls, plan lookups, validation) in TypeScript first, then calls the `complete_checkout_payment` transactional RPC with all gathered data. The RPC performs ALL DB writes atomically. If any write fails, everything rolls back.
-    * `[ ]` After the RPC returns successfully, fire the wallet-balance-changed notification (best-effort, outside the transaction) by reading the notification logic from `adminTokenWalletService.ts` lines 206-230.
+  * ` [✅]` `objective`
+    * ` [✅]` Currently, `handleCheckoutSessionCompleted` (at `supabase/functions/_shared/adapters/stripe/handlers/stripe.checkoutSessionCompleted.ts`) makes 3+ independent DB writes: (1) upsert user_subscriptions, (2) update payment_transactions to COMPLETED, (3) record_token_transaction via RPC. If step 3 fails after steps 1+2 succeed, the user has a subscription and completed payment record but no tokens. The handler marks this as `TOKEN_AWARD_FAILED` but cannot roll back steps 1+2.
+    * ` [✅]` Restructure: the handler gathers ALL data (Stripe API calls, plan lookups, validation) in TypeScript first, then calls the `complete_checkout_payment` transactional RPC with all gathered data. The RPC performs ALL DB writes atomically. If any write fails, everything rolls back.
+    * ` [✅]` After the RPC returns successfully, fire the wallet-balance-changed notification (best-effort, outside the transaction) by reading the notification logic from `adminTokenWalletService.ts` lines 206-230.
 
-  * `[ ]` `role`
-    * `[ ]` Adapter handler — Stripe-specific webhook processing
-    * `[ ]` Must NOT contain DB writes other than the single RPC call — all writes are inside the RPC
+  * ` [✅]` `role`
+    * ` [✅]` Adapter handler — Stripe-specific webhook processing
+    * ` [✅]` Must NOT contain DB writes other than the single RPC call — all writes are inside the RPC
 
-  * `[ ]` `module`
-    * `[ ]` Stripe adapter, within `_shared/adapters/stripe/handlers/`
+  * ` [✅]` `module`
+    * ` [✅]` Stripe adapter, within `_shared/adapters/stripe/handlers/`
 
-  * `[ ]` `deps`
-    * `[ ]` `complete_checkout_payment` RPC from prior migration node
-    * `[ ]` `HandlerContext` from `_shared/stripe.mock.ts` (existing — provides `supabaseClient`, `logger`, `stripe`, `tokenWalletService`)
-    * `[ ]` Note: `tokenWalletService.recordTransaction()` is NO LONGER called from the handler — the RPC calls `record_token_transaction` internally. The handler still uses `tokenWalletService` only if it needs to fire post-transaction notifications.
+  * ` [✅]` `deps`
+    * ` [✅]` `complete_checkout_payment` RPC from prior migration node
+    * ` [✅]` `HandlerContext` from `_shared/stripe.mock.ts` (existing — provides `supabaseClient`, `logger`, `stripe`, `tokenWalletService`)
+    * ` [✅]` Note: `tokenWalletService.recordTransaction()` is NO LONGER called from the handler — the RPC calls `record_token_transaction` internally. The handler still uses `tokenWalletService` only if it needs to fire post-transaction notifications.
 
-  * `[ ]` `context_slice`
-    * `[ ]` Handler still receives `HandlerContext` unchanged
-    * `[ ]` Handler no longer calls `context.supabaseClient.from('user_subscriptions').upsert(...)` or `context.updatePaymentTransaction(...)` or `context.tokenWalletService.recordTransaction(...)` directly
-    * `[ ]` Handler calls `context.supabaseClient.rpc('complete_checkout_payment', { ... })` once with all gathered data
+  * ` [✅]` `context_slice`
+    * ` [✅]` Handler still receives `HandlerContext` unchanged
+    * ` [✅]` Handler no longer calls `context.supabaseClient.from('user_subscriptions').upsert(...)` or `context.updatePaymentTransaction(...)` or `context.tokenWalletService.recordTransaction(...)` directly
+    * ` [✅]` Handler calls `context.supabaseClient.rpc('complete_checkout_payment', { ... })` once with all gathered data
 
-  * `[ ]` supabase/functions/_shared/adapters/stripe/handlers/`stripe.checkoutSessionCompleted.test.ts`
-    * `[ ]` Test: successful subscription-mode checkout → RPC `complete_checkout_payment` called with correct subscription data + payment data + token data + ratchet=true
-    * `[ ]` Test: successful payment-mode (OTP) checkout → RPC called with `p_is_subscription_mode = false`, subscription fields null
-    * `[ ]` Test: failed checkout (early validation failure) → RPC NOT called, early return
-    * `[ ]` Test: RPC returns error → handler returns `{ success: false }` with error message from RPC
-    * `[ ]` Test: RPC succeeds → handler fires wallet notification (best-effort) and returns success with tier_level and tokens_awarded
-    * `[ ]` Test: zero tokens_to_award → RPC still called (payment completion + tier update), but token award is skipped inside RPC
-    * `[ ]` Update existing tests to expect the single RPC call pattern instead of multiple independent DB calls
+  * ` [✅]` supabase/functions/_shared/adapters/stripe/handlers/`stripe.checkoutSessionCompleted.test.ts`
+    * ` [✅]` Test: successful subscription-mode checkout → RPC `complete_checkout_payment` called with correct subscription data + payment data + token data + ratchet=true
+    * ` [✅]` Test: successful payment-mode (OTP) checkout → RPC called with `p_is_subscription_mode = false`, subscription fields null
+    * ` [✅]` Test: failed checkout (early validation failure) → RPC NOT called, early return
+    * ` [✅]` Test: RPC returns error → handler returns `{ success: false }` with error message from RPC
+    * ` [✅]` Test: RPC succeeds → handler fires wallet notification (best-effort) and returns success with tier_level and tokens_awarded
+    * ` [✅]` Test: zero tokens_to_award → RPC still called (payment completion + tier update), but token award is skipped inside RPC
+    * ` [✅]` Update existing tests to expect the single RPC call pattern instead of multiple independent DB calls
 
-  * `[ ]` supabase/functions/_shared/adapters/stripe/handlers/`stripe.checkoutSessionCompleted.ts`
-    * `[ ]` Read the current file carefully — it is ~280 lines with complex branching for subscription vs payment mode
-    * `[ ]` Restructure into two phases:
+  * ` [✅]` supabase/functions/_shared/adapters/stripe/handlers/`stripe.checkoutSessionCompleted.ts`
+    * ` [✅]` Read the current file carefully — it is ~280 lines with complex branching for subscription vs payment mode
+    * ` [✅]` Restructure into two phases:
       * Phase 1 (Gather): All Stripe API calls, payment_transaction lookup, plan lookup, validation. NO DB writes. This is lines 1-200 of the current handler, refactored to not write to DB.
       * Phase 2 (Execute): Single `context.supabaseClient.rpc('complete_checkout_payment', { p_user_id, p_is_subscription_mode, p_plan_id, ... })` call. Handle success/failure.
-    * `[ ]` After successful RPC: fire wallet notification if tokens were awarded. Read the notification pattern from `adminTokenWalletService.ts` lines 206-230 — call `context.supabaseClient.rpc('create_notification_for_user', ...)` in a try/catch (best-effort).
-    * `[ ]` Remove all direct `.upsert()`, `.update()`, and `tokenWalletService.recordTransaction()` calls from the handler — these are now inside the RPC.
-    * `[ ]` Preserve all existing validation logic, error messages, and logging — only the write path changes.
+    * ` [✅]` After successful RPC: fire wallet notification if tokens were awarded. Read the notification pattern from `adminTokenWalletService.ts` lines 206-230 — call `context.supabaseClient.rpc('create_notification_for_user', ...)` in a try/catch (best-effort).
+    * ` [✅]` Remove all direct `.upsert()`, `.update()`, and `tokenWalletService.recordTransaction()` calls from the handler — these are now inside the RPC.
+    * ` [✅]` Preserve all existing validation logic, error messages, and logging — only the write path changes.
 
-* `[ ]` `[BE]` supabase/functions/_shared/adapters/stripe/handlers/stripe.invoicePaymentSucceeded **Restructure to atomic gather-then-RPC pattern**
+* `[✅]` `[BE]` supabase/functions/_shared/adapters/stripe/handlers/stripe.invoicePaymentSucceeded **Restructure to atomic gather-then-RPC pattern**
 
-  * `[ ]` `objective`
-    * `[ ]` Currently, `handleInvoicePaymentSucceeded` (at `supabase/functions/_shared/adapters/stripe/handlers/stripe.invoicePaymentSucceeded.ts`) makes 4-5 independent DB writes: (1) insert payment_transaction, (2) record_token_transaction via RPC, (3) update payment_transaction to COMPLETED, (4) update user_subscriptions period, (5) tier refresh (new). Partial failure between any of these leaves inconsistent state.
-    * `[ ]` Restructure to gather-then-RPC: the handler gathers all data first (idempotency check, user/wallet lookup, token amount resolution from invoice/subscription/session metadata), then calls `complete_invoice_payment` RPC with all gathered data.
+  * ` [✅]` `objective`
+    * ` [✅]` Currently, `handleInvoicePaymentSucceeded` (at `supabase/functions/_shared/adapters/stripe/handlers/stripe.invoicePaymentSucceeded.ts`) makes 4-5 independent DB writes: (1) insert payment_transaction, (2) record_token_transaction via RPC, (3) update payment_transaction to COMPLETED, (4) update user_subscriptions period, (5) tier refresh (new). Partial failure between any of these leaves inconsistent state.
+    * ` [✅]` Restructure to gather-then-RPC: the handler gathers all data first (idempotency check, user/wallet lookup, token amount resolution from invoice/subscription/session metadata), then calls `complete_invoice_payment` RPC with all gathered data.
 
-  * `[ ]` `role`
-    * `[ ]` Adapter handler — Stripe-specific webhook processing
-    * `[ ]` Must NOT contain DB writes other than the single RPC call
+  * ` [✅]` `role`
+    * ` [✅]` Adapter handler — Stripe-specific webhook processing
+    * ` [✅]` Must NOT contain DB writes other than the single RPC call
 
-  * `[ ]` `module`
-    * `[ ]` Stripe adapter, within `_shared/adapters/stripe/handlers/`
+  * ` [✅]` `module`
+    * ` [✅]` Stripe adapter, within `_shared/adapters/stripe/handlers/`
 
-  * `[ ]` `deps`
-    * `[ ]` `complete_invoice_payment` RPC from migration node
-    * `[ ]` `HandlerContext` from `_shared/stripe.mock.ts` (existing)
+  * ` [✅]` `deps`
+    * ` [✅]` `complete_invoice_payment` RPC from migration node
+    * ` [✅]` `HandlerContext` from `_shared/stripe.mock.ts` (existing)
 
-  * `[ ]` `context_slice`
-    * `[ ]` Same as checkoutSessionCompleted — handler calls one RPC instead of multiple DB operations
-    * `[ ]` The idempotency check (SELECT for existing COMPLETED transaction) remains as a pre-RPC read — it's a guard, not a write
+  * ` [✅]` `context_slice`
+    * ` [✅]` Same as checkoutSessionCompleted — handler calls one RPC instead of multiple DB operations
+    * ` [✅]` The idempotency check (SELECT for existing COMPLETED transaction) remains as a pre-RPC read — it's a guard, not a write
 
-  * `[ ]` supabase/functions/_shared/adapters/stripe/handlers/`stripe.invoicePaymentSucceeded.test.ts`
-    * `[ ]` Test: successful recurring invoice → RPC `complete_invoice_payment` called with correct payment insert data + token data + subscription period data + ratchet=true
-    * `[ ]` Test: `subscription_create` billing_reason → skipped entirely (handled by checkout), RPC NOT called
-    * `[ ]` Test: idempotent — already-COMPLETED transaction → early return, RPC NOT called
-    * `[ ]` Test: RPC returns error → handler returns `{ success: false }` with error from RPC
-    * `[ ]` Test: zero tokens → RPC still called for payment recording + tier update, token award skipped inside RPC
-    * `[ ]` Test: no subscription line item (one-time invoice) → RPC called with null subscription period fields
-    * `[ ]` Update existing tests to expect single RPC pattern
+  * ` [✅]` supabase/functions/_shared/adapters/stripe/handlers/`stripe.invoice.successful.test.ts`
+    * ` [✅]` Rename this file — it tests `StripePaymentAdapter.initiatePayment`, not `handleInvoicePaymentSucceeded`. Rename to `stripePaymentAdapter.initiatePayment.test.ts` and relocate alongside the adapter source. No content changes required.
 
-  * `[ ]` supabase/functions/_shared/adapters/stripe/handlers/`stripe.invoicePaymentSucceeded.ts`
-    * `[ ]` Read the current file carefully — it is ~330 lines with complex metadata resolution logic
-    * `[ ]` Restructure into two phases:
-      * Phase 1 (Gather): Idempotency check, user/wallet lookup, token amount resolution (invoice metadata → line item metadata → subscription plan details → checkout session metadata), subscription period extraction. NO DB writes except the idempotency SELECT.
-      * Phase 2 (Execute): Single `context.supabaseClient.rpc('complete_invoice_payment', { ... })` call.
-    * `[ ]` After successful RPC: fire wallet notification (best-effort).
-    * `[ ]` Remove all direct `.insert()`, `.update()`, and `tokenWalletService.recordTransaction()` calls — these are now inside the RPC.
-    * `[ ]` Preserve all existing metadata resolution logic, the `retrieveSubscriptionPlanDetails` helper, and logging.
+  * ` [✅]` supabase/functions/_shared/adapters/stripe/handlers/`stripe.invoice.dbErrors.test.ts`
+    * ` [✅]` Delete this file entirely. All five tests (payment_transactions insert fails, tokenWalletService.recordTransaction fails, user_subscriptions update fails, final COMPLETED update fails, sub update fails after token award) cover DB write failure paths that move inside the `complete_invoice_payment` RPC after the refactor. These failure modes are tested at the RPC/migration level, not the handler level.
 
-* `[ ]` `[BE]` supabase/functions/_shared/adapters/stripe/handlers/stripe.subscriptionUpdated **Atomic subscription update with tier recomputation**
+  * ` [✅]` supabase/functions/_shared/adapters/stripe/handlers/`stripe.invoice.initial.test.ts`
+    * ` [✅]` Rewrite mock setup for the three existing handler tests (renewal happy path, idempotency-COMPLETED, idempotency-FAILED): remove `payment_transactions.insert`, `payment_transactions.update`, `user_subscriptions.update`, and `tokenWalletService.recordTransaction` mocks — these writes no longer exist in the handler. Replace with a single `supabaseClient.rpc('complete_invoice_payment', ...)` mock returning `{ data: [{ payment_transaction_id, tier_level, token_transaction_id }], error: null }`.
+    * ` [✅]` Preserve the `subscription_create` early-return test unchanged — it fires before the RPC call and remains valid.
+    * ` [✅]` Add test: zero `tokens_to_award` resolved in Phase 1 → RPC still called with `p_tokens_to_award = 0`, handler returns `{ success: true, tokensAwarded: 0 }`.
+    * ` [✅]` Add test: no subscription line item (OTP invoice) → Phase 1 extracts null period fields, RPC called with `p_stripe_subscription_id = null`, `p_period_start = null`, `p_period_end = null`.
 
-  * `[ ]` `objective`
-    * `[ ]` `handleCustomerSubscriptionUpdated` makes one DB write (update user_subscriptions). Adding tier recomputation would add a second independent write. Use `update_subscription_with_tier` RPC to make both atomic.
-    * `[ ]` The current handler (at `stripe.subscriptionUpdated.ts`) builds a `subscriptionUpdateData` partial, then calls `.update()` matching on `stripe_subscription_id`. Replace this with the RPC call.
+  * ` [✅]` supabase/functions/_shared/adapters/stripe/handlers/`stripe.invoice.failure.test.ts`
+    * ` [✅]` All five existing tests (subscriptions.retrieve fails, idempotency DB error, user not found, wallet not found, plan not found) remain valid — all are Phase 1 (Gather) failures that fire before the RPC call. Update mock setup only: remove `payment_transactions.insert`, `payment_transactions.update`, and `user_subscriptions.update` mock entries that were included unnecessarily in the setup.
+    * ` [✅]` Add test: RPC call returns error → handler returns `{ success: false, error: <RPC error message> }` without firing wallet notification.
 
-  * `[ ]` `role`
-    * `[ ]` Adapter handler — Stripe-specific webhook processing
+  * ` [✅]` supabase/functions/_shared/adapters/stripe/handlers/`stripe.invoicePaymentSucceeded.ts`
+    * ` [✅]` Read the current file — it is 333 lines. Phase 1 and Phase 2 logic is currently interleaved with DB writes; the restructure separates them cleanly.
+    * ` [✅]` Phase 1 (Gather) — the following existing logic is unchanged and produces no DB writes:
+      * `billing_reason === 'subscription_create'` early return (line 59–67)
+      * Idempotency SELECT on `payment_transactions` matching `gateway_transaction_id` and `status = 'COMPLETED'` (line 77–97) — read-only guard, not a write
+      * User lookup via `user_subscriptions.select` on `stripe_customer_id` (line 101–113)
+      * Wallet lookup via `token_wallets.select` on `user_id` (line 117–127)
+      * Token amount resolution chain: invoice metadata → line item metadata → `retrieveSubscriptionPlanDetails` → checkout session metadata (line 129–196)
+      * Subscription period extraction from `invoice.lines.data` (line 298–325) — move this block before the RPC call. Locate the subscription line item in `invoice.lines.data` where `type === 'subscription'`. If found: read `subscriptionIdForUpdate`, `periodStartIso`, and `periodEndIso` from the line item, converting epoch timestamps to ISO strings via `new Date(ts * 1000).toISOString()` during extraction. If not found (one-time invoice): assign `subscriptionIdForUpdate`, `periodStartIso`, and `periodEndIso` to `null` explicitly. All variables must be typed from existing source types — do not introduce new types at the call site or rely on coercion.
+    * ` [✅]` Phase 2 (Execute) — remove all four DB writes and add one RPC call:
+      * Remove: `payment_transactions.insert` (line 221–230)
+      * Remove: `tokenWalletService.recordTransaction` (line 245–255)
+      * Remove: `payment_transactions.update` to COMPLETED (line 278–291)
+      * Remove: `user_subscriptions.update` (line 307–315)
+      * Add: `context.supabaseClient.rpc('complete_invoice_payment', { p_user_id: userId, p_target_wallet_id: targetWalletId, p_gateway_transaction_id: invoice.id, p_tokens_to_award: tokensToAward, p_amount_fiat: invoice.total, p_currency: invoice.currency, p_metadata: { stripe_event_id: stripeEventId, stripe_customer_id: stripeCustomerId, stripe_subscription_id: subscriptionId, checkout_session_id: checkoutSessionId, billing_reason: invoice.billing_reason, payment_intent_id: paymentIntentId }, p_token_idempotency_key: event.id, p_token_notes: JSON.stringify({ reason: 'Subscription Renewal', invoice_id: invoice.id, stripe_event_id: stripeEventId, item_id_internal: planItemIdInternal }), p_stripe_subscription_id: subscriptionIdForUpdate, p_period_start: periodStartIso, p_period_end: periodEndIso })` — all three nullable fields are pre-computed in Phase 1 and passed directly; no coercion or fallbacks at the call site
+    * ` [✅]` After successful RPC: if `tokensToAward > 0`, fire wallet notification best-effort — call `context.supabaseClient.rpc('create_notification_for_user', ...)` in a try/catch. Read the notification pattern from `adminTokenWalletService.ts` lines 206–230.
+    * ` [✅]` Preserve `retrieveSubscriptionPlanDetails` helper — called during Phase 1, unchanged.
+    * ` [✅]` Preserve all existing logging.
 
-  * `[ ]` `module`
-    * `[ ]` Stripe adapter, within `_shared/adapters/stripe/handlers/`
+* `[✅]` `[BE]` supabase/functions/_shared/adapters/stripe/handlers/stripe.subscriptionUpdated **Atomic subscription update with tier recomputation**
 
-  * `[ ]` `deps`
-    * `[ ]` `update_subscription_with_tier` RPC from migration node
-    * `[ ]` `HandlerContext` from `_shared/stripe.mock.ts` (existing)
+  * ` [✅]` `objective`
+    * ` [✅]` `handleCustomerSubscriptionUpdated` makes one DB write (update user_subscriptions). Adding tier recomputation would add a second independent write. Use `update_subscription_with_tier` RPC to make both atomic.
+    * ` [✅]` The current handler (at `stripe.subscriptionUpdated.ts`) builds a `subscriptionUpdateData` partial, then calls `.update()` matching on `stripe_subscription_id`. Replace this with the RPC call.
 
-  * `[ ]` supabase/functions/_shared/adapters/stripe/handlers/`stripe.subscriptionUpdated.test.ts`
-    * `[ ]` Test: subscription status changes to `active` → RPC `update_subscription_with_tier` called with `p_set_ratchet = false`
-    * `[ ]` Test: subscription status changes to `canceled` → RPC called, free plan resolved internally, `p_set_ratchet = false`
-    * `[ ]` Test: subscription status changes to `past_due` → RPC called with `p_set_ratchet = false`
-    * `[ ]` Test: RPC returns error → handler returns `{ success: false }`
-    * `[ ]` Test: RPC returns tier_level and rows_updated → handler logs and returns success
-    * `[ ]` Update existing tests to expect RPC call instead of direct `.update()`
+  * ` [✅]` `role`
+    * ` [✅]` Adapter handler — Stripe-specific webhook processing
 
-  * `[ ]` supabase/functions/_shared/adapters/stripe/handlers/`stripe.subscriptionUpdated.ts`
-    * `[ ]` Read the current file (~100 lines). It builds `subscriptionUpdateData` and calls `.update().eq('stripe_subscription_id', ...)`
-    * `[ ]` Replace the `.update()` call with: `context.supabaseClient.rpc('update_subscription_with_tier', { p_stripe_subscription_id: subscription.id, p_status: subscription.status, p_plan_id: internalPlanId, p_period_start, p_period_end, p_cancel_at_period_end: subscription.cancel_at_period_end, p_stripe_customer_id: stripeCustomerId, p_set_ratchet: false })`
-    * `[ ]` The existing plan resolution logic (lookup internal plan by stripe_price_id, or set to free plan on cancellation) stays in TypeScript — pass the resolved `plan_id` to the RPC.
-    * `[ ]` Log the returned `tier_level` from the RPC result.
+  * ` [✅]` `module`
+    * ` [✅]` Stripe adapter, within `_shared/adapters/stripe/handlers/`
 
-* `[ ]` `[BE]` supabase/functions/_shared/adapters/stripe/handlers/stripe.subscriptionDeleted **Atomic subscription cancellation with tier recomputation**
+  * ` [✅]` `deps`
+    * ` [✅]` `update_subscription_with_tier` RPC from migration node
+    * ` [✅]` `HandlerContext` from `_shared/stripe.mock.ts` (existing)
 
-  * `[ ]` `objective`
-    * `[ ]` `handleCustomerSubscriptionDeleted` marks subscription as `canceled` and sets plan to free. Adding tier recomputation via `update_subscription_with_tier` makes both atomic and ensures the user's cached tier drops to `basic` (not `free`) when the ratchet is set.
+  * ` [✅]` supabase/functions/_shared/adapters/stripe/handlers/`stripe.subscriptionUpdated.test.ts`
+    * ` [✅]` Test: subscription status changes to `active` → RPC `update_subscription_with_tier` called with `p_set_ratchet = false`
+    * ` [✅]` Test: subscription status changes to `canceled` → RPC called, free plan resolved internally, `p_set_ratchet = false`
+    * ` [✅]` Test: subscription status changes to `past_due` → RPC called with `p_set_ratchet = false`
+    * ` [✅]` Test: RPC returns error → handler returns `{ success: false }`
+    * ` [✅]` Test: RPC returns tier_level and rows_updated → handler logs and returns success
+    * ` [✅]` Update existing tests to expect RPC call instead of direct `.update()`
 
-  * `[ ]` `role`
-    * `[ ]` Adapter handler — Stripe-specific webhook processing
+  * ` [✅]` supabase/functions/_shared/adapters/stripe/handlers/`stripe.subscriptionUpdated.ts`
+    * ` [✅]` Read the current file (~100 lines). It builds `subscriptionUpdateData` and calls `.update().eq('stripe_subscription_id', ...)`
+    * ` [✅]` Replace the `.update()` call with: `context.supabaseClient.rpc('update_subscription_with_tier', { p_stripe_subscription_id: subscription.id, p_status: subscription.status, p_plan_id: internalPlanId, p_period_start, p_period_end, p_cancel_at_period_end: subscription.cancel_at_period_end, p_stripe_customer_id: stripeCustomerId, p_set_ratchet: false })`
+    * ` [✅]` The existing plan resolution logic (lookup internal plan by stripe_price_id, or set to free plan on cancellation) stays in TypeScript — pass the resolved `plan_id` to the RPC.
+    * ` [✅]` Log the returned `tier_level` from the RPC result.
 
-  * `[ ]` `module`
-    * `[ ]` Stripe adapter, within `_shared/adapters/stripe/handlers/`
+* `[✅]` `[BE]` supabase/functions/_shared/adapters/stripe/handlers/stripe.subscriptionDeleted **Atomic subscription cancellation with tier recomputation**
 
-  * `[ ]` `deps`
-    * `[ ]` `update_subscription_with_tier` RPC from migration node
-    * `[ ]` `HandlerContext` from `_shared/stripe.mock.ts` (existing)
+  * ` [✅]` `objective`
+    * ` [✅]` `handleCustomerSubscriptionDeleted` marks subscription as `canceled` and sets plan to free. Adding tier recomputation via `update_subscription_with_tier` makes both atomic and ensures the user's cached tier drops to `basic` (not `free`) when the ratchet is set.
 
-  * `[ ]` supabase/functions/_shared/adapters/stripe/handlers/`stripe.subscriptionDeleted.test.ts`
-    * `[ ]` Test: subscription deleted → RPC `update_subscription_with_tier` called with `p_status = 'canceled'`, `p_plan_id` = free plan ID, `p_set_ratchet = false`
-    * `[ ]` Test: RPC returns `tier_level = 10` (basic) for user with `has_ever_paid = true` — confirms ratchet prevents drop to free
-    * `[ ]` Test: RPC returns error → handler returns `{ success: false }`
-    * `[ ]` Update existing tests to expect RPC call instead of direct `.update()`
+  * ` [✅]` `role`
+    * ` [✅]` Adapter handler — Stripe-specific webhook processing
 
-  * `[ ]` supabase/functions/_shared/adapters/stripe/handlers/`stripe.subscriptionDeleted.ts`
-    * `[ ]` Read the current file (~70 lines). It looks up the free plan, builds update data, and calls `.update().eq('stripe_subscription_id', ...)`
-    * `[ ]` Keep the free plan lookup in TypeScript (needed to resolve `internalPlanId`)
-    * `[ ]` Replace the `.update()` call with: `context.supabaseClient.rpc('update_subscription_with_tier', { p_stripe_subscription_id: subscription.id, p_status: 'canceled', p_plan_id: internalPlanId, p_cancel_at_period_end: false, p_set_ratchet: false })`
-    * `[ ]` Log the returned `tier_level`.
+  * ` [✅]` `module`
+    * ` [✅]` Stripe adapter, within `_shared/adapters/stripe/handlers/`
 
-  * `[ ]` supabase/functions/_shared/adapters/stripe/handlers/`stripe.subscriptionDeleted.integration.test.ts`
-    * `[ ]` Integration test: full payment lifecycle — checkout creates subscription → invoice payment succeeds → subscription deleted → verify: `has_ever_paid = true`, `tier_level = 10` (basic, not free), `status = 'canceled'`, payment_transactions all COMPLETED, token balance reflects all awards
-    * `[ ]` Integration test: new user with no payments → subscription deleted (edge case, should not happen but must not crash) → verify: `has_ever_paid = false`, `tier_level = 0` (free)
+  * ` [✅]` `deps`
+    * ` [✅]` `update_subscription_with_tier` RPC from migration node
+    * ` [✅]` `HandlerContext` from `_shared/stripe.mock.ts` (existing)
 
-  * `[ ]` **Commit** `feat(tiers+atomicity): tier infrastructure, transactional payment RPCs, handler restructure`
-    * `[ ]` Migration: `tier_definitions` table, `tier_level` columns on `subscription_plans`/`user_subscriptions`/`ai_providers`, `has_ever_paid` ratchet, `current_plan_tier()` + `refresh_user_tier()` SQL functions, consolidated `handle_new_user()`, GRANT EXECUTE, cost-band backfills
-    * `[ ]` Migration: `complete_checkout_payment`, `complete_invoice_payment`, `update_subscription_with_tier` transactional RPCs — each bundles all handler writes into a single atomic transaction including token award and tier refresh
-    * `[ ]` `checkoutSessionCompleted` + `invoicePaymentSucceeded`: restructured from multiple independent writes to gather-then-RPC atomic pattern
-    * `[ ]` `subscriptionUpdated` + `subscriptionDeleted`: replaced direct `.update()` with `update_subscription_with_tier` RPC for atomic subscription + tier update
-    * `[ ]` All tests green
+  * ` [✅]` supabase/functions/_shared/adapters/stripe/handlers/`stripe.subscriptionDeleted.test.ts`
+    * ` [✅]` Test: subscription deleted → RPC `update_subscription_with_tier` called with `p_status = 'canceled'`, `p_plan_id` = free plan ID, `p_set_ratchet = false`
+    * ` [✅]` Test: RPC returns `tier_level = 10` (basic) for user with `has_ever_paid = true` — confirms ratchet prevents drop to free
+    * ` [✅]` Test: RPC returns error → handler returns `{ success: false }`
+    * ` [✅]` Update existing tests to expect RPC call instead of direct `.update()`
+
+  * ` [✅]` supabase/functions/_shared/adapters/stripe/handlers/`stripe.subscriptionDeleted.ts`
+    * ` [✅]` Read the current file (~70 lines). It looks up the free plan, builds update data, and calls `.update().eq('stripe_subscription_id', ...)`
+    * ` [✅]` Keep the free plan lookup in TypeScript (needed to resolve `internalPlanId`)
+    * ` [✅]` Replace the `.update()` call with: `context.supabaseClient.rpc('update_subscription_with_tier', { p_stripe_subscription_id: subscription.id, p_status: 'canceled', p_plan_id: internalPlanId, p_cancel_at_period_end: false, p_set_ratchet: false })`
+    * ` [✅]` Log the returned `tier_level`.
+
+  * ` [✅]` supabase/functions/_shared/adapters/stripe/handlers/`stripe.subscriptionDeleted.integration.test.ts`
+    * ` [✅]` Integration test: full payment lifecycle — checkout creates subscription → invoice payment succeeds → subscription deleted → verify: `has_ever_paid = true`, `tier_level = 10` (basic, not free), `status = 'canceled'`, payment_transactions all COMPLETED, token balance reflects all awards
+    * ` [✅]` Integration test: new user with no payments → subscription deleted (edge case, should not happen but must not crash) → verify: `has_ever_paid = false`, `tier_level = 0` (free)
+
+  * ` [✅]` **Commit** `feat(tiers+atomicity): tier infrastructure, transactional payment RPCs, handler restructure`
+    * ` [✅]` Migration: `tier_definitions` table, `tier_level` columns on `subscription_plans`/`user_subscriptions`/`ai_providers`, `has_ever_paid` ratchet, `current_plan_tier()` + `refresh_user_tier()` SQL functions, consolidated `handle_new_user()`, GRANT EXECUTE, cost-band backfills
+    * ` [✅]` Migration: `complete_checkout_payment`, `complete_invoice_payment`, `update_subscription_with_tier` transactional RPCs — each bundles all handler writes into a single atomic transaction including token award and tier refresh
+    * ` [✅]` `checkoutSessionCompleted` + `invoicePaymentSucceeded`: restructured from multiple independent writes to gather-then-RPC atomic pattern
+    * ` [✅]` `subscriptionUpdated` + `subscriptionDeleted`: replaced direct `.update()` with `update_subscription_with_tier` RPC for atomic subscription + tier update
+    * ` [✅]` All tests green
 
 * Update model costs to match documentation — **COVERED by Stream 1 nodes** (config_assembler prefix match, provider map audits, re-sync + re-seed)
 - Gemini 3 Flash, 3 Pro, https://ai.google.dev/gemini-api/docs/pricing

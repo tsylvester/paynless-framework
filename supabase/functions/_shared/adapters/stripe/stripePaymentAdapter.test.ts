@@ -132,16 +132,19 @@ Deno.test('StripePaymentAdapter: handleWebhook', async (t) => {
             return { data: [], error: new Error('Mock: Plan not found for sub update test'), count: 0, status: 404, statusText: 'Not Found' };
           }
         },
-        'user_subscriptions': {
-          update: async (state: any) => {
-            const updateData = state.updateData as any;
-            if (state.filters.some((f: any) => f.column === 'stripe_subscription_id' && f.value === stripeSubscriptionId) && updateData.status === newStatus) {
-              return { data: [{ id: 'user_sub_mock_id', ...updateData }], error: null, count: 1, status: 200, statusText: 'OK' };
-            }
-            return { data: null, error: new Error('Mock: user_subscriptions update failed condition check'), count: 0, status: 500, statusText: 'Error' };
-          }
-        }
-      }
+      },
+      rpcResults: {
+        update_subscription_with_tier: {
+          data: [
+            {
+              user_id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+              tier_level: 1,
+              rows_updated: 1,
+            },
+          ],
+          error: null,
+        },
+      },
     };
     setupMocksAndAdapterForWebhook(supabaseConfig);
 
@@ -184,16 +187,20 @@ Deno.test('StripePaymentAdapter: handleWebhook', async (t) => {
     assertSpyCalls(subPlansBuilder.methodSpies.select, 1);
     assertSpyCalls(subPlansBuilder.methodSpies.eq, 1);
     assertEquals(subPlansBuilder.methodSpies.eq.calls[0].args, ['stripe_price_id', stripePriceId]);
+    assertSpyCalls(subPlansBuilder.methodSpies.single, 1);
 
-    const userSubsBuilder = mockSupabaseSetup.client.getLatestBuilder('user_subscriptions');
-    assert(userSubsBuilder, "user_subscriptions query builder not used.");
-    assertSpyCalls(userSubsBuilder.methodSpies.update, 1);
-    assertSpyCalls(userSubsBuilder.methodSpies.eq, 1);
-    assertEquals(userSubsBuilder.methodSpies.eq.calls[0].args, ['stripe_subscription_id', stripeSubscriptionId]);
-    
-    const updateCallArgs = userSubsBuilder.methodSpies.update.calls[0].args[0] as any;
-    assertEquals(updateCallArgs.status, newStatus);
-    assertEquals(updateCallArgs.plan_id, internalPlanId);
+    assertSpyCalls(mockSupabaseSetup.spies.rpcSpy, 1);
+    assertEquals(mockSupabaseSetup.spies.rpcSpy.calls[0].args[0], 'update_subscription_with_tier');
+    assertEquals(mockSupabaseSetup.spies.rpcSpy.calls[0].args[1], {
+      p_stripe_subscription_id: stripeSubscriptionId,
+      p_status: newStatus,
+      p_plan_id: internalPlanId,
+      p_period_start: null,
+      p_period_end: null,
+      p_cancel_at_period_end: false,
+      p_stripe_customer_id: stripeCustomerId,
+      p_set_ratchet: false,
+    });
 
     teardownWebhookMocks();
   });
