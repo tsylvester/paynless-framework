@@ -2689,6 +2689,16 @@ export type Database = {
           rows_updated: number
         }[]
       }
+      validate_model_tier_access: {
+        Args: { p_model_ids: string[] }
+        Returns: {
+          valid: boolean
+          user_tier_level: number
+          max_models_per_project: number
+          over_model_limit: boolean
+          disallowed_model_ids: string[]
+        }[]
+      }
     }
     Enums: {
       dialectic_job_type_enum: "PLAN" | "EXECUTE" | "RENDER"

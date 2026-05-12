@@ -687,124 +687,124 @@
     * `[✅]` `listModelCatalog.ts`: add `min_plan_tier_level` to SELECT and `rowToCatalogEntry()` mapping; return type and function structure unchanged
     * `[✅]` `ai-providers/index.ts`: add `min_plan_tier_level` to SELECT and response
 
-* `[ ]` `[BE]` supabase/functions/dialectic-service/startSession **Guard selected_model_ids against user tier before session INSERT**
+* `[✅]` `[BE]` supabase/functions/dialectic-service/startSession **Guard selected_model_ids against user tier before session INSERT**
 
-  * `[ ]` `objective`
-    * `[ ]` `startSession.ts` line 303 writes `selected_model_ids` to `dialectic_sessions` without tier validation. A frontend bypass or direct API call can create a session with models the user's subscription does not permit, or with more models than `max_models_per_project` allows for the user's tier.
-    * `[ ]` Fix: call `validate_model_tier_access` RPC after resolving `selectedModels` and before the session INSERT. If `valid = false`: return a structured error identifying whether the failure is a tier mismatch (`disallowed_model_ids`) or a count violation (`over_model_limit`). Do not write the session on failure.
+  * `[✅]` `objective`
+    * `[✅]` `startSession.ts` line 303 writes `selected_model_ids` to `dialectic_sessions` without tier validation. A frontend bypass or direct API call can create a session with models the user's subscription does not permit, or with more models than `max_models_per_project` allows for the user's tier.
+    * `[✅]` Fix: call `validate_model_tier_access` RPC after resolving `selectedModels` and before the session INSERT. If `valid = false`: return a distinct error code/message identifying whether the failure is a tier mismatch (`disallowed_model_ids`) or a count violation (`over_model_limit`). Do not write the session on failure.
 
-  * `[ ]` `role`
-    * `[ ]` Domain service — session creation entrypoint
-    * `[ ]` Guard is a pre-write validation step; it delegates the judgment to the SQL function
+  * `[✅]` `role`
+    * `[✅]` Domain service — session creation entrypoint
+    * `[✅]` Guard is a pre-write validation step; it delegates the judgment to the SQL function
 
-  * `[ ]` `module`
-    * `[ ]` dialectic-service bounded context
+  * `[✅]` `module`
+    * `[✅]` dialectic-service bounded context
 
-  * `[ ]` `deps`
-    * `[ ]` `validate_model_tier_access` RPC (prior migration node)
-    * `[ ]` `supabaseClient` — already in scope at the INSERT call site
-    * `[ ]` `userId` — the authenticated user's ID; confirm it is available before the guard call site (present via JWT context)
+  * `[✅]` `deps`
+    * `[✅]` `validate_model_tier_access` RPC (prior migration node)
+    * `[✅]` `supabaseClient` — already in scope at the INSERT call site and already carries the authenticated caller JWT used by `auth.uid()` inside the public RPC
+    * `[✅]` Do NOT pass `userId` into the public RPC — the public function resolves the caller from JWT context inside Supabase
 
-  * `[ ]` `context_slice`
-    * `[ ]` Insert guard AFTER `selectedModels` is resolved and BEFORE the `dialectic_sessions` INSERT at lines 295–309
-    * `[ ]` Guard call: `supabaseClient.rpc('validate_model_tier_access', { p_user_id: userId, p_model_ids: selectedModels.map(m => m.id) })`
-    * `[ ]` Return shape conforms to the existing handler contract `Promise<{ data?: T; error?: ServiceError }>`. Structured payload is packaged into `ServiceError.details` as a single-element `Record<string, unknown>[]` per the `string | Record<string, unknown>[]` union at `_shared/types.ts:524`.
-    * `[ ]` On RPC error: return `{ error: { message: 'Failed to validate model tier access', status: 500, code: 'TIER_VALIDATION_FAILED' } }`
-    * `[ ]` On `valid = false` + `over_model_limit = true`: return `{ error: { message: 'Model selection exceeds the limit for your plan', status: 403, code: 'MODEL_LIMIT_EXCEEDED', details: [{ over_model_limit: true, max_models_per_project: result.max_models_per_project, user_tier_level: result.user_tier_level }] } }`
-    * `[ ]` On `valid = false` + disallowed models: return `{ error: { message: 'Selected models are not available on your plan', status: 403, code: 'MODEL_TIER_DISALLOWED', details: [{ disallowed_model_ids: result.disallowed_model_ids, user_tier_level: result.user_tier_level }] } }`
-    * `[ ]` On `valid = true`: existing INSERT logic unchanged
+  * `[✅]` `context_slice`
+    * `[✅]` Insert guard AFTER `selectedModels` is resolved and BEFORE the `dialectic_sessions` INSERT at lines 295–309
+    * `[✅]` Guard call: `supabaseClient.rpc('validate_model_tier_access', { p_model_ids: selectedModels.map(m => m.id) })`
+    * `[✅]` Preserve the existing `startSession()` signature and return type in this node. Do NOT expand scope into handler contract rewrites.
+    * `[✅]` On RPC error: return `{ error: { message: 'Failed to validate model tier access', status: 500, code: 'TIER_VALIDATION_FAILED' } }`
+    * `[✅]` On `valid = false` + `over_model_limit = true`: return `{ error: { message: 'Model selection exceeds the limit for your plan', status: 403, code: 'MODEL_LIMIT_EXCEEDED' } }`
+    * `[✅]` On `valid = false` + disallowed models: return `{ error: { message: 'Selected models are not available on your plan', status: 403, code: 'MODEL_TIER_DISALLOWED' } }`
+    * `[✅]` On `valid = true`: existing INSERT logic unchanged
 
-  * `[ ]` `startSession.test.ts` does not exist; tests are split by behavior across `startSession.happy.test.ts` and `startSession.errors.test.ts` per the file-organization convention. The new tests must be placed accordingly.
+  * `[✅]` `startSession.test.ts` does not exist; tests are split by behavior across `startSession.happy.test.ts` and `startSession.errors.test.ts` per the file-organization convention. The new tests must be placed accordingly.
 
-  * `[ ]` supabase/functions/dialectic-service/`startSession.happy.test.ts`
-    * `[ ]` Add test: all selected models within user's tier and under model count limit → session INSERT proceeds, session returned
-    * `[ ]` Add test: empty `selected_model_ids` array → `validate_model_tier_access` returns `valid = true, over_model_limit = false, disallowed_model_ids = '{}'`, INSERT proceeds — this also exercises the migration's empty-array guard
+  * `[✅]` supabase/functions/dialectic-service/`startSession.happy.test.ts`
+    * `[✅]` Add test: all selected models within user's tier and under model count limit → session INSERT proceeds, session returned
+    * `[✅]` Add test: empty `selected_model_ids` array → `validate_model_tier_access` returns `valid = true, over_model_limit = false, disallowed_model_ids = []`, INSERT proceeds — this also exercises the migration's empty-array guard
 
-  * `[ ]` supabase/functions/dialectic-service/`startSession.errors.test.ts`
-    * `[ ]` Add test: one selected model has `min_plan_tier_level` above user's `tier_level` → RPC returns `valid = false`, `disallowed_model_ids` populated → session NOT inserted; assertion reads `error.details[0].disallowed_model_ids` and `error.details[0].user_tier_level`
-    * `[ ]` Add test: `selected_model_ids` count exceeds `max_models_per_project` for user's tier → RPC returns `valid = false`, `over_model_limit = true` → session NOT inserted; assertion reads `error.details[0].over_model_limit`, `error.details[0].max_models_per_project`, `error.details[0].user_tier_level`
-    * `[ ]` Add test: `validate_model_tier_access` RPC returns DB error → session NOT inserted, generic `ServiceError` returned with no `details`
+  * `[✅]` supabase/functions/dialectic-service/`startSession.errors.test.ts`
+    * `[✅]` Add test: one selected model has `min_plan_tier_level` above user's `tier_level` → RPC returns `valid = false`, `disallowed_model_ids` populated → session NOT inserted; assertion reads `error.code === 'MODEL_TIER_DISALLOWED'` and `error.status === 403`
+    * `[✅]` Add test: `selected_model_ids` count exceeds `max_models_per_project` for user's tier → RPC returns `valid = false`, `over_model_limit = true` → session NOT inserted; assertion reads `error.code === 'MODEL_LIMIT_EXCEEDED'` and `error.status === 403`
+    * `[✅]` Add test: `validate_model_tier_access` RPC returns DB error → session NOT inserted; assertion reads `error.code === 'TIER_VALIDATION_FAILED'` and `error.status === 500`
 
-  * `[ ]` supabase/functions/dialectic-service/`startSession.ts`
-    * `[ ]` After resolving `selectedModels` (before the INSERT at line 295): call `validate_model_tier_access` RPC with `userId` and model ID array
-    * `[ ]` Handle RPC error, `over_model_limit`, and disallowed model cases as described in `context_slice`
-    * `[ ]` On `valid = true`: existing INSERT at lines 295–309 is unchanged
+  * `[✅]` supabase/functions/dialectic-service/`startSession.ts`
+    * `[✅]` After resolving `selectedModels` (before the INSERT at line 295): call `validate_model_tier_access` RPC with the model ID array only
+    * `[✅]` Handle RPC error, `over_model_limit`, and disallowed model cases as described in `context_slice`
+    * `[✅]` On `valid = true`: existing INSERT at lines 295–309 is unchanged
 
-* `[ ]` `[BE]` supabase/functions/dialectic-service/updateSessionModels **Guard selected_model_ids against user tier before session UPDATE**
+* `[✅]` `[BE]` supabase/functions/dialectic-service/updateSessionModels **Guard selected_model_ids against user tier before session UPDATE**
 
-  * `[ ]` `objective`
-    * `[ ]` `updateSessionModels.ts` line 56 updates `selected_model_ids` on an existing session without tier validation. The frontend calls this endpoint dynamically whenever the user changes their model selection mid-project, but a bypass can write inaccessible models or exceed the model count limit without detection.
-    * `[ ]` Fix: same guard pattern as `startSession.ts` — call `validate_model_tier_access` RPC before the UPDATE. Return a structured error if invalid; do not execute the UPDATE.
+  * `[✅]` `objective`
+    * `[✅]` `updateSessionModels.ts` line 56 updates `selected_model_ids` on an existing session without tier validation. The frontend calls this endpoint dynamically whenever the user changes their model selection mid-project, but a bypass can write inaccessible models or exceed the model count limit without detection.
+    * `[✅]` Fix: same guard pattern as `startSession.ts` — call `validate_model_tier_access` RPC before the UPDATE. Return a structured error if invalid; do not execute the UPDATE.
 
-  * `[ ]` `role`
-    * `[ ]` Domain service — dynamic model selection update for an existing session
+  * `[✅]` `role`
+    * `[✅]` Domain service — dynamic model selection update for an existing session
 
-  * `[ ]` `module`
-    * `[ ]` dialectic-service bounded context
+  * `[✅]` `module`
+    * `[✅]` dialectic-service bounded context
 
-  * `[ ]` `deps`
-    * `[ ]` `validate_model_tier_access` RPC (prior migration node)
-    * `[ ]` `userId` — confirm it is available in `handleUpdateSessionModels` context before the guard call site
+  * `[✅]` `deps`
+    * `[✅]` `validate_model_tier_access` RPC (prior migration node)
+    * `[✅]` `userId` — confirm it is available in `handleUpdateSessionModels` context before the guard call site
 
-  * `[ ]` `context_slice`
-    * `[ ]` Guard call pattern: identical to `startSession.ts` — insert before the `.update()` at line 54
-    * `[ ]` Use `selectedModels.map(model => model.id)` as `p_model_ids` — `selectedModels` is already resolved before the UPDATE
-    * `[ ]` Same error return shapes and passthrough logic as `startSession.ts` — `{ error: ServiceError }` with structured payload in `error.details` as `Record<string, unknown>[]`
+  * `[✅]` `context_slice`
+    * `[✅]` Guard call pattern: identical to `startSession.ts` — insert before the `.update()` at line 54
+    * `[✅]` Use `selectedModels.map(model => model.id)` as `p_model_ids` — `selectedModels` is already resolved before the UPDATE
+    * `[✅]` Same error return shapes and passthrough logic as `startSession.ts` — `{ error: ServiceError }` with structured payload in `error.details` as `Record<string, unknown>[]`
 
-  * `[ ]` supabase/functions/dialectic-service/`updateSessionModels.test.ts`
-    * `[ ]` Add test: valid selection within tier and count limit → UPDATE proceeds, updated session returned
-    * `[ ]` Add test: model above user's tier → `valid = false`, UPDATE NOT executed; assertion reads `error.details[0].disallowed_model_ids` and `error.details[0].user_tier_level`
-    * `[ ]` Add test: count exceeds `max_models_per_project` → `valid = false`, `over_model_limit = true`, UPDATE NOT executed; assertion reads `error.details[0].over_model_limit`, `error.details[0].max_models_per_project`, `error.details[0].user_tier_level`
-    * `[ ]` Add test: RPC returns DB error → UPDATE NOT executed, generic `ServiceError` propagated with no `details`
+  * `[✅]` supabase/functions/dialectic-service/`updateSessionModels.test.ts`
+    * `[✅]` Add test: valid selection within tier and count limit → UPDATE proceeds, updated session returned
+    * `[✅]` Add test: model above user's tier → `valid = false`, UPDATE NOT executed; assertion reads `error.details[0].disallowed_model_ids` and `error.details[0].user_tier_level`
+    * `[✅]` Add test: count exceeds `max_models_per_project` → `valid = false`, `over_model_limit = true`, UPDATE NOT executed; assertion reads `error.details[0].over_model_limit`, `error.details[0].max_models_per_project`, `error.details[0].user_tier_level`
+    * `[✅]` Add test: RPC returns DB error → UPDATE NOT executed, generic `ServiceError` propagated with no `details`
 
-  * `[ ]` supabase/functions/dialectic-service/`updateSessionModels.ts`
-    * `[ ]` Before the `.update({ selected_model_ids: ... })` call at line 54: call `validate_model_tier_access` RPC
-    * `[ ]` Handle results identically to `startSession.ts` — same error shapes, same passthrough on `valid = true`
+  * `[✅]` supabase/functions/dialectic-service/`updateSessionModels.ts`
+    * `[✅]` Before the `.update({ selected_model_ids: ... })` call at line 54: call `validate_model_tier_access` RPC
+    * `[✅]` Handle results identically to `startSession.ts` — same error shapes, same passthrough on `valid = true`
 
-* `[ ]` `[BE]` supabase/functions/dialectic-service/cloneProject **Filter tier-inaccessible models from cloned sessions**
+* `[✅]` `[BE]` supabase/functions/dialectic-service/cloneProject **Filter tier-inaccessible models from cloned sessions**
 
-  * `[ ]` `objective`
-    * `[ ]` `cloneProject.ts` line 216 copies `selected_model_ids` from original sessions verbatim into cloned sessions. The cloning user's tier is not validated. If the user's tier has downgraded since the original project was created, or if they are cloning from a higher-tier project, the cloned sessions will carry inaccessible model IDs.
-    * `[ ]` Fix: before each session INSERT in the clone loop, validate the original `selected_model_ids` against the cloning user's tier. Exclude disallowed models from the cloned session — do not abort the clone. Add a TODO comment at the exclusion point identifying this as a known gap for future UX resolution.
+  * `[✅]` `objective`
+    * `[✅]` `cloneProject.ts` line 216 copies `selected_model_ids` from original sessions verbatim into cloned sessions. The cloning user's tier is not validated. If the user's tier has downgraded since the original project was created, or if they are cloning from a higher-tier project, the cloned sessions will carry inaccessible model IDs.
+    * `[✅]` Fix: before each session INSERT in the clone loop, validate the original `selected_model_ids` against the cloning user's tier. Exclude disallowed models from the cloned session — do not abort the clone. Add a TODO comment at the exclusion point identifying this as a known gap for future UX resolution.
 
-  * `[ ]` `role`
-    * `[ ]` Domain service — project clone operation; guard here filters rather than rejects because a partial clone is better than no clone
+  * `[✅]` `role`
+    * `[✅]` Domain service — project clone operation; guard here filters rather than rejects because a partial clone is better than no clone
 
-  * `[ ]` `module`
-    * `[ ]` dialectic-service bounded context
+  * `[✅]` `module`
+    * `[✅]` dialectic-service bounded context
 
-  * `[ ]` `deps`
-    * `[ ]` `validate_model_tier_access` RPC (prior migration node)
-    * `[ ]` Cloning user's `userId` — confirm it is available in `cloneProject` function context before editing
+  * `[✅]` `deps`
+    * `[✅]` `validate_model_tier_access` RPC (prior migration node)
+    * `[✅]` Cloning user's `userId` — confirm it is available in `cloneProject` function context before editing
 
-  * `[ ]` `context_slice`
-    * `[ ]` For each session in the clone loop (around lines 211–222): if `originalSession.selected_model_ids` is non-null and non-empty, call `validate_model_tier_access` with the cloning user's ID and the original model IDs
-    * `[ ]` Compute `allowedModelIds`: filter original model IDs to those NOT in `result.disallowed_model_ids`
-    * `[ ]` If models were excluded: `logger.warn('[cloneProject] Excluded ${excluded.length} model(s) from cloned session ${newSessionId} — models above user tier ${result.user_tier_level}: ${excluded.join(", ")}')`
-    * `[ ]` Add TODO comment at the filter step: `// TODO: Models excluded here because they exceed the cloning user's tier may leave the cloned project unable to continue without a valid model. The write-path guards on startSession and updateSessionModels will catch invalid usage at runtime, but the clone itself silently carries the gap. This is a deliberate filter-not-reject decision: a partial clone is preferable to no clone. Future work: before proceeding with the clone, notify the user of excluded models and offer resolution — either select an accessible replacement model or upgrade the plan. See Stream 3 / Gate models scope.`
-    * `[ ]` If the RPC itself errors: log warning, use the original unfiltered list (best-effort — write-path guards on start/update catch invalid usage at runtime), continue the clone
-    * `[ ]` If `originalSession.selected_model_ids` is null or empty: skip the guard call, clone null/empty as-is
+  * `[✅]` `context_slice`
+    * `[✅]` For each session in the clone loop (around lines 211–222): if `originalSession.selected_model_ids` is non-null and non-empty, call `validate_model_tier_access` with the cloning user's ID and the original model IDs
+    * `[✅]` Compute `allowedModelIds`: filter original model IDs to those NOT in `result.disallowed_model_ids`
+    * `[✅]` If models were excluded: `logger.warn('[cloneProject] Excluded ${excluded.length} model(s) from cloned session ${newSessionId} — models above user tier ${result.user_tier_level}: ${excluded.join(", ")}')`
+    * `[✅]` Add TODO comment at the filter step: `// TODO: Models excluded here because they exceed the cloning user's tier may leave the cloned project unable to continue without a valid model. The write-path guards on startSession and updateSessionModels will catch invalid usage at runtime, but the clone itself silently carries the gap. This is a deliberate filter-not-reject decision: a partial clone is preferable to no clone. Future work: before proceeding with the clone, notify the user of excluded models and offer resolution — either select an accessible replacement model or upgrade the plan. See Stream 3 / Gate models scope.`
+    * `[✅]` If the RPC itself errors: log warning, use the original unfiltered list (best-effort — write-path guards on start/update catch invalid usage at runtime), continue the clone
+    * `[✅]` If `originalSession.selected_model_ids` is null or empty: skip the guard call, clone null/empty as-is
 
-  * `[ ]` supabase/functions/dialectic-service/`cloneProject.test.ts`
-    * `[ ]` Add test: all original models within user's tier → cloned session has identical `selected_model_ids`
-    * `[ ]` Add test: one model above user's tier → that model excluded from clone, others preserved, clone succeeds
-    * `[ ]` Add test: all models above user's tier → `selected_model_ids` is empty in cloned session, clone succeeds
-    * `[ ]` Add test: `validate_model_tier_access` RPC errors → original model IDs used unfiltered, warning logged, clone succeeds
-    * `[ ]` Add test: original session has null `selected_model_ids` → guard skipped, null cloned as-is
+  * `[✅]` supabase/functions/dialectic-service/`cloneProject.test.ts`
+    * `[✅]` Add test: all original models within user's tier → cloned session has identical `selected_model_ids`
+    * `[✅]` Add test: one model above user's tier → that model excluded from clone, others preserved, clone succeeds
+    * `[✅]` Add test: all models above user's tier → `selected_model_ids` is empty in cloned session, clone succeeds
+    * `[✅]` Add test: `validate_model_tier_access` RPC errors → original model IDs used unfiltered, warning logged, clone succeeds
+    * `[✅]` Add test: original session has null `selected_model_ids` → guard skipped, null cloned as-is
 
-  * `[ ]` supabase/functions/dialectic-service/`cloneProject.ts`
-    * `[ ]` In the session clone loop around lines 211–222: before constructing `newSessionInsert`, call `validate_model_tier_access` on `originalSession.selected_model_ids` (if non-null/non-empty); filter to `allowedModelIds`; add TODO comment; set `selected_model_ids: allowedModelIds` on `newSessionInsert`
+  * `[✅]` supabase/functions/dialectic-service/`cloneProject.ts`
+    * `[✅]` In the session clone loop around lines 211–222: before constructing `newSessionInsert`, call `validate_model_tier_access` on `originalSession.selected_model_ids` (if non-null/non-empty); filter to `allowedModelIds`; add TODO comment; set `selected_model_ids: allowedModelIds` on `newSessionInsert`
 
-  * `[ ]` Create supabase/functions/dialectic-service/`cloneProject.integration.test.ts` — file does not currently exist; only `cloneProject.test.ts` is present.
-    * `[ ]` Full guard chain integration test spanning all three write points:
+  * `[✅]` Create supabase/functions/dialectic-service/`modelTiers.integration.test.ts` — file does not currently exist.
+    * `[✅]` Full guard chain integration test spanning all three write points:
       * Attempt to start a session with a premium-tier model as a free-tier user → rejected with disallowed model error, session not created
       * Attempt to update an existing session's models to that same premium model as a free-tier user → rejected with disallowed model error, session not updated
       * Clone a project whose sessions include that premium model as a free-tier user → clone succeeds, premium model excluded from cloned session's `selected_model_ids`
 
-  * `[ ]` **Commit** `feat(model-tier-guards): validate model tier access and max-models-per-project on all selected_model_ids write points`
-    * `[ ]` Migration: `validate_model_tier_access` SQL RPC — reads user tier, checks model access and count, returns structured result; granted to service_role and authenticated
-    * `[ ]` `startSession.ts`, `updateSessionModels.ts`: reject writes when selected models exceed user tier or count limit; structured error identifies whether it's a tier mismatch or count violation
-    * `[ ]` `cloneProject.ts`: filter tier-inaccessible models from cloned sessions; partial clone with TODO comment for future conflict resolution UX
+  * `[✅]` **Commit** `feat(model-tier-guards): validate model tier access and max-models-per-project on all selected_model_ids write points`
+    * `[✅]` Migration: `validate_model_tier_access` SQL RPC — reads user tier, checks model access and count, returns structured result; granted to service_role and authenticated
+    * `[✅]` `startSession.ts`, `updateSessionModels.ts`: reject writes when selected models exceed user tier or count limit; structured error identifies whether it's a tier mismatch or count violation
+    * `[✅]` `cloneProject.ts`: filter tier-inaccessible models from cloned sessions; partial clone with TODO comment for future conflict resolution UX
 
 * `[ ]` `[BE]` supabase/functions/_shared/utils/affordability_utils **Add tier output cap parameter to getMaxOutputTokens**
 

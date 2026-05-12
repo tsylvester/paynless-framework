@@ -116,6 +116,18 @@ Deno.test("startSession - Happy Path (with explicit sessionDescription)", async 
                 })
             }
         },
+        rpcResults: {
+            validate_model_tier_access: {
+                data: [{
+                    valid: true,
+                    user_tier_level: 1,
+                    max_models_per_project: 3,
+                    over_model_limit: false,
+                    disallowed_model_ids: [],
+                }],
+                error: null,
+            }
+        },
         mockUser: mockUser,
     });
 
@@ -266,6 +278,18 @@ Deno.test("startSession - Happy Path (without explicit sessionDescription, defau
                     }],
                     error: null, status: 200, statusText: 'ok'
                 })
+            }
+        },
+        rpcResults: {
+            validate_model_tier_access: {
+                data: [{
+                    valid: true,
+                    user_tier_level: 1,
+                    max_models_per_project: 3,
+                    over_model_limit: false,
+                    disallowed_model_ids: [],
+                }],
+                error: null,
             }
         },
         mockUser: mockUser,
@@ -455,6 +479,18 @@ Deno.test("startSession - Happy Path (with initial prompt from file resource)", 
                 })
             }
         },
+        rpcResults: {
+            validate_model_tier_access: {
+                data: [{
+                    valid: true,
+                    user_tier_level: 1,
+                    max_models_per_project: 3,
+                    over_model_limit: false,
+                    disallowed_model_ids: [],
+                }],
+                error: null,
+            }
+        },
         storageMock: {
             downloadResult: async (bucketId, path) => {
                 const expectedPath = `${mockInitialPromptResource.storage_path}/${mockInitialPromptResource.file_name}`;
@@ -575,6 +611,18 @@ Deno.test("startSession - selects DummyAdapter for embedding when default provid
             dialectic_sessions: { insert: async () => ({ data: [{ id: mockNewSessionId, project_id: mockProjectId, session_description: payload.sessionDescription, status: `pending_${mockInitialStageName}`, iteration_count: 1, associated_chat_id: 'chat-id', current_stage_id: mockInitialStageId, selected_model_ids: payload.selectedModels.map(m => m.id) }], error: null, status: 201, statusText: 'ok' }) },
             ai_providers: { select: async () => ({ data: [{ id: 'prov-dummy', api_identifier: 'dummy-model-v1', name: 'Dummy', description: 'Dummy', is_active: true, provider: 'dummy', config: dummyConfig, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), is_default_embedding: true, is_enabled: true }], error: null, status: 200, statusText: 'ok' }) },
         },
+        rpcResults: {
+            validate_model_tier_access: {
+                data: [{
+                    valid: true,
+                    user_tier_level: 1,
+                    max_models_per_project: 3,
+                    over_model_limit: false,
+                    disallowed_model_ids: [],
+                }],
+                error: null,
+            }
+        },
         mockUser: mockUser,
     });
 
@@ -615,5 +663,342 @@ Deno.test("startSession - selects DummyAdapter for embedding when default provid
         mockAssembler.assembleSeedPrompt.calls.length,
         1,
         "assembleSeedPrompt should have been called once for dummy case.",
+    );
+});
+
+Deno.test("startSession - Happy Path calls validate_model_tier_access before insert when selected models are allowed", async () => {
+    const mockUser: User = {
+        id: "user-tier-validation-happy-id",
+        app_metadata: {},
+        user_metadata: {},
+        aud: 'authenticated',
+        created_at: new Date().toISOString(),
+    };
+    const mockProjectId = "project-tier-validation-happy-id";
+    const mockProcessTemplateId = "proc-template-tier-validation-happy";
+    const mockInitialStageId = "stage-initial-tier-validation-happy";
+    const mockInitialStageName = "Tier Validation Stage";
+    const mockInitialStageSlug = "tier-validation-stage";
+    const mockSystemPromptId = "system-prompt-tier-validation-happy";
+    const mockNewSessionId = "session-tier-validation-happy-id";
+
+    const payload: StartSessionPayload = {
+        projectId: mockProjectId,
+        selectedModels: [
+            { id: "model-allowed-1", displayName: "Model Allowed One" },
+            { id: "model-allowed-2", displayName: "Model Allowed Two" },
+        ],
+        sessionDescription: "Tier validation happy path session",
+        idempotencyKey: "idempotency-key-tier-validation-happy",
+    };
+
+    const mockAssembledPrompt: AssembledPrompt = {
+        promptContent: "This is the assembled seed prompt for tier validation happy path.",
+        source_prompt_resource_id: "tier-validation-happy-resource-id",
+    };
+    const mockAssembler = new MockPromptAssembler();
+    mockAssembler.assembleSeedPrompt = spy(() => Promise.resolve(mockAssembledPrompt));
+    const mockFileManager = new MockFileManagerService();
+
+    const mockAdminDbClientSetup = createMockSupabaseClient(mockUser.id, {
+        genericMockResults: {
+            dialectic_projects: {
+                select: async () => ({
+                    data: [{
+                        id: mockProjectId,
+                        user_id: mockUser.id,
+                        project_name: "Tier Validation Project",
+                        initial_user_prompt: "Validate my model access.",
+                        process_template_id: mockProcessTemplateId,
+                        dialectic_domains: { name: 'General' },
+                        selected_domain_id: 'd-1'
+                    }],
+                    error: null,
+                    status: 200,
+                    statusText: 'ok'
+                })
+            },
+            dialectic_process_templates: {
+                select: async () => ({
+                    data: [{ id: mockProcessTemplateId, name: 'Tier Validation Template', starting_stage_id: mockInitialStageId }],
+                    error: null,
+                    status: 200,
+                    statusText: 'ok'
+                })
+            },
+            dialectic_stages: {
+                select: async () => ({
+                    data: [{ id: mockInitialStageId, slug: mockInitialStageSlug, display_name: mockInitialStageName, default_system_prompt_id: mockSystemPromptId }],
+                    error: null,
+                    status: 200,
+                    statusText: 'ok'
+                })
+            },
+            system_prompts: {
+                select: async () => ({
+                    data: [{ id: mockSystemPromptId, prompt_text: "Tier validation prompt text." }],
+                    error: null,
+                    status: 200,
+                    statusText: 'ok'
+                })
+            },
+            domain_specific_prompt_overlays: {
+                select: async () => ({
+                    data: [{ overlay_values: { role: 'senior product strategist', stage_instructions: 'baseline', style_guide_markdown: '# Guide', expected_output_artifacts_json: '{}' } }],
+                    error: null,
+                    status: 200,
+                    statusText: 'ok'
+                })
+            },
+            dialectic_sessions: {
+                insert: async () => ({
+                    data: [{
+                        id: mockNewSessionId,
+                        project_id: mockProjectId,
+                        session_description: payload.sessionDescription,
+                        status: `pending_${mockInitialStageName}`,
+                        iteration_count: 1,
+                        associated_chat_id: null,
+                        current_stage_id: mockInitialStageId,
+                        selected_model_ids: payload.selectedModels.map((model) => model.id),
+                    }],
+                    error: null,
+                    status: 201,
+                    statusText: 'ok'
+                })
+            },
+            ai_providers: {
+                select: async () => ({
+                    data: [{
+                        id: 'embedding-model-1',
+                        provider_max_input_tokens: 8000,
+                        config: {
+                            api_identifier: 'text-embedding-3-large',
+                            tokenization_strategy: {
+                                type: 'tiktoken',
+                                tiktoken_encoding_name: 'cl100k_base'
+                            }
+                        }
+                    }],
+                    error: null,
+                    status: 200,
+                    statusText: 'ok'
+                })
+            }
+        },
+        rpcResults: {
+            validate_model_tier_access: {
+                data: [{
+                    valid: true,
+                    user_tier_level: 2,
+                    max_models_per_project: 3,
+                    over_model_limit: false,
+                    disallowed_model_ids: [],
+                }],
+                error: null,
+            }
+        },
+        mockUser: mockUser,
+    });
+
+    const mockLogger = new MockLogger();
+    const deps: Partial<StartSessionDeps> = {
+        logger: mockLogger,
+        fileManager: mockFileManager,
+        promptAssembler: mockAssembler,
+        randomUUID: () => mockNewSessionId,
+    };
+
+    const adminDbClient = mockAdminDbClientSetup.client as unknown as SupabaseClient<Database>;
+    const result = await startSession(mockUser, adminDbClient, payload, deps);
+
+    assertExists(result.data, `Session start failed: ${result.error?.message}`);
+    assertEquals(result.error, undefined, "Error should be undefined when selected models are within tier limits.");
+    assertEquals(
+        mockAdminDbClientSetup.spies.rpcSpy.calls.length,
+        1,
+        "validate_model_tier_access should be called exactly once before the session insert.",
+    );
+    assertEquals(
+        mockAdminDbClientSetup.spies.rpcSpy.calls[0].args[0],
+        "validate_model_tier_access",
+        "startSession should call the public model tier validation RPC.",
+    );
+    assertEquals(
+        mockAdminDbClientSetup.spies.rpcSpy.calls[0].args[1],
+        { p_model_ids: payload.selectedModels.map((model) => model.id) },
+        "startSession should validate the exact selected model ids.",
+    );
+    assertEquals(
+        mockAdminDbClientSetup.spies.getHistoricQueryBuilderSpies("dialectic_sessions", "insert")?.callCount,
+        1,
+        "The session insert should proceed after tier validation succeeds.",
+    );
+});
+
+Deno.test("startSession - Happy Path calls validate_model_tier_access with an empty model list before insert", async () => {
+    const mockUser: User = {
+        id: "user-tier-validation-empty-id",
+        app_metadata: {},
+        user_metadata: {},
+        aud: 'authenticated',
+        created_at: new Date().toISOString(),
+    };
+    const mockProjectId = "project-tier-validation-empty-id";
+    const mockProcessTemplateId = "proc-template-tier-validation-empty";
+    const mockInitialStageId = "stage-initial-tier-validation-empty";
+    const mockInitialStageName = "Empty Model Stage";
+    const mockInitialStageSlug = "empty-model-stage";
+    const mockSystemPromptId = "system-prompt-tier-validation-empty";
+    const mockNewSessionId = "session-tier-validation-empty-id";
+
+    const payload: StartSessionPayload = {
+        projectId: mockProjectId,
+        selectedModels: [],
+        sessionDescription: "Tier validation empty model session",
+        idempotencyKey: "idempotency-key-tier-validation-empty",
+    };
+
+    const mockAssembledPrompt: AssembledPrompt = {
+        promptContent: "This is the assembled seed prompt for the empty model path.",
+        source_prompt_resource_id: "tier-validation-empty-resource-id",
+    };
+    const mockAssembler = new MockPromptAssembler();
+    mockAssembler.assembleSeedPrompt = spy(() => Promise.resolve(mockAssembledPrompt));
+    const mockFileManager = new MockFileManagerService();
+
+    const mockAdminDbClientSetup = createMockSupabaseClient(mockUser.id, {
+        genericMockResults: {
+            dialectic_projects: {
+                select: async () => ({
+                    data: [{
+                        id: mockProjectId,
+                        user_id: mockUser.id,
+                        project_name: "Empty Model Project",
+                        initial_user_prompt: "Start with no selected models.",
+                        process_template_id: mockProcessTemplateId,
+                        dialectic_domains: { name: 'General' },
+                        selected_domain_id: 'd-1'
+                    }],
+                    error: null,
+                    status: 200,
+                    statusText: 'ok'
+                })
+            },
+            dialectic_process_templates: {
+                select: async () => ({
+                    data: [{ id: mockProcessTemplateId, name: 'Empty Model Template', starting_stage_id: mockInitialStageId }],
+                    error: null,
+                    status: 200,
+                    statusText: 'ok'
+                })
+            },
+            dialectic_stages: {
+                select: async () => ({
+                    data: [{ id: mockInitialStageId, slug: mockInitialStageSlug, display_name: mockInitialStageName, default_system_prompt_id: mockSystemPromptId }],
+                    error: null,
+                    status: 200,
+                    statusText: 'ok'
+                })
+            },
+            system_prompts: {
+                select: async () => ({
+                    data: [{ id: mockSystemPromptId, prompt_text: "Empty model prompt text." }],
+                    error: null,
+                    status: 200,
+                    statusText: 'ok'
+                })
+            },
+            domain_specific_prompt_overlays: {
+                select: async () => ({
+                    data: [{ overlay_values: { role: 'senior product strategist', stage_instructions: 'baseline', style_guide_markdown: '# Guide', expected_output_artifacts_json: '{}' } }],
+                    error: null,
+                    status: 200,
+                    statusText: 'ok'
+                })
+            },
+            dialectic_sessions: {
+                insert: async () => ({
+                    data: [{
+                        id: mockNewSessionId,
+                        project_id: mockProjectId,
+                        session_description: payload.sessionDescription,
+                        status: `pending_${mockInitialStageName}`,
+                        iteration_count: 1,
+                        associated_chat_id: null,
+                        current_stage_id: mockInitialStageId,
+                        selected_model_ids: [],
+                    }],
+                    error: null,
+                    status: 201,
+                    statusText: 'ok'
+                })
+            },
+            ai_providers: {
+                select: async () => ({
+                    data: [{
+                        id: 'embedding-model-empty',
+                        provider_max_input_tokens: 8000,
+                        config: {
+                            api_identifier: 'text-embedding-3-large',
+                            tokenization_strategy: {
+                                type: 'tiktoken',
+                                tiktoken_encoding_name: 'cl100k_base'
+                            }
+                        }
+                    }],
+                    error: null,
+                    status: 200,
+                    statusText: 'ok'
+                })
+            }
+        },
+        rpcResults: {
+            validate_model_tier_access: {
+                data: [{
+                    valid: true,
+                    user_tier_level: 0,
+                    max_models_per_project: 1,
+                    over_model_limit: false,
+                    disallowed_model_ids: [],
+                }],
+                error: null,
+            }
+        },
+        mockUser: mockUser,
+    });
+
+    const mockLogger = new MockLogger();
+    const deps: Partial<StartSessionDeps> = {
+        logger: mockLogger,
+        fileManager: mockFileManager,
+        promptAssembler: mockAssembler,
+        randomUUID: () => mockNewSessionId,
+    };
+
+    const adminDbClient = mockAdminDbClientSetup.client as unknown as SupabaseClient<Database>;
+    const result = await startSession(mockUser, adminDbClient, payload, deps);
+
+    assertExists(result.data, `Session start failed: ${result.error?.message}`);
+    assertEquals(result.error, undefined, "Error should be undefined when the selected model list is empty and tier validation passes.");
+    assertEquals(
+        mockAdminDbClientSetup.spies.rpcSpy.calls.length,
+        1,
+        "validate_model_tier_access should still be called when the selected model list is empty.",
+    );
+    assertEquals(
+        mockAdminDbClientSetup.spies.rpcSpy.calls[0].args[0],
+        "validate_model_tier_access",
+        "startSession should call the public model tier validation RPC for an empty selection.",
+    );
+    assertEquals(
+        mockAdminDbClientSetup.spies.rpcSpy.calls[0].args[1],
+        { p_model_ids: [] },
+        "startSession should pass an empty model id array to tier validation when no models are selected.",
+    );
+    assertEquals(
+        mockAdminDbClientSetup.spies.getHistoricQueryBuilderSpies("dialectic_sessions", "insert")?.callCount,
+        1,
+        "The session insert should still proceed when empty model selection is explicitly validated as allowed.",
     );
 });

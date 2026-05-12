@@ -208,16 +208,40 @@ export async function cloneProject(
             for (const originalSession of originalSessions) {
                 const newSessionId = crypto.randomUUID();
                 originalFullSessionIdToNewFullSessionIdMap.set(originalSession.id, newSessionId);
+                const originalSelectedModelIds = originalSession.selected_model_ids;
+                let selectedModelIdsForClone = originalSelectedModelIds;
+
+                if (originalSelectedModelIds !== null && originalSelectedModelIds.length > 0) {
+                    const { data: tierValidationData, error: tierValidationError } = await supabaseClient.rpc(
+                        'validate_model_tier_access',
+                        { p_model_ids: originalSelectedModelIds },
+                    );
+
+                    if (tierValidationError) {
+                        console.warn(`[cloneProject] Failed to validate model tier access for cloned session ${newSessionId}; using original selected_model_ids.`, tierValidationError);
+                    } else if (!Array.isArray(tierValidationData) || tierValidationData.length === 0) {
+                        console.warn(`[cloneProject] Model tier validation returned no result for cloned session ${newSessionId}; using original selected_model_ids.`);
+                    } else {
+                        const disallowedModelIds = tierValidationData[0].disallowed_model_ids;
+                        const excludedModelIds = originalSelectedModelIds.filter((modelId) => disallowedModelIds.includes(modelId));
+                        // TODO: Models excluded here because they exceed the cloning user's tier may leave the cloned project unable to continue without a valid model. The write-path guards on startSession and updateSessionModels will catch invalid usage at runtime, but the clone itself silently carries the gap. This is a deliberate filter-not-reject decision: a partial clone is preferable to no clone. Future work: before proceeding with the clone, notify the user of excluded models and offer resolution - either select an accessible replacement model or upgrade the plan. See Stream 3 / Gate models scope.
+                        selectedModelIdsForClone = originalSelectedModelIds.filter((modelId) => !disallowedModelIds.includes(modelId));
+
+                        if (excludedModelIds.length > 0) {
+                            console.warn(`[cloneProject] Excluded ${excludedModelIds.length} model(s) from cloned session ${newSessionId} - models above user tier ${tierValidationData[0].user_tier_level}: ${excludedModelIds.join(", ")}`);
+                        }
+                    }
+                }
                 const newSessionInsert: DialecticSessionInsert = {
                     id: newSessionId,
                     project_id: actualClonedProjectId,
-                    session_description: originalSession.session_description ?? undefined,
+                    session_description: originalSession.session_description,
                     iteration_count: originalSession.iteration_count,
-                    selected_model_ids: originalSession.selected_model_ids ?? undefined,
-                    user_input_reference_url: originalSession.user_input_reference_url ?? undefined,
+                    selected_model_ids: selectedModelIdsForClone,
+                    user_input_reference_url: originalSession.user_input_reference_url,
                     current_stage_id: originalSession.current_stage_id,
                     status: originalSession.status,
-                    associated_chat_id: originalSession.associated_chat_id ?? undefined,
+                    associated_chat_id: originalSession.associated_chat_id,
                 };
                 const { error: insertSessionError } = await supabaseClient.from('dialectic_sessions').insert(newSessionInsert);
                 if (insertSessionError) throw new Error(`Failed to clone session ${originalSession.id}.`);

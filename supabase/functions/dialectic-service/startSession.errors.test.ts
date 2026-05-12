@@ -37,6 +37,18 @@ Deno.test("startSession - Error: Project not found", async () => {
                 select: async () => ({ data: null, error: { message: "Not found", code: "PGRST116", name: "Not found" }, status: 404, statusText: 'not found' })
             }
         },
+        rpcResults: {
+            validate_model_tier_access: {
+                data: [{
+                    valid: true,
+                    user_tier_level: 1,
+                    max_models_per_project: 3,
+                    over_model_limit: false,
+                    disallowed_model_ids: [],
+                }],
+                error: null,
+            }
+        },
         mockUser: MOCK_USER,
     });
     const result = await startSession(MOCK_USER, mockAdminDbClientSetup.client as unknown as SupabaseClient<Database>, payload, { logger: { info: spy(), error: spy(), debug: spy(), warn: spy() }, fileManager: MOCK_FILE_MANAGER });
@@ -57,6 +69,18 @@ Deno.test("startSession - Error: Project is missing a process_template_id", asyn
                     status: 200,
                     statusText: 'ok'
                 })
+            }
+        },
+        rpcResults: {
+            validate_model_tier_access: {
+                data: [{
+                    valid: true,
+                    user_tier_level: 1,
+                    max_models_per_project: 3,
+                    over_model_limit: false,
+                    disallowed_model_ids: [],
+                }],
+                error: null,
             }
         },
         mockUser: MOCK_USER,
@@ -105,6 +129,18 @@ Deno.test("startSession - Error: Process template is missing a starting_stage_id
                 })
             },
         },
+        rpcResults: {
+            validate_model_tier_access: {
+                data: [{
+                    valid: true,
+                    user_tier_level: 1,
+                    max_models_per_project: 3,
+                    over_model_limit: false,
+                    disallowed_model_ids: [],
+                }],
+                error: null,
+            }
+        },
         mockUser: MOCK_USER,
     });
     const result = await startSession(MOCK_USER, mockAdminDbClientSetup.client as unknown as SupabaseClient<Database>, payload, { logger: { info: spy(), error: spy(), debug: spy(), warn: spy() }, fileManager: MOCK_FILE_MANAGER });
@@ -148,6 +184,18 @@ Deno.test("startSession - Error: Initial stage has no associated system prompt",
                     }],
                     error: null, status: 200, statusText: 'ok'
                 })
+            }
+        },
+        rpcResults: {
+            validate_model_tier_access: {
+                data: [{
+                    valid: true,
+                    user_tier_level: 1,
+                    max_models_per_project: 3,
+                    over_model_limit: false,
+                    disallowed_model_ids: [],
+                }],
+                error: null,
             }
         },
         mockUser: MOCK_USER,
@@ -201,6 +249,18 @@ Deno.test("startSession - Error: Database error on session insertion", async () 
                     }],
                     error: null, status: 200, statusText: 'ok'
                 })
+            }
+        },
+        rpcResults: {
+            validate_model_tier_access: {
+                data: [{
+                    valid: true,
+                    user_tier_level: 1,
+                    max_models_per_project: 3,
+                    over_model_limit: false,
+                    disallowed_model_ids: [],
+                }],
+                error: null,
             }
         },
         mockUser: MOCK_USER,
@@ -263,6 +323,18 @@ Deno.test("startSession - Error: Fails to assemble seed prompt and cleans up ses
             dialectic_sessions: {
                 insert: async () => ({ data: [{ id: mockNewSessionId, project_id: mockProjectId, current_stage_id: 'stage-1', iteration_count: 1, selected_model_ids: ['model-abc'] }], error: null, status: 201, statusText: 'created' }),
                 delete: spiedSessionDeleteFn // Use the spied function here
+            }
+        },
+        rpcResults: {
+            validate_model_tier_access: {
+                data: [{
+                    valid: true,
+                    user_tier_level: 1,
+                    max_models_per_project: 3,
+                    over_model_limit: false,
+                    disallowed_model_ids: [],
+                }],
+                error: null,
             }
         },
         mockUser: MOCK_USER,
@@ -436,6 +508,18 @@ Deno.test("startSession - includes idempotency_key in the insert call to dialect
                 delete: async () => ({ data: null, error: null, status: 204, statusText: "no content" })
             },
         },
+        rpcResults: {
+            validate_model_tier_access: {
+                data: [{
+                    valid: true,
+                    user_tier_level: 1,
+                    max_models_per_project: 3,
+                    over_model_limit: false,
+                    disallowed_model_ids: [],
+                }],
+                error: null,
+            }
+        },
         mockUser: MOCK_USER,
     };
     const payload: StartSessionPayload = { projectId: mockProjectId, selectedModels: [{ id: "model-abc", displayName: "Model ABC" }], idempotencyKey: mockIdempotencyKey };
@@ -536,6 +620,18 @@ Deno.test("startSession - on unique constraint violation (23505 on idempotency_k
                 },
             },
         },
+        rpcResults: {
+            validate_model_tier_access: {
+                data: [{
+                    valid: true,
+                    user_tier_level: 1,
+                    max_models_per_project: 3,
+                    over_model_limit: false,
+                    disallowed_model_ids: [],
+                }],
+                error: null,
+            }
+        },
         mockUser: MOCK_USER,
     };
     const payload: StartSessionPayload = { projectId: mockProjectId, selectedModels: [{ id: "model-abc", displayName: "Model ABC" }], idempotencyKey: mockIdempotencyKey };
@@ -551,4 +647,238 @@ Deno.test("startSession - on unique constraint violation (23505 on idempotency_k
     assertExists(result.data, "Should return existing session on 23505 instead of error");
     assertEquals(result.data.id, existingSessionId);
     assert(selectCallCount >= 1, "Select by idempotency_key should be called to fetch existing session");
+});
+
+Deno.test("startSession - Error: returns MODEL_TIER_DISALLOWED when tier validation rejects a selected model", async () => {
+    const mockProjectId = "project-tier-disallowed";
+    const payload: StartSessionPayload = {
+        projectId: mockProjectId,
+        selectedModels: [{ id: "model-disallowed", displayName: "Model Disallowed" }],
+        idempotencyKey: IDEM_KEY_ERRORS_TEST,
+    };
+    const mockAssembler = new MockPromptAssembler();
+    const mockAdminDbClientSetup = createMockSupabaseClient(MOCK_USER.id, {
+        genericMockResults: {
+            dialectic_projects: {
+                select: async () => ({
+                    data: [{ id: mockProjectId, user_id: MOCK_USER.id, process_template_id: "proc-template-ok", project_name: "test", initial_user_prompt: "test", dialectic_domains: { name: "test" }, selected_domain_id: "d-1" }],
+                    error: null,
+                    status: 200,
+                    statusText: "ok"
+                })
+            },
+            dialectic_process_templates: {
+                select: async () => ({
+                    data: [{ id: "proc-template-ok", name: "Test Template", starting_stage_id: "stage-1" }],
+                    error: null,
+                    status: 200,
+                    statusText: "ok"
+                })
+            },
+            dialectic_stages: {
+                select: async () => ({
+                    data: [{ id: "stage-1", display_name: "Hypothesis", slug: "hypothesis", default_system_prompt_id: "p-1" }],
+                    error: null,
+                    status: 200,
+                    statusText: "ok"
+                })
+            },
+            system_prompts: {
+                select: async () => ({ data: [{ id: "p-1", prompt_text: "test prompt" }], error: null, status: 200, statusText: "ok" })
+            },
+            domain_specific_prompt_overlays: {
+                select: async () => ({ data: [{ overlay_values: { role: "senior product strategist", stage_instructions: "baseline", style_guide_markdown: "# Guide", expected_output_artifacts_json: "{}" } }], error: null, status: 200, statusText: "ok" })
+            },
+            ai_providers: {
+                select: async () => ({
+                    data: [{ id: "embedding-model", api_identifier: "text-embedding-3-large", provider_max_input_tokens: 8000, config: { tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: "cl100k_base" } } }],
+                    error: null,
+                    status: 200,
+                    statusText: "ok"
+                })
+            },
+            dialectic_sessions: {
+                insert: async () => ({ data: [{ id: "session-should-not-insert" }], error: null, status: 201, statusText: "created" })
+            },
+        },
+        rpcResults: {
+            validate_model_tier_access: {
+                data: [{
+                    valid: false,
+                    user_tier_level: 1,
+                    max_models_per_project: 3,
+                    over_model_limit: false,
+                    disallowed_model_ids: ["model-disallowed"],
+                }],
+                error: null,
+            }
+        },
+        mockUser: MOCK_USER,
+    });
+    const result = await startSession(
+        MOCK_USER,
+        mockAdminDbClientSetup.client as unknown as SupabaseClient<Database>,
+        payload,
+        { logger: new MockLogger(), fileManager: MOCK_FILE_MANAGER, promptAssembler: mockAssembler, randomUUID: () => "session-should-not-insert" }
+    );
+    assertExists(result.error);
+    assertEquals(result.error?.code, "MODEL_TIER_DISALLOWED");
+    assertEquals(result.error?.status, 403);
+    assertEquals(mockAdminDbClientSetup.spies.rpcSpy.calls.length, 1);
+    assertEquals(mockAdminDbClientSetup.spies.getHistoricQueryBuilderSpies("dialectic_sessions", "insert")?.callCount, 0);
+});
+
+Deno.test("startSession - Error: returns MODEL_LIMIT_EXCEEDED when tier validation rejects model count", async () => {
+    const mockProjectId = "project-model-limit";
+    const payload: StartSessionPayload = {
+        projectId: mockProjectId,
+        selectedModels: [
+            { id: "model-1", displayName: "Model One" },
+            { id: "model-2", displayName: "Model Two" },
+        ],
+        idempotencyKey: IDEM_KEY_ERRORS_TEST,
+    };
+    const mockAssembler = new MockPromptAssembler();
+    const mockAdminDbClientSetup = createMockSupabaseClient(MOCK_USER.id, {
+        genericMockResults: {
+            dialectic_projects: {
+                select: async () => ({
+                    data: [{ id: mockProjectId, user_id: MOCK_USER.id, process_template_id: "proc-template-ok", project_name: "test", initial_user_prompt: "test", dialectic_domains: { name: "test" }, selected_domain_id: "d-1" }],
+                    error: null,
+                    status: 200,
+                    statusText: "ok"
+                })
+            },
+            dialectic_process_templates: {
+                select: async () => ({
+                    data: [{ id: "proc-template-ok", name: "Test Template", starting_stage_id: "stage-1" }],
+                    error: null,
+                    status: 200,
+                    statusText: "ok"
+                })
+            },
+            dialectic_stages: {
+                select: async () => ({
+                    data: [{ id: "stage-1", display_name: "Hypothesis", slug: "hypothesis", default_system_prompt_id: "p-1" }],
+                    error: null,
+                    status: 200,
+                    statusText: "ok"
+                })
+            },
+            system_prompts: {
+                select: async () => ({ data: [{ id: "p-1", prompt_text: "test prompt" }], error: null, status: 200, statusText: "ok" })
+            },
+            domain_specific_prompt_overlays: {
+                select: async () => ({ data: [{ overlay_values: { role: "senior product strategist", stage_instructions: "baseline", style_guide_markdown: "# Guide", expected_output_artifacts_json: "{}" } }], error: null, status: 200, statusText: "ok" })
+            },
+            ai_providers: {
+                select: async () => ({
+                    data: [{ id: "embedding-model", api_identifier: "text-embedding-3-large", provider_max_input_tokens: 8000, config: { tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: "cl100k_base" } } }],
+                    error: null,
+                    status: 200,
+                    statusText: "ok"
+                })
+            },
+            dialectic_sessions: {
+                insert: async () => ({ data: [{ id: "session-should-not-insert" }], error: null, status: 201, statusText: "created" })
+            },
+        },
+        rpcResults: {
+            validate_model_tier_access: {
+                data: [{
+                    valid: false,
+                    user_tier_level: 1,
+                    max_models_per_project: 1,
+                    over_model_limit: true,
+                    disallowed_model_ids: [],
+                }],
+                error: null,
+            }
+        },
+        mockUser: MOCK_USER,
+    });
+    const result = await startSession(
+        MOCK_USER,
+        mockAdminDbClientSetup.client as unknown as SupabaseClient<Database>,
+        payload,
+        { logger: new MockLogger(), fileManager: MOCK_FILE_MANAGER, promptAssembler: mockAssembler, randomUUID: () => "session-should-not-insert" }
+    );
+    assertExists(result.error);
+    assertEquals(result.error?.code, "MODEL_LIMIT_EXCEEDED");
+    assertEquals(result.error?.status, 403);
+    assertEquals(mockAdminDbClientSetup.spies.rpcSpy.calls.length, 1);
+    assertEquals(mockAdminDbClientSetup.spies.getHistoricQueryBuilderSpies("dialectic_sessions", "insert")?.callCount, 0);
+});
+
+Deno.test("startSession - Error: returns TIER_VALIDATION_FAILED when model tier validation RPC fails", async () => {
+    const mockProjectId = "project-tier-validation-rpc-error";
+    const payload: StartSessionPayload = {
+        projectId: mockProjectId,
+        selectedModels: [{ id: "model-abc", displayName: "Model ABC" }],
+        idempotencyKey: IDEM_KEY_ERRORS_TEST,
+    };
+    const mockAssembler = new MockPromptAssembler();
+    const mockAdminDbClientSetup = createMockSupabaseClient(MOCK_USER.id, {
+        genericMockResults: {
+            dialectic_projects: {
+                select: async () => ({
+                    data: [{ id: mockProjectId, user_id: MOCK_USER.id, process_template_id: "proc-template-ok", project_name: "test", initial_user_prompt: "test", dialectic_domains: { name: "test" }, selected_domain_id: "d-1" }],
+                    error: null,
+                    status: 200,
+                    statusText: "ok"
+                })
+            },
+            dialectic_process_templates: {
+                select: async () => ({
+                    data: [{ id: "proc-template-ok", name: "Test Template", starting_stage_id: "stage-1" }],
+                    error: null,
+                    status: 200,
+                    statusText: "ok"
+                })
+            },
+            dialectic_stages: {
+                select: async () => ({
+                    data: [{ id: "stage-1", display_name: "Hypothesis", slug: "hypothesis", default_system_prompt_id: "p-1" }],
+                    error: null,
+                    status: 200,
+                    statusText: "ok"
+                })
+            },
+            system_prompts: {
+                select: async () => ({ data: [{ id: "p-1", prompt_text: "test prompt" }], error: null, status: 200, statusText: "ok" })
+            },
+            domain_specific_prompt_overlays: {
+                select: async () => ({ data: [{ overlay_values: { role: "senior product strategist", stage_instructions: "baseline", style_guide_markdown: "# Guide", expected_output_artifacts_json: "{}" } }], error: null, status: 200, statusText: "ok" })
+            },
+            ai_providers: {
+                select: async () => ({
+                    data: [{ id: "embedding-model", api_identifier: "text-embedding-3-large", provider_max_input_tokens: 8000, config: { tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: "cl100k_base" } } }],
+                    error: null,
+                    status: 200,
+                    statusText: "ok"
+                })
+            },
+            dialectic_sessions: {
+                insert: async () => ({ data: [{ id: "session-should-not-insert" }], error: null, status: 201, statusText: "created" })
+            },
+        },
+        rpcResults: {
+            validate_model_tier_access: {
+                data: null,
+                error: new Error("Simulated tier validation failure"),
+            }
+        },
+        mockUser: MOCK_USER,
+    });
+    const result = await startSession(
+        MOCK_USER,
+        mockAdminDbClientSetup.client as unknown as SupabaseClient<Database>,
+        payload,
+        { logger: new MockLogger(), fileManager: MOCK_FILE_MANAGER, promptAssembler: mockAssembler, randomUUID: () => "session-should-not-insert" }
+    );
+    assertExists(result.error);
+    assertEquals(result.error?.code, "TIER_VALIDATION_FAILED");
+    assertEquals(result.error?.status, 500);
+    assertEquals(mockAdminDbClientSetup.spies.rpcSpy.calls.length, 1);
+    assertEquals(mockAdminDbClientSetup.spies.getHistoricQueryBuilderSpies("dialectic_sessions", "insert")?.callCount, 0);
 });

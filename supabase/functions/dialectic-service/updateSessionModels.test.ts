@@ -96,6 +96,18 @@ Deno.test("handleUpdateSessionModels - Happy Path: Successfully updates models",
                 select: async () => ({ data: mockCatalogRows, error: null, status: 200, statusText: 'OK', count: mockCatalogRows.length }),
             },
         },
+        rpcResults: {
+            validate_model_tier_access: {
+                data: [{
+                    valid: true,
+                    user_tier_level: 2,
+                    max_models_per_project: 5,
+                    over_model_limit: false,
+                    disallowed_model_ids: [],
+                }],
+                error: null,
+            },
+        },
         mockUser: mockUser,
     });
 
@@ -314,6 +326,18 @@ Deno.test("handleUpdateSessionModels - Error: DB Error on Session Update", async
                 select: async () => ({ data: [mockProject as DialecticProject], error: null, status: 200, statusText: 'OK', count: 1 }),
             },
         },
+        rpcResults: {
+            validate_model_tier_access: {
+                data: [{
+                    valid: true,
+                    user_tier_level: 2,
+                    max_models_per_project: 5,
+                    over_model_limit: false,
+                    disallowed_model_ids: [],
+                }],
+                error: null,
+            },
+        },
         mockUser: mockUser,
     });
     const adminDbClient = mockAdminDbClientSetup.client as unknown as SupabaseClient<Database>;
@@ -331,3 +355,369 @@ Deno.test("handleUpdateSessionModels - Error: DB Error on Session Update", async
         loggerSpy.restore();
     }
 }); 
+
+Deno.test("handleUpdateSessionModels - Happy Path: validates selected models against tier limits before update", async () => {
+    const mockUserId = "user-tier-validation-update-id";
+    const mockSessionId = "session-tier-validation-update-id";
+    const mockProjectId = "project-tier-validation-update-id";
+    const updatedModels = ["model-allowed-1", "model-allowed-2"];
+    const payload: UpdateSessionModelsPayload = {
+        sessionId: mockSessionId,
+        selectedModels: selectedModelsFromIds(updatedModels),
+    };
+    const mockUser: User = {
+        id: mockUserId,
+        app_metadata: {},
+        user_metadata: {},
+        aud: 'authenticated',
+        created_at: new Date().toISOString(),
+    };
+    const mockSessionBeforeUpdate: DialecticSession = {
+        id: mockSessionId,
+        project_id: mockProjectId,
+        session_description: "Session before update",
+        user_input_reference_url: null,
+        iteration_count: 1,
+        selected_models: selectedModelsFromIds(["model-old-1"]),
+        status: "active",
+        associated_chat_id: null,
+        current_stage_id: "stage-tier-validation",
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        viewing_stage_id: null,
+    };
+    const mockSessionRowAfterUpdate = {
+        id: mockSessionId,
+        project_id: mockProjectId,
+        session_description: "Session after update",
+        user_input_reference_url: null,
+        iteration_count: 2,
+        selected_model_ids: updatedModels,
+        status: "active",
+        associated_chat_id: "chat-tier-validation",
+        current_stage_id: "stage-tier-validation",
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+    };
+    const mockCatalogRows = updatedModels.map((id) => ({ id, name: id }));
+
+    const mockAdminDbClientSetup = createMockSupabaseClient(mockUserId, {
+        genericMockResults: {
+            dialectic_sessions: {
+                select: async (state: MockQueryBuilderState) => {
+                    if (state.filters.some((filter) => filter.column === 'id' && filter.value === mockSessionId)) {
+                        return { data: [mockSessionBeforeUpdate], error: null, status: 200, statusText: 'OK', count: 1 };
+                    }
+                    return { data: null, error: null, status: 200, statusText: 'OK', count: 0 };
+                },
+                update: async () => ({
+                    data: [mockSessionRowAfterUpdate],
+                    error: null,
+                    status: 200,
+                    statusText: 'OK',
+                    count: 1,
+                }),
+            },
+            dialectic_projects: {
+                select: async (state: MockQueryBuilderState) => {
+                    if (
+                        state.filters.some((filter) => filter.column === 'id' && filter.value === mockProjectId) &&
+                        state.filters.some((filter) => filter.column === 'user_id' && filter.value === mockUserId)
+                    ) {
+                        return { data: [{ id: mockProjectId, user_id: mockUserId }], error: null, status: 200, statusText: 'OK', count: 1 };
+                    }
+                    return { data: null, error: null, status: 200, statusText: 'OK', count: 0 };
+                },
+            },
+            ai_providers: {
+                select: async () => ({ data: mockCatalogRows, error: null, status: 200, statusText: 'OK', count: mockCatalogRows.length }),
+            },
+        },
+        rpcResults: {
+            validate_model_tier_access: {
+                data: [{
+                    valid: true,
+                    user_tier_level: 2,
+                    max_models_per_project: 3,
+                    over_model_limit: false,
+                    disallowed_model_ids: [],
+                }],
+                error: null,
+            },
+        },
+        mockUser: mockUser,
+    });
+
+    const adminDbClient = mockAdminDbClientSetup.client as unknown as SupabaseClient<Database>;
+    const result = await handleUpdateSessionModels(adminDbClient, payload, mockUserId);
+
+    assertExists(result.data, `Update failed: ${result.error?.message}`);
+    assertEquals(result.error, undefined);
+    assertEquals(result.status, 200);
+    assertEquals(result.data?.selected_models, payload.selectedModels);
+    assertEquals(mockAdminDbClientSetup.spies.rpcSpy.calls.length, 1);
+    assertEquals(mockAdminDbClientSetup.spies.rpcSpy.calls[0].args[0], "validate_model_tier_access");
+    assertEquals(
+        mockAdminDbClientSetup.spies.rpcSpy.calls[0].args[1],
+        { p_model_ids: updatedModels },
+    );
+    assertEquals(
+        mockAdminDbClientSetup.spies.getHistoricQueryBuilderSpies("dialectic_sessions", "update")?.callCount,
+        1,
+    );
+});
+
+Deno.test("handleUpdateSessionModels - Error: returns MODEL_TIER_DISALLOWED when tier validation rejects a selected model", async () => {
+    const mockUserId = "user-tier-disallowed-update-id";
+    const mockSessionId = "session-tier-disallowed-update-id";
+    const mockProjectId = "project-tier-disallowed-update-id";
+    const updatedModels = ["model-disallowed"];
+    const payload: UpdateSessionModelsPayload = {
+        sessionId: mockSessionId,
+        selectedModels: selectedModelsFromIds(updatedModels),
+    };
+    const mockUser: User = {
+        id: mockUserId,
+        app_metadata: {},
+        user_metadata: {},
+        aud: 'authenticated',
+        created_at: new Date().toISOString(),
+    };
+    const mockSessionBeforeUpdate: DialecticSession = {
+        id: mockSessionId,
+        project_id: mockProjectId,
+        session_description: "Session before disallowed update",
+        user_input_reference_url: null,
+        iteration_count: 1,
+        selected_models: [],
+        status: "active",
+        associated_chat_id: null,
+        current_stage_id: "stage-tier-disallowed",
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        viewing_stage_id: null,
+    };
+    const mockSessionRowAfterUpdate = {
+        id: mockSessionId,
+        project_id: mockProjectId,
+        session_description: "Session after disallowed update",
+        user_input_reference_url: null,
+        iteration_count: 2,
+        selected_model_ids: updatedModels,
+        status: "active",
+        associated_chat_id: null,
+        current_stage_id: "stage-tier-disallowed",
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+    };
+    const mockCatalogRows = updatedModels.map((id) => ({ id, name: id }));
+
+    const mockAdminDbClientSetup = createMockSupabaseClient(mockUserId, {
+        genericMockResults: {
+            dialectic_sessions: {
+                select: async () => ({ data: [mockSessionBeforeUpdate], error: null, status: 200, statusText: 'OK', count: 1 }),
+                update: async () => ({ data: [mockSessionRowAfterUpdate], error: null, status: 200, statusText: 'OK', count: 1 }),
+            },
+            dialectic_projects: {
+                select: async () => ({ data: [{ id: mockProjectId, user_id: mockUserId }], error: null, status: 200, statusText: 'OK', count: 1 }),
+            },
+            ai_providers: {
+                select: async () => ({ data: mockCatalogRows, error: null, status: 200, statusText: 'OK', count: mockCatalogRows.length }),
+            },
+        },
+        rpcResults: {
+            validate_model_tier_access: {
+                data: [{
+                    valid: false,
+                    user_tier_level: 1,
+                    max_models_per_project: 3,
+                    over_model_limit: false,
+                    disallowed_model_ids: updatedModels,
+                }],
+                error: null,
+            },
+        },
+        mockUser: mockUser,
+    });
+
+    const adminDbClient = mockAdminDbClientSetup.client as unknown as SupabaseClient<Database>;
+    const result = await handleUpdateSessionModels(adminDbClient, payload, mockUserId);
+
+    assertExists(result.error);
+    assertEquals(result.status, 403);
+    assertEquals(result.error?.code, "MODEL_TIER_DISALLOWED");
+    assertEquals(result.error?.details, [{ disallowed_model_ids: updatedModels, user_tier_level: 1 }]);
+    assertEquals(mockAdminDbClientSetup.spies.rpcSpy.calls.length, 1);
+    assertEquals(
+        mockAdminDbClientSetup.spies.getHistoricQueryBuilderSpies("dialectic_sessions", "update")?.callCount,
+        0,
+    );
+});
+
+Deno.test("handleUpdateSessionModels - Error: returns MODEL_LIMIT_EXCEEDED when tier validation rejects model count", async () => {
+    const mockUserId = "user-model-limit-update-id";
+    const mockSessionId = "session-model-limit-update-id";
+    const mockProjectId = "project-model-limit-update-id";
+    const updatedModels = ["model-limit-1", "model-limit-2"];
+    const payload: UpdateSessionModelsPayload = {
+        sessionId: mockSessionId,
+        selectedModels: selectedModelsFromIds(updatedModels),
+    };
+    const mockUser: User = {
+        id: mockUserId,
+        app_metadata: {},
+        user_metadata: {},
+        aud: 'authenticated',
+        created_at: new Date().toISOString(),
+    };
+    const mockSessionBeforeUpdate: DialecticSession = {
+        id: mockSessionId,
+        project_id: mockProjectId,
+        session_description: "Session before over-limit update",
+        user_input_reference_url: null,
+        iteration_count: 1,
+        selected_models: [],
+        status: "active",
+        associated_chat_id: null,
+        current_stage_id: "stage-model-limit",
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        viewing_stage_id: null,
+    };
+    const mockSessionRowAfterUpdate = {
+        id: mockSessionId,
+        project_id: mockProjectId,
+        session_description: "Session after over-limit update",
+        user_input_reference_url: null,
+        iteration_count: 2,
+        selected_model_ids: updatedModels,
+        status: "active",
+        associated_chat_id: null,
+        current_stage_id: "stage-model-limit",
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+    };
+    const mockCatalogRows = updatedModels.map((id) => ({ id, name: id }));
+
+    const mockAdminDbClientSetup = createMockSupabaseClient(mockUserId, {
+        genericMockResults: {
+            dialectic_sessions: {
+                select: async () => ({ data: [mockSessionBeforeUpdate], error: null, status: 200, statusText: 'OK', count: 1 }),
+                update: async () => ({ data: [mockSessionRowAfterUpdate], error: null, status: 200, statusText: 'OK', count: 1 }),
+            },
+            dialectic_projects: {
+                select: async () => ({ data: [{ id: mockProjectId, user_id: mockUserId }], error: null, status: 200, statusText: 'OK', count: 1 }),
+            },
+            ai_providers: {
+                select: async () => ({ data: mockCatalogRows, error: null, status: 200, statusText: 'OK', count: mockCatalogRows.length }),
+            },
+        },
+        rpcResults: {
+            validate_model_tier_access: {
+                data: [{
+                    valid: false,
+                    user_tier_level: 1,
+                    max_models_per_project: 1,
+                    over_model_limit: true,
+                    disallowed_model_ids: [],
+                }],
+                error: null,
+            },
+        },
+        mockUser: mockUser,
+    });
+
+    const adminDbClient = mockAdminDbClientSetup.client as unknown as SupabaseClient<Database>;
+    const result = await handleUpdateSessionModels(adminDbClient, payload, mockUserId);
+
+    assertExists(result.error);
+    assertEquals(result.status, 403);
+    assertEquals(result.error?.code, "MODEL_LIMIT_EXCEEDED");
+    assertEquals(result.error?.details, [{ over_model_limit: true, max_models_per_project: 1, user_tier_level: 1 }]);
+    assertEquals(mockAdminDbClientSetup.spies.rpcSpy.calls.length, 1);
+    assertEquals(
+        mockAdminDbClientSetup.spies.getHistoricQueryBuilderSpies("dialectic_sessions", "update")?.callCount,
+        0,
+    );
+});
+
+Deno.test("handleUpdateSessionModels - Error: returns TIER_VALIDATION_FAILED when model tier validation RPC fails", async () => {
+    const mockUserId = "user-tier-rpc-failed-update-id";
+    const mockSessionId = "session-tier-rpc-failed-update-id";
+    const mockProjectId = "project-tier-rpc-failed-update-id";
+    const updatedModels = ["model-rpc-failed"];
+    const payload: UpdateSessionModelsPayload = {
+        sessionId: mockSessionId,
+        selectedModels: selectedModelsFromIds(updatedModels),
+    };
+    const mockUser: User = {
+        id: mockUserId,
+        app_metadata: {},
+        user_metadata: {},
+        aud: 'authenticated',
+        created_at: new Date().toISOString(),
+    };
+    const mockSessionBeforeUpdate: DialecticSession = {
+        id: mockSessionId,
+        project_id: mockProjectId,
+        session_description: "Session before RPC failure",
+        user_input_reference_url: null,
+        iteration_count: 1,
+        selected_models: [],
+        status: "active",
+        associated_chat_id: null,
+        current_stage_id: "stage-rpc-failed",
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        viewing_stage_id: null,
+    };
+    const mockSessionRowAfterUpdate = {
+        id: mockSessionId,
+        project_id: mockProjectId,
+        session_description: "Session after RPC failure",
+        user_input_reference_url: null,
+        iteration_count: 2,
+        selected_model_ids: updatedModels,
+        status: "active",
+        associated_chat_id: null,
+        current_stage_id: "stage-rpc-failed",
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+    };
+    const mockCatalogRows = updatedModels.map((id) => ({ id, name: id }));
+
+    const mockAdminDbClientSetup = createMockSupabaseClient(mockUserId, {
+        genericMockResults: {
+            dialectic_sessions: {
+                select: async () => ({ data: [mockSessionBeforeUpdate], error: null, status: 200, statusText: 'OK', count: 1 }),
+                update: async () => ({ data: [mockSessionRowAfterUpdate], error: null, status: 200, statusText: 'OK', count: 1 }),
+            },
+            dialectic_projects: {
+                select: async () => ({ data: [{ id: mockProjectId, user_id: mockUserId }], error: null, status: 200, statusText: 'OK', count: 1 }),
+            },
+            ai_providers: {
+                select: async () => ({ data: mockCatalogRows, error: null, status: 200, statusText: 'OK', count: mockCatalogRows.length }),
+            },
+        },
+        rpcResults: {
+            validate_model_tier_access: {
+                data: null,
+                error: new Error("Simulated tier validation failure"),
+            },
+        },
+        mockUser: mockUser,
+    });
+
+    const adminDbClient = mockAdminDbClientSetup.client as unknown as SupabaseClient<Database>;
+    const result = await handleUpdateSessionModels(adminDbClient, payload, mockUserId);
+
+    assertExists(result.error);
+    assertEquals(result.status, 500);
+    assertEquals(result.error?.code, "TIER_VALIDATION_FAILED");
+    assertEquals(result.error?.details, undefined);
+    assertEquals(mockAdminDbClientSetup.spies.rpcSpy.calls.length, 1);
+    assertEquals(
+        mockAdminDbClientSetup.spies.getHistoricQueryBuilderSpies("dialectic_sessions", "update")?.callCount,
+        0,
+    );
+});
