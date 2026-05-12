@@ -30,6 +30,7 @@ const mockDbProviders: Tables<"ai_providers">[] = [
         is_default_embedding: false,
         is_default_generation: true,
         is_enabled: true,
+        min_plan_tier_level: 0,
         created_at: mockTimestamp,
         updated_at: mockTimestamp,
     },
@@ -44,6 +45,7 @@ const mockDbProviders: Tables<"ai_providers">[] = [
         is_default_embedding: false,
         is_default_generation: false,
         is_enabled: false,
+        min_plan_tier_level: 20,
         created_at: mockTimestamp,
         updated_at: mockTimestamp,
     },
@@ -58,6 +60,7 @@ const mockDbProviders: Tables<"ai_providers">[] = [
         is_default_embedding: false,
         is_default_generation: false,
         is_enabled: true,
+        min_plan_tier_level: 10,
         created_at: mockTimestamp,
         updated_at: mockTimestamp,
     },
@@ -72,6 +75,7 @@ const mockDbProviders: Tables<"ai_providers">[] = [
         is_default_embedding: false,
         is_default_generation: false,
         is_enabled: true,
+        min_plan_tier_level: 30,
         created_at: mockTimestamp,
         updated_at: mockTimestamp,
     },
@@ -86,6 +90,7 @@ const mockDbProviders: Tables<"ai_providers">[] = [
         is_default_embedding: false,
         is_default_generation: false,
         is_enabled: true,
+        min_plan_tier_level: 0,
         created_at: mockTimestamp,
         updated_at: mockTimestamp,
     },
@@ -100,6 +105,7 @@ const mockDbProviders: Tables<"ai_providers">[] = [
         is_default_embedding: false,
         is_default_generation: false,
         is_enabled: true,
+        min_plan_tier_level: 0,
         created_at: mockTimestamp,
         updated_at: mockTimestamp,
     },
@@ -114,6 +120,7 @@ const mockDbProviders: Tables<"ai_providers">[] = [
         is_default_embedding: false,
         is_default_generation: false,
         is_enabled: true,
+        min_plan_tier_level: 0,
         created_at: mockTimestamp,
         updated_at: mockTimestamp,
     },
@@ -128,6 +135,7 @@ const mockDbProviders: Tables<"ai_providers">[] = [
         is_default_embedding: false,
         is_default_generation: false,
         is_enabled: true,
+        min_plan_tier_level: 10,
         created_at: mockTimestamp,
         updated_at: mockTimestamp,
     },
@@ -142,6 +150,7 @@ const mockDbProviders: Tables<"ai_providers">[] = [
         is_default_embedding: false,
         is_default_generation: false,
         is_enabled: false,
+        min_plan_tier_level: 0,
         created_at: mockTimestamp,
         updated_at: mockTimestamp,
     },
@@ -195,6 +204,11 @@ function assertProviderQueryFilters(
     const queryBuilderSpies: ReturnType<typeof createMockSupabaseClient>["spies"]["getLatestQueryBuilderSpies"] extends (...args: never[]) => infer TResult ? TResult : never =
         clientSpies.getLatestQueryBuilderSpies("ai_providers");
     assertExists(queryBuilderSpies);
+    assertExists(queryBuilderSpies.select);
+    assertSpyCalls(queryBuilderSpies.select, 1);
+    assertSpyCall(queryBuilderSpies.select, 0, {
+        args: ["*"],
+    });
     assertExists(queryBuilderSpies.eq);
     assertSpyCalls(queryBuilderSpies.eq, 2);
     assertSpyCall(queryBuilderSpies.eq, 0, { args: ["is_active", true] });
@@ -327,6 +341,34 @@ Deno.test("ai-providers Function Tests", async (t) => {
         assert(!body.providers.some((providerRow) => providerRow.id === "9"), "Provider ID 9 should be filtered");
         assert(getEnvSpy.calls.some((call) => call.args[0] === "OPENAI_API_KEY"));
         assert(getEnvSpy.calls.some((call) => call.args[0] === "GOOGLE_API_KEY"));
+    });
+
+    await t.step("GET Success - response items include min_plan_tier_level as a number", async () => {
+        const envVars = {
+            SUPABASE_URL: mockSupabaseUrl,
+            SUPABASE_ANON_KEY: mockAnonKey,
+            OPENAI_API_KEY: mockOpenAiKey,
+            GOOGLE_API_KEY: mockGoogleKey,
+        };
+        const { deps } = createTestDeps(
+            [...mockDbProviders],
+            null,
+            envVars,
+        );
+
+        const req = createUserScopedGetRequest();
+        const response = await mainHandler(req, deps);
+        const body: { providers: Tables<"ai_providers">[] } = await response.json();
+        const openAiProvider: Tables<"ai_providers"> | undefined = body.providers.find((providerRow) => providerRow.id === "1");
+        const googleProvider: Tables<"ai_providers"> | undefined = body.providers.find((providerRow) => providerRow.id === "3");
+
+        assertEquals(response.status, 200);
+        assertExists(openAiProvider);
+        assertExists(googleProvider);
+        assertEquals(typeof openAiProvider.min_plan_tier_level, "number");
+        assertEquals(typeof googleProvider.min_plan_tier_level, "number");
+        assertEquals(openAiProvider.min_plan_tier_level, 0);
+        assertEquals(googleProvider.min_plan_tier_level, 10);
     });
 
     await t.step("GET Filtering - Only OpenAI Key Set: Returns active, enabled OpenAI providers", async () => {

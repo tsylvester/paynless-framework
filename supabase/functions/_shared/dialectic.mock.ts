@@ -2,25 +2,21 @@ import { spy, type Spy } from "https://deno.land/std@0.218.2/testing/mock.ts";
 import type {
     DialecticProject,
     CreateProjectPayload,
-    // ApiResponse is not a generic type here; responses are specific
-    GetContributionContentSignedUrlPayload, // For the payload, actual response type will be simpler
     StartSessionPayload,
     DialecticSession,
     AIModelCatalogEntry,
     DomainOverlayDescriptor,
     DialecticProjectResource,
-    GenerateContributionsPayload, // Corrected name
-    GenerateContributionsSuccessResponse, // Corrected name
+    GenerateContributionsPayload, 
+    GenerateContributionsSuccessResponse, 
     SubmitStageResponsesPayload, 
     SubmitStageResponsesResponse, 
     SaveContributionEditPayload,
     DialecticContribution,
-    // DomainDescriptor is not from dialectic.interface.ts, used in ActionHandlers
     UpdateProjectDomainPayload,
     GetProjectResourceContentPayload,
     GetProjectResourceContentResponse,
-    // CloneProjectResult is not from dialectic.interface.ts, used in ActionHandlers
-    DialecticStage // For listAvailableDomains payload
+    DialecticStage 
 } from '../dialectic-service/dialectic.interface.ts';
 
 // 1. Define Function Signature Types

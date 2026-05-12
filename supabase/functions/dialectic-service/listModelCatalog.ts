@@ -7,6 +7,11 @@ import { logger } from "../_shared/logger.ts";
 type AiProvidersRow = Database["public"]["Tables"]["ai_providers"]["Row"];
 
 function rowToCatalogEntry(row: AiProvidersRow): AIModelCatalogEntry {
+
+  if (!row.id || !row.name || !row.api_identifier || !row.provider) {
+    throw new Error("Invalid row data for catalog entry.");
+  }
+
   const entireRow: AiProvidersRow = {
     id: row.id,
     name: row.name,
@@ -20,11 +25,16 @@ function rowToCatalogEntry(row: AiProvidersRow): AIModelCatalogEntry {
     is_enabled: row.is_enabled,
     created_at: row.created_at,
     updated_at: row.updated_at,
+    min_plan_tier_level: row.min_plan_tier_level,
   };
+  
+  if (!entireRow.id || !entireRow.name || !entireRow.api_identifier || !entireRow.provider) {
+    throw new Error("Invalid row data for catalog entry.");
+  }
 
   const modelCatalogEntry: AIModelCatalogEntry = {
     id: entireRow.id,
-    provider_name: entireRow.provider ?? "",
+    provider_name: entireRow.provider,
     model_name: entireRow.name,
     api_identifier: entireRow.api_identifier,
     description: entireRow.description,
@@ -38,6 +48,7 @@ function rowToCatalogEntry(row: AiProvidersRow): AIModelCatalogEntry {
     created_at: entireRow.created_at,
     updated_at: entireRow.updated_at,
     is_default_generation: entireRow.is_default_generation,
+    min_plan_tier_level: entireRow.min_plan_tier_level,
   };
 
   return modelCatalogEntry;

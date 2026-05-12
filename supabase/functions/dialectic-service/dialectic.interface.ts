@@ -300,6 +300,7 @@ export interface AIModelCatalogEntry {
 	created_at: string;
 	updated_at: string;
 	is_default_generation: boolean;
+	min_plan_tier_level: number | null;
 }
 
 // Defines the structured contribution object used within the service and for API responses,
