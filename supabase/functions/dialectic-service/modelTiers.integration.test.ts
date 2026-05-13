@@ -1,421 +1,281 @@
 import { assertEquals, assertExists } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import type { SupabaseClient, User } from "npm:@supabase/supabase-js@2";
-import type { Database, Tables } from "../types_db.ts";
+import type { User } from "npm:@supabase/supabase-js@2";
 import { startSession } from "./startSession.ts";
 import { handleUpdateSessionModels } from "./updateSessionModels.ts";
 import { cloneProject } from "./cloneProject.ts";
 import type { StartSessionPayload, UpdateSessionModelsPayload, SelectedModels } from "./dialectic.interface.ts";
-import type { ProjectContext } from "../_shared/prompt-assembler/prompt-assembler.interface.ts";
-import { createMockSupabaseClient, type MockSupabaseDataConfig, type MockQueryBuilderState } from "../_shared/supabase.mock.ts";
-import { createMockFileManagerService } from "../_shared/services/file_manager.mock.ts";
-import { MockPromptAssembler } from "../_shared/prompt-assembler/prompt-assembler.mock.ts";
-import { MockLogger } from "../_shared/logger.mock.ts";
+import {
+    initializeTestDeps,
+    coreInitializeTestStep,
+    coreCleanupTestResources,
+    registerUndoAction,
+} from "../_shared/_integration.test.utils.ts";
+import { FileManagerService } from "../_shared/services/file_manager.ts";
+import { constructStoragePath } from "../_shared/utils/path_constructor.ts";
+import { logger } from "../_shared/logger.ts";
+import { assembleChunks } from "../_shared/utils/assembleChunks/assembleChunks.ts";
 
-const FREE_USER: User = {
-    id: "free-user-model-tier-int",
-    app_metadata: {},
-    user_metadata: {},
-    aud: "authenticated",
-    created_at: new Date().toISOString(),
-};
+// OPENAI_API_KEY must be set to any non-empty string in the test environment.
+// startSession constructs the embedding adapter before the tier guard fires; the adapter
+// is never invoked because the tier check returns early on the disallowed model.
 
-const PREMIUM_MODEL_ID = "premium-model-tier-int";
-const PREMIUM_SELECTED_MODELS: SelectedModels[] = [
-    { id: PREMIUM_MODEL_ID, displayName: "Premium Tier Model" },
-];
+Deno.test("modelTiers integration: tier guard fires via real userClient RPC", async (t) => {
+    initializeTestDeps();
 
-Deno.test("modelTiers integration: startSession -> updateSessionModels -> cloneProject", async (t) => {
-    await t.step("startSession rejects a premium-tier model for a free-tier user and does not create a session", async () => {
-        const startProjectId = "project-model-tier-start-int";
-        const startSessionPayload: StartSessionPayload = {
-            projectId: startProjectId,
-            selectedModels: PREMIUM_SELECTED_MODELS,
-            idempotencyKey: "idem-model-tier-start-int",
-        };
-        const startProject: ProjectContext = {
-            id: startProjectId,
-            user_id: FREE_USER.id,
-            project_name: "Model Tier Start Project",
-            initial_user_prompt: "Start project prompt",
-            process_template_id: "process-template-model-tier-int",
-            selected_domain_id: "domain-model-tier-int",
-            dialectic_domains: { name: "General" },
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-            initial_prompt_resource_id: null,
-            repo_url: null,
-            selected_domain_overlay_id: null,
-            user_domain_overlay_values: null,
+    const { primaryUserId, primaryUserClient, adminClient } = await coreInitializeTestStep({}, "global");
+
+    const { data: { user: primaryUser }, error: getUserError } = await primaryUserClient.auth.getUser();
+    if (getUserError || !primaryUser) {
+        throw new Error(`Failed to retrieve test user from JWT: ${getUserError?.message}`);
+    }
+    const user: User = primaryUser;
+
+    // --- Resolve pre-seeded reference data by name/slug at runtime ---
+
+    const { data: premiumModelRow, error: premiumModelError } = await adminClient
+        .from("ai_providers")
+        .select("id")
+        .eq("api_identifier", "anthropic-claude-opus-4-6")
+        .single();
+    if (premiumModelError || !premiumModelRow) {
+        throw new Error(`Seeded premium model 'anthropic-claude-opus-4-6' not found: ${premiumModelError?.message}`);
+    }
+    const premiumModelId: string = premiumModelRow.id;
+
+    const { data: domainRow, error: domainError } = await adminClient
+        .from("dialectic_domains")
+        .select("id")
+        .eq("name", "Software Development")
+        .single();
+    if (domainError || !domainRow) {
+        throw new Error(`Seeded domain 'Software Development' not found: ${domainError?.message}`);
+    }
+    const domainId: string = domainRow.id;
+
+    const { data: templateRow, error: templateError } = await adminClient
+        .from("dialectic_process_templates")
+        .select("id")
+        .not("starting_stage_id", "is", null)
+        .limit(1)
+        .single();
+    if (templateError || !templateRow) {
+        throw new Error(`No seeded process template with starting_stage_id found: ${templateError?.message}`);
+    }
+    const templateId: string = templateRow.id;
+
+    const { data: stageRow, error: stageError } = await adminClient
+        .from("dialectic_stages")
+        .select("id")
+        .eq("slug", "thesis")
+        .single();
+    if (stageError || !stageRow) {
+        throw new Error(`Seeded thesis stage not found: ${stageError?.message}`);
+    }
+    const stageId: string = stageRow.id;
+
+    // --- Insert shared test project (owned by the free-tier test user) ---
+
+    const projectId: string = crypto.randomUUID();
+    const { error: projectInsertError } = await adminClient
+        .from("dialectic_projects")
+        .insert({
+            id: projectId,
+            user_id: primaryUserId,
+            project_name: "Model Tier Integration Test Project",
+            initial_user_prompt: "Integration test: verify tier guard rejects disallowed models.",
+            process_template_id: templateId,
+            selected_domain_id: domainId,
             status: "draft",
-            idempotency_key: null,
-        };
-        const startSessionConfig: MockSupabaseDataConfig = {
-            genericMockResults: {
-                dialectic_projects: {
-                    select: async () => ({
-                        data: [startProject],
-                        error: null,
-                        count: 1,
-                        status: 200,
-                        statusText: "OK",
-                    }),
-                },
-                dialectic_process_templates: {
-                    select: async () => ({
-                        data: [{ id: "process-template-model-tier-int", name: "Integration Template", starting_stage_id: "stage-model-tier-int" }],
-                        error: null,
-                        count: 1,
-                        status: 200,
-                        statusText: "OK",
-                    }),
-                },
-                dialectic_stages: {
-                    select: async () => ({
-                        data: [{ id: "stage-model-tier-int", slug: "hypothesis", display_name: "Hypothesis", default_system_prompt_id: "system-prompt-model-tier-int" }],
-                        error: null,
-                        count: 1,
-                        status: 200,
-                        statusText: "OK",
-                    }),
-                },
-                system_prompts: {
-                    select: async () => ({
-                        data: [{ id: "system-prompt-model-tier-int", prompt_text: "Integration system prompt" }],
-                        error: null,
-                        count: 1,
-                        status: 200,
-                        statusText: "OK",
-                    }),
-                },
-                domain_specific_prompt_overlays: {
-                    select: async () => ({
-                        data: [{ overlay_values: { role: "senior product strategist", stage_instructions: "baseline", style_guide_markdown: "# Guide", expected_output_artifacts_json: "{}" } }],
-                        error: null,
-                        count: 1,
-                        status: 200,
-                        statusText: "OK",
-                    }),
-                },
-                ai_providers: {
-                    select: async () => ({
-                        data: [{
-                            id: "embedding-model-tier-int",
-                            api_identifier: "text-embedding-3-large",
-                            provider_max_input_tokens: 8000,
-                            config: {
-                                tokenization_strategy: {
-                                    type: "tiktoken",
-                                    tiktoken_encoding_name: "cl100k_base",
-                                },
-                            },
-                        }],
-                        error: null,
-                        count: 1,
-                        status: 200,
-                        statusText: "OK",
-                    }),
-                },
-                dialectic_sessions: {
-                    insert: async () => ({
-                        data: [{ id: "session-should-not-exist" }],
-                        error: null,
-                        count: 1,
-                        status: 201,
-                        statusText: "Created",
-                    }),
-                },
-            },
-            rpcResults: {
-                validate_model_tier_access: {
-                    data: [{
-                        valid: false,
-                        user_tier_level: 0,
-                        max_models_per_project: 1,
-                        over_model_limit: false,
-                        disallowed_model_ids: [PREMIUM_MODEL_ID],
-                    }],
-                    error: null,
-                },
-            },
-            mockUser: FREE_USER,
-        };
-        const startSetup = createMockSupabaseClient(FREE_USER.id, startSessionConfig);
-        const startClient: SupabaseClient<Database> = startSetup.client as unknown as SupabaseClient<Database>;
-        const startFileManager = createMockFileManagerService();
-        const startPromptAssembler = new MockPromptAssembler(startClient, startFileManager);
-        const startLogger = new MockLogger();
-
-        const startResult = await startSession(
-            FREE_USER,
-            startClient,
-            startSessionPayload,
-            {
-                logger: startLogger,
-                fileManager: startFileManager,
-                promptAssembler: startPromptAssembler,
-                randomUUID: () => "session-should-not-exist",
-            },
-        );
-
-        assertExists(startResult.error);
-        assertEquals(startResult.error?.code, "MODEL_TIER_DISALLOWED");
-        assertEquals(startSetup.spies.rpcSpy.calls.length, 1);
-        assertEquals(
-            startSetup.spies.getHistoricQueryBuilderSpies("dialectic_sessions", "insert")?.callCount,
-            0,
-        );
+        });
+    if (projectInsertError) {
+        throw new Error(`Failed to insert test project: ${projectInsertError.message}`);
+    }
+    registerUndoAction({
+        type: "DELETE_CREATED_ROW",
+        tableName: "dialectic_projects",
+        criteria: { id: projectId },
+        scope: "global",
     });
 
-    await t.step("handleUpdateSessionModels rejects a premium-tier model for a free-tier user and does not update the session", async () => {
-        const updateProjectId = "project-model-tier-update-int";
-        const updateSessionId = "session-model-tier-update-int";
-        const updatePayload: UpdateSessionModelsPayload = {
-            sessionId: updateSessionId,
-            selectedModels: PREMIUM_SELECTED_MODELS,
-        };
-        const existingSession: Tables<"dialectic_sessions"> = {
-            id: updateSessionId,
-            project_id: updateProjectId,
-            session_description: "Existing integration session",
-            user_input_reference_url: null,
-            iteration_count: 1,
-            selected_model_ids: ["free-model-tier-int"],
-            status: "active",
-            associated_chat_id: null,
-            current_stage_id: "stage-model-tier-update-int",
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-            idempotency_key: null,
-            viewing_stage_id: null,
-        };
-        const updateConfig: MockSupabaseDataConfig = {
-            genericMockResults: {
-                dialectic_sessions: {
-                    select: async () => ({
-                        data: [existingSession],
-                        error: null,
-                        count: 1,
-                        status: 200,
-                        statusText: "OK",
-                    }),
-                    update: async () => ({
-                        data: [existingSession],
-                        error: null,
-                        count: 1,
-                        status: 200,
-                        statusText: "OK",
-                    }),
-                },
-                dialectic_projects: {
-                    select: async () => ({
-                        data: [{ id: updateProjectId, user_id: FREE_USER.id }],
-                        error: null,
-                        count: 1,
-                        status: 200,
-                        statusText: "OK",
-                    }),
-                },
-            },
-            rpcResults: {
-                validate_model_tier_access: {
-                    data: [{
-                        valid: false,
-                        user_tier_level: 0,
-                        max_models_per_project: 1,
-                        over_model_limit: false,
-                        disallowed_model_ids: [PREMIUM_MODEL_ID],
-                    }],
-                    error: null,
-                },
-            },
-            mockUser: FREE_USER,
-        };
-        const updateSetup = createMockSupabaseClient(FREE_USER.id, updateConfig);
-        const updateClient: SupabaseClient<Database> = updateSetup.client as unknown as SupabaseClient<Database>;
+    // -------------------------------------------------------------------------
+    // Step 1: startSession rejects a premium-tier model for a free-tier user
+    // -------------------------------------------------------------------------
+    await t.step(
+        "startSession rejects a premium-tier model for a free-tier user and does not create a session",
+        async () => {
+            const premiumModel: SelectedModels = { id: premiumModelId, displayName: "Opus 4.6 (Premium)" };
+            const payload: StartSessionPayload = {
+                projectId,
+                selectedModels: [premiumModel],
+                idempotencyKey: "tier-int-test-start-session",
+            };
 
-        const updateResult = await handleUpdateSessionModels(updateClient, updatePayload, FREE_USER.id);
+            const result = await startSession(user, adminClient, primaryUserClient, payload);
 
-        assertExists(updateResult.error);
-        assertEquals(updateResult.error?.code, "MODEL_TIER_DISALLOWED");
-        assertEquals(updateSetup.spies.rpcSpy.calls.length, 1);
-        assertEquals(
-            updateSetup.spies.getHistoricQueryBuilderSpies("dialectic_sessions", "update")?.callCount,
-            0,
-        );
-    });
+            assertExists(result.error);
+            assertEquals(result.error?.code, "MODEL_TIER_DISALLOWED");
 
-    await t.step("cloneProject filters a premium-tier model out of cloned sessions for a free-tier user", async () => {
-        const originalProjectId = "project-model-tier-clone-original-int";
-        const clonedProjectName = "Cloned Model Tier Project";
-        const originalProject: Tables<"dialectic_projects"> = {
-            id: originalProjectId,
-            user_id: FREE_USER.id,
-            project_name: "Original Model Tier Project",
-            initial_user_prompt: "Clone project prompt",
-            process_template_id: "process-template-model-tier-clone-int",
-            selected_domain_id: "domain-model-tier-clone-int",
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-            initial_prompt_resource_id: null,
-            repo_url: null,
-            selected_domain_overlay_id: null,
-            user_domain_overlay_values: null,
-            status: "active",
-            idempotency_key: null,
-        };
-        const originalSession: Tables<"dialectic_sessions"> = {
-            id: "session-model-tier-clone-original-int",
-            project_id: originalProjectId,
-            session_description: "Original cloned session",
-            user_input_reference_url: null,
-            iteration_count: 1,
-            selected_model_ids: [PREMIUM_MODEL_ID],
-            status: "active",
-            associated_chat_id: null,
-            current_stage_id: "stage-model-tier-clone-int",
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-            idempotency_key: null,
-            viewing_stage_id: null,
-        };
-        const insertedSelectedModelIds: Array<string[] | null | undefined> = [];
-        let clonedProjectId = "";
+            const { data: sessions, error: sessionQueryError } = await adminClient
+                .from("dialectic_sessions")
+                .select("id")
+                .eq("project_id", projectId)
+                .eq("idempotency_key", "tier-int-test-start-session");
+            if (sessionQueryError) {
+                throw new Error(`Failed to query sessions after rejection: ${sessionQueryError.message}`);
+            }
+            assertEquals(sessions?.length ?? 0, 0);
+        },
+    );
 
-        const cloneConfig: MockSupabaseDataConfig = {
-            genericMockResults: {
-                dialectic_projects: {
-                    select: async (state: MockQueryBuilderState) => {
-                        if (state.filters.some((filter) => filter.column === "id" && filter.value === originalProjectId)) {
-                            return {
-                                data: [originalProject],
-                                error: null,
-                                count: 1,
-                                status: 200,
-                                statusText: "OK",
-                            };
-                        }
-                        if (state.filters.some((filter) => filter.column === "id" && filter.value === clonedProjectId)) {
-                            return {
-                                data: [{ ...originalProject, id: clonedProjectId, project_name: clonedProjectName }],
-                                error: null,
-                                count: 1,
-                                status: 200,
-                                statusText: "OK",
-                            };
-                        }
-                        return {
-                            data: [],
-                            error: null,
-                            count: 0,
-                            status: 200,
-                            statusText: "OK",
-                        };
-                    },
-                    insert: async (state: MockQueryBuilderState) => {
-                        const insertData = Array.isArray(state.insertData) ? state.insertData[0] : state.insertData;
-                        if (insertData && typeof insertData === "object" && "id" in insertData && typeof insertData.id === "string") {
-                            clonedProjectId = insertData.id;
-                        }
-                        return {
-                            data: [{ ...originalProject, ...(insertData && typeof insertData === "object" ? insertData : {}), project_name: clonedProjectName }],
-                            error: null,
-                            count: 1,
-                            status: 201,
-                            statusText: "Created",
-                        };
-                    },
-                },
-                dialectic_sessions: {
-                    select: async () => ({
-                        data: [originalSession],
-                        error: null,
-                        count: 1,
-                        status: 200,
-                        statusText: "OK",
-                    }),
-                    insert: async (state: MockQueryBuilderState) => {
-                        const insertData = Array.isArray(state.insertData) ? state.insertData[0] : state.insertData;
-                        if (insertData && typeof insertData === "object" && "selected_model_ids" in insertData) {
-                            const selectedModelIds = insertData.selected_model_ids;
-                            if (selectedModelIds === null || selectedModelIds === undefined || Array.isArray(selectedModelIds)) {
-                                insertedSelectedModelIds.push(selectedModelIds);
-                            }
-                        }
-                        return {
-                            data: [{ ...originalSession, ...(insertData && typeof insertData === "object" ? insertData : {}), project_id: clonedProjectId }],
-                            error: null,
-                            count: 1,
-                            status: 201,
-                            statusText: "Created",
-                        };
-                    },
-                },
-                dialectic_project_resources: {
-                    select: async () => ({
-                        data: [],
-                        error: null,
-                        count: 0,
-                        status: 200,
-                        statusText: "OK",
-                    }),
-                },
-                dialectic_contributions: {
-                    select: async () => ({
-                        data: [],
-                        error: null,
-                        count: 0,
-                        status: 200,
-                        statusText: "OK",
-                    }),
-                },
-                dialectic_feedback: {
-                    select: async () => ({
-                        data: [],
-                        error: null,
-                        count: 0,
-                        status: 200,
-                        statusText: "OK",
-                    }),
-                },
-                dialectic_memory: {
-                    select: async () => ({
-                        data: [],
-                        error: null,
-                        count: 0,
-                        status: 200,
-                        statusText: "OK",
-                    }),
-                },
-            },
-            rpcResults: {
-                validate_model_tier_access: {
-                    data: [{
-                        valid: false,
-                        user_tier_level: 0,
-                        max_models_per_project: 1,
-                        over_model_limit: false,
-                        disallowed_model_ids: [PREMIUM_MODEL_ID],
-                    }],
-                    error: null,
-                },
-            },
-            mockUser: FREE_USER,
-        };
-        const cloneSetup = createMockSupabaseClient(FREE_USER.id, cloneConfig);
-        const cloneClient: SupabaseClient<Database> = cloneSetup.client as unknown as SupabaseClient<Database>;
-        const cloneFileManager = createMockFileManagerService();
+    // -------------------------------------------------------------------------
+    // Step 2: handleUpdateSessionModels rejects a premium-tier model
+    // -------------------------------------------------------------------------
+    await t.step(
+        "handleUpdateSessionModels rejects a premium-tier model for a free-tier user and does not update the session",
+        async () => {
+            const { data: freeModelRow, error: freeModelError } = await adminClient
+                .from("ai_providers")
+                .select("id")
+                .eq("min_plan_tier_level", 0)
+                .eq("is_active", true)
+                .limit(1)
+                .single();
+            if (freeModelError || !freeModelRow) {
+                throw new Error(`No active free-tier model found for session seed: ${freeModelError?.message}`);
+            }
+            const freeModelId: string = freeModelRow.id;
 
-        const cloneResult = await cloneProject(
-            cloneClient,
-            cloneFileManager,
-            originalProjectId,
-            clonedProjectName,
-            FREE_USER.id,
-        );
+            const sessionId: string = crypto.randomUUID();
+            const { error: sessionInsertError } = await adminClient
+                .from("dialectic_sessions")
+                .insert({
+                    id: sessionId,
+                    project_id: projectId,
+                    session_description: "Tier guard update test session",
+                    iteration_count: 1,
+                    selected_model_ids: [freeModelId],
+                    current_stage_id: stageId,
+                    status: "active",
+                });
+            if (sessionInsertError) {
+                throw new Error(`Failed to insert test session: ${sessionInsertError.message}`);
+            }
+            registerUndoAction({
+                type: "DELETE_CREATED_ROW",
+                tableName: "dialectic_sessions",
+                criteria: { id: sessionId },
+                scope: "global",
+            });
 
-        assertExists(cloneResult.data);
-        assertEquals(cloneResult.error, null);
-        assertEquals(insertedSelectedModelIds, [[]]);
-        assertEquals(cloneSetup.spies.rpcSpy.calls.length, 1);
-    });
+            const premiumModel: SelectedModels = { id: premiumModelId, displayName: "Opus 4.6 (Premium)" };
+            const payload: UpdateSessionModelsPayload = {
+                sessionId,
+                selectedModels: [premiumModel],
+            };
+
+            const result = await handleUpdateSessionModels(adminClient, primaryUserClient, payload, primaryUserId);
+
+            assertExists(result.error);
+            assertEquals(result.error?.code, "MODEL_TIER_DISALLOWED");
+
+            const { data: session, error: sessionQueryError } = await adminClient
+                .from("dialectic_sessions")
+                .select("selected_model_ids")
+                .eq("id", sessionId)
+                .single();
+            if (sessionQueryError) {
+                throw new Error(`Failed to query session after rejection: ${sessionQueryError.message}`);
+            }
+            assertExists(session);
+            assertEquals(session.selected_model_ids, [freeModelId]);
+        },
+    );
+
+    // -------------------------------------------------------------------------
+    // Step 3: cloneProject filters premium-tier models from cloned sessions
+    // -------------------------------------------------------------------------
+    await t.step(
+        "cloneProject filters a premium-tier model out of cloned sessions for a free-tier user",
+        async () => {
+            const sessionId: string = crypto.randomUUID();
+            const { error: sessionInsertError } = await adminClient
+                .from("dialectic_sessions")
+                .insert({
+                    id: sessionId,
+                    project_id: projectId,
+                    session_description: "Tier guard clone test session",
+                    iteration_count: 1,
+                    selected_model_ids: [premiumModelId],
+                    current_stage_id: stageId,
+                    status: "active",
+                });
+            if (sessionInsertError) {
+                throw new Error(`Failed to insert clone test session: ${sessionInsertError.message}`);
+            }
+            registerUndoAction({
+                type: "DELETE_CREATED_ROW",
+                tableName: "dialectic_sessions",
+                criteria: { id: sessionId },
+                scope: "global",
+            });
+
+            const fileManager = new FileManagerService(adminClient, {
+                constructStoragePath,
+                logger,
+                assembleChunks,
+            });
+
+            const result = await cloneProject(
+                adminClient,
+                primaryUserClient,
+                fileManager,
+                projectId,
+                "Cloned Tier Test Project",
+                primaryUserId,
+            );
+
+            assertExists(result.data);
+            assertEquals(result.error, null);
+
+            const clonedProjectId: string = result.data.id;
+
+            // Register cloned project for deletion first (processed after its sessions due to LIFO).
+            registerUndoAction({
+                type: "DELETE_CREATED_ROW",
+                tableName: "dialectic_projects",
+                criteria: { id: clonedProjectId },
+                scope: "global",
+            });
+
+            const { data: clonedSessions, error: clonedSessionsError } = await adminClient
+                .from("dialectic_sessions")
+                .select("id, selected_model_ids")
+                .eq("project_id", clonedProjectId);
+            if (clonedSessionsError) {
+                throw new Error(`Failed to query cloned sessions: ${clonedSessionsError.message}`);
+            }
+            assertExists(clonedSessions);
+            // The original project has 2 sessions: the one inserted in step 2 (free model)
+            // and the one inserted in this step (premium model). Both are cloned; the premium
+            // model is filtered out of the second session's selected_model_ids.
+            assertEquals(clonedSessions.length, 2);
+
+            // Register cloned sessions for deletion (processed before the cloned project due to LIFO).
+            for (const cs of clonedSessions) {
+                registerUndoAction({
+                    type: "DELETE_CREATED_ROW",
+                    tableName: "dialectic_sessions",
+                    criteria: { id: cs.id },
+                    scope: "global",
+                });
+            }
+
+            for (const cs of clonedSessions) {
+                const clonedModelIds: string[] = cs.selected_model_ids ?? [];
+                assertEquals(clonedModelIds.includes(premiumModelId), false);
+            }
+        },
+    );
+
+    await coreCleanupTestResources("all");
 });

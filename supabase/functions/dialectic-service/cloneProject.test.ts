@@ -5,6 +5,7 @@ import { stub, type Stub, spy } from "https://deno.land/std@0.224.0/testing/mock
 import type { SupabaseClient } from "npm:@supabase/supabase-js@^2.43.4";
 import type { Database, TablesInsert, Tables } from "../types_db.ts";
 import { cloneProject } from "./cloneProject.ts";
+import { mockCloneProject } from "./cloneProject.mock.ts";
 import { FileType } from "../_shared/types/file_manager.types.ts";
 import type { FileRecord, UploadContext, PathContext, FileManagerResponse } from "../_shared/types/file_manager.types.ts";
 import { createMockSupabaseClient, type MockSupabaseClientSetup, type MockQueryBuilderState } from "../_shared/supabase.mock.ts";
@@ -25,6 +26,7 @@ import {
 
 describe("cloneProject", () => {
     let mockSupabaseSetup: MockSupabaseClientSetup;
+    let mockUserClientSetup: MockSupabaseClientSetup;
     let mockFileManager: MockFileManagerService;
     let cryptoMock: Stub<Crypto>;
 
@@ -38,6 +40,7 @@ describe("cloneProject", () => {
 
     beforeEach(() => {
         mockSupabaseSetup = createMockSupabaseClient(cloningUserId, {});
+        mockUserClientSetup = createMockSupabaseClient(cloningUserId, {});
         mockFileManager = createMockFileManagerService();
 
         uuidCallCount = 0;
@@ -186,8 +189,15 @@ describe("cloneProject", () => {
             }
         }).client;
 
-        const typedClientForL149: SupabaseClient<Database> = mockSupabaseSetup.client as unknown as SupabaseClient<Database>;
-        const result = await cloneProject(typedClientForL149, mockFileManager, originalProjectId, "New Cloned Project Alpha", cloningUserId);
+        const invoke = mockCloneProject({
+            supabaseClient: mockSupabaseSetup.client as unknown as SupabaseClient<Database>,
+            userClient: mockUserClientSetup.client as unknown as SupabaseClient<Database>,
+            fileManager: mockFileManager,
+            originalProjectId,
+            newProjectName: "New Cloned Project Alpha",
+            cloningUserId,
+        });
+        const result = await cloneProject(invoke.supabaseClient, invoke.userClient, invoke.fileManager, invoke.originalProjectId, invoke.newProjectName, invoke.cloningUserId);
 
         assert(result.data, "Expected data to be returned for a successful clone.");
         assertEquals(result.error, null);
@@ -290,8 +300,15 @@ describe("cloneProject", () => {
             }
         }).client;
 
-        const typedClientForL229: SupabaseClient<Database> = mockSupabaseSetup.client as unknown as SupabaseClient<Database>;
-        const result = await cloneProject(typedClientForL229, mockFileManager, originalProjectId, "Cloned Resource Project", cloningUserId);
+        const invoke = mockCloneProject({
+            supabaseClient: mockSupabaseSetup.client as unknown as SupabaseClient<Database>,
+            userClient: mockUserClientSetup.client as unknown as SupabaseClient<Database>,
+            fileManager: mockFileManager,
+            originalProjectId,
+            newProjectName: "Cloned Resource Project",
+            cloningUserId,
+        });
+        const result = await cloneProject(invoke.supabaseClient, invoke.userClient, invoke.fileManager, invoke.originalProjectId, invoke.newProjectName, invoke.cloningUserId);
 
         assert(result.data, "Expected data for successful resource clone.");
         assertEquals(result.error, null);
@@ -357,8 +374,15 @@ describe("cloneProject", () => {
             }
         }).client;
 
-        const typedClientForL264: SupabaseClient<Database> = mockSupabaseSetup.client as unknown as SupabaseClient<Database>;
-        const result = await cloneProject(typedClientForL264, mockFileManager, "non-existent-id", "Clone Test", cloningUserId);
+        const invoke = mockCloneProject({
+            supabaseClient: mockSupabaseSetup.client as unknown as SupabaseClient<Database>,
+            userClient: mockUserClientSetup.client as unknown as SupabaseClient<Database>,
+            fileManager: mockFileManager,
+            originalProjectId: "non-existent-id",
+            newProjectName: "Clone Test",
+            cloningUserId,
+        });
+        const result = await cloneProject(invoke.supabaseClient, invoke.userClient, invoke.fileManager, invoke.originalProjectId, invoke.newProjectName, invoke.cloningUserId);
         assert(result.error, "Error should be returned");
         assertEquals(result.error?.message, "Original project not found or database error.");
         assertEquals(result.data, null);
@@ -381,8 +405,15 @@ describe("cloneProject", () => {
             }
         }).client;
 
-        const typedClientForL287: SupabaseClient<Database> = mockSupabaseSetup.client as unknown as SupabaseClient<Database>;
-        const result = await cloneProject(typedClientForL287, mockFileManager, originalProjectId, "Clone Test", cloningUserId);
+        const invoke = mockCloneProject({
+            supabaseClient: mockSupabaseSetup.client as unknown as SupabaseClient<Database>,
+            userClient: mockUserClientSetup.client as unknown as SupabaseClient<Database>,
+            fileManager: mockFileManager,
+            originalProjectId,
+            newProjectName: "Clone Test",
+            cloningUserId,
+        });
+        const result = await cloneProject(invoke.supabaseClient, invoke.userClient, invoke.fileManager, invoke.originalProjectId, invoke.newProjectName, invoke.cloningUserId);
         assert(result.error, "Error should be returned for authorization failure.");
         assertEquals(result.error?.message, "Original project not found or not accessible.");
         assertEquals(result.data, null);
@@ -452,7 +483,7 @@ describe("cloneProject", () => {
         let capturedNewProjectIdLocal = "";
         let capturedNewSessionId1Local = "";
 
-        mockSupabaseSetup.client = createMockSupabaseClient(cloningUserId, {
+        mockSupabaseSetup = createMockSupabaseClient(cloningUserId, {
             genericMockResults: {
                 dialectic_projects: {
                     select: (state: MockQueryBuilderState) => {
@@ -507,18 +538,6 @@ describe("cloneProject", () => {
                     },
                 },
             },
-            rpcResults: {
-                validate_model_tier_access: {
-                    data: [{
-                        valid: true,
-                        user_tier_level: 1,
-                        max_models_per_project: 3,
-                        over_model_limit: false,
-                        disallowed_model_ids: [],
-                    }],
-                    error: null,
-                },
-            },
             storageMock: {
                 downloadResult: (bucketId: string, path: string) => {
                     if (bucketId === 'test-bucket') {
@@ -531,10 +550,34 @@ describe("cloneProject", () => {
                     return Promise.resolve({ data: null, error: new Error(`Mock download error: path ${path} not found`) });
                 }
             }
-        }).client;
+        });
+        mockUserClientSetup = createMockSupabaseClient(cloningUserId, {
+            rpcResults: {
+                validate_model_tier_access: {
+                    data: [{
+                        valid: true,
+                        user_tier_level: 1,
+                        max_models_per_project: 3,
+                        over_model_limit: false,
+                        disallowed_model_ids: [],
+                    }],
+                    error: null,
+                },
+            },
+        });
 
-        const typedClient = mockSupabaseSetup.client as unknown as SupabaseClient<Database>;       
-        const result = await cloneProject(typedClient, mockFileManager, originalProjectId, "Cloned Complex Project", cloningUserId);
+        const invokeComplex = mockCloneProject({
+            supabaseClient: mockSupabaseSetup.client as unknown as SupabaseClient<Database>,
+            userClient: mockUserClientSetup.client as unknown as SupabaseClient<Database>,
+            fileManager: mockFileManager,
+            originalProjectId,
+            newProjectName: "Cloned Complex Project",
+            cloningUserId,
+        });
+        const result = await cloneProject(invokeComplex.supabaseClient, invokeComplex.userClient, invokeComplex.fileManager, invokeComplex.originalProjectId, invokeComplex.newProjectName, invokeComplex.cloningUserId);
+
+        assertEquals(mockUserClientSetup.spies.rpcSpy.calls.filter((c) => c.args[0] === "validate_model_tier_access").length, 1);
+        assertEquals(mockSupabaseSetup.spies.rpcSpy.calls.filter((c) => c.args[0] === "validate_model_tier_access").length, 0);
 
         assert(result.data, "Expected data for successful complex clone.");
         assertEquals(result.error, null);
@@ -752,7 +795,7 @@ describe("cloneProject", () => {
             }
         );
 
-        mockSupabaseSetup.client = createMockSupabaseClient(cloningUserId, {
+        mockSupabaseSetup = createMockSupabaseClient(cloningUserId, {
             genericMockResults: {
                 dialectic_projects: {
                     select: (state: MockQueryBuilderState) => {
@@ -808,6 +851,19 @@ describe("cloneProject", () => {
                     // NOTE: The insert mock is REMOVED for feedback, as we expect FileManager to handle it
                 },
             },
+            storageMock: {
+                downloadResult: (_bucketId: string, path: string) => {
+                    if (path === `${originalResourcesData[0].storage_path}/${originalResourcesData[0].file_name}`) return Promise.resolve({ data: new Blob(["initial"]), error: null });
+                    if (path === `${originalResourcesData[1].storage_path}/${originalResourcesData[1].file_name}`) return Promise.resolve({ data: new Blob(["planner prompt content"]), error: null });
+                    if (path === `${originalContributionsData[0].storage_path}/${originalContributionsData[0].file_name}`) return Promise.resolve({ data: new Blob(["c1 main"]), error: null });
+                    if (path === originalContributionsData[0].raw_response_storage_path) return Promise.resolve({ data: new Blob(["{\"raw\":1}"]), error: null });
+                    if (path === `${originalContributionsData[1].storage_path}/${originalContributionsData[1].file_name}`) return Promise.resolve({ data: new Blob(["pairwise chunk content"]), error: null });
+                    if (path === `${originalFeedbackData[0].storage_path}/${originalFeedbackData[0].file_name}`) return Promise.resolve({ data: new Blob(["user feedback content"]), error: null });
+                    return Promise.resolve({ data: null, error: new Error(`Mock download error: path ${path} not found`) });
+                }
+            }
+        });
+        mockUserClientSetup = createMockSupabaseClient(cloningUserId, {
             rpcResults: {
                 validate_model_tier_access: {
                     data: [{
@@ -820,21 +876,20 @@ describe("cloneProject", () => {
                     error: null,
                 },
             },
-            storageMock: {
-                downloadResult: (_bucketId: string, path: string) => {
-                    if (path === `${originalResourcesData[0].storage_path}/${originalResourcesData[0].file_name}`) return Promise.resolve({ data: new Blob(["initial"]), error: null });
-                    if (path === `${originalResourcesData[1].storage_path}/${originalResourcesData[1].file_name}`) return Promise.resolve({ data: new Blob(["planner prompt content"]), error: null });
-                    if (path === `${originalContributionsData[0].storage_path}/${originalContributionsData[0].file_name}`) return Promise.resolve({ data: new Blob(["c1 main"]), error: null });
-                    if (path === originalContributionsData[0].raw_response_storage_path) return Promise.resolve({ data: new Blob(["{\"raw\":1}"]), error: null });
-                    if (path === `${originalContributionsData[1].storage_path}/${originalContributionsData[1].file_name}`) return Promise.resolve({ data: new Blob(["pairwise chunk content"]), error: null });
-                    if (path === `${originalFeedbackData[0].storage_path}/${originalFeedbackData[0].file_name}`) return Promise.resolve({ data: new Blob(["user feedback content"]), error: null });
-                    return Promise.resolve({ data: null, error: new Error(`Mock download error: path ${path} not found`) });
-                }
-            }
-        }).client;
+        });
 
-        const typedClient = mockSupabaseSetup.client as unknown as SupabaseClient<Database>;
-        await cloneProject(typedClient, mockFileManager, originalProjectId, "Deep Clone Project - Copy", cloningUserId);
+        const invokeDeep = mockCloneProject({
+            supabaseClient: mockSupabaseSetup.client as unknown as SupabaseClient<Database>,
+            userClient: mockUserClientSetup.client as unknown as SupabaseClient<Database>,
+            fileManager: mockFileManager,
+            originalProjectId,
+            newProjectName: "Deep Clone Project - Copy",
+            cloningUserId,
+        });
+        await cloneProject(invokeDeep.supabaseClient, invokeDeep.userClient, invokeDeep.fileManager, invokeDeep.originalProjectId, invokeDeep.newProjectName, invokeDeep.cloningUserId);
+
+        assertEquals(mockUserClientSetup.spies.rpcSpy.calls.filter((c) => c.args[0] === "validate_model_tier_access").length, 1);
+        assertEquals(mockSupabaseSetup.spies.rpcSpy.calls.filter((c) => c.args[0] === "validate_model_tier_access").length, 0);
 
         // --- PROOF #1: UNIFIED FILE HANDLING ---
         const fmCalls = mockFileManager.uploadAndRegisterFile.calls;
@@ -971,6 +1026,8 @@ describe("cloneProject", () => {
                     select: () => Promise.resolve({ data: [], error: null, count: 0, status: 200, statusText: "OK" }),
                 },
             },
+        });
+        mockUserClientSetup = createMockSupabaseClient(cloningUserId, {
             rpcResults: {
                 validate_model_tier_access: {
                     data: [{
@@ -985,15 +1042,23 @@ describe("cloneProject", () => {
             },
         });
 
-        const typedClientForTierSafe: SupabaseClient<Database> = mockSupabaseSetup.client as unknown as SupabaseClient<Database>;
-        const result = await cloneProject(typedClientForTierSafe, mockFileManager, originalProjectId, "Tier Safe Clone Copy", cloningUserId);
+        const invokeTierSafe = mockCloneProject({
+            supabaseClient: mockSupabaseSetup.client as unknown as SupabaseClient<Database>,
+            userClient: mockUserClientSetup.client as unknown as SupabaseClient<Database>,
+            fileManager: mockFileManager,
+            originalProjectId,
+            newProjectName: "Tier Safe Clone Copy",
+            cloningUserId,
+        });
+        const result = await cloneProject(invokeTierSafe.supabaseClient, invokeTierSafe.userClient, invokeTierSafe.fileManager, invokeTierSafe.originalProjectId, invokeTierSafe.newProjectName, invokeTierSafe.cloningUserId);
 
         assert(result.data, "Expected clone to succeed when all selected models are allowed.");
         assertEquals(result.error, null);
         assertEquals(insertedSelections, [originalSessionData.selected_model_ids]);
-        assertEquals(mockSupabaseSetup.spies.rpcSpy.calls.length, 1);
-        assertEquals(mockSupabaseSetup.spies.rpcSpy.calls[0].args[0], "validate_model_tier_access");
-        assertEquals(mockSupabaseSetup.spies.rpcSpy.calls[0].args[1], { p_model_ids: originalSessionData.selected_model_ids });
+        assertEquals(mockUserClientSetup.spies.rpcSpy.calls.length, 1);
+        assertEquals(mockUserClientSetup.spies.rpcSpy.calls[0].args[0], "validate_model_tier_access");
+        assertEquals(mockUserClientSetup.spies.rpcSpy.calls[0].args[1], { p_model_ids: originalSessionData.selected_model_ids });
+        assertEquals(mockSupabaseSetup.spies.rpcSpy.calls.filter((c) => c.args[0] === "validate_model_tier_access").length, 0);
     });
 
     it("should exclude a model above the user's tier while preserving allowed models", async () => {
@@ -1092,6 +1157,8 @@ describe("cloneProject", () => {
                     select: () => Promise.resolve({ data: [], error: null, count: 0, status: 200, statusText: "OK" }),
                 },
             },
+        });
+        mockUserClientSetup = createMockSupabaseClient(cloningUserId, {
             rpcResults: {
                 validate_model_tier_access: {
                     data: [{
@@ -1106,15 +1173,23 @@ describe("cloneProject", () => {
             },
         });
 
-        const typedClientForTierFilter: SupabaseClient<Database> = mockSupabaseSetup.client as unknown as SupabaseClient<Database>;
-        const result = await cloneProject(typedClientForTierFilter, mockFileManager, originalProjectId, "Tier Filter Clone Copy", cloningUserId);
+        const invokeTierFilter = mockCloneProject({
+            supabaseClient: mockSupabaseSetup.client as unknown as SupabaseClient<Database>,
+            userClient: mockUserClientSetup.client as unknown as SupabaseClient<Database>,
+            fileManager: mockFileManager,
+            originalProjectId,
+            newProjectName: "Tier Filter Clone Copy",
+            cloningUserId,
+        });
+        const result = await cloneProject(invokeTierFilter.supabaseClient, invokeTierFilter.userClient, invokeTierFilter.fileManager, invokeTierFilter.originalProjectId, invokeTierFilter.newProjectName, invokeTierFilter.cloningUserId);
 
         assert(result.data, "Expected clone to succeed even when one model is filtered out.");
         assertEquals(result.error, null);
         assertEquals(insertedSelections, [["model-allowed"]]);
-        assertEquals(mockSupabaseSetup.spies.rpcSpy.calls.length, 1);
-        assertEquals(mockSupabaseSetup.spies.rpcSpy.calls[0].args[0], "validate_model_tier_access");
-        assertEquals(mockSupabaseSetup.spies.rpcSpy.calls[0].args[1], { p_model_ids: originalSessionData.selected_model_ids });
+        assertEquals(mockUserClientSetup.spies.rpcSpy.calls.length, 1);
+        assertEquals(mockUserClientSetup.spies.rpcSpy.calls[0].args[0], "validate_model_tier_access");
+        assertEquals(mockUserClientSetup.spies.rpcSpy.calls[0].args[1], { p_model_ids: originalSessionData.selected_model_ids });
+        assertEquals(mockSupabaseSetup.spies.rpcSpy.calls.filter((c) => c.args[0] === "validate_model_tier_access").length, 0);
     });
 
     it("should clone the session with an empty selected_model_ids array when all original models are above the user's tier", async () => {
@@ -1213,6 +1288,8 @@ describe("cloneProject", () => {
                     select: () => Promise.resolve({ data: [], error: null, count: 0, status: 200, statusText: "OK" }),
                 },
             },
+        });
+        mockUserClientSetup = createMockSupabaseClient(cloningUserId, {
             rpcResults: {
                 validate_model_tier_access: {
                     data: [{
@@ -1227,15 +1304,23 @@ describe("cloneProject", () => {
             },
         });
 
-        const typedClientForTierEmpty: SupabaseClient<Database> = mockSupabaseSetup.client as unknown as SupabaseClient<Database>;
-        const result = await cloneProject(typedClientForTierEmpty, mockFileManager, originalProjectId, "Tier Empty Clone Copy", cloningUserId);
+        const invokeTierEmpty = mockCloneProject({
+            supabaseClient: mockSupabaseSetup.client as unknown as SupabaseClient<Database>,
+            userClient: mockUserClientSetup.client as unknown as SupabaseClient<Database>,
+            fileManager: mockFileManager,
+            originalProjectId,
+            newProjectName: "Tier Empty Clone Copy",
+            cloningUserId,
+        });
+        const result = await cloneProject(invokeTierEmpty.supabaseClient, invokeTierEmpty.userClient, invokeTierEmpty.fileManager, invokeTierEmpty.originalProjectId, invokeTierEmpty.newProjectName, invokeTierEmpty.cloningUserId);
 
         assert(result.data, "Expected clone to succeed even when all models are filtered out.");
         assertEquals(result.error, null);
         assertEquals(insertedSelections, [[]]);
-        assertEquals(mockSupabaseSetup.spies.rpcSpy.calls.length, 1);
-        assertEquals(mockSupabaseSetup.spies.rpcSpy.calls[0].args[0], "validate_model_tier_access");
-        assertEquals(mockSupabaseSetup.spies.rpcSpy.calls[0].args[1], { p_model_ids: originalSessionData.selected_model_ids });
+        assertEquals(mockUserClientSetup.spies.rpcSpy.calls.length, 1);
+        assertEquals(mockUserClientSetup.spies.rpcSpy.calls[0].args[0], "validate_model_tier_access");
+        assertEquals(mockUserClientSetup.spies.rpcSpy.calls[0].args[1], { p_model_ids: originalSessionData.selected_model_ids });
+        assertEquals(mockSupabaseSetup.spies.rpcSpy.calls.filter((c) => c.args[0] === "validate_model_tier_access").length, 0);
     });
 
     it("should keep the original selected_model_ids and log a warning when model tier validation RPC fails", async () => {
@@ -1336,6 +1421,8 @@ describe("cloneProject", () => {
                         select: () => Promise.resolve({ data: [], error: null, count: 0, status: 200, statusText: "OK" }),
                     },
                 },
+            });
+            mockUserClientSetup = createMockSupabaseClient(cloningUserId, {
                 rpcResults: {
                     validate_model_tier_access: {
                         data: null,
@@ -1344,15 +1431,23 @@ describe("cloneProject", () => {
                 },
             });
 
-            const typedClientForTierWarning: SupabaseClient<Database> = mockSupabaseSetup.client as unknown as SupabaseClient<Database>;
-            const result = await cloneProject(typedClientForTierWarning, mockFileManager, originalProjectId, "Tier Warning Clone Copy", cloningUserId);
+            const invokeTierWarning = mockCloneProject({
+                supabaseClient: mockSupabaseSetup.client as unknown as SupabaseClient<Database>,
+                userClient: mockUserClientSetup.client as unknown as SupabaseClient<Database>,
+                fileManager: mockFileManager,
+                originalProjectId,
+                newProjectName: "Tier Warning Clone Copy",
+                cloningUserId,
+            });
+            const result = await cloneProject(invokeTierWarning.supabaseClient, invokeTierWarning.userClient, invokeTierWarning.fileManager, invokeTierWarning.originalProjectId, invokeTierWarning.newProjectName, invokeTierWarning.cloningUserId);
 
             assert(result.data, "Expected clone to succeed when tier validation fails and the original model ids are retained.");
             assertEquals(result.error, null);
             assertEquals(insertedSelections, [originalSessionData.selected_model_ids]);
-            assertEquals(mockSupabaseSetup.spies.rpcSpy.calls.length, 1);
-            assertEquals(mockSupabaseSetup.spies.rpcSpy.calls[0].args[0], "validate_model_tier_access");
-            assertEquals(mockSupabaseSetup.spies.rpcSpy.calls[0].args[1], { p_model_ids: originalSessionData.selected_model_ids });
+            assertEquals(mockUserClientSetup.spies.rpcSpy.calls.length, 1);
+            assertEquals(mockUserClientSetup.spies.rpcSpy.calls[0].args[0], "validate_model_tier_access");
+            assertEquals(mockUserClientSetup.spies.rpcSpy.calls[0].args[1], { p_model_ids: originalSessionData.selected_model_ids });
+            assertEquals(mockSupabaseSetup.spies.rpcSpy.calls.filter((c) => c.args[0] === "validate_model_tier_access").length, 0);
             assertEquals(warnStub.calls.length, 1);
         } finally {
             warnStub.restore();
@@ -1456,14 +1551,23 @@ describe("cloneProject", () => {
                 },
             },
         });
+        mockUserClientSetup = createMockSupabaseClient(cloningUserId, {});
 
-        const typedClientForTierNull: SupabaseClient<Database> = mockSupabaseSetup.client as unknown as SupabaseClient<Database>;
-        const result = await cloneProject(typedClientForTierNull, mockFileManager, originalProjectId, "Tier Null Clone Copy", cloningUserId);
+        const invokeTierNull = mockCloneProject({
+            supabaseClient: mockSupabaseSetup.client as unknown as SupabaseClient<Database>,
+            userClient: mockUserClientSetup.client as unknown as SupabaseClient<Database>,
+            fileManager: mockFileManager,
+            originalProjectId,
+            newProjectName: "Tier Null Clone Copy",
+            cloningUserId,
+        });
+        const result = await cloneProject(invokeTierNull.supabaseClient, invokeTierNull.userClient, invokeTierNull.fileManager, invokeTierNull.originalProjectId, invokeTierNull.newProjectName, invokeTierNull.cloningUserId);
 
         assert(result.data, "Expected clone to succeed when selected_model_ids is null.");
         assertEquals(result.error, null);
         assertEquals(insertedSelections, [null]);
-        assertEquals(mockSupabaseSetup.spies.rpcSpy.calls.length, 0);
+        assertEquals(mockSupabaseSetup.spies.rpcSpy.calls.filter((c) => c.args[0] === "validate_model_tier_access").length, 0);
+        assertEquals(mockUserClientSetup.spies.rpcSpy.calls.length, 0);
     });
 
 });

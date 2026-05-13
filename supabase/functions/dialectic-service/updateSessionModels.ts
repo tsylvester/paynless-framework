@@ -6,6 +6,7 @@ import { logger } from '../_shared/logger.ts';
 
 export async function handleUpdateSessionModels(
   dbClient: SupabaseClient<Database>,
+  userClient: SupabaseClient<Database>,
   payload: UpdateSessionModelsPayload,
   userId: string,
 ): Promise<{ data?: DialecticSession; error?: ServiceError; status?: number }> {
@@ -51,7 +52,7 @@ export async function handleUpdateSessionModels(
   }
 
   const selectedModelIds: string[] = selectedModels.map((model) => model.id);
-  const { data: tierValidationData, error: tierValidationError } = await dbClient.rpc(
+  const { data: tierValidationData, error: tierValidationError } = await userClient.rpc(
     'validate_model_tier_access',
     { p_model_ids: selectedModelIds },
   );

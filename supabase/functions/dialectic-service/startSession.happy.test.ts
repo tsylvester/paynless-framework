@@ -1,8 +1,8 @@
 // deno-lint-ignore-file no-explicit-any
 import { assertEquals, assertExists, assertObjectMatch } from "https://deno.land/std@0.170.0/testing/asserts.ts";
-import { spy, stub } from "jsr:@std/testing@0.225.1/mock";
+import { spy } from "jsr:@std/testing@0.225.1/mock";
 import { startSession } from "./startSession.ts";
-import type { StartSessionPayload, StartSessionSuccessResponse, DialecticProjectResource, StartSessionDeps, SelectedModels } from "./dialectic.interface.ts";
+import type { StartSessionPayload, StartSessionSuccessResponse, DialecticProjectResource, StartSessionDeps } from "./dialectic.interface.ts";
 import type { Database } from "../types_db.ts";
 import { type SupabaseClient, type User } from "npm:@supabase/supabase-js@2";
 import { createMockSupabaseClient } from "../_shared/supabase.mock.ts";
@@ -116,6 +116,10 @@ Deno.test("startSession - Happy Path (with explicit sessionDescription)", async 
                 })
             }
         },
+        mockUser: mockUser,
+    });
+
+    const mockUserTierClientSetup = createMockSupabaseClient(mockUser.id, {
         rpcResults: {
             validate_model_tier_access: {
                 data: [{
@@ -126,12 +130,13 @@ Deno.test("startSession - Happy Path (with explicit sessionDescription)", async 
                     disallowed_model_ids: [],
                 }],
                 error: null,
-            }
+            },
         },
         mockUser: mockUser,
     });
 
     const adminDbClient = mockAdminDbClientSetup.client as unknown as SupabaseClient<Database>;
+    const userDbClient = mockUserTierClientSetup.client as unknown as SupabaseClient<Database>;
     const mockLogger = new MockLogger();
 
     const deps: Partial<StartSessionDeps> = {
@@ -141,7 +146,7 @@ Deno.test("startSession - Happy Path (with explicit sessionDescription)", async 
         randomUUID: () => mockNewChatId,
     };
 
-    const result = await startSession(mockUser, adminDbClient, payload, deps);
+    const result = await startSession(mockUser, adminDbClient, userDbClient, payload, deps);
 
     assertExists(result.data, `Session start failed: ${result.error?.message}`);
     assertEquals(result.error, undefined, "Error should be undefined on happy path");
@@ -280,6 +285,10 @@ Deno.test("startSession - Happy Path (without explicit sessionDescription, defau
                 })
             }
         },
+        mockUser: mockUser,
+    });
+
+    const mockUserTierClientSetup = createMockSupabaseClient(mockUser.id, {
         rpcResults: {
             validate_model_tier_access: {
                 data: [{
@@ -290,12 +299,13 @@ Deno.test("startSession - Happy Path (without explicit sessionDescription, defau
                     disallowed_model_ids: [],
                 }],
                 error: null,
-            }
+            },
         },
         mockUser: mockUser,
     });
 
     const adminDbClient = mockAdminDbClientSetup.client as unknown as SupabaseClient<Database>;
+    const userDbClient = mockUserTierClientSetup.client as unknown as SupabaseClient<Database>;
     const mockLogger = { info: spy(), warn: spy(), error: spy(), debug: spy() };
 
     const deps: Partial<StartSessionDeps> = {
@@ -305,7 +315,7 @@ Deno.test("startSession - Happy Path (without explicit sessionDescription, defau
         randomUUID: () => mockNewChatId
     };
     
-    const result = await startSession(mockUser, adminDbClient, payload, deps);
+    const result = await startSession(mockUser, adminDbClient, userDbClient, payload, deps);
 
     assertExists(result.data, `Session start failed: ${result.error?.message}`);
     assertEquals(result.error, undefined, "Error should be undefined on happy path");
@@ -479,18 +489,6 @@ Deno.test("startSession - Happy Path (with initial prompt from file resource)", 
                 })
             }
         },
-        rpcResults: {
-            validate_model_tier_access: {
-                data: [{
-                    valid: true,
-                    user_tier_level: 1,
-                    max_models_per_project: 3,
-                    over_model_limit: false,
-                    disallowed_model_ids: [],
-                }],
-                error: null,
-            }
-        },
         storageMock: {
             downloadResult: async (bucketId, path) => {
                 const expectedPath = `${mockInitialPromptResource.storage_path}/${mockInitialPromptResource.file_name}`;
@@ -503,7 +501,24 @@ Deno.test("startSession - Happy Path (with initial prompt from file resource)", 
         mockUser: mockUser,
     });
 
+    const mockUserTierClientSetup = createMockSupabaseClient(mockUser.id, {
+        rpcResults: {
+            validate_model_tier_access: {
+                data: [{
+                    valid: true,
+                    user_tier_level: 1,
+                    max_models_per_project: 3,
+                    over_model_limit: false,
+                    disallowed_model_ids: [],
+                }],
+                error: null,
+            },
+        },
+        mockUser: mockUser,
+    });
+
     const adminDbClient = mockAdminDbClientSetup.client as unknown as SupabaseClient<Database>;
+    const userDbClient = mockUserTierClientSetup.client as unknown as SupabaseClient<Database>;
     const mockLogger = { info: spy(), warn: spy(), error: spy(), debug: spy() };
 
     const deps: Partial<StartSessionDeps> = {
@@ -513,7 +528,7 @@ Deno.test("startSession - Happy Path (with initial prompt from file resource)", 
         randomUUID: () => mockNewSessionId
     };
 
-    const result = await startSession(mockUser, adminDbClient, payload, deps);
+    const result = await startSession(mockUser, adminDbClient, userDbClient, payload, deps);
 
     assertExists(
         result.data,
@@ -601,7 +616,7 @@ Deno.test("startSession - selects DummyAdapter for embedding when default provid
         hard_cap_output_tokens: 4096,
     };
 
-    const { client } = createMockSupabaseClient(mockUser.id, {
+    const mockAdminDbClientSetup = createMockSupabaseClient(mockUser.id, {
         genericMockResults: {
             dialectic_projects: { select: async () => ({ data: [{ id: mockProjectId, user_id: mockUser.id, project_name: "Dummy Project", initial_user_prompt: "Hi", process_template_id: mockProcessTemplateId, dialectic_domains: { name: 'General' }, selected_domain_id: 'd-1' }], error: null, status: 200, statusText: 'ok' }) },
             dialectic_process_templates: { select: async () => ({ data: [{ id: mockProcessTemplateId, name: 'Dummy Template', starting_stage_id: mockInitialStageId }], error: null, status: 200, statusText: 'ok' }) },
@@ -611,6 +626,10 @@ Deno.test("startSession - selects DummyAdapter for embedding when default provid
             dialectic_sessions: { insert: async () => ({ data: [{ id: mockNewSessionId, project_id: mockProjectId, session_description: payload.sessionDescription, status: `pending_${mockInitialStageName}`, iteration_count: 1, associated_chat_id: 'chat-id', current_stage_id: mockInitialStageId, selected_model_ids: payload.selectedModels.map(m => m.id) }], error: null, status: 201, statusText: 'ok' }) },
             ai_providers: { select: async () => ({ data: [{ id: 'prov-dummy', api_identifier: 'dummy-model-v1', name: 'Dummy', description: 'Dummy', is_active: true, provider: 'dummy', config: dummyConfig, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), is_default_embedding: true, is_enabled: true }], error: null, status: 200, statusText: 'ok' }) },
         },
+        mockUser: mockUser,
+    });
+
+    const mockUserTierClientSetup = createMockSupabaseClient(mockUser.id, {
         rpcResults: {
             validate_model_tier_access: {
                 data: [{
@@ -621,12 +640,13 @@ Deno.test("startSession - selects DummyAdapter for embedding when default provid
                     disallowed_model_ids: [],
                 }],
                 error: null,
-            }
+            },
         },
         mockUser: mockUser,
     });
 
-    const adminDbClient = client as unknown as SupabaseClient<Database>;
+    const adminDbClient = mockAdminDbClientSetup.client as unknown as SupabaseClient<Database>;
+    const userDbClient = mockUserTierClientSetup.client as unknown as SupabaseClient<Database>;
     const mockLogger = new MockLogger();
 
     const getAdapterSpy = spy((deps: FactoryDependencies): AiProviderAdapterInstance | null => {
@@ -643,7 +663,7 @@ Deno.test("startSession - selects DummyAdapter for embedding when default provid
         getAiProviderAdapter: getAdapterSpy,
     };
 
-    const result = await startSession(mockUser, adminDbClient, payload, deps);
+    const result = await startSession(mockUser, adminDbClient, userDbClient, payload, deps);
 
     // Desired behavior: should succeed, proving DummyAdapter is accepted for embeddings
     assertExists(
@@ -786,6 +806,10 @@ Deno.test("startSession - Happy Path calls validate_model_tier_access before ins
                 })
             }
         },
+        mockUser: mockUser,
+    });
+
+    const mockUserTierClientSetup = createMockSupabaseClient(mockUser.id, {
         rpcResults: {
             validate_model_tier_access: {
                 data: [{
@@ -796,7 +820,7 @@ Deno.test("startSession - Happy Path calls validate_model_tier_access before ins
                     disallowed_model_ids: [],
                 }],
                 error: null,
-            }
+            },
         },
         mockUser: mockUser,
     });
@@ -810,24 +834,33 @@ Deno.test("startSession - Happy Path calls validate_model_tier_access before ins
     };
 
     const adminDbClient = mockAdminDbClientSetup.client as unknown as SupabaseClient<Database>;
-    const result = await startSession(mockUser, adminDbClient, payload, deps);
+    const userDbClient = mockUserTierClientSetup.client as unknown as SupabaseClient<Database>;
+    const result = await startSession(mockUser, adminDbClient, userDbClient, payload, deps);
 
     assertExists(result.data, `Session start failed: ${result.error?.message}`);
     assertEquals(result.error, undefined, "Error should be undefined when selected models are within tier limits.");
+    const adminTierRpcCalls = mockAdminDbClientSetup.spies.rpcSpy.calls.filter(
+        (call) => call.args[0] === "validate_model_tier_access",
+    );
     assertEquals(
-        mockAdminDbClientSetup.spies.rpcSpy.calls.length,
+        adminTierRpcCalls.length,
+        0,
+        "validate_model_tier_access must not be invoked on the admin dbClient mock.",
+    );
+    assertEquals(
+        mockUserTierClientSetup.spies.rpcSpy.calls.length,
         1,
-        "validate_model_tier_access should be called exactly once before the session insert.",
+        "validate_model_tier_access should be called exactly once on the user client before the session insert.",
     );
     assertEquals(
-        mockAdminDbClientSetup.spies.rpcSpy.calls[0].args[0],
+        mockUserTierClientSetup.spies.rpcSpy.calls[0].args[0],
         "validate_model_tier_access",
-        "startSession should call the public model tier validation RPC.",
+        "startSession should call the public model tier validation RPC on the user client.",
     );
     assertEquals(
-        mockAdminDbClientSetup.spies.rpcSpy.calls[0].args[1],
+        mockUserTierClientSetup.spies.rpcSpy.calls[0].args[1],
         { p_model_ids: payload.selectedModels.map((model) => model.id) },
-        "startSession should validate the exact selected model ids.",
+        "startSession should validate the exact selected model ids via the user client.",
     );
     assertEquals(
         mockAdminDbClientSetup.spies.getHistoricQueryBuilderSpies("dialectic_sessions", "insert")?.callCount,
@@ -953,6 +986,10 @@ Deno.test("startSession - Happy Path calls validate_model_tier_access with an em
                 })
             }
         },
+        mockUser: mockUser,
+    });
+
+    const mockUserTierClientSetup = createMockSupabaseClient(mockUser.id, {
         rpcResults: {
             validate_model_tier_access: {
                 data: [{
@@ -963,7 +1000,7 @@ Deno.test("startSession - Happy Path calls validate_model_tier_access with an em
                     disallowed_model_ids: [],
                 }],
                 error: null,
-            }
+            },
         },
         mockUser: mockUser,
     });
@@ -977,24 +1014,33 @@ Deno.test("startSession - Happy Path calls validate_model_tier_access with an em
     };
 
     const adminDbClient = mockAdminDbClientSetup.client as unknown as SupabaseClient<Database>;
-    const result = await startSession(mockUser, adminDbClient, payload, deps);
+    const userDbClient = mockUserTierClientSetup.client as unknown as SupabaseClient<Database>;
+    const result = await startSession(mockUser, adminDbClient, userDbClient, payload, deps);
 
     assertExists(result.data, `Session start failed: ${result.error?.message}`);
     assertEquals(result.error, undefined, "Error should be undefined when the selected model list is empty and tier validation passes.");
+    const adminTierRpcCalls = mockAdminDbClientSetup.spies.rpcSpy.calls.filter(
+        (call) => call.args[0] === "validate_model_tier_access",
+    );
     assertEquals(
-        mockAdminDbClientSetup.spies.rpcSpy.calls.length,
+        adminTierRpcCalls.length,
+        0,
+        "validate_model_tier_access must not be invoked on the admin dbClient mock.",
+    );
+    assertEquals(
+        mockUserTierClientSetup.spies.rpcSpy.calls.length,
         1,
-        "validate_model_tier_access should still be called when the selected model list is empty.",
+        "validate_model_tier_access should still be called on the user client when the selected model list is empty.",
     );
     assertEquals(
-        mockAdminDbClientSetup.spies.rpcSpy.calls[0].args[0],
+        mockUserTierClientSetup.spies.rpcSpy.calls[0].args[0],
         "validate_model_tier_access",
-        "startSession should call the public model tier validation RPC for an empty selection.",
+        "startSession should call the public model tier validation RPC on the user client for an empty selection.",
     );
     assertEquals(
-        mockAdminDbClientSetup.spies.rpcSpy.calls[0].args[1],
+        mockUserTierClientSetup.spies.rpcSpy.calls[0].args[1],
         { p_model_ids: [] },
-        "startSession should pass an empty model id array to tier validation when no models are selected.",
+        "startSession should pass an empty model id array to tier validation on the user client when no models are selected.",
     );
     assertEquals(
         mockAdminDbClientSetup.spies.getHistoricQueryBuilderSpies("dialectic_sessions", "insert")?.callCount,

@@ -1,7 +1,7 @@
 // supabase/functions/dialectic-worker/calculateAffordability/calculateAffordability.test.ts
 
 import { assertEquals, assertStringIncludes } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import type { AiModelExtendedConfig } from "../../_shared/types.ts";
+import type { AiModelExtendedConfig, ILogger } from "../../_shared/types.ts";
 import type {
   CountableChatPayload,
   CountTokensDeps,
@@ -21,6 +21,7 @@ import {
   createCompressPromptMock,
   DbClient,
 } from "../compressPrompt/compressPrompt.mock.ts";
+import type { GetMaxOutputTokensFn, TierOutputCapTokens } from "./calculateAffordability.interface.ts";
 import { calculateAffordability } from "./calculateAffordability.ts";
 import {
   isCalculateAffordabilityCompressedReturn,
@@ -52,6 +53,7 @@ Deno.test("Non-oversized adequate balance: direct return; maxOutputTokens matche
     compressPrompt,
   });
   const params = buildCalculateAffordabilityParams(DbClient(client), {
+    tierOutputCapTokens: null,
     walletBalance,
     extendedModelConfig,
     inputRate: 0.01,
@@ -59,11 +61,13 @@ Deno.test("Non-oversized adequate balance: direct return; maxOutputTokens matche
   });
   const payload = buildCalculateAffordabilityPayload();
   const result = await calculateAffordability(deps, params, payload);
-  const expectedMax: number = getMaxOutputTokens(
+  const expectedMax: number = deps.getMaxOutputTokens(
     walletBalance,
     initialTokenCount,
     extendedModelConfig,
     logger,
+    0,
+    params.tierOutputCapTokens,
   );
   assertEquals(isCalculateAffordabilityDirectReturn(result), true);
   if (isCalculateAffordabilityDirectReturn(result)) {
@@ -89,6 +93,7 @@ Deno.test("Non-oversized NSF: error return; retriable false", async () => {
     compressPrompt,
   });
   const params = buildCalculateAffordabilityParams(DbClient(client), {
+    tierOutputCapTokens: null,
     walletBalance: 5,
     extendedModelConfig: buildExtendedModelConfig(),
     inputRate: 0.01,
@@ -119,6 +124,7 @@ Deno.test("Non-oversized allowedInput <= 0: ContextWindowError; retriable false"
     compressPrompt,
   });
   const params = buildCalculateAffordabilityParams(DbClient(client), {
+    tierOutputCapTokens: null,
     walletBalance: 1_000_000,
     extendedModelConfig: buildExtendedModelConfig({
       provider_max_input_tokens: 100,
@@ -162,6 +168,7 @@ Deno.test("Oversized: compressPrompt called with finalTargetThreshold, balanceAf
   });
   const walletBalance: number = 10_000_000;
   const params = buildCalculateAffordabilityParams(DbClient(client), {
+    tierOutputCapTokens: null,
     walletBalance,
     extendedModelConfig: buildExtendedModelConfig({
       context_window_tokens: 50_000,
@@ -202,6 +209,7 @@ Deno.test("Oversized: compressPrompt error propagated; error return", async () =
     compressPrompt,
   });
   const params = buildCalculateAffordabilityParams(DbClient(client), {
+    tierOutputCapTokens: null,
     walletBalance: 10_000_000,
     extendedModelConfig: buildExtendedModelConfig({
       context_window_tokens: 50_000,
@@ -236,6 +244,7 @@ Deno.test("Oversized NSF for entire operation including embeddings: error return
     compressPrompt,
   });
   const params = buildCalculateAffordabilityParams(DbClient(client), {
+    tierOutputCapTokens: null,
     walletBalance: 100_000,
     extendedModelConfig: buildExtendedModelConfig({
       context_window_tokens: 50_000,
@@ -272,6 +281,7 @@ Deno.test("Oversized estimated embedding cost exceeds 80% rationality: error ret
     compressPrompt,
   });
   const params = buildCalculateAffordabilityParams(DbClient(client), {
+    tierOutputCapTokens: null,
     walletBalance: 100_000,
     extendedModelConfig: buildExtendedModelConfig({
       context_window_tokens: 50_000,
@@ -308,6 +318,7 @@ Deno.test("Oversized balanceAfterCompression <= 0: error return; retriable false
     compressPrompt,
   });
   const params = buildCalculateAffordabilityParams(DbClient(client), {
+    tierOutputCapTokens: null,
     walletBalance: 100,
     extendedModelConfig: buildExtendedModelConfig({
       context_window_tokens: 50_000,
@@ -344,6 +355,7 @@ Deno.test("Oversized infeasible solver target: ContextWindowError; retriable fal
     compressPrompt,
   });
   const params = buildCalculateAffordabilityParams(DbClient(client), {
+    tierOutputCapTokens: null,
     walletBalance: 10_000_000,
     extendedModelConfig: buildExtendedModelConfig({
       context_window_tokens: 50_000,
@@ -381,6 +393,7 @@ Deno.test("Oversized total estimated cost exceeds balance: error return; retriab
     compressPrompt,
   });
   const params = buildCalculateAffordabilityParams(DbClient(client), {
+    tierOutputCapTokens: null,
     walletBalance: 200_000,
     extendedModelConfig: buildExtendedModelConfig({
       context_window_tokens: 80_000,
@@ -427,6 +440,7 @@ Deno.test(
       compressPrompt,
     });
     const params = buildCalculateAffordabilityParams(DbClient(client), {
+      tierOutputCapTokens: null,
       walletBalance,
       extendedModelConfig,
       inputRate: 1,
@@ -443,11 +457,13 @@ Deno.test(
       }),
     });
     const result = await calculateAffordability(deps, params, payload);
-    const expectedMax: number = getMaxOutputTokens(
+    const expectedMax: number = deps.getMaxOutputTokens(
       walletBalance,
       initialTokenCount,
       extendedModelConfig,
       logger,
+      0,
+      params.tierOutputCapTokens,
     );
     assertEquals(isCalculateAffordabilityDirectReturn(result), true);
     if (isCalculateAffordabilityDirectReturn(result)) {
@@ -475,6 +491,7 @@ Deno.test("Oversized total estimated cost exceeds 80% rationality threshold: err
     compressPrompt,
   });
   const params = buildCalculateAffordabilityParams(DbClient(client), {
+    tierOutputCapTokens: null,
     walletBalance: 250_000,
     extendedModelConfig: buildExtendedModelConfig({
       context_window_tokens: 80_000,
@@ -519,6 +536,7 @@ Deno.test(
       compressPrompt,
     });
     const params = buildCalculateAffordabilityParams(DbClient(client), {
+      tierOutputCapTokens: null,
       walletBalance,
       extendedModelConfig,
       inputRate: 1,
@@ -572,6 +590,7 @@ Deno.test(
     });
     const resourceDocuments = [buildResourceDocument()];
     const params = buildCalculateAffordabilityParams(DbClient(client), {
+      tierOutputCapTokens: null,
       walletBalance,
       extendedModelConfig,
       inputRate: 1,
@@ -626,6 +645,7 @@ Deno.test(
     });
     const resourceDocuments = [buildResourceDocument()];
     const params = buildCalculateAffordabilityParams(DbClient(client), {
+      tierOutputCapTokens: null,
       walletBalance,
       extendedModelConfig,
       inputRate: 1,
@@ -679,6 +699,7 @@ Deno.test(
       compressPrompt,
     });
     const params = buildCalculateAffordabilityParams(DbClient(client), {
+      tierOutputCapTokens: null,
       walletBalance,
       extendedModelConfig,
       inputRate: 1,
@@ -695,11 +716,13 @@ Deno.test(
       }),
     });
     const result = await calculateAffordability(deps, params, payload);
-    const expectedMax: number = getMaxOutputTokens(
+    const expectedMax: number = deps.getMaxOutputTokens(
       walletBalance,
       initialTokenCount,
       extendedModelConfig,
       logger,
+      0,
+      params.tierOutputCapTokens,
     );
     assertEquals(isCalculateAffordabilityDirectReturn(result), true);
     if (isCalculateAffordabilityDirectReturn(result)) {
@@ -738,6 +761,7 @@ Deno.test(
       compressPrompt,
     });
     const params = buildCalculateAffordabilityParams(DbClient(client), {
+      tierOutputCapTokens: null,
       walletBalance,
       extendedModelConfig,
       inputRate: 1,
@@ -763,3 +787,164 @@ Deno.test(
     assertEquals(calls.length, 0);
   },
 );
+
+Deno.test("non-oversized: deps.getMaxOutputTokens receives params.tierOutputCapTokens value", async () => {
+  const logger: MockLogger = new MockLogger();
+  const initialTokenCount: number = 100;
+  const walletBalance: number = 1_000_000;
+  const tierCap: number = 16384;
+  const extendedModelConfig: AiModelExtendedConfig = buildExtendedModelConfig({
+    context_window_tokens: 50_000,
+    provider_max_input_tokens: 128_000,
+  });
+  const { client } = createMockSupabaseClient();
+  const { compressPrompt, calls } = createCompressPromptMock({});
+  const returnedMax: number = 555;
+  let depsMaxCalls: number = 0;
+  const getMaxOutputTokensDep: GetMaxOutputTokensFn = (
+    _user_balance_tokens: number,
+    _prompt_input_tokens: number,
+    _modelConfig: AiModelExtendedConfig,
+    _logger: ILogger,
+    _deficit_tokens_allowed: number,
+    passedTierOutputCapTokens: TierOutputCapTokens | null,
+  ): number => {
+    depsMaxCalls += 1;
+    assertEquals(passedTierOutputCapTokens, tierCap);
+    return returnedMax;
+  };
+  const deps = buildCalculateAffordabilityDeps({
+    logger,
+    countTokens: createMockCountTokens({
+      countTokens: (
+        _deps: CountTokensDeps,
+        _payload: CountableChatPayload,
+        _modelConfig: AiModelExtendedConfig,
+      ): number => initialTokenCount,
+    }),
+    compressPrompt,
+    getMaxOutputTokens: getMaxOutputTokensDep,
+  });
+  const params = buildCalculateAffordabilityParams(DbClient(client), {
+    tierOutputCapTokens: tierCap,
+    walletBalance,
+    extendedModelConfig,
+    inputRate: 0.01,
+    outputRate: 0.01,
+  });
+  const payload = buildCalculateAffordabilityPayload();
+  const result = await calculateAffordability(deps, params, payload);
+  assertEquals(isCalculateAffordabilityDirectReturn(result), true);
+  if (isCalculateAffordabilityDirectReturn(result)) {
+    assertEquals(result.maxOutputTokens, returnedMax);
+  }
+  assertEquals(depsMaxCalls >= 1, true);
+  assertEquals(calls.length, 0);
+});
+
+Deno.test("non-oversized: deps.getMaxOutputTokens receives null tierOutputCapTokens when params null", async () => {
+  const logger: MockLogger = new MockLogger();
+  const initialTokenCount: number = 100;
+  const walletBalance: number = 1_000_000;
+  const extendedModelConfig: AiModelExtendedConfig = buildExtendedModelConfig({
+    context_window_tokens: 50_000,
+    provider_max_input_tokens: 128_000,
+  });
+  const { client } = createMockSupabaseClient();
+  const { compressPrompt, calls } = createCompressPromptMock({});
+  const returnedMax: number = 777;
+  let depsMaxCalls: number = 0;
+  const getMaxOutputTokensDep: GetMaxOutputTokensFn = (
+    _user_balance_tokens: number,
+    _prompt_input_tokens: number,
+    _modelConfig: AiModelExtendedConfig,
+    _logger: ILogger,
+    _deficit_tokens_allowed: number,
+    passedTierOutputCapTokens: TierOutputCapTokens | null,
+  ): number => {
+    depsMaxCalls += 1;
+    assertEquals(passedTierOutputCapTokens, null);
+    return returnedMax;
+  };
+  const deps = buildCalculateAffordabilityDeps({
+    logger,
+    countTokens: createMockCountTokens({
+      countTokens: (
+        _deps: CountTokensDeps,
+        _payload: CountableChatPayload,
+        _modelConfig: AiModelExtendedConfig,
+      ): number => initialTokenCount,
+    }),
+    compressPrompt,
+    getMaxOutputTokens: getMaxOutputTokensDep,
+  });
+  const params = buildCalculateAffordabilityParams(DbClient(client), {
+    tierOutputCapTokens: null,
+    walletBalance,
+    extendedModelConfig,
+    inputRate: 0.01,
+    outputRate: 0.01,
+  });
+  const payload = buildCalculateAffordabilityPayload();
+  const result = await calculateAffordability(deps, params, payload);
+  assertEquals(isCalculateAffordabilityDirectReturn(result), true);
+  if (isCalculateAffordabilityDirectReturn(result)) {
+    assertEquals(result.maxOutputTokens, returnedMax);
+  }
+  assertEquals(depsMaxCalls >= 1, true);
+  assertEquals(calls.length, 0);
+});
+
+Deno.test("non-oversized: calculateAffordability invokes deps.getMaxOutputTokens at least once", async () => {
+  const logger: MockLogger = new MockLogger();
+  const initialTokenCount: number = 100;
+  const walletBalance: number = 1_000_000;
+  const extendedModelConfig: AiModelExtendedConfig = buildExtendedModelConfig({
+    context_window_tokens: 50_000,
+    provider_max_input_tokens: 128_000,
+  });
+  const { client } = createMockSupabaseClient();
+  const { compressPrompt, calls } = createCompressPromptMock({});
+  let depsMaxCalls: number = 0;
+  const recordingGetMax: GetMaxOutputTokensFn = (
+    user_balance_tokens: number,
+    prompt_input_tokens: number,
+    modelConfig: AiModelExtendedConfig,
+    log: ILogger,
+    deficit_tokens_allowed: number,
+    tierOutputCapTokens: TierOutputCapTokens | null,
+  ): number => {
+    depsMaxCalls += 1;
+    return getMaxOutputTokens(
+      user_balance_tokens,
+      prompt_input_tokens,
+      modelConfig,
+      log,
+      deficit_tokens_allowed,
+      tierOutputCapTokens,
+    );
+  };
+  const deps = buildCalculateAffordabilityDeps({
+    logger,
+    countTokens: createMockCountTokens({
+      countTokens: (
+        _deps: CountTokensDeps,
+        _payload: CountableChatPayload,
+        _modelConfig: AiModelExtendedConfig,
+      ): number => initialTokenCount,
+    }),
+    compressPrompt,
+    getMaxOutputTokens: recordingGetMax,
+  });
+  const params = buildCalculateAffordabilityParams(DbClient(client), {
+    tierOutputCapTokens: null,
+    walletBalance,
+    extendedModelConfig,
+    inputRate: 0.01,
+    outputRate: 0.01,
+  });
+  const payload = buildCalculateAffordabilityPayload();
+  await calculateAffordability(deps, params, payload);
+  assertEquals(depsMaxCalls >= 1, true);
+  assertEquals(calls.length, 0);
+});

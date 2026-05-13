@@ -37,6 +37,9 @@ Deno.test("startSession - Error: Project not found", async () => {
                 select: async () => ({ data: null, error: { message: "Not found", code: "PGRST116", name: "Not found" }, status: 404, statusText: 'not found' })
             }
         },
+        mockUser: MOCK_USER,
+    });
+    const mockUserTierClientSetup = createMockSupabaseClient(MOCK_USER.id, {
         rpcResults: {
             validate_model_tier_access: {
                 data: [{
@@ -47,11 +50,11 @@ Deno.test("startSession - Error: Project not found", async () => {
                     disallowed_model_ids: [],
                 }],
                 error: null,
-            }
+            },
         },
         mockUser: MOCK_USER,
     });
-    const result = await startSession(MOCK_USER, mockAdminDbClientSetup.client as unknown as SupabaseClient<Database>, payload, { logger: { info: spy(), error: spy(), debug: spy(), warn: spy() }, fileManager: MOCK_FILE_MANAGER });
+    const result = await startSession(MOCK_USER, mockAdminDbClientSetup.client as unknown as SupabaseClient<Database>, mockUserTierClientSetup.client as unknown as SupabaseClient<Database>, payload, { logger: { info: spy(), error: spy(), debug: spy(), warn: spy() }, fileManager: MOCK_FILE_MANAGER });
     assertExists(result.error);
     assertEquals(result.error?.message, "Project not found or access denied.");
     assertEquals(result.error?.status, 404);
@@ -71,6 +74,9 @@ Deno.test("startSession - Error: Project is missing a process_template_id", asyn
                 })
             }
         },
+        mockUser: MOCK_USER,
+    });
+    const mockUserTierClientSetup = createMockSupabaseClient(MOCK_USER.id, {
         rpcResults: {
             validate_model_tier_access: {
                 data: [{
@@ -81,11 +87,11 @@ Deno.test("startSession - Error: Project is missing a process_template_id", asyn
                     disallowed_model_ids: [],
                 }],
                 error: null,
-            }
+            },
         },
         mockUser: MOCK_USER,
     });
-    const result = await startSession(MOCK_USER, mockAdminDbClientSetup.client as unknown as SupabaseClient<Database>, payload, { logger: { info: spy(), error: spy(), debug: spy(), warn: spy() }, fileManager: MOCK_FILE_MANAGER });
+    const result = await startSession(MOCK_USER, mockAdminDbClientSetup.client as unknown as SupabaseClient<Database>, mockUserTierClientSetup.client as unknown as SupabaseClient<Database>, payload, { logger: { info: spy(), error: spy(), debug: spy(), warn: spy() }, fileManager: MOCK_FILE_MANAGER });
     assertExists(result.error);
     assertEquals(result.error?.message, "Project is not configured with a process template.");
     assertEquals(result.error?.status, 400);
@@ -129,6 +135,9 @@ Deno.test("startSession - Error: Process template is missing a starting_stage_id
                 })
             },
         },
+        mockUser: MOCK_USER,
+    });
+    const mockUserTierClientSetup = createMockSupabaseClient(MOCK_USER.id, {
         rpcResults: {
             validate_model_tier_access: {
                 data: [{
@@ -139,11 +148,11 @@ Deno.test("startSession - Error: Process template is missing a starting_stage_id
                     disallowed_model_ids: [],
                 }],
                 error: null,
-            }
+            },
         },
         mockUser: MOCK_USER,
     });
-    const result = await startSession(MOCK_USER, mockAdminDbClientSetup.client as unknown as SupabaseClient<Database>, payload, { logger: { info: spy(), error: spy(), debug: spy(), warn: spy() }, fileManager: MOCK_FILE_MANAGER });
+    const result = await startSession(MOCK_USER, mockAdminDbClientSetup.client as unknown as SupabaseClient<Database>, mockUserTierClientSetup.client as unknown as SupabaseClient<Database>, payload, { logger: { info: spy(), error: spy(), debug: spy(), warn: spy() }, fileManager: MOCK_FILE_MANAGER });
     assertExists(result.error);
     assertEquals(result.error?.message, "Process template does not have a starting stage defined.");
     assertEquals(result.error?.status, 500);
@@ -186,6 +195,9 @@ Deno.test("startSession - Error: Initial stage has no associated system prompt",
                 })
             }
         },
+        mockUser: MOCK_USER,
+    });
+    const mockUserTierClientSetup = createMockSupabaseClient(MOCK_USER.id, {
         rpcResults: {
             validate_model_tier_access: {
                 data: [{
@@ -196,7 +208,7 @@ Deno.test("startSession - Error: Initial stage has no associated system prompt",
                     disallowed_model_ids: [],
                 }],
                 error: null,
-            }
+            },
         },
         mockUser: MOCK_USER,
     });
@@ -204,6 +216,7 @@ Deno.test("startSession - Error: Initial stage has no associated system prompt",
     const result = await startSession(
         MOCK_USER,
         mockAdminDbClientSetup.client as unknown as SupabaseClient<Database>,
+        mockUserTierClientSetup.client as unknown as SupabaseClient<Database>,
         payload,
         { logger: mockLogger, fileManager: MOCK_FILE_MANAGER, providerMap: testProviderMap, embeddingApiKey: "test-key" }
     );
@@ -251,6 +264,9 @@ Deno.test("startSession - Error: Database error on session insertion", async () 
                 })
             }
         },
+        mockUser: MOCK_USER,
+    });
+    const mockUserTierClientSetup = createMockSupabaseClient(MOCK_USER.id, {
         rpcResults: {
             validate_model_tier_access: {
                 data: [{
@@ -261,7 +277,7 @@ Deno.test("startSession - Error: Database error on session insertion", async () 
                     disallowed_model_ids: [],
                 }],
                 error: null,
-            }
+            },
         },
         mockUser: MOCK_USER,
     });
@@ -270,6 +286,7 @@ Deno.test("startSession - Error: Database error on session insertion", async () 
     const result = await startSession(
         MOCK_USER,
         mockAdminDbClientSetup.client as unknown as SupabaseClient<Database>,
+        mockUserTierClientSetup.client as unknown as SupabaseClient<Database>,
         payload,
         { logger: mockLogger, fileManager: MOCK_FILE_MANAGER, promptAssembler: mockAssembler, providerMap: testProviderMap, embeddingApiKey: 'test-key' }
     );
@@ -325,6 +342,10 @@ Deno.test("startSession - Error: Fails to assemble seed prompt and cleans up ses
                 delete: spiedSessionDeleteFn // Use the spied function here
             }
         },
+        mockUser: MOCK_USER,
+    });
+    
+    const mockUserTierClientSetup = createMockSupabaseClient(MOCK_USER.id, {
         rpcResults: {
             validate_model_tier_access: {
                 data: [{
@@ -335,11 +356,11 @@ Deno.test("startSession - Error: Fails to assemble seed prompt and cleans up ses
                     disallowed_model_ids: [],
                 }],
                 error: null,
-            }
+            },
         },
         mockUser: MOCK_USER,
     });
-    
+
     const mockLogger = new MockLogger();
     
     await assertRejects(
@@ -347,6 +368,7 @@ Deno.test("startSession - Error: Fails to assemble seed prompt and cleans up ses
             await startSession(
                 MOCK_USER, 
                 mockAdminDbClientSetup.client as unknown as SupabaseClient<Database>, 
+                mockUserTierClientSetup.client as unknown as SupabaseClient<Database>,
                 payload, 
                 { 
                     logger: mockLogger,
@@ -391,12 +413,29 @@ Deno.test("startSession - Error: Missing overlays should fail fast", async () =>
         mockUser: MOCK_USER,
     });
 
+    const mockUserTierClientSetup = createMockSupabaseClient(MOCK_USER.id, {
+        rpcResults: {
+            validate_model_tier_access: {
+                data: [{
+                    valid: true,
+                    user_tier_level: 1,
+                    max_models_per_project: 3,
+                    over_model_limit: false,
+                    disallowed_model_ids: [],
+                }],
+                error: null,
+            },
+        },
+        mockUser: MOCK_USER,
+    });
+
     const mockLogger = new MockLogger();
     const assembler = new MockPromptAssembler();
 
     const result = await startSession(
         MOCK_USER,
         mockAdminDbClientSetup.client as unknown as SupabaseClient<Database>,
+        mockUserTierClientSetup.client as unknown as SupabaseClient<Database>,
         payload,
         { logger: mockLogger, fileManager: MOCK_FILE_MANAGER, promptAssembler: assembler }
     );
@@ -414,7 +453,22 @@ Deno.test("startSession - Error: rejects request when idempotencyKey is missing 
         },
         mockUser: MOCK_USER,
     });
-    const result = await startSession(MOCK_USER, mockAdminDbClientSetup.client as unknown as SupabaseClient<Database>, payloadMissingKey, { logger: { info: spy(), error: spy(), debug: spy(), warn: spy() }, fileManager: MOCK_FILE_MANAGER });
+    const mockUserTierClientSetup = createMockSupabaseClient(MOCK_USER.id, {
+        rpcResults: {
+            validate_model_tier_access: {
+                data: [{
+                    valid: true,
+                    user_tier_level: 1,
+                    max_models_per_project: 3,
+                    over_model_limit: false,
+                    disallowed_model_ids: [],
+                }],
+                error: null,
+            },
+        },
+        mockUser: MOCK_USER,
+    });
+    const result = await startSession(MOCK_USER, mockAdminDbClientSetup.client as unknown as SupabaseClient<Database>, mockUserTierClientSetup.client as unknown as SupabaseClient<Database>, payloadMissingKey, { logger: { info: spy(), error: spy(), debug: spy(), warn: spy() }, fileManager: MOCK_FILE_MANAGER });
     assertExists(result.error);
     assertEquals(result.error?.status, 400);
     assert((result.error?.message?.toLowerCase().includes("idempotency")) ?? false, "Error message should mention idempotency");
@@ -428,7 +482,22 @@ Deno.test("startSession - Error: rejects request when idempotencyKey is empty st
         },
         mockUser: MOCK_USER,
     });
-    const result = await startSession(MOCK_USER, mockAdminDbClientSetup.client as unknown as SupabaseClient<Database>, payload, { logger: { info: spy(), error: spy(), debug: spy(), warn: spy() }, fileManager: MOCK_FILE_MANAGER });
+    const mockUserTierClientSetup = createMockSupabaseClient(MOCK_USER.id, {
+        rpcResults: {
+            validate_model_tier_access: {
+                data: [{
+                    valid: true,
+                    user_tier_level: 1,
+                    max_models_per_project: 3,
+                    over_model_limit: false,
+                    disallowed_model_ids: [],
+                }],
+                error: null,
+            },
+        },
+        mockUser: MOCK_USER,
+    });
+    const result = await startSession(MOCK_USER, mockAdminDbClientSetup.client as unknown as SupabaseClient<Database>, mockUserTierClientSetup.client as unknown as SupabaseClient<Database>, payload, { logger: { info: spy(), error: spy(), debug: spy(), warn: spy() }, fileManager: MOCK_FILE_MANAGER });
     assertExists(result.error);
     assertEquals(result.error?.status, 400);
     assert((result.error?.message?.toLowerCase().includes("idempotency")) ?? false, "Error message should mention idempotency");
@@ -508,6 +577,13 @@ Deno.test("startSession - includes idempotency_key in the insert call to dialect
                 delete: async () => ({ data: null, error: null, status: 204, statusText: "no content" })
             },
         },
+        mockUser: MOCK_USER,
+    };
+    const payload: StartSessionPayload = { projectId: mockProjectId, selectedModels: [{ id: "model-abc", displayName: "Model ABC" }], idempotencyKey: mockIdempotencyKey };
+    const mockAssembler = new MockPromptAssembler();
+    mockAssembler.assembleSeedPrompt = spy(() => Promise.resolve(mockAssembledPrompt));
+    const { client: mockAdminClient } = createMockSupabaseClient(MOCK_USER.id, mockConfig);
+    const mockUserTierClientSetup = createMockSupabaseClient(MOCK_USER.id, {
         rpcResults: {
             validate_model_tier_access: {
                 data: [{
@@ -518,17 +594,14 @@ Deno.test("startSession - includes idempotency_key in the insert call to dialect
                     disallowed_model_ids: [],
                 }],
                 error: null,
-            }
+            },
         },
         mockUser: MOCK_USER,
-    };
-    const payload: StartSessionPayload = { projectId: mockProjectId, selectedModels: [{ id: "model-abc", displayName: "Model ABC" }], idempotencyKey: mockIdempotencyKey };
-    const mockAssembler = new MockPromptAssembler();
-    mockAssembler.assembleSeedPrompt = spy(() => Promise.resolve(mockAssembledPrompt));
-    const { client: mockClient } = createMockSupabaseClient(MOCK_USER.id, mockConfig);
+    });
     const result = await startSession(
         MOCK_USER,
-        mockClient as unknown as SupabaseClient<Database>,
+        mockAdminClient as unknown as SupabaseClient<Database>,
+        mockUserTierClientSetup.client as unknown as SupabaseClient<Database>,
         payload,
         { logger: new MockLogger(), fileManager: MOCK_FILE_MANAGER, promptAssembler: mockAssembler, randomUUID: () => mockNewSessionId, providerMap: testProviderMap, embeddingApiKey: "test-key" }
     );
@@ -620,6 +693,13 @@ Deno.test("startSession - on unique constraint violation (23505 on idempotency_k
                 },
             },
         },
+        mockUser: MOCK_USER,
+    };
+    const payload: StartSessionPayload = { projectId: mockProjectId, selectedModels: [{ id: "model-abc", displayName: "Model ABC" }], idempotencyKey: mockIdempotencyKey };
+    const mockAssembler = new MockPromptAssembler();
+    mockAssembler.assembleSeedPrompt = spy(() => Promise.resolve(mockAssembledPrompt));
+    const { client: mockAdminClient } = createMockSupabaseClient(MOCK_USER.id, mockConfig);
+    const mockUserTierClientSetup = createMockSupabaseClient(MOCK_USER.id, {
         rpcResults: {
             validate_model_tier_access: {
                 data: [{
@@ -630,17 +710,14 @@ Deno.test("startSession - on unique constraint violation (23505 on idempotency_k
                     disallowed_model_ids: [],
                 }],
                 error: null,
-            }
+            },
         },
         mockUser: MOCK_USER,
-    };
-    const payload: StartSessionPayload = { projectId: mockProjectId, selectedModels: [{ id: "model-abc", displayName: "Model ABC" }], idempotencyKey: mockIdempotencyKey };
-    const mockAssembler = new MockPromptAssembler();
-    mockAssembler.assembleSeedPrompt = spy(() => Promise.resolve(mockAssembledPrompt));
-    const { client: mockClient } = createMockSupabaseClient(MOCK_USER.id, mockConfig);
+    });
     const result = await startSession(
         MOCK_USER,
-        mockClient as unknown as SupabaseClient<Database>,
+        mockAdminClient as unknown as SupabaseClient<Database>,
+        mockUserTierClientSetup.client as unknown as SupabaseClient<Database>,
         payload,
         { logger: new MockLogger(), fileManager: MOCK_FILE_MANAGER, promptAssembler: mockAssembler, providerMap: testProviderMap, embeddingApiKey: "test-key" }
     );
@@ -701,6 +778,9 @@ Deno.test("startSession - Error: returns MODEL_TIER_DISALLOWED when tier validat
                 insert: async () => ({ data: [{ id: "session-should-not-insert" }], error: null, status: 201, statusText: "created" })
             },
         },
+        mockUser: MOCK_USER,
+    });
+    const mockUserTierClientSetup = createMockSupabaseClient(MOCK_USER.id, {
         rpcResults: {
             validate_model_tier_access: {
                 data: [{
@@ -711,20 +791,26 @@ Deno.test("startSession - Error: returns MODEL_TIER_DISALLOWED when tier validat
                     disallowed_model_ids: ["model-disallowed"],
                 }],
                 error: null,
-            }
+            },
         },
         mockUser: MOCK_USER,
     });
     const result = await startSession(
         MOCK_USER,
         mockAdminDbClientSetup.client as unknown as SupabaseClient<Database>,
+        mockUserTierClientSetup.client as unknown as SupabaseClient<Database>,
         payload,
         { logger: new MockLogger(), fileManager: MOCK_FILE_MANAGER, promptAssembler: mockAssembler, randomUUID: () => "session-should-not-insert" }
     );
     assertExists(result.error);
     assertEquals(result.error?.code, "MODEL_TIER_DISALLOWED");
     assertEquals(result.error?.status, 403);
-    assertEquals(mockAdminDbClientSetup.spies.rpcSpy.calls.length, 1);
+    const adminTierRpcCalls = mockAdminDbClientSetup.spies.rpcSpy.calls.filter(
+        (call) => call.args[0] === "validate_model_tier_access",
+    );
+    assertEquals(adminTierRpcCalls.length, 0, "validate_model_tier_access must not be invoked on the admin dbClient mock.");
+    assertEquals(mockUserTierClientSetup.spies.rpcSpy.calls.length, 1);
+    assertEquals(mockUserTierClientSetup.spies.rpcSpy.calls[0].args[0], "validate_model_tier_access");
     assertEquals(mockAdminDbClientSetup.spies.getHistoricQueryBuilderSpies("dialectic_sessions", "insert")?.callCount, 0);
 });
 
@@ -783,6 +869,9 @@ Deno.test("startSession - Error: returns MODEL_LIMIT_EXCEEDED when tier validati
                 insert: async () => ({ data: [{ id: "session-should-not-insert" }], error: null, status: 201, statusText: "created" })
             },
         },
+        mockUser: MOCK_USER,
+    });
+    const mockUserTierClientSetup = createMockSupabaseClient(MOCK_USER.id, {
         rpcResults: {
             validate_model_tier_access: {
                 data: [{
@@ -793,20 +882,26 @@ Deno.test("startSession - Error: returns MODEL_LIMIT_EXCEEDED when tier validati
                     disallowed_model_ids: [],
                 }],
                 error: null,
-            }
+            },
         },
         mockUser: MOCK_USER,
     });
     const result = await startSession(
         MOCK_USER,
         mockAdminDbClientSetup.client as unknown as SupabaseClient<Database>,
+        mockUserTierClientSetup.client as unknown as SupabaseClient<Database>,
         payload,
         { logger: new MockLogger(), fileManager: MOCK_FILE_MANAGER, promptAssembler: mockAssembler, randomUUID: () => "session-should-not-insert" }
     );
     assertExists(result.error);
     assertEquals(result.error?.code, "MODEL_LIMIT_EXCEEDED");
     assertEquals(result.error?.status, 403);
-    assertEquals(mockAdminDbClientSetup.spies.rpcSpy.calls.length, 1);
+    const adminTierRpcCalls = mockAdminDbClientSetup.spies.rpcSpy.calls.filter(
+        (call) => call.args[0] === "validate_model_tier_access",
+    );
+    assertEquals(adminTierRpcCalls.length, 0, "validate_model_tier_access must not be invoked on the admin dbClient mock.");
+    assertEquals(mockUserTierClientSetup.spies.rpcSpy.calls.length, 1);
+    assertEquals(mockUserTierClientSetup.spies.rpcSpy.calls[0].args[0], "validate_model_tier_access");
     assertEquals(mockAdminDbClientSetup.spies.getHistoricQueryBuilderSpies("dialectic_sessions", "insert")?.callCount, 0);
 });
 
@@ -862,23 +957,32 @@ Deno.test("startSession - Error: returns TIER_VALIDATION_FAILED when model tier 
                 insert: async () => ({ data: [{ id: "session-should-not-insert" }], error: null, status: 201, statusText: "created" })
             },
         },
+        mockUser: MOCK_USER,
+    });
+    const mockUserTierClientSetup = createMockSupabaseClient(MOCK_USER.id, {
         rpcResults: {
             validate_model_tier_access: {
                 data: null,
                 error: new Error("Simulated tier validation failure"),
-            }
+            },
         },
         mockUser: MOCK_USER,
     });
     const result = await startSession(
         MOCK_USER,
         mockAdminDbClientSetup.client as unknown as SupabaseClient<Database>,
+        mockUserTierClientSetup.client as unknown as SupabaseClient<Database>,
         payload,
         { logger: new MockLogger(), fileManager: MOCK_FILE_MANAGER, promptAssembler: mockAssembler, randomUUID: () => "session-should-not-insert" }
     );
     assertExists(result.error);
     assertEquals(result.error?.code, "TIER_VALIDATION_FAILED");
     assertEquals(result.error?.status, 500);
-    assertEquals(mockAdminDbClientSetup.spies.rpcSpy.calls.length, 1);
+    const adminTierRpcCalls = mockAdminDbClientSetup.spies.rpcSpy.calls.filter(
+        (call) => call.args[0] === "validate_model_tier_access",
+    );
+    assertEquals(adminTierRpcCalls.length, 0, "validate_model_tier_access must not be invoked on the admin dbClient mock.");
+    assertEquals(mockUserTierClientSetup.spies.rpcSpy.calls.length, 1);
+    assertEquals(mockUserTierClientSetup.spies.rpcSpy.calls[0].args[0], "validate_model_tier_access");
     assertEquals(mockAdminDbClientSetup.spies.getHistoricQueryBuilderSpies("dialectic_sessions", "insert")?.callCount, 0);
 });

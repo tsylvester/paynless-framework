@@ -234,3 +234,45 @@ Deno.test("isBoundCalculateAffordabilityFn accepts async functions and rejects n
   assertEquals(isBoundCalculateAffordabilityFn({}), false);
   assertEquals(isBoundCalculateAffordabilityFn("not-a-function"), false);
 });
+
+Deno.test("isCalculateAffordabilityParams accepts params with tierOutputCapTokens null", () => {
+  const { client } = createMockSupabaseClient();
+  const params: CalculateAffordabilityParams = buildCalculateAffordabilityParams(DbClient(client), {
+    tierOutputCapTokens: null,
+  });
+  assertEquals(isCalculateAffordabilityParams(params), true);
+});
+
+Deno.test("isCalculateAffordabilityParams accepts params with tierOutputCapTokens 32768", () => {
+  const { client } = createMockSupabaseClient();
+  const params: CalculateAffordabilityParams = buildCalculateAffordabilityParams(DbClient(client), {
+    tierOutputCapTokens: 32768,
+  });
+  assertEquals(isCalculateAffordabilityParams(params), true);
+});
+
+Deno.test("isCalculateAffordabilityParams rejects params missing tierOutputCapTokens", () => {
+  const { client } = createMockSupabaseClient();
+  const valid: CalculateAffordabilityParams = buildCalculateAffordabilityParams(DbClient(client));
+  const { tierOutputCapTokens: _tierOutputCapTokens, ...missingTierOutputCapTokens } = valid;
+  assertEquals(isCalculateAffordabilityParams(missingTierOutputCapTokens), false);
+});
+
+Deno.test("isCalculateAffordabilityDeps rejects deps missing getMaxOutputTokens", () => {
+  const valid: CalculateAffordabilityDeps = buildCalculateAffordabilityDeps();
+  const { getMaxOutputTokens: _getMaxOutputTokens, ...missingGetMaxOutputTokens } = valid;
+  assertEquals(isCalculateAffordabilityDeps(missingGetMaxOutputTokens), false);
+});
+
+Deno.test("isCalculateAffordabilityDeps rejects deps with non-function getMaxOutputTokens", () => {
+  const valid: CalculateAffordabilityDeps = buildCalculateAffordabilityDeps();
+  assertEquals(
+    isCalculateAffordabilityDeps({
+      logger: valid.logger,
+      countTokens: valid.countTokens,
+      compressPrompt: valid.compressPrompt,
+      getMaxOutputTokens: "not-a-function",
+    }),
+    false,
+  );
+});

@@ -4,8 +4,10 @@ import { assertEquals, assertStringIncludes } from "https://deno.land/std@0.224.
 import { ContextWindowError } from "../../_shared/utils/errors.ts";
 import type {
   CalculateAffordabilityCompressedReturn,
+  CalculateAffordabilityDeps,
   CalculateAffordabilityDirectReturn,
   CalculateAffordabilityErrorReturn,
+  CalculateAffordabilityParams,
   CalculateAffordabilityReturn,
 } from "./calculateAffordability.interface.ts";
 import {
@@ -159,4 +161,29 @@ Deno.test("calculateAffordability contract: union result accepts error branch", 
     false,
   );
   assertEquals("error" in result, true);
+});
+
+Deno.test(
+  "CalculateAffordabilityParams contract: tierOutputCapTokens is number | null per interface",
+  () => {
+    const whenNull: CalculateAffordabilityParams["tierOutputCapTokens"] = null;
+    const whenNumber: CalculateAffordabilityParams["tierOutputCapTokens"] = 32768;
+    assertEquals(whenNull, null);
+    assertEquals(whenNumber, 32768);
+  },
+);
+
+Deno.test("CalculateAffordabilityParams contract: tierOutputCapTokens null is valid", () => {
+  const tierOutputCapTokens: CalculateAffordabilityParams["tierOutputCapTokens"] = null;
+  assertEquals(tierOutputCapTokens, null);
+});
+
+Deno.test("CalculateAffordabilityParams contract: tierOutputCapTokens 32768 is valid", () => {
+  const tierOutputCapTokens: CalculateAffordabilityParams["tierOutputCapTokens"] = 32768;
+  assertEquals(tierOutputCapTokens, 32768);
+});
+
+Deno.test("CalculateAffordabilityDeps contract: getMaxOutputTokens is a required key", () => {
+  const key: keyof CalculateAffordabilityDeps = "getMaxOutputTokens";
+  assertEquals(key, "getMaxOutputTokens");
 });

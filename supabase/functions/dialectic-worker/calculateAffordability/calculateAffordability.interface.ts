@@ -1,7 +1,7 @@
 // supabase/functions/dialectic-worker/calculateAffordability/calculateAffordability.interface.ts
 
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
-import type { Database } from "../../types_db.ts";
+import type { Database, Tables } from "../../types_db.ts";
 import type {
   AiModelExtendedConfig,
   ChatApiRequest,
@@ -14,12 +14,23 @@ import type { RelevanceRule } from "../../dialectic-service/dialectic.interface.
 import type { ICompressionStrategy } from "../../_shared/utils/vector_utils.interface.ts";
 import type { BoundCompressPromptFn } from "../compressPrompt/compressPrompt.interface.ts";
 
+export type TierOutputCapTokens = Tables<'tier_definitions'>['output_cap_tokens'];
+
+export type GetMaxOutputTokensFn = (
+  user_balance_tokens: number,
+  prompt_input_tokens: number,
+  modelConfig: AiModelExtendedConfig,
+  logger: ILogger,
+  deficit_tokens_allowed: number,
+  tierOutputCapTokens: TierOutputCapTokens | null,
+) => number;
+
 export interface CalculateAffordabilityDeps {
   logger: ILogger;
   countTokens: CountTokensFn;
   compressPrompt: BoundCompressPromptFn;
+  getMaxOutputTokens: GetMaxOutputTokensFn;
 }
-
 export interface CalculateAffordabilityParams {
   dbClient: SupabaseClient<Database>;
   jobId: string;
@@ -33,6 +44,7 @@ export interface CalculateAffordabilityParams {
   outputRate: number;
   isContinuationFlowInitial: boolean;
   inputsRelevance?: RelevanceRule[];
+  tierOutputCapTokens: TierOutputCapTokens;
 }
 
 export interface CalculateAffordabilityPayload {

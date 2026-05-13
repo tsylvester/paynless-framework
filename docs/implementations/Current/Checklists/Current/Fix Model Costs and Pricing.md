@@ -806,99 +806,97 @@
     * `[✅]` `startSession.ts`, `updateSessionModels.ts`: reject writes when selected models exceed user tier or count limit; structured error identifies whether it's a tier mismatch or count violation
     * `[✅]` `cloneProject.ts`: filter tier-inaccessible models from cloned sessions; partial clone with TODO comment for future conflict resolution UX
 
-* `[ ]` `[BE]` supabase/functions/_shared/utils/affordability_utils **Add tier output cap parameter to getMaxOutputTokens**
+* `[✅]` `[BE]` supabase/functions/_shared/utils/affordability_utils **Add tier output cap parameter to getMaxOutputTokens**
 
-  * `[ ]` `objective`
-    * `[ ]` `getMaxOutputTokens()` caps output by `hard_cap_output_tokens`, `provider_max_output_tokens`, and the user's wallet budget. The user's tier-based output cap (`tier_definitions.output_cap_tokens`) is not applied. A free-tier user with sufficient wallet balance could request 128k tokens — 16× their permitted 8k tier cap.
-    * `[ ]` Fix: add `tierOutputCapTokens` as a new parameter. When non-null, apply it as an explicit conditional cap. When null (ultra tier — no limit from tier), skip the conditional entirely. This is a pure function; it does not fetch from DB.
+  * `[✅]` `objective`
+    * `[✅]` `getMaxOutputTokens()` caps output by `hard_cap_output_tokens`, `provider_max_output_tokens`, and the user's wallet budget. The user's tier-based output cap (`tier_definitions.output_cap_tokens`) is not applied. A free-tier user with sufficient wallet balance could request 128k tokens — 16× their permitted 8k tier cap.
+    * `[✅]` Fix: add `tierOutputCapTokens` as a new parameter. When non-null, apply it as an explicit conditional cap. When null (ultra tier — no limit from tier), skip the conditional entirely. This is a pure function; it does not fetch from DB.
 
-  * `[ ]` `role`
-    * `[ ]` Domain utility — pure output cap calculation, no I/O
-    * `[ ]` Must NOT fetch tier data — receives the cap value as a parameter from the caller
+  * `[✅]` `role`
+    * `[✅]` Domain utility — pure output cap calculation, no I/O
+    * `[✅]` Must NOT fetch tier data — receives the cap value as a parameter from the caller
 
-  * `[ ]` `module`
-    * `[ ]` `_shared/utils`, consumed by `calculateAffordability`
+  * `[✅]` `module`
+    * `[✅]` `_shared/utils`, consumed by `calculateAffordability`
 
-  * `[ ]` `deps`
-    * `[ ]` `types_db.ts` — `Tables<'tier_definitions'>['output_cap_tokens']` — use this type accessor for the parameter type; the `number | null` union is declared in the row type definition (the authoritative source), not inline at the call site
+  * `[✅]` `deps`
+    * `[✅]` `types_db.ts` — `Tables<'tier_definitions'>['output_cap_tokens']` — use this type accessor for the parameter type; the `number | null` union is declared in the row type definition (the authoritative source), not inline at the call site
 
-  * `[ ]` `context_slice`
-    * `[ ]` New parameter: `tierOutputCapTokens: Tables<'tier_definitions'>['output_cap_tokens']` — appended **after** the existing optional `deficit_tokens_allowed = 0` parameter, also optional with default `null`: `tierOutputCapTokens: Tables<'tier_definitions'>['output_cap_tokens'] = null`. This preserves backward compatibility with `chat/` callers that omit the parameter entirely — the chat subsystem does not apply tier output caps and its call sites must not be modified. The dialectic enforcement is at the `CalculateAffordabilityParams.tierOutputCapTokens` required-field boundary, which forces dialectic callers to provide the value explicitly.
-    * `[ ]` After computing the existing minimum of all non-tier caps: `if (tierOutputCapTokens !== null && result > tierOutputCapTokens) { result = tierOutputCapTokens }`
-    * `[ ]` No nullish coalescing against `Infinity` — the conditional is the complete logic. When null, the block is skipped; no default is substituted.
+  * `[✅]` `context_slice`
+    * `[✅]` New parameter: `tierOutputCapTokens: Tables<'tier_definitions'>['output_cap_tokens']` — appended **after** the existing optional `deficit_tokens_allowed = 0` parameter, also optional with default `null`: `tierOutputCapTokens: Tables<'tier_definitions'>['output_cap_tokens'] = null`. This preserves backward compatibility with `chat/` callers that omit the parameter entirely — the chat subsystem does not apply tier output caps and its call sites must not be modified. The dialectic enforcement is at the `CalculateAffordabilityParams.tierOutputCapTokens` required-field boundary, which forces dialectic callers to provide the value explicitly.
+    * `[✅]` After computing the existing minimum of all non-tier caps: `if (tierOutputCapTokens !== null && result > tierOutputCapTokens) { result = tierOutputCapTokens }`
+    * `[✅]` No nullish coalescing against `Infinity` — the conditional is the complete logic. When null, the block is skipped; no default is substituted.
 
-  * `[ ]` supabase/functions/_shared/utils/`affordability_utils.test.ts`
-    * `[ ]` Add test: `tierOutputCapTokens` omitted entirely → result unchanged from existing logic (confirms optional default null behavior; validates `chat/` call sites remain compatible)
-    * `[ ]` Add test: `tierOutputCapTokens = null` (explicit) → result unchanged from existing logic (tier conditional not applied)
-    * `[ ]` Add test: `tierOutputCapTokens = 32768`, wallet budget allows 100000, model hard cap = 131072 → result = 32768 (tier is binding)
-    * `[ ]` Add test: `tierOutputCapTokens = 131072`, model hard cap = 64000 → result = 64000 (model cap is binding)
-    * `[ ]` Add test: `tierOutputCapTokens = 131072`, wallet budget = 10000 → result = 10000 (wallet is binding)
-    * `[ ]` All existing tests: do NOT add the parameter — must still pass to prove backward compatibility
+  * `[✅]` supabase/functions/_shared/utils/`affordability_utils.test.ts`
+    * `[✅]` Add test: `tierOutputCapTokens` omitted entirely → result unchanged from existing logic (confirms optional default null behavior; validates `chat/` call sites remain compatible)
+    * `[✅]` Add test: `tierOutputCapTokens = null` (explicit) → result unchanged from existing logic (tier conditional not applied)
+    * `[✅]` Add test: `tierOutputCapTokens = 32768`, wallet budget allows 100000, model hard cap = 131072 → result = 32768 (tier is binding)
+    * `[✅]` Add test: `tierOutputCapTokens = 131072`, model hard cap = 64000 → result = 64000 (model cap is binding)
+    * `[✅]` Add test: `tierOutputCapTokens = 131072`, wallet budget = 10000 → result = 10000 (wallet is binding)
+    * `[✅]` All existing tests: do NOT add the parameter — must still pass to prove backward compatibility
 
-  * `[ ]` supabase/functions/_shared/utils/`affordability_utils.ts`
-    * `[ ]` Add `tierOutputCapTokens: Tables<'tier_definitions'>['output_cap_tokens'] = null` as the last parameter to `getMaxOutputTokens()` (after `deficit_tokens_allowed = 0`)
-    * `[ ]` Add explicit conditional after existing cap logic: `if (tierOutputCapTokens !== null && result > tierOutputCapTokens) { result = tierOutputCapTokens }`
-    * `[ ]` Import `Tables` from `types_db.ts` if not already imported
-    * `[ ]` Add a comment above the new parameter documenting why the default exists: two chat-source call sites (`supabase/functions/chat/streamChat/StreamChat.ts:203`, `supabase/functions/chat/streamRewind/streamRewind.ts:214`) intentionally remain unmodified — chat is out of scope for tier capping. The parameter default preserves those call sites without modification. The default is a deliberate part of the contract, not an oversight.
+  * `[✅]` supabase/functions/_shared/utils/`affordability_utils.ts`
+    * `[✅]` Add `tierOutputCapTokens: Tables<'tier_definitions'>['output_cap_tokens'] = null` as the last parameter to `getMaxOutputTokens()` (after `deficit_tokens_allowed = 0`)
+    * `[✅]` Add explicit conditional after existing cap logic: `if (tierOutputCapTokens !== null && result > tierOutputCapTokens) { result = tierOutputCapTokens }`
+    * `[✅]` Import `Tables` from `types_db.ts` if not already imported
+    * `[✅]` Add a comment above the new parameter documenting why the default exists: two chat-source call sites (`supabase/functions/chat/streamChat/StreamChat.ts:203`, `supabase/functions/chat/streamRewind/streamRewind.ts:214`) intentionally remain unmodified — chat is out of scope for tier capping. The parameter default preserves those call sites without modification. The default is a deliberate part of the contract, not an oversight.
 
 * `[ ]` `[BE]` supabase/functions/dialectic-worker/calculateAffordability **Thread tierOutputCapTokens through to getMaxOutputTokens**
 
-  * `[ ]` `objective`
-    * `[ ]` `calculateAffordability()` calls `getMaxOutputTokens()` but cannot pass the new `tierOutputCapTokens` parameter because it does not receive it. The tier cap must be threaded from `prepareModelJob` through this function to the utility.
+  * `[✅]` `objective`
+    * `[✅]` `calculateAffordability()` calls `getMaxOutputTokens()` but cannot pass the new `tierOutputCapTokens` parameter because it does not receive it. The tier cap must be threaded from `prepareModelJob` through this function to the utility.
 
-  * `[ ]` `role`
-    * `[ ]` Domain service — affordability computation, orchestrates cap inputs and wallet math
+  * `[✅]` `role`
+    * `[✅]` Domain service — affordability computation, orchestrates cap inputs and wallet math
 
-  * `[ ]` `module`
-    * `[ ]` dialectic-worker bounded context
+  * `[✅]` `module`
+    * `[✅]` dialectic-worker bounded context
 
-  * `[ ]` `deps`
-    * `[ ]` `affordability_utils.ts` (prior node — `getMaxOutputTokens` with new parameter)
-    * `[ ]` `types_db.ts` — `Tables<'tier_definitions'>['output_cap_tokens']`
+  * `[✅]` `deps`
+    * `[✅]` `affordability_utils.ts` (prior node — `getMaxOutputTokens` with new parameter)
+    * `[✅]` `types_db.ts` — `Tables<'tier_definitions'>['output_cap_tokens']`
 
-  * `[ ]` `context_slice`
-    * `[ ]` `CalculateAffordabilityParams` (the params type for this function): add `tierOutputCapTokens: Tables<'tier_definitions'>['output_cap_tokens']`
-    * `[ ]` In the function body: pass `params.tierOutputCapTokens` to `getMaxOutputTokens()` as the new parameter
-    * `[ ]` No other logic changes
+  * `[✅]` `context_slice`
+    * `[✅]` `CalculateAffordabilityParams` (the params type for this function): add `tierOutputCapTokens: Tables<'tier_definitions'>['output_cap_tokens']`
+    * `[✅]` In the function body: pass `params.tierOutputCapTokens` to `getMaxOutputTokens()` as the new parameter
+    * `[✅]` No other logic changes
 
-  * `[ ]` supabase/functions/dialectic-worker/calculateAffordability/`calculateAffordability.test.ts`
-    * `[ ]` Add test: `tierOutputCapTokens` is forwarded to `getMaxOutputTokens` — mock `getMaxOutputTokens` and assert it receives the value passed in params
-    * `[ ]` Add test: `tierOutputCapTokens = null` → null forwarded as-is
-    * `[ ]` Existing tests: add `tierOutputCapTokens: null` to test params — must still pass
+  * `[✅]` supabase/functions/dialectic-worker/calculateAffordability/`calculateAffordability.interface.test.ts`
+    * `[✅]` Add test: `CalculateAffordabilityParams` shape includes `tierOutputCapTokens` typed as `Tables<'tier_definitions'>['output_cap_tokens']` (number | null)
+    * `[✅]` Add test: valid params with `tierOutputCapTokens: null` satisfies the interface
+    * `[✅]` Add test: valid params with `tierOutputCapTokens: 32768` (number) satisfies the interface
+    * `[✅]` Existing contract tests for `CalculateAffordabilityParams` must still pass with the added field
 
-  * `[ ]` supabase/functions/dialectic-worker/calculateAffordability/`calculateAffordability.interface.test.ts`
-    * `[ ]` Add test: `CalculateAffordabilityParams` shape includes `tierOutputCapTokens` typed as `Tables<'tier_definitions'>['output_cap_tokens']` (number | null)
-    * `[ ]` Add test: valid params with `tierOutputCapTokens: null` satisfies the interface
-    * `[ ]` Add test: valid params with `tierOutputCapTokens: 32768` (number) satisfies the interface
-    * `[ ]` Existing contract tests for `CalculateAffordabilityParams` must still pass with the added field
+  * `[✅]` supabase/functions/dialectic-worker/calculateAffordability/`calculateAffordability.interface.ts`
+    * `[✅]` Add `Tables` to the existing `types_db.ts` import (currently only `Database` is imported; add `Tables` to the same import statement)
+    * `[✅]` Add `tierOutputCapTokens: Tables<'tier_definitions'>['output_cap_tokens']` to `CalculateAffordabilityParams` — required field; callers must always provide it explicitly (number for a capped tier, null for ultra / no cap)
 
-  * `[ ]` supabase/functions/dialectic-worker/calculateAffordability/`calculateAffordability.interface.ts`
-    * `[ ]` Add `Tables` to the existing `types_db.ts` import (currently only `Database` is imported; add `Tables` to the same import statement)
-    * `[ ]` Add `tierOutputCapTokens: Tables<'tier_definitions'>['output_cap_tokens']` to `CalculateAffordabilityParams` — required field; callers must always provide it explicitly (number for a capped tier, null for ultra / no cap)
+  * `[✅]` supabase/functions/dialectic-worker/calculateAffordability/`calculateAffordability.guard.test.ts`
+    * `[✅]` Add test: `isCalculateAffordabilityParams()` accepts params with `tierOutputCapTokens: null`
+    * `[✅]` Add test: `isCalculateAffordabilityParams()` accepts params with `tierOutputCapTokens: 32768` (number)
+    * `[✅]` Add test: `isCalculateAffordabilityParams()` rejects params missing `tierOutputCapTokens` field entirely
+    * `[✅]` Existing `isCalculateAffordabilityParams` tests must still pass
 
-  * `[ ]` supabase/functions/dialectic-worker/calculateAffordability/`calculateAffordability.guard.test.ts`
-    * `[ ]` Add test: `isCalculateAffordabilityParams()` accepts params with `tierOutputCapTokens: null`
-    * `[ ]` Add test: `isCalculateAffordabilityParams()` accepts params with `tierOutputCapTokens: 32768` (number)
-    * `[ ]` Add test: `isCalculateAffordabilityParams()` rejects params missing `tierOutputCapTokens` field entirely
-    * `[ ]` Existing `isCalculateAffordabilityParams` tests must still pass
+  * `[✅]` supabase/functions/dialectic-worker/calculateAffordability/`calculateAffordability.guard.ts`
+    * `[✅]` Add check in `isCalculateAffordabilityParams()` after existing field checks: `if (!('tierOutputCapTokens' in v)) { return false }` then validate `typeof v.tierOutputCapTokens === 'number' || v.tierOutputCapTokens === null`
 
-  * `[ ]` supabase/functions/dialectic-worker/calculateAffordability/`calculateAffordability.guard.ts`
-    * `[ ]` Add check in `isCalculateAffordabilityParams()` after existing field checks: `if (!('tierOutputCapTokens' in v)) { return false }` then validate `typeof v.tierOutputCapTokens === 'number' || v.tierOutputCapTokens === null`
+  * `[✅]` supabase/functions/dialectic-worker/calculateAffordability/`calculateAffordability.test.ts`
+    * `[✅]` Add test: `tierOutputCapTokens` is forwarded to `getMaxOutputTokens` — mock `getMaxOutputTokens` and assert it receives the value passed in params
+    * `[✅]` Add test: `tierOutputCapTokens = null` → null forwarded as-is
+    * `[✅]` Existing tests: add `tierOutputCapTokens: null` to test params — must still pass
+    * `[ ]` Direct `getMaxOutputTokens(...)` call sites used to compute `expectedMax` fixtures must pass the new parameter explicitly — visible-intent rule applies to test fixtures the same as to source. Pass the tier cap value being exercised by the surrounding test (or `null` when the test asserts behavior with no tier cap applied).
+    * `[ ]` All `CalculateAffordabilityParams` constructions in this file are produced via `buildCalculateAffordabilityParams`; the factory update above carries `tierOutputCapTokens` through. No literal updates required in this file.
 
-  * `[ ]` supabase/functions/dialectic-worker/calculateAffordability/`calculateAffordability.ts`
-    * `[ ]` `calculateAffordability.ts` calls `getMaxOutputTokens` in three distinct locations; all three must be updated explicitly — relying on the optional default is not sufficient here; intent must be visible at each call site:
+  * `[✅]` supabase/functions/dialectic-worker/calculateAffordability/`calculateAffordability.ts`
+    * `[✅]` `calculateAffordability.ts` calls `getMaxOutputTokens` in three distinct locations; all three must be updated explicitly — relying on the optional default is not sufficient here; intent must be visible at each call site:
       * Non-compressed path (~line 80): `getMaxOutputTokens(walletBalance, initialTokenCount, extendedModelConfig, deps.logger, 0, params.tierOutputCapTokens)` — this is the binding enforcement point; pass the actual tier cap
       * Compression path `getAllowedInputFor` lambda (~line 236): `getMaxOutputTokens(balanceTokens, tokenCount, extendedModelConfig, deps.logger, 0, null)` — compression budget estimation does not enforce the tier cap; pass null explicitly
       * Compression path `plannedMaxOutPostPrecheck` (~line 278): `getMaxOutputTokens(balanceAfterCompression, finalTargetThreshold, extendedModelConfig, deps.logger, 0, null)` — same rationale; pass null explicitly
 
-  * `[ ]` supabase/functions/dialectic-worker/calculateAffordability/`calculateAffordability.mock.ts`
-    * `[ ]` Add `tierOutputCapTokens` to the `CalculateAffordabilityParamsOverrides` type as an optional override (`number | null`) so callers can vary the value
-    * `[ ]` Add `tierOutputCapTokens` to the `base` literal returned by `buildCalculateAffordabilityParams`, sourced from `overrides?.tierOutputCapTokens` with a default of `null`
-    * `[ ]` Any additional `CalculateAffordabilityParams` literals constructed directly in this file (outside the factory): add `tierOutputCapTokens: null`
-
-  * `[ ]` supabase/functions/dialectic-worker/calculateAffordability/`calculateAffordability.test.ts`
-    * `[ ]` Direct `getMaxOutputTokens(...)` call sites used to compute `expectedMax` fixtures must pass the new parameter explicitly — visible-intent rule applies to test fixtures the same as to source. Pass the tier cap value being exercised by the surrounding test (or `null` when the test asserts behavior with no tier cap applied).
-    * `[ ]` All `CalculateAffordabilityParams` constructions in this file are produced via `buildCalculateAffordabilityParams`; the factory update above carries `tierOutputCapTokens` through. No literal updates required in this file.
+  * `[✅]` supabase/functions/dialectic-worker/calculateAffordability/`calculateAffordability.mock.ts`
+    * `[✅]` Add `tierOutputCapTokens` to the `CalculateAffordabilityParamsOverrides` type as an optional override (`number | null`) so callers can vary the value
+    * `[✅]` Add `tierOutputCapTokens` to the `base` literal returned by `buildCalculateAffordabilityParams`, sourced from `overrides?.tierOutputCapTokens` with a default of `null`
+    * `[✅]` Any additional `CalculateAffordabilityParams` literals constructed directly in this file (outside the factory): add `tierOutputCapTokens: null`
 
   * `[ ]` supabase/functions/dialectic-worker/calculateAffordability/`calculateAffordability.integration.test.ts`
     * `[ ]` Direct `getMaxOutputTokens(...)` call site used to compute `expectedMax` fixture must pass the new parameter explicitly — same rule as above

@@ -30,6 +30,7 @@ const assembleChunksMock = createAssembleChunksMock()
 export async function startSession(
   user: User,
   dbClient: SupabaseClient<Database>,
+  userClient: SupabaseClient<Database>,
   payload: StartSessionPayload,
   partialDeps?: Partial<StartSessionDeps>
 ): Promise<{ data?: StartSessionSuccessResponse; error?: { message: string; status?: number; details?: string, code?: string } }> {
@@ -288,7 +289,7 @@ export async function startSession(
 
 
     const selectedModelIds = selectedModels.map((model) => model.id);
-    const { data: tierValidationData, error: tierValidationError } = await dbClient.rpc(
+    const { data: tierValidationData, error: tierValidationError } = await userClient.rpc(
         'validate_model_tier_access',
         { p_model_ids: selectedModelIds },
     );

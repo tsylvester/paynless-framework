@@ -140,6 +140,7 @@ function buildUploadContextForAsset(
 
 export async function cloneProject(
     supabaseClient: SupabaseClient<Database>,
+    userClient: SupabaseClient<Database>,
     fileManager: IFileManager,
     originalProjectId: string,
     newProjectName: string | undefined,
@@ -212,7 +213,7 @@ export async function cloneProject(
                 let selectedModelIdsForClone = originalSelectedModelIds;
 
                 if (originalSelectedModelIds !== null && originalSelectedModelIds.length > 0) {
-                    const { data: tierValidationData, error: tierValidationError } = await supabaseClient.rpc(
+                    const { data: tierValidationData, error: tierValidationError } = await userClient.rpc(
                         'validate_model_tier_access',
                         { p_model_ids: originalSelectedModelIds },
                     );

@@ -24,6 +24,9 @@ export function isCalculateAffordabilityDeps(value: unknown): value is Calculate
   if (!("compressPrompt" in value) || typeof value.compressPrompt !== "function") {
     return false;
   }
+  if (!("getMaxOutputTokens" in value) || typeof value.getMaxOutputTokens !== "function") {
+    return false;
+  }
   return true;
 }
 
@@ -68,6 +71,12 @@ export function isCalculateAffordabilityParams(value: unknown): value is Calcula
     if (!Array.isArray(value.inputsRelevance)) {
       return false;
     }
+  }
+  if (!("tierOutputCapTokens" in value)) {
+    return false;
+  }
+  if (typeof value.tierOutputCapTokens !== "number" && value.tierOutputCapTokens !== null) {
+    return false;
   }
   return true;
 }

@@ -180,7 +180,7 @@ export interface ActionHandlers {
   getProjectDetails: (payload: GetProjectDetailsPayload, dbClient: SupabaseClient, user: User) => Promise<{ data?: DialecticProject; error?: ServiceError; status?: number }>;
   getSessionDetails: (payload: GetSessionDetailsPayload, dbClient: SupabaseClient, user: User) => Promise<{ data?: GetSessionDetailsResponse; error?: ServiceError; status?: number }>;
   getContributionContentHandler: (getUserFn: GetUserFn, dbClient: SupabaseClient, logger: ILogger, payload: { contributionId: string }) => Promise<{ data?: GetContributionContentDataResponse; error?: ServiceError; status?: number }>;
-  startSession: (user: User, dbClient: SupabaseClient, payload: StartSessionPayload, dependencies: { logger: ILogger }) => Promise<{ data?: StartSessionSuccessResponse; error?: ServiceError }>;
+  startSession: (user: User, dbClient: SupabaseClient, userClient: SupabaseClient, payload: StartSessionPayload, dependencies: { logger: ILogger }) => Promise<{ data?: StartSessionSuccessResponse; error?: ServiceError }>;
   generateContributions: (
     dbClient: SupabaseClient,
     payload: GenerateContributionsPayload,
@@ -200,7 +200,7 @@ export interface ActionHandlers {
   listProjects: (user: User, dbClient: SupabaseClient) => Promise<{ data?: DialecticProject[]; error?: ServiceError; status?: number }>;
   listAvailableDomainOverlays: (stageAssociation: string, dbClient: SupabaseClient) => Promise<DomainOverlayDescriptor[]>;
   deleteProject: (dbClient: SupabaseClient, payload: { projectId: string }, userId: string) => Promise<{data?: null, error?: { message: string; details?: string | undefined; }, status?: number}>;
-  cloneProject: (dbClient: SupabaseClient, fileManager: IFileManager, originalProjectId: string, newProjectName: string | undefined, cloningUserId: string) => Promise<CloneProjectResult>;
+  cloneProject: (dbClient: SupabaseClient, userClient: SupabaseClient, fileManager: IFileManager, originalProjectId: string, newProjectName: string | undefined, cloningUserId: string) => Promise<CloneProjectResult>;
   exportProject: (dbClient: SupabaseClient, fileManager: IFileManager, storageUtils: IStorageUtils, projectId: string, userId: string) => Promise<{ data?: { export_url: string }; error?: ServiceError; status?: number }>;
   getProjectResourceContent: (payload: GetProjectResourceContentPayload, dbClient: SupabaseClient, user: User) => Promise<{ data?: GetProjectResourceContentResponse; error?: ServiceError; status?: number }>;
   saveContributionEdit: SaveContributionEditFn;
@@ -208,7 +208,7 @@ export interface ActionHandlers {
   listDomains: (dbClient: SupabaseClient) => Promise<{ data?: DialecticDomain[]; error?: ServiceError }>;
   listModelCatalog: (dbClient: SupabaseClient) => Promise<{ data?: AIModelCatalogEntry[]; error?: ServiceError }>;
   fetchProcessTemplate: (dbClient: SupabaseClient, payload: FetchProcessTemplatePayload) => Promise<{ data?: DialecticProcessTemplate; error?: ServiceError; status?: number }>;
-  updateSessionModels: (dbClient: SupabaseClient, payload: UpdateSessionModelsPayload, userId: string) => Promise<{ data?: DialecticSession; error?: ServiceError; status?: number }>;
+  updateSessionModels: (dbClient: SupabaseClient, userClient: SupabaseClient, payload: UpdateSessionModelsPayload, userId: string) => Promise<{ data?: DialecticSession; error?: ServiceError; status?: number }>;
   updateViewingStage: UpdateViewingStageFn;
   getStageRecipe: (payload: { stageSlug: string }, dbClient: SupabaseClient) => Promise<{ data?: StageRecipeResponse; error?: ServiceError; status?: number }>;
   listStageDocuments: (payload: ListStageDocumentsPayload, dbClient: SupabaseClient) => Promise<{ status: number; data?: ListStageDocumentsResponse; error?: { message: string } }>;
@@ -422,6 +422,7 @@ export async function handleRequest(
           const { data, error } = await handlers.startSession(
             userForJson!,
             adminClient,
+            userClient,
             payload,
             { logger }
           );
@@ -502,7 +503,10 @@ export async function handleRequest(
           if (!payload || !payload.projectId) {
               return createErrorResponse("projectId is required for cloneProject.", 400, req, { message: "projectId is required for cloneProject.", status: 400 });
           }
-          const { data, error } = await handlers.cloneProject(adminClient, fileManager, payload.projectId, payload.newProjectName, userForJson!.id);
+          if (!userForJson) {
+            return createErrorResponse('User not authenticated for cloneProject', 401, req, { message: 'User not authenticated', status: 401, code: 'USER_AUTH_FAILED' });
+          }
+          const { data, error } = await handlers.cloneProject(adminClient, userClient, fileManager, payload.projectId, payload.newProjectName, userForJson.id);
           if (error) {
               return createErrorResponse(error.message, 500, req, error);
           }
@@ -517,7 +521,10 @@ export async function handleRequest(
             downloadFromStorage,
             createSignedUrlForPath
           };
-          const { data, error, status } = await handlers.exportProject(adminClient, fileManager, storageUtils, payload.projectId, userForJson!.id);
+          if (!userForJson) {
+            return createErrorResponse('User not authenticated for exportProject', 401, req, { message: 'User not authenticated', status: 401, code: 'USER_AUTH_FAILED' });
+          }
+          const { data, error, status } = await handlers.exportProject(adminClient, fileManager, storageUtils, payload.projectId, userForJson.id);
           if (error) {
             return createErrorResponse(error.message, status || 500, req, error);
           }
@@ -589,7 +596,7 @@ export async function handleRequest(
             return createErrorResponse('User not authenticated for updateSessionModels', 401, req, { message: "User not authenticated", status: 401, code: 'USER_AUTH_FAILED' });
           }
           const payload: UpdateSessionModelsPayload = requestBody.payload;
-          const { data, error, status } = await handlers.updateSessionModels(adminClient, payload, userForJson.id);
+          const { data, error, status } = await handlers.updateSessionModels(adminClient, userClient, payload, userForJson.id);
           if (error) {
             return createErrorResponse(error.message, status || 500, req, error);
           }
