@@ -29,6 +29,7 @@ export interface NodeModelConfig {
   provider_max_output_tokens?: number;
   input_token_cost_rate: number | null;
   output_token_cost_rate: number | null;
+  tier_output_cap_tokens: number | null;
 }
 
 export interface NodeTokenUsage {

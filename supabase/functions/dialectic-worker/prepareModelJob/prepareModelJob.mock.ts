@@ -157,6 +157,7 @@ export function mockAiProvidersRow(
     is_default_embedding: false,
     is_default_generation: false,
     is_enabled: true,
+    min_plan_tier_level: 0,
   };
   return { ...base, ...overrides };
 }
@@ -186,6 +187,7 @@ export function mockAiProvidersRowFromConfig(
     is_default_embedding: false,
     is_default_generation: false,
     is_enabled: true,
+    min_plan_tier_level: 0,
   };
   return { ...base, ...overrides };
 }

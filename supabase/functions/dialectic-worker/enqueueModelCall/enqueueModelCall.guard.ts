@@ -150,6 +150,15 @@ export function isAiStreamEventData(v: unknown): v is AiStreamEventData {
   if (!("sig" in v) || typeof v.sig !== "string") {
     return false;
   }
+  if (!("tier_output_cap_tokens" in v)) {
+    return false;
+  }
+  if (
+    typeof v.tier_output_cap_tokens !== "number" &&
+    v.tier_output_cap_tokens !== null
+  ) {
+    return false;
+  }
   return true;
 }
 

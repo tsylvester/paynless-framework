@@ -24,6 +24,7 @@ import { pickLatest } from '../../_shared/utils/pickLatest.ts';
 import { applyInputsRequiredScope } from '../../_shared/utils/applyInputsRequiredScope.ts';
 import { validateWalletBalance } from '../../_shared/utils/validateWalletBalance.ts';
 import { validateModelCostRates } from '../../_shared/utils/validateModelCostRates.ts';
+import { getMaxOutputTokens } from '../../_shared/utils/affordability_utils.ts';
 import { resolveFinishReason } from '../../_shared/utils/resolveFinishReason.ts';
 import { isIntermediateChunk } from '../../_shared/utils/isIntermediateChunk.ts';
 import { determineContinuation } from '../../_shared/utils/determineContinuation/determineContinuation.ts';
@@ -112,19 +113,22 @@ export function createCompressPromptFn(): {
 export function createCalculateAffordabilityFn(): {
     calculateAffordabilityFn: CalculateAffordabilityFn;
     recordedAffordabilityDeps: CalculateAffordabilityDeps[];
+    recordedAffordabilityParams: CalculateAffordabilityParams[];
 } {
     const recordedAffordabilityDeps: CalculateAffordabilityDeps[] = [];
+    const recordedAffordabilityParams: CalculateAffordabilityParams[] = [];
     const calculateAffordabilityFn: CalculateAffordabilityFn = buildMockCalculateAffordabilityFn({
         resolve: async (
             deps: CalculateAffordabilityDeps,
-            _params: CalculateAffordabilityParams,
+            params: CalculateAffordabilityParams,
             _payload: CalculateAffordabilityPayload,
         ) => {
             recordedAffordabilityDeps.push(deps);
+            recordedAffordabilityParams.push(params);
             return buildCalculateAffordabilityDirectReturn(0);
         },
     });
-    return { calculateAffordabilityFn, recordedAffordabilityDeps };
+    return { calculateAffordabilityFn, recordedAffordabilityDeps, recordedAffordabilityParams };
 }
 
 /**
@@ -234,6 +238,7 @@ export function createMockJobContextParams(overrides?: JobContextParamsOverrides
         applyInputsRequiredScope: applyInputsRequiredScope,
         validateWalletBalance: validateWalletBalance,
         validateModelCostRates: validateModelCostRates,
+        getMaxOutputTokens: getMaxOutputTokens,
         resolveFinishReason: resolveFinishReason,
         isIntermediateChunk: isIntermediateChunk,
         determineContinuation: determineContinuation,
@@ -282,6 +287,7 @@ export function buildIJobContext(): IJobContext {
         applyInputsRequiredScope: params.applyInputsRequiredScope,
         validateWalletBalance: params.validateWalletBalance,
         validateModelCostRates: params.validateModelCostRates,
+        getMaxOutputTokens: params.getMaxOutputTokens,
         resolveFinishReason: params.resolveFinishReason,
         isIntermediateChunk: params.isIntermediateChunk,
         determineContinuation: params.determineContinuation,

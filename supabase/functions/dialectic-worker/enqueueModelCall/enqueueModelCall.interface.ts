@@ -22,6 +22,7 @@ export interface EnqueueModelCallParams {
   providerRow: Tables<'ai_providers'>;
   userAuthToken: string;
   output_type: string;
+  tier_output_cap_tokens: Tables<'tier_definitions'>['output_cap_tokens'];
 }
 
 export interface EnqueueModelCallPayload {
@@ -48,6 +49,7 @@ export interface AiStreamEventData {
   model_config: AiModelExtendedConfig;
   chat_api_request: ChatApiRequest;
   sig: string;
+  tier_output_cap_tokens: Tables<'tier_definitions'>['output_cap_tokens'];
 }
 
 export interface AiStreamEventBody {

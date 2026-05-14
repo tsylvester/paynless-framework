@@ -3,11 +3,12 @@ import {
   assertEquals,
   assertExists,
 } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { spy, type Spy } from "https://deno.land/std@0.224.0/testing/mock.ts";
+import { spy, type MethodSpy, type Spy } from "https://deno.land/std@0.224.0/testing/mock.ts";
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import type {
   AiModelExtendedConfig,
   ChatApiRequest,
+  LogMetadata,
   Messages,
   ResourceDocument,
   ResourceDocuments,
@@ -18,7 +19,13 @@ import { calculateAffordability } from "../calculateAffordability/calculateAffor
 import type {
   BoundCalculateAffordabilityFn,
   CalculateAffordabilityDeps,
+  CalculateAffordabilityParams,
+  CalculateAffordabilityPayload,
 } from "../calculateAffordability/calculateAffordability.interface.ts";
+import {
+  isCalculateAffordabilityParams,
+  isCalculateAffordabilityPayload,
+} from "../calculateAffordability/calculateAffordability.guard.ts";
 import {
   buildCalculateAffordabilityCompressedReturn,
   buildCalculateAffordabilityDirectReturn,
@@ -45,6 +52,7 @@ import { createMockAdminTokenWalletService } from "../../_shared/services/tokenw
 import { createMockUserTokenWalletService } from "../../_shared/services/tokenwallet/client/userTokenWalletService.mock.ts";
 import type { IUserTokenWalletService } from "../../_shared/services/tokenwallet/client/userTokenWalletService.interface.ts";
 import { isJson } from "../../_shared/utils/type_guards.ts";
+import { getMaxOutputTokens } from "../../_shared/utils/affordability_utils.ts";
 import { countTokens } from "../../_shared/utils/tokenizer_utils.ts";
 import { createMockCountTokens } from "../../_shared/utils/tokenizer_utils.mock.ts";
 import { getSortedCompressionCandidates } from "../../_shared/utils/vector_utils.ts";
@@ -55,7 +63,11 @@ import type {
   InputRule,
   PromptConstructionPayload,
 } from "../../dialectic-service/dialectic.interface.ts";
-import type { BoundEnqueueModelCallFn } from "../enqueueModelCall/enqueueModelCall.interface.ts";
+import type {
+  BoundEnqueueModelCallFn,
+  EnqueueModelCallParams,
+  EnqueueModelCallPayload,
+} from "../enqueueModelCall/enqueueModelCall.interface.ts";
 import {
   isEnqueueModelCallParams,
   isEnqueueModelCallPayload,
@@ -63,8 +75,10 @@ import {
 import { prepareModelJob } from "./prepareModelJob.ts";
 import type {
   PrepareModelJobDeps,
+  PrepareModelJobErrorReturn,
   PrepareModelJobParams,
   PrepareModelJobPayload,
+  PrepareModelJobReturn,
 } from "./prepareModelJob.interface.ts";
 import {
   isPrepareModelJobErrorReturn,
@@ -84,13 +98,15 @@ import {
 
 function assertEnqueueModelCallFirstCallShape(enqueueModelCallSpy: Spy<BoundEnqueueModelCallFn>): void {
   assertEquals(enqueueModelCallSpy.calls.length >= 1, true);
-  const first = enqueueModelCallSpy.calls[0];
+  const first: (typeof enqueueModelCallSpy.calls)[number] = enqueueModelCallSpy.calls[0];
   assertExists(first);
   assertEquals(first.args.length >= 2, true);
-  const paramArg: unknown = first.args[0];
-  const payloadArg: unknown = first.args[1];
+  const paramArg: Parameters<BoundEnqueueModelCallFn>[0] = first.args[0];
+  const payloadArg: Parameters<BoundEnqueueModelCallFn>[1] = first.args[1];
   assertEquals(isEnqueueModelCallParams(paramArg), true);
   assertEquals(isEnqueueModelCallPayload(payloadArg), true);
+  const tierCap: EnqueueModelCallParams["tier_output_cap_tokens"] = paramArg.tier_output_cap_tokens;
+  assertEquals(typeof tierCap === "number" || tierCap === null, true);
 }
 
 Deno.test(
@@ -1194,6 +1210,7 @@ Deno.test("prepareModelJob returns ContextWindowError when prompt exceeds token 
           logger,
           countTokens,
           compressPrompt: boundCompressPrompt,
+          getMaxOutputTokens,
         };
         const boundCalculateAffordability: BoundCalculateAffordabilityFn = async (p, pl) =>
           calculateAffordability(calculateAffordabilityDeps, p, pl);
@@ -2048,7 +2065,237 @@ Deno.test(
 Deno.test(
   "prepareModelJob deps do not include enqueueRenderJob",
   () => {
-    const deps = mockPrepareModelJobDeps();
+    const deps: PrepareModelJobDeps = mockPrepareModelJobDeps();
     assertEquals("enqueueRenderJob" in deps, false);
+  },
+);
+
+Deno.test(
+  "prepareModelJob passes tierOutputCapTokens from DB to calculateAffordability and tier_output_cap_tokens to enqueueModelCall",
+  async () => {
+    const projectOwnerUserId: string = "owner-tier-output-cap-contract";
+    const outputCap: Tables<"tier_definitions">["output_cap_tokens"] = 32768;
+    const tierDefEmbed: Pick<Tables<"tier_definitions">, "output_cap_tokens"> = {
+      output_cap_tokens: outputCap,
+    };
+    const userSubSelectRow: { tier_definitions: Pick<Tables<"tier_definitions">, "output_cap_tokens"> } = {
+      tier_definitions: tierDefEmbed,
+    };
+    const mockSetup = createMockSupabaseClient("user-tier-cap-contract", {
+      genericMockResults: {
+        ai_providers: {
+          select: () =>
+            Promise.resolve({
+              data: [mockAiProvidersRow()],
+              error: null,
+            }),
+        },
+        token_wallets: {
+          select: () =>
+            Promise.resolve({
+              data: [mockTokenWalletRow()],
+              error: null,
+            }),
+        },
+        user_subscriptions: {
+          select: () =>
+            Promise.resolve({
+              data: [userSubSelectRow],
+              error: null,
+            }),
+        },
+      },
+    });
+    const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
+    const executePayload: DialecticExecuteJobPayload = mockDialecticExecuteJobPayload();
+    const job: DialecticJobRow = mockDialecticJobRow(executePayload);
+    const params: PrepareModelJobParams = {
+      dbClient,
+      authToken: "jwt.contract",
+      job,
+      projectOwnerUserId,
+      providerRow: mockAiProvidersRow(),
+      sessionData: mockDialecticSessionRow(),
+    };
+    const preparePayload: PrepareModelJobPayload = {
+      promptConstructionPayload: mockPromptConstructionPayload(),
+      compressionStrategy: async () => [],
+      inputsRelevance: [],
+      inputsRequired: [],
+    };
+    const boundAffordability: BoundCalculateAffordabilityFn = buildMockBoundCalculateAffordabilityFn(
+      buildCalculateAffordabilityDirectReturn(200, 75),
+    );
+    const affordabilitySpy: Spy<BoundCalculateAffordabilityFn> = spy(boundAffordability);
+    const enqueueModelCallSpy: Spy<BoundEnqueueModelCallFn> = spy(async () => ({ queued: true }));
+    const deps: PrepareModelJobDeps = mockPrepareModelJobDeps({
+      enqueueModelCall: enqueueModelCallSpy,
+      calculateAffordability: affordabilitySpy,
+    });
+    const result: PrepareModelJobReturn = await prepareModelJob(deps, params, preparePayload);
+    assertEquals(isPrepareModelJobSuccessReturn(result), true);
+    assertEquals(affordabilitySpy.calls.length, 1);
+    assertEquals(enqueueModelCallSpy.calls.length, 1);
+    const affordEntry: (typeof affordabilitySpy.calls)[number] = affordabilitySpy.calls[0];
+    assertExists(affordEntry);
+    const affordParams: CalculateAffordabilityParams = affordEntry.args[0];
+    const affordPayloadArg: CalculateAffordabilityPayload = affordEntry.args[1];
+    assertEquals(isCalculateAffordabilityParams(affordParams), true);
+    assertEquals(isCalculateAffordabilityParams(affordParams) && affordParams.projectOwnerUserId === projectOwnerUserId, true);
+    assertEquals(isCalculateAffordabilityParams(affordParams) && affordParams.tierOutputCapTokens === 32768, true);
+    assertEquals(isCalculateAffordabilityPayload(affordPayloadArg), true);
+    assertEnqueueModelCallFirstCallShape(enqueueModelCallSpy);
+    const enqueueEntry: (typeof enqueueModelCallSpy.calls)[number] = enqueueModelCallSpy.calls[0];
+    assertExists(enqueueEntry);
+    const enqueueParams: EnqueueModelCallParams = enqueueEntry.args[0];
+    assertEquals(enqueueParams.tier_output_cap_tokens, 32768);
+  },
+);
+
+Deno.test(
+  "prepareModelJob passes tierOutputCapTokens null and tier_output_cap_tokens null when DB returns output_cap_tokens null",
+  async () => {
+    const projectOwnerUserId: string = "owner-tier-output-cap-null";
+    const outputCap: Tables<"tier_definitions">["output_cap_tokens"] = null;
+    const tierDefEmbed: Pick<Tables<"tier_definitions">, "output_cap_tokens"> = {
+      output_cap_tokens: outputCap,
+    };
+    const userSubSelectRow: { tier_definitions: Pick<Tables<"tier_definitions">, "output_cap_tokens"> } = {
+      tier_definitions: tierDefEmbed,
+    };
+    const mockSetup = createMockSupabaseClient("user-tier-cap-null", {
+      genericMockResults: {
+        ai_providers: {
+          select: () =>
+            Promise.resolve({
+              data: [mockAiProvidersRow()],
+              error: null,
+            }),
+        },
+        token_wallets: {
+          select: () =>
+            Promise.resolve({
+              data: [mockTokenWalletRow()],
+              error: null,
+            }),
+        },
+        user_subscriptions: {
+          select: () =>
+            Promise.resolve({
+              data: [userSubSelectRow],
+              error: null,
+            }),
+        },
+      },
+    });
+    const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
+    const executePayload: DialecticExecuteJobPayload = mockDialecticExecuteJobPayload();
+    const job: DialecticJobRow = mockDialecticJobRow(executePayload);
+    const params: PrepareModelJobParams = {
+      dbClient,
+      authToken: "jwt.contract",
+      job,
+      projectOwnerUserId,
+      providerRow: mockAiProvidersRow(),
+      sessionData: mockDialecticSessionRow(),
+    };
+    const preparePayload: PrepareModelJobPayload = {
+      promptConstructionPayload: mockPromptConstructionPayload(),
+      compressionStrategy: async () => [],
+      inputsRelevance: [],
+      inputsRequired: [],
+    };
+    const boundAffordability: BoundCalculateAffordabilityFn = buildMockBoundCalculateAffordabilityFn(
+      buildCalculateAffordabilityDirectReturn(200, 75),
+    );
+    const affordabilitySpy: Spy<BoundCalculateAffordabilityFn> = spy(boundAffordability);
+    const enqueueModelCallSpy: Spy<BoundEnqueueModelCallFn> = spy(async () => ({ queued: true }));
+    const deps: PrepareModelJobDeps = mockPrepareModelJobDeps({
+      enqueueModelCall: enqueueModelCallSpy,
+      calculateAffordability: affordabilitySpy,
+    });
+    const result: PrepareModelJobReturn = await prepareModelJob(deps, params, preparePayload);
+    assertEquals(isPrepareModelJobSuccessReturn(result), true);
+    assertEquals(affordabilitySpy.calls.length, 1);
+    assertEquals(enqueueModelCallSpy.calls.length, 1);
+    const affordEntry: (typeof affordabilitySpy.calls)[number] = affordabilitySpy.calls[0];
+    assertExists(affordEntry);
+    const affordParams: CalculateAffordabilityParams = affordEntry.args[0];
+    const affordPayloadArg: CalculateAffordabilityPayload = affordEntry.args[1];
+    assertEquals(isCalculateAffordabilityParams(affordParams), true);
+    assertEquals(isCalculateAffordabilityParams(affordParams) && affordParams.tierOutputCapTokens === null, true);
+    assertEquals(isCalculateAffordabilityPayload(affordPayloadArg), true);
+    assertEnqueueModelCallFirstCallShape(enqueueModelCallSpy);
+    const enqueueEntry: (typeof enqueueModelCallSpy.calls)[number] = enqueueModelCallSpy.calls[0];
+    assertExists(enqueueEntry);
+    const enqueueParams: EnqueueModelCallParams = enqueueEntry.args[0];
+    assertEquals(enqueueParams.tier_output_cap_tokens, null);
+  },
+);
+
+Deno.test(
+  "prepareModelJob returns retriable error and skips calculateAffordability and enqueueModelCall when tier cap DB query fails",
+  async () => {
+    const projectOwnerUserId: string = "owner-tier-output-cap-db-error";
+    const tierQueryError: Error = new Error("simulated tier cap query failure");
+    const mockSetup = createMockSupabaseClient("user-tier-cap-db-error", {
+      genericMockResults: {
+        ai_providers: {
+          select: () =>
+            Promise.resolve({
+              data: [mockAiProvidersRow()],
+              error: null,
+            }),
+        },
+        token_wallets: {
+          select: () =>
+            Promise.resolve({
+              data: [mockTokenWalletRow()],
+              error: null,
+            }),
+        },
+        user_subscriptions: {
+          select: () =>
+            Promise.resolve({
+              data: null,
+              error: tierQueryError,
+            }),
+        },
+      },
+    });
+    const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
+    const executePayload: DialecticExecuteJobPayload = mockDialecticExecuteJobPayload();
+    const job: DialecticJobRow = mockDialecticJobRow(executePayload);
+    const params: PrepareModelJobParams = {
+      dbClient,
+      authToken: "jwt.contract",
+      job,
+      projectOwnerUserId,
+      providerRow: mockAiProvidersRow(),
+      sessionData: mockDialecticSessionRow(),
+    };
+    const preparePayload: PrepareModelJobPayload = {
+      promptConstructionPayload: mockPromptConstructionPayload(),
+      compressionStrategy: async () => [],
+    };
+    const boundAffordability: BoundCalculateAffordabilityFn = buildMockBoundCalculateAffordabilityFn(
+      buildCalculateAffordabilityDirectReturn(200, 75),
+    );
+    const affordabilitySpy: Spy<BoundCalculateAffordabilityFn> = spy(boundAffordability);
+    const enqueueModelCallSpy: Spy<BoundEnqueueModelCallFn> = spy(async () => ({ queued: true }));
+    const deps: PrepareModelJobDeps = mockPrepareModelJobDeps({
+      enqueueModelCall: enqueueModelCallSpy,
+      calculateAffordability: affordabilitySpy,
+    });
+    const result: PrepareModelJobReturn = await prepareModelJob(deps, params, preparePayload);
+    assertEquals(isPrepareModelJobErrorReturn(result), true);
+    if (!isPrepareModelJobErrorReturn(result)) {
+      throw new Error("expected PrepareModelJobErrorReturn");
+    }
+    const errReturn: PrepareModelJobErrorReturn = result;
+    assertEquals(errReturn.retriable, true);
+    assertEquals(errReturn.error.message, tierQueryError.message);
+    assertEquals(affordabilitySpy.calls.length, 0);
+    assertEquals(enqueueModelCallSpy.calls.length, 0);
   },
 );

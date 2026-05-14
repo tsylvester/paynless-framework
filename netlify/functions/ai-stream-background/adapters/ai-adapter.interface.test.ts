@@ -104,6 +104,7 @@ describe('ai-adapter.interface contract', () => {
       provider_max_output_tokens: 8192,
       input_token_cost_rate: 0.001,
       output_token_cost_rate: 0.002,
+      tier_output_cap_tokens: null,
     };
     expect(typeof config.api_identifier).toBe('string');
     expect(config.provider_max_input_tokens).toBe(100_000);
@@ -112,6 +113,7 @@ describe('ai-adapter.interface contract', () => {
     expect(config.provider_max_output_tokens).toBe(8192);
     expect(config.input_token_cost_rate).toBe(0.001);
     expect(config.output_token_cost_rate).toBe(0.002);
+    expect(config.tier_output_cap_tokens).toBe(null);
   });
 
   it('accepts NodeModelConfig with null token cost rates', () => {
@@ -119,9 +121,11 @@ describe('ai-adapter.interface contract', () => {
       api_identifier: 'anthropic-claude-3',
       input_token_cost_rate: null,
       output_token_cost_rate: null,
+      tier_output_cap_tokens: null,
     };
     expect(config.input_token_cost_rate).toBe(null);
     expect(config.output_token_cost_rate).toBe(null);
+    expect(config.tier_output_cap_tokens).toBe(null);
   });
 
   it('accepts NodeTokenUsage with non-negative integer token counts', () => {
@@ -183,5 +187,48 @@ describe('ai-adapter.interface contract', () => {
       },
     };
     expect(typeof adapter.sendMessageStream).toBe('function');
+  });
+
+  it('NodeModelConfig contract includes tier_output_cap_tokens as number or null', () => {
+    const withNull: NodeModelConfig = {
+      api_identifier: 'contract-null',
+      input_token_cost_rate: null,
+      output_token_cost_rate: null,
+      tier_output_cap_tokens: null,
+    };
+    const withNumber: NodeModelConfig = {
+      api_identifier: 'contract-num',
+      input_token_cost_rate: null,
+      output_token_cost_rate: null,
+      tier_output_cap_tokens: 32_768,
+    };
+    expect(
+      withNull.tier_output_cap_tokens === null ||
+        typeof withNull.tier_output_cap_tokens === 'number',
+    ).toBe(true);
+    expect(
+      withNumber.tier_output_cap_tokens === null ||
+        typeof withNumber.tier_output_cap_tokens === 'number',
+    ).toBe(true);
+  });
+
+  it('accepts NodeModelConfig with tier_output_cap_tokens: null', () => {
+    const config: NodeModelConfig = {
+      api_identifier: 'tier-cap-null',
+      input_token_cost_rate: null,
+      output_token_cost_rate: null,
+      tier_output_cap_tokens: null,
+    };
+    expect(config.tier_output_cap_tokens).toBe(null);
+  });
+
+  it('accepts NodeModelConfig with tier_output_cap_tokens: 32768', () => {
+    const config: NodeModelConfig = {
+      api_identifier: 'tier-cap-num',
+      input_token_cost_rate: null,
+      output_token_cost_rate: null,
+      tier_output_cap_tokens: 32_768,
+    };
+    expect(config.tier_output_cap_tokens).toBe(32_768);
   });
 });

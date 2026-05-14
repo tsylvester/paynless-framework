@@ -82,6 +82,7 @@ export const enqueueModelCall: EnqueueModelCallFn = async (
     model_config: extendedConfig,
     chat_api_request: payload.chatApiRequest,
     sig,
+    tier_output_cap_tokens: params.tier_output_cap_tokens,
   };
 
   const eventBody: AiStreamEventBody = {

@@ -15,8 +15,13 @@ import {
   isCalculateAffordabilityErrorReturn,
   isCalculateAffordabilityCompressedReturn,
 } from '../calculateAffordability/calculateAffordability.guard.ts';
-import type { CalculateAffordabilityParams, CalculateAffordabilityPayload } from '../calculateAffordability/calculateAffordability.interface.ts';
+import type {
+  CalculateAffordabilityParams,
+  CalculateAffordabilityPayload,
+  TierOutputCapTokens,
+} from '../calculateAffordability/calculateAffordability.interface.ts';
 import type { EnqueueModelCallParams } from '../enqueueModelCall/enqueueModelCall.interface.ts';
+import type { PostgrestError } from 'npm:@supabase/supabase-js@2';
 import type {
   PrepareModelJobDeps,
   PrepareModelJobParams,
@@ -32,6 +37,38 @@ export async function prepareModelJob(
   try {
     const dbClient = params.dbClient;
     const { job, projectOwnerUserId, providerRow } = params;
+
+    let tierOutputCapTokens: TierOutputCapTokens = null;
+    const tierCapQueryResult = await dbClient
+      .from('user_subscriptions')
+      .select('tier_definitions(output_cap_tokens)')
+      .eq('user_id', projectOwnerUserId)
+      .maybeSingle();
+
+    if (tierCapQueryResult.error !== null) {
+      const pgErr: PostgrestError = tierCapQueryResult.error;
+      deps.logger.warn('[prepareModelJob] Failed to load tier output cap', {
+        jobId: job.id,
+        projectOwnerUserId,
+        message: pgErr.message,
+        code: pgErr.code,
+      });
+      return { error: pgErr, retriable: true };
+    }
+
+    if (tierCapQueryResult.data !== null && isRecord(tierCapQueryResult.data)) {
+      const data = tierCapQueryResult.data;
+      if ('tier_definitions' in data && isRecord(data['tier_definitions'])) {
+        const td = data['tier_definitions'];
+        if ('output_cap_tokens' in td) {
+          const tokenVal = td['output_cap_tokens'];
+          if (typeof tokenVal === 'number' || tokenVal === null) {
+            tierOutputCapTokens = tokenVal;
+          }
+        }
+      }
+    }
+
     const {
       promptConstructionPayload,
       compressionStrategy,
@@ -220,6 +257,7 @@ export async function prepareModelJob(
       outputRate,
       isContinuationFlowInitial,
       inputsRelevance: inputsRelevance,
+      tierOutputCapTokens,
     };
 
     const affordPayload: CalculateAffordabilityPayload = {
@@ -286,6 +324,7 @@ export async function prepareModelJob(
       providerRow,
       userAuthToken: userAuthTokenStrict,
       output_type,
+      tier_output_cap_tokens: tierOutputCapTokens,
     };
 
     const enqueueResult = await deps.enqueueModelCall(enqueueModelCallParams, { chatApiRequest, preflightInputTokens: resolvedInputTokenCount });

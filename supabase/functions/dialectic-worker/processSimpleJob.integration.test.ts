@@ -16,6 +16,7 @@ import type { BoundCompressPromptFn } from "./compressPrompt/compressPrompt.inte
 import { applyInputsRequiredScope } from "../_shared/utils/applyInputsRequiredScope.ts";
 import { validateWalletBalance } from "../_shared/utils/validateWalletBalance.ts";
 import { validateModelCostRates } from "../_shared/utils/validateModelCostRates.ts";
+import { getMaxOutputTokens } from "../_shared/utils/affordability_utils.ts";
 import type { PrepareModelJobDeps } from "./prepareModelJob/prepareModelJob.interface.ts";
 import {
   isEnqueueModelCallParams,
@@ -275,7 +276,11 @@ Deno.test(
     const boundCompressPrompt: BoundCompressPromptFn = (cpParams, cpPayload) =>
       compressPrompt({ logger, ragService, embeddingClient, tokenWalletService: adminTokenWalletService, countTokens }, cpParams, cpPayload);
     const boundCalculateAffordability: BoundCalculateAffordabilityFn = (caParams, caPayload) =>
-      calculateAffordability({ logger, countTokens, compressPrompt: boundCompressPrompt }, caParams, caPayload);
+      calculateAffordability(
+        { logger, countTokens, compressPrompt: boundCompressPrompt, getMaxOutputTokens },
+        caParams,
+        caPayload,
+      );
     const prepareDeps: PrepareModelJobDeps = {
       logger,
       applyInputsRequiredScope,
@@ -1022,7 +1027,7 @@ Deno.test({
         );
       const boundCalculateAffordability: BoundCalculateAffordabilityFn = (caParams, caPayload) =>
         calculateAffordability(
-          { logger, countTokens, compressPrompt: boundCompressPrompt },
+          { logger, countTokens, compressPrompt: boundCompressPrompt, getMaxOutputTokens },
           caParams,
           caPayload,
         );

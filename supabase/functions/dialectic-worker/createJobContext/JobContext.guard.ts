@@ -162,6 +162,7 @@ export function isIJobContext(value: unknown): value is IJobContext {
         'applyInputsRequiredScope' in value && typeof value.applyInputsRequiredScope === 'function' &&
         'validateWalletBalance' in value && typeof value.validateWalletBalance === 'function' &&
         'validateModelCostRates' in value && typeof value.validateModelCostRates === 'function' &&
+        'getMaxOutputTokens' in value && typeof value.getMaxOutputTokens === 'function' &&
         'continueJob' in value && typeof value.continueJob === 'function' &&
         'retryJob' in value && typeof value.retryJob === 'function' &&
         'resolveFinishReason' in value && typeof value.resolveFinishReason === 'function' &&

@@ -10,7 +10,7 @@ import type {
     EnqueueModelCallReturn,
     EnqueueModelCallSuccessReturn,
 } from "./enqueueModelCall.interface.ts";
-import type { ComputeJobSig } from "../../_shared/utils/computeJobSig/computeJobSig.interface.ts";
+import type { Tables } from "../../types_db.ts";
 Deno.test(
     "Contract: EnqueueModelCallDeps declares five dependency keys",
     () => {
@@ -26,7 +26,7 @@ Deno.test(
 );
 
 Deno.test(
-    "Contract: EnqueueModelCallParams declares five fields",
+    "Contract: EnqueueModelCallParams declares six fields",
     () => {
         const surface: Record<keyof EnqueueModelCallParams, true> = {
             dbClient: true,
@@ -34,8 +34,9 @@ Deno.test(
             providerRow: true,
             userAuthToken: true,
             output_type: true,
+            tier_output_cap_tokens: true,
         };
-        assertEquals(Object.keys(surface).length, 5);
+        assertEquals(Object.keys(surface).length, 6);
     },
 );
 
@@ -76,7 +77,7 @@ Deno.test(
 );
 
 Deno.test(
-    "Contract: AiStreamEventData declares five fields including sig not user_jwt",
+    "Contract: AiStreamEventData declares six fields including sig not user_jwt",
     () => {
         const surface: Record<keyof AiStreamEventData, true> = {
             job_id: true,
@@ -84,8 +85,9 @@ Deno.test(
             model_config: true,
             chat_api_request: true,
             sig: true,
+            tier_output_cap_tokens: true,
         };
-        assertEquals(Object.keys(surface).length, 5);
+        assertEquals(Object.keys(surface).length, 6);
     },
 );
 
@@ -150,8 +152,59 @@ Deno.test(
             model_config: true,
             chat_api_request: true,
             sig: true,
+            tier_output_cap_tokens: true,
         };
         assertEquals("sig" in surface, true);
         assertEquals("user_jwt" in surface, false);
+    },
+);
+
+Deno.test(
+    "Contract: EnqueueModelCallParams tier_output_cap_tokens matches Tables tier_definitions output_cap_tokens",
+    () => {
+        type Column = Tables<"tier_definitions">["output_cap_tokens"];
+        type Field = EnqueueModelCallParams["tier_output_cap_tokens"];
+        const columnNumber: Column = 32768;
+        const columnNull: Column = null;
+        const fieldFromColumnNumber: Field = columnNumber;
+        const fieldFromColumnNull: Field = columnNull;
+        const fieldNumber: Field = 32768;
+        const fieldNull: Field = null;
+        const columnFromFieldNumber: Column = fieldNumber;
+        const columnFromFieldNull: Column = fieldNull;
+        assertEquals(fieldFromColumnNumber, 32768);
+        assertEquals(fieldFromColumnNull, null);
+        assertEquals(columnFromFieldNumber, 32768);
+        assertEquals(columnFromFieldNull, null);
+    },
+);
+
+Deno.test(
+    "Contract: AiStreamEventData tier_output_cap_tokens matches Tables tier_definitions output_cap_tokens",
+    () => {
+        type Column = Tables<"tier_definitions">["output_cap_tokens"];
+        type Field = AiStreamEventData["tier_output_cap_tokens"];
+        const columnNumber: Column = 32768;
+        const columnNull: Column = null;
+        const fieldFromColumnNumber: Field = columnNumber;
+        const fieldFromColumnNull: Field = columnNull;
+        const fieldNumber: Field = 32768;
+        const fieldNull: Field = null;
+        const columnFromFieldNumber: Column = fieldNumber;
+        const columnFromFieldNull: Column = fieldNull;
+        assertEquals(fieldFromColumnNumber, 32768);
+        assertEquals(fieldFromColumnNull, null);
+        assertEquals(columnFromFieldNumber, 32768);
+        assertEquals(columnFromFieldNull, null);
+    },
+);
+
+Deno.test(
+    "Contract: tier_output_cap_tokens null is valid for EnqueueModelCallParams and AiStreamEventData",
+    () => {
+        const paramsTier: EnqueueModelCallParams["tier_output_cap_tokens"] = null;
+        const eventTier: AiStreamEventData["tier_output_cap_tokens"] = null;
+        assertEquals(paramsTier, null);
+        assertEquals(eventTier, null);
     },
 );

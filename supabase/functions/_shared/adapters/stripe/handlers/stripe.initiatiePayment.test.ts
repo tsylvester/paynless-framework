@@ -100,6 +100,7 @@ Deno.test('StripePaymentAdapter: initiatePayment', async (t) => {
       stripe_product_id: null,
       tokens_to_award: 1000,
       updated_at: MOCK_PLAN_TS,
+      tier_level: 0,
     };
 
     const stripeSessionData = { 
@@ -317,6 +318,7 @@ Deno.test('StripePaymentAdapter: initiatePayment', async (t) => {
       stripe_product_id: null,
       tokens_to_award: 300,
       updated_at: MOCK_PLAN_TS,
+      tier_level: 0,
     }; 
     const stripeError = new Error('Mock Stripe API error during session creation final test');
 
@@ -399,6 +401,7 @@ Deno.test('StripePaymentAdapter: initiatePayment', async (t) => {
       stripe_product_id: null,
       tokens_to_award: 500,
       updated_at: MOCK_PLAN_TS,
+      tier_level: 0,
     };
     // const walletData = { walletId: 'wallet-for-user-stripe-error', balance: '0', currency: 'AI_TOKEN', createdAt: new Date(), updatedAt: new Date(), userId: basePurchaseRequest.userId } as TokenWallet;
 
@@ -489,6 +492,7 @@ Deno.test('StripePaymentAdapter: initiatePayment', async (t) => {
       stripe_product_id: null,
       tokens_to_award: 600,
       updated_at: MOCK_PLAN_TS,
+      tier_level: 0,
     };
     const stripeSessionData = { 
       id: 'cs_test_pi_retrieve_error', 
@@ -586,6 +590,7 @@ Deno.test('StripePaymentAdapter: initiatePayment', async (t) => {
       stripe_product_id: null,
       tokens_to_award: 5000,
       updated_at: MOCK_PLAN_TS,
+      tier_level: 0,
     };
 
     const stripeSessionData = { 
@@ -710,6 +715,7 @@ Deno.test('StripePaymentAdapter: initiatePayment', async (t) => {
       stripe_product_id: null,
       tokens_to_award: 250,
       updated_at: MOCK_PLAN_TS,
+      tier_level: 0,
     };
 
     const planDataInvalidType: SubscriptionPlansRow = {
@@ -729,6 +735,7 @@ Deno.test('StripePaymentAdapter: initiatePayment', async (t) => {
       stripe_product_id: null,
       tokens_to_award: 250,
       updated_at: MOCK_PLAN_TS,
+      tier_level: 0,
     };
 
     const testScenarios = [

@@ -62,6 +62,7 @@ import { ApiKeyForProviderFn } from '../_shared/types.ts';
 import { sanitizeJsonContent } from '../_shared/utils/jsonSanitizer/jsonSanitizer.ts';
 import { createComputeJobSig } from '../_shared/utils/computeJobSig/computeJobSig.ts';
 import type { ComputeJobSig } from '../_shared/utils/computeJobSig/computeJobSig.interface.ts';
+import { getMaxOutputTokens } from '../_shared/utils/affordability_utils.ts';
 
 type Job = Database['public']['Tables']['dialectic_generation_jobs']['Row'];
 
@@ -191,7 +192,7 @@ export async function createDialecticWorkerDeps(
       const boundCompressPrompt: BoundCompressPromptFn = (cpParams, cpPayload) =>
         compressPrompt({ logger, ragService, embeddingClient, tokenWalletService: adminTokenWalletService, countTokens }, cpParams, cpPayload);
       const boundCalculateAffordability: BoundCalculateAffordabilityFn = (caParams, caPayload) =>
-        calculateAffordability({ logger, countTokens, compressPrompt: boundCompressPrompt }, caParams, caPayload);
+        calculateAffordability({ logger, countTokens, compressPrompt: boundCompressPrompt, getMaxOutputTokens }, caParams, caPayload);
       return prepareModelJob(
         {
           logger,
@@ -218,6 +219,7 @@ export async function createDialecticWorkerDeps(
     sanitizeJsonContent,
     computeJobSig,
     gatherArtifacts: boundGatherArtifacts,
+    getMaxOutputTokens: getMaxOutputTokens,
   });
 }
 
