@@ -1839,42 +1839,42 @@
     * `[✅]` Verify `user_subscriptions` rows include `has_ever_paid` and `tier_level` populated by backfill
     * `[✅]` Verify `ai_providers` rows include `min_plan_tier_level` populated by cost-band backfill
 
-  * `[ ]` **Commit** `chore(seed): regenerate seed.sql with tier-infrastructure columns and backfill values`
+  * `[✅]` **Commit** `chore(seed): regenerate seed.sql with tier-infrastructure columns and backfill values`
 
-* `[ ]` `[DB]` supabase/migrations **Fix current_plan_tier — remove non-existent 'trialing' status from active subscription check**
+* `[✅]` `[DB]` supabase/migrations **Fix current_plan_tier — remove non-existent 'trialing' status from active subscription check**
 
-  * `[ ]` `objective`
-    * `[ ]` Line 87 of `20260501204427_tier_infrastructure.sql` reads `AND us.status IN ('active', 'trialing')`. The status `trialing` does not exist in this system — no handler ever writes `status = 'trialing'`. The only valid active-subscription status is `active`. The `trialing` branch is dead code that misrepresents the system's status vocabulary and was never reachable.
-    * `[ ]` **Full-chain audit result (covers the deferred audit item below):** The complete `update_subscription_with_tier → refresh_user_tier → current_plan_tier` RPC chain has been audited against the stated business rules:
-      * `[ ]` never-paid → 0: `current_plan_tier` returns 0 immediately when `has_ever_paid IS NOT TRUE`. ✓ Correct.
-      * `[ ]` has-ever-paid + active → plan tier_level: after this migration, `current_plan_tier` queries `WHERE us.status = 'active'` and JOINs to `subscription_plans.tier_level`. ✓ Correct after fix.
-      * `[ ]` has-ever-paid + not active → 10 (basic floor): `current_plan_tier` returns 10 when no active subscription row is found and `has_ever_paid = true`. ✓ Correct.
-      * `[ ]` `refresh_user_tier`: sets ratchet when instructed, calls `current_plan_tier`, caches result in `user_subscriptions.tier_level`, returns -1 on missing row with WARNING. ✓ Correct.
-      * `[ ]` `update_subscription_with_tier`: UPDATE sets all fields including nullable parameters unconditionally. Both callers (`subscriptionUpdated`, `subscriptionDeleted`) always supply non-null `p_plan_id` (resolved from Stripe price or free plan), so `plan_id` is never silently overwritten with NULL in practice. ✓ Correct for all defined callers.
-      * `[ ]` No additional defects found in `update_subscription_with_tier` or `refresh_user_tier`. No additional corrective migration required.
-    * `[ ]` Functional goal: create a corrective migration that replaces `current_plan_tier` with the identical function body except `AND us.status = 'active'` in place of `AND us.status IN ('active', 'trialing')`. No other changes to any function.
-    * `[ ]` Non-functional constraint: no behavioral change for any currently reachable code path — `trialing` was never a valid status so no existing row matched it.
+  * `[✅]` `objective`
+    * `[✅]` Line 87 of `20260501204427_tier_infrastructure.sql` reads `AND us.status IN ('active', 'trialing')`. The status `trialing` does not exist in this system — no handler ever writes `status = 'trialing'`. The only valid active-subscription status is `active`. The `trialing` branch is dead code that misrepresents the system's status vocabulary and was never reachable.
+    * `[✅]` **Full-chain audit result (covers the deferred audit item below):** The complete `update_subscription_with_tier → refresh_user_tier → current_plan_tier` RPC chain has been audited against the stated business rules:
+      * `[✅]` never-paid → 0: `current_plan_tier` returns 0 immediately when `has_ever_paid IS NOT TRUE`. ✓ Correct.
+      * `[✅]` has-ever-paid + active → plan tier_level: after this migration, `current_plan_tier` queries `WHERE us.status = 'active'` and JOINs to `subscription_plans.tier_level`. ✓ Correct after fix.
+      * `[✅]` has-ever-paid + not active → 10 (basic floor): `current_plan_tier` returns 10 when no active subscription row is found and `has_ever_paid = true`. ✓ Correct.
+      * `[✅]` `refresh_user_tier`: sets ratchet when instructed, calls `current_plan_tier`, caches result in `user_subscriptions.tier_level`, returns -1 on missing row with WARNING. ✓ Correct.
+      * `[✅]` `update_subscription_with_tier`: UPDATE sets all fields including nullable parameters unconditionally. Both callers (`subscriptionUpdated`, `subscriptionDeleted`) always supply non-null `p_plan_id` (resolved from Stripe price or free plan), so `plan_id` is never silently overwritten with NULL in practice. ✓ Correct for all defined callers.
+      * `[✅]` No additional defects found in `update_subscription_with_tier` or `refresh_user_tier`. No additional corrective migration required.
+    * `[✅]` Functional goal: create a corrective migration that replaces `current_plan_tier` with the identical function body except `AND us.status = 'active'` in place of `AND us.status IN ('active', 'trialing')`. No other changes to any function.
+    * `[✅]` Non-functional constraint: no behavioral change for any currently reachable code path — `trialing` was never a valid status so no existing row matched it.
 
-  * `[ ]` `role`
-    * `[ ]` Infrastructure — corrective database migration
-    * `[ ]` Must NOT change any behavior other than removing the dead `trialing` branch
+  * `[✅]` `role`
+    * `[✅]` Infrastructure — corrective database migration
+    * `[✅]` Must NOT change any behavior other than removing the dead `trialing` branch
 
-  * `[ ]` `module`
-    * `[ ]` Database, cross-cutting — `current_plan_tier` is consumed by `refresh_user_tier`, `complete_checkout_payment` (idempotency path), and `complete_invoice_payment` (idempotency path)
+  * `[✅]` `module`
+    * `[✅]` Database, cross-cutting — `current_plan_tier` is consumed by `refresh_user_tier`, `complete_checkout_payment` (idempotency path), and `complete_invoice_payment` (idempotency path)
 
-  * `[ ]` `deps`
-    * `[ ]` `20260501204427_tier_infrastructure.sql` — defines the original `current_plan_tier`; this migration replaces it with a corrected version
-    * `[ ]` No other dependencies; this migration only re-declares one function
+  * `[✅]` `deps`
+    * `[✅]` `20260501204427_tier_infrastructure.sql` — defines the original `current_plan_tier`; this migration replaces it with a corrected version
+    * `[✅]` No other dependencies; this migration only re-declares one function
 
-  * `[ ]` supabase/migrations/`<timestamp>_fix_current_plan_tier_remove_trialing.sql`
-    * `[ ]` `CREATE OR REPLACE FUNCTION public.current_plan_tier(p_user_id UUID)` with `LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public`
-    * `[ ]` Function body is identical to `20260501204427_tier_infrastructure.sql` lines 64–96 except: the active-subscription query changes from `AND us.status IN ('active', 'trialing')` to `AND us.status = 'active'`
-    * `[ ]` Include migration comment: `-- Fix: removes 'trialing' from the active status check. 'trialing' is not a valid status in this system and was never written by any handler. The only valid active-subscription status is 'active'.`
-    * `[ ]` `GRANT EXECUTE ON FUNCTION public.current_plan_tier(UUID) TO service_role, authenticated;` — re-affirm grants; REPLACE preserves existing grants in PostgreSQL but explicit re-grant ensures correctness after migration replay
+  * `[✅]` supabase/migrations/`<timestamp>_fix_current_plan_tier_remove_trialing.sql`
+    * `[✅]` `CREATE OR REPLACE FUNCTION public.current_plan_tier(p_user_id UUID)` with `LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public`
+    * `[✅]` Function body is identical to `20260501204427_tier_infrastructure.sql` lines 64–96 except: the active-subscription query changes from `AND us.status IN ('active', 'trialing')` to `AND us.status = 'active'`
+    * `[✅]` Include migration comment: `-- Fix: removes 'trialing' from the active status check. 'trialing' is not a valid status in this system and was never written by any handler. The only valid active-subscription status is 'active'.`
+    * `[✅]` `GRANT EXECUTE ON FUNCTION public.current_plan_tier(UUID) TO service_role, authenticated;` — re-affirm grants; REPLACE preserves existing grants in PostgreSQL but explicit re-grant ensures correctness after migration replay
 
-  * `[ ]` **Commit** `fix(db): remove non-existent trialing status from current_plan_tier active subscription query`
-    * `[ ]` `current_plan_tier`: `AND us.status IN ('active', 'trialing')` → `AND us.status = 'active'`; `trialing` is not a valid status in this system and was never written by any handler
-    * `[ ]` Full-chain audit complete: `update_subscription_with_tier → refresh_user_tier → current_plan_tier` correctly implements all three business rules (never-paid → 0, has-ever-paid + active → plan tier_level, has-ever-paid + not active → 10); no additional corrective migrations required
+  * `[✅]` **Commit** `fix(db): remove non-existent trialing status from current_plan_tier active subscription query`
+    * `[✅]` `current_plan_tier`: `AND us.status IN ('active', 'trialing')` → `AND us.status = 'active'`; `trialing` is not a valid status in this system and was never written by any handler
+    * `[✅]` Full-chain audit complete: `update_subscription_with_tier → refresh_user_tier → current_plan_tier` correctly implements all three business rules (never-paid → 0, has-ever-paid + active → plan tier_level, has-ever-paid + not active → 10); no additional corrective migrations required
 
 * Remove recurring token allocation — **RESOLUTION: disable the cron job, leave code as inert dead code.** The `allocate-periodic-tokens` function and its `token_wallets` column are not called by anything other than the cron schedule. Disabling the cron job kills the feature immediately with zero code changes and is trivially reversible if business conditions change. No nodes needed.
 
