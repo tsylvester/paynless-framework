@@ -10,7 +10,7 @@ import type {
     EnqueueModelCallReturn,
     EnqueueModelCallSuccessReturn,
 } from "./enqueueModelCall.interface.ts";
-import type { Tables } from "../../types_db.ts";
+
 Deno.test(
     "Contract: EnqueueModelCallDeps declares five dependency keys",
     () => {
@@ -34,7 +34,7 @@ Deno.test(
             providerRow: true,
             userAuthToken: true,
             output_type: true,
-            tier_output_cap_tokens: true,
+            userConfig: true,
         };
         assertEquals(Object.keys(surface).length, 6);
     },
@@ -85,7 +85,7 @@ Deno.test(
             model_config: true,
             chat_api_request: true,
             sig: true,
-            tier_output_cap_tokens: true,
+            user_config: true,
         };
         assertEquals(Object.keys(surface).length, 6);
     },
@@ -152,7 +152,7 @@ Deno.test(
             model_config: true,
             chat_api_request: true,
             sig: true,
-            tier_output_cap_tokens: true,
+            user_config: true,
         };
         assertEquals("sig" in surface, true);
         assertEquals("user_jwt" in surface, false);
@@ -160,51 +160,43 @@ Deno.test(
 );
 
 Deno.test(
-    "Contract: EnqueueModelCallParams tier_output_cap_tokens matches Tables tier_definitions output_cap_tokens",
+    "Contract: EnqueueModelCallParams userConfig is UserConfig object shape",
     () => {
-        type Column = Tables<"tier_definitions">["output_cap_tokens"];
-        type Field = EnqueueModelCallParams["tier_output_cap_tokens"];
-        const columnNumber: Column = 32768;
-        const columnNull: Column = null;
-        const fieldFromColumnNumber: Field = columnNumber;
-        const fieldFromColumnNull: Field = columnNull;
-        const fieldNumber: Field = 32768;
-        const fieldNull: Field = null;
-        const columnFromFieldNumber: Column = fieldNumber;
-        const columnFromFieldNull: Column = fieldNull;
-        assertEquals(fieldFromColumnNumber, 32768);
-        assertEquals(fieldFromColumnNull, null);
-        assertEquals(columnFromFieldNumber, 32768);
-        assertEquals(columnFromFieldNull, null);
+        const uc: EnqueueModelCallParams["userConfig"] = {
+            tier_output_cap_tokens: null,
+        };
+        const uc2: EnqueueModelCallParams["userConfig"] = {
+            tier_output_cap_tokens: 32768,
+        };
+        assertEquals(uc.tier_output_cap_tokens, null);
+        assertEquals(uc2.tier_output_cap_tokens, 32768);
     },
 );
 
 Deno.test(
-    "Contract: AiStreamEventData tier_output_cap_tokens matches Tables tier_definitions output_cap_tokens",
+    "Contract: AiStreamEventData user_config is UserConfig object shape",
     () => {
-        type Column = Tables<"tier_definitions">["output_cap_tokens"];
-        type Field = AiStreamEventData["tier_output_cap_tokens"];
-        const columnNumber: Column = 32768;
-        const columnNull: Column = null;
-        const fieldFromColumnNumber: Field = columnNumber;
-        const fieldFromColumnNull: Field = columnNull;
-        const fieldNumber: Field = 32768;
-        const fieldNull: Field = null;
-        const columnFromFieldNumber: Column = fieldNumber;
-        const columnFromFieldNull: Column = fieldNull;
-        assertEquals(fieldFromColumnNumber, 32768);
-        assertEquals(fieldFromColumnNull, null);
-        assertEquals(columnFromFieldNumber, 32768);
-        assertEquals(columnFromFieldNull, null);
+        const uc: AiStreamEventData["user_config"] = {
+            tier_output_cap_tokens: null,
+        };
+        const uc2: AiStreamEventData["user_config"] = {
+            tier_output_cap_tokens: 32768,
+        };
+        assertEquals(uc.tier_output_cap_tokens, null);
+        assertEquals(uc2.tier_output_cap_tokens, 32768);
     },
 );
 
 Deno.test(
-    "Contract: tier_output_cap_tokens null is valid for EnqueueModelCallParams and AiStreamEventData",
+    "Contract: userConfig and user_config accept tier_output_cap_tokens null",
     () => {
-        const paramsTier: EnqueueModelCallParams["tier_output_cap_tokens"] = null;
-        const eventTier: AiStreamEventData["tier_output_cap_tokens"] = null;
-        assertEquals(paramsTier, null);
-        assertEquals(eventTier, null);
+        const paramsUserConfig: EnqueueModelCallParams["userConfig"] = {
+            tier_output_cap_tokens: null,
+        };
+        const eventUserConfig: AiStreamEventData["user_config"] = {
+            tier_output_cap_tokens: null,
+        };
+        assertEquals(paramsUserConfig.tier_output_cap_tokens, null);
+        assertEquals(eventUserConfig.tier_output_cap_tokens, null);
     },
 );

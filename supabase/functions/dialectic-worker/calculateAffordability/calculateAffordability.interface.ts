@@ -16,6 +16,10 @@ import type { BoundCompressPromptFn } from "../compressPrompt/compressPrompt.int
 
 export type TierOutputCapTokens = Tables<'tier_definitions'>['output_cap_tokens'];
 
+export interface UserConfig {
+  readonly tier_output_cap_tokens: TierOutputCapTokens;
+}
+
 export type GetMaxOutputTokensFn = (
   user_balance_tokens: number,
   prompt_input_tokens: number,
@@ -44,7 +48,7 @@ export interface CalculateAffordabilityParams {
   outputRate: number;
   isContinuationFlowInitial: boolean;
   inputsRelevance?: RelevanceRule[];
-  tierOutputCapTokens: TierOutputCapTokens;
+  userConfig: UserConfig;
 }
 
 export interface CalculateAffordabilityPayload {

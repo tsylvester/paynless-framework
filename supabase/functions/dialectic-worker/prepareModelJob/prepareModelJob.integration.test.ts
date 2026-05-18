@@ -541,12 +541,12 @@ Deno.test(
     const affordEntry: (typeof affordabilitySpy.calls)[number] = affordabilitySpy.calls[0];
     assertExists(affordEntry);
     const affordParams: CalculateAffordabilityParams = affordEntry.args[0];
-    assertEquals(affordParams.tierOutputCapTokens, 32768);
+    assertEquals(affordParams.userConfig.tier_output_cap_tokens, 32768);
 
     const enqueueEntry: (typeof enqueueModelCallSpy.calls)[number] = enqueueModelCallSpy.calls[0];
     assertExists(enqueueEntry);
     const enqueueParams: EnqueueModelCallParams = enqueueEntry.args[0];
-    assertEquals(enqueueParams.tier_output_cap_tokens, 32768);
+    assertEquals(enqueueParams.userConfig.tier_output_cap_tokens, 32768);
   },
 );
 

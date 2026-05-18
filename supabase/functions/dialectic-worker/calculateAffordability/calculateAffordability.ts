@@ -80,7 +80,7 @@ export async function calculateAffordability(
       extendedModelConfig,
       deps.logger,
       0,
-      params.tierOutputCapTokens,
+      params.userConfig.tier_output_cap_tokens,
     );
     if (plannedMaxOutputTokens < 0) {
       return {

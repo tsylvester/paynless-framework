@@ -17,6 +17,7 @@ const conformanceModelConfig: NodeModelConfig = {
   api_identifier: 'openai-gpt-4o',
   input_token_cost_rate: 0.001,
   output_token_cost_rate: 0.002,
+  tier_output_cap_tokens: null,
 };
 
 const conformanceParams: NodeAdapterConstructorParams = {

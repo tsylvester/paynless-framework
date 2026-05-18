@@ -35,6 +35,7 @@ import type {
   CalculateAffordabilityReturn,
   TierOutputCapTokens,
   GetMaxOutputTokensFn,
+  UserConfig,
 } from "./calculateAffordability.interface.ts";
 
 const defaultCompressionStrategy: ICompressionStrategy = async () => {
@@ -61,6 +62,7 @@ export type CalculateAffordabilityParamsOverrides = {
   isContinuationFlowInitial?: boolean;
   inputsRelevance?: RelevanceRule[];
   tierOutputCapTokens?: TierOutputCapTokens;
+  userConfig?: UserConfig;
 };
 
 export type CalculateAffordabilityPayloadOverrides = {
@@ -123,7 +125,9 @@ export function buildCalculateAffordabilityParams(
     isContinuationFlowInitial: overrides?.isContinuationFlowInitial !== undefined
       ? overrides.isContinuationFlowInitial
       : false,
-    tierOutputCapTokens: overrides?.tierOutputCapTokens !== undefined ? overrides.tierOutputCapTokens : null,
+    userConfig: {
+      tier_output_cap_tokens: overrides?.userConfig !== undefined ? overrides.userConfig.tier_output_cap_tokens : null,
+    },
   };
   if (overrides?.inputsRelevance !== undefined) {
     return { ...base, inputsRelevance: overrides.inputsRelevance };

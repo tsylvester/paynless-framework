@@ -21,6 +21,7 @@ import type {
   CalculateAffordabilityDeps,
   CalculateAffordabilityParams,
   CalculateAffordabilityPayload,
+  UserConfig,
 } from "../calculateAffordability/calculateAffordability.interface.ts";
 import {
   isCalculateAffordabilityParams,
@@ -105,7 +106,7 @@ function assertEnqueueModelCallFirstCallShape(enqueueModelCallSpy: Spy<BoundEnqu
   const payloadArg: Parameters<BoundEnqueueModelCallFn>[1] = first.args[1];
   assertEquals(isEnqueueModelCallParams(paramArg), true);
   assertEquals(isEnqueueModelCallPayload(payloadArg), true);
-  const tierCap: EnqueueModelCallParams["tier_output_cap_tokens"] = paramArg.tier_output_cap_tokens;
+  const tierCap: UserConfig["tier_output_cap_tokens"] = paramArg.userConfig.tier_output_cap_tokens;
   assertEquals(typeof tierCap === "number" || tierCap === null, true);
 }
 
@@ -2071,7 +2072,7 @@ Deno.test(
 );
 
 Deno.test(
-  "prepareModelJob passes tierOutputCapTokens from DB to calculateAffordability and tier_output_cap_tokens to enqueueModelCall",
+  "prepareModelJob passes userConfig.tier_output_cap_tokens to calculateAffordability and enqueueModelCall",
   async () => {
     const projectOwnerUserId: string = "owner-tier-output-cap-contract";
     const outputCap: Tables<"tier_definitions">["output_cap_tokens"] = 32768;
@@ -2142,18 +2143,18 @@ Deno.test(
     const affordPayloadArg: CalculateAffordabilityPayload = affordEntry.args[1];
     assertEquals(isCalculateAffordabilityParams(affordParams), true);
     assertEquals(isCalculateAffordabilityParams(affordParams) && affordParams.projectOwnerUserId === projectOwnerUserId, true);
-    assertEquals(isCalculateAffordabilityParams(affordParams) && affordParams.tierOutputCapTokens === 32768, true);
+    assertEquals(isCalculateAffordabilityParams(affordParams) && affordParams.userConfig.tier_output_cap_tokens === 32768, true);
     assertEquals(isCalculateAffordabilityPayload(affordPayloadArg), true);
     assertEnqueueModelCallFirstCallShape(enqueueModelCallSpy);
     const enqueueEntry: (typeof enqueueModelCallSpy.calls)[number] = enqueueModelCallSpy.calls[0];
     assertExists(enqueueEntry);
     const enqueueParams: EnqueueModelCallParams = enqueueEntry.args[0];
-    assertEquals(enqueueParams.tier_output_cap_tokens, 32768);
+    assertEquals(enqueueParams.userConfig.tier_output_cap_tokens, 32768);
   },
 );
 
 Deno.test(
-  "prepareModelJob passes tierOutputCapTokens null and tier_output_cap_tokens null when DB returns output_cap_tokens null",
+  "prepareModelJob passes userConfig.tier_output_cap_tokens null to calculateAffordability and enqueueModelCall when DB returns output_cap_tokens null",
   async () => {
     const projectOwnerUserId: string = "owner-tier-output-cap-null";
     const outputCap: Tables<"tier_definitions">["output_cap_tokens"] = null;
@@ -2223,13 +2224,13 @@ Deno.test(
     const affordParams: CalculateAffordabilityParams = affordEntry.args[0];
     const affordPayloadArg: CalculateAffordabilityPayload = affordEntry.args[1];
     assertEquals(isCalculateAffordabilityParams(affordParams), true);
-    assertEquals(isCalculateAffordabilityParams(affordParams) && affordParams.tierOutputCapTokens === null, true);
+    assertEquals(isCalculateAffordabilityParams(affordParams) && affordParams.userConfig.tier_output_cap_tokens === null, true);
     assertEquals(isCalculateAffordabilityPayload(affordPayloadArg), true);
     assertEnqueueModelCallFirstCallShape(enqueueModelCallSpy);
     const enqueueEntry: (typeof enqueueModelCallSpy.calls)[number] = enqueueModelCallSpy.calls[0];
     assertExists(enqueueEntry);
     const enqueueParams: EnqueueModelCallParams = enqueueEntry.args[0];
-    assertEquals(enqueueParams.tier_output_cap_tokens, null);
+    assertEquals(enqueueParams.userConfig.tier_output_cap_tokens, null);
   },
 );
 

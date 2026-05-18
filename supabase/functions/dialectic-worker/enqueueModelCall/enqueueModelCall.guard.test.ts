@@ -113,7 +113,7 @@ Deno.test(
                 providerRow: full.providerRow,
                 userAuthToken: full.userAuthToken,
                 output_type: full.output_type,
-                tier_output_cap_tokens: null,
+                userConfig: { tier_output_cap_tokens: null },
             }),
             false,
         );
@@ -130,7 +130,7 @@ Deno.test(
                 providerRow: full.providerRow,
                 userAuthToken: full.userAuthToken,
                 output_type: full.output_type,
-                tier_output_cap_tokens: null,
+                userConfig: { tier_output_cap_tokens: null },
             }),
             false,
         );
@@ -147,7 +147,7 @@ Deno.test(
                 job: full.job,
                 userAuthToken: full.userAuthToken,
                 output_type: full.output_type,
-                tier_output_cap_tokens: null,
+                userConfig: { tier_output_cap_tokens: null },
             }),
             false,
         );
@@ -164,7 +164,7 @@ Deno.test(
                 job: full.job,
                 providerRow: full.providerRow,
                 output_type: full.output_type,
-                tier_output_cap_tokens: null,
+                userConfig: { tier_output_cap_tokens: null },
             }),
             false,
         );
@@ -181,7 +181,7 @@ Deno.test(
                 job: full.job,
                 providerRow: full.providerRow,
                 userAuthToken: full.userAuthToken,
-                tier_output_cap_tokens: null,
+                userConfig: { tier_output_cap_tokens: null },
             }),
             false,
         );
@@ -336,7 +336,7 @@ Deno.test(
                 model_config: { api_identifier: "api-id" },
                 chat_api_request: { message: "m", providerId: "p", promptId: "q" },
                 sig: "mock-sig",
-                tier_output_cap_tokens: null,
+                user_config: { tier_output_cap_tokens: null },
             }),
             true,
         );
@@ -352,7 +352,7 @@ Deno.test(
                 model_config: { api_identifier: "api-id" },
                 chat_api_request: { message: "m", providerId: "p", promptId: "q" },
                 user_jwt: "jwt-token",
-                tier_output_cap_tokens: null,
+                user_config: { tier_output_cap_tokens: null },
             }),
             false,
         );
@@ -368,7 +368,7 @@ Deno.test(
                 model_config: { api_identifier: "api-id" },
                 chat_api_request: { message: "m", providerId: "p", promptId: "q" },
                 user_jwt: "jwt-token",
-                tier_output_cap_tokens: null,
+                user_config: { tier_output_cap_tokens: null },
             }),
             false,
         );
@@ -384,7 +384,7 @@ Deno.test(
                 api_identifier: "api-id",
                 chat_api_request: { message: "m", providerId: "p", promptId: "q" },
                 user_jwt: "jwt-token",
-                tier_output_cap_tokens: null,
+                user_config: { tier_output_cap_tokens: null },
             }),
             false,
         );
@@ -400,7 +400,7 @@ Deno.test(
                 api_identifier: "api-id",
                 model_config: { api_identifier: "api-id" },
                 user_jwt: "jwt-token",
-                tier_output_cap_tokens: null,
+                user_config: { tier_output_cap_tokens: null },
             }),
             false,
         );
@@ -416,7 +416,7 @@ Deno.test(
                 api_identifier: "api-id",
                 model_config: { api_identifier: "api-id" },
                 chat_api_request: { message: "m", providerId: "p", promptId: "q" },
-                tier_output_cap_tokens: null,
+                user_config: { tier_output_cap_tokens: null },
             }),
             false,
         );
@@ -570,7 +570,7 @@ Deno.test(
                 model_config: { api_identifier: "api-id" },
                 chat_api_request: { message: "m", providerId: "p", promptId: "q" },
                 sig: "mock-sig",
-                tier_output_cap_tokens: null,
+                user_config: { tier_output_cap_tokens: null },
             }),
             true,
         );
@@ -587,7 +587,7 @@ Deno.test(
                 model_config: { api_identifier: "api-id" },
                 chat_api_request: { message: "m", providerId: "p", promptId: "q" },
                 sig: "mock-sig",
-                tier_output_cap_tokens: 32768,
+                user_config: { tier_output_cap_tokens: 32768 },
             }),
             true,
         );

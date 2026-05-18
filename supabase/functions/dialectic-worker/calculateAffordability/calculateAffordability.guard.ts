@@ -72,10 +72,13 @@ export function isCalculateAffordabilityParams(value: unknown): value is Calcula
       return false;
     }
   }
-  if (!("tierOutputCapTokens" in value)) {
+  if (!("userConfig" in value) || !isRecord(value.userConfig)) {
     return false;
   }
-  if (typeof value.tierOutputCapTokens !== "number" && value.tierOutputCapTokens !== null) {
+  if (
+    typeof value.userConfig.tier_output_cap_tokens !== "number" &&
+    value.userConfig.tier_output_cap_tokens !== null
+  ) {
     return false;
   }
   return true;

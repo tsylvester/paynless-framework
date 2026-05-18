@@ -235,27 +235,39 @@ Deno.test("isBoundCalculateAffordabilityFn accepts async functions and rejects n
   assertEquals(isBoundCalculateAffordabilityFn("not-a-function"), false);
 });
 
-Deno.test("isCalculateAffordabilityParams accepts params with tierOutputCapTokens null", () => {
+Deno.test("isCalculateAffordabilityParams accepts params with userConfig: { tier_output_cap_tokens: null }", () => {
   const { client } = createMockSupabaseClient();
   const params: CalculateAffordabilityParams = buildCalculateAffordabilityParams(DbClient(client), {
-    tierOutputCapTokens: null,
+    userConfig: { tier_output_cap_tokens: null },
   });
   assertEquals(isCalculateAffordabilityParams(params), true);
 });
 
-Deno.test("isCalculateAffordabilityParams accepts params with tierOutputCapTokens 32768", () => {
+Deno.test("isCalculateAffordabilityParams accepts params with userConfig: { tier_output_cap_tokens: 32768 }", () => {
   const { client } = createMockSupabaseClient();
   const params: CalculateAffordabilityParams = buildCalculateAffordabilityParams(DbClient(client), {
-    tierOutputCapTokens: 32768,
+    userConfig: { tier_output_cap_tokens: 32768 },
   });
   assertEquals(isCalculateAffordabilityParams(params), true);
 });
 
-Deno.test("isCalculateAffordabilityParams rejects params missing tierOutputCapTokens", () => {
+Deno.test("isCalculateAffordabilityParams rejects params missing userConfig", () => {
   const { client } = createMockSupabaseClient();
   const valid: CalculateAffordabilityParams = buildCalculateAffordabilityParams(DbClient(client));
-  const { tierOutputCapTokens: _tierOutputCapTokens, ...missingTierOutputCapTokens } = valid;
-  assertEquals(isCalculateAffordabilityParams(missingTierOutputCapTokens), false);
+  const { userConfig: _userConfig, ...missingUserConfig } = valid;
+  assertEquals(isCalculateAffordabilityParams(missingUserConfig), false);
+});
+
+Deno.test("isCalculateAffordabilityParams rejects params where userConfig is not a record", () => {
+  const { client } = createMockSupabaseClient();
+  const valid: CalculateAffordabilityParams = buildCalculateAffordabilityParams(DbClient(client));
+  assertEquals(
+    isCalculateAffordabilityParams({
+      ...valid,
+      userConfig: "not-a-record",
+    }),
+    false,
+  );
 });
 
 Deno.test("isCalculateAffordabilityDeps rejects deps missing getMaxOutputTokens", () => {

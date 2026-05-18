@@ -36,6 +36,7 @@ describe('getNodeAiAdapter.interface contract', () => {
         api_identifier: 'openai-gpt-4o',
         input_token_cost_rate: 0.001,
         output_token_cost_rate: 0.002,
+        tier_output_cap_tokens: null,
       },
     };
     expect(params.apiIdentifier.length >= 1).toBe(true);

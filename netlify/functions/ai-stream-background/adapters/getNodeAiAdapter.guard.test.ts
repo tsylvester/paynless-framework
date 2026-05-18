@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { NodeModelConfig } from './ai-adapter.interface.ts';
 import {
   createMockGetNodeAiAdapterDeps,
   createMockGetNodeAiAdapterParams,
@@ -10,6 +11,7 @@ import {
   isGetNodeAiAdapterDeps,
   isGetNodeAiAdapterParams,
   isNodeAdapterStreamChunk,
+  isNodeModelConfig,
   isNodeProviderMap,
 } from './getNodeAiAdapter.guard.ts';
 
@@ -110,6 +112,38 @@ describe('getNodeAiAdapter.guard', () => {
     it('rejects unknown type values', () => {
       const chunk = { type: 'unknown', text: 'x' };
       expect(isNodeAdapterStreamChunk(chunk)).toBe(false);
+    });
+  });
+
+  describe('isNodeModelConfig', () => {
+    it('accepts object with tier_output_cap_tokens: null', () => {
+      const config: NodeModelConfig = {
+        api_identifier: 'openai-gpt-4o',
+        input_token_cost_rate: null,
+        output_token_cost_rate: null,
+        tier_output_cap_tokens: null,
+      };
+      expect(isNodeModelConfig(config)).toBe(true);
+    });
+
+    it('accepts object with tier_output_cap_tokens: 32768', () => {
+      const config: NodeModelConfig = {
+        api_identifier: 'openai-gpt-4o',
+        input_token_cost_rate: null,
+        output_token_cost_rate: null,
+        tier_output_cap_tokens: 32_768,
+      };
+      expect(isNodeModelConfig(config)).toBe(true);
+    });
+
+    it('rejects object missing tier_output_cap_tokens entirely', () => {
+      expect(
+        isNodeModelConfig({
+          api_identifier: 'openai-gpt-4o',
+          input_token_cost_rate: null,
+          output_token_cost_rate: null,
+        }),
+      ).toBe(false);
     });
   });
 });

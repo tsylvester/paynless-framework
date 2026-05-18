@@ -33,7 +33,7 @@ Deno.test(
             },
         });
         const baseParams = createMockEnqueueModelCallParams({
-            tier_output_cap_tokens: null,
+            userConfig: { tier_output_cap_tokens: null },
         }, {
             mockSetup,
         });
@@ -42,7 +42,7 @@ Deno.test(
                 ...baseParams.providerRow,
                 api_identifier: "expected-api-id-enqueue",
             },
-            tier_output_cap_tokens: null,
+            userConfig: { tier_output_cap_tokens: null },
         }, { mockSetup });
         const payload = createMockEnqueueModelCallPayload({
             chatApiRequest: {
@@ -75,8 +75,9 @@ Deno.test(
             assert(isRecord(data.chat_api_request));
             assertEquals(data.chat_api_request.message, payloadMarker);
             assertEquals(data.api_identifier, "expected-api-id-enqueue");
-            assertEquals("tier_output_cap_tokens" in data, true);
-            assertEquals(data.tier_output_cap_tokens, null);
+            assertEquals("user_config" in data, true);
+            assert(isRecord(data.user_config));
+            assertEquals(data.user_config.tier_output_cap_tokens, null);
         } finally {
             fetchStub.restore();
         }
@@ -93,7 +94,7 @@ Deno.test(
                 },
             },
         });
-        const params = createMockEnqueueModelCallParams({ tier_output_cap_tokens: null }, { mockSetup });
+        const params = createMockEnqueueModelCallParams({ userConfig: { tier_output_cap_tokens: null } }, { mockSetup });
         const fetchStub = stub(
             globalThis,
             "fetch",
@@ -145,7 +146,7 @@ Deno.test(
                 createMockEnqueueModelCallDeps(),
                 createMockEnqueueModelCallParams({
                     output_type: "___invalid_model_contribution_output___",
-                    tier_output_cap_tokens: null,
+                    userConfig: { tier_output_cap_tokens: null },
                 }, { mockSetup }),
                 createMockEnqueueModelCallPayload(),
             );
@@ -174,7 +175,7 @@ Deno.test(
                 },
             },
         });
-        const baseParams = createMockEnqueueModelCallParams({ tier_output_cap_tokens: null }, { mockSetup });
+        const baseParams = createMockEnqueueModelCallParams({ userConfig: { tier_output_cap_tokens: null } }, { mockSetup });
         const badProvider = {
             ...baseParams.providerRow,
             config: {},
@@ -185,7 +186,7 @@ Deno.test(
                 createMockEnqueueModelCallDeps(),
                 createMockEnqueueModelCallParams({
                     providerRow: badProvider,
-                    tier_output_cap_tokens: null,
+                    userConfig: { tier_output_cap_tokens: null },
                 }, { mockSetup }),
                 createMockEnqueueModelCallPayload(),
             );
@@ -220,7 +221,7 @@ Deno.test(
                 createMockEnqueueModelCallDeps({
                     apiKeyForProvider: () => null,
                 }),
-                createMockEnqueueModelCallParams({ tier_output_cap_tokens: null }, { mockSetup }),
+                createMockEnqueueModelCallParams({ userConfig: { tier_output_cap_tokens: null } }, { mockSetup }),
                 createMockEnqueueModelCallPayload(),
             );
             assert("error" in result);
@@ -248,7 +249,7 @@ Deno.test(
                 },
             },
         });
-        const params = createMockEnqueueModelCallParams({ tier_output_cap_tokens: null }, { mockSetup });
+        const params = createMockEnqueueModelCallParams({ userConfig: { tier_output_cap_tokens: null } }, { mockSetup });
         const fetchStub = stub(
             globalThis,
             "fetch",
@@ -292,7 +293,7 @@ Deno.test(
         try {
             const result: EnqueueModelCallReturn = await enqueueModelCall(
                 createMockEnqueueModelCallDeps(),
-                createMockEnqueueModelCallParams({ tier_output_cap_tokens: null }, { mockSetup }),
+                createMockEnqueueModelCallParams({ userConfig: { tier_output_cap_tokens: null } }, { mockSetup }),
                 createMockEnqueueModelCallPayload(),
             );
             assert("error" in result);
@@ -320,7 +321,7 @@ Deno.test(
         });
         const params = createMockEnqueueModelCallParams({
             userAuthToken: "jwt-from-params",
-            tier_output_cap_tokens: null,
+            userConfig: { tier_output_cap_tokens: null },
         }, { mockSetup });
         const payload = createMockEnqueueModelCallPayload();
         const fetchStub = stub(
@@ -364,8 +365,9 @@ Deno.test(
             assertEquals(data.job_id, params.job.id);
             assertEquals("user_jwt" in data, false);
             assertEquals(data.sig, "mock-sig");
-            assertEquals("tier_output_cap_tokens" in data, true);
-            assertEquals(data.tier_output_cap_tokens, null);
+            assertEquals("user_config" in data, true);
+            assert(isRecord(data.user_config));
+            assertEquals(data.user_config.tier_output_cap_tokens, null);
             assert(isRecord(data.model_config));
             assertEquals(
                 data.model_config.api_identifier,
@@ -420,7 +422,7 @@ Deno.test(
         try {
             const result: EnqueueModelCallReturn = await enqueueModelCall(
                 createMockEnqueueModelCallDeps(),
-                createMockEnqueueModelCallParams({ tier_output_cap_tokens: null }, { mockSetup }),
+                createMockEnqueueModelCallParams({ userConfig: { tier_output_cap_tokens: null } }, { mockSetup }),
                 createMockEnqueueModelCallPayload(),
             );
             assert("queued" in result);
@@ -450,7 +452,7 @@ Deno.test(
         try {
             const result: EnqueueModelCallReturn = await enqueueModelCall(
                 createMockEnqueueModelCallDeps(),
-                createMockEnqueueModelCallParams({ tier_output_cap_tokens: null }, { mockSetup }),
+                createMockEnqueueModelCallParams({ userConfig: { tier_output_cap_tokens: null } }, { mockSetup }),
                 createMockEnqueueModelCallPayload(),
             );
             assert("error" in result);
@@ -496,7 +498,7 @@ Deno.test(
         try {
             await enqueueModelCall(
                 createMockEnqueueModelCallDeps(),
-                createMockEnqueueModelCallParams({ tier_output_cap_tokens: null }, { mockSetup }),
+                createMockEnqueueModelCallParams({ userConfig: { tier_output_cap_tokens: null } }, { mockSetup }),
                 largePayload,
             );
             assertEquals(fetchStub.calls.length, 1);
@@ -533,7 +535,7 @@ Deno.test(
         try {
             const result: EnqueueModelCallReturn = await enqueueModelCall(
                 createMockEnqueueModelCallDeps(),
-                createMockEnqueueModelCallParams({ tier_output_cap_tokens: null }, { mockSetup }),
+                createMockEnqueueModelCallParams({ userConfig: { tier_output_cap_tokens: null } }, { mockSetup }),
                 hugePayload,
             );
             assert("error" in result);
@@ -561,7 +563,7 @@ Deno.test(
                 },
             },
         });
-        const params = createMockEnqueueModelCallParams({ tier_output_cap_tokens: null }, { mockSetup });
+        const params = createMockEnqueueModelCallParams({ userConfig: { tier_output_cap_tokens: null } }, { mockSetup });
         const capturedArgs: string[] = [];
         const mockSig: string = "test-hmac-sig-value";
         const deps = createMockEnqueueModelCallDeps({
@@ -606,7 +608,7 @@ Deno.test(
                 },
             },
         });
-        const baseParams = createMockEnqueueModelCallParams({ tier_output_cap_tokens: null }, { mockSetup });
+        const baseParams = createMockEnqueueModelCallParams({ userConfig: { tier_output_cap_tokens: null } }, { mockSetup });
         const nullUserIdJob: DialecticJobRow = { ...baseParams.job, user_id: null } as unknown as DialecticJobRow;
         const deps = createMockEnqueueModelCallDeps({
             computeJobSig: mockComputeJobSig,
@@ -617,7 +619,7 @@ Deno.test(
                 deps,
                 createMockEnqueueModelCallParams({
                     job: nullUserIdJob,
-                    tier_output_cap_tokens: null,
+                    userConfig: { tier_output_cap_tokens: null },
                 }, { mockSetup }),
                 createMockEnqueueModelCallPayload(),
             );
@@ -648,7 +650,7 @@ Deno.test(
         try {
             const result: EnqueueModelCallReturn = await enqueueModelCall(
                 deps,
-                createMockEnqueueModelCallParams({ tier_output_cap_tokens: null }, { mockSetup }),
+                createMockEnqueueModelCallParams({ userConfig: { tier_output_cap_tokens: null } }, { mockSetup }),
                 createMockEnqueueModelCallPayload(),
             );
             assert("error" in result);
@@ -680,7 +682,7 @@ Deno.test(
         try {
             await enqueueModelCall(
                 createMockEnqueueModelCallDeps(),
-                createMockEnqueueModelCallParams({ tier_output_cap_tokens: null }, { mockSetup }),
+                createMockEnqueueModelCallParams({ userConfig: { tier_output_cap_tokens: null } }, { mockSetup }),
                 createMockEnqueueModelCallPayload(),
             );
             assertEquals(fetchStub.calls.length, 1);
@@ -717,7 +719,7 @@ Deno.test(
         try {
             await enqueueModelCall(
                 createMockEnqueueModelCallDeps(),
-                createMockEnqueueModelCallParams({ tier_output_cap_tokens: null }, { mockSetup }),
+                createMockEnqueueModelCallParams({ userConfig: { tier_output_cap_tokens: null } }, { mockSetup }),
                 createMockEnqueueModelCallPayload(),
             );
             assertEquals(fetchStub.calls.length, 1);
@@ -732,7 +734,7 @@ Deno.test(
 );
 
 Deno.test(
-    "enqueueModelCall posts tier_output_cap_tokens from params onto enqueued event data",
+    "enqueueModelCall posts user_config.tier_output_cap_tokens from params onto enqueued event data",
     async () => {
         const mockSetup = createMockSupabaseClient(undefined, {
             genericMockResults: {
@@ -743,7 +745,7 @@ Deno.test(
         });
         const tierCap: number = 32768;
         const params = createMockEnqueueModelCallParams({
-            tier_output_cap_tokens: tierCap,
+            userConfig: { tier_output_cap_tokens: tierCap },
         }, { mockSetup });
         const fetchStub = stub(
             globalThis,
@@ -764,7 +766,8 @@ Deno.test(
             const parsed = JSON.parse(initArg.body);
             assert(isRecord(parsed));
             assert(isRecord(parsed.data));
-            assertEquals(parsed.data.tier_output_cap_tokens, tierCap);
+            assert(isRecord(parsed.data.user_config));
+            assertEquals(parsed.data.user_config.tier_output_cap_tokens, tierCap);
         } finally {
             fetchStub.restore();
         }
@@ -772,7 +775,7 @@ Deno.test(
 );
 
 Deno.test(
-    "enqueueModelCall includes tier_output_cap_tokens null in JSON body when params supply null",
+    "enqueueModelCall includes user_config.tier_output_cap_tokens null in JSON body when params supply null",
     async () => {
         const mockSetup = createMockSupabaseClient(undefined, {
             genericMockResults: {
@@ -782,7 +785,7 @@ Deno.test(
             },
         });
         const params = createMockEnqueueModelCallParams({
-            tier_output_cap_tokens: null,
+            userConfig: { tier_output_cap_tokens: null },
         }, { mockSetup });
         const fetchStub = stub(
             globalThis,
@@ -801,12 +804,13 @@ Deno.test(
             assert(initArg !== undefined);
             assert(typeof initArg.body === "string");
             const bodyRaw: string = initArg.body;
-            assertEquals(bodyRaw.includes('"tier_output_cap_tokens":null'), true);
+            assertEquals(bodyRaw.includes('"user_config":{"tier_output_cap_tokens":null}'), true);
             const parsed = JSON.parse(bodyRaw);
             assert(isRecord(parsed));
             assert(isRecord(parsed.data));
-            assertEquals("tier_output_cap_tokens" in parsed.data, true);
-            assertEquals(parsed.data.tier_output_cap_tokens, null);
+            assertEquals("user_config" in parsed.data, true);
+            assert(isRecord(parsed.data.user_config));
+            assertEquals(parsed.data.user_config.tier_output_cap_tokens, null);
         } finally {
             fetchStub.restore();
         }

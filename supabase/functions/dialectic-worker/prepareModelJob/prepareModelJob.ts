@@ -19,6 +19,7 @@ import type {
   CalculateAffordabilityParams,
   CalculateAffordabilityPayload,
   TierOutputCapTokens,
+  UserConfig,
 } from '../calculateAffordability/calculateAffordability.interface.ts';
 import type { EnqueueModelCallParams } from '../enqueueModelCall/enqueueModelCall.interface.ts';
 import type { PostgrestError } from 'npm:@supabase/supabase-js@2';
@@ -68,6 +69,8 @@ export async function prepareModelJob(
         }
       }
     }
+
+    const userConfig: UserConfig = { tier_output_cap_tokens: tierOutputCapTokens };
 
     const {
       promptConstructionPayload,
@@ -257,7 +260,7 @@ export async function prepareModelJob(
       outputRate,
       isContinuationFlowInitial,
       inputsRelevance: inputsRelevance,
-      tierOutputCapTokens,
+      userConfig: userConfig,
     };
 
     const affordPayload: CalculateAffordabilityPayload = {
@@ -324,7 +327,7 @@ export async function prepareModelJob(
       providerRow,
       userAuthToken: userAuthTokenStrict,
       output_type,
-      tier_output_cap_tokens: tierOutputCapTokens,
+      userConfig: userConfig,
     };
 
     const enqueueResult = await deps.enqueueModelCall(enqueueModelCallParams, { chatApiRequest, preflightInputTokens: resolvedInputTokenCount });

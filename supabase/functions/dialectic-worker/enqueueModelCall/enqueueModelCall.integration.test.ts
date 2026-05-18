@@ -82,7 +82,7 @@ Deno.test(
             providerRow: integrationProviderRow,
             userAuthToken: "integration-user-jwt",
             output_type: FileType.HeaderContext,
-            tier_output_cap_tokens: null,
+            userConfig: { tier_output_cap_tokens: null },
         };
 
         const payload: EnqueueModelCallPayload = {
@@ -180,7 +180,7 @@ Deno.test(
             providerRow: integrationProviderRow,
             userAuthToken: "integration-user-jwt",
             output_type: FileType.HeaderContext,
-            tier_output_cap_tokens: null,
+            userConfig: { tier_output_cap_tokens: null },
         };
 
         const payload: EnqueueModelCallPayload = {
@@ -252,7 +252,7 @@ Deno.test(
             providerRow: integrationProviderRow,
             userAuthToken: "integration-user-jwt",
             output_type: FileType.HeaderContext,
-            tier_output_cap_tokens: tierCap,
+            userConfig: { tier_output_cap_tokens: tierCap },
         };
 
         const payload: EnqueueModelCallPayload = {
@@ -288,7 +288,10 @@ Deno.test(
             const parsed = JSON.parse(initArg.body);
             assert(isRecord(parsed));
             assert(isRecord(parsed.data));
-            assertEquals(parsed.data.tier_output_cap_tokens, tierCap);
+            assertEquals("user_config" in parsed.data, true);
+            assert(isRecord(parsed.data.user_config));
+            assertEquals("tier_output_cap_tokens" in parsed.data.user_config, true);
+            assertEquals(parsed.data.user_config.tier_output_cap_tokens, tierCap);
         } finally {
             fetchStub.restore();
         }

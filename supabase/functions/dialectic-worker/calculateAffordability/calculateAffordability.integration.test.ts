@@ -173,7 +173,7 @@ Deno.test("calculateAffordability integration: non-oversized → direct return (
     extendedModelConfig,
     deps.logger,
     0,
-    params.tierOutputCapTokens,
+    params.userConfig.tier_output_cap_tokens,
   );
   assertEquals(result.maxOutputTokens, expectedMax);
 });
@@ -513,7 +513,7 @@ Deno.test("calculateAffordability integration: tierOutputCapTokens=32768 is bind
     inputRate: 0.0001,
     outputRate: 0.0001,
     isContinuationFlowInitial: false,
-    tierOutputCapTokens: 32768,
+    userConfig: { tier_output_cap_tokens: 32768 },
   });
   const payload: CalculateAffordabilityPayload = buildCalculateAffordabilityPayload({
     resourceDocuments,
@@ -550,7 +550,7 @@ Deno.test("calculateAffordability integration: tierOutputCapTokens=32768 is bind
     extendedModelConfig,
     deps.logger,
     0,
-    params.tierOutputCapTokens,
+    params.userConfig.tier_output_cap_tokens,
   );
   assertEquals(result.maxOutputTokens, expectedMax);
   assertEquals(expectedMax, 32768);

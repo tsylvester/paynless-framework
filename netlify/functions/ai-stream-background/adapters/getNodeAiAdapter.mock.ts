@@ -22,6 +22,7 @@ export const defaultNodeModelConfig: NodeModelConfig = {
   api_identifier: 'openai-gpt-4o',
   input_token_cost_rate: 0.001,
   output_token_cost_rate: 0.002,
+  tier_output_cap_tokens: null,
 };
 
 export const mockAiAdapter: AiAdapter = {

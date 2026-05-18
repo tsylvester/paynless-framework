@@ -1116,7 +1116,7 @@
     * `[✅]` Test 2 (~line 1023): add `getMaxOutputTokens` to the `CalculateAffordabilityDeps` inline construction — same pattern
     * `[✅]` All existing tests must still pass
 
-* `[ ]` `[BE]` supabase/functions/dialectic-worker/prepareModelJob **Fetch tier output cap from DB and thread through call chain**
+* `[✅]` `[BE]` supabase/functions/dialectic-worker/prepareModelJob **Fetch tier output cap from DB and thread through call chain**
 
   * `[✅]` `objective`
     * `[✅]` Four compile errors exist in this module after the tier migration and prior calculateAffordability/enqueueModelCall nodes:
@@ -1165,59 +1165,59 @@
     * `[✅]` `affordParams: CalculateAffordabilityParams` (line 210): add `tierOutputCapTokens`
     * `[✅]` `enqueueModelCallParams: EnqueueModelCallParams` (line 283): add `tier_output_cap_tokens: tierOutputCapTokens`
 
-  * `[ ]` supabase/functions/dialectic-worker/prepareModelJob/`prepareModelJob.integration.test.ts`
-    * `[ ]` Add test: full execution with mocked DB returning `output_cap_tokens: 32768` → `calculateAffordability` called with `tierOutputCapTokens: 32768`, `enqueueModelCall` called with `tier_output_cap_tokens: 32768`
-    * `[ ]` Add test: tier cap DB query fails → `PrepareModelJobErrorReturn` with `retriable: true`; neither `calculateAffordability` nor `enqueueModelCall` is invoked
-    * `[ ]` All existing tests must still pass
+  * `[✅]` supabase/functions/dialectic-worker/prepareModelJob/`prepareModelJob.integration.test.ts`
+    * `[✅]` Add test: full execution with mocked DB returning `output_cap_tokens: 32768` → `calculateAffordability` called with `tierOutputCapTokens: 32768`, `enqueueModelCall` called with `tier_output_cap_tokens: 32768`
+    * `[✅]` Add test: tier cap DB query fails → `PrepareModelJobErrorReturn` with `retriable: true`; neither `calculateAffordability` nor `enqueueModelCall` is invoked
+    * `[✅]` All existing tests must still pass
 
 * `[ ]` `[BE]` netlify/functions/ai-stream-background/adapters/getNodeAiAdapter **Add tier_output_cap_tokens to NodeModelConfig and update isNodeModelConfig guard**
 
-  * `[ ]` `objective`
-    * `[ ]` `NodeModelConfig` does not carry `tier_output_cap_tokens`. The field must be present on the type before `ai-stream-background.ts` can merge it into adapter config and before any adapter can read it from `modelConfig`. Add the field to `NodeModelConfig` in `ai-adapter.interface.ts`, update `isNodeModelConfig` in `getNodeAiAdapter.guard.ts`, and update all `NodeModelConfig` construction sites in this module.
+  * `[✅]` `objective`
+    * `[✅]` `NodeModelConfig` does not carry `tier_output_cap_tokens`. The field must be present on the type before `ai-stream-background.ts` can merge it into adapter config and before any adapter can read it from `modelConfig`. Add the field to `NodeModelConfig` in `ai-adapter.interface.ts`, update `isNodeModelConfig` in `getNodeAiAdapter.guard.ts`, and update all `NodeModelConfig` construction sites in this module.
 
-  * `[ ]` `role`
-    * `[ ]` Infrastructure adapter factory — routes to the correct provider adapter; owns the `NodeModelConfig` type
+  * `[✅]` `role`
+    * `[✅]` Infrastructure adapter factory — routes to the correct provider adapter; owns the `NodeModelConfig` type
 
-  * `[ ]` `module`
-    * `[ ]` ai-stream-background, adapter layer
+  * `[✅]` `module`
+    * `[✅]` ai-stream-background, adapter layer
 
-  * `[ ]` `deps`
-    * `[ ]` None for the type change — `tier_output_cap_tokens: number | null` declared inline; no cross-workspace import of `Tables<'tier_definitions'>`
+  * `[✅]` `deps`
+    * `[✅]` None for the type change — `tier_output_cap_tokens: number | null` declared inline; no cross-workspace import of `Tables<'tier_definitions'>`
 
-  * `[ ]` `context_slice`
-    * `[ ]` `NodeModelConfig` in `ai-adapter.interface.ts` gains `tier_output_cap_tokens: number | null`
-    * `[ ]` `isNodeModelConfig` gains check: `'tier_output_cap_tokens' in v` and `typeof v['tier_output_cap_tokens'] === 'number' || v['tier_output_cap_tokens'] === null`
-    * `[ ]` All `NodeModelConfig` construction sites in this module: add `tier_output_cap_tokens: null`
+  * `[✅]` `context_slice`
+    * `[✅]` `NodeModelConfig` in `ai-adapter.interface.ts` gains `tier_output_cap_tokens: number | null`
+    * `[✅]` `isNodeModelConfig` gains check: `'tier_output_cap_tokens' in v` and `typeof v['tier_output_cap_tokens'] === 'number' || v['tier_output_cap_tokens'] === null`
+    * `[✅]` All `NodeModelConfig` construction sites in this module: add `tier_output_cap_tokens: null`
 
-  * `[ ]` netlify/functions/ai-stream-background/adapters/`ai-adapter.interface.test.ts`
-    * `[ ]` Add contract test: `NodeModelConfig` shape includes `tier_output_cap_tokens` as `number | null`
-    * `[ ]` Add test: valid `NodeModelConfig` with `tier_output_cap_tokens: null` satisfies the interface
-    * `[ ]` Add test: valid `NodeModelConfig` with `tier_output_cap_tokens: 32768` satisfies the interface
-    * `[ ]` Existing contract tests must still pass with the added field
+  * `[✅]` netlify/functions/ai-stream-background/adapters/`ai-adapter.interface.test.ts`
+    * `[✅]` Add contract test: `NodeModelConfig` shape includes `tier_output_cap_tokens` as `number | null`
+    * `[✅]` Add test: valid `NodeModelConfig` with `tier_output_cap_tokens: null` satisfies the interface
+    * `[✅]` Add test: valid `NodeModelConfig` with `tier_output_cap_tokens: 32768` satisfies the interface
+    * `[✅]` Existing contract tests must still pass with the added field
 
-  * `[ ]` netlify/functions/ai-stream-background/adapters/`ai-adapter.interface.ts`
-    * `[ ]` Add `tier_output_cap_tokens: number | null` to `NodeModelConfig`
+  * `[✅]` netlify/functions/ai-stream-background/adapters/`ai-adapter.interface.ts`
+    * `[✅]` Add `tier_output_cap_tokens: number | null` to `NodeModelConfig`
 
-  * `[ ]` netlify/functions/ai-stream-background/adapters/`getNodeAiAdapter.interface.test.ts`
-    * `[ ]` Add `tier_output_cap_tokens: null` to the `GetNodeAiAdapterParams.modelConfig` literal — must still pass
+  * `[✅]` netlify/functions/ai-stream-background/adapters/`getNodeAiAdapter.interface.test.ts`
+    * `[✅]` Add `tier_output_cap_tokens: null` to the `GetNodeAiAdapterParams.modelConfig` literal — must still pass
 
-  * `[ ]` netlify/functions/ai-stream-background/adapters/`getNodeAiAdapter.guard.test.ts`
-    * `[ ]` Add test: `isNodeModelConfig()` accepts object with `tier_output_cap_tokens: null`
-    * `[ ]` Add test: `isNodeModelConfig()` accepts object with `tier_output_cap_tokens: 32768`
-    * `[ ]` Add test: `isNodeModelConfig()` rejects object missing `tier_output_cap_tokens` entirely
-    * `[ ]` Update all existing `NodeModelConfig` constructions to include `tier_output_cap_tokens: null` — must still pass
+  * `[✅]` netlify/functions/ai-stream-background/adapters/`getNodeAiAdapter.guard.test.ts`
+    * `[✅]` Add test: `isNodeModelConfig()` accepts object with `tier_output_cap_tokens: null`
+    * `[✅]` Add test: `isNodeModelConfig()` accepts object with `tier_output_cap_tokens: 32768`
+    * `[✅]` Add test: `isNodeModelConfig()` rejects object missing `tier_output_cap_tokens` entirely
+    * `[✅]` Update all existing `NodeModelConfig` constructions to include `tier_output_cap_tokens: null` — must still pass
 
-  * `[ ]` netlify/functions/ai-stream-background/adapters/`getNodeAiAdapter.guard.ts`
-    * `[ ]` Add check in `isNodeModelConfig()` after existing field checks: `if (!('tier_output_cap_tokens' in v)) return false`; validate `typeof v['tier_output_cap_tokens'] === 'number' || v['tier_output_cap_tokens'] === null`
+  * `[✅]` netlify/functions/ai-stream-background/adapters/`getNodeAiAdapter.guard.ts`
+    * `[✅]` Add check in `isNodeModelConfig()` after existing field checks: `if (!('tier_output_cap_tokens' in v)) return false`; validate `typeof v['tier_output_cap_tokens'] === 'number' || v['tier_output_cap_tokens'] === null`
 
-  * `[ ]` netlify/functions/ai-stream-background/adapters/`getNodeAiAdapter.test.ts`
-    * `[ ]` Update all `NodeModelConfig` constructions to include `tier_output_cap_tokens: null` — must still pass
+  * `[✅]` netlify/functions/ai-stream-background/adapters/`getNodeAiAdapter.test.ts`
+    * `[✅]` Update all `NodeModelConfig` constructions to include `tier_output_cap_tokens: null` — must still pass
 
-  * `[ ]` netlify/functions/ai-stream-background/adapters/`getNodeAiAdapter.mock.ts`
-    * `[ ]` Add `tier_output_cap_tokens: null` to all `NodeModelConfig` constructions
+  * `[✅]` netlify/functions/ai-stream-background/adapters/`getNodeAiAdapter.mock.ts`
+    * `[✅]` Add `tier_output_cap_tokens: null` to all `NodeModelConfig` constructions
 
-  * `[ ]` netlify/functions/ai-stream-background/adapters/`adapter-conformance.test-utils.ts`
-    * `[ ]` Add `tier_output_cap_tokens: null` to the `conformanceModelConfig` construction — the `NodeModelConfig` literal will fail to compile without the new required field
+  * `[✅]` netlify/functions/ai-stream-background/adapters/`adapter-conformance.test-utils.ts`
+    * `[✅]` Add `tier_output_cap_tokens: null` to the `conformanceModelConfig` construction — the `NodeModelConfig` literal will fail to compile without the new required field
 
 * `[ ]` `[BE]` netlify/functions/ai-stream-background/adapters/resolveOutputCap **Single binding-cap resolver shared by all adapters**
 

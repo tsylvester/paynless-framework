@@ -170,7 +170,7 @@ export function createMockEnqueueModelCallParams(
         providerRow: createDefaultEnqueueAiProviderRow(),
         userAuthToken: "mock-user-jwt",
         output_type: FileType.HeaderContext,
-        tier_output_cap_tokens: null,
+        userConfig: { tier_output_cap_tokens: null },
     };
 
     if (!overrides) {
@@ -197,10 +197,10 @@ export function createMockEnqueueModelCallParams(
             overrides.output_type !== undefined && overrides.output_type !== null
             ? overrides.output_type
             : base.output_type,
-        tier_output_cap_tokens:
-            overrides.tier_output_cap_tokens !== undefined
-                ? overrides.tier_output_cap_tokens
-                : base.tier_output_cap_tokens,
+        userConfig:
+            overrides.userConfig !== undefined && overrides.userConfig !== null
+                ? overrides.userConfig
+                : base.userConfig,
     };
 }
 
@@ -300,7 +300,7 @@ export function createMockAiStreamEventData(
         model_config: defaultAiStreamEventModelConfig,
         chat_api_request: defaultAiStreamEventChatApiRequest,
         sig: "mock-sig",
-        tier_output_cap_tokens: null,
+        user_config: { tier_output_cap_tokens: null },
     };
     if (!overrides) {
         return base;
@@ -327,10 +327,10 @@ export function createMockAiStreamEventData(
         sig: overrides.sig !== undefined && overrides.sig !== null
             ? overrides.sig
             : base.sig,
-        tier_output_cap_tokens:
-            overrides.tier_output_cap_tokens !== undefined
-                ? overrides.tier_output_cap_tokens
-                : base.tier_output_cap_tokens,
+        user_config:
+            overrides.user_config !== undefined && overrides.user_config !== null
+                ? overrides.user_config
+                : base.user_config,
     };
 }
 

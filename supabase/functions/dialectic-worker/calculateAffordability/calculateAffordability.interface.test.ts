@@ -9,6 +9,7 @@ import type {
   CalculateAffordabilityErrorReturn,
   CalculateAffordabilityParams,
   CalculateAffordabilityReturn,
+  UserConfig,
 } from "./calculateAffordability.interface.ts";
 import {
   buildCalculateAffordabilityCompressedReturn,
@@ -163,24 +164,31 @@ Deno.test("calculateAffordability contract: union result accepts error branch", 
   assertEquals("error" in result, true);
 });
 
+Deno.test("UserConfig shape has exactly tier_output_cap_tokens number | null", () => {
+  const uc: UserConfig = { tier_output_cap_tokens: null };
+  const uc2: UserConfig = { tier_output_cap_tokens: 32768 };
+  assertEquals(uc.tier_output_cap_tokens, null);
+  assertEquals(uc2.tier_output_cap_tokens, 32768);
+});
+
 Deno.test(
-  "CalculateAffordabilityParams contract: tierOutputCapTokens is number | null per interface",
+  "CalculateAffordabilityParams contract: userConfig is UserConfig per interface",
   () => {
-    const whenNull: CalculateAffordabilityParams["tierOutputCapTokens"] = null;
-    const whenNumber: CalculateAffordabilityParams["tierOutputCapTokens"] = 32768;
-    assertEquals(whenNull, null);
-    assertEquals(whenNumber, 32768);
+    const whenNull: CalculateAffordabilityParams["userConfig"] = { tier_output_cap_tokens: null };
+    const whenNumber: CalculateAffordabilityParams["userConfig"] = { tier_output_cap_tokens: 32768 };
+    assertEquals(whenNull.tier_output_cap_tokens, null);
+    assertEquals(whenNumber.tier_output_cap_tokens, 32768);
   },
 );
 
-Deno.test("CalculateAffordabilityParams contract: tierOutputCapTokens null is valid", () => {
-  const tierOutputCapTokens: CalculateAffordabilityParams["tierOutputCapTokens"] = null;
-  assertEquals(tierOutputCapTokens, null);
+Deno.test("userConfig with tier_output_cap_tokens null is valid", () => {
+  const userConfig: CalculateAffordabilityParams["userConfig"] = { tier_output_cap_tokens: null };
+  assertEquals(userConfig.tier_output_cap_tokens, null);
 });
 
-Deno.test("CalculateAffordabilityParams contract: tierOutputCapTokens 32768 is valid", () => {
-  const tierOutputCapTokens: CalculateAffordabilityParams["tierOutputCapTokens"] = 32768;
-  assertEquals(tierOutputCapTokens, 32768);
+Deno.test("userConfig with tier_output_cap_tokens 32768 is valid", () => {
+  const userConfig: CalculateAffordabilityParams["userConfig"] = { tier_output_cap_tokens: 32768 };
+  assertEquals(userConfig.tier_output_cap_tokens, 32768);
 });
 
 Deno.test("CalculateAffordabilityDeps contract: getMaxOutputTokens is a required key", () => {

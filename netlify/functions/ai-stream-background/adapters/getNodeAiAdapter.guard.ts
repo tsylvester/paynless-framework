@@ -163,6 +163,13 @@ export function isNodeModelConfig(v: unknown): v is NodeModelConfig {
       return false;
     }
   }
+  if (!('tier_output_cap_tokens' in v)) {
+    return false;
+  }
+  const tierCap: unknown = v['tier_output_cap_tokens'];
+  if (typeof tierCap !== 'number' && tierCap !== null) {
+    return false;
+  }
   return true;
 }
 
