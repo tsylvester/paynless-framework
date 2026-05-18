@@ -1771,7 +1771,7 @@
     * `[✅]` All existing tests with `status: 'active'` update their `p_set_ratchet` assertions from `false` to `true` — observable: test runner GREEN
     * `[✅]` All out-of-spec statuses (`past_due`, `trialing`) removed from test file — no impossible-state assertions remain — observable: test runner GREEN for entire subscriptionUpdated test file
 
-* `[ ]` `[BE]` supabase/functions/_shared/adapters/stripe/handlers/stripe.subscriptionDeleted **Derive p_set_ratchet from subscription transition instead of hardcoded false**
+* `[✅]` `[BE]` supabase/functions/_shared/adapters/stripe/handlers/stripe.subscriptionDeleted **Derive p_set_ratchet from subscription transition instead of hardcoded false**
 
   * `[✅]` `objective`
     * `[✅]` `stripe.subscriptionDeleted.ts` hardcodes `p_set_ratchet: false` at the RPC call. Variables must depend on real inputs. The derivation is `const setRatchet: boolean = false` — deletion events are never payment events — but expressing it as a named variable makes the call site self-documenting and removes the unexplained literal.
@@ -1816,28 +1816,28 @@
     * `[✅]` `stripe.subscriptionUpdated.ts`: `p_set_ratchet` derived from `subscription.status === 'active'`; active = paying = set the ratchet; out-of-spec statuses removed from tests
     * `[✅]` `stripe.subscriptionDeleted.ts`: `p_set_ratchet` derived as named constant `false`; deletion is never a payment event; self-documenting, no unexplained literal
 
-* `[ ]` `[CONFIG]` supabase/scripts/update-seed **Re-run after tier-infrastructure migration to keep seed.sql in sync**
+* `[✅]` `[CONFIG]` supabase/scripts/update-seed **Re-run after tier-infrastructure migration to keep seed.sql in sync**
 
-  * `[ ]` `objective`
-    * `[ ]` Tier-infrastructure migration adds `tier_definitions` table, `subscription_plans.tier_level`, `user_subscriptions.has_ever_paid` + `tier_level`, `ai_providers.min_plan_tier_level`, and backfills all of them. Current `seed.sql` does not reflect these columns. Local dev / CI bring-up will see schema drift.
-    * `[ ]` Fix: apply the tier-infrastructure migration locally; re-run `update-seed.ts` to regenerate `seed.sql` with the new columns and backfill values.
+  * `[✅]` `objective`
+    * `[✅]` Tier-infrastructure migration adds `tier_definitions` table, `subscription_plans.tier_level`, `user_subscriptions.has_ever_paid` + `tier_level`, `ai_providers.min_plan_tier_level`, and backfills all of them. Current `seed.sql` does not reflect these columns. Local dev / CI bring-up will see schema drift.
+    * `[✅]` Fix: apply the tier-infrastructure migration locally; re-run `update-seed.ts` to regenerate `seed.sql` with the new columns and backfill values.
 
-  * `[ ]` `role`
-    * `[ ]` Operations — seed regeneration
+  * `[✅]` `role`
+    * `[✅]` Operations — seed regeneration
 
-  * `[ ]` `module`
-    * `[ ]` supabase/scripts (no code change to `update-seed.ts` itself)
+  * `[✅]` `module`
+    * `[✅]` supabase/scripts (no code change to `update-seed.ts` itself)
 
-  * `[ ]` `deps`
-    * `[ ]` Tier infrastructure migration (completed earlier in this checklist)
-    * `[ ]` Stream 1 seed regeneration (completed) — that pass did not include tier columns because the migration had not yet been applied
-    * `[ ]` `supabase/scripts/update-seed.ts` (no changes needed to the script)
+  * `[✅]` `deps`
+    * `[✅]` Tier infrastructure migration (completed earlier in this checklist)
+    * `[✅]` Stream 1 seed regeneration (completed) — that pass did not include tier columns because the migration had not yet been applied
+    * `[✅]` `supabase/scripts/update-seed.ts` (no changes needed to the script)
 
-  * `[ ]` Apply tier-infrastructure migration to local DB; run `update-seed.ts`; inspect regenerated `seed.sql`
-    * `[ ]` Verify `tier_definitions` rows present (level 0/10/20/30 with seeded names and caps)
-    * `[ ]` Verify `subscription_plans` rows include `tier_level` populated by backfill
-    * `[ ]` Verify `user_subscriptions` rows include `has_ever_paid` and `tier_level` populated by backfill
-    * `[ ]` Verify `ai_providers` rows include `min_plan_tier_level` populated by cost-band backfill
+  * `[✅]` Apply tier-infrastructure migration to local DB; run `update-seed.ts`; inspect regenerated `seed.sql`
+    * `[✅]` Verify `tier_definitions` rows present (level 0/10/20/30 with seeded names and caps)
+    * `[✅]` Verify `subscription_plans` rows include `tier_level` populated by backfill
+    * `[✅]` Verify `user_subscriptions` rows include `has_ever_paid` and `tier_level` populated by backfill
+    * `[✅]` Verify `ai_providers` rows include `min_plan_tier_level` populated by cost-band backfill
 
   * `[ ]` **Commit** `chore(seed): regenerate seed.sql with tier-infrastructure columns and backfill values`
 
