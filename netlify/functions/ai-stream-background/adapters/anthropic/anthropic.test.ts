@@ -357,8 +357,9 @@ describe('createAnthropicNodeAdapter', () => {
     );
   });
 
-  it('throws when no max tokens can be resolved for the payload', async () => {
+  it('throws when tier_output_cap_tokens is null and no positive cap inputs are provided', async () => {
     const params = createMockAnthropicNodeAdapterConstructorParams({
+      userConfig: { tier_output_cap_tokens: null },
       modelConfig: createMockAnthropicNodeModelConfig({
         hard_cap_output_tokens: undefined,
       }),
@@ -438,7 +439,7 @@ describe('createAnthropicNodeAdapter', () => {
     );
   });
 
-  it('resolves max_tokens from request.max_tokens_to_generate when provided', async () => {
+  it('applies binding max_tokens as min of request and hard cap when both are provided', async () => {
     const params = createMockAnthropicNodeAdapterConstructorParams({
       modelConfig: createMockAnthropicNodeModelConfig({
         hard_cap_output_tokens: 200,
@@ -463,7 +464,7 @@ describe('createAnthropicNodeAdapter', () => {
     );
     expect(messagesStream).toHaveBeenCalledWith(
       expect.objectContaining({
-        max_tokens: 777,
+        max_tokens: 200,
       }),
     );
   });
@@ -523,6 +524,97 @@ describe('createAnthropicNodeAdapter', () => {
         adapter.sendMessageStream(request, 'anthropic-claude-3-5-sonnet'),
       ),
     ).rejects.toThrow('Invalid resource document');
+  });
+
+  it('sets max_tokens to tier cap when tier_output_cap_tokens binds over request and hard cap', async () => {
+    const params = createMockAnthropicNodeAdapterConstructorParams({
+      userConfig: { tier_output_cap_tokens: 32_768 },
+      modelConfig: createMockAnthropicNodeModelConfig({
+        hard_cap_output_tokens: 131_072,
+      }),
+    });
+    const adapter = createAnthropicNodeAdapter(params);
+    const request = createMockAnthropicNodeChatApiRequest({
+      max_tokens_to_generate: 50_000,
+    });
+    const stream = createAnthropicMessagesStreamResult({
+      events: [
+        {
+          type: 'content_block_delta',
+          delta: { type: 'text_delta', text: 'z' },
+        },
+      ],
+      finalMessage: createMockAnthropicSdkFinalMessagePayload(),
+    });
+    messagesStream.mockReturnValue(stream);
+    await collectNodeAdapterStreamChunks(
+      adapter.sendMessageStream(request, 'anthropic-claude-3-5-sonnet'),
+    );
+    expect(messagesStream).toHaveBeenCalledWith(
+      expect.objectContaining({
+        max_tokens: 32_768,
+      }),
+    );
+  });
+
+  it('sets max_tokens to request max when tier_output_cap_tokens is null and request binds', async () => {
+    const params = createMockAnthropicNodeAdapterConstructorParams({
+      userConfig: { tier_output_cap_tokens: null },
+      modelConfig: createMockAnthropicNodeModelConfig({
+        hard_cap_output_tokens: 131_072,
+      }),
+    });
+    const adapter = createAnthropicNodeAdapter(params);
+    const request = createMockAnthropicNodeChatApiRequest({
+      max_tokens_to_generate: 50_000,
+    });
+    const stream = createAnthropicMessagesStreamResult({
+      events: [
+        {
+          type: 'content_block_delta',
+          delta: { type: 'text_delta', text: 'z' },
+        },
+      ],
+      finalMessage: createMockAnthropicSdkFinalMessagePayload(),
+    });
+    messagesStream.mockReturnValue(stream);
+    await collectNodeAdapterStreamChunks(
+      adapter.sendMessageStream(request, 'anthropic-claude-3-5-sonnet'),
+    );
+    expect(messagesStream).toHaveBeenCalledWith(
+      expect.objectContaining({
+        max_tokens: 50_000,
+      }),
+    );
+  });
+
+  it('sets max_tokens to hard cap when hard cap binds and request has no max', async () => {
+    const params = createMockAnthropicNodeAdapterConstructorParams({
+      userConfig: { tier_output_cap_tokens: 131_072 },
+      modelConfig: createMockAnthropicNodeModelConfig({
+        hard_cap_output_tokens: 64_000,
+      }),
+    });
+    const adapter = createAnthropicNodeAdapter(params);
+    const request = createMockAnthropicNodeChatApiRequest();
+    const stream = createAnthropicMessagesStreamResult({
+      events: [
+        {
+          type: 'content_block_delta',
+          delta: { type: 'text_delta', text: 'z' },
+        },
+      ],
+      finalMessage: createMockAnthropicSdkFinalMessagePayload(),
+    });
+    messagesStream.mockReturnValue(stream);
+    await collectNodeAdapterStreamChunks(
+      adapter.sendMessageStream(request, 'anthropic-claude-3-5-sonnet'),
+    );
+    expect(messagesStream).toHaveBeenCalledWith(
+      expect.objectContaining({
+        max_tokens: 64_000,
+      }),
+    );
   });
 });
 

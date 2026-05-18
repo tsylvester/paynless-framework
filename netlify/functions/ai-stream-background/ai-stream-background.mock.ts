@@ -4,6 +4,7 @@ import type {
   NodeChatApiRequest,
   NodeModelConfig,
   NodeProviderMap,
+  NodeUserConfig,
 } from './adapters/ai-adapter.interface.ts';
 import { createMockAnthropicNodeAdapter } from './adapters/anthropic/anthropic.mock.ts';
 import { createMockGoogleNodeAdapter } from './adapters/google/google.mock.ts';
@@ -17,6 +18,8 @@ import type { AiStreamDeps, AiStreamEvent, GetApiKeyFn } from './ai-stream-backg
 
 export const mockAiStreamSaveResponseUrl: string =
   'http://localhost/mock-saveResponse';
+
+const defaultUserConfig: NodeUserConfig = { tier_output_cap_tokens: null };
 
 const defaultGetApiKey: GetApiKeyFn = (): string => {
   return 'mock-key';
@@ -85,7 +88,18 @@ export function createMockAiStreamEvent(
       : overrides.chat_api_request;
   const sig: string =
     overrides?.sig === undefined ? 'mock-hmac-sig' : overrides.sig;
-  return { job_id, api_identifier, model_config, chat_api_request, sig };
+  const user_config: NodeUserConfig =
+    overrides?.user_config === undefined
+      ? defaultUserConfig
+      : overrides.user_config;
+  return {
+    job_id,
+    api_identifier,
+    model_config,
+    chat_api_request,
+    sig,
+    user_config,
+  };
 }
 
 export function createMockAsyncWorkloadEvent(

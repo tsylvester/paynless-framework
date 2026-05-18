@@ -159,6 +159,7 @@ describe('ai-stream workload', () => {
         },
         chat_api_request: { message: 'hi', providerId: 'p', promptId: 'q' },
         sig: 'hmac-anthropic-sig',
+        user_config: { tier_output_cap_tokens: null },
       }),
     });
     await handleAiStreamWorkload(deps, event);
@@ -194,10 +195,79 @@ describe('ai-stream workload', () => {
         },
         chat_api_request: { message: 'hi', providerId: 'p', promptId: 'q' },
         sig: 'hmac-google-sig',
+        user_config: { tier_output_cap_tokens: null },
       }),
     });
     await handleAiStreamWorkload(deps, event);
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('passes event.user_config tier_output_cap_tokens 32768 to adapter factory userConfig', async () => {
+    const fetchMock = vi.fn(
+      async (_input: string | URL, _init?: RequestInit): Promise<Response> => {
+        return new Response(null, { status: 200 });
+      },
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const factorySpy = vi.fn((_params: NodeAdapterConstructorParams): AiAdapter => {
+      return createMockOpenAINodeAdapter();
+    });
+    const deps: AiStreamDeps = createMockAiStreamDeps({
+      providerMap: {
+        'openai-': factorySpy,
+      },
+      getApiKey: (): string => {
+        return 'sk-openai';
+      },
+    });
+    const event: AsyncWorkloadEvent = createMockAsyncWorkloadEvent({
+      eventData: createMockAiStreamEvent({
+        sig: 'hmac-tier-cap-sig',
+        user_config: { tier_output_cap_tokens: 32_768 },
+      }),
+    });
+    await handleAiStreamWorkload(deps, event);
+    expect(factorySpy).toHaveBeenCalledTimes(1);
+    const firstFactoryCall = factorySpy.mock.calls[0];
+    if (firstFactoryCall === undefined) {
+      throw new Error('expected adapter factory to be called');
+    }
+    const factoryParams: NodeAdapterConstructorParams = firstFactoryCall[0];
+    expect(factoryParams.userConfig.tier_output_cap_tokens).toBe(32_768);
+  });
+
+  it('passes event.user_config tier_output_cap_tokens null to adapter factory userConfig', async () => {
+    const fetchMock = vi.fn(
+      async (_input: string | URL, _init?: RequestInit): Promise<Response> => {
+        return new Response(null, { status: 200 });
+      },
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const factorySpy = vi.fn((_params: NodeAdapterConstructorParams): AiAdapter => {
+      return createMockOpenAINodeAdapter();
+    });
+    const deps: AiStreamDeps = createMockAiStreamDeps({
+      providerMap: {
+        'openai-': factorySpy,
+      },
+      getApiKey: (): string => {
+        return 'sk-openai';
+      },
+    });
+    const event: AsyncWorkloadEvent = createMockAsyncWorkloadEvent({
+      eventData: createMockAiStreamEvent({
+        sig: 'hmac-null-tier-sig',
+        user_config: { tier_output_cap_tokens: null },
+      }),
+    });
+    await handleAiStreamWorkload(deps, event);
+    expect(factorySpy).toHaveBeenCalledTimes(1);
+    const firstFactoryCall = factorySpy.mock.calls[0];
+    if (firstFactoryCall === undefined) {
+      throw new Error('expected adapter factory to be called');
+    }
+    const factoryParams: NodeAdapterConstructorParams = firstFactoryCall[0];
+    expect(factoryParams.userConfig.tier_output_cap_tokens).toBe(null);
   });
 
   it('propagates adapter stream errors as a retryable failure', async () => {

@@ -891,67 +891,113 @@
     * `[✅]` Import `Tables` from `types_db.ts` if not already imported
     * `[✅]` Add a comment above the new parameter documenting why the default exists: two chat-source call sites (`supabase/functions/chat/streamChat/StreamChat.ts:203`, `supabase/functions/chat/streamRewind/streamRewind.ts:214`) intentionally remain unmodified — chat is out of scope for tier capping. The parameter default preserves those call sites without modification. The default is a deliberate part of the contract, not an oversight.
 
-* `[✅]` `[BE]` supabase/functions/dialectic-worker/calculateAffordability **Thread tierOutputCapTokens through to getMaxOutputTokens**
+* `[✅]` `[BE]` supabase/functions/dialectic-worker/calculateAffordability **Introduce UserConfig; replace tierOutputCapTokens scalar with userConfig object**
 
   * `[✅]` `objective`
-    * `[✅]` `calculateAffordability()` calls `getMaxOutputTokens()` but cannot pass the new `tierOutputCapTokens` parameter because it does not receive it. The tier cap must be threaded from `prepareModelJob` through this function to the utility.
+    * `[✅]` `CalculateAffordabilityParams` carries `tierOutputCapTokens: TierOutputCapTokens` as a bare scalar. User-facing configuration must travel as a typed object so future user config fields can be added to the type without surgery on every consumer's signature.
+    * `[✅]` Separate:
+      * Functional goals: (1) add `export interface UserConfig { readonly tier_output_cap_tokens: TierOutputCapTokens; }` to `calculateAffordability.interface.ts` after the `TierOutputCapTokens` type alias; (2) replace `tierOutputCapTokens: TierOutputCapTokens` with `userConfig: UserConfig` on `CalculateAffordabilityParams`; (3) replace the two-line `tierOutputCapTokens` scalar check in `isCalculateAffordabilityParams` with a `userConfig` record check; (4) update `CalculateAffordabilityParamsOverrides` and `buildCalculateAffordabilityParams` in the mock to use `userConfig`; (5) update `calculateAffordability.ts` line 83: `params.tierOutputCapTokens` → `params.userConfig.tier_output_cap_tokens`; (6) update all `tierOutputCapTokens` occurrences in tests to `userConfig: { tier_output_cap_tokens: ... }`; (7) add `UserConfig` to exports in `calculateAffordability.provides.ts`
+      * Non-functional constraints: no behavioral change — the scalar value flows identically to `getMaxOutputTokens`; only its container changes
+    * `[✅]` Each goal is atomic and testable
 
   * `[✅]` `role`
-    * `[✅]` Domain service — affordability computation, orchestrates cap inputs and wallet math
+    * `[✅]` Domain service — affordability computation; owner and export origin of the `UserConfig` type
+    * `[✅]` Appropriate because `calculateAffordability` is the lowest-level consumer of the user's tier cap in the dialectic-worker chain; defining `UserConfig` here makes it the authoritative source imported by all upstream modules
+    * `[✅]` Must NOT: fetch tier data from DB; must NOT contain event queue serialization or provider adapter logic
 
   * `[✅]` `module`
     * `[✅]` dialectic-worker bounded context
+    * `[✅]` Inside: `UserConfig`, `TierOutputCapTokens`, affordability computation and compression orchestration types and implementation
+    * `[✅]` Outside: DB tier lookup (owned by `prepareModelJob`), event queue serialization (owned by `enqueueModelCall`), provider adapter selection (owned by `getNodeAiAdapter`)
+    * `[✅]` Boundary rule: `UserConfig` is exported from this module and imported inward by upstream modules; import direction is always upstream → this module, never the reverse
 
   * `[✅]` `deps`
-    * `[✅]` `affordability_utils.ts` (prior node — `getMaxOutputTokens` with new parameter)
-    * `[✅]` `types_db.ts` — `Tables<'tier_definitions'>['output_cap_tokens']`
+    * `[✅]` `types_db.ts` — database/infra layer — inward — provides `Tables<'tier_definitions'>['output_cap_tokens']` for the `TierOutputCapTokens` type alias used inside `UserConfig`
+    * `[✅]` `_shared/utils/affordability_utils.ts` — utility layer — inward — provides `getMaxOutputTokens` threaded as a dep via `CalculateAffordabilityDeps.getMaxOutputTokens`
+    * `[✅]` Confirm: no reverse dependencies; no lateral layer violations
 
   * `[✅]` `context_slice`
-    * `[✅]` `CalculateAffordabilityParams` (the params type for this function): add `tierOutputCapTokens: Tables<'tier_definitions'>['output_cap_tokens']`
-    * `[✅]` In the function body: pass `params.tierOutputCapTokens` to `getMaxOutputTokens()` as the new parameter
-    * `[✅]` No other logic changes
+    * `[✅]` `CalculateAffordabilityParams` exposes `userConfig: UserConfig`; callers provide the full object; no consumer accesses `tier_output_cap_tokens` directly at this params boundary
+    * `[✅]` `isCalculateAffordabilityParams` checks `'userConfig' in v && isRecord(v.userConfig)`, then `typeof v.userConfig.tier_output_cap_tokens === 'number' || v.userConfig.tier_output_cap_tokens === null`
+    * `[✅]` Confirm: no over-fetching — `UserConfig` has exactly one field matching what `getMaxOutputTokens` needs; no hidden coupling — `UserConfig` is a pure interface with no runtime behavior
 
   * `[✅]` supabase/functions/dialectic-worker/calculateAffordability/`calculateAffordability.interface.test.ts`
-    * `[✅]` Add test: `CalculateAffordabilityParams` shape includes `tierOutputCapTokens` typed as `Tables<'tier_definitions'>['output_cap_tokens']` (number | null)
-    * `[✅]` Add test: valid params with `tierOutputCapTokens: null` satisfies the interface
-    * `[✅]` Add test: valid params with `tierOutputCapTokens: 32768` (number) satisfies the interface
-    * `[✅]` Existing contract tests for `CalculateAffordabilityParams` must still pass with the added field
+    * `[✅]` Add import: `UserConfig` from `calculateAffordability.interface.ts`
+    * `[✅]` Add test: `UserConfig` shape has exactly `tier_output_cap_tokens: number | null` — `const uc: UserConfig = { tier_output_cap_tokens: null }` and `const uc2: UserConfig = { tier_output_cap_tokens: 32768 }` both satisfy the type; assert both equal their respective values
+    * `[✅]` Replace test at line 166 (`CalculateAffordabilityParams contract: tierOutputCapTokens is number | null per interface`): rename to `CalculateAffordabilityParams contract: userConfig is UserConfig per interface`; test `const uc: CalculateAffordabilityParams["userConfig"] = { tier_output_cap_tokens: null }` and `{ tier_output_cap_tokens: 32768 }`; assert both equal their respective values
+    * `[✅]` Replace test at line 176 (`tierOutputCapTokens null is valid`): rename to `userConfig with tier_output_cap_tokens null is valid`; `const userConfig: CalculateAffordabilityParams["userConfig"] = { tier_output_cap_tokens: null }`; assert `userConfig.tier_output_cap_tokens === null`
+    * `[✅]` Replace test at line 181 (`tierOutputCapTokens 32768 is valid`): rename to `userConfig with tier_output_cap_tokens 32768 is valid`; `const userConfig: CalculateAffordabilityParams["userConfig"] = { tier_output_cap_tokens: 32768 }`; assert `userConfig.tier_output_cap_tokens === 32768`
+    * `[✅]` All other tests (lines 19–165, 186–189) unchanged
 
   * `[✅]` supabase/functions/dialectic-worker/calculateAffordability/`calculateAffordability.interface.ts`
-    * `[✅]` Add `Tables` to the existing `types_db.ts` import (currently only `Database` is imported; add `Tables` to the same import statement)
-    * `[✅]` Add `tierOutputCapTokens: Tables<'tier_definitions'>['output_cap_tokens']` to `CalculateAffordabilityParams` — required field; callers must always provide it explicitly (number for a capped tier, null for ultra / no cap)
+    * `[✅]` After line 17 (`TierOutputCapTokens` type alias): add `export interface UserConfig { readonly tier_output_cap_tokens: TierOutputCapTokens; }`
+    * `[✅]` Line 47: replace `tierOutputCapTokens: TierOutputCapTokens;` with `userConfig: UserConfig;` in `CalculateAffordabilityParams`
+    * `[✅]` All other types and exports unchanged
+
+  * `[✅]` supabase/functions/dialectic-worker/calculateAffordability/`calculateAffordability.interaction.spec`
+    * `[✅]` Caller: `prepareModelJob` constructs `userConfig: UserConfig = { tier_output_cap_tokens: fetchedScalar }` and passes it in `CalculateAffordabilityParams`
+    * `[✅]` `calculateAffordability` reads `params.userConfig.tier_output_cap_tokens` at line 83 and forwards it as the 6th argument to `deps.getMaxOutputTokens(walletBalance, initialTokenCount, extendedModelConfig, deps.logger, 0, params.userConfig.tier_output_cap_tokens)`
+    * `[✅]` No side effects on `userConfig`: the field is declared `readonly`; `calculateAffordability` does not mutate it
+    * `[✅]` Failure modes: params missing `userConfig` → `isCalculateAffordabilityParams` returns false before function executes; `userConfig.tier_output_cap_tokens` is not a number or null → guard returns false
+    * `[✅]` No ordering or temporal constraints beyond the existing compression flow
 
   * `[✅]` supabase/functions/dialectic-worker/calculateAffordability/`calculateAffordability.guard.test.ts`
-    * `[✅]` Add test: `isCalculateAffordabilityParams()` accepts params with `tierOutputCapTokens: null`
-    * `[✅]` Add test: `isCalculateAffordabilityParams()` accepts params with `tierOutputCapTokens: 32768` (number)
-    * `[✅]` Add test: `isCalculateAffordabilityParams()` rejects params missing `tierOutputCapTokens` field entirely
-    * `[✅]` Existing `isCalculateAffordabilityParams` tests must still pass
+    * `[✅]` Replace test at line 238 (`isCalculateAffordabilityParams accepts params with tierOutputCapTokens null`): rename to `isCalculateAffordabilityParams accepts params with userConfig: { tier_output_cap_tokens: null }`; build params with `buildCalculateAffordabilityParams(DbClient(client), { userConfig: { tier_output_cap_tokens: null } })`; assert guard returns true
+    * `[✅]` Replace test at line 246 (`isCalculateAffordabilityParams accepts params with tierOutputCapTokens 32768`): rename to `isCalculateAffordabilityParams accepts params with userConfig: { tier_output_cap_tokens: 32768 }`; use `{ userConfig: { tier_output_cap_tokens: 32768 } }` override; assert true
+    * `[✅]` Replace test at line 254 (`isCalculateAffordabilityParams rejects params missing tierOutputCapTokens`): rename to `isCalculateAffordabilityParams rejects params missing userConfig`; destructure `const { userConfig: _userConfig, ...missingUserConfig } = valid`; assert `isCalculateAffordabilityParams(missingUserConfig)` is false
+    * `[✅]` Add test: `isCalculateAffordabilityParams rejects params where userConfig is not a record`; spread valid params with `userConfig: 'not-a-record'`; assert false
+    * `[✅]` All other tests (lines 34–237, 261–278) unchanged
 
   * `[✅]` supabase/functions/dialectic-worker/calculateAffordability/`calculateAffordability.guard.ts`
-    * `[✅]` Add check in `isCalculateAffordabilityParams()` after existing field checks: `if (!('tierOutputCapTokens' in v)) { return false }` then validate `typeof v.tierOutputCapTokens === 'number' || v.tierOutputCapTokens === null`
+    * `[✅]` Lines 75–80: replace the `tierOutputCapTokens` scalar check — remove `if (!('tierOutputCapTokens' in value)) { return false; }` and `if (typeof value.tierOutputCapTokens !== 'number' && value.tierOutputCapTokens !== null) { return false; }` — add `if (!('userConfig' in value) || !isRecord(value.userConfig)) { return false; }` then `if (typeof value.userConfig.tier_output_cap_tokens !== 'number' && value.userConfig.tier_output_cap_tokens !== null) { return false; }`
+    * `[✅]` All other guard functions unchanged
 
   * `[✅]` supabase/functions/dialectic-worker/calculateAffordability/`calculateAffordability.test.ts`
-    * `[✅]` Add test: `tierOutputCapTokens` is forwarded to `getMaxOutputTokens` — mock `getMaxOutputTokens` and assert it receives the value passed in params
-    * `[✅]` Add test: `tierOutputCapTokens = null` → null forwarded as-is
-    * `[✅]` Existing tests: add `tierOutputCapTokens: null` to test params — must still pass
-    * `[✅]` Direct `getMaxOutputTokens(...)` call sites used to compute `expectedMax` fixtures must pass the new parameter explicitly — visible-intent rule applies to test fixtures the same as to source. Pass the tier cap value being exercised by the surrounding test (or `null` when the test asserts behavior with no tier cap applied).
-    * `[✅]` All `CalculateAffordabilityParams` constructions in this file are produced via `buildCalculateAffordabilityParams`; the factory update above carries `tierOutputCapTokens` through. No literal updates required in this file.
+    * `[✅]` Line 24: add `UserConfig` to the import list from `calculateAffordability.interface.ts`
+    * `[✅]` All `buildCalculateAffordabilityParams` overrides with `tierOutputCapTokens: null` (lines 56, 96, 127, 171, 212, 247, 284, 321, 358, 396, 443, 494, 539, 593, 648, 702, 764, 882, 940): replace `tierOutputCapTokens: null` with `userConfig: { tier_output_cap_tokens: null }`
+    * `[✅]` Lines 70, 466, 725: replace `params.tierOutputCapTokens` with `params.userConfig.tier_output_cap_tokens`
+    * `[✅]` Line 829: replace `tierOutputCapTokens: tierCap` with `userConfig: { tier_output_cap_tokens: tierCap }`
+    * `[✅]` Line 791 test name: `non-oversized: deps.getMaxOutputTokens receives params.tierOutputCapTokens value` → `non-oversized: deps.getMaxOutputTokens receives params.userConfig.tier_output_cap_tokens value`
+    * `[✅]` Line 845 test name: `non-oversized: deps.getMaxOutputTokens receives null tierOutputCapTokens when params null` → `non-oversized: deps.getMaxOutputTokens receives null tier_output_cap_tokens via params.userConfig`
+    * `[✅]` Lines 915 and 924: `tierOutputCapTokens` in the `getMaxOutputTokens` spy mock parameter name and body — these are the utility function's own signature, not `CalculateAffordabilityParams`; they remain unchanged
+
+  * `[✅]` `construction`
+    * `[✅]` `buildCalculateAffordabilityParams(dbClient, overrides?)` is the sole factory for `CalculateAffordabilityParams`; `dbClient: SupabaseClient<Database>` is required at construction time
+    * `[✅]` After this node: `overrides.userConfig` replaces `overrides.tierOutputCapTokens`; the base object always sets `userConfig: overrides?.userConfig ?? { tier_output_cap_tokens: null }`
+    * `[✅]` No partially constructed instances: `userConfig` always resolves to a full `UserConfig` object with `tier_output_cap_tokens` set
+    * `[✅]` Invalid construction context: `tierOutputCapTokens` is removed from `CalculateAffordabilityParamsOverrides` entirely; callers must use `userConfig`
+    * `[✅]` No initialization ordering constraints
 
   * `[✅]` supabase/functions/dialectic-worker/calculateAffordability/`calculateAffordability.ts`
-    * `[✅]` `calculateAffordability.ts` calls `getMaxOutputTokens` in three distinct locations; all three must be updated explicitly — relying on the optional default is not sufficient here; intent must be visible at each call site:
-      * Non-compressed path (~line 80): `getMaxOutputTokens(walletBalance, initialTokenCount, extendedModelConfig, deps.logger, 0, params.tierOutputCapTokens)` — this is the binding enforcement point; pass the actual tier cap
-      * Compression path `getAllowedInputFor` lambda (~line 236): `getMaxOutputTokens(balanceTokens, tokenCount, extendedModelConfig, deps.logger, 0, null)` — compression budget estimation does not enforce the tier cap; pass null explicitly
-      * Compression path `plannedMaxOutPostPrecheck` (~line 278): `getMaxOutputTokens(balanceAfterCompression, finalTargetThreshold, extendedModelConfig, deps.logger, 0, null)` — same rationale; pass null explicitly
+    * `[✅]` Line 83: replace `params.tierOutputCapTokens` with `params.userConfig.tier_output_cap_tokens`
+    * `[✅]` All other code unchanged
 
   * `[✅]` supabase/functions/dialectic-worker/calculateAffordability/`calculateAffordability.mock.ts`
-    * `[✅]` Add `tierOutputCapTokens` to the `CalculateAffordabilityParamsOverrides` type as an optional override (`number | null`) so callers can vary the value
-    * `[✅]` Add `tierOutputCapTokens` to the `base` literal returned by `buildCalculateAffordabilityParams`, sourced from `overrides?.tierOutputCapTokens` with a default of `null`
-    * `[✅]` Any additional `CalculateAffordabilityParams` literals constructed directly in this file (outside the factory): add `tierOutputCapTokens: null`
+    * `[✅]` Line 37: add `UserConfig` to the import list from `calculateAffordability.interface.ts`
+    * `[✅]` `CalculateAffordabilityParamsOverrides` type (line 63): replace `tierOutputCapTokens?: TierOutputCapTokens;` with `userConfig?: UserConfig;`
+    * `[✅]` `buildCalculateAffordabilityParams` base object (line 126): replace `tierOutputCapTokens: overrides?.tierOutputCapTokens !== undefined ? overrides.tierOutputCapTokens : null` with `userConfig: overrides?.userConfig !== undefined ? overrides.userConfig : { tier_output_cap_tokens: null }`
+
+  * `[✅]` supabase/functions/dialectic-worker/calculateAffordability/`calculateAffordability.provides.ts`
+    * `[✅]` Add `UserConfig` to the `export type { ... }` block from `calculateAffordability.interface.ts` (after `TierOutputCapTokens`); all other exports unchanged
 
   * `[✅]` supabase/functions/dialectic-worker/calculateAffordability/`calculateAffordability.integration.test.ts`
-    * `[✅]` Direct `getMaxOutputTokens(...)` call site used to compute `expectedMax` fixture must pass the new parameter explicitly — same rule as above
-    * `[✅]` All `CalculateAffordabilityParams` constructions are produced via `buildCalculateAffordabilityParams`; the factory update carries the field through
-    * `[✅]` Add test: `tierOutputCapTokens = 32768` → `getMaxOutputTokens` receives the cap and returns 32768 when it is binding; confirms end-to-end threading within the module
+    * `[✅]` Line 176: replace `params.tierOutputCapTokens` with `params.userConfig.tier_output_cap_tokens`
+    * `[✅]` Line 480 test name: update from `tierOutputCapTokens=32768` to `userConfig.tier_output_cap_tokens=32768`
+    * `[✅]` Line 516: replace `tierOutputCapTokens: 32768` with `userConfig: { tier_output_cap_tokens: 32768 }`
+    * `[✅]` Line 553: replace `params.tierOutputCapTokens` with `params.userConfig.tier_output_cap_tokens`
+    * `[✅]` All other integration tests unchanged
+
+  * `[✅]` `directionality`
+    * `[✅]` Node layer: domain service
+    * `[✅]` `calculateAffordability.interface.ts` exports `UserConfig` outward — consumed by `enqueueModelCall.interface.ts` and `prepareModelJob.ts`; import direction is always upstream → this module, never the reverse
+    * `[✅]` `calculateAffordability.provides.ts` is the single outward-facing export surface; no external consumer bypasses it
+    * `[✅]` No cycles: `calculateAffordability` does not import from `prepareModelJob`, `enqueueModelCall`, or `getNodeAiAdapter`
+
+  * `[✅]` `requirements`
+    * `[✅]` `CalculateAffordabilityParams["userConfig"]` is type `UserConfig` with `tier_output_cap_tokens: number | null` — observable: TypeScript compiler enforces at all construction sites; maps to interface tests
+    * `[✅]` `isCalculateAffordabilityParams` accepts `{ userConfig: { tier_output_cap_tokens: null } }` and `{ userConfig: { tier_output_cap_tokens: 32768 } }`; rejects params missing `userConfig` and rejects non-record `userConfig` — observable: guard tests GREEN
+    * `[✅]` `calculateAffordability.ts` reads `params.userConfig.tier_output_cap_tokens` at line 83 and passes it to `deps.getMaxOutputTokens` as the 6th argument — observable: spy assertion in `calculateAffordability.test.ts` GREEN
+    * `[✅]` All pre-existing tests pass without modification except those lines explicitly listed above — observable: test runner GREEN for entire package
 
 * `[✅]` `[BE]` supabase/functions/dialectic-worker/compressPrompt **Explicit null for tierOutputCapTokens at all getMaxOutputTokens call sites**
 
@@ -1026,61 +1072,110 @@
     * `[✅]` Add `getMaxOutputTokens: getMaxOutputTokens` to `baseParams` in `createMockJobContextParams`
     * `[✅]` Add `getMaxOutputTokens: params.getMaxOutputTokens` to the return object of `buildIJobContext`
 
-* `[✅]` `[BE]` supabase/functions/dialectic-worker/enqueueModelCall **Add tier_output_cap_tokens to EnqueueModelCallParams and AiStreamEventData**
+* `[✅]` `[BE]` supabase/functions/dialectic-worker/enqueueModelCall **Replace tier_output_cap_tokens scalar with UserConfig on EnqueueModelCallParams; user_config on AiStreamEventData**
 
   * `[✅]` `objective`
-    * `[✅]` `EnqueueModelCallParams` and `AiStreamEventData` do not carry `tier_output_cap_tokens`. `prepareModelJob.ts` (next node) will fetch the tier cap from the DB and pass it when calling `enqueueModelCall`. `enqueueModelCall.ts` must include it in the enqueued event so the Netlify boundary can merge it into adapter config. Add the field to both types, update the guard, include it in the event constructor, and update all existing construction sites in this module.
+    * `[✅]` `EnqueueModelCallParams` currently carries `tier_output_cap_tokens` as a loose scalar and `AiStreamEventData` carries the same scalar. Per the `UserConfig` architecture introduced in the `calculateAffordability` node, user-facing configuration must travel as a typed object — not a bare scalar — so future user config fields can be added to the type without surgery on every consumer. Replace the loose scalar with `userConfig: UserConfig` on `EnqueueModelCallParams` and `user_config: UserConfig` on `AiStreamEventData` (snake_case for JSON transport). Update all guards, the source constructor, the mock, and all test constructions throughout this module.
 
   * `[✅]` `role`
-    * `[✅]` Domain service — enqueues the model call event; passes the tier cap through to the event payload without interpretation
+    * `[✅]` Domain service — enqueues the model call event; passes the complete user config object through to the event payload without interpretation
 
   * `[✅]` `module`
     * `[✅]` dialectic-worker bounded context
 
   * `[✅]` `deps`
-    * `[✅]` `types_db.ts` — `Tables<'tier_definitions'>['output_cap_tokens']` for the field type
-    * `[✅]` `prepareModelJob.ts` is a consumer of this node (next node), not a prior dep
+    * `[✅]` `calculateAffordability.interface.ts` (prior node) — provides `UserConfig` type; import it here
+    * `[✅]` `types_db.ts` — `Tables<'tier_definitions'>['output_cap_tokens']` still used inside `UserConfig.tier_output_cap_tokens`; no direct import change needed here since `UserConfig` encapsulates it
 
   * `[✅]` `context_slice`
-    * `[✅]` `EnqueueModelCallParams` gains `tier_output_cap_tokens: Tables<'tier_definitions'>['output_cap_tokens']`
-    * `[✅]` `AiStreamEventData` gains `tier_output_cap_tokens: Tables<'tier_definitions'>['output_cap_tokens']`
-    * `[✅]` `isAiStreamEventData` guard: add check for `tier_output_cap_tokens` present and `typeof === 'number' || === null`
-    * `[✅]` In the `eventData` constructor: add `tier_output_cap_tokens: params.tier_output_cap_tokens`
-    * `[✅]` All existing `EnqueueModelCallParams` and `AiStreamEventData` constructions in this module: add `tier_output_cap_tokens: null`
+    * `[✅]` `EnqueueModelCallParams`: remove `tier_output_cap_tokens: Tables<'tier_definitions'>['output_cap_tokens']`; add `userConfig: UserConfig`; add `import type { UserConfig } from '../calculateAffordability/calculateAffordability.interface.ts'`
+    * `[✅]` `AiStreamEventData`: remove `tier_output_cap_tokens: Tables<'tier_definitions'>['output_cap_tokens']`; add `user_config: UserConfig`
+    * `[✅]` `isEnqueueModelCallParams` guard: add `'userConfig'` to the required keys array; add `if (!isRecord(v.userConfig)) return false` after the string checks
+    * `[✅]` `isAiStreamEventData` guard: replace `tier_output_cap_tokens` scalar check with `user_config` record check: `if (!('user_config' in v) || !isRecord(v.user_config)) return false`; then validate `typeof v.user_config.tier_output_cap_tokens === 'number' || v.user_config.tier_output_cap_tokens === null`
+    * `[✅]` In the `eventData` constructor in `enqueueModelCall.ts`: `tier_output_cap_tokens: params.tier_output_cap_tokens` → `user_config: params.userConfig`
 
   * `[✅]` supabase/functions/dialectic-worker/enqueueModelCall/`enqueueModelCall.interface.test.ts`
-    * `[✅]` Add test: `EnqueueModelCallParams` shape includes `tier_output_cap_tokens` as `Tables<'tier_definitions'>['output_cap_tokens']` (number | null)
-    * `[✅]` Add test: `AiStreamEventData` shape includes `tier_output_cap_tokens` as `Tables<'tier_definitions'>['output_cap_tokens']` (number | null)
-    * `[✅]` Add test: valid params with `tier_output_cap_tokens: null` satisfies both interfaces
-    * `[✅]` Existing contract tests must still pass with the added field
+    * `[✅]` `EnqueueModelCallParams` surface test (~line 31): replace `tier_output_cap_tokens: true` with `userConfig: true`; field count remains 6
+    * `[✅]` `AiStreamEventData` surface tests (~lines 82, 150): replace `tier_output_cap_tokens: true` with `user_config: true`; field count remains 6
+    * `[✅]` Replace `EnqueueModelCallParams["tier_output_cap_tokens"]` type test (~line 163) with `UserConfig` object shape test: `const uc: EnqueueModelCallParams["userConfig"] = { tier_output_cap_tokens: null }` and `{ tier_output_cap_tokens: 32768 }`
+    * `[✅]` Replace `AiStreamEventData["tier_output_cap_tokens"]` type test (~line 183) with `user_config` object shape test: `const uc: AiStreamEventData["user_config"] = { tier_output_cap_tokens: null }` and `{ tier_output_cap_tokens: 32768 }`
+    * `[✅]` Replace scalar null-valid test (~line 202): `EnqueueModelCallParams["userConfig"]` and `AiStreamEventData["user_config"]` both accept `{ tier_output_cap_tokens: null }`
 
   * `[✅]` supabase/functions/dialectic-worker/enqueueModelCall/`enqueueModelCall.interface.ts`
-    * `[✅]` Add `tier_output_cap_tokens: Tables<'tier_definitions'>['output_cap_tokens']` to `EnqueueModelCallParams`
-    * `[✅]` Add `tier_output_cap_tokens: Tables<'tier_definitions'>['output_cap_tokens']` to `AiStreamEventData`
+    * `[✅]` Add `import type { UserConfig } from '../calculateAffordability/calculateAffordability.interface.ts'`
+    * `[✅]` `EnqueueModelCallParams`: remove `tier_output_cap_tokens: Tables<'tier_definitions'>['output_cap_tokens']`; add `userConfig: UserConfig`
+    * `[✅]` `AiStreamEventData`: remove `tier_output_cap_tokens: Tables<'tier_definitions'>['output_cap_tokens']`; add `user_config: UserConfig`
+
+  * `[✅]` `enqueueModelCall.interaction.spec`
+    * `[✅]` Called by `prepareModelJob` after resolving affordability; receives fully-constructed `EnqueueModelCallDeps`, `EnqueueModelCallParams` (including `userConfig: UserConfig`), and `EnqueueModelCallPayload`
+    * `[✅]` Required dependency interactions in execution order:
+      1. `isModelContributionFileType(params.output_type)` — validates output type; `false` → `{ error, retriable: false }`
+      2. `isAiModelExtendedConfig(params.providerRow.config)` — validates provider config shape; `false` → `{ error, retriable: false }`
+      3. `deps.apiKeyForProvider(params.providerRow.api_identifier)` — returns `string | null`; `null` → `{ error, retriable: false }`
+      4. `params.job.user_id` presence check — must be a non-empty string; failure → `{ error, retriable: false }`
+      5. `await deps.computeJobSig(params.job.id, params.job.user_id, params.job.created_at)` — produces HMAC signature string; thrown error → `{ error, retriable: false }`
+      6. `params.dbClient.from('dialectic_generation_jobs').update({ status: 'queued' }).eq('id', params.job.id)` — marks job queued; `dbError` truthy → `{ error, retriable: true }`
+      7. Constructs `AiStreamEventData` with `user_config: params.userConfig`; wraps in `AiStreamEventBody`; serializes to JSON string
+      8. Size check: serialized body > 500 KB → `{ error, retriable: false }`
+      9. `fetch(deps.netlifyQueueUrl, { method: 'POST', headers: { Authorization: 'Bearer <netlifyApiKey>', 'Content-Type': 'application/json' }, body })` — non-2xx → `{ error, retriable: true }`; network throw → `{ error, retriable: true }`
+    * `[✅]` Success path: all validations pass, Netlify returns 2xx → `{ queued: true }`
+    * `[✅]` `params.userConfig` is forwarded verbatim as `eventData.user_config` — no transformation, no field extraction
 
   * `[✅]` supabase/functions/dialectic-worker/enqueueModelCall/`enqueueModelCall.guard.test.ts`
-    * `[✅]` Add test: `isAiStreamEventData()` accepts object with `tier_output_cap_tokens: null`
-    * `[✅]` Add test: `isAiStreamEventData()` accepts object with `tier_output_cap_tokens: 32768`
-    * `[✅]` Add test: `isAiStreamEventData()` rejects object missing `tier_output_cap_tokens` entirely
-    * `[✅]` Update all existing `AiStreamEventData` and `EnqueueModelCallParams` constructions to include `tier_output_cap_tokens: null` — must still pass
+    * `[✅]` All inline `EnqueueModelCallParams`-shaped objects that include `tier_output_cap_tokens: null` (lines ~116, 133, 149, 167, 184): replace with `userConfig: { tier_output_cap_tokens: null }`
+    * `[✅]` `isAiStreamEventData` valid test (~line 329): replace `tier_output_cap_tokens: null` with `user_config: { tier_output_cap_tokens: null }` in the inline object
+    * `[✅]` `isAiStreamEventData` missing-field tests (~lines 346-424): replace `tier_output_cap_tokens: null` in each inline object with `user_config: { tier_output_cap_tokens: null }`; update the sig-missing test to omit `sig` and include `user_config`
+    * `[✅]` Update existing `isAiStreamEventData` accepts-with-null test to use `user_config: { tier_output_cap_tokens: null }`
+    * `[✅]` Update existing `isAiStreamEventData` accepts-with-number test to use `user_config: { tier_output_cap_tokens: 32768 }`
+    * `[✅]` Update existing `isAiStreamEventData` rejects-missing-field test to omit `user_config` field entirely
 
   * `[✅]` supabase/functions/dialectic-worker/enqueueModelCall/`enqueueModelCall.guard.ts`
-    * `[✅]` Add check in `isAiStreamEventData()`: `if (!('tier_output_cap_tokens' in v)) return false`; validate `typeof v.tier_output_cap_tokens === 'number' || v.tier_output_cap_tokens === null`
+    * `[✅]` `isEnqueueModelCallParams`: add `'userConfig'` to the required keys array; after the `output_type` string check add `if (!isRecord(v.userConfig)) { return false; }`
+    * `[✅]` `isAiStreamEventData`: remove the two `tier_output_cap_tokens` checks (lines 153-161); add `if (!('user_config' in v) || !isRecord(v.user_config)) { return false; }` then `if (typeof v.user_config.tier_output_cap_tokens !== 'number' && v.user_config.tier_output_cap_tokens !== null) { return false; }`
 
   * `[✅]` supabase/functions/dialectic-worker/enqueueModelCall/`enqueueModelCall.test.ts`
-    * `[✅]` Add test: `tier_output_cap_tokens` in params is included in the enqueued `AiStreamEventData`
-    * `[✅]` Add test: `tier_output_cap_tokens: null` is included in the enqueued event as null (not omitted)
-    * `[✅]` Update all existing `EnqueueModelCallParams` constructions to include `tier_output_cap_tokens: null` — must still pass
+    * `[✅]` All `createMockEnqueueModelCallParams({ tier_output_cap_tokens: null }, ...)` calls (~lines 96, 177, 223, 251, 295, 423, 453, 499, 536, 564, 609, 651, 683, 720): replace override key `tier_output_cap_tokens: null` with `userConfig: { tier_output_cap_tokens: null }`
+    * `[✅]` Inline `EnqueueModelCallParams`-shaped literals that include `tier_output_cap_tokens: null` (~lines 36, 45): replace with `userConfig: { tier_output_cap_tokens: null }`
+    * `[✅]` Inline `AiStreamEventData`-shaped literals that include `tier_output_cap_tokens: null` (~lines 148, 188, 323, 620): replace with `user_config: { tier_output_cap_tokens: null }`
+    * `[✅]` `data.tier_output_cap_tokens` assertions (~lines 78-79, 367-368): replace with `data.user_config.tier_output_cap_tokens`
+    * `[✅]` Test ~line 735 (tier_output_cap_tokens threading): update params override to `userConfig: { tier_output_cap_tokens: tierCap }`; update event data assertion to `parsed.data.user_config.tier_output_cap_tokens` (~line 767)
+    * `[✅]` Test ~line 775 (null threading): update params override to `userConfig: { tier_output_cap_tokens: null }`; update assertions (~lines 804, 808-809) to check `data.user_config.tier_output_cap_tokens`
+
+  * `[✅]` `construction`
+    * `[✅]` `EnqueueModelCallDeps` is constructed by callers (`prepareModelJob` supplies it from its own deps); in tests use `createMockEnqueueModelCallDeps(overrides?)` which requires all five fields: `logger`, `netlifyQueueUrl` (string), `netlifyApiKey` (string), `apiKeyForProvider` (function returning `string | null`), `computeJobSig` (async function returning string)
+    * `[✅]` `EnqueueModelCallParams` is constructed by `prepareModelJob`; in tests use `createMockEnqueueModelCallParams(overrides?, options?)` which requires `dbClient`, `job` (`DialecticJobRow`), `providerRow` (`Tables<'ai_providers'>`), `userAuthToken` (string), `output_type` (string), and `userConfig: UserConfig` (`{ tier_output_cap_tokens: number | null }`)
+    * `[✅]` No partially constructed instances — `isEnqueueModelCallDeps` and `isEnqueueModelCallParams` reject any object missing a required field
+    * `[✅]` Invalid construction contexts: any dep field absent; `apiKeyForProvider` or `computeJobSig` not a function; `userConfig` not a record; `userConfig.tier_output_cap_tokens` neither number nor null
 
   * `[✅]` supabase/functions/dialectic-worker/enqueueModelCall/`enqueueModelCall.ts`
-    * `[✅]` Add `tier_output_cap_tokens: params.tier_output_cap_tokens` to the `eventData` object constructor
+    * `[✅]` In the `eventData` object constructor: replace `tier_output_cap_tokens: params.tier_output_cap_tokens` with `user_config: params.userConfig`
 
   * `[✅]` supabase/functions/dialectic-worker/enqueueModelCall/`enqueueModelCall.mock.ts`
-    * `[✅]` Add `tier_output_cap_tokens: null` to all `AiStreamEventData` and `EnqueueModelCallParams` constructions
+    * `[✅]` `createMockEnqueueModelCallParams` base (~line 167): replace `tier_output_cap_tokens: null` with `userConfig: { tier_output_cap_tokens: null }`
+    * `[✅]` `createMockEnqueueModelCallParams` override section (~line 200): replace `tier_output_cap_tokens: overrides.tier_output_cap_tokens !== undefined ? overrides.tier_output_cap_tokens : base.tier_output_cap_tokens` with `userConfig: overrides.userConfig !== undefined ? overrides.userConfig : base.userConfig`
+    * `[✅]` `createMockAiStreamEventData` base (~line 297): replace `tier_output_cap_tokens: null` with `user_config: { tier_output_cap_tokens: null }`
+    * `[✅]` `createMockAiStreamEventData` override section (~line 330): replace `tier_output_cap_tokens: overrides.tier_output_cap_tokens !== undefined ? overrides.tier_output_cap_tokens : base.tier_output_cap_tokens` with `user_config: overrides.user_config !== undefined ? overrides.user_config : base.user_config`
+
+  * `[✅]` supabase/functions/dialectic-worker/enqueueModelCall/`enqueueModelCall.provides.ts`
+    * `[✅]` Add `export type { UserConfig } from '../calculateAffordability/calculateAffordability.interface.ts'` — callers constructing `EnqueueModelCallParams.userConfig` or reading `AiStreamEventData.user_config` need this type; re-exporting through the module boundary keeps the import surface at one location
 
   * `[✅]` supabase/functions/dialectic-worker/enqueueModelCall/`enqueueModelCall.integration.test.ts`
-    * `[✅]` Update all `EnqueueModelCallParams` constructions to include `tier_output_cap_tokens: null` — must still pass
-    * `[✅]` Add test: params with `tier_output_cap_tokens: 32768` → enqueued `AiStreamEventData` carries `tier_output_cap_tokens: 32768`
+    * `[✅]` Params override `tier_output_cap_tokens: null` (~lines 85, 183): replace with `userConfig: { tier_output_cap_tokens: null }`
+    * `[✅]` Integration test for threading (~lines 225-291): update params override to `userConfig: { tier_output_cap_tokens: tierCap }`; update assertion (~line 291) to `parsed.data.user_config.tier_output_cap_tokens`
+
+  * `[✅]` `directionality`
+    * `[✅]` Node layer: domain service (application layer)
+    * `[✅]` Deps are inward-facing: `calculateAffordability.interface.ts` (application layer, prior node in dep chain) provides `UserConfig`; `types_db.ts` (infrastructure layer) provides `Tables<'ai_providers'>` and `Tables<'tier_definitions'>`
+    * `[✅]` Provides are outward-facing: `prepareModelJob` is the sole direct consumer of `EnqueueModelCallParams`; `ai-stream-background/adapters` is the downstream consumer of the serialized `AiStreamEventData` after Netlify queue deserialization
+    * `[✅]` No cycles
+
+  * `[✅]` `requirements`
+    * `[✅]` `isEnqueueModelCallParams` accepts any object with `userConfig` as a record and rejects any object missing `userConfig` or where `userConfig` is not a record — GREEN when guard.test.ts missing-field and type-mismatch tests pass
+    * `[✅]` `isAiStreamEventData` accepts any object with `user_config` as a record carrying `tier_output_cap_tokens: number | null` and rejects objects where `user_config` is absent, non-record, or `tier_output_cap_tokens` is neither number nor null — GREEN when guard.test.ts acceptance and rejection tests pass
+    * `[✅]` `enqueueModelCall` places `params.userConfig` verbatim on `eventData.user_config`; the value of `eventData.user_config.tier_output_cap_tokens` equals the value supplied in `params.userConfig.tier_output_cap_tokens` — GREEN when test.ts threading tests pass
+    * `[✅]` `createMockEnqueueModelCallParams()` (no overrides) returns `{ ..., userConfig: { tier_output_cap_tokens: null } }` — GREEN when mock baseline is updated
+    * `[✅]` `createMockAiStreamEventData()` (no overrides) returns `{ ..., user_config: { tier_output_cap_tokens: null } }` — GREEN when mock baseline is updated
+    * `[✅]` `enqueueModelCall.provides.ts` re-exports `UserConfig` so consumers import it from the enqueueModelCall module boundary — GREEN when provides.ts export is verified compilable by a consumer
 
 * `[✅]` `[BE]` supabase/functions/dialectic-worker/processSimpleJob **Consumer update: add min_plan_tier_level to ai_providers mock and getMaxOutputTokens to CalculateAffordabilityDeps in integration tests**
 
@@ -1089,7 +1184,7 @@
       1. `processSimpleJob.mock.ts` — `mockProviderData: Tables<'ai_providers'>` is missing `min_plan_tier_level: number`, which is now a required column added by the tier infrastructure migration and reflected in `types_db.ts`.
       2. `processSimpleJob.integration.test.ts` — both Test 1 (~line 277) and Test 2 (~line 1023) construct `CalculateAffordabilityDeps` inline as `{ logger, countTokens, compressPrompt: boundCompressPrompt }`, missing the required `getMaxOutputTokens: GetMaxOutputTokensFn` field added in the prior `calculateAffordability` node.
     * `[✅]` `processSimpleJob.ts` and `processSimpleJob.test.ts` contain no constructions of the changed types and need no changes.
-    * `[✅]` Note: `CalculateAffordabilityParams` is never constructed directly in this module — it is passed through from `prepareModelJob` via `BoundCalculateAffordabilityFn`. `EnqueueModelCallParams` is never constructed directly in this module either — it is captured from a spy. `isEnqueueModelCallParams` does not check `tier_output_cap_tokens` so existing narrowing assertions are unaffected.
+    * `[✅]` Note: `CalculateAffordabilityParams` is never constructed directly in this module — it is passed through from `prepareModelJob` via `BoundCalculateAffordabilityFn`. `EnqueueModelCallParams` is never constructed directly in this module either — it is captured from a spy. `isEnqueueModelCallParams` now checks `userConfig` (an object), but since the spy captures the complete `EnqueueModelCallParams` object actually built by `prepareModelJob` (which will include `userConfig` after the `prepareModelJob` node correction), the existing narrowing assertions remain unaffected.
 
   * `[✅]` `role`
     * `[✅]` Application service — orchestrates the simple job execution path
@@ -1116,345 +1211,523 @@
     * `[✅]` Test 2 (~line 1023): add `getMaxOutputTokens` to the `CalculateAffordabilityDeps` inline construction — same pattern
     * `[✅]` All existing tests must still pass
 
-* `[✅]` `[BE]` supabase/functions/dialectic-worker/prepareModelJob **Fetch tier output cap from DB and thread through call chain**
+* `[✅]` `[BE]` supabase/functions/dialectic-worker/prepareModelJob **Fetch tier output cap from DB, build UserConfig once, pass to calculateAffordability and enqueueModelCall**
 
   * `[✅]` `objective`
-    * `[✅]` Four compile errors exist in this module after the tier migration and prior calculateAffordability/enqueueModelCall nodes:
-      1. `prepareModelJob.mock.ts` — `mockAiProvidersRow()` (line 139) and `mockAiProvidersRowFromConfig()` (line 168) both construct `Tables<"ai_providers">` base objects missing the required `min_plan_tier_level: number` column added by the tier infrastructure migration.
-      2. `prepareModelJob.ts` — `affordParams: CalculateAffordabilityParams` (line 210) missing the required `tierOutputCapTokens: TierOutputCapTokens` field added in the prior `calculateAffordability` node.
-      3. `prepareModelJob.ts` — `enqueueModelCallParams: EnqueueModelCallParams` (line 283) missing the required `tier_output_cap_tokens` field added in the prior `enqueueModelCall` node.
-      4. `prepareModelJob.test.ts` — inline `CalculateAffordabilityDeps` construction at line 1193 (`{ logger, countTokens, compressPrompt: boundCompressPrompt }`) missing `getMaxOutputTokens: GetMaxOutputTokensFn`; all other `CalculateAffordabilityDeps` constructions in this file use `buildCalculateAffordabilityDeps` which already includes `getMaxOutputTokens` and are unaffected.
-    * `[✅]` Fix for `prepareModelJob.ts`: after the `const { job, projectOwnerUserId, providerRow } = params` destructuring (line 34), add `SELECT td.output_cap_tokens FROM user_subscriptions us JOIN tier_definitions td ON td.level = us.tier_level WHERE us.user_id = $projectOwnerUserId`. On DB error: return `{ error, retriable: true }` immediately — do not proceed to `calculateAffordability` or `enqueueModelCall`. Pass `tierOutputCapTokens` to `calculateAffordability()` and as `tier_output_cap_tokens` in `EnqueueModelCallParams` when calling `enqueueModelCall`.
+    * `[✅]` Four compile errors existed in this module after the tier migration and prior calculateAffordability/enqueueModelCall nodes; the DB query and mock fixes are already implemented. The remaining work is to correct the field names used on `CalculateAffordabilityParams` and `EnqueueModelCallParams` to match the `UserConfig` architecture: `prepareModelJob.ts` currently passes `tierOutputCapTokens` (loose scalar) to `affordParams` and `tier_output_cap_tokens: tierOutputCapTokens` to `enqueueModelCallParams`. Both must be replaced by a single `userConfig: UserConfig` object built once from the fetched scalar and passed to both.
     * `[✅]` `prepareModelJob.guard.test.ts` and `prepareModelJob.inputsRequired.test.ts` contain no `EnqueueModelCallParams` or `CalculateAffordabilityParams` constructions — no changes needed.
-    * `[✅]` `prepareModelJob.integration.test.ts` existing constructions use `buildCalculateAffordabilityDeps` (already includes `getMaxOutputTokens`) and `buildMockBoundCalculateAffordabilityFn` (uses `buildCalculateAffordabilityParams` which already defaults `tierOutputCapTokens: null`) — no existing construction sites need updating.
+    * `[✅]` `prepareModelJob.mock.ts` `min_plan_tier_level: 0` is already present on both `mockAiProvidersRow()` and `mockAiProvidersRowFromConfig()` — no changes needed.
+    * `[✅]` `prepareModelJob.integration.test.ts` existing constructions use `buildCalculateAffordabilityDeps` (already includes `getMaxOutputTokens`) and `buildMockBoundCalculateAffordabilityFn` (uses `buildCalculateAffordabilityParams` which now defaults `userConfig: { tier_output_cap_tokens: null }`) — no existing construction sites need updating; only the spy-capture assertions at lines 544 and 549 need updating.
 
   * `[✅]` `role`
-    * `[✅]` Domain orchestrator — prepares the AI call payload from job data
+    * `[✅]` Domain orchestrator — prepares the AI call payload from job data; sole construction point for `UserConfig` in the Deno worker chain
 
   * `[✅]` `module`
     * `[✅]` dialectic-worker bounded context
 
   * `[✅]` `deps`
-    * `[✅]` `types_db.ts` — `Tables<"ai_providers">['Row']` gains required column `min_plan_tier_level: number` (from tier infrastructure migration)
-    * `[✅]` `calculateAffordability.interface.ts` (prior node) — `CalculateAffordabilityParams.tierOutputCapTokens: TierOutputCapTokens` required; `CalculateAffordabilityDeps.getMaxOutputTokens: GetMaxOutputTokensFn` required
-    * `[✅]` `enqueueModelCall.interface.ts` (prior node) — `EnqueueModelCallParams.tier_output_cap_tokens` required
-    * `[✅]` `_shared/utils/affordability_utils.ts` — provides the concrete `getMaxOutputTokens` implementation for the inline `CalculateAffordabilityDeps` construction in `prepareModelJob.test.ts`
-    * `[✅]` `calculateAffordability.mock.ts` — `buildCalculateAffordabilityDeps` already includes `getMaxOutputTokens` (line 97–100); `buildCalculateAffordabilityParams` already includes `tierOutputCapTokens: null` default (line 126) — confirmed, no changes needed to these builders
+    * `[✅]` `types_db.ts` — `Tables<"ai_providers">['Row']` requires `min_plan_tier_level: number` (already in mock)
+    * `[✅]` `calculateAffordability.interface.ts` (prior node) — provides `UserConfig` type and `CalculateAffordabilityParams.userConfig: UserConfig`; `TierOutputCapTokens` still needed as the DB result scalar type
+    * `[✅]` `enqueueModelCall.interface.ts` (prior node) — `EnqueueModelCallParams.userConfig: UserConfig` required
+    * `[✅]` `_shared/utils/affordability_utils.ts` — provides concrete `getMaxOutputTokens` for the inline `CalculateAffordabilityDeps` construction in `prepareModelJob.test.ts` (already imported)
+    * `[✅]` `calculateAffordability.mock.ts` — `buildCalculateAffordabilityDeps` already includes `getMaxOutputTokens`; `buildCalculateAffordabilityParams` now defaults `userConfig: { tier_output_cap_tokens: null }` — no changes needed to these builders
 
   * `[✅]` `context_slice`
-    * `[✅]` `prepareModelJob.mock.ts` `mockAiProvidersRow()` base object (line 139): add `min_plan_tier_level: 0`
-    * `[✅]` `prepareModelJob.mock.ts` `mockAiProvidersRowFromConfig()` base object (line 168): add `min_plan_tier_level: 0`
-    * `[✅]` `prepareModelJob.test.ts` line 1193: add import `import { getMaxOutputTokens } from '../../_shared/utils/affordability_utils.ts'`; add `getMaxOutputTokens` to inline construction: `{ logger, countTokens, compressPrompt: boundCompressPrompt, getMaxOutputTokens }`
-    * `[✅]` `prepareModelJob.ts`: add import `TierOutputCapTokens` from `'../calculateAffordability/calculateAffordability.interface.ts'`; after line 34, add SELECT for `td.output_cap_tokens` via `user_subscriptions JOIN tier_definitions`; on DB error return `{ error, retriable: true }` immediately — do not proceed; add `tierOutputCapTokens` to `affordParams` at line 210; add `tier_output_cap_tokens: tierOutputCapTokens` to `enqueueModelCallParams` at line 283
+    * `[✅]` `prepareModelJob.ts`: add `UserConfig` to existing import from `calculateAffordability.interface.ts`; after the DB query resolves `tierOutputCapTokens`, construct `const userConfig: UserConfig = { tier_output_cap_tokens: tierOutputCapTokens }`; replace `tierOutputCapTokens` field on `affordParams` with `userConfig: userConfig`; replace `tier_output_cap_tokens: tierOutputCapTokens` field on `enqueueModelCallParams` with `userConfig: userConfig`
+    * `[✅]` `prepareModelJob.test.ts` line 108: update spy-capture line from `EnqueueModelCallParams["tier_output_cap_tokens"]` / `paramArg.tier_output_cap_tokens` to `paramArg.userConfig.tier_output_cap_tokens`
+    * `[✅]` `prepareModelJob.test.ts` tests at lines 2074, 2156: update test descriptions and assertions to use `userConfig.tier_output_cap_tokens` instead of `tierOutputCapTokens` / `tier_output_cap_tokens`
+    * `[✅]` `prepareModelJob.integration.test.ts` lines 544, 549: update assertions from `affordParams.tierOutputCapTokens` / `enqueueParams.tier_output_cap_tokens` to `affordParams.userConfig.tier_output_cap_tokens` / `enqueueParams.userConfig.tier_output_cap_tokens`
 
-  * `[✅]` supabase/functions/dialectic-worker/prepareModelJob/`prepareModelJob.mock.ts`
-    * `[✅]` `mockAiProvidersRow()` base object (line 139): add `min_plan_tier_level: 0` — `Tables<"ai_providers">` now requires this field
-    * `[✅]` `mockAiProvidersRowFromConfig()` base object (line 168): add `min_plan_tier_level: 0` — same requirement
+  * `[✅]` `prepareModelJob.interaction.spec`
+    * `[✅]` Called by `processSimpleJob` through a `BoundPrepareModelJobFn` wrapper (deps already bound); receives `PrepareModelJobParams` and `PrepareModelJobPayload`
+    * `[✅]` Required dependency interactions in execution order:
+      1. `dbClient.from('user_subscriptions').select('tier_definitions(output_cap_tokens)').eq('user_id', projectOwnerUserId).maybeSingle()` → error truthy → `{ error, retriable: true }`
+      2. Extract `tierOutputCapTokens: TierOutputCapTokens` from query result; defaults to `null` if data is null or field absent
+      3. Construct `const userConfig: UserConfig = { tier_output_cap_tokens: tierOutputCapTokens }` — sole construction point for `UserConfig` in this chain
+      4. Extract and validate `user_jwt` from `job.payload`; absent → throw (caught → `{ error, retriable: false }`)
+      5. Validate job payload via `isDialecticExecuteJobPayload`; invalid → throw
+      6. Apply inputs-required scope via `deps.applyInputsRequiredScope`
+      7. Query token wallet; validate balance via `deps.validateWalletBalance`; insufficient → `{ error, retriable: false }`
+      8. Query AI provider config; validate model cost rates via `deps.validateModelCostRates`; invalid → `{ error, retriable: false }`
+      9. Build `CalculateAffordabilityParams` with `userConfig: userConfig`; call `deps.calculateAffordability(affordParams, affordPayload)` → error return → `{ error, retriable }`
+      10. Build `EnqueueModelCallParams` with `userConfig: userConfig`; call `deps.enqueueModelCall(enqueueParams, payload)` → error return → `{ error, retriable }`
+    * `[✅]` Success path: all steps succeed → `{ queued: true }`
+    * `[✅]` `userConfig` is constructed exactly once; both `affordParams.userConfig` and `enqueueModelCallParams.userConfig` receive the same object — no field re-extraction between construction points
 
   * `[✅]` supabase/functions/dialectic-worker/prepareModelJob/`prepareModelJob.test.ts`
-    * `[✅]` Add import: `import { getMaxOutputTokens } from '../../_shared/utils/affordability_utils.ts'`
-    * `[✅]` Line 1193: add `getMaxOutputTokens` to inline `CalculateAffordabilityDeps` construction — `{ logger, countTokens, compressPrompt: boundCompressPrompt, getMaxOutputTokens }`
-    * `[✅]` Add test: `prepareModelJob` fetches tier output cap for `projectOwnerUserId` from DB → passes it as `tierOutputCapTokens` to `calculateAffordability` and as `tier_output_cap_tokens` in `EnqueueModelCallParams` to `enqueueModelCall`
-    * `[✅]` Add test: DB returns `output_cap_tokens: null` (ultra tier) → null passed through to both callees
-    * `[✅]` Add test: tier cap DB query fails → returns `PrepareModelJobErrorReturn` with `retriable: true`; neither `calculateAffordability` nor `enqueueModelCall` is invoked
-    * `[✅]` All existing tests must still pass
+    * `[✅]` Line 108: replace `const tierCap: EnqueueModelCallParams["tier_output_cap_tokens"] = paramArg.tier_output_cap_tokens` with `const tierCap: UserConfig["tier_output_cap_tokens"] = paramArg.userConfig.tier_output_cap_tokens`
+    * `[✅]` Test ~line 2074: update title from `passes tierOutputCapTokens...tier_output_cap_tokens` to `passes userConfig.tier_output_cap_tokens to calculateAffordability and enqueueModelCall`; update assertions at ~lines 2145, 2151: `affordParams.tierOutputCapTokens === 32768` → `affordParams.userConfig.tier_output_cap_tokens === 32768`; `enqueueParams.tier_output_cap_tokens === 32768` → `enqueueParams.userConfig.tier_output_cap_tokens === 32768`
+    * `[✅]` Test ~line 2156: update title from `passes tierOutputCapTokens null and tier_output_cap_tokens null when DB returns output_cap_tokens null` to `passes userConfig.tier_output_cap_tokens null to calculateAffordability and enqueueModelCall when DB returns output_cap_tokens null`; update assertions at ~lines 2226, 2232: `affordParams.tierOutputCapTokens === null` → `affordParams.userConfig.tier_output_cap_tokens === null`; `enqueueParams.tier_output_cap_tokens === null` → `enqueueParams.userConfig.tier_output_cap_tokens === null`
+
+  * `[✅]` `construction`
+    * `[✅]` `PrepareModelJobDeps` is constructed by callers (`processSimpleJob` binds concrete implementations from `IJobContext`); in tests use `mockPrepareModelJobDeps(overrides?)` which requires all seven fields: `logger`, `applyInputsRequiredScope`, `tokenWalletService`, `validateWalletBalance`, `validateModelCostRates`, `calculateAffordability`, `enqueueModelCall`
+    * `[✅]` `PrepareModelJobParams` is constructed by callers from job data; in tests use `mockPrepareModelJobParams(overrides?)` which requires `dbClient`, `authToken`, `job`, `projectOwnerUserId`, `providerRow`, `sessionData`
+    * `[✅]` `userConfig: UserConfig` is constructed INSIDE `prepareModelJob.ts` from the DB-resolved `tierOutputCapTokens` scalar — it is not a caller-supplied construction-time input
+    * `[✅]` No partially constructed instances — `isPrepareModelJobDeps` and `isPrepareModelJobParams` reject any object missing a required field
 
   * `[✅]` supabase/functions/dialectic-worker/prepareModelJob/`prepareModelJob.ts`
-    * `[✅]` Add import: `TierOutputCapTokens` from `'../calculateAffordability/calculateAffordability.interface.ts'`
-    * `[✅]` After `const { job, projectOwnerUserId, providerRow } = params` (line 34): add `SELECT td.output_cap_tokens FROM user_subscriptions us JOIN tier_definitions td ON td.level = us.tier_level WHERE us.user_id = $projectOwnerUserId`; on DB error return `{ error, retriable: true }` immediately — do not proceed to `calculateAffordability` or `enqueueModelCall`
-    * `[✅]` `affordParams: CalculateAffordabilityParams` (line 210): add `tierOutputCapTokens`
-    * `[✅]` `enqueueModelCallParams: EnqueueModelCallParams` (line 283): add `tier_output_cap_tokens: tierOutputCapTokens`
+    * `[✅]` Add `UserConfig` to the existing import from `'../calculateAffordability/calculateAffordability.interface.ts'` (keep `TierOutputCapTokens` — still used for the DB scalar type)
+    * `[✅]` After the DB query resolves `tierOutputCapTokens` (after line 70): add `const userConfig: UserConfig = { tier_output_cap_tokens: tierOutputCapTokens };`
+    * `[✅]` `affordParams: CalculateAffordabilityParams` (~line 260): replace `tierOutputCapTokens` field with `userConfig: userConfig`
+    * `[✅]` `enqueueModelCallParams: EnqueueModelCallParams` (~line 327): replace `tier_output_cap_tokens: tierOutputCapTokens` with `userConfig: userConfig`
 
   * `[✅]` supabase/functions/dialectic-worker/prepareModelJob/`prepareModelJob.integration.test.ts`
-    * `[✅]` Add test: full execution with mocked DB returning `output_cap_tokens: 32768` → `calculateAffordability` called with `tierOutputCapTokens: 32768`, `enqueueModelCall` called with `tier_output_cap_tokens: 32768`
-    * `[✅]` Add test: tier cap DB query fails → `PrepareModelJobErrorReturn` with `retriable: true`; neither `calculateAffordability` nor `enqueueModelCall` is invoked
-    * `[✅]` All existing tests must still pass
+    * `[✅]` Line 544: `affordParams.tierOutputCapTokens` → `affordParams.userConfig.tier_output_cap_tokens`
+    * `[✅]` Line 549: `enqueueParams.tier_output_cap_tokens` → `enqueueParams.userConfig.tier_output_cap_tokens`
 
-* `[ ]` `[BE]` netlify/functions/ai-stream-background/adapters/getNodeAiAdapter **Add tier_output_cap_tokens to NodeModelConfig and update isNodeModelConfig guard**
+  * `[✅]` `directionality`
+    * `[✅]` Node layer: domain orchestrator (application layer)
+    * `[✅]` Deps are inward-facing: `calculateAffordability.interface.ts` (application layer, prior node) provides `UserConfig`, `TierOutputCapTokens`, `CalculateAffordabilityParams`; `enqueueModelCall.interface.ts` (application layer, prior node) provides `EnqueueModelCallParams`; `types_db.ts` (infra) provides `Tables<'ai_providers'>`, `Tables<'user_subscriptions'>`
+    * `[✅]` Provides are outward-facing: `processSimpleJob` is the sole direct consumer via the bound `BoundPrepareModelJobFn` wrapper
+    * `[✅]` No cycles
+
+  * `[✅]` `requirements`
+    * `[✅]` `prepareModelJob.ts` imports `UserConfig` and constructs `const userConfig: UserConfig = { tier_output_cap_tokens: tierOutputCapTokens }` after the DB query resolves — GREEN when ts is updated and compiles
+    * `[✅]` `affordParams.userConfig.tier_output_cap_tokens` equals the DB-resolved `tierOutputCapTokens` at the point of the `deps.calculateAffordability` call — GREEN when test.ts assertions at ~lines 2145 pass
+    * `[✅]` `enqueueModelCallParams.userConfig.tier_output_cap_tokens` equals the DB-resolved `tierOutputCapTokens` at the point of the `deps.enqueueModelCall` call — GREEN when test.ts assertions at ~lines 2151 pass
+    * `[✅]` `assertEnqueueModelCallFirstCallShape` (test.ts line ~108) captures `paramArg.userConfig.tier_output_cap_tokens` typed as `UserConfig["tier_output_cap_tokens"]` — GREEN when test.ts line 108 is updated
+    * `[✅]` Integration test line 544 asserts `affordParams.userConfig.tier_output_cap_tokens === 32768` and line 549 asserts `enqueueParams.userConfig.tier_output_cap_tokens === 32768` — GREEN when integration.test.ts assertions are updated
+
+* `[✅]` `[BE]` netlify/functions/ai-stream-background/adapters/getNodeAiAdapter **Remove tier_output_cap_tokens from NodeModelConfig; introduce NodeUserConfig; add userConfig to NodeAdapterConstructorParams and GetNodeAiAdapterParams**
 
   * `[✅]` `objective`
-    * `[✅]` `NodeModelConfig` does not carry `tier_output_cap_tokens`. The field must be present on the type before `ai-stream-background.ts` can merge it into adapter config and before any adapter can read it from `modelConfig`. Add the field to `NodeModelConfig` in `ai-adapter.interface.ts`, update `isNodeModelConfig` in `getNodeAiAdapter.guard.ts`, and update all `NodeModelConfig` construction sites in this module.
+    * `[✅]` The completed node incorrectly added `tier_output_cap_tokens` to `NodeModelConfig` and to `isNodeModelConfig`. This is wrong: `NodeModelConfig` is the PROVIDER config; user/application config is a separate concern. Adding a required field to `isNodeModelConfig` causes it to reject every incoming event from the Deno worker (which serializes `AiModelExtendedConfig` as `model_config` — a type that does not have `tier_output_cap_tokens`). Fix: REMOVE `tier_output_cap_tokens` from `NodeModelConfig` and from `isNodeModelConfig`. Introduce `NodeUserConfig` as a new interface on the Netlify side (`{ readonly tier_output_cap_tokens: number | null }`). Add `userConfig: NodeUserConfig` to `NodeAdapterConstructorParams` and `GetNodeAiAdapterParams` so the adapter receives both concerns separately. Update all construction sites, guards, and tests throughout this module.
 
   * `[✅]` `role`
-    * `[✅]` Infrastructure adapter factory — routes to the correct provider adapter; owns the `NodeModelConfig` type
+    * `[✅]` Infrastructure adapter factory — routes to the correct provider adapter; owns `NodeModelConfig` (provider config) and `NodeUserConfig` (user/application config) as distinct types
 
   * `[✅]` `module`
     * `[✅]` ai-stream-background, adapter layer
 
   * `[✅]` `deps`
-    * `[✅]` None for the type change — `tier_output_cap_tokens: number | null` declared inline; no cross-workspace import of `Tables<'tier_definitions'>`
+    * `[✅]` None — both `NodeModelConfig` and `NodeUserConfig` are declared inline in `ai-adapter.interface.ts`; no cross-workspace import needed
 
   * `[✅]` `context_slice`
-    * `[✅]` `NodeModelConfig` in `ai-adapter.interface.ts` gains `tier_output_cap_tokens: number | null`
-    * `[✅]` `isNodeModelConfig` gains check: `'tier_output_cap_tokens' in v` and `typeof v['tier_output_cap_tokens'] === 'number' || v['tier_output_cap_tokens'] === null`
-    * `[✅]` All `NodeModelConfig` construction sites in this module: add `tier_output_cap_tokens: null`
+    * `[✅]` `ai-adapter.interface.ts`: REMOVE `tier_output_cap_tokens: number | null` from `NodeModelConfig`; ADD `export interface NodeUserConfig { readonly tier_output_cap_tokens: number | null; }`; ADD `userConfig: NodeUserConfig` to `NodeAdapterConstructorParams`
+    * `[✅]` `getNodeAiAdapter.interface.ts`: ADD `import type { NodeUserConfig }` from `ai-adapter.interface.ts`; ADD `userConfig: NodeUserConfig` to `GetNodeAiAdapterParams`
+    * `[✅]` `getNodeAiAdapter.guard.ts`: REMOVE `tier_output_cap_tokens` required check from `isNodeModelConfig`; ADD `isNodeUserConfig` guard; update `isGetNodeAiAdapterParams` to check `userConfig: isNodeUserConfig(...)`
+    * `[✅]` `getNodeAiAdapter.ts`: add `userConfig: params.userConfig` to the `factory({...})` call
+    * `[✅]` All `NodeModelConfig` construction sites: REMOVE `tier_output_cap_tokens` field
+    * `[✅]` All `NodeAdapterConstructorParams` and `GetNodeAiAdapterParams` construction sites: ADD `userConfig: { tier_output_cap_tokens: null }` (or appropriate value)
 
   * `[✅]` netlify/functions/ai-stream-background/adapters/`ai-adapter.interface.test.ts`
-    * `[✅]` Add contract test: `NodeModelConfig` shape includes `tier_output_cap_tokens` as `number | null`
-    * `[✅]` Add test: valid `NodeModelConfig` with `tier_output_cap_tokens: null` satisfies the interface
-    * `[✅]` Add test: valid `NodeModelConfig` with `tier_output_cap_tokens: 32768` satisfies the interface
-    * `[✅]` Existing contract tests must still pass with the added field
+    * `[✅]` All `NodeModelConfig` literals (~lines 99-116, 119-129): REMOVE `tier_output_cap_tokens` field
+    * `[✅]` REMOVE the three `tier_output_cap_tokens` tests on `NodeModelConfig` (lines 192-233 — "NodeModelConfig contract includes tier_output_cap_tokens", "accepts NodeModelConfig with tier_output_cap_tokens: null", "accepts NodeModelConfig with tier_output_cap_tokens: 32768")
+    * `[✅]` ADD `NodeUserConfig` contract tests: shape has `tier_output_cap_tokens: number | null`; accepts `{ tier_output_cap_tokens: null }`; accepts `{ tier_output_cap_tokens: 32768 }`
+    * `[✅]` ADD test: `NodeAdapterConstructorParams` shape includes `userConfig: NodeUserConfig`
 
   * `[✅]` netlify/functions/ai-stream-background/adapters/`ai-adapter.interface.ts`
-    * `[✅]` Add `tier_output_cap_tokens: number | null` to `NodeModelConfig`
+    * `[✅]` REMOVE `tier_output_cap_tokens: number | null` from `NodeModelConfig`
+    * `[✅]` ADD `export interface NodeUserConfig { readonly tier_output_cap_tokens: number | null; }` after `NodeModelConfig`
+    * `[✅]` ADD `userConfig: NodeUserConfig` to `NodeAdapterConstructorParams`
 
   * `[✅]` netlify/functions/ai-stream-background/adapters/`getNodeAiAdapter.interface.test.ts`
-    * `[✅]` Add `tier_output_cap_tokens: null` to the `GetNodeAiAdapterParams.modelConfig` literal — must still pass
+    * `[✅]` REMOVE `tier_output_cap_tokens: null` from the `modelConfig` literal inside the `GetNodeAiAdapterParams` construction (~line 39)
+    * `[✅]` ADD `userConfig: { tier_output_cap_tokens: null }` to the `GetNodeAiAdapterParams` construction
+
+  * `[✅]` netlify/functions/ai-stream-background/adapters/`getNodeAiAdapter.interface.ts`
+    * `[✅]` ADD `import type { NodeUserConfig } from './ai-adapter.interface.ts'` (alongside existing `NodeModelConfig` import)
+    * `[✅]` ADD `userConfig: NodeUserConfig` to `GetNodeAiAdapterParams`
+
+  * `[✅]` `getNodeAiAdapter.interaction.spec`
+    * `[✅]` Called by the ai-stream-background handler after deserializing the Netlify queue event body; receives `GetNodeAiAdapterDeps` (providerMap) and `GetNodeAiAdapterParams` (apiIdentifier, apiKey, modelConfig, userConfig)
+    * `[✅]` Required dependency interactions in execution order:
+      1. Lowercase `params.apiIdentifier`; if empty string → return `null`
+      2. Find first matching key in `deps.providerMap` where `lowerApiIdentifier.startsWith(key)` — if none found → return `null`
+      3. Retrieve `factory: NodeAdapterFactory = deps.providerMap[prefix]`
+      4. Call `factory({ modelConfig: params.modelConfig, apiKey: params.apiKey, userConfig: params.userConfig })` — returns `AiAdapter`
+    * `[✅]` Success path: matching prefix found, factory returns `AiAdapter` → return the adapter
+    * `[✅]` `params.userConfig` is passed verbatim to the factory as `NodeAdapterConstructorParams.userConfig` — not inspected or transformed by `getNodeAiAdapter`
 
   * `[✅]` netlify/functions/ai-stream-background/adapters/`getNodeAiAdapter.guard.test.ts`
-    * `[✅]` Add test: `isNodeModelConfig()` accepts object with `tier_output_cap_tokens: null`
-    * `[✅]` Add test: `isNodeModelConfig()` accepts object with `tier_output_cap_tokens: 32768`
-    * `[✅]` Add test: `isNodeModelConfig()` rejects object missing `tier_output_cap_tokens` entirely
-    * `[✅]` Update all existing `NodeModelConfig` constructions to include `tier_output_cap_tokens: null` — must still pass
+    * `[✅]` `isNodeModelConfig` describe block: REMOVE the three `tier_output_cap_tokens` tests (lines 118-148); update valid `NodeModelConfig` literals in remaining tests to NOT include `tier_output_cap_tokens` field
+    * `[✅]` ADD `isNodeUserConfig` describe block: accepts `{ tier_output_cap_tokens: null }`; accepts `{ tier_output_cap_tokens: 32768 }`; rejects missing `tier_output_cap_tokens` field; rejects `tier_output_cap_tokens: undefined`; rejects non-record
+    * `[✅]` `isGetNodeAiAdapterParams` describe block: ADD test rejecting params with missing `userConfig` (e.g., spread `createMockGetNodeAiAdapterParams()` omitting `userConfig`); existing tests using `createMockGetNodeAiAdapterParams()` will pass once mock is updated to include `userConfig` by default
 
   * `[✅]` netlify/functions/ai-stream-background/adapters/`getNodeAiAdapter.guard.ts`
-    * `[✅]` Add check in `isNodeModelConfig()` after existing field checks: `if (!('tier_output_cap_tokens' in v)) return false`; validate `typeof v['tier_output_cap_tokens'] === 'number' || v['tier_output_cap_tokens'] === null`
+    * `[✅]` ADD `import type { NodeUserConfig } from './ai-adapter.interface.ts'` alongside existing imports
+    * `[✅]` `isNodeModelConfig` (lines 111-174): REMOVE the two lines checking `tier_output_cap_tokens` — the `if (!('tier_output_cap_tokens' in v)) { return false; }` check (line 166) and the `typeof tierCap` validation (lines 169-172)
+    * `[✅]` ADD `export function isNodeUserConfig(v: unknown): v is NodeUserConfig` after `isNodeModelConfig`: check `isPlainRecord(v)`, `'tier_output_cap_tokens' in v`, `typeof v['tier_output_cap_tokens'] === 'number' || v['tier_output_cap_tokens'] === null`
+    * `[✅]` `isGetNodeAiAdapterParams` (lines 255-271): ADD `const userConfigValue: unknown = v['userConfig']; if (!isNodeUserConfig(userConfigValue)) { return false; }` before the final `return isNodeModelConfig(modelConfigValue)`
 
   * `[✅]` netlify/functions/ai-stream-background/adapters/`getNodeAiAdapter.test.ts`
-    * `[✅]` Update all `NodeModelConfig` constructions to include `tier_output_cap_tokens: null` — must still pass
+    * `[✅]` Tests at ~lines 22-25 and 39-42: update `factorySpy` assertion from `{ modelConfig: params.modelConfig, apiKey: params.apiKey }` to `{ modelConfig: params.modelConfig, apiKey: params.apiKey, userConfig: params.userConfig }`
+
+  * `[✅]` `construction`
+    * `[✅]` `GetNodeAiAdapterDeps` is constructed by the handler with a `providerMap: NodeProviderMap`; in tests use `createMockGetNodeAiAdapterDeps(overrides?)`
+    * `[✅]` `GetNodeAiAdapterParams` is constructed by the handler from the deserialized Netlify queue event; in tests use `createMockGetNodeAiAdapterParams(overrides?)` which now defaults `userConfig: { tier_output_cap_tokens: null }`
+    * `[✅]` `NodeAdapterConstructorParams` is constructed INSIDE `getNodeAiAdapter` and passed to the factory — callers do not construct it directly; it must now include `userConfig: NodeUserConfig`
+    * `[✅]` Invalid construction: any of `apiIdentifier`, `apiKey`, `modelConfig` absent or not satisfying type; `userConfig` absent, non-record, or `userConfig.tier_output_cap_tokens` neither number nor null
+
+  * `[✅]` netlify/functions/ai-stream-background/adapters/`getNodeAiAdapter.ts`
+    * `[✅]` `factory({...})` call (~line 28): add `userConfig: params.userConfig` to the object literal alongside `modelConfig` and `apiKey`
 
   * `[✅]` netlify/functions/ai-stream-background/adapters/`getNodeAiAdapter.mock.ts`
-    * `[✅]` Add `tier_output_cap_tokens: null` to all `NodeModelConfig` constructions
+    * `[✅]` ADD `import type { NodeUserConfig } from './ai-adapter.interface.ts'`
+    * `[✅]` `defaultNodeModelConfig` (~line 21): REMOVE `tier_output_cap_tokens: null` field
+    * `[✅]` ADD `const defaultNodeUserConfig: NodeUserConfig = { tier_output_cap_tokens: null }` after `defaultNodeModelConfig`
+    * `[✅]` `createMockGetNodeAiAdapterParams` (~line 93): ADD `userConfig` field with default `defaultNodeUserConfig`; include `userConfig` in the return object
 
   * `[✅]` netlify/functions/ai-stream-background/adapters/`adapter-conformance.test-utils.ts`
-    * `[✅]` Add `tier_output_cap_tokens: null` to the `conformanceModelConfig` construction — the `NodeModelConfig` literal will fail to compile without the new required field
+    * `[✅]` ADD `import type { NodeUserConfig } from './ai-adapter.interface.ts'`
+    * `[✅]` `conformanceModelConfig` (~line 16): REMOVE `tier_output_cap_tokens: null` field
+    * `[✅]` ADD `const conformanceUserConfig: NodeUserConfig = { tier_output_cap_tokens: null }` after `conformanceModelConfig`
+    * `[✅]` `conformanceParams: NodeAdapterConstructorParams` (~line 23): ADD `userConfig: conformanceUserConfig`
 
-* `[ ]` `[BE]` netlify/functions/ai-stream-background/adapters/resolveOutputCap **Single binding-cap resolver shared by all adapters**
+  * `[✅]` netlify/functions/ai-stream-background/adapters/`getNodeAiAdapter.provides.ts`
+    * `[✅]` ADD `export type { NodeUserConfig } from './ai-adapter.interface.ts'` — callers (including individual provider adapters) that receive `NodeAdapterConstructorParams.userConfig` need this type from the module boundary
+    * `[✅]` ADD `export { isNodeUserConfig } from './getNodeAiAdapter.guard.ts'` — guards are part of the public API surface
 
-  * `[ ]` `objective`
-    * `[ ]` Each of the three adapters (OpenAI, Anthropic, Google) computes the binding output cap with its own ternary chain or if/else bifurcation — forbidden default/fallback patterns that also duplicate logic. Fix: one pure function that collects all positive-number inputs, takes the minimum, and returns it. `undefined` only when no input is a positive number. No ternaries, no fallbacks, no nullish coalescing.
+  * `[✅]` `directionality`
+    * `[✅]` Node layer: infrastructure adapter factory (infrastructure layer)
+    * `[✅]` Deps are inward-facing: all shared types (`NodeModelConfig`, `NodeUserConfig`, `NodeAdapterConstructorParams`, `NodeProviderMap`) declared in `ai-adapter.interface.ts` — no cross-workspace imports
+    * `[✅]` Provides are outward-facing: the ai-stream-background handler constructs `GetNodeAiAdapterParams` to call `getNodeAiAdapter`; individual provider adapters (openai, anthropic, google) receive `NodeAdapterConstructorParams` which now includes `userConfig: NodeUserConfig`
+    * `[✅]` No cycles
 
-  * `[ ]` `role`
-    * `[ ]` Domain utility — pure cap calculation; no I/O; no provider knowledge
+  * `[✅]` `requirements`
+    * `[✅]` `NodeModelConfig` does NOT include `tier_output_cap_tokens`; `isNodeModelConfig` accepts objects without `tier_output_cap_tokens` — GREEN when ai-adapter.interface.ts is updated and guard.test.ts removed-field tests are deleted
+    * `[✅]` `NodeUserConfig = { readonly tier_output_cap_tokens: number | null }` exists in `ai-adapter.interface.ts`; all three contract tests in ai-adapter.interface.test.ts pass — GREEN when interface is updated and tests are added
+    * `[✅]` `NodeAdapterConstructorParams` includes `userConfig: NodeUserConfig` — GREEN when ai-adapter.interface.ts is updated and interface.test.ts shape test passes
+    * `[✅]` `GetNodeAiAdapterParams` includes `userConfig: NodeUserConfig` — GREEN when getNodeAiAdapter.interface.ts is updated and interface.test.ts passes
+    * `[✅]` `isNodeUserConfig` validates `{ tier_output_cap_tokens: number | null }` and rejects invalid shapes — GREEN when guard.test.ts `isNodeUserConfig` describe block passes
+    * `[✅]` `isGetNodeAiAdapterParams` rejects objects missing `userConfig` or where `userConfig` fails `isNodeUserConfig` — GREEN when guard.test.ts missing-userConfig test passes
+    * `[✅]` `getNodeAiAdapter` passes `{ modelConfig, apiKey, userConfig }` to the adapter factory — GREEN when test.ts spy assertion tests pass
+    * `[✅]` `createMockGetNodeAiAdapterParams()` (no overrides) returns `{ ..., userConfig: { tier_output_cap_tokens: null } }` — GREEN when mock baseline is updated
+    * `[✅]` `conformanceParams` in `adapter-conformance.test-utils.ts` includes `userConfig: { tier_output_cap_tokens: null }` — GREEN when conformance utils are updated
 
-  * `[ ]` `module`
-    * `[ ]` ai-stream-background, adapter layer; cross-adapter
+* `[✅]` `[BE]` netlify/functions/ai-stream-background/adapters/resolveOutputCap **Single binding-cap resolver shared by all adapters**
 
-  * `[ ]` `deps`
-    * `[ ]` None (pure function)
+  * `[✅]` `objective`
+    * `[✅]` Each of the three adapters (OpenAI, Anthropic, Google) computes the binding output cap with its own ternary chain or if/else bifurcation — forbidden default/fallback patterns that also duplicate logic. Fix: one pure function that collects all positive-number inputs, takes the minimum, and returns it. `undefined` only when no input is a positive number. No ternaries, no fallbacks, no nullish coalescing.
 
-  * `[ ]` `context_slice`
-    * `[ ]` Inputs: `requestMax: number | undefined`, `hardCap: number | undefined`, `providerMax: number | undefined`, `tierCap: number | null`
-    * `[ ]` Output: `number | undefined` — minimum of all positive-number inputs; `undefined` only when no input is a positive number
-    * `[ ]` Implementation: collect every input that is a positive number into a single list; return `Math.min(...list)` if list is non-empty, `undefined` if empty. One collection step, one minimum step, one return
+  * `[✅]` `role`
+    * `[✅]` Domain utility — pure cap calculation; no I/O; no provider knowledge
 
-  * `[ ]` netlify/functions/ai-stream-background/adapters/`resolveOutputCap.interface.test.ts`
-    * `[ ]` Contract test: `ResolveOutputCapInputs` shape includes `requestMax: number | undefined`, `hardCap: number | undefined`, `providerMax: number | undefined`, `tierCap: number | null`
-    * `[ ]` Contract test: `ResolveOutputCapFn` return type is `number | undefined`
+  * `[✅]` `module`
+    * `[✅]` ai-stream-background, adapter layer; cross-adapter
 
-  * `[ ]` netlify/functions/ai-stream-background/adapters/`resolveOutputCap.interface.ts`
-    * `[ ]` Declare `ResolveOutputCapInputs` with the four fields above
-    * `[ ]` Declare `ResolveOutputCapFn` as `(inputs: ResolveOutputCapInputs) => number | undefined`
+  * `[✅]` `deps`
+    * `[✅]` None (pure function)
 
-  * `[ ]` netlify/functions/ai-stream-background/adapters/`resolveOutputCap.guard.test.ts`
-    * `[ ]` Add test: `isResolveOutputCapInputs` accepts a fully populated object
-    * `[ ]` Add test: accepts `requestMax`/`hardCap`/`providerMax` as `undefined`
-    * `[ ]` Add test: accepts `tierCap: null`
-    * `[ ]` Add test: rejects object missing any of the four required fields
-    * `[ ]` Add test: rejects when any field is the wrong type (e.g. `tierCap: undefined`, `requestMax: null`)
+  * `[✅]` `context_slice`
+    * `[✅]` Inputs: `requestMax: number | undefined`, `hardCap: number | undefined`, `providerMax: number | undefined`, `tierCap: number | null`
+    * `[✅]` Output: `number | undefined` — minimum of all positive-number inputs; `undefined` only when no input is a positive number
+    * `[✅]` Implementation: collect every input that is a positive number into a single list; return `Math.min(...list)` if list is non-empty, `undefined` if empty. One collection step, one minimum step, one return
 
-  * `[ ]` netlify/functions/ai-stream-background/adapters/`resolveOutputCap.guard.ts`
-    * `[ ]` Implement `isResolveOutputCapInputs` — every field must be present and exactly conform to its declared type
+  * `[✅]` netlify/functions/ai-stream-background/adapters/`resolveOutputCap.interface.test.ts`
+    * `[✅]` Contract test: `ResolveOutputCapInputs` shape includes `requestMax: number | undefined`, `hardCap: number | undefined`, `providerMax: number | undefined`, `tierCap: number | null`
+    * `[✅]` Contract test: `ResolveOutputCapFn` return type is `number | undefined`
 
-  * `[ ]` netlify/functions/ai-stream-background/adapters/`resolveOutputCap.test.ts`
-    * `[ ]` Add test: all four inputs positive numbers → returns the minimum
-    * `[ ]` Add test: `tierCap: 32768`, `requestMax: 50000`, `hardCap: 131072`, `providerMax: undefined` → returns 32768
-    * `[ ]` Add test: `tierCap: 131072`, `hardCap: 64000`, `requestMax: undefined`, `providerMax: undefined` → returns 64000
-    * `[ ]` Add test: `tierCap: null`, `requestMax: 50000`, `hardCap: 131072`, `providerMax: 100000` → returns 50000
-    * `[ ]` Add test: `tierCap: null`, all numeric inputs `undefined` → returns `undefined`
-    * `[ ]` Add test: zero or negative numeric input excluded from minimum
-    * `[ ]` Add test: `providerMax` binds when smallest
+  * `[✅]` netlify/functions/ai-stream-background/adapters/`resolveOutputCap.interface.ts`
+    * `[✅]` Declare `ResolveOutputCapInputs` with the four fields above
+    * `[✅]` Declare `ResolveOutputCapFn` as `(inputs: ResolveOutputCapInputs) => number | undefined`
 
-  * `[ ]` netlify/functions/ai-stream-background/adapters/`resolveOutputCap.ts`
-    * `[ ]` Implement: collect each input into a list if it is a positive number; return `Math.min(...list)` if list non-empty, `undefined` otherwise. The only branch: list empty → `undefined`, list non-empty → min.
+  * `[✅]` netlify/functions/ai-stream-background/adapters/`resolveOutputCap.guard.test.ts`
+    * `[✅]` Add test: `isResolveOutputCapInputs` accepts a fully populated object
+    * `[✅]` Add test: accepts `requestMax`/`hardCap`/`providerMax` as `undefined`
+    * `[✅]` Add test: accepts `tierCap: null`
+    * `[✅]` Add test: rejects object missing any of the four required fields
+    * `[✅]` Add test: rejects when any field is the wrong type (e.g. `tierCap: undefined`, `requestMax: null`)
 
-  * `[ ]` netlify/functions/ai-stream-background/adapters/`resolveOutputCap.mock.ts`
-    * `[ ]` Provide `buildResolveOutputCapInputs(overrides?)` factory returning a fully typed `ResolveOutputCapInputs` with documented domain-approved defaults
+  * `[✅]` netlify/functions/ai-stream-background/adapters/`resolveOutputCap.guard.ts`
+    * `[✅]` Implement `isResolveOutputCapInputs` — every field must be present and exactly conform to its declared type
 
-  * `[ ]` netlify/functions/ai-stream-background/adapters/`resolveOutputCap.provides.ts`
-    * `[ ]` Export `resolveOutputCap`, `ResolveOutputCapInputs`, `ResolveOutputCapFn`, `isResolveOutputCapInputs`, `buildResolveOutputCapInputs`
+  * `[✅]` netlify/functions/ai-stream-background/adapters/`resolveOutputCap.test.ts`
+    * `[✅]` Add test: all four inputs positive numbers → returns the minimum
+    * `[✅]` Add test: `tierCap: 32768`, `requestMax: 50000`, `hardCap: 131072`, `providerMax: undefined` → returns 32768
+    * `[✅]` Add test: `tierCap: 131072`, `hardCap: 64000`, `requestMax: undefined`, `providerMax: undefined` → returns 64000
+    * `[✅]` Add test: `tierCap: null`, `requestMax: 50000`, `hardCap: 131072`, `providerMax: 100000` → returns 50000
+    * `[✅]` Add test: `tierCap: null`, all numeric inputs `undefined` → returns `undefined`
+    * `[✅]` Add test: zero or negative numeric input excluded from minimum
+    * `[✅]` Add test: `providerMax` binds when smallest
 
-* `[ ]` `[BE]` netlify/functions/ai-stream-background **Add tier_output_cap_tokens to AiStreamEvent; merge into NodeModelConfig at execution boundary**
+  * `[✅]` netlify/functions/ai-stream-background/adapters/`resolveOutputCap.ts`
+    * `[✅]` Implement: collect each input into a list if it is a positive number; return `Math.min(...list)` if list non-empty, `undefined` otherwise. The only branch: list empty → `undefined`, list non-empty → min.
 
-  * `[ ]` `objective`
-    * `[ ]` `AiStreamEvent` does not carry `tier_output_cap_tokens`. `enqueueModelCall.ts` (prior node) now includes it in `AiStreamEventData` in the queue payload. `ai-stream-background.ts` must read it from the event and merge it into `NodeModelConfig` at the adapter boundary — one merge point that keeps provider config and user restrictions separate upstream, unified for adapter consumption downstream. Add the field to `AiStreamEvent`, update the guard, and replace `modelConfig: event.model_config` with the spread merge.
+  * `[✅]` netlify/functions/ai-stream-background/adapters/`resolveOutputCap.mock.ts`
+    * `[✅]` Provide `buildResolveOutputCapInputs(overrides?)` factory returning a fully typed `ResolveOutputCapInputs` with documented domain-approved defaults
 
-  * `[ ]` `role`
-    * `[ ]` Infrastructure adapter — receives queue events; assembles adapter config from provider data and user restrictions at the execution boundary
+  * `[✅]` netlify/functions/ai-stream-background/adapters/`resolveOutputCap.provides.ts`
+    * `[✅]` Export `resolveOutputCap`, `ResolveOutputCapInputs`, `ResolveOutputCapFn`, `isResolveOutputCapInputs`, `buildResolveOutputCapInputs`
 
-  * `[ ]` `module`
-    * `[ ]` ai-stream-background, Netlify execution boundary
+* `[✅]` `[BE]` netlify/functions/ai-stream-background **Add user_config: NodeUserConfig to AiStreamEvent; pass userConfig to getNodeAiAdapter at execution boundary**
 
-  * `[ ]` `deps`
-    * `[ ]` `enqueueModelCall.ts` (prior node) — `AiStreamEventData.tier_output_cap_tokens` flows through the queue
-    * `[ ]` `getNodeAiAdapter.ts` (prior node) — `NodeModelConfig.tier_output_cap_tokens` now defined and typed
+  * `[✅]` `objective`
+    * `[✅]` `AiStreamEvent` has no `user_config` field. The `enqueueModelCall.ts` node (prior) now sends `user_config: UserConfig` in `AiStreamEventData` as JSON (`user_config` snake_case). The Netlify side must declare `user_config: NodeUserConfig` on `AiStreamEvent` to receive this field. `isAiStreamEvent` must validate it via `isNodeUserConfig`. `collectAiStreamPayload` must pass `userConfig: event.user_config` to `getNodeAiAdapter` as a separate parameter — `NodeModelConfig` and `NodeUserConfig` remain permanently separate concerns; no spread merge.
+    * `[✅]` `ai-stream-background.interface.test.ts` currently has the WRONG approach: `tier_output_cap_tokens: null` as a standalone scalar on `AiStreamEvent` AND `tier_output_cap_tokens: null` inside `NodeModelConfig` literals. Both are wrong. The scalar tests (lines 38-83) must be removed and replaced with `user_config: NodeUserConfig` contract tests. All `NodeModelConfig` literals must have `tier_output_cap_tokens` removed (that field no longer exists on `NodeModelConfig`). All `AiStreamEvent` constructions must add `user_config: { tier_output_cap_tokens: null }`.
 
-  * `[ ]` `context_slice`
-    * `[ ]` `AiStreamEvent` in `ai-stream-background.interface.ts`: add `tier_output_cap_tokens: number | null` (declared inline; no cross-workspace import)
-    * `[ ]` `isAiStreamEvent` guard: add check for `tier_output_cap_tokens` present and `number | null`
-    * `[ ]` In `ai-stream-background.ts` at the `getNodeAiAdapter` call: replace `modelConfig: event.model_config` with `modelConfig: { ...event.model_config, tier_output_cap_tokens: event.tier_output_cap_tokens }`
+  * `[✅]` `role`
+    * `[✅]` Infrastructure adapter — receives queue events; delivers `NodeModelConfig` (provider config) and `NodeUserConfig` (user/application config) as separate arguments to `getNodeAiAdapter` at the execution boundary
 
-  * `[ ]` netlify/functions/ai-stream-background/`ai-stream-background.interface.test.ts`
-    * `[ ]` Add contract test: `AiStreamEvent` shape includes `tier_output_cap_tokens` as `number | null`
-    * `[ ]` Existing contract tests must still pass
+  * `[✅]` `module`
+    * `[✅]` ai-stream-background, Netlify execution boundary
 
-  * `[ ]` netlify/functions/ai-stream-background/`ai-stream-background.interface.ts`
-    * `[ ]` Add `tier_output_cap_tokens: number | null` to `AiStreamEvent`
+  * `[✅]` `deps`
+    * `[✅]` `enqueueModelCall.ts` (prior node) — `AiStreamEventData.user_config: UserConfig` flows through the queue as JSON; `user_config` snake_case maps to `user_config: NodeUserConfig` on the Netlify side
+    * `[✅]` `getNodeAiAdapter.ts` (prior node) — `GetNodeAiAdapterParams.userConfig: NodeUserConfig` is required; `isNodeUserConfig` guard is exported from `getNodeAiAdapter.guard.ts`
 
-  * `[ ]` netlify/functions/ai-stream-background/`ai-stream-background.guard.test.ts`
-    * `[ ]` Add test: guard accepts `AiStreamEvent` with `tier_output_cap_tokens` as a number
-    * `[ ]` Add test: guard accepts `AiStreamEvent` with `tier_output_cap_tokens: null`
-    * `[ ]` Add test: guard rejects `AiStreamEvent` missing `tier_output_cap_tokens` entirely
-    * `[ ]` Update all existing `AiStreamEvent` constructions to include `tier_output_cap_tokens: null` — must still pass
+  * `[✅]` `context_slice`
+    * `[✅]` `ai-stream-background.interface.ts`: ADD `import type { NodeUserConfig } from './adapters/ai-adapter.interface.ts'`; ADD `user_config: NodeUserConfig` to `AiStreamEvent`
+    * `[✅]` `ai-stream-background.guard.ts`: ADD `isNodeUserConfig` to imports from `./adapters/getNodeAiAdapter.guard.ts`; ADD after the `chat_api_request` validation block: `if (!('user_config' in v) || !isNodeUserConfig(v['user_config'])) { return false; }` in `isAiStreamEvent`
+    * `[✅]` `ai-stream-background.ts` `collectAiStreamPayload`: ADD `userConfig: event.user_config` to the `getNodeAiAdapter` params object alongside `apiIdentifier`, `apiKey`, and `modelConfig`
 
-  * `[ ]` netlify/functions/ai-stream-background/`ai-stream-background.guard.ts`
-    * `[ ]` Update guard to check `tier_output_cap_tokens` is present and is `number | null`
+  * `[✅]` netlify/functions/ai-stream-background/`ai-stream-background.interface.test.ts`
+    * `[✅]` ADD `import type { NodeUserConfig } from './adapters/ai-adapter.interface.ts'` to the import block
+    * `[✅]` ADD `user_config: { tier_output_cap_tokens: null }` to the `AiStreamEvent` construction in the "accepts AiStreamEvent with all required fields including sig" test (lines 10-24)
+    * `[✅]` ADD new contract test at end of file: `AiStreamEvent` contract includes `user_config: NodeUserConfig` — construct `const withNull: AiStreamEvent = { job_id: 'j', api_identifier: 'a', model_config: { api_identifier: 'a', input_token_cost_rate: null, output_token_cost_rate: null }, chat_api_request: { message: 'hi', providerId: 'p', promptId: 'q' }, sig: 's', user_config: { tier_output_cap_tokens: null } }` and `const withNumber: AiStreamEvent = { ...withNull, user_config: { tier_output_cap_tokens: 32768 } }`; assert `withNull.user_config.tier_output_cap_tokens === null` and `withNumber.user_config.tier_output_cap_tokens === 32768`
 
-  * `[ ]` netlify/functions/ai-stream-background/`ai-stream-background.test.ts`
-    * `[ ]` Add test: `event.tier_output_cap_tokens: 32768` → `NodeModelConfig` passed to `getNodeAiAdapter` contains `tier_output_cap_tokens: 32768`
-    * `[ ]` Add test: `event.tier_output_cap_tokens: null` → `NodeModelConfig` passed to `getNodeAiAdapter` contains `tier_output_cap_tokens: null`
-    * `[ ]` Update all existing `AiStreamEvent` constructions to include `tier_output_cap_tokens: null` — must still pass
+  * `[✅]` netlify/functions/ai-stream-background/`ai-stream-background.interface.ts`
+    * `[✅]` ADD `import type { NodeUserConfig } from './adapters/ai-adapter.interface.ts'`
+    * `[✅]` ADD `user_config: NodeUserConfig` to `AiStreamEvent`
 
-  * `[ ]` netlify/functions/ai-stream-background/`ai-stream-background.ts`
-    * `[ ]` Replace `modelConfig: event.model_config` with `modelConfig: { ...event.model_config, tier_output_cap_tokens: event.tier_output_cap_tokens }` in the `getNodeAiAdapter` call
+  * `[✅]` netlify/functions/ai-stream-background/`ai-stream-background.interaction.spec`
+    * `[✅]` Caller: `handleAiStreamWorkload` reads `event.eventData`, validates via `isAiStreamEvent` (which enforces `user_config: NodeUserConfig`); if valid, calls `collectAiStreamPayload(deps, validated)`
+    * `[✅]` `collectAiStreamPayload` calls `deps.getApiKey(event.api_identifier)`, then calls `getNodeAiAdapter({ providerMap: deps.providerMap }, { apiIdentifier: event.api_identifier, apiKey, modelConfig: event.model_config, userConfig: event.user_config })`; iterates the adapter stream; returns assembled `AiStreamPayload`
+    * `[✅]` `NodeModelConfig` and `NodeUserConfig` are passed as separate fields to `getNodeAiAdapter` — no spread merge; the adapter layer keeps provider config and user config permanently distinct
+    * `[✅]` Failure modes: `user_config` missing from event → `isAiStreamEvent` returns false → `handleAiStreamWorkload` throws `ErrorDoNotRetry`; `user_config` not a valid `NodeUserConfig` record → `isNodeUserConfig` returns false → `isAiStreamEvent` returns false → `ErrorDoNotRetry`
+    * `[✅]` No ordering or temporal constraints beyond the existing stream iteration flow
 
-  * `[ ]` netlify/functions/ai-stream-background/`ai-stream-background.mock.ts`
-    * `[ ]` Add `tier_output_cap_tokens: null` to all `AiStreamEvent` constructions
+  * `[✅]` netlify/functions/ai-stream-background/`ai-stream-background.guard.test.ts`
+    * `[✅]` ADD `user_config: { tier_output_cap_tokens: null }` to the valid `AiStreamEvent` object in the "accepts valid event" test (~lines 11-26) — required for `isAiStreamEvent` to return `true`
+    * `[✅]` ADD `user_config: { tier_output_cap_tokens: null }` to the `AiStreamEvent` in the "rejects missing sig" test (~lines 73-84) — so the event is valid in all other respects and fails only on missing `sig`
+    * `[✅]` ADD `user_config: { tier_output_cap_tokens: null }` to the `AiStreamEvent` in the "rejects user_jwt" test (~lines 88-104) — same rationale
+    * `[✅]` ADD test: `isAiStreamEvent` accepts valid event with `user_config: { tier_output_cap_tokens: null }`
+    * `[✅]` ADD test: `isAiStreamEvent` accepts valid event with `user_config: { tier_output_cap_tokens: 32768 }`
+    * `[✅]` ADD test: `isAiStreamEvent` rejects event missing `user_config` field entirely (all other fields valid)
 
-  * `[ ]` netlify/functions/ai-stream-background/`ai-stream-background.integration.test.ts`
-    * `[ ]` Update all `AiStreamEvent` constructions to include `tier_output_cap_tokens: null` — must still pass
-    * `[ ]` Add test: event with `tier_output_cap_tokens: 32768` → after merge, `NodeModelConfig` passed to each adapter contains `tier_output_cap_tokens: 32768`
+  * `[✅]` netlify/functions/ai-stream-background/`ai-stream-background.guard.ts`
+    * `[✅]` ADD `isNodeUserConfig` to the imports from `./adapters/getNodeAiAdapter.guard.ts`
+    * `[✅]` ADD after the `chatApiValue.message.length === 0` check in `isAiStreamEvent`: `if (!('user_config' in v) || !isNodeUserConfig(v['user_config'])) { return false; }`
 
-* `[ ]` `[BE]` netlify/functions/ai-stream-background/adapters/openai **Apply binding output cap via resolveOutputCap**
+  * `[✅]` netlify/functions/ai-stream-background/`ai-stream-background.test.ts`
+    * `[✅]` ADD `user_config: { tier_output_cap_tokens: null }` to the `createMockAiStreamEvent` override object in the "dispatches anthropic prefix" test (lines 151-163)
+    * `[✅]` ADD `user_config: { tier_output_cap_tokens: null }` to the `createMockAiStreamEvent` override object in the "dispatches google prefix" test (lines 186-198)
+    * `[✅]` ADD test: `event.user_config.tier_output_cap_tokens: 32768` → `userConfig.tier_output_cap_tokens` passed to adapter factory params — spy the factory to capture `NodeAdapterConstructorParams` and assert `params.userConfig.tier_output_cap_tokens === 32768`
+    * `[✅]` ADD test: `event.user_config.tier_output_cap_tokens: null` → `userConfig.tier_output_cap_tokens` is null in adapter factory params (same spy pattern)
 
-  * `[ ]` `objective`
-    * `[ ]` The OpenAI adapter bifurcates cap selection: if `request.max_tokens_to_generate` is a number it is used directly (ignoring `hard_cap_output_tokens`, `provider_max_output_tokens`, and tier cap); otherwise the minimum of hard cap and provider max is used. Two paths, conditional default — both rules-violating. Fix: delete the bifurcation. Compute the binding cap once via `resolveOutputCap` with all four inputs. Pass the result to `applyCap` once, guarded by `cap !== undefined`.
+  * `[✅]` `construction`
+    * `[✅]` `createMockAiStreamEvent(overrides?: Partial<AiStreamEvent>): AiStreamEvent` is the sole factory for `AiStreamEvent` in tests
+    * `[✅]` After this node: `user_config` is handled with `const user_config: NodeUserConfig = overrides?.user_config === undefined ? defaultUserConfig : overrides.user_config`; `defaultUserConfig: NodeUserConfig = { tier_output_cap_tokens: null }` is declared as a module-level const
+    * `[✅]` No partially constructed instances: `user_config` always resolves to a full `NodeUserConfig` object with `tier_output_cap_tokens` set
+    * `[✅]` Invalid construction context: any inline `AiStreamEvent` literal without `user_config` will fail TypeScript compilation once `user_config` is required on the interface; raw inline literals in `guard.test.ts` and `integration.test.ts` must add `user_config: { tier_output_cap_tokens: null }` explicitly
 
-  * `[ ]` `role`
-    * `[ ]` Infrastructure adapter — calls OpenAI API; enforces the binding output cap at the provider boundary
+  * `[✅]` netlify/functions/ai-stream-background/`ai-stream-background.ts`
+    * `[✅]` In `collectAiStreamPayload` at the `getNodeAiAdapter` call (~lines 87-94): ADD `userConfig: event.user_config` to the params object alongside `apiIdentifier: event.api_identifier`, `apiKey`, and `modelConfig: event.model_config`
 
-  * `[ ]` `module`
-    * `[ ]` ai-stream-background, OpenAI adapter
+  * `[✅]` netlify/functions/ai-stream-background/`ai-stream-background.mock.ts`
+    * `[✅]` ADD `import type { NodeUserConfig } from './adapters/ai-adapter.interface.ts'`
+    * `[✅]` ADD `const defaultUserConfig: NodeUserConfig = { tier_output_cap_tokens: null }`
+    * `[✅]` In `createMockAiStreamEvent`: ADD `const user_config: NodeUserConfig = overrides?.user_config === undefined ? defaultUserConfig : overrides.user_config`; ADD `user_config` to the return object
 
-  * `[ ]` `deps`
-    * `[ ]` `resolveOutputCap.provides.ts` (prior node)
-    * `[ ]` `getNodeAiAdapter.ts` (prior node) — `NodeModelConfig.tier_output_cap_tokens` defined; `ai-stream-background.ts` populates it at the merge point before the adapter receives `modelConfig`
+  * `[✅]` netlify/functions/ai-stream-background/`ai-stream-background.integration.test.ts`
+    * `[✅]` All five `AiStreamEvent` literals (~lines 312-326, 353-368, 403-418, 447-460, 475-490): ADD `user_config: { tier_output_cap_tokens: null }` to each
+    * `[✅]` ADD integration test: event with `user_config: { tier_output_cap_tokens: 32768 }` and OpenAI prefix → `isAiStreamEvent` validates successfully and handler completes (POSTs `AiStreamPayload`) — proves `user_config` is accepted by the guard and threaded through the handler without error
 
-  * `[ ]` `context_slice`
-    * `[ ]` Replace the if/else cap-selection block with: `const cap = resolveOutputCap({ requestMax: request.max_tokens_to_generate, hardCap: modelConfig.hard_cap_output_tokens, providerMax: modelConfig.provider_max_output_tokens, tierCap: modelConfig.tier_output_cap_tokens })`
-    * `[ ]` Then: `if (cap !== undefined) { applyCap(cap) }` — one call site, one path; `applyCap`'s internal write logic is unchanged
-    * `[ ]` Import `resolveOutputCap` from `../resolveOutputCap.provides`
+  * `[✅]` `directionality`
+    * `[✅]` Node layer: infrastructure — Netlify execution boundary
+    * `[✅]` `ai-stream-background.interface.ts` imports `NodeUserConfig` from `./adapters/ai-adapter.interface.ts` — inward dependency on the adapter layer; no reverse
+    * `[✅]` `ai-stream-background.guard.ts` imports `isNodeUserConfig` from `./adapters/getNodeAiAdapter.guard.ts` — inward dependency on adapter guard; no reverse
+    * `[✅]` `ai-stream-background.ts` passes `userConfig: event.user_config` to `getNodeAiAdapter` — data flows from the event into the adapter; adapter layer is downstream
+    * `[✅]` No cycles: `ai-stream-background` does not import from `enqueueModelCall`, `prepareModelJob`, or `calculateAffordability`
 
-  * `[ ]` netlify/functions/ai-stream-background/adapters/openai/`openai.test.ts`
-    * `[ ]` Add test: `tier_output_cap_tokens: 32768`, `max_tokens_to_generate: 50000`, hard cap `131072` → outbound max field = 32768 (tier is binding)
-    * `[ ]` Add test: `tier_output_cap_tokens: null`, `max_tokens_to_generate: 50000`, hard cap `131072` → outbound max field = 50000 (request is binding when tier disabled)
-    * `[ ]` Add test: `tier_output_cap_tokens: 131072`, hard cap `64000`, no request value → outbound max field = 64000 (hard cap is binding)
-    * `[ ]` Add test: `tier_output_cap_tokens: null`, no request value, no hard cap, no provider max → no max field set on payload
-    * `[ ]` Update all existing `NodeModelConfig` constructions to include `tier_output_cap_tokens: null` — must still pass
+  * `[✅]` `requirements`
+    * `[✅]` `AiStreamEvent` has `user_config: NodeUserConfig` — observable: TypeScript compiler enforces at all construction sites; maps to interface test GREEN
+    * `[✅]` `isAiStreamEvent` returns `true` for `user_config: { tier_output_cap_tokens: null }` and `{ tier_output_cap_tokens: 32768 }`; returns `false` when `user_config` is missing — observable: guard tests GREEN
+    * `[✅]` `collectAiStreamPayload` passes `userConfig: event.user_config` to `getNodeAiAdapter` alongside `apiIdentifier`, `apiKey`, and `modelConfig` — observable: spy assertions in `ai-stream-background.test.ts` GREEN
+    * `[✅]` All pre-existing tests pass without modification except those lines explicitly listed above — observable: test runner GREEN for entire package
 
-  * `[ ]` netlify/functions/ai-stream-background/adapters/openai/`openai.ts`
-    * `[ ]` Replace the if/else cap-selection block with a single `resolveOutputCap` call followed by a single `applyCap` invocation guarded by `cap !== undefined`
-    * `[ ]` Import `resolveOutputCap` from `../resolveOutputCap.provides`
+* `[✅]` `[BE]` netlify/functions/ai-stream-background/adapters/openai **Apply binding output cap via resolveOutputCap**
 
-  * `[ ]` netlify/functions/ai-stream-background/adapters/openai/`openai.mock.ts`
-    * `[ ]` Add `tier_output_cap_tokens: null` to all `NodeModelConfig` constructions
+  * `[✅]` `objective`
+    * `[✅]` The OpenAI adapter bifurcates cap selection: if `request.max_tokens_to_generate` is a number it is used directly (ignoring `hard_cap_output_tokens`, `provider_max_output_tokens`, and tier cap); otherwise the minimum of hard cap and provider max is used. Two paths, conditional default — both rules-violating. Fix: delete the bifurcation. Compute the binding cap once via `resolveOutputCap` with all four inputs. Pass the result to `applyCap` once, guarded by `cap !== undefined`.
 
-  * `[ ]` netlify/functions/ai-stream-background/adapters/openai/`openai.integration.test.ts`
-    * `[ ]` Update all `NodeModelConfig` constructions to include `tier_output_cap_tokens: null` — must still pass
-    * `[ ]` Add integration test: bounded subsystem run with `tier_output_cap_tokens: 32768` and `max_tokens_to_generate: 50000` → outbound OpenAI payload max field = 32768
+  * `[✅]` `role`
+    * `[✅]` Infrastructure adapter — calls OpenAI API; enforces the binding output cap at the provider boundary
 
-* `[ ]` `[BE]` netlify/functions/ai-stream-background/adapters/anthropic **Apply binding output cap via resolveOutputCap**
+  * `[✅]` `module`
+    * `[✅]` ai-stream-background, OpenAI adapter
 
-  * `[ ]` `objective`
-    * `[ ]` The Anthropic adapter selects `maxTokensForPayload` via a nested ternary chain — a forbidden default/fallback pattern — and never considers the tier cap. Fix: delete the ternary chain. Compute `maxTokensForPayload` once via `resolveOutputCap` with all four inputs (`providerMax: undefined` for Anthropic). The result feeds the existing `prepared` return shape unchanged.
+  * `[✅]` `deps`
+    * `[✅]` `resolveOutputCap.provides.ts` (prior node)
+    * `[✅]` `getNodeAiAdapter.ts` (prior node) — `NodeAdapterConstructorParams.userConfig: NodeUserConfig` carries `tier_output_cap_tokens`; the adapter receives `userConfig` as a separate field alongside `modelConfig` — `NodeModelConfig` does not have `tier_output_cap_tokens`
 
-  * `[ ]` `role`
-    * `[ ]` Infrastructure adapter — calls Anthropic API; enforces the binding output cap at the provider boundary
+  * `[✅]` `context_slice`
+    * `[✅]` In `createOpenAINodeAdapter`: ADD `const userConfig: NodeUserConfig = params.userConfig` alongside the existing `const modelConfig: NodeModelConfig = params.modelConfig`
+    * `[✅]` ADD `userConfig: NodeUserConfig` as a fourth parameter to `prepareOpenAiStreamingRequest` so it can supply `tierCap`
+    * `[✅]` Replace the if/else cap-selection block with: `const cap: number | undefined = resolveOutputCap({ requestMax: request.max_tokens_to_generate, hardCap: modelConfig.hard_cap_output_tokens, providerMax: modelConfig.provider_max_output_tokens, tierCap: userConfig.tier_output_cap_tokens })`
+    * `[✅]` Then: `if (cap !== undefined) { applyCap(cap) }` — one call site, one path; `applyCap`'s internal write logic is unchanged
+    * `[✅]` Import `resolveOutputCap` from `../../resolveOutputCap/resolveOutputCap.provides.ts`
+    * `[✅]` Import `NodeUserConfig` from `../ai-adapter.interface.ts`
 
-  * `[ ]` `module`
-    * `[ ]` ai-stream-background, Anthropic adapter
+  * `[✅]` netlify/functions/ai-stream-background/adapters/openai/`openai.test.ts`
+    * `[✅]` Add test: `userConfig: { tier_output_cap_tokens: 32768 }`, `max_tokens_to_generate: 50000`, hard cap `131072` → outbound max field = 32768 (tier is binding); use `createMockNodeAdapterConstructorParams({ userConfig: { tier_output_cap_tokens: 32768 }, modelConfig: createMockNodeModelConfig({ hard_cap_output_tokens: 131072 }) })` and `createMockNodeChatApiRequest({ max_tokens_to_generate: 50000 })`
+    * `[✅]` Add test: `userConfig: { tier_output_cap_tokens: null }`, `max_tokens_to_generate: 50000`, hard cap `131072` → outbound max field = 50000 (request is binding when tier disabled)
+    * `[✅]` Add test: `userConfig: { tier_output_cap_tokens: 131072 }`, hard cap `64000`, no request value → outbound max field = 64000 (hard cap is binding)
+    * `[✅]` Add test: `userConfig: { tier_output_cap_tokens: null }`, no request value, no hard cap, no provider max → no max field set on payload (`max_completion_tokens` and `max_tokens` both absent from the call args)
 
-  * `[ ]` `deps`
-    * `[ ]` `resolveOutputCap.provides.ts` (prior node)
-    * `[ ]` `getNodeAiAdapter.ts` (prior node) — `NodeModelConfig.tier_output_cap_tokens` defined; `ai-stream-background.ts` populates it at the merge point
+  * `[✅]` netlify/functions/ai-stream-background/adapters/openai/`openai.ts`
+    * `[✅]` ADD `const userConfig: NodeUserConfig = params.userConfig` in `createOpenAINodeAdapter`
+    * `[✅]` ADD `userConfig: NodeUserConfig` as fourth parameter to `prepareOpenAiStreamingRequest`; update the call site in `sendMessageStream` to pass `userConfig`
+    * `[✅]` Replace the if/else cap-selection block with a single `resolveOutputCap` call (`tierCap: userConfig.tier_output_cap_tokens`) followed by a single `applyCap` invocation guarded by `cap !== undefined`
+    * `[✅]` Import `resolveOutputCap` from `../../resolveOutputCap/resolveOutputCap.provides.ts`
+    * `[✅]` Import `NodeUserConfig` from `../ai-adapter.interface.ts`
 
-  * `[ ]` `context_slice`
-    * `[ ]` Replace the ternary `const maxTokensForPayload` with: `const maxTokensForPayload: number | undefined = resolveOutputCap({ requestMax: typeof request.max_tokens_to_generate === 'number' ? request.max_tokens_to_generate : undefined, hardCap: typeof modelConfig.hard_cap_output_tokens === 'number' ? modelConfig.hard_cap_output_tokens : undefined, providerMax: undefined, tierCap: modelConfig.tier_output_cap_tokens })`
-    * `[ ]` The `typeof X === 'number' ? X : undefined` shape is boundary normalization, not a default — converts non-number values into the `undefined` slot the resolver requires
-    * `[ ]` Import `resolveOutputCap` from `../resolveOutputCap.provides`
+  * `[✅]` netlify/functions/ai-stream-background/adapters/openai/`openai.mock.ts`
+    * `[✅]` ADD `import type { NodeUserConfig } from '../ai-adapter.interface.ts'`
+    * `[✅]` ADD `export const mockNodeUserConfig: NodeUserConfig = { tier_output_cap_tokens: null }`
+    * `[✅]` ADD `userConfig: mockNodeUserConfig` to `mockNodeAdapterConstructorParams`
+    * `[✅]` In `createMockNodeAdapterConstructorParams`: ADD `userConfig` field handling (default `{ ...mockNodeUserConfig }`, override via `overrides.userConfig`); include `userConfig` in the return object
 
-  * `[ ]` netlify/functions/ai-stream-background/adapters/anthropic/`anthropic.test.ts`
-    * `[ ]` Add test: `tier_output_cap_tokens: 32768`, request value `50000`, hard cap `131072` → `maxTokensForPayload: 32768`
-    * `[ ]` Add test: `tier_output_cap_tokens: null`, request value `50000`, hard cap `131072` → `maxTokensForPayload: 50000`
-    * `[ ]` Add test: `tier_output_cap_tokens: 131072`, hard cap `64000`, no request value → `maxTokensForPayload: 64000`
-    * `[ ]` Add test: `tier_output_cap_tokens: null`, no request value, no hard cap → `maxTokensForPayload: undefined`
-    * `[ ]` Update all existing `NodeModelConfig` constructions to include `tier_output_cap_tokens: null` — must still pass
+  * `[✅]` netlify/functions/ai-stream-background/adapters/openai/`openai.integration.test.ts`
+    * `[✅]` ADD `userConfig: { tier_output_cap_tokens: null }` to the inline `NodeAdapterConstructorParams` at the "constructs an adapter" test (~lines 72-79)
+    * `[✅]` Add integration test: `NodeAdapterConstructorParams` with `userConfig: { tier_output_cap_tokens: 32768 }`, `modelConfig.hard_cap_output_tokens: 131072`, and `max_tokens_to_generate: 50000` in the request → `chatCompletionsCreate` called with `max_completion_tokens: 32768`
 
-  * `[ ]` netlify/functions/ai-stream-background/adapters/anthropic/`anthropic.ts`
-    * `[ ]` Replace the ternary `const maxTokensForPayload` with a single `resolveOutputCap` call as described in `context_slice`
-    * `[ ]` Import `resolveOutputCap` from `../resolveOutputCap.provides`
+  * `[✅]` `directionality`
+    * `[✅]` Node layer: infrastructure adapter — `netlify/functions/ai-stream-background/adapters/openai/`
+    * `[✅]` Deps are inward-facing: `resolveOutputCap.provides.ts` (cap resolver, prior node); `ai-adapter.interface.ts` (`NodeUserConfig` type); both are producers the adapter consumes
+    * `[✅]` `createOpenAINodeAdapter` is outward-facing: exported symbol consumed by `getNodeAiAdapter.ts` to construct the adapter instance — `getNodeAiAdapter` is the only consumer
+    * `[✅]` No cycles: openai adapter does not import from `getNodeAiAdapter.ts`, `ai-stream-background.ts`, or any dialectic-worker module
 
-  * `[ ]` netlify/functions/ai-stream-background/adapters/anthropic/`anthropic.mock.ts`
-    * `[ ]` Add `tier_output_cap_tokens: null` to all `NodeModelConfig` constructions
+  * `[✅]` `requirements`
+    * `[✅]` `resolveOutputCap` is called in `prepareOpenAiStreamingRequest` with `requestMax`, `hardCap`, `providerMax`, and `tierCap: userConfig.tier_output_cap_tokens` — observable: four new unit tests GREEN
+    * `[✅]` When `tier_output_cap_tokens: 32768` and `max_tokens_to_generate: 50000` and hard cap `131072`, `chatCompletionsCreate` receives `max_completion_tokens: 32768` (tier is binding minimum) — observable: tier-binding unit test GREEN
+    * `[✅]` When `tier_output_cap_tokens: null`, tier cap is excluded from candidates; binding cap is min of remaining inputs — observable: null-tier unit tests GREEN
+    * `[✅]` When no cap inputs are provided (all undefined/null), `resolveOutputCap` returns `undefined`; `applyCap` is not called; `max_completion_tokens` and `max_tokens` are absent from the payload — observable: no-cap unit test GREEN
+    * `[✅]` `prepareOpenAiStreamingRequest` accepts `userConfig: NodeUserConfig` as its fourth parameter; all pre-existing tests pass without modification because `createMockNodeAdapterConstructorParams()` supplies a default null tier cap — observable: test runner GREEN for entire openai package
 
-  * `[ ]` netlify/functions/ai-stream-background/adapters/anthropic/`anthropic.integration.test.ts`
-    * `[ ]` Update all `NodeModelConfig` constructions to include `tier_output_cap_tokens: null` — must still pass
-    * `[ ]` Add integration test: bounded subsystem run with `tier_output_cap_tokens: 32768` and request value `50000` → outbound Anthropic payload `max_tokens: 32768`
+* `[✅]` `[BE]` netlify/functions/ai-stream-background/adapters/anthropic **Apply binding output cap via resolveOutputCap**
+
+  * `[✅]` `objective`
+    * `[✅]` The Anthropic adapter selects `maxTokensForPayload` via a nested ternary chain — a forbidden default/fallback pattern — and never considers the tier cap. Fix: delete the ternary chain. Compute `maxTokensForPayload` once via `resolveOutputCap` with all four inputs (`providerMax: undefined` for Anthropic). The result feeds the existing `prepared` return shape unchanged.
+
+  * `[✅]` `role`
+    * `[✅]` Infrastructure adapter — calls Anthropic API; enforces the binding output cap at the provider boundary
+
+  * `[✅]` `module`
+    * `[✅]` ai-stream-background, Anthropic adapter
+
+  * `[✅]` `deps`
+    * `[✅]` `resolveOutputCap.provides.ts` (prior node)
+    * `[✅]` `getNodeAiAdapter.ts` (prior node) — `NodeAdapterConstructorParams.userConfig: NodeUserConfig` carries `tier_output_cap_tokens`; the adapter receives `userConfig` as a separate field alongside `modelConfig` — `NodeModelConfig` does not have `tier_output_cap_tokens`
+
+  * `[✅]` `context_slice`
+    * `[✅]` In `createAnthropicNodeAdapter`: ADD `const userConfig: NodeUserConfig = params.userConfig` alongside the existing `const modelConfig: NodeModelConfig = params.modelConfig`
+    * `[✅]` ADD `userConfig: NodeUserConfig` as a fourth parameter to `prepareAnthropicRequest`; update the call site in `sendMessageStream` to pass `userConfig`
+    * `[✅]` Replace the nested ternary `const maxTokensForPayload` with: `const maxTokensForPayload: number | undefined = resolveOutputCap({ requestMax: request.max_tokens_to_generate, hardCap: modelConfig.hard_cap_output_tokens, providerMax: undefined, tierCap: userConfig.tier_output_cap_tokens })` — `request.max_tokens_to_generate` and `modelConfig.hard_cap_output_tokens` are already `number | undefined`; no ternary wrappers needed
+    * `[✅]` Import `resolveOutputCap` from `../../resolveOutputCap/resolveOutputCap.provides.ts`
+    * `[✅]` Import `NodeUserConfig` from `../ai-adapter.interface.ts`
+
+  * `[✅]` netlify/functions/ai-stream-background/adapters/anthropic/`anthropic.test.ts`
+    * `[✅]` Add test: `userConfig: { tier_output_cap_tokens: 32768 }`, request `max_tokens_to_generate: 50000`, hard cap `131072` → `messagesStream` called with `max_tokens: 32768`; use `createMockAnthropicNodeAdapterConstructorParams({ userConfig: { tier_output_cap_tokens: 32768 }, modelConfig: createMockAnthropicNodeModelConfig({ hard_cap_output_tokens: 131072 }) })` and `createMockAnthropicNodeChatApiRequest({ max_tokens_to_generate: 50000 })`
+    * `[✅]` Add test: `userConfig: { tier_output_cap_tokens: null }`, request `max_tokens_to_generate: 50000`, hard cap `131072` → `messagesStream` called with `max_tokens: 50000`
+    * `[✅]` Add test: `userConfig: { tier_output_cap_tokens: 131072 }`, hard cap `64000`, no request value → `messagesStream` called with `max_tokens: 64000`
+    * `[✅]` Add test: `userConfig: { tier_output_cap_tokens: null }`, no request value, no hard cap → throws `'AnthropicAdapter: No max tokens for payload'` (existing guard on `maxTokensForPayload === undefined` unchanged)
+
+  * `[✅]` netlify/functions/ai-stream-background/adapters/anthropic/`anthropic.ts`
+    * `[✅]` ADD `const userConfig: NodeUserConfig = params.userConfig` in `createAnthropicNodeAdapter`
+    * `[✅]` ADD `userConfig: NodeUserConfig` as fourth parameter to `prepareAnthropicRequest`; update the call site in `sendMessageStream` to pass `userConfig`
+    * `[✅]` Replace the nested ternary `const maxTokensForPayload` with a single `resolveOutputCap` call (`tierCap: userConfig.tier_output_cap_tokens`, `providerMax: undefined`)
+    * `[✅]` Import `resolveOutputCap` from `../../resolveOutputCap/resolveOutputCap.provides.ts`
+    * `[✅]` Import `NodeUserConfig` from `../ai-adapter.interface.ts`
+
+  * `[✅]` netlify/functions/ai-stream-background/adapters/anthropic/`anthropic.mock.ts`
+    * `[✅]` ADD `import type { NodeUserConfig } from '../ai-adapter.interface.ts'`
+    * `[✅]` ADD `export const mockAnthropicNodeUserConfig: NodeUserConfig = { tier_output_cap_tokens: null }`
+    * `[✅]` ADD `userConfig: mockAnthropicNodeUserConfig` to `mockAnthropicNodeAdapterConstructorParams`
+    * `[✅]` In `createMockAnthropicNodeAdapterConstructorParams`: ADD `userConfig` field handling (default `{ ...mockAnthropicNodeUserConfig }`, override via `overrides.userConfig`); include `userConfig` in the return object
+
+  * `[✅]` netlify/functions/ai-stream-background/adapters/anthropic/`anthropic.integration.test.ts`
+    * `[✅]` ADD `userConfig: { tier_output_cap_tokens: null }` to the inline `NodeAdapterConstructorParams` at the "constructs an adapter" test (~lines 84-92)
+    * `[✅]` Add integration test: `NodeAdapterConstructorParams` with `userConfig: { tier_output_cap_tokens: 32768 }`, `modelConfig.hard_cap_output_tokens: 131072`, and `max_tokens_to_generate: 50000` in the request → `messagesStream` called with `max_tokens: 32768`
+
+  * `[✅]` `directionality`
+    * `[✅]` Node layer: infrastructure adapter — `netlify/functions/ai-stream-background/adapters/anthropic/`
+    * `[✅]` Deps are inward-facing: `resolveOutputCap.provides.ts` (cap resolver, prior node); `ai-adapter.interface.ts` (`NodeUserConfig` type); both are producers the adapter consumes
+    * `[✅]` `createAnthropicNodeAdapter` is outward-facing: exported symbol consumed by `getNodeAiAdapter.ts` to construct the adapter instance — `getNodeAiAdapter` is the only consumer
+    * `[✅]` No cycles: anthropic adapter does not import from `getNodeAiAdapter.ts`, `ai-stream-background.ts`, or any dialectic-worker module
+
+  * `[✅]` `requirements`
+    * `[✅]` `resolveOutputCap` is called in `prepareAnthropicRequest` with `requestMax`, `hardCap`, `providerMax: undefined`, and `tierCap: userConfig.tier_output_cap_tokens` — observable: four new unit tests GREEN
+    * `[✅]` When `tier_output_cap_tokens: 32768` and `max_tokens_to_generate: 50000` and hard cap `131072`, `messagesStream` receives `max_tokens: 32768` (tier is binding minimum) — observable: tier-binding unit test GREEN
+    * `[✅]` When `tier_output_cap_tokens: null`, tier cap is excluded from candidates; binding cap is min of remaining inputs — observable: null-tier unit tests GREEN
+    * `[✅]` When no cap inputs are provided (all undefined/null), `resolveOutputCap` returns `undefined`; existing guard throws `'AnthropicAdapter: No max tokens for payload'` — observable: no-cap unit test GREEN
+    * `[✅]` `prepareAnthropicRequest` accepts `userConfig: NodeUserConfig` as its fourth parameter; all pre-existing tests pass without modification because `createMockAnthropicNodeAdapterConstructorParams()` supplies a default null tier cap — observable: test runner GREEN for entire anthropic package
 
 * `[ ]` `[BE]` netlify/functions/ai-stream-background/adapters/google **Apply binding output cap via resolveOutputCap**
 
-  * `[ ]` `objective`
-    * `[ ]` The Google adapter selects the cap via three nested ternaries (`clientCap`, `cap`, `generationConfig`) — multiple forbidden default/fallback patterns — and never considers the tier cap. Fix: delete all three ternaries. Compute the binding cap once via `resolveOutputCap`. Construct `generationConfig` once from the result.
+  * `[✅]` `objective`
+    * `[✅]` The Google adapter selects the cap via three nested ternaries (`clientCap`, `cap`, `generationConfig`) — multiple forbidden default/fallback patterns — and never considers the tier cap. Fix: delete all three ternaries. Compute the binding cap once via `resolveOutputCap`. Construct `generationConfig` once from the result.
 
-  * `[ ]` `role`
-    * `[ ]` Infrastructure adapter — calls Google Gemini API; enforces the binding output cap at the provider boundary
+  * `[✅]` `role`
+    * `[✅]` Infrastructure adapter — calls Google Gemini API; enforces the binding output cap at the provider boundary
 
-  * `[ ]` `module`
-    * `[ ]` ai-stream-background, Google adapter
+  * `[✅]` `module`
+    * `[✅]` ai-stream-background, Google adapter
 
-  * `[ ]` `deps`
-    * `[ ]` `resolveOutputCap.provides.ts` (prior node)
-    * `[ ]` `getNodeAiAdapter.ts` (prior node) — `NodeModelConfig.tier_output_cap_tokens` defined; `ai-stream-background.ts` populates it at the merge point
+  * `[✅]` `deps`
+    * `[✅]` `resolveOutputCap.provides.ts` (prior node)
+    * `[✅]` `getNodeAiAdapter.ts` (prior node) — `NodeAdapterConstructorParams.userConfig: NodeUserConfig` carries `tier_output_cap_tokens`; the adapter receives `userConfig` as a separate field alongside `modelConfig` — `NodeModelConfig` does not have `tier_output_cap_tokens`
 
-  * `[ ]` `context_slice`
-    * `[ ]` Replace the `clientCap`/`modelHardCap`/`cap`/`generationConfig` ternary chain with: `const cap: number | undefined = resolveOutputCap({ requestMax: typeof request.max_tokens_to_generate === 'number' ? request.max_tokens_to_generate : undefined, hardCap: typeof modelConfig.hard_cap_output_tokens === 'number' ? modelConfig.hard_cap_output_tokens : undefined, providerMax: undefined, tierCap: modelConfig.tier_output_cap_tokens })`
-    * `[ ]` Then: `const generationConfig: { maxOutputTokens: number } | undefined = cap === undefined ? undefined : { maxOutputTokens: cap }`
-    * `[ ]` The `cap === undefined ? undefined : { maxOutputTokens: cap }` is structural construction of the optional Google config object — the cap is not defaulted; the object is constructed once or omitted once based on whether the resolver returned a value
-    * `[ ]` Import `resolveOutputCap` from `../resolveOutputCap.provides`
+  * `[✅]` `context_slice`
+    * `[✅]` In `createGoogleNodeAdapter`: ADD `const userConfig: NodeUserConfig = params.userConfig` alongside the existing `const modelConfig: NodeModelConfig = params.modelConfig`
+    * `[✅]` ADD `userConfig: NodeUserConfig` as a fourth parameter to `prepareGoogleChatAndParts`; update the call site in `sendMessageStream` to pass `userConfig`
+    * `[✅]` Replace the `clientCap`/`modelHardCap`/`cap`/`generationConfig` ternary chain with: `const cap: number | undefined = resolveOutputCap({ requestMax: request.max_tokens_to_generate, hardCap: modelConfig.hard_cap_output_tokens, providerMax: undefined, tierCap: userConfig.tier_output_cap_tokens })` — `request.max_tokens_to_generate` and `modelConfig.hard_cap_output_tokens` are already `number | undefined`; no ternary wrappers needed
+    * `[✅]` Then: `const generationConfig: { maxOutputTokens: number } | undefined = cap === undefined ? undefined : { maxOutputTokens: cap }` — structural construction of the optional Google config object; the cap is not defaulted, the object is constructed once or omitted once based on whether the resolver returned a value
+    * `[✅]` Import `resolveOutputCap` from `../../resolveOutputCap/resolveOutputCap.provides.ts`
+    * `[✅]` Import `NodeUserConfig` from `../ai-adapter.interface.ts`
 
-  * `[ ]` netlify/functions/ai-stream-background/adapters/google/`google.test.ts`
-    * `[ ]` Add test: `tier_output_cap_tokens: 32768`, request value `50000`, hard cap `131072` → `generationConfig.maxOutputTokens: 32768`
-    * `[ ]` Add test: `tier_output_cap_tokens: null`, request value `50000`, hard cap `131072` → `generationConfig.maxOutputTokens: 50000`
-    * `[ ]` Add test: `tier_output_cap_tokens: 131072`, hard cap `64000`, no request value → `generationConfig.maxOutputTokens: 64000`
-    * `[ ]` Add test: `tier_output_cap_tokens: null`, no request value, no hard cap → `generationConfig: undefined`
-    * `[ ]` Update all existing `NodeModelConfig` constructions to include `tier_output_cap_tokens: null` — must still pass
+  * `[✅]` netlify/functions/ai-stream-background/adapters/google/`google.test.ts`
+    * `[✅]` Add test: `userConfig: { tier_output_cap_tokens: 32768 }`, request `max_tokens_to_generate: 50000`, hard cap `131072` → `startChat` called with `generationConfig: { maxOutputTokens: 32768 }`; use `createMockGoogleNodeAdapterConstructorParams({ userConfig: { tier_output_cap_tokens: 32768 }, modelConfig: createMockGoogleNodeModelConfig({ hard_cap_output_tokens: 131072 }) })` and `createMockGoogleNodeChatApiRequest({ max_tokens_to_generate: 50000 })`
+    * `[✅]` Add test: `userConfig: { tier_output_cap_tokens: null }`, request `max_tokens_to_generate: 50000`, hard cap `131072` → `startChat` called with `generationConfig: { maxOutputTokens: 50000 }`
+    * `[✅]` Add test: `userConfig: { tier_output_cap_tokens: 131072 }`, hard cap `64000`, no request value → `startChat` called with `generationConfig: { maxOutputTokens: 64000 }`
+    * `[✅]` Add test: `userConfig: { tier_output_cap_tokens: null }`, no request value, no hard cap → `startChat` called with `generationConfig: undefined`
 
-  * `[ ]` netlify/functions/ai-stream-background/adapters/google/`google.ts`
-    * `[ ]` Replace the ternary chain with the `resolveOutputCap` call and single `generationConfig` construction described in `context_slice`
-    * `[ ]` Import `resolveOutputCap` from `../resolveOutputCap.provides`
+  * `[✅]` netlify/functions/ai-stream-background/adapters/google/`google.ts`
+    * `[✅]` ADD `const userConfig: NodeUserConfig = params.userConfig` in `createGoogleNodeAdapter`
+    * `[✅]` ADD `userConfig: NodeUserConfig` as fourth parameter to `prepareGoogleChatAndParts`; update the call site in `sendMessageStream` to pass `userConfig`
+    * `[✅]` Replace the `clientCap`/`modelHardCap`/`cap`/`generationConfig` ternary chain with a single `resolveOutputCap` call (`tierCap: userConfig.tier_output_cap_tokens`, `providerMax: undefined`) and single `generationConfig` construction
+    * `[✅]` Import `resolveOutputCap` from `../../resolveOutputCap/resolveOutputCap.provides.ts`
+    * `[✅]` Import `NodeUserConfig` from `../ai-adapter.interface.ts`
 
-  * `[ ]` netlify/functions/ai-stream-background/adapters/google/`google.mock.ts`
-    * `[ ]` Add `tier_output_cap_tokens: null` to all `NodeModelConfig` constructions
+  * `[✅]` netlify/functions/ai-stream-background/adapters/google/`google.mock.ts`
+    * `[✅]` ADD `import type { NodeUserConfig } from '../ai-adapter.interface.ts'`
+    * `[✅]` ADD `export const mockGoogleNodeUserConfig: NodeUserConfig = { tier_output_cap_tokens: null }`
+    * `[✅]` ADD `userConfig: mockGoogleNodeUserConfig` to `mockGoogleNodeAdapterConstructorParams`
+    * `[✅]` In `createMockGoogleNodeAdapterConstructorParams`: ADD `userConfig` field handling (default `{ ...mockGoogleNodeUserConfig }`, override via `overrides.userConfig`); include `userConfig` in the return object
 
-  * `[ ]` netlify/functions/ai-stream-background/adapters/google/`google.integration.test.ts`
-    * `[ ]` Update all `NodeModelConfig` constructions to include `tier_output_cap_tokens: null` — must still pass
-    * `[ ]` Add integration test: bounded subsystem run with `tier_output_cap_tokens: 32768` and request value `50000` → outbound Google payload `generationConfig.maxOutputTokens: 32768`
+  * `[✅]` netlify/functions/ai-stream-background/adapters/google/`google.integration.test.ts`
+    * `[✅]` ADD `userConfig: { tier_output_cap_tokens: null }` to the inline `NodeAdapterConstructorParams` at the "constructs an adapter" test (~lines 76-84)
+    * `[✅]` Add integration test: `NodeAdapterConstructorParams` with `userConfig: { tier_output_cap_tokens: 32768 }`, `modelConfig.hard_cap_output_tokens: 131072`, and `max_tokens_to_generate: 50000` in the request → `startChat` called with `generationConfig: { maxOutputTokens: 32768 }`
 
-  * `[ ]` **Commit** `feat(output-cap-tiers): thread tier output cap from user subscription through affordability calc and into provider adapters`
-    * `[ ]` `calculateAffordability`: `CalculateAffordabilityParams` gains `tierOutputCapTokens`; `getMaxOutputTokens()` enforces tier cap; null = ultra (no limit from tier)
-    * `[ ]` `createJobContext`: consumer update — `CalculateAffordabilityParams` constructions include `tierOutputCapTokens: null`
-    * `[ ]` `enqueueModelCall`: `EnqueueModelCallParams` and `AiStreamEventData` gain `tier_output_cap_tokens`; guard updated; source threads field into event payload
-    * `[ ]` `processSimpleJob`: consumer update — both params types' new required fields added to all construction sites
-    * `[ ]` `prepareModelJob`: fetches `tier_definitions.output_cap_tokens` from DB; passes to `calculateAffordability` and `enqueueModelCall`
-    * `[ ]` `getNodeAiAdapter`: `NodeModelConfig` gains `tier_output_cap_tokens: number | null`; `isNodeModelConfig` guard updated; all construction sites updated
-    * `[ ]` `ai-stream-background`: `AiStreamEvent` gains `tier_output_cap_tokens`; guard updated; merge into `NodeModelConfig` at execution boundary
-    * `[ ]` `resolveOutputCap`: new pure cap resolver — collects positive-number inputs, returns minimum; no ternaries, no fallbacks
-    * `[ ]` OpenAI, Anthropic, Google adapters: replace ternary/bifurcation cap logic with single `resolveOutputCap` call; tier cap applied unconditionally at provider boundary
+  * `[✅]` `directionality`
+    * `[✅]` Node layer: infrastructure adapter — `netlify/functions/ai-stream-background/adapters/google/`
+    * `[✅]` Deps are inward-facing: `resolveOutputCap.provides.ts` (cap resolver, prior node); `ai-adapter.interface.ts` (`NodeUserConfig` type); both are producers the adapter consumes
+    * `[✅]` `createGoogleNodeAdapter` is outward-facing: exported symbol consumed by `getNodeAiAdapter.ts` to construct the adapter instance — `getNodeAiAdapter` is the only consumer
+    * `[✅]` No cycles: google adapter does not import from `getNodeAiAdapter.ts`, `ai-stream-background.ts`, or any dialectic-worker module
+
+  * `[✅]` `requirements`
+    * `[✅]` `resolveOutputCap` is called in `prepareGoogleChatAndParts` with `requestMax`, `hardCap`, `providerMax: undefined`, and `tierCap: userConfig.tier_output_cap_tokens` — observable: four new unit tests GREEN
+    * `[✅]` When `tier_output_cap_tokens: 32768` and `max_tokens_to_generate: 50000` and hard cap `131072`, `startChat` receives `generationConfig: { maxOutputTokens: 32768 }` (tier is binding minimum) — observable: tier-binding unit test GREEN
+    * `[✅]` When `tier_output_cap_tokens: null`, tier cap is excluded from candidates; binding cap is min of remaining inputs — observable: null-tier unit tests GREEN
+    * `[✅]` When no cap inputs are provided (all undefined/null), `resolveOutputCap` returns `undefined`; `generationConfig` is `undefined`; `startChat` receives no `generationConfig` constraint — observable: no-cap unit test GREEN
+    * `[✅]` `prepareGoogleChatAndParts` accepts `userConfig: NodeUserConfig` as its fourth parameter; all pre-existing tests pass without modification because `createMockGoogleNodeAdapterConstructorParams()` supplies a default null tier cap — observable: test runner GREEN for entire google package
+
+  * `[✅]` **Commit** `feat(output-cap-tiers): thread tier output cap from user subscription through affordability calc and into provider adapters`
+    * `[✅]` `calculateAffordability`: `CalculateAffordabilityParams` gains `tierOutputCapTokens`; `getMaxOutputTokens()` enforces tier cap; null = ultra (no limit from tier)
+    * `[✅]` `createJobContext`: consumer update — `CalculateAffordabilityParams` constructions include `tierOutputCapTokens: null`
+    * `[✅]` `enqueueModelCall`: `EnqueueModelCallParams` and `AiStreamEventData` gain `user_config: UserConfig`; guard updated; source threads field into event payload
+    * `[✅]` `processSimpleJob`: consumer update — both params types' new required fields added to all construction sites
+    * `[✅]` `prepareModelJob`: fetches `tier_definitions.output_cap_tokens` from DB; passes to `calculateAffordability` and `enqueueModelCall`
+    * `[✅]` `getNodeAiAdapter`: `NodeUserConfig` introduced as a separate type with `tier_output_cap_tokens: number | null`; `NodeAdapterConstructorParams` gains `userConfig: NodeUserConfig`; `isNodeUserConfig` guard added; `NodeModelConfig` does NOT gain `tier_output_cap_tokens`; all construction sites updated
+    * `[✅]` `ai-stream-background`: `AiStreamEvent` gains `user_config: NodeUserConfig`; `isAiStreamEvent` guard validates it via `isNodeUserConfig`; `collectAiStreamPayload` passes `userConfig: event.user_config` to `getNodeAiAdapter` — no merge into `NodeModelConfig`
+    * `[✅]` `resolveOutputCap`: new pure cap resolver — collects positive-number inputs, returns minimum; no ternaries, no fallbacks
+    * `[✅]` OpenAI, Anthropic, Google adapters: replace ternary/bifurcation cap logic with single `resolveOutputCap` call sourcing `tierCap` from `params.userConfig.tier_output_cap_tokens`; tier cap applied unconditionally at provider boundary
 
 * `[ ]` `[BE]` supabase/functions/_shared/adapters/stripe/handlers/stripe.subscriptionUpdated **Derive p_set_ratchet from subscription transition instead of hardcoded false**
 
   * `[ ]` `objective`
-    * `[ ]` `stripe.subscriptionUpdated.ts` hardcodes `p_set_ratchet: false` at the `update_subscription_with_tier` RPC call. Variables must depend on real inputs; hardcoded literals at parameterized call sites defeat the parameter. Fix: derive `p_set_ratchet` from the Stripe event — `subscription.status IN ('active', 'trialing') AND resolvedPlanTierLevel > 0`. Active or trialing transitions onto a paid plan set the ratchet; `past_due`, free plan transitions, and other movements do not.
+    * `[ ]` `stripe.subscriptionUpdated.ts` hardcodes `p_set_ratchet: false` at the `update_subscription_with_tier` RPC call. Variables must depend on real inputs; hardcoded literals at parameterized call sites defeat the parameter. Fix: derive `p_set_ratchet` from the event — `const setRatchet: boolean = subscription.status === 'active'`. Active = paying = set the ratchet. No other transition sets it from this handler.
+    * `[ ]` The test file also contains out-of-spec statuses `past_due` and `trialing` that do not exist in this system. All must be removed and replaced with valid scenarios.
 
   * `[ ]` `role`
     * `[ ]` Adapter handler — Stripe-specific webhook processing
@@ -1464,32 +1737,44 @@
 
   * `[ ]` `deps`
     * `[ ]` `update_subscription_with_tier` RPC (already deployed)
-    * `[ ]` `subscription_plans` table — plan lookup already exists in handler but selects only `id`; must also select `tier_level`
 
   * `[ ]` `context_slice`
-    * `[ ]` Non-canceled path: change `.select('id')` to `.select('id, tier_level')` at line 53; extract `const resolvedPlanTierLevel: number = planData?.tier_level ?? 0`; if plan not found set `resolvedPlanTierLevel = 0`
-    * `[ ]` Canceled path: set `resolvedPlanTierLevel = 0` (free tier — no fetch needed)
-    * `[ ]` Above the RPC call: `const setRatchet: boolean = ['active', 'trialing'].includes(subscription.status) && resolvedPlanTierLevel > 0`
-    * `[ ]` Pass `p_set_ratchet: setRatchet` at the RPC call site
+    * `[ ]` Above the RPC call at line 99: `const setRatchet: boolean = subscription.status === 'active'`
+    * `[ ]` Replace `p_set_ratchet: false` with `p_set_ratchet: setRatchet` at the RPC call site (line 99)
 
   * `[ ]` supabase/functions/_shared/adapters/stripe/handlers/`stripe.subscriptionUpdated.test.ts`
-    * `[ ]` Add `tier_level?: number` to the `subscriptionPlans` array element type in `setup()` — the mock currently types it as `{ id: string; stripe_price_id?: string, item_id_internal?: string }[]`
-    * `[ ]` Add test: `status: 'active'`, plan with `tier_level: 10` → RPC called with `p_set_ratchet: true`
-    * `[ ]` Add test: `status: 'trialing'`, plan with `tier_level: 10` → RPC called with `p_set_ratchet: true`
-    * `[ ]` Add test: `status: 'past_due'`, plan with `tier_level: 10` → RPC called with `p_set_ratchet: false`
-    * `[ ]` Add test: `status: 'active'`, plan with `tier_level: 0` → RPC called with `p_set_ratchet: false`
-    * `[ ]` Existing tests do not supply `tier_level` in mock plans → `resolvedPlanTierLevel` defaults to 0 → all existing `p_set_ratchet: false` assertions remain correct without change
+    * `[ ]` First test (line 116): replace out-of-spec `newStatus = "past_due"` with `newStatus = "canceled"`; `p_set_ratchet: false` assertion remains correct
+    * `[ ]` Replace all 6 out-of-spec `{ status: "trialing" }` previous_attributes (lines 207, 315, 372, 426, 682, 832) with `{ status: "active" }` — trialing does not exist in this system
+    * `[ ]` Replace out-of-spec `{ status: "past_due" }` previous_attributes at line 883 with `{ status: "canceled" }`
+    * `[ ]` "Plan not linked" test (~line 242): update `p_set_ratchet: false` → `p_set_ratchet: true` — status is `"active"`
+    * `[ ]` "Plan change" test (~line 517): update `p_set_ratchet: false` → `p_set_ratchet: true` — status is `"active"`
+    * `[ ]` "cancel_at_period_end true" test (~line 581): update `p_set_ratchet: false` → `p_set_ratchet: true` — status is `'active'`
+    * `[ ]` "subscription status changes to active" test (~line 690): update `p_set_ratchet: false` → `p_set_ratchet: true`; fix test step title to read `p_set_ratchet true`
+    * `[ ]` Remove the entire out-of-spec `past_due` test at lines 752-798 — `past_due` does not exist in this system
+    * `[ ]` Add test: `status: 'active'` → RPC called with `p_set_ratchet: true` — proves the derivation
+    * `[ ]` Add test: `status: 'canceled'` → RPC called with `p_set_ratchet: false` — proves the derivation
 
   * `[ ]` supabase/functions/_shared/adapters/stripe/handlers/`stripe.subscriptionUpdated.ts`
-    * `[ ]` Non-canceled plan lookup: change `.select('id')` to `.select('id, tier_level')` at the `stripe_price_id` lookup; extract `resolvedPlanTierLevel` from `planData?.tier_level ?? 0`; set `resolvedPlanTierLevel = 0` when plan is not found
-    * `[ ]` Canceled path: declare `resolvedPlanTierLevel = 0` (constant — cancellation is always free tier)
-    * `[ ]` Above the RPC call: `const setRatchet: boolean = ['active', 'trialing'].includes(subscription.status) && resolvedPlanTierLevel > 0`
-    * `[ ]` Replace `p_set_ratchet: false` with `p_set_ratchet: setRatchet` at the RPC call
+    * `[ ]` Above the RPC call at line 99: `const setRatchet: boolean = subscription.status === 'active'`
+    * `[ ]` Replace `p_set_ratchet: false` with `p_set_ratchet: setRatchet` at line 99
+
+  * `[ ]` `directionality`
+    * `[ ]` Node layer: adapter handler — `supabase/functions/_shared/adapters/stripe/handlers/`
+    * `[ ]` Deps are inward-facing: `update_subscription_with_tier` RPC (deployed DB function, invoked via `context.supabaseClient`)
+    * `[ ]` `handleCustomerSubscriptionUpdated` is outward-facing: exported function consumed by the Stripe webhook dispatcher
+    * `[ ]` No cycles: handler does not import from the dispatcher or any consumer
+
+  * `[ ]` `requirements`
+    * `[ ]` `p_set_ratchet` is derived from `subscription.status === 'active'` — observable: new test GREEN
+    * `[ ]` `status: 'active'` → `p_set_ratchet: true`; active = paying = set the ratchet — observable: new test GREEN
+    * `[ ]` `status: 'canceled'` → `p_set_ratchet: false`; cancellation is not a payment event — observable: new test GREEN
+    * `[ ]` All existing tests with `status: 'active'` update their `p_set_ratchet` assertions from `false` to `true` — observable: test runner GREEN
+    * `[ ]` All out-of-spec statuses (`past_due`, `trialing`) removed from test file — no impossible-state assertions remain — observable: test runner GREEN for entire subscriptionUpdated test file
 
 * `[ ]` `[BE]` supabase/functions/_shared/adapters/stripe/handlers/stripe.subscriptionDeleted **Derive p_set_ratchet from subscription transition instead of hardcoded false**
 
   * `[ ]` `objective`
-    * `[ ]` `stripe.subscriptionDeleted.ts` hardcodes `p_set_ratchet: false` at the RPC call. Same code-hygiene rule: variables must depend on real inputs. The derivation evaluates to `false` for cancellations (cancellation is never a payment event) but expressing it as a derivation makes the call site self-documenting and robust to future flow changes.
+    * `[ ]` `stripe.subscriptionDeleted.ts` hardcodes `p_set_ratchet: false` at the RPC call. Variables must depend on real inputs. The derivation is `const setRatchet: boolean = false` — deletion events are never payment events — but expressing it as a named variable makes the call site self-documenting and removes the unexplained literal.
 
   * `[ ]` `role`
     * `[ ]` Adapter handler — Stripe-specific webhook processing
@@ -1501,24 +1786,35 @@
     * `[ ]` `update_subscription_with_tier` RPC (already deployed)
 
   * `[ ]` `context_slice`
-    * `[ ]` Above the RPC call: `const setRatchet: boolean = false` — deletion events are never payment events; the named variable makes the intent visible at the call site
-    * `[ ]` Replace `p_set_ratchet: false` with `p_set_ratchet: setRatchet` at the RPC call
+    * `[ ]` Above the RPC call at line 51: `const setRatchet: boolean = false` — deletion is never a payment event
+    * `[ ]` Replace `p_set_ratchet: false` with `p_set_ratchet: setRatchet` at line 51
 
   * `[ ]` supabase/functions/_shared/adapters/stripe/handlers/`stripe.subscriptionDeleted.test.ts`
     * `[ ]` Existing tests assert `p_set_ratchet: false`; `setRatchet = false` so those assertions remain correct — no changes to existing tests
-    * `[ ]` Add test: RPC is called with `p_set_ratchet: false` on a standard deletion event — confirms the derivation produces the correct value
+    * `[ ]` Add test: RPC is called with `p_set_ratchet: false` on a standard deletion event — confirms the named derivation produces the correct value
 
   * `[ ]` supabase/functions/_shared/adapters/stripe/handlers/`stripe.subscriptionDeleted.ts`
-    * `[ ]` Above the RPC call: declare `const setRatchet: boolean = false`
+    * `[ ]` Above the RPC call at line 51: declare `const setRatchet: boolean = false`
     * `[ ]` Replace `p_set_ratchet: false` with `p_set_ratchet: setRatchet` at line 51
 
   * `[ ]` supabase/functions/_shared/adapters/stripe/handlers/`stripe.subscriptionDeleted.integration.test.ts`
-    * `[ ]` Add test: paid user with active subscription deleted → derived `p_set_ratchet: false` → after RPC, `has_ever_paid: true` preserved, `tier_level: 10` (basic via ratchet), `status: 'canceled'`
-    * `[ ]` Add test: user who never paid with subscription deleted → derived `p_set_ratchet: false` → `has_ever_paid: false` preserved, `tier_level: 0` (free)
+    * `[ ]` Integration tests already exist covering both scenarios: full lifecycle (checkout → invoice → deletion, `has_ever_paid: true` → `tier_level: 10`) and never-paid deletion (`tier_level: 0`); both assert `p_set_ratchet: false` at the RPC call — no new integration tests needed
+
+  * `[ ]` `directionality`
+    * `[ ]` Node layer: adapter handler — `supabase/functions/_shared/adapters/stripe/handlers/`
+    * `[ ]` Deps are inward-facing: `update_subscription_with_tier` RPC (deployed DB function, invoked via `context.supabaseClient`)
+    * `[ ]` `handleCustomerSubscriptionDeleted` is outward-facing: exported function consumed by the Stripe webhook dispatcher
+    * `[ ]` No cycles: handler does not import from the dispatcher or any consumer
+
+  * `[ ]` `requirements`
+    * `[ ]` `p_set_ratchet` is derived from `const setRatchet: boolean = false` — deletion is never a payment event — observable: new unit test GREEN
+    * `[ ]` RPC receives `p_set_ratchet: false` on every deletion event — observable: new unit test GREEN
+    * `[ ]` All pre-existing unit tests pass without modification — `setRatchet = false` matches existing `p_set_ratchet: false` assertions — observable: test runner GREEN for entire subscriptionDeleted test file
+    * `[ ]` Integration tests pass without modification — both lifecycle scenarios assert `p_set_ratchet: false` and remain correct — observable: integration test runner GREEN
 
   * `[ ]` **Commit** `fix(p-set-ratchet): derive p_set_ratchet from subscription event semantics instead of hardcoded false`
-    * `[ ]` `stripe.subscriptionUpdated.ts`: `p_set_ratchet` derived from `subscription.status` and `tier_level`; active/trialing on paid plan sets ratchet
-    * `[ ]` `stripe.subscriptionDeleted.ts`: `p_set_ratchet` derived from event semantics (cancellation = false); self-documenting, no unexplained literal
+    * `[ ]` `stripe.subscriptionUpdated.ts`: `p_set_ratchet` derived from `subscription.status === 'active'`; active = paying = set the ratchet; out-of-spec statuses removed from tests
+    * `[ ]` `stripe.subscriptionDeleted.ts`: `p_set_ratchet` derived as named constant `false`; deletion is never a payment event; self-documenting, no unexplained literal
 
 * `[ ]` `[CONFIG]` supabase/scripts/update-seed **Re-run after tier-infrastructure migration to keep seed.sql in sync**
 
@@ -1544,6 +1840,41 @@
     * `[ ]` Verify `ai_providers` rows include `min_plan_tier_level` populated by cost-band backfill
 
   * `[ ]` **Commit** `chore(seed): regenerate seed.sql with tier-infrastructure columns and backfill values`
+
+* `[ ]` `[DB]` supabase/migrations **Fix current_plan_tier — remove non-existent 'trialing' status from active subscription check**
+
+  * `[ ]` `objective`
+    * `[ ]` Line 87 of `20260501204427_tier_infrastructure.sql` reads `AND us.status IN ('active', 'trialing')`. The status `trialing` does not exist in this system — no handler ever writes `status = 'trialing'`. The only valid active-subscription status is `active`. The `trialing` branch is dead code that misrepresents the system's status vocabulary and was never reachable.
+    * `[ ]` **Full-chain audit result (covers the deferred audit item below):** The complete `update_subscription_with_tier → refresh_user_tier → current_plan_tier` RPC chain has been audited against the stated business rules:
+      * `[ ]` never-paid → 0: `current_plan_tier` returns 0 immediately when `has_ever_paid IS NOT TRUE`. ✓ Correct.
+      * `[ ]` has-ever-paid + active → plan tier_level: after this migration, `current_plan_tier` queries `WHERE us.status = 'active'` and JOINs to `subscription_plans.tier_level`. ✓ Correct after fix.
+      * `[ ]` has-ever-paid + not active → 10 (basic floor): `current_plan_tier` returns 10 when no active subscription row is found and `has_ever_paid = true`. ✓ Correct.
+      * `[ ]` `refresh_user_tier`: sets ratchet when instructed, calls `current_plan_tier`, caches result in `user_subscriptions.tier_level`, returns -1 on missing row with WARNING. ✓ Correct.
+      * `[ ]` `update_subscription_with_tier`: UPDATE sets all fields including nullable parameters unconditionally. Both callers (`subscriptionUpdated`, `subscriptionDeleted`) always supply non-null `p_plan_id` (resolved from Stripe price or free plan), so `plan_id` is never silently overwritten with NULL in practice. ✓ Correct for all defined callers.
+      * `[ ]` No additional defects found in `update_subscription_with_tier` or `refresh_user_tier`. No additional corrective migration required.
+    * `[ ]` Functional goal: create a corrective migration that replaces `current_plan_tier` with the identical function body except `AND us.status = 'active'` in place of `AND us.status IN ('active', 'trialing')`. No other changes to any function.
+    * `[ ]` Non-functional constraint: no behavioral change for any currently reachable code path — `trialing` was never a valid status so no existing row matched it.
+
+  * `[ ]` `role`
+    * `[ ]` Infrastructure — corrective database migration
+    * `[ ]` Must NOT change any behavior other than removing the dead `trialing` branch
+
+  * `[ ]` `module`
+    * `[ ]` Database, cross-cutting — `current_plan_tier` is consumed by `refresh_user_tier`, `complete_checkout_payment` (idempotency path), and `complete_invoice_payment` (idempotency path)
+
+  * `[ ]` `deps`
+    * `[ ]` `20260501204427_tier_infrastructure.sql` — defines the original `current_plan_tier`; this migration replaces it with a corrected version
+    * `[ ]` No other dependencies; this migration only re-declares one function
+
+  * `[ ]` supabase/migrations/`<timestamp>_fix_current_plan_tier_remove_trialing.sql`
+    * `[ ]` `CREATE OR REPLACE FUNCTION public.current_plan_tier(p_user_id UUID)` with `LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public`
+    * `[ ]` Function body is identical to `20260501204427_tier_infrastructure.sql` lines 64–96 except: the active-subscription query changes from `AND us.status IN ('active', 'trialing')` to `AND us.status = 'active'`
+    * `[ ]` Include migration comment: `-- Fix: removes 'trialing' from the active status check. 'trialing' is not a valid status in this system and was never written by any handler. The only valid active-subscription status is 'active'.`
+    * `[ ]` `GRANT EXECUTE ON FUNCTION public.current_plan_tier(UUID) TO service_role, authenticated;` — re-affirm grants; REPLACE preserves existing grants in PostgreSQL but explicit re-grant ensures correctness after migration replay
+
+  * `[ ]` **Commit** `fix(db): remove non-existent trialing status from current_plan_tier active subscription query`
+    * `[ ]` `current_plan_tier`: `AND us.status IN ('active', 'trialing')` → `AND us.status = 'active'`; `trialing` is not a valid status in this system and was never written by any handler
+    * `[ ]` Full-chain audit complete: `update_subscription_with_tier → refresh_user_tier → current_plan_tier` correctly implements all three business rules (never-paid → 0, has-ever-paid + active → plan tier_level, has-ever-paid + not active → 10); no additional corrective migrations required
 
 * Remove recurring token allocation — **RESOLUTION: disable the cron job, leave code as inert dead code.** The `allocate-periodic-tokens` function and its `token_wallets` column are not called by anything other than the cron schedule. Disabling the cron job kills the feature immediately with zero code changes and is trivially reversible if business conditions change. No nodes needed.
 

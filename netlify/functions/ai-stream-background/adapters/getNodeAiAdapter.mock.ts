@@ -6,6 +6,7 @@ import type {
   NodeChatApiRequest,
   NodeModelConfig,
   NodeProviderMap,
+  NodeUserConfig,
 } from './ai-adapter.interface.ts';
 import type {
   GetNodeAiAdapterDeps,
@@ -22,6 +23,9 @@ export const defaultNodeModelConfig: NodeModelConfig = {
   api_identifier: 'openai-gpt-4o',
   input_token_cost_rate: 0.001,
   output_token_cost_rate: 0.002,
+};
+
+export const defaultNodeUserConfig: NodeUserConfig = {
   tier_output_cap_tokens: null,
 };
 
@@ -103,9 +107,14 @@ export function createMockGetNodeAiAdapterParams(
     overrides?.modelConfig === undefined
       ? { ...defaultNodeModelConfig }
       : overrides.modelConfig;
+  const userConfig: NodeUserConfig =
+    overrides?.userConfig === undefined
+      ? { ...defaultNodeUserConfig }
+      : overrides.userConfig;
   return {
     apiIdentifier,
     apiKey,
     modelConfig,
+    userConfig,
   };
 }

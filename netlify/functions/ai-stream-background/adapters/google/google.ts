@@ -7,7 +7,9 @@ import type {
   NodeChatMessage,
   NodeModelConfig,
   NodeOutboundDocument,
+  NodeUserConfig,
 } from '../ai-adapter.interface.ts';
+import { resolveOutputCap } from '../../resolveOutputCap/resolveOutputCap.provides.ts';
 
 type GoogleHistoryEntry = {
   role: string;
@@ -32,6 +34,7 @@ function prepareGoogleChatAndParts(
   request: NodeChatApiRequest,
   apiIdentifier: string,
   modelConfig: NodeModelConfig,
+  userConfig: NodeUserConfig,
 ): {
   modelApiName: string;
   history: GoogleHistoryEntry[];
@@ -62,18 +65,14 @@ function prepareGoogleChatAndParts(
     throw new Error('Cannot send request to Google Gemini: message history format invalid.');
   }
 
-  const clientCap: number | undefined =
-    typeof request.max_tokens_to_generate === 'number'
-      ? request.max_tokens_to_generate
-      : undefined;
-  const modelHardCap: number | undefined =
-    typeof modelConfig.hard_cap_output_tokens === 'number'
-      ? modelConfig.hard_cap_output_tokens
-      : undefined;
-  const cap: number | undefined =
-    typeof clientCap === 'number' ? clientCap : modelHardCap;
+  const cap: number | undefined = resolveOutputCap({
+    requestMax: request.max_tokens_to_generate,
+    hardCap: modelConfig.hard_cap_output_tokens,
+    providerMax: undefined,
+    tierCap: userConfig.tier_output_cap_tokens,
+  });
   const generationConfig: { maxOutputTokens: number } | undefined =
-    typeof cap === 'number' ? { maxOutputTokens: cap } : undefined;
+    cap === undefined ? undefined : { maxOutputTokens: cap };
 
   let finalParts: Array<{ text: string }> = [...lastEntry.parts];
   if (request.resourceDocuments !== undefined && request.resourceDocuments.length > 0) {
@@ -114,6 +113,7 @@ export function createGoogleNodeAdapter(
   params: NodeAdapterConstructorParams,
 ): AiAdapter {
   const modelConfig: NodeModelConfig = params.modelConfig;
+  const userConfig: NodeUserConfig = params.userConfig;
   const apiKey: string = params.apiKey;
   const client: GoogleGenerativeAI = new GoogleGenerativeAI(apiKey);
 
@@ -127,7 +127,7 @@ export function createGoogleNodeAdapter(
         history: GoogleHistoryEntry[];
         finalParts: Array<{ text: string }>;
         generationConfig: { maxOutputTokens: number } | undefined;
-      } = prepareGoogleChatAndParts(request, apiIdentifier, modelConfig);
+      } = prepareGoogleChatAndParts(request, apiIdentifier, modelConfig, userConfig);
 
       const model = client.getGenerativeModel({ model: prepared.modelApiName });
       const chat = model.startChat({

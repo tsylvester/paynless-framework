@@ -7,6 +7,7 @@ import type {
   NodeOutboundDocument,
   NodeProviderMap,
   NodeTokenUsage,
+  NodeUserConfig,
 } from './ai-adapter.interface.ts';
 import type {
   GetNodeAiAdapterDeps,
@@ -163,6 +164,13 @@ export function isNodeModelConfig(v: unknown): v is NodeModelConfig {
       return false;
     }
   }
+  return true;
+}
+
+export function isNodeUserConfig(v: unknown): v is NodeUserConfig {
+  if (!isPlainRecord(v)) {
+    return false;
+  }
   if (!('tier_output_cap_tokens' in v)) {
     return false;
   }
@@ -265,6 +273,10 @@ export function isGetNodeAiAdapterParams(
     return false;
   }
   if (typeof apiKeyValue !== 'string' || apiKeyValue.length === 0) {
+    return false;
+  }
+  const userConfigValue: unknown = v['userConfig'];
+  if (!isNodeUserConfig(userConfigValue)) {
     return false;
   }
   return isNodeModelConfig(modelConfigValue);

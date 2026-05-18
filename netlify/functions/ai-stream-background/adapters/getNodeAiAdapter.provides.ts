@@ -14,11 +14,13 @@ export type {
   NodeOutboundDocument,
   NodeProviderMap,
   NodeTokenUsage,
+  NodeUserConfig,
 } from './ai-adapter.interface.ts';
 export {
   isAiAdapter,
   isNodeAdapterStreamChunk,
   isNodeTokenUsage,
+  isNodeUserConfig,
 } from './getNodeAiAdapter.guard.ts';
 export { runAdapterConformanceTests } from './adapter-conformance.test-utils.ts';
 export {

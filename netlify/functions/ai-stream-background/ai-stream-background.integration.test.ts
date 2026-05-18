@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AiStreamEvent } from './ai-stream-background.interface.ts';
-import { isAiStreamPayload } from './ai-stream-background.guard.ts';
+import { isAiStreamEvent, isAiStreamPayload } from './ai-stream-background.guard.ts';
 import type { OpenAIChatCompletionChunk } from './adapters/openai/openai.interface.ts';
 import type {
   AnthropicContentBlockDeltaEvent,
@@ -323,6 +323,7 @@ describe('ai-stream integration', () => {
         promptId: 'prompt-1',
       },
       sig: 'hmac-openai-integration',
+      user_config: { tier_output_cap_tokens: null },
     };
     const mockEvent: unknown = createMockWorkloadEvent(eventPayload);
 
@@ -365,6 +366,7 @@ describe('ai-stream integration', () => {
         promptId: 'prompt-1',
       },
       sig: 'hmac-anthropic-integration',
+      user_config: { tier_output_cap_tokens: null },
     };
     const mockEvent: unknown = createMockWorkloadEvent(eventPayload);
 
@@ -415,6 +417,7 @@ describe('ai-stream integration', () => {
         promptId: 'prompt-1',
       },
       sig: 'hmac-google-integration',
+      user_config: { tier_output_cap_tokens: null },
     };
     const mockEvent: unknown = createMockWorkloadEvent(eventPayload);
 
@@ -458,6 +461,7 @@ describe('ai-stream integration', () => {
         promptId: 'prompt-1',
       },
       sig: 'hmac-step-error',
+      user_config: { tier_output_cap_tokens: null },
     };
     const mockEvent: unknown = createMockWorkloadEvent(eventPayload);
 
@@ -487,11 +491,50 @@ describe('ai-stream integration', () => {
         promptId: 'prompt-1',
       },
       sig: 'hmac-post-failure',
+      user_config: { tier_output_cap_tokens: null },
     };
     const mockEvent: unknown = createMockWorkloadEvent(eventPayload);
 
     await expect(getHandler()(mockEvent)).rejects.toThrow();
     expect(openaiSdk.chatCompletionsCreate).toHaveBeenCalledTimes(1);
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('full chain — OpenAI with user_config tier_output_cap_tokens 32768: guard accepts event and handler POSTs AiStreamPayload', async () => {
+    openaiSdk.chatCompletionsCreate.mockResolvedValue(openaiSdkStream());
+
+    const eventPayload: AiStreamEvent = {
+      job_id: 'integration-openai-tier-cap',
+      api_identifier: 'openai-gpt-4o',
+      model_config: {
+        api_identifier: 'openai-gpt-4o',
+        input_token_cost_rate: 0.001,
+        output_token_cost_rate: 0.002,
+      },
+      chat_api_request: {
+        message: 'integration test openai tier cap',
+        providerId: 'prov-1',
+        promptId: 'prompt-1',
+      },
+      sig: 'hmac-openai-tier-cap',
+      user_config: { tier_output_cap_tokens: 32_768 },
+    };
+    expect(isAiStreamEvent(eventPayload)).toBe(true);
+
+    const mockEvent: unknown = createMockWorkloadEvent(eventPayload);
+
+    await getHandler()(mockEvent);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const posted = extractFetchPostArgs(fetchMock);
+    expect(posted.url).toBe(TEST_SAVE_RESPONSE_URL);
+    expect(isAiStreamPayload(posted.body)).toBe(true);
+    if (!isAiStreamPayload(posted.body)) {
+      throw new Error('POST body must satisfy AiStreamPayload');
+    }
+    expect(posted.body.sig).toBe('hmac-openai-tier-cap');
+    expect(posted.body.job_id).toBe('integration-openai-tier-cap');
+    expect(posted.body.assembled_content).toBe('integration-openai');
+    expect(posted.body.finish_reason).toBe('stop');
   });
 });

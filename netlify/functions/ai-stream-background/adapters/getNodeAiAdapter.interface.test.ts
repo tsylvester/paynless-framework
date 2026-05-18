@@ -28,7 +28,7 @@ describe('getNodeAiAdapter.interface contract', () => {
     expect(typeof deps.providerMap['openai-']).toBe('function');
   });
 
-  it('accepts GetNodeAiAdapterParams with non-empty apiIdentifier, non-empty apiKey, and modelConfig', () => {
+  it('accepts GetNodeAiAdapterParams with non-empty apiIdentifier, non-empty apiKey, modelConfig, and userConfig', () => {
     const params: GetNodeAiAdapterParams = {
       apiIdentifier: 'openai-gpt-4o',
       apiKey: 'sk-test',
@@ -36,13 +36,14 @@ describe('getNodeAiAdapter.interface contract', () => {
         api_identifier: 'openai-gpt-4o',
         input_token_cost_rate: 0.001,
         output_token_cost_rate: 0.002,
-        tier_output_cap_tokens: null,
       },
+      userConfig: { tier_output_cap_tokens: null },
     };
     expect(params.apiIdentifier.length >= 1).toBe(true);
     expect(params.apiKey.length >= 1).toBe(true);
     expect(typeof params.modelConfig).toBe('object');
     expect(typeof params.modelConfig.api_identifier).toBe('string');
     expect(params.modelConfig.api_identifier.length >= 1).toBe(true);
+    expect(params.userConfig.tier_output_cap_tokens).toBe(null);
   });
 });

@@ -3,6 +3,7 @@ import type {
   NodeModelConfig,
   NodeProviderMap,
   NodeTokenUsage,
+  NodeUserConfig,
 } from './adapters/ai-adapter.interface.ts';
 
 export interface AiStreamEvent {
@@ -11,6 +12,7 @@ export interface AiStreamEvent {
   model_config: NodeModelConfig;
   chat_api_request: NodeChatApiRequest;
   sig: string;
+  user_config: NodeUserConfig;
 }
 
 export interface AiStreamPayload {

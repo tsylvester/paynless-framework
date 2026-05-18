@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { NodeUserConfig } from './adapters/ai-adapter.interface.ts';
 import type {
   AiStreamDeps,
   AiStreamEvent,
@@ -21,6 +22,7 @@ describe('ai-stream.interface contract', () => {
         promptId: 'prompt-1',
       },
       sig: 'hmac-sig-value',
+      user_config: { tier_output_cap_tokens: null },
     };
     expect(typeof event.job_id).toBe('string');
     expect(typeof event.api_identifier).toBe('string');
@@ -76,5 +78,30 @@ describe('ai-stream.interface contract', () => {
     expect(typeof deps.providerMap).toBe('object');
     expect(typeof deps.getApiKey).toBe('function');
     expect(typeof deps.getApiKey('openai-gpt-4o')).toBe('string');
+  });
+
+  it('AiStreamEvent contract includes user_config: NodeUserConfig', () => {
+    const withNull: AiStreamEvent = {
+      job_id: 'j',
+      api_identifier: 'a',
+      model_config: {
+        api_identifier: 'a',
+        input_token_cost_rate: null,
+        output_token_cost_rate: null,
+      },
+      chat_api_request: {
+        message: 'hi',
+        providerId: 'p',
+        promptId: 'q',
+      },
+      sig: 's',
+      user_config: { tier_output_cap_tokens: null },
+    };
+    const withNumber: AiStreamEvent = {
+      ...withNull,
+      user_config: { tier_output_cap_tokens: 32_768 },
+    };
+    expect(withNull.user_config.tier_output_cap_tokens).toBe(null);
+    expect(withNumber.user_config.tier_output_cap_tokens).toBe(32_768);
   });
 });

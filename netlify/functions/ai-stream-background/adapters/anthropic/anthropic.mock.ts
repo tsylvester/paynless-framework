@@ -4,6 +4,7 @@ import type {
   NodeAdapterStreamChunk,
   NodeChatApiRequest,
   NodeModelConfig,
+  NodeUserConfig,
 } from '../ai-adapter.interface.ts';
 
 export type AnthropicSdkStreamEvent = {
@@ -29,9 +30,14 @@ export const mockAnthropicNodeModelConfig: NodeModelConfig = {
   output_token_cost_rate: 0.002,
 };
 
+export const mockAnthropicNodeUserConfig: NodeUserConfig = {
+  tier_output_cap_tokens: null,
+};
+
 export const mockAnthropicNodeAdapterConstructorParams: NodeAdapterConstructorParams = {
   modelConfig: { ...mockAnthropicNodeModelConfig },
   apiKey: 'sk-anthropic-mock',
+  userConfig: { ...mockAnthropicNodeUserConfig },
 };
 
 export const mockAnthropicNodeChatApiRequest: NodeChatApiRequest = {
@@ -115,26 +121,45 @@ export function createMockAnthropicNodeModelConfig(
   return { ...mockAnthropicNodeModelConfig, ...overrides };
 }
 
+export function createMockAnthropicNodeUserConfig(
+  overrides?: Partial<NodeUserConfig>,
+): NodeUserConfig {
+  if (overrides === undefined) {
+    return { ...mockAnthropicNodeUserConfig };
+  }
+  const tier_output_cap_tokens: number | null =
+    overrides.tier_output_cap_tokens === undefined
+      ? mockAnthropicNodeUserConfig.tier_output_cap_tokens
+      : overrides.tier_output_cap_tokens;
+  return { tier_output_cap_tokens };
+}
+
 export function createMockAnthropicNodeAdapterConstructorParams(
   overrides?: Partial<NodeAdapterConstructorParams>,
 ): NodeAdapterConstructorParams {
   if (overrides === undefined) {
     return {
-      modelConfig: { ...mockAnthropicNodeAdapterConstructorParams.modelConfig },
+      modelConfig: createMockAnthropicNodeModelConfig(),
       apiKey: mockAnthropicNodeAdapterConstructorParams.apiKey,
+      userConfig: createMockAnthropicNodeUserConfig(),
     };
   }
   const modelConfig: NodeModelConfig =
     overrides.modelConfig === undefined
-      ? { ...mockAnthropicNodeModelConfig }
-      : { ...mockAnthropicNodeModelConfig, ...overrides.modelConfig };
+      ? createMockAnthropicNodeModelConfig()
+      : createMockAnthropicNodeModelConfig(overrides.modelConfig);
   const apiKey: string =
     overrides.apiKey === undefined
       ? mockAnthropicNodeAdapterConstructorParams.apiKey
       : overrides.apiKey;
+  const userConfig: NodeUserConfig =
+    overrides.userConfig === undefined
+      ? createMockAnthropicNodeUserConfig()
+      : createMockAnthropicNodeUserConfig(overrides.userConfig);
   return {
     modelConfig,
     apiKey,
+    userConfig,
   };
 }
 
