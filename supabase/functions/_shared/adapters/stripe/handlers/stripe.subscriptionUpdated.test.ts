@@ -108,16 +108,16 @@ Deno.test('[stripe.subscriptionUpdated.ts] Tests - handleCustomerSubscriptionUpd
     };
   };
 
-  await t.step("Successful update - status change and plan linked", async () => {
+  await t.step("Successful update - status change to canceled and free plan linked", async () => {
     const stripeSubscriptionId = "sub_status_change_plan_linked";
     const stripeCustomerId = "cus_status_change_plan_linked";
     const stripePriceId = "price_for_plan_link";
-    const internalPlanId = "plan_linked_123";
-    const newStatus = "past_due";
+    const freePlanInternalId = "plan_linked_123";
+    const newStatus = "canceled";
     const eventId = "evt_successful_update_1";
 
     setup({
-      subscriptionPlans: [{ id: internalPlanId, stripe_price_id: stripePriceId }],
+      subscriptionPlans: [{ id: freePlanInternalId, item_id_internal: FREE_TIER_ITEM_ID_INTERNAL, stripe_price_id: undefined }],
     });
 
     const event = createMockCustomerSubscriptionUpdatedEvent(
@@ -149,17 +149,17 @@ Deno.test('[stripe.subscriptionUpdated.ts] Tests - handleCustomerSubscriptionUpd
     assertEquals(result.transactionId, eventId); // Handler uses event.id as transactionId in this context
 
     // Verify logger calls
-    assertSpyCalls(infoSpy, 2); // Initial processing + successful processing
+    assertSpyCalls(infoSpy, 3); // Initial processing + free plan switch + successful processing
     assert(String(infoSpy.calls[0].args[0]).includes(`Processing subscription ${stripeSubscriptionId}`), "Initial log wrong");
-    assert(String(infoSpy.calls[1].args[0]).includes(`Successfully processed event for subscription ${stripeSubscriptionId}`), "Success log wrong");
-
+    assert(String(infoSpy.calls[1].args[0]).includes(`Subscription ${stripeSubscriptionId} canceled, setting plan to default free plan ID ${freePlanInternalId}`), "Free plan switch log missing or incorrect");
+    assert(String(infoSpy.calls[2].args[0]).includes(`Successfully processed event for subscription ${stripeSubscriptionId}`), "Success log wrong");
 
     // Verify Supabase calls
     const subPlansBuilder = mockSupabaseSetup.client.getLatestBuilder('subscription_plans');
     assert(subPlansBuilder, "subscription_plans query builder not used.");
     assertSpyCalls(subPlansBuilder.methodSpies.select, 1);
     assertSpyCalls(subPlansBuilder.methodSpies.eq, 1);
-    assertEquals(subPlansBuilder.methodSpies.eq.calls[0].args, ['stripe_price_id', stripePriceId]);
+    assertEquals(subPlansBuilder.methodSpies.eq.calls[0].args, ['item_id_internal', FREE_TIER_ITEM_ID_INTERNAL]);
     assertSpyCalls(subPlansBuilder.methodSpies.single, 1);
 
     assertSpyCalls(mockSupabaseSetup.spies.rpcSpy, 1);
@@ -167,7 +167,7 @@ Deno.test('[stripe.subscriptionUpdated.ts] Tests - handleCustomerSubscriptionUpd
     assertEquals(mockSupabaseSetup.spies.rpcSpy.calls[0].args[1], {
       p_stripe_subscription_id: stripeSubscriptionId,
       p_status: newStatus,
-      p_plan_id: internalPlanId,
+      p_plan_id: freePlanInternalId,
       p_period_start: PLAN_PERIOD_START_ISO,
       p_period_end: PLAN_PERIOD_END_ISO,
       p_cancel_at_period_end: false,
@@ -204,7 +204,7 @@ Deno.test('[stripe.subscriptionUpdated.ts] Tests - handleCustomerSubscriptionUpd
           url: `/v1/subscription_items?subscription=${stripeSubscriptionId}`,
         },
       },
-      { status: "trialing" }, // Previous attributes
+      { status: "active" }, // Previous attributes
       { id: eventId }
     );
 
@@ -239,7 +239,7 @@ Deno.test('[stripe.subscriptionUpdated.ts] Tests - handleCustomerSubscriptionUpd
       p_period_end: PLAN_PERIOD_END_ISO,
       p_cancel_at_period_end: false,
       p_stripe_customer_id: stripeCustomerId,
-      p_set_ratchet: false,
+      p_set_ratchet: true,
     });
   });
 
@@ -312,7 +312,7 @@ Deno.test('[stripe.subscriptionUpdated.ts] Tests - handleCustomerSubscriptionUpd
           url: `/v1/subscription_items?subscription=${stripeSubscriptionId}`,
         },
       },
-      { status: "trialing" },
+      { status: "active" },
       { id: eventId }
     );
 
@@ -369,7 +369,7 @@ Deno.test('[stripe.subscriptionUpdated.ts] Tests - handleCustomerSubscriptionUpd
           url: `/v1/subscription_items?subscription=${stripeSubscriptionId}`,
         },
       },
-      { status: "trialing" },
+      { status: "active" },
       { id: eventId }
     );
 
@@ -423,7 +423,7 @@ Deno.test('[stripe.subscriptionUpdated.ts] Tests - handleCustomerSubscriptionUpd
           url: `/v1/subscription_items?subscription=${stripeSubscriptionId}`,
         },
       },
-      { status: "trialing" },
+      { status: "active" },
       { id: eventId }
     );
 
@@ -514,7 +514,7 @@ Deno.test('[stripe.subscriptionUpdated.ts] Tests - handleCustomerSubscriptionUpd
       p_period_end: PLAN_PERIOD_END_ISO,
       p_cancel_at_period_end: false,
       p_stripe_customer_id: stripeCustomerId,
-      p_set_ratchet: false,
+      p_set_ratchet: true,
     });
   });
 
@@ -578,7 +578,7 @@ Deno.test('[stripe.subscriptionUpdated.ts] Tests - handleCustomerSubscriptionUpd
       p_period_end: PLAN_PERIOD_END_ISO,
       p_cancel_at_period_end: true,
       p_stripe_customer_id: stripeCustomerId,
-      p_set_ratchet: false,
+      p_set_ratchet: true,
     });
   });
 
@@ -651,7 +651,7 @@ Deno.test('[stripe.subscriptionUpdated.ts] Tests - handleCustomerSubscriptionUpd
     });
   });
 
-  await t.step("subscription status changes to active → RPC update_subscription_with_tier with p_set_ratchet false", async () => {
+  await t.step("subscription status changes to active → RPC update_subscription_with_tier with p_set_ratchet true", async () => {
     const stripeSubscriptionId = "sub_rpc_contract_active";
     const stripeCustomerId = "cus_rpc_contract_active";
     const stripePriceId = "price_rpc_contract_active";
@@ -679,7 +679,7 @@ Deno.test('[stripe.subscriptionUpdated.ts] Tests - handleCustomerSubscriptionUpd
           url: `/v1/subscription_items?subscription=${stripeSubscriptionId}`,
         },
       },
-      { status: "trialing" },
+      { status: "active" },
       { id: eventId }
     );
 
@@ -695,7 +695,7 @@ Deno.test('[stripe.subscriptionUpdated.ts] Tests - handleCustomerSubscriptionUpd
       p_period_end: PLAN_PERIOD_END_ISO,
       p_cancel_at_period_end: false,
       p_stripe_customer_id: stripeCustomerId,
-      p_set_ratchet: false,
+      p_set_ratchet: true,
     });
   });
 
@@ -749,12 +749,12 @@ Deno.test('[stripe.subscriptionUpdated.ts] Tests - handleCustomerSubscriptionUpd
     });
   });
 
-  await t.step("subscription status changes to past_due → RPC update_subscription_with_tier with p_set_ratchet false", async () => {
-    const stripeSubscriptionId = "sub_rpc_contract_past_due";
-    const stripeCustomerId = "cus_rpc_contract_past_due";
-    const stripePriceId = "price_rpc_contract_past_due";
-    const internalPlanId = "plan_rpc_contract_past_due";
-    const eventId = "evt_rpc_contract_past_due";
+  await t.step("p_set_ratchet derivation: status active → RPC p_set_ratchet true", async () => {
+    const stripeSubscriptionId = "sub_p_set_ratchet_active";
+    const stripeCustomerId = "cus_p_set_ratchet_active";
+    const stripePriceId = "price_p_set_ratchet_active";
+    const internalPlanId = "plan_p_set_ratchet_active";
+    const eventId = "evt_p_set_ratchet_active";
 
     setup({
       subscriptionPlans: [{ id: internalPlanId, stripe_price_id: stripePriceId }],
@@ -764,7 +764,7 @@ Deno.test('[stripe.subscriptionUpdated.ts] Tests - handleCustomerSubscriptionUpd
       {
         id: stripeSubscriptionId,
         customer: stripeCustomerId,
-        status: "past_due",
+        status: "active",
         items: {
           object: 'list',
           data: [createMockSubscriptionItem({
@@ -785,16 +785,48 @@ Deno.test('[stripe.subscriptionUpdated.ts] Tests - handleCustomerSubscriptionUpd
 
     assertSpyCalls(mockSupabaseSetup.spies.rpcSpy, 1);
     assertEquals(mockSupabaseSetup.spies.rpcSpy.calls[0].args[0], "update_subscription_with_tier");
-    assertEquals(mockSupabaseSetup.spies.rpcSpy.calls[0].args[1], {
-      p_stripe_subscription_id: stripeSubscriptionId,
-      p_status: "past_due",
-      p_plan_id: internalPlanId,
-      p_period_start: PLAN_PERIOD_START_ISO,
-      p_period_end: PLAN_PERIOD_END_ISO,
-      p_cancel_at_period_end: false,
-      p_stripe_customer_id: stripeCustomerId,
-      p_set_ratchet: false,
+    assertEquals(mockSupabaseSetup.spies.rpcSpy.calls[0].args[1].p_set_ratchet, true);
+  });
+
+  await t.step("p_set_ratchet derivation: status canceled → RPC p_set_ratchet false", async () => {
+    const stripeSubscriptionId = "sub_p_set_ratchet_canceled";
+    const stripeCustomerId = "cus_p_set_ratchet_canceled";
+    const oldStripePriceId = "price_p_set_ratchet_canceled_old";
+    const freePlanInternalId = "free_plan_p_set_ratchet_canceled";
+    const eventId = "evt_p_set_ratchet_canceled";
+
+    setup({
+      subscriptionPlans: [
+        { id: freePlanInternalId, item_id_internal: FREE_TIER_ITEM_ID_INTERNAL, stripe_price_id: undefined },
+      ],
     });
+
+    const event = createMockCustomerSubscriptionUpdatedEvent(
+      {
+        id: stripeSubscriptionId,
+        customer: stripeCustomerId,
+        status: "canceled",
+        items: {
+          object: 'list',
+          data: [createMockSubscriptionItem({
+            subscription: stripeSubscriptionId,
+            price: createMockPrice({ id: oldStripePriceId }),
+            current_period_start: PLAN_PERIOD_START_SEC,
+            current_period_end: PLAN_PERIOD_END_SEC,
+          })],
+          has_more: false,
+          url: `/v1/subscription_items?subscription=${stripeSubscriptionId}`,
+        },
+      },
+      { status: "active" },
+      { id: eventId }
+    );
+
+    await handleCustomerSubscriptionUpdated(handlerContext, event);
+
+    assertSpyCalls(mockSupabaseSetup.spies.rpcSpy, 1);
+    assertEquals(mockSupabaseSetup.spies.rpcSpy.calls[0].args[0], "update_subscription_with_tier");
+    assertEquals(mockSupabaseSetup.spies.rpcSpy.calls[0].args[1].p_set_ratchet, false);
   });
 
   await t.step("RPC returns error → handler returns { success: false }", async () => {
@@ -829,7 +861,7 @@ Deno.test('[stripe.subscriptionUpdated.ts] Tests - handleCustomerSubscriptionUpd
           url: `/v1/subscription_items?subscription=${stripeSubscriptionId}`,
         },
       },
-      { status: "trialing" },
+      { status: "active" },
       { id: eventId }
     );
 
@@ -880,7 +912,7 @@ Deno.test('[stripe.subscriptionUpdated.ts] Tests - handleCustomerSubscriptionUpd
           url: `/v1/subscription_items?subscription=${stripeSubscriptionId}`,
         },
       },
-      { status: "past_due" },
+      { status: "canceled" },
       { id: eventId }
     );
 

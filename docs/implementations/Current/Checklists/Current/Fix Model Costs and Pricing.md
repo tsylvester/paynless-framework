@@ -1653,7 +1653,7 @@
     * `[✅]` When no cap inputs are provided (all undefined/null), `resolveOutputCap` returns `undefined`; existing guard throws `'AnthropicAdapter: No max tokens for payload'` — observable: no-cap unit test GREEN
     * `[✅]` `prepareAnthropicRequest` accepts `userConfig: NodeUserConfig` as its fourth parameter; all pre-existing tests pass without modification because `createMockAnthropicNodeAdapterConstructorParams()` supplies a default null tier cap — observable: test runner GREEN for entire anthropic package
 
-* `[ ]` `[BE]` netlify/functions/ai-stream-background/adapters/google **Apply binding output cap via resolveOutputCap**
+* `[✅]` `[BE]` netlify/functions/ai-stream-background/adapters/google **Apply binding output cap via resolveOutputCap**
 
   * `[✅]` `objective`
     * `[✅]` The Google adapter selects the cap via three nested ternaries (`clientCap`, `cap`, `generationConfig`) — multiple forbidden default/fallback patterns — and never considers the tier cap. Fix: delete all three ternaries. Compute the binding cap once via `resolveOutputCap`. Construct `generationConfig` once from the result.
@@ -1723,98 +1723,98 @@
     * `[✅]` `resolveOutputCap`: new pure cap resolver — collects positive-number inputs, returns minimum; no ternaries, no fallbacks
     * `[✅]` OpenAI, Anthropic, Google adapters: replace ternary/bifurcation cap logic with single `resolveOutputCap` call sourcing `tierCap` from `params.userConfig.tier_output_cap_tokens`; tier cap applied unconditionally at provider boundary
 
-* `[ ]` `[BE]` supabase/functions/_shared/adapters/stripe/handlers/stripe.subscriptionUpdated **Derive p_set_ratchet from subscription transition instead of hardcoded false**
+* `[✅]` `[BE]` supabase/functions/_shared/adapters/stripe/handlers/stripe.subscriptionUpdated **Derive p_set_ratchet from subscription transition instead of hardcoded false**
 
-  * `[ ]` `objective`
-    * `[ ]` `stripe.subscriptionUpdated.ts` hardcodes `p_set_ratchet: false` at the `update_subscription_with_tier` RPC call. Variables must depend on real inputs; hardcoded literals at parameterized call sites defeat the parameter. Fix: derive `p_set_ratchet` from the event — `const setRatchet: boolean = subscription.status === 'active'`. Active = paying = set the ratchet. No other transition sets it from this handler.
-    * `[ ]` The test file also contains out-of-spec statuses `past_due` and `trialing` that do not exist in this system. All must be removed and replaced with valid scenarios.
+  * `[✅]` `objective`
+    * `[✅]` `stripe.subscriptionUpdated.ts` hardcodes `p_set_ratchet: false` at the `update_subscription_with_tier` RPC call. Variables must depend on real inputs; hardcoded literals at parameterized call sites defeat the parameter. Fix: derive `p_set_ratchet` from the event — `const setRatchet: boolean = subscription.status === 'active'`. Active = paying = set the ratchet. No other transition sets it from this handler.
+    * `[✅]` The test file also contains out-of-spec statuses `past_due` and `trialing` that do not exist in this system. All must be removed and replaced with valid scenarios.
 
-  * `[ ]` `role`
-    * `[ ]` Adapter handler — Stripe-specific webhook processing
+  * `[✅]` `role`
+    * `[✅]` Adapter handler — Stripe-specific webhook processing
 
-  * `[ ]` `module`
-    * `[ ]` Stripe adapter, `_shared/adapters/stripe/handlers/`
+  * `[✅]` `module`
+    * `[✅]` Stripe adapter, `_shared/adapters/stripe/handlers/`
 
-  * `[ ]` `deps`
-    * `[ ]` `update_subscription_with_tier` RPC (already deployed)
+  * `[✅]` `deps`
+    * `[✅]` `update_subscription_with_tier` RPC (already deployed)
 
-  * `[ ]` `context_slice`
-    * `[ ]` Above the RPC call at line 99: `const setRatchet: boolean = subscription.status === 'active'`
-    * `[ ]` Replace `p_set_ratchet: false` with `p_set_ratchet: setRatchet` at the RPC call site (line 99)
+  * `[✅]` `context_slice`
+    * `[✅]` Above the RPC call at line 99: `const setRatchet: boolean = subscription.status === 'active'`
+    * `[✅]` Replace `p_set_ratchet: false` with `p_set_ratchet: setRatchet` at the RPC call site (line 99)
 
-  * `[ ]` supabase/functions/_shared/adapters/stripe/handlers/`stripe.subscriptionUpdated.test.ts`
-    * `[ ]` First test (line 116): replace out-of-spec `newStatus = "past_due"` with `newStatus = "canceled"`; `p_set_ratchet: false` assertion remains correct
-    * `[ ]` Replace all 6 out-of-spec `{ status: "trialing" }` previous_attributes (lines 207, 315, 372, 426, 682, 832) with `{ status: "active" }` — trialing does not exist in this system
-    * `[ ]` Replace out-of-spec `{ status: "past_due" }` previous_attributes at line 883 with `{ status: "canceled" }`
-    * `[ ]` "Plan not linked" test (~line 242): update `p_set_ratchet: false` → `p_set_ratchet: true` — status is `"active"`
-    * `[ ]` "Plan change" test (~line 517): update `p_set_ratchet: false` → `p_set_ratchet: true` — status is `"active"`
-    * `[ ]` "cancel_at_period_end true" test (~line 581): update `p_set_ratchet: false` → `p_set_ratchet: true` — status is `'active'`
-    * `[ ]` "subscription status changes to active" test (~line 690): update `p_set_ratchet: false` → `p_set_ratchet: true`; fix test step title to read `p_set_ratchet true`
-    * `[ ]` Remove the entire out-of-spec `past_due` test at lines 752-798 — `past_due` does not exist in this system
-    * `[ ]` Add test: `status: 'active'` → RPC called with `p_set_ratchet: true` — proves the derivation
-    * `[ ]` Add test: `status: 'canceled'` → RPC called with `p_set_ratchet: false` — proves the derivation
+  * `[✅]` supabase/functions/_shared/adapters/stripe/handlers/`stripe.subscriptionUpdated.test.ts`
+    * `[✅]` First test (line 116): replace out-of-spec `newStatus = "past_due"` with `newStatus = "canceled"`; `p_set_ratchet: false` assertion remains correct
+    * `[✅]` Replace all 6 out-of-spec `{ status: "trialing" }` previous_attributes (lines 207, 315, 372, 426, 682, 832) with `{ status: "active" }` — trialing does not exist in this system
+    * `[✅]` Replace out-of-spec `{ status: "past_due" }` previous_attributes at line 883 with `{ status: "canceled" }`
+    * `[✅]` "Plan not linked" test (~line 242): update `p_set_ratchet: false` → `p_set_ratchet: true` — status is `"active"`
+    * `[✅]` "Plan change" test (~line 517): update `p_set_ratchet: false` → `p_set_ratchet: true` — status is `"active"`
+    * `[✅]` "cancel_at_period_end true" test (~line 581): update `p_set_ratchet: false` → `p_set_ratchet: true` — status is `'active'`
+    * `[✅]` "subscription status changes to active" test (~line 690): update `p_set_ratchet: false` → `p_set_ratchet: true`; fix test step title to read `p_set_ratchet true`
+    * `[✅]` Remove the entire out-of-spec `past_due` test at lines 752-798 — `past_due` does not exist in this system
+    * `[✅]` Add test: `status: 'active'` → RPC called with `p_set_ratchet: true` — proves the derivation
+    * `[✅]` Add test: `status: 'canceled'` → RPC called with `p_set_ratchet: false` — proves the derivation
 
-  * `[ ]` supabase/functions/_shared/adapters/stripe/handlers/`stripe.subscriptionUpdated.ts`
-    * `[ ]` Above the RPC call at line 99: `const setRatchet: boolean = subscription.status === 'active'`
-    * `[ ]` Replace `p_set_ratchet: false` with `p_set_ratchet: setRatchet` at line 99
+  * `[✅]` supabase/functions/_shared/adapters/stripe/handlers/`stripe.subscriptionUpdated.ts`
+    * `[✅]` Above the RPC call at line 99: `const setRatchet: boolean = subscription.status === 'active'`
+    * `[✅]` Replace `p_set_ratchet: false` with `p_set_ratchet: setRatchet` at line 99
 
-  * `[ ]` `directionality`
-    * `[ ]` Node layer: adapter handler — `supabase/functions/_shared/adapters/stripe/handlers/`
-    * `[ ]` Deps are inward-facing: `update_subscription_with_tier` RPC (deployed DB function, invoked via `context.supabaseClient`)
-    * `[ ]` `handleCustomerSubscriptionUpdated` is outward-facing: exported function consumed by the Stripe webhook dispatcher
-    * `[ ]` No cycles: handler does not import from the dispatcher or any consumer
+  * `[✅]` `directionality`
+    * `[✅]` Node layer: adapter handler — `supabase/functions/_shared/adapters/stripe/handlers/`
+    * `[✅]` Deps are inward-facing: `update_subscription_with_tier` RPC (deployed DB function, invoked via `context.supabaseClient`)
+    * `[✅]` `handleCustomerSubscriptionUpdated` is outward-facing: exported function consumed by the Stripe webhook dispatcher
+    * `[✅]` No cycles: handler does not import from the dispatcher or any consumer
 
-  * `[ ]` `requirements`
-    * `[ ]` `p_set_ratchet` is derived from `subscription.status === 'active'` — observable: new test GREEN
-    * `[ ]` `status: 'active'` → `p_set_ratchet: true`; active = paying = set the ratchet — observable: new test GREEN
-    * `[ ]` `status: 'canceled'` → `p_set_ratchet: false`; cancellation is not a payment event — observable: new test GREEN
-    * `[ ]` All existing tests with `status: 'active'` update their `p_set_ratchet` assertions from `false` to `true` — observable: test runner GREEN
-    * `[ ]` All out-of-spec statuses (`past_due`, `trialing`) removed from test file — no impossible-state assertions remain — observable: test runner GREEN for entire subscriptionUpdated test file
+  * `[✅]` `requirements`
+    * `[✅]` `p_set_ratchet` is derived from `subscription.status === 'active'` — observable: new test GREEN
+    * `[✅]` `status: 'active'` → `p_set_ratchet: true`; active = paying = set the ratchet — observable: new test GREEN
+    * `[✅]` `status: 'canceled'` → `p_set_ratchet: false`; cancellation is not a payment event — observable: new test GREEN
+    * `[✅]` All existing tests with `status: 'active'` update their `p_set_ratchet` assertions from `false` to `true` — observable: test runner GREEN
+    * `[✅]` All out-of-spec statuses (`past_due`, `trialing`) removed from test file — no impossible-state assertions remain — observable: test runner GREEN for entire subscriptionUpdated test file
 
 * `[ ]` `[BE]` supabase/functions/_shared/adapters/stripe/handlers/stripe.subscriptionDeleted **Derive p_set_ratchet from subscription transition instead of hardcoded false**
 
-  * `[ ]` `objective`
-    * `[ ]` `stripe.subscriptionDeleted.ts` hardcodes `p_set_ratchet: false` at the RPC call. Variables must depend on real inputs. The derivation is `const setRatchet: boolean = false` — deletion events are never payment events — but expressing it as a named variable makes the call site self-documenting and removes the unexplained literal.
+  * `[✅]` `objective`
+    * `[✅]` `stripe.subscriptionDeleted.ts` hardcodes `p_set_ratchet: false` at the RPC call. Variables must depend on real inputs. The derivation is `const setRatchet: boolean = false` — deletion events are never payment events — but expressing it as a named variable makes the call site self-documenting and removes the unexplained literal.
 
-  * `[ ]` `role`
-    * `[ ]` Adapter handler — Stripe-specific webhook processing
+  * `[✅]` `role`
+    * `[✅]` Adapter handler — Stripe-specific webhook processing
 
-  * `[ ]` `module`
-    * `[ ]` Stripe adapter, `_shared/adapters/stripe/handlers/`
+  * `[✅]` `module`
+    * `[✅]` Stripe adapter, `_shared/adapters/stripe/handlers/`
 
-  * `[ ]` `deps`
-    * `[ ]` `update_subscription_with_tier` RPC (already deployed)
+  * `[✅]` `deps`
+    * `[✅]` `update_subscription_with_tier` RPC (already deployed)
 
-  * `[ ]` `context_slice`
-    * `[ ]` Above the RPC call at line 51: `const setRatchet: boolean = false` — deletion is never a payment event
-    * `[ ]` Replace `p_set_ratchet: false` with `p_set_ratchet: setRatchet` at line 51
+  * `[✅]` `context_slice`
+    * `[✅]` Above the RPC call at line 51: `const setRatchet: boolean = false` — deletion is never a payment event
+    * `[✅]` Replace `p_set_ratchet: false` with `p_set_ratchet: setRatchet` at line 51
 
-  * `[ ]` supabase/functions/_shared/adapters/stripe/handlers/`stripe.subscriptionDeleted.test.ts`
-    * `[ ]` Existing tests assert `p_set_ratchet: false`; `setRatchet = false` so those assertions remain correct — no changes to existing tests
-    * `[ ]` Add test: RPC is called with `p_set_ratchet: false` on a standard deletion event — confirms the named derivation produces the correct value
+  * `[✅]` supabase/functions/_shared/adapters/stripe/handlers/`stripe.subscriptionDeleted.test.ts`
+    * `[✅]` Existing tests assert `p_set_ratchet: false`; `setRatchet = false` so those assertions remain correct — no changes to existing tests
+    * `[✅]` Add test: RPC is called with `p_set_ratchet: false` on a standard deletion event — confirms the named derivation produces the correct value
 
-  * `[ ]` supabase/functions/_shared/adapters/stripe/handlers/`stripe.subscriptionDeleted.ts`
-    * `[ ]` Above the RPC call at line 51: declare `const setRatchet: boolean = false`
-    * `[ ]` Replace `p_set_ratchet: false` with `p_set_ratchet: setRatchet` at line 51
+  * `[✅]` supabase/functions/_shared/adapters/stripe/handlers/`stripe.subscriptionDeleted.ts`
+    * `[✅]` Above the RPC call at line 51: declare `const setRatchet: boolean = false`
+    * `[✅]` Replace `p_set_ratchet: false` with `p_set_ratchet: setRatchet` at line 51
 
-  * `[ ]` supabase/functions/_shared/adapters/stripe/handlers/`stripe.subscriptionDeleted.integration.test.ts`
-    * `[ ]` Integration tests already exist covering both scenarios: full lifecycle (checkout → invoice → deletion, `has_ever_paid: true` → `tier_level: 10`) and never-paid deletion (`tier_level: 0`); both assert `p_set_ratchet: false` at the RPC call — no new integration tests needed
+  * `[✅]` supabase/functions/_shared/adapters/stripe/handlers/`stripe.subscriptionDeleted.integration.test.ts`
+    * `[✅]` Integration tests already exist covering both scenarios: full lifecycle (checkout → invoice → deletion, `has_ever_paid: true` → `tier_level: 10`) and never-paid deletion (`tier_level: 0`); both assert `p_set_ratchet: false` at the RPC call — no new integration tests needed
 
-  * `[ ]` `directionality`
-    * `[ ]` Node layer: adapter handler — `supabase/functions/_shared/adapters/stripe/handlers/`
-    * `[ ]` Deps are inward-facing: `update_subscription_with_tier` RPC (deployed DB function, invoked via `context.supabaseClient`)
-    * `[ ]` `handleCustomerSubscriptionDeleted` is outward-facing: exported function consumed by the Stripe webhook dispatcher
-    * `[ ]` No cycles: handler does not import from the dispatcher or any consumer
+  * `[✅]` `directionality`
+    * `[✅]` Node layer: adapter handler — `supabase/functions/_shared/adapters/stripe/handlers/`
+    * `[✅]` Deps are inward-facing: `update_subscription_with_tier` RPC (deployed DB function, invoked via `context.supabaseClient`)
+    * `[✅]` `handleCustomerSubscriptionDeleted` is outward-facing: exported function consumed by the Stripe webhook dispatcher
+    * `[✅]` No cycles: handler does not import from the dispatcher or any consumer
 
-  * `[ ]` `requirements`
-    * `[ ]` `p_set_ratchet` is derived from `const setRatchet: boolean = false` — deletion is never a payment event — observable: new unit test GREEN
-    * `[ ]` RPC receives `p_set_ratchet: false` on every deletion event — observable: new unit test GREEN
-    * `[ ]` All pre-existing unit tests pass without modification — `setRatchet = false` matches existing `p_set_ratchet: false` assertions — observable: test runner GREEN for entire subscriptionDeleted test file
-    * `[ ]` Integration tests pass without modification — both lifecycle scenarios assert `p_set_ratchet: false` and remain correct — observable: integration test runner GREEN
+  * `[✅]` `requirements`
+    * `[✅]` `p_set_ratchet` is derived from `const setRatchet: boolean = false` — deletion is never a payment event — observable: new unit test GREEN
+    * `[✅]` RPC receives `p_set_ratchet: false` on every deletion event — observable: new unit test GREEN
+    * `[✅]` All pre-existing unit tests pass without modification — `setRatchet = false` matches existing `p_set_ratchet: false` assertions — observable: test runner GREEN for entire subscriptionDeleted test file
+    * `[✅]` Integration tests pass without modification — both lifecycle scenarios assert `p_set_ratchet: false` and remain correct — observable: integration test runner GREEN
 
-  * `[ ]` **Commit** `fix(p-set-ratchet): derive p_set_ratchet from subscription event semantics instead of hardcoded false`
-    * `[ ]` `stripe.subscriptionUpdated.ts`: `p_set_ratchet` derived from `subscription.status === 'active'`; active = paying = set the ratchet; out-of-spec statuses removed from tests
-    * `[ ]` `stripe.subscriptionDeleted.ts`: `p_set_ratchet` derived as named constant `false`; deletion is never a payment event; self-documenting, no unexplained literal
+  * `[✅]` **Commit** `fix(p-set-ratchet): derive p_set_ratchet from subscription event semantics instead of hardcoded false`
+    * `[✅]` `stripe.subscriptionUpdated.ts`: `p_set_ratchet` derived from `subscription.status === 'active'`; active = paying = set the ratchet; out-of-spec statuses removed from tests
+    * `[✅]` `stripe.subscriptionDeleted.ts`: `p_set_ratchet` derived as named constant `false`; deletion is never a payment event; self-documenting, no unexplained literal
 
 * `[ ]` `[CONFIG]` supabase/scripts/update-seed **Re-run after tier-infrastructure migration to keep seed.sql in sync**
 

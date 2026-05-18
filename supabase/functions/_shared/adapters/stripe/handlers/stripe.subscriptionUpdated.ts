@@ -88,6 +88,8 @@ export async function handleCustomerSubscriptionUpdated(
     p_plan_id = internalPlanId;
   }
 
+  const setRatchet: boolean = subscription.status === 'active';
+
   const rpcResult = await context.supabaseClient.rpc('update_subscription_with_tier', {
     p_stripe_subscription_id: subscription.id,
     p_status: subscription.status,
@@ -96,7 +98,7 @@ export async function handleCustomerSubscriptionUpdated(
     p_period_end,
     p_cancel_at_period_end: subscription.cancel_at_period_end,
     p_stripe_customer_id: stripeCustomerId,
-    p_set_ratchet: false,
+    p_set_ratchet: setRatchet,
   });
 
   if (rpcResult.error) {

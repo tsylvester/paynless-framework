@@ -315,4 +315,31 @@ Deno.test('[stripe.subscriptionDeleted.ts] Tests - handleCustomerSubscriptionDel
       'Warning for no user_subscription record incorrect or missing',
     );
   });
+
+  await t.step('p_set_ratchet derivation: deletion event → RPC p_set_ratchet false', async () => {
+    const stripeSubscriptionId = 'sub_p_set_ratchet_deleted';
+    const eventId = 'evt_p_set_ratchet_deleted';
+    const freePlanId = 'plan_p_set_ratchet_deleted';
+
+    setup({
+      subscriptionPlans: [{ id: freePlanId, item_id_internal: FREE_TIER_ITEM_ID_INTERNAL }],
+    });
+
+    const event = createMockCustomerSubscriptionDeletedEvent(
+      {
+        id: stripeSubscriptionId,
+        cancel_at_period_end: false,
+      },
+      { id: eventId },
+    );
+
+    const result = await handleCustomerSubscriptionDeleted(handlerContext, event);
+
+    assert(result.success, `Expected success, got error: ${result.error}`);
+    assertEquals(result.transactionId, eventId);
+
+    assertSpyCalls(mockSupabaseSetup.spies.rpcSpy, 1);
+    assertEquals(mockSupabaseSetup.spies.rpcSpy.calls[0].args[0], 'update_subscription_with_tier');
+    assertEquals(mockSupabaseSetup.spies.rpcSpy.calls[0].args[1].p_set_ratchet, false);
+  });
 });

@@ -43,12 +43,14 @@ export async function handleCustomerSubscriptionDeleted(
   }
 
   try {
+    const setRatchet: boolean = false;
+
     const rpcResult = await context.supabaseClient.rpc('update_subscription_with_tier', {
       p_stripe_subscription_id: subscription.id,
       p_status: 'canceled',
       p_plan_id,
       p_cancel_at_period_end: false,
-      p_set_ratchet: false,
+      p_set_ratchet: setRatchet,
     });
 
     const rpcErr = rpcResult.error;
