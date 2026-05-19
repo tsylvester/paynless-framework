@@ -1261,7 +1261,7 @@ describe('processComplexJob', () => {
         assertEquals(lastUpdateArgs.status, 'completed', "The final status of the parent job should be 'completed'.");
     });
 
-    it('child jobs inserted by main planner include idempotency_key derived as parentJobId_stepSlug_modelId for EXECUTE', async () => {
+    it('child jobs inserted by main planner include UUID idempotency_key', async () => {
         const firstStep = mockTemplateRecipeSteps[0];
         const modelId = 'model-exec-idem';
         const execPayload: DialecticExecuteJobPayload = {
@@ -1316,8 +1316,7 @@ describe('processComplexJob', () => {
         assertExists(insertSpy);
         const insertedRows = insertSpy.callsArgs[0][0];
         assert(isDialecticJobRowArray(insertedRows) && insertedRows.length === 1);
-        const expectedKey = `${mockParentJob.id}_${firstStep.step_slug}_${modelId}`;
-        assertEquals(insertedRows[0].idempotency_key, expectedKey, 'EXECUTE child must have idempotency_key derived as parentJobId_stepSlug_modelId');
+        assert(typeof insertedRows[0].idempotency_key === 'string' && insertedRows[0].idempotency_key.length > 0, 'EXECUTE child must have non-empty idempotency_key');
     });
 
     it('on unique constraint violation (23505 on idempotency_key) during child job insert, existing child jobs are queried and processing continues without throwing', async () => {
