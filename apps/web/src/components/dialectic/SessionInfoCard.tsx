@@ -165,11 +165,8 @@ export const SessionInfoCard: React.FC = () => {
 							<p className="text-xs text-muted-foreground">Configure models and output limits</p>
 						</div>
 						<div className="p-3 bg-background space-y-4 max-h-[500px] overflow-y-auto">
-							<div>
-								<h4 className="text-sm font-medium mb-2">AI Models</h4>
-								<AIModelSelector />
-							</div>
-							<div className="border-t pt-4">
+							<AIModelSelector />
+							<div className="border-t pt-3">
 								<OutputCapSlider />
 							</div>
 						</div>

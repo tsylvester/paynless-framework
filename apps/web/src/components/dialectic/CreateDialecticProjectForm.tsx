@@ -4,26 +4,6 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { logger } from "@paynless/utils";
 import { useNavigate } from "react-router-dom";
 import {
-<<<<<<< HEAD
-  useDialecticStore,
-  useWalletStore,
-  selectIsCreatingProject,
-  selectCreateProjectError,
-  selectSelectedDomain,
-  selectDomains,
-  selectDefaultGenerationModels,
-  selectActiveChatWalletInfo,
-  selectSortedStages,
-  selectSelectedModels,
-} from '@paynless/store';
-import { DomainSelector } from '@/components/dialectic/DomainSelector';
-import { AIModelSelector } from '@/components/dialectic/AIModelSelector';
-import { OutputCapSlider } from '@/components/dialectic/OutputCapSlider';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardFooter } from '@/components/ui/card';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-=======
 	useDialecticStore,
 	useWalletStore,
 	selectIsCreatingProject,
@@ -37,6 +17,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 } from "@paynless/store";
 import { DomainSelector } from "@/components/dialectic/DomainSelector";
 import { AIModelSelector } from "@/components/dialectic/AIModelSelector";
+import { OutputCapSlider } from "@/components/dialectic/OutputCapSlider";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -45,7 +26,6 @@ import {
 	TooltipContent,
 	TooltipTrigger,
 } from "@/components/ui/tooltip";
->>>>>>> origin/development
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { ChevronDown, Cpu, Loader2 } from "lucide-react";
@@ -569,75 +549,6 @@ export const CreateDialecticProjectForm: React.FC<
 		);
 	}
 
-<<<<<<< HEAD
-          <div className="space-y-2 relative"> 
-          {enableDomainSelection && (
-            <div className="flex flex-row items-center gap-2 ">
-              <span>Create</span>
-              <DomainSelector /> 
-              <span>Project</span>
-              <Controller
-                name="projectName"
-                control={control}
-                render={({ field }) => (
-                  <input
-                    id="project-name"
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                    placeholder={projectNamePlaceholder}
-                    {...field}
-                    onChange={(e) => {
-                      field.onChange(e); 
-                      if (e.target.value.trim() !== '') {
-                          setProjectNameManuallySet(true);
-                      } else {
-                          // If user clears the field, allow auto-naming to resume
-                          setProjectNameManuallySet(false);
-                      }
-                    }}
-                    aria-invalid={!!errors.projectName}
-                  />
-                )}  
-              />
-              <span>with</span>
-              <Popover open={isModelSelectorOpen} onOpenChange={setIsModelSelectorOpen}>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className={cn(
-                      "h-9 px-3 gap-2",
-                      uniqueModelCount === 0 && "ring-2 ring-primary animate-pulse",
-                    )}
-                  >
-                    <Cpu className="h-4 w-4" />
-                    <span>
-                      {uniqueModelCount > 0
-                        ? `${uniqueModelCount} model${uniqueModelCount !== 1 ? "s" : ""}`
-                        : "Select models"}
-                    </span>
-                    <ChevronDown className="h-3.5 w-3.5 opacity-50" />
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-[480px] p-0 bg-popover border shadow-lg" align="start">
-                  <div className="p-3 border-b bg-popover">
-                    <p className="text-sm font-medium">Model Settings</p>
-                    <p className="text-xs text-muted-foreground">Configure models and output limits</p>
-                  </div>
-                  <div className="p-3 bg-popover space-y-4 overflow-y-auto max-h-[500px]">
-                    <div>
-                      <h4 className="text-sm font-medium mb-2">AI Models</h4>
-                      <AIModelSelector />
-                    </div>
-                    <div className="border-t pt-4">
-                      <OutputCapSlider />
-                    </div>
-                  </div>
-                </PopoverContent>
-              </Popover>
-            </div>
-          )}
-            {errors.projectName && <p className="text-sm text-destructive data-testid='project-name-error'">{errors.projectName.message}</p>}
-=======
 	return (
 		<Card
 			className={containerClassName}
@@ -651,7 +562,6 @@ export const CreateDialecticProjectForm: React.FC<
 							<AlertDescription>{creationError.message}</AlertDescription>
 						</Alert>
 					)}
->>>>>>> origin/development
 
 					<div className="space-y-2 relative">
 						{enableDomainSelection && (
@@ -706,17 +616,20 @@ export const CreateDialecticProjectForm: React.FC<
 										</Button>
 									</PopoverTrigger>
 									<PopoverContent
-										className="w-[420px] p-0 bg-background z-50 border shadow-lg"
+										className="w-[480px] z-50 p-0 bg-background border shadow-lg"
 										align="end"
 									>
 										<div className="p-3 border-b bg-popover">
-											<p className="text-sm font-medium">AI Models</p>
+											<p className="text-sm font-medium">Model Settings</p>
 											<p className="text-xs text-muted-foreground">
-												Select models for generation
+												Configure models and output limits
 											</p>
 										</div>
-										<div className="p-3 bg-popover overflow-y-auto">
+										<div className="p-3 bg-popover space-y-4 overflow-y-auto max-h-[500px]">
 											<AIModelSelector />
+											<div className="border-t pt-3">
+												<OutputCapSlider />
+											</div>
 										</div>
 									</PopoverContent>
 								</Popover>
