@@ -86,7 +86,7 @@ export function LoginForm() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               disabled={isLoading}
-              className="pl-10 bg-black"
+              className="pl-10"
               placeholder="you@example.com"
               required
             />
