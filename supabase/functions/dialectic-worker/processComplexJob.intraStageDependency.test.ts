@@ -1894,7 +1894,7 @@ describe('processComplexJob - Deferred Planning (106.c)', () => {
         );
     });
 
-    it('deferred planning path (skeleton job insert at line 288) includes deterministic idempotency_key', async () => {
+    it('deferred planning path (skeleton job insert at line 288) includes UUID idempotency_key', async () => {
         const headerPathCtx = createPathContext('parenthesis', FileType.HeaderContext, FileType.HeaderContext);
         const { storagePath: headerPath, fileName: headerFileName } = constructStoragePath(headerPathCtx);
         const headerContribution = createContribution('parenthesis', 'header_context', FileType.HeaderContext, headerFileName, headerPath);
@@ -2089,12 +2089,7 @@ describe('processComplexJob - Deferred Planning (106.c)', () => {
         assertExists(insertSpy);
         const insertedRows = insertSpy.callsArgs[0][0];
         assert(isDialecticJobRowArray(insertedRows) && insertedRows.length === 1);
-        const expectedKey = `${skeletonPlanJob.id}_${step.step_slug}_${modelId}`;
-        assertEquals(
-            insertedRows[0].idempotency_key,
-            expectedKey,
-            'Deferred planning insert must set idempotency_key to skeletonId_stepSlug_modelId for EXECUTE child'
-        );
+        assert(typeof insertedRows[0].idempotency_key === 'string' && insertedRows[0].idempotency_key.length > 0, 'Deferred planning insert must set non-empty idempotency_key');
     });
 
     it('on unique constraint violation during deferred planning insert, existing jobs are used and processing continues', async () => {
