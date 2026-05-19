@@ -17,6 +17,7 @@ import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
 import { ChevronDown, Download, MoreVertical, Cpu } from "lucide-react";
 import { WalletSelector } from "../ai/WalletSelector";
 import { AIModelSelector } from "./AIModelSelector";
+import { OutputCapSlider } from "./OutputCapSlider";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { ExportProjectButton } from "./ExportProjectButton";
@@ -158,13 +159,19 @@ export const SessionInfoCard: React.FC = () => {
 							<ChevronDown className="h-3.5 w-3.5 opacity-50" />
 						</Button>
 					</PopoverTrigger>
-					<PopoverContent className="w-[420px] p-0 bg-background border shadow-lg" align="start">
+					<PopoverContent className="w-[480px] p-0 bg-background border shadow-lg" align="start">
 						<div className="p-3 border-b bg-background">
-							<p className="text-sm font-medium">AI Models</p>
-							<p className="text-xs text-muted-foreground">Select models for generation</p>
+							<p className="text-sm font-medium">Model Settings</p>
+							<p className="text-xs text-muted-foreground">Configure models and output limits</p>
 						</div>
-						<div className="p-3 bg-background">
-							<AIModelSelector />
+						<div className="p-3 bg-background space-y-4 max-h-[500px] overflow-y-auto">
+							<div>
+								<h4 className="text-sm font-medium mb-2">AI Models</h4>
+								<AIModelSelector />
+							</div>
+							<div className="border-t pt-4">
+								<OutputCapSlider />
+							</div>
 						</div>
 					</PopoverContent>
 				</Popover>
