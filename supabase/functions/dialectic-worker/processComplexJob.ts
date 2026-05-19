@@ -987,7 +987,20 @@ export async function processComplexJob(
                     }
                 }
             }
-            throw new Error(`Failed to insert child jobs: ${insertError.message}`);
+            const collidedIdempotencyKeys: Record<string, string> = {};
+            for (const child of childJobsToInsert) {
+                const idempotencyKey = child.idempotency_key;
+                if (idempotencyKey != null) {
+                    collidedIdempotencyKeys[idempotencyKey] = child.id;
+                }
+            }
+            const insertChildJobsFailure = new Error(`Failed to insert child jobs: ${insertError.message}`);
+            Object.assign(insertChildJobsFailure, {
+                code: insertError.code,
+                details: insertError.details,
+                collidedIdempotencyKeys,
+            });
+            throw insertChildJobsFailure;
         }
 
         // 7. Update the parent job's status to signal it's waiting for the children.
@@ -1007,7 +1020,37 @@ export async function processComplexJob(
         
         const failureReason = e instanceof ContextWindowError 
             ? `Context window limit exceeded: ${error.message}`
-            : `Failed to plan or enqueue child jobs: ${error.message}`;
+            : (() => {
+                let code: string | null = null;
+                let details: string | null = null;
+                let collidedIdempotencyKeys: Record<string, string> = {};
+                if (isRecord(e)) {
+                    const codeValue: unknown = e.code;
+                    if (typeof codeValue === 'string') {
+                        code = codeValue;
+                    }
+                    const detailsValue: unknown = e.details;
+                    if (typeof detailsValue === 'string') {
+                        details = detailsValue;
+                    }
+                    const keysValue: unknown = e.collidedIdempotencyKeys;
+                    if (isRecord(keysValue)) {
+                        const map: Record<string, string> = {};
+                        for (const [key, value] of Object.entries(keysValue)) {
+                            if (typeof value === 'string') {
+                                map[key] = value;
+                            }
+                        }
+                        collidedIdempotencyKeys = map;
+                    }
+                }
+                return `Failed to plan or enqueue child jobs: ${JSON.stringify({
+                    message: error.message,
+                    code,
+                    details,
+                    collidedIdempotencyKeys,
+                })}`;
+            })();
 
         // If planning or enqueuing fails, mark the parent job as failed.
         await dbClient.from('dialectic_generation_jobs').update({
