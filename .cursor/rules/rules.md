@@ -469,10 +469,10 @@ The second exception to strict typing is for intentionally malformed objects in 
   
 ## Legend - You must use this EXACT format. Do not modify it, adapt it, or "improve" it. The bullets, square braces, ticks, nesting, and node structuring are ABSOLUTELY MANDATORY and UNALTERABLE. 
 
-*   `[ ]` [path]/[workspace] Unstarted work node. Each node is addressed by its deepest unique segment to disambiguate.
+*   `[ ]` [path]/[workspace] Unstarted work step in a node. Each node is addressed by its deepest unique segment to disambiguate.
     *   `[ ]` [subfolder]/`filename`. Elements in work nodes will be nested as shown. Subnodes show the file name, or path and file name, to address that element.
         *   `[ ]` [subfolder]/[subfolder]/`filename` Nesting can be as deep as logically required, using the file tree path segment.
-*   `[✅]` Represents a completed node at any depth.
+*   `[✅]` Represents a completed step at any depth.
 
 ## Example Component Types and Labels
 
