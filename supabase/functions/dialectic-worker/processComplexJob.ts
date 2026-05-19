@@ -288,17 +288,7 @@ export async function processComplexJob(
             for (const child of childJobs) {
                 if (child == null) continue;
                 if (child.idempotency_key != null) continue;
-                const payload = child.payload;
-                if (isRecord(payload)) {
-                    if (child.job_type === 'EXECUTE' && typeof payload.model_id === 'string') {
-                        child.idempotency_key = `${job.id}_${step.step_slug}_${payload.model_id}`;
-                    } else if (child.job_type === 'PLAN' && isRecord(payload.planner_metadata) && typeof payload.planner_metadata.recipe_step_id === 'string') {
-                        child.idempotency_key = `${job.id}_skeleton_${payload.planner_metadata.recipe_step_id}`;
-                    }
-                }
-                if (child.idempotency_key == null) {
-                    child.idempotency_key = `${job.id}_child_${child.id}`;
-                }
+                child.idempotency_key = crypto.randomUUID();
             }
             const { error: insertError } = await dbClient.from('dialectic_generation_jobs').insert(childJobs);
             if (insertError) {
@@ -957,21 +947,7 @@ export async function processComplexJob(
         const childJobsToInsert = childJobs.filter((c): c is DialecticJobRow => c != null);
         for (const child of childJobsToInsert) {
             if (child.idempotency_key != null) continue;
-            const payload = child.payload;
-            if (isRecord(payload)) {
-                if (child.job_type === 'EXECUTE' && typeof payload.model_id === 'string') {
-                    const recipeStepId = isRecord(payload.planner_metadata) && typeof payload.planner_metadata.recipe_step_id === 'string'
-                        ? payload.planner_metadata.recipe_step_id
-                        : null;
-                    const stepSlug = recipeStepId ? (stepIdToStep.get(recipeStepId)?.step_slug ?? child.stage_slug) : child.stage_slug;
-                    child.idempotency_key = `${parentJobId}_${stepSlug}_${payload.model_id}`;
-                } else if (child.job_type === 'PLAN' && isRecord(payload.planner_metadata) && typeof payload.planner_metadata.recipe_step_id === 'string') {
-                    child.idempotency_key = `${parentJobId}_skeleton_${payload.planner_metadata.recipe_step_id}`;
-                }
-            }
-            if (child.idempotency_key == null) {
-                child.idempotency_key = `${parentJobId}_child_${child.id}`;
-            }
+            child.idempotency_key = crypto.randomUUID();
         }
 
         // 6. Enqueue the child jobs.
