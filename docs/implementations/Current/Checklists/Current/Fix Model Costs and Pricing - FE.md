@@ -79,59 +79,59 @@
 
   * `[ ]` `supabase/functions/me/index.ts` **[BE] Add tier data to GET /me response**
 
-    * `[ ]` `objective`
-      * `[ ]` The GET `/me` handler currently returns only `{ user, profile }`. It must also return the authenticated user's tier record and all available tier definitions so the FE can hydrate tier state from a single fetch — with no defaults, no silent fallbacks, and no swallowed errors.
-      * `[ ]` Functional goals: (1) query `user_subscriptions.tier_level` for the authenticated user, (2) fetch all `tier_definitions` rows ordered by `level`, (3) find the matching tier definition by `level`, (4) include `userTier: TierRow` and `tiers: TierRow[]` in the response.
-      * `[ ]` Non-functional: all query failures must return explicit error responses — no fallback tier data, no substituted defaults, no swallowed errors. The additional queries must not break existing POST behavior or response shape for `user` and `profile`.
+    * `[✅]` `objective`
+      * `[✅]` The GET `/me` handler currently returns only `{ user, profile }`. It must also return the authenticated user's tier record and all available tier definitions so the FE can hydrate tier state from a single fetch — with no defaults, no silent fallbacks, and no swallowed errors.
+      * `[✅]` Functional goals: (1) query `user_subscriptions.tier_level` for the authenticated user, (2) fetch all `tier_definitions` rows ordered by `level`, (3) find the matching tier definition by `level`, (4) include `userTier: TierRow` and `tiers: TierRow[]` in the response.
+      * `[✅]` Non-functional: all query failures must return explicit error responses — no fallback tier data, no substituted defaults, no swallowed errors. The additional queries must not break existing POST behavior or response shape for `user` and `profile`.
 
-    * `[ ]` `role`
-      * `[ ]` Adapter layer — Supabase Edge Function endpoint that serves as the API boundary for user profile + tier data.
-      * `[ ]` This node must NOT define FE types, FE store logic, or UI behavior — those belong to downstream nodes.
+    * `[✅]` `role`
+      * `[✅]` Adapter layer — Supabase Edge Function endpoint that serves as the API boundary for user profile + tier data.
+      * `[✅]` This node must NOT define FE types, FE store logic, or UI behavior — those belong to downstream nodes.
 
-    * `[ ]` `module`
-      * `[ ]` Bounded context: user identity and access level. The `/me` endpoint is the single source of truth for "who is this user and what can they access."
-      * `[ ]` Inside this boundary: user profile, user subscription tier level, tier definitions.
-      * `[ ]` Outside this boundary: subscription management, payment flows, model gating.
+    * `[✅]` `module`
+      * `[✅]` Bounded context: user identity and access level. The `/me` endpoint is the single source of truth for "who is this user and what can they access."
+      * `[✅]` Inside this boundary: user profile, user subscription tier level, tier definitions.
+      * `[✅]` Outside this boundary: subscription management, payment flows, model gating.
 
-    * `[ ]` `deps`
-      * `[ ]` `MeHandlerDeps` — currently defined inline in `index.ts` lines 18–25 in violation of the no-inline-interfaces rule; must be extracted to `index.interface.ts` in this node.
-      * `[ ]` DB tables consumed: `user_profiles` (existing, FK column `id`), `user_subscriptions` (new — FK column `user_id: string`, `tier_level: number`, confirmed by `types_db.ts` line 2281 and FK `user_subscriptions_user_id_fkey` at line 2329), `tier_definitions` (new — `level: number`, `name: string`, `output_cap_tokens: number | null`, `max_models_per_project: number | null`, per `types_db.ts` lines 2081–2084).
-      * `[ ]` DB types used: `Database['public']['Tables']['tier_definitions']['Row']` aliased as `TierRow` in `index.interface.ts`; `Database['public']['Tables']['user_subscriptions']['Row']` for subscription query result typing.
-      * `[ ]` No reverse or lateral layer violations — `types_db.ts` is the lowest-level type provider.
+    * `[✅]` `deps`
+      * `[✅]` `MeHandlerDeps` — currently defined inline in `index.ts` lines 18–25 in violation of the no-inline-interfaces rule; must be extracted to `index.interface.ts` in this node.
+      * `[✅]` DB tables consumed: `user_profiles` (existing, FK column `id`), `user_subscriptions` (new — FK column `user_id: string`, `tier_level: number`, confirmed by `types_db.ts` line 2281 and FK `user_subscriptions_user_id_fkey` at line 2329), `tier_definitions` (new — `level: number`, `name: string`, `output_cap_tokens: number | null`, `max_models_per_project: number | null`, per `types_db.ts` lines 2081–2084).
+      * `[✅]` DB types used: `Database['public']['Tables']['tier_definitions']['Row']` aliased as `TierRow` in `index.interface.ts`; `Database['public']['Tables']['user_subscriptions']['Row']` for subscription query result typing.
+      * `[✅]` No reverse or lateral layer violations — `types_db.ts` is the lowest-level type provider.
 
-    * `[ ]` `context_slice`
-      * `[ ]` The handler uses the existing Supabase client (from `deps.createSupabaseClient(req)`) for all queries — no new injection surface needed.
-      * `[ ]` The authenticated `user.id` (from `supabase.auth.getUser()`) keys `user_profiles.id` and `user_subscriptions.user_id` (column names confirmed above from `types_db.ts`).
+    * `[✅]` `context_slice`
+      * `[✅]` The handler uses the existing Supabase client (from `deps.createSupabaseClient(req)`) for all queries — no new injection surface needed.
+      * `[✅]` The authenticated `user.id` (from `supabase.auth.getUser()`) keys `user_profiles.id` and `user_subscriptions.user_id` (column names confirmed above from `types_db.ts`).
 
-    * `[ ]` `supabase/functions/me/index.interface.test.ts`
-      * `[ ]` Contract cases for `TierRow`:
+    * `[✅]` `supabase/functions/me/index.interface.test.ts`
+      * `[✅]` Contract cases for `TierRow`:
         * Valid: `{ level: 0, name: 'free', output_cap_tokens: 8192, max_models_per_project: 1 }` — all fields present with correct types
         * Valid: `{ level: 30, name: 'ultra', output_cap_tokens: null, max_models_per_project: null }` — nullable fields are null
         * Invalid: missing `level` field
         * Invalid: missing `name` field
         * Invalid: `level` is a string instead of number
         * Invalid: `null` value for the whole object
-      * `[ ]` Contract cases for `MeGetResponse`:
+      * `[✅]` Contract cases for `MeGetResponse`:
         * Valid: object with non-null `user`, non-null `profile`, `userTier` satisfying `TierRow`, non-empty `tiers` array of `TierRow`
         * Invalid: missing `userTier` key
         * Invalid: missing `tiers` key
         * Invalid: `tiers` is an empty array (response requires at least one tier)
 
-    * `[ ]` `supabase/functions/me/index.interface.ts`
-      * `[ ]` Import `Database` from `'../types_db.ts'`
-      * `[ ]` Import `User` from `'npm:@supabase/gotrue-js@^2.6.3'`
-      * `[ ]` Import `typeof` dep-function types from their source files (same modules already imported in `index.ts` lines 5–14): `handleCorsPreflightRequest`, `createErrorResponse`, `createSuccessResponse` from `'../_shared/cors-headers.ts'`; `createSupabaseClient`, `createUnauthorizedResponse` from `'../_shared/auth.ts'`; `getEmailMarketingService` from `'../_shared/email_service/factory.ts'`
-      * `[ ]` Define and export `TierRow` type alias: `export type TierRow = Database['public']['Tables']['tier_definitions']['Row']`
-      * `[ ]` Define and export `MeGetResponse` interface:
+    * `[✅]` `supabase/functions/me/index.interface.ts`
+      * `[✅]` Import `Database` from `'../types_db.ts'`
+      * `[✅]` Import `User` from `'npm:@supabase/gotrue-js@^2.6.3'`
+      * `[✅]` Import `typeof` dep-function types from their source files (same modules already imported in `index.ts` lines 5–14): `handleCorsPreflightRequest`, `createErrorResponse`, `createSuccessResponse` from `'../_shared/cors-headers.ts'`; `createSupabaseClient`, `createUnauthorizedResponse` from `'../_shared/auth.ts'`; `getEmailMarketingService` from `'../_shared/email_service/factory.ts'`
+      * `[✅]` Define and export `TierRow` type alias: `export type TierRow = Database['public']['Tables']['tier_definitions']['Row']`
+      * `[✅]` Define and export `MeGetResponse` interface:
         * `user: User`
         * `profile: Database['public']['Tables']['user_profiles']['Row']`
         * `userTier: TierRow`
         * `tiers: TierRow[]`
-      * `[ ]` Move `MeHandlerDeps` verbatim from `index.ts` lines 18–25 into this file and export it
-      * `[ ]` After this file is written: remove the inline `export interface MeHandlerDeps` block from `index.ts` (lines 17–25) and add `import type { MeHandlerDeps, MeGetResponse, TierRow } from './index.interface.ts'`
+      * `[✅]` Move `MeHandlerDeps` verbatim from `index.ts` lines 18–25 into this file and export it
+      * `[✅]` After this file is written: remove the inline `export interface MeHandlerDeps` block from `index.ts` (lines 17–25) and add `import type { MeHandlerDeps, MeGetResponse, TierRow } from './index.interface.ts'`
 
-    * `[ ]` `interaction.spec`
-      * `[ ]` GET `/me` updated call pattern — all failure modes return explicit error responses, no fallbacks:
+    * `[✅]` `interaction.spec`
+      * `[✅]` GET `/me` updated call pattern — all failure modes return explicit error responses, no fallbacks:
         1. Authenticate user via `supabase.auth.getUser()`; if `userError` or no `user`, return 401
         2. Fetch `user_profiles` by `id = user.id` using `.single()` (existing logic — PGRST116 triggers profile creation, other errors return 500)
         3. Fetch `user_subscriptions` selecting `tier_level` where `user_id = user.id` using `.maybeSingle()`:
@@ -143,78 +143,68 @@
         5. Find matching tier: `(allTiers as TierRow[]).find(t => t.level === subscriptionData.tier_level)`:
            - If no match → `return deps.createErrorResponse("User tier level not found in definitions", 500, req)`
         6. Build typed `responseData: MeGetResponse = { user, profile: profileData, userTier: matchingTier, tiers: allTiers as TierRow[] }` and return via `deps.createSuccessResponse(responseData, 200, req)`
-      * `[ ]` Failure modes — all return explicit 500 error responses, no swallowed errors, no substituted defaults:
+      * `[✅]` Failure modes — all return explicit 500 error responses, no swallowed errors, no substituted defaults:
         * `user_subscriptions` query errors → 500 "Failed to fetch user subscription"
         * `user_subscriptions` returns null (no row exists) → 500 "No subscription found for user"
         * `tier_definitions` query errors → 500 "Failed to fetch tier definitions"
         * `tier_definitions` returns empty array → 500 "No tier definitions configured"
         * No `tier_definitions` entry matches `tier_level` → 500 "User tier level not found in definitions"
-      * `[ ]` POST `/me` is unchanged — no tier logic in the update path.
+      * `[✅]` POST `/me` is unchanged — no tier logic in the update path.
 
-    * `[ ]` `supabase/functions/me/index.guard.test.ts`
-      * `[ ]` Test `isTierRow` — no false negatives:
+    * `[✅]` `supabase/functions/me/index.guard.test.ts`
+      * `[✅]` Test `isTierRow` — no false negatives:
         * Accepts: `{ level: 0, name: 'free', output_cap_tokens: 8192, max_models_per_project: 1 }`
         * Accepts: `{ level: 30, name: 'ultra', output_cap_tokens: null, max_models_per_project: null }`
-      * `[ ]` Test `isTierRow` — no false positives:
+      * `[✅]` Test `isTierRow` — no false positives:
         * Rejects: `null`
         * Rejects: object missing `level`
         * Rejects: object missing `name`
         * Rejects: object where `level` is a string
-      * `[ ]` Test `isMeGetResponse` — no false negatives:
+      * `[✅]` Test `isMeGetResponse` — no false negatives:
         * Accepts: full valid `MeGetResponse` with populated `userTier` and non-empty `tiers`
-      * `[ ]` Test `isMeGetResponse` — no false positives:
+      * `[✅]` Test `isMeGetResponse` — no false positives:
         * Rejects: object missing `userTier`
         * Rejects: object missing `tiers`
         * Rejects: object where `tiers` is an empty array
 
-    * `[ ]` `supabase/functions/me/index.guard.ts`
-      * `[ ]` Import `TierRow`, `MeGetResponse` from `'./index.interface.ts'`
-      * `[ ]` Export `isTierRow(value: unknown): value is TierRow`:
-        * `typeof value === 'object' && value !== null`
-        * `typeof (value as Record<string, unknown>).level === 'number'`
-        * `typeof (value as Record<string, unknown>).name === 'string'`
-        * `(value as Record<string, unknown>).output_cap_tokens === null || typeof (value as Record<string, unknown>).output_cap_tokens === 'number'`
-        * `(value as Record<string, unknown>).max_models_per_project === null || typeof (value as Record<string, unknown>).max_models_per_project === 'number'`
-      * `[ ]` Export `isMeGetResponse(value: unknown): value is MeGetResponse`:
-        * `typeof value === 'object' && value !== null`
-        * `(value as Record<string, unknown>).user != null`
-        * `(value as Record<string, unknown>).profile != null`
-        * `isTierRow((value as Record<string, unknown>).userTier)`
-        * `Array.isArray((value as Record<string, unknown>).tiers) && ((value as Record<string, unknown>).tiers as unknown[]).length > 0 && ((value as Record<string, unknown>).tiers as unknown[]).every(isTierRow)`
+    * `[✅]` `supabase/functions/me/index.guard.ts`
+      * `[✅]` Import `TierRow`, `MeGetResponse` from `'./index.interface.ts'`
+      * `[✅]` Export `isTierRow(value: unknown): value is TierRow`
+      * `[✅]` Export `isMeGetResponse(value: unknown): value is MeGetResponse`
 
-    * `[ ]` `supabase/functions/me/index.test.ts`
-      * `[ ]` Update default `setup()` mock config to include `user_subscriptions` and `tier_definitions` table mock results (arrays — `supabase.mock.ts` lines 862–874 confirm the mock unwraps single-element arrays to a single object for `.maybeSingle()` calls):
+    * `[✅]` `supabase/functions/me/index.test.ts`
+      * `[✅]` Update default `setup()` mock config to include `user_subscriptions` and `tier_definitions` table mock results (arrays — `supabase.mock.ts` lines 862–874 confirm the mock unwraps single-element arrays to a single object for `.maybeSingle()` calls):
         * `user_subscriptions.select`: `{ data: [{ tier_level: 0 }], error: null }`
         * `tier_definitions.select`: `{ data: [{ level: 0, name: 'free', output_cap_tokens: 8192, max_models_per_project: 1 }, { level: 10, name: 'basic', output_cap_tokens: 32768, max_models_per_project: 2 }, { level: 20, name: 'premium', output_cap_tokens: 131072, max_models_per_project: 3 }, { level: 30, name: 'ultra', output_cap_tokens: null, max_models_per_project: null }], error: null }`
-      * `[ ]` Update existing test "GET: successful profile fetch returns profile" to assert `createSuccessSpy` was called with an object containing `userTier` (with all four `TierRow` fields) and `tiers` (array of length 4).
-      * `[ ]` Add test: "GET: returns correct userTier for tier_level 0"
+      * `[✅]` Update existing test "GET: successful profile fetch returns profile" to assert `createSuccessSpy` was called with an object containing `userTier` (with all four `TierRow` fields) and `tiers` (array of length 4).
+      * `[✅]` Add test: "GET: returns correct userTier for tier_level 0"
         * Setup: default mock (`tier_level: 0`)
         * Assert: `userTier` in success response equals `{ level: 0, name: 'free', output_cap_tokens: 8192, max_models_per_project: 1 }`
-      * `[ ]` Add test: "GET: returns correct userTier for tier_level 20"
+      * `[✅]` Add test: "GET: returns correct userTier for tier_level 20"
         * Setup: `user_subscriptions.select` returns `{ data: [{ tier_level: 20 }], error: null }`
         * Assert: `userTier` in response equals `{ level: 20, name: 'premium', output_cap_tokens: 131072, max_models_per_project: 3 }`
-      * `[ ]` Add test: "GET: returns all tier_definitions in tiers array"
+      * `[✅]` Add test: "GET: returns all tier_definitions in tiers array"
         * Assert: `tiers` in response is the full array of 4 tier definitions ordered by `level` ascending
-      * `[ ]` Add test: "GET: returns 500 when user_subscriptions query errors"
+      * `[✅]` Add test: "GET: returns 500 when user_subscriptions query errors"
         * Setup: `user_subscriptions.select` returns `{ data: null, error: new Error('query failed') }`
         * Assert: `createErrorSpy` called; `createSuccessSpy` not called
-      * `[ ]` Add test: "GET: returns 500 when user_subscriptions row does not exist"
+      * `[✅]` Add test: "GET: returns 500 when user_subscriptions row does not exist"
         * Setup: `user_subscriptions.select` returns `{ data: null, error: null }` (maybeSingle with no row — mock returns null data, null error per `supabase.mock.ts` line 873)
         * Assert: `createErrorSpy` called; `createSuccessSpy` not called
-      * `[ ]` Add test: "GET: returns 500 when tier_definitions query errors"
+      * `[✅]` Add test: "GET: returns 500 when tier_definitions query errors"
         * Setup: `tier_definitions.select` returns `{ data: null, error: new Error('query failed') }`
         * Assert: `createErrorSpy` called; `createSuccessSpy` not called
-      * `[ ]` Add test: "GET: returns 500 when tier_definitions returns empty array"
+      * `[✅]` Add test: "GET: returns 500 when tier_definitions returns empty array"
         * Setup: `tier_definitions.select` returns `{ data: [], error: null }`
         * Assert: `createErrorSpy` called; `createSuccessSpy` not called
-      * `[ ]` Add test: "GET: returns 500 when tier_level has no matching tier definition"
+      * `[✅]` Add test: "GET: returns 500 when tier_level has no matching tier definition"
         * Setup: `user_subscriptions.select` returns `{ data: [{ tier_level: 99 }], error: null }` (level 99 not present in tier_definitions)
         * Assert: `createErrorSpy` called; `createSuccessSpy` not called
 
-    * `[ ]` `supabase/functions/me/index.ts`
-      * `[ ]` Add import: `import type { MeHandlerDeps, MeGetResponse, TierRow } from './index.interface.ts'`
-      * `[ ]` Remove inline `export interface MeHandlerDeps` block (lines 17–25) — it now lives in `index.interface.ts`
-      * `[ ]` In the GET case, after the profile fetch block (line 106) and before the current `responseData` construction (line 110), insert:
+    * `[✅]` `supabase/functions/me/index.ts`
+      * `[✅]` Add import: `import type { MeHandlerDeps, MeGetResponse, TierRow } from './index.interface.ts'`
+      * `[✅]` Remove inline `export interface MeHandlerDeps` block (lines 17–25) — it now lives in `index.interface.ts`
+      * `[✅]` In the GET case, after the profile fetch block (line 106) and before the current `responseData` construction (line 110), insert:
         1. `const { data: subscriptionData, error: subscriptionError } = await supabase.from('user_subscriptions').select('tier_level').eq('user_id', user.id).maybeSingle();`
         2. `console.log('[me/index.ts] Subscription fetch: data=%s, error=%s', !!subscriptionData, subscriptionError?.message);`
         3. `if (subscriptionError) { return deps.createErrorResponse("Failed to fetch user subscription", 500, req); }`
@@ -225,51 +215,51 @@
         8. `if (!allTiers || allTiers.length === 0) { return deps.createErrorResponse("No tier definitions configured", 500, req); }`
         9. `const userTier: TierRow | undefined = (allTiers as TierRow[]).find(t => t.level === (subscriptionData as { tier_level: number }).tier_level);`
         10. `if (!userTier) { return deps.createErrorResponse("User tier level not found in definitions", 500, req); }`
-      * `[ ]` Replace the `responseData` block (lines 110–115) with: `const responseData: MeGetResponse = { user, profile: profileData as Database['public']['Tables']['user_profiles']['Row'], userTier, tiers: allTiers as TierRow[] };` followed by `return deps.createSuccessResponse(responseData, 200, req);` — casting of Supabase client return values is permitted per the explicit Supabase typing exception in `rules.md`.
-      * `[ ]` Add import of `Database` from `'../types_db.ts'` to support the cast in the previous step.
-      * `[ ]` No changes to POST handler, CORS handling, or error handling outside the GET case.
+      * `[✅]` Replace the `responseData` block (lines 110–115) with: `const responseData: MeGetResponse = { user, profile: profileData as Database['public']['Tables']['user_profiles']['Row'], userTier, tiers: allTiers as TierRow[] };` followed by `return deps.createSuccessResponse(responseData, 200, req);` — casting of Supabase client return values is permitted per the explicit Supabase typing exception in `rules.md`.
+      * `[✅]` Add import of `Database` from `'../types_db.ts'` to support the cast in the previous step.
+      * `[✅]` No changes to POST handler, CORS handling, or error handling outside the GET case.
 
-    * `[ ]` `supabase/functions/me/index.mock.ts`
-      * `[ ]` Import `MeGetResponse`, `TierRow` from `'./index.interface.ts'`
-      * `[ ]` Import `User` from `'npm:@supabase/gotrue-js@^2.6.3'`
-      * `[ ]` Export `createMockTierRow(overrides?: Partial<TierRow>): TierRow` — factory for a full valid free-tier `TierRow`: `{ level: 0, name: 'free', output_cap_tokens: 8192, max_models_per_project: 1 }` merged with `overrides`; `overrides` may be omitted for the default free-tier shape
-      * `[ ]` Export `createMockMeGetResponse(user: User, overrides?: Partial<MeGetResponse>): MeGetResponse` — factory that builds a full valid `MeGetResponse` using `createMockTierRow()` for `userTier` and a single-element `tiers` array, merged with `overrides`
+    * `[✅]` `supabase/functions/me/index.mock.ts`
+      * `[✅]` Import `MeGetResponse`, `TierRow` from `'./index.interface.ts'`
+      * `[✅]` Import `User` from `'npm:@supabase/gotrue-js@^2.6.3'`
+      * `[✅]` Export `createMockTierRow(overrides?: Partial<TierRow>): TierRow` — factory for a full valid free-tier `TierRow`: `{ level: 0, name: 'free', output_cap_tokens: 8192, max_models_per_project: 1 }` merged with `overrides`; `overrides` may be omitted for the default free-tier shape
+      * `[✅]` Export `createMockMeGetResponse(user: User, overrides?: Partial<MeGetResponse>): MeGetResponse` — factory that builds a full valid `MeGetResponse` using `createMockTierRow()` for `userTier` and a single-element `tiers` array, merged with `overrides`
 
-    * `[ ]` `supabase/functions/me/index.provides.ts`
-      * `[ ]` Re-export `handleMeRequest` from `'./index.ts'`
-      * `[ ]` Re-export `MeHandlerDeps`, `MeGetResponse`, `TierRow` from `'./index.interface.ts'`
-      * `[ ]` Re-export `isTierRow`, `isMeGetResponse` from `'./index.guard.ts'`
-      * `[ ]` Re-export `createMockTierRow`, `createMockMeGetResponse` from `'./index.mock.ts'`
-      * `[ ]` No external consumer of this module imports from any file other than `index.provides.ts`
+    * `[✅]` `supabase/functions/me/index.provides.ts`
+      * `[✅]` Re-export `handleMeRequest` from `'./index.ts'`
+      * `[✅]` Re-export `MeHandlerDeps`, `MeGetResponse`, `TierRow` from `'./index.interface.ts'`
+      * `[✅]` Re-export `isTierRow`, `isMeGetResponse` from `'./index.guard.ts'`
+      * `[✅]` Re-export `createMockTierRow`, `createMockMeGetResponse` from `'./index.mock.ts'`
+      * `[✅]` No external consumer of this module imports from any file other than `index.provides.ts`
 
-    * `[ ]` `supabase/functions/me/me.integration.test.ts`
-      * `[ ]` In the "GET /me handler" suite, update "Success: Call /me with a valid token returns user and profile" to add:
+    * `[✅]` `supabase/functions/me/me.integration.test.ts`
+      * `[✅]` In the "GET /me handler" suite, update "Success: Call /me with a valid token returns user and profile" to add:
         * `assertExists(body.userTier)` — user tier object exists
         * `assertEquals(typeof body.userTier.level, 'number')` — level is a number
         * `assertEquals(typeof body.userTier.name, 'string')` — name is a string
         * `assertExists(body.tiers)` — tiers array exists
         * `assertEquals(Array.isArray(body.tiers), true)` — tiers is an array
         * `assert(body.tiers.length > 0)` — at least one tier definition returned
-      * `[ ]` Add test: "Success: userTier fields match TierRow shape"
+      * `[✅]` Add test: "Success: userTier fields match TierRow shape"
         * Assert: `body.userTier` has exactly `level`, `name`, `output_cap_tokens`, `max_models_per_project` keys
         * Assert: `body.userTier.level` is `0` (test user gets free tier from `handle_new_user` trigger)
         * Assert: `body.userTier.name` is `'free'`
-      * `[ ]` Add test: "Success: tiers array contains all seeded tier definitions"
+      * `[✅]` Add test: "Success: tiers array contains all seeded tier definitions"
         * Assert: `body.tiers` contains entries with levels `[0, 10, 20, 30]`
         * Assert: each entry has `level`, `name`, `output_cap_tokens`, `max_models_per_project`
 
-    * `[ ]` `requirements`
-      * `[ ]` GET `/me` returns `userTier: TierRow` derived from `user_subscriptions.tier_level` joined to `tier_definitions` — no default or fallback value
-      * `[ ]` GET `/me` returns `tiers: TierRow[]` with all `tier_definitions` rows ordered by `level`
-      * `[ ]` All five failure modes (`user_subscriptions` error, no subscription row, `tier_definitions` error, empty definitions, unmatched tier level) return explicit 500 error responses — no swallowed errors, no silent defaults
-      * `[ ]` `MeHandlerDeps` interface lives in `index.interface.ts`, not inline in `index.ts`
-      * `[ ]` `MeGetResponse` and `TierRow` types are defined and exported from `index.interface.ts`
-      * `[ ]` `isTierRow` and `isMeGetResponse` type guards exist in `index.guard.ts`
-      * `[ ]` `createMockTierRow` and `createMockMeGetResponse` factories exist in `index.mock.ts`
-      * `[ ]` `index.provides.ts` is the sole external boundary for this module
-      * `[ ]` POST `/me` behavior is unchanged
-      * `[ ]` All existing unit and integration tests continue to pass
-      * `[ ]` All new unit and integration tests pass
+    * `[✅]` `requirements`
+      * `[✅]` GET `/me` returns `userTier: TierRow` derived from `user_subscriptions.tier_level` joined to `tier_definitions` — no default or fallback value
+      * `[✅]` GET `/me` returns `tiers: TierRow[]` with all `tier_definitions` rows ordered by `level`
+      * `[✅]` All five failure modes (`user_subscriptions` error, no subscription row, `tier_definitions` error, empty definitions, unmatched tier level) return explicit 500 error responses — no swallowed errors, no silent defaults
+      * `[✅]` `MeHandlerDeps` interface lives in `index.interface.ts`, not inline in `index.ts`
+      * `[✅]` `MeGetResponse` and `TierRow` types are defined and exported from `index.interface.ts`
+      * `[✅]` `isTierRow` and `isMeGetResponse` type guards exist in `index.guard.ts`
+      * `[✅]` `createMockTierRow` and `createMockMeGetResponse` factories exist in `index.mock.ts`
+      * `[✅]` `index.provides.ts` is the sole external boundary for this module
+      * `[✅]` POST `/me` behavior is unchanged
+      * `[✅]` All existing unit and integration tests continue to pass
+      * `[✅]` All new unit and integration tests pass
 
   * `[ ]` `packages/store/src/authStore.ts` **[STORE] Add tier state, setter, hydration from /me response, logout clear**
 
