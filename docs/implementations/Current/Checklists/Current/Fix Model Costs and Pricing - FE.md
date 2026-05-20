@@ -77,7 +77,7 @@
   - This ticket is a prerequisite for Ticket 2 (model selector gating), Ticket 3 (output clamp slider), and Ticket 7 (marketing/upgrade prompts). All of those read tier from the auth store established here.
   - No dependency on other tickets — this is the first ticket in the FE tier implementation.
 
-  * `[ ]` `supabase/functions/me/index.ts` **[BE] Add tier data to GET /me response**
+  * `[✅]` `supabase/functions/me/index.ts` **[BE] Add tier data to GET /me response**
 
     * `[✅]` `objective`
       * `[✅]` The GET `/me` handler currently returns only `{ user, profile }`. It must also return the authenticated user's tier record and all available tier definitions so the FE can hydrate tier state from a single fetch — with no defaults, no silent fallbacks, and no swallowed errors.
@@ -261,32 +261,32 @@
       * `[✅]` All existing unit and integration tests continue to pass
       * `[✅]` All new unit and integration tests pass
 
-  * `[ ]` `packages/store/src/authStore.ts` **[STORE] Add tier state, setter, hydration from /me response, logout clear**
+  * `[✅]` `packages/store/src/authStore.ts` **[STORE] Add tier state, setter, hydration from /me response, logout clear**
 
-    * `[ ]` `objective`
-      * `[ ]` The auth store has no concept of tier. After this node, the store holds `userTier` (the authenticated user's tier) and `availableTiers` (all tier definitions), both hydrated from the `/me` response. Every FE surface that needs tier data reads from this store.
-      * `[ ]` Functional goals: (1) add `UserTier` type, (2) update `ProfileResponse` to include tier data, (3) add tier state properties and setters to `AuthStore`, (4) hydrate tier from `_fetchAndSetProfile` with explicit conditional — no defaults or fallbacks, (5) clear tier on logout/SIGNED_OUT.
-      * `[ ]` Non-functional: must not break existing profile, session, or auth state management.
+    * `[✅]` `objective`
+      * `[✅]` The auth store has no concept of tier. After this node, the store holds `userTier` (the authenticated user's tier) and `availableTiers` (all tier definitions), both hydrated from the `/me` response. Every FE surface that needs tier data reads from this store.
+      * `[✅]` Functional goals: (1) add `UserTier` type, (2) update `ProfileResponse` to include tier data, (3) add tier state properties and setters to `AuthStore`, (4) hydrate tier from `_fetchAndSetProfile` with explicit conditional — no defaults or fallbacks, (5) clear tier on logout/SIGNED_OUT.
+      * `[✅]` Non-functional: must not break existing profile, session, or auth state management.
 
-    * `[ ]` `role`
-      * `[ ]` State management layer — Zustand store that holds and distributes user identity and access-level data to all FE consumers.
-      * `[ ]` This node must NOT define UI behavior, model gating, or subscription logic.
+    * `[✅]` `role`
+      * `[✅]` State management layer — Zustand store that holds and distributes user identity and access-level data to all FE consumers.
+      * `[✅]` This node must NOT define UI behavior, model gating, or subscription logic.
 
-    * `[ ]` `module`
-      * `[ ]` Bounded context: FE auth state. The auth store is the single source of truth for "who is the user and what tier are they."
-      * `[ ]` Inside: user, session, profile, userTier, availableTiers.
-      * `[ ]` Outside: subscription management, model selection, cost estimation.
+    * `[✅]` `module`
+      * `[✅]` Bounded context: FE auth state. The auth store is the single source of truth for "who is the user and what tier are they."
+      * `[✅]` Inside: user, session, profile, userTier, availableTiers.
+      * `[✅]` Outside: subscription management, model selection, cost estimation.
 
-    * `[ ]` `deps`
-      * `[ ]` Depends on prior node `supabase/functions/me/index.ts` — the BE must return `userTier` and `tiers` in the GET `/me` response before the FE can consume them.
-      * `[ ]` `packages/types/src/auth.types.ts` — type changes are included in this node (types are never orphaned into their own node).
-      * `[ ]` `@paynless/api` — the existing `getApiClient().get<ProfileResponse>('me', ...)` call in `_fetchAndSetProfile` already fetches the response; the new fields are consumed from the same response.
+    * `[✅]` `deps`
+      * `[✅]` Depends on prior node `supabase/functions/me/index.ts` — the BE must return `userTier` and `tiers` in the GET `/me` response before the FE can consume them.
+      * `[✅]` `packages/types/src/auth.types.ts` — type changes are included in this node (types are never orphaned into their own node).
+      * `[✅]` `@paynless/api` — the existing `getApiClient().get<ProfileResponse>('me', ...)` call in `_fetchAndSetProfile` already fetches the response; the new fields are consumed from the same response.
 
-    * `[ ]` `context_slice`
-      * `[ ]` `_fetchAndSetProfile` (line 507 of `authStore.ts`) already fetches the `/me` response as `ProfileResponse`. After the type update, `profileResponse.data.userTier` and `profileResponse.data.tiers` become available. No new API call or injection surface needed.
+    * `[✅]` `context_slice`
+      * `[✅]` `_fetchAndSetProfile` (line 507 of `authStore.ts`) already fetches the `/me` response as `ProfileResponse`. After the type update, `profileResponse.data.userTier` and `profileResponse.data.tiers` become available. No new API call or injection surface needed.
 
-    * `[ ]` `packages/types/src/auth.types.ts`
-      * `[ ]` Add `UserTier` interface after `UserProfile` (line 66):
+    * `[✅]` `packages/types/src/auth.types.ts`
+      * `[✅]` Add `UserTier` interface after `UserProfile` (line 66):
         ```
         export interface UserTier {
           level: number;
@@ -295,47 +295,47 @@
           max_models_per_project: number | null;
         }
         ```
-      * `[ ]` Update `ProfileResponse` (line 129-132) — add two optional fields to accommodate deployment order (FE may run briefly against a BE not yet serving these fields):
+      * `[✅]` Update `ProfileResponse` (line 129-132) — add two optional fields to accommodate deployment order (FE may run briefly against a BE not yet serving these fields):
         * `userTier?: UserTier` — the user's current tier (optional for deployment compat)
         * `tiers?: UserTier[]` — all tier definitions (optional for deployment compat)
-      * `[ ]` Update `AuthStore` interface (line 69):
+      * `[✅]` Update `AuthStore` interface (line 69):
         * Add state property: `userTier: UserTier | null;` (after `profile` at line 104)
         * Add state property: `availableTiers: UserTier[];` (after `userTier`)
         * Add setter: `setTier: (tier: UserTier | null) => void;` (after `setProfile` at line 73)
         * Add setter: `setAvailableTiers: (tiers: UserTier[]) => void;` (after `setTier`)
 
-    * `[ ]` `packages/store/src/authStore.profile.test.ts`
-      * `[ ]` Add `UserTier` to the type imports from `@paynless/types`.
-      * `[ ]` Add mock tier constants at the top of the file (after existing mock data):
+    * `[✅]` `packages/store/src/authStore.profile.test.ts`
+      * `[✅]` Add `UserTier` to the type imports from `@paynless/types`.
+      * `[✅]` Add mock tier constants at the top of the file (after existing mock data):
         * `const mockFreeTier: UserTier = { level: 0, name: 'free', output_cap_tokens: 8192, max_models_per_project: 1 };`
         * `const mockAllTiers: UserTier[] = [{ level: 0, name: 'free', output_cap_tokens: 8192, max_models_per_project: 1 }, { level: 10, name: 'basic', output_cap_tokens: 32768, max_models_per_project: 2 }, { level: 20, name: 'premium', output_cap_tokens: 131072, max_models_per_project: 3 }, { level: 30, name: 'ultra', output_cap_tokens: null, max_models_per_project: null }];`
-      * `[ ]` Add new describe block "AuthStore - Tier State Management" at the end of the file with tests:
-        * `[ ]` Test: "initial state has userTier: null and availableTiers: []"
+      * `[✅]` Add new describe block "AuthStore - Tier State Management" at the end of the file with tests:
+        * `[✅]` Test: "initial state has userTier: null and availableTiers: []"
           * Assert: `useAuthStore.getState().userTier` is `null`
           * Assert: `useAuthStore.getState().availableTiers` deep equals `[]`
-        * `[ ]` Test: "setTier sets userTier in state"
+        * `[✅]` Test: "setTier sets userTier in state"
           * Call `useAuthStore.getState().setTier(mockFreeTier)`
           * Assert: `useAuthStore.getState().userTier` deep equals `mockFreeTier`
-        * `[ ]` Test: "setTier(null) clears userTier"
+        * `[✅]` Test: "setTier(null) clears userTier"
           * Set tier then clear: `setTier(mockFreeTier)` then `setTier(null)`
           * Assert: `useAuthStore.getState().userTier` is `null`
-        * `[ ]` Test: "setAvailableTiers sets availableTiers in state"
+        * `[✅]` Test: "setAvailableTiers sets availableTiers in state"
           * Call `useAuthStore.getState().setAvailableTiers(mockAllTiers)`
           * Assert: `useAuthStore.getState().availableTiers` deep equals `mockAllTiers`
-        * `[ ]` Test: "setAvailableTiers([]) clears availableTiers"
+        * `[✅]` Test: "setAvailableTiers([]) clears availableTiers"
           * Set then clear: `setAvailableTiers(mockAllTiers)` then `setAvailableTiers([])`
           * Assert: `useAuthStore.getState().availableTiers` deep equals `[]`
 
-    * `[ ]` `packages/store/src/authStore.ts`
-      * `[ ]` Update imports (line 1-11): add `UserTier` to the import from `@paynless/types`.
-      * `[ ]` Add initial state properties inside `create<AuthStore>()` (after `profile: null` at line 58):
+    * `[✅]` `packages/store/src/authStore.ts`
+      * `[✅]` Update imports (line 1-11): add `UserTier` to the import from `@paynless/types`.
+      * `[✅]` Add initial state properties inside `create<AuthStore>()` (after `profile: null` at line 58):
         * `userTier: null,`
         * `availableTiers: [],`
-      * `[ ]` Add `setTier` setter (after `setProfile` at line 70):
+      * `[✅]` Add `setTier` setter (after `setProfile` at line 70):
         * `setTier: (tier: UserTier | null) => set({ userTier: tier }),`
-      * `[ ]` Add `setAvailableTiers` setter (after `setTier`):
+      * `[✅]` Add `setAvailableTiers` setter (after `setTier`):
         * `setAvailableTiers: (tiers: UserTier[]) => set({ availableTiers: tiers }),`
-      * `[ ]` Update `_fetchAndSetProfile` (line 507-570) — in the success branch (line 522, `if (profileResponse.data?.profile)`):
+      * `[✅]` Update `_fetchAndSetProfile` (line 507-570) — in the success branch (line 522, `if (profileResponse.data?.profile)`):
         * After `useAuthStore.setState({ profile: fetchedProfile, error: null })` at line 525, add tier hydration with an explicit conditional — no `??` operators, no hardcoded default tier data:
           ```
           if (profileResponse.data.userTier && profileResponse.data.tiers) {
@@ -350,17 +350,17 @@
           ```
         * In the failure branches (line 551-553 `else` block and line 560-564 `catch` block), add to the existing `useAuthStore.setState` calls — same pattern already used for `profile: null` and its `error`:
           * Add `userTier: null, availableTiers: [],` to each existing setState call in these branches (the `error` field is already set in those branches)
-      * `[ ]` Update SIGNED_OUT case (line 639-666) — in the `useAuthStore.setState` call at line 641:
+      * `[✅]` Update SIGNED_OUT case (line 639-666) — in the `useAuthStore.setState` call at line 641:
         * Add `userTier: null,` and `availableTiers: [],` to the state clear object alongside `user: null, session: null, profile: null`.
 
-    * `[ ]` `apps/web/src/mocks/profile.mock.ts`
-      * `[ ]` Add import for `UserTier` from `@paynless/types`.
-      * `[ ]` Add mock tier data exports after the existing `mockUserProfile`:
+    * `[✅]` `apps/web/src/mocks/profile.mock.ts`
+      * `[✅]` Add import for `UserTier` from `@paynless/types`.
+      * `[✅]` Add mock tier data exports after the existing `mockUserProfile`:
         * `export const mockUserTier: UserTier = { level: 0, name: 'free', output_cap_tokens: 8192, max_models_per_project: 1 };`
         * `export const mockAllTiers: UserTier[] = [{ level: 0, name: 'free', output_cap_tokens: 8192, max_models_per_project: 1 }, { level: 10, name: 'basic', output_cap_tokens: 32768, max_models_per_project: 2 }, { level: 20, name: 'premium', output_cap_tokens: 131072, max_models_per_project: 3 }, { level: 30, name: 'ultra', output_cap_tokens: null, max_models_per_project: null }];`
 
-    * `[ ]` `apps/web/src/mocks/authStore.mock.ts`
-      * `[ ]` In `initializeMockAuthState()` (line 19-59), add the four new `AuthStore` fields so the mock compiles after the `AuthStore` interface update:
+    * `[✅]` `apps/web/src/mocks/authStore.mock.ts`
+      * `[✅]` In `initializeMockAuthState()` (line 19-59), add the four new `AuthStore` fields so the mock compiles after the `AuthStore` interface update:
         * After `showWelcomeModal: false,` (line 27), add:
           * `userTier: null,`
           * `availableTiers: [],`
@@ -368,69 +368,69 @@
           * `setTier: vi.fn(),`
           * `setAvailableTiers: vi.fn(),`
 
-    * `[ ]` `requirements`
-      * `[ ]` `UserTier` interface exists in `packages/types/src/auth.types.ts` with `{ level: number; name: string; output_cap_tokens: number | null; max_models_per_project: number | null }`
-      * `[ ]` `ProfileResponse` includes optional `userTier?: UserTier` and `tiers?: UserTier[]` fields
-      * `[ ]` `AuthStore` interface includes `userTier: UserTier | null`, `availableTiers: UserTier[]`, `setTier`, and `setAvailableTiers`
-      * `[ ]` `authStore.ts` initial state has `userTier: null` and `availableTiers: []`
-      * `[ ]` `_fetchAndSetProfile` hydrates `userTier: UserTier` and `availableTiers: UserTier[]` from the `/me` response when both fields are present; when either field is absent, calls `logger.error` and sets `{ userTier: null, availableTiers: [], error: new Error('Failed to load tier data') }` — the error surfaces to the UI so the user is not silently presented a broken application that cannot determine their privilege level
-      * `[ ]` `_fetchAndSetProfile` failure branches (profile fetch error and catch block) add `userTier: null, availableTiers: []` to the existing `useAuthStore.setState` calls — the `error` field is already set in those branches
-      * `[ ]` SIGNED_OUT clears `userTier` to `null` and `availableTiers` to `[]`
-      * `[ ]` `setTier` and `setAvailableTiers` setters work correctly (proven by unit tests)
-      * `[ ]` Mock tier data exists in `apps/web/src/mocks/profile.mock.ts` for downstream node test support
-      * `[ ]` `authStore.mock.ts` includes `userTier: null`, `availableTiers: []`, `setTier: vi.fn()`, and `setAvailableTiers: vi.fn()` so all downstream test files compile after `AuthStore` type update
-      * `[ ]` All existing auth store tests continue to pass
-      * `[ ]` All new tier state management tests pass
+    * `[✅]` `requirements`
+      * `[✅]` `UserTier` interface exists in `packages/types/src/auth.types.ts` with `{ level: number; name: string; output_cap_tokens: number | null; max_models_per_project: number | null }`
+      * `[✅]` `ProfileResponse` includes optional `userTier?: UserTier` and `tiers?: UserTier[]` fields
+      * `[✅]` `AuthStore` interface includes `userTier: UserTier | null`, `availableTiers: UserTier[]`, `setTier`, and `setAvailableTiers`
+      * `[✅]` `authStore.ts` initial state has `userTier: null` and `availableTiers: []`
+      * `[✅]` `_fetchAndSetProfile` hydrates `userTier: UserTier` and `availableTiers: UserTier[]` from the `/me` response when both fields are present; when either field is absent, calls `logger.error` and sets `{ userTier: null, availableTiers: [], error: new Error('Failed to load tier data') }` — the error surfaces to the UI so the user is not silently presented a broken application that cannot determine their privilege level
+      * `[✅]` `_fetchAndSetProfile` failure branches (profile fetch error and catch block) add `userTier: null, availableTiers: []` to the existing `useAuthStore.setState` calls — the `error` field is already set in those branches
+      * `[✅]` SIGNED_OUT clears `userTier` to `null` and `availableTiers` to `[]`
+      * `[✅]` `setTier` and `setAvailableTiers` setters work correctly (proven by unit tests)
+      * `[✅]` Mock tier data exists in `apps/web/src/mocks/profile.mock.ts` for downstream node test support
+      * `[✅]` `authStore.mock.ts` includes `userTier: null`, `availableTiers: []`, `setTier: vi.fn()`, and `setAvailableTiers: vi.fn()` so all downstream test files compile after `AuthStore` type update
+      * `[✅]` All existing auth store tests continue to pass
+      * `[✅]` All new tier state management tests pass
 
-  * `[ ]` `apps/web/src/pages/Dashboard.tsx` **[UI] Dynamic Plan card — tier name and upgrade CTA from store**
+  * `[✅]` `apps/web/src/pages/Dashboard.tsx` **[UI] Dynamic Plan card — tier name and upgrade CTA from store**
 
-    * `[ ]` `objective`
-      * `[ ]` The Plan card in the stats row is hardcoded to show "Free" and "Upgrade to Pro". After this node, the card reads the user's tier from the auth store and displays the tier name dynamically, with a context-aware upgrade CTA.
-      * `[ ]` Non-functional: must not break existing dashboard layout, loading, or redirect behavior.
+    * `[✅]` `objective`
+      * `[✅]` The Plan card in the stats row is hardcoded to show "Free" and "Upgrade to Pro". After this node, the card reads the user's tier from the auth store and displays the tier name dynamically, with a context-aware upgrade CTA.
+      * `[✅]` Non-functional: must not break existing dashboard layout, loading, or redirect behavior.
 
-    * `[ ]` `role`
-      * `[ ]` UI presentation layer — a React page component that reads from the auth store and renders tier-aware content.
-      * `[ ]` This node must NOT modify store logic, types, or BE endpoints.
+    * `[✅]` `role`
+      * `[✅]` UI presentation layer — a React page component that reads from the auth store and renders tier-aware content.
+      * `[✅]` This node must NOT modify store logic, types, or BE endpoints.
 
-    * `[ ]` `module`
-      * `[ ]` Bounded context: dashboard overview. The Plan card is one of four stats cards.
-      * `[ ]` Inside: rendering the user's tier name and a contextual upgrade/top-up CTA.
-      * `[ ]` Outside: subscription management, checkout flows, tier mutation.
+    * `[✅]` `module`
+      * `[✅]` Bounded context: dashboard overview. The Plan card is one of four stats cards.
+      * `[✅]` Inside: rendering the user's tier name and a contextual upgrade/top-up CTA.
+      * `[✅]` Outside: subscription management, checkout flows, tier mutation.
 
-    * `[ ]` `deps`
-      * `[ ]` Depends on prior node `packages/store/src/authStore.ts` — `userTier` and `availableTiers` must be available in the auth store.
-      * `[ ]` `useAuthStore` is already imported (line 3). The selector at line 41-45 must be extended to also read `userTier` and `availableTiers`.
+    * `[✅]` `deps`
+      * `[✅]` Depends on prior node `packages/store/src/authStore.ts` — `userTier` and `availableTiers` must be available in the auth store.
+      * `[✅]` `useAuthStore` is already imported (line 3). The selector at line 41-45 must be extended to also read `userTier` and `availableTiers`.
 
-    * `[ ]` `context_slice`
-      * `[ ]` The component already calls `useAuthStore((state) => ({ user, profile, isLoading }))` at line 41. The tier data is read from the same store with `userTier: state.userTier` and `availableTiers: state.availableTiers` added to the selector.
+    * `[✅]` `context_slice`
+      * `[✅]` The component already calls `useAuthStore((state) => ({ user, profile, isLoading }))` at line 41. The tier data is read from the same store with `userTier: state.userTier` and `availableTiers: state.availableTiers` added to the selector.
 
-    * `[ ]` `apps/web/src/pages/Dashboard.test.tsx`
-      * `[ ]` Import `UserTier` and `Tier` from `@paynless/types`.
-      * `[ ]` Add mock tier data constants at the top:
+    * `[✅]` `apps/web/src/pages/Dashboard.test.tsx`
+      * `[✅]` Import `UserTier` and `Tier` from `@paynless/types`.
+      * `[✅]` Add mock tier data constants at the top:
         * `const mockFreeTier: UserTier = { level: 0, name: 'free', output_cap_tokens: 8192, max_models_per_project: 1 };`
         * `const mockPremiumTier: UserTier = { level: 20, name: 'premium', output_cap_tokens: 131072, max_models_per_project: 3 };`
         * `const mockUltraTier: UserTier = { level: 30, name: 'ultra', output_cap_tokens: null, max_models_per_project: null };`
         * `const mockAllTiers: Tier[] = [{ level: 0, name: 'free', output_cap_tokens: 8192, max_models_per_project: 1 }, { level: 10, name: 'basic', output_cap_tokens: 32768, max_models_per_project: 2 }, { level: 20, name: 'premium', output_cap_tokens: 131072, max_models_per_project: 3 }, { level: 30, name: 'ultra', output_cap_tokens: null, max_models_per_project: null }];`
-      * `[ ]` Update default `useAuthStore` mock (line 85-89) to include `userTier: mockFreeTier` and `availableTiers: mockAllTiers`.
-      * `[ ]` Add test: "Plan card shows tier name from store"
+      * `[✅]` Update default `useAuthStore` mock (line 85-89) to include `userTier: mockFreeTier` and `availableTiers: mockAllTiers`.
+      * `[✅]` Add test: "Plan card shows tier name from store"
         * Default mock has `userTier: mockFreeTier`
         * Assert: the Plan card contains text "Free" (capitalized from `name`)
-      * `[ ]` Add test: "Plan card shows Premium when user has premium tier"
+      * `[✅]` Add test: "Plan card shows Premium when user has premium tier"
         * Override `useAuthStore` mock with `userTier: mockPremiumTier`
         * Assert: the Plan card contains text "Premium"
-      * `[ ]` Add test: "Plan card shows Upgrade to basic when user is on free tier"
+      * `[✅]` Add test: "Plan card shows Upgrade to basic when user is on free tier"
         * Default mock with `userTier: mockFreeTier` and `availableTiers: mockAllTiers`
         * Assert: CTA link text contains "Upgrade" and the next tier name "Basic"
         * Assert: CTA links to `/subscription`
-      * `[ ]` Add test: "Plan card hides upgrade CTA when user is on highest tier"
+      * `[✅]` Add test: "Plan card hides upgrade CTA when user is on highest tier"
         * Override with `userTier: mockUltraTier`
         * Assert: no "Upgrade" link rendered in the Plan card
-      * `[ ]` Add test: "Plan card shows fallback when userTier is null"
+      * `[✅]` Add test: "Plan card shows fallback when userTier is null"
         * Override with `userTier: null, availableTiers: []`
         * Assert: the Plan card shows "Free" as fallback tier name and shows "Upgrade" CTA linking to `/subscription`
 
-    * `[ ]` `apps/web/src/pages/Dashboard.tsx`
-      * `[ ]` Update the `useAuthStore` selector (line 41-45) to also destructure `userTier` and `availableTiers`:
+    * `[✅]` `apps/web/src/pages/Dashboard.tsx`
+      * `[✅]` Update the `useAuthStore` selector (line 41-45) to also destructure `userTier` and `availableTiers`:
         ```
         const { user, profile, isLoading, userTier, availableTiers } = useAuthStore((state) => ({
           user: state.user,
@@ -440,77 +440,77 @@
           availableTiers: state.availableTiers,
         }));
         ```
-      * `[ ]` Derive the display tier name and next tier before the return statement (after line 93):
+      * `[✅]` Derive the display tier name and next tier before the return statement (after line 93):
         * `const tierName = userTier?.name ?? 'free';`
         * `const displayTierName = tierName.charAt(0).toUpperCase() + tierName.slice(1);`
         * `const nextTier = availableTiers.find(t => t.level > (userTier?.level ?? -1));`
         * `const nextTierName = nextTier ? nextTier.name.charAt(0).toUpperCase() + nextTier.name.slice(1) : null;`
-      * `[ ]` Replace the hardcoded Plan card content (lines 170-173):
+      * `[✅]` Replace the hardcoded Plan card content (lines 170-173):
         * Line 170: replace `<div className="text-2xl font-bold">Free</div>` with `<div className="text-2xl font-bold">{displayTierName}</div>`
         * Lines 171-173: replace the static `<Link to="/subscription">Upgrade to Pro</Link>` with conditional rendering:
           * If `nextTierName` exists: render `<Link to="/subscription">Upgrade to {nextTierName}</Link>`
           * If `nextTierName` is null (user is on highest tier): render nothing (or optionally a "Top up tokens" CTA if wallet balance is low — the actual top-up CTA logic can be refined in a later ticket; for now, render nothing)
 
-    * `[ ]` `requirements`
-      * `[ ]` The Plan card displays the user's current tier name from the auth store, not hardcoded "Free"
-      * `[ ]` The Plan card CTA dynamically shows "Upgrade to {next tier name}" when a higher tier exists
-      * `[ ]` The Plan card CTA is hidden when the user is on the highest tier
-      * `[ ]` When `userTier` is null (loading/not hydrated), the card falls back to displaying "Free" and a generic upgrade CTA
-      * `[ ]` All existing dashboard tests continue to pass
-      * `[ ]` All new dashboard tests pass
+    * `[✅]` `requirements`
+      * `[✅]` The Plan card displays the user's current tier name from the auth store, not hardcoded "Free"
+      * `[✅]` The Plan card CTA dynamically shows "Upgrade to {next tier name}" when a higher tier exists
+      * `[✅]` The Plan card CTA is hidden when the user is on the highest tier
+      * `[✅]` When `userTier` is null (loading/not hydrated), the card falls back to displaying "Free" and a generic upgrade CTA
+      * `[✅]` All existing dashboard tests continue to pass
+      * `[✅]` All new dashboard tests pass
 
-  * `[ ]` `apps/web/src/components/sidebar/nav-user.tsx` **[UI] Dynamic Upgrade CTA in sidebar user dropdown**
+  * `[✅]` `apps/web/src/components/sidebar/nav-user.tsx` **[UI] Dynamic Upgrade CTA in sidebar user dropdown**
 
-    * `[ ]` `objective`
-      * `[ ]` The sidebar user dropdown has a hardcoded "Upgrade to Pro" button (line 127). After this node, the button reads the user's tier from the auth store and displays a context-aware CTA: "Upgrade to {next tier}" when a higher tier exists, or hides the CTA entirely when the user is on the highest tier.
-      * `[ ]` Non-functional: must not break existing dropdown behavior, logout flow, notification display, or theme toggle.
+    * `[✅]` `objective`
+      * `[✅]` The sidebar user dropdown has a hardcoded "Upgrade to Pro" button (line 127). After this node, the button reads the user's tier from the auth store and displays a context-aware CTA: "Upgrade to {next tier}" when a higher tier exists, or hides the CTA entirely when the user is on the highest tier.
+      * `[✅]` Non-functional: must not break existing dropdown behavior, logout flow, notification display, or theme toggle.
 
-    * `[ ]` `role`
-      * `[ ]` UI presentation layer — a sidebar dropdown component that reads from the auth store and renders tier-aware content.
-      * `[ ]` This node must NOT modify store logic, types, or BE endpoints.
+    * `[✅]` `role`
+      * `[✅]` UI presentation layer — a sidebar dropdown component that reads from the auth store and renders tier-aware content.
+      * `[✅]` This node must NOT modify store logic, types, or BE endpoints.
 
-    * `[ ]` `module`
-      * `[ ]` Bounded context: sidebar user menu. The Upgrade CTA is one of five dropdown items.
-      * `[ ]` Inside: rendering a dynamic upgrade button based on the user's tier and the next available tier.
-      * `[ ]` Outside: subscription management, checkout flows, tier mutation.
+    * `[✅]` `module`
+      * `[✅]` Bounded context: sidebar user menu. The Upgrade CTA is one of five dropdown items.
+      * `[✅]` Inside: rendering a dynamic upgrade button based on the user's tier and the next available tier.
+      * `[✅]` Outside: subscription management, checkout flows, tier mutation.
 
-    * `[ ]` `deps`
-      * `[ ]` Depends on prior node `packages/store/src/authStore.ts` — `userTier` and `availableTiers` must be available in the auth store, and `AuthStore` interface must include these fields.
-      * `[ ]` `useAuthStore` is already imported (line 3) and used (lines 46-48 reads `logout`). The existing selector must be extended to also read `userTier` and `availableTiers`.
+    * `[✅]` `deps`
+      * `[✅]` Depends on prior node `packages/store/src/authStore.ts` — `userTier` and `availableTiers` must be available in the auth store, and `AuthStore` interface must include these fields.
+      * `[✅]` `useAuthStore` is already imported (line 3) and used (lines 46-48 reads `logout`). The existing selector must be extended to also read `userTier` and `availableTiers`.
 
-    * `[ ]` `context_slice`
-      * `[ ]` The component calls `useAuthStore((state) => ({ logout: state.logout }))` at line 46. The tier data is read from the same store by extending this selector to include `userTier: state.userTier` and `availableTiers: state.availableTiers`.
+    * `[✅]` `context_slice`
+      * `[✅]` The component calls `useAuthStore((state) => ({ logout: state.logout }))` at line 46. The tier data is read from the same store by extending this selector to include `userTier: state.userTier` and `availableTiers: state.availableTiers`.
 
-    * `[ ]` `apps/web/src/components/sidebar/nav-user.test.tsx`
-      * `[ ]` Import `UserTier` and `Tier` from `@paynless/types`.
-      * `[ ]` Add mock tier data constants after existing mocks:
+    * `[✅]` `apps/web/src/components/sidebar/nav-user.test.tsx`
+      * `[✅]` Import `UserTier` and `Tier` from `@paynless/types`.
+      * `[✅]` Add mock tier data constants after existing mocks:
         * `const mockFreeTier: UserTier = { level: 0, name: 'free', output_cap_tokens: 8192, max_models_per_project: 1 };`
         * `const mockPremiumTier: UserTier = { level: 20, name: 'premium', output_cap_tokens: 131072, max_models_per_project: 3 };`
         * `const mockUltraTier: UserTier = { level: 30, name: 'ultra', output_cap_tokens: null, max_models_per_project: null };`
         * `const mockAllTiers: Tier[] = [{ level: 0, name: 'free', output_cap_tokens: 8192, max_models_per_project: 1 }, { level: 10, name: 'basic', output_cap_tokens: 32768, max_models_per_project: 2 }, { level: 20, name: 'premium', output_cap_tokens: 131072, max_models_per_project: 3 }, { level: 30, name: 'ultra', output_cap_tokens: null, max_models_per_project: null }];`
-      * `[ ]` In `beforeEach` (line 163-212), after `authState.logout = mockLogout;` (line 211), add:
+      * `[✅]` In `beforeEach` (line 163-212), after `authState.logout = mockLogout;` (line 211), add:
         * `authState.userTier = mockFreeTier;`
         * `authState.availableTiers = mockAllTiers;`
-      * `[ ]` Update existing test "should render 'Upgrade to Pro' button with Sparkles icon" (line 473-479):
+      * `[✅]` Update existing test "should render 'Upgrade to Pro' button with Sparkles icon" (line 473-479):
         * Change assertion from `screen.getByText('Upgrade to Pro')` to `screen.getByText('Upgrade to Basic')` (since default mock is free tier, next tier is basic).
         * Update test description to: "should render dynamic upgrade CTA with Sparkles icon when a higher tier exists"
-      * `[ ]` Update existing test "should navigate to /subscription when 'Upgrade to Pro' is clicked" (line 482-491):
+      * `[✅]` Update existing test "should navigate to /subscription when 'Upgrade to Pro' is clicked" (line 482-491):
         * Change `screen.getByText('Upgrade to Pro')` to `screen.getByText('Upgrade to Basic')`.
         * Update test description to: "should navigate to /subscription when upgrade CTA is clicked"
-      * `[ ]` Add test: "should show 'Upgrade to Premium' when user is on basic tier"
+      * `[✅]` Add test: "should show 'Upgrade to Premium' when user is on basic tier"
         * Override auth state: `authState.userTier = { level: 10, name: 'basic', output_cap_tokens: 32768, max_models_per_project: 2 };`
         * Open dropdown, assert `screen.getByText('Upgrade to Premium')` is in the document
-      * `[ ]` Add test: "should hide upgrade CTA when user is on highest tier"
+      * `[✅]` Add test: "should hide upgrade CTA when user is on highest tier"
         * Override auth state: `authState.userTier = mockUltraTier;`
         * Open dropdown, assert `screen.queryByText(/Upgrade to/i)` is `null`
         * Assert Sparkles icon is NOT present in dropdown content (only the Sparkles icon from the CTA, not other icons)
-      * `[ ]` Add test: "should show fallback 'Upgrade' CTA when userTier is null"
+      * `[✅]` Add test: "should show fallback 'Upgrade' CTA when userTier is null"
         * Override auth state: `authState.userTier = null; authState.availableTiers = [];`
         * Open dropdown, assert `screen.getByText('Upgrade')` is in the document
         * Assert clicking it navigates to `/subscription`
 
-    * `[ ]` `apps/web/src/components/sidebar/nav-user.tsx`
-      * `[ ]` Extend the `useAuthStore` selector (lines 46-48) to also read tier data:
+    * `[✅]` `apps/web/src/components/sidebar/nav-user.tsx`
+      * `[✅]` Extend the `useAuthStore` selector (lines 46-48) to also read tier data:
         ```
         const { logout, userTier, availableTiers } = useAuthStore((state) => ({
           logout: state.logout,
@@ -518,70 +518,70 @@
           availableTiers: state.availableTiers,
         }));
         ```
-      * `[ ]` Derive the next tier before the return statement (after `const handleLogout`):
+      * `[✅]` Derive the next tier before the return statement (after `const handleLogout`):
         * `const nextTier = availableTiers.find(t => t.level > (userTier?.level ?? -1));`
         * `const nextTierName = nextTier ? nextTier.name.charAt(0).toUpperCase() + nextTier.name.slice(1) : null;`
-      * `[ ]` Replace the hardcoded "Upgrade to Pro" button (lines 121-128) with conditional rendering:
+      * `[✅]` Replace the hardcoded "Upgrade to Pro" button (lines 121-128) with conditional rendering:
         * If `nextTierName` exists: render `<Button variant="ghost" className="w-full justify-start hover:underline" onClick={() => navigate("/subscription")}><Sparkles />Upgrade to {nextTierName}</Button>`
         * If `nextTierName` is null and `userTier` is null (not hydrated): render `<Button variant="ghost" className="w-full justify-start hover:underline" onClick={() => navigate("/subscription")}><Sparkles />Upgrade</Button>`
         * If `nextTierName` is null and `userTier` is not null (user is on highest tier): render nothing
 
-    * `[ ]` `requirements`
-      * `[ ]` The sidebar upgrade CTA displays "Upgrade to {next tier name}" when a higher tier exists
-      * `[ ]` The sidebar upgrade CTA is hidden when the user is on the highest tier
-      * `[ ]` When `userTier` is null, the CTA falls back to a generic "Upgrade" label linking to `/subscription`
-      * `[ ]` All existing nav-user tests continue to pass (with updated assertions for dynamic text)
-      * `[ ]` All new nav-user tests pass
+    * `[✅]` `requirements`
+      * `[✅]` The sidebar upgrade CTA displays "Upgrade to {next tier name}" when a higher tier exists
+      * `[✅]` The sidebar upgrade CTA is hidden when the user is on the highest tier
+      * `[✅]` When `userTier` is null, the CTA falls back to a generic "Upgrade" label linking to `/subscription`
+      * `[✅]` All existing nav-user tests continue to pass (with updated assertions for dynamic text)
+      * `[✅]` All new nav-user tests pass
 
-  * `[ ]` `apps/web/src/pages/Subscription.tsx` **[UI] Tier-aware plan display — badges and tier comparison from auth store**
+  * `[✅]` `apps/web/src/pages/Subscription.tsx` **[UI] Tier-aware plan display — badges and tier comparison from auth store**
 
-    * `[ ]` `objective`
-      * `[ ]` The subscription page currently identifies the user's plan via `currentUserResolvedPlan` (plan ID comparison) from the subscription store. After this node, the page also reads `userTier` from the auth store and compares each plan's `tier_level` against `userTier.level` to add tier-aware badges ("Your Tier", "Upgrade") on plan cards. This provides a second, more authoritative signal of the user's access level alongside the existing subscription-based "Current Plan" button.
-      * `[ ]` Non-functional: must not break existing subscription management flows (subscribe, cancel, manage billing), plan card rendering, or loading/redirect behavior.
+    * `[✅]` `objective`
+      * `[✅]` The subscription page currently identifies the user's plan via `currentUserResolvedPlan` (plan ID comparison) from the subscription store. After this node, the page also reads `userTier` from the auth store and compares each plan's `tier_level` against `userTier.level` to add tier-aware badges ("Your Tier", "Upgrade") on plan cards. This provides a second, more authoritative signal of the user's access level alongside the existing subscription-based "Current Plan" button.
+      * `[✅]` Non-functional: must not break existing subscription management flows (subscribe, cancel, manage billing), plan card rendering, or loading/redirect behavior.
 
-    * `[ ]` `role`
-      * `[ ]` UI presentation layer — a React page component that reads from both the auth store (tier) and the subscription store (plans), and renders tier-aware badge overlays around existing `PlanCard` components.
-      * `[ ]` This node must NOT modify `PlanCard.tsx`, store logic, types, or BE endpoints.
+    * `[✅]` `role`
+      * `[✅]` UI presentation layer — a React page component that reads from both the auth store (tier) and the subscription store (plans), and renders tier-aware badge overlays around existing `PlanCard` components.
+      * `[✅]` This node must NOT modify `PlanCard.tsx`, store logic, types, or BE endpoints.
 
-    * `[ ]` `module`
-      * `[ ]` Bounded context: subscription plan selection page.
-      * `[ ]` Inside: reading `userTier` from auth store, computing tier relationship per plan, rendering tier badges around `PlanCard` components.
-      * `[ ]` Outside: PlanCard button logic (unchanged), checkout flows, subscription store mutations, tier mutation.
+    * `[✅]` `module`
+      * `[✅]` Bounded context: subscription plan selection page.
+      * `[✅]` Inside: reading `userTier` from auth store, computing tier relationship per plan, rendering tier badges around `PlanCard` components.
+      * `[✅]` Outside: PlanCard button logic (unchanged), checkout flows, subscription store mutations, tier mutation.
 
-    * `[ ]` `deps`
-      * `[ ]` Depends on prior node `packages/store/src/authStore.ts` — `userTier` and `availableTiers` must be available in the auth store.
-      * `[ ]` `useAuthStore` is already imported (line 3) and used (line 22). The destructured selector must be extended to also read `userTier`.
-      * `[ ]` `SubscriptionPlan` (from `@paynless/types`) already has a `tier_level: number` field (from `subscription_plans` DB table, `types_db.ts` line 1918). No type changes needed.
+    * `[✅]` `deps`
+      * `[✅]` Depends on prior node `packages/store/src/authStore.ts` — `userTier` and `availableTiers` must be available in the auth store.
+      * `[✅]` `useAuthStore` is already imported (line 3) and used (line 22). The destructured selector must be extended to also read `userTier`.
+      * `[✅]` `SubscriptionPlan` (from `@paynless/types`) already has a `tier_level: number` field (from `subscription_plans` DB table, `types_db.ts` line 1918). No type changes needed.
 
-    * `[ ]` `context_slice`
-      * `[ ]` The component calls `useAuthStore()` at line 22 to get `{ user, isLoading: authLoading }`. Extend to include `userTier: state.userTier`.
-      * `[ ]` Each `SubscriptionPlan` object in `availablePlans` already contains `tier_level: number`. The comparison is `plan.tier_level` vs `userTier?.level`.
+    * `[✅]` `context_slice`
+      * `[✅]` The component calls `useAuthStore()` at line 22 to get `{ user, isLoading: authLoading }`. Extend to include `userTier: state.userTier`.
+      * `[✅]` Each `SubscriptionPlan` object in `availablePlans` already contains `tier_level: number`. The comparison is `plan.tier_level` vs `userTier?.level`.
 
-    * `[ ]` `apps/web/src/pages/Subscription.test.tsx`
-      * `[ ]` Import `UserTier` from `@paynless/types`.
-      * `[ ]` Add `userTier` to `authStoreInitialState` (line 43-60):
+    * `[✅]` `apps/web/src/pages/Subscription.test.tsx`
+      * `[✅]` Import `UserTier` from `@paynless/types`.
+      * `[✅]` Add `userTier` to `authStoreInitialState` (line 43-60):
         * Add `userTier: { level: 0, name: 'free', output_cap_tokens: 8192, max_models_per_project: 1 } as UserTier,`
         * Add `availableTiers: [],` (not consumed by this page but needed for store shape)
         * Add `setTier: vi.fn(),`
         * Add `setAvailableTiers: vi.fn(),`
-      * `[ ]` Ensure mock plans have `tier_level` values in `subscriptionStoreInitialState` (they already use `as unknown as SubscriptionPlan` casts — add `tier_level: 10` to Basic Monthly Plan and `tier_level: 20` to Pro Monthly Plan in the mock data).
-      * `[ ]` Add test: "should render 'Your Tier' badge on plan cards matching user's tier level"
+      * `[✅]` Ensure mock plans have `tier_level` values in `subscriptionStoreInitialState` (they already use `as unknown as SubscriptionPlan` casts — add `tier_level: 10` to Basic Monthly Plan and `tier_level: 20` to Pro Monthly Plan in the mock data).
+      * `[✅]` Add test: "should render 'Your Tier' badge on plan cards matching user's tier level"
         * Set `useAuthStore.setState({ userTier: { level: 10, name: 'basic', output_cap_tokens: 32768, max_models_per_project: 2 } })` and ensure a plan with `tier_level: 10` exists
         * Render, find the plan card for the matching plan
         * Assert: a badge with text "Your Tier" is visible within or adjacent to that plan card
-      * `[ ]` Add test: "should render 'Upgrade' badge on plan cards with higher tier level"
+      * `[✅]` Add test: "should render 'Upgrade' badge on plan cards with higher tier level"
         * Default mock: user is on free tier (level 0), plans have `tier_level: 10` and `tier_level: 20`
         * Assert: both plan cards show an "Upgrade" badge
-      * `[ ]` Add test: "should not render 'Upgrade' badge on plan cards at or below user's tier level"
+      * `[✅]` Add test: "should not render 'Upgrade' badge on plan cards at or below user's tier level"
         * Set user to premium tier (level 20), plans have `tier_level: 10` and `tier_level: 20`
         * Assert: the `tier_level: 10` plan does NOT have an "Upgrade" badge
         * Assert: the `tier_level: 20` plan has a "Your Tier" badge
-      * `[ ]` Add test: "should not render any tier badge when userTier is null"
+      * `[✅]` Add test: "should not render any tier badge when userTier is null"
         * Set `useAuthStore.setState({ userTier: null })`
         * Assert: no "Your Tier" or "Upgrade" badges are rendered
 
-    * `[ ]` `apps/web/src/pages/Subscription.tsx`
-      * `[ ]` Extend the `useAuthStore` call (line 22) to also read `userTier`:
+    * `[✅]` `apps/web/src/pages/Subscription.tsx`
+      * `[✅]` Extend the `useAuthStore` call (line 22) to also read `userTier`:
         ```
         const { user, isLoading: authLoading, userTier } = useAuthStore((state) => ({
           user: state.user,
@@ -589,7 +589,7 @@
           userTier: state.userTier,
         }));
         ```
-      * `[ ]` Add a helper function (before the return statement) to compute tier relationship:
+      * `[✅]` Add a helper function (before the return statement) to compute tier relationship:
         ```
         const getTierBadge = (planTierLevel: number): string | null => {
           if (userTier == null) return null;
@@ -598,80 +598,80 @@
           return null;
         };
         ```
-      * `[ ]` In each `TabsContent` section (monthly, annual, top-up), wrap each `PlanCard` in a relative-positioned container and conditionally render a badge based on `getTierBadge(plan.tier_level)`:
+      * `[✅]` In the monthly and annual `TabsContent` sections, wrap each `PlanCard` in a relative-positioned container and conditionally render a badge based on `getTierBadge(plan.tier_level)`:
         * If badge text is not null, render a `<Badge>` element (from `@/components/ui/badge`) positioned at the top-right or top-left of the card container:
           * "Your Tier" → `<Badge variant="outline">Your Tier</Badge>`
           * "Upgrade" → `<Badge variant="default">Upgrade</Badge>`
         * If badge text is null, render no badge
-      * `[ ]` Import `Badge` from `@/components/ui/badge` (add to existing imports).
-      * `[ ]` The wrapper div for each `PlanCard` gets `className="relative"` to position the badge absolutely within it.
+      * `[✅]` Import `Badge` from `@/components/ui/badge` (add to existing imports).
+      * `[✅]` The wrapper div for each `PlanCard` gets `className="relative"` to position the badge absolutely within it.
 
-    * `[ ]` `requirements`
-      * `[ ]` The subscription page reads `userTier` from the auth store
-      * `[ ]` Plan cards at the user's tier level show a "Your Tier" badge
-      * `[ ]` Plan cards above the user's tier level show an "Upgrade" badge
-      * `[ ]` Plan cards below the user's tier level show no tier badge
-      * `[ ]` When `userTier` is null (not hydrated), no tier badges are rendered
-      * `[ ]` Existing plan card button behavior (Subscribe, Change Plan, Current Plan, Downgrade to Free) is unchanged
-      * `[ ]` All existing subscription page tests continue to pass
-      * `[ ]` All new tier badge tests pass
+    * `[✅]` `requirements`
+      * `[✅]` The subscription page reads `userTier` from the auth store
+      * `[✅]` Plan cards at the user's tier level show a "Your Tier" badge
+      * `[✅]` Plan cards above the user's tier level show an "Upgrade" badge
+      * `[✅]` Plan cards below the user's tier level show no tier badge
+      * `[✅]` When `userTier` is null (not hydrated), no tier badges are rendered
+      * `[✅]` Existing plan card button behavior (Subscribe, Change Plan, Current Plan, Downgrade to Free) is unchanged
+      * `[✅]` All existing subscription page tests continue to pass
+      * `[✅]` All new tier badge tests pass
 
-  * `[ ]` `apps/web/src/pages/Profile.tsx` **[UI] Plan & Tier card — display tier details and upgrade link**
+  * `[✅]` `apps/web/src/pages/Profile.tsx` **[UI] Plan & Tier card — display tier details and upgrade link**
 
-    * `[ ]` `objective`
-      * `[ ]` The profile page currently shows wallet balance, name, email, password, privacy settings, and notification settings. No tier information is displayed. After this node, a new "Plan & Tier" card appears in the profile card stack showing the user's tier name, output cap, max models per project, and a link to the subscription page.
-      * `[ ]` Non-functional: must not break existing profile page layout, loading states, error states, or ErrorBoundary behavior.
+    * `[✅]` `objective`
+      * `[✅]` The profile page currently shows wallet balance, name, email, password, privacy settings, and notification settings. No tier information is displayed. After this node, a new "Plan & Tier" card appears in the profile card stack showing the user's tier name, output cap, max models per project, and a link to the subscription page.
+      * `[✅]` Non-functional: must not break existing profile page layout, loading states, error states, or ErrorBoundary behavior.
 
-    * `[ ]` `role`
-      * `[ ]` UI presentation layer — a React page component that reads tier data from the auth store and renders a read-only display card.
-      * `[ ]` This node must NOT modify store logic, types, or BE endpoints.
+    * `[✅]` `role`
+      * `[✅]` UI presentation layer — a React page component that reads tier data from the auth store and renders a read-only display card.
+      * `[✅]` This node must NOT modify store logic, types, or BE endpoints.
 
-    * `[ ]` `module`
-      * `[ ]` Bounded context: user profile overview. The Plan & Tier card is a new read-only card in the existing vertical card stack.
-      * `[ ]` Inside: rendering the user's tier name, output cap tokens, max models per project, and an upgrade link.
-      * `[ ]` Outside: tier mutation, subscription management, checkout flows.
+    * `[✅]` `module`
+      * `[✅]` Bounded context: user profile overview. The Plan & Tier card is a new read-only card in the existing vertical card stack.
+      * `[✅]` Inside: rendering the user's tier name, output cap tokens, max models per project, and an upgrade link.
+      * `[✅]` Outside: tier mutation, subscription management, checkout flows.
 
-    * `[ ]` `deps`
-      * `[ ]` Depends on prior node `packages/store/src/authStore.ts` — `userTier` must be available in the auth store.
-      * `[ ]` `useAuthStore` is already imported (line 1) and used (lines 19-21). A new selector call reads `userTier`.
-      * `[ ]` Uses `Card`, `CardContent`, `CardHeader`, `CardTitle` already imported (lines 11-15). Uses `Link` from `react-router-dom` for the upgrade CTA — must be imported.
+    * `[✅]` `deps`
+      * `[✅]` Depends on prior node `packages/store/src/authStore.ts` — `userTier` must be available in the auth store.
+      * `[✅]` `useAuthStore` is already imported (line 1) and used (lines 19-21). A new selector call reads `userTier`.
+      * `[✅]` Uses `Card`, `CardContent`, `CardHeader`, `CardTitle` already imported (lines 11-15). Uses `Link` from `react-router-dom` for the upgrade CTA — must be imported.
 
-    * `[ ]` `context_slice`
-      * `[ ]` The component makes three separate `useAuthStore` calls (lines 19-21). A fourth call reads `userTier`: `const userTier = useAuthStore((state) => state.userTier);`
-      * `[ ]` The card renders inline in `ProfilePage` (not a separate component) because it is purely display logic with no form, state management, or side effects.
+    * `[✅]` `context_slice`
+      * `[✅]` The component makes three separate `useAuthStore` calls (lines 19-21). A fourth call reads `userTier`: `const userTier = useAuthStore((state) => state.userTier);`
+      * `[✅]` The card renders inline in `ProfilePage` (not a separate component) because it is purely display logic with no form, state management, or side effects.
 
-    * `[ ]` `apps/web/src/pages/Profile.test.tsx`
-      * `[ ]` Import `UserTier` from `@paynless/types`.
-      * `[ ]` Import `MemoryRouter` from `react-router-dom` (needed because the new card includes a `<Link>`). Update `renderProfilePage` to wrap in `<MemoryRouter>`.
-      * `[ ]` Import `mockedUseAuthStoreHookLogic` or use the existing `resetAuthStoreMock` + state setter pattern to set `userTier` on the mock auth store. Since `authStore.mock.ts` will already include `userTier` (from Node B), set it in `beforeEach` after `resetAuthStoreMock()`:
+    * `[✅]` `apps/web/src/pages/Profile.test.tsx`
+      * `[✅]` Import `UserTier` from `@paynless/types`.
+      * `[✅]` Import `MemoryRouter` from `react-router-dom` (needed because the new card includes a `<Link>`). Update `renderProfilePage` to wrap in `<MemoryRouter>`.
+      * `[✅]` Import `mockedUseAuthStoreHookLogic` or use the existing `resetAuthStoreMock` + state setter pattern to set `userTier` on the mock auth store. Since `authStore.mock.ts` will already include `userTier` (from Node B), set it in `beforeEach` after `resetAuthStoreMock()`:
         * Add: `internalMockAuthStoreGetState().userTier = { level: 0, name: 'free', output_cap_tokens: 8192, max_models_per_project: 1 };`
-      * `[ ]` Import `internalMockAuthStoreGetState` from `../mocks/authStore.mock` (already imported: `resetAuthStoreMock` comes from there).
-      * `[ ]` Add test: "should render Plan & Tier card with tier details when profile is loaded"
+      * `[✅]` Import `internalMockAuthStoreGetState` from `../mocks/authStore.mock` (already imported: `resetAuthStoreMock` comes from there).
+      * `[✅]` Add test: "should render Plan & Tier card with tier details when profile is loaded"
         * Default mock has `userTier` set to free tier
         * Assert: text "Plan & Tier" is present (card title)
         * Assert: text "Free" is present (tier name, capitalized)
         * Assert: text "8,192" is present (output cap formatted with locale)
         * Assert: text "1" is present (max models)
         * Assert: a link to `/subscription` exists within the card
-      * `[ ]` Add test: "should render 'Unlimited' for null output_cap_tokens and max_models_per_project"
+      * `[✅]` Add test: "should render 'Unlimited' for null output_cap_tokens and max_models_per_project"
         * Set `userTier` to `{ level: 30, name: 'ultra', output_cap_tokens: null, max_models_per_project: null }`
         * Assert: text "Ultra" is present
         * Assert: text "Unlimited" appears twice (once for output cap, once for max models)
-      * `[ ]` Add test: "should not render Plan & Tier card when userTier is null"
+      * `[✅]` Add test: "should not render Plan & Tier card when userTier is null"
         * Set `userTier` to `null`
         * Assert: text "Plan & Tier" is NOT present
-      * `[ ]` Update existing test "should render all profile components when profile is loaded":
+      * `[✅]` Update existing test "should render all profile components when profile is loaded":
         * Assert: text "Plan & Tier" is present (the new card renders alongside existing cards)
 
-    * `[ ]` `apps/web/src/pages/Profile.tsx`
-      * `[ ]` Add import: `import { Link } from "react-router-dom";`
-      * `[ ]` Add a fourth `useAuthStore` selector call after line 21:
+    * `[✅]` `apps/web/src/pages/Profile.tsx`
+      * `[✅]` Add import: `import { Link } from "react-router-dom";`
+      * `[✅]` Add a fourth `useAuthStore` selector call after line 21:
         * `const userTier = useAuthStore((state) => state.userTier);`
-      * `[ ]` Derive display values before the return statement (after the early-return guards, before line 80):
+      * `[✅]` Derive display values before the return statement (after the early-return guards, before line 80):
         * `const tierName = userTier ? userTier.name.charAt(0).toUpperCase() + userTier.name.slice(1) : null;`
         * `const outputCap = userTier?.output_cap_tokens != null ? userTier.output_cap_tokens.toLocaleString() : 'Unlimited';`
         * `const maxModels = userTier?.max_models_per_project != null ? String(userTier.max_models_per_project) : 'Unlimited';`
-      * `[ ]` Insert the Plan & Tier card into the card stack, after the `WalletBalanceDisplay` ErrorBoundary block (after line 104) and before the `EditName` ErrorBoundary block (line 106). Wrap in an ErrorBoundary with a fallback matching the existing pattern:
+      * `[✅]` Insert the Plan & Tier card into the card stack, after the `WalletBalanceDisplay` ErrorBoundary block (after line 104) and before the `EditName` ErrorBoundary block (line 106). Wrap in an ErrorBoundary with a fallback matching the existing pattern:
         ```
         {userTier && (
           <ErrorBoundary
@@ -719,16 +719,16 @@
           </ErrorBoundary>
         )}
         ```
-      * `[ ]` When `userTier` is null, the entire card block is not rendered (the conditional `{userTier && (...)}` handles this).
+      * `[✅]` When `userTier` is null, the entire card block is not rendered (the conditional `{userTier && (...)}` handles this).
 
-    * `[ ]` `requirements`
-      * `[ ]` The profile page displays a "Plan & Tier" card when `userTier` is not null
-      * `[ ]` The card shows the tier name (capitalized), output cap (formatted with locale or "Unlimited"), and max models per project (number or "Unlimited")
-      * `[ ]` The card includes a link to `/subscription`
-      * `[ ]` When `userTier` is null, the card is not rendered
-      * `[ ]` The card is wrapped in an ErrorBoundary matching the existing page pattern
-      * `[ ]` All existing profile page tests continue to pass
-      * `[ ]` All new tier card tests pass
+    * `[✅]` `requirements`
+      * `[✅]` The profile page displays a "Plan & Tier" card when `userTier` is not null
+      * `[✅]` The card shows the tier name (capitalized), output cap (formatted with locale or "Unlimited"), and max models per project (number or "Unlimited")
+      * `[✅]` The card includes a link to `/subscription`
+      * `[✅]` When `userTier` is null, the card is not rendered
+      * `[✅]` The card is wrapped in an ErrorBoundary matching the existing page pattern
+      * `[✅]` All existing profile page tests continue to pass
+      * `[✅]` All new tier card tests pass
 
 * **Multi-item checkout cart — select a subscription plan + one or more OTP token packages in a single Stripe Checkout flow**
 

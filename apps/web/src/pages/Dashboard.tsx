@@ -38,10 +38,12 @@ import {
 import { selectActiveChatWalletInfo } from "@paynless/store";
 
 export function DashboardPage() {
-	const { user, profile, isLoading } = useAuthStore((state) => ({
+	const { user, profile, isLoading, userTier, availableTiers } = useAuthStore((state) => ({
 		user: state.user,
 		profile: state.profile,
 		isLoading: state.isLoading,
+		userTier: state.userTier,
+		availableTiers: state.availableTiers,
 	}));
 
 	// Chat data
@@ -91,6 +93,10 @@ export function DashboardPage() {
 	const recentChats = chats.slice(0, 5);
 	const recentProjects = dialecticProjects.slice(0, 4);
 	const tokenUsagePercentage = (Number(tokenBalance) / Number(maxTokens)) * 100;
+	const tierName = userTier?.name ?? 'free';
+	const displayTierName = tierName.charAt(0).toUpperCase() + tierName.slice(1);
+	const nextTier = availableTiers.find(t => t.level > (userTier?.level ?? -1));
+	const nextTierName = nextTier ? nextTier.name.charAt(0).toUpperCase() + nextTier.name.slice(1) : null;
 
 	return (
 		<div className="min-h-screen bg-gradient-to-br from-background to-muted/20">
@@ -167,10 +173,16 @@ export function DashboardPage() {
 							<TrendingUp className="h-4 w-4 text-muted-foreground" />
 						</CardHeader>
 						<CardContent>
-							<div className="text-2xl font-bold">Free</div>
-							<Button variant="link" className="p-0 h-auto text-xs" asChild>
-								<Link to="/subscription">Upgrade to Pro</Link>
-							</Button>
+							<div className="text-2xl font-bold">{displayTierName}</div>
+							{nextTierName ? (
+								<Button variant="link" className="p-0 h-auto text-xs" asChild>
+									<Link to="/subscription">Upgrade to {nextTierName}</Link>
+								</Button>
+							) : userTier === null ? (
+								<Button variant="link" className="p-0 h-auto text-xs" asChild>
+									<Link to="/subscription">Upgrade</Link>
+								</Button>
+							) : null}
 						</CardContent>
 					</Card>
 				</div>

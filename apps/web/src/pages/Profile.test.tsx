@@ -1,13 +1,16 @@
 import { describe, it, expect, vi, beforeEach, afterEach, SpyInstance } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
+import type { UserTier } from '@paynless/types';
 import { ProfilePage } from './Profile';
 import {
+	internalMockAuthStoreGetState,
 	mockSetAuthError,
 	mockSetAuthIsLoading,
 	mockSetAuthProfile,
 	resetAuthStoreMock,
 } from '../mocks/authStore.mock';
-import { mockUserProfile } from '../mocks/profile.mock';
+import { mockAllTiers, mockUserProfile, mockUserTier } from '../mocks/profile.mock';
 
 // Mock child components
 vi.mock('../components/profile/EditName', () => ({ 
@@ -49,7 +52,11 @@ vi.mock('@paynless/utils', () => ({
 }));
 
 const renderProfilePage = () => {
-  return render(<ProfilePage />);
+  return render(
+    <MemoryRouter>
+      <ProfilePage />
+    </MemoryRouter>,
+  );
 };
 
 describe('ProfilePage Component', () => {
@@ -74,6 +81,7 @@ describe('ProfilePage Component', () => {
     mockSetAuthProfile(mockUserProfile);
     mockSetAuthIsLoading(false);
     mockSetAuthError(null);
+    internalMockAuthStoreGetState().userTier = mockUserTier;
   });
 
   afterEach(() => {
@@ -95,6 +103,7 @@ describe('ProfilePage Component', () => {
 
     expect(screen.queryByTestId('edit-name')).not.toBeInTheDocument();
     expect(screen.queryByTestId('edit-email')).not.toBeInTheDocument();
+    expect(screen.queryByText('Plan & Tier')).not.toBeInTheDocument();
   });
 
   it('should render error state if profile loading fails with authError', () => {
@@ -106,6 +115,7 @@ describe('ProfilePage Component', () => {
     expect(screen.getByText('Could not load Profile Page')).toBeInTheDocument(); // Card Title
     expect(screen.getByText(`Profile data could not be loaded. ${testError.message}`)).toBeInTheDocument();
     expect(screen.queryByTestId('edit-name')).not.toBeInTheDocument();
+    expect(screen.queryByText('Plan & Tier')).not.toBeInTheDocument();
   });
 
   it('should render error state if profile is null even without a specific authError message', () => {
@@ -116,11 +126,10 @@ describe('ProfilePage Component', () => {
     expect(screen.getByText('Profile Unavailable')).toBeInTheDocument(); // Card Title
     expect(screen.getByText('Profile data is unavailable. Please ensure you are logged in and try refreshing the page.')).toBeInTheDocument();
     expect(screen.queryByTestId('edit-name')).not.toBeInTheDocument();
+    expect(screen.queryByText('Plan & Tier')).not.toBeInTheDocument();
   });
 
   it('should render all profile components when profile is loaded', () => {
-    // No need for inline vi.mock here anymore, beforeEach with resetModules handles it.
-    // The default useAuthStore mock from beforeEach should be sufficient.
     renderProfilePage();
     expect(screen.getByTestId('profile-grid-container')).toBeInTheDocument();
     expect(screen.getByTestId('edit-name')).toBeInTheDocument();
@@ -129,6 +138,48 @@ describe('ProfilePage Component', () => {
     expect(screen.getByTestId('profile-privacy-settings-card')).toBeInTheDocument();
     expect(screen.getByTestId('notification-settings-card')).toBeInTheDocument();
     expect(screen.getByText('Email Notifications')).toBeInTheDocument();
+    expect(screen.getByText('Plan & Tier')).toBeInTheDocument();
+  });
+
+  it('should render Plan & Tier card with tier details when profile is loaded', () => {
+    renderProfilePage();
+    expect(screen.getByText('Plan & Tier')).toBeInTheDocument();
+    const planTierCard = screen.getByText('Plan & Tier').closest('[data-slot="card"]');
+    expect(planTierCard).not.toBeNull();
+    if (!(planTierCard instanceof HTMLElement)) {
+      throw new Error('Plan & Tier card not found');
+    }
+    const withinCard = within(planTierCard);
+
+    expect(withinCard.getByText('Free')).toBeInTheDocument();
+    expect(withinCard.getByText('8,192 tokens')).toBeInTheDocument();
+    expect(withinCard.getByText('1')).toBeInTheDocument();
+
+    const subscriptionLink = withinCard.getByRole('link', { name: /manage subscription/i });
+    expect(subscriptionLink).toHaveAttribute('href', '/subscription');
+  });
+
+  it("should render 'Unlimited' for null output_cap_tokens and max_models_per_project", () => {
+    const mockUltraTier: UserTier = mockAllTiers[3];
+    internalMockAuthStoreGetState().userTier = mockUltraTier;
+    renderProfilePage();
+
+    const planTierCard = screen.getByText('Plan & Tier').closest('[data-slot="card"]');
+    expect(planTierCard).not.toBeNull();
+    if (!(planTierCard instanceof HTMLElement)) {
+      throw new Error('Plan & Tier card not found');
+    }
+    const withinCard = within(planTierCard);
+
+    expect(withinCard.getByText('Ultra')).toBeInTheDocument();
+    expect(withinCard.getByText('Unlimited tokens')).toBeInTheDocument();
+    expect(withinCard.getByText('Unlimited', { selector: 'span.font-medium' })).toBeInTheDocument();
+  });
+
+  it('should not render Plan & Tier card when userTier is null', () => {
+    internalMockAuthStoreGetState().userTier = null;
+    renderProfilePage();
+    expect(screen.queryByText('Plan & Tier')).not.toBeInTheDocument();
   });
 
   it('should display ErrorBoundary fallback for a child component error', async () => {
@@ -144,7 +195,11 @@ describe('ProfilePage Component', () => {
     mockSetAuthIsLoading(false);
     mockSetAuthError(null);
 
-    render(<ProfilePageWithMockedError />);
+    render(
+      <MemoryRouter>
+        <ProfilePageWithMockedError />
+      </MemoryRouter>,
+    );
 
     // Check for the specific fallback UI for EditName
     expect(screen.getByText('Error in User Name')).toBeInTheDocument();
@@ -155,6 +210,7 @@ describe('ProfilePage Component', () => {
     expect(screen.getByTestId('wallet-balance-display')).toBeInTheDocument(); 
     expect(screen.getByTestId('edit-email')).toBeInTheDocument();
     expect(screen.getByTestId('profile-privacy-settings-card')).toBeInTheDocument();
+    expect(screen.getByText('Plan & Tier')).toBeInTheDocument();
     
     // Check that ErrorBoundary's componentDidCatch (which logs to console.error) was triggered by our spy
     // The actual console.error is suppressed by the spy, but we can check if the spy was called with expected error pattern.
@@ -164,4 +220,4 @@ describe('ProfilePage Component', () => {
     // We test that the fallback UI showed up, which means ErrorBoundary worked.
   });
 
-}); 
+});

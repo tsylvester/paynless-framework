@@ -2,8 +2,9 @@ import { describe, it, expect, afterEach, beforeEach, vi, SpyInstance } from 'vi
 import { useAuthStore } from './authStore';
 import { api } from '@paynless/api';
 import { mockApiClient, resetMockApiClient } from '@paynless/api/mocks';
-import type { User, Session, UserProfile, UserRole, ApiError, UserProfileUpdate, SuccessResponse, ErrorResponse, ProfilePrivacySetting, Json } from '@paynless/types';
+import type { User, Session, UserProfile, UserRole, ApiError, UserProfileUpdate, SuccessResponse, ErrorResponse } from '@paynless/types';
 import { logger } from '@paynless/utils';
+import { mockUserTier, mockAllTiers } from '../../../apps/web/src/mocks/profile.mock';
 
 // Helper to reset Zustand store state between tests
 const resetStore = () => {
@@ -26,11 +27,16 @@ const mockProfile: UserProfile = {
   profile_privacy_setting: 'private',
   has_seen_welcome_modal: false,
   is_subscribed_to_newsletter: false,
+  signup_ref: null,
+  subscribed_at: null,
+  synced_to_kit_at: null,
+  unsubscribed_at: null,
 };
 const profileUpdateData: UserProfileUpdate = { first_name: 'Updated', last_name: 'Name' };
-const updatedProfile: UserProfile = { 
-  ...mockProfile, 
-  ...profileUpdateData, 
+const updatedProfile: UserProfile = {
+  ...mockProfile,
+  first_name: 'Updated',
+  last_name: 'Name',
   updated_at: 'later',
 };
 
@@ -263,4 +269,37 @@ describe('AuthStore - Update Profile Action', () => {
     expect(result).toEqual(profileWithChatContextUpdate);
     expect(setStateSpy).not.toHaveBeenCalledWith(expect.objectContaining({ isLoading: true }));
   });
-}); 
+});
+
+describe('AuthStore - Tier State Management', () => {
+  beforeEach(() => {
+    resetStore();
+  });
+
+  it('initial state has userTier: null and availableTiers: []', () => {
+    expect(useAuthStore.getState().userTier).toBeNull();
+    expect(useAuthStore.getState().availableTiers).toEqual([]);
+  });
+
+  it('setTier sets userTier in state', () => {
+    useAuthStore.getState().setTier(mockUserTier);
+    expect(useAuthStore.getState().userTier).toEqual(mockUserTier);
+  });
+
+  it('setTier(null) clears userTier', () => {
+    useAuthStore.getState().setTier(mockUserTier);
+    useAuthStore.getState().setTier(null);
+    expect(useAuthStore.getState().userTier).toBeNull();
+  });
+
+  it('setAvailableTiers sets availableTiers in state', () => {
+    useAuthStore.getState().setAvailableTiers(mockAllTiers);
+    expect(useAuthStore.getState().availableTiers).toEqual(mockAllTiers);
+  });
+
+  it('setAvailableTiers([]) clears availableTiers', () => {
+    useAuthStore.getState().setAvailableTiers(mockAllTiers);
+    useAuthStore.getState().setAvailableTiers([]);
+    expect(useAuthStore.getState().availableTiers).toEqual([]);
+  });
+});

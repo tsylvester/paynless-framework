@@ -4,8 +4,9 @@ import { SubscriptionPage } from './Subscription';
 import { useAuthStore, useSubscriptionStore, useWalletStore } from '@paynless/store'; // Import actual stores
 import React from 'react';
 import { MemoryRouter } from 'react-router-dom';
-import type { UserProfile, SubscriptionPlan, UserSubscription, PurchaseRequest, PaymentInitiationResult, Session, User } from '@paynless/types';
+import type { UserTier, SubscriptionPlan, UserSubscription, PurchaseRequest, PaymentInitiationResult, Session, User } from '@paynless/types';
 import userEvent from '@testing-library/user-event';
+import { mockUserTier, mockUserProfile, mockAllTiers } from '../mocks/profile.mock';
 
 // --- Mocks --- 
 // Mock ONLY external dependencies or layout if needed
@@ -38,48 +39,130 @@ const mockCancelSubscription = vi.fn();
 const mockResumeSubscription = vi.fn(); 
 const mockInitiatePurchase = vi.fn(); // Added for useWalletStore
 
+const mockAuthUser: User = {
+  id: 'user-123',
+  email: 'user@example.com',
+};
+
+const mockSession: Session = {
+  access_token: 'mock-token',
+  refresh_token: 'mock-refresh',
+  expiresAt: Date.now() + 3600000,
+};
+
+const mockBasicTier: UserTier = mockAllTiers[1];
+
+const mockPremiumTier: UserTier = mockAllTiers[2];
+
+const mockBasicMonthlyPlan: SubscriptionPlan = {
+  id: 'plan-1',
+  name: 'Basic Monthly Plan',
+  stripe_price_id: 'price_basic',
+  amount: 1000,
+  currency: 'usd',
+  interval: 'month',
+  interval_count: 1,
+  active: true,
+  created_at: '2024-01-01T00:00:00.000Z',
+  updated_at: '2024-01-01T00:00:00.000Z',
+  description: { subtitle: 'Basic Sub', features: ['Feature 1'] },
+  metadata: null,
+  stripe_product_id: 'prod_basic',
+  plan_type: 'subscription',
+  item_id_internal: null,
+  tokens_to_award: 1000,
+  tier_level: 10,
+};
+
+const mockProMonthlyPlan: SubscriptionPlan = {
+  id: 'plan-2',
+  name: 'Pro Monthly Plan',
+  stripe_price_id: 'price_pro',
+  amount: 5000,
+  currency: 'usd',
+  interval: 'month',
+  interval_count: 1,
+  active: true,
+  created_at: '2024-01-01T00:00:00.000Z',
+  updated_at: '2024-01-01T00:00:00.000Z',
+  description: { subtitle: 'Pro Sub', features: ['Feature A', 'Feature B'] },
+  metadata: null,
+  stripe_product_id: 'prod_pro',
+  plan_type: 'subscription',
+  item_id_internal: null,
+  tokens_to_award: 5000,
+  tier_level: 20,
+};
+
+const mockFreePlan: SubscriptionPlan = {
+  id: 'plan-free',
+  name: 'Free Plan',
+  stripe_price_id: 'price_free',
+  amount: 0,
+  currency: 'usd',
+  interval: 'month',
+  interval_count: 1,
+  active: true,
+  created_at: '2024-01-01T00:00:00.000Z',
+  updated_at: '2024-01-01T00:00:00.000Z',
+  description: null,
+  metadata: null,
+  stripe_product_id: 'prod_free',
+  plan_type: 'subscription',
+  item_id_internal: null,
+  tokens_to_award: null,
+  tier_level: 0,
+};
+
+const mockUserSubscription: UserSubscription = {
+  id: 'sub-db-id-123',
+  status: 'active',
+  stripe_subscription_id: 'stripe_sub_abc',
+  plan_id: 'plan-1',
+  current_period_end: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+  cancel_at_period_end: false,
+  created_at: '2024-01-01T00:00:00.000Z',
+  updated_at: '2024-01-01T00:00:00.000Z',
+  user_id: 'user-123',
+  stripe_customer_id: 'cus_mock',
+  current_period_start: '2024-01-01T00:00:00.000Z',
+  has_ever_paid: true,
+  tier_level: 10,
+  plan: mockBasicMonthlyPlan,
+};
+
 // Define Initial States for Stores (ensure stripe_subscription_id is present)
 // Add necessary fields for formatters (amount, currency, interval, intervalCount)
 const authStoreInitialState = {
-  user: { id: 'user-123' } as User, 
-  profile: { id: 'user-123' } as UserProfile, 
-  session: { access_token: 'mock-token' } as unknown as Session,
+  user: mockAuthUser,
+  profile: mockUserProfile,
+  session: mockSession,
   isLoading: false,
   error: null,
-  login: vi.fn(), 
+  userTier: mockUserTier,
+  availableTiers: [],
+  login: vi.fn(),
   logout: vi.fn(),
   initialize: vi.fn(),
   refreshSession: vi.fn(),
   register: vi.fn(),
-  updateProfile: vi.fn(), 
+  updateProfile: vi.fn(),
   setUser: vi.fn(),
   setSession: vi.fn(),
   setProfile: vi.fn(),
-  setIsLoading: vi.fn(), 
-  setError: vi.fn(),    
+  setTier: vi.fn(),
+  setAvailableTiers: vi.fn(),
+  setIsLoading: vi.fn(),
+  setError: vi.fn(),
 };
 
 const subscriptionStoreInitialState = {
-  availablePlans: [
-      { id: 'plan-1', name: 'Basic Monthly Plan', stripe_price_id: 'price_basic', amount: 1000, currency: 'usd', interval: 'month', interval_count: 1, description: { subtitle: 'Basic Sub', features: ['Feature 1'] }, tokens_to_award: 1000 } as unknown as SubscriptionPlan,
-      { id: 'plan-2', name: 'Pro Monthly Plan', stripe_price_id: 'price_pro', amount: 5000, currency: 'usd', interval: 'month', interval_count: 1, description: { subtitle: 'Pro Sub', features: ['Feature A', 'Feature B'] }, tokens_to_award: 5000 } as unknown as SubscriptionPlan
-  ],
-  userSubscription: {
-    id: 'sub-db-id-123', 
-    status: 'active', 
-    stripe_subscription_id: 'stripe_sub_abc', // Make sure this exists for cancel
-    plan_id: 'plan-1', // Added plan_id to match an available plan
-    currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(), // Add date for display
-    cancelAtPeriodEnd: false, // Add for display logic
-    // The 'plan' object here might be overridden by currentUserResolvedPlan in the component,
-    // but keeping it for now in case other selectors or direct access uses it.
-    // Ideally, the component relies on currentUserResolvedPlan for consistency.
-    plan: { id: 'plan-1', name: 'Basic Monthly Plan', stripe_price_id: 'price_basic', amount: 1000, currency: 'usd', interval: 'month', interval_count: 1, description: { subtitle: 'Basic Sub', features: ['Feature 1'] }, tokens_to_award: 1000 } 
-  } as unknown as UserSubscription,
+  availablePlans: [mockBasicMonthlyPlan, mockProMonthlyPlan],
+  userSubscription: mockUserSubscription,
   isSubscriptionLoading: false,
   hasActiveSubscription: true, // This is usually derived state, but set for mock
   isTestMode: false,
-  error: null as Error | null,
+  error: null,
   loadSubscriptionData: mockLoadSubscriptionData,
   createCheckoutSession: mockCreateCheckoutSession,
   createBillingPortalSession: mockCreateBillingPortalSession,
@@ -254,15 +337,30 @@ describe('SubscriptionPage Component', () => {
   });
   
   it('should NOT render CurrentSubscriptionCard content if user subscription status is free', () => {
-    act(() => { 
-      useSubscriptionStore.setState({ 
-        userSubscription: { id: 'sub-free', plan_id: 'plan-free', status: 'free' } as unknown as UserSubscription, 
+    const freeUserSubscription: UserSubscription = {
+      id: 'sub-free',
+      plan_id: 'plan-free',
+      status: 'free',
+      stripe_subscription_id: null,
+      current_period_end: null,
+      cancel_at_period_end: null,
+      created_at: '2024-01-01T00:00:00.000Z',
+      updated_at: '2024-01-01T00:00:00.000Z',
+      user_id: 'user-123',
+      stripe_customer_id: null,
+      current_period_start: null,
+      has_ever_paid: false,
+      tier_level: 0,
+    };
+    act(() => {
+      useSubscriptionStore.setState({
+        userSubscription: freeUserSubscription,
         availablePlans: [
-          ...subscriptionStoreInitialState.availablePlans, 
-          {id: 'plan-free', name: 'Free Plan', stripe_price_id: 'price_free', amount: 0, currency: 'usd', interval: 'month', interval_count: 1} as unknown as SubscriptionPlan
+          ...subscriptionStoreInitialState.availablePlans,
+          mockFreePlan,
         ],
-        hasActiveSubscription: false 
-      }); 
+        hasActiveSubscription: false,
+      });
     });
     renderWithRouter(<SubscriptionPage />);
     expect(screen.queryByText(/Current Subscription/i)).not.toBeInTheDocument();
@@ -362,7 +460,8 @@ describe('SubscriptionPage Component', () => {
       });
       
       const mockRedirectUrl = 'https://stripe.com/checkout_mock_success_url';
-      mockInitiatePurchase.mockResolvedValue({ success: true, redirectUrl: mockRedirectUrl } as PaymentInitiationResult);
+      const mockPaymentResult: PaymentInitiationResult = { success: true, redirectUrl: mockRedirectUrl };
+      mockInitiatePurchase.mockResolvedValue(mockPaymentResult);
 
       renderWithRouter(<SubscriptionPage />);
 
@@ -499,7 +598,8 @@ describe('SubscriptionPage Component', () => {
 
     it('should call initiatePurchase with correct PurchaseRequest and redirect on success', async () => {
       const redirectUrl = 'https://stripe.com/checkout_mock_success_url';
-      mockInitiatePurchase.mockResolvedValue({ success: true, redirectUrl } as PaymentInitiationResult);
+      const mockPaymentResult: PaymentInitiationResult = { success: true, redirectUrl };
+      mockInitiatePurchase.mockResolvedValue(mockPaymentResult);
       // window.location is mocked in beforeEach
 
       renderWithRouter(<SubscriptionPage />);
@@ -532,7 +632,8 @@ describe('SubscriptionPage Component', () => {
             isLoadingPurchase: false 
           });
         });
-        return { success: false, error: errorMessage } as PaymentInitiationResult;
+        const failedPaymentResult: PaymentInitiationResult = { success: false, error: errorMessage };
+        return failedPaymentResult;
       });
 
       renderWithRouter(<SubscriptionPage />);
@@ -563,7 +664,8 @@ describe('SubscriptionPage Component', () => {
             act(() => {
                 useWalletStore.setState({ purchaseError: networkApiError }); 
             });
-            return { success: false, error: errorMessage } as PaymentInitiationResult; 
+            const failedPaymentResult: PaymentInitiationResult = { success: false, error: errorMessage };
+            return failedPaymentResult;
         });
 
         renderWithRouter(<SubscriptionPage />);
@@ -591,7 +693,8 @@ describe('SubscriptionPage Component', () => {
         act(() => { useWalletStore.setState({ isLoadingPurchase: true }); });
         await loadingPhasePromise; // Wait for the test to assert the loading state
         act(() => { useWalletStore.setState({ isLoadingPurchase: false }); });
-        return { success: true, redirectUrl: 'some-successful-redirect-url' } as PaymentInitiationResult;
+        const successPaymentResult: PaymentInitiationResult = { success: true, redirectUrl: 'some-successful-redirect-url' };
+        return successPaymentResult;
       });
 
       renderWithRouter(<SubscriptionPage />);
@@ -626,26 +729,58 @@ describe('SubscriptionPage Component', () => {
       expect(window.location.href).toBe('some-successful-redirect-url'); 
     });
   });
+
+  it("should render 'Your Tier' badge on plan cards matching user's tier level", () => {
+    act(() => {
+      useAuthStore.setState({ userTier: mockBasicTier });
+    });
+    renderWithRouter(<SubscriptionPage />);
+    const planCardsGrid = screen.getByRole('heading', { name: /Subscription Plans/i })
+      .parentElement?.parentElement?.querySelector('.grid.gap-8') as HTMLElement;
+    if (!planCardsGrid) throw new Error('Plan cards grid container not found');
+    const basicPlanHeading = within(planCardsGrid).getByRole('heading', { name: /Basic Monthly Plan/i, level: 2 });
+    const basicPlanWrapper = basicPlanHeading.closest('.relative');
+    if (!(basicPlanWrapper instanceof HTMLElement)) throw new Error('Basic plan card wrapper not found');
+    expect(within(basicPlanWrapper).getByText('Your Tier')).toBeInTheDocument();
+  });
+
+  it("should render 'Upgrade' badge on plan cards with higher tier level", () => {
+    renderWithRouter(<SubscriptionPage />);
+    const planCardsGrid = screen.getByRole('heading', { name: /Subscription Plans/i })
+      .parentElement?.parentElement?.querySelector('.grid.gap-8') as HTMLElement;
+    if (!planCardsGrid) throw new Error('Plan cards grid container not found');
+    const basicPlanHeading = within(planCardsGrid).getByRole('heading', { name: /Basic Monthly Plan/i, level: 2 });
+    const proPlanHeading = within(planCardsGrid).getByRole('heading', { name: /Pro Monthly Plan/i, level: 2 });
+    const basicPlanWrapper = basicPlanHeading.closest('.relative');
+    const proPlanWrapper = proPlanHeading.closest('.relative');
+    if (!(basicPlanWrapper instanceof HTMLElement) || !(proPlanWrapper instanceof HTMLElement)) throw new Error('Plan card wrappers not found');
+    expect(within(basicPlanWrapper).getByText('Upgrade')).toBeInTheDocument();
+    expect(within(proPlanWrapper).getByText('Upgrade')).toBeInTheDocument();
+  });
+
+  it("should not render 'Upgrade' badge on plan cards at or below user's tier level", () => {
+    act(() => {
+      useAuthStore.setState({ userTier: mockPremiumTier });
+    });
+    renderWithRouter(<SubscriptionPage />);
+    const planCardsGrid = screen.getByRole('heading', { name: /Subscription Plans/i })
+      .parentElement?.parentElement?.querySelector('.grid.gap-8') as HTMLElement;
+    if (!planCardsGrid) throw new Error('Plan cards grid container not found');
+    const basicPlanHeading = within(planCardsGrid).getByRole('heading', { name: /Basic Monthly Plan/i, level: 2 });
+    const proPlanHeading = within(planCardsGrid).getByRole('heading', { name: /Pro Monthly Plan/i, level: 2 });
+    const basicPlanWrapper = basicPlanHeading.closest('.relative');
+    const proPlanWrapper = proPlanHeading.closest('.relative');
+    if (!(basicPlanWrapper instanceof HTMLElement) || !(proPlanWrapper instanceof HTMLElement)) throw new Error('Plan card wrappers not found');
+    expect(within(basicPlanWrapper).queryByText('Upgrade')).not.toBeInTheDocument();
+    expect(within(proPlanWrapper).getByText('Your Tier')).toBeInTheDocument();
+  });
+
+  it('should not render any tier badge when userTier is null', () => {
+    act(() => {
+      useAuthStore.setState({ userTier: null });
+    });
+    renderWithRouter(<SubscriptionPage />);
+    expect(screen.queryByText('Your Tier')).not.toBeInTheDocument();
+    expect(screen.queryByText('Upgrade')).not.toBeInTheDocument();
+  });
 });
-
-// --- To consider for further tests (if not covered by integration tests) ---
-// - Test different subscription statuses (trialing, past_due, etc.) and their display.
-// - Test behavior when no plans are available.
-// - Test specific UI states for `cancelAtPeriodEnd`.
-// - Test `resumeSubscription` functionality if UI for it exists.
-// - Test `formatAmount` and `formatInterval` more directly if their logic becomes complex,
-//   though their usage in cards is implicitly tested.
-
-// Helper to find subscribe button for a specific plan
-// async function clickSubscribeButtonForPlan(planName: string) {
-//   const planCard = screen.getByText(planName).closest('.border'); // Adjust selector as needed
-//   if (!planCard) throw new Error(`Plan card for "${planName}" not found`);
-//   const subscribeButton = within(planCard).getByRole('button', { name: /Subscribe/i });
-//   await user.click(subscribeButton);
-// }
-
-//       renderWithRouter(<SubscriptionPage onSubscribe={mockSubscribeProp} />);
-//       const subscribeButton = screen.getAllByRole('button', { name: /Subscribe/i })[0];
-//       await user.click(subscribeButton);
-//       expect(mockSubscribeProp).toHaveBeenCalledWith(subscriptionStoreInitialState.availablePlans[0].id);
-//     });

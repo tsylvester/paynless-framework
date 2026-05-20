@@ -17,9 +17,14 @@ import { CurrentSubscriptionCard } from '../components/subscription/CurrentSubsc
 import { PlanCard } from '../components/subscription/PlanCard';
 import type { UserSubscription, SubscriptionPlan, PurchaseRequest, PaymentInitiationResult } from '@paynless/types';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Badge } from "@/components/ui/badge"
 
 export function SubscriptionPage() {
-  const { user, isLoading: authLoading } = useAuthStore();
+  const { user, isLoading: authLoading, userTier } = useAuthStore((state) => ({
+    user: state.user,
+    isLoading: state.isLoading,
+    userTier: state.userTier,
+  }));
   const [activeTab, setActiveTab] = useState('monthly');
 
   const availablePlans = useSubscriptionStore(selectAvailablePlans);
@@ -163,6 +168,13 @@ export function SubscriptionPage() {
   
   const userIsOnPaidPlan = hasActiveSubscription;
 
+  const getTierBadge = (planTierLevel: number): string | null => {
+    if (userTier == null) return null;
+    if (planTierLevel === userTier.level) return 'Your Tier';
+    if (planTierLevel > userTier.level) return 'Upgrade';
+    return null;
+  };
+
   return (
     <div>
       <div className="py-8 px-4 pt-6 sm:px-6 lg:px-8">
@@ -227,36 +239,60 @@ export function SubscriptionPage() {
             </TabsList>
             <TabsContent value="monthly">
               <div className="mt-8 sm:mt-12 grid gap-8 md:grid-cols-2 lg:grid-cols-3">
-                {monthlyPlans.map((plan) => (
-                  <PlanCard 
-                    key={plan.id} 
-                    plan={plan}
-                    isCurrentPlan={currentUserResolvedPlan?.id === plan.id}
-                    userIsOnPaidPlan={!!userIsOnPaidPlan}
-                    isProcessing={isSubStoreLoading || isLoadingPurchase}
-                    handleSubscribe={handleSubscribe}
-                    handleCancelSubscription={handleCancelSubscription}
-                    formatAmount={formatAmount}
-                    formatInterval={formatInterval}
-                  />
-                ))}
+                {monthlyPlans.map((plan) => {
+                  const badgeText = getTierBadge(plan.tier_level);
+                  return (
+                    <div key={plan.id} className="relative">
+                      {badgeText !== null && (
+                        <Badge
+                          variant={badgeText === 'Your Tier' ? 'outline' : 'default'}
+                          className="absolute top-2 right-2 z-10"
+                        >
+                          {badgeText}
+                        </Badge>
+                      )}
+                      <PlanCard
+                        plan={plan}
+                        isCurrentPlan={currentUserResolvedPlan?.id === plan.id}
+                        userIsOnPaidPlan={!!userIsOnPaidPlan}
+                        isProcessing={isSubStoreLoading || isLoadingPurchase}
+                        handleSubscribe={handleSubscribe}
+                        handleCancelSubscription={handleCancelSubscription}
+                        formatAmount={formatAmount}
+                        formatInterval={formatInterval}
+                      />
+                    </div>
+                  );
+                })}
               </div>
             </TabsContent>
             <TabsContent value="annual">
               <div className="mt-8 sm:mt-12 grid gap-8 md:grid-cols-2 lg:grid-cols-3">
-                {annualPlans.map((plan) => (
-                  <PlanCard 
-                    key={plan.id} 
-                    plan={plan}
-                    isCurrentPlan={currentUserResolvedPlan?.id === plan.id}
-                    userIsOnPaidPlan={!!userIsOnPaidPlan}
-                    isProcessing={isSubStoreLoading || isLoadingPurchase}
-                    handleSubscribe={handleSubscribe}
-                    handleCancelSubscription={handleCancelSubscription}
-                    formatAmount={formatAmount}
-                    formatInterval={formatInterval}
-                  />
-                ))}
+                {annualPlans.map((plan) => {
+                  const badgeText = getTierBadge(plan.tier_level);
+                  return (
+                    <div key={plan.id} className="relative">
+                      {badgeText !== null && (
+                        <Badge
+                          variant={badgeText === 'Your Tier' ? 'outline' : 'default'}
+                          className="absolute top-2 right-2 z-10"
+                        >
+                          {badgeText}
+                        </Badge>
+                      )}
+                      <PlanCard
+                        plan={plan}
+                        isCurrentPlan={currentUserResolvedPlan?.id === plan.id}
+                        userIsOnPaidPlan={!!userIsOnPaidPlan}
+                        isProcessing={isSubStoreLoading || isLoadingPurchase}
+                        handleSubscribe={handleSubscribe}
+                        handleCancelSubscription={handleCancelSubscription}
+                        formatAmount={formatAmount}
+                        formatInterval={formatInterval}
+                      />
+                    </div>
+                  );
+                })}
               </div>
             </TabsContent>
             <TabsContent value="top-up">
