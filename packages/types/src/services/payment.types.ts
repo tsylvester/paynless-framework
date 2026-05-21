@@ -3,6 +3,14 @@
  */
 
 /**
+ * A single line item in a multi-item purchase request.
+ */
+export interface PurchaseRequestItem {
+  itemId: string;
+  quantity: number;
+}
+
+/**
  * Represents a request to purchase an item (e.g., a package of tokens).
  */
 export interface PurchaseRequest {
@@ -10,6 +18,7 @@ export interface PurchaseRequest {
   organizationId?: string | null;
   itemId: string; // e.g., package_1000_tokens
   quantity: number;
+  items?: PurchaseRequestItem[];
   currency: string; // e.g., USD, ETH
   paymentGatewayId: string; // e.g., 'stripe', 'coinbase', 'internal_tauri_wallet'
   metadata?: Record<string, unknown>;

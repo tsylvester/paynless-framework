@@ -20,19 +20,31 @@ import { createMockSupabaseClient, type MockQueryBuilderState, type MockSupabase
 // getPaymentAdapter builds AdminTokenWalletService(admin client) for StripePaymentAdapter. We mock Supabase
 // so the real user-scoped service can resolve wallets, and we spy getPaymentAdapterFn instead of constructing adapters.
 
-// --- Constants for Mocking ---
-const MOCK_USER_ID = 'test-user-id-123';
-const MOCK_ORGANIZATION_ID = 'test-org-id-456';
-const MOCK_ITEM_ID = 'item_abc_123';
-const MOCK_INVALID_ITEM_ID = 'item_invalid_xxx';
-const MOCK_INCOMPLETE_ITEM_ID = 'item_incomplete_cfg';
-const MOCK_WRONG_CURRENCY_ITEM_ID = 'item_wrong_currency';
-const MOCK_tokens_to_award = 1000;
-const MOCK_ITEM_AMOUNT = 20; // e.g., 20 USD
-const MOCK_CURRENCY = 'usd';
-const MOCK_WALLET_ID = 'wallet-id-for-user';
-const MOCK_PAYMENT_TRANSACTION_ID = 'ptxn_new_id_789';
-const MOCK_SITE_URL = 'http://localhost:5173';
+import {
+    MOCK_USER_ID,
+    MOCK_ORGANIZATION_ID,
+    MOCK_ITEM_ID,
+    MOCK_INVALID_ITEM_ID,
+    MOCK_INCOMPLETE_ITEM_ID,
+    MOCK_WRONG_CURRENCY_ITEM_ID,
+    MOCK_tokens_to_award,
+    MOCK_ITEM_AMOUNT,
+    MOCK_CURRENCY,
+    MOCK_WALLET_ID,
+    MOCK_PAYMENT_TRANSACTION_ID,
+    MOCK_SITE_URL,
+    MOCK_SUBSCRIPTION_ITEM_ID,
+    MOCK_OTP_ITEM_ID,
+    MOCK_OTP_ITEM_2_ID,
+    MOCK_SUBSCRIPTION_PLAN_TYPE,
+    MOCK_OTP_PLAN_TYPE,
+    MOCK_SUBSCRIPTION_tokens_to_award,
+    MOCK_SUBSCRIPTION_AMOUNT,
+    MOCK_OTP_tokens_to_award,
+    MOCK_OTP_AMOUNT,
+    MOCK_OTP_2_tokens_to_award,
+    MOCK_OTP_2_AMOUNT,
+} from './index.mock.ts';
 
 function messageFromUnknown(err: unknown): string {
     if (err instanceof Error) {
@@ -195,16 +207,25 @@ Deno.test("initiate-payment function tests", async (t) => {
 
                         if (itemIdFilter && activeFilter) {
                             if (itemIdFilter.value === MOCK_ITEM_ID) {
-                                return { data: [{ stripe_price_id: MOCK_ITEM_ID, item_id_internal: MOCK_ITEM_ID, tokens_to_award: MOCK_tokens_to_award, amount: MOCK_ITEM_AMOUNT, currency: MOCK_CURRENCY, active: true }], error: null, count: 1, status: 200, statusText: 'OK' };
+                                return { data: [{ stripe_price_id: MOCK_ITEM_ID, item_id_internal: MOCK_ITEM_ID, plan_type: MOCK_OTP_PLAN_TYPE, tokens_to_award: MOCK_tokens_to_award, amount: MOCK_ITEM_AMOUNT, currency: MOCK_CURRENCY, active: true }], error: null, count: 1, status: 200, statusText: 'OK' };
                             }
                             if (itemIdFilter.value === MOCK_INCOMPLETE_ITEM_ID) {
-                                return { data: [{ stripe_price_id: MOCK_INCOMPLETE_ITEM_ID, item_id_internal: MOCK_INCOMPLETE_ITEM_ID, tokens_to_award: null, amount: MOCK_ITEM_AMOUNT, currency: MOCK_CURRENCY, active: true }], error: null, count: 1, status: 200, statusText: 'OK' };
+                                return { data: [{ stripe_price_id: MOCK_INCOMPLETE_ITEM_ID, item_id_internal: MOCK_INCOMPLETE_ITEM_ID, plan_type: MOCK_OTP_PLAN_TYPE, tokens_to_award: null, amount: MOCK_ITEM_AMOUNT, currency: MOCK_CURRENCY, active: true }], error: null, count: 1, status: 200, statusText: 'OK' };
                             }
                             if (itemIdFilter.value === MOCK_WRONG_CURRENCY_ITEM_ID) {
-                                return { data: [{ stripe_price_id: MOCK_WRONG_CURRENCY_ITEM_ID, item_id_internal: MOCK_WRONG_CURRENCY_ITEM_ID, tokens_to_award: MOCK_tokens_to_award, amount: MOCK_ITEM_AMOUNT, currency: 'eur', active: true }], error: null, count: 1, status: 200, statusText: 'OK' };
+                                return { data: [{ stripe_price_id: MOCK_WRONG_CURRENCY_ITEM_ID, item_id_internal: MOCK_WRONG_CURRENCY_ITEM_ID, plan_type: MOCK_OTP_PLAN_TYPE, tokens_to_award: MOCK_tokens_to_award, amount: MOCK_ITEM_AMOUNT, currency: 'eur', active: true }], error: null, count: 1, status: 200, statusText: 'OK' };
                             }
                             if (itemIdFilter.value === MOCK_INVALID_ITEM_ID) { // Simulate item not found or inactive by returning empty
                                 return { data: [], error: null, count: 0, status: 200, statusText: 'OK' };
+                            }
+                            if (itemIdFilter.value === MOCK_SUBSCRIPTION_ITEM_ID) {
+                                return { data: [{ stripe_price_id: MOCK_SUBSCRIPTION_ITEM_ID, item_id_internal: MOCK_SUBSCRIPTION_ITEM_ID, plan_type: MOCK_SUBSCRIPTION_PLAN_TYPE, tokens_to_award: MOCK_SUBSCRIPTION_tokens_to_award, amount: MOCK_SUBSCRIPTION_AMOUNT, currency: MOCK_CURRENCY, active: true }], error: null, count: 1, status: 200, statusText: 'OK' };
+                            }
+                            if (itemIdFilter.value === MOCK_OTP_ITEM_ID) {
+                                return { data: [{ stripe_price_id: MOCK_OTP_ITEM_ID, item_id_internal: MOCK_OTP_ITEM_ID, plan_type: MOCK_OTP_PLAN_TYPE, tokens_to_award: MOCK_OTP_tokens_to_award, amount: MOCK_OTP_AMOUNT, currency: MOCK_CURRENCY, active: true }], error: null, count: 1, status: 200, statusText: 'OK' };
+                            }
+                            if (itemIdFilter.value === MOCK_OTP_ITEM_2_ID) {
+                                return { data: [{ stripe_price_id: MOCK_OTP_ITEM_2_ID, item_id_internal: MOCK_OTP_ITEM_2_ID, plan_type: MOCK_OTP_PLAN_TYPE, tokens_to_award: MOCK_OTP_2_tokens_to_award, amount: MOCK_OTP_2_AMOUNT, currency: MOCK_CURRENCY, active: true }], error: null, count: 1, status: 200, statusText: 'OK' };
                             }
                         }
                         return { data: [], error: new Error('Mock: Item not found or query unexpected'), count: 0, status: 404, statusText: 'Not Found' };
@@ -578,6 +599,153 @@ Deno.test("initiate-payment function tests", async (t) => {
             afterEachScoped();
         });
 
+        await t.step("multi-item happy path (subscription + OTP): aggregates tokens and amount, sets checkoutMode to subscription", async () => {
+            beforeEachScoped();
+            const purchaseRequestBody: PurchaseRequest = {
+                itemId: MOCK_SUBSCRIPTION_ITEM_ID,
+                quantity: 1,
+                currency: MOCK_CURRENCY,
+                paymentGatewayId: 'stripe',
+                userId: MOCK_USER_ID,
+                items: [
+                    { itemId: MOCK_SUBSCRIPTION_ITEM_ID, quantity: 1 },
+                    { itemId: MOCK_OTP_ITEM_ID, quantity: 2 },
+                ],
+            };
+            const req = createMockRequest('POST', '/initiate-payment', purchaseRequestBody, { Authorization: 'Bearer valid.token' });
+            const res = await initiatePaymentHandler(req, supabaseClientForHandlerTests(mockAdminSbSetup), mockCreateUserClientFn!, mockGetPaymentAdapterFn!);
+            const resBody = await res.json();
+
+            assertEquals(res.status, 200);
+            assertEquals(resBody.success, true);
+
+            const insertSpy = mockAdminSbSetup.spies.getLatestQueryBuilderSpies('payment_transactions')?.insert;
+            assert(insertSpy, "payment_transactions insert spy should exist");
+            assertSpyCalls(insertSpy, 1);
+            const insertArg = insertSpy.calls[0].args[0];
+            assertEquals(insertArg.tokens_to_award, MOCK_SUBSCRIPTION_tokens_to_award * 1 + MOCK_OTP_tokens_to_award * 2);
+            assertEquals(insertArg.amount_requested_fiat, MOCK_SUBSCRIPTION_AMOUNT * 1 + MOCK_OTP_AMOUNT * 2);
+
+            const initiatePaymentSpy = mockPaymentAdapter.initiatePayment;
+            assertSpyCalls(initiatePaymentSpy, 1);
+            const adapterContext = initiatePaymentSpy.calls[0].args[0];
+            assertEquals(adapterContext.lineItems?.length, 2);
+            assertEquals(adapterContext.checkoutMode, 'subscription');
+            assertEquals(adapterContext.itemId, MOCK_SUBSCRIPTION_ITEM_ID);
+
+            afterEachScoped();
+        });
+
+        await t.step("multi-item happy path (OTP-only): aggregates tokens and amount, sets checkoutMode to payment", async () => {
+            beforeEachScoped();
+            const purchaseRequestBody: PurchaseRequest = {
+                itemId: MOCK_OTP_ITEM_ID,
+                quantity: 1,
+                currency: MOCK_CURRENCY,
+                paymentGatewayId: 'stripe',
+                userId: MOCK_USER_ID,
+                items: [
+                    { itemId: MOCK_OTP_ITEM_ID, quantity: 1 },
+                    { itemId: MOCK_OTP_ITEM_2_ID, quantity: 1 },
+                ],
+            };
+            const req = createMockRequest('POST', '/initiate-payment', purchaseRequestBody, { Authorization: 'Bearer valid.token' });
+            const res = await initiatePaymentHandler(req, supabaseClientForHandlerTests(mockAdminSbSetup), mockCreateUserClientFn!, mockGetPaymentAdapterFn!);
+            const resBody = await res.json();
+
+            assertEquals(res.status, 200);
+            assertEquals(resBody.success, true);
+
+            const insertSpy = mockAdminSbSetup.spies.getLatestQueryBuilderSpies('payment_transactions')?.insert;
+            assert(insertSpy, "payment_transactions insert spy should exist");
+            assertSpyCalls(insertSpy, 1);
+            const insertArg = insertSpy.calls[0].args[0];
+            assertEquals(insertArg.tokens_to_award, MOCK_OTP_tokens_to_award * 1 + MOCK_OTP_2_tokens_to_award * 1);
+            assertEquals(insertArg.amount_requested_fiat, MOCK_OTP_AMOUNT * 1 + MOCK_OTP_2_AMOUNT * 1);
+
+            const initiatePaymentSpy = mockPaymentAdapter.initiatePayment;
+            assertSpyCalls(initiatePaymentSpy, 1);
+            const adapterContext = initiatePaymentSpy.calls[0].args[0];
+            assertEquals(adapterContext.lineItems?.length, 2);
+            assertEquals(adapterContext.checkoutMode, 'payment');
+
+            afterEachScoped();
+        });
+
+        await t.step("multi-item with one invalid item should return 404 with that item's ID in error message", async () => {
+            beforeEachScoped();
+            const purchaseRequestBody: PurchaseRequest = {
+                itemId: MOCK_OTP_ITEM_ID,
+                quantity: 1,
+                currency: MOCK_CURRENCY,
+                paymentGatewayId: 'stripe',
+                userId: MOCK_USER_ID,
+                items: [
+                    { itemId: MOCK_OTP_ITEM_ID, quantity: 1 },
+                    { itemId: MOCK_INVALID_ITEM_ID, quantity: 1 },
+                ],
+            };
+            const req = createMockRequest('POST', '/initiate-payment', purchaseRequestBody, { Authorization: 'Bearer valid.token' });
+            const res = await initiatePaymentHandler(req, supabaseClientForHandlerTests(mockAdminSbSetup), mockCreateUserClientFn!, mockGetPaymentAdapterFn!);
+            const resBody = await res.json();
+
+            assertEquals(res.status, 404);
+            assert(resBody.error.includes(MOCK_INVALID_ITEM_ID));
+            afterEachScoped();
+        });
+
+        await t.step("multi-item with currency mismatch should return 400 with 'All items must share the same currency'", async () => {
+            beforeEachScoped();
+            const purchaseRequestBody: PurchaseRequest = {
+                itemId: MOCK_OTP_ITEM_ID,
+                quantity: 1,
+                currency: MOCK_CURRENCY,
+                paymentGatewayId: 'stripe',
+                userId: MOCK_USER_ID,
+                items: [
+                    { itemId: MOCK_OTP_ITEM_ID, quantity: 1 },
+                    { itemId: MOCK_WRONG_CURRENCY_ITEM_ID, quantity: 1 },
+                ],
+            };
+            const req = createMockRequest('POST', '/initiate-payment', purchaseRequestBody, { Authorization: 'Bearer valid.token' });
+            const res = await initiatePaymentHandler(req, supabaseClientForHandlerTests(mockAdminSbSetup), mockCreateUserClientFn!, mockGetPaymentAdapterFn!);
+            const resBody = await res.json();
+
+            assertEquals(res.status, 400);
+            assertEquals(resBody.error, 'All items must share the same currency');
+            afterEachScoped();
+        });
+
+        await t.step("empty items array falls through to single-item path and succeeds when itemId and quantity are present", async () => {
+            beforeEachScoped();
+            const purchaseRequestBody: PurchaseRequest = { itemId: MOCK_ITEM_ID, items: [], quantity: 1, currency: MOCK_CURRENCY, paymentGatewayId: 'stripe', userId: MOCK_USER_ID };
+            const req = createMockRequest('POST', '/initiate-payment', purchaseRequestBody, { Authorization: 'Bearer valid.token' });
+            const res = await initiatePaymentHandler(req, supabaseClientForHandlerTests(mockAdminSbSetup), mockCreateUserClientFn!, mockGetPaymentAdapterFn!);
+            const resBody = await res.json();
+
+            assertEquals(res.status, 200);
+            assertEquals(resBody.success, true);
+
+            const initiatePaymentSpy = mockPaymentAdapter.initiatePayment;
+            assertSpyCalls(initiatePaymentSpy, 1);
+            const adapterContext = initiatePaymentSpy.calls[0].args[0];
+            assertEquals(adapterContext.lineItems, undefined);
+            assertEquals(adapterContext.checkoutMode, undefined);
+
+            afterEachScoped();
+        });
+
+        await t.step("empty items array falls through to single-item validation and returns 400 when itemId is missing", async () => {
+            beforeEachScoped();
+            const purchaseRequestBody = { items: [], quantity: 1, currency: MOCK_CURRENCY, paymentGatewayId: 'stripe', userId: MOCK_USER_ID };
+            const req = createMockRequest('POST', '/initiate-payment', purchaseRequestBody, { Authorization: 'Bearer valid.token' });
+            const res = await initiatePaymentHandler(req, supabaseClientForHandlerTests(mockAdminSbSetup), mockCreateUserClientFn!, mockGetPaymentAdapterFn!);
+            const resBody = await res.json();
+
+            assertEquals(res.status, 400);
+            assertEquals(resBody.error, 'Invalid PurchaseRequest body: missing required fields');
+            afterEachScoped();
+        });
 
     } finally {
         teardownGlobalTestEnvironment(); // Teardown env once after all tests in this block

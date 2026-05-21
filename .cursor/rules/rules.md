@@ -364,7 +364,19 @@ The second exception to strict typing is for intentionally malformed objects in 
       * Accept all valid contract cases
       * Reject all invalid contract cases
 
-  ### 7. Behavioral Verification
+  ### 7. Simulation
+
+  * `[ ]`   `[function].mock.ts`
+    * `[ ]`   Provide controllable implementations of:
+      * All external interactions
+
+    * `[ ]`   Must conform to:
+      * interface
+      * interaction.spec
+
+    * `[ ]`   No new behavior introduced beyond spec
+
+### 8. Behavioral Verification 
 
   * `[ ]`   `[function].test.ts`
     * `[ ]`   Validate behavior against:
@@ -379,7 +391,7 @@ The second exception to strict typing is for intentionally malformed objects in 
       * Type shape
       * Guard correctness
 
-  ### 8. Construction
+  ### 9. Construction
 
   * `[ ]`   `construction`
     * `[ ]`   Define:
@@ -392,7 +404,7 @@ The second exception to strict typing is for intentionally malformed objects in 
     * `[ ]`   Declare invalid construction contexts
     * `[ ]`   Define initialization order (if needed)
 
-  ### 9. Implementation
+  ### 10. Implementation
 
   * `[ ]`   `[function].ts`
     * `[ ]`   Implement behavior defined in:
@@ -404,18 +416,6 @@ The second exception to strict typing is for intentionally malformed objects in 
       * Bypass guards or contracts
 
     * `[ ]`   Each requirement maps to code paths
-
-  ### 10. Simulation
-
-  * `[ ]`   `[function].mock.ts`
-    * `[ ]`   Provide controllable implementations of:
-      * All external interactions
-
-    * `[ ]`   Must conform to:
-      * interface
-      * interaction.spec
-
-    * `[ ]`   No new behavior introduced beyond spec
 
   ### 11. External Boundary
 

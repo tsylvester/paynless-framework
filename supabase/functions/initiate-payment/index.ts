@@ -11,11 +11,15 @@ import {
   PurchaseRequest,
   PaymentOrchestrationContext,
   IPaymentGatewayAdapter,
+  PaymentCheckoutMode,
+  OrchestrationLineItem,
 } from '../_shared/types/payment.types.ts';
+import { isPurchaseRequestItem } from '../_shared/types/payment.guard.ts';
 import { UserTokenWalletService } from '../_shared/services/tokenwallet/client/userTokenWalletService.ts';
+import type { TokenWallet } from '../_shared/types/tokenWallet.types.ts';
 import { AdminTokenWalletService } from '../_shared/services/tokenwallet/admin/adminTokenWalletService.ts';
 import { StripePaymentAdapter } from '../_shared/adapters/stripe/stripePaymentAdapter.ts';
-import { Database } from '../types_db.ts'; // Assuming this is the path for your DB types
+import { Database } from '../types_db.ts';
 
 console.log('Initializing initiate-payment function');
 
@@ -39,7 +43,7 @@ const stripe = new Stripe(stripeKey!, {
 function getPaymentAdapter(
   gatewayId: string,
   adminSupabaseClient: SupabaseClient<Database>,
-): IPaymentGatewayAdapter | null {
+): IPaymentGatewayAdapter {
   if (gatewayId === 'stripe') {
     const stripeWebhookSecret = Deno.env.get('STRIPE_WEBHOOK_SIGNING_SECRET');
     if (!stripeWebhookSecret) {
@@ -52,7 +56,7 @@ function getPaymentAdapter(
   }
   // Add other gateways here:
   // else if (gatewayId === 'coinbase') {
-  return null;
+  throw new Error(`Unsupported payment gateway: ${gatewayId}`);
 }
 
 // Define the main request handler logic
@@ -63,7 +67,7 @@ async function initiatePaymentHandler(
   getPaymentAdapterFn: (
     gatewayId: string,
     adminSupabaseClient: SupabaseClient<Database>,
-  ) => IPaymentGatewayAdapter | null
+  ) => IPaymentGatewayAdapter,
 ): Promise<Response> {
   console.log(`[initiate-payment] Received request: ${req.method} ${req.url}`);
 
@@ -98,7 +102,7 @@ async function initiatePaymentHandler(
 
     if (userError || !user) {
       console.warn('[initiate-payment] Authentication error:', userError?.message);
-      return createErrorResponse('Authentication failed', 401, req, userError || undefined);
+      return createErrorResponse('Authentication failed', 401, req, userError);
     }
     console.log('[initiate-payment] User authenticated:', user.id);
 
@@ -106,68 +110,252 @@ async function initiatePaymentHandler(
     if (!req.body) {
         return createErrorResponse('Request body is missing', 400, req);
     }
-    const purchaseRequest = await req.json();
+    const purchaseRequest: PurchaseRequest = await req.json();
     console.log('[initiate-payment] Parsed PurchaseRequest:', purchaseRequest);
 
-    if (!purchaseRequest.itemId || !purchaseRequest.paymentGatewayId || !purchaseRequest.currency || purchaseRequest.quantity == null) {
+    if (!purchaseRequest.paymentGatewayId || !purchaseRequest.currency) {
         return createErrorResponse('Invalid PurchaseRequest body: missing required fields', 400, req);
     }
     purchaseRequest.userId = user.id; // Ensure userId from authenticated user is used
 
-    // 3. Generic Item Details Extraction (from subscription_plans)
-    const { data: planData, error: planError } = await adminClient
-      .from('subscription_plans')
-      .select('stripe_price_id, item_id_internal, tokens_to_award, amount, currency')  // Ensure stripe_price_id is also selected for consistency, and item_id_internal is still useful
-      .eq('stripe_price_id', purchaseRequest.itemId) // Corrected to query by stripe_price_id
-      .eq('active', true)
-      .single();
+    const hasMultiItemCart: boolean =
+      purchaseRequest.items !== undefined &&
+      Array.isArray(purchaseRequest.items) &&
+      purchaseRequest.items.length > 0;
 
-    if (planError) {
-      console.error('[initiate-payment] Error fetching plan data for item:', purchaseRequest.itemId, 'Details:', planError.message);
-      // Check if the error is specifically a "not found" error from .single()
-      if (planError.code === 'PGRST116') { // PGRST116: "Query returned no rows"
-        const errMessage = `Item ID ${purchaseRequest.itemId} not found or is not active.`;
-        return createErrorResponse(errMessage, 404, req, planError);
+    let tokensToAward: number;
+    let amountForGateway: number;
+    let currencyForGateway: string;
+    let itemId: string;
+    let lineItems: OrchestrationLineItem[];
+    let checkoutMode: PaymentCheckoutMode;
+
+    if (hasMultiItemCart) {
+      const multiItems = purchaseRequest.items;
+      if (multiItems === undefined) {
+        return createErrorResponse('Invalid PurchaseRequest body: missing required fields', 400, req);
       }
-      // For other database errors during plan fetch
-      const errStatus = (typeof planError === 'object' && 
-                         planError !== null && 
-                         'status' in planError && 
-                         typeof planError.status === 'number') 
-                         ? planError.status 
-                         : 500;
-      return createErrorResponse(planError.message || 'Failed to retrieve item details due to a database error.', errStatus, req, planError);
-    }
 
-    // If there was no DB error, but planData is still null (e.g. .maybeSingle() returning null without error, or unexpected state)
-    if (!planData) {
-      const errMessage = `Item ID ${purchaseRequest.itemId} not found or is not active (no preceding DB error, but no data returned for item):`;
-      console.error('[initiate-payment] Plan not found or inactive (no preceding DB error, but no data returned for item):', purchaseRequest.itemId);
-      return createErrorResponse(errMessage, 404, req);
-    }
-    
-    // Original check for incomplete data - this should come after validating planData exists
-    if (planData.tokens_to_award == null || planData.amount == null || !planData.currency) {
+      const resolvedLineItems: OrchestrationLineItem[] = [];
+      let aggregateTokensToAward = 0;
+      let aggregateAmountForGateway = 0;
+      let resolvedCommonCurrency: string | null = null;
+      let subscriptionContextItemId: string | null = null;
+      let firstMultiItemId: string = '';
+      let resolvedCheckoutMode: PaymentCheckoutMode;
+
+      for (const rawItem of multiItems) {
+        if (!isPurchaseRequestItem(rawItem)) {
+          return createErrorResponse('Invalid item in PurchaseRequest items array', 400, req);
+        }
+
+        const { data: planData, error: planError } = await adminClient
+          .from('subscription_plans')
+          .select('stripe_price_id, item_id_internal, plan_type, tokens_to_award, amount, currency')
+          .eq('stripe_price_id', rawItem.itemId)
+          .eq('active', true)
+          .single();
+
+        if (planError) {
+          console.error('[initiate-payment] Error fetching plan data for item:', rawItem.itemId, 'Details:', planError.message);
+          if (planError.code === 'PGRST116') {
+            const errMessage = `Item ID ${rawItem.itemId} not found or is not active.`;
+            return createErrorResponse(errMessage, 404, req, planError);
+          }
+          let errStatus: number = 500;
+          if (
+            typeof planError === 'object' &&
+            planError !== null &&
+            'status' in planError &&
+            typeof planError.status === 'number'
+          ) {
+            errStatus = planError.status;
+          }
+          let planErrorMessage: string = 'Failed to retrieve item details due to a database error.';
+          if (planError.message) {
+            planErrorMessage = planError.message;
+          }
+          return createErrorResponse(planErrorMessage, errStatus, req, planError);
+        }
+
+        if (!planData) {
+          const errMessage = `Item ID ${rawItem.itemId} not found or is not active.`;
+          console.error('[initiate-payment] Plan not found or inactive for item:', rawItem.itemId);
+          return createErrorResponse(errMessage, 404, req);
+        }
+
+        if (
+          planData.tokens_to_award == null ||
+          planData.amount == null ||
+          !planData.currency ||
+          planData.stripe_price_id == null ||
+          planData.stripe_price_id === '' ||
+          !planData.plan_type
+        ) {
+          const errMessage = 'Service offering configuration error for the selected item.';
+          console.error('[initiate-payment] Plan data is incomplete for item:', rawItem.itemId, planData);
+          return createErrorResponse(errMessage, 500, req);
+        }
+
+        const planType: string = planData.plan_type;
+        const planCurrency = planData.currency.toLowerCase();
+        if (resolvedCommonCurrency === null) {
+          resolvedCommonCurrency = planCurrency;
+        } else if (resolvedCommonCurrency !== planCurrency) {
+          return createErrorResponse('All items must share the same currency', 400, req);
+        }
+
+        aggregateTokensToAward += planData.tokens_to_award * rawItem.quantity;
+        aggregateAmountForGateway += planData.amount * rawItem.quantity;
+
+        const stripePriceId: string = planData.stripe_price_id;
+        const resolvedLineItem: OrchestrationLineItem = {
+          itemId: rawItem.itemId,
+          stripePriceId,
+          quantity: rawItem.quantity,
+          tokensToAward: planData.tokens_to_award,
+          planType,
+          amount: planData.amount,
+          currency: planCurrency,
+        };
+        resolvedLineItems.push(resolvedLineItem);
+
+        if (firstMultiItemId === '') {
+          firstMultiItemId = rawItem.itemId;
+        }
+
+        if (planType === 'subscription') {
+          subscriptionContextItemId = rawItem.itemId;
+        }
+      }
+
+      if (subscriptionContextItemId !== null) {
+        resolvedCheckoutMode = 'subscription';
+      } else {
+        resolvedCheckoutMode = 'payment';
+      }
+
+      if (resolvedCommonCurrency === null) {
+        return createErrorResponse('Invalid PurchaseRequest body: missing required fields', 400, req);
+      }
+
+      currencyForGateway = resolvedCommonCurrency;
+      if (purchaseRequest.currency.toLowerCase() !== currencyForGateway) {
+        const errMessage = 'Requested currency does not match item currency.';
+        console.error(`[initiate-payment] Mismatch between requested currency (${purchaseRequest.currency}) and plan currency (${currencyForGateway})`);
+        return createErrorResponse(errMessage, 400, req);
+      }
+
+      tokensToAward = aggregateTokensToAward;
+      amountForGateway = aggregateAmountForGateway;
+      lineItems = resolvedLineItems;
+      checkoutMode = resolvedCheckoutMode;
+      if (subscriptionContextItemId !== null) {
+        itemId = subscriptionContextItemId;
+      } else {
+        itemId = firstMultiItemId;
+      }
+      console.log('[initiate-payment] Multi-item plan resolution complete:', { lineItems, checkoutMode, itemId });
+    } else {
+      if (!purchaseRequest.itemId || purchaseRequest.quantity == null) {
+        return createErrorResponse('Invalid PurchaseRequest body: missing required fields', 400, req);
+      }
+
+      // 3. Generic Item Details Extraction (from subscription_plans) — single-item path unchanged
+      const { data: planData, error: planError } = await adminClient
+        .from('subscription_plans')
+        .select('stripe_price_id, item_id_internal, plan_type, tokens_to_award, amount, currency')
+        .eq('stripe_price_id', purchaseRequest.itemId)
+        .eq('active', true)
+        .single();
+
+      if (planError) {
+        console.error('[initiate-payment] Error fetching plan data for item:', purchaseRequest.itemId, 'Details:', planError.message);
+        if (planError.code === 'PGRST116') {
+          const errMessage = `Item ID ${purchaseRequest.itemId} not found or is not active.`;
+          return createErrorResponse(errMessage, 404, req, planError);
+        }
+        let errStatus: number = 500;
+        if (
+          typeof planError === 'object' &&
+          planError !== null &&
+          'status' in planError &&
+          typeof planError.status === 'number'
+        ) {
+          errStatus = planError.status;
+        }
+        let planErrorMessage: string = 'Failed to retrieve item details due to a database error.';
+        if (planError.message) {
+          planErrorMessage = planError.message;
+        }
+        return createErrorResponse(planErrorMessage, errStatus, req, planError);
+      }
+
+      if (!planData) {
+        const errMessage = `Item ID ${purchaseRequest.itemId} not found or is not active (no preceding DB error, but no data returned for item):`;
+        console.error('[initiate-payment] Plan not found or inactive (no preceding DB error, but no data returned for item):', purchaseRequest.itemId);
+        return createErrorResponse(errMessage, 404, req);
+      }
+
+      if (
+        planData.tokens_to_award == null ||
+        planData.amount == null ||
+        !planData.currency ||
+        planData.stripe_price_id == null ||
+        planData.stripe_price_id === '' ||
+        !planData.plan_type
+      ) {
         const errMessage = 'Service offering configuration error for the selected item.';
         console.error('[initiate-payment] Plan data is incomplete for item:', purchaseRequest.itemId, planData);
         return createErrorResponse(errMessage, 500, req);
-    }
-    console.log('[initiate-payment] Fetched plan data:', planData);
+      }
+      console.log('[initiate-payment] Fetched plan data:', planData);
 
-    const tokensToAward = planData.tokens_to_award;
-    const amountForGateway = planData.amount * purchaseRequest.quantity; // Assuming planData.amount is per unit
-    const currencyForGateway = planData.currency.toLowerCase(); // Ensure consistent casing
+      const singlePlanType: string = planData.plan_type;
+      const singleStripePriceId: string = planData.stripe_price_id;
+      const singlePlanCurrency: string = planData.currency.toLowerCase();
+      const singleLineItem: OrchestrationLineItem = {
+        itemId: purchaseRequest.itemId,
+        stripePriceId: singleStripePriceId,
+        quantity: purchaseRequest.quantity,
+        tokensToAward: planData.tokens_to_award,
+        planType: singlePlanType,
+        amount: planData.amount,
+        currency: singlePlanCurrency,
+      };
 
-    // Validate requested currency against plan currency
-    if (purchaseRequest.currency.toLowerCase() !== currencyForGateway) {
+      tokensToAward = planData.tokens_to_award;
+      amountForGateway = planData.amount * purchaseRequest.quantity;
+      currencyForGateway = singlePlanCurrency;
+      itemId = purchaseRequest.itemId;
+      lineItems = [singleLineItem];
+      if (singlePlanType === 'subscription') {
+        checkoutMode = 'subscription';
+      } else {
+        checkoutMode = 'payment';
+      }
+
+      if (purchaseRequest.currency.toLowerCase() !== currencyForGateway) {
         const errMessage = 'Requested currency does not match item currency.';
         console.error(`[initiate-payment] Mismatch between requested currency (${purchaseRequest.currency}) and plan currency (${currencyForGateway}) for item ${purchaseRequest.itemId}`);
         return createErrorResponse(errMessage, 400, req);
+      }
     }
     
     // 4. Target Wallet Identification (user-scoped client + UserTokenWalletService)
     const userTokenWalletService = new UserTokenWalletService(userClient);
-    const wallet = await userTokenWalletService.getWalletForContext(purchaseRequest.userId, purchaseRequest.organizationId ?? undefined);
+    let wallet: TokenWallet | null;
+    if (purchaseRequest.organizationId !== undefined && purchaseRequest.organizationId !== null) {
+      wallet = await userTokenWalletService.getWalletForContext(
+        purchaseRequest.userId,
+        purchaseRequest.organizationId,
+      );
+    } else {
+      wallet = await userTokenWalletService.getWalletForContext(
+        purchaseRequest.userId,
+        undefined,
+      );
+    }
 
     if (!wallet) {
       const errMessage = 'User/Organization wallet not found. A wallet must be provisioned before payment.';
@@ -180,37 +368,58 @@ async function initiatePaymentHandler(
     console.log('[initiate-payment] Target wallet ID:', targetWalletId);
     
     // 5. Create payment_transactions Record
-    const paymentTxMetadata: Record<string, string | number | boolean | null | undefined> = {
-        itemId: purchaseRequest.itemId,
+    let organizationIdForInsert: string | null = null;
+    if (purchaseRequest.organizationId !== undefined && purchaseRequest.organizationId !== null) {
+      organizationIdForInsert = purchaseRequest.organizationId;
+    }
+
+    let metadataJson: Database['public']['Tables']['payment_transactions']['Insert']['metadata_json'];
+    if (hasMultiItemCart) {
+      const multiMetadataJson: Database['public']['Tables']['payment_transactions']['Insert']['metadata_json'] = {
+        itemId: itemId,
         quantity: purchaseRequest.quantity,
         requestedCurrency: purchaseRequest.currency,
-    };
-    if (purchaseRequest.metadata) {
-        for (const key in purchaseRequest.metadata) {
-            if (Object.prototype.hasOwnProperty.call(purchaseRequest.metadata, key)) {
-                const value = purchaseRequest.metadata[key];
-                if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean' || value === null) {
-                    paymentTxMetadata[`user_${key}`] = value;
-                } else {
-                    paymentTxMetadata[`user_${key}`] = String(value); // Convert other types to string
-                }
-            }
-        }
+        items: JSON.stringify(lineItems),
+      };
+      metadataJson = multiMetadataJson;
+    } else {
+      const singleMetadataJson: Database['public']['Tables']['payment_transactions']['Insert']['metadata_json'] = {
+        itemId: itemId,
+        quantity: purchaseRequest.quantity,
+        requestedCurrency: purchaseRequest.currency,
+      };
+      metadataJson = singleMetadataJson;
     }
+    if (purchaseRequest.metadata) {
+      if (typeof metadataJson === 'object' && metadataJson !== null && !Array.isArray(metadataJson)) {
+        for (const key in purchaseRequest.metadata) {
+          if (Object.prototype.hasOwnProperty.call(purchaseRequest.metadata, key)) {
+            const value = purchaseRequest.metadata[key];
+            if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean' || value === null) {
+              metadataJson[`user_${key}`] = value;
+            } else {
+              metadataJson[`user_${key}`] = String(value);
+            }
+          }
+        }
+      }
+    }
+
+    const paymentTransactionInsert: Database['public']['Tables']['payment_transactions']['Insert'] = {
+      user_id: purchaseRequest.userId,
+      organization_id: organizationIdForInsert,
+      target_wallet_id: targetWalletId,
+      payment_gateway_id: purchaseRequest.paymentGatewayId,
+      status: 'PENDING',
+      tokens_to_award: tokensToAward,
+      amount_requested_fiat: amountForGateway,
+      currency_requested_fiat: currencyForGateway,
+      metadata_json: metadataJson,
+    };
 
     const { data: paymentTxnData, error: paymentTxnError } = await adminClient
       .from('payment_transactions')
-      .insert({
-        user_id: purchaseRequest.userId,
-        organization_id: purchaseRequest.organizationId ?? null,
-        target_wallet_id: targetWalletId,
-        payment_gateway_id: purchaseRequest.paymentGatewayId,
-        status: 'PENDING', // Initial status
-        tokens_to_award: tokensToAward, // From planData
-        amount_requested_fiat: amountForGateway, // Total amount for the quantity
-        currency_requested_fiat: currencyForGateway, // From planData
-        metadata_json: paymentTxMetadata,
-      })
+      .insert(paymentTransactionInsert)
       .select('id')
       .single();
 
@@ -222,38 +431,63 @@ async function initiatePaymentHandler(
     const internalPaymentId = paymentTxnData.id;
     console.log('[initiate-payment] Created payment_transactions record:', internalPaymentId);
 
-    // 6. Adapter factory (admin-scoped AdminTokenWalletService inside getPaymentAdapter for Stripe)
+    const request_origin: string | null = req.headers.get('origin');
+
+    // 7. Build PaymentOrchestrationContext and call adapter
+    let paymentOrchestrationContext: PaymentOrchestrationContext;
+    if (hasMultiItemCart) {
+      const multiPaymentOrchestrationContext: PaymentOrchestrationContext = {
+        userId: purchaseRequest.userId,
+        organizationId: purchaseRequest.organizationId,
+        itemId: itemId,
+        quantity: purchaseRequest.quantity,
+        paymentGatewayId: purchaseRequest.paymentGatewayId,
+        internalPaymentId: internalPaymentId,
+        targetWalletId: targetWalletId,
+        tokensToAward: tokensToAward,
+        amountForGateway: amountForGateway,
+        currencyForGateway: currencyForGateway,
+        lineItems: lineItems,
+        checkoutMode: checkoutMode,
+        metadata: purchaseRequest.metadata,
+      };
+      paymentOrchestrationContext = multiPaymentOrchestrationContext;
+    } else {
+      const singlePaymentOrchestrationContext: PaymentOrchestrationContext = {
+        userId: purchaseRequest.userId,
+        organizationId: purchaseRequest.organizationId,
+        itemId: itemId,
+        quantity: purchaseRequest.quantity,
+        paymentGatewayId: purchaseRequest.paymentGatewayId,
+        internalPaymentId: internalPaymentId,
+        targetWalletId: targetWalletId,
+        tokensToAward: tokensToAward,
+        amountForGateway: amountForGateway,
+        currencyForGateway: currencyForGateway,
+        metadata: purchaseRequest.metadata,
+      };
+      paymentOrchestrationContext = singlePaymentOrchestrationContext;
+    }
+    if (request_origin !== null) {
+      paymentOrchestrationContext.request_origin = request_origin;
+    }
+
     const adapter = getPaymentAdapterFn(purchaseRequest.paymentGatewayId, adminClient);
 
     if (!adapter) {
       const errMessage = `Payment gateway '${purchaseRequest.paymentGatewayId}' is not supported.`;
       console.error('[initiate-payment] No adapter found for gateway:', purchaseRequest.paymentGatewayId);
-      const updatedMetadata: Record<string, string | number | boolean | null | undefined> = { ...paymentTxMetadata, error_message: 'Invalid payment gateway', adapter_error_details: 'No suitable adapter found' };
-      // Attempt to update the transaction with this failure info
-      await adminClient.from('payment_transactions').update({ status: 'FAILED', metadata_json: updatedMetadata }).eq('id', internalPaymentId);
+      if (typeof metadataJson === 'object' && metadataJson !== null && !Array.isArray(metadataJson)) {
+        metadataJson.error_message = 'Invalid payment gateway';
+        metadataJson.adapter_error_details = 'No suitable adapter found';
+      }
+      const unsupportedGatewayPaymentTransactionUpdate: Database['public']['Tables']['payment_transactions']['Update'] = {
+        status: 'FAILED',
+        metadata_json: metadataJson,
+      };
+      await adminClient.from('payment_transactions').update(unsupportedGatewayPaymentTransactionUpdate).eq('id', internalPaymentId);
       return createErrorResponse(errMessage, 400, req);
     }
-
-    const request_origin = req.headers.get('origin');
-
-    // 7. Call Adapter's initiatePayment
-    const paymentOrchestrationContext: PaymentOrchestrationContext = {
-      userId: purchaseRequest.userId,
-      organizationId: purchaseRequest.organizationId,
-      itemId: purchaseRequest.itemId,
-      quantity: purchaseRequest.quantity,
-      paymentGatewayId: purchaseRequest.paymentGatewayId,
-      internalPaymentId: internalPaymentId,
-      targetWalletId: targetWalletId,
-      tokensToAward: tokensToAward,
-      amountForGateway: amountForGateway,
-      currencyForGateway: currencyForGateway,
-      metadata: {
-        ...purchaseRequest.metadata,
-        request_origin: request_origin,
-      },
-      request_origin: request_origin ?? undefined,
-    };
 
     const initiationResult = await adapter.initiatePayment(paymentOrchestrationContext);
 
@@ -266,24 +500,31 @@ async function initiatePaymentHandler(
        // If the adapter succeeded, our payment_transactions status is still 'PENDING'
        // It will be updated by the webhook.
     } else if (!initiationResult.success) {
-      // If the adapter's initiation fails, update our transaction record to FAILED
-      const updatedMetadata = {
-          ...paymentTxMetadata,
-          error_message: 'Adapter initiation failed',
-          adapter_error_details: initiationResult.error || 'No additional details provided'
+      if (typeof metadataJson === 'object' && metadataJson !== null && !Array.isArray(metadataJson)) {
+        metadataJson.error_message = 'Adapter initiation failed';
+        let adapterErrorDetails: string = 'No additional details provided';
+        if (initiationResult.error) {
+          adapterErrorDetails = initiationResult.error;
+        }
+        metadataJson.adapter_error_details = adapterErrorDetails;
+      }
+      const failedPaymentTransactionUpdate: Database['public']['Tables']['payment_transactions']['Update'] = {
+        status: 'FAILED',
+        gateway_transaction_id: initiationResult.paymentGatewayTransactionId,
+        metadata_json: metadataJson,
       };
       await adminClient
           .from('payment_transactions')
-          .update({
-              status: 'FAILED',
-              payment_gateway_txn_id: initiationResult.paymentGatewayTransactionId, // capture even on failure if available
-              metadata_json: updatedMetadata,
-          })
+          .update(failedPaymentTransactionUpdate)
           .eq('id', internalPaymentId);
     }
 
     // 9. Return Response
-    return createSuccessResponse(initiationResult, initiationResult.success ? 200 : 400, req );
+    let responseStatus: number = 400;
+    if (initiationResult.success) {
+      responseStatus = 200;
+    }
+    return createSuccessResponse(initiationResult, responseStatus, req );
 
   } catch (error) {
     console.error('[initiate-payment] Unhandled error in serve handler:', error, (error instanceof Error ? error.stack : 'No stack available'));
