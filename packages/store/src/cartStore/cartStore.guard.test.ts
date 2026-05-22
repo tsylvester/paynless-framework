@@ -7,19 +7,18 @@ import {
 } from './cartStore.guard.ts';
 import {
   buildCartItem,
-  initialCheckoutCart,
-  mockCartItemQty2,
-  mockCheckoutCartWithLines,
-  mockSubscriptionPlan,
+  buildCheckoutCart,
 } from './cartStore.mock';
+import { buildSubscriptionPlan } from '../../../../apps/web/src/components/subscription/PlanCard.mock';
 
 describe('isCartItem', () => {
   it('returns true for valid CartItem with full SubscriptionPlan and positive quantity', () => {
-    expect(isCartItem(mockCartItemQty2)).toBe(true);
+    const item: CartItem = buildCartItem({ plan: buildSubscriptionPlan(), quantity: 2 });
+    expect(isCartItem(item)).toBe(true);
   });
 
   it('returns true for valid CartItem with quantity of 1', () => {
-    const item: CartItem = buildCartItem({ quantity: 1 });
+    const item: CartItem = buildCartItem({ plan: buildSubscriptionPlan(), quantity: 1 });
     expect(isCartItem(item)).toBe(true);
   });
 
@@ -44,17 +43,17 @@ describe('isCartItem', () => {
   });
 
   it('returns false when quantity is zero', () => {
-    const value = { plan: mockSubscriptionPlan, quantity: 0 };
+    const value = { plan: buildSubscriptionPlan(), quantity: 0 };
     expect(isCartItem(value)).toBe(false);
   });
 
   it('returns false when quantity is negative', () => {
-    const value = { plan: mockSubscriptionPlan, quantity: -1 };
+    const value = { plan: buildSubscriptionPlan(), quantity: -1 };
     expect(isCartItem(value)).toBe(false);
   });
 
   it('returns false when quantity is missing', () => {
-    const value = { plan: mockSubscriptionPlan };
+    const value = { plan: buildSubscriptionPlan() };
     expect(isCartItem(value)).toBe(false);
   });
 
@@ -66,11 +65,11 @@ describe('isCartItem', () => {
 
 describe('isCheckoutCart', () => {
   it('returns true for valid CheckoutCart with null subscriptionItem and empty otpItems', () => {
-    expect(isCheckoutCart(initialCheckoutCart)).toBe(true);
+    expect(isCheckoutCart(buildCheckoutCart())).toBe(true);
   });
 
   it('returns true for valid CheckoutCart with subscription and otp lines', () => {
-    expect(isCheckoutCart(mockCheckoutCartWithLines)).toBe(true);
+    expect(isCheckoutCart(buildCheckoutCart({ subscriptionItem: buildCartItem({ plan: buildSubscriptionPlan(), quantity: 1 }), otpItems: [buildCartItem({ plan: buildSubscriptionPlan(), quantity: 2 })] }))).toBe(true);
   });
 
   it('returns false for null', () => {

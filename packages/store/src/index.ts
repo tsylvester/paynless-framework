@@ -7,7 +7,7 @@ export * from './organizationStore';
 export * from './analyticsStore';
 export * from './walletStore';
 export * from './dialecticStore';
-export * from './cartStore/cartStore';
+export * from './cartStore/cartStore.provides';
 
 // Export selectors
 export * from './aiStore.selectors';

@@ -1,28 +1,51 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, within, act, waitFor } from '@testing-library/react';
+import { ComponentProps, ReactElement } from 'react';
+import {
+  render,
+  screen,
+  fireEvent,
+  within,
+  act,
+  waitFor,
+} from '@testing-library/react';
 import { SubscriptionPage } from '../../pages/Subscription';
-import { useAuthStore, useSubscriptionStore, useWalletStore } from '@paynless/store';
+import { useAuthStore, useSubscriptionStore, useCartStore } from '@paynless/store';
 import {
   mockStripeGetSubscriptionPlans,
   mockStripeGetUserSubscription,
   mockStripeCreatePortalSession,
   mockStripeCancelSubscription,
 } from '@paynless/api/mocks/stripe.mock';
-import type { User, SubscriptionPlan, UserSubscription, ApiError } from '@paynless/types';
+import type {
+  User,
+  SubscriptionPlan,
+  UserSubscription,
+} from '@paynless/types';
 import { MemoryRouter } from 'react-router-dom';
+import { Layout } from '../layout/Layout';
+import { Navigate } from 'react-router-dom';
 
-const customRender = (ui: React.ReactElement) =>
-  render(<MemoryRouter>{ui}</MemoryRouter>);
+function customRender(ui: ReactElement) {
+  return render(<MemoryRouter>{ui}</MemoryRouter>);
+}
 
-vi.mock('../../components/layout/Layout', () => ({
-  Layout: ({ children }: { children: React.ReactNode }) => <div data-testid="layout">{children}</div>,
+vi.mock('../layout/Layout', () => ({
+  Layout: (props: ComponentProps<typeof Layout>) => (
+    <div data-testid="layout">{props.children}</div>
+  ),
 }));
 
 vi.mock('react-router-dom', async (importOriginal) => {
   const actual = await importOriginal<typeof import('react-router-dom')>();
   return {
     ...actual,
-    Navigate: ({ to }: { to: string }) => <div data-testid="navigate">Redirecting to {to}</div>,
+    Navigate: (props: ComponentProps<typeof Navigate>) => {
+      const destination: string =
+        typeof props.to === 'string' ? props.to : '/';
+      return (
+        <div data-testid="navigate">Redirecting to {destination}</div>
+      );
+    },
   };
 });
 
@@ -30,7 +53,11 @@ vi.mock('@paynless/utils', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
-const mockUser: User = { id: 'user-sub-int-123', email: 'subint@example.com', created_at: 'date' };
+const mockUser: User = {
+  id: 'user-sub-int-123',
+  email: 'subint@example.com',
+  created_at: 'date',
+};
 
 const mockPlansData: SubscriptionPlan[] = [
   {
@@ -50,6 +77,7 @@ const mockPlansData: SubscriptionPlan[] = [
     plan_type: 'subscription',
     item_id_internal: null,
     tokens_to_award: null,
+    tier_level: 10,
   },
   {
     id: 'int_pro',
@@ -68,25 +96,36 @@ const mockPlansData: SubscriptionPlan[] = [
     plan_type: 'subscription',
     item_id_internal: null,
     tokens_to_award: null,
+    tier_level: 20,
   },
 ];
 
 describe('SubscriptionPage Integration Tests', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockStripeGetSubscriptionPlans.mockResolvedValue({ data: mockPlansData, error: null });
+    mockStripeGetSubscriptionPlans.mockResolvedValue({
+      data: mockPlansData,
+      error: null,
+    });
     mockStripeGetUserSubscription.mockResolvedValue({ data: null, error: null });
-    mockStripeCreatePortalSession.mockResolvedValue({ data: { url: 'https://portal.example' }, error: null });
+    mockStripeCreatePortalSession.mockResolvedValue({
+      data: { url: 'https://portal.example' },
+      error: null,
+    });
     mockStripeCancelSubscription.mockResolvedValue({ data: null, error: null });
     act(() => {
       useAuthStore.setState({
         user: mockUser,
-        session: { access_token: 'int-token', refresh_token: 'refresh', expiresAt: 0 },
+        session: {
+          access_token: 'int-token',
+          refresh_token: 'refresh',
+          expiresAt: 0,
+        },
       });
       useSubscriptionStore.setState(useSubscriptionStore.getInitialState());
+      useCartStore.setState(useCartStore.getInitialState(), true);
     });
   });
-
 
   it('should load and display subscription plans from API', async () => {
     customRender(<SubscriptionPage />);
@@ -94,8 +133,13 @@ describe('SubscriptionPage Integration Tests', () => {
       expect(screen.getByText('Integration Basic Monthly')).toBeInTheDocument();
       expect(screen.getByText('Integration Pro Monthly')).toBeInTheDocument();
     });
-    expect(screen.getAllByRole('button', { name: /Subscribe/i })).toHaveLength(2);
-    expect(useSubscriptionStore.getState().availablePlans).toEqual(mockPlansData);
+    expect(screen.getAllByRole('button', { name: /Select Plan/i })).toHaveLength(
+      2,
+    );
+    expect(screen.getByTestId('cart-summary-empty')).toBeInTheDocument();
+    expect(useSubscriptionStore.getState().availablePlans).toEqual(
+      mockPlansData,
+    );
   });
 
   it('should load and display current subscription details from API', async () => {
@@ -111,71 +155,93 @@ describe('SubscriptionPage Integration Tests', () => {
       cancel_at_period_end: false,
       created_at: 'date',
       updated_at: 'date',
+      has_ever_paid: true,
+      tier_level: 20,
     };
-    mockStripeGetUserSubscription.mockResolvedValue({ data: mockCurrentSub, error: null });
+    mockStripeGetUserSubscription.mockResolvedValue({
+      data: mockCurrentSub,
+      error: null,
+    });
 
     customRender(<SubscriptionPage />);
     await waitFor(() => {
       expect(screen.getByText(/Current Subscription/i)).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /Manage Billing/i })).toBeInTheDocument();
+      expect(
+        screen.getByRole('button', { name: /Manage Billing/i }),
+      ).toBeInTheDocument();
     });
     await waitFor(() => {
-      expect(within(screen.getByTestId('plan-card-int_basic')).getByRole('button', { name: /Change Plan/i })).toBeEnabled();
-      expect(within(screen.getByTestId('plan-card-int_pro')).getByRole('button', { name: /Current Plan/i })).toBeDisabled();
+      expect(
+        within(screen.getByTestId('plan-card-int_basic')).getByRole('button', {
+          name: /Select Plan/i,
+        }),
+      ).toBeEnabled();
+      expect(
+        within(screen.getByTestId('plan-card-int_pro')).getByRole('button', {
+          name: /Current Plan/i,
+        }),
+      ).toBeDisabled();
     });
-    expect(useSubscriptionStore.getState().userSubscription?.id).toBe('sub-int-pro');
+    expect(useSubscriptionStore.getState().userSubscription?.id).toBe(
+      'sub-int-pro',
+    );
     expect(useSubscriptionStore.getState().hasActiveSubscription).toBe(true);
   });
 
-  it('should call initiatePurchase when Subscribe is clicked', async () => {
-    const mockInitiatePurchase = vi.fn().mockResolvedValue({
-      success: true,
-      redirectUrl: 'https://checkout.example',
-    });
-    useWalletStore.setState({ initiatePurchase: mockInitiatePurchase });
-
+  it('should add subscription plan to cart when Select Plan is clicked', async () => {
     customRender(<SubscriptionPage />);
     await waitFor(() => {
       expect(screen.getByText('Integration Pro Monthly')).toBeInTheDocument();
     });
-    const subscribeButton = within(screen.getByTestId('plan-card-int_pro')).getByRole('button', { name: /Subscribe/i });
+    const selectButton = within(
+      screen.getByTestId('plan-card-int_pro'),
+    ).getByRole('button', { name: /Select Plan/i });
     await act(async () => {
-      fireEvent.click(subscribeButton);
+      fireEvent.click(selectButton);
     });
     await waitFor(() => {
-      expect(mockInitiatePurchase).toHaveBeenCalledTimes(1);
+      const cartSubscriptionId =
+        useCartStore.getState().cart.subscriptionItem?.plan.id;
+      expect(cartSubscriptionId).toBe('int_pro');
     });
-    expect(mockInitiatePurchase).toHaveBeenCalledWith(
-      expect.objectContaining({
-        itemId: 'price_int_pro',
-        userId: mockUser.id,
-      })
-    );
+    expect(
+      within(screen.getByTestId('plan-card-int_pro')).getByRole('button', {
+        name: /Selected/i,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByTestId('cart-summary-subscription-row'),
+    ).toBeInTheDocument();
   });
 
-  it('should display error message if initiatePurchase fails', async () => {
-    const checkoutError: ApiError = { message: 'Checkout process failed!', code: 'CHECKOUT_FAILED' };
-    const mockInitiatePurchase = vi.fn().mockImplementation(async () => {
-      useWalletStore.setState({ purchaseError: checkoutError });
-      return null;
-    });
-    useWalletStore.setState({ initiatePurchase: mockInitiatePurchase });
-
+  it('should display checkout error via CartSummary when checkoutError is set', async () => {
+    const errorMessage: string = 'Checkout process failed!';
     customRender(<SubscriptionPage />);
     await waitFor(() => {
       expect(screen.getByText('Integration Pro Monthly')).toBeInTheDocument();
     });
-    const subscribeButton = within(screen.getByTestId('plan-card-int_pro')).getByRole('button', { name: /Subscribe/i });
+    const selectButton = within(
+      screen.getByTestId('plan-card-int_pro'),
+    ).getByRole('button', { name: /Select Plan/i });
     await act(async () => {
-      fireEvent.click(subscribeButton);
+      fireEvent.click(selectButton);
     });
     await waitFor(() => {
-      expect(screen.getByText(checkoutError.message)).toBeInTheDocument();
+      expect(useCartStore.getState().cart.subscriptionItem?.plan.id).toBe(
+        'int_pro',
+      );
     });
+    act(() => {
+      useCartStore.setState({
+        checkoutError: new Error(errorMessage),
+      });
+    });
+    const alert = screen.getByTestId('cart-summary-error');
+    expect(within(alert).getByText(errorMessage)).toBeInTheDocument();
   });
 
   it('should call createBillingPortalSession and redirect when Manage Billing is clicked', async () => {
-    const mockPortalUrl = 'http://mock-portal-url';
+    const mockPortalUrl: string = 'http://mock-portal-url';
     mockStripeGetUserSubscription.mockResolvedValue({
       data: {
         id: 'sub-active',
@@ -189,13 +255,21 @@ describe('SubscriptionPage Integration Tests', () => {
         cancel_at_period_end: false,
         created_at: 'date',
         updated_at: 'date',
+        has_ever_paid: true,
+        tier_level: 20,
       },
       error: null,
     });
-    mockStripeCreatePortalSession.mockResolvedValue({ data: { url: mockPortalUrl }, error: null });
+    mockStripeCreatePortalSession.mockResolvedValue({
+      data: { url: mockPortalUrl },
+      error: null,
+    });
 
     const mockLocation = { href: '', assign: vi.fn() };
-    Object.defineProperty(window, 'location', { value: mockLocation, writable: true });
+    Object.defineProperty(window, 'location', {
+      value: mockLocation,
+      writable: true,
+    });
 
     customRender(<SubscriptionPage />);
     await waitFor(() => {
@@ -223,21 +297,28 @@ describe('SubscriptionPage Integration Tests', () => {
       cancel_at_period_end: false,
       created_at: 'date',
       updated_at: 'date',
+      has_ever_paid: true,
+      tier_level: 20,
     };
-    mockStripeGetUserSubscription.mockResolvedValue({ data: mockCurrentSub, error: null });
+    mockStripeGetUserSubscription.mockResolvedValue({
+      data: mockCurrentSub,
+      error: null,
+    });
 
     customRender(<SubscriptionPage />);
     await waitFor(() => {
       expect(screen.getByText(/Current Subscription/i)).toBeInTheDocument();
     });
-    const cancelButton = screen.getByRole('button', { name: /Cancel Subscription/i });
+    const cancelButton = screen.getByRole('button', {
+      name: /Cancel Subscription/i,
+    });
     await act(async () => {
       fireEvent.click(cancelButton);
     });
     await waitFor(() => {
       expect(mockStripeCancelSubscription).toHaveBeenCalledWith(
         'stripe_sub_cancel',
-        expect.objectContaining({ token: 'int-token' })
+        expect.objectContaining({ token: 'int-token' }),
       );
     });
   });

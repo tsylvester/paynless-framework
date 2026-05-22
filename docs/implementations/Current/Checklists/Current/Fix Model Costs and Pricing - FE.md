@@ -1471,50 +1471,50 @@
       * `[✅]` Behavioral changes: `initiate-payment` handler accepts multi-item `PurchaseRequest.items`, resolves each item, computes aggregates, builds multi-item `PaymentOrchestrationContext`; `StripePaymentAdapter.initiatePayment` validates lineItems with `isOrchestrationLineItem`, builds multi-entry `line_items` from `context.lineItems`, encodes per-item metadata; existing single-item paths unchanged
       * `[✅]` Contract changes: `PurchaseRequest.items?` (additive, backward-compatible), `PaymentOrchestrationContext.lineItems?` and `.checkoutMode?` (additive, backward-compatible), `stripe.initiatiePayment.test.ts` renamed to `stripe.initiatePayment.test.ts`
 
-  * `[ ]` [UI] apps/web/src/components/subscription/`PlanCard` **Cart-aware plan card with select/add behavior by plan type**
+  * `[✅]` [UI] apps/web/src/components/subscription/`PlanCard` **Cart-aware plan card with select/add behavior by plan type**
 
-    * `[ ]` `objective`
-      * `[ ]` The PlanCard component currently triggers immediate Stripe checkout on every click via `handleSubscribe(priceId)`; it cannot participate in a multi-item cart because it has no concept of selection state or plan-type-specific behavior. The component must be modified so that subscription plans are toggled into/out of the cart via a select action, and OTP plans are added to the cart with quantity awareness, while preserving the existing free-plan downgrade path and the current-plan disabled state.
-      * `[ ]` Functional goals:
+    * `[✅]` `objective`
+      * `[✅]` The PlanCard component currently triggers immediate Stripe checkout on every click via `handleSubscribe(priceId)`; it cannot participate in a multi-item cart because it has no concept of selection state or plan-type-specific behavior. The component must be modified so that subscription plans are toggled into/out of the cart via a select action, and OTP plans are added to the cart with quantity awareness, while preserving the existing free-plan downgrade path and the current-plan disabled state.
+      * `[✅]` Functional goals:
         * Subscription plans (`plan.plan_type === 'subscription'`): clicking the action button calls `onSelect(plan)` to toggle the plan into or out of the cart; visual state reflects `isInCart` (highlighted border, "Selected" label when in cart, "Select Plan" when not)
         * OTP plans (`plan.plan_type === 'one_time_purchase'`): clicking the action button calls `onAdd(plan)` to add the plan to the cart or increment its quantity; visual state reflects `isInCart` and `cartQuantity` ("Add to Cart" when not in cart, "In Cart (×{qty})" with quantity display when in cart)
         * Free plan downgrade: `onDowngrade()` replaces `handleCancelSubscription()` — behavior and guard logic (disabled when not on paid plan, disabled when processing) preserved
         * Current plan: disabled "Current Plan" button — unchanged
         * All existing display logic preserved: name, subtitle, features, formatted amount, formatted interval
-      * `[ ]` Non-functional constraints:
+      * `[✅]` Non-functional constraints:
         * No direct store imports — PlanCard is a pure presentational component that receives all state and callbacks via props
         * Backward-incompatible prop change: `handleSubscribe` and `handleCancelSubscription` are removed, replaced by `onSelect`, `onAdd`, `onDowngrade` — consumers (Subscription.tsx) will have compile errors until updated in their own node
-      * `[ ]` Each goal is atomic and testable
+      * `[✅]` Each goal is atomic and testable
 
-    * `[ ]` `role`
-      * `[ ]` Presentational UI component — leaf in the component tree, receives all data and callbacks via props
-      * `[ ]` Appropriate because: the PlanCard is a stateless display component that renders plan details and delegates user intent to the parent via callbacks — it does not own cart state, subscription lifecycle, or payment processing
-      * `[ ]` Must NOT: import or reference any store directly, manage cart state, initiate payment, or navigate
+    * `[✅]` `role`
+      * `[✅]` Presentational UI component — leaf in the component tree, receives all data and callbacks via props
+      * `[✅]` Appropriate because: the PlanCard is a stateless display component that renders plan details and delegates user intent to the parent via callbacks — it does not own cart state, subscription lifecycle, or payment processing
+      * `[✅]` Must NOT: import or reference any store directly, manage cart state, initiate payment, or navigate
 
-    * `[ ]` `module`
-      * `[ ]` Bounded context: Subscription Plan Display
-      * `[ ]` Inside boundary: plan detail rendering (name, subtitle, features, amount, interval), action button rendering based on plan type and cart state, visual cart-selection state (border highlight, label)
-      * `[ ]` Outside boundary: cart state management (cartStore), subscription lifecycle (subscriptionStore), payment processing (walletStore), page layout and tab organization (Subscription.tsx)
-      * `[ ]` Each boundary rule is explicit and reviewable
+    * `[✅]` `module`
+      * `[✅]` Bounded context: Subscription Plan Display
+      * `[✅]` Inside boundary: plan detail rendering (name, subtitle, features, amount, interval), action button rendering based on plan type and cart state, visual cart-selection state (border highlight, label)
+      * `[✅]` Outside boundary: cart state management (cartStore), subscription lifecycle (subscriptionStore), payment processing (walletStore), page layout and tab organization (Subscription.tsx)
+      * `[✅]` Each boundary rule is explicit and reviewable
 
-    * `[ ]` `deps`
-      * `[ ]` For each dependency:
+    * `[✅]` `deps`
+      * `[✅]` For each dependency:
         * `@paynless/types` — domain layer — inward — provides `SubscriptionPlan` type (for prop typing and `plan_type` field)
         * `lucide-react` — external UI library — inward — provides `Check` icon (existing), `Plus`/`Minus` icons (new, for OTP quantity controls)
-      * `[ ]` Confirm:
+      * `[✅]` Confirm:
         * No reverse dependencies — PlanCard is consumed by Subscription.tsx, not the other way around
         * No lateral layer violations — component depends only on types (inward) and a UI icon library (inward)
 
-    * `[ ]` `context_slice`
-      * `[ ]` From parent (Subscription.tsx) via props: `plan: SubscriptionPlan`, `isCurrentPlan: boolean`, `userIsOnPaidPlan: boolean`, `isProcessing: boolean`, `onSelect: (plan: SubscriptionPlan) => void`, `onAdd: (plan: SubscriptionPlan) => void`, `onDowngrade: () => void`, `isInCart: boolean`, `cartQuantity: number`, `formatAmount`, `formatInterval`
-      * `[ ]` Injection shape: React props — all data and callbacks provided by the parent component
-      * `[ ]` Confirm:
+    * `[✅]` `context_slice`
+      * `[✅]` From parent (Subscription.tsx) via props: `plan: SubscriptionPlan`, `isCurrentPlan: boolean`, `userIsOnPaidPlan: boolean`, `isProcessing: boolean`, `onSelect: (plan: SubscriptionPlan) => void`, `onAdd: (plan: SubscriptionPlan) => void`, `onDowngrade: () => void`, `isInCart: boolean`, `cartQuantity: number`, `formatAmount`, `formatInterval`
+      * `[✅]` Injection shape: React props — all data and callbacks provided by the parent component
+      * `[✅]` Confirm:
         * No over-fetching — PlanCard receives only the props it needs to render and delegate
         * No hidden coupling — PlanCard has no knowledge of stores or other components
 
-    * `[ ]` components/subscription/`PlanCard.interface.ts` (NEW)
-      * `[ ]` Write existing in-line interface to its own interface file
-      * `[ ]` Replace existing `PlanCardProps` interface (lines 4–13 of current PlanCard.tsx) with:
+    * `[✅]` components/subscription/`PlanCard.interface.ts` (NEW)
+      * `[✅]` Write existing in-line interface to its own interface file
+      * `[✅]` Replace existing `PlanCardProps` interface (lines 4–13 of current PlanCard.tsx) with:
         * `plan: SubscriptionPlan` — unchanged
         * `isCurrentPlan: boolean` — unchanged
         * `userIsOnPaidPlan: boolean` — unchanged
@@ -1526,12 +1526,12 @@
         * `cartQuantity: number` — NEW: quantity of this plan in the cart (0 when not in cart; relevant for OTP plans)
         * `formatAmount: (amount: number, currency: string) => string` — unchanged
         * `formatInterval: (interval: string | null | undefined, count: number | null | undefined) => string` — unchanged
-      * `[ ]` Removed props: `handleSubscribe`, `handleCancelSubscription`
-      * `[ ]` No implicit/any types
-      * `[ ]` Each type is minimal and composable
+      * `[✅]` Removed props: `handleSubscribe`, `handleCancelSubscription`
+      * `[✅]` No implicit/any types
+      * `[✅]` Each type is minimal and composable
 
-    * `[ ]` `PlanCard.interaction.spec`
-      * `[ ]` Define call patterns:
+    * `[✅]` `PlanCard.interaction.spec`
+      * `[✅]` Define call patterns:
         * **Current plan** (`isCurrentPlan === true`): render disabled "Current Plan" button. No callback invoked. Unchanged from current behavior.
         * **Free plan, not current** (`plan.amount === 0 && !isCurrentPlan`): render "Downgrade to Free" button. Click calls `onDowngrade()`. Disabled when `isProcessing || !userIsOnPaidPlan`. Unchanged behavior, renamed callback.
         * **Subscription plan, not current, not free** (`plan.plan_type === 'subscription' && plan.amount > 0 && !isCurrentPlan`):
@@ -1541,29 +1541,29 @@
           * When `isInCart === false`: render "Add to Cart" button. Click calls `onAdd(plan)`. Disabled when `isProcessing`.
           * When `isInCart === true`: render "In Cart" label with `×{cartQuantity}` display. Render "+" button that calls `onAdd(plan)` for increment. Disabled when `isProcessing`.
         * **Card border styling**: when `isInCart === true`, apply a highlighted border style (similar to `isCurrentPlan`'s ring style but with a distinct color, e.g., `border-green-500 ring-2 ring-green-500`) to visually distinguish cart-selected cards from the current-plan card
-      * `[ ]` Side effects: none — PlanCard is a pure presentational component; all side effects are delegated to the parent via callbacks
-      * `[ ]` Failure modes:
+      * `[✅]` Side effects: none — PlanCard is a pure presentational component; all side effects are delegated to the parent via callbacks
+      * `[✅]` Failure modes:
         * `plan.plan_type` is unexpected value (not `'subscription'` or `'one_time_purchase'`): fall back to subscription-plan behavior (call `onSelect`) — defensive default
         * `plan.amount` is null: existing guard throws Error("Plan amount is missing") — unchanged
         * `plan.currency` is falsy: existing guard throws Error("Plan currency is missing") — unchanged
-      * `[ ]` Ordering: no temporal constraints — all interactions are synchronous prop-callback invocations
-      * `[ ]` No code — purely declarative
+      * `[✅]` Ordering: no temporal constraints — all interactions are synchronous prop-callback invocations
+      * `[✅]` No code — purely declarative
 
-    * `[ ]` components/subscription/`PlanCard.mock.ts` (NEW)
-      * `[ ]` Extract existing inline mock data from `PlanCard.test.tsx` into this file:
+    * `[✅]` components/subscription/`PlanCard.mock.ts` (NEW)
+      * `[✅]` Extract existing inline mock data from `PlanCard.test.tsx` into this file:
         * `mockSubscriptionPlan` — a `SubscriptionPlan` with `plan_type: 'subscription'`, `amount: 1000`, `currency: 'usd'`, `interval: 'month'`, `interval_count: 1`, features array
         * `mockOtpPlan` — a `SubscriptionPlan` with `plan_type: 'one_time_purchase'`, `amount: 500`, `currency: 'usd'`, `interval: null`, `interval_count: null`, `tokens_to_award: 5000`
         * `mockFreePlan` — a `SubscriptionPlan` with `amount: 0`, `plan_type: 'subscription'`, `name: 'Free'`
         * `mockFormatAmount` — `(amount: number, currency: string) => string` using `Intl.NumberFormat`
         * `mockFormatInterval` — `(interval: string | null | undefined, count: number | null | undefined) => string`
-      * `[ ]` Mock callback factories: `createMockPlanCardCallbacks()` returning `{ onSelect: vi.fn(), onAdd: vi.fn(), onDowngrade: vi.fn() }`
-      * `[ ]` Must conform to `PlanCardProps` interface and interaction spec
-      * `[ ]` No new behavior introduced beyond spec
+      * `[✅]` Mock callback factories: `createMockPlanCardCallbacks()` returning `{ onSelect: vi.fn(), onAdd: vi.fn(), onDowngrade: vi.fn() }`
+      * `[✅]` Must conform to `PlanCardProps` interface and interaction spec
+      * `[✅]` No new behavior introduced beyond spec
 
-    * `[ ]` components/subscription/`PlanCard.test.tsx` (MODIFY)
-      * `[ ]` Remove inline mock data and callback definitions; import from `PlanCard.mock.ts`
-      * `[ ]` Update `defaultProps` to use new prop names: `onSelect`, `onAdd`, `onDowngrade`, `isInCart: false`, `cartQuantity: 0`
-      * `[ ]` Validate behavior against requirements and interaction spec:
+    * `[✅]` components/subscription/`PlanCard.test.tsx` (MODIFY)
+      * `[✅]` Remove inline mock data and callback definitions; import from `PlanCard.mock.ts`
+      * `[✅]` Update `defaultProps` to use new prop names: `onSelect`, `onAdd`, `onDowngrade`, `isInCart: false`, `cartQuantity: 0`
+      * `[✅]` Validate behavior against requirements and interaction spec:
         * Existing tests updated for renamed callbacks:
           * "Current Plan" disabled button — unchanged assertion, updated props
           * "Downgrade to Free" — `onDowngrade` called instead of `handleCancelSubscription`
@@ -1580,23 +1580,23 @@
           * OTP plan in cart: processing state disables "+" button
         * New test for unknown plan_type fallback:
           * Plan with `plan_type: 'unknown_value'`: renders "Select Plan" button (falls back to subscription behavior)
-      * `[ ]` Focus on correct button rendering, callback invocation with correct arguments, and visual state based on `isInCart`/`cartQuantity`
-      * `[ ]` Do NOT re-test type shape or guard correctness
+      * `[✅]` Focus on correct button rendering, callback invocation with correct arguments, and visual state based on `isInCart`/`cartQuantity`
+      * `[✅]` Do NOT re-test type shape or guard correctness
 
-    * `[ ]` `construction`
-      * `[ ]` Factory entrypoint: `<PlanCard {...props} />` — React functional component, no factory constructor
-      * `[ ]` Required dependencies at creation: all props must be provided by the parent — TypeScript compiler enforces completeness
-      * `[ ]` Enforce: no partially constructed instances — all required props must be supplied (no optional props except those explicitly marked optional)
-      * `[ ]` Invalid construction: omitting any required prop produces a compile-time error at the call site
+    * `[✅]` `construction`
+      * `[✅]` Factory entrypoint: `<PlanCard {...props} />` — React functional component, no factory constructor
+      * `[✅]` Required dependencies at creation: all props must be provided by the parent — TypeScript compiler enforces completeness
+      * `[✅]` Enforce: no partially constructed instances — all required props must be supplied (no optional props except those explicitly marked optional)
+      * `[✅]` Invalid construction: omitting any required prop produces a compile-time error at the call site
 
-    * `[ ]` components/subscription/`PlanCard.tsx` (MODIFY)
-      * `[ ]` Delete existing inline interface and import it from the interface file
-      * `[ ]` Replace `PlanCardProps` interface: remove `handleSubscribe` and `handleCancelSubscription`, add `onSelect`, `onAdd`, `onDowngrade`, `isInCart`, `cartQuantity` as described in the interface section
-      * `[ ]` Update function signature destructuring to match new props
-      * `[ ]` Add `isOtp` derived boolean: `const isOtp = plan.plan_type === 'one_time_purchase'`
-      * `[ ]` Add `Plus` and `Minus` icon imports from `lucide-react` (alongside existing `Check`)
-      * `[ ]` Update card root `className`: add cart-selected highlight when `isInCart && !isCurrentPlan` — e.g., `border-green-500 ring-2 ring-green-500` (distinct from `isCurrentPlan`'s `border-primary ring-2 ring-primary`)
-      * `[ ]` Update button section (lines 98–130 of current file):
+    * `[✅]` components/subscription/`PlanCard.tsx` (MODIFY)
+      * `[✅]` Delete existing inline interface and import it from the interface file
+      * `[✅]` Replace `PlanCardProps` interface: remove `handleSubscribe` and `handleCancelSubscription`, add `onSelect`, `onAdd`, `onDowngrade`, `isInCart`, `cartQuantity` as described in the interface section
+      * `[✅]` Update function signature destructuring to match new props
+      * `[✅]` Add `isOtp` derived boolean: `const isOtp = plan.plan_type === 'one_time_purchase'`
+      * `[✅]` Add `Plus` and `Minus` icon imports from `lucide-react` (alongside existing `Check`)
+      * `[✅]` Update card root `className`: add cart-selected highlight when `isInCart && !isCurrentPlan` — e.g., `border-green-500 ring-2 ring-green-500` (distinct from `isCurrentPlan`'s `border-primary ring-2 ring-primary`)
+      * `[✅]` Update button section (lines 98–130 of current file):
         * `isCurrentPlan` branch: unchanged — disabled "Current Plan" button
         * `isFreePlan && !isCurrentPlan` branch: replace `onClick={handleCancelSubscription}` with `onClick={onDowngrade}`; all other logic unchanged
         * `isOtp && !isCurrentPlan` branch (NEW): 
@@ -1607,47 +1607,47 @@
           * When `!isInCart`: render "Select Plan" button, `onClick={() => onSelect(plan)}`
           * When `isInCart`: render "Selected" button with checkmark icon, `onClick={() => onSelect(plan)}` for toggle, highlighted background
           * Both states: disabled when `isProcessing`
-      * `[ ]` Preserve all existing display logic: plan name, subtitle extraction from `plan.description`, features list rendering, amount/interval formatting, `data-testid` attribute
-      * `[ ]` Must not introduce undeclared dependencies or bypass guards/contracts
-      * `[ ]` Each requirement maps to code paths
+      * `[✅]` Preserve all existing display logic: plan name, subtitle extraction from `plan.description`, features list rendering, amount/interval formatting, `data-testid` attribute
+      * `[✅]` Must not introduce undeclared dependencies or bypass guards/contracts
+      * `[✅]` Each requirement maps to code paths
 
-    * `[ ]` components/subscription/`PlanCard` export — no change needed
-      * `[ ]` `PlanCard` is already exported as a named export from `PlanCard.tsx`
-      * `[ ]` Public API surface: `PlanCard` component function, `PlanCardProps` interface (implicitly via TypeScript)
-      * `[ ]` Stability: breaking change to `PlanCardProps` — consumers (Subscription.tsx, Subscription.integration.test.tsx) will have compile errors until updated in their respective nodes
-      * `[ ]` No barrel export file — component is imported directly by path
+    * `[✅]` components/subscription/`PlanCard` export — no change needed
+      * `[✅]` `PlanCard` is already exported as a named export from `PlanCard.tsx`
+      * `[✅]` Public API surface: `PlanCard` component function, `PlanCardProps` interface (implicitly via TypeScript)
+      * `[✅]` Stability: breaking change to `PlanCardProps` — consumers (Subscription.tsx, Subscription.integration.test.tsx) will have compile errors until updated in their respective nodes
+      * `[✅]` No barrel export file — component is imported directly by path
 
-    * `[ ]` components/subscription/`PlanCard.integration.test` — deferred to Subscription.tsx node
-      * `[ ]` PlanCard is a pure presentational component; integration testing with cartStore actions and Subscription.tsx orchestration is covered in the Subscription.tsx node's integration test (`Subscription.integration.test.tsx`)
-      * `[ ]` The Subscription.tsx node will validate: parent passes cartStore state to PlanCard props → PlanCard renders correct button → click triggers cart action → cart state updates → PlanCard re-renders
+    * `[✅]` components/subscription/`PlanCard.integration.test` — deferred to Subscription.tsx node
+      * `[✅]` PlanCard is a pure presentational component; integration testing with cartStore actions and Subscription.tsx orchestration is covered in the Subscription.tsx node's integration test (`Subscription.integration.test.tsx`)
+      * `[✅]` The Subscription.tsx node will validate: parent passes cartStore state to PlanCard props → PlanCard renders correct button → click triggers cart action → cart state updates → PlanCard re-renders
 
-    * `[ ]` `directionality`
-      * `[ ]` Layer: UI (presentational component)
-      * `[ ]` Confirm:
+    * `[✅]` `directionality`
+      * `[✅]` Layer: UI (presentational component)
+      * `[✅]` Confirm:
         * deps are inward-facing: reads `SubscriptionPlan` type from `@paynless/types` (domain layer below), uses `lucide-react` icons (external UI library)
         * provides are outward-facing: `PlanCard` component is consumed by `Subscription.tsx` (page-level UI layer above)
-      * `[ ]` No cycles: PlanCard depends only on types and icons; it does not import its consumer
+      * `[✅]` No cycles: PlanCard depends only on types and icons; it does not import its consumer
 
-    * `[ ]` `requirements`
-      * `[ ]` Subscription plans render "Select Plan" when `isInCart === false` — observable via button text, testable via render assertion
-      * `[ ]` Subscription plans render "Selected" with highlight when `isInCart === true` — observable via button text and CSS class, testable
-      * `[ ]` Clicking subscription plan button calls `onSelect(plan)` with the full `SubscriptionPlan` object — observable via mock spy, testable
-      * `[ ]` OTP plans render "Add to Cart" when `isInCart === false` — observable via button text, testable
-      * `[ ]` OTP plans render "In Cart ×{qty}" when `isInCart === true` — observable via rendered text with `cartQuantity`, testable
-      * `[ ]` Clicking OTP "+" or "Add to Cart" calls `onAdd(plan)` with the full `SubscriptionPlan` object — observable via mock spy, testable
-      * `[ ]` Free plan calls `onDowngrade()` on click — observable via mock spy, testable
-      * `[ ]` Current plan button remains disabled — observable, testable (existing test updated for new props)
-      * `[ ]` `isProcessing` disables all action buttons — observable, testable (existing test updated)
-      * `[ ]` Cart-selected cards (`isInCart && !isCurrentPlan`) have visually distinct highlighted border — observable via CSS class assertion, testable
-      * `[ ]` Unknown `plan_type` falls back to subscription behavior — observable, testable via mock plan with unknown type
+    * `[✅]` `requirements`
+      * `[✅]` Subscription plans render "Select Plan" when `isInCart === false` — observable via button text, testable via render assertion
+      * `[✅]` Subscription plans render "Selected" with highlight when `isInCart === true` — observable via button text and CSS class, testable
+      * `[✅]` Clicking subscription plan button calls `onSelect(plan)` with the full `SubscriptionPlan` object — observable via mock spy, testable
+      * `[✅]` OTP plans render "Add to Cart" when `isInCart === false` — observable via button text, testable
+      * `[✅]` OTP plans render "In Cart ×{qty}" when `isInCart === true` — observable via rendered text with `cartQuantity`, testable
+      * `[✅]` Clicking OTP "+" or "Add to Cart" calls `onAdd(plan)` with the full `SubscriptionPlan` object — observable via mock spy, testable
+      * `[✅]` Free plan calls `onDowngrade()` on click — observable via mock spy, testable
+      * `[✅]` Current plan button remains disabled — observable, testable (existing test updated for new props)
+      * `[✅]` `isProcessing` disables all action buttons — observable, testable (existing test updated)
+      * `[✅]` Cart-selected cards (`isInCart && !isCurrentPlan`) have visually distinct highlighted border — observable via CSS class assertion, testable
+      * `[✅]` Unknown `plan_type` falls back to subscription behavior — observable, testable via mock plan with unknown type
 
-    * `[ ]` `versioning` — deferred to final node in this ticket's scope (Subscription.tsx integration node); PlanCard is an intermediate UI producer, not a standalone shippable unit
+    * `[✅]` `versioning` — deferred to final node in this ticket's scope (Subscription.tsx integration node); PlanCard is an intermediate UI producer, not a standalone shippable unit
 
-  * `[ ]` [UI] apps/web/src/components/subscription/CartSummary/`CartSummary` **Cart summary panel — display selected items, modify cart, compute totals, and initiate checkout**
+  * `[✅]` [UI] apps/web/src/components/subscription/CartSummary/`CartSummary` **Cart summary panel — display selected items, modify cart, compute totals, and initiate checkout**
 
-    * `[ ]` `objective`
-      * `[ ]` After adding items to the cart via PlanCard, the user has no way to review what they've selected, see the total cost, remove individual items, or initiate checkout; a summary panel is needed that renders the cart contents, computes and displays the total amount, provides per-item and bulk removal controls, shows checkout status and errors, and delegates the checkout action to the parent
-      * `[ ]` Functional goals:
+    * `[✅]` `objective`
+      * `[✅]` After adding items to the cart via PlanCard, the user has no way to review what they've selected, see the total cost, remove individual items, or initiate checkout; a summary panel is needed that renders the cart contents, computes and displays the total amount, provides per-item and bulk removal controls, shows checkout status and errors, and delegates the checkout action to the parent
+      * `[✅]` Functional goals:
         * Display the subscription item (if any) with plan name, formatted amount, and formatted interval
         * Display each OTP item with plan name, quantity, unit price, and computed subtotal
         * Compute and display the grand total across all cart items
@@ -1657,34 +1657,34 @@
         * Display checkout error when `checkoutError` is non-null
         * Display loading state when `isCheckingOut` is true
         * Render an empty-cart message when the cart has no items
-      * `[ ]` Non-functional constraints:
+      * `[✅]` Non-functional constraints:
         * Pure presentational component — all data and callbacks injected via props (DI-compliant)
         * No direct store imports — CartSummary does not reference `useCartStore` or any other store hook
         * Total computation is a pure derivation from `cart` prop — no external state required
-      * `[ ]` Each goal is atomic and testable
+      * `[✅]` Each goal is atomic and testable
 
-    * `[ ]` `role`
-      * `[ ]` Presentational UI component — leaf in the component tree, receives all data and callbacks via props
-      * `[ ]` Appropriate because: the cart summary is a display component that renders data, computes derived values (totals), and delegates user actions to the parent — it does not own cart state, payment processing, or navigation
-      * `[ ]` Must NOT: import or reference any store directly, manage cart state, initiate payment, navigate, or persist any data
+    * `[✅]` `role`
+      * `[✅]` Presentational UI component — leaf in the component tree, receives all data and callbacks via props
+      * `[✅]` Appropriate because: the cart summary is a display component that renders data, computes derived values (totals), and delegates user actions to the parent — it does not own cart state, payment processing, or navigation
+      * `[✅]` Must NOT: import or reference any store directly, manage cart state, initiate payment, navigate, or persist any data
 
-    * `[ ]` `module`
-      * `[ ]` Bounded context: Cart Display
-      * `[ ]` Inside boundary: cart item rendering, total computation (`subscriptionItem.plan.amount × quantity + Σ(otpItems[i].plan.amount × quantity)`), action button rendering (remove, clear, checkout), error/loading display
-      * `[ ]` Outside boundary: cart state management (cartStore), payment processing (walletStore), plan catalog (subscriptionStore), page layout and tab organization (Subscription.tsx)
-      * `[ ]` Each boundary rule is explicit and reviewable
+    * `[✅]` `module`
+      * `[✅]` Bounded context: Cart Display
+      * `[✅]` Inside boundary: cart item rendering, total computation (`subscriptionItem.plan.amount × quantity + Σ(otpItems[i].plan.amount × quantity)`), action button rendering (remove, clear, checkout), error/loading display
+      * `[✅]` Outside boundary: cart state management (cartStore), payment processing (walletStore), plan catalog (subscriptionStore), page layout and tab organization (Subscription.tsx)
+      * `[✅]` Each boundary rule is explicit and reviewable
 
-    * `[ ]` `deps`
-      * `[ ]` For each dependency:
+    * `[✅]` `deps`
+      * `[✅]` For each dependency:
         * `@paynless/store` — app layer — inward — provides `CheckoutCart`, `CartItem` types (from `cartStore.interface.ts`) and `isCheckoutCart` guard (from `cartStore.guard.ts`) for guard composition
         * `@paynless/types` — domain layer — inward — provides `SubscriptionPlan` type (referenced transitively by `CartItem.plan`)
         * `lucide-react` — external UI library — inward — provides icons (`Trash2`, `ShoppingCart`, `X`, `Loader2`)
-      * `[ ]` Confirm:
+      * `[✅]` Confirm:
         * No reverse dependencies — CartSummary is consumed by Subscription.tsx, not the other way around
         * No lateral layer violations — component depends only on types (inward) and a UI icon library (inward)
 
-    * `[ ]` `context_slice`
-      * `[ ]` From parent (Subscription.tsx) via props:
+    * `[✅]` `context_slice`
+      * `[✅]` From parent (Subscription.tsx) via props:
         * `cart: CheckoutCart` — the complete cart state to render
         * `isCheckingOut: boolean` — whether a checkout operation is in progress
         * `checkoutError: Error | null` — error from the most recent checkout attempt
@@ -1693,13 +1693,13 @@
         * `onClearCart: () => void` — callback to clear the entire cart
         * `onCheckout: () => void` — callback to initiate checkout
         * `formatAmount: (amount: number, currency: string) => string` — formatting helper from parent
-      * `[ ]` Injection shape: React props — all data and callbacks provided by the parent component
-      * `[ ]` Confirm:
+      * `[✅]` Injection shape: React props — all data and callbacks provided by the parent component
+      * `[✅]` Confirm:
         * No over-fetching — CartSummary receives only the data it needs to render and the callbacks it needs to delegate
         * No hidden coupling — CartSummary has no knowledge of stores or other components
 
-    * `[ ]` CartSummary/`CartSummary.interface.test.ts`
-      * `[ ]` Define:
+    * `[✅]` CartSummary/`CartSummary.interface.test.ts`
+      * `[✅]` Define:
         * Valid `CartSummaryProps`: full `CheckoutCart` (with subscription + OTPs), boolean `isCheckingOut`, null `checkoutError`, all four callbacks as functions, `formatAmount` as function — must pass
         * Valid `CartSummaryProps` with empty cart (`subscriptionItem: null, otpItems: []`) — must pass
         * Valid `CartSummaryProps` with `checkoutError` as an `Error` instance — must pass
@@ -1708,12 +1708,12 @@
         * Invalid `CartSummaryProps`: `isCheckingOut` is not a boolean — must fail
         * Invalid `CartSummaryProps`: any callback is missing or not a function — must fail
         * Invalid `CartSummaryProps`: `formatAmount` is missing or not a function — must fail
-      * `[ ]` Edge cases: empty cart (valid), cart with subscription only (valid), cart with OTPs only (valid), `checkoutError` as null vs Error (both valid)
-      * `[ ]` Invariants: `cart` is always a valid `CheckoutCart`; all callbacks are always functions; `isCheckingOut` is always boolean
-      * `[ ]` No implementation details — pure expectation
+      * `[✅]` Edge cases: empty cart (valid), cart with subscription only (valid), cart with OTPs only (valid), `checkoutError` as null vs Error (both valid)
+      * `[✅]` Invariants: `cart` is always a valid `CheckoutCart`; all callbacks are always functions; `isCheckingOut` is always boolean
+      * `[✅]` No implementation details — pure expectation
 
-    * `[ ]` CartSummary/`CartSummary.interface.ts`
-      * `[ ]` Define:
+    * `[✅]` CartSummary/`CartSummary.interface.ts`
+      * `[✅]` Define:
         * Input type — `CartSummaryProps`:
           * `cart: CheckoutCart` (imported from `@paynless/store`)
           * `isCheckingOut: boolean`
@@ -1725,11 +1725,11 @@
           * `formatAmount: (amount: number, currency: string) => string`
         * Output type: `React.ReactElement | null` (JSX)
         * Error types: none — component does not throw; errors are displayed via the `checkoutError` prop
-      * `[ ]` No implicit/any types
-      * `[ ]` Each type is minimal and composable
+      * `[✅]` No implicit/any types
+      * `[✅]` Each type is minimal and composable
 
-    * `[ ]` `CartSummary.interaction.spec`
-      * `[ ]` Define call patterns:
+    * `[✅]` `CartSummary.interaction.spec`
+      * `[✅]` Define call patterns:
         * **Empty cart** (`cart.subscriptionItem === null && cart.otpItems.length === 0`): render empty-state message ("Your cart is empty"). Checkout and Clear All buttons are not rendered or are disabled. No item rows rendered.
         * **Subscription item present** (`cart.subscriptionItem !== null`): render a row with `subscriptionItem.plan.name`, formatted amount via `formatAmount(plan.amount, plan.currency)`, interval text (e.g., "/month" or "one-time"). Render "Remove" button on the subscription row. Click calls `onRemoveSubscription()`.
         * **OTP items present** (`cart.otpItems.length > 0`): for each OTP item, render a row with `item.plan.name`, quantity display `×{item.quantity}`, unit price via `formatAmount(item.plan.amount, item.plan.currency)`, subtotal via `formatAmount(item.plan.amount * item.quantity, item.plan.currency)`. Render "Remove" button on each OTP row. Click calls `onRemoveOtp(item.plan.id)`.
@@ -1737,15 +1737,15 @@
         * **Clear All button**: rendered when cart is non-empty. Click calls `onClearCart()`.
         * **Checkout button**: rendered when cart is non-empty. Click calls `onCheckout()`. Disabled when `isCheckingOut`. Shows loading indicator (spinner icon) when `isCheckingOut`.
         * **Error display**: when `checkoutError` is non-null, render an error alert showing `checkoutError.message`.
-      * `[ ]` Side effects: none — CartSummary is a pure presentational component; all side effects are delegated to the parent via callbacks
-      * `[ ]` Failure modes:
+      * `[✅]` Side effects: none — CartSummary is a pure presentational component; all side effects are delegated to the parent via callbacks
+      * `[✅]` Failure modes:
         * `plan.amount` is null (DB type allows `number | null`): treat as 0 for total computation — defensive default, no crash
         * `plan.currency` is null: skip formatting for that item, display raw number or "N/A"
-      * `[ ]` Ordering: no temporal constraints — all interactions are synchronous prop-callback invocations
-      * `[ ]` No code — purely declarative
+      * `[✅]` Ordering: no temporal constraints — all interactions are synchronous prop-callback invocations
+      * `[✅]` No code — purely declarative
 
-    * `[ ]` CartSummary/`CartSummary.guard.test.ts`
-      * `[ ]` Verify `isCartSummaryProps` against contract:
+    * `[✅]` CartSummary/`CartSummary.guard.test.ts`
+      * `[✅]` Verify `isCartSummaryProps` against contract:
         * Full valid props (cart with items, all callbacks, formatAmount) — passes
         * Valid props with empty cart — passes
         * Valid props with `checkoutError` as Error instance — passes
@@ -1760,10 +1760,10 @@
         * Missing `onCheckout` callback — fails
         * `onCheckout` is string instead of function — fails
         * Missing `formatAmount` — fails
-      * `[ ]` Ensure: no false positives, no false negatives
+      * `[✅]` Ensure: no false positives, no false negatives
 
-    * `[ ]` CartSummary/`CartSummary.guard.ts`
-      * `[ ]` Implement `isCartSummaryProps(value: unknown): value is CartSummaryProps`
+    * `[✅]` CartSummary/`CartSummary.guard.ts`
+      * `[✅]` Implement `isCartSummaryProps(value: unknown): value is CartSummaryProps`
         * Check `value` is non-null object
         * Delegate `cart` field validation to `isCheckoutCart` guard (imported from `@paynless/store`)
         * Check `isCheckingOut` is `typeof boolean`
@@ -1773,18 +1773,18 @@
         * Check `onClearCart` is `typeof function`
         * Check `onCheckout` is `typeof function`
         * Check `formatAmount` is `typeof function`
-      * `[ ]` Guard accepts all valid contract cases and rejects all invalid contract cases
+      * `[✅]` Guard accepts all valid contract cases and rejects all invalid contract cases
 
-    * `[ ]` CartSummary/`CartSummary.mock.ts`
-      * `[ ]` Provide controllable implementations of:
+    * `[✅]` CartSummary/`CartSummary.mock.ts`
+      * `[✅]` Provide controllable implementations of:
         * `mockCartSummaryProps()` — factory returning valid `CartSummaryProps` with a cart containing one subscription `CartItem` and two OTP `CartItem`s (using mock plan data from `PlanCard.mock.ts`), `isCheckingOut: false`, `checkoutError: null`, all callbacks as `vi.fn()`, `formatAmount` as a real `Intl.NumberFormat`-based formatter
         * `mockEmptyCartSummaryProps()` — factory returning valid `CartSummaryProps` with empty cart (`{ subscriptionItem: null, otpItems: [] }`)
         * `MockCartSummary` — a stub React component rendering `<div data-testid="mock-cart-summary" />` for consumer tests (Subscription.tsx)
-      * `[ ]` Must conform to `CartSummaryProps` interface and interaction spec
-      * `[ ]` No new behavior introduced beyond spec
+      * `[✅]` Must conform to `CartSummaryProps` interface and interaction spec
+      * `[✅]` No new behavior introduced beyond spec
 
-    * `[ ]` CartSummary/`CartSummary.test.tsx`
-      * `[ ]` Validate behavior against requirements and interaction spec:
+    * `[✅]` CartSummary/`CartSummary.test.tsx`
+      * `[✅]` Validate behavior against requirements and interaction spec:
         * Empty cart: renders empty-state message (`data-testid="cart-summary-empty"`); Checkout and Clear All are not rendered or disabled
         * Subscription item only: renders subscription row with plan name, formatted amount, interval; renders Remove button; no OTP rows
         * OTP items only: renders each OTP row with plan name, quantity, unit price, subtotal; renders Remove button per row; no subscription row
@@ -1797,25 +1797,25 @@
         * Checkout disabled during loading: when `isCheckingOut: true`, Checkout button is disabled; loading spinner visible
         * Error display: when `checkoutError` is `new Error('Payment failed')`, error message "Payment failed" renders in error alert
         * Null amount defense: subscription with `plan.amount: null` renders gracefully (0 or fallback); no crash
-      * `[ ]` Focus on correct rendering, correct callback invocations, and correct total computation
-      * `[ ]` Do NOT re-test type shape or guard correctness
+      * `[✅]` Focus on correct rendering, correct callback invocations, and correct total computation
+      * `[✅]` Do NOT re-test type shape or guard correctness
 
-    * `[ ]` `construction`
-      * `[ ]` Factory entrypoint: `<CartSummary {...props} />` — React functional component, no class constructor
-      * `[ ]` Required dependencies at creation: all `CartSummaryProps` fields must be provided by the parent — TypeScript compiler enforces completeness
-      * `[ ]` Enforce: no partially constructed instances — all required props must be supplied
-      * `[ ]` Declare invalid construction contexts: omitting any required prop produces a compile-time error at the call site; rendering without a parent that wires cart state to props yields an empty or broken display
-      * `[ ]` Define initialization order: CartSummary is rendered by Subscription.tsx after cartStore has been initialized and cart state is available
+    * `[✅]` `construction`
+      * `[✅]` Factory entrypoint: `<CartSummary {...props} />` — React functional component, no class constructor
+      * `[✅]` Required dependencies at creation: all `CartSummaryProps` fields must be provided by the parent — TypeScript compiler enforces completeness
+      * `[✅]` Enforce: no partially constructed instances — all required props must be supplied
+      * `[✅]` Declare invalid construction contexts: omitting any required prop produces a compile-time error at the call site; rendering without a parent that wires cart state to props yields an empty or broken display
+      * `[✅]` Define initialization order: CartSummary is rendered by Subscription.tsx after cartStore has been initialized and cart state is available
 
-    * `[ ]` CartSummary/`CartSummary.tsx`
-      * `[ ]` Import `CartSummaryProps` from `./CartSummary.interface`
-      * `[ ]` Import `CartItem` from `@paynless/store`
-      * `[ ]` Import icons from `lucide-react`: `Trash2` (remove per item), `ShoppingCart` (empty state), `X` (clear all), `Loader2` (checkout loading)
-      * `[ ]` Destructure all props from `CartSummaryProps`
-      * `[ ]` Derive `isEmpty`: `cart.subscriptionItem === null && cart.otpItems.length === 0`
-      * `[ ]` Derive `totalAmount`: `((cart.subscriptionItem?.plan.amount ?? 0) * (cart.subscriptionItem?.quantity ?? 0)) + cart.otpItems.reduce((sum, item) => sum + ((item.plan.amount ?? 0) * item.quantity), 0)`
-      * `[ ]` Derive `currency`: `cart.subscriptionItem?.plan.currency ?? cart.otpItems[0]?.plan.currency ?? 'usd'`
-      * `[ ]` Render:
+    * `[✅]` CartSummary/`CartSummary.tsx`
+      * `[✅]` Import `CartSummaryProps` from `./CartSummary.interface`
+      * `[✅]` Import `CartItem` from `@paynless/store`
+      * `[✅]` Import icons from `lucide-react`: `Trash2` (remove per item), `ShoppingCart` (empty state), `X` (clear all), `Loader2` (checkout loading)
+      * `[✅]` Destructure all props from `CartSummaryProps`
+      * `[✅]` Derive `isEmpty`: `cart.subscriptionItem === null && cart.otpItems.length === 0`
+      * `[✅]` Derive `totalAmount`: `((cart.subscriptionItem?.plan.amount ?? 0) * (cart.subscriptionItem?.quantity ?? 0)) + cart.otpItems.reduce((sum, item) => sum + ((item.plan.amount ?? 0) * item.quantity), 0)`
+      * `[✅]` Derive `currency`: `cart.subscriptionItem?.plan.currency ?? cart.otpItems[0]?.plan.currency ?? 'usd'`
+      * `[✅]` Render:
         * Root container with `data-testid="cart-summary"`
         * When `isEmpty`: `data-testid="cart-summary-empty"` div with `ShoppingCart` icon and "Your cart is empty" text; return early (no item rows, no total, no buttons)
         * Subscription row (when `cart.subscriptionItem !== null`): `data-testid="cart-summary-subscription-row"` — plan name, `formatAmount(plan.amount ?? 0, plan.currency ?? 'usd')`, interval label derived from `plan.interval`/`plan.interval_count` (e.g., "/month", "/year", "one-time"), `Trash2` icon button calling `onRemoveSubscription`, disabled when `isCheckingOut`
@@ -1826,57 +1826,57 @@
           * Clear All button: `X` icon + "Clear All" text, `onClick={onClearCart}`, disabled when `isCheckingOut`
           * Checkout button: `data-testid="cart-summary-checkout-btn"` — "Checkout" text, `onClick={onCheckout}`, disabled when `isCheckingOut`, shows `Loader2` spinner alongside text when `isCheckingOut`
         * Error alert (when `checkoutError !== null`): `data-testid="cart-summary-error"` — red-styled alert with `checkoutError.message`
-      * `[ ]` Must not introduce undeclared dependencies or bypass guards/contracts
-      * `[ ]` Each requirement maps to code paths
+      * `[✅]` Must not introduce undeclared dependencies or bypass guards/contracts
+      * `[✅]` Each requirement maps to code paths
 
-    * `[ ]` CartSummary/`index.ts`
-      * `[ ]` Declare:
+    * `[✅]` CartSummary/`CartSummary.provides.ts`
+      * `[✅]` Declare:
         * `export { CartSummary } from './CartSummary'`
         * `export { isCartSummaryProps } from './CartSummary.guard'`
         * `export type { CartSummaryProps } from './CartSummary.interface'`
-      * `[ ]` Public API surface: `CartSummary` component, `CartSummaryProps` type, `isCartSummaryProps` guard
-      * `[ ]` Define:
+      * `[✅]` Public API surface: `CartSummary` component, `CartSummaryProps` type, `isCartSummaryProps` guard
+      * `[✅]` Define:
         * Stability guarantees: new addition, no existing exports affected
         * Semantic guarantees: CartSummary renders a consistent cart display given valid `CartSummaryProps`
-      * `[ ]` Enforce: no external access bypasses this file — consumers import from `CartSummary/` (resolves to `index.ts`)
+      * `[✅]` Enforce: no external access bypasses this file — consumers import from `CartSummary/` (resolves to `index.ts`)
 
-    * `[ ]` CartSummary/`CartSummary.integration.test.tsx`
-      * `[ ]` Validate provider → function: realistic `CheckoutCart` data (one subscription `CartItem` with `SubscriptionPlan` fields from `mockSubscriptionPlan` + two distinct OTP `CartItem`s with different amounts and quantities) → CartSummary renders correct item count, correct plan names, correct formatted amounts, correct total
-      * `[ ]` Validate function → consumer: click Remove on subscription row → `onRemoveSubscription` spy called once; click Remove on first OTP row → `onRemoveOtp` spy called with first OTP's `plan.id`; click Clear All → `onClearCart` spy called once; click Checkout → `onCheckout` spy called once
-      * `[ ]` Validate full chain: render with mixed cart (sub amount 1000 qty 1, OTP1 amount 500 qty 2, OTP2 amount 300 qty 1) → verify total displays formatted value of 2300 → click Checkout → spy called → re-render with `isCheckingOut: true` → Checkout button disabled and spinner visible → re-render with `checkoutError: new Error('Stripe error')` → error message "Stripe error" visible in alert
-      * `[ ]` Use mocks only for external nodes: callbacks are `vi.fn()`, `formatAmount` is real `Intl.NumberFormat`-based formatter, plan data uses full `SubscriptionPlan` objects
+    * `[✅]` CartSummary/`CartSummary.integration.test.tsx`
+      * `[✅]` Validate provider → function: realistic `CheckoutCart` data (one subscription `CartItem` with `SubscriptionPlan` fields from `mockSubscriptionPlan` + two distinct OTP `CartItem`s with different amounts and quantities) → CartSummary renders correct item count, correct plan names, correct formatted amounts, correct total
+      * `[✅]` Validate function → consumer: click Remove on subscription row → `onRemoveSubscription` spy called once; click Remove on first OTP row → `onRemoveOtp` spy called with first OTP's `plan.id`; click Clear All → `onClearCart` spy called once; click Checkout → `onCheckout` spy called once
+      * `[✅]` Validate full chain: render with mixed cart (sub amount 1000 qty 1, OTP1 amount 500 qty 2, OTP2 amount 300 qty 1) → verify total displays formatted value of 2300 → click Checkout → spy called → re-render with `isCheckingOut: true` → Checkout button disabled and spinner visible → re-render with `checkoutError: new Error('Stripe error')` → error message "Stripe error" visible in alert
+      * `[✅]` Use mocks only for external nodes: callbacks are `vi.fn()`, `formatAmount` is real `Intl.NumberFormat`-based formatter, plan data uses full `SubscriptionPlan` objects
 
-    * `[ ]` `directionality`
-      * `[ ]` Declare node layer: UI (presentational component)
-      * `[ ]` Confirm:
+    * `[✅]` `directionality`
+      * `[✅]` Declare node layer: UI (presentational component)
+      * `[✅]` Confirm:
         * deps are inward-facing: reads `CheckoutCart` and `CartItem` types from `@paynless/store` (app layer), `SubscriptionPlan` from `@paynless/types` (domain layer), `isCheckoutCart` guard from `@paynless/store` (for guard composition), `lucide-react` icons (external UI library)
         * provides are outward-facing: `CartSummary` component and `CartSummaryProps` type are consumed by `Subscription.tsx` (page-level UI layer above)
-      * `[ ]` No cycles: CartSummary depends only on types, guards, and icons; it does not import its consumer
+      * `[✅]` No cycles: CartSummary depends only on types, guards, and icons; it does not import its consumer
 
-    * `[ ]` `requirements`
-      * `[ ]` Empty cart renders empty-state message and no item rows — observable via `data-testid="cart-summary-empty"`, testable
-      * `[ ]` Subscription item renders with plan name, formatted amount, and interval — observable via `data-testid="cart-summary-subscription-row"`, testable
-      * `[ ]` Each OTP item renders with plan name, quantity, unit price, and subtotal — observable via `data-testid="cart-summary-otp-row-{id}"`, testable
-      * `[ ]` Total is correctly computed as sum of all item subtotals — observable via `data-testid="cart-summary-total"` content, testable via numeric assertion
-      * `[ ]` Remove subscription calls `onRemoveSubscription()` — observable via mock spy, testable
-      * `[ ]` Remove OTP calls `onRemoveOtp(planId)` with correct plan ID — observable via mock spy argument, testable
-      * `[ ]` Clear All calls `onClearCart()` — observable via mock spy, testable
-      * `[ ]` Checkout calls `onCheckout()` — observable via mock spy, testable
-      * `[ ]` Checkout button disabled when `isCheckingOut === true` — observable via disabled attribute, testable
-      * `[ ]` Checkout button disabled when cart is empty — observable via disabled attribute or non-rendering, testable
-      * `[ ]` Loading spinner visible when `isCheckingOut === true` — observable, testable
-      * `[ ]` Error message displays `checkoutError.message` when error is non-null — observable via `data-testid="cart-summary-error"`, testable
-      * `[ ]` Null `plan.amount` handled defensively (treated as 0) — observable (renders without crash), testable
-      * `[ ]` `isCartSummaryProps` guard accepts all valid cases and rejects all invalid cases — observable via guard return value, testable
-      * `[ ]` All files reside in `apps/web/src/components/subscription/CartSummary/` folder — observable via filesystem
+    * `[✅]` `requirements`
+      * `[✅]` Empty cart renders empty-state message and no item rows — observable via `data-testid="cart-summary-empty"`, testable
+      * `[✅]` Subscription item renders with plan name, formatted amount, and interval — observable via `data-testid="cart-summary-subscription-row"`, testable
+      * `[✅]` Each OTP item renders with plan name, quantity, unit price, and subtotal — observable via `data-testid="cart-summary-otp-row-{id}"`, testable
+      * `[✅]` Total is correctly computed as sum of all item subtotals — observable via `data-testid="cart-summary-total"` content, testable via numeric assertion
+      * `[✅]` Remove subscription calls `onRemoveSubscription()` — observable via mock spy, testable
+      * `[✅]` Remove OTP calls `onRemoveOtp(planId)` with correct plan ID — observable via mock spy argument, testable
+      * `[✅]` Clear All calls `onClearCart()` — observable via mock spy, testable
+      * `[✅]` Checkout calls `onCheckout()` — observable via mock spy, testable
+      * `[✅]` Checkout button disabled when `isCheckingOut === true` — observable via disabled attribute, testable
+      * `[✅]` Checkout button disabled when cart is empty — observable via disabled attribute or non-rendering, testable
+      * `[✅]` Loading spinner visible when `isCheckingOut === true` — observable, testable
+      * `[✅]` Error message displays `checkoutError.message` when error is non-null — observable via `data-testid="cart-summary-error"`, testable
+      * `[✅]` Null `plan.amount` handled defensively (treated as 0) — observable (renders without crash), testable
+      * `[✅]` `isCartSummaryProps` guard accepts all valid cases and rejects all invalid cases — observable via guard return value, testable
+      * `[✅]` All files reside in `apps/web/src/components/subscription/CartSummary/` folder — observable via filesystem
 
-    * `[ ]` `versioning` — deferred to final node in this ticket's scope (Subscription.tsx integration node); CartSummary is an intermediate UI producer, not a standalone shippable unit
+    * `[✅]` `versioning` — deferred to final node in this ticket's scope (Subscription.tsx integration node); CartSummary is an intermediate UI producer, not a standalone shippable unit
 
-  * `[ ]` [UI] apps/web/src/pages/`Subscription` **Cart-integrated subscription page with multi-item checkout, URL prefill, and bundle suggestions**
+  * `[✅]` [UI] apps/web/src/pages/`Subscription` **Cart-integrated subscription page with multi-item checkout, URL prefill, and bundle suggestions**
 
-    * `[ ]` `objective`
-      * `[ ]` The Subscription page currently triggers immediate single-item Stripe Checkout on every PlanCard click via `handleSubscribe(priceId)` → `walletStore.initiatePurchase()`; it has no concept of a shopping cart, cannot combine a subscription plan with OTP token packages in a single checkout, cannot be pre-populated by CTAs from other surfaces, and does not display a summary of selected items before checkout. The page must be rewired to orchestrate the cartStore (produced in the first node of this ticket), the cart-aware PlanCard (produced in the PlanCard node), and the CartSummary component (produced in the CartSummary node) so that users can select a subscription plan, add OTP packages, review the cart, and check out in a single flow.
-      * `[ ]` Functional goals:
+    * `[✅]` `objective`
+      * `[✅]` The Subscription page currently triggers immediate single-item Stripe Checkout on every PlanCard click via `handleSubscribe(priceId)` → `walletStore.initiatePurchase()`; it has no concept of a shopping cart, cannot combine a subscription plan with OTP token packages in a single checkout, cannot be pre-populated by CTAs from other surfaces, and does not display a summary of selected items before checkout. The page must be rewired to orchestrate the cartStore (produced in the first node of this ticket), the cart-aware PlanCard (produced in the PlanCard node), and the CartSummary component (produced in the CartSummary node) so that users can select a subscription plan, add OTP packages, review the cart, and check out in a single flow.
+      * `[✅]` Functional goals:
         * Replace `handleSubscribe(priceId)` → `walletStore.initiatePurchase()` with cart-based actions: subscription plan clicks call `cartStore.setSubscriptionItem(plan)`, OTP plan clicks call `cartStore.addOtpItem(plan, 1)`, free plan click calls existing `cancelSubscription` via `handleCancelSubscription`
         * Wire each PlanCard with new cart-aware props (`onSelect`, `onAdd`, `onDowngrade`, `isInCart`, `cartQuantity`) computed from `cartStore.cart` state
         * Render CartSummary component alongside the plan grid, wired to cartStore state and actions (`onRemoveSubscription` → `setSubscriptionItem(null)`, `onRemoveOtp` → `removeOtpItem`, `onClearCart` → `clearCart`, `onCheckout` → `checkoutCart`)
@@ -1884,25 +1884,25 @@
         * Display a "current plan change" warning when the user has an active subscription and selects a different subscription plan in the cart
         * Remove direct `walletStore.initiatePurchase` usage — checkout is now delegated through `cartStore.checkoutCart`
         * Remove `purchaseError` display from walletStore — checkout errors are now displayed via CartSummary's `checkoutError` prop
-      * `[ ]` Non-functional constraints:
+      * `[✅]` Non-functional constraints:
         * Cart state persists across tab switches (Monthly/Annual/Top-Up) — selecting a monthly plan then switching to Top-Up to add tokens keeps the subscription item in the cart
         * Existing subscription management flows (CurrentSubscriptionCard's "Manage Billing" and "Cancel Subscription") are unchanged — they do not interact with the cart
         * Loading state composition: `isLoading` now includes `cartStore.isCheckingOut` alongside existing `authLoading`, `isSubStoreLoading`
-      * `[ ]` Each goal is atomic and testable
+      * `[✅]` Each goal is atomic and testable
 
-    * `[ ]` `role`
-      * `[ ]` Page-level UI orchestrator component — wires stores to presentational components, handles URL-based side effects
-      * `[ ]` Appropriate because: the Subscription page is the composition root for the subscription/checkout domain on the FE — it reads from authStore, subscriptionStore, and cartStore, computes derived props for PlanCard and CartSummary, and delegates actions to the appropriate stores
-      * `[ ]` Must NOT: own cart state (cartStore owns it), own payment processing (walletStore/cartStore.checkoutCart own it), own subscription lifecycle (subscriptionStore owns it), render plan detail internals (PlanCard owns it), render cart item detail internals (CartSummary owns it)
+    * `[✅]` `role`
+      * `[✅]` Page-level UI orchestrator component — wires stores to presentational components, handles URL-based side effects
+      * `[✅]` Appropriate because: the Subscription page is the composition root for the subscription/checkout domain on the FE — it reads from authStore, subscriptionStore, and cartStore, computes derived props for PlanCard and CartSummary, and delegates actions to the appropriate stores
+      * `[✅]` Must NOT: own cart state (cartStore owns it), own payment processing (walletStore/cartStore.checkoutCart own it), own subscription lifecycle (subscriptionStore owns it), render plan detail internals (PlanCard owns it), render cart item detail internals (CartSummary owns it)
 
-    * `[ ]` `module`
-      * `[ ]` Bounded context: Subscription Page Orchestration
-      * `[ ]` Inside boundary: store-to-component prop wiring, cart-aware PlanCard prop computation (`isInCart`, `cartQuantity` derived from `cartStore.cart`), URL query parameter parsing for cart prefill, tab state management, loading state composition, page layout (header, tabs, plan grids, cart panel, FAQ, error displays), "current plan change" warning logic
-      * `[ ]` Outside boundary: cart state management (cartStore), payment initiation (cartStore.checkoutCart → walletStore), subscription loading/cancellation/portal (subscriptionStore), plan detail rendering (PlanCard), cart item rendering (CartSummary), authentication (authStore)
-      * `[ ]` Each boundary rule is explicit and reviewable
+    * `[✅]` `module`
+      * `[✅]` Bounded context: Subscription Page Orchestration
+      * `[✅]` Inside boundary: store-to-component prop wiring, cart-aware PlanCard prop computation (`isInCart`, `cartQuantity` derived from `cartStore.cart`), URL query parameter parsing for cart prefill, tab state management, loading state composition, page layout (header, tabs, plan grids, cart panel, FAQ, error displays), "current plan change" warning logic
+      * `[✅]` Outside boundary: cart state management (cartStore), payment initiation (cartStore.checkoutCart → walletStore), subscription loading/cancellation/portal (subscriptionStore), plan detail rendering (PlanCard), cart item rendering (CartSummary), authentication (authStore)
+      * `[✅]` Each boundary rule is explicit and reviewable
 
-    * `[ ]` `deps`
-      * `[ ]` For each dependency:
+    * `[✅]` `deps`
+      * `[✅]` For each dependency:
         * `@paynless/store` — app layer — inward — provides `useAuthStore`, `useSubscriptionStore`, `useCartStore` hooks and selectors (`selectAvailablePlans`, `selectUserSubscription`, `selectIsSubscriptionLoading`, `selectHasActiveSubscription`, `selectSubscriptionError`, `selectCurrentUserResolvedPlan`)
         * `@paynless/types` — domain layer — inward — provides `UserSubscription`, `SubscriptionPlan` types
         * `@paynless/utils` — infra layer — inward — provides `logger`
@@ -1913,22 +1913,22 @@
         * `@/components/ui/tabs` — external UI library — provides `Tabs`, `TabsContent`, `TabsList`, `TabsTrigger`
         * `@/components/ui/badge` — external UI library — provides `Badge`
         * `lucide-react` — external UI library — provides `AlertCircle`, `AlertTriangle` icons
-      * `[ ]` Confirm:
+      * `[✅]` Confirm:
         * No reverse dependencies — Subscription page is consumed by the router, not by any component it renders
         * No lateral layer violations — page depends on stores (app layer), types (domain layer), and UI components (peer)
 
-    * `[ ]` `context_slice`
-      * `[ ]` From `useAuthStore`: `{ user, isLoading: authLoading, userTier }` — read-only for authentication gating, tier badge computation, and loading state
-      * `[ ]` From `useSubscriptionStore` (via selectors): `availablePlans`, `userSubscription`, `isSubStoreLoading`, `storeError`, `hasActiveSubscription`, `currentUserResolvedPlan`; from state: `isTestMode`, `loadSubscriptionData`, `createBillingPortalSession`, `cancelSubscription`
-      * `[ ]` From `useCartStore`: `{ cart, isCheckingOut, checkoutError, setSubscriptionItem, addOtpItem, removeOtpItem, clearCart, checkoutCart, prefillCart }`
-      * `[ ]` From `react-router-dom`: `useSearchParams()` for reading and clearing `?plan=` and `?otp=` query parameters
-      * `[ ]` Injection shape: React hooks provide store state and actions; components receive derived props
-      * `[ ]` Confirm:
+    * `[✅]` `context_slice`
+      * `[✅]` From `useAuthStore`: `{ user, isLoading: authLoading, userTier }` — read-only for authentication gating, tier badge computation, and loading state
+      * `[✅]` From `useSubscriptionStore` (via selectors): `availablePlans`, `userSubscription`, `isSubStoreLoading`, `storeError`, `hasActiveSubscription`, `currentUserResolvedPlan`; from state: `isTestMode`, `loadSubscriptionData`, `createBillingPortalSession`, `cancelSubscription`
+      * `[✅]` From `useCartStore`: `{ cart, isCheckingOut, checkoutError, setSubscriptionItem, addOtpItem, removeOtpItem, clearCart, checkoutCart, prefillCart }`
+      * `[✅]` From `react-router-dom`: `useSearchParams()` for reading and clearing `?plan=` and `?otp=` query parameters
+      * `[✅]` Injection shape: React hooks provide store state and actions; components receive derived props
+      * `[✅]` Confirm:
         * No over-fetching — page reads only the state and actions it needs from each store
         * No hidden coupling — stores are unaware of the page component; PlanCard and CartSummary receive only their declared props
 
-    * `[ ]` `Subscription.interaction.spec`
-      * `[ ]` Define call patterns:
+    * `[✅]` `Subscription.interaction.spec`
+      * `[✅]` Define call patterns:
         * **Page load**: `useEffect` calls `loadSubscriptionData(user.id)` when user is present (existing, unchanged). A second `useEffect` reads URL query params via `useSearchParams()`: if `?plan=` or `?otp=` params are present, calls `cartStore.prefillCart({ subscriptionPlanId: searchParams.get('plan'), otpPlanIds: searchParams.getAll('otp') })`, then calls `setSearchParams({}, { replace: true })` to clear the params from the URL without navigation. This effect runs once on mount and when `searchParams` changes.
         * **Subscription PlanCard click** (monthly/annual tabs): parent computes `onSelect` callback as `(plan) => cartStore.setSubscriptionItem(plan)`. If the plan is already the cart's `subscriptionItem` (same `plan.id`), calling `setSubscriptionItem(plan)` replaces it (no-op in effect); the parent may optionally toggle by calling `setSubscriptionItem(null)` when the same plan is clicked again. `isInCart` is computed as `cartStore.cart.subscriptionItem?.plan.id === plan.id`. `cartQuantity` is `1` when in cart, `0` otherwise.
         * **OTP PlanCard click** (Top-Up tab): parent computes `onAdd` callback as `(plan) => cartStore.addOtpItem(plan, 1)`. `isInCart` is computed as `cartStore.cart.otpItems.some(item => item.plan.id === plan.id)`. `cartQuantity` is the matching item's `quantity` or `0`.
@@ -1938,42 +1938,29 @@
         * **Current plan change warning**: when `hasActiveSubscription && cartStore.cart.subscriptionItem !== null && cartStore.cart.subscriptionItem.plan.id !== currentUserResolvedPlan?.id`, render an inline warning: "Selecting a new plan will replace your current {currentUserResolvedPlan.name} subscription." Positioned above or within the CartSummary.
         * **CurrentSubscriptionCard**: wiring unchanged — `handleManageSubscription` and `handleCancelSubscription` are the same existing callbacks. No cart interaction.
         * **Tab switches**: `activeTab` state and `Tabs` component unchanged. Cart state persists across tab switches because cartStore is external to the tab component.
-      * `[ ]` Side effects:
+      * `[✅]` Side effects:
         * URL query param `useEffect`: reads `searchParams`, calls `prefillCart`, clears params via `setSearchParams`
         * `loadSubscriptionData` `useEffect`: existing, unchanged
         * `handleCancelSubscription`: calls `subscriptionStore.cancelSubscription` (existing, unchanged)
         * `handleManageSubscription`: calls `subscriptionStore.createBillingPortalSession`, sets `window.location.href` (existing, unchanged)
-      * `[ ]` Failure modes:
+      * `[✅]` Failure modes:
         * URL prefill with invalid plan IDs: `prefillCart` skips unfound plans and logs warning (handled by cartStore, not the page)
         * `checkoutCart` failure: cartStore sets `checkoutError` → CartSummary displays the error message (page just passes the prop through)
         * User not authenticated: existing `Navigate to="/login"` redirect remains
         * No available plans: existing loading/empty state handling remains
-      * `[ ]` Ordering: URL prefill `useEffect` must run after `availablePlans` are loaded (it depends on subscriptionStore state); add `availablePlans` to the effect's dependency array or guard the prefill call with `availablePlans.length > 0`
-      * `[ ]` No code — purely declarative
+      * `[✅]` Ordering: URL prefill `useEffect` must run after `availablePlans` are loaded (it depends on subscriptionStore state); add `availablePlans` to the effect's dependency array or guard the prefill call with `availablePlans.length > 0`
+      * `[✅]` No code — purely declarative
 
-    * `[ ]` pages/`Subscription.mock.ts` (NEW)
-      * `[ ]` Extract existing inline mock data from `Subscription.test.tsx` into this file:
-        * `mockAuthUser`, `mockSession`, `mockBasicTier`, `mockPremiumTier` — auth store mock data
-        * `mockBasicMonthlyPlan`, `mockProMonthlyPlan`, `mockFreePlan` — `SubscriptionPlan` objects (reuse from `PlanCard.mock.ts` or define subscription-page-specific variants with the `tier_level` field populated)
-        * `mockOtpPlan` — `SubscriptionPlan` with `plan_type: 'one_time_purchase'` for Top-Up tab testing
-        * `mockUserSubscription` — `UserSubscription` object
-        * `authStoreInitialState`, `subscriptionStoreInitialState`, `walletStoreInitialState` — initial store states with mock actions
-        * `cartStoreInitialState` — initial cart store state: `{ cart: { subscriptionItem: null, otpItems: [] }, isCheckingOut: false, checkoutError: null }` with mock actions (`mockSetSubscriptionItem`, `mockAddOtpItem`, `mockRemoveOtpItem`, `mockClearCart`, `mockCheckoutCart`, `mockPrefillCart`)
-        * `mockLoadSubscriptionData`, `mockCreateBillingPortalSession`, `mockCancelSubscription`, `mockInitiatePurchase` — mock action references
-        * `renderWithRouter` helper — wraps component in `MemoryRouter`
-      * `[ ]` Must conform to current store interfaces and interaction spec
-      * `[ ]` No new behavior introduced beyond spec
-
-    * `[ ]` pages/`Subscription.test.tsx` (MODIFY)
-      * `[ ]` Remove all inline mock data, mock actions, mock store states, and `renderWithRouter` helper; import from `Subscription.mock.ts`
-      * `[ ]` Add `useCartStore` to the mock store setup in `beforeEach`: set cart store initial state via `useCartStore.setState({ ...cartStoreInitialState }, true)`
-      * `[ ]` Update all existing PlanCard interaction tests to use new prop names:
+    * `[✅]` pages/`Subscription.test.tsx` (MODIFY)
+      * `[✅]` Remove all inline mock data, mock actions, mock store states, and `renderWithRouter` helper; import from the mock provided in the namespace for the function or type
+      * `[✅]` Add `useCartStore` to the mock store setup in `beforeEach`: set cart store initial state via `useCartStore.setState({ ...cartStoreInitialState }, true)`
+      * `[✅]` Update all existing PlanCard interaction tests to use new prop names:
         * Tests that called `mockInitiatePurchase` via `handleSubscribe` → now assert `mockSetSubscriptionItem` or `mockAddOtpItem` called (depending on plan type)
         * Tests that checked `purchaseError` display → now assert `checkoutError` displayed via CartSummary
         * Tests that checked `isLoadingPurchase` → now assert `isCheckingOut` state
         * Tests that asserted `window.location.href` redirect → now assert via cartStore.checkoutCart flow (mocked)
-      * `[ ]` Update `isProcessing` assertions: PlanCard `isProcessing` is now `isSubStoreLoading || isCheckingOut` (no longer includes `isLoadingPurchase`)
-      * `[ ]` New tests for cart integration:
+      * `[✅]` Update `isProcessing` assertions: PlanCard `isProcessing` is now `isSubStoreLoading || isCheckingOut` (no longer includes `isLoadingPurchase`)
+      * `[✅]` New tests for cart integration:
         * Subscription plan click calls `setSubscriptionItem(plan)` with the full `SubscriptionPlan` object — mock cartStore action spy
         * OTP plan click calls `addOtpItem(plan, 1)` — mock cartStore action spy
         * Free plan click calls `handleCancelSubscription` (via `onDowngrade`) — unchanged behavior, new prop name
@@ -1982,101 +1969,101 @@
         * PlanCard `isInCart` is `true` for the subscription plan in the cart — set cart state, assert PlanCard renders "Selected" button text
         * PlanCard `cartQuantity` reflects OTP item quantity in cart — set cart state with OTP item `quantity: 3`, assert "×3" visible
         * Cart persists across tab switches — add subscription on Monthly tab, switch to Top-Up tab, assert CartSummary still shows subscription item
-      * `[ ]` New tests for URL prefill:
+      * `[✅]` New tests for URL prefill:
         * Page loads with `?plan=plan-1` query param → `prefillCart` called with `{ subscriptionPlanId: 'plan-1' }` → query params cleared from URL
         * Page loads with `?plan=plan-1&otp=otp-1&otp=otp-2` → `prefillCart` called with `{ subscriptionPlanId: 'plan-1', otpPlanIds: ['otp-1', 'otp-2'] }`
         * Page loads with no query params → `prefillCart` not called
-      * `[ ]` New test for current plan change warning:
+      * `[✅]` New test for current plan change warning:
         * User has active subscription on Basic plan, selects Pro plan in cart → warning message "Selecting a new plan will replace your current Basic Monthly Plan subscription." renders
         * User has active subscription on Basic plan, selects Basic plan in cart (same plan) → no warning
         * User has no active subscription → no warning regardless of cart state
-      * `[ ]` Preserve existing tests (updated for new props and store wiring):
+      * `[✅]` Preserve existing tests (updated for new props and store wiring):
         * Loading spinner, redirect to login, error display, test mode warning, CurrentSubscriptionCard rendering, `loadSubscriptionData` on mount, `createBillingPortalSession` redirect, `cancelSubscription` call, tier badge rendering
-      * `[ ]` Focus on correct store-to-component wiring, cart state reflection in UI, and URL prefill side effect
-      * `[ ]` Do NOT re-test PlanCard rendering internals, CartSummary rendering internals, or cartStore action logic (covered in their own nodes)
+      * `[✅]` Focus on correct store-to-component wiring, cart state reflection in UI, and URL prefill side effect
+      * `[✅]` Do NOT re-test PlanCard rendering internals, CartSummary rendering internals, or cartStore action logic (covered in their own nodes)
 
-    * `[ ]` `construction`
-      * `[ ]` Factory entrypoint: `<SubscriptionPage />` — React functional component, no props, no factory constructor
-      * `[ ]` Required dependencies at creation: stores must be initialized by the application shell before this page renders — `useAuthStore`, `useSubscriptionStore`, `useCartStore` must be available as Zustand module-scoped singletons
-      * `[ ]` Enforce: no partially constructed instances — page reads all required state from stores at render time; missing store state results in loading/redirect branches
-      * `[ ]` Invalid construction: rendering without initialized stores produces loading spinner or login redirect (existing defensive behavior)
-      * `[ ]` Initialization order: authStore must be initialized first (provides user); subscriptionStore loads plans on auth change (existing listener); cartStore is initialized with empty state at module scope
+    * `[✅]` `construction`
+      * `[✅]` Factory entrypoint: `<SubscriptionPage />` — React functional component, no props, no factory constructor
+      * `[✅]` Required dependencies at creation: stores must be initialized by the application shell before this page renders — `useAuthStore`, `useSubscriptionStore`, `useCartStore` must be available as Zustand module-scoped singletons
+      * `[✅]` Enforce: no partially constructed instances — page reads all required state from stores at render time; missing store state results in loading/redirect branches
+      * `[✅]` Invalid construction: rendering without initialized stores produces loading spinner or login redirect (existing defensive behavior)
+      * `[✅]` Initialization order: authStore must be initialized first (provides user); subscriptionStore loads plans on auth change (existing listener); cartStore is initialized with empty state at module scope
 
-    * `[ ]` pages/`Subscription.tsx` (MODIFY)
-      * `[ ]` Add imports: `useCartStore` from `@paynless/store`; `CartSummary` from `../components/subscription/CartSummary`; `useSearchParams` from `react-router-dom`
-      * `[ ]` Remove `walletStore` hook usage: delete the `useWalletStore` selector block (lines 49–57 — `initiatePurchase`, `isLoadingPurchase`, `purchaseError`). These are no longer consumed directly; checkout is via cartStore.
-      * `[ ]` Add `useCartStore` hook: destructure `cart`, `isCheckingOut`, `checkoutError`, `setSubscriptionItem`, `addOtpItem`, `removeOtpItem`, `clearCart`, `checkoutCart`, `prefillCart` from `useCartStore`
-      * `[ ]` Add `useSearchParams` hook: `const [searchParams, setSearchParams] = useSearchParams()`
-      * `[ ]` Add URL prefill `useEffect`: when `searchParams.has('plan') || searchParams.has('otp')` AND `availablePlans.length > 0`: call `prefillCart({ subscriptionPlanId: searchParams.get('plan') ?? undefined, otpPlanIds: searchParams.getAll('otp') })`, then `setSearchParams({}, { replace: true })`. Dependency array: `[searchParams, setSearchParams, prefillCart, availablePlans.length]`.
-      * `[ ]` Remove `handleSubscribe` function (lines 66–97): replaced by cart actions wired through PlanCard props
-      * `[ ]` Update `isLoading` computation (line 143): change `isLoadingPurchase` to `isCheckingOut` — `const isLoading = authLoading || isSubStoreLoading || isCheckingOut`
-      * `[ ]` Add cart-derived helpers before the return statement:
+    * `[✅]` pages/`Subscription.tsx` (MODIFY)
+      * `[✅]` Add imports: `useCartStore` from `@paynless/store`; `CartSummary` from `../components/subscription/CartSummary`; `useSearchParams` from `react-router-dom`
+      * `[✅]` Remove `walletStore` hook usage: delete the `useWalletStore` selector block (lines 49–57 — `initiatePurchase`, `isLoadingPurchase`, `purchaseError`). These are no longer consumed directly; checkout is via cartStore.
+      * `[✅]` Add `useCartStore` hook: destructure `cart`, `isCheckingOut`, `checkoutError`, `setSubscriptionItem`, `addOtpItem`, `removeOtpItem`, `clearCart`, `checkoutCart`, `prefillCart` from `useCartStore`
+      * `[✅]` Add `useSearchParams` hook: `const [searchParams, setSearchParams] = useSearchParams()`
+      * `[✅]` Add URL prefill `useEffect`: when `searchParams.has('plan') || searchParams.has('otp')` AND `availablePlans.length > 0`: call `prefillCart({ subscriptionPlanId: searchParams.get('plan') ?? undefined, otpPlanIds: searchParams.getAll('otp') })`, then `setSearchParams({}, { replace: true })`. Dependency array: `[searchParams, setSearchParams, prefillCart, availablePlans.length]`.
+      * `[✅]` Remove `handleSubscribe` function (lines 66–97): replaced by cart actions wired through PlanCard props
+      * `[✅]` Update `isLoading` computation (line 143): change `isLoadingPurchase` to `isCheckingOut` — `const isLoading = authLoading || isSubStoreLoading || isCheckingOut`
+      * `[✅]` Add cart-derived helpers before the return statement:
         * `const isInCart = (plan: SubscriptionPlan): boolean => { if (plan.plan_type === 'one_time_purchase') { return cart.otpItems.some(item => item.plan.id === plan.id); } return cart.subscriptionItem?.plan.id === plan.id; }`
         * `const getCartQuantity = (plan: SubscriptionPlan): number => { if (plan.plan_type === 'one_time_purchase') { const found = cart.otpItems.find(item => item.plan.id === plan.id); return found ? found.quantity : 0; } return cart.subscriptionItem?.plan.id === plan.id ? 1 : 0; }`
         * `const handlePlanSelect = (plan: SubscriptionPlan): void => { setSubscriptionItem(plan); }`
         * `const handleOtpAdd = (plan: SubscriptionPlan): void => { addOtpItem(plan, 1); }`
         * `const cartHasItems = cart.subscriptionItem !== null || cart.otpItems.length > 0`
         * `const showPlanChangeWarning = hasActiveSubscription && cart.subscriptionItem !== null && cart.subscriptionItem.plan.id !== currentUserResolvedPlan?.id`
-      * `[ ]` Update all PlanCard instances in Monthly, Annual, Top-Up tabs, and the free plan section:
+      * `[✅]` Update all PlanCard instances in Monthly, Annual, Top-Up tabs, and the free plan section:
         * Replace `handleSubscribe={handleSubscribe}` with `onSelect={handlePlanSelect}` and `onAdd={handleOtpAdd}`
         * Replace `handleCancelSubscription={handleCancelSubscription}` with `onDowngrade={handleCancelSubscription}`
         * Add `isInCart={isInCart(plan)}` and `cartQuantity={getCartQuantity(plan)}`
         * Update `isProcessing` from `isSubStoreLoading || isLoadingPurchase` to `isSubStoreLoading || isCheckingOut`
-      * `[ ]` Add plan change warning: after the CurrentSubscriptionCard block and before the Tabs, render a conditional warning when `showPlanChangeWarning`: `<div data-testid="plan-change-warning" className="...">Selecting a new plan will replace your current {currentUserResolvedPlan?.name} subscription.</div>`
-      * `[ ]` Add CartSummary rendering: after the Tabs component (after the closing `</Tabs>` and before the free plan section), conditionally render CartSummary:
+      * `[✅]` Add plan change warning: after the CurrentSubscriptionCard block and before the Tabs, render a conditional warning when `showPlanChangeWarning`: `<div data-testid="plan-change-warning" className="...">Selecting a new plan will replace your current {currentUserResolvedPlan?.name} subscription.</div>`
+      * `[✅]` Add CartSummary rendering: after the Tabs component (after the closing `</Tabs>` and before the free plan section), conditionally render CartSummary:
         * `<CartSummary cart={cart} isCheckingOut={isCheckingOut} checkoutError={checkoutError} onRemoveSubscription={() => setSubscriptionItem(null)} onRemoveOtp={(planId) => removeOtpItem(planId)} onClearCart={() => clearCart()} onCheckout={() => checkoutCart()} formatAmount={formatAmount} />`
         * CartSummary is always rendered (handles its own empty state via "Your cart is empty" message)
-      * `[ ]` Remove `purchaseError` display block (lines 360–365): replaced by CartSummary's `checkoutError` display
-      * `[ ]` Remove `useWalletStore` import from the import block (line 3); remove `PurchaseRequest` and `PaymentInitiationResult` from the type import (line 18) since they are no longer used directly
-      * `[ ]` Preserve all unchanged behavior: CurrentSubscriptionCard wiring, tab structure, tier badge logic, formatAmount/formatInterval helpers, FAQ section, loading spinner, login redirect, subscription error display, test mode warning
-      * `[ ]` Must not introduce undeclared dependencies or bypass guards/contracts
-      * `[ ]` Each requirement maps to code paths
+      * `[✅]` Remove `purchaseError` display block (lines 360–365): replaced by CartSummary's `checkoutError` display
+      * `[✅]` Remove `useWalletStore` import from the import block (line 3); remove `PurchaseRequest` and `PaymentInitiationResult` from the type import (line 18) since they are no longer used directly
+      * `[✅]` Preserve all unchanged behavior: CurrentSubscriptionCard wiring, tab structure, tier badge logic, formatAmount/formatInterval helpers, FAQ section, loading spinner, login redirect, subscription error display, test mode warning
+      * `[✅]` Must not introduce undeclared dependencies or bypass guards/contracts
+      * `[✅]` Each requirement maps to code paths
 
-    * `[ ]` `provides` — no change to exports; `SubscriptionPage` is already exported as a named export
-      * `[ ]` Public API surface: `SubscriptionPage` function component (unchanged export)
-      * `[ ]` Stability: internal wiring changes only; no external API change. Consumers (router) import `SubscriptionPage` by the same name and path.
-      * `[ ]` No barrel export file — page is imported directly by path from the router configuration
+    * `[✅]` `provides` — no change to exports; `SubscriptionPage` is already exported as a named export
+      * `[✅]` Public API surface: `SubscriptionPage` function component (unchanged export)
+      * `[✅]` Stability: internal wiring changes only; no external API change. Consumers (router) import `SubscriptionPage` by the same name and path.
+      * `[✅]` No barrel export file — page is imported directly by path from the router configuration
 
-    * `[ ]` pages/`Subscription.integration.test.tsx` (NEW)
-      * `[ ]` Validate provider → function: set `subscriptionStore.availablePlans` with mixed plans (subscription + OTP), set `authStore` with user and tier → render SubscriptionPage → verify PlanCards appear with correct `isInCart: false` initial state
-      * `[ ]` Validate function → consumer (cart add flow): click a subscription PlanCard's "Select Plan" button → assert `cartStore.setSubscriptionItem` called with the clicked plan → set `cartStore.cart.subscriptionItem` to the plan → re-render → assert PlanCard shows "Selected" state → assert CartSummary shows the subscription item row
-      * `[ ]` Validate function → consumer (OTP add flow): click an OTP PlanCard's "Add to Cart" button → assert `cartStore.addOtpItem` called with the plan and quantity 1 → set cart state with the OTP item → re-render → assert PlanCard shows "In Cart" state → assert CartSummary shows the OTP item row with quantity
-      * `[ ]` Validate full cart workflow: add subscription plan → add OTP plan → verify CartSummary total is correct → click CartSummary Checkout → assert `cartStore.checkoutCart` called → simulate success with redirect URL → assert `window.location.href` set
-      * `[ ]` Validate URL prefill: render with `MemoryRouter` initialEntries `['/subscription?plan=plan-1&otp=otp-1']` → assert `cartStore.prefillCart` called with `{ subscriptionPlanId: 'plan-1', otpPlanIds: ['otp-1'] }` → assert query params cleared
-      * `[ ]` Validate plan change warning: set auth with active subscription on Basic plan → set cart with Pro plan as subscription item → assert warning text "Selecting a new plan will replace your current Basic Monthly Plan subscription." visible
-      * `[ ]` Validate cart persistence across tabs: add subscription on Monthly tab → switch to Top-Up tab → assert CartSummary still shows subscription item
-      * `[ ]` Use mocks only for external nodes: mock store actions via `vi.fn()`, set store state via `setState`, use real component rendering (PlanCard, CartSummary, CurrentSubscriptionCard render as real components), mock `window.location` for redirect assertions
+    * `[✅]` pages/`Subscription.integration.test.tsx` (NEW)
+      * `[✅]` Validate provider → function: set `subscriptionStore.availablePlans` with mixed plans (subscription + OTP), set `authStore` with user and tier → render SubscriptionPage → verify PlanCards appear with correct `isInCart: false` initial state
+      * `[✅]` Validate function → consumer (cart add flow): click a subscription PlanCard's "Select Plan" button → assert `cartStore.setSubscriptionItem` called with the clicked plan → set `cartStore.cart.subscriptionItem` to the plan → re-render → assert PlanCard shows "Selected" state → assert CartSummary shows the subscription item row
+      * `[✅]` Validate function → consumer (OTP add flow): click an OTP PlanCard's "Add to Cart" button → assert `cartStore.addOtpItem` called with the plan and quantity 1 → set cart state with the OTP item → re-render → assert PlanCard shows "In Cart" state → assert CartSummary shows the OTP item row with quantity
+      * `[✅]` Validate full cart workflow: add subscription plan → add OTP plan → verify CartSummary total is correct → click CartSummary Checkout → assert `cartStore.checkoutCart` called → simulate success with redirect URL → assert `window.location.href` set
+      * `[✅]` Validate URL prefill: render with `MemoryRouter` initialEntries `['/subscription?plan=plan-1&otp=otp-1']` → assert `cartStore.prefillCart` called with `{ subscriptionPlanId: 'plan-1', otpPlanIds: ['otp-1'] }` → assert query params cleared
+      * `[✅]` Validate plan change warning: set auth with active subscription on Basic plan → set cart with Pro plan as subscription item → assert warning text "Selecting a new plan will replace your current Basic Monthly Plan subscription." visible
+      * `[✅]` Validate cart persistence across tabs: add subscription on Monthly tab → switch to Top-Up tab → assert CartSummary still shows subscription item
+      * `[✅]` Use mocks only for external nodes: mock store actions via `vi.fn()`, set store state via `setState`, use real component rendering (PlanCard, CartSummary, CurrentSubscriptionCard render as real components), mock `window.location` for redirect assertions
 
-    * `[ ]` `directionality`
-      * `[ ]` Layer: UI (page-level orchestrator)
-      * `[ ]` Confirm:
+    * `[✅]` `directionality`
+      * `[✅]` Layer: UI (page-level orchestrator)
+      * `[✅]` Confirm:
         * deps are inward-facing: reads from stores (`useAuthStore`, `useSubscriptionStore`, `useCartStore` — app layer), reads types from `@paynless/types` (domain layer), renders UI components (`PlanCard`, `CartSummary`, `CurrentSubscriptionCard` — peer UI layer)
         * provides are outward-facing: `SubscriptionPage` is consumed by the router (app shell layer above)
-      * `[ ]` No cycles: page depends on stores and components; none of those import the page
+      * `[✅]` No cycles: page depends on stores and components; none of those import the page
 
-    * `[ ]` `requirements`
-      * `[ ]` Subscription plan PlanCard click calls `cartStore.setSubscriptionItem(plan)` — observable via mock spy on cartStore action, testable
-      * `[ ]` OTP plan PlanCard click calls `cartStore.addOtpItem(plan, 1)` — observable via mock spy, testable
-      * `[ ]` Free plan PlanCard click calls `handleCancelSubscription` (existing `cancelSubscription` flow) — observable via mock spy, testable
-      * `[ ]` PlanCard `isInCart` prop correctly reflects `cartStore.cart` state for each plan — observable via PlanCard rendering "Selected" / "In Cart" text, testable
-      * `[ ]` PlanCard `cartQuantity` prop correctly reflects OTP item quantity from `cartStore.cart.otpItems` — observable via rendered quantity text, testable
-      * `[ ]` CartSummary renders with correct cart state, actions, and formatAmount — observable via `data-testid` attributes, testable
-      * `[ ]` CartSummary Checkout button triggers `cartStore.checkoutCart()` — observable via mock spy, testable
-      * `[ ]` URL query params `?plan=` and `?otp=` trigger `cartStore.prefillCart` on page load — observable via mock spy arguments, testable
-      * `[ ]` URL query params cleared after prefill — observable via `searchParams` assertion, testable
-      * `[ ]` URL prefill waits for `availablePlans` to be loaded before calling `prefillCart` — observable via effect dependency, testable
-      * `[ ]` Plan change warning renders when active subscription exists and cart has a different subscription plan — observable via `data-testid="plan-change-warning"`, testable
-      * `[ ]` Plan change warning does not render when cart subscription matches current plan or cart is empty — observable via absence of warning element, testable
-      * `[ ]` Cart persists across tab switches — observable by adding item on one tab and verifying CartSummary content after tab switch, testable
-      * `[ ]` `isProcessing` for PlanCard uses `isSubStoreLoading || isCheckingOut` (no longer `isLoadingPurchase`) — observable via button disabled state, testable
-      * `[ ]` `purchaseError` display removed from page bottom — observable via absence of `data-testid="purchase-error-message"`, testable
-      * `[ ]` `walletStore` no longer directly consumed by Subscription page — observable via removed import, testable via no references to `useWalletStore` in source
-      * `[ ]` All existing subscription management flows unchanged: CurrentSubscriptionCard, Manage Billing, Cancel Subscription, tier badges, loading spinner, login redirect, subscription error display, test mode warning, FAQ — observable, testable via preserved existing tests
+    * `[✅]` `requirements`
+      * `[✅]` Subscription plan PlanCard click calls `cartStore.setSubscriptionItem(plan)` — observable via mock spy on cartStore action, testable
+      * `[✅]` OTP plan PlanCard click calls `cartStore.addOtpItem(plan, 1)` — observable via mock spy, testable
+      * `[✅]` Free plan PlanCard click calls `handleCancelSubscription` (existing `cancelSubscription` flow) — observable via mock spy, testable
+      * `[✅]` PlanCard `isInCart` prop correctly reflects `cartStore.cart` state for each plan — observable via PlanCard rendering "Selected" / "In Cart" text, testable
+      * `[✅]` PlanCard `cartQuantity` prop correctly reflects OTP item quantity from `cartStore.cart.otpItems` — observable via rendered quantity text, testable
+      * `[✅]` CartSummary renders with correct cart state, actions, and formatAmount — observable via `data-testid` attributes, testable
+      * `[✅]` CartSummary Checkout button triggers `cartStore.checkoutCart()` — observable via mock spy, testable
+      * `[✅]` URL query params `?plan=` and `?otp=` trigger `cartStore.prefillCart` on page load — observable via mock spy arguments, testable
+      * `[✅]` URL query params cleared after prefill — observable via `searchParams` assertion, testable
+      * `[✅]` URL prefill waits for `availablePlans` to be loaded before calling `prefillCart` — observable via effect dependency, testable
+      * `[✅]` Plan change warning renders when active subscription exists and cart has a different subscription plan — observable via `data-testid="plan-change-warning"`, testable
+      * `[✅]` Plan change warning does not render when cart subscription matches current plan or cart is empty — observable via absence of warning element, testable
+      * `[✅]` Cart persists across tab switches — observable by adding item on one tab and verifying CartSummary content after tab switch, testable
+      * `[✅]` `isProcessing` for PlanCard uses `isSubStoreLoading || isCheckingOut` (no longer `isLoadingPurchase`) — observable via button disabled state, testable
+      * `[✅]` `purchaseError` display removed from page bottom — observable via absence of `data-testid="purchase-error-message"`, testable
+      * `[✅]` `walletStore` no longer directly consumed by Subscription page — observable via removed import, testable via no references to `useWalletStore` in source
+      * `[✅]` All existing subscription management flows unchanged: CurrentSubscriptionCard, Manage Billing, Cancel Subscription, tier badges, loading spinner, login redirect, subscription error display, test mode warning, FAQ — observable, testable via preserved existing tests
 
-    * `[ ]` **Commit** `feat(subscription) multi-item checkout cart: FE cart store, plan selection, cart summary, URL prefill, and Subscription page integration`
-      * `[ ]` Structural changes: new `cartStore` package (`cartStore.ts`, `cartStore.interface.ts`, `cartStore.guard.ts`, `cartStore.mock.ts`, `cartStore.test.ts`, `cartStore.integration.test.ts`); new `CartSummary` component package (`CartSummary.tsx`, `CartSummary.interface.ts`, `CartSummary.guard.ts`, `CartSummary.mock.ts`, `CartSummary.test.tsx`, `CartSummary.integration.test.tsx`); `PlanCard.interface.ts` extracted from inline; `PlanCard.mock.ts` new; `Subscription.mock.ts` new; `PurchaseRequestItem` and `OrchestrationLineItem` types in FE and BE payment types; BE type guards (`payment.guard.ts`, `payment.guard.test.ts`, `payment.types.test.ts`); `stripe.initiatiePayment.test.ts` renamed to `stripe.initiatePayment.test.ts`
-      * `[ ]` Behavioral changes: `initiate-payment` handler accepts multi-item `PurchaseRequest.items` and builds multi-item `PaymentOrchestrationContext`; `StripePaymentAdapter.initiatePayment` builds multi-entry `line_items` from `context.lineItems` and encodes per-item metadata; `PlanCard` uses cart-aware props (`onSelect`/`onAdd`/`onDowngrade`, `isInCart`, `cartQuantity`) instead of immediate-checkout `handleSubscribe`; `Subscription.tsx` orchestrates cartStore with PlanCard and CartSummary, supports URL-based cart prefill, displays plan change warning, delegates checkout to `cartStore.checkoutCart`; existing single-item checkout paths preserved for backward compatibility
-      * `[ ]` Contract changes: `PurchaseRequest.items?` (additive, backward-compatible) in FE and BE; `PaymentOrchestrationContext.lineItems?` and `.checkoutMode?` (additive); `PlanCardProps` breaking change (removed `handleSubscribe`/`handleCancelSubscription`, added `onSelect`/`onAdd`/`onDowngrade`/`isInCart`/`cartQuantity`); new `CartStore`, `CartState`, `CartItem`, `CheckoutCart`, `PrefillCartRequest`, `CartSummaryProps` types; `useCartStore` hook exported from `@paynless/store` barrel
+    * `[✅]` **Commit** `feat(subscription) multi-item checkout cart: FE cart store, plan selection, cart summary, URL prefill, and Subscription page integration`
+      * `[✅]` Structural changes: new `cartStore` package (`cartStore.ts`, `cartStore.interface.ts`, `cartStore.guard.ts`, `cartStore.mock.ts`, `cartStore.test.ts`, `cartStore.integration.test.ts`); new `CartSummary` component package (`CartSummary.tsx`, `CartSummary.interface.ts`, `CartSummary.guard.ts`, `CartSummary.mock.ts`, `CartSummary.test.tsx`, `CartSummary.integration.test.tsx`); `PlanCard.interface.ts` extracted from inline; `PlanCard.mock.ts` new; `Subscription.mock.ts` new; `PurchaseRequestItem` and `OrchestrationLineItem` types in FE and BE payment types; BE type guards (`payment.guard.ts`, `payment.guard.test.ts`, `payment.types.test.ts`); `stripe.initiatiePayment.test.ts` renamed to `stripe.initiatePayment.test.ts`
+      * `[✅]` Behavioral changes: `initiate-payment` handler accepts multi-item `PurchaseRequest.items` and builds multi-item `PaymentOrchestrationContext`; `StripePaymentAdapter.initiatePayment` builds multi-entry `line_items` from `context.lineItems` and encodes per-item metadata; `PlanCard` uses cart-aware props (`onSelect`/`onAdd`/`onDowngrade`, `isInCart`, `cartQuantity`) instead of immediate-checkout `handleSubscribe`; `Subscription.tsx` orchestrates cartStore with PlanCard and CartSummary, supports URL-based cart prefill, displays plan change warning, delegates checkout to `cartStore.checkoutCart`; existing single-item checkout paths preserved for backward compatibility
+      * `[✅]` Contract changes: `PurchaseRequest.items?` (additive, backward-compatible) in FE and BE; `PaymentOrchestrationContext.lineItems?` and `.checkoutMode?` (additive); `PlanCardProps` breaking change (removed `handleSubscribe`/`handleCancelSubscription`, added `onSelect`/`onAdd`/`onDowngrade`/`isInCart`/`cartQuantity`); new `CartStore`, `CartState`, `CartItem`, `CheckoutCart`, `PrefillCartRequest`, `CartSummaryProps` types; `useCartStore` hook exported from `@paynless/store` barrel
 
 * **Gate model selection by user tier, enforce model count limit, and remove invalid `trialing` status from FE**
 

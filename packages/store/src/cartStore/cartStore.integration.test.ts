@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { act } from '@testing-library/react';
+import type { PaymentInitiationResult, Session, SubscriptionPlan, User } from '@paynless/types';
 import {
   api,
   resetApiMock,
@@ -16,20 +17,38 @@ import {
   createMockActions,
   internalMockOrgStoreGetState,
 } from '../../../../apps/web/src/mocks/organizationStore.mock';
+import { mockUserProfile } from '../../../../apps/web/src/mocks/profile.mock';
+import {
+  mockOtpPlan,
+  mockSubscriptionPlan,
+} from '../../../../apps/web/src/components/subscription/PlanCard.mock';
 import { useCartStore } from './cartStore';
 import { useSubscriptionStore } from '../subscriptionStore';
 import { useWalletStore } from '../walletStore';
-import {
-  buildPrefillCartRequest,
-  mockCartAvailablePlansForPrefill,
-  mockCartCheckoutSession,
-  mockCartCheckoutUser,
-  mockCartPaymentSuccessResult,
-  mockCartPrefillOtpByStripePriceRequest,
-  mockCartSubscriptionPlan,
-  mockCartPaymentRedirectUrl,
+import { buildPrefillCartRequest } from './cartStore.mock';
+
+const cartCheckoutUser: User = {
+  id: mockUserProfile.id,
+};
+
+const cartCheckoutSession: Session = {
+  access_token: 'mock-token',
+  refresh_token: 'mock-refresh',
+  expiresAt: Date.now() + 3600000,
+};
+
+const cartPaymentRedirectUrl: string =
+  'https://checkout.stripe.com/pay/cs_mock_session';
+
+const cartPaymentSuccessResult: PaymentInitiationResult = {
+  success: true,
+  redirectUrl: cartPaymentRedirectUrl,
+};
+
+const cartAvailablePlansForPrefill: SubscriptionPlan[] = [
   mockSubscriptionPlan,
-} from './cartStore.mock';
+  mockOtpPlan,
+];
 
 vi.mock('@paynless/api', async () => {
   const mockModule = await import('../../../api/src/mocks/api.mock');
@@ -89,7 +108,7 @@ describe('useCartStore (integration)', () => {
     useWalletStore.getState()._resetForTesting();
     mockInitiateTokenPurchase = api.wallet().initiateTokenPurchase;
     mockInitiateTokenPurchase.mockResolvedValue({
-      data: mockCartPaymentSuccessResult,
+      data: cartPaymentSuccessResult,
       error: undefined,
       status: 200,
     });
@@ -109,41 +128,54 @@ describe('useCartStore (integration)', () => {
       act(() => {
         useSubscriptionStore
           .getState()
-          .setAvailablePlans(mockCartAvailablePlansForPrefill);
+          .setAvailablePlans(cartAvailablePlansForPrefill);
       });
     });
 
     it('populates cart from real subscriptionStore.availablePlans by plan id', () => {
       act(() => {
-        useCartStore.getState().prefillCart(buildPrefillCartRequest());
+        useCartStore.getState().prefillCart(
+          buildPrefillCartRequest({
+            subscriptionPlanId: mockSubscriptionPlan.id,
+          }),
+        );
       });
 
       expect(useCartStore.getState().cart.subscriptionItem).toEqual({
-        plan: mockCartSubscriptionPlan,
+        plan: mockSubscriptionPlan,
         quantity: 1,
       });
       expect(useCartStore.getState().cart.otpItems).toEqual([]);
     });
 
     it('populates OTP lines from availablePlans by stripe_price_id', () => {
+      const otpStripePriceId: string | null = mockOtpPlan.stripe_price_id;
+      if (otpStripePriceId === null) {
+        throw new Error('mockOtpPlan requires stripe_price_id for this test');
+      }
       act(() => {
-        useCartStore.getState().prefillCart(mockCartPrefillOtpByStripePriceRequest);
+        useCartStore.getState().prefillCart(
+          buildPrefillCartRequest({
+            subscriptionPlanId: null,
+            otpPlanIds: [otpStripePriceId],
+          }),
+        );
       });
 
       expect(useCartStore.getState().cart.subscriptionItem).toBeNull();
       expect(useCartStore.getState().cart.otpItems).toEqual([
-        { plan: mockSubscriptionPlan, quantity: 1 },
+        { plan: mockOtpPlan, quantity: 1 },
       ]);
     });
   });
 
   describe('checkoutCart → walletStore.initiatePurchase', () => {
     beforeEach(() => {
-      mockSetAuthUser(mockCartCheckoutUser);
-      mockSetAuthSession(mockCartCheckoutSession);
+      mockSetAuthUser(cartCheckoutUser);
+      mockSetAuthSession(cartCheckoutSession);
       act(() => {
-        useCartStore.getState().setSubscriptionItem(mockCartSubscriptionPlan);
-        useCartStore.getState().addOtpItem(mockSubscriptionPlan, 2);
+        useCartStore.getState().setSubscriptionItem(mockSubscriptionPlan);
+        useCartStore.getState().addOtpItem(mockOtpPlan, 2);
       });
     });
 
@@ -153,25 +185,25 @@ describe('useCartStore (integration)', () => {
       });
 
       expect(mockInitiateTokenPurchase).toHaveBeenCalledWith({
-        userId: mockCartCheckoutUser.id,
-        itemId: mockCartSubscriptionPlan.stripe_price_id,
+        userId: cartCheckoutUser.id,
+        itemId: mockSubscriptionPlan.stripe_price_id,
         quantity: 1,
         items: [
           {
-            itemId: mockCartSubscriptionPlan.stripe_price_id,
+            itemId: mockSubscriptionPlan.stripe_price_id,
             quantity: 1,
           },
           {
-            itemId: mockSubscriptionPlan.stripe_price_id,
+            itemId: mockOtpPlan.stripe_price_id,
             quantity: 2,
           },
         ],
-        currency: mockCartSubscriptionPlan.currency,
+        currency: mockSubscriptionPlan.currency,
         paymentGatewayId: 'stripe',
       });
       expect(useWalletStore.getState().purchaseError).toBeNull();
       expect(useWalletStore.getState().isLoadingPurchase).toBe(false);
-      expect(stubbedLocation.href).toBe(mockCartPaymentRedirectUrl);
+      expect(stubbedLocation.href).toBe(cartPaymentRedirectUrl);
       expect(useCartStore.getState().checkoutError).toBeNull();
       expect(useCartStore.getState().isCheckingOut).toBe(false);
     });
@@ -179,14 +211,18 @@ describe('useCartStore (integration)', () => {
 
   describe('full chain', () => {
     it('auth → prefill → modify cart → checkoutCart → wallet initiatePurchase', async () => {
-      mockSetAuthUser(mockCartCheckoutUser);
-      mockSetAuthSession(mockCartCheckoutSession);
+      mockSetAuthUser(cartCheckoutUser);
+      mockSetAuthSession(cartCheckoutSession);
 
       act(() => {
         useSubscriptionStore
           .getState()
-          .setAvailablePlans(mockCartAvailablePlansForPrefill);
-        useCartStore.getState().prefillCart(buildPrefillCartRequest());
+          .setAvailablePlans(cartAvailablePlansForPrefill);
+        useCartStore.getState().prefillCart(
+          buildPrefillCartRequest({
+            subscriptionPlanId: mockSubscriptionPlan.id,
+          }),
+        );
         useCartStore.getState().setSubscriptionItem(mockSubscriptionPlan);
         useCartStore.getState().addOtpItem(mockSubscriptionPlan, 2);
       });
@@ -204,7 +240,7 @@ describe('useCartStore (integration)', () => {
       });
 
       expect(mockInitiateTokenPurchase).toHaveBeenCalledWith({
-        userId: mockCartCheckoutUser.id,
+        userId: cartCheckoutUser.id,
         itemId: mockSubscriptionPlan.stripe_price_id,
         quantity: 1,
         items: [
@@ -221,7 +257,7 @@ describe('useCartStore (integration)', () => {
         paymentGatewayId: 'stripe',
       });
       expect(useWalletStore.getState().purchaseError).toBeNull();
-      expect(stubbedLocation.href).toBe(mockCartPaymentRedirectUrl);
+      expect(stubbedLocation.href).toBe(cartPaymentRedirectUrl);
       expect(useCartStore.getState().checkoutError).toBeNull();
       expect(useCartStore.getState().isCheckingOut).toBe(false);
     });
