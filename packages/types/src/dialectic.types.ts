@@ -373,6 +373,9 @@ export interface DialecticStateValues {
   uploadProjectResourceError: ApiError | null;
   /** Single origin from session response (id + displayName); display uses this, not catalog. */
   selectedModels: SelectedModels[] | null | undefined;
+  
+  // Output token cap configuration
+  maxOutputTokens: number | null;
 
   // Cache for initial prompt file content
   initialPromptContentCache: { [resourceId: string]: InitialPromptCacheEntry };
@@ -695,6 +698,9 @@ export interface DialecticActions {
   setSelectedModels: (models: SelectedModels[]) => void;
   setModelMultiplicity: (model: SelectedModels, count: number) => void;
   resetSelectedModels: () => void;
+  
+  // Output token cap configuration
+  setMaxOutputTokens: (maxTokens: number) => void;
 
   // New action for fetching process templates
   fetchProcessTemplate: (templateId: string) => Promise<void>;
@@ -1124,6 +1130,7 @@ export interface GenerateContributionsPayload {
   iterationNumber: number;
   continueUntilComplete: boolean;
   walletId: string;
+  maxOutputTokens?: number;
 }
 
 export interface StartContributionGenerationResult {

@@ -200,6 +200,9 @@ export const initialDialecticStateValues: DialecticStateValues = {
 	fetchFeedbackFileContentError: null,
 
   activeDialecticWalletId: null,
+  
+  // Output token cap configuration
+  maxOutputTokens: null,
 
 	// Recipe hydration and per-stage-run progress
 	recipesByStageSlug: {},
@@ -1381,6 +1384,11 @@ export const useDialecticStore = create<DialecticStore>()(
 					);
 				});
 		}
+	},
+	
+	setMaxOutputTokens: (maxTokens: number) => {
+		logger.info(`[DialecticStore] Setting max output tokens to ${maxTokens}`);
+		set({ maxOutputTokens: maxTokens });
 	},
 
 	fetchInitialPromptContent: async (resourceId: string) => {
