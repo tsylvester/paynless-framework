@@ -1,23 +1,26 @@
 import { SupabaseClient, createClient } from 'npm:@supabase/supabase-js@2';
-import { Json } from '../types_db.ts';
+import type { Database } from '../types_db.ts';
 import { handleCorsPreflightRequest, createSuccessResponse, createErrorResponse } from '../_shared/cors-headers.ts';
 import { syncOpenAIModels, defaultSyncOpenAIDeps } from './openai_sync.ts';
 import { syncAnthropicModels, defaultSyncAnthropicDeps } from './anthropic_sync.ts';
 import { syncGoogleModels, defaultSyncGoogleDeps } from './google_sync.ts';
 
-// --- Types specific to this function ---
+export type DbAiProvider = Database['public']['Tables']['ai_providers']['Row'];
+export type AiProvidersSyncInsert = Database['public']['Tables']['ai_providers']['Insert'];
+export type AiProvidersSyncUpdate = Database['public']['Tables']['ai_providers']['Update'];
+export type ModelsToUpdate = { id: string; changes: AiProvidersSyncUpdate };
 
-// Structure of the DB ai_providers table
-// Exporting this so provider files can import it
-export interface DbAiProvider {
-    id: string;
-    api_identifier: string;
-    name: string;
-    description: string | null;
-    is_active: boolean;
-    provider: string; 
-    config: Json | null;
-  }
+export interface DbOpLists {
+  modelsToInsert: AiProvidersSyncInsert[];
+  modelsToUpdate: ModelsToUpdate[];
+  modelsToDeactivate: string[];
+}
+
+export interface DbOpResult {
+  inserted: number;
+  updated: number;
+  deactivated: number;
+}
   
   // Structure for sync results
   // Exporting this so provider files can import it

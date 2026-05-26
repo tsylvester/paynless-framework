@@ -1,91 +1,123 @@
 import type { AiModelExtendedConfig, FinalAppModelConfig } from "../_shared/types.ts";
 import type { Json } from "../types_db.ts";
-import { DbAiProvider } from "./sync-ai-models.interface.ts";
+import type { DbAiProvider, AiProvidersSyncInsert, AiProvidersSyncUpdate, ModelsToUpdate } from "./sync-ai-models.interface.ts";
 import type { ModelCostProvenance } from "./config_assembler.interface.ts";
+import { DbOpLists, DbOpResult } from "./sync-ai-models.interface.ts";
 
-export function createTestConfig(apiIdentifier: string): AiModelExtendedConfig {
+export function mockAiModelExtendedConfig(
+    overrides: Partial<AiModelExtendedConfig> = {},
+): AiModelExtendedConfig {
     return {
-        api_identifier: apiIdentifier,
-        input_token_cost_rate: 0.00001,
-        output_token_cost_rate: 0.00002,
+        api_identifier: "mock-model",
+        input_token_cost_rate: 3,
+        output_token_cost_rate: 3,
+        tokenization_strategy: { type: "rough_char_count", chars_per_token_ratio: 4 },
         context_window_tokens: 8192,
         hard_cap_output_tokens: 4096,
         provider_max_input_tokens: 8192,
         provider_max_output_tokens: 4096,
-        tokenization_strategy: { type: "rough_char_count", chars_per_token_ratio: 4 },
+        ...overrides,
     };
 }
 
-export function createFinalAppModelConfig(
-    apiIdentifier: string,
-    name: string,
-    overrides: Partial<AiModelExtendedConfig> = {},
+export function mockFinalAppModelConfig(
+    overrides: Partial<Omit<FinalAppModelConfig, "config">> & { config?: Partial<AiModelExtendedConfig> } = {},
 ): FinalAppModelConfig {
+    const { config: configOverrides, ...topLevel } = overrides;
+    const apiIdentifier: string = topLevel.api_identifier ?? "mock-model";
     return {
         api_identifier: apiIdentifier,
-        name: name,
-        description: `Description for ${name}`,
-        config: { ...createTestConfig(apiIdentifier), ...overrides },
+        name: "Mock Model",
+        description: "Mock model description",
+        ...topLevel,
+        config: mockAiModelExtendedConfig({ api_identifier: apiIdentifier, ...configOverrides }),
     };
 }
 
-export function provenanceNone(): ModelCostProvenance {
-    return { input_source: "none", output_source: "none" };
-}
-
-export function provenanceStaticMap(): ModelCostProvenance {
-    return { input_source: "static_map", output_source: "static_map" };
-}
-
-export function provenanceApi(): ModelCostProvenance {
-    return { input_source: "api", output_source: "api" };
-}
-
-export function singleCostProvenanceMap(
-    apiIdentifier: string,
-    provenance: ModelCostProvenance,
-): Map<string, ModelCostProvenance> {
-    const costProvenanceByApiId: Map<string, ModelCostProvenance> = new Map();
-    costProvenanceByApiId.set(apiIdentifier, provenance);
-    return costProvenanceByApiId;
-}
-
-/** One provenance entry per assembled model — matches sync pipeline wiring after ConfigAssembler. */
-export function costProvenanceForAssembledConfigs(
-    assembledConfigs: readonly FinalAppModelConfig[],
-    provenance: ModelCostProvenance,
-): Map<string, ModelCostProvenance> {
-    const costProvenanceByApiId: Map<string, ModelCostProvenance> = new Map();
-    for (const model of assembledConfigs) {
-        costProvenanceByApiId.set(model.api_identifier, provenance);
-    }
-    return costProvenanceByApiId;
-}
-
-export function emptyCostProvenanceMap(): Map<string, ModelCostProvenance> {
-    return new Map();
-}
-
-export function dbRowWithTier(params: {
-    id: string;
-    api_identifier: string;
-    name: string;
-    description: string | null;
-    is_active: boolean;
-    provider: string;
-    config: Json;
-    is_enabled: boolean;
-    min_plan_tier_level: number;
-}): DbAiProvider & { is_enabled: boolean; min_plan_tier_level: number } {
+export function mockDbAiProvider(overrides: Partial<DbAiProvider> = {}): DbAiProvider {
+    const defaultConfig: Json = {
+        api_identifier: "mock-model",
+        input_token_cost_rate: 3,
+        output_token_cost_rate: 3,
+        tokenization_strategy: { type: "rough_char_count", chars_per_token_ratio: 4 },
+        context_window_tokens: 8192,
+        hard_cap_output_tokens: 4096,
+        provider_max_input_tokens: 8192,
+        provider_max_output_tokens: 4096,
+    };
     return {
-        id: params.id,
-        api_identifier: params.api_identifier,
-        name: params.name,
-        description: params.description,
-        is_active: params.is_active,
-        provider: params.provider,
-        config: params.config,
-        is_enabled: params.is_enabled,
-        min_plan_tier_level: params.min_plan_tier_level,
+        id: "mock-db-id",
+        api_identifier: "mock-model",
+        name: "Mock Model",
+        description: "Mock model description",
+        is_active: true,
+        is_enabled: true,
+        is_default_embedding: false,
+        is_default_generation: false,
+        provider: "mock-provider",
+        config: defaultConfig,
+        min_plan_tier_level: 0,
+        created_at: "2024-01-01T00:00:00.000Z",
+        updated_at: "2024-01-01T00:00:00.000Z",
+        ...overrides,
+    };
+}
+
+export function mockModelCostProvenance(
+    overrides: Partial<ModelCostProvenance> = {},
+): ModelCostProvenance {
+    return {
+        input_source: "static_map",
+        output_source: "static_map",
+        ...overrides,
+    };
+}
+
+export function mockCostProvenanceMap(
+    entries: [string, ModelCostProvenance][] = [],
+): Map<string, ModelCostProvenance> {
+    return new Map(entries);
+}
+
+export function mockAiProvidersSyncInsert(
+    overrides: Partial<AiProvidersSyncInsert> = {},
+): AiProvidersSyncInsert {
+    return {
+        api_identifier: "mock-model",
+        name: "Mock Model",
+        description: "Mock model description",
+        provider: "mock-provider",
+        config: null,
+        is_enabled: true,
+        min_plan_tier_level: 0,
+        ...overrides,
+    };
+}
+
+export function mockModelsToUpdate(
+    overrides: { id?: string; changes?: AiProvidersSyncUpdate } = {},
+): ModelsToUpdate {
+    return {
+        id: "mock-db-id",
+        changes: {},
+        ...overrides,
+    };
+}
+
+export function mockDbOpLists(overrides: Partial<DbOpLists> = {}): DbOpLists {
+    return {
+        modelsToInsert: [],
+        modelsToUpdate: [],
+        modelsToDeactivate: [],
+        ...overrides,
+    };
+}
+
+export function mockDbOpResult(overrides: Partial<DbOpResult> = {}): DbOpResult {
+    return {
+        inserted: 0,
+        updated: 0,
+        deactivated: 0,
+        ...overrides,
     };
 }

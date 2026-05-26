@@ -14,6 +14,7 @@ import {
     anthropicRates,
     anthropicIdentifiers,
 } from "./anthropic_sync.mock.ts";
+import { mockDbAiProvider } from "./diffAndPrepareDbOps.mock.ts";
 
 const PROVIDER_NAME = 'anthropic';
 
@@ -49,7 +50,7 @@ const assembledClaudeReactivate: FinalAppModelConfig = { api_identifier: `anthro
 
 const dbClaudeOpusConfig = createTestConfig('claude-3-opus-20240229');
 assert(isJson(dbClaudeOpusConfig), "dbClaudeOpusConfig must be valid JSON");
-const dbClaudeOpus: DbAiProvider = {
+const dbClaudeOpus: DbAiProvider = mockDbAiProvider({
     id: 'db-id-claude-opus',
     api_identifier: `anthropic-claude-3-opus-20240229`,
     name: 'Claude 3 Opus',
@@ -57,31 +58,31 @@ const dbClaudeOpus: DbAiProvider = {
     is_active: true,
     provider: PROVIDER_NAME,
     config: dbClaudeOpusConfig,
-};
+});
 
 const dbStaleConfig = createTestConfig('claude-stale');
 assert(isJson(dbStaleConfig), "dbStaleConfig must be valid JSON");
-const dbStale: DbAiProvider = {
+const dbStale: DbAiProvider = mockDbAiProvider({
     id: 'db-id-stale',
     api_identifier: `anthropic-claude-stale`,
     name: 'Stale Model',
     description: 'This should be deactivated.',
     is_active: true,
     provider: PROVIDER_NAME,
-    config: dbStaleConfig
-};
+    config: dbStaleConfig,
+});
 
 const dbInactiveConfig = createTestConfig('claude-reactivate');
 assert(isJson(dbInactiveConfig), "dbInactiveConfig must be valid JSON");
-const dbInactive: DbAiProvider = {
+const dbInactive: DbAiProvider = mockDbAiProvider({
     id: 'db-id-inactive',
     api_identifier: `anthropic-claude-reactivate`,
     name: 'Reactivated',
     description: 'It is back.',
     is_active: false,
     provider: PROVIDER_NAME,
-    config: dbInactiveConfig
-};
+    config: dbInactiveConfig,
+});
 
 const mockAnthropicData: MockProviderData = {
     apiModels: [assembledClaudeOpus],
@@ -187,21 +188,21 @@ Deno.test("[Provider-Specific] anthropic: INTERNAL_MODEL_MAP sets 200k input win
 
     const claude3x = entries.filter(([id]) => /anthropic-claude-3(\.|-)/i.test(id));
     for (const [id, cfg] of claude3x) {
-        const pmi = (cfg as { provider_max_input_tokens?: unknown }).provider_max_input_tokens;
+        const pmi = cfg.provider_max_input_tokens;
         assertExists(pmi, `provider_max_input_tokens missing for ${id}`);
         assert(typeof pmi === 'number' && pmi === 200_000, `provider_max_input_tokens should be 200,000 for ${id}`);
     }
 
     const expect8192 = entries.filter(([id]) => /anthropic-claude-(3\.5|3-5|3\.7|3-7)-sonnet/i.test(id));
     for (const [id, cfg] of expect8192) {
-        const hcap = (cfg as { hard_cap_output_tokens?: unknown }).hard_cap_output_tokens;
+        const hcap = cfg.hard_cap_output_tokens;
         assertExists(hcap, `hard_cap_output_tokens missing for ${id}`);
         assert(typeof hcap === 'number' && hcap === 8_192, `hard_cap_output_tokens should be 8,192 for ${id}`);
     }
 
     const expectLegacy4096 = entries.filter(([id]) => /anthropic-claude-3-(haiku|sonnet|opus)-/i.test(id));
     for (const [id, cfg] of expectLegacy4096) {
-        const hcap = (cfg as { hard_cap_output_tokens?: unknown }).hard_cap_output_tokens;
+        const hcap = cfg.hard_cap_output_tokens;
         assertExists(hcap, `hard_cap_output_tokens missing for ${id}`);
         assert(typeof hcap === 'number' && (hcap === 4_096 || hcap === 8_192), `hard_cap_output_tokens should be 4,096 (or 8,192 if upgraded) for ${id}`);
     }
@@ -209,15 +210,13 @@ Deno.test("[Provider-Specific] anthropic: INTERNAL_MODEL_MAP sets 200k input win
 
 Deno.test("every anthropic Tier-3 coverage api_identifier resolves to INTERNAL_MODEL_MAP costs via longest-prefix match", () => {
     for (const apiId of anthropicIdentifiers) {
-        const partial: Partial<AiModelExtendedConfig> | undefined = ConfigAssembler.getLongestPrefixInternalMapPartial(
-            apiId,
-            INTERNAL_MODEL_MAP,
-        );
-        assert(partial !== undefined, `No INTERNAL_MODEL_MAP prefix matched api_identifier ${apiId}`);
-        const inputRate: number | null | undefined = partial.input_token_cost_rate;
-        const outputRate: number | null | undefined = partial.output_token_cost_rate;
-        assert(typeof inputRate === "number", `Tier-3 input cost missing for ${apiId}`);
-        assert(typeof outputRate === "number", `Tier-3 output cost missing for ${apiId}`);
+        const lookup = ConfigAssembler.getLongestPrefixInternalMapPartial(apiId, INTERNAL_MODEL_MAP);
+        if (lookup === undefined) {
+            assert(false, `No INTERNAL_MODEL_MAP prefix matched api_identifier ${apiId}`);
+        }
+        const partial: Partial<AiModelExtendedConfig> = lookup;
+        assert(typeof partial.input_token_cost_rate === "number", `Tier-3 input cost missing for ${apiId}`);
+        assert(typeof partial.output_token_cost_rate === "number", `Tier-3 output cost missing for ${apiId}`);
     }
 });
 
@@ -226,16 +225,14 @@ Deno.test("official headline Anthropic rates on resolved longest-prefix partials
         const apiId: string = rateRow[0];
         const expectedIn: number = rateRow[1];
         const expectedOut: number = rateRow[2];
-        const partial: Partial<AiModelExtendedConfig> | undefined = ConfigAssembler.getLongestPrefixInternalMapPartial(
-            apiId,
-            INTERNAL_MODEL_MAP,
-        );
-        assert(partial !== undefined);
-        const inputRate: number | null | undefined = partial.input_token_cost_rate;
-        const outputRate: number | null | undefined = partial.output_token_cost_rate;
-        assert(typeof inputRate === "number");
-        assert(typeof outputRate === "number");
-        assertEquals(inputRate, expectedIn);
-        assertEquals(outputRate, expectedOut);
+        const lookup = ConfigAssembler.getLongestPrefixInternalMapPartial(apiId, INTERNAL_MODEL_MAP);
+        if (lookup === undefined) {
+            assert(false, `No INTERNAL_MODEL_MAP prefix matched api_identifier ${apiId}`);
+        }
+        const partial: Partial<AiModelExtendedConfig> = lookup;
+        assert(typeof partial.input_token_cost_rate === "number");
+        assert(typeof partial.output_token_cost_rate === "number");
+        assertEquals(partial.input_token_cost_rate, expectedIn);
+        assertEquals(partial.output_token_cost_rate, expectedOut);
     }
 });

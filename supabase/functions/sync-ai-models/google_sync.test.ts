@@ -8,7 +8,7 @@ import { isJson } from "../_shared/utils/type_guards.ts";
 import { assert, assertEquals } from "jsr:@std/assert@0.225.3";
 import { AiModelExtendedConfigSchema } from "../chat/zodSchema.ts";
 import { ConfigAssembler } from "./config_assembler.ts";
-
+import { mockDbAiProvider } from "./diffAndPrepareDbOps.mock.ts";
 const PROVIDER_NAME = 'google';
 
 // --- Test Data Factory ---
@@ -43,7 +43,7 @@ const assembledGeminiReactivate: FinalAppModelConfig = { api_identifier: `google
 
 const dbGeminiProConfig = createTestConfig('gemini-1.5-pro-latest');
 assert(isJson(dbGeminiProConfig), "dbGeminiProConfig must be valid JSON");
-const dbGeminiPro: DbAiProvider = {
+const dbGeminiPro: DbAiProvider = mockDbAiProvider({
     id: 'db-id-gemini-pro',
     api_identifier: `google-gemini-1.5-pro-latest`,
     name: 'Gemini 1.5 Pro',
@@ -51,11 +51,11 @@ const dbGeminiPro: DbAiProvider = {
     is_active: true,
     provider: PROVIDER_NAME,
     config: dbGeminiProConfig,
-};
+});
 
 const dbStaleConfig = createTestConfig('gemini-stale');
 assert(isJson(dbStaleConfig), "dbStaleConfig must be valid JSON");
-const dbStale: DbAiProvider = {
+const dbStale: DbAiProvider = mockDbAiProvider({
     id: 'db-id-stale',
     api_identifier: `google-gemini-stale`,
     name: 'Stale Model',
@@ -63,11 +63,11 @@ const dbStale: DbAiProvider = {
     is_active: true,
     provider: PROVIDER_NAME,
     config: dbStaleConfig
-};
+});
 
 const dbInactiveConfig = createTestConfig('gemini-reactivate');
 assert(isJson(dbInactiveConfig), "dbInactiveConfig must be valid JSON");
-const dbInactive: DbAiProvider = {
+const dbInactive: DbAiProvider = mockDbAiProvider({
     id: 'db-id-inactive',
     api_identifier: `google-gemini-reactivate`,
     name: 'Reactivated',
@@ -75,7 +75,7 @@ const dbInactive: DbAiProvider = {
     is_active: false,
     provider: PROVIDER_NAME,
     config: dbInactiveConfig
-};
+});
 
 const mockGoogleData: MockProviderData = {
     apiModels: [assembledGeminiPro],

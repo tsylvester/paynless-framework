@@ -7,7 +7,7 @@ import { SyncResult, DbAiProvider } from './sync-ai-models.interface.ts';
 import { ConfigAssembler } from './config_assembler.ts';
 import { diffAndPrepareDbOps, executeDbOps } from './diffAndPrepareDbOps.ts';
 import { isJson } from "../_shared/utils/type_guards.ts";
-
+import { logger } from "../_shared/logger.ts";
 const PROVIDER_NAME = 'openai';
 
 function selectOpenAIEncoding(modelId: string, isEmbeddingModel: boolean): { encoding: 'o200k_base' | 'cl100k_base' | 'p50k_base'; isChatML: boolean } {
@@ -197,12 +197,7 @@ export interface SyncOpenAIDeps {
 
 export const defaultSyncOpenAIDeps: SyncOpenAIDeps = {
   listProviderModels: async (apiKey: string) => {
-    const logger: ILogger = {
-      debug: (...args: unknown[]) => console.debug('[SyncOpenAI:OpenAiAdapter]', ...args),
-      info: (...args: unknown[]) => console.info('[SyncOpenAI:OpenAiAdapter]', ...args),
-      warn: (...args: unknown[]) => console.warn('[SyncOpenAI:OpenAiAdapter]', ...args),
-      error: (...args: unknown[]) => console.error('[SyncOpenAI:OpenAiAdapter]', ...args),
-    };
+
     const minimalConfig: AiModelExtendedConfig = {
       api_identifier: 'openai-gpt-4o',
       input_token_cost_rate: 1,
@@ -226,6 +221,7 @@ export const defaultSyncOpenAIDeps: SyncOpenAIDeps = {
       is_default_embedding: false,
       is_enabled: true,
       is_default_generation: false,
+      min_plan_tier_level: 99,
     };
     const adapter = new OpenAiAdapter(dummyProvider, apiKey, logger);
     const { models, raw } = await adapter.listModels(true);

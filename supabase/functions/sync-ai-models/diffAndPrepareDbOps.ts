@@ -7,24 +7,7 @@ import { isJson } from '../_shared/utils/type_guards.ts';
 import { AiModelExtendedConfigSchema } from '../chat/zodSchema.ts';
 import type { AiModelExtendedConfig } from '../_shared/types.ts';
 import type { ModelCostProvenance } from './config_assembler.interface.ts';
-
-export type AiProvidersSyncInsert = Omit<DbAiProvider, 'id' | 'is_active'> & {
-    is_enabled: boolean;
-    min_plan_tier_level: number;
-};
-
-export type ModelsToUpdate = { id: string; changes: Partial<DbAiProvider> };
-export interface DbOpLists {
-  modelsToInsert: AiProvidersSyncInsert[];
-  modelsToUpdate: ModelsToUpdate[];
-  modelsToDeactivate: string[];
-}
-
-export interface DbOpResult {
-    inserted: number;
-    updated: number;
-    deactivated: number;
-}
+import type { DbOpLists, DbOpResult, AiProvidersSyncInsert, AiProvidersSyncUpdate, ModelsToUpdate } from './sync-ai-models.interface.ts';
 
 /**
  * Compares the assembled model configurations with the current state in the database
@@ -147,7 +130,7 @@ export function diffAndPrepareDbOps(
                 dbModelMap.delete(apiIdentifier);
             } else {
                 // Both configs are VALID. Compare for standard changes.
-                const changes: Partial<DbAiProvider> = {};
+                const changes: AiProvidersSyncUpdate = {};
                 if (assembledModel.name !== dbModel.name) changes.name = assembledModel.name;
                 if ((assembledModel.description ?? null) !== dbModel.description) changes.description = assembledModel.description ?? null;
                 if (!dbModel.is_active) changes.is_active = true;
@@ -173,7 +156,29 @@ export function diffAndPrepareDbOps(
                         }
                     }
                 }
-                // Never overwrite min_plan_tier_level on updates — it is maintainer-controlled once set.
+                let outputRate: AiModelExtendedConfig['output_token_cost_rate'] = dbValidation.data.output_token_cost_rate;
+                if (changes.config !== undefined) {
+                    const configForTier = AiModelExtendedConfigSchema.safeParse(changes.config);
+                    if (configForTier.success) {
+                        outputRate = configForTier.data.output_token_cost_rate;
+                    }
+                }
+                let minPlanTierLevel: DbAiProvider['min_plan_tier_level'];
+                if (outputRate === null) {
+                    minPlanTierLevel = 99;
+                } else if (outputRate < 10) {
+                    minPlanTierLevel = 0;
+                } else if (outputRate < 20) {
+                    minPlanTierLevel = 10;
+                } else {
+                    minPlanTierLevel = 20;
+                }
+                if (minPlanTierLevel !== dbModel.min_plan_tier_level) {
+                    changes.min_plan_tier_level = minPlanTierLevel;
+                    logger.info(
+                        `[Diff] Correcting min_plan_tier_level=${String(minPlanTierLevel)} for ${apiIdentifier} based on output_token_cost_rate=${String(outputRate)}`,
+                    );
+                }
                 if (Object.keys(changes).length > 0) {
                     logger.info(`[Diff] Queuing update for ${apiIdentifier}:`, changes);
                     modelsToUpdate.push({ id: dbModel.id, changes });
@@ -188,8 +193,8 @@ export function diffAndPrepareDbOps(
             // --- NEW MODEL LOGIC ---
             if (assembledValidation.success) {
                 if (isJson(assembledModel.config)) {
-                    const outputRate: number | null = assembledModel.config.output_token_cost_rate;
-                    let minPlanTierLevel: number;
+                    const outputRate: AiModelExtendedConfig['output_token_cost_rate'] = assembledModel.config.output_token_cost_rate;
+                    let minPlanTierLevel: DbAiProvider['min_plan_tier_level'];
                     if (outputRate === null) {
                         minPlanTierLevel = 99;
                     } else if (outputRate < 10) {

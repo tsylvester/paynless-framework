@@ -12,7 +12,7 @@ import { DbAiProvider, SyncResult, ProviderSyncFunction, PROVIDERS_TO_SYNC, Sync
 export async function getCurrentDbModels(supabaseClient: SupabaseClient, providerName: string): Promise<DbAiProvider[]> {
   const { data, error } = await supabaseClient
     .from('ai_providers')
-    .select('id, api_identifier, name, description, is_active, provider, config')
+    .select('*')
     .eq('provider', providerName);
 
   if (error) {

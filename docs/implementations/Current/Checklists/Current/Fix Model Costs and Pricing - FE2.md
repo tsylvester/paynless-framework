@@ -1263,10 +1263,10 @@
       * `[✅]`   ripgrep `model-limit-footer` on `AIModelSelectorList.tsx` returns zero matches
       * `[✅]`   ripgrep `Upgrade` on `AIModelSelectorList.tsx` only inside `TooltipContent` on row wrappers — no detached footer CTA
 
-    * `[ ]`   **Commit** `feat(dialectic) tier-gate model selection, catalog min_plan_tier_level, and subscription active semantics`
-      * `[ ]`   Structural changes: `AIModelCatalogEntry.min_plan_tier_level` in `@paynless/types`; `AIModelSelectorList.test.tsx` (new); `AIModelSelectorListProps` rename in `AIModelSelectorList.tsx`
-      * `[ ]`   Behavioral changes: `hasActiveSubscription` active-only (`subscriptionStore`, web mock, selectors, `CurrentSubscriptionCard`); tier/count gating on `AIModelSelector` and `AIModelSelectorList` via `useAuthStore().userTier`; optimistic `selectedModels` revert on `MODEL_TIER_DISALLOWED` / `MODEL_LIMIT_EXCEEDED` in `dialecticStore`
-      * `[ ]`   Contract changes: `SubscriptionStatus` JSDoc (Stripe wire vs application-active); `listModelCatalog` / `modelCatalog` rows include `min_plan_tier_level`; no change to `SubscriptionStatus` union members
+    * `[✅]`   **Commit** `feat(dialectic) tier-gate model selection, catalog min_plan_tier_level, and subscription active semantics`
+      * `[✅]`   Structural changes: `AIModelCatalogEntry.min_plan_tier_level` in `@paynless/types`; `AIModelSelectorList.test.tsx` (new); `AIModelSelectorListProps` rename in `AIModelSelectorList.tsx`
+      * `[✅]`   Behavioral changes: `hasActiveSubscription` active-only (`subscriptionStore`, web mock, selectors, `CurrentSubscriptionCard`); tier/count gating on `AIModelSelector` and `AIModelSelectorList` via `useAuthStore().userTier`; optimistic `selectedModels` revert on `MODEL_TIER_DISALLOWED` / `MODEL_LIMIT_EXCEEDED` in `dialecticStore`
+      * `[✅]`   Contract changes: `SubscriptionStatus` JSDoc (Stripe wire vs application-active); `listModelCatalog` / `modelCatalog` rows include `min_plan_tier_level`; no change to `SubscriptionStatus` union members
 
 * **Output clamp slider — user-selectable output token cap, bounded by tier maximum**
 

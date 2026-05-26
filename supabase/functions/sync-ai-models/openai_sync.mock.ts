@@ -5,6 +5,7 @@ import { DbAiProvider } from "./sync-ai-models.interface.ts";
 import type { MockProviderData } from "./sync_test_contract.ts";
 import { isJson } from "../_shared/utils/type_guards.ts";
 import { assert } from "jsr:@std/assert@0.225.3";
+import { mockDbAiProvider } from "./diffAndPrepareDbOps.mock.ts";
 
 /**
  * Checklist `Fix Model Costs and Pricing` — official headline USD per 1M tokens (input, output)
@@ -161,7 +162,7 @@ const assembledGptReactivate: FinalAppModelConfig = { api_identifier: `gpt-react
 
 const dbGpt4Config = createTestConfig('gpt-4-turbo');
 assert(isJson(dbGpt4Config), "dbGpt4Config must be valid JSON");
-const dbGpt4: DbAiProvider = {
+const dbGpt4: DbAiProvider = mockDbAiProvider({
     id: 'db-id-gpt-4',
     api_identifier: `gpt-4-turbo`,
     name: 'GPT-4 Turbo',
@@ -169,11 +170,11 @@ const dbGpt4: DbAiProvider = {
     is_active: true,
     provider: PROVIDER_NAME,
     config: dbGpt4Config,
-};
+});
 
 const dbStaleConfig = createTestConfig('gpt-stale');
 assert(isJson(dbStaleConfig), "dbStaleConfig must be valid JSON");
-const dbStale: DbAiProvider = {
+const dbStale: DbAiProvider = mockDbAiProvider({
     id: 'db-id-stale',
     api_identifier: `gpt-stale`,
     name: 'Stale Model',
@@ -181,11 +182,11 @@ const dbStale: DbAiProvider = {
     is_active: true,
     provider: PROVIDER_NAME,
     config: dbStaleConfig
-};
+});
 
 const dbInactiveConfig = createTestConfig('gpt-reactivate');
 assert(isJson(dbInactiveConfig), "dbInactiveConfig must be valid JSON");
-const dbInactive: DbAiProvider = {
+const dbInactive: DbAiProvider = mockDbAiProvider({
     id: 'db-id-inactive',
     api_identifier: `gpt-reactivate`,
     name: 'Reactivated',
@@ -193,7 +194,7 @@ const dbInactive: DbAiProvider = {
     is_active: false,
     provider: PROVIDER_NAME,
     config: dbInactiveConfig
-};
+});
 
 export const mockOpenAIData: MockProviderData = {
     apiModels: [assembledGpt4],

@@ -8,7 +8,7 @@ import { SyncResult, DbAiProvider } from './sync-ai-models.interface.ts';
 import { ConfigAssembler } from './config_assembler.ts';
 import { diffAndPrepareDbOps, executeDbOps } from './diffAndPrepareDbOps.ts';
 import { isJson } from "../_shared/utils/type_guards.ts";
-
+import { logger } from "../_shared/logger.ts";
 const PROVIDER_NAME = 'anthropic';
 
 // Tier 3 Data Source: Hardcoded internal map as a failsafe (API does not return full pricing/caps).
@@ -49,12 +49,6 @@ export interface SyncAnthropicDeps {
 // Default dependencies using actual implementations
 export const defaultSyncAnthropicDeps: SyncAnthropicDeps = {
   listProviderModels: async (apiKey: string) => {
-    const logger: ILogger = {
-      debug: (...args: unknown[]) => console.debug('[SyncAnthropic:AnthropicAdapter]', ...args),
-      info: (...args: unknown[]) => console.info('[SyncAnthropic:AnthropicAdapter]', ...args),
-      warn: (...args: unknown[]) => console.warn('[SyncAnthropic:AnthropicAdapter]', ...args),
-      error: (...args: unknown[]) => console.error('[SyncAnthropic:AnthropicAdapter]', ...args),
-    };
     // The adapter expects a provider row with a valid AiModelExtendedConfig.
     const minimalConfig: AiModelExtendedConfig = {
       api_identifier: 'anthropic-claude-3.5-sonnet-20240620',
@@ -78,6 +72,7 @@ export const defaultSyncAnthropicDeps: SyncAnthropicDeps = {
       is_default_embedding: false,
       is_enabled: true,
       is_default_generation: false,
+      min_plan_tier_level: 99,
     };
     const adapter = new AnthropicAdapter(dummyProvider, apiKey, logger);
     // We call with `getRaw: true` to get the detailed data for our logs.
@@ -124,7 +119,7 @@ export async function syncAnthropicModels(
     const { models: assembledModels, costProvenance } = await assembler.assemble();
 
     // Provider-specific hardening: ensure Anthropic chat models use official tokenizer strategy
-    const assembledConfigs: FinalAppModelConfig[] = assembledModels.map((cfg) => {
+    const assembledConfigs: FinalAppModelConfig[] = assembledModels.map((cfg: FinalAppModelConfig) => {
       const modelId = cfg.api_identifier.replace(/^anthropic-/i, '');
       const strat = cfg.config.tokenization_strategy;
       if (strat.type !== 'anthropic_tokenizer') {

@@ -1,21 +1,18 @@
-import { spy, assertSpyCall, assertSpyCalls } from "jsr:@std/testing@0.225.1/mock";
+import { spy, assertSpyCall } from "jsr:@std/testing@0.225.1/mock";
 import { assert, assertEquals, assertExists, assertMatch } from "jsr:@std/assert@0.225.3";
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 
-import { diffAndPrepareDbOps, executeDbOps, type DbOpLists } from "./diffAndPrepareDbOps.ts";
+import { diffAndPrepareDbOps, executeDbOps } from "./diffAndPrepareDbOps.ts";
+import type { DbAiProvider, DbOpLists } from "./sync-ai-models.interface.ts";
 import {
-    costProvenanceForAssembledConfigs,
-    createFinalAppModelConfig,
-    createTestConfig,
-    dbRowWithTier,
-    emptyCostProvenanceMap,
-    provenanceApi,
-    provenanceNone,
-    provenanceStaticMap,
-    singleCostProvenanceMap,
+    mockAiModelExtendedConfig,
+    mockCostProvenanceMap,
+    mockDbAiProvider,
+    mockFinalAppModelConfig,
+    mockModelCostProvenance,
 } from "./diffAndPrepareDbOps.mock.ts";
 import type { ModelCostProvenance } from "./config_assembler.interface.ts";
-import { DbAiProvider } from "./sync-ai-models.interface.ts";
+import type { Json } from "../types_db.ts";
 import type { FinalAppModelConfig } from "../_shared/types.ts";
 import type { AiModelExtendedConfig } from "../_shared/types.ts";
 import { createMockSupabaseClient, type MockSupabaseDataConfig } from "../_shared/supabase.mock.ts";
@@ -30,15 +27,14 @@ Deno.test("diffAndPrepareDbOps", async (t) => {
     await t.step("should identify new models for insertion", () => {
         const mockLogger = new MockLogger();
         const assembled: FinalAppModelConfig[] = [
-            createFinalAppModelConfig('model-1', 'Model 1'),
+            mockFinalAppModelConfig({ api_identifier: 'model-1', name: 'Model 1', description: 'Description for Model 1' }),
         ];
         const dbModels: DbAiProvider[] = [];
-        const costProvenanceByApiId: Map<string, ModelCostProvenance> = costProvenanceForAssembledConfigs(
-            assembled,
-            provenanceStaticMap(),
+        const costProvenanceByApiId: Map<string, ModelCostProvenance> = mockCostProvenanceMap(
+            assembled.map((model) => [model.api_identifier, mockModelCostProvenance()]),
         );
         assertEquals(costProvenanceByApiId.size, assembled.length);
-        assertEquals(costProvenanceByApiId.get("model-1"), provenanceStaticMap());
+        assertEquals(costProvenanceByApiId.get("model-1"), mockModelCostProvenance());
         const result = diffAndPrepareDbOps(assembled, dbModels, "test-provider", mockLogger, costProvenanceByApiId);
 
         assertEquals(result.modelsToInsert.length, 1);
@@ -50,19 +46,18 @@ Deno.test("diffAndPrepareDbOps", async (t) => {
     await t.step("should identify existing models for update", () => {
         const mockLogger = new MockLogger();
         const assembled: FinalAppModelConfig[] = [
-            createFinalAppModelConfig('model-1', 'Model One Updated'),
+            mockFinalAppModelConfig({ api_identifier: 'model-1', name: 'Model One Updated', description: 'Description for Model One Updated' }),
         ];
-        const testConfig = createTestConfig('model-1'); 
+        const testConfig = mockAiModelExtendedConfig({ api_identifier: 'model-1' }); 
         if(isJson(testConfig)) {
         const dbModels: DbAiProvider[] = [
-            { id: 'db-1', api_identifier: 'model-1', name: 'Model One', description: 'Description for Model One', is_active: true, provider: 'test-provider', config: testConfig }
+            mockDbAiProvider({ id: 'db-1', api_identifier: 'model-1', name: 'Model One', description: 'Description for Model One', is_active: true, provider: 'test-provider', config: testConfig })
         ];
-        const costProvenanceByApiId: Map<string, ModelCostProvenance> = costProvenanceForAssembledConfigs(
-            assembled,
-            provenanceStaticMap(),
+        const costProvenanceByApiId: Map<string, ModelCostProvenance> = mockCostProvenanceMap(
+            assembled.map((model) => [model.api_identifier, mockModelCostProvenance()]),
         );
         assertEquals(costProvenanceByApiId.size, assembled.length);
-        assertEquals(costProvenanceByApiId.get("model-1"), provenanceStaticMap());
+        assertEquals(costProvenanceByApiId.get("model-1"), mockModelCostProvenance());
         const result = diffAndPrepareDbOps(assembled, dbModels, "test-provider", mockLogger, costProvenanceByApiId);
 
         assertEquals(result.modelsToUpdate.length, 1);
@@ -76,12 +71,12 @@ Deno.test("diffAndPrepareDbOps", async (t) => {
     await t.step("should identify missing models for deactivation", () => {
         const mockLogger = new MockLogger();
         const assembled: FinalAppModelConfig[] = [];       
-        const testConfig = createTestConfig('model-1'); 
+        const testConfig = mockAiModelExtendedConfig({ api_identifier: 'model-1' }); 
         if(isJson(testConfig)) {
         const dbModels: DbAiProvider[] = [
-            { id: 'db-1', api_identifier: 'model-1', name: 'Model One', description: 'Description for Model One', is_active: true, provider: 'test-provider', config: testConfig }
+            mockDbAiProvider({ id: 'db-1', api_identifier: 'model-1', name: 'Model One', description: 'Description for Model One', is_active: true, provider: 'test-provider', config: testConfig })
         ];
-        const costProvenanceByApiId: Map<string, ModelCostProvenance> = emptyCostProvenanceMap();
+        const costProvenanceByApiId: Map<string, ModelCostProvenance> = mockCostProvenanceMap();
         assertEquals(costProvenanceByApiId.size, 0);
         const result = diffAndPrepareDbOps(assembled, dbModels, "test-provider", mockLogger, costProvenanceByApiId);
 
@@ -95,23 +90,22 @@ Deno.test("diffAndPrepareDbOps", async (t) => {
     await t.step("should handle a mix of insert, update, and deactivate", () => {
         const mockLogger = new MockLogger();
         const assembled: FinalAppModelConfig[] = [
-            createFinalAppModelConfig('model-1', 'Model One Updated'), // Update
-            createFinalAppModelConfig('model-2', 'Model Two'),       // Insert
+            mockFinalAppModelConfig({ api_identifier: 'model-1', name: 'Model One Updated', description: 'Description for Model One Updated' }), // Update
+            mockFinalAppModelConfig({ api_identifier: 'model-2', name: 'Model Two', description: 'Description for Model Two' }),       // Insert
         ];
-        const testConfig1 = createTestConfig('model-1');
-        const testConfig3 = createTestConfig('model-3');
+        const testConfig1 = mockAiModelExtendedConfig({ api_identifier: 'model-1' });
+        const testConfig3 = mockAiModelExtendedConfig({ api_identifier: 'model-3' });
         if(isJson(testConfig1) && isJson(testConfig3)) {
         const dbModels: DbAiProvider[] = [
-            { id: 'db-1', api_identifier: 'model-1', name: 'Model One', description: 'Description for Model One Updated', is_active: true, provider: 'test-provider', config: testConfig1 },
-            { id: 'db-3', api_identifier: 'model-3', name: 'Model Three', description: 'Description for Model Three', is_active: true, provider: 'test-provider', config: testConfig3 }, // Deactivate
+            mockDbAiProvider({ id: 'db-1', api_identifier: 'model-1', name: 'Model One', description: 'Description for Model One Updated', is_active: true, provider: 'test-provider', config: testConfig1 }),
+            mockDbAiProvider({ id: 'db-3', api_identifier: 'model-3', name: 'Model Three', description: 'Description for Model Three', is_active: true, provider: 'test-provider', config: testConfig3 }), // Deactivate
         ];
-        const costProvenanceByApiId: Map<string, ModelCostProvenance> = costProvenanceForAssembledConfigs(
-            assembled,
-            provenanceStaticMap(),
+        const costProvenanceByApiId: Map<string, ModelCostProvenance> = mockCostProvenanceMap(
+            assembled.map((model) => [model.api_identifier, mockModelCostProvenance()]),
         );
         assertEquals(costProvenanceByApiId.size, assembled.length);
-        assertEquals(costProvenanceByApiId.get("model-1"), provenanceStaticMap());
-        assertEquals(costProvenanceByApiId.get("model-2"), provenanceStaticMap());
+        assertEquals(costProvenanceByApiId.get("model-1"), mockModelCostProvenance());
+        assertEquals(costProvenanceByApiId.get("model-2"), mockModelCostProvenance());
         const result = diffAndPrepareDbOps(assembled, dbModels, "test-provider", mockLogger, costProvenanceByApiId);
 
         assertEquals(result.modelsToInsert.length, 1);
@@ -127,7 +121,7 @@ Deno.test("diffAndPrepareDbOps", async (t) => {
         const mockLogger = new MockLogger();
 
         // Create base configs that are valid AiModelExtendedConfig objects
-        const baseAssembledConfig = createTestConfig('model-1');
+        const baseAssembledConfig = mockAiModelExtendedConfig({ api_identifier: 'model-1' });
 
         // Introduce the key order difference and nested objects
         const assembledConfigWithReorder = { ...baseAssembledConfig, b: 2, a: 1, c: { y: 2, x: 1 } };
@@ -135,17 +129,16 @@ Deno.test("diffAndPrepareDbOps", async (t) => {
 
         if(isJson(dbConfigWithReorder)) {
             const assembled: FinalAppModelConfig[] = [
-                createFinalAppModelConfig('model-1', 'Model One', assembledConfigWithReorder)
+                mockFinalAppModelConfig({ api_identifier: 'model-1', name: 'Model One', description: 'Description for Model One', config: assembledConfigWithReorder })
             ];
             const dbModels: DbAiProvider[] = [
-                { id: 'db-1', api_identifier: 'model-1', name: 'Model One', description: 'Description for Model One', is_active: true, provider: 'test-provider', config: dbConfigWithReorder }
+                mockDbAiProvider({ id: 'db-1', api_identifier: 'model-1', name: 'Model One', description: 'Description for Model One', is_active: true, provider: 'test-provider', config: dbConfigWithReorder })
             ];
-            const costProvenanceByApiId: Map<string, ModelCostProvenance> = costProvenanceForAssembledConfigs(
-                assembled,
-                provenanceStaticMap(),
+            const costProvenanceByApiId: Map<string, ModelCostProvenance> = mockCostProvenanceMap(
+                assembled.map((model) => [model.api_identifier, mockModelCostProvenance()]),
             );
             assertEquals(costProvenanceByApiId.size, assembled.length);
-            assertEquals(costProvenanceByApiId.get("model-1"), provenanceStaticMap());
+            assertEquals(costProvenanceByApiId.get("model-1"), mockModelCostProvenance());
             const result = diffAndPrepareDbOps(assembled, dbModels, "test-provider", mockLogger, costProvenanceByApiId);
     
             assertEquals(result.modelsToUpdate.length, 0, "Should not queue an update for reordered keys");
@@ -158,13 +151,16 @@ Deno.test("diffAndPrepareDbOps", async (t) => {
         // 1. Setup: Replicate the exact error from the logs.
         // The assembled config is valid, but the DB config is missing the 'model' property in its strategy.
         const assembled: FinalAppModelConfig[] = [
-            createFinalAppModelConfig('anthropic-model-1', 'Anthropic Model 1', { 
-                tokenization_strategy: { type: 'anthropic_tokenizer', model: 'claude-3-opus-20240229' } 
+            mockFinalAppModelConfig({
+                api_identifier: 'anthropic-model-1',
+                name: 'Anthropic Model 1',
+                description: 'Description for Anthropic Model 1',
+                config: { tokenization_strategy: { type: 'anthropic_tokenizer', model: 'claude-3-opus-20240229' } },
             }),
         ];
         
         const invalidDbConfig = { 
-            ...createTestConfig('anthropic-model-1'),
+            ...mockAiModelExtendedConfig({ api_identifier: 'anthropic-model-1' }),
             tokenization_strategy: { type: 'anthropic_tokenizer' } // Missing 'model' property
         };
 
@@ -174,16 +170,15 @@ Deno.test("diffAndPrepareDbOps", async (t) => {
 
         if (isJson(invalidDbConfig)) {
             const dbModels: DbAiProvider[] = [
-                { id: 'db-anthropic-invalid', api_identifier: 'anthropic-model-1', name: 'Anthropic Model 1', description: '', is_active: true, provider: 'anthropic', config: invalidDbConfig }
+                mockDbAiProvider({ id: 'db-anthropic-invalid', api_identifier: 'anthropic-model-1', name: 'Anthropic Model 1', description: '', is_active: true, provider: 'anthropic', config: invalidDbConfig })
             ];
 
             // 2. Action: Run the diff.
-            const costProvenanceByApiId: Map<string, ModelCostProvenance> = costProvenanceForAssembledConfigs(
-                assembled,
-                provenanceApi(),
+            const costProvenanceByApiId: Map<string, ModelCostProvenance> = mockCostProvenanceMap(
+                assembled.map((model) => [model.api_identifier, mockModelCostProvenance({ input_source: "api", output_source: "api" })]),
             );
             assertEquals(costProvenanceByApiId.size, assembled.length);
-            assertEquals(costProvenanceByApiId.get("anthropic-model-1"), provenanceApi());
+            assertEquals(costProvenanceByApiId.get("anthropic-model-1"), mockModelCostProvenance({ input_source: "api", output_source: "api" }));
             const result = diffAndPrepareDbOps(assembled, dbModels, "anthropic", mockLogger, costProvenanceByApiId);
 
             if (isJson(assembled[0].config)) {
@@ -279,13 +274,16 @@ Deno.test({
         // 1. Setup: Replicate the exact known error. The assembler provides a valid config.
         // The database holds a config that is invalid because it violates the Zod schema.
         const assembled: FinalAppModelConfig[] = [
-            createFinalAppModelConfig('anthropic-model-1', 'Anthropic Model 1', { 
-                tokenization_strategy: { type: 'anthropic_tokenizer', model: 'claude-3-opus-20240229' } 
+            mockFinalAppModelConfig({
+                api_identifier: 'anthropic-model-1',
+                name: 'Anthropic Model 1',
+                description: 'Description for Anthropic Model 1',
+                config: { tokenization_strategy: { type: 'anthropic_tokenizer', model: 'claude-3-opus-20240229' } },
             }),
         ];
         
         const invalidDbConfig = { 
-            ...createTestConfig('anthropic-model-1'),
+            ...mockAiModelExtendedConfig({ api_identifier: 'anthropic-model-1' }),
             // This is the specific invalid structure found in the wild.
             tokenization_strategy: { type: 'anthropic_tokenizer' } // It's missing the 'model' property.
         };
@@ -295,16 +293,15 @@ Deno.test({
 
         if (isJson(invalidDbConfig)) {
             const dbModels: DbAiProvider[] = [
-                { id: 'db-anthropic-invalid', api_identifier: 'anthropic-model-1', name: 'Anthropic Model 1', description: '', is_active: true, provider: 'anthropic', config: invalidDbConfig }
+                mockDbAiProvider({ id: 'db-anthropic-invalid', api_identifier: 'anthropic-model-1', name: 'Anthropic Model 1', description: '', is_active: true, provider: 'anthropic', config: invalidDbConfig })
             ];
 
             // 2. Action: Run the diffing logic.
-            const costProvenanceByApiId: Map<string, ModelCostProvenance> = costProvenanceForAssembledConfigs(
-                assembled,
-                provenanceApi(),
+            const costProvenanceByApiId: Map<string, ModelCostProvenance> = mockCostProvenanceMap(
+                assembled.map((model) => [model.api_identifier, mockModelCostProvenance({ input_source: "api", output_source: "api" })]),
             );
             assertEquals(costProvenanceByApiId.size, assembled.length);
-            assertEquals(costProvenanceByApiId.get("anthropic-model-1"), provenanceApi());
+            assertEquals(costProvenanceByApiId.get("anthropic-model-1"), mockModelCostProvenance({ input_source: "api", output_source: "api" }));
             const result = diffAndPrepareDbOps(assembled, dbModels, "anthropic", mockLogger, costProvenanceByApiId);
 
             // 3. Assertion: This MUST queue an update. The ONLY way to guarantee this is to
@@ -326,16 +323,18 @@ Deno.test({
         // and the API returns no cost data. The model exists and must be inserted disabled
         // with 99 tier until a maintainer configures it.
         const assembled: FinalAppModelConfig[] = [
-            createFinalAppModelConfig('anthropic-model-1', 'Anthropic Model 1', {
-                input_token_cost_rate: null,
-                output_token_cost_rate: null,
+            mockFinalAppModelConfig({
+                api_identifier: 'anthropic-model-1',
+                name: 'Anthropic Model 1',
+                description: 'Description for Anthropic Model 1',
+                config: { input_token_cost_rate: null, output_token_cost_rate: null },
             }),
         ];
 
         const dbModels: DbAiProvider[] = [];
 
         const costProvenanceByApiId: Map<string, ModelCostProvenance> =
-            singleCostProvenanceMap('anthropic-model-1', provenanceNone());
+            mockCostProvenanceMap([['anthropic-model-1', mockModelCostProvenance({ input_source: "none", output_source: "none" })]]);
         const result = diffAndPrepareDbOps(assembled, dbModels, "anthropic", mockLogger, costProvenanceByApiId);
 
         assertEquals(result.modelsToInsert.length, 1);
@@ -351,29 +350,28 @@ Deno.test({
         const mockLogger = new MockLogger();
 
         // 1. Setup: The assembled config is VALID.
-        const validConfig = createTestConfig('anthropic-model-1');
+        const validConfig: AiModelExtendedConfig = mockAiModelExtendedConfig({ api_identifier: 'anthropic-model-1' });
         const assembled: FinalAppModelConfig[] = [
-            createFinalAppModelConfig('anthropic-model-1', 'Anthropic Model 1', validConfig)
+            mockFinalAppModelConfig({ api_identifier: 'anthropic-model-1', name: 'Anthropic Model 1', description: 'Description for Anthropic Model 1', config: validConfig })
         ];
         
         // 2. The DB config is INVALID.
         const invalidDbConfig = { 
-            ...createTestConfig('anthropic-model-1'),
+            ...mockAiModelExtendedConfig({ api_identifier: 'anthropic-model-1' }),
             tokenization_strategy: { type: 'anthropic_tokenizer' } // Missing 'model' property
         };
 
         if (isJson(invalidDbConfig)) {
             const dbModels: DbAiProvider[] = [
-                { id: 'db-anthropic-invalid', api_identifier: 'anthropic-model-1', name: 'Anthropic Model 1', description: '', is_active: true, provider: 'anthropic', config: invalidDbConfig }
+                mockDbAiProvider({ id: 'db-anthropic-invalid', api_identifier: 'anthropic-model-1', name: 'Anthropic Model 1', description: '', is_active: true, provider: 'anthropic', config: invalidDbConfig })
             ];
 
             // 3. Action: Run the diff.
-            const costProvenanceByApiId: Map<string, ModelCostProvenance> = costProvenanceForAssembledConfigs(
-                assembled,
-                provenanceApi(),
+            const costProvenanceByApiId: Map<string, ModelCostProvenance> = mockCostProvenanceMap(
+                assembled.map((model) => [model.api_identifier, mockModelCostProvenance({ input_source: "api", output_source: "api" })]),
             );
             assertEquals(costProvenanceByApiId.size, assembled.length);
-            assertEquals(costProvenanceByApiId.get("anthropic-model-1"), provenanceApi());
+            assertEquals(costProvenanceByApiId.get("anthropic-model-1"), mockModelCostProvenance({ input_source: "api", output_source: "api" }));
             const result = diffAndPrepareDbOps(assembled, dbModels, "anthropic", mockLogger, costProvenanceByApiId);
 
             // 4. Assertion: The function must detect the invalid DB record and queue an update.
@@ -392,7 +390,7 @@ Deno.test({
 
         // 1. Setup: An invalid config object, replicating the known error.
         const invalidConfig = { 
-            ...createTestConfig('anthropic-model-1'),
+            ...mockAiModelExtendedConfig({ api_identifier: 'anthropic-model-1' }),
             tokenization_strategy: { type: 'anthropic_tokenizer' }
         };
 
@@ -405,20 +403,20 @@ Deno.test({
         
         // 4. Scenario: The assembled config is VALID.
         const assembled: FinalAppModelConfig[] = [
-            createFinalAppModelConfig('anthropic-model-1', 'Anthropic Model 1', createTestConfig('anthropic-model-1'))
+            mockFinalAppModelConfig({ api_identifier: 'anthropic-model-1', name: 'Anthropic Model 1', description: 'Description for Anthropic Model 1', config: mockAiModelExtendedConfig({ api_identifier: 'anthropic-model-1' }) })
         ];
         if (isJson(invalidConfig)) {
+            const invalidConfigJson: Json = invalidConfig;
             const dbModels: DbAiProvider[] = [
-                { id: 'db-anthropic-invalid', api_identifier: 'anthropic-model-1', name: 'Anthropic Model 1', description: '', is_active: true, provider: 'anthropic', config: invalidConfig }
+                mockDbAiProvider({ id: 'db-anthropic-invalid', api_identifier: 'anthropic-model-1', name: 'Anthropic Model 1', description: '', is_active: true, provider: 'anthropic', config: invalidConfigJson })
             ];
 
             // 5. Action: Run the diff.
-            const costProvenanceByApiId: Map<string, ModelCostProvenance> = costProvenanceForAssembledConfigs(
-                assembled,
-                provenanceApi(),
+            const costProvenanceByApiId: Map<string, ModelCostProvenance> = mockCostProvenanceMap(
+                assembled.map((model) => [model.api_identifier, mockModelCostProvenance({ input_source: "api", output_source: "api" })]),
             );
             assertEquals(costProvenanceByApiId.size, assembled.length);
-            assertEquals(costProvenanceByApiId.get("anthropic-model-1"), provenanceApi());
+            assertEquals(costProvenanceByApiId.get("anthropic-model-1"), mockModelCostProvenance({ input_source: "api", output_source: "api" }));
             const result = diffAndPrepareDbOps(assembled, dbModels, "anthropic", mockLogger, costProvenanceByApiId);
 
             // 6. FINAL PROOF OF CORRECTNESS: This assertion will now pass.
@@ -436,26 +434,28 @@ Deno.test({
         const mockLogger = new MockLogger();
 
         const assembled: FinalAppModelConfig[] = [
-            createFinalAppModelConfig('anthropic-model-1', 'Anthropic Model 1', { 
-                tokenization_strategy: { type: 'anthropic_tokenizer', model: 'claude-3-opus-20240229' } 
+            mockFinalAppModelConfig({
+                api_identifier: 'anthropic-model-1',
+                name: 'Anthropic Model 1',
+                description: 'Description for Anthropic Model 1',
+                config: { tokenization_strategy: { type: 'anthropic_tokenizer', model: 'claude-3-opus-20240229' } },
             }),
         ];
         
         const invalidDbConfig = { 
-            ...createTestConfig('anthropic-model-1'),
+            ...mockAiModelExtendedConfig({ api_identifier: 'anthropic-model-1' }),
             tokenization_strategy: { type: 'anthropic_tokenizer' } // Missing 'model' property
         };
 
         const dbModels: DbAiProvider[] = [
-            { id: 'db-anthropic-invalid', api_identifier: 'anthropic-model-1', name: 'Anthropic Model 1', description: '', is_active: true, provider: 'anthropic', config: invalidDbConfig}
+            mockDbAiProvider({ id: 'db-anthropic-invalid', api_identifier: 'anthropic-model-1', name: 'Anthropic Model 1', description: '', is_active: true, provider: 'anthropic', config: invalidDbConfig })
         ];
 
-        const costProvenanceByApiId: Map<string, ModelCostProvenance> = costProvenanceForAssembledConfigs(
-            assembled,
-            provenanceApi(),
+        const costProvenanceByApiId: Map<string, ModelCostProvenance> = mockCostProvenanceMap(
+            assembled.map((model) => [model.api_identifier, mockModelCostProvenance({ input_source: "api", output_source: "api" })]),
         );
         assertEquals(costProvenanceByApiId.size, assembled.length);
-        assertEquals(costProvenanceByApiId.get("anthropic-model-1"), provenanceApi());
+        assertEquals(costProvenanceByApiId.get("anthropic-model-1"), mockModelCostProvenance({ input_source: "api", output_source: "api" }));
         const result = diffAndPrepareDbOps(assembled, dbModels, "anthropic", mockLogger, costProvenanceByApiId);
 
         assertEquals(result.modelsToUpdate.length, 1, "The function failed to queue an update for a schema-invalid database record.");
@@ -469,37 +469,37 @@ Deno.test({
         const mockLogger = new MockLogger();
 
         // 1. The assembled config is INVALID.
-        const invalidAssembledModel: FinalAppModelConfig = createFinalAppModelConfig(
-            'anthropic-model-1', 
-            'Invalid Assembled Model', 
-            { tokenization_strategy: { type: 'anthropic_tokenizer' } } as unknown as Partial<AiModelExtendedConfig> // Missing 'model'
-        );
+        const invalidAssembledModel: FinalAppModelConfig = mockFinalAppModelConfig({
+            api_identifier: 'anthropic-model-1',
+            name: 'Invalid Assembled Model',
+            description: 'Description for Invalid Assembled Model',
+            config: { context_window_tokens: -1 },
+        });
         
         // 2. The database config is ALSO INVALID, with a different (or same) error.
         const invalidDbConfig = { 
-            ...createTestConfig('anthropic-model-1'),
+            ...mockAiModelExtendedConfig({ api_identifier: 'anthropic-model-1' }),
             context_window_tokens: -1 // Invalid value
         };
 
         const dbModels: DbAiProvider[] = [
-            { 
-                id: 'db-anthropic-invalid', 
-                api_identifier: 'anthropic-model-1', 
-                name: 'Corrupt DB Model', 
-                description: '', 
-                is_active: true, 
-                provider: 'anthropic', 
-                config: invalidDbConfig
-            }
+            mockDbAiProvider({
+                id: 'db-anthropic-invalid',
+                api_identifier: 'anthropic-model-1',
+                name: 'Corrupt DB Model',
+                description: '',
+                is_active: true,
+                provider: 'anthropic',
+                config: invalidDbConfig,
+            }),
         ];
 
         // 3. Action
-        const costProvenanceByApiId: Map<string, ModelCostProvenance> = costProvenanceForAssembledConfigs(
-            [invalidAssembledModel],
-            provenanceNone(),
+        const costProvenanceByApiId: Map<string, ModelCostProvenance> = mockCostProvenanceMap(
+            [[invalidAssembledModel.api_identifier, mockModelCostProvenance({ input_source: "none", output_source: "none" })]],
         );
         assertEquals(costProvenanceByApiId.size, 1);
-        assertEquals(costProvenanceByApiId.get("anthropic-model-1"), provenanceNone());
+        assertEquals(costProvenanceByApiId.get("anthropic-model-1"), mockModelCostProvenance({ input_source: "none", output_source: "none" }));
         const result = diffAndPrepareDbOps([invalidAssembledModel], dbModels, "anthropic", mockLogger, costProvenanceByApiId);
 
         // 4. Assertion: The irreparable model should be queued for an UPDATE that
@@ -532,22 +532,26 @@ Deno.test({
         // error that causes `update-seed.ts` to fail.
         const invalidDbConfig = {
             api_identifier: 'obsolete-anthropic-model',
-            tokenization_strategy: { type: 'anthropic_tokenizer' }, // Missing 'model'
-            // Other fields are irrelevant as the structure itself is invalid.
+            tokenization_strategy: { type: 'anthropic_tokenizer' },
         };
-
-        const dbModels: DbAiProvider[] = [{
-            id: 'db-obsolete-invalid',
-            api_identifier: 'obsolete-anthropic-model',
-            name: 'Obsolete Invalid Model',
-            provider: 'anthropic',
-            is_active: true,
-            description: '',
-            config: invalidDbConfig as any, // Cast to bypass TS for the test
-        }];
+        if (!isJson(invalidDbConfig)) {
+            assert(false, "invalidDbConfig must be JSON");
+            return;
+        }
+        const dbModels: DbAiProvider[] = [
+            mockDbAiProvider({
+                id: 'db-obsolete-invalid',
+                api_identifier: 'obsolete-anthropic-model',
+                name: 'Obsolete Invalid Model',
+                provider: 'anthropic',
+                is_active: true,
+                description: '',
+                config: invalidDbConfig,
+            }),
+        ];
 
         // 3. ACTION: Run the diff logic.
-        const costProvenanceByApiId: Map<string, ModelCostProvenance> = emptyCostProvenanceMap();
+        const costProvenanceByApiId: Map<string, ModelCostProvenance> = mockCostProvenanceMap();
         assertEquals(costProvenanceByApiId.size, 0);
         const result = diffAndPrepareDbOps(assembledConfigs, dbModels, "anthropic", mockLogger, costProvenanceByApiId);
 
@@ -571,7 +575,7 @@ Deno.test("diffAndPrepareDbOps — cost provenance and min_plan_tier_level (chec
     await t.step("assembled provenance none preserves existing DB cost fields; other fields still update", () => {
         const mockLogger: MockLogger = new MockLogger();
         const apiIdentifier: string = "provenance-none-preserve-1";
-        const dbConfig: AiModelExtendedConfig = createTestConfig(apiIdentifier);
+        const dbConfig: AiModelExtendedConfig = mockAiModelExtendedConfig({ api_identifier: apiIdentifier });
         dbConfig.input_token_cost_rate = 0.5;
         dbConfig.output_token_cost_rate = 3.0;
         if (!isJson(dbConfig)) {
@@ -579,14 +583,18 @@ Deno.test("diffAndPrepareDbOps — cost provenance and min_plan_tier_level (chec
             return;
         }
         const assembledConfigs: FinalAppModelConfig[] = [
-            createFinalAppModelConfig(apiIdentifier, "Renamed Display Name", {
-                input_token_cost_rate: 15,
-                output_token_cost_rate: 75,
-                context_window_tokens: 16384,
+            mockFinalAppModelConfig({
+                api_identifier: apiIdentifier,
+                name: "Renamed Display Name",
+                config: {
+                    input_token_cost_rate: 15,
+                    output_token_cost_rate: 75,
+                    context_window_tokens: 16384,
+                },
             }),
         ];
         const dbModels: DbAiProvider[] = [
-            {
+            mockDbAiProvider({
                 id: "db-prov-none-1",
                 api_identifier: apiIdentifier,
                 name: "Old Name",
@@ -594,12 +602,12 @@ Deno.test("diffAndPrepareDbOps — cost provenance and min_plan_tier_level (chec
                 is_active: true,
                 provider: "test-provider",
                 config: dbConfig,
-            },
+            }),
         ];
         const costProvenanceByApiId: Map<string, ModelCostProvenance> =
-            singleCostProvenanceMap(apiIdentifier, provenanceNone());
+            mockCostProvenanceMap([[apiIdentifier, mockModelCostProvenance({ input_source: "none", output_source: "none" })]]);
         assertEquals(costProvenanceByApiId.size, assembledConfigs.length);
-        assertEquals(costProvenanceByApiId.get(apiIdentifier), provenanceNone());
+        assertEquals(costProvenanceByApiId.get(apiIdentifier), mockModelCostProvenance({ input_source: "none", output_source: "none" }));
         const result: DbOpLists = diffAndPrepareDbOps(
             assembledConfigs,
             dbModels,
@@ -621,7 +629,7 @@ Deno.test("diffAndPrepareDbOps — cost provenance and min_plan_tier_level (chec
     await t.step("assembled provenance static_map updates cost fields from assembled config", () => {
         const mockLogger: MockLogger = new MockLogger();
         const apiIdentifier: string = "provenance-static-1";
-        const dbConfig: AiModelExtendedConfig = createTestConfig(apiIdentifier);
+        const dbConfig: AiModelExtendedConfig = mockAiModelExtendedConfig({ api_identifier: apiIdentifier });
         dbConfig.input_token_cost_rate = 0.1;
         dbConfig.output_token_cost_rate = 0.2;
         if (!isJson(dbConfig)) {
@@ -629,13 +637,14 @@ Deno.test("diffAndPrepareDbOps — cost provenance and min_plan_tier_level (chec
             return;
         }
         const assembledConfigs: FinalAppModelConfig[] = [
-            createFinalAppModelConfig(apiIdentifier, "Same Name", {
-                input_token_cost_rate: 9,
-                output_token_cost_rate: 8,
+            mockFinalAppModelConfig({
+                api_identifier: apiIdentifier,
+                name: "Same Name",
+                config: { input_token_cost_rate: 9, output_token_cost_rate: 8 },
             }),
         ];
         const dbModels: DbAiProvider[] = [
-            {
+            mockDbAiProvider({
                 id: "db-static-1",
                 api_identifier: apiIdentifier,
                 name: "Same Name",
@@ -643,12 +652,12 @@ Deno.test("diffAndPrepareDbOps — cost provenance and min_plan_tier_level (chec
                 is_active: true,
                 provider: "test-provider",
                 config: dbConfig,
-            },
+            }),
         ];
         const costProvenanceByApiId: Map<string, ModelCostProvenance> =
-            singleCostProvenanceMap(apiIdentifier, provenanceStaticMap());
+            mockCostProvenanceMap([[apiIdentifier, mockModelCostProvenance()]]);
         assertEquals(costProvenanceByApiId.size, assembledConfigs.length);
-        assertEquals(costProvenanceByApiId.get(apiIdentifier), provenanceStaticMap());
+        assertEquals(costProvenanceByApiId.get(apiIdentifier), mockModelCostProvenance());
         const result: DbOpLists = diffAndPrepareDbOps(
             assembledConfigs,
             dbModels,
@@ -668,7 +677,7 @@ Deno.test("diffAndPrepareDbOps — cost provenance and min_plan_tier_level (chec
     await t.step("assembled provenance api updates cost fields from assembled config", () => {
         const mockLogger: MockLogger = new MockLogger();
         const apiIdentifier: string = "provenance-api-1";
-        const dbConfig: AiModelExtendedConfig = createTestConfig(apiIdentifier);
+        const dbConfig: AiModelExtendedConfig = mockAiModelExtendedConfig({ api_identifier: apiIdentifier });
         dbConfig.input_token_cost_rate = 1;
         dbConfig.output_token_cost_rate = 1;
         if (!isJson(dbConfig)) {
@@ -676,13 +685,14 @@ Deno.test("diffAndPrepareDbOps — cost provenance and min_plan_tier_level (chec
             return;
         }
         const assembledConfigs: FinalAppModelConfig[] = [
-            createFinalAppModelConfig(apiIdentifier, "Same", {
-                input_token_cost_rate: 4,
-                output_token_cost_rate: 6,
+            mockFinalAppModelConfig({
+                api_identifier: apiIdentifier,
+                name: "Same",
+                config: { input_token_cost_rate: 4, output_token_cost_rate: 6 },
             }),
         ];
         const dbModels: DbAiProvider[] = [
-            {
+            mockDbAiProvider({
                 id: "db-api-1",
                 api_identifier: apiIdentifier,
                 name: "Same",
@@ -690,12 +700,12 @@ Deno.test("diffAndPrepareDbOps — cost provenance and min_plan_tier_level (chec
                 is_active: true,
                 provider: "test-provider",
                 config: dbConfig,
-            },
+            }),
         ];
         const costProvenanceByApiId: Map<string, ModelCostProvenance> =
-            singleCostProvenanceMap(apiIdentifier, provenanceApi());
+            mockCostProvenanceMap([[apiIdentifier, mockModelCostProvenance({ input_source: "api", output_source: "api" })]]);
         assertEquals(costProvenanceByApiId.size, assembledConfigs.length);
-        assertEquals(costProvenanceByApiId.get(apiIdentifier), provenanceApi());
+        assertEquals(costProvenanceByApiId.get(apiIdentifier), mockModelCostProvenance({ input_source: "api", output_source: "api" }));
         const result: DbOpLists = diffAndPrepareDbOps(
             assembledConfigs,
             dbModels,
@@ -717,16 +727,17 @@ Deno.test("diffAndPrepareDbOps — cost provenance and min_plan_tier_level (chec
         const errorSpy = spy(mockLogger, "error");
         const apiIdentifier: string = "insert-none-alarm-1";
         const assembledConfigs: FinalAppModelConfig[] = [
-            createFinalAppModelConfig(apiIdentifier, "New Model None", {
-                input_token_cost_rate: null,
-                output_token_cost_rate: null,
+            mockFinalAppModelConfig({
+                api_identifier: apiIdentifier,
+                name: "New Model None",
+                config: { input_token_cost_rate: null, output_token_cost_rate: null },
             }),
         ];
         const dbModels: DbAiProvider[] = [];
         const costProvenanceByApiId: Map<string, ModelCostProvenance> =
-            singleCostProvenanceMap(apiIdentifier, provenanceNone());
+            mockCostProvenanceMap([[apiIdentifier, mockModelCostProvenance({ input_source: "none", output_source: "none" })]]);
         assertEquals(costProvenanceByApiId.size, assembledConfigs.length);
-        assertEquals(costProvenanceByApiId.get(apiIdentifier), provenanceNone());
+        assertEquals(costProvenanceByApiId.get(apiIdentifier), mockModelCostProvenance({ input_source: "none", output_source: "none" }));
         const result: DbOpLists = diffAndPrepareDbOps(
             assembledConfigs,
             dbModels,
@@ -757,16 +768,17 @@ Deno.test("diffAndPrepareDbOps — cost provenance and min_plan_tier_level (chec
         const mockLogger: MockLogger = new MockLogger();
         const apiIdentifier: string = "insert-static-enabled-1";
         const assembledConfigs: FinalAppModelConfig[] = [
-            createFinalAppModelConfig(apiIdentifier, "New Static", {
-                input_token_cost_rate: 1,
-                output_token_cost_rate: 2,
+            mockFinalAppModelConfig({
+                api_identifier: apiIdentifier,
+                name: "New Static",
+                config: { input_token_cost_rate: 1, output_token_cost_rate: 2 },
             }),
         ];
         const dbModels: DbAiProvider[] = [];
         const costProvenanceByApiId: Map<string, ModelCostProvenance> =
-            singleCostProvenanceMap(apiIdentifier, provenanceStaticMap());
+            mockCostProvenanceMap([[apiIdentifier, mockModelCostProvenance()]]);
         assertEquals(costProvenanceByApiId.size, assembledConfigs.length);
-        assertEquals(costProvenanceByApiId.get(apiIdentifier), provenanceStaticMap());
+        assertEquals(costProvenanceByApiId.get(apiIdentifier), mockModelCostProvenance());
         const result: DbOpLists = diffAndPrepareDbOps(
             assembledConfigs,
             dbModels,
@@ -794,16 +806,17 @@ Deno.test("diffAndPrepareDbOps — cost provenance and min_plan_tier_level (chec
         const infoSpy = spy(mockLogger, "info");
         const apiIdentifier: string = "tier-band-free-1";
         const assembledConfigs: FinalAppModelConfig[] = [
-            createFinalAppModelConfig(apiIdentifier, "Tier Free", {
-                input_token_cost_rate: 1,
-                output_token_cost_rate: 3.0,
+            mockFinalAppModelConfig({
+                api_identifier: apiIdentifier,
+                name: "Tier Free",
+                config: { input_token_cost_rate: 1, output_token_cost_rate: 3.0 },
             }),
         ];
         const dbModels: DbAiProvider[] = [];
         const costProvenanceByApiId: Map<string, ModelCostProvenance> =
-            singleCostProvenanceMap(apiIdentifier, provenanceStaticMap());
+            mockCostProvenanceMap([[apiIdentifier, mockModelCostProvenance()]]);
         assertEquals(costProvenanceByApiId.size, assembledConfigs.length);
-        assertEquals(costProvenanceByApiId.get(apiIdentifier), provenanceStaticMap());
+        assertEquals(costProvenanceByApiId.get(apiIdentifier), mockModelCostProvenance());
         const result: DbOpLists = diffAndPrepareDbOps(
             assembledConfigs,
             dbModels,
@@ -829,16 +842,17 @@ Deno.test("diffAndPrepareDbOps — cost provenance and min_plan_tier_level (chec
         const infoSpy = spy(mockLogger, "info");
         const apiIdentifier: string = "tier-band-basic-1";
         const assembledConfigs: FinalAppModelConfig[] = [
-            createFinalAppModelConfig(apiIdentifier, "Tier Basic", {
-                input_token_cost_rate: 1,
-                output_token_cost_rate: 15.0,
+            mockFinalAppModelConfig({
+                api_identifier: apiIdentifier,
+                name: "Tier Basic",
+                config: { input_token_cost_rate: 1, output_token_cost_rate: 15.0 },
             }),
         ];
         const dbModels: DbAiProvider[] = [];
         const costProvenanceByApiId: Map<string, ModelCostProvenance> =
-            singleCostProvenanceMap(apiIdentifier, provenanceStaticMap());
+            mockCostProvenanceMap([[apiIdentifier, mockModelCostProvenance()]]);
         assertEquals(costProvenanceByApiId.size, assembledConfigs.length);
-        assertEquals(costProvenanceByApiId.get(apiIdentifier), provenanceStaticMap());
+        assertEquals(costProvenanceByApiId.get(apiIdentifier), mockModelCostProvenance());
         const result: DbOpLists = diffAndPrepareDbOps(
             assembledConfigs,
             dbModels,
@@ -863,16 +877,17 @@ Deno.test("diffAndPrepareDbOps — cost provenance and min_plan_tier_level (chec
         const infoSpy = spy(mockLogger, "info");
         const apiIdentifier: string = "tier-band-premium-1";
         const assembledConfigs: FinalAppModelConfig[] = [
-            createFinalAppModelConfig(apiIdentifier, "Tier Premium", {
-                input_token_cost_rate: 1,
-                output_token_cost_rate: 25.0,
+            mockFinalAppModelConfig({
+                api_identifier: apiIdentifier,
+                name: "Tier Premium",
+                config: { input_token_cost_rate: 1, output_token_cost_rate: 25.0 },
             }),
         ];
         const dbModels: DbAiProvider[] = [];
         const costProvenanceByApiId: Map<string, ModelCostProvenance> =
-            singleCostProvenanceMap(apiIdentifier, provenanceStaticMap());
+            mockCostProvenanceMap([[apiIdentifier, mockModelCostProvenance()]]);
         assertEquals(costProvenanceByApiId.size, assembledConfigs.length);
-        assertEquals(costProvenanceByApiId.get(apiIdentifier), provenanceStaticMap());
+        assertEquals(costProvenanceByApiId.get(apiIdentifier), mockModelCostProvenance());
         const result: DbOpLists = diffAndPrepareDbOps(
             assembledConfigs,
             dbModels,
@@ -897,16 +912,17 @@ Deno.test("diffAndPrepareDbOps — cost provenance and min_plan_tier_level (chec
         const infoSpy = spy(mockLogger, "info");
         const apiIdentifier: string = "tier-band-premium-high-1";
         const assembledConfigs: FinalAppModelConfig[] = [
-            createFinalAppModelConfig(apiIdentifier, "Tier Premium High", {
-                input_token_cost_rate: 1,
-                output_token_cost_rate: 75.0,
+            mockFinalAppModelConfig({
+                api_identifier: apiIdentifier,
+                name: "Tier Premium High",
+                config: { input_token_cost_rate: 1, output_token_cost_rate: 75.0 },
             }),
         ];
         const dbModels: DbAiProvider[] = [];
         const costProvenanceByApiId: Map<string, ModelCostProvenance> =
-            singleCostProvenanceMap(apiIdentifier, provenanceStaticMap());
+            mockCostProvenanceMap([[apiIdentifier, mockModelCostProvenance()]]);
         assertEquals(costProvenanceByApiId.size, assembledConfigs.length);
-        assertEquals(costProvenanceByApiId.get(apiIdentifier), provenanceStaticMap());
+        assertEquals(costProvenanceByApiId.get(apiIdentifier), mockModelCostProvenance());
         const result: DbOpLists = diffAndPrepareDbOps(
             assembledConfigs,
             dbModels,
@@ -931,16 +947,17 @@ Deno.test("diffAndPrepareDbOps — cost provenance and min_plan_tier_level (chec
         const infoSpy = spy(mockLogger, "info");
         const apiIdentifier: string = "tier-null-output-1";
         const assembledConfigs: FinalAppModelConfig[] = [
-            createFinalAppModelConfig(apiIdentifier, "Unknown Cost", {
-                input_token_cost_rate: null,
-                output_token_cost_rate: null,
+            mockFinalAppModelConfig({
+                api_identifier: apiIdentifier,
+                name: "Unknown Cost",
+                config: { input_token_cost_rate: null, output_token_cost_rate: null },
             }),
         ];
         const dbModels: DbAiProvider[] = [];    
         const costProvenanceByApiId: Map<string, ModelCostProvenance> =
-            singleCostProvenanceMap(apiIdentifier, provenanceNone());
+            mockCostProvenanceMap([[apiIdentifier, mockModelCostProvenance({ input_source: "none", output_source: "none" })]]);
         assertEquals(costProvenanceByApiId.size, assembledConfigs.length);
-        assertEquals(costProvenanceByApiId.get(apiIdentifier), provenanceNone());
+        assertEquals(costProvenanceByApiId.get(apiIdentifier), mockModelCostProvenance({ input_source: "none", output_source: "none" }));
         const result: DbOpLists = diffAndPrepareDbOps(
             assembledConfigs,
             dbModels,
@@ -960,10 +977,10 @@ Deno.test("diffAndPrepareDbOps — cost provenance and min_plan_tier_level (chec
         assertMatch(logged, /Auto-assigned min_plan_tier_level=99/);
     });
 
-    await t.step("update path: existing min_plan_tier_level is not overwritten", () => {
+    await t.step("update path: min_plan_tier_level derived from effective output_token_cost_rate when cost changes", () => {
         const mockLogger: MockLogger = new MockLogger();
-        const apiIdentifier: string = "tier-preserve-update-1";
-        const dbConfig: AiModelExtendedConfig = createTestConfig(apiIdentifier);
+        const apiIdentifier: string = "tier-derive-update-1";
+        const dbConfig: AiModelExtendedConfig = mockAiModelExtendedConfig({ api_identifier: apiIdentifier });
         dbConfig.input_token_cost_rate = 1;
         dbConfig.output_token_cost_rate = 1;
         if (!isJson(dbConfig)) {
@@ -971,8 +988,8 @@ Deno.test("diffAndPrepareDbOps — cost provenance and min_plan_tier_level (chec
             return;
         }
         const dbModels: DbAiProvider[] = [
-            dbRowWithTier({
-                id: "db-tier-preserve-1",
+            mockDbAiProvider({
+                id: "db-tier-derive-1",
                 api_identifier: apiIdentifier,
                 name: "Keeper",
                 description: null,
@@ -984,15 +1001,16 @@ Deno.test("diffAndPrepareDbOps — cost provenance and min_plan_tier_level (chec
             }),
         ];
         const assembledConfigs: FinalAppModelConfig[] = [
-            createFinalAppModelConfig(apiIdentifier, "Keeper Updated", {
-                input_token_cost_rate: 99,
-                output_token_cost_rate: 99,
+            mockFinalAppModelConfig({
+                api_identifier: apiIdentifier,
+                name: "Keeper Updated",
+                config: { input_token_cost_rate: 99, output_token_cost_rate: 99 },
             }),
         ];
         const costProvenanceByApiId: Map<string, ModelCostProvenance> =
-            singleCostProvenanceMap(apiIdentifier, provenanceApi());
+            mockCostProvenanceMap([[apiIdentifier, mockModelCostProvenance({ input_source: "api", output_source: "api" })]]);
         assertEquals(costProvenanceByApiId.size, assembledConfigs.length);
-        assertEquals(costProvenanceByApiId.get(apiIdentifier), provenanceApi());
+        assertEquals(costProvenanceByApiId.get(apiIdentifier), mockModelCostProvenance({ input_source: "api", output_source: "api" }));
         const result: DbOpLists = diffAndPrepareDbOps(
             assembledConfigs,
             dbModels,
@@ -1001,7 +1019,107 @@ Deno.test("diffAndPrepareDbOps — cost provenance and min_plan_tier_level (chec
             costProvenanceByApiId,
         );
         assertEquals(result.modelsToUpdate.length, 1);
-        assertEquals(Object.prototype.hasOwnProperty.call(result.modelsToUpdate[0].changes, "min_plan_tier_level"), false);
+        assertEquals(result.modelsToUpdate[0].changes.min_plan_tier_level, 20);
+        const parsed = AiModelExtendedConfigSchema.safeParse(result.modelsToUpdate[0].changes.config);
+        assertEquals(parsed.success, true);
+        if (parsed.success) {
+            assertEquals(parsed.data.output_token_cost_rate, 99);
+        }
+    });
+
+    await t.step("update path: min_plan_tier_level corrected from DB output rate when provenance none preserves cost", () => {
+        const mockLogger: MockLogger = new MockLogger();
+        const apiIdentifier: string = "tier-derive-preserve-cost-1";
+        const dbConfig: AiModelExtendedConfig = mockAiModelExtendedConfig({ api_identifier: apiIdentifier });
+        dbConfig.input_token_cost_rate = 0.5;
+        dbConfig.output_token_cost_rate = 3.0;
+        if (!isJson(dbConfig)) {
+            assert(false, "dbConfig must be JSON");
+            return;
+        }
+        const dbModels: DbAiProvider[] = [
+            mockDbAiProvider({
+                id: "db-tier-derive-preserve-1",
+                api_identifier: apiIdentifier,
+                name: "Same Name",
+                description: null,
+                is_active: true,
+                provider: "test-provider",
+                config: dbConfig,
+                min_plan_tier_level: 20,
+            }),
+        ];
+        const assembledConfigs: FinalAppModelConfig[] = [
+            mockFinalAppModelConfig({
+                api_identifier: apiIdentifier,
+                name: "Same Name",
+                config: {
+                    input_token_cost_rate: 15,
+                    output_token_cost_rate: 75,
+                    context_window_tokens: 16384,
+                },
+            }),
+        ];
+        const costProvenanceByApiId: Map<string, ModelCostProvenance> =
+            mockCostProvenanceMap([[apiIdentifier, mockModelCostProvenance({ input_source: "none", output_source: "none" })]]);
+        const result: DbOpLists = diffAndPrepareDbOps(
+            assembledConfigs,
+            dbModels,
+            "test-provider",
+            mockLogger,
+            costProvenanceByApiId,
+        );
+        assertEquals(result.modelsToUpdate.length, 1);
+        assertEquals(result.modelsToUpdate[0].changes.min_plan_tier_level, 0);
+        const parsed = AiModelExtendedConfigSchema.safeParse(result.modelsToUpdate[0].changes.config);
+        assertEquals(parsed.success, true);
+        if (parsed.success) {
+            assertEquals(parsed.data.input_token_cost_rate, 0.5);
+            assertEquals(parsed.data.output_token_cost_rate, 3.0);
+            assertEquals(parsed.data.context_window_tokens, 16384);
+        }
+    });
+
+    await t.step("update path: min_plan_tier_level corrected even when config unchanged", () => {
+        const mockLogger: MockLogger = new MockLogger();
+        const apiIdentifier: string = "tier-only-correction-1";
+        const dbConfig: AiModelExtendedConfig = mockAiModelExtendedConfig({ api_identifier: apiIdentifier });
+        dbConfig.output_token_cost_rate = 3.0;
+        if (!isJson(dbConfig)) {
+            assert(false, "dbConfig must be JSON");
+            return;
+        }
+        const assembledConfigs: FinalAppModelConfig[] = [
+            mockFinalAppModelConfig({
+                api_identifier: apiIdentifier,
+                name: "Same Name",
+                config: { output_token_cost_rate: 3.0 },
+            }),
+        ];
+        const dbModels: DbAiProvider[] = [
+            mockDbAiProvider({
+                id: "db-tier-only-1",
+                api_identifier: apiIdentifier,
+                name: "Same Name",
+                description: null,
+                is_active: true,
+                provider: "test-provider",
+                config: dbConfig,
+                min_plan_tier_level: 20,
+            }),
+        ];
+        const costProvenanceByApiId: Map<string, ModelCostProvenance> =
+            mockCostProvenanceMap([[apiIdentifier, mockModelCostProvenance({ input_source: "none", output_source: "none" })]]);
+        const result: DbOpLists = diffAndPrepareDbOps(
+            assembledConfigs,
+            dbModels,
+            "test-provider",
+            mockLogger,
+            costProvenanceByApiId,
+        );
+        assertEquals(result.modelsToUpdate.length, 1);
+        assertEquals(result.modelsToUpdate[0].changes.min_plan_tier_level, 0);
+        assertEquals(Object.prototype.hasOwnProperty.call(result.modelsToUpdate[0].changes, "config"), false);
     });
 });
 

@@ -8,6 +8,7 @@ import { SyncResult, DbAiProvider } from './sync-ai-models.interface.ts';
 import { ConfigAssembler } from './config_assembler.ts';
 import { diffAndPrepareDbOps, executeDbOps } from './diffAndPrepareDbOps.ts';
 import { isJson } from "../_shared/utils/type_guards.ts";
+import { logger } from "../_shared/logger.ts";
 
 const PROVIDER_NAME = 'google';
 
@@ -121,12 +122,7 @@ export interface SyncGoogleDeps {
 
 export const defaultSyncGoogleDeps: SyncGoogleDeps = {
   listProviderModels: async (apiKey: string) => {
-    const logger: ILogger = {
-      debug: (...args: unknown[]) => console.debug('[SyncGoogle:GoogleAdapter]', ...args),
-      info: (...args: unknown[]) => console.info('[SyncGoogle:GoogleAdapter]', ...args),
-      warn: (...args: unknown[]) => console.warn('[SyncGoogle:GoogleAdapter]', ...args),
-      error: (...args: unknown[]) => console.error('[SyncGoogle:GoogleAdapter]', ...args),
-    };
+
     const minimalConfig: AiModelExtendedConfig = {
       api_identifier: 'google-gemini-2.5-pro',
       input_token_cost_rate: 0,
@@ -149,6 +145,7 @@ export const defaultSyncGoogleDeps: SyncGoogleDeps = {
       is_default_embedding: false,
       is_enabled: true,
       is_default_generation: false,
+      min_plan_tier_level: 99,
     };
     const adapter = new GoogleAdapter(dummyProvider, apiKey, logger);
     const { models, raw } = await adapter.listModels(true);
