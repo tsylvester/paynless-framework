@@ -205,6 +205,7 @@ describe('Dialectic Store Selectors', () => {
                 { id: 'c2-s1', session_id: 'session-1' } as DialecticContribution,
             ],
             feedback: [mockFeedback1S1ThesisIter1, mockFeedback2S1ThesisIter1, mockFeedbackS1AntithesisIter1, mockFeedbackS1ThesisIter2],
+            viewing_stage_id: 'thesis',
         },
         {
             id: 'session-2',
@@ -222,6 +223,7 @@ describe('Dialectic Store Selectors', () => {
                 { id: 'c1-s2', session_id: 'session-2' } as DialecticContribution,
             ],
             feedback: [],
+            viewing_stage_id: 'thesis',
         }
     ];
 
@@ -444,7 +446,26 @@ describe('Dialectic Store Selectors', () => {
     });
 
     it('selectModelCatalog should return modelCatalog from testState and initial', () => {
-        testState.modelCatalog = [{ id: 'model1' } as AIModelCatalogEntry];
+        testState.modelCatalog = [
+            {
+                id: 'model1',
+                provider_name: 'Provider',
+                model_name: 'Model One',
+                api_identifier: 'api-id',
+                description: null,
+                strengths: null,
+                weaknesses: null,
+                context_window_tokens: null,
+                input_token_cost_usd_millionths: null,
+                output_token_cost_usd_millionths: null,
+                max_output_tokens: null,
+                is_active: true,
+                created_at: '2025-01-01T00:00:00Z',
+                updated_at: '2025-01-01T00:00:00Z',
+                is_default_generation: false,
+                min_plan_tier_level: 0,
+            },
+        ];
         expect(selectModelCatalog(testState)).toEqual(testState.modelCatalog);
         expect(selectModelCatalog(initialState)).toEqual(initialDialecticStateValues.modelCatalog);
     });
@@ -572,6 +593,7 @@ describe('Dialectic Store Selectors', () => {
                 current_stage_id: 'stage-abc',
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString(),
+                viewing_stage_id: null,
             };
             const stage: DialecticStage = {
                 id: 'stage-abc',
@@ -665,6 +687,7 @@ describe('Dialectic Store Selectors', () => {
                 current_stage_id: 'stage-abc',
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString(),
+                viewing_stage_id: null,
             };
             const stage: DialecticStage = {
                 id: 'stage-abc',
@@ -749,6 +772,7 @@ describe('Dialectic Store Selectors', () => {
                 current_stage_id: 'stage-abc',
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString(),
+                viewing_stage_id: null,
             };
             const stage: DialecticStage = {
                 id: 'stage-abc',
@@ -848,6 +872,7 @@ describe('Dialectic Store Selectors', () => {
                 current_stage_id: 'stage-abc',
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString(),
+                viewing_stage_id: null,
             };
             const stage: DialecticStage = {
                 id: 'stage-abc',
@@ -931,6 +956,7 @@ describe('Dialectic Store Selectors', () => {
                 current_stage_id: 'stage-abc',
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString(),
+                viewing_stage_id: null,
             };
             const stage: DialecticStage = {
                 id: 'stage-abc',
@@ -1016,6 +1042,7 @@ describe('Dialectic Store Selectors', () => {
                 current_stage_id: 'stage-abc',
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString(),
+                viewing_stage_id: null,
             };
             const stage: DialecticStage = {
                 id: 'stage-abc',
@@ -1112,6 +1139,7 @@ describe('Dialectic Store Selectors', () => {
                 current_stage_id: 'stage-abc',
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString(),
+                viewing_stage_id: null,
             };
             const stage: DialecticStage = {
                 id: 'stage-abc',
@@ -1219,6 +1247,7 @@ describe('Dialectic Store Selectors', () => {
                 current_stage_id: 'stage-abc',
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString(),
+                viewing_stage_id: null,
             };
             const stage: DialecticStage = {
                 id: 'stage-abc',
@@ -1302,6 +1331,7 @@ describe('Dialectic Store Selectors', () => {
                 current_stage_id: 'stage-abc',
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString(),
+                viewing_stage_id: null,
             };
             const stage: DialecticStage = {
                 id: 'stage-abc',
@@ -1398,6 +1428,7 @@ describe('Dialectic Store Selectors', () => {
                 current_stage_id: 'stage-abc',
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString(),
+                viewing_stage_id: null,
             };
             const stage: DialecticStage = {
                 id: 'stage-abc',
@@ -2427,6 +2458,7 @@ describe('selectIsStageReadyForSessionIteration', () => {
             current_stage_id: 'stage-thesis',
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
+            viewing_stage_id: null,
         }],
         resources: [],
         process_template_id: 'pt-1',

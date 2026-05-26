@@ -160,6 +160,7 @@ function buildMinimalDialecticProjectRow(overrides: { id: string; project_name: 
     status: 'active',
     created_at: '',
     updated_at: '',
+    idempotency_key: null,
   };
 }
 
@@ -180,6 +181,7 @@ function buildMinimalAIModelCatalogEntry(overrides: { id: string; model_name: st
     created_at: '',
     updated_at: '',
     is_default_generation: overrides.is_default_generation,
+    min_plan_tier_level: 0,
   };
 }
 

@@ -1,10 +1,12 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { MemoryRouter } from 'react-router-dom';
+import type { ReactElement } from 'react';
 import { initialDialecticStateValues } from '@paynless/store';
 import { initialAiStateValues } from '@paynless/types';
 import { AIModelSelector } from './AIModelSelector';
-// Import AiProvider and DialecticStateValues for typing mock stores
-import type { AiProvider, DialecticStateValues, AiState, SelectedModels, AIModelCatalogEntry } from '@paynless/types';
+import { mockUserTier, mockAllTiers } from '../../mocks/profile.mock';
+import type { AiProvider, DialecticStateValues, AiState, SelectedModels, AIModelCatalogEntry, UserTier } from '@paynless/types';
 
 // Store references to mock implementations that can be updated
 let currentDialecticState: DialecticStateValues;
@@ -15,12 +17,13 @@ let currentDialecticActions: {
 };
 let currentAiState: AiState;
 let currentAiActions: { loadAiConfig: ReturnType<typeof vi.fn> };
+let currentAuthState: { userTier: UserTier; availableTiers: UserTier[] };
 
 // Mock the Zustand stores
 vi.mock('@paynless/store', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@paynless/store')>();
   const typesModule = await vi.importActual<typeof import('@paynless/types')>('@paynless/types');
-  
+
   const mockUseDialecticStore = vi.fn((selector?: (state: DialecticStateValues & typeof currentDialecticActions) => unknown) => {
     if (selector) {
       return selector({ ...currentDialecticState, ...currentDialecticActions });
@@ -35,18 +38,31 @@ vi.mock('@paynless/store', async (importOriginal) => {
     return { ...currentAiState, ...currentAiActions };
   });
 
+  const mockUseAuthStore = vi.fn((selector?: (state: typeof currentAuthState) => unknown) => {
+    if (selector) {
+      return selector(currentAuthState);
+    }
+    return currentAuthState;
+  });
+
   return {
     ...actual,
     useAiStore: mockUseAiStore,
     useDialecticStore: mockUseDialecticStore,
+    useAuthStore: mockUseAuthStore,
     initialAiStateValues: typesModule.initialAiStateValues,
   };
 });
 
+function renderWithRouter(ui: ReactElement) {
+  return render(<MemoryRouter>{ui}</MemoryRouter>);
+}
+
 // Helper function to set up mock store states and actions
 const setupMockStores = (
   initialDialecticConfig: Partial<DialecticStateValues> = {},
-  initialAiConfig: Partial<AiState> = {}
+  initialAiConfig: Partial<AiState> = {},
+  initialAuthConfig: { userTier?: UserTier; availableTiers?: UserTier[] } = {}
 ) => {
   const dialecticState: DialecticStateValues = {
     ...initialDialecticStateValues,
@@ -70,27 +86,34 @@ const setupMockStores = (
 
   const aiActions = {
     loadAiConfig: vi.fn(),
-    // Add other AI actions if used
   };
 
-  // Update the current state references
+  const authState: { userTier: UserTier; availableTiers: UserTier[] } = {
+    userTier: initialAuthConfig.userTier !== undefined ? initialAuthConfig.userTier : mockUserTier,
+    availableTiers: initialAuthConfig.availableTiers !== undefined ? initialAuthConfig.availableTiers : mockAllTiers,
+  };
+
   currentDialecticState = dialecticState;
   currentDialecticActions = dialecticActions;
   currentAiState = aiState;
   currentAiActions = aiActions;
+  currentAuthState = authState;
 
   return { dialecticState, dialecticActions, aiState, aiActions };
 };
 
 const mockAiProvidersData: AiProvider[] = [
-  { id: 'model1', name: 'GPT-4', provider: 'OpenAI', api_identifier: 'gpt-4', created_at: 'test', updated_at: 'test', is_active: true, is_enabled: true, is_default_embedding: false, is_default_generation: false, config: null, description: null },
-  { id: 'model2', name: 'Claude 3', provider: 'Anthropic', api_identifier: 'claude-3', created_at: 'test', updated_at: 'test', is_active: true, is_enabled: true, is_default_embedding: false, is_default_generation: false, config: null, description: null },
+  { id: 'model1', name: 'GPT-4', provider: 'OpenAI', api_identifier: 'gpt-4', created_at: 'test', updated_at: 'test', is_active: true, is_enabled: true, is_default_embedding: false, is_default_generation: false, config: null, description: null, min_plan_tier_level: 0 },
+  { id: 'model2', name: 'Claude 3', provider: 'Anthropic', api_identifier: 'claude-3', created_at: 'test', updated_at: 'test', is_active: true, is_enabled: true, is_default_embedding: false, is_default_generation: false, config: null, description: null, min_plan_tier_level: 0 },
 ];
 
 const modelIdToDisplayName: Record<string, string> = {
   model1: 'GPT-4',
   model2: 'Claude 3',
   model3: 'Gemini',
+  'model-free': 'Free Model',
+  'model-free-b': 'Free B',
+  'model-premium': 'Premium Model',
 };
 
 function selectedModelsFromIds(ids: string[]): SelectedModels[] {
@@ -114,9 +137,42 @@ function catalogEntry(overrides: Partial<AIModelCatalogEntry>): AIModelCatalogEn
     created_at: '2025-01-01T00:00:00Z',
     updated_at: '2025-01-01T00:00:00Z',
     is_default_generation: false,
+    min_plan_tier_level: 0,
   };
   return { ...base, ...overrides };
 }
+
+const tierFree: UserTier = mockUserTier;
+const tierUltra: UserTier = mockAllTiers[3];
+
+const providerFree: AiProvider = {
+  ...mockAiProvidersData[0],
+  id: 'model-free',
+  name: 'Free Model',
+  api_identifier: 'model-free',
+  min_plan_tier_level: 0,
+};
+
+const providerFreeB: AiProvider = {
+  ...mockAiProvidersData[0],
+  id: 'model-free-b',
+  name: 'Free B',
+  api_identifier: 'model-free-b',
+  min_plan_tier_level: 0,
+};
+
+const providerPremium: AiProvider = {
+  ...mockAiProvidersData[0],
+  id: 'model-premium',
+  name: 'Premium Model',
+  api_identifier: 'model-premium',
+  min_plan_tier_level: 20,
+};
+
+const tierUltraAuthConfig: { userTier: UserTier; availableTiers: UserTier[] } = {
+  userTier: tierUltra,
+  availableTiers: mockAllTiers,
+};
 
 describe('AIModelSelector', () => {
   const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
@@ -132,35 +188,35 @@ describe('AIModelSelector', () => {
 
   test('renders loading state initially when isConfigLoading is true', async () => {
     setupMockStores({}, { isConfigLoading: true, availableProviders: [] });
-    render(<AIModelSelector />);
+    renderWithRouter(<AIModelSelector />);
     await userEvent.click(screen.getByRole('button'));
     expect(await screen.findByText('Loading models...')).toBeInTheDocument();
   });
 
   test('calls loadAiConfig on mount if providers not available and not loading', () => {
     const { aiActions } = setupMockStores({}, { availableProviders: [], isConfigLoading: false, aiError: null });
-    render(<AIModelSelector />);
+    renderWithRouter(<AIModelSelector />);
     expect(aiActions.loadAiConfig).toHaveBeenCalledTimes(1);
   });
 
   test('does not call loadAiConfig if providers already loaded', () => {
     const { aiActions } = setupMockStores({}, { availableProviders: mockAiProvidersData, isConfigLoading: false, aiError: null });
-    render(<AIModelSelector />);
+    renderWithRouter(<AIModelSelector />);
     expect(aiActions.loadAiConfig).not.toHaveBeenCalled();
   });
 
   test('renders error state from aiStore', async () => {
     const errorMsg = 'Failed to load AI providers';
     setupMockStores({}, { aiError: errorMsg, isConfigLoading: false, availableProviders: [] });
-    render(<AIModelSelector />);
+    renderWithRouter(<AIModelSelector />);
     await userEvent.click(screen.getByRole('button'));
     expect(await screen.findByText(`Error: ${errorMsg}`)).toBeInTheDocument();
   });
 
   test('renders no models available message', async () => {
     setupMockStores({}, { availableProviders: [], isConfigLoading: false, aiError: null });
-    render(<AIModelSelector />);
-    expect(screen.getByText('No models available')).toBeInTheDocument(); 
+    renderWithRouter(<AIModelSelector />);
+    expect(screen.getByText('No models available')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button'));
     expect(await screen.findByText('No models available to select.')).toBeInTheDocument();
   });
@@ -170,7 +226,7 @@ describe('AIModelSelector', () => {
       { selectedModels: selectedModelsFromIds([]) },
       { availableProviders: mockAiProvidersData, isConfigLoading: false }
     );
-    render(<AIModelSelector />);
+    renderWithRouter(<AIModelSelector />);
     const user = userEvent.setup();
 
     expect(screen.getByText('Click to select AI models')).toBeInTheDocument();
@@ -178,19 +234,13 @@ describe('AIModelSelector', () => {
 
     await waitFor(async () => {
       expect(screen.getByText('GPT-4')).toBeInTheDocument();
-      expect(screen.getByText('Claude 3')).toBeInTheDocument(); 
+      expect(screen.getByText('Claude 3')).toBeInTheDocument();
     });
 
-    // Find the GPT-4 model item
     const gpt4Item = await screen.findByTestId('model-item-model1');
-    
-    // Find the increment button within the GPT-4 item and click it
-    // Assuming MultiplicitySelector's increment button has an accessible name or role
-    // For this example, let's assume it has title "Increment"
     const incrementButton = within(gpt4Item).getByRole('button', { name: /Increment/i });
     await user.click(incrementButton);
 
-    // Expect setModelMultiplicity to be called with SelectedModels and count 1
     expect(dialecticActions.setModelMultiplicity).toHaveBeenCalledWith(
       { id: 'model1', displayName: 'GPT-4' },
       1,
@@ -207,7 +257,7 @@ describe('AIModelSelector', () => {
       },
       { availableProviders: mockAiProvidersData, isConfigLoading: false }
     );
-    render(<AIModelSelector />);
+    renderWithRouter(<AIModelSelector />);
 
     expect(screen.getByText('GPT-4')).toBeInTheDocument();
     expect(screen.getByText('Claude 3')).toBeInTheDocument();
@@ -218,58 +268,71 @@ describe('AIModelSelector', () => {
   test('displays selected models summary correctly', () => {
     let unmount: () => void;
 
-    // Initial: No models selected
     setupMockStores({ selectedModels: [] }, { availableProviders: mockAiProvidersData });
-    ({ unmount } = render(<AIModelSelector />));
+    ({ unmount } = renderWithRouter(<AIModelSelector />));
     expect(screen.getByText('Click to select AI models')).toBeInTheDocument();
     unmount();
 
-    // Test with multiplicity 1 for GPT-4
     setupMockStores({ selectedModels: selectedModelsFromIds(['model1']) }, { availableProviders: mockAiProvidersData });
-    ({ unmount } = render(<AIModelSelector />));
+    ({ unmount } = renderWithRouter(<AIModelSelector />));
     expect(screen.getByText('GPT-4')).toBeInTheDocument();
     expect(screen.queryByText('Claude 3')).not.toBeInTheDocument();
     unmount();
 
-    // Test with multiplicity 2 for GPT-4
-    setupMockStores({ selectedModels: selectedModelsFromIds(['model1', 'model1']) }, { availableProviders: mockAiProvidersData });
-    ({ unmount } = render(<AIModelSelector />));
+    setupMockStores(
+      { selectedModels: selectedModelsFromIds(['model1', 'model1']) },
+      { availableProviders: mockAiProvidersData },
+      tierUltraAuthConfig
+    );
+    ({ unmount } = renderWithRouter(<AIModelSelector />));
     expect(screen.getByText('GPT-4')).toBeInTheDocument();
-    expect(screen.getByText('2')).toBeInTheDocument(); // Count badge should show 2
+    expect(screen.getByText('2')).toBeInTheDocument();
     expect(screen.queryByText('Claude 3')).not.toBeInTheDocument();
     unmount();
 
-    // Test with GPT-4 (x1) and Claude 3 (x1)
-    setupMockStores({ selectedModels: selectedModelsFromIds(['model1', 'model2']) }, { availableProviders: mockAiProvidersData });
-    ({ unmount } = render(<AIModelSelector />));
+    setupMockStores(
+      { selectedModels: selectedModelsFromIds(['model1', 'model2']) },
+      { availableProviders: mockAiProvidersData },
+      tierUltraAuthConfig
+    );
+    ({ unmount } = renderWithRouter(<AIModelSelector />));
     expect(screen.getByText('GPT-4')).toBeInTheDocument();
     expect(screen.getByText('Claude 3')).toBeInTheDocument();
     unmount();
 
-    // Test with GPT-4 (x2) and Claude 3 (x1)
-    setupMockStores({ selectedModels: selectedModelsFromIds(['model1', 'model1', 'model2']) }, { availableProviders: mockAiProvidersData });
-    ({ unmount } = render(<AIModelSelector />));
+    setupMockStores(
+      { selectedModels: selectedModelsFromIds(['model1', 'model1', 'model2']) },
+      { availableProviders: mockAiProvidersData },
+      tierUltraAuthConfig
+    );
+    ({ unmount } = renderWithRouter(<AIModelSelector />));
     expect(screen.getByText('GPT-4')).toBeInTheDocument();
-    expect(screen.getByText('2')).toBeInTheDocument(); // Count badge should show 2
+    expect(screen.getByText('2')).toBeInTheDocument();
     expect(screen.getByText('Claude 3')).toBeInTheDocument();
     unmount();
 
-    const geminiModel: AiProvider = { id: 'model3', name: 'Gemini', provider: 'Google', api_identifier: 'gemini', created_at: 'test', updated_at: 'test', is_active: true, is_enabled: true, is_default_embedding: false, is_default_generation: false, config: null, description: null };
+    const geminiModel: AiProvider = { id: 'model3', name: 'Gemini', provider: 'Google', api_identifier: 'gemini', created_at: 'test', updated_at: 'test', is_active: true, is_enabled: true, is_default_embedding: false, is_default_generation: false, config: null, description: null, min_plan_tier_level: 0 };
     const manyProviders: AiProvider[] = [...mockAiProvidersData, geminiModel];
 
-    // Test with three models, GPT-4 (x1), Claude 3 (x1), Gemini (x1)
-    setupMockStores({ selectedModels: selectedModelsFromIds(['model1', 'model2', 'model3']) }, { availableProviders: manyProviders });
-    ({ unmount } = render(<AIModelSelector />));
+    setupMockStores(
+      { selectedModels: selectedModelsFromIds(['model1', 'model2', 'model3']) },
+      { availableProviders: manyProviders },
+      tierUltraAuthConfig
+    );
+    ({ unmount } = renderWithRouter(<AIModelSelector />));
     expect(screen.getByText('GPT-4')).toBeInTheDocument();
     expect(screen.getByText('Claude 3')).toBeInTheDocument();
     expect(screen.getByText('Gemini')).toBeInTheDocument();
     unmount();
 
-    // Test with three models, GPT-4 (x2), Claude 3 (x1), Gemini (x1)
-    setupMockStores({ selectedModels: selectedModelsFromIds(['model1', 'model1', 'model2', 'model3']) }, { availableProviders: manyProviders });
-    ({ unmount } = render(<AIModelSelector />));
+    setupMockStores(
+      { selectedModels: selectedModelsFromIds(['model1', 'model1', 'model2', 'model3']) },
+      { availableProviders: manyProviders },
+      tierUltraAuthConfig
+    );
+    ({ unmount } = renderWithRouter(<AIModelSelector />));
     expect(screen.getByText('GPT-4')).toBeInTheDocument();
-    expect(screen.getByText('2')).toBeInTheDocument(); // Count badge should show 2
+    expect(screen.getByText('2')).toBeInTheDocument();
     expect(screen.getByText('Claude 3')).toBeInTheDocument();
     expect(screen.getByText('Gemini')).toBeInTheDocument();
     unmount();
@@ -280,7 +343,7 @@ describe('AIModelSelector', () => {
       { selectedModels: [] },
       { availableProviders: mockAiProvidersData, isConfigLoading: false }
     );
-    render(<AIModelSelector />);
+    renderWithRouter(<AIModelSelector />);
     const user = userEvent.setup();
     await user.click(screen.getByRole('button', { name: /Select AI Models/i }));
 
@@ -288,8 +351,7 @@ describe('AIModelSelector', () => {
       const modelItem = await screen.findByTestId(`model-item-${provider.id}`);
       expect(within(modelItem).getByRole('button', { name: /Increment/i })).toBeInTheDocument();
       expect(within(modelItem).getByRole('button', { name: /Decrement/i })).toBeInTheDocument();
-      // Check for the display of count, which is 0 initially for all
-      expect(within(modelItem).getByText('0')).toBeInTheDocument(); 
+      expect(within(modelItem).getByText('0')).toBeInTheDocument();
     }
   });
 
@@ -298,117 +360,107 @@ describe('AIModelSelector', () => {
       { selectedModels: [] },
       { availableProviders: [mockAiProvidersData[0]], isConfigLoading: false }
     );
-    const { unmount, container } = render(<AIModelSelector />); // Capture unmount and container
+    const { unmount, container } = renderWithRouter(<AIModelSelector />);
     const user = userEvent.setup();
     await user.click(within(container).getByRole('button', { name: /Select AI Models/i }));
 
-    // Dropdown content is usually portalled, so findByTestId might still search globally or within screen
-    // but let's assume the dropdown items are within a structure accessible from the initial render for the first interaction
     const modelItem = await screen.findByTestId(`model-item-${mockAiProvidersData[0].id}`);
     const incrementButton = within(modelItem).getByRole('button', { name: /Increment/i });
 
-    // Increment from 0 to 1
     await user.click(incrementButton);
     expect(dialecticActions.setModelMultiplicity).toHaveBeenCalledWith(
       { id: mockAiProvidersData[0].id, displayName: mockAiProvidersData[0].name },
       1,
     );
 
-    await user.keyboard('{Escape}'); // Close the dropdown
-    unmount(); // Unmount the previous instance
+    await user.keyboard('{Escape}');
+    unmount();
 
-    // Setup state as if count is now 1 for model1
     const { dialecticActions: secondPhaseActions } = setupMockStores(
       { selectedModels: selectedModelsFromIds([mockAiProvidersData[0].id]) },
-      { availableProviders: [mockAiProvidersData[0]], isConfigLoading: false }
+      { availableProviders: [mockAiProvidersData[0]], isConfigLoading: false },
+      tierUltraAuthConfig
     );
-    // Re-render with new state and get the new container
-    const { container: newContainer, unmount: newUnmount } = render(<AIModelSelector />); 
-    // Use the new container for subsequent queries
-    await user.click(within(newContainer).getByRole('button', { name: /Select AI Models/i })); // Re-open dropdown
-    
+    const { container: newContainer, unmount: newUnmount } = renderWithRouter(<AIModelSelector />);
+    await user.click(within(newContainer).getByRole('button', { name: /Select AI Models/i }));
+
     const updatedModelItem = await screen.findByTestId(`model-item-${mockAiProvidersData[0].id}`);
     const updatedIncrementButton = within(updatedModelItem).getByRole('button', { name: /Increment/i });
 
-    // Increment from 1 to 2
     await user.click(updatedIncrementButton);
-    // Check the call to the new spy instance
     expect(secondPhaseActions.setModelMultiplicity).toHaveBeenCalledWith(
       { id: mockAiProvidersData[0].id, displayName: mockAiProvidersData[0].name },
       2,
     );
-    expect(secondPhaseActions.setModelMultiplicity).toHaveBeenCalledTimes(1); 
-    newUnmount(); // cleanup the second render
+    expect(secondPhaseActions.setModelMultiplicity).toHaveBeenCalledTimes(1);
+    newUnmount();
   });
 
   test('decrementing multiplicity calls setModelMultiplicity correctly', async () => {
     const { dialecticActions: firstPhaseActions } = setupMockStores(
       { selectedModels: selectedModelsFromIds([mockAiProvidersData[0].id, mockAiProvidersData[0].id]) },
-      { availableProviders: [mockAiProvidersData[0]], isConfigLoading: false }
+      { availableProviders: [mockAiProvidersData[0]], isConfigLoading: false },
+      tierUltraAuthConfig
     );
-    const { container, unmount } = render(<AIModelSelector />);
+    const { container, unmount } = renderWithRouter(<AIModelSelector />);
     const user = userEvent.setup();
-    
+
     await user.click(within(container).getByRole('button', { name: /Select AI Models/i }));
 
     const modelItem = await screen.findByTestId(`model-item-${mockAiProvidersData[0].id}`);
     const decrementButton = within(modelItem).getByRole('button', { name: /Decrement/i });
 
-    // Decrement from 2 to 1
     await user.click(decrementButton);
     expect(firstPhaseActions.setModelMultiplicity).toHaveBeenCalledWith(
       { id: mockAiProvidersData[0].id, displayName: mockAiProvidersData[0].name },
       1,
     );
     expect(firstPhaseActions.setModelMultiplicity).toHaveBeenCalledTimes(1);
-    
-    await user.keyboard('{Escape}'); // Close the dropdown
-    unmount(); // Unmount the previous instance
 
-    // Setup state for the second phase, as if count is now 1 for model1
+    await user.keyboard('{Escape}');
+    unmount();
+
     const { dialecticActions: secondPhaseActions } = setupMockStores(
       { selectedModels: selectedModelsFromIds([mockAiProvidersData[0].id]) },
       { availableProviders: [mockAiProvidersData[0]], isConfigLoading: false }
     );
-    // Re-render and get the new container
-    const { container: newContainer, unmount: newUnmount } = render(<AIModelSelector />);
-    await user.click(within(newContainer).getByRole('button', { name: /Select AI Models/i })); // Re-open
+    const { container: newContainer, unmount: newUnmount } = renderWithRouter(<AIModelSelector />);
+    await user.click(within(newContainer).getByRole('button', { name: /Select AI Models/i }));
 
     const updatedModelItem = await screen.findByTestId(`model-item-${mockAiProvidersData[0].id}`);
     const updatedDecrementButton = within(updatedModelItem).getByRole('button', { name: /Decrement/i });
 
-    // Decrement from 1 to 0
     await user.click(updatedDecrementButton);
     expect(secondPhaseActions.setModelMultiplicity).toHaveBeenCalledWith(
       { id: mockAiProvidersData[0].id, displayName: mockAiProvidersData[0].name },
       0,
     );
-    expect(secondPhaseActions.setModelMultiplicity).toHaveBeenCalledTimes(1); 
+    expect(secondPhaseActions.setModelMultiplicity).toHaveBeenCalledTimes(1);
     newUnmount();
   });
 
   test('dropdown is disabled when disabled prop is true', () => {
     setupMockStores({}, { availableProviders: mockAiProvidersData });
-    render(<AIModelSelector disabled={true} />);
+    renderWithRouter(<AIModelSelector disabled={true} />);
     expect(screen.getByRole('button')).toBeDisabled();
   });
 
-   test('dropdown is NOT disabled when loading, so loading message can be shown', () => {
+  test('dropdown is NOT disabled when loading, so loading message can be shown', () => {
     setupMockStores({}, { availableProviders: [], isConfigLoading: true });
-    render(<AIModelSelector />);
-    expect(screen.getByRole('button')).not.toBeDisabled(); // Changed from toBeDisabled
+    renderWithRouter(<AIModelSelector />);
+    expect(screen.getByRole('button')).not.toBeDisabled();
   });
 
   test('dropdown is disabled when no models and not loading (and no error)', () => {
     setupMockStores({}, { availableProviders: [], isConfigLoading: false, aiError: null });
-    render(<AIModelSelector />);
+    renderWithRouter(<AIModelSelector />);
     expect(screen.getByRole('button')).toBeDisabled();
   });
 
   test('dropdown is NOT disabled if there is an error, even if no models', () => {
     setupMockStores({}, { availableProviders: [], isConfigLoading: false, aiError: 'Some error' });
-    render(<AIModelSelector />);
-    expect(screen.getByRole('button')).not.toBeDisabled(); // Button should be clickable to show error
+    renderWithRouter(<AIModelSelector />);
+    expect(screen.getByRole('button')).not.toBeDisabled();
   });
 
   test('when modelCatalog is empty and isLoadingModelCatalog is false, fetchAIModelCatalog is called on mount', () => {
@@ -416,7 +468,7 @@ describe('AIModelSelector', () => {
       { modelCatalog: [], isLoadingModelCatalog: false },
       { availableProviders: [], isConfigLoading: false }
     );
-    render(<AIModelSelector />);
+    renderWithRouter(<AIModelSelector />);
     expect(dialecticActions.fetchAIModelCatalog).toHaveBeenCalledTimes(1);
   });
 
@@ -428,7 +480,7 @@ describe('AIModelSelector', () => {
       },
       { availableProviders: mockAiProvidersData, isConfigLoading: false }
     );
-    render(<AIModelSelector />);
+    renderWithRouter(<AIModelSelector />);
     expect(dialecticActions.fetchAIModelCatalog).not.toHaveBeenCalled();
   });
 
@@ -445,7 +497,7 @@ describe('AIModelSelector', () => {
       },
       { availableProviders: mockAiProvidersData, isConfigLoading: false }
     );
-    render(<AIModelSelector />);
+    renderWithRouter(<AIModelSelector />);
     expect(dialecticActions.setSelectedModels).toHaveBeenCalledTimes(1);
     expect(dialecticActions.setSelectedModels).toHaveBeenCalledWith(defaultModels);
   });
@@ -460,7 +512,7 @@ describe('AIModelSelector', () => {
       },
       { availableProviders: mockAiProvidersData, isConfigLoading: false }
     );
-    render(<AIModelSelector />);
+    renderWithRouter(<AIModelSelector />);
     expect(dialecticActions.setSelectedModels).not.toHaveBeenCalled();
   });
 
@@ -474,7 +526,7 @@ describe('AIModelSelector', () => {
       },
       { availableProviders: mockAiProvidersData, isConfigLoading: false }
     );
-    render(<AIModelSelector />);
+    renderWithRouter(<AIModelSelector />);
     expect(dialecticActions.setSelectedModels).not.toHaveBeenCalled();
   });
 
@@ -489,7 +541,7 @@ describe('AIModelSelector', () => {
       { ...dialecticConfig },
       { availableProviders: mockAiProvidersData, isConfigLoading: false }
     );
-    const { rerender } = render(<AIModelSelector />);
+    const { rerender } = renderWithRouter(<AIModelSelector />);
     expect(dialecticActions.setSelectedModels).toHaveBeenCalledTimes(1);
     dialecticActions.setSelectedModels.mockClear();
 
@@ -497,20 +549,204 @@ describe('AIModelSelector', () => {
       { ...dialecticConfig, selectedModels: [] },
       { availableProviders: mockAiProvidersData, isConfigLoading: false }
     );
-    rerender(<AIModelSelector />);
+    rerender(<MemoryRouter><AIModelSelector /></MemoryRouter>);
     expect(dialecticActions.setSelectedModels).not.toHaveBeenCalled();
+  });
+
+  test('model above user tier renders disabled without multiplicity controls', async () => {
+    setupMockStores(
+      {},
+      { availableProviders: [providerFree, providerPremium], isConfigLoading: false },
+      { userTier: tierFree, availableTiers: mockAllTiers }
+    );
+    renderWithRouter(<AIModelSelector />);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: /Select AI Models/i }));
+
+    expect(within(screen.getByTestId('model-item-model-premium')).queryByRole('button', { name: /Increment/i })).toBeNull();
+    expect(within(screen.getByTestId('model-item-model-premium')).getByTestId('tier-lock-model-premium')).toBeInTheDocument();
+    expect(within(screen.getByTestId('model-item-model-free')).getByRole('button', { name: /Increment/i })).toBeInTheDocument();
+  });
+
+  test('tier-locked row shows upgrade CTA with link to subscription at lock interaction point', async () => {
+    setupMockStores(
+      {},
+      { availableProviders: [providerFree, providerPremium], isConfigLoading: false },
+      { userTier: tierFree, availableTiers: mockAllTiers }
+    );
+    renderWithRouter(<AIModelSelector />);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: /Select AI Models/i }));
+
+    const premiumItem = screen.getByTestId('model-item-model-premium');
+    await user.hover(within(premiumItem).getByTestId('tier-lock-model-premium'));
+
+    const tierPlanMessages = screen.getAllByText(/This model requires a Premium plan/i);
+    expect(tierPlanMessages.length).toBeGreaterThanOrEqual(1);
+    const upgradeLinks = screen.getAllByTestId('upgrade-link-tier-model-premium');
+    expect(upgradeLinks[0]).toHaveAttribute('href', '/subscription');
+  });
+
+  test('at max_models_per_project unselected models cannot increment', async () => {
+    const { dialecticActions } = setupMockStores(
+      { selectedModels: selectedModelsFromIds(['model-free']) },
+      { availableProviders: [providerFree, providerFreeB] },
+      { userTier: tierFree }
+    );
+    renderWithRouter(<AIModelSelector />);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: /Select AI Models/i }));
+
+    const freeBItem = screen.getByTestId('model-item-model-free-b');
+    const incrementButton = within(freeBItem).queryByRole('button', { name: /Increment/i });
+    if (incrementButton !== null) {
+      expect(incrementButton).toBeDisabled();
+      await user.click(incrementButton);
+    }
+    expect(dialecticActions.setModelMultiplicity).not.toHaveBeenCalled();
+  });
+
+  test('at count cap hover on disabled increment on unselected row shows upgrade CTA at control', async () => {
+    const { dialecticActions } = setupMockStores(
+      { selectedModels: selectedModelsFromIds(['model-free']) },
+      { availableProviders: [providerFree, providerFreeB] },
+      { userTier: tierFree }
+    );
+    renderWithRouter(<AIModelSelector />);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: /Select AI Models/i }));
+
+    const freeBItem = screen.getByTestId('model-item-model-free-b');
+    expect(within(freeBItem).getByTestId('model-cap-controls-model-free-b')).toBeInTheDocument();
+
+    const incrementButton = within(freeBItem).getByRole('button', { name: /Increment/i });
+    await user.hover(incrementButton);
+
+    const capLimitMessages = screen.getAllByText(
+      /You've reached the model limit for your plan \(1\/1\)/i,
+    );
+    expect(capLimitMessages.length).toBeGreaterThanOrEqual(1);
+    const capUpgradeLinks = screen.getAllByTestId('upgrade-link-cap-model-free-b');
+    expect(capUpgradeLinks.length).toBeGreaterThanOrEqual(1);
+    expect(capUpgradeLinks[0]).toHaveAttribute('href', '/subscription');
+    expect(screen.queryByTestId('model-limit-footer')).toBeNull();
+
+    await user.click(incrementButton);
+    expect(dialecticActions.setModelMultiplicity).not.toHaveBeenCalled();
+  });
+
+  test('at cap selected model can decrement; disabled increment shows count-cap CTA at control', async () => {
+    const { dialecticActions: decrementActions } = setupMockStores(
+      { selectedModels: selectedModelsFromIds(['model-free']) },
+      { availableProviders: [providerFree] },
+      { userTier: tierFree }
+    );
+    const { unmount: unmountAfterDecrement } = renderWithRouter(<AIModelSelector />);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: /Select AI Models/i }));
+
+    const freeItem = screen.getByTestId('model-item-model-free');
+    await user.click(within(freeItem).getByRole('button', { name: /Decrement/i }));
+    expect(decrementActions.setModelMultiplicity).toHaveBeenCalledWith(
+      { id: 'model-free', displayName: 'Free Model' },
+      0,
+    );
+    unmountAfterDecrement();
+
+    setupMockStores(
+      { selectedModels: selectedModelsFromIds(['model-free']) },
+      { availableProviders: [providerFree] },
+      { userTier: tierFree }
+    );
+    const { unmount: unmountAfterHover } = renderWithRouter(<AIModelSelector />);
+    await user.click(screen.getByRole('button', { name: /Select AI Models/i }));
+
+    const cappedFreeItem = screen.getByTestId('model-item-model-free');
+    await user.hover(within(cappedFreeItem).getByRole('button', { name: /Increment/i }));
+    const capUpgradeLinks = screen.getAllByTestId('upgrade-link-cap-model-free');
+    expect(capUpgradeLinks.length).toBeGreaterThanOrEqual(1);
+    expect(capUpgradeLinks[0]).toHaveAttribute('href', '/subscription');
+    unmountAfterHover();
+
+    const { dialecticActions: incrementActions } = setupMockStores(
+      { selectedModels: selectedModelsFromIds(['model-free']) },
+      { availableProviders: [providerFree] },
+      { userTier: tierFree }
+    );
+    renderWithRouter(<AIModelSelector />);
+    await user.click(screen.getByRole('button', { name: /Select AI Models/i }));
+    await user.click(within(screen.getByTestId('model-item-model-free')).getByRole('button', { name: /Increment/i }));
+    expect(incrementActions.setModelMultiplicity).not.toHaveBeenCalled();
+  });
+
+  test('ultra tier max_models_per_project null imposes no count limit', async () => {
+    const { dialecticActions: firstActions } = setupMockStores(
+      { selectedModels: [] },
+      { availableProviders: [providerFree], isConfigLoading: false },
+      { userTier: tierUltra, availableTiers: mockAllTiers }
+    );
+    const { unmount, container } = renderWithRouter(<AIModelSelector />);
+    const user = userEvent.setup();
+    await user.click(within(container).getByRole('button', { name: /Select AI Models/i }));
+    await user.click(within(screen.getByTestId('model-item-model-free')).getByRole('button', { name: /Increment/i }));
+    expect(firstActions.setModelMultiplicity).toHaveBeenCalledWith(
+      { id: 'model-free', displayName: 'Free Model' },
+      1,
+    );
+    unmount();
+
+    const { dialecticActions: secondActions } = setupMockStores(
+      { selectedModels: selectedModelsFromIds(['model-free']) },
+      { availableProviders: [providerFree], isConfigLoading: false },
+      { userTier: tierUltra, availableTiers: mockAllTiers }
+    );
+    const { unmount: unmount2, container: container2 } = renderWithRouter(<AIModelSelector />);
+    await user.click(within(container2).getByRole('button', { name: /Select AI Models/i }));
+    await user.click(within(screen.getByTestId('model-item-model-free')).getByRole('button', { name: /Increment/i }));
+    expect(secondActions.setModelMultiplicity).toHaveBeenCalledWith(
+      { id: 'model-free', displayName: 'Free Model' },
+      2,
+    );
+    unmount2();
+
+    const { dialecticActions: thirdActions } = setupMockStores(
+      { selectedModels: selectedModelsFromIds(['model-free', 'model-free']) },
+      { availableProviders: [providerFree], isConfigLoading: false },
+      { userTier: tierUltra, availableTiers: mockAllTiers }
+    );
+    renderWithRouter(<AIModelSelector />);
+    await user.click(screen.getByRole('button', { name: /Select AI Models/i }));
+    await user.click(within(screen.getByTestId('model-item-model-free')).getByRole('button', { name: /Increment/i }));
+    expect(thirdActions.setModelMultiplicity).toHaveBeenCalledWith(
+      { id: 'model-free', displayName: 'Free Model' },
+      3,
+    );
+    expect(screen.queryByTestId('upgrade-link-cap-model-free')).toBeNull();
+  });
+
+  test('ultra user can access highest-tier model row', async () => {
+    setupMockStores(
+      {},
+      { availableProviders: [providerFree, providerPremium], isConfigLoading: false },
+      { userTier: tierUltra, availableTiers: mockAllTiers }
+    );
+    renderWithRouter(<AIModelSelector />);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: /Select AI Models/i }));
+
+    const premiumItem = screen.getByTestId('model-item-model-premium');
+    expect(within(premiumItem).getByRole('button', { name: /Increment/i })).toBeInTheDocument();
+    expect(within(premiumItem).queryByTestId('tier-lock-model-premium')).toBeNull();
   });
 });
 
 describe('AIModelSelector Pulsing animation', () => {
   const getPulsingButton = () => {
-    // The pulsing classes are applied directly to the InternalDropdownButton
     return screen.getByRole('button', { name: /Select AI Models/i });
   };
 
   beforeEach(() => {
     vi.clearAllMocks();
-    // Ensure scrollIntoView is mocked for Radix components that might use it
     HTMLElement.prototype.scrollIntoView = vi.fn();
   });
 
@@ -523,7 +759,7 @@ describe('AIModelSelector Pulsing animation', () => {
         aiError: null,
       }
     );
-    render(<AIModelSelector disabled={false} />); // Not disabled by prop
+    renderWithRouter(<AIModelSelector disabled={false} />);
     const pulsingButton = getPulsingButton();
     expect(pulsingButton).toHaveClass('ring-2', 'ring-primary', 'animate-pulse');
   });
@@ -533,7 +769,7 @@ describe('AIModelSelector Pulsing animation', () => {
       { selectedModels: selectedModelsFromIds(['model1']) },
       { availableProviders: mockAiProvidersData, isConfigLoading: false, aiError: null }
     );
-    render(<AIModelSelector disabled={false} />);
+    renderWithRouter(<AIModelSelector disabled={false} />);
     const pulsingButton = getPulsingButton();
     expect(pulsingButton).not.toHaveClass('animate-pulse');
   });
@@ -543,7 +779,7 @@ describe('AIModelSelector Pulsing animation', () => {
       { selectedModels: [] },
       { availableProviders: mockAiProvidersData, isConfigLoading: false, aiError: null }
     );
-    render(<AIModelSelector disabled={true} />); // Disabled
+    renderWithRouter(<AIModelSelector disabled={true} />);
     const pulsingButton = getPulsingButton();
     expect(pulsingButton).not.toHaveClass('animate-pulse');
   });
@@ -553,7 +789,7 @@ describe('AIModelSelector Pulsing animation', () => {
       { selectedModels: [] },
       { availableProviders: mockAiProvidersData, isConfigLoading: true, aiError: null }
     );
-    render(<AIModelSelector disabled={false} />);
+    renderWithRouter(<AIModelSelector disabled={false} />);
     const pulsingButton = getPulsingButton();
     expect(pulsingButton).not.toHaveClass('animate-pulse');
   });
@@ -563,7 +799,7 @@ describe('AIModelSelector Pulsing animation', () => {
       { selectedModels: [] },
       { availableProviders: mockAiProvidersData, isConfigLoading: false, aiError: 'Some Error' }
     );
-    render(<AIModelSelector disabled={false} />);
+    renderWithRouter(<AIModelSelector disabled={false} />);
     const pulsingButton = getPulsingButton();
     expect(pulsingButton).not.toHaveClass('animate-pulse');
   });
@@ -573,9 +809,9 @@ describe('AIModelSelector Pulsing animation', () => {
       { selectedModels: [] },
       { availableProviders: [], isConfigLoading: false, aiError: null }
     );
-    render(<AIModelSelector disabled={false} />);
+    renderWithRouter(<AIModelSelector disabled={false} />);
     const button = screen.getByRole('button', { name: /Select AI Models/i });
-    expect(button).toBeDisabled(); // Button becomes disabled because no providers + not loading + no error
+    expect(button).toBeDisabled();
     expect(button).not.toHaveClass('animate-pulse');
   });
-}); 
+});

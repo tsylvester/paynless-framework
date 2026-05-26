@@ -355,6 +355,7 @@ describe('useDialecticStore', () => {
             strengths: null,
             weaknesses: null,
             is_default_generation: true,
+            min_plan_tier_level: 0,
         };
         const payload: CreateProjectAndAutoStartPayload = {
             idempotencyKey: 'caller-provided-project-idem',
@@ -397,6 +398,7 @@ describe('useDialecticStore', () => {
                 associated_chat_id: null,
                 selected_models: [{ id: 'm1', displayName: 'Model One' }],
                 user_input_reference_url: null,
+                viewing_stage_id: null,
             };
             mockDialecticApi.startSession.mockResolvedValue({
                 data: mockStartSessionResponse,
@@ -444,6 +446,7 @@ describe('useDialecticStore', () => {
                 associated_chat_id: 'chat-1',
                 selected_models: [{ id: 'model-1', displayName: 'Model 1' }],
                 user_input_reference_url: null,
+                viewing_stage_id: null,
             };
 
             const mockApiResponse: ApiResponse<StartSessionSuccessResponse> = { data: mockSessionResponse, status: 200 };

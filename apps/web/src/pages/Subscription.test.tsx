@@ -44,6 +44,7 @@ import {
   mockCancelSubscription,
 } from '../mocks/subscriptionStore.mock';
 import { buildSubscriptionPlan } from '../components/subscription/PlanCard.mock';
+import { buildUserSubscription } from '../mocks/userSubscription.mock';
 import { Layout } from '../components/layout/Layout';
 import { Navigate } from 'react-router-dom';
 
@@ -85,8 +86,6 @@ vi.mock('@paynless/store', async (importOriginal) => {
     useCartStore: actual.useCartStore,
   };
 });
-
-const MOCK_TIMESTAMP: string = '2024-01-01T00:00:00.000Z';
 
 const subscriptionTestUser: User = {
   id: 'user-123',
@@ -153,24 +152,30 @@ const freePlan: SubscriptionPlan = buildSubscriptionPlan({
   tier_level: 0,
 });
 
-const activeUserSubscription: UserSubscription = {
+const activeUserSubscription: UserSubscription = buildUserSubscription({
   id: 'sub-db-id-123',
-  status: 'active',
+  user_id: 'user-123',
   stripe_subscription_id: 'stripe_sub_abc',
+  stripe_customer_id: 'cus_mock',
   plan_id: 'plan-1',
   current_period_end: new Date(
     Date.now() + 30 * 24 * 60 * 60 * 1000,
   ).toISOString(),
-  cancel_at_period_end: false,
-  created_at: MOCK_TIMESTAMP,
-  updated_at: MOCK_TIMESTAMP,
+});
+
+const freeUserSubscription: UserSubscription = buildUserSubscription({
+  id: 'sub-free',
   user_id: 'user-123',
-  stripe_customer_id: 'cus_mock',
-  current_period_start: MOCK_TIMESTAMP,
-  has_ever_paid: true,
-  tier_level: 10,
-  plan: basicMonthlyPlan,
-};
+  plan_id: 'plan-free',
+  status: 'free',
+  stripe_subscription_id: null,
+  stripe_customer_id: null,
+  current_period_start: null,
+  current_period_end: null,
+  cancel_at_period_end: null,
+  has_ever_paid: false,
+  tier_level: 0,
+});
 
 describe('SubscriptionPage Component', () => {
   const user = userEvent.setup();
@@ -323,21 +328,6 @@ describe('SubscriptionPage Component', () => {
   });
 
   it('should NOT render CurrentSubscriptionCard content if user subscription status is free', () => {
-    const freeUserSubscription: UserSubscription = {
-      id: 'sub-free',
-      plan_id: 'plan-free',
-      status: 'free',
-      stripe_subscription_id: null,
-      current_period_end: null,
-      cancel_at_period_end: null,
-      created_at: MOCK_TIMESTAMP,
-      updated_at: MOCK_TIMESTAMP,
-      user_id: 'user-123',
-      stripe_customer_id: null,
-      current_period_start: null,
-      has_ever_paid: false,
-      tier_level: 0,
-    };
     act(() => {
       useSubscriptionStore.setState({
         userSubscription: freeUserSubscription,

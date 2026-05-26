@@ -281,6 +281,7 @@ describe('useDialecticStore', () => {
                     input_token_cost_usd_millionths: null,
                     output_token_cost_usd_millionths: null,
                     max_output_tokens: null,
+                    min_plan_tier_level: 0,
                 },
                 {
                     id: 'model2',
@@ -298,6 +299,7 @@ describe('useDialecticStore', () => {
                     input_token_cost_usd_millionths: null,
                     output_token_cost_usd_millionths: null,
                     max_output_tokens: null,
+                    min_plan_tier_level: 10,
                 },
             ];
             const mockResponse: ApiResponse<AIModelCatalogEntry[]> = { data: mockCatalog, status: 200 };
@@ -591,6 +593,7 @@ describe('useDialecticStore', () => {
             getMockDialecticClient().updateSessionModels.mockResolvedValue({ error: mockApiError, status: 500 });
             vi.mocked(logger).error.mockClear();
 
+            useDialecticStore.setState({ selectedModels: initialModelsSelected });
             const { setSelectedModels } = useDialecticStore.getState();
             setSelectedModels(newModelsSelected);
 
@@ -604,6 +607,60 @@ describe('useDialecticStore', () => {
                     }
                 );
             });
+            expect(useDialecticStore.getState().selectedModels).toEqual(initialModelsSelected);
+            expect(useDialecticStore.getState().updateSessionModelsError).toEqual(mockApiError);
+        });
+
+        it('setSelectedModels reverts and sets updateSessionModelsError on MODEL_TIER_DISALLOWED', async () => {
+            const mockApiError: ApiError = {
+                code: 'MODEL_TIER_DISALLOWED',
+                message: 'Selected models are not available on your plan',
+            };
+            getMockDialecticClient().updateSessionModels.mockResolvedValue({ error: mockApiError, status: 403 });
+            vi.mocked(logger).error.mockClear();
+
+            useDialecticStore.setState({ selectedModels: initialModelsSelected });
+            const { setSelectedModels } = useDialecticStore.getState();
+            setSelectedModels(newModelsSelected);
+
+            await vi.waitFor(() => {
+                expect(getMockDialecticClient().updateSessionModels).toHaveBeenCalled();
+                expect(vi.mocked(logger).error).toHaveBeenCalledWith(
+                    '[DialecticStore] Post-setSelectedModels: Failed to update session models on backend',
+                    {
+                        sessionId: activeSessionId,
+                        error: mockApiError,
+                    }
+                );
+            });
+            expect(useDialecticStore.getState().selectedModels).toEqual(initialModelsSelected);
+            expect(useDialecticStore.getState().updateSessionModelsError?.code).toBe('MODEL_TIER_DISALLOWED');
+        });
+
+        it('setSelectedModels reverts and sets updateSessionModelsError on MODEL_LIMIT_EXCEEDED', async () => {
+            const mockApiError: ApiError = {
+                code: 'MODEL_LIMIT_EXCEEDED',
+                message: 'Model selection exceeds the limit for your plan',
+            };
+            getMockDialecticClient().updateSessionModels.mockResolvedValue({ error: mockApiError, status: 403 });
+            vi.mocked(logger).error.mockClear();
+
+            useDialecticStore.setState({ selectedModels: initialModelsSelected });
+            const { setSelectedModels } = useDialecticStore.getState();
+            setSelectedModels(newModelsSelected);
+
+            await vi.waitFor(() => {
+                expect(getMockDialecticClient().updateSessionModels).toHaveBeenCalled();
+                expect(vi.mocked(logger).error).toHaveBeenCalledWith(
+                    '[DialecticStore] Post-setSelectedModels: Failed to update session models on backend',
+                    {
+                        sessionId: activeSessionId,
+                        error: mockApiError,
+                    }
+                );
+            });
+            expect(useDialecticStore.getState().selectedModels).toEqual(initialModelsSelected);
+            expect(useDialecticStore.getState().updateSessionModelsError?.code).toBe('MODEL_LIMIT_EXCEEDED');
         });
     });
 
@@ -706,6 +763,8 @@ describe('useDialecticStore', () => {
                     }
                 );
             });
+            expect(useDialecticStore.getState().selectedModels).toEqual(selectedModelsThree);
+            expect(useDialecticStore.getState().updateSessionModelsError).toEqual(mockApiError);
         });
 
         it('should handle setting multiplicity to 0 (removing the model)', async () => {
@@ -738,6 +797,64 @@ describe('useDialecticStore', () => {
                 expect(selected).toBeDefined();
                 expect(selected!.map((m) => m.id)).toEqual([initialOtherModelObj.id]);
             });
+        });
+
+        it('setModelMultiplicity reverts and sets updateSessionModelsError on MODEL_TIER_DISALLOWED', async () => {
+            const mockApiError: ApiError = {
+                code: 'MODEL_TIER_DISALLOWED',
+                message: 'Selected models are not available on your plan',
+            };
+            getMockDialecticClient().updateSessionModels.mockResolvedValue({ error: mockApiError, status: 403 });
+            const count = 2;
+            vi.mocked(logger).error.mockClear();
+
+            useDialecticStore.setState({ selectedModels: selectedModelsThree });
+            const { setModelMultiplicity } = useDialecticStore.getState();
+            setModelMultiplicity(modelToChangeObj, count);
+
+            await vi.waitFor(() => {
+                expect(getMockDialecticClient().updateSessionModels).toHaveBeenCalled();
+                expect(vi.mocked(logger).error).toHaveBeenCalledWith(
+                    '[DialecticStore] Post-setModelMultiplicity: Failed to update session models on backend',
+                    {
+                        sessionId: activeSessionId,
+                        modelId: modelToChangeObj.id,
+                        count: count,
+                        error: mockApiError,
+                    }
+                );
+            });
+            expect(useDialecticStore.getState().selectedModels).toEqual(selectedModelsThree);
+            expect(useDialecticStore.getState().updateSessionModelsError?.code).toBe('MODEL_TIER_DISALLOWED');
+        });
+
+        it('setModelMultiplicity reverts and sets updateSessionModelsError on MODEL_LIMIT_EXCEEDED', async () => {
+            const mockApiError: ApiError = {
+                code: 'MODEL_LIMIT_EXCEEDED',
+                message: 'Model selection exceeds the limit for your plan',
+            };
+            getMockDialecticClient().updateSessionModels.mockResolvedValue({ error: mockApiError, status: 403 });
+            const count = 2;
+            vi.mocked(logger).error.mockClear();
+
+            useDialecticStore.setState({ selectedModels: selectedModelsThree });
+            const { setModelMultiplicity } = useDialecticStore.getState();
+            setModelMultiplicity(modelToChangeObj, count);
+
+            await vi.waitFor(() => {
+                expect(getMockDialecticClient().updateSessionModels).toHaveBeenCalled();
+                expect(vi.mocked(logger).error).toHaveBeenCalledWith(
+                    '[DialecticStore] Post-setModelMultiplicity: Failed to update session models on backend',
+                    {
+                        sessionId: activeSessionId,
+                        modelId: modelToChangeObj.id,
+                        count: count,
+                        error: mockApiError,
+                    }
+                );
+            });
+            expect(useDialecticStore.getState().selectedModels).toEqual(selectedModelsThree);
+            expect(useDialecticStore.getState().updateSessionModelsError?.code).toBe('MODEL_LIMIT_EXCEEDED');
         });
     });
 

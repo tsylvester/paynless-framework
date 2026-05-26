@@ -42,6 +42,8 @@ const mockModel1: AIModelCatalogEntry = {
     input_token_cost_usd_millionths: null,
     output_token_cost_usd_millionths: null,
     max_output_tokens: null,
+    min_plan_tier_level: 0,
+    is_default_generation: false,
 };
 
 const mockModel2: AIModelCatalogEntry = {
@@ -59,6 +61,8 @@ const mockModel2: AIModelCatalogEntry = {
     input_token_cost_usd_millionths: null,
     output_token_cost_usd_millionths: null,
     max_output_tokens: null,
+    min_plan_tier_level: 0,
+    is_default_generation: false,
 };
 
 const mockSessionSelectedModels: SelectedModels[] = [
@@ -79,6 +83,7 @@ const mockSession: DialecticSession = {
     session_description: null,
     user_input_reference_url: null,
     associated_chat_id: null,
+    viewing_stage_id: null,
 };
 
 const mockProject: DialecticProject = {
@@ -175,6 +180,7 @@ describe('Dialectic Store Notification Handlers', () => {
             stageSlug,
             instanceId: 'recipe-1',
             steps: [plannerStep, executeStep, renderStep],
+            edges: [],
           },
         },
         stageRunProgress: {
@@ -186,6 +192,8 @@ describe('Dialectic Store Notification Handlers', () => {
             },
             documents: {},
             jobProgress: {},
+            progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
+            jobs: [],
           },
         },
       });
@@ -572,6 +580,7 @@ describe('Dialectic Store Notification Handlers', () => {
       iterationNumber: 1,
       continueUntilComplete: false,
       walletId: 'wallet-1',
+      idempotencyKey: 'idempotency-key-1',
     });
     
     // Verify that two placeholders were created
@@ -624,6 +633,7 @@ describe('Dialectic Store Notification Handlers', () => {
       iterationNumber: 1,
       continueUntilComplete: false,
       walletId: 'wallet-1',
+      idempotencyKey: 'idempotency-key-1',
     });
 
     const receivedContribution = {
@@ -696,6 +706,7 @@ describe('Dialectic Store Notification Handlers', () => {
           iterationNumber: 1,
           continueUntilComplete: false,
           walletId: 'wallet-1',
+          idempotencyKey: 'idempotency-key-1',
       });
 
       const failureNotification: DialecticLifecycleEvent = {
@@ -741,6 +752,7 @@ describe('Dialectic Store Notification Handlers', () => {
       iterationNumber: 1,
       continueUntilComplete: false,
       walletId: 'wallet-1',
+      idempotencyKey: 'idempotency-key-1',
     });
     
     // First, mark it as generating
@@ -790,6 +802,7 @@ describe('Dialectic Store Notification Handlers', () => {
       iterationNumber: 1,
       continueUntilComplete: false,
       walletId: 'wallet-1',
+      idempotencyKey: 'idempotency-key-1',
     });
 
     const preFailureState = useDialecticStore.getState();
@@ -844,6 +857,7 @@ describe('Dialectic Store Notification Handlers', () => {
           iterationNumber: 1,
           continueUntilComplete: false,
           walletId: 'wallet-1',
+          idempotencyKey: 'idempotency-key-1',
       });
 
       // Check that the session is being tracked as generating
@@ -875,6 +889,7 @@ describe('Dialectic Store Notification Handlers', () => {
       iterationNumber: 1,
       continueUntilComplete: false,
       walletId: 'wallet-1',
+      idempotencyKey: 'idempotency-key-1',
     });
 
     const continuingContribution = {
@@ -965,6 +980,7 @@ describe('Dialectic Store Notification Handlers', () => {
         iterationNumber: 1,
         continueUntilComplete: false,
         walletId: 'wallet-1',
+        idempotencyKey: 'idempotency-key-1',
     });
     
     // Check for two placeholders for model-1

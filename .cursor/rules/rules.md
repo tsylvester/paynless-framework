@@ -382,6 +382,9 @@ The second exception to strict typing is for intentionally malformed objects in 
     * `[ ]`   Validate behavior against:
       * `requirements`
       * `interaction.spec`
+  * `[ ]`   `[function].someOther.test.ts` 
+    * Some functions have multiple test files. 
+    * In such case, include every test file that must be updated in the node detail. 
 
     * `[ ]`   Focus on:
       * Correct transformations

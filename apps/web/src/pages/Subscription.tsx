@@ -282,10 +282,8 @@ export function SubscriptionPage() {
             currentUserResolvedPlan &&
             userSubscription.status !== 'free' && (
               <CurrentSubscriptionCard
-                userSubscription={{
-                  ...userSubscription,
-                  plan: currentUserResolvedPlan,
-                }}
+                subscription={userSubscription}
+                plan={currentUserResolvedPlan}
                 isProcessing={isSubStoreLoading}
                 handleManageSubscription={handleManageSubscription}
                 handleCancelSubscription={handleCancelSubscription}

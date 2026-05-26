@@ -210,6 +210,7 @@ describe('useDialecticStore', () => {
                         strengths: null,
                         weaknesses: null,
                         is_default_generation: true,
+                        min_plan_tier_level: 0,
                     },
                     {
                         id: 'model-b',
@@ -227,6 +228,7 @@ describe('useDialecticStore', () => {
                         strengths: null,
                         weaknesses: null,
                         is_default_generation: true,
+                        min_plan_tier_level: 0,
                     },
                     {
                         id: 'model-c',
@@ -244,6 +246,7 @@ describe('useDialecticStore', () => {
                         strengths: null,
                         weaknesses: null,
                         is_default_generation: true,
+                        min_plan_tier_level: 0,
                     },
                 ],
             });
@@ -308,6 +311,7 @@ describe('useDialecticStore', () => {
                         strengths: null,
                         weaknesses: null,
                         is_default_generation: true,
+                        min_plan_tier_level: 0,
                     },
                 ],
             });
@@ -1643,8 +1647,42 @@ describe('useDialecticStore', () => {
         };
 
         const mockModelCatalog: AIModelCatalogEntry[] = [
-            { id: 'model-1', model_name: 'Test Model 1', provider_name: 'Provider A', api_identifier: 'm1', created_at: '', updated_at: '', context_window_tokens: 1000, input_token_cost_usd_millionths: 1, output_token_cost_usd_millionths: 1, max_output_tokens: 500, is_active: true, description: null, strengths: null, weaknesses: null, is_default_generation: true },
-            { id: 'model-2', model_name: 'Test Model 2', provider_name: 'Provider B', api_identifier: 'm2', created_at: '', updated_at: '', context_window_tokens: 1000, input_token_cost_usd_millionths: 1, output_token_cost_usd_millionths: 1, max_output_tokens: 500, is_active: true, description: null, strengths: null, weaknesses: null, is_default_generation: true },
+            { 
+                id: 'model-1', 
+                model_name: 'Test Model 1', 
+                provider_name: 'Provider A', 
+                api_identifier: 'm1', 
+                created_at: '', 
+                updated_at: '', 
+                context_window_tokens: 1000, 
+                input_token_cost_usd_millionths: 1, 
+                output_token_cost_usd_millionths: 1, 
+                max_output_tokens: 500, 
+                is_active: true, 
+                description: null, 
+                strengths: null, 
+                weaknesses: null, 
+                is_default_generation: true, 
+                min_plan_tier_level: 0 
+            },
+            { 
+                id: 'model-2', 
+                model_name: 'Test Model 2', 
+                provider_name: 'Provider B', 
+                api_identifier: 'm2', 
+                created_at: '', 
+                updated_at: '', 
+                context_window_tokens: 1000, 
+                input_token_cost_usd_millionths: 1, 
+                output_token_cost_usd_millionths: 1, 
+                max_output_tokens: 500, 
+                is_active: true, 
+                description: null, 
+                strengths: null, 
+                weaknesses: null, 
+                is_default_generation: true, 
+                min_plan_tier_level: 0 
+            },
         ];
 
 

@@ -47,7 +47,7 @@ const wireMockImplementations = (): void => {
   mockSetUserSubscription.mockImplementation((subscription) => {
     internalMockSubscriptionStoreState.userSubscription = subscription;
     internalMockSubscriptionStoreState.hasActiveSubscription = subscription
-      ? subscription.status === 'active' || subscription.status === 'trialing'
+      ? subscription.status === 'active'
       : false;
   });
   mockSetAvailablePlans.mockImplementation((plans) => {

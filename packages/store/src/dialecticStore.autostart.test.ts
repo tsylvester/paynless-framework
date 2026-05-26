@@ -107,6 +107,7 @@ function catalogEntry(overrides: Partial<AIModelCatalogEntry>): AIModelCatalogEn
     created_at: '2025-01-01T00:00:00Z',
     updated_at: '2025-01-01T00:00:00Z',
     is_default_generation: false,
+    min_plan_tier_level: 0,
   };
   return { ...base, ...overrides };
 }

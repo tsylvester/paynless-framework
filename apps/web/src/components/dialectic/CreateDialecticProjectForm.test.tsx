@@ -173,6 +173,7 @@ const modelCatalogWithDefault: AIModelCatalogEntry[] = [
     created_at: '',
     updated_at: '',
     is_default_generation: true,
+    min_plan_tier_level: 0,
   },
 ];
 

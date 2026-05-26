@@ -1,6 +1,7 @@
 import React, { useMemo, useEffect, useRef } from "react";
+import { Link } from "react-router-dom";
 import { InternalDropdownButton } from "./InternalDropdownButton";
-import type { AiProvider, SelectedModels } from "@paynless/types";
+import type { AiProvider, SelectedModels, UserTier } from "@paynless/types";
 import {
 	DropdownMenu,
 	DropdownMenuTrigger,
@@ -10,8 +11,19 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ChevronDown, X, Cpu } from "lucide-react";
-import { useDialecticStore, useAiStore, selectSelectedModels, selectDefaultGenerationModels } from "@paynless/store";
+import {
+	Tooltip,
+	TooltipContent,
+	TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { ChevronDown, X, Cpu, Lock } from "lucide-react";
+import {
+	useDialecticStore,
+	useAiStore,
+	useAuthStore,
+	selectSelectedModels,
+	selectDefaultGenerationModels,
+} from "@paynless/store";
 import { MultiplicitySelector } from "./MultiplicitySelector";
 import { cn } from "@/lib/utils";
 
@@ -19,8 +31,44 @@ interface AIModelSelectorProps {
 	disabled?: boolean;
 }
 
+function tierDisplayName(level: number, availableTiers: UserTier[]): string {
+	for (const tier of availableTiers) {
+		if (tier.level === level) {
+			const name: string = tier.name;
+			return name.charAt(0).toUpperCase() + name.slice(1);
+		}
+	}
+	throw new Error(
+		`AIModelSelector: no tier definition for level ${level} in availableTiers`,
+	);
+}
+
+function resolveNextTierName(
+	availableTiers: UserTier[],
+	effectiveUserTier: UserTier,
+	modelLimit: number | null,
+): string {
+	const sortedTiers: UserTier[] = [...availableTiers].sort(
+		(a, b) => a.level - b.level,
+	);
+	for (const tier of sortedTiers) {
+		if (tier.level <= effectiveUserTier.level) {
+			continue;
+		}
+		if (tier.max_models_per_project === null) {
+			return tierDisplayName(tier.level, availableTiers);
+		}
+		if (modelLimit !== null && tier.max_models_per_project > modelLimit) {
+			return tierDisplayName(tier.level, availableTiers);
+		}
+	}
+	throw new Error(
+		"AIModelSelector: no upgrade tier with higher model limit in availableTiers",
+	);
+}
+
 const SelectedModelsDisplayContent: React.FC<{
-	availableProviders: AiProvider[] | null | undefined;
+	availableProviders: AiProvider[];
 	selectedModels: SelectedModels[];
 	currentSelectedModelIds: string[];
 	modelMultiplicities: Record<string, number>;
@@ -173,6 +221,36 @@ export const AIModelSelector: React.FC<AIModelSelectorProps> = ({
 		return counts;
 	}, [selectedModels, availableProviders]);
 
+	const { userTier, availableTiers } = useAuthStore((state) => ({
+		userTier: state.userTier,
+		availableTiers: state.availableTiers,
+	}));
+
+	const effectiveUserTier: UserTier = useMemo(() => {
+		if (userTier !== null) {
+			return userTier;
+		}
+		for (const tier of availableTiers) {
+			if (tier.level === 0) {
+				return tier;
+			}
+		}
+		throw new Error(
+			"AIModelSelector: userTier is null and no level-0 tier in availableTiers",
+		);
+	}, [userTier, availableTiers]);
+
+	const totalSelectedCount: number = currentSelectedModelIds.length;
+
+	const modelLimit: number | null = effectiveUserTier.max_models_per_project;
+
+	const atCap: boolean = useMemo(() => {
+		if (modelLimit === null) {
+			return false;
+		}
+		return totalSelectedCount >= modelLimit;
+	}, [modelLimit, totalSelectedCount]);
+
 	useEffect(() => {
 		if (
 			!isConfigLoading &&
@@ -203,12 +281,33 @@ export const AIModelSelector: React.FC<AIModelSelectorProps> = ({
 
 	const handleMultiplicityChange = (modelId: string, newCount: number) => {
 		const provider = availableProviders?.find((p) => p.id === modelId);
-		if (provider) {
-			setModelMultiplicity({ id: provider.id, displayName: provider.name }, newCount);
-		} else {
+		if (provider === undefined) {
 			const model = selectedModels.find((m) => m.id === modelId);
 			if (model) setModelMultiplicity(model, newCount);
+			return;
 		}
+
+		const tierLocked: boolean =
+			provider.min_plan_tier_level > effectiveUserTier.level;
+		if (tierLocked) {
+			return;
+		}
+
+		const currentCount: number = modelMultiplicities[modelId];
+		if (currentCount === undefined) {
+			throw new Error(
+				`AIModelSelector: no multiplicity entry for model id ${modelId}`,
+			);
+		}
+
+		if (newCount > currentCount && atCap) {
+			return;
+		}
+
+		setModelMultiplicity(
+			{ id: provider.id, displayName: provider.name },
+			newCount,
+		);
 	};
 
 	const handleRemoveModel = (modelId: string) => {
@@ -243,15 +342,128 @@ export const AIModelSelector: React.FC<AIModelSelectorProps> = ({
 					<ScrollArea className="h-64">
 						<div className="p-2 space-y-1">
 							{availableProviders.map((provider) => {
-								const count = modelMultiplicities[provider.id];
-								const isSelected = count !== undefined && count > 0;
+								const count: number = modelMultiplicities[provider.id];
+								if (count === undefined) {
+									throw new Error(
+										`AIModelSelector: no multiplicity entry for provider id ${provider.id}`,
+									);
+								}
+								const isSelected: boolean = count > 0;
+								const tierLocked: boolean =
+									provider.min_plan_tier_level >
+									effectiveUserTier.level;
+								const requiredTierName: string = tierDisplayName(
+									provider.min_plan_tier_level,
+									availableTiers,
+								);
+
+								let controls: React.ReactNode;
+								if (tierLocked) {
+									controls = (
+										<Tooltip>
+											<TooltipTrigger asChild>
+												<div
+													className="flex items-center gap-1"
+													data-testid={`tier-lock-${provider.id}`}
+												>
+													<Lock className="h-4 w-4 text-muted-foreground" />
+													<span className="text-xs text-muted-foreground">
+														Requires {requiredTierName}
+													</span>
+												</div>
+											</TooltipTrigger>
+											<TooltipContent>
+												<p>
+													This model requires a {requiredTierName}{" "}
+													plan.
+												</p>
+												<Link
+													to="/subscription"
+													data-testid={`upgrade-link-tier-${provider.id}`}
+													onClick={(e) => e.stopPropagation()}
+												>
+													Upgrade to {requiredTierName}
+												</Link>
+											</TooltipContent>
+										</Tooltip>
+									);
+								} else if (atCap) {
+									if (modelLimit === null) {
+										throw new Error(
+											"AIModelSelector: atCap with null modelLimit",
+										);
+									}
+									const capNextTierName: string = resolveNextTierName(
+										availableTiers,
+										effectiveUserTier,
+										modelLimit,
+									);
+									controls = (
+										<Tooltip>
+											<TooltipTrigger asChild>
+												<span
+													data-testid={`model-cap-controls-${provider.id}`}
+												>
+													<MultiplicitySelector
+														value={count}
+														onChange={(newCount) =>
+															handleMultiplicityChange(
+																provider.id,
+																newCount,
+															)
+														}
+														minValue={0}
+														maxValue={
+															isSelected ? count : undefined
+														}
+														disabled={
+															finalIsDisabled ||
+															(!isSelected && atCap)
+														}
+													/>
+												</span>
+											</TooltipTrigger>
+											<TooltipContent>
+												<p>
+													You&apos;ve reached the model limit for your
+													plan ({totalSelectedCount}/{modelLimit}).
+													Upgrade to {capNextTierName} to add more
+													models.
+												</p>
+												<Link
+													to="/subscription"
+													data-testid={`upgrade-link-cap-${provider.id}`}
+													onClick={(e) => e.stopPropagation()}
+												>
+													Upgrade to {capNextTierName}
+												</Link>
+											</TooltipContent>
+										</Tooltip>
+									);
+								} else {
+									controls = (
+										<MultiplicitySelector
+											value={count}
+											onChange={(newCount) =>
+												handleMultiplicityChange(
+													provider.id,
+													newCount,
+												)
+											}
+											minValue={0}
+											disabled={finalIsDisabled}
+										/>
+									);
+								}
 
 								return (
 									<div
 										key={provider.id}
 										className={cn(
 											"flex items-center gap-3 p-3 rounded-lg transition-all duration-150",
-											"hover:bg-muted/50 cursor-pointer",
+											tierLocked
+												? "opacity-50 cursor-not-allowed"
+												: "hover:bg-muted/50 cursor-pointer",
 											isSelected && "bg-primary/5 border border-primary/20",
 										)}
 										data-testid={`model-item-${provider.id}`}
@@ -285,14 +497,7 @@ export const AIModelSelector: React.FC<AIModelSelectorProps> = ({
 
 										{/* Controls */}
 										<div className="flex-shrink-0">
-											<MultiplicitySelector
-												value={count}
-												onChange={(newCount) =>
-													handleMultiplicityChange(provider.id, newCount)
-												}
-												minValue={0}
-												disabled={finalIsDisabled}
-											/>
+											{controls}
 										</div>
 									</div>
 								);

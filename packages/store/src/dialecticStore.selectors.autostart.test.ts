@@ -20,6 +20,7 @@ function catalogEntry(overrides: Partial<AIModelCatalogEntry>): AIModelCatalogEn
     created_at: '2025-01-01T00:00:00Z',
     updated_at: '2025-01-01T00:00:00Z',
     is_default_generation: false,
+    min_plan_tier_level: 0,
   };
   return { ...base, ...overrides };
 }
@@ -82,6 +83,22 @@ describe('selectDefaultGenerationModels', () => {
     expect(result).toEqual([
       { id: 'd1', displayName: 'Default One' },
       { id: 'd2', displayName: 'Default Two' },
+    ]);
+  });
+
+  it('selectDefaultGenerationModels does not filter by min_plan_tier_level', () => {
+    const state: DialecticStateValues = stateWithCatalog([
+      catalogEntry({
+        id: 'high-tier-default',
+        model_name: 'High Tier Default',
+        is_default_generation: true,
+        is_active: true,
+        min_plan_tier_level: 30,
+      }),
+    ]);
+    const result: SelectedModels[] = selectDefaultGenerationModels(state);
+    expect(result).toEqual([
+      { id: 'high-tier-default', displayName: 'High Tier Default' },
     ]);
   });
 });

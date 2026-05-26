@@ -3,7 +3,7 @@ import { DialecticApiClient } from './dialectic.api';
 import { ApiClient, ApiError as LocalApiError } from './apiClient';
 import { 
     ApiResponse, 
-    ApiError as ApiErrorType,
+    ApiError,
     CreateProjectPayload, 
     DialecticProject, 
     StartSessionPayload, 
@@ -84,6 +84,7 @@ const mockDialecticSession: DialecticSession = {
   current_stage_id: 'stage-123',
   selected_models: [{ id: 'model-1', displayName: 'Model 1' }],
   user_input_reference_url: null,
+  viewing_stage_id: null,
 };
 
 // Remove any mock project data that incorrectly includes a 'sessions' array directly
@@ -216,7 +217,7 @@ describe('DialecticApiClient', () => {
         });
 
         it('should return the error object on failed generation (e.g., session not found)', async () => {
-            const mockApiError: ApiErrorType = { code: 'NOT_FOUND', message: 'Session not found or generation failed' };
+            const mockApiError: ApiError = { code: 'NOT_FOUND', message: 'Session not found or generation failed' };
             const mockErrorResponse: ApiResponse<GenerateContributionsResponse> = {
                 error: mockApiError,
                 status: 404,
@@ -318,7 +319,7 @@ describe('DialecticApiClient', () => {
         });
 
         it('should return the error object on other API failures', async () => {
-            const mockApiError: ApiErrorType = { code: 'SERVER_ERROR', message: 'Failed to fetch content data' };
+            const mockApiError: ApiError = { code: 'SERVER_ERROR', message: 'Failed to fetch content data' };
             const mockErrorResponse: ApiResponse<GetContributionContentDataResponse | null> = {
                 error: mockApiError,
                 status: 500,
@@ -389,7 +390,7 @@ describe('DialecticApiClient', () => {
         });
 
         it('should return the error object on failed fetch (e.g., prompt not found)', async () => {
-            const mockApiError: ApiErrorType = { code: 'NOT_FOUND', message: 'Initial prompt for iteration not found' };
+            const mockApiError: ApiError = { code: 'NOT_FOUND', message: 'Initial prompt for iteration not found' };
             const mockErrorResponse: ApiResponse<IterationInitialPromptData> = {
                 error: mockApiError,
                 status: 404,
@@ -438,6 +439,7 @@ describe('DialecticApiClient', () => {
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
             is_default_generation: false,
+            min_plan_tier_level: 10,
         };
 
         it('should call apiClient.post with the correct endpoint and body', async () => {
@@ -469,7 +471,7 @@ describe('DialecticApiClient', () => {
         });
 
         it('should return the error object on failed response', async () => {
-            const mockApiError: ApiErrorType = { code: 'SERVER_ERROR', message: 'Failed to fetch model catalog' };
+            const mockApiError: ApiError = { code: 'SERVER_ERROR', message: 'Failed to fetch model catalog' };
             const mockErrorResponse: ApiResponse<AIModelCatalogEntry[]> = {
                 error: mockApiError,
                 status: 500,
@@ -495,6 +497,17 @@ describe('DialecticApiClient', () => {
             });
             expect(result.status).toBe(0);
             expect(result.data).toBeUndefined();
+        });
+
+        it('listModelCatalog returns entries including min_plan_tier_level', async () => {
+            mockApiClientPost.mockResolvedValue({ data: [mockModelCatalogEntry], status: 200 });
+
+            const result = await dialecticApiClient.listModelCatalog();
+
+            expect(result.data).toBeDefined();
+            expect(result.data?.length).toBe(1);
+            expect(result.data?.[0].min_plan_tier_level).toBe(10);
+            expect(result.error).toBeUndefined();
         });
     });    
     
@@ -536,7 +549,7 @@ describe('DialecticApiClient', () => {
         });
 
         it('should return an error object on failed save', async () => {
-            const mockError: ApiErrorType = { code: 'FORBIDDEN', message: 'Not authorized' };
+            const mockError: ApiError = { code: 'FORBIDDEN', message: 'Not authorized' };
             mockApiClientPost.mockResolvedValue({ error: mockError, status: 403 });
 
             const result = await dialecticApiClient.saveContributionEdit(validPayload);
@@ -593,7 +606,7 @@ describe('DialecticApiClient', () => {
         });
 
         it('should return the error object on failed session creation', async () => {
-            const mockApiError: ApiErrorType = { code: 'VALIDATION_ERROR', message: 'Invalid project ID' };
+            const mockApiError: ApiError = { code: 'VALIDATION_ERROR', message: 'Invalid project ID' };
             const mockErrorResponse: ApiResponse<DialecticSession> = {
                 error: mockApiError,
                 status: 400,
@@ -643,6 +656,7 @@ describe('DialecticApiClient', () => {
             current_stage_id: 'stage-456', // ID of the next stage
             selected_models: [{ id: 'model-1', displayName: 'Model 1' }],
             user_input_reference_url: null,
+            viewing_stage_id: null,
         };
 
         it('should call apiClient.post with the correct action and payload', async () => {
@@ -677,7 +691,7 @@ describe('DialecticApiClient', () => {
         });
 
         it('should return an error object on failed stage advancement', async () => {
-            const mockError: ApiErrorType = { code: 'SERVER_ERROR', message: 'Failed to advance stage' };
+            const mockError: ApiError = { code: 'SERVER_ERROR', message: 'Failed to advance stage' };
             mockApiClientPost.mockResolvedValue({ error: mockError, status: 500 });
 
             const result = await dialecticApiClient.submitStageResponses(validPayload);
@@ -729,7 +743,7 @@ describe('DialecticApiClient', () => {
         });
 
         it('should return the error object on failed update (e.g., session not found)', async () => {
-            const mockApiError: ApiErrorType = { code: 'NOT_FOUND', message: 'Session not found for model update' };
+            const mockApiError: ApiError = { code: 'NOT_FOUND', message: 'Session not found for model update' };
             const mockErrorResponse: ApiResponse<DialecticSession> = {
                 error: mockApiError,
                 status: 404,
