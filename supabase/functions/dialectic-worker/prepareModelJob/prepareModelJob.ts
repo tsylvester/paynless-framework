@@ -70,7 +70,28 @@ export async function prepareModelJob(
       }
     }
 
-    const userConfig: UserConfig = { tier_output_cap_tokens: tierOutputCapTokens };
+    let effectiveCap: TierOutputCapTokens = tierOutputCapTokens;
+    let userChosenMaxOutputTokens: number | null = null;
+    if (
+      isRecord(job.payload) &&
+      'maxOutputTokens' in job.payload &&
+      typeof job.payload.maxOutputTokens === 'number'
+    ) {
+      userChosenMaxOutputTokens = job.payload.maxOutputTokens;
+      if (tierOutputCapTokens === null) {
+        effectiveCap = userChosenMaxOutputTokens;
+      } else {
+        effectiveCap = Math.min(userChosenMaxOutputTokens, tierOutputCapTokens);
+      }
+    }
+
+    const userConfig: UserConfig = { tier_output_cap_tokens: effectiveCap };
+
+    deps.logger.info('[prepareModelJob] Effective output cap', {
+      tierCap: tierOutputCapTokens,
+      userChosen: userChosenMaxOutputTokens,
+      effective: effectiveCap,
+    });
 
     const {
       promptConstructionPayload,

@@ -854,6 +854,20 @@ Deno.test('Type Guard: isDialecticExecuteJobPayload', async (t) => {
             'Missing or invalid user_jwt.'
         );
     });
+
+    await t.step('should pass with a valid optional maxOutputTokens from GenerateContributionsPayload', () => {
+        const p: DialecticExecuteJobPayload = { ...basePayload, maxOutputTokens: 8192 };
+        assert(isDialecticExecuteJobPayload(p));
+    });
+
+    await t.step('should throw when maxOutputTokens is a string', () => {
+        const p: Record<string, unknown> = { ...basePayload, maxOutputTokens: 'string' };
+        assertThrows(
+            () => isDialecticExecuteJobPayload(p),
+            Error,
+            'Invalid maxOutputTokens.',
+        );
+    });
 });
 
 Deno.test('Type Guard: isDialecticJobPayload', async (t) => {
@@ -994,6 +1008,18 @@ Deno.test('Type Guard: isDialecticJobPayload', async (t) => {
             is_test_job: true,
         };
         assert(!isDialecticJobPayload(payload));
+    });
+
+    await t.step('should return true when maxOutputTokens is present on payload', () => {
+        const payload: Json = {
+            sessionId: 'test-session',
+            projectId: 'test-project',
+            model_id: 'model-1',
+            stageSlug: 'thesis',
+            iterationNumber: 1,
+            maxOutputTokens: 8192,
+        };
+        assert(isDialecticJobPayload(payload));
     });
 });
 
@@ -1365,6 +1391,31 @@ Deno.test('Type Guard: isDialecticPlanJobPayload', async (t) => {
         };
         assert(!isDialecticPlanJobPayload(payload));
     });
+
+    await t.step('should return true when maxOutputTokens is present on plan job payload', () => {
+        const payload: DialecticPlanJobPayload = {
+            sessionId: 'test-session',
+            projectId: 'test-project',
+            model_id: 'model-123',
+            walletId: 'wallet-abc',
+            user_jwt: 'test-jwt',
+            idempotencyKey: 'test-idempotency-key',
+            maxOutputTokens: 8192,
+        };
+        assert(isDialecticPlanJobPayload(payload));
+    });
+
+    await t.step('should return false when maxOutputTokens is not a number on plan job payload', () => {
+        const payload: Record<string, unknown> = {
+            sessionId: 'test-session',
+            projectId: 'test-project',
+            model_id: 'model-123',
+            walletId: 'wallet-abc',
+            user_jwt: 'test-jwt',
+            maxOutputTokens: 'not a number',
+        };
+        assert(!isDialecticPlanJobPayload(payload));
+    });
 });
 
 Deno.test('Type Guard: isDialecticSkeletonJobPayload', async (t) => {
@@ -1423,6 +1474,28 @@ Deno.test('Type Guard: isDialecticSkeletonJobPayload', async (t) => {
             },
         };
         assert(!isDialecticSkeletonJobPayload(payload));
+    });
+
+    await t.step('should return true when maxOutputTokens is present on skeleton job payload', () => {
+        const payload: DialecticSkeletonJobPayload = {
+            projectId: 'test-project',
+            sessionId: 'test-session',
+            model_id: 'model-123',
+            walletId: 'wallet-abc',
+            user_jwt: 'test-jwt',
+            stageSlug: 'thesis',
+            iterationNumber: 1,
+            planner_metadata: {
+                recipe_step_id: 'step-123',
+            },
+            step_info: {
+                current_step: 1,
+                total_steps: 1,
+            },
+            idempotencyKey: 'test-idempotency-key',
+            maxOutputTokens: 8192,
+        };
+        assert(isDialecticSkeletonJobPayload(payload));
     });
 });
 
@@ -3755,6 +3828,20 @@ Deno.test('Type Guard: isDialecticRenderJobPayload', async (t) => {
         const p = { ...basePayload, template_filename: '   ' };
         // This test must initially FAIL because type guard doesn't validate template_filename yet
         assertThrows(() => isDialecticRenderJobPayload(p), Error, 'Missing or invalid template_filename.');
+    });
+
+    await t.step('should pass with a valid optional maxOutputTokens from GenerateContributionsPayload', () => {
+        const p: DialecticRenderJobPayload = { ...basePayload, maxOutputTokens: 8192 };
+        assert(isDialecticRenderJobPayload(p));
+    });
+
+    await t.step('should throw when maxOutputTokens is a string', () => {
+        const p: Record<string, unknown> = { ...basePayload, maxOutputTokens: 'string' };
+        assertThrows(
+            () => isDialecticRenderJobPayload(p),
+            Error,
+            'Invalid maxOutputTokens.',
+        );
     });
 });
 

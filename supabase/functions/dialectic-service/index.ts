@@ -47,7 +47,7 @@ import {
   PauseActiveJobsFn,
   RegenerateDocumentPayload,
   RegenerateDocumentFn,
-  AIModelCatalogEntry,
+  AiProvidersRow,
 } from "./dialectic.interface.ts";
 import { getStageRecipe } from "./getStageRecipe.ts";
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
@@ -206,7 +206,7 @@ export interface ActionHandlers {
   saveContributionEdit: SaveContributionEditFn;
   submitStageResponses: (payload: SubmitStageResponsesPayload, dbClient: SupabaseClient, user: User, dependencies: SubmitStageResponsesDependencies) => Promise<{ data?: SubmitStageResponsesResponse; error?: ServiceError; status?: number }>;
   listDomains: (dbClient: SupabaseClient) => Promise<{ data?: DialecticDomain[]; error?: ServiceError }>;
-  listModelCatalog: (dbClient: SupabaseClient) => Promise<{ data?: AIModelCatalogEntry[]; error?: ServiceError }>;
+  listModelCatalog: (dbClient: SupabaseClient<Database>) => Promise<{ data?: AiProvidersRow[]; error?: ServiceError }>;
   fetchProcessTemplate: (dbClient: SupabaseClient, payload: FetchProcessTemplatePayload) => Promise<{ data?: DialecticProcessTemplate; error?: ServiceError; status?: number }>;
   updateSessionModels: (dbClient: SupabaseClient, userClient: SupabaseClient, payload: UpdateSessionModelsPayload, userId: string) => Promise<{ data?: DialecticSession; error?: ServiceError; status?: number }>;
   updateViewingStage: UpdateViewingStageFn;

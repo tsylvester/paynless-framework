@@ -27,6 +27,7 @@ import { calculateAffordability } from "../calculateAffordability/calculateAffor
 import type {
   BoundCalculateAffordabilityFn,
   CalculateAffordabilityParams,
+  CalculateAffordabilityReturn,
 } from "../calculateAffordability/calculateAffordability.interface.ts";
 import {
   buildCalculateAffordabilityCompressedReturn,
@@ -46,6 +47,14 @@ import type {
   EnqueueModelCallParams,
 } from "../enqueueModelCall/enqueueModelCall.interface.ts";
 import { isEnqueueModelCallPayload } from "../enqueueModelCall/enqueueModelCall.guard.ts";
+import { isCalculateAffordabilityDirectReturn } from "../calculateAffordability/calculateAffordability.guard.ts";
+import type {
+  BoundCompressPromptFn,
+  CompressPromptParams,
+  CompressPromptPayload,
+  CompressPromptReturn,
+} from "../compressPrompt/compressPrompt.interface.ts";
+import { countTokens } from "../../_shared/utils/tokenizer_utils.ts";
 import { prepareModelJob } from "./prepareModelJob.ts";
 import type {
   PrepareModelJobDeps,
@@ -547,6 +556,128 @@ Deno.test(
     assertExists(enqueueEntry);
     const enqueueParams: EnqueueModelCallParams = enqueueEntry.args[0];
     assertEquals(enqueueParams.userConfig.tier_output_cap_tokens, 32768);
+  },
+);
+
+Deno.test(
+  "integration: job maxOutputTokens below tier DB cap flows through real calculateAffordability with effective cap binding",
+  async () => {
+    const projectOwnerUserId: string = "owner-int-effective-cap-user-below-tier";
+    const tierOutputCapTokens: Tables<"tier_definitions">["output_cap_tokens"] = 32768;
+    const userChosenMaxOutputTokens: number = 8192;
+    const effectiveCap: number = userChosenMaxOutputTokens;
+    const tierDefEmbed: Pick<Tables<"tier_definitions">, "output_cap_tokens"> = {
+      output_cap_tokens: tierOutputCapTokens,
+    };
+    const userSubSelectRow: { tier_definitions: Pick<Tables<"tier_definitions">, "output_cap_tokens"> } = {
+      tier_definitions: tierDefEmbed,
+    };
+    const extendedModelConfig: AiModelExtendedConfig = buildExtendedModelConfig({
+      context_window_tokens: 500_000,
+      provider_max_input_tokens: 500_000,
+      hard_cap_output_tokens: 200_000,
+      provider_max_output_tokens: 200_000,
+      input_token_cost_rate: 0.0001,
+      output_token_cost_rate: 0.0001,
+    });
+    const mockSetup = createMockSupabaseClient("user-int-effective-cap-below-tier", {
+      genericMockResults: {
+        ai_providers: {
+          select: () =>
+            Promise.resolve({
+              data: [mockAiProvidersRowFromConfig(extendedModelConfig)],
+              error: null,
+            }),
+        },
+        token_wallets: {
+          select: () =>
+            Promise.resolve({
+              data: [mockTokenWalletRow()],
+              error: null,
+            }),
+        },
+        user_subscriptions: {
+          select: () =>
+            Promise.resolve({
+              data: [userSubSelectRow],
+              error: null,
+            }),
+        },
+      },
+    });
+    const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
+
+    const compressPromptFn: BoundCompressPromptFn = async (
+      _params: CompressPromptParams,
+      _payload: CompressPromptPayload,
+    ): Promise<CompressPromptReturn> => {
+      throw new Error("compressPrompt must not be called on effective-cap binding path");
+    };
+
+    const affordDeps = buildCalculateAffordabilityDeps({
+      countTokens,
+      compressPrompt: compressPromptFn,
+    });
+
+    const boundCalculateAffordability: BoundCalculateAffordabilityFn = async (params, payload) => {
+      return calculateAffordability(affordDeps, params, payload);
+    };
+    const affordabilitySpy: Spy<BoundCalculateAffordabilityFn> = spy(boundCalculateAffordability);
+    const enqueueModelCallSpy: Spy<BoundEnqueueModelCallFn> = buildEnqueueModelCallSuccessSpy();
+
+    const userTokenWalletService = createMockUserTokenWalletService({
+      getBalance: () => Promise.resolve("1000000"),
+    }).instance;
+
+    const deps: PrepareModelJobDeps = mockPrepareModelJobDeps({
+      enqueueModelCall: enqueueModelCallSpy,
+      calculateAffordability: affordabilitySpy,
+      tokenWalletService: userTokenWalletService,
+    });
+
+    const executePayload: DialecticExecuteJobPayload = mockDialecticExecuteJobPayload({
+      maxOutputTokens: userChosenMaxOutputTokens,
+    });
+    const job: DialecticJobRow = mockDialecticJobRow(executePayload);
+    const params: PrepareModelJobParams = {
+      dbClient,
+      authToken: "jwt.integration",
+      job,
+      projectOwnerUserId,
+      providerRow: mockAiProvidersRowFromConfig(extendedModelConfig),
+      sessionData: mockDialecticSessionRow(),
+    };
+
+    const preparePayload: PrepareModelJobPayload = {
+      promptConstructionPayload: mockPromptConstructionPayload(),
+      compressionStrategy: async () => [],
+      inputsRelevance: [],
+    };
+
+    const result: PrepareModelJobReturn = await prepareModelJob(deps, params, preparePayload);
+
+    assertEquals(isPrepareModelJobSuccessReturn(result), true);
+    assertEquals(affordabilitySpy.calls.length, 1);
+    assertEquals(enqueueModelCallSpy.calls.length, 1);
+
+    const affordEntry: (typeof affordabilitySpy.calls)[number] = affordabilitySpy.calls[0];
+    assertExists(affordEntry);
+    const affordParams: CalculateAffordabilityParams = affordEntry.args[0];
+    assertEquals(affordParams.userConfig.tier_output_cap_tokens, effectiveCap);
+
+    const affordResult: CalculateAffordabilityReturn = await affordEntry.returned;
+    assertEquals(isCalculateAffordabilityDirectReturn(affordResult), true);
+    if (!isCalculateAffordabilityDirectReturn(affordResult)) {
+      throw new Error("expected CalculateAffordabilityDirectReturn");
+    }
+    assertEquals(affordResult.maxOutputTokens, effectiveCap);
+
+    const enqueuePayload: unknown = enqueueModelCallSpy.calls[0].args[1];
+    assertEquals(isEnqueueModelCallPayload(enqueuePayload), true);
+    if (!isEnqueueModelCallPayload(enqueuePayload)) {
+      throw new Error("expected EnqueueModelCallPayload");
+    }
+    assertEquals(enqueuePayload.chatApiRequest.max_tokens_to_generate, effectiveCap);
   },
 );
 

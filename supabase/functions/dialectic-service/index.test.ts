@@ -54,6 +54,7 @@ import {
   DialecticProcessTemplate,
   RegenerateDocumentParams,
   RegenerateDocumentDeps,
+  AiProvidersRow,
 } from "./dialectic.interface.ts";
 import type { DomainDescriptor } from "./listAvailableDomains.ts";
 import { createMockSupabaseClient, type MockSupabaseClientSetup } from '../_shared/supabase.mock.ts';
@@ -153,6 +154,39 @@ const mockUpdateViewingStageSuccessReturn: UpdateViewingStageReturn = {
   },
   status: 200,
 };
+
+function aiProviderRow(overrides: Partial<AiProvidersRow>): AiProvidersRow {
+  return {
+    id: "id-1",
+    name: "Model One",
+    api_identifier: "provider-model-one",
+    provider: "openai",
+    description: "First model",
+    is_active: true,
+    is_default_generation: false,
+    is_default_embedding: false,
+    is_enabled: true,
+    min_plan_tier_level: 0,
+    config: null,
+    created_at: "2025-01-01T00:00:00Z",
+    updated_at: "2025-01-01T00:00:00Z",
+    ...overrides,
+  };
+}
+
+const mockGeminiFlashCatalogRow: AiProvidersRow = aiProviderRow({
+  id: "gemini-flash",
+  name: "Gemini 3 Flash Preview",
+  api_identifier: "google-gemini-3-flash-preview",
+  provider: "google",
+  is_default_generation: true,
+  config: {
+    api_identifier: "google-gemini-3-flash-preview",
+    context_window_tokens: 1048576,
+    hard_cap_output_tokens: 65536,
+    provider_max_output_tokens: 65536,
+  },
+});
 
 // #endregion
 
@@ -486,6 +520,28 @@ withSupabaseEnv("handleRequest - Routing and Dispatching", async (t) => {
       assertEquals(listSpy.calls.length, 1);
     });
 
+    await t.step("should correctly route JSON 'listModelCatalog' action (auth needed)", async () => {
+      const listSpy = spy(() => Promise.resolve({ data: [mockGeminiFlashCatalogRow] }));
+      mockHandlers = createMockHandlers({ listModelCatalog: listSpy });
+
+      const mockToken = "mock-jwt";
+      const { client: mockUserClient } = createMockSupabaseClient('test-user-id', {
+        getUserResult: { data: { user: mockUser }, error: null },
+      });
+      const { client: mockAdminClient } = createMockSupabaseClient();
+
+      const req = createJsonRequest("listModelCatalog", undefined, mockToken);
+      const response = await handleRequest(
+        req,
+        mockHandlers,
+        mockUserClient as any,
+        mockAdminClient as any,
+      );
+
+      assertEquals(response.status, 200);
+      assertEquals(listSpy.calls.length, 1);
+    });
+
     await t.step("should return 401 for auth-required JSON action without token", async () => {
       const listSpy = spy(() => Promise.resolve({ data: [mockProject], status: 200 }));
       mockHandlers = createMockHandlers({ listProjects: listSpy });
@@ -610,6 +666,96 @@ withSupabaseEnv("handleRequest - listAvailableDomainOverlays", async (t) => {
         assertEquals(response.status, 400);
         const responseBody = await response.json();
         assertEquals(responseBody.error, "stageAssociation is required.");
+        assertEquals(listSpy.calls.length, 0);
+    });
+});
+
+withSupabaseEnv("handleRequest - listModelCatalog", async (t) => {
+    await t.step("should route listModelCatalog and return ai_providers rows unchanged", async () => {
+        const listSpy = spy((_dbClient: SupabaseClient<Database>) =>
+          Promise.resolve({ data: [mockGeminiFlashCatalogRow] })
+        );
+        const mockHandlers = createMockHandlers({ listModelCatalog: listSpy });
+
+        const mockToken = "mock-jwt";
+        const { client: mockUserClient } = createMockSupabaseClient('test-user-id', {
+            getUserResult: { data: { user: mockUser }, error: null },
+        });
+        const { client: mockAdminClient } = createMockSupabaseClient();
+
+        const req = createJsonRequest("listModelCatalog", undefined, mockToken);
+        const response = await handleRequest(
+          req,
+          mockHandlers,
+          mockUserClient as any,
+          mockAdminClient as any,
+        );
+
+        assertEquals(response.status, 200);
+        assertEquals(listSpy.calls.length, 1);
+
+        const body: unknown = await response.json();
+        assert(Array.isArray(body));
+        assertEquals(body, [mockGeminiFlashCatalogRow]);
+
+        const firstRow: unknown = body[0];
+        assert(isRecord(firstRow));
+        assertEquals(firstRow.name, "Gemini 3 Flash Preview");
+        assertEquals(firstRow.provider, "google");
+        assertEquals(firstRow.api_identifier, "google-gemini-3-flash-preview");
+        assertEquals(firstRow.is_default_generation, true);
+        assert(isRecord(firstRow.config));
+        assertEquals(firstRow.config.hard_cap_output_tokens, 65536);
+        assertEquals(firstRow.config.provider_max_output_tokens, 65536);
+        assertEquals("model_name" in firstRow, false);
+        assertEquals("provider_name" in firstRow, false);
+        assertEquals("max_output_tokens" in firstRow, false);
+    });
+
+    await t.step("should return error if listModelCatalog returns an error", async () => {
+        const error: ServiceError = { message: "DB Error", status: 500, code: "DB_FETCH_FAILED" };
+        const listSpy = spy(() => Promise.resolve({ error }));
+        const mockHandlers = createMockHandlers({ listModelCatalog: listSpy });
+
+        const mockToken = "mock-jwt";
+        const { client: mockUserClient } = createMockSupabaseClient('test-user-id', {
+            getUserResult: { data: { user: mockUser }, error: null },
+        });
+        const { client: mockAdminClient } = createMockSupabaseClient();
+
+        const req = createJsonRequest("listModelCatalog", undefined, mockToken);
+        const response = await handleRequest(
+          req,
+          mockHandlers,
+          mockUserClient as any,
+          mockAdminClient as any,
+        );
+
+        assertEquals(response.status, 500);
+        const responseBody = await response.json();
+        assertEquals(responseBody.error, error.message);
+        assertEquals(listSpy.calls.length, 1);
+    });
+
+    await t.step("should return 401 if no auth token is provided", async () => {
+        const listSpy = spy(() => Promise.resolve({ data: [mockGeminiFlashCatalogRow] }));
+        const mockHandlers = createMockHandlers({ listModelCatalog: listSpy });
+        const { client: mockUserClient } = createMockSupabaseClient('test-user-id', {
+             getUserResult: { data: { user: null }, error: null },
+        });
+        const { client: mockAdminClient } = createMockSupabaseClient();
+
+        const req = createJsonRequest("listModelCatalog");
+        const response = await handleRequest(
+          req,
+          mockHandlers,
+          mockUserClient as any,
+          mockAdminClient as any,
+        );
+
+        assertEquals(response.status, 401);
+        const body = await response.json();
+        assertEquals(body.error, "User not authenticated");
         assertEquals(listSpy.calls.length, 0);
     });
 });

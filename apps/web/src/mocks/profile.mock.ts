@@ -5,6 +5,7 @@ const mockTierDefinitions: UserTier[] = [
   { level: 10, name: 'basic', output_cap_tokens: 32768, max_models_per_project: 2 },
   { level: 20, name: 'premium', output_cap_tokens: 131072, max_models_per_project: 3 },
   { level: 30, name: 'ultra', output_cap_tokens: null, max_models_per_project: null },
+  { level: 99, name: 'unreachable', output_cap_tokens: null, max_models_per_project: null },
 ];
 
 export const mockUserTier: UserTier = mockTierDefinitions[0];

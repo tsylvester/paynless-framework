@@ -258,8 +258,6 @@ export function useStartContributionGeneration(): UseStartContributionGeneration
       });
       onOpenDagProgress?.();
 
-      const maxOutputTokens = state.maxOutputTokens;
-      
       const payload: GenerateContributionsPayload = {
         sessionId: activeContextSessionId,
         projectId: currentProjectDetail.id,
@@ -268,7 +266,7 @@ export function useStartContributionGeneration(): UseStartContributionGeneration
         continueUntilComplete,
         walletId,
         idempotencyKey: '',
-        ...(maxOutputTokens && { maxOutputTokens }),
+        maxOutputTokens: state.maxOutputTokens ?? undefined,
       };
 
       try {

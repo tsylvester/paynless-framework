@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useState } from "react";
+import {
+	useCallback,
+	useEffect,
+	useMemo,
+	useRef,
+	useState,
+	type ReactElement,
+} from "react";
+import { useNavigate } from "react-router-dom";
 import { Slider } from "@/components/ui/slider";
 import {
 	Tooltip,
@@ -8,410 +16,495 @@ import {
 } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
 import { useAuthStore, useDialecticStore } from "@paynless/store";
+import { UserTier } from "@paynless/types";
 import { logger } from "@paynless/utils";
 import { cn } from "@/lib/utils";
 import { Sparkles, Lock, AlertCircle } from "lucide-react";
 
-interface TierDefinition {
-	level: number;
-	name: string;
-	output_cap_tokens: number | null;
-	max_models_per_project: number;
-}
-
-// Default tier definitions as fallback
-const DEFAULT_TIERS: TierDefinition[] = [
-	{
-		level: 0,
-		name: "free",
-		output_cap_tokens: 8192,
-		max_models_per_project: 1,
-	},
-	{
-		level: 10,
-		name: "basic",
-		output_cap_tokens: 32768,
-		max_models_per_project: 2,
-	},
-	{
-		level: 20,
-		name: "premium",
-		output_cap_tokens: 131072,
-		max_models_per_project: 3,
-	},
-	{
-		level: 30,
-		name: "ultra",
-		output_cap_tokens: null,
-		max_models_per_project: null,
-	},
-];
+const MIN_OUTPUT_TOKENS = 1024;
 
 interface OutputCapSliderProps {
 	className?: string;
-	onUpgradeClick?: (tierName: string, tierLevel: number) => void;
-	testTierLevel?: number; // Optional prop for testing different tiers
 }
 
-export function OutputCapSlider({
-	className,
-	onUpgradeClick,
-	testTierLevel,
-}: OutputCapSliderProps) {
-	const profile = useAuthStore((state) => state.profile);
-	const { maxOutputTokens, setMaxOutputTokens } = useDialecticStore(
-		(state) => ({
-			maxOutputTokens: state.maxOutputTokens || 8192,
-			setMaxOutputTokens: state.setMaxOutputTokens,
-		}),
+export function OutputCapSlider({ className }: OutputCapSliderProps) {
+	const navigate = useNavigate();
+	const userTier = useAuthStore((state) => state.userTier);
+	const availableTiers = useAuthStore((state) => state.availableTiers);
+	const maxOutputTokens = useDialecticStore((state) => state.maxOutputTokens);
+	const setMaxOutputTokens = useDialecticStore(
+		(state) => state.setMaxOutputTokens,
 	);
+	const modelCatalog = useDialecticStore((state) => state.modelCatalog);
+	const selectedModels = useDialecticStore((state) => state.selectedModels);
 
-	const [tierDefinitions, setTierDefinitions] =
-		useState<TierDefinition[]>(DEFAULT_TIERS);
-	const [userTier, setUserTier] = useState<TierDefinition>(DEFAULT_TIERS[0]);
-	const [sliderValue, setSliderValue] = useState(maxOutputTokens);
-	const [showUpgradeCTA, setShowUpgradeCTA] = useState(false);
-	const [upgradeTarget, setUpgradeTarget] = useState<TierDefinition | null>(
-		null,
-	);
-
-	// TODO: Fetch tier definitions from backend when API endpoint is available
-	// For now, using default tier definitions that match the database
-	useEffect(() => {
-		// In the future, this will fetch from an API endpoint like:
-		// api.subscription().getTierDefinitions()
-		logger.info('Using default tier definitions');
-	}, []);
-
-	// Determine user's tier
-	useEffect(() => {
-		// If testTierLevel prop is provided, use it for testing
-		if (testTierLevel !== undefined) {
-			const testTier = tierDefinitions.find((t) => t.level === testTierLevel);
-			if (testTier) {
-				setUserTier(testTier);
-				logger.info('Using test tier level:', { testTierLevel, tierName: testTier.name });
-			return;
+	const displayTiers: UserTier[] = useMemo(() => {
+		const filteredTiers: UserTier[] = [];
+		for (const tier of availableTiers) {
+			if (tier.name !== "unreachable") {
+				filteredTiers.push(tier);
 			}
 		}
+		filteredTiers.sort((left, right) => left.level - right.level);
+		return filteredTiers;
+	}, [availableTiers]);
 
-		// TODO: Fetch actual user tier from backend when API endpoint is available
-		// For now, defaulting to free tier for all users
-		// In the future, this will call something like:
-		// api.subscription().getUserTier(profile.id)
-		const defaultTier = tierDefinitions[0]; // Free tier
-		setUserTier(defaultTier);
-		logger.info('Using default tier for user:', { tierName: defaultTier.name });
-	}, [profile?.id, tierDefinitions, testTierLevel]);
-
-	// Get the maximum allowed value for the slider
-	const getMaxSliderValue = useCallback(() => {
-		if (userTier.output_cap_tokens === null) {
-			// Ultra tier - use the highest defined token value or a sensible maximum
-			const highestDefinedTier = tierDefinitions
-				.filter((t) => t.output_cap_tokens !== null)
-				.reduce(
-					(max, tier) =>
-						tier.output_cap_tokens! > max.output_cap_tokens! ? tier : max,
-					tierDefinitions[0],
-				);
-			return highestDefinedTier.output_cap_tokens || 131072;
+	const sliderRangeMax = useMemo(() => {
+		if (selectedModels === null) {
+			return null;
 		}
-		return userTier.output_cap_tokens;
-	}, [userTier, tierDefinitions]);
+		if (selectedModels === undefined) {
+			return null;
+		}
+		if (selectedModels.length === 0) {
+			return null;
+		}
 
-	// Get the minimum value (Free tier)
-
-	// Handle slider value change
-	const handleSliderChange = useCallback(
-		(value: number[]) => {
-			const newValue = value[0];
-			const maxAllowed = getMaxSliderValue();
-
-			if (newValue <= maxAllowed) {
-				setSliderValue(newValue);
-				setShowUpgradeCTA(false);
-				setUpgradeTarget(null);
-			} else {
-				// Snap back to max allowed
-				setSliderValue(maxAllowed);
-
-				// Find the tier needed for this value
-				const requiredTier = tierDefinitions.find(
-					(t) =>
-						t.output_cap_tokens === null || t.output_cap_tokens >= newValue,
-				);
-
-				if (requiredTier && requiredTier.level > userTier.level) {
-					setUpgradeTarget(requiredTier);
-					setShowUpgradeCTA(true);
-					setTimeout(() => setShowUpgradeCTA(false), 3000); // Hide after 3 seconds
+		let highest: number | null = null;
+		for (const selectedModel of selectedModels) {
+			for (const catalogEntry of modelCatalog) {
+				if (catalogEntry.id !== selectedModel.id) {
+					continue;
+				}
+				if (catalogEntry.max_output_tokens === null) {
+					continue;
+				}
+				if (highest === null) {
+					highest = catalogEntry.max_output_tokens;
+					continue;
+				}
+				if (catalogEntry.max_output_tokens > highest) {
+					highest = catalogEntry.max_output_tokens;
 				}
 			}
-		},
-		[getMaxSliderValue, userTier, tierDefinitions],
-	);
+		}
+		return highest;
+	}, [selectedModels, modelCatalog]);
 
-	// Handle committing the value to the store
-	const handleSliderCommit = useCallback(() => {
-		setMaxOutputTokens(sliderValue);
-		logger.info("Output cap set to:", { maxOutputTokens: sliderValue });
-	}, [sliderValue, setMaxOutputTokens]);
+	const [sliderRealValue, setSliderRealValue] = useState(MIN_OUTPUT_TOKENS);
+	const [showUpgradeCTA, setShowUpgradeCTA] = useState(false);
+	const [upgradeTargetName, setUpgradeTargetName] = useState("");
+	const sliderRegionRef = useRef<HTMLDivElement>(null);
 
-	// Handle tier marker click
-	const handleTierMarkerClick = useCallback(
-		(tier: TierDefinition) => {
-			const tierValue = tier.output_cap_tokens;
+	useEffect(() => {
+		if (userTier === null) {
+			return;
+		}
+		if (sliderRangeMax === null) {
+			return;
+		}
 
-			if (tierValue === null) {
-				// Ultra tier - set to max displayable value
-				const maxDisplay = getMaxSliderValue();
-				if (userTier.level >= tier.level) {
-					setSliderValue(maxDisplay);
-					handleSliderCommit();
-				} else {
-					// Trigger upgrade CTA for ultra
-					setUpgradeTarget(tier);
-					setShowUpgradeCTA(true);
-					if (onUpgradeClick) {
-						onUpgradeClick(tier.name, tier.level);
-					}
+		let nextValue: number;
+		if (maxOutputTokens !== null) {
+			nextValue = maxOutputTokens;
+		} else if (userTier.output_cap_tokens !== null) {
+			nextValue = userTier.output_cap_tokens;
+		} else {
+			nextValue = sliderRangeMax;
+		}
+		setSliderRealValue(nextValue);
+	}, [maxOutputTokens, userTier, sliderRangeMax]);
+
+	useEffect(() => {
+		if (sliderRangeMax === null) {
+			return;
+		}
+		if (userTier === null) {
+			return;
+		}
+
+		let thumbMaxForLog: number;
+		if (userTier.output_cap_tokens !== null) {
+			thumbMaxForLog = userTier.output_cap_tokens;
+		} else {
+			thumbMaxForLog = sliderRangeMax;
+		}
+
+		let selectedModelCount = 0;
+		if (selectedModels !== null) {
+			if (selectedModels !== undefined) {
+				selectedModelCount = selectedModels.length;
+			}
+		}
+
+		logger.info("[OutputCapSlider] Effective output cap bounds", {
+			tierCap: userTier.output_cap_tokens,
+			sliderRangeMax,
+			thumbMax: thumbMaxForLog,
+			selectedModelCount,
+		});
+	}, [sliderRangeMax, userTier, selectedModels]);
+
+	useEffect(() => {
+		if (sliderRangeMax === null) {
+			return;
+		}
+		const thumb = sliderRegionRef.current?.querySelector(
+			'[data-slot="slider-thumb"]',
+		);
+		if (thumb === null) {
+			return;
+		}
+		if (thumb === undefined) {
+			return;
+		}
+		thumb.setAttribute("aria-valuenow", String(sliderRealValue));
+		thumb.setAttribute("aria-valuemin", String(MIN_OUTPUT_TOKENS));
+		thumb.setAttribute("aria-valuemax", String(sliderRangeMax));
+	}, [sliderRealValue, sliderRangeMax]);
+
+	const formatTokenCount = useCallback((tokens: number): string => {
+		if (tokens >= 1000000) {
+			return `${(tokens / 1000000).toFixed(1)}M`;
+		}
+		if (tokens >= 1000) {
+			const k = tokens / 1000;
+			if (k % 1 === 0) {
+				return `${k}k`;
+			}
+			return `${k.toFixed(1)}k`;
+		}
+		return tokens.toLocaleString();
+	}, []);
+
+	const formatPageGuidance = useCallback((tokens: number): string => {
+		const words = Math.round(tokens * 0.75);
+		const pages = Math.round(words / 250);
+		if (pages < 1) {
+			return `at most ~${words} words`;
+		}
+		return `at most ~${pages} pages`;
+	}, []);
+
+	const applyOutputCapValue = useCallback(
+		(requestedReal: number, persistToStore: boolean) => {
+			if (userTier === null) {
+				return;
+			}
+			if (sliderRangeMax === null) {
+				return;
+			}
+
+			let thumbMax: number;
+			if (userTier.output_cap_tokens !== null) {
+				thumbMax = userTier.output_cap_tokens;
+			} else {
+				thumbMax = sliderRangeMax;
+			}
+
+			if (requestedReal <= thumbMax) {
+				setSliderRealValue(requestedReal);
+				setShowUpgradeCTA(false);
+				if (persistToStore) {
+					setMaxOutputTokens(requestedReal);
+					logger.info("Output cap set to:", {
+						maxOutputTokens: requestedReal,
+					});
 				}
 				return;
 			}
 
-			if (tierValue <= getMaxSliderValue()) {
-				setSliderValue(tierValue);
-				handleSliderCommit();
-			} else {
-				// Need upgrade
-				setUpgradeTarget(tier);
-				setShowUpgradeCTA(true);
-				if (onUpgradeClick) {
-					onUpgradeClick(tier.name, tier.level);
+			setSliderRealValue(thumbMax);
+
+			let requiredTierFound = false;
+			let requiredTierName = "";
+			for (const tier of displayTiers) {
+				if (tier.level <= userTier.level) {
+					continue;
+				}
+				if (tier.output_cap_tokens === null) {
+					requiredTierFound = true;
+					requiredTierName = tier.name;
+					break;
+				}
+				if (requestedReal <= tier.output_cap_tokens) {
+					requiredTierFound = true;
+					requiredTierName = tier.name;
+					break;
 				}
 			}
+			if (!requiredTierFound) {
+				return;
+			}
+			setUpgradeTargetName(requiredTierName);
+			setShowUpgradeCTA(true);
+			setTimeout(() => setShowUpgradeCTA(false), 3000);
 		},
-		[userTier, getMaxSliderValue, handleSliderCommit, onUpgradeClick],
+		[userTier, sliderRangeMax, displayTiers, setMaxOutputTokens],
 	);
 
-	// Format token count for display
-	const formatTokenCount = (tokens: number) => {
-		if (tokens >= 1000000) {
-			return `${(tokens / 1000000).toFixed(1)}M`;
-		} else if (tokens >= 1000) {
-			const k = tokens / 1000;
-			return k % 1 === 0 ? `${k}k` : `${k.toFixed(1)}k`;
-		}
-		return tokens.toLocaleString();
-	};
+	const handleUpgradeClick = useCallback(() => {
+		navigate("/subscription");
+	}, [navigate]);
 
-	// Get tier name for current value
-	const getTierForValue = (value: number) => {
-		// Find the highest tier that the value fits within
-		for (let i = tierDefinitions.length - 1; i >= 0; i--) {
-			const tier = tierDefinitions[i];
-			if (tier.output_cap_tokens === null || value <= tier.output_cap_tokens) {
-				// Check if we have access to this tier
-				if (tier.level <= userTier.level) {
-					return tier;
-				}
-			}
-		}
-		return tierDefinitions[0]; // Default to free
-	};
+	if (availableTiers.length === 0) {
+		return null;
+	}
+	if (userTier === null) {
+		return null;
+	}
+	if (sliderRangeMax === null) {
+		return null;
+	}
 
-	const currentValueTier = getTierForValue(sliderValue);
-	const minValue = 1024;
-	const maxValue = getMaxSliderValue();
+	const activeUserTier: UserTier = userTier;
+	const activeSliderRangeMax: number = sliderRangeMax;
 
-	// Calculate the highest tier's max value for the slider range display
-	const sliderRangeMax = tierDefinitions
-		.filter((t) => t.output_cap_tokens !== null)
-		.reduce((max, tier) => Math.max(max, tier.output_cap_tokens!), maxValue);
+	let activeThumbMax: number;
+	if (activeUserTier.output_cap_tokens !== null) {
+		activeThumbMax = activeUserTier.output_cap_tokens;
+	} else {
+		activeThumbMax = activeSliderRangeMax;
+	}
+
+	let currentDisplayValue: number;
+	if (maxOutputTokens !== null) {
+		currentDisplayValue = maxOutputTokens;
+	} else if (activeUserTier.output_cap_tokens !== null) {
+		currentDisplayValue = activeUserTier.output_cap_tokens;
+	} else {
+		currentDisplayValue = activeSliderRangeMax;
+	}
+
+	let clampedSliderValue: number;
+	if (sliderRealValue > activeThumbMax) {
+		clampedSliderValue = activeThumbMax;
+	} else if (sliderRealValue < MIN_OUTPUT_TOKENS) {
+		clampedSliderValue = MIN_OUTPUT_TOKENS;
+	} else {
+		clampedSliderValue = sliderRealValue;
+	}
+
+	const logMin = Math.log(MIN_OUTPUT_TOKENS);
+	const logMax = Math.log(activeSliderRangeMax);
+	const internalSliderValue = Math.log(
+		Math.max(clampedSliderValue, MIN_OUTPUT_TOKENS),
+	);
+	const logStep = (logMax - logMin) / 200;
+
+	let thumbMaxPercent: number;
+	if (activeThumbMax <= MIN_OUTPUT_TOKENS) {
+		thumbMaxPercent = 0;
+	} else {
+		thumbMaxPercent =
+			((Math.log(activeThumbMax) - Math.log(MIN_OUTPUT_TOKENS)) /
+				(Math.log(activeSliderRangeMax) - Math.log(MIN_OUTPUT_TOKENS))) *
+			100;
+	}
+
+	let helperTextContent: ReactElement;
+	if (activeUserTier.output_cap_tokens === null) {
+		helperTextContent = (
+			<>
+				<Sparkles className="h-3 w-3" />
+				<span>Unlimited output capacity with Ultra tier</span>
+			</>
+		);
+	} else {
+		helperTextContent = (
+			<span>
+				Your{" "}
+				<span className="font-medium capitalize">{activeUserTier.name}</span>{" "}
+				tier allows up to{" "}
+				<span className="font-medium">
+					{formatTokenCount(activeUserTier.output_cap_tokens)}
+				</span>{" "}
+				tokens
+			</span>
+		);
+	}
 
 	return (
 		<TooltipProvider>
 			<div className={cn("space-y-3", className)}>
-				{/* Header with current value */}
 				<div className="flex items-center justify-between">
 					<div className="flex w-full items-center justify-between">
 						<h4 className="text-sm font-medium mb-1">Max Output Tokens</h4>
-						<div className="flex items-center gap-2">
+						<div className="flex flex-col items-end gap-0.5">
 							<span className="text-lg font-semibold">
-								{formatTokenCount(sliderValue)}
+								{formatTokenCount(currentDisplayValue)}
+							</span>
+							<span className="text-[10px] text-muted-foreground">
+								{formatPageGuidance(currentDisplayValue)}
 							</span>
 						</div>
 					</div>
 				</div>
 
-				{/* Slider with tier markers */}
 				<div className="space-y-3">
-					{/* Tier markers as buttons */}
-					<div className="flex justify-between gap-1">
-						{tierDefinitions.map((tier) => {
-							const isAccessible = tier.level <= userTier.level;
-							const isCurrent = tier.level === userTier.level;
-							const isSelected =
-								sliderValue >= (tier.output_cap_tokens || 0) &&
-								(tier === tierDefinitions[tierDefinitions.length - 1] ||
-									sliderValue <
-										(tierDefinitions[
-											tierDefinitions.findIndex((t) => t === tier) + 1
-										]?.output_cap_tokens || Infinity));
+					<div className="relative h-14">
+						{displayTiers.map((tier) => {
+							const isAccessible = tier.level <= activeUserTier.level;
+							const isCurrent = tier.level === activeUserTier.level;
+
+							let markerPercent: number;
+							if (tier.output_cap_tokens === null) {
+								markerPercent = 100;
+							} else {
+								markerPercent =
+									((Math.log(tier.output_cap_tokens) -
+										Math.log(MIN_OUTPUT_TOKENS)) /
+										(Math.log(activeSliderRangeMax) -
+											Math.log(MIN_OUTPUT_TOKENS))) *
+									100;
+							}
+
+							let markerTokenValue: number;
+							if (tier.output_cap_tokens === null) {
+								markerTokenValue = activeSliderRangeMax;
+							} else {
+								markerTokenValue = tier.output_cap_tokens;
+							}
 
 							return (
-								<Tooltip key={tier.level}>
-									<TooltipTrigger asChild>
-										<button
-											className={cn(
-												"flex-1 flex flex-col items-center gap-0.5 px-1 py-1 rounded-md transition-all text-xs",
-												isAccessible
-													? "hover:bg-accent cursor-pointer"
-													: "cursor-not-allowed opacity-40",
-												isCurrent && "ring-1 ring-primary/20",
-												isSelected && isAccessible && "bg-accent",
-											)}
-											onClick={() => handleTierMarkerClick(tier)}
-											disabled={!isAccessible}
-										>
-											<div className="flex items-center gap-0.5">
-												{tier.output_cap_tokens === null && (
-													<Sparkles className="h-2.5 w-2.5" />
+								<div
+									key={tier.level}
+									className="absolute top-0 flex flex-col items-center -translate-x-1/2"
+									style={{ left: `${markerPercent}%` }}
+								>
+									<Tooltip>
+										<TooltipTrigger asChild>
+											<button
+												type="button"
+												className={cn(
+													"flex flex-col items-center gap-0.5 px-1 py-1 rounded-md transition-all text-xs",
+													isAccessible
+														? "hover:bg-accent cursor-pointer"
+														: "cursor-pointer opacity-40",
+													isCurrent && "ring-1 ring-primary/20",
 												)}
-												{!isAccessible && <Lock className="h-2.5 w-2.5" />}
-												<span
-													className={cn(
-														"font-medium capitalize text-[11px]",
-														isCurrent && "text-primary",
+												onClick={() => {
+													const isAccessible =
+														tier.level <= activeUserTier.level;
+													if (!isAccessible) {
+														setUpgradeTargetName(tier.name);
+														setShowUpgradeCTA(true);
+														logger.info(
+															"[OutputCapSlider] Upgrade required for tier marker",
+															{
+																targetTier: tier.name,
+																userTier: activeUserTier.name,
+															},
+														);
+														return;
+													}
+													let requestedReal: number;
+													if (tier.output_cap_tokens === null) {
+														requestedReal = activeThumbMax;
+													} else {
+														requestedReal = tier.output_cap_tokens;
+													}
+													applyOutputCapValue(requestedReal, true);
+												}}
+											>
+												<div className="flex items-center gap-0.5">
+													{tier.output_cap_tokens === null && (
+														<Sparkles className="h-2.5 w-2.5" />
 													)}
-												>
-													{tier.name}
+													{!isAccessible && (
+														<Lock className="h-2.5 w-2.5" />
+													)}
+													<span
+														className={cn(
+															"font-medium capitalize text-[11px]",
+															isCurrent && "text-primary",
+														)}
+													>
+														{tier.name}
+													</span>
+												</div>
+												<span className="text-[9px] text-muted-foreground">
+													{formatTokenCount(markerTokenValue)}
 												</span>
-											</div>
-											<span className="text-[9px] text-muted-foreground">
-												{tier.output_cap_tokens === null
-													? "∞"
-													: formatTokenCount(tier.output_cap_tokens)}
-											</span>
-										</button>
-									</TooltipTrigger>
-									<TooltipContent>
-										<div className="space-y-1">
-											<p className="font-medium capitalize flex items-center gap-1">
-												{tier.output_cap_tokens === null && (
-													<Sparkles className="h-3 w-3" />
-												)}
-												{tier.name} Tier
-											</p>
-											<p className="text-xs">
-												{tier.output_cap_tokens === null
-													? "Unlimited output capacity"
-													: `Up to ${formatTokenCount(tier.output_cap_tokens)} tokens`}
-											</p>
-											{!isAccessible && (
-												<p className="text-xs flex items-center gap-1">
-													<Lock className="h-3 w-3" />
-													Upgrade required
+												<span className="text-[9px] text-muted-foreground">
+													{formatPageGuidance(markerTokenValue)}
+												</span>
+											</button>
+										</TooltipTrigger>
+										<TooltipContent>
+											<div className="space-y-1">
+												<p className="font-medium capitalize flex items-center gap-1">
+													{tier.output_cap_tokens === null && (
+														<Sparkles className="h-3 w-3" />
+													)}
+													{tier.name} Tier
 												</p>
-											)}
-										</div>
-									</TooltipContent>
-								</Tooltip>
+												<p className="text-xs">
+													Up to{" "}
+													{formatTokenCount(markerTokenValue)} tokens
+												</p>
+												<p className="text-xs">
+													{formatPageGuidance(markerTokenValue)}
+												</p>
+												{!isAccessible && (
+													<p className="text-xs flex items-center gap-1">
+														<Lock className="h-3 w-3" />
+														Upgrade required
+													</p>
+												)}
+											</div>
+										</TooltipContent>
+									</Tooltip>
+									<div className="mt-1 w-[2px] h-2 bg-border/50 rounded-full" />
+								</div>
 							);
 						})}
 					</div>
 
-					{/* Slider container */}
-					<div className="relative">
-						{/* Visual stops at tier boundaries */}
-						<div className="absolute inset-x-0 top-1/2 -translate-y-1/2 pointer-events-none flex justify-between px-[2px]">
-							{tierDefinitions.slice(0, -1).map((tier) => {
-								if (tier.output_cap_tokens === null) return null;
-								const position =
-									((tier.output_cap_tokens - minValue) /
-										(sliderRangeMax - minValue)) *
-									100;
-								return (
-									<div
-										key={tier.level}
-										className="absolute w-[2px] h-2 bg-border/50 rounded-full"
-										style={{
-											left: `${position}%`,
-											transform: "translateX(-50%)",
-										}}
-									/>
-								);
-							})}
-						</div>
-
+					<div className="relative" ref={sliderRegionRef}>
 						<Slider
-							value={[sliderValue]}
-							min={minValue}
-							max={sliderRangeMax}
-							step={1024}
-							onValueChange={handleSliderChange}
-							onValueCommit={handleSliderCommit}
+							value={[internalSliderValue]}
+							min={logMin}
+							max={logMax}
+							step={logStep}
+							onValueChange={(internalValues) => {
+								const requestedReal = Math.round(
+									Math.exp(internalValues[0]),
+								);
+								applyOutputCapValue(requestedReal, false);
+							}}
+							onValueCommit={(internalValues) => {
+								const requestedReal = Math.round(
+									Math.exp(internalValues[0]),
+								);
+								applyOutputCapValue(requestedReal, true);
+							}}
 							className="relative bg-gray-500/90"
-							disabled={false}
 						/>
 
-						{/* Disabled range overlay for tiers beyond user's access */}
-						{userTier.output_cap_tokens &&
-							userTier.output_cap_tokens < sliderRangeMax && (
-								<div
-									className="absolute top-1/2 -translate-y-1/2 h-1.5 bg-muted opacity-60 pointer-events-none rounded-r-full bg-background"
-									style={{
-										left: `${((userTier.output_cap_tokens - minValue) / (sliderRangeMax - minValue)) * 100}%`,
-										right: 0,
-									}}
-								/>
-							)}
+						{activeThumbMax < activeSliderRangeMax && (
+							<div
+								className="absolute top-1/2 -translate-y-1/2 h-1.5 bg-muted opacity-60 pointer-events-none rounded-r-full bg-background"
+								style={{
+									left: `${thumbMaxPercent}%`,
+									right: 0,
+								}}
+							/>
+						)}
 					</div>
 				</div>
 
-				{/* Helper text */}
 				<div className="flex items-center gap-2 text-xs text-muted-foreground">
-					{userTier.output_cap_tokens === null ? (
-						<>
-							<Sparkles className="h-3 w-3" />
-							<span>Unlimited output capacity with Ultra tier</span>
-						</>
-					) : (
-						<span>
-							Your{" "}
-							<span className="font-medium capitalize">{userTier.name}</span>{" "}
-							tier allows up to{" "}
-							<span className="font-medium">
-								{formatTokenCount(userTier.output_cap_tokens)}
-							</span>{" "}
-							tokens
-						</span>
-					)}
+					{helperTextContent}
 				</div>
 
-				{/* Upgrade CTA */}
-				{showUpgradeCTA && upgradeTarget && (
+				{showUpgradeCTA && (
 					<div className="flex items-center gap-2 rounded-lg bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 px-3 py-2 text-xs animate-in fade-in slide-in-from-top-1 duration-200">
 						<AlertCircle className="h-3.5 w-3.5 text-amber-600 dark:text-amber-500" />
 						<span className="text-amber-900 dark:text-amber-200">
 							Upgrade to{" "}
 							<span className="font-medium capitalize">
-								{upgradeTarget.name}
+								{upgradeTargetName}
 							</span>
 						</span>
-						{onUpgradeClick && (
-							<Button
-								size="sm"
-								variant="ghost"
-								onClick={() =>
-									onUpgradeClick(upgradeTarget.name, upgradeTarget.level)
-								}
-								className="h-6 px-2 ml-auto text-amber-900 hover:text-amber-950 dark:text-amber-200 dark:hover:text-amber-100"
-							>
-								Upgrade
-							</Button>
-						)}
+						<Button
+							size="sm"
+							variant="ghost"
+							onClick={handleUpgradeClick}
+							className="h-6 px-2 ml-auto text-amber-900 hover:text-amber-950 dark:text-amber-200 dark:hover:text-amber-100"
+						>
+							Upgrade
+						</Button>
 					</div>
 				)}
 			</div>

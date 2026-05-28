@@ -2072,7 +2072,7 @@ Deno.test(
 );
 
 Deno.test(
-  "prepareModelJob passes userConfig.tier_output_cap_tokens to calculateAffordability and enqueueModelCall",
+  "prepareModelJob passes tier DB cap as userConfig.tier_output_cap_tokens when job payload omits maxOutputTokens",
   async () => {
     const projectOwnerUserId: string = "owner-tier-output-cap-contract";
     const outputCap: Tables<"tier_definitions">["output_cap_tokens"] = 32768;
@@ -2109,6 +2109,7 @@ Deno.test(
     });
     const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
     const executePayload: DialecticExecuteJobPayload = mockDialecticExecuteJobPayload();
+    assertEquals("maxOutputTokens" in executePayload, false);
     const job: DialecticJobRow = mockDialecticJobRow(executePayload);
     const params: PrepareModelJobParams = {
       dbClient,
@@ -2154,7 +2155,7 @@ Deno.test(
 );
 
 Deno.test(
-  "prepareModelJob passes userConfig.tier_output_cap_tokens null to calculateAffordability and enqueueModelCall when DB returns output_cap_tokens null",
+  "prepareModelJob passes null userConfig.tier_output_cap_tokens when tier DB cap is null and job payload omits maxOutputTokens",
   async () => {
     const projectOwnerUserId: string = "owner-tier-output-cap-null";
     const outputCap: Tables<"tier_definitions">["output_cap_tokens"] = null;
@@ -2191,6 +2192,7 @@ Deno.test(
     });
     const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
     const executePayload: DialecticExecuteJobPayload = mockDialecticExecuteJobPayload();
+    assertEquals("maxOutputTokens" in executePayload, false);
     const job: DialecticJobRow = mockDialecticJobRow(executePayload);
     const params: PrepareModelJobParams = {
       dbClient,
@@ -2231,6 +2233,242 @@ Deno.test(
     assertExists(enqueueEntry);
     const enqueueParams: EnqueueModelCallParams = enqueueEntry.args[0];
     assertEquals(enqueueParams.userConfig.tier_output_cap_tokens, null);
+  },
+);
+
+Deno.test(
+  "prepareModelJob passes user-chosen maxOutputTokens as userConfig.tier_output_cap_tokens when lower than tier DB cap",
+  async () => {
+    const projectOwnerUserId: string = "owner-effective-cap-user-below-tier";
+    const tierOutputCapTokens: Tables<"tier_definitions">["output_cap_tokens"] = 32768;
+    const userChosenMaxOutputTokens: number = 8192;
+    const tierDefEmbed: Pick<Tables<"tier_definitions">, "output_cap_tokens"> = {
+      output_cap_tokens: tierOutputCapTokens,
+    };
+    const userSubSelectRow: { tier_definitions: Pick<Tables<"tier_definitions">, "output_cap_tokens"> } = {
+      tier_definitions: tierDefEmbed,
+    };
+    const mockSetup = createMockSupabaseClient("user-effective-cap-below-tier", {
+      genericMockResults: {
+        ai_providers: {
+          select: () =>
+            Promise.resolve({
+              data: [mockAiProvidersRow()],
+              error: null,
+            }),
+        },
+        token_wallets: {
+          select: () =>
+            Promise.resolve({
+              data: [mockTokenWalletRow()],
+              error: null,
+            }),
+        },
+        user_subscriptions: {
+          select: () =>
+            Promise.resolve({
+              data: [userSubSelectRow],
+              error: null,
+            }),
+        },
+      },
+    });
+    const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
+    const executePayload: DialecticExecuteJobPayload = mockDialecticExecuteJobPayload({
+      maxOutputTokens: userChosenMaxOutputTokens,
+    });
+    const job: DialecticJobRow = mockDialecticJobRow(executePayload);
+    const params: PrepareModelJobParams = {
+      dbClient,
+      authToken: "jwt.contract",
+      job,
+      projectOwnerUserId,
+      providerRow: mockAiProvidersRow(),
+      sessionData: mockDialecticSessionRow(),
+    };
+    const preparePayload: PrepareModelJobPayload = {
+      promptConstructionPayload: mockPromptConstructionPayload(),
+      compressionStrategy: async () => [],
+      inputsRelevance: [],
+      inputsRequired: [],
+    };
+    const boundAffordability: BoundCalculateAffordabilityFn = buildMockBoundCalculateAffordabilityFn(
+      buildCalculateAffordabilityDirectReturn(200, 75),
+    );
+    const affordabilitySpy: Spy<BoundCalculateAffordabilityFn> = spy(boundAffordability);
+    const enqueueModelCallSpy: Spy<BoundEnqueueModelCallFn> = spy(async () => ({ queued: true }));
+    const deps: PrepareModelJobDeps = mockPrepareModelJobDeps({
+      enqueueModelCall: enqueueModelCallSpy,
+      calculateAffordability: affordabilitySpy,
+    });
+    const result: PrepareModelJobReturn = await prepareModelJob(deps, params, preparePayload);
+    assertEquals(isPrepareModelJobSuccessReturn(result), true);
+    assertEquals(affordabilitySpy.calls.length, 1);
+    const affordEntry: (typeof affordabilitySpy.calls)[number] = affordabilitySpy.calls[0];
+    assertExists(affordEntry);
+    const affordParams: CalculateAffordabilityParams = affordEntry.args[0];
+    assertEquals(affordParams.userConfig.tier_output_cap_tokens, userChosenMaxOutputTokens);
+    const enqueueEntry: (typeof enqueueModelCallSpy.calls)[number] = enqueueModelCallSpy.calls[0];
+    assertExists(enqueueEntry);
+    const enqueueParams: EnqueueModelCallParams = enqueueEntry.args[0];
+    assertEquals(enqueueParams.userConfig.tier_output_cap_tokens, userChosenMaxOutputTokens);
+  },
+);
+
+Deno.test(
+  "prepareModelJob passes tier DB cap as userConfig.tier_output_cap_tokens when maxOutputTokens exceeds tier cap",
+  async () => {
+    const projectOwnerUserId: string = "owner-effective-cap-tier-wins";
+    const tierOutputCapTokens: Tables<"tier_definitions">["output_cap_tokens"] = 32768;
+    const userChosenMaxOutputTokens: number = 65536;
+    const tierDefEmbed: Pick<Tables<"tier_definitions">, "output_cap_tokens"> = {
+      output_cap_tokens: tierOutputCapTokens,
+    };
+    const userSubSelectRow: { tier_definitions: Pick<Tables<"tier_definitions">, "output_cap_tokens"> } = {
+      tier_definitions: tierDefEmbed,
+    };
+    const mockSetup = createMockSupabaseClient("user-effective-cap-tier-wins", {
+      genericMockResults: {
+        ai_providers: {
+          select: () =>
+            Promise.resolve({
+              data: [mockAiProvidersRow()],
+              error: null,
+            }),
+        },
+        token_wallets: {
+          select: () =>
+            Promise.resolve({
+              data: [mockTokenWalletRow()],
+              error: null,
+            }),
+        },
+        user_subscriptions: {
+          select: () =>
+            Promise.resolve({
+              data: [userSubSelectRow],
+              error: null,
+            }),
+        },
+      },
+    });
+    const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
+    const executePayload: DialecticExecuteJobPayload = mockDialecticExecuteJobPayload({
+      maxOutputTokens: userChosenMaxOutputTokens,
+    });
+    const job: DialecticJobRow = mockDialecticJobRow(executePayload);
+    const params: PrepareModelJobParams = {
+      dbClient,
+      authToken: "jwt.contract",
+      job,
+      projectOwnerUserId,
+      providerRow: mockAiProvidersRow(),
+      sessionData: mockDialecticSessionRow(),
+    };
+    const preparePayload: PrepareModelJobPayload = {
+      promptConstructionPayload: mockPromptConstructionPayload(),
+      compressionStrategy: async () => [],
+      inputsRelevance: [],
+      inputsRequired: [],
+    };
+    const boundAffordability: BoundCalculateAffordabilityFn = buildMockBoundCalculateAffordabilityFn(
+      buildCalculateAffordabilityDirectReturn(200, 75),
+    );
+    const affordabilitySpy: Spy<BoundCalculateAffordabilityFn> = spy(boundAffordability);
+    const enqueueModelCallSpy: Spy<BoundEnqueueModelCallFn> = spy(async () => ({ queued: true }));
+    const deps: PrepareModelJobDeps = mockPrepareModelJobDeps({
+      enqueueModelCall: enqueueModelCallSpy,
+      calculateAffordability: affordabilitySpy,
+    });
+    const result: PrepareModelJobReturn = await prepareModelJob(deps, params, preparePayload);
+    assertEquals(isPrepareModelJobSuccessReturn(result), true);
+    assertEquals(affordabilitySpy.calls.length, 1);
+    const affordEntry: (typeof affordabilitySpy.calls)[number] = affordabilitySpy.calls[0];
+    assertExists(affordEntry);
+    const affordParams: CalculateAffordabilityParams = affordEntry.args[0];
+    assertEquals(affordParams.userConfig.tier_output_cap_tokens, tierOutputCapTokens);
+    const enqueueEntry: (typeof enqueueModelCallSpy.calls)[number] = enqueueModelCallSpy.calls[0];
+    assertExists(enqueueEntry);
+    const enqueueParams: EnqueueModelCallParams = enqueueEntry.args[0];
+    assertEquals(enqueueParams.userConfig.tier_output_cap_tokens, tierOutputCapTokens);
+  },
+);
+
+Deno.test(
+  "prepareModelJob passes user-chosen maxOutputTokens as userConfig.tier_output_cap_tokens when tier DB cap is null",
+  async () => {
+    const projectOwnerUserId: string = "owner-effective-cap-ultra-user-chosen";
+    const userChosenMaxOutputTokens: number = 8192;
+    const tierDefEmbed: Pick<Tables<"tier_definitions">, "output_cap_tokens"> = {
+      output_cap_tokens: null,
+    };
+    const userSubSelectRow: { tier_definitions: Pick<Tables<"tier_definitions">, "output_cap_tokens"> } = {
+      tier_definitions: tierDefEmbed,
+    };
+    const mockSetup = createMockSupabaseClient("user-effective-cap-ultra-chosen", {
+      genericMockResults: {
+        ai_providers: {
+          select: () =>
+            Promise.resolve({
+              data: [mockAiProvidersRow()],
+              error: null,
+            }),
+        },
+        token_wallets: {
+          select: () =>
+            Promise.resolve({
+              data: [mockTokenWalletRow()],
+              error: null,
+            }),
+        },
+        user_subscriptions: {
+          select: () =>
+            Promise.resolve({
+              data: [userSubSelectRow],
+              error: null,
+            }),
+        },
+      },
+    });
+    const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
+    const executePayload: DialecticExecuteJobPayload = mockDialecticExecuteJobPayload({
+      maxOutputTokens: userChosenMaxOutputTokens,
+    });
+    const job: DialecticJobRow = mockDialecticJobRow(executePayload);
+    const params: PrepareModelJobParams = {
+      dbClient,
+      authToken: "jwt.contract",
+      job,
+      projectOwnerUserId,
+      providerRow: mockAiProvidersRow(),
+      sessionData: mockDialecticSessionRow(),
+    };
+    const preparePayload: PrepareModelJobPayload = {
+      promptConstructionPayload: mockPromptConstructionPayload(),
+      compressionStrategy: async () => [],
+      inputsRelevance: [],
+      inputsRequired: [],
+    };
+    const boundAffordability: BoundCalculateAffordabilityFn = buildMockBoundCalculateAffordabilityFn(
+      buildCalculateAffordabilityDirectReturn(200, 75),
+    );
+    const affordabilitySpy: Spy<BoundCalculateAffordabilityFn> = spy(boundAffordability);
+    const enqueueModelCallSpy: Spy<BoundEnqueueModelCallFn> = spy(async () => ({ queued: true }));
+    const deps: PrepareModelJobDeps = mockPrepareModelJobDeps({
+      enqueueModelCall: enqueueModelCallSpy,
+      calculateAffordability: affordabilitySpy,
+    });
+    const result: PrepareModelJobReturn = await prepareModelJob(deps, params, preparePayload);
+    assertEquals(isPrepareModelJobSuccessReturn(result), true);
+    assertEquals(affordabilitySpy.calls.length, 1);
+    const affordEntry: (typeof affordabilitySpy.calls)[number] = affordabilitySpy.calls[0];
+    assertExists(affordEntry);
+    const affordParams: CalculateAffordabilityParams = affordEntry.args[0];
+    assertEquals(affordParams.userConfig.tier_output_cap_tokens, userChosenMaxOutputTokens);
+    const enqueueEntry: (typeof enqueueModelCallSpy.calls)[number] = enqueueModelCallSpy.calls[0];
+    assertExists(enqueueEntry);
+    const enqueueParams: EnqueueModelCallParams = enqueueEntry.args[0];
+    assertEquals(enqueueParams.userConfig.tier_output_cap_tokens, userChosenMaxOutputTokens);
   },
 );
 

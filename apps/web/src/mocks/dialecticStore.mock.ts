@@ -36,6 +36,7 @@ import type {
   SubmitStageDocumentFeedbackPayload,
   UnifiedProjectProgress,
   SelectedModels,
+  AIModelCatalogEntry,
 } from '@paynless/types';
 import { STAGE_RUN_DOCUMENT_KEY_SEPARATOR } from '@paynless/types';
 import {
@@ -375,6 +376,48 @@ export const emptyDialecticStageRecipe: DialecticStageRecipe = {
   edges: [],
 };
 
+export function mockAIModelCatalogEntry(
+  overrides: Partial<AIModelCatalogEntry> = {},
+): AIModelCatalogEntry {
+  const base: AIModelCatalogEntry = {
+    id: 'model-1',
+    provider_name: 'OpenAI',
+    model_name: 'Model 1',
+    api_identifier: 'model-1',
+    description: null,
+    strengths: null,
+    weaknesses: null,
+    context_window_tokens: null,
+    input_token_cost_usd_millionths: null,
+    output_token_cost_usd_millionths: null,
+    max_output_tokens: null,
+    is_active: true,
+    created_at: '2025-01-01T00:00:00Z',
+    updated_at: '2025-01-01T00:00:00Z',
+    is_default_generation: false,
+    min_plan_tier_level: 0,
+  };
+  return { ...base, ...overrides };
+}
+
+export function mockSelectedModel(
+  overrides: Partial<SelectedModels> = {},
+): SelectedModels {
+  const base: SelectedModels = {
+    id: 'model-1',
+    displayName: 'Model 1',
+  };
+  return { ...base, ...overrides };
+}
+
+export function mockSelectedModelsForCatalog(
+  catalog: AIModelCatalogEntry[],
+): SelectedModels[] {
+  return catalog.map((entry) =>
+    mockSelectedModel({ id: entry.id, displayName: entry.model_name }),
+  );
+}
+
 // 1. Define initial state values
 export const initialDialecticStateValues: DialecticStateValues = {
   domains: [],
@@ -455,6 +498,7 @@ export const initialDialecticStateValues: DialecticStateValues = {
   isAutoStarting: false,
   autoStartError: null,
   shouldOpenDagProgress: false,
+  maxOutputTokens: null,
 };
 
 // 2. Helper function to create a new mock store instance
@@ -549,6 +593,7 @@ const createActualMockStore = (initialOverrides?: Partial<DialecticStateValues>)
         set({ selectedModels: newModels });
       }),
       resetSelectedModels: vi.fn(() => set({ selectedModels: [] })),
+      setMaxOutputTokens: vi.fn((maxTokens: number) => set({ maxOutputTokens: maxTokens })),
       fetchInitialPromptContent: vi.fn().mockResolvedValue(undefined),
       generateContributions: vi.fn().mockResolvedValue({ data: { message: 'ok', contributions: [] }, error: undefined, status: 200 }),
       resumePausedNsfJobs: mockResumePausedNsfJobs,
