@@ -288,17 +288,7 @@ export async function processComplexJob(
             for (const child of childJobs) {
                 if (child == null) continue;
                 if (child.idempotency_key != null) continue;
-                const payload = child.payload;
-                if (isRecord(payload)) {
-                    if (child.job_type === 'EXECUTE' && typeof payload.model_id === 'string') {
-                        child.idempotency_key = `${job.id}_${step.step_slug}_${payload.model_id}`;
-                    } else if (child.job_type === 'PLAN' && isRecord(payload.planner_metadata) && typeof payload.planner_metadata.recipe_step_id === 'string') {
-                        child.idempotency_key = `${job.id}_skeleton_${payload.planner_metadata.recipe_step_id}`;
-                    }
-                }
-                if (child.idempotency_key == null) {
-                    child.idempotency_key = `${job.id}_child_${child.id}`;
-                }
+                child.idempotency_key = crypto.randomUUID();
             }
             const { error: insertError } = await dbClient.from('dialectic_generation_jobs').insert(childJobs);
             if (insertError) {
@@ -957,21 +947,7 @@ export async function processComplexJob(
         const childJobsToInsert = childJobs.filter((c): c is DialecticJobRow => c != null);
         for (const child of childJobsToInsert) {
             if (child.idempotency_key != null) continue;
-            const payload = child.payload;
-            if (isRecord(payload)) {
-                if (child.job_type === 'EXECUTE' && typeof payload.model_id === 'string') {
-                    const recipeStepId = isRecord(payload.planner_metadata) && typeof payload.planner_metadata.recipe_step_id === 'string'
-                        ? payload.planner_metadata.recipe_step_id
-                        : null;
-                    const stepSlug = recipeStepId ? (stepIdToStep.get(recipeStepId)?.step_slug ?? child.stage_slug) : child.stage_slug;
-                    child.idempotency_key = `${parentJobId}_${stepSlug}_${payload.model_id}`;
-                } else if (child.job_type === 'PLAN' && isRecord(payload.planner_metadata) && typeof payload.planner_metadata.recipe_step_id === 'string') {
-                    child.idempotency_key = `${parentJobId}_skeleton_${payload.planner_metadata.recipe_step_id}`;
-                }
-            }
-            if (child.idempotency_key == null) {
-                child.idempotency_key = `${parentJobId}_child_${child.id}`;
-            }
+            child.idempotency_key = crypto.randomUUID();
         }
 
         // 6. Enqueue the child jobs.
@@ -1011,7 +987,20 @@ export async function processComplexJob(
                     }
                 }
             }
-            throw new Error(`Failed to insert child jobs: ${insertError.message}`);
+            const collidedIdempotencyKeys: Record<string, string> = {};
+            for (const child of childJobsToInsert) {
+                const idempotencyKey = child.idempotency_key;
+                if (idempotencyKey != null) {
+                    collidedIdempotencyKeys[idempotencyKey] = child.id;
+                }
+            }
+            const insertChildJobsFailure = new Error(`Failed to insert child jobs: ${insertError.message}`);
+            Object.assign(insertChildJobsFailure, {
+                code: insertError.code,
+                details: insertError.details,
+                collidedIdempotencyKeys,
+            });
+            throw insertChildJobsFailure;
         }
 
         // 7. Update the parent job's status to signal it's waiting for the children.
@@ -1031,7 +1020,37 @@ export async function processComplexJob(
         
         const failureReason = e instanceof ContextWindowError 
             ? `Context window limit exceeded: ${error.message}`
-            : `Failed to plan or enqueue child jobs: ${error.message}`;
+            : (() => {
+                let code: string | null = null;
+                let details: string | null = null;
+                let collidedIdempotencyKeys: Record<string, string> = {};
+                if (isRecord(e)) {
+                    const codeValue: unknown = e.code;
+                    if (typeof codeValue === 'string') {
+                        code = codeValue;
+                    }
+                    const detailsValue: unknown = e.details;
+                    if (typeof detailsValue === 'string') {
+                        details = detailsValue;
+                    }
+                    const keysValue: unknown = e.collidedIdempotencyKeys;
+                    if (isRecord(keysValue)) {
+                        const map: Record<string, string> = {};
+                        for (const [key, value] of Object.entries(keysValue)) {
+                            if (typeof value === 'string') {
+                                map[key] = value;
+                            }
+                        }
+                        collidedIdempotencyKeys = map;
+                    }
+                }
+                return `Failed to plan or enqueue child jobs: ${JSON.stringify({
+                    message: error.message,
+                    code,
+                    details,
+                    collidedIdempotencyKeys,
+                })}`;
+            })();
 
         // If planning or enqueuing fails, mark the parent job as failed.
         await dbClient.from('dialectic_generation_jobs').update({
