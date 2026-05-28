@@ -6,7 +6,7 @@ import type {
     GetContributionContentDataResponse,
     StartSessionPayload, 
     DialecticSession, 
-    AIModelCatalogEntry,
+    AiProvidersRow,
     DomainDescriptor,
     UpdateProjectDomainPayload,
     DomainOverlayDescriptor,
@@ -52,7 +52,7 @@ export type MockDialecticApiClient = {
     getContributionContentData: ReturnType<typeof vi.fn<[contributionId: string], Promise<ApiResponse<GetContributionContentDataResponse | null>>>>;
     startSession: ReturnType<typeof vi.fn<[payload: StartSessionPayload], Promise<ApiResponse<DialecticSession>>>>;
     getProjectDetails: ReturnType<typeof vi.fn<[projectId: string], Promise<ApiResponse<DialecticProject>>>>;
-    listModelCatalog: ReturnType<typeof vi.fn<[], Promise<ApiResponse<AIModelCatalogEntry[]>>>>;
+    listModelCatalog: ReturnType<typeof vi.fn<[], Promise<ApiResponse<AiProvidersRow[]>>>>;
     updateProjectDomain: ReturnType<typeof vi.fn<[payload: UpdateProjectDomainPayload], Promise<ApiResponse<DialecticProject>>>>;
     deleteProject: ReturnType<typeof vi.fn<[projectId: string], Promise<ApiResponse<void>>>>;
     cloneProject: ReturnType<typeof vi.fn<[projectId: string], Promise<ApiResponse<DialecticProject>>>>;
@@ -88,7 +88,7 @@ export function createMockDialecticClient(): MockDialecticApiClient {
         getContributionContentData: vi.fn<[string], Promise<ApiResponse<GetContributionContentDataResponse | null>>>(),
         startSession: vi.fn<[StartSessionPayload], Promise<ApiResponse<DialecticSession>>>(),
         getProjectDetails: vi.fn<[string], Promise<ApiResponse<DialecticProject>>>(),
-        listModelCatalog: vi.fn<[], Promise<ApiResponse<AIModelCatalogEntry[]>>>(),
+        listModelCatalog: vi.fn<[], Promise<ApiResponse<AiProvidersRow[]>>>(),
         updateProjectDomain: vi.fn<[UpdateProjectDomainPayload], Promise<ApiResponse<DialecticProject>>>(),
         deleteProject: vi.fn<[string], Promise<ApiResponse<void>>>(),
         cloneProject: vi.fn<[string], Promise<ApiResponse<DialecticProject>>>(),

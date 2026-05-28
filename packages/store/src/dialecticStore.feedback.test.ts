@@ -3,37 +3,21 @@ import {
     it, 
     expect, 
     beforeEach, 
-    afterEach, 
     vi,
     type Mock
 } from 'vitest';
 import { 
     useDialecticStore, 
-    initialDialecticStateValues 
 } from './dialecticStore';
 import type { 
   ApiError, 
   ApiResponse, 
-  DialecticProject, 
-  CreateProjectPayload,
-  ContributionContentSignedUrlResponse,
-  AIModelCatalogEntry,
-  DialecticSession,
-  StartSessionPayload,
-  DomainOverlayDescriptor,
-  DialecticDomain,
-  DialecticProcessTemplate,
-  DialecticStage,
-  GenerateContributionsPayload,
-  GenerateContributionsResponse,
-  ContributionGenerationStatus,
   GetProjectResourceContentResponse,
-  GetProjectResourceContentPayload
 } from '@paynless/types';
 
 // Add the mock call here
 vi.mock('@paynless/api', async (importOriginal) => {
-    const original = await importOriginal() as Record<string, unknown>;
+    const original = await importOriginal<typeof import('@paynless/api')>();
     // Import the parts of the mock we need
     const { api } = await import('@paynless/api/mocks'); 
     
@@ -66,6 +50,8 @@ describe('useDialecticStore', () => {
             content: '## Markdown Feedback\n\nThis is the feedback content.',
             fileName: 'feedback.md',
             mimeType: 'text/markdown',
+            sourceContributionId: 'contrib-123',
+            resourceType: 'rendered_document',
         };
 
         describe('fetchFeedbackFileContent', () => {
@@ -74,7 +60,7 @@ describe('useDialecticStore', () => {
                     data: mockFeedbackContentResponse,
                     status: 200,
                 };
-                (api.dialectic().getProjectResourceContent as Mock).mockResolvedValue(mockSuccess);
+                getMockDialecticClient().getProjectResourceContent.mockResolvedValue(mockSuccess);
 
                 const { fetchFeedbackFileContent } = useDialecticStore.getState();
                 
@@ -106,7 +92,7 @@ describe('useDialecticStore', () => {
                     error: mockError,
                     status: 404,
                 };
-                (api.dialectic().getProjectResourceContent as Mock).mockResolvedValue(mockFailure);
+                getMockDialecticClient().getProjectResourceContent.mockResolvedValue(mockFailure);
 
                 const { fetchFeedbackFileContent } = useDialecticStore.getState();
                 await fetchFeedbackFileContent({ projectId: mockProjectId, storagePath: 'invalid/path.md' });
@@ -119,7 +105,7 @@ describe('useDialecticStore', () => {
 
             it('should handle network/exception and update state accordingly', async () => {
                 const networkError = new Error('Network connection failed');
-                (api.dialectic().getProjectResourceContent as Mock).mockRejectedValue(networkError);
+                getMockDialecticClient().getProjectResourceContent.mockRejectedValue(networkError);
 
                 const { fetchFeedbackFileContent } = useDialecticStore.getState();
                 await fetchFeedbackFileContent({ projectId: mockProjectId, storagePath: mockStoragePath });

@@ -1,10 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { http, HttpResponse } from 'msw';
 import { createClient } from '@supabase/supabase-js';
-import { AIModelCatalogEntry } from '@paynless/types';
+import { AiProvidersRow } from '@paynless/types';
 import { api, initializeApiClient, _resetApiClient } from './apiClient';
 import { server } from './setupTests';
-
+import { mockAiProvidersRow } from '../../../apps/web/src/mocks/dialecticStore.mock';
 // Mock the @supabase/supabase-js module to control auth in ApiClient
 vi.mock('@supabase/supabase-js', () => {
   const mockClient = {
@@ -104,25 +104,14 @@ describe('DialecticApiClient (integration) - listModelCatalog', () => {
   });
 
   it('returns catalog entries with min_plan_tier_level from dialectic-service', async () => {
-    const catalogFromService: AIModelCatalogEntry[] = [
-      {
+    const catalogFromService: AiProvidersRow[] = [
+      mockAiProvidersRow({
         id: 'model-cat-123',
-        provider_name: 'OpenAI',
-        model_name: 'GPT-4',
-        api_identifier: 'gpt-4',
-        description: 'Powerful model by OpenAI',
-        strengths: ['coding', 'writing'],
-        weaknesses: ['cost'],
-        context_window_tokens: 8192,
-        input_token_cost_usd_millionths: 30,
-        output_token_cost_usd_millionths: 60,
-        max_output_tokens: 4096,
-        is_active: true,
-        created_at: '2025-01-01T00:00:00.000Z',
-        updated_at: '2025-01-01T00:00:00.000Z',
+        name: 'GPT-4',
         is_default_generation: false,
+        is_active: true,
         min_plan_tier_level: 10,
-      },
+      }),
     ];
 
     server.use(

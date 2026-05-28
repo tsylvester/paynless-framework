@@ -12,7 +12,6 @@ import {
 import type {
   ApiError,
   ApiResponse,
-  AIModelCatalogEntry,
   AssembledPrompt,
   CreateProjectAndAutoStartPayload,
   CreateProjectAutoStartResult,
@@ -23,7 +22,18 @@ import type {
   StartSessionPayload,
   StartSessionSuccessResponse,
   UpdateProjectInitialPromptPayload,
+  AiProvidersRow,
 } from '@paynless/types';
+import {
+    mockAiProvidersRow,
+    mockAssembledPrompt,
+    mockDialecticProcessTemplate,
+    mockDialecticProject,
+    mockDialecticStage,
+    mockDialecticStageRecipe,
+    mockSelectedModel,
+    mockSession,
+} from '../../../apps/web/src/mocks/dialecticStore.mock';
 
 // Add the mock call here
 vi.mock('@paynless/api', async (importOriginal) => {
@@ -43,7 +53,6 @@ vi.mock('@paynless/api', async (importOriginal) => {
 
 // Import the shared mock setup - these are test utilities, not part of the mocked module itself.
 import { resetApiMock, getMockDialecticClient, type MockDialecticApiClient } from '@paynless/api/mocks';
-import { api } from '@paynless/api';
 
 describe('useDialecticStore', () => {
     let mockDialecticApi: MockDialecticApiClient;
@@ -57,35 +66,7 @@ describe('useDialecticStore', () => {
 
     describe('fetchDialecticProjects action', () => {
         it('should fetch and set projects on success', async () => {
-            const mockProjects: DialecticProject[] = [{ 
-                id: 'proj1', 
-                project_name: 'Test Project 1', 
-                user_id: 'user1', 
-                initial_user_prompt: 'prompt1', 
-                selected_domain_id: 'dom-1',
-                dialectic_domains: { name: 'Software Development' },
-                selected_domain_overlay_id: null,
-                repo_url: null, 
-                status: 'active', 
-                created_at: '2023-01-01T00:00:00Z', 
-                updated_at: '2023-01-01T00:00:00Z',
-                process_template_id: 'pt-1',
-                dialectic_process_templates: {
-                    id: 'pt-1',
-                    name: 'Standard Process',
-                    description: 'A standard process template',
-                    created_at: '2023-01-01T00:00:00Z',
-                    starting_stage_id: 'stage-1',
-                },
-                isLoadingProcessTemplate: false,
-                processTemplateError: null,
-                contributionGenerationStatus: 'idle',
-                generateContributionsError: null,
-                isSubmittingStageResponses: false,
-                submitStageResponsesError: null,
-                isSavingContributionEdit: false,
-                saveContributionEditError: null,
-            }];
+            const mockProjects: DialecticProject[] = [mockDialecticProject()];
             const mockResponse: ApiResponse<DialecticProject[]> = { data: mockProjects, status: 200 };
             mockDialecticApi.listProjects.mockResolvedValue(mockResponse);
 
@@ -165,35 +146,13 @@ describe('useDialecticStore', () => {
             selectedDomainId: 'dom-1',
             selectedDomainOverlayId: 'overlay-1',
         };
-        const mockCreatedProject: DialecticProject = {
+        const mockCreatedProject: DialecticProject = mockDialecticProject({
             id: 'newProjId',
             project_name: projectPayload.projectName,
             initial_user_prompt: projectPayload.initialUserPrompt,
             selected_domain_id: projectPayload.selectedDomainId,
-            dialectic_domains: { name: 'Software Development' }, // This would be set by the backend
             selected_domain_overlay_id: projectPayload.selectedDomainOverlayId ?? null,
-            user_id: 'user1',
-            repo_url: null,
-            status: 'active',
-            created_at: '2023-01-01T00:00:00.000Z',
-            updated_at: '2023-01-01T00:00:00.000Z',
-            process_template_id: 'pt-1',
-            dialectic_process_templates: {
-                id: 'pt-1',
-                name: 'Standard Process',
-                description: 'A standard process template',
-                created_at: '2023-01-01T00:00:00Z',
-                starting_stage_id: 'stage-1',
-            },
-            isLoadingProcessTemplate: false,
-            processTemplateError: null,
-            contributionGenerationStatus: 'idle',
-            generateContributionsError: null,
-            isSubmittingStageResponses: false,
-            submitStageResponsesError: null,
-            isSavingContributionEdit: false,
-            saveContributionEditError: null,
-        };
+        });
 
         it('should create a project and add it to the local state on success', async () => {
             const { createDialecticProject } = useDialecticStore.getState();
@@ -296,67 +255,29 @@ describe('useDialecticStore', () => {
         const sessionId = 'sess-auto-idem-1';
         const stageSlug = 'thesis';
         const oneStage: DialecticStage[] = [
-            {
-                id: 'stage-1',
-                slug: stageSlug,
-                display_name: 'Thesis',
-                expected_output_template_ids: [],
-                recipe_template_id: null,
-                created_at: '2023-01-01T00:00:00.000Z',
+            mockDialecticStage({
+                minimum_balance: 0,
                 default_system_prompt_id: null,
                 description: null,
-                active_recipe_instance_id: null,
-                minimum_balance: 0,
-            },
+            }),
         ];
-        const template: DialecticProcessTemplate = {
-            id: 'pt-1',
-            name: 'Standard',
+        const template: DialecticProcessTemplate = mockDialecticProcessTemplate({
             description: null,
-            created_at: '2023-01-01T00:00:00.000Z',
-            starting_stage_id: 'stage-1',
             stages: oneStage,
-        };
-        const mockProjectForAutoStart: DialecticProject = {
+            transitions: [],
+        });
+        const autoStartProjectOverrides: Partial<DialecticProject> = {
             id: projectId,
-            user_id: 'user-1',
             project_name: 'Auto Project',
-            selected_domain_id: 'dom-1',
             dialectic_domains: null,
-            selected_domain_overlay_id: null,
-            repo_url: null,
-            status: 'active',
-            created_at: '2023-01-01T00:00:00.000Z',
-            updated_at: '2023-01-01T00:00:00.000Z',
-            process_template_id: 'pt-1',
             dialectic_process_templates: template,
-            isLoadingProcessTemplate: false,
-            processTemplateError: null,
-            contributionGenerationStatus: 'idle',
-            generateContributionsError: null,
-            isSubmittingStageResponses: false,
-            submitStageResponsesError: null,
-            isSavingContributionEdit: false,
-            saveContributionEditError: null,
         };
-        const defaultCatalogEntry: AIModelCatalogEntry = {
-            id: 'm1',
-            provider_name: 'Provider',
-            model_name: 'Model One',
-            api_identifier: 'm1',
-            created_at: '',
-            updated_at: '',
-            context_window_tokens: 1000,
-            input_token_cost_usd_millionths: 1,
-            output_token_cost_usd_millionths: 1,
-            max_output_tokens: 500,
-            is_active: true,
-            description: null,
-            strengths: null,
-            weaknesses: null,
+        const mockProjectForAutoStart: DialecticProject = mockDialecticProject(autoStartProjectOverrides);
+        const mockProjectDetailsForAutoStart: DialecticProject = mockDialecticProject(autoStartProjectOverrides);
+        const defaultCatalogEntry: AiProvidersRow = mockAiProvidersRow({
             is_default_generation: true,
-            min_plan_tier_level: 0,
-        };
+            is_active: true,
+        });
         const payload: CreateProjectAndAutoStartPayload = {
             idempotencyKey: 'caller-provided-project-idem',
             sessionIdempotencyKey: 'caller-provided-session-idem',
@@ -374,7 +295,7 @@ describe('useDialecticStore', () => {
                 status: 201,
             });
             mockDialecticApi.getProjectDetails.mockResolvedValue({
-                data: mockProjectForAutoStart,
+                data: mockProjectDetailsForAutoStart,
                 status: 200,
             });
             mockDialecticApi.fetchProcessTemplate.mockResolvedValue({
@@ -382,23 +303,24 @@ describe('useDialecticStore', () => {
                 status: 200,
             });
             mockDialecticApi.fetchStageRecipe.mockResolvedValue({
-                data: { stageSlug, instanceId: 'inst-1', steps: [], edges: [] },
+                data: mockDialecticStageRecipe({ stageSlug }),
                 status: 200,
             });
             const mockStartSessionResponse: StartSessionSuccessResponse = {
-                id: sessionId,
-                project_id: projectId,
-                current_stage_id: 'stage-1',
-                status: 'pending',
-                iteration_count: 1,
-                session_description: null,
-                created_at: new Date().toISOString(),
-                updated_at: new Date().toISOString(),
-                seedPrompt: { promptContent: 'Seed', source_prompt_resource_id: 'res-idem-1' },
-                associated_chat_id: null,
-                selected_models: [{ id: 'm1', displayName: 'Model One' }],
-                user_input_reference_url: null,
-                viewing_stage_id: null,
+                ...mockSession({
+                    id: sessionId,
+                    project_id: projectId,
+                    status: 'pending',
+                    session_description: null,
+                    associated_chat_id: null,
+                    current_stage_id: 'stage-1',
+                    viewing_stage_id: null,
+                    selected_models: [mockSelectedModel({ id: 'm1', displayName: 'Model One' })],
+                }),
+                seedPrompt: mockAssembledPrompt({
+                    promptContent: 'Seed',
+                    source_prompt_resource_id: 'res-idem-1',
+                }),
             };
             mockDialecticApi.startSession.mockResolvedValue({
                 data: mockStartSessionResponse,
@@ -429,24 +351,21 @@ describe('useDialecticStore', () => {
                 projectId: 'proj-1',
                 selectedModels: [{ id: 'model-1', displayName: 'Model 1' }],
             };
-            const mockAssembledPrompt: AssembledPrompt = {
+            const assembledPrompt: AssembledPrompt = mockAssembledPrompt({
                 promptContent: 'This is the seed prompt content.',
                 source_prompt_resource_id: 'res-123',
-            };
+            });
             const mockSessionResponse: StartSessionSuccessResponse = {
-                id: 'session-1',
-                project_id: 'proj-1',
-                current_stage_id: 'stage-1',
-                status: 'pending',
-                iteration_count: 1,
-                session_description: 'Test session',
-                created_at: new Date().toISOString(),
-                updated_at: new Date().toISOString(),
-                seedPrompt: mockAssembledPrompt,
-                associated_chat_id: 'chat-1',
-                selected_models: [{ id: 'model-1', displayName: 'Model 1' }],
-                user_input_reference_url: null,
-                viewing_stage_id: null,
+                ...mockSession({
+                    id: 'session-1',
+                    project_id: 'proj-1',
+                    status: 'pending',
+                    session_description: 'Test session',
+                    associated_chat_id: 'chat-1',
+                    current_stage_id: 'stage-1',
+                    selected_models: [mockSelectedModel()],
+                }),
+                seedPrompt: assembledPrompt,
             };
 
             const mockApiResponse: ApiResponse<StartSessionSuccessResponse> = { data: mockSessionResponse, status: 200 };
@@ -461,7 +380,7 @@ describe('useDialecticStore', () => {
             const state = useDialecticStore.getState();
             expect(state.isStartingSession).toBe(false);
             expect(state.startSessionError).toBeNull();
-            expect(state.activeSeedPrompt).toEqual(mockAssembledPrompt);
+            expect(state.activeSeedPrompt).toEqual(assembledPrompt);
             expect(mockDialecticApi.startSession).toHaveBeenCalledWith(payload);
             expect(fetchDetailsSpy).toHaveBeenCalledWith(payload.projectId);
         });
@@ -469,61 +388,42 @@ describe('useDialecticStore', () => {
 
     describe('fetchDialecticProjectDetails action', () => {
         const projectId = 'proj-detail-1';
-        const mockProjectDetail: DialecticProject = {
+        const mockProjectDetail: DialecticProject = mockDialecticProject({
             id: projectId,
             project_name: 'Detailed Project',
             user_id: 'user-detail',
             initial_user_prompt: 'Detail prompt',
             selected_domain_id: 'dom-detail',
             dialectic_domains: { name: 'Detailed Domain' },
-            selected_domain_overlay_id: null,
-            repo_url: null,
-            status: 'active',
             created_at: '2023-02-01T00:00:00Z',
             updated_at: '2023-02-01T00:00:00Z',
-            dialectic_sessions: [], // Add empty sessions array for completeness
-            resources: [], // Add empty resources array
+            dialectic_sessions: [],
             process_template_id: 'pt-detail-1',
-            dialectic_process_templates: { // Corrected field name based on DialecticProject type
+            dialectic_process_templates: mockDialecticProcessTemplate({
                 id: 'pt-detail-1',
                 name: 'Detail Process',
                 description: 'A detailed process template',
                 created_at: '2023-02-01T00:00:00Z',
-                // Ensure starting_stage_id and domain_id are included if they are non-nullable in DialecticProcessTemplate
-                // For this test, assuming they can be omitted if nullable or not directly relevant to the core assertions
+                starting_stage_id: 'stage-detail-1',
                 stages: [],
                 transitions: [],
-                starting_stage_id: 'stage-detail-1',
-            },
-            // The following are store-specific states, not part of DB response for DialecticProject typically
-            isLoadingProcessTemplate: false,
-            processTemplateError: null,
-            contributionGenerationStatus: 'idle',
-            generateContributionsError: null,
-            isSubmittingStageResponses: false,
-            submitStageResponsesError: null,
-            isSavingContributionEdit: false,
-            saveContributionEditError: null,
-        };
+            }),
+        });
 
         it('should fetch and set currentProjectDetail, and update context on success', async () => {
             // Arrange: Set initial state for context fields to ensure they change
             useDialecticStore.setState({
                 activeContextProjectId: 'old-project-id',
                 activeContextSessionId: 'old-session-id',
-                activeContextStage: { 
-                    id: 'old-stage', 
-                    slug: 'old-stage', 
-                    display_name: 'Old Stage', 
-                    description: 'Old Stage', 
-                    created_at: new Date().toISOString(), 
-                    expected_output_template_ids: [], 
-                    recipe_template_id: null, 
-                    active_recipe_instance_id: null,
+                activeContextStage: mockDialecticStage({
+                    id: 'old-stage',
+                    slug: 'old-stage',
+                    display_name: 'Old Stage',
+                    description: 'Old Stage',
                     default_system_prompt_id: null,
                     minimum_balance: 0,
-                },
-                selectedModels: [{ id: 'old-model-1', displayName: 'Old Model 1' }],
+                }),
+                selectedModels: [mockSelectedModel({ id: 'old-model-1', displayName: 'Old Model 1' })],
             });
 
             const mockResponse: ApiResponse<DialecticProject> = { data: mockProjectDetail, status: 200 };
@@ -634,52 +534,28 @@ describe('useDialecticStore', () => {
     describe('deleteDialecticProject action', () => {
         const projectIdToDelete = 'proj1';
         const initialProjects: DialecticProject[] = [
-            { 
-                id: 'proj1', 
-                project_name: 'Test Project 1', 
-                user_id: 'user1',
-                dialectic_domains: { name: 'Test Domain' },
-                dialectic_process_templates: null,
-                process_template_id: null,
-                isLoadingProcessTemplate: false,
-                processTemplateError: null,
-                contributionGenerationStatus: 'idle',
-                generateContributionsError: null,
-                isSubmittingStageResponses: false,
-                submitStageResponsesError: null,
-                isSavingContributionEdit: false,
-                saveContributionEditError: null,
-                created_at: '2023-01-01T00:00:00Z',
-                updated_at: '2023-01-01T00:00:00Z',
-                selected_domain_overlay_id: null,
-                repo_url: null,
-                status: 'active',
+            mockDialecticProject({
+                id: 'proj1',
+                project_name: 'Test Project 1',
                 initial_user_prompt: 'Test Project 1',
-                initial_prompt_resource_id: null,
-                selected_domain_id: 'dom-1',
-            },
-            { 
-                id: 'proj2', project_name: 'Test Project 2', user_id: 'user1',
                 dialectic_domains: { name: 'Test Domain' },
                 dialectic_process_templates: null,
                 process_template_id: null,
-                isLoadingProcessTemplate: false,
-                processTemplateError: null,
-                contributionGenerationStatus: 'idle',
-                generateContributionsError: null,
-                isSubmittingStageResponses: false,
-                submitStageResponsesError: null,
-                isSavingContributionEdit: false,
-                saveContributionEditError: null,
+                dialectic_sessions: [],
                 created_at: '2023-01-01T00:00:00Z',
                 updated_at: '2023-01-01T00:00:00Z',
-                selected_domain_overlay_id: null,
-                repo_url: null,
-                status: 'active',
+            }),
+            mockDialecticProject({
+                id: 'proj2',
+                project_name: 'Test Project 2',
                 initial_user_prompt: 'Test Project 2',
-                initial_prompt_resource_id: null,
-                selected_domain_id: 'dom-1',
-            },
+                dialectic_domains: { name: 'Test Domain' },
+                dialectic_process_templates: null,
+                process_template_id: null,
+                dialectic_sessions: [],
+                created_at: '2023-01-01T00:00:00Z',
+                updated_at: '2023-01-01T00:00:00Z',
+            }),
         ];
 
         beforeEach(() => {
@@ -760,50 +636,29 @@ describe('useDialecticStore', () => {
 
     describe('cloneDialecticProject action', () => {
         const projectIdToClone = 'proj1';
-        const clonedProject: DialecticProject = { 
-            id: 'clonedProj', project_name: 'Cloned Project 1', user_id: 'user1',
+        const clonedProject: DialecticProject = mockDialecticProject({
+            id: 'clonedProj',
+            project_name: 'Cloned Project 1',
+            initial_user_prompt: 'Test Project 1',
             dialectic_domains: { name: 'Test Domain' },
             dialectic_process_templates: null,
             process_template_id: null,
-            isLoadingProcessTemplate: false,
-            processTemplateError: null,
-            contributionGenerationStatus: 'idle',
-            generateContributionsError: null,
-            isSubmittingStageResponses: false,
-            submitStageResponsesError: null,
-            isSavingContributionEdit: false,
-            saveContributionEditError: null,
+            dialectic_sessions: [],
             created_at: '2023-01-01T00:00:00Z',
             updated_at: '2023-01-01T00:00:00Z',
-            selected_domain_overlay_id: null,
-            repo_url: null,
-            status: 'active',
-            initial_user_prompt: 'Test Project 1',
-            initial_prompt_resource_id: null,
-            selected_domain_id: 'dom-1',
-        };
+        });
         const initialProjects: DialecticProject[] = [
-            { id: 'proj1', project_name: 'Test Project 1', user_id: 'user1',
+            mockDialecticProject({
+                id: 'proj1',
+                project_name: 'Test Project 1',
+                initial_user_prompt: 'Test Project 1',
                 dialectic_domains: { name: 'Test Domain' },
                 dialectic_process_templates: null,
                 process_template_id: null,
-                isLoadingProcessTemplate: false,
-                processTemplateError: null,
-                contributionGenerationStatus: 'idle',
-                generateContributionsError: null,
-                isSubmittingStageResponses: false,
-                submitStageResponsesError: null,
-                isSavingContributionEdit: false,
-                saveContributionEditError: null,
+                dialectic_sessions: [],
                 created_at: '2023-01-01T00:00:00Z',
                 updated_at: '2023-01-01T00:00:00Z',
-                selected_domain_overlay_id: null,
-                repo_url: null,
-                status: 'active',
-                initial_user_prompt: 'Test Project 1',
-                initial_prompt_resource_id: null,
-                selected_domain_id: 'dom-1',
-            },
+            }),
         ];
 
         beforeEach(() => {
@@ -966,42 +821,19 @@ describe('useDialecticStore', () => {
         const projectId = 'proj123';
         const oldInitialPrompt = 'Old initial prompt';
         const newInitialPrompt = 'New and improved initial prompt';
-        const mockExistingProject: DialecticProject = {
+        const mockExistingProject: DialecticProject = mockDialecticProject({
             id: 'proj123',
             project_name: 'Existing Project',
             initial_user_prompt: oldInitialPrompt,
-            user_id: 'user1',
-            selected_domain_id: 'dom-1',
-            dialectic_domains: { name: 'Software Development' },
-            selected_domain_overlay_id: null,
-            repo_url: null,
-            status: 'active',
-            created_at: '2023-01-01T00:00:00Z',
-            updated_at: '2023-01-01T00:00:00Z',
             dialectic_sessions: [],
-            resources: [],
-            process_template_id: 'pt-1',
-            dialectic_process_templates: {
-                id: 'pt-1',
-                name: 'Standard Process',
-                description: 'A standard process template',
-                created_at: '2023-01-01T00:00:00Z',
-                starting_stage_id: 'stage-1',
-            },
-            isLoadingProcessTemplate: false,
-            processTemplateError: null,
-            contributionGenerationStatus: 'idle',
-            generateContributionsError: null,
-            isSubmittingStageResponses: false,
-            submitStageResponsesError: null,
-            isSavingContributionEdit: false,
-            saveContributionEditError: null,
-        };
-        const mockUpdatedProject: DialecticProject = {
-            ...mockExistingProject,
+        });
+        const mockUpdatedProject: DialecticProject = mockDialecticProject({
+            id: 'proj123',
+            project_name: 'Existing Project',
             initial_user_prompt: newInitialPrompt,
+            dialectic_sessions: [],
             updated_at: '2023-01-02T00:00:00Z',
-        };
+        });
         const payload: UpdateProjectInitialPromptPayload = { projectId, newInitialPrompt };
 
         beforeEach(() => {
@@ -1036,7 +868,7 @@ describe('useDialecticStore', () => {
         it('should update only projects list if currentProjectDetail is different', async () => {
             // Set currentProjectDetail to a different project
             useDialecticStore.setState({
-                currentProjectDetail: { ...mockExistingProject, id: 'otherProject' }
+                currentProjectDetail: mockDialecticProject({ id: 'otherProject' }),
             });
             const mockResponse: ApiResponse<DialecticProject> = { data: mockUpdatedProject, status: 200 };
             mockDialecticApi.updateDialecticProjectInitialPrompt.mockResolvedValue(mockResponse);

@@ -357,15 +357,10 @@ export const CreateDialecticProjectForm: React.FC<
 	}, [capabilities, handleFileLoadForPrompt]);
 
 	useEffect(() => {
-		if (creationError) {
-			resetCreateProjectError();
-		}
 		return () => {
-			if (creationError) {
-				resetCreateProjectError();
-			}
+			resetCreateProjectError();
 		};
-	}, [creationError, resetCreateProjectError]);
+	}, [resetCreateProjectError]);
 
 	useEffect(() => {
 		reset({
@@ -474,6 +469,10 @@ export const CreateDialecticProjectForm: React.FC<
 		if (!selectedDomainId) {
 			logger.error("No domain selected. Cannot create project.");
 			return;
+		}
+
+		if (creationError) {
+			resetCreateProjectError();
 		}
 
 		const idempotencyKey: string = crypto.randomUUID();

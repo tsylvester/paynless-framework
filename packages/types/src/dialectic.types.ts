@@ -9,6 +9,8 @@ export interface UpdateProjectDomainPayload {
   selectedDomainId: string;
 }
 
+export type AiProvidersRow = Database['public']['Tables']['ai_providers']['Row'];
+
 export type DialecticStage = Database['public']['Tables']['dialectic_stages']['Row'];
 
 export type DialecticStageTransition = Database['public']['Tables']['dialectic_stage_transitions']['Row'];
@@ -156,29 +158,7 @@ export interface DialecticSessionModel {
     model_id: string;
     model_role: string | null;
     created_at: string;
-    ai_provider?: AIModelCatalogEntry;
-}
-
-export interface AIModelCatalogEntry {
-    id: string;
-    provider_name: string;
-    model_name: string;
-    api_identifier: string;
-    description: string | null;
-    strengths: string[] | null;
-    weaknesses: string[] | null;
-    context_window_tokens: number | null;
-    input_token_cost_usd_millionths: number | null;
-    output_token_cost_usd_millionths: number | null;
-    supports_image_input?: boolean;
-    supports_video_input?: boolean;
-    supports_audio_input?: boolean;
-    max_output_tokens: number | null;
-    is_active: boolean;
-    created_at: string;
-    updated_at: string;
-    is_default_generation: boolean;
-    min_plan_tier_level: number;
+    ai_provider?: AiProvidersRow;
 }
 
 export interface PromptTemplateVariable {
@@ -347,7 +327,7 @@ export interface DialecticStateValues {
   isLoadingProjectDetail: boolean;
   projectDetailError: ApiError | null;
 
-  modelCatalog: AIModelCatalogEntry[];
+  modelCatalog: AiProvidersRow[];
   isLoadingModelCatalog: boolean;
   modelCatalogError: ApiError | null;
 
@@ -1077,7 +1057,7 @@ export interface DialecticApiClient {
   getProjectDetails(projectId: string): Promise<ApiResponse<DialecticProject>>;
   startSession(payload: StartSessionPayload): Promise<ApiResponse<StartSessionSuccessResponse>>;
   updateSessionModels(payload: UpdateSessionModelsPayload): Promise<ApiResponse<DialecticSession>>;
-  listModelCatalog(): Promise<ApiResponse<AIModelCatalogEntry[]>>;
+  listModelCatalog(): Promise<ApiResponse<AiProvidersRow[]>>;
   getContributionContentData(contributionId: string): Promise<ApiResponse<GetContributionContentDataResponse | null>>;
   listDomains(): Promise<ApiResponse<DialecticDomain[]>>;
   fetchProcessTemplate(templateId: string): Promise<ApiResponse<DialecticProcessTemplate>>;

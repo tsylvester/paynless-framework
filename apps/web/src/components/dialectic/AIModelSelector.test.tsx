@@ -1,56 +1,33 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import type { ReactElement } from 'react';
-import { initialDialecticStateValues } from '@paynless/store';
+import { beforeEach, afterEach, describe, expect, test, vi } from 'vitest';
 import { initialAiStateValues } from '@paynless/types';
 import { AIModelSelector } from './AIModelSelector';
 import { mockUserTier, mockAllTiers } from '../../mocks/profile.mock';
-import type { AiProvider, DialecticStateValues, AiState, SelectedModels, AIModelCatalogEntry, UserTier } from '@paynless/types';
+import type { AiProvider, DialecticStateValues, AiState, SelectedModels, UserTier, AiProvidersRow } from '@paynless/types';
+import {
+  mockAiProvidersRow,
+  mockSelectedModel,
+  initializeMockDialecticState,
+  resetDialecticStoreMock,
+  getDialecticStoreActions,
+  getDialecticStoreActionMock,
+} from '../../mocks/dialecticStore.mock';
+import { mockedUseAuthStoreHookLogic, resetAuthStoreMock } from '../../mocks/authStore.mock';
+import { getAiStoreState, mockSetState, resetAiStoreMock } from '../../mocks/aiStore.mock';
 
-// Store references to mock implementations that can be updated
-let currentDialecticState: DialecticStateValues;
-let currentDialecticActions: {
-  setModelMultiplicity: ReturnType<typeof vi.fn>;
-  fetchAIModelCatalog: ReturnType<typeof vi.fn>;
-  setSelectedModels: ReturnType<typeof vi.fn>;
-};
-let currentAiState: AiState;
-let currentAiActions: { loadAiConfig: ReturnType<typeof vi.fn> };
-let currentAuthState: { userTier: UserTier; availableTiers: UserTier[] };
-
-// Mock the Zustand stores
 vi.mock('@paynless/store', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@paynless/store')>();
-  const typesModule = await vi.importActual<typeof import('@paynless/types')>('@paynless/types');
-
-  const mockUseDialecticStore = vi.fn((selector?: (state: DialecticStateValues & typeof currentDialecticActions) => unknown) => {
-    if (selector) {
-      return selector({ ...currentDialecticState, ...currentDialecticActions });
-    }
-    return { ...currentDialecticState, ...currentDialecticActions };
-  });
-
-  const mockUseAiStore = vi.fn((selector?: (state: AiState & typeof currentAiActions) => unknown) => {
-    if (selector) {
-      return selector({ ...currentAiState, ...currentAiActions });
-    }
-    return { ...currentAiState, ...currentAiActions };
-  });
-
-  const mockUseAuthStore = vi.fn((selector?: (state: typeof currentAuthState) => unknown) => {
-    if (selector) {
-      return selector(currentAuthState);
-    }
-    return currentAuthState;
-  });
-
+  const dialecticMock = await import('../../mocks/dialecticStore.mock');
+  const authMock = await import('../../mocks/authStore.mock');
+  const aiMock = await import('../../mocks/aiStore.mock');
   return {
     ...actual,
-    useAiStore: mockUseAiStore,
-    useDialecticStore: mockUseDialecticStore,
-    useAuthStore: mockUseAuthStore,
-    initialAiStateValues: typesModule.initialAiStateValues,
+    useDialecticStore: dialecticMock.useDialecticStore,
+    useAuthStore: authMock.useAuthStore,
+    useAiStore: aiMock.useAiStore,
   };
 });
 
@@ -58,53 +35,52 @@ function renderWithRouter(ui: ReactElement) {
   return render(<MemoryRouter>{ui}</MemoryRouter>);
 }
 
-// Helper function to set up mock store states and actions
-const setupMockStores = (
-  initialDialecticConfig: Partial<DialecticStateValues> = {},
-  initialAiConfig: Partial<AiState> = {},
-  initialAuthConfig: { userTier?: UserTier; availableTiers?: UserTier[] } = {}
-) => {
-  const dialecticState: DialecticStateValues = {
-    ...initialDialecticStateValues,
-    selectedModels: [],
-    ...initialDialecticConfig,
-  };
-
-  const aiState: AiState = {
-    ...initialAiStateValues,
-    availableProviders: [],
-    isConfigLoading: false,
-    aiError: null,
-    ...initialAiConfig,
-  };
-
-  const dialecticActions = {
-    setModelMultiplicity: vi.fn(),
-    fetchAIModelCatalog: vi.fn(),
-    setSelectedModels: vi.fn(),
-  };
-
-  const aiActions = {
-    loadAiConfig: vi.fn(),
-  };
-
-  const authState: { userTier: UserTier; availableTiers: UserTier[] } = {
-    userTier: initialAuthConfig.userTier !== undefined ? initialAuthConfig.userTier : mockUserTier,
-    availableTiers: initialAuthConfig.availableTiers !== undefined ? initialAuthConfig.availableTiers : mockAllTiers,
-  };
-
-  currentDialecticState = dialecticState;
-  currentDialecticActions = dialecticActions;
-  currentAiState = aiState;
-  currentAiActions = aiActions;
-  currentAuthState = authState;
-
-  return { dialecticState, dialecticActions, aiState, aiActions };
+const testProviderOverrides: Partial<AiProvidersRow> = {
+  created_at: 'test',
+  updated_at: 'test',
+  config: null,
+  description: null,
+  is_active: true,
+  is_enabled: true,
+  is_default_embedding: false,
+  is_default_generation: false,
+  min_plan_tier_level: 0,
 };
 
+function mockTestAiProvider(overrides: Partial<AiProvidersRow>): AiProvider {
+  return mockAiProvidersRow({ ...testProviderOverrides, ...overrides });
+}
+
+function setupMockStores(
+  dialecticOverrides: Partial<DialecticStateValues> = {},
+  aiOverrides: Partial<AiState> = {},
+  authOverrides: { userTier?: UserTier; availableTiers?: UserTier[] } = {},
+) {
+  resetDialecticStoreMock();
+  resetAuthStoreMock();
+  resetAiStoreMock();
+  initializeMockDialecticState(dialecticOverrides);
+  act(() => {
+    mockSetState({
+      ...initialAiStateValues,
+      availableProviders: [],
+      isConfigLoading: false,
+      aiError: null,
+      ...aiOverrides,
+    });
+    mockedUseAuthStoreHookLogic.setState({
+      userTier: authOverrides.userTier !== undefined ? authOverrides.userTier : mockUserTier,
+      availableTiers: authOverrides.availableTiers !== undefined ? authOverrides.availableTiers : mockAllTiers,
+    });
+  });
+  const dialecticActions = getDialecticStoreActions();
+  const loadAiConfig = getAiStoreState().loadAiConfig;
+  return { dialecticActions, aiActions: { loadAiConfig } };
+}
+
 const mockAiProvidersData: AiProvider[] = [
-  { id: 'model1', name: 'GPT-4', provider: 'OpenAI', api_identifier: 'gpt-4', created_at: 'test', updated_at: 'test', is_active: true, is_enabled: true, is_default_embedding: false, is_default_generation: false, config: null, description: null, min_plan_tier_level: 0 },
-  { id: 'model2', name: 'Claude 3', provider: 'Anthropic', api_identifier: 'claude-3', created_at: 'test', updated_at: 'test', is_active: true, is_enabled: true, is_default_embedding: false, is_default_generation: false, config: null, description: null, min_plan_tier_level: 0 },
+  mockTestAiProvider({ id: 'model1', name: 'GPT-4', provider: 'OpenAI', api_identifier: 'gpt-4' }),
+  mockTestAiProvider({ id: 'model2', name: 'Claude 3', provider: 'Anthropic', api_identifier: 'claude-3' }),
 ];
 
 const modelIdToDisplayName: Record<string, string> = {
@@ -117,57 +93,62 @@ const modelIdToDisplayName: Record<string, string> = {
 };
 
 function selectedModelsFromIds(ids: string[]): SelectedModels[] {
-  return ids.map((id) => ({ id, displayName: modelIdToDisplayName[id] ?? id }));
+  return ids.map((id) => mockSelectedModel({ id, displayName: modelIdToDisplayName[id] ?? id }));
 }
 
-function catalogEntry(overrides: Partial<AIModelCatalogEntry>): AIModelCatalogEntry {
-  const base: AIModelCatalogEntry = {
-    id: 'base-id',
-    provider_name: 'Provider',
-    model_name: 'Base Model',
-    api_identifier: 'api-id',
-    description: null,
-    strengths: null,
-    weaknesses: null,
-    context_window_tokens: null,
-    input_token_cost_usd_millionths: null,
-    output_token_cost_usd_millionths: null,
-    max_output_tokens: null,
-    is_active: true,
-    created_at: '2025-01-01T00:00:00Z',
-    updated_at: '2025-01-01T00:00:00Z',
-    is_default_generation: false,
-    min_plan_tier_level: 0,
-  };
-  return { ...base, ...overrides };
-}
+const modelOneCatalogRow: AiProvidersRow = mockAiProvidersRow({
+  id: 'm1',
+  name: 'Model One',
+  provider: 'Provider',
+  api_identifier: 'api-id',
+  description: null,
+  is_active: true,
+  is_default_generation: true,
+  min_plan_tier_level: 0,
+});
+
+const defaultCatalogRow: AiProvidersRow = mockAiProvidersRow({
+  id: 'default-1',
+  name: 'Default One',
+  provider: 'Provider',
+  api_identifier: 'api-id',
+  description: null,
+  is_active: true,
+  is_default_generation: true,
+  min_plan_tier_level: 0,
+});
+
+const geminiProvider: AiProvider = mockTestAiProvider({
+  id: 'model3',
+  name: 'Gemini',
+  provider: 'Google',
+  api_identifier: 'gemini',
+});
 
 const tierFree: UserTier = mockUserTier;
 const tierUltra: UserTier = mockAllTiers[3];
 
-const providerFree: AiProvider = {
-  ...mockAiProvidersData[0],
+const providerFree: AiProvider = mockTestAiProvider({
   id: 'model-free',
   name: 'Free Model',
   api_identifier: 'model-free',
-  min_plan_tier_level: 0,
-};
+  provider: 'OpenAI',
+});
 
-const providerFreeB: AiProvider = {
-  ...mockAiProvidersData[0],
+const providerFreeB: AiProvider = mockTestAiProvider({
   id: 'model-free-b',
   name: 'Free B',
   api_identifier: 'model-free-b',
-  min_plan_tier_level: 0,
-};
+  provider: 'OpenAI',
+});
 
-const providerPremium: AiProvider = {
-  ...mockAiProvidersData[0],
+const providerPremium: AiProvider = mockTestAiProvider({
   id: 'model-premium',
   name: 'Premium Model',
   api_identifier: 'model-premium',
+  provider: 'OpenAI',
   min_plan_tier_level: 20,
-};
+});
 
 const tierUltraAuthConfig: { userTier: UserTier; availableTiers: UserTier[] } = {
   userTier: tierUltra,
@@ -251,8 +232,8 @@ describe('AIModelSelector', () => {
     setupMockStores(
       {
         selectedModels: [
-          { id: 'model1', displayName: 'model1' },
-          { id: 'model2', displayName: 'model2' },
+          mockSelectedModel({ id: 'model1', displayName: 'model1' }),
+          mockSelectedModel({ id: 'model2', displayName: 'model2' }),
         ],
       },
       { availableProviders: mockAiProvidersData, isConfigLoading: false }
@@ -311,8 +292,7 @@ describe('AIModelSelector', () => {
     expect(screen.getByText('Claude 3')).toBeInTheDocument();
     unmount();
 
-    const geminiModel: AiProvider = { id: 'model3', name: 'Gemini', provider: 'Google', api_identifier: 'gemini', created_at: 'test', updated_at: 'test', is_active: true, is_enabled: true, is_default_embedding: false, is_default_generation: false, config: null, description: null, min_plan_tier_level: 0 };
-    const manyProviders: AiProvider[] = [...mockAiProvidersData, geminiModel];
+    const manyProviders: AiProvider[] = [...mockAiProvidersData, geminiProvider];
 
     setupMockStores(
       { selectedModels: selectedModelsFromIds(['model1', 'model2', 'model3']) },
@@ -475,7 +455,7 @@ describe('AIModelSelector', () => {
   test('when modelCatalog is non-empty, fetchAIModelCatalog is NOT called on mount', () => {
     const { dialecticActions } = setupMockStores(
       {
-        modelCatalog: [catalogEntry({ id: 'm1', model_name: 'Model One', is_default_generation: true, is_active: true })],
+        modelCatalog: [modelOneCatalogRow],
         isLoadingModelCatalog: false,
       },
       { availableProviders: mockAiProvidersData, isConfigLoading: false }
@@ -486,11 +466,11 @@ describe('AIModelSelector', () => {
 
   test('when selectedModels is empty, defaultModels is non-empty, and activeContextSessionId is null, setSelectedModels is called with the default models', () => {
     const defaultModels: SelectedModels[] = [
-      { id: 'default-1', displayName: 'Default One' },
+      mockSelectedModel({ id: 'default-1', displayName: 'Default One' }),
     ];
     const { dialecticActions } = setupMockStores(
       {
-        modelCatalog: [catalogEntry({ id: 'default-1', model_name: 'Default One', is_default_generation: true, is_active: true })],
+        modelCatalog: [defaultCatalogRow],
         isLoadingModelCatalog: false,
         selectedModels: [],
         activeContextSessionId: null,
@@ -505,7 +485,7 @@ describe('AIModelSelector', () => {
   test('when selectedModels is already non-empty, setSelectedModels is NOT called for defaults', () => {
     const { dialecticActions } = setupMockStores(
       {
-        modelCatalog: [catalogEntry({ id: 'default-1', model_name: 'Default One', is_default_generation: true, is_active: true })],
+        modelCatalog: [defaultCatalogRow],
         isLoadingModelCatalog: false,
         selectedModels: selectedModelsFromIds(['model1']),
         activeContextSessionId: null,
@@ -519,7 +499,7 @@ describe('AIModelSelector', () => {
   test('when activeContextSessionId is set, setSelectedModels is NOT called for defaults even if selectedModels is empty', () => {
     const { dialecticActions } = setupMockStores(
       {
-        modelCatalog: [catalogEntry({ id: 'default-1', model_name: 'Default One', is_default_generation: true, is_active: true })],
+        modelCatalog: [defaultCatalogRow],
         isLoadingModelCatalog: false,
         selectedModels: [],
         activeContextSessionId: 'session-123',
@@ -532,7 +512,7 @@ describe('AIModelSelector', () => {
 
   test('after defaults are applied once, clearing all models does NOT re-apply defaults', () => {
     const dialecticConfig: Partial<DialecticStateValues> = {
-      modelCatalog: [catalogEntry({ id: 'default-1', model_name: 'Default One', is_default_generation: true, is_active: true })],
+      modelCatalog: [defaultCatalogRow],
       isLoadingModelCatalog: false,
       selectedModels: [],
       activeContextSessionId: null,
@@ -543,7 +523,7 @@ describe('AIModelSelector', () => {
     );
     const { rerender } = renderWithRouter(<AIModelSelector />);
     expect(dialecticActions.setSelectedModels).toHaveBeenCalledTimes(1);
-    dialecticActions.setSelectedModels.mockClear();
+    vi.mocked(getDialecticStoreActionMock('setSelectedModels')).mockClear();
 
     setupMockStores(
       { ...dialecticConfig, selectedModels: [] },

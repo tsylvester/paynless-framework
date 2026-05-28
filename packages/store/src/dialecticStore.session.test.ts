@@ -15,7 +15,7 @@ import type {
   ApiError, 
   ApiResponse, 
   DialecticProject, 
-  AIModelCatalogEntry,
+  AiProvidersRow,
   DialecticSession,
   SelectedModels,
   StartSessionPayload,
@@ -264,45 +264,39 @@ describe('useDialecticStore', () => {
 
     describe('fetchAIModelCatalog action', () => {
         it('should fetch and set AI model catalog on success', async () => {
-            const mockCatalog: AIModelCatalogEntry[] = [
+            const mockCatalog: AiProvidersRow[] = [
                 {
                     id: 'model1',
-                    provider_name: 'OpenAI',
-                    model_name: 'GPT-4',
+                    provider: 'OpenAI',
+                    name: 'GPT-4',
                     api_identifier: 'gpt-4',
                     created_at: '2023-01-01T00:00:00.000Z',
                     updated_at: '2023-01-01T00:00:00.000Z',
                     is_active: true,
                     is_default_generation: false,
                     description: null,
-                    strengths: null,
-                    weaknesses: null,
-                    context_window_tokens: null,
-                    input_token_cost_usd_millionths: null,
-                    output_token_cost_usd_millionths: null,
-                    max_output_tokens: null,
+                    is_default_embedding: false,
+                    is_enabled: true,
                     min_plan_tier_level: 0,
+                    config: null,
                 },
                 {
                     id: 'model2',
-                    provider_name: 'Anthropic',
-                    model_name: 'Claude 3',
+                    provider: 'Anthropic',
+                    name: 'Claude 3',
                     api_identifier: 'claude-3',
                     created_at: '2023-01-01T00:00:00.000Z',
                     updated_at: '2023-01-01T00:00:00.000Z',
                     is_active: true,
                     is_default_generation: false,
                     description: null,
-                    strengths: null,
-                    weaknesses: null,
-                    context_window_tokens: null,
-                    input_token_cost_usd_millionths: null,
-                    output_token_cost_usd_millionths: null,
-                    max_output_tokens: null,
+                    is_default_embedding: false,
+                    is_enabled: true,
                     min_plan_tier_level: 10,
+                    config: null,
                 },
             ];
-            const mockResponse: ApiResponse<AIModelCatalogEntry[]> = { data: mockCatalog, status: 200 };
+            const mockResponse: ApiResponse<AiProvidersRow[]> = { data: mockCatalog, status: 200 };
             getMockDialecticClient().listModelCatalog.mockResolvedValue(mockResponse);
 
             const { fetchAIModelCatalog } = useDialecticStore.getState();
@@ -317,7 +311,7 @@ describe('useDialecticStore', () => {
 
         it('should set error state if listModelCatalog API returns an error', async () => {
             const mockError: ApiError = { code: 'CATALOG_ERROR', message: 'Failed to fetch model catalog' };
-            const mockResponse: ApiResponse<AIModelCatalogEntry[]> = { error: mockError, status: 500 };
+            const mockResponse: ApiResponse<AiProvidersRow[]> = { error: mockError, status: 500 };
             getMockDialecticClient().listModelCatalog.mockResolvedValue(mockResponse);
 
             const { fetchAIModelCatalog } = useDialecticStore.getState();

@@ -4,20 +4,26 @@ import { render, screen, waitFor, act } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import userEvent from '@testing-library/user-event';
 
-import { useDialecticStore, initialDialecticStateValues, selectActiveChatWalletInfo } from '@paynless/store';
+import { selectActiveChatWalletInfo } from '@paynless/store';
 import type {
-  CreateProjectAndAutoStartPayload,
   CreateProjectAutoStartResult,
-  DialecticStore,
-  DialecticProject,
   ApiError,
   DialecticDomain,
-  AIModelCatalogEntry,
+  DialecticProjectRow,
+  AiProvidersRow,
+  ActiveChatWalletInfo,
 } from '@paynless/types';
 import { usePlatform } from '@paynless/platform';
 import type { CapabilitiesContextValue, PlatformCapabilities } from '@paynless/types';
 import { CreateDialecticProjectForm } from './CreateDialecticProjectForm';
 import type { TextInputAreaProps } from '@/components/common/TextInputArea';
+import {
+  initializeMockDialecticState,
+  setDialecticStateValues,
+  getDialecticStoreActionMock,
+  mockAiProvidersRow,
+  mockDialecticDomain,
+} from '@/mocks/dialecticStore.mock';
 
 const projectNamePlaceholder = "A Notepad App with To Do lists";
 const initialUserPromptPlaceholder = `I want to create a notepad app with a to-do list, reminders, and event scheduling. It should say hello world, tell me the date, and then list all of my tasks and notes.
@@ -26,15 +32,22 @@ I want it to record dates from my to-do list, schedule when it needs to be compl
 
 It should be a web app with user accounts, built in typescript with next.js and shadcn components.`;
 
-// Mock @paynless/store — use wallet store mock so real Zustand subscriptions don't keep process alive
-vi.mock('@paynless/store', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@paynless/store')>();
+// Mock @paynless/store — dialectic mock hook + wallet mock (see CreateDialecticProjectForm.autostart.test.tsx)
+vi.mock('@paynless/store', async () => {
+  const mockStoreExports = await vi.importActual<typeof import('@/mocks/dialecticStore.mock')>('@/mocks/dialecticStore.mock');
+  const actualPaynlessStore = await vi.importActual<typeof import('@paynless/store')>('@paynless/store');
   const walletStoreMock = await vi.importActual<typeof import('@/mocks/walletStore.mock')>('@/mocks/walletStore.mock');
   return {
-    ...actual,
-    useDialecticStore: vi.fn(),
+    ...mockStoreExports,
     useWalletStore: walletStoreMock.useWalletStore,
     selectActiveChatWalletInfo: walletStoreMock.selectActiveChatWalletInfo,
+    initialWalletStateValues: actualPaynlessStore.initialWalletStateValues,
+    selectIsCreatingProject: actualPaynlessStore.selectIsCreatingProject,
+    selectCreateProjectError: actualPaynlessStore.selectCreateProjectError,
+    selectSelectedDomain: actualPaynlessStore.selectSelectedDomain,
+    selectDomains: actualPaynlessStore.selectDomains,
+    selectDefaultGenerationModels: actualPaynlessStore.selectDefaultGenerationModels,
+    initialDialecticStateValues: actualPaynlessStore.initialDialecticStateValues,
   };
 });
 
@@ -85,12 +98,6 @@ vi.mock('@/components/dialectic/DomainSelector', () => ({
     DomainSelector: vi.fn(() => <div data-testid="mock-domain-selector">Mock Domain Selector</div>),
 }));
 
-const mockCreateDialecticProject = vi.fn();
-const mockCreateProjectAndAutoStart = vi.fn(async (payload: CreateProjectAndAutoStartPayload): Promise<CreateProjectAutoStartResult> => {
-  mockCreateDialecticProject(payload);
-  return { projectId: 'autostart-proj-id', sessionId: 'autostart-sess-id', hasDefaultModels: true };
-});
-const mockResetCreateProjectError = vi.fn();
 const mockNavigate = vi.fn();
 
 vi.mock('react-router-dom', async (importOriginal) => {
@@ -101,52 +108,6 @@ vi.mock('react-router-dom', async (importOriginal) => {
     };
 });
 
-let mockStoreState: DialecticStore;
-
-const createMockStoreState = (overrides: Partial<DialecticStore>): DialecticStore => {
-  mockStoreState = {
-    ...initialDialecticStateValues,
-    projects: [],
-    isLoadingProjects: false,
-    projectsError: null,
-    fetchDialecticProjects: vi.fn(),
-    
-    domains: [],
-    isLoadingDomains: false,
-    domainsError: null,
-    selectedDomain: null,
-    fetchDomains: vi.fn(),
-    setSelectedDomain: vi.fn((domain: DialecticDomain | null) => {
-      if (mockStoreState) {
-        mockStoreState.selectedDomain = domain;
-      }
-    }),
-
-    currentProjectDetail: null,
-    isLoadingProjectDetail: false,
-    projectDetailError: null,
-    fetchDialecticProjectDetails: vi.fn(),
-    modelCatalog: [],
-    isLoadingModelCatalog: false,
-    modelCatalogError: null,
-    fetchAIModelCatalog: vi.fn(),
-    isCreatingProject: false,
-    createProjectError: null,
-    createDialecticProject: mockCreateDialecticProject,
-    createProjectAndAutoStart: mockCreateProjectAndAutoStart,
-    isStartingSession: false,
-    startSessionError: null,
-    startDialecticSession: vi.fn(),
-    contributionContentCache: {},
-    fetchContributionContent: vi.fn(),
-    _resetForTesting: vi.fn(),
-    resetCreateProjectError: mockResetCreateProjectError,
-    resetProjectDetailsError: vi.fn(),
-    ...overrides,
-  } as DialecticStore;
-  return mockStoreState;
-};
-
 const createMockPlatformContext = (overrides?: Partial<PlatformCapabilities>): CapabilitiesContextValue => {
   const localDefaultCaps: PlatformCapabilities = { platform: 'web', os: 'unknown', fileSystem: { isAvailable: false } };
   return {
@@ -156,56 +117,88 @@ const createMockPlatformContext = (overrides?: Partial<PlatformCapabilities>): C
   };
 };
 
-const modelCatalogWithDefault: AIModelCatalogEntry[] = [
-  {
+const mockSelectedDomain: DialecticDomain = mockDialecticDomain({
+  id: 'domain-1',
+  name: 'General',
+  description: '',
+});
+
+const defaultWalletInfo: ActiveChatWalletInfo = {
+  status: 'ok',
+  type: 'personal',
+  walletId: 'test-wallet',
+  orgId: null,
+  balance: '300000',
+  isLoadingPrimaryWallet: false,
+};
+
+const catalogEntryOverrides: Partial<AiProvidersRow> = {
+  provider: 'Provider',
+  description: null,
+  config: null,
+  created_at: '',
+  updated_at: '',
+  is_default_embedding: false,
+  min_plan_tier_level: 0,
+};
+
+const modelCatalogWithDefault: AiProvidersRow[] = [
+  mockAiProvidersRow({
+    ...catalogEntryOverrides,
     id: 'dft',
-    provider_name: 'Provider',
-    model_name: 'Default',
+    name: 'Default',
     api_identifier: 'dft',
-    description: null,
-    strengths: null,
-    weaknesses: null,
-    context_window_tokens: null,
-    input_token_cost_usd_millionths: null,
-    output_token_cost_usd_millionths: null,
-    max_output_tokens: null,
-    is_active: true,
-    created_at: '',
-    updated_at: '',
     is_default_generation: true,
-    min_plan_tier_level: 0,
-  },
+    is_active: true,
+  }),
 ];
 
+function buildMinimalDialecticProjectRow(overrides: { id: string; project_name: string }): DialecticProjectRow {
+  return {
+    id: overrides.id,
+    user_id: 'user-xyz',
+    project_name: overrides.project_name,
+    initial_user_prompt: '',
+    initial_prompt_resource_id: null,
+    selected_domain_id: mockSelectedDomain.id,
+    selected_domain_overlay_id: null,
+    process_template_id: null,
+    user_domain_overlay_values: null,
+    repo_url: null,
+    status: 'active',
+    created_at: '',
+    updated_at: '',
+    idempotency_key: null,
+  };
+}
+
 describe('CreateDialecticProjectForm', () => {
-  let mockStore: DialecticStore;
-  const mockOnProjectCreated = vi.fn();
   let TextInputAreaMockComponent: Mocked<typeof import('@/components/common/TextInputArea').TextInputArea>;
 
   beforeEach(async () => {
     vi.clearAllMocks();
+    initializeMockDialecticState({
+      selectedDomain: mockSelectedDomain,
+      modelCatalog: modelCatalogWithDefault,
+      isLoadingModelCatalog: false,
+    });
     const { initializeMockWalletStore } = await import('@/mocks/walletStore.mock');
     initializeMockWalletStore();
-    vi.mocked(selectActiveChatWalletInfo).mockReturnValue({
-      status: 'ok',
-      type: 'personal',
-      walletId: 'test-wallet',
-      orgId: null,
-      balance: '300000',
-      isLoadingPrimaryWallet: false,
-    });
-    mockStore = createMockStoreState({});
-    vi.mocked(useDialecticStore).mockImplementation((selector) => selector(mockStore));
+    vi.mocked(selectActiveChatWalletInfo).mockReturnValue(defaultWalletInfo);
     const defaultPlatformContext = createMockPlatformContext();
     vi.mocked(usePlatform).mockReturnValue(defaultPlatformContext);
-    mockOnProjectCreated.mockClear();
-    
+
     const TIA_Module = await import('@/components/common/TextInputArea');
     TextInputAreaMockComponent = vi.mocked(TIA_Module.TextInputArea);
 
     capturedTextInputAreaProps = {};
     triggerMockTextInputAreaOnFileLoad = async (_content: string | ArrayBuffer, _file: File): Promise<void> => { void _content; void _file; };
   });
+
+  const cycleToManualMode = async (user: ReturnType<typeof userEvent.setup>): Promise<void> => {
+    await user.click(screen.getByRole('checkbox', { name: /Autostart/i }));
+    await user.click(screen.getByRole('checkbox', { name: /Autoconfig/i }));
+  };
 
   const renderForm = (props: Partial<Parameters<typeof CreateDialecticProjectForm>[0]> = {}) => {
     return render(
@@ -273,23 +266,19 @@ describe('CreateDialecticProjectForm', () => {
 
   it('Manual path: submits with placeholder values and sends only idempotencyKey to createDialecticProject', async () => {
     const user = userEvent.setup();
-    const mockSelectedDomain: DialecticDomain = { id: 'domain-1', name: 'General', description: '', parent_domain_id: null, is_enabled: true };
-    mockStore = createMockStoreState({ selectedDomain: mockSelectedDomain, modelCatalog: modelCatalogWithDefault });
-    vi.mocked(useDialecticStore).mockImplementation((selector) => selector(mockStore));
 
-    const mockSuccessfulProject: DialecticProject = { id: 'new-proj-123', project_name: projectNamePlaceholder } as DialecticProject;
-    mockCreateDialecticProject.mockResolvedValueOnce({ data: mockSuccessfulProject, error: null });
+    const mockSuccessfulProject: DialecticProjectRow = buildMinimalDialecticProjectRow({ id: 'new-proj-123', project_name: projectNamePlaceholder });
+    vi.mocked(getDialecticStoreActionMock('createDialecticProject')).mockResolvedValueOnce({ data: mockSuccessfulProject, status: 200 });
 
     renderForm();
 
-    await user.click(screen.getByRole('checkbox', { name: /Autostart/i }));
-    await user.click(screen.getByRole('checkbox', { name: /Autoconfig/i }));
+    await cycleToManualMode(user);
 
     const submitButton = screen.getByRole('button', { name: /Create Project/i });
     await user.click(submitButton);
 
     await waitFor(() => {
-      expect(mockCreateDialecticProject).toHaveBeenCalledWith(
+      expect(getDialecticStoreActionMock('createDialecticProject')).toHaveBeenCalledWith(
         expect.objectContaining({
           projectName: projectNamePlaceholder,
           initialUserPrompt: initialUserPromptPlaceholder,
@@ -298,7 +287,7 @@ describe('CreateDialecticProjectForm', () => {
         })
       );
     });
-    const manualPayload = mockCreateDialecticProject.mock.calls[0][0];
+    const manualPayload = vi.mocked(getDialecticStoreActionMock('createDialecticProject')).mock.calls[0][0];
     expect(manualPayload).not.toHaveProperty('sessionIdempotencyKey');
 
     await waitFor(() => {
@@ -308,9 +297,8 @@ describe('CreateDialecticProjectForm', () => {
 
   it('Autostart path: submits with placeholder values and sends both idempotency keys to createProjectAndAutoStart', async () => {
     const user = userEvent.setup();
-    const mockSelectedDomain: DialecticDomain = { id: 'domain-1', name: 'General', description: '', parent_domain_id: null, is_enabled: true };
-    mockStore = createMockStoreState({ selectedDomain: mockSelectedDomain, modelCatalog: modelCatalogWithDefault });
-    vi.mocked(useDialecticStore).mockImplementation((selector) => selector(mockStore));
+    const autoStartResult: CreateProjectAutoStartResult = { projectId: 'autostart-proj-id', sessionId: 'autostart-sess-id', hasDefaultModels: true };
+    vi.mocked(getDialecticStoreActionMock('createProjectAndAutoStart')).mockResolvedValueOnce(autoStartResult);
 
     renderForm();
 
@@ -318,18 +306,16 @@ describe('CreateDialecticProjectForm', () => {
     await user.click(submitButton);
 
     await waitFor(() => {
-      expect(mockCreateProjectAndAutoStart).toHaveBeenCalledTimes(1);
+      expect(getDialecticStoreActionMock('createProjectAndAutoStart')).toHaveBeenCalledTimes(1);
     });
-    const autoStartPayload = mockCreateProjectAndAutoStart.mock.calls[0][0];
+    const autoStartPayload = vi.mocked(getDialecticStoreActionMock('createProjectAndAutoStart')).mock.calls[0][0];
     expect(autoStartPayload.idempotencyKey).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
     expect(autoStartPayload.sessionIdempotencyKey).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
-    expect(mockCreateDialecticProject).toHaveBeenCalledWith(
+    expect(autoStartPayload).toEqual(
       expect.objectContaining({
         projectName: projectNamePlaceholder,
         initialUserPrompt: initialUserPromptPlaceholder,
         selectedDomainId: mockSelectedDomain.id,
-        idempotencyKey: expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i),
-        sessionIdempotencyKey: expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i),
       })
     );
     await waitFor(() => {
@@ -340,38 +326,13 @@ describe('CreateDialecticProjectForm', () => {
   it('Manual path: calls createDialecticProject with form data and only idempotencyKey on submit', async () => {
     const user = userEvent.setup();
     const testData = { projectName: 'Test Project', initialUserPrompt: 'Test Prompt' };
-    const mockSelectedDomain: DialecticDomain = { id: 'domain-1', name: 'General', description: '', parent_domain_id: null, is_enabled: true };
-    mockStore = createMockStoreState({ selectedDomain: mockSelectedDomain, modelCatalog: modelCatalogWithDefault });
-    vi.mocked(useDialecticStore).mockImplementation((selector) => selector(mockStore));
 
-    const mockSuccessfulProject: DialecticProject = {
-      id: 'new-proj-123',
-      user_id: 'user-xyz',
-      project_name: testData.projectName,
-      initial_user_prompt: testData.initialUserPrompt,
-      created_at: '',
-      updated_at: '',
-      status: 'active',
-      selected_domain_id: 'domain-1',
-      selected_domain_overlay_id: null,
-      repo_url: null,
-      dialectic_domains: { name: 'General' },
-      dialectic_process_templates: null,
-      isLoadingProcessTemplate: false,
-      processTemplateError: null,
-      contributionGenerationStatus: 'idle',
-      generateContributionsError: null,
-      isSubmittingStageResponses: false,
-      submitStageResponsesError: null,
-      isSavingContributionEdit: false,
-      saveContributionEditError: null,
-    };
-    mockCreateDialecticProject.mockResolvedValueOnce({ data: mockSuccessfulProject, error: null });
+    const mockSuccessfulProject: DialecticProjectRow = buildMinimalDialecticProjectRow({ id: 'new-proj-123', project_name: testData.projectName });
+    vi.mocked(getDialecticStoreActionMock('createDialecticProject')).mockResolvedValueOnce({ data: mockSuccessfulProject, status: 200 });
 
     renderForm();
 
-    await user.click(screen.getByRole('checkbox', { name: /Autostart/i }));
-    await user.click(screen.getByRole('checkbox', { name: /Autoconfig/i }));
+    await cycleToManualMode(user);
 
     await user.type(screen.getByPlaceholderText(projectNamePlaceholder), testData.projectName);
     act(() => {
@@ -382,7 +343,7 @@ describe('CreateDialecticProjectForm', () => {
     await user.click(submitButton);
 
     await waitFor(() => {
-      expect(mockCreateDialecticProject).toHaveBeenCalledWith(
+      expect(getDialecticStoreActionMock('createDialecticProject')).toHaveBeenCalledWith(
         expect.objectContaining({
           projectName: testData.projectName,
           initialUserPrompt: testData.initialUserPrompt,
@@ -391,7 +352,7 @@ describe('CreateDialecticProjectForm', () => {
         })
       );
     });
-    const manualPayload = mockCreateDialecticProject.mock.calls[0][0];
+    const manualPayload = vi.mocked(getDialecticStoreActionMock('createDialecticProject')).mock.calls[0][0];
     expect(manualPayload).not.toHaveProperty('sessionIdempotencyKey');
 
     await waitFor(() => {
@@ -404,38 +365,13 @@ describe('CreateDialecticProjectForm', () => {
     const markdownContent = '# My Project From File';
     const file = new File([markdownContent], 'test.md', { type: 'text/markdown' });
 
-    const mockCreatedProject: DialecticProject = {
-      id: 'proj-with-file',
-      user_id: 'user-abc',
-      project_name: 'My Project From File',
-      created_at: '',
-      updated_at: '',
-      status: 'active',
-      selected_domain_id: 'domain-1',
-      selected_domain_overlay_id: null,
-      repo_url: null,
-      dialectic_domains: { name: 'General' },
-      dialectic_process_templates: null,
-      isLoadingProcessTemplate: false,
-      processTemplateError: null,
-      contributionGenerationStatus: 'idle',
-      generateContributionsError: null,
-      isSubmittingStageResponses: false,
-      submitStageResponsesError: null,
-      isSavingContributionEdit: false,
-      saveContributionEditError: null,
-    };
+    const mockCreatedProject: DialecticProjectRow = buildMinimalDialecticProjectRow({ id: 'proj-with-file', project_name: 'My Project From File' });
 
-    mockCreateDialecticProject.mockResolvedValueOnce({ data: mockCreatedProject, error: null });
-
-    const mockSelectedDomain: DialecticDomain = { id: 'domain-1', name: 'General', description: '', parent_domain_id: null, is_enabled: true };
-    mockStore = createMockStoreState({ selectedDomain: mockSelectedDomain, modelCatalog: modelCatalogWithDefault });
-    vi.mocked(useDialecticStore).mockImplementation((selector) => selector(mockStore));
+    vi.mocked(getDialecticStoreActionMock('createDialecticProject')).mockResolvedValueOnce({ data: mockCreatedProject, status: 200 });
 
     renderForm();
 
-    await user.click(screen.getByRole('checkbox', { name: /Autostart/i }));
-    await user.click(screen.getByRole('checkbox', { name: /Autoconfig/i }));
+    await cycleToManualMode(user);
 
     // Simulate file upload via the TextInputArea's onFileLoad prop
     await act(async () => {
@@ -446,7 +382,7 @@ describe('CreateDialecticProjectForm', () => {
     await user.click(submitButton);
 
     await waitFor(() => {
-      expect(mockCreateDialecticProject).toHaveBeenCalledWith(
+      expect(getDialecticStoreActionMock('createDialecticProject')).toHaveBeenCalledWith(
         expect.objectContaining({
           projectName: 'My Project From File',
           initialUserPrompt: markdownContent,
@@ -456,7 +392,7 @@ describe('CreateDialecticProjectForm', () => {
         })
       );
     });
-    const manualPayload = mockCreateDialecticProject.mock.calls[0][0];
+    const manualPayload = vi.mocked(getDialecticStoreActionMock('createDialecticProject')).mock.calls[0][0];
     expect(manualPayload).not.toHaveProperty('sessionIdempotencyKey');
 
     await waitFor(() => {
@@ -465,8 +401,7 @@ describe('CreateDialecticProjectForm', () => {
   });
 
   it('displays loading state correctly', () => {
-    mockStore = createMockStoreState({ isCreatingProject: true });
-    vi.mocked(useDialecticStore).mockImplementation((selector) => selector(mockStore));
+    initializeMockDialecticState({ isCreatingProject: true });
     const customSubmitText = 'Launch';
     renderForm({submitButtonText: customSubmitText});
     const expectedButtonText = new RegExp(`Creating.*${customSubmitText}.*\\.\\.\\.`);
@@ -476,16 +411,14 @@ describe('CreateDialecticProjectForm', () => {
   it('displays error message if creation fails', async () => {
     const user = userEvent.setup();
     const error: ApiError = { message: 'Creation failed', code: 'SERVER_ERROR' };
-    mockCreateDialecticProject.mockResolvedValueOnce({ data: null, error });
-
-    const mockSelectedDomain: DialecticDomain = { id: 'domain-1', name: 'General', description: '', parent_domain_id: null, is_enabled: true };
-    mockStore = createMockStoreState({ 
-      selectedDomain: mockSelectedDomain,
-      createProjectError: error // Also set the error state
+    vi.mocked(getDialecticStoreActionMock('createDialecticProject')).mockImplementationOnce(async () => {
+      setDialecticStateValues({ createProjectError: error });
+      return { data: undefined, error, status: 500 };
     });
-    vi.mocked(useDialecticStore).mockImplementation((selector) => selector(mockStore));
-    
+
     renderForm();
+
+    await cycleToManualMode(user);
 
     await user.type(screen.getByPlaceholderText(projectNamePlaceholder), 'Error Project');
     act(() => {
@@ -554,36 +487,30 @@ describe('CreateDialecticProjectForm', () => {
   it('displays error message if creation fails and calls resetCreateProjectError on next submission attempt', async () => {
     const user = userEvent.setup();
     const initialError: ApiError = { message: 'Initial failure', code: 'SERVER_ERROR' };
-    
-    // First attempt fails
-    mockCreateDialecticProject.mockResolvedValueOnce({ data: null, error: initialError });
+    const mockSuccessfulProject: DialecticProjectRow = buildMinimalDialecticProjectRow({ id: 'proj-456', project_name: 'Retry Project' });
 
-    const mockSelectedDomain: DialecticDomain = { id: 'domain-1', name: 'General', description: '', parent_domain_id: null, is_enabled: true };
-    const mockStoreWithState = createMockStoreState({
-        selectedDomain: mockSelectedDomain,
-        createProjectError: initialError, // Start with an error
-    });
-    vi.mocked(useDialecticStore).mockImplementation((selector) => selector(mockStoreWithState));
+    vi.mocked(getDialecticStoreActionMock('createDialecticProject'))
+      .mockImplementationOnce(async () => {
+        setDialecticStateValues({ createProjectError: initialError });
+        return { data: undefined, error: initialError, status: 500 };
+      })
+      .mockResolvedValueOnce({ data: mockSuccessfulProject, status: 200 });
 
     renderForm();
-    
-    // Check initial error is shown
-    await waitFor(() => {
-        expect(screen.getByTestId('creation-error-alert')).toHaveTextContent(initialError.message);
-    });
 
-    // Mock successful response for the second attempt
-    const mockSuccessfulProject: DialecticProject = { id: 'proj-456', user_id: 'user-xyz', project_name: 'Retry Project', created_at: '', updated_at: '', status: 'active', selected_domain_id: 'domain-1', dialectic_domains: { name: 'General' }, selected_domain_overlay_id: null, repo_url: null, dialectic_process_templates: null, isLoadingProcessTemplate: false, processTemplateError: null, contributionGenerationStatus: 'idle', generateContributionsError: null, isSubmittingStageResponses: false, submitStageResponsesError: null, isSavingContributionEdit: false, saveContributionEditError: null };
-    mockCreateDialecticProject.mockResolvedValueOnce({ data: mockSuccessfulProject, error: null });
+    await cycleToManualMode(user);
 
-    // Simulate user trying again
     const submitButton = screen.getByRole('button', { name: /Create Project/i });
     await user.click(submitButton);
 
-    // The component should call resetCreateProjectError on mount/effect if there's an error.
-    // The test setup will re-render, triggering this. We can also check if the mock was called.
     await waitFor(() => {
-        expect(mockResetCreateProjectError).toHaveBeenCalled();
+      expect(screen.getByTestId('creation-error-alert')).toHaveTextContent(initialError.message);
+    });
+
+    await user.click(submitButton);
+
+    await waitFor(() => {
+      expect(getDialecticStoreActionMock('resetCreateProjectError')).toHaveBeenCalled();
     });
   });
 

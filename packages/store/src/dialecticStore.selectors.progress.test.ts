@@ -58,7 +58,6 @@ import type {
     ApiError,
     DomainOverlayDescriptor,
     DialecticProject,
-    AIModelCatalogEntry,
     DialecticDomain,
     DialecticStage,
     DialecticProcessTemplate,

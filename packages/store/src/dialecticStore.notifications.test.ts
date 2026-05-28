@@ -2,19 +2,28 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { useDialecticStore, initialDialecticStateValues } from './dialecticStore';
 import { getStageRunDocumentKey } from './dialecticStore.documents';
 import type {
-  ApiError,
   DialecticProject,
   DialecticSession,
-  AIModelCatalogEntry,
+  AiProvidersRow,
   DialecticLifecycleEvent,
   GenerateContributionsResponse,
-  DialecticStageRecipe,
   DialecticStageRecipeStep,
   SelectedModels,
+  DialecticContribution,
 } from '@paynless/types';
-import { api } from '@paynless/api';
 import { resetApiMock, getMockDialecticClient } from '@paynless/api/mocks';
-import { logger } from '@paynless/utils';
+import {
+  mockAiProvidersRow,
+  mockSession,
+  mockDialecticProject,
+  mockSelectedModelsForCatalog,
+  mockDialecticStageRecipe,
+  mockDialecticStageRecipeStep,
+  mockStageRunProgressSnapshot,
+  mockStageRenderedDocumentDescriptor,
+  mockDialecticContribution,
+  mockSelectedModel,
+} from '../../../apps/web/src/mocks/dialecticStore.mock';
 
 // Mock the entire API module
 vi.mock('@paynless/api', async () => {
@@ -26,107 +35,39 @@ vi.mock('@paynless/api', async () => {
   };
 });
 
-// Mock Data
-const mockModel1: AIModelCatalogEntry = {
-    id: 'model-1',
-    model_name: 'Test Model 1',
-    api_identifier: 'test-model-1',
-    provider_name: 'TestProvider',
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-    is_active: true,
-    description: null,
-    strengths: null,
-    weaknesses: null,
-    context_window_tokens: null,
-    input_token_cost_usd_millionths: null,
-    output_token_cost_usd_millionths: null,
-    max_output_tokens: null,
-    min_plan_tier_level: 0,
-    is_default_generation: false,
+const mockModel1: AiProvidersRow = mockAiProvidersRow({ id: 'model-1', name: 'Test Model 1' });
+const mockModel2: AiProvidersRow = mockAiProvidersRow({ id: 'model-2', name: 'Test Model 2' });
+const catalogSelectedModels: SelectedModels[] = mockSelectedModelsForCatalog([mockModel1, mockModel2]);
+
+const notificationTestSession: DialecticSession = mockSession({
+  id: 'session-1',
+  selected_models: catalogSelectedModels,
+  dialectic_contributions: [],
+});
+
+const mockProject: DialecticProject = mockDialecticProject({
+  dialectic_sessions: [notificationTestSession],
+});
+
+const generateContributionsPendingResponse: GenerateContributionsResponse = {
+  sessionId: 'session-1',
+  projectId: 'proj-1',
+  stage: 'test-stage',
+  iteration: 1,
+  status: 'pending',
+  job_ids: ['job-1', 'job-2'],
+  successfulContributions: [],
+  failedAttempts: [],
 };
-
-const mockModel2: AIModelCatalogEntry = {
-    id: 'model-2',
-    model_name: 'Test Model 2',
-    api_identifier: 'test-model-2',
-    provider_name: 'TestProvider',
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-    is_active: true,
-    description: null,
-    strengths: null,
-    weaknesses: null,
-    context_window_tokens: null,
-    input_token_cost_usd_millionths: null,
-    output_token_cost_usd_millionths: null,
-    max_output_tokens: null,
-    min_plan_tier_level: 0,
-    is_default_generation: false,
-};
-
-const mockSessionSelectedModels: SelectedModels[] = [
-  { id: 'model-1', displayName: 'Test Model 1' },
-  { id: 'model-2', displayName: 'Test Model 2' },
-];
-
-const mockSession: DialecticSession = {
-    id: 'session-1',
-    project_id: 'proj-1',
-    status: 'active',
-    iteration_count: 1,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-    current_stage_id: 'stage-1',
-    selected_models: mockSessionSelectedModels,
-    dialectic_contributions: [],
-    session_description: null,
-    user_input_reference_url: null,
-    associated_chat_id: null,
-    viewing_stage_id: null,
-};
-
-const mockProject: DialecticProject = {
-    id: 'proj-1',
-    user_id: 'user-1',
-    project_name: 'Test Project',
-    selected_domain_id: 'domain-1',
-    dialectic_domains: { name: 'Test Domain' },
-    status: 'active',
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-    dialectic_sessions: [mockSession],
-    dialectic_process_templates: null,
-    process_template_id: 'pt-1',
-    isLoadingProcessTemplate: false,
-    processTemplateError: null,
-    contributionGenerationStatus: 'idle',
-    generateContributionsError: null,
-    isSubmittingStageResponses: false,
-    submitStageResponsesError: null,
-    isSavingContributionEdit: false,
-    saveContributionEditError: null,
-    initial_user_prompt: 'Test',
-    initial_prompt_resource_id: null,
-    selected_domain_overlay_id: null,
-    repo_url: null,
-};
-
 
 describe('Dialectic Store Notification Handlers', () => {
-  const defaultSelectedModels: SelectedModels[] = [
-    { id: 'model-1', displayName: 'Test Model 1' },
-    { id: 'model-2', displayName: 'Test Model 2' },
-  ];
-
   beforeEach(() => {
     resetApiMock();
-    // Set a clean initial state for the store before each test
     useDialecticStore.setState({
       ...initialDialecticStateValues,
-      currentProjectDetail: JSON.parse(JSON.stringify(mockProject)), // Deep copy
+      currentProjectDetail: JSON.parse(JSON.stringify(mockProject)),
       modelCatalog: [mockModel1, mockModel2],
-      selectedModels: defaultSelectedModels,
+      selectedModels: catalogSelectedModels,
     });
     vi.clearAllMocks();
   });
@@ -136,7 +77,7 @@ describe('Dialectic Store Notification Handlers', () => {
     const stageSlug = 'thesis';
     const iterationNumber = 1;
     const progressKey = `${sessionId}:${stageSlug}:${iterationNumber}`;
-    const plannerStep: DialecticStageRecipeStep = {
+    const plannerStep: DialecticStageRecipeStep = mockDialecticStageRecipeStep({
       id: 'step-1',
       step_key: 'planner_step',
       step_slug: 'planner',
@@ -147,8 +88,8 @@ describe('Dialectic Store Notification Handlers', () => {
       output_type: 'header_context',
       granularity_strategy: 'all_to_one',
       inputs_required: [],
-    };
-    const executeStep: DialecticStageRecipeStep = {
+    });
+    const executeStep: DialecticStageRecipeStep = mockDialecticStageRecipeStep({
       id: 'step-2',
       step_key: 'document_step',
       step_slug: 'document',
@@ -159,8 +100,8 @@ describe('Dialectic Store Notification Handlers', () => {
       output_type: 'assembled_document_json',
       granularity_strategy: 'per_source_document',
       inputs_required: [],
-    };
-    const renderStep: DialecticStageRecipeStep = {
+    });
+    const renderStep: DialecticStageRecipeStep = mockDialecticStageRecipeStep({
       id: 'step-3',
       step_key: 'render_step',
       step_slug: 'render',
@@ -171,20 +112,20 @@ describe('Dialectic Store Notification Handlers', () => {
       output_type: 'rendered_document',
       granularity_strategy: 'per_source_document',
       inputs_required: [],
-    };
+    });
 
     beforeEach(() => {
       useDialecticStore.setState({
         recipesByStageSlug: {
-          [stageSlug]: {
+          [stageSlug]: mockDialecticStageRecipe({
             stageSlug,
             instanceId: 'recipe-1',
             steps: [plannerStep, executeStep, renderStep],
             edges: [],
-          },
+          }),
         },
         stageRunProgress: {
-          [progressKey]: {
+          [progressKey]: mockStageRunProgressSnapshot({
             stepStatuses: {
               planner_step: 'not_started',
               document_step: 'not_started',
@@ -194,7 +135,7 @@ describe('Dialectic Store Notification Handlers', () => {
             jobProgress: {},
             progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
             jobs: [],
-          },
+          }),
         },
       });
     });
@@ -293,15 +234,13 @@ describe('Dialectic Store Notification Handlers', () => {
     it('updates chunk status when document_chunk_completed arrives', () => {
       const docKey = getStageRunDocumentKey('business_case', 'model-2');
       useDialecticStore.setState(state => {
-        state.stageRunProgress[progressKey].documents[docKey] = {
+        state.stageRunProgress[progressKey].documents[docKey] = mockStageRenderedDocumentDescriptor({
           status: 'generating',
           job_id: 'job-doc',
           latestRenderedResourceId: 'resource/business_case.json',
           modelId: 'model-2',
           lastRenderedResourceId: 'resource/business_case.json',
-          versionHash: expect.any(String),
-          lastRenderAtIso: expect.any(String),
-        };
+        });
       });
       const { _handleDialecticLifecycleEvent } = useDialecticStore.getState();
       const event: DialecticLifecycleEvent = {
@@ -337,15 +276,13 @@ describe('Dialectic Store Notification Handlers', () => {
     it('marks document completed when final chunk flagged', () => {
       const docKey = getStageRunDocumentKey('business_case', 'model-2');
       useDialecticStore.setState(state => {
-        state.stageRunProgress[progressKey].documents[docKey] = {
+        state.stageRunProgress[progressKey].documents[docKey] = mockStageRenderedDocumentDescriptor({
           status: 'continuing',
           job_id: 'job-doc',
           latestRenderedResourceId: 'resource/business_case.json',
           modelId: 'model-2',
           lastRenderedResourceId: 'resource/business_case.json',
-          versionHash: expect.any(String),
-          lastRenderAtIso: expect.any(String),
-        };
+        });
       });
       const { _handleDialecticLifecycleEvent } = useDialecticStore.getState();
       const event: DialecticLifecycleEvent = {
@@ -369,15 +306,13 @@ describe('Dialectic Store Notification Handlers', () => {
     it('records render completion and latest resource', () => {
       const renderDocKey = getStageRunDocumentKey('business_case', 'model-render');
       useDialecticStore.setState(state => {
-        state.stageRunProgress[progressKey].documents[renderDocKey] = {
+        state.stageRunProgress[progressKey].documents[renderDocKey] = mockStageRenderedDocumentDescriptor({
           status: 'continuing',
           job_id: 'job-doc',
           latestRenderedResourceId: 'resource/business_case.json',
           modelId: 'model-render',
           lastRenderedResourceId: 'resource/business_case.json',
-          versionHash: expect.any(String),
-          lastRenderAtIso: expect.any(String),
-        };
+        });
       });
       const { _handleDialecticLifecycleEvent } = useDialecticStore.getState();
       const event: DialecticLifecycleEvent = {
@@ -415,15 +350,13 @@ describe('Dialectic Store Notification Handlers', () => {
     it('marks document failed when job_failed arrives', () => {
       const docKey = getStageRunDocumentKey('business_case', 'model-2');
       useDialecticStore.setState(state => {
-        state.stageRunProgress[progressKey].documents[docKey] = {
+        state.stageRunProgress[progressKey].documents[docKey] = mockStageRenderedDocumentDescriptor({
           status: 'continuing',
           job_id: 'job-doc',
           latestRenderedResourceId: 'resource/business_case.json',
           modelId: 'model-2',
           lastRenderedResourceId: 'resource/business_case.json',
-          versionHash: expect.any(String),
-          lastRenderAtIso: expect.any(String),
-        };
+        });
       });
       const { _handleDialecticLifecycleEvent } = useDialecticStore.getState();
       const event: DialecticLifecycleEvent = {
@@ -557,18 +490,8 @@ describe('Dialectic Store Notification Handlers', () => {
     const { generateContributions, _handleDialecticLifecycleEvent } = useDialecticStore.getState();
 
     // Mock the API call for generateContributions
-    const mockApiResponse: GenerateContributionsResponse = {
-      sessionId: 'session-1',
-      projectId: 'proj-1',
-      stage: 'test-stage',
-      iteration: 1,
-      status: 'pending',
-      job_ids: ['job-1', 'job-2'],
-      successfulContributions: [],
-      failedAttempts: [],
-    };
     getMockDialecticClient().generateContributions.mockResolvedValue({
-        data: mockApiResponse,
+        data: generateContributionsPendingResponse,
         status: 202
     });
 
@@ -614,17 +537,10 @@ describe('Dialectic Store Notification Handlers', () => {
 
   it('should update a placeholder to a received contribution', async () => {
     const { generateContributions, _handleDialecticLifecycleEvent } = useDialecticStore.getState();
-    const mockApiResponse: GenerateContributionsResponse = {
-      sessionId: 'session-1',
-      projectId: 'proj-1',
-      stage: 'test-stage',
-      iteration: 1,
-      status: 'pending',
-      job_ids: ['job-1', 'job-2'],
-      successfulContributions: [],
-      failedAttempts: [],
-    };
-    getMockDialecticClient().generateContributions.mockResolvedValue({ data: mockApiResponse, status: 202 });
+    getMockDialecticClient().generateContributions.mockResolvedValue({
+      data: generateContributionsPendingResponse,
+      status: 202,
+    });
 
     await generateContributions({
       sessionId: 'session-1',
@@ -636,36 +552,16 @@ describe('Dialectic Store Notification Handlers', () => {
       idempotencyKey: 'idempotency-key-1',
     });
 
-    const receivedContribution = {
-        id: 'real-contrib-1',
-        model_id: 'model-1',
-        iteration_number: 1,
-        // ... other required fields
-        session_id: 'session-1',
-        user_id: 'user-1',
-        stage: 'test-stage',
-        prompt_template_id_used: null,
-        seed_prompt_url: null,
-        edit_version: 0,
-        is_latest_edit: true,
-        original_model_contribution_id: null,
-        raw_response_storage_path: null,
-        target_contribution_id: null,
-        tokens_used_input: null,
-        tokens_used_output: null,
-        processing_time_ms: null,
-        error: null,
-        citations: null,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        contribution_type: null,
-        file_name: null,
-        storage_bucket: null,
-        storage_path: null,
-        size_bytes: null,
-        mime_type: null,
-        model_name: 'Test Model 1',
-    };
+    const receivedContribution: DialecticContribution = mockDialecticContribution({
+      id: 'real-contrib-1',
+      session_id: 'session-1',
+      user_id: 'user-1',
+      stage: 'test-stage',
+      iteration_number: 1,
+      model_id: 'model-1',
+      model_name: 'Test Model 1',
+      edit_version: 0,
+    });
 
     const receivedNotification: DialecticLifecycleEvent = {
       type: 'dialectic_contribution_received',
@@ -687,17 +583,10 @@ describe('Dialectic Store Notification Handlers', () => {
   
   it('should mark remaining placeholders as failed on a session-wide failure', async () => {
       const { generateContributions, _handleDialecticLifecycleEvent } = useDialecticStore.getState();
-      const mockApiResponse: GenerateContributionsResponse = {
-          sessionId: 'session-1',
-          projectId: 'proj-1',
-          stage: 'test-stage',
-          iteration: 1,
-          status: 'pending',
-          job_ids: ['job-1', 'job-2'],
-          successfulContributions: [],
-          failedAttempts: [],
-      };
-      getMockDialecticClient().generateContributions.mockResolvedValue({ data: mockApiResponse, status: 202 });
+      getMockDialecticClient().generateContributions.mockResolvedValue({
+        data: generateContributionsPendingResponse,
+        status: 202,
+      });
       
       await generateContributions({
           sessionId: 'session-1',
@@ -729,20 +618,9 @@ describe('Dialectic Store Notification Handlers', () => {
   it('should update a placeholder to retrying', async () => {
     const { generateContributions, _handleDialecticLifecycleEvent } = useDialecticStore.getState();
 
-    // Mock the API call for generateContributions
-    const mockApiResponse: GenerateContributionsResponse = {
-      sessionId: 'session-1',
-      projectId: 'proj-1',
-      stage: 'test-stage',
-      iteration: 1,
-      status: 'pending',
-      job_ids: ['job-1', 'job-2'],
-      successfulContributions: [],
-      failedAttempts: [],
-    };
     getMockDialecticClient().generateContributions.mockResolvedValue({
-        data: mockApiResponse,
-        status: 202
+      data: generateContributionsPendingResponse,
+      status: 202,
     });
 
     await generateContributions({
@@ -783,17 +661,10 @@ describe('Dialectic Store Notification Handlers', () => {
 
   it('should set generation status to failed when job_failed arrives with a job id', async () => {
     const { generateContributions, _handleDialecticLifecycleEvent } = useDialecticStore.getState();
-    const mockApiResponse: GenerateContributionsResponse = {
-      sessionId: 'session-1',
-      projectId: 'proj-1',
-      stage: 'test-stage',
-      iteration: 1,
-      status: 'pending',
-      job_ids: ['job-1', 'job-2'],
-      successfulContributions: [],
-      failedAttempts: [],
-    };
-    getMockDialecticClient().generateContributions.mockResolvedValue({ data: mockApiResponse, status: 202 });
+    getMockDialecticClient().generateContributions.mockResolvedValue({
+      data: generateContributionsPendingResponse,
+      status: 202,
+    });
 
     await generateContributions({
       sessionId: 'session-1',
@@ -835,19 +706,9 @@ describe('Dialectic Store Notification Handlers', () => {
       const fetchDetailsSpy = vi.spyOn(useDialecticStore.getState(), 'fetchDialecticProjectDetails');
       
       // Mock the API call for generateContributions
-      const mockApiResponse: GenerateContributionsResponse = {
-        sessionId: 'session-1',
-        projectId: 'proj-1',
-        stage: 'test-stage',
-        iteration: 1,
-        status: 'pending',
-        job_ids: ['job-1', 'job-2'],
-        successfulContributions: [],
-        failedAttempts: [],
-      };
       getMockDialecticClient().generateContributions.mockResolvedValue({
-          data: mockApiResponse,
-          status: 202
+        data: generateContributionsPendingResponse,
+        status: 202,
       });
 
       await generateContributions({
@@ -892,14 +753,17 @@ describe('Dialectic Store Notification Handlers', () => {
       idempotencyKey: 'idempotency-key-1',
     });
 
-    const continuingContribution = {
-        id: 'real-contrib-1',
-        model_id: 'model-1',
-        iteration_number: 1,
-        status: 'generating', // It was generating, now it's continuing
-        // ... other required fields ...
-        session_id: 'session-1', user_id: 'user-1', stage: 'test-stage', prompt_template_id_used: null, seed_prompt_url: null, edit_version: 0, is_latest_edit: true, original_model_contribution_id: null, raw_response_storage_path: null, target_contribution_id: null, tokens_used_input: null, tokens_used_output: null, processing_time_ms: null, error: null, citations: null, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), contribution_type: null, file_name: null, storage_bucket: null, storage_path: null, size_bytes: null, mime_type: null, model_name: 'Test Model 1',
-    };
+    const continuingContribution: DialecticContribution = mockDialecticContribution({
+      id: 'real-contrib-1',
+      session_id: 'session-1',
+      user_id: 'user-1',
+      stage: 'test-stage',
+      iteration_number: 1,
+      model_id: 'model-1',
+      model_name: 'Test Model 1',
+      edit_version: 0,
+      status: 'generating',
+    });
 
     const continueNotification: DialecticLifecycleEvent = {
         type: 'contribution_generation_continued',
@@ -924,13 +788,16 @@ describe('Dialectic Store Notification Handlers', () => {
     const stateBefore = useDialecticStore.getState();
     expect(stateBefore.currentProjectDetail?.dialectic_sessions?.[0].dialectic_contributions).toHaveLength(0);
 
-    const newContribution = {
-        id: 'orphan-contrib-1',
-        model_id: 'model-3', // A model that wasn't in the initial generation
-        iteration_number: 1,
-        // ... other required fields ...
-        session_id: 'session-1', user_id: 'user-1', stage: 'test-stage', prompt_template_id_used: null, seed_prompt_url: null, edit_version: 0, is_latest_edit: true, original_model_contribution_id: null, raw_response_storage_path: null, target_contribution_id: null, tokens_used_input: null, tokens_used_output: null, processing_time_ms: null, error: null, citations: null, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), contribution_type: null, file_name: null, storage_bucket: null, storage_path: null, size_bytes: null, mime_type: null, model_name: 'Test Model 3',
-    };
+    const newContribution: DialecticContribution = mockDialecticContribution({
+      id: 'orphan-contrib-1',
+      session_id: 'session-1',
+      user_id: 'user-1',
+      stage: 'test-stage',
+      iteration_number: 1,
+      model_id: 'model-3',
+      model_name: 'Test Model 3',
+      edit_version: 0,
+    });
 
     const receivedNotification: DialecticLifecycleEvent = {
       type: 'dialectic_contribution_received',
@@ -951,26 +818,15 @@ describe('Dialectic Store Notification Handlers', () => {
 
   it('should correctly update placeholders when the same model is used multiple times', async () => {
     const duplicateModelSelectedModels: SelectedModels[] = [
-      { id: 'model-1', displayName: 'Test Model 1' },
-      { id: 'model-1', displayName: 'Test Model 1' },
+      mockSelectedModel({ id: 'model-1', displayName: 'Test Model 1' }),
+      mockSelectedModel({ id: 'model-1', displayName: 'Test Model 1' }),
     ];
     useDialecticStore.setState({ selectedModels: duplicateModelSelectedModels });
     const { generateContributions, _handleDialecticLifecycleEvent } = useDialecticStore.getState();
 
-    // Mock the API call for generateContributions
-    const mockApiResponse: GenerateContributionsResponse = {
-      sessionId: 'session-1',
-      projectId: 'proj-1',
-      stage: 'test-stage',
-      iteration: 1,
-      status: 'pending',
-      job_ids: ['job-1', 'job-2'],
-      successfulContributions: [],
-      failedAttempts: [],
-    };
     getMockDialecticClient().generateContributions.mockResolvedValue({
-        data: mockApiResponse,
-        status: 202
+      data: generateContributionsPendingResponse,
+      status: 202,
     });
 
     await generateContributions({

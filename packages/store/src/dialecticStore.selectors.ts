@@ -1,7 +1,7 @@
 import type {
     DialecticStateValues,
     DialecticProject,
-    AIModelCatalogEntry,
+    AiProvidersRow,
     ApiError,
     DomainOverlayDescriptor,
     DialecticStage,
@@ -101,7 +101,7 @@ export const selectCurrentProjectSessions = createSelector(
 export const selectIsUpdatingProjectPrompt = (state: DialecticStateValues): boolean => state.isUpdatingProjectPrompt;
 
 // Selector for the model catalog
-export const selectModelCatalog = (state: DialecticStateValues): AIModelCatalogEntry[] => state.modelCatalog;
+export const selectModelCatalog = (state: DialecticStateValues): AiProvidersRow[] => state.modelCatalog;
 
 // Selector for the loading state of the model catalog
 export const selectIsLoadingModelCatalog = (state: DialecticStateValues): boolean => state.isLoadingModelCatalog;
@@ -111,10 +111,10 @@ export const selectModelCatalogError = (state: DialecticStateValues): ApiError |
 
 // Selector for default generation models (is_default_generation and is_active), mapped to SelectedModels
 export const selectDefaultGenerationModels = (state: DialecticStateValues): SelectedModels[] => {
-  const catalog: AIModelCatalogEntry[] = state.modelCatalog ?? [];
+  const catalog: AiProvidersRow[] = state.modelCatalog ?? [];
   return catalog
     .filter((m) => m.is_default_generation === true && m.is_active === true)
-    .map((m) => ({ id: m.id, displayName: m.model_name }));
+    .map((m) => ({ id: m.id, displayName: m.name }));
 };
 
 // Selector for the action status of creating a project

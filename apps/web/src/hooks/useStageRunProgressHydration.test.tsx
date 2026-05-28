@@ -3,18 +3,20 @@ import { waitFor } from '@testing-library/react';
 import { describe, it, beforeEach, afterEach, expect, vi } from 'vitest';
 import type {
     DialecticSession,
-    DialecticStage,
-    DialecticProcessTemplate,
-    DialecticProject,
     User,
     GetAllStageProgressResponse,
-    StageRunProgressSnapshot,
+    DialecticStageRecipe,
 } from '@paynless/types';
 import { api } from '@paynless/api';
 
 import { useStageRunProgressHydration } from './useStageRunProgressHydration';
 import {
-    emptyDialecticStageRecipe,
+    mockDialecticStage,
+    mockDialecticProcessTemplate,
+    mockDialecticProject,
+    mockDialecticStageRecipe,
+    mockSession,
+    mockStageRunProgressSnapshot,
     initializeMockDialecticState,
     setDialecticStateValues,
     getDialecticStoreActionMock,
@@ -46,102 +48,83 @@ describe('useStageRunProgressHydration', () => {
         updated_at: new Date().toISOString(),
     };
 
-    const createSession = (): DialecticSession => ({
-        id: sessionId,
-        project_id: projectId,
-        session_description: 'Mock session',
-        user_input_reference_url: null,
-        iteration_count: iterationNumber,
-        selected_models: [],
-        status: 'active',
-        associated_chat_id: null,
-        current_stage_id: 'stage-id',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        dialectic_contributions: [],
-        dialectic_session_models: [],
-        feedback: [],
-        viewing_stage_id: 'thesis',
-    });
+    const createSession = (): DialecticSession =>
+        mockSession({
+            id: sessionId,
+            project_id: projectId,
+            session_description: 'Mock session',
+            iteration_count: iterationNumber,
+            selected_models: [],
+            current_stage_id: 'stage-id',
+            viewing_stage_id: 'thesis',
+        });
 
-    const stageThesis: DialecticStage = {
+    const stageThesis = mockDialecticStage({
         id: 'stage-thesis-id',
         slug: 'thesis',
         display_name: 'Thesis',
         description: 'Thesis stage',
-        created_at: new Date().toISOString(),
-        default_system_prompt_id: 'sp-1',
-        expected_output_template_ids: [],
-        recipe_template_id: null,
-        active_recipe_instance_id: null,
-        minimum_balance: 0,
-    };
+    });
 
-    const templateOneStage: DialecticProcessTemplate = {
+    const templateOneStage = mockDialecticProcessTemplate({
         id: 'pt-1',
         name: 'Template',
         description: '',
-        created_at: new Date().toISOString(),
         starting_stage_id: stageThesis.id,
         stages: [stageThesis],
         transitions: [],
-    };
+    });
 
-    const stageSynthesis: DialecticStage = {
+    const stageSynthesis = mockDialecticStage({
         id: 'stage-synthesis-id',
         slug: 'synthesis',
         display_name: 'Synthesis',
         description: 'Synthesis stage',
-        created_at: new Date().toISOString(),
         default_system_prompt_id: 'sp-2',
-        expected_output_template_ids: [],
-        recipe_template_id: null,
-        active_recipe_instance_id: null,
-        minimum_balance: 0,
-    };
+    });
 
-    const templateTwoStages: DialecticProcessTemplate = {
+    const templateTwoStages = mockDialecticProcessTemplate({
         id: 'pt-2',
         name: 'Template Two',
-        description: '',
-        created_at: new Date().toISOString(),
         starting_stage_id: stageThesis.id,
         stages: [stageThesis, stageSynthesis],
         transitions: [],
-    };
+    });
 
     const runKey = `${sessionId}:${iterationNumber}`;
 
-    const recipeThesis: typeof emptyDialecticStageRecipe = {
-        ...emptyDialecticStageRecipe,
+    const recipeThesis = mockDialecticStageRecipe({
         stageSlug: 'thesis',
         instanceId: 'inst-thesis',
-    };
+        steps: [],
+        edges: [],
+    });
 
-    const recipesForTemplateOneStage: Record<string, typeof emptyDialecticStageRecipe> = {
+    const recipesForTemplateOneStage: Record<string, DialecticStageRecipe> = {
         thesis: recipeThesis,
     };
 
-    const recipeSynthesis: typeof emptyDialecticStageRecipe = {
-        ...emptyDialecticStageRecipe,
+    const recipeSynthesis = mockDialecticStageRecipe({
         stageSlug: 'synthesis',
         instanceId: 'inst-synthesis',
-    };
+        steps: [],
+        edges: [],
+    });
 
-    const recipesForTemplateTwoStages: Record<string, typeof emptyDialecticStageRecipe> = {
+    const recipesForTemplateTwoStages: Record<string, DialecticStageRecipe> = {
         thesis: recipeThesis,
         synthesis: recipeSynthesis,
     };
 
     const synthesisProgressKey = `${sessionId}:synthesis:${iterationNumber}`;
 
-    const emptyProgressSnapshot: StageRunProgressSnapshot = {
+    const emptyProgressSnapshot = mockStageRunProgressSnapshot({
         documents: {},
         stepStatuses: {},
         jobProgress: {},
-        progress: { totalSteps: 0, completedSteps: 0, failedSteps: 0 },
         jobs: [],
-    };
+        progress: { totalSteps: 0, completedSteps: 0, failedSteps: 0 },
+    });
 
     const validGetAllStageProgressResponse: GetAllStageProgressResponse = {
         dagProgress: { completedStages: 1, totalStages: 1 },
@@ -322,31 +305,16 @@ describe('useStageRunProgressHydration', () => {
             ...createSession(),
             current_stage_id: stageThesis.id,
         };
-        const project: DialecticProject = {
+        const project = mockDialecticProject({
             id: projectId,
             user_id: userId,
             project_name: 'Test',
-            initial_user_prompt: null,
             selected_domain_id: '',
             dialectic_domains: { name: 'Domain' },
-            selected_domain_overlay_id: null,
-            repo_url: null,
-            status: 'active',
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
             dialectic_sessions: [session],
-            resources: [],
             process_template_id: templateTwoStages.id,
             dialectic_process_templates: templateTwoStages,
-            isLoadingProcessTemplate: false,
-            processTemplateError: null,
-            contributionGenerationStatus: 'idle',
-            generateContributionsError: null,
-            isSubmittingStageResponses: false,
-            submitStageResponsesError: null,
-            isSavingContributionEdit: false,
-            saveContributionEditError: null,
-        };
+        });
         setDialecticStateValues({
             currentProjectDetail: project,
             activeContextSessionId: sessionId,
@@ -483,16 +451,17 @@ describe('useStageRunProgressHydration', () => {
 
     it('verifies recipesByStageSlug has entries for all stages after fetchStageRecipe — if any missing, does not proceed and logs error', async () => {
         const session: DialecticSession = createSession();
-        const recipeThesis: typeof emptyDialecticStageRecipe = {
-            ...emptyDialecticStageRecipe,
+        const recipeThesisOnly = mockDialecticStageRecipe({
             stageSlug: 'thesis',
             instanceId: 'inst-thesis',
-        };
+            steps: [],
+            edges: [],
+        });
         setDialecticStateValues({
             activeContextSessionId: sessionId,
             activeSessionDetail: session,
             currentProcessTemplate: templateTwoStages,
-            recipesByStageSlug: { thesis: recipeThesis },
+            recipesByStageSlug: { thesis: recipeThesisOnly },
         });
 
         const hydrateAllStageProgressMock = getDialecticStoreActionMock('hydrateAllStageProgress');

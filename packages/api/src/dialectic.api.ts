@@ -6,7 +6,7 @@ import type {
     StartSessionPayload,
     DialecticSession,
     DialecticSessionRow,
-    AIModelCatalogEntry,
+    AiProvidersRow,
     DomainDescriptor,
     DomainOverlayDescriptor,
     UpdateProjectDomainPayload,
@@ -269,11 +269,11 @@ export class DialecticApiClient {
      * Fetches the list of available AI models from the catalog.
      * Requires authentication.
      */
-    async listModelCatalog(): Promise<ApiResponse<AIModelCatalogEntry[]>> {
+    async listModelCatalog(): Promise<ApiResponse<AiProvidersRow[]>> {
         logger.info('Fetching AI model catalog');
 
         try {
-            const response = await this.apiClient.post<AIModelCatalogEntry[], { action: string }>(
+            const response = await this.apiClient.post<AiProvidersRow[], { action: string }>(
                 'dialectic-service',
                 { action: 'listModelCatalog' }
             );

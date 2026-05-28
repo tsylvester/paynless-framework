@@ -7,6 +7,10 @@ import {
   initializeMockDialecticState,
   setDialecticStateValues,
   getDialecticStoreActionMock,
+  mockDialecticDomain,
+  mockDialecticStage,
+  mockDialecticProcessTemplate,
+  mockAiProvidersRow,
 } from '@/mocks/dialecticStore.mock';
 import { selectActiveChatWalletInfo } from '@paynless/store';
 import type {
@@ -16,7 +20,7 @@ import type {
   DialecticStage,
   DialecticProcessTemplate,
   CreateProjectAutoStartResult,
-  AIModelCatalogEntry,
+  AiProvidersRow,
   ActiveChatWalletInfo,
 } from '@paynless/types';
 import { usePlatform } from '@paynless/platform';
@@ -99,13 +103,11 @@ vi.mock('react-router-dom', async (importOriginal) => {
   };
 });
 
-const mockSelectedDomain: DialecticDomain = {
+const mockSelectedDomain: DialecticDomain = mockDialecticDomain({
   id: 'domain-1',
   name: 'General',
   description: '',
-  parent_domain_id: null,
-  is_enabled: true,
-};
+});
 
 const defaultWalletInfo: ActiveChatWalletInfo = {
   status: 'ok',
@@ -118,31 +120,44 @@ const defaultWalletInfo: ActiveChatWalletInfo = {
 
 const firstStageMinBalanceForAutostartTest = 100000;
 
-const stageThesisForAutostart: DialecticStage = {
+const autostartCatalogEntryOverrides: Partial<AiProvidersRow> = {
+  provider: 'Provider',
+  description: null,
+  config: null,
+  created_at: '',
+  updated_at: '',
+  is_default_embedding: false,
+  min_plan_tier_level: 0,
+};
+
+const stageThesisForAutostart: DialecticStage = mockDialecticStage({
   id: 'stage-thesis-autostart',
   slug: 'thesis',
   display_name: 'Proposal',
   description: 'First stage for autostart balance test.',
-  created_at: new Date().toISOString(),
   default_system_prompt_id: null,
-  expected_output_template_ids: [],
-  recipe_template_id: null,
-  active_recipe_instance_id: null,
   minimum_balance: firstStageMinBalanceForAutostartTest,
-};
+});
 
-const processTemplateForAutostartBalanceTest: DialecticProcessTemplate = {
-  id: 'pt-autostart-balance',
-  name: 'Autostart balance test template',
-  description: null,
-  created_at: new Date().toISOString(),
-  starting_stage_id: stageThesisForAutostart.id,
-  stages: [stageThesisForAutostart],
-  transitions: [],
-};
+const processTemplateForAutostartBalanceTest: DialecticProcessTemplate =
+  mockDialecticProcessTemplate({
+    id: 'pt-autostart-balance',
+    name: 'Autostart balance test template',
+    description: null,
+    starting_stage_id: stageThesisForAutostart.id,
+    stages: [stageThesisForAutostart],
+    transitions: [],
+  });
 
-const defaultCatalogWithDefaultModel: AIModelCatalogEntry[] = [
-  buildMinimalAIModelCatalogEntry({ id: 'dft', model_name: 'Default', is_default_generation: true, is_active: true }),
+const defaultCatalogWithDefaultModel: AiProvidersRow[] = [
+  mockAiProvidersRow({
+    ...autostartCatalogEntryOverrides,
+    id: 'dft',
+    name: 'Default',
+    api_identifier: 'dft',
+    is_default_generation: true,
+    is_active: true,
+  }),
 ];
 
 function buildMinimalDialecticProjectRow(overrides: { id: string; project_name: string }): DialecticProjectRow {
@@ -161,27 +176,6 @@ function buildMinimalDialecticProjectRow(overrides: { id: string; project_name: 
     created_at: '',
     updated_at: '',
     idempotency_key: null,
-  };
-}
-
-function buildMinimalAIModelCatalogEntry(overrides: { id: string; model_name: string; is_default_generation: boolean; is_active: boolean }): AIModelCatalogEntry {
-  return {
-    id: overrides.id,
-    provider_name: 'Provider',
-    model_name: overrides.model_name,
-    api_identifier: overrides.id,
-    description: null,
-    strengths: null,
-    weaknesses: null,
-    context_window_tokens: null,
-    input_token_cost_usd_millionths: null,
-    output_token_cost_usd_millionths: null,
-    max_output_tokens: null,
-    is_active: overrides.is_active,
-    created_at: '',
-    updated_at: '',
-    is_default_generation: overrides.is_default_generation,
-    min_plan_tier_level: 0,
   };
 }
 
@@ -408,8 +402,14 @@ describe('CreateDialecticProjectForm (autostart)', () => {
   });
 
   it('defaults to Autoconfig (half-checked) when no default models available and shows explanatory text', async () => {
-    const catalogNoDefaults: AIModelCatalogEntry[] = [
-      buildMinimalAIModelCatalogEntry({ id: 'm1', model_name: 'Model 1', is_default_generation: false, is_active: true }),
+    const catalogNoDefaults: AiProvidersRow[] = [
+      mockAiProvidersRow({
+        ...autostartCatalogEntryOverrides,
+        id: 'm1',
+        name: 'Model 1',
+        is_default_generation: false,
+        is_active: true,
+      }),
     ];
     initializeMockDialecticState({
       selectedDomain: mockSelectedDomain,
