@@ -17,11 +17,13 @@ import {
 import { Button } from "@/components/ui/button";
 import { useAuthStore, useDialecticStore } from "@paynless/store";
 import { UserTier } from "@paynless/types";
-import { logger } from "@paynless/utils";
+import { isJson, isPlainObject, logger } from "@paynless/utils";
 import { cn } from "@/lib/utils";
 import { Sparkles, Lock, AlertCircle } from "lucide-react";
 
 const MIN_OUTPUT_TOKENS = 1024;
+const SLIDER_STEPS_PER_SEGMENT = 50;
+const UPGRADE_CTA_THRESHOLD_RATIO = 0.85;
 
 interface OutputCapSliderProps {
 	className?: string;
@@ -37,17 +39,6 @@ export function OutputCapSlider({ className }: OutputCapSliderProps) {
 	);
 	const modelCatalog = useDialecticStore((state) => state.modelCatalog);
 	const selectedModels = useDialecticStore((state) => state.selectedModels);
-
-	const displayTiers: UserTier[] = useMemo(() => {
-		const filteredTiers: UserTier[] = [];
-		for (const tier of availableTiers) {
-			if (tier.name !== "unreachable") {
-				filteredTiers.push(tier);
-			}
-		}
-		filteredTiers.sort((left, right) => left.level - right.level);
-		return filteredTiers;
-	}, [availableTiers]);
 
 	const sliderRangeMax = useMemo(() => {
 		if (selectedModels === null) {
@@ -66,20 +57,106 @@ export function OutputCapSlider({ className }: OutputCapSliderProps) {
 				if (catalogEntry.id !== selectedModel.id) {
 					continue;
 				}
-				if (catalogEntry.max_output_tokens === null) {
+
+				const configValue = catalogEntry.config;
+				if (configValue === null) {
 					continue;
 				}
+				if (!isJson(configValue)) {
+					continue;
+				}
+				if (!isPlainObject(configValue)) {
+					continue;
+				}
+
+				const hardCapRaw = configValue["hard_cap_output_tokens"];
+				const providerMaxRaw = configValue["provider_max_output_tokens"];
+
+				let applicationCap: number = Infinity;
+				if (
+					typeof hardCapRaw === "number" &&
+					Number.isFinite(hardCapRaw) &&
+					hardCapRaw >= 0
+				) {
+					applicationCap = hardCapRaw;
+				}
+
+				let providerCap: number = Infinity;
+				if (
+					typeof providerMaxRaw === "number" &&
+					Number.isFinite(providerMaxRaw) &&
+					providerMaxRaw >= 0
+				) {
+					providerCap = providerMaxRaw;
+				}
+
+				const modelMaxOutputTokens: number = Math.min(
+					applicationCap,
+					providerCap,
+				);
+				if (!Number.isFinite(modelMaxOutputTokens)) {
+					continue;
+				}
+
 				if (highest === null) {
-					highest = catalogEntry.max_output_tokens;
+					highest = modelMaxOutputTokens;
 					continue;
 				}
-				if (catalogEntry.max_output_tokens > highest) {
-					highest = catalogEntry.max_output_tokens;
+				if (modelMaxOutputTokens > highest) {
+					highest = modelMaxOutputTokens;
 				}
 			}
 		}
 		return highest;
 	}, [selectedModels, modelCatalog]);
+
+	const displayTiers: UserTier[] = useMemo(() => {
+		const filteredTiers: UserTier[] = [];
+		for (const tier of availableTiers) {
+			if (tier.name !== "unreachable") {
+				filteredTiers.push(tier);
+			}
+		}
+		filteredTiers.sort((left, right) => left.level - right.level);
+
+		if (sliderRangeMax === null) {
+			return filteredTiers;
+		}
+
+		const modelLimitedTiers: UserTier[] = [];
+		let previousValue: number = MIN_OUTPUT_TOKENS;
+		for (const tier of filteredTiers) {
+			if (tier.output_cap_tokens === null) {
+				if (sliderRangeMax > previousValue) {
+					const modelLimitedTier: UserTier = {
+						level: tier.level,
+						name: tier.name,
+						output_cap_tokens: sliderRangeMax,
+						max_models_per_project: tier.max_models_per_project,
+					};
+					modelLimitedTiers.push(modelLimitedTier);
+				}
+				break;
+			}
+
+			if (tier.output_cap_tokens > sliderRangeMax) {
+				if (sliderRangeMax > previousValue) {
+					const modelLimitedTier: UserTier = {
+						level: tier.level,
+						name: tier.name,
+						output_cap_tokens: sliderRangeMax,
+						max_models_per_project: tier.max_models_per_project,
+					};
+					modelLimitedTiers.push(modelLimitedTier);
+				}
+				break;
+			}
+
+			modelLimitedTiers.push(tier);
+			previousValue = tier.output_cap_tokens;
+		}
+		return modelLimitedTiers;
+	}, [availableTiers, sliderRangeMax]);
 
 	const [sliderRealValue, setSliderRealValue] = useState(MIN_OUTPUT_TOKENS);
 	const [showUpgradeCTA, setShowUpgradeCTA] = useState(false);
@@ -115,7 +192,7 @@ export function OutputCapSlider({ className }: OutputCapSliderProps) {
 
 		let thumbMaxForLog: number;
 		if (userTier.output_cap_tokens !== null) {
-			thumbMaxForLog = userTier.output_cap_tokens;
+			thumbMaxForLog = Math.min(userTier.output_cap_tokens, sliderRangeMax);
 		} else {
 			thumbMaxForLog = sliderRangeMax;
 		}
@@ -177,7 +254,10 @@ export function OutputCapSlider({ className }: OutputCapSliderProps) {
 	}, []);
 
 	const applyOutputCapValue = useCallback(
-		(requestedReal: number, persistToStore: boolean) => {
+		(
+			requestedReal: number,
+			persistToStore: boolean,
+		) => {
 			if (userTier === null) {
 				return;
 			}
@@ -187,24 +267,10 @@ export function OutputCapSlider({ className }: OutputCapSliderProps) {
 
 			let thumbMax: number;
 			if (userTier.output_cap_tokens !== null) {
-				thumbMax = userTier.output_cap_tokens;
+				thumbMax = Math.min(userTier.output_cap_tokens, sliderRangeMax);
 			} else {
 				thumbMax = sliderRangeMax;
 			}
-
-			if (requestedReal <= thumbMax) {
-				setSliderRealValue(requestedReal);
-				setShowUpgradeCTA(false);
-				if (persistToStore) {
-					setMaxOutputTokens(requestedReal);
-					logger.info("Output cap set to:", {
-						maxOutputTokens: requestedReal,
-					});
-				}
-				return;
-			}
-
-			setSliderRealValue(thumbMax);
 
 			let requiredTierFound = false;
 			let requiredTierName = "";
@@ -223,12 +289,35 @@ export function OutputCapSlider({ className }: OutputCapSliderProps) {
 					break;
 				}
 			}
+
+			const upgradeThreshold: number = thumbMax * UPGRADE_CTA_THRESHOLD_RATIO;
+			const shouldShowUpgradeCTA: boolean =
+				requiredTierFound && requestedReal >= upgradeThreshold;
+
+			if (requestedReal <= thumbMax) {
+				setSliderRealValue(requestedReal);
+				if (shouldShowUpgradeCTA) {
+					setUpgradeTargetName(requiredTierName);
+					setShowUpgradeCTA(true);
+				} else {
+					setShowUpgradeCTA(false);
+				}
+				if (persistToStore) {
+					setMaxOutputTokens(requestedReal);
+					logger.info("Output cap set to:", {
+						maxOutputTokens: requestedReal,
+					});
+				}
+				return;
+			}
+
+			setSliderRealValue(thumbMax);
+
 			if (!requiredTierFound) {
 				return;
 			}
 			setUpgradeTargetName(requiredTierName);
 			setShowUpgradeCTA(true);
-			setTimeout(() => setShowUpgradeCTA(false), 3000);
 		},
 		[userTier, sliderRangeMax, displayTiers, setMaxOutputTokens],
 	);
@@ -252,16 +341,19 @@ export function OutputCapSlider({ className }: OutputCapSliderProps) {
 
 	let activeThumbMax: number;
 	if (activeUserTier.output_cap_tokens !== null) {
-		activeThumbMax = activeUserTier.output_cap_tokens;
+		activeThumbMax = Math.min(
+			activeUserTier.output_cap_tokens,
+			activeSliderRangeMax,
+		);
 	} else {
 		activeThumbMax = activeSliderRangeMax;
 	}
 
 	let currentDisplayValue: number;
 	if (maxOutputTokens !== null) {
-		currentDisplayValue = maxOutputTokens;
+		currentDisplayValue = Math.min(maxOutputTokens, activeThumbMax);
 	} else if (activeUserTier.output_cap_tokens !== null) {
-		currentDisplayValue = activeUserTier.output_cap_tokens;
+		currentDisplayValue = activeThumbMax;
 	} else {
 		currentDisplayValue = activeSliderRangeMax;
 	}
@@ -275,21 +367,70 @@ export function OutputCapSlider({ className }: OutputCapSliderProps) {
 		clampedSliderValue = sliderRealValue;
 	}
 
-	const logMin = Math.log(MIN_OUTPUT_TOKENS);
-	const logMax = Math.log(activeSliderRangeMax);
-	const internalSliderValue = Math.log(
-		Math.max(clampedSliderValue, MIN_OUTPUT_TOKENS),
-	);
-	const logStep = (logMax - logMin) / 200;
+	const sliderSegmentCount: number = Math.max(displayTiers.length, 1);
+	const sliderMin: number = 0;
+	const sliderMax: number = sliderSegmentCount;
+	const sliderStep: number = 1 / SLIDER_STEPS_PER_SEGMENT;
+
+	let internalSliderValue: number = sliderMin;
+	let sliderSegmentMin: number = MIN_OUTPUT_TOKENS;
+	for (let tierIndex = 0; tierIndex < displayTiers.length; tierIndex += 1) {
+		const tier: UserTier = displayTiers[tierIndex];
+		let sliderSegmentMax: number;
+		if (tier.output_cap_tokens === null) {
+			sliderSegmentMax = activeSliderRangeMax;
+		} else {
+			sliderSegmentMax = tier.output_cap_tokens;
+		}
+		const sliderSegmentStart: number = tierIndex;
+		const sliderSegmentEnd: number = tierIndex + 1;
+		const isLastSegment: boolean = tierIndex === displayTiers.length - 1;
+		if (clampedSliderValue <= sliderSegmentMax || isLastSegment) {
+			if (sliderSegmentMax <= sliderSegmentMin) {
+				internalSliderValue = sliderSegmentEnd;
+			} else {
+				const sliderSegmentProgress: number =
+					(clampedSliderValue - sliderSegmentMin) /
+					(sliderSegmentMax - sliderSegmentMin);
+				internalSliderValue =
+					sliderSegmentStart + sliderSegmentProgress;
+			}
+			break;
+		}
+		sliderSegmentMin = sliderSegmentMax;
+	}
 
 	let thumbMaxPercent: number;
 	if (activeThumbMax <= MIN_OUTPUT_TOKENS) {
 		thumbMaxPercent = 0;
 	} else {
-		thumbMaxPercent =
-			((Math.log(activeThumbMax) - Math.log(MIN_OUTPUT_TOKENS)) /
-				(Math.log(activeSliderRangeMax) - Math.log(MIN_OUTPUT_TOKENS))) *
-			100;
+		let thumbMaxPosition: number = sliderMin;
+		let thumbSegmentMin: number = MIN_OUTPUT_TOKENS;
+		for (let tierIndex = 0; tierIndex < displayTiers.length; tierIndex += 1) {
+			const tier: UserTier = displayTiers[tierIndex];
+			let thumbSegmentMax: number;
+			if (tier.output_cap_tokens === null) {
+				thumbSegmentMax = activeSliderRangeMax;
+			} else {
+				thumbSegmentMax = tier.output_cap_tokens;
+			}
+			const thumbSegmentStart: number = tierIndex;
+			const thumbSegmentEnd: number = tierIndex + 1;
+			const isLastSegment: boolean = tierIndex === displayTiers.length - 1;
+			if (activeThumbMax <= thumbSegmentMax || isLastSegment) {
+				if (thumbSegmentMax <= thumbSegmentMin) {
+					thumbMaxPosition = thumbSegmentEnd;
+				} else {
+					const thumbSegmentProgress: number =
+						(activeThumbMax - thumbSegmentMin) /
+						(thumbSegmentMax - thumbSegmentMin);
+					thumbMaxPosition = thumbSegmentStart + thumbSegmentProgress;
+				}
+				break;
+			}
+			thumbSegmentMin = thumbSegmentMax;
+		}
+		thumbMaxPercent = (thumbMaxPosition / sliderMax) * 100;
 	}
 
 	let helperTextContent: ReactElement;
@@ -332,22 +473,10 @@ export function OutputCapSlider({ className }: OutputCapSliderProps) {
 				</div>
 
 				<div className="space-y-3">
-					<div className="relative h-14">
-						{displayTiers.map((tier) => {
+					<div className="relative mx-2 h-14 sm:mx-4">
+						{displayTiers.map((tier, tierIndex) => {
 							const isAccessible = tier.level <= activeUserTier.level;
 							const isCurrent = tier.level === activeUserTier.level;
-
-							let markerPercent: number;
-							if (tier.output_cap_tokens === null) {
-								markerPercent = 100;
-							} else {
-								markerPercent =
-									((Math.log(tier.output_cap_tokens) -
-										Math.log(MIN_OUTPUT_TOKENS)) /
-										(Math.log(activeSliderRangeMax) -
-											Math.log(MIN_OUTPUT_TOKENS))) *
-									100;
-							}
 
 							let markerTokenValue: number;
 							if (tier.output_cap_tokens === null) {
@@ -356,10 +485,13 @@ export function OutputCapSlider({ className }: OutputCapSliderProps) {
 								markerTokenValue = tier.output_cap_tokens;
 							}
 
+							const markerPercent: number =
+								((tierIndex + 1) / sliderSegmentCount) * 100;
+
 							return (
 								<div
 									key={tier.level}
-									className="absolute top-0 flex flex-col items-center -translate-x-1/2"
+									className="absolute top-0 flex -translate-x-full flex-col items-end"
 									style={{ left: `${markerPercent}%` }}
 								>
 									<Tooltip>
@@ -367,7 +499,7 @@ export function OutputCapSlider({ className }: OutputCapSliderProps) {
 											<button
 												type="button"
 												className={cn(
-													"flex flex-col items-center gap-0.5 px-1 py-1 rounded-md transition-all text-xs",
+													"flex min-w-24 flex-col items-end gap-0.5 rounded-md px-1 py-1 text-xs transition-all",
 													isAccessible
 														? "hover:bg-accent cursor-pointer"
 														: "cursor-pointer opacity-40",
@@ -394,10 +526,13 @@ export function OutputCapSlider({ className }: OutputCapSliderProps) {
 													} else {
 														requestedReal = tier.output_cap_tokens;
 													}
-													applyOutputCapValue(requestedReal, true);
+													applyOutputCapValue(
+														requestedReal,
+														true,
+													);
 												}}
 											>
-												<div className="flex items-center gap-0.5">
+												<div className="flex items-center gap-0.5 whitespace-nowrap">
 													{tier.output_cap_tokens === null && (
 														<Sparkles className="h-2.5 w-2.5" />
 													)}
@@ -412,11 +547,14 @@ export function OutputCapSlider({ className }: OutputCapSliderProps) {
 													>
 														{tier.name}
 													</span>
+													<span className="text-[11px] text-muted-foreground">
+														,
+													</span>
+													<span className="text-[11px] text-muted-foreground">
+														{formatTokenCount(markerTokenValue)}
+													</span>
 												</div>
-												<span className="text-[9px] text-muted-foreground">
-													{formatTokenCount(markerTokenValue)}
-												</span>
-												<span className="text-[9px] text-muted-foreground">
+												<span className="whitespace-nowrap text-[9px] text-muted-foreground">
 													{formatPageGuidance(markerTokenValue)}
 												</span>
 											</button>
@@ -451,23 +589,99 @@ export function OutputCapSlider({ className }: OutputCapSliderProps) {
 						})}
 					</div>
 
-					<div className="relative" ref={sliderRegionRef}>
+					<div className="relative mx-2 sm:mx-4" ref={sliderRegionRef}>
 						<Slider
 							value={[internalSliderValue]}
-							min={logMin}
-							max={logMax}
-							step={logStep}
+							min={sliderMin}
+							max={sliderMax}
+							step={sliderStep}
 							onValueChange={(internalValues) => {
-								const requestedReal = Math.round(
-									Math.exp(internalValues[0]),
+								const requestedInternal = internalValues[0];
+								let requestedReal: number = activeSliderRangeMax;
+								let sliderSegmentMin: number = MIN_OUTPUT_TOKENS;
+								for (
+									let tierIndex = 0;
+									tierIndex < displayTiers.length;
+									tierIndex += 1
+								) {
+									const tier: UserTier = displayTiers[tierIndex];
+									let sliderSegmentMax: number;
+									if (tier.output_cap_tokens === null) {
+										sliderSegmentMax = activeSliderRangeMax;
+									} else {
+										sliderSegmentMax = tier.output_cap_tokens;
+									}
+									const sliderSegmentStart: number = tierIndex;
+									const sliderSegmentEnd: number = tierIndex + 1;
+									const isLastSegment: boolean =
+										tierIndex === displayTiers.length - 1;
+									if (requestedInternal <= sliderSegmentEnd || isLastSegment) {
+										let sliderSegmentProgress: number;
+										if (requestedInternal <= sliderSegmentStart) {
+											sliderSegmentProgress = 0;
+										} else if (requestedInternal >= sliderSegmentEnd) {
+											sliderSegmentProgress = 1;
+										} else {
+											sliderSegmentProgress =
+												requestedInternal - sliderSegmentStart;
+										}
+										requestedReal = Math.round(
+											sliderSegmentMin +
+												(sliderSegmentMax - sliderSegmentMin) *
+													sliderSegmentProgress,
+										);
+										break;
+									}
+									sliderSegmentMin = sliderSegmentMax;
+								}
+								applyOutputCapValue(
+									requestedReal,
+									false,
 								);
-								applyOutputCapValue(requestedReal, false);
 							}}
 							onValueCommit={(internalValues) => {
-								const requestedReal = Math.round(
-									Math.exp(internalValues[0]),
+								const requestedInternal = internalValues[0];
+								let requestedReal: number = activeSliderRangeMax;
+								let sliderSegmentMin: number = MIN_OUTPUT_TOKENS;
+								for (
+									let tierIndex = 0;
+									tierIndex < displayTiers.length;
+									tierIndex += 1
+								) {
+									const tier: UserTier = displayTiers[tierIndex];
+									let sliderSegmentMax: number;
+									if (tier.output_cap_tokens === null) {
+										sliderSegmentMax = activeSliderRangeMax;
+									} else {
+										sliderSegmentMax = tier.output_cap_tokens;
+									}
+									const sliderSegmentStart: number = tierIndex;
+									const sliderSegmentEnd: number = tierIndex + 1;
+									const isLastSegment: boolean =
+										tierIndex === displayTiers.length - 1;
+									if (requestedInternal <= sliderSegmentEnd || isLastSegment) {
+										let sliderSegmentProgress: number;
+										if (requestedInternal <= sliderSegmentStart) {
+											sliderSegmentProgress = 0;
+										} else if (requestedInternal >= sliderSegmentEnd) {
+											sliderSegmentProgress = 1;
+										} else {
+											sliderSegmentProgress =
+												requestedInternal - sliderSegmentStart;
+										}
+										requestedReal = Math.round(
+											sliderSegmentMin +
+												(sliderSegmentMax - sliderSegmentMin) *
+													sliderSegmentProgress,
+										);
+										break;
+									}
+									sliderSegmentMin = sliderSegmentMax;
+								}
+								applyOutputCapValue(
+									requestedReal,
+									true,
 								);
-								applyOutputCapValue(requestedReal, true);
 							}}
 							className="relative bg-gray-500/90"
 						/>
@@ -496,6 +710,7 @@ export function OutputCapSlider({ className }: OutputCapSliderProps) {
 							<span className="font-medium capitalize">
 								{upgradeTargetName}
 							</span>
+							{" "}for larger output limits 
 						</span>
 						<Button
 							size="sm"

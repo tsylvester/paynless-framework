@@ -12,7 +12,7 @@ import {
 	type Mock,
 } from 'vitest';
 import type {
-	AIModelCatalogEntry,
+	AiProvidersRow,
 	NavigateFunction,
 	SelectedModels,
 	UserTier,
@@ -20,6 +20,7 @@ import type {
 import { useAuthStore, useDialecticStore } from '@paynless/store';
 import { OutputCapSlider } from './OutputCapSlider';
 import { mockAllTiers, mockUserTier } from '../../mocks/profile.mock';
+import { mockAiProvidersRow } from '../../mocks/dialecticStore.mock';
 
 const mockNavigate: Mock<
 	Parameters<NavigateFunction>,
@@ -39,29 +40,83 @@ const userFacingTiers: UserTier[] = mockAllTiers.filter(
 );
 const tierBasic: UserTier = mockAllTiers[1];
 
-const integrationModelCatalogEntry: AIModelCatalogEntry = {
-	id: 'model-integration-1',
-	provider_name: 'OpenAI',
-	model_name: 'Integration Model',
-	api_identifier: 'model-integration-1',
-	description: null,
-	strengths: null,
-	weaknesses: null,
-	context_window_tokens: null,
-	input_token_cost_usd_millionths: null,
-	output_token_cost_usd_millionths: null,
-	max_output_tokens: 200000,
-	is_active: true,
-	created_at: '2025-01-01T00:00:00Z',
-	updated_at: '2025-01-01T00:00:00Z',
-	is_default_generation: false,
-	min_plan_tier_level: 0,
-};
+const MIN_OUTPUT_TOKENS = 1024;
+const SLIDER_STEPS_PER_SEGMENT = 50;
+const MODEL_TRACK_MAX = 200000;
 
+function upgradeCtaText(tierName: string): string {
+	return `Upgrade to ${tierName} for larger output limits`;
+}
+
+function tierSegmentMax(tier: UserTier, trackMax: number): number {
+	if (tier.output_cap_tokens === null) {
+		return trackMax;
+	}
+	if (tier.output_cap_tokens > trackMax) {
+		return trackMax;
+	}
+	return tier.output_cap_tokens;
+}
+
+function tokensToInternalSliderValue(tokens: number, trackMax: number): number {
+	let segmentMin: number = MIN_OUTPUT_TOKENS;
+	for (let tierIndex = 0; tierIndex < userFacingTiers.length; tierIndex += 1) {
+		const tier: UserTier = userFacingTiers[tierIndex];
+		const segmentMax: number = tierSegmentMax(tier, trackMax);
+		const segmentStart: number = tierIndex;
+		const segmentEnd: number = tierIndex + 1;
+		const isLastSegment: boolean = tierIndex === userFacingTiers.length - 1;
+		if (tokens <= segmentMax || isLastSegment) {
+			if (segmentMax <= segmentMin) {
+				return segmentEnd;
+			}
+			const segmentProgress: number =
+				(tokens - segmentMin) / (segmentMax - segmentMin);
+			return segmentStart + segmentProgress;
+		}
+		segmentMin = segmentMax;
+	}
+	return 0;
+}
+
+function segmentedArrowPressCount(
+	fromTokens: number,
+	toTokens: number,
+	trackMax: number,
+): number {
+	const fromInternal: number = tokensToInternalSliderValue(fromTokens, trackMax);
+	const toInternal: number = tokensToInternalSliderValue(toTokens, trackMax);
+	const sliderStep: number = 1 / SLIDER_STEPS_PER_SEGMENT;
+	return Math.ceil((toInternal - fromInternal) / sliderStep);
+}
+
+async function dragSegmentedSliderToTokens(
+	fromTokens: number,
+	toTokens: number,
+	trackMax: number,
+): Promise<void> {
+	const slider = screen.getByRole('slider');
+	slider.focus();
+	const arrowPressCount: number = segmentedArrowPressCount(
+		fromTokens,
+		toTokens,
+		trackMax,
+	);
+	for (let index = 0; index < arrowPressCount; index += 1) {
+		await userEvent.keyboard('{ArrowRight}');
+	}
+}
+
+const integrationModelCatalogEntry: AiProvidersRow = mockAiProvidersRow({
+	id: 'model-integration-1',
+	name: 'Integration Model',
+	config: { provider_max_output_tokens: 200000 },
+});
+	
 const integrationSelectedModels: SelectedModels[] = [
 	{
 		id: integrationModelCatalogEntry.id,
-		displayName: integrationModelCatalogEntry.model_name,
+		displayName: integrationModelCatalogEntry.name,
 	},
 ];
 
@@ -128,36 +183,6 @@ function seedIntegrationStores(
 	});
 }
 
-function logSliderArrowPressCount(
-	fromTokens: number,
-	toTokens: number,
-	trackMax: number,
-): number {
-	const logMin = Math.log(1024);
-	const logMax = Math.log(trackMax);
-	const logStep = (logMax - logMin) / 200;
-	const fromInternal = Math.log(fromTokens);
-	const toInternal = Math.log(toTokens);
-	return Math.round((toInternal - fromInternal) / logStep);
-}
-
-async function dragSliderToTokens(
-	fromTokens: number,
-	toTokens: number,
-	trackMax: number,
-): Promise<void> {
-	const slider = screen.getByRole('slider');
-	slider.focus();
-	const arrowPressCount = logSliderArrowPressCount(
-		fromTokens,
-		toTokens,
-		trackMax,
-	);
-	for (let index = 0; index < arrowPressCount; index += 1) {
-		await userEvent.keyboard('{ArrowRight}');
-	}
-}
-
 describe('OutputCapSlider integration', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
@@ -197,17 +222,29 @@ describe('OutputCapSlider integration', () => {
 	});
 
 	it('function → consumer: persists chosen cap to real dialectic store', async () => {
+		const trackMax = 200000;
+		const initialCap = 4096;
+		expect(mockUserTier.output_cap_tokens).toBe(8192);
+		const freeTierThumbMax: number = 8192;
+
 		seedIntegrationStores(
 			{ userTier: mockUserTier, availableTiers: mockAllTiers },
-			{ maxOutputTokens: 4096 },
+			{ maxOutputTokens: initialCap },
 		);
 
 		renderWithRouter(<OutputCapSlider />);
 
-		await userEvent.click(screen.getByRole('button', { name: /free/i }));
+		await dragSegmentedSliderToTokens(initialCap, freeTierThumbMax, trackMax);
 
 		await waitFor(() => {
-			expect(useDialecticStore.getState().maxOutputTokens).toBe(8192);
+			const sliderAfterDrag = screen.getByRole('slider');
+			const ariaValue = sliderAfterDrag.getAttribute('aria-valuenow');
+			expect(ariaValue).not.toBeNull();
+			const thumbTokens = Number(ariaValue);
+			const storedCap = useDialecticStore.getState().maxOutputTokens;
+			expect(storedCap).toBe(thumbTokens);
+			expect(storedCap).toBeGreaterThan(initialCap);
+			expect(storedCap).toBeLessThanOrEqual(freeTierThumbMax);
 		});
 	});
 
@@ -227,7 +264,7 @@ describe('OutputCapSlider integration', () => {
 			expect(useDialecticStore.getState().maxOutputTokens).toBe(8192);
 		});
 
-		await dragSliderToTokens(8192, 16384, 200000);
+		await dragSegmentedSliderToTokens(8192, 16384, MODEL_TRACK_MAX);
 
 		await waitFor(() => {
 			const sliderAfterDrag = screen.getByRole('slider');
@@ -243,7 +280,7 @@ describe('OutputCapSlider integration', () => {
 		await userEvent.click(screen.getByRole('button', { name: /premium/i }));
 
 		expect(
-			screen.getByText(byExactTextContent('Upgrade to premium')),
+			screen.getByText(byExactTextContent(upgradeCtaText('premium'))),
 		).toBeInTheDocument();
 		expect(
 			screen.getByRole('button', { name: /^upgrade$/i }),

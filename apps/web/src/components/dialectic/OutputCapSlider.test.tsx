@@ -4,7 +4,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { ReactElement } from 'react';
 import { beforeEach, describe, expect, it, vi, Mock } from 'vitest';
 import {
-	AIModelCatalogEntry,
+	AiProvidersRow,
 	AuthStore,
 	DialecticStateValues,
 	NavigateFunction,
@@ -20,7 +20,7 @@ import {
 import {
 	getDialecticStoreActionMock,
 	initializeMockDialecticState,
-	mockAIModelCatalogEntry,
+	mockAiProvidersRow,
 	mockSelectedModelsForCatalog,
 	resetDialecticStoreMock,
 } from '../../mocks/dialecticStore.mock';
@@ -80,12 +80,86 @@ function byExactTextContent(expectedText: string) {
 		elementHasExactAggregatedText(element, expectedText);
 }
 
+const MIN_OUTPUT_TOKENS = 1024;
+const SLIDER_STEPS_PER_SEGMENT = 50;
+const UPGRADE_CTA_THRESHOLD_RATIO = 0.85;
+const MODEL_TRACK_MAX = 200000;
+
+const userFacingTiers: UserTier[] = mockAllTiers.filter(
+	(tier) => tier.name !== 'unreachable',
+);
+const tierBasic: UserTier = mockAllTiers[1];
+const tierUltra: UserTier = mockAllTiers[3];
+
+function upgradeCtaText(tierName: string): string {
+	return `Upgrade to ${tierName} for larger output limits`;
+}
+
+function tierSegmentMax(tier: UserTier, trackMax: number): number {
+	if (tier.output_cap_tokens === null) {
+		return trackMax;
+	}
+	if (tier.output_cap_tokens > trackMax) {
+		return trackMax;
+	}
+	return tier.output_cap_tokens;
+}
+
+function tokensToInternalSliderValue(tokens: number, trackMax: number): number {
+	let segmentMin: number = MIN_OUTPUT_TOKENS;
+	for (let tierIndex = 0; tierIndex < userFacingTiers.length; tierIndex += 1) {
+		const tier: UserTier = userFacingTiers[tierIndex];
+		const segmentMax: number = tierSegmentMax(tier, trackMax);
+		const segmentStart: number = tierIndex;
+		const segmentEnd: number = tierIndex + 1;
+		const isLastSegment: boolean = tierIndex === userFacingTiers.length - 1;
+		if (tokens <= segmentMax || isLastSegment) {
+			if (segmentMax <= segmentMin) {
+				return segmentEnd;
+			}
+			const segmentProgress: number =
+				(tokens - segmentMin) / (segmentMax - segmentMin);
+			return segmentStart + segmentProgress;
+		}
+		segmentMin = segmentMax;
+	}
+	return 0;
+}
+
+function segmentedArrowPressCount(
+	fromTokens: number,
+	toTokens: number,
+	trackMax: number,
+): number {
+	const fromInternal: number = tokensToInternalSliderValue(fromTokens, trackMax);
+	const toInternal: number = tokensToInternalSliderValue(toTokens, trackMax);
+	const sliderStep: number = 1 / SLIDER_STEPS_PER_SEGMENT;
+	return Math.ceil((toInternal - fromInternal) / sliderStep);
+}
+
+async function dragSegmentedSliderToTokens(
+	fromTokens: number,
+	toTokens: number,
+	trackMax: number,
+): Promise<void> {
+	const slider = screen.getByRole('slider');
+	slider.focus();
+	const arrowPressCount: number = segmentedArrowPressCount(
+		fromTokens,
+		toTokens,
+		trackMax,
+	);
+	for (let index = 0; index < arrowPressCount; index += 1) {
+		await userEvent.keyboard('{ArrowRight}');
+	}
+}
+
 function setupMockStores(
 	dialecticOverrides: Partial<DialecticStateValues>,
 	authOverrides: Partial<AuthStore>,
 ) {
-	const modelCatalog: AIModelCatalogEntry[] = [
-		mockAIModelCatalogEntry({ max_output_tokens: 200000 }),
+	const modelCatalog: AiProvidersRow[] = [
+		mockAiProvidersRow({ config: { provider_max_output_tokens: 200000 } }),
 	];
 	const selectedModels = mockSelectedModelsForCatalog(modelCatalog);
 
@@ -102,12 +176,6 @@ function setupMockStores(
 	const setMaxOutputTokens = getDialecticStoreActionMock('setMaxOutputTokens');
 	return { setMaxOutputTokens };
 }
-
-const userFacingTiers: UserTier[] = mockAllTiers.filter(
-	(tier) => tier.name !== 'unreachable',
-);
-const tierBasic: UserTier = mockAllTiers[1];
-const tierUltra: UserTier = mockAllTiers[3];
 
 describe('OutputCapSlider', () => {
 	beforeEach(() => {
@@ -143,8 +211,8 @@ describe('OutputCapSlider', () => {
 	});
 
 	it('slider track max equals highest max_output_tokens from selected models catalog entries', () => {
-		const modelCatalog: AIModelCatalogEntry[] = [
-			mockAIModelCatalogEntry({ max_output_tokens: 200000 }),
+		const modelCatalog: AiProvidersRow[] = [
+			mockAiProvidersRow({ config: { provider_max_output_tokens: 200000 } }),
 		];
 		const selectedModels: SelectedModels[] =
 			mockSelectedModelsForCatalog(modelCatalog);
@@ -217,7 +285,7 @@ describe('OutputCapSlider', () => {
 		await userEvent.click(screen.getByRole('button', { name: /premium/i }));
 
 		expect(
-			screen.getByText(byExactTextContent('Upgrade to premium')),
+			screen.getByText(byExactTextContent(upgradeCtaText('premium'))),
 		).toBeInTheDocument();
 		expect(screen.getByRole('button', { name: /^upgrade$/i })).toBeInTheDocument();
 		expect(setMaxOutputTokens).not.toHaveBeenCalled();
@@ -239,16 +307,16 @@ describe('OutputCapSlider', () => {
 	});
 
 	it('ultra user thumb can reach slider track max and does not show upgrade CTA', async () => {
-		const modelCatalog: AIModelCatalogEntry[] = [
-			mockAIModelCatalogEntry({
+		const modelCatalog: AiProvidersRow[] = [
+			mockAiProvidersRow({
 				id: 'model-a',
-				model_name: 'Model A',
-				max_output_tokens: 64000,
+				name: 'Model A',
+				config: { provider_max_output_tokens: 64000 },
 			}),
-			mockAIModelCatalogEntry({
+			mockAiProvidersRow({
 				id: 'model-b',
-				model_name: 'Model B',
-				max_output_tokens: 100000,
+				name: 'Model B',
+				config: { provider_max_output_tokens: 100000 },
 			}),
 		];
 		const selectedModels: SelectedModels[] =
@@ -297,8 +365,8 @@ describe('OutputCapSlider', () => {
 	});
 
 	it('when availableTiers is empty, component handles gracefully without tier markers', () => {
-		const modelCatalog: AIModelCatalogEntry[] = [
-			mockAIModelCatalogEntry({ max_output_tokens: 200000 }),
+		const modelCatalog: AiProvidersRow[] = [
+			mockAiProvidersRow({ config: { provider_max_output_tokens: 200000 } }),
 		];
 
 		setupMockStores(
@@ -318,8 +386,8 @@ describe('OutputCapSlider', () => {
 	});
 
 	it('when selectedModels is empty, component returns null and does not render slider', () => {
-		const modelCatalog: AIModelCatalogEntry[] = [
-			mockAIModelCatalogEntry({ max_output_tokens: 200000 }),
+		const modelCatalog: AiProvidersRow[] = [
+			mockAiProvidersRow({ config: { provider_max_output_tokens: 200000 } }),
 		];
 
 		setupMockStores(
@@ -369,7 +437,11 @@ describe('OutputCapSlider', () => {
 		expect(setMaxOutputTokens).toHaveBeenCalledWith(32768);
 	});
 
-	it('shows upgrade CTA when dragging beyond basic tier cap without persisting invalid selection to store', async () => {
+	it('shows upgrade CTA when slider enters top threshold and persists values at or below tier cap', async () => {
+		const basicThumbMax: number = 32768;
+		const upgradeThresholdTokens: number = Math.ceil(
+			basicThumbMax * UPGRADE_CTA_THRESHOLD_RATIO,
+		);
 		const { setMaxOutputTokens } = setupMockStores(
 			{ maxOutputTokens: 16384 },
 			{ userTier: tierBasic, availableTiers: mockAllTiers },
@@ -378,21 +450,72 @@ describe('OutputCapSlider', () => {
 		renderWithRouter(<OutputCapSlider />);
 		vi.mocked(setMaxOutputTokens).mockClear();
 
-		const slider = screen.getByRole('slider');
-		slider.focus();
-		await userEvent.keyboard('{End}');
+		await dragSegmentedSliderToTokens(
+			16384,
+			upgradeThresholdTokens,
+			MODEL_TRACK_MAX,
+		);
 
 		await waitFor(() => {
 			expect(
-				screen.getByText(byExactTextContent('Upgrade to ultra')),
+				screen.getByText(byExactTextContent(upgradeCtaText('premium'))),
+			).toBeInTheDocument();
+		});
+		await waitFor(() => {
+			const ariaValue: string | null = screen
+				.getByRole('slider')
+				.getAttribute('aria-valuenow');
+			expect(ariaValue).not.toBeNull();
+			expect(Number(ariaValue)).toBeGreaterThanOrEqual(upgradeThresholdTokens);
+			expect(Number(ariaValue)).toBeLessThanOrEqual(basicThumbMax);
+		});
+
+		expect(setMaxOutputTokens).toHaveBeenCalled();
+		const persistedCalls: number[] = vi
+			.mocked(setMaxOutputTokens)
+			.mock.calls.map((call) => call[0]);
+		for (const persistedTokens of persistedCalls) {
+			expect(persistedTokens).toBeLessThanOrEqual(basicThumbMax);
+		}
+		const lastPersistedTokens: number =
+			persistedCalls[persistedCalls.length - 1];
+		expect(lastPersistedTokens).toBeGreaterThanOrEqual(upgradeThresholdTokens);
+		expect(lastPersistedTokens).toBeLessThanOrEqual(basicThumbMax);
+	});
+
+	it('shows upgrade CTA when slider is pulled past tier cap and does not persist values above tier cap', async () => {
+		const basicThumbMax: number = 32768;
+		const { setMaxOutputTokens } = setupMockStores(
+			{ maxOutputTokens: 32000 },
+			{ userTier: tierBasic, availableTiers: mockAllTiers },
+		);
+
+		renderWithRouter(<OutputCapSlider />);
+		vi.mocked(setMaxOutputTokens).mockClear();
+
+		await dragSegmentedSliderToTokens(32000, 40000, MODEL_TRACK_MAX);
+
+		await waitFor(() => {
+			expect(
+				screen.getByText(byExactTextContent(upgradeCtaText('premium'))),
 			).toBeInTheDocument();
 		});
 		await waitFor(() => {
 			expect(screen.getByRole('slider')).toHaveAttribute(
 				'aria-valuenow',
-				'32768',
+				String(basicThumbMax),
 			);
 		});
-		expect(setMaxOutputTokens).not.toHaveBeenCalled();
+
+		const persistedCalls: number[] = vi
+			.mocked(setMaxOutputTokens)
+			.mock.calls.map((call) => call[0]);
+		for (const persistedTokens of persistedCalls) {
+			expect(persistedTokens).toBeLessThanOrEqual(basicThumbMax);
+		}
+		expect(persistedCalls.length).toBeGreaterThan(0);
+		const lastPersistedTokens: number =
+			persistedCalls[persistedCalls.length - 1];
+		expect(lastPersistedTokens).toBeLessThanOrEqual(basicThumbMax);
 	});
 });
