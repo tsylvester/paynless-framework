@@ -2,25 +2,21 @@ import { spy, type Spy } from "https://deno.land/std@0.218.2/testing/mock.ts";
 import type {
     DialecticProject,
     CreateProjectPayload,
-    // ApiResponse is not a generic type here; responses are specific
-    GetContributionContentSignedUrlPayload, // For the payload, actual response type will be simpler
     StartSessionPayload,
     DialecticSession,
-    AIModelCatalogEntry,
+    AiProvidersRow,
     DomainOverlayDescriptor,
     DialecticProjectResource,
-    GenerateContributionsPayload, // Corrected name
-    GenerateContributionsSuccessResponse, // Corrected name
+    GenerateContributionsPayload, 
+    GenerateContributionsSuccessResponse, 
     SubmitStageResponsesPayload, 
     SubmitStageResponsesResponse, 
     SaveContributionEditPayload,
     DialecticContribution,
-    // DomainDescriptor is not from dialectic.interface.ts, used in ActionHandlers
     UpdateProjectDomainPayload,
     GetProjectResourceContentPayload,
     GetProjectResourceContentResponse,
-    // CloneProjectResult is not from dialectic.interface.ts, used in ActionHandlers
-    DialecticStage // For listAvailableDomains payload
+    DialecticStage 
 } from '../dialectic-service/dialectic.interface.ts';
 
 // 1. Define Function Signature Types
@@ -31,7 +27,7 @@ type SubmitStageResponsesFn = (payload: SubmitStageResponsesPayload) => Promise<
 type SaveContributionEditFn = (payload: SaveContributionEditPayload) => Promise<DialecticContribution>;
 type GetProjectDetailsFn = (projectId: string) => Promise<DialecticProject | null>;
 type ListProjectsFn = () => Promise<DialecticProject[]>;
-type ListModelCatalogFn = () => Promise<AIModelCatalogEntry[]>;
+type ListModelCatalogFn = () => Promise<AiProvidersRow[]>;
 type ListAvailableDomainOverlaysFn = (payload: { stageAssociation: string }) => Promise<DomainOverlayDescriptor[]>;
 type GetContributionContentSignedUrlLogicFn = (contributionId: string) => Promise<{ data?: { signedUrl: string }; error?: any }>;
 type HandleInitialPromptUploadFn = (projectId: string, file: File) => Promise<DialecticProjectResource>;
@@ -72,7 +68,7 @@ class _DialecticServiceDummyImpl implements IDialecticService {
     async saveContributionEdit(_payload: SaveContributionEditPayload): Promise<DialecticContribution> { return undefined as any; }
     async getProjectDetails(_projectId: string): Promise<DialecticProject | null> { return undefined as any; }
     async listProjects(): Promise<DialecticProject[]> { return undefined as any; }
-    async listModelCatalog(): Promise<AIModelCatalogEntry[]> { return undefined as any; }
+    async listModelCatalog(): Promise<AiProvidersRow[]> { return undefined as any; }
     async listAvailableDomainOverlays(_payload: { stageAssociation: string }): Promise<DomainOverlayDescriptor[]> { return undefined as any; }
     async getContributionContentSignedUrlLogic(_contributionId: string): Promise<{ data?: { signedUrl: string }; error?: any }> { return undefined as any; }
     async handleInitialPromptUpload(_projectId: string, _file: File): Promise<DialecticProjectResource> { return undefined as any; }

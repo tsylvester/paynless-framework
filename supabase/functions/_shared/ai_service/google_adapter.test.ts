@@ -109,6 +109,7 @@ const MOCK_PROVIDER: Tables<'ai_providers'> = {
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
     config: MOCK_MODEL_CONFIG,
+    min_plan_tier_level: 0,
 };
 
 // This is the mock API that the test contract will spy on.

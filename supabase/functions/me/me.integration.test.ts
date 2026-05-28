@@ -1,11 +1,18 @@
-import { assertEquals, assertExists, assertObjectMatch, assertRejects } from "https://deno.land/std@0.192.0/testing/asserts.ts";
+import {
+  assert,
+  assertEquals,
+  assertExists,
+  assertObjectMatch,
+} from "https://deno.land/std@0.192.0/testing/asserts.ts";
 import { spy, assertSpyCall, assertSpyCalls } from "https://deno.land/std@0.192.0/testing/mock.ts";
 import {
   coreInitializeTestStep,
   coreCleanupTestResources,
   initializeTestDeps,
 } from "../_shared/_integration.test.utils.ts";
-import { handleMeRequest, MeHandlerDeps } from './index.ts';
+import { handleMeRequest } from "./index.ts";
+import { MeHandlerDeps } from "./index.interface.ts";
+import { MOCK_TIER_DEFINITIONS } from "./index.mock.ts";
 import { createMockEmailMarketingService } from '../_shared/email_service/email.mock.ts';
 import {
   createSupabaseClient,
@@ -58,6 +65,62 @@ Deno.test("/me Integration Tests", async (t) => {
       assertEquals(body.user.id, testContext.primaryUserId);
       assertEquals(body.profile.id, testContext.primaryUserId);
       assertEquals(body.profile.first_name, "MeGetTest");
+      assertExists(body.userTier);
+      assertEquals(typeof body.userTier.level, "number");
+      assertEquals(typeof body.userTier.name, "string");
+      assertExists(body.tiers);
+      assertEquals(Array.isArray(body.tiers), true);
+      assert(body.tiers.length > 0);
+    });
+
+    await t.step("Success: userTier fields match TierRow shape", async () => {
+      const req = new Request(`http://localhost/me`, {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${testContext.primaryUserJwt}`,
+        },
+      });
+
+      const res = await handleMeRequest(req, mockDeps);
+      const body = await res.json();
+
+      assertEquals(res.status, 200);
+      const tierRowKeys: string[] = [
+        "level",
+        "name",
+        "output_cap_tokens",
+        "max_models_per_project",
+      ];
+      assertEquals(Object.keys(body.userTier).sort(), tierRowKeys.sort());
+      assertEquals(body.userTier.level, 0);
+      assertEquals(body.userTier.name, "free");
+    });
+
+    await t.step("Success: tiers array contains all seeded tier definitions", async () => {
+      const req = new Request(`http://localhost/me`, {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${testContext.primaryUserJwt}`,
+        },
+      });
+
+      const res = await handleMeRequest(req, mockDeps);
+      const body = await res.json();
+
+      assertEquals(res.status, 200);
+      const tierRowKeys: string[] = [
+        "level",
+        "name",
+        "output_cap_tokens",
+        "max_models_per_project",
+      ];
+      const levels: number[] = [];
+      for (const tier of body.tiers) {
+        assertEquals(Object.keys(tier).sort(), tierRowKeys.sort());
+        levels.push(tier.level);
+      }
+      const expectedLevels: number[] = MOCK_TIER_DEFINITIONS.map((tier) => tier.level);
+      assertEquals(levels, expectedLevels);
     });
 
     await t.step("Failure: Call /me without a token returns 401", async () => {

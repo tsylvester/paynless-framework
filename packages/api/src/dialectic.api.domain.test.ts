@@ -1,54 +1,17 @@
-import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { DialecticApiClient } from './dialectic.api';
-import { ApiClient, ApiError as LocalApiError } from './apiClient';
 import { 
     ApiResponse, 
-    ApiError as ApiErrorType,
-    CreateProjectPayload, 
+    ApiError,
     DialecticProject, 
-    StartSessionPayload, 
-    DialecticSession, 
-    AIModelCatalogEntry, 
-    ContributionContentSignedUrlResponse, 
-    DialecticProjectResource, 
     DomainOverlayDescriptor, 
     UpdateProjectDomainPayload,
-    DeleteProjectPayload,
-    DialecticServiceActionPayload,
-    GetContributionContentSignedUrlPayload,
-    GetProjectResourceContentPayload,
-    DialecticContribution,
-    GenerateContributionsPayload,
-    GenerateContributionsResponse,
-    UpdateProjectInitialPromptPayload,
-    SubmitStageResponsesPayload,
-    SubmitStageResponsesResponse,
-    SaveContributionEditPayload,
-    GetIterationInitialPromptPayload,
-    IterationInitialPromptData,
-    GetProjectResourceContentResponse,
-    DialecticDomain,
     DialecticProcessTemplate,
-    DialecticStage,
-    UpdateSessionModelsPayload,
     DomainDescriptor,
-    GetContributionContentDataResponse,
+    DialecticDomain,
 } from '@paynless/types';
+import { mockApiClient, resetMockApiClient } from './mocks/apiClient.mock';
 
-// Mock the base ApiClient
-const mockApiClientPost = vi.fn();
-const mockApiClient = {
-    get: vi.fn(),
-    post: mockApiClientPost,
-    put: vi.fn(),
-    patch: vi.fn(),
-    delete: vi.fn(),
-} as unknown as ApiClient; 
-
-// Create an instance of the class we are testing
-const dialecticApiClient = new DialecticApiClient(mockApiClient);
-
-// Mock data (ensure these align with current type definitions)
 const mockDialecticProject: DialecticProject = {
   id: 'proj-123',
   user_id: 'user-abc',
@@ -72,49 +35,18 @@ const mockDialecticProject: DialecticProject = {
   saveContributionEditError: null,
 };
 
-const mockDialecticSession: DialecticSession = {
-  id: 'sess-456',
-  project_id: 'proj-123',
-  session_description: "Test Session",
-  iteration_count: 1,
-  created_at: new Date().toISOString(),
-  updated_at: new Date().toISOString(),
-  status: "pending_hypothesis",
-  associated_chat_id: null,
-  current_stage_id: 'stage-123',
-  selected_model_ids: ['model-1'],
-  user_input_reference_url: null,
-};
-
-// Remove any mock project data that incorrectly includes a 'sessions' array directly
-// For example, if baseMockProject previously had a sessions property, remove it:
-const baseMockProject: Omit<DialecticProject, 'user_id' | 'created_at' | 'updated_at' | 'id' | 'dialectic_domains' | 'dialectic_process_templates'> & Partial<Pick<DialecticProject, 'id' | 'user_id' | 'created_at' | 'updated_at'>> & { dialectic_domains?: { name: string } | null, dialectic_process_templates?: DialecticProcessTemplate | null } = {
-    project_name: "Test Project Base",
-    initial_user_prompt: "Base prompt.",
-    selected_domain_id: "dom-1",
-    dialectic_domains: { name: 'Software Development' },
-    selected_domain_overlay_id: null,
-    repo_url: null,
-    status: 'active',
-    dialectic_process_templates: null,
-    isLoadingProcessTemplate: false,
-    processTemplateError: null,
-    contributionGenerationStatus: 'idle',
-    generateContributionsError: null,
-    isSubmittingStageResponses: false,
-    submitStageResponsesError: null,
-    isSavingContributionEdit: false,
-    saveContributionEditError: null,
-};
-
 describe('DialecticApiClient', () => {
+    let dialecticApiClient: DialecticApiClient;
+
     beforeEach(() => {
-        vi.resetAllMocks(); // Reset mocks before each test
+        resetMockApiClient();
+        dialecticApiClient = new DialecticApiClient(mockApiClient);
     });
     describe('fetchProcessTemplate', () => {
         const endpoint = 'dialectic-service';
         const templateId = 'template-123';
-        const requestBody = { action: 'fetchProcessTemplate', payload: { templateId } };
+        const payload = { templateId };
+        const requestBody = { action: 'fetchProcessTemplate', payload };
         const mockTemplate: DialecticProcessTemplate = {
             id: templateId,
             name: 'Standard Dialectic',
@@ -127,30 +59,31 @@ describe('DialecticApiClient', () => {
 
         it('should call apiClient.post with the correct endpoint and payload', async () => {
             const mockResponse: ApiResponse<DialecticProcessTemplate> = { data: mockTemplate, status: 200 };
-            mockApiClientPost.mockResolvedValue(mockResponse);
-            await dialecticApiClient.fetchProcessTemplate({ templateId });
-            expect(mockApiClientPost).toHaveBeenCalledWith(endpoint, requestBody);
+            vi.mocked(mockApiClient.post).mockResolvedValueOnce(mockResponse);
+            await dialecticApiClient.fetchProcessTemplate(payload);
+            expect(vi.mocked(mockApiClient.post)).toHaveBeenCalledTimes(1);
+            expect(vi.mocked(mockApiClient.post)).toHaveBeenCalledWith(endpoint, requestBody);
         });
 
         it('should return the template data on successful response', async () => {
             const mockResponse: ApiResponse<DialecticProcessTemplate> = { data: mockTemplate, status: 200 };
-            mockApiClientPost.mockResolvedValue(mockResponse);
-            const result = await dialecticApiClient.fetchProcessTemplate({ templateId });
+            vi.mocked(mockApiClient.post).mockResolvedValueOnce(mockResponse);
+            const result = await dialecticApiClient.fetchProcessTemplate(payload);
             expect(result.data).toEqual(mockTemplate);
         });
 
         it('should return an error on a failed response', async () => {
-            const mockError: ApiErrorType = { code: 'NOT_FOUND', message: 'Template not found' };
+            const mockError: ApiError = { code: 'NOT_FOUND', message: 'Template not found' };
             const mockErrorResponse: ApiResponse<DialecticProcessTemplate> = { error: mockError, status: 404 };
-            mockApiClientPost.mockResolvedValue(mockErrorResponse);
-            const result = await dialecticApiClient.fetchProcessTemplate({ templateId });
+            vi.mocked(mockApiClient.post).mockResolvedValueOnce(mockErrorResponse);
+            const result = await dialecticApiClient.fetchProcessTemplate(payload);
             expect(result.error).toEqual(mockError);
         });
 
         it('should return a network error if the call rejects', async () => {
             const errorMessage = 'Network Failure';
-            mockApiClientPost.mockRejectedValue(new Error(errorMessage));
-            const result = await dialecticApiClient.fetchProcessTemplate({ templateId });
+            vi.mocked(mockApiClient.post).mockRejectedValueOnce(new Error(errorMessage));
+            const result = await dialecticApiClient.fetchProcessTemplate(payload);
             expect(result.error).toEqual({ code: 'NETWORK_ERROR', message: errorMessage });
         });
     });    
@@ -173,26 +106,26 @@ describe('DialecticApiClient', () => {
                 data: mockDomainDescriptors,
                 status: 200,
             };
-            mockApiClientPost.mockResolvedValue(mockResponse);
+            vi.mocked(mockApiClient.post).mockResolvedValueOnce(mockResponse);
 
             await dialecticApiClient.listAvailableDomains();
 
-            expect(mockApiClientPost).toHaveBeenCalledTimes(1);
-            expect(mockApiClientPost).toHaveBeenCalledWith(endpoint, requestBody);
+            expect(vi.mocked(mockApiClient.post)).toHaveBeenCalledTimes(1);
+            expect(vi.mocked(mockApiClient.post)).toHaveBeenCalledWith(endpoint, requestBody);
         });
 
         it('should call apiClient.post with the correct endpoint and body when stageAssociation param is provided', async () => {
             const mockResponse: ApiResponse<DomainDescriptor[]> = {
-                data: [mockDomainDescriptors[1]], // Assuming filtering happens backend
+                data: [mockDomainDescriptors[1]],
                 status: 200,
             };
-            mockApiClientPost.mockResolvedValue(mockResponse);
+            vi.mocked(mockApiClient.post).mockResolvedValueOnce(mockResponse);
             const params = { stageAssociation: 'planning' };
 
             await dialecticApiClient.listAvailableDomains(params);
 
-            expect(mockApiClientPost).toHaveBeenCalledTimes(1);
-            expect(mockApiClientPost).toHaveBeenCalledWith(endpoint, requestBodyWithParams(params.stageAssociation));
+            expect(vi.mocked(mockApiClient.post)).toHaveBeenCalledTimes(1);
+            expect(vi.mocked(mockApiClient.post)).toHaveBeenCalledWith(endpoint, requestBodyWithParams('planning'));
         });
 
         it('should return the DomainDescriptor array on successful response', async () => {
@@ -200,7 +133,7 @@ describe('DialecticApiClient', () => {
                 data: mockDomainDescriptors,
                 status: 200,
             };
-            mockApiClientPost.mockResolvedValue(mockResponse);
+            vi.mocked(mockApiClient.post).mockResolvedValueOnce(mockResponse);
 
             const result = await dialecticApiClient.listAvailableDomains();
 
@@ -210,12 +143,12 @@ describe('DialecticApiClient', () => {
         });
 
         it('should return the error object on failed response', async () => {
-            const mockApiError: ApiErrorType = { code: 'SERVER_ERROR', message: 'Failed to fetch available domains' };
+            const mockApiError: ApiError = { code: 'SERVER_ERROR', message: 'Failed to fetch available domains' };
             const mockErrorResponse: ApiResponse<DomainDescriptor[]> = {
                 error: mockApiError,
                 status: 500,
             };
-            mockApiClientPost.mockResolvedValue(mockErrorResponse);
+            vi.mocked(mockApiClient.post).mockResolvedValueOnce(mockErrorResponse);
 
             const result = await dialecticApiClient.listAvailableDomains();
 
@@ -226,7 +159,7 @@ describe('DialecticApiClient', () => {
 
         it('should return a network error if apiClient.post rejects', async () => {
             const networkErrorMessage = 'Simulated network failure';
-            mockApiClientPost.mockRejectedValueOnce(new Error(networkErrorMessage));
+            vi.mocked(mockApiClient.post).mockRejectedValueOnce(new Error(networkErrorMessage));
 
             const result = await dialecticApiClient.listAvailableDomains();
 
@@ -249,11 +182,12 @@ describe('DialecticApiClient', () => {
                 { id: 'overlay-1', domainId: 'dom-1', domainName: 'Software', description: 'Overlay for SWE', stageAssociation, overlay_values: {} },
             ];
             const mockResponse: ApiResponse<DomainOverlayDescriptor[]> = { data: mockOverlays, status: 200 };
-            mockApiClientPost.mockResolvedValue(mockResponse);
+            vi.mocked(mockApiClient.post).mockResolvedValueOnce(mockResponse);
 
             await dialecticApiClient.listAvailableDomainOverlays({ stageAssociation });
 
-            expect(mockApiClientPost).toHaveBeenCalledWith(endpoint, requestBody);
+            expect(vi.mocked(mockApiClient.post)).toHaveBeenCalledTimes(1);
+            expect(vi.mocked(mockApiClient.post)).toHaveBeenCalledWith(endpoint, requestBody);
         });
     });    
     
@@ -270,12 +204,12 @@ describe('DialecticApiClient', () => {
                 data: mockDomains,
                 status: 200,
             };
-            mockApiClientPost.mockResolvedValue(mockResponse);
+            vi.mocked(mockApiClient.post).mockResolvedValueOnce(mockResponse);
 
             await dialecticApiClient.listDomains();
 
-            expect(mockApiClientPost).toHaveBeenCalledTimes(1);
-            expect(mockApiClientPost).toHaveBeenCalledWith(endpoint, requestBody, { isPublic: true });
+            expect(vi.mocked(mockApiClient.post)).toHaveBeenCalledTimes(1);
+            expect(vi.mocked(mockApiClient.post)).toHaveBeenCalledWith(endpoint, requestBody, { isPublic: true });
         });
 
         it('should return the domains array on successful response', async () => {
@@ -283,7 +217,7 @@ describe('DialecticApiClient', () => {
                 data: mockDomains,
                 status: 200,
             };
-            mockApiClientPost.mockResolvedValue(mockResponse);
+            vi.mocked(mockApiClient.post).mockResolvedValueOnce(mockResponse);
 
             const result = await dialecticApiClient.listDomains();
 
@@ -293,12 +227,12 @@ describe('DialecticApiClient', () => {
         });
 
         it('should return the error object on failed response', async () => {
-            const mockApiError: ApiErrorType = { code: 'SERVER_ERROR', message: 'Failed to fetch domains' };
+            const mockApiError: ApiError = { code: 'SERVER_ERROR', message: 'Failed to fetch domains' };
             const mockErrorResponse: ApiResponse<DialecticDomain[]> = {
                 error: mockApiError,
                 status: 500,
             };
-            mockApiClientPost.mockResolvedValue(mockErrorResponse);
+            vi.mocked(mockApiClient.post).mockResolvedValueOnce(mockErrorResponse);
 
             const result = await dialecticApiClient.listDomains();
 
@@ -309,7 +243,7 @@ describe('DialecticApiClient', () => {
 
         it('should return a network error if apiClient.post rejects', async () => {
             const networkErrorMessage = 'Simulated network failure';
-            mockApiClientPost.mockRejectedValueOnce(new Error(networkErrorMessage));
+            vi.mocked(mockApiClient.post).mockRejectedValueOnce(new Error(networkErrorMessage));
 
             const result = await dialecticApiClient.listDomains();
 
@@ -348,12 +282,12 @@ describe('DialecticApiClient', () => {
                 data: mockUpdatedProject,
                 status: 200,
             };
-            mockApiClientPost.mockResolvedValue(mockResponse);
+            vi.mocked(mockApiClient.post).mockResolvedValueOnce(mockResponse);
 
             await dialecticApiClient.updateProjectDomain(payload);
 
-            expect(mockApiClientPost).toHaveBeenCalledTimes(1);
-            expect(mockApiClientPost).toHaveBeenCalledWith(endpoint, requestBody);
+            expect(vi.mocked(mockApiClient.post)).toHaveBeenCalledTimes(1);
+            expect(vi.mocked(mockApiClient.post)).toHaveBeenCalledWith(endpoint, requestBody);
         });
 
         it('should return the updated project on successful response', async () => {
@@ -361,7 +295,7 @@ describe('DialecticApiClient', () => {
                 data: mockUpdatedProject,
                 status: 200,
             };
-            mockApiClientPost.mockResolvedValue(mockResponse);
+            vi.mocked(mockApiClient.post).mockResolvedValueOnce(mockResponse);
 
             const result = await dialecticApiClient.updateProjectDomain(payload);
 
@@ -371,12 +305,12 @@ describe('DialecticApiClient', () => {
         });
 
         it('should return the error object on failed response', async () => {
-            const mockApiError: ApiErrorType = { code: 'SERVER_ERROR', message: 'Failed to update domain' };
+            const mockApiError: ApiError = { code: 'SERVER_ERROR', message: 'Failed to update domain' };
             const mockErrorResponse: ApiResponse<DialecticProject> = {
                 error: mockApiError,
                 status: 500,
             };
-            mockApiClientPost.mockResolvedValue(mockErrorResponse);
+            vi.mocked(mockApiClient.post).mockResolvedValueOnce(mockErrorResponse);
 
             const result = await dialecticApiClient.updateProjectDomain(payload);
 
@@ -387,7 +321,7 @@ describe('DialecticApiClient', () => {
 
         it('should return a network error if apiClient.post rejects', async () => {
             const networkErrorMessage = 'Simulated network failure';
-            mockApiClientPost.mockRejectedValueOnce(new Error(networkErrorMessage));
+            vi.mocked(mockApiClient.post).mockRejectedValueOnce(new Error(networkErrorMessage));
 
             const result = await dialecticApiClient.updateProjectDomain(payload);
 
@@ -399,4 +333,4 @@ describe('DialecticApiClient', () => {
             expect(result.data).toBeUndefined();
         });
     });    
-}); 
+});

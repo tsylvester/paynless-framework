@@ -53,6 +53,8 @@ import type {
 } from "../dialectic-worker/createJobContext/JobContext.interface.ts";
 import type { Database, Json, Tables } from "../types_db.ts";
 
+export type AiProvidersRow = Database["public"]["Tables"]["ai_providers"]["Row"];
+
 export type DialecticStageRecipeEdge =
 	Database["public"]["Tables"]["dialectic_stage_recipe_edges"]["Row"];
 export type DialecticStageRecipeInstance =
@@ -281,27 +283,6 @@ export type StorageError = {
 export type SystemInstruction = string;
 export type Prompt = string;
 
-export interface AIModelCatalogEntry {
-	id: string;
-	provider_name: string;
-	model_name: string;
-	api_identifier: string;
-	description: string | null;
-	strengths: string[] | null;
-	weaknesses: string[] | null;
-	context_window_tokens: number | null;
-	input_token_cost_usd_millionths: number | null;
-	output_token_cost_usd_millionths: number | null;
-	supports_image_input?: boolean;
-	supports_video_input?: boolean;
-	supports_audio_input?: boolean;
-	max_output_tokens: number | null;
-	is_active: boolean;
-	created_at: string;
-	updated_at: string;
-	is_default_generation: boolean;
-}
-
 // Defines the structured contribution object used within the service and for API responses,
 // aligning with packages/types/src/dialectic.types.ts
 
@@ -353,7 +334,7 @@ export interface DialecticSessionModel {
 	model_id: string;
 	model_role: string | null;
 	created_at: string;
-	ai_provider?: AIModelCatalogEntry;
+	ai_provider?: AiProvidersRow;
 }
 
 export interface SelectedModels {
@@ -1232,6 +1213,7 @@ export interface GenerateContributionsPayload {
 	is_test_job?: boolean;
 	model_slug?: string;
 	idempotencyKey: string;
+	maxOutputTokens?: number;
 }
 
 /**

@@ -50,7 +50,7 @@ export const useSubscriptionStore = create<SubscriptionStore>()(
         set({ 
           userSubscription: subscription,
           hasActiveSubscription: subscription 
-            ? subscription.status === 'active' || subscription.status === 'trialing'
+            ? subscription.status === 'active'
             : false,
         }),
       
@@ -109,7 +109,7 @@ export const useSubscriptionStore = create<SubscriptionStore>()(
           
           const userSubscription = subResponse.data || null;
           const hasActiveSubscription = userSubscription 
-            ? userSubscription.status === 'active' || userSubscription.status === 'trialing'
+            ? userSubscription.status === 'active'
             : false;
           
           // ---> Add Logging <---

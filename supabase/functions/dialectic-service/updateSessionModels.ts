@@ -6,6 +6,7 @@ import { logger } from '../_shared/logger.ts';
 
 export async function handleUpdateSessionModels(
   dbClient: SupabaseClient<Database>,
+  userClient: SupabaseClient<Database>,
   payload: UpdateSessionModelsPayload,
   userId: string,
 ): Promise<{ data?: DialecticSession; error?: ServiceError; status?: number }> {
@@ -50,10 +51,62 @@ export async function handleUpdateSessionModels(
     return { error: { message: 'Error verifying project ownership.', status: 500, code: 'PROJECT_FETCH_ERROR', details: projectFetchError.message }, status: 500 };
   }
 
+  const selectedModelIds: string[] = selectedModels.map((model) => model.id);
+  const { data: tierValidationData, error: tierValidationError } = await userClient.rpc(
+    'validate_model_tier_access',
+    { p_model_ids: selectedModelIds },
+  );
+
+  if (tierValidationError) {
+    logger.error('[handleUpdateSessionModels] Failed to validate model tier access.', { sessionId, userId, error: tierValidationError });
+    return { error: { message: 'Failed to validate model tier access', status: 500, code: 'TIER_VALIDATION_FAILED' }, status: 500 };
+  }
+
+  const tierValidationResult: Database['public']['Functions']['validate_model_tier_access']['Returns'][number] | null =
+    Array.isArray(tierValidationData) && tierValidationData.length > 0 ? tierValidationData[0] : null;
+
+  if (tierValidationResult === null) {
+    logger.error('[handleUpdateSessionModels] Model tier validation returned no result.', { sessionId, userId, selectedModelIds });
+    return { error: { message: 'Failed to validate model tier access', status: 500, code: 'TIER_VALIDATION_FAILED' }, status: 500 };
+  }
+
+  if (!tierValidationResult.valid && tierValidationResult.over_model_limit) {
+    const modelLimitDetails: Record<string, unknown>[] = [{
+      over_model_limit: true,
+      max_models_per_project: tierValidationResult.max_models_per_project,
+      user_tier_level: tierValidationResult.user_tier_level,
+    }];
+    return {
+      error: {
+        message: 'Model selection exceeds the limit for your plan',
+        status: 403,
+        code: 'MODEL_LIMIT_EXCEEDED',
+        details: modelLimitDetails,
+      },
+      status: 403,
+    };
+  }
+
+  if (!tierValidationResult.valid) {
+    const disallowedModelDetails: Record<string, unknown>[] = [{
+      disallowed_model_ids: tierValidationResult.disallowed_model_ids,
+      user_tier_level: tierValidationResult.user_tier_level,
+    }];
+    return {
+      error: {
+        message: 'Selected models are not available on your plan',
+        status: 403,
+        code: 'MODEL_TIER_DISALLOWED',
+        details: disallowedModelDetails,
+      },
+      status: 403,
+    };
+  }
+
   // Proceed with the update
   const { data: updatedSession, error: updateError } = await dbClient
     .from('dialectic_sessions')
-    .update({ selected_model_ids: selectedModels.map(model => model.id) })
+    .update({ selected_model_ids: selectedModelIds })
     .eq('id', sessionId)
     .select(
       `

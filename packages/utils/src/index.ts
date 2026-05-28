@@ -6,3 +6,4 @@ export * from './pendingAction';
 export * from './type_guards';
 export * from './dialecticUtils';
 export * from './sse.stream.provides';
+export * from './dialectic.guard';

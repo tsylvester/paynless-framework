@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { NavUser } from './nav-user';
@@ -10,7 +10,8 @@ import {
 } from '../../mocks/authStore.mock';
 import { useNotificationStore, type NotificationState } from '@paynless/store';
 import { useTheme } from '../../hooks/useTheme';
-import type { ThemeState, Theme } from '@paynless/types';
+import type { ThemeState, Theme, UserTier } from '@paynless/types';
+import { mockUserTier, mockAllTiers } from '../../mocks/profile.mock';
 
 // Mock stores
 vi.mock('@paynless/store', async () => {
@@ -154,6 +155,9 @@ vi.mock('lucide-react', async () => {
 const mockedUseNotificationStore = vi.mocked(useNotificationStore);
 const mockedUseTheme = vi.mocked(useTheme);
 
+const mockFreeTier: UserTier = mockUserTier;
+const mockUltraTier: UserTier = mockAllTiers[3];
+
 describe('NavUser', () => {
   let queryClient: QueryClient;
   let mockFetchNotifications: () => Promise<void>;
@@ -209,6 +213,8 @@ describe('NavUser', () => {
     // Set up logout mock in auth store state
     const authState = internalMockAuthStoreGetState();
     authState.logout = mockLogout;
+    authState.userTier = mockFreeTier;
+    authState.availableTiers = mockAllTiers;
   });
 
   const renderComponent = (user: { email: string; avatar?: string; name?: string }) => {
@@ -229,17 +235,7 @@ describe('NavUser', () => {
       expect(screen.getByText('test@example.com')).toBeInTheDocument();
     });
 
-    it('should render avatar with image when avatar prop is provided', () => {
-      const user = { email: 'test@example.com', avatar: '/avatar.jpg', name: 'Test User' };
-      renderComponent(user);
-
-      const avatarImage = screen.getByTestId('avatar-image');
-      expect(avatarImage).toBeInTheDocument();
-      expect(avatarImage).toHaveAttribute('src', '/avatar.jpg');
-      expect(avatarImage).toHaveAttribute('alt', 'Test User');
-    });
-
-    it('should render avatar fallback with initials from email when no avatar', () => {
+    it('should render initials from email', () => {
       const user = { email: 'test@example.com' };
       renderComponent(user);
 
@@ -470,23 +466,62 @@ describe('NavUser', () => {
       fireEvent.click(trigger);
     };
 
-    it('should render "Upgrade to Pro" button with Sparkles icon', () => {
+    it('should render dynamic upgrade CTA with Sparkles icon when a higher tier exists', () => {
       const user = { email: 'test@example.com' };
       renderComponent(user);
       openDropdown();
 
-      expect(screen.getByText('Upgrade to Pro')).toBeInTheDocument();
+      expect(screen.getByText('Upgrade to Basic')).toBeInTheDocument();
       expect(screen.getByTestId('lucide-sparkles')).toBeInTheDocument();
     });
 
-    it('should navigate to /subscription when "Upgrade to Pro" is clicked', () => {
+    it('should navigate to /subscription when upgrade CTA is clicked', () => {
       const user = { email: 'test@example.com' };
       renderComponent(user);
       openDropdown();
 
-      const button = screen.getByText('Upgrade to Pro');
+      const button = screen.getByText('Upgrade to Basic');
       fireEvent.click(button);
 
+      expect(mockNavigate).toHaveBeenCalledWith('/subscription');
+    });
+
+    it("should show 'Upgrade to Premium' when user is on basic tier", () => {
+      const authState = internalMockAuthStoreGetState();
+      authState.userTier = mockAllTiers[1];
+
+      const user = { email: 'test@example.com' };
+      renderComponent(user);
+      openDropdown();
+
+      expect(screen.getByText('Upgrade to Premium')).toBeInTheDocument();
+    });
+
+    it('should hide upgrade CTA when user is on highest tier', () => {
+      const authState = internalMockAuthStoreGetState();
+      authState.userTier = mockUltraTier;
+
+      const user = { email: 'test@example.com' };
+      renderComponent(user);
+      openDropdown();
+
+      expect(screen.queryByText(/Upgrade to/i)).toBeNull();
+      const dropdownContent = screen.getByTestId('dropdown-content');
+      expect(within(dropdownContent).queryByTestId('lucide-sparkles')).toBeNull();
+    });
+
+    it("should show fallback 'Upgrade' CTA when userTier is null", () => {
+      const authState = internalMockAuthStoreGetState();
+      authState.userTier = null;
+      authState.availableTiers = [];
+
+      const user = { email: 'test@example.com' };
+      renderComponent(user);
+      openDropdown();
+
+      const upgradeButton = screen.getByText('Upgrade', { exact: true });
+      expect(upgradeButton).toBeInTheDocument();
+      fireEvent.click(upgradeButton);
       expect(mockNavigate).toHaveBeenCalledWith('/subscription');
     });
 

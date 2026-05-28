@@ -38,6 +38,7 @@ const MOCK_PROVIDER: Tables<'ai_providers'> = {
     updated_at: new Date().toISOString(),
     config: MOCK_MODEL_CONFIG,
     is_default_generation: false,
+    min_plan_tier_level: 0,
 };
 
 const MOCK_ANTHROPIC_SUCCESS_RESPONSE: Message = {
@@ -265,6 +266,7 @@ Deno.test("AnthropicAdapter - Specific Tests: does NOT inject 4096 default when 
                 hard_cap_output_tokens: 250,
             },
             is_default_generation: false,
+            min_plan_tier_level: 0,
         };
         const adapter = new AnthropicAdapter(PROVIDER_WITH_HARD_CAP, 'sk-ant-test-key', mockLogger);
         const request: ChatApiRequest = {

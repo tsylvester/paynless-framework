@@ -22,6 +22,7 @@ describe('ai-stream.guard', () => {
           promptId: 'prompt-1',
         },
         sig: 'hmac-sig-value',
+        user_config: { tier_output_cap_tokens: null },
       };
       expect(isAiStreamEvent(value)).toBe(true);
     });
@@ -81,6 +82,7 @@ describe('ai-stream.guard', () => {
           providerId: 'prov-1',
           promptId: 'prompt-1',
         },
+        user_config: { tier_output_cap_tokens: null },
       };
       expect(isAiStreamEvent(value)).toBe(false);
     });
@@ -100,6 +102,66 @@ describe('ai-stream.guard', () => {
           promptId: 'prompt-1',
         },
         user_jwt: 'jwt-token',
+        user_config: { tier_output_cap_tokens: null },
+      };
+      expect(isAiStreamEvent(value)).toBe(false);
+    });
+
+    it('isAiStreamEvent accepts valid event with user_config: { tier_output_cap_tokens: null }', () => {
+      const value = {
+        job_id: 'job-1',
+        api_identifier: 'openai-gpt-4o',
+        model_config: {
+          api_identifier: 'openai-gpt-4o',
+          input_token_cost_rate: 0.001,
+          output_token_cost_rate: 0.002,
+        },
+        chat_api_request: {
+          message: 'hello',
+          providerId: 'prov-1',
+          promptId: 'prompt-1',
+        },
+        sig: 'hmac-sig-value',
+        user_config: { tier_output_cap_tokens: null },
+      };
+      expect(isAiStreamEvent(value)).toBe(true);
+    });
+
+    it('isAiStreamEvent accepts valid event with user_config: { tier_output_cap_tokens: 32768 }', () => {
+      const value = {
+        job_id: 'job-1',
+        api_identifier: 'openai-gpt-4o',
+        model_config: {
+          api_identifier: 'openai-gpt-4o',
+          input_token_cost_rate: 0.001,
+          output_token_cost_rate: 0.002,
+        },
+        chat_api_request: {
+          message: 'hello',
+          providerId: 'prov-1',
+          promptId: 'prompt-1',
+        },
+        sig: 'hmac-sig-value',
+        user_config: { tier_output_cap_tokens: 32_768 },
+      };
+      expect(isAiStreamEvent(value)).toBe(true);
+    });
+
+    it('isAiStreamEvent rejects event missing user_config field entirely', () => {
+      const value = {
+        job_id: 'job-1',
+        api_identifier: 'openai-gpt-4o',
+        model_config: {
+          api_identifier: 'openai-gpt-4o',
+          input_token_cost_rate: 0.001,
+          output_token_cost_rate: 0.002,
+        },
+        chat_api_request: {
+          message: 'hello',
+          providerId: 'prov-1',
+          promptId: 'prompt-1',
+        },
+        sig: 'hmac-sig-value',
       };
       expect(isAiStreamEvent(value)).toBe(false);
     });

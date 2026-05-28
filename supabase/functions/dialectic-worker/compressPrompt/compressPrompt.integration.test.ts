@@ -164,7 +164,7 @@ import {
         idempotencyKey: crypto.randomUUID(),
         sessionDescription: "compressPrompt integration session",
       };
-      const sessionResult = await startSession(testUser, adminClient, sessionPayload);
+      const sessionResult = await startSession(testUser, adminClient, userClient, sessionPayload);
       if (sessionResult.error || !sessionResult.data) {
         throw new Error(`startSession failed: ${sessionResult.error?.message ?? "no data"}`);
       }

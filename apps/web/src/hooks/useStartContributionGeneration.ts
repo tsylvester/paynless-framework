@@ -266,6 +266,7 @@ export function useStartContributionGeneration(): UseStartContributionGeneration
         continueUntilComplete,
         walletId,
         idempotencyKey: '',
+        maxOutputTokens: state.maxOutputTokens ?? undefined,
       };
 
       try {

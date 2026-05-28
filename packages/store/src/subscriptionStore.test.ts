@@ -1,6 +1,6 @@
 // src/subscriptionStore.test.ts
-import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
-import { useSubscriptionStore } from './subscriptionStore';
+import { describe, it, expect, beforeEach, vi, afterEach, type MockInstance } from 'vitest';
+import { useSubscriptionStore, type SubscriptionStore } from './subscriptionStore';
 import { act } from '@testing-library/react';
 import type { UserSubscription, SubscriptionPlan, SubscriptionUsageMetrics, ApiResponse, ApiError as ApiErrorType, User, Session } from '@paynless/types';
 import { api, initializeApiClient, _resetApiClient } from '@paynless/api';
@@ -56,31 +56,59 @@ const resetAuthStore = () => useAuthStore.setState(useAuthStore.getInitialState(
 // Mock data
 const mockSubscription: UserSubscription = {
     id: "sub_123",
-    userId: "user_abc",
+    user_id: "user_abc",
     status: "active",
-    planId: "plan_xyz",
-    stripeCustomerId: "cus_abc",
-    stripeSubscriptionId: "sub_ext_123",
-    currentPeriodStart: new Date().toISOString(),
-    currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-    cancelAtPeriodEnd: false,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
+    plan_id: "plan_xyz",
+    stripe_customer_id: "cus_abc",
+    stripe_subscription_id: "sub_ext_123",
+    current_period_start: new Date().toISOString(),
+    current_period_end: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+    cancel_at_period_end: false,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    has_ever_paid: true,
+    tier_level: 10,
     plan: {
         id: "plan_xyz",
-        name: "Pro Plan",
+        name: "Basic Plan",
         amount: 1000,
         currency: "usd",
         interval: "month",
-        stripePriceId: "price_abc",
+        stripe_price_id: "price_abc",
         active: true,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        description: null,
+        interval_count: 1,
+        item_id_internal: null,
+        metadata: null,
+        plan_type: 'subscription',
+        tokens_to_award: null,
+        tier_level: 10,
+        stripe_product_id: null,
     }
 };
 
 const mockPlans: SubscriptionPlan[] = [
-    { id: 'plan_abc', name: 'Basic', stripePriceId: 'price_basic', amount: 500, currency: 'usd', interval: 'month', active: true },
-    { id: 'plan_xyz', name: 'Pro', stripePriceId: 'price_pro', amount: 1000, currency: 'usd', interval: 'month', active: true },
+    { id: 'plan_abc', name: 'Basic', stripe_price_id: 'price_basic', amount: 500, currency: 'usd', interval: 'month', active: true, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), description: null, interval_count: 1, item_id_internal: null, metadata: null, plan_type: 'subscription', tokens_to_award: null, tier_level: 10, stripe_product_id: null },
+    { id: 'plan_xyz', name: 'Pro', stripe_price_id: 'price_pro', amount: 1000, currency: 'usd', interval: 'month', active: true, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), description: null, interval_count: 1, item_id_internal: null, metadata: null, plan_type: 'subscription', tokens_to_award: null, tier_level: 10, stripe_product_id: null },
 ];
+
+const mockUserSubTrialing: UserSubscription = {
+  id: 'sub_trial_2',
+  user_id: 'user_123',
+  plan_id: 'plan_2',
+  status: 'trialing',
+  current_period_start: '2023-03-01T00:00:00Z',
+  current_period_end: '2023-04-01T00:00:00Z',
+  created_at: new Date().toISOString(),
+  updated_at: new Date().toISOString(),
+  cancel_at_period_end: null,
+  stripe_customer_id: null,
+  stripe_subscription_id: null,
+  has_ever_paid: false,
+  tier_level: 0,
+};
 
 const mockUser: Partial<User> = { id: 'user_abc', email: 'test@example.com' };
 const mockSession: Partial<Session> = { access_token: 'mock-token' };
@@ -130,6 +158,14 @@ describe('SubscriptionStore', () => {
     expect(useSubscriptionStore.getState().hasActiveSubscription).toBe(false);
   });
 
+  it('setUserSubscription with Stripe trialing status does not set hasActiveSubscription', () => {
+    act(() => {
+      useSubscriptionStore.getState().setUserSubscription(mockUserSubTrialing);
+    });
+    expect(useSubscriptionStore.getState().userSubscription).toEqual(mockUserSubTrialing);
+    expect(useSubscriptionStore.getState().hasActiveSubscription).toBe(false);
+  });
+
   it('setAvailablePlans should update availablePlans state', () => {
     act(() => {
       useSubscriptionStore.getState().setAvailablePlans(mockPlans);
@@ -161,6 +197,22 @@ describe('SubscriptionStore', () => {
      });
   }
 
+  it('loadSubscriptionData with Stripe trialing status does not set hasActiveSubscription', async () => {
+    setAuthenticated();
+    mockStripeGetSubscriptionPlans.mockResolvedValue({ data: mockPlans, error: null });
+    mockStripeGetUserSubscription.mockResolvedValue({ data: mockUserSubTrialing, error: null });
+
+    await act(async () => {
+      if (!mockUser.id) {
+        throw new Error('Mock user ID is required');
+      }
+      await useSubscriptionStore.getState().loadSubscriptionData(mockUser.id);
+    });
+
+    expect(useSubscriptionStore.getState().hasActiveSubscription).toBe(false);
+    expect(useSubscriptionStore.getState().userSubscription?.status).toBe('trialing');
+  });
+
   // Test loadSubscriptionData
   describe('loadSubscriptionData action', () => {
      it('should fetch plans and subscription, updating state on success', async () => {
@@ -170,7 +222,10 @@ describe('SubscriptionStore', () => {
         mockStripeGetUserSubscription.mockResolvedValue({ data: mockSubscription, error: null });
 
         await act(async () => {
-            await useSubscriptionStore.getState().loadSubscriptionData();
+            if (!mockUser.id) {
+              throw new Error('Mock user ID is required');
+            }
+            await useSubscriptionStore.getState().loadSubscriptionData(mockUser.id);
         });
 
         expect(mockStripeGetSubscriptionPlans).toHaveBeenCalled();
@@ -191,7 +246,10 @@ describe('SubscriptionStore', () => {
         mockStripeGetUserSubscription.mockResolvedValue({ data: mockSubscription, error: null });
 
         await act(async () => {
-           await useSubscriptionStore.getState().loadSubscriptionData();
+           if (!mockUser.id) {
+             throw new Error('Mock user ID is required');
+           }
+           await useSubscriptionStore.getState().loadSubscriptionData(mockUser.id);
         });
 
         const state = useSubscriptionStore.getState();
@@ -208,7 +266,10 @@ describe('SubscriptionStore', () => {
         mockStripeGetUserSubscription.mockResolvedValue({ data: null, error: { message: 'Not found', code: 404 } });
 
         await act(async () => {
-            await useSubscriptionStore.getState().loadSubscriptionData();
+            if (!mockUser.id) {
+              throw new Error('Mock user ID is required');
+            }
+            await useSubscriptionStore.getState().loadSubscriptionData(mockUser.id);
         });
 
         const state = useSubscriptionStore.getState();
@@ -223,7 +284,10 @@ describe('SubscriptionStore', () => {
         act(() => { resetAuthStore(); });
 
         await act(async () => {
-            await useSubscriptionStore.getState().loadSubscriptionData();
+            if (!mockUser.id) {
+              throw new Error('Mock user ID is required');
+            }
+            await useSubscriptionStore.getState().loadSubscriptionData(mockUser.id);
         });
 
         expect(mockStripeGetSubscriptionPlans).not.toHaveBeenCalled();
@@ -240,7 +304,10 @@ describe('SubscriptionStore', () => {
       mockStripeGetUserSubscription.mockResolvedValue({ data: null, error: subError as ApiErrorType });
 
       await act(async () => {
-         await useSubscriptionStore.getState().loadSubscriptionData();
+         if (!mockUser.id) {
+           throw new Error('Mock user ID is required');
+         }
+         await useSubscriptionStore.getState().loadSubscriptionData(mockUser.id);
       });
 
       const state = useSubscriptionStore.getState();
@@ -526,7 +593,7 @@ describe('SubscriptionStore', () => {
 
   describe('getUsageMetrics action', () => {
     const metric = 'ai_tokens';
-    const mockUsage: SubscriptionUsageMetrics = { current: 50, limit: 1000 };
+    const mockUsage: SubscriptionUsageMetrics = { metric: 'ai_tokens', usage: 50, limit: 1000, period_start: new Date().toISOString(), period_end: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString() };
 
     it('should call API and return metrics on success', async () => {
         setAuthenticated();
@@ -574,7 +641,10 @@ describe('SubscriptionStore', () => {
   });
 
   describe('refreshSubscription action', () => {
-      let loadDataSpy: ReturnType<typeof vi.spyOn>;
+      let loadDataSpy: MockInstance<
+        Parameters<SubscriptionStore['loadSubscriptionData']>,
+        ReturnType<SubscriptionStore['loadSubscriptionData']>
+      >;
 
       beforeEach(() => {
           loadDataSpy = vi.spyOn(useSubscriptionStore.getState(), 'loadSubscriptionData');

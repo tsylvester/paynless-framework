@@ -10,6 +10,10 @@
     ".": {
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
+    },
+    "./cartStore/mock": {
+      "import": "./src/cartStore/cartStore.mock.ts",
+      "types": "./src/cartStore/cartStore.mock.ts"
     }
   },
   "scripts": {

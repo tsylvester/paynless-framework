@@ -4,6 +4,7 @@ import type {
   NodeAdapterStreamChunk,
   NodeChatApiRequest,
   NodeModelConfig,
+  NodeUserConfig,
 } from '../ai-adapter.interface.ts';
 import type {
   OpenAIChatCompletionChunk,
@@ -38,9 +39,14 @@ export const mockNodeModelConfig: NodeModelConfig = {
   output_token_cost_rate: 0.002,
 };
 
+export const mockNodeUserConfig: NodeUserConfig = {
+  tier_output_cap_tokens: null,
+};
+
 export const mockNodeAdapterConstructorParams: NodeAdapterConstructorParams = {
   modelConfig: { ...mockNodeModelConfig },
   apiKey: 'sk-openai-mock',
+  userConfig: { ...mockNodeUserConfig },
 };
 
 export const mockNodeChatApiRequest: NodeChatApiRequest = {
@@ -143,24 +149,43 @@ export function createMockNodeModelConfig(
   return { ...mockNodeModelConfig, ...overrides };
 }
 
+export function createMockNodeUserConfig(
+  overrides?: Partial<NodeUserConfig>,
+): NodeUserConfig {
+  if (overrides === undefined) {
+    return { ...mockNodeUserConfig };
+  }
+  const tier_output_cap_tokens: number | null =
+    overrides.tier_output_cap_tokens === undefined
+      ? mockNodeUserConfig.tier_output_cap_tokens
+      : overrides.tier_output_cap_tokens;
+  return { tier_output_cap_tokens };
+}
+
 export function createMockNodeAdapterConstructorParams(
   overrides?: Partial<NodeAdapterConstructorParams>,
 ): NodeAdapterConstructorParams {
   if (overrides === undefined) {
     return {
-      modelConfig: { ...mockNodeAdapterConstructorParams.modelConfig },
+      modelConfig: createMockNodeModelConfig(),
       apiKey: mockNodeAdapterConstructorParams.apiKey,
+      userConfig: createMockNodeUserConfig(),
     };
   }
   const modelConfig: NodeModelConfig =
     overrides.modelConfig === undefined
-      ? { ...mockNodeModelConfig }
-      : { ...mockNodeModelConfig, ...overrides.modelConfig };
+      ? createMockNodeModelConfig()
+      : createMockNodeModelConfig(overrides.modelConfig);
   const apiKey: string =
     overrides.apiKey === undefined ? mockNodeAdapterConstructorParams.apiKey : overrides.apiKey;
+  const userConfig: NodeUserConfig =
+    overrides.userConfig === undefined
+      ? createMockNodeUserConfig()
+      : createMockNodeUserConfig(overrides.userConfig);
   return {
     modelConfig,
     apiKey,
+    userConfig,
   };
 }
 

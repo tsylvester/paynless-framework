@@ -10,7 +10,9 @@ import {
   isGetNodeAiAdapterDeps,
   isGetNodeAiAdapterParams,
   isNodeAdapterStreamChunk,
+  isNodeModelConfig,
   isNodeProviderMap,
+  isNodeUserConfig,
 } from './getNodeAiAdapter.guard.ts';
 
 describe('getNodeAiAdapter.guard', () => {
@@ -66,6 +68,12 @@ describe('getNodeAiAdapter.guard', () => {
       const params = { apiIdentifier: 'openai-gpt-4o', apiKey: 'sk-test' };
       expect(isGetNodeAiAdapterParams(params)).toBe(false);
     });
+
+    it('rejects params missing userConfig', () => {
+      const valid = createMockGetNodeAiAdapterParams();
+      const { userConfig: _userConfig, ...missingUserConfig } = valid;
+      expect(isGetNodeAiAdapterParams(missingUserConfig)).toBe(false);
+    });
   });
 
   describe('isAiAdapter', () => {
@@ -110,6 +118,42 @@ describe('getNodeAiAdapter.guard', () => {
     it('rejects unknown type values', () => {
       const chunk = { type: 'unknown', text: 'x' };
       expect(isNodeAdapterStreamChunk(chunk)).toBe(false);
+    });
+  });
+
+  describe('isNodeModelConfig', () => {
+    it('accepts NodeModelConfig without tier_output_cap_tokens', () => {
+      expect(
+        isNodeModelConfig({
+          api_identifier: 'openai-gpt-4o',
+          input_token_cost_rate: null,
+          output_token_cost_rate: null,
+        }),
+      ).toBe(true);
+    });
+  });
+
+  describe('isNodeUserConfig', () => {
+    it('accepts object with tier_output_cap_tokens: null', () => {
+      expect(isNodeUserConfig({ tier_output_cap_tokens: null })).toBe(true);
+    });
+
+    it('accepts object with tier_output_cap_tokens: 32768', () => {
+      expect(isNodeUserConfig({ tier_output_cap_tokens: 32_768 })).toBe(true);
+    });
+
+    it('rejects object missing tier_output_cap_tokens field', () => {
+      expect(isNodeUserConfig({})).toBe(false);
+    });
+
+    it('rejects tier_output_cap_tokens: undefined', () => {
+      expect(
+        isNodeUserConfig({ tier_output_cap_tokens: undefined }),
+      ).toBe(false);
+    });
+
+    it('rejects non-record', () => {
+      expect(isNodeUserConfig('not-a-record')).toBe(false);
     });
   });
 });

@@ -25,11 +25,15 @@ const initializeMockAuthState = (): AuthStore => ({
   error: null,
   navigate: null,
   showWelcomeModal: false,
+  userTier: null,
+  availableTiers: [],
 
   // Setters
   setUser: vi.fn(),
   setSession: vi.fn(),
   setProfile: vi.fn(),
+  setTier: vi.fn(),
+  setAvailableTiers: vi.fn(),
   setIsLoading: vi.fn(),
   setError: vi.fn(),
   setNavigate: vi.fn(),

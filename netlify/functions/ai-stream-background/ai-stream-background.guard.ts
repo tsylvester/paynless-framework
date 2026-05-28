@@ -7,6 +7,7 @@ import {
   isNodeChatApiRequest,
   isNodeModelConfig,
   isNodeTokenUsage,
+  isNodeUserConfig,
   isPlainRecord,
 } from './adapters/getNodeAiAdapter.guard.ts';
 
@@ -41,6 +42,9 @@ export function isAiStreamEvent(v: unknown): v is AiStreamEvent {
     return false;
   }
   if (chatApiValue.message.length === 0) {
+    return false;
+  }
+  if (!('user_config' in v) || !isNodeUserConfig(v['user_config'])) {
     return false;
   }
   return true;

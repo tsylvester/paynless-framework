@@ -8,7 +8,7 @@ import {
 } from './getNodeAiAdapter.mock.ts';
 
 describe('getNodeAiAdapter', () => {
-  it('returns factory result for known prefix openai-gpt-4o and calls factory with modelConfig and apiKey', () => {
+  it('returns factory result for known prefix openai-gpt-4o and calls factory with modelConfig, apiKey, and userConfig', () => {
     const factorySpy = vi.fn(() => mockAiAdapter);
     const providerMap = createMockNodeProviderMap({ 'openai-': factorySpy });
     const deps = createMockGetNodeAiAdapterDeps({ providerMap });
@@ -22,6 +22,7 @@ describe('getNodeAiAdapter', () => {
     expect(factorySpy).toHaveBeenCalledWith({
       modelConfig: params.modelConfig,
       apiKey: params.apiKey,
+      userConfig: params.userConfig,
     });
   });
 
@@ -39,6 +40,7 @@ describe('getNodeAiAdapter', () => {
     expect(factorySpy).toHaveBeenCalledWith({
       modelConfig: params.modelConfig,
       apiKey: params.apiKey,
+      userConfig: params.userConfig,
     });
   });
 

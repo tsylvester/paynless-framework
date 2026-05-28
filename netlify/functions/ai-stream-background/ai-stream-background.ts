@@ -90,6 +90,7 @@ async function collectAiStreamPayload(
       apiIdentifier: event.api_identifier,
       apiKey,
       modelConfig: event.model_config,
+      userConfig: event.user_config,
     },
   );
   if (adapter === null) {

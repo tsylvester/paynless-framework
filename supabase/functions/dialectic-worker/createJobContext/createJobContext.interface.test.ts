@@ -21,6 +21,7 @@ import { pickLatest } from '../../_shared/utils/pickLatest.ts';
 import { applyInputsRequiredScope } from '../../_shared/utils/applyInputsRequiredScope.ts';
 import { validateWalletBalance } from '../../_shared/utils/validateWalletBalance.ts';
 import { validateModelCostRates } from '../../_shared/utils/validateModelCostRates.ts';
+import { getMaxOutputTokens } from '../../_shared/utils/affordability_utils.ts';
 import { resolveFinishReason } from '../../_shared/utils/resolveFinishReason.ts';
 import { isIntermediateChunk } from '../../_shared/utils/isIntermediateChunk.ts';
 import { determineContinuation } from '../../_shared/utils/determineContinuation/determineContinuation.ts';
@@ -293,6 +294,7 @@ describe('JobContext.interface.ts contracts', () => {
                 applyInputsRequiredScope: applyInputsRequiredScope,
                 validateWalletBalance: validateWalletBalance,
                 validateModelCostRates: validateModelCostRates,
+                getMaxOutputTokens: getMaxOutputTokens,
                 resolveFinishReason: resolveFinishReason,
                 isIntermediateChunk: isIntermediateChunk,
                 determineContinuation: determineContinuation,
@@ -325,6 +327,7 @@ describe('JobContext.interface.ts contracts', () => {
                 applyInputsRequiredScope: params.applyInputsRequiredScope,
                 validateWalletBalance: params.validateWalletBalance,
                 validateModelCostRates: params.validateModelCostRates,
+                getMaxOutputTokens: params.getMaxOutputTokens,
                 resolveFinishReason: params.resolveFinishReason,
                 isIntermediateChunk: params.isIntermediateChunk,
                 determineContinuation: params.determineContinuation,
@@ -346,6 +349,8 @@ describe('JobContext.interface.ts contracts', () => {
             assertEquals(job.logger, params.logger);
             assertEquals(job.ragService, params.ragService);
             assertEquals(typeof job.getGranularityPlanner, 'function');
+            assertEquals(typeof params.getMaxOutputTokens, 'function');
+            assertEquals(typeof job.getMaxOutputTokens, 'function');
         });
     });
 

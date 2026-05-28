@@ -2,22 +2,12 @@
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import isEqual from 'npm:fast-deep-equal';
 import type { ILogger, FinalAppModelConfig } from '../_shared/types.ts';
-import type { DbAiProvider } from './index.ts';
+import { DbAiProvider } from './sync-ai-models.interface.ts';
 import { isJson } from '../_shared/utils/type_guards.ts';
 import { AiModelExtendedConfigSchema } from '../chat/zodSchema.ts';
 import type { AiModelExtendedConfig } from '../_shared/types.ts';
-
-export interface DbOpLists {
-  modelsToInsert: Omit<DbAiProvider, 'id' | 'is_active'>[];
-  modelsToUpdate: { id: string; changes: Partial<DbAiProvider> }[];
-  modelsToDeactivate: string[];
-}
-
-export interface DbOpResult {
-    inserted: number;
-    updated: number;
-    deactivated: number;
-}
+import type { ModelCostProvenance } from './config_assembler.interface.ts';
+import type { DbOpLists, DbOpResult, AiProvidersSyncInsert, AiProvidersSyncUpdate, ModelsToUpdate } from './sync-ai-models.interface.ts';
 
 /**
  * Compares the assembled model configurations with the current state in the database
@@ -33,9 +23,10 @@ export function diffAndPrepareDbOps(
     dbModels: DbAiProvider[],
     providerName: string,
     logger: ILogger,
+    costProvenance: Map<string, ModelCostProvenance>,
 ): DbOpLists {
-    const modelsToInsert: Omit<DbAiProvider, 'id' | 'is_active'>[] = [];
-    const modelsToUpdate: { id: string; changes: Partial<DbAiProvider> }[] = [];
+    const modelsToInsert: AiProvidersSyncInsert[] = [];
+    const modelsToUpdate: ModelsToUpdate[] = [];
     const modelsToDeactivate: string[] = [];
     
     const dbModelMap = new Map<string, DbAiProvider>(dbModels.map(m => [m.api_identifier, m]));
@@ -46,14 +37,7 @@ export function diffAndPrepareDbOps(
 
     for (const [apiIdentifier, assembledModel] of assembledConfigMap.entries()) {
         const dbModel = dbModelMap.get(apiIdentifier);
-
-        // --- ENFORCE NON-ZERO COST RATES ---
-        const inputRate = assembledModel.config?.input_token_cost_rate;
-        const outputRate = assembledModel.config?.output_token_cost_rate;
-        if (typeof inputRate !== 'number' || inputRate <= 0 || typeof outputRate !== 'number' || outputRate <= 0) {
-            logger.error(`[Diff] Assembled config for ${apiIdentifier} has zero or missing cost rates.`, { inputRate, outputRate });
-            throw new Error(`Invalid cost rates for ${providerName} model ${apiIdentifier}: input=${String(inputRate)}, output=${String(outputRate)}`);
-        }
+        const provenance: ModelCostProvenance = costProvenance.get(apiIdentifier) ?? { input_source: 'none', output_source: 'none' };
 
         // --- VALIDATE ASSEMBLED CONFIG ---
         const assembledValidation = AiModelExtendedConfigSchema.safeParse(assembledModel.config);
@@ -120,7 +104,7 @@ export function diffAndPrepareDbOps(
                         api_identifier: dbModel.api_identifier,
                         input_token_cost_rate: null,
                         output_token_cost_rate: null,
-                        hard_cap_output_tokens: 1, // Must be a positive number
+                        hard_cap_output_tokens: 1,
                         tokenization_strategy: { type: 'rough_char_count', chars_per_token_ratio: 4 },
                     };
 
@@ -134,7 +118,6 @@ export function diffAndPrepareDbOps(
                             },
                         });
                     } else {
-                        // This should be an unreachable state, but we log it as a critical failure if it ever occurs.
                         logger.error(`[Diff] CRITICAL FAILURE: Failsafe config for ${dbModel.api_identifier} is not valid JSON. Cannot sanitize.`);
                     }
 
@@ -142,20 +125,59 @@ export function diffAndPrepareDbOps(
                 }
             } else if (!assembledValidation.success) {
                 // The database config is VALID, but the assembled one is NOT.
-                // This is a critical error in the configuration pipeline, but we MUST NOT
-                // do anything to the DB. Log the error and mark as handled so it won't be deactivated.
+                // Do nothing to the DB. Log and mark as handled so it won't be deactivated.
                 logger.error(`[Diff] Assembled config for ${apiIdentifier} is INVALID, but DB config is valid. SKIPPING update to prevent corruption.`, { error: assembledValidation.error.format() });
                 dbModelMap.delete(apiIdentifier);
             } else {
                 // Both configs are VALID. Compare for standard changes.
-                const changes: Partial<DbAiProvider> = {};
+                const changes: AiProvidersSyncUpdate = {};
                 if (assembledModel.name !== dbModel.name) changes.name = assembledModel.name;
                 if ((assembledModel.description ?? null) !== dbModel.description) changes.description = assembledModel.description ?? null;
                 if (!dbModel.is_active) changes.is_active = true;
                 if (!isEqual(assembledModel.config, dbModel.config)) {
                     if (isJson(assembledModel.config)) {
-                        changes.config = assembledModel.config;
+                        // When provenance is none for a cost field, preserve the existing DB value if non-null.
+                        if (provenance.input_source === 'none' || provenance.output_source === 'none') {
+                            const dbParsed = AiModelExtendedConfigSchema.safeParse(dbModel.config);
+                            const mergedConfig: AiModelExtendedConfig = { ...assembledValidation.data };
+                            if (provenance.input_source === 'none' && dbParsed.success && dbParsed.data.input_token_cost_rate !== null) {
+                                mergedConfig.input_token_cost_rate = dbParsed.data.input_token_cost_rate;
+                                logger.info(`[Diff] Suppressing cost overwrite for ${apiIdentifier}: preserving DB input_token_cost_rate=${String(dbParsed.data.input_token_cost_rate)} (assembled provenance=none)`);
+                            }
+                            if (provenance.output_source === 'none' && dbParsed.success && dbParsed.data.output_token_cost_rate !== null) {
+                                mergedConfig.output_token_cost_rate = dbParsed.data.output_token_cost_rate;
+                                logger.info(`[Diff] Suppressing cost overwrite for ${apiIdentifier}: preserving DB output_token_cost_rate=${String(dbParsed.data.output_token_cost_rate)} (assembled provenance=none)`);
+                            }
+                            if (!isEqual(mergedConfig, dbModel.config) && isJson(mergedConfig)) {
+                                changes.config = mergedConfig;
+                            }
+                        } else {
+                            changes.config = assembledModel.config;
+                        }
                     }
+                }
+                let outputRate: AiModelExtendedConfig['output_token_cost_rate'] = dbValidation.data.output_token_cost_rate;
+                if (changes.config !== undefined) {
+                    const configForTier = AiModelExtendedConfigSchema.safeParse(changes.config);
+                    if (configForTier.success) {
+                        outputRate = configForTier.data.output_token_cost_rate;
+                    }
+                }
+                let minPlanTierLevel: DbAiProvider['min_plan_tier_level'];
+                if (outputRate === null) {
+                    minPlanTierLevel = 99;
+                } else if (outputRate < 10) {
+                    minPlanTierLevel = 0;
+                } else if (outputRate < 20) {
+                    minPlanTierLevel = 10;
+                } else {
+                    minPlanTierLevel = 20;
+                }
+                if (minPlanTierLevel !== dbModel.min_plan_tier_level) {
+                    changes.min_plan_tier_level = minPlanTierLevel;
+                    logger.info(
+                        `[Diff] Correcting min_plan_tier_level=${String(minPlanTierLevel)} for ${apiIdentifier} based on output_token_cost_rate=${String(outputRate)}`,
+                    );
                 }
                 if (Object.keys(changes).length > 0) {
                     logger.info(`[Diff] Queuing update for ${apiIdentifier}:`, changes);
@@ -171,22 +193,38 @@ export function diffAndPrepareDbOps(
             // --- NEW MODEL LOGIC ---
             if (assembledValidation.success) {
                 if (isJson(assembledModel.config)) {
+                    const outputRate: AiModelExtendedConfig['output_token_cost_rate'] = assembledModel.config.output_token_cost_rate;
+                    let minPlanTierLevel: DbAiProvider['min_plan_tier_level'];
+                    if (outputRate === null) {
+                        minPlanTierLevel = 99;
+                    } else if (outputRate < 10) {
+                        minPlanTierLevel = 0;
+                    } else if (outputRate < 20) {
+                        minPlanTierLevel = 10;
+                    } else {
+                        minPlanTierLevel = 20;
+                    }
+                    logger.info(`[Diff] Auto-assigned min_plan_tier_level=${String(minPlanTierLevel)} for new model ${apiIdentifier} based on output_token_cost_rate=${String(outputRate)}`);
+                    const isEnabled: boolean = provenance.input_source !== 'none' || provenance.output_source !== 'none';
+                    if (!isEnabled) {
+                        logger.error(`[Diff] ALARM: New model ${apiIdentifier} has no trusted cost data. Inserted as disabled.`);
+                    }
                     logger.info(`[Diff] Queuing insert for new model ${apiIdentifier}`);
-                    modelsToInsert.push({
+                    const insertRow: AiProvidersSyncInsert = {
                         api_identifier: apiIdentifier,
                         name: assembledModel.name,
-                        description: assembledModel.description ?? null,
+                        description: assembledModel.description,
                         provider: providerName,
                         config: assembledModel.config,
-                    });
+                        is_enabled: isEnabled,
+                        min_plan_tier_level: minPlanTierLevel,
+                    };
+                    modelsToInsert.push(insertRow);
                 } else {
                      logger.error(`[Diff] Assembled config for new model ${apiIdentifier} is not valid JSON. SKIPPING insert.`);
                 }
             } else {
-                // Assembled config for a new model is invalid. Do not insert.
-                if (!assembledValidation.success) {
-                    logger.error(`[Diff] Assembled config for new model ${apiIdentifier} is INVALID. SKIPPING insert.`, { error: assembledValidation.error.format() });
-                }
+                logger.error(`[Diff] CRITICAL: Config for new model ${apiIdentifier} is not valid JSON. Cannot insert.`);
             }
         }
     }

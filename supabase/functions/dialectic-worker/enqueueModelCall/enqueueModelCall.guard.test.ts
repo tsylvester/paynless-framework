@@ -113,6 +113,7 @@ Deno.test(
                 providerRow: full.providerRow,
                 userAuthToken: full.userAuthToken,
                 output_type: full.output_type,
+                userConfig: { tier_output_cap_tokens: null },
             }),
             false,
         );
@@ -129,6 +130,7 @@ Deno.test(
                 providerRow: full.providerRow,
                 userAuthToken: full.userAuthToken,
                 output_type: full.output_type,
+                userConfig: { tier_output_cap_tokens: null },
             }),
             false,
         );
@@ -145,6 +147,7 @@ Deno.test(
                 job: full.job,
                 userAuthToken: full.userAuthToken,
                 output_type: full.output_type,
+                userConfig: { tier_output_cap_tokens: null },
             }),
             false,
         );
@@ -161,6 +164,7 @@ Deno.test(
                 job: full.job,
                 providerRow: full.providerRow,
                 output_type: full.output_type,
+                userConfig: { tier_output_cap_tokens: null },
             }),
             false,
         );
@@ -177,6 +181,7 @@ Deno.test(
                 job: full.job,
                 providerRow: full.providerRow,
                 userAuthToken: full.userAuthToken,
+                userConfig: { tier_output_cap_tokens: null },
             }),
             false,
         );
@@ -331,6 +336,7 @@ Deno.test(
                 model_config: { api_identifier: "api-id" },
                 chat_api_request: { message: "m", providerId: "p", promptId: "q" },
                 sig: "mock-sig",
+                user_config: { tier_output_cap_tokens: null },
             }),
             true,
         );
@@ -346,6 +352,7 @@ Deno.test(
                 model_config: { api_identifier: "api-id" },
                 chat_api_request: { message: "m", providerId: "p", promptId: "q" },
                 user_jwt: "jwt-token",
+                user_config: { tier_output_cap_tokens: null },
             }),
             false,
         );
@@ -361,6 +368,7 @@ Deno.test(
                 model_config: { api_identifier: "api-id" },
                 chat_api_request: { message: "m", providerId: "p", promptId: "q" },
                 user_jwt: "jwt-token",
+                user_config: { tier_output_cap_tokens: null },
             }),
             false,
         );
@@ -376,6 +384,7 @@ Deno.test(
                 api_identifier: "api-id",
                 chat_api_request: { message: "m", providerId: "p", promptId: "q" },
                 user_jwt: "jwt-token",
+                user_config: { tier_output_cap_tokens: null },
             }),
             false,
         );
@@ -391,6 +400,7 @@ Deno.test(
                 api_identifier: "api-id",
                 model_config: { api_identifier: "api-id" },
                 user_jwt: "jwt-token",
+                user_config: { tier_output_cap_tokens: null },
             }),
             false,
         );
@@ -406,6 +416,7 @@ Deno.test(
                 api_identifier: "api-id",
                 model_config: { api_identifier: "api-id" },
                 chat_api_request: { message: "m", providerId: "p", promptId: "q" },
+                user_config: { tier_output_cap_tokens: null },
             }),
             false,
         );
@@ -432,6 +443,7 @@ Deno.test(
                     model_config: { api_identifier: "api-id" },
                     chat_api_request: { message: "m", providerId: "p", promptId: "q" },
                     user_jwt: "jwt-token",
+                    tier_output_cap_tokens: null,
                 },
             }),
             true,
@@ -450,6 +462,7 @@ Deno.test(
                     model_config: { api_identifier: "api-id" },
                     chat_api_request: { message: "m", providerId: "p", promptId: "q" },
                     user_jwt: "jwt-token",
+                    tier_output_cap_tokens: null,
                 },
             }),
             false,
@@ -469,6 +482,7 @@ Deno.test(
                     model_config: { api_identifier: "api-id" },
                     chat_api_request: { message: "m", providerId: "p", promptId: "q" },
                     user_jwt: "jwt-token",
+                    tier_output_cap_tokens: null,
                 },
             }),
             false,
@@ -539,6 +553,57 @@ Deno.test(
                 model_config: { api_identifier: "api-id" },
                 chat_api_request: { message: "m", providerId: "p", promptId: "q" },
                 user_jwt: "jwt-token",
+                tier_output_cap_tokens: null,
+            }),
+            false,
+        );
+    },
+);
+
+Deno.test(
+    "Type Guard: isAiStreamEventData returns true when tier_output_cap_tokens is null",
+    () => {
+        assertEquals(
+            isAiStreamEventData({
+                job_id: "job-1",
+                api_identifier: "api-id",
+                model_config: { api_identifier: "api-id" },
+                chat_api_request: { message: "m", providerId: "p", promptId: "q" },
+                sig: "mock-sig",
+                user_config: { tier_output_cap_tokens: null },
+            }),
+            true,
+        );
+    },
+);
+
+Deno.test(
+    "Type Guard: isAiStreamEventData returns true when tier_output_cap_tokens is 32768",
+    () => {
+        assertEquals(
+            isAiStreamEventData({
+                job_id: "job-1",
+                api_identifier: "api-id",
+                model_config: { api_identifier: "api-id" },
+                chat_api_request: { message: "m", providerId: "p", promptId: "q" },
+                sig: "mock-sig",
+                user_config: { tier_output_cap_tokens: 32768 },
+            }),
+            true,
+        );
+    },
+);
+
+Deno.test(
+    "Type Guard: isAiStreamEventData returns false when tier_output_cap_tokens is missing",
+    () => {
+        assertEquals(
+            isAiStreamEventData({
+                job_id: "job-1",
+                api_identifier: "api-id",
+                model_config: { api_identifier: "api-id" },
+                chat_api_request: { message: "m", providerId: "p", promptId: "q" },
+                sig: "mock-sig",
             }),
             false,
         );

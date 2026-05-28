@@ -445,6 +445,7 @@ describe('useStartContributionGeneration', () => {
     expect(payload.stageSlug).toBe('thesis');
     expect(payload.iterationNumber).toBe(1);
     expect(payload.walletId).toBe('wallet-1');
+    expect(payload.maxOutputTokens).toBeUndefined();
   });
 
   it('payload uses continueUntilComplete from useAiStore (not hardcoded true)', async () => {
@@ -457,6 +458,7 @@ describe('useStartContributionGeneration', () => {
 
     const payload: GenerateContributionsPayload = vi.mocked(generateContributions).mock.calls[0][0];
     expect(payload.continueUntilComplete).toBe(true);
+    expect(payload.maxOutputTokens).toBeUndefined();
   });
 
   it('payload uses walletId from selectActiveChatWalletInfo', async () => {
@@ -479,6 +481,7 @@ describe('useStartContributionGeneration', () => {
 
     const payload: GenerateContributionsPayload = vi.mocked(generateContributions).mock.calls[0][0];
     expect(payload.walletId).toBe('custom-wallet-id');
+    expect(payload.maxOutputTokens).toBeUndefined();
   });
 
   it('returns { success: true } when generateContributions succeeds', async () => {
@@ -717,6 +720,7 @@ describe('useStartContributionGeneration', () => {
     expect(generateContributions).toHaveBeenCalledTimes(1);
     const payload: GenerateContributionsPayload = vi.mocked(generateContributions).mock.calls[0][0];
     expect(payload.stageSlug).toBe('antithesis');
+    expect(payload.maxOutputTokens).toBeUndefined();
   });
 
   it('startContributionGeneration reads activeSession from current store state — after store mutation, callback uses updated session', async () => {
@@ -750,6 +754,7 @@ describe('useStartContributionGeneration', () => {
     expect(generateContributions).toHaveBeenCalledTimes(1);
     const payload: GenerateContributionsPayload = vi.mocked(generateContributions).mock.calls[0][0];
     expect(payload.sessionId).toBe('sess-2');
+    expect(payload.maxOutputTokens).toBeUndefined();
   });
 
   it('pauseGeneration reads viewingStage and activeSession from current store state', async () => {
@@ -936,5 +941,31 @@ describe('useStartContributionGeneration', () => {
       stageSlug: 'thesis',
       iterationNumber: 1,
     });
+  });
+
+  it('includes maxOutputTokens on GenerateContributionsPayload when state.maxOutputTokens is a non-null number', async () => {
+    useDialecticStore.setState({ maxOutputTokens: 8192 });
+    const generateContributions = getDialecticStoreState().generateContributions;
+    const { result } = renderHook(() => useStartContributionGeneration());
+
+    await act(async () => {
+      await result.current.startContributionGeneration();
+    });
+
+    const payload: GenerateContributionsPayload = vi.mocked(generateContributions).mock.calls[0][0];
+    expect(payload.maxOutputTokens).toBe(8192);
+  });
+
+  it('sets maxOutputTokens to undefined on GenerateContributionsPayload when state.maxOutputTokens is null', async () => {
+    useDialecticStore.setState({ maxOutputTokens: null });
+    const generateContributions = getDialecticStoreState().generateContributions;
+    const { result } = renderHook(() => useStartContributionGeneration());
+
+    await act(async () => {
+      await result.current.startContributionGeneration();
+    });
+
+    const payload: GenerateContributionsPayload = vi.mocked(generateContributions).mock.calls[0][0];
+    expect(payload.maxOutputTokens).toBeUndefined();
   });
 });

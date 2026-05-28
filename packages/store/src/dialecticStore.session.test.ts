@@ -15,7 +15,7 @@ import type {
   ApiError, 
   ApiResponse, 
   DialecticProject, 
-  AIModelCatalogEntry,
+  AiProvidersRow,
   DialecticSession,
   SelectedModels,
   StartSessionPayload,
@@ -264,43 +264,39 @@ describe('useDialecticStore', () => {
 
     describe('fetchAIModelCatalog action', () => {
         it('should fetch and set AI model catalog on success', async () => {
-            const mockCatalog: AIModelCatalogEntry[] = [
+            const mockCatalog: AiProvidersRow[] = [
                 {
                     id: 'model1',
-                    provider_name: 'OpenAI',
-                    model_name: 'GPT-4',
+                    provider: 'OpenAI',
+                    name: 'GPT-4',
                     api_identifier: 'gpt-4',
                     created_at: '2023-01-01T00:00:00.000Z',
                     updated_at: '2023-01-01T00:00:00.000Z',
                     is_active: true,
                     is_default_generation: false,
                     description: null,
-                    strengths: null,
-                    weaknesses: null,
-                    context_window_tokens: null,
-                    input_token_cost_usd_millionths: null,
-                    output_token_cost_usd_millionths: null,
-                    max_output_tokens: null,
+                    is_default_embedding: false,
+                    is_enabled: true,
+                    min_plan_tier_level: 0,
+                    config: null,
                 },
                 {
                     id: 'model2',
-                    provider_name: 'Anthropic',
-                    model_name: 'Claude 3',
+                    provider: 'Anthropic',
+                    name: 'Claude 3',
                     api_identifier: 'claude-3',
                     created_at: '2023-01-01T00:00:00.000Z',
                     updated_at: '2023-01-01T00:00:00.000Z',
                     is_active: true,
                     is_default_generation: false,
                     description: null,
-                    strengths: null,
-                    weaknesses: null,
-                    context_window_tokens: null,
-                    input_token_cost_usd_millionths: null,
-                    output_token_cost_usd_millionths: null,
-                    max_output_tokens: null,
+                    is_default_embedding: false,
+                    is_enabled: true,
+                    min_plan_tier_level: 10,
+                    config: null,
                 },
             ];
-            const mockResponse: ApiResponse<AIModelCatalogEntry[]> = { data: mockCatalog, status: 200 };
+            const mockResponse: ApiResponse<AiProvidersRow[]> = { data: mockCatalog, status: 200 };
             getMockDialecticClient().listModelCatalog.mockResolvedValue(mockResponse);
 
             const { fetchAIModelCatalog } = useDialecticStore.getState();
@@ -315,7 +311,7 @@ describe('useDialecticStore', () => {
 
         it('should set error state if listModelCatalog API returns an error', async () => {
             const mockError: ApiError = { code: 'CATALOG_ERROR', message: 'Failed to fetch model catalog' };
-            const mockResponse: ApiResponse<AIModelCatalogEntry[]> = { error: mockError, status: 500 };
+            const mockResponse: ApiResponse<AiProvidersRow[]> = { error: mockError, status: 500 };
             getMockDialecticClient().listModelCatalog.mockResolvedValue(mockResponse);
 
             const { fetchAIModelCatalog } = useDialecticStore.getState();
@@ -591,6 +587,7 @@ describe('useDialecticStore', () => {
             getMockDialecticClient().updateSessionModels.mockResolvedValue({ error: mockApiError, status: 500 });
             vi.mocked(logger).error.mockClear();
 
+            useDialecticStore.setState({ selectedModels: initialModelsSelected });
             const { setSelectedModels } = useDialecticStore.getState();
             setSelectedModels(newModelsSelected);
 
@@ -604,6 +601,60 @@ describe('useDialecticStore', () => {
                     }
                 );
             });
+            expect(useDialecticStore.getState().selectedModels).toEqual(initialModelsSelected);
+            expect(useDialecticStore.getState().updateSessionModelsError).toEqual(mockApiError);
+        });
+
+        it('setSelectedModels reverts and sets updateSessionModelsError on MODEL_TIER_DISALLOWED', async () => {
+            const mockApiError: ApiError = {
+                code: 'MODEL_TIER_DISALLOWED',
+                message: 'Selected models are not available on your plan',
+            };
+            getMockDialecticClient().updateSessionModels.mockResolvedValue({ error: mockApiError, status: 403 });
+            vi.mocked(logger).error.mockClear();
+
+            useDialecticStore.setState({ selectedModels: initialModelsSelected });
+            const { setSelectedModels } = useDialecticStore.getState();
+            setSelectedModels(newModelsSelected);
+
+            await vi.waitFor(() => {
+                expect(getMockDialecticClient().updateSessionModels).toHaveBeenCalled();
+                expect(vi.mocked(logger).error).toHaveBeenCalledWith(
+                    '[DialecticStore] Post-setSelectedModels: Failed to update session models on backend',
+                    {
+                        sessionId: activeSessionId,
+                        error: mockApiError,
+                    }
+                );
+            });
+            expect(useDialecticStore.getState().selectedModels).toEqual(initialModelsSelected);
+            expect(useDialecticStore.getState().updateSessionModelsError?.code).toBe('MODEL_TIER_DISALLOWED');
+        });
+
+        it('setSelectedModels reverts and sets updateSessionModelsError on MODEL_LIMIT_EXCEEDED', async () => {
+            const mockApiError: ApiError = {
+                code: 'MODEL_LIMIT_EXCEEDED',
+                message: 'Model selection exceeds the limit for your plan',
+            };
+            getMockDialecticClient().updateSessionModels.mockResolvedValue({ error: mockApiError, status: 403 });
+            vi.mocked(logger).error.mockClear();
+
+            useDialecticStore.setState({ selectedModels: initialModelsSelected });
+            const { setSelectedModels } = useDialecticStore.getState();
+            setSelectedModels(newModelsSelected);
+
+            await vi.waitFor(() => {
+                expect(getMockDialecticClient().updateSessionModels).toHaveBeenCalled();
+                expect(vi.mocked(logger).error).toHaveBeenCalledWith(
+                    '[DialecticStore] Post-setSelectedModels: Failed to update session models on backend',
+                    {
+                        sessionId: activeSessionId,
+                        error: mockApiError,
+                    }
+                );
+            });
+            expect(useDialecticStore.getState().selectedModels).toEqual(initialModelsSelected);
+            expect(useDialecticStore.getState().updateSessionModelsError?.code).toBe('MODEL_LIMIT_EXCEEDED');
         });
     });
 
@@ -706,6 +757,8 @@ describe('useDialecticStore', () => {
                     }
                 );
             });
+            expect(useDialecticStore.getState().selectedModels).toEqual(selectedModelsThree);
+            expect(useDialecticStore.getState().updateSessionModelsError).toEqual(mockApiError);
         });
 
         it('should handle setting multiplicity to 0 (removing the model)', async () => {
@@ -738,6 +791,64 @@ describe('useDialecticStore', () => {
                 expect(selected).toBeDefined();
                 expect(selected!.map((m) => m.id)).toEqual([initialOtherModelObj.id]);
             });
+        });
+
+        it('setModelMultiplicity reverts and sets updateSessionModelsError on MODEL_TIER_DISALLOWED', async () => {
+            const mockApiError: ApiError = {
+                code: 'MODEL_TIER_DISALLOWED',
+                message: 'Selected models are not available on your plan',
+            };
+            getMockDialecticClient().updateSessionModels.mockResolvedValue({ error: mockApiError, status: 403 });
+            const count = 2;
+            vi.mocked(logger).error.mockClear();
+
+            useDialecticStore.setState({ selectedModels: selectedModelsThree });
+            const { setModelMultiplicity } = useDialecticStore.getState();
+            setModelMultiplicity(modelToChangeObj, count);
+
+            await vi.waitFor(() => {
+                expect(getMockDialecticClient().updateSessionModels).toHaveBeenCalled();
+                expect(vi.mocked(logger).error).toHaveBeenCalledWith(
+                    '[DialecticStore] Post-setModelMultiplicity: Failed to update session models on backend',
+                    {
+                        sessionId: activeSessionId,
+                        modelId: modelToChangeObj.id,
+                        count: count,
+                        error: mockApiError,
+                    }
+                );
+            });
+            expect(useDialecticStore.getState().selectedModels).toEqual(selectedModelsThree);
+            expect(useDialecticStore.getState().updateSessionModelsError?.code).toBe('MODEL_TIER_DISALLOWED');
+        });
+
+        it('setModelMultiplicity reverts and sets updateSessionModelsError on MODEL_LIMIT_EXCEEDED', async () => {
+            const mockApiError: ApiError = {
+                code: 'MODEL_LIMIT_EXCEEDED',
+                message: 'Model selection exceeds the limit for your plan',
+            };
+            getMockDialecticClient().updateSessionModels.mockResolvedValue({ error: mockApiError, status: 403 });
+            const count = 2;
+            vi.mocked(logger).error.mockClear();
+
+            useDialecticStore.setState({ selectedModels: selectedModelsThree });
+            const { setModelMultiplicity } = useDialecticStore.getState();
+            setModelMultiplicity(modelToChangeObj, count);
+
+            await vi.waitFor(() => {
+                expect(getMockDialecticClient().updateSessionModels).toHaveBeenCalled();
+                expect(vi.mocked(logger).error).toHaveBeenCalledWith(
+                    '[DialecticStore] Post-setModelMultiplicity: Failed to update session models on backend',
+                    {
+                        sessionId: activeSessionId,
+                        modelId: modelToChangeObj.id,
+                        count: count,
+                        error: mockApiError,
+                    }
+                );
+            });
+            expect(useDialecticStore.getState().selectedModels).toEqual(selectedModelsThree);
+            expect(useDialecticStore.getState().updateSessionModelsError?.code).toBe('MODEL_LIMIT_EXCEEDED');
         });
     });
 

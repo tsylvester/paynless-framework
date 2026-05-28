@@ -4,6 +4,14 @@ Mocks are named as mock[FunctionName] or mock[Object]. Do not add additional sty
 
 The mock file must provide a builder for each element of the function signature, for example deps, params, payload, returns. 
 
+The mock file must EXACTLY MATCH the ACTUAL FUNCTION AND ITS TYPES. 
+
+You must use the ACTUAL NAMES of the existing types and functions, with "mock" prefixed. 
+
+You will not invent new types for the mock. You will not invent new shapes for the mock. You will not invent new names for the mock. 
+
+You are mocking the ACTUAL FUNCTION THAT EXISTS (or will soon exist). You are NOT imagining an entirely new function, types, and naming conventions. 
+
 Each builder must provide a default value and accept an override for each value it owns, including undefined or null, for any value that is a member of the object. 
 
 Do not build mocks specific to a single override value. We do not want `mockFunctionMissingSomeDependency`. That is what the default type and override values are for. 

@@ -10,8 +10,10 @@ import type {
   NodeChatApiRequest,
   NodeModelConfig,
   NodeOutboundDocument,
+  NodeUserConfig,
 } from '../ai-adapter.interface.ts';
 import { isNodeTokenUsage, isPlainRecord } from '../getNodeAiAdapter.guard.ts';
+import { resolveOutputCap } from '../../resolveOutputCap/resolveOutputCap.provides.ts';
 
 function resourceDocumentLine(doc: NodeOutboundDocument): string {
   if (doc.document_key !== undefined && doc.stage_slug !== undefined) {
@@ -32,6 +34,7 @@ function prepareOpenAiStreamingRequest(
   request: NodeChatApiRequest,
   modelIdentifier: string,
   modelConfig: NodeModelConfig,
+  userConfig: NodeUserConfig,
 ): {
   payload: ChatCompletionCreateParamsStreaming;
 } {
@@ -89,22 +92,14 @@ function prepareOpenAiStreamingRequest(
     }
   };
 
-  if (typeof request.max_tokens_to_generate === 'number') {
-    applyCap(request.max_tokens_to_generate);
-  } else {
-    const hardCap: number | undefined = modelConfig.hard_cap_output_tokens;
-    const providerCap: number | undefined = modelConfig.provider_max_output_tokens;
-    const candidates: number[] = [];
-    if (typeof hardCap === 'number' && hardCap > 0) {
-      candidates.push(hardCap);
-    }
-    if (typeof providerCap === 'number' && providerCap > 0) {
-      candidates.push(providerCap);
-    }
-    if (candidates.length > 0) {
-      const fallbackCap: number = Math.min(...candidates);
-      applyCap(fallbackCap);
-    }
+  const cap: number | undefined = resolveOutputCap({
+    requestMax: request.max_tokens_to_generate,
+    hardCap: modelConfig.hard_cap_output_tokens,
+    providerMax: modelConfig.provider_max_output_tokens,
+    tierCap: userConfig.tier_output_cap_tokens,
+  });
+  if (cap !== undefined) {
+    applyCap(cap);
   }
 
   return { payload };
@@ -114,6 +109,7 @@ export function createOpenAINodeAdapter(
   params: NodeAdapterConstructorParams,
 ): AiAdapter {
   const modelConfig: NodeModelConfig = params.modelConfig;
+  const userConfig: NodeUserConfig = params.userConfig;
   const client: OpenAI = new OpenAI({ apiKey: params.apiKey });
 
   return {
@@ -122,7 +118,7 @@ export function createOpenAINodeAdapter(
       apiIdentifier: string,
     ): AsyncGenerator<NodeAdapterStreamChunk> {
       const prepared: { payload: ChatCompletionCreateParamsStreaming } =
-        prepareOpenAiStreamingRequest(request, apiIdentifier, modelConfig);
+        prepareOpenAiStreamingRequest(request, apiIdentifier, modelConfig, userConfig);
 
       try {
         const stream: AsyncIterable<unknown> = await client.chat.completions.create(

@@ -2,6 +2,7 @@ import type {
   AiAdapter,
   NodeModelConfig,
   NodeProviderMap,
+  NodeUserConfig,
 } from './ai-adapter.interface.ts';
 
 export interface GetNodeAiAdapterDeps {
@@ -12,6 +13,7 @@ export interface GetNodeAiAdapterParams {
   apiIdentifier: string;
   apiKey: string;
   modelConfig: NodeModelConfig;
+  userConfig: NodeUserConfig;
 }
 
 export type GetNodeAiAdapterFn = (

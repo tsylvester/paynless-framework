@@ -4,6 +4,7 @@ import {
 } from 'https://deno.land/std@0.208.0/assert/mod.ts';
 import { getMaxOutputTokens } from './affordability_utils.ts';
 import type { AiModelExtendedConfig, ILogger, LogMetadata } from '../types.ts';
+import type { Tables } from '../../types_db.ts';
 
 // Mock Logger for Deno
 // deno-lint-ignore no-explicit-any
@@ -348,6 +349,148 @@ Deno.test('getMaxOutputTokens', async (t) => {
         'Cannot calculate max output tokens: Invalid input token cost rate.',
       );
       assertEquals(mockLoggerErrorCalls.length, 1);
+    },
+  );
+
+  await t.step(
+    'tierOutputCapTokens omitted → same result as pre-tier cap logic (chat-compatible arity)',
+    () => {
+      beforeEachStep();
+      const user_balance_tokens = 1000;
+      const prompt_input_tokens = 100;
+      const cfg: AiModelExtendedConfig = {
+        api_identifier: 'tier-omit-baseline',
+        input_token_cost_rate: 1,
+        output_token_cost_rate: 2,
+        hard_cap_output_tokens: undefined,
+        tokenization_strategy: {
+          type: 'tiktoken',
+          tiktoken_encoding_name: 'cl100k_base',
+        },
+      };
+      const result = getMaxOutputTokens(
+        user_balance_tokens,
+        prompt_input_tokens,
+        cfg,
+        mockLogger,
+      );
+      assertEquals(result, 400);
+    },
+  );
+
+  await t.step(
+    'tierOutputCapTokens explicit null → same result as when tier cap is not applied',
+    () => {
+      beforeEachStep();
+      const user_balance_tokens = 1000;
+      const prompt_input_tokens = 100;
+      const cfg: AiModelExtendedConfig = {
+        api_identifier: 'tier-null-baseline',
+        input_token_cost_rate: 1,
+        output_token_cost_rate: 2,
+        hard_cap_output_tokens: undefined,
+        tokenization_strategy: {
+          type: 'tiktoken',
+          tiktoken_encoding_name: 'cl100k_base',
+        },
+      };
+      const explicitNullTier: Tables<'tier_definitions'>['output_cap_tokens'] = null;
+      const result = getMaxOutputTokens(
+        user_balance_tokens,
+        prompt_input_tokens,
+        cfg,
+        mockLogger,
+        0,
+        explicitNullTier,
+      );
+      assertEquals(result, 400);
+    },
+  );
+
+  await t.step(
+    'tierOutputCapTokens 32768 binds below wallet and model hard_cap 131072',
+    () => {
+      beforeEachStep();
+      const user_balance_tokens = 200_000;
+      const prompt_input_tokens = 100;
+      const cfg: AiModelExtendedConfig = {
+        api_identifier: 'tier-binds-low',
+        input_token_cost_rate: 1,
+        output_token_cost_rate: 1,
+        hard_cap_output_tokens: 131_072,
+        context_window_tokens: 1_000_000,
+        tokenization_strategy: {
+          type: 'tiktoken',
+          tiktoken_encoding_name: 'cl100k_base',
+        },
+      };
+      const result = getMaxOutputTokens(
+        user_balance_tokens,
+        prompt_input_tokens,
+        cfg,
+        mockLogger,
+        0,
+        32_768,
+      );
+      assertEquals(result, 32_768);
+    },
+  );
+
+  await t.step(
+    'tierOutputCapTokens 131072 does not override model hard_cap 64000',
+    () => {
+      beforeEachStep();
+      const user_balance_tokens = 200_000;
+      const prompt_input_tokens = 100;
+      const cfg: AiModelExtendedConfig = {
+        api_identifier: 'model-cap-binds',
+        input_token_cost_rate: 1,
+        output_token_cost_rate: 1,
+        hard_cap_output_tokens: 64_000,
+        context_window_tokens: 1_000_000,
+        tokenization_strategy: {
+          type: 'tiktoken',
+          tiktoken_encoding_name: 'cl100k_base',
+        },
+      };
+      const result = getMaxOutputTokens(
+        user_balance_tokens,
+        prompt_input_tokens,
+        cfg,
+        mockLogger,
+        0,
+        131_072,
+      );
+      assertEquals(result, 64_000);
+    },
+  );
+
+  await t.step(
+    'tierOutputCapTokens 131072 does not override wallet-derived cap 10000',
+    () => {
+      beforeEachStep();
+      const user_balance_tokens = 12_500;
+      const prompt_input_tokens = 100;
+      const cfg: AiModelExtendedConfig = {
+        api_identifier: 'wallet-cap-binds',
+        input_token_cost_rate: 1,
+        output_token_cost_rate: 1,
+        hard_cap_output_tokens: 500_000,
+        context_window_tokens: 1_000_000,
+        tokenization_strategy: {
+          type: 'tiktoken',
+          tiktoken_encoding_name: 'cl100k_base',
+        },
+      };
+      const result = getMaxOutputTokens(
+        user_balance_tokens,
+        prompt_input_tokens,
+        cfg,
+        mockLogger,
+        0,
+        131_072,
+      );
+      assertEquals(result, 10_000);
     },
   );
 });

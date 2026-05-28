@@ -1,210 +1,273 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { render, screen, fireEvent, within } from '@testing-library/react';
 import { PlanCard } from './PlanCard';
-import type { SubscriptionPlan } from '@paynless/types';
+import type { PlanCardProps } from './PlanCard.interface';
+import {
+  buildPlanCardProps,
+  buildSubscriptionPlan,
+  createMockPlanCardCallbacks,
+  mockSubscriptionPlan,
+  mockOtpPlan,
+  mockFreePlan,
+  type PlanCardCallbacks,
+  type PlanCardPropsOverrides,
+} from './PlanCard.mock';
 
-// --- Mock Data & Functions ---
-const mockPlan: SubscriptionPlan = {
-  id: 'plan_basic_123',
-  stripe_price_id: 'price_basic_stripe_123',
-  stripe_product_id: 'prod_basic_stripe',
-  name: 'Basic Plan',
-  description: { 
-    subtitle: 'Good for starters', 
-    features: ['Feature 1', 'Feature 2'] 
-  },
-  amount: 1000, // $10.00
-  currency: 'usd',
-  interval: 'month',
-  interval_count: 1,
-  active: true,
-  metadata: null,
-  created_at: new Date().toISOString(),
-  updated_at: new Date().toISOString(),
-  item_id_internal: null,
-  plan_type: 'subscription',
-  tokens_to_award: 1000,
-};
-
-const mockHandleSubscribe = vi.fn();
-const mockHandleCancelSubscription = vi.fn();
-const mockFormatAmount = (amount: number, currency: string) => 
-  new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(amount / 100);
-const mockFormatInterval = (interval: string, count: number) => 
-  count === 1 ? interval : `every ${count} ${interval}s`;
-
-const defaultProps = {
-  plan: mockPlan,
-  isCurrentPlan: false,
-  userIsOnPaidPlan: false,
-  isProcessing: false,
-  handleSubscribe: mockHandleSubscribe,
-  handleCancelSubscription: mockHandleCancelSubscription,
-  formatAmount: mockFormatAmount,
-  formatInterval: mockFormatInterval,
-};
-
-// --- Test Suite ---
 describe('PlanCard Component', () => {
+  let callbacks: PlanCardCallbacks;
 
-  it('should render basic plan details correctly', () => {
-    render(<PlanCard {...defaultProps} />);
-
-    // Check plan name
-    expect(screen.getByRole('heading', { name: /Basic Plan/i })).toBeInTheDocument();
-
-    // Check subtitle from description
-    expect(screen.getByText(/Good for starters/i)).toBeInTheDocument();
-
-    // Check formatted price
-    expect(screen.getByText(/\$10\.00/)).toBeInTheDocument(); // $10.00
-
-    // Check formatted interval (using replace logic from component)
-    expect(screen.getByText(/\/month/i)).toBeInTheDocument(); // /month (monthly becomes month)
+  beforeEach(() => {
+    callbacks = createMockPlanCardCallbacks();
   });
 
-  // --- Tests for features --- 
+  function renderPlanCard(overrides?: PlanCardPropsOverrides): void {
+    const props: PlanCardProps = buildPlanCardProps({
+      onSelect: callbacks.onSelect,
+      onAdd: callbacks.onAdd,
+      onDowngrade: callbacks.onDowngrade,
+      ...overrides,
+    });
+    render(<PlanCard {...props} />);
+  }
+
+  it('should render basic plan details correctly', () => {
+    renderPlanCard();
+
+    expect(screen.getByRole('heading', { name: /Basic Plan/i })).toBeInTheDocument();
+    expect(screen.getByText(/Good for starters/i)).toBeInTheDocument();
+    expect(screen.getByText(/\$10\.00/)).toBeInTheDocument();
+    expect(screen.getByText(/\/month/i)).toBeInTheDocument();
+  });
+
   it('should render features from description correctly', () => {
-    render(<PlanCard {...defaultProps} />);
-    
+    renderPlanCard();
+
     expect(screen.getByText(/Feature 1/i)).toBeInTheDocument();
     expect(screen.getByText(/Feature 2/i)).toBeInTheDocument();
   });
 
   it('should render fallback message when features are empty', () => {
-    const planWithoutFeatures = {
-      ...mockPlan,
+    const planWithoutFeatures = buildSubscriptionPlan({
       description: { subtitle: 'No features here', features: [] },
-    };
-    render(<PlanCard {...defaultProps} plan={planWithoutFeatures} />);
+    });
+    renderPlanCard({ plan: planWithoutFeatures });
 
     expect(screen.getByText(/No specific features listed/i)).toBeInTheDocument();
   });
 
   it('should handle missing or invalid description structure gracefully', () => {
-    const planWithInvalidDesc = {
-      ...mockPlan,
-      description: null, // Or could be { subtitle: 'Only sub' } etc.
-    };
-    render(<PlanCard {...defaultProps} plan={planWithInvalidDesc} />);
+    const planWithInvalidDesc = buildSubscriptionPlan({ description: null });
+    renderPlanCard({ plan: planWithInvalidDesc });
 
-    // Check heading exists
-    expect(screen.getByRole('heading', { name: /Basic Plan/i })).toBeInTheDocument(); 
-    // Check paragraph contains fallback subtitle
-    expect(screen.getByText(/Basic Plan/i, { selector: 'p' })).toBeInTheDocument(); 
-    // Should render fallback message for features
+    expect(screen.getByRole('heading', { name: /Basic Plan/i })).toBeInTheDocument();
+    expect(screen.getByText(/Basic Plan/i, { selector: 'p' })).toBeInTheDocument();
     expect(screen.getByText(/No specific features listed/i)).toBeInTheDocument();
   });
-  
-  // --- Tests for button logic --- 
-  describe('Button Logic', () => {
-    const freePlan: SubscriptionPlan = {
-      ...mockPlan, // Spread mockPlan to get defaults for other fields
-      id: 'plan_free_001', // Ensure a unique ID
-      stripe_price_id: 'price_Free',
-      stripe_product_id: null,
-      name: 'Free',
-      description: { 
-        subtitle: 'Basic free features', 
-        features: ['Limited Access'] 
-      },
-      amount: 0,
-      plan_type: 'subscription', // Or 'subscription' if appropriate, ensure consistency
-      item_id_internal: 'default_free',
-      tokens_to_award: 0,
-    };
 
+  describe('Button Logic', () => {
     beforeEach(() => {
-      // Clear mock calls before each button test
-      mockHandleSubscribe.mockClear();
-      mockHandleCancelSubscription.mockClear();
+      callbacks.onSelect.mockClear();
+      callbacks.onAdd.mockClear();
+      callbacks.onDowngrade.mockClear();
     });
 
     it('should render "Current Plan" button (disabled) if isCurrentPlan is true', () => {
-      render(<PlanCard {...defaultProps} isCurrentPlan={true} />);
+      renderPlanCard({ isCurrentPlan: true });
+
       const button = screen.getByRole('button', { name: /Current Plan/i });
       expect(button).toBeInTheDocument();
       expect(button).toBeDisabled();
     });
 
     it('should render "Downgrade to Free" button if plan is free and not current', () => {
-      const freePlan = { ...mockPlan, amount: 0, name: 'Free Plan' };
-      render(<PlanCard {...defaultProps} plan={freePlan} isCurrentPlan={false} userIsOnPaidPlan={true} />); // User must be on paid plan to downgrade
-      
+      renderPlanCard({
+        plan: mockFreePlan,
+        isCurrentPlan: false,
+        userIsOnPaidPlan: true,
+      });
+
       const button = screen.getByRole('button', { name: /Downgrade to Free/i });
       expect(button).toBeInTheDocument();
       expect(button).toBeEnabled();
-      
+
       fireEvent.click(button);
-      expect(mockHandleCancelSubscription).toHaveBeenCalledTimes(1);
-      expect(mockHandleSubscribe).not.toHaveBeenCalled();
+      expect(callbacks.onDowngrade).toHaveBeenCalledTimes(1);
+      expect(callbacks.onSelect).not.toHaveBeenCalled();
+      expect(callbacks.onAdd).not.toHaveBeenCalled();
     });
 
     it('should disable "Downgrade to Free" if user is not on a paid plan', () => {
-      const freePlan = { ...mockPlan, amount: 0, name: 'Free Plan' };
-      render(<PlanCard {...defaultProps} plan={freePlan} isCurrentPlan={false} userIsOnPaidPlan={false} />);
-      
+      renderPlanCard({
+        plan: mockFreePlan,
+        isCurrentPlan: false,
+        userIsOnPaidPlan: false,
+      });
+
       const button = screen.getByRole('button', { name: /Downgrade to Free/i });
       expect(button).toBeInTheDocument();
       expect(button).toBeDisabled();
     });
 
-    it('should render "Subscribe" button if plan is paid, not current, and user is not on paid plan', () => {
-      render(<PlanCard {...defaultProps} isCurrentPlan={false} userIsOnPaidPlan={false} />); // Default state
-      
-      const button = screen.getByRole('button', { name: /Subscribe/i });
+    it('should render "Select Plan" button for subscription plan not in cart', () => {
+      renderPlanCard({ plan: mockSubscriptionPlan, isInCart: false });
+
+      const button = screen.getByRole('button', { name: /Select Plan/i });
       expect(button).toBeInTheDocument();
       expect(button).toBeEnabled();
-      
+
       fireEvent.click(button);
-      expect(mockHandleSubscribe).toHaveBeenCalledTimes(1);
-      expect(mockHandleSubscribe).toHaveBeenCalledWith(mockPlan.stripe_price_id);
-      expect(mockHandleCancelSubscription).not.toHaveBeenCalled();
+      expect(callbacks.onSelect).toHaveBeenCalledTimes(1);
+      expect(callbacks.onSelect).toHaveBeenCalledWith(mockSubscriptionPlan);
+      expect(callbacks.onAdd).not.toHaveBeenCalled();
+      expect(callbacks.onDowngrade).not.toHaveBeenCalled();
     });
 
-    it('should render "Change Plan" button if plan is paid, not current, and user IS on paid plan', () => {
-      render(<PlanCard {...defaultProps} isCurrentPlan={false} userIsOnPaidPlan={true} />);
-      
-      const button = screen.getByRole('button', { name: /Change Plan/i });
+    it('should render "Selected" button for subscription plan in cart and call onSelect on click', () => {
+      renderPlanCard({ plan: mockSubscriptionPlan, isInCart: true });
+
+      const button = screen.getByRole('button', { name: /Selected/i });
       expect(button).toBeInTheDocument();
       expect(button).toBeEnabled();
-      
+
       fireEvent.click(button);
-      expect(mockHandleSubscribe).toHaveBeenCalledTimes(1);
-      expect(mockHandleSubscribe).toHaveBeenCalledWith(mockPlan.stripe_price_id);
-      expect(mockHandleCancelSubscription).not.toHaveBeenCalled();
+      expect(callbacks.onSelect).toHaveBeenCalledTimes(1);
+      expect(callbacks.onSelect).toHaveBeenCalledWith(mockSubscriptionPlan);
+    });
+
+    it('should apply cart-selected border styling when subscription plan is in cart', () => {
+      renderPlanCard({ plan: mockSubscriptionPlan, isInCart: true, isCurrentPlan: false });
+
+      const card = screen.getByTestId(`plan-card-${mockSubscriptionPlan.id}`);
+      expect(card.className).toMatch(/ring-green-500/);
+      expect(card.className).toMatch(/border-green-500/);
+    });
+
+    it('should render "Add to Cart" button for OTP plan not in cart', () => {
+      renderPlanCard({ plan: mockOtpPlan, isInCart: false });
+
+      const button = screen.getByRole('button', { name: /Add to Cart/i });
+      expect(button).toBeInTheDocument();
+      expect(button).toBeEnabled();
+
+      fireEvent.click(button);
+      expect(callbacks.onAdd).toHaveBeenCalledTimes(1);
+      expect(callbacks.onAdd).toHaveBeenCalledWith(mockOtpPlan);
+      expect(callbacks.onSelect).not.toHaveBeenCalled();
+    });
+
+    it('should render "In Cart" with quantity for OTP plan in cart', () => {
+      renderPlanCard({ plan: mockOtpPlan, isInCart: true, cartQuantity: 2 });
+
+      expect(screen.getByText(/In Cart/i)).toBeInTheDocument();
+      expect(screen.getByText(/×2/)).toBeInTheDocument();
+    });
+
+    it('should call onAdd when OTP increment button is clicked', () => {
+      renderPlanCard({ plan: mockOtpPlan, isInCart: true, cartQuantity: 2 });
+
+      const incrementButton = screen.getByRole('button', { name: '+' });
+      fireEvent.click(incrementButton);
+      expect(callbacks.onAdd).toHaveBeenCalledTimes(1);
+      expect(callbacks.onAdd).toHaveBeenCalledWith(mockOtpPlan);
+    });
+
+    it('should disable OTP increment button when isProcessing is true', () => {
+      renderPlanCard({
+        plan: mockOtpPlan,
+        isInCart: true,
+        cartQuantity: 2,
+        isProcessing: true,
+      });
+
+      const incrementButton = screen.getByRole('button', { name: '+' });
+      expect(incrementButton).toBeDisabled();
+    });
+
+    it('should fall back to subscription behavior for unknown plan_type', () => {
+      const unknownPlan = buildSubscriptionPlan({ plan_type: 'unknown_value' });
+      renderPlanCard({ plan: unknownPlan, isInCart: false });
+
+      const button = screen.getByRole('button', { name: /Select Plan/i });
+      expect(button).toBeInTheDocument();
+      expect(button).toBeEnabled();
+
+      fireEvent.click(button);
+      expect(callbacks.onSelect).toHaveBeenCalledTimes(1);
+      expect(callbacks.onSelect).toHaveBeenCalledWith(unknownPlan);
     });
 
     it('should disable action buttons when isProcessing is true', () => {
-      // Test for a typical paid plan that is NOT the current plan
-      const { rerender } = render(<PlanCard {...defaultProps} isCurrentPlan={false} userIsOnPaidPlan={true} isProcessing={false} plan={mockPlan} />);
-      expect(screen.getByRole('button', { name: /Change Plan/i })).toBeEnabled();
+      const { rerender } = render(
+        <PlanCard
+          {...buildPlanCardProps({
+            onSelect: callbacks.onSelect,
+            onAdd: callbacks.onAdd,
+            onDowngrade: callbacks.onDowngrade,
+            plan: mockSubscriptionPlan,
+            isCurrentPlan: false,
+            isProcessing: false,
+            isInCart: false,
+          })}
+        />,
+      );
+      expect(screen.getByRole('button', { name: /Select Plan/i })).toBeEnabled();
 
-      rerender(<PlanCard {...defaultProps} isCurrentPlan={false} userIsOnPaidPlan={true} isProcessing={true} plan={mockPlan} />);
+      rerender(
+        <PlanCard
+          {...buildPlanCardProps({
+            onSelect: callbacks.onSelect,
+            onAdd: callbacks.onAdd,
+            onDowngrade: callbacks.onDowngrade,
+            plan: mockSubscriptionPlan,
+            isCurrentPlan: false,
+            isProcessing: true,
+            isInCart: false,
+          })}
+        />,
+      );
       const processingButton = screen.getByRole('button', { name: /Processing.../i });
       expect(processingButton).toBeInTheDocument();
       expect(processingButton).toBeDisabled();
-      expect(screen.queryByRole('button', { name: /Change Plan/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /Select Plan/i })).not.toBeInTheDocument();
 
-      // Test for the "Downgrade to Free" button on the Free plan card when user is on a paid plan
-      const { rerender: rerenderFree, container: freePlanContainer } = render(<PlanCard {...defaultProps} isCurrentPlan={false} userIsOnPaidPlan={true} isProcessing={false} plan={freePlan} />);
-      expect(within(freePlanContainer).getByRole('button', { name: /Downgrade to Free/i })).toBeEnabled();
-      
-      rerenderFree(<PlanCard {...defaultProps} isCurrentPlan={false} userIsOnPaidPlan={true} isProcessing={true} plan={freePlan} />);
-      // Scope the search for the processing button to within the freePlanContainer
-      const downgradeProcessingButton = within(freePlanContainer).getByRole('button', { name: /Processing.../i });
+      const { rerender: rerenderFree, container: freePlanContainer } = render(
+        <PlanCard
+          {...buildPlanCardProps({
+            onSelect: callbacks.onSelect,
+            onAdd: callbacks.onAdd,
+            onDowngrade: callbacks.onDowngrade,
+            plan: mockFreePlan,
+            isCurrentPlan: false,
+            userIsOnPaidPlan: true,
+            isProcessing: false,
+          })}
+        />,
+      );
+      expect(
+        within(freePlanContainer).getByRole('button', { name: /Downgrade to Free/i }),
+      ).toBeEnabled();
+
+      rerenderFree(
+        <PlanCard
+          {...buildPlanCardProps({
+            onSelect: callbacks.onSelect,
+            onAdd: callbacks.onAdd,
+            onDowngrade: callbacks.onDowngrade,
+            plan: mockFreePlan,
+            isCurrentPlan: false,
+            userIsOnPaidPlan: true,
+            isProcessing: true,
+          })}
+        />,
+      );
+      const downgradeProcessingButton = within(freePlanContainer).getByRole('button', {
+        name: /Processing.../i,
+      });
       expect(downgradeProcessingButton).toBeInTheDocument();
       expect(downgradeProcessingButton).toBeDisabled();
-      expect(within(freePlanContainer).queryByRole('button', { name: /Downgrade to Free/i })).not.toBeInTheDocument();
-    });
-
-     it('should use plan.id as fallback if stripePriceId is missing', () => {
-      const planWithoutStripeId = { ...mockPlan, stripe_price_id: null };
-      render(<PlanCard {...defaultProps} plan={planWithoutStripeId} />);
-      
-      const button = screen.getByRole('button', { name: /Subscribe/i });
-      fireEvent.click(button);
-      expect(mockHandleSubscribe).toHaveBeenCalledWith(planWithoutStripeId.id); // Fallback to plan.id
+      expect(
+        within(freePlanContainer).queryByRole('button', { name: /Downgrade to Free/i }),
+      ).not.toBeInTheDocument();
     });
   });
-}); 
+});

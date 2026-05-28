@@ -58,6 +58,7 @@ export function isEnqueueModelCallParams(
     "providerRow",
     "userAuthToken",
     "output_type",
+    "userConfig",
   ];
   for (let i = 0; i < keys.length; i++) {
     const key: keyof EnqueueModelCallParams = keys[i];
@@ -78,6 +79,9 @@ export function isEnqueueModelCallParams(
     return false;
   }
   if (typeof v.output_type !== "string") {
+    return false;
+  }
+  if (!isRecord(v.userConfig)) {
     return false;
   }
   return true;
@@ -148,6 +152,15 @@ export function isAiStreamEventData(v: unknown): v is AiStreamEventData {
     return false;
   }
   if (!("sig" in v) || typeof v.sig !== "string") {
+    return false;
+  }
+  if (!("user_config" in v) || !isRecord(v.user_config)) {
+    return false;
+  }
+  if (
+    typeof v.user_config.tier_output_cap_tokens !== "number" &&
+    v.user_config.tier_output_cap_tokens !== null
+  ) {
     return false;
   }
   return true;

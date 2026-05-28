@@ -28,5 +28,6 @@ export function getNodeAiAdapter(
   return factory({
     modelConfig: params.modelConfig,
     apiKey: params.apiKey,
+    userConfig: params.userConfig,
   });
 }

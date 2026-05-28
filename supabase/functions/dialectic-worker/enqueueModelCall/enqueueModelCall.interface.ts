@@ -8,6 +8,7 @@ import type {
 } from '../../_shared/types.ts';
 import type { DialecticJobRow } from '../../dialectic-service/dialectic.interface.ts';
 import type { ComputeJobSig } from "../../_shared/utils/computeJobSig/computeJobSig.interface.ts";
+import type { UserConfig } from '../calculateAffordability/calculateAffordability.interface.ts';
 export interface EnqueueModelCallDeps {
   logger: ILogger;
   netlifyQueueUrl: string;
@@ -22,6 +23,7 @@ export interface EnqueueModelCallParams {
   providerRow: Tables<'ai_providers'>;
   userAuthToken: string;
   output_type: string;
+  userConfig: UserConfig;
 }
 
 export interface EnqueueModelCallPayload {
@@ -48,6 +50,7 @@ export interface AiStreamEventData {
   model_config: AiModelExtendedConfig;
   chat_api_request: ChatApiRequest;
   sig: string;
+  user_config: UserConfig;
 }
 
 export interface AiStreamEventBody {

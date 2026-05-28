@@ -17,6 +17,7 @@ import {
 } from "@paynless/store";
 import { DomainSelector } from "@/components/dialectic/DomainSelector";
 import { AIModelSelector } from "@/components/dialectic/AIModelSelector";
+import { OutputCapSlider } from "@/components/dialectic/OutputCapSlider";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -356,15 +357,10 @@ export const CreateDialecticProjectForm: React.FC<
 	}, [capabilities, handleFileLoadForPrompt]);
 
 	useEffect(() => {
-		if (creationError) {
-			resetCreateProjectError();
-		}
 		return () => {
-			if (creationError) {
-				resetCreateProjectError();
-			}
+			resetCreateProjectError();
 		};
-	}, [creationError, resetCreateProjectError]);
+	}, [resetCreateProjectError]);
 
 	useEffect(() => {
 		reset({
@@ -473,6 +469,10 @@ export const CreateDialecticProjectForm: React.FC<
 		if (!selectedDomainId) {
 			logger.error("No domain selected. Cannot create project.");
 			return;
+		}
+
+		if (creationError) {
+			resetCreateProjectError();
 		}
 
 		const idempotencyKey: string = crypto.randomUUID();
@@ -597,6 +597,7 @@ export const CreateDialecticProjectForm: React.FC<
 								>
 									<PopoverTrigger asChild>
 										<Button
+											type="button"
 											variant="outline"
 											size="sm"
 											className={cn(
@@ -615,17 +616,20 @@ export const CreateDialecticProjectForm: React.FC<
 										</Button>
 									</PopoverTrigger>
 									<PopoverContent
-										className="w-[420px] p-0 bg-background z-50 border shadow-lg"
+										className="w-[480px] z-50 p-0 bg-background border shadow-lg"
 										align="end"
 									>
 										<div className="p-3 border-b bg-popover">
-											<p className="text-sm font-medium">AI Models</p>
+											<p className="text-sm font-medium">Model Settings</p>
 											<p className="text-xs text-muted-foreground">
-												Select models for generation
+												Configure models and output limits
 											</p>
 										</div>
-										<div className="p-3 bg-popover overflow-y-auto">
+										<div className="p-3 bg-popover space-y-4 overflow-y-auto max-h-[500px]">
 											<AIModelSelector />
+											<div className="border-t pt-3">
+												<OutputCapSlider />
+											</div>
 										</div>
 									</PopoverContent>
 								</Popover>

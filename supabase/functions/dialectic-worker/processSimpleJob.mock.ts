@@ -267,6 +267,7 @@ export const mockProviderData: Tables<'ai_providers'> = {
   is_default_embedding: false,
   is_default_generation: false,
   is_enabled: true,
+  min_plan_tier_level: 0,
 };
 
 // ---------------------------------------------------------------------------

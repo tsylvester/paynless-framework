@@ -257,6 +257,8 @@ export async function compressPrompt(
         currentTokenCount,
         modelConfig,
         deps.logger,
+        0,
+        null,
       );
       const safetyBufferForCheck: number = 32;
       allowedInputCheck = providerMaxInputTokens - (plannedMaxOutputForCheck + safetyBufferForCheck);
@@ -306,6 +308,8 @@ export async function compressPrompt(
         finalTokenCountAfterCompression,
         modelConfig,
         deps.logger,
+        0,
+        null,
       );
     } catch (e: unknown) {
       if (e instanceof Error) {

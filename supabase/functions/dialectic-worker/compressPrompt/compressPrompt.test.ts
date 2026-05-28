@@ -308,12 +308,16 @@ Deno.test("compressPrompt: balance decremented by tokensUsed * inputRate affects
       finalTokens,
       params.extendedModelConfig,
       depsHigh.logger,
+      0,
+      null,
     );
     const expectedZero: number = getMaxOutputTokens(
       params.balanceAfterCompression,
       finalTokens,
       params.extendedModelConfig,
       depsZero.logger,
+      0,
+      null,
     );
     assertEquals(resultHigh.chatApiRequest.max_tokens_to_generate, expectedHigh);
     assertEquals(resultZero.chatApiRequest.max_tokens_to_generate, expectedZero);
@@ -793,6 +797,8 @@ Deno.test("post-compression allowedInputPost <= 0 returns ContextWindowError", a
     finalInputTokens,
     cfg,
     deps.logger,
+    0,
+    null,
   );
   const safetyBuffer: number = 32;
   const allowedInputPost: number =
@@ -968,6 +974,8 @@ Deno.test("success sets max_tokens_to_generate from getMaxOutputTokens", async (
       finalTokens,
       cfg,
       deps.logger,
+      0,
+      null,
     );
     const maxOut = result.chatApiRequest.max_tokens_to_generate;
     assertEquals(typeof maxOut, "number");

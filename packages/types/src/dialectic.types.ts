@@ -9,6 +9,8 @@ export interface UpdateProjectDomainPayload {
   selectedDomainId: string;
 }
 
+export type AiProvidersRow = Database['public']['Tables']['ai_providers']['Row'];
+
 export type DialecticStage = Database['public']['Tables']['dialectic_stages']['Row'];
 
 export type DialecticStageTransition = Database['public']['Tables']['dialectic_stage_transitions']['Row'];
@@ -156,28 +158,7 @@ export interface DialecticSessionModel {
     model_id: string;
     model_role: string | null;
     created_at: string;
-    ai_provider?: AIModelCatalogEntry;
-}
-
-export interface AIModelCatalogEntry {
-    id: string;
-    provider_name: string;
-    model_name: string;
-    api_identifier: string;
-    description: string | null;
-    strengths: string[] | null;
-    weaknesses: string[] | null;
-    context_window_tokens: number | null;
-    input_token_cost_usd_millionths: number | null;
-    output_token_cost_usd_millionths: number | null;
-    supports_image_input?: boolean;
-    supports_video_input?: boolean;
-    supports_audio_input?: boolean;
-    max_output_tokens: number | null;
-    is_active: boolean;
-    created_at: string;
-    updated_at: string;
-    is_default_generation: boolean;
+    ai_provider?: AiProvidersRow;
 }
 
 export interface PromptTemplateVariable {
@@ -346,7 +327,7 @@ export interface DialecticStateValues {
   isLoadingProjectDetail: boolean;
   projectDetailError: ApiError | null;
 
-  modelCatalog: AIModelCatalogEntry[];
+  modelCatalog: AiProvidersRow[];
   isLoadingModelCatalog: boolean;
   modelCatalogError: ApiError | null;
 
@@ -372,6 +353,9 @@ export interface DialecticStateValues {
   uploadProjectResourceError: ApiError | null;
   /** Single origin from session response (id + displayName); display uses this, not catalog. */
   selectedModels: SelectedModels[] | null | undefined;
+  
+  // Output token cap configuration
+  maxOutputTokens: number | null;
 
   // Cache for initial prompt file content
   initialPromptContentCache: { [resourceId: string]: InitialPromptCacheEntry };
@@ -694,6 +678,9 @@ export interface DialecticActions {
   setSelectedModels: (models: SelectedModels[]) => void;
   setModelMultiplicity: (model: SelectedModels, count: number) => void;
   resetSelectedModels: () => void;
+  
+  // Output token cap configuration
+  setMaxOutputTokens: (maxTokens: number) => void;
 
   // New action for fetching process templates
   fetchProcessTemplate: (templateId: string) => Promise<void>;
@@ -1070,7 +1057,7 @@ export interface DialecticApiClient {
   getProjectDetails(projectId: string): Promise<ApiResponse<DialecticProject>>;
   startSession(payload: StartSessionPayload): Promise<ApiResponse<StartSessionSuccessResponse>>;
   updateSessionModels(payload: UpdateSessionModelsPayload): Promise<ApiResponse<DialecticSession>>;
-  listModelCatalog(): Promise<ApiResponse<AIModelCatalogEntry[]>>;
+  listModelCatalog(): Promise<ApiResponse<AiProvidersRow[]>>;
   getContributionContentData(contributionId: string): Promise<ApiResponse<GetContributionContentDataResponse | null>>;
   listDomains(): Promise<ApiResponse<DialecticDomain[]>>;
   fetchProcessTemplate(templateId: string): Promise<ApiResponse<DialecticProcessTemplate>>;
@@ -1123,6 +1110,7 @@ export interface GenerateContributionsPayload {
   iterationNumber: number;
   continueUntilComplete: boolean;
   walletId: string;
+  maxOutputTokens?: number;
 }
 
 export interface StartContributionGenerationResult {

@@ -200,6 +200,9 @@ export const initialDialecticStateValues: DialecticStateValues = {
 	fetchFeedbackFileContentError: null,
 
   activeDialecticWalletId: null,
+  
+  // Output token cap configuration
+  maxOutputTokens: null,
 
 	// Recipe hydration and per-stage-run progress
 	recipesByStageSlug: {},
@@ -1283,6 +1286,9 @@ export const useDialecticStore = create<DialecticStore>()(
 
 	setSelectedModels: (models) => {
 		logger.info("[DialecticStore] Setting selected models.", { models });
+		const previousSelectedModels: SelectedModels[] = [
+			...(get().selectedModels || []),
+		];
 		set({ selectedModels: models });
 		const activeSessionId = get().activeContextSessionId;
 		if (activeSessionId) {
@@ -1293,23 +1299,24 @@ export const useDialecticStore = create<DialecticStore>()(
 				})
 				.then((response) => {
 					if (response.error) {
+						set({
+							selectedModels: previousSelectedModels,
+							updateSessionModelsError: response.error,
+						});
 						logger.error(
 							"[DialecticStore] Post-setSelectedModels: Failed to update session models on backend",
 							{ sessionId: activeSessionId, error: response.error },
 						);
 					}
-				})
-				.catch((err) => {
-					logger.error(
-						"[DialecticStore] Post-setSelectedModels: Network error during background session model update",
-						{ sessionId: activeSessionId, error: err },
-					);
 				});
 		}
 	},
 
 	setModelMultiplicity: (model, count) => {
 		const state = get();
+		const previousSelectedModels: SelectedModels[] = [
+			...(state.selectedModels || []),
+		];
 		// Ensure selectedModels is treated as an array, even if it's null or undefined.
 		const currentModels = state.selectedModels || [];
 		const otherModels = currentModels.filter((m) => m.id !== model.id);
@@ -1334,6 +1341,10 @@ export const useDialecticStore = create<DialecticStore>()(
 				})
 				.then((response) => {
 					if (response.error) {
+						set({
+							selectedModels: previousSelectedModels,
+							updateSessionModelsError: response.error,
+						});
 						logger.error(
 							"[DialecticStore] Post-setModelMultiplicity: Failed to update session models on backend",
 							{
@@ -1344,12 +1355,6 @@ export const useDialecticStore = create<DialecticStore>()(
 							},
 						);
 					}
-				})
-				.catch((err) => {
-					logger.error(
-						"[DialecticStore] Post-setModelMultiplicity: Network error during background session model update",
-						{ sessionId: activeSessionId, modelId: model.id, count, error: err },
-					);
 				});
 		}
 	},
@@ -1379,6 +1384,11 @@ export const useDialecticStore = create<DialecticStore>()(
 					);
 				});
 		}
+	},
+	
+	setMaxOutputTokens: (maxTokens: number) => {
+		logger.info(`[DialecticStore] Setting max output tokens to ${maxTokens}`);
+		set({ maxOutputTokens: maxTokens });
 	},
 
 	fetchInitialPromptContent: async (resourceId: string) => {

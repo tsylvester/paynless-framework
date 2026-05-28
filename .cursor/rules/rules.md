@@ -10,6 +10,9 @@
 * These rules are strict requirements.
 * The agent must abide by this entire rule set at all times without deviation. 
 * Do not ignore or override these rules to "be helpful", or you will not be helpful, you will aggravate the user and be intentionally, knowingly, consciously, provocatively antagonistic. 
+* This repo will *automatically revert* any file that is touched without being explicitly provided to the agent, and *automatically revert* any edit that does not obey this rule set. 
+* Any edit the agent performs that *does not completely comply with this set of rules* is *automatically, immediately, instantly, irrevocably* discarded. 
+* The agent is explicitly informed that the repo is automatically constrained, which means *any deviation from this rule set means the agent has intentionally chosen to waste time and effort on edits they know will be immediately, automatically discarded.* 
 
 ## 0. Command Pyramid & Modes
 * Any work that does not exactly follow these instructions will be rejected for failing to follow these instructions.
@@ -88,6 +91,11 @@ The second exception to strict typing is for intentionally malformed objects in 
 * Reexporting is only permitted in barrel exports for a package or workspace. These files are typically named *index* or *provides*. 
 * A ternary is not a type guard, a ternary is a default value. Default values are prohibited in production code.
 * Every object and variable must be typed. There are no exceptions to this rule. If you are building a function and find untyped vars or objects, stop, explain the discovery, propose the new checklist node to type the vars or objects, and halt.
+* Never re-define an object's type inline in any way, for any reason. Use the exact type defined for it and declare that type when instancing the object. 
+* If an object is not primitive and you cannot find a type, EXPLAIN THE PROBLEM AND HALT. DO NOT TYPE THE OBJECT INLINE! 
+* If the imported type is object:Type, an inline union object:Type|Othertype is invalid. A union type declaration is only valid if it exists in the type definition itself, not inline. 
+* DO NOT EDIT THE DEFINED TYPE TO AVOID STRICT COMPLIANCE WITH THIS RULE! THIS RULE DOES NOT PERMIT YOU TO EDIT TYPES AT YOUR CONVENIENCE! 
+* You DO NOT edit any type you are not EXPLICITLY given permission to edit. Types are a FIXED CONTRACT TO THE APPLICATION AND USER, not renegotiable at the agent's leisure. 
 
 ## 6. Plan Fidelity & Shortcut Ban
 * Once a solution is described, implement exactly that solution and the user’s instruction. Expedient shortcuts are forbidden without explicit approval.
@@ -356,12 +364,27 @@ The second exception to strict typing is for intentionally malformed objects in 
       * Accept all valid contract cases
       * Reject all invalid contract cases
 
-  ### 7. Behavioral Verification
+  ### 7. Simulation
+
+  * `[ ]`   `[function].mock.ts`
+    * `[ ]`   Provide controllable implementations of:
+      * All external interactions
+
+    * `[ ]`   Must conform to:
+      * interface
+      * interaction.spec
+
+    * `[ ]`   No new behavior introduced beyond spec
+
+### 8. Behavioral Verification 
 
   * `[ ]`   `[function].test.ts`
     * `[ ]`   Validate behavior against:
       * `requirements`
       * `interaction.spec`
+  * `[ ]`   `[function].someOther.test.ts` 
+    * Some functions have multiple test files. 
+    * In such case, include every test file that must be updated in the node detail. 
 
     * `[ ]`   Focus on:
       * Correct transformations
@@ -371,7 +394,7 @@ The second exception to strict typing is for intentionally malformed objects in 
       * Type shape
       * Guard correctness
 
-  ### 8. Construction
+  ### 9. Construction
 
   * `[ ]`   `construction`
     * `[ ]`   Define:
@@ -384,7 +407,7 @@ The second exception to strict typing is for intentionally malformed objects in 
     * `[ ]`   Declare invalid construction contexts
     * `[ ]`   Define initialization order (if needed)
 
-  ### 9. Implementation
+  ### 10. Implementation
 
   * `[ ]`   `[function].ts`
     * `[ ]`   Implement behavior defined in:
@@ -396,18 +419,6 @@ The second exception to strict typing is for intentionally malformed objects in 
       * Bypass guards or contracts
 
     * `[ ]`   Each requirement maps to code paths
-
-  ### 10. Simulation
-
-  * `[ ]`   `[function].mock.ts`
-    * `[ ]`   Provide controllable implementations of:
-      * All external interactions
-
-    * `[ ]`   Must conform to:
-      * interface
-      * interaction.spec
-
-    * `[ ]`   No new behavior introduced beyond spec
 
   ### 11. External Boundary
 
@@ -461,10 +472,10 @@ The second exception to strict typing is for intentionally malformed objects in 
   
 ## Legend - You must use this EXACT format. Do not modify it, adapt it, or "improve" it. The bullets, square braces, ticks, nesting, and node structuring are ABSOLUTELY MANDATORY and UNALTERABLE. 
 
-*   `[ ]` [path]/[workspace] Unstarted work node. Each node is addressed by its deepest unique segment to disambiguate.
+*   `[ ]` [path]/[workspace] Unstarted work step in a node. Each node is addressed by its deepest unique segment to disambiguate.
     *   `[ ]` [subfolder]/`filename`. Elements in work nodes will be nested as shown. Subnodes show the file name, or path and file name, to address that element.
         *   `[ ]` [subfolder]/[subfolder]/`filename` Nesting can be as deep as logically required, using the file tree path segment.
-*   `[✅]` Represents a completed node at any depth.
+*   `[✅]` Represents a completed step at any depth.
 
 ## Example Component Types and Labels
 

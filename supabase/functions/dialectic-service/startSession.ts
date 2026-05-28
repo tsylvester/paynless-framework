@@ -1,5 +1,4 @@
 import {
-    SelectedModels,
     StartSessionPayload,
     StartSessionSuccessResponse,
 } from "./dialectic.interface.ts";
@@ -31,6 +30,7 @@ const assembleChunksMock = createAssembleChunksMock()
 export async function startSession(
   user: User,
   dbClient: SupabaseClient<Database>,
+  userClient: SupabaseClient<Database>,
   payload: StartSessionPayload,
   partialDeps?: Partial<StartSessionDeps>
 ): Promise<{ data?: StartSessionSuccessResponse; error?: { message: string; status?: number; details?: string, code?: string } }> {
@@ -288,6 +288,34 @@ export async function startSession(
     })();
 
 
+    const selectedModelIds = selectedModels.map((model) => model.id);
+    const { data: tierValidationData, error: tierValidationError } = await userClient.rpc(
+        'validate_model_tier_access',
+        { p_model_ids: selectedModelIds },
+    );
+
+    if (tierValidationError) {
+        log.error("[startSession] Failed to validate model tier access.", { error: tierValidationError, projectId, userId });
+        return { error: { message: "Failed to validate model tier access", status: 500, code: 'TIER_VALIDATION_FAILED' } };
+    }
+
+    const tierValidationResult = Array.isArray(tierValidationData)
+        ? tierValidationData[0]
+        : tierValidationData;
+
+    if (!tierValidationResult) {
+        log.error("[startSession] Model tier validation returned no result.", { projectId, userId, selectedModelIds });
+        return { error: { message: "Failed to validate model tier access", status: 500, code: 'TIER_VALIDATION_FAILED' } };
+    }
+
+    if (!tierValidationResult.valid && tierValidationResult.over_model_limit) {
+        return { error: { message: "Model selection exceeds the limit for your plan", status: 403, code: 'MODEL_LIMIT_EXCEEDED' } };
+    }
+
+    if (!tierValidationResult.valid) {
+        return { error: { message: "Selected models are not available on your plan", status: 403, code: 'MODEL_TIER_DISALLOWED' } };
+    }
+
     // Create the session record first, so its ID and other details can be used by the assembler
     const sessionId = randomUUID();
     const initialSessionStatus = `pending_${initialStageName.replace(/\s+/g, '_').toLowerCase()}`;
@@ -300,7 +328,7 @@ export async function startSession(
             current_stage_id: initialStageId,
             status: initialSessionStatus,
             iteration_count: 1,
-            selected_model_ids: selectedModels.map(m => m.id),
+            selected_model_ids: selectedModelIds,
             session_description: sessionDescription ?? `Session for ${project.project_name} - ${initialStageName}`,
             associated_chat_id: originatingChatId,
             idempotency_key: idempotencyKey,

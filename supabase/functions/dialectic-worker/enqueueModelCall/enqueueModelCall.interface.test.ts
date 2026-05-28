@@ -10,7 +10,7 @@ import type {
     EnqueueModelCallReturn,
     EnqueueModelCallSuccessReturn,
 } from "./enqueueModelCall.interface.ts";
-import type { ComputeJobSig } from "../../_shared/utils/computeJobSig/computeJobSig.interface.ts";
+
 Deno.test(
     "Contract: EnqueueModelCallDeps declares five dependency keys",
     () => {
@@ -26,7 +26,7 @@ Deno.test(
 );
 
 Deno.test(
-    "Contract: EnqueueModelCallParams declares five fields",
+    "Contract: EnqueueModelCallParams declares six fields",
     () => {
         const surface: Record<keyof EnqueueModelCallParams, true> = {
             dbClient: true,
@@ -34,8 +34,9 @@ Deno.test(
             providerRow: true,
             userAuthToken: true,
             output_type: true,
+            userConfig: true,
         };
-        assertEquals(Object.keys(surface).length, 5);
+        assertEquals(Object.keys(surface).length, 6);
     },
 );
 
@@ -76,7 +77,7 @@ Deno.test(
 );
 
 Deno.test(
-    "Contract: AiStreamEventData declares five fields including sig not user_jwt",
+    "Contract: AiStreamEventData declares six fields including sig not user_jwt",
     () => {
         const surface: Record<keyof AiStreamEventData, true> = {
             job_id: true,
@@ -84,8 +85,9 @@ Deno.test(
             model_config: true,
             chat_api_request: true,
             sig: true,
+            user_config: true,
         };
-        assertEquals(Object.keys(surface).length, 5);
+        assertEquals(Object.keys(surface).length, 6);
     },
 );
 
@@ -150,8 +152,51 @@ Deno.test(
             model_config: true,
             chat_api_request: true,
             sig: true,
+            user_config: true,
         };
         assertEquals("sig" in surface, true);
         assertEquals("user_jwt" in surface, false);
+    },
+);
+
+Deno.test(
+    "Contract: EnqueueModelCallParams userConfig is UserConfig object shape",
+    () => {
+        const uc: EnqueueModelCallParams["userConfig"] = {
+            tier_output_cap_tokens: null,
+        };
+        const uc2: EnqueueModelCallParams["userConfig"] = {
+            tier_output_cap_tokens: 32768,
+        };
+        assertEquals(uc.tier_output_cap_tokens, null);
+        assertEquals(uc2.tier_output_cap_tokens, 32768);
+    },
+);
+
+Deno.test(
+    "Contract: AiStreamEventData user_config is UserConfig object shape",
+    () => {
+        const uc: AiStreamEventData["user_config"] = {
+            tier_output_cap_tokens: null,
+        };
+        const uc2: AiStreamEventData["user_config"] = {
+            tier_output_cap_tokens: 32768,
+        };
+        assertEquals(uc.tier_output_cap_tokens, null);
+        assertEquals(uc2.tier_output_cap_tokens, 32768);
+    },
+);
+
+Deno.test(
+    "Contract: userConfig and user_config accept tier_output_cap_tokens null",
+    () => {
+        const paramsUserConfig: EnqueueModelCallParams["userConfig"] = {
+            tier_output_cap_tokens: null,
+        };
+        const eventUserConfig: AiStreamEventData["user_config"] = {
+            tier_output_cap_tokens: null,
+        };
+        assertEquals(paramsUserConfig.tier_output_cap_tokens, null);
+        assertEquals(eventUserConfig.tier_output_cap_tokens, null);
     },
 );

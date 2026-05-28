@@ -1,33 +1,44 @@
-import { StripePaymentAdapter } from '../stripePaymentAdapter.ts';
-import type { TokenWalletTransaction, TokenWalletTransactionType } from '../../../types/tokenWallet.types.ts';
-import { MockAdminTokenWalletService } from '../../../services/tokenwallet/admin/adminTokenWalletService.mock.ts';
-import type { SupabaseClient } from 'npm:@supabase/supabase-js';
+import { StripePaymentAdapter } from './stripePaymentAdapter.ts';
+import type { MockAdminTokenWalletService } from '../../services/tokenwallet/admin/adminTokenWalletService.mock.ts';
 import Stripe from 'npm:stripe';
-import type { PurchaseRequest, PaymentOrchestrationContext } from '../../../types/payment.types.ts';
+import type {
+  OrchestrationLineItemMetadata,
+  PurchaseRequest,
+  PaymentOrchestrationContext,
+} from '../../types/payment.types.ts';
+import {
+  MOCK_MULTI_OTP_ITEM,
+  MOCK_MULTI_OTP_ITEM_2,
+  MOCK_MULTI_SUB_ITEM,
+  MOCK_PLAN_TS,
+  mockPaymentIntentRetrieveNoData,
+  mockPaymentOrchestrationContext,
+  mockStripeCheckoutSessionResponse,
+  mockStripeCheckoutSessionWithExpandedPaymentIntent,
+  mockStripePaymentIntentResponse,
+  setupMocksAndAdapter,
+  teardownMocks,
+} from './stripePaymentAdapter.mock.ts';
 import {
   assert,
   assertEquals,
-  assertRejects,
   assertExists,
 } from 'https://deno.land/std@0.224.0/assert/mod.ts';
 import {
   assertSpyCalls,
-  spy,
   stub,
   type SpyCall,
-  type Spy
 } from 'jsr:@std/testing@0.225.1/mock';
-import { createMockStripe, MockStripe } from '../../../stripe.mock.ts';
-import { createMockSupabaseClient, MockSupabaseClientSetup, MockSupabaseDataConfig, MockQueryBuilderState } from '../../../supabase.mock.ts';
-import { createMockAdminTokenWalletService } from '../../../services/tokenwallet/admin/adminTokenWalletService.mock.ts';
-import { Database } from '../../../../types_db.ts';
+import type { MockStripe } from '../../stripe.mock.ts';
+import type {
+  MockSupabaseClientSetup,
+  MockSupabaseDataConfig,
+  MockQueryBuilderState,
+} from '../../supabase.mock.ts';
+import { Database } from '../../../types_db.ts';
 
-type SubscriptionPlansRow = Database['public']['Tables']['subscription_plans']['Row'];
-
-const MOCK_PLAN_TS = '2026-04-10T12:00:00.000Z';
-import { ILogger, LogMetadata } from '../../../types.ts';
-import { handleInvoicePaymentSucceeded } from './stripe.invoicePaymentSucceeded.ts';
-import { HandlerContext } from '../../../stripe.mock.ts';
+type SubscriptionPlansRow =
+  Database['public']['Tables']['subscription_plans']['Row'];
 
 Deno.test('StripePaymentAdapter: initiatePayment', async (t) => {
   
@@ -35,34 +46,6 @@ Deno.test('StripePaymentAdapter: initiatePayment', async (t) => {
   let mockSupabaseSetup: MockSupabaseClientSetup;
   let mockTokenWalletService: MockAdminTokenWalletService;
   let adapter: StripePaymentAdapter;
-
-  const MOCK_SITE_URL = 'http://localhost:3000';
-  const MOCK_WEBHOOK_SECRET = 'whsec_test_dummy';
-
-  const setupMocksAndAdapter = (supabaseConfig: MockSupabaseDataConfig = {}) => {
-    Deno.env.set('SITE_URL', MOCK_SITE_URL);
-    mockStripe = createMockStripe();
-    // Corrected: Pass undefined for currentTestUserId and supabaseConfig as the second argument
-    mockSupabaseSetup = createMockSupabaseClient(undefined, supabaseConfig);
-    mockTokenWalletService = createMockAdminTokenWalletService();
-
-    adapter = new StripePaymentAdapter(
-      mockStripe.instance,
-      mockSupabaseSetup.client as unknown as SupabaseClient,
-      mockTokenWalletService.instance,
-      MOCK_WEBHOOK_SECRET
-    );
-  };
-
-  const teardownMocks = () => {
-    Deno.env.delete('SITE_URL');
-    if (mockStripe && typeof mockStripe.clearStubs === 'function') {
-        mockStripe.clearStubs();
-    }
-    if (mockTokenWalletService && typeof mockTokenWalletService.clearStubs === 'function') {
-        mockTokenWalletService.clearStubs();
-    }
-  };
 
   await t.step('initiatePayment - happy path: one-time purchase successfully initiates payment', async () => {
     const basePurchaseRequest: PurchaseRequest = {
@@ -100,6 +83,7 @@ Deno.test('StripePaymentAdapter: initiatePayment', async (t) => {
       stripe_product_id: null,
       tokens_to_award: 1000,
       updated_at: MOCK_PLAN_TS,
+      tier_level: 0,
     };
 
     const stripeSessionData = { 
@@ -145,7 +129,8 @@ Deno.test('StripePaymentAdapter: initiatePayment', async (t) => {
       }
     };
     
-    setupMocksAndAdapter(supabaseConfig);
+    ({ mockStripe, mockSupabaseSetup, mockTokenWalletService, adapter } =
+      setupMocksAndAdapter(supabaseConfig));
 
     // mockTokenWalletService.getWalletForContext is not called by adapter
     // So, no need to stub it here for this particular test path.
@@ -204,7 +189,7 @@ Deno.test('StripePaymentAdapter: initiatePayment', async (t) => {
     assertExists(singleSpy, "single spy for subscription_plans should exist (OTP)");
     assertSpyCalls(singleSpy, 1);
 
-    teardownMocks();
+    teardownMocks(mockStripe, mockTokenWalletService);
   });
 
   await t.step('initiatePayment - error: item details (e.g., stripe_price_id) not found for itemId', async () => {
@@ -239,7 +224,8 @@ Deno.test('StripePaymentAdapter: initiatePayment', async (t) => {
         }
       }
     };
-    setupMocksAndAdapter(supabaseConfig);
+    ({ mockStripe, mockSupabaseSetup, mockTokenWalletService, adapter } =
+      setupMocksAndAdapter(supabaseConfig));
 
     if (mockStripe.stubs.checkoutSessionsCreate?.restore) {
         mockStripe.stubs.checkoutSessionsCreate.restore();
@@ -280,7 +266,7 @@ Deno.test('StripePaymentAdapter: initiatePayment', async (t) => {
     assertExists(singleSpyNotFound, "single spy for subscription_plans should exist (item not found case)");
     assertSpyCalls(singleSpyNotFound, 1);
 
-    teardownMocks();
+    teardownMocks(mockStripe, mockTokenWalletService);
   });
 
   await t.step('initiatePayment - error: Stripe checkout session creation fails', async () => {
@@ -317,6 +303,7 @@ Deno.test('StripePaymentAdapter: initiatePayment', async (t) => {
       stripe_product_id: null,
       tokens_to_award: 300,
       updated_at: MOCK_PLAN_TS,
+      tier_level: 0,
     }; 
     const stripeError = new Error('Mock Stripe API error during session creation final test');
 
@@ -332,7 +319,8 @@ Deno.test('StripePaymentAdapter: initiatePayment', async (t) => {
         },
       }
     };
-    setupMocksAndAdapter(supabaseConfig);
+    ({ mockStripe, mockSupabaseSetup, mockTokenWalletService, adapter } =
+      setupMocksAndAdapter(supabaseConfig));
     
     if (mockStripe.stubs.checkoutSessionsCreate?.restore) mockStripe.stubs.checkoutSessionsCreate.restore();
     mockStripe.stubs.checkoutSessionsCreate = stub(mockStripe.instance.checkout.sessions, "create", () => Promise.reject(stripeError));
@@ -362,7 +350,7 @@ Deno.test('StripePaymentAdapter: initiatePayment', async (t) => {
     
     assertSpyCalls(mockStripe.stubs.checkoutSessionsCreate, 1); // Ensure Stripe's create was indeed called
 
-    teardownMocks();
+    teardownMocks(mockStripe, mockTokenWalletService);
   });
 
   await t.step('initiatePayment - error: Stripe API call fails', async () => {
@@ -399,6 +387,7 @@ Deno.test('StripePaymentAdapter: initiatePayment', async (t) => {
       stripe_product_id: null,
       tokens_to_award: 500,
       updated_at: MOCK_PLAN_TS,
+      tier_level: 0,
     };
     // const walletData = { walletId: 'wallet-for-user-stripe-error', balance: '0', currency: 'AI_TOKEN', createdAt: new Date(), updatedAt: new Date(), userId: basePurchaseRequest.userId } as TokenWallet;
 
@@ -415,7 +404,8 @@ Deno.test('StripePaymentAdapter: initiatePayment', async (t) => {
         }
       }
     };
-    setupMocksAndAdapter(supabaseConfig);
+    ({ mockStripe, mockSupabaseSetup, mockTokenWalletService, adapter } =
+      setupMocksAndAdapter(supabaseConfig));
 
     // mockTokenWalletService.getWalletForContext is not called by adapter
     // if (mockTokenWalletService.stubs.getWalletForContext?.restore) mockTokenWalletService.stubs.getWalletForContext.restore();
@@ -452,7 +442,7 @@ Deno.test('StripePaymentAdapter: initiatePayment', async (t) => {
                                                               // If the mock is set to throw, callCount might be 1 or 0 depending on when it throws.
                                                               // The critical part is that the overall initiatePayment fails as expected.
 
-    teardownMocks();
+    teardownMocks(mockStripe, mockTokenWalletService);
   });
 
   await t.step('initiatePayment - error: Stripe paymentIntents.retrieve fails', async () => {
@@ -489,6 +479,7 @@ Deno.test('StripePaymentAdapter: initiatePayment', async (t) => {
       stripe_product_id: null,
       tokens_to_award: 600,
       updated_at: MOCK_PLAN_TS,
+      tier_level: 0,
     };
     const stripeSessionData = { 
       id: 'cs_test_pi_retrieve_error', 
@@ -514,7 +505,8 @@ Deno.test('StripePaymentAdapter: initiatePayment', async (t) => {
         },
       }
     };
-    setupMocksAndAdapter(supabaseConfig);
+    ({ mockStripe, mockSupabaseSetup, mockTokenWalletService, adapter } =
+      setupMocksAndAdapter(supabaseConfig));
 
     if (mockStripe.stubs.checkoutSessionsCreate?.restore) mockStripe.stubs.checkoutSessionsCreate.restore();
     mockStripe.stubs.checkoutSessionsCreate = stub(mockStripe.instance.checkout.sessions, "create", () => Promise.resolve(stripeSessionData));
@@ -547,7 +539,7 @@ Deno.test('StripePaymentAdapter: initiatePayment', async (t) => {
     assertSpyCalls(mockStripe.stubs.checkoutSessionsCreate, 1);
     assertSpyCalls(mockStripe.stubs.paymentIntentsRetrieve, 1); // This is called, but the mock makes it throw an error
 
-    teardownMocks();
+    teardownMocks(mockStripe, mockTokenWalletService);
   });
 
   await t.step('initiatePayment - happy path: subscription successfully initiates payment', async () => {
@@ -586,6 +578,7 @@ Deno.test('StripePaymentAdapter: initiatePayment', async (t) => {
       stripe_product_id: null,
       tokens_to_award: 5000,
       updated_at: MOCK_PLAN_TS,
+      tier_level: 0,
     };
 
     const stripeSessionData = { 
@@ -619,7 +612,8 @@ Deno.test('StripePaymentAdapter: initiatePayment', async (t) => {
       }
     };
     
-    setupMocksAndAdapter(supabaseConfig);
+    ({ mockStripe, mockSupabaseSetup, mockTokenWalletService, adapter } =
+      setupMocksAndAdapter(supabaseConfig));
 
     if (mockStripe.stubs.checkoutSessionsCreate?.restore) mockStripe.stubs.checkoutSessionsCreate.restore();
     mockStripe.stubs.checkoutSessionsCreate = stub(mockStripe.instance.checkout.sessions, "create", () => Promise.resolve(stripeSessionData));
@@ -673,7 +667,7 @@ Deno.test('StripePaymentAdapter: initiatePayment', async (t) => {
     assertExists(singleSpySub, "single spy for subscription_plans should exist (Sub)");
     assertSpyCalls(singleSpySub, 1);
 
-    teardownMocks();
+    teardownMocks(mockStripe, mockTokenWalletService);
   });
 
   await t.step('initiatePayment - error: invalid or missing plan_type in fetched item details', async () => {
@@ -710,6 +704,7 @@ Deno.test('StripePaymentAdapter: initiatePayment', async (t) => {
       stripe_product_id: null,
       tokens_to_award: 250,
       updated_at: MOCK_PLAN_TS,
+      tier_level: 0,
     };
 
     const planDataInvalidType: SubscriptionPlansRow = {
@@ -729,6 +724,7 @@ Deno.test('StripePaymentAdapter: initiatePayment', async (t) => {
       stripe_product_id: null,
       tokens_to_award: 250,
       updated_at: MOCK_PLAN_TS,
+      tier_level: 0,
     };
 
     const testScenarios = [
@@ -752,7 +748,8 @@ Deno.test('StripePaymentAdapter: initiatePayment', async (t) => {
           },
         }
       };
-      setupMocksAndAdapter(supabaseConfig);
+      ({ mockStripe, mockSupabaseSetup, mockTokenWalletService, adapter } =
+      setupMocksAndAdapter(supabaseConfig));
 
       if (mockStripe.stubs.checkoutSessionsCreate?.restore) {
         mockStripe.stubs.checkoutSessionsCreate.restore();
@@ -774,8 +771,509 @@ Deno.test('StripePaymentAdapter: initiatePayment', async (t) => {
       assertEquals(result.transactionId, currentContext.internalPaymentId);
       assertSpyCalls(checkoutCreateStub, 0);
 
-      teardownMocks(); // Teardown after each scenario to reset stubs
+      teardownMocks(mockStripe, mockTokenWalletService);
     }
   });
+
+  await t.step(
+    'initiatePayment - multi-item: subscription + OTP builds correct line_items and uses subscription mode',
+    async () => {
+      const context: PaymentOrchestrationContext = mockPaymentOrchestrationContext({
+        lineItems: [MOCK_MULTI_SUB_ITEM, MOCK_MULTI_OTP_ITEM],
+        checkoutMode: 'subscription',
+        tokensToAward: 7000,
+        internalPaymentId: 'ptxn_multi_sub_otp_001',
+        userId: 'user-multi-sub-otp',
+        targetWalletId: 'wallet_multi_sub_otp',
+        metadata: { request_origin: 'http://localhost:3000' },
+      });
+
+      const stripeSessionData: Stripe.Response<Stripe.Checkout.Session> =
+        mockStripeCheckoutSessionResponse({
+          id: 'cs_test_multi_sub_otp',
+          url: 'https://stripe.com/pay/multi_sub_otp',
+          payment_intent: 'pi_multi_sub_otp',
+          status: 'open',
+        });
+
+      ({ mockStripe, mockSupabaseSetup, mockTokenWalletService, adapter } =
+        setupMocksAndAdapter({}));
+
+      if (mockStripe.stubs.checkoutSessionsCreate?.restore) {
+        mockStripe.stubs.checkoutSessionsCreate.restore();
+      }
+      mockStripe.stubs.checkoutSessionsCreate = stub(
+        mockStripe.instance.checkout.sessions,
+        'create',
+        () => Promise.resolve(stripeSessionData),
+      );
+
+      const mockPaymentIntentResponse: Stripe.Response<Stripe.PaymentIntent> =
+        mockStripePaymentIntentResponse({
+          id: 'pi_multi_sub_otp',
+          client_secret: 'pi_multi_sub_otp_secret',
+        });
+
+      if (mockStripe.stubs.paymentIntentsRetrieve?.restore) {
+        mockStripe.stubs.paymentIntentsRetrieve.restore();
+      }
+      mockStripe.stubs.paymentIntentsRetrieve = stub(
+        mockStripe.instance.paymentIntents,
+        'retrieve',
+        () => Promise.resolve(mockPaymentIntentResponse),
+      );
+
+      const result = await adapter.initiatePayment(context);
+
+      assert(result.success, `Multi-item payment should succeed. Error: ${result.error}`);
+      const createCallArgs = mockStripe.stubs.checkoutSessionsCreate.calls[0]?.args[0] as Stripe.Checkout.SessionCreateParams;
+      assert(createCallArgs, 'Stripe session create was not called or args not captured');
+      assertEquals(createCallArgs.mode, 'subscription');
+      assertEquals(createCallArgs.line_items?.length, 2);
+      assertEquals(createCallArgs.line_items?.[0].price, MOCK_MULTI_SUB_ITEM.stripePriceId);
+      assertEquals(createCallArgs.line_items?.[0].quantity, 1);
+      assertEquals(createCallArgs.line_items?.[1].price, MOCK_MULTI_OTP_ITEM.stripePriceId);
+      assertEquals(createCallArgs.line_items?.[1].quantity, 2);
+
+      teardownMocks(mockStripe, mockTokenWalletService);
+    },
+  );
+
+  await t.step(
+    'initiatePayment - multi-item: metadata encodes per-item array and uses subscription item for item_id',
+    async () => {
+      const context: PaymentOrchestrationContext = mockPaymentOrchestrationContext({
+        lineItems: [MOCK_MULTI_SUB_ITEM, MOCK_MULTI_OTP_ITEM],
+        checkoutMode: 'subscription',
+        tokensToAward: 7000,
+        internalPaymentId: 'ptxn_multi_metadata_001',
+        userId: 'user-multi-metadata',
+        targetWalletId: 'wallet_multi_metadata',
+        metadata: { request_origin: 'http://localhost:3000' },
+      });
+
+      const stripeSessionData: Stripe.Response<Stripe.Checkout.Session> =
+        mockStripeCheckoutSessionResponse({
+          id: 'cs_test_multi_metadata',
+          url: 'https://stripe.com/pay/multi_metadata',
+          payment_intent: 'pi_multi_metadata',
+          status: 'open',
+        });
+
+      ({ mockStripe, mockSupabaseSetup, mockTokenWalletService, adapter } =
+        setupMocksAndAdapter({}));
+
+      if (mockStripe.stubs.checkoutSessionsCreate?.restore) {
+        mockStripe.stubs.checkoutSessionsCreate.restore();
+      }
+      mockStripe.stubs.checkoutSessionsCreate = stub(
+        mockStripe.instance.checkout.sessions,
+        'create',
+        () => Promise.resolve(stripeSessionData),
+      );
+
+      const mockPaymentIntentMetadataResponse: Stripe.Response<Stripe.PaymentIntent> =
+        mockStripePaymentIntentResponse({
+          id: 'pi_multi_metadata',
+          client_secret: 'pi_multi_metadata_secret',
+        });
+
+      if (mockStripe.stubs.paymentIntentsRetrieve?.restore) {
+        mockStripe.stubs.paymentIntentsRetrieve.restore();
+      }
+      mockStripe.stubs.paymentIntentsRetrieve = stub(
+        mockStripe.instance.paymentIntents,
+        'retrieve',
+        () => Promise.resolve(mockPaymentIntentMetadataResponse),
+      );
+
+      const result = await adapter.initiatePayment(context);
+
+      assert(result.success, `Multi-item metadata test should succeed. Error: ${result.error}`);
+      assertEquals(result.clientSecret, 'pi_multi_metadata_secret');
+      const createCallArgs = mockStripe.stubs.checkoutSessionsCreate.calls[0]?.args[0] as Stripe.Checkout.SessionCreateParams;
+      assert(createCallArgs, 'Stripe session create was not called or args not captured');
+      assertEquals(createCallArgs.metadata?.item_id, MOCK_MULTI_SUB_ITEM.itemId);
+      assertEquals(createCallArgs.metadata?.tokens_to_award, '7000');
+      const itemsField: string | number | null | undefined = createCallArgs.metadata?.items;
+      assert(typeof itemsField === 'string', 'metadata.items must be a JSON string for multi-item checkout');
+      const parsedItems: OrchestrationLineItemMetadata[] = JSON.parse(itemsField);
+      assertEquals(parsedItems.length, 2);
+      assertEquals(parsedItems[0].itemId, MOCK_MULTI_SUB_ITEM.itemId);
+      assertEquals(parsedItems[0].quantity, MOCK_MULTI_SUB_ITEM.quantity);
+      assertEquals(parsedItems[0].tokensToAward, MOCK_MULTI_SUB_ITEM.tokensToAward);
+      assertEquals(parsedItems[1].itemId, MOCK_MULTI_OTP_ITEM.itemId);
+      assertEquals(parsedItems[1].quantity, MOCK_MULTI_OTP_ITEM.quantity);
+      assertEquals(parsedItems[1].tokensToAward, MOCK_MULTI_OTP_ITEM.tokensToAward);
+
+      teardownMocks(mockStripe, mockTokenWalletService);
+    },
+  );
+
+  await t.step(
+    'initiatePayment - multi-item: OTP-only uses payment mode and first item for item_id',
+    async () => {
+      const context: PaymentOrchestrationContext = mockPaymentOrchestrationContext({
+        lineItems: [MOCK_MULTI_OTP_ITEM, MOCK_MULTI_OTP_ITEM_2],
+        checkoutMode: 'payment',
+        tokensToAward: 11000,
+        internalPaymentId: 'ptxn_multi_otp_only_001',
+        userId: 'user-multi-otp-only',
+        targetWalletId: 'wallet_multi_otp_only',
+        metadata: { request_origin: 'http://localhost:3000' },
+      });
+
+      const stripeSessionData = {
+        id: 'cs_test_multi_otp_only',
+        url: 'https://stripe.com/pay/multi_otp_only',
+        object: 'checkout.session',
+        status: 'open',
+        livemode: false,
+        lastResponse: {
+          headers: {},
+          requestId: 'req_test_multi_otp_only',
+          statusCode: 200,
+        },
+      } as Stripe.Response<Stripe.Checkout.Session>;
+
+      ({ mockStripe, mockSupabaseSetup, mockTokenWalletService, adapter } =
+        setupMocksAndAdapter({}));
+
+      if (mockStripe.stubs.checkoutSessionsCreate?.restore) {
+        mockStripe.stubs.checkoutSessionsCreate.restore();
+      }
+      mockStripe.stubs.checkoutSessionsCreate = stub(
+        mockStripe.instance.checkout.sessions,
+        'create',
+        () => Promise.resolve(stripeSessionData),
+      );
+
+      const result = await adapter.initiatePayment(context);
+
+      assert(result.success, `OTP-only multi-item should succeed. Error: ${result.error}`);
+      const createCallArgs = mockStripe.stubs.checkoutSessionsCreate.calls[0]?.args[0] as Stripe.Checkout.SessionCreateParams;
+      assert(createCallArgs, 'Stripe session create was not called or args not captured');
+      assertEquals(createCallArgs.mode, 'payment');
+      assertEquals(createCallArgs.metadata?.item_id, MOCK_MULTI_OTP_ITEM.itemId);
+
+      teardownMocks(mockStripe, mockTokenWalletService);
+    },
+  );
+
+  await t.step(
+    'initiatePayment - multi-item: skips subscription_plans query when lineItems present',
+    async () => {
+      const context: PaymentOrchestrationContext = mockPaymentOrchestrationContext({
+        lineItems: [MOCK_MULTI_SUB_ITEM, MOCK_MULTI_OTP_ITEM],
+        checkoutMode: 'subscription',
+        tokensToAward: 7000,
+        internalPaymentId: 'ptxn_multi_no_db_001',
+        metadata: { request_origin: 'http://localhost:3000' },
+      });
+
+      const stripeSessionData = {
+        id: 'cs_test_multi_no_db',
+        url: 'https://stripe.com/pay/multi_no_db',
+        object: 'checkout.session',
+        status: 'open',
+        livemode: false,
+        lastResponse: {
+          headers: {},
+          requestId: 'req_test_multi_no_db',
+          statusCode: 200,
+        },
+      } as Stripe.Response<Stripe.Checkout.Session>;
+
+      ({ mockStripe, mockSupabaseSetup, mockTokenWalletService, adapter } =
+        setupMocksAndAdapter({}));
+
+      if (mockStripe.stubs.checkoutSessionsCreate?.restore) {
+        mockStripe.stubs.checkoutSessionsCreate.restore();
+      }
+      mockStripe.stubs.checkoutSessionsCreate = stub(
+        mockStripe.instance.checkout.sessions,
+        'create',
+        () => Promise.resolve(stripeSessionData),
+      );
+
+      const result = await adapter.initiatePayment(context);
+
+      assert(result.success, `Multi-item should succeed without DB plan query. Error: ${result.error}`);
+      assert(
+        !mockSupabaseSetup.spies.fromSpy.calls.some(
+          (call: SpyCall) => call.args[0] === 'subscription_plans',
+        ),
+        "subscription_plans must not be queried when lineItems are pre-resolved",
+      );
+
+      teardownMocks(mockStripe, mockTokenWalletService);
+    },
+  );
+
+  await t.step(
+    'initiatePayment - multi-item error: checkoutMode missing returns failure without calling Stripe',
+    async () => {
+      const context: PaymentOrchestrationContext = mockPaymentOrchestrationContext({
+        lineItems: [MOCK_MULTI_SUB_ITEM],
+        checkoutMode: undefined,
+        internalPaymentId: 'ptxn_multi_no_mode_001',
+      });
+
+      ({ mockStripe, mockSupabaseSetup, mockTokenWalletService, adapter } =
+        setupMocksAndAdapter({}));
+
+      if (mockStripe.stubs.checkoutSessionsCreate?.restore) {
+        mockStripe.stubs.checkoutSessionsCreate.restore();
+      }
+      mockStripe.stubs.checkoutSessionsCreate = stub(
+        mockStripe.instance.checkout.sessions,
+        'create',
+        () => {
+          throw new Error('Stripe checkout.sessions.create must not be called when checkoutMode is missing');
+        },
+      );
+
+      const result = await adapter.initiatePayment(context);
+
+      assertEquals(result.success, false);
+      assertEquals(
+        result.error,
+        'checkoutMode is required when lineItems are provided',
+      );
+      assertSpyCalls(mockStripe.stubs.checkoutSessionsCreate, 0);
+
+      teardownMocks(mockStripe, mockTokenWalletService);
+    },
+  );
+
+  await t.step(
+    'initiatePayment - multi-item: string payment_intent requires retrieve to return PaymentIntent with client_secret',
+    async () => {
+      const context: PaymentOrchestrationContext = mockPaymentOrchestrationContext({
+        lineItems: [MOCK_MULTI_SUB_ITEM],
+        checkoutMode: 'subscription',
+        internalPaymentId: 'ptxn_multi_pi_valid_001',
+        metadata: { request_origin: 'http://localhost:3000' },
+      });
+
+      const stripeSessionData: Stripe.Response<Stripe.Checkout.Session> =
+        mockStripeCheckoutSessionResponse({
+          id: 'cs_test_multi_pi_valid',
+          url: 'https://stripe.com/pay/multi_pi_valid',
+          payment_intent: 'pi_multi_valid',
+          status: 'open',
+        });
+
+      const mockPaymentIntentValidResponse: Stripe.Response<Stripe.PaymentIntent> =
+        mockStripePaymentIntentResponse({
+          id: 'pi_multi_valid',
+          client_secret: 'pi_multi_valid_secret',
+        });
+
+      ({ mockStripe, mockSupabaseSetup, mockTokenWalletService, adapter } =
+        setupMocksAndAdapter({}));
+
+      if (mockStripe.stubs.checkoutSessionsCreate?.restore) {
+        mockStripe.stubs.checkoutSessionsCreate.restore();
+      }
+      mockStripe.stubs.checkoutSessionsCreate = stub(
+        mockStripe.instance.checkout.sessions,
+        'create',
+        () => Promise.resolve(stripeSessionData),
+      );
+
+      if (mockStripe.stubs.paymentIntentsRetrieve?.restore) {
+        mockStripe.stubs.paymentIntentsRetrieve.restore();
+      }
+      mockStripe.stubs.paymentIntentsRetrieve = stub(
+        mockStripe.instance.paymentIntents,
+        'retrieve',
+        () => Promise.resolve(mockPaymentIntentValidResponse),
+      );
+
+      const result = await adapter.initiatePayment(context);
+
+      assert(result.success, `Multi-item with valid PaymentIntent must succeed. Error: ${result.error}`);
+      assertEquals(result.clientSecret, 'pi_multi_valid_secret');
+      assertSpyCalls(mockStripe.stubs.paymentIntentsRetrieve, 1);
+
+      teardownMocks(mockStripe, mockTokenWalletService);
+    },
+  );
+
+  await t.step(
+    'initiatePayment - multi-item error: string payment_intent fails when retrieve returns no PaymentIntent',
+    async () => {
+      const context: PaymentOrchestrationContext = mockPaymentOrchestrationContext({
+        lineItems: [MOCK_MULTI_SUB_ITEM],
+        checkoutMode: 'subscription',
+        internalPaymentId: 'ptxn_multi_pi_empty_001',
+        metadata: { request_origin: 'http://localhost:3000' },
+      });
+
+      const stripeSessionData: Stripe.Response<Stripe.Checkout.Session> =
+        mockStripeCheckoutSessionResponse({
+          id: 'cs_test_multi_pi_empty',
+          url: 'https://stripe.com/pay/multi_pi_empty',
+          payment_intent: 'pi_multi_empty',
+          status: 'open',
+        });
+
+      ({ mockStripe, mockSupabaseSetup, mockTokenWalletService, adapter } =
+        setupMocksAndAdapter({}));
+
+      if (mockStripe.stubs.checkoutSessionsCreate?.restore) {
+        mockStripe.stubs.checkoutSessionsCreate.restore();
+      }
+      mockStripe.stubs.checkoutSessionsCreate = stub(
+        mockStripe.instance.checkout.sessions,
+        'create',
+        () => Promise.resolve(stripeSessionData),
+      );
+
+      if (mockStripe.stubs.paymentIntentsRetrieve?.restore) {
+        mockStripe.stubs.paymentIntentsRetrieve.restore();
+      }
+      mockStripe.stubs.paymentIntentsRetrieve = stub(
+        mockStripe.instance.paymentIntents,
+        'retrieve',
+        mockPaymentIntentRetrieveNoData,
+      );
+
+      const result = await adapter.initiatePayment(context);
+
+      assertEquals(result.success, false);
+      assertEquals(
+        result.error,
+        'PaymentIntent retrieve returned no data for checkout session payment_intent',
+      );
+      assertEquals(result.transactionId, context.internalPaymentId);
+      assertSpyCalls(mockStripe.stubs.checkoutSessionsCreate, 1);
+      assertSpyCalls(mockStripe.stubs.paymentIntentsRetrieve, 1);
+
+      teardownMocks(mockStripe, mockTokenWalletService);
+    },
+  );
+
+  await t.step(
+    'initiatePayment - multi-item error: string payment_intent fails when retrieved PaymentIntent has no client_secret',
+    async () => {
+      const context: PaymentOrchestrationContext = mockPaymentOrchestrationContext({
+        lineItems: [MOCK_MULTI_SUB_ITEM],
+        checkoutMode: 'subscription',
+        internalPaymentId: 'ptxn_multi_pi_no_secret_001',
+        metadata: { request_origin: 'http://localhost:3000' },
+      });
+
+      const stripeSessionData: Stripe.Response<Stripe.Checkout.Session> =
+        mockStripeCheckoutSessionResponse({
+          id: 'cs_test_multi_pi_no_secret',
+          url: 'https://stripe.com/pay/multi_pi_no_secret',
+          payment_intent: 'pi_multi_no_secret',
+          status: 'open',
+        });
+
+      const mockPaymentIntentNoSecretResponse: Stripe.Response<Stripe.PaymentIntent> =
+        mockStripePaymentIntentResponse({
+          id: 'pi_multi_no_secret',
+          client_secret: null,
+        });
+
+      ({ mockStripe, mockSupabaseSetup, mockTokenWalletService, adapter } =
+        setupMocksAndAdapter({}));
+
+      if (mockStripe.stubs.checkoutSessionsCreate?.restore) {
+        mockStripe.stubs.checkoutSessionsCreate.restore();
+      }
+      mockStripe.stubs.checkoutSessionsCreate = stub(
+        mockStripe.instance.checkout.sessions,
+        'create',
+        () => Promise.resolve(stripeSessionData),
+      );
+
+      if (mockStripe.stubs.paymentIntentsRetrieve?.restore) {
+        mockStripe.stubs.paymentIntentsRetrieve.restore();
+      }
+      mockStripe.stubs.paymentIntentsRetrieve = stub(
+        mockStripe.instance.paymentIntents,
+        'retrieve',
+        () => Promise.resolve(mockPaymentIntentNoSecretResponse),
+      );
+
+      const result = await adapter.initiatePayment(context);
+
+      assertEquals(result.success, false);
+      assertEquals(
+        result.error,
+        'PaymentIntent client_secret is missing after retrieve',
+      );
+      assertEquals(result.transactionId, context.internalPaymentId);
+      assertSpyCalls(mockStripe.stubs.checkoutSessionsCreate, 1);
+      assertSpyCalls(mockStripe.stubs.paymentIntentsRetrieve, 1);
+
+      teardownMocks(mockStripe, mockTokenWalletService);
+    },
+  );
+
+  await t.step(
+    'initiatePayment - multi-item error: expanded payment_intent on session fails when client_secret is missing',
+    async () => {
+      const context: PaymentOrchestrationContext = mockPaymentOrchestrationContext({
+        lineItems: [MOCK_MULTI_OTP_ITEM],
+        checkoutMode: 'payment',
+        internalPaymentId: 'ptxn_multi_expanded_pi_001',
+        metadata: { request_origin: 'http://localhost:3000' },
+      });
+
+      const stripeSessionData: Stripe.Response<Stripe.Checkout.Session> =
+        mockStripeCheckoutSessionWithExpandedPaymentIntent(
+          {
+            id: 'cs_test_multi_expanded_pi',
+            url: 'https://stripe.com/pay/multi_expanded_pi',
+            status: 'open',
+          },
+          {
+            id: 'pi_multi_expanded_no_secret',
+            client_secret: null,
+          },
+        );
+
+      ({ mockStripe, mockSupabaseSetup, mockTokenWalletService, adapter } =
+        setupMocksAndAdapter({}));
+
+      if (mockStripe.stubs.checkoutSessionsCreate?.restore) {
+        mockStripe.stubs.checkoutSessionsCreate.restore();
+      }
+      mockStripe.stubs.checkoutSessionsCreate = stub(
+        mockStripe.instance.checkout.sessions,
+        'create',
+        () => Promise.resolve(stripeSessionData),
+      );
+
+      if (mockStripe.stubs.paymentIntentsRetrieve?.restore) {
+        mockStripe.stubs.paymentIntentsRetrieve.restore();
+      }
+      mockStripe.stubs.paymentIntentsRetrieve = stub(
+        mockStripe.instance.paymentIntents,
+        'retrieve',
+        () => {
+          throw new Error('paymentIntents.retrieve must not be called for expanded payment_intent on session');
+        },
+      );
+
+      const result = await adapter.initiatePayment(context);
+
+      assertEquals(result.success, false);
+      assertEquals(
+        result.error,
+        'PaymentIntent client_secret is missing on checkout session payment_intent',
+      );
+      assertEquals(result.transactionId, context.internalPaymentId);
+      assertSpyCalls(mockStripe.stubs.checkoutSessionsCreate, 1);
+      assertSpyCalls(mockStripe.stubs.paymentIntentsRetrieve, 0);
+
+      teardownMocks(mockStripe, mockTokenWalletService);
+    },
+  );
 
 });

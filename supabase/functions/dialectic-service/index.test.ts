@@ -11,7 +11,7 @@ import {
   type ActionHandlers,
 } from "./index.ts";
 import type { SupabaseClient, User } from 'npm:@supabase/supabase-js';
-import type { ServiceError } from '../_shared/types.ts';
+import type { ServiceError, ILogger } from '../_shared/types.ts';
 import {
   DialecticProject,
   DialecticSession,
@@ -54,13 +54,14 @@ import {
   DialecticProcessTemplate,
   RegenerateDocumentParams,
   RegenerateDocumentDeps,
+  AiProvidersRow,
 } from "./dialectic.interface.ts";
 import type { DomainDescriptor } from "./listAvailableDomains.ts";
 import { createMockSupabaseClient, type MockSupabaseClientSetup } from '../_shared/supabase.mock.ts';
 import { isRecord } from '../_shared/utils/type-guards/type_guards.common.ts';
 import { CloneProjectResult } from "./cloneProject.ts";
 import { Database, Json } from "../types_db.ts";
-import { FileType } from '../_shared/types/file_manager.types.ts';
+import { FileType, type IFileManager } from '../_shared/types/file_manager.types.ts';
 
 function isUser(u: unknown): u is User {
   return isRecord(u) && typeof u.id === 'string';
@@ -154,6 +155,39 @@ const mockUpdateViewingStageSuccessReturn: UpdateViewingStageReturn = {
   status: 200,
 };
 
+function aiProviderRow(overrides: Partial<AiProvidersRow>): AiProvidersRow {
+  return {
+    id: "id-1",
+    name: "Model One",
+    api_identifier: "provider-model-one",
+    provider: "openai",
+    description: "First model",
+    is_active: true,
+    is_default_generation: false,
+    is_default_embedding: false,
+    is_enabled: true,
+    min_plan_tier_level: 0,
+    config: null,
+    created_at: "2025-01-01T00:00:00Z",
+    updated_at: "2025-01-01T00:00:00Z",
+    ...overrides,
+  };
+}
+
+const mockGeminiFlashCatalogRow: AiProvidersRow = aiProviderRow({
+  id: "gemini-flash",
+  name: "Gemini 3 Flash Preview",
+  api_identifier: "google-gemini-3-flash-preview",
+  provider: "google",
+  is_default_generation: true,
+  config: {
+    api_identifier: "google-gemini-3-flash-preview",
+    context_window_tokens: 1048576,
+    hard_cap_output_tokens: 65536,
+    provider_max_output_tokens: 65536,
+  },
+});
+
 // #endregion
 
 // Helper to create a mostly empty but type-compliant ActionHandlers mock
@@ -169,19 +203,28 @@ const createMockHandlers = (overrides?: Partial<ActionHandlers> & {
         getProjectDetails: overrides?.getProjectDetails || (() => Promise.resolve({ data: mockProject })),
         getSessionDetails: overrides?.getSessionDetails || (() => Promise.resolve({ data: { session: mockSession, currentStageDetails: null, activeSeedPrompt: null } })),
         getContributionContentHandler: overrides?.getContributionContentHandler || (() => Promise.resolve({ data: { content: 'mock content', mimeType: 'text/plain', fileName: 'mock.txt', sizeBytes: 123 }})),
-        startSession: overrides?.startSession || (() => Promise.resolve({ data: { ...mockSession, seedPrompt: { promptContent: '', source_prompt_resource_id: '' } } })),
+        startSession: overrides?.startSession || ((_user: User, dbClient: SupabaseClient, userClient: SupabaseClient, _payload: StartSessionPayload, _dependencies: { logger: ILogger }) => {
+            assert(dbClient !== userClient);
+            return Promise.resolve({ data: { ...mockSession, seedPrompt: { promptContent: '', source_prompt_resource_id: '' } } });
+        }),
         generateContributions: overrides?.generateContributions || (() => Promise.resolve({ success: false, error: { message: "Not implemented" } })),
         listProjects: overrides?.listProjects || (() => Promise.resolve({ data: [mockProject] })),
         listAvailableDomainOverlays: overrides?.listAvailableDomainOverlays || (() => Promise.resolve([])),
         deleteProject: overrides?.deleteProject || (() => Promise.resolve({ status: 200 })),
-        cloneProject: overrides?.cloneProject || (() => Promise.resolve({ data: mockProject, error: null, status: 201 })),
+        cloneProject: overrides?.cloneProject || ((_dbClient: SupabaseClient, userClient: SupabaseClient, _fileManager: IFileManager, _originalProjectId: string, _newProjectName: string | undefined, _cloningUserId: string) => {
+            assert(_dbClient !== userClient);
+            return Promise.resolve({ data: mockProject, error: null, status: 201 });
+        }),
         exportProject: overrides?.exportProject || (() => Promise.resolve({ data: { export_url: '' }})),
         getProjectResourceContent: overrides?.getProjectResourceContent || (() => Promise.resolve({ data: { fileName: '', mimeType: '', content: '', sourceContributionId: null, resourceType: 'rendered_document' }})),
         saveContributionEdit: (overrides?.saveContributionEdit || ((_payload: SaveContributionEditPayload, _user: User, _deps: SaveContributionEditContext): Promise<SaveContributionEditResult> => Promise.resolve({ data: { resource: { id: 'mock-resource-id', resource_type: 'rendered_document', project_id: 'mock-project-id', session_id: 'mock-session-id', stage_slug: 'thesis', iteration_number: 1, document_key: null, source_contribution_id: 'mock-contribution-id', storage_bucket: 'mock-bucket', storage_path: 'mock-path', file_name: 'mock.txt', mime_type: 'text/plain', size_bytes: 123, created_at: new Date().toISOString(), updated_at: new Date().toISOString() }, sourceContributionId: 'mock-contribution-id' }, status: 200 }))),
         submitStageResponses: overrides?.submitStageResponses || (() => Promise.resolve({ data: { message: 'mock-message', updatedSession: mockSession, feedbackRecords: [] }, status: 200 })),
         listDomains: overrides?.listDomains || (() => Promise.resolve({ data: [] })),
         fetchProcessTemplate: overrides?.fetchProcessTemplate || (() => Promise.resolve({ data: { created_at: new Date().toISOString(), description: 'mock-description', id: 'mock-id', name: 'mock-name', starting_stage_id: 'mock-starting-stage-id' }, status: 200 })),
-        updateSessionModels: overrides?.updateSessionModels || (() => Promise.resolve({ data: mockSession, status: 200 })),
+        updateSessionModels: overrides?.updateSessionModels || ((dbClient: SupabaseClient, userClient: SupabaseClient, _payload: UpdateSessionModelsPayload, _userId: string) => {
+            assert(dbClient !== userClient);
+            return Promise.resolve({ data: mockSession, status: 200 });
+        }),
         updateViewingStage: overrides?.updateViewingStage || (() => Promise.resolve<UpdateViewingStageReturn>(mockUpdateViewingStageSuccessReturn)),
         getStageRecipe: overrides?.getStageRecipe || (() => Promise.resolve({ data: { stageSlug: '', instanceId: '', steps: [], edges: [] }, status: 200 })),
         listStageDocuments: overrides?.listStageDocuments || (() => Promise.resolve({ data: [], status: 200 })),
@@ -477,6 +520,28 @@ withSupabaseEnv("handleRequest - Routing and Dispatching", async (t) => {
       assertEquals(listSpy.calls.length, 1);
     });
 
+    await t.step("should correctly route JSON 'listModelCatalog' action (auth needed)", async () => {
+      const listSpy = spy(() => Promise.resolve({ data: [mockGeminiFlashCatalogRow] }));
+      mockHandlers = createMockHandlers({ listModelCatalog: listSpy });
+
+      const mockToken = "mock-jwt";
+      const { client: mockUserClient } = createMockSupabaseClient('test-user-id', {
+        getUserResult: { data: { user: mockUser }, error: null },
+      });
+      const { client: mockAdminClient } = createMockSupabaseClient();
+
+      const req = createJsonRequest("listModelCatalog", undefined, mockToken);
+      const response = await handleRequest(
+        req,
+        mockHandlers,
+        mockUserClient as any,
+        mockAdminClient as any,
+      );
+
+      assertEquals(response.status, 200);
+      assertEquals(listSpy.calls.length, 1);
+    });
+
     await t.step("should return 401 for auth-required JSON action without token", async () => {
       const listSpy = spy(() => Promise.resolve({ data: [mockProject], status: 200 }));
       mockHandlers = createMockHandlers({ listProjects: listSpy });
@@ -601,6 +666,96 @@ withSupabaseEnv("handleRequest - listAvailableDomainOverlays", async (t) => {
         assertEquals(response.status, 400);
         const responseBody = await response.json();
         assertEquals(responseBody.error, "stageAssociation is required.");
+        assertEquals(listSpy.calls.length, 0);
+    });
+});
+
+withSupabaseEnv("handleRequest - listModelCatalog", async (t) => {
+    await t.step("should route listModelCatalog and return ai_providers rows unchanged", async () => {
+        const listSpy = spy((_dbClient: SupabaseClient<Database>) =>
+          Promise.resolve({ data: [mockGeminiFlashCatalogRow] })
+        );
+        const mockHandlers = createMockHandlers({ listModelCatalog: listSpy });
+
+        const mockToken = "mock-jwt";
+        const { client: mockUserClient } = createMockSupabaseClient('test-user-id', {
+            getUserResult: { data: { user: mockUser }, error: null },
+        });
+        const { client: mockAdminClient } = createMockSupabaseClient();
+
+        const req = createJsonRequest("listModelCatalog", undefined, mockToken);
+        const response = await handleRequest(
+          req,
+          mockHandlers,
+          mockUserClient as any,
+          mockAdminClient as any,
+        );
+
+        assertEquals(response.status, 200);
+        assertEquals(listSpy.calls.length, 1);
+
+        const body: unknown = await response.json();
+        assert(Array.isArray(body));
+        assertEquals(body, [mockGeminiFlashCatalogRow]);
+
+        const firstRow: unknown = body[0];
+        assert(isRecord(firstRow));
+        assertEquals(firstRow.name, "Gemini 3 Flash Preview");
+        assertEquals(firstRow.provider, "google");
+        assertEquals(firstRow.api_identifier, "google-gemini-3-flash-preview");
+        assertEquals(firstRow.is_default_generation, true);
+        assert(isRecord(firstRow.config));
+        assertEquals(firstRow.config.hard_cap_output_tokens, 65536);
+        assertEquals(firstRow.config.provider_max_output_tokens, 65536);
+        assertEquals("model_name" in firstRow, false);
+        assertEquals("provider_name" in firstRow, false);
+        assertEquals("max_output_tokens" in firstRow, false);
+    });
+
+    await t.step("should return error if listModelCatalog returns an error", async () => {
+        const error: ServiceError = { message: "DB Error", status: 500, code: "DB_FETCH_FAILED" };
+        const listSpy = spy(() => Promise.resolve({ error }));
+        const mockHandlers = createMockHandlers({ listModelCatalog: listSpy });
+
+        const mockToken = "mock-jwt";
+        const { client: mockUserClient } = createMockSupabaseClient('test-user-id', {
+            getUserResult: { data: { user: mockUser }, error: null },
+        });
+        const { client: mockAdminClient } = createMockSupabaseClient();
+
+        const req = createJsonRequest("listModelCatalog", undefined, mockToken);
+        const response = await handleRequest(
+          req,
+          mockHandlers,
+          mockUserClient as any,
+          mockAdminClient as any,
+        );
+
+        assertEquals(response.status, 500);
+        const responseBody = await response.json();
+        assertEquals(responseBody.error, error.message);
+        assertEquals(listSpy.calls.length, 1);
+    });
+
+    await t.step("should return 401 if no auth token is provided", async () => {
+        const listSpy = spy(() => Promise.resolve({ data: [mockGeminiFlashCatalogRow] }));
+        const mockHandlers = createMockHandlers({ listModelCatalog: listSpy });
+        const { client: mockUserClient } = createMockSupabaseClient('test-user-id', {
+             getUserResult: { data: { user: null }, error: null },
+        });
+        const { client: mockAdminClient } = createMockSupabaseClient();
+
+        const req = createJsonRequest("listModelCatalog");
+        const response = await handleRequest(
+          req,
+          mockHandlers,
+          mockUserClient as any,
+          mockAdminClient as any,
+        );
+
+        assertEquals(response.status, 401);
+        const body = await response.json();
+        assertEquals(body.error, "User not authenticated");
         assertEquals(listSpy.calls.length, 0);
     });
 });
@@ -814,14 +969,19 @@ withSupabaseEnv("handleRequest - startSession", async (t) => {
 
     await t.step("should call startSession and return 200 on success", async () => {
         const startSessionData: StartSessionSuccessResponse = { ...mockSession, seedPrompt: { promptContent: '', source_prompt_resource_id: '' } };
-        const startSpy = spy((): Promise<{ data?: StartSessionSuccessResponse; error?: ServiceError }> => Promise.resolve({ data: startSessionData }));
-        const mockHandlers = createMockHandlers({ startSession: startSpy });
-
         const mockToken = "mock-jwt";
         const { client: mockUserClient } = createMockSupabaseClient('test-user-id', {
             getUserResult: { data: { user: mockUser }, error: null }
         });
         const { client: mockAdminClient } = createMockSupabaseClient();
+
+        const startSpy = spy(
+            (_user: User, dbClient: SupabaseClient, userClient: SupabaseClient, _payload: StartSessionPayload, _dependencies: { logger: ILogger }): Promise<{ data?: StartSessionSuccessResponse; error?: ServiceError }> => {
+                assert(dbClient !== userClient);
+                return Promise.resolve({ data: startSessionData });
+            },
+        );
+        const mockHandlers = createMockHandlers({ startSession: startSpy });
 
         const payload: StartSessionPayload = { projectId, sessionDescription: 'New session', selectedModels: [{ id: 'model-1', displayName: 'Model One' }], idempotencyKey: 'job-id-123_start_session' };
         const req = createJsonRequest("startSession", payload, mockToken);
@@ -840,14 +1000,19 @@ withSupabaseEnv("handleRequest - startSession", async (t) => {
 
     await t.step("should return error if startSession fails", async () => {
         const error: ServiceError = { message: "Too many active sessions", status: 429, code: "TOO_MANY_SESSIONS" };
-        const startSpy = spy(() => Promise.resolve({ error }));
-        const mockHandlers = createMockHandlers({ startSession: startSpy });
-        
         const mockToken = "mock-jwt";
         const { client: mockUserClient } = createMockSupabaseClient('test-user-id', {
             getUserResult: { data: { user: mockUser }, error: null }
         });
         const { client: mockAdminClient } = createMockSupabaseClient();
+
+        const startSpy = spy(
+            (_user: User, dbClient: SupabaseClient, userClient: SupabaseClient, _payload: StartSessionPayload, _dependencies: { logger: ILogger }): Promise<{ data?: StartSessionSuccessResponse; error?: ServiceError }> => {
+                assert(dbClient !== userClient);
+                return Promise.resolve({ error });
+            },
+        );
+        const mockHandlers = createMockHandlers({ startSession: startSpy });
 
         const payload: StartSessionPayload = { projectId, selectedModels: [{ id: 'model-1', displayName: 'Model One' }], idempotencyKey: 'job-id-123_start_session' };
         const req = createJsonRequest("startSession", payload, mockToken);
@@ -1083,14 +1248,19 @@ withSupabaseEnv("handleRequest - cloneProject", async (t) => {
 
     await t.step("should call cloneProject and return 201 on success", async () => {
         const successResponse: CloneProjectResult = { data: { ...mockProject, id: 'proj-clone' }, error: null };
-        const cloneSpy = spy(() => Promise.resolve(successResponse));
-        const mockHandlers = createMockHandlers({ cloneProject: cloneSpy });
-
         const mockToken = "mock-jwt";
         const { client: mockUserClient } = createMockSupabaseClient('test-user-id', {
             getUserResult: { data: { user: mockUser }, error: null }
         });
         const { client: mockAdminClient } = createMockSupabaseClient();
+
+        const cloneSpy = spy(
+            (dbClient: SupabaseClient, userClient: SupabaseClient, _fileManager: IFileManager, _originalProjectId: string, _newProjectName: string | undefined, _cloningUserId: string): Promise<CloneProjectResult> => {
+                assert(dbClient !== userClient);
+                return Promise.resolve(successResponse);
+            },
+        );
+        const mockHandlers = createMockHandlers({ cloneProject: cloneSpy });
 
         const req = createJsonRequest("cloneProject", payload, mockToken);
         const response = await handleRequest(
@@ -1109,14 +1279,19 @@ withSupabaseEnv("handleRequest - cloneProject", async (t) => {
     await t.step("should return error if cloneProject fails", async () => {
         const error: ServiceError = { message: "Cloning failed", status: 500, code: "CLONE_ERROR" };
         const errorResponse: CloneProjectResult = { data: null, error };
-        const cloneSpy = spy(() => Promise.resolve(errorResponse));
-        const mockHandlers = createMockHandlers({ cloneProject: cloneSpy });
-
         const mockToken = "mock-jwt";
         const { client: mockUserClient } = createMockSupabaseClient('test-user-id', {
             getUserResult: { data: { user: mockUser }, error: null }
         });
         const { client: mockAdminClient } = createMockSupabaseClient();
+
+        const cloneSpy = spy(
+            (dbClient: SupabaseClient, userClient: SupabaseClient, _fileManager: IFileManager, _originalProjectId: string, _newProjectName: string | undefined, _cloningUserId: string): Promise<CloneProjectResult> => {
+                assert(dbClient !== userClient);
+                return Promise.resolve(errorResponse);
+            },
+        );
+        const mockHandlers = createMockHandlers({ cloneProject: cloneSpy });
 
         const req = createJsonRequest("cloneProject", payload, mockToken);
         const response = await handleRequest(
@@ -1361,14 +1536,19 @@ withSupabaseEnv("handleRequest - updateSessionModels", async (t) => {
     const payload: UpdateSessionModelsPayload = { sessionId: mockSessionId, selectedModels: [{ id: 'model-a', displayName: 'Model A' }, { id: 'model-b', displayName: 'Model B' }] };
 
     await t.step("should call updateSessionModels and return 200 on success", async () => {
-        const updateSpy = spy(() => Promise.resolve({ data: mockUpdatedSession, status: 200 }));
-        const mockHandlers = createMockHandlers({ updateSessionModels: updateSpy });
-
         const mockToken = "mock-jwt";
         const { client: mockUserClient } = createMockSupabaseClient('test-user-id', {
             getUserResult: { data: { user: mockUser }, error: null }
         });
         const { client: mockAdminClient } = createMockSupabaseClient();
+
+        const updateSpy = spy(
+            (dbClient: SupabaseClient, userClient: SupabaseClient, _payload: UpdateSessionModelsPayload, _userId: string): Promise<{ data?: DialecticSession; error?: ServiceError; status?: number }> => {
+                assert(dbClient !== userClient);
+                return Promise.resolve({ data: mockUpdatedSession, status: 200 });
+            },
+        );
+        const mockHandlers = createMockHandlers({ updateSessionModels: updateSpy });
 
         const req = createJsonRequest("updateSessionModels", payload, mockToken);
         const response = await handleRequest(req, mockHandlers, mockUserClient as any, mockAdminClient as any);
@@ -1382,15 +1562,20 @@ withSupabaseEnv("handleRequest - updateSessionModels", async (t) => {
 
     await t.step("should return error if updateSessionModels handler fails", async () => {
         const error: ServiceError = { message: "Update Failed", status: 500, code: "DB_UPDATE_ERROR" };
-        const updateSpy = spy(() => Promise.resolve({ error, status: 500 }));
-        const mockHandlers = createMockHandlers({ updateSessionModels: updateSpy });
-
         const mockToken = "mock-jwt";
         const { client: mockUserClient } = createMockSupabaseClient('test-user-id', {
             getUserResult: { data: { user: mockUser }, error: null }
         });
         const { client: mockAdminClient } = createMockSupabaseClient();
-        
+
+        const updateSpy = spy(
+            (dbClient: SupabaseClient, userClient: SupabaseClient, _payload: UpdateSessionModelsPayload, _userId: string): Promise<{ data?: DialecticSession; error?: ServiceError; status?: number }> => {
+                assert(dbClient !== userClient);
+                return Promise.resolve({ error, status: 500 });
+            },
+        );
+        const mockHandlers = createMockHandlers({ updateSessionModels: updateSpy });
+
         const req = createJsonRequest("updateSessionModels", payload, mockToken);
         const response = await handleRequest(req, mockHandlers, mockUserClient as any, mockAdminClient as any);
         
@@ -1401,7 +1586,12 @@ withSupabaseEnv("handleRequest - updateSessionModels", async (t) => {
     });
 
     await t.step("should return 401 if not authenticated", async () => {
-        const updateSpy = spy(() => Promise.resolve({ data: mockUpdatedSession, status: 200 }));
+        const updateSpy = spy(
+            (dbClient: SupabaseClient, userClient: SupabaseClient, _payload: UpdateSessionModelsPayload, _userId: string): Promise<{ data?: DialecticSession; error?: ServiceError; status?: number }> => {
+                assert(dbClient !== userClient);
+                return Promise.resolve({ data: mockUpdatedSession, status: 200 });
+            },
+        );
         const mockHandlers = createMockHandlers({ updateSessionModels: updateSpy });
 
         const { client: mockUserClient } = createMockSupabaseClient('test-user-id', {
@@ -1419,9 +1609,6 @@ withSupabaseEnv("handleRequest - updateSessionModels", async (t) => {
     });
 
     await t.step("should return 400 if sessionId is missing from payload", async () => {
-        const updateSpy = spy(() => Promise.resolve({ data: mockUpdatedSession, status: 200 }));
-        // const mockHandlers = createMockHandlers({ updateSessionModels: updateSpy as any });
-        
         const mockToken = "mock-jwt";
         const { client: mockUserClient } = createMockSupabaseClient('test-user-id', {
             getUserResult: { data: { user: mockUser }, error: null }
@@ -1432,8 +1619,13 @@ withSupabaseEnv("handleRequest - updateSessionModels", async (t) => {
         const req = createJsonRequest("updateSessionModels", incompletePayload, mockToken);
         const reqClone = req.clone(); // Clone the request
 
-        const specificErrorSpy = spy(() => Promise.resolve({ error: {message: "sessionId is required", status: 400, code: "MISSING_PARAM"}, status: 400 }));
-        const specificMockHandlers = createMockHandlers({ updateSessionModels: specificErrorSpy as any });
+        const specificErrorSpy = spy(
+            (dbClient: SupabaseClient, userClient: SupabaseClient, _payload: UpdateSessionModelsPayload, _userId: string): Promise<{ data?: DialecticSession; error?: ServiceError; status?: number }> => {
+                assert(dbClient !== userClient);
+                return Promise.resolve({ error: { message: "sessionId is required", status: 400, code: "MISSING_PARAM" }, status: 400 });
+            },
+        );
+        const specificMockHandlers = createMockHandlers({ updateSessionModels: specificErrorSpy });
         
         // Use the cloned request
         const specificResponse = await handleRequest(reqClone, specificMockHandlers, mockUserClient as any, mockAdminClient as any);
@@ -1445,9 +1637,6 @@ withSupabaseEnv("handleRequest - updateSessionModels", async (t) => {
     });
 
      await t.step("should return 400 if selectedModels is missing from payload", async () => {
-        const updateSpy = spy(() => Promise.resolve({ data: mockUpdatedSession, status: 200 }));
-        const mockHandlers = createMockHandlers({ updateSessionModels: updateSpy });
-        
         const mockToken = "mock-jwt";
         const { client: mockUserClient } = createMockSupabaseClient('test-user-id', {
             getUserResult: { data: { user: mockUser }, error: null }
@@ -1457,7 +1646,12 @@ withSupabaseEnv("handleRequest - updateSessionModels", async (t) => {
         const incompletePayload: UpdateSessionModelsPayload = { sessionId: mockSessionId } as UpdateSessionModelsPayload  ; // Missing selectedModels
         const req = createJsonRequest("updateSessionModels", incompletePayload, mockToken);
         
-        const specificErrorSpy = spy(() => Promise.resolve({ error: {message: "selectedModels is required", status: 400, code: "MISSING_PARAM"}, status: 400 }));
+        const specificErrorSpy = spy(
+            (dbClient: SupabaseClient, userClient: SupabaseClient, _payload: UpdateSessionModelsPayload, _userId: string): Promise<{ data?: DialecticSession; error?: ServiceError; status?: number }> => {
+                assert(dbClient !== userClient);
+                return Promise.resolve({ error: { message: "selectedModels is required", status: 400, code: "MISSING_PARAM" }, status: 400 });
+            },
+        );
         const specificMockHandlers = createMockHandlers({ updateSessionModels: specificErrorSpy });
         
         const specificResponse = await handleRequest(req, specificMockHandlers, mockUserClient as any, mockAdminClient as any);

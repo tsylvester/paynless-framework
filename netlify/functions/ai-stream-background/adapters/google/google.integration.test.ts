@@ -81,6 +81,7 @@ describe('createGoogleNodeAdapter (integration)', () => {
         output_token_cost_rate: 0.002,
       },
       apiKey: 'google-integration-key',
+      userConfig: { tier_output_cap_tokens: null },
     };
     const adapter = createGoogleNodeAdapter(params);
     expect(isAiAdapter(adapter)).toBe(true);
@@ -132,5 +133,45 @@ describe('createGoogleNodeAdapter (integration)', () => {
       return c.type === 'done';
     });
     expect(doneChunks.length).toBe(1);
+  });
+
+  it('calls startChat with maxOutputTokens from binding tier cap over request and hard cap', async () => {
+    const params: NodeAdapterConstructorParams = {
+      modelConfig: {
+        api_identifier: 'google-gemini-2-5-pro',
+        hard_cap_output_tokens: 131_072,
+        input_token_cost_rate: 0.001,
+        output_token_cost_rate: 0.002,
+      },
+      apiKey: 'google-integration-key-tier-cap',
+      userConfig: { tier_output_cap_tokens: 32_768 },
+    };
+    const adapter = createGoogleNodeAdapter(params);
+
+    googleSdk.sendMessageStream.mockResolvedValue(createIntegrationGoogleStreamResult());
+
+    const request: NodeChatApiRequest = {
+      message: 'integration tier cap message',
+      providerId: 'prov-integration-tier',
+      promptId: 'prompt-integration-tier',
+      max_tokens_to_generate: 50_000,
+    };
+    const apiIdentifier: string = 'google-gemini-2-5-pro';
+
+    const stream: AsyncGenerator<NodeAdapterStreamChunk> = adapter.sendMessageStream(
+      request,
+      apiIdentifier,
+    );
+    const collected: NodeAdapterStreamChunk[] = [];
+    for await (const chunk of stream) {
+      collected.push(chunk);
+    }
+    expect(collected.length >= 1).toBe(true);
+
+    expect(googleSdk.startChat).toHaveBeenCalledWith(
+      expect.objectContaining({
+        generationConfig: { maxOutputTokens: 32_768 },
+      }),
+    );
   });
 });

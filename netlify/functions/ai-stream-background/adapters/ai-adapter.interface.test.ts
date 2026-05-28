@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import type {
   AiAdapter,
+  NodeAdapterConstructorParams,
   NodeAdapterStreamChunk,
   NodeChatApiRequest,
   NodeChatMessage,
   NodeModelConfig,
   NodeOutboundDocument,
   NodeTokenUsage,
+  NodeUserConfig,
 } from './ai-adapter.interface.ts';
 
 describe('ai-adapter.interface contract', () => {
@@ -183,5 +185,39 @@ describe('ai-adapter.interface contract', () => {
       },
     };
     expect(typeof adapter.sendMessageStream).toBe('function');
+  });
+
+  it('NodeUserConfig contract has tier_output_cap_tokens as number or null', () => {
+    const withNull: NodeUserConfig = { tier_output_cap_tokens: null };
+    const withNumber: NodeUserConfig = { tier_output_cap_tokens: 32_768 };
+    expect(withNull.tier_output_cap_tokens).toBe(null);
+    expect(withNumber.tier_output_cap_tokens).toBe(32_768);
+  });
+
+  it('accepts NodeUserConfig with tier_output_cap_tokens: null', () => {
+    const userConfig: NodeUserConfig = { tier_output_cap_tokens: null };
+    expect(userConfig.tier_output_cap_tokens).toBe(null);
+  });
+
+  it('accepts NodeUserConfig with tier_output_cap_tokens: 32768', () => {
+    const userConfig: NodeUserConfig = { tier_output_cap_tokens: 32_768 };
+    expect(userConfig.tier_output_cap_tokens).toBe(32_768);
+  });
+
+  it('NodeAdapterConstructorParams shape includes userConfig: NodeUserConfig', () => {
+    const modelConfig: NodeModelConfig = {
+      api_identifier: 'openai-gpt-4o',
+      input_token_cost_rate: null,
+      output_token_cost_rate: null,
+    };
+    const userConfig: NodeUserConfig = { tier_output_cap_tokens: null };
+    const params: NodeAdapterConstructorParams = {
+      modelConfig,
+      apiKey: 'sk-test',
+      userConfig,
+    };
+    expect(params.userConfig.tier_output_cap_tokens).toBe(null);
+    expect(params.modelConfig.api_identifier).toBe('openai-gpt-4o');
+    expect(params.apiKey).toBe('sk-test');
   });
 });

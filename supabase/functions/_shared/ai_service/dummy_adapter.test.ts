@@ -388,6 +388,7 @@ Deno.test("DummyAdapter getEmbedding returns 3072-d vectors", async () => {
       provider_max_input_tokens: 8191,
       provider_max_output_tokens: 4096,
     },
+    min_plan_tier_level: 0,
   };
 
   const logger: ILogger = {
@@ -449,6 +450,7 @@ Deno.test("[DummyAdapter] honors injected provider config for context window/tok
       },
       hard_cap_output_tokens: 4096,
     },
+    min_plan_tier_level: 0,
   };
 
   const adapter = new DummyAdapter(providerRow, "sk-test", new MockLogger());
@@ -495,6 +497,7 @@ Deno.test("[DummyAdapter] uses rational self-default window when constructed as 
       tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: "cl100k_base" },
       hard_cap_output_tokens: 4096,
     },
+    min_plan_tier_level: 0,
   };
 
   const adapter = new DummyAdapter(providerRow, "sk-test", new MockLogger());

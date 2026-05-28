@@ -17,6 +17,7 @@ import { Session, User, UserProfile } from '@paynless/types';
 import { useNotificationStore } from './notificationStore';
 import { useOrganizationStore } from './organizationStore';
 import { Database } from '@paynless/db-types';
+import { mockUserTier, mockAllTiers } from '../../../apps/web/src/mocks/profile.mock';
 
 type AuthStateChangeListener = (event: AuthChangeEvent, session: SupabaseSession | null) => void;
 
@@ -101,6 +102,10 @@ const mockUserProfile: UserProfile = {
     is_subscribed_to_newsletter: false,
     last_selected_org_id: null,
     profile_privacy_setting: 'private',
+    signup_ref: null,
+    subscribed_at: null,
+    synced_to_kit_at: null,
+    unsubscribed_at: null,
 };
 
 const mockNavigate = vi.fn();
@@ -187,7 +192,7 @@ describe('authStore Listener Logic (initAuthListener)', () => {
     const profileWithLastOrg = { ...mockUserProfile, last_selected_org_id: 'org-from-profile' };
     vi.mocked(mockApiClient.get).mockResolvedValueOnce({ 
         status: 200, 
-        data: { profile: profileWithLastOrg },
+        data: { profile: profileWithLastOrg, userTier: mockUserTier, tiers: mockAllTiers },
         error: undefined 
     });
 
@@ -196,12 +201,14 @@ describe('authStore Listener Logic (initAuthListener)', () => {
         await vi.advanceTimersByTimeAsync(10);
     });
 
-    expect(setStateSpy).toHaveBeenCalledTimes(2); 
+    expect(setStateSpy).toHaveBeenCalledTimes(3); 
     
     const finalState = useAuthStore.getState();
     expect(finalState.session).toEqual(expectedMappedSession);
     expect(finalState.user).toEqual(expectedMappedUser);
     expect(finalState.profile).toEqual(profileWithLastOrg);
+    expect(finalState.userTier).toEqual(mockUserTier);
+    expect(finalState.availableTiers).toEqual(mockAllTiers);
     expect(finalState.isLoading).toBe(false);
     expect(finalState.error).toBeNull();
     expect(mockApiClient.get).toHaveBeenCalledTimes(1);
@@ -215,7 +222,7 @@ describe('authStore Listener Logic (initAuthListener)', () => {
     const profileWithNullOrg = { ...mockUserProfile, last_selected_org_id: null };
     vi.mocked(mockApiClient.get).mockResolvedValueOnce({ 
         status: 200, 
-        data: { profile: profileWithNullOrg }, 
+        data: { profile: profileWithNullOrg, userTier: mockUserTier, tiers: mockAllTiers }, 
         error: undefined 
     });
 
@@ -248,7 +255,7 @@ describe('authStore Listener Logic (initAuthListener)', () => {
 
   it('should set session, user, profile on SIGNED_IN', async () => {
     vi.useFakeTimers();
-    vi.mocked(mockApiClient.get).mockResolvedValueOnce({ status: 200, data: { profile: mockUserProfile }, error: undefined });
+    vi.mocked(mockApiClient.get).mockResolvedValueOnce({ status: 200, data: { profile: mockUserProfile, userTier: mockUserTier, tiers: mockAllTiers }, error: undefined });
     localStorage.setItem('pendingAction', JSON.stringify({ returnPath: '/pending' }));
 
     await act(async () => {
@@ -256,11 +263,13 @@ describe('authStore Listener Logic (initAuthListener)', () => {
         await vi.advanceTimersByTimeAsync(10);
     });
 
-    expect(setStateSpy).toHaveBeenCalledTimes(2);
+    expect(setStateSpy).toHaveBeenCalledTimes(3);
     const finalState = useAuthStore.getState();
     expect(finalState.session).toEqual(expectedMappedSession);
     expect(finalState.user).toEqual(expectedMappedUser);
     expect(finalState.profile).toEqual(mockUserProfile);
+    expect(finalState.userTier).toEqual(mockUserTier);
+    expect(finalState.availableTiers).toEqual(mockAllTiers);
     expect(finalState.isLoading).toBe(false);
     expect(finalState.error).toBeNull();
     expect(mockApiClient.get).toHaveBeenCalledTimes(1);
@@ -288,12 +297,16 @@ describe('authStore Listener Logic (initAuthListener)', () => {
       user: null,
       isLoading: false,
       error: null,
-      profile: null, 
+      profile: null,
+      userTier: null,
+      availableTiers: [],
     });
     const finalState = useAuthStore.getState();
     expect(finalState.session).toBeNull();
     expect(finalState.user).toBeNull();
     expect(finalState.profile).toBeNull();
+    expect(finalState.userTier).toBeNull();
+    expect(finalState.availableTiers).toEqual([]);
     expect(finalState.isLoading).toBe(false);
     expect(mockApiClient.get).not.toHaveBeenCalled();
     expect(mockUnsubscribeNotifications).toHaveBeenCalledTimes(1);
@@ -304,18 +317,20 @@ describe('authStore Listener Logic (initAuthListener)', () => {
     vi.useFakeTimers();
     const refreshedSession = { ...mockSupabaseSession, access_token: 'refreshed-token' };
     const refreshedMappedSession = { ...expectedMappedSession, access_token: 'refreshed-token' };
-    vi.mocked(mockApiClient.get).mockResolvedValueOnce({ status: 200, data: { profile: mockUserProfile }, error: undefined });
+    vi.mocked(mockApiClient.get).mockResolvedValueOnce({ status: 200, data: { profile: mockUserProfile, userTier: mockUserTier, tiers: mockAllTiers }, error: undefined });
 
     await act(async () => {
         await listenerCallback('TOKEN_REFRESHED', refreshedSession);
         await vi.advanceTimersByTimeAsync(10);
     });
 
-    expect(setStateSpy).toHaveBeenCalledTimes(2);
+    expect(setStateSpy).toHaveBeenCalledTimes(3);
     const finalState = useAuthStore.getState();
     expect(finalState.session).toEqual(refreshedMappedSession);
     expect(finalState.user).toEqual(expectedMappedUser);
     expect(finalState.profile).toEqual(mockUserProfile);
+    expect(finalState.userTier).toEqual(mockUserTier);
+    expect(finalState.availableTiers).toEqual(mockAllTiers);
     expect(mockApiClient.get).toHaveBeenCalledTimes(1);
     expect(mockApiClient.get).toHaveBeenCalledWith('me', { token: refreshedSession.access_token });
     expect(mockSubscribeNotifications).toHaveBeenCalledWith(expectedMappedUser.id);
@@ -326,18 +341,20 @@ describe('authStore Listener Logic (initAuthListener)', () => {
     const updatedUser = { ...mockSupabaseUser, email: 'updated@example.com' };
     const updatedMappedUser = { ...expectedMappedUser, email: 'updated@example.com' };
     const updatedSession = { ...mockSupabaseSession, user: updatedUser };
-    vi.mocked(mockApiClient.get).mockResolvedValueOnce({ status: 200, data: { profile: mockUserProfile }, error: undefined });
+    vi.mocked(mockApiClient.get).mockResolvedValueOnce({ status: 200, data: { profile: mockUserProfile, userTier: mockUserTier, tiers: mockAllTiers }, error: undefined });
 
     await act(async () => {
         await listenerCallback('USER_UPDATED', updatedSession);
         await vi.advanceTimersByTimeAsync(10);
     });
 
-    expect(setStateSpy).toHaveBeenCalledTimes(2);
+    expect(setStateSpy).toHaveBeenCalledTimes(3);
     const finalState = useAuthStore.getState();
     expect(finalState.session).toEqual(expectedMappedSession);
     expect(finalState.user).toEqual(updatedMappedUser);
     expect(finalState.profile).toEqual(mockUserProfile);
+    expect(finalState.userTier).toEqual(mockUserTier);
+    expect(finalState.availableTiers).toEqual(mockAllTiers);
     expect(mockApiClient.get).toHaveBeenCalledTimes(1);
     expect(mockApiClient.get).toHaveBeenCalledWith('me', { token: updatedSession.access_token });
     expect(mockSubscribeNotifications).toHaveBeenCalledWith(updatedMappedUser.id);
@@ -349,7 +366,7 @@ describe('authStore Listener Logic (initAuthListener)', () => {
     const profileWithLastOrg = { ...mockUserProfile, last_selected_org_id: 'org-signed-in' };
     vi.mocked(mockApiClient.get).mockResolvedValueOnce({ 
         status: 200, 
-        data: { profile: profileWithLastOrg }, 
+        data: { profile: profileWithLastOrg, userTier: mockUserTier, tiers: mockAllTiers }, 
         error: undefined 
     });
 
@@ -362,7 +379,10 @@ describe('authStore Listener Logic (initAuthListener)', () => {
     expect(finalState.session).toEqual(expectedMappedSession);
     expect(finalState.user).toEqual(expectedMappedUser);
     expect(finalState.profile).toEqual(profileWithLastOrg);
+    expect(finalState.userTier).toEqual(mockUserTier);
+    expect(finalState.availableTiers).toEqual(mockAllTiers);
     expect(finalState.isLoading).toBe(false);
+    expect(finalState.error).toBeNull();
     expect(mockNavigate).toHaveBeenCalledWith('/pending');
     expect(mockSetCurrentOrgId).toHaveBeenCalledWith('org-signed-in');
   });
@@ -372,7 +392,7 @@ describe('authStore Listener Logic (initAuthListener)', () => {
     const profileWithLastOrg = { ...mockUserProfile, last_selected_org_id: 'org-refreshed' };
     vi.mocked(mockApiClient.get).mockResolvedValueOnce({ 
         status: 200, 
-        data: { profile: profileWithLastOrg }, 
+        data: { profile: profileWithLastOrg, userTier: mockUserTier, tiers: mockAllTiers }, 
         error: undefined 
     });
     
@@ -385,7 +405,10 @@ describe('authStore Listener Logic (initAuthListener)', () => {
     expect(finalState.session).toEqual(expectedMappedSession);
     expect(finalState.user).toEqual(expectedMappedUser);
     expect(finalState.profile).toEqual(profileWithLastOrg);
+    expect(finalState.userTier).toEqual(mockUserTier);
+    expect(finalState.availableTiers).toEqual(mockAllTiers);
     expect(finalState.isLoading).toBe(false);
+    expect(finalState.error).toBeNull();
     expect(mockSetCurrentOrgId).toHaveBeenCalledWith('org-refreshed');
   });
 
@@ -397,7 +420,7 @@ describe('authStore Listener Logic (initAuthListener)', () => {
     const profileWithLastOrg = { ...mockUserProfile, last_selected_org_id: 'org-user-update' };
     vi.mocked(mockApiClient.get).mockResolvedValueOnce({ 
         status: 200, 
-        data: { profile: profileWithLastOrg }, 
+        data: { profile: profileWithLastOrg, userTier: mockUserTier, tiers: mockAllTiers }, 
         error: undefined 
     });
 
@@ -409,7 +432,10 @@ describe('authStore Listener Logic (initAuthListener)', () => {
     const finalState = useAuthStore.getState();
     expect(finalState.user).toEqual(expectedUpdatedMappedUser);
     expect(finalState.profile).toEqual(profileWithLastOrg);
+    expect(finalState.userTier).toEqual(mockUserTier);
+    expect(finalState.availableTiers).toEqual(mockAllTiers);
     expect(finalState.isLoading).toBe(false);
+    expect(finalState.error).toBeNull();
     expect(mockSetCurrentOrgId).toHaveBeenCalledWith('org-user-update');
   });
 
@@ -430,6 +456,8 @@ describe('authStore Listener Logic (initAuthListener)', () => {
     expect(finalState.session).toBeNull();
     expect(finalState.user).toBeNull();
     expect(finalState.profile).toBeNull();
+    expect(finalState.userTier).toBeNull();
+    expect(finalState.availableTiers).toEqual([]);
     expect(mockUnsubscribeNotifications).toHaveBeenCalledTimes(1);
   });
 }); 

@@ -383,6 +383,20 @@ describe('JobContexts Type Guards', () => {
 
             assertEquals(isIJobContext(context), false);
         });
+
+        it('returns false when getMaxOutputTokens is missing', () => {
+            const rootContext = buildIJobContext();
+            const { getMaxOutputTokens, ...contextMissingGetMaxOutputTokens } = rootContext;
+
+            assertEquals(isIJobContext(contextMissingGetMaxOutputTokens), false);
+        });
+
+        it('returns false when getMaxOutputTokens is not a function', () => {
+            const rootContext = buildIJobContext();
+            const context = { ...rootContext, getMaxOutputTokens: 'not-a-function' };
+
+            assertEquals(isIJobContext(context), false);
+        });
     });
 
     describe('isIJobContext computeJobSig', () => {

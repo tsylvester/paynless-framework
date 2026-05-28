@@ -1,5 +1,6 @@
 import { useAuthStore } from "@paynless/store";
 import { AlertTriangle } from "lucide-react";
+import { Link } from "react-router-dom";
 import ErrorBoundary from "../components/common/ErrorBoundary";
 import { CardSkeleton } from "../components/common/CardSkeleton";
 import { EditEmail } from "../components/profile/EditEmail";
@@ -19,6 +20,7 @@ export function ProfilePage() {
 	const currentProfile = useAuthStore((state) => state.profile);
 	const isLoading = useAuthStore((state) => state.isLoading);
 	const error = useAuthStore((state) => state.error);
+	const userTier = useAuthStore((state) => state.userTier);
 
 	if (isLoading) {
 		return (
@@ -77,6 +79,10 @@ export function ProfilePage() {
 		);
 	}
 
+	const tierName = userTier ? userTier.name.charAt(0).toUpperCase() + userTier.name.slice(1) : null;
+	const outputCap = userTier?.output_cap_tokens != null ? userTier.output_cap_tokens.toLocaleString() : 'Unlimited';
+	const maxModels = userTier?.max_models_per_project != null ? String(userTier.max_models_per_project) : 'Unlimited';
+
 	return (
 		<div className="container mx-auto px-4 py-8">
 			<div
@@ -102,6 +108,52 @@ export function ProfilePage() {
 				>
 					<WalletBalanceDisplay />
 				</ErrorBoundary>
+
+				{userTier && (
+					<ErrorBoundary
+						fallback={
+							<Card className="w-full border-destructive bg-destructive/10">
+								<CardHeader>
+									<CardTitle className="flex items-center text-destructive text-lg">
+										<AlertTriangle size={20} className="mr-2 shrink-0" />
+										Error in Plan & Tier
+									</CardTitle>
+								</CardHeader>
+								<CardContent>
+									<p className="text-destructive/90 text-sm">
+										This section could not be loaded. Please try refreshing.
+									</p>
+								</CardContent>
+							</Card>
+						}
+					>
+						<Card>
+							<CardHeader>
+								<CardTitle>Plan & Tier</CardTitle>
+							</CardHeader>
+							<CardContent className="space-y-3">
+								<div className="flex justify-between">
+									<span className="text-muted-foreground">Current Tier</span>
+									<span className="font-medium">{tierName}</span>
+								</div>
+								<div className="flex justify-between">
+									<span className="text-muted-foreground">Output Cap</span>
+									<span className="font-medium">{outputCap} tokens</span>
+								</div>
+								<div className="flex justify-between">
+									<span className="text-muted-foreground">Max Models per Project</span>
+									<span className="font-medium">{maxModels}</span>
+								</div>
+								<Link
+									to="/subscription"
+									className="inline-block mt-2 text-sm text-primary hover:underline"
+								>
+									Manage subscription
+								</Link>
+							</CardContent>
+						</Card>
+					</ErrorBoundary>
+				)}
 
 				<ErrorBoundary
 					fallback={

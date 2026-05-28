@@ -1,12 +1,14 @@
 // supabase/functions/sync-ai-models/google_sync.test.ts
 import { testSyncContract, type MockProviderData } from "./sync_test_contract.ts";
 import { syncGoogleModels, INTERNAL_MODEL_MAP } from "./google_sync.ts";
-import { type DbAiProvider } from "./index.ts";
+import { googleIdentifiers } from "./google_sync.mock.ts";
+import { DbAiProvider } from "./sync-ai-models.interface.ts";
 import type { AiModelExtendedConfig, FinalAppModelConfig } from "../_shared/types.ts";
 import { isJson } from "../_shared/utils/type_guards.ts";
 import { assert, assertEquals } from "jsr:@std/assert@0.225.3";
 import { AiModelExtendedConfigSchema } from "../chat/zodSchema.ts";
-
+import { ConfigAssembler } from "./config_assembler.ts";
+import { mockDbAiProvider } from "./diffAndPrepareDbOps.mock.ts";
 const PROVIDER_NAME = 'google';
 
 // --- Test Data Factory ---
@@ -41,7 +43,7 @@ const assembledGeminiReactivate: FinalAppModelConfig = { api_identifier: `google
 
 const dbGeminiProConfig = createTestConfig('gemini-1.5-pro-latest');
 assert(isJson(dbGeminiProConfig), "dbGeminiProConfig must be valid JSON");
-const dbGeminiPro: DbAiProvider = {
+const dbGeminiPro: DbAiProvider = mockDbAiProvider({
     id: 'db-id-gemini-pro',
     api_identifier: `google-gemini-1.5-pro-latest`,
     name: 'Gemini 1.5 Pro',
@@ -49,11 +51,11 @@ const dbGeminiPro: DbAiProvider = {
     is_active: true,
     provider: PROVIDER_NAME,
     config: dbGeminiProConfig,
-};
+});
 
 const dbStaleConfig = createTestConfig('gemini-stale');
 assert(isJson(dbStaleConfig), "dbStaleConfig must be valid JSON");
-const dbStale: DbAiProvider = {
+const dbStale: DbAiProvider = mockDbAiProvider({
     id: 'db-id-stale',
     api_identifier: `google-gemini-stale`,
     name: 'Stale Model',
@@ -61,11 +63,11 @@ const dbStale: DbAiProvider = {
     is_active: true,
     provider: PROVIDER_NAME,
     config: dbStaleConfig
-};
+});
 
 const dbInactiveConfig = createTestConfig('gemini-reactivate');
 assert(isJson(dbInactiveConfig), "dbInactiveConfig must be valid JSON");
-const dbInactive: DbAiProvider = {
+const dbInactive: DbAiProvider = mockDbAiProvider({
     id: 'db-id-inactive',
     api_identifier: `google-gemini-reactivate`,
     name: 'Reactivated',
@@ -73,7 +75,7 @@ const dbInactive: DbAiProvider = {
     is_active: false,
     provider: PROVIDER_NAME,
     config: dbInactiveConfig
-};
+});
 
 const mockGoogleData: MockProviderData = {
     apiModels: [assembledGeminiPro],
@@ -144,4 +146,47 @@ Deno.test("[Provider-Specific] google: INTERNAL_MODEL_MAP sets provider_max_inpu
         assert(typeof pmi === 'number', `provider_max_input_tokens missing for ${id}`);
         assertEquals(pmi, 1000000, `${id} should have provider_max_input_tokens = 1,000,000`);
     }
+});
+
+Deno.test("every google seed api_identifier resolves to Tier-3 INTERNAL_MODEL_MAP costs via longest-prefix match", () => {
+    for (const apiId of googleIdentifiers) {
+        const partial: Partial<AiModelExtendedConfig> | undefined = ConfigAssembler.getLongestPrefixInternalMapPartial(apiId, INTERNAL_MODEL_MAP);
+        assert(partial !== undefined, `No INTERNAL_MODEL_MAP prefix matched seed api_identifier ${apiId}`);
+        assert(typeof partial.input_token_cost_rate === 'number', `Tier-3 input cost missing for ${apiId}`);
+        assert(typeof partial.output_token_cost_rate === 'number', `Tier-3 output cost missing for ${apiId}`);
+    }
+});
+
+Deno.test("official headline Gemini rates on resolved longest-prefix partials", () => {
+    const flashPreview: Partial<AiModelExtendedConfig> | undefined = ConfigAssembler.getLongestPrefixInternalMapPartial(
+        'google-gemini-3-flash-preview',
+        INTERNAL_MODEL_MAP,
+    );
+    assert(flashPreview !== undefined);
+    assertEquals(flashPreview.input_token_cost_rate, 0.5);
+    assertEquals(flashPreview.output_token_cost_rate, 3.0);
+
+    const proPreview: Partial<AiModelExtendedConfig> | undefined = ConfigAssembler.getLongestPrefixInternalMapPartial(
+        'google-gemini-3-pro-preview',
+        INTERNAL_MODEL_MAP,
+    );
+    assert(proPreview !== undefined);
+    assertEquals(proPreview.input_token_cost_rate, 2.0);
+    assertEquals(proPreview.output_token_cost_rate, 12.0);
+
+    const pro25: Partial<AiModelExtendedConfig> | undefined = ConfigAssembler.getLongestPrefixInternalMapPartial(
+        'google-gemini-2.5-pro',
+        INTERNAL_MODEL_MAP,
+    );
+    assert(pro25 !== undefined);
+    assertEquals(pro25.input_token_cost_rate, 2.5);
+    assertEquals(pro25.output_token_cost_rate, 15.0);
+
+    const flash25: Partial<AiModelExtendedConfig> | undefined = ConfigAssembler.getLongestPrefixInternalMapPartial(
+        'google-gemini-2.5-flash',
+        INTERNAL_MODEL_MAP,
+    );
+    assert(flash25 !== undefined);
+    assertEquals(flash25.input_token_cost_rate, 0.3);
+    assertEquals(flash25.output_token_cost_rate, 2.5);
 });

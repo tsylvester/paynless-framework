@@ -4,7 +4,6 @@ import type { AiModelExtendedConfig, Messages } from "../../_shared/types.ts";
 import type { CountableChatPayload, CountTokensDeps } from "../../_shared/types/tokenizer.types.ts";
 import { isApiChatMessage } from "../../_shared/utils/type_guards.ts";
 import { ContextWindowError } from "../../_shared/utils/errors.ts";
-import { getMaxOutputTokens } from "../../_shared/utils/affordability_utils.ts";
 import {
   isValidInputTokenCostRate,
   isValidOutputTokenCostRate,
@@ -75,11 +74,13 @@ export async function calculateAffordability(
     maxTokens !== undefined && initialTokenCount > maxTokens;
 
   if (!isOversized) {
-    const plannedMaxOutputTokens: number = getMaxOutputTokens(
+    const plannedMaxOutputTokens: number = deps.getMaxOutputTokens(
       walletBalance,
       initialTokenCount,
       extendedModelConfig,
       deps.logger,
+      0,
+      params.userConfig.tier_output_cap_tokens,
     );
     if (plannedMaxOutputTokens < 0) {
       return {
@@ -234,11 +235,13 @@ export async function calculateAffordability(
   const providerMaxInputForPre: number = extendedModelConfig.provider_max_input_tokens;
 
   const getAllowedInputFor = (balanceTokens: number, tokenCount: number): number => {
-    const plannedOut: number = getMaxOutputTokens(
+    const plannedOut: number = deps.getMaxOutputTokens(
       balanceTokens,
       tokenCount,
       extendedModelConfig,
       deps.logger,
+      0,
+      null,
     );
     const safetyBufferTokensPre: number = 32;
     return providerMaxInputForPre - (plannedOut + safetyBufferTokensPre);
@@ -284,11 +287,13 @@ export async function calculateAffordability(
     };
   }
 
-  const plannedMaxOutPostPrecheck: number = getMaxOutputTokens(
+  const plannedMaxOutPostPrecheck: number = deps.getMaxOutputTokens(
     balanceAfterCompression,
     finalTargetThreshold,
     extendedModelConfig,
     deps.logger,
+    0,
+    null,
   );
   const estimatedFinalInputCost: number = finalTargetThreshold * inputRate;
   const estimatedFinalOutputCost: number = plannedMaxOutPostPrecheck * outputRate;

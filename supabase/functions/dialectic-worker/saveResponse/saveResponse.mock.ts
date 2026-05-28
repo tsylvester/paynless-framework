@@ -484,6 +484,7 @@ export function createMockSaveResponseParamsWithQueuedJob(
         is_default_embedding: false,
         is_default_generation: false,
         updated_at: new Date().toISOString(),
+        min_plan_tier_level: 0,
     };
     const providerRow: Tables<"ai_providers"> = providerRowOverrides
         ? { ...baseProviderRow, ...providerRowOverrides }

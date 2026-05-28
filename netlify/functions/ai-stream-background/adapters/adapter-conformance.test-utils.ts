@@ -6,6 +6,7 @@ import type {
   NodeAdapterStreamChunk,
   NodeChatApiRequest,
   NodeModelConfig,
+  NodeUserConfig,
 } from './ai-adapter.interface.ts';
 import {
   isAiAdapter,
@@ -19,9 +20,14 @@ const conformanceModelConfig: NodeModelConfig = {
   output_token_cost_rate: 0.002,
 };
 
+const conformanceUserConfig: NodeUserConfig = {
+  tier_output_cap_tokens: null,
+};
+
 const conformanceParams: NodeAdapterConstructorParams = {
   modelConfig: conformanceModelConfig,
   apiKey: 'sk-conformance-test',
+  userConfig: conformanceUserConfig,
 };
 
 const conformanceChatRequest: NodeChatApiRequest = {
