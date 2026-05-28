@@ -133,268 +133,266 @@
   - `(20, 'premium', 131072, 3)` — Premium: 128k output cap, max 3 models per project
   - `(30, 'ultra', NULL, NULL)` — Ultra: no output cap, no model limit
 
-# Checklist
+  * `[✅]`   supabase/functions/dialectic-worker/prepareModelJob/prepareModelJob **Apply user-chosen output cap via min(userChosen, tierCap)**
 
-* `[✅]`   supabase/functions/dialectic-worker/prepareModelJob/prepareModelJob **Apply user-chosen output cap via min(userChosen, tierCap)**
+    * `[✅]`   `objective`
+      * `[✅]`   The BE currently ignores the user's chosen output cap (`maxOutputTokens`) sent by the FE in `GenerateContributionsPayload`. The worker's `prepareModelJob` reads only the platform-imposed tier cap from `tier_definitions.output_cap_tokens` and passes it as `UserConfig.tier_output_cap_tokens` to `calculateAffordability`. The user's slider choice has no effect on actual generation.
+      * `[✅]`   Functional goal: When `maxOutputTokens` is present on the job payload and is less than the tier cap, use `maxOutputTokens` as the effective output cap. When absent or greater than the tier cap, use the tier cap (current behavior). When tier cap is null (ultra), use `maxOutputTokens` as-is if present.
+      * `[✅]`   Non-functional: Zero behavioral change when `maxOutputTokens` is absent from the payload (backward compatibility).
 
-  * `[✅]`   `objective`
-    * `[✅]`   The BE currently ignores the user's chosen output cap (`maxOutputTokens`) sent by the FE in `GenerateContributionsPayload`. The worker's `prepareModelJob` reads only the platform-imposed tier cap from `tier_definitions.output_cap_tokens` and passes it as `UserConfig.tier_output_cap_tokens` to `calculateAffordability`. The user's slider choice has no effect on actual generation.
-    * `[✅]`   Functional goal: When `maxOutputTokens` is present on the job payload and is less than the tier cap, use `maxOutputTokens` as the effective output cap. When absent or greater than the tier cap, use the tier cap (current behavior). When tier cap is null (ultra), use `maxOutputTokens` as-is if present.
-    * `[✅]`   Non-functional: Zero behavioral change when `maxOutputTokens` is absent from the payload (backward compatibility).
+    * `[✅]`   `role`
+      * `[✅]`   Infrastructure / BE worker — `prepareModelJob` is the boundary where user configuration meets platform constraints before a model call is dispatched.
+      * `[✅]`   This node applies the `min(userChosen, tierCap)` logic. It does NOT modify `calculateAffordability`, `getMaxOutputTokens`, or `enqueueModelCall` — those already consume `UserConfig.tier_output_cap_tokens` correctly.
+      * `[✅]`   Out of scope: FE store changes, FE component changes, API adapter changes, affordability algorithm changes.
 
-  * `[✅]`   `role`
-    * `[✅]`   Infrastructure / BE worker — `prepareModelJob` is the boundary where user configuration meets platform constraints before a model call is dispatched.
-    * `[✅]`   This node applies the `min(userChosen, tierCap)` logic. It does NOT modify `calculateAffordability`, `getMaxOutputTokens`, or `enqueueModelCall` — those already consume `UserConfig.tier_output_cap_tokens` correctly.
-    * `[✅]`   Out of scope: FE store changes, FE component changes, API adapter changes, affordability algorithm changes.
+    * `[✅]`   `module`
+      * `[✅]`   Bounded context: `dialectic-worker` — job preparation and dispatch.
+      * `[✅]`   Inside this boundary: reading user-chosen cap from job payload, combining it with tier cap, constructing `UserConfig`.
+      * `[✅]`   Outside this boundary: how the FE collects the value, how the API transports it, how `calculateAffordability` consumes the cap.
 
-  * `[✅]`   `module`
-    * `[✅]`   Bounded context: `dialectic-worker` — job preparation and dispatch.
-    * `[✅]`   Inside this boundary: reading user-chosen cap from job payload, combining it with tier cap, constructing `UserConfig`.
-    * `[✅]`   Outside this boundary: how the FE collects the value, how the API transports it, how `calculateAffordability` consumes the cap.
+    * `[✅]`   `deps`
+      * `[✅]`   `GenerateContributionsPayload` — provider: `dialectic-service/dialectic.interface.ts`, layer: service interface, direction: inward (worker reads the type defined by the service layer), purpose: declares `maxOutputTokens?: number` field on the payload contract.
+      * `[✅]`   `UserConfig` — provider: `calculateAffordability/calculateAffordability.interface.ts`, layer: worker internal, direction: inward, purpose: carries `tier_output_cap_tokens` to affordability calculation.
+      * `[✅]`   `isRecord` — provider: `_shared/utils/type-guards/type_guards.common.ts`, layer: shared utility, direction: inward, purpose: type-guard for JSONB payload fields.
+      * `[✅]`   Five payload guards in `_shared/utils/type-guards/type_guards.dialectic.ts` — `isDialecticJobPayload`, `isDialecticPlanJobPayload`, `isDialecticExecuteJobPayload`, `isDialecticSkeletonJobPayload`, `isDialecticRenderJobPayload` — all validate payload shapes that inherit from `GenerateContributionsPayload` and must accept the new `maxOutputTokens` field.
+      * `[✅]`   No reverse dependencies. No lateral layer violations.
 
-  * `[✅]`   `deps`
-    * `[✅]`   `GenerateContributionsPayload` — provider: `dialectic-service/dialectic.interface.ts`, layer: service interface, direction: inward (worker reads the type defined by the service layer), purpose: declares `maxOutputTokens?: number` field on the payload contract.
-    * `[✅]`   `UserConfig` — provider: `calculateAffordability/calculateAffordability.interface.ts`, layer: worker internal, direction: inward, purpose: carries `tier_output_cap_tokens` to affordability calculation.
-    * `[✅]`   `isRecord` — provider: `_shared/utils/type-guards/type_guards.common.ts`, layer: shared utility, direction: inward, purpose: type-guard for JSONB payload fields.
-    * `[✅]`   Five payload guards in `_shared/utils/type-guards/type_guards.dialectic.ts` — `isDialecticJobPayload`, `isDialecticPlanJobPayload`, `isDialecticExecuteJobPayload`, `isDialecticSkeletonJobPayload`, `isDialecticRenderJobPayload` — all validate payload shapes that inherit from `GenerateContributionsPayload` and must accept the new `maxOutputTokens` field.
-    * `[✅]`   No reverse dependencies. No lateral layer violations.
+    * `[✅]`   `context_slice`
+      * `[✅]`   From `GenerateContributionsPayload`: only `maxOutputTokens?: number` (new field).
+      * `[✅]`   From `job.payload` (JSONB): read `maxOutputTokens` via `isRecord` + `typeof` guard — no new type guard function needed, pattern already established in the function for reading `tier_definitions.output_cap_tokens`.
+      * `[✅]`   No over-fetching. No hidden coupling.
 
-  * `[✅]`   `context_slice`
-    * `[✅]`   From `GenerateContributionsPayload`: only `maxOutputTokens?: number` (new field).
-    * `[✅]`   From `job.payload` (JSONB): read `maxOutputTokens` via `isRecord` + `typeof` guard — no new type guard function needed, pattern already established in the function for reading `tier_definitions.output_cap_tokens`.
-    * `[✅]`   No over-fetching. No hidden coupling.
+    * `[✅]`   dialectic-service/`dialectic.interface.ts`
+      * `[✅]`   Add `maxOutputTokens?: number` to `GenerateContributionsPayload` (after `idempotencyKey: string`, line 1235)
+      * `[✅]`   This field cascades through `DialecticBaseJobPayload` (extends `Omit<GenerateContributionsPayload, "chatId">`) → `DialecticPlanJobPayload` → `DialecticSimpleJobPayload` → `DialecticExecuteJobPayload` → `DialecticSkeletonJobPayload` → `DialecticRenderJobPayload`. No edits needed to those types — they inherit the field.
 
-  * `[✅]`   dialectic-service/`dialectic.interface.ts`
-    * `[✅]`   Add `maxOutputTokens?: number` to `GenerateContributionsPayload` (after `idempotencyKey: string`, line 1235)
-    * `[✅]`   This field cascades through `DialecticBaseJobPayload` (extends `Omit<GenerateContributionsPayload, "chatId">`) → `DialecticPlanJobPayload` → `DialecticSimpleJobPayload` → `DialecticExecuteJobPayload` → `DialecticSkeletonJobPayload` → `DialecticRenderJobPayload`. No edits needed to those types — they inherit the field.
+    * `[✅]`   _shared/utils/type-guards/`type_guards.dialectic.test.ts`
+      * `[✅]`   `isDialecticJobPayload` suite (line 859): add test with valid `maxOutputTokens` present on payload — assert true.
+      * `[✅]`   `isDialecticPlanJobPayload` suite (line 1273): add test with valid `maxOutputTokens: 8192` present — assert true. Add test with `maxOutputTokens: "not a number"` — assert false.
+      * `[✅]`   `isDialecticExecuteJobPayload` suite: add test with valid `maxOutputTokens` present — assert true (no throw). Add test with `maxOutputTokens: "string"` — assert throws.
+      * `[✅]`   `isDialecticSkeletonJobPayload` suite: add test with valid `maxOutputTokens` present — assert true.
+      * `[✅]`   `isDialecticRenderJobPayload` suite: add test with valid `maxOutputTokens` present — assert true (no throw). Add test with `maxOutputTokens: "string"` — assert throws.
 
-  * `[✅]`   _shared/utils/type-guards/`type_guards.dialectic.test.ts`
-    * `[✅]`   `isDialecticJobPayload` suite (line 859): add test with valid `maxOutputTokens` present on payload — assert true.
-    * `[✅]`   `isDialecticPlanJobPayload` suite (line 1273): add test with valid `maxOutputTokens: 8192` present — assert true. Add test with `maxOutputTokens: "not a number"` — assert false.
-    * `[✅]`   `isDialecticExecuteJobPayload` suite: add test with valid `maxOutputTokens` present — assert true (no throw). Add test with `maxOutputTokens: "string"` — assert throws.
-    * `[✅]`   `isDialecticSkeletonJobPayload` suite: add test with valid `maxOutputTokens` present — assert true.
-    * `[✅]`   `isDialecticRenderJobPayload` suite: add test with valid `maxOutputTokens` present — assert true (no throw). Add test with `maxOutputTokens: "string"` — assert throws.
+    * `[✅]`   _shared/utils/type-guards/`type_guards.dialectic.ts`
+      * `[✅]`   `isDialecticJobPayload` (line 1050): add `'maxOutputTokens'` to the `allowedKeys` array (line 1081-1085).
+      * `[✅]`   `isDialecticPlanJobPayload` (line 1214): add optional field validation after line 1236: `if ('maxOutputTokens' in payload && typeof payload.maxOutputTokens !== 'number') return false;`
+      * `[✅]`   `isDialecticExecuteJobPayload` (line 977): add optional field validation: `if (('maxOutputTokens' in payload) && typeof payload.maxOutputTokens !== 'number') throw new Error('Invalid maxOutputTokens.');` Add `'maxOutputTokens'` to the `allowedKeys` Set (line 1014-1022).
+      * `[✅]`   `isDialecticSkeletonJobPayload` (line 1241): add optional field validation: `if ('maxOutputTokens' in payload && typeof payload.maxOutputTokens !== 'number') return false;`
+      * `[✅]`   `isDialecticRenderJobPayload` (line 1261): add optional field validation: `if (('maxOutputTokens' in payload) && typeof payload.maxOutputTokens !== 'number') throw new Error('Invalid maxOutputTokens.');` Add `'maxOutputTokens'` to the `allowedKeys` Set (line 1290-1296).
 
-  * `[✅]`   _shared/utils/type-guards/`type_guards.dialectic.ts`
-    * `[✅]`   `isDialecticJobPayload` (line 1050): add `'maxOutputTokens'` to the `allowedKeys` array (line 1081-1085).
-    * `[✅]`   `isDialecticPlanJobPayload` (line 1214): add optional field validation after line 1236: `if ('maxOutputTokens' in payload && typeof payload.maxOutputTokens !== 'number') return false;`
-    * `[✅]`   `isDialecticExecuteJobPayload` (line 977): add optional field validation: `if (('maxOutputTokens' in payload) && typeof payload.maxOutputTokens !== 'number') throw new Error('Invalid maxOutputTokens.');` Add `'maxOutputTokens'` to the `allowedKeys` Set (line 1014-1022).
-    * `[✅]`   `isDialecticSkeletonJobPayload` (line 1241): add optional field validation: `if ('maxOutputTokens' in payload && typeof payload.maxOutputTokens !== 'number') return false;`
-    * `[✅]`   `isDialecticRenderJobPayload` (line 1261): add optional field validation: `if (('maxOutputTokens' in payload) && typeof payload.maxOutputTokens !== 'number') throw new Error('Invalid maxOutputTokens.');` Add `'maxOutputTokens'` to the `allowedKeys` Set (line 1290-1296).
+    * `[✅]`   prepareModelJob/`prepareModelJob.test.ts`
+      * `[✅]`   Add test: when `job.payload` contains `maxOutputTokens` less than `tierOutputCapTokens`, `UserConfig.tier_output_cap_tokens` equals `maxOutputTokens`
+      * `[✅]`   Add test: when `job.payload` contains `maxOutputTokens` greater than `tierOutputCapTokens`, `UserConfig.tier_output_cap_tokens` equals `tierOutputCapTokens` (tier wins)
+      * `[✅]`   Add test: when `job.payload` does not contain `maxOutputTokens`, `UserConfig.tier_output_cap_tokens` equals `tierOutputCapTokens` (backward compatibility)
+      * `[✅]`   Add test: when `tierOutputCapTokens` is `null` (ultra) and `job.payload` contains `maxOutputTokens`, `UserConfig.tier_output_cap_tokens` equals `maxOutputTokens`
+      * `[✅]`   Add test: when `tierOutputCapTokens` is `null` (ultra) and `job.payload` does not contain `maxOutputTokens`, `UserConfig.tier_output_cap_tokens` remains `null`
 
-  * `[✅]`   prepareModelJob/`prepareModelJob.test.ts`
-    * `[✅]`   Add test: when `job.payload` contains `maxOutputTokens` less than `tierOutputCapTokens`, `UserConfig.tier_output_cap_tokens` equals `maxOutputTokens`
-    * `[✅]`   Add test: when `job.payload` contains `maxOutputTokens` greater than `tierOutputCapTokens`, `UserConfig.tier_output_cap_tokens` equals `tierOutputCapTokens` (tier wins)
-    * `[✅]`   Add test: when `job.payload` does not contain `maxOutputTokens`, `UserConfig.tier_output_cap_tokens` equals `tierOutputCapTokens` (backward compatibility)
-    * `[✅]`   Add test: when `tierOutputCapTokens` is `null` (ultra) and `job.payload` contains `maxOutputTokens`, `UserConfig.tier_output_cap_tokens` equals `maxOutputTokens`
-    * `[✅]`   Add test: when `tierOutputCapTokens` is `null` (ultra) and `job.payload` does not contain `maxOutputTokens`, `UserConfig.tier_output_cap_tokens` remains `null`
+    * `[✅]`   prepareModelJob/`prepareModelJob.ts`
+      * `[✅]`   After extracting `tierOutputCapTokens` from DB (line 42-71) and before constructing `userConfig` (line 73):
+        * Read `maxOutputTokens` from `job.payload` using `isRecord(job.payload) && 'maxOutputTokens' in job.payload && typeof job.payload.maxOutputTokens === 'number'` guard pattern
+        * If extracted value is a valid number, compute effective cap:
+          * If `tierOutputCapTokens === null`: effective = extracted value
+          * If `tierOutputCapTokens !== null`: effective = `Math.min(extracted, tierOutputCapTokens)`
+        * If value is not present or not a number: effective = `tierOutputCapTokens` (current behavior)
+      * `[✅]`   Replace `const userConfig: UserConfig = { tier_output_cap_tokens: tierOutputCapTokens }` with `const userConfig: UserConfig = { tier_output_cap_tokens: effectiveCap }`
+      * `[✅]`   Add logging: `deps.logger.info('[prepareModelJob] Effective output cap', { tierCap: tierOutputCapTokens, userChosen: ..., effective: effectiveCap })`
 
-  * `[✅]`   prepareModelJob/`prepareModelJob.ts`
-    * `[✅]`   After extracting `tierOutputCapTokens` from DB (line 42-71) and before constructing `userConfig` (line 73):
-      * Read `maxOutputTokens` from `job.payload` using `isRecord(job.payload) && 'maxOutputTokens' in job.payload && typeof job.payload.maxOutputTokens === 'number'` guard pattern
-      * If extracted value is a valid number, compute effective cap:
-        * If `tierOutputCapTokens === null`: effective = extracted value
-        * If `tierOutputCapTokens !== null`: effective = `Math.min(extracted, tierOutputCapTokens)`
-      * If value is not present or not a number: effective = `tierOutputCapTokens` (current behavior)
-    * `[✅]`   Replace `const userConfig: UserConfig = { tier_output_cap_tokens: tierOutputCapTokens }` with `const userConfig: UserConfig = { tier_output_cap_tokens: effectiveCap }`
-    * `[✅]`   Add logging: `deps.logger.info('[prepareModelJob] Effective output cap', { tierCap: tierOutputCapTokens, userChosen: ..., effective: effectiveCap })`
+    * `[✅]`   prepareModelJob/`prepareModelJob.integration.test.ts`
+      * `[✅]`   Add integration test: job with `maxOutputTokens` on payload flows through `prepareModelJob` → `calculateAffordability` → the affordability calculation respects the lower effective cap.
 
-  * `[✅]`   prepareModelJob/`prepareModelJob.integration.test.ts`
-    * `[✅]`   Add integration test: job with `maxOutputTokens` on payload flows through `prepareModelJob` → `calculateAffordability` → the affordability calculation respects the lower effective cap.
+    * `[✅]`   `directionality`
+      * `[✅]`   Layer: infrastructure (worker)
+      * `[✅]`   Deps: inward (reads service-layer types, shared utilities)
+      * `[✅]`   Provides: outward (passes `UserConfig` to `calculateAffordability`)
+      * `[✅]`   No cycles.
 
-  * `[✅]`   `directionality`
-    * `[✅]`   Layer: infrastructure (worker)
-    * `[✅]`   Deps: inward (reads service-layer types, shared utilities)
-    * `[✅]`   Provides: outward (passes `UserConfig` to `calculateAffordability`)
-    * `[✅]`   No cycles.
+    * `[✅]`   `requirements`
+      * `[✅]`   When `maxOutputTokens < tierCap`: effective cap = `maxOutputTokens`. Observable: test asserts `UserConfig.tier_output_cap_tokens === maxOutputTokens`.
+      * `[✅]`   When `maxOutputTokens > tierCap`: effective cap = `tierCap`. Observable: test asserts `UserConfig.tier_output_cap_tokens === tierCap`.
+      * `[✅]`   When `maxOutputTokens` absent: effective cap = `tierCap`. Observable: test asserts identical behavior to current implementation.
+      * `[✅]`   When `tierCap` is null (ultra) + `maxOutputTokens` present: effective cap = `maxOutputTokens`. Observable: test asserts `UserConfig.tier_output_cap_tokens === maxOutputTokens`.
+      * `[✅]`   When `tierCap` is null (ultra) + `maxOutputTokens` absent: effective cap = `null`. Observable: test asserts `UserConfig.tier_output_cap_tokens === null`.
+      * `[✅]`   All five payload guards accept `maxOutputTokens` as valid optional number. Observable: guard tests assert true for valid, false/throw for non-number.
+      * `[✅]`   Execute and render guard `allowedKeys` sets include `maxOutputTokens`. Observable: guard tests with `maxOutputTokens` present do not throw "unknown properties" error.
 
-  * `[✅]`   `requirements`
-    * `[✅]`   When `maxOutputTokens < tierCap`: effective cap = `maxOutputTokens`. Observable: test asserts `UserConfig.tier_output_cap_tokens === maxOutputTokens`.
-    * `[✅]`   When `maxOutputTokens > tierCap`: effective cap = `tierCap`. Observable: test asserts `UserConfig.tier_output_cap_tokens === tierCap`.
-    * `[✅]`   When `maxOutputTokens` absent: effective cap = `tierCap`. Observable: test asserts identical behavior to current implementation.
-    * `[✅]`   When `tierCap` is null (ultra) + `maxOutputTokens` present: effective cap = `maxOutputTokens`. Observable: test asserts `UserConfig.tier_output_cap_tokens === maxOutputTokens`.
-    * `[✅]`   When `tierCap` is null (ultra) + `maxOutputTokens` absent: effective cap = `null`. Observable: test asserts `UserConfig.tier_output_cap_tokens === null`.
-    * `[✅]`   All five payload guards accept `maxOutputTokens` as valid optional number. Observable: guard tests assert true for valid, false/throw for non-number.
-    * `[✅]`   Execute and render guard `allowedKeys` sets include `maxOutputTokens`. Observable: guard tests with `maxOutputTokens` present do not throw "unknown properties" error.
+  * `[✅]`   apps/web/src/hooks/useStartContributionGeneration **Fix payload construction to include maxOutputTokens directly**
 
-* `[✅]`   apps/web/src/hooks/useStartContributionGeneration **Fix payload construction to include maxOutputTokens directly**
+    * `[✅]`   `objective`
+      * `[✅]`   The hook constructs `GenerateContributionsPayload` at lines 263-272 then conditionally spreads `maxOutputTokens` via `...(maxOutputTokens && { maxOutputTokens })`. This rebuilds the object unnecessarily and is subtly buggy — the `&&` operator is falsy for `0`, which would silently drop a valid value. The field should be included in the initial object construction.
+      * `[✅]`   Functional goal: Construct the `GenerateContributionsPayload` once, correctly, with `maxOutputTokens` included directly. Use `?? undefined` to convert the store's `null` to `undefined` for the optional field.
+      * `[✅]`   Non-functional: No behavioral change for non-zero values. Fix for the `0` edge case.
 
-  * `[✅]`   `objective`
-    * `[✅]`   The hook constructs `GenerateContributionsPayload` at lines 263-272 then conditionally spreads `maxOutputTokens` via `...(maxOutputTokens && { maxOutputTokens })`. This rebuilds the object unnecessarily and is subtly buggy — the `&&` operator is falsy for `0`, which would silently drop a valid value. The field should be included in the initial object construction.
-    * `[✅]`   Functional goal: Construct the `GenerateContributionsPayload` once, correctly, with `maxOutputTokens` included directly. Use `?? undefined` to convert the store's `null` to `undefined` for the optional field.
-    * `[✅]`   Non-functional: No behavioral change for non-zero values. Fix for the `0` edge case.
+    * `[✅]`   `role`
+      * `[✅]`   Application / FE hook — `useStartContributionGeneration` is the boundary where the dialectic store's state is read and assembled into the API payload for contribution generation.
+      * `[✅]`   This node fixes payload construction only. It does NOT modify the store, the types, the API adapter, or the component.
+      * `[✅]`   Out of scope: store state shape, type definitions, API transport, BE consumption, slider component.
 
-  * `[✅]`   `role`
-    * `[✅]`   Application / FE hook — `useStartContributionGeneration` is the boundary where the dialectic store's state is read and assembled into the API payload for contribution generation.
-    * `[✅]`   This node fixes payload construction only. It does NOT modify the store, the types, the API adapter, or the component.
-    * `[✅]`   Out of scope: store state shape, type definitions, API transport, BE consumption, slider component.
+    * `[✅]`   `module`
+      * `[✅]`   Bounded context: `apps/web/src/hooks` — React hooks that bridge store state to UI actions.
+      * `[✅]`   Inside this boundary: reading `state.maxOutputTokens` from dialectic store, constructing `GenerateContributionsPayload`.
+      * `[✅]`   Outside this boundary: how the store value is set (slider), how the API sends it, how the BE reads it.
 
-  * `[✅]`   `module`
-    * `[✅]`   Bounded context: `apps/web/src/hooks` — React hooks that bridge store state to UI actions.
-    * `[✅]`   Inside this boundary: reading `state.maxOutputTokens` from dialectic store, constructing `GenerateContributionsPayload`.
-    * `[✅]`   Outside this boundary: how the store value is set (slider), how the API sends it, how the BE reads it.
+    * `[✅]`   `deps`
+      * `[✅]`   `GenerateContributionsPayload` — provider: `@paynless/types`, layer: types, direction: inward, purpose: payload shape contract. Already has `maxOutputTokens?: number`.
+      * `[✅]`   `useDialecticStore` — provider: `@paynless/store`, layer: store, direction: inward, purpose: reads `state.maxOutputTokens`.
+      * `[✅]`   No reverse dependencies. No lateral layer violations.
 
-  * `[✅]`   `deps`
-    * `[✅]`   `GenerateContributionsPayload` — provider: `@paynless/types`, layer: types, direction: inward, purpose: payload shape contract. Already has `maxOutputTokens?: number`.
-    * `[✅]`   `useDialecticStore` — provider: `@paynless/store`, layer: store, direction: inward, purpose: reads `state.maxOutputTokens`.
-    * `[✅]`   No reverse dependencies. No lateral layer violations.
+    * `[✅]`   `context_slice`
+      * `[✅]`   From dialectic store: `state.maxOutputTokens: number | null` — the user's chosen output cap.
+      * `[✅]`   No over-fetching. No hidden coupling.
 
-  * `[✅]`   `context_slice`
-    * `[✅]`   From dialectic store: `state.maxOutputTokens: number | null` — the user's chosen output cap.
-    * `[✅]`   No over-fetching. No hidden coupling.
+    * `[✅]`   hooks/`useStartContributionGeneration.test.ts`
+      * `[✅]`   Add test: when `state.maxOutputTokens` is a non-null number, the `GenerateContributionsPayload` passed to `generateContributions` includes `maxOutputTokens` equal to that number.
+      * `[✅]`   Add test: when `state.maxOutputTokens` is `null`, the `GenerateContributionsPayload` passed to `generateContributions` has `maxOutputTokens` as `undefined` (field absent or undefined).
 
-  * `[✅]`   hooks/`useStartContributionGeneration.test.ts`
-    * `[✅]`   Add test: when `state.maxOutputTokens` is a non-null number, the `GenerateContributionsPayload` passed to `generateContributions` includes `maxOutputTokens` equal to that number.
-    * `[✅]`   Add test: when `state.maxOutputTokens` is `null`, the `GenerateContributionsPayload` passed to `generateContributions` has `maxOutputTokens` as `undefined` (field absent or undefined).
+    * `[✅]`   hooks/`useStartContributionGeneration.ts`
+      * `[✅]`   Remove line 261: `const maxOutputTokens = state.maxOutputTokens;`
+      * `[✅]`   Remove line 271: `...(maxOutputTokens && { maxOutputTokens }),`
+      * `[✅]`   Add `maxOutputTokens: state.maxOutputTokens ?? undefined,` as a direct field in the `GenerateContributionsPayload` object literal (alongside `sessionId`, `projectId`, etc.)
+      * `[✅]`   Net result: one clean object construction, no spreads, no intermediate variable, `null` converts to `undefined` for the optional field.
 
-  * `[✅]`   hooks/`useStartContributionGeneration.ts`
-    * `[✅]`   Remove line 261: `const maxOutputTokens = state.maxOutputTokens;`
-    * `[✅]`   Remove line 271: `...(maxOutputTokens && { maxOutputTokens }),`
-    * `[✅]`   Add `maxOutputTokens: state.maxOutputTokens ?? undefined,` as a direct field in the `GenerateContributionsPayload` object literal (alongside `sessionId`, `projectId`, etc.)
-    * `[✅]`   Net result: one clean object construction, no spreads, no intermediate variable, `null` converts to `undefined` for the optional field.
+    * `[✅]`   `directionality`
+      * `[✅]`   Layer: application (FE hook)
+      * `[✅]`   Deps: inward (reads store state, uses types)
+      * `[✅]`   Provides: outward (passes payload to store action `generateContributions`)
+      * `[✅]`   No cycles.
 
-  * `[✅]`   `directionality`
-    * `[✅]`   Layer: application (FE hook)
-    * `[✅]`   Deps: inward (reads store state, uses types)
-    * `[✅]`   Provides: outward (passes payload to store action `generateContributions`)
-    * `[✅]`   No cycles.
+    * `[✅]`   `requirements`
+      * `[✅]`   When `state.maxOutputTokens` is a number: payload includes `maxOutputTokens` equal to that number. Observable: test spy on `generateContributions` asserts payload field.
+      * `[✅]`   When `state.maxOutputTokens` is `null`: payload has `maxOutputTokens` as `undefined`. Observable: test spy asserts field is `undefined`.
+      * `[✅]`   When `state.maxOutputTokens` is `0`: payload includes `maxOutputTokens: 0` (not dropped). Observable: test spy asserts `payload.maxOutputTokens === 0`. This is the bug fix — the old spread pattern dropped `0`.
 
-  * `[✅]`   `requirements`
-    * `[✅]`   When `state.maxOutputTokens` is a number: payload includes `maxOutputTokens` equal to that number. Observable: test spy on `generateContributions` asserts payload field.
-    * `[✅]`   When `state.maxOutputTokens` is `null`: payload has `maxOutputTokens` as `undefined`. Observable: test spy asserts field is `undefined`.
-    * `[✅]`   When `state.maxOutputTokens` is `0`: payload includes `maxOutputTokens: 0` (not dropped). Observable: test spy asserts `payload.maxOutputTokens === 0`. This is the bug fix — the old spread pattern dropped `0`.
+  * `[✅]`   apps/web/src/components/dialectic/OutputCapSlider **Fix component to use application types and auth store data, add tests**
 
-* `[✅]`   apps/web/src/components/dialectic/OutputCapSlider **Fix component to use application types and auth store data, add tests**
+    * `[✅]`   `objective`
+      * `[✅]`   The slider component exists but is disconnected from the application's type system and store data. It defines a local `TierDefinition` interface that duplicates `UserTier` from `@paynless/types`. It hardcodes tier definitions in a `DEFAULT_TIERS` array instead of reading `availableTiers` from `useAuthStore()`. It does not read `userTier` from `useAuthStore()` — it defaults all users to free tier. The upgrade CTA has no link to the subscription page. The tier boundary tick marks on the slider are positioned proportionally to token values while the tier description buttons are evenly distributed via flexbox, so the marks do not align with their descriptions. The slider max is wrong. The component exposes a `testTierLevel` prop that is a test backdoor in production code. No test file exists.
+      * `[✅]`   **Domain context — tier system (the implementer MUST know this):**
+        * The database table `tier_definitions` contains exactly **5** tiers, inserted across two migrations:
+          * `(0, 'free', 8192, 1)` — Free: 8k output cap, 1 model per project
+          * `(10, 'basic', 32768, 2)` — Basic: 32k output cap, 2 models per project
+          * `(20, 'premium', 131072, 3)` — Premium: 128k output cap, 3 models per project
+          * `(30, 'ultra', NULL, NULL)` — Ultra: no output cap, no model limit
+          * `(99, 'unreachable', NULL, NULL)` — Unreachable: system-only tier for gating models with null cost rates. **No user can ever reach tier 99. No subscription plan maps to it. It exists solely to make unconfigured models inaccessible.**
+        * The `/me` endpoint returns **ALL 5 rows** from `tier_definitions` ordered by level ascending. The auth store stores all 5 as `availableTiers: UserTier[]`.
+        * **The slider must filter `availableTiers` before rendering.** The `unreachable` tier must be excluded. Filter condition: `tier.name !== 'unreachable'`. Do NOT use a hardcoded level threshold like `level <= 30` — that breaks when new tiers are added above 30. All tiers except `unreachable` are user-facing and appear as markers.
+      * `[✅]`   **Domain context — slider range and limits (the implementer MUST know this):**
+        * The **slider track max** (the right edge of the slider range) is the highest `max_output_tokens` from the selected models' `AIModelCatalogEntry` records. This is determined by **model selection**, not by the user's tier. When models change, the slider max changes. With multiple selected models, use the **highest** `max_output_tokens` among them — each model naturally caps at its own max regardless of what the slider requests.
+        * The **thumb max** (how far the user can drag) is determined by the user's tier: `userTier.output_cap_tokens`. For non-ultra users, the thumb stops at their tier's cap. For ultra users (`output_cap_tokens === null`), the thumb can go all the way to the slider track max because ultra imposes no cap below the model's capability.
+        * **The slider uses a logarithmic scale.** Tier caps span orders of magnitude (8k, 32k, 128k, 2M+). A linear scale would cram free and basic into the first few percent of the track. A log scale naturally distributes granularity — fine-grained at low values (where 1024 increments matter), coarse at high values (where they don't). With 2M frontier models the log positions are approximately: free 27%, basic 46%, premium 64%, ultra 100% — readable and well-spaced.
+        * **Tier markers** are reference points positioned along the slider track at their log-scale positions. Markers for tiers above the user's tier are visible but locked (greyed out, click triggers upgrade CTA). The ultra marker sits at the slider track max (the model's max) since ultra has no numeric cap of its own.
+        * When no models are selected, `selectedModels` is empty — the slider cannot determine a track max. **Do not render the slider.** No models means no output cap to select. The component returns null (or a disabled/hidden state) when `selectedModels` is empty or has no matching catalog entries with non-null `max_output_tokens`.
+        * **Human-readable guidance.** Token counts are meaningless to users. Each tier marker and the current slider value must show an approximate word/page equivalent to help users understand the scale of what they're requesting. Conversion: **words ≈ tokens × 0.75**, **pages ≈ words / 250** (standard double-spaced page). Tier markers show: Free "at most ~25 pages", Basic "at most ~100 pages", Premium "at most ~400 pages", Ultra "at most ~6,000 pages". The current value display updates dynamically (e.g., "64,000 tokens · at most ~192 pages"). This helps users understand they don't need a massive token budget — it reframes the choice from an abstract number to a document length.
+      * `[✅]`   Functional goals:
+        * Read `availableTiers: UserTier[]` and `userTier: UserTier | null` from `useAuthStore()` instead of hardcoded data
+        * **Filter `availableTiers` to exclude `unreachable` before rendering tier markers** — filter: `tier.name !== 'unreachable'`
+        * Use `UserTier` from `@paynless/types` instead of local `TierDefinition`
+        * Read `modelCatalog: AIModelCatalogEntry[]` and `selectedModels: SelectedModels[]` from `useDialecticStore()` to compute slider track max
+        * Slider track max = highest `max_output_tokens` from selected models' `AIModelCatalogEntry` catalog entries (cross-reference `selectedModels[].id` → `modelCatalog[].id`). This applies to **all** users, not just ultra.
+        * Thumb max = `userTier.output_cap_tokens` for non-ultra users. For ultra users (`output_cap_tokens === null`), thumb max = slider track max.
+        * Navigate to `/subscription` on upgrade CTA click instead of relying on a callback prop
+        * Align tier tick marks and tier description buttons so each mark is centered below its description
+        * Remove `testTierLevel` prop — tests mock the store instead
+        * Remove `onUpgradeClick` callback prop — replaced by `useNavigate`
+        * Retain `className` prop for mount-point styling
+      * `[✅]`   Non-functional: No changes to mount points (already mounted in `SessionInfoCard.tsx` and `CreateDialecticProjectForm.tsx`). No changes to store state shape. No changes to types.
+      * `[✅]`   Each goal is atomic and testable.
 
-  * `[✅]`   `objective`
-    * `[✅]`   The slider component exists but is disconnected from the application's type system and store data. It defines a local `TierDefinition` interface that duplicates `UserTier` from `@paynless/types`. It hardcodes tier definitions in a `DEFAULT_TIERS` array instead of reading `availableTiers` from `useAuthStore()`. It does not read `userTier` from `useAuthStore()` — it defaults all users to free tier. The upgrade CTA has no link to the subscription page. The tier boundary tick marks on the slider are positioned proportionally to token values while the tier description buttons are evenly distributed via flexbox, so the marks do not align with their descriptions. The slider max is wrong. The component exposes a `testTierLevel` prop that is a test backdoor in production code. No test file exists.
-    * `[✅]`   **Domain context — tier system (the implementer MUST know this):**
-      * The database table `tier_definitions` contains exactly **5** tiers, inserted across two migrations:
-        * `(0, 'free', 8192, 1)` — Free: 8k output cap, 1 model per project
-        * `(10, 'basic', 32768, 2)` — Basic: 32k output cap, 2 models per project
-        * `(20, 'premium', 131072, 3)` — Premium: 128k output cap, 3 models per project
-        * `(30, 'ultra', NULL, NULL)` — Ultra: no output cap, no model limit
-        * `(99, 'unreachable', NULL, NULL)` — Unreachable: system-only tier for gating models with null cost rates. **No user can ever reach tier 99. No subscription plan maps to it. It exists solely to make unconfigured models inaccessible.**
-      * The `/me` endpoint returns **ALL 5 rows** from `tier_definitions` ordered by level ascending. The auth store stores all 5 as `availableTiers: UserTier[]`.
-      * **The slider must filter `availableTiers` before rendering.** The `unreachable` tier must be excluded. Filter condition: `tier.name !== 'unreachable'`. Do NOT use a hardcoded level threshold like `level <= 30` — that breaks when new tiers are added above 30. All tiers except `unreachable` are user-facing and appear as markers.
-    * `[✅]`   **Domain context — slider range and limits (the implementer MUST know this):**
-      * The **slider track max** (the right edge of the slider range) is the highest `max_output_tokens` from the selected models' `AIModelCatalogEntry` records. This is determined by **model selection**, not by the user's tier. When models change, the slider max changes. With multiple selected models, use the **highest** `max_output_tokens` among them — each model naturally caps at its own max regardless of what the slider requests.
-      * The **thumb max** (how far the user can drag) is determined by the user's tier: `userTier.output_cap_tokens`. For non-ultra users, the thumb stops at their tier's cap. For ultra users (`output_cap_tokens === null`), the thumb can go all the way to the slider track max because ultra imposes no cap below the model's capability.
-      * **The slider uses a logarithmic scale.** Tier caps span orders of magnitude (8k, 32k, 128k, 2M+). A linear scale would cram free and basic into the first few percent of the track. A log scale naturally distributes granularity — fine-grained at low values (where 1024 increments matter), coarse at high values (where they don't). With 2M frontier models the log positions are approximately: free 27%, basic 46%, premium 64%, ultra 100% — readable and well-spaced.
-      * **Tier markers** are reference points positioned along the slider track at their log-scale positions. Markers for tiers above the user's tier are visible but locked (greyed out, click triggers upgrade CTA). The ultra marker sits at the slider track max (the model's max) since ultra has no numeric cap of its own.
-      * When no models are selected, `selectedModels` is empty — the slider cannot determine a track max. **Do not render the slider.** No models means no output cap to select. The component returns null (or a disabled/hidden state) when `selectedModels` is empty or has no matching catalog entries with non-null `max_output_tokens`.
-      * **Human-readable guidance.** Token counts are meaningless to users. Each tier marker and the current slider value must show an approximate word/page equivalent to help users understand the scale of what they're requesting. Conversion: **words ≈ tokens × 0.75**, **pages ≈ words / 250** (standard double-spaced page). Tier markers show: Free "at most ~25 pages", Basic "at most ~100 pages", Premium "at most ~400 pages", Ultra "at most ~6,000 pages". The current value display updates dynamically (e.g., "64,000 tokens · at most ~192 pages"). This helps users understand they don't need a massive token budget — it reframes the choice from an abstract number to a document length.
-    * `[✅]`   Functional goals:
-      * Read `availableTiers: UserTier[]` and `userTier: UserTier | null` from `useAuthStore()` instead of hardcoded data
-      * **Filter `availableTiers` to exclude `unreachable` before rendering tier markers** — filter: `tier.name !== 'unreachable'`
-      * Use `UserTier` from `@paynless/types` instead of local `TierDefinition`
-      * Read `modelCatalog: AIModelCatalogEntry[]` and `selectedModels: SelectedModels[]` from `useDialecticStore()` to compute slider track max
-      * Slider track max = highest `max_output_tokens` from selected models' `AIModelCatalogEntry` catalog entries (cross-reference `selectedModels[].id` → `modelCatalog[].id`). This applies to **all** users, not just ultra.
-      * Thumb max = `userTier.output_cap_tokens` for non-ultra users. For ultra users (`output_cap_tokens === null`), thumb max = slider track max.
-      * Navigate to `/subscription` on upgrade CTA click instead of relying on a callback prop
-      * Align tier tick marks and tier description buttons so each mark is centered below its description
-      * Remove `testTierLevel` prop — tests mock the store instead
-      * Remove `onUpgradeClick` callback prop — replaced by `useNavigate`
-      * Retain `className` prop for mount-point styling
-    * `[✅]`   Non-functional: No changes to mount points (already mounted in `SessionInfoCard.tsx` and `CreateDialecticProjectForm.tsx`). No changes to store state shape. No changes to types.
-    * `[✅]`   Each goal is atomic and testable.
+    * `[✅]`   `role`
+      * `[✅]`   UI component — `OutputCapSlider` is a presentational component that reads tier and model data from stores, renders a slider with tier markers, and writes the user's choice back to the dialectic store.
+      * `[✅]`   This node fixes the component's data sources, visual alignment, and upgrade path. It does NOT modify the auth store, dialectic store, type definitions, API adapter, hook, or BE.
+      * `[✅]`   Out of scope: store state changes, type file edits, mount point changes, BE changes, hook changes.
 
-  * `[✅]`   `role`
-    * `[✅]`   UI component — `OutputCapSlider` is a presentational component that reads tier and model data from stores, renders a slider with tier markers, and writes the user's choice back to the dialectic store.
-    * `[✅]`   This node fixes the component's data sources, visual alignment, and upgrade path. It does NOT modify the auth store, dialectic store, type definitions, API adapter, hook, or BE.
-    * `[✅]`   Out of scope: store state changes, type file edits, mount point changes, BE changes, hook changes.
+    * `[✅]`   `module`
+      * `[✅]`   Bounded context: `apps/web/src/components/dialectic` — dialectic UI components.
+      * `[✅]`   Inside this boundary: rendering slider, filtering tiers, reading tier data from auth store, reading model data from dialectic store, computing slider max from model catalog, writing chosen value to dialectic store, navigating to subscription page.
+      * `[✅]`   Outside this boundary: how tiers are fetched and cached (auth store), how `maxOutputTokens` flows to the BE (hook + store action), how the BE consumes the value (worker).
 
-  * `[✅]`   `module`
-    * `[✅]`   Bounded context: `apps/web/src/components/dialectic` — dialectic UI components.
-    * `[✅]`   Inside this boundary: rendering slider, filtering tiers, reading tier data from auth store, reading model data from dialectic store, computing slider max from model catalog, writing chosen value to dialectic store, navigating to subscription page.
-    * `[✅]`   Outside this boundary: how tiers are fetched and cached (auth store), how `maxOutputTokens` flows to the BE (hook + store action), how the BE consumes the value (worker).
+    * `[✅]`   `deps`
+      * `[✅]`   `UserTier` — provider: `@paynless/types` via `auth.types.ts`, layer: types, direction: inward, purpose: type for tier definitions and the user's current tier. Shape: `{ level: number; name: string; output_cap_tokens: number | null; max_models_per_project: number | null; }`.
+      * `[✅]`   `AIModelCatalogEntry` — provider: `@paynless/types` via `dialectic.types.ts`, layer: types, direction: inward, purpose: type for model catalog entries. The field `max_output_tokens: number | null` provides each model's hard output cap. Used to compute slider track max.
+      * `[✅]`   `SelectedModels` — provider: `@paynless/types` via `dialectic.types.ts`, layer: types, direction: inward, purpose: type for selected model references. Shape: `{ id: string; displayName: string; }`. The `id` cross-references `modelCatalog[].id` to find each selected model's `AIModelCatalogEntry`.
+      * `[✅]`   `useAuthStore` — provider: `@paynless/store`, layer: store, direction: inward, purpose: reads `userTier` and `availableTiers`.
+      * `[✅]`   `useDialecticStore` — provider: `@paynless/store`, layer: store, direction: inward, purpose: reads `maxOutputTokens`, `setMaxOutputTokens`, `modelCatalog`, `selectedModels`.
+      * `[✅]`   `useNavigate` — provider: `react-router-dom`, layer: framework, direction: inward, purpose: navigate to `/subscription` on upgrade CTA.
+      * `[✅]`   `Slider`, `Tooltip`, `Button` — provider: `@/components/ui`, layer: UI primitives, direction: inward, purpose: rendering.
+      * `[✅]`   No reverse dependencies. No lateral layer violations.
 
-  * `[✅]`   `deps`
-    * `[✅]`   `UserTier` — provider: `@paynless/types` via `auth.types.ts`, layer: types, direction: inward, purpose: type for tier definitions and the user's current tier. Shape: `{ level: number; name: string; output_cap_tokens: number | null; max_models_per_project: number | null; }`.
-    * `[✅]`   `AIModelCatalogEntry` — provider: `@paynless/types` via `dialectic.types.ts`, layer: types, direction: inward, purpose: type for model catalog entries. The field `max_output_tokens: number | null` provides each model's hard output cap. Used to compute slider track max.
-    * `[✅]`   `SelectedModels` — provider: `@paynless/types` via `dialectic.types.ts`, layer: types, direction: inward, purpose: type for selected model references. Shape: `{ id: string; displayName: string; }`. The `id` cross-references `modelCatalog[].id` to find each selected model's `AIModelCatalogEntry`.
-    * `[✅]`   `useAuthStore` — provider: `@paynless/store`, layer: store, direction: inward, purpose: reads `userTier` and `availableTiers`.
-    * `[✅]`   `useDialecticStore` — provider: `@paynless/store`, layer: store, direction: inward, purpose: reads `maxOutputTokens`, `setMaxOutputTokens`, `modelCatalog`, `selectedModels`.
-    * `[✅]`   `useNavigate` — provider: `react-router-dom`, layer: framework, direction: inward, purpose: navigate to `/subscription` on upgrade CTA.
-    * `[✅]`   `Slider`, `Tooltip`, `Button` — provider: `@/components/ui`, layer: UI primitives, direction: inward, purpose: rendering.
-    * `[✅]`   No reverse dependencies. No lateral layer violations.
+    * `[✅]`   `context_slice`
+      * `[✅]`   From auth store: `userTier: UserTier | null` (user's current tier — determines thumb max), `availableTiers: UserTier[]` (all 5 tier definitions from DB — **must be filtered to exclude level 99 before rendering**).
+      * `[✅]`   From dialectic store: `maxOutputTokens: number | null` (current slider value), `setMaxOutputTokens: (n: number) => void` (setter), `modelCatalog: AIModelCatalogEntry[]` (all models — cross-reference with `selectedModels` to compute slider track max from `max_output_tokens`), `selectedModels: SelectedModels[] | null | undefined` (currently selected model IDs).
+      * `[✅]`   No over-fetching. No hidden coupling.
 
-  * `[✅]`   `context_slice`
-    * `[✅]`   From auth store: `userTier: UserTier | null` (user's current tier — determines thumb max), `availableTiers: UserTier[]` (all 5 tier definitions from DB — **must be filtered to exclude level 99 before rendering**).
-    * `[✅]`   From dialectic store: `maxOutputTokens: number | null` (current slider value), `setMaxOutputTokens: (n: number) => void` (setter), `modelCatalog: AIModelCatalogEntry[]` (all models — cross-reference with `selectedModels` to compute slider track max from `max_output_tokens`), `selectedModels: SelectedModels[] | null | undefined` (currently selected model IDs).
-    * `[✅]`   No over-fetching. No hidden coupling.
+    * `[✅]`   dialectic/`OutputCapSlider.test.tsx`
+      * `[✅]`   Mock `useAuthStore` to provide controlled `userTier` and `availableTiers` values using production `UserTier` type.
+      * `[✅]`   Mock `useDialecticStore` to provide controlled `maxOutputTokens`, `setMaxOutputTokens`, `modelCatalog`, `selectedModels` values using production types.
+      * `[✅]`   Mock `useNavigate` from `react-router-dom`.
+      * `[✅]`   **All test `availableTiers` arrays must include the `unreachable` tier `{ level: 99, name: 'unreachable', output_cap_tokens: null, max_models_per_project: null }` to prove the component filters it out.** Tests must assert that no marker renders for `unreachable`.
+      * `[✅]`   Test: renders exactly 4 tier markers (free, basic, premium, ultra) from `availableTiers` — NOT 5. The `unreachable` tier (level 99) must not render. Assert no element contains text "unreachable".
+      * `[✅]`   Test: slider track max equals the highest `max_output_tokens` from selected models' catalog entries — not any tier's `output_cap_tokens`. Provide `modelCatalog` with a model whose `max_output_tokens` is 200000, set `selectedModels` to reference that model, assert slider max is 200000.
+      * `[✅]`   Test: slider thumb cannot exceed `userTier.output_cap_tokens` — set `userTier` to basic (cap 32768), assert thumb stops at 32768 even though slider track extends to model max.
+      * `[✅]`   Test: clicking a within-tier marker calls `setMaxOutputTokens` with that tier's `output_cap_tokens`.
+      * `[✅]`   Test: clicking an above-tier marker shows upgrade CTA with tier name, does NOT call `setMaxOutputTokens`.
+      * `[✅]`   Test: upgrade CTA click calls `navigate('/subscription')`.
+      * `[✅]`   Test: ultra user (`userTier.output_cap_tokens === null`) — thumb can reach slider track max (model's max_output_tokens). No upgrade CTA fires.
+      * `[✅]`   Test: when `maxOutputTokens` is `null` in store, component renders with tier default display.
+      * `[✅]`   Test: when `availableTiers` is empty, component handles gracefully (loading or no-render state).
+      * `[✅]`   Test: when `selectedModels` is empty, slider does not render — component returns null. No fallback value.
+      * `[✅]`   Test: tier markers display approximate page counts (e.g., free marker shows "at most ~25 pages"). Current value display updates dynamically with page equivalent as slider moves.
 
-  * `[✅]`   dialectic/`OutputCapSlider.test.tsx`
-    * `[✅]`   Mock `useAuthStore` to provide controlled `userTier` and `availableTiers` values using production `UserTier` type.
-    * `[✅]`   Mock `useDialecticStore` to provide controlled `maxOutputTokens`, `setMaxOutputTokens`, `modelCatalog`, `selectedModels` values using production types.
-    * `[✅]`   Mock `useNavigate` from `react-router-dom`.
-    * `[✅]`   **All test `availableTiers` arrays must include the `unreachable` tier `{ level: 99, name: 'unreachable', output_cap_tokens: null, max_models_per_project: null }` to prove the component filters it out.** Tests must assert that no marker renders for `unreachable`.
-    * `[✅]`   Test: renders exactly 4 tier markers (free, basic, premium, ultra) from `availableTiers` — NOT 5. The `unreachable` tier (level 99) must not render. Assert no element contains text "unreachable".
-    * `[✅]`   Test: slider track max equals the highest `max_output_tokens` from selected models' catalog entries — not any tier's `output_cap_tokens`. Provide `modelCatalog` with a model whose `max_output_tokens` is 200000, set `selectedModels` to reference that model, assert slider max is 200000.
-    * `[✅]`   Test: slider thumb cannot exceed `userTier.output_cap_tokens` — set `userTier` to basic (cap 32768), assert thumb stops at 32768 even though slider track extends to model max.
-    * `[✅]`   Test: clicking a within-tier marker calls `setMaxOutputTokens` with that tier's `output_cap_tokens`.
-    * `[✅]`   Test: clicking an above-tier marker shows upgrade CTA with tier name, does NOT call `setMaxOutputTokens`.
-    * `[✅]`   Test: upgrade CTA click calls `navigate('/subscription')`.
-    * `[✅]`   Test: ultra user (`userTier.output_cap_tokens === null`) — thumb can reach slider track max (model's max_output_tokens). No upgrade CTA fires.
-    * `[✅]`   Test: when `maxOutputTokens` is `null` in store, component renders with tier default display.
-    * `[✅]`   Test: when `availableTiers` is empty, component handles gracefully (loading or no-render state).
-    * `[✅]`   Test: when `selectedModels` is empty, slider does not render — component returns null. No fallback value.
-    * `[✅]`   Test: tier markers display approximate page counts (e.g., free marker shows "at most ~25 pages"). Current value display updates dynamically with page equivalent as slider moves.
+    * `[✅]`   dialectic/`OutputCapSlider.tsx`
+      * `[✅]`   Remove local `TierDefinition` interface (lines 15-20).
+      * `[✅]`   Remove `DEFAULT_TIERS` hardcoded array (lines 23-48).
+      * `[✅]`   Remove `testTierLevel` and `onUpgradeClick` from the props interface. Retain only `className?: string`.
+      * `[✅]`   Import `UserTier` from `@paynless/types`.
+      * `[✅]`   Import `useNavigate` from `react-router-dom`.
+      * `[✅]`   Read `userTier` and `availableTiers` from `useAuthStore()`.
+      * `[✅]`   Read `modelCatalog` and `selectedModels` from `useDialecticStore()`.
+      * `[✅]`   **Filter `availableTiers` to produce `displayTiers`: exclude any tier where `name === 'unreachable'`. All rendering, marker positioning, and iteration uses `displayTiers`, never raw `availableTiers`.**
+      * `[✅]`   Remove the `useEffect` that sets `tierDefinitions` from `DEFAULT_TIERS` (lines 80-84) and the `useEffect` that determines user tier from `testTierLevel` or defaults to free (lines 87-105). Replace with direct reads from auth store.
+      * `[✅]`   Replace `onUpgradeClick` callback usage with `navigate('/subscription')`.
+      * `[✅]`   **Compute slider track max (`sliderRangeMax`):** cross-reference `selectedModels[].id` against `modelCatalog[].id` to collect `AIModelCatalogEntry.max_output_tokens` for each selected model. Take the highest value. If `selectedModels` is empty or no matching catalog entry has a non-null `max_output_tokens`, **do not render the slider** — return null. No fallback. No default. No models means no output cap to select. This value is the slider's `max` prop and the right edge of the track. It is NOT tier-dependent — it is model-dependent.
+      * `[✅]`   **Compute thumb max (`thumbMax`):** if `userTier.output_cap_tokens` is a number, `thumbMax = userTier.output_cap_tokens`. If `userTier.output_cap_tokens` is `null` (ultra), `thumbMax = sliderRangeMax`. The thumb cannot be dragged past `thumbMax`. Dragging beyond snaps back to `thumbMax` and triggers the upgrade CTA briefly.
+      * `[✅]`   **Logarithmic scale.** The slider operates on a log-transformed internal scale. The Radix Slider's `step` prop is uniform — the log mapping produces naturally variable grain (fine-grained at low values where 1024 increments matter, coarse at high values where they don't). Implementation:
+        * Internal-to-real: `realValue = Math.exp(internalValue)`
+        * Real-to-internal: `internalValue = Math.log(realValue)`
+        * Slider `min` = `Math.log(1024)`, slider `max` = `Math.log(sliderRangeMax)`
+        * `onValueChange` receives internal values — convert to real values via `Math.exp` before calling `setMaxOutputTokens`
+        * Display the real token value to the user, not the internal log value
+      * `[✅]`   **Position tier markers along the slider track** using the same log scale: `(Math.log(tier.output_cap_tokens) - Math.log(1024)) / (Math.log(sliderRangeMax) - Math.log(1024)) * 100` percent. Ultra marker (which has `output_cap_tokens === null`) is positioned at 100% (the right edge). With 2M frontier models this produces ~27%, ~18%, ~18%, ~36% spacing between markers — readable and well-distributed. Each marker and its corresponding tick mark must use the same positioning so the tick appears centered below its description.
+      * `[✅]`   Fix tier marker layout: replace the two separate positioning systems (flexbox buttons + absolute-positioned tick marks) with a single consistent layout where each tier marker and its corresponding tick mark are co-located using absolute positioning based on the log percentage formula above.
+      * `[✅]`   **Word/page guidance display.** Each tier marker label shows three lines: tier name, token count, and approximate page count. The current slider value display also shows the dynamic word/page equivalent. Conversion: `words = Math.round(tokens * 0.75)`, `pages = Math.round(words / 250)`. Format pages as "~N pages" (e.g., "at most ~25 pages"). For values under 1 page, show "at most ~N words" instead.
+      * `[✅]`   Replace all local `TierDefinition` type references with `UserTier` throughout the file (function parameters, state variables, callbacks).
+      * `[✅]`   Preserve all existing logging.
 
-  * `[✅]`   dialectic/`OutputCapSlider.tsx`
-    * `[✅]`   Remove local `TierDefinition` interface (lines 15-20).
-    * `[✅]`   Remove `DEFAULT_TIERS` hardcoded array (lines 23-48).
-    * `[✅]`   Remove `testTierLevel` and `onUpgradeClick` from the props interface. Retain only `className?: string`.
-    * `[✅]`   Import `UserTier` from `@paynless/types`.
-    * `[✅]`   Import `useNavigate` from `react-router-dom`.
-    * `[✅]`   Read `userTier` and `availableTiers` from `useAuthStore()`.
-    * `[✅]`   Read `modelCatalog` and `selectedModels` from `useDialecticStore()`.
-    * `[✅]`   **Filter `availableTiers` to produce `displayTiers`: exclude any tier where `name === 'unreachable'`. All rendering, marker positioning, and iteration uses `displayTiers`, never raw `availableTiers`.**
-    * `[✅]`   Remove the `useEffect` that sets `tierDefinitions` from `DEFAULT_TIERS` (lines 80-84) and the `useEffect` that determines user tier from `testTierLevel` or defaults to free (lines 87-105). Replace with direct reads from auth store.
-    * `[✅]`   Replace `onUpgradeClick` callback usage with `navigate('/subscription')`.
-    * `[✅]`   **Compute slider track max (`sliderRangeMax`):** cross-reference `selectedModels[].id` against `modelCatalog[].id` to collect `AIModelCatalogEntry.max_output_tokens` for each selected model. Take the highest value. If `selectedModels` is empty or no matching catalog entry has a non-null `max_output_tokens`, **do not render the slider** — return null. No fallback. No default. No models means no output cap to select. This value is the slider's `max` prop and the right edge of the track. It is NOT tier-dependent — it is model-dependent.
-    * `[✅]`   **Compute thumb max (`thumbMax`):** if `userTier.output_cap_tokens` is a number, `thumbMax = userTier.output_cap_tokens`. If `userTier.output_cap_tokens` is `null` (ultra), `thumbMax = sliderRangeMax`. The thumb cannot be dragged past `thumbMax`. Dragging beyond snaps back to `thumbMax` and triggers the upgrade CTA briefly.
-    * `[✅]`   **Logarithmic scale.** The slider operates on a log-transformed internal scale. The Radix Slider's `step` prop is uniform — the log mapping produces naturally variable grain (fine-grained at low values where 1024 increments matter, coarse at high values where they don't). Implementation:
-      * Internal-to-real: `realValue = Math.exp(internalValue)`
-      * Real-to-internal: `internalValue = Math.log(realValue)`
-      * Slider `min` = `Math.log(1024)`, slider `max` = `Math.log(sliderRangeMax)`
-      * `onValueChange` receives internal values — convert to real values via `Math.exp` before calling `setMaxOutputTokens`
-      * Display the real token value to the user, not the internal log value
-    * `[✅]`   **Position tier markers along the slider track** using the same log scale: `(Math.log(tier.output_cap_tokens) - Math.log(1024)) / (Math.log(sliderRangeMax) - Math.log(1024)) * 100` percent. Ultra marker (which has `output_cap_tokens === null`) is positioned at 100% (the right edge). With 2M frontier models this produces ~27%, ~18%, ~18%, ~36% spacing between markers — readable and well-distributed. Each marker and its corresponding tick mark must use the same positioning so the tick appears centered below its description.
-    * `[✅]`   Fix tier marker layout: replace the two separate positioning systems (flexbox buttons + absolute-positioned tick marks) with a single consistent layout where each tier marker and its corresponding tick mark are co-located using absolute positioning based on the log percentage formula above.
-    * `[✅]`   **Word/page guidance display.** Each tier marker label shows three lines: tier name, token count, and approximate page count. The current slider value display also shows the dynamic word/page equivalent. Conversion: `words = Math.round(tokens * 0.75)`, `pages = Math.round(words / 250)`. Format pages as "~N pages" (e.g., "at most ~25 pages"). For values under 1 page, show "at most ~N words" instead.
-    * `[✅]`   Replace all local `TierDefinition` type references with `UserTier` throughout the file (function parameters, state variables, callbacks).
-    * `[✅]`   Preserve all existing logging.
+    * `[✅]`   dialectic/`OutputCapSlider.integration.test.tsx`
+      * `[✅]`   Integration test using real stores, mocks only for external nodes (router `useNavigate`).
+      * `[✅]`   **Seed `availableTiers` with all 5 tiers including `unreachable` (level 99) to prove the component filters it in the real integration path.**
+      * `[✅]`   provider → function: seed real `useAuthStore` with `availableTiers` (all 5 tiers) and `userTier` data, seed real `useDialecticStore` with `modelCatalog` and `selectedModels`. Mount `OutputCapSlider`. Verify component renders exactly 4 tier markers (not 5). Verify no element contains "unreachable".
+      * `[✅]`   function → consumer: interact with slider (set value). Verify `useDialecticStore.getState().maxOutputTokens` reflects the chosen value in real store state — not via a mock spy, but by reading the actual store.
+      * `[✅]`   full chain: set `userTier` to basic (cap 32768) in real auth store. Provide `modelCatalog` with a model whose `max_output_tokens` is 200000 and set `selectedModels` to reference it. Verify slider track max is 200000. Drag slider to 16384. Assert real dialectic store `maxOutputTokens === 16384`. Click a locked premium marker. Assert upgrade CTA visible. Click CTA. Assert `navigate('/subscription')` called (router is the only mock).
 
-  * `[✅]`   dialectic/`OutputCapSlider.integration.test.tsx`
-    * `[✅]`   Integration test using real stores, mocks only for external nodes (router `useNavigate`).
-    * `[✅]`   **Seed `availableTiers` with all 5 tiers including `unreachable` (level 99) to prove the component filters it in the real integration path.**
-    * `[✅]`   provider → function: seed real `useAuthStore` with `availableTiers` (all 5 tiers) and `userTier` data, seed real `useDialecticStore` with `modelCatalog` and `selectedModels`. Mount `OutputCapSlider`. Verify component renders exactly 4 tier markers (not 5). Verify no element contains "unreachable".
-    * `[✅]`   function → consumer: interact with slider (set value). Verify `useDialecticStore.getState().maxOutputTokens` reflects the chosen value in real store state — not via a mock spy, but by reading the actual store.
-    * `[✅]`   full chain: set `userTier` to basic (cap 32768) in real auth store. Provide `modelCatalog` with a model whose `max_output_tokens` is 200000 and set `selectedModels` to reference it. Verify slider track max is 200000. Drag slider to 16384. Assert real dialectic store `maxOutputTokens === 16384`. Click a locked premium marker. Assert upgrade CTA visible. Click CTA. Assert `navigate('/subscription')` called (router is the only mock).
+    * `[✅]`   `directionality`
+      * `[✅]`   Layer: UI component (presentation)
+      * `[✅]`   Deps: inward (reads from stores, uses types, uses UI primitives)
+      * `[✅]`   Provides: outward (writes `maxOutputTokens` to dialectic store via `setMaxOutputTokens`)
+      * `[✅]`   No cycles.
 
-  * `[✅]`   `directionality`
-    * `[✅]`   Layer: UI component (presentation)
-    * `[✅]`   Deps: inward (reads from stores, uses types, uses UI primitives)
-    * `[✅]`   Provides: outward (writes `maxOutputTokens` to dialectic store via `setMaxOutputTokens`)
-    * `[✅]`   No cycles.
+    * `[✅]`   `requirements`
+      * `[✅]`   Tier markers render from filtered `availableTiers` (excluding `unreachable`) — not hardcoded. Observable: test provides all 5 tiers and asserts exactly 4 markers render, no "unreachable" text present.
+      * `[✅]`   Slider track max equals highest `max_output_tokens` from selected models. Observable: test provides model catalog with known `max_output_tokens`, asserts slider max matches.
+      * `[✅]`   User's tier limits thumb, not slider range. Observable: test sets `userTier` to basic (cap 32768) with model max 200000, asserts slider track extends to 200000 but thumb stops at 32768.
+      * `[✅]`   Above-tier marker click shows upgrade CTA with link to `/subscription`. Observable: test clicks locked marker, asserts CTA visible, clicks CTA, asserts `navigate('/subscription')`.
+      * `[✅]`   Ultra user thumb reaches slider max. Observable: test provides ultra tier + model catalog with `max_output_tokens` 200000, asserts thumb can reach 200000.
+      * `[✅]`   Tick marks aligned below their tier description. Observable: visual test or snapshot confirming co-located layout using same absolute positioning.
+      * `[✅]`   No local `TierDefinition` type. Observable: grep confirms `TierDefinition` does not appear in file.
+      * `[✅]`   No hardcoded `DEFAULT_TIERS`. Observable: grep confirms `DEFAULT_TIERS` does not appear in file.
+      * `[✅]`   No `testTierLevel` prop. Observable: grep confirms `testTierLevel` does not appear in file.
+      * `[✅]`   Empty `selectedModels` = no render. Observable: test provides empty `selectedModels`, asserts component returns null — no slider rendered, no fallback value.
 
-  * `[✅]`   `requirements`
-    * `[✅]`   Tier markers render from filtered `availableTiers` (excluding `unreachable`) — not hardcoded. Observable: test provides all 5 tiers and asserts exactly 4 markers render, no "unreachable" text present.
-    * `[✅]`   Slider track max equals highest `max_output_tokens` from selected models. Observable: test provides model catalog with known `max_output_tokens`, asserts slider max matches.
-    * `[✅]`   User's tier limits thumb, not slider range. Observable: test sets `userTier` to basic (cap 32768) with model max 200000, asserts slider track extends to 200000 but thumb stops at 32768.
-    * `[✅]`   Above-tier marker click shows upgrade CTA with link to `/subscription`. Observable: test clicks locked marker, asserts CTA visible, clicks CTA, asserts `navigate('/subscription')`.
-    * `[✅]`   Ultra user thumb reaches slider max. Observable: test provides ultra tier + model catalog with `max_output_tokens` 200000, asserts thumb can reach 200000.
-    * `[✅]`   Tick marks aligned below their tier description. Observable: visual test or snapshot confirming co-located layout using same absolute positioning.
-    * `[✅]`   No local `TierDefinition` type. Observable: grep confirms `TierDefinition` does not appear in file.
-    * `[✅]`   No hardcoded `DEFAULT_TIERS`. Observable: grep confirms `DEFAULT_TIERS` does not appear in file.
-    * `[✅]`   No `testTierLevel` prop. Observable: grep confirms `testTierLevel` does not appear in file.
-    * `[✅]`   Empty `selectedModels` = no render. Observable: test provides empty `selectedModels`, asserts component returns null — no slider rendered, no fallback value.
-
-  * `[✅]`   **Commit** `feat(output-cap-slider) deliver end-to-end user-selectable output token cap`
-    * `[✅]`   Structural: BE `GenerateContributionsPayload` gains `maxOutputTokens` field; `prepareModelJob` reads it from job payload
-    * `[✅]`   Behavioral: user's slider choice now flows FE → store → hook → API → BE worker → affordability calculation; `min(userChosen, tierCap)` enforced server-side
-    * `[✅]`   Contract: FE component reads `UserTier` from auth store and `modelCatalog` from dialectic store instead of hardcoded data; filters out `unreachable` tier; slider max is model-determined; upgrade CTA links to `/subscription`
+    * `[✅]`   **Commit** `feat(output-cap-slider) deliver end-to-end user-selectable output token cap`
+      * `[✅]`   Structural: BE `GenerateContributionsPayload` gains `maxOutputTokens` field; `prepareModelJob` reads it from job payload
+      * `[✅]`   Behavioral: user's slider choice now flows FE → store → hook → API → BE worker → affordability calculation; `min(userChosen, tierCap)` enforced server-side
+      * `[✅]`   Contract: FE component reads `UserTier` from auth store and `modelCatalog` from dialectic store instead of hardcoded data; filters out `unreachable` tier; slider max is model-determined; upgrade CTA links to `/subscription`
 
 * **Dynamic cost ceiling estimation — per-stage and full-project token cost based on user configuration**
 
@@ -506,6 +504,145 @@
   All core cost ceiling computation is FE-only — the data is already available on the FE, and the algorithm is a pure function port. No new BE endpoint is required for the basic cost ceiling.
 
   The only BE investigation needed is: does `fetchStageRecipe` work without an active session? If not, a small BE adjustment may be needed to support pre-project estimation. This is a discovery item for node planning, not a confirmed BE edit.
+
+* **Subscription checkout deep links — prepopulate cart from upgrade and top-up CTAs**
+
+  Implement after the **Dynamic cost ceiling** ticket above. Cost ceiling supplies `stage_ceiling`, `project_ceiling`, and token shortfalls for NSF and pre-project surfaces; this ticket wires every `/subscription` CTA to the cart using those values (where applicable) plus tier-aware plan resolution for feature-gate upgrades. Do this in **one pass** once `costCeiling` / `recomputeCostCeiling` exist — do not ship another round of naked `/subscription` links.
+
+  ### Problem
+
+  Multiple tickets (FE Ticket 1 dashboard/sidebar, FE2 model selector gating, FE3 output-cap slider and cost-ceiling NSF) added upgrade and top-up CTAs that navigate to `/subscription` with no cart context. The user lands on the subscription page and must manually find the right plan or token pack. The original FE plan (**Multi-item checkout cart**, now implemented) specified `prefillCart`, URL query params (`?plan=` / `?otp=`), and CTA consumers — but consumers were left as placeholders (`Link to="/subscription"` or `navigate("/subscription")`).
+
+  ### What already exists (no reinvention)
+
+  - **`packages/store/src/cartStore/cartStore.ts`**: `prefillCart({ subscriptionPlanId?, otpPlanIds? })` clears the cart, resolves plans from `useSubscriptionStore.getState().availablePlans` by `plan.id` or `plan.stripe_price_id`, then populates `subscriptionItem` / `otpItems`.
+  - **`apps/web/src/pages/Subscription.tsx`**: On load, if `?plan=` or `?otp=` query params are present and `availablePlans` is loaded, calls `prefillCart` and clears params from the URL (`setSearchParams({}, { replace: true })`).
+  - **Cart checkout**: `checkoutCart()` builds multi-item `PurchaseRequest` and redirects to Stripe.
+
+  **Gaps in existing infrastructure:**
+  - No shared helper maps **tier level** or **token shortfall** → plan IDs; each CTA would duplicate lookup logic.
+  - `prefillCart` does not match `item_id_internal` (only `id` and `stripe_price_id`); extend if production plans are keyed internally.
+  - Subscription page tabs (`monthly` / `annual` / `top-up`) are local state only; NSF/top-up CTAs need **`?tab=top-up`** (or equivalent) read on mount so the Top-Up tab is visible after navigation.
+
+  ### Resolution helpers (new — shared by all CTAs)
+
+  Add a small pure module (location TBD during node planning — e.g. `apps/web/src/utils/subscriptionCta.ts`) that operates on `SubscriptionPlan[]` from `availablePlans`:
+
+  1. **`subscriptionPlanForTierLevel(targetLevel, plans, preferInterval?)`**
+     - Filter: `plan_type === 'subscription'`, `active`, `tier_level === targetLevel`, exclude free/zero-amount plans.
+     - Prefer monthly vs annual by name or interval when multiple plans share a tier (default: monthly).
+     - Return `SubscriptionPlan | null` (use `.id` in URLs and `prefillCart`).
+
+  2. **`smallestOtpPlanForShortfall(shortfallTokens, plans)`**
+     - Filter: `plan_type === 'one_time_purchase'`, `tokens_to_award` not null.
+     - Sort ascending by `tokens_to_award`; return first plan where `tokens_to_award >= shortfallTokens`.
+
+  3. **`buildSubscriptionCtaUrl(intent)`** (or equivalent)
+     - Inputs: `{ subscriptionPlanId?: string; otpPlanIds?: string[]; tab?: 'top-up' }`.
+     - Output: `/subscription?plan=...&otp=...&tab=top-up` with repeated `otp` params when needed.
+     - Use **runtime plan UUIDs** from `availablePlans` — do not hardcode doc examples like `premium-monthly`.
+
+  CTAs may use **URL-only** deep links (preferred for `<Link>`) or **prefillCart + navigate** for buttons; URL prefill on `SubscriptionPage` must remain the single source of truth on arrival so refresh and shared links work.
+
+  ### CTA inventory — current naked links and intended prefill
+
+  **Tier / feature-gate upgrades (subscription plan only)**
+
+  | Surface | File | Trigger | Prefill |
+  |--------|------|---------|---------|
+  | Tier-locked model | `AIModelSelector.tsx` | `min_plan_tier_level > userTier.level` | `plan` = subscription for `provider.min_plan_tier_level` |
+  | Model-count cap | `AIModelSelector.tsx` | at cap on multiplicity | `plan` = subscription for tier from `resolveNextTierName` → that tier's `level` |
+  | Tier-locked row | `AIModelSelectorList.tsx` | same as selector | same |
+  | Count-cap row | `AIModelSelectorList.tsx` | same | same |
+  | Output cap upgrade | `OutputCapSlider.tsx` | locked marker / drag past thumb max | `plan` = subscription for tier matching `upgradeTargetName` (`availableTiers` by name → `level`) |
+
+  **Account / navigation (tier upgrade or browse)**
+
+  | Surface | File | Trigger | Prefill |
+  |--------|------|---------|---------|
+  | Plan card | `Dashboard.tsx` | `nextTierName` | `plan` = next tier's `level` |
+  | Plan card fallback | `Dashboard.tsx` | `userTier === null` | no plan (generic `/subscription`) |
+  | Quick action "Upgrade" | `Dashboard.tsx` | marketing | next tier `plan`, or OTP-only if product decides ultra users need tokens only |
+  | Sidebar upgrade | `nav-user.tsx` | `nextTierName` | same as dashboard |
+  | Sidebar "Billing" | `nav-user.tsx` | manage billing | no prefill (portal on page) |
+  | Profile | `Profile.tsx` | "Manage subscription" | no prefill |
+  | Header / Help / Pricing (logged in) | `Header.tsx`, `Help.tsx`, `PricingPage.tsx` | browse | no prefill |
+
+  **Token top-up (OTP only — often `tab=top-up`)**
+
+  | Surface | File | Trigger | Prefill |
+  |--------|------|---------|---------|
+  | Wallet | `WalletBalanceDisplay.tsx` | "Purchase Tokens" | optional smallest OTP or none; `tab=top-up` |
+  | Generate callout | `GenerateContributionButton.tsx` | wallet below stage `minimum_balance` | `otp` = pack covering `stageThreshold - balance` (interim until cost ceiling ships) |
+  | Session NSF (this ticket + cost ceiling) | `DialecticSessionDetailsPage.tsx`, `GenerateContributionButton` / session controls | `stage_ceiling > wallet_balance` | `otp` = `smallestOtpPlanForShortfall(stage_ceiling - wallet_balance)`; `tab=top-up` |
+  | Project warning (cost ceiling) | session / `SessionInfoCard.tsx` | `project_ceiling > wallet_balance` | `otp` for `project_ceiling - wallet_balance`; informational, do not block create |
+  | Pre-project autostart (cost ceiling) | `CreateDialecticProjectForm.tsx` | first-stage `stage_ceiling > wallet` | same OTP shortfall for first stage; disable Autostart, allow Create |
+
+  **Dual intent (upgrade + top-up):** When a surface needs both a higher tier and tokens (e.g. locked premium model with insufficient wallet for estimated run), pass both `plan` and `otp` in one URL. FE cart ticket Pattern 1 applies.
+
+  ### Implementation sequence (single pass, after cost ceiling)
+
+  1. **Cost ceiling** — `costCeiling.ts`, store state, `recomputeCostCeiling`, UI hooks for estimates and shortfalls (per Dynamic cost ceiling ticket above).
+  2. **Subscription CTA helpers** — `subscriptionPlanForTierLevel`, `smallestOtpPlanForShortfall`, `buildSubscriptionCtaUrl`; unit tests with `SubscriptionPlan` fixtures from `PlanCard.mock.ts`.
+  3. **`Subscription.tsx`** — honor `?tab=top-up` on mount (set `activeTab`); optionally extend `prefillCart` lookup to `item_id_internal`.
+  4. **Wire all CTAs** in one change set: replace naked `to="/subscription"` / `navigate("/subscription")` with URLs from helpers; dialectic components first (`AIModelSelector`, `AIModelSelectorList`, `OutputCapSlider`, `GenerateContributionButton`, `CreateDialecticProjectForm`, session page / `SessionInfoCard`), then account surfaces (`Dashboard`, `nav-user`, `WalletBalanceDisplay`).
+  5. **Tests** — update existing tests that assert `href === '/subscription'` to assert query strings when prefill applies; add helper unit tests.
+
+  ### Known files in dependency order
+
+  **Helpers (new):**
+  1. `packages/store/src/subscriptionCta.ts` (new) — plan resolution and URL builder (or `apps/web/src/utils/subscriptionCta.ts` if web-only; prefer store package if dialectic store will import shortfall helpers)
+  2. `packages/store/src/subscriptionCta.test.ts` (new)
+
+  **Subscription page:**
+  3. `apps/web/src/pages/Subscription.tsx` — `?tab=` query handling; confirm prefill runs after `loadSubscriptionData`
+  4. `apps/web/src/pages/Subscription.test.tsx` — tab param + combined `plan` + `otp` prefill
+
+  **Optional cart store:**
+  5. `packages/store/src/cartStore/cartStore.ts` — optional `item_id_internal` in `prefillCart` lookup
+
+  **CTA consumers (modify — replace naked links):**
+  6. `apps/web/src/components/dialectic/AIModelSelector.tsx`
+  7. `apps/web/src/components/dialectic/AIModelSelector.test.tsx`
+  8. `apps/web/src/components/dialectic/AIModelSelectorList.tsx`
+  9. `apps/web/src/components/dialectic/AIModelSelectorList.test.tsx`
+  10. `apps/web/src/components/dialectic/OutputCapSlider.tsx`
+  11. `apps/web/src/components/dialectic/OutputCapSlider.test.tsx`
+  12. `apps/web/src/components/dialectic/OutputCapSlider.integration.test.tsx`
+  13. `apps/web/src/components/dialectic/GenerateContributionButton.tsx`
+  14. `apps/web/src/components/dialectic/GenerateContributionButton.nsf.test.tsx`
+  15. `apps/web/src/pages/DialecticSessionDetailsPage.tsx` — NSF + cost display (depends on cost ceiling)
+  16. `apps/web/src/components/dialectic/SessionInfoCard.tsx`
+  17. `apps/web/src/components/dialectic/CreateDialecticProjectForm.tsx`
+  18. `apps/web/src/components/dialectic/CreateDialecticProjectForm.autostart.test.tsx`
+  19. `apps/web/src/pages/Dashboard.tsx`
+  20. `apps/web/src/pages/Dashboard.test.tsx`
+  21. `apps/web/src/components/sidebar/nav-user.tsx`
+  22. `apps/web/src/components/sidebar/nav-user.test.tsx`
+  23. `apps/web/src/components/wallet/WalletBalanceDisplay.tsx`
+
+  **No prefill required (leave generic `/subscription` or document explicitly):**
+  - `Profile.tsx`, `Header.tsx`, `Help.tsx`, `PricingPage.tsx`, `nav-user` Billing button
+
+  ### Dependencies
+
+  - **Depends on Dynamic cost ceiling** (same FE3 doc): OTP shortfalls for NSF, pre-project autostart, and project-level warnings require `costCeilingEstimate` / `stage_ceiling` / `project_ceiling`. Tier-only CTAs (model lock, output cap, dashboard upgrade) can be implemented with helpers alone but should ship in the same pass to avoid duplicate churn.
+  - **Depends on FE cart ticket (complete)**: `cartStore`, `Subscription.tsx` URL prefill, multi-item checkout.
+  - **Depends on Ticket 1**: `userTier`, `availableTiers`, `availablePlans` / `loadSubscriptionData`.
+  - **Depends on Output clamp slider (complete)**: `maxOutputTokens` for cost ceiling `output_cap` input.
+  - **Ops (deferred)**: `subscription_plans.tier_level` must match `tier_definitions.level` in production data for `subscriptionPlanForTierLevel` to resolve correctly (see Stripe plans ops task below).
+
+  ### Scope split — FE vs BE
+
+  FE-only. No BE changes unless plan catalog fetch is incomplete before navigation (ensure `loadSubscriptionData` runs for authenticated users hitting deep links).
+
+  ### Open questions for node planning
+
+  1. **Helper package location:** `packages/store` (shared with dialectic recompute) vs `apps/web` only?
+  2. **Billing interval preference:** Default monthly for tier upgrades, or infer from `userSubscription` / current plan?
+  3. **Ultra users on Dashboard quick action:** Next tier is null — link to top-up tab only, or hide?
+  4. **GenerateContributionButton:** Retain `minimum_balance` shortfall until cost ceiling is wired on session page, then unify on `stage_ceiling` shortfall.
+  5. **Bundle cards** (FE cart ticket §E): Optional follow-up — static bundle config calling same `prefillCart` / URL builder; not required for CTA pass.
 
 * Update Stripe plans per spreadsheet — **Ops task (deferred). Prereq**: after tier infrastructure migration, update `subscription_plans.tier_level` for each Stripe plan to match the correct tier. This is a data-only change via direct DB update or a follow-up migration, not a code change.
 

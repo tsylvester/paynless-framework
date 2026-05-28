@@ -1,7 +1,7 @@
 import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
-import { ReactElement } from 'react';
+import { FormEvent, ReactElement } from 'react';
 import { beforeEach, describe, expect, it, vi, Mock } from 'vitest';
 import {
 	AiProvidersRow,
@@ -304,6 +304,35 @@ describe('OutputCapSlider', () => {
 
 		expect(mockNavigate).toHaveBeenCalledTimes(1);
 		expect(mockNavigate).toHaveBeenCalledWith('/subscription');
+	});
+
+	it('upgrade CTA click does not submit containing project form or trigger autostart', async () => {
+		const autoStartProject: Mock<[], void> = vi.fn();
+		const submitHandler: Mock<[FormEvent<HTMLFormElement>], void> = vi.fn(
+			(event: FormEvent<HTMLFormElement>) => {
+				event.preventDefault();
+				autoStartProject();
+			},
+		);
+		setupMockStores(
+			{ maxOutputTokens: 8192 },
+			{ userTier: mockUserTier, availableTiers: mockAllTiers },
+		);
+
+		renderWithRouter(
+			<form onSubmit={submitHandler}>
+				<OutputCapSlider />
+				<button type="submit">Create Project</button>
+			</form>,
+		);
+
+		await userEvent.click(screen.getByRole('button', { name: /premium/i }));
+		await userEvent.click(screen.getByRole('button', { name: /^upgrade$/i }));
+
+		expect(mockNavigate).toHaveBeenCalledTimes(1);
+		expect(mockNavigate).toHaveBeenCalledWith('/subscription');
+		expect(submitHandler).not.toHaveBeenCalled();
+		expect(autoStartProject).not.toHaveBeenCalled();
 	});
 
 	it('ultra user thumb can reach slider track max and does not show upgrade CTA', async () => {

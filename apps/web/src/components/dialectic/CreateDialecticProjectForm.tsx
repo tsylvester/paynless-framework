@@ -597,6 +597,7 @@ export const CreateDialecticProjectForm: React.FC<
 								>
 									<PopoverTrigger asChild>
 										<Button
+											type="button"
 											variant="outline"
 											size="sm"
 											className={cn(

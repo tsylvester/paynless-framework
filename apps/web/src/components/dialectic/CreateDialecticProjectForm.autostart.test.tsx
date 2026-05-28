@@ -12,7 +12,15 @@ import {
   mockDialecticProcessTemplate,
   mockAiProvidersRow,
 } from '@/mocks/dialecticStore.mock';
-import { selectActiveChatWalletInfo } from '@paynless/store';
+import {
+  mockedUseAuthStoreHookLogic,
+  resetAuthStoreMock,
+} from '@/mocks/authStore.mock';
+import { mockAllTiers, mockUserTier } from '@/mocks/profile.mock';
+import {
+  selectActiveChatWalletInfo,
+  selectSelectedModels,
+} from '@paynless/store';
 import type {
   DialecticProjectRow,
   ApiError,
@@ -22,6 +30,7 @@ import type {
   CreateProjectAutoStartResult,
   AiProvidersRow,
   ActiveChatWalletInfo,
+  SelectedModels,
 } from '@paynless/types';
 import { usePlatform } from '@paynless/platform';
 import type { CapabilitiesContextValue, PlatformCapabilities } from '@paynless/types';
@@ -37,8 +46,10 @@ vi.mock('@paynless/store', async () => {
   const mockStoreExports = await vi.importActual<typeof import('@/mocks/dialecticStore.mock')>('@/mocks/dialecticStore.mock');
   const actualPaynlessStore = await vi.importActual<typeof import('@paynless/store')>('@paynless/store');
   const walletStoreMock = await vi.importActual<typeof import('@/mocks/walletStore.mock')>('@/mocks/walletStore.mock');
+  const authStoreMock = await vi.importActual<typeof import('@/mocks/authStore.mock')>('@/mocks/authStore.mock');
   return {
     ...mockStoreExports,
+    useAuthStore: authStoreMock.useAuthStore,
     useWalletStore: walletStoreMock.useWalletStore,
     selectActiveChatWalletInfo: walletStoreMock.selectActiveChatWalletInfo,
     initialWalletStateValues: actualPaynlessStore.initialWalletStateValues,
@@ -85,6 +96,10 @@ vi.mock('@/components/common/TextInputArea', () => ({
 
 vi.mock('@/components/dialectic/DomainSelector', () => ({
   DomainSelector: vi.fn(() => <div data-testid="mock-domain-selector">Mock Domain Selector</div>),
+}));
+
+vi.mock('@/components/dialectic/AIModelSelector', () => ({
+  AIModelSelector: vi.fn(() => <div data-testid="mock-ai-model-selector">Mock AI Model Selector</div>),
 }));
 
 vi.mock('sonner', () => ({
@@ -157,7 +172,15 @@ const defaultCatalogWithDefaultModel: AiProvidersRow[] = [
     api_identifier: 'dft',
     is_default_generation: true,
     is_active: true,
+    config: { provider_max_output_tokens: 200000 },
   }),
+];
+
+const defaultSelectedModels: SelectedModels[] = [
+  {
+    id: 'dft',
+    displayName: 'Default',
+  },
 ];
 
 function buildMinimalDialecticProjectRow(overrides: { id: string; project_name: string }): DialecticProjectRow {
@@ -191,14 +214,22 @@ const createMockPlatformContext = (overrides?: Partial<PlatformCapabilities>): C
 describe('CreateDialecticProjectForm (autostart)', () => {
   beforeEach(async () => {
     vi.clearAllMocks();
+    resetAuthStoreMock();
+    mockedUseAuthStoreHookLogic.setState({
+      userTier: mockUserTier,
+      availableTiers: mockAllTiers,
+    });
     initializeMockDialecticState({
       selectedDomain: mockSelectedDomain,
       modelCatalog: defaultCatalogWithDefaultModel,
+      selectedModels: defaultSelectedModels,
+      maxOutputTokens: 8192,
       isLoadingModelCatalog: false,
     });
     const { initializeMockWalletStore } = await import('@/mocks/walletStore.mock');
     initializeMockWalletStore();
     vi.mocked(selectActiveChatWalletInfo).mockReturnValue(defaultWalletInfo);
+    vi.mocked(selectSelectedModels).mockReturnValue(defaultSelectedModels);
     vi.mocked(usePlatform).mockReturnValue(createMockPlatformContext());
   });
 
@@ -340,6 +371,21 @@ describe('CreateDialecticProjectForm (autostart)', () => {
     await waitFor(() => {
       expect(getDialecticStoreActionMock('createProjectAndAutoStart')).toHaveBeenCalled();
     });
+    expect(getDialecticStoreActionMock('createDialecticProject')).not.toHaveBeenCalled();
+  });
+
+  it('upgrade CTA inside real model settings popover navigates to subscription without submitting autostart form', async () => {
+    const user = userEvent.setup();
+
+    renderForm();
+
+    await user.click(screen.getByRole('button', { name: /1 model/i }));
+    await user.click(await screen.findByRole('button', { name: /premium/i }));
+    await user.click(screen.getByRole('button', { name: /^upgrade$/i }));
+
+    expect(mockNavigate).toHaveBeenCalledTimes(1);
+    expect(mockNavigate).toHaveBeenCalledWith('/subscription');
+    expect(getDialecticStoreActionMock('createProjectAndAutoStart')).not.toHaveBeenCalled();
     expect(getDialecticStoreActionMock('createDialecticProject')).not.toHaveBeenCalled();
   });
 

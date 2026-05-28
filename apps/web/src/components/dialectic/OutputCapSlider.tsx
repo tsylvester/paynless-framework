@@ -4,6 +4,7 @@ import {
 	useMemo,
 	useRef,
 	useState,
+	type MouseEvent,
 	type ReactElement,
 } from "react";
 import { useNavigate } from "react-router-dom";
@@ -322,7 +323,9 @@ export function OutputCapSlider({ className }: OutputCapSliderProps) {
 		[userTier, sliderRangeMax, displayTiers, setMaxOutputTokens],
 	);
 
-	const handleUpgradeClick = useCallback(() => {
+	const handleUpgradeClick = useCallback((event: MouseEvent<HTMLButtonElement>) => {
+		event.preventDefault();
+		event.stopPropagation();
 		navigate("/subscription");
 	}, [navigate]);
 
@@ -713,6 +716,7 @@ export function OutputCapSlider({ className }: OutputCapSliderProps) {
 							{" "}for larger output limits 
 						</span>
 						<Button
+							type="button"
 							size="sm"
 							variant="ghost"
 							onClick={handleUpgradeClick}
