@@ -44,8 +44,6 @@ import type {
 
 // --- Dialectic Client Mock Setup ---
 export type MockDialecticApiClient = {
-    listAvailableDomains: ReturnType<typeof vi.fn<[], Promise<ApiResponse<{ data: DomainDescriptor[] }>>>>;
-    listAvailableDomainOverlays: ReturnType<typeof vi.fn<[payload: { stageAssociation: string }], Promise<ApiResponse<DomainOverlayDescriptor[]>>>>;
     fetchStageRecipe: ReturnType<typeof vi.fn<[stageSlug: string], Promise<ApiResponse<DialecticStageRecipe>>>>;
     createProject: ReturnType<typeof vi.fn<[payload: FormData], Promise<ApiResponse<DialecticProject>>>>;
     listProjects: ReturnType<typeof vi.fn<[], Promise<ApiResponse<DialecticProject[]>>>>;
@@ -80,8 +78,6 @@ export type MockDialecticApiClient = {
 // Factory function to create a new mock instance
 export function createMockDialecticClient(): MockDialecticApiClient {
     return {
-        listAvailableDomains: vi.fn<[], Promise<ApiResponse<{ data: DomainDescriptor[] }>>>(),
-        listAvailableDomainOverlays: vi.fn<[{ stageAssociation: string }], Promise<ApiResponse<DomainOverlayDescriptor[]>>>(),
         fetchStageRecipe: vi.fn<[string], Promise<ApiResponse<DialecticStageRecipe>>>(),
         createProject: vi.fn<[FormData], Promise<ApiResponse<DialecticProject>>>(),
         listProjects: vi.fn<[], Promise<ApiResponse<DialecticProject[]>>>(),

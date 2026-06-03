@@ -1050,8 +1050,6 @@ export interface DialecticFeedback {
 
 export interface DialecticApiClient {
   fetchStageRecipe(stageSlug: string): Promise<ApiResponse<DialecticStageRecipe>>;
-  listAvailableDomains(): Promise<ApiResponse<{ data: DomainDescriptor[] }>>;
-  listAvailableDomainOverlays(payload: { stageAssociation: string }): Promise<ApiResponse<DomainOverlayDescriptor[]>>;
   createProject(payload: FormData): Promise<ApiResponse<DialecticProject>>;
   listProjects(): Promise<ApiResponse<DialecticProject[]>>;
   getProjectDetails(projectId: string): Promise<ApiResponse<DialecticProject>>;
@@ -1380,9 +1378,6 @@ export type DialecticServiceActionPayload = {
 } | {
   action: 'listDomains';
   payload?: undefined;
-} | {
-  action: 'listAvailableDomainOverlays';
-  payload: { stageAssociation: DialecticStage };
 } | {
   action: 'getContributionContentData';
   payload: GetContributionContentDataPayload;

@@ -338,68 +338,6 @@ export const useDialecticStore = create<DialecticStore>()(
 		});
 	},
 
-	fetchAvailableDomainOverlays: async (stageAssociation: DialecticStage) => {
-		set({
-			isLoadingDomainOverlays: true,
-			domainOverlaysError: null,
-			availableDomainOverlays: [],
-			selectedStageAssociation: stageAssociation,
-		});
-		logger.info(
-			`[DialecticStore] Fetching available domain overlays for stage: ${stageAssociation.slug}`,
-		);
-		try {
-			const response = await api
-				.dialectic()
-				.listAvailableDomainOverlays({
-					stageAssociation: stageAssociation.slug,
-				});
-
-			if (response.error) {
-				logger.error("[DialecticStore] Error fetching domain overlays:", {
-					stageAssociation: stageAssociation.slug,
-					errorDetails: response.error,
-				});
-				set({
-					availableDomainOverlays: [],
-					isLoadingDomainOverlays: false,
-					domainOverlaysError: response.error,
-				});
-			} else {
-				const descriptors = response.data || [];
-				logger.info("[DialecticStore] Raw descriptors received from API:", {
-					descriptors,
-				});
-				logger.info("[DialecticStore] Successfully fetched domain overlays:", {
-					stageAssociation: stageAssociation.slug,
-					count: descriptors.length,
-				});
-				set({
-					availableDomainOverlays: descriptors,
-					isLoadingDomainOverlays: false,
-					domainOverlaysError: null,
-				});
-			}
-		} catch (error: unknown) {
-			const networkError: ApiError = {
-				message:
-					error instanceof Error
-						? error.message
-						: "An unknown network error occurred while fetching domain overlays",
-				code: "NETWORK_ERROR",
-			};
-			logger.error("[DialecticStore] Network error fetching domain overlays:", {
-				stageAssociation: stageAssociation.slug,
-				errorDetails: networkError,
-			});
-			set({
-				availableDomainOverlays: [],
-				isLoadingDomainOverlays: false,
-				domainOverlaysError: networkError,
-			});
-		}
-	},
-
 	fetchDialecticProjects: async () => {
 		set({ isLoadingProjects: true, projectsError: null });
 		logger.info("[DialecticStore] Fetching dialectic projects...");

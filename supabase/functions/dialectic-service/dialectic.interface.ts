@@ -390,10 +390,6 @@ export interface DialecticProject {
 
 // Actions with NO payload
 type ListProjectsAction = { action: "listProjects" };
-type ListAvailableDomainsAction = {
-	action: "listAvailableDomains";
-	payload?: { stageAssociation?: string };
-}; // Optional payload
 type ListDomainsAction = { action: "listDomains" };
 type ListModelCatalogAction = { action: "listModelCatalog" };
 
@@ -441,10 +437,6 @@ type SaveContributionEditAction = {
 type SubmitStageResponsesAction = {
 	action: "submitStageResponses";
 	payload: SubmitStageResponsesPayload;
-};
-type ListAvailableDomainOverlaysAction = {
-	action: "listAvailableDomainOverlays";
-	payload: ListAvailableDomainOverlaysPayload;
 };
 type FetchProcessTemplateAction = {
 	action: "fetchProcessTemplate";
@@ -888,7 +880,6 @@ type GetAvailableModelsForSyncAction = {
 // The main union type for all possible JSON requests to the service.
 export type DialecticServiceRequest =
 	| ListProjectsAction
-	| ListAvailableDomainsAction
 	| ListDomainsAction
 	| ListModelCatalogAction
 	| UpdateProjectDomainAction
@@ -902,7 +893,6 @@ export type DialecticServiceRequest =
 	| GetProjectResourceContentAction
 	| SaveContributionEditAction
 	| SubmitStageResponsesAction
-	| ListAvailableDomainOverlaysAction
 	| FetchProcessTemplateAction
 	| UpdateSessionModelsAction
 	| UpdateViewingStageAction
@@ -1611,10 +1601,6 @@ export interface DomainOverlayDescriptor {
 	description: string | null;
 	stageAssociation: string; // Corresponds to system_prompts.stage_association
 	overlay_values: Record<string, unknown> | string | null;
-}
-
-export interface ListAvailableDomainOverlaysPayload {
-	stageAssociation: string;
 }
 
 export interface GetContributionContentSignedUrlPayload {

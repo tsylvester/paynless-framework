@@ -64,11 +64,9 @@ import type {
   GetUserFn,
   ILogger
 } from '../_shared/types.ts';
-import type { DomainDescriptor } from "./listAvailableDomains.ts";
 import type { IFileManager } from "../_shared/types/file_manager.types.ts";
 import type { IStorageUtils } from "../_shared/types/storage_utils.types.ts";
 import { createProject } from "./createProject.ts";
-import { listAvailableDomains } from "./listAvailableDomains.ts";
 import { updateProjectDomain } from "./updateProjectDomain.ts";
 import { getProjectDetails } from "./getProjectDetails.ts";
 import { getSessionDetails } from "./getSessionDetails.ts";
@@ -76,7 +74,6 @@ import { getContributionContentHandler } from "./getContributionContent.ts";
 import { startSession } from "./startSession.ts";
 import { generateContributions } from "./generateContribution.ts";
 import { listProjects } from "./listProjects.ts";
-import { listAvailableDomainOverlays } from "./listAvailableDomainOverlays.ts";
 import { deleteProject } from './deleteProject.ts';
 import { cloneProject, CloneProjectResult } from './cloneProject.ts';
 import { exportProject } from './exportProject.ts';
@@ -186,7 +183,6 @@ export const createSignedUrlDefaultFn: CreateSignedUrlFn = async (client, bucket
 // Define ActionHandlers interface
 export interface ActionHandlers {
   createProject: (payload: FormData, dbClient: SupabaseClient, user: User) => Promise<{ data?: DialecticProject; error?: ServiceError; status?: number }>;
-  listAvailableDomains: (dbClient: SupabaseClient, payload?: { stageAssociation?: string }) => Promise<DomainDescriptor[] | { error: ServiceError }>;
   updateProjectDomain: (getUserFn: GetUserFn, dbClient: SupabaseClient, payload: UpdateProjectDomainPayload, logger: ILogger) => Promise<{ data?: DialecticProject; error?: ServiceError }>;
   getProjectDetails: (payload: GetProjectDetailsPayload, dbClient: SupabaseClient, user: User) => Promise<{ data?: DialecticProject; error?: ServiceError; status?: number }>;
   getSessionDetails: (payload: GetSessionDetailsPayload, dbClient: SupabaseClient, user: User) => Promise<{ data?: GetSessionDetailsResponse; error?: ServiceError; status?: number }>;
@@ -209,7 +205,6 @@ export interface ActionHandlers {
     };
   }>;
   listProjects: (user: User, dbClient: SupabaseClient) => Promise<{ data?: DialecticProject[]; error?: ServiceError; status?: number }>;
-  listAvailableDomainOverlays: (stageAssociation: string, dbClient: SupabaseClient) => Promise<DomainOverlayDescriptor[]>;
   deleteProject: (dbClient: SupabaseClient, payload: { projectId: string }, userId: string) => Promise<{data?: null, error?: { message: string; details?: string | undefined; }, status?: number}>;
   cloneProject: (dbClient: SupabaseClient, userClient: SupabaseClient, fileManager: IFileManager, originalProjectId: string, newProjectName: string | undefined, cloningUserId: string) => Promise<CloneProjectResult>;
   exportProject: (dbClient: SupabaseClient, fileManager: IFileManager, storageUtils: IStorageUtils, projectId: string, userId: string) => Promise<{ data?: { export_url: string }; error?: ServiceError; status?: number }>;
@@ -332,20 +327,6 @@ export async function handleRequest(
       // Route to the appropriate handler
       switch (requestBody.action) {
         // --- Unauthenticated Actions ---
-        case "listAvailableDomains": {
-          const result = await handlers.listAvailableDomains(adminClient, requestBody.payload);
-          if (result && 'error' in result) {
-            return createErrorResponse(result.error.message, result.error.status, req, result.error);
-          }
-          return createSuccessResponse(result, 200, req);
-        }
-        case "listAvailableDomainOverlays": {
-          if (!requestBody.payload || typeof requestBody.payload.stageAssociation !== 'string') {
-            return createErrorResponse("stageAssociation is required.", 400, req, { message: "stageAssociation is required.", status: 400 });
-          }
-          const data = await handlers.listAvailableDomainOverlays(requestBody.payload.stageAssociation, adminClient);
-          return createSuccessResponse(data, 200, req);
-        }
         case "listDomains": {
             const { data, error } = await handlers.listDomains(adminClient);
             if (error) {
@@ -771,7 +752,6 @@ async function handleGetAllStageProgress(
 
 export const defaultHandlers: ActionHandlers = {
   createProject,
-  listAvailableDomains,
   updateProjectDomain,
   getProjectDetails,
   getSessionDetails,
@@ -779,7 +759,6 @@ export const defaultHandlers: ActionHandlers = {
   startSession,
   generateContributions,
   listProjects,
-  listAvailableDomainOverlays,
   deleteProject,
   cloneProject,
   exportProject,

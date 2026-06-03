@@ -59,7 +59,6 @@ import {
   RegenerateDocumentDeps,
   AiProvidersRow,
 } from "./dialectic.interface.ts";
-import type { DomainDescriptor } from "./listAvailableDomains.ts";
 import { createMockSupabaseClient, type MockSupabaseClientSetup } from '../_shared/supabase.mock.ts';
 import { isRecord } from '../_shared/utils/type-guards/type_guards.common.ts';
 import { CloneProjectResult } from "./cloneProject.ts";
@@ -215,7 +214,6 @@ const createMockHandlers = (overrides?: Partial<ActionHandlers> & {
 }): ActionHandlers => {
     return {
         createProject: overrides?.createProject || (() => Promise.resolve({ data: { id: 'mock-project-id', user_id: 'mock-user-id', project_name: 'mock-project-name', initial_user_prompt: 'mock-initial-user-prompt', selected_domain_id: 'mock-domain-id', repo_url: null, status: 'active', created_at: new Date().toISOString(), updated_at: new Date().toISOString(), initial_prompt_resource_id: null, selected_domain_overlay_id: null, process_template_id: null, user_domain_overlay_values: null }, status: 201 })),
-        listAvailableDomains: overrides?.listAvailableDomains || (() => Promise.resolve([])),
         updateProjectDomain: overrides?.updateProjectDomain || (() => Promise.resolve({ data: mockProject })),
         getProjectDetails: overrides?.getProjectDetails || (() => Promise.resolve({ data: mockProject })),
         getSessionDetails: overrides?.getSessionDetails || (() => Promise.resolve({ data: { session: mockSession, currentStageDetails: null, activeSeedPrompt: null } })),
@@ -226,7 +224,6 @@ const createMockHandlers = (overrides?: Partial<ActionHandlers> & {
         }),
         generateContributions: overrides?.generateContributions || (() => Promise.resolve({ success: false, error: { message: "Not implemented" } })),
         listProjects: overrides?.listProjects || (() => Promise.resolve({ data: [mockProject] })),
-        listAvailableDomainOverlays: overrides?.listAvailableDomainOverlays || (() => Promise.resolve([])),
         deleteProject: overrides?.deleteProject || (() => Promise.resolve({ status: 200 })),
         cloneProject: overrides?.cloneProject || ((_dbClient: SupabaseClient, userClient: SupabaseClient, _fileManager: IFileManager, _originalProjectId: string, _newProjectName: string | undefined, _cloningUserId: string) => {
             assert(_dbClient !== userClient);
@@ -506,24 +503,6 @@ withSupabaseEnv("handleRequest - Routing and Dispatching", async (t) => {
       assert(body.error.startsWith("Unknown action"));
     });
 
-    await t.step("should correctly route JSON 'listAvailableDomains' action (no auth needed)", async () => {
-      const listSpy = spy(() => Promise.resolve([]));
-      mockHandlers = createMockHandlers({ listAvailableDomains: listSpy });
-      const { client: mockUserClient } = createMockSupabaseClient();
-      const { client: mockAdminClient } = createMockSupabaseClient();
-      const req = createJsonRequest("listAvailableDomains");
-  
-      const response = await handleRequest(
-        req,
-        mockHandlers,
-        mockUserClient as any,
-        mockAdminClient as any
-      );
-        
-      assertEquals(response.status, 200);
-      assertEquals(listSpy.calls.length, 1);
-    });
-
     await t.step("should correctly route JSON 'listProjects' action (auth needed)", async () => {
       const listSpy = spy(() => Promise.resolve({ data: [mockProject], status: 200 }));
       mockHandlers = createMockHandlers({ listProjects: listSpy });
@@ -604,95 +583,6 @@ withSupabaseEnv("handleRequest - Routing and Dispatching", async (t) => {
       assertEquals(response.status, 400);
       const body = await response.json();
       assertEquals(body.error, "Unknown action for application/json.");
-    });
-});
-
-withSupabaseEnv("handleRequest - listAvailableDomains", async (t) => {
-    await t.step("should call listAvailableDomains and return 200 on success", async () => {
-        const mockDomains: DomainDescriptor[] = [{ id: 'domain1', domainId: 'domain1', description: 'Test Domain', stageAssociation: null }];
-        const listSpy = spy((): Promise<DomainDescriptor[]> => Promise.resolve(mockDomains));
-        const mockHandlers = createMockHandlers({ listAvailableDomains: listSpy });
-        
-        const { client: mockUserClient } = createMockSupabaseClient();
-        const { client: mockAdminClient } = createMockSupabaseClient();
-
-        const req = createJsonRequest("listAvailableDomains");
-        const response = await handleRequest(
-          req,
-          mockHandlers,
-          mockUserClient as any,
-          mockAdminClient as any
-        );
-        
-        assertEquals(response.status, 200);
-        const body = await response.json();
-        assertEquals(body, mockDomains);
-        assertEquals(listSpy.calls.length, 1);
-    });
-
-    await t.step("should return error if listAvailableDomains returns an error", async () => {
-        const error: ServiceError = { message: "DB Error", status: 500, code: 'DB_ERROR' };
-        const listSpy = spy(() => Promise.resolve({ error }));
-        const mockHandlers = createMockHandlers({ listAvailableDomains: listSpy });
-        
-        const { client: mockUserClient } = createMockSupabaseClient();
-        const { client: mockAdminClient } = createMockSupabaseClient();
-
-        const req = createJsonRequest("listAvailableDomains");
-        const response = await handleRequest(
-          req,
-          mockHandlers,
-          mockUserClient as any,
-          mockAdminClient as any
-        );
-        
-        assertEquals(response.status, 500);
-        const responseBody = await response.json();
-        assertEquals(responseBody.error, error.message);
-        assertEquals(listSpy.calls.length, 1);
-    });
-});
-
-withSupabaseEnv("handleRequest - listAvailableDomainOverlays", async (t) => {
-    await t.step("should call listAvailableDomainOverlays and return 200 on success", async () => {
-        const mockOverlays: DomainOverlayDescriptor[] = [{ id: 'overlay1', domainId: 'domain1', description: 'Test Overlay', stageAssociation: 'test', overlay_values: null }];
-        const listSpy = spy(() => Promise.resolve(mockOverlays));
-        const mockHandlers = createMockHandlers({ listAvailableDomainOverlays: listSpy });
-
-        const { client: mockUserClient } = createMockSupabaseClient();
-        const { client: mockAdminClient } = createMockSupabaseClient();
-        const req = createJsonRequest('listAvailableDomainOverlays', { stageAssociation: 'test' });
-        const response = await handleRequest(
-          req,
-          mockHandlers,
-          mockUserClient as any,
-          mockAdminClient as any
-        );
-
-        assertEquals(response.status, 200);
-        const body = await response.json();
-        assertEquals(body, mockOverlays);
-        assertEquals(listSpy.calls.length, 1);
-    });
-
-    await t.step("should return 400 if stageAssociation is missing", async () => {
-        const listSpy = spy(() => Promise.resolve([]));
-        const mockHandlers = createMockHandlers({ listAvailableDomainOverlays: listSpy });
-
-        const { client: mockUserClient } = createMockSupabaseClient();
-        const { client: mockAdminClient } = createMockSupabaseClient();
-        const req = createJsonRequest('listAvailableDomainOverlays', {}); // Missing payload field
-        const response = await handleRequest(
-          req,
-          mockHandlers,
-          mockUserClient as any,
-          mockAdminClient as any
-        );
-        
-        assertEquals(response.status, 400);
-        const responseBody = await response.json();
-        assertEquals(responseBody.error, "stageAssociation is required.");
-        assertEquals(listSpy.calls.length, 0);
     });
 });
 
