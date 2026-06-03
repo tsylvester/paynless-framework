@@ -4,9 +4,11 @@ Mocks are named as mock[FunctionName] or mock[Object]. Do not add additional sty
 
 The mock file must provide a builder for each element of the function signature, for example deps, params, payload, returns. 
 
+The mock file only provides mocks for SYMBOLS OWNED BY THE INTERFACE THAT IS BEING MOCKED! You NEVER write mocks for imported symbols. THIS INCLUDES TRYING TO WRITE ROWS FOR DATABASE FETCHES! YOU DO NOT ADD DATABASE MOCKS TO THE MOCK FILE FOR AN INTERFACE! THE INTERFACE DOES NOT OWN THE DATABASE! YOU DO NOT ADD MOCKS FOR ANYTHING THAT THE INTERFACE DOES NOT OWN! 
+
 The mock file must EXACTLY MATCH the ACTUAL FUNCTION AND ITS TYPES. 
 
-You must use the ACTUAL NAMES of the existing types and functions, with "mock" prefixed. 
+You must use the ACTUAL NAMES of the existing types and functions, with "mock" prefixed for a function or "build" prefixed for an object constructor. 
 
 You will not invent new types for the mock. You will not invent new shapes for the mock. You will not invent new names for the mock. 
 

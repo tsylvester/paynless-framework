@@ -109,6 +109,17 @@ import type { IIndexingService, IEmbeddingClient } from '../_shared/services/ind
 import type { DialecticServiceResponse, DialecticFeedbackRow, SaveContributionEditFn, SaveContributionEditContext, GetStageDocumentFeedbackDeps, GetAllStageProgressDeps } from './dialectic.interface.ts';
 import type { Database } from '../types_db.ts';
 import { assembleChunks } from "../_shared/utils/assembleChunks/assembleChunks.ts";
+import { computeTemplateStageCounts } from "./computeTemplateStageCounts/computeTemplateStageCounts.provides.ts";
+import { getStageExpectedCounts } from "./getStageExpectedCounts/getStageExpectedCounts.provides.ts";
+import type {
+  GetStageExpectedCountsDeps,
+  GetStageExpectedCountsErrorReturn,
+  GetStageExpectedCountsFn,
+  GetStageExpectedCountsParams,
+  GetStageExpectedCountsPayload,
+  GetStageExpectedCountsResult,
+} from "./getStageExpectedCounts/getStageExpectedCounts.interface.ts";
+import { isGetStageExpectedCountsSuccessReturn } from "./getStageExpectedCounts/getStageExpectedCounts.guard.ts";
 
 console.log("dialectic-service function started");
 
@@ -215,6 +226,7 @@ export interface ActionHandlers {
   submitStageDocumentFeedback: (payload: SubmitStageDocumentFeedbackPayload, dbClient: SupabaseClient, deps: SubmitStageDocumentFeedbackDeps) => Promise<DialecticServiceResponse<DialecticFeedbackRow>>;
   getStageDocumentFeedback: (payload: GetStageDocumentFeedbackPayload, dbClient: SupabaseClient<Database>, deps: GetStageDocumentFeedbackDeps) => Promise<DialecticServiceResponse<GetStageDocumentFeedbackResponse>>;
   getAllStageProgress: (payload: GetAllStageProgressPayload, dbClient: SupabaseClient<Database>, user: User) => Promise<GetAllStageProgressResult>;
+  getStageExpectedCounts: GetStageExpectedCountsFn;
   resumePausedNsfJobs: ResumePausedNsfJobsFn;
   pauseActiveJobs: PauseActiveJobsFn;
   regenerateDocument: RegenerateDocumentFn;
@@ -299,6 +311,7 @@ export async function handleRequest(
         'submitStageDocumentFeedback',
         'getStageDocumentFeedback',
         'getAllStageProgress',
+        'getStageExpectedCounts',
         'resumePausedNsfJobs',
         'pauseActiveJobs',
         'regenerateDocument',
@@ -655,6 +668,26 @@ export async function handleRequest(
           }
           return createSuccessResponse(result.data, result.status || 200, req);
         }
+        case "getStageExpectedCounts": {
+          if (!userForJson) {
+            return createErrorResponse('User not authenticated for getStageExpectedCounts', 401, req, { message: 'User not authenticated', status: 401, code: 'USER_AUTH_FAILED' });
+          }
+          const payload: GetStageExpectedCountsPayload = requestBody.payload;
+          const deps: GetStageExpectedCountsDeps = {
+            dbClient: adminClient as SupabaseClient<Database>,
+            user: userForJson,
+            computeTemplateStageCounts,
+            topologicalSortSteps,
+            computeExpectedCounts,
+          };
+          const params: GetStageExpectedCountsParams = {};
+          const result: GetStageExpectedCountsResult = await handlers.getStageExpectedCounts(deps, params, payload);
+          if (isGetStageExpectedCountsSuccessReturn(result)) {
+            return createSuccessResponse(result.data, result.status, req);
+          }
+          const errorReturn: GetStageExpectedCountsErrorReturn = result;
+          return createErrorResponse(errorReturn.error.message, errorReturn.status, req, errorReturn.error);
+        }
         case "resumePausedNsfJobs": {
           if (!userForJson) {
             return createErrorResponse('User not authenticated for resumePausedNsfJobs', 401, req, { message: 'User not authenticated', status: 401, code: 'USER_AUTH_FAILED' });
@@ -731,6 +764,7 @@ async function handleGetAllStageProgress(
     computeExpectedCounts,
     buildDocumentDescriptors,
     buildJobProgressDtos,
+    computeTemplateStageCounts,
   };
   return getAllStageProgress(deps, { payload });
 }
@@ -762,6 +796,7 @@ export const defaultHandlers: ActionHandlers = {
   submitStageDocumentFeedback,
   getStageDocumentFeedback,
   getAllStageProgress: handleGetAllStageProgress,
+  getStageExpectedCounts,
   resumePausedNsfJobs: handleResumePausedNsfJobs,
   pauseActiveJobs: handlePauseActiveJobs,
   regenerateDocument,

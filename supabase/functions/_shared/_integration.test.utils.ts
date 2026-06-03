@@ -26,7 +26,21 @@ import {
 import { isTokenUsage } from "./utils/type_guards.ts";
 import type { Database } from "../types_db.ts";
 import { getMockAiProviderAdapter } from "./ai_service/ai_provider.mock.ts";
-import type { GenerateContributionsDeps } from "../../functions/dialectic-service/dialectic.interface.ts";
+import type {
+  GenerateContributionsDeps,
+  SelectedModels,
+} from "../../functions/dialectic-service/dialectic.interface.ts";
+import type {
+  CoreSelectModelsForTierResult,
+  TestTierIntent,
+  TestUserWithTierSetup,
+  TierDefinitionRow,
+  ValidateModelTierAccessMissing,
+  ValidateModelTierAccessOk,
+  ValidateModelTierAccessParseResult,
+  ValidateModelTierAccessRow,
+  ValidateModelTierAccessRpcResponse,
+} from "./_integration.test.interface.ts";
 import type { ChatApiRequest } from "./types.ts";
 import { MockFileManagerService } from './services/file_manager.mock.ts';
 import { createClient } from "npm:@supabase/supabase-js";
@@ -383,10 +397,341 @@ export async function coreTeardown() {
   }
 }
 
+function formatTierVerificationFailure(
+  validation: ValidateModelTierAccessRow,
+  modelIds: string[],
+  effectiveTier: TierDefinitionRow,
+): string {
+  const lines: string[] = [
+    "[TestTierSetup] Model tier verification failed.",
+    `  valid: ${validation.valid}`,
+    `  user_tier_level: ${validation.user_tier_level} (harness effective tier: ${effectiveTier.name} level ${effectiveTier.level})`,
+    `  max_models_per_project: ${validation.max_models_per_project}`,
+    `  over_model_limit: ${validation.over_model_limit}`,
+    `  selected_model_count: ${modelIds.length}`,
+    `  disallowed_model_ids: ${JSON.stringify(validation.disallowed_model_ids)}`,
+  ];
+  if (validation.over_model_limit) {
+    lines.push(
+      `  fix: raise tierIntent.minModelsPerProject to at least ${modelIds.length}, or select fewer models.`,
+    );
+  }
+  if (validation.disallowed_model_ids.length > 0) {
+    lines.push(
+      "  fix: select models with min_plan_tier_level <= user tier, or raise tier via tierIntent.",
+    );
+  }
+  return lines.join("\n");
+}
+
+export async function coreFetchTierDefinitions(
+  adminClient: SupabaseClient<Database>,
+): Promise<TierDefinitionRow[]> {
+  const { data, error } = await adminClient
+    .from("tier_definitions")
+    .select("*")
+    .order("level", { ascending: true });
+  if (error) {
+    throw new Error(`[TestTierSetup] Failed to load tier_definitions: ${error.message}`);
+  }
+  if (data === null) {
+    throw new Error("[TestTierSetup] tier_definitions query returned null");
+  }
+  return data;
+}
+
+export function coreResolveTierForIntent(
+  tiers: TierDefinitionRow[],
+  intent: TestTierIntent,
+): TierDefinitionRow {
+  const hasMinModels: boolean = intent.minModelsPerProject !== undefined;
+  const hasMinOutputCap: boolean = intent.minOutputCapTokens !== undefined;
+  const hasTierLevel: boolean = intent.tierLevel !== undefined;
+  const hasTierName: boolean = intent.tierName !== undefined;
+  if (!hasMinModels && !hasMinOutputCap && !hasTierLevel && !hasTierName) {
+    throw new Error(
+      "[TestTierSetup] TestTierIntent requires at least one of: minModelsPerProject, minOutputCapTokens, tierLevel, tierName.",
+    );
+  }
+
+  if (hasTierLevel && intent.tierLevel !== undefined) {
+    const targetLevel: number = intent.tierLevel;
+    for (const tier of tiers) {
+      if (tier.level === targetLevel) {
+        return tier;
+      }
+    }
+    throw new Error(
+      `[TestTierSetup] tierLevel ${targetLevel} not found in tier_definitions.`,
+    );
+  }
+
+  if (hasTierName && intent.tierName !== undefined) {
+    const targetName: string = intent.tierName;
+    for (const tier of tiers) {
+      if (tier.name === targetName) {
+        return tier;
+      }
+    }
+    throw new Error(
+      `[TestTierSetup] tierName "${targetName}" not found in tier_definitions.`,
+    );
+  }
+
+  let candidates: TierDefinitionRow[] = tiers;
+  if (hasMinModels && intent.minModelsPerProject !== undefined) {
+    const minModels: number = intent.minModelsPerProject;
+    const filtered: TierDefinitionRow[] = [];
+    for (const tier of candidates) {
+      if (tier.max_models_per_project === null) {
+        filtered.push(tier);
+        continue;
+      }
+      if (tier.max_models_per_project >= minModels) {
+        filtered.push(tier);
+      }
+    }
+    candidates = filtered;
+  }
+  if (hasMinOutputCap && intent.minOutputCapTokens !== undefined) {
+    const minCap: number = intent.minOutputCapTokens;
+    const filtered: TierDefinitionRow[] = [];
+    for (const tier of candidates) {
+      if (tier.output_cap_tokens === null) {
+        filtered.push(tier);
+        continue;
+      }
+      if (tier.output_cap_tokens >= minCap) {
+        filtered.push(tier);
+      }
+    }
+    candidates = filtered;
+  }
+  if (candidates.length === 0) {
+    const catalogSummary: string = tiers
+      .map((tier) =>
+        `${tier.name}(level=${tier.level},max_models=${tier.max_models_per_project},output_cap=${tier.output_cap_tokens})`
+      )
+      .join("; ");
+    throw new Error(
+      `[TestTierSetup] No tier satisfies intent ${JSON.stringify(intent)}. Catalog: ${catalogSummary}`,
+    );
+  }
+
+  let resolved: TierDefinitionRow = candidates[0];
+  for (const tier of candidates) {
+    if (tier.level < resolved.level) {
+      resolved = tier;
+    }
+  }
+  return resolved;
+}
+
+export async function coreEnsureTestUserTier(
+  userId: string,
+  tier: TierDefinitionRow,
+  scope: "global" | "local",
+): Promise<void> {
+  if (!supabaseAdminClient) {
+    throw new Error("Supabase admin client not initialized.");
+  }
+
+  const { data: existingSubscription, error: selectError } = await supabaseAdminClient
+    .from("user_subscriptions")
+    .select("*")
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (selectError && selectError.code !== "PGRST116") {
+    throw new Error(
+      `[TestTierSetup] Failed to read user_subscriptions for ${userId}: ${selectError.message}`,
+    );
+  }
+  if (existingSubscription === null) {
+    throw new Error(
+      `[TestTierSetup] user_subscriptions row missing for ${userId}; handle_new_user trigger may not have run.`,
+    );
+  }
+
+  registerUndoAction({
+    type: "RESTORE_UPDATED_ROW",
+    tableName: "user_subscriptions",
+    identifier: { user_id: userId },
+    originalRow: existingSubscription,
+    scope,
+  });
+
+  const { error: updateError } = await supabaseAdminClient
+    .from("user_subscriptions")
+    .update({ tier_level: tier.level, updated_at: new Date().toISOString() })
+    .eq("user_id", userId);
+
+  if (updateError) {
+    throw new Error(
+      `[TestTierSetup] Failed to set tier_level=${tier.level} for user ${userId}: ${updateError.message}`,
+    );
+  }
+}
+
+export async function coreFetchEffectiveTierForUser(
+  adminClient: SupabaseClient<Database>,
+  userId: string,
+): Promise<TierDefinitionRow> {
+  const { data: subscription, error: subscriptionError } = await adminClient
+    .from("user_subscriptions")
+    .select("tier_level")
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (subscriptionError && subscriptionError.code !== "PGRST116") {
+    throw new Error(
+      `[TestTierSetup] Failed to read subscription tier for ${userId}: ${subscriptionError.message}`,
+    );
+  }
+  if (subscription === null) {
+    throw new Error(`[TestTierSetup] user_subscriptions missing for ${userId}`);
+  }
+
+  const { data: tierRow, error: tierError } = await adminClient
+    .from("tier_definitions")
+    .select("*")
+    .eq("level", subscription.tier_level)
+    .single();
+
+  if (tierError) {
+    throw new Error(
+      `[TestTierSetup] tier_definitions level ${subscription.tier_level} missing: ${tierError.message}`,
+    );
+  }
+  if (tierRow === null) {
+    throw new Error(
+      `[TestTierSetup] tier_definitions level ${subscription.tier_level} returned null`,
+    );
+  }
+  return tierRow;
+}
+
+export async function coreApplyTestUserTierIntent(
+  adminClient: SupabaseClient<Database>,
+  userId: string,
+  tierIntent: TestTierIntent,
+  scope: "global" | "local",
+): Promise<TierDefinitionRow> {
+  const tiers: TierDefinitionRow[] = await coreFetchTierDefinitions(adminClient);
+  const resolved: TierDefinitionRow = coreResolveTierForIntent(tiers, tierIntent);
+  await coreEnsureTestUserTier(userId, resolved, scope);
+  return resolved;
+}
+
+function parseValidateModelTierAccessRpcData(
+  data: ValidateModelTierAccessRpcResponse,
+): ValidateModelTierAccessParseResult {
+  if (data === null) {
+    const missing: ValidateModelTierAccessMissing = {
+      kind: "missing",
+      reason: "validate_model_tier_access returned null",
+    };
+    return missing;
+  }
+  if (data.length === 0) {
+    const missing: ValidateModelTierAccessMissing = {
+      kind: "missing",
+      reason: "validate_model_tier_access returned empty array",
+    };
+    return missing;
+  }
+  const row: ValidateModelTierAccessRow = data[0];
+  const ok: ValidateModelTierAccessOk = { kind: "ok", row };
+  return ok;
+}
+
+export async function coreVerifyModelTierAccess(
+  userClient: SupabaseClient<Database>,
+  modelIds: string[],
+  effectiveTier: TierDefinitionRow,
+): Promise<void> {
+  const { data, error } = await userClient.rpc("validate_model_tier_access", {
+    p_model_ids: modelIds,
+  });
+
+  if (error) {
+    throw new Error(
+      `[TestTierSetup] validate_model_tier_access RPC failed: ${error.message}`,
+    );
+  }
+
+  const response: ValidateModelTierAccessRpcResponse = data;
+  const parsed: ValidateModelTierAccessParseResult = parseValidateModelTierAccessRpcData(response);
+  if (parsed.kind === "missing") {
+    throw new Error(`[TestTierSetup] ${parsed.reason}`);
+  }
+
+  const validation: ValidateModelTierAccessRow = parsed.row;
+  if (validation.valid) {
+    return;
+  }
+
+  throw new Error(formatTierVerificationFailure(validation, modelIds, effectiveTier));
+}
+
+export async function coreSelectModelsForTier(
+  adminClient: SupabaseClient<Database>,
+  userClient: SupabaseClient<Database>,
+  tier: TierDefinitionRow,
+  count: number,
+): Promise<CoreSelectModelsForTierResult> {
+  if (count < 1) {
+    throw new Error(`[TestTierSetup] coreSelectModelsForTier count must be >= 1, got ${count}`);
+  }
+  if (tier.max_models_per_project !== null && count > tier.max_models_per_project) {
+    throw new Error(
+      `[TestTierSetup] Requested ${count} models but tier "${tier.name}" (level ${tier.level}) allows max_models_per_project=${tier.max_models_per_project}. Raise tierIntent before selecting models.`,
+    );
+  }
+
+  const { data: modelRows, error: modelsError } = await adminClient
+    .from("ai_providers")
+    .select("id, name")
+    .eq("is_active", true)
+    .eq("is_enabled", true)
+    .eq("is_default_embedding", false)
+    .lte("min_plan_tier_level", tier.level)
+    .limit(count);
+
+  if (modelsError) {
+    throw new Error(`[TestTierSetup] ai_providers query failed: ${modelsError.message}`);
+  }
+  if (modelRows === null) {
+    throw new Error("[TestTierSetup] ai_providers query returned null");
+  }
+  if (modelRows.length < count) {
+    throw new Error(
+      `[TestTierSetup] Need ${count} tier-eligible models (min_plan_tier_level<=${tier.level}); found ${modelRows.length}.`,
+    );
+  }
+
+  const selectedModels: SelectedModels[] = [];
+  const modelIds: string[] = [];
+  for (const modelRow of modelRows) {
+    const selectedModel: SelectedModels = {
+      id: modelRow.id,
+      displayName: modelRow.name,
+    };
+    selectedModels.push(selectedModel);
+    modelIds.push(modelRow.id);
+  }
+
+  await coreVerifyModelTierAccess(userClient, modelIds, tier);
+
+  const result: CoreSelectModelsForTierResult = { selectedModels, modelIds };
+  return result;
+}
+
 export async function coreCreateAndSetupTestUser(
   profileProps?: Partial<{ role: "user" | "admin"; first_name: string }>,
-  scope: 'global' | 'local' = 'local'
-): Promise<{ userId: string; userClient: SupabaseClient<Database>; jwt: string }> {
+  scope: 'global' | 'local' = 'local',
+  tierIntent?: TestTierIntent,
+): Promise<TestUserWithTierSetup> {
   if (!currentTestDeps || !supabaseAdminClient) {
     throw new Error(
       "Test dependencies or admin client not initialized. Call initializeTestDeps() first."
@@ -470,7 +815,20 @@ export async function coreCreateAndSetupTestUser(
     },
   });
 
-  return { userId, userClient, jwt };
+  let effectiveTier: TierDefinitionRow;
+  if (tierIntent !== undefined) {
+    effectiveTier = await coreApplyTestUserTierIntent(
+      supabaseAdminClient,
+      userId,
+      tierIntent,
+      scope,
+    );
+  } else {
+    effectiveTier = await coreFetchEffectiveTierForUser(supabaseAdminClient, userId);
+  }
+
+  const setup: TestUserWithTierSetup = { userId, userClient, jwt, effectiveTier };
+  return setup;
 }
 
 export async function coreGenerateTestUserJwt(userId: string, role: string = 'authenticated', app_metadata?: Record<string, unknown>): Promise<string> {
@@ -736,7 +1094,8 @@ export interface TestSetupConfig {
    * Optional: Specifies the initial token balance for the primary test user's default wallet.
    * Defaults to 10000 if not provided. See `coreEnsureTestUserAndWallet`.
    */
-  initialWalletBalance?: number; 
+  initialWalletBalance?: number;
+  tierIntent?: TestTierIntent;
 }
 
 // ADDED: Interface for returning info about processed resources
@@ -1358,6 +1717,7 @@ export async function coreInitializeTestStep(
     resources: configResources = [],
     userProfile: configUserProfile,
     initialWalletBalance: configInitialWalletBalance,
+    tierIntent: configTierIntent,
   } = config;
 
   if (!supabaseAdminClient) {
@@ -1380,6 +1740,15 @@ export async function coreInitializeTestStep(
 
   // Now ensure the wallet exists for this user.
   await coreEnsureTestUserAndWallet(primaryUserId, configInitialWalletBalance, executionScope);
+
+  if (configTierIntent !== undefined) {
+    await coreApplyTestUserTierIntent(
+      supabaseAdminClient,
+      primaryUserId,
+      configTierIntent,
+      executionScope,
+    );
+  }
 
   const processedResources: ProcessedResourceInfo[] = [];
   const exportedIds = new Map<string, string>();

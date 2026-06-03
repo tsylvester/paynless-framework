@@ -115,6 +115,18 @@ export function computeExpectedCounts(
 				cardinality.set(step.id, val);
 				break;
 			}
+			case "per_source_group": {
+				const ctx = params.priorStageContext;
+				if (!ctx) {
+					throw new Error(
+						`per_source_group step "${step.step_key}" requires priorStageContext`,
+					);
+				}
+				const val = ctx.lineageCount;
+				expected.set(step.step_key, val);
+				cardinality.set(step.id, val);
+				break;
+			}
 			default: {
 				throw new Error(
 					`Unsupported granularity_strategy "${strategy}" for step "${step.step_key}"`,

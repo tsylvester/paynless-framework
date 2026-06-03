@@ -1,4 +1,4 @@
-Read @.cursor/rules/rules.md then read this node and the files it references. 
+Read ..cursor/rules/rules.mdc then read this node and the files it references. 
 
 First, output the initial description under # Rules and explain why they're important to how the agent performs work, and why the agent must actively, intentionally comply with them every single turn no matter what. 
 

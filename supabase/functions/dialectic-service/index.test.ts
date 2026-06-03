@@ -3,11 +3,12 @@ import {
   assertExists,
   assert,
 } from "https://deno.land/std@0.208.0/assert/mod.ts";
-import { spy, type Spy } from "https://deno.land/std@0.208.0/testing/mock.ts";
+import { spy, stub, type Spy } from "https://deno.land/std@0.208.0/testing/mock.ts";
 import {
   isValidDomainDefaultFn,
   createSignedUrlDefaultFn,
   handleRequest,
+  defaultHandlers,
   type ActionHandlers,
 } from "./index.ts";
 import type { SupabaseClient, User } from 'npm:@supabase/supabase-js';
@@ -31,6 +32,8 @@ import {
   DialecticServiceError,
   GetStageDocumentFeedbackPayload,
   GetStageDocumentFeedbackResponse,
+  GetAllStageProgressDeps,
+  GetAllStageProgressParams,
   GetAllStageProgressPayload,
   GetAllStageProgressResult,
   JobProgressDto,
@@ -62,6 +65,20 @@ import { isRecord } from '../_shared/utils/type-guards/type_guards.common.ts';
 import { CloneProjectResult } from "./cloneProject.ts";
 import { Database, Json } from "../types_db.ts";
 import { FileType, type IFileManager } from '../_shared/types/file_manager.types.ts';
+import type {
+  GetStageExpectedCountsPayload,
+  GetStageExpectedCountsResult,
+  GetStageExpectedCountsSuccessReturn,
+} from "./getStageExpectedCounts/getStageExpectedCounts.interface.ts";
+import {
+  buildGetStageExpectedCountsPayload,
+  buildGetStageExpectedCountsSuccessReturn,
+} from "./getStageExpectedCounts/getStageExpectedCounts.mock.ts";
+import { computeTemplateStageCounts } from "./computeTemplateStageCounts/computeTemplateStageCounts.provides.ts";
+import {
+  createMockGetAllStageProgressResult,
+  MockGetAllStageProgressConfig,
+} from "./getAllStageProgress.mock.ts";
 
 function isUser(u: unknown): u is User {
   return isRecord(u) && typeof u.id === 'string';
@@ -231,8 +248,17 @@ const createMockHandlers = (overrides?: Partial<ActionHandlers> & {
         submitStageDocumentFeedback: overrides?.submitStageDocumentFeedback || (() => Promise.resolve({ data: mockFeedbackRow })),
         getStageDocumentFeedback: overrides?.getStageDocumentFeedback || (() => Promise.resolve({ data: [] })),
         getAllStageProgress: overrides?.getAllStageProgress || (() => Promise.resolve({ data: { dagProgress: { completedStages: 0, totalStages: 0 }, stages: [] }, status: 200 })),
+        getStageExpectedCounts: overrides?.getStageExpectedCounts || (() => {
+          const result: GetStageExpectedCountsResult = buildGetStageExpectedCountsSuccessReturn();
+          return Promise.resolve(result);
+        }),
         resumePausedNsfJobs: overrides?.resumePausedNsfJobs || ((_p: ResumePausedNsfJobsPayload, _params: ResumePausedNsfJobsParams, _deps: ResumePausedNsfJobsDeps): Promise<ResumePausedNsfJobsResult> => Promise.resolve({ data: { resumedCount: 0 }, status: 200 })),
-        pauseActiveJobs: overrides?.pauseActiveJobs || ((_p: PauseActiveJobsPayload, _deps: PauseActiveJobsDeps, _adminClient: SupabaseClient, _u: User | null): Promise<PauseActiveJobsResult> => Promise.resolve({ data: { pausedCount: 0 }, status: 200 })),
+        pauseActiveJobs: overrides?.pauseActiveJobs || ((_p: PauseActiveJobsPayload, _deps: PauseActiveJobsDeps, _adminClient: SupabaseClient, _u: User): Promise<PauseActiveJobsResult> => {
+            if (!_u) {
+                throw new Error("mockUser is required");
+            }
+            return Promise.resolve({ data: { pausedCount: 0 }, status: 200 });
+        }),
         regenerateDocument: overrides?.regenerateDocument || (() => Promise.resolve({ data: { jobIds: [] }, status: 200 })),
         listModelCatalog: overrides?.listModelCatalog || (() => Promise.resolve({ data: [] })),
         ...overrides,
@@ -2046,6 +2072,7 @@ withSupabaseEnv("handleRequest - getAllStageProgress", async (t) => {
             documents: [],
             jobs: [jobDto],
             edges: [{ from_step_id: "step-1", to_step_id: "step-2" }],
+            expectedCount: 1,
         };
         const getAllStageProgressSpy = spy(() => Promise.resolve({
             data: { dagProgress: { completedStages: 0, totalStages: 1 }, stages: [stageWithJobsAndEdges] },
@@ -2219,8 +2246,11 @@ withSupabaseEnv("handleRequest - pauseActiveJobs", async (t) => {
     });
 
     await t.step("should pass correct payload, deps, adminClient, and user to pauseActiveJobs handler", async () => {
-        const pauseSpy = spy((_p: PauseActiveJobsPayload, _deps: PauseActiveJobsDeps, _adminClient: SupabaseClient, _u: User | null): Promise<PauseActiveJobsResult> =>
+        const pauseSpy = spy((_p: PauseActiveJobsPayload, _deps: PauseActiveJobsDeps, _adminClient: SupabaseClient, _u: User): Promise<PauseActiveJobsResult> =>
             Promise.resolve({ data: { pausedCount: 0 }, status: 200 }));
+        if (!mockUser) {
+            throw new Error("mockUser is required");
+        }
         const mockHandlers = createMockHandlers({ pauseActiveJobs: pauseSpy });
 
         const mockToken = "mock-jwt";
@@ -2591,4 +2621,97 @@ withSupabaseEnv("handleRequest - updateViewingStage", async (t) => {
     assertEquals(body.error, "User not authenticated");
     assertEquals(updateSpy.calls.length, 0);
   });
+});
+
+withSupabaseEnv("handleRequest - getStageExpectedCounts", async (t) => {
+  const payload: GetStageExpectedCountsPayload = buildGetStageExpectedCountsPayload();
+  const successReturn: GetStageExpectedCountsSuccessReturn = buildGetStageExpectedCountsSuccessReturn();
+
+  await t.step("should route action getStageExpectedCounts to handler and return 200 on success", async () => {
+    const getStageExpectedCountsSpy = spy(() => Promise.resolve(successReturn));
+    const mockHandlers = createMockHandlers({ getStageExpectedCounts: getStageExpectedCountsSpy });
+
+    const mockToken = "mock-jwt";
+    const { client: mockUserClient } = createMockSupabaseClient("test-user-id", {
+      getUserResult: { data: { user: mockUser }, error: null },
+    });
+    const { client: mockAdminClient } = createMockSupabaseClient();
+
+    const req = createJsonRequest("getStageExpectedCounts", payload, mockToken);
+    const response = await handleRequest(
+      req,
+      mockHandlers,
+      mockUserClient as unknown as SupabaseClient<Database>,
+      mockAdminClient as unknown as SupabaseClient<Database>,
+    );
+
+    assertEquals(response.status, 200);
+    const body = await response.json();
+    assertEquals(body.stages, successReturn.data.stages);
+    assertEquals(body.totalStages, successReturn.data.totalStages);
+    assertEquals(getStageExpectedCountsSpy.calls.length, 1);
+  });
+
+  await t.step("should return 401 if not authenticated", async () => {
+    const getStageExpectedCountsSpy = spy(() => Promise.resolve(successReturn));
+    const mockHandlers = createMockHandlers({ getStageExpectedCounts: getStageExpectedCountsSpy });
+
+    const { client: mockUserClient } = createMockSupabaseClient("test-user-id", {
+      getUserResult: { data: { user: null }, error: null },
+    });
+    const { client: mockAdminClient } = createMockSupabaseClient();
+
+    const req = createJsonRequest("getStageExpectedCounts", payload);
+    const response = await handleRequest(
+      req,
+      mockHandlers,
+      mockUserClient as unknown as SupabaseClient<Database>,
+      mockAdminClient as unknown as SupabaseClient<Database>,
+    );
+
+    assertEquals(response.status, 401);
+    assertEquals(getStageExpectedCountsSpy.calls.length, 0);
+  });
+});
+
+withSupabaseEnv("defaultHandlers.getStageExpectedCounts is defined", async () => {
+  assertEquals(typeof defaultHandlers.getStageExpectedCounts, "function");
+});
+
+withSupabaseEnv("defaultHandlers.getAllStageProgress injects computeTemplateStageCounts", async () => {
+  const getAllStageProgressModule = await import("./getAllStageProgress.ts");
+  const emptyProgressConfig: MockGetAllStageProgressConfig = {
+    completedStages: 0,
+    totalStages: 0,
+    stages: [],
+  };
+  const getAllStageProgressStub = stub(
+    getAllStageProgressModule,
+    "getAllStageProgress",
+    (deps: GetAllStageProgressDeps, _params: GetAllStageProgressParams): Promise<GetAllStageProgressResult> => {
+      assertEquals(deps.computeTemplateStageCounts, computeTemplateStageCounts);
+      const result: GetAllStageProgressResult = createMockGetAllStageProgressResult(emptyProgressConfig);
+      return Promise.resolve(result);
+    },
+  );
+
+  try {
+    const payload: GetAllStageProgressPayload = {
+      sessionId: "sess-123",
+      iterationNumber: 1,
+      userId: mockUser.id,
+      projectId: "proj-123",
+    };
+    const { client: mockAdminClient } = createMockSupabaseClient();
+
+    await defaultHandlers.getAllStageProgress(
+      payload,
+      mockAdminClient as unknown as SupabaseClient<Database>,
+      mockUser,
+    );
+
+    assertEquals(getAllStageProgressStub.calls.length, 1);
+  } finally {
+    getAllStageProgressStub.restore();
+  }
 });

@@ -8,7 +8,7 @@ YOU MUST IMPORT FUNCTIONS FROM THE IMPLEMENTATION FILE. Do not complain that the
 
 THIS IS A TDD RED TEST YOU WILL HAVE LINTER ERRORS YOU JUST DO EXACTLY WHAT YOU"RE TOLD! 
 
-For any factories or other helpers, place them in the mock file.
+For any factories or other helpers, place them in the mock file. If you need to touch the mock file, you MUST obey ./mock.md and ../rules/rules.mdc
 
 DO NOT DUPLICATE FUNCTIONALITY! CONSUME WHAT EXISTS BEFORE BUILDING SOMETHING NEW! 
 

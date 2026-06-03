@@ -52,6 +52,8 @@ import type {
 	IRenderJobContext,
 } from "../dialectic-worker/createJobContext/JobContext.interface.ts";
 import type { Database, Json, Tables } from "../types_db.ts";
+import type { ComputeTemplateStageCountsFn } from "./computeTemplateStageCounts/computeTemplateStageCounts.interface.ts";
+import type { GetStageExpectedCountsPayload } from "./getStageExpectedCounts/getStageExpectedCounts.interface.ts";
 
 export type AiProvidersRow = Database["public"]["Tables"]["ai_providers"]["Row"];
 
@@ -499,6 +501,11 @@ type GetAllStageProgressAction = {
 	payload: GetAllStageProgressPayload;
 };
 
+type GetStageExpectedCountsAction = {
+	action: "getStageExpectedCounts";
+	payload: GetStageExpectedCountsPayload;
+};
+
 export interface ResumePausedNsfJobsPayload {
 	sessionId: string;
 	stageSlug: string;
@@ -556,7 +563,7 @@ export type PauseActiveJobsFn = (
 	payload: PauseActiveJobsPayload,
 	deps: PauseActiveJobsDeps,
 	adminClient: SupabaseClient,
-	user: User | null,
+	user: User,
 ) => Promise<PauseActiveJobsResult>;
 
 type PauseActiveJobsAction = {
@@ -903,6 +910,7 @@ export type DialecticServiceRequest =
 	| GetStageRecipeAction
 	| ListStageDocumentsAction
 	| GetAllStageProgressAction
+	| GetStageExpectedCountsAction
 	| ResumePausedNsfJobsAction
 	| PauseActiveJobsAction
 	| RegenerateDocumentAction
@@ -1004,6 +1012,7 @@ export interface StageProgressEntry {
 	status: UnifiedStageStatus;
 	modelCount: number | null;
 	progress: { completedSteps: number; totalSteps: number; failedSteps: number };
+	expectedCount: number;
 	steps: StepProgressDto[];
 	documents: StageDocumentDescriptorDto[];
 	jobs: JobProgressDto[];
@@ -1038,6 +1047,7 @@ export interface GetAllStageProgressDeps {
 		deps: BuildJobProgressDtosDeps,
 		params: BuildJobProgressDtosParams,
 	) => Map<string, JobProgressDto[]>;
+	computeTemplateStageCounts: ComputeTemplateStageCountsFn;
 }
 
 export interface GetAllStageProgressParams {

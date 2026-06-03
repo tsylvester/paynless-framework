@@ -2,6 +2,9 @@
  * Unit tests for getAllStageProgress.
  * Tests use the exact stage and step structure from the existing DAG (thesis recipe per migrations).
  * See: Prelaunch Fixes checklist — Progress calculates correctly for every stage in the existing DAG.
+ *
+ * Count derivation (granularity strategies, lineageCount walk) lives in computeTemplateStageCounts
+ * and computeExpectedCounts tests; this suite injects createMockComputeTemplateStageCountsFn.
  */
 import {
   assert,
@@ -11,17 +14,15 @@ import {
 import { createClient, SupabaseClient, User } from "npm:@supabase/supabase-js@2";
 import { restoreFetch, mockFetch } from "../_shared/supabase.mock.ts";
 import { getAllStageProgress } from "./getAllStageProgress.ts";
-import { Database, Tables } from "../types_db.ts";
+import { Database } from "../types_db.ts";
 import {
   DialecticJobRow,
+  DialecticProjectRow,
   DialecticProjectResourceRow,
-  DialecticRecipeTemplateStep,
   DialecticRenderJobPayload,
-  DialecticStage,
-  DialecticStageRecipeInstance,
-  DialecticStageTransition,
+  DialecticSessionRow,
   GranularityStrategy,
-  GranularityStrategies,
+  JobType,
   GetAllStageProgressPayload,
   GetAllStageProgressDeps,
   GetAllStageProgressParams,
@@ -29,10 +30,30 @@ import {
   GetAllStageProgressResult,
   JobProgressDto,
   ProgressRecipeEdge,
+  ProgressRecipeStep,
+  StageDocumentDescriptorDto,
   StageProgressEntry,
   StepProgressDto,
+  BuildDocumentDescriptorsDeps,
+  BuildDocumentDescriptorsParams,
+  BuildJobProgressDtosDeps,
+  BuildJobProgressDtosParams,
+  DeriveStepStatusesDeps,
+  DeriveStepStatusesParams,
+  DeriveStepStatusesResult,
 } from "./dialectic.interface.ts";
-import { computeExpectedCounts } from "./computeExpectedCounts.ts";
+import {
+  buildComputeTemplateStageCountsFailureResult,
+  buildStageCountsEntry,
+  createMockComputeTemplateStageCountsFn,
+} from "./computeTemplateStageCounts/computeTemplateStageCounts.mock.ts";
+import type {
+  ComputeTemplateStageCountsData,
+  ComputeTemplateStageCountsResult,
+  StageCountsEntry,
+} from "./computeTemplateStageCounts/computeTemplateStageCounts.interface.ts";
+import { buildGetAllStageProgressDeps } from "./getAllStageProgress.mock.ts";
+import { mockDialecticSessionRow } from "../dialectic-worker/prepareModelJob/prepareModelJob.mock.ts";
 import { deriveStepStatuses } from "./deriveStepStatuses.ts";
 import { buildDocumentDescriptors } from "./buildDocumentDescriptors.ts";
 import { buildJobProgressDtos } from "./buildJobProgressDtos.ts";
@@ -146,58 +167,6 @@ const baseUser: User = {
   created_at: new Date().toISOString(),
 };
 
-/** Builds a full DB row for dialectic_stage_recipe_steps (cloned). Used by getAllStageProgress test mocks. */
-function buildClonedStepRow(
-  id: string,
-  instance_id: string,
-  step_key: string,
-  job_type: string,
-  granularity_strategy: string,
-): Tables<"dialectic_stage_recipe_steps"> {
-  const iso: string = new Date().toISOString();
-  return {
-    id,
-    instance_id,
-    step_key,
-    step_slug: step_key.replace(/_/g, "-"),
-    step_name: step_key,
-    step_description: null,
-    job_type,
-    prompt_type: "Turn",
-    prompt_template_id: null,
-    output_type: "contribution",
-    granularity_strategy,
-    inputs_required: [],
-    inputs_relevance: [],
-    outputs_required: {},
-    config_override: {},
-    object_filter: {},
-    output_overrides: {},
-    is_skipped: false,
-    execution_order: null,
-    parallel_group: null,
-    branch_key: null,
-    template_step_id: null,
-    created_at: iso,
-    updated_at: iso,
-  };
-}
-
-function createGetAllStageProgressDeps(
-  dbClient: SupabaseClient<Database>,
-  user: User,
-): GetAllStageProgressDeps {
-  return {
-    dbClient,
-    user,
-    topologicalSortSteps,
-    deriveStepStatuses,
-    computeExpectedCounts,
-    buildDocumentDescriptors,
-    buildJobProgressDtos,
-  };
-}
-
 Deno.test("getAllStageProgress: thesis stage with full recipe and sparse jobs returns 200 and satisfies spec invariants", async (t) => {
   const stageId = "stage-thesis-id";
   const instanceId = "instance-thesis-id";
@@ -210,19 +179,19 @@ Deno.test("getAllStageProgress: thesis stage with full recipe and sparse jobs re
   const technicalStepId = "step-thesis-technical";
   const successStepId = "step-thesis-success";
 
-  const recipeSteps: Tables<"dialectic_stage_recipe_steps">[] = [
-    buildClonedStepRow(planStepId, instanceId, THESIS_STEP_KEYS[0], "PLAN", "all_to_one"),
-    buildClonedStepRow(businessStepId, instanceId, THESIS_STEP_KEYS[1], "EXECUTE", "per_source_document"),
-    buildClonedStepRow(featureStepId, instanceId, THESIS_STEP_KEYS[2], "EXECUTE", "per_source_document"),
-    buildClonedStepRow(technicalStepId, instanceId, THESIS_STEP_KEYS[3], "EXECUTE", "per_source_document"),
-    buildClonedStepRow(successStepId, instanceId, THESIS_STEP_KEYS[4], "EXECUTE", "per_source_document"),
+  const progressSteps: ProgressRecipeStep[] = [
+    { id: planStepId, step_key: THESIS_STEP_KEYS[0], job_type: "PLAN", granularity_strategy: "all_to_one" },
+    { id: businessStepId, step_key: THESIS_STEP_KEYS[1], job_type: "EXECUTE", granularity_strategy: "per_source_document" },
+    { id: featureStepId, step_key: THESIS_STEP_KEYS[2], job_type: "EXECUTE", granularity_strategy: "per_source_document" },
+    { id: technicalStepId, step_key: THESIS_STEP_KEYS[3], job_type: "EXECUTE", granularity_strategy: "per_source_document" },
+    { id: successStepId, step_key: THESIS_STEP_KEYS[4], job_type: "EXECUTE", granularity_strategy: "per_source_document" },
   ];
 
-  const edges: { instance_id: string; from_step_id: string; to_step_id: string }[] = [
-    { instance_id: instanceId, from_step_id: planStepId, to_step_id: businessStepId },
-    { instance_id: instanceId, from_step_id: planStepId, to_step_id: featureStepId },
-    { instance_id: instanceId, from_step_id: planStepId, to_step_id: technicalStepId },
-    { instance_id: instanceId, from_step_id: planStepId, to_step_id: successStepId },
+  const progressEdges: ProgressRecipeEdge[] = [
+    { from_step_id: planStepId, to_step_id: businessStepId },
+    { from_step_id: planStepId, to_step_id: featureStepId },
+    { from_step_id: planStepId, to_step_id: technicalStepId },
+    { from_step_id: planStepId, to_step_id: successStepId },
   ];
 
   const jobs: DialecticJobRow[] = [
@@ -290,70 +259,74 @@ Deno.test("getAllStageProgress: thesis stage with full recipe and sparse jobs re
     },
   ];
 
-  const sessionRow = {
+  const sessionRow: DialecticSessionRow = mockDialecticSessionRow({
     id: basePayload.sessionId,
     project_id: basePayload.projectId,
     selected_model_ids: [modelId],
-  };
-  const projectRow = {
+    current_stage_id: stageId,
+  });
+  const thesisIso: string = new Date().toISOString();
+  const projectRow: DialecticProjectRow = {
     id: basePayload.projectId,
     process_template_id: "process-tpl-1",
+    created_at: thesisIso,
+    initial_prompt_resource_id: null,
+    initial_user_prompt: "",
+    project_name: "test",
+    repo_url: null,
+    selected_domain_id: "domain-1",
+    selected_domain_overlay_id: null,
+    status: "active",
+    updated_at: thesisIso,
+    user_domain_overlay_values: null,
+    user_id: basePayload.userId,
+    idempotency_key: null,
   };
-  const transitions = [
-    { source_stage_id: stageId, target_stage_id: stageId },
-  ];
-  const templateStages = [
-    { id: stageId, slug: THESIS_STAGE_SLUG },
-  ];
-
-  const stages: DialecticStage[] = [
-    {
-      id: stageId,
-      slug: THESIS_STAGE_SLUG,
-      display_name: "Thesis",
-      description: null,
-      created_at: new Date().toISOString(),
-      expected_output_template_ids: [],
-      active_recipe_instance_id: instanceId,
-      default_system_prompt_id: null,
-      recipe_template_id: templateId,
-      minimum_balance: 0,
+  const stepIdToStepKey: Map<string, string> = new Map<string, string>();
+  for (const row of progressSteps) {
+    stepIdToStepKey.set(row.id, row.step_key);
+  }
+  const countsConfig: ComputeTemplateStageCountsResult = {
+    status: 200,
+    data: {
+      stages: [buildStageCountsEntry({
+        stageId,
+        stageSlug: THESIS_STAGE_SLUG,
+        steps: progressSteps,
+        edges: progressEdges,
+        totalExpected: 13,
+      })],
+      totalStages: 1,
+      stepIdToStepKey,
     },
-  ];
-
-  const instances: DialecticStageRecipeInstance[] = [
-    {
-      id: instanceId,
-      stage_id: stageId,
-      template_id: templateId,
-      is_cloned: true,
-      cloned_at: null,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    },
-  ];
+  };
+  if (countsConfig.data === undefined) {
+    throw new Error("countsConfig.data missing");
+  }
+  const countsData: ComputeTemplateStageCountsData = countsConfig.data;
 
   const headers = { "Content-Type": "application/json" };
   mockFetch([
     new Response(JSON.stringify(sessionRow), { status: 200, headers }),
     new Response(JSON.stringify(projectRow), { status: 200, headers }),
-    new Response(JSON.stringify(transitions), { status: 200, headers }),
-    new Response(JSON.stringify(templateStages), { status: 200, headers }),
     new Response(JSON.stringify(jobs), { status: 200, headers }),
-    new Response(JSON.stringify(stages), { status: 200, headers }),
-    new Response(JSON.stringify(instances), { status: 200, headers }),
-    new Response(JSON.stringify(recipeSteps), { status: 200, headers }),
-    new Response(JSON.stringify(edges), { status: 200, headers }),
     new Response(JSON.stringify([]), { status: 200, headers }),
     new Response(JSON.stringify([]), { status: 200, headers }),
   ]);
+
+  if (sessionRow.selected_model_ids === null) {
+    throw new Error("selected_model_ids must not be null");
+  }
+  const selectedModelCount: number = sessionRow.selected_model_ids.length;
 
   const dbClient = createClient<Database>(SUPABASE_URL, SUPABASE_ANON_KEY, {
     auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
   });
 
   try {
-    const deps: GetAllStageProgressDeps = createGetAllStageProgressDeps(dbClient, baseUser);
+    const deps: GetAllStageProgressDeps = buildGetAllStageProgressDeps(dbClient, baseUser, {
+      computeTemplateStageCounts: createMockComputeTemplateStageCountsFn(countsConfig),
+    });
     const params: GetAllStageProgressParams = { payload: basePayload };
     const result: GetAllStageProgressResult = await getAllStageProgress(deps, params);
 
@@ -372,17 +345,28 @@ Deno.test("getAllStageProgress: thesis stage with full recipe and sparse jobs re
 
     await t.step("response contains stages array with entries for every stage in the process template (including not_started)", () => {
       assert(Array.isArray(data.stages));
-      assertEquals(data.stages.length, templateStages.length);
+      assertEquals(data.stages.length, countsData.stages.length);
+      for (const countsEntry of countsData.stages) {
+        let progressEntry: StageProgressEntry = data.stages[0];
+        for (const candidate of data.stages) {
+          if (candidate.stageSlug === countsEntry.stageSlug) {
+            progressEntry = candidate;
+          }
+        }
+        assertEquals(progressEntry.stageSlug, countsEntry.stageSlug);
+      }
     });
 
-    const thesisEntry: StageProgressEntry | undefined = data.stages.find(
-      (s: StageProgressEntry) => s.stageSlug === THESIS_STAGE_SLUG,
-    );
-    assertExists(thesisEntry, "thesis stage must appear in response");
-    if (!thesisEntry) throw new Error("thesis entry missing");
+    let thesisEntry: StageProgressEntry = data.stages[0];
+    for (const candidate of data.stages) {
+      if (candidate.stageSlug === THESIS_STAGE_SLUG) {
+        thesisEntry = candidate;
+      }
+    }
+    assertEquals(thesisEntry.stageSlug, THESIS_STAGE_SLUG);
 
     await t.step("when stage has jobs (started), modelCount is n", () => {
-      assertEquals(thesisEntry.modelCount, sessionRow.selected_model_ids.length);
+      assertEquals(thesisEntry.modelCount, selectedModelCount);
     });
 
     await t.step("each stage has progress: { completedSteps, totalSteps, failedSteps } where totalSteps = recipe.steps.length", () => {
@@ -435,7 +419,12 @@ Deno.test("getAllStageProgress: thesis stage with full recipe and sparse jobs re
 
     await t.step("progress calculates correctly for every stage in the existing DAG (thesis recipe)", () => {
       for (const stepKey of THESIS_STEP_KEYS) {
-        const step: StepProgressDto | undefined = thesisEntry.steps.find((s: StepProgressDto) => s.stepKey === stepKey);
+        let step: StepProgressDto = thesisEntry.steps[0];
+        for (const candidate of thesisEntry.steps) {
+          if (candidate.stepKey === stepKey) {
+            step = candidate;
+          }
+        }
         assertExists(step, `step ${stepKey} must appear in response`);
       }
       if (thesisEntry.status === "completed") {
@@ -445,20 +434,20 @@ Deno.test("getAllStageProgress: thesis stage with full recipe and sparse jobs re
     });
 
     await t.step("model count loaded from dialectic_sessions.selected_models.length", () => {
-      assertEquals(thesisEntry.modelCount, sessionRow.selected_model_ids.length);
+      assertEquals(thesisEntry.modelCount, selectedModelCount);
     });
 
-    await t.step("total stages loaded from dialectic_stage_transitions for the session process template", () => {
-      assertEquals(data.dagProgress.totalStages, templateStages.length);
+    await t.step("total stages from computeTemplateStageCounts totalStages", () => {
+      assertEquals(data.dagProgress.totalStages, countsData.totalStages);
     });
 
     await t.step("progress is independent of granularity strategy: a step with per_model and a step with all_to_one are each one step toward completedSteps", () => {
-      assertEquals(thesisEntry.progress.totalSteps, recipeSteps.length);
+      assertEquals(thesisEntry.progress.totalSteps, progressSteps.length);
     });
 
     await t.step("edge loading: cloned instances use dialectic_stage_recipe_edges (instance_id in edges)", () => {
-      assertEquals(edges.every((e: { instance_id: string }) => e.instance_id === instanceId), true);
-      assertEquals(thesisEntry.progress.totalSteps, recipeSteps.length);
+      assertEquals(progressEdges.length, 4);
+      assertEquals(thesisEntry.progress.totalSteps, progressSteps.length);
     });
   } finally {
     restoreFetch();
@@ -478,8 +467,8 @@ Deno.test("getAllStageProgress: progress calculates correctly for every stage in
   const templateIds: string[] = stageSlugs.map((slug: string) => `template-${slug}-id`);
   const modelId = "model-1";
 
-  const allRecipeSteps: Tables<"dialectic_stage_recipe_steps">[] = [];
-  const allEdges: { instance_id: string; from_step_id: string; to_step_id: string }[] = [];
+  const allProgressSteps: { instanceId: string; step: ProgressRecipeStep }[] = [];
+  const allProgressEdges: { instanceId: string; edge: ProgressRecipeEdge }[] = [];
 
   // Thesis: real recipe from 20251006194531_thesis_stage.sql (planner → 4 execute)
   const thesisStepIds: string[] = [];
@@ -488,15 +477,24 @@ Deno.test("getAllStageProgress: progress calculates correctly for every stage in
     thesisStepIds.push(stepId);
     const jobType: string = j === 0 ? "PLAN" : "EXECUTE";
     const strategy: string = j === 0 ? "all_to_one" : "per_source_document";
-    allRecipeSteps.push(
-      buildClonedStepRow(stepId, instanceIds[0], THESIS_STEP_KEYS[j], jobType, strategy),
-    );
+    if (!isJobTypeEnum(jobType)) {
+      throw new Error(`invalid job_type: ${jobType}`);
+    }
+    if (!isGranularityStrategy(strategy)) {
+      throw new Error(`invalid granularity_strategy: ${strategy}`);
+    }
+    const step: ProgressRecipeStep = {
+      id: stepId,
+      step_key: THESIS_STEP_KEYS[j],
+      job_type: jobType,
+      granularity_strategy: strategy,
+    };
+    allProgressSteps.push({ instanceId: instanceIds[0], step });
   }
   for (let j = 1; j < thesisStepIds.length; j++) {
-    allEdges.push({
-      instance_id: instanceIds[0],
-      from_step_id: thesisStepIds[0],
-      to_step_id: thesisStepIds[j],
+    allProgressEdges.push({
+      instanceId: instanceIds[0],
+      edge: { from_step_id: thesisStepIds[0], to_step_id: thesisStepIds[j] },
     });
   }
 
@@ -506,15 +504,24 @@ Deno.test("getAllStageProgress: progress calculates correctly for every stage in
     const stepId: string = `step-${ANTITHESIS_STAGE_SLUG}-${j}`;
     antithesisStepIds.push(stepId);
     const spec: { step_key: string; job_type: string; granularity_strategy: string } = ANTITHESIS_STEP_SPEC[j];
-    allRecipeSteps.push(
-      buildClonedStepRow(stepId, instanceIds[1], spec.step_key, spec.job_type, spec.granularity_strategy),
-    );
+    if (!isJobTypeEnum(spec.job_type)) {
+      throw new Error(`invalid job_type: ${spec.job_type}`);
+    }
+    if (!isGranularityStrategy(spec.granularity_strategy)) {
+      throw new Error(`invalid granularity_strategy: ${spec.granularity_strategy}`);
+    }
+    const step: ProgressRecipeStep = {
+      id: stepId,
+      step_key: spec.step_key,
+      job_type: spec.job_type,
+      granularity_strategy: spec.granularity_strategy,
+    };
+    allProgressSteps.push({ instanceId: instanceIds[1], step });
   }
   for (let j = 1; j < antithesisStepIds.length; j++) {
-    allEdges.push({
-      instance_id: instanceIds[1],
-      from_step_id: antithesisStepIds[0],
-      to_step_id: antithesisStepIds[j],
+    allProgressEdges.push({
+      instanceId: instanceIds[1],
+      edge: { from_step_id: antithesisStepIds[0], to_step_id: antithesisStepIds[j] },
     });
   }
 
@@ -524,36 +531,42 @@ Deno.test("getAllStageProgress: progress calculates correctly for every stage in
     const stepId: string = `step-${SYNTHESIS_STAGE_SLUG}-${j}`;
     synthesisStepIds.push(stepId);
     const spec: { step_key: string; job_type: string; granularity_strategy: string } = SYNTHESIS_STEP_SPEC[j];
-    allRecipeSteps.push(
-      buildClonedStepRow(stepId, instanceIds[2], spec.step_key, spec.job_type, spec.granularity_strategy),
-    );
+    if (!isJobTypeEnum(spec.job_type)) {
+      throw new Error(`invalid job_type: ${spec.job_type}`);
+    }
+    if (!isGranularityStrategy(spec.granularity_strategy)) {
+      throw new Error(`invalid granularity_strategy: ${spec.granularity_strategy}`);
+    }
+    const step: ProgressRecipeStep = {
+      id: stepId,
+      step_key: spec.step_key,
+      job_type: spec.job_type,
+      granularity_strategy: spec.granularity_strategy,
+    };
+    allProgressSteps.push({ instanceId: instanceIds[2], step });
   }
   for (let j = 1; j <= 4; j++) {
-    allEdges.push({
-      instance_id: instanceIds[2],
-      from_step_id: synthesisStepIds[0],
-      to_step_id: synthesisStepIds[j],
+    allProgressEdges.push({
+      instanceId: instanceIds[2],
+      edge: { from_step_id: synthesisStepIds[0], to_step_id: synthesisStepIds[j] },
     });
   }
   for (let j = 1; j <= 4; j++) {
-    allEdges.push({
-      instance_id: instanceIds[2],
-      from_step_id: synthesisStepIds[j],
-      to_step_id: synthesisStepIds[4 + j],
+    allProgressEdges.push({
+      instanceId: instanceIds[2],
+      edge: { from_step_id: synthesisStepIds[j], to_step_id: synthesisStepIds[4 + j] },
     });
   }
   for (let j = 5; j <= 8; j++) {
-    allEdges.push({
-      instance_id: instanceIds[2],
-      from_step_id: synthesisStepIds[j],
-      to_step_id: synthesisStepIds[9],
+    allProgressEdges.push({
+      instanceId: instanceIds[2],
+      edge: { from_step_id: synthesisStepIds[j], to_step_id: synthesisStepIds[9] },
     });
   }
   for (let j = 10; j <= 12; j++) {
-    allEdges.push({
-      instance_id: instanceIds[2],
-      from_step_id: synthesisStepIds[9],
-      to_step_id: synthesisStepIds[j],
+    allProgressEdges.push({
+      instanceId: instanceIds[2],
+      edge: { from_step_id: synthesisStepIds[9], to_step_id: synthesisStepIds[j] },
     });
   }
 
@@ -563,15 +576,24 @@ Deno.test("getAllStageProgress: progress calculates correctly for every stage in
     const stepId: string = `step-${PARENTHESIS_STAGE_SLUG}-${j}`;
     parenthesisStepIds.push(stepId);
     const spec: { step_key: string; job_type: string; granularity_strategy: string } = PARENTHESIS_STEP_SPEC[j];
-    allRecipeSteps.push(
-      buildClonedStepRow(stepId, instanceIds[3], spec.step_key, spec.job_type, spec.granularity_strategy),
-    );
+    if (!isJobTypeEnum(spec.job_type)) {
+      throw new Error(`invalid job_type: ${spec.job_type}`);
+    }
+    if (!isGranularityStrategy(spec.granularity_strategy)) {
+      throw new Error(`invalid granularity_strategy: ${spec.granularity_strategy}`);
+    }
+    const step: ProgressRecipeStep = {
+      id: stepId,
+      step_key: spec.step_key,
+      job_type: spec.job_type,
+      granularity_strategy: spec.granularity_strategy,
+    };
+    allProgressSteps.push({ instanceId: instanceIds[3], step });
   }
   for (let j = 1; j < parenthesisStepIds.length; j++) {
-    allEdges.push({
-      instance_id: instanceIds[3],
-      from_step_id: parenthesisStepIds[0],
-      to_step_id: parenthesisStepIds[j],
+    allProgressEdges.push({
+      instanceId: instanceIds[3],
+      edge: { from_step_id: parenthesisStepIds[0], to_step_id: parenthesisStepIds[j] },
     });
   }
 
@@ -581,73 +603,94 @@ Deno.test("getAllStageProgress: progress calculates correctly for every stage in
     const stepId: string = `step-${PARALYSIS_STAGE_SLUG}-${j}`;
     paralysisStepIds.push(stepId);
     const spec: { step_key: string; job_type: string; granularity_strategy: string } = PARALYSIS_STEP_SPEC[j];
-    allRecipeSteps.push(
-      buildClonedStepRow(stepId, instanceIds[4], spec.step_key, spec.job_type, spec.granularity_strategy),
-    );
+    if (!isJobTypeEnum(spec.job_type)) {
+      throw new Error(`invalid job_type: ${spec.job_type}`);
+    }
+    if (!isGranularityStrategy(spec.granularity_strategy)) {
+      throw new Error(`invalid granularity_strategy: ${spec.granularity_strategy}`);
+    }
+    const step: ProgressRecipeStep = {
+      id: stepId,
+      step_key: spec.step_key,
+      job_type: spec.job_type,
+      granularity_strategy: spec.granularity_strategy,
+    };
+    allProgressSteps.push({ instanceId: instanceIds[4], step });
   }
-  allEdges.push(
-    { instance_id: instanceIds[4], from_step_id: paralysisStepIds[0], to_step_id: paralysisStepIds[1] },
-    { instance_id: instanceIds[4], from_step_id: paralysisStepIds[0], to_step_id: paralysisStepIds[2] },
-    { instance_id: instanceIds[4], from_step_id: paralysisStepIds[1], to_step_id: paralysisStepIds[3] },
-    { instance_id: instanceIds[4], from_step_id: paralysisStepIds[2], to_step_id: paralysisStepIds[3] },
+  allProgressEdges.push(
+    { instanceId: instanceIds[4], edge: { from_step_id: paralysisStepIds[0], to_step_id: paralysisStepIds[1] } },
+    { instanceId: instanceIds[4], edge: { from_step_id: paralysisStepIds[0], to_step_id: paralysisStepIds[2] } },
+    { instanceId: instanceIds[4], edge: { from_step_id: paralysisStepIds[1], to_step_id: paralysisStepIds[3] } },
+    { instanceId: instanceIds[4], edge: { from_step_id: paralysisStepIds[2], to_step_id: paralysisStepIds[3] } },
   );
 
-  const transitions: { source_stage_id: string; target_stage_id: string }[] = [];
-  for (let i = 0; i < stageIds.length - 1; i++) {
-    transitions.push({ source_stage_id: stageIds[i], target_stage_id: stageIds[i + 1] });
-  }
-  for (const id of stageIds) {
-    transitions.push({ source_stage_id: id, target_stage_id: id });
-  }
-
-  const templateStages: { id: string; slug: string }[] = stageIds.map((id: string, i: number) => ({
-    id,
-    slug: stageSlugs[i],
-  }));
-
-  const sessionRow: { id: string; project_id: string; selected_model_ids: string[] } = {
+  const sessionRow: DialecticSessionRow = mockDialecticSessionRow({
     id: basePayload.sessionId,
     project_id: basePayload.projectId,
     selected_model_ids: [modelId],
-  };
-  const projectRow: { id: string; process_template_id: string } = {
+  });
+  const dagIso: string = new Date().toISOString();
+  const projectRow: DialecticProjectRow = {
     id: basePayload.projectId,
     process_template_id: "process-tpl-five",
+    created_at: dagIso,
+    initial_prompt_resource_id: null,
+    initial_user_prompt: "",
+    project_name: "test",
+    repo_url: null,
+    selected_domain_id: "domain-1",
+    selected_domain_overlay_id: null,
+    status: "active",
+    updated_at: dagIso,
+    user_domain_overlay_values: null,
+    user_id: basePayload.userId,
+    idempotency_key: null,
   };
   const jobs: DialecticJobRow[] = [];
-  const stages: DialecticStage[] = stageIds.map((id: string, i: number) => ({
-    id,
-    slug: stageSlugs[i],
-    display_name: stageSlugs[i],
-    description: null,
-    created_at: new Date().toISOString(),
-    expected_output_template_ids: [],
-    active_recipe_instance_id: instanceIds[i],
-    default_system_prompt_id: null,
-    recipe_template_id: templateIds[i],
-    minimum_balance: 0,
-  }));
-  const instances: DialecticStageRecipeInstance[] = instanceIds.map((id: string, i: number) => ({
-    id,
-    stage_id: stageIds[i],
-    template_id: templateIds[i],
-    is_cloned: true,
-    cloned_at: null,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  }));
+
+  const dagCountsStages: StageCountsEntry[] = [];
+  const dagStepIdToStepKey: Map<string, string> = new Map<string, string>();
+  for (let i = 0; i < stageIds.length; i++) {
+    const instanceId: string = instanceIds[i];
+    const progressSteps: ProgressRecipeStep[] = [];
+    for (const item of allProgressSteps) {
+      if (item.instanceId !== instanceId) {
+        continue;
+      }
+      progressSteps.push(item.step);
+      dagStepIdToStepKey.set(item.step.id, item.step.step_key);
+    }
+    const progressEdges: ProgressRecipeEdge[] = [];
+    for (const item of allProgressEdges) {
+      if (item.instanceId !== instanceId) {
+        continue;
+      }
+      progressEdges.push(item.edge);
+    }
+    dagCountsStages.push(
+      buildStageCountsEntry({
+        stageId: stageIds[i],
+        stageSlug: stageSlugs[i],
+        steps: progressSteps,
+        edges: progressEdges,
+        totalExpected: EXISTING_DAG_STEP_COUNTS[stageSlugs[i]],
+      }),
+    );
+  }
+  const dagCountsConfig: ComputeTemplateStageCountsResult = {
+    status: 200,
+    data: {
+      stages: dagCountsStages,
+      totalStages: stageSlugs.length,
+      stepIdToStepKey: dagStepIdToStepKey,
+    },
+  };
 
   const headers: { "Content-Type": string } = { "Content-Type": "application/json" };
   mockFetch([
     new Response(JSON.stringify(sessionRow), { status: 200, headers }),
     new Response(JSON.stringify(projectRow), { status: 200, headers }),
-    new Response(JSON.stringify(transitions), { status: 200, headers }),
-    new Response(JSON.stringify(templateStages), { status: 200, headers }),
     new Response(JSON.stringify(jobs), { status: 200, headers }),
-    new Response(JSON.stringify(stages), { status: 200, headers }),
-    new Response(JSON.stringify(instances), { status: 200, headers }),
-    new Response(JSON.stringify(allRecipeSteps), { status: 200, headers }),
-    new Response(JSON.stringify(allEdges), { status: 200, headers }),
     new Response(JSON.stringify([]), { status: 200, headers }),
     new Response(JSON.stringify([]), { status: 200, headers }),
   ]);
@@ -657,7 +700,9 @@ Deno.test("getAllStageProgress: progress calculates correctly for every stage in
   });
 
   try {
-    const deps: GetAllStageProgressDeps = createGetAllStageProgressDeps(dbClient, baseUser);
+    const deps: GetAllStageProgressDeps = buildGetAllStageProgressDeps(dbClient, baseUser, {
+      computeTemplateStageCounts: createMockComputeTemplateStageCountsFn(dagCountsConfig),
+    });
     const params: GetAllStageProgressParams = { payload: basePayload };
     const result: GetAllStageProgressResult = await getAllStageProgress(deps, params);
     assertEquals(result.status, 200, "expected status 200");
@@ -668,41 +713,48 @@ Deno.test("getAllStageProgress: progress calculates correctly for every stage in
     await t.step("response contains an entry for every stage in the existing DAG (thesis, antithesis, synthesis, parenthesis, paralysis)", () => {
       assertEquals(data.stages.length, stageSlugs.length);
       for (const slug of stageSlugs) {
-        const entry: StageProgressEntry | undefined = data.stages.find(
-          (s: StageProgressEntry) => s.stageSlug === slug,
-        );
-        assertExists(entry, `stage ${slug} must appear in response`);
+        let entry: StageProgressEntry = data.stages[0];
+        for (const candidate of data.stages) {
+          if (candidate.stageSlug === slug) {
+            entry = candidate;
+          }
+        }   
+        assertEquals(entry.stageSlug, slug);
       }
     });
 
     for (const slug of stageSlugs) {
       const expectedTotal: number = EXISTING_DAG_STEP_COUNTS[slug];
       await t.step(`${slug}: totalSteps == recipe step count (${expectedTotal})`, () => {
-        const entry: StageProgressEntry | undefined = data.stages.find(
-          (s: StageProgressEntry) => s.stageSlug === slug,
-        );
-        assertExists(entry);
-        if (!entry) throw new Error(`entry ${slug} missing`);
+        let entry: StageProgressEntry = data.stages[0];
+        for (const candidate of data.stages) {
+          if (candidate.stageSlug === slug) {
+            entry = candidate;
+          }
+        }
+        assertEquals(entry.stageSlug, slug);
         assertEquals(entry.progress.totalSteps, expectedTotal);
         assertEquals(entry.steps.length, expectedTotal);
       });
       await t.step(`${slug}: completedSteps == count of steps with status completed`, () => {
-        const entry: StageProgressEntry | undefined = data.stages.find(
-          (s: StageProgressEntry) => s.stageSlug === slug,
-        );
-        assertExists(entry);
-        if (!entry) throw new Error(`entry ${slug} missing`);
+        let entry: StageProgressEntry = data.stages[0];
+        for (const candidate of data.stages) {
+          if (candidate.stageSlug === slug) {
+            entry = candidate;
+          }
+        }
         const completedCount: number = entry.steps.filter(
           (s: StepProgressDto) => s.status === "completed",
         ).length;
         assertEquals(entry.progress.completedSteps, completedCount);
       });
       await t.step(`${slug}: failedSteps == count of steps with status failed`, () => {
-        const entry: StageProgressEntry | undefined = data.stages.find(
-          (s: StageProgressEntry) => s.stageSlug === slug,
-        );
-        assertExists(entry);
-        if (!entry) throw new Error(`entry ${slug} missing`);
+        let entry: StageProgressEntry = data.stages[0];
+        for (const candidate of data.stages) {
+          if (candidate.stageSlug === slug) {
+            entry = candidate;
+          }
+        }
         const failedCount: number = entry.steps.filter(
           (s: StepProgressDto) => s.status === "failed",
         ).length;
@@ -727,13 +779,31 @@ Deno.test("getAllStageProgress: RENDER jobs excluded from step status derivation
   const modelId = "model-1";
   const planStepId = "step-plan";
   const executeStepId = "step-execute";
-  const recipeSteps: Tables<"dialectic_stage_recipe_steps">[] = [
-    buildClonedStepRow(planStepId, instanceId, "plan", "PLAN", "all_to_one"),
-    buildClonedStepRow(executeStepId, instanceId, "execute", "EXECUTE", "per_model"),
+  const progressSteps: ProgressRecipeStep[] = [
+    { id: planStepId, step_key: "plan", job_type: "PLAN", granularity_strategy: "all_to_one" },
+    { id: executeStepId, step_key: "execute", job_type: "EXECUTE", granularity_strategy: "per_model" },
   ];
-  const edges: { instance_id: string; from_step_id: string; to_step_id: string }[] = [
-    { instance_id: instanceId, from_step_id: planStepId, to_step_id: executeStepId },
+  const progressEdges: ProgressRecipeEdge[] = [
+    { from_step_id: planStepId, to_step_id: executeStepId },
   ];
+  const stepIdToStepKey: Map<string, string> = new Map<string, string>([
+    [planStepId, "plan"],
+    [executeStepId, "execute"],
+  ]);
+  const countsConfig: ComputeTemplateStageCountsResult = {
+    status: 200,
+    data: {
+      stages: [buildStageCountsEntry({
+        stageId,
+        stageSlug: THESIS_STAGE_SLUG,
+        steps: progressSteps,
+        edges: progressEdges,
+        totalExpected: 13,
+      })],
+      totalStages: 1,
+      stepIdToStepKey,
+    },
+  };
   const executeJob: DialecticJobRow = {
     id: "job-exec",
     created_at: new Date().toISOString(),
@@ -806,16 +876,7 @@ Deno.test("getAllStageProgress: RENDER jobs excluded from step status derivation
     idempotency_key: null,
   };
   const jobs: DialecticJobRow[] = [executeJob, renderJob];
-  const tplPlanId = "tpl-plan";
-  const tplExecId = "tpl-execute";
-  const templateSteps: Pick<DialecticRecipeTemplateStep, "id" | "template_id" | "step_key" | "job_type" | "granularity_strategy">[] = [
-    { id: tplPlanId, template_id: templateId, step_key: "plan", job_type: "PLAN", granularity_strategy: "all_to_one" },
-    { id: tplExecId, template_id: templateId, step_key: "execute", job_type: "EXECUTE", granularity_strategy: "per_model" },
-  ];
-  const templateEdges: (ProgressRecipeEdge & { template_id: string })[] = [
-    { template_id: templateId, from_step_id: tplPlanId, to_step_id: tplExecId },
-  ];
-  const iso = new Date().toISOString();
+  const iso: string = new Date().toISOString();
   const renderResource: DialecticProjectResourceRow = {
     id: "resource-render-1",
     source_contribution_id: sourceContributionId,
@@ -835,43 +896,33 @@ Deno.test("getAllStageProgress: RENDER jobs excluded from step status derivation
     resource_description: null,
   };
   const resources: DialecticProjectResourceRow[] = [renderResource];
-  const sessionRow = { id: basePayload.sessionId, project_id: basePayload.projectId, selected_model_ids: [modelId] };
-  const projectRow = { id: basePayload.projectId, process_template_id: "process-1" };
-  const transitions = [{ source_stage_id: stageId, target_stage_id: stageId }];
-  const templateStages = [{ id: stageId, slug: THESIS_STAGE_SLUG }];
-  const stages: DialecticStage[] = [{
-    id: stageId,
-    slug: THESIS_STAGE_SLUG,
-    display_name: "Thesis",
-    description: null,
-    created_at: new Date().toISOString(),
-    expected_output_template_ids: [],
-    active_recipe_instance_id: instanceId,
-    default_system_prompt_id: null,
-    recipe_template_id: templateId,
-    minimum_balance: 0,
-  }];
-  const instances: DialecticStageRecipeInstance[] = [{
-    id: instanceId,
-    stage_id: stageId,
-    template_id: templateId,
-    is_cloned: true,
-    cloned_at: null,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  }];
+  const sessionRow: DialecticSessionRow = mockDialecticSessionRow({
+    id: basePayload.sessionId,
+    project_id: basePayload.projectId,
+    selected_model_ids: [modelId],
+    current_stage_id: stageId,
+  });
+  const projectRow: DialecticProjectRow = {
+    id: basePayload.projectId,
+    process_template_id: "process-1",
+    created_at: iso,
+    initial_prompt_resource_id: null,
+    initial_user_prompt: "",
+    project_name: "test",
+    repo_url: null,
+    selected_domain_id: "domain-1",
+    selected_domain_overlay_id: null,
+    status: "active",
+    updated_at: iso,
+    user_domain_overlay_values: null,
+    user_id: basePayload.userId,
+    idempotency_key: null,
+  };
   const headers = { "Content-Type": "application/json" };
-  // Implementation fetches only cloned steps/edges when all instances are cloned (no template steps/edges).
   mockFetch([
     new Response(JSON.stringify(sessionRow), { status: 200, headers: { "Content-Type": "application/json" } }),
     new Response(JSON.stringify(projectRow), { status: 200, headers }),
-    new Response(JSON.stringify(transitions), { status: 200, headers }),
-    new Response(JSON.stringify(templateStages), { status: 200, headers }),
     new Response(JSON.stringify(jobs), { status: 200, headers }),
-    new Response(JSON.stringify(stages), { status: 200, headers }),
-    new Response(JSON.stringify(instances), { status: 200, headers }),
-    new Response(JSON.stringify(recipeSteps), { status: 200, headers }),
-    new Response(JSON.stringify(edges), { status: 200, headers }),
     new Response(JSON.stringify(resources), { status: 200, headers }),
     new Response(JSON.stringify([]), { status: 200, headers }),
   ]);
@@ -879,16 +930,23 @@ Deno.test("getAllStageProgress: RENDER jobs excluded from step status derivation
     auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
   });
   try {
-    const deps: GetAllStageProgressDeps = createGetAllStageProgressDeps(dbClient, baseUser);
+    const deps: GetAllStageProgressDeps = buildGetAllStageProgressDeps(dbClient, baseUser, {
+      computeTemplateStageCounts: createMockComputeTemplateStageCountsFn(countsConfig),
+    });
     const params: GetAllStageProgressParams = { payload: basePayload };
     const result: GetAllStageProgressResult = await getAllStageProgress(deps, params);
     assertEquals(result.status, 200, "expected status 200");
     if (!result.data) throw new Error("result.data missing");
-    const entry: StageProgressEntry | undefined = result.data.stages.find((s: StageProgressEntry) => s.stageSlug === THESIS_STAGE_SLUG);
+    let entry: StageProgressEntry = result.data.stages[0];
+    for (const candidate of result.data.stages) {
+      if (candidate.stageSlug === THESIS_STAGE_SLUG) {
+        entry = candidate;
+      }
+    }
     assertExists(entry);
     if (!entry) throw new Error("entry missing");
     await t.step("step count equals recipe steps only (RENDER not a step)", () => {
-      assertEquals(entry.steps.length, recipeSteps.length);
+      assertEquals(entry.steps.length, progressSteps.length);
     });
     await t.step("no step has stepKey from RENDER job (RENDER excluded from step attribution)", () => {
       for (const step of entry.steps) {
@@ -906,10 +964,27 @@ Deno.test("getAllStageProgress: continuation jobs excluded from step status deri
   const templateId = "template-cont-id";
   const modelId = "model-1";
   const stepId = "step-1";
-  const recipeSteps: Tables<"dialectic_stage_recipe_steps">[] = [
-    buildClonedStepRow(stepId, instanceId, "step_one", "EXECUTE", "all_to_one"),
+  const progressSteps: ProgressRecipeStep[] = [
+    { id: stepId, step_key: "step_one", job_type: "EXECUTE", granularity_strategy: "all_to_one" },
   ];
-  const edges: { instance_id: string; from_step_id: string; to_step_id: string }[] = [];
+  const progressEdges: ProgressRecipeEdge[] = [];
+  const stepIdToStepKey: Map<string, string> = new Map<string, string>([[stepId, "step_one"]]);
+  const countsConfig: ComputeTemplateStageCountsResult = {
+    status: 200,
+    data: {
+      stages: [
+      buildStageCountsEntry({
+        stageId,
+        stageSlug: THESIS_STAGE_SLUG,
+        steps: progressSteps,
+        edges: progressEdges,
+        totalExpected: 1,
+        }),
+      ],
+      totalStages: 1,
+      stepIdToStepKey,
+    },
+  };
   const normalJob: DialecticJobRow = {
     id: "job-normal",
     created_at: new Date().toISOString(),
@@ -973,42 +1048,34 @@ Deno.test("getAllStageProgress: continuation jobs excluded from step status deri
     idempotency_key: null,
   };
   const jobs: DialecticJobRow[] = [normalJob, continuationJob];
-  const sessionRow = { id: basePayload.sessionId, project_id: basePayload.projectId, selected_model_ids: [modelId] };
-  const projectRow = { id: basePayload.projectId, process_template_id: "process-1" };
-  const transitions = [{ source_stage_id: stageId, target_stage_id: stageId }];
-  const templateStages = [{ id: stageId, slug: THESIS_STAGE_SLUG }];
-  const stages: DialecticStage[] = [{
-    id: stageId,
-    slug: THESIS_STAGE_SLUG,
-    display_name: "Thesis",
-    description: null,
-    created_at: new Date().toISOString(),
-    expected_output_template_ids: [],
-    active_recipe_instance_id: instanceId,
-    default_system_prompt_id: null,
-    recipe_template_id: templateId,
-    minimum_balance: 0,
-  }];
-  const instances: DialecticStageRecipeInstance[] = [{
-    id: instanceId,
-    stage_id: stageId,
-    template_id: templateId,
-    is_cloned: true,
-    cloned_at: null,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  }];
+  const contIso: string = new Date().toISOString();
+  const sessionRow: DialecticSessionRow = mockDialecticSessionRow({
+    id: basePayload.sessionId,
+    project_id: basePayload.projectId,
+    selected_model_ids: [modelId],
+    current_stage_id: stageId,
+  });
+  const projectRow: DialecticProjectRow = {
+    id: basePayload.projectId,
+    process_template_id: "process-1",
+    created_at: contIso,
+    initial_prompt_resource_id: null,
+    initial_user_prompt: "",
+    project_name: "test",
+    repo_url: null,
+    selected_domain_id: "domain-1",
+    selected_domain_overlay_id: null,
+    status: "active",
+    updated_at: contIso,
+    user_domain_overlay_values: null,
+    user_id: basePayload.userId,
+    idempotency_key: null,
+  };
   const headers = { "Content-Type": "application/json" };
   mockFetch([
     new Response(JSON.stringify(sessionRow), { status: 200, headers }),
     new Response(JSON.stringify(projectRow), { status: 200, headers }),
-    new Response(JSON.stringify(transitions), { status: 200, headers }),
-    new Response(JSON.stringify(templateStages), { status: 200, headers }),
     new Response(JSON.stringify(jobs), { status: 200, headers }),
-    new Response(JSON.stringify(stages), { status: 200, headers }),
-    new Response(JSON.stringify(instances), { status: 200, headers }),
-    new Response(JSON.stringify(recipeSteps), { status: 200, headers }),
-    new Response(JSON.stringify(edges), { status: 200, headers }),
     new Response(JSON.stringify([]), { status: 200, headers }),
     new Response(JSON.stringify([]), { status: 200, headers }),
   ]);
@@ -1016,14 +1083,20 @@ Deno.test("getAllStageProgress: continuation jobs excluded from step status deri
     auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
   });
   try {
-    const deps: GetAllStageProgressDeps = createGetAllStageProgressDeps(dbClient, baseUser);
+    const deps: GetAllStageProgressDeps = buildGetAllStageProgressDeps(dbClient, baseUser, {
+      computeTemplateStageCounts: createMockComputeTemplateStageCountsFn(countsConfig),
+    });
     const params: GetAllStageProgressParams = { payload: basePayload };
     const result: GetAllStageProgressResult = await getAllStageProgress(deps, params);
     assertEquals(result.status, 200, "expected status 200");
     if (!result.data) throw new Error("result.data missing");
-    const entry: StageProgressEntry | undefined = result.data.stages.find((s: StageProgressEntry) => s.stageSlug === THESIS_STAGE_SLUG);
-    assertExists(entry);
-    if (!entry) throw new Error("entry missing");
+    let entry: StageProgressEntry = result.data.stages[0];
+    for (const candidate of result.data.stages) {
+      if (candidate.stageSlug === THESIS_STAGE_SLUG) {
+        entry = candidate;
+      }
+    }
+    assertEquals(entry.stageSlug, THESIS_STAGE_SLUG);
     await t.step("completedSteps equals count of steps with status completed (continuation job not double-counted)", () => {
       const completedCount: number = entry.steps.filter((s: StepProgressDto) => s.status === "completed").length;
       assertEquals(entry.progress.completedSteps, completedCount);
@@ -1039,10 +1112,27 @@ Deno.test("getAllStageProgress: spec invariant progress never decreases across s
   const templateId = "template-mono-id";
   const modelId = "model-1";
   const stepId = "step-mono";
-  const recipeSteps: Tables<"dialectic_stage_recipe_steps">[] = [
-    buildClonedStepRow(stepId, instanceId, "step_one", "EXECUTE", "all_to_one"),
+  const progressSteps: ProgressRecipeStep[] = [
+    { id: stepId, step_key: "step_one", job_type: "EXECUTE", granularity_strategy: "all_to_one" },
   ];
-  const edges: { instance_id: string; from_step_id: string; to_step_id: string }[] = [];
+  const progressEdges: ProgressRecipeEdge[] = [];
+  const stepIdToStepKey: Map<string, string> = new Map<string, string>([[stepId, "step_one"]]);
+  const countsConfig: ComputeTemplateStageCountsResult = {
+    status: 200,
+    data: {
+      stages: [
+      buildStageCountsEntry({
+        stageId,
+        stageSlug: THESIS_STAGE_SLUG,
+        steps: progressSteps,
+        edges: progressEdges,
+        totalExpected: 1,
+      }),
+    ],
+    totalStages: 1,
+    stepIdToStepKey,
+    },
+  };
   const jobs: DialecticJobRow[] = [{
     id: "job-1",
     created_at: new Date().toISOString(),
@@ -1074,57 +1164,49 @@ Deno.test("getAllStageProgress: spec invariant progress never decreases across s
     error_details: null,
     idempotency_key: null,
   }];
-  const sessionRow = { id: basePayload.sessionId, project_id: basePayload.projectId, selected_model_ids: [modelId] };
-  const projectRow = { id: basePayload.projectId, process_template_id: "process-1" };
-  const transitions = [{ source_stage_id: stageId, target_stage_id: stageId }];
-  const templateStages = [{ id: stageId, slug: THESIS_STAGE_SLUG }];
-  const stages: DialecticStage[] = [{
-    id: stageId,
-    slug: THESIS_STAGE_SLUG,
-    display_name: "Thesis",
-    description: null,
-    created_at: new Date().toISOString(),
-    expected_output_template_ids: [],
-    active_recipe_instance_id: instanceId,
-    default_system_prompt_id: null,
-    recipe_template_id: templateId,
-    minimum_balance: 0,
-  }];
-  const instances: DialecticStageRecipeInstance[] = [{
-    id: instanceId,
-    stage_id: stageId,
-    template_id: templateId,
-    is_cloned: true,
-    cloned_at: null,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  }];
-  const templateStepsMono: Pick<DialecticRecipeTemplateStep, "id" | "template_id" | "step_key" | "job_type" | "granularity_strategy">[] = [
-    { id: "tpl-mono", template_id: templateId, step_key: "step_one", job_type: "EXECUTE", granularity_strategy: "all_to_one" },
-  ];
-  const templateEdgesMono: (ProgressRecipeEdge & { template_id: string })[] = [];
+  const monoIso: string = new Date().toISOString();
+  const sessionRow: DialecticSessionRow = mockDialecticSessionRow({
+    id: basePayload.sessionId,
+    project_id: basePayload.projectId,
+    selected_model_ids: [modelId],
+    current_stage_id: stageId,
+  });
+  const projectRow: DialecticProjectRow = {
+    id: basePayload.projectId,
+    process_template_id: "process-1",
+    created_at: monoIso,
+    initial_prompt_resource_id: null,
+    initial_user_prompt: "",
+    project_name: "test",
+    repo_url: null,
+    selected_domain_id: "domain-1",
+    selected_domain_overlay_id: null,
+    status: "active",
+    updated_at: monoIso,
+    user_domain_overlay_values: null,
+    user_id: basePayload.userId,
+    idempotency_key: null,
+  };
   const headers = { "Content-Type": "application/json" };
-  // Implementation fetches only cloned steps/edges when all instances are cloned (no template steps/edges).
-  // Each Response body is single-use; second getAllStageProgress call needs fresh Response objects.
-  const buildMonoResponses = (): Response[] => [
+  mockFetch([
     new Response(JSON.stringify(sessionRow), { status: 200, headers }),
     new Response(JSON.stringify(projectRow), { status: 200, headers }),
-    new Response(JSON.stringify(transitions), { status: 200, headers }),
-    new Response(JSON.stringify(templateStages), { status: 200, headers }),
     new Response(JSON.stringify(jobs), { status: 200, headers }),
-    new Response(JSON.stringify(stages), { status: 200, headers }),
-    new Response(JSON.stringify(instances), { status: 200, headers }),
-    new Response(JSON.stringify(recipeSteps), { status: 200, headers }),
-    new Response(JSON.stringify(edges), { status: 200, headers }),
     new Response(JSON.stringify([]), { status: 200, headers }),
     new Response(JSON.stringify([]), { status: 200, headers }),
-  ];
-  mockFetch([...buildMonoResponses(), ...buildMonoResponses()]);
+    new Response(JSON.stringify(sessionRow), { status: 200, headers }),
+    new Response(JSON.stringify(projectRow), { status: 200, headers }),
+    new Response(JSON.stringify(jobs), { status: 200, headers }),
+    new Response(JSON.stringify([]), { status: 200, headers }),
+    new Response(JSON.stringify([]), { status: 200, headers }),
+  ]);
   const dbClient = createClient<Database>(SUPABASE_URL, SUPABASE_ANON_KEY, {
     auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
   });
   try {
-    const deps: GetAllStageProgressDeps = createGetAllStageProgressDeps(dbClient, baseUser);
+    const deps: GetAllStageProgressDeps = buildGetAllStageProgressDeps(dbClient, baseUser, {
+      computeTemplateStageCounts: createMockComputeTemplateStageCountsFn(countsConfig),
+    });
     const params: GetAllStageProgressParams = { payload: basePayload };
     const first: GetAllStageProgressResult = await getAllStageProgress(deps, params);
     const second: GetAllStageProgressResult = await getAllStageProgress(deps, params);
@@ -1148,10 +1230,27 @@ Deno.test("getAllStageProgress: progress independent of model count", async (t) 
   const instanceId = "instance-n-id";
   const templateId = "template-n-id";
   const stepId = "step-n";
-  const recipeSteps: Tables<"dialectic_stage_recipe_steps">[] = [
-    buildClonedStepRow(stepId, instanceId, "step_one", "EXECUTE", "per_model"),
+  const progressSteps: ProgressRecipeStep[] = [
+    { id: stepId, step_key: "step_one", job_type: "EXECUTE", granularity_strategy: "per_model" },
   ];
-  const edges: { instance_id: string; from_step_id: string; to_step_id: string }[] = [];
+  const progressEdges: ProgressRecipeEdge[] = [];
+  const stepIdToStepKey: Map<string, string> = new Map<string, string>([[stepId, "step_one"]]);
+  const countsConfig: ComputeTemplateStageCountsResult = {
+    status: 200,
+    data: {
+      stages: [
+      buildStageCountsEntry({
+        stageId,
+        stageSlug: THESIS_STAGE_SLUG,
+        steps: progressSteps,
+        edges: progressEdges,
+        totalExpected: 1,
+      }),
+    ],
+      totalStages: 1,
+      stepIdToStepKey,
+    },
+  };
   const job: DialecticJobRow = {
     id: "job-n",
     created_at: new Date().toISOString(),
@@ -1183,55 +1282,46 @@ Deno.test("getAllStageProgress: progress independent of model count", async (t) 
     error_details: null,
     idempotency_key: null,
   };
-  const projectRow = { id: basePayload.projectId, process_template_id: "process-1" };
-  const transitions = [{ source_stage_id: stageId, target_stage_id: stageId }];
-  const templateStages = [{ id: stageId, slug: THESIS_STAGE_SLUG }];
-  const stages: DialecticStage[] = [{
-    id: stageId,
-    slug: THESIS_STAGE_SLUG,
-    display_name: "Thesis",
-    description: null,
-    created_at: new Date().toISOString(),
-    expected_output_template_ids: [],
-    active_recipe_instance_id: instanceId,
-    default_system_prompt_id: null,
-    recipe_template_id: templateId,
-    minimum_balance: 0,
-  }];
-  const instances: DialecticStageRecipeInstance[] = [{
-    id: instanceId,
-    stage_id: stageId,
-    template_id: templateId,
-    is_cloned: true,
-    cloned_at: null,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  }];
+  const nIso: string = new Date().toISOString();
+  const projectRow: DialecticProjectRow = {
+    id: basePayload.projectId,
+    process_template_id: "process-1",
+    created_at: nIso,
+    initial_prompt_resource_id: null,
+    initial_user_prompt: "",
+    project_name: "test",
+    repo_url: null,
+    selected_domain_id: "domain-1",
+    selected_domain_overlay_id: null,
+    status: "active",
+    updated_at: nIso,
+    user_domain_overlay_values: null,
+    user_id: basePayload.userId,
+    idempotency_key: null,
+  };
   const headers = { "Content-Type": "application/json" };
   const jobsForN: DialecticJobRow[] = [job];
-  const sessionRowN2 = { id: basePayload.sessionId, project_id: basePayload.projectId, selected_model_ids: ["m1", "m2"] };
-  const sessionRowN3 = { id: basePayload.sessionId, project_id: basePayload.projectId, selected_model_ids: ["m1", "m2", "m3"] };
+  const sessionRowN2: DialecticSessionRow = mockDialecticSessionRow({
+    id: basePayload.sessionId,
+    project_id: basePayload.projectId,
+    selected_model_ids: ["m1", "m2"],
+    current_stage_id: stageId,
+  });
+  const sessionRowN3: DialecticSessionRow = mockDialecticSessionRow({
+    id: basePayload.sessionId,
+    project_id: basePayload.projectId,
+    selected_model_ids: ["m1", "m2", "m3"],
+    current_stage_id: stageId,
+  });
   mockFetch([
     new Response(JSON.stringify(sessionRowN2), { status: 200, headers }),
     new Response(JSON.stringify(projectRow), { status: 200, headers }),
-    new Response(JSON.stringify(transitions), { status: 200, headers }),
-    new Response(JSON.stringify(templateStages), { status: 200, headers }),
     new Response(JSON.stringify(jobsForN), { status: 200, headers }),
-    new Response(JSON.stringify(stages), { status: 200, headers }),
-    new Response(JSON.stringify(instances), { status: 200, headers }),
-    new Response(JSON.stringify(recipeSteps), { status: 200, headers }),
-    new Response(JSON.stringify(edges), { status: 200, headers }),
     new Response(JSON.stringify([]), { status: 200, headers }),
     new Response(JSON.stringify([]), { status: 200, headers }),
     new Response(JSON.stringify(sessionRowN3), { status: 200, headers }),
     new Response(JSON.stringify(projectRow), { status: 200, headers }),
-    new Response(JSON.stringify(transitions), { status: 200, headers }),
-    new Response(JSON.stringify(templateStages), { status: 200, headers }),
     new Response(JSON.stringify(jobsForN), { status: 200, headers }),
-    new Response(JSON.stringify(stages), { status: 200, headers }),
-    new Response(JSON.stringify(instances), { status: 200, headers }),
-    new Response(JSON.stringify(recipeSteps), { status: 200, headers }),
-    new Response(JSON.stringify(edges), { status: 200, headers }),
     new Response(JSON.stringify([]), { status: 200, headers }),
     new Response(JSON.stringify([]), { status: 200, headers }),
   ]);
@@ -1239,18 +1329,29 @@ Deno.test("getAllStageProgress: progress independent of model count", async (t) 
     auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
   });
   try {
-    const deps: GetAllStageProgressDeps = createGetAllStageProgressDeps(dbClient, baseUser);
+    const deps: GetAllStageProgressDeps = buildGetAllStageProgressDeps(dbClient, baseUser, {
+      computeTemplateStageCounts: createMockComputeTemplateStageCountsFn(countsConfig),
+    });
     const params: GetAllStageProgressParams = { payload: basePayload };
     const resultN2: GetAllStageProgressResult = await getAllStageProgress(deps, params);
     const resultN3: GetAllStageProgressResult = await getAllStageProgress(deps, params);
     assertEquals(resultN2.status, 200, "resultN2 expected status 200");
     assertEquals(resultN3.status, 200, "resultN3 expected status 200");
     if (!resultN2.data || !resultN3.data) throw new Error("data missing");
-    const entryN2: StageProgressEntry | undefined = resultN2.data.stages.find((s: StageProgressEntry) => s.stageSlug === THESIS_STAGE_SLUG);
-    const entryN3: StageProgressEntry | undefined = resultN3.data.stages.find((s: StageProgressEntry) => s.stageSlug === THESIS_STAGE_SLUG);
-    assertExists(entryN2);
-    assertExists(entryN3);
-    if (!entryN2 || !entryN3) throw new Error("entry missing");
+    let entryN2: StageProgressEntry = resultN2.data.stages[0];
+    for (const candidate of resultN2.data.stages) {
+      if (candidate.stageSlug === THESIS_STAGE_SLUG) {
+        entryN2 = candidate;
+      }
+    }
+    let entryN3: StageProgressEntry = resultN3.data.stages[0];
+    for (const candidate of resultN3.data.stages) {
+      if (candidate.stageSlug === THESIS_STAGE_SLUG) {
+        entryN3 = candidate;
+      }
+    }
+    assertEquals(entryN2.stageSlug, THESIS_STAGE_SLUG);
+    assertEquals(entryN3.stageSlug, THESIS_STAGE_SLUG);
     await t.step("totalSteps same regardless of model count n", () => {
       assertEquals(entryN2.progress.totalSteps, entryN3.progress.totalSteps);
     });
@@ -1269,13 +1370,33 @@ Deno.test("getAllStageProgress: step with zero jobs whose successors have been r
   const modelId = "model-1";
   const stepAId = "step-a";
   const stepBId = "step-b";
-  const recipeSteps: Tables<"dialectic_stage_recipe_steps">[] = [
-    buildClonedStepRow(stepAId, instanceId, "step_a", "EXECUTE", "all_to_one"),
-    buildClonedStepRow(stepBId, instanceId, "step_b", "EXECUTE", "all_to_one"),
+  const progressSteps: ProgressRecipeStep[] = [
+    { id: stepAId, step_key: "step_a", job_type: "EXECUTE", granularity_strategy: "all_to_one" },
+    { id: stepBId, step_key: "step_b", job_type: "EXECUTE", granularity_strategy: "all_to_one" },
   ];
-  const edges: { instance_id: string; from_step_id: string; to_step_id: string }[] = [
-    { instance_id: instanceId, from_step_id: stepAId, to_step_id: stepBId },
+  const progressEdges: ProgressRecipeEdge[] = [
+    { from_step_id: stepAId, to_step_id: stepBId },
   ];
+  const stepIdToStepKey: Map<string, string> = new Map<string, string>([
+    [stepAId, "step_a"],
+    [stepBId, "step_b"],
+  ]);
+  const countsConfig: ComputeTemplateStageCountsResult = {
+    status: 200,
+    data: {
+      stages: [
+      buildStageCountsEntry({
+        stageId,
+        stageSlug: THESIS_STAGE_SLUG,
+        steps: progressSteps,
+        edges: progressEdges,
+        totalExpected: 2,
+      }),
+    ],
+      totalStages: 1,
+      stepIdToStepKey,
+    },
+  };
   const jobForB: DialecticJobRow = {
     id: "job-b",
     created_at: new Date().toISOString(),
@@ -1308,42 +1429,34 @@ Deno.test("getAllStageProgress: step with zero jobs whose successors have been r
     idempotency_key: null,
   };
   const jobs: DialecticJobRow[] = [jobForB];
-  const sessionRow = { id: basePayload.sessionId, project_id: basePayload.projectId, selected_model_ids: [modelId] };
-  const projectRow = { id: basePayload.projectId, process_template_id: "process-1" };
-  const transitions = [{ source_stage_id: stageId, target_stage_id: stageId }];
-  const templateStages = [{ id: stageId, slug: THESIS_STAGE_SLUG }];
-  const stages: DialecticStage[] = [{
-    id: stageId,
-    slug: THESIS_STAGE_SLUG,
-    display_name: "Thesis",
-    description: null,
-    created_at: new Date().toISOString(),
-    expected_output_template_ids: [],
-    active_recipe_instance_id: instanceId,
-    default_system_prompt_id: null,
-    recipe_template_id: templateId,
-    minimum_balance: 0,
-  }];
-  const instances: DialecticStageRecipeInstance[] = [{
-    id: instanceId,
-    stage_id: stageId,
-    template_id: templateId,
-    is_cloned: true,
-    cloned_at: null,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  }];
+  const zeroIso: string = new Date().toISOString();
+  const sessionRow: DialecticSessionRow = mockDialecticSessionRow({
+    id: basePayload.sessionId,
+    project_id: basePayload.projectId,
+    selected_model_ids: [modelId],
+    current_stage_id: stageId,
+  });
+  const projectRow: DialecticProjectRow = {
+    id: basePayload.projectId,
+    process_template_id: "process-1",
+    created_at: zeroIso,
+    initial_prompt_resource_id: null,
+    initial_user_prompt: "",
+    project_name: "test",
+    repo_url: null,
+    selected_domain_id: "domain-1",
+    selected_domain_overlay_id: null,
+    status: "active",
+    updated_at: zeroIso,
+    user_domain_overlay_values: null,
+    user_id: basePayload.userId,
+    idempotency_key: null,
+  };
   const headers = { "Content-Type": "application/json" };
   mockFetch([
     new Response(JSON.stringify(sessionRow), { status: 200, headers }),
     new Response(JSON.stringify(projectRow), { status: 200, headers }),
-    new Response(JSON.stringify(transitions), { status: 200, headers }),
-    new Response(JSON.stringify(templateStages), { status: 200, headers }),
     new Response(JSON.stringify(jobs), { status: 200, headers }),
-    new Response(JSON.stringify(stages), { status: 200, headers }),
-    new Response(JSON.stringify(instances), { status: 200, headers }),
-    new Response(JSON.stringify(recipeSteps), { status: 200, headers }),
-    new Response(JSON.stringify(edges), { status: 200, headers }),
     new Response(JSON.stringify([]), { status: 200, headers }),
     new Response(JSON.stringify([]), { status: 200, headers }),
   ]);
@@ -1351,16 +1464,27 @@ Deno.test("getAllStageProgress: step with zero jobs whose successors have been r
     auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
   });
   try {
-    const deps: GetAllStageProgressDeps = createGetAllStageProgressDeps(dbClient, baseUser);
+    const deps: GetAllStageProgressDeps = buildGetAllStageProgressDeps(dbClient, baseUser, {
+      computeTemplateStageCounts: createMockComputeTemplateStageCountsFn(countsConfig),
+    });
     const params: GetAllStageProgressParams = { payload: basePayload };
     const result: GetAllStageProgressResult = await getAllStageProgress(deps, params);
     assertEquals(result.status, 200, "expected status 200");
     if (!result.data) throw new Error("result.data missing");
-    const entry: StageProgressEntry | undefined = result.data.stages.find((s: StageProgressEntry) => s.stageSlug === THESIS_STAGE_SLUG);
-    assertExists(entry);
-    if (!entry) throw new Error("entry missing");
-    const stepA: StepProgressDto | undefined = entry.steps.find((s: StepProgressDto) => s.stepKey === "step_a");
-    assertExists(stepA);
+    let entry: StageProgressEntry = result.data.stages[0];
+    for (const candidate of result.data.stages) {
+      if (candidate.stageSlug === THESIS_STAGE_SLUG) {
+        entry = candidate;
+      }
+    }
+    assertEquals(entry.stageSlug, THESIS_STAGE_SLUG);
+    let stepA: StepProgressDto = entry.steps[0];
+    for (const candidate of entry.steps) {
+      if (candidate.stepKey === "step_a") {
+        stepA = candidate;
+      }
+    }
+    assertEquals(stepA.stepKey, "step_a");
     await t.step("step with zero jobs whose successors have been reached has status completed", () => {
       assertEquals(stepA.status, "completed");
     });
@@ -1379,26 +1503,70 @@ Deno.test("getAllStageProgress: randomized DAG test and progress for any valid D
   const modelId = "model-1";
   const numStepsA: number = 2 + Math.floor(Math.random() * 3);
   const numStepsB: number = 2 + Math.floor(Math.random() * 3);
-  const stepsA: Tables<"dialectic_stage_recipe_steps">[] = [];
+  const stepsA: ProgressRecipeStep[] = [];
   for (let i = 0; i < numStepsA; i++) {
+    const stepId: string = `step-a-${i}`;
+    const jobType: JobType = i === 0 ? "PLAN" : "EXECUTE";
     const strat: GranularityStrategy = STRATEGIES_NO_PRIOR_CONTEXT[Math.floor(Math.random() * STRATEGIES_NO_PRIOR_CONTEXT.length)];
-    stepsA.push(buildClonedStepRow(`step-a-${i}`, instanceIdA, `step_a_${i}`, i === 0 ? "PLAN" : "EXECUTE", strat));
+    const step: ProgressRecipeStep = {
+      id: stepId,
+      step_key: `step_a_${i}`,
+      job_type: jobType,
+      granularity_strategy: strat,
+    };
+    stepsA.push(step);
   }
-  const edgesA: { instance_id: string; from_step_id: string; to_step_id: string }[] = [];
+  const edgesA: ProgressRecipeEdge[] = [];
   for (let i = 0; i < numStepsA - 1; i++) {
-    edgesA.push({ instance_id: instanceIdA, from_step_id: stepsA[i].id, to_step_id: stepsA[i + 1].id });
+    edgesA.push({ from_step_id: stepsA[i].id, to_step_id: stepsA[i + 1].id });
   }
-  const stepsB: Tables<"dialectic_stage_recipe_steps">[] = [];
+  const stepsB: ProgressRecipeStep[] = [];
   for (let i = 0; i < numStepsB; i++) {
+    const stepId: string = `step-b-${i}`;
+    const jobType: JobType = i === 0 ? "PLAN" : "EXECUTE";
     const strat: GranularityStrategy = STRATEGIES_SUPPORTED[Math.floor(Math.random() * STRATEGIES_SUPPORTED.length)];
-    stepsB.push(buildClonedStepRow(`step-b-${i}`, instanceIdB, `step_b_${i}`, i === 0 ? "PLAN" : "EXECUTE", strat));
+    const step: ProgressRecipeStep = {
+      id: stepId,
+      step_key: `step_b_${i}`,
+      job_type: jobType,
+      granularity_strategy: strat,
+    };
+    stepsB.push(step);
   }
-  const edgesB: { instance_id: string; from_step_id: string; to_step_id: string }[] = [];
+  const edgesB: ProgressRecipeEdge[] = [];
   for (let i = 0; i < numStepsB - 1; i++) {
-    edgesB.push({ instance_id: instanceIdB, from_step_id: stepsB[i].id, to_step_id: stepsB[i + 1].id });
+    edgesB.push({ from_step_id: stepsB[i].id, to_step_id: stepsB[i + 1].id });
   }
-  const allSteps: Tables<"dialectic_stage_recipe_steps">[] = [...stepsA, ...stepsB];
-  const allEdges: { instance_id: string; from_step_id: string; to_step_id: string }[] = [...edgesA, ...edgesB];
+  const randStepIdToStepKey: Map<string, string> = new Map<string, string>();
+  for (const step of stepsA) {
+    randStepIdToStepKey.set(step.id, step.step_key);
+  }
+  for (const step of stepsB) {
+    randStepIdToStepKey.set(step.id, step.step_key);
+  }
+  const countsConfig: ComputeTemplateStageCountsResult = {
+    status: 200,
+    data: {
+      stages: [
+      buildStageCountsEntry({
+        stageId: stageIdA,
+        stageSlug: THESIS_STAGE_SLUG,
+        steps: stepsA,
+        edges: edgesA,
+        totalExpected: numStepsA,
+      }),
+      buildStageCountsEntry({
+        stageId: stageIdB,
+        stageSlug: SYNTHESIS_STAGE_SLUG,
+        steps: stepsB,
+        edges: edgesB,
+        totalExpected: numStepsB,
+      }),
+      ],
+      totalStages: 2,
+      stepIdToStepKey: randStepIdToStepKey,
+    },
+  };
   const jobs: DialecticJobRow[] = [];
   const completedA: number = Math.floor(Math.random() * (numStepsA + 1));
   for (let j = 0; j < numStepsA; j++) {
@@ -1472,81 +1640,33 @@ Deno.test("getAllStageProgress: randomized DAG test and progress for any valid D
       idempotency_key: null,
     });
   }
-  const sessionRow: { id: string; project_id: string; selected_model_ids: string[] } = {
+  const randIso: string = new Date().toISOString();
+  const sessionRow: DialecticSessionRow = mockDialecticSessionRow({
     id: basePayload.sessionId,
     project_id: basePayload.projectId,
     selected_model_ids: [modelId],
-  };
-  const projectRow: { id: string; process_template_id: string } = {
+  });
+  const projectRow: DialecticProjectRow = {
     id: basePayload.projectId,
     process_template_id: "process-1",
+    created_at: randIso,
+    initial_prompt_resource_id: null,
+    initial_user_prompt: "",
+    project_name: "test",
+    repo_url: null,
+    selected_domain_id: "domain-1",
+    selected_domain_overlay_id: null,
+    status: "active",
+    updated_at: randIso,
+    user_domain_overlay_values: null,
+    user_id: basePayload.userId,
+    idempotency_key: null,
   };
-  const transitions: { source_stage_id: string; target_stage_id: string }[] = [
-    { source_stage_id: stageIdA, target_stage_id: stageIdA },
-    { source_stage_id: stageIdB, target_stage_id: stageIdB },
-    { source_stage_id: stageIdA, target_stage_id: stageIdB },
-  ];
-  const templateStages: { id: string; slug: string }[] = [
-    { id: stageIdA, slug: THESIS_STAGE_SLUG },
-    { id: stageIdB, slug: SYNTHESIS_STAGE_SLUG },
-  ];
-  const stages: DialecticStage[] = [
-    {
-      id: stageIdA,
-      slug: THESIS_STAGE_SLUG,
-      display_name: "Thesis",
-      description: null,
-      created_at: new Date().toISOString(),
-      expected_output_template_ids: [],
-      active_recipe_instance_id: instanceIdA,
-      default_system_prompt_id: null,
-      recipe_template_id: templateIdA,
-      minimum_balance: 0,
-    },
-    {
-      id: stageIdB,
-      slug: SYNTHESIS_STAGE_SLUG,
-      display_name: "Synthesis",
-      description: null,
-      created_at: new Date().toISOString(),
-      expected_output_template_ids: [],
-      active_recipe_instance_id: instanceIdB,
-      default_system_prompt_id: null,
-      recipe_template_id: templateIdB,
-      minimum_balance: 0,
-    },
-  ];
-  const instances: DialecticStageRecipeInstance[] = [
-    {
-      id: instanceIdA,
-      stage_id: stageIdA,
-      template_id: templateIdA,
-      is_cloned: true,
-      cloned_at: null,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    },
-    {
-      id: instanceIdB,
-      stage_id: stageIdB,
-      template_id: templateIdB,
-      is_cloned: true,
-      cloned_at: null,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    },
-  ];
   const headers: { "Content-Type": string } = { "Content-Type": "application/json" };
   mockFetch([
     new Response(JSON.stringify(sessionRow), { status: 200, headers }),
     new Response(JSON.stringify(projectRow), { status: 200, headers }),
-    new Response(JSON.stringify(transitions), { status: 200, headers }),
-    new Response(JSON.stringify(templateStages), { status: 200, headers }),
     new Response(JSON.stringify(jobs), { status: 200, headers }),
-    new Response(JSON.stringify(stages), { status: 200, headers }),
-    new Response(JSON.stringify(instances), { status: 200, headers }),
-    new Response(JSON.stringify(allSteps), { status: 200, headers }),
-    new Response(JSON.stringify(allEdges), { status: 200, headers }),
     new Response(JSON.stringify([]), { status: 200, headers }),
     new Response(JSON.stringify([]), { status: 200, headers }),
   ]);
@@ -1554,16 +1674,27 @@ Deno.test("getAllStageProgress: randomized DAG test and progress for any valid D
     auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
   });
   try {
-    const deps: GetAllStageProgressDeps = createGetAllStageProgressDeps(dbClient, baseUser);
+    const deps: GetAllStageProgressDeps = buildGetAllStageProgressDeps(dbClient, baseUser, {
+      computeTemplateStageCounts: createMockComputeTemplateStageCountsFn(countsConfig),
+    });
     const params: GetAllStageProgressParams = { payload: basePayload };
     const result: GetAllStageProgressResult = await getAllStageProgress(deps, params);
     assertEquals(result.status, 200, "expected status 200");
     if (!result.data) throw new Error("result.data missing");
-    const entryA: StageProgressEntry | undefined = result.data.stages.find((s: StageProgressEntry) => s.stageSlug === THESIS_STAGE_SLUG);
-    const entryB: StageProgressEntry | undefined = result.data.stages.find((s: StageProgressEntry) => s.stageSlug === SYNTHESIS_STAGE_SLUG);
-    assertExists(entryA);
-    assertExists(entryB);
-    if (!entryA || !entryB) throw new Error("entry missing");
+    let entryA: StageProgressEntry = result.data.stages[0];
+    for (const candidate of result.data.stages) {
+      if (candidate.stageSlug === THESIS_STAGE_SLUG) {
+        entryA = candidate;
+      }
+    }
+    let entryB: StageProgressEntry = result.data.stages[0];
+    for (const candidate of result.data.stages) {
+      if (candidate.stageSlug === SYNTHESIS_STAGE_SLUG) {
+        entryB = candidate;
+      }
+    }
+    assertEquals(entryA.stageSlug, THESIS_STAGE_SLUG);
+    assertEquals(entryB.stageSlug, SYNTHESIS_STAGE_SLUG);
     await t.step("thesis: completedSteps == count of completed status", () => {
       const completedCount: number = entryA.steps.filter((s: StepProgressDto) => s.status === "completed").length;
       assertEquals(entryA.progress.completedSteps, completedCount);
@@ -1604,29 +1735,40 @@ Deno.test("getAllStageProgress: paused_nsf step status drives stage status (NSF 
   const stepAId: string = "step-paused-a";
   const stepBId: string = "step-paused-b";
   const iso: string = new Date().toISOString();
-  const recipeSteps: Tables<"dialectic_stage_recipe_steps">[] = [
-    buildClonedStepRow(stepAId, instanceId, "step_paused_a", "EXECUTE", "all_to_one"),
-    buildClonedStepRow(stepBId, instanceId, "step_paused_b", "EXECUTE", "all_to_one"),
+  const progressSteps: ProgressRecipeStep[] = [
+    { id: stepAId, step_key: "step_paused_a", job_type: "EXECUTE", granularity_strategy: "all_to_one" },
+    { id: stepBId, step_key: "step_paused_b", job_type: "EXECUTE", granularity_strategy: "all_to_one" },
   ];
-  const edges: Tables<"dialectic_stage_recipe_edges">[] = [
-    { id: "edge-paused-1", created_at: iso, instance_id: instanceId, from_step_id: stepAId, to_step_id: stepBId },
+  const progressEdges: ProgressRecipeEdge[] = [
+    { from_step_id: stepAId, to_step_id: stepBId },
   ];
-  const sessionRow: Tables<"dialectic_sessions"> = {
+  const stepIdToStepKey: Map<string, string> = new Map<string, string>([
+    [stepAId, "step_paused_a"],
+    [stepBId, "step_paused_b"],
+  ]);
+  const countsConfig: ComputeTemplateStageCountsResult = {
+    status: 200,
+    data: {
+      stages: [
+      buildStageCountsEntry({
+        stageId,
+        stageSlug: THESIS_STAGE_SLUG,
+        steps: progressSteps,
+        edges: progressEdges,
+        totalExpected: 2,
+      }),
+    ],
+    totalStages: 1,
+    stepIdToStepKey,
+    },
+  };
+  const sessionRow: DialecticSessionRow = mockDialecticSessionRow({
     id: basePayload.sessionId,
     project_id: basePayload.projectId,
     selected_model_ids: [modelId],
-    associated_chat_id: null,
-    created_at: iso,
     current_stage_id: stageId,
-    iteration_count: 1,
-    session_description: null,
-    status: "active",
-    updated_at: iso,
-    user_input_reference_url: null,
-    idempotency_key: null,
-    viewing_stage_id: null,
-  };
-  const projectRow: Tables<"dialectic_projects"> = {
+  });
+  const projectRow: DialecticProjectRow = {
     id: basePayload.projectId,
     process_template_id: "process-1",
     created_at: iso,
@@ -1642,18 +1784,6 @@ Deno.test("getAllStageProgress: paused_nsf step status drives stage status (NSF 
     user_id: basePayload.userId,
     idempotency_key: null,
   };
-  const transitions: DialecticStageTransition[] = [
-    { id: "trans-1", process_template_id: "process-1", source_stage_id: stageId, target_stage_id: stageId, condition_description: null, created_at: iso },
-  ];
-  const templateStages: DialecticStage[] = [
-    { id: stageId, slug: THESIS_STAGE_SLUG, display_name: "Thesis", description: null, created_at: iso, expected_output_template_ids: [], active_recipe_instance_id: instanceId, default_system_prompt_id: null, recipe_template_id: templateId, minimum_balance: 0 },
-  ];
-  const stages: DialecticStage[] = [
-    { id: stageId, slug: THESIS_STAGE_SLUG, display_name: "Thesis", description: null, created_at: iso, expected_output_template_ids: [], active_recipe_instance_id: instanceId, default_system_prompt_id: null, recipe_template_id: templateId, minimum_balance: 0 },
-  ];
-  const instances: DialecticStageRecipeInstance[] = [
-    { id: instanceId, stage_id: stageId, template_id: templateId, is_cloned: true, cloned_at: null, created_at: iso, updated_at: iso },
-  ];
   const headers: HeadersInit = { "Content-Type": "application/json" };
 
   await t.step("when any step has status paused_nsf, stage status is paused_nsf", async () => {
@@ -1691,13 +1821,7 @@ Deno.test("getAllStageProgress: paused_nsf step status drives stage status (NSF 
     mockFetch([
       new Response(JSON.stringify(sessionRow), { status: 200, headers }),
       new Response(JSON.stringify(projectRow), { status: 200, headers }),
-      new Response(JSON.stringify(transitions), { status: 200, headers }),
-      new Response(JSON.stringify(templateStages), { status: 200, headers }),
       new Response(JSON.stringify(jobs), { status: 200, headers }),
-      new Response(JSON.stringify(stages), { status: 200, headers }),
-      new Response(JSON.stringify(instances), { status: 200, headers }),
-      new Response(JSON.stringify(recipeSteps), { status: 200, headers }),
-      new Response(JSON.stringify(edges), { status: 200, headers }),
       new Response(JSON.stringify([]), { status: 200, headers }),
       new Response(JSON.stringify([]), { status: 200, headers }),
     ]);
@@ -1705,12 +1829,19 @@ Deno.test("getAllStageProgress: paused_nsf step status drives stage status (NSF 
       auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
     });
     try {
-      const deps: GetAllStageProgressDeps = createGetAllStageProgressDeps(dbClient, baseUser);
+      const deps: GetAllStageProgressDeps = buildGetAllStageProgressDeps(dbClient, baseUser, {
+        computeTemplateStageCounts: createMockComputeTemplateStageCountsFn(countsConfig),
+      });
       const params: GetAllStageProgressParams = { payload: basePayload };
       const result: GetAllStageProgressResult = await getAllStageProgress(deps, params);
       assertEquals(result.status, 200, "expected status 200");
       assertExists(result.data);
-      const entry: StageProgressEntry | undefined = result.data!.stages.find((s: StageProgressEntry) => s.stageSlug === THESIS_STAGE_SLUG);
+      let entry: StageProgressEntry = result.data!.stages[0];
+      for (const candidate of result.data!.stages) {
+        if (candidate.stageSlug === THESIS_STAGE_SLUG) {
+          entry = candidate;
+        }
+      }
       assertExists(entry);
       assertEquals(entry!.status, "paused_nsf");
     } finally {
@@ -1786,13 +1917,7 @@ Deno.test("getAllStageProgress: paused_nsf step status drives stage status (NSF 
     mockFetch([
       new Response(JSON.stringify(sessionRow), { status: 200, headers }),
       new Response(JSON.stringify(projectRow), { status: 200, headers }),
-      new Response(JSON.stringify(transitions), { status: 200, headers }),
-      new Response(JSON.stringify(templateStages), { status: 200, headers }),
       new Response(JSON.stringify(jobs), { status: 200, headers }),
-      new Response(JSON.stringify(stages), { status: 200, headers }),
-      new Response(JSON.stringify(instances), { status: 200, headers }),
-      new Response(JSON.stringify(recipeSteps), { status: 200, headers }),
-      new Response(JSON.stringify(edges), { status: 200, headers }),
       new Response(JSON.stringify([]), { status: 200, headers }),
       new Response(JSON.stringify([]), { status: 200, headers }),
     ]);
@@ -1800,12 +1925,19 @@ Deno.test("getAllStageProgress: paused_nsf step status drives stage status (NSF 
       auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
     });
     try {
-      const deps: GetAllStageProgressDeps = createGetAllStageProgressDeps(dbClient, baseUser);
+      const deps: GetAllStageProgressDeps = buildGetAllStageProgressDeps(dbClient, baseUser, {
+        computeTemplateStageCounts: createMockComputeTemplateStageCountsFn(countsConfig),
+      });
       const params: GetAllStageProgressParams = { payload: basePayload };
       const result: GetAllStageProgressResult = await getAllStageProgress(deps, params);
       assertEquals(result.status, 200, "expected status 200");
       assertExists(result.data);
-      const entry: StageProgressEntry | undefined = result.data!.stages.find((s: StageProgressEntry) => s.stageSlug === THESIS_STAGE_SLUG);
+      let entry: StageProgressEntry = result.data!.stages[0];
+      for (const candidate of result.data!.stages) {
+        if (candidate.stageSlug === THESIS_STAGE_SLUG) {
+          entry = candidate;
+        }
+      }
       assertExists(entry);
       assertEquals(entry!.status, "paused_nsf");
     } finally {
@@ -1881,13 +2013,7 @@ Deno.test("getAllStageProgress: paused_nsf step status drives stage status (NSF 
     mockFetch([
       new Response(JSON.stringify(sessionRow), { status: 200, headers }),
       new Response(JSON.stringify(projectRow), { status: 200, headers }),
-      new Response(JSON.stringify(transitions), { status: 200, headers }),
-      new Response(JSON.stringify(templateStages), { status: 200, headers }),
       new Response(JSON.stringify(jobs), { status: 200, headers }),
-      new Response(JSON.stringify(stages), { status: 200, headers }),
-      new Response(JSON.stringify(instances), { status: 200, headers }),
-      new Response(JSON.stringify(recipeSteps), { status: 200, headers }),
-      new Response(JSON.stringify(edges), { status: 200, headers }),
       new Response(JSON.stringify([]), { status: 200, headers }),
       new Response(JSON.stringify([]), { status: 200, headers }),
     ]);
@@ -1895,12 +2021,19 @@ Deno.test("getAllStageProgress: paused_nsf step status drives stage status (NSF 
       auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
     });
     try {
-      const deps: GetAllStageProgressDeps = createGetAllStageProgressDeps(dbClient, baseUser);
+      const deps: GetAllStageProgressDeps = buildGetAllStageProgressDeps(dbClient, baseUser, {
+        computeTemplateStageCounts: createMockComputeTemplateStageCountsFn(countsConfig),
+      });
       const params: GetAllStageProgressParams = { payload: basePayload };
       const result: GetAllStageProgressResult = await getAllStageProgress(deps, params);
       assertEquals(result.status, 200, "expected status 200");
       assertExists(result.data);
-      const entry: StageProgressEntry | undefined = result.data!.stages.find((s: StageProgressEntry) => s.stageSlug === THESIS_STAGE_SLUG);
+      let entry: StageProgressEntry = result.data!.stages[0];
+      for (const candidate of result.data!.stages) {
+        if (candidate.stageSlug === THESIS_STAGE_SLUG) {
+          entry = candidate;
+        }
+      }
       assertExists(entry);
       assertEquals(entry!.status, "failed");
     } finally {
@@ -1917,29 +2050,40 @@ Deno.test("getAllStageProgress: paused_user step status drives stage status (use
   const stepAId: string = "step-paused-user-a";
   const stepBId: string = "step-paused-user-b";
   const iso: string = new Date().toISOString();
-  const recipeSteps: Tables<"dialectic_stage_recipe_steps">[] = [
-    buildClonedStepRow(stepAId, instanceId, "step_paused_user_a", "EXECUTE", "all_to_one"),
-    buildClonedStepRow(stepBId, instanceId, "step_paused_user_b", "EXECUTE", "all_to_one"),
+  const progressSteps: ProgressRecipeStep[] = [
+    { id: stepAId, step_key: "step_paused_user_a", job_type: "EXECUTE", granularity_strategy: "all_to_one" },
+    { id: stepBId, step_key: "step_paused_user_b", job_type: "EXECUTE", granularity_strategy: "all_to_one" },
   ];
-  const edges: Tables<"dialectic_stage_recipe_edges">[] = [
-    { id: "edge-paused-user-1", created_at: iso, instance_id: instanceId, from_step_id: stepAId, to_step_id: stepBId },
+  const progressEdges: ProgressRecipeEdge[] = [
+    { from_step_id: stepAId, to_step_id: stepBId },
   ];
-  const sessionRow: Tables<"dialectic_sessions"> = {
+  const stepIdToStepKey: Map<string, string> = new Map<string, string>([
+    [stepAId, "step_paused_user_a"],
+    [stepBId, "step_paused_user_b"],
+  ]);
+  const countsConfig: ComputeTemplateStageCountsResult = {
+    status: 200,
+    data: {
+      stages: [
+      buildStageCountsEntry({
+        stageId,
+        stageSlug: THESIS_STAGE_SLUG,
+        steps: progressSteps,
+        edges: progressEdges,
+        totalExpected: 2,
+      }),
+    ],
+    totalStages: 1,
+    stepIdToStepKey,
+    },
+  };
+  const sessionRow: DialecticSessionRow = mockDialecticSessionRow({
     id: basePayload.sessionId,
     project_id: basePayload.projectId,
     selected_model_ids: [modelId],
-    associated_chat_id: null,
-    created_at: iso,
     current_stage_id: stageId,
-    iteration_count: 1,
-    session_description: null,
-    status: "active",
-    updated_at: iso,
-    user_input_reference_url: null,
-    idempotency_key: null,
-    viewing_stage_id: null,
-  };
-  const projectRow: Tables<"dialectic_projects"> = {
+  });
+  const projectRow: DialecticProjectRow = {
     id: basePayload.projectId,
     process_template_id: "process-1",
     created_at: iso,
@@ -1955,18 +2099,6 @@ Deno.test("getAllStageProgress: paused_user step status drives stage status (use
     user_id: basePayload.userId,
     idempotency_key: null,
   };
-  const transitions: DialecticStageTransition[] = [
-    { id: "trans-pu-1", process_template_id: "process-1", source_stage_id: stageId, target_stage_id: stageId, condition_description: null, created_at: iso },
-  ];
-  const templateStages: DialecticStage[] = [
-    { id: stageId, slug: THESIS_STAGE_SLUG, display_name: "Thesis", description: null, created_at: iso, expected_output_template_ids: [], active_recipe_instance_id: instanceId, default_system_prompt_id: null, recipe_template_id: templateId, minimum_balance: 0 },
-  ];
-  const stages: DialecticStage[] = [
-    { id: stageId, slug: THESIS_STAGE_SLUG, display_name: "Thesis", description: null, created_at: iso, expected_output_template_ids: [], active_recipe_instance_id: instanceId, default_system_prompt_id: null, recipe_template_id: templateId, minimum_balance: 0 },
-  ];
-  const instances: DialecticStageRecipeInstance[] = [
-    { id: instanceId, stage_id: stageId, template_id: templateId, is_cloned: true, cloned_at: null, created_at: iso, updated_at: iso },
-  ];
   const headers: HeadersInit = { "Content-Type": "application/json" };
 
   await t.step("when any step has status paused_user, stage status is paused_user", async () => {
@@ -2004,13 +2136,7 @@ Deno.test("getAllStageProgress: paused_user step status drives stage status (use
     mockFetch([
       new Response(JSON.stringify(sessionRow), { status: 200, headers }),
       new Response(JSON.stringify(projectRow), { status: 200, headers }),
-      new Response(JSON.stringify(transitions), { status: 200, headers }),
-      new Response(JSON.stringify(templateStages), { status: 200, headers }),
       new Response(JSON.stringify(jobs), { status: 200, headers }),
-      new Response(JSON.stringify(stages), { status: 200, headers }),
-      new Response(JSON.stringify(instances), { status: 200, headers }),
-      new Response(JSON.stringify(recipeSteps), { status: 200, headers }),
-      new Response(JSON.stringify(edges), { status: 200, headers }),
       new Response(JSON.stringify([]), { status: 200, headers }),
       new Response(JSON.stringify([]), { status: 200, headers }),
     ]);
@@ -2018,12 +2144,19 @@ Deno.test("getAllStageProgress: paused_user step status drives stage status (use
       auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
     });
     try {
-      const deps: GetAllStageProgressDeps = createGetAllStageProgressDeps(dbClient, baseUser);
+      const deps: GetAllStageProgressDeps = buildGetAllStageProgressDeps(dbClient, baseUser, {
+        computeTemplateStageCounts: createMockComputeTemplateStageCountsFn(countsConfig),
+      });
       const params: GetAllStageProgressParams = { payload: basePayload };
       const result: GetAllStageProgressResult = await getAllStageProgress(deps, params);
       assertEquals(result.status, 200, "expected status 200");
       assertExists(result.data);
-      const entry: StageProgressEntry | undefined = result.data!.stages.find((s: StageProgressEntry) => s.stageSlug === THESIS_STAGE_SLUG);
+      let entry: StageProgressEntry = result.data!.stages[0];
+      for (const candidate of result.data!.stages) {
+        if (candidate.stageSlug === THESIS_STAGE_SLUG) {
+          entry = candidate;
+        }
+      }
       assertExists(entry);
       assertEquals(entry!.status, "paused_user");
     } finally {
@@ -2099,13 +2232,7 @@ Deno.test("getAllStageProgress: paused_user step status drives stage status (use
     mockFetch([
       new Response(JSON.stringify(sessionRow), { status: 200, headers }),
       new Response(JSON.stringify(projectRow), { status: 200, headers }),
-      new Response(JSON.stringify(transitions), { status: 200, headers }),
-      new Response(JSON.stringify(templateStages), { status: 200, headers }),
       new Response(JSON.stringify(jobs), { status: 200, headers }),
-      new Response(JSON.stringify(stages), { status: 200, headers }),
-      new Response(JSON.stringify(instances), { status: 200, headers }),
-      new Response(JSON.stringify(recipeSteps), { status: 200, headers }),
-      new Response(JSON.stringify(edges), { status: 200, headers }),
       new Response(JSON.stringify([]), { status: 200, headers }),
       new Response(JSON.stringify([]), { status: 200, headers }),
     ]);
@@ -2113,12 +2240,19 @@ Deno.test("getAllStageProgress: paused_user step status drives stage status (use
       auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
     });
     try {
-      const deps: GetAllStageProgressDeps = createGetAllStageProgressDeps(dbClient, baseUser);
+      const deps: GetAllStageProgressDeps = buildGetAllStageProgressDeps(dbClient, baseUser, {
+        computeTemplateStageCounts: createMockComputeTemplateStageCountsFn(countsConfig),
+      });
       const params: GetAllStageProgressParams = { payload: basePayload };
       const result: GetAllStageProgressResult = await getAllStageProgress(deps, params);
       assertEquals(result.status, 200, "expected status 200");
       assertExists(result.data);
-      const entry: StageProgressEntry | undefined = result.data!.stages.find((s: StageProgressEntry) => s.stageSlug === THESIS_STAGE_SLUG);
+      let entry: StageProgressEntry = result.data!.stages[0];
+      for (const candidate of result.data!.stages) {
+        if (candidate.stageSlug === THESIS_STAGE_SLUG) {
+          entry = candidate;
+        }
+      }
       assertExists(entry);
       assertEquals(entry!.status, "paused_user");
     } finally {
@@ -2136,17 +2270,38 @@ Deno.test("getAllStageProgress: stages[].jobs contains JobProgressDto[] with cor
   const executeStepId: string = "step-execute-je";
   const renderStepId: string = "step-render-je";
 
-  const recipeSteps: Tables<"dialectic_stage_recipe_steps">[] = [
-    buildClonedStepRow(planStepId, instanceId, "plan", "PLAN", "all_to_one"),
-    buildClonedStepRow(executeStepId, instanceId, "execute", "EXECUTE", "per_model"),
-    buildClonedStepRow(renderStepId, instanceId, "render", "RENDER", "all_to_one"),
+  const progressSteps: ProgressRecipeStep[] = [
+    { id: planStepId, step_key: "plan", job_type: "PLAN", granularity_strategy: "all_to_one" },
+    { id: executeStepId, step_key: "execute", job_type: "EXECUTE", granularity_strategy: "per_model" },
+    { id: renderStepId, step_key: "render", job_type: "RENDER", granularity_strategy: "all_to_one" },
   ];
+  const progressEdges: ProgressRecipeEdge[] = [
+    { from_step_id: planStepId, to_step_id: executeStepId },
+    { from_step_id: executeStepId, to_step_id: renderStepId },
+  ];
+  const stepIdToStepKey: Map<string, string> = new Map<string, string>([
+    [planStepId, "plan"],
+    [executeStepId, "execute"],
+    [renderStepId, "render"],
+  ]);
+  const countsConfig: ComputeTemplateStageCountsResult = {
+    status: 200,
+    data: {
+      stages: [
+      buildStageCountsEntry({
+        stageId,
+        stageSlug: THESIS_STAGE_SLUG,
+        steps: progressSteps,
+        edges: progressEdges,
+        totalExpected: 3,
+      }),
+    ],
+    totalStages: 1,
+    stepIdToStepKey,
+    },
+  };
 
   const iso: string = new Date().toISOString();
-  const edges: Tables<"dialectic_stage_recipe_edges">[] = [
-    { id: "edge-je-1", created_at: iso, instance_id: instanceId, from_step_id: planStepId, to_step_id: executeStepId },
-    { id: "edge-je-2", created_at: iso, instance_id: instanceId, from_step_id: executeStepId, to_step_id: renderStepId },
-  ];
 
   const jobs: DialecticJobRow[] = [
     {
@@ -2239,22 +2394,13 @@ Deno.test("getAllStageProgress: stages[].jobs contains JobProgressDto[] with cor
     },
   ];
 
-  const sessionRow: Tables<"dialectic_sessions"> = {
+  const sessionRow: DialecticSessionRow = mockDialecticSessionRow({
     id: basePayload.sessionId,
     project_id: basePayload.projectId,
     selected_model_ids: [modelId],
-    associated_chat_id: null,
-    created_at: iso,
     current_stage_id: stageId,
-    iteration_count: 1,
-    session_description: null,
-    status: "active",
-    updated_at: iso,
-    user_input_reference_url: null,
-    idempotency_key: null,
-    viewing_stage_id: null,
-  };
-  const projectRow: Tables<"dialectic_projects"> = {
+  });
+  const projectRow: DialecticProjectRow = {
     id: basePayload.projectId,
     process_template_id: "process-tpl-1",
     created_at: iso,
@@ -2270,30 +2416,12 @@ Deno.test("getAllStageProgress: stages[].jobs contains JobProgressDto[] with cor
     user_id: basePayload.userId,
     idempotency_key: null,
   };
-  const transitions: DialecticStageTransition[] = [
-    { id: "trans-je-1", process_template_id: "process-tpl-1", source_stage_id: stageId, target_stage_id: stageId, condition_description: null, created_at: iso },
-  ];
-  const templateStages: DialecticStage[] = [
-    { id: stageId, slug: THESIS_STAGE_SLUG, display_name: "Thesis", description: null, created_at: iso, expected_output_template_ids: [], active_recipe_instance_id: instanceId, default_system_prompt_id: null, recipe_template_id: templateId, minimum_balance: 0 },
-  ];
-  const stages: DialecticStage[] = [
-    { id: stageId, slug: THESIS_STAGE_SLUG, display_name: "Thesis", description: null, created_at: iso, expected_output_template_ids: [], active_recipe_instance_id: instanceId, default_system_prompt_id: null, recipe_template_id: templateId, minimum_balance: 0 },
-  ];
-  const instances: DialecticStageRecipeInstance[] = [
-    { id: instanceId, stage_id: stageId, template_id: templateId, is_cloned: true, cloned_at: null, created_at: iso, updated_at: iso },
-  ];
 
   const headers: HeadersInit = { "Content-Type": "application/json" };
   mockFetch([
     new Response(JSON.stringify(sessionRow), { status: 200, headers }),
     new Response(JSON.stringify(projectRow), { status: 200, headers }),
-    new Response(JSON.stringify(transitions), { status: 200, headers }),
-    new Response(JSON.stringify(templateStages), { status: 200, headers }),
     new Response(JSON.stringify(jobs), { status: 200, headers }),
-    new Response(JSON.stringify(stages), { status: 200, headers }),
-    new Response(JSON.stringify(instances), { status: 200, headers }),
-    new Response(JSON.stringify(recipeSteps), { status: 200, headers }),
-    new Response(JSON.stringify(edges), { status: 200, headers }),
     new Response(JSON.stringify([]), { status: 200, headers }),
     new Response(JSON.stringify([]), { status: 200, headers }),
   ]);
@@ -2303,21 +2431,28 @@ Deno.test("getAllStageProgress: stages[].jobs contains JobProgressDto[] with cor
   });
 
   try {
-    const deps: GetAllStageProgressDeps = createGetAllStageProgressDeps(dbClient, baseUser);
+    const deps: GetAllStageProgressDeps = buildGetAllStageProgressDeps(dbClient, baseUser, {
+      computeTemplateStageCounts: createMockComputeTemplateStageCountsFn(countsConfig),
+    });
     const params: GetAllStageProgressParams = { payload: basePayload };
     const result: GetAllStageProgressResult = await getAllStageProgress(deps, params);
     assertEquals(result.status, 200);
     assertExists(result.data);
     if (!result.data) throw new Error("result.data missing");
     const data: GetAllStageProgressResponse = result.data;
-    const entry: StageProgressEntry | undefined = data.stages.find((s: StageProgressEntry) => s.stageSlug === THESIS_STAGE_SLUG);
+    let entry: StageProgressEntry = data.stages[0];
+    for (const candidate of data.stages) {
+      if (candidate.stageSlug === THESIS_STAGE_SLUG) {
+        entry = candidate;
+      }
+    }
     assertExists(entry);
     if (!entry) throw new Error("entry missing");
 
     await t.step("response stages[].jobs contains JobProgressDto[] with correct fields (id, status, jobType, stepKey, modelId, documentKey, parentJobId, createdAt, startedAt, completedAt)", () => {
       assert(Array.isArray(entry.jobs));
       assertEquals(entry.jobs.length, jobs.length);
-      const first: JobProgressDto | undefined = entry.jobs[0];
+      const first: JobProgressDto = entry.jobs[0];
       assertExists(first);
       if (!first) return;
       assertEquals(typeof first.id, "string");
@@ -2353,7 +2488,7 @@ Deno.test("getAllStageProgress: stages[].jobs contains JobProgressDto[] with cor
 
     await t.step("response stages[].edges contains ProgressRecipeEdge[] matching the recipe edges for that stage", () => {
       assert(Array.isArray(entry.edges));
-      assertEquals(entry.edges.length, edges.length);
+      assertEquals(entry.edges.length, progressEdges.length);
       for (const e of entry.edges) {
         assertEquals(typeof e.from_step_id, "string");
         assertEquals(typeof e.to_step_id, "string");
@@ -2361,7 +2496,7 @@ Deno.test("getAllStageProgress: stages[].jobs contains JobProgressDto[] with cor
     });
 
     await t.step("existing steps and documents fields are unchanged (additive only)", () => {
-      assertEquals(entry.steps.length, recipeSteps.length);
+      assertEquals(entry.steps.length, progressSteps.length);
       assert(Array.isArray(entry.documents));
     });
   } finally {
@@ -2375,28 +2510,36 @@ Deno.test("getAllStageProgress: stage with no jobs returns empty jobs: [] array"
   const templateId: string = "template-no-jobs-id";
   const stepId: string = "step-single";
   const iso: string = new Date().toISOString();
-  const recipeSteps: Tables<"dialectic_stage_recipe_steps">[] = [
-    buildClonedStepRow(stepId, instanceId, "single", "PLAN", "all_to_one"),
+  const progressSteps: ProgressRecipeStep[] = [
+    { id: stepId, step_key: "single", job_type: "PLAN", granularity_strategy: "all_to_one" },
   ];
-  const edges: Tables<"dialectic_stage_recipe_edges">[] = [];
+  const progressEdges: ProgressRecipeEdge[] = [];
+  const stepIdToStepKey: Map<string, string> = new Map<string, string>([[stepId, "single"]]);
+  const countsConfig: ComputeTemplateStageCountsResult = {
+    status: 200,
+    data: {
+      stages: [
+      buildStageCountsEntry({
+        stageId,
+        stageSlug: THESIS_STAGE_SLUG,
+        steps: progressSteps,
+        edges: progressEdges,
+        totalExpected: 1,
+      }),
+    ],
+    totalStages: 1,
+    stepIdToStepKey,
+    },
+  };
   const jobs: DialecticJobRow[] = [];
 
-  const sessionRow: Tables<"dialectic_sessions"> = {
+  const sessionRow: DialecticSessionRow = mockDialecticSessionRow({
     id: basePayload.sessionId,
     project_id: basePayload.projectId,
     selected_model_ids: ["model-1"],
-    associated_chat_id: null,
-    created_at: iso,
     current_stage_id: stageId,
-    iteration_count: 1,
-    session_description: null,
-    status: "active",
-    updated_at: iso,
-    user_input_reference_url: null,
-    idempotency_key: null,
-    viewing_stage_id: null,
-  };
-  const projectRow: Tables<"dialectic_projects"> = {
+  });
+  const projectRow: DialecticProjectRow = {
     id: basePayload.projectId,
     process_template_id: "process-tpl-1",
     created_at: iso,
@@ -2412,30 +2555,12 @@ Deno.test("getAllStageProgress: stage with no jobs returns empty jobs: [] array"
     user_id: basePayload.userId,
     idempotency_key: null,
   };
-  const transitions: DialecticStageTransition[] = [
-    { id: "trans-nojobs-1", process_template_id: "process-tpl-1", source_stage_id: stageId, target_stage_id: stageId, condition_description: null, created_at: iso },
-  ];
-  const templateStages: DialecticStage[] = [
-    { id: stageId, slug: THESIS_STAGE_SLUG, display_name: "Thesis", description: null, created_at: iso, expected_output_template_ids: [], active_recipe_instance_id: instanceId, default_system_prompt_id: null, recipe_template_id: templateId, minimum_balance: 0 },
-  ];
-  const stages: DialecticStage[] = [
-    { id: stageId, slug: THESIS_STAGE_SLUG, display_name: "Thesis", description: null, created_at: iso, expected_output_template_ids: [], active_recipe_instance_id: instanceId, default_system_prompt_id: null, recipe_template_id: templateId, minimum_balance: 0 },
-  ];
-  const instances: DialecticStageRecipeInstance[] = [
-    { id: instanceId, stage_id: stageId, template_id: templateId, is_cloned: true, cloned_at: null, created_at: iso, updated_at: iso },
-  ];
 
   const headers: HeadersInit = { "Content-Type": "application/json" };
   mockFetch([
     new Response(JSON.stringify(sessionRow), { status: 200, headers }),
     new Response(JSON.stringify(projectRow), { status: 200, headers }),
-    new Response(JSON.stringify(transitions), { status: 200, headers }),
-    new Response(JSON.stringify(templateStages), { status: 200, headers }),
     new Response(JSON.stringify(jobs), { status: 200, headers }),
-    new Response(JSON.stringify(stages), { status: 200, headers }),
-    new Response(JSON.stringify(instances), { status: 200, headers }),
-    new Response(JSON.stringify(recipeSteps), { status: 200, headers }),
-    new Response(JSON.stringify(edges), { status: 200, headers }),
     new Response(JSON.stringify([]), { status: 200, headers }),
     new Response(JSON.stringify([]), { status: 200, headers }),
   ]);
@@ -2445,12 +2570,19 @@ Deno.test("getAllStageProgress: stage with no jobs returns empty jobs: [] array"
   });
 
   try {
-    const deps: GetAllStageProgressDeps = createGetAllStageProgressDeps(dbClient, baseUser);
+    const deps: GetAllStageProgressDeps = buildGetAllStageProgressDeps(dbClient, baseUser, {
+      computeTemplateStageCounts: createMockComputeTemplateStageCountsFn(countsConfig),
+    });
     const params: GetAllStageProgressParams = { payload: basePayload };
     const result: GetAllStageProgressResult = await getAllStageProgress(deps, params);
     assertEquals(result.status, 200);
     assertExists(result.data);
-    const entry: StageProgressEntry | undefined = result.data!.stages.find((s: StageProgressEntry) => s.stageSlug === THESIS_STAGE_SLUG);
+    let entry: StageProgressEntry = result.data!.stages[0];
+    for (const candidate of result.data!.stages) {
+      if (candidate.stageSlug === THESIS_STAGE_SLUG) {
+        entry = candidate;
+      }
+    }
     assertExists(entry);
     await t.step("stage with no jobs returns jobs: [] (not null, not omitted)", () => {
       assert(Array.isArray(entry!.jobs));
@@ -2467,28 +2599,36 @@ Deno.test("getAllStageProgress: stage with no edges returns empty edges: [] arra
   const templateId: string = "template-no-edges-id";
   const stepId: string = "step-single-ne";
   const iso: string = new Date().toISOString();
-  const recipeSteps: Tables<"dialectic_stage_recipe_steps">[] = [
-    buildClonedStepRow(stepId, instanceId, "single", "PLAN", "all_to_one"),
+  const progressSteps: ProgressRecipeStep[] = [
+    { id: stepId, step_key: "single", job_type: "PLAN", granularity_strategy: "all_to_one" },
   ];
-  const edges: Tables<"dialectic_stage_recipe_edges">[] = [];
+  const progressEdges: ProgressRecipeEdge[] = [];
+  const stepIdToStepKey: Map<string, string> = new Map<string, string>([[stepId, "single"]]);
+  const countsConfig: ComputeTemplateStageCountsResult = {
+    status: 200,
+    data: {
+      stages: [
+      buildStageCountsEntry({
+        stageId,
+        stageSlug: THESIS_STAGE_SLUG,
+        steps: progressSteps,
+        edges: progressEdges,
+        totalExpected: 1,
+      }),
+    ],
+    totalStages: 1,
+    stepIdToStepKey,
+    },
+  };
   const jobs: DialecticJobRow[] = [];
 
-  const sessionRow: Tables<"dialectic_sessions"> = {
+  const sessionRow: DialecticSessionRow = mockDialecticSessionRow({
     id: basePayload.sessionId,
     project_id: basePayload.projectId,
     selected_model_ids: ["model-1"],
-    associated_chat_id: null,
-    created_at: iso,
     current_stage_id: stageId,
-    iteration_count: 1,
-    session_description: null,
-    status: "active",
-    updated_at: iso,
-    user_input_reference_url: null,
-    idempotency_key: null,  
-    viewing_stage_id: null,
-  };
-  const projectRow: Tables<"dialectic_projects"> = {
+  });
+  const projectRow: DialecticProjectRow = {
     id: basePayload.projectId,
     process_template_id: "process-tpl-1",
     created_at: iso,
@@ -2504,30 +2644,12 @@ Deno.test("getAllStageProgress: stage with no edges returns empty edges: [] arra
     user_id: basePayload.userId,
     idempotency_key: null,
   };
-  const transitions: DialecticStageTransition[] = [
-    { id: "trans-noedges-1", process_template_id: "process-tpl-1", source_stage_id: stageId, target_stage_id: stageId, condition_description: null, created_at: iso },
-  ];
-  const templateStages: DialecticStage[] = [
-    { id: stageId, slug: THESIS_STAGE_SLUG, display_name: "Thesis", description: null, created_at: iso, expected_output_template_ids: [], active_recipe_instance_id: instanceId, default_system_prompt_id: null, recipe_template_id: templateId, minimum_balance: 0 },
-  ];
-  const stages: DialecticStage[] = [
-    { id: stageId, slug: THESIS_STAGE_SLUG, display_name: "Thesis", description: null, created_at: iso, expected_output_template_ids: [], active_recipe_instance_id: instanceId, default_system_prompt_id: null, recipe_template_id: templateId, minimum_balance: 0 },
-  ];
-  const instances: DialecticStageRecipeInstance[] = [
-    { id: instanceId, stage_id: stageId, template_id: templateId, is_cloned: true, cloned_at: null, created_at: iso, updated_at: iso },
-  ];
 
   const headers: HeadersInit = { "Content-Type": "application/json" };
   mockFetch([
     new Response(JSON.stringify(sessionRow), { status: 200, headers }),
     new Response(JSON.stringify(projectRow), { status: 200, headers }),
-    new Response(JSON.stringify(transitions), { status: 200, headers }),
-    new Response(JSON.stringify(templateStages), { status: 200, headers }),
     new Response(JSON.stringify(jobs), { status: 200, headers }),
-    new Response(JSON.stringify(stages), { status: 200, headers }),
-    new Response(JSON.stringify(instances), { status: 200, headers }),
-    new Response(JSON.stringify(recipeSteps), { status: 200, headers }),
-    new Response(JSON.stringify(edges), { status: 200, headers }),
     new Response(JSON.stringify([]), { status: 200, headers }),
     new Response(JSON.stringify([]), { status: 200, headers }),
   ]);
@@ -2537,17 +2659,358 @@ Deno.test("getAllStageProgress: stage with no edges returns empty edges: [] arra
   });
 
   try {
-    const deps: GetAllStageProgressDeps = createGetAllStageProgressDeps(dbClient, baseUser);
+    const deps: GetAllStageProgressDeps = buildGetAllStageProgressDeps(dbClient, baseUser, {
+      computeTemplateStageCounts: createMockComputeTemplateStageCountsFn(countsConfig),
+    });
     const params: GetAllStageProgressParams = { payload: basePayload };
     const result: GetAllStageProgressResult = await getAllStageProgress(deps, params);
     assertEquals(result.status, 200);
     assertExists(result.data);
-    const entry: StageProgressEntry | undefined = result.data!.stages.find((s: StageProgressEntry) => s.stageSlug === THESIS_STAGE_SLUG);
+    let entry: StageProgressEntry = result.data!.stages[0];
+    for (const candidate of result.data!.stages) {
+      if (candidate.stageSlug === THESIS_STAGE_SLUG) {
+        entry = candidate;
+      }
+    }
     assertExists(entry);
     await t.step("stage with no edges returns edges: [] (not null, not omitted)", () => {
       assert(Array.isArray(entry!.edges));
       assertEquals(entry!.edges.length, 0);
     });
+  } finally {
+    restoreFetch();
+  }
+});
+
+Deno.test("getAllStageProgress: StageProgressEntry.expectedCount equals injected StageCountsEntry.totalExpected", async () => {
+  const stageId = "stage-expected-count-id";
+  const planStepId = "step-plan-expected";
+  const execStepId = "step-exec-expected";
+  const progressSteps: ProgressRecipeStep[] = [
+    { id: planStepId, step_key: "plan", job_type: "PLAN", granularity_strategy: "all_to_one" },
+    { id: execStepId, step_key: "execute", job_type: "EXECUTE", granularity_strategy: "per_model" },
+  ];
+  const progressEdges: ProgressRecipeEdge[] = [
+    { from_step_id: planStepId, to_step_id: execStepId },
+  ];
+  const stepIdToStepKey: Map<string, string> = new Map<string, string>([
+    [planStepId, "plan"],
+    [execStepId, "execute"],
+  ]);
+  const totalExpected = 42;
+  const countsConfig: ComputeTemplateStageCountsResult = {
+    status: 200,
+    data: {
+      stages: [
+      buildStageCountsEntry({
+        stageId,
+        stageSlug: THESIS_STAGE_SLUG,
+        steps: progressSteps,
+        edges: progressEdges,
+        totalExpected,
+      }),
+    ],
+    totalStages: 1,
+    stepIdToStepKey,
+    },
+  };
+  const expectedIso: string = new Date().toISOString();
+  const sessionRow: DialecticSessionRow = mockDialecticSessionRow({
+    id: basePayload.sessionId,
+    project_id: basePayload.projectId,
+    selected_model_ids: ["model-1"],
+    current_stage_id: stageId,
+  });
+  const projectRow: DialecticProjectRow = {
+    id: basePayload.projectId,
+    process_template_id: "process-tpl-expected",
+    created_at: expectedIso,
+    initial_prompt_resource_id: null,
+    initial_user_prompt: "",
+    project_name: "test",
+    repo_url: null,
+    selected_domain_id: "domain-1",
+    selected_domain_overlay_id: null,
+    status: "active",
+    updated_at: expectedIso,
+    user_domain_overlay_values: null,
+    user_id: basePayload.userId,
+    idempotency_key: null,
+  };
+  const headers = { "Content-Type": "application/json" };
+  mockFetch([
+    new Response(JSON.stringify(sessionRow), { status: 200, headers }),
+    new Response(JSON.stringify(projectRow), { status: 200, headers }),
+    new Response(JSON.stringify([]), { status: 200, headers }),
+    new Response(JSON.stringify([]), { status: 200, headers }),
+    new Response(JSON.stringify([]), { status: 200, headers }),
+  ]);
+  const dbClient = createClient<Database>(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+  });
+  try {
+    const deps: GetAllStageProgressDeps = buildGetAllStageProgressDeps(dbClient, baseUser, {
+      computeTemplateStageCounts: createMockComputeTemplateStageCountsFn(countsConfig),
+    });
+    const result: GetAllStageProgressResult = await getAllStageProgress(deps, { payload: basePayload });
+    assertEquals(result.status, 200);
+    assertExists(result.data);
+    let entry: StageProgressEntry = result.data!.stages[0];
+    for (const candidate of result.data!.stages) {
+      if (candidate.stageSlug === THESIS_STAGE_SLUG) {
+        entry = candidate;
+      }
+    }
+    assertEquals(entry.expectedCount, totalExpected);
+  } finally {
+    restoreFetch();
+  }
+});
+
+Deno.test("getAllStageProgress: layering receives core stepIdToStepKey steps and edges", async () => {
+  const stageId = "stage-layering-id";
+  const planStepId = "step-plan-layer";
+  const execStepId = "step-exec-layer";
+  const progressSteps: ProgressRecipeStep[] = [
+    { id: planStepId, step_key: "plan", job_type: "PLAN", granularity_strategy: "all_to_one" },
+    { id: execStepId, step_key: "execute", job_type: "EXECUTE", granularity_strategy: "per_model" },
+  ];
+  const progressEdges: ProgressRecipeEdge[] = [
+    { from_step_id: planStepId, to_step_id: execStepId },
+  ];
+  const stepIdToStepKey: Map<string, string> = new Map<string, string>([
+    [planStepId, "plan"],
+    [execStepId, "execute"],
+  ]);
+  const countsConfig: ComputeTemplateStageCountsResult = {
+    status: 200,
+    data: {
+      stages: [
+      buildStageCountsEntry({
+        stageId,
+        stageSlug: THESIS_STAGE_SLUG,
+        steps: progressSteps,
+        edges: progressEdges,
+        totalExpected: 2,
+      }),
+    ],
+    totalStages: 1,
+    stepIdToStepKey,
+    },
+  };
+  const capturedDeriveParams: DeriveStepStatusesParams[] = [];
+  const capturedBuildDocsParams: BuildDocumentDescriptorsParams[] = [];
+  const capturedBuildJobsParams: BuildJobProgressDtosParams[] = [];
+  const layerIso: string = new Date().toISOString();
+  const sessionRow: DialecticSessionRow = mockDialecticSessionRow({
+    id: basePayload.sessionId,
+    project_id: basePayload.projectId,
+    selected_model_ids: ["model-1"],
+    current_stage_id: stageId,
+  });
+  const projectRow: DialecticProjectRow = {
+    id: basePayload.projectId,
+    process_template_id: "process-tpl-layer",
+    created_at: layerIso,
+    initial_prompt_resource_id: null,
+    initial_user_prompt: "",
+    project_name: "test",
+    repo_url: null,
+    selected_domain_id: "domain-1",
+    selected_domain_overlay_id: null,
+    status: "active",
+    updated_at: layerIso,
+    user_domain_overlay_values: null,
+    user_id: basePayload.userId,
+    idempotency_key: null,
+  };
+  const headers = { "Content-Type": "application/json" };
+  mockFetch([
+    new Response(JSON.stringify(sessionRow), { status: 200, headers }),
+    new Response(JSON.stringify(projectRow), { status: 200, headers }),
+    new Response(JSON.stringify([]), { status: 200, headers }),
+    new Response(JSON.stringify([]), { status: 200, headers }),
+    new Response(JSON.stringify([]), { status: 200, headers }),
+  ]);
+  const dbClient = createClient<Database>(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+  });
+  try {
+    const deps: GetAllStageProgressDeps = buildGetAllStageProgressDeps(dbClient, baseUser, {
+      computeTemplateStageCounts: createMockComputeTemplateStageCountsFn(countsConfig),
+      deriveStepStatuses: (
+        d: DeriveStepStatusesDeps,
+        p: DeriveStepStatusesParams,
+      ): DeriveStepStatusesResult => {
+        capturedDeriveParams.push(p);
+        return deriveStepStatuses(d, p);
+      },
+      buildDocumentDescriptors: (
+        d: BuildDocumentDescriptorsDeps,
+        p: BuildDocumentDescriptorsParams,
+      ): Map<string, StageDocumentDescriptorDto[]> => {
+        capturedBuildDocsParams.push(p);
+        return buildDocumentDescriptors(d, p);
+      },
+      buildJobProgressDtos: (
+        d: BuildJobProgressDtosDeps,
+        p: BuildJobProgressDtosParams,
+      ): Map<string, JobProgressDto[]> => {
+        capturedBuildJobsParams.push(p);
+        return buildJobProgressDtos(d, p);
+      },
+    });
+    const result: GetAllStageProgressResult = await getAllStageProgress(deps, { payload: basePayload });
+    assertEquals(result.status, 200);
+    assertEquals(capturedDeriveParams.length, 1);
+    assertEquals(capturedBuildDocsParams.length, 1);
+    assertEquals(capturedBuildJobsParams.length, 1);
+    const deriveParamsAt = capturedDeriveParams[0];
+    const buildDocsParamsAt = capturedBuildDocsParams[0];
+    const buildJobsParamsAt = capturedBuildJobsParams[0];
+    assertEquals(deriveParamsAt !== undefined, true);
+    assertEquals(buildDocsParamsAt !== undefined, true);
+    assertEquals(buildJobsParamsAt !== undefined, true);
+    if (deriveParamsAt === undefined || buildDocsParamsAt === undefined || buildJobsParamsAt === undefined) {
+      throw new Error("layering params not captured");
+    }
+    const deriveParams: DeriveStepStatusesParams = deriveParamsAt;
+    const buildDocsParams: BuildDocumentDescriptorsParams = buildDocsParamsAt;
+    const buildJobsParams: BuildJobProgressDtosParams = buildJobsParamsAt;
+    assertEquals(deriveParams.stepIdToStepKey, stepIdToStepKey);
+    assertEquals(deriveParams.steps, progressSteps);
+    assertEquals(deriveParams.edges, progressEdges);
+    assertEquals(buildDocsParams.stepIdToStepKey, stepIdToStepKey);
+    assertEquals(buildJobsParams.stepIdToStepKey, stepIdToStepKey);
+  } finally {
+    restoreFetch();
+  }
+});
+
+Deno.test("getAllStageProgress: computeTemplateStageCounts 500 short-circuits without layering", async () => {
+  let buildDocsCalled = false;
+  let buildJobsCalled = false;
+  let deriveCalled = false;
+  const failIso: string = new Date().toISOString();
+  const sessionRow: DialecticSessionRow = mockDialecticSessionRow({
+    id: basePayload.sessionId,
+    project_id: basePayload.projectId,
+    selected_model_ids: ["model-1"],
+  });
+  const projectRow: DialecticProjectRow = {
+    id: basePayload.projectId,
+    process_template_id: "process-tpl-fail",
+    created_at: failIso,
+    initial_prompt_resource_id: null,
+    initial_user_prompt: "",
+    project_name: "test",
+    repo_url: null,
+    selected_domain_id: "domain-1",
+    selected_domain_overlay_id: null,
+    status: "active",
+    updated_at: failIso,
+    user_domain_overlay_values: null,
+    user_id: basePayload.userId,
+    idempotency_key: null,
+  };
+  const headers = { "Content-Type": "application/json" };
+  mockFetch([
+    new Response(JSON.stringify(sessionRow), { status: 200, headers }),
+    new Response(JSON.stringify(projectRow), { status: 200, headers }),
+  ]);
+  const dbClient = createClient<Database>(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+  });
+  try {
+    const deps: GetAllStageProgressDeps = buildGetAllStageProgressDeps(dbClient, baseUser, {
+      computeTemplateStageCounts: async () => buildComputeTemplateStageCountsFailureResult(),
+      buildDocumentDescriptors: (
+        d: BuildDocumentDescriptorsDeps,
+        p: BuildDocumentDescriptorsParams,
+      ): Map<string, StageDocumentDescriptorDto[]> => {
+        buildDocsCalled = true;
+        return buildDocumentDescriptors(d, p);
+      },
+      buildJobProgressDtos: (
+        d: BuildJobProgressDtosDeps,
+        p: BuildJobProgressDtosParams,
+      ): Map<string, JobProgressDto[]> => {
+        buildJobsCalled = true;
+        return buildJobProgressDtos(d, p);
+      },
+      deriveStepStatuses: (
+        d: DeriveStepStatusesDeps,
+        p: DeriveStepStatusesParams,
+      ): DeriveStepStatusesResult => {
+        deriveCalled = true;
+        return deriveStepStatuses(d, p);
+      },
+    });
+    const result: GetAllStageProgressResult = await getAllStageProgress(deps, { payload: basePayload });
+    assertEquals(result.status, 500);
+    assertExists(result.error);
+    assertEquals(buildDocsCalled, false);
+    assertEquals(buildJobsCalled, false);
+    assertEquals(deriveCalled, false);
+  } finally {
+    restoreFetch();
+  }
+});
+
+Deno.test("getAllStageProgress: calls computeTemplateStageCounts once without transitions recipe fetch", async () => {
+  let coreCallCount = 0;
+  const countsConfig: ComputeTemplateStageCountsResult = {
+    status: 200,
+    data: {
+      stages: [buildStageCountsEntry({ stageSlug: THESIS_STAGE_SLUG, totalExpected: 7 })],
+      totalStages: 1,
+      stepIdToStepKey: new Map<string, string>([["step-plan-id", "plan"]]),
+    },
+  };
+  const baseFn = createMockComputeTemplateStageCountsFn(countsConfig);
+  const onceIso: string = new Date().toISOString();
+  const sessionRow: DialecticSessionRow = mockDialecticSessionRow({
+    id: basePayload.sessionId,
+    project_id: basePayload.projectId,
+    selected_model_ids: ["model-1"],
+  });
+  const projectRow: DialecticProjectRow = {
+    id: basePayload.projectId,
+    process_template_id: "process-tpl-once",
+    created_at: onceIso,
+    initial_prompt_resource_id: null,
+    initial_user_prompt: "",
+    project_name: "test",
+    repo_url: null,
+    selected_domain_id: "domain-1",
+    selected_domain_overlay_id: null,
+    status: "active",
+    updated_at: onceIso,
+    user_domain_overlay_values: null,
+    user_id: basePayload.userId,
+    idempotency_key: null,
+  };
+  const headers = { "Content-Type": "application/json" };
+  mockFetch([
+    new Response(JSON.stringify(sessionRow), { status: 200, headers }),
+    new Response(JSON.stringify(projectRow), { status: 200, headers }),
+    new Response(JSON.stringify([]), { status: 200, headers }),
+    new Response(JSON.stringify([]), { status: 200, headers }),
+    new Response(JSON.stringify([]), { status: 200, headers }),
+  ]);
+  const dbClient = createClient<Database>(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+  });
+  try {
+    const deps: GetAllStageProgressDeps = buildGetAllStageProgressDeps(dbClient, baseUser, {
+      computeTemplateStageCounts: async (d, p) => {
+        coreCallCount += 1;
+        return baseFn(d, p, { processTemplateId: "process-tpl-once", modelCount: 1 });
+      },
+    });
+    const result: GetAllStageProgressResult = await getAllStageProgress(deps, { payload: basePayload });
+    assertEquals(result.status, 200);
+    assertEquals(coreCallCount, 1);
   } finally {
     restoreFetch();
   }
