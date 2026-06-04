@@ -54,6 +54,7 @@ import type {
 import type { Database, Json, Tables } from "../types_db.ts";
 import type { ComputeTemplateStageCountsFn } from "./computeTemplateStageCounts/computeTemplateStageCounts.interface.ts";
 import type { GetStageExpectedCountsPayload } from "./getStageExpectedCounts/getStageExpectedCounts.interface.ts";
+import type { FetchProcessAssociationPayload } from "./fetchProcessAssociation/fetchProcessAssociation.interface.ts";
 
 export type AiProvidersRow = Database["public"]["Tables"]["ai_providers"]["Row"];
 
@@ -441,6 +442,10 @@ type SubmitStageResponsesAction = {
 type FetchProcessTemplateAction = {
 	action: "fetchProcessTemplate";
 	payload: FetchProcessTemplatePayload;
+};
+type FetchProcessAssociationAction = {
+	action: "fetchProcessAssociation";
+	payload: FetchProcessAssociationPayload;
 };
 type UpdateSessionModelsAction = {
 	action: "updateSessionModels";
@@ -894,6 +899,7 @@ export type DialecticServiceRequest =
 	| SaveContributionEditAction
 	| SubmitStageResponsesAction
 	| FetchProcessTemplateAction
+	| FetchProcessAssociationAction
 	| UpdateSessionModelsAction
 	| UpdateViewingStageAction
 	| GetSessionDetailsAction

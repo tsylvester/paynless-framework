@@ -92,6 +92,7 @@ Deno.test("createProject - successful project creation (no file)", async () => {
     initialUserPromptText: mockInitialUserPromptText,
     selectedDomainId: mockSelectedDomainId,
     selectedDomainOverlayId: mockSelectedDomainOverlayId,
+    processTemplateId: mockProcessTemplateId,
   };
 
   const formData = new FormData();
@@ -191,8 +192,8 @@ Deno.test("createProject - successful project creation (no file)", async () => {
     assertEquals(result.data.initial_prompt_resource_id, mockProjectResourceId, "initial_prompt_resource_id should be set");
     assertEquals(result.data.initial_user_prompt, "", "initial_user_prompt should be empty since content is stored as file");
 
-    assertEquals(spies.fromSpy.calls.length, 4, "fromSpy should be called 4 times (assoc, projects insert, resources insert, projects update)");
-    assertEquals(spies.fromSpy.calls[0].args[0], 'domain_process_associations', "First from call should be for 'domain_process_associations'");
+    assertEquals(spies.fromSpy.calls.length, 4, "fromSpy should be called 4 times (assoc validation, projects insert, resources insert, projects update)");
+    assertEquals(spies.fromSpy.calls[0].args[0], 'domain_process_associations', "First from call validates domain_process_associations (domain_id, process_template_id, is_default_for_domain)");
     assertEquals(spies.fromSpy.calls[1].args[0], 'dialectic_projects', "Second from call should be for 'dialectic_projects' (insert)");
     assertEquals(spies.fromSpy.calls[2].args[0], 'dialectic_project_resources', "Third from call should be for 'dialectic_project_resources'");
     assertEquals(spies.fromSpy.calls[3].args[0], 'dialectic_projects', "Fourth from call should be for 'dialectic_projects' (update)");
@@ -292,6 +293,7 @@ Deno.test("createProject - database error on insert", async () => {
     projectName: mockProjectName,
     initialUserPromptText: mockInitialUserPromptText,
     selectedDomainId: mockSelectedDomainId,
+    processTemplateId: mockProcessTemplateId,
   };
 
   const formData = new FormData();
@@ -360,8 +362,8 @@ Deno.test("createProject - database error on insert", async () => {
     assertEquals(result.error?.details, dbOperationErrorMessage, "Error details should match the mock DB error message");
     assertEquals(result.error?.status, 500, "Error status should be 500");
 
-    assertEquals(spies.fromSpy.calls.length, 2, "fromSpy should be called twice (assoc and projects)");
-    assertEquals(spies.fromSpy.calls[0].args[0], 'domain_process_associations');
+    assertEquals(spies.fromSpy.calls.length, 2, "fromSpy should be called twice (assoc validation and projects)");
+    assertEquals(spies.fromSpy.calls[0].args[0], 'domain_process_associations', "First from call validates domain_process_associations");
     assertEquals(spies.fromSpy.calls[1].args[0], 'dialectic_projects');
 
     const projectInsertSpies = spies.getLatestQueryBuilderSpies('dialectic_projects');
@@ -511,6 +513,7 @@ Deno.test("createProject - with invalid selectedDomainId (FK violation)", async 
     projectName: mockProjectName,
     initialUserPromptText: mockInitialUserPromptText,
     selectedDomainId: mockSelectedDomainId,
+    processTemplateId: mockProcessTemplateId,
   };
 
   const formData = new FormData();
@@ -559,7 +562,8 @@ Deno.test("createProject - with invalid selectedDomainId (FK violation)", async 
     assertEquals(result.error?.status, 400);
     assertEquals(result.error?.details, fkErrorMessage, "Error details should contain the original DB error");
 
-    assertEquals(spies.fromSpy.calls.length, 2, "fromSpy should be called twice (assoc and projects)");
+    assertEquals(spies.fromSpy.calls.length, 2, "fromSpy should be called twice (assoc validation and projects)");
+    assertEquals(spies.fromSpy.calls[0].args[0], 'domain_process_associations', "First from call validates domain_process_associations");
     const projectSpies = spies.getLatestQueryBuilderSpies('dialectic_projects');
     assertExists(projectSpies?.insert, "insert should have been called");
     assertEquals(projectSpies.insert.calls.length, 1);
@@ -573,18 +577,27 @@ Deno.test("createProject - no default process template found for domain", async 
   const mockUserId = "user-no-default-process";
   const mockProjectName = "Test No Default Process";
   const mockSelectedDomainId = "domain-with-no-default-process";
-  const mockUser = { id: mockUserId, created_at: new Date().toISOString(), aud: 'authenticated', app_metadata: {}, user_metadata: {} };
-  
+  const mockProcessTemplateId = "proc-template-not-default-for-domain";
+  const testTimestamp = new Date().toISOString();
+  const mockUser: User = {
+    id: mockUserId,
+    app_metadata: {},
+    user_metadata: {},
+    aud: "authenticated",
+    created_at: testTimestamp,
+  };
+
   const formData = new FormData();
   formData.append('idempotencyKey', 'idem-no-default-process');
   formData.append('projectName', mockProjectName);
   formData.append('initialUserPromptText', "A prompt");
   formData.append('selectedDomainId', mockSelectedDomainId);
+  formData.append('processTemplateId', mockProcessTemplateId);
 
   const mockConfig: MockSupabaseDataConfig = {
     genericMockResults: {
       'domain_process_associations': {
-        select: async () => ({ // Mock the case where no default is found
+        select: async () => ({
           data: [],
           error: null,
           count: 0,
@@ -594,14 +607,18 @@ Deno.test("createProject - no default process template found for domain", async 
       }
     }
   };
-  
+
   const { client: mockDbAdminClient, spies, clearAllStubs } = createMockSupabaseClient(mockUserId, mockConfig);
-  
+
   try {
     const result = await createProject(formData, mockDbAdminClient as unknown as SupabaseClient<Database>, mockUser, {});
-    assertExists(result.error, "Error should exist when no default process is found");
+    assertExists(result.error, "Error should exist when association validation finds no matching default row");
     assertEquals(result.error?.message, "Could not find a default process template for the selected domain.");
     assertEquals(result.error?.status, 400);
+    assertEquals(spies.fromSpy.calls.length, 1, "Only association validation should run before 400");
+    assertEquals(spies.fromSpy.calls[0].args[0], 'domain_process_associations', "Association validation query only");
+    const projectInsertSpies = spies.getLatestQueryBuilderSpies('dialectic_projects');
+    assertEquals(projectInsertSpies?.insert?.calls.length ?? 0, 0, "dialectic_projects insert must not run");
   } finally {
     if (clearAllStubs) clearAllStubs();
   }
@@ -642,6 +659,7 @@ Deno.test("createProject - successful with promptFile", async () => {
   formData.append('projectName', mockProjectName);
   formData.append('initialUserPromptText', "");
   formData.append('selectedDomainId', mockSelectedDomainId);
+  formData.append('processTemplateId', mockProcessTemplateId);
   formData.append('promptFile', mockFile);
 
   const insertPayloadHolder: { payload: Database['public']['Tables']['dialectic_projects']['Insert'][] | null } = { payload: null };
@@ -753,8 +771,8 @@ Deno.test("createProject - successful with promptFile", async () => {
     assertEquals(result.data.initial_prompt_resource_id, mockProjectResourceId, "initial_prompt_resource_id should be set");
     assertEquals(result.data.initial_user_prompt, "", "initial_user_prompt should be empty since content is stored as file");
 
-    assertEquals(spies.fromSpy.calls.length, 4, "fromSpy should be called 4 times (assoc, projects insert, resources insert, projects update)");
-    assertEquals(spies.fromSpy.calls[0].args[0], 'domain_process_associations', "First from call should be for 'domain_process_associations'");
+    assertEquals(spies.fromSpy.calls.length, 4, "fromSpy should be called 4 times (assoc validation, projects insert, resources insert, projects update)");
+    assertEquals(spies.fromSpy.calls[0].args[0], 'domain_process_associations', "First from call validates domain_process_associations");
     assertEquals(spies.fromSpy.calls[1].args[0], 'dialectic_projects', "Second from call should be for 'dialectic_projects' (insert)");
     assertEquals(spies.fromSpy.calls[2].args[0], 'dialectic_project_resources', "Third from call should be for 'dialectic_project_resources'");
     assertEquals(spies.fromSpy.calls[3].args[0], 'dialectic_projects', "Fourth from call should be for 'dialectic_projects' (update)");
@@ -788,6 +806,7 @@ Deno.test("createProject - promptFile upload fails (storage error)", async () =>
   formData.append('projectName', mockProjectName);
   formData.append('initialUserPromptText', "");
   formData.append('selectedDomainId', mockSelectedDomainId);
+  formData.append('processTemplateId', mockProcessTemplateId);
   formData.append('promptFile', mockFile);
 
   const storageErrorMessage = "Mock storage upload error";
@@ -858,6 +877,7 @@ Deno.test("createProject - promptFile dialectic_project_resources insert fails (
   formData.append('projectName', mockProjectName);
   formData.append('initialUserPromptText', "");
   formData.append('selectedDomainId', mockSelectedDomainId);
+  formData.append('processTemplateId', mockProcessTemplateId);
   formData.append('promptFile', mockFile);
 
   const resourceInsertError = "Mock resource insert error";
@@ -940,6 +960,7 @@ Deno.test("createProject - project update with resource_id fails (db error)", as
   formData.append('projectName', mockProjectName);
   formData.append('initialUserPromptText', "");
   formData.append('selectedDomainId', mockSelectedDomainId);
+  formData.append('processTemplateId', mockProcessTemplateId);
   formData.append('promptFile', mockFile);
 
   const projectUpdateError = "Mock project update error";
@@ -1053,6 +1074,7 @@ Deno.test("createProject - successful project creation with domain and overlay",
     initialUserPromptText: mockInitialUserPromptText,
     selectedDomainId: mockSelectedDomainId,
     selectedDomainOverlayId: mockSelectedDomainOverlayId,
+    processTemplateId: mockProcessTemplateId,
   };
 
   const formData = new FormData();
@@ -1292,6 +1314,7 @@ Deno.test("createProject - includes idempotency_key in insert call to dialectic_
   formData.append("projectName", "Idem Assert Project");
   formData.append("initialUserPromptText", "Prompt");
   formData.append("selectedDomainId", "domain-idem");
+  formData.append("processTemplateId", mockProcessTemplateId);
 
   const { client: mockDbAdminClient, clearAllStubs } = createMockSupabaseClient(mockUserId, mockConfig);
 
@@ -1300,9 +1323,8 @@ Deno.test("createProject - includes idempotency_key in insert call to dialectic_
     assertEquals(result.error, undefined, "Create should succeed");
     assertExists(insertPayloadHolder.payload, "Insert payload should be captured");
     assertEquals(insertPayloadHolder.payload.length, 1);
-    const insertPayload: DialecticProjectInsert | undefined = insertPayloadHolder.payload[0];
-    assertExists(insertPayload, "Insert payload element should exist");
-    assertEquals(insertPayload.idempotency_key, mockIdempotencyKey, "Insert must include idempotency_key");
+    assertEquals(insertPayloadHolder.payload[0].idempotency_key, mockIdempotencyKey, "Insert must include idempotency_key");
+    assertEquals(insertPayloadHolder.payload[0].process_template_id, mockProcessTemplateId, "Insert must include process_template_id from FormData");
   } finally {
     if (clearAllStubs) clearAllStubs();
   }
@@ -1380,6 +1402,7 @@ Deno.test("createProject - on unique constraint violation 23505 on idempotency_k
   formData.append("projectName", "Duplicate Project");
   formData.append("initialUserPromptText", "Prompt");
   formData.append("selectedDomainId", "domain-23505");
+  formData.append("processTemplateId", mockProcessTemplateId);
 
   const { client: mockDbAdminClient, clearAllStubs } = createMockSupabaseClient(mockUserId, mockConfig);
 
@@ -1391,6 +1414,224 @@ Deno.test("createProject - on unique constraint violation 23505 on idempotency_k
     assertEquals(result.data.project_name, existingProjectRow.project_name);
     assertEquals(result.data.domain_name, "Existing Domain");
     assert(selectCallCount >= 1, "Select by idempotency_key should be called to fetch existing project");
+  } finally {
+    if (clearAllStubs) clearAllStubs();
+  }
+});
+
+Deno.test("createProject - rejects when processTemplateId is omitted from FormData (400)", async () => {
+  const mockUserId = "user-process-template-omitted";
+  const testTimestamp = new Date().toISOString();
+  const mockUser: User = {
+    id: mockUserId,
+    app_metadata: {},
+    user_metadata: {},
+    aud: "authenticated",
+    created_at: testTimestamp,
+  };
+  const formData = new FormData();
+  formData.append("action", "createProject");
+  formData.append("idempotencyKey", "idem-process-template-omitted");
+  formData.append("projectName", "Test");
+  formData.append("initialUserPromptText", "Prompt");
+  formData.append("selectedDomainId", "domain-id");
+
+  const { client: mockDbAdminClient, spies, clearAllStubs } = createMockSupabaseClient(mockUserId, {});
+
+  try {
+    const result = await createProject(formData, mockDbAdminClient as unknown as SupabaseClient<Database>, mockUser, {});
+    assertExists(result.error, "Error should exist when processTemplateId is omitted");
+    assertEquals(result.error?.message, "processTemplateId is required and must be a string");
+    assertEquals(result.error?.status, 400);
+    assertEquals(spies.fromSpy.calls.length, 0, "dialectic_projects insert must not run");
+  } finally {
+    if (clearAllStubs) clearAllStubs();
+  }
+});
+
+Deno.test("createProject - rejects when processTemplateId is empty string (400)", async () => {
+  const mockUserId = "user-process-template-empty";
+  const testTimestamp = new Date().toISOString();
+  const mockUser: User = {
+    id: mockUserId,
+    app_metadata: {},
+    user_metadata: {},
+    aud: "authenticated",
+    created_at: testTimestamp,
+  };
+  const formData = new FormData();
+  formData.append("action", "createProject");
+  formData.append("idempotencyKey", "idem-process-template-empty");
+  formData.append("projectName", "Test");
+  formData.append("initialUserPromptText", "Prompt");
+  formData.append("selectedDomainId", "domain-id");
+  formData.append("processTemplateId", "");
+
+  const { client: mockDbAdminClient, spies, clearAllStubs } = createMockSupabaseClient(mockUserId, {});
+
+  try {
+    const result = await createProject(formData, mockDbAdminClient as unknown as SupabaseClient<Database>, mockUser, {});
+    assertExists(result.error, "Error should exist when processTemplateId is empty");
+    assertEquals(result.error?.message, "processTemplateId is required and must be a string");
+    assertEquals(result.error?.status, 400);
+    assertEquals(spies.fromSpy.calls.length, 0, "dialectic_projects insert must not run");
+  } finally {
+    if (clearAllStubs) clearAllStubs();
+  }
+});
+
+Deno.test("createProject - rejects when processTemplateId is whitespace only (400)", async () => {
+  const mockUserId = "user-process-template-whitespace";
+  const testTimestamp = new Date().toISOString();
+  const mockUser: User = {
+    id: mockUserId,
+    app_metadata: {},
+    user_metadata: {},
+    aud: "authenticated",
+    created_at: testTimestamp,
+  };
+  const formData = new FormData();
+  formData.append("action", "createProject");
+  formData.append("idempotencyKey", "idem-process-template-whitespace");
+  formData.append("projectName", "Test");
+  formData.append("initialUserPromptText", "Prompt");
+  formData.append("selectedDomainId", "domain-id");
+  formData.append("processTemplateId", "   ");
+
+  const { client: mockDbAdminClient, spies, clearAllStubs } = createMockSupabaseClient(mockUserId, {});
+
+  try {
+    const result = await createProject(formData, mockDbAdminClient as unknown as SupabaseClient<Database>, mockUser, {});
+    assertExists(result.error, "Error should exist when processTemplateId is whitespace only");
+    assertEquals(result.error?.message, "processTemplateId is required and must be a string");
+    assertEquals(result.error?.status, 400);
+    assertEquals(spies.fromSpy.calls.length, 0, "dialectic_projects insert must not run");
+  } finally {
+    if (clearAllStubs) clearAllStubs();
+  }
+});
+
+Deno.test("createProject - processTemplateId present with matching default association inserts supplied template id", async () => {
+  const mockUserId = "user-process-template-validation-success";
+  const mockProjectName = "Test Process Template Validation";
+  const mockInitialUserPromptText = "Prompt for validation success.";
+  const mockSelectedDomainId = "domain-id-validation-success";
+  const mockProcessTemplateId = "proc-template-validation-success";
+  const mockIdempotencyKey = "idem-process-template-validation-success";
+  const testTimestamp = new Date().toISOString();
+  const mockUser: User = {
+    id: mockUserId,
+    app_metadata: {},
+    user_metadata: {},
+    aud: "authenticated",
+    created_at: testTimestamp,
+  };
+  const mockExpectedDbInsert: DialecticProjectInsert = {
+    user_id: mockUserId,
+    project_name: mockProjectName,
+    initial_user_prompt: "",
+    selected_domain_id: mockSelectedDomainId,
+    selected_domain_overlay_id: null,
+    process_template_id: mockProcessTemplateId,
+    status: "new",
+    initial_prompt_resource_id: null,
+    idempotency_key: mockIdempotencyKey,
+  };
+  const mockProcessTemplate: DialecticProcessTemplate = {
+    id: mockProcessTemplateId,
+    name: "Validation Template",
+    description: "Template for association validation success",
+    created_at: testTimestamp,
+    starting_stage_id: "start-stage-id",
+  };
+  const mockProjectDataAfterInsert = {
+    id: "project-process-template-validation",
+    user_id: mockUserId,
+    project_name: mockProjectName,
+    initial_user_prompt: "",
+    selected_domain_id: mockSelectedDomainId,
+    selected_domain_overlay_id: null,
+    repo_url: null,
+    status: "new",
+    created_at: testTimestamp,
+    updated_at: testTimestamp,
+    initial_prompt_resource_id: "res-validation",
+    process_template_id: mockProcessTemplateId,
+    user_domain_overlay_values: null,
+    idempotency_key: mockIdempotencyKey,
+    domain: { name: "Validation Domain" },
+    process_template: mockProcessTemplate,
+  };
+  const insertPayloadHolder: { payload: Database['public']['Tables']['dialectic_projects']['Insert'][] | null } = { payload: null };
+  const mockConfig: MockSupabaseDataConfig = {
+    genericMockResults: {
+      'domain_process_associations': {
+        select: async () => ({
+          data: [{ process_template_id: mockProcessTemplateId }],
+          error: null,
+          count: 1,
+          status: 200,
+          statusText: 'OK'
+        })
+      },
+      'dialectic_projects': {
+        insert: (state) => {
+          const { insertData } = state;
+          if (isDialecticProjectInsert(insertData)) {
+            insertPayloadHolder.payload = [insertData];
+          } else if (isDialecticProjectInsertArray(insertData)) {
+            insertPayloadHolder.payload = insertData;
+          }
+          return Promise.resolve({ data: [mockProjectDataAfterInsert], error: null, count: 1, status: 201, statusText: 'Created' });
+        },
+        update: async () => ({
+          data: [mockProjectDataAfterInsert],
+          error: null,
+          count: 1,
+          status: 200,
+          statusText: 'OK'
+        }),
+        select: async () => ({
+          data: [mockProjectDataAfterInsert],
+          error: null,
+          count: 1,
+          status: 200,
+          statusText: 'OK'
+        })
+      },
+      'dialectic_project_resources': {
+        upsert: async () => ({
+          data: [{ id: "res-validation", storage_path: "mock/path/validation.md" }],
+          error: null,
+          count: 1,
+          status: 201,
+          statusText: 'Created'
+        })
+      }
+    },
+    storageMock: {
+      uploadResult: async () => ({ data: { path: "mock/path/validation.md" }, error: null }),
+      removeResult: async () => ({ data: [], error: null }),
+    },
+    mockUser: mockUser,
+  };
+  const formData = new FormData();
+  formData.append("action", "createProject");
+  formData.append("idempotencyKey", mockIdempotencyKey);
+  formData.append("projectName", mockProjectName);
+  formData.append("initialUserPromptText", mockInitialUserPromptText);
+  formData.append("selectedDomainId", mockSelectedDomainId);
+  formData.append("processTemplateId", mockProcessTemplateId);
+
+  const { client: mockDbAdminClient, spies, clearAllStubs } = createMockSupabaseClient(mockUserId, mockConfig);
+
+  try {
+    const result = await createProject(formData, mockDbAdminClient as unknown as SupabaseClient<Database>, mockUser, {});
+    assertEquals(result.error, undefined, "Create should succeed when association validation passes");
+    assertExists(insertPayloadHolder.payload, "Insert payload should be captured");
+    assertEquals(insertPayloadHolder.payload.length, 1);
+    assertObjectMatch(insertPayloadHolder.payload[0], mockExpectedDbInsert);
+    assertEquals(spies.fromSpy.calls[0].args[0], 'domain_process_associations', "First from call validates domain_process_associations");
   } finally {
     if (clearAllStubs) clearAllStubs();
   }

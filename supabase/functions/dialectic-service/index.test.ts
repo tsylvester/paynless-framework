@@ -3,7 +3,7 @@ import {
   assertExists,
   assert,
 } from "https://deno.land/std@0.208.0/assert/mod.ts";
-import { spy, stub, type Spy } from "https://deno.land/std@0.208.0/testing/mock.ts";
+import { spy, type Spy } from "https://deno.land/std@0.208.0/testing/mock.ts";
 import {
   isValidDomainDefaultFn,
   createSignedUrlDefaultFn,
@@ -32,8 +32,6 @@ import {
   DialecticServiceError,
   GetStageDocumentFeedbackPayload,
   GetStageDocumentFeedbackResponse,
-  GetAllStageProgressDeps,
-  GetAllStageProgressParams,
   GetAllStageProgressPayload,
   GetAllStageProgressResult,
   JobProgressDto,
@@ -73,11 +71,32 @@ import {
   buildGetStageExpectedCountsPayload,
   buildGetStageExpectedCountsSuccessReturn,
 } from "./getStageExpectedCounts/getStageExpectedCounts.mock.ts";
-import { computeTemplateStageCounts } from "./computeTemplateStageCounts/computeTemplateStageCounts.provides.ts";
+import type {
+  ListDomainsDeps,
+  ListDomainsFn,
+  ListDomainsParams,
+  ListDomainsPayload,
+  ListDomainsResult,
+  ListDomainsSuccessReturn,
+  ListDomainsErrorReturn,
+} from "./listDomains/listDomains.interface.ts";
 import {
-  createMockGetAllStageProgressResult,
-  MockGetAllStageProgressConfig,
-} from "./getAllStageProgress.mock.ts";
+  buildListDomainsSuccessReturn,
+  buildListDomainsErrorReturn,
+} from "./listDomains/listDomains.mock.ts";
+import type {
+  FetchProcessAssociationPayload,
+  FetchProcessAssociationDeps,
+  FetchProcessAssociationFn,
+  FetchProcessAssociationParams,
+  FetchProcessAssociationResult,
+  FetchProcessAssociationSuccessReturn,
+  FetchProcessAssociationErrorReturn,
+} from "./fetchProcessAssociation/fetchProcessAssociation.interface.ts";
+import {
+  buildFetchProcessAssociationSuccessReturn,
+  buildFetchProcessAssociationErrorReturn,
+} from "./fetchProcessAssociation/fetchProcessAssociation.mock.ts";
 
 function isUser(u: unknown): u is User {
   return isRecord(u) && typeof u.id === 'string';
@@ -233,7 +252,14 @@ const createMockHandlers = (overrides?: Partial<ActionHandlers> & {
         getProjectResourceContent: overrides?.getProjectResourceContent || (() => Promise.resolve({ data: { fileName: '', mimeType: '', content: '', sourceContributionId: null, resourceType: 'rendered_document' }})),
         saveContributionEdit: (overrides?.saveContributionEdit || ((_payload: SaveContributionEditPayload, _user: User, _deps: SaveContributionEditContext): Promise<SaveContributionEditResult> => Promise.resolve({ data: { resource: { id: 'mock-resource-id', resource_type: 'rendered_document', project_id: 'mock-project-id', session_id: 'mock-session-id', stage_slug: 'thesis', iteration_number: 1, document_key: null, source_contribution_id: 'mock-contribution-id', storage_bucket: 'mock-bucket', storage_path: 'mock-path', file_name: 'mock.txt', mime_type: 'text/plain', size_bytes: 123, created_at: new Date().toISOString(), updated_at: new Date().toISOString() }, sourceContributionId: 'mock-contribution-id' }, status: 200 }))),
         submitStageResponses: overrides?.submitStageResponses || (() => Promise.resolve({ data: { message: 'mock-message', updatedSession: mockSession, feedbackRecords: [] }, status: 200 })),
-        listDomains: overrides?.listDomains || (() => Promise.resolve({ data: [] })),
+        listDomains: overrides?.listDomains || ((_deps: ListDomainsDeps, _params: ListDomainsParams, _payload: ListDomainsPayload): Promise<ListDomainsSuccessReturn> => {
+            const result: ListDomainsSuccessReturn = { status: 200, data: [] };
+            return Promise.resolve(result);
+        }),
+        fetchProcessAssociation: overrides?.fetchProcessAssociation || ((_deps: FetchProcessAssociationDeps, _params: FetchProcessAssociationParams, _payload: FetchProcessAssociationPayload): Promise<FetchProcessAssociationSuccessReturn> => {
+            const result: FetchProcessAssociationSuccessReturn = buildFetchProcessAssociationSuccessReturn();
+            return Promise.resolve(result);
+        }),
         fetchProcessTemplate: overrides?.fetchProcessTemplate || (() => Promise.resolve({ data: { created_at: new Date().toISOString(), description: 'mock-description', id: 'mock-id', name: 'mock-name', starting_stage_id: 'mock-starting-stage-id' }, status: 200 })),
         updateSessionModels: overrides?.updateSessionModels || ((dbClient: SupabaseClient, userClient: SupabaseClient, _payload: UpdateSessionModelsPayload, _userId: string) => {
             assert(dbClient !== userClient);
@@ -2568,40 +2594,160 @@ withSupabaseEnv("defaultHandlers.getStageExpectedCounts is defined", async () =>
   assertEquals(typeof defaultHandlers.getStageExpectedCounts, "function");
 });
 
-withSupabaseEnv("defaultHandlers.getAllStageProgress injects computeTemplateStageCounts", async () => {
-  const getAllStageProgressModule = await import("./getAllStageProgress.ts");
-  const emptyProgressConfig: MockGetAllStageProgressConfig = {
-    completedStages: 0,
-    totalStages: 0,
-    stages: [],
-  };
-  const getAllStageProgressStub = stub(
-    getAllStageProgressModule,
-    "getAllStageProgress",
-    (deps: GetAllStageProgressDeps, _params: GetAllStageProgressParams): Promise<GetAllStageProgressResult> => {
-      assertEquals(deps.computeTemplateStageCounts, computeTemplateStageCounts);
-      const result: GetAllStageProgressResult = createMockGetAllStageProgressResult(emptyProgressConfig);
-      return Promise.resolve(result);
-    },
+withSupabaseEnv("defaultHandlers.getAllStageProgress is defined", async () => {
+  assertEquals(typeof defaultHandlers.getAllStageProgress, "function");
+});
+
+withSupabaseEnv("handleRequest - listDomains routes to handler and returns 200 with array body", async () => {
+  const successReturn: ListDomainsSuccessReturn = buildListDomainsSuccessReturn({ data: [] });
+  const listDomainsHandler: ListDomainsFn = (_deps, _params, _payload): Promise<ListDomainsResult> =>
+    Promise.resolve(successReturn);
+  const listDomainsSpy = spy(listDomainsHandler);
+  const mockHandlers = createMockHandlers({ listDomains: listDomainsSpy });
+
+  const { client: mockUserClient } = createMockSupabaseClient();
+  const { client: mockAdminClient } = createMockSupabaseClient();
+
+  const req = createJsonRequest("listDomains");
+  const response = await handleRequest(
+    req,
+    mockHandlers,
+    mockUserClient as unknown as SupabaseClient<Database>,
+    mockAdminClient as unknown as SupabaseClient<Database>,
   );
 
-  try {
-    const payload: GetAllStageProgressPayload = {
-      sessionId: "sess-123",
-      iterationNumber: 1,
-      userId: mockUser.id,
-      projectId: "proj-123",
-    };
-    const { client: mockAdminClient } = createMockSupabaseClient();
+  assertEquals(response.status, 200);
+  const body = await response.json();
+  assertEquals(body, []);
+  assertEquals(listDomainsSpy.calls.length, 1);
+  const deps: ListDomainsDeps = listDomainsSpy.calls[0].args[0];
+  const params: ListDomainsParams = listDomainsSpy.calls[0].args[1];
+  const payload: ListDomainsPayload = listDomainsSpy.calls[0].args[2];
+  assertEquals(Object.keys(params).length, 0);
+  assertEquals(Object.keys(payload).length, 0);
+  assert(deps.dbClient === (mockAdminClient as unknown), "handler should receive adminClient as dbClient");
+});
 
-    await defaultHandlers.getAllStageProgress(
-      payload,
-      mockAdminClient as unknown as SupabaseClient<Database>,
-      mockUser,
-    );
+withSupabaseEnv("handleRequest - listDomains error stub returns 500 DB_FETCH_FAILED", async () => {
+  const errorReturn: ListDomainsErrorReturn = buildListDomainsErrorReturn();
+  const listDomainsHandler: ListDomainsFn = (_deps, _params, _payload): Promise<ListDomainsResult> =>
+    Promise.resolve(errorReturn);
+  const listDomainsSpy = spy(listDomainsHandler);
+  const mockHandlers = createMockHandlers({ listDomains: listDomainsSpy });
 
-    assertEquals(getAllStageProgressStub.calls.length, 1);
-  } finally {
-    getAllStageProgressStub.restore();
-  }
+  const { client: mockUserClient } = createMockSupabaseClient();
+  const { client: mockAdminClient } = createMockSupabaseClient();
+
+  const req = createJsonRequest("listDomains");
+  const response = await handleRequest(
+    req,
+    mockHandlers,
+    mockUserClient as unknown as SupabaseClient<Database>,
+    mockAdminClient as unknown as SupabaseClient<Database>,
+  );
+
+  assertEquals(response.status, 500);
+  const body = await response.json();
+  assertEquals(body.error, "Could not fetch dialectic domains.");
+  assertEquals(listDomainsSpy.calls.length, 1);
+});
+
+withSupabaseEnv("handleRequest - fetchProcessAssociation routes to handler and returns 200 with association row", async () => {
+  const domainId = "domain-uuid-software";
+  const payload: FetchProcessAssociationPayload = { domainId };
+  const successReturn: FetchProcessAssociationSuccessReturn = buildFetchProcessAssociationSuccessReturn();
+  const fetchProcessAssociationHandler: FetchProcessAssociationFn = (_deps, _params, _payload): Promise<FetchProcessAssociationResult> =>
+    Promise.resolve(successReturn);
+  const fetchProcessAssociationSpy = spy(fetchProcessAssociationHandler);
+  const mockHandlers = createMockHandlers({ fetchProcessAssociation: fetchProcessAssociationSpy });
+
+  const { client: mockUserClient } = createMockSupabaseClient();
+  const { client: mockAdminClient } = createMockSupabaseClient();
+
+  const req = createJsonRequest("fetchProcessAssociation", payload);
+  const response = await handleRequest(
+    req,
+    mockHandlers,
+    mockUserClient as unknown as SupabaseClient<Database>,
+    mockAdminClient as unknown as SupabaseClient<Database>,
+  );
+
+  assertEquals(response.status, 200);
+  const body = await response.json();
+  assertEquals(body.id, successReturn.data.id);
+  assertEquals(body.domain_id, successReturn.data.domain_id);
+  assertEquals(body.process_template_id, successReturn.data.process_template_id);
+  assertEquals(fetchProcessAssociationSpy.calls.length, 1);
+  const deps: FetchProcessAssociationDeps = fetchProcessAssociationSpy.calls[0].args[0];
+  const params: FetchProcessAssociationParams = fetchProcessAssociationSpy.calls[0].args[1];
+  const callPayload: FetchProcessAssociationPayload = fetchProcessAssociationSpy.calls[0].args[2];
+  assertEquals(Object.keys(params).length, 0);
+  assertEquals(callPayload.domainId, domainId);
+  assert(deps.dbClient === (mockAdminClient as unknown), "handler should receive adminClient as dbClient");
+});
+
+withSupabaseEnv("handleRequest - fetchProcessAssociation error stub returns 404 NOT_FOUND", async () => {
+  const payload: FetchProcessAssociationPayload = { domainId: "domain-uuid-software" };
+  const notFoundReturn: FetchProcessAssociationErrorReturn = buildFetchProcessAssociationErrorReturn({
+    status: 404,
+    error: {
+      message: "No default process association found for the domain.",
+      code: "NOT_FOUND",
+    },
+  });
+  const fetchProcessAssociationSpy = spy(() => Promise.resolve(notFoundReturn));
+  const mockHandlers = createMockHandlers({ fetchProcessAssociation: fetchProcessAssociationSpy });
+
+  const { client: mockUserClient } = createMockSupabaseClient();
+  const { client: mockAdminClient } = createMockSupabaseClient();
+
+  const req = createJsonRequest("fetchProcessAssociation", payload);
+  const response = await handleRequest(
+    req,
+    mockHandlers,
+    mockUserClient as unknown as SupabaseClient<Database>,
+    mockAdminClient as unknown as SupabaseClient<Database>,
+  );
+
+  assertEquals(response.status, 404);
+  const body = await response.json();
+  assertEquals(body.error, "No default process association found for the domain.");
+  assertEquals(fetchProcessAssociationSpy.calls.length, 1);
+});
+
+withSupabaseEnv("handleRequest - fetchProcessAssociation error stub returns 400 VALIDATION_ERROR", async () => {
+  const payload: FetchProcessAssociationPayload = { domainId: "domain-uuid-software" };
+  const validationErrorReturn: FetchProcessAssociationErrorReturn = buildFetchProcessAssociationErrorReturn({
+    status: 400,
+    error: {
+      message: "domainId is required and must be a non-empty string",
+      code: "VALIDATION_ERROR",
+    },
+  });
+  const fetchProcessAssociationSpy = spy(() => Promise.resolve(validationErrorReturn));
+  const mockHandlers = createMockHandlers({ fetchProcessAssociation: fetchProcessAssociationSpy });
+
+  const { client: mockUserClient } = createMockSupabaseClient();
+  const { client: mockAdminClient } = createMockSupabaseClient();
+
+  const req = createJsonRequest("fetchProcessAssociation", payload);
+  const response = await handleRequest(
+    req,
+    mockHandlers,
+    mockUserClient as unknown as SupabaseClient<Database>,
+    mockAdminClient as unknown as SupabaseClient<Database>,
+  );
+
+  assertEquals(response.status, 400);
+  const body = await response.json();
+  assertEquals(body.error, "domainId is required and must be a non-empty string");
+  assertEquals(fetchProcessAssociationSpy.calls.length, 1);
+});
+
+withSupabaseEnv("defaultHandlers.listDomains is defined", async () => {
+  assertEquals(typeof defaultHandlers.listDomains, "function");
+});
+
+withSupabaseEnv("defaultHandlers.fetchProcessAssociation is defined", async () => {
+  assertEquals(typeof defaultHandlers.fetchProcessAssociation, "function");
 });

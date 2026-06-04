@@ -8,7 +8,6 @@ import {
   GetProjectDetailsPayload,
   GetSessionDetailsPayload,
   DialecticProject,
-  DomainOverlayDescriptor,
   StartSessionSuccessResponse,
   GetProjectResourceContentPayload,
   GetProjectResourceContentResponse,
@@ -81,7 +80,24 @@ import { getProjectResourceContent } from "./getProjectResourceContent.ts";
 import { saveContributionEdit } from './saveContributionEdit.ts';
 import { submitStageResponses } from './submitStageResponses.ts';
 import { downloadFromStorage, deleteFromStorage, createSignedUrlForPath } from '../_shared/supabase_storage_utils.ts';
-import { listDomains, type DialecticDomain } from './listDomains.ts';
+import { listDomains } from "./listDomains/listDomains.provides.ts";
+import type {
+  ListDomainsFn,
+  ListDomainsDeps,
+  ListDomainsParams,
+  ListDomainsPayload,
+  ListDomainsResult,
+} from "./listDomains/listDomains.interface.ts";
+import { isListDomainsSuccessReturn, isListDomainsErrorReturn } from "./listDomains/listDomains.guard.ts";
+import { fetchProcessAssociation } from "./fetchProcessAssociation/fetchProcessAssociation.provides.ts";
+import type {
+  FetchProcessAssociationFn,
+  FetchProcessAssociationDeps,
+  FetchProcessAssociationParams,
+  FetchProcessAssociationPayload,
+  FetchProcessAssociationResult,
+} from "./fetchProcessAssociation/fetchProcessAssociation.interface.ts";
+import { isFetchProcessAssociationSuccessReturn, isFetchProcessAssociationErrorReturn } from "./fetchProcessAssociation/fetchProcessAssociation.guard.ts";
 import { listModelCatalog } from './listModelCatalog.ts';
 import { fetchProcessTemplate } from './fetchProcessTemplate.ts';
 import { FileManagerService } from '../_shared/services/file_manager.ts';
@@ -211,7 +227,8 @@ export interface ActionHandlers {
   getProjectResourceContent: (payload: GetProjectResourceContentPayload, dbClient: SupabaseClient, user: User) => Promise<{ data?: GetProjectResourceContentResponse; error?: ServiceError; status?: number }>;
   saveContributionEdit: SaveContributionEditFn;
   submitStageResponses: (payload: SubmitStageResponsesPayload, dbClient: SupabaseClient, user: User, dependencies: SubmitStageResponsesDependencies) => Promise<{ data?: SubmitStageResponsesResponse; error?: ServiceError; status?: number }>;
-  listDomains: (dbClient: SupabaseClient) => Promise<{ data?: DialecticDomain[]; error?: ServiceError }>;
+  listDomains: ListDomainsFn;
+  fetchProcessAssociation: FetchProcessAssociationFn;
   listModelCatalog: (dbClient: SupabaseClient<Database>) => Promise<{ data?: AiProvidersRow[]; error?: ServiceError }>;
   fetchProcessTemplate: (dbClient: SupabaseClient, payload: FetchProcessTemplatePayload) => Promise<{ data?: DialecticProcessTemplate; error?: ServiceError; status?: number }>;
   updateSessionModels: (dbClient: SupabaseClient, userClient: SupabaseClient, payload: UpdateSessionModelsPayload, userId: string) => Promise<{ data?: DialecticSession; error?: ServiceError; status?: number }>;
@@ -328,11 +345,42 @@ export async function handleRequest(
       switch (requestBody.action) {
         // --- Unauthenticated Actions ---
         case "listDomains": {
-            const { data, error } = await handlers.listDomains(adminClient);
-            if (error) {
-              return createErrorResponse(error.message, error.status, req, error);
-            }
-            return createSuccessResponse(data, 200, req);
+          const deps: ListDomainsDeps = { dbClient: adminClient as SupabaseClient<Database> };
+          const params: ListDomainsParams = {};
+          const payload: ListDomainsPayload = {};
+          const result: ListDomainsResult = await handlers.listDomains(deps, params, payload);
+          if (isListDomainsSuccessReturn(result)) {
+            return createSuccessResponse(result.data, result.status, req);
+          }
+          if (isListDomainsErrorReturn(result)) {
+            return createErrorResponse(result.error.message, result.status, req, result.error);
+          }
+          const invalidListDomainsHandlerResponse: ServiceError = {
+            message: "Invalid listDomains handler response.",
+            status: 500,
+            code: "INTERNAL_ERROR",
+          };
+          logger.error("[listDomains] Handler returned an invalid result shape.", { result });
+          return createErrorResponse(invalidListDomainsHandlerResponse.message, 500, req, invalidListDomainsHandlerResponse);
+        }
+        case "fetchProcessAssociation": {
+          const payload: FetchProcessAssociationPayload = requestBody.payload;
+          const deps: FetchProcessAssociationDeps = { dbClient: adminClient as SupabaseClient<Database> };
+          const params: FetchProcessAssociationParams = {};
+          const result: FetchProcessAssociationResult = await handlers.fetchProcessAssociation(deps, params, payload);
+          if (isFetchProcessAssociationSuccessReturn(result)) {
+            return createSuccessResponse(result.data, result.status, req);
+          }
+          if (isFetchProcessAssociationErrorReturn(result)) {
+            return createErrorResponse(result.error.message, result.status, req, result.error);
+          }
+          const invalidFetchProcessAssociationHandlerResponse: ServiceError = {
+            message: "Invalid fetchProcessAssociation handler response.",
+            status: 500,
+            code: "INTERNAL_ERROR",
+          };
+          logger.error("[fetchProcessAssociation] Handler returned an invalid result shape.", { result });
+          return createErrorResponse(invalidFetchProcessAssociationHandlerResponse.message, 500, req, invalidFetchProcessAssociationHandlerResponse);
         }
         case "listModelCatalog": {
             try {
@@ -766,6 +814,7 @@ export const defaultHandlers: ActionHandlers = {
   saveContributionEdit,
   submitStageResponses,
   listDomains,
+  fetchProcessAssociation,
   listModelCatalog,
   fetchProcessTemplate,
   updateSessionModels: handleUpdateSessionModels,

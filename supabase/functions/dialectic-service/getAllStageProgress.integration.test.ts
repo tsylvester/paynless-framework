@@ -113,6 +113,20 @@ Deno.test("getAllStageProgress integration: DB template, real core, expectedCoun
 		}
 		const domainId: string = domainResponse.data.id;
 
+		const associationResponse = await adminClient
+			.from("domain_process_associations")
+			.select("process_template_id")
+			.eq("domain_id", domainId)
+			.eq("is_default_for_domain", true)
+			.single();
+		if (associationResponse.error !== null) {
+			throw associationResponse.error;
+		}
+		if (associationResponse.data === null) {
+			throw new Error("Default domain_process_associations row not found for Software Development");
+		}
+		const defaultProcessTemplateId: string = associationResponse.data.process_template_id;
+
 		const modelSelection = await coreSelectModelsForTier(
 			adminClient,
 			userClient,
@@ -128,6 +142,7 @@ Deno.test("getAllStageProgress integration: DB template, real core, expectedCoun
 			"Integration test: getAllStageProgress expectedCount boundary.",
 		);
 		projectFormData.append("selectedDomainId", domainId);
+		projectFormData.append("processTemplateId", defaultProcessTemplateId);
 		projectFormData.append("idempotencyKey", crypto.randomUUID());
 
 		const projectResult = await createProject(projectFormData, adminClient, testUser);
@@ -147,6 +162,7 @@ Deno.test("getAllStageProgress integration: DB template, real core, expectedCoun
 		}
 		const processTemplate: DialecticProcessTemplate = project.process_template;
 		const processTemplateId: string = processTemplate.id;
+		assertEquals(processTemplateId, defaultProcessTemplateId);
 
 		const sessionPayload: StartSessionPayload = {
 			projectId: project.id,

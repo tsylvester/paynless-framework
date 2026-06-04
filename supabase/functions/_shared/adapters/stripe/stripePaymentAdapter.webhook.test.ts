@@ -7,7 +7,6 @@ import {
 import {
   assertSpyCalls,
   stub,
-  type Stub,
 } from 'jsr:@std/testing@0.225.1/mock';
 import {
   createMockCustomerSubscriptionUpdatedEvent,
@@ -26,27 +25,24 @@ import {
   setupMocksAndAdapter,
   teardownMocks,
 } from './stripePaymentAdapter.mock.ts';
+import type { Database } from '../../../types_db.ts';
+
+type UpdateSubscriptionWithTierArgs = Database['public']['Functions']['update_subscription_with_tier']['Args'];
+
+function assertIso8601Timestamp(value: string): void {
+  const parsedMilliseconds: number = Date.parse(value);
+  assert(!Number.isNaN(parsedMilliseconds), `Expected ISO 8601 timestamp, got: ${value}`);
+}
 
 Deno.test('StripePaymentAdapter: handleWebhook', async (t) => {
   let mockStripe: MockStripe;
   let mockSupabaseSetup: MockSupabaseClientSetup;
   let mockTokenWalletService: MockAdminTokenWalletService;
   let adapter: StripePaymentAdapter;
-  let constructEventAsyncStub:
-    | Stub<
-      Stripe.Webhooks,
-      Parameters<Stripe.Webhooks['constructEventAsync']>,
-      Promise<Stripe.Event>
-    >
-    | undefined;
 
   const teardownWebhookMocks = (): void => {
     teardownMocks(mockStripe, mockTokenWalletService);
     Deno.env.delete('STRIPE_WEBHOOK_SECRET');
-    if (constructEventAsyncStub && constructEventAsyncStub.restored === false) {
-      constructEventAsyncStub.restore();
-    }
-    constructEventAsyncStub = undefined;
   };
 
   await t.step('handleWebhook - customer.subscription.updated - successful update', async () => {
@@ -110,7 +106,7 @@ Deno.test('StripePaymentAdapter: handleWebhook', async (t) => {
       mockStripe.stubs.webhooksConstructEvent.restore();
     }
     mockStripe.instance.webhooks = mockStripe.instance.webhooks || {};
-    constructEventAsyncStub = stub(
+    mockStripe.stubs.webhooksConstructEvent = stub(
       mockStripe.instance.webhooks,
       "constructEventAsync",
       async () => mockStripeEvent,
@@ -125,7 +121,7 @@ Deno.test('StripePaymentAdapter: handleWebhook', async (t) => {
     assert(result.success, `Webhook handling for subscription.updated should be successful. Error: ${result.error}`);
     assertEquals(result.transactionId, eventId);
 
-    assertSpyCalls(constructEventAsyncStub, 1);
+    assertSpyCalls(mockStripe.stubs.webhooksConstructEvent, 1);
 
     const subPlansBuilder = mockSupabaseSetup.client.getLatestBuilder('subscription_plans');
     assert(subPlansBuilder, "subscription_plans query builder not used.");
@@ -136,16 +132,17 @@ Deno.test('StripePaymentAdapter: handleWebhook', async (t) => {
 
     assertSpyCalls(mockSupabaseSetup.spies.rpcSpy, 1);
     assertEquals(mockSupabaseSetup.spies.rpcSpy.calls[0].args[0], 'update_subscription_with_tier');
-    assertEquals(mockSupabaseSetup.spies.rpcSpy.calls[0].args[1], {
-      p_stripe_subscription_id: stripeSubscriptionId,
-      p_status: newStatus,
-      p_plan_id: internalPlanId,
-      p_period_start: null,
-      p_period_end: null,
-      p_cancel_at_period_end: false,
-      p_stripe_customer_id: stripeCustomerId,
-      p_set_ratchet: false,
-    });
+    const rpcPayload: UpdateSubscriptionWithTierArgs = mockSupabaseSetup.spies.rpcSpy.calls[0].args[1];
+    assertEquals(rpcPayload.p_stripe_subscription_id, stripeSubscriptionId);
+    assertEquals(rpcPayload.p_status, newStatus);
+    assertEquals(rpcPayload.p_plan_id, internalPlanId);
+    assertEquals(rpcPayload.p_cancel_at_period_end, false);
+    assertEquals(rpcPayload.p_stripe_customer_id, stripeCustomerId);
+    assertEquals(rpcPayload.p_set_ratchet, false);
+    assert(typeof rpcPayload.p_period_start === 'string', 'p_period_start must be a non-null ISO string');
+    assert(typeof rpcPayload.p_period_end === 'string', 'p_period_end must be a non-null ISO string');
+    assertIso8601Timestamp(rpcPayload.p_period_start);
+    assertIso8601Timestamp(rpcPayload.p_period_end);
 
     teardownWebhookMocks();
   });
