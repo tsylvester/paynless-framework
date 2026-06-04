@@ -61,7 +61,6 @@ export type CalculateAffordabilityParamsOverrides = {
   outputRate?: number;
   isContinuationFlowInitial?: boolean;
   inputsRelevance?: RelevanceRule[];
-  tierOutputCapTokens?: TierOutputCapTokens;
   userConfig?: UserConfig;
 };
 
