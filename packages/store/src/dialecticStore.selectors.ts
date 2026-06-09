@@ -31,11 +31,11 @@ import { STAGE_RUN_DOCUMENT_KEY_SEPARATOR } from '@paynless/types';
 import {
     isAiModelExtendedConfig,
     computeCostCeiling,
-    buildComputeCostCeilingDeps,
-    buildComputeCostCeilingParams,
-    buildComputeCostCeilingPayload,
     ComputeCostCeilingContributionInput,
     ComputeCostCeilingStageInput,
+    ComputeCostCeilingDeps,
+    ComputeCostCeilingParams,
+    ComputeCostCeilingPayload,
     ComputeCostCeilingReturn,
 } from '@paynless/utils';
 import { createSelector } from 'reselect';
@@ -1082,11 +1082,14 @@ export function selectCostCeiling(
         }
         stages.push({ stageSlug: stage.slug, expectedCount, contributions });
     }
-    return computeCostCeiling(
-        buildComputeCostCeilingDeps(),
-        buildComputeCostCeilingParams(),
-        buildComputeCostCeilingPayload({ stages, maxOutputTokens, outputTokenCostRates }),
-    );
+    const deps: ComputeCostCeilingDeps = {};
+    const params: ComputeCostCeilingParams = {};
+    const payload: ComputeCostCeilingPayload = {
+        stages,
+        maxOutputTokens,
+        outputTokenCostRates,
+    };
+    return computeCostCeiling(deps, params, payload);
 }
 
 export function selectPreProjectCostCeiling(state: DialecticStateValues): ComputeCostCeilingReturn | null {
@@ -1123,11 +1126,14 @@ export function selectPreProjectCostCeiling(state: DialecticStateValues): Comput
         }
         stages.push({ stageSlug: entry.stageSlug, expectedCount: entry.expectedCount, contributions: [] });
     }
-    return computeCostCeiling(
-        buildComputeCostCeilingDeps(),
-        buildComputeCostCeilingParams(),
-        buildComputeCostCeilingPayload({ stages, maxOutputTokens, outputTokenCostRates }),
-    );
+    const deps: ComputeCostCeilingDeps = {};
+    const params: ComputeCostCeilingParams = {};
+    const payload: ComputeCostCeilingPayload = {
+        stages,
+        maxOutputTokens,
+        outputTokenCostRates,
+    };
+    return computeCostCeiling(deps, params, payload);
 }
 
 /**
