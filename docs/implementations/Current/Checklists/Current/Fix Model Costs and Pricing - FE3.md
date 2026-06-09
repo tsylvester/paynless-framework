@@ -2588,7 +2588,6 @@
         at t (https://paynless.app/assets/vendor-store-B-XaJYVV.js:119:63)
         at qs (https://paynless.app/assets/DialecticSessionDetailsPage-BPXjc1k_.js:487:229)
 
-
 ## Netlify-Worker-Stream Phase 2 and Phase 3 — deferred detail
 
 ### Phase 2 (backend notification and status adaptation):

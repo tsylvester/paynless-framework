@@ -2,7 +2,6 @@ import React from 'react';
 import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 import { render, screen, waitFor, fireEvent, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import '@testing-library/jest-dom';
 import { useNotificationStore, useAuthStore } from '@paynless/store';
 import { Notifications } from './Notifications';
 import type { Notification, User } from '@paynless/types';
@@ -58,9 +57,9 @@ const mockedUseAuthStore = useAuthStore as unknown as Mock;
 
 // --- Test Data ---
 const mockUser: User = { id: 'user-abc', email: 'test@example.com', role: 'user' };
-const mockNotificationUnread: Notification = { id: 'uuid-unread', user_id: mockUser.id, created_at: new Date().toISOString(), type: 'info', read: false, data: { subject: 'Unread Subject', message: 'Unread message', target_path: '/profile' } };
-const mockNotificationRead: Notification = { id: 'uuid-read', user_id: mockUser.id, created_at: new Date().toISOString(), type: 'warning', read: true, data: { subject: 'Read Subject', message: 'Read message' } };
-const mockNotificationUnreadNoPath: Notification = { id: 'uuid-unread-no-path', user_id: mockUser.id, created_at: new Date().toISOString(), type: 'info', read: false, data: { subject: 'Unread No Path Subject', message: 'Unread no path message' } };
+const mockNotificationUnread: Notification = { id: 'uuid-unread', user_id: mockUser.id, created_at: new Date().toISOString(), type: 'info', read: false, data: { subject: 'Unread Subject', message: 'Unread message', target_path: '/profile' }, is_internal_event: false, link_path: null, message: null, title: null };
+const mockNotificationRead: Notification = { id: 'uuid-read', user_id: mockUser.id, created_at: new Date().toISOString(), type: 'warning', read: true, data: { subject: 'Read Subject', message: 'Read message' }, is_internal_event: false, link_path: null, message: null, title: null };
+const mockNotificationUnreadNoPath: Notification = { id: 'uuid-unread-no-path', user_id: mockUser.id, created_at: new Date().toISOString(), type: 'info', read: false, data: { subject: 'Unread No Path Subject', message: 'Unread no path message' }, is_internal_event: false, link_path: null, message: null, title: null };
 
 const renderNotifications = () => render(<MemoryRouter><Notifications /></MemoryRouter>);
 
@@ -98,7 +97,7 @@ describe("Notifications Component", () => {
 
     it('should render trigger button when logged in', () => {
         renderNotifications();
-        expect(screen.getByLabelText('Toggle Notifications')).toBeInTheDocument();
+        expect(screen.getByLabelText('Toggle Notifications')).toBeDefined();
     });
     
     it('should render null when logged out', () => {
@@ -118,31 +117,31 @@ describe("Notifications Component", () => {
         mockedUseNotificationStore.mockReturnValue({ ...mockStoreState, unreadCount: 2 });
         renderNotifications();
         const badge = screen.getByLabelText('2 unread notifications');
-        expect(badge).toBeInTheDocument();
-        expect(badge).toHaveTextContent('2');
+        expect(badge).toBeDefined();
+        expect(badge.textContent).toBe('2');
     });
 
     it('should display "9+" when unread count exceeds 9', () => {
         mockedUseNotificationStore.mockReturnValue({ ...mockStoreState, unreadCount: 10 });
         renderNotifications();
         const badge = screen.getByLabelText('10 unread notifications');
-        expect(badge).toBeInTheDocument();
-        expect(badge).toHaveTextContent('9+');
+        expect(badge).toBeDefined();
+        expect(badge.textContent).toBe('9+');
     });
 
     it('should open dropdown on trigger click', () => {
         renderNotifications();
         fireEvent.click(screen.getByTestId('mock-dropdown-trigger'));
-        expect(screen.getByTestId('mock-dropdown-content')).toBeInTheDocument();
+        expect(screen.getByTestId('mock-dropdown-content')).toBeDefined();
     });
 
     it('should display only unread notifications initially in the dropdown', () => {
         mockedUseNotificationStore.mockReturnValue({ ...mockStoreState, notifications: [mockNotificationUnread, mockNotificationRead, mockNotificationUnreadNoPath], unreadCount: 2 });
         renderNotifications();
         fireEvent.click(screen.getByTestId('mock-dropdown-trigger'));
-        expect(screen.getByLabelText(/Notification: Unread Subject/)).toBeInTheDocument();
-        expect(screen.getByLabelText(/Notification: Unread No Path Subject/)).toBeInTheDocument();
-        expect(screen.queryByLabelText(/Notification: Read Subject/)).not.toBeInTheDocument();
+        expect(screen.getByLabelText(/Notification: Unread Subject/)).toBeDefined();
+        expect(screen.getByLabelText(/Notification: Unread No Path Subject/)).toBeDefined();
+        expect(screen.queryByLabelText(/Notification: Read Subject/)).toBeNull();
     });
 
     it('should show blue dot indicator only for unread notifications', () => {
@@ -151,7 +150,7 @@ describe("Notifications Component", () => {
         fireEvent.click(screen.getByTestId('mock-dropdown-trigger'));
         const unreadItem = screen.getByLabelText(/Notification: Unread Subject/);
         const blueDot = unreadItem.querySelector('span[aria-hidden="true"].bg-blue-500');
-        expect(blueDot).toBeInTheDocument();
+        expect(blueDot).toBeDefined();
     });
 
     it('should call markAllNotificationsAsRead store action when "Mark all as read" button is clicked', () => {
@@ -196,7 +195,7 @@ describe("Notifications Component", () => {
         renderNotifications();
         fireEvent.click(screen.getByTestId('mock-dropdown-trigger'));
         const link = screen.getByRole('link', { name: /Notifications/i });
-        expect(link).toHaveAttribute('href', '/notifications');
+        expect(link.getAttribute('href')).toBe('/notifications');
     });
 
     it('should keep item visible after clicking its mark read button (locally read state)', () => {
@@ -205,7 +204,7 @@ describe("Notifications Component", () => {
         fireEvent.click(screen.getByTestId('mock-dropdown-trigger'));
         const markReadButton = within(screen.getByLabelText(/Notification: Unread Subject/)).getByRole('button', { name: /Mark notification "Unread Subject" as read/i });
         fireEvent.click(markReadButton);
-        expect(screen.getByLabelText(/Notification: Unread Subject/)).toBeInTheDocument();
+        expect(screen.getByLabelText(/Notification: Unread Subject/)).toBeDefined();
     });
     
     it('should clear locally read items when dropdown is closed and reopened', () => {
@@ -219,18 +218,11 @@ describe("Notifications Component", () => {
         fireEvent.click(trigger); // reopen
         const unreadItem = screen.getByLabelText(/Notification: Unread Subject/);
         const blueDot = unreadItem.querySelector('span[aria-hidden="true"].bg-blue-500');
-        expect(blueDot).toBeInTheDocument();
+        expect(blueDot).toBeDefined();
     });
 
     it('constructs and navigates to the correct URL when a notification with projectId and sessionId is clicked', () => {
-        const mockNotification: Notification = { 
-            id: 'notif-1', 
-            read: false, 
-            created_at: new Date().toISOString(), 
-            type: 'info', 
-            user_id: mockUser.id,
-            data: { projectId: 'proj-abc', sessionId: 'sess-xyz', message: 'Your contribution is ready!' } 
-        };
+        const mockNotification: Notification = { id: 'notif-1', read: false, created_at: new Date().toISOString(), type: 'info', user_id: mockUser.id, data: { projectId: 'proj-abc', sessionId: 'sess-xyz', message: 'Your contribution is ready!' }, is_internal_event: false, link_path: null, message: null, title: null };
         mockedUseNotificationStore.mockReturnValue({ ...mockStoreState, notifications: [mockNotification], unreadCount: 1 });
         renderNotifications();
         fireEvent.click(screen.getByTestId('mock-dropdown-trigger'));

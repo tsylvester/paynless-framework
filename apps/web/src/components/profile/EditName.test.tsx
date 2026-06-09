@@ -6,10 +6,11 @@ import {
 	screen,
 	waitFor,
 } from "@testing-library/react";
-import { vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { EditName } from "./EditName";
-import "@testing-library/jest-dom";
 import { toast } from "sonner";
+import { ButtonProps, InputProps } from "react-day-picker";
+import { UserProfile } from "@paynless/types";
 
 // Mock the useAuthStore
 vi.mock("@paynless/store", () => ({
@@ -94,13 +95,13 @@ vi.mock("@/components/ui/card", () => ({
 	),
 }));
 vi.mock("@/components/ui/input", () => ({
-	Input: (props: any) => <input data-testid="shadcn-input" {...props} />,
+	Input: (props: InputProps) => <input data-testid="shadcn-input" {...props} />,
 }));
 vi.mock("@/components/ui/button", () => ({
-	Button: (props: any) => <button data-testid="shadcn-button" {...props} />,
+	Button: (props: ButtonProps) => <button data-testid="shadcn-button" {...props} />,
 }));
 vi.mock("@/components/ui/label", () => ({
-	Label: (props: any) => <label data-testid="shadcn-label" {...props} />,
+	Label: (props: React.LabelHTMLAttributes<HTMLLabelElement>) => <label data-testid="shadcn-label" {...props} />,
 }));
 
 vi.mock("lucide-react", () => ({
@@ -112,31 +113,31 @@ vi.mock("lucide-react", () => ({
 
 describe("EditName Component", () => {
 	const mockUpdateProfile = vi.fn();
-	const mockProfileInitial = {
+	const mockProfileInitial: UserProfile = {
 		id: "user123",
-		email: "test@example.com",
 		first_name: "InitialFirst",
 		last_name: "InitialLast",
-		avatar_url: "",
-		username: "initialuser",
-		onboarded: true,
 		created_at: "2023-01-01T00:00:00Z",
 		updated_at: "2023-01-01T00:00:00Z",
-		role: "user" as const,
-		profile_privacy_setting: "private" as const,
-		user_status: "active" as const,
-		name: "",
+		role: "user",
+		profile_privacy_setting: "private",
 		chat_context: null,
 		last_selected_org_id: null,
+		is_subscribed_to_newsletter: false,
+		has_seen_welcome_modal: false,
+		signup_ref: null,
+		subscribed_at: null,
+		synced_to_kit_at: null,
+		unsubscribed_at: null,
 	};
 
 	const setupMockStore = (
-		profile: any = mockProfileInitial,
+		profile: UserProfile | null = mockProfileInitial,
 		isLoading = false,
 		error: Error | null = null,
-		updateProfileImpl?: () => Promise<any>,
+		updateProfileImpl?: () => Promise<UserProfile>,
 	) => {
-		(useAuthStore as unknown as vi.Mock).mockReturnValue({
+		vi.mocked(useAuthStore).mockReturnValue({
 			profile,
 			updateProfile: updateProfileImpl || mockUpdateProfile,
 			isLoading,
@@ -153,19 +154,19 @@ describe("EditName Component", () => {
 	it("should render with initial first and last names in input fields and a disabled Save button", () => {
 		render(<EditName />);
 
-		expect(screen.getByTestId("shadcn-card-title")).toHaveTextContent("Name");
+		expect(screen.getByTestId("shadcn-card-title").textContent).toBe("Name");
 
-		const firstNameInput = screen.getByLabelText(/first name/i);
-		expect(firstNameInput).toBeInTheDocument();
-		expect(firstNameInput).toHaveValue("InitialFirst");
+		const firstNameInput = screen.getByLabelText<HTMLInputElement>(/first name/i);
+		expect(firstNameInput).toBeDefined();
+		expect(firstNameInput.value).toBe("InitialFirst");
 
-		const lastNameInput = screen.getByLabelText(/last name/i);
-		expect(lastNameInput).toBeInTheDocument();
-		expect(lastNameInput).toHaveValue("InitialLast");
+		const lastNameInput = screen.getByLabelText<HTMLInputElement>(/last name/i);
+		expect(lastNameInput).toBeDefined();
+		expect(lastNameInput.value).toBe("InitialLast");
 
 		const saveButton = screen.getByRole("button", { name: /save/i });
-		expect(saveButton).toBeInTheDocument();
-		expect(saveButton).toBeDisabled();
+		expect(saveButton).toBeDefined();
+		expect(saveButton.hasAttribute("disabled")).toBe(true);
 	});
 
 	it("should enable Save button when first name is changed", () => {
@@ -174,7 +175,7 @@ describe("EditName Component", () => {
 		const saveButton = screen.getByRole("button", { name: /save/i });
 
 		fireEvent.change(firstNameInput, { target: { value: "NewFirst" } });
-		expect(saveButton).toBeEnabled();
+		expect(saveButton.hasAttribute("disabled")).toBe(false);
 	});
 
 	it("should enable Save button when last name is changed", () => {
@@ -183,7 +184,7 @@ describe("EditName Component", () => {
 		const saveButton = screen.getByRole("button", { name: /save/i });
 
 		fireEvent.change(lastNameInput, { target: { value: "NewLast" } });
-		expect(saveButton).toBeEnabled();
+		expect(saveButton.hasAttribute("disabled")).toBe(false);
 	});
 
 	it("should call updateProfile with first and last names on Save and show success toast", async () => {
@@ -210,12 +211,12 @@ describe("EditName Component", () => {
 			});
 			expect(toast.success).toHaveBeenCalledWith("Name updated successfully!");
 		});
-		expect(saveButton).toBeEnabled();
+		expect(saveButton.hasAttribute("disabled")).toBe(false);
 	});
 
 	it("should display loading state on Save button during save operation", async () => {
-		let resolveUpdate: (value: any) => void = () => {};
-		const updatePromise = new Promise<any>((resolve) => {
+		let resolveUpdate: (value: UserProfile) => void = () => {};
+		const updatePromise = new Promise<UserProfile>((resolve) => {
 			resolveUpdate = resolve;
 		});
 
@@ -227,11 +228,11 @@ describe("EditName Component", () => {
 		fireEvent.change(firstNameInput, { target: { value: "SavingFirst" } });
 
 		const saveButton = screen.getByRole("button", { name: /save/i });
-		expect(saveButton).toBeEnabled();
+		expect(saveButton.hasAttribute("disabled")).toBe(false);
 		fireEvent.click(saveButton);
 
-		expect(saveButton).toHaveTextContent(/saving.../i);
-		expect(saveButton).toBeDisabled();
+		expect(saveButton.textContent).toMatch(/saving.../i);
+		expect(saveButton.hasAttribute("disabled")).toBe(true);
 
 		// Simulate the successful resolution of the update
 		const updatedProfileAfterSave = {
@@ -251,11 +252,11 @@ describe("EditName Component", () => {
 		// The key is that the profile used by hasChanged should reflect updatedProfileAfterSave.
 
 		const finalSaveButton = screen.getByRole("button", { name: /save/i });
-		expect(finalSaveButton).toHaveTextContent(/save/i);
+		expect(finalSaveButton.textContent).toMatch(/save/i);
 		// Now that the profile in the store mock reflects the change,
 		// and firstName input is 'SavingFirst',
 		// hasChanged should be false, thus button is disabled.
-		expect(finalSaveButton).toBeDisabled();
+		expect(finalSaveButton.hasAttribute("disabled")).toBe(true);
 	});
 
 	it("should show error toast when updateProfile returns null (simulating API error)", async () => {
@@ -284,7 +285,7 @@ describe("EditName Component", () => {
 		});
 
 		const saveButtonAfterError = screen.getByRole("button", { name: /save/i });
-		expect(saveButtonAfterError).toBeEnabled();
+		expect(saveButtonAfterError.hasAttribute("disabled")).toBe(false);
 	});
 
 	it("should render form when store has error on load (component does not display store error)", () => {
@@ -293,9 +294,9 @@ describe("EditName Component", () => {
 
 		render(<EditName />);
 
-		expect(screen.getByTestId("shadcn-card-title")).toHaveTextContent("Name");
-		expect(screen.getByLabelText(/first name/i)).toBeInTheDocument();
-		expect(screen.queryByTestId("alert-circle-icon")).not.toBeInTheDocument();
+		expect(screen.getByTestId("shadcn-card-title").textContent).toBe("Name");
+		expect(screen.getByLabelText(/first name/i)).toBeDefined();
+		expect(screen.queryByTestId("alert-circle-icon")).toBeNull();
 	});
 
 	it("should show loading message and no form when profile is not loaded", () => {
@@ -303,17 +304,17 @@ describe("EditName Component", () => {
 		render(<EditName />);
 		expect(
 			screen.getByText(/Loading profile data.../i),
-		).toBeInTheDocument();
+		).toBeDefined();
 		expect(screen.queryByRole("button", { name: /save/i })).toBeNull();
 	});
 
 	it("should render form with Save button when store isLoading is true (component uses only isSubmitting for button state)", () => {
 		setupMockStore(mockProfileInitial, true);
 		render(<EditName />);
-		expect(screen.getByTestId("shadcn-card-title")).toHaveTextContent("Name");
+		expect(screen.getByTestId("shadcn-card-title").textContent).toBe("Name");
 		const saveButton = screen.getByRole("button", { name: /save/i });
-		expect(saveButton).toBeInTheDocument();
-		expect(saveButton).toHaveTextContent(/save/i);
-		expect(saveButton).toBeDisabled();
+		expect(saveButton).toBeDefined();
+		expect(saveButton.textContent).toMatch(/save/i);
+		expect(saveButton.hasAttribute("disabled")).toBe(true);
 	});
 });

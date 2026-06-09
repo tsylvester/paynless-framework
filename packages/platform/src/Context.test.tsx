@@ -26,7 +26,9 @@ import { getPlatformCapabilities } from './index';
 const mockOnDragDropEvent = vi.fn();
 const mockUnlisten = vi.fn();
 // Variable to capture the actual listener callback passed by the component
-let capturedListenerCallback: Function | null = null; 
+let capturedListenerCallback:
+  | ((event: TauriEvent<DragDropEvent>) => void)
+  | null = null; 
 vi.mock('@tauri-apps/api/window', () => ({
   getCurrentWindow: vi.fn(() => ({
     // Use mockImplementation to capture the callback AND call the outer spy
@@ -50,10 +52,27 @@ vi.mock('@tauri-apps/api/window', () => ({
 import { platformEventEmitter } from './events';
 
 // Import the mocked window function
-import { getCurrentWindow } from '@tauri-apps/api/window';
+import { Event as TauriEvent } from '@tauri-apps/api/event';
+import { DragDropEvent, getCurrentWindow } from '@tauri-apps/api/window';
+import { SERIALIZE_TO_IPC_FN } from '@tauri-apps/api/core';
+import { PhysicalPosition } from '@tauri-apps/api/dpi';
 
-// Import jest-dom matchers
-import '@testing-library/jest-dom/vitest';
+const createDragDropTauriEvent = (
+  payload: DragDropEvent,
+): TauriEvent<DragDropEvent> => ({
+  event: 'tauri://drag-drop',
+  id: 0,
+  payload,
+});
+
+const mockPhysicalPosition: PhysicalPosition = {
+  type: 'Physical',
+  x: 0,
+  y: 0,
+  toLogical: vi.fn(),
+  toJSON: vi.fn(),
+  [SERIALIZE_TO_IPC_FN]: vi.fn(),
+};
 
 // Define the spy *after* importing the actual emitter
 // Initialize with spyOn immediately
@@ -108,10 +127,13 @@ describe('PlatformProvider and usePlatform Hook', () => {
     mockGetPlatformCapabilitiesFn.mockReset();
     // Default mock implementation for most tests
     mockGetPlatformCapabilitiesFn.mockResolvedValue(mockWebCapabilities);
+    mockEmit.mockClear();
+    vi.mocked(getCurrentWindow).mockClear();
   });
 
   afterEach(() => {
-    vi.restoreAllMocks(); 
+    mockEmit.mockClear();
+    vi.mocked(getCurrentWindow).mockClear();
   });
 
   it('should provide loading state initially, then resolved capabilities', async () => {
@@ -123,17 +145,17 @@ describe('PlatformProvider and usePlatform Hook', () => {
     
     renderWithProvider(<TestConsumer />);
 
-    expect(screen.getByTestId('loading-state')).toHaveTextContent('isLoading:true');
-    expect(screen.getByTestId('error-state')).toHaveTextContent('error:null');
-    expect(screen.getByTestId('capabilities-state')).toHaveTextContent(`capabilities:${JSON.stringify(null)}`);
+    expect(screen.getByTestId('loading-state').textContent).toBe('isLoading:true');
+    expect(screen.getByTestId('error-state').textContent).toBe('error:null');
+    expect(screen.getByTestId('capabilities-state').textContent).toBe(`capabilities:${JSON.stringify(null)}`);
 
     resolvePromise!(mockWebCapabilities);
 
     await waitFor(() => {
-      expect(screen.getByTestId('loading-state')).toHaveTextContent('isLoading:false');
+      expect(screen.getByTestId('loading-state').textContent).toBe('isLoading:false');
     });
-    expect(screen.getByTestId('error-state')).toHaveTextContent('error:null');
-    expect(screen.getByTestId('capabilities-state')).toHaveTextContent(`capabilities:${JSON.stringify(mockWebCapabilities)}`);
+    expect(screen.getByTestId('error-state').textContent).toBe('error:null');
+    expect(screen.getByTestId('capabilities-state').textContent).toBe(`capabilities:${JSON.stringify(mockWebCapabilities)}`);
     expect(mockGetPlatformCapabilitiesFn).toHaveBeenCalledTimes(1);
   });
 
@@ -142,12 +164,12 @@ describe('PlatformProvider and usePlatform Hook', () => {
     renderWithProvider(<TestConsumer />);
 
     await waitFor(() => {
-      expect(screen.getByTestId('loading-state')).toHaveTextContent('isLoading:false');
+      expect(screen.getByTestId('loading-state').textContent).toBe('isLoading:false');
     });
 
-    expect(screen.getByTestId('error-state')).toHaveTextContent('error:null');
+    expect(screen.getByTestId('error-state').textContent).toBe('error:null');
     const capsStateElement = screen.getByTestId('capabilities-state');
-    const finalCapabilities = JSON.parse(capsStateElement.textContent?.replace('capabilities:', '') || '{}') as PlatformCapabilities;
+    const finalCapabilities = JSON.parse(capsStateElement.textContent?.replace('capabilities:', '') || '{}');
     
     const expectedSerializableTauriCaps = {
       platform: mockTauriCapabilities.platform,
@@ -169,17 +191,17 @@ describe('PlatformProvider and usePlatform Hook', () => {
 
     renderWithProvider(<TestConsumer />);
 
-    expect(screen.getByTestId('loading-state')).toHaveTextContent('isLoading:true');
-    expect(screen.getByTestId('error-state')).toHaveTextContent('error:null');
-    expect(screen.getByTestId('capabilities-state')).toHaveTextContent(`capabilities:${JSON.stringify(null)}`);
+    expect(screen.getByTestId('loading-state').textContent).toBe('isLoading:true');
+    expect(screen.getByTestId('error-state').textContent).toBe('error:null');
+    expect(screen.getByTestId('capabilities-state').textContent).toBe(`capabilities:${JSON.stringify(null)}`);
 
     rejectPromise!(mockError);
 
     await waitFor(() => {
-      expect(screen.getByTestId('loading-state')).toHaveTextContent('isLoading:false');
+      expect(screen.getByTestId('loading-state').textContent).toBe('isLoading:false');
     });
-    expect(screen.getByTestId('error-state')).toHaveTextContent(`error:${mockError.message}`);
-    expect(screen.getByTestId('capabilities-state')).toHaveTextContent(`capabilities:${JSON.stringify(null)}`); 
+    expect(screen.getByTestId('error-state').textContent).toBe(`error:${mockError.message}`);
+    expect(screen.getByTestId('capabilities-state').textContent).toBe(`capabilities:${JSON.stringify(null)}`); 
     expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('Error getting platform capabilities'), mockError);
     expect(mockGetPlatformCapabilitiesFn).toHaveBeenCalledTimes(1);
     consoleErrorSpy.mockRestore();
@@ -194,7 +216,7 @@ describe('PlatformProvider and usePlatform Hook', () => {
 
     const { unmount } = renderWithProvider(<TestConsumer />); 
 
-    expect(screen.getByTestId('loading-state')).toHaveTextContent('isLoading:true');
+    expect(screen.getByTestId('loading-state').textContent).toBe('isLoading:true');
 
     unmount();
 
@@ -230,7 +252,7 @@ describe('PlatformProvider and usePlatform Hook', () => {
 
       // Wait for capabilities to load
       await waitFor(() => {
-        expect(screen.getByTestId('loading-state')).toHaveTextContent('isLoading:false');
+        expect(screen.getByTestId('loading-state').textContent).toBe('isLoading:false');
       });
 
       // Check if listener was attached
@@ -253,16 +275,24 @@ describe('PlatformProvider and usePlatform Hook', () => {
       const listenerCallback = capturedListenerCallback; 
       if (!listenerCallback) throw new Error('Listener callback was not captured');
 
-      const mockEnterEvent = { type: 'enter', paths: [], position: { x: 0, y: 0 } };
-      const mockOverEvent = { type: 'over', paths: [], position: { x: 0, y: 0 } };
-
       // Simulate enter
-      listenerCallback({ payload: mockEnterEvent }); // Wrap in { payload: ... }
+      listenerCallback(
+        createDragDropTauriEvent({
+          type: 'enter',
+          paths: [],
+          position: mockPhysicalPosition,
+        }),
+      );
       // Assert on the predefined mock spy
       expect(mockEmit).toHaveBeenCalledWith('file-drag-hover');
 
       // Simulate over
-      listenerCallback({ payload: mockOverEvent }); // Wrap in { payload: ... }
+      listenerCallback(
+        createDragDropTauriEvent({
+          type: 'over',
+          position: mockPhysicalPosition,
+        }),
+      );
       // Check total calls and specifically the second call
       expect(mockEmit).toHaveBeenCalledTimes(2);
       expect(mockEmit).toHaveBeenNthCalledWith(2, 'file-drag-hover');
@@ -276,12 +306,13 @@ describe('PlatformProvider and usePlatform Hook', () => {
       const listenerCallback = capturedListenerCallback; 
       if (!listenerCallback) throw new Error('Listener callback was not captured');
 
-      const mockLeaveEvent = { type: 'leave', position: { x: 0, y: 0 } }; // Leave doesn't have paths
+      const mockLeaveEvent: DragDropEvent = { type: 'leave' };
 
       // Simulate leave
-      listenerCallback({ payload: mockLeaveEvent }); // Wrap in { payload: ... }
+      listenerCallback(createDragDropTauriEvent(mockLeaveEvent));
       // Assert on the predefined mock spy
-      expect(mockEmit).toHaveBeenNthCalledWith(3, 'file-drag-cancel');
+      expect(mockEmit).toHaveBeenCalledWith('file-drag-cancel');
+      expect(mockEmit).toHaveBeenCalledTimes(1);
     });
 
     it('should emit file-drop and file-drag-cancel on "drop" event with paths', async () => {
@@ -293,16 +324,20 @@ describe('PlatformProvider and usePlatform Hook', () => {
       if (!listenerCallback) throw new Error('Listener callback was not captured');
 
       const mockPaths = ['/path/to/file1.txt', '/path/to/file2.png'];
-      const mockDropEvent = { type: 'drop', paths: mockPaths, position: { x: 0, y: 0 } };
 
       // Simulate drop
-      listenerCallback({ payload: mockDropEvent }); // Wrap in { payload: ... }
+      listenerCallback(
+        createDragDropTauriEvent({
+          type: 'drop',
+          paths: mockPaths,
+          position: mockPhysicalPosition,
+        }),
+      );
 
       // Assert on the predefined mock spy
-      expect(mockEmit).toHaveBeenNthCalledWith(4, 'file-drop', mockPaths);
-      expect(mockEmit).toHaveBeenNthCalledWith(5, 'file-drag-cancel');
-      // Check total calls
-      expect(mockEmit).toHaveBeenCalledTimes(5);
+      expect(mockEmit).toHaveBeenNthCalledWith(1, 'file-drop', mockPaths);
+      expect(mockEmit).toHaveBeenNthCalledWith(2, 'file-drag-cancel');
+      expect(mockEmit).toHaveBeenCalledTimes(2);
     });
 
     it('should emit only file-drag-cancel on "drop" event without paths', async () => {
@@ -313,14 +348,18 @@ describe('PlatformProvider and usePlatform Hook', () => {
       const listenerCallback = capturedListenerCallback;
       if (!listenerCallback) throw new Error('Listener callback was not captured');
 
-      const mockDropEventNoPaths = { type: 'drop', paths: [], position: { x: 0, y: 0 } };
-
       // Simulate drop with no paths
-      listenerCallback({ payload: mockDropEventNoPaths }); // Wrap in { payload: ... }
+      listenerCallback(
+        createDragDropTauriEvent({
+          type: 'drop',
+          paths: [],
+          position: mockPhysicalPosition,
+        }),
+      );
 
       // Assert on the predefined mock spy
-      expect(mockEmit).toHaveBeenNthCalledWith(6, 'file-drag-cancel');
-      expect(mockEmit).toHaveBeenCalledTimes(6); // Total calls up to this point
+      expect(mockEmit).toHaveBeenCalledWith('file-drag-cancel');
+      expect(mockEmit).toHaveBeenCalledTimes(1);
     });
   });
 

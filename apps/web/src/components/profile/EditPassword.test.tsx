@@ -6,9 +6,8 @@ import {
 	screen,
 	waitFor,
 } from "@testing-library/react";
-import { vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { EditPassword } from "./EditPassword";
-import "@testing-library/jest-dom";
 import { toast } from "sonner";
 
 vi.mock("@paynless/store", () => ({
@@ -113,24 +112,24 @@ describe("EditPassword Component", () => {
 	it("should render with empty password inputs and a disabled Update Password button", () => {
 		render(<EditPassword />);
 
-		expect(screen.getByTestId("shadcn-card-title")).toHaveTextContent(
+		expect(screen.getByTestId("shadcn-card-title").textContent).toBe(
 			"Password",
 		);
 
-		const newPasswordInput = screen.getByLabelText(/new password/i);
-		expect(newPasswordInput).toBeInTheDocument();
-		expect(newPasswordInput).toHaveValue("");
+		const newPasswordInput = screen.getByLabelText<HTMLInputElement>(/new password/i);
+		expect(newPasswordInput).toBeDefined();
+		expect(newPasswordInput.value).toBe("");
 
 		const confirmPasswordInput =
-			screen.getByLabelText(/confirm password/i);
-		expect(confirmPasswordInput).toBeInTheDocument();
-		expect(confirmPasswordInput).toHaveValue("");
+			screen.getByLabelText<HTMLInputElement>(/confirm password/i);
+		expect(confirmPasswordInput).toBeDefined();
+		expect(confirmPasswordInput.value).toBe("");
 
 		const submitButton = screen.getByRole("button", {
 			name: /update password/i,
 		});
-		expect(submitButton).toBeInTheDocument();
-		expect(submitButton).toBeDisabled();
+		expect(submitButton).toBeDefined();
+		expect(submitButton.hasAttribute("disabled")).toBe(true);
 	});
 
 	it("should enable Update Password button when new password has input", () => {
@@ -141,7 +140,7 @@ describe("EditPassword Component", () => {
 		});
 
 		fireEvent.change(newPasswordInput, { target: { value: "SomePass1" } });
-		expect(submitButton).toBeEnabled();
+		expect(submitButton.hasAttribute("disabled")).toBe(false);
 	});
 
 	it("should enable Update Password button when confirm password has input", () => {
@@ -155,7 +154,7 @@ describe("EditPassword Component", () => {
 		fireEvent.change(confirmPasswordInput, {
 			target: { value: "SomePass1" },
 		});
-		expect(submitButton).toBeEnabled();
+		expect(submitButton.hasAttribute("disabled")).toBe(false);
 	});
 
 	it("should show length validation error and not call updatePassword when password is shorter than 8 characters", async () => {
@@ -175,9 +174,9 @@ describe("EditPassword Component", () => {
 			expect(mockUpdatePassword).not.toHaveBeenCalled();
 			expect(
 				screen.getByText(/password must be at least 8 characters\./i),
-			).toBeInTheDocument();
+			).toBeDefined();
 		});
-		expect(screen.getByTestId("alert-circle-icon")).toBeInTheDocument();
+		expect(screen.getByTestId("alert-circle-icon")).toBeDefined();
 	});
 
 	it("should show mismatch validation error and not call updatePassword when passwords do not match", async () => {
@@ -201,16 +200,16 @@ describe("EditPassword Component", () => {
 			expect(mockUpdatePassword).not.toHaveBeenCalled();
 			expect(
 				screen.getByText(/passwords do not match\./i),
-			).toBeInTheDocument();
+			).toBeDefined();
 		});
 	});
 
 	it("should call updatePassword on submit and show success toast and clear inputs when update succeeds", async () => {
 		mockUpdatePassword.mockResolvedValue(true);
 		render(<EditPassword />);
-		const newPasswordInput = screen.getByLabelText(/new password/i);
+		const newPasswordInput = screen.getByLabelText<HTMLInputElement>(/new password/i);
 		const confirmPasswordInput =
-			screen.getByLabelText(/confirm password/i);
+			screen.getByLabelText<HTMLInputElement>(/confirm password/i);
 		const submitButton = screen.getByRole("button", {
 			name: /update password/i,
 		});
@@ -230,17 +229,17 @@ describe("EditPassword Component", () => {
 				"Password updated successfully!",
 			);
 		});
-		expect(newPasswordInput).toHaveValue("");
-		expect(confirmPasswordInput).toHaveValue("");
+		expect(newPasswordInput.value).toBe("");
+		expect(confirmPasswordInput.value).toBe("");
 	});
 
 	it("should show error toast and leave inputs unchanged when updatePassword returns false", async () => {
 		mockUpdatePassword.mockResolvedValue(false);
 		setupMockStore(mockUpdatePassword);
 		render(<EditPassword />);
-		const newPasswordInput = screen.getByLabelText(/new password/i);
+		const newPasswordInput = screen.getByLabelText<HTMLInputElement>(/new password/i);
 		const confirmPasswordInput =
-			screen.getByLabelText(/confirm password/i);
+			screen.getByLabelText<HTMLInputElement>(/confirm password/i);
 		const submitButton = screen.getByRole("button", {
 			name: /update password/i,
 		});
@@ -258,8 +257,8 @@ describe("EditPassword Component", () => {
 				"Failed to update password. Please try again.",
 			);
 		});
-		expect(newPasswordInput).toHaveValue("ValidPass1");
-		expect(confirmPasswordInput).toHaveValue("ValidPass1");
+		expect(newPasswordInput.value).toBe("ValidPass1");
+		expect(confirmPasswordInput.value).toBe("ValidPass1");
 	});
 
 	it("should display Updating... and loader and disable button and inputs during submit", async () => {
@@ -285,11 +284,11 @@ describe("EditPassword Component", () => {
 		});
 		fireEvent.click(submitButton);
 
-		expect(submitButton).toHaveTextContent(/updating.../i);
-		expect(screen.getByTestId("loader2-icon")).toBeInTheDocument();
-		expect(submitButton).toBeDisabled();
-		expect(newPasswordInput).toBeDisabled();
-		expect(confirmPasswordInput).toBeDisabled();
+		expect(submitButton.textContent).toMatch(/updating.../i);
+		expect(screen.getByTestId("loader2-icon")).toBeDefined();
+		expect(submitButton.hasAttribute("disabled")).toBe(true);
+		expect(newPasswordInput.hasAttribute("disabled")).toBe(true);
+		expect(confirmPasswordInput.hasAttribute("disabled")).toBe(true);
 
 		await act(async () => {
 			resolveUpdate(true);
@@ -299,7 +298,7 @@ describe("EditPassword Component", () => {
 		const finalSubmitButton = screen.getByRole("button", {
 			name: /update password/i,
 		});
-		expect(finalSubmitButton).toHaveTextContent(/update password/i);
+		expect(finalSubmitButton.textContent).toMatch(/update password/i);
 	});
 
 	it("should clear validation error when user types in new password after error", async () => {
@@ -318,7 +317,7 @@ describe("EditPassword Component", () => {
 		await waitFor(() => {
 			expect(
 				screen.getByText(/password must be at least 8 characters\./i),
-			).toBeInTheDocument();
+			).toBeDefined();
 		});
 
 		fireEvent.change(newPasswordInput, { target: { value: "longer" } });
@@ -326,7 +325,7 @@ describe("EditPassword Component", () => {
 		await waitFor(() => {
 			expect(
 				screen.queryByText(/password must be at least 8 characters\./i),
-			).not.toBeInTheDocument();
+			).toBeNull();
 		});
 	});
 

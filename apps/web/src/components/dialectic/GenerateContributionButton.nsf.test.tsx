@@ -2,7 +2,6 @@ import React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
-import '@testing-library/jest-dom';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { GenerateContributionButton } from './GenerateContributionButton';
 import type {
@@ -277,8 +276,8 @@ describe('GenerateContributionButton NSF', () => {
       })
     );
     renderWithRouter(<GenerateContributionButton />);
-    expect(screen.getByRole('button')).toBeDisabled();
-    expect(screen.getByRole('button')).toHaveTextContent(/Insufficient Balance/i);
+    const button = screen.getByRole('button', { name: /Insufficient Balance/i });
+    expect(button.hasAttribute('disabled')).toBe(true);
   });
 
   it('when balance is below stageCeiling, balance callout is present with shortfall copy and links to /subscription?tab=top-up', () => {
@@ -293,15 +292,12 @@ describe('GenerateContributionButton NSF', () => {
       })
     );
     renderWithRouter(<GenerateContributionButton />);
-    const callout = screen.getByTestId('generate-button-balance-callout');
-    expect(callout).toBeInTheDocument();
-    expect(callout).toHaveTextContent(/Insufficient tokens/i);
-    expect(callout).toHaveTextContent(/Top up/i);
-    expect(callout).toHaveTextContent(/50,000/);
-    const link = callout.querySelector('a[href="/subscription?tab=top-up"]');
-    expect(link).toBeInTheDocument();
-    expect(screen.queryByTestId('generate-button-no-estimate-callout')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('generate-button-estimate-error-callout')).not.toBeInTheDocument();
+    expect(screen.getByTestId('generate-button-balance-callout')).toBeDefined();
+    expect(screen.getByText(/Insufficient tokens/i)).toBeDefined();
+    const topUpLink = screen.getByRole('link', { name: /Top up 50,000/i });
+    expect(topUpLink.getAttribute('href')).toBe('/subscription?tab=top-up');
+    expect(screen.queryByTestId('generate-button-no-estimate-callout')).toBeNull();
+    expect(screen.queryByTestId('generate-button-estimate-error-callout')).toBeNull();
   });
 
   it('when balance is below stageCeiling and stage is paused_nsf, balance callout is present with shortfall copy and links to /subscription?tab=top-up', () => {
@@ -317,26 +313,23 @@ describe('GenerateContributionButton NSF', () => {
       })
     );
     renderWithRouter(<GenerateContributionButton />);
-    const callout = screen.getByTestId('generate-button-balance-callout');
-    expect(callout).toBeInTheDocument();
-    expect(callout).toHaveTextContent(/Insufficient tokens/i);
-    expect(callout).toHaveTextContent(/Top up/i);
-    expect(callout).toHaveTextContent(/50,000/);
-    const link = callout.querySelector('a[href="/subscription?tab=top-up"]');
-    expect(link).toBeInTheDocument();
+    expect(screen.getByTestId('generate-button-balance-callout')).toBeDefined();
+    expect(screen.getByText(/Insufficient tokens/i)).toBeDefined();
+    const topUpLink = screen.getByRole('link', { name: /Top up 50,000/i });
+    expect(topUpLink.getAttribute('href')).toBe('/subscription?tab=top-up');
   });
 
   it('when balance meets threshold, balance callout is not present', () => {
     mockUseStartContributionGeneration.mockReturnValue(getDefaultHookReturn());
     renderWithRouter(<GenerateContributionButton />);
-    expect(screen.queryByTestId('generate-button-balance-callout')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('generate-button-balance-callout')).toBeNull();
   });
 
   it('when activeWalletInfo.balance meets stageCeiling and active stage is NOT paused_nsf, button is enabled and shows "Generate {displayName}"', () => {
     mockUseStartContributionGeneration.mockReturnValue(getDefaultHookReturn());
     renderWithRouter(<GenerateContributionButton />);
-    expect(screen.getByRole('button')).not.toBeDisabled();
-    expect(screen.getByRole('button', { name: /Generate Proposal/i })).toBeInTheDocument();
+    expect(screen.getByRole('button').hasAttribute('disabled')).toBe(false);
+    expect(screen.getByRole('button', { name: /Generate Proposal/i })).toBeDefined();
   });
 
   it('when active stage stageStatus is paused_nsf and balance is below stageCeiling, button is disabled and shows "Insufficient Balance"', () => {
@@ -349,8 +342,8 @@ describe('GenerateContributionButton NSF', () => {
       })
     );
     renderWithRouter(<GenerateContributionButton />);
-    expect(screen.getByRole('button')).toBeDisabled();
-    expect(screen.getByRole('button')).toHaveTextContent(/Insufficient Balance/i);
+    const button = screen.getByRole('button', { name: /Insufficient Balance/i });
+    expect(button.hasAttribute('disabled')).toBe(true);
   });
 
   it('when active stage stageStatus is paused_nsf and balance meets threshold, button is enabled and shows "Resume {displayName}"', () => {
@@ -358,8 +351,8 @@ describe('GenerateContributionButton NSF', () => {
       getDefaultHookReturn({ isResumeMode: true, hasPausedNsfJobs: true, balanceMeetsThreshold: true })
     );
     renderWithRouter(<GenerateContributionButton />);
-    expect(screen.getByRole('button')).not.toBeDisabled();
-    expect(screen.getByRole('button', { name: /Resume Proposal/i })).toBeInTheDocument();
+    expect(screen.getByRole('button').hasAttribute('disabled')).toBe(false);
+    expect(screen.getByRole('button', { name: /Resume Proposal/i })).toBeDefined();
   });
 
   it('clicking "Resume {displayName}" calls resumePausedNsfJobs with sessionId, stageSlug, iterationNumber and does not call generateContributions', async () => {
@@ -428,11 +421,11 @@ describe('GenerateContributionButton NSF', () => {
     );
     const user = userEvent.setup();
     renderWithRouter(<GenerateContributionButton />);
-    expect(screen.queryByTestId('stage-dag-progress-dialog')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('stage-dag-progress-dialog')).toBeNull();
     const button = screen.getByRole('button', { name: /Resume Proposal/i });
     await user.click(button);
     await waitFor(() => {
-      expect(screen.getByTestId('stage-dag-progress-dialog')).toBeInTheDocument();
+      expect(screen.getByTestId('stage-dag-progress-dialog')).toBeDefined();
     });
   });
 
@@ -441,8 +434,8 @@ describe('GenerateContributionButton NSF', () => {
       getDefaultHookReturn({ isSessionGenerating: true, isPauseMode: true, isDisabled: false })
     );
     renderWithRouter(<GenerateContributionButton />);
-    expect(screen.getByRole('button')).toBeEnabled();
-    expect(screen.getByRole('button')).toHaveTextContent(/Pause Proposal/i);
+    const button = screen.getByRole('button', { name: /Pause Proposal/i });
+    expect(button.hasAttribute('disabled')).toBe(false);
   });
 
   it('when showStageCostEstimate is true and stageCeiling is 120000, stage cost estimate callout shows formatted ceiling', () => {
@@ -453,10 +446,9 @@ describe('GenerateContributionButton NSF', () => {
       })
     );
     renderWithRouter(<GenerateContributionButton />);
-    const estimate = screen.getByTestId('generate-button-stage-cost-estimate');
-    expect(estimate).toBeInTheDocument();
-    expect(estimate).toHaveTextContent(/Estimated cost for this stage/i);
-    expect(estimate).toHaveTextContent(/120,000/);
+    expect(screen.getByTestId('generate-button-stage-cost-estimate')).toBeDefined();
+    expect(screen.getByText(/Estimated cost for this stage/i)).toBeDefined();
+    expect(screen.getByText(/120,000/)).toBeDefined();
   });
 
   it('when projectCeiling exceeds wallet balance, project balance callout is present with shortfall and top-up link', () => {
@@ -477,12 +469,10 @@ describe('GenerateContributionButton NSF', () => {
       })
     );
     renderWithRouter(<GenerateContributionButton />);
-    const callout = screen.getByTestId('generate-button-project-balance-callout');
-    expect(callout).toBeInTheDocument();
-    expect(callout).toHaveTextContent(/200,000/);
-    const link = callout.querySelector('a[href="/subscription?tab=top-up"]');
-    expect(link).toBeInTheDocument();
-    expect(screen.getByRole('button')).not.toBeDisabled();
+    expect(screen.getByTestId('generate-button-project-balance-callout')).toBeDefined();
+    const topUpLink = screen.getByRole('link', { name: /Top up 200,000/i });
+    expect(topUpLink.getAttribute('href')).toBe('/subscription?tab=top-up');
+    expect(screen.getByRole('button', { name: /Generate Proposal/i }).hasAttribute('disabled')).toBe(false);
   });
 
   it('when projectCeiling is null, isCostEstimateKnown is false, or wallet meets projectCeiling, project balance callout is absent', () => {
@@ -490,7 +480,7 @@ describe('GenerateContributionButton NSF', () => {
       getDefaultHookReturn({ projectCeiling: null })
     );
     renderWithRouter(<GenerateContributionButton />);
-    expect(screen.queryByTestId('generate-button-project-balance-callout')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('generate-button-project-balance-callout')).toBeNull();
 
     mockUseStartContributionGeneration.mockReturnValue(
       getDefaultHookReturn({
@@ -500,7 +490,7 @@ describe('GenerateContributionButton NSF', () => {
       })
     );
     renderWithRouter(<GenerateContributionButton />);
-    expect(screen.queryByTestId('generate-button-project-balance-callout')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('generate-button-project-balance-callout')).toBeNull();
 
     vi.mocked(selectActiveChatWalletInfo).mockReturnValue({
       status: 'ok',
@@ -518,7 +508,7 @@ describe('GenerateContributionButton NSF', () => {
       })
     );
     renderWithRouter(<GenerateContributionButton />);
-    expect(screen.queryByTestId('generate-button-project-balance-callout')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('generate-button-project-balance-callout')).toBeNull();
   });
 
   it('when cost estimate is not yet available, button is disabled with "No Estimate" and no-estimate callout', () => {
@@ -533,14 +523,13 @@ describe('GenerateContributionButton NSF', () => {
       })
     );
     renderWithRouter(<GenerateContributionButton />);
-    expect(screen.getByRole('button')).toBeDisabled();
-    expect(screen.getByRole('button')).toHaveTextContent(/No Estimate/i);
-    const callout = screen.getByTestId('generate-button-no-estimate-callout');
-    expect(callout).toBeInTheDocument();
-    expect(callout).toHaveTextContent(/no cost estimate/i);
-    expect(callout).not.toHaveTextContent(/unknown cost/i);
-    expect(screen.queryByTestId('generate-button-estimate-error-callout')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('generate-button-balance-callout')).not.toBeInTheDocument();
+    const button = screen.getByRole('button', { name: /No Estimate/i });
+    expect(button.hasAttribute('disabled')).toBe(true);
+    expect(screen.getByTestId('generate-button-no-estimate-callout')).toBeDefined();
+    expect(screen.getByText(/no cost estimate/i)).toBeDefined();
+    expect(screen.queryByText(/unknown cost/i)).toBeNull();
+    expect(screen.queryByTestId('generate-button-estimate-error-callout')).toBeNull();
+    expect(screen.queryByTestId('generate-button-balance-callout')).toBeNull();
   });
 
   it('when cost estimate failed, button is disabled with "Estimate Failed" and estimate-error callout shows error message', () => {
@@ -559,13 +548,12 @@ describe('GenerateContributionButton NSF', () => {
       })
     );
     renderWithRouter(<GenerateContributionButton />);
-    expect(screen.getByRole('button')).toBeDisabled();
-    expect(screen.getByRole('button')).toHaveTextContent(/Estimate Failed/i);
-    const callout = screen.getByTestId('generate-button-estimate-error-callout');
-    expect(callout).toBeInTheDocument();
-    expect(callout).toHaveTextContent('Invalid payload');
-    expect(screen.queryByTestId('generate-button-no-estimate-callout')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('generate-button-balance-callout')).not.toBeInTheDocument();
+    const button = screen.getByRole('button', { name: /Estimate Failed/i });
+    expect(button.hasAttribute('disabled')).toBe(true);
+    expect(screen.getByTestId('generate-button-estimate-error-callout')).toBeDefined();
+    expect(screen.getByText(/Invalid payload/i)).toBeDefined();
+    expect(screen.queryByTestId('generate-button-no-estimate-callout')).toBeNull();
+    expect(screen.queryByTestId('generate-button-balance-callout')).toBeNull();
   });
 
   it('when paused_nsf and cost estimate is blocked, resume control is disabled and click does not invoke startContributionGeneration', async () => {
@@ -583,7 +571,7 @@ describe('GenerateContributionButton NSF', () => {
     const user = userEvent.setup();
     renderWithRouter(<GenerateContributionButton />);
     const button = screen.getByRole('button');
-    expect(button).toBeDisabled();
+    expect(button.hasAttribute('disabled')).toBe(true);
     await user.click(button);
     expect(startContributionGeneration).not.toHaveBeenCalled();
   });

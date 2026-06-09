@@ -1,7 +1,6 @@
 import React from 'react';
 import { render, screen, waitFor, act, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import '@testing-library/jest-dom'; // Still useful for DOM assertions
 import { MemoryRouter } from 'react-router-dom';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { toast } from 'sonner'; // Import the mocked toast
@@ -260,8 +259,8 @@ describe('GenerateContributionButton', () => {
   it('renders "Generate [StageName]" when models are selected and no other conditions met', () => {
     vi.mocked(selectIsStageReadyForSessionIteration).mockReturnValue(true);
     renderWithRouter(<GenerateContributionButton />);
-    expect(screen.getByRole('button', { name: /Generate Proposal/i })).toBeInTheDocument();
-    expect(screen.getByRole('button')).not.toBeDisabled();
+    expect(screen.getByRole('button', { name: /Generate Proposal/i })).toBeDefined();
+    expect(screen.getByRole('button', { name: /Generate Proposal/i }).hasAttribute('disabled')).toBe(false);
   });
 
   it('renders "Choose AI Models" and is disabled when no models are selected', () => {
@@ -270,8 +269,8 @@ describe('GenerateContributionButton', () => {
       getDefaultHookReturn({ areAnyModelsSelected: false, isDisabled: true })
     );
     renderWithRouter(<GenerateContributionButton />);
-    expect(screen.getByRole('button', { name: /Choose AI Models/i })).toBeInTheDocument();
-    expect(screen.getByRole('button')).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Choose AI Models/i })).toBeDefined();
+    expect(screen.getByRole('button').hasAttribute('disabled')).toBe(true);
   });
 
   it('is disabled and shows "Stage Not Ready" when no active stage is selected', () => {
@@ -280,8 +279,8 @@ describe('GenerateContributionButton', () => {
       getDefaultHookReturn({ activeSession: null, isDisabled: true })
     );
     renderWithRouter(<GenerateContributionButton />);
-    expect(screen.getByRole('button', { name: /Stage Not Ready/i })).toBeInTheDocument();
-    expect(screen.getByRole('button')).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Stage Not Ready/i })).toBeDefined();
+    expect(screen.getByRole('button').hasAttribute('disabled')).toBe(true);
   });
 
   it('is disabled and shows "Previous Stage Incomplete" when the stage is not ready', () => {
@@ -290,8 +289,8 @@ describe('GenerateContributionButton', () => {
       getDefaultHookReturn({ isStageReady: false, isDisabled: true })
     );
     renderWithRouter(<GenerateContributionButton />);
-    expect(screen.getByRole('button', { name: /Previous Stage Incomplete/i })).toBeInTheDocument();
-    expect(screen.getByRole('button')).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Previous Stage Incomplete/i })).toBeDefined();
+    expect(screen.getByRole('button').hasAttribute('disabled')).toBe(true);
   });
 
   it('renders "Regenerate [StageName]" when contributions for current stage and iteration exist', () => {
@@ -303,8 +302,8 @@ describe('GenerateContributionButton', () => {
       })
     );
     renderWithRouter(<GenerateContributionButton />);
-    expect(screen.getByRole('button', { name: /Regenerate Proposal/i })).toBeInTheDocument();
-    expect(screen.getByRole('button')).not.toBeDisabled();
+    expect(screen.getByRole('button', { name: /Regenerate Proposal/i })).toBeDefined();
+    expect(screen.getByRole('button', { name: /Regenerate Proposal/i }).hasAttribute('disabled')).toBe(false);
   });
 
   it('when isPauseMode is true, button shows "Pause [StageName]" with pause icon and is not disabled (for pause action)', () => {
@@ -317,10 +316,8 @@ describe('GenerateContributionButton', () => {
       })
     );
     renderWithRouter(<GenerateContributionButton />);
-    const button = screen.getByRole('button');
-    expect(button).toHaveTextContent('Pause');
-    expect(button).toHaveTextContent('Proposal');
-    expect(button).not.toBeDisabled();
+    const button = screen.getByRole('button', { name: /Pause Proposal/i });
+    expect(button.hasAttribute('disabled')).toBe(false);
   });
 
   it('renders "Regenerate [StageName]" when contributions for the current stage/iteration already exist', () => {
@@ -332,8 +329,8 @@ describe('GenerateContributionButton', () => {
       })
     );
     renderWithRouter(<GenerateContributionButton />);
-    expect(screen.getByRole('button', { name: /Regenerate Proposal/i })).toBeInTheDocument();
-    expect(screen.getByRole('button')).not.toBeDisabled();
+    expect(screen.getByRole('button', { name: /Regenerate Proposal/i })).toBeDefined();
+    expect(screen.getByRole('button', { name: /Regenerate Proposal/i }).hasAttribute('disabled')).toBe(false);
   });
 
 
@@ -342,8 +339,8 @@ describe('GenerateContributionButton', () => {
       getDefaultHookReturn({ viewingStage: null, isDisabled: true })
     );
     renderWithRouter(<GenerateContributionButton />);
-    expect(screen.getByRole('button')).toBeDisabled();
-    expect(screen.getByRole('button', { name: /Stage Not Ready/i })).toBeInTheDocument();
+    expect(screen.getByRole('button').hasAttribute('disabled')).toBe(true);
+    expect(screen.getByRole('button', { name: /Stage Not Ready/i })).toBeDefined();
   });
 
   it('is disabled and shows "Choose AI Models" when no models selected, overriding "Regenerate" label', () => {
@@ -356,9 +353,9 @@ describe('GenerateContributionButton', () => {
       })
     );
     renderWithRouter(<GenerateContributionButton />);
-    expect(screen.getByRole('button', { name: /Choose AI Models/i })).toBeInTheDocument();
-    expect(screen.getByRole('button')).toBeDisabled();
-    expect(screen.queryByRole('button', { name: /Regenerate Proposal/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Choose AI Models/i })).toBeDefined();
+    expect(screen.getByRole('button').hasAttribute('disabled')).toBe(true);
+    expect(screen.queryByRole('button', { name: /Regenerate Proposal/i })).toBeNull();
   });
 
   it('handles currentProjectDetail being null gracefully by being disabled', () => {
@@ -370,8 +367,8 @@ describe('GenerateContributionButton', () => {
       })
     );
     renderWithRouter(<GenerateContributionButton />);
-    expect(screen.getByRole('button')).toBeDisabled();
-    expect(screen.getByRole('button', { name: /Stage Not Ready/i })).toBeInTheDocument();
+    expect(screen.getByRole('button').hasAttribute('disabled')).toBe(true);
+    expect(screen.getByRole('button', { name: /Stage Not Ready/i })).toBeDefined();
   });
 
   it('is disabled when no active wallet is available', () => {
@@ -380,7 +377,7 @@ describe('GenerateContributionButton', () => {
       getDefaultHookReturn({ isWalletReady: false, isDisabled: true })
     );
     renderWithRouter(<GenerateContributionButton />);
-    expect(screen.getByRole('button')).toBeDisabled();
+    expect(screen.getByRole('button').hasAttribute('disabled')).toBe(true);
   });
 
   it('reacts to chat context: personal wallet makes button enabled', () => {
@@ -412,7 +409,7 @@ describe('GenerateContributionButton', () => {
     });
 
     renderWithRouter(<GenerateContributionButton />);
-    expect(screen.getByRole('button', { name: /Generate Proposal/i })).not.toBeDisabled();
+    expect(screen.getByRole('button', { name: /Generate Proposal/i }).hasAttribute('disabled')).toBe(false);
   });
 
   it('handleClick calls hook\'s startContributionGeneration with an onOpenDagProgress callback', async () => {
@@ -443,14 +440,14 @@ describe('GenerateContributionButton', () => {
     );
     const user = userEvent.setup();
     renderWithRouter(<GenerateContributionButton />);
-    expect(screen.queryByTestId('stage-dag-progress-dialog')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('stage-dag-progress-dialog')).toBeNull();
     await user.click(screen.getByRole('button', { name: /Generate Proposal/i }));
     expect(capturedCallback).toBeDefined();
     act(() => {
       capturedCallback?.();
     });
     await waitFor(() => {
-      expect(screen.getByTestId('stage-dag-progress-dialog')).toBeInTheDocument();
+      expect(screen.getByTestId('stage-dag-progress-dialog')).toBeDefined();
     });
   });
 
@@ -458,13 +455,13 @@ describe('GenerateContributionButton', () => {
     vi.mocked(selectIsStageReadyForSessionIteration).mockReturnValue(true);
     mockUseStartContributionGeneration.mockReturnValue(getDefaultHookReturn());
     renderWithRouter(<GenerateContributionButton />);
-    expect(screen.queryByTestId('stage-dag-progress-dialog')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('stage-dag-progress-dialog')).toBeNull();
     const setShouldOpenDagProgress = getDialecticStoreState().setShouldOpenDagProgress;
     act(() => {
       useDialecticStore.setState({ shouldOpenDagProgress: true });
     });
     await waitFor(() => {
-      expect(screen.getByTestId('stage-dag-progress-dialog')).toBeInTheDocument();
+      expect(screen.getByTestId('stage-dag-progress-dialog')).toBeDefined();
     });
     expect(vi.mocked(setShouldOpenDagProgress)).toHaveBeenCalledWith(false);
   });
@@ -473,7 +470,7 @@ describe('GenerateContributionButton', () => {
     vi.mocked(selectIsStageReadyForSessionIteration).mockReturnValue(true);
     mockUseStartContributionGeneration.mockReturnValue(getDefaultHookReturn({ isDisabled: true }));
     renderWithRouter(<GenerateContributionButton />);
-    expect(screen.getByRole('button')).toBeDisabled();
+    expect(screen.getByRole('button').hasAttribute('disabled')).toBe(true);
   });
 
   it('button text is computed correctly from hook\'s derived state values', () => {
@@ -492,7 +489,7 @@ describe('GenerateContributionButton', () => {
       })
     );
     renderWithRouter(<GenerateContributionButton />);
-    expect(screen.getByRole('button', { name: /Generate Proposal/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Generate Proposal/i })).toBeDefined();
   });
 
   it('StageDAGProgressDialog renders with correct props when dagDialogOpen is true', async () => {
@@ -509,9 +506,9 @@ describe('GenerateContributionButton', () => {
     await user.click(screen.getByRole('button', { name: /Generate Proposal/i }));
     await waitFor(() => {
       const dialog = screen.getByTestId('stage-dag-progress-dialog');
-      expect(dialog).toHaveAttribute('data-stage-slug', 'thesis');
-      expect(dialog).toHaveAttribute('data-session-id', 'test-session-id');
-      expect(dialog).toHaveAttribute('data-iteration-number', '1');
+      expect(dialog.getAttribute('data-stage-slug')).toBe('thesis');
+      expect(dialog.getAttribute('data-session-id')).toBe('test-session-id');
+      expect(dialog.getAttribute('data-iteration-number')).toBe('1');
     });
   });
 
@@ -528,11 +525,9 @@ describe('GenerateContributionButton', () => {
       })
     );
     renderWithRouter(<GenerateContributionButton />);
-    const callout = screen.getByTestId('generate-button-balance-callout');
-    expect(callout).toBeInTheDocument();
-    expect(callout).toHaveTextContent(/Top up/i);
-    expect(callout).toHaveTextContent(/25,000/);
-    expect(screen.queryByTestId('generate-button-no-estimate-callout')).not.toBeInTheDocument();
+    expect(screen.getByTestId('generate-button-balance-callout')).toBeDefined();
+    expect(screen.getByRole('link', { name: /Top up 25,000/i })).toBeDefined();
+    expect(screen.queryByTestId('generate-button-no-estimate-callout')).toBeNull();
   });
 
   it('renders disabled button with no-estimate callout when cost estimate is not yet available instead of returning null', () => {
@@ -547,8 +542,8 @@ describe('GenerateContributionButton', () => {
       })
     );
     renderWithRouter(<GenerateContributionButton />);
-    expect(screen.getByRole('button')).toBeDisabled();
-    expect(screen.getByTestId('generate-button-no-estimate-callout')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /No Estimate/i }).hasAttribute('disabled')).toBe(true);
+    expect(screen.getByTestId('generate-button-no-estimate-callout')).toBeDefined();
   });
 
   it('closes DAG progress dialog when onOpenChange(false) is called', async () => {
@@ -564,7 +559,7 @@ describe('GenerateContributionButton', () => {
     renderWithRouter(<GenerateContributionButton />);
     await user.click(screen.getByRole('button', { name: /Generate Proposal/i }));
     await waitFor(() => {
-      expect(screen.getByTestId('stage-dag-progress-dialog')).toBeInTheDocument();
+      expect(screen.getByTestId('stage-dag-progress-dialog')).toBeDefined();
     });
     const { StageDAGProgressDialog } = await import('./StageDAGProgressDialog');
     const mockDialog = vi.mocked(StageDAGProgressDialog);
@@ -574,7 +569,7 @@ describe('GenerateContributionButton', () => {
       onOpenChange(false);
     });
     await waitFor(() => {
-      expect(screen.queryByTestId('stage-dag-progress-dialog')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('stage-dag-progress-dialog')).toBeNull();
     });
   });
 
@@ -609,7 +604,7 @@ describe('GenerateContributionButton', () => {
       })
     );
     renderWithRouter(<GenerateContributionButton />);
-    expect(screen.getByRole('button', { name: /Resume Proposal/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Resume Proposal/i })).toBeDefined();
   });
 
   it('when hasPausedUserJobs is true, clicking button calls startContributionGeneration (resume path)', async () => {
@@ -643,7 +638,7 @@ describe('GenerateContributionButton', () => {
       })
     );
     renderWithRouter(<GenerateContributionButton />);
-    expect(screen.getByRole('button', { name: /Resume Proposal/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Resume Proposal/i })).toBeDefined();
   });
 
   it('after click, button is disabled for 500ms debounce period then enters pause mode', async () => {
@@ -654,7 +649,7 @@ describe('GenerateContributionButton', () => {
     const button = screen.getByRole('button', { name: /Generate Proposal/i });
     // Use fireEvent to avoid userEvent's internal timer delays conflicting with fake timers
     fireEvent.click(button);
-    expect(button).toBeDisabled();
+    expect(button.hasAttribute('disabled')).toBe(true);
     // After click, generation is in progress — hook now returns isPauseMode
     mockUseStartContributionGeneration.mockReturnValue(
       getDefaultHookReturn({ isPauseMode: true, isSessionGenerating: true, isDisabled: false })
@@ -663,8 +658,8 @@ describe('GenerateContributionButton', () => {
       vi.advanceTimersByTime(500);
     });
     // Debounce cleared, button is now in pause mode and enabled
-    expect(screen.getByRole('button')).not.toBeDisabled();
-    expect(screen.getByRole('button')).toHaveTextContent(/Pause Proposal/i);
+    expect(screen.getByRole('button', { name: /Pause Proposal/i }).hasAttribute('disabled')).toBe(false);
+    expect(screen.getByRole('button', { name: /Pause Proposal/i })).toBeDefined();
     vi.useRealTimers();
   });
 
@@ -679,16 +674,14 @@ describe('GenerateContributionButton', () => {
       })
     );
     renderWithRouter(<GenerateContributionButton />);
-    const button = screen.getByRole('button');
-    expect(button).toHaveTextContent('Pause');
-    expect(button).toHaveTextContent('Proposal');
+    expect(screen.getByRole('button', { name: /Pause Proposal/i })).toBeDefined();
   });
 
   it('button renders at compact size (size sm) and full width suitable for sidebar', () => {
     vi.mocked(selectIsStageReadyForSessionIteration).mockReturnValue(true);
     renderWithRouter(<GenerateContributionButton />);
     const button = screen.getByRole('button');
-    expect(button).toBeInTheDocument();
+    expect(button).toBeDefined();
     expect(button.className).toMatch(/w-full|width.*100/);
   });
 
@@ -701,9 +694,7 @@ describe('GenerateContributionButton', () => {
       })
     );
     renderWithRouter(<GenerateContributionButton />);
-    const button = screen.getByRole('button');
-    expect(button).toHaveTextContent('Retry');
-    expect(button).toHaveTextContent('Proposal');
+    expect(screen.getByRole('button', { name: /Retry Proposal/i })).toBeDefined();
   });
 
   it('shows "Prior Stage Not Submitted" when viewing ahead and stage not ready', () => {
@@ -717,8 +708,8 @@ describe('GenerateContributionButton', () => {
       })
     );
     renderWithRouter(<GenerateContributionButton />);
-    expect(screen.getByRole('button')).toHaveTextContent('Prior Stage Not Submitted');
-    expect(screen.getByRole('button')).toBeDisabled();
+    const button = screen.getByRole('button', { name: /Prior Stage Not Submitted/i });
+    expect(button.hasAttribute('disabled')).toBe(true);
   });
 
   it('shows tooltip with viewingAheadReason when viewing ahead of current stage', async () => {
@@ -754,7 +745,7 @@ describe('GenerateContributionButton', () => {
       })
     );
     renderWithRouter(<GenerateContributionButton />);
-    expect(screen.getByRole('button')).toHaveTextContent('Previous Stage Incomplete');
+    expect(screen.getByRole('button', { name: /Previous Stage Incomplete/i })).toBeDefined();
   });
 
   it('button is disabled when isViewingAheadOfCurrentStage is true even if other conditions pass', () => {
@@ -767,6 +758,6 @@ describe('GenerateContributionButton', () => {
       })
     );
     renderWithRouter(<GenerateContributionButton />);
-    expect(screen.getByRole('button')).toBeDisabled();
+    expect(screen.getByRole('button').hasAttribute('disabled')).toBe(true);
   });
 }); 
