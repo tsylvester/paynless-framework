@@ -371,9 +371,6 @@
     "packageJson": {
       "dependencies": [
         "npm:@biomejs/biome@2.1.1",
-        "npm:@nx/eslint@20.7.1",
-        "npm:@nx/vite@20.7.1",
-        "npm:@nx/web@20.7.1",
         "npm:@supabase/supabase-js@^2.49.4",
         "npm:@testing-library/react@^16.3.0",
         "npm:@types/node@^20.11.24",
@@ -385,7 +382,6 @@
         "npm:jiti@2.4.2",
         "npm:jsdom@26",
         "npm:msw@^2.7.3",
-        "npm:nx@20.7.1",
         "npm:rimraf@^5.0.10",
         "npm:typescript@^5.5.3",
         "npm:vite@6",

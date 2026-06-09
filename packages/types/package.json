@@ -17,17 +17,17 @@
   },
   "devDependencies": {
     "@paynless/db-types": "workspace:^",
-    "@supabase/supabase-js": "^2",
-    "@types/react": "^18",
+    "@supabase/supabase-js": "^2.108.1",
+    "@types/react": "^18.3.31",
     "@typescript-eslint/eslint-plugin": "^7.18.0",
     "@typescript-eslint/parser": "^7.18.0",
-    "eslint": "^8.57.0",
-    "typescript": "^5.3.3"
+    "eslint": "^10.4.1",
+    "typescript": "^5.9.3"
   },
   "license": "ISC",
   "dependencies": {
-    "@supabase/postgrest-js": "^1.19.4",
-    "immer": "^10.1.1",
+    "@supabase/postgrest-js": "^1.21.4",
+    "immer": "^10.2.0",
     "vite-plugin-node-polyfills": "^0.23.0"
   }
 }
