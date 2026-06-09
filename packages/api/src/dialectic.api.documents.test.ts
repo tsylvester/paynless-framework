@@ -5,6 +5,8 @@ import type {
   StageRunDocumentDescriptor,
   GetAllStageProgressPayload,
   GetAllStageProgressResponse,
+  GetStageExpectedCountsPayload,
+  GetStageExpectedCountsResponse,
   ResumePausedNsfJobsPayload,
   ResumePausedNsfJobsResponse,
   PauseActiveJobsPayload,
@@ -15,6 +17,10 @@ import type {
   ApiResponse,
 } from '@paynless/types';
 import { mockApiClient, resetMockApiClient } from './mocks/apiClient.mock';
+import {
+  mockGetAllStageProgressResponse,
+  mockStageProgressEntry,
+} from '../../../apps/web/src/mocks/dialecticStore.mock';
 
 describe('DialecticApiClient - Document Listing', () => {
   let dialecticApiClient: DialecticApiClient;
@@ -214,36 +220,36 @@ describe('DialecticApiClient - Document Listing', () => {
         projectId: 'test-project-id',
       };
 
-      const mockResponseData: GetAllStageProgressResponse = {
+      const mockResponseData = mockGetAllStageProgressResponse({
         dagProgress: { completedStages: 1, totalStages: 1 },
         stages: [
-          {
+          mockStageProgressEntry({
             stageSlug: 'thesis',
             edges: [{ from_step_id: 'feature_spec', to_step_id: 'thesis' }],
             jobs: [{ id: 'job-123', status: 'completed', jobType: 'PLAN', stepKey: 'feature_spec', modelId: 'gpt-4', documentKey: 'feature_spec', parentJobId: null, createdAt: new Date().toISOString(), startedAt: new Date().toISOString(), completedAt: new Date().toISOString(), modelName: 'GPT-4' }],
-          documents: [
-            {
-              documentKey: 'feature_spec',
-              status: 'completed',
-              jobId: 'job-123',
-              latestRenderedResourceId: 'resource-456',
-              modelId: 'gpt-4',
-            },
-            {
-              documentKey: 'feature_spec',
-              status: 'completed',
-              jobId: 'job-123',
-              latestRenderedResourceId: 'resource-456',
-              modelId: 'gpt-4',
-            },
-          ],
-          steps: [{ stepKey: 'feature_spec', status: 'completed' }],
-          status: 'completed',
-          modelCount: 1,
-          progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
-          },
+            documents: [
+              {
+                documentKey: 'feature_spec',
+                status: 'completed',
+                jobId: 'job-123',
+                latestRenderedResourceId: 'resource-456',
+                modelId: 'gpt-4',
+              },
+              {
+                documentKey: 'feature_spec',
+                status: 'completed',
+                jobId: 'job-123',
+                latestRenderedResourceId: 'resource-456',
+                modelId: 'gpt-4',
+              },
+            ],
+            steps: [{ stepKey: 'feature_spec', status: 'completed' }],
+            status: 'completed',
+            modelCount: 1,
+            progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
+          }),
         ],
-      };
+      });
 
       const mockApiResponse: ApiResponse<GetAllStageProgressResponse> = {
         data: mockResponseData,
@@ -617,6 +623,99 @@ describe('DialecticApiClient - Document Listing', () => {
         'dialectic-service',
         expect.objectContaining({ payload: expect.objectContaining({ idempotencyKey: payload.idempotencyKey }) })
       );
+    });
+  });
+
+  describe('getStageExpectedCounts', () => {
+    it('should call the post method with the correct action and payload for successful fetch', async () => {
+      const payload: GetStageExpectedCountsPayload = {
+        processTemplateId: 'template-uuid',
+        modelCount: 3,
+      };
+
+      const mockResponseData: GetStageExpectedCountsResponse = {
+        stages: [
+          { stageSlug: 'thesis', expectedCount: 6 },
+          { stageSlug: 'antithesis', expectedCount: 9 },
+        ],
+        totalStages: 2,
+      };
+
+      const mockApiResponse: ApiResponse<GetStageExpectedCountsResponse> = {
+        data: mockResponseData,
+        error: undefined,
+        status: 200,
+      };
+
+      vi.mocked(mockApiClient.post).mockResolvedValue(mockApiResponse);
+
+      const result = await dialecticApiClient.getStageExpectedCounts(payload);
+
+      expect(mockApiClient.post).toHaveBeenCalledWith(
+        'dialectic-service',
+        {
+          action: 'getStageExpectedCounts',
+          payload,
+        }
+      );
+      expect(result.data).toEqual(mockResponseData);
+      expect(result.error).toBeUndefined();
+    });
+
+    it('should return an error when the API call fails', async () => {
+      const payload: GetStageExpectedCountsPayload = {
+        processTemplateId: 'template-uuid',
+        modelCount: 3,
+      };
+      const mockError: ApiError = { message: 'Internal Server Error', code: '500' };
+
+      const mockApiResponse: ApiResponse<GetStageExpectedCountsResponse> = {
+        data: undefined,
+        error: mockError,
+        status: 500,
+      };
+
+      vi.mocked(mockApiClient.post).mockResolvedValue(mockApiResponse);
+
+      const result = await dialecticApiClient.getStageExpectedCounts(payload);
+
+      expect(mockApiClient.post).toHaveBeenCalledWith(
+        'dialectic-service',
+        {
+          action: 'getStageExpectedCounts',
+          payload,
+        }
+      );
+      expect(result.data).toBeUndefined();
+      expect(result.error).toEqual(mockError);
+    });
+
+    it('should handle a network error gracefully', async () => {
+      const payload: GetStageExpectedCountsPayload = {
+        processTemplateId: 'template-uuid',
+        modelCount: 3,
+      };
+      const mockApiResponse: ApiResponse<GetStageExpectedCountsResponse> = {
+        data: undefined,
+        error: { code: 'NETWORK_ERROR', message: 'Network request failed' },
+        status: 0,
+      };
+      vi.mocked(mockApiClient.post).mockResolvedValue(mockApiResponse);
+
+      const result = await dialecticApiClient.getStageExpectedCounts(payload);
+
+      expect(mockApiClient.post).toHaveBeenCalledWith(
+        'dialectic-service',
+        {
+          action: 'getStageExpectedCounts',
+          payload,
+        }
+      );
+      expect(result.data).toBeUndefined();
+      expect(result.error).toEqual({
+        code: 'NETWORK_ERROR',
+        message: 'Network request failed',
+      });
     });
   });
 });

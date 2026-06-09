@@ -9,13 +9,27 @@ import {
   useDialecticStore,
   selectDomains,
   selectSelectedDomain,
+  selectDefaultGenerationModels,
+  selectPreProjectCostCeiling,
+  selectActiveChatWalletInfo,
+  useWalletStore,
 } from "@paynless/store";
-import type { CreateProjectAndAutoStartPayload } from "@paynless/types";
-import { logger } from "@paynless/utils";
+import type {
+  CreateProjectAndAutoStartPayload,
+  DialecticDomainRow,
+  DialecticStage,
+} from "@paynless/types";
+import { ComputeCostCeilingReturn, logger } from "@paynless/utils";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { formatChatMessagesAsPrompt } from "@/utils/formatChatMessagesAsPrompt";
+
+const noEstimateToastCopy =
+  "No cost estimate yet. Set the output cap in Model Settings, then try again.";
+
+const nsfToastCopy =
+  "Insufficient tokens for auto-start. Top up your wallet to continue.";
 
 export const CreateProjectFromChatButton: React.FC = () => {
   const navigate = useNavigate();
@@ -25,6 +39,18 @@ export const CreateProjectFromChatButton: React.FC = () => {
     (state) => state.createProjectAndAutoStart
   );
   const fetchDomains = useDialecticStore((state) => state.fetchDomains);
+  const fetchProcessAssociation = useDialecticStore(
+    (state) => state.fetchProcessAssociation
+  );
+  const fetchProcessTemplate = useDialecticStore(
+    (state) => state.fetchProcessTemplate
+  );
+  const fetchStageExpectedCounts = useDialecticStore(
+    (state) => state.fetchStageExpectedCounts
+  );
+  const fetchAIModelCatalog = useDialecticStore(
+    (state) => state.fetchAIModelCatalog
+  );
   const isAutoStarting = useDialecticStore((state) => state.isAutoStarting);
   const autoStartStep = useDialecticStore((state) => state.autoStartStep);
   const domains = useDialecticStore(selectDomains);
@@ -38,12 +64,101 @@ export const CreateProjectFromChatButton: React.FC = () => {
     if (domains.length === 0) {
       await fetchDomains();
     }
-    const selectedDomainId: string | undefined =
-      selectSelectedDomain(useDialecticStore.getState())?.id;
-    if (selectedDomainId === undefined) {
+
+    const selectedDomain: DialecticDomainRow | null = selectSelectedDomain(
+      useDialecticStore.getState()
+    );
+    if (selectedDomain?.id === undefined) {
       toast.error("No domain available. Please try again later.");
       return;
     }
+
+    await fetchProcessAssociation({ domainId: selectedDomain.id });
+
+    const associationProcessTemplateId: string | undefined =
+      useDialecticStore.getState().selectedDomainProcessAssociation
+        ?.process_template_id;
+    if (
+      associationProcessTemplateId === undefined ||
+      associationProcessTemplateId.length === 0
+    ) {
+      toast.error("No process template available for this domain.");
+      return;
+    }
+
+    const processTemplateId: string = associationProcessTemplateId;
+
+    const dialecticStateAfterAssociation = useDialecticStore.getState();
+    if (
+      dialecticStateAfterAssociation.modelCatalog.length === 0 &&
+      !dialecticStateAfterAssociation.isLoadingModelCatalog
+    ) {
+      await fetchAIModelCatalog();
+    }
+
+    const defaultModelCount: number = new Set(
+      selectDefaultGenerationModels(useDialecticStore.getState()).map(
+        (model) => model.id
+      )
+    ).size;
+
+    if (defaultModelCount >= 1) {
+      await fetchProcessTemplate(processTemplateId);
+      await fetchStageExpectedCounts({
+        processTemplateId,
+        modelCount: defaultModelCount,
+      });
+
+      const preProjectCostCeilingResult: ComputeCostCeilingReturn | null =
+        selectPreProjectCostCeiling(useDialecticStore.getState());
+
+      if (preProjectCostCeilingResult === null) {
+        toast.error(noEstimateToastCopy);
+        return;
+      }
+
+      if ("error" in preProjectCostCeilingResult) {
+        toast.error(preProjectCostCeilingResult.error.message);
+        return;
+      }
+
+      const currentProcessTemplate =
+        useDialecticStore.getState().currentProcessTemplate;
+      const startingStageId: string | null =
+        currentProcessTemplate?.starting_stage_id ?? null;
+      const stages: DialecticStage[] = currentProcessTemplate?.stages ?? [];
+      const firstStage: DialecticStage | undefined = stages.find(
+        (stage) => stage.id === startingStageId
+      );
+      const firstStageSlug: string | undefined = firstStage?.slug;
+
+      let firstStageCeiling: number | null = null;
+      if (firstStageSlug !== undefined) {
+        const rawFirstStageCeiling: number =
+          preProjectCostCeilingResult.stageCeilings[firstStageSlug];
+        if (
+          Number.isFinite(rawFirstStageCeiling) &&
+          rawFirstStageCeiling >= 0
+        ) {
+          firstStageCeiling = rawFirstStageCeiling;
+        }
+      }
+
+      const walletBalance: string | null = selectActiveChatWalletInfo(
+        useWalletStore.getState(),
+        useAiStore.getState().newChatContext
+      ).balance;
+
+      if (
+        firstStageCeiling === null ||
+        walletBalance === null ||
+        Number(walletBalance) < firstStageCeiling
+      ) {
+        toast.error(nsfToastCopy);
+        return;
+      }
+    }
+
     const initialUserPrompt: string = formatChatMessagesAsPrompt(selectedMessages);
     const firstUserMessage = selectedMessages.find((m) => m.role === "user");
     const firstLine: string =
@@ -55,7 +170,8 @@ export const CreateProjectFromChatButton: React.FC = () => {
     const payload: CreateProjectAndAutoStartPayload = {
       projectName,
       initialUserPrompt,
-      selectedDomainId,
+      selectedDomainId: selectedDomain.id,
+      processTemplateId,
       idempotencyKey,
       sessionIdempotencyKey,
     };

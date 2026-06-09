@@ -11,6 +11,8 @@ import {
   mockDialecticStage,
   mockDialecticProcessTemplate,
   mockAiProvidersRow,
+  mockAiModelConfig,
+  mockDomainProcessAssociationRow,
 } from '@/mocks/dialecticStore.mock';
 import {
   mockedUseAuthStoreHookLogic,
@@ -24,14 +26,22 @@ import {
 import type {
   DialecticProjectRow,
   ApiError,
-  DialecticDomain,
+  DialecticDomainRow,
   DialecticStage,
   DialecticProcessTemplate,
   CreateProjectAutoStartResult,
   AiProvidersRow,
   ActiveChatWalletInfo,
   SelectedModels,
+  DialecticStateValues,
+  DomainProcessAssociationRow,
 } from '@paynless/types';
+import {
+  buildComputeCostCeilingErrorReturn,
+  ComputeCostCeilingReturn,
+  ComputeCostCeilingSuccessReturn,
+  isJson,
+} from '@paynless/utils';
 import { usePlatform } from '@paynless/platform';
 import type { CapabilitiesContextValue, PlatformCapabilities } from '@paynless/types';
 import { toast } from 'sonner';
@@ -41,6 +51,13 @@ import type { TextInputAreaProps } from '@/components/common/TextInputArea';
 const projectNamePlaceholder = "A Notepad App with To Do lists";
 
 const mockNavigate = vi.fn();
+
+const { selectPreProjectCostCeilingMock } = vi.hoisted(() => ({
+  selectPreProjectCostCeilingMock: vi.fn<
+    [DialecticStateValues],
+    ComputeCostCeilingReturn | null
+  >(() => null),
+}));
 
 vi.mock('@paynless/store', async () => {
   const mockStoreExports = await vi.importActual<typeof import('@/mocks/dialecticStore.mock')>('@/mocks/dialecticStore.mock');
@@ -58,6 +75,8 @@ vi.mock('@paynless/store', async () => {
     selectSelectedDomain: actualPaynlessStore.selectSelectedDomain,
     selectDomains: actualPaynlessStore.selectDomains,
     selectDefaultGenerationModels: actualPaynlessStore.selectDefaultGenerationModels,
+    selectSortedStages: actualPaynlessStore.selectSortedStages,
+    selectPreProjectCostCeiling: selectPreProjectCostCeilingMock,
     initialDialecticStateValues: actualPaynlessStore.initialDialecticStateValues,
   };
 });
@@ -118,7 +137,7 @@ vi.mock('react-router-dom', async (importOriginal) => {
   };
 });
 
-const mockSelectedDomain: DialecticDomain = mockDialecticDomain({
+const mockSelectedDomain: DialecticDomainRow = mockDialecticDomain({
   id: 'domain-1',
   name: 'General',
   description: '',
@@ -151,7 +170,6 @@ const stageThesisForAutostart: DialecticStage = mockDialecticStage({
   display_name: 'Proposal',
   description: 'First stage for autostart balance test.',
   default_system_prompt_id: null,
-  minimum_balance: firstStageMinBalanceForAutostartTest,
 });
 
 const processTemplateForAutostartBalanceTest: DialecticProcessTemplate =
@@ -163,6 +181,23 @@ const processTemplateForAutostartBalanceTest: DialecticProcessTemplate =
     stages: [stageThesisForAutostart],
     transitions: [],
   });
+
+const mockSelectedDomainProcessAssociation: DomainProcessAssociationRow =
+  mockDomainProcessAssociationRow({
+    domain_id: mockSelectedDomain.id,
+    process_template_id: processTemplateForAutostartBalanceTest.id,
+    is_default_for_domain: true,
+  });
+
+const autostartSuccessCeiling: ComputeCostCeilingSuccessReturn = {
+  stageCeilings: { thesis: firstStageMinBalanceForAutostartTest },
+  projectCeiling: firstStageMinBalanceForAutostartTest,
+};
+
+const autostartSuccessCeilingHighProject: ComputeCostCeilingSuccessReturn = {
+  stageCeilings: { thesis: firstStageMinBalanceForAutostartTest },
+  projectCeiling: 500000,
+};
 
 const defaultCatalogWithDefaultModel: AiProvidersRow[] = [
   mockAiProvidersRow({
@@ -202,6 +237,22 @@ function buildMinimalDialecticProjectRow(overrides: { id: string; project_name: 
   };
 }
 
+function initializeAutostartFormTestState(
+  overrides?: Partial<DialecticStateValues>,
+): void {
+  initializeMockDialecticState({
+    selectedDomain: mockSelectedDomain,
+    selectedDomainProcessAssociation: mockSelectedDomainProcessAssociation,
+    modelCatalog: defaultCatalogWithDefaultModel,
+    selectedModels: defaultSelectedModels,
+    maxOutputTokens: 8192,
+    isLoadingModelCatalog: false,
+    currentProcessTemplate: processTemplateForAutostartBalanceTest,
+    ...overrides,
+  });
+  vi.mocked(selectSelectedModels).mockReturnValue(defaultSelectedModels);
+}
+
 const createMockPlatformContext = (overrides?: Partial<PlatformCapabilities>): CapabilitiesContextValue => {
   const localDefaultCaps: PlatformCapabilities = { platform: 'web', os: 'unknown', fileSystem: { isAvailable: false } };
   return {
@@ -214,6 +265,7 @@ const createMockPlatformContext = (overrides?: Partial<PlatformCapabilities>): C
 describe('CreateDialecticProjectForm (autostart)', () => {
   beforeEach(async () => {
     vi.clearAllMocks();
+    selectPreProjectCostCeilingMock.mockReturnValue(null);
     resetAuthStoreMock();
     mockedUseAuthStoreHookLogic.setState({
       userTier: mockUserTier,
@@ -237,21 +289,22 @@ describe('CreateDialecticProjectForm (autostart)', () => {
     return render(
       <MemoryRouter>
         <CreateDialecticProjectForm {...props} />
-      </MemoryRouter>
+      </MemoryRouter>,
     );
   };
 
-  it('renders single setup-mode control in Autostart state (checked) by default', () => {
+  it('defaults to Autoconfig (half-checked) when cost estimate is not yet known', async () => {
     renderForm();
-    const control = screen.getByRole('checkbox', { name: /Autostart/i });
-    expect(control).toBeInTheDocument();
-    expect(control).toBeChecked();
+    await waitFor(() => {
+      const control = screen.getByRole('checkbox', { name: /Autoconfig/i });
+      expect(control).toHaveAttribute('aria-checked', 'mixed');
+    });
   });
 
   it('on hover, shows explainer text for all three states (Autostart, Autoconfig, Manual) so user knows what each does without iterating', async () => {
     const user = userEvent.setup();
     renderForm();
-    const control = screen.getByRole('checkbox', { name: /Autostart/i });
+    const control = screen.getByRole('checkbox', { name: /Autoconfig/i });
     await user.hover(control);
     await waitFor(() => {
       const explainerContent =
@@ -269,7 +322,7 @@ describe('CreateDialecticProjectForm (autostart)', () => {
   it('explainer text describes Autostart (auto session and start generation)', async () => {
     const user = userEvent.setup();
     renderForm();
-    const control = screen.getByRole('checkbox', { name: /Autostart/i });
+    const control = screen.getByRole('checkbox', { name: /Autoconfig/i });
     await user.hover(control);
     await waitFor(() => {
       const explainerContent =
@@ -284,7 +337,7 @@ describe('CreateDialecticProjectForm (autostart)', () => {
   it('explainer text describes Autoconfig (auto session, user starts generation)', async () => {
     const user = userEvent.setup();
     renderForm();
-    const control = screen.getByRole('checkbox', { name: /Autostart/i });
+    const control = screen.getByRole('checkbox', { name: /Autoconfig/i });
     await user.hover(control);
     await waitFor(() => {
       const explainerContent =
@@ -299,7 +352,7 @@ describe('CreateDialecticProjectForm (autostart)', () => {
   it('explainer text describes Manual (create project only, user creates session)', async () => {
     const user = userEvent.setup();
     renderForm();
-    const control = screen.getByRole('checkbox', { name: /Autostart/i });
+    const control = screen.getByRole('checkbox', { name: /Autoconfig/i });
     await user.hover(control);
     await waitFor(() => {
       const explainerContent =
@@ -311,28 +364,34 @@ describe('CreateDialecticProjectForm (autostart)', () => {
     });
   });
 
-  it('first click cycles setup mode from Autostart to Autoconfig (half-checked)', async () => {
+  it('first click cycles setup mode from Autoconfig to Manual (unchecked)', async () => {
     const user = userEvent.setup();
     renderForm();
-    await user.click(screen.getByRole('checkbox', { name: /Autostart/i }));
-    const control = screen.getByRole('checkbox', { name: /Autoconfig/i });
-    expect(control).toBeInTheDocument();
-    expect(control).toHaveAttribute('aria-checked', 'mixed');
-  });
-
-  it('second click cycles setup mode from Autoconfig to Manual (unchecked)', async () => {
-    const user = userEvent.setup();
-    renderForm();
-    await user.click(screen.getByRole('checkbox', { name: /Autostart/i }));
     await user.click(screen.getByRole('checkbox', { name: /Autoconfig/i }));
     const control = screen.getByRole('checkbox', { name: /Manual/i });
     expect(control).toBeInTheDocument();
     expect(control).not.toBeChecked();
   });
 
-  it('third click cycles setup mode from Manual back to Autostart', async () => {
+  it('second click cycles setup mode from Manual back to Autoconfig when autostart is not affordable', async () => {
     const user = userEvent.setup();
     renderForm();
+    await user.click(screen.getByRole('checkbox', { name: /Autoconfig/i }));
+    await user.click(screen.getByRole('checkbox', { name: /Manual/i }));
+    const control = screen.getByRole('checkbox', { name: /Autoconfig/i });
+    expect(control).toBeInTheDocument();
+    expect(control).toHaveAttribute('aria-checked', 'mixed');
+  });
+
+  it('third click cycles setup mode from Manual to Autostart when estimate and wallet allow autostart', async () => {
+    const user = userEvent.setup();
+    selectPreProjectCostCeilingMock.mockReturnValue(autostartSuccessCeiling);
+    initializeAutostartFormTestState();
+    vi.mocked(selectActiveChatWalletInfo).mockReturnValue(defaultWalletInfo);
+    renderForm();
+    await waitFor(() => {
+      expect(screen.getByRole('checkbox', { name: /Autostart/i })).toBeChecked();
+    });
     await user.click(screen.getByRole('checkbox', { name: /Autostart/i }));
     await user.click(screen.getByRole('checkbox', { name: /Autoconfig/i }));
     await user.click(screen.getByRole('checkbox', { name: /Manual/i }));
@@ -344,10 +403,10 @@ describe('CreateDialecticProjectForm (autostart)', () => {
   it('submit with Manual mode calls createDialecticProject and navigates to project page', async () => {
     const user = userEvent.setup();
     const mockProjectRow: DialecticProjectRow = buildMinimalDialecticProjectRow({ id: 'proj-manual', project_name: 'Manual' });
+    initializeAutostartFormTestState();
     vi.mocked(getDialecticStoreActionMock('createDialecticProject')).mockResolvedValueOnce({ data: mockProjectRow, status: 200 });
 
     renderForm();
-    await user.click(screen.getByRole('checkbox', { name: /Autostart/i }));
     await user.click(screen.getByRole('checkbox', { name: /Autoconfig/i }));
     await user.click(screen.getByRole('button', { name: /Create Project/i }));
 
@@ -360,9 +419,12 @@ describe('CreateDialecticProjectForm (autostart)', () => {
     });
   });
 
-  it('submit with Autostart mode (default) calls createProjectAndAutoStart', async () => {
+  it('submit with Autostart mode calls createProjectAndAutoStart when estimate and wallet allow autostart', async () => {
     const user = userEvent.setup();
     const result: CreateProjectAutoStartResult = { projectId: 'proj-auto', sessionId: 'sess-1', hasDefaultModels: true };
+    selectPreProjectCostCeilingMock.mockReturnValue(autostartSuccessCeiling);
+    initializeAutostartFormTestState();
+    vi.mocked(selectActiveChatWalletInfo).mockReturnValue(defaultWalletInfo);
     vi.mocked(getDialecticStoreActionMock('createProjectAndAutoStart')).mockResolvedValueOnce(result);
 
     renderForm();
@@ -376,6 +438,27 @@ describe('CreateDialecticProjectForm (autostart)', () => {
 
   it('upgrade CTA inside real model settings popover navigates to subscription without submitting autostart form', async () => {
     const user = userEvent.setup();
+    const outputCapModelConfig = mockAiModelConfig({
+      hard_cap_output_tokens: 200001,
+      provider_max_output_tokens: 200000,
+    });
+    if (!isJson(outputCapModelConfig)) {
+      throw new Error('outputCapModelConfig is not a valid JSON object');
+    }
+    const catalogForOutputCapSlider: AiProvidersRow[] = [
+      mockAiProvidersRow({
+        ...autostartCatalogEntryOverrides,
+        id: 'dft',
+        name: 'Default',
+        api_identifier: 'dft',
+        is_default_generation: true,
+        is_active: true,
+        config: outputCapModelConfig,
+      }),
+    ];
+    initializeAutostartFormTestState({
+      modelCatalog: catalogForOutputCapSlider,
+    });
 
     renderForm();
 
@@ -389,9 +472,12 @@ describe('CreateDialecticProjectForm (autostart)', () => {
     expect(getDialecticStoreActionMock('createDialecticProject')).not.toHaveBeenCalled();
   });
 
-  it('successful auto-start navigates to session page', async () => {
+  it('successful auto-start navigates to session page when estimate and wallet allow autostart', async () => {
     const user = userEvent.setup();
     const result: CreateProjectAutoStartResult = { projectId: 'proj-auto', sessionId: 'sess-1', hasDefaultModels: true };
+    selectPreProjectCostCeilingMock.mockReturnValue(autostartSuccessCeiling);
+    initializeAutostartFormTestState();
+    vi.mocked(selectActiveChatWalletInfo).mockReturnValue(defaultWalletInfo);
     vi.mocked(getDialecticStoreActionMock('createProjectAndAutoStart')).mockResolvedValueOnce(result);
 
     renderForm();
@@ -405,6 +491,9 @@ describe('CreateDialecticProjectForm (autostart)', () => {
   it('successful auto-start with Autostart mode navigates with state autoStartGeneration true', async () => {
     const user = userEvent.setup();
     const result: CreateProjectAutoStartResult = { projectId: 'proj-auto', sessionId: 'sess-1', hasDefaultModels: true };
+    selectPreProjectCostCeilingMock.mockReturnValue(autostartSuccessCeiling);
+    initializeAutostartFormTestState();
+    vi.mocked(selectActiveChatWalletInfo).mockReturnValue(defaultWalletInfo);
     vi.mocked(getDialecticStoreActionMock('createProjectAndAutoStart')).mockResolvedValueOnce(result);
 
     renderForm();
@@ -420,10 +509,10 @@ describe('CreateDialecticProjectForm (autostart)', () => {
   it('successful auto-start with Autoconfig mode navigates without auto-start state', async () => {
     const user = userEvent.setup();
     const result: CreateProjectAutoStartResult = { projectId: 'proj-auto', sessionId: 'sess-1', hasDefaultModels: true };
+    initializeAutostartFormTestState();
     vi.mocked(getDialecticStoreActionMock('createProjectAndAutoStart')).mockResolvedValueOnce(result);
 
     renderForm();
-    await user.click(screen.getByRole('checkbox', { name: /Autostart/i }));
     await user.click(screen.getByRole('button', { name: /Create Project/i }));
 
     await waitFor(() => {
@@ -436,6 +525,9 @@ describe('CreateDialecticProjectForm (autostart)', () => {
   it('auto-start with hasDefaultModels false navigates to project page without auto-start state', async () => {
     const user = userEvent.setup();
     const result: CreateProjectAutoStartResult = { projectId: 'proj-no-models', sessionId: null, hasDefaultModels: false };
+    selectPreProjectCostCeilingMock.mockReturnValue(autostartSuccessCeiling);
+    initializeAutostartFormTestState();
+    vi.mocked(selectActiveChatWalletInfo).mockReturnValue(defaultWalletInfo);
     vi.mocked(getDialecticStoreActionMock('createProjectAndAutoStart')).mockResolvedValueOnce(result);
 
     renderForm();
@@ -471,14 +563,16 @@ describe('CreateDialecticProjectForm (autostart)', () => {
     expect(screen.getByText(/No default models available/i)).toBeInTheDocument();
   });
 
-  it('defaults to Autoconfig (half-checked) when wallet balance below thesis threshold and shows explanatory text', async () => {
+  it('defaults to Autoconfig (half-checked) when wallet balance is below first-stage ceiling and shows ceiling copy', async () => {
     const lowBalance: ActiveChatWalletInfo = {
       ...defaultWalletInfo,
       balance: String(firstStageMinBalanceForAutostartTest - 1),
     };
     vi.mocked(selectActiveChatWalletInfo).mockReturnValue(lowBalance);
+    selectPreProjectCostCeilingMock.mockReturnValue(autostartSuccessCeiling);
     initializeMockDialecticState({
       selectedDomain: mockSelectedDomain,
+      selectedDomainProcessAssociation: mockSelectedDomainProcessAssociation,
       modelCatalog: defaultCatalogWithDefaultModel,
       isLoadingModelCatalog: false,
       currentProcessTemplate: processTemplateForAutostartBalanceTest,
@@ -489,7 +583,7 @@ describe('CreateDialecticProjectForm (autostart)', () => {
       const control = screen.getByRole('checkbox', { name: /Autoconfig/i });
       expect(control).toHaveAttribute('aria-checked', 'mixed');
     });
-    expect(screen.getByText(/Wallet balance too low for auto-start/i)).toBeInTheDocument();
+    expect(screen.getByText(/Estimated first-stage cost exceeds wallet balance for auto-start/i)).toBeInTheDocument();
   });
 
   it('displays progressive loader from autoStartStep during auto-start', () => {
@@ -519,6 +613,9 @@ describe('CreateDialecticProjectForm (autostart)', () => {
   it('shows error toast on createProjectAndAutoStart failure and form remains visible', async () => {
     const user = userEvent.setup();
     const error: ApiError = { message: 'Auto-start failed', code: 'SERVER_ERROR' };
+    selectPreProjectCostCeilingMock.mockReturnValue(autostartSuccessCeiling);
+    initializeAutostartFormTestState();
+    vi.mocked(selectActiveChatWalletInfo).mockReturnValue(defaultWalletInfo);
     vi.mocked(getDialecticStoreActionMock('createProjectAndAutoStart')).mockResolvedValueOnce({
       projectId: 'proj',
       sessionId: null,
@@ -539,5 +636,301 @@ describe('CreateDialecticProjectForm (autostart)', () => {
     renderForm();
 
     expect(getDialecticStoreActionMock('fetchAIModelCatalog')).toHaveBeenCalled();
+  });
+
+  it('calls fetchProcessAssociation with selected domain id after render', async () => {
+    renderForm();
+
+    await waitFor(() => {
+      expect(getDialecticStoreActionMock('fetchProcessAssociation')).toHaveBeenCalledWith({
+        domainId: mockSelectedDomain.id,
+      });
+    });
+  });
+
+  it('does not call fetchProcessTemplate or fetchStageExpectedCounts when association is null', async () => {
+    initializeMockDialecticState({
+      selectedDomain: mockSelectedDomain,
+      selectedDomainProcessAssociation: null,
+      modelCatalog: defaultCatalogWithDefaultModel,
+      selectedModels: defaultSelectedModels,
+      maxOutputTokens: 8192,
+      isLoadingModelCatalog: false,
+    });
+
+    renderForm();
+
+    await waitFor(() => {
+      expect(getDialecticStoreActionMock('fetchProcessAssociation')).toHaveBeenCalled();
+    });
+    expect(getDialecticStoreActionMock('fetchProcessTemplate')).not.toHaveBeenCalled();
+    expect(getDialecticStoreActionMock('fetchStageExpectedCounts')).not.toHaveBeenCalled();
+  });
+
+  it('calls fetchProcessTemplate with association process_template_id when association row is present', async () => {
+    initializeMockDialecticState({
+      selectedDomain: mockSelectedDomain,
+      selectedDomainProcessAssociation: mockSelectedDomainProcessAssociation,
+      modelCatalog: defaultCatalogWithDefaultModel,
+      selectedModels: defaultSelectedModels,
+      maxOutputTokens: 8192,
+      isLoadingModelCatalog: false,
+    });
+
+    renderForm();
+
+    await waitFor(() => {
+      expect(getDialecticStoreActionMock('fetchProcessTemplate')).toHaveBeenCalledWith(
+        mockSelectedDomainProcessAssociation.process_template_id,
+      );
+    });
+  });
+
+  it('Manual submit payload includes processTemplateId from selectedDomainProcessAssociation', async () => {
+    const user = userEvent.setup();
+    const mockProjectRow: DialecticProjectRow = buildMinimalDialecticProjectRow({ id: 'proj-manual-template', project_name: 'Manual Template' });
+    initializeAutostartFormTestState();
+    vi.mocked(getDialecticStoreActionMock('createDialecticProject')).mockResolvedValueOnce({ data: mockProjectRow, status: 200 });
+
+    renderForm();
+    await user.click(screen.getByRole('checkbox', { name: /Autoconfig/i }));
+    await user.click(screen.getByRole('button', { name: /Create Project/i }));
+
+    await waitFor(() => {
+      expect(getDialecticStoreActionMock('createDialecticProject')).toHaveBeenCalledWith(
+        expect.objectContaining({
+          processTemplateId: mockSelectedDomainProcessAssociation.process_template_id,
+        }),
+      );
+    });
+  });
+
+  it('Autoconfig submit payload includes processTemplateId on createProjectAndAutoStart', async () => {
+    const user = userEvent.setup();
+    const result: CreateProjectAutoStartResult = { projectId: 'proj-autoconfig-template', sessionId: 'sess-template', hasDefaultModels: true };
+    initializeAutostartFormTestState();
+    vi.mocked(getDialecticStoreActionMock('createProjectAndAutoStart')).mockResolvedValueOnce(result);
+
+    renderForm();
+    await user.click(screen.getByRole('button', { name: /Create Project/i }));
+
+    await waitFor(() => {
+      expect(getDialecticStoreActionMock('createProjectAndAutoStart')).toHaveBeenCalledWith(
+        expect.objectContaining({
+          processTemplateId: mockSelectedDomainProcessAssociation.process_template_id,
+        }),
+      );
+    });
+  });
+
+  it('defaults to Autostart (checked) when success estimate and wallet meet first-stage ceiling', async () => {
+    selectPreProjectCostCeilingMock.mockReturnValue(autostartSuccessCeiling);
+    initializeAutostartFormTestState();
+    vi.mocked(selectActiveChatWalletInfo).mockReturnValue(defaultWalletInfo);
+    renderForm();
+
+    await waitFor(() => {
+      const control = screen.getByRole('checkbox', { name: /Autostart/i });
+      expect(control).toBeChecked();
+    });
+  });
+
+  it('shows no-estimate notice and disables Autostart when selector returns null', async () => {
+    renderForm();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('create-project-no-estimate-notice')).toBeInTheDocument();
+    });
+    expect(screen.queryByTestId('create-project-cost-preview')).not.toBeInTheDocument();
+    const control = screen.getByRole('checkbox', { name: /Autoconfig/i });
+    expect(control).toHaveAttribute('aria-checked', 'mixed');
+    expect(screen.getByText(/estimate not ready/i)).toBeInTheDocument();
+  });
+
+  it('shows estimate-error notice when selector returns error', async () => {
+    const estimateError: ApiError = { message: 'Invalid payload', code: 'INVALID_PAYLOAD' };
+    selectPreProjectCostCeilingMock.mockReturnValue(
+      buildComputeCostCeilingErrorReturn({ error: estimateError }),
+    );
+
+    renderForm();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('create-project-estimate-error-notice')).toHaveTextContent('Invalid payload');
+    });
+    expect(screen.queryByTestId('create-project-cost-preview')).not.toBeInTheDocument();
+    const control = screen.getByRole('checkbox', { name: /Autoconfig/i });
+    expect(control).toHaveAttribute('aria-checked', 'mixed');
+  });
+
+  it('demotes to Autoconfig when estimate becomes null before submit and allows Autoconfig submit', async () => {
+    const user = userEvent.setup();
+    const result: CreateProjectAutoStartResult = { projectId: 'proj-demoted-null', sessionId: 'sess-demoted-null', hasDefaultModels: true };
+    selectPreProjectCostCeilingMock.mockReturnValue(autostartSuccessCeiling);
+    initializeAutostartFormTestState();
+    vi.mocked(selectActiveChatWalletInfo).mockReturnValue(defaultWalletInfo);
+    renderForm();
+
+    await waitFor(() => {
+      expect(screen.getByRole('checkbox', { name: /Autostart/i })).toBeChecked();
+    });
+
+    selectPreProjectCostCeilingMock.mockReturnValue(null);
+    setDialecticStateValues({ preProjectStageExpectedCounts: null });
+    await waitFor(() => {
+      expect(screen.getByRole('checkbox', { name: /Autoconfig/i })).toHaveAttribute('aria-checked', 'mixed');
+    });
+
+    vi.mocked(getDialecticStoreActionMock('createProjectAndAutoStart')).mockResolvedValueOnce(result);
+    await user.click(screen.getByRole('button', { name: /Create Project/i }));
+
+    await waitFor(() => {
+      expect(getDialecticStoreActionMock('createProjectAndAutoStart')).toHaveBeenCalledTimes(1);
+    });
+    expect(vi.mocked(toast.error)).not.toHaveBeenCalled();
+  });
+
+  it('demotes to Autoconfig when estimate becomes error before submit and allows Autoconfig submit', async () => {
+    const user = userEvent.setup();
+    const estimateError: ApiError = { message: 'Ceiling computation failed', code: 'CEILING_ERROR' };
+    const result: CreateProjectAutoStartResult = { projectId: 'proj-demoted-error', sessionId: 'sess-demoted-error', hasDefaultModels: true };
+    selectPreProjectCostCeilingMock.mockReturnValue(autostartSuccessCeiling);
+    initializeAutostartFormTestState();
+    vi.mocked(selectActiveChatWalletInfo).mockReturnValue(defaultWalletInfo);
+    renderForm();
+
+    await waitFor(() => {
+      expect(screen.getByRole('checkbox', { name: /Autostart/i })).toBeChecked();
+    });
+
+    selectPreProjectCostCeilingMock.mockReturnValue(
+      buildComputeCostCeilingErrorReturn({ error: estimateError }),
+    );
+    setDialecticStateValues({ stageExpectedCountsError: estimateError });
+    await waitFor(() => {
+      expect(screen.getByRole('checkbox', { name: /Autoconfig/i })).toHaveAttribute('aria-checked', 'mixed');
+    });
+
+    vi.mocked(getDialecticStoreActionMock('createProjectAndAutoStart')).mockResolvedValueOnce(result);
+    await user.click(screen.getByRole('button', { name: /Create Project/i }));
+
+    await waitFor(() => {
+      expect(getDialecticStoreActionMock('createProjectAndAutoStart')).toHaveBeenCalledTimes(1);
+    });
+    expect(vi.mocked(toast.error)).not.toHaveBeenCalledWith('Ceiling computation failed');
+  });
+
+  it('allows Autoconfig submit when selector returns null', async () => {
+    const user = userEvent.setup();
+    const result: CreateProjectAutoStartResult = { projectId: 'proj-autoconfig-null', sessionId: 'sess-null', hasDefaultModels: true };
+    initializeAutostartFormTestState();
+    vi.mocked(getDialecticStoreActionMock('createProjectAndAutoStart')).mockResolvedValueOnce(result);
+
+    renderForm();
+    await user.click(screen.getByRole('button', { name: /Create Project/i }));
+
+    await waitFor(() => {
+      expect(getDialecticStoreActionMock('createProjectAndAutoStart')).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('calls createProjectAndAutoStart once on Autostart submit when estimate and wallet allow autostart', async () => {
+    const user = userEvent.setup();
+    const result: CreateProjectAutoStartResult = { projectId: 'proj-autostart-once', sessionId: 'sess-once', hasDefaultModels: true };
+    selectPreProjectCostCeilingMock.mockReturnValue(autostartSuccessCeiling);
+    initializeAutostartFormTestState();
+    vi.mocked(selectActiveChatWalletInfo).mockReturnValue(defaultWalletInfo);
+    vi.mocked(getDialecticStoreActionMock('createProjectAndAutoStart')).mockResolvedValueOnce(result);
+
+    renderForm();
+    await user.click(screen.getByRole('button', { name: /Create Project/i }));
+
+    await waitFor(() => {
+      expect(getDialecticStoreActionMock('createProjectAndAutoStart')).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('calls fetchStageExpectedCounts with association process_template_id and modelCount after association is present', async () => {
+    initializeAutostartFormTestState();
+
+    renderForm();
+
+    await waitFor(() => {
+      expect(getDialecticStoreActionMock('fetchStageExpectedCounts')).toHaveBeenCalledWith({
+        processTemplateId: mockSelectedDomainProcessAssociation.process_template_id,
+        modelCount: 1,
+      });
+    });
+  });
+
+  it('shows formatted project and first-stage cost preview on success estimate', async () => {
+    selectPreProjectCostCeilingMock.mockReturnValue(autostartSuccessCeiling);
+    initializeAutostartFormTestState();
+
+    renderForm();
+
+    await waitFor(() => {
+      const preview = screen.getByTestId('create-project-cost-preview');
+      expect(preview).toHaveTextContent('~100,000');
+      expect(preview).toHaveTextContent('Estimated token cost');
+      expect(preview).toHaveTextContent('full project');
+      expect(preview).toHaveTextContent('first stage');
+    });
+  });
+
+  it('shows project balance warning when project ceiling exceeds wallet while Create stays enabled', async () => {
+    selectPreProjectCostCeilingMock.mockReturnValue(autostartSuccessCeilingHighProject);
+    initializeAutostartFormTestState();
+
+    renderForm();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('create-project-project-balance-warning')).toBeInTheDocument();
+    });
+    expect(screen.getByRole('button', { name: /Create Project/i })).toBeEnabled();
+  });
+
+  it('shows autostart top-up link when balance blocks autostart', async () => {
+    const lowBalance: ActiveChatWalletInfo = {
+      ...defaultWalletInfo,
+      balance: String(firstStageMinBalanceForAutostartTest - 1),
+    };
+    vi.mocked(selectActiveChatWalletInfo).mockReturnValue(lowBalance);
+    selectPreProjectCostCeilingMock.mockReturnValue(autostartSuccessCeiling);
+    initializeAutostartFormTestState();
+
+    renderForm();
+
+    await waitFor(() => {
+      const topUpLink = screen.getByTestId('create-project-autostart-top-up-link');
+      expect(topUpLink).toHaveAttribute('href', '/subscription?tab=top-up');
+    });
+  });
+
+  it('does not enable Autostart when cycling from Manual while estimate is null', async () => {
+    const user = userEvent.setup();
+    renderForm();
+    await user.click(screen.getByRole('checkbox', { name: /Autoconfig/i }));
+    await user.click(screen.getByRole('checkbox', { name: /Manual/i }));
+
+    const control = screen.getByRole('checkbox', { name: /Autoconfig/i });
+    expect(control).toHaveAttribute('aria-checked', 'mixed');
+    expect(screen.queryByRole('checkbox', { name: /Autostart/i })).not.toBeInTheDocument();
+  });
+
+  it('does not enable Autostart when cycling from Manual while estimate returns error', async () => {
+    const user = userEvent.setup();
+    const estimateError: ApiError = { message: 'Counts unavailable', code: 'COUNTS_ERROR' };
+    selectPreProjectCostCeilingMock.mockReturnValue(
+      buildComputeCostCeilingErrorReturn({ error: estimateError }),
+    );
+
+    renderForm();
+    await user.click(screen.getByRole('checkbox', { name: /Autoconfig/i }));
+    await user.click(screen.getByRole('checkbox', { name: /Manual/i }));
+
+    const control = screen.getByRole('checkbox', { name: /Autoconfig/i });
+    expect(control).toHaveAttribute('aria-checked', 'mixed');
+    expect(screen.queryByRole('checkbox', { name: /Autostart/i })).not.toBeInTheDocument();
   });
 });

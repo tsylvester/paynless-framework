@@ -7,10 +7,13 @@ import {
 	AiProvidersRow,
 	AuthStore,
 	DialecticStateValues,
+	Json,
 	NavigateFunction,
+	AiModelExtendedConfig,
 	SelectedModels,
 	UserTier,
 } from '@paynless/types';
+import { isJson } from '@paynless/utils';
 import { OutputCapSlider } from './OutputCapSlider';
 import { mockAllTiers, mockUserTier } from '../../mocks/profile.mock';
 import {
@@ -20,6 +23,7 @@ import {
 import {
 	getDialecticStoreActionMock,
 	initializeMockDialecticState,
+	mockAiModelConfig,
 	mockAiProvidersRow,
 	mockSelectedModelsForCatalog,
 	resetDialecticStoreMock,
@@ -84,6 +88,14 @@ const MIN_OUTPUT_TOKENS = 1024;
 const SLIDER_STEPS_PER_SEGMENT = 50;
 const UPGRADE_CTA_THRESHOLD_RATIO = 0.85;
 const MODEL_TRACK_MAX = 200000;
+
+const modelConfig: AiModelExtendedConfig = mockAiModelConfig({
+	hard_cap_output_tokens: MODEL_TRACK_MAX + 1,
+	provider_max_output_tokens: MODEL_TRACK_MAX,
+});
+if (!isJson(modelConfig)) {
+	throw new Error('config is not a valid JSON object');
+}
 
 const userFacingTiers: UserTier[] = mockAllTiers.filter(
 	(tier) => tier.name !== 'unreachable',
@@ -158,8 +170,13 @@ function setupMockStores(
 	dialecticOverrides: Partial<DialecticStateValues>,
 	authOverrides: Partial<AuthStore>,
 ) {
+	if (!isJson(modelConfig)) {
+		throw new Error('config is not a valid JSON object');
+	}
 	const modelCatalog: AiProvidersRow[] = [
-		mockAiProvidersRow({ config: { provider_max_output_tokens: 200000 } }),
+		mockAiProvidersRow({
+			config: modelConfig,
+		}),
 	];
 	const selectedModels = mockSelectedModelsForCatalog(modelCatalog);
 
@@ -211,8 +228,13 @@ describe('OutputCapSlider', () => {
 	});
 
 	it('slider track max equals highest max_output_tokens from selected models catalog entries', () => {
+		if (!isJson(modelConfig)) {
+			throw new Error('config is not a valid JSON object');
+		}
 		const modelCatalog: AiProvidersRow[] = [
-			mockAiProvidersRow({ config: { provider_max_output_tokens: 200000 } }),
+			mockAiProvidersRow({
+				config: modelConfig,
+			}),
 		];
 		const selectedModels: SelectedModels[] =
 			mockSelectedModelsForCatalog(modelCatalog);
@@ -336,16 +358,30 @@ describe('OutputCapSlider', () => {
 	});
 
 	it('ultra user thumb can reach slider track max and does not show upgrade CTA', async () => {
+		const modelAConfig = mockAiModelConfig({
+			hard_cap_output_tokens: 100000,
+			provider_max_output_tokens: 64000,
+		});
+		if (!isJson(modelAConfig)) {
+			throw new Error('config is not a valid JSON object');
+		}
+		const modelBConfig = mockAiModelConfig({
+			hard_cap_output_tokens: MODEL_TRACK_MAX,
+			provider_max_output_tokens: 100000,
+		});
+		if (!isJson(modelBConfig)) {
+			throw new Error('config is not a valid JSON object');
+		}
 		const modelCatalog: AiProvidersRow[] = [
 			mockAiProvidersRow({
 				id: 'model-a',
 				name: 'Model A',
-				config: { provider_max_output_tokens: 64000 },
+				config: modelAConfig,
 			}),
 			mockAiProvidersRow({
 				id: 'model-b',
 				name: 'Model B',
-				config: { provider_max_output_tokens: 100000 },
+				config: modelBConfig,
 			}),
 		];
 		const selectedModels: SelectedModels[] =
@@ -394,8 +430,13 @@ describe('OutputCapSlider', () => {
 	});
 
 	it('when availableTiers is empty, component handles gracefully without tier markers', () => {
+		if (!isJson(modelConfig)) {
+			throw new Error('config is not a valid JSON object');
+		}
 		const modelCatalog: AiProvidersRow[] = [
-			mockAiProvidersRow({ config: { provider_max_output_tokens: 200000 } }),
+			mockAiProvidersRow({
+				config: modelConfig,
+			}),
 		];
 
 		setupMockStores(
@@ -415,8 +456,13 @@ describe('OutputCapSlider', () => {
 	});
 
 	it('when selectedModels is empty, component returns null and does not render slider', () => {
+		if (!isJson(modelConfig)) {
+			throw new Error('config is not a valid JSON object');
+		}
 		const modelCatalog: AiProvidersRow[] = [
-			mockAiProvidersRow({ config: { provider_max_output_tokens: 200000 } }),
+			mockAiProvidersRow({
+				config: modelConfig,
+			}),
 		];
 
 		setupMockStores(
@@ -546,5 +592,62 @@ describe('OutputCapSlider', () => {
 		const lastPersistedTokens: number =
 			persistedCalls[persistedCalls.length - 1];
 		expect(lastPersistedTokens).toBeLessThanOrEqual(basicThumbMax);
+	});
+
+	it('does not render slider when only selected model has config that fails isAiModelExtendedConfig', () => {
+		const malformedConfig: Json = { provider_max_output_tokens: MODEL_TRACK_MAX };
+		if (!isJson(malformedConfig)) {
+			throw new Error('config is not a valid JSON object');
+		}
+		const modelCatalog: AiProvidersRow[] = [
+			mockAiProvidersRow({
+				config: malformedConfig,
+			}),
+		];
+		const selectedModels: SelectedModels[] =
+			mockSelectedModelsForCatalog(modelCatalog);
+
+		setupMockStores(
+			{
+				maxOutputTokens: 8192,
+				modelCatalog,
+				selectedModels,
+			},
+			{ userTier: mockUserTier, availableTiers: mockAllTiers },
+		);
+
+		const { container } = renderWithRouter(<OutputCapSlider />);
+
+		expect(screen.queryByRole('slider')).not.toBeInTheDocument();
+		expect(container.firstChild).toBeNull();
+	});
+
+	it('slider track max is 200000 when selected model has valid full config with provider_max_output_tokens 200000', () => {
+		if (!isJson(modelConfig)) {
+			throw new Error('config is not a valid JSON object');
+		}
+		const modelCatalog: AiProvidersRow[] = [
+			mockAiProvidersRow({
+				config: modelConfig,
+			}),
+		];
+		const selectedModels: SelectedModels[] =
+			mockSelectedModelsForCatalog(modelCatalog);
+
+		setupMockStores(
+			{
+				maxOutputTokens: 8192,
+				modelCatalog,
+				selectedModels,
+			},
+			{ userTier: mockUserTier, availableTiers: mockAllTiers },
+		);
+
+		renderWithRouter(<OutputCapSlider />);
+
+		expect(screen.getByRole('slider')).toHaveAttribute(
+			'aria-valuemax',
+			'200000',
+		);
 	});
 });

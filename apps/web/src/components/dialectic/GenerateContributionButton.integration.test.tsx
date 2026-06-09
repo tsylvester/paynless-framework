@@ -16,8 +16,17 @@ import type {
   StageRenderedDocumentDescriptor,
   UnifiedProjectStatus,
   SelectedModels,
+  AiProvidersRow,
+  AiModelExtendedConfig,
 } from '@paynless/types';
 import { STAGE_RUN_DOCUMENT_KEY_SEPARATOR } from '@paynless/types';
+import {
+  computeCostCeiling,
+  buildComputeCostCeilingDeps,
+  buildComputeCostCeilingParams,
+  buildComputeCostCeilingPayload,
+  buildComputeCostCeilingStageInput,
+} from '@paynless/utils';
 import { GenerateContributionButton } from './GenerateContributionButton';
 import {
   initialDialecticStateValues,
@@ -25,9 +34,11 @@ import {
   setDialecticStateValues,
   getDialecticStoreState,
   mockResumePausedNsfJobs,
+  mockAiProvidersRow,
+  mockAiModelConfig,
 } from '../../mocks/dialecticStore.mock';
 import { selectActiveChatWalletInfo } from '../../mocks/walletStore.mock';
-
+import { isJson } from '@paynless/utils';
 vi.mock('@paynless/store', async () => {
   const mockDialecticStoreUtils = await import('../../mocks/dialecticStore.mock');
   const actualPaynlessStore = await vi.importActual<typeof import('@paynless/store')>('@paynless/store');
@@ -42,9 +53,11 @@ vi.mock('@paynless/store', async () => {
     selectSessionById: actualPaynlessStore.selectSessionById,
     selectIsStageReadyForSessionIteration: actualPaynlessStore.selectIsStageReadyForSessionIteration,
     selectSelectedModels: actualPaynlessStore.selectSelectedModels,
+    selectCostCeiling: actualPaynlessStore.selectCostCeiling,
+    selectSortedStages: actualPaynlessStore.selectSortedStages,
+    selectViewingStage: actualPaynlessStore.selectViewingStage,
     useWalletStore: walletStoreMock.useWalletStore,
     selectActiveChatWalletInfo: walletStoreMock.selectActiveChatWalletInfo,
-    selectViewingStage: actualPaynlessStore.selectViewingStage,
     useAiStore: Object.assign(
       (selector: (state: { continueUntilComplete: boolean; newChatContext: string | null }) => unknown) => {
         return selector({ continueUntilComplete: false, newChatContext: 'personal' });
@@ -65,6 +78,34 @@ const stageSlug = 'thesis';
 const sessionId = 'test-session-id';
 const iterationNumber = 1;
 const progressKey = `${sessionId}:${stageSlug}:${iterationNumber}`;
+const runKey = `${sessionId}:${iterationNumber}`;
+const maxOutputTokens = 1000;
+const stageExpectedCount = 4;
+const outputTokenCostRate = 2;
+
+const ceilingComputationResult = computeCostCeiling(
+  buildComputeCostCeilingDeps(),
+  buildComputeCostCeilingParams(),
+  buildComputeCostCeilingPayload({
+    stages: [
+      buildComputeCostCeilingStageInput({
+        stageSlug,
+        expectedCount: stageExpectedCount,
+        contributions: [],
+      }),
+    ],
+    maxOutputTokens,
+    outputTokenCostRates: [outputTokenCostRate],
+  }),
+);
+
+if ('error' in ceilingComputationResult) {
+  throw new Error('integration fixture ceiling computation failed');
+}
+
+const expectedStageCeiling: number = ceilingComputationResult.stageCeilings[stageSlug];
+const sufficientWalletBalance: string = String(expectedStageCeiling + 2000);
+const lowWalletBalance: string = '0';
 
 const mockThesisStage: DialecticStage = {
   id: `stage-${stageSlug}`,
@@ -138,6 +179,17 @@ function makeDocumentKey(documentKey: string, modelId: string): string {
   return `${documentKey}${STAGE_RUN_DOCUMENT_KEY_SEPARATOR}${modelId}`;
 }
 
+function setWalletBalance(balance: string): void {
+  vi.mocked(selectActiveChatWalletInfo).mockReturnValue({
+    status: 'ok',
+    type: 'personal',
+    walletId: 'wallet-1',
+    orgId: null,
+    balance,
+    isLoadingPrimaryWallet: false,
+  });
+}
+
 function setStoreForButton(
   recipe: DialecticStageRecipe,
   progress: StageRunProgressSnapshot,
@@ -194,6 +246,17 @@ function setStoreForButton(
     saveContributionEditError: null,
     dialectic_sessions: [session],
   };
+
+  const modelConfig: AiModelExtendedConfig = mockAiModelConfig({
+    output_token_cost_rate: outputTokenCostRate,
+  });
+  if (!isJson(modelConfig)) {
+    throw new Error('config is not a valid JSON object');
+  }
+  const catalogRow: AiProvidersRow = mockAiProvidersRow({
+    id: 'model-1',
+    config: modelConfig,
+  });
   const state: Partial<DialecticStateValues> = {
     ...initialDialecticStateValues,
     currentProcessTemplate: template,
@@ -201,6 +264,13 @@ function setStoreForButton(
     activeContextSessionId: sessionId,
     viewingStageSlug: stageSlug,
     selectedModels,
+    maxOutputTokens,
+    modelCatalog: [catalogRow],
+    stageExpectedCountsByRun: {
+      [runKey]: {
+        [stageSlug]: stageExpectedCount,
+      },
+    },
     recipesByStageSlug: { [stageSlug]: recipe },
     stageRunProgress: { [progressKey]: progress },
     generatingSessions: {},
@@ -212,35 +282,21 @@ describe('GenerateContributionButton integration', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     initializeMockDialecticState();
-    vi.mocked(selectActiveChatWalletInfo).mockReturnValue({
-      status: 'ok',
-      type: 'personal',
-      walletId: 'wallet-1',
-      orgId: null,
-      balance: String(mockThesisStage.minimum_balance),
-      isLoadingPrimaryWallet: false,
-    });
+    setWalletBalance(sufficientWalletBalance);
   });
 
-  it('render with progress stageStatus paused_nsf and low balance → button shows "Resume Proposal" and is disabled', () => {
+  it('render with progress stageStatus paused_nsf and low balance → button shows "Insufficient Balance" and is disabled', () => {
     const steps: DialecticStageRecipeStep[] = [
       buildStep({ id: 's1', step_key: 'plan', step_name: 'Plan', job_type: 'PLAN', execution_order: 0 }),
     ];
     const recipe = buildRecipe(steps, []);
     const progress = buildProgressSnapshot({ plan: 'paused_nsf' }, {});
     setStoreForButton(recipe, progress);
-    vi.mocked(selectActiveChatWalletInfo).mockReturnValue({
-      status: 'ok',
-      type: 'personal',
-      walletId: 'wallet-1',
-      orgId: null,
-      balance: '0',
-      isLoadingPrimaryWallet: false,
-    });
+    setWalletBalance(lowWalletBalance);
 
     renderWithRouter(<GenerateContributionButton />);
 
-    const button = screen.getByRole('button', { name: /Resume Proposal/i });
+    const button = screen.getByRole('button', { name: /Insufficient Balance/i });
     expect(button).toBeInTheDocument();
     expect(button).toBeDisabled();
   });
@@ -252,15 +308,7 @@ describe('GenerateContributionButton integration', () => {
     const recipe = buildRecipe(steps, []);
     const progress = buildProgressSnapshot({ plan: 'paused_nsf' }, {});
     setStoreForButton(recipe, progress);
-    const thesisMinBalance = 100000;
-    vi.mocked(selectActiveChatWalletInfo).mockReturnValue({
-      status: 'ok',
-      type: 'personal',
-      walletId: 'wallet-1',
-      orgId: null,
-      balance: String(thesisMinBalance),
-      isLoadingPrimaryWallet: false,
-    });
+    setWalletBalance(sufficientWalletBalance);
 
     const user = userEvent.setup();
     renderWithRouter(<GenerateContributionButton />);
@@ -286,14 +334,7 @@ describe('GenerateContributionButton integration', () => {
     const recipe = buildRecipe(steps, []);
     const progress = buildProgressSnapshot({ plan: 'not_started' }, {});
     setStoreForButton(recipe, progress);
-    vi.mocked(selectActiveChatWalletInfo).mockReturnValue({
-      status: 'ok',
-      type: 'personal',
-      walletId: 'wallet-1',
-      orgId: null,
-      balance: '0',
-      isLoadingPrimaryWallet: false,
-    });
+    setWalletBalance(lowWalletBalance);
 
     renderWithRouter(<GenerateContributionButton />);
 

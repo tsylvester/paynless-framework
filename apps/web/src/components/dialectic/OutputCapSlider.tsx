@@ -18,7 +18,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { useAuthStore, useDialecticStore } from "@paynless/store";
 import { UserTier } from "@paynless/types";
-import { isJson, isPlainObject, logger } from "@paynless/utils";
+import { isAiModelExtendedConfig, logger } from "@paynless/utils";
 import { cn } from "@/lib/utils";
 import { Sparkles, Lock, AlertCircle } from "lucide-react";
 
@@ -59,36 +59,19 @@ export function OutputCapSlider({ className }: OutputCapSliderProps) {
 					continue;
 				}
 
-				const configValue = catalogEntry.config;
-				if (configValue === null) {
+				const config = catalogEntry.config;
+				if (!isAiModelExtendedConfig(config)) {
 					continue;
 				}
-				if (!isJson(configValue)) {
-					continue;
-				}
-				if (!isPlainObject(configValue)) {
-					continue;
-				}
-
-				const hardCapRaw = configValue["hard_cap_output_tokens"];
-				const providerMaxRaw = configValue["provider_max_output_tokens"];
 
 				let applicationCap: number = Infinity;
-				if (
-					typeof hardCapRaw === "number" &&
-					Number.isFinite(hardCapRaw) &&
-					hardCapRaw >= 0
-				) {
-					applicationCap = hardCapRaw;
+				if (config.hard_cap_output_tokens !== undefined) {
+					applicationCap = config.hard_cap_output_tokens;
 				}
 
 				let providerCap: number = Infinity;
-				if (
-					typeof providerMaxRaw === "number" &&
-					Number.isFinite(providerMaxRaw) &&
-					providerMaxRaw >= 0
-				) {
-					providerCap = providerMaxRaw;
+				if (config.provider_max_output_tokens !== undefined) {
+					providerCap = config.provider_max_output_tokens;
 				}
 
 				const modelMaxOutputTokens: number = Math.min(

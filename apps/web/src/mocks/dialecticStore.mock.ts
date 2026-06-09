@@ -11,7 +11,9 @@ import type {
   DialecticSessionModel,
   DialecticStage,
   DialecticStageTransition,
-  DialecticDomain,
+  DialecticDomainRow,
+  DagProgressDto,
+  DomainProcessAssociationRow,
   DialecticActions,
   ApiError,
   ApiResponse,
@@ -27,6 +29,7 @@ import type {
   SetFocusedStageDocumentPayload,
   ClearFocusedStageDocumentPayload,
   StageRunProgressEntry,
+  StageProgressEntry,
   StageRunProgressSnapshot,
   StageRenderedDocumentDescriptor,
   StagePlannedDocumentDescriptor,
@@ -38,6 +41,7 @@ import type {
   StageDocumentVersionInfo,
   ListStageDocumentsPayload,
   GetAllStageProgressPayload,
+  GetAllStageProgressResponse,
   EditedDocumentResource,
   SaveContributionEditSuccessResponse,
   SaveContributionEditPayload,
@@ -356,14 +360,16 @@ export const mockResumePausedNsfJobs = vi.fn().mockResolvedValue({ data: { resum
 export const mockPauseActiveJobs = vi.fn().mockResolvedValue({ data: { pausedCount: 0 }, error: undefined, status: 200 });
 
 export function mockDialecticDomain(
-  overrides: Partial<DialecticDomain> = {},
-): DialecticDomain {
-  const base: DialecticDomain = {
+  overrides: Partial<DialecticDomainRow> = {},
+): DialecticDomainRow {
+  const base: DialecticDomainRow = {
     id: 'dom-1',
     name: 'Domain 1',
     description: 'Test domain',
     parent_domain_id: null,
     is_enabled: true,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
   };
   return { ...base, ...overrides };
 }
@@ -526,6 +532,51 @@ export function mockStageRunProgressSnapshot(
     },
     progress: { completedSteps: 0, totalSteps: 1, failedSteps: 0 },
     jobs: [mockJobProgressDto()],
+  };
+  return { ...base, ...overrides };
+}
+
+export function mockDomainProcessAssociationRow(
+  overrides: Partial<DomainProcessAssociationRow> = {},
+): DomainProcessAssociationRow {
+  const base: DomainProcessAssociationRow = {
+    id: 'association-uuid-default',
+    domain_id: 'domain-uuid-default',
+    process_template_id: 'pt-thesis',
+    is_default_for_domain: true,
+    created_at: '2025-01-01T00:00:00.000Z',
+    updated_at: '2025-01-01T01:00:00.000Z',
+  };
+  return { ...base, ...overrides };
+}
+
+export function mockStageProgressEntry(
+  overrides: Partial<StageProgressEntry> = {},
+): StageProgressEntry {
+  const base: StageProgressEntry = {
+    stageSlug: 'thesis',
+    status: 'not_started',
+    modelCount: 1,
+    progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
+    expectedCount: 0,
+    steps: [],
+    documents: [],
+    jobs: [],
+    edges: [],
+  };
+  return { ...base, ...overrides };
+}
+
+export function mockGetAllStageProgressResponse(
+  overrides: Partial<GetAllStageProgressResponse> = {},
+): GetAllStageProgressResponse {
+  const dagProgress: DagProgressDto = {
+    completedStages: 0,
+    totalStages: 0,
+  };
+  const base: GetAllStageProgressResponse = {
+    dagProgress,
+    stages: [mockStageProgressEntry()],
   };
   return { ...base, ...overrides };
 }
@@ -906,6 +957,13 @@ export const initialDialecticStateValues: DialecticStateValues = {
   autoStartError: null,
   shouldOpenDagProgress: false,
   maxOutputTokens: null,
+  selectedDomainProcessAssociation: null,
+  isLoadingDomainProcessAssociation: false,
+  domainProcessAssociationError: null,
+  stageExpectedCountsByRun: {},
+  preProjectStageExpectedCounts: null,
+  isLoadingStageExpectedCounts: false,
+  stageExpectedCountsError: null,
 };
 
 // 2. Helper function to create a new mock store instance
@@ -964,7 +1022,9 @@ const createActualMockStore = (initialOverrides?: Partial<DialecticStateValues>)
       ...(initialOverrides || {}),
       // Actions - implemented using vi.fn() and using `set` for state changes
       fetchDomains: vi.fn().mockResolvedValue(undefined),
-      setSelectedDomain: vi.fn((domain: DialecticDomain | null) => set({ selectedDomain: domain })),
+      setSelectedDomain: vi.fn((domain: DialecticDomainRow | null) => set({ selectedDomain: domain })),
+      fetchProcessAssociation: vi.fn().mockResolvedValue(undefined),
+      fetchStageExpectedCounts: vi.fn().mockResolvedValue(undefined),
       fetchAvailableDomainOverlays: vi.fn().mockResolvedValue(undefined),
       setSelectedStageAssociation: vi.fn((stage: DialecticStage | null) => set({ selectedStageAssociation: stage })),
       setSelectedDomainOverlayId: vi.fn((id: string | null) => set({ selectedDomainOverlayId: id })),

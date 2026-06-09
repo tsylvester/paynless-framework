@@ -1,8 +1,8 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { useForm, Controller, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { logger } from "@paynless/utils";
-import { useNavigate } from "react-router-dom";
+import { ComputeCostCeilingReturn, logger } from "@paynless/utils";
+import { Link, useNavigate } from "react-router-dom";
 import {
 	useDialecticStore,
 	useWalletStore,
@@ -14,6 +14,7 @@ import {
 	selectActiveChatWalletInfo,
 	selectSortedStages,
 	selectSelectedModels,
+	selectPreProjectCostCeiling,
 } from "@paynless/store";
 import { DomainSelector } from "@/components/dialectic/DomainSelector";
 import { AIModelSelector } from "@/components/dialectic/AIModelSelector";
@@ -38,6 +39,7 @@ import {
 	type FileDropPayload,
 } from "@paynless/platform";
 import type {
+	ApiError,
 	CreateProjectPayload,
 	CreateProjectAndAutoStartPayload,
 	SelectedModels,
@@ -98,6 +100,24 @@ export const CreateDialecticProjectForm: React.FC<
 	const fetchAIModelCatalog = useDialecticStore(
 		(state) => state.fetchAIModelCatalog,
 	);
+	const fetchProcessAssociation = useDialecticStore(
+		(state) => state.fetchProcessAssociation,
+	);
+	const fetchProcessTemplate = useDialecticStore(
+		(state) => state.fetchProcessTemplate,
+	);
+	const fetchStageExpectedCounts = useDialecticStore(
+		(state) => state.fetchStageExpectedCounts,
+	);
+	const selectedDomainProcessAssociation = useDialecticStore(
+		(state) => state.selectedDomainProcessAssociation,
+	);
+	const isLoadingDomainProcessAssociation = useDialecticStore(
+		(state) => state.isLoadingDomainProcessAssociation,
+	);
+	const isLoadingStageExpectedCounts = useDialecticStore(
+		(state) => state.isLoadingStageExpectedCounts,
+	);
 	const isCreating = useDialecticStore(selectIsCreatingProject);
 	const creationError = useDialecticStore(selectCreateProjectError);
 	const selectedDomain = useDialecticStore(selectSelectedDomain);
@@ -123,6 +143,11 @@ export const CreateDialecticProjectForm: React.FC<
 		selectActiveChatWalletInfo(state, null),
 	);
 	const sortedStages = useDialecticStore(selectSortedStages);
+	const preProjectCostCeilingResult: ComputeCostCeilingReturn | null =
+		useDialecticStore(selectPreProjectCostCeiling);
+
+	const formatTokenCount = (n: number): string =>
+		new Intl.NumberFormat("en-US").format(n);
 	const [isModelSelectorOpen, setIsModelSelectorOpen] = useState(false);
 	const [promptFile, setPromptFile] = useState<File | null>(null);
 	const [projectNameManuallySet, setProjectNameManuallySet] =
@@ -398,13 +423,98 @@ export const CreateDialecticProjectForm: React.FC<
 	}, [fetchAIModelCatalog]);
 
 	useEffect(() => {
+		const domainId: string | undefined = selectedDomain?.id;
+		if (domainId !== undefined && domainId.length > 0) {
+			fetchProcessAssociation({ domainId });
+		}
+	}, [selectedDomain?.id, fetchProcessAssociation]);
+
+	useEffect(() => {
+		const processTemplateId: string | undefined =
+			selectedDomainProcessAssociation?.process_template_id;
+		if (processTemplateId !== undefined && processTemplateId.length > 0) {
+			fetchProcessTemplate(processTemplateId);
+			if (uniqueModelCount >= 1) {
+				fetchStageExpectedCounts({
+					processTemplateId,
+					modelCount: uniqueModelCount,
+				});
+			}
+		}
+	}, [
+		selectedDomainProcessAssociation?.process_template_id,
+		uniqueModelCount,
+		fetchProcessTemplate,
+		fetchStageExpectedCounts,
+	]);
+
+	const preProjectCostCeilingError: ApiError | null =
+		preProjectCostCeilingResult !== null &&
+		"error" in preProjectCostCeilingResult
+			? preProjectCostCeilingResult.error
+			: null;
+
+	const firstStageSlug: string | null = sortedStages[0]?.slug ?? null;
+
+	let firstStageCeiling: number | null = null;
+	if (
+		preProjectCostCeilingResult !== null &&
+		!("error" in preProjectCostCeilingResult) &&
+		firstStageSlug !== null
+	) {
+		const rawFirstStageCeiling: number =
+			preProjectCostCeilingResult.stageCeilings[firstStageSlug];
+		if (
+			Number.isFinite(rawFirstStageCeiling) &&
+			rawFirstStageCeiling >= 0
+		) {
+			firstStageCeiling = rawFirstStageCeiling;
+		}
+	}
+
+	let projectCeiling: number | null = null;
+	if (
+		preProjectCostCeilingResult !== null &&
+		!("error" in preProjectCostCeilingResult)
+	) {
+		const rawProjectCeiling: number =
+			preProjectCostCeilingResult.projectCeiling;
+		if (Number.isFinite(rawProjectCeiling) && rawProjectCeiling >= 0) {
+			projectCeiling = rawProjectCeiling;
+		}
+	}
+
+	const isPreProjectCostEstimateKnown: boolean = firstStageCeiling !== null;
+
+	const walletBalanceNum: number = Number(walletInfo.balance);
+	const canAffordAutostart: boolean =
+		isPreProjectCostEstimateKnown &&
+		firstStageCeiling !== null &&
+		Number.isFinite(walletBalanceNum) &&
+		!Number.isNaN(walletBalanceNum) &&
+		walletBalanceNum >= firstStageCeiling;
+
+	const autostartBlockedByBalance: boolean =
+		isPreProjectCostEstimateKnown &&
+		firstStageCeiling !== null &&
+		Number.isFinite(walletBalanceNum) &&
+		!Number.isNaN(walletBalanceNum) &&
+		walletBalanceNum < firstStageCeiling;
+
+	let projectBalanceShortfall: number | null = null;
+	if (
+		projectCeiling !== null &&
+		Number.isFinite(walletBalanceNum) &&
+		!Number.isNaN(walletBalanceNum) &&
+		walletBalanceNum < projectCeiling
+	) {
+		projectBalanceShortfall = projectCeiling - walletBalanceNum;
+	}
+
+	useEffect(() => {
 		if (configureManually) return;
 		const noDefaults = !isLoadingModelCatalog && defaultModels.length === 0;
-		const firstStageMinBalance = sortedStages[0]?.minimum_balance;
-		const lowBalance =
-			typeof firstStageMinBalance === "number" &&
-			Number(walletInfo.balance ?? "0") < firstStageMinBalance;
-		if (noDefaults || lowBalance) {
+		if (noDefaults || !canAffordAutostart) {
 			setStartGeneration(false);
 		} else {
 			setStartGeneration(true);
@@ -413,22 +523,25 @@ export const CreateDialecticProjectForm: React.FC<
 		configureManually,
 		isLoadingModelCatalog,
 		defaultModels.length,
-		walletInfo.balance,
-		sortedStages,
+		canAffordAutostart,
 	]);
 
-	const firstStageMinBalance = sortedStages[0]?.minimum_balance;
-	const lowBalanceForReason =
-		typeof firstStageMinBalance === "number" &&
-		Number(walletInfo.balance ?? "0") < firstStageMinBalance;
-	const autoUncheckReason: string | null =
-		!configureManually && !startGeneration
-			? !isLoadingModelCatalog && defaultModels.length === 0
-				? "No default models available"
-				: lowBalanceForReason
-					? "Wallet balance too low for auto-start"
-					: null
-			: null;
+	let autoUncheckReason: string | null = null;
+	if (!configureManually && !startGeneration) {
+		const noDefaults = !isLoadingModelCatalog && defaultModels.length === 0;
+		if (noDefaults) {
+			autoUncheckReason = "No default models available";
+		} else if (preProjectCostCeilingError !== null) {
+			autoUncheckReason = preProjectCostCeilingError.message;
+		} else if (
+			!isPreProjectCostEstimateKnown ||
+			isLoadingDomainProcessAssociation ||
+			isLoadingStageExpectedCounts
+		) {
+			autoUncheckReason =
+				"Cost estimate not ready yet. Select models, set the output cap, and wait for stage counts.";
+		}
+	}
 
 	const setupMode: SetupMode = configureManually
 		? "manual"
@@ -443,9 +556,13 @@ export const CreateDialecticProjectForm: React.FC<
 			setConfigureManually(true);
 		} else {
 			setConfigureManually(false);
-			setStartGeneration(true);
+			if (canAffordAutostart) {
+				setStartGeneration(true);
+			} else {
+				setStartGeneration(false);
+			}
 		}
-	}, [setupMode]);
+	}, [setupMode, canAffordAutostart]);
 
 	const setupModeLabel =
 		setupMode === "autostart"
@@ -471,8 +588,40 @@ export const CreateDialecticProjectForm: React.FC<
 			return;
 		}
 
+		const associationProcessTemplateId: string | undefined =
+			selectedDomainProcessAssociation?.process_template_id;
+		if (
+			associationProcessTemplateId === undefined ||
+			associationProcessTemplateId.length === 0
+		) {
+			logger.error(
+				"No process template association. Cannot create project.",
+			);
+			return;
+		}
+
 		if (creationError) {
 			resetCreateProjectError();
+		}
+
+		if (!configureManually && startGeneration) {
+			if (preProjectCostCeilingResult === null) {
+				toast.error("Cost estimate is not available yet.");
+				return;
+			}
+			if ("error" in preProjectCostCeilingResult) {
+				toast.error(preProjectCostCeilingResult.error.message);
+				return;
+			}
+			if (
+				firstStageCeiling === null ||
+				Number(walletInfo.balance) < firstStageCeiling
+			) {
+				toast.error(
+					"Insufficient wallet balance for auto-start.",
+				);
+				return;
+			}
 		}
 
 		const idempotencyKey: string = crypto.randomUUID();
@@ -483,6 +632,7 @@ export const CreateDialecticProjectForm: React.FC<
 			promptFile: promptFile,
 			selectedDomainId: selectedDomainId,
 			selectedDomainOverlayId: currentSelectedDomainOverlayId,
+			processTemplateId: associationProcessTemplateId,
 		};
 
 		if (configureManually) {
@@ -673,6 +823,49 @@ export const CreateDialecticProjectForm: React.FC<
 							</p>
 						)}
 					</div>
+
+					<div className="text-xs text-muted-foreground space-y-1">
+						{preProjectCostCeilingResult === null && (
+							<p data-testid="create-project-no-estimate-notice">
+								No cost estimate yet. Select at least one model, set the
+								output cap, and wait for stage counts to finish loading.
+							</p>
+						)}
+						{preProjectCostCeilingResult !== null &&
+							"error" in preProjectCostCeilingResult && (
+								<p data-testid="create-project-estimate-error-notice">
+									Cost estimate failed:{" "}
+									{preProjectCostCeilingResult.error.message}
+								</p>
+							)}
+						{preProjectCostCeilingResult !== null &&
+							!("error" in preProjectCostCeilingResult) &&
+							firstStageCeiling !== null &&
+							projectCeiling !== null && (
+								<p data-testid="create-project-cost-preview">
+									Estimated token cost: ~
+									{formatTokenCount(projectCeiling)} for the full project, ~
+									{formatTokenCount(firstStageCeiling)} for the first stage.
+								</p>
+							)}
+						{preProjectCostCeilingResult !== null &&
+							!("error" in preProjectCostCeilingResult) &&
+							projectBalanceShortfall !== null &&
+							projectCeiling !== null && (
+								<p data-testid="create-project-project-balance-warning">
+									This project may need ~
+									{formatTokenCount(projectCeiling)} tokens total.{" "}
+									<Link
+										to="/subscription?tab=top-up"
+										className="font-semibold underline underline-offset-2 hover:no-underline"
+									>
+										Top up{" "}
+										{formatTokenCount(projectBalanceShortfall)} to cover the
+										full project.
+									</Link>
+								</p>
+							)}
+					</div>
 				</CardContent>
 				<CardFooter className="flex flex-row items-center justify-between gap-4">
 					<div className="flex flex-col gap-2 shrink-0 min-w-[7.5rem]">
@@ -703,13 +896,28 @@ export const CreateDialecticProjectForm: React.FC<
 								{SETUP_MODE_EXPLAINER}
 							</TooltipContent>
 						</Tooltip>
-						{!configureManually &&
-							!startGeneration &&
-							autoUncheckReason !== null && (
-								<p className="text-sm text-muted-foreground">
-									{autoUncheckReason}
-								</p>
-							)}
+						{!configureManually && !startGeneration && (
+							<>
+								{autoUncheckReason !== null && (
+									<p className="text-sm text-muted-foreground">
+										{autoUncheckReason}
+									</p>
+								)}
+								{autostartBlockedByBalance && (
+									<p className="text-sm text-muted-foreground">
+										Estimated first-stage cost exceeds wallet balance for
+										auto-start{" "}
+										<Link
+											to="/subscription?tab=top-up"
+											data-testid="create-project-autostart-top-up-link"
+											className="font-semibold underline underline-offset-2 hover:no-underline"
+										>
+											Top up
+										</Link>
+									</p>
+								)}
+							</>
+						)}
 					</div>
 					<Button
 						type="submit"

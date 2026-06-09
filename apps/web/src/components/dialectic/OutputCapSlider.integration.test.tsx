@@ -12,15 +12,17 @@ import {
 	type Mock,
 } from 'vitest';
 import type {
+	AiModelExtendedConfig,
 	AiProvidersRow,
 	NavigateFunction,
 	SelectedModels,
 	UserTier,
 } from '@paynless/types';
+import { isJson } from '@paynless/utils';
 import { useAuthStore, useDialecticStore } from '@paynless/store';
 import { OutputCapSlider } from './OutputCapSlider';
 import { mockAllTiers, mockUserTier } from '../../mocks/profile.mock';
-import { mockAiProvidersRow } from '../../mocks/dialecticStore.mock';
+import { mockAiModelConfig, mockAiProvidersRow } from '../../mocks/dialecticStore.mock';
 
 const mockNavigate: Mock<
 	Parameters<NavigateFunction>,
@@ -107,10 +109,18 @@ async function dragSegmentedSliderToTokens(
 	}
 }
 
+const integrationModelConfig: AiModelExtendedConfig = mockAiModelConfig({
+	hard_cap_output_tokens: MODEL_TRACK_MAX + 1,
+	provider_max_output_tokens: MODEL_TRACK_MAX,
+});
+if (!isJson(integrationModelConfig)) {
+	throw new Error('config is not a valid JSON object');
+}
+
 const integrationModelCatalogEntry: AiProvidersRow = mockAiProvidersRow({
 	id: 'model-integration-1',
 	name: 'Integration Model',
-	config: { provider_max_output_tokens: 200000 },
+	config: integrationModelConfig,
 });
 	
 const integrationSelectedModels: SelectedModels[] = [

@@ -6,6 +6,7 @@ import '@testing-library/jest-dom';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { GenerateContributionButton } from './GenerateContributionButton';
 import type {
+  ApiError,
   DialecticStage,
   DialecticContribution,
   DialecticProject,
@@ -156,7 +157,15 @@ function getDefaultHookReturn(
     showBalanceCallout: false,
     viewingStage: mockThesisStage,
     activeSession: defaultSession,
-    stageThreshold: mockThesisStage.minimum_balance,
+    stageCeiling: 200000,
+    projectCeiling: 400000,
+    stageBalanceShortfall: null,
+    isCostEstimateKnown: true,
+    showCostEstimateBlocked: false,
+    costCeilingError: null,
+    showStageCostEstimate: true,
+    isViewingAheadOfCurrentStage: false,
+    viewingAheadReason: null,
     ...overrides,
   };
 }
@@ -259,36 +268,61 @@ describe('GenerateContributionButton NSF', () => {
     vi.clearAllMocks();
   });
 
-  it('when activeWalletInfo.balance is below stage minimum_balance and active stage is NOT paused_nsf, button is disabled and shows "Insufficient Balance"', () => {
+  it('when stage balance is below stageCeiling and active stage is NOT paused_nsf, button is disabled and shows "Insufficient Balance"', () => {
     mockUseStartContributionGeneration.mockReturnValue(
-      getDefaultHookReturn({ isDisabled: true, balanceMeetsThreshold: false })
+      getDefaultHookReturn({
+        isDisabled: true,
+        isCostEstimateKnown: true,
+        balanceMeetsThreshold: false,
+      })
     );
     renderWithRouter(<GenerateContributionButton />);
     expect(screen.getByRole('button')).toBeDisabled();
     expect(screen.getByRole('button')).toHaveTextContent(/Insufficient Balance/i);
   });
 
-  it('when balance is below threshold, balance callout is present with minimum tokens and stage name and links to /subscription', () => {
+  it('when balance is below stageCeiling, balance callout is present with shortfall copy and links to /subscription?tab=top-up', () => {
     mockUseStartContributionGeneration.mockReturnValue(
-      getDefaultHookReturn({ showBalanceCallout: true, balanceMeetsThreshold: false })
+      getDefaultHookReturn({
+        isCostEstimateKnown: true,
+        showCostEstimateBlocked: false,
+        stageBalanceShortfall: 50000,
+        showBalanceCallout: true,
+        balanceMeetsThreshold: false,
+        isDisabled: true,
+      })
     );
     renderWithRouter(<GenerateContributionButton />);
     const callout = screen.getByTestId('generate-button-balance-callout');
     expect(callout).toBeInTheDocument();
-    expect(callout).toHaveTextContent(/Minimum.*200,000.*token balance.*Proposal/i);
-    const link = callout.querySelector('a[href="/subscription"]');
+    expect(callout).toHaveTextContent(/Insufficient tokens/i);
+    expect(callout).toHaveTextContent(/Top up/i);
+    expect(callout).toHaveTextContent(/50,000/);
+    const link = callout.querySelector('a[href="/subscription?tab=top-up"]');
     expect(link).toBeInTheDocument();
+    expect(screen.queryByTestId('generate-button-no-estimate-callout')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('generate-button-estimate-error-callout')).not.toBeInTheDocument();
   });
 
-  it('when balance is below threshold and stage is paused_nsf, balance callout is present and links to /subscription', () => {
+  it('when balance is below stageCeiling and stage is paused_nsf, balance callout is present with shortfall copy and links to /subscription?tab=top-up', () => {
     mockUseStartContributionGeneration.mockReturnValue(
-      getDefaultHookReturn({ showBalanceCallout: true, balanceMeetsThreshold: false, hasPausedNsfJobs: true })
+      getDefaultHookReturn({
+        isCostEstimateKnown: true,
+        showCostEstimateBlocked: false,
+        stageBalanceShortfall: 50000,
+        showBalanceCallout: true,
+        balanceMeetsThreshold: false,
+        hasPausedNsfJobs: true,
+        isDisabled: true,
+      })
     );
     renderWithRouter(<GenerateContributionButton />);
     const callout = screen.getByTestId('generate-button-balance-callout');
     expect(callout).toBeInTheDocument();
-    expect(callout).toHaveTextContent(/Minimum.*200,000.*token balance.*Proposal/i);
-    const link = callout.querySelector('a[href="/subscription"]');
+    expect(callout).toHaveTextContent(/Insufficient tokens/i);
+    expect(callout).toHaveTextContent(/Top up/i);
+    expect(callout).toHaveTextContent(/50,000/);
+    const link = callout.querySelector('a[href="/subscription?tab=top-up"]');
     expect(link).toBeInTheDocument();
   });
 
@@ -298,20 +332,25 @@ describe('GenerateContributionButton NSF', () => {
     expect(screen.queryByTestId('generate-button-balance-callout')).not.toBeInTheDocument();
   });
 
-  it('when activeWalletInfo.balance meets threshold and active stage is NOT paused_nsf, button is enabled and shows "Generate {displayName}"', () => {
+  it('when activeWalletInfo.balance meets stageCeiling and active stage is NOT paused_nsf, button is enabled and shows "Generate {displayName}"', () => {
     mockUseStartContributionGeneration.mockReturnValue(getDefaultHookReturn());
     renderWithRouter(<GenerateContributionButton />);
     expect(screen.getByRole('button')).not.toBeDisabled();
     expect(screen.getByRole('button', { name: /Generate Proposal/i })).toBeInTheDocument();
   });
 
-  it('when active stage stageStatus is paused_nsf and balance is below threshold, button is disabled and shows "Resume" so user knows they are resuming', () => {
+  it('when active stage stageStatus is paused_nsf and balance is below stageCeiling, button is disabled and shows "Insufficient Balance"', () => {
     mockUseStartContributionGeneration.mockReturnValue(
-      getDefaultHookReturn({ isDisabled: true, hasPausedNsfJobs: true, balanceMeetsThreshold: false })
+      getDefaultHookReturn({
+        isDisabled: true,
+        isCostEstimateKnown: true,
+        hasPausedNsfJobs: true,
+        balanceMeetsThreshold: false,
+      })
     );
     renderWithRouter(<GenerateContributionButton />);
     expect(screen.getByRole('button')).toBeDisabled();
-    expect(screen.getByRole('button')).toHaveTextContent(/Resume Proposal/i);
+    expect(screen.getByRole('button')).toHaveTextContent(/Insufficient Balance/i);
   });
 
   it('when active stage stageStatus is paused_nsf and balance meets threshold, button is enabled and shows "Resume {displayName}"', () => {
@@ -404,5 +443,148 @@ describe('GenerateContributionButton NSF', () => {
     renderWithRouter(<GenerateContributionButton />);
     expect(screen.getByRole('button')).toBeEnabled();
     expect(screen.getByRole('button')).toHaveTextContent(/Pause Proposal/i);
+  });
+
+  it('when showStageCostEstimate is true and stageCeiling is 120000, stage cost estimate callout shows formatted ceiling', () => {
+    mockUseStartContributionGeneration.mockReturnValue(
+      getDefaultHookReturn({
+        showStageCostEstimate: true,
+        stageCeiling: 120000,
+      })
+    );
+    renderWithRouter(<GenerateContributionButton />);
+    const estimate = screen.getByTestId('generate-button-stage-cost-estimate');
+    expect(estimate).toBeInTheDocument();
+    expect(estimate).toHaveTextContent(/Estimated cost for this stage/i);
+    expect(estimate).toHaveTextContent(/120,000/);
+  });
+
+  it('when projectCeiling exceeds wallet balance, project balance callout is present with shortfall and top-up link', () => {
+    vi.mocked(selectActiveChatWalletInfo).mockReturnValue({
+      status: 'ok',
+      type: 'personal',
+      walletId: 'wallet-id',
+      orgId: null,
+      balance: '300000',
+      isLoadingPrimaryWallet: false,
+    });
+    mockUseStartContributionGeneration.mockReturnValue(
+      getDefaultHookReturn({
+        isCostEstimateKnown: true,
+        projectCeiling: 500000,
+        balanceMeetsThreshold: true,
+        isDisabled: false,
+      })
+    );
+    renderWithRouter(<GenerateContributionButton />);
+    const callout = screen.getByTestId('generate-button-project-balance-callout');
+    expect(callout).toBeInTheDocument();
+    expect(callout).toHaveTextContent(/200,000/);
+    const link = callout.querySelector('a[href="/subscription?tab=top-up"]');
+    expect(link).toBeInTheDocument();
+    expect(screen.getByRole('button')).not.toBeDisabled();
+  });
+
+  it('when projectCeiling is null, isCostEstimateKnown is false, or wallet meets projectCeiling, project balance callout is absent', () => {
+    mockUseStartContributionGeneration.mockReturnValue(
+      getDefaultHookReturn({ projectCeiling: null })
+    );
+    renderWithRouter(<GenerateContributionButton />);
+    expect(screen.queryByTestId('generate-button-project-balance-callout')).not.toBeInTheDocument();
+
+    mockUseStartContributionGeneration.mockReturnValue(
+      getDefaultHookReturn({
+        isCostEstimateKnown: false,
+        projectCeiling: 500000,
+        showCostEstimateBlocked: true,
+      })
+    );
+    renderWithRouter(<GenerateContributionButton />);
+    expect(screen.queryByTestId('generate-button-project-balance-callout')).not.toBeInTheDocument();
+
+    vi.mocked(selectActiveChatWalletInfo).mockReturnValue({
+      status: 'ok',
+      type: 'personal',
+      walletId: 'wallet-id',
+      orgId: null,
+      balance: '500000',
+      isLoadingPrimaryWallet: false,
+    });
+    mockUseStartContributionGeneration.mockReturnValue(
+      getDefaultHookReturn({
+        isCostEstimateKnown: true,
+        projectCeiling: 500000,
+        balanceMeetsThreshold: true,
+      })
+    );
+    renderWithRouter(<GenerateContributionButton />);
+    expect(screen.queryByTestId('generate-button-project-balance-callout')).not.toBeInTheDocument();
+  });
+
+  it('when cost estimate is not yet available, button is disabled with "No Estimate" and no-estimate callout', () => {
+    mockUseStartContributionGeneration.mockReturnValue(
+      getDefaultHookReturn({
+        isCostEstimateKnown: false,
+        showCostEstimateBlocked: true,
+        costCeilingError: null,
+        isDisabled: true,
+        stageCeiling: null,
+        showStageCostEstimate: false,
+      })
+    );
+    renderWithRouter(<GenerateContributionButton />);
+    expect(screen.getByRole('button')).toBeDisabled();
+    expect(screen.getByRole('button')).toHaveTextContent(/No Estimate/i);
+    const callout = screen.getByTestId('generate-button-no-estimate-callout');
+    expect(callout).toBeInTheDocument();
+    expect(callout).toHaveTextContent(/no cost estimate/i);
+    expect(callout).not.toHaveTextContent(/unknown cost/i);
+    expect(screen.queryByTestId('generate-button-estimate-error-callout')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('generate-button-balance-callout')).not.toBeInTheDocument();
+  });
+
+  it('when cost estimate failed, button is disabled with "Estimate Failed" and estimate-error callout shows error message', () => {
+    const costCeilingError: ApiError = {
+      code: 'INVALID_PAYLOAD',
+      message: 'Invalid payload',
+    };
+    mockUseStartContributionGeneration.mockReturnValue(
+      getDefaultHookReturn({
+        isCostEstimateKnown: false,
+        showCostEstimateBlocked: true,
+        costCeilingError,
+        isDisabled: true,
+        stageCeiling: null,
+        showStageCostEstimate: false,
+      })
+    );
+    renderWithRouter(<GenerateContributionButton />);
+    expect(screen.getByRole('button')).toBeDisabled();
+    expect(screen.getByRole('button')).toHaveTextContent(/Estimate Failed/i);
+    const callout = screen.getByTestId('generate-button-estimate-error-callout');
+    expect(callout).toBeInTheDocument();
+    expect(callout).toHaveTextContent('Invalid payload');
+    expect(screen.queryByTestId('generate-button-no-estimate-callout')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('generate-button-balance-callout')).not.toBeInTheDocument();
+  });
+
+  it('when paused_nsf and cost estimate is blocked, resume control is disabled and click does not invoke startContributionGeneration', async () => {
+    const startContributionGeneration = vi.fn().mockResolvedValue({ success: true });
+    mockUseStartContributionGeneration.mockReturnValue(
+      getDefaultHookReturn({
+        hasPausedNsfJobs: true,
+        showCostEstimateBlocked: true,
+        isCostEstimateKnown: false,
+        costCeilingError: null,
+        isDisabled: true,
+        stageCeiling: null,
+      })
+    );
+    const user = userEvent.setup();
+    renderWithRouter(<GenerateContributionButton />);
+    const button = screen.getByRole('button');
+    expect(button).toBeDisabled();
+    await user.click(button);
+    expect(startContributionGeneration).not.toHaveBeenCalled();
   });
 });

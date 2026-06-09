@@ -1,6 +1,6 @@
 import type { ISseConnection, SseChatEvent } from '@paynless/types';
-import { isSseChatEvent } from './type_guards';
-import { logger } from './logger';
+import { isSseChatEvent } from '../type_guards';
+import { logger } from '../logger';
 import type { ErrorEventConstructor } from './sse.stream.interface';
 
 function getErrorEventConstructor(): ErrorEventConstructor {

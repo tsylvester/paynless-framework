@@ -21,7 +21,10 @@ import type {
   DialecticSession,
   StartSessionPayload,
   DomainOverlayDescriptor,
-  DialecticDomain,
+  DialecticDomainRow,
+  DomainProcessAssociationRow,
+  StageExpectedCount,
+  GetStageExpectedCountsResponse,
   DialecticProcessTemplate,
   DialecticStage,
   DialecticStageRecipe,
@@ -40,7 +43,6 @@ import type {
   GetAllStageProgressPayload,
   ListStageDocumentsPayload,
   ListStageDocumentsResponse,
-  StageProgressEntry,
   SubmitStageResponsesPayload,
   StageDocumentContentState,
   StageRunProgressSnapshot,
@@ -65,7 +67,11 @@ vi.mock('@paynless/api', async () => {
 
 // Import the shared mock setup - these are test utilities, not part of the mocked module itself.
 import { api } from '@paynless/api';
-import { resetApiMock, getMockDialecticClient } from '@paynless/api/mocks';
+import { resetApiMock, getMockDialecticClient, buildGetStageExpectedCountsPayload } from '@paynless/api/mocks';
+import {
+  mockGetAllStageProgressResponse,
+  mockStageProgressEntry,
+} from '../../../apps/web/src/mocks/dialecticStore.mock';
 
 describe('useDialecticStore', () => {
     beforeEach(() => {
@@ -119,6 +125,14 @@ describe('useDialecticStore', () => {
 
             expect(state.progressHydrationStatus).toEqual(initialDialecticStateValues.progressHydrationStatus);
             expect(state.progressHydrationError).toEqual(initialDialecticStateValues.progressHydrationError);
+
+            expect(state.stageExpectedCountsByRun).toEqual({});
+            expect(state.selectedDomainProcessAssociation).toBeNull();
+            expect(state.isLoadingDomainProcessAssociation).toBe(false);
+            expect(state.domainProcessAssociationError).toBeNull();
+            expect(state.preProjectStageExpectedCounts).toBeNull();
+            expect(state.isLoadingStageExpectedCounts).toBe(false);
+            expect(state.stageExpectedCountsError).toBeNull();
         });
 
         it('initialDialecticStateValues includes progressHydrationStatus and progressHydrationError as empty records', () => {
@@ -360,6 +374,8 @@ describe('useDialecticStore', () => {
                     description: 'Test Domain Description',
                     parent_domain_id: null,
                     is_enabled: true,
+                    created_at: '2025-01-01T00:00:00.000Z',
+                    updated_at: '2025-01-01T01:00:00.000Z',
                 },
                 activeSessionDetail: { 
                     id: 'session-reset-test',
@@ -1138,21 +1154,17 @@ describe('useDialecticStore', () => {
     });
 
     describe('hydrateAllStageProgress thunk', () => {
-        const validGetAllStageProgressData: { dagProgress: { completedStages: number; totalStages: number }; stages: StageProgressEntry[] } = {
+        const validGetAllStageProgressData = mockGetAllStageProgressResponse({
             dagProgress: { completedStages: 0, totalStages: 0 },
             stages: [
-                {
+                mockStageProgressEntry({
                     stageSlug: 'thesis',
                     status: 'not_started',
                     modelCount: null,
                     progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
-                    steps: [],
-                    documents: [],
-                    jobs: [],
-                    edges: [],
-                },
+                }),
             ],
-        };
+        });
 
         it('hydrateAllStageProgress action exists', () => {
             const state = useDialecticStore.getState();
@@ -1428,13 +1440,29 @@ describe('useDialecticStore', () => {
     });
 
     describe('fetchDomains thunk', () => {
-        const mockDomains: DialecticDomain[] = [
-            { id: '1', name: 'Software Development', description: 'All about code', parent_domain_id: null, is_enabled: true },
-            { id: '2', name: 'Finance', description: 'All about money', parent_domain_id: null, is_enabled: true },
+        const mockDomains: DialecticDomainRow[] = [
+            {
+                id: '1',
+                name: 'Software Development',
+                description: 'All about code',
+                parent_domain_id: null,
+                is_enabled: true,
+                created_at: '2025-01-01T00:00:00.000Z',
+                updated_at: '2025-01-01T01:00:00.000Z',
+            },
+            {
+                id: '2',
+                name: 'Finance',
+                description: 'All about money',
+                parent_domain_id: null,
+                is_enabled: true,
+                created_at: '2025-01-01T00:00:00.000Z',
+                updated_at: '2025-01-01T01:00:00.000Z',
+            },
         ];
 
         it('should fetch domains and update state on success', async () => {
-            const mockResponse: ApiResponse<DialecticDomain[]> = {
+            const mockResponse: ApiResponse<DialecticDomainRow[]> = {
                 data: mockDomains,
                 status: 200,
             };
@@ -1451,7 +1479,7 @@ describe('useDialecticStore', () => {
 
         it('should handle API errors when fetching domains', async () => {
             const mockError: ApiError = { code: 'SERVER_ERROR', message: 'Failed to fetch' };
-            const mockResponse: ApiResponse<DialecticDomain[]> = {
+            const mockResponse: ApiResponse<DialecticDomainRow[]> = {
                 error: mockError,
                 status: 500,
             };
@@ -3314,4 +3342,134 @@ describe('useDialecticStore', () => {
 			expect(useDialecticStore.getState().exportProjectError).toEqual(apiError);
 		});
 	});
+
+    describe('fetchStageExpectedCounts action', () => {
+        const validStageExpectedCount: StageExpectedCount = {
+            stageSlug: 'thesis',
+            expectedCount: 3,
+        };
+
+        it('should store validated stages on success', async () => {
+            const payload = buildGetStageExpectedCountsPayload();
+            const responseData: GetStageExpectedCountsResponse = {
+                stages: [validStageExpectedCount],
+                totalStages: 1,
+            };
+            getMockDialecticClient().getStageExpectedCounts.mockResolvedValue({
+                data: responseData,
+                status: 200,
+            });
+
+            const { fetchStageExpectedCounts } = useDialecticStore.getState();
+            await fetchStageExpectedCounts(payload);
+
+            const state = useDialecticStore.getState();
+            expect(state.isLoadingStageExpectedCounts).toBe(false);
+            expect(state.preProjectStageExpectedCounts).toEqual(responseData.stages);
+            expect(state.stageExpectedCountsError).toBeNull();
+            expect(getMockDialecticClient().getStageExpectedCounts).toHaveBeenCalledWith(payload);
+        });
+
+        it('should leave pre-project counts null when the API returns an error', async () => {
+            const payload = buildGetStageExpectedCountsPayload();
+            const mockError: ApiError = { code: 'SERVER_ERROR', message: 'Failed to fetch expected counts' };
+            getMockDialecticClient().getStageExpectedCounts.mockResolvedValue({
+                error: mockError,
+                status: 500,
+            });
+
+            const { fetchStageExpectedCounts } = useDialecticStore.getState();
+            await fetchStageExpectedCounts(payload);
+
+            const state = useDialecticStore.getState();
+            expect(state.isLoadingStageExpectedCounts).toBe(false);
+            expect(state.preProjectStageExpectedCounts).toBeNull();
+            expect(state.stageExpectedCountsError).toEqual(mockError);
+        });
+
+        it('should leave pre-project counts null and set error when response data fails validation', async () => {
+            const payload = buildGetStageExpectedCountsPayload();
+            getMockDialecticClient().getStageExpectedCounts.mockResolvedValue({
+                data: {
+                    stages: [{ ...validStageExpectedCount, stageSlug: '' }],
+                    totalStages: 1,
+                },
+                status: 200,
+            });
+
+            const { fetchStageExpectedCounts } = useDialecticStore.getState();
+            await fetchStageExpectedCounts(payload);
+
+            const state = useDialecticStore.getState();
+            expect(state.isLoadingStageExpectedCounts).toBe(false);
+            expect(state.preProjectStageExpectedCounts).toBeNull();
+            expect(state.stageExpectedCountsError).toEqual({
+                code: 'INVALID_RESPONSE',
+                message: expect.stringContaining('Invalid stage expected counts response'),
+            });
+        });
+
+        it('should toggle isLoadingStageExpectedCounts while the request is in flight', async () => {
+            const payload = buildGetStageExpectedCountsPayload();
+            let resolveFetch: (value: ApiResponse<GetStageExpectedCountsResponse>) => void = () => undefined;
+            const fetchPromise: Promise<ApiResponse<GetStageExpectedCountsResponse>> = new Promise((resolve) => {
+                resolveFetch = resolve;
+            });
+            getMockDialecticClient().getStageExpectedCounts.mockReturnValue(fetchPromise);
+
+            const { fetchStageExpectedCounts } = useDialecticStore.getState();
+            const pendingFetch = fetchStageExpectedCounts(payload);
+
+            expect(useDialecticStore.getState().isLoadingStageExpectedCounts).toBe(true);
+
+            resolveFetch({
+                data: {
+                    stages: [validStageExpectedCount],
+                    totalStages: 1,
+                },
+                status: 200,
+            });
+            await pendingFetch;
+
+            expect(useDialecticStore.getState().isLoadingStageExpectedCounts).toBe(false);
+        });
+    });
+
+    describe('setSelectedDomain action', () => {
+        it('should clear stored association and pre-project counts when selection changes', () => {
+            const storedAssociation: DomainProcessAssociationRow = {
+                id: 'association-uuid-default',
+                domain_id: 'dom1',
+                process_template_id: 'pt-thesis',
+                is_default_for_domain: true,
+                created_at: '2025-01-01T00:00:00.000Z',
+                updated_at: '2025-01-01T01:00:00.000Z',
+            };
+            const storedStageExpectedCounts: StageExpectedCount[] = [
+                { stageSlug: 'thesis', expectedCount: 3 },
+            ];
+            const nextDomain: DialecticDomainRow = {
+                id: 'dom2',
+                name: 'Finance',
+                description: 'All about money',
+                parent_domain_id: null,
+                is_enabled: true,
+                created_at: '2025-01-01T00:00:00.000Z',
+                updated_at: '2025-01-01T01:00:00.000Z',
+            };
+
+            useDialecticStore.setState({
+                selectedDomainProcessAssociation: storedAssociation,
+                preProjectStageExpectedCounts: storedStageExpectedCounts,
+            });
+
+            const { setSelectedDomain } = useDialecticStore.getState();
+            setSelectedDomain(nextDomain);
+
+            const state = useDialecticStore.getState();
+            expect(state.selectedDomain).toEqual(nextDomain);
+            expect(state.selectedDomainProcessAssociation).toBeNull();
+            expect(state.preProjectStageExpectedCounts).toBeNull();
+        });
+    });
 }); 

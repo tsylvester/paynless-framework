@@ -7,7 +7,7 @@ import type {
     DialecticStage,
     DialecticSession,
     DialecticContribution,
-    DialecticDomain,
+    DialecticDomainRow,
     DialecticFeedback,
     DialecticStageRecipe,
     DialecticStageRecipeStep,
@@ -25,15 +25,26 @@ import type {
     DialecticProcessTemplate,
     SelectedModels,
     SelectCanAdvanceStageReturn,
+    StageExpectedCount,
 } from '@paynless/types';
 import { STAGE_RUN_DOCUMENT_KEY_SEPARATOR } from '@paynless/types';
+import {
+    isAiModelExtendedConfig,
+    computeCostCeiling,
+    buildComputeCostCeilingDeps,
+    buildComputeCostCeilingParams,
+    buildComputeCostCeilingPayload,
+    ComputeCostCeilingContributionInput,
+    ComputeCostCeilingStageInput,
+    ComputeCostCeilingReturn,
+} from '@paynless/utils';
 import { createSelector } from 'reselect';
 
 // Selectors for Domains
-export const selectDomains = (state: DialecticStateValues): DialecticDomain[] => state.domains ?? [];
+export const selectDomains = (state: DialecticStateValues): DialecticDomainRow[] => state.domains ?? [];
 export const selectIsLoadingDomains = (state: DialecticStateValues): boolean => state.isLoadingDomains;
 export const selectDomainsError = (state: DialecticStateValues): ApiError | null => state.domainsError;
-export const selectSelectedDomain = (state: DialecticStateValues): DialecticDomain | null => state.selectedDomain;
+export const selectSelectedDomain = (state: DialecticStateValues): DialecticDomainRow | null => state.selectedDomain;
 
 // Selector for the selected domain overlay ID
 export const selectSelectedDomainOverlayId = (state: DialecticStateValues): string | null => state.selectedDomainOverlayId;
@@ -1007,6 +1018,117 @@ export const selectUnifiedProjectProgress = (
         stageDetails,
     };
 };
+
+export function selectCostCeiling(
+    state: DialecticStateValues,
+    sessionId: string,
+): ComputeCostCeilingReturn | null {
+    const maxOutputTokens = state.maxOutputTokens;
+    if (typeof maxOutputTokens !== 'number' || !Number.isFinite(maxOutputTokens)) {
+        return null;
+    }
+    const selectedModels = state.selectedModels;
+    if (selectedModels == null || selectedModels.length === 0) {
+        return null;
+    }
+    const outputTokenCostRates: number[] = [];
+    for (const selected of selectedModels) {
+        const row = state.modelCatalog.find((entry) => entry.id === selected.id);
+        if (row == null || !isAiModelExtendedConfig(row.config)) {
+            return null;
+        }
+        outputTokenCostRates.push(row.config.output_token_cost_rate);
+    }
+    const session = selectSessionById(state, sessionId);
+    if (session == null) {
+        return null;
+    }
+    const countsBySlug = state.stageExpectedCountsByRun[`${sessionId}:${session.iteration_count}`];
+    if (countsBySlug == null) {
+        return null;
+    }
+    const templateStages = getSortedStagesFromTemplate(state.currentProcessTemplate);
+    if (templateStages.length === 0) {
+        return null;
+    }
+    const unified = selectUnifiedProjectProgress(state, sessionId);
+    const stages: ComputeCostCeilingStageInput[] = [];
+    for (const stage of templateStages) {
+        const expectedCount = countsBySlug[stage.slug];
+        if (expectedCount == null || expectedCount < 0) {
+            return null;
+        }
+        const stageDetail = unified.stageDetails.find((detail) => detail.stageSlug === stage.slug);
+        const contributions: ComputeCostCeilingContributionInput[] = [];
+        if (stageDetail != null && stageDetail.stageStatus === 'completed' && session.dialectic_contributions != null) {
+            for (const contribution of session.dialectic_contributions) {
+                if (contribution.stage !== stage.slug || contribution.iteration_number !== session.iteration_count) {
+                    continue;
+                }
+                if (contribution.tokens_used_input == null || contribution.tokens_used_output == null || contribution.model_id == null) {
+                    return null;
+                }
+                const row = state.modelCatalog.find((entry) => entry.id === contribution.model_id);
+                if (row == null || !isAiModelExtendedConfig(row.config)) {
+                    return null;
+                }
+                contributions.push({
+                    tokensUsedInput: contribution.tokens_used_input,
+                    tokensUsedOutput: contribution.tokens_used_output,
+                    inputTokenCostRate: row.config.input_token_cost_rate,
+                    outputTokenCostRate: row.config.output_token_cost_rate,
+                });
+            }
+        }
+        stages.push({ stageSlug: stage.slug, expectedCount, contributions });
+    }
+    return computeCostCeiling(
+        buildComputeCostCeilingDeps(),
+        buildComputeCostCeilingParams(),
+        buildComputeCostCeilingPayload({ stages, maxOutputTokens, outputTokenCostRates }),
+    );
+}
+
+export function selectPreProjectCostCeiling(state: DialecticStateValues): ComputeCostCeilingReturn | null {
+    const maxOutputTokens = state.maxOutputTokens;
+    if (typeof maxOutputTokens !== 'number' || !Number.isFinite(maxOutputTokens)) {
+        return null;
+    }
+    const selectedModels = state.selectedModels;
+    if (selectedModels == null || selectedModels.length === 0) {
+        return null;
+    }
+    const outputTokenCostRates: number[] = [];
+    for (const selected of selectedModels) {
+        const row = state.modelCatalog.find((entry) => entry.id === selected.id);
+        if (row == null || !isAiModelExtendedConfig(row.config)) {
+            return null;
+        }
+        outputTokenCostRates.push(row.config.output_token_cost_rate);
+    }
+    if (state.selectedDomain == null || state.domainProcessAssociationError != null || state.selectedDomainProcessAssociation == null) {
+        return null;
+    }
+    if (state.selectedDomainProcessAssociation.domain_id !== state.selectedDomain.id) {
+        return null;
+    }
+    const counts: StageExpectedCount[] | null = state.preProjectStageExpectedCounts;
+    if (counts == null || counts.length === 0) {
+        return null;
+    }
+    const stages: ComputeCostCeilingStageInput[] = [];
+    for (const entry of counts) {
+        if (entry.expectedCount < 0) {
+            return null;
+        }
+        stages.push({ stageSlug: entry.stageSlug, expectedCount: entry.expectedCount, contributions: [] });
+    }
+    return computeCostCeiling(
+        buildComputeCostCeilingDeps(),
+        buildComputeCostCeilingParams(),
+        buildComputeCostCeilingPayload({ stages, maxOutputTokens, outputTokenCostRates }),
+    );
+}
 
 /**
  * Returns whether the user can advance from the current stage to the next.

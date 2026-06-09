@@ -5,11 +5,17 @@ import {
 	selectGenerateContributionsError,
 	selectUnifiedProjectProgress,
 	selectSelectedModels,
+	selectCostCeiling,
+	selectViewingStage,
+	useWalletStore,
+	selectActiveChatWalletInfo,
+	useAiStore,
 } from "@paynless/store";
 import {
 	DialecticProject,
 	DialecticSession,
 } from "@paynless/types";
+import { ComputeCostCeilingReturn } from "@paynless/utils";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -18,7 +24,7 @@ import { ChevronDown, Download, MoreVertical, Cpu } from "lucide-react";
 import { WalletSelector } from "../ai/WalletSelector";
 import { AIModelSelector } from "./AIModelSelector";
 import { OutputCapSlider } from "./OutputCapSlider";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { ExportProjectButton } from "./ExportProjectButton";
 import { ContinueUntilCompleteToggle } from "../common/ContinueUntilCompleteToggle";
@@ -52,6 +58,20 @@ export const SessionInfoCard: React.FC = () => {
 		),
 	);
 	const generateContributionsError = useDialecticStore(selectGenerateContributionsError);
+	const costCeilingResult: ComputeCostCeilingReturn | null = useDialecticStore(
+		useShallow((state) => {
+			const sid: string | undefined = state.activeSessionDetail?.id;
+			if (sid === undefined) {
+				return null;
+			}
+			return selectCostCeiling(state, sid);
+		}),
+	);
+	const viewingStage = useDialecticStore(selectViewingStage);
+	const newChatContext = useAiStore((state) => state.newChatContext);
+	const activeWalletInfo = useWalletStore((state) =>
+		selectActiveChatWalletInfo(state, newChatContext),
+	);
 	const navigate = useNavigate();
 	const [isPromptOpen, setIsPromptOpen] = useState(false);
 	const [isModelSelectorOpen, setIsModelSelectorOpen] = useState(false);
@@ -61,6 +81,47 @@ export const SessionInfoCard: React.FC = () => {
 	// Get selected model count
 	const selectedModels = useDialecticStore(selectSelectedModels);
 	const uniqueModelCount = new Set(selectedModels.map((model) => model.id)).size;
+
+	const formatTokenCount = (n: number): string =>
+		new Intl.NumberFormat("en-US").format(n);
+
+	const costCeilingSuccessResult =
+		costCeilingResult !== null && !("error" in costCeilingResult)
+			? costCeilingResult
+			: null;
+
+	const rawStageCeilingForViewingStage: number | undefined =
+		costCeilingSuccessResult !== null && viewingStage !== null
+			? costCeilingSuccessResult.stageCeilings[viewingStage.slug]
+			: undefined;
+
+	const stageCeiling: number | null =
+		rawStageCeilingForViewingStage !== undefined &&
+		Number.isFinite(rawStageCeilingForViewingStage) &&
+		rawStageCeilingForViewingStage >= 0
+			? rawStageCeilingForViewingStage
+			: null;
+
+	const rawProjectCeiling: number | undefined =
+		costCeilingSuccessResult !== null
+			? costCeilingSuccessResult.projectCeiling
+			: undefined;
+
+	const projectCeiling: number | null =
+		rawProjectCeiling !== undefined &&
+		Number.isFinite(rawProjectCeiling) &&
+		rawProjectCeiling >= 0
+			? rawProjectCeiling
+			: null;
+
+	const walletBalance: number = Number(activeWalletInfo.balance);
+
+	const projectBalanceShortfall: number | null =
+		projectCeiling !== null &&
+		Number.isFinite(walletBalance) &&
+		walletBalance < projectCeiling
+			? projectCeiling - walletBalance
+			: null;
 
 	if (!project || !session) {
 		return (
@@ -179,6 +240,49 @@ export const SessionInfoCard: React.FC = () => {
 					<div className="flex-1 min-w-0">
 						<DynamicProgressBar sessionId={session.id} />
 					</div>
+				)}
+			</div>
+
+			<div className="text-xs text-muted-foreground space-y-1">
+				{costCeilingResult === null && (
+					<p data-testid="session-info-no-estimate-notice">
+						No cost estimate yet. Open Model Settings, select at least one model,
+						set the output cap, and wait for stage counts to finish loading.
+					</p>
+				)}
+				{costCeilingResult !== null && "error" in costCeilingResult && (
+					<p data-testid="session-info-estimate-error-notice">
+						Cost estimate failed: {costCeilingResult.error.message}
+					</p>
+				)}
+				{costCeilingSuccessResult !== null && (
+					<>
+						{stageCeiling !== null && (
+							<p data-testid="session-info-stage-cost-estimate">
+								Estimated cost for this stage: ~
+								{formatTokenCount(stageCeiling)} tokens.
+							</p>
+						)}
+						{projectCeiling !== null && (
+							<p data-testid="session-info-project-cost-estimate">
+								Estimated project cost: ~
+								{formatTokenCount(projectCeiling)} tokens.
+							</p>
+						)}
+						{projectBalanceShortfall !== null && projectCeiling !== null && (
+							<p data-testid="session-info-project-balance-warning">
+								This project may need ~
+								{formatTokenCount(projectCeiling)} tokens total.{" "}
+								<Link
+									to="/subscription?tab=top-up"
+									className="font-semibold underline underline-offset-2 hover:no-underline"
+								>
+									Top up {formatTokenCount(projectBalanceShortfall)} to cover
+									the full project.
+								</Link>
+							</p>
+						)}
+					</>
 				)}
 			</div>
 

@@ -6,7 +6,7 @@ Do EXACTLY what you're told to do.
 
 Do not do anything EXCEPT the EXACT thing you're told. 
 
-Follow the rules (@.cursor/rules/rules.md) EXACTLY or your work will be WASTED. 
+Follow the rules (@.cursor/rules/rules.mdc) EXACTLY or your work will be WASTED. 
 
 There is an automated system that sits between YOU and the USER'S INPUTs. 
 

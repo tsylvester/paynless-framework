@@ -4,11 +4,10 @@ import {
     ApiResponse, 
     ApiError,
     DialecticProject, 
-    DomainOverlayDescriptor, 
     UpdateProjectDomainPayload,
     DialecticProcessTemplate,
-    DomainDescriptor,
-    DialecticDomain,
+    DialecticDomainRow,
+    DomainProcessAssociationRow,
 } from '@paynless/types';
 import { mockApiClient, resetMockApiClient } from './mocks/apiClient.mock';
 
@@ -91,13 +90,29 @@ describe('DialecticApiClient', () => {
     describe('listDomains', () => {
         const endpoint = 'dialectic-service';
         const requestBody = { action: 'listDomains' };
-        const mockDomains: DialecticDomain[] = [
-            { id: '1', name: 'Software Development', description: 'All about code', parent_domain_id: null, is_enabled: true },
-            { id: '2', name: 'Finance', description: 'All about money', parent_domain_id: null, is_enabled: true },
+        const mockDomains: DialecticDomainRow[] = [
+            {
+                id: '1',
+                name: 'Software Development',
+                description: 'All about code',
+                parent_domain_id: null,
+                is_enabled: true,
+                created_at: '2024-01-01T00:00:00.000Z',
+                updated_at: '2024-01-02T00:00:00.000Z',
+            },
+            {
+                id: '2',
+                name: 'Finance',
+                description: 'All about money',
+                parent_domain_id: null,
+                is_enabled: true,
+                created_at: '2024-01-03T00:00:00.000Z',
+                updated_at: '2024-01-04T00:00:00.000Z',
+            },
         ];
 
         it('should call apiClient.post with the correct endpoint and body', async () => {
-            const mockResponse: ApiResponse<DialecticDomain[]> = {
+            const mockResponse: ApiResponse<DialecticDomainRow[]> = {
                 data: mockDomains,
                 status: 200,
             };
@@ -110,7 +125,7 @@ describe('DialecticApiClient', () => {
         });
 
         it('should return the domains array on successful response', async () => {
-            const mockResponse: ApiResponse<DialecticDomain[]> = {
+            const mockResponse: ApiResponse<DialecticDomainRow[]> = {
                 data: mockDomains,
                 status: 200,
             };
@@ -125,7 +140,7 @@ describe('DialecticApiClient', () => {
 
         it('should return the error object on failed response', async () => {
             const mockApiError: ApiError = { code: 'SERVER_ERROR', message: 'Failed to fetch domains' };
-            const mockErrorResponse: ApiResponse<DialecticDomain[]> = {
+            const mockErrorResponse: ApiResponse<DialecticDomainRow[]> = {
                 error: mockApiError,
                 status: 500,
             };
@@ -140,7 +155,12 @@ describe('DialecticApiClient', () => {
 
         it('should return a network error if apiClient.post rejects', async () => {
             const networkErrorMessage = 'Simulated network failure';
-            vi.mocked(mockApiClient.post).mockRejectedValueOnce(new Error(networkErrorMessage));
+            const mockErrorResponse: ApiResponse<DialecticDomainRow[]> = {
+                status: 0,
+                data: undefined,
+                error: { code: 'NETWORK_ERROR', message: networkErrorMessage },
+            };
+            vi.mocked(mockApiClient.post).mockResolvedValueOnce(mockErrorResponse);
 
             const result = await dialecticApiClient.listDomains();
 
@@ -150,6 +170,56 @@ describe('DialecticApiClient', () => {
             });
             expect(result.status).toBe(0);
             expect(result.data).toBeUndefined();
+        });
+    });
+
+    describe('fetchProcessAssociation', () => {
+        const endpoint = 'dialectic-service';
+        const domainId = 'domain-uuid-software';
+        const payload = { domainId };
+        const requestBody = { action: 'fetchProcessAssociation', payload };
+        const mockAssociation: DomainProcessAssociationRow = {
+            id: 'association-uuid-default',
+            domain_id: domainId,
+            process_template_id: 'pt-thesis',
+            is_default_for_domain: true,
+            created_at: '2024-01-01T00:00:00.000Z',
+            updated_at: '2024-01-02T00:00:00.000Z',
+        };
+
+        it('should call apiClient.post with the correct endpoint and payload', async () => {
+            const mockResponse: ApiResponse<DomainProcessAssociationRow> = { data: mockAssociation, status: 200 };
+            vi.mocked(mockApiClient.post).mockResolvedValueOnce(mockResponse);
+            await dialecticApiClient.fetchProcessAssociation(payload);
+            expect(vi.mocked(mockApiClient.post)).toHaveBeenCalledTimes(1);
+            expect(vi.mocked(mockApiClient.post)).toHaveBeenCalledWith(endpoint, requestBody);
+        });
+
+        it('should return the association row on successful response', async () => {
+            const mockResponse: ApiResponse<DomainProcessAssociationRow> = { data: mockAssociation, status: 200 };
+            vi.mocked(mockApiClient.post).mockResolvedValueOnce(mockResponse);
+            const result = await dialecticApiClient.fetchProcessAssociation(payload);
+            expect(result.data).toEqual(mockAssociation);
+        });
+
+        it('should return an error on a failed response', async () => {
+            const mockError: ApiError = { code: 'NOT_FOUND', message: 'Association not found' };
+            const mockErrorResponse: ApiResponse<DomainProcessAssociationRow> = { error: mockError, status: 404 };
+            vi.mocked(mockApiClient.post).mockResolvedValueOnce(mockErrorResponse);
+            const result = await dialecticApiClient.fetchProcessAssociation(payload);
+            expect(result.error).toEqual(mockError);
+        });
+
+        it('should return a network error if the call rejects', async () => {
+            const errorMessage = 'Network Failure';
+            const mockErrorResponse: ApiResponse<DomainProcessAssociationRow> = {
+                status: 0,
+                data: undefined,
+                error: { code: 'NETWORK_ERROR', message: errorMessage },
+            };
+            vi.mocked(mockApiClient.post).mockResolvedValueOnce(mockErrorResponse);
+            const result = await dialecticApiClient.fetchProcessAssociation(payload);
+            expect(result.error).toEqual({ code: 'NETWORK_ERROR', message: errorMessage });
         });
     });
 

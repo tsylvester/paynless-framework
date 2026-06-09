@@ -8,8 +8,8 @@ import type {
 } from '@paynless/types';
 import { createSseConnection, processStream, SseConnection } from './sse.stream';
 import { isSseConnection } from './sse.stream.guard';
-import { isSseChatEvent } from './type_guards';
-import { logger } from './logger';
+import { isSseChatEvent } from '../type_guards';
+import { logger } from '../logger';
 import {
     createMockFetchForSseWire,
     sseWireFromDataLines,

@@ -8,11 +8,21 @@ import { selectActiveChatWalletInfo } from '@paynless/store';
 import type {
   CreateProjectAutoStartResult,
   ApiError,
-  DialecticDomain,
+  DialecticDomainRow,
   DialecticProjectRow,
   AiProvidersRow,
   ActiveChatWalletInfo,
+  DialecticStateValues,
+  DomainProcessAssociationRow,
+  DialecticProcessTemplate,
+  DialecticStage,
+  SelectedModels,
 } from '@paynless/types';
+import {
+  buildComputeCostCeilingErrorReturn,
+  ComputeCostCeilingReturn,
+  ComputeCostCeilingSuccessReturn,
+} from '@paynless/utils';
 import { usePlatform } from '@paynless/platform';
 import type { CapabilitiesContextValue, PlatformCapabilities } from '@paynless/types';
 import { CreateDialecticProjectForm } from './CreateDialecticProjectForm';
@@ -23,6 +33,9 @@ import {
   getDialecticStoreActionMock,
   mockAiProvidersRow,
   mockDialecticDomain,
+  mockDomainProcessAssociationRow,
+  mockDialecticStage,
+  mockDialecticProcessTemplate,
 } from '@/mocks/dialecticStore.mock';
 
 const projectNamePlaceholder = "A Notepad App with To Do lists";
@@ -32,7 +45,13 @@ I want it to record dates from my to-do list, schedule when it needs to be compl
 
 It should be a web app with user accounts, built in typescript with next.js and shadcn components.`;
 
-// Mock @paynless/store — dialectic mock hook + wallet mock (see CreateDialecticProjectForm.autostart.test.tsx)
+const { selectPreProjectCostCeilingMock } = vi.hoisted(() => ({
+  selectPreProjectCostCeilingMock: vi.fn<
+    [DialecticStateValues],
+    ComputeCostCeilingReturn | null
+  >(() => null),
+}));
+
 vi.mock('@paynless/store', async () => {
   const mockStoreExports = await vi.importActual<typeof import('@/mocks/dialecticStore.mock')>('@/mocks/dialecticStore.mock');
   const actualPaynlessStore = await vi.importActual<typeof import('@paynless/store')>('@paynless/store');
@@ -47,11 +66,12 @@ vi.mock('@paynless/store', async () => {
     selectSelectedDomain: actualPaynlessStore.selectSelectedDomain,
     selectDomains: actualPaynlessStore.selectDomains,
     selectDefaultGenerationModels: actualPaynlessStore.selectDefaultGenerationModels,
+    selectSortedStages: actualPaynlessStore.selectSortedStages,
+    selectPreProjectCostCeiling: selectPreProjectCostCeilingMock,
     initialDialecticStateValues: actualPaynlessStore.initialDialecticStateValues,
   };
 });
 
-// Mock @paynless/platform
 vi.mock('@paynless/platform', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@paynless/platform')>();
   return {
@@ -65,7 +85,6 @@ vi.mock('@paynless/platform', async (importOriginal) => {
   };
 });
 
-// Simplified Mock for TextInputArea
 let capturedTextInputAreaProps: Partial<TextInputAreaProps> = {};
 let triggerMockTextInputAreaOnFileLoad = async (_content: string | ArrayBuffer, _file: File): Promise<void> => { void _content; void _file; };
 
@@ -117,7 +136,7 @@ const createMockPlatformContext = (overrides?: Partial<PlatformCapabilities>): C
   };
 };
 
-const mockSelectedDomain: DialecticDomain = mockDialecticDomain({
+const mockSelectedDomain: DialecticDomainRow = mockDialecticDomain({
   id: 'domain-1',
   name: 'General',
   description: '',
@@ -130,6 +149,37 @@ const defaultWalletInfo: ActiveChatWalletInfo = {
   orgId: null,
   balance: '300000',
   isLoadingPrimaryWallet: false,
+};
+
+const processTemplateIdForSubmitTests = 'pt-form-submit-test';
+
+const stageThesisForFormTest: DialecticStage = mockDialecticStage({
+  id: 'stage-thesis-form',
+  slug: 'thesis',
+  display_name: 'Proposal',
+  description: 'First stage for form test.',
+  default_system_prompt_id: null,
+});
+
+const processTemplateForFormTest: DialecticProcessTemplate = mockDialecticProcessTemplate({
+  id: processTemplateIdForSubmitTests,
+  name: 'Form test template',
+  description: null,
+  starting_stage_id: stageThesisForFormTest.id,
+  stages: [stageThesisForFormTest],
+  transitions: [],
+});
+
+const mockSelectedDomainProcessAssociation: DomainProcessAssociationRow =
+  mockDomainProcessAssociationRow({
+    domain_id: mockSelectedDomain.id,
+    process_template_id: processTemplateIdForSubmitTests,
+    is_default_for_domain: true,
+  });
+
+const formTestSuccessCeiling: ComputeCostCeilingSuccessReturn = {
+  stageCeilings: { thesis: 100000 },
+  projectCeiling: 100000,
 };
 
 const catalogEntryOverrides: Partial<AiProvidersRow> = {
@@ -151,6 +201,13 @@ const modelCatalogWithDefault: AiProvidersRow[] = [
     is_default_generation: true,
     is_active: true,
   }),
+];
+
+const defaultSelectedModels: SelectedModels[] = [
+  {
+    id: 'dft',
+    displayName: 'Default',
+  },
 ];
 
 function buildMinimalDialecticProjectRow(overrides: { id: string; project_name: string }): DialecticProjectRow {
@@ -177,10 +234,15 @@ describe('CreateDialecticProjectForm', () => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
+    selectPreProjectCostCeilingMock.mockReturnValue(null);
     initializeMockDialecticState({
       selectedDomain: mockSelectedDomain,
+      selectedDomainProcessAssociation: mockSelectedDomainProcessAssociation,
       modelCatalog: modelCatalogWithDefault,
+      selectedModels: defaultSelectedModels,
+      maxOutputTokens: 8192,
       isLoadingModelCatalog: false,
+      currentProcessTemplate: processTemplateForFormTest,
     });
     const { initializeMockWalletStore } = await import('@/mocks/walletStore.mock');
     initializeMockWalletStore();
@@ -196,8 +258,10 @@ describe('CreateDialecticProjectForm', () => {
   });
 
   const cycleToManualMode = async (user: ReturnType<typeof userEvent.setup>): Promise<void> => {
-    await user.click(screen.getByRole('checkbox', { name: /Autostart/i }));
     await user.click(screen.getByRole('checkbox', { name: /Autoconfig/i }));
+    await waitFor(() => {
+      expect(screen.getByRole('checkbox', { name: /Manual/i })).toBeInTheDocument();
+    });
   };
 
   const renderForm = (props: Partial<Parameters<typeof CreateDialecticProjectForm>[0]> = {}) => {
@@ -264,7 +328,7 @@ describe('CreateDialecticProjectForm', () => {
     expect(screen.getByTestId('text-input-area-for-prompt-previewtoggle-indicator')).toBeInTheDocument();
   });
 
-  it('Manual path: submits with placeholder values and sends only idempotencyKey to createDialecticProject', async () => {
+  it('Manual path: submits with placeholder values and sends processTemplateId to createDialecticProject', async () => {
     const user = userEvent.setup();
 
     const mockSuccessfulProject: DialecticProjectRow = buildMinimalDialecticProjectRow({ id: 'new-proj-123', project_name: projectNamePlaceholder });
@@ -283,6 +347,7 @@ describe('CreateDialecticProjectForm', () => {
           projectName: projectNamePlaceholder,
           initialUserPrompt: initialUserPromptPlaceholder,
           selectedDomainId: mockSelectedDomain.id,
+          processTemplateId: mockSelectedDomainProcessAssociation.process_template_id,
           idempotencyKey: expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i),
         })
       );
@@ -299,6 +364,8 @@ describe('CreateDialecticProjectForm', () => {
     const user = userEvent.setup();
     const autoStartResult: CreateProjectAutoStartResult = { projectId: 'autostart-proj-id', sessionId: 'autostart-sess-id', hasDefaultModels: true };
     vi.mocked(getDialecticStoreActionMock('createProjectAndAutoStart')).mockResolvedValueOnce(autoStartResult);
+    selectPreProjectCostCeilingMock.mockReturnValue(formTestSuccessCeiling);
+    vi.mocked(selectActiveChatWalletInfo).mockReturnValue(defaultWalletInfo);
 
     renderForm();
 
@@ -316,6 +383,7 @@ describe('CreateDialecticProjectForm', () => {
         projectName: projectNamePlaceholder,
         initialUserPrompt: initialUserPromptPlaceholder,
         selectedDomainId: mockSelectedDomain.id,
+        processTemplateId: mockSelectedDomainProcessAssociation.process_template_id,
       })
     );
     await waitFor(() => {
@@ -323,7 +391,7 @@ describe('CreateDialecticProjectForm', () => {
     });
   });
 
-  it('Manual path: calls createDialecticProject with form data and only idempotencyKey on submit', async () => {
+  it('Manual path: calls createDialecticProject with form data and processTemplateId on submit', async () => {
     const user = userEvent.setup();
     const testData = { projectName: 'Test Project', initialUserPrompt: 'Test Prompt' };
 
@@ -348,6 +416,7 @@ describe('CreateDialecticProjectForm', () => {
           projectName: testData.projectName,
           initialUserPrompt: testData.initialUserPrompt,
           selectedDomainId: mockSelectedDomain.id,
+          processTemplateId: mockSelectedDomainProcessAssociation.process_template_id,
           idempotencyKey: expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i),
         })
       );
@@ -360,7 +429,7 @@ describe('CreateDialecticProjectForm', () => {
     });
   });
 
-  it('Manual path: uploads promptFile and sends only idempotencyKey to createDialecticProject', async () => {
+  it('Manual path: uploads promptFile and sends processTemplateId to createDialecticProject', async () => {
     const user = userEvent.setup();
     const markdownContent = '# My Project From File';
     const file = new File([markdownContent], 'test.md', { type: 'text/markdown' });
@@ -373,7 +442,6 @@ describe('CreateDialecticProjectForm', () => {
 
     await cycleToManualMode(user);
 
-    // Simulate file upload via the TextInputArea's onFileLoad prop
     await act(async () => {
       await triggerMockTextInputAreaOnFileLoad(markdownContent, file);
     });
@@ -388,6 +456,7 @@ describe('CreateDialecticProjectForm', () => {
           initialUserPrompt: markdownContent,
           promptFile: file,
           selectedDomainId: 'domain-1',
+          processTemplateId: mockSelectedDomainProcessAssociation.process_template_id,
           idempotencyKey: expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i),
         })
       );
@@ -467,7 +536,6 @@ describe('CreateDialecticProjectForm', () => {
     const manualProjectName = "My Manual Project";
     await user.type(screen.getByPlaceholderText(projectNamePlaceholder), manualProjectName);
 
-    // Now, type in the prompt - project name should NOT change
     act(() => {
       capturedTextInputAreaProps.onChange?.("A new prompt that won't change the name.");
     });
@@ -475,7 +543,6 @@ describe('CreateDialecticProjectForm', () => {
       expect(screen.getByPlaceholderText(projectNamePlaceholder)).toHaveValue(manualProjectName);
     });
 
-    // Now, simulate a file load - project name should also NOT change
     await act(async () => {
       await triggerMockTextInputAreaOnFileLoad("# A file that won't change the name", new File([""], "test.md"));
     });
@@ -564,4 +631,43 @@ describe('CreateDialecticProjectForm', () => {
       expect(screen.getByPlaceholderText(projectNamePlaceholder)).toHaveValue(manualProjectName);
     });
   });
-}); 
+
+  it('shows create-project-cost-preview when selector returns success', async () => {
+    selectPreProjectCostCeilingMock.mockReturnValue(formTestSuccessCeiling);
+
+    renderForm();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('create-project-cost-preview')).toBeInTheDocument();
+    });
+    expect(screen.queryByTestId('create-project-no-estimate-notice')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('create-project-estimate-error-notice')).not.toBeInTheDocument();
+  });
+
+  it('shows create-project-no-estimate-notice when selector returns null', async () => {
+    selectPreProjectCostCeilingMock.mockReturnValue(null);
+
+    renderForm();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('create-project-no-estimate-notice')).toBeInTheDocument();
+    });
+    expect(screen.queryByTestId('create-project-cost-preview')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('create-project-estimate-error-notice')).not.toBeInTheDocument();
+  });
+
+  it('shows create-project-estimate-error-notice when selector returns error', async () => {
+    const estimateError: ApiError = { message: 'Counts unavailable', code: 'COUNTS_ERROR' };
+    selectPreProjectCostCeilingMock.mockReturnValue(
+      buildComputeCostCeilingErrorReturn({ error: estimateError }),
+    );
+
+    renderForm();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('create-project-estimate-error-notice')).toHaveTextContent('Counts unavailable');
+    });
+    expect(screen.queryByTestId('create-project-cost-preview')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('create-project-no-estimate-notice')).not.toBeInTheDocument();
+  });
+});

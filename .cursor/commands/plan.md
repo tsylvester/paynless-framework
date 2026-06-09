@@ -2,7 +2,7 @@ It is time to update the work plan. The proper method is to parse the work plan 
 
 The procedure you must follow to perform the work: 
 
-1. Re-read ./cursor/rules/rules.md from disk to confirm the entire correct canonical node structure. 
+1. Re-read ./cursor/rules/rules.mdc from disk to confirm the entire correct canonical node structure. 
 2. Read the work scope you've been given. 
 3. Read every file in the scope so you understand the current status of the files. 
 4. Identify if there are any other files that need changes that aren't listed in the scope.  

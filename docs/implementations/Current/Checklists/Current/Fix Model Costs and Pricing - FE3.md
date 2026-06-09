@@ -399,22 +399,26 @@
   This ticket delivers a dynamic cost ceiling that answers "at most, how many tokens will this stage / this project consume?" and drives two UX surfaces: (A) a **preventive NSF gate** on the session page (disable Generate/Continue and show a top-up CTA when the stage ceiling exceeds the wallet balance), and (B) a **pre-project cost preview** on the Create Project form (estimated project + first-stage cost before the project is created, gating Autostart).
 
   **Architecture decisions (resolved — do not relitigate):**
-  - **Job counting stays on the BE; the estimate arithmetic is computed on the FE.** The BE returns expected job counts per stage; the FE multiplies `counts × maxOutputTokens × maxOutputCostRate`. Strategy/DAG math stays in one place (the BE), and the slider stays instant (no BE round-trip per slider tick, because only counts come from the BE and those change only with model count / template). Nothing about the estimate is persisted to the DB.
+  - **Job counting stays on the BE; the estimate arithmetic is computed on the FE in `computeCostCeiling`.** The BE returns **total** expected job count per stage (`expectedCount` / `totalExpected` at the current model count). The utility computes `expectedCount × maxOutputTokens × meanRate` where `meanRate = (Σ output_token_cost_rate(m)) / |selectedModels|`. Model multiplicity is already in `expectedCount` — the FE does not multiply by `|selectedModels|` again. Strategy/DAG math stays on the BE; the slider stays instant (no BE round-trip per slider tick, because only counts come from the BE and those change only with model count / template). Nothing about the estimate is persisted to the DB.
   - **Use the existing `maxOutputTokens` symbol** (dialectic store; output-cap slider ticket).
   - **Model cost rates come from the dialectic store's `modelCatalog: AiProvidersRow[]`** (the dialectic-specific source `OutputCapSlider` already reads), NOT `aiStore.availableProviders`.
   - **Project ceiling = actual(completed stages) + estimate(remaining stages).** It starts estimate-weighted and resolves toward actual as stages complete (actual ≤ estimate, so the user perceives a saving).
 
   ### Core math
 
-  `stage_ceiling = (Σ_step expected_job_count[step]) × maxOutputTokens × maxOutputCostRate`
+  `stageCeilings[stageSlug]` (incomplete) = `expectedCount(stage) × maxOutputTokens × (Σ_{m ∈ selectedModels} output_token_cost_rate(m) / |selectedModels|)`
 
-  `project_ceiling = Σ_completed_stage actual_cost(stage) + Σ_remaining_stage stage_ceiling(stage)`
+  Equivalently: `stageCeilings[stageSlug] = Σ_{m ∈ selectedModels} (expectedCount(stage) / |selectedModels|) × maxOutputTokens × output_token_cost_rate(m)`
+
+  `stageCeilings[stageSlug]` (complete) = `Σ contributions (tokens_used_input × input_token_cost_rate + tokens_used_output × output_token_cost_rate)` — each contribution uses its model's rates from `modelCatalog`
+
+  `projectCeiling = Σ stages`: contribution sum when the stage has contributions; else mean-rate estimate for that stage
 
   where:
-  - `expected_job_count[step]` — number of jobs a step produces, from its `granularity_strategy` and the model count `n`. Computed on the BE (see Group 2). The estimate is linear in `maxOutputTokens` and `maxOutputCostRate`, so the FE applies those two factors locally for instant slider response.
-  - `maxOutputTokens` — the dialectic store value (output-cap slider ticket). When null, the slider's effective default applies (tier cap / model cap), consistent with how the slider already clamps.
-  - `maxOutputCostRate` — the highest `output_token_cost_rate` across the selected models, read from `modelCatalog[].config` (`AiModelExtendedConfig.output_token_cost_rate`). Max is the ceiling; real cost is usually lower.
-  - `actual_cost(stage)` — summed on the FE from `DialecticContribution` rows of that stage/iteration: `Σ (tokens_used_input × input_token_cost_rate + tokens_used_output × output_token_cost_rate)`, rates from each contribution's model config. Contributions already carry `stage`, `iteration_number`, `model_id`, `tokens_used_input`, `tokens_used_output`. This avoids any wallet-transaction change; enriching debit metadata to reference jobs is deferred.
+  - `expectedCount(stage)` — **total** expected jobs for that stage from the BE (hydrated into `stageExpectedCountsByRun` in-session or `preProjectStageExpectedCounts` on Create). Computed on the BE (Group 2).
+  - `maxOutputTokens` — dialectic store (output-cap slider). **When null, selectors return `null`.**
+  - `output_token_cost_rate(m)` — from each selected model's `modelCatalog[].config` (`AiModelExtendedConfig`), assembled into payload `outputTokenCostRates[]`.
+  - Completed stages: selectors copy contribution token fields + rates into payload `contributions[]`; utility sums. Incomplete stages: `contributions: []`.
 
   ### Discovery — BE/FE granularity strategy desync (fix first, Group 1)
 
@@ -441,16 +445,16 @@
 
   ### FE estimate utility (pure, SRP)
 
-  A pure FE utility (`packages/utils/src/computeCostCeiling.ts`, exported from `@paynless/utils`) performs the **arithmetic only** — NOT strategy/DAG math. Given per-stage expected counts, `maxOutputTokens`, `maxOutputCostRate`, and per-completed-stage actuals, it returns `{ stageCeilings: Record<stageSlug, number>; projectCeiling: number }`. Consumed by both the session NSF surface and the pre-project preview. Tested in isolation in the utils package (Vitest).
+  A pure FE utility (`packages/utils/src/computeCostCeiling`, exported from `@paynless/utils`) owns **all cost-ceiling arithmetic** — mean-rate estimates, contribution actuals, `stageCeilings`, and `projectCeiling` — NOT strategy/DAG math and NOT job counting. Given `ComputeCostCeilingPayload`, it returns `ComputeCostCeilingReturn`: success `{ stageCeilings: Record<string, number>; projectCeiling: number }` or `{ error: ApiError }`. **`selectCostCeiling` / `selectPreProjectCostCeiling` assemble the payload from store state, call `computeCostCeiling`, and return the result unchanged (success or error).** Return `null` only when prerequisite state is incomplete. **`null` is not used to swallow function errors.** Group 5 handles `'error' in result` (fail closed). Tested in isolation in the utils package (Vitest).
 
   Reading model config rates requires a **shape-specific guard for `AiModelExtendedConfig`** (replacing the generic `isJson` / `isPlainObject` checks). Introduce that guard and migrate the existing in-scope consumer (`OutputCapSlider.tsx`) to it.
 
   ### NSF UI — preventive gate (session page)
 
-  The Generate/Continue disable + threshold logic currently lives in the `useStartContributionGeneration` hook (it computes `balanceMeetsThreshold` from `viewingStage.minimum_balance`) and renders a `/subscription` callout in `GenerateContributionButton`. Replace the hardcoded `minimum_balance` gate with the dynamic `stage_ceiling`:
-  - `stage_ceiling > wallet_balance`: disable the button; show "Insufficient tokens. Top up {shortfall} to continue." linking to `/subscription` (top-up tab), where `shortfall = stage_ceiling - wallet_balance`.
-  - `stage_ceiling <= wallet_balance`: enable; show "Estimated cost for this stage: ~{stage_ceiling} tokens."
-  - `project_ceiling > wallet_balance`: secondary, non-blocking notice with `project_ceiling - wallet_balance` shortfall and top-up CTA.
+  The Generate/Continue disable + threshold logic currently lives in the `useStartContributionGeneration` hook (it computes `balanceMeetsThreshold` from `viewingStage.minimum_balance`) and renders a `/subscription` callout in `GenerateContributionButton`. Replace the hardcoded `minimum_balance` gate with `stageCeilings[viewingStage.slug]` from `selectCostCeiling` (success branch only):
+  - `stageCeilings[viewingStage.slug] > wallet_balance`: disable the button; show "Insufficient tokens. Top up {shortfall} to continue." linking to `/subscription` (top-up tab), where `shortfall = stageCeilings[viewingStage.slug] - wallet_balance`.
+  - `stageCeilings[viewingStage.slug] <= wallet_balance`: enable; show "Estimated cost for this stage: ~{stageCeilings[viewingStage.slug]} tokens."
+  - `projectCeiling > wallet_balance`: secondary, non-blocking notice with `projectCeiling - wallet_balance` shortfall and top-up CTA.
   - Both stage and project notices may show simultaneously. Recompute dynamically on slider and model-selection changes.
   - This is preventive UX; the BE `paused_nsf` status (runs out mid-execution) still coexists as the after-the-fact handler.
   - Pages remain hosts; logic lives in the hook + components for portability.
@@ -458,10 +462,10 @@
   ### Pre-project cost preview (Create Project form)
 
   Most users pick "Autostart", so the estimate cannot be deferred to the session page. On `CreateDialecticProjectForm` (which already gates Autostart on `firstStageMinBalance` vs `walletInfo.balance` and mounts `AIModelSelector` + `OutputCapSlider`):
-  - Compute `project_ceiling` and first-stage `stage_ceiling` from the session-less count handler + selected models / `maxOutputTokens`.
-  - Display: "Estimated token cost: ~{project_ceiling} for the full project, ~{stage_ceiling} for the first stage."
-  - `project_ceiling > wallet_balance`: warning + top-up CTA, do NOT block Create.
-  - first-stage `stage_ceiling > wallet_balance`: extend the existing gate to disable Autostart (fall back to Autoconfig) with a top-up CTA, but allow Create. With Autostart off, the session-page Generate button stays NSF-locked until top-up.
+  - Compute `projectCeiling` and `stageCeilings[firstStage]` from **`selectPreProjectCostCeiling`** (fed by `fetchProcessAssociation` → `fetchStageExpectedCounts` → `preProjectStageExpectedCounts`).
+  - Display: "Estimated token cost: ~{projectCeiling} for the full project, ~{stageCeilings[firstStage]} for the first stage."
+  - `projectCeiling > wallet_balance`: warning + top-up CTA, do NOT block Create.
+  - first-stage `stageCeilings[firstStage] > wallet_balance`: extend the existing gate to disable Autostart (fall back to Autoconfig) with a top-up CTA, but allow Create. With Autostart off, the session-page Generate button stays NSF-locked until top-up.
 
   ### Work groups in dependency order (formal nodes to be authored in a fresh thread)
 
@@ -475,14 +479,14 @@
   - New session-less count handler `{ templateId, modelCount }` → per-stage counts (+ interface / guards / tests), wired into `dialectic-service/index.ts` and the API client.
 
   **Group 3 — FE estimate utility:**
-  - `packages/utils/src/computeCostCeiling.ts` (+ test) — pure arithmetic utility (counts + cap + rate + completed-stage actuals → stage/project ceilings); exported via `@paynless/utils`.
+  - `packages/utils/src/computeCostCeiling` (+ test) — mean-rate math, contribution sums, `{ stageCeilings, projectCeiling }`; `ComputeCostCeilingReturn`; exported via `@paynless/utils`.
   - `AiModelExtendedConfig` shape guard (+ test); migrate `OutputCapSlider.tsx` to it.
 
   **Group 4 — types + store wiring:**
-  - `CostCeilingEstimate` type + `costCeilingEstimate` state + selector/action in `dialectic.types.ts` and `dialecticStore.ts` (reads counts, contributions/actuals, `maxOutputTokens`, `modelCatalog` rates; recompute on model / cap / recipe change) (+ store tests).
+  - `selectCostCeiling` / `selectPreProjectCostCeiling` in `dialecticStore.selectors.ts` — assemble payload (`outputTokenCostRates[]`, per-stage `contributions[]`); call `computeCostCeiling`; return **`ComputeCostCeilingReturn | null`** (+ `dialecticStore.selectors.costCeiling.test.ts`).
 
   **Group 5 — consumers:**
-  - `useStartContributionGeneration` (+ its return type) — replace the `minimum_balance` gate with the dynamic `stage_ceiling`.
+  - `useStartContributionGeneration` (+ its return type) — replace `minimum_balance` with `stageCeilings[viewingStage.slug]` / `projectCeiling` from `selectCostCeiling`; **`ComputeCostCeilingReturn | null`**; fail closed on `null` **and** `'error' in result`; expose `costCeilingError`.
   - `GenerateContributionButton.tsx` (+ nsf test) — ceiling-based NSF CTA.
   - `SessionInfoCard.tsx` — project ceiling (actual + estimate) + stage estimate display.
   - `CreateDialecticProjectForm.tsx` (+ autostart test) — pre-project preview + Autostart gate on first-stage ceiling.
@@ -499,7 +503,7 @@
   ### Scope split — FE vs BE
 
   - **BE**: fix `computeExpectedCounts` (`per_source_group`); extract the count core; refactor `getAllStageProgress` to delegate and expose counts; add the session-less count handler; wire `dialectic-service/index.ts` + API client.
-  - **FE**: remove phantom `RecipeGranularity` values; `AiModelExtendedConfig` guard + `OutputCapSlider` migration; pure `computeCostCeiling` in `@paynless/utils`; selector-derived `CostCeilingEstimate` wiring (no stored ceiling state); NSF gate in `useStartContributionGeneration` + `GenerateContributionButton`; `SessionInfoCard` + `CreateDialecticProjectForm` displays.
+  - **FE**: remove phantom `RecipeGranularity` values; `AiModelExtendedConfig` guard + `OutputCapSlider` migration; pure `computeCostCeiling` in `@paynless/utils`; selector-derived ceiling wiring; NSF gate in `useStartContributionGeneration` + `GenerateContributionButton`; `SessionInfoCard` + `CreateDialecticProjectForm` displays.
 
   * `[✅]`   supabase/functions/dialectic-service/computeExpectedCounts **Add `per_source_group` expected-count support (one job per source group)**
 
@@ -1359,909 +1363,1074 @@
       * `[✅]`   Behavioral: HTTP actions `listDomains` and `fetchProcessAssociation` return full table rows per package contracts.
       * `[✅]`   Contract: `ActionHandlers` uses `ListDomainsFn` and `FetchProcessAssociationFn`; legacy `DialecticDomain` DTO removed from dispatch layer.
 
-  * `[ ]`   packages/api/src/dialectic.api **Domain rows, default association read, and session-less counts (first FE `@paynless/db-types` consumer)**
-
-    * `[ ]`   `objective`
-      * `[ ]`   After the `dialectic-service/index` wiring node, HTTP exposes `action: "listDomains"` (full `DialecticDomainRow[]` body) and `action: "fetchProcessAssociation"` (full `DomainProcessAssociationRow` body for `{ domainId }`). The FE still uses a hand-written `DialecticDomain` interface (partial projection, no `created_at`/`updated_at`) and has no client for the association read — store cannot obtain `process_template_id` after domain selection without inventing a merged DTO on `listDomains`.
-      * `[ ]`   Functional goal (row types — first FE consumer): in `packages/types/src/dialectic.types.ts`, add `DialecticDomainRow = Database['public']['Tables']['dialectic_domains']['Row']` and `DomainProcessAssociationRow = Database['public']['Tables']['domain_process_associations']['Row']` using `Database` from `@paynless/db-types` (workspace ref to `types_db`). **Delete** the hand-written `export interface DialecticDomain { ... }`. Replace every remaining `DialecticDomain` reference in that file (`DialecticStateValues.domains`, `selectedDomain`, `setSelectedDomain`, `DialecticApiClient.listDomains`, and any other symbol still named `DialecticDomain`) with `DialecticDomainRow`. No `default_process_template_id` on the domain row; template id comes only from `DomainProcessAssociationRow.process_template_id` after `fetchProcessAssociation`.
-      * `[ ]`   Functional goal (`listDomains` transport): change `DialecticApiClient.listDomains()` to `Promise<ApiResponse<DialecticDomainRow[]>>`; keep posting `{ action: 'listDomains' }` to `'dialectic-service'` with `{ isPublic: true }` (unchanged public catalog behavior, `dialectic.api.ts` lines 778-802). Return the typed `ApiResponse` unchanged — HTTP body is the full domain row array from `ListDomainsSuccessReturn.data`. No in-method response guard (same as today).
-      * `[ ]`   Functional goal (`fetchProcessAssociation` transport): add `FetchProcessAssociationPayload`: `{ domainId: string }`; add `async fetchProcessAssociation(payload: FetchProcessAssociationPayload): Promise<ApiResponse<DomainProcessAssociationRow>>` posting `{ action: 'fetchProcessAssociation', payload }` to `'dialectic-service'` with the same `try/catch` `NETWORK_ERROR` contract as `fetchProcessTemplate` (`dialectic.api.domain.test.ts` / `dialectic.api.ts` lines 805-826): log, `post`, surface `response.error` (including `404` `NOT_FOUND` from handler), catch → `{ code: 'NETWORK_ERROR', message, status: 0 }`. No `isPublic` flag unless index node later requires auth (match index node: no `userForJson` gate → do not add auth headers beyond default client). Place method immediately after `listDomains` in `dialectic.api.ts` so the call chain reads `listDomains` → `fetchProcessAssociation` → `fetchProcessTemplate(templateId)`.
-      * `[ ]`   Functional goal (`getStageExpectedCounts` transport): add `getStageExpectedCounts(payload: GetStageExpectedCountsPayload): Promise<ApiResponse<GetStageExpectedCountsResponse>>` posting `{ action: 'getStageExpectedCounts', payload }`, mirroring `getAllStageProgress` (`dialectic.api.ts` lines 597-622) including `NETWORK_ERROR` handling.
-      * `[ ]`   Functional goal (action union): add to `DialecticServiceActionPayload`: `{ action: 'fetchProcessAssociation'; payload: FetchProcessAssociationPayload }`, `{ action: 'getStageExpectedCounts'; payload: GetStageExpectedCountsPayload }`; keep `{ action: 'listDomains'; payload?: undefined }`. Add `GetStageExpectedCountsPayload`, `StageExpectedCount`, `GetStageExpectedCountsResponse` in the same `dialectic.types.ts` edit block as the row aliases (types ride with this node — no standalone types node).
-      * `[ ]`   Non-functional: flat `dialectic.api.ts` only (no API package folder). No in-method response guards for any of the three methods (mirror existing list/count/template clients). Does not touch store, hooks, or components.
-      * `[ ]`   HARD dependency: `dialectic-service/index` node complete (`listDomains` + `fetchProcessAssociation` routes return full table rows). Runs before `dialecticStore` and Group 5 UI nodes.
-      * `[ ]`   Each goal is atomic and testable.
-
-    * `[ ]`   `role`
-      * `[ ]`   API client adapter (FE transport) — first consumer of `@paynless/db-types` row aliases for domains and associations; wires three edge actions into typed `ApiResponse`s.
-      * `[ ]`   This node edits exactly one source file (`dialectic.api.ts`) plus support: `packages/types/src/dialectic.types.ts` (row aliases + action/count types + `DialecticApiClient` signature updates); `mocks/dialectic.api.mock.ts`; `dialectic.api.domain.test.ts` (`listDomains` + `fetchProcessAssociation`); `dialectic.api.documents.test.ts` (`getStageExpectedCounts`); `dialectic.api.integration.test.ts` (transport-boundary cases for new/changed methods as needed).
-      * `[ ]`   Does NOT add `expectedCount` to `StageProgressEntry` (Group 3/4). Does NOT implement store orchestration (store node calls these methods after domain selection). Does NOT change `fetchProcessTemplate` signature beyond existing imports.
-
-    * `[ ]`   `module`
-      * `[ ]`   Bounded context: `@paynless/api` dialectic transport.
-      * `[ ]`   Inside: HTTP envelopes, `ApiResponse` typing, `NETWORK_ERROR` paths, FE row aliases from `@paynless/db-types`, removal of legacy `DialecticDomain` interface.
-      * `[ ]`   Outside: SQL, BE guards, store state, ceiling math, UI.
-
-    * `[ ]`   `deps`
-      * `[ ]`   `this.apiClient.post<..., DialecticServiceActionPayload>` — provider: base `ApiClient`; layer: transport; direction: inward.
-      * `[ ]`   `Database`, `DialecticDomainRow`, `DomainProcessAssociationRow`, `FetchProcessAssociationPayload`, `GetStageExpectedCountsPayload`, `GetStageExpectedCountsResponse`, `StageExpectedCount`, `DialecticServiceActionPayload`, `ApiResponse` — provider: `@paynless/types` / `@paynless/db-types` (row aliases defined in `dialectic.types.ts` using `Database` from `@paynless/db-types`); direction: inward.
-      * `[ ]`   `logger` — existing api logger; reused.
-      * `[ ]`   No reverse dependencies. Depends on `dialectic-service/index` wiring node only among BE work in this chain.
-
-    * `[ ]`   `context_slice`
-      * `[ ]`   `listDomains()`: no payload; output `ApiResponse<DialecticDomainRow[]>` (full six domain columns per row).
-      * `[ ]`   `fetchProcessAssociation({ domainId })`: output `ApiResponse<DomainProcessAssociationRow>` (full six association columns; `process_template_id` is the field downstream store/UI use for `fetchProcessTemplate` / `getStageExpectedCounts`).
-      * `[ ]`   `getStageExpectedCounts({ processTemplateId, modelCount })`: output `ApiResponse<GetStageExpectedCountsResponse>`.
-      * `[ ]`   Methods forward payloads verbatim; no merging domain + association in the client.
-
-    * `[ ]`   packages/types/src/`dialectic.types.ts`
-      * `[ ]`   Add `export type DialecticDomainRow = Database['public']['Tables']['dialectic_domains']['Row'];`
-      * `[ ]`   Add `export type DomainProcessAssociationRow = Database['public']['Tables']['domain_process_associations']['Row'];`
-      * `[ ]`   Remove `export interface DialecticDomain { ... }` entirely.
-      * `[ ]`   Replace all `DialecticDomain` identifiers in this file with `DialecticDomainRow` (`DialecticStateValues`, `DialecticActions.setSelectedDomain`, `DialecticApiClient.listDomains`, etc.).
-      * `[ ]`   Add `FetchProcessAssociationPayload`: `{ domainId: string }`.
-      * `[ ]`   Add `GetStageExpectedCountsPayload`, `StageExpectedCount`, `GetStageExpectedCountsResponse` (BE mirror).
-      * `[ ]`   Add union members `{ action: 'fetchProcessAssociation'; payload: FetchProcessAssociationPayload }` and `{ action: 'getStageExpectedCounts'; payload: GetStageExpectedCountsPayload }` to `DialecticServiceActionPayload`.
-      * `[ ]`   Types only in this file section (exempt from RED/GREEN). No `any`. No `default_process_template_id` anywhere.
-
-    * `[ ]`   packages/api/src/`dialectic.api.domain.test.ts`
-      * `[ ]`   **Update** `describe('listDomains')`: import `DialecticDomainRow` (not `DialecticDomain`). Mock rows must include **all** `DialecticDomainRow` fields (`id`, `name`, `description`, `parent_domain_id`, `is_enabled`, `created_at`, `updated_at`) — use fixed ISO strings for timestamps. Keep existing four behaviors (correct POST + `{ isPublic: true }`, success data, server error, network error); assert `result.data` is full rows.
-      * `[ ]`   **Append** `describe('fetchProcessAssociation')` mirroring `fetchProcessTemplate` (lines 45-88): POST `{ action: 'fetchProcessAssociation', payload: { domainId } }` to `'dialectic-service'` **without** `{ isPublic: true }` (authenticated default client path, same as `fetchProcessTemplate`); success returns full `DomainProcessAssociationRow` mock (all six columns, `is_default_for_domain: true`); server error (e.g. `404` `NOT_FOUND`) surfaces `response.error`; network reject → `NETWORK_ERROR`. One behavior per test; appended after `listDomains` block.
-      * `[ ]`   Use `mockApiClient` harness; production types from `@paynless/types`; no inline parallel DTO types.
-
-    * `[ ]`   packages/api/src/`dialectic.api.documents.test.ts`
-      * `[ ]`   Append `getStageExpectedCounts` tests mirroring `getAllStageProgress` (lines 256-344): success posts `{ action: 'getStageExpectedCounts', payload }` and returns `stages`/`totalStages`; server error; `NETWORK_ERROR` on reject. One behavior per test; appended at end.
-
-    * `[ ]`   packages/api/src/`dialectic.api.ts`
-      * `[ ]`   Imports: add `DialecticDomainRow`, `DomainProcessAssociationRow`, `FetchProcessAssociationPayload`, `GetStageExpectedCountsPayload`, `GetStageExpectedCountsResponse`; remove `DialecticDomain` import.
-      * `[ ]`   Change `listDomains()` return type to `Promise<ApiResponse<DialecticDomainRow[]>>` and generic on `post<DialecticDomainRow[], ...>`; behavior unchanged otherwise.
-      * `[ ]`   Add `fetchProcessAssociation(payload)` immediately after `listDomains` (mirror `fetchProcessTemplate` try/catch/logging; `post<DomainProcessAssociationRow, DialecticServiceActionPayload>` with action `fetchProcessAssociation`).
-      * `[ ]`   Add `getStageExpectedCounts(payload)` immediately after `getAllStageProgress` (mirror lines 597-622).
-      * `[ ]`   Update `DialecticApiClient` class declaration in `@paynless/types` (same node's types file) — not in `dialectic.api.ts` — to list all three signatures.
-
-    * `[ ]`   packages/api/src/mocks/`dialectic.api.mock.ts`
-      * `[ ]`   Update `listDomains` mock fn type to `ApiResponse<DialecticDomainRow[]>`.
-      * `[ ]`   Add `fetchProcessAssociation` mock fn typed with `FetchProcessAssociationPayload` → `ApiResponse<DomainProcessAssociationRow>`.
-      * `[ ]`   Add `getStageExpectedCounts` mock fn typed with `GetStageExpectedCountsPayload` → `ApiResponse<GetStageExpectedCountsResponse>`.
-      * `[ ]`   Factory entries beside existing dialectic mocks; `vi.fn` only.
-
-    * `[ ]`   packages/api/src/`dialectic.api.integration.test.ts`
-      * `[ ]`   Add transport-boundary case for `fetchProcessAssociation`: assert posted `action`/`payload.domainId` and stubbed full association row returned.
-      * `[ ]`   Add transport-boundary case for `getStageExpectedCounts` (mirror `getAllStageProgress` pattern in this file).
-      * `[ ]`   Update any `listDomains` integration stub if present to use full `DialecticDomainRow` shape.
-
-    * `[ ]`   `directionality`
-      * `[ ]`   Layer: API client adapter (FE transport).
-      * `[ ]`   Deps: inward (`ApiClient`, `@paynless/types`, `@paynless/db-types` via row aliases).
-      * `[ ]`   Provides: outward (`listDomains`, `fetchProcessAssociation`, `getStageExpectedCounts` consumed by store then UI).
-      * `[ ]`   No cycles.
-
-    * `[ ]`   `requirements`
-      * `[ ]`   No `DialecticDomain` interface remains in `@paynless/types`; `DialecticDomainRow` and `DomainProcessAssociationRow` are `Database[...]['Row']` aliases. Observable: grep `interface DialecticDomain` in `dialectic.types.ts` — absent.
-      * `[ ]`   `listDomains()` still posts public catalog request; returns `ApiResponse<DialecticDomainRow[]>`. Observable: updated `dialectic.api.domain.test.ts`.
-      * `[ ]`   `fetchProcessAssociation({ domainId })` posts correct envelope; returns full association row or surfaces server/network errors. Observable: four tests in `dialectic.api.domain.test.ts`.
-      * `[ ]`   `getStageExpectedCounts(payload)` posts correct envelope; returns typed counts response. Observable: `dialectic.api.documents.test.ts`.
-      * `[ ]`   `DialecticServiceActionPayload` includes `fetchProcessAssociation` and `getStageExpectedCounts` members. Observable: type-check in `dialectic.api.ts` post calls.
-      * `[ ]`   `StageProgressEntry` unchanged. Observable: no edit to that interface in this node.
-      * `[ ]`   No merged `default_process_template_id` on domain type. Observable: grep in `packages/types` — absent.
-
-  * `[ ]`   packages/utils/src/computeCostCeiling **Pure arithmetic: per-stage ceilings and project ceiling from counts × cap × rate, with completed-stage actuals (`@paynless/utils`)**
-
-    * `[ ]`   `objective`
-      * `[ ]`   The cost-ceiling ticket needs a single, side-effect-free arithmetic function that the session NSF surface and the pre-project preview both consume, so the estimate math lives in exactly one tested place and cannot drift between the two surfaces. Today no such function exists; the ceiling formulas (`stage_ceiling = (Σ_step expected_job_count) × maxOutputTokens × maxOutputCostRate`; `project_ceiling = Σ_completed actual + Σ_remaining stage_ceiling`) are only described in prose (lines 409-417).
-      * `[ ]`   Functional goal: implement `computeCostCeiling(params: ComputeCostCeilingParams): CostCeilingEstimate` where, for each stage, `stageCeilings[stageSlug] = stage.expectedCount × params.maxOutputTokens × params.maxOutputCostRate` (the per-stage "at most" estimate, computed for every stage regardless of completion), and `projectCeiling` is the sum over stages of the stage's `actualCost` when it is a number (completed) and the stage's estimate when `actualCost` is `null` (remaining).
-      * `[ ]`   Functional goal: the completed-vs-remaining choice is made by an explicit `stage.actualCost === null` branch — NEVER a `??`/ternary default — so a completed stage whose real cost is `0` contributes `0` to `projectCeiling` (not its estimate). This is the load-bearing edge: `0` is a valid actual, `null` means "not yet run".
-      * `[ ]`   Functional goal: arithmetic only. The function performs NO model-catalog reading, NO `AiModelExtendedConfig` rate extraction, NO `DialecticContribution` summation, NO strategy/DAG/count derivation, NO `fetchProcessAssociation` / domain resolution, and NO store/DB/API access. `maxOutputCostRate`, `maxOutputTokens`, `expectedCount`, and per-completed-stage `actualCost` arrive pre-assembled in `params` from callers (`dialecticStore.selectors` in Group 4 assembles inputs; Group 5 UI reads selector output only).
-      * `[ ]`   **No change from `fetchProcessAssociation`:** association fetch only supplies upstream `processTemplateId` for `getStageExpectedCounts`; this node's math is unchanged. Pre-project `expectedCount` values still reach `computeCostCeiling` only after `fetchProcessAssociation` → `process_template_id` → `fetchStageExpectedCounts` (store/API nodes — not this file).
-      * `[ ]`   Non-functional: zero side effects, deterministic, and stable under empty input (`stages: []` → `{ stageCeilings: {}, projectCeiling: 0 }`) and zero factors (`maxOutputTokens` or `maxOutputCostRate` of `0` → all ceilings `0`, never `NaN`).
-      * `[ ]`   Each goal is atomic and testable.
-
-    * `[ ]`   `role`
-      * `[ ]`   Domain / pure utility in `@paynless/utils` — the single source of cost-ceiling arithmetic, mirroring the existing flat util convention (`packages/utils/src/dialecticUtils.ts`: one function per file, types in `@paynless/types`, Vitest colocated `.test.ts`, exported from `packages/utils/src/index.ts` — consumed by `@paynless/store` via `import { computeCostCeiling } from '@paynless/utils'`, never a store-local relative import).
-      * `[ ]`   This node CREATES one flat source file, its unit test, one `index.ts` export line, and the ceiling contract types in `@paynless/types`. It does NOT add a runtime guard (inputs are typed values assembled by selectors, not parsed at an HTTP boundary), a mock (no injected dependency), a `.provides` subpackage, or an integration test (composition with real counts/rates/actuals is proven in `dialecticStore.selectors`).
-      * `[ ]`   Out of scope: `AiModelExtendedConfig` guard + `OutputCapSlider` (next Group 3 node); `fetchProcessAssociation` / domain association store state (API node + Create-form orchestration); selector input assembly, contribution summation, rate extraction (Group 4 `dialecticStore.selectors`); stored `costCeilingEstimate` / `recomputeCostCeiling` (superseded — ceilings are selector-derived); every UI consumer (Group 5).
-
-    * `[ ]`   `module`
-      * `[ ]`   Bounded context: `@paynless/utils` FE cost-estimation arithmetic (utility workspace — **not** `@paynless/store`).
-      * `[ ]`   Inside this boundary: multiplying per-stage `expectedCount` by `maxOutputTokens` and `maxOutputCostRate` to produce `stageCeilings`, and summing actuals (completed) with estimates (remaining) into `projectCeiling`.
-      * `[ ]`   Outside this boundary: where `expectedCount` comes from (post-project: `getAllStageProgress` → `stageExpectedCountsByRun`; pre-project: `getStageExpectedCounts({ processTemplateId, modelCount })` where `processTemplateId` is `DomainProcessAssociationRow.process_template_id` after `fetchProcessAssociation`, not from `DialecticDomainRow`); where `maxOutputCostRate` comes from (`modelCatalog[].config` via `isAiModelExtendedConfig` in selectors); where `actualCost` comes from (`DialecticContribution` summation in selectors); where `maxOutputTokens` comes from (dialectic store). All are caller responsibility.
-
-    * `[ ]`   `deps`
-      * `[ ]`   `CostCeilingEstimate`, `ComputeCostCeilingParams`, `CostCeilingStageInput`, `ComputeCostCeilingFn` — provider: `@paynless/types` (`packages/types/src/dialectic.types.ts`); layer: types; direction: inward; purpose: input/output contract. Imported from the original source in `computeCostCeiling.ts`; never re-exported from utils.
-      * `[ ]`   No runtime dependencies beyond types; no `@paynless/store`, no `@paynless/api`, no `@paynless/db-types`. No reverse dependencies. No lateral layer violations.
-      * `[ ]`   **Ordering (HARD, upstream only — not imported here):** `dialectic.api` (count transport + row aliases) may precede or parallel this node; `fetchProcessAssociation` BE/API/store wiring must exist before pre-project selectors can return non-null ceilings, but this function does not call those APIs.
-
-    * `[ ]`   `context_slice`
-      * `[ ]`   From `params`: only `stages: CostCeilingStageInput[]` (each `{ stageSlug, expectedCount, actualCost }`), `maxOutputTokens: number`, and `maxOutputCostRate: number`. Nothing else is read or reachable.
-      * `[ ]`   No over-fetching, no hidden coupling, no store/DB/catalog/association access.
-
-    * `[ ]`   packages/types/src/`dialectic.types.ts`
-      * `[ ]`   Add `CostCeilingStageInput`: `{ stageSlug: string; expectedCount: number; actualCost: number | null; }` (`actualCost` is the completed stage's summed token cost, or `null` when the stage has not completed). Co-locate near the FE count types from the `dialectic.api` node (`StageExpectedCount` / `GetStageExpectedCountsResponse`).
-      * `[ ]`   Add `ComputeCostCeilingParams`: `{ stages: CostCeilingStageInput[]; maxOutputTokens: number; maxOutputCostRate: number; }`.
-      * `[ ]`   Add `CostCeilingEstimate`: `{ stageCeilings: Record<string, number>; projectCeiling: number; }` (return type for `selectCostCeiling` / `selectPreProjectCostCeiling` — **not** stored on `DialecticStateValues`).
-      * `[ ]`   Add `ComputeCostCeilingFn = (params: ComputeCostCeilingParams) => CostCeilingEstimate;` for typed references to the function shape.
-      * `[ ]`   `RecipeGranularity` (line 185): remove the non-existent members `'one_to_many'` and `'many_to_one'`, leaving `'all_to_one' | 'per_source_document' | 'pairwise_by_origin' | 'per_source_group' | 'per_source_document_by_lineage' | 'per_model'` to match the BE `GranularityStrategy` contract — **only if not already corrected in the `dialectic.api` node** (that node also edits this file; do not duplicate the edit).
-      * `[ ]`   Types only (exempt from RED/GREEN). No inline ad-hoc types; no `any`; each type minimal and composable.
-
-    * `[ ]`   packages/utils/src/`computeCostCeiling.test.ts`
-      * `[ ]`   Vitest unit test (`describe`/`it`/`expect`, mirroring `dialecticUtils.test.ts`), importing `computeCostCeiling` from `./computeCostCeiling` and production types from `@paynless/types`; one behavior per test.
-      * `[ ]`   Test (per-stage estimate): a single stage `{ stageSlug: 's1', expectedCount: 4, actualCost: null }`, `maxOutputTokens: 1000`, `maxOutputCostRate: 3` → `stageCeilings.s1 === 12000` and `projectCeiling === 12000`.
-      * `[ ]`   Test (all remaining): two pending stages (`actualCost: null`) → `projectCeiling` equals the sum of both `stageCeilings` entries.
-      * `[ ]`   Test (mixed actual + estimate): one completed stage `{ actualCost: 500 }` and one pending stage with estimate `9000` → `projectCeiling === 9500`, while `stageCeilings` still reports BOTH stages' estimates (the completed stage's estimate is present in `stageCeilings` but its `actualCost` is what counts toward `projectCeiling`).
-      * `[ ]`   Test (zero actual is honored, not defaulted): a completed stage `{ expectedCount: 4, actualCost: 0 }` plus a pending stage → `projectCeiling` adds `0` for the completed stage (NOT its estimate), proving the `=== null` discriminator rather than a falsy/`??` default.
-      * `[ ]`   Test (empty input): `stages: []` → `{ stageCeilings: {}, projectCeiling: 0 }`.
-      * `[ ]`   Test (zero factors): `maxOutputTokens: 0` (or `maxOutputCostRate: 0`) with pending stages → every `stageCeilings` value is `0` and `projectCeiling === 0`, with no `NaN`.
-      * `[ ]`   New tests appended at the end; full typed objects from production types (no partials, no casts).
-
-    * `[ ]`   `construction`
-      * `[ ]`   Entrypoint: the bare pure function `computeCostCeiling(params)`; no class, no state, no partially-constructed instance. All inputs arrive in `params`; there are no defaults and no internal fallback values.
-      * `[ ]`   Invalid construction: omitting any `params` field is a type error at the boundary; the function does not synthesize missing inputs.
-
-    * `[ ]`   packages/utils/src/`computeCostCeiling.ts`
-      * `[ ]`   Implement `export function computeCostCeiling(params: ComputeCostCeilingParams): CostCeilingEstimate`: initialize `const stageCeilings: Record<string, number> = {};` and `let projectCeiling: number = 0;`; for each `stage` of `params.stages`, compute `const estimate: number = stage.expectedCount * params.maxOutputTokens * params.maxOutputCostRate;`, set `stageCeilings[stage.stageSlug] = estimate;`, then `if (stage.actualCost === null) { projectCeiling += estimate; } else { projectCeiling += stage.actualCost; }`; return `{ stageCeilings, projectCeiling }`.
-      * `[ ]`   Import `ComputeCostCeilingParams`, `CostCeilingEstimate` from `@paynless/types`. One function in the file; no side effects; no `??`/ternary defaults for the completed/remaining choice.
-
-    * `[ ]`   packages/utils/src/`index.ts`
-      * `[ ]`   Add `export * from './computeCostCeiling';` beside the existing util exports so `@paynless/store` and tests import from `@paynless/utils`.
-
-    * `[ ]`   `directionality`
-      * `[ ]`   Layer: domain (pure FE utility in the utils workspace).
-      * `[ ]`   Deps: inward (`@paynless/types` only).
-      * `[ ]`   Provides: outward (`computeCostCeiling` + `CostCeilingEstimate` type, consumed by `dialecticStore.selectors` via `@paynless/utils`, then by NSF and pre-project UI in Group 5).
-      * `[ ]`   No cycles.
-
-    * `[ ]`   `requirements`
-      * `[ ]`   Per-stage `stageCeilings[stageSlug]` equals `expectedCount × maxOutputTokens × maxOutputCostRate` for every stage. Observable: unit test asserts the product.
-      * `[ ]`   `projectCeiling` sums actuals for completed stages and estimates for remaining stages. Observable: mixed-input unit test.
-      * `[ ]`   A completed stage with `actualCost: 0` contributes `0`, not its estimate. Observable: the zero-actual unit test.
-      * `[ ]`   Empty `stages` and zero factors produce well-formed, `NaN`-free zero results. Observable: empty-input and zero-factor unit tests.
-      * `[ ]`   The function reads nothing beyond `params` (no store/catalog/DB/association/API access). Observable: review — imports are `@paynless/types` only; no `@paynless/store`.
-      * `[ ]`   `computeCostCeiling` is exported from `@paynless/utils` `index.ts`. Observable: grep `packages/utils/src/index.ts`.
-      * `[ ]`   `RecipeGranularity` no longer contains `one_to_many`/`many_to_one` (when this node owns that edit). Observable: grep confirms absence; FE set matches BE `GranularityStrategy`.
-
-  * `[ ]`   packages/store/src/dialecticStore **Domain rows, default association fetch, expected-counts state, and pre-project count action**
-
-    * `[ ]`   `objective`
-      * `[ ]`   After the `dialectic.api` node, `listDomains()` returns `DialecticDomainRow[]` and `fetchProcessAssociation({ domainId })` returns `DomainProcessAssociationRow` (`@paynless/db-types` row aliases — no hand-written `DialecticDomain`, no `default_process_template_id` on the domain row). The store still types `domains` / `selectedDomain` as legacy partial `DialecticDomain` and has no association fetch — pre-project cost preview cannot obtain `process_template_id` for `fetchProcessTemplate` / `getStageExpectedCounts` after domain selection.
-      * `[ ]`   The selector that derives the dynamic cost ceiling (next node, `dialecticStore.selectors.ts`) needs per-stage expected job counts in two contexts: (a) **post-project** — authoritative counts on `GetAllStageProgressResponse.stages[].expectedCount`; (b) **pre-project** — via `api.dialectic().getStageExpectedCounts(...)` with `processTemplateId` taken from `selectedDomainProcessAssociation.process_template_id` after `fetchProcessAssociation`, never from `DialecticDomainRow`. Neither count source has store state today.
-      * `[ ]`   Why a run-keyed map and NOT a field on `StageRunProgressSnapshot`: snapshots are built at sites without counts (`dialecticStore.documents.ts:1724`, `dialecticStore.ts:636`, notification job upserts). Mirror `dagProgressByRun` (`dialectic.types.ts:409`, `dialecticStore.ts:209`, populated only in `hydrateAllStageProgressLogic` at `dialecticStore.documents.ts:1847`). Absent counts ⇒ selector returns `null`, never a fabricated zero.
-      * `[ ]`   Functional goal (domain catalog): update `fetchDomains` to store `response.data` as `DialecticDomainRow[]` when every element passes `isDialecticDomainRow`; on API error, network failure, or invalid row shape → `domains: []` and `domainsError` set (mirror existing paths). No merged template field on domain rows.
-      * `[ ]`   Functional goal (association): add `selectedDomainProcessAssociation: DomainProcessAssociationRow | null`, `isLoadingDomainProcessAssociation: boolean`, and `domainProcessAssociationError: ApiError | null` to `DialecticStateValues`, initialized `null` / `false` / `null`. Add `fetchProcessAssociation: (payload: FetchProcessAssociationPayload) => Promise<void>` calling `api.dialectic().fetchProcessAssociation(payload)`; mirror `fetchProcessTemplate` loading/error handling. On success validate `response.data` with `isDomainProcessAssociationRow` and require `data.is_default_for_domain === true` and `data.domain_id === payload.domainId` before storing the full row; on API error or failed validation leave `selectedDomainProcessAssociation` `null` and set `domainProcessAssociationError`. No fallback, no partial row, no invented `process_template_id`.
-      * `[ ]`   Functional goal (domain selection reset): update `setSelectedDomain(domain: DialecticDomainRow | null)` so every call clears pre-project association-dependent state: `selectedDomainProcessAssociation: null`, `domainProcessAssociationError: null`, `isLoadingDomainProcessAssociation: false`, `preProjectStageExpectedCounts: null`, `stageExpectedCountsError: null`, `isLoadingStageExpectedCounts: false`. Does **not** invoke `fetchProcessAssociation` (callers orchestrate — see `interaction.spec`). Does not clear `currentProcessTemplate` (post-project / separate flows).
-      * `[ ]`   Functional goal (post-project counts): add `stageExpectedCountsByRun: Record<string, Record<string, number>>` beside `dagProgressByRun`; **declare and initialize only** — `dialecticStore.documents` populates it.
-      * `[ ]`   Functional goal (pre-project counts): add `preProjectStageExpectedCounts`, `isLoadingStageExpectedCounts`, `stageExpectedCountsError`; add `fetchStageExpectedCounts` mirroring `fetchProcessTemplate`; validate with `isGetStageExpectedCountsResponse`; store only `response.data.stages` on success. Callers pass `{ processTemplateId: selectedDomainProcessAssociation.process_template_id, modelCount }` — if association is `null`, callers must not invoke `fetchStageExpectedCounts`.
-      * `[ ]`   Functional goal (guards in `@paynless/utils` `dialectic.guard.ts`): `isDialecticDomainRow`, `isDomainProcessAssociationRow`, `isStageExpectedCount`, `isGetStageExpectedCountsResponse` — financial-path responses rejected when invalid; import row/count types from `@paynless/types` only.
-      * `[ ]`   Non-functional: edits `dialecticStore.ts`, `dialectic.types.ts` (state + actions only — `DialecticDomainRow` / `DomainProcessAssociationRow` aliases owned by `dialectic.api` node), `dialectic.guard.ts`, `dialecticStore.test.ts`, `dialecticStore.domain.test.ts`, `dialecticStore.mock.ts`. Does not touch BE, `dialectic.api.ts`, UI components, selectors, or `dialecticStore.documents` hydration.
-      * `[ ]`   HARD dependency: `packages/api/src/dialectic.api` node complete (`DialecticDomainRow`, `DomainProcessAssociationRow`, `listDomains`, `fetchProcessAssociation`, `getStageExpectedCounts`). Runs before `dialecticStore.selectors` and Group 5 UI nodes.
-      * `[ ]`   Each goal is atomic and testable.
-
-    * `[ ]`   `role`
-      * `[ ]`   FE store state + actions (`dialecticStore.ts`) and FE response guards (`@paynless/utils` `dialectic.guard.ts`).
-      * `[ ]`   This node wires the **two-table** pre-project read path in the store (domain list rows + per-selection association row), expected-counts state/actions, and guards. It updates `fetchDomains` / `setSelectedDomain` to consume `DialecticDomainRow`. It does NOT populate `stageExpectedCountsByRun` (`dialecticStore.documents`), compute ceilings (`computeCostCeiling`), derive ceilings (`dialecticStore.selectors`), or implement Create-form / chat-button orchestration (Group 5 — those components call the actions in order documented below).
-      * `[ ]`   Out of scope: BE handlers; API transport implementation; `fetchProcessTemplate` body changes; `createProject` FormData (separate node); selector math.
-
-    * `[ ]`   `module`
-      * `[ ]`   Bounded context: `@paynless/store` dialectic module (`dialecticStore.ts`), store-owned slices of `@paynless/types` (`dialectic.types.ts` state/actions), `@paynless/utils` guards (`dialectic.guard.ts`).
-      * `[ ]`   Inside: association + expected-count state/actions; domain-list/selection typing alignment; FE guards for association/count/domain-row API responses.
-      * `[ ]`   Outside: SQL, index dispatch, API client methods (prior node), ceiling arithmetic, UI call sequencing beyond documented contract.
-
-    * `[ ]`   `deps`
-      * `[ ]`   `DialecticDomainRow`, `DomainProcessAssociationRow`, `FetchProcessAssociationPayload`, `GetStageExpectedCountsPayload`, `StageExpectedCount`, `GetStageExpectedCountsResponse`, `ApiError` — provider: `@paynless/types` (`dialectic.types.ts`; row aliases from `@paynless/db-types` added by `dialectic.api` node); direction: inward; never re-export from store.
-      * `[ ]`   `api.dialectic().listDomains`, `api.dialectic().fetchProcessAssociation`, `api.dialectic().getStageExpectedCounts` — provider: `@paynless/api`; direction: inward.
-      * `[ ]`   `isRecord` — provider: `@paynless/utils` `dialectic.guard.ts`; direction: inward.
-      * `[ ]`   No reverse dependencies. Precedes `dialecticStore.documents` and `dialecticStore.selectors`.
-
-    * `[ ]`   `context_slice`
-      * `[ ]`   `fetchDomains`: stores validated `DialecticDomainRow[]` only.
-      * `[ ]`   `fetchProcessAssociation({ domainId })`: stores one validated `DomainProcessAssociationRow` or leaves `selectedDomainProcessAssociation` null on failure.
-      * `[ ]`   `fetchStageExpectedCounts({ processTemplateId, modelCount })`: stores validated `StageExpectedCount[]` in `preProjectStageExpectedCounts` only.
-      * `[ ]`   Post-project: `stageExpectedCountsByRun[runKey][stageSlug]` — written later by documents node; read later by selector.
-      * `[ ]`   Pre-project caller order (declarative — Group 5 / chat button implement): `setSelectedDomain(domainRow)` → `fetchProcessAssociation({ domainId: domainRow.id })` → on success `fetchProcessTemplate(association.process_template_id)` and `fetchStageExpectedCounts({ processTemplateId: association.process_template_id, modelCount })`. On association `404`/`error`, do not call template or counts; show no cost preview.
-
-    * `[ ]`   `interaction.spec`
-      * `[ ]`   `fetchDomains` unchanged transport (`listDomains` public catalog); success persists full domain rows or rejects entire list on any invalid element.
-      * `[ ]`   `setSelectedDomain` synchronous; clears association + pre-project count state whenever selection changes.
-      * `[ ]`   `fetchProcessAssociation` async; loading flag; success stores full association row; failure leaves association null and sets `domainProcessAssociationError` (including handler `404` `NOT_FOUND`).
-      * `[ ]`   `fetchStageExpectedCounts` async; independent of `fetchProcessAssociation` except callers must supply `processTemplateId` from stored association row.
-      * `[ ]`   Declarative only — no code.
-
-    * `[ ]`   packages/types/src/`dialectic.types.ts`
-      * `[ ]`   **Consume** `DialecticDomainRow` / `DomainProcessAssociationRow` already defined by `dialectic.api` node (`domains`, `selectedDomain`, `setSelectedDomain` — do not re-define row aliases here).
-      * `[ ]`   In `DialecticStateValues` (beside `domains` / `selectedDomain`): add `selectedDomainProcessAssociation: DomainProcessAssociationRow | null;`, `isLoadingDomainProcessAssociation: boolean;`, `domainProcessAssociationError: ApiError | null;`.
-      * `[ ]`   In `DialecticStateValues` (beside `dagProgressByRun`, ~409): add `stageExpectedCountsByRun: Record<string, Record<string, number>>;`, `preProjectStageExpectedCounts: StageExpectedCount[] | null;`, `isLoadingStageExpectedCounts: boolean;`, `stageExpectedCountsError: ApiError | null;`.
-      * `[ ]`   In `DialecticActions`: add `fetchProcessAssociation: (payload: FetchProcessAssociationPayload) => Promise<void>;` and `fetchStageExpectedCounts: (payload: GetStageExpectedCountsPayload) => Promise<void>;`.
-      * `[ ]`   Types only (exempt RED/GREEN). No `default_process_template_id`. No new row aliases in this node.
-
-    * `[ ]`   utils/`dialectic.guard.test.ts`
-      * `[ ]`   Append `describe('isDialecticDomainRow')`: passing full six-field row (`id`, `name`, `description`, `parent_domain_id`, `is_enabled`, `created_at`, `updated_at`); failing partial row (missing `created_at`), empty `id`, wrong `is_enabled` type.
-      * `[ ]`   Append `describe('isDomainProcessAssociationRow')`: passing full row with `is_default_for_domain: true`; failing `is_default_for_domain: false`, missing `process_template_id`, empty `domain_id`.
-      * `[ ]`   Append `describe('isStageExpectedCount')` and `describe('isGetStageExpectedCountsResponse')` (unchanged intent from prior draft).
-      * `[ ]`   Valid objects from `@paynless/types`; invalid via factory-then-override per strict-typing exception. One behavior per test; appended at end.
-
-    * `[ ]`   utils/`dialectic.guard.ts`
-      * `[ ]`   Add `isDialecticDomainRow`: `isRecord`; non-empty `id`/`name`; `description` string|null; `parent_domain_id` string|null; `typeof is_enabled === 'boolean'`; non-empty `created_at`/`updated_at`.
-      * `[ ]`   Add `isDomainProcessAssociationRow`: `isRecord`; non-empty `id`/`domain_id`/`process_template_id`; `is_default_for_domain === true`; non-empty `created_at`/`updated_at`.
-      * `[ ]`   Add `isStageExpectedCount` and `isGetStageExpectedCountsResponse` (as prior draft).
-      * `[ ]`   Import `DialecticDomainRow`, `DomainProcessAssociationRow`, `StageExpectedCount`, `GetStageExpectedCountsResponse` from `@paynless/types`. Reuse `isRecord`. No `any`, no casts.
-
-    * `[ ]`   packages/store/src/`dialecticStore.domain.test.ts`
-      * `[ ]`   Update fixtures: `DialecticDomainRow` with all six columns (`is_enabled: true`, fixed ISO `created_at`/`updated_at`). Remove `DialecticDomain` import.
-      * `[ ]`   Update `fetchDomains` tests to expect full rows; add case: API returns array with one invalid element → `domains` `[]` and `domainsError` set (invalid catalog rejected).
-      * `[ ]`   Update `setSelectedDomain` test: after `setSelectedDomain(row)`, assert `selectedDomainProcessAssociation` is `null` and `preProjectStageExpectedCounts` is `null` (reset on selection).
-      * `[ ]`   Append `describe('fetchProcessAssociation')`: success stores full `DomainProcessAssociationRow`; API error leaves association `null`; invalid row shape leaves association `null` and sets error; loading toggles `isLoadingDomainProcessAssociation`.
-      * `[ ]`   Use `api` mock from `@paynless/api/mocks`; production types only; one behavior per test; appended at end.
-
-    * `[ ]`   packages/store/src/`dialecticStore.test.ts`
-      * `[ ]`   Initial-state test: `stageExpectedCountsByRun` `{}`; `selectedDomainProcessAssociation` `null`; `isLoadingDomainProcessAssociation` `false`; `domainProcessAssociationError` `null`; `preProjectStageExpectedCounts` `null`; `isLoadingStageExpectedCounts` `false`; `stageExpectedCountsError` `null`.
-      * `[ ]`   `fetchStageExpectedCounts` success / API-error / invalid-data / loading tests (as prior draft).
-      * `[ ]`   Append test: `setSelectedDomain` after association was stored clears `selectedDomainProcessAssociation` and `preProjectStageExpectedCounts`.
-      * `[ ]`   New cases appended at end; existing unrelated tests remain green.
-
-    * `[ ]`   packages/store/src/`dialecticStore.ts`
-      * `[ ]`   Initial state (beside `dagProgressByRun: {}`, ~209): add `selectedDomainProcessAssociation: null,`, `isLoadingDomainProcessAssociation: false,`, `domainProcessAssociationError: null,`, `stageExpectedCountsByRun: {},`, `preProjectStageExpectedCounts: null,`, `isLoadingStageExpectedCounts: false,`, `stageExpectedCountsError: null,`.
-      * `[ ]`   `fetchDomains`: after `listDomains` response, if `response.error` or network catch — unchanged empty/error paths; on success require `Array.isArray(response.data)` and `response.data.every(isDialecticDomainRow)` else set `domainsError` `{ code: 'INVALID_RESPONSE', message: '...' }` and `domains: []`; else `set({ domains: response.data, ... })`.
-      * `[ ]`   `setSelectedDomain(domain: DialecticDomainRow | null)`: `set({ selectedDomain: domain, selectedDomainProcessAssociation: null, domainProcessAssociationError: null, isLoadingDomainProcessAssociation: false, preProjectStageExpectedCounts: null, stageExpectedCountsError: null, isLoadingStageExpectedCounts: false })`.
-      * `[ ]`   `fetchProcessAssociation(payload)`: mirror `fetchProcessTemplate` pattern — loading/error; validate with `isDomainProcessAssociationRow`; assert `data.domain_id === payload.domainId`; store full row or leave null on failure.
-      * `[ ]`   `fetchStageExpectedCounts(payload)`: as prior draft with `isGetStageExpectedCountsResponse`.
-      * `[ ]`   Imports: `DialecticDomainRow`, `DomainProcessAssociationRow`, `FetchProcessAssociationPayload`, `GetStageExpectedCountsPayload`, guards from `@paynless/utils`. Remove `DialecticDomain` import if present. No `as`, no defaulting of template id or counts.
-
-    * `[ ]`   apps/web/src/mocks/`dialecticStore.mock.ts`
-      * `[ ]`   Mock initial state: association fields + expected-count fields (same defaults as `dialecticStore.ts` initial state).
-      * `[ ]`   Action mocks: `fetchProcessAssociation: vi.fn().mockResolvedValue(undefined),`, `fetchStageExpectedCounts: vi.fn().mockResolvedValue(undefined),` beside `fetchProcessTemplate`.
-
-    * `[ ]`   `directionality`
-      * `[ ]`   Layer: store (FE state/actions) + shared guards (`@paynless/utils`).
-      * `[ ]`   Deps: inward (`@paynless/types`, `@paynless/api`, guards).
-      * `[ ]`   Provides: outward (`DialecticDomainRow[]` catalog; `DomainProcessAssociationRow` for template id; `preProjectStageExpectedCounts` + `stageExpectedCountsByRun` for selectors; actions consumed by Group 5).
-      * `[ ]`   No cycles.
-
-    * `[ ]`   `requirements`
-      * `[ ]`   `fetchDomains` stores only validated `DialecticDomainRow[]`. Observable: `dialecticStore.domain.test.ts`.
-      * `[ ]`   `fetchProcessAssociation` stores only a validated default association row for the requested `domainId`, or leaves null on failure. Observable: domain test suite.
-      * `[ ]`   `setSelectedDomain` clears association and pre-project count state on every selection change. Observable: domain + store tests.
-      * `[ ]`   `fetchStageExpectedCounts` stores only validated `stages` on success; null on API/validation failure. Observable: `dialecticStore.test.ts`.
-      * `[ ]`   Guards reject invalid domain rows, non-default association rows, and invalid count payloads. Observable: `dialectic.guard.test.ts`.
-      * `[ ]`   No `default_process_template_id` on domain state; template id read only from `selectedDomainProcessAssociation.process_template_id`. Observable: grep store + types.
-      * `[ ]`   `stageExpectedCountsByRun` declared, initialized `{}`, not populated in this node. Observable: review + documents node owns population.
-      * `[ ]`   `dagProgressByRun`, `stageRunProgress`, and unrelated fetch actions behavior unchanged aside from typed domain list/selection. Observable: existing store tests remain green.
-
-  * `[ ]`   packages/store/src/dialecticStore.documents **Populate `stageExpectedCountsByRun` from authoritative `getAllStageProgress` hydration; mirror the BE `expectedCount` onto the FE `StageProgressEntry`**
-
-    * `[ ]`   `objective`
-      * `[ ]`   **Post-project only.** Pre-project template id and per-stage counts use a separate path: `fetchProcessAssociation({ domainId })` → `DomainProcessAssociationRow.process_template_id` → `fetchStageExpectedCounts` → `preProjectStageExpectedCounts` (owned by the `packages/store/src/dialecticStore` node and Group 5 orchestration). This node does not call `fetchProcessAssociation`, does not read `listDomains` / `DialecticDomainRow`, and does not merge `process_template_id` onto domain rows.
-      * `[ ]`   The `packages/store/src/dialecticStore` node declared and initialized `stageExpectedCountsByRun: Record<string, Record<string, number>>` to `{}`, but nothing populates it. The authoritative source of **post-project** per-stage counts is `GetAllStageProgressResponse.stages[].expectedCount` — the BE `getAllStageProgress` node adds `expectedCount: number` to the BE `StageProgressEntry` (`dialectic.interface.ts:1002-1011`), populated from `StageCountsEntry.totalExpected` and guarded as a finite non-negative integer by `isStageProgressEntry`. The FE mirror type `StageProgressEntry` (`dialectic.types.ts:1255-1264`) does not yet carry `expectedCount`, so `hydrateAllStageProgressLogic` (`dialecticStore.documents.ts:1799`) cannot read it and the count is dropped.
-      * `[ ]`   Functional goal: add `expectedCount: number` to the FE `StageProgressEntry`, after `progress` (line 1259), mirroring the BE contract exactly — required, finite non-negative integer (no optional, no `null`; the BE always emits it).
-      * `[ ]`   Functional goal: in `hydrateAllStageProgressLogic`, before the `set` (alongside the existing pre-`set` validations at lines 1820-1842), throw a `[hydrateAllStageProgress]`-prefixed error if any `entry.expectedCount` is not a finite non-negative integer — invalid count data is never admitted to the store, because users make financial decisions on it. This matches the function's existing throw-on-invalid pattern (lines 1814-1842); no silent skip, no default.
-      * `[ ]`   Functional goal: inside the `set`, beside `state.dagProgressByRun[runKey] = dagProgress;` (line 1847), reset `state.stageExpectedCountsByRun[runKey] = {}` and, within the existing per-stage loop (lines 1848-1920), assign `state.stageExpectedCountsByRun[runKey][entry.stageSlug] = entry.expectedCount;`. Full overwrite on every authoritative hydration (refresh semantics), mirroring how `dagProgressByRun[runKey]` is overwritten.
-      * `[ ]`   Non-functional: `hydrateStageProgressLogic` — the per-stage path fed by `listStageDocuments`, which returns NO counts (`dialecticStore.documents.ts:1693-1797`) — is NOT modified. It must never write `stageExpectedCountsByRun`, so an authoritative count is never overwritten by a fabricated or absent one. No `StageRunProgressSnapshot` field, no other hydrated field, and no other hydrate logic changes. `hydrateAllStageProgressLogic` must not read or write `selectedDomainProcessAssociation`, `domainProcessAssociationError`, `preProjectStageExpectedCounts`, or any domain-catalog field.
-      * `[ ]`   Each goal is atomic and testable.
-
-    * `[ ]`   `role`
-      * `[ ]`   FE hydration logic (`dialecticStore.documents.ts`) + the FE `StageProgressEntry` type mirror (`dialectic.types.ts` — `expectedCount` on `StageProgressEntry` only; do not add `DomainProcessAssociationRow` or `DialecticDomainRow` aliases here — those are owned by the `dialectic.api` node).
-      * `[ ]`   This node reads `expectedCount` from the authoritative all-stages response and writes the run-keyed `stageExpectedCountsByRun` map for **post-project** `selectCostCeiling`. It does NOT compute or select ceilings, modify the per-stage hydrate path, call `fetchProcessAssociation`, or change the API client / BE beyond consuming `getAllStageProgress`.
-      * `[ ]`   Out of scope: `packages/store/src/dialecticStore` association actions/state (`fetchProcessAssociation`, `selectedDomainProcessAssociation`, `fetchStageExpectedCounts`, `preProjectStageExpectedCounts`); `listDomains` / `DialecticDomainRow`; merged `default_process_template_id` on domains; the `selectCostCeiling` / `selectPreProjectCostCeiling` selectors (next node — pre-project selector reads `preProjectStageExpectedCounts`, not this map); UI (Group 5); the shallow `isGetAllStageProgressResponse` guard (`type_guards.ts:171-177`, `Array.isArray(stages)` only — not on this hydration path, left unchanged).
-
-    * `[ ]`   `module`
-      * `[ ]`   Bounded context: `@paynless/store` documents module (`dialecticStore.documents.ts`) + `@paynless/types` (`StageProgressEntry.expectedCount` field only in `dialectic.types.ts`).
-      * `[ ]`   Inside this boundary: the FE `StageProgressEntry.expectedCount` field, and the validate-then-populate of `stageExpectedCountsByRun` in `hydrateAllStageProgressLogic`.
-      * `[ ]`   Outside this boundary: BE count computation; `getAllStageProgress` API transport; pre-project `fetchProcessAssociation` / `getStageExpectedCounts` chain; domain catalog; ceiling selectors; UI consumers.
-
-    * `[ ]`   `deps`
-      * `[ ]`   `GetAllStageProgressResponse`, `StageProgressEntry` — provider: `@paynless/types` (`dialectic.types.ts`); layer: types; direction: inward; purpose: the response the hydrate reads, now carrying `expectedCount`. Imported from the original source, never re-exported.
-      * `[ ]`   `stageExpectedCountsByRun` — provider: `packages/store/src/dialecticStore` node (`dialecticStore.ts` initial state + `DialecticStateValues`); layer: store state; direction: this node populates it only. HARD dependency: without that node's `{}` initialization, `state.stageExpectedCountsByRun[runKey]` is `undefined` and the assignment throws. That node also declares `selectedDomainProcessAssociation` / pre-project count state — this node must not touch those fields.
-      * `[ ]`   `api.dialectic().getAllStageProgress` — provider: `@paynless/api`; layer: API client; direction: inward; purpose: returns the authoritative `GetAllStageProgressResponse`. Does **not** use `api.dialectic().fetchProcessAssociation` or `listDomains`.
-      * `[ ]`   `set: (fn: (draft: Draft<DialecticStateValues>) => void) => void` — existing parameter of `hydrateAllStageProgressLogic`; provides the Immer draft.
-      * `[ ]`   No reverse dependencies. HARD dependency: `packages/store/src/dialecticStore` node (initializes `stageExpectedCountsByRun`); BE `getAllStageProgress` node (`expectedCount` on response). HARD dependency: `packages/api/src/dialectic.api` node only for `getAllStageProgress` transport — not for association. Precedes `dialecticStore.selectors` (`selectCostCeiling` reads this map; `selectPreProjectCostCeiling` reads `preProjectStageExpectedCounts` from the store node).
-
-    * `[ ]`   `interaction.spec`
-      * `[ ]`   Trigger: existing post-project flows call `hydrateAllStageProgressLogic` after `api.dialectic().getAllStageProgress` returns (session + project context). Side effects: writes `dagProgressByRun[runKey]` and `stageExpectedCountsByRun[runKey]` only.
-      * `[ ]`   Does **not** run on domain selection, does not invoke `fetchProcessAssociation`, and does not populate `preProjectStageExpectedCounts`. Declarative only — no code.
-
-    * `[ ]`   `context_slice`
-      * `[ ]`   From each `StageProgressEntry`: only `stageSlug` and `expectedCount` (the existing `steps`/`documents`/`jobs`/`progress` reads are unchanged).
-      * `[ ]`   Writes only `stageExpectedCountsByRun[`${sessionId}:${iterationNumber}`][stageSlug]`. Must not read or write `selectedDomainProcessAssociation`, `isLoadingDomainProcessAssociation`, `domainProcessAssociationError`, `preProjectStageExpectedCounts`, `domains`, `selectedDomain`, or `currentProcessTemplate`. No over-fetch, no hidden coupling.
-
-    * `[ ]`   packages/types/src/`dialectic.types.ts`
-      * `[ ]`   In the FE `StageProgressEntry` (lines 1255-1264): add `expectedCount: number;` immediately after `progress: { completedSteps: number; totalSteps: number; failedSteps: number };` (line 1259), matching the BE field ordering. Required field, finite non-negative integer by contract.
-      * `[ ]`   Types only (exempt from RED/GREEN). Additive to the interface; because it is required, every constructed `StageProgressEntry` must supply it — satisfied centrally by the `mockStageProgressEntry` factory default below, not by per-fixture edits.
-
-    * `[ ]`   apps/web/src/mocks/`dialecticStore.mock.ts`
-      * `[ ]`   The three FE tests that build `StageProgressEntry`/`GetAllStageProgressResponse` do so with inline literals (`dialecticStore.documents.test.ts` ~10 entries at 452/470/515/566/701/745/794/872/951/1034; `dialecticStore.test.ts` ≈1145; `dialectic.api.documents.test.ts` ≈221-242), which violates the no-inline-mocks rule and would force manual repair on every shape change. This file is already the project's dialectic mock factory (`mockDialecticProject`, `mockStageRunProgressSnapshot`, etc.); the `packages/store/src/dialecticStore` node already edits it for association + expected-count mock state/actions — this node adds progress-response factories only (no duplicate association action mocks). `packages/store` tests (`dialecticStore.notifications.test.ts`) and `packages/api` tests (`dialectic.api.contribution.test.ts`, `dialectic.api.integration.test.ts`) already import factories from here via `../../../apps/web/src/mocks/dialecticStore.mock` — NOT from `@paynless/api/mocks` (that barrel is only API client `vi.fn` stubs in `dialectic.api.mock.ts`).
-      * `[ ]`   If the store node did not add it: `export function mockDomainProcessAssociationRow(overrides: Partial<DomainProcessAssociationRow> = {}): DomainProcessAssociationRow` — full six-column `DomainProcessAssociationRow` with `is_default_for_domain: true` defaults (for association-isolation test seeding). Import `DomainProcessAssociationRow` from `@paynless/types`.
-      * `[ ]`   Add `export function mockStageProgressEntry(overrides: Partial<StageProgressEntry> = {}): StageProgressEntry` returning spec-valid defaults from the production type — `{ stageSlug: 'thesis', status: <valid UnifiedProjectStatus>, modelCount: 1, progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 }, expectedCount: 0, steps: [], documents: [], jobs: [], edges: [], ...overrides }` (the default carries the new `expectedCount`).
-      * `[ ]`   Add `export function mockGetAllStageProgressResponse(overrides: Partial<GetAllStageProgressResponse> = {}): GetAllStageProgressResponse` returning `{ dagProgress: <valid DagProgressDto, `dialectic.types.ts:1179`>, stages: [mockStageProgressEntry()], ...overrides }`. Extend the file's existing `@paynless/types` imports with `StageProgressEntry`, `GetAllStageProgressResponse`, `DagProgressDto`. No `as`, no inline ad-hoc types.
-
-    * `[ ]`   packages/store/src/`dialecticStore.documents.test.ts`
-      * `[ ]`   Migrate every inline `GetAllStageProgressResponse`/`StageProgressEntry` literal in the `hydrateAllStageProgressLogic` suite (452, 470, 515, 566, 701, 745, 794, 872, 951, 1034) to `mockGetAllStageProgressResponse({ stages: [mockStageProgressEntry({ ...asserted fields... })] })`, preserving each test's `stageSlug`/`modelCount`/`steps`/`documents`/`jobs`/`progress`/`dagProgress`. Import from `../../../apps/web/src/mocks/dialecticStore.mock` (same path as `dialecticStore.notifications.test.ts`). Existing assertions stay green.
-      * `[ ]`   Success assertion: `mockStageProgressEntry({ stageSlug: 'thesis', expectedCount: <n> })`; after `hydrateAllStageProgressLogic` resolves, `store.getState().stageExpectedCountsByRun['${sessionId}:${iterationNumber}']['thesis']` equals `<n>`; a two-stage response asserts each stage keyed to its own count.
-      * `[ ]`   Throw assertion: `mockStageProgressEntry({ expectedCount: -1 })` (and `1.5`, and a non-number via typed override) makes `hydrateAllStageProgressLogic` reject with `/\[hydrateAllStageProgress\].*expectedCount/`, and `stageExpectedCountsByRun` is left unchanged.
-      * `[ ]`   Per-stage-path assertion: after an authoritative hydrate populates a stage's count, a subsequent `hydrateStageProgressLogic` (listStageDocuments path) for the same key does NOT clear or alter `stageExpectedCountsByRun`. New cases appended; all objects via the factory with typed overrides.
-      * `[ ]`   Association isolation: `set({ selectedDomainProcessAssociation: mockDomainProcessAssociationRow(), preProjectStageExpectedCounts: [{ stageSlug: 'thesis', expectedCount: 2 }] })` before `hydrateAllStageProgressLogic`; after hydrate, both fields deep-equal the seeded values (post-project hydration must not clobber pre-project / association state).
-
-    * `[ ]`   packages/store/src/`dialecticStore.test.ts`
-      * `[ ]`   Migrate the inline `StageProgressEntry`/response literal(s) (≈1145) to the factory + typed overrides; import from `../../../apps/web/src/mocks/dialecticStore.mock`. No assertion changes (the factory default supplies `expectedCount`).
-
-    * `[ ]`   packages/api/src/`dialectic.api.documents.test.ts`
-      * `[ ]`   Migrate the inline `StageProgressEntry`/response literal(s) (≈221-242) to the factory + typed overrides; import from `../../../apps/web/src/mocks/dialecticStore.mock` (same path as `dialectic.api.contribution.test.ts`). No assertion changes.
-
-    * `[ ]`   packages/store/src/`dialecticStore.documents.ts`
-      * `[ ]`   Add a pre-`set` validation loop after the document-validation block (which ends at line 1842) and before `const runKey` (line 1844): `for (const entry of stages) { if (!Number.isInteger(entry.expectedCount) || entry.expectedCount < 0) { throw new Error(`[hydrateAllStageProgress] expectedCount invalid for stage ${entry.stageSlug}; sessionId=${sessionId}, iterationNumber=${iterationNumber}`); } }`. Consistent with the existing inline validations/throws in this function; no shared FE helper exists (none in `@paynless/utils`), so the check is inline as the file already does for `steps`/`documents`.
-      * `[ ]`   Inside the `set`, immediately after `state.dagProgressByRun[runKey] = dagProgress;` (line 1847): add `state.stageExpectedCountsByRun[runKey] = {};`. Within the existing `for (const entry of stages)` loop (starting line 1848), add `state.stageExpectedCountsByRun[runKey][entry.stageSlug] = entry.expectedCount;`.
-      * `[ ]`   Do NOT modify `hydrateStageProgressLogic`. No new imports (the response type already flows through the existing `@paynless/types` import). No other behavioral change; all existing snapshot population (`stepStatuses`, `documents`, `jobProgress`, `progress`, `jobs`) is untouched. No `as`, no default, no fallback.
-
-    * `[ ]`   `directionality`
-      * `[ ]`   Layer: store (FE hydration, post-project run scope).
-      * `[ ]`   Deps: inward (`@paynless/types`, `@paynless/api` `getAllStageProgress` only, `packages/store/src/dialecticStore` initial state for `stageExpectedCountsByRun`, Immer `set`).
-      * `[ ]`   Provides: outward (`stageExpectedCountsByRun[runKey]` for `selectCostCeiling`; does not provide pre-project counts or `process_template_id`).
-      * `[ ]`   No cycles. No lateral call to `fetchProcessAssociation`.
-
-    * `[ ]`   `requirements`
-      * `[ ]`   FE `StageProgressEntry` carries a required `expectedCount: number`. Observable: type definition; all fixtures compile with the field present.
-      * `[ ]`   After authoritative hydration, `stageExpectedCountsByRun[runKey][stageSlug]` equals each `entry.expectedCount`. Observable: success unit test (single- and multi-stage).
-      * `[ ]`   An invalid `expectedCount` (negative, non-integer, or non-number) makes `hydrateAllStageProgressLogic` throw and stores nothing. Observable: throw unit test.
-      * `[ ]`   `hydrateStageProgressLogic` never writes `stageExpectedCountsByRun`; an authoritative count survives a subsequent per-stage hydrate. Observable: per-stage-path unit test.
-      * `[ ]`   `hydrateAllStageProgressLogic` does not read or mutate association or pre-project count state. Observable: association-isolation unit test; grep `dialecticStore.documents.ts` for `fetchProcessAssociation`, `selectedDomainProcessAssociation`, `preProjectStageExpectedCounts`, `default_process_template_id` → no matches.
-      * `[ ]`   No `default_process_template_id` (or synthetic domain template field) in this module. Observable: grep confirms absent.
-      * `[ ]`   No change to any other hydrated field or to the per-stage path. Observable: existing documents tests remain green.
-
-  * `[ ]`   packages/store/src/dialecticStore.selectors **Selector-derived `selectCostCeiling` (post-project) and `selectPreProjectCostCeiling` (pre-project); no stored estimate, no recompute action**
-
-    * `[ ]`   `objective`
-      * `[ ]`   Group 4 architecture (resolved): cost ceilings are **selector-derived**, not stored. This node adds two pure selectors that read live dialectic state, assemble `ComputeCostCeilingParams`, and call `computeCostCeiling` from `@paynless/utils` — recomputing on every read when inputs change (model selection, slider, hydration, contributions, domain/association selection).
-      * `[ ]`   **`selectCostCeiling(state, sessionId): CostCeilingEstimate | null`** (post-project): for the session's current `iteration_count`, read per-stage `expectedCount` from `state.stageExpectedCountsByRun[`${sessionId}:${iterationNumber}`][stageSlug]` (populated by the `dialecticStore.documents` node); read `maxOutputTokens` and `maxOutputCostRate` from dialectic state; determine per-stage `actualCost` by summing `DialecticContribution` token usage × model rates when `selectUnifiedProjectProgress` reports `stageStatus === 'completed'`, else `actualCost: null`; call `computeCostCeiling`. Return `null` when any required input is absent or invalid — never a fabricated zero estimate. Does **not** read `selectedDomain`, `selectedDomainProcessAssociation`, or `DialecticDomainRow` (post-project path is session-scoped).
-      * `[ ]`   **`selectPreProjectCostCeiling(state): CostCeilingEstimate | null`** (pre-project): read `state.preProjectStageExpectedCounts` only (populated by `fetchStageExpectedCounts` in the `packages/store/src/dialecticStore` node after callers supply `processTemplateId` from `selectedDomainProcessAssociation.process_template_id` — never from `DialecticDomainRow` and never from a merged `default_process_template_id` field). Before reading counts, enforce the association chain stored by that node: if `state.selectedDomain == null`, return `null`; if `state.domainProcessAssociationError != null`, return `null`; if `state.selectedDomainProcessAssociation == null`, return `null`; if `state.selectedDomainProcessAssociation.domain_id !== state.selectedDomain.id`, return `null` (stale/mismatched rows). Same `maxOutputTokens` / `maxOutputCostRate` extraction as post-project; all stages `actualCost: null`; call `computeCostCeiling`. Does **not** call `fetchProcessAssociation` or `fetchStageExpectedCounts` (actions live in `dialecticStore.ts`; Group 5 orchestrates call order).
-      * `[ ]`   **`maxOutputTokens`**: use `state.maxOutputTokens` only when it is a finite number. When `null`, return `null` — the tier-default clamp (`userTier.output_cap_tokens`) lives in `authStore` / `OutputCapSlider` (`OutputCapSlider.tsx:176-182`), not in `DialecticStateValues`, so this selector does not invent a tier cap. The slider's `useEffect` writes the effective value into `maxOutputTokens` once tier/model bounds are known; until then consumers show no estimate.
-      * `[ ]`   Functional goal: introduce a shape-specific guard `isAiModelExtendedConfig(value: unknown): value is AiModelExtendedConfig` in `@paynless/utils` and migrate FE to narrow `catalogEntry.config` with it, then read the now-typed `config.hard_cap_output_tokens` / `config.provider_max_output_tokens` directly. 
-      * `[ ]`   Functional goal: the guard validates the REQUIRED fields — `input_token_cost_rate: number` (finite), `output_token_cost_rate: number` (finite), and `tokenization_strategy` is a record whose `type` is one of `'tiktoken' | 'rough_char_count' | 'provider_specific_api' | 'unknown'` — and, for each OPTIONAL field that is present, enforces its type (`hard_cap_output_tokens`, `provider_max_output_tokens`, `provider_max_input_tokens`, `default_temperature`, `default_top_p` finite numbers; `context_window_tokens` a finite number or `null`). A config missing a required field or carrying a wrong-typed field is rejected.
-      * `[ ]`   Functional goal: Ceilings are selector-derived (no stored `costCeilingEstimate` / no `recomputeCostCeiling` action).
-      * `[ ]`   **`maxOutputCostRate`**: highest `output_token_cost_rate` across `state.selectedModels` matched to `state.modelCatalog[].config` via `isAiModelExtendedConfig` (`@paynless/utils`). When `selectedModels` is `null`, `undefined`, or `[]`, or no selected model has a valid config, return `null`.
-      * `[ ]`   **Contribution actuals** (post-project only): for a completed stage, sum every `DialecticContribution` on that session where `c.stage === stageSlug` and `c.iteration_number === iterationNumber`: `tokens_used_input × input_token_cost_rate + tokens_used_output × output_token_cost_rate`, rates from the contribution's `model_id` catalog entry (guard-required). If any included contribution has `tokens_used_input`/`tokens_used_output`/`model_id` null, or its model config fails the guard, return `null` for the whole estimate. An empty sum on a completed stage is `actualCost: 0` (valid).
-      * `[ ]`   **Counts** (post-project): iterate template stages via `getSortedStagesFromTemplate(state.currentProcessTemplate)`; if template missing, run-key missing, or any template `stage.slug` lacks a finite non-negative integer in `stageExpectedCountsByRun[runKey]`, return `null`. (Pre-project): after association gates above, if `preProjectStageExpectedCounts` is `null` or empty, return `null`; map each `StageExpectedCount` with finite non-negative integer `expectedCount`.
-      * `[ ]`   Non-functional: module-private helpers only (`extractMaxOutputCostRate`, `sumStageActualCost`, `buildPostProjectCostCeilingInputs`, `buildPreProjectCostCeilingInputs`); no new `DialecticStateValues` fields, no actions, no `costCeilingEstimate` / `recomputeCostCeiling`. `computeCostCeiling` remains arithmetic-only; this node owns rate extraction, contribution summation, and count assembly. No `api.dialectic()` calls, no `fetchProcessAssociation`, no reads of `domains[]`.
-      * `[ ]`   Each goal is atomic and testable.
-
-    * `[ ]`   `role`
-      * `[ ]`  FE store selectors (`dialecticStore.selectors.ts`) — the derivation layer between hydrated counts / contributions / catalog rates / stored association+count state and the pure `computeCostCeiling` utility.
-      * `[ ]`  This node CREATES the two exported selectors and their private helpers. It does NOT add store state, actions, UI, or duplicate `computeCostCeiling` / `isAiModelExtendedConfig` logic.
-      * `[ ]`  Out of scope: `fetchProcessAssociation` / `fetchStageExpectedCounts` actions and their loading/error flags (owned by `packages/store/src/dialecticStore`); `listDomains` / `DialecticDomainRow` catalog fetch; Group 5 call sequencing (`setSelectedDomain` → `fetchProcessAssociation` → `fetchProcessTemplate` / `fetchStageExpectedCounts`); wallet balance (`selectActiveChatWalletInfo` stays in wallet store).
-
-    * `[ ]`   `module`
-      * `[ ]`  Bounded context: `@paynless/store` dialectic selectors (`dialecticStore.selectors.ts`).
-      * `[ ]`  Inside: `selectCostCeiling`, `selectPreProjectCostCeiling`, and private helpers that read dialectic state and call `computeCostCeiling`.
-      * `[ ]`  Outside: BE handlers, API transport, association/count **actions**, `computeCostCeiling` implementation, auth tier, UI orchestration.
-
-    * `[ ]`   `deps`
-      * `[ ]`   `CostCeilingEstimate`, `CostCeilingStageInput`, `ComputeCostCeilingParams`, `StageExpectedCount` — provider: `@paynless/types` (`dialectic.types.ts`, `packages/utils/src/computeCostCeiling` node); layer: types; direction: inward.
-      * `[ ]`   `computeCostCeiling` — provider: `@paynless/utils` (`packages/utils/src/computeCostCeiling.ts`, prior Group 3 node); layer: domain utility; direction: inward; import from `@paynless/utils`, never re-export from store.
-      * `[ ]`   `isAiModelExtendedConfig` — provider: `@paynless/utils` (`dialectic.guard.ts`, OutputCapSlider node); layer: shared guard; direction: inward.
-      * `[ ]`   Post-project state: `stageExpectedCountsByRun`, `maxOutputTokens`, `selectedModels`, `modelCatalog`, `currentProcessTemplate`, `currentProjectDetail` — provider: `DialecticStateValues` + existing selectors in this file.
-      * `[ ]`   Pre-project state: `selectedDomain` (`DialecticDomainRow | null`), `selectedDomainProcessAssociation` (`DomainProcessAssociationRow | null`), `domainProcessAssociationError`, `preProjectStageExpectedCounts`, `stageExpectedCountsError` — provider: `DialecticStateValues` (`packages/store/src/dialecticStore` node declares them; row aliases from `@paynless/db-types` via `dialectic.api` node). Selectors read these fields only; they do not fetch associations.
-      * `[ ]`   `selectSessionById`, `selectUnifiedProjectProgress`, `getSortedStagesFromTemplate` — same file; direction: inward (composition, no cycles).
-      * `[ ]`   HARD dependency chain: `packages/utils/src/computeCostCeiling` → `isAiModelExtendedConfig` (OutputCapSlider node) → `packages/api/src/dialectic.api` (row aliases + transport) → `packages/store/src/dialecticStore` (association row + `fetchStageExpectedCounts` + count error state) → `packages/store/src/dialecticStore.documents` (`stageExpectedCountsByRun` population). This node is last in Group 4.
-
-    * `[ ]`   `context_slice`
-      * `[ ]`  Post-project reads: `stageExpectedCountsByRun[runKey]`, session `iteration_count`, template stage slugs, `selectUnifiedProjectProgress(...).stageDetails[].stageStatus`, session `dialectic_contributions` filtered by stage/iteration, `modelCatalog` configs for selected + contribution models, `maxOutputTokens`. No domain-catalog or association fields.
-      * `[ ]`  Pre-project reads: `selectedDomain`, `selectedDomainProcessAssociation`, `domainProcessAssociationError`, `preProjectStageExpectedCounts`, `stageExpectedCountsError`, `maxOutputTokens`, `selectedModels`, `modelCatalog`. Selectors ignore `isLoadingDomainProcessAssociation` / `isLoadingStageExpectedCounts` (return `null` while counts/association are absent — loading is a UI concern; absent data must not produce a fabricated estimate).
-      * `[ ]`  No wallet, no auth tier, no DB/API. No over-fetch.
-
-    * `[ ]`   utils/`dialectic.guard.test.ts`
-      * `[ ]`   Append a `describe('isAiModelExtendedConfig')` suite (mirroring the existing `isJson`/`isPlainObject`/`isRecord` suites; `import { isAiModelExtendedConfig } from './dialectic.guard'`).
-      * `[ ]`   Passing cases: a full valid `AiModelExtendedConfig` (all required + several optional fields) passes; a minimal valid config (only `input_token_cost_rate`, `output_token_cost_rate`, `tokenization_strategy: { type: 'tiktoken' }`) passes; `context_window_tokens: null` passes.
-      * `[ ]`   Failing cases: missing `input_token_cost_rate`; missing `output_token_cost_rate`; a rate that is non-number / non-finite; missing `tokenization_strategy`; `tokenization_strategy.type` not in the literal set; an optional numeric field present but non-number (e.g. `hard_cap_output_tokens: "x"`); `null`; an array; a string; a number.
-      * `[ ]`   Valid objects built from the `AiModelExtendedConfig` production type; invalid variants built via factory-then-override to invalid values (typed per the strict-typing exception), not by casting arbitrary literals. One behavior per test; appended at the end.
-
-    * `[ ]`   utils/`dialectic.guard.ts`
-      * `[ ]`   Add `export function isAiModelExtendedConfig(value: unknown): value is AiModelExtendedConfig`, importing `AiModelExtendedConfig` from `@paynless/types` (add to the existing top-of-file import). Logic: `if (!isRecord(value)) return false;` require `typeof value['input_token_cost_rate'] === 'number' && Number.isFinite(value['input_token_cost_rate'])` and the same for `output_token_cost_rate`; require `isRecord(value['tokenization_strategy'])` and `value['tokenization_strategy']['type']` to be one of `'tiktoken' | 'rough_char_count' | 'provider_specific_api' | 'unknown'`; for each optional numeric key (`hard_cap_output_tokens`, `provider_max_output_tokens`, `provider_max_input_tokens`, `default_temperature`, `default_top_p`), if the key is present it must be a finite number else return false; for `context_window_tokens`, if present it must be a finite number or `null`; otherwise return `true`.
-      * `[ ]`   Reuse `isRecord` from this same file (lines 37-39). No `any`, no casts, no inline ad-hoc types.
-
-    * `[ ]`   packages/store/src/`dialecticStore.selectors.ts`
-      * `[ ]`   Add imports: `CostCeilingEstimate`, `CostCeilingStageInput`, `ComputeCostCeilingParams`, `AiModelExtendedConfig`, `StageExpectedCount` from `@paynless/types`; `isAiModelExtendedConfig`, `computeCostCeiling` from `@paynless/utils`.
-      * `[ ]`   `function extractMaxOutputCostRate(state: DialecticStateValues): number | null`: if `state.selectedModels == null` or `length === 0`, return `null`; loop each selected model id against `state.modelCatalog`; for each match where `isAiModelExtendedConfig(catalogEntry.config)`, track the max `config.output_token_cost_rate`; if no valid rate found, return `null`; else return the max. No default rate.
-      * `[ ]`   `function lookupModelRates(modelId: string | null, catalog: AiProvidersRow[]): AiModelExtendedConfig | null`: find catalog row by id; return narrowed config or `null`.
-      * `[ ]`   `function sumStageActualCost(session: DialecticSession, stageSlug: string, iterationNumber: number, catalog: AiProvidersRow[]): number | null`: filter `session.dialectic_contributions` where `c.stage === stageSlug && c.iteration_number === iterationNumber`; for each, require non-null `model_id`, `tokens_used_input`, `tokens_used_output`; resolve rates via `lookupModelRates`; if any contribution fails, return `null`; sum `input × input_rate + output × output_rate`; return the sum (may be `0`).
-      * `[ ]`   `function buildPostProjectCostCeilingInputs(state: DialecticStateValues, sessionId: string): CostCeilingStageInput[] | null`: resolve `session` via `selectSessionById(state, sessionId)` — if missing or `iteration_count` not a number, return `null`; `runKey = `${sessionId}:${iterationNumber}`; `countsBySlug = state.stageExpectedCountsByRun[runKey]` — if missing, return `null`; `stages = getSortedStagesFromTemplate(state.currentProcessTemplate)` — if empty, return `null`; `unified = selectUnifiedProjectProgress(state, sessionId)` (may throw if session/stage invalid — callers must pass a valid sessionId in production; tests seed valid session); build `CostCeilingStageInput[]` in template order: for each `stage.slug`, if `countsBySlug[stage.slug]` is not a finite non-negative integer, return `null`; if unified `stageDetails` entry has `stageStatus === 'completed'`, set `actualCost = sumStageActualCost(...)` (propagate `null`); else `actualCost: null`; push `{ stageSlug, expectedCount: countsBySlug[stage.slug], actualCost }`.
-      * `[ ]`   `export function selectCostCeiling(state: DialecticStateValues, sessionId: string): CostCeilingEstimate | null`: `const maxOutputTokens = state.maxOutputTokens`; if not finite number, return `null`; `const maxOutputCostRate = extractMaxOutputCostRate(state)`; if `null`, return `null`; `const stages = buildPostProjectCostCeilingInputs(state, sessionId)`; if `null`, return `null`; `return computeCostCeiling({ stages, maxOutputTokens, maxOutputCostRate })`.
-      * `[ ]`   `function buildPreProjectCostCeilingInputs(state: DialecticStateValues): CostCeilingStageInput[] | null`: if `state.selectedDomain == null`, return `null`; if `state.domainProcessAssociationError != null`, return `null`; if `state.selectedDomainProcessAssociation == null`, return `null`; if `state.selectedDomainProcessAssociation.domain_id !== state.selectedDomain.id`, return `null`; if `state.preProjectStageExpectedCounts == null` or `length === 0`, return `null`; map each `StageExpectedCount` to `{ stageSlug, expectedCount, actualCost: null }` — if any `expectedCount` is not a finite non-negative integer, return `null`; return the array. Does not read `process_template_id` (counts were already fetched for that template by `fetchStageExpectedCounts` in `dialecticStore.ts`).
-      * `[ ]`   `export function selectPreProjectCostCeiling(state: DialecticStateValues): CostCeilingEstimate | null`: same cap/rate guards as `selectCostCeiling`; `const stages = buildPreProjectCostCeilingInputs(state)`; if `null`, return `null`; `return computeCostCeiling({ stages, maxOutputTokens, maxOutputCostRate })`.
-      * `[ ]`   Place exports after `selectUnifiedProjectProgress` (≈line 814) or at the end of the progress section; helpers are `function` declarations above the exports (same pattern as `getSortedStagesFromTemplate`). No `createSelector` memoization required (cheap pure read; matches `selectUnifiedProjectProgress` signature style). Grep this file: no `default_process_template_id`, no `fetchProcessAssociation`, no `domains[]` reads for template id.
-
-    * `[ ]`   packages/store/src/`dialecticStore.selectors.progress.test.ts`
-      * `[ ]`   Append `describe('selectCostCeiling')` and `describe('selectPreProjectCostCeiling')` at the end; import the new selectors and `mockAiProvidersRow` / `mockAiModelConfig` from `../../../apps/web/src/mocks/dialecticStore.mock`. For pre-project fixtures, seed `selectedDomain` and `selectedDomainProcessAssociation` with matching `domain_id` (production row shapes / existing dialectic mock factories — no inline ad-hoc domain types).
-      * `[ ]`   `selectCostCeiling` — returns estimate: seed `maxOutputTokens`, `selectedModels`, `modelCatalog` (full config via `mockAiProvidersRow({ config: { ...mockAiModelConfig(), output_token_cost_rate: 3 } })`), `stageExpectedCountsByRun[runKey]` with counts for every template stage, valid session/project/template (reuse the `selectUnifiedProjectProgress` fixture patterns in this file); assert `stageCeilings[slug] === expectedCount × maxOutputTokens × rate` and `projectCeiling` matches `computeCostCeiling` for all-pending stages.
-      * `[ ]`   `selectCostCeiling` — mixed actual + estimate: one stage `stageStatus: 'completed'` with contributions (valid tokens + rates) and a second pending stage; assert `projectCeiling` uses actual for completed and estimate for pending (hand-check against `computeCostCeiling`).
-      * `[ ]`   `selectCostCeiling` — returns `null` when: `maxOutputTokens` is `null`; `selectedModels` is `[]`; no valid catalog config; `stageExpectedCountsByRun` missing run-key; a template stage slug missing from the counts map; a completed-stage contribution with `tokens_used_input: null`; `expectedCount` invalid on counts map. One behavior per test.
-      * `[ ]`   `selectPreProjectCostCeiling` — returns estimate: `selectedDomain` + `selectedDomainProcessAssociation` with matching `domain_id`, `domainProcessAssociationError: null`, `preProjectStageExpectedCounts: [{ stageSlug: 'thesis', expectedCount: 4 }, ...]`, cap + rate set; assert `projectCeiling` equals sum of stage estimates (all `actualCost` null).
-      * `[ ]`   `selectPreProjectCostCeiling` — returns `null` when: `selectedDomain` is `null`; `domainProcessAssociationError` is set; `selectedDomainProcessAssociation` is `null`; `selectedDomainProcessAssociation.domain_id` does not match `selectedDomain.id`; `preProjectStageExpectedCounts` is `null` or `[]`; cap or rate missing; invalid `expectedCount` on a stored count. One behavior per test. New cases appended; state built from `initialDialecticStateValues` + production types.
-
-    * `[ ]`   `directionality`
-      * `[ ]`   Layer: store selectors.
-      * `[ ]`   Deps: inward (`@paynless/types`, `@paynless/utils` including `computeCostCeiling`, `DialecticStateValues` association+count fields from `dialecticStore`, existing selectors in this file).
-      * `[ ]`   Provides: outward (`CostCeilingEstimate | null` for Group 5 NSF, SessionInfoCard, Create form — Create form still orchestrates `fetchProcessAssociation` / `fetchStageExpectedCounts`; selectors only read settled state).
-      * `[ ]`   No cycles.
-
-    * `[ ]`   `requirements`
-      * `[ ]`   No `costCeilingEstimate` state and no `recomputeCostCeiling` action added. Observable: grep `DialecticStateValues` / `DialecticActions` unchanged for those symbols.
-      * `[ ]`   `selectCostCeiling` returns `CostCeilingEstimate` only when counts, cap, rate, and (for completed stages) contribution actuals are all valid; otherwise `null`. Does not read domain/association fields. Observable: null-path unit tests.
-      * `[ ]`   `selectPreProjectCostCeiling` returns `CostCeilingEstimate` only when association chain is consistent (`selectedDomain`, matching `selectedDomainProcessAssociation`, no `domainProcessAssociationError`), `preProjectStageExpectedCounts`, cap, and rate are valid; otherwise `null`. Never reads `default_process_template_id` or `DialecticDomainRow` for template id. Observable: unit tests.
-      * `[ ]`   Both selectors delegate arithmetic to `computeCostCeiling` (no duplicated multiply/sum). Observable: review + spot-check against hand-computed `computeCostCeiling` outputs in tests.
-      * `[ ]`   `maxOutputCostRate` uses `isAiModelExtendedConfig` on catalog configs only; no string-indexed config reads. Observable: review.
-      * `[ ]`   Selectors module contains no `fetchProcessAssociation`, `fetchStageExpectedCounts`, or `default_process_template_id`. Observable: grep `dialecticStore.selectors.ts`.
-      * `[ ]`   Existing selector tests remain green. Observable: full `dialecticStore.selectors.progress.test.ts` (and sibling selector test files) pass.
-
-  * `[ ]`   apps/web/src/components/dialectic/OutputCapSlider **Narrow `modelCatalog[].config` with a shape-specific `AiModelExtendedConfig` guard, replacing generic `isJson`/`isPlainObject` reads**
-
-    * `[ ]`   `objective`
-      * `[ ]`   `OutputCapSlider.tsx` reads each selected model's `modelCatalog[].config` (a Supabase `Json | null` on `AiProvidersRow`) using the generic guards `isJson` + `isPlainObject` (lines 62-71), then indexes raw string keys `configValue["hard_cap_output_tokens"]` / `configValue["provider_max_output_tokens"]` as `unknown` and re-validates each inline with `typeof === "number" && Number.isFinite && >= 0` (lines 73-100). The application type `AiModelExtendedConfig` (`@paynless/types`, `ai.types.ts:129-159`) is never proven, the cost-rate fields (`input_token_cost_rate`, `output_token_cost_rate`) the cost-ceiling work needs stay invisible, and string-indexed access is fragile.
-      * `[ ]`   Non-functional: no change to slider props, existing store reads, tier filtering, log-segment scale, markers, thumb-max math, or upgrade CTA. `logger` import is retained; the slider's `isJson`/`isPlainObject` imports are removed (both remain exported from `@paynless/utils` for other consumers). The only behavioral change is the config-narrowing path (lines 62-100). **No coupling to `fetchProcessAssociation`:** pre-project `process_template_id` comes from `DomainProcessAssociationRow` via store/API nodes on domain selection; this component never reads `selectedDomain`, `selectedDomainProcessAssociation`, `domains`, or calls `fetchProcessAssociation` / `fetchStageExpectedCounts`.
-      * `[ ]`   Each goal is atomic and testable.
-
-    * `[ ]`   `role`
-      * `[ ]`   UI component (`OutputCapSlider`) data-source hardening, plus a new shared FE type guard in `@paynless/utils`.
-      * `[ ]`   The guard rides in this node because the slider is its first demanding consumer. This node does NOT modify the `AiModelExtendedConfig` type (it already exists), does not add or change dialectic store actions/state beyond what the slider already reads/writes (`maxOutputTokens`, `modelCatalog`, `selectedModels`), and does not touch the slider's tier/marker/scale/CTA logic.
-      * `[ ]`   Out of scope: `computeCostCeiling` (prior node); `dialecticStore.selectors` implementation (`extractMaxOutputCostRate` — next node, imports this guard); `fetchProcessAssociation` / `listDomains` BE packages, index wiring, `dialectic.api` transport, `fetchProcessAssociation` / `fetchStageExpectedCounts` store actions, `selectedDomain` / `selectedDomainProcessAssociation` / `DomainProcessAssociationRow` / `DialecticDomainRow` (API + `dialecticStore` nodes); `CreateDialecticProjectForm` domain-selection orchestration (Group 5); all other UI except this slider's config path.
-
-    * `[ ]`   `module`
-      * `[ ]`   Bounded context: `@paynless/utils` FE type guards (`dialectic.guard.ts`) + `apps/web` dialectic UI (`OutputCapSlider.tsx`, tests).
-      * `[ ]`   Inside this boundary: the `isAiModelExtendedConfig` guard, and the slider narrowing `catalogEntry.config` to `AiModelExtendedConfig` before reading `hard_cap_output_tokens`/`provider_max_output_tokens`; writing `maxOutputTokens` to the dialectic store (unchanged contract).
-      * `[ ]`   Outside this boundary: how `modelCatalog` is loaded (existing store/API paths); domain catalog + default association read (`fetchProcessAssociation` after `listDomains`); pre-project count fetch (`fetchStageExpectedCounts` with `process_template_id` from the association row); selector assembly of ceilings (`dialecticStore.selectors` reads `maxOutputTokens` this slider sets plus rates from the same guard).
-
-    * `[ ]`   `deps`
-      * `[ ]`   `AiModelExtendedConfig` — provider: `@paynless/types` (`ai.types.ts`); layer: types; direction: inward; purpose: the guarded shape. Imported from the original source, never re-exported.
-      * `[ ]`   `isRecord` — provider: `@paynless/utils` (`dialectic.guard.ts`, lines 37-39); layer: shared utility; direction: inward; purpose: the guard's object primitive (the new guard lives in the same file and reuses it).
-      * `[ ]`   `useAuthStore`, `useDialecticStore`, `useNavigate`, `Slider`/`Tooltip`/`Button`, `UserTier`, `logger` — existing slider dependencies, unchanged. Dialectic store reads remain limited to `maxOutputTokens`, `setMaxOutputTokens`, `modelCatalog`, `selectedModels` (no `selectedDomain`, no association fields, no `api.dialectic()`).
-      * `[ ]`   No reverse dependencies. No lateral layer violations. HARD ordering: completes before `packages/store/src/dialecticStore.selectors` (that node imports `isAiModelExtendedConfig` from `@paynless/utils`). May run in parallel with BE `fetchProcessAssociation/` and FE API/store association work — no import or runtime dependency between those tracks and this slider.
-
-    * `[ ]`   `context_slice`
-      * `[ ]`   Guard input: only `value: unknown` (a `Json | null` config value from `AiProvidersRow.config`).
-      * `[ ]`   Slider reads: `useAuthStore` (`userTier`, `availableTiers`); `useDialecticStore` (`maxOutputTokens`, `setMaxOutputTokens`, `modelCatalog`, `selectedModels` only). From each matched `catalogEntry.config`, only `hard_cap_output_tokens` and `provider_max_output_tokens` after `isAiModelExtendedConfig` (for `sliderRangeMax`); writes user cap via `setMaxOutputTokens` (consumed later by `selectCostCeiling` / `selectPreProjectCostCeiling` when finite).
-      * `[ ]`   Slider does NOT read: `domains`, `selectedDomain`, `selectedDomainProcessAssociation`, `domainProcessAssociationError`, `preProjectStageExpectedCounts`, `stageExpectedCountsError`, or any `default_process_template_id` / merged domain field. Does NOT call `fetchProcessAssociation`, `fetchDomains`, `fetchStageExpectedCounts`, or `fetchProcessTemplate`.
-      * `[ ]`   No over-fetching, no hidden coupling to the association-read path.
-
-    * `[ ]`   dialectic/`OutputCapSlider.test.tsx`
-      * `[ ]`   Rebuild the `modelCatalog` fixtures so each `mockAiProvidersRow({ config })` carries a FULL valid `AiModelExtendedConfig` — replace the bare `config: { provider_max_output_tokens: 200000 }` (lines 162, 215, 398, 419) and the two-model ultra fixtures (lines 343, 348) with `config: { ...mockAiModelConfig(), provider_max_output_tokens: <value> }`, spreading the existing `mockAiModelConfig()` factory (already used as `mockAiProvidersRow`'s default config, `dialecticStore.mock.ts:798`) so the new guard accepts the fixture and `sliderRangeMax` is computed identically. Import `mockAiModelConfig` if not already imported.
-      * `[ ]`   Add test: a selected model whose `config` fails `isAiModelExtendedConfig` (e.g. `config: { provider_max_output_tokens: 200000 }` with the required rate/tokenization fields removed) is NOT counted toward `sliderRangeMax`; with only that model selected the slider returns null (no track), proving the guard gates malformed config.
-      * `[ ]`   Add test: with a valid full config whose `provider_max_output_tokens` is `200000`, `sliderRangeMax` is `200000` (unchanged from the pre-migration assertion), proving the typed read matches the previous string-indexed read.
-      * `[ ]`   All other existing assertions (4 markers, thumb max, within/above-tier marker clicks, CTA → `/subscription`, ultra thumb reach, page guidance, empty-`availableTiers`, empty-`selectedModels`) remain green. New tests appended at the end; full typed objects from production types.
-
-    * `[ ]`   dialectic/`OutputCapSlider.tsx`
-      * `[ ]`   Replace the import on line 21 `import { isJson, isPlainObject, logger } from "@paynless/utils";` with `import { isAiModelExtendedConfig, logger } from "@paynless/utils";`.
-      * `[ ]`   In the `sliderRangeMax` memo (lines 62-100): replace the `configValue === null` / `!isJson(configValue)` / `!isPlainObject(configValue)` gate and the raw `configValue["hard_cap_output_tokens"]` / `configValue["provider_max_output_tokens"]` reads with `const config = catalogEntry.config; if (!isAiModelExtendedConfig(config)) { continue; }` then read the typed `config.hard_cap_output_tokens` and `config.provider_max_output_tokens`. Preserve the existing `applicationCap`/`providerCap`/`Math.min`/`Number.isFinite` selection and the `highest` accumulation (lines 76-108) unchanged — only the source of the two values changes from `unknown`-indexed to typed-field access (the present-and-finite optional fields are guaranteed numbers by the guard, so the per-field `typeof`/`Number.isFinite` checks collapse to a presence check `if (config.hard_cap_output_tokens !== undefined)` / `if (config.provider_max_output_tokens !== undefined)`).
-      * `[ ]`   No other change: tier filtering (`displayTiers`), `thumbMax`/`activeThumbMax`, the log-segment slider math, markers, page guidance, and the upgrade CTA are untouched. Preserve all existing logging.
-
-    * `[ ]`   dialectic/`OutputCapSlider.integration.test.tsx`
-      * `[ ]`   Rebuild the `modelCatalog` fixtures here the same way (full `AiModelExtendedConfig` via `{ ...mockAiModelConfig(), provider_max_output_tokens: <value> }`) so the real-store integration path passes the new guard and the existing assertions (4 markers excluding `unreachable`, track max from model, thumb clamp, locked-marker CTA → `navigate('/subscription')`, real `maxOutputTokens` write) remain green with router as the only mock. Add one assertion that the slider's track max derives from the guarded `provider_max_output_tokens` of the seeded model.
-      * `[ ]`   Seed `useDialecticStore` with `modelCatalog` + `selectedModels` only — do not seed `selectedDomain`, `selectedDomainProcessAssociation`, or association loading flags to prove the slider path does not depend on `fetchProcessAssociation` having run (Create-form orchestration is a separate Group 5 node).
-
-    * `[ ]`   `directionality`
-      * `[ ]`   Layer: shared utility guard (`@paynless/utils`) + UI component (`apps/web`).
-      * `[ ]`   Deps: inward (`@paynless/types`, `isRecord`; `useAuthStore` + limited `useDialecticStore` fields; router; UI primitives).
-      * `[ ]`   Provides: outward (`isAiModelExtendedConfig` consumed by `dialecticStore.selectors` `extractMaxOutputCostRate`; slider continues to write `maxOutputTokens` used by both ceiling selectors). Does not provide association rows or `process_template_id`.
-      * `[ ]`   No cycles. No dependency on `fetchProcessAssociation` BE/API/store nodes.
-
-    * `[ ]`   `requirements`
-      * `[ ]`   `isAiModelExtendedConfig` accepts valid configs (required + optional) and rejects configs missing a required field, with a bad rate, with an invalid `tokenization_strategy.type`, or with a wrong-typed optional field. Observable: guard tests.
-      * `[ ]`   The slider narrows `catalogEntry.config` via `isAiModelExtendedConfig` and reads typed `hard_cap_output_tokens`/`provider_max_output_tokens`; `isJson`/`isPlainObject` no longer appear in `OutputCapSlider.tsx`. Observable: grep + unit test that `sliderRangeMax` matches the prior value for a valid config.
-      * `[ ]`   A selected model with malformed config is excluded from `sliderRangeMax`. Observable: unit test asserts null/no-track when only that model is selected.
-      * `[ ]`   All pre-existing slider unit and integration assertions remain green with the full-config fixtures. Observable: the existing tests pass after the fixture rebuild.
-      * `[ ]`   No change to slider props, tier/marker/scale/CTA logic, or logging. Dialectic store surface unchanged: still only `maxOutputTokens`, `setMaxOutputTokens`, `modelCatalog`, `selectedModels`. Observable: grep `OutputCapSlider.tsx` / `OutputCapSlider.test.tsx` / `OutputCapSlider.integration.test.tsx` for `fetchProcessAssociation`, `selectedDomain`, `selectedDomainProcessAssociation`, `DomainProcessAssociationRow`, `DialecticDomainRow`, `default_process_template_id`, `fetchStageExpectedCounts`, `fetchDomains` → no matches.
-      * `[ ]`   `dialectic.guard.ts` gains `isAiModelExtendedConfig` only; `isStageExpectedCount` / `isGetStageExpectedCountsResponse` (added by the `dialecticStore` node) are separate suites in the same file and must not be modified in this node. Observable: file review + guard test file scope.
-
-  * `[ ]`   apps/web/src/hooks/useStartContributionGeneration **Replace `minimum_balance` NSF gate with dynamic `stage_ceiling` from `selectCostCeiling`**
-
-    * `[ ]`   `objective`
-      * `[ ]`   The session-page preventive NSF gate still compares `viewingStage.minimum_balance` (a static DB column) to wallet balance in `useStartContributionGeneration.ts` (lines 133-142, 170, 173-176, 240-241). That hardcoded threshold does not reflect the user's selected models, output-cap slider, or per-stage job counts, and it diverges from the ticket's ceiling math (lines 448-456).
-      * `[ ]`   Functional goal: derive the viewing-stage ceiling from `selectCostCeiling(state, sessionId)` (`dialecticStore.selectors` node) — `stageCeilings[viewingStage.slug]` — and use it everywhere the hook previously used `minimum_balance` for disable logic, balance callout visibility, and paused-NSF resume eligibility.
-      * `[ ]`   Functional goal: when `selectCostCeiling` returns `null` (counts/cap/rate/actuals not yet valid), do **not** apply a preventive ceiling gate — `balanceMeetsThreshold` is `true`, `showBalanceCallout` is `false`, `stageCeiling`/`projectCeiling`/`stageBalanceShortfall` are `null`. The Generate button remains subject to the other existing guards (models, wallet ready, stage ready, viewing-ahead). No fallback to `minimum_balance`.
-      * `[ ]`   Functional goal: when `stageCeiling` is a finite number and `Number(walletBalance) < stageCeiling`, set `balanceMeetsThreshold` to `false`, include `!balanceMeetsThreshold` in `isDisabled`, set `showBalanceCallout` to `true`, and expose `stageBalanceShortfall = stageCeiling - walletBalance` (finite, positive). When balance meets or exceeds the ceiling, `balanceMeetsThreshold` is `true`, `showBalanceCallout` is `false`, and `showStageCostEstimate` is `true` so the button consumer can render "Estimated cost for this stage: ~{stageCeiling} tokens."
-      * `[ ]`   Functional goal: expose `projectCeiling` from the same `selectCostCeiling` result (`projectCeiling` field) for the next `GenerateContributionButton` node (project-level notice); this hook does not render UI.
-      * `[ ]`   Functional goal: in `startContributionGeneration` (callback, lines 232-243), recompute resume eligibility using `selectCostCeiling(state, activeContextSessionId)` and the viewing stage slug — **not** `viewingStage.minimum_balance`.
-      * `[ ]`   Non-functional: remove `stageThreshold` from `UseStartContributionGenerationReturn` (consumers must migrate in the next node). Keep `balanceMeetsThreshold` and `showBalanceCallout` names so mock factories need minimal renames, but their semantics are now ceiling-based. No changes to `GenerateContributionButton.tsx`, `SessionInfoCard.tsx`, or `CreateDialecticProjectForm.tsx` in this node.
-      * `[ ]`   Each goal is atomic and testable.
-
-    * `[ ]`   `role`
-      * `[ ]`   Application / FE hook — bridges dialectic store selectors, wallet balance, and contribution-generation actions for the session Generate/Continue control.
-      * `[ ]`   This node replaces the threshold source and extends the hook return contract. It does NOT edit button components, subscription deep links, or store selector implementation.
-      * `[ ]`   Out of scope: rendering NSF/cost copy (`GenerateContributionButton` next node); project/stage cost displays on `SessionInfoCard` / Create form; `selectPreProjectCostCeiling`; BE `paused_nsf` handling (unchanged).
-
-    * `[ ]`   `module`
-      * `[ ]`   Bounded context: `apps/web/src/hooks` — `useStartContributionGeneration`.
-      * `[ ]`   Inside this boundary: reading `selectCostCeiling`, deriving stage/project ceiling fields, wallet comparison, disable/callout/resume flags, and the callback's ceiling-aware resume check.
-      * `[ ]`   Outside this boundary: ceiling arithmetic (`computeCostCeiling`), count hydration, API transport, and UI markup.
-
-    * `[ ]`   `deps`
-      * `[ ]`   `selectCostCeiling` — provider: `@paynless/store` (`dialecticStore.selectors.ts`, prior node); layer: store selector; direction: inward; purpose: post-project `CostCeilingEstimate | null` for the active session.
-      * `[ ]`   `CostCeilingEstimate` — provider: `@paynless/types` (`dialectic.types.ts`, `computeCostCeiling` node); layer: types; direction: inward; purpose: shape of `stageCeilings` / `projectCeiling`.
-      * `[ ]`   `selectViewingStage`, `selectSessionById`, `selectUnifiedProjectProgress`, `selectIsStageReadyForSessionIteration`, `selectSelectedModels`, `selectActiveChatWalletInfo`, `selectSortedStages` — existing hook deps, unchanged.
-      * `[ ]`   `useDialecticStore`, `useWalletStore`, `useAiStore` — existing stores.
-      * `[ ]`   HARD dependency: `dialecticStore.selectors` node (`selectCostCeiling` exported from `@paynless/store` via `dialecticStore.selectors.ts` re-export). Precedes `GenerateContributionButton` node.
-      * `[ ]`   No reverse dependencies. No lateral layer violations.
-
-    * `[ ]`   `context_slice`
-      * `[ ]`   From dialectic store (via `selectCostCeiling`): `stageCeilings[viewingStage.slug]`, `projectCeiling` for the active `activeContextSessionId` only.
-      * `[ ]`   From wallet store: `activeWalletInfo.balance` (string) converted with `Number()` for comparison.
-      * `[ ]`   No reads of `viewingStage.minimum_balance` after this node. No auth-tier cap invention when `maxOutputTokens` is null (selector returns `null`; hook does not gate).
-
-    * `[ ]`   packages/types/src/`dialectic.types.ts`
-      * `[ ]`   Update `UseStartContributionGenerationReturn` (lines 1121-1142): remove `stageThreshold: number | undefined`.
-      * `[ ]`   Add `stageCeiling: number | null` — viewing-stage preventive ceiling from `selectCostCeiling`; `null` when estimate unavailable or slug missing from `stageCeilings`.
-      * `[ ]`   Add `projectCeiling: number | null` — full-project ceiling from the same estimate; `null` when estimate unavailable.
-      * `[ ]`   Add `stageBalanceShortfall: number | null` — `stageCeiling - walletBalance` when balance is below ceiling; `null` when no shortfall or no ceiling.
-      * `[ ]`   Add `showStageCostEstimate: boolean` — `true` when `stageCeiling` is a finite number and balance meets the ceiling (enough tokens for the preventive estimate).
-      * `[ ]`   Retain `balanceMeetsThreshold: boolean` and `showBalanceCallout: boolean` with ceiling semantics documented above. Types only (exempt from RED/GREEN).
-
-    * `[ ]`   hooks/`useStartContributionGeneration.test.ts`
-      * `[ ]`   Extend the existing `vi.mock('@paynless/store', ...)` block: import `selectCostCeiling` from the actual `@paynless/store` module and expose `selectCostCeiling: vi.fn<[DialecticStateValues, string], CostCeilingEstimate | null>()` on the mock return (default implementation delegates to `actualPaynlessStore.selectCostCeiling` once the prior node lands; until then the mock implementation is the test-controlled surface).
-      * `[ ]`   Add `const defaultCostCeiling: CostCeilingEstimate = { stageCeilings: { thesis: mockThesisStage.minimum_balance }, projectCeiling: mockThesisStage.minimum_balance };` (or an explicit ceiling value such as `120000` decoupled from `minimum_balance`) and `beforeEach` default: `vi.mocked(selectCostCeiling).mockImplementation((_state, sessionId) => sessionId === 'sess-1' ? defaultCostCeiling : null);`.
-      * `[ ]`   Update the test `derived state values correctly reflect store state`: assert `result.current.stageCeiling` equals the mocked ceiling for `thesis` (not `stageThreshold === minimum_balance`); assert `result.current.projectCeiling` matches the mock; remove any `stageThreshold` assertion.
-      * `[ ]`   Add test: when `selectCostCeiling` returns `null`, `stageCeiling`/`projectCeiling`/`stageBalanceShortfall` are `null`, `balanceMeetsThreshold` is `true`, `showBalanceCallout` is `false`, `showStageCostEstimate` is `false`, and `isDisabled` is `false` when all other guards pass.
-      * `[ ]`   Add test: when `stageCeilings.thesis` is `150000` and wallet balance is `100000`, `balanceMeetsThreshold` is `false`, `isDisabled` is `true`, `showBalanceCallout` is `true`, `stageBalanceShortfall` is `50000`, `showStageCostEstimate` is `false`.
-      * `[ ]`   Add test: when `stageCeilings.thesis` is `80000` and wallet balance is `100000`, `balanceMeetsThreshold` is `true`, `showBalanceCallout` is `false`, `showStageCostEstimate` is `true`, `stageBalanceShortfall` is `null`, `isDisabled` is `false` (other guards passing).
-      * `[ ]`   Add test: `startContributionGeneration` resume path — `hasPausedNsfJobs` with balance below `minimum_balance` but **above** `stageCeiling` calls `resumePausedNsfJobs` (ceiling gate satisfied); mirror with balance below `stageCeiling` verifying resume is **not** taken when `balanceMeetsThreshold` is false (generation path or early behavior per existing toast rules).
-      * `[ ]`   Update `isDisabled is true when any guard fails` case that relied on low balance vs `minimum_balance`: drive low balance vs mocked `stageCeiling` instead.
-      * `[ ]`   Preserve all unrelated tests (payload construction, pause, viewing-ahead, stale-closure reads, `maxOutputTokens` payload). New cases appended at the end.
-
-    * `[ ]`   hooks/`useStartContributionGeneration.ts`
-      * `[ ]`   Add `selectCostCeiling` to the import from `@paynless/store` (line 3-13).
-      * `[ ]`   Add `CostCeilingEstimate` to the import from `@paynless/types` (line 14-19).
-      * `[ ]`   Remove the `stageThreshold` `useMemo` (lines 133-136).
-      * `[ ]`   Add `costCeilingEstimate` subscription: `useDialecticStore((state) => { const sid = state.activeContextSessionId; if (sid === null) return null; return selectCostCeiling(state, sid); })`.
-      * `[ ]`   Add `stageCeiling: number | null` `useMemo`: if `viewingStage === null` or `costCeilingEstimate === null`, return `null`; read `costCeilingEstimate.stageCeilings[viewingStage.slug]`; if not a finite non-negative number, return `null`; else return the number.
-      * `[ ]`   Add `projectCeiling: number | null` `useMemo`: if `costCeilingEstimate === null`, return `null`; if `projectCeiling` on the estimate is not a finite non-negative number, return `null`; else return it.
-      * `[ ]`   Replace `balanceMeetsThreshold` `useMemo` (lines 138-142): if `stageCeiling === null`, return `true`; else `Number(activeWalletInfo.balance)` compared with `>= stageCeiling` (reject `NaN` as not meeting).
-      * `[ ]`   Add `stageBalanceShortfall: number | null` `useMemo`: when `stageCeiling` and balance are valid numbers and balance `< stageCeiling`, return `stageCeiling - balance`; else `null`.
-      * `[ ]`   Add `showStageCostEstimate: boolean` `useMemo`: `stageCeiling !== null && balanceMeetsThreshold`.
-      * `[ ]`   Update `showBalanceCallout` (lines 173-176): `viewingStage != null && stageCeiling !== null && !balanceMeetsThreshold` (remove `stageThreshold` checks).
-      * `[ ]`   In `startContributionGeneration` callback (lines 239-243): replace `balanceNum >= viewingStage.minimum_balance` with the same ceiling rule — read `selectCostCeiling(state, activeContextSessionId)`, resolve viewing-stage ceiling for `viewingStage.slug`, if finite then require `balanceNum >= ceiling`, else treat as meeting threshold for resume (`true`).
-      * `[ ]`   Update the return object (lines 309-330): remove `stageThreshold`; add `stageCeiling`, `projectCeiling`, `stageBalanceShortfall`, `showStageCostEstimate`.
-      * `[ ]`   No other behavioral changes to pause/generate payloads, viewing-ahead, or toasts.
-
-    * `[ ]`   `directionality`
-      * `[ ]`   Layer: application (FE hook).
-      * `[ ]`   Deps: inward (`@paynless/store` selectors/state, `@paynless/types`, wallet/ai stores).
-      * `[ ]`   Provides: outward (ceiling-aware flags for `GenerateContributionButton` and any other hook consumers).
-      * `[ ]`   No cycles.
-
-    * `[ ]`   `requirements`
-      * `[ ]`   `viewingStage.minimum_balance` is not read anywhere in `useStartContributionGeneration.ts`. Observable: grep the file for `minimum_balance` returns no matches.
-      * `[ ]`   When `selectCostCeiling` returns a valid estimate and wallet balance is below `stageCeilings[viewingSlug]`, `isDisabled` is `true` and `showBalanceCallout` is `true` with `stageBalanceShortfall` equal to the difference. Observable: unit test.
-      * `[ ]`   When balance meets or exceeds `stageCeiling`, `balanceMeetsThreshold` is `true`, `showStageCostEstimate` is `true`, and `showBalanceCallout` is `false`. Observable: unit test.
-      * `[ ]`   When `selectCostCeiling` returns `null`, no preventive ceiling disable or callout is applied. Observable: unit test.
-      * `[ ]`   Paused-NSF resume in `startContributionGeneration` uses the dynamic ceiling, not `minimum_balance`. Observable: unit test on resume branch.
-      * `[ ]`   `UseStartContributionGenerationReturn` no longer exposes `stageThreshold`; exposes `stageCeiling`, `projectCeiling`, `stageBalanceShortfall`, `showStageCostEstimate`. Observable: type definition + tests compile.
-
-  * `[ ]`   apps/web/src/components/dialectic/GenerateContributionButton **Ceiling-based NSF CTA, stage cost estimate, and project balance notice**
-
-    * `[ ]`   `objective`
-      * `[ ]`   `GenerateContributionButton.tsx` still destructures `stageThreshold` from the hook (line 34), returns `null` when `stageThreshold` is falsy (lines 101-102), and renders the balance callout as "Minimum {formattedThreshold} token balance for {displayName}" (lines 135-146). That UI is tied to the removed `minimum_balance` contract and blocks the control whenever no static threshold exists, even when the hook allows rendering with a null ceiling estimate.
-      * `[ ]`   Functional goal (NSF callout): when `showBalanceCallout` is `true` and `stageBalanceShortfall` is a finite positive number, render "Insufficient tokens. Top up {formattedShortfall} to continue." with a `Link` to `/subscription?tab=top-up` (top-up intent per ticket line 451; full cart prefill is deferred to the Subscription deep-links ticket). Use `stageBalanceShortfall` from the hook — do not recompute shortfall in the component.
-      * `[ ]`   Functional goal (stage estimate): when `showStageCostEstimate` is `true` and `stageCeiling` is a finite number, render a non-blocking line: "Estimated cost for this stage: ~{formattedStageCeiling} tokens." (`data-testid="generate-button-stage-cost-estimate"`).
-      * `[ ]`   Functional goal (project notice): when `projectCeiling` from the hook is a finite number and wallet balance (read in-component via `useWalletStore` + `selectActiveChatWalletInfo` + `useAiStore().newChatContext`, same pattern as the hook) is below `projectCeiling`, render a secondary, non-blocking notice with shortfall `projectCeiling - balance` and a top-up `Link` to `/subscription?tab=top-up` (`data-testid="generate-button-project-balance-callout"`). This notice does not disable the button. It may show at the same time as the stage NSF callout or the stage estimate.
-      * `[ ]`   Functional goal (visibility): remove the `stageThreshold` early return. Render the button host when `viewingStage` and `activeSession` from the hook are non-null (same minimum the button already needs for labels and `StageDAGProgressDialog`). When `stageCeiling` is `null`, the hook already avoids preventive disable — the component still renders.
-      * `[ ]`   Non-functional: keep `getButtonText` priority and "Insufficient Balance" label when `!balanceMeetsThreshold`; keep pause/resume/DAG dialog behavior unchanged. No `selectCostCeiling` call in this component (hook owns derivation). No edits to `useStartContributionGeneration.ts` (prior node).
-      * `[ ]`   Each goal is atomic and testable.
-
-    * `[ ]`   `role`
-      * `[ ]`   UI component — session-page Generate/Continue control and its cost/NSF messaging.
-      * `[ ]`   This node consumes the extended hook return contract and adds wallet read only for the project-level notice (project ceiling vs balance is not on the hook). It does NOT change store selectors, hook logic, or `SessionInfoCard` / Create form.
-      * `[ ]`   Out of scope: subscription cart prefill helpers; `SessionInfoCard` project/stage display (next node); Autostart gate (Create form node).
-
-    * `[ ]`   `module`
-      * `[ ]`   Bounded context: `apps/web/src/components/dialectic` — `GenerateContributionButton`.
-      * `[ ]`   Inside: NSF callout copy, stage estimate line, project warning line, early-return rule, token number formatting.
-      * `[ ]`   Outside: ceiling arithmetic, hook disable logic, wallet store implementation.
-
-    * `[ ]`   `deps`
-      * `[ ]`   `useStartContributionGeneration` — provider: `@/hooks/useStartContributionGeneration`; layer: application hook; direction: inward; purpose: `showBalanceCallout`, `stageBalanceShortfall`, `stageCeiling`, `projectCeiling`, `showStageCostEstimate`, `balanceMeetsThreshold`, `viewingStage`, `activeSession`, and all existing button flags.
-      * `[ ]`   `useWalletStore`, `selectActiveChatWalletInfo`, `useAiStore` — provider: `@paynless/store`; layer: store; direction: inward; purpose: wallet balance for project-level shortfall only.
-      * `[ ]`   `Link` — provider: `react-router-dom`; existing.
-      * `[ ]`   HARD dependency: `useStartContributionGeneration` node (hook return shape). Precedes `SessionInfoCard` node.
-      * `[ ]`   No reverse dependencies.
-
-    * `[ ]`   `context_slice`
-      * `[ ]`   From hook: `stageCeiling`, `projectCeiling`, `stageBalanceShortfall`, `showStageCostEstimate`, `showBalanceCallout`, `viewingStage`, `activeSession`.
-      * `[ ]`   From wallet store: `balance` string → `Number()` for project notice comparison only.
-      * `[ ]`   No reads of `viewingStage.minimum_balance` or `stageThreshold`.
-
-    * `[ ]`   dialectic/`GenerateContributionButton.nsf.test.tsx`
-      * `[ ]`   Update `getDefaultHookReturn`: remove `stageThreshold`; add `stageCeiling: 200000`, `projectCeiling: 400000`, `stageBalanceShortfall: null`, `showStageCostEstimate: true`, `isViewingAheadOfCurrentStage: false`, `viewingAheadReason: null` (defaults aligned to production `UseStartContributionGenerationReturn` after hook node).
-      * `[ ]`   Replace callout assertion `Minimum.*200,000.*token balance` with `Insufficient tokens` and `Top up` and formatted shortfall (e.g. mock `stageBalanceShortfall: 50000` → "50,000" in copy); assert `href` is `/subscription?tab=top-up`.
-      * `[ ]`   Update paused-NSF callout test similarly (shortfall-driven copy, same link).
-      * `[ ]`   Add test: when `showStageCostEstimate` is `true` and `stageCeiling` is `120000`, `generate-button-stage-cost-estimate` shows `~120,000` (or locale-formatted equivalent) and "Estimated cost for this stage".
-      * `[ ]`   Add test: when `projectCeiling` is `500000`, hook supplies `stageCeiling`/`showBalanceCallout` satisfied, and mocked wallet `balance` is `300000`, `generate-button-project-balance-callout` is present with top-up link and shortfall `200,000`; button remains enabled when hook says so.
-      * `[ ]`   Add test: when `projectCeiling` is `null` or wallet meets `projectCeiling`, project callout absent.
-      * `[ ]`   Preserve existing NSF tests for disabled/enabled Generate/Resume, resume/generate click paths, pause priority. New cases appended at the end.
-
-    * `[ ]`   dialectic/`GenerateContributionButton.test.tsx`
-      * `[ ]`   Update `getDefaultHookReturn` the same way (remove `stageThreshold`, add new hook fields).
-      * `[ ]`   Replace `component returns null when stageThreshold is falsy` and `handles currentProjectDetail being null gracefully by being disabled` cases that set `stageThreshold: undefined`: instead assert the component **renders** the button when `stageCeiling: null`, `viewingStage` and `activeSession` present (estimate unavailable does not hide the control).
-      * `[ ]`   Add test: `stageThreshold: undefined` removed — use `stageCeiling: null` with `showBalanceCallout: false` and button visible.
-      * `[ ]`   Update `balance callout renders when showBalanceCallout is true` to assert new NSF copy uses `stageBalanceShortfall` from hook mock (e.g. `stageBalanceShortfall: 25000`, expect "Top up" and "25,000" in callout).
-      * `[ ]`   Preserve all unrelated tests (pause, DAG dialog, chat context, viewing-ahead). New/updated cases appended at the end.
-
-    * `[ ]`   dialectic/`GenerateContributionButton.tsx`
-      * `[ ]`   Destructure from hook: remove `stageThreshold`; add `stageCeiling`, `projectCeiling`, `stageBalanceShortfall`, `showStageCostEstimate`.
-      * `[ ]`   Add imports: `useWalletStore`, `selectActiveChatWalletInfo` from `@paynless/store`; `useAiStore` from `@paynless/store` (if not already present).
-      * `[ ]`   Add `const newChatContext = useAiStore((state) => state.newChatContext);` and `const activeWalletInfo = useWalletStore((state) => selectActiveChatWalletInfo(state, newChatContext));`.
-      * `[ ]`   Add `formatTokenCount = (n: number): string => new Intl.NumberFormat("en-US").format(n)` (reuse for stage ceiling, shortfall, project ceiling).
-      * `[ ]`   Replace early return (lines 101-102): `if (viewingStage == null || activeSession == null) return null;` — remove `formattedThreshold` derived from `stageThreshold`.
-      * `[ ]`   Compute project notice flags after wallet read: `const walletBalanceNum = Number(activeWalletInfo.balance);` — if `projectCeiling` is finite and `walletBalanceNum` is finite and `walletBalanceNum < projectCeiling`, set `showProjectBalanceCallout` true and `projectBalanceShortfall = projectCeiling - walletBalanceNum`; else no project callout. No default/fallback when `projectCeiling` is `null`.
-      * `[ ]`   Replace balance callout block (lines 135-146): condition `showBalanceCallout && viewingStage && stageBalanceShortfall !== null`; link `to="/subscription?tab=top-up"`; text `Insufficient tokens. Top up {formatTokenCount(stageBalanceShortfall)} to continue.`
-      * `[ ]`   After balance callout (or before project notice), add stage estimate block: `showStageCostEstimate && stageCeiling !== null` → `data-testid="generate-button-stage-cost-estimate"` with `Estimated cost for this stage: ~{formatTokenCount(stageCeiling)} tokens.`
-      * `[ ]`   Add project notice block (non-blocking, below stage estimate/callout): when `showProjectBalanceCallout` and `projectBalanceShortfall` computed — `data-testid="generate-button-project-balance-callout"`, copy includes formatted `projectCeiling` and shortfall, `Link` to `/subscription?tab=top-up`. Wording concise (e.g. project may need ~X tokens; top up Y for the full project).
-      * `[ ]`   No other behavioral changes.
-
-    * `[ ]`   dialectic/`GenerateContributionButton.integration.test.tsx`
-      * `[ ]`   If this file uses the real hook (not mocked), seed store state so `selectCostCeiling` can return a valid estimate once Group 4 is implemented (`maxOutputTokens`, `selectedModels`, `modelCatalog`, `stageExpectedCountsByRun`) — or assert only that the button renders without `stageThreshold` gate when wallet and models are seeded.
-      * `[ ]`   Append at most one integration assertion: with sufficient mocked wallet balance and a hydrated ceiling, `generate-button-stage-cost-estimate` appears when the real hook sets `showStageCostEstimate`. Skip if the integration harness cannot seed counts without scope creep.
-
-    * `[ ]`   `directionality`
-      * `[ ]`   Layer: UI component.
-      * `[ ]`   Deps: inward (hook, wallet/ai stores, router `Link`).
-      * `[ ]`   Provides: outward (session-page NSF/top-up UX).
-      * `[ ]`   No cycles.
-
-    * `[ ]`   `requirements`
-      * `[ ]`   No `stageThreshold` or `minimum_balance` in `GenerateContributionButton.tsx`. Observable: grep.
-      * `[ ]`   NSF callout shows shortfall-based copy and links to `/subscription?tab=top-up`. Observable: `GenerateContributionButton.nsf.test.tsx`.
-      * `[ ]`   Stage estimate line renders when `showStageCostEstimate` and `stageCeiling` set. Observable: unit test.
-      * `[ ]`   Project notice renders when `projectCeiling > wallet` and does not disable the button. Observable: unit test.
-      * `[ ]`   Component renders when `viewingStage`/`activeSession` exist even if `stageCeiling` is `null`. Observable: updated unit tests (no null render on missing estimate).
-      * `[ ]`   Existing Generate/Resume/pause/DAG tests remain green after `getDefaultHookReturn` migration.
-
-  * `[ ]`   apps/web/src/components/dialectic/SessionInfoCard **Project and viewing-stage cost estimates in session header**
-
-    * `[ ]`   `objective`
-      * `[ ]`   `SessionInfoCard.tsx` (lines 40-215) renders session chrome (back, title, model popover, wallet, progress bar, seed prompt) but shows no token-cost context. Users on the session page cannot see the dynamic `project_ceiling` (actual completed stages + estimate for remaining) or the viewing-stage `stage_ceiling` without opening Generate or inferring from NSF state.
-      * `[ ]`   Functional goal (stage estimate): when `selectCostCeiling(state, session.id)` returns a non-null estimate and `selectViewingStage` resolves a stage whose `slug` has a finite `stageCeilings[slug]`, render a non-blocking line: "Estimated cost for this stage: ~{formattedStageCeiling} tokens." (`data-testid="session-info-stage-cost-estimate"`). Show whenever the ceiling is available — not gated on wallet balance (informational; the hook/button own the preventive NSF gate).
-      * `[ ]`   Functional goal (project estimate): when the same estimate has a finite `projectCeiling`, render "Estimated project cost: ~{formattedProjectCeiling} tokens." (`data-testid="session-info-project-cost-estimate"`). Copy reflects ticket math: `projectCeiling` already sums actuals for completed stages and estimates for remaining (no separate "actual vs estimate" breakdown in this node).
-      * `[ ]`   Functional goal (project balance notice): when `projectCeiling` is finite and wallet balance (`useWalletStore` + `selectActiveChatWalletInfo` + `useAiStore().newChatContext`, same pattern as `GenerateContributionButton`) is below `projectCeiling`, render a secondary, non-blocking notice with shortfall `projectCeiling - balance` and a `Link` to `/subscription?tab=top-up` (`data-testid="session-info-project-balance-warning"`). Does not disable any control. May appear alongside stage estimate lines.
-      * `[ ]`   Functional goal (null estimate): when `selectCostCeiling` returns `null`, render none of the three cost elements (no fabricated zeros, no fallback to `minimum_balance`).
-      * `[ ]`   Non-functional: preserve existing toolbar, seed prompt, progress bar, and error alert behavior. No `useStartContributionGeneration` import (header is independent of Generate button). No subscription cart prefill (deferred ticket). No edits to `GenerateContributionButton` or the hook (prior nodes).
-      * `[ ]`   Each goal is atomic and testable.
-
-    * `[ ]`   `role`
-      * `[ ]`   UI component — session-page header cost transparency.
-      * `[ ]`   This node adds read-only cost display beside wallet/progress. It does NOT implement NSF disable, Autostart gating, or store/selector logic.
-      * `[ ]`   Out of scope: `CreateDialecticProjectForm` pre-project preview (next node); hook/button NSF copy changes (prior nodes).
-
-    * `[ ]`   `module`
-      * `[ ]`   Bounded context: `apps/web/src/components/dialectic` — `SessionInfoCard`.
-      * `[ ]`   Inside: `selectCostCeiling` / `selectViewingStage` subscriptions, token formatting, three cost UI blocks, placement under row 2.
-      * `[ ]`   Outside: ceiling arithmetic, counts hydration, wallet store implementation.
-
-    * `[ ]`   `deps`
-      * `[ ]`   `selectCostCeiling`, `selectViewingStage` — provider: `@paynless/store` (`dialecticStore.selectors` node); layer: store selectors; direction: inward; purpose: `CostCeilingEstimate | null` and viewing-stage slug object.
-      * `[ ]`   `CostCeilingEstimate` — provider: `@paynless/types` (`dialectic.types.ts`, `computeCostCeiling` node); layer: types; direction: inward; import from original source only.
-      * `[ ]`   `useWalletStore`, `selectActiveChatWalletInfo`, `useAiStore` — provider: `@paynless/store`; layer: store; direction: inward; purpose: wallet balance for project shortfall notice only.
-      * `[ ]`   `Link` — provider: `react-router-dom`; existing `useNavigate` import site.
-      * `[ ]`   HARD dependency: `dialecticStore.selectors` node (`selectCostCeiling` export). Soft ordering: after `GenerateContributionButton` node is fine; this component does not consume the hook.
-      * `[ ]`   No reverse dependencies.
-
-    * `[ ]`   `context_slice`
-      * `[ ]`   `session` from `state.activeSessionDetail` (already line 44-46) supplies `session.id` for `selectCostCeiling(state, session.id)`.
-      * `[ ]`   `viewingStage` from `selectViewingStage(state)`; `stageCeiling` from `costCeilingEstimate.stageCeilings[viewingStage.slug]` when both non-null and value is finite non-negative.
-      * `[ ]`   `projectCeiling` from `costCeilingEstimate.projectCeiling` when estimate non-null and finite.
-      * `[ ]`   No reads of `minimum_balance`, `stageThreshold`, or `useStartContributionGeneration`.
-
-    * `[ ]`   dialectic/`SessionInfoCard.test.tsx`
-      * `[ ]`   Extend `vi.hoisted`: `selectCostCeilingMock = vi.fn<[DialecticStateValues, string], CostCeilingEstimate | null>()` defaulting to `null`.
-      * `[ ]`   Extend `vi.mock('@paynless/store', ...)`: import `selectCostCeiling`, `selectViewingStage` from actual `@paynless/store`; expose `selectCostCeiling: selectCostCeilingMock` and `selectViewingStage: dialecticMockModule.selectViewingStage` (or delegate to actual once selectors exist). Import `CostCeilingEstimate` from `@paynless/types`.
-      * `[ ]`   In `setupMockStore` defaults for cost tests: set `viewingStageSlug: mockStageSlug`, `currentProjectDetail: mockProjectWithStages` (stages array present), `selectedModels` non-empty if required by selector tests in sibling nodes — mirror minimal fields other Group-4 tests use when mocking ceiling.
-      * `[ ]`   Append `describe('cost ceiling display (SessionInfoCard)')` at end of file with `beforeEach` resetting `selectCostCeilingMock` to `null`.
-      * `[ ]`   Test: when `selectCostCeilingMock` returns `{ stageCeilings: { thesis: 120000 }, projectCeiling: 350000 }`, viewing stage `thesis`, `session-info-stage-cost-estimate` shows `~120,000` (locale-formatted) and "Estimated cost for this stage"; `session-info-project-cost-estimate` shows `~350,000` and "Estimated project cost".
-      * `[ ]`   Test: when mock returns `null`, all three `session-info-*` cost testids absent; existing toolbar/seed-prompt tests unchanged.
-      * `[ ]`   Test: when `projectCeiling` is `400000`, stage ceiling present, and `initializeMockWalletStore` sets balance `250000`, `session-info-project-balance-warning` present with top-up `Link` `href` `/subscription?tab=top-up` and shortfall `150,000` in copy; stage/project estimate testids still present.
-      * `[ ]`   Test: when wallet balance meets or exceeds `projectCeiling`, `session-info-project-balance-warning` absent; estimates still shown when mock supplies ceilings.
-      * `[ ]`   Test: when `viewingStageSlug` does not match a key in `stageCeilings` (mock returns estimate without `thesis` key), `session-info-stage-cost-estimate` absent; `session-info-project-cost-estimate` still shown if `projectCeiling` finite.
-      * `[ ]`   Preserve all existing tests (seed prompt, progress bar, export dropdown, 2-row toolbar). New cases appended only.
-
-    * `[ ]`   dialectic/`SessionInfoCard.tsx`
-      * `[ ]`   Add imports: `selectCostCeiling`, `selectViewingStage`, `useWalletStore`, `selectActiveChatWalletInfo`, `useAiStore` from `@paynless/store`; `CostCeilingEstimate` from `@paynless/types`; `Link` from `react-router-dom`.
-      * `[ ]`   After `session` is known (inside component, before skeleton early return is fine for subscriptions — use `session?.id` guard in selector): `const costCeilingEstimate = useDialecticStore(useShallow((state) => { const sid = state.activeSessionDetail?.id; if (sid === undefined) return null; return selectCostCeiling(state, sid); }));` — typed `CostCeilingEstimate | null`.
-      * `[ ]`   `const viewingStage = useDialecticStore(selectViewingStage);`
-      * `[ ]`   `const newChatContext = useAiStore((state) => state.newChatContext);` and `const activeWalletInfo = useWalletStore((state) => selectActiveChatWalletInfo(state, newChatContext));`
-      * `[ ]`   `const formatTokenCount = (n: number): string => new Intl.NumberFormat("en-US").format(n);` (module-level `const` or inner — match `GenerateContributionButton` node).
-      * `[ ]`   Derive `stageCeiling: number | null`: if `costCeilingEstimate === null` or `viewingStage === null`, `null`; else read `costCeilingEstimate.stageCeilings[viewingStage.slug]`; if not finite non-negative number, `null`.
-      * `[ ]`   Derive `projectCeiling: number | null`: if `costCeilingEstimate === null`, `null`; else if `projectCeiling` on estimate not finite non-negative, `null`; else return it.
-      * `[ ]`   Derive project warning: `walletBalanceNum = Number(activeWalletInfo.balance)`; when `projectCeiling` and `walletBalanceNum` finite and `walletBalanceNum < projectCeiling`, `projectBalanceShortfall = projectCeiling - walletBalanceNum` and `showProjectBalanceWarning = true`; else no warning.
-      * `[ ]`   After row 2 block (after line 183 `</div>`), before `generateContributionsError` alert: wrap cost lines in a container `div` with `className="text-xs text-muted-foreground space-y-1"` (or equivalent existing muted copy).
-      * `[ ]`   When `stageCeiling !== null`: render `data-testid="session-info-stage-cost-estimate"` — `Estimated cost for this stage: ~{formatTokenCount(stageCeiling)} tokens.`
-      * `[ ]`   When `projectCeiling !== null`: render `data-testid="session-info-project-cost-estimate"` — `Estimated project cost: ~{formatTokenCount(projectCeiling)} tokens.`
-      * `[ ]`   When `showProjectBalanceWarning` and `projectBalanceShortfall` computed: render `data-testid="session-info-project-balance-warning"` with concise copy (e.g. full project may need ~{projectCeiling}; top up {shortfall}) and `Link to="/subscription?tab=top-up"`.
-      * `[ ]`   No other behavioral changes.
-
-    * `[ ]`   `directionality`
-      * `[ ]`   Layer: UI component.
-      * `[ ]`   Deps: inward (store selectors, wallet/ai stores, router `Link`).
-      * `[ ]`   Provides: outward (session-header cost transparency for wallet/top-up decisions).
-      * `[ ]`   No cycles.
-
-    * `[ ]`   `requirements`
-      * `[ ]`   No `minimum_balance` reads in `SessionInfoCard.tsx`. Observable: grep.
-      * `[ ]`   Stage and project estimate lines render when `selectCostCeiling` returns valid ceilings for the active session and viewing slug. Observable: `SessionInfoCard.test.tsx`.
-      * `[ ]`   When `selectCostCeiling` returns `null`, no cost estimate testids render. Observable: unit test.
-      * `[ ]`   Project balance warning renders when `projectCeiling > wallet` with top-up link; does not hide toolbar or progress. Observable: unit test.
-      * `[ ]`   Existing SessionInfoCard tests (seed prompt, progress, export, 2-row layout) remain green.
-
-  * `[ ]`   apps/web/src/components/dialectic/CreateDialecticProjectForm **Pre-project cost preview, dynamic Autostart gate, and project balance warning**
-
-    * `[ ]`   `objective`
-      * `[ ]`   `CreateDialecticProjectForm.tsx` gates Autostart on `sortedStages[0]?.minimum_balance` (lines 400-418, 420-431) and never surfaces dynamic ceilings. Ticket lines 458-464 require pre-project `project_ceiling` + first-stage `stage_ceiling` from `selectPreProjectCostCeiling` (fed by `fetchProcessAssociation` → `fetchStageExpectedCounts` → `preProjectStageExpectedCounts`), display copy, a non-blocking project warning when `project_ceiling > wallet`, and Autostart forced off when first-stage ceiling exceeds wallet (Create still allowed).
-      * `[ ]`   Functional goal (association + template + counts orchestration): when `selectedDomain` (`DialecticDomainRow | null`) has a non-empty `id`, call `fetchProcessAssociation({ domainId: selectedDomain.id })` (re-fetch when `selectedDomain?.id` changes). When `selectedDomainProcessAssociation` is a validated row with non-empty `process_template_id`, call `fetchProcessTemplate(association.process_template_id)` and, when `uniqueModelCount >= 1`, call `fetchStageExpectedCounts({ processTemplateId: association.process_template_id, modelCount: uniqueModelCount })` (re-fetch template/counts when association row or `uniqueModelCount` changes). When `selectedDomain` is `null`, association is `null`, `domainProcessAssociationError` is set, or `process_template_id` is missing — do not call `fetchProcessTemplate` or `fetchStageExpectedCounts`; render no cost preview and no ceiling-based Autostart block. No fabricated template id; do not read `process_template_id` from `DialecticDomainRow`.
-      * `[ ]`   Functional goal (fetch counts guard): do not call `fetchStageExpectedCounts` when `uniqueModelCount < 1` or `selectedDomainProcessAssociation?.process_template_id` is absent. Count payload uses `association.process_template_id`, not `currentProcessTemplate?.id` alone (template hydration may lag; association row is the SSOT for pre-project `processTemplateId`).
-      * `[ ]`   Functional goal (preview copy): when `selectPreProjectCostCeiling(state)` returns a non-null estimate and `sortedStages[0]` exists with slug `firstSlug`, read `firstStageCeiling = estimate.stageCeilings[firstSlug]` (finite non-negative only); when both `estimate.projectCeiling` and `firstStageCeiling` are finite, render `data-testid="create-project-cost-preview"`: "Estimated token cost: ~{projectCeiling} for the full project, ~{firstStageCeiling} for the first stage." (use `Intl.NumberFormat("en-US")` formatting). When estimate is `null`, render no preview (no fallback to `minimum_balance`).
-      * `[ ]`   Functional goal (project warning): when `projectCeiling` is finite and wallet balance (`walletInfo` via existing `selectActiveChatWalletInfo(state, null)`) is below `projectCeiling`, render non-blocking `data-testid="create-project-project-balance-warning"` with shortfall and `Link` to `/subscription?tab=top-up`. Does not disable Create submit.
-      * `[ ]`   Functional goal (Autostart gate): replace `firstStageMinBalance` / `minimum_balance` checks in the autostart `useEffect` (lines 400-418) and `lowBalanceForReason` (lines 420-431) with `firstStageCeiling` from `selectPreProjectCostCeiling` + `sortedStages[0].slug`. When `firstStageCeiling` is finite and `Number(walletInfo.balance) < firstStageCeiling`, set `startGeneration` false (Autoconfig) and set `autoUncheckReason` to explanatory copy (e.g. "Estimated first-stage cost exceeds wallet balance for auto-start") with optional inline top-up `Link` (`data-testid="create-project-autostart-top-up-link"`) to `/subscription?tab=top-up`. When `firstStageCeiling` is `null`, do not apply a ceiling-based autostart block (same as hook: no preventive gate without estimate). Preserve "No default models available" branch unchanged.
-      * `[ ]`   Functional goal (submit): Create / Autoconfig / Manual submit paths unchanged except autostart eligibility now uses ceiling, not `minimum_balance`.
-      * `[ ]`   Functional goal (submit template id): on submit, set `processTemplateId` on `CreateProjectPayload` / `CreateProjectAndAutoStartPayload` from `selectedDomainProcessAssociation.process_template_id` when association is stored and `process_template_id` is a non-empty string; if missing at submit time, do not submit (log error and return, same as missing `selectedDomainId`). Store `createDialecticProject` / `createProjectAndAutoStart` append `processTemplateId` to FormData (prior `dialecticStore.ts` node); this form supplies the field on the payload object.
-      * `[ ]`   Non-functional: no `selectCostCeiling` (post-project) in this form; no edits to `dialecticStore.ts`, selectors, or BE. Subscription cart prefill deferred. `currentProcessTemplate` must be hydrated (via association → `fetchProcessTemplate`) before `selectSortedStages` / cost preview can render — tests seed both `selectedDomainProcessAssociation` and `currentProcessTemplate` in autostart fixtures.
-      * `[ ]`   Each goal is atomic and testable.
-
-    * `[ ]`   `role`
-      * `[ ]`   UI component — pre-project cost transparency and Autostart affordability gate.
-      * `[ ]`   This node orchestrates the pre-project call chain documented in `dialecticStore` `interaction.spec`: `fetchProcessAssociation` → `fetchProcessTemplate` / `fetchStageExpectedCounts`, and wires `selectPreProjectCostCeiling` into the create UX. It does NOT implement store actions, guards, or selector arithmetic (prior Group 3/4 nodes).
-      * `[ ]`   Out of scope: session-page consumers (prior nodes); subscription cart prefill; BE handlers; `listDomains` / `fetchDomains` implementation (domain picker elsewhere calls `fetchDomains`; this form reads `selectedDomain` only).
-      * `[ ]`   HARD dependency: `dialectic.api` node (`DialecticDomainRow`, `DomainProcessAssociationRow`, `fetchProcessAssociation`, `getStageExpectedCounts`, `CreateProjectPayload.processTemplateId`), `dialecticStore.ts` node (`fetchProcessAssociation`, `selectedDomainProcessAssociation`, `fetchStageExpectedCounts`, `createDialecticProject` FormData `processTemplateId`), `dialecticStore.selectors` node (`selectPreProjectCostCeiling`), `createProject` BE node (accept supplied `processTemplateId`). Precedes commit node below.
-
-    * `[ ]`   `module`
-      * `[ ]`   Bounded context: `apps/web/src/components/dialectic` — `CreateDialecticProjectForm`.
-      * `[ ]`   Inside: domain-selection orchestration effects (`fetchProcessAssociation` then template + counts), cost preview, project warning, Autostart gate rewrite, submit `processTemplateId` from association row, token formatting.
-      * `[ ]`   Outside: `computeCostCeiling`, store action implementations, API transport, association SQL.
-
-    * `[ ]`   `deps`
-      * `[ ]`   `fetchProcessAssociation` — provider: `@paynless/store` (`dialecticStore.ts` node); layer: store action; direction: inward; purpose: load `selectedDomainProcessAssociation` after domain selection.
-      * `[ ]`   `fetchProcessTemplate` — provider: `@paynless/store` (`dialecticStore.ts`, existing action); layer: store action; direction: inward; purpose: hydrate `currentProcessTemplate` from `selectedDomainProcessAssociation.process_template_id` for `selectSortedStages`.
-      * `[ ]`   `fetchStageExpectedCounts` — provider: `@paynless/store` (`dialecticStore.ts` node); layer: store action; direction: inward; purpose: populate `preProjectStageExpectedCounts` using `processTemplateId` from association row.
-      * `[ ]`   `selectedDomainProcessAssociation`, `domainProcessAssociationError`, `isLoadingDomainProcessAssociation` — provider: `@paynless/store` `DialecticStateValues`; direction: inward; purpose: gate preview/autostart/submit on association success or failure.
-      * `[ ]`   `selectPreProjectCostCeiling`, `selectSortedStages` — provider: `@paynless/store` (`dialecticStore.selectors` node); layer: selectors; direction: inward.
-      * `[ ]`   `DomainProcessAssociationRow`, `CostCeilingEstimate` — provider: `@paynless/types` (`@paynless/db-types` row alias); direction: inward (test mocks / typed reads only).
-      * `[ ]`   `currentProcessTemplate`, `selectedDomain` (`DialecticDomainRow`), `selectSelectedModels` / `uniqueModelCount` — existing store reads.
-      * `[ ]`   `walletInfo` / `selectActiveChatWalletInfo` — existing (line 121-124).
-      * `[ ]`   `Link` — provider: `react-router-dom`; direction: inward.
-      * `[ ]`   HARD dependency: `dialecticStore.selectors` (`selectPreProjectCostCeiling`) and `dialecticStore.ts` (`fetchProcessAssociation`, `fetchStageExpectedCounts`). Precedes commit node below.
-      * `[ ]`   No reverse dependencies.
-
-    * `[ ]`   `context_slice`
-      * `[ ]`   `domainId` = `selectedDomain?.id` (from store after `fetchDomains` / domain picker — full `DialecticDomainRow`, no template field on domain).
-      * `[ ]`   `processTemplateId` (pre-project SSOT) = `selectedDomainProcessAssociation?.process_template_id` (non-empty string only); used for `fetchProcessTemplate`, `fetchStageExpectedCounts`, and submit payload.
-      * `[ ]`   `modelCount` = `uniqueModelCount` (existing lines 152-155).
-      * `[ ]`   `firstStageSlug` = `sortedStages[0]?.slug` when `sortedStages.length > 0` (requires `currentProcessTemplate` hydrated).
-      * `[ ]`   `preProjectEstimate` = `useDialecticStore(selectPreProjectCostCeiling)` (no session id).
-      * `[ ]`   No reads of `minimum_balance` or `default_process_template_id` anywhere in the file after this node.
-
-    * `[ ]`   dialectic/`CreateDialecticProjectForm.autostart.test.tsx`
-      * `[ ]`   Extend `vi.mock('@paynless/store', ...)`: expose `selectPreProjectCostCeiling: vi.fn<[DialecticStateValues], CostCeilingEstimate | null>()` (default `null`); expose `fetchProcessAssociation`, `fetchProcessTemplate`, and `fetchStageExpectedCounts` via `getDialecticStoreActionMock` / mock store actions (spy on calls).
-      * `[ ]`   Seed `selectedDomain` as full `DialecticDomainRow` (no `default_process_template_id`). Seed `selectedDomainProcessAssociation` as full `DomainProcessAssociationRow` with `domain_id` matching `selectedDomain.id`, `is_default_for_domain: true`, and `process_template_id` matching `processTemplateForAutostartBalanceTest.id` in cost-preview / autostart tests.
-      * `[ ]`   Add test: when `selectedDomain.id` is set, `fetchProcessAssociation` called with `{ domainId: selectedDomain.id }` after render (`waitFor`).
-      * `[ ]`   Add test: when `selectedDomainProcessAssociation` is `null` (association error / not loaded), `fetchProcessTemplate` and `fetchStageExpectedCounts` are not called.
-      * `[ ]`   Add test: when association row present with `process_template_id`, `fetchProcessTemplate` called with that id (`waitFor`).
-      * `[ ]`   Add test: Manual submit payload includes `processTemplateId` equal to `selectedDomainProcessAssociation.process_template_id`.
-      * `[ ]`   Add test: Autostart / Autoconfig submit payload includes `processTemplateId` on `createProjectAndAutoStart` mock call from association row.
-      * `[ ]`   Replace test `defaults to Autoconfig when wallet balance below thesis threshold` (lines 474-493): remove reliance on `stageThesisForAutostart.minimum_balance`; mock `selectPreProjectCostCeiling` to return `{ stageCeilings: { thesis: firstStageMinBalanceForAutostartTest }, projectCeiling: firstStageMinBalanceForAutostartTest }` with wallet `balance: String(firstStageMinBalanceForAutostartTest - 1)`; expect Autoconfig + reason matching new ceiling copy (not "thesis threshold" / `minimum_balance`).
-      * `[ ]`   Add test: when `selectPreProjectCostCeiling` returns estimate and wallet meets first-stage ceiling, default remains Autostart (checked).
-      * `[ ]`   Add test: when estimate is `null`, autostart default follows existing no-default-models / catalog rules only (no ceiling block).
-      * `[ ]`   Add test: `fetchStageExpectedCounts` called with `{ processTemplateId: selectedDomainProcessAssociation.process_template_id, modelCount: 1 }` after association + template seeded (use `waitFor`).
-      * `[ ]`   Add test: `create-project-cost-preview` shows formatted project + first-stage ceilings when mock estimate and `sortedStages[0].slug === 'thesis'`.
-      * `[ ]`   Add test: `create-project-project-balance-warning` when `projectCeiling` exceeds wallet; Create button still enabled.
-      * `[ ]`   Add test: `create-project-autostart-top-up-link` (or warning copy) present when autostart blocked by ceiling; `href` `/subscription?tab=top-up`.
-      * `[ ]`   Preserve all other autostart tests (setup mode cycle, submit paths, loaders). New cases appended.
-
-    * `[ ]`   dialectic/`CreateDialecticProjectForm.test.tsx`
-      * `[ ]`   If the shared store mock is duplicated, align with autostart file: mock `selectPreProjectCostCeiling` default `null`; expose `fetchProcessAssociation` spy; seed `selectedDomainProcessAssociation` with `process_template_id` on submit tests.
-      * `[ ]`   Add test: when mock estimate present, `create-project-cost-preview` visible; when `null`, absent.
-      * `[ ]`   Update Manual-path tests that assert `createDialecticProject` payload: expect `processTemplateId` equal to `selectedDomainProcessAssociation.process_template_id` (alongside existing `idempotencyKey` / domain fields).
-      * `[ ]`   Preserve unrelated tests (TextInputArea props, manual submit, placeholders). New cases appended.
-
-    * `[ ]`   dialectic/`CreateDialecticProjectForm.tsx`
-      * `[ ]`   Add imports: `selectPreProjectCostCeiling`, `fetchProcessAssociation`, `fetchStageExpectedCounts` from `@paynless/store`; `Link` from `react-router-dom`.
-      * `[ ]`   `const fetchProcessAssociation = useDialecticStore((state) => state.fetchProcessAssociation);`
-      * `[ ]`   `const fetchProcessTemplate = useDialecticStore((state) => state.fetchProcessTemplate);`
-      * `[ ]`   `const fetchStageExpectedCounts = useDialecticStore((state) => state.fetchStageExpectedCounts);`
-      * `[ ]`   `const selectedDomainProcessAssociation = useDialecticStore((state) => state.selectedDomainProcessAssociation);`
-      * `[ ]`   `const currentProcessTemplate = useDialecticStore((state) => state.currentProcessTemplate);`
-      * `[ ]`   `const preProjectEstimate = useDialecticStore(selectPreProjectCostCeiling);`
-      * `[ ]`   `const formatTokenCount = (n: number): string => new Intl.NumberFormat("en-US").format(n);`
-      * `[ ]`   Add `useEffect` for association fetch (deps: `selectedDomain?.id`, `fetchProcessAssociation`): when `selectedDomain?.id` is a non-empty string, call `fetchProcessAssociation({ domainId: selectedDomain.id })`.
-      * `[ ]`   Add `useEffect` for template + counts (deps: `selectedDomainProcessAssociation?.process_template_id`, `uniqueModelCount`, `fetchProcessTemplate`, `fetchStageExpectedCounts`): when `selectedDomainProcessAssociation?.process_template_id` is a non-empty string, call `fetchProcessTemplate(selectedDomainProcessAssociation.process_template_id)`; when same id present and `uniqueModelCount >= 1`, call `fetchStageExpectedCounts({ processTemplateId: selectedDomainProcessAssociation.process_template_id, modelCount: uniqueModelCount })`.
-      * `[ ]`   Derive `firstStageSlug: string | null` from `sortedStages[0]?.slug ?? null`.
-      * `[ ]`   Derive `firstStageCeiling: number | null` from `preProjectEstimate` + `firstStageSlug` (finite non-negative only).
-      * `[ ]`   Derive `projectCeiling: number | null` from `preProjectEstimate?.projectCeiling` when finite.
-      * `[ ]`   Replace autostart `useEffect` (lines 400-418): remove `firstStageMinBalance` / `minimum_balance`; use `firstStageCeiling` vs `Number(walletInfo.balance)` when `firstStageCeiling !== null`; keep `noDefaults` branch.
-      * `[ ]`   Replace `lowBalanceForReason` block (lines 420-423): compare wallet to `firstStageCeiling` instead of `firstStageMinBalance`.
-      * `[ ]`   Update `autoUncheckReason` string for ceiling case (lines 424-431).
-      * `[ ]`   In `CardContent` (before `CardFooter`): render cost preview block when both ceilings available; render project warning when `projectCeiling > wallet`; render top-up link in autostart reason area when ceiling blocks autostart.
-      * `[ ]`   In `onSubmit` (lines 464-533): before building `CreateProjectPayload`, read `processTemplateId` from `selectedDomainProcessAssociation?.process_template_id`; if not a non-empty string, log error and return; set `processTemplateId` on `payload` and `autoStartPayload` spread from `payload`.
-      * `[ ]`   Remove all `minimum_balance` and `default_process_template_id` identifiers from the file.
-      * `[ ]`   No other behavioral changes.
-
-    * `[ ]`   `directionality`
-      * `[ ]`   Layer: UI component.
-      * `[ ]`   Deps: inward (store action + selectors + wallet).
-      * `[ ]`   Provides: outward (pre-project cost UX; closes Group 5 consumer chain).
-      * `[ ]`   No cycles.
-
-    * `[ ]`   `requirements`
-      * `[ ]`   `minimum_balance` and `default_process_template_id` do not appear in `CreateDialecticProjectForm.tsx`. Observable: grep.
-      * `[ ]`   `fetchProcessAssociation` invoked with `{ domainId: selectedDomain.id }` when domain selected. Observable: autostart unit test.
-      * `[ ]`   `fetchProcessTemplate` and `fetchStageExpectedCounts` invoked only after `selectedDomainProcessAssociation.process_template_id` is available. Observable: autostart unit tests (success + null-association paths).
-      * `[ ]`   Submit payloads include `processTemplateId` matching `selectedDomainProcessAssociation.process_template_id` on Manual and Autostart paths. Observable: `CreateDialecticProjectForm.test.tsx` and `CreateDialecticProjectForm.autostart.test.tsx`.
-      * `[ ]`   `fetchStageExpectedCounts` uses `processTemplateId` from association row, not domain row. Observable: autostart unit test.
-      * `[ ]`   Preview copy matches ticket when `selectPreProjectCostCeiling` returns valid data. Observable: unit test.
-      * `[ ]`   Autostart defaults to Autoconfig when wallet below first-stage ceiling; Create remains enabled. Observable: updated autostart test.
-      * `[ ]`   Project warning is non-blocking with top-up link. Observable: unit test.
-      * `[ ]`   When estimate is `null`, no preview and no ceiling autostart block. Observable: unit test.
-
-  * `[ ]`   apps/web/src/components/ai/CreateProjectFromChatButton **Supply `processTemplateId` on chat-initiated `createProjectAndAutoStart`**
-
-    * `[ ]`   `objective`
-      * `[ ]`   `CreateProjectFromChatButton.tsx` builds `CreateProjectAndAutoStartPayload` with `projectName`, `initialUserPrompt`, `selectedDomainId`, and idempotency keys only (lines 55-61). After the `createProject` BE node requires `processTemplateId` on FormData (validated against `domain_process_associations`), this path must supply `processTemplateId` from `DomainProcessAssociationRow.process_template_id` after `fetchProcessAssociation({ domainId })` — not from `DialecticDomainRow` (domain rows carry no template column).
-      * `[ ]`   Functional goal: after `fetchDomains` when needed, resolve `selectedDomain: DialecticDomainRow | null` via `selectSelectedDomain(useDialecticStore.getState())`; require non-empty `selectedDomain.id`.
-      * `[ ]`   Functional goal: `await fetchProcessAssociation({ domainId: selectedDomain.id })` (store action from `dialecticStore.ts` node); then read `selectedDomainProcessAssociation` from `useDialecticStore.getState()`. When the row is stored and `process_template_id` is a non-empty string, set `processTemplateId` on `CreateProjectAndAutoStartPayload` and call `createProjectAndAutoStart` (store appends `processTemplateId` to FormData per `dialecticStore.ts` node).
-      * `[ ]`   Functional goal: when `selectedDomain` is `null` or `selectedDomain.id` is missing, keep existing toast "No domain available…" and return without calling `fetchProcessAssociation` or `createProjectAndAutoStart`.
-      * `[ ]`   Functional goal: when `fetchProcessAssociation` completes with `selectedDomainProcessAssociation === null` or `process_template_id` missing/empty (association error / `404` `NOT_FOUND`), show an error toast (e.g. no process template for this domain) and return without calling `createProjectAndAutoStart`.
-      * `[ ]`   Non-functional: no pre-project cost preview, no `fetchProcessTemplate`, no `fetchStageExpectedCounts`, no `selectPreProjectCostCeiling` in this component (chat surface only resolves association + submits create+autostart). No edits to `dialecticStore.ts`, `CreateDialecticProjectForm`, or BE handlers.
-      * `[ ]`   Each goal is atomic and testable.
-
-    * `[ ]`   `role`
-      * `[ ]`   UI component — chat toolbar control that creates a dialectic project from selected messages.
-      * `[ ]`   This node orchestrates the minimal pre-create read path (`fetchProcessAssociation` → `process_template_id` on payload). It does NOT implement domain listing, association API transport, store FormData assembly, or project creation on the BE.
-      * `[ ]`   Out of scope: cost ceiling display; Autostart/mode UI; `createDialecticProject` manual path; `setSelectedDomain` / domain-picker UX.
-
-    * `[ ]`   `module`
-      * `[ ]`   Bounded context: `apps/web/src/components/ai` — `CreateProjectFromChatButton`.
-      * `[ ]`   Inside: domain resolution after `fetchDomains`, `fetchProcessAssociation` call, `processTemplateId` from stored association row, guard toasts when association or template id absent.
-      * `[ ]`   Outside: `listDomains` / `fetchProcessAssociation` BE handlers, `createProject` validation, `createProjectAndAutoStart` FormData append.
-
-    * `[ ]`   `deps`
-      * `[ ]`   `selectSelectedDomain`, `selectDomains`, `fetchDomains`, `fetchProcessAssociation`, `createProjectAndAutoStart` — provider: `@paynless/store`; layer: store; direction: inward; purpose: domain list, selected `DialecticDomainRow`, default association fetch, project creation.
-      * `[ ]`   `selectedDomainProcessAssociation` — provider: `@paynless/store` `DialecticStateValues`; direction: inward; purpose: read `process_template_id` after `fetchProcessAssociation` settles.
-      * `[ ]`   `DialecticDomainRow`, `DomainProcessAssociationRow`, `CreateProjectAndAutoStartPayload` — provider: `@paynless/types` (`@paynless/db-types` row aliases + `CreateProjectPayload.processTemplateId` from `dialectic.api` node); layer: types; direction: inward.
-      * `[ ]`   `useAiStore` selectors, `formatChatMessagesAsPrompt`, `useNavigate`, `toast` — existing; unchanged.
-      * `[ ]`   HARD dependency: `dialectic.api` node (`fetchProcessAssociation`, row aliases, `CreateProjectPayload.processTemplateId`), `dialecticStore.ts` node (`fetchProcessAssociation`, `selectedDomainProcessAssociation`, FormData `processTemplateId`), `createProject` BE node. Runs after those nodes; parallel consumer with `CreateDialecticProjectForm`.
-
-    * `[ ]`   `context_slice`
-      * `[ ]`   After `fetchDomains` (if `domains.length === 0`), re-read `const selectedDomain: DialecticDomainRow | null = selectSelectedDomain(useDialecticStore.getState())`.
-      * `[ ]`   `selectedDomainId = selectedDomain?.id`. When defined, `await fetchProcessAssociation({ domainId: selectedDomainId })`.
-      * `[ ]`   `processTemplateId = useDialecticStore.getState().selectedDomainProcessAssociation?.process_template_id` — use only when non-empty string; otherwise early return with toast.
-      * `[ ]`   Payload includes `processTemplateId` and `selectedDomainId` only when both are valid.
-
-    * `[ ]`   ai/`CreateProjectFromChatButton.test.tsx`
-      * `[ ]`   Replace `DialecticDomain` imports/fixtures with full `DialecticDomainRow` literals (`created_at`, `updated_at` included — `@paynless/db-types` shape). Domain fixtures carry **no** `process_template_id` / `default_process_template_id`.
-      * `[ ]`   Add `mockGeneralAssociation: DomainProcessAssociationRow` with `domain_id: generalDomain.id`, `is_default_for_domain: true`, `process_template_id: 'pt-general'`, and remaining required columns. Add `mockOtherAssociation` with `process_template_id: 'pt-other'` for multi-domain tests.
-      * `[ ]`   Wire `fetchProcessAssociation` via `getDialecticStoreActionMock('fetchProcessAssociation')`: default implementation sets `selectedDomainProcessAssociation` to the association row matching the payload `domainId` (mirror store success path); expose `selectedDomainProcessAssociation` on mock state reads after the mock resolves.
-      * `[ ]`   Update every `createProjectAndAutoStart` payload assertion to include `processTemplateId: 'pt-general'` (or fixture id matching seeded association for the selected domain).
-      * `[ ]`   Add test: `fetchProcessAssociation` called with `{ domainId: generalDomain.id }` on click when `selectedDomain` is set (`waitFor`).
-      * `[ ]`   Add test: when mock leaves `selectedDomainProcessAssociation: null` after `fetchProcessAssociation`, click does not call `createProjectAndAutoStart`; `toast.error` called.
-      * `[ ]`   Add test: when `fetchDomains` runs and store then has `selectedDomain` + successful association mock, payload includes `processTemplateId` from association row.
-      * `[ ]`   Preserve existing tests (disabled states, navigation, idempotency keys distinct, error toast on API failure, does not call `createDialecticProject`). New/updated cases appended.
-
-    * `[ ]`   ai/`CreateProjectFromChatButton.tsx`
-      * `[ ]`   Import `DialecticDomainRow` from `@paynless/types` for typing `selectedDomain` after `getState()`.
-      * `[ ]`   `const fetchProcessAssociation = useDialecticStore((state) => state.fetchProcessAssociation);`
-      * `[ ]`   In `handleClick` after `fetchDomains` block: read `const selectedDomain: DialecticDomainRow | null = selectSelectedDomain(useDialecticStore.getState())`; derive `selectedDomainId = selectedDomain?.id`.
-      * `[ ]`   If `selectedDomainId === undefined`, keep existing toast and return.
-      * `[ ]`   `await fetchProcessAssociation({ domainId: selectedDomainId })`.
-      * `[ ]`   Read `const association = useDialecticStore.getState().selectedDomainProcessAssociation`; `const processTemplateId = association?.process_template_id`. If not a non-empty string, `toast.error(...)` and return.
-      * `[ ]`   Add `processTemplateId` to the `CreateProjectAndAutoStartPayload` object (lines 55-61).
-      * `[ ]`   No reads of `default_process_template_id`. No other behavioral changes.
-
-    * `[ ]`   `directionality`
-      * `[ ]`   Layer: UI component.
-      * `[ ]`   Deps: inward (store selectors/actions, `@paynless/types` row aliases, ai store, router, toast).
-      * `[ ]`   Provides: outward (chat → project create payload aligned with Create form and BE contract).
-      * `[ ]`   No cycles.
-
-    * `[ ]`   `requirements`
-      * `[ ]`   Every successful `createProjectAndAutoStart` call includes `processTemplateId` equal to `selectedDomainProcessAssociation.process_template_id` for the fetched domain. Observable: unit tests on mock payload.
-      * `[ ]`   `fetchProcessAssociation` is invoked with `{ domainId: selectedDomain.id }` before create when domain is selected. Observable: unit test.
-      * `[ ]`   When association row is absent after fetch, `createProjectAndAutoStart` is not invoked. Observable: unit test + `toast.error`.
-      * `[ ]`   No `default_process_template_id` or legacy `DialecticDomain` interface usage in `CreateProjectFromChatButton.tsx` or its test fixtures. Observable: grep.
-      * `[ ]`   Existing navigation, disabled, and idempotency behavior unchanged. Observable: preserved tests green.
-
-    * `[ ]`   **Commit** `feat(dialectic): dynamic cost ceiling — FE estimate utility, selectors, and consumers`
-      * `[ ]`   Structural: `computeCostCeiling` + `CostCeilingEstimate` types; `stageExpectedCountsByRun` / `preProjectStageExpectedCounts` store state; `selectCostCeiling` / `selectPreProjectCostCeiling`; BE count core + session-less handler + API client (Groups 1–4 nodes).
-      * `[ ]`   Behavioral: post-project ceilings drive NSF gate (`useStartContributionGeneration`, `GenerateContributionButton`); session header shows project/stage estimates (`SessionInfoCard`); create form previews full-project + first-stage cost, gates Autostart on first-stage ceiling, warns when project ceiling exceeds wallet; estimates recompute with model/cap changes; no `minimum_balance` preventive gates in Group 5 consumers.
-      * `[ ]`   Contract: arithmetic-only `computeCostCeiling`; selectors return `null` without valid counts/cap/rate; pre-project counts via `getStageExpectedCounts`; subscription cart prefill explicitly deferred to next ticket.
+  * `[✅]`   packages/api/src/dialectic.api **Domain rows, default association read, and session-less counts (first FE `@paynless/db-types` consumer)**
+
+    * `[✅]`   `objective`
+      * `[✅]`   After the `dialectic-service/index` wiring node, HTTP exposes `action: "listDomains"` (full `DialecticDomainRow[]` body) and `action: "fetchProcessAssociation"` (full `DomainProcessAssociationRow` body for `{ domainId }`). The FE still uses a hand-written `DialecticDomain` interface (partial projection, no `created_at`/`updated_at`) and has no client for the association read — store cannot obtain `process_template_id` after domain selection without inventing a merged DTO on `listDomains`.
+      * `[✅]`   Functional goal (row types — first FE consumer): in `packages/types/src/dialectic.types.ts`, add `DialecticDomainRow = Database['public']['Tables']['dialectic_domains']['Row']` and `DomainProcessAssociationRow = Database['public']['Tables']['domain_process_associations']['Row']` using `Database` from `@paynless/db-types` (workspace ref to `types_db`). **Delete** the hand-written `export interface DialecticDomain { ... }`. Replace every remaining `DialecticDomain` reference in that file (`DialecticStateValues.domains`, `selectedDomain`, `setSelectedDomain`, `DialecticApiClient.listDomains`, and any other symbol still named `DialecticDomain`) with `DialecticDomainRow`. No `default_process_template_id` on the domain row; template id comes only from `DomainProcessAssociationRow.process_template_id` after `fetchProcessAssociation`.
+      * `[✅]`   Functional goal (`listDomains` transport): change `DialecticApiClient.listDomains()` to `Promise<ApiResponse<DialecticDomainRow[]>>`; keep posting `{ action: 'listDomains' }` to `'dialectic-service'` with `{ isPublic: true }` (unchanged public catalog behavior, `dialectic.api.ts` lines 778-802). Return the typed `ApiResponse` unchanged — HTTP body is the full domain row array from `ListDomainsSuccessReturn.data`. No in-method response guard (same as today).
+      * `[✅]`   Functional goal (`fetchProcessAssociation` transport): add `FetchProcessAssociationPayload`: `{ domainId: string }`; add `async fetchProcessAssociation(payload: FetchProcessAssociationPayload): Promise<ApiResponse<DomainProcessAssociationRow>>` posting `{ action: 'fetchProcessAssociation', payload }` to `'dialectic-service'` with the same `try/catch` `NETWORK_ERROR` contract as `fetchProcessTemplate` (`dialectic.api.domain.test.ts` / `dialectic.api.ts` lines 805-826): log, `post`, surface `response.error` (including `404` `NOT_FOUND` from handler), catch → `{ code: 'NETWORK_ERROR', message, status: 0 }`. No `isPublic` flag unless index node later requires auth (match index node: no `userForJson` gate → do not add auth headers beyond default client). Place method immediately after `listDomains` in `dialectic.api.ts` so the call chain reads `listDomains` → `fetchProcessAssociation` → `fetchProcessTemplate(templateId)`.
+      * `[✅]`   Functional goal (`getStageExpectedCounts` transport): add `getStageExpectedCounts(payload: GetStageExpectedCountsPayload): Promise<ApiResponse<GetStageExpectedCountsResponse>>` posting `{ action: 'getStageExpectedCounts', payload }`, mirroring `getAllStageProgress` (`dialectic.api.ts` lines 597-622) including `NETWORK_ERROR` handling.
+      * `[✅]`   Functional goal (action union): add to `DialecticServiceActionPayload`: `{ action: 'fetchProcessAssociation'; payload: FetchProcessAssociationPayload }`, `{ action: 'getStageExpectedCounts'; payload: GetStageExpectedCountsPayload }`; keep `{ action: 'listDomains'; payload?: undefined }`. Add `GetStageExpectedCountsPayload`, `StageExpectedCount`, `GetStageExpectedCountsResponse` in the same `dialectic.types.ts` edit block as the row aliases (types ride with this node — no standalone types node).
+      * `[✅]`   Non-functional: flat `dialectic.api.ts` only (no API package folder). No in-method response guards for any of the three methods (mirror existing list/count/template clients). Does not touch store, hooks, or components.
+      * `[✅]`   HARD dependency: `dialectic-service/index` node complete (`listDomains` + `fetchProcessAssociation` routes return full table rows). Runs before `dialecticStore` and Group 5 UI nodes.
+      * `[✅]`   Each goal is atomic and testable.
+
+    * `[✅]`   `role`
+      * `[✅]`   API client adapter (FE transport) — first consumer of `@paynless/db-types` row aliases for domains and associations; wires three edge actions into typed `ApiResponse`s.
+      * `[✅]`   This node edits exactly one source file (`dialectic.api.ts`) plus support: `packages/types/src/dialectic.types.ts` (row aliases + action/count types + `DialecticApiClient` signature updates); `mocks/dialectic.api.mock.ts`; `dialectic.api.domain.test.ts` (`listDomains` + `fetchProcessAssociation`); `dialectic.api.documents.test.ts` (`getStageExpectedCounts`); `dialectic.api.integration.test.ts` (transport-boundary cases for new/changed methods as needed).
+      * `[✅]`   Does NOT add `expectedCount` to `StageProgressEntry` (Group 3/4). Does NOT implement store orchestration (store node calls these methods after domain selection). Does NOT change `fetchProcessTemplate` signature beyond existing imports.
+
+    * `[✅]`   `module`
+      * `[✅]`   Bounded context: `@paynless/api` dialectic transport.
+      * `[✅]`   Inside: HTTP envelopes, `ApiResponse` typing, `NETWORK_ERROR` paths, FE row aliases from `@paynless/db-types`, removal of legacy `DialecticDomain` interface.
+      * `[✅]`   Outside: SQL, BE guards, store state, ceiling math, UI.
+
+    * `[✅]`   `deps`
+      * `[✅]`   `this.apiClient.post<..., DialecticServiceActionPayload>` — provider: base `ApiClient`; layer: transport; direction: inward.
+      * `[✅]`   `Database`, `DialecticDomainRow`, `DomainProcessAssociationRow`, `FetchProcessAssociationPayload`, `GetStageExpectedCountsPayload`, `GetStageExpectedCountsResponse`, `StageExpectedCount`, `DialecticServiceActionPayload`, `ApiResponse` — provider: `@paynless/types` / `@paynless/db-types` (row aliases defined in `dialectic.types.ts` using `Database` from `@paynless/db-types`); direction: inward.
+      * `[✅]`   `logger` — existing api logger; reused.
+      * `[✅]`   No reverse dependencies. Depends on `dialectic-service/index` wiring node only among BE work in this chain.
+
+    * `[✅]`   `context_slice`
+      * `[✅]`   `listDomains()`: no payload; output `ApiResponse<DialecticDomainRow[]>` (full six domain columns per row).
+      * `[✅]`   `fetchProcessAssociation({ domainId })`: output `ApiResponse<DomainProcessAssociationRow>` (full six association columns; `process_template_id` is the field downstream store/UI use for `fetchProcessTemplate` / `getStageExpectedCounts`).
+      * `[✅]`   `getStageExpectedCounts({ processTemplateId, modelCount })`: output `ApiResponse<GetStageExpectedCountsResponse>`.
+      * `[✅]`   Methods forward payloads verbatim; no merging domain + association in the client.
+
+    * `[✅]`   packages/types/src/`dialectic.types.ts`
+      * `[✅]`   Add `export type DialecticDomainRow = Database['public']['Tables']['dialectic_domains']['Row'];`
+      * `[✅]`   Add `export type DomainProcessAssociationRow = Database['public']['Tables']['domain_process_associations']['Row'];`
+      * `[✅]`   Remove `export interface DialecticDomain { ... }` entirely.
+      * `[✅]`   Replace all `DialecticDomain` identifiers in this file with `DialecticDomainRow` (`DialecticStateValues`, `DialecticActions.setSelectedDomain`, `DialecticApiClient.listDomains`, etc.).
+      * `[✅]`   Add `FetchProcessAssociationPayload`: `{ domainId: string }`.
+      * `[✅]`   Add `GetStageExpectedCountsPayload`, `StageExpectedCount`, `GetStageExpectedCountsResponse` (BE mirror).
+      * `[✅]`   Add union members `{ action: 'fetchProcessAssociation'; payload: FetchProcessAssociationPayload }` and `{ action: 'getStageExpectedCounts'; payload: GetStageExpectedCountsPayload }` to `DialecticServiceActionPayload`.
+      * `[✅]`   Types only in this file section (exempt from RED/GREEN). No `any`. No `default_process_template_id` anywhere.
+
+    * `[✅]`   packages/api/src/`dialectic.api.domain.test.ts`
+      * `[✅]`   **Update** `describe('listDomains')`: import `DialecticDomainRow` (not `DialecticDomain`). Mock rows must include **all** `DialecticDomainRow` fields (`id`, `name`, `description`, `parent_domain_id`, `is_enabled`, `created_at`, `updated_at`) — use fixed ISO strings for timestamps. Keep existing four behaviors (correct POST + `{ isPublic: true }`, success data, server error, network error); assert `result.data` is full rows.
+      * `[✅]`   **Append** `describe('fetchProcessAssociation')` mirroring `fetchProcessTemplate` (lines 45-88): POST `{ action: 'fetchProcessAssociation', payload: { domainId } }` to `'dialectic-service'` **without** `{ isPublic: true }` (authenticated default client path, same as `fetchProcessTemplate`); success returns full `DomainProcessAssociationRow` mock (all six columns, `is_default_for_domain: true`); server error (e.g. `404` `NOT_FOUND`) surfaces `response.error`; network reject → `NETWORK_ERROR`. One behavior per test; appended after `listDomains` block.
+      * `[✅]`   Use `mockApiClient` harness; production types from `@paynless/types`; no inline parallel DTO types.
+
+    * `[✅]`   packages/api/src/`dialectic.api.documents.test.ts`
+      * `[✅]`   Append `getStageExpectedCounts` tests mirroring `getAllStageProgress` (lines 256-344): success posts `{ action: 'getStageExpectedCounts', payload }` and returns `stages`/`totalStages`; server error; `NETWORK_ERROR` on reject. One behavior per test; appended at end.
+
+    * `[✅]`   packages/api/src/`dialectic.api.ts`
+      * `[✅]`   Imports: add `DialecticDomainRow`, `DomainProcessAssociationRow`, `FetchProcessAssociationPayload`, `GetStageExpectedCountsPayload`, `GetStageExpectedCountsResponse`; remove `DialecticDomain` import.
+      * `[✅]`   Change `listDomains()` return type to `Promise<ApiResponse<DialecticDomainRow[]>>` and generic on `post<DialecticDomainRow[], ...>`; behavior unchanged otherwise.
+      * `[✅]`   Add `fetchProcessAssociation(payload)` immediately after `listDomains` (mirror `fetchProcessTemplate` try/catch/logging; `post<DomainProcessAssociationRow, DialecticServiceActionPayload>` with action `fetchProcessAssociation`).
+      * `[✅]`   Add `getStageExpectedCounts(payload)` immediately after `getAllStageProgress` (mirror lines 597-622).
+      * `[✅]`   Update `DialecticApiClient` class declaration in `@paynless/types` (same node's types file) — not in `dialectic.api.ts` — to list all three signatures.
+
+    * `[✅]`   packages/api/src/mocks/`dialectic.api.mock.ts`
+      * `[✅]`   Update `listDomains` mock fn type to `ApiResponse<DialecticDomainRow[]>`.
+      * `[✅]`   Add `fetchProcessAssociation` mock fn typed with `FetchProcessAssociationPayload` → `ApiResponse<DomainProcessAssociationRow>`.
+      * `[✅]`   Add `getStageExpectedCounts` mock fn typed with `GetStageExpectedCountsPayload` → `ApiResponse<GetStageExpectedCountsResponse>`.
+      * `[✅]`   Factory entries beside existing dialectic mocks; `vi.fn` only.
+
+    * `[✅]`   packages/api/src/`dialectic.api.integration.test.ts`
+      * `[✅]`   Add transport-boundary case for `fetchProcessAssociation`: assert posted `action`/`payload.domainId` and stubbed full association row returned.
+      * `[✅]`   Add transport-boundary case for `getStageExpectedCounts` (mirror `getAllStageProgress` pattern in this file).
+      * `[✅]`   Update any `listDomains` integration stub if present to use full `DialecticDomainRow` shape.
+
+    * `[✅]`   `directionality`
+      * `[✅]`   Layer: API client adapter (FE transport).
+      * `[✅]`   Deps: inward (`ApiClient`, `@paynless/types`, `@paynless/db-types` via row aliases).
+      * `[✅]`   Provides: outward (`listDomains`, `fetchProcessAssociation`, `getStageExpectedCounts` consumed by store then UI).
+      * `[✅]`   No cycles.
+
+    * `[✅]`   `requirements`
+      * `[✅]`   No `DialecticDomain` interface remains in `@paynless/types`; `DialecticDomainRow` and `DomainProcessAssociationRow` are `Database[...]['Row']` aliases. Observable: grep `interface DialecticDomain` in `dialectic.types.ts` — absent.
+      * `[✅]`   `listDomains()` still posts public catalog request; returns `ApiResponse<DialecticDomainRow[]>`. Observable: updated `dialectic.api.domain.test.ts`.
+      * `[✅]`   `fetchProcessAssociation({ domainId })` posts correct envelope; returns full association row or surfaces server/network errors. Observable: four tests in `dialectic.api.domain.test.ts`.
+      * `[✅]`   `getStageExpectedCounts(payload)` posts correct envelope; returns typed counts response. Observable: `dialectic.api.documents.test.ts`.
+      * `[✅]`   `DialecticServiceActionPayload` includes `fetchProcessAssociation` and `getStageExpectedCounts` members. Observable: type-check in `dialectic.api.ts` post calls.
+      * `[✅]`   `StageProgressEntry` unchanged. Observable: no edit to that interface in this node.
+      * `[✅]`   No merged `default_process_template_id` on domain type. Observable: grep in `packages/types` — absent.
+
+  * `[✅]`   packages/utils/src/computeCostCeiling **Pure cost-ceiling arithmetic: mean-rate estimates, contribution actuals, stageCeilings and projectCeiling (`@paynless/utils`)**
+
+    * `[✅]`   `objective`
+      * `[✅]`   The cost-ceiling ticket needs a single, side-effect-free arithmetic function that the session NSF surface and the pre-project preview both consume, so the estimate math lives in exactly one tested place and cannot drift between the two surfaces. Today no such function exists; the ceiling formulas are defined in the ticket intro core math (mean rate over `outputTokenCostRates[]`, contribution sums for completed stages).
+      * `[✅]`   Functional goal: implement `computeCostCeiling(deps: ComputeCostCeilingDeps, params: ComputeCostCeilingParams, payload: ComputeCostCeilingPayload): ComputeCostCeilingReturn` where `meanRate = sum(payload.outputTokenCostRates) / payload.outputTokenCostRates.length`. For each stage: if `stage.contributions.length === 0`, `stageCeilings[stageSlug] = stage.expectedCount × payload.maxOutputTokens × meanRate` and `projectCeiling` adds that estimate; if `stage.contributions.length > 0`, `stageCeilings[stageSlug] = Σ (tokensUsedInput × inputTokenCostRate + tokensUsedOutput × outputTokenCostRate)` over contributions and `projectCeiling` adds that sum (including `0` when contributions sum to zero).
+      * `[✅]`   Functional goal: the completed-vs-remaining choice is made by an explicit `stage.contributions.length === 0` branch — NEVER a `??`/ternary default — so a completed stage whose real cost is `0` contributes `0` to `projectCeiling` (not its estimate). This is the load-bearing edge: `0` is a valid actual sum, empty `contributions` means "not yet run".
+      * `[✅]`   Functional goal: if any step yields `ComputeCostCeilingReturn` with `'error' in result`, return it unchanged — `computeCostCeiling` does not construct, reinterpret, or substitute errors; then run arithmetic on payload. `stages`, `maxOutputTokens`, and `outputTokenCostRates` arrive pre-assembled from Group 4 selectors as `ComputeCostCeilingPayload`.
+      * `[✅]`   Non-functional: zero side effects, deterministic, synchronous, and stable under empty input (`stages: []` → `{ stageCeilings: {}, projectCeiling: 0 }`) and zero factors (`maxOutputTokens: 0` or empty `outputTokenCostRates` → all ceilings `0`, never `NaN`).
+      * `[✅]`   Non-functional: full mandatory function construction — `interface.test` → `interface` → `interaction.spec` → `guard.test` → `guard` → `mock` → `test` → `construction` → `computeCostCeiling.ts` → `provides` → `integration.test` — colocated in `packages/utils/src/`, exported via `computeCostCeiling.provides.ts`.
+      * `[✅]`   Each goal is atomic and testable.
+
+    * `[✅]`   `role`
+      * `[✅]`   Domain / pure utility in `@paynless/utils` — the single source of cost-ceiling arithmetic; one function per file with the full support system (`computeCostCeiling.interface.ts`, guards, mock, tests, `provides.ts`); consumed by `@paynless/store` via `import { computeCostCeiling } from '@paynless/utils'`.
+      * `[✅]`   This node CREATES `computeCostCeiling.ts`, the entire `computeCostCeiling.*` support file set, and one `index.ts` export line. Group 4 `dialecticStore.selectors` assembles payload and calls this function; Group 5 UI reads selector output.
+
+    * `[✅]`   `module`
+      * `[✅]`   Bounded context: `@paynless/utils` FE cost-estimation arithmetic.
+      * `[✅]`   Inside this boundary: mean-rate per-stage estimates, contribution actual sums, `stageCeilings`, and `projectCeiling` aggregation.
+      * `[✅]`   Outside this boundary: payload assembly only (Group 4 selectors); UI display (Group 5).
+      * `[✅]`   The function reads only `payload` fields.
+
+    * `[✅]`   `deps`
+      * `[✅]`   `ComputeCostCeilingDeps`, `ComputeCostCeilingParams`, `ComputeCostCeilingPayload`, `ComputeCostCeilingContributionInput`, `ComputeCostCeilingStageInput`, `ComputeCostCeilingSuccessReturn`, `ComputeCostCeilingErrorReturn`, `ComputeCostCeilingReturn`, `ComputeCostCeilingFn` — provider: `packages/utils/src/computeCostCeiling.interface.ts` (this node); layer: types; direction: inward; purpose: owned function contract (sole definition site).
+      * `[✅]`   `isRecord` — provider: `packages/utils/src/dialectic.guard.ts`; layer: utils guard; direction: inward; purpose: guard primitive for owned type guards.
+      * `[✅]`   `ApiError` — provider: `@paynless/types` (`api.types.ts`); layer: shared types; direction: inward; purpose: `ComputeCostCeilingErrorReturn.error` shape only (not a cost-ceiling-owned symbol).
+      * `[✅]`   Confirm: no reverse dependencies; no `@paynless/store`, no `@paynless/api`, no `@paynless/db-types`; no `@paynless/types` cost-ceiling symbols beyond `ApiError`.
+
+    * `[✅]`   `context_slice`
+      * `[✅]`   `ComputeCostCeilingDeps`: `{}`. `ComputeCostCeilingParams`: `{}`. `ComputeCostCeilingPayload`: `{ stages: ComputeCostCeilingStageInput[]; maxOutputTokens: number; outputTokenCostRates: number[]; }` where `ComputeCostCeilingStageInput` is `{ stageSlug: string; expectedCount: number; contributions: ComputeCostCeilingContributionInput[] }` and `ComputeCostCeilingContributionInput` is `{ tokensUsedInput: number; tokensUsedOutput: number; inputTokenCostRate: number; outputTokenCostRate: number }`. **`contributions: []` = incomplete stage.**
+      * `[✅]`   Injection shape: `(deps: ComputeCostCeilingDeps, params: ComputeCostCeilingParams, payload: ComputeCostCeilingPayload)`.
+      * `[✅]`   Function reads only `payload` fields.
+
+    * `[✅]`   packages/utils/src/computeCostCeiling/`computeCostCeiling.interface.test.ts`
+      * `[✅]`   Contract (truth) test for owned types, asserted through the package guards. Construct a full valid `ComputeCostCeilingContributionInput` (`{ tokensUsedInput: 100, tokensUsedOutput: 200, inputTokenCostRate: 1, outputTokenCostRate: 2 }`) and assert `isComputeCostCeilingContributionInput` accepts it; invalid contribution cases: non-finite `tokensUsedInput`, non-finite `outputTokenCostRate`.
+      * `[✅]`   Construct a full valid incomplete `ComputeCostCeilingStageInput` (`{ stageSlug: 's1', expectedCount: 4, contributions: [] }`) and assert `isComputeCostCeilingStageInput` accepts it; construct a completed stage with one contribution row and assert acceptance.
+      * `[✅]`   Construct a full valid `ComputeCostCeilingPayload` (`{ stages: [valid stage], maxOutputTokens: 1000, outputTokenCostRates: [3] }`) and assert `isComputeCostCeilingPayload` accepts it; define invalid payload cases that must fail the guard: `{}`; `stages` not an array; `maxOutputTokens` not finite; `outputTokenCostRates` not a non-empty array of finite numbers.
+      * `[✅]`   Construct a full valid `ComputeCostCeilingSuccessReturn` (`{ stageCeilings: { s1: 12000 }, projectCeiling: 12000 }`) and assert `isComputeCostCeilingSuccessReturn` accepts it; construct invalid success-return cases: `stageCeilings` not a record; `projectCeiling` not finite.
+      * `[✅]`   Construct a full valid `ComputeCostCeilingErrorReturn` by wrapping any object that satisfies `isApiError` as `{ error: thatObject }` and assert `isComputeCostCeilingErrorReturn` accepts it; invalid error cases: missing `error`; `error` fails `isApiError`.
+      * `[✅]`   Construct valid empty `{}` for `ComputeCostCeilingDeps` and `ComputeCostCeilingParams`; assert `isComputeCostCeilingDeps` and `isComputeCostCeilingParams` accept them.
+      * `[✅]`   Invalid `ComputeCostCeilingStageInput` cases (must fail): empty `stageSlug`; non-finite `expectedCount`; `contributions` not an array; contribution element fails contribution guard. Invariants: `stageSlug` non-empty; `contributions.length === 0` means incomplete; non-empty contributions with sum `0` is valid completed. No mocks. No implementation details.
+
+    * `[✅]`   packages/types/src/`dialectic.types.ts`
+      * `[✅]`   Line 189 `RecipeGranularity`: remove `'one_to_many' | 'many_to_one' |`, leaving `'all_to_one' | 'per_source_document' | 'pairwise_by_origin' | 'per_source_group' | 'per_source_document_by_lineage' | 'per_model'` to match the BE `GranularityStrategy` contract (disk line 189 still carries phantoms — edit is mandatory). Types only (exempt from RED/GREEN).
+
+    * `[✅]`   packages/utils/src/computeCostCeiling/`computeCostCeiling.interface.ts`
+      * `[✅]`   Own the complete function contract here — import `ApiError` from `@paynless/types` for the error return only; no other `@paynless/types` cost-ceiling symbols:
+        * `ComputeCostCeilingContributionInput`: `{ tokensUsedInput: number; tokensUsedOutput: number; inputTokenCostRate: number; outputTokenCostRate: number; }`.
+        * `ComputeCostCeilingStageInput`: `{ stageSlug: string; expectedCount: number; contributions: ComputeCostCeilingContributionInput[]; }` (`contributions: []` when the stage has not completed; non-empty when completed — utility sums rows).
+        * `ComputeCostCeilingDeps`: `{}`.
+        * `ComputeCostCeilingParams`: `{}`.
+        * `ComputeCostCeilingPayload`: `{ stages: ComputeCostCeilingStageInput[]; maxOutputTokens: number; outputTokenCostRates: number[]; }`.
+        * `ComputeCostCeilingSuccessReturn`: `{ stageCeilings: Record<string, number>; projectCeiling: number; }`.
+        * `ComputeCostCeilingErrorReturn`: `{ error: ApiError; }`.
+        * `ComputeCostCeilingReturn`: `ComputeCostCeilingSuccessReturn | ComputeCostCeilingErrorReturn`.
+        * `ComputeCostCeilingFn = (deps: ComputeCostCeilingDeps, params: ComputeCostCeilingParams, payload: ComputeCostCeilingPayload) => ComputeCostCeilingReturn`.
+      * `[✅]`   Types only (exempt from RED/GREEN). No inline ad-hoc types; no `any`.
+
+    * `[✅]`   `interaction.spec`
+      * `[✅]`   Callers: `selectCostCeiling` and `selectPreProjectCostCeiling` (`dialecticStore.selectors`, Group 4) — assemble `ComputeCostCeilingPayload` from store state; call `computeCostCeiling(deps, params, payload)` imported from `@paynless/utils` **without** pre-guarding with `isComputeCostCeilingPayload`; return the function result unchanged (propagate success or error). Selectors return `null` only when prerequisite state is incomplete (counts/cap/rate absent — selectors node); `null` is not used to swallow function errors.
+      * `[✅]`   Required dependency interactions: none at runtime — `ComputeCostCeilingDeps` and `ComputeCostCeilingParams` are empty; no injected services are called inside `computeCostCeiling`.
+      * `[✅]`   Input → output: valid path → `ComputeCostCeilingSuccessReturn` (`{ stageCeilings, projectCeiling }`); error path → `ComputeCostCeilingErrorReturn` (`{ error: ApiError }`) returned unchanged; side effects: none; synchronous; no throws.
+      * `[✅]`   Failure modes: any step yielding `ComputeCostCeilingErrorReturn` → return unchanged; selectors propagate that result to consumers; Group 5 UI handles `'error' in result`.
+      * `[✅]`   Ordering/temporal: none. Declarative only — no code.
+
+    * `[✅]`   packages/utils/src/computeCostCeiling/`computeCostCeiling.guard.test.ts`
+      * `[✅]`   Verify `isComputeCostCeilingContributionInput`, `isComputeCostCeilingStageInput`, `isComputeCostCeilingDeps`, `isComputeCostCeilingParams`, `isComputeCostCeilingPayload`, `isComputeCostCeilingSuccessReturn`, and `isComputeCostCeilingErrorReturn` against every contract case from `computeCostCeiling.interface.test.ts`: no false negatives (every valid contract object passes) and no false positives (every malformed variant is rejected).
+      * `[✅]`   Intentionally malformed objects built from `build*` mock factories then overridden to invalid values (typed per the strict-typing exception), not by casting arbitrary literals.
+
+    * `[✅]`   packages/utils/src/computeCostCeiling/`computeCostCeiling.guard.ts`
+      * `[✅]`   Implement `isComputeCostCeilingContributionInput(value: unknown): value is ComputeCostCeilingContributionInput` — `isRecord`; finite number `tokensUsedInput`, `tokensUsedOutput`, `inputTokenCostRate`, `outputTokenCostRate`.
+      * `[✅]`   Implement `isComputeCostCeilingStageInput(value: unknown): value is ComputeCostCeilingStageInput` — `isRecord`; non-empty string `stageSlug`; finite number `expectedCount`; `Array.isArray(contributions)` and every element `isComputeCostCeilingContributionInput`.
+      * `[✅]`   Implement `isComputeCostCeilingDeps(value: unknown): value is ComputeCostCeilingDeps` — `isRecord` with no required keys.
+      * `[✅]`   Implement `isComputeCostCeilingParams(value: unknown): value is ComputeCostCeilingParams` — `isRecord` with no required keys.
+      * `[✅]`   Implement `isComputeCostCeilingPayload(value: unknown): value is ComputeCostCeilingPayload` — `isRecord`; `Array.isArray(stages)` and every element `isComputeCostCeilingStageInput`; finite `maxOutputTokens`; `outputTokenCostRates` is a non-empty array and every element is a finite number.
+      * `[✅]`   Implement `isComputeCostCeilingSuccessReturn(value: unknown): value is ComputeCostCeilingSuccessReturn` — `isRecord`; `stageCeilings` is a record with finite number values; finite `projectCeiling`.
+      * `[✅]`   Implement `isComputeCostCeilingErrorReturn(value: unknown): value is ComputeCostCeilingErrorReturn` — `isRecord`; `isApiError(value['error'])`.
+      * `[✅]`   Import `isRecord` from `../dialectic.guard`; import `isApiError` from `../type_guards`. Guards must accept all valid contract cases and reject all invalid contract cases.
+
+    * `[✅]`   packages/utils/src/computeCostCeiling/`computeCostCeiling.mock.ts`
+      * `[✅]`   Per `.cursor/commands/mock.md`: provide `build*` builders with defaults and per-field overrides for each owned signature element — `ComputeCostCeilingDeps`, `ComputeCostCeilingParams`, `ComputeCostCeilingContributionInput`, `ComputeCostCeilingStageInput`, `ComputeCostCeilingPayload`, `ComputeCostCeilingSuccessReturn`, `ComputeCostCeilingErrorReturn`.
+      * `[✅]`   `buildComputeCostCeilingDeps(overrides?)` → `{}`; `buildComputeCostCeilingParams(overrides?)` → `{}`; `buildComputeCostCeilingContributionInput(overrides?)` → `{ tokensUsedInput: 100, tokensUsedOutput: 200, inputTokenCostRate: 1, outputTokenCostRate: 2 }`; `buildComputeCostCeilingStageInput(overrides?)` → `{ stageSlug: 's1', expectedCount: 4, contributions: [] }`; `buildComputeCostCeilingPayload(overrides?)` → `{ stages: [buildComputeCostCeilingStageInput()], maxOutputTokens: 1000, outputTokenCostRates: [3] }`; `buildComputeCostCeilingSuccessReturn(overrides?)` → `{ stageCeilings: { s1: 12000 }, projectCeiling: 12000 }`; `buildComputeCostCeilingErrorReturn(overrides?)` → `{ error: … }` where default `error` is any minimal object satisfying `isApiError`, mergeable via `overrides` (including `overrides.error`); no cost-ceiling-specific `code` or `message` in defaults.
+      * `[✅]`   Export `createMockComputeCostCeilingFn()` returning a `ComputeCostCeilingFn` that records `(deps, params, payload)` at call time and returns `buildComputeCostCeilingSuccessReturn()` unless the caller overrides the mock return via the factory pattern. Conforms to `interface` and `interaction.spec`; mocks owned symbols only.
+
+    * `[✅]`   packages/utils/src/computeCostCeiling/`computeCostCeiling.test.ts`
+      * `[✅]`   Vitest unit test importing `computeCostCeiling` from `./computeCostCeiling` and using `build*` from `./computeCostCeiling.mock.ts`; validate behavior against `requirements` and `interaction.spec`; one behavior per test; appended at the end. Do NOT re-test type shape or guard correctness.
+      * `[✅]`   Test (per-stage estimate): `buildComputeCostCeilingPayload({ stages: [buildComputeCostCeilingStageInput({ stageSlug: 's1', expectedCount: 4, contributions: [] })], maxOutputTokens: 1000, outputTokenCostRates: [3] })` → `stageCeilings.s1 === 12000` and `projectCeiling === 12000`.
+      * `[✅]`   Test (all remaining): `s1` `{ expectedCount: 2, contributions: [] }` + `s2` `{ expectedCount: 3, contributions: [] }`, `maxOutputTokens: 1000`, `outputTokenCostRates: [2]` → `stageCeilings.s1 === 4000`, `stageCeilings.s2 === 6000`, `projectCeiling === 10000`.
+      * `[✅]`   Test (two-model mean rate): one stage `{ expectedCount: 4, contributions: [] }`, `maxOutputTokens: 1000`, `outputTokenCostRates: [2, 3]` → `stageCeilings.s1 === 10000` and `projectCeiling === 10000` (mean rate `2.5`, not max `3`).
+      * `[✅]`   Test (mixed actual + estimate): `s1` `{ expectedCount: 4, contributions: [buildComputeCostCeilingContributionInput({ tokensUsedInput: 100, tokensUsedOutput: 200, inputTokenCostRate: 1, outputTokenCostRate: 2 })] }` (sum `500`) + `s2` `{ expectedCount: 3, contributions: [] }`, `maxOutputTokens: 1000`, `outputTokenCostRates: [3]` → `stageCeilings.s1 === 500`, `stageCeilings.s2 === 9000`, `projectCeiling === 9500`.
+      * `[✅]`   Test (zero actual is honored, not defaulted): `s1` `{ expectedCount: 4, contributions: [buildComputeCostCeilingContributionInput({ tokensUsedInput: 0, tokensUsedOutput: 0, inputTokenCostRate: 1, outputTokenCostRate: 2 })] }` + `s2` `{ expectedCount: 1, contributions: [] }`, `maxOutputTokens: 1000`, `outputTokenCostRates: [3]` → `projectCeiling === 3000` (not `12000`), proving the `contributions.length === 0` discriminator for incomplete stages only.
+      * `[✅]`   Test (empty input): `stages: []` → `{ stageCeilings: {}, projectCeiling: 0 }`.
+      * `[✅]`   Test (zero factors): `maxOutputTokens: 0` with pending stages → every `stageCeilings` value is `0`, `projectCeiling === 0`, no `NaN`.
+      * `[✅]`   Test (invalid payload): malformed payload (e.g. `{}` or `stages` not an array) → `'error' in result` and `isApiError(result.error)`.
+
+    * `[✅]`   `construction`
+      * `[✅]`   Entrypoint: the bare pure function `computeCostCeiling(deps, params, payload)`; no class, no state, no partially-constructed instance. Required at call time: `deps: ComputeCostCeilingDeps` (empty object), `params: ComputeCostCeilingParams` (empty object), `payload: ComputeCostCeilingPayload`.
+      * `[✅]`   Enforce: no partially constructed instances; no defaults and no internal fallback values inside the function.
+      * `[✅]`   Invalid construction contexts: external consumers importing from `./computeCostCeiling` instead of `@paynless/utils` / `computeCostCeiling.provides.ts`.
+      * `[✅]`   Initialization order: callers do not pre-guard; if any internal step yields `'error' in result`, return that result before arithmetic.
+
+    * `[✅]`   packages/utils/src/computeCostCeiling/`computeCostCeiling.ts`
+      * `[✅]`   Implement `export function computeCostCeiling(deps: ComputeCostCeilingDeps, params: ComputeCostCeilingParams, payload: ComputeCostCeilingPayload): ComputeCostCeilingReturn`: for each step that may yield `ComputeCostCeilingReturn`, if `'error' in stepResult`, return `stepResult` unchanged; `computeCostCeiling` does not construct, reinterpret, or substitute `ApiError` inline; validate payload via guard — on failure return `{ error: … }`; after validation succeeds, compute `meanRate = sum(outputTokenCostRates) / outputTokenCostRates.length`; initialize `const stageCeilings: Record<string, number> = {};` and `let projectCeiling: number = 0;`; for each `stage` of `payload.stages`, if `stage.contributions.length === 0`, compute `estimate = stage.expectedCount * payload.maxOutputTokens * meanRate`, set `stageCeilings[stage.stageSlug] = estimate`, `projectCeiling += estimate`; else compute `actual = Σ (tokensUsedInput × inputTokenCostRate + tokensUsedOutput × outputTokenCostRate)` over contributions, set `stageCeilings[stage.stageSlug] = actual`, `projectCeiling += actual`; return `{ stageCeilings, projectCeiling }`.
+      * `[✅]`   Import contract types from `./computeCostCeiling.interface.ts`; import from `./computeCostCeiling.guard.ts` as required by steps. One function in the file; explicit `stage.contributions.length === 0` branch for the incomplete/complete choice.
+
+    * `[✅]`   packages/utils/src/computeCostCeiling/`computeCostCeiling.provides.ts`
+      * `[✅]`   External boundary barrel (sole sanctioned re-export point): export `computeCostCeiling`; contract types (`ComputeCostCeilingDeps`, `ComputeCostCeilingParams`, `ComputeCostCeilingContributionInput`, `ComputeCostCeilingStageInput`, `ComputeCostCeilingPayload`, `ComputeCostCeilingSuccessReturn`, `ComputeCostCeilingErrorReturn`, `ComputeCostCeilingReturn`, `ComputeCostCeilingFn`); guards (`isComputeCostCeilingContributionInput`, `isComputeCostCeilingStageInput`, `isComputeCostCeilingDeps`, `isComputeCostCeilingParams`, `isComputeCostCeilingPayload`, `isComputeCostCeilingSuccessReturn`, `isComputeCostCeilingErrorReturn`); mock builders and `createMockComputeCostCeilingFn`.
+      * `[✅]`   Stability guarantees: synchronous; pure; deterministic; no throws.
+      * `[✅]`   Semantic guarantees: incomplete stages — `stageCeilings[slug] = expectedCount × maxOutputTokens × meanRate`; complete stages — `stageCeilings[slug] = contribution sum`; `projectCeiling` uses `contributions.length === 0` vs non-empty discriminator; empty `stages` returns zero totals.
+      * `[✅]`   No external access bypasses this file.
+
+    * `[✅]`   packages/utils/src/`index.ts`
+      * `[✅]`   Add `export * from './computeCostCeiling.provides';` beside the existing util exports. Do not change other export lines.
+
+    * `[✅]`   `directionality`
+      * `[✅]`   Layer: domain (pure FE utility in the utils workspace).
+      * `[✅]`   Deps: inward (`computeCostCeiling.interface.ts` owned types; `ApiError` from `@paynless/types`; `isRecord` from `dialectic.guard.ts`; `isApiError` from `type_guards.ts`).
+      * `[✅]`   Provides: outward via `computeCostCeiling.provides.ts` → `index.ts` → `@paynless/utils` (consumed by `dialecticStore.selectors`, then NSF and pre-project UI in Group 5).
+      * `[✅]`   No cycles.
+
+    * `[✅]`   `requirements`
+      * `[✅]`   `computeCostCeiling(deps, params, payload)` uses separate `Deps`/`Params`/`Payload` (no blob). Observable: `computeCostCeiling.interface.ts` and `computeCostCeiling.ts` signatures.
+      * `[✅]`   Incomplete per-stage `stageCeilings[stageSlug]` equals `expectedCount × maxOutputTokens × meanRate` where `meanRate = sum(outputTokenCostRates) / outputTokenCostRates.length`. Observable: `computeCostCeiling.test.ts` per-stage and two-model mean cases.
+      * `[✅]`   Complete per-stage `stageCeilings[stageSlug]` equals the contribution sum for that stage. Observable: `computeCostCeiling.test.ts` mixed case (`stageCeilings.s1 === 500`).
+      * `[✅]`   `projectCeiling` sums contribution totals for completed stages and mean-rate estimates for incomplete stages. Observable: `computeCostCeiling.test.ts` mixed case (`projectCeiling === 9500`).
+      * `[✅]`   A completed stage whose contributions sum to `0` contributes `0`, not its estimate. Observable: `computeCostCeiling.test.ts` zero-actual case (`projectCeiling === 3000`).
+      * `[✅]`   Empty `stages` and zero factors produce well-formed, `NaN`-free zero results. Observable: `computeCostCeiling.test.ts` empty-input and zero-factor cases.
+      * `[✅]`   `'error' in result` → return unchanged (pass-through). Observable: `computeCostCeiling.test.ts` invalid-payload case; `computeCostCeiling.integration.test.ts` invalid-payload case.
+      * `[✅]`   The function reads nothing beyond `payload`. Observable: review — `computeCostCeiling.ts` imports `./computeCostCeiling.interface.ts` and `./computeCostCeiling.guard.ts` only.
+      * `[✅]`   `computeCostCeiling` is exported from `@paynless/utils` via `computeCostCeiling.provides.ts`. Observable: `computeCostCeiling.integration.test.ts` package import; grep `packages/utils/src/index.ts`.
+      * `[✅]`   Producer → function → consumer chain works. Observable: `computeCostCeiling.integration.test.ts`.
+      * `[✅]`   `RecipeGranularity` no longer contains `one_to_many`/`many_to_one`. Observable: grep `dialectic.types.ts` line 189; FE set matches BE `GranularityStrategy`.
+
+  * `[✅]`   packages/store/src/dialecticStore **Domain rows, default association fetch, expected-counts state, and pre-project count action**
+
+    * `[✅]`   `objective`
+      * `[✅]`   After the `dialectic.api` node, `listDomains()` returns `DialecticDomainRow[]` and `fetchProcessAssociation({ domainId })` returns `DomainProcessAssociationRow` (`@paynless/db-types` row aliases — no hand-written `DialecticDomain`, no `default_process_template_id` on the domain row). The store still types `domains` / `selectedDomain` as legacy partial `DialecticDomain` and has no association fetch — pre-project cost preview cannot obtain `process_template_id` for `fetchProcessTemplate` / `getStageExpectedCounts` after domain selection.
+      * `[✅]`   The selector that derives the dynamic cost ceiling (next node, `dialecticStore.selectors.ts`) needs per-stage expected job counts in two contexts: (a) **post-project** — authoritative counts on `GetAllStageProgressResponse.stages[].expectedCount`; (b) **pre-project** — via `api.dialectic().getStageExpectedCounts(...)` with `processTemplateId` taken from `selectedDomainProcessAssociation.process_template_id` after `fetchProcessAssociation`, never from `DialecticDomainRow`. Neither count source has store state today.
+      * `[✅]`   Why a run-keyed map and NOT a field on `StageRunProgressSnapshot`: snapshots are built at sites without counts (`dialecticStore.documents.ts:1724`, `dialecticStore.ts:636`, notification job upserts). Mirror `dagProgressByRun` (`dialectic.types.ts:409`, `dialecticStore.ts:209`, populated only in `hydrateAllStageProgressLogic` at `dialecticStore.documents.ts:1847`). Absent counts ⇒ selector returns `null`, never a fabricated zero.
+      * `[✅]`   Functional goal (domain catalog): update `fetchDomains` to store `response.data` as `DialecticDomainRow[]` when every element passes `isDialecticDomainRow`; on API error, network failure, or invalid row shape → `domains: []` and `domainsError` set (mirror existing paths). No merged template field on domain rows.
+      * `[✅]`   Functional goal (association): add `selectedDomainProcessAssociation: DomainProcessAssociationRow | null`, `isLoadingDomainProcessAssociation: boolean`, and `domainProcessAssociationError: ApiError | null` to `DialecticStateValues`, initialized `null` / `false` / `null`. Add `fetchProcessAssociation: (payload: FetchProcessAssociationPayload) => Promise<void>` calling `api.dialectic().fetchProcessAssociation(payload)`; mirror `fetchProcessTemplate` loading/error handling. On success validate `response.data` with `isDomainProcessAssociationRow` and require `data.is_default_for_domain === true` and `data.domain_id === payload.domainId` before storing the full row; on API error or failed validation leave `selectedDomainProcessAssociation` `null` and set `domainProcessAssociationError`. No fallback, no partial row, no invented `process_template_id`.
+      * `[✅]`   Functional goal (domain selection reset): update `setSelectedDomain(domain: DialecticDomainRow | null)` so every call clears pre-project association-dependent state: `selectedDomainProcessAssociation: null`, `domainProcessAssociationError: null`, `isLoadingDomainProcessAssociation: false`, `preProjectStageExpectedCounts: null`, `stageExpectedCountsError: null`, `isLoadingStageExpectedCounts: false`. Does **not** invoke `fetchProcessAssociation` (callers orchestrate — see `interaction.spec`). Does not clear `currentProcessTemplate` (post-project / separate flows).
+      * `[✅]`   Functional goal (post-project counts): add `stageExpectedCountsByRun: Record<string, Record<string, number>>` beside `dagProgressByRun`; **declare and initialize only** — `dialecticStore.documents` populates it.
+      * `[✅]`   Functional goal (pre-project counts): add `preProjectStageExpectedCounts`, `isLoadingStageExpectedCounts`, `stageExpectedCountsError`; add `fetchStageExpectedCounts` mirroring `fetchProcessTemplate`; validate with `isGetStageExpectedCountsResponse`; store only `response.data.stages` on success. Callers pass `{ processTemplateId: selectedDomainProcessAssociation.process_template_id, modelCount }` — if association is `null`, callers must not invoke `fetchStageExpectedCounts`.
+      * `[✅]`   Functional goal (guards in `@paynless/utils` `dialectic.guard.ts`): `isDialecticDomainRow`, `isDomainProcessAssociationRow`, `isStageExpectedCount`, `isGetStageExpectedCountsResponse` — financial-path responses rejected when invalid; import row/count types from `@paynless/types` only.
+      * `[✅]`   Non-functional: edits `dialecticStore.ts`, `dialectic.types.ts` (state + actions only — `DialecticDomainRow` / `DomainProcessAssociationRow` aliases owned by `dialectic.api` node), `dialectic.guard.ts`, `dialecticStore.test.ts`, `dialecticStore.domain.test.ts`, `dialecticStore.mock.ts`. Does not touch BE, `dialectic.api.ts`, UI components, selectors, or `dialecticStore.documents` hydration.
+      * `[✅]`   HARD dependency: `packages/api/src/dialectic.api` node complete (`DialecticDomainRow`, `DomainProcessAssociationRow`, `listDomains`, `fetchProcessAssociation`, `getStageExpectedCounts`). Runs before `dialecticStore.selectors` and Group 5 UI nodes.
+      * `[✅]`   Each goal is atomic and testable.
+
+    * `[✅]`   `role`
+      * `[✅]`   FE store state + actions (`dialecticStore.ts`) and FE response guards (`@paynless/utils` `dialectic.guard.ts`).
+      * `[✅]`   This node wires the **two-table** pre-project read path in the store (domain list rows + per-selection association row), expected-counts state/actions, and guards. It updates `fetchDomains` / `setSelectedDomain` to consume `DialecticDomainRow`. It does NOT populate `stageExpectedCountsByRun` (`dialecticStore.documents`), compute ceilings (`computeCostCeiling`), derive ceilings (`dialecticStore.selectors`), or implement Create-form / chat-button orchestration (Group 5 — those components call the actions in order documented below).
+      * `[✅]`   Out of scope: BE handlers; API transport implementation; `fetchProcessTemplate` body changes; `createProject` FormData (separate node); selector math.
+
+    * `[✅]`   `module`
+      * `[✅]`   Bounded context: `@paynless/store` dialectic module (`dialecticStore.ts`), store-owned slices of `@paynless/types` (`dialectic.types.ts` state/actions), `@paynless/utils` guards (`dialectic.guard.ts`).
+      * `[✅]`   Inside: association + expected-count state/actions; domain-list/selection typing alignment; FE guards for association/count/domain-row API responses.
+      * `[✅]`   Outside: SQL, index dispatch, API client methods (prior node), ceiling arithmetic, UI call sequencing beyond documented contract.
+
+    * `[✅]`   `deps`
+      * `[✅]`   `DialecticDomainRow`, `DomainProcessAssociationRow`, `FetchProcessAssociationPayload`, `GetStageExpectedCountsPayload`, `StageExpectedCount`, `GetStageExpectedCountsResponse`, `ApiError` — provider: `@paynless/types` (`dialectic.types.ts`; row aliases from `@paynless/db-types` added by `dialectic.api` node); direction: inward; never re-export from store.
+      * `[✅]`   `api.dialectic().listDomains`, `api.dialectic().fetchProcessAssociation`, `api.dialectic().getStageExpectedCounts` — provider: `@paynless/api`; direction: inward.
+      * `[✅]`   `isRecord` — provider: `@paynless/utils` `dialectic.guard.ts`; direction: inward.
+      * `[✅]`   No reverse dependencies. Precedes `dialecticStore.documents` and `dialecticStore.selectors`.
+
+    * `[✅]`   `context_slice`
+      * `[✅]`   `fetchDomains`: stores validated `DialecticDomainRow[]` only.
+      * `[✅]`   `fetchProcessAssociation({ domainId })`: stores one validated `DomainProcessAssociationRow` or leaves `selectedDomainProcessAssociation` null on failure.
+      * `[✅]`   `fetchStageExpectedCounts({ processTemplateId, modelCount })`: stores validated `StageExpectedCount[]` in `preProjectStageExpectedCounts` only.
+      * `[✅]`   Post-project: `stageExpectedCountsByRun[runKey][stageSlug]` — written later by documents node; read later by selector.
+      * `[✅]`   Pre-project caller order (declarative — Group 5 / chat button implement): `setSelectedDomain(domainRow)` → `fetchProcessAssociation({ domainId: domainRow.id })` → on success `fetchProcessTemplate(association.process_template_id)` and `fetchStageExpectedCounts({ processTemplateId: association.process_template_id, modelCount })`. On association `404`/`error`, do not call template or counts; show no cost preview.
+
+    * `[✅]`   `interaction.spec`
+      * `[✅]`   `fetchDomains` unchanged transport (`listDomains` public catalog); success persists full domain rows or rejects entire list on any invalid element.
+      * `[✅]`   `setSelectedDomain` synchronous; clears association + pre-project count state whenever selection changes.
+      * `[✅]`   `fetchProcessAssociation` async; loading flag; success stores full association row; failure leaves association null and sets `domainProcessAssociationError` (including handler `404` `NOT_FOUND`).
+      * `[✅]`   `fetchStageExpectedCounts` async; independent of `fetchProcessAssociation` except callers must supply `processTemplateId` from stored association row.
+      * `[✅]`   Declarative only — no code.
+
+    * `[✅]`   packages/types/src/`dialectic.types.ts`
+      * `[✅]`   **Consume** `DialecticDomainRow` / `DomainProcessAssociationRow` already defined by `dialectic.api` node (`domains`, `selectedDomain`, `setSelectedDomain` — do not re-define row aliases here).
+      * `[✅]`   In `DialecticStateValues` (beside `domains` / `selectedDomain`): add `selectedDomainProcessAssociation: DomainProcessAssociationRow | null;`, `isLoadingDomainProcessAssociation: boolean;`, `domainProcessAssociationError: ApiError | null;`.
+      * `[✅]`   In `DialecticStateValues` (beside `dagProgressByRun`, ~409): add `stageExpectedCountsByRun: Record<string, Record<string, number>>;`, `preProjectStageExpectedCounts: StageExpectedCount[] | null;`, `isLoadingStageExpectedCounts: boolean;`, `stageExpectedCountsError: ApiError | null;`.
+      * `[✅]`   In `DialecticActions`: add `fetchProcessAssociation: (payload: FetchProcessAssociationPayload) => Promise<void>;` and `fetchStageExpectedCounts: (payload: GetStageExpectedCountsPayload) => Promise<void>;`.
+      * `[✅]`   Types only (exempt RED/GREEN). No `default_process_template_id`. No new row aliases in this node.
+
+    * `[✅]`   utils/`dialectic.guard.test.ts`
+      * `[✅]`   Append `describe('isDialecticDomainRow')`: passing full six-field row (`id`, `name`, `description`, `parent_domain_id`, `is_enabled`, `created_at`, `updated_at`); failing partial row (missing `created_at`), empty `id`, wrong `is_enabled` type.
+      * `[✅]`   Append `describe('isDomainProcessAssociationRow')`: passing full row with `is_default_for_domain: true`; failing `is_default_for_domain: false`, missing `process_template_id`, empty `domain_id`.
+      * `[✅]`   Append `describe('isStageExpectedCount')` and `describe('isGetStageExpectedCountsResponse')` (unchanged intent from prior draft).
+      * `[✅]`   Valid objects from `@paynless/types`; invalid via factory-then-override per strict-typing exception. One behavior per test; appended at end.
+
+    * `[✅]`   utils/`dialectic.guard.ts`
+      * `[✅]`   Add `isDialecticDomainRow`: `isRecord`; non-empty `id`/`name`; `description` string|null; `parent_domain_id` string|null; `typeof is_enabled === 'boolean'`; non-empty `created_at`/`updated_at`.
+      * `[✅]`   Add `isDomainProcessAssociationRow`: `isRecord`; non-empty `id`/`domain_id`/`process_template_id`; `is_default_for_domain === true`; non-empty `created_at`/`updated_at`.
+      * `[✅]`   Add `isStageExpectedCount` and `isGetStageExpectedCountsResponse` (as prior draft).
+      * `[✅]`   Import `DialecticDomainRow`, `DomainProcessAssociationRow`, `StageExpectedCount`, `GetStageExpectedCountsResponse` from `@paynless/types`. Reuse `isRecord`. No `any`, no casts.
+
+    * `[✅]`   packages/store/src/`dialecticStore.domain.test.ts`
+      * `[✅]`   Update fixtures: `DialecticDomainRow` with all six columns (`is_enabled: true`, fixed ISO `created_at`/`updated_at`). Remove `DialecticDomain` import.
+      * `[✅]`   Update `fetchDomains` tests to expect full rows; add case: API returns array with one invalid element → `domains` `[]` and `domainsError` set (invalid catalog rejected).
+      * `[✅]`   Update `setSelectedDomain` test: after `setSelectedDomain(row)`, assert `selectedDomainProcessAssociation` is `null` and `preProjectStageExpectedCounts` is `null` (reset on selection).
+      * `[✅]`   Append `describe('fetchProcessAssociation')`: success stores full `DomainProcessAssociationRow`; API error leaves association `null`; invalid row shape leaves association `null` and sets error; loading toggles `isLoadingDomainProcessAssociation`.
+      * `[✅]`   Use `api` mock from `@paynless/api/mocks`; production types only; one behavior per test; appended at end.
+
+    * `[✅]`   packages/store/src/`dialecticStore.test.ts`
+      * `[✅]`   Initial-state test: `stageExpectedCountsByRun` `{}`; `selectedDomainProcessAssociation` `null`; `isLoadingDomainProcessAssociation` `false`; `domainProcessAssociationError` `null`; `preProjectStageExpectedCounts` `null`; `isLoadingStageExpectedCounts` `false`; `stageExpectedCountsError` `null`.
+      * `[✅]`   `fetchStageExpectedCounts` success / API-error / invalid-data / loading tests (as prior draft).
+      * `[✅]`   Append test: `setSelectedDomain` after association was stored clears `selectedDomainProcessAssociation` and `preProjectStageExpectedCounts`.
+      * `[✅]`   New cases appended at end; existing unrelated tests remain green.
+
+    * `[✅]`   packages/store/src/`dialecticStore.ts`
+      * `[✅]`   Initial state (beside `dagProgressByRun: {}`, ~209): add `selectedDomainProcessAssociation: null,`, `isLoadingDomainProcessAssociation: false,`, `domainProcessAssociationError: null,`, `stageExpectedCountsByRun: {},`, `preProjectStageExpectedCounts: null,`, `isLoadingStageExpectedCounts: false,`, `stageExpectedCountsError: null,`.
+      * `[✅]`   `fetchDomains`: after `listDomains` response, if `response.error` or network catch — unchanged empty/error paths; on success require `Array.isArray(response.data)` and `response.data.every(isDialecticDomainRow)` else set `domainsError` `{ code: 'INVALID_RESPONSE', message: '...' }` and `domains: []`; else `set({ domains: response.data, ... })`.
+      * `[✅]`   `setSelectedDomain(domain: DialecticDomainRow | null)`: `set({ selectedDomain: domain, selectedDomainProcessAssociation: null, domainProcessAssociationError: null, isLoadingDomainProcessAssociation: false, preProjectStageExpectedCounts: null, stageExpectedCountsError: null, isLoadingStageExpectedCounts: false })`.
+      * `[✅]`   `fetchProcessAssociation(payload)`: mirror `fetchProcessTemplate` pattern — loading/error; validate with `isDomainProcessAssociationRow`; assert `data.domain_id === payload.domainId`; store full row or leave null on failure.
+      * `[✅]`   `fetchStageExpectedCounts(payload)`: as prior draft with `isGetStageExpectedCountsResponse`.
+      * `[✅]`   Imports: `DialecticDomainRow`, `DomainProcessAssociationRow`, `FetchProcessAssociationPayload`, `GetStageExpectedCountsPayload`, guards from `@paynless/utils`. Remove `DialecticDomain` import if present. No `as`, no defaulting of template id or counts.
+
+    * `[✅]`   apps/web/src/mocks/`dialecticStore.mock.ts`
+      * `[✅]`   Mock initial state: association fields + expected-count fields (same defaults as `dialecticStore.ts` initial state).
+      * `[✅]`   Action mocks: `fetchProcessAssociation: vi.fn().mockResolvedValue(undefined),`, `fetchStageExpectedCounts: vi.fn().mockResolvedValue(undefined),` beside `fetchProcessTemplate`.
+
+    * `[✅]`   `directionality`
+      * `[✅]`   Layer: store (FE state/actions) + shared guards (`@paynless/utils`).
+      * `[✅]`   Deps: inward (`@paynless/types`, `@paynless/api`, guards).
+      * `[✅]`   Provides: outward (`DialecticDomainRow[]` catalog; `DomainProcessAssociationRow` for template id; `preProjectStageExpectedCounts` + `stageExpectedCountsByRun` for selectors; actions consumed by Group 5).
+      * `[✅]`   No cycles.
+
+    * `[✅]`   `requirements`
+      * `[✅]`   `fetchDomains` stores only validated `DialecticDomainRow[]`. Observable: `dialecticStore.domain.test.ts`.
+      * `[✅]`   `fetchProcessAssociation` stores only a validated default association row for the requested `domainId`, or leaves null on failure. Observable: domain test suite.
+      * `[✅]`   `setSelectedDomain` clears association and pre-project count state on every selection change. Observable: domain + store tests.
+      * `[✅]`   `fetchStageExpectedCounts` stores only validated `stages` on success; null on API/validation failure. Observable: `dialecticStore.test.ts`.
+      * `[✅]`   Guards reject invalid domain rows, non-default association rows, and invalid count payloads. Observable: `dialectic.guard.test.ts`.
+      * `[✅]`   No `default_process_template_id` on domain state; template id read only from `selectedDomainProcessAssociation.process_template_id`. Observable: grep store + types.
+      * `[✅]`   `stageExpectedCountsByRun` declared, initialized `{}`, not populated in this node. Observable: review + documents node owns population.
+      * `[✅]`   `dagProgressByRun`, `stageRunProgress`, and unrelated fetch actions behavior unchanged aside from typed domain list/selection. Observable: existing store tests remain green.
+
+  * `[✅]`   packages/store/src/dialecticStore.documents **Populate `stageExpectedCountsByRun` from authoritative `getAllStageProgress` hydration; mirror the BE `expectedCount` onto the FE `StageProgressEntry`**
+
+    * `[✅]`   `objective`
+      * `[✅]`   **Post-project only.** Pre-project template id and per-stage counts use a separate path: `fetchProcessAssociation({ domainId })` → `DomainProcessAssociationRow.process_template_id` → `fetchStageExpectedCounts` → `preProjectStageExpectedCounts` (owned by the `packages/store/src/dialecticStore` node and Group 5 orchestration). This node does not call `fetchProcessAssociation`, does not read `listDomains` / `DialecticDomainRow`, and does not merge `process_template_id` onto domain rows.
+      * `[✅]`   The `packages/store/src/dialecticStore` node declared and initialized `stageExpectedCountsByRun: Record<string, Record<string, number>>` to `{}`, but nothing populates it. The authoritative source of **post-project** per-stage counts is `GetAllStageProgressResponse.stages[].expectedCount` — the BE `getAllStageProgress` node adds `expectedCount: number` to the BE `StageProgressEntry` (`dialectic.interface.ts:1002-1011`), populated from `StageCountsEntry.totalExpected` and guarded as a finite non-negative integer by `isStageProgressEntry`. The FE mirror type `StageProgressEntry` (`dialectic.types.ts:1255-1264`) does not yet carry `expectedCount`, so `hydrateAllStageProgressLogic` (`dialecticStore.documents.ts:1799`) cannot read it and the count is dropped.
+      * `[✅]`   Functional goal: add `expectedCount: number` to the FE `StageProgressEntry`, after `progress` (line 1259), mirroring the BE contract exactly — required, finite non-negative integer (no optional, no `null`; the BE always emits it).
+      * `[✅]`   Functional goal: in `hydrateAllStageProgressLogic`, before the `set` (alongside the existing pre-`set` validations at lines 1820-1842), throw a `[hydrateAllStageProgress]`-prefixed error if any `entry.expectedCount` is not a finite non-negative integer — invalid count data is never admitted to the store, because users make financial decisions on it. This matches the function's existing throw-on-invalid pattern (lines 1814-1842); no silent skip, no default.
+      * `[✅]`   Functional goal: inside the `set`, beside `state.dagProgressByRun[runKey] = dagProgress;` (line 1847), reset `state.stageExpectedCountsByRun[runKey] = {}` and, within the existing per-stage loop (lines 1848-1920), assign `state.stageExpectedCountsByRun[runKey][entry.stageSlug] = entry.expectedCount;`. Full overwrite on every authoritative hydration (refresh semantics), mirroring how `dagProgressByRun[runKey]` is overwritten.
+      * `[✅]`   Non-functional: `hydrateStageProgressLogic` — the per-stage path fed by `listStageDocuments`, which returns NO counts (`dialecticStore.documents.ts:1693-1797`) — is NOT modified. It must never write `stageExpectedCountsByRun`, so an authoritative count is never overwritten by a fabricated or absent one. No `StageRunProgressSnapshot` field, no other hydrated field, and no other hydrate logic changes. `hydrateAllStageProgressLogic` must not read or write `selectedDomainProcessAssociation`, `domainProcessAssociationError`, `preProjectStageExpectedCounts`, or any domain-catalog field.
+      * `[✅]`   Each goal is atomic and testable.
+
+    * `[✅]`   `role`
+      * `[✅]`   FE hydration logic (`dialecticStore.documents.ts`) + the FE `StageProgressEntry` type mirror (`dialectic.types.ts` — `expectedCount` on `StageProgressEntry` only; do not add `DomainProcessAssociationRow` or `DialecticDomainRow` aliases here — those are owned by the `dialectic.api` node).
+      * `[✅]`   This node reads `expectedCount` from the authoritative all-stages response and writes the run-keyed `stageExpectedCountsByRun` map for **post-project** `selectCostCeiling`. It does NOT compute or select ceilings, modify the per-stage hydrate path, call `fetchProcessAssociation`, or change the API client / BE beyond consuming `getAllStageProgress`.
+      * `[✅]`   Out of scope: `packages/store/src/dialecticStore` association actions/state (`fetchProcessAssociation`, `selectedDomainProcessAssociation`, `fetchStageExpectedCounts`, `preProjectStageExpectedCounts`); `listDomains` / `DialecticDomainRow`; merged `default_process_template_id` on domains; the `selectCostCeiling` / `selectPreProjectCostCeiling` selectors (next node — pre-project selector reads `preProjectStageExpectedCounts`, not this map); UI (Group 5); the shallow `isGetAllStageProgressResponse` guard (`type_guards.ts:171-177`, `Array.isArray(stages)` only — not on this hydration path, left unchanged).
+
+    * `[✅]`   `module`
+      * `[✅]`   Bounded context: `@paynless/store` documents module (`dialecticStore.documents.ts`) + `@paynless/types` (`StageProgressEntry.expectedCount` field only in `dialectic.types.ts`).
+      * `[✅]`   Inside this boundary: the FE `StageProgressEntry.expectedCount` field, and the validate-then-populate of `stageExpectedCountsByRun` in `hydrateAllStageProgressLogic`.
+      * `[✅]`   Outside this boundary: BE count computation; `getAllStageProgress` API transport; pre-project `fetchProcessAssociation` / `getStageExpectedCounts` chain; domain catalog; ceiling selectors; UI consumers.
+
+    * `[✅]`   `deps`
+      * `[✅]`   `GetAllStageProgressResponse`, `StageProgressEntry` — provider: `@paynless/types` (`dialectic.types.ts`); layer: types; direction: inward; purpose: the response the hydrate reads, now carrying `expectedCount`. Imported from the original source, never re-exported.
+      * `[✅]`   `stageExpectedCountsByRun` — provider: `packages/store/src/dialecticStore` node (`dialecticStore.ts` initial state + `DialecticStateValues`); layer: store state; direction: this node populates it only. HARD dependency: without that node's `{}` initialization, `state.stageExpectedCountsByRun[runKey]` is `undefined` and the assignment throws. That node also declares `selectedDomainProcessAssociation` / pre-project count state — this node must not touch those fields.
+      * `[✅]`   `api.dialectic().getAllStageProgress` — provider: `@paynless/api`; layer: API client; direction: inward; purpose: returns the authoritative `GetAllStageProgressResponse`. Does **not** use `api.dialectic().fetchProcessAssociation` or `listDomains`.
+      * `[✅]`   `set: (fn: (draft: Draft<DialecticStateValues>) => void) => void` — existing parameter of `hydrateAllStageProgressLogic`; provides the Immer draft.
+      * `[✅]`   No reverse dependencies. HARD dependency: `packages/store/src/dialecticStore` node (initializes `stageExpectedCountsByRun`); BE `getAllStageProgress` node (`expectedCount` on response). HARD dependency: `packages/api/src/dialectic.api` node only for `getAllStageProgress` transport — not for association. Precedes `dialecticStore.selectors` (`selectCostCeiling` reads this map; `selectPreProjectCostCeiling` reads `preProjectStageExpectedCounts` from the store node).
+
+    * `[✅]`   `interaction.spec`
+      * `[✅]`   Trigger: existing post-project flows call `hydrateAllStageProgressLogic` after `api.dialectic().getAllStageProgress` returns (session + project context). Side effects: writes `dagProgressByRun[runKey]` and `stageExpectedCountsByRun[runKey]` only.
+      * `[✅]`   Does **not** run on domain selection, does not invoke `fetchProcessAssociation`, and does not populate `preProjectStageExpectedCounts`. Declarative only — no code.
+
+    * `[✅]`   `context_slice`
+      * `[✅]`   From each `StageProgressEntry`: only `stageSlug` and `expectedCount` (the existing `steps`/`documents`/`jobs`/`progress` reads are unchanged).
+      * `[✅]`   Writes only `stageExpectedCountsByRun[`${sessionId}:${iterationNumber}`][stageSlug]`. Must not read or write `selectedDomainProcessAssociation`, `isLoadingDomainProcessAssociation`, `domainProcessAssociationError`, `preProjectStageExpectedCounts`, `domains`, `selectedDomain`, or `currentProcessTemplate`. No over-fetch, no hidden coupling.
+
+    * `[✅]`   packages/types/src/`dialectic.types.ts`
+      * `[✅]`   In the FE `StageProgressEntry` (lines 1255-1264): add `expectedCount: number;` immediately after `progress: { completedSteps: number; totalSteps: number; failedSteps: number };` (line 1259), matching the BE field ordering. Required field, finite non-negative integer by contract.
+      * `[✅]`   Types only (exempt from RED/GREEN). Additive to the interface; because it is required, every constructed `StageProgressEntry` must supply it — satisfied centrally by the `mockStageProgressEntry` factory default below, not by per-fixture edits.
+
+    * `[✅]`   apps/web/src/mocks/`dialecticStore.mock.ts`
+      * `[✅]`   The three FE tests that build `StageProgressEntry`/`GetAllStageProgressResponse` do so with inline literals (`dialecticStore.documents.test.ts` ~10 entries at 452/470/515/566/701/745/794/872/951/1034; `dialecticStore.test.ts` ≈1145; `dialectic.api.documents.test.ts` ≈221-242), which violates the no-inline-mocks rule and would force manual repair on every shape change. This file is already the project's dialectic mock factory (`mockDialecticProject`, `mockStageRunProgressSnapshot`, etc.); the `packages/store/src/dialecticStore` node already edits it for association + expected-count mock state/actions — this node adds progress-response factories only (no duplicate association action mocks). `packages/store` tests (`dialecticStore.notifications.test.ts`) and `packages/api` tests (`dialectic.api.contribution.test.ts`, `dialectic.api.integration.test.ts`) already import factories from here via `../../../apps/web/src/mocks/dialecticStore.mock` — NOT from `@paynless/api/mocks` (that barrel is only API client `vi.fn` stubs in `dialectic.api.mock.ts`).
+      * `[✅]`   If the store node did not add it: `export function mockDomainProcessAssociationRow(overrides: Partial<DomainProcessAssociationRow> = {}): DomainProcessAssociationRow` — full six-column `DomainProcessAssociationRow` with `is_default_for_domain: true` defaults (for association-isolation test seeding). Import `DomainProcessAssociationRow` from `@paynless/types`.
+      * `[✅]`   Add `export function mockStageProgressEntry(overrides: Partial<StageProgressEntry> = {}): StageProgressEntry` returning spec-valid defaults from the production type — `{ stageSlug: 'thesis', status: <valid UnifiedProjectStatus>, modelCount: 1, progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 }, expectedCount: 0, steps: [], documents: [], jobs: [], edges: [], ...overrides }` (the default carries the new `expectedCount`).
+      * `[✅]`   Add `export function mockGetAllStageProgressResponse(overrides: Partial<GetAllStageProgressResponse> = {}): GetAllStageProgressResponse` returning `{ dagProgress: <valid DagProgressDto, `dialectic.types.ts:1179`>, stages: [mockStageProgressEntry()], ...overrides }`. Extend the file's existing `@paynless/types` imports with `StageProgressEntry`, `GetAllStageProgressResponse`, `DagProgressDto`. No `as`, no inline ad-hoc types.
+
+    * `[✅]`   packages/store/src/`dialecticStore.documents.test.ts`
+      * `[✅]`   Migrate every inline `GetAllStageProgressResponse`/`StageProgressEntry` literal in the `hydrateAllStageProgressLogic` suite (452, 470, 515, 566, 701, 745, 794, 872, 951, 1034) to `mockGetAllStageProgressResponse({ stages: [mockStageProgressEntry({ ...asserted fields... })] })`, preserving each test's `stageSlug`/`modelCount`/`steps`/`documents`/`jobs`/`progress`/`dagProgress`. Import from `../../../apps/web/src/mocks/dialecticStore.mock` (same path as `dialecticStore.notifications.test.ts`). Existing assertions stay green.
+      * `[✅]`   Success assertion: `mockStageProgressEntry({ stageSlug: 'thesis', expectedCount: <n> })`; after `hydrateAllStageProgressLogic` resolves, `store.getState().stageExpectedCountsByRun['${sessionId}:${iterationNumber}']['thesis']` equals `<n>`; a two-stage response asserts each stage keyed to its own count.
+      * `[✅]`   Throw assertion: `mockStageProgressEntry({ expectedCount: -1 })` (and `1.5`, and a non-number via typed override) makes `hydrateAllStageProgressLogic` reject with `/\[hydrateAllStageProgress\].*expectedCount/`, and `stageExpectedCountsByRun` is left unchanged.
+      * `[✅]`   Per-stage-path assertion: after an authoritative hydrate populates a stage's count, a subsequent `hydrateStageProgressLogic` (listStageDocuments path) for the same key does NOT clear or alter `stageExpectedCountsByRun`. New cases appended; all objects via the factory with typed overrides.
+      * `[✅]`   Association isolation: `set({ selectedDomainProcessAssociation: mockDomainProcessAssociationRow(), preProjectStageExpectedCounts: [{ stageSlug: 'thesis', expectedCount: 2 }] })` before `hydrateAllStageProgressLogic`; after hydrate, both fields deep-equal the seeded values (post-project hydration must not clobber pre-project / association state).
+
+    * `[✅]`   packages/store/src/`dialecticStore.test.ts`
+      * `[✅]`   Migrate the inline `StageProgressEntry`/response literal(s) (≈1145) to the factory + typed overrides; import from `../../../apps/web/src/mocks/dialecticStore.mock`. No assertion changes (the factory default supplies `expectedCount`).
+
+    * `[✅]`   packages/api/src/`dialectic.api.documents.test.ts`
+      * `[✅]`   Migrate the inline `StageProgressEntry`/response literal(s) (≈221-242) to the factory + typed overrides; import from `../../../apps/web/src/mocks/dialecticStore.mock` (same path as `dialectic.api.contribution.test.ts`). No assertion changes.
+
+    * `[✅]`   packages/store/src/`dialecticStore.documents.ts`
+      * `[✅]`   Add a pre-`set` validation loop after the document-validation block (which ends at line 1842) and before `const runKey` (line 1844): `for (const entry of stages) { if (!Number.isInteger(entry.expectedCount) || entry.expectedCount < 0) { throw new Error(`[hydrateAllStageProgress] expectedCount invalid for stage ${entry.stageSlug}; sessionId=${sessionId}, iterationNumber=${iterationNumber}`); } }`. Consistent with the existing inline validations/throws in this function; no shared FE helper exists (none in `@paynless/utils`), so the check is inline as the file already does for `steps`/`documents`.
+      * `[✅]`   Inside the `set`, immediately after `state.dagProgressByRun[runKey] = dagProgress;` (line 1847): add `state.stageExpectedCountsByRun[runKey] = {};`. Within the existing `for (const entry of stages)` loop (starting line 1848), add `state.stageExpectedCountsByRun[runKey][entry.stageSlug] = entry.expectedCount;`.
+      * `[✅]`   Do NOT modify `hydrateStageProgressLogic`. No new imports (the response type already flows through the existing `@paynless/types` import). No other behavioral change; all existing snapshot population (`stepStatuses`, `documents`, `jobProgress`, `progress`, `jobs`) is untouched. No `as`, no default, no fallback.
+
+    * `[✅]`   `directionality`
+      * `[✅]`   Layer: store (FE hydration, post-project run scope).
+      * `[✅]`   Deps: inward (`@paynless/types`, `@paynless/api` `getAllStageProgress` only, `packages/store/src/dialecticStore` initial state for `stageExpectedCountsByRun`, Immer `set`).
+      * `[✅]`   Provides: outward (`stageExpectedCountsByRun[runKey]` for `selectCostCeiling`; does not provide pre-project counts or `process_template_id`).
+      * `[✅]`   No cycles. No lateral call to `fetchProcessAssociation`.
+
+    * `[✅]`   `requirements`
+      * `[✅]`   FE `StageProgressEntry` carries a required `expectedCount: number`. Observable: type definition; all fixtures compile with the field present.
+      * `[✅]`   After authoritative hydration, `stageExpectedCountsByRun[runKey][stageSlug]` equals each `entry.expectedCount`. Observable: success unit test (single- and multi-stage).
+      * `[✅]`   An invalid `expectedCount` (negative, non-integer, or non-number) makes `hydrateAllStageProgressLogic` throw and stores nothing. Observable: throw unit test.
+      * `[✅]`   `hydrateStageProgressLogic` never writes `stageExpectedCountsByRun`; an authoritative count survives a subsequent per-stage hydrate. Observable: per-stage-path unit test.
+      * `[✅]`   `hydrateAllStageProgressLogic` does not read or mutate association or pre-project count state. Observable: association-isolation unit test; grep `dialecticStore.documents.ts` for `fetchProcessAssociation`, `selectedDomainProcessAssociation`, `preProjectStageExpectedCounts`, `default_process_template_id` → no matches.
+      * `[✅]`   No `default_process_template_id` (or synthetic domain template field) in this module. Observable: grep confirms absent.
+      * `[✅]`   No change to any other hydrated field or to the per-stage path. Observable: existing documents tests remain green.
+
+  * `[✅]`   packages/store/src/dialecticStore.selectors **Selector-derived `selectCostCeiling` (post-project) and `selectPreProjectCostCeiling` (pre-project)**
+
+    * `[✅]`   `objective`
+      * `[✅]`   Cost ceilings are selector-derived. This node adds `isAiModelExtendedConfig` in `@paynless/utils` and two pure selectors that read live dialectic state, assemble `ComputeCostCeilingPayload`, call `computeCostCeiling(deps, params, payload)` from `@paynless/utils` **without** pre-guarding with `isComputeCostCeilingPayload`, and return the function result unchanged (success or error) — recomputing on every read when inputs change (model selection, slider, hydration, contributions, domain/association selection).
+      * `[✅]`   **`selectCostCeiling(state, sessionId): ComputeCostCeilingReturn | null`** (post-project): read per-stage `expectedCount` from `state.stageExpectedCountsByRun[`${sessionId}:${iterationNumber}`][stageSlug]`; read `maxOutputTokens`; assemble `outputTokenCostRates: number[]` (one `output_token_cost_rate` per selected model from catalog via `isAiModelExtendedConfig`); for each stage when `selectUnifiedProjectProgress` reports `stageStatus === 'completed'`, copy contribution rows `{ tokensUsedInput, tokensUsedOutput, inputTokenCostRate, outputTokenCostRate }` from session contributions + catalog (no summation in selectors); else `contributions: []`; assemble `ComputeCostCeilingPayload`; `return computeCostCeiling(buildComputeCostCeilingDeps(), buildComputeCostCeilingParams(), payload)` (pass through success or error). Return `null` only when prerequisite inputs are incomplete (counts, cap, rates, session, contribution row fields) — not to swallow function errors.
+      * `[✅]`   **`selectPreProjectCostCeiling(state): ComputeCostCeilingReturn | null`** (pre-project): read `state.preProjectStageExpectedCounts`; enforce association chain (`selectedDomain`, matching `selectedDomainProcessAssociation`, `domainProcessAssociationError == null`); same cap + `outputTokenCostRates[]` assembly; all stages `contributions: []`; assemble payload; call `computeCostCeiling` the same way and return the result unchanged. Return `null` only when prerequisite inputs are incomplete — not to swallow function errors.
+      * `[✅]`   **`maxOutputTokens`**: use `state.maxOutputTokens` only when it is a finite number; when `null`, return `null`.
+      * `[✅]`   **`outputTokenCostRates[]`**: one finite `output_token_cost_rate` per entry in `state.selectedModels` (in selection order), each read from the matching `modelCatalog[].config` narrowed by `isAiModelExtendedConfig`. When `selectedModels` is empty or any selected model lacks a valid config/rate, return `null`. No max pick — the utility computes mean rate.
+      * `[✅]`   **Contribution rows** (post-project only): copy token counts and per-contribution model rates into payload `contributions[]`; propagate `null` when any included contribution lacks valid tokens, `model_id`, or catalog rates. Selectors do not multiply or sum — `computeCostCeiling` owns all arithmetic.
+      * `[✅]`   **Counts** (post-project): iterate template stages via `getSortedStagesFromTemplate`; require finite non-negative integer counts for every template slug. (Pre-project): map `preProjectStageExpectedCounts` after association gates.
+      * `[✅]`   Functional goal: implement `isAiModelExtendedConfig` in `packages/utils/src/dialectic.guard.ts` with full contract tests in `dialectic.guard.test.ts` (required + optional field validation per `AiModelExtendedConfig`). Required for narrowing `modelCatalog[].config` when assembling `outputTokenCostRates[]` and contribution rate fields — no string-indexed config reads.
+      * `[✅]`   Non-functional: module-private assembly helpers only (`lookupModelConfig`, `assembleOutputTokenCostRates`, `buildPostProjectCostCeilingStages`, `buildPreProjectCostCeilingStages`); no cost arithmetic in selectors; no `extractMaxOutputCostRate`, no `sumStageActualCost`.
+      * `[✅]`   Each goal is atomic and testable.
+
+    * `[✅]`   `role`
+      * `[✅]`  FE store selectors + shared guard — derivation layer between hydrated counts / contributions / catalog rates / association+count state and `computeCostCeiling`.
+      * `[✅]`  This node CREATES `isAiModelExtendedConfig`, the two exported selectors, and module-private payload-assembly helpers.
+
+    * `[✅]`   `module`
+      * `[✅]`  Bounded context: `@paynless/utils` guard (`dialectic.guard.ts`) + `@paynless/store` dialectic selectors (`dialecticStore.selectors.ts`).
+      * `[✅]`  Inside: `isAiModelExtendedConfig`; `selectCostCeiling`, `selectPreProjectCostCeiling`; private helpers that read dialectic state, assemble payload fields, and call `computeCostCeiling` (no multiply/sum/max-rate pick).
+      * `[✅]`  Outside: BE handlers, API transport, association/count **actions**, `computeCostCeiling` arithmetic implementation, auth tier, UI orchestration.
+
+    * `[✅]`   `deps`
+      * `[✅]`   `StageExpectedCount`, `AiModelExtendedConfig` — provider: `@paynless/types` (`dialectic.types.ts`, `ai.types.ts`); layer: types; direction: inward.
+      * `[✅]`   `ComputeCostCeilingContributionInput`, `ComputeCostCeilingStageInput`, `ComputeCostCeilingPayload`, `ComputeCostCeilingReturn`, `computeCostCeiling`, `buildComputeCostCeilingDeps`, `buildComputeCostCeilingParams`, `buildComputeCostCeilingPayload` — provider: `@paynless/utils` (`computeCostCeiling.provides.ts`); layer: domain utility; direction: inward.
+      * `[✅]`   `isRecord` — provider: `@paynless/utils` (`dialectic.guard.ts`); layer: shared guard primitive; direction: inward; purpose: primitive for `isAiModelExtendedConfig` (implemented in this node).
+      * `[✅]`   Post-project state: `stageExpectedCountsByRun`, `maxOutputTokens`, `selectedModels`, `modelCatalog`, `currentProcessTemplate`, `currentProjectDetail` — provider: `DialecticStateValues` + existing selectors in this file.
+      * `[✅]`   Pre-project state: `selectedDomain` (`DialecticDomainRow | null`), `selectedDomainProcessAssociation` (`DomainProcessAssociationRow | null`), `domainProcessAssociationError`, `preProjectStageExpectedCounts`, `stageExpectedCountsError` — provider: `DialecticStateValues` (`packages/store/src/dialecticStore` node declares them; row aliases from `@paynless/db-types` via `dialectic.api` node). Selectors read these fields only; they do not fetch associations.
+      * `[✅]`   `selectSessionById`, `selectUnifiedProjectProgress`, `getSortedStagesFromTemplate` — same file; direction: inward (composition, no cycles).
+      * `[✅]`   HARD dependency chain: `packages/utils/src/computeCostCeiling` → `packages/api/src/dialectic.api` (row aliases + transport) → `packages/store/src/dialecticStore` (association row + `fetchStageExpectedCounts` + count error state) → `packages/store/src/dialecticStore.documents` (`stageExpectedCountsByRun` population) → **this node** (guard + selectors). This node is last in Group 4. `OutputCapSlider` and other consumers import `isAiModelExtendedConfig` from `@paynless/utils` after this node lands.
+
+    * `[✅]`   `context_slice`
+      * `[✅]`  Post-project reads: `stageExpectedCountsByRun[runKey]`, session `iteration_count`, template stage slugs, `selectUnifiedProjectProgress(...).stageDetails[].stageStatus`, session `dialectic_contributions` filtered by stage/iteration, `modelCatalog` configs for selected + contribution models (via `isAiModelExtendedConfig`), `maxOutputTokens`. No domain-catalog or association fields.
+      * `[✅]`  Pre-project reads: `selectedDomain`, `selectedDomainProcessAssociation`, `domainProcessAssociationError`, `preProjectStageExpectedCounts`, `stageExpectedCountsError`, `maxOutputTokens`, `selectedModels`, `modelCatalog`. Selectors ignore `isLoadingDomainProcessAssociation` / `isLoadingStageExpectedCounts` (return `null` while counts/association are absent — loading is a UI concern; absent data must not produce a fabricated estimate).
+      * `[✅]`  No wallet, no auth tier, no DB/API. No over-fetch.
+
+    * `[✅]`   packages/utils/src/`dialectic.guard.test.ts`
+      * `[✅]`   Append a `describe('isAiModelExtendedConfig')` suite (mirroring the existing `isJson`/`isPlainObject`/`isRecord` suites; `import { isAiModelExtendedConfig } from './dialectic.guard'`).
+      * `[✅]`   Passing cases: a full valid `AiModelExtendedConfig` (all required + several optional fields) passes; a minimal valid config (only `input_token_cost_rate`, `output_token_cost_rate`, `tokenization_strategy: { type: 'tiktoken' }`) passes; `context_window_tokens: null` passes.
+      * `[✅]`   Failing cases: missing `input_token_cost_rate`; missing `output_token_cost_rate`; a rate that is non-number / non-finite; missing `tokenization_strategy`; `tokenization_strategy.type` not in the literal set; an optional numeric field present but non-number (e.g. `hard_cap_output_tokens: "x"`); `null`; an array; a string; a number.
+      * `[✅]`   Valid objects built from the `AiModelExtendedConfig` production type; invalid variants built via factory-then-override to invalid values (typed per the strict-typing exception), not by casting arbitrary literals. One behavior per test; appended at the end.
+
+    * `[✅]`   packages/utils/src/`dialectic.guard.ts`
+      * `[✅]`   Add `export function isAiModelExtendedConfig(value: unknown): value is AiModelExtendedConfig`, importing `AiModelExtendedConfig` from `@paynless/types` (add to the existing top-of-file import). Logic: `if (!isRecord(value)) return false;` require `typeof value['input_token_cost_rate'] === 'number' && Number.isFinite(value['input_token_cost_rate'])` and the same for `output_token_cost_rate`; require `isRecord(value['tokenization_strategy'])` and `value['tokenization_strategy']['type']` to be one of `'tiktoken' | 'rough_char_count' | 'provider_specific_api' | 'unknown'`; for each optional numeric key (`hard_cap_output_tokens`, `provider_max_output_tokens`, `provider_max_input_tokens`, `default_temperature`, `default_top_p`), if the key is present it must be a finite number else return false; for `context_window_tokens`, if present it must be a finite number or `null`; otherwise return `true`.
+      * `[✅]`   Reuse `isRecord` from this same file (lines 37-39). No `any`, no casts, no inline ad-hoc types. Do not modify `isStageExpectedCount` / `isGetStageExpectedCountsResponse` suites added by the `dialecticStore` node.
+
+    * `[✅]`   packages/store/src/`dialecticStore.selectors.costCeiling.test.ts`
+      * `[✅]`   New file: unit tests for `selectCostCeiling` and `selectPreProjectCostCeiling`; import selectors from `./dialecticStore.selectors`; import `mockAiProvidersRow` / `mockAiModelConfig` from `../../../apps/web/src/mocks/dialecticStore.mock`; import `computeCostCeiling`, `buildComputeCostCeilingDeps`, `buildComputeCostCeilingParams`, `buildComputeCostCeilingPayload`, `buildComputeCostCeilingErrorReturn`, `ComputeCostCeilingSuccessReturn` from `@paynless/utils`; import `isApiError` from `@paynless/utils` (or the package path used elsewhere in store tests). For pre-project fixtures, seed `selectedDomain` and `selectedDomainProcessAssociation` with matching `domain_id` (production row shapes / existing dialectic mock factories — no inline ad-hoc domain types). Do not mock `computeCostCeiling` except in dedicated error pass-through tests (`vi.spyOn`).
+      * `[✅]`   `selectCostCeiling` — returns estimate (single rate): seed `maxOutputTokens: 1000`, one selected model, `modelCatalog` with `output_token_cost_rate: 3`, `stageExpectedCountsByRun[runKey]` with counts for every template stage, valid session/project/template; assert `'error' not in result`; assert `stageCeilings[slug] === expectedCount × 1000 × 3` and `projectCeiling` matches real `computeCostCeiling(...)` hand-check with `outputTokenCostRates: [3]` and all stages `contributions: []`.
+      * `[✅]`   `selectCostCeiling` — two-model mean rate: two selected models with catalog rates `2` and `3`, `expectedCount: 4`, `maxOutputTokens: 1000` → assert `stageCeilings[slug] === 10000` (mean 2.5, not 5, not max 3).
+      * `[✅]`   `selectCostCeiling` — mixed actual + estimate: one stage `stageStatus: 'completed'` with contribution rows copied into payload (valid tokens + rates) and a second pending stage (`contributions: []`); assert `'error' not in result`; assert `projectCeiling === 9500` when completed stage contributions sum to 500 and pending stage estimate is 9000 (hand-check via real `computeCostCeiling`).
+      * `[✅]`   `selectCostCeiling` — returns `null` when: `maxOutputTokens` is `null`; `selectedModels` is `[]`; no valid catalog config for a selected model; `stageExpectedCountsByRun` missing run-key; a template stage slug missing from the counts map; a completed-stage contribution with `tokens_used_input: null`; `expectedCount` invalid on counts map. One behavior per test.
+      * `[✅]`   `selectCostCeiling` — passes through error: when `computeCostCeiling` returns `buildComputeCostCeilingErrorReturn(...)` (via `vi.spyOn` on the real `@paynless/utils` import), assert selector returns the same error object (`'error' in result`, `isApiError(result.error)`), not `null`. One behavior per test.
+      * `[✅]`   `selectPreProjectCostCeiling` — returns estimate: `selectedDomain` + `selectedDomainProcessAssociation` with matching `domain_id`, `domainProcessAssociationError: null`, `preProjectStageExpectedCounts: [{ stageSlug: 'thesis', expectedCount: 4 }, ...]`, cap + rates set; assert `'error' not in result`; assert `projectCeiling` equals real `computeCostCeiling` hand-check (all stages `contributions: []`, mean rate over `outputTokenCostRates[]`).
+      * `[✅]`   `selectPreProjectCostCeiling` — returns `null` when: `selectedDomain` is `null`; `domainProcessAssociationError` is set; `selectedDomainProcessAssociation` is `null`; `selectedDomainProcessAssociation.domain_id` does not match `selectedDomain.id`; `preProjectStageExpectedCounts` is `null` or `[]`; cap or rates missing; invalid `expectedCount` on a stored count. One behavior per test.
+      * `[✅]`   `selectPreProjectCostCeiling` — passes through error: when `computeCostCeiling` returns `buildComputeCostCeilingErrorReturn(...)`, assert selector returns the same error object (`'error' in result`, `isApiError(result.error)`), not `null`. One behavior per test. New cases appended; state built from `initialDialecticStateValues` + production types.
+
+    * `[✅]`   packages/store/src/`dialecticStore.selectors.ts`
+      * `[✅]`   Add imports: `AiModelExtendedConfig`, `StageExpectedCount` from `@paynless/types`; `isAiModelExtendedConfig`, `computeCostCeiling`, `buildComputeCostCeilingDeps`, `buildComputeCostCeilingParams`, `buildComputeCostCeilingPayload`, `ComputeCostCeilingContributionInput`, `ComputeCostCeilingStageInput`, `ComputeCostCeilingReturn` from `@paynless/utils`.
+      * `[✅]`   `function lookupModelConfig(modelId: string | null, catalog: AiProvidersRow[]): AiModelExtendedConfig | null`: find catalog row by id; if `isAiModelExtendedConfig(catalogEntry.config)`, return config; else `null`.
+      * `[✅]`   `function assembleOutputTokenCostRates(state: DialecticStateValues): number[] | null`: if `state.selectedModels == null` or `length === 0`, return `null`; loop each selected model id in order against `state.modelCatalog`; for each match where `isAiModelExtendedConfig(catalogEntry.config)`, push `config.output_token_cost_rate`; if pushed length !== `selectedModels.length`, return `null`; else return the array. No max pick; no default rate.
+      * `[✅]`   `function buildPostProjectCostCeilingStages(state: DialecticStateValues, sessionId: string): ComputeCostCeilingStageInput[] | null`: resolve `session` via `selectSessionById(state, sessionId)` — if missing or `iteration_count` not a number, return `null`; `runKey = `${sessionId}:${iterationNumber}`; `countsBySlug = state.stageExpectedCountsByRun[runKey]` — if missing, return `null`; `stages = getSortedStagesFromTemplate(state.currentProcessTemplate)` — if empty, return `null`; `unified = selectUnifiedProjectProgress(state, sessionId)` (may throw if session/stage invalid — callers must pass a valid sessionId in production; tests seed valid session); build `ComputeCostCeilingStageInput[]` in template order: for each `stage.slug`, if `countsBySlug[stage.slug]` is not a finite non-negative integer, return `null`; if unified `stageDetails` entry has `stageStatus === 'completed'`, filter `session.dialectic_contributions` for stage/iteration; for each contribution require finite `tokens_used_input`, `tokens_used_output`, non-null `model_id`; resolve rates via `lookupModelConfig`; if any fails return `null`; push `{ tokensUsedInput, tokensUsedOutput, inputTokenCostRate: config.input_token_cost_rate, outputTokenCostRate: config.output_token_cost_rate }` into `contributions[]`; else `contributions: []`; push `{ stageSlug: stage.slug, expectedCount: countsBySlug[stage.slug], contributions }`.
+      * `[✅]`   `export function selectCostCeiling(state: DialecticStateValues, sessionId: string): ComputeCostCeilingReturn | null`: if `state.maxOutputTokens` is not a finite number, return `null`; `const outputTokenCostRates = assembleOutputTokenCostRates(state)`; if `null`, return `null`; `const stages = buildPostProjectCostCeilingStages(state, sessionId)`; if `null`, return `null`; `const payload = buildComputeCostCeilingPayload({ stages, maxOutputTokens: state.maxOutputTokens, outputTokenCostRates })`; `return computeCostCeiling(buildComputeCostCeilingDeps(), buildComputeCostCeilingParams(), payload)` — no branch on `'error' in result`.
+      * `[✅]`   `function buildPreProjectCostCeilingStages(state: DialecticStateValues): ComputeCostCeilingStageInput[] | null`: if `state.selectedDomain == null`, return `null`; if `state.domainProcessAssociationError != null`, return `null`; if `state.selectedDomainProcessAssociation == null`, return `null`; if `state.selectedDomainProcessAssociation.domain_id !== state.selectedDomain.id`, return `null`; if `state.preProjectStageExpectedCounts == null` or `length === 0`, return `null`; map each `StageExpectedCount` to `{ stageSlug, expectedCount, contributions: [] }` — if any `expectedCount` is not a finite non-negative integer, return `null`; return the array. Does not read `process_template_id` (counts were already fetched for that template by `fetchStageExpectedCounts` in `dialecticStore.ts`).
+      * `[✅]`   `export function selectPreProjectCostCeiling(state: DialecticStateValues): ComputeCostCeilingReturn | null`: same cap + `outputTokenCostRates` guards as `selectCostCeiling`; `const stages = buildPreProjectCostCeilingStages(state)`; if `null`, return `null`; `const payload = buildComputeCostCeilingPayload({ stages, maxOutputTokens: state.maxOutputTokens, outputTokenCostRates })`; `return computeCostCeiling(buildComputeCostCeilingDeps(), buildComputeCostCeilingParams(), payload)` — no branch on `'error' in result`.
+      * `[✅]`   Place exports after `selectUnifiedProjectProgress` (≈line 814) or at the end of the progress section; helpers are `function` declarations above the exports (same pattern as `getSortedStagesFromTemplate`). No `createSelector` memoization required (cheap pure read; matches `selectUnifiedProjectProgress` signature style). Grep this file: no `default_process_template_id`, no `fetchProcessAssociation`, no `domains[]` reads for template id, no `maxOutputCostRate`, no `actualCost`, no `extractMaxOutputCostRate`, no `sumStageActualCost`.
+
+    * `[✅]`   `directionality`
+      * `[✅]`   Layer: shared guard (`@paynless/utils`) + store selectors.
+      * `[✅]`   Deps: inward (`@paynless/types`, `@paynless/utils` including `computeCostCeiling` + `buildComputeCostCeiling*` + `ComputeCostCeilingReturn` from `computeCostCeiling.provides.ts`, `DialecticStateValues` association+count fields from `dialecticStore`, existing selectors in this file).
+      * `[✅]`   Provides: outward (`isAiModelExtendedConfig` from `@paynless/utils`; `ComputeCostCeilingReturn | null` from both selectors for Group 5 NSF, SessionInfoCard, Create form, OutputCapSlider).
+      * `[✅]`   No cycles.
+
+    * `[✅]`   `requirements`
+      * `[✅]`   `isAiModelExtendedConfig` accepts valid configs and rejects invalid variants per `dialectic.guard.test.ts`. Observable: guard test suite green.
+      * `[✅]`   `selectCostCeiling` returns `ComputeCostCeilingReturn` (success or error from `computeCostCeiling`) when prerequisite inputs are complete; returns `null` only when prerequisites are incomplete (counts, cap, rates, session, contribution row fields). Observable: success-path unit tests + null-path unit tests in `dialecticStore.selectors.costCeiling.test.ts`.
+      * `[✅]`   `selectPreProjectCostCeiling` returns `ComputeCostCeilingReturn` when association chain, `preProjectStageExpectedCounts`, cap, and rates are complete; returns `null` only when prerequisites are incomplete. Observable: unit tests in `dialecticStore.selectors.costCeiling.test.ts`.
+      * `[✅]`   Both selectors call `computeCostCeiling(deps, params, payload)` with assembled `payload` and return the function result unchanged — no pre-call `isComputeCostCeilingPayload`, no mapping `'error' in result` to `null`. Observable: review + error pass-through unit tests + hand-computed success expectations.
+      * `[✅]`   When `computeCostCeiling` returns `{ error: ApiError }`, the selector returns the same error object. Observable: error pass-through unit tests for both selectors.
+      * `[✅]`   `outputTokenCostRates[]` uses `isAiModelExtendedConfig` on catalog configs only — one rate per selected model in selection order; no max pick; no string-indexed config reads. Observable: review + two-model mean-rate test (`stageCeilings[slug] === 10000`).
+      * `[✅]`   Selectors copy contribution token+rate fields into payload; they do not sum actuals or compute mean rate. Observable: grep `dialecticStore.selectors.ts` for multiply/sum patterns on token costs → none; mixed actual+estimate test hand-checks utility output.
+      * `[✅]`   `dialecticStore.selectors.ts` contains no `isComputeCostCeilingPayload`, `fetchProcessAssociation`, `fetchStageExpectedCounts`, `default_process_template_id`, `maxOutputCostRate`, `actualCost`, `extractMaxOutputCostRate`, or `sumStageActualCost`. Observable: grep `dialecticStore.selectors.ts`.
+      * `[✅]`   Cost-ceiling selector tests live in `dialecticStore.selectors.costCeiling.test.ts` only — not in `dialecticStore.selectors.progress.test.ts`. Observable: grep progress test file for `selectCostCeiling` → no matches.
+      * `[✅]`   Existing selector tests remain green. Observable: full `dialecticStore.selectors.progress.test.ts` (and sibling selector test files except the new cost-ceiling file) pass.
+
+  * `[✅]`   apps/web/src/components/dialectic/OutputCapSlider **Narrow `modelCatalog[].config` with `isAiModelExtendedConfig`, replacing generic `isJson`/`isPlainObject` reads**
+
+    * `[✅]`   `objective`
+      * `[✅]`   `OutputCapSlider.tsx` reads each selected model's `modelCatalog[].config` (a Supabase `Json | null` on `AiProvidersRow`) using the generic guards `isJson` + `isPlainObject` (lines 62-71), then indexes raw string keys `configValue["hard_cap_output_tokens"]` / `configValue["provider_max_output_tokens"]` as `unknown` and re-validates each inline with `typeof === "number" && Number.isFinite && >= 0` (lines 73-100). The application type `AiModelExtendedConfig` (`@paynless/types`, `ai.types.ts:129-159`) is never proven, and string-indexed access is fragile.
+      * `[✅]`   Functional goal: import `isAiModelExtendedConfig` from `@paynless/utils` (implemented in the prior `dialecticStore.selectors` node) and use it to narrow `catalogEntry.config` before reading `hard_cap_output_tokens` / `provider_max_output_tokens` for `sliderRangeMax`. Malformed configs are skipped (same exclusion behavior as today when config fails validation).
+      * `[✅]`   Non-functional: no change to slider props, existing store reads, tier filtering, log-segment scale, markers, thumb-max math, or upgrade CTA. `logger` import is retained; the slider's `isJson`/`isPlainObject` imports are removed (both remain exported from `@paynless/utils` for other consumers). The only behavioral change is the config-narrowing path (lines 62-100). **No coupling to `fetchProcessAssociation`:** pre-project `process_template_id` comes from `DomainProcessAssociationRow` via store/API nodes on domain selection; this component never reads `selectedDomain`, `selectedDomainProcessAssociation`, `domains`, or calls `fetchProcessAssociation` / `fetchStageExpectedCounts`.
+      * `[✅]`   Each goal is atomic and testable.
+
+    * `[✅]`   `role`
+      * `[✅]`   UI component — `OutputCapSlider` data-source hardening: first UI consumer of `isAiModelExtendedConfig` for catalog config narrowing.
+      * `[✅]`   This node migrates the slider to the shared guard. It does NOT implement `isAiModelExtendedConfig` (prior `dialecticStore.selectors` node owns guard + tests in `dialectic.guard.ts` / `dialectic.guard.test.ts`). It does NOT modify the `AiModelExtendedConfig` type, dialectic store actions/state beyond what the slider already reads/writes (`maxOutputTokens`, `modelCatalog`, `selectedModels`), or tier/marker/scale/CTA logic.
+      * `[✅]`   Out of scope: `computeCostCeiling` arithmetic; `dialecticStore.selectors` (`selectCostCeiling` / `selectPreProjectCostCeiling` / `assembleOutputTokenCostRates` — prior node, same guard); `fetchProcessAssociation` / `listDomains` BE packages, index wiring, `dialectic.api` transport, `fetchProcessAssociation` / `fetchStageExpectedCounts` store actions, `selectedDomain` / `selectedDomainProcessAssociation` / `DomainProcessAssociationRow` / `DialecticDomainRow` (API + `dialecticStore` nodes); `CreateDialecticProjectForm` domain-selection orchestration (Group 5); all other UI except this slider's config path.
+
+    * `[✅]`   `module`
+      * `[✅]`   Bounded context: `apps/web` dialectic UI (`OutputCapSlider.tsx`, tests).
+      * `[✅]`   Inside this boundary: importing `isAiModelExtendedConfig` from `@paynless/utils`; narrowing `catalogEntry.config` before reading cap fields; writing `maxOutputTokens` to the dialectic store (unchanged contract).
+      * `[✅]`   Outside this boundary: `isAiModelExtendedConfig` implementation and guard tests (`dialecticStore.selectors` node); how `modelCatalog` is loaded; domain/association orchestration; selector ceiling assembly (`selectCostCeiling` / `selectPreProjectCostCeiling` read `maxOutputTokens` this slider sets and rates from the same guard).
+
+    * `[✅]`   `deps`
+      * `[✅]`   `isAiModelExtendedConfig` — provider: `@paynless/utils` (`dialectic.guard.ts`, **`dialecticStore.selectors` node**); layer: shared guard; direction: inward; purpose: narrow `catalogEntry.config` before reading cap fields. Import from `@paynless/utils` only — do not reimplement or duplicate guard logic in the slider.
+      * `[✅]`   `AiModelExtendedConfig` — provider: `@paynless/types` (`ai.types.ts`); layer: types; direction: inward; purpose: typed fields after narrowing. Imported from the original source, never re-exported.
+      * `[✅]`   `useAuthStore`, `useDialecticStore`, `useNavigate`, `Slider`/`Tooltip`/`Button`, `UserTier`, `logger` — existing slider dependencies, unchanged. Dialectic store reads remain limited to `maxOutputTokens`, `setMaxOutputTokens`, `modelCatalog`, `selectedModels` (no `selectedDomain`, no association fields, no `api.dialectic()`).
+      * `[✅]`   HARD dependency: `dialecticStore.selectors` node must land first (`isAiModelExtendedConfig` exported from `@paynless/utils`). No reverse dependencies. No lateral layer violations.
+
+    * `[✅]`   `context_slice`
+      * `[✅]`   Slider reads: `useAuthStore` (`userTier`, `availableTiers`); `useDialecticStore` (`maxOutputTokens`, `setMaxOutputTokens`, `modelCatalog`, `selectedModels` only). From each matched `catalogEntry.config`, only `hard_cap_output_tokens` and `provider_max_output_tokens` after `isAiModelExtendedConfig(config)` (for `sliderRangeMax`); writes user cap via `setMaxOutputTokens` (consumed later by `selectCostCeiling` / `selectPreProjectCostCeiling` when finite).
+      * `[✅]`   Slider does NOT read: `domains`, `selectedDomain`, `selectedDomainProcessAssociation`, `domainProcessAssociationError`, `preProjectStageExpectedCounts`, `stageExpectedCountsError`, or any `default_process_template_id` / merged domain field. Does NOT call `fetchProcessAssociation`, `fetchDomains`, `fetchStageExpectedCounts`, or `fetchProcessTemplate`.
+      * `[✅]`   No over-fetching, no hidden coupling to the association-read path.
+
+    * `[✅]`   dialectic/`OutputCapSlider.test.tsx`
+      * `[✅]`   Rebuild the `modelCatalog` fixtures so each `mockAiProvidersRow({ config })` carries a FULL valid `AiModelExtendedConfig` — replace the bare `config: { provider_max_output_tokens: 200000 }` (lines 162, 215, 398, 419) and the two-model ultra fixtures (lines 343, 348) with `config: { ...mockAiModelConfig(), provider_max_output_tokens: <value> }`, spreading the existing `mockAiModelConfig()` factory (already used as `mockAiProvidersRow`'s default config, `dialecticStore.mock.ts:798`) so the guard accepts the fixture and `sliderRangeMax` is computed identically. Import `mockAiModelConfig` if not already imported.
+      * `[✅]`   Add test: a selected model whose `config` fails `isAiModelExtendedConfig` (e.g. `config: { provider_max_output_tokens: 200000 }` with the required rate/tokenization fields removed) is NOT counted toward `sliderRangeMax`; with only that model selected the slider returns null (no track), proving the guard gates malformed config.
+      * `[✅]`   Add test: with a valid full config whose `provider_max_output_tokens` is `200000`, `sliderRangeMax` is `200000` (unchanged from the pre-migration assertion), proving the typed read matches the previous string-indexed read.
+      * `[✅]`   All other existing assertions (4 markers, thumb max, within/above-tier marker clicks, CTA → `/subscription`, ultra thumb reach, page guidance, empty-`availableTiers`, empty-`selectedModels`) remain green. New tests appended at the end; full typed objects from production types.
+
+    * `[✅]`   dialectic/`OutputCapSlider.tsx`
+      * `[✅]`   Replace the import on line 21 `import { isJson, isPlainObject, logger } from "@paynless/utils";` with `import { isAiModelExtendedConfig, logger } from "@paynless/utils";`.
+      * `[✅]`   In the `sliderRangeMax` memo (lines 62-100): replace the `configValue === null` / `!isJson(configValue)` / `!isPlainObject(configValue)` gate and the raw `configValue["hard_cap_output_tokens"]` / `configValue["provider_max_output_tokens"]` reads with `const config = catalogEntry.config; if (!isAiModelExtendedConfig(config)) { continue; }` then read the typed `config.hard_cap_output_tokens` and `config.provider_max_output_tokens`. Preserve the existing `applicationCap`/`providerCap`/`Math.min`/`Number.isFinite` selection and the `highest` accumulation (lines 76-108) unchanged — only the source of the two values changes from `unknown`-indexed to typed-field access (the present-and-finite optional fields are guaranteed numbers by the guard, so the per-field `typeof`/`Number.isFinite` checks collapse to a presence check `if (config.hard_cap_output_tokens !== undefined)` / `if (config.provider_max_output_tokens !== undefined)`).
+      * `[✅]`   No other change: tier filtering (`displayTiers`), `thumbMax`/`activeThumbMax`, the log-segment slider math, markers, page guidance, and the upgrade CTA are untouched. Preserve all existing logging.
+
+    * `[✅]`   dialectic/`OutputCapSlider.integration.test.tsx`
+      * `[✅]`   Rebuild the `modelCatalog` fixtures here the same way (full `AiModelExtendedConfig` via `{ ...mockAiModelConfig(), provider_max_output_tokens: <value> }`) so the real-store integration path passes the guard and the existing assertions (4 markers excluding `unreachable`, track max from model, thumb clamp, locked-marker CTA → `navigate('/subscription')`, real `maxOutputTokens` write) remain green with router as the only mock. Add one assertion that the slider's track max derives from the guarded `provider_max_output_tokens` of the seeded model.
+      * `[✅]`   Seed `useDialecticStore` with `modelCatalog` + `selectedModels` only — do not seed `selectedDomain`, `selectedDomainProcessAssociation`, or association loading flags to prove the slider path does not depend on `fetchProcessAssociation` having run (Create-form orchestration is a separate Group 5 node).
+
+    * `[✅]`   `directionality`
+      * `[✅]`   Layer: UI component (`apps/web`).
+      * `[✅]`   Deps: inward (`isAiModelExtendedConfig` from `@paynless/utils`; `@paynless/types`; `useAuthStore` + limited `useDialecticStore` fields; router; UI primitives).
+      * `[✅]`   Provides: outward (slider continues to write `maxOutputTokens` consumed by `selectCostCeiling` / `selectPreProjectCostCeiling`; demonstrates guard usage for cap fields — same guard selectors use for `outputTokenCostRates[]`). Does not provide association rows, `process_template_id`, or guard implementation.
+      * `[✅]`   No cycles. No dependency on `fetchProcessAssociation` BE/API/store nodes.
+
+    * `[✅]`   `requirements`
+      * `[✅]`   The slider narrows `catalogEntry.config` via imported `isAiModelExtendedConfig` and reads typed `hard_cap_output_tokens`/`provider_max_output_tokens`; `isJson`/`isPlainObject` no longer appear in `OutputCapSlider.tsx`. Observable: grep + unit test that `sliderRangeMax` matches the prior value for a valid config.
+      * `[✅]`   A selected model with malformed config is excluded from `sliderRangeMax`. Observable: unit test asserts null/no-track when only that model is selected.
+      * `[✅]`   All pre-existing slider unit and integration assertions remain green with the full-config fixtures. Observable: the existing tests pass after the fixture rebuild.
+      * `[✅]`   No change to slider props, tier/marker/scale/CTA logic, or logging. Dialectic store surface unchanged: still only `maxOutputTokens`, `setMaxOutputTokens`, `modelCatalog`, `selectedModels`. Observable: grep `OutputCapSlider.tsx` / `OutputCapSlider.test.tsx` / `OutputCapSlider.integration.test.tsx` for `fetchProcessAssociation`, `selectedDomain`, `selectedDomainProcessAssociation`, `DomainProcessAssociationRow`, `DialecticDomainRow`, `default_process_template_id`, `fetchStageExpectedCounts`, `fetchDomains` → no matches.
+      * `[✅]`   This node does not edit `dialectic.guard.ts` or `dialectic.guard.test.ts` — guard correctness is owned by the prior `dialecticStore.selectors` node. Observable: grep this node's file steps for guard implementation → no matches; slider imports `isAiModelExtendedConfig` only.
+
+  * `[✅]`   apps/web/src/hooks/useStartContributionGeneration **Replace minimum_balance NSF gate with `stageCeilings[viewingStage.slug]` and `projectCeiling` from `selectCostCeiling`**
+
+    * `[✅]`   `objective`
+      * `[✅]`   The session-page preventive NSF gate still compares `viewingStage.minimum_balance` (a static DB column) to wallet balance in `useStartContributionGeneration.ts` (lines 133-142, 170, 173-176, 240-241). That hardcoded threshold does not reflect the user's selected models, output-cap slider, or per-stage job counts, and it diverges from the ticket's ceiling math (lines 448-456).
+      * `[✅]`   Non-functional: `startContributionGeneration` is a financial operation that consumes wallet tokens — it **must fail safe** (fail closed). Generation and paused-NSF resume are allowed **only** when `selectCostCeiling` returns a success estimate with a finite viewing-stage ceiling **and** wallet balance meets or exceeds that ceiling. Unknown estimate (`null` prerequisites) or selector/function error (`'error' in result`) **must block** spend — no fail-open path. No fallback to `minimum_balance`.
+      * `[✅]`   Functional goal: derive the viewing-stage ceiling from `selectCostCeiling(state, sessionId)` (`dialecticStore.selectors` node) — success branch `stageCeilings[viewingStage.slug]` — and use it everywhere the hook previously used `minimum_balance` for disable logic, balance callout visibility, and paused-NSF resume eligibility.
+      * `[✅]`   Functional goal: when `selectCostCeiling` returns `null` (prerequisite inputs incomplete) or `{ error: ApiError }` (call happened, estimate failed), treat as **not affordable / not known**: `isCostEstimateKnown` is `false`, `stageCeiling`/`projectCeiling`/`stageBalanceShortfall` are `null`, `costCeilingError` is set on the error branch else `null`, `balanceMeetsThreshold` is `false`, `showCostEstimateBlocked` is `true`, `showStageCostEstimate` is `false`, `showBalanceCallout` is `true`, and `isDisabled` is `true` (via `!balanceMeetsThreshold`) when other guards pass. The Generate button must not allow spend until a success estimate exists.
+      * `[✅]`   Functional goal: when `selectCostCeiling` returns success and `stageCeiling` is a finite number and `Number(walletBalance) < stageCeiling`, set `balanceMeetsThreshold` to `false`, include `!balanceMeetsThreshold` in `isDisabled`, set `showBalanceCallout` to `true`, `showCostEstimateBlocked` to `false`, and expose `stageBalanceShortfall = stageCeiling - walletBalance` (finite, positive). When balance meets or exceeds the ceiling, `isCostEstimateKnown` is `true`, `balanceMeetsThreshold` is `true`, `showBalanceCallout` is `false`, `showCostEstimateBlocked` is `false`, and `showStageCostEstimate` is `true` so the button consumer can render "Estimated cost for this stage: ~{stageCeiling} tokens."
+      * `[✅]`   Functional goal: expose `projectCeiling` from the same success `selectCostCeiling` result for the next `GenerateContributionButton` node (project-level notice); this hook does not render UI.
+      * `[✅]`   Functional goal: in `startContributionGeneration` (callback, lines 232-243), before `resumePausedNsfJobs` or `generateContributions`, re-read `selectCostCeiling(state, activeContextSessionId)` and apply the same fail-safe rule — reject with toast and `{ success: false, error }` when result is `null`, `'error' in result`, viewing-stage ceiling is not finite, or `balanceNum < stageCeiling`. **Not** `viewingStage.minimum_balance`; **not** fail-open when estimate unknown.
+      * `[✅]`   Non-functional: remove `stageThreshold` from `UseStartContributionGenerationReturn` (consumers must migrate in the next node). Keep `balanceMeetsThreshold` and `showBalanceCallout` names so mock factories need minimal renames, but their semantics are now fail-safe ceiling-based. No changes to `GenerateContributionButton.tsx`, `SessionInfoCard.tsx`, or `CreateDialecticProjectForm.tsx` in this node.
+      * `[✅]`   Each goal is atomic and testable.
+
+    * `[✅]`   `role`
+      * `[✅]`   Application / FE hook — bridges dialectic store selectors, wallet balance, and contribution-generation actions for the session Generate/Continue control.
+      * `[✅]`   This node replaces the threshold source and extends the hook return contract. It does NOT edit button components, subscription deep links, or store selector implementation.
+      * `[✅]`   Out of scope: rendering NSF/cost copy (`GenerateContributionButton` next node); project/stage cost displays on `SessionInfoCard` / Create form; `selectPreProjectCostCeiling`; BE `paused_nsf` handling (unchanged).
+
+    * `[✅]`   `module`
+      * `[✅]`   Bounded context: `apps/web/src/hooks` — `useStartContributionGeneration`.
+      * `[✅]`   Inside this boundary: reading `selectCostCeiling`, three-way result handling (`null` / error / success), deriving stage/project ceiling fields, fail-safe wallet comparison, disable/callout/resume flags, and the callback's fail-safe ceiling guard before any spend.
+      * `[✅]`   Outside this boundary: ceiling arithmetic (`computeCostCeiling`), count hydration, API transport, and UI markup.
+
+    * `[✅]`   `deps`
+      * `[✅]`   `selectCostCeiling` — provider: `@paynless/store` (`dialecticStore.selectors.ts`, prior node); layer: store selector; direction: inward; purpose: post-project `ComputeCostCeilingReturn | null` for the active session.
+      * `[✅]`   `ComputeCostCeilingReturn`, `ComputeCostCeilingSuccessReturn` — provider: `@paynless/utils` (`computeCostCeiling.provides.ts`); layer: types; direction: inward; purpose: selector result shape (`ComputeCostCeilingReturn`) and success-branch fields (`stageCeilings` / `projectCeiling`).
+      * `[✅]`   `ApiError` — provider: `@paynless/types` (`api.types.ts`); layer: types; direction: inward; purpose: `costCeilingError` when `'error' in selectCostCeiling(...)`.
+      * `[✅]`   `selectViewingStage`, `selectSessionById`, `selectUnifiedProjectProgress`, `selectIsStageReadyForSessionIteration`, `selectSelectedModels`, `selectActiveChatWalletInfo`, `selectSortedStages` — existing hook deps, unchanged.
+      * `[✅]`   `useDialecticStore`, `useWalletStore`, `useAiStore` — existing stores.
+      * `[✅]`   HARD dependency: `dialecticStore.selectors` node (`selectCostCeiling` exported from `@paynless/store` via `dialecticStore.selectors.ts` re-export). Precedes `GenerateContributionButton` node.
+      * `[✅]`   No reverse dependencies. No lateral layer violations.
+
+    * `[✅]`   `context_slice`
+      * `[✅]`   From dialectic store (via `selectCostCeiling`): full `ComputeCostCeilingReturn | null`; on success only — `stageCeilings[viewingStage.slug]`, `projectCeiling` for the active `activeContextSessionId`.
+      * `[✅]`   From wallet store: `activeWalletInfo.balance` (string) converted with `Number()` for comparison.
+      * `[✅]`   No reads of `viewingStage.minimum_balance` after this node. When `maxOutputTokens` is null the selector returns `null`; the hook **must** fail closed (block spend) until prerequisites complete and a success estimate is available.
+
+    * `[✅]`   packages/types/src/`dialectic.types.ts`
+      * `[✅]`   Update `UseStartContributionGenerationReturn` (lines 1121-1142): remove `stageThreshold: number | undefined`.
+      * `[✅]`   Add `stageCeiling: number | null` — finite viewing-stage preventive ceiling from success `selectCostCeiling` only; `null` when result is `null`, `'error' in result`, or slug missing/invalid in `stageCeilings`.
+      * `[✅]`   Add `projectCeiling: number | null` — full-project ceiling from success estimate only; `null` when result is `null`, error, or `projectCeiling` not finite.
+      * `[✅]`   Add `stageBalanceShortfall: number | null` — `stageCeiling - walletBalance` when `isCostEstimateKnown` and balance is below ceiling; `null` otherwise.
+      * `[✅]`   Add `costCeilingError: ApiError | null` — set to `result.error` when `'error' in selectCostCeiling(...)`; else `null` (import `ApiError` from `@paynless/types`).
+      * `[✅]`   Add `isCostEstimateKnown: boolean` — `true` only when `selectCostCeiling` returns success and `stageCeiling` is a finite non-negative number for the viewing slug.
+      * `[✅]`   Add `showCostEstimateBlocked: boolean` — `true` when `viewingStage != null && !isCostEstimateKnown` (estimate unavailable or error — distinct from NSF shortfall for the next button node).
+      * `[✅]`   Add `showStageCostEstimate: boolean` — `true` when `isCostEstimateKnown && balanceMeetsThreshold`.
+      * `[✅]`   Retain `balanceMeetsThreshold: boolean` and `showBalanceCallout: boolean` with fail-safe ceiling semantics: `balanceMeetsThreshold` is `false` unless `isCostEstimateKnown && balance >= stageCeiling`; `showBalanceCallout` is `true` when `viewingStage != null && !balanceMeetsThreshold`. Types only (exempt from RED/GREEN).
+
+    * `[✅]`   hooks/`useStartContributionGeneration.test.ts`
+      * `[✅]`   Extend the existing `vi.mock('@paynless/store', ...)` block: import `selectCostCeiling` from the actual `@paynless/store` module and expose `selectCostCeiling: vi.fn<[DialecticStateValues, string], ComputeCostCeilingReturn | null>()` on the mock return (default implementation delegates to `actualPaynlessStore.selectCostCeiling` once the prior node lands; until then the mock implementation is the test-controlled surface). Import `ComputeCostCeilingReturn`, `ComputeCostCeilingSuccessReturn`, `buildComputeCostCeilingErrorReturn` from `@paynless/utils`.
+      * `[✅]`   Add `const defaultCostCeiling: ComputeCostCeilingSuccessReturn = { stageCeilings: { thesis: 120000 }, projectCeiling: 350000 }` (explicit ceiling decoupled from `minimum_balance`) and `beforeEach` default: `vi.mocked(selectCostCeiling).mockImplementation((_state, sessionId) => sessionId === 'sess-1' ? defaultCostCeiling : null);`.
+      * `[✅]`   Update the test `derived state values correctly reflect store state`: assert `result.current.isCostEstimateKnown` is `true`; assert `result.current.stageCeiling` equals the mocked ceiling for `thesis` (not `stageThreshold === minimum_balance`); assert `result.current.projectCeiling` matches the mock; remove any `stageThreshold` assertion.
+      * `[✅]`   Add test: when `selectCostCeiling` returns `null`, `stageCeiling`/`projectCeiling`/`stageBalanceShortfall` are `null`, `costCeilingError` is `null`, `isCostEstimateKnown` is `false`, `balanceMeetsThreshold` is `false`, `showCostEstimateBlocked` is `true`, `showBalanceCallout` is `true`, `showStageCostEstimate` is `false`, and `isDisabled` is `true` when all other guards pass; `startContributionGeneration` does not call `generateContributions`.
+      * `[✅]`   Add test: when `selectCostCeiling` returns `buildComputeCostCeilingErrorReturn(...)`, `costCeilingError` matches the mocked error, `isCostEstimateKnown` is `false`, `balanceMeetsThreshold` is `false`, `showCostEstimateBlocked` is `true`, `isDisabled` is `true`, and `startContributionGeneration` returns `{ success: false }` with toast using `error.message` (does not call `generateContributions`).
+      * `[✅]`   Add test: when `stageCeilings.thesis` is `150000` and wallet balance is `100000`, `isCostEstimateKnown` is `true`, `balanceMeetsThreshold` is `false`, `isDisabled` is `true`, `showBalanceCallout` is `true`, `showCostEstimateBlocked` is `false`, `stageBalanceShortfall` is `50000`, `showStageCostEstimate` is `false`.
+      * `[✅]`   Add test: when `stageCeilings.thesis` is `80000` and wallet balance is `100000`, `isCostEstimateKnown` is `true`, `balanceMeetsThreshold` is `true`, `showBalanceCallout` is `false`, `showCostEstimateBlocked` is `false`, `showStageCostEstimate` is `true`, `stageBalanceShortfall` is `null`, `isDisabled` is `false` (other guards passing).
+      * `[✅]`   Add test: `startContributionGeneration` resume path — `hasPausedNsfJobs` with balance below `minimum_balance` but **above** `stageCeiling` calls `resumePausedNsfJobs` when estimate is success (ceiling gate satisfied); mirror with balance below `stageCeiling` verifying resume is **not** taken; mirror with `selectCostCeiling` returning `null` or error verifying resume is **not** taken.
+      * `[✅]`   Add test: `startContributionGeneration` generate path — when `selectCostCeiling` returns `null` or error, callback returns failure and does not call `generateContributions` even when other UI guards would pass.
+      * `[✅]`   Update `isDisabled is true when any guard fails` case that relied on low balance vs `minimum_balance`: drive low balance vs mocked `stageCeiling` instead.
+      * `[✅]`   Preserve all unrelated tests (payload construction, pause, viewing-ahead, stale-closure reads, `maxOutputTokens` payload). New cases appended at the end.
+
+    * `[✅]`   hooks/`useStartContributionGeneration.ts`
+      * `[✅]`   Add `selectCostCeiling` to the import from `@paynless/store` (line 3-13).
+      * `[✅]`   Add `ComputeCostCeilingReturn` to the import from `@paynless/utils`; add `ApiError` to the import from `@paynless/types`.
+      * `[✅]`   Remove the `stageThreshold` `useMemo` (lines 133-136).
+      * `[✅]`   Add `costCeilingResult: ComputeCostCeilingReturn | null` subscription: `useDialecticStore((state) => { const sid = state.activeContextSessionId; if (sid === null) return null; return selectCostCeiling(state, sid); })`.
+      * `[✅]`   Add `costCeilingError: ApiError | null` `useMemo`: if `costCeilingResult !== null && 'error' in costCeilingResult`, return `costCeilingResult.error`; else `null`.
+      * `[✅]`   Add `stageCeiling: number | null` `useMemo`: if `costCeilingResult === null || 'error' in costCeilingResult || viewingStage === null`, return `null`; read `costCeilingResult.stageCeilings[viewingStage.slug]`; if not a finite non-negative number, return `null`; else return the number.
+      * `[✅]`   Add `projectCeiling: number | null` `useMemo`: if `costCeilingResult === null || 'error' in costCeilingResult`, return `null`; if `costCeilingResult.projectCeiling` is not a finite non-negative number, return `null`; else return it.
+      * `[✅]`   Add `isCostEstimateKnown: boolean` `useMemo`: `stageCeiling !== null`.
+      * `[✅]`   Replace `balanceMeetsThreshold` `useMemo` (lines 138-142): if `!isCostEstimateKnown`, return `false`; else `Number(activeWalletInfo.balance) >= stageCeiling` (reject `NaN` as not meeting).
+      * `[✅]`   Add `stageBalanceShortfall: number | null` `useMemo`: when `isCostEstimateKnown` and balance is a valid number and balance `< stageCeiling`, return `stageCeiling - balance`; else `null`.
+      * `[✅]`   Add `showCostEstimateBlocked: boolean` `useMemo`: `viewingStage != null && !isCostEstimateKnown`.
+      * `[✅]`   Add `showStageCostEstimate: boolean` `useMemo`: `isCostEstimateKnown && balanceMeetsThreshold`.
+      * `[✅]`   Update `showBalanceCallout` (lines 173-176): `viewingStage != null && !balanceMeetsThreshold` (covers NSF and unknown/error estimate; remove `stageThreshold` checks).
+      * `[✅]`   In `startContributionGeneration` callback (before resume/generate): read `selectCostCeiling(state, activeContextSessionId)`; if `null`, toast and return `{ success: false, error }`; if `'error' in result`, toast `result.error.message` and return failure; resolve viewing-stage ceiling from success `stageCeilings[viewingStage.slug]`; if not finite, toast and return failure; if `balanceNum < ceiling`, toast and return failure; only then proceed with resume or generate (replaces L239-241 `minimum_balance` check — fail closed on unknown/error, not fail open).
+      * `[✅]`   Update the return object (lines 309-330): remove `stageThreshold`; add `stageCeiling`, `projectCeiling`, `stageBalanceShortfall`, `costCeilingError`, `isCostEstimateKnown`, `showCostEstimateBlocked`, `showStageCostEstimate`.
+      * `[✅]`   No other behavioral changes to pause/generate payloads, viewing-ahead, or unrelated toasts.
+
+    * `[✅]`   `directionality`
+      * `[✅]`   Layer: application (FE hook).
+      * `[✅]`   Deps: inward (`@paynless/store` selectors/state, `@paynless/types`, wallet/ai stores).
+      * `[✅]`   Provides: outward (ceiling-aware flags for `GenerateContributionButton` and any other hook consumers).
+      * `[✅]`   No cycles.
+
+    * `[✅]`   `requirements`
+      * `[✅]`   `viewingStage.minimum_balance` is not read anywhere in `useStartContributionGeneration.ts`. Observable: grep the file for `minimum_balance` returns no matches.
+      * `[✅]`   When `selectCostCeiling` returns success and wallet balance is below `stageCeilings[viewingSlug]`, `isDisabled` is `true`, `isCostEstimateKnown` is `true`, `showCostEstimateBlocked` is `false`, and `showBalanceCallout` is `true` with `stageBalanceShortfall` equal to the difference. Observable: unit test.
+      * `[✅]`   When balance meets or exceeds `stageCeiling` on a success estimate, `isCostEstimateKnown` is `true`, `balanceMeetsThreshold` is `true`, `showStageCostEstimate` is `true`, and `showBalanceCallout` is `false`. Observable: unit test.
+      * `[✅]`   When `selectCostCeiling` returns `null` or `{ error: ApiError }`, `balanceMeetsThreshold` is `false`, `isCostEstimateKnown` is `false`, `showCostEstimateBlocked` is `true`, `isDisabled` is `true` (via `!balanceMeetsThreshold`), and `startContributionGeneration` does not call `generateContributions` or `resumePausedNsfJobs`. Observable: unit tests.
+      * `[✅]`   Paused-NSF resume and generate paths in `startContributionGeneration` use the dynamic fail-safe ceiling guard, not `minimum_balance`. Observable: unit tests on resume and generate branches.
+      * `[✅]`   `UseStartContributionGenerationReturn` no longer exposes `stageThreshold`; exposes `stageCeiling`, `projectCeiling`, `stageBalanceShortfall`, `costCeilingError`, `isCostEstimateKnown`, `showCostEstimateBlocked`, `showStageCostEstimate`. Observable: type definition + tests compile.
+
+  * `[✅]`   apps/web/src/components/dialectic/GenerateContributionButton **Ceiling-based NSF CTA, stage cost estimate, project balance notice, and post-project ceiling stack integration**
+
+    * `[✅]`   `objective`
+      * `[✅]`   `GenerateContributionButton.tsx` still destructures `stageThreshold` from the hook (line 34), returns `null` when `stageThreshold` is falsy (lines 101-102), and renders the balance callout as "Minimum {formattedThreshold} token balance for {displayName}" (lines 135-146). That UI is tied to the removed `minimum_balance` contract and hides the spend control whenever no static threshold exists.
+      * `[✅]`   Non-functional: this button activates a financial operation that consumes wallet tokens — it **must fail safe** (fail closed). Generate and paused-NSF resume are allowed **only** when the hook reports a success estimate (`isCostEstimateKnown`) and wallet balance meets `stageCeiling`. When there is **no estimate** (prerequisites incomplete) or the estimate **failed** (`costCeilingError`), the hook sets `isDisabled` — this component must render the disabled control and the matching callout; it must not imply spend is allowed. Do not frame missing prerequisites as "unknown cost"; the problem is **we do not have an estimate yet** — a different problem from NSF when an estimate exists.
+      * `[✅]`   Non-functional: no `selectCostCeiling` call in this component (hook owns derivation). No edits to `useStartContributionGeneration.ts` (prior node). Subscription cart prefill deferred. This node owns the **session post-project epic stack integration test** (API MSW edge → `hydrateAllStageProgress` / `stageExpectedCountsByRun` → real `selectCostCeiling` → real `computeCostCeiling` → real `useStartContributionGeneration` → button UI/gating → `generateContributions` observation).
+      * `[✅]`   Functional goal (no estimate): when `showCostEstimateBlocked` is `true` and `costCeilingError` is `null` (selector returned `null` — prerequisites incomplete), render `data-testid="generate-button-no-estimate-callout"` with copy that states **no cost estimate is available yet** (e.g. "No cost estimate yet. Select models and set output cap to continue.") — not "unknown cost". Button label via `getButtonText`: **"No Estimate"**. No top-up link (not an NSF case).
+      * `[✅]`   Functional goal (estimate error): when `showCostEstimateBlocked` is `true` and `costCeilingError` is non-null (`'error' in selectCostCeiling` result propagated by hook), render `data-testid="generate-button-estimate-error-callout"` displaying `costCeilingError.message` from the hook — do not invent error text; this is a **failed estimate**, not missing prerequisites and not NSF. Button label: **"Estimate Failed"**.
+      * `[✅]`   Functional goal (NSF callout): when `isCostEstimateKnown` is `true`, `showBalanceCallout` is `true`, `showCostEstimateBlocked` is `false`, and `stageBalanceShortfall` is a finite positive number, render "Insufficient tokens. Top up {formattedShortfall} to continue." with a `Link` to `/subscription?tab=top-up` (`data-testid="generate-button-balance-callout"`; top-up intent per ticket line 451; full cart prefill deferred). Use `stageBalanceShortfall` from the hook — do not recompute shortfall in the component.
+      * `[✅]`   Functional goal (stage estimate): when `showStageCostEstimate` is `true` and `stageCeiling` is a finite number, render a non-blocking line: "Estimated cost for this stage: ~{formattedStageCeiling} tokens." (`data-testid="generate-button-stage-cost-estimate"`).
+      * `[✅]`   Functional goal (project notice): when `isCostEstimateKnown` is `true`, `projectCeiling` from the hook is a finite number, and wallet balance (read in-component via `useWalletStore` + `selectActiveChatWalletInfo` + `useAiStore().newChatContext`, same pattern as the hook) is below `projectCeiling`, render a secondary, non-blocking notice with shortfall `projectCeiling - balance` and a top-up `Link` to `/subscription?tab=top-up` (`data-testid="generate-button-project-balance-callout"`). Informational only — does not override stage gate disable. May show alongside stage estimate or NSF callout.
+      * `[✅]`   Functional goal (visibility): remove the `stageThreshold` early return. Render the button host when `viewingStage` and `activeSession` from the hook are non-null. When there is no estimate or estimate failed, the hook disables spend — component **still renders** the disabled button and the appropriate blocked callout (does not return `null` and does not fail open).
+      * `[✅]`   Non-functional: keep pause/resume/DAG dialog behavior unchanged except resume follows hook fail-safe disable. `getButtonText`: `showCostEstimateBlocked && costCeilingError === null` → "No Estimate"; `showCostEstimateBlocked && costCeilingError !== null` → "Estimate Failed"; `isCostEstimateKnown && !balanceMeetsThreshold` → "Insufficient Balance"; other priority unchanged.
+      * `[✅]`   Each goal is atomic and testable.
+
+    * `[✅]`   `role`
+      * `[✅]`   UI component — session-page Generate/Continue control, cost/NSF messaging, and **post-project spend-entry integration proof** for the dynamic ceiling epic.
+      * `[✅]`   This node consumes the extended hook return contract and adds wallet read only for the project-level notice (project ceiling vs balance is not on the hook). It does NOT change store selectors, hook logic, or `SessionInfoCard` / Create form.
+      * `[✅]`   Out of scope: subscription cart prefill helpers; `SessionInfoCard` project/stage display (next node); pre-project Autostart gates (Create form / chat button nodes).
+
+    * `[✅]`   `module`
+      * `[✅]`   Bounded context: `apps/web/src/components/dialectic` — `GenerateContributionButton`.
+      * `[✅]`   Inside: no-estimate callout, estimate-error callout, NSF callout copy, stage estimate line, project warning line, early-return rule, token number formatting, fail-safe button labels, post-project stack integration test.
+      * `[✅]`   Outside: ceiling arithmetic, hook disable logic, wallet store implementation, `hydrateAllStageProgressLogic` implementation (`dialecticStore.documents` node).
+
+    * `[✅]`   `deps`
+      * `[✅]`   `useStartContributionGeneration` — provider: `@/hooks/useStartContributionGeneration`; layer: application hook; direction: inward; purpose: `isCostEstimateKnown`, `showCostEstimateBlocked`, `costCeilingError`, `showBalanceCallout`, `stageBalanceShortfall`, `stageCeiling`, `projectCeiling`, `showStageCostEstimate`, `balanceMeetsThreshold`, `isDisabled`, `viewingStage`, `activeSession`, and all existing button flags. **Integration test uses the real hook — do not mock.**
+      * `[✅]`   `selectCostCeiling` — provider: `@paynless/store` (`dialecticStore.selectors.ts` node); layer: store selector; direction: inward (hook consumer only — not imported by button component); purpose: post-project `ComputeCostCeilingReturn | null` exercised by real hook in integration test.
+      * `[✅]`   `ComputeCostCeilingReturn`, `ComputeCostCeilingStageInput`, `computeCostCeiling`, `buildComputeCostCeilingDeps`, `buildComputeCostCeilingParams`, `buildComputeCostCeilingPayload` — provider: `@paynless/utils` (`computeCostCeiling.provides.ts`); layer: domain utility; direction: inward; purpose: integration test hand-check expected `stageCeiling` / `projectCeiling` via mean-rate payload (`outputTokenCostRates[]`, `contributions: []` on pending stages).
+      * `[✅]`   `hydrateAllStageProgress`, `GetAllStageProgressResponse`, `mockGetAllStageProgressResponse`, `mockStageProgressEntry` — provider: `@paynless/store` action + `@paynless/types` + `apps/web/src/mocks/dialecticStore.mock` (`dialecticStore.documents` node); direction: inward; purpose: populate `stageExpectedCountsByRun` from MSW-backed `getAllStageProgress` in integration test.
+      * `[✅]`   `ApiError` — provider: `@paynless/types` (`api.types.ts`); layer: types; direction: inward; purpose: type of `costCeilingError` for estimate-error callout display only (import from original source in tests if needed; component reads string via hook field).
+      * `[✅]`   `useWalletStore`, `selectActiveChatWalletInfo`, `useAiStore` — provider: `@paynless/store`; layer: store; direction: inward; purpose: wallet balance for project-level shortfall (component) and NSF gate (hook, integration test).
+      * `[✅]`   `Link` — provider: `react-router-dom`; existing.
+      * `[✅]`   `@paynless/api` client + MSW `server` from `packages/api/src/setupTests` — integration test only; mocks at API transport edge (`getAllStageProgress`, `listModelCatalog`).
+      * `[✅]`   HARD dependency: `useStartContributionGeneration` node (hook return shape + `selectCostCeiling` consumption), `dialecticStore.selectors` node, `dialecticStore.documents` node (`stageExpectedCountsByRun` hydration), `computeCostCeiling` node. Precedes `SessionInfoCard` node.
+      * `[✅]`   No reverse dependencies.
+
+    * `[✅]`   `context_slice`
+      * `[✅]`   From hook: `isCostEstimateKnown`, `showCostEstimateBlocked`, `costCeilingError`, `stageCeiling`, `projectCeiling`, `stageBalanceShortfall`, `showStageCostEstimate`, `showBalanceCallout`, `balanceMeetsThreshold`, `isDisabled`, `viewingStage`, `activeSession`.
+      * `[✅]`   From wallet store: `balance` string → `Number()` for project notice comparison only.
+      * `[✅]`   No reads of `viewingStage.minimum_balance`, `stageThreshold`, or `selectCostCeiling`.
+
+    * `[✅]`   dialectic/`GenerateContributionButton.nsf.test.tsx`
+      * `[✅]`   Update `getDefaultHookReturn`: remove `stageThreshold`; add `stageCeiling: 200000`, `projectCeiling: 400000`, `stageBalanceShortfall: null`, `isCostEstimateKnown: true`, `showCostEstimateBlocked: false`, `costCeilingError: null`, `showStageCostEstimate: true`, `showBalanceCallout: false`, `balanceMeetsThreshold: true`, `isViewingAheadOfCurrentStage: false`, `viewingAheadReason: null` (defaults aligned to production `UseStartContributionGenerationReturn` after hook node).
+      * `[✅]`   Replace callout assertion `Minimum.*200,000.*token balance` with `Insufficient tokens` and `Top up` and formatted shortfall (e.g. mock `isCostEstimateKnown: true`, `showCostEstimateBlocked: false`, `stageBalanceShortfall: 50000`, `showBalanceCallout: true`, `balanceMeetsThreshold: false` → "50,000" in copy); assert `href` is `/subscription?tab=top-up`; assert `generate-button-balance-callout` present; assert `generate-button-no-estimate-callout` and `generate-button-estimate-error-callout` absent.
+      * `[✅]`   Update paused-NSF callout test similarly (shortfall-driven NSF copy only when `isCostEstimateKnown`; same top-up link).
+      * `[✅]`   Add test: when `showStageCostEstimate` is `true` and `stageCeiling` is `120000`, `generate-button-stage-cost-estimate` shows `~120,000` (or locale-formatted equivalent) and "Estimated cost for this stage".
+      * `[✅]`   Add test: when `projectCeiling` is `500000`, `isCostEstimateKnown: true`, hook supplies affordable stage ceiling, and mocked wallet `balance` is `300000`, `generate-button-project-balance-callout` is present with top-up link and shortfall `200,000`; button remains enabled when hook says so.
+      * `[✅]`   Add test: when `projectCeiling` is `null`, `isCostEstimateKnown` is `false`, or wallet meets `projectCeiling`, project callout absent.
+      * `[✅]`   Add test: when `isCostEstimateKnown: false`, `showCostEstimateBlocked: true`, `costCeilingError: null`, `isDisabled: true`, button renders disabled with label "No Estimate" and `generate-button-no-estimate-callout` (copy references no estimate yet — not "unknown cost"); NSF and estimate-error callouts absent.
+      * `[✅]`   Add test: when `showCostEstimateBlocked: true`, `costCeilingError: { message: 'Invalid payload' }` (full `ApiError` shape from test factory), `isDisabled: true`, button label "Estimate Failed", `generate-button-estimate-error-callout` shows `Invalid payload`; no-estimate and NSF callouts absent.
+      * `[✅]`   Add test: paused-NSF resume blocked when `showCostEstimateBlocked: true` and `isDisabled: true` (`costCeilingError: null` or error) — resume control disabled; `startContributionGeneration` not invoked on click.
+      * `[✅]`   Preserve existing NSF tests for disabled/enabled Generate/Resume (with success estimate seeded), resume/generate click paths, pause priority. New cases appended at the end.
+
+    * `[✅]`   dialectic/`GenerateContributionButton.test.tsx`
+      * `[✅]`   Update `getDefaultHookReturn` the same way (remove `stageThreshold`; add `isCostEstimateKnown`, `showCostEstimateBlocked`, `costCeilingError`, and other hook fields from nsf test defaults).
+      * `[✅]`   Replace `component returns null when stageThreshold is falsy`: assert component **renders** disabled button when `stageCeiling: null`, `isCostEstimateKnown: false`, `showCostEstimateBlocked: true`, `costCeilingError: null`, `isDisabled: true`, `viewingStage` and `activeSession` present — `generate-button-no-estimate-callout` present; component does not return `null`.
+      * `[✅]`   Replace `handles currentProjectDetail being null gracefully by being disabled` cases that set `stageThreshold: undefined`: use fail-safe hook mocks (`isDisabled: true` as appropriate) without `stageThreshold`.
+      * `[✅]`   Update `balance callout renders when showBalanceCallout is true` to require `isCostEstimateKnown: true`, `showCostEstimateBlocked: false`, `stageBalanceShortfall: 25000`; assert NSF copy uses shortfall ("Top up", "25,000"); no-estimate callout absent.
+      * `[✅]`   Preserve all unrelated tests (pause, DAG dialog, chat context, viewing-ahead). New/updated cases appended at the end.
+
+    * `[✅]`   dialectic/`GenerateContributionButton.tsx`
+      * `[✅]`   Destructure from hook: remove `stageThreshold`; add `isCostEstimateKnown`, `showCostEstimateBlocked`, `costCeilingError`, `stageCeiling`, `projectCeiling`, `stageBalanceShortfall`, `showStageCostEstimate`.
+      * `[✅]`   Add imports: `useWalletStore`, `selectActiveChatWalletInfo` from `@paynless/store`; `useAiStore` from `@paynless/store` (if not already present).
+      * `[✅]`   Add `const newChatContext = useAiStore((state) => state.newChatContext);` and `const activeWalletInfo = useWalletStore((state) => selectActiveChatWalletInfo(state, newChatContext));`.
+      * `[✅]`   Add `formatTokenCount = (n: number): string => new Intl.NumberFormat("en-US").format(n)` (reuse for stage ceiling, shortfall, project ceiling).
+      * `[✅]`   Replace early return (lines 101-102): `if (viewingStage == null || activeSession == null) return null;` — remove `formattedThreshold` and all `stageThreshold` usage.
+      * `[✅]`   Update `getButtonText`: after existing stage-ready guards, if `showCostEstimateBlocked && costCeilingError === null` return `"No Estimate"`; if `showCostEstimateBlocked && costCeilingError !== null` return `"Estimate Failed"`; if `isCostEstimateKnown && !balanceMeetsThreshold` return `"Insufficient Balance"`; remaining priority unchanged (pause, resume, retry, generate).
+      * `[✅]`   Compute project notice flags after wallet read: only when `isCostEstimateKnown`; `walletBalanceNum = Number(activeWalletInfo.balance)`; if `projectCeiling` is finite and `walletBalanceNum` is finite and `walletBalanceNum < projectCeiling`, set `showProjectBalanceCallout` true and `projectBalanceShortfall = projectCeiling - walletBalanceNum`; else no project callout.
+      * `[✅]`   Add no-estimate callout block before NSF callout: when `showCostEstimateBlocked && costCeilingError === null` → `data-testid="generate-button-no-estimate-callout"` with fixed copy stating no cost estimate yet (not unknown cost); no `Link`.
+      * `[✅]`   Add estimate-error callout block: when `showCostEstimateBlocked && costCeilingError !== null` → `data-testid="generate-button-estimate-error-callout"` displaying `costCeilingError.message`; no invented error strings.
+      * `[✅]`   Replace balance callout block (lines 135-146): condition `isCostEstimateKnown && showBalanceCallout && !showCostEstimateBlocked && viewingStage && stageBalanceShortfall !== null`; link `to="/subscription?tab=top-up"`; text `Insufficient tokens. Top up {formatTokenCount(stageBalanceShortfall)} to continue.`; `data-testid="generate-button-balance-callout"`.
+      * `[✅]`   Add stage estimate block: `showStageCostEstimate && stageCeiling !== null` → `data-testid="generate-button-stage-cost-estimate"` with `Estimated cost for this stage: ~{formatTokenCount(stageCeiling)} tokens.`
+      * `[✅]`   Add project notice block (non-blocking, below stage estimate/callouts): when `showProjectBalanceCallout` and `projectBalanceShortfall` computed — `data-testid="generate-button-project-balance-callout"`, copy includes formatted `projectCeiling` and shortfall, `Link` to `/subscription?tab=top-up`. Wording concise (e.g. project may need ~X tokens; top up Y for the full project).
+      * `[✅]`   Button remains `disabled={isDisabled || isDebouncing}` from hook — do not bypass fail-safe disable in `handleClick`. No other behavioral changes.
+
+    * `[✅]`   dialectic/`GenerateContributionButton.integration.test.tsx`
+      * `[✅]`   **Scope after hook node:** existing pause/resume/DAG dialog tests remain in this file. **Remove all `minimum_balance` wallet seeding** — replace with wallet balance derived from hand-computed `expectedStageCeiling` (via real `computeCostCeiling` on mean-rate payload: `outputTokenCostRates[]`, per-stage `contributions: []`) or explicit numeric literals decoupled from `mockThesisStage.minimum_balance`.
+      * `[✅]`   Extend `vi.mock('@paynless/store', ...)` to pass through actual `selectCostCeiling`, `selectSortedStages`, and any other selectors the real `useStartContributionGeneration` hook reads (mirror additions in cost-ceiling integration file — keep both files' store mocks aligned).
+      * `[✅]`   **Do not mock** `@/hooks/useStartContributionGeneration` in this file.
+      * `[✅]`   Update paused-NSF resume enabled/disabled cases: sufficient wallet = balance **≥** `expectedStageCeiling`; low balance = balance **<** `expectedStageCeiling` (not `minimum_balance`).
+      * `[✅]`   Preserve DAG dialog open/close behavior tests unchanged aside from wallet/ceiling fixture migration.
+
+    * `[✅]`   dialectic/`GenerateContributionButton.costCeiling.integration.test.tsx`
+      * `[✅]`   **Approved integration boundary:** MSW mocks at API transport only (mirror `CreateDialecticProjectForm.costCeiling.integration.test.tsx` and `packages/api/src/dialectic.api.integration.test.ts` — `initializeApiClient`, `server.use`, handlers for `getAllStageProgress`, `listModelCatalog`). Everything inward is **real**: `@paynless/api` client, real `hydrateAllStageProgress` store action (populates `stageExpectedCountsByRun` from `GetAllStageProgressResponse.stages[].expectedCount`), real `selectCostCeiling`, real `computeCostCeiling` (via selector), real `useStartContributionGeneration` hook, real `GenerateContributionButton`. **Do not mock** `selectCostCeiling`, `computeCostCeiling`, or `useStartContributionGeneration`. Mock only `generateContributions` / `resumePausedNsfJobs` on the dialectic store (spy) to observe click outcome without full BE generation.
+      * `[✅]`   Harness: `MemoryRouter`; real `useDialecticStore` / `useWalletStore` wired with MSW-backed API (extend the pattern from existing `GenerateContributionButton.integration.test.tsx` — pass through actual `selectCostCeiling`, `selectUnifiedProjectProgress`, `selectViewingStage`, `selectSessionById`, `selectIsStageReadyForSessionIteration`, `selectSelectedModels`, `selectSortedStages` from `@paynless/store`; wallet via `walletStore.mock` or real wallet store). Import `computeCostCeiling`, `buildComputeCostCeilingDeps`, `buildComputeCostCeilingParams`, `buildComputeCostCeilingPayload`, `ComputeCostCeilingStageInput` from `@paynless/utils`; import `mockGetAllStageProgressResponse`, `mockStageProgressEntry`, `mockAiProvidersRow`, `mockAiModelConfig` from `apps/web/src/mocks/dialecticStore.mock`.
+      * `[✅]`   Shared fixture constants: `stageSlug: 'thesis'`, `sessionId`, `iterationNumber`, `runKey = \`${sessionId}:${iterationNumber}\``, `maxOutputTokens`, `output_token_cost_rate` from full `AiModelExtendedConfig` on seeded `modelCatalog` row(s), `expectedCount` on `mockStageProgressEntry({ stageSlug, expectedCount: <n> })` matching BE `getAllStageProgress` integration spec for the seeded template. Derive `outputTokenCostRates: number[]` — one `output_token_cost_rate` per seeded `selectedModels` entry matched to catalog (single-model fixtures: `[rate]`; two-model mean-rate anchor: `[2, 3]` with `expectedCount: 4`, `maxOutputTokens: 1000` → `expectedStageCeiling === 10000`). Build `stages: ComputeCostCeilingStageInput[]` in template order: for each template slug, `{ stageSlug, expectedCount, contributions: [] }` (default success path — all stages pending). Compute `expectedStageCeiling` and `expectedProjectCeiling` via real `computeCostCeiling(buildComputeCostCeilingDeps(), buildComputeCostCeilingParams(), buildComputeCostCeilingPayload({ stages, maxOutputTokens, outputTokenCostRates }))` — assert `'error' not in result` in fixture setup; viewing-stage ceiling must equal `expectedCount × maxOutputTokens × (sum(outputTokenCostRates) / outputTokenCostRates.length)` (mean rate — not max across models). Seed session/project/template/recipe/progress snapshot so `selectIsStageReadyForSessionIteration` passes and button is not blocked by stage-ready guards.
+      * `[✅]`   MSW handlers (success path): `getAllStageProgress` returns `mockGetAllStageProgressResponse({ stages: [mockStageProgressEntry({ stageSlug, expectedCount: <n> })] })` with required `expectedCount` on every stage entry; `listModelCatalog` returns catalog row(s) with full `AiModelExtendedConfig` matching seeded `selectedModels`.
+      * `[✅]`   Setup helper: after seeding store session context, invoke real `hydrateAllStageProgress({ sessionId, iterationNumber, userId, projectId })` (or the store action the app uses on session load) so `stageExpectedCountsByRun[runKey][stageSlug]` is populated from the MSW response — **do not** write `stageExpectedCountsByRun` directly unless the hydration action cannot be invoked in the harness (prefer real hydration path; document in test comment if direct seed is unavoidable).
+      * `[✅]`   Test (success stack + afford generate): wallet balance **above** `expectedStageCeiling`; after hydration `waitFor` `generate-button-stage-cost-estimate` with hand-formatted `expectedStageCeiling`; button enabled (`Generate Proposal` or stage display name); click → `generateContributions` called once. Proves API → hydration → selector → `computeCostCeiling` → hook → button allows spend.
+      * `[✅]`   Test (null prerequisites — fail closed): success MSW handlers but seed `maxOutputTokens: null` (or `selectedModels: []`) before render/hydration → `waitFor` disabled button with `generate-button-no-estimate-callout`; click → `generateContributions` **not** called (no mocked selector).
+      * `[✅]`   Test (API progress error — fail closed): MSW `getAllStageProgress` returns 500 so `stageExpectedCountsByRun` is not populated / selector returns `null` → disabled button + `generate-button-no-estimate-callout`; click → `generateContributions` not called; document observed store path in test comment.
+      * `[✅]`   Test (insufficient wallet — fail closed): success stack + hydration; wallet **below** `expectedStageCeiling` → `waitFor` `generate-button-balance-callout` with shortfall copy; button disabled (`Insufficient Balance`); click → `generateContributions` not called.
+      * `[✅]`   Test (hook callback guard — fail closed): button appears enabled only if UI guards pass, but if prerequisites are cleared between render and click (e.g. set `maxOutputTokens: null` on store immediately before click), `startContributionGeneration` returns failure and `generateContributions` not called — optional if harness can trigger; otherwise covered by hook unit tests. One behavior per test; appended at end of file.
+
+    * `[✅]`   `directionality`
+      * `[✅]`   Layer: UI component + session post-project epic integration boundary.
+      * `[✅]`   Deps: inward (fail-safe hook, wallet/ai stores, router `Link`; integration: API → store hydration → selectors → utils).
+      * `[✅]`   Provides: outward (session-page fail-safe spend gate, no-estimate / estimate-error / NSF messaging, **proof that API → hydration → selector → computeCostCeiling → hook → button gating works** for success / null / NSF paths).
+      * `[✅]`   No cycles.
+
+    * `[✅]`   `requirements`
+      * `[✅]`   No `stageThreshold` or `minimum_balance` in `GenerateContributionButton.tsx`. Observable: grep.
+      * `[✅]`   When `showCostEstimateBlocked` and `costCeilingError === null`, disabled button shows "No Estimate" and `generate-button-no-estimate-callout` (no estimate yet — not "unknown cost" copy). Observable: unit test.
+      * `[✅]`   When `showCostEstimateBlocked` and `costCeilingError !== null`, disabled button shows "Estimate Failed" and `generate-button-estimate-error-callout` with `costCeilingError.message`. Observable: unit test.
+      * `[✅]`   NSF callout (`generate-button-balance-callout`) renders only when `isCostEstimateKnown` with shortfall-based copy and `/subscription?tab=top-up`. Observable: `GenerateContributionButton.nsf.test.tsx`.
+      * `[✅]`   Stage estimate line renders when `showStageCostEstimate` and `stageCeiling` set. Observable: unit test.
+      * `[✅]`   Project notice renders when `isCostEstimateKnown` and `projectCeiling > wallet`; informational only. Observable: unit test.
+      * `[✅]`   Component renders disabled (not `null`) when `viewingStage`/`activeSession` exist but there is no estimate or estimate failed; fail closed — no enabled spend without success estimate. Observable: unit tests.
+      * `[✅]`   Existing Generate/Resume/pause/DAG tests in `GenerateContributionButton.integration.test.tsx` remain green after wallet fixture migration off `minimum_balance`.
+      * `[✅]`   Integration test exercises real `selectCostCeiling`, real `hydrateAllStageProgress` path (or documented equivalent), and real `useStartContributionGeneration` with MSW at API edge only. Observable: `GenerateContributionButton.costCeiling.integration.test.tsx` success + null + NSF cases green.
+      * `[✅]`   Integration fixture hand-check uses `outputTokenCostRates[]` and per-stage `contributions: []` — no `maxOutputCostRate`, no `actualCost` on stage input. Observable: grep checklist node + `GenerateContributionButton.costCeiling.integration.test.tsx`.
+      * `[✅]`   Existing Generate/Resume/pause/DAG unit tests remain green after `getDefaultHookReturn` migration (success-estimate defaults).
+
+  * `[✅]`   apps/web/src/components/dialectic/SessionInfoCard **Project and viewing-stage cost estimates in session header**
+
+    * `[✅]`   `objective`
+      * `[✅]`   `SessionInfoCard.tsx` (lines 40-215) renders session chrome (back, title, model popover, wallet, progress bar, seed prompt) but shows no token-cost context. Users on the session page cannot see `projectCeiling` (completed contribution actuals + mean-rate estimates for remaining stages, from `selectCostCeiling` success) or the viewing-stage value `stageCeilings[viewingStage.slug]` without opening Generate or inferring from NSF state.
+      * `[✅]`   Non-functional: read-only **inform** layer — tells users cost estimates when available; when no estimate exists, **what is required to obtain one**; when estimate computation failed, **the error message**. Does not disable Generate (hook/button own spend gate). Do not frame missing prerequisites as "unknown cost"; the problem is **we do not have an estimate yet** — distinct from estimate failure and from NSF when an estimate exists.
+      * `[✅]`   Functional goal (no estimate): when `selectCostCeiling(state, session.id)` returns `null` (prerequisites incomplete — selector call never happened), render `data-testid="session-info-no-estimate-notice"` with fixed copy: `No cost estimate yet. Open Model Settings, select at least one model, set the output cap, and wait for stage counts to finish loading.` (labels match row-2 popover header "Model Settings" at L164). No numeric estimate lines; no project balance warning; no "unknown cost" wording.
+      * `[✅]`   Functional goal (estimate error): when `selectCostCeiling` returns `{ error: ApiError }`, render `data-testid="session-info-estimate-error-notice"` with fixed prefix `Cost estimate failed: ` followed by `costCeilingResult.error.message` pass-through only — do not invent error text. No numeric estimate lines; no project balance warning.
+      * `[✅]`   Functional goal (stage estimate): when result is success (`costCeilingResult !== null && 'error' not in costCeilingResult`) and `selectViewingStage` resolves a stage whose `slug` has a finite non-negative `stageCeilings[slug]`, render non-blocking: `Estimated cost for this stage: ~{formatTokenCount(stageCeiling)} tokens.` (`data-testid="session-info-stage-cost-estimate"`). Not gated on wallet balance (informational).
+      * `[✅]`   Functional goal (project estimate): on success branch, when `projectCeiling` is finite non-negative, render `Estimated project cost: ~{formatTokenCount(projectCeiling)} tokens.` (`data-testid="session-info-project-cost-estimate"`). `projectCeiling` sums completed actuals + remaining estimates (no breakdown in this node).
+      * `[✅]`   Functional goal (project balance notice): on success branch only — when `projectCeiling` is finite and wallet balance (`useWalletStore` + `selectActiveChatWalletInfo` + `useAiStore().newChatContext`, same pattern as `GenerateContributionButton`) is below `projectCeiling`, render `data-testid="session-info-project-balance-warning"`: `This project may need ~{formatTokenCount(projectCeiling)} tokens total. Top up {formatTokenCount(projectBalanceShortfall)} to cover the full project.` with `Link to="/subscription?tab=top-up"`. Informational only — does not enable Generate. May appear alongside stage/project estimate lines.
+      * `[✅]`   Functional goal (branching): `costCeilingResult === null` → no-estimate notice only; `'error' in costCeilingResult` → estimate-error notice only; else → success lines (stage and/or project and/or warning per finite checks). Mutually exclusive null/error notices vs success block.
+      * `[✅]`   Non-functional: preserve existing toolbar, seed prompt, progress bar, and `generateContributionsError` alert behavior. No `useStartContributionGeneration` import. No `selectPreProjectCostCeiling`. No subscription cart prefill (deferred). No edits to `GenerateContributionButton` or the hook (prior nodes).
+      * `[✅]`   Each goal is atomic and testable.
+
+    * `[✅]`   `role`
+      * `[✅]`   UI component — session-page header cost transparency and prerequisite guidance.
+      * `[✅]`   This node adds read-only cost display and no-estimate / estimate-error notices beside wallet/progress. It does NOT implement NSF disable, Autostart gating, or selector logic.
+      * `[✅]`   Out of scope: `CreateDialecticProjectForm` pre-project preview (next node); hook/button spend-gate copy (prior nodes).
+
+    * `[✅]`   `module`
+      * `[✅]`   Bounded context: `apps/web/src/components/dialectic` — `SessionInfoCard`.
+      * `[✅]`   Inside: `selectCostCeiling` / `selectViewingStage` subscriptions, three-way result branching, token formatting, no-estimate notice, estimate-error notice, success estimate lines, project balance warning, placement under row 2.
+      * `[✅]`   Outside: ceiling arithmetic, counts hydration, wallet store implementation.
+
+    * `[✅]`   `deps`
+      * `[✅]`   `selectCostCeiling`, `selectViewingStage` — provider: `@paynless/store` (`dialecticStore.selectors` node); layer: store selectors; direction: inward; purpose: `ComputeCostCeilingReturn | null` and viewing-stage slug object.
+      * `[✅]`   `ComputeCostCeilingReturn` — provider: `@paynless/utils` (`computeCostCeiling.provides.ts`); layer: types; direction: inward; import from original source only (success fields read only after `'error' not in result` narrow).
+      * `[✅]`   `useWalletStore`, `selectActiveChatWalletInfo`, `useAiStore` — provider: `@paynless/store`; layer: store; direction: inward; purpose: wallet balance for project shortfall notice on success branch only.
+      * `[✅]`   `Link` — provider: `react-router-dom`; add alongside existing `useNavigate` import site.
+      * `[✅]`   HARD dependency: `dialecticStore.selectors` node (`selectCostCeiling` export). Soft ordering: after `GenerateContributionButton` node; this component does not consume the hook.
+      * `[✅]`   No reverse dependencies.
+
+    * `[✅]`   `context_slice`
+      * `[✅]`   `session` from `state.activeSessionDetail` (lines 44-46) supplies `session.id` for `selectCostCeiling(state, session.id)`.
+      * `[✅]`   `costCeilingResult: ComputeCostCeilingReturn | null` from `selectCostCeiling`; branch null / error / success before reading numeric fields.
+      * `[✅]`   `viewingStage` from `selectViewingStage(state)`; on success only — `stageCeiling` from `costCeilingResult.stageCeilings[viewingStage.slug]` when finite non-negative.
+      * `[✅]`   On success only — `projectCeiling` from `costCeilingResult.projectCeiling` when finite non-negative.
+      * `[✅]`   No reads of `minimum_balance`, `stageThreshold`, `useStartContributionGeneration`, or `selectPreProjectCostCeiling`.
+
+    * `[✅]`   dialectic/`SessionInfoCard.test.tsx`
+      * `[✅]`   Extend `vi.hoisted`: `selectCostCeilingMock = vi.fn<[DialecticStateValues, string], ComputeCostCeilingReturn | null>()` defaulting to `null`.
+      * `[✅]`   Extend `vi.mock('@paynless/store', ...)`: expose `selectCostCeiling: selectCostCeilingMock` and `selectViewingStage` from actual `@paynless/store` or dialectic mock (must supply viewing stage with `slug` for cost tests). Import `ComputeCostCeilingReturn`, `buildComputeCostCeilingErrorReturn` from `@paynless/utils`; `ApiError` from `@paynless/types` for error factory in tests.
+      * `[✅]`   In cost-test fixtures: seed `viewingStageSlug` / `selectViewingStage` return with `slug: 'thesis'`, `currentProjectDetail` with stages array, `selectedModels` non-empty when mirroring Group-4 selector fixtures.
+      * `[✅]`   Append `describe('cost ceiling display (SessionInfoCard)')` at end of file; `beforeEach` resets `selectCostCeilingMock` to `null`. One behavior per test.
+      * `[✅]`   Test (success both lines): mock `{ stageCeilings: { thesis: 120000 }, projectCeiling: 350000 }`, viewing stage `thesis` → `session-info-stage-cost-estimate` shows `~120,000` and "Estimated cost for this stage"; `session-info-project-cost-estimate` shows `~350,000` and "Estimated project cost"; `session-info-no-estimate-notice` and `session-info-estimate-error-notice` absent.
+      * `[✅]`   Test (null → guidance): mock `null` → `session-info-no-estimate-notice` present with copy containing "Model Settings", "output cap", and "stage counts"; `session-info-stage-cost-estimate`, `session-info-project-cost-estimate`, `session-info-project-balance-warning`, and `session-info-estimate-error-notice` absent.
+      * `[✅]`   Test (estimate error): mock `buildComputeCostCeilingErrorReturn({ error: { message: 'Invalid payload', ... } })` (full `ApiError` from test factory) → `session-info-estimate-error-notice` contains `Invalid payload`; `session-info-no-estimate-notice` absent; numeric estimate testids absent.
+      * `[✅]`   Test (project warning): success mock `projectCeiling: 400000`, stage ceiling present, `initializeMockWalletStore` balance `250000` → `session-info-project-balance-warning` present, top-up `Link` `href="/subscription?tab=top-up"`, shortfall `150,000` in copy; stage/project estimate testids present.
+      * `[✅]`   Test (wallet sufficient): success mock, wallet balance ≥ `projectCeiling` → `session-info-project-balance-warning` absent; estimates present.
+      * `[✅]`   Test (missing stage slug): success mock without `thesis` in `stageCeilings`, viewing stage `thesis` → `session-info-stage-cost-estimate` absent; `session-info-project-cost-estimate` present if `projectCeiling` finite.
+      * `[✅]`   Preserve all existing tests (seed prompt, progress bar, export dropdown, 2-row toolbar). New cases appended only.
+
+    * `[✅]`   dialectic/`SessionInfoCard.tsx`
+      * `[✅]`   Add imports: `selectCostCeiling`, `selectViewingStage`, `useWalletStore`, `selectActiveChatWalletInfo`, `useAiStore` from `@paynless/store`; `ComputeCostCeilingReturn` from `@paynless/utils`; `Link` from `react-router-dom`.
+      * `[✅]`   Subscribe `costCeilingResult: ComputeCostCeilingReturn | null`: `useDialecticStore(useShallow((state) => { const sid = state.activeSessionDetail?.id; if (sid === undefined) return null; return selectCostCeiling(state, sid); }))` (before skeleton early return is fine).
+      * `[✅]`   `const viewingStage = useDialecticStore(selectViewingStage);`
+      * `[✅]`   `const newChatContext = useAiStore((state) => state.newChatContext);` and `const activeWalletInfo = useWalletStore((state) => selectActiveChatWalletInfo(state, newChatContext));`
+      * `[✅]`   `const formatTokenCount = (n: number): string => new Intl.NumberFormat("en-US").format(n);` (match `GenerateContributionButton` node).
+      * `[✅]`   After row 2 block (after line 183 `</div>`), before `generateContributionsError` alert: wrapper `div` with `className="text-xs text-muted-foreground space-y-1"`.
+      * `[✅]`   When `costCeilingResult === null`: render `data-testid="session-info-no-estimate-notice"` — `No cost estimate yet. Open Model Settings, select at least one model, set the output cap, and wait for stage counts to finish loading.`
+      * `[✅]`   When `costCeilingResult !== null && 'error' in costCeilingResult`: render `data-testid="session-info-estimate-error-notice"` — `Cost estimate failed: {costCeilingResult.error.message}`
+      * `[✅]`   When `costCeilingResult !== null && 'error' not in costCeilingResult`: derive `stageCeiling` from `costCeilingResult.stageCeilings[viewingStage.slug]` when `viewingStage !== null` and value is finite non-negative; derive `projectCeiling` from `costCeilingResult.projectCeiling` when finite non-negative; when `stageCeiling !== null` render `session-info-stage-cost-estimate`; when `projectCeiling !== null` render `session-info-project-cost-estimate`; when `projectCeiling` and `Number(activeWalletInfo.balance)` are finite and balance < `projectCeiling`, compute `projectBalanceShortfall = projectCeiling - balance` and render `session-info-project-balance-warning` with copy and `Link to="/subscription?tab=top-up"` per objective.
+      * `[✅]`   No other behavioral changes.
+
+    * `[✅]`   `directionality`
+      * `[✅]`   Layer: UI component.
+      * `[✅]`   Deps: inward (store selectors `ComputeCostCeilingReturn | null`, wallet/ai stores, router `Link`).
+      * `[✅]`   Provides: outward (session-header cost transparency, prerequisite guidance, estimate-error display).
+      * `[✅]`   No cycles.
+
+    * `[✅]`   `requirements`
+      * `[✅]`   No `minimum_balance`, `stageThreshold`, `project_ceiling`, `stage_ceiling`, `useStartContributionGeneration`, or `selectPreProjectCostCeiling` in `SessionInfoCard.tsx`. Observable: grep.
+      * `[✅]`   When `selectCostCeiling` returns `null`, `session-info-no-estimate-notice` renders with prerequisite copy (Model Settings, output cap, stage counts). Observable: unit test.
+      * `[✅]`   When `selectCostCeiling` returns `{ error: ApiError }`, `session-info-estimate-error-notice` renders with pass-through `error.message`. Observable: unit test.
+      * `[✅]`   Stage and project estimate lines render on success branch when ceilings finite for session/viewing slug. Observable: unit tests.
+      * `[✅]`   Project balance warning renders on success branch only when `projectCeiling > wallet`; does not hide toolbar or progress. Observable: unit test.
+      * `[✅]`   Existing SessionInfoCard tests (seed prompt, progress, export, 2-row layout) remain green.
+
+  * `[✅]`   apps/web/src/components/dialectic/CreateDialecticProjectForm **Pre-project cost preview, fail-safe Autostart gate, project balance warning, and pre-project ceiling stack integration**
+
+    * `[✅]`   `objective`
+      * `[✅]`   `CreateDialecticProjectForm.tsx` gates Autostart on `sortedStages[0]?.minimum_balance` (lines 400-418, 420-431) and never surfaces dynamic ceilings. Ticket lines 458-464 require pre-project `projectCeiling` and first-stage `stageCeilings[firstStageSlug]` from `selectPreProjectCostCeiling` (fed by `fetchProcessAssociation` → `fetchStageExpectedCounts` → `preProjectStageExpectedCounts`), display copy, a non-blocking project warning when `projectCeiling > wallet`, and Autostart forced off when `stageCeilings[firstStageSlug]` exceeds wallet (Create still allowed via Autoconfig/Manual).
+      * `[✅]`   Non-functional: Autostart (`startGeneration === true` → navigation with `autoStartGeneration: true`) is a **financial operation that consumes wallet tokens** — it **must fail safe** (fail closed). Autostart is allowed **only** when `selectPreProjectCostCeiling` returns a **success** estimate with a finite first-stage ceiling **and** wallet balance meets or exceeds that ceiling. Unknown estimate (`null` prerequisites) or selector/function error (`'error' in result`) **must block Autostart and block autostart submit** — no fail-open path. No fallback to `minimum_balance`. Autoconfig and Manual Create remain allowed per ticket when project ceiling exceeds wallet (informational warning only); they do not auto-start generation.
+      * `[✅]`   Functional goal (association + template + counts orchestration): when `selectedDomain` (`DialecticDomainRow | null`) has a non-empty `id`, call `fetchProcessAssociation({ domainId: selectedDomain.id })` (re-fetch when `selectedDomain?.id` changes). When `selectedDomainProcessAssociation` is a validated row with non-empty `process_template_id`, call `fetchProcessTemplate(association.process_template_id)` and, when `uniqueModelCount >= 1`, call `fetchStageExpectedCounts({ processTemplateId: association.process_template_id, modelCount: uniqueModelCount })` (re-fetch template/counts when association row or `uniqueModelCount` changes). When `selectedDomain` is `null`, association is `null`, `domainProcessAssociationError` is set, or `process_template_id` is missing — do not call `fetchProcessTemplate` or `fetchStageExpectedCounts`; render no-estimate notice (not cost preview). No fabricated template id; do not read `process_template_id` from `DialecticDomainRow`.
+      * `[✅]`   Functional goal (fetch counts guard): do not call `fetchStageExpectedCounts` when `uniqueModelCount < 1` or `selectedDomainProcessAssociation?.process_template_id` is absent. Count payload uses `association.process_template_id`, not `currentProcessTemplate?.id` alone (template hydration may lag; association row is the SSOT for pre-project `processTemplateId`).
+      * `[✅]`   Functional goal (three-way selector result): subscribe `preProjectCostCeilingResult: ComputeCostCeilingReturn | null` from `selectPreProjectCostCeiling`. Branch before reading numeric fields: `null` → prerequisites incomplete; `'error' in result` → estimate computation failed; else → success. Derive `preProjectCostCeilingError: ApiError | null` on error branch only; `isPreProjectCostEstimateKnown: boolean` — `true` only on success when `firstStageCeiling` is finite non-negative for `sortedStages[0].slug`; `canAffordAutostart: boolean` — `isPreProjectCostEstimateKnown && Number(walletInfo.balance) >= firstStageCeiling`.
+      * `[✅]`   Functional goal (no estimate): when `preProjectCostCeilingResult === null` (includes `isLoadingDomainProcessAssociation`, `isLoadingStageExpectedCounts`, missing cap/rate/counts), render `data-testid="create-project-no-estimate-notice"`: `No cost estimate yet. Select at least one model, set the output cap, and wait for stage counts to finish loading.` No preview; no project balance warning; **Autostart forced off** (fail closed).
+      * `[✅]`   Functional goal (estimate error): when `'error' in preProjectCostCeilingResult`, render `data-testid="create-project-estimate-error-notice"`: `Cost estimate failed: {preProjectCostCeilingResult.error.message}` pass-through only. No preview; no project balance warning; **Autostart forced off** (fail closed).
+      * `[✅]`   Functional goal (preview copy — success only): when success and `sortedStages[0]` exists with slug `firstSlug`, read `firstStageCeiling = result.stageCeilings[firstSlug]` and `projectCeiling = result.projectCeiling` (finite non-negative only); when both finite, render `data-testid="create-project-cost-preview"`: "Estimated token cost: ~{projectCeiling} for the full project, ~{firstStageCeiling} for the first stage." (`Intl.NumberFormat("en-US")`). No fallback to `minimum_balance`.
+      * `[✅]`   Functional goal (project warning — success only): when `projectCeiling` is finite and wallet balance (`walletInfo` via `selectActiveChatWalletInfo(state, null)`) is below `projectCeiling`, render non-blocking `data-testid="create-project-project-balance-warning"` with shortfall and `Link` to `/subscription?tab=top-up`. Does not disable Create submit.
+      * `[✅]`   Functional goal (Autostart gate): replace `firstStageMinBalance` / `minimum_balance` in autostart `useEffect` (lines 400-418) and `autoUncheckReason` (lines 420-431). When `!configureManually`: `noDefaults` → `setStartGeneration(false)` (unchanged); else if `!canAffordAutostart` → `setStartGeneration(false)` (**includes null, error, and insufficient balance**); else → `setStartGeneration(true)`. `autoUncheckReason` priority: `noDefaults` → "No default models available"; `preProjectCostCeilingError !== null` → pass-through error message; `!isPreProjectCostEstimateKnown` → estimate-not-ready copy; `autostartBlockedByBalance` → "Estimated first-stage cost exceeds wallet balance for auto-start" with `create-project-autostart-top-up-link` → `/subscription?tab=top-up`.
+      * `[✅]`   Functional goal (`cycleSetupMode` fail-safe): when transition would enable Autostart (`setStartGeneration(true)`), if `!canAffordAutostart`, do not enable Autostart — remain Autoconfig and surface `autoUncheckReason` (defense against checkbox cycling past the effect).
+      * `[✅]`   Functional goal (submit fail-safe): in `onSubmit`, when `!configureManually && startGeneration` (Autostart spend path), before `createProjectAndAutoStart`: if `preProjectCostCeilingResult === null`, toast error and return; if `'error' in preProjectCostCeilingResult`, toast `preProjectCostCeilingResult.error.message` and return; if `firstStageCeiling === null` or `Number(walletInfo.balance) < firstStageCeiling`, toast and return. Only then call `createProjectAndAutoStart` with autostart intent. Autoconfig (`!configureManually && !startGeneration`) and Manual paths unchanged except ceiling-based autostart eligibility (Create allowed per ticket). Defense in depth — UI gate plus submit guard.
+      * `[✅]`   Functional goal (submit template id): on submit, set `processTemplateId` on `CreateProjectPayload` / `CreateProjectAndAutoStartPayload` from `selectedDomainProcessAssociation.process_template_id` when association is stored and `process_template_id` is a non-empty string; if missing at submit time, log error and return (same as missing `selectedDomainId`). Store `createDialecticProject` / `createProjectAndAutoStart` append `processTemplateId` to FormData (prior `dialecticStore.ts` node).
+      * `[✅]`   Non-functional: no `selectCostCeiling` (post-project) in this form; no edits to `dialecticStore.ts`, selectors, or BE. Subscription cart prefill deferred. `currentProcessTemplate` must be hydrated (via association → `fetchProcessTemplate`) before `selectSortedStages` / cost preview can render. This node owns the **pre-project epic stack integration test** (API MSW edge → store actions → real selectors → real `computeCostCeiling` → form UI/gating).
+      * `[✅]`   Each goal is atomic and testable.
+
+    * `[✅]`   `role`
+      * `[✅]`   UI component — pre-project cost transparency and **fail-safe Autostart affordability gate** (primary pre-project spend entry point for the dynamic ceiling epic).
+      * `[✅]`   This node orchestrates the pre-project call chain documented in `dialecticStore` `interaction.spec`: `fetchProcessAssociation` → `fetchProcessTemplate` / `fetchStageExpectedCounts`, wires `selectPreProjectCostCeiling` into the create UX, and proves the full pre-project stack via integration test. It does NOT implement store actions, guards, or selector arithmetic (prior Group 3/4 nodes).
+      * `[✅]`   Out of scope: session-page consumers (prior nodes); subscription cart prefill; BE handlers; `listDomains` / `fetchDomains` implementation (domain picker elsewhere calls `fetchDomains`; this form reads `selectedDomain` only); `CreateProjectFromChatButton` (separate node).
+      * `[✅]`   HARD dependency: `dialectic.api` node (`DialecticDomainRow`, `DomainProcessAssociationRow`, `fetchProcessAssociation`, `getStageExpectedCounts`, `CreateProjectPayload.processTemplateId`), `dialecticStore.ts` node (`fetchProcessAssociation`, `selectedDomainProcessAssociation`, `fetchStageExpectedCounts`, `createDialecticProject` FormData `processTemplateId`), `dialecticStore.selectors` node (`selectPreProjectCostCeiling`, `ComputeCostCeilingReturn | null`), `computeCostCeiling` node, `createProject` BE node. Precedes `CreateProjectFromChatButton` and commit node below.
+
+    * `[✅]`   `module`
+      * `[✅]`   Bounded context: `apps/web/src/components/dialectic` — `CreateDialecticProjectForm`.
+      * `[✅]`   Inside: domain-selection orchestration effects, three-way ceiling result branching, no-estimate / estimate-error notices, success preview + project warning, fail-safe Autostart gate + submit guard, `processTemplateId` on submit, token formatting, pre-project stack integration test.
+      * `[✅]`   Outside: `computeCostCeiling` implementation body, store action implementations, API transport handlers, association SQL.
+
+    * `[✅]`   `deps`
+      * `[✅]`   `fetchProcessAssociation` — provider: `@paynless/store` (`dialecticStore.ts` node); layer: store action; direction: inward; purpose: load `selectedDomainProcessAssociation` after domain selection.
+      * `[✅]`   `fetchProcessTemplate` — provider: `@paynless/store` (`dialecticStore.ts`, existing action); layer: store action; direction: inward; purpose: hydrate `currentProcessTemplate` from `selectedDomainProcessAssociation.process_template_id` for `selectSortedStages`.
+      * `[✅]`   `fetchStageExpectedCounts` — provider: `@paynless/store` (`dialecticStore.ts` node); layer: store action; direction: inward; purpose: populate `preProjectStageExpectedCounts` using `processTemplateId` from association row.
+      * `[✅]`   `selectedDomainProcessAssociation`, `domainProcessAssociationError`, `isLoadingDomainProcessAssociation`, `isLoadingStageExpectedCounts`, `stageExpectedCountsError` — provider: `@paynless/store` `DialecticStateValues`; direction: inward; purpose: orchestration gates and loading → selector `null`.
+      * `[✅]`   `selectPreProjectCostCeiling`, `selectSortedStages` — provider: `@paynless/store` (`dialecticStore.selectors` node); layer: selectors; direction: inward; purpose: `ComputeCostCeilingReturn | null`.
+      * `[✅]`   `ComputeCostCeilingReturn`, `ComputeCostCeilingSuccessReturn`, `ComputeCostCeilingStageInput`, `computeCostCeiling`, `buildComputeCostCeilingDeps`, `buildComputeCostCeilingParams`, `buildComputeCostCeilingPayload` — provider: `@paynless/utils` (`computeCostCeiling.provides.ts`); layer: domain utility; direction: inward; purpose: integration test hand-check expected `firstStageCeiling` / `projectCeiling` via mean-rate payload (`outputTokenCostRates[]`, per-stage `contributions: []` on pre-project path).
+      * `[✅]`   `ApiError` — provider: `@paynless/types` (`api.types.ts`); layer: types; direction: inward; purpose: `preProjectCostCeilingError` typing.
+      * `[✅]`   `DomainProcessAssociationRow`, `GetStageExpectedCountsResponse` — provider: `@paynless/types`; direction: inward; purpose: integration MSW fixtures and typed reads.
+      * `[✅]`   `currentProcessTemplate`, `selectedDomain` (`DialecticDomainRow`), `selectSelectedModels` / `uniqueModelCount`, `maxOutputTokens`, `modelCatalog` — existing store reads.
+      * `[✅]`   `walletInfo` / `selectActiveChatWalletInfo` — existing (line 121-124).
+      * `[✅]`   `Link` — provider: `react-router-dom`; direction: inward.
+      * `[✅]`   `@paynless/api` client + MSW `server` from `packages/api/src/setupTests` — integration test only; mocks at API transport edge.
+      * `[✅]`   HARD dependency: `dialecticStore.selectors`, `dialecticStore.ts`, `computeCostCeiling`, `dialectic.api`. Precedes `CreateProjectFromChatButton` and commit node.
+      * `[✅]`   No reverse dependencies.
+
+    * `[✅]`   `context_slice`
+      * `[✅]`   `domainId` = `selectedDomain?.id` (full `DialecticDomainRow`, no template field on domain).
+      * `[✅]`   `processTemplateId` (pre-project SSOT) = `selectedDomainProcessAssociation?.process_template_id` (non-empty string only); used for `fetchProcessTemplate`, `fetchStageExpectedCounts`, and submit payload.
+      * `[✅]`   `modelCount` = `uniqueModelCount` (existing lines 152-155).
+      * `[✅]`   `firstStageSlug` = `sortedStages[0]?.slug` when `sortedStages.length > 0` (requires `currentProcessTemplate` hydrated).
+      * `[✅]`   `preProjectCostCeilingResult: ComputeCostCeilingReturn | null` = `useDialecticStore(selectPreProjectCostCeiling)`; branch null / error / success before numeric reads.
+      * `[✅]`   No reads of `minimum_balance` or `default_process_template_id` anywhere in the file after this node.
+
+    * `[✅]`   dialectic/`CreateDialecticProjectForm.autostart.test.tsx`
+      * `[✅]`   Extend `vi.mock('@paynless/store', ...)`: expose `selectPreProjectCostCeiling: vi.fn<[DialecticStateValues], ComputeCostCeilingReturn | null>()` (default `null`); expose `fetchProcessAssociation`, `fetchProcessTemplate`, and `fetchStageExpectedCounts` via `getDialecticStoreActionMock` / mock store actions (spy on calls). Import `ComputeCostCeilingReturn`, `ComputeCostCeilingSuccessReturn`, `buildComputeCostCeilingErrorReturn` from `@paynless/utils`; `ApiError` from `@paynless/types`.
+      * `[✅]`   Seed `selectedDomain` as full `DialecticDomainRow` (no `default_process_template_id`). Seed `selectedDomainProcessAssociation` as full `DomainProcessAssociationRow` with `domain_id` matching `selectedDomain.id`, `is_default_for_domain: true`, and `process_template_id` matching `processTemplateForAutostartBalanceTest.id` in cost-preview / autostart tests.
+      * `[✅]`   Add test: when `selectedDomain.id` is set, `fetchProcessAssociation` called with `{ domainId: selectedDomain.id }` after render (`waitFor`).
+      * `[✅]`   Add test: when `selectedDomainProcessAssociation` is `null` (association error / not loaded), `fetchProcessTemplate` and `fetchStageExpectedCounts` are not called.
+      * `[✅]`   Add test: when association row present with `process_template_id`, `fetchProcessTemplate` called with that id (`waitFor`).
+      * `[✅]`   Add test: Manual submit payload includes `processTemplateId` equal to `selectedDomainProcessAssociation.process_template_id`.
+      * `[✅]`   Add test: Autoconfig submit payload includes `processTemplateId` on `createProjectAndAutoStart` mock call from association row.
+      * `[✅]`   Replace test `defaults to Autoconfig when wallet balance below thesis threshold` (lines 474-493): remove reliance on `stageThesisForAutostart.minimum_balance`; mock success `{ stageCeilings: { thesis: firstStageMinBalanceForAutostartTest }, projectCeiling: firstStageMinBalanceForAutostartTest }` with wallet `balance: String(firstStageMinBalanceForAutostartTest - 1)`; expect Autoconfig + ceiling copy (not `minimum_balance`).
+      * `[✅]`   Add test: when mock returns success and wallet meets first-stage ceiling, default remains Autostart (checked).
+      * `[✅]`   Add test: when mock returns `null`, `create-project-no-estimate-notice` present; Autostart unchecked; `autoUncheckReason` mentions estimate not ready; `create-project-cost-preview` absent.
+      * `[✅]`   Add test: when mock returns `buildComputeCostCeilingErrorReturn(...)`, `create-project-estimate-error-notice` contains pass-through `error.message`; Autostart unchecked; preview absent.
+      * `[✅]`   Add test: when mock returns `null` or error, submit with Autostart intent (`startGeneration true`) does not call `createProjectAndAutoStart` (or toast.error and no call); Autoconfig submit may still proceed when other guards pass.
+      * `[✅]`   Add test: when mock returns success and wallet meets ceiling, Autostart submit calls `createProjectAndAutoStart` once.
+      * `[✅]`   Add test: `fetchStageExpectedCounts` called with `{ processTemplateId: selectedDomainProcessAssociation.process_template_id, modelCount: 1 }` after association + template seeded (`waitFor`).
+      * `[✅]`   Add test: success mock → `create-project-cost-preview` shows formatted project + first-stage ceilings when `sortedStages[0].slug === 'thesis'`.
+      * `[✅]`   Add test: success mock → `create-project-project-balance-warning` when `projectCeiling` exceeds wallet; Create button still enabled.
+      * `[✅]`   Add test: `create-project-autostart-top-up-link` present when autostart blocked by balance; `href` `/subscription?tab=top-up`.
+      * `[✅]`   Add test: `cycleSetupMode` from Autoconfig does not enable Autostart when mock returns `null` or error (`canAffordAutostart` false).
+      * `[✅]`   Preserve all other autostart tests (setup mode cycle, submit paths, loaders). New cases appended.
+
+    * `[✅]`   dialectic/`CreateDialecticProjectForm.test.tsx`
+      * `[✅]`   Align store mock with autostart file: `selectPreProjectCostCeiling: vi.fn<..., ComputeCostCeilingReturn | null>()` default `null`; expose `fetchProcessAssociation` spy; seed `selectedDomainProcessAssociation` with `process_template_id` on submit tests.
+      * `[✅]`   Add test: success mock → `create-project-cost-preview` visible; `null` → `create-project-no-estimate-notice` visible, preview absent; error mock → `create-project-estimate-error-notice` visible, preview absent.
+      * `[✅]`   Update Manual-path tests: expect `processTemplateId` equal to `selectedDomainProcessAssociation.process_template_id`.
+      * `[✅]`   Preserve unrelated tests (TextInputArea props, manual submit, placeholders). New cases appended.
+
+    * `[✅]`   dialectic/`CreateDialecticProjectForm.tsx`
+      * `[✅]`   Add imports: `selectPreProjectCostCeiling`, `fetchProcessAssociation`, `fetchStageExpectedCounts` from `@paynless/store`; `ComputeCostCeilingReturn` from `@paynless/utils`; `ApiError` from `@paynless/types`; `Link` from `react-router-dom`.
+      * `[✅]`   Store subscriptions: `fetchProcessAssociation`, `fetchProcessTemplate`, `fetchStageExpectedCounts`, `selectedDomainProcessAssociation`, `currentProcessTemplate`, `isLoadingDomainProcessAssociation`, `isLoadingStageExpectedCounts` (read-only for loading context if needed in copy).
+      * `[✅]`   `const preProjectCostCeilingResult: ComputeCostCeilingReturn | null = useDialecticStore(selectPreProjectCostCeiling);`
+      * `[✅]`   `const formatTokenCount = (n: number): string => new Intl.NumberFormat("en-US").format(n);`
+      * `[✅]`   Add `useEffect` for association fetch (deps: `selectedDomain?.id`, `fetchProcessAssociation`): when `selectedDomain?.id` is a non-empty string, call `fetchProcessAssociation({ domainId: selectedDomain.id })`.
+      * `[✅]`   Add `useEffect` for template + counts (deps: `selectedDomainProcessAssociation?.process_template_id`, `uniqueModelCount`, `fetchProcessTemplate`, `fetchStageExpectedCounts`): when `selectedDomainProcessAssociation?.process_template_id` is a non-empty string, call `fetchProcessTemplate(...)`; when same id present and `uniqueModelCount >= 1`, call `fetchStageExpectedCounts({ processTemplateId, modelCount: uniqueModelCount })`.
+      * `[✅]`   Derive `preProjectCostCeilingError: ApiError | null`: if `preProjectCostCeilingResult !== null && 'error' in preProjectCostCeilingResult`, return `preProjectCostCeilingResult.error`; else `null`.
+      * `[✅]`   Derive `firstStageSlug: string | null` from `sortedStages[0]?.slug ?? null`.
+      * `[✅]`   Derive `firstStageCeiling: number | null`: if `preProjectCostCeilingResult === null || 'error' in preProjectCostCeilingResult || firstStageSlug === null`, return `null`; read `preProjectCostCeilingResult.stageCeilings[firstStageSlug]`; if not finite non-negative, return `null`; else return the number.
+      * `[✅]`   Derive `projectCeiling: number | null`: if `preProjectCostCeilingResult === null || 'error' in preProjectCostCeilingResult`, return `null`; if `preProjectCostCeilingResult.projectCeiling` not finite non-negative, return `null`; else return it.
+      * `[✅]`   Derive `isPreProjectCostEstimateKnown: boolean` = `firstStageCeiling !== null`.
+      * `[✅]`   Derive `canAffordAutostart: boolean` = `isPreProjectCostEstimateKnown && Number(walletInfo.balance) >= firstStageCeiling` (reject `NaN`).
+      * `[✅]`   Replace autostart `useEffect` (lines 400-418): remove `minimum_balance`; when `configureManually` return; `noDefaults` → `setStartGeneration(false)`; else if `!canAffordAutostart` → `setStartGeneration(false)`; else → `setStartGeneration(true)`.
+      * `[✅]`   Replace `autoUncheckReason` (lines 420-431): priority chain per objective (noDefaults → error message → estimate not ready → balance ceiling copy).
+      * `[✅]`   Update `cycleSetupMode`: when enabling Autostart, if `!canAffordAutostart`, do not call `setStartGeneration(true)`.
+      * `[✅]`   In `CardContent` (before `CardFooter`): when `preProjectCostCeilingResult === null` → `create-project-no-estimate-notice`; when `'error' in preProjectCostCeilingResult` → `create-project-estimate-error-notice`; on success → preview when both ceilings finite; project warning when `projectCeiling > wallet`; top-up link in autostart reason area when balance blocks autostart.
+      * `[✅]`   In `onSubmit`: read `processTemplateId` from association row — abort if missing; when `!configureManually && startGeneration`, apply fail-safe guard (null / error / insufficient ceiling → toast + return) before `createProjectAndAutoStart`; set `processTemplateId` on payloads.
+      * `[✅]`   Remove all `minimum_balance` and `default_process_template_id` identifiers from the file.
+
+    * `[✅]`   dialectic/`CreateDialecticProjectForm.costCeiling.integration.test.tsx`
+      * `[✅]`   **Approved integration boundary:** MSW mocks at API transport only (mirror `packages/api/src/dialectic.api.integration.test.ts` — `initializeApiClient`, `server.use`, `http.post` to `dialectic-service`). Everything inward is **real**: `@paynless/api` client, real store actions (`fetchProcessAssociation`, `fetchProcessTemplate`, `fetchStageExpectedCounts`), real `selectPreProjectCostCeiling`, real `computeCostCeiling` (via selector). **Do not mock** `selectPreProjectCostCeiling` or `computeCostCeiling`. Mock only outbound `createProjectAndAutoStart` / `createDialecticProject` on the dialectic store mock (or spy) to observe submit without full BE project creation.
+      * `[✅]`   Harness: `MemoryRouter`; real `useDialecticStore` / `useWalletStore` from `@paynless/store` (or test harness that wires real store with MSW-backed API — same pattern as `GenerateContributionButton.integration.test.tsx` but import actual `selectPreProjectCostCeiling` from `@paynless/store` alongside actual selectors). Seed `fetchAIModelCatalog` / catalog ready path so form renders past loader. Import `computeCostCeiling`, `buildComputeCostCeilingDeps`, `buildComputeCostCeilingParams`, `buildComputeCostCeilingPayload`, `ComputeCostCeilingStageInput` from `@paynless/utils` for hand-check expected ceilings.
+      * `[✅]`   Shared fixture constants: `domainId`, `processTemplateId`, `firstStageSlug: 'thesis'`, `modelCount: 1`, `maxOutputTokens`, `output_token_cost_rate` from full `AiModelExtendedConfig` on seeded `modelCatalog` row(s), `GetStageExpectedCountsResponse` counts matching BE integration spec (e.g. thesis `expectedCount: 5` for `modelCount: 1` — use the same hand-computed value as `getStageExpectedCounts.integration.test.ts` for the seeded template). Derive `outputTokenCostRates: number[]` — one `output_token_cost_rate` per seeded `selectedModels` entry matched to catalog (single-model fixtures: `[rate]`; two-model mean-rate anchor: `[2, 3]` with `expectedCount: 4`, `maxOutputTokens: 1000` → first-stage `expectedFirstStageCeiling === 10000`). Build `stages: ComputeCostCeilingStageInput[]` from response counts: for each stage slug, `{ stageSlug, expectedCount, contributions: [] }` (pre-project — all stages pending). Compute `expectedFirstStageCeiling` and `expectedProjectCeiling` via real `computeCostCeiling(buildComputeCostCeilingDeps(), buildComputeCostCeilingParams(), buildComputeCostCeilingPayload({ stages, maxOutputTokens, outputTokenCostRates }))` — assert `'error' not in result` in fixture setup; first-stage ceiling must equal `expectedCount(firstStageSlug) × maxOutputTokens × (sum(outputTokenCostRates) / outputTokenCostRates.length)` (mean rate — not max across models).
+      * `[✅]`   MSW handlers (success path): `fetchProcessAssociation` action → return full `DomainProcessAssociationRow` with matching `domain_id` and `process_template_id`; `getStageExpectedCounts` → return full `GetStageExpectedCountsResponse` with per-stage counts; `fetchProcessTemplate` / template fetch → hydrate template with stage slug `thesis` (match existing autostart test template fixtures in `dialecticStore.mock`).
+      * `[✅]`   Test (success stack + afford autostart): render `CreateDialecticProjectForm`; `waitFor` association + counts + template effects; `waitFor` `create-project-cost-preview` with hand-computed formatted `expectedProjectCeiling` and `expectedFirstStageCeiling`; wallet balance seeded **above** `expectedFirstStageCeiling`; setup mode Autostart checked; submit form → `createProjectAndAutoStart` called once with `processTemplateId` from association row. Proves API → store → selector → `computeCostCeiling` → UI → submit gate allows spend.
+      * `[✅]`   Test (null prerequisites — fail closed): same MSW success handlers but seed store with `maxOutputTokens: null` (or `selectedModels: []`) before render; `waitFor` `create-project-no-estimate-notice`; Autostart unchecked; submit → `createProjectAndAutoStart` **not** called when setup would be Autostart; Autoconfig path may call `createProjectAndAutoStart` with `startGeneration` false when user cycles to Autoconfig (optional second click in same test or separate test). Proves fail-safe without mocked selector.
+      * `[✅]`   Test (API counts error — fail closed): MSW `getStageExpectedCounts` returns 500 or store action surfaces fetch error so `preProjectStageExpectedCounts` stays absent / selector returns `null`; `waitFor` `create-project-no-estimate-notice` (or association error path — assert whichever the real store produces, document in test comment); Autostart unchecked; autostart submit not called.
+      * `[✅]`   Test (insufficient wallet — fail closed autostart, allow autoconfig): success stack seeded; wallet balance **below** `expectedFirstStageCeiling`; `waitFor` Autoconfig (Autostart unchecked); `create-project-autostart-top-up-link` or balance reason present; Create submit still enabled; `createProjectAndAutoStart` called when submitting in Autoconfig mode (not autostart spend). One behavior per test; appended at end of file.
+
+    * `[✅]`   `directionality`
+      * `[✅]`   Layer: UI component + pre-project epic integration boundary.
+      * `[✅]`   Deps: inward (store actions, `selectPreProjectCostCeiling` `ComputeCostCeilingReturn | null`, wallet, API via store).
+      * `[✅]`   Provides: outward (fail-safe pre-project spend gate, cost preview UX, **proof that API → store → selector → computeCostCeiling → form gating works** for success / null / error paths).
+      * `[✅]`   No cycles.
+
+    * `[✅]`   `requirements`
+      * `[✅]`   `minimum_balance`, `default_process_template_id`, `project_ceiling`, `stage_ceiling`, `maxOutputCostRate`, and `actualCost` do not appear in `CreateDialecticProjectForm.tsx`. Observable: grep.
+      * `[✅]`   `fetchProcessAssociation` invoked with `{ domainId: selectedDomain.id }` when domain selected. Observable: autostart unit test + integration test.
+      * `[✅]`   `fetchProcessTemplate` and `fetchStageExpectedCounts` invoked only after `selectedDomainProcessAssociation.process_template_id` is available. Observable: autostart unit tests + integration test.
+      * `[✅]`   Submit payloads include `processTemplateId` matching association row on Manual and Autoconfig/Autostart paths. Observable: unit tests.
+      * `[✅]`   When `selectPreProjectCostCeiling` returns `null`, `create-project-no-estimate-notice` renders; Autostart off; autostart submit blocked. Observable: unit + integration tests.
+      * `[✅]`   When selector returns `{ error: ApiError }`, `create-project-estimate-error-notice` renders with pass-through message; Autostart off; autostart submit blocked. Observable: unit test (error mock); integration test covers null/fetch-failure path at minimum.
+      * `[✅]`   On success branch, preview copy matches hand-computed ceilings. Observable: unit test + integration test (`create-project-cost-preview` vs `computeCostCeiling` hand-check).
+      * `[✅]`   Autostart enabled only when success estimate and wallet ≥ first-stage ceiling; defaults to Autoconfig when balance below ceiling; Create remains enabled. Observable: unit + integration tests.
+      * `[✅]`   `onSubmit` fail-safe: Autostart path never calls `createProjectAndAutoStart` when result is `null`, error, or unaffordable. Observable: unit + integration tests.
+      * `[✅]`   Project warning is non-blocking with top-up link on success branch only. Observable: unit test.
+      * `[✅]`   Integration test exercises real `selectPreProjectCostCeiling` and real store fetch actions with MSW at API edge only — not mocked selector. Observable: `CreateDialecticProjectForm.costCeiling.integration.test.tsx` success + null + insufficient-wallet cases green.
+      * `[✅]`   Integration fixture hand-check uses `outputTokenCostRates[]` and per-stage `contributions: []` — no `maxOutputCostRate`, no `actualCost` on stage input. Observable: grep checklist node + `CreateDialecticProjectForm.costCeiling.integration.test.tsx`.
+      * `[✅]`   Existing autostart and form unit tests remain green.
+
+  * `[✅]`   apps/web/src/components/ai/CreateProjectFromChatButton **Pre-project ceiling fail-safe, `processTemplateId`, and chat create+autostart stack integration**
+
+    * `[✅]`   `objective`
+      * `[✅]`   `CreateProjectFromChatButton.tsx` builds `CreateProjectAndAutoStartPayload` with `projectName`, `initialUserPrompt`, `selectedDomainId`, and idempotency keys only (lines 55-61) and calls `createProjectAndAutoStart` without association lookup, without `processTemplateId`, and without any pre-project cost-ceiling gate. Navigation passes `autoStartGeneration: result.hasDefaultModels` (line 73) — when default generation models exist, this is a **financial operation that consumes wallet tokens** on session load; it **must fail safe** (fail closed) using the same pre-project stack as `CreateDialecticProjectForm` Autostart, not static `minimum_balance`.
+      * `[✅]`   Non-functional: chat has no cost-preview UI and no output-cap slider — fail-safe gating runs at click time in `handleClick` only. No `selectCostCeiling` (post-project). No edits to `dialecticStore.ts`, `CreateDialecticProjectForm.tsx`, selectors, `computeCostCeiling`, or BE handlers. Subscription cart prefill deferred. This node owns the **chat pre-project epic stack integration test** (API MSW edge → store actions → real `selectPreProjectCostCeiling` → real `computeCostCeiling` → click guard → `createProjectAndAutoStart` observation).
+      * `[✅]`   Functional goal (domain + association): after `fetchDomains` when needed, resolve `selectedDomain: DialecticDomainRow | null` via `selectSelectedDomain(useDialecticStore.getState())`; require non-empty `selectedDomain.id`; `await fetchProcessAssociation({ domainId: selectedDomain.id })`; read `selectedDomainProcessAssociation` from `useDialecticStore.getState()`. When row is absent or `process_template_id` is missing/empty, toast error and return — no `createProjectAndAutoStart`. No fabricated template id; do not read `process_template_id` from `DialecticDomainRow`.
+      * `[✅]`   Functional goal (catalog + default model count): before ceiling reads, mirror `createProjectAndAutoStart` catalog bootstrap (`dialecticStore.ts:750-753`): when `modelCatalog.length === 0 && !isLoadingModelCatalog`, `await fetchAIModelCatalog()`. Derive `defaultModelCount: number` from `new Set(selectDefaultGenerationModels(state).map((m) => m.id)).size` (same models the store will autostart with when `selectedModels` is empty — `dialecticStore.ts:763`). When `defaultModelCount < 1`, skip ceiling orchestration and ceiling gate (store returns `hasDefaultModels: false` — no generation spend); still require valid `processTemplateId` on payload before `createProjectAndAutoStart`.
+      * `[✅]`   Functional goal (template + counts orchestration — autostart spend path only): when `defaultModelCount >= 1` and association row has non-empty `process_template_id`, `await fetchProcessTemplate(processTemplateId)` then `await fetchStageExpectedCounts({ processTemplateId, modelCount: defaultModelCount })`. Count payload uses association `process_template_id`, not `currentProcessTemplate?.id` alone (association row is SSOT — same rule as `CreateDialecticProjectForm` node).
+      * `[✅]`   Functional goal (three-way selector result — autostart spend path only): after orchestration, read `preProjectCostCeilingResult: ComputeCostCeilingReturn | null` via `selectPreProjectCostCeiling(useDialecticStore.getState())`. Branch before spend: `null` → prerequisites incomplete; `'error' in result` → estimate computation failed; else → success. Resolve `firstStageSlug` from `currentProcessTemplate`: find stage where `stage.id === currentProcessTemplate.starting_stage_id` (mirror `createProjectAndAutoStart` lines 790-796); read `firstStageCeiling` from success `stageCeilings[firstStageSlug]` when finite non-negative. **Fail closed:** when `defaultModelCount >= 1`, do not call `createProjectAndAutoStart` when result is `null`, `'error' in result`, `firstStageCeiling` is not finite, or `Number(walletBalance) < firstStageCeiling` — toast with pass-through `error.message` on error branch, fixed copy on null branch (e.g. "No cost estimate yet. Set the output cap in Model Settings, then try again."), fixed copy on NSF branch (e.g. "Insufficient tokens for auto-start. Top up your wallet to continue."). No fallback to `minimum_balance`.
+      * `[✅]`   Functional goal (payload): when guards pass, set `processTemplateId` from `selectedDomainProcessAssociation.process_template_id` on `CreateProjectAndAutoStartPayload` alongside existing fields; call `createProjectAndAutoStart`. When `selectedDomain` is `null` or id missing, keep existing toast "No domain available…" and return without association fetch or create.
+      * `[✅]`   Each goal is atomic and testable.
+
+    * `[✅]`   `role`
+      * `[✅]`   UI component — chat toolbar control that creates a dialectic project from selected messages and may trigger autostart generation spend.
+      * `[✅]`   This node orchestrates the pre-project call chain documented in `dialecticStore` `interaction.spec` at click time (`fetchProcessAssociation` → `fetchProcessTemplate` / `fetchStageExpectedCounts` → `selectPreProjectCostCeiling` fail-safe gate → `createProjectAndAutoStart` with `processTemplateId`). It does NOT implement store actions, selector arithmetic, or BE handlers.
+      * `[✅]`   Out of scope: cost preview markup (form owns preview copy); Autostart/mode UI; `createDialecticProject` manual path; `setSelectedDomain` / domain-picker UX; post-project `selectCostCeiling`.
+
+    * `[✅]`   `module`
+      * `[✅]`   Bounded context: `apps/web/src/components/ai` — `CreateProjectFromChatButton`.
+      * `[✅]`   Inside: click-time domain resolution, association/template/counts orchestration for autostart spend path, three-way `selectPreProjectCostCeiling` branching, wallet fail-safe gate, `processTemplateId` on payload, chat pre-project stack integration test.
+      * `[✅]`   Outside: `computeCostCeiling` implementation body, store action implementations, API transport handlers, association SQL, `createProjectAndAutoStart` FormData append.
+
+    * `[✅]`   `deps`
+      * `[✅]`   `fetchDomains`, `fetchProcessAssociation`, `fetchProcessTemplate`, `fetchStageExpectedCounts`, `fetchAIModelCatalog`, `createProjectAndAutoStart` — provider: `@paynless/store` (`dialecticStore.ts` node + existing actions); layer: store actions; direction: inward.
+      * `[✅]`   `selectSelectedDomain`, `selectDomains`, `selectDefaultGenerationModels`, `selectPreProjectCostCeiling` — provider: `@paynless/store` (`dialecticStore.selectors.ts` node); layer: selectors; direction: inward; purpose: domain resolution, default model count, `ComputeCostCeilingReturn | null`.
+      * `[✅]`   `selectedDomainProcessAssociation`, `currentProcessTemplate`, `maxOutputTokens`, `modelCatalog`, `isLoadingModelCatalog` — provider: `@paynless/store` `DialecticStateValues`; direction: inward; purpose: orchestration gates and selector prerequisites (`maxOutputTokens` must be finite for success estimate — chat reads store value set elsewhere, e.g. OutputCapSlider on a prior dialectic visit; when `null`, selector returns `null` and click gate fail-closes).
+      * `[✅]`   `selectActiveChatWalletInfo`, `useWalletStore` — provider: `@paynless/store`; layer: store; direction: inward; purpose: wallet balance for NSF gate (`useAiStore().newChatContext` pattern — same as `useStartContributionGeneration`).
+      * `[✅]`   `ComputeCostCeilingReturn`, `ComputeCostCeilingStageInput`, `computeCostCeiling`, `buildComputeCostCeilingDeps`, `buildComputeCostCeilingParams`, `buildComputeCostCeilingPayload` — provider: `@paynless/utils` (`computeCostCeiling.provides.ts`); layer: domain utility; direction: inward; purpose: integration test hand-check expected `firstStageCeiling` / `projectCeiling` via mean-rate payload (`outputTokenCostRates[]`, per-stage `contributions: []` on pre-project path; component does not import `computeCostCeiling` directly).
+      * `[✅]`   `DialecticDomainRow`, `DomainProcessAssociationRow`, `CreateProjectAndAutoStartPayload`, `ApiError` — provider: `@paynless/types`; direction: inward.
+      * `[✅]`   `GetStageExpectedCountsResponse` — provider: `@paynless/types`; direction: inward; purpose: integration MSW fixtures.
+      * `[✅]`   `useAiStore` selectors, `formatChatMessagesAsPrompt`, `useNavigate`, `toast` — existing; unchanged.
+      * `[✅]`   `@paynless/api` client + MSW `server` from `packages/api/src/setupTests` — integration test only; mocks at API transport edge.
+      * `[✅]`   HARD dependency: `CreateDialecticProjectForm` node (establishes pre-project orchestration contract), `dialecticStore.selectors` node (`selectPreProjectCostCeiling`, `ComputeCostCeilingReturn | null`), `dialecticStore.ts` node (association + counts actions), `computeCostCeiling` node, `dialectic.api` node, `createProject` BE node. Precedes commit node below.
+      * `[✅]`   No reverse dependencies.
+
+    * `[✅]`   `context_slice`
+      * `[✅]`   After `fetchDomains` (if `domains.length === 0`), re-read `selectedDomain: DialecticDomainRow | null = selectSelectedDomain(useDialecticStore.getState())`.
+      * `[✅]`   `processTemplateId` (pre-project SSOT) = `selectedDomainProcessAssociation?.process_template_id` after `fetchProcessAssociation` — non-empty string only.
+      * `[✅]`   `defaultModelCount` = unique id count from `selectDefaultGenerationModels(state)` after catalog ready.
+      * `[✅]`   `firstStageSlug` = slug of template stage where `stage.id === currentProcessTemplate.starting_stage_id` after `fetchProcessTemplate`.
+      * `[✅]`   `preProjectCostCeilingResult: ComputeCostCeilingReturn | null` = `selectPreProjectCostCeiling(state)` after counts orchestration; branch null / error / success before calling `createProjectAndAutoStart` when `defaultModelCount >= 1`.
+      * `[✅]`   Wallet balance from `selectActiveChatWalletInfo(useWalletStore.getState(), useAiStore.getState().newChatContext)`.
+      * `[✅]`   No reads of `minimum_balance`, `default_process_template_id`, or `selectCostCeiling`.
+
+    * `[✅]`   ai/`CreateProjectFromChatButton.test.tsx`
+      * `[✅]`   Replace `DialecticDomain` imports/fixtures with full `DialecticDomainRow` literals (`created_at`, `updated_at` included). Domain fixtures carry **no** `process_template_id` / `default_process_template_id`.
+      * `[✅]`   Add `mockGeneralAssociation: DomainProcessAssociationRow` with `domain_id: generalDomain.id`, `is_default_for_domain: true`, `process_template_id: 'pt-general'`, and remaining required columns. Add `mockOtherAssociation` with `process_template_id: 'pt-other'` for multi-domain tests.
+      * `[✅]`   Extend store mock: expose `selectPreProjectCostCeiling: vi.fn<[DialecticStateValues], ComputeCostCeilingReturn | null>()` defaulting to success `{ stageCeilings: { thesis: 120000 }, projectCeiling: 350000 }` for autostart-path tests; expose `fetchProcessTemplate`, `fetchStageExpectedCounts`, `fetchAIModelCatalog` via `getDialecticStoreActionMock`; seed `currentProcessTemplate` with `starting_stage_id` pointing at stage slug `thesis` in cost-gate tests. Import `ComputeCostCeilingReturn`, `buildComputeCostCeilingErrorReturn` from `@paynless/utils`.
+      * `[✅]`   Wire `fetchProcessAssociation` mock: default sets `selectedDomainProcessAssociation` matching payload `domainId`.
+      * `[✅]`   Seed happy-path autostart tests: `modelCatalog` with at least one `is_default_generation: true` row, `maxOutputTokens` finite, wallet balance ≥ mocked `firstStageCeiling`, `selectPreProjectCostCeiling` success mock.
+      * `[✅]`   Update every successful `createProjectAndAutoStart` payload assertion to include `processTemplateId: 'pt-general'` (or matching fixture id).
+      * `[✅]`   Add test: `fetchProcessAssociation` called with `{ domainId: generalDomain.id }` on click (`waitFor`).
+      * `[✅]`   Add test: when `defaultModelCount >= 1`, `fetchProcessTemplate` called with association `process_template_id` and `fetchStageExpectedCounts` called with `{ processTemplateId, modelCount: defaultModelCount }` (`waitFor`).
+      * `[✅]`   Add test: association null after fetch → no `createProjectAndAutoStart`; `toast.error`.
+      * `[✅]`   Add test: `selectPreProjectCostCeiling` returns `null` with defaults present → no `createProjectAndAutoStart`; `toast.error` with no-estimate copy.
+      * `[✅]`   Add test: `selectPreProjectCostCeiling` returns `buildComputeCostCeilingErrorReturn(...)` → no create; `toast.error` with pass-through `error.message`.
+      * `[✅]`   Add test: success estimate but wallet below `firstStageCeiling` → no create; NSF toast.
+      * `[✅]`   Add test: `defaultModelCount === 0` (no default generation models) → `createProjectAndAutoStart` still called with `processTemplateId` when association valid; `fetchStageExpectedCounts` **not** called; ceiling gate skipped.
+      * `[✅]`   Preserve existing tests (disabled states, navigation, idempotency keys, API error toast, does not call `createDialecticProject`). New/updated cases appended.
+
+    * `[✅]`   ai/`CreateProjectFromChatButton.tsx`
+      * `[✅]`   Add imports: `DialecticDomainRow`, `ApiError` from `@paynless/types`; `ComputeCostCeilingReturn` from `@paynless/utils`; `selectDefaultGenerationModels`, `selectPreProjectCostCeiling`, `selectActiveChatWalletInfo`, `useWalletStore` from `@paynless/store`.
+      * `[✅]`   Store action subscriptions: `fetchProcessAssociation`, `fetchProcessTemplate`, `fetchStageExpectedCounts`, `fetchAIModelCatalog` (besides existing `fetchDomains`, `createProjectAndAutoStart`).
+      * `[✅]`   In `handleClick` after `fetchDomains` block: read `selectedDomain: DialecticDomainRow | null = selectSelectedDomain(useDialecticStore.getState())`; if `selectedDomain?.id` undefined, existing toast and return.
+      * `[✅]`   `await fetchProcessAssociation({ domainId: selectedDomain.id })`; read association; if `process_template_id` not non-empty string, toast and return.
+      * `[✅]`   If `modelCatalog.length === 0 && !isLoadingModelCatalog`, `await fetchAIModelCatalog()`.
+      * `[✅]`   `const defaultModelCount = new Set(selectDefaultGenerationModels(useDialecticStore.getState()).map((m) => m.id)).size`.
+      * `[✅]`   When `defaultModelCount >= 1`: `await fetchProcessTemplate(processTemplateId)`; `await fetchStageExpectedCounts({ processTemplateId, modelCount: defaultModelCount })`; read `const preProjectCostCeilingResult: ComputeCostCeilingReturn | null = selectPreProjectCostCeiling(useDialecticStore.getState())`.
+      * `[✅]`   When `defaultModelCount >= 1`: if `preProjectCostCeilingResult === null`, toast no-estimate copy and return; if `'error' in preProjectCostCeilingResult`, toast `preProjectCostCeilingResult.error.message` and return; resolve `firstStageSlug` from `currentProcessTemplate` starting stage; read `firstStageCeiling` from success `stageCeilings[firstStageSlug]`; if not finite or wallet `< firstStageCeiling`, toast NSF copy and return.
+      * `[✅]`   Build payload with `processTemplateId` added to existing fields; call `createProjectAndAutoStart` (existing try/navigate unchanged).
+      * `[✅]`   No reads of `default_process_template_id` or `minimum_balance`.
+
+    * `[✅]`   ai/`CreateProjectFromChatButton.costCeiling.integration.test.tsx`
+      * `[✅]`   **Approved integration boundary:** MSW mocks at API transport only (mirror `CreateDialecticProjectForm.costCeiling.integration.test.tsx` and `packages/api/src/dialectic.api.integration.test.ts` — `initializeApiClient`, `server.use`, handlers for `fetchProcessAssociation`, `getStageExpectedCounts`, `listModelCatalog`, template fetch). Everything inward is **real**: `@paynless/api` client, real store actions (`fetchProcessAssociation`, `fetchProcessTemplate`, `fetchStageExpectedCounts`, `fetchAIModelCatalog`), real `selectPreProjectCostCeiling`, real `computeCostCeiling` (via selector). **Do not mock** `selectPreProjectCostCeiling` or `computeCostCeiling`. Mock only `createProjectAndAutoStart` (spy) to observe click outcome without full BE project creation.
+      * `[✅]`   Harness: `MemoryRouter`; real `useDialecticStore` / `useWalletStore` wired with MSW-backed API (same pattern as form integration test). Seed `useAiStore` selection state (`selectCurrentChatSelectionState` → `'some'`, selected messages non-empty). Import `computeCostCeiling`, `buildComputeCostCeilingDeps`, `buildComputeCostCeilingParams`, `buildComputeCostCeilingPayload`, `ComputeCostCeilingStageInput` from `@paynless/utils` for hand-check expected `firstStageCeiling` / `projectCeiling`.
+      * `[✅]`   Shared fixture constants: duplicate in-file the same `domainId`, `processTemplateId`, `firstStageSlug: 'thesis'`, `defaultModelCount: 1`, `maxOutputTokens`, `output_token_cost_rate`, and `GetStageExpectedCountsResponse` counts as `CreateDialecticProjectForm.costCeiling.integration.test.tsx` (do not import from form test). Derive `outputTokenCostRates: number[]` — one `output_token_cost_rate` per default-generation model on seeded catalog (single-model fixtures: `[rate]`; two-model mean-rate anchor: `[2, 3]` with `expectedCount: 4`, `maxOutputTokens: 1000` → `expectedFirstStageCeiling === 10000`). Build `stages: ComputeCostCeilingStageInput[]` from response counts: for each stage slug, `{ stageSlug, expectedCount, contributions: [] }`. Compute `expectedFirstStageCeiling` and `expectedProjectCeiling` via real `computeCostCeiling(buildComputeCostCeilingDeps(), buildComputeCostCeilingParams(), buildComputeCostCeilingPayload({ stages, maxOutputTokens, outputTokenCostRates }))` — assert `'error' not in result` in fixture setup; first-stage ceiling must equal `expectedCount(firstStageSlug) × maxOutputTokens × (sum(outputTokenCostRates) / outputTokenCostRates.length)` (mean rate — not max across models).
+      * `[✅]`   MSW handlers (success path): full `DomainProcessAssociationRow`; `getStageExpectedCounts` success; `listModelCatalog` with one `is_default_generation: true` row carrying full `AiModelExtendedConfig`; template fetch hydrates `starting_stage_id` → `thesis`.
+      * `[✅]`   Test (success stack + afford autostart): seed `selectedDomain`, finite `maxOutputTokens`, wallet **above** hand-computed `expectedFirstStageCeiling`; click button → `waitFor` `createProjectAndAutoStart` called once with `processTemplateId` from association row. Proves API → store → selector → `computeCostCeiling` → click gate allows spend.
+      * `[✅]`   Test (null prerequisites — fail closed): success MSW handlers but seed `maxOutputTokens: null` before click → `createProjectAndAutoStart` **not** called; `toast.error` invoked (no mocked selector).
+      * `[✅]`   Test (API counts error — fail closed): MSW `getStageExpectedCounts` returns 500 → click → `createProjectAndAutoStart` not called; document observed store path in test comment.
+      * `[✅]`   Test (insufficient wallet — fail closed): success stack; wallet **below** `expectedFirstStageCeiling` → click → `createProjectAndAutoStart` not called; NSF toast. One behavior per test; appended at end of file.
+
+    * `[✅]`   `directionality`
+      * `[✅]`   Layer: UI component + chat pre-project epic integration boundary.
+      * `[✅]`   Deps: inward (store actions, `selectPreProjectCostCeiling` `ComputeCostCeilingReturn | null`, wallet/ai stores, API via store).
+      * `[✅]`   Provides: outward (fail-safe chat create+autostart spend gate, **proof that API → store → selector → computeCostCeiling → click guard → createProjectAndAutoStart works** for success / null / error / NSF paths).
+      * `[✅]`   No cycles.
+
+    * `[✅]`   `requirements`
+      * `[✅]`   `minimum_balance`, `default_process_template_id`, `project_ceiling`, `stage_ceiling`, `maxOutputCostRate`, and `actualCost` do not appear in `CreateProjectFromChatButton.tsx` or its unit/integration tests. Observable: grep.
+      * `[✅]`   `fetchProcessAssociation` invoked with `{ domainId: selectedDomain.id }` before create when domain selected. Observable: unit + integration tests.
+      * `[✅]`   When `defaultModelCount >= 1`, `fetchProcessTemplate` and `fetchStageExpectedCounts` invoked with association `process_template_id` before ceiling read. Observable: unit test + integration test.
+      * `[✅]`   Every successful `createProjectAndAutoStart` call includes `processTemplateId` equal to association row. Observable: unit + integration tests.
+      * `[✅]`   When `defaultModelCount >= 1` and `selectPreProjectCostCeiling` returns `null`, click does not call `createProjectAndAutoStart`. Observable: unit + integration tests.
+      * `[✅]`   When `defaultModelCount >= 1` and selector returns `{ error: ApiError }`, click does not call `createProjectAndAutoStart`; toast shows pass-through message. Observable: unit test.
+      * `[✅]`   When `defaultModelCount >= 1`, success estimate, and wallet `< firstStageCeiling`, click does not call `createProjectAndAutoStart`. Observable: unit + integration tests.
+      * `[✅]`   When `defaultModelCount === 0`, create may proceed with `processTemplateId` without counts fetch or ceiling gate. Observable: unit test.
+      * `[✅]`   Integration test exercises real `selectPreProjectCostCeiling` and real store fetch actions with MSW at API edge only. Observable: `CreateProjectFromChatButton.costCeiling.integration.test.tsx` success + null + NSF cases green.
+      * `[✅]`   Integration fixture hand-check uses `outputTokenCostRates[]` and per-stage `contributions: []` — no `maxOutputCostRate`, no `actualCost` on stage input. Observable: grep checklist node + `CreateProjectFromChatButton.costCeiling.integration.test.tsx`.
+      * `[✅]`   Existing navigation, disabled, and idempotency unit tests remain green.
+
+    * `[✅]`   **Commit** `feat(dialectic): dynamic cost ceiling — FE estimate utility, selectors, and consumers`
+      * `[✅]`   Structural: `computeCostCeiling` + owned contract types in `computeCostCeiling.interface.ts`; `stageExpectedCountsByRun` / `preProjectStageExpectedCounts` store state; `selectCostCeiling` / `selectPreProjectCostCeiling`; BE count core + session-less handler + API client (Groups 1–4 nodes).
+      * `[✅]`   Behavioral: post-project ceilings drive NSF gate (`useStartContributionGeneration`, `GenerateContributionButton`); session header shows project/stage estimates (`SessionInfoCard`); create form and chat button gate autostart spend on first-stage ceiling from `selectPreProjectCostCeiling`; estimates recompute with model/cap changes; no `minimum_balance` preventive gates in Group 5 consumers.
+      * `[✅]`   Contract: selectors assemble payload, call `computeCostCeiling`, return result unchanged (`ComputeCostCeilingReturn | null`); `null` only for incomplete prerequisites; `'error' in result` fail-closes spend at all three entry points; pre-project counts via `getStageExpectedCounts`; subscription cart prefill explicitly deferred to next ticket.
 
 * **Subscription checkout deep links — prepopulate cart from upgrade and top-up CTAs**
 

@@ -10,13 +10,16 @@ import {
   selectSelectedModels,
   selectActiveChatWalletInfo,
   selectSortedStages,
+  selectCostCeiling,
 } from "@paynless/store";
 import {
+  type ApiError,
   type DialecticSession,
   type GenerateContributionsPayload,
   type StartContributionGenerationResult,
   type UseStartContributionGenerationReturn,
 } from "@paynless/types";
+import { type ComputeCostCeilingReturn } from "@paynless/utils";
 import { toast } from "sonner";
 
 const GENERATION_STARTED_DESCRIPTION =
@@ -130,16 +133,71 @@ export function useStartContributionGeneration(): UseStartContributionGeneration
   const hasPausedNsfJobs = viewingStageProgress?.stageStatus === "paused_nsf";
   const hasPausedUserJobs = viewingStageProgress?.stageStatus === "paused_user";
 
-  const stageThreshold: number | undefined = useMemo(() => {
-    if (!viewingStage) return undefined;
-    return viewingStage.minimum_balance;
-  }, [viewingStage]);
+  const costCeilingResult: ComputeCostCeilingReturn | null = useDialecticStore(
+    (state) => {
+      const sid = state.activeContextSessionId;
+      if (sid === null) return null;
+      return selectCostCeiling(state, sid);
+    },
+  );
+
+  const costCeilingError: ApiError | null = useMemo(() => {
+    if (costCeilingResult !== null && "error" in costCeilingResult) {
+      return costCeilingResult.error;
+    }
+    return null;
+  }, [costCeilingResult]);
+
+  const stageCeiling: number | null = useMemo(() => {
+    if (
+      costCeilingResult === null ||
+      "error" in costCeilingResult ||
+      viewingStage === null
+    ) {
+      return null;
+    }
+    const ceiling = costCeilingResult.stageCeilings[viewingStage.slug];
+    if (typeof ceiling !== "number" || !Number.isFinite(ceiling) || ceiling < 0) {
+      return null;
+    }
+    return ceiling;
+  }, [costCeilingResult, viewingStage]);
+
+  const projectCeiling: number | null = useMemo(() => {
+    if (costCeilingResult === null || "error" in costCeilingResult) {
+      return null;
+    }
+    const ceiling = costCeilingResult.projectCeiling;
+    if (typeof ceiling !== "number" || !Number.isFinite(ceiling) || ceiling < 0) {
+      return null;
+    }
+    return ceiling;
+  }, [costCeilingResult]);
+
+  const isCostEstimateKnown: boolean = useMemo(() => {
+    return stageCeiling !== null;
+  }, [stageCeiling]);
 
   const balanceMeetsThreshold = useMemo((): boolean => {
-    if (stageThreshold === undefined) return false;
+    if (!isCostEstimateKnown || stageCeiling === null) return false;
     const balanceNum = Number(activeWalletInfo.balance);
-    return !Number.isNaN(balanceNum) && balanceNum >= stageThreshold;
-  }, [stageThreshold, activeWalletInfo.balance]);
+    return !Number.isNaN(balanceNum) && balanceNum >= stageCeiling;
+  }, [isCostEstimateKnown, stageCeiling, activeWalletInfo.balance]);
+
+  const stageBalanceShortfall: number | null = useMemo(() => {
+    if (!isCostEstimateKnown || stageCeiling === null) return null;
+    const balanceNum = Number(activeWalletInfo.balance);
+    if (Number.isNaN(balanceNum) || balanceNum >= stageCeiling) return null;
+    return stageCeiling - balanceNum;
+  }, [isCostEstimateKnown, stageCeiling, activeWalletInfo.balance]);
+
+  const showCostEstimateBlocked: boolean = useMemo(() => {
+    return viewingStage != null && !isCostEstimateKnown;
+  }, [viewingStage, isCostEstimateKnown]);
+
+  const showStageCostEstimate: boolean = useMemo(() => {
+    return isCostEstimateKnown && balanceMeetsThreshold;
+  }, [isCostEstimateKnown, balanceMeetsThreshold]);
 
   const isResumeMode = (hasPausedNsfJobs && balanceMeetsThreshold) || hasPausedUserJobs;
   const isPauseMode = isSessionGenerating;
@@ -171,9 +229,7 @@ export function useStartContributionGeneration(): UseStartContributionGeneration
     isViewingAheadOfCurrentStage;
 
   const showBalanceCallout =
-    viewingStage != null &&
-    stageThreshold !== undefined &&
-    !balanceMeetsThreshold;
+    viewingStage != null && !balanceMeetsThreshold;
 
   const startContributionGeneration = useCallback(
     async (
@@ -230,15 +286,39 @@ export function useStartContributionGeneration(): UseStartContributionGeneration
       }
 
       const iterationNumber = activeSession.iteration_count;
+      const costCeilingResult = selectCostCeiling(state, activeContextSessionId);
+      if (costCeilingResult === null) {
+        const error = "Cost estimate is not available.";
+        toast.error(error);
+        return { success: false, error };
+      }
+      if ("error" in costCeilingResult) {
+        toast.error(costCeilingResult.error.message);
+        return { success: false, error: costCeilingResult.error.message };
+      }
+      const stageCeilingValue = costCeilingResult.stageCeilings[viewingStage.slug];
+      if (
+        typeof stageCeilingValue !== "number" ||
+        !Number.isFinite(stageCeilingValue) ||
+        stageCeilingValue < 0
+      ) {
+        const error = "Cost estimate is invalid.";
+        toast.error(error);
+        return { success: false, error };
+      }
+      const balanceNum = Number(activeWalletInfo.balance);
+      if (Number.isNaN(balanceNum) || balanceNum < stageCeilingValue) {
+        const error = "Insufficient wallet balance for this stage.";
+        toast.error(error);
+        return { success: false, error };
+      }
+      const balanceMeetsThreshold = true;
       const unifiedProgress = selectUnifiedProjectProgress(state, activeContextSessionId);
       const viewingStageProgress = unifiedProgress?.stageDetails?.find(
         (s) => s.stageSlug === viewingStage.slug,
       );
       const hasPausedNsfJobs = viewingStageProgress?.stageStatus === "paused_nsf";
       const hasPausedUserJobs = viewingStageProgress?.stageStatus === "paused_user";
-      const balanceNum = Number(activeWalletInfo.balance);
-      const balanceMeetsThreshold =
-        !Number.isNaN(balanceNum) && balanceNum >= viewingStage.minimum_balance;
       const isResumeMode =
         (hasPausedNsfJobs && balanceMeetsThreshold) || hasPausedUserJobs;
 
@@ -324,7 +404,13 @@ export function useStartContributionGeneration(): UseStartContributionGeneration
     showBalanceCallout,
     viewingStage,
     activeSession,
-    stageThreshold,
+    stageCeiling,
+    projectCeiling,
+    stageBalanceShortfall,
+    costCeilingError,
+    isCostEstimateKnown,
+    showCostEstimateBlocked,
+    showStageCostEstimate,
     isViewingAheadOfCurrentStage,
     viewingAheadReason,
   };

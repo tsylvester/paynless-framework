@@ -18,7 +18,9 @@ import {
   type SaveContributionEditPayload,
   type SaveContributionEditSuccessResponse,
   type DialecticContribution,
-  type DialecticDomain,
+  type DialecticDomainRow,
+  type FetchProcessAssociationPayload,
+  type GetStageExpectedCountsPayload,
   type UpdateSessionModelsPayload,
   type UpdateViewingStageDeps,
   type UpdateViewingStageParams,
@@ -69,7 +71,13 @@ import { useWalletStore } from './walletStore';
 import { useAiStore } from './aiStore';
 import { selectActiveChatWalletInfo } from './walletStore.selectors';
 import { selectDefaultGenerationModels, selectSelectedModels } from './dialecticStore.selectors';
-import { isAssembledPrompt, logger } from '@paynless/utils';
+import {
+  isAssembledPrompt,
+  logger,
+  isDialecticDomainRow,
+  isDomainProcessAssociationRow,
+  isGetStageExpectedCountsResponse,
+} from '@paynless/utils';
 import {
 	ensureStageDocumentContentLogic,
 	type EnsureStageDocumentContentSeed,
@@ -114,6 +122,9 @@ export const initialDialecticStateValues: DialecticStateValues = {
 	isLoadingDomains: false,
 	domainsError: null,
 	selectedDomain: null,
+	selectedDomainProcessAssociation: null,
+	isLoadingDomainProcessAssociation: false,
+	domainProcessAssociationError: null,
 
 	// New initial state for Domain Overlays
 	selectedStageAssociation: null,
@@ -207,6 +218,10 @@ export const initialDialecticStateValues: DialecticStateValues = {
 	// Recipe hydration and per-stage-run progress
 	recipesByStageSlug: {},
 	dagProgressByRun: {},
+	stageExpectedCountsByRun: {},
+	preProjectStageExpectedCounts: null,
+	isLoadingStageExpectedCounts: false,
+	stageExpectedCountsError: null,
 	stageRunProgress: {},
 	progressHydrationStatus: {},
 	progressHydrationError: {},
@@ -294,11 +309,17 @@ export const useDialecticStore = create<DialecticStore>()(
       if (response.error) {
         logger.error('[DialecticStore] Error fetching domains:', { errorDetails: response.error });
         set({ domains: [], isLoadingDomains: false, domainsError: response.error });
+      } else if (!Array.isArray(response.data) || !response.data.every(isDialecticDomainRow)) {
+        const invalidResponseError: ApiError = {
+          code: 'INVALID_RESPONSE',
+          message: 'Invalid domain row in listDomains response',
+        };
+        logger.error('[DialecticStore] Invalid domain rows in listDomains response:', { data: response.data });
+        set({ domains: [], isLoadingDomains: false, domainsError: invalidResponseError });
       } else {
-        const domains = response.data || [];
-        logger.info('[DialecticStore] Successfully fetched domains:', { domains });
+        logger.info('[DialecticStore] Successfully fetched domains:', { domains: response.data });
         set({
-          domains,
+          domains: response.data,
           isLoadingDomains: false,
           domainsError: null,
         });
@@ -313,9 +334,160 @@ export const useDialecticStore = create<DialecticStore>()(
     }
   },
 
-	setSelectedDomain: (domain: DialecticDomain | null) => {
+	setSelectedDomain: (domain: DialecticDomainRow | null) => {
 		logger.info("[DialecticStore] Setting selected domain", { domain });
-		set({ selectedDomain: domain });
+		set({
+			selectedDomain: domain,
+			selectedDomainProcessAssociation: null,
+			domainProcessAssociationError: null,
+			isLoadingDomainProcessAssociation: false,
+			preProjectStageExpectedCounts: null,
+			stageExpectedCountsError: null,
+			isLoadingStageExpectedCounts: false,
+		});
+	},
+
+	fetchProcessAssociation: async (payload: FetchProcessAssociationPayload) => {
+		set({ isLoadingDomainProcessAssociation: true, domainProcessAssociationError: null });
+		logger.info('[DialecticStore] Fetching process association...', { payload });
+		try {
+			const response = await api.dialectic().fetchProcessAssociation(payload);
+			if (response.error) {
+				logger.error('[DialecticStore] Error fetching process association', {
+					payload,
+					error: response.error,
+				});
+				set({
+					isLoadingDomainProcessAssociation: false,
+					selectedDomainProcessAssociation: null,
+					domainProcessAssociationError: response.error,
+				});
+			} else {
+				const association = response.data;
+				if (
+					!isDomainProcessAssociationRow(association)
+					|| association.domain_id !== payload.domainId
+				) {
+					const invalidResponseError: ApiError = {
+						code: 'INVALID_RESPONSE',
+						message: 'Invalid process association row in fetchProcessAssociation response',
+					};
+					logger.error('[DialecticStore] Invalid process association row', {
+						payload,
+						association,
+					});
+					set({
+						isLoadingDomainProcessAssociation: false,
+						selectedDomainProcessAssociation: null,
+						domainProcessAssociationError: invalidResponseError,
+					});
+				} else {
+					logger.info('[DialecticStore] Successfully fetched process association', {
+						payload,
+						association,
+					});
+					set({
+						isLoadingDomainProcessAssociation: false,
+						selectedDomainProcessAssociation: association,
+						domainProcessAssociationError: null,
+					});
+				}
+			}
+		} catch (error: unknown) {
+			const networkError: ApiError = {
+				message:
+					error instanceof Error
+						? error.message
+						: 'An unknown network error occurred while fetching process association',
+				code: 'NETWORK_ERROR',
+			};
+			logger.error('[DialecticStore] Network error fetching process association:', {
+				payload,
+				errorDetails: networkError,
+			});
+			set({
+				isLoadingDomainProcessAssociation: false,
+				selectedDomainProcessAssociation: null,
+				domainProcessAssociationError: networkError,
+			});
+		}
+	},
+
+	fetchStageExpectedCounts: async (payload: GetStageExpectedCountsPayload) => {
+		set({ isLoadingStageExpectedCounts: true, stageExpectedCountsError: null });
+		logger.info('[DialecticStore] Fetching stage expected counts...', { payload });
+		try {
+			const response = await api.dialectic().getStageExpectedCounts(payload);
+			if (response.error) {
+				logger.error('[DialecticStore] Error fetching stage expected counts', {
+					payload,
+					error: response.error,
+				});
+				set({
+					isLoadingStageExpectedCounts: false,
+					preProjectStageExpectedCounts: null,
+					stageExpectedCountsError: response.error,
+				});
+			} else if (!isGetStageExpectedCountsResponse(response.data)) {
+				const invalidResponseError: ApiError = {
+					code: 'INVALID_RESPONSE',
+					message: 'Invalid stage expected counts response',
+				};
+				logger.error('[DialecticStore] Invalid stage expected counts response', {
+					payload,
+					data: response.data,
+				});
+				set({
+					isLoadingStageExpectedCounts: false,
+					preProjectStageExpectedCounts: null,
+					stageExpectedCountsError: invalidResponseError,
+				});
+			} else {
+				logger.info('[DialecticStore] Successfully fetched stage expected counts', {
+					payload,
+					stages: response.data.stages,
+				});
+				set({
+					isLoadingStageExpectedCounts: false,
+					preProjectStageExpectedCounts: response.data.stages,
+					stageExpectedCountsError: null,
+				});
+			}
+		} catch (error: unknown) {
+			const networkError: ApiError = {
+				message:
+					error instanceof Error
+						? error.message
+						: 'An unknown network error occurred while fetching stage expected counts',
+				code: 'NETWORK_ERROR',
+			};
+			logger.error('[DialecticStore] Network error fetching stage expected counts:', {
+				payload,
+				errorDetails: networkError,
+			});
+			set({
+				isLoadingStageExpectedCounts: false,
+				preProjectStageExpectedCounts: null,
+				stageExpectedCountsError: networkError,
+			});
+		}
+	},
+
+	fetchAvailableDomainOverlays: async (stageAssociation: DialecticStage) => {
+		set({
+			isLoadingDomainOverlays: true,
+			domainOverlaysError: null,
+			availableDomainOverlays: [],
+			selectedStageAssociation: stageAssociation,
+		});
+		logger.info(
+			`[DialecticStore] Domain overlay catalog unavailable; clearing overlays for stage: ${stageAssociation.slug}`,
+		);
+		set({
+			availableDomainOverlays: [],
+			isLoadingDomainOverlays: false,
+			domainOverlaysError: null,
+		});
 	},
 
 	setSelectedDomainOverlayId: (id: string | null) => {
@@ -618,7 +790,8 @@ export const useDialecticStore = create<DialecticStore>()(
     formData.append('action', 'createProject');
     formData.append('projectName', payload.projectName);
     formData.append('selectedDomainId', payload.selectedDomainId);
-    
+    formData.append('processTemplateId', payload.processTemplateId);
+
     if (payload.initialUserPrompt) {
         formData.append('initialUserPromptText', payload.initialUserPrompt);
     }
@@ -1182,32 +1355,30 @@ export const useDialecticStore = create<DialecticStore>()(
       } else {
         logger.info('[DialecticStore] Successfully updated session models:', { sessionId: payload.sessionId, updatedSession: response.data });
         const updatedSessionFromApi = response.data;
-        set(state => {
-          let newCurrentProjectDetail = state.currentProjectDetail;
-          if (state.currentProjectDetail && state.currentProjectDetail.dialectic_sessions) {
-            const sessionIndex = state.currentProjectDetail.dialectic_sessions.findIndex(
-              s => s.id === updatedSessionFromApi.id
-            );
-            if (sessionIndex !== -1) {
-              const newSessions = [...state.currentProjectDetail.dialectic_sessions];
-              // Merge: keep existing fields, overwrite with new ones from updatedSessionFromApi
-              newSessions[sessionIndex] = {
-                ...newSessions[sessionIndex],
-                ...updatedSessionFromApi,
-              };
-              newCurrentProjectDetail = {
-                ...state.currentProjectDetail,
-                dialectic_sessions: newSessions,
-              };
-            }
+        const storeState = get();
+        let newCurrentProjectDetail: DialecticProject | null = storeState.currentProjectDetail;
+        if (storeState.currentProjectDetail?.dialectic_sessions) {
+          const sessionIndex = storeState.currentProjectDetail.dialectic_sessions.findIndex(
+            s => s.id === updatedSessionFromApi.id
+          );
+          if (sessionIndex !== -1) {
+            const newSessions = [...storeState.currentProjectDetail.dialectic_sessions];
+            newSessions[sessionIndex] = {
+              ...newSessions[sessionIndex],
+              ...updatedSessionFromApi,
+            };
+            newCurrentProjectDetail = {
+              ...storeState.currentProjectDetail,
+              dialectic_sessions: newSessions,
+            };
           }
-          const models = updatedSessionFromApi.selected_models;
-          return {
-            currentProjectDetail: newCurrentProjectDetail,
-            selectedModels: models,
-            isUpdatingSessionModels: false,
-            updateSessionModelsError: null,
-          };
+        }
+        const models: SelectedModels[] = updatedSessionFromApi.selected_models;
+        set({
+          currentProjectDetail: newCurrentProjectDetail,
+          selectedModels: models,
+          isUpdatingSessionModels: false,
+          updateSessionModelsError: null,
         });
         return { data: updatedSessionFromApi, status: response.status || 200 };
       }
@@ -2645,55 +2816,56 @@ export const useDialecticStore = create<DialecticStore>()(
 					const viewingMatchedLogical: boolean =
 						oldViewingStageId !== null && oldViewingStageId === oldCurrentStageId;
 
-					set((s) => {
-						let newCurrentProjectDetail = s.currentProjectDetail;
-						let newActiveSessionDetail = s.activeSessionDetail;
-						if (!s.currentProjectDetail?.dialectic_sessions) {
-							return {
-								isSubmittingStageResponses: false,
-								submitStageResponsesError: null,
-							};
-						}
-						const sessionIndex = s.currentProjectDetail.dialectic_sessions.findIndex(
+					const currentProjectDetail = state.currentProjectDetail;
+					if (!currentProjectDetail?.dialectic_sessions) {
+						set({
+							isSubmittingStageResponses: false,
+							submitStageResponsesError: null,
+						});
+					} else {
+						const sessionIndex = currentProjectDetail.dialectic_sessions.findIndex(
 							(entry) => entry.id === updatedSession.id,
 						);
 						if (sessionIndex === -1) {
-							return {
+							set({
 								isSubmittingStageResponses: false,
 								submitStageResponsesError: null,
+							});
+						} else {
+							const newSessions = [...currentProjectDetail.dialectic_sessions];
+							const existing = newSessions[sessionIndex];
+							let mergedSession: DialecticSession = {
+								...existing,
+								...updatedSession,
 							};
-						}
-						const newSessions = [...s.currentProjectDetail.dialectic_sessions];
-						const existing = newSessions[sessionIndex];
-						let mergedSession: DialecticSession = {
-							...existing,
-							...updatedSession,
-						};
-						if (
-							viewingMatchedLogical &&
-							updatedSession.current_stage_id !== null &&
-							updatedSession.current_stage_id !== undefined
-						) {
-							mergedSession = {
-								...mergedSession,
-								viewing_stage_id: updatedSession.current_stage_id,
+							if (
+								viewingMatchedLogical &&
+								updatedSession.current_stage_id !== null &&
+								updatedSession.current_stage_id !== undefined
+							) {
+								mergedSession = {
+									...mergedSession,
+									viewing_stage_id: updatedSession.current_stage_id,
+								};
+							}
+							newSessions[sessionIndex] = mergedSession;
+							const newCurrentProjectDetail: DialecticProject = {
+								...currentProjectDetail,
+								dialectic_sessions: newSessions,
 							};
+							let newActiveSessionDetail: DialecticSession | null =
+								state.activeSessionDetail;
+							if (state.activeSessionDetail?.id === updatedSession.id) {
+								newActiveSessionDetail = mergedSession;
+							}
+							set({
+								currentProjectDetail: newCurrentProjectDetail,
+								activeSessionDetail: newActiveSessionDetail,
+								isSubmittingStageResponses: false,
+								submitStageResponsesError: null,
+							});
 						}
-						newSessions[sessionIndex] = mergedSession;
-						newCurrentProjectDetail = {
-							...s.currentProjectDetail,
-							dialectic_sessions: newSessions,
-						};
-						if (s.activeSessionDetail?.id === updatedSession.id) {
-							newActiveSessionDetail = mergedSession;
-						}
-						return {
-							currentProjectDetail: newCurrentProjectDetail,
-							activeSessionDetail: newActiveSessionDetail,
-							isSubmittingStageResponses: false,
-							submitStageResponsesError: null,
-						};
-					});
+					}
 
 					const template = get().currentProcessTemplate;
 					const stageForCurrent =
@@ -2922,42 +3094,54 @@ export const useDialecticStore = create<DialecticStore>()(
 				},
 			);
 
-      set((state) => {
-        if (!state.activeSeedPrompt && activeSeedPrompt) {
-          state.activeSeedPrompt = activeSeedPrompt;
-        }
-        let sessionWithContributions = fetchedSession; // Default to fetchedSession
+      const postFetchState = get();
+      let sessionWithContributions: DialecticSession = fetchedSession;
+      let newCurrentProjectDetail: DialecticProject | null = postFetchState.currentProjectDetail;
+      let newActiveSeedPrompt = postFetchState.activeSeedPrompt;
+      if (!postFetchState.activeSeedPrompt && activeSeedPrompt) {
+        newActiveSeedPrompt = activeSeedPrompt;
+      }
 
-        if (state.currentProjectDetail && state.currentProjectDetail.dialectic_sessions) {
-          const sessionIndex = state.currentProjectDetail.dialectic_sessions.findIndex(s => s.id === fetchedSession.id);
-          if (sessionIndex !== -1) {
-            const existingSessionData = state.currentProjectDetail.dialectic_sessions[sessionIndex];
-            const mergedSession = {
-              ...fetchedSession,
-              dialectic_contributions: fetchedSession.dialectic_contributions || existingSessionData.dialectic_contributions || [],
-              feedback: fetchedSession.feedback || existingSessionData.feedback || [],
-              dialectic_session_models: fetchedSession.dialectic_session_models || existingSessionData.dialectic_session_models || [],
-            };
-            state.currentProjectDetail.dialectic_sessions[sessionIndex] = mergedSession;
-            // After merging, this is the session we want for activeSessionDetail
-            sessionWithContributions = mergedSession; 
-          } else {
-            // Session not found in current project, add it. 
-            // Ensure the pushed session has at least an empty contributions array if not present.
-            const sessionToAdd = {
-                ...fetchedSession,
-                dialectic_contributions: fetchedSession.dialectic_contributions || [],
-                feedback: fetchedSession.feedback || [],
-                dialectic_session_models: fetchedSession.dialectic_session_models || [],
-            };
-            state.currentProjectDetail.dialectic_sessions.push(sessionToAdd);
-            sessionWithContributions = sessionToAdd;
-          }
+      if (postFetchState.currentProjectDetail?.dialectic_sessions) {
+        const sessionIndex = postFetchState.currentProjectDetail.dialectic_sessions.findIndex(
+          s => s.id === fetchedSession.id
+        );
+        if (sessionIndex !== -1) {
+          const existingSessionData = postFetchState.currentProjectDetail.dialectic_sessions[sessionIndex];
+          const mergedSession: DialecticSession = {
+            ...fetchedSession,
+            dialectic_contributions: fetchedSession.dialectic_contributions || existingSessionData.dialectic_contributions || [],
+            feedback: fetchedSession.feedback || existingSessionData.feedback || [],
+            dialectic_session_models: fetchedSession.dialectic_session_models || existingSessionData.dialectic_session_models || [],
+          };
+          const newSessions = [...postFetchState.currentProjectDetail.dialectic_sessions];
+          newSessions[sessionIndex] = mergedSession;
+          newCurrentProjectDetail = {
+            ...postFetchState.currentProjectDetail,
+            dialectic_sessions: newSessions,
+          };
+          sessionWithContributions = mergedSession;
+        } else {
+          const sessionToAdd: DialecticSession = {
+            ...fetchedSession,
+            dialectic_contributions: fetchedSession.dialectic_contributions || [],
+            feedback: fetchedSession.feedback || [],
+            dialectic_session_models: fetchedSession.dialectic_session_models || [],
+          };
+          newCurrentProjectDetail = {
+            ...postFetchState.currentProjectDetail,
+            dialectic_sessions: [...postFetchState.currentProjectDetail.dialectic_sessions, sessionToAdd],
+          };
+          sessionWithContributions = sessionToAdd;
         }
+      }
 
-        state.isLoadingActiveSessionDetail = false;
-        state.activeSessionDetailError = null;
-        state.activeSessionDetail = sessionWithContributions; // Use the potentially enriched session
+      set({
+        activeSeedPrompt: newActiveSeedPrompt,
+        currentProjectDetail: newCurrentProjectDetail,
+        isLoadingActiveSessionDetail: false,
+        activeSessionDetailError: null,
+        activeSessionDetail: sessionWithContributions,
       });
       
       // Set the active context including the stage

@@ -1841,11 +1841,21 @@ export const hydrateAllStageProgressLogic = async (
 		);
 	}
 
+	for (const entry of stages) {
+		if (!Number.isInteger(entry.expectedCount) || entry.expectedCount < 0) {
+			throw new Error(
+				`[hydrateAllStageProgress] expectedCount invalid for stage ${entry.stageSlug}; sessionId=${sessionId}, iterationNumber=${iterationNumber}`,
+			);
+		}
+	}
+
 	const runKey = `${sessionId}:${iterationNumber}`;
 
 	set((state) => {
 		state.dagProgressByRun[runKey] = dagProgress;
+		state.stageExpectedCountsByRun[runKey] = {};
 		for (const entry of stages) {
+			state.stageExpectedCountsByRun[runKey][entry.stageSlug] = entry.expectedCount;
 			const progressKey = `${sessionId}:${entry.stageSlug}:${iterationNumber}`;
 
 			if (!state.stageRunProgress[progressKey]) {

@@ -203,7 +203,13 @@ function getDefaultHookReturn(
     showBalanceCallout: false,
     viewingStage: mockThesisStage,
     activeSession: defaultSession,
-    stageThreshold: mockThesisStage.minimum_balance,
+    stageCeiling: 200000,
+    projectCeiling: 400000,
+    stageBalanceShortfall: null,
+    isCostEstimateKnown: true,
+    showCostEstimateBlocked: false,
+    costCeilingError: null,
+    showStageCostEstimate: true,
     isViewingAheadOfCurrentStage: false,
     viewingAheadReason: null,
     ...overrides,
@@ -237,13 +243,12 @@ describe('GenerateContributionButton', () => {
     vi.mocked(toast.error).mockClear();
     vi.mocked(toast.info).mockClear();
 
-    const thesisMinBalance = mockThesisStage.minimum_balance;
     vi.mocked(selectActiveChatWalletInfo).mockReturnValue({
       status: 'ok',
       type: 'personal',
       walletId: 'default-wallet-id',
       orgId: null,
-      balance: String(thesisMinBalance),
+      balance: '300000',
       isLoadingPrimaryWallet: false,
     });
   });
@@ -334,10 +339,11 @@ describe('GenerateContributionButton', () => {
 
   it('is disabled when the active stage cannot be found from the store', () => {
     mockUseStartContributionGeneration.mockReturnValue(
-      getDefaultHookReturn({ stageThreshold: undefined })
+      getDefaultHookReturn({ viewingStage: null, isDisabled: true })
     );
     renderWithRouter(<GenerateContributionButton />);
-    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    expect(screen.getByRole('button')).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Stage Not Ready/i })).toBeInTheDocument();
   });
 
   it('is disabled and shows "Choose AI Models" when no models selected, overriding "Regenerate" label', () => {
@@ -357,10 +363,15 @@ describe('GenerateContributionButton', () => {
 
   it('handles currentProjectDetail being null gracefully by being disabled', () => {
     mockUseStartContributionGeneration.mockReturnValue(
-      getDefaultHookReturn({ stageThreshold: undefined })
+      getDefaultHookReturn({
+        viewingStage: null,
+        activeSession: null,
+        isDisabled: true,
+      })
     );
     renderWithRouter(<GenerateContributionButton />);
-    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    expect(screen.getByRole('button')).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Stage Not Ready/i })).toBeInTheDocument();
   });
 
   it('is disabled when no active wallet is available', () => {
@@ -377,7 +388,6 @@ describe('GenerateContributionButton', () => {
     vi.mocked(selectIsStageReadyForSessionIteration).mockReturnValue(true);
 
     // Selector returns ok only when ctx === 'personal'; otherwise loading
-    const thesisMinBalance = mockThesisStage.minimum_balance;
     vi.mocked(selectActiveChatWalletInfo).mockImplementation((state, ctx) => {
       void state;
       if (ctx === 'personal') {
@@ -386,7 +396,7 @@ describe('GenerateContributionButton', () => {
           type: 'personal',
           walletId: 'personal-wallet',
           orgId: null,
-          balance: String(thesisMinBalance),
+          balance: '300000',
           isLoadingPrimaryWallet: false,
         };
       }
@@ -508,18 +518,37 @@ describe('GenerateContributionButton', () => {
   it('balance callout renders when showBalanceCallout is true from hook', () => {
     vi.mocked(selectIsStageReadyForSessionIteration).mockReturnValue(true);
     mockUseStartContributionGeneration.mockReturnValue(
-      getDefaultHookReturn({ showBalanceCallout: true })
+      getDefaultHookReturn({
+        isCostEstimateKnown: true,
+        showCostEstimateBlocked: false,
+        stageBalanceShortfall: 25000,
+        showBalanceCallout: true,
+        balanceMeetsThreshold: false,
+        isDisabled: true,
+      })
     );
     renderWithRouter(<GenerateContributionButton />);
-    expect(screen.getByTestId('generate-button-balance-callout')).toBeInTheDocument();
+    const callout = screen.getByTestId('generate-button-balance-callout');
+    expect(callout).toBeInTheDocument();
+    expect(callout).toHaveTextContent(/Top up/i);
+    expect(callout).toHaveTextContent(/25,000/);
+    expect(screen.queryByTestId('generate-button-no-estimate-callout')).not.toBeInTheDocument();
   });
 
-  it('component returns null when stageThreshold is falsy', () => {
+  it('renders disabled button with no-estimate callout when cost estimate is not yet available instead of returning null', () => {
     mockUseStartContributionGeneration.mockReturnValue(
-      getDefaultHookReturn({ stageThreshold: undefined })
+      getDefaultHookReturn({
+        stageCeiling: null,
+        isCostEstimateKnown: false,
+        showCostEstimateBlocked: true,
+        costCeilingError: null,
+        isDisabled: true,
+        showStageCostEstimate: false,
+      })
     );
     renderWithRouter(<GenerateContributionButton />);
-    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    expect(screen.getByRole('button')).toBeDisabled();
+    expect(screen.getByTestId('generate-button-no-estimate-callout')).toBeInTheDocument();
   });
 
   it('closes DAG progress dialog when onOpenChange(false) is called', async () => {
