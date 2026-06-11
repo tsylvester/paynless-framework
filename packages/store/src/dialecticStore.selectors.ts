@@ -39,6 +39,7 @@ import {
     ComputeCostCeilingReturn,
 } from '@paynless/utils';
 import { createSelector } from 'reselect';
+import { useAuthStore } from './authStore';
 
 // Selectors for Domains
 export const selectDomains = (state: DialecticStateValues): DialecticDomainRow[] => state.domains ?? [];
@@ -847,7 +848,16 @@ export const selectUnifiedProjectProgress = (
     }
 
     if (!session) {
-        throw new Error('[selectUnifiedProjectProgress] Session is required when stages exist');
+        return {
+            hydrationReady: false,
+            totalStages: stages.length,
+            completedStages: 0,
+            currentStageSlug: null,
+            overallPercentage: 0,
+            currentStage: null,
+            projectStatus: 'not_started',
+            stageDetails: [],
+        };
     }
     const currentStageId = session.current_stage_id;
     if (currentStageId == null) {
@@ -1022,41 +1032,102 @@ export const selectUnifiedProjectProgress = (
 export function selectCostCeiling(
     state: DialecticStateValues,
     sessionId: string,
-): ComputeCostCeilingReturn | null {
+): ComputeCostCeilingReturn {
+    const authState = useAuthStore.getState();
+    if (authState.error !== null) {
+        return { error: authState.error };
+    }
+    const session = selectSessionById(state, sessionId);
+    if (session != null) {
+        const runKey = `${sessionId}:${session.iteration_count}`;
+        if (state.progressHydrationStatus[runKey] === 'failed') {
+            const hydrationFailedError: ApiError = {
+                code: 'STAGE_PROGRESS_HYDRATION_FAILED',
+                message: 'Stage progress hydration failed.',
+            };
+            return { error: hydrationFailedError };
+        }
+    }
+    if (state.modelCatalogError != null) {
+        return { error: state.modelCatalogError };
+    }
+    if (state.processTemplateError != null) {
+        return { error: state.processTemplateError };
+    }
     const maxOutputTokens = state.maxOutputTokens;
     if (typeof maxOutputTokens !== 'number' || !Number.isFinite(maxOutputTokens)) {
-        return null;
+        const outputCapNotInitializedError: ApiError = {
+            code: 'OUTPUT_CAP_NOT_INITIALIZED',
+            message: 'Output cap is not initialized in dialectic store.',
+        };
+        return { error: outputCapNotInitializedError };
     }
     const selectedModels = state.selectedModels;
     if (selectedModels == null || selectedModels.length === 0) {
-        return null;
+        const noModelsSelectedError: ApiError = {
+            code: 'NO_MODELS_SELECTED',
+            message: 'No models selected.',
+        };
+        return { error: noModelsSelectedError };
     }
     const outputTokenCostRates: number[] = [];
     for (const selected of selectedModels) {
         const row = state.modelCatalog.find((entry) => entry.id === selected.id);
-        if (row == null || !isAiModelExtendedConfig(row.config)) {
-            return null;
+        if (row == null) {
+            const modelCatalogEntryMissingError: ApiError = {
+                code: 'MODEL_CATALOG_ENTRY_MISSING',
+                message: `Model catalog entry missing for selected model id ${selected.id}.`,
+                details: { modelId: selected.id },
+            };
+            return { error: modelCatalogEntryMissingError };
+        }
+        if (!isAiModelExtendedConfig(row.config)) {
+            const modelCatalogInvalidConfigError: ApiError = {
+                code: 'MODEL_CATALOG_INVALID_CONFIG',
+                message: `Model catalog config invalid for model id ${selected.id}.`,
+                details: { modelId: selected.id },
+            };
+            return { error: modelCatalogInvalidConfigError };
         }
         outputTokenCostRates.push(row.config.output_token_cost_rate);
     }
-    const session = selectSessionById(state, sessionId);
     if (session == null) {
-        return null;
+        const sessionNotFoundError: ApiError = {
+            code: 'SESSION_NOT_FOUND',
+            message: `Session not found for id ${sessionId}.`,
+            details: { sessionId },
+        };
+        return { error: sessionNotFoundError };
     }
     const countsBySlug = state.stageExpectedCountsByRun[`${sessionId}:${session.iteration_count}`];
     if (countsBySlug == null) {
-        return null;
+        const runKey = `${sessionId}:${session.iteration_count}`;
+        const stageCountsByRunMissingError: ApiError = {
+            code: 'STAGE_COUNTS_BY_RUN_MISSING',
+            message: 'Stage expected counts by run are not loaded for this session.',
+            details: { runKey },
+        };
+        return { error: stageCountsByRunMissingError };
     }
     const templateStages = getSortedStagesFromTemplate(state.currentProcessTemplate);
     if (templateStages.length === 0) {
-        return null;
+        const processTemplateStagesMissingError: ApiError = {
+            code: 'PROCESS_TEMPLATE_STAGES_MISSING',
+            message: 'Process template has no stages.',
+        };
+        return { error: processTemplateStagesMissingError };
     }
     const unified = selectUnifiedProjectProgress(state, sessionId);
     const stages: ComputeCostCeilingStageInput[] = [];
     for (const stage of templateStages) {
         const expectedCount = countsBySlug[stage.slug];
         if (expectedCount == null || expectedCount < 0) {
-            return null;
+            const stageExpectedCountMissingError: ApiError = {
+                code: 'STAGE_EXPECTED_COUNT_MISSING',
+                message: `Stage expected count missing for slug ${stage.slug}.`,
+                details: { stageSlug: stage.slug },
+            };
+            return { error: stageExpectedCountMissingError };
         }
         const stageDetail = unified.stageDetails.find((detail) => detail.stageSlug === stage.slug);
         const contributions: ComputeCostCeilingContributionInput[] = [];
@@ -1066,11 +1137,29 @@ export function selectCostCeiling(
                     continue;
                 }
                 if (contribution.tokens_used_input == null || contribution.tokens_used_output == null || contribution.model_id == null) {
-                    return null;
+                    const contributionCostDataMissingError: ApiError = {
+                        code: 'CONTRIBUTION_COST_DATA_MISSING',
+                        message: `Contribution cost data incomplete for contribution id ${contribution.id}.`,
+                        details: { contributionId: contribution.id },
+                    };
+                    return { error: contributionCostDataMissingError };
                 }
                 const row = state.modelCatalog.find((entry) => entry.id === contribution.model_id);
-                if (row == null || !isAiModelExtendedConfig(row.config)) {
-                    return null;
+                if (row == null) {
+                    const contributionModelCatalogEntryMissingError: ApiError = {
+                        code: 'MODEL_CATALOG_ENTRY_MISSING',
+                        message: `Model catalog entry missing for selected model id ${contribution.model_id}.`,
+                        details: { modelId: contribution.model_id },
+                    };
+                    return { error: contributionModelCatalogEntryMissingError };
+                }
+                if (!isAiModelExtendedConfig(row.config)) {
+                    const contributionModelCatalogInvalidConfigError: ApiError = {
+                        code: 'MODEL_CATALOG_INVALID_CONFIG',
+                        message: `Model catalog config invalid for model id ${contribution.model_id}.`,
+                        details: { modelId: contribution.model_id },
+                    };
+                    return { error: contributionModelCatalogInvalidConfigError };
                 }
                 contributions.push({
                     tokensUsedInput: contribution.tokens_used_input,
@@ -1092,37 +1181,98 @@ export function selectCostCeiling(
     return computeCostCeiling(deps, params, payload);
 }
 
-export function selectPreProjectCostCeiling(state: DialecticStateValues): ComputeCostCeilingReturn | null {
+export function selectPreProjectCostCeiling(state: DialecticStateValues): ComputeCostCeilingReturn {
+    const authState = useAuthStore.getState();
+    if (authState.error !== null) {
+        return { error: authState.error };
+    }
+    if (state.stageExpectedCountsError != null) {
+        return { error: state.stageExpectedCountsError };
+    }
+    if (state.domainProcessAssociationError != null) {
+        return { error: state.domainProcessAssociationError };
+    }
+    if (state.modelCatalogError != null) {
+        return { error: state.modelCatalogError };
+    }
+    if (state.processTemplateError != null) {
+        return { error: state.processTemplateError };
+    }
     const maxOutputTokens = state.maxOutputTokens;
     if (typeof maxOutputTokens !== 'number' || !Number.isFinite(maxOutputTokens)) {
-        return null;
+        const outputCapNotInitializedError: ApiError = {
+            code: 'OUTPUT_CAP_NOT_INITIALIZED',
+            message: 'Output cap is not initialized in dialectic store.',
+        };
+        return { error: outputCapNotInitializedError };
     }
     const selectedModels = state.selectedModels;
     if (selectedModels == null || selectedModels.length === 0) {
-        return null;
+        const noModelsSelectedError: ApiError = {
+            code: 'NO_MODELS_SELECTED',
+            message: 'No models selected.',
+        };
+        return { error: noModelsSelectedError };
     }
     const outputTokenCostRates: number[] = [];
     for (const selected of selectedModels) {
         const row = state.modelCatalog.find((entry) => entry.id === selected.id);
-        if (row == null || !isAiModelExtendedConfig(row.config)) {
-            return null;
+        if (row == null) {
+            const modelCatalogEntryMissingError: ApiError = {
+                code: 'MODEL_CATALOG_ENTRY_MISSING',
+                message: `Model catalog entry missing for selected model id ${selected.id}.`,
+                details: { modelId: selected.id },
+            };
+            return { error: modelCatalogEntryMissingError };
+        }
+        if (!isAiModelExtendedConfig(row.config)) {
+            const modelCatalogInvalidConfigError: ApiError = {
+                code: 'MODEL_CATALOG_INVALID_CONFIG',
+                message: `Model catalog config invalid for model id ${selected.id}.`,
+                details: { modelId: selected.id },
+            };
+            return { error: modelCatalogInvalidConfigError };
         }
         outputTokenCostRates.push(row.config.output_token_cost_rate);
     }
-    if (state.selectedDomain == null || state.domainProcessAssociationError != null || state.selectedDomainProcessAssociation == null) {
-        return null;
+    if (state.selectedDomain == null) {
+        const selectedDomainMissingError: ApiError = {
+            code: 'SELECTED_DOMAIN_MISSING',
+            message: 'No domain selected.',
+        };
+        return { error: selectedDomainMissingError };
+    }
+    if (state.selectedDomainProcessAssociation == null) {
+        const domainProcessAssociationMissingError: ApiError = {
+            code: 'DOMAIN_PROCESS_ASSOCIATION_MISSING',
+            message: 'Domain process association is not loaded.',
+        };
+        return { error: domainProcessAssociationMissingError };
     }
     if (state.selectedDomainProcessAssociation.domain_id !== state.selectedDomain.id) {
-        return null;
+        const domainProcessAssociationDomainMismatchError: ApiError = {
+            code: 'DOMAIN_PROCESS_ASSOCIATION_DOMAIN_MISMATCH',
+            message: 'Domain process association does not match selected domain.',
+        };
+        return { error: domainProcessAssociationDomainMismatchError };
     }
     const counts: StageExpectedCount[] | null = state.preProjectStageExpectedCounts;
     if (counts == null || counts.length === 0) {
-        return null;
+        const preProjectStageCountsMissingError: ApiError = {
+            code: 'PRE_PROJECT_STAGE_COUNTS_MISSING',
+            message: 'Pre-project stage expected counts are not loaded.',
+        };
+        return { error: preProjectStageCountsMissingError };
     }
     const stages: ComputeCostCeilingStageInput[] = [];
     for (const entry of counts) {
         if (entry.expectedCount < 0) {
-            return null;
+            const stageExpectedCountInvalidError: ApiError = {
+                code: 'STAGE_EXPECTED_COUNT_INVALID',
+                message: `Stage expected count invalid for slug ${entry.stageSlug}.`,
+                details: { stageSlug: entry.stageSlug },
+            };
+            return { error: stageExpectedCountInvalidError };
         }
         stages.push({ stageSlug: entry.stageSlug, expectedCount: entry.expectedCount, contributions: [] });
     }

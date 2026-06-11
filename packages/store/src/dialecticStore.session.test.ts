@@ -950,6 +950,22 @@ describe('useDialecticStore', () => {
             expect(state.selectedModels).toEqual(mockSessionData.selected_models);
         });
 
+        it('resets outputCapUserCustomized to false when loading a session whose id differs from prior activeContextSessionId', async () => {
+            getMockDialecticClient().getSessionDetails.mockResolvedValue(mockApiResponse);
+            useDialecticStore.setState({
+                ...initialDialecticStateValues,
+                outputCapUserCustomized: true,
+                activeContextProjectId: mockProjectId,
+                activeContextSessionId: 'session-prior',
+            });
+
+            await useDialecticStore.getState().fetchAndSetCurrentSessionDetails(mockSessionId);
+
+            const state = useDialecticStore.getState();
+            expect(state.activeContextSessionId).toEqual(mockSessionId);
+            expect(state.outputCapUserCustomized).toBe(false);
+        });
+
         it('should persist selectedModels from session response (single origin)', async () => {
             const selectedModelsFromResponse: SelectedModels[] = [
                 { id: 'model-1', displayName: 'Model One' },
@@ -1253,6 +1269,42 @@ describe('useDialecticStore', () => {
 
             const state = useDialecticStore.getState();
             expect(state.activeSessionDetail).toEqual(mockSessionDetail);
+        });
+
+        it('resets outputCapUserCustomized to false when sessionId changes', () => {
+            useDialecticStore.setState({
+                outputCapUserCustomized: true,
+                activeContextProjectId: 'project-1',
+                activeContextSessionId: 'session-1',
+            });
+
+            const { setActiveDialecticContext } = useDialecticStore.getState();
+            setActiveDialecticContext({
+                projectId: 'project-1',
+                sessionId: 'session-2',
+                stage: null,
+            });
+
+            const state = useDialecticStore.getState();
+            expect(state.outputCapUserCustomized).toBe(false);
+        });
+
+        it('resets outputCapUserCustomized to false when projectId changes and sessionId is unchanged', () => {
+            useDialecticStore.setState({
+                outputCapUserCustomized: true,
+                activeContextProjectId: 'project-1',
+                activeContextSessionId: 'session-1',
+            });
+
+            const { setActiveDialecticContext } = useDialecticStore.getState();
+            setActiveDialecticContext({
+                projectId: 'project-2',
+                sessionId: 'session-1',
+                stage: null,
+            });
+
+            const state = useDialecticStore.getState();
+            expect(state.outputCapUserCustomized).toBe(false);
         });
     });
 

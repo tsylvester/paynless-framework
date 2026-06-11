@@ -5,57 +5,25 @@ import {
 } from './dialecticStore';
 import type {
 	DialecticStateValues,
-	StageDocumentCompositeKey,
-	StageDocumentContentState,
-	StageDocumentVersionInfo,
 	ApiError,
-	RenderCompletedPayload,
-	RenderStartedPayload,
-	DocumentCompletedPayload,
-	DocumentChunkCompletedPayload,
-	DialecticStageRecipe,
 	ListStageDocumentsPayload,
 	ListStageDocumentsResponse,
-	StageDocumentChecklistEntry,
-	SubmitStageDocumentFeedbackPayload,
-	JobFailedPayload,
-	DocumentStartedPayload,
 	StageRenderedDocumentDescriptor,
 	StageRunDocumentDescriptor,
-	EditedDocumentResource,
 	GetAllStageProgressPayload,
-	GetAllStageProgressResponse,
 	JobProgressDto,
-	PlannerStartedPayload,
-	PlannerCompletedPayload,
-	ExecuteStartedPayload,
-	IKeyValueStorage,
 } from '@paynless/types';
 import { STAGE_RUN_DOCUMENT_KEY_SEPARATOR } from '@paynless/types';
 import {
-	handleRenderCompletedLogic,
-	getStageDocumentKey,
-	ensureStageDocumentContentLogic,
-	reapplyDraftToNewBaselineLogic,
-	recordStageDocumentDraftLogic,
-	recordStageDocumentFeedbackDraftLogic,
-	flushStageDocumentFeedbackDraftLogic,
 	hydrateStageProgressLogic,
 	hydrateAllStageProgressLogic,
-	upsertStageDocumentVersionLogic,
-	fetchStageDocumentContentLogic,
-	fetchStageDocumentFeedbackLogic,
-	initializeFeedbackDraftLogic,
-	buildFeedbackLocalStorageKey,
-	type EnsureStageDocumentContentSeed,
 } from './dialecticStore.documents';
 import {
-	api,
 	resetApiMock,
 	getMockDialecticClient,
 } from '@paynless/api/mocks';
-import { logger } from '@paynless/utils';
-import { produce, type Draft } from 'immer';
+import { isApiError } from '@paynless/utils';
+import { produce } from 'immer';
 import {
 	mockDomainProcessAssociationRow,
 	mockGetAllStageProgressResponse,
@@ -198,9 +166,10 @@ describe('hydrateStageProgressLogic', () => {
 	});
 
 	it('throws when API returns error response', async () => {
+		const apiError: ApiError = { message: 'Server error', code: 'INTERNAL_ERROR' };
 		vi.spyOn(mockDialecticClient, 'listStageDocuments').mockResolvedValue({
 			data: undefined,
-			error: { message: 'Server error', code: 'INTERNAL_ERROR' },
+			error: apiError,
 			status: 500,
 		});
 
@@ -212,9 +181,17 @@ describe('hydrateStageProgressLogic', () => {
 			state = produce<DialecticStateValues>(state, fn);
 		};
 
-		await expect(hydrateStageProgressLogic(set, payload)).rejects.toThrow(
-			/[hydrateStageProgress]/,
-		);
+		let rejected: ApiError | null = null;
+		try {
+			await hydrateStageProgressLogic(set, payload);
+			expect.fail('expected hydrateStageProgressLogic to reject');
+		} catch (error) {
+			if (isApiError(error)) {
+				rejected = error;
+			}
+		}
+		expect(isApiError(rejected)).toBe(true);
+		expect(rejected).toBe(apiError);
 	});
 
 	it('throws when API returns null data', async () => {
@@ -231,9 +208,19 @@ describe('hydrateStageProgressLogic', () => {
 			state = produce<DialecticStateValues>(state, fn);
 		};
 
-		await expect(hydrateStageProgressLogic(set, payload)).rejects.toThrow(
-			/[hydrateStageProgress]/,
-		);
+		let rejected: ApiError | null = null;
+		try {
+			await hydrateStageProgressLogic(set, payload);
+			expect.fail('expected hydrateStageProgressLogic to reject');
+		} catch (error) {
+			if (isApiError(error)) {
+				rejected = error;
+			}
+		}
+		expect(isApiError(rejected)).toBe(true);
+		if (rejected !== null) {
+			expect(rejected.code).toBe('HYDRATE_STAGE_PROGRESS_DATA_MISSING');
+		}
 	});
 
 	it('throws when document validation fails (invalid entries)', async () => {
@@ -260,9 +247,19 @@ describe('hydrateStageProgressLogic', () => {
 			state = produce<DialecticStateValues>(state, fn);
 		};
 
-		await expect(hydrateStageProgressLogic(set, payload)).rejects.toThrow(
-			/[hydrateStageProgress].*validation/,
-		);
+		let rejected: ApiError | null = null;
+		try {
+			await hydrateStageProgressLogic(set, payload);
+			expect.fail('expected hydrateStageProgressLogic to reject');
+		} catch (error) {
+			if (isApiError(error)) {
+				rejected = error;
+			}
+		}
+		expect(isApiError(rejected)).toBe(true);
+		if (rejected !== null) {
+			expect(rejected.code).toBe('HYDRATE_STAGE_PROGRESS_DOCUMENT_INVALID');
+		}
 	});
 
 	it('populates jobs array with one JobProgressDto per document entry returned by listStageDocuments', async () => {
@@ -643,15 +640,26 @@ describe('hydrateAllStageProgressLogic', () => {
 			state = produce<DialecticStateValues>(state, fn);
 		};
 
-		await expect(hydrateAllStageProgressLogic(set, payload)).rejects.toThrow(
-			/[hydrateAllStageProgress].*stages array is empty/,
-		);
+		let rejected: ApiError | null = null;
+		try {
+			await hydrateAllStageProgressLogic(set, payload);
+			expect.fail('expected hydrateAllStageProgressLogic to reject');
+		} catch (error) {
+			if (isApiError(error)) {
+				rejected = error;
+			}
+		}
+		expect(isApiError(rejected)).toBe(true);
+		if (rejected !== null) {
+			expect(rejected.code).toBe('HYDRATE_ALL_STAGE_PROGRESS_STAGES_EMPTY');
+		}
 	});
 
 	it('throws when API returns error response', async () => {
+		const apiError: ApiError = { message: 'Server error', code: 'INTERNAL_ERROR' };
 		vi.spyOn(mockDialecticClient, 'getAllStageProgress').mockResolvedValue({
 			data: undefined,
-			error: { message: 'Server error', code: 'INTERNAL_ERROR' },
+			error: apiError,
 			status: 500,
 		});
 
@@ -663,9 +671,17 @@ describe('hydrateAllStageProgressLogic', () => {
 			state = produce<DialecticStateValues>(state, fn);
 		};
 
-		await expect(hydrateAllStageProgressLogic(set, payload)).rejects.toThrow(
-			/[hydrateAllStageProgress]/,
-		);
+		let rejected: ApiError | null = null;
+		try {
+			await hydrateAllStageProgressLogic(set, payload);
+			expect.fail('expected hydrateAllStageProgressLogic to reject');
+		} catch (error) {
+			if (isApiError(error)) {
+				rejected = error;
+			}
+		}
+		expect(isApiError(rejected)).toBe(true);
+		expect(rejected).toBe(apiError);
 	});
 
 	it('throws when API returns undefined data', async () => {
@@ -682,9 +698,19 @@ describe('hydrateAllStageProgressLogic', () => {
 			state = produce<DialecticStateValues>(state, fn);
 		};
 
-		await expect(hydrateAllStageProgressLogic(set, payload)).rejects.toThrow(
-			/[hydrateAllStageProgress]/,
-		);
+		let rejected: ApiError | null = null;
+		try {
+			await hydrateAllStageProgressLogic(set, payload);
+			expect.fail('expected hydrateAllStageProgressLogic to reject');
+		} catch (error) {
+			if (isApiError(error)) {
+				rejected = error;
+			}
+		}
+		expect(isApiError(rejected)).toBe(true);
+		if (rejected !== null) {
+			expect(rejected.code).toBe('HYDRATE_ALL_STAGE_PROGRESS_DATA_UNDEFINED');
+		}
 	});
 
 	it('throws when document validation fails (invalid entries)', async () => {
@@ -722,9 +748,19 @@ describe('hydrateAllStageProgressLogic', () => {
 			state = produce<DialecticStateValues>(state, fn);
 		};
 
-		await expect(hydrateAllStageProgressLogic(set, payload)).rejects.toThrow(
-			/[hydrateAllStageProgress].*validation/,
-		);
+		let rejected: ApiError | null = null;
+		try {
+			await hydrateAllStageProgressLogic(set, payload);
+			expect.fail('expected hydrateAllStageProgressLogic to reject');
+		} catch (error) {
+			if (isApiError(error)) {
+				rejected = error;
+			}
+		}
+		expect(isApiError(rejected)).toBe(true);
+		if (rejected !== null) {
+			expect(rejected.code).toBe('HYDRATE_ALL_STAGE_PROGRESS_DOCUMENT_INVALID');
+		}
 	});
 
 	it('adds valid documents to progress', async () => {
@@ -1351,9 +1387,19 @@ describe('hydrateAllStageProgressLogic', () => {
 			state = produce<DialecticStateValues>(state, fn);
 		};
 
-		await expect(hydrateAllStageProgressLogic(set, payload)).rejects.toThrow(
-			/\[hydrateAllStageProgress\].*expectedCount/,
-		);
+		let rejected: ApiError | null = null;
+		try {
+			await hydrateAllStageProgressLogic(set, payload);
+			expect.fail('expected hydrateAllStageProgressLogic to reject');
+		} catch (error) {
+			if (isApiError(error)) {
+				rejected = error;
+			}
+		}
+		expect(isApiError(rejected)).toBe(true);
+		if (rejected !== null) {
+			expect(rejected.code).toBe('HYDRATE_ALL_STAGE_PROGRESS_EXPECTED_COUNT_INVALID');
+		}
 		expect(state.stageExpectedCountsByRun).toEqual(seededCounts);
 	});
 
@@ -1380,9 +1426,19 @@ describe('hydrateAllStageProgressLogic', () => {
 			state = produce<DialecticStateValues>(state, fn);
 		};
 
-		await expect(hydrateAllStageProgressLogic(set, payload)).rejects.toThrow(
-			/\[hydrateAllStageProgress\].*expectedCount/,
-		);
+		let rejected: ApiError | null = null;
+		try {
+			await hydrateAllStageProgressLogic(set, payload);
+			expect.fail('expected hydrateAllStageProgressLogic to reject');
+		} catch (error) {
+			if (isApiError(error)) {
+				rejected = error;
+			}
+		}
+		expect(isApiError(rejected)).toBe(true);
+		if (rejected !== null) {
+			expect(rejected.code).toBe('HYDRATE_ALL_STAGE_PROGRESS_EXPECTED_COUNT_INVALID');
+		}
 		expect(state.stageExpectedCountsByRun).toEqual(seededCounts);
 	});
 
@@ -1411,9 +1467,60 @@ describe('hydrateAllStageProgressLogic', () => {
 			state = produce<DialecticStateValues>(state, fn);
 		};
 
-		await expect(hydrateAllStageProgressLogic(set, payload)).rejects.toThrow(
-			/\[hydrateAllStageProgress\].*expectedCount/,
-		);
+		let rejected: ApiError | null = null;
+		try {
+			await hydrateAllStageProgressLogic(set, payload);
+			expect.fail('expected hydrateAllStageProgressLogic to reject');
+		} catch (error) {
+			if (isApiError(error)) {
+				rejected = error;
+			}
+		}
+		expect(isApiError(rejected)).toBe(true);
+		if (rejected !== null) {
+			expect(rejected.code).toBe('HYDRATE_ALL_STAGE_PROGRESS_EXPECTED_COUNT_INVALID');
+		}
+		expect(state.stageExpectedCountsByRun).toEqual(seededCounts);
+	});
+
+	it('throws when step data is absent on a stage entry and leaves stageExpectedCountsByRun unchanged', async () => {
+		const runKey = `${sessionId}:${iterationNumber}`;
+		const seededCounts: Record<string, Record<string, number>> = {
+			[runKey]: { thesis: 99 },
+		};
+		const stageWithAbsentSteps = mockStageProgressEntry();
+		Reflect.deleteProperty(stageWithAbsentSteps, 'steps');
+		const mockResponse = mockGetAllStageProgressResponse({
+			stages: [stageWithAbsentSteps],
+		});
+
+		vi.spyOn(mockDialecticClient, 'getAllStageProgress').mockResolvedValue({
+			data: mockResponse,
+			status: 200,
+		});
+
+		let state: DialecticStateValues = {
+			...initialDialecticStateValues,
+			stageRunProgress: {},
+			stageExpectedCountsByRun: seededCounts,
+		};
+		const set = (fn: (draft: DialecticStateValues) => void) => {
+			state = produce<DialecticStateValues>(state, fn);
+		};
+
+		let rejected: ApiError | null = null;
+		try {
+			await hydrateAllStageProgressLogic(set, payload);
+			expect.fail('expected hydrateAllStageProgressLogic to reject');
+		} catch (error) {
+			if (isApiError(error)) {
+				rejected = error;
+			}
+		}
+		expect(isApiError(rejected)).toBe(true);
+		if (rejected !== null) {
+			expect(rejected.code).toBe('HYDRATE_ALL_STAGE_PROGRESS_STEPS_ABSENT');
+		}
 		expect(state.stageExpectedCountsByRun).toEqual(seededCounts);
 	});
 

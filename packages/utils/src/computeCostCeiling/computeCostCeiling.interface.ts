@@ -29,7 +29,7 @@ export interface ComputeCostCeilingSuccessReturn {
 }
 
 export interface ComputeCostCeilingErrorReturn {
-    error: ApiError;
+    error: Error | ApiError;
 }
 
 export type ComputeCostCeilingReturn =

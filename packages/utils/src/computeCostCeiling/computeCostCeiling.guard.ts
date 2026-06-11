@@ -132,5 +132,6 @@ export function isComputeCostCeilingErrorReturn(
     if (!isRecord(value)) {
         return false;
     }
-    return isApiError(value['error']);
+    const error: unknown = value['error'];
+    return isApiError(error) || error instanceof Error;
 }

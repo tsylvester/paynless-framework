@@ -61,6 +61,7 @@ import {
   type RegenerateDocumentResponse,
   StartSessionSuccessResponse,
   type CreateProjectAutoStartResult,
+  type InitializeMaxOutputTokensResult,
   type SelectedModels,
   UpsertJobFromLifecycleEventParams,
   type UpsertJobFromLifecycleEventPayload,
@@ -77,6 +78,7 @@ import {
   isDialecticDomainRow,
   isDomainProcessAssociationRow,
   isGetStageExpectedCountsResponse,
+  isAiModelExtendedConfig,
 } from '@paynless/utils';
 import {
 	ensureStageDocumentContentLogic,
@@ -214,6 +216,7 @@ export const initialDialecticStateValues: DialecticStateValues = {
   
   // Output token cap configuration
   maxOutputTokens: null,
+  outputCapUserCustomized: false,
 
 	// Recipe hydration and per-stage-run progress
 	recipesByStageSlug: {},
@@ -224,7 +227,6 @@ export const initialDialecticStateValues: DialecticStateValues = {
 	stageExpectedCountsError: null,
 	stageRunProgress: {},
 	progressHydrationStatus: {},
-	progressHydrationError: {},
 	focusedStageDocument: {},
 	stageDocumentContent: {},
 	stageDocumentVersions: {},
@@ -671,7 +673,19 @@ export const useDialecticStore = create<DialecticStore>()(
 				const { currentProjectDetail } = get();
 				const template = response.data;
 
-				if (!currentProjectDetail || !template?.stages) {
+				if (!currentProjectDetail) {
+					logger.info(
+						'[DialecticStore] Process template fetched before project detail is loaded; skipping active stage resolution.',
+						{ templateId },
+					);
+					set({
+						isLoadingProcessTemplate: false,
+						currentProcessTemplate: template,
+					});
+					return;
+				}
+
+				if (!template?.stages) {
 					logger.warn(
 						"[DialecticStore] Cannot determine active stage without project details or template stages.",
 					);
@@ -1497,7 +1511,123 @@ export const useDialecticStore = create<DialecticStore>()(
 	
 	setMaxOutputTokens: (maxTokens: number) => {
 		logger.info(`[DialecticStore] Setting max output tokens to ${maxTokens}`);
-		set({ maxOutputTokens: maxTokens });
+		set({ maxOutputTokens: maxTokens, outputCapUserCustomized: true });
+	},
+
+	initializeMaxOutputTokens: (): InitializeMaxOutputTokensResult => {
+		const state = get();
+		const authState = useAuthStore.getState();
+
+		if (
+			authState.isLoading
+			|| authState.userTier === null
+			|| state.isLoadingModelCatalog
+			|| state.modelCatalog.length === 0
+		) {
+			return { ok: true, skipped: true };
+		}
+
+		if (state.outputCapUserCustomized) {
+			return { ok: true, skipped: true };
+		}
+
+		const userTier = authState.userTier;
+		let modelsForCap: SelectedModels[] = state.selectedModels ?? [];
+
+		if (modelsForCap.length === 0) {
+			const defaultModels: SelectedModels[] = selectDefaultGenerationModels(state);
+			if (defaultModels.length === 0) {
+				const noDefaultModelsError: ApiError = {
+					code: 'NO_DEFAULT_GENERATION_MODELS',
+					message: 'No default generation models are available in the catalog.',
+				};
+				logger.error('[DialecticStore] initializeMaxOutputTokens failed', {
+					message: noDefaultModelsError.message,
+				});
+				return { ok: false, error: noDefaultModelsError };
+			}
+			modelsForCap = defaultModels;
+			set({ selectedModels: defaultModels });
+		}
+
+		const modelCaps: number[] = [];
+		const catalog = get().modelCatalog;
+
+		for (const selectedModel of modelsForCap) {
+			const catalogRow = catalog.find((row) => row.id === selectedModel.id);
+			if (catalogRow == null) {
+				const missingCatalogRowError: ApiError = {
+					code: 'MODEL_CATALOG_ENTRY_MISSING',
+					message: `Model catalog entry missing for selected model id ${selectedModel.id}.`,
+					details: { modelId: selectedModel.id },
+				};
+				logger.error('[DialecticStore] initializeMaxOutputTokens failed', {
+					message: missingCatalogRowError.message,
+					modelId: selectedModel.id,
+				});
+				return { ok: false, error: missingCatalogRowError };
+			}
+
+			const configValue: unknown = catalogRow.config;
+			if (!isAiModelExtendedConfig(configValue)) {
+				const invalidConfigError: ApiError = {
+					code: 'MODEL_CATALOG_INVALID_CONFIG',
+					message: `Model catalog config invalid for model id ${selectedModel.id}.`,
+					details: { modelId: selectedModel.id },
+				};
+				logger.error('[DialecticStore] initializeMaxOutputTokens failed', {
+					message: invalidConfigError.message,
+					modelId: selectedModel.id,
+				});
+				return { ok: false, error: invalidConfigError };
+			}
+
+			const hardCapOutputTokens: number | undefined = configValue.hard_cap_output_tokens;
+			const providerMaxOutputTokens: number | undefined = configValue.provider_max_output_tokens;
+
+			const finiteHardCapOutputTokens: number | null =
+				typeof hardCapOutputTokens === 'number' && Number.isFinite(hardCapOutputTokens)
+					? hardCapOutputTokens
+					: null;
+			const finiteProviderMaxOutputTokens: number | null =
+				typeof providerMaxOutputTokens === 'number' && Number.isFinite(providerMaxOutputTokens)
+					? providerMaxOutputTokens
+					: null;
+
+			let modelCap: number | null = null;
+			if (finiteHardCapOutputTokens !== null && finiteProviderMaxOutputTokens !== null) {
+				modelCap = Math.min(finiteHardCapOutputTokens, finiteProviderMaxOutputTokens);
+			} else if (finiteHardCapOutputTokens !== null) {
+				modelCap = finiteHardCapOutputTokens;
+			} else if (finiteProviderMaxOutputTokens !== null) {
+				modelCap = finiteProviderMaxOutputTokens;
+			}
+
+			if (modelCap === null) {
+				const outputCapUnavailableError: ApiError = {
+					code: 'MODEL_OUTPUT_CAP_UNAVAILABLE',
+					message: `Model output cap is unavailable for model id ${selectedModel.id}.`,
+					details: { modelId: selectedModel.id },
+				};
+				logger.error('[DialecticStore] initializeMaxOutputTokens failed', {
+					message: outputCapUnavailableError.message,
+					modelId: selectedModel.id,
+				});
+				return { ok: false, error: outputCapUnavailableError };
+			}
+
+			modelCaps.push(modelCap);
+		}
+
+		const bindingModelCap: number = Math.min(...modelCaps);
+		const tierCap: number | null = userTier.output_cap_tokens;
+		let maxOutputTokens: number = bindingModelCap;
+		if (tierCap !== null && Number.isFinite(tierCap)) {
+			maxOutputTokens = Math.min(tierCap, bindingModelCap);
+		}
+
+		set({ maxOutputTokens });
+		return { ok: true };
 	},
 
 	fetchInitialPromptContent: async (resourceId: string) => {
@@ -1951,11 +2081,13 @@ export const useDialecticStore = create<DialecticStore>()(
     });
     const userId: string | undefined = useAuthStore.getState().user?.id;
     if (userId && userId.length > 0) {
-      get().hydrateAllStageProgress({
+      void get().hydrateAllStageProgress({
         sessionId: payload.sessionId,
         iterationNumber: payload.iterationNumber,
         userId,
         projectId: payload.projectId,
+      }).catch((err: unknown) => {
+        logger.error('[DialecticStore] hydrateAllStageProgress failed after action', { errorDetails: err });
       });
     } else {
       logger.warn('[DialecticStore] _handleContributionGenerationPausedNsf: no userId available, skipping hydrateAllStageProgress', {
@@ -2530,11 +2662,13 @@ export const useDialecticStore = create<DialecticStore>()(
     const userId: string | undefined = useAuthStore.getState().user?.id;
     const projectId: string | undefined = get().currentProjectDetail?.id;
     if (userId && userId.length > 0 && projectId) {
-      get().hydrateAllStageProgress({
+      void get().hydrateAllStageProgress({
         sessionId: payload.sessionId,
         iterationNumber: payload.iterationNumber,
         userId,
         projectId,
+      }).catch((err: unknown) => {
+        logger.error('[DialecticStore] hydrateAllStageProgress failed after action', { errorDetails: err });
       });
     }
     return response;
@@ -2549,11 +2683,13 @@ export const useDialecticStore = create<DialecticStore>()(
     const userId: string | undefined = useAuthStore.getState().user?.id;
     const projectId: string | undefined = get().currentProjectDetail?.id;
     if (userId && userId.length > 0 && projectId) {
-      get().hydrateAllStageProgress({
+      void get().hydrateAllStageProgress({
         sessionId: payload.sessionId,
         iterationNumber: payload.iterationNumber,
         userId,
         projectId,
+      }).catch((err: unknown) => {
+        logger.error('[DialecticStore] hydrateAllStageProgress failed after action', { errorDetails: err });
       });
     }
     return response;
@@ -2590,11 +2726,13 @@ export const useDialecticStore = create<DialecticStore>()(
       const userId: string | undefined = useAuthStore.getState().user?.id;
       const projectId: string | undefined = get().currentProjectDetail?.id;
       if (userId && userId.length > 0 && projectId) {
-        get().hydrateAllStageProgress({
+        void get().hydrateAllStageProgress({
           sessionId: payload.sessionId,
           iterationNumber: payload.iterationNumber,
           userId,
           projectId,
+        }).catch((err: unknown) => {
+          logger.error('[DialecticStore] hydrateAllStageProgress failed after action', { errorDetails: err });
         });
       }
       return { data: response.data, status: response.status };
@@ -2637,11 +2775,18 @@ export const useDialecticStore = create<DialecticStore>()(
 		logger.info("[DialecticStore] Setting active dialectic context", {
 			context,
 		});
+		const priorState = get();
+		const projectIdChanged: boolean = priorState.activeContextProjectId !== context.projectId;
+		const sessionIdChanged: boolean = priorState.activeContextSessionId !== context.sessionId;
+		const shouldResetOutputCapState: boolean = projectIdChanged || sessionIdChanged;
 		set({
 			activeContextProjectId: context.projectId,
 			activeContextSessionId: context.sessionId,
 			activeContextStage: context.stage,
 			...(context.sessionId === null ? { activeSessionDetail: null, activeSessionDetailError: null } : {}),
+			...(shouldResetOutputCapState
+				? { outputCapUserCustomized: false }
+				: {}),
 		});
 	},
 
@@ -3527,12 +3672,11 @@ export const useDialecticStore = create<DialecticStore>()(
         state.progressHydrationStatus[progressKey] = 'success';
       });
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
       set(state => {
         state.progressHydrationStatus[progressKey] = 'failed';
-        state.progressHydrationError[progressKey] = message;
       });
       logger.error('[DialecticStore] hydrateStageProgress failed', { progressKey, errorDetails: err });
+      throw err;
     }
   },
 
@@ -3547,12 +3691,11 @@ export const useDialecticStore = create<DialecticStore>()(
         state.progressHydrationStatus[runKey] = 'success';
       });
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
       set(state => {
         state.progressHydrationStatus[runKey] = 'failed';
-        state.progressHydrationError[runKey] = message;
       });
       logger.error('[DialecticStore] hydrateAllStageProgress failed', { runKey, errorDetails: err });
+      throw err;
     }
   },
 
@@ -3565,7 +3708,6 @@ export const useDialecticStore = create<DialecticStore>()(
   resetProgressHydrationStatus: (runKey: string): void => {
     set(state => {
       delete state.progressHydrationStatus[runKey];
-      delete state.progressHydrationError[runKey];
     });
   },
     };

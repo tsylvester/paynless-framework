@@ -54,6 +54,8 @@ import type {
   JobProgressDto,
   ContributionCacheEntry,
   FocusedStageDocumentState,
+  InitializeMaxOutputTokensResult,
+  Json,
 } from '@paynless/types';
 import { STAGE_RUN_DOCUMENT_KEY_SEPARATOR } from '@paynless/types';
 import {
@@ -358,6 +360,9 @@ export const mockFetchAndSetCurrentSessionDetails = vi.fn().mockResolvedValue(un
 
 export const mockResumePausedNsfJobs = vi.fn().mockResolvedValue({ data: { resumedCount: 0 }, error: undefined, status: 200 });
 export const mockPauseActiveJobs = vi.fn().mockResolvedValue({ data: { pausedCount: 0 }, error: undefined, status: 200 });
+export const mockInitializeMaxOutputTokens: Mock<[], InitializeMaxOutputTokensResult> = vi
+  .fn<[], InitializeMaxOutputTokensResult>()
+  .mockReturnValue({ ok: true });
 
 export function mockDialecticDomain(
   overrides: Partial<DialecticDomainRow> = {},
@@ -565,6 +570,44 @@ export function mockStageProgressEntry(
     edges: [],
   };
   return { ...base, ...overrides };
+}
+
+export function buildListStageDocumentsPayload(
+  overrides: Partial<ListStageDocumentsPayload> = {},
+): ListStageDocumentsPayload {
+  const base: ListStageDocumentsPayload = {
+    sessionId: 'ses-1',
+    stageSlug: 'thesis',
+    iterationNumber: 1,
+    userId: 'user-1',
+    projectId: 'proj-1',
+  };
+  return { ...base, ...overrides };
+}
+
+export function buildGetAllStageProgressPayload(
+  overrides: Partial<GetAllStageProgressPayload> = {},
+): GetAllStageProgressPayload {
+  const base: GetAllStageProgressPayload = {
+    sessionId: 'ses-1',
+    iterationNumber: 1,
+    userId: 'user-1',
+    projectId: 'proj-1',
+  };
+  return { ...base, ...overrides };
+}
+
+export function buildInitializeMaxOutputTokensResult(
+  error?: ApiError,
+  skipped?: boolean,
+): InitializeMaxOutputTokensResult {
+  if (error !== undefined) {
+    return { ok: false, error };
+  }
+  if (skipped === true) {
+    return { ok: true, skipped: true };
+  }
+  return { ok: true };
 }
 
 export function mockGetAllStageProgressResponse(
@@ -842,6 +885,18 @@ export function mockAiModelConfig(
   return { ...base, ...overrides };
 }
 
+export function mockCatalogConfigMissingOutputCap(): Json {
+  const config = {
+    input_token_cost_rate: 1,
+    output_token_cost_rate: 1,
+    tokenization_strategy: { type: 'tiktoken' },
+  };
+  if (!isJson(config)) {
+    throw new Error('config is not a valid JSON object');
+  }
+  return config;
+}
+
 export function mockAiProvidersRow(
   overrides: Partial<AiProvidersRow> = {},
 ): AiProvidersRow {
@@ -940,7 +995,6 @@ export const initialDialecticStateValues: DialecticStateValues = {
   dagProgressByRun: {},
   stageRunProgress: {},
   progressHydrationStatus: {},
-  progressHydrationError: {},
   focusedStageDocument: {},
   stageDocumentContent: {},
   stageDocumentVersions: {},
@@ -957,6 +1011,7 @@ export const initialDialecticStateValues: DialecticStateValues = {
   autoStartError: null,
   shouldOpenDagProgress: false,
   maxOutputTokens: null,
+  outputCapUserCustomized: false,
   selectedDomainProcessAssociation: null,
   isLoadingDomainProcessAssociation: false,
   domainProcessAssociationError: null,
@@ -1060,7 +1115,10 @@ const createActualMockStore = (initialOverrides?: Partial<DialecticStateValues>)
         set({ selectedModels: newModels });
       }),
       resetSelectedModels: vi.fn(() => set({ selectedModels: [] })),
-      setMaxOutputTokens: vi.fn((maxTokens: number) => set({ maxOutputTokens: maxTokens })),
+      setMaxOutputTokens: vi.fn((maxTokens: number) =>
+        set({ maxOutputTokens: maxTokens, outputCapUserCustomized: true }),
+      ),
+      initializeMaxOutputTokens: mockInitializeMaxOutputTokens,
       fetchInitialPromptContent: vi.fn().mockResolvedValue(undefined),
       generateContributions: vi.fn().mockResolvedValue({ data: { message: 'ok', contributions: [] }, error: undefined, status: 200 }),
       resumePausedNsfJobs: mockResumePausedNsfJobs,
@@ -1121,10 +1179,18 @@ const createActualMockStore = (initialOverrides?: Partial<DialecticStateValues>)
       setActiveContextSessionId: vi.fn((id: string | null) => set({ activeContextSessionId: id })),
       setActiveContextStage: vi.fn((stage: DialecticStage | null) => set({ activeContextStage: stage })),
       setActiveDialecticContext: vi.fn((context: { projectId: string | null; sessionId: string | null; stage: DialecticStage | null }) => {
+        const priorState = get();
+        const projectIdChanged: boolean = priorState.activeContextProjectId !== context.projectId;
+        const sessionIdChanged: boolean = priorState.activeContextSessionId !== context.sessionId;
+        const shouldResetOutputCapState: boolean = projectIdChanged || sessionIdChanged;
         set({
           activeContextProjectId: context.projectId,
           activeContextSessionId: context.sessionId,
           activeContextStage: context.stage,
+          ...(context.sessionId === null ? { activeSessionDetail: null, activeSessionDetailError: null } : {}),
+          ...(shouldResetOutputCapState
+            ? { outputCapUserCustomized: false }
+            : {}),
         });
       }),
       fetchFeedbackFileContent: vi.fn().mockResolvedValue(undefined),
@@ -1273,18 +1339,50 @@ const createActualMockStore = (initialOverrides?: Partial<DialecticStateValues>)
             );
         },
       ),
-      hydrateStageProgress: vi.fn().mockImplementation((payload: ListStageDocumentsPayload) => {
-        hydrateStageProgressLogic(set, payload);
+      hydrateStageProgress: vi.fn().mockImplementation(async (payload: ListStageDocumentsPayload) => {
+        const progressKey = `${payload.sessionId}:${payload.stageSlug}:${payload.iterationNumber}`;
+        set((state) => {
+          state.progressHydrationStatus[progressKey] = 'pending';
+        });
+        try {
+          await hydrateStageProgressLogic(set, payload);
+          set((state) => {
+            state.progressHydrationStatus[progressKey] = 'success';
+          });
+        } catch (err: unknown) {
+          set((state) => {
+            state.progressHydrationStatus[progressKey] = 'failed';
+          });
+          throw err;
+        }
       }),
-      hydrateAllStageProgress: vi.fn().mockImplementation((payload: GetAllStageProgressPayload) => {
-        hydrateAllStageProgressLogic(set, payload);
+      hydrateAllStageProgress: vi.fn().mockImplementation(async (payload: GetAllStageProgressPayload) => {
+        const runKey = `${payload.sessionId}:${payload.iterationNumber}`;
+        set((state) => {
+          state.progressHydrationStatus[runKey] = 'pending';
+        });
+        try {
+          await hydrateAllStageProgressLogic(set, payload);
+          set((state) => {
+            state.progressHydrationStatus[runKey] = 'success';
+          });
+        } catch (err: unknown) {
+          set((state) => {
+            state.progressHydrationStatus[runKey] = 'failed';
+          });
+          throw err;
+        }
       }),
       setProgressHydrationRunPending: vi.fn().mockImplementation((runKey: string) => {
         set((state) => {
           state.progressHydrationStatus[runKey] = 'pending';
         });
       }),
-      resetProgressHydrationStatus: vi.fn(),
+      resetProgressHydrationStatus: vi.fn().mockImplementation((runKey: string) => {
+        set((state) => {
+          delete state.progressHydrationStatus[runKey];
+        });
+      }),
       initializeFeedbackDraft: vi.fn().mockImplementation(
         async (key: StageDocumentCompositeKey) => {
           const userId = internalMockAuthStoreGetState().user?.id ?? null;
@@ -1355,6 +1453,7 @@ export const initializeMockDialecticState = (initialStateOverrides?: Partial<Dia
   // Resetting specific action mocks (ensure all relevant actions are included if needed for global mock state)
   mockActivateProjectAndSessionContextForDeepLink.mockClear();
   mockFetchAndSetCurrentSessionDetails.mockClear();
+  mockInitializeMaxOutputTokens.mockClear().mockReturnValue({ ok: true });
 };
 
 // 8. Reset Function for tests (full reset)
@@ -1364,6 +1463,7 @@ export const resetDialecticStoreMock = () => {
   // Clear any top-level thunk mocks that are not part of the store's state
   mockActivateProjectAndSessionContextForDeepLink.mockClear();
   mockFetchAndSetCurrentSessionDetails.mockClear();
+  mockInitializeMaxOutputTokens.mockClear().mockReturnValue({ ok: true });
   // Global selectors are reset within initializeMockDialecticState
 };
 

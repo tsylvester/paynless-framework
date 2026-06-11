@@ -389,6 +389,7 @@ describe('isAiModelExtendedConfig', () => {
             input_token_cost_rate: 1.0,
             output_token_cost_rate: 3.0,
             tokenization_strategy: { type: 'tiktoken' },
+            provider_max_output_tokens: 4096,
         };
         expect(isAiModelExtendedConfig(minimalValidConfig)).toBe(true);
     });
@@ -398,6 +399,7 @@ describe('isAiModelExtendedConfig', () => {
             input_token_cost_rate: 1.0,
             output_token_cost_rate: 3.0,
             tokenization_strategy: { type: 'tiktoken' },
+            provider_max_output_tokens: 4096,
         };
         const withNullContextWindow: AiModelExtendedConfig = {
             ...minimalValidConfig,
@@ -509,5 +511,52 @@ describe('isAiModelExtendedConfig', () => {
 
     it('rejects a number', () => {
         expect(isAiModelExtendedConfig(42)).toBe(false);
+    });
+
+    it('accepts seed-shaped default-generation config with google_gemini_tokenizer strategy', () => {
+        const seedShapedDefaultGenerationConfig: AiModelExtendedConfig = {
+            input_token_cost_rate: 0.5,
+            output_token_cost_rate: 3,
+            tokenization_strategy: { type: 'google_gemini_tokenizer' },
+            hard_cap_output_tokens: 65536,
+            provider_max_output_tokens: 65536,
+        };
+        expect(isAiModelExtendedConfig(seedShapedDefaultGenerationConfig)).toBe(true);
+    });
+
+    it('accepts anthropic_tokenizer strategy with model string', () => {
+        const anthropicTokenizerConfig: AiModelExtendedConfig = {
+            input_token_cost_rate: 3,
+            output_token_cost_rate: 15,
+            tokenization_strategy: { type: 'anthropic_tokenizer', model: 'claude-sonnet-4-6' },
+            hard_cap_output_tokens: 64000,
+            provider_max_output_tokens: 64000,
+        };
+        expect(isAiModelExtendedConfig(anthropicTokenizerConfig)).toBe(true);
+    });
+
+    it('accepts none tokenization strategy type', () => {
+        const noneStrategyConfig: AiModelExtendedConfig = {
+            input_token_cost_rate: 1.0,
+            output_token_cost_rate: 3.0,
+            tokenization_strategy: { type: 'none' },
+            provider_max_output_tokens: 4096,
+        };
+        expect(isAiModelExtendedConfig(noneStrategyConfig)).toBe(true);
+    });
+
+    it('rejects google_gemini_tokenizer config with non-finite output_token_cost_rate', () => {
+        const seedShapedDefaultGenerationConfig: AiModelExtendedConfig = {
+            input_token_cost_rate: 0.5,
+            output_token_cost_rate: 3,
+            tokenization_strategy: { type: 'google_gemini_tokenizer' },
+            provider_max_output_tokens: 65536,
+        };
+        expect(
+            isAiModelExtendedConfig({
+                ...seedShapedDefaultGenerationConfig,
+                output_token_cost_rate: NaN,
+            }),
+        ).toBe(false);
     });
 });

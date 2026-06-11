@@ -10,6 +10,7 @@ import type {
     ComputeCostCeilingReturn,
     ComputeCostCeilingFn,
 } from './computeCostCeiling.interface.ts';
+import { ApiError } from 'packages/types/src/api.types.js';
 
 describe('computeCostCeiling.interface contract', () => {
     it('ComputeCostCeilingContributionInput accepts a full valid contribution row', () => {
@@ -95,14 +96,16 @@ describe('computeCostCeiling.interface contract', () => {
     });
 
     it('ComputeCostCeilingErrorReturn accepts an error wrapper object', () => {
-        const errorReturn: ComputeCostCeilingErrorReturn = {
-            error: {
-                code: 'VALIDATION',
-                message: 'invalid payload',
-            },
+        const apiError: ApiError = {
+            code: 'VALIDATION',
+            message: 'invalid payload',
         };
-        expect(errorReturn.error.code).toBe('VALIDATION');
-        expect(errorReturn.error.message).toBe('invalid payload');
+        const errorReturn: ComputeCostCeilingErrorReturn = {
+            error: apiError,
+        };
+        expect(errorReturn.error).toBe(apiError);
+        expect(apiError.code).toBe('VALIDATION');
+        expect(apiError.message).toBe('invalid payload');
     });
 
     it('ComputeCostCeilingDeps accepts an empty object', () => {

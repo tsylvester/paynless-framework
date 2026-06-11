@@ -2420,6 +2420,20 @@ describe('selectUnifiedProjectProgress', () => {
       expect(detailStepsOnly?.totalDocuments).toBe(1);
       expect(detailStepsOnly?.stageStatus).not.toBe('completed');
     });
+
+    it('when template has stages and sessionId not in project sessions, returns hydrationReady false without throwing', () => {
+      const state: DialecticStateValues = {
+        ...initialDialecticStateValues,
+        currentProjectDetail: projectBaseForUnified,
+        currentProcessTemplate: templateForUnified,
+      };
+
+      const result: UnifiedProjectProgress = selectUnifiedProjectProgress(state, sessionId);
+
+      expect(result.hydrationReady).toBe(false);
+      expect(result.totalStages).toBe(templateForUnified.stages.length);
+      expect(result.stageDetails.length).toBe(0);
+    });
   });
 
 describe('selectStageHasUnsavedChanges', () => {

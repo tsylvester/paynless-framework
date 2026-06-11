@@ -176,10 +176,17 @@ export function isAiModelExtendedConfig(value: unknown): value is AiModelExtende
     if (
         strategyType !== 'tiktoken'
         && strategyType !== 'rough_char_count'
-        && strategyType !== 'provider_specific_api'
-        && strategyType !== 'unknown'
+        && strategyType !== 'anthropic_tokenizer'
+        && strategyType !== 'google_gemini_tokenizer'
+        && strategyType !== 'none'
     ) {
         return false;
+    }
+    if (strategyType === 'anthropic_tokenizer') {
+        const anthropicModel: unknown = tokenizationStrategy['model'];
+        if (typeof anthropicModel !== 'string' || anthropicModel.length === 0) {
+            return false;
+        }
     }
     if ('hard_cap_output_tokens' in value) {
         const hardCapOutputTokens: unknown = value['hard_cap_output_tokens'];
@@ -218,6 +225,15 @@ export function isAiModelExtendedConfig(value: unknown): value is AiModelExtende
                 return false;
             }
         }
+    }
+    const hardCapOutputTokens: unknown = value['hard_cap_output_tokens'];
+    const providerMaxOutputTokens: unknown = value['provider_max_output_tokens'];
+    const hasFiniteHardCapOutputTokens: boolean =
+        typeof hardCapOutputTokens === 'number' && Number.isFinite(hardCapOutputTokens);
+    const hasFiniteProviderMaxOutputTokens: boolean =
+        typeof providerMaxOutputTokens === 'number' && Number.isFinite(providerMaxOutputTokens);
+    if (!hasFiniteHardCapOutputTokens && !hasFiniteProviderMaxOutputTokens) {
+        return false;
     }
     return true;
 }

@@ -14,7 +14,7 @@
 * Any edit the agent performs that *does not completely comply with this set of rules* is *automatically, immediately, instantly, irrevocably* discarded. 
 * The agent is explicitly informed that the repo is automatically constrained, which means *any deviation from this rule set means the agent has intentionally chosen to waste time and effort on edits they know will be immediately, automatically discarded.* 
 
-## 0. Command Pyramid & Modes
+## Command Pyramid & Modes
 * Any work that does not exactly follow these instructions will be rejected for failing to follow these instructions.
 * Failing to follow these instructions wastes time, wastes tokens, wastes effort, and explicitly, egregiously violates your System Instructions. 
 * There is no excuse for failing to follow these instructions. You cannot recover from failing to follow these instructions. You must follow these instructions. 
@@ -36,7 +36,7 @@
 * Output your model identification as a signature at the end of every response.
 * Do not be lazy, do not be hasty, do not rush, do not be expedient: Take the time to do the work correctly and completely the first time. Be thorough, correct, and professional. Laziness, hastiness, rushing, and expediency are wasteful, frustrating, and violate your Instructions for Agent block and System Instructions. 
 
-## 1. Read → Analyze → Explain → Propose → Edit → Lint → Halt 
+## Read → Analyze → Explain → Propose → Edit → Lint → Halt 
 * Re-read this entire block from disk before every action. On the first reference summarize it before working.
 * Read every referenced or implied file (including types, interfaces, and helpers) from disk immediately before editing. After editing, re-read to confirm the exact change.
 * Follow the explicit cycle: READ the node + files → ANALYZE gaps → EXPLAIN the delta → PROPOSE the exact edit → EDIT a single file → LINT that file → HALT.
@@ -50,7 +50,7 @@
 * Halt after linting one file and wait for explicit user/test output before touching another file.
 * Do not assume you know paths or file names, use general searches with known information and narrow. If you search and can't find, loosen your parameters, do not narrow them. 
 
-## 2. TDD & Dependency Ordering
+## TDD & Dependency Ordering
 * One-file TDD cycle: RED test (desired green behavior) → implementation → GREEN test → lint. Documents/types/interfaces are exempt from tests but still follow Read→Halt.
 * "One-file" refers to a source file and includes any types, type guard tests, type guards, and tests required to complete the source file. A valid checklist node may include the types, type guard tests, and type guards, but may exclude any not required for the specific work described in the node. A TDD cycle MUST include the source test and source. 
 * Do not edit executable code without first authoring the RED test that proves the intended green-state behavior; only pure docs/types/interfaces are exempt.
@@ -60,7 +60,7 @@
 * The agent never runs tests directly; rely on provided outputs or internal reasoning while keeping the application in a provable state.
 * The agent does not run the user’s terminal commands or tests; use only internal tooling and rely on provided outputs.
 
-## 3. Checklist Discipline
+## Checklist Discipline
 * Do not edit the checklist (or its statuses) without explicit instruction; when instructed, change only the specified portion exactly as described in the checklist instruction set.
 * Execute exactly what the active checklist node instructs with no deviation or “creative interpretation.”
 * Each checklist node equals one file’s entire TDD cycle (explanation of deps → types → type guard tests → type guards → source tests → implementation of source → proof source works → integration test showing test target works with immediate producer and immediate consumer). Preserve existing detail while adding new requirements.
@@ -70,14 +70,14 @@
 * Following a block of related checklist nodes that complete a working implementation, include a commit with a proposed commit message like the `## Example Checklist` demonstrates.
 * "Commit" steps are for the user. The agent NEVER ATTEMPTS TO COMMIT WORK! Attempting to commit work is a violation of this rule, and the prohibition against running terminal commands. THE AGENT WILL NEVER FOR ANY REASON ATTEMPT TO COMMIT WORK! 
 
-## 4. Builder vs Reviewer Modes
+## Builder vs Reviewer Modes
 * **Builder:** follow the Read→…→Halt loop precisely. If a deviation, blocker, or new requirement is discovered—or the current node simply cannot be completed as written—explain the problem, propose the required checklist change, and halt immediately.
 * **Reviewer:** treat prior reasoning as untrusted. Re-read relevant files/tests from scratch and produce an EO&D list grouped by the specific file. Ignore checklist status or RED/GREEN history unless it causes a real defect. If no EO&D are found, state “No EO&D detected; residual risks: …”
 * Sign your work with your model identification at the end of your chat message so the user knows what agent performed the work. 
 * When reviewing work against the checklist, do not assume the checklist is correct. If you see a problem with the checklist, or the work violates these instructions, stop, explain the problem, propose a correction to the checklist, and halt.
 * When reviewing work against the checklist, the work being completed already is not a discovery or a problem to resolve. Do not propose undoing the work you are reviewing. Do not propose undoing a GREEN state to prove a RED state. "This work has already been completed and matches the checklist" is a valid statement to make in a review.
 
-## 5. Strict Typing & Object 
+## Strict Typing & Object Composition
 * Use explicit types everywhere for any object defined and owned by the repo. No `any`, `as`, `as const`, inline ad-hoc types, or casts. 
 One exception to strict typing is for external services (Supabase, Stripe, Netlify, etc) that rely on types not owned by the repo and not publicly fully defined.  
 The second exception to strict typing is for intentionally malformed objects in error-handling tests. Every object and variable must be typed, even if the object is intentionally constructed incorrectly for a test. This can be done by using "as" on an incomplete object in the test, or by using a mock factory then overriding the value with an otherwise invalid value such as null or undefined. 
@@ -97,7 +97,7 @@ The second exception to strict typing is for intentionally malformed objects in 
 * DO NOT EDIT THE DEFINED TYPE TO AVOID STRICT COMPLIANCE WITH THIS RULE! THIS RULE DOES NOT PERMIT YOU TO EDIT TYPES AT YOUR CONVENIENCE! 
 * You DO NOT edit any type you are not EXPLICITLY given permission to edit. Types are a FIXED CONTRACT TO THE APPLICATION AND USER, not renegotiable at the agent's leisure. 
 
-## 6. Plan Fidelity & Shortcut Ban
+## Plan Fidelity & Shortcut Ban
 * Once a solution is described, implement exactly that solution and the user’s instruction. Expedient shortcuts are forbidden without explicit approval.
 * If you realize you deviated, stop, report it, and wait for direction. Repeating corrected violations triggers halt-and-wait immediately.
 * If your solution to a challenge is "rewrite the entire file", you have made an error. Stop, do not rewrite the file. Explain the problem to the user and await instruction.
@@ -105,14 +105,7 @@ The second exception to strict typing is for intentionally malformed objects in 
 * Refactors must preserve all existing functionality unless the user explicitly authorizes removals; log and identifier fidelity is mandatory.
 * Never rename functions or variables without explicit instruction.
 
-## 7. Dependency Injection & Architecture
-* All functions have defined signatures, deps, params, payload, returns
-  exampleFunction: ExampleFunction {
-    exampleDeps: ExampleDeps;
-    exampleParams: ExampleParams;
-    examplePayload: ExamplePayload;
-  }: ExampleReturn = ExampleSuccessReturn | ExampleErrorReturn
-  * Agents cannot place deps inside params, blob params and payload, or invent other types to define the function. 
+## Dependency Injection
 * Use explicit dependency injection at the application boundary—construct dependencies and provide them to the top-level operation.
 * **RequestContext / ExecutionContext allowed and recommended:** a single, strictly typed, immutable context object may be created at the operation boundary and passed down the call chain to avoid deep prop-drilling. Context must be:
   * Fully typed (no optional fields) and constructed by a typed factory.
@@ -127,7 +120,22 @@ The second exception to strict typing is for intentionally malformed objects in 
 * Do not create deeply nested functions. If you are tempted to create a deeply nested function, stop, explain the discovery, propose the new checklist node to refactor the function into smaller functions, and halt.
 * If you are working on a function that does not use DI, is too long, or is too complex, stop, explain the discovery, propose the new checklist node to refactor the function into smaller functions, and halt.
 
-## 8. Testing Standards
+## Function Composition
+* All new functions have defined signatures, deps, params, payload, returns
+  exampleFunction: ExampleFunction {
+    exampleDeps: ExampleDeps;
+    exampleParams: ExampleParams;
+    examplePayload: ExamplePayload;
+  }: ExampleReturn = ExampleSuccessReturn | ExampleErrorReturn
+* Agents cannot place deps inside params, blob params and payload, or invent other types to define the function. 
+* Agents cannot ignore a required element just because the function doesn't use it RIGHT NOW. Supply it anyway. 
+* Agents cannot decide "this function will never have errors, only return the SuccessReturn". That's not your call. THE RETURN IS A UNION ON PURPOSE! 
+* This pattern applies to a function that is exported so that it can be consumed elsewhere. 
+* This pattern guarantees that the function is compliant with DI to enable testing. 
+* Existing functions do not need to be converted to this pattern. 
+* Internal functions and helpers do not require this pattern. 
+
+## Testing Standards
 * Tests assert the desired passing state (no RED/GREEN labels) and new tests are added to the end of the file.
 * Each test covers exactly one behavior.
 * Use real application functions/mocks, strict typing, and asserts.
@@ -149,14 +157,14 @@ The second exception to strict typing is for intentionally malformed objects in 
 * Tests must call out which production type/helper each mock mirrors so partial objects are not invented.
 * Prove the functional gap, the implemented fix, and regressions through tests before moving on; never assume success without proof.
 
-## 9. Logging, Defaults, and Error Handling
+## Logging
 * Do not remove logging unless the user explicitly instructs you to do so.
 * The first step to debugging is to add logging. Do not guess at the problem, add logging to see what's happening.
 * Adding console logs solely for troubleshooting is exempt from TDD and checklist obligations, but the exemption applies only to the logging statements themselves.
 * Believe failing tests, linter flags, and user-reported errors literally; fix the stated condition before chasing deeper causes.
 * If the user flags instruction noncompliance, acknowledge, halt, and wait for explicit direction—do not self-remediate in a way that risks further violations.
 
-## 10. Linting & Proof
+## Linting & Proof
 * After each edit, lint the touched file and resolve every warning/error. Record lint/test evidence in the response (e.g., “Lint: clean via internal tool; Tests: not run per instructions”).
 * Do not claim a lint error is pre-existing and ignore it. If you see a lint error, fix it, as long as it is fixable within that single file.
 * Evaluate if a linter error can be resolved in-file, or out-of-file. Only resolve in-file linter errors, then report the out-of-file errors and await instruction.
@@ -164,12 +172,25 @@ The second exception to strict typing is for intentionally malformed objects in 
 * Do not silence valid linter errors with `@ts` or `@es` flags, create an empty target function, or other work-arounds. The linter error is itself proof of the RED state of the test.
 * Completion proof requires a lint-clean file plus GREEN test evidence (or documented exemption for types/docs).
 
-## 11. Reporting & Traceability
+## Error Handling
+* Errors are explicitly typed.
+* You do not guess at what type of error you have and use a ternary. YOU KNOW WHAT KIND OF ERRORS YOU MIGHT RECEIVE!  
+* Errors are never converted, coerced, or otherwise modified. 
+* Every error is surfaced, every single time. 
+* Every error is for a single specific failure. 
+* Errors explain EXACTLY what went wrong and EXACTLY where. 
+* Errors are NEVER SWALLOWED. 
+* Errors are NEVER STORED. 
+* Errors are NEVER MODIFIED.
+* You get an error, you pass the error along. 
+* YOU DO NOT CHANGE THE ERROR OR HIDE THE ERROR! YOU SURFACE THE ERROR SO IT CAN BE FIXED! 
+
+## Reporting & Traceability
 * Every response must include: mode declaration, confirmation that this block was re-read, plan bullets (Builder) or EO&D findings (Reviewer), checklist node references, lint/test evidence, and the agent's model identification.
 * If no EO&D are found, state that along with remaining risks. "This work has already been completed and matches the checklist" is not an EO&D finding.
 * The agent uses only its own tools and never the user’s terminal.
 
-## 12. Output Constraints
+## Output Constraints
 * Never output large code blocks (entire files or multi-function dumps) in chat unless the user explicitly requests them.
 * Never print an entire function and tell the user to paste it in; edit the file directly or provide the minimal diff required.
 * Never write to any file you are not explicitly directed to write to by the user.
@@ -178,7 +199,7 @@ The second exception to strict typing is for intentionally malformed objects in 
 * After writing a file, if you find the file is empty, it's because you did not construct the edit command correctly and accidentally deleted the file content. Do not attempt to rewrite the file. Halt, explain what you've done, and ask the user to revert the file to the previous state.
 * The larger the file, the more likely you are to accidentally delete the file content. Be careful when editing large files. Use exact, explicit boundaries for your edit command.
 
-## 13. Test Architecture & Layering
+## Test Architecture & Layering
 * Tests are organized by layer:
   * **Unit:** pure logic, mocked deps, many small tests; use Trusted Factories for object construction.
   * **Integration:** bounded subsystem testing (API/service/repo/adapter). Use integration fixtures built from Trusted Factories and exercise real code paths within the boundary.
@@ -186,24 +207,28 @@ The second exception to strict typing is for intentionally malformed objects in 
 * Tests at each layer must be explicit about boundary assumptions and the exact production code paths exercised.
 * Avoid duplication of setup across layers by using Trusted Factories and shared helpers.
 
-## 14. Trusted Factories & Context Factories
-* **Trusted Factories** live under `/tests/factories` and:
+## Trusted Factories & Context Factories
+* **Mock Object Factories** live in `[function].mock.ts` and:
   * Produce full, typed domain objects.
-  * Use production constructors or adapters where possible.
-  * Are code-reviewed and versioned.
-  * May include domain-approved defaults documented in the factory file.
+  * Accept overrides for every element, including null and undefined, so that any input pattern can be tested. 
+  * Include defaults that are used when no override is provided.
 * **Context Factories** construct the `RequestContext` / `ExecutionContext`:
   * Must set every field explicitly (no optional fields).
   * Must return an immutable context object.
   * Are used in both tests and production wiring to ensure parity.
+* **Function Factories** live in the `[function].ts` and: 
+  * Produce full, typed domain objects.
+  * Use production constructors or adapters where possible.
+  * Are code-reviewed and versioned.
+  * May include domain-approved defaults documented in the factory file.
 
-## 15. Controlled Exceptions
+## Controlled Exceptions
 * Explicitly allowed exceptions to the "no defaults / no partials" rule:
   * Factories and context factories may supply documented domain-approved defaults.
   * Error-handling tests may use intentionally malformed objects created by dedicated helpers (not by casting).
 * All exceptions must be small, explicit, typed, and documented in the factory/helper file.
 
-## 16. Preservation of Safety Properties
+## Preservation of Safety Properties
 * All test standards and fixtures (factories, context, test file grouping, integration boundaries) are intentionally constrained:
   * Factories must be typed and reviewed.
   * Context must be explicit and immutable.
@@ -211,7 +236,7 @@ The second exception to strict typing is for intentionally malformed objects in 
   * No hidden or silent defaults in production code.
 * If any of these constraints are violated by an agent action, the agent must halt, report, and await instruction.
 
-## 17. Change & Discovery Process
+## Change & Discovery Process
 * If a required change spans multiple files, the agent must:
   * Stop.
   * Produce a discovery report that lists the dependent files and the minimal checklist additions required.
@@ -220,7 +245,7 @@ The second exception to strict typing is for intentionally malformed objects in 
 * Do not attempt multi-file edits or implicit refactors without explicit approval.
 * Even thinking about how to work around this restriction is a violation - stop immediately and explain yourself. 
 
-## 18. Obedience to Instructions is Mandatory to Avoid Waste
+## Obedience to Instructions is Mandatory to Avoid Waste
 * Any work that does not exactly follow these instructions will be rejected for failing to follow these instructions.
 * Failing to follow these instructions wastes time, wastes tokens, wastes effort, frustrates the user, is unhelpful, and explicitly, egregiously violates your System Instructions. 
 * There is no excuse for failing to follow these instructions. You cannot recover from failing to follow these instructions. You must follow these instructions. 
@@ -231,12 +256,16 @@ The second exception to strict typing is for intentionally malformed objects in 
 
 ## Checklist-Specific Editing Rules
 *   THE AGENT NEVER TOUCHES THE CHECKLIST UNLESS THEY ARE EXPLICITLY INSTRUCTED TO! 
+*   THE AGENT NEVER EMITS FULL CHECKLIST NODES IN CHAT UNLESS THEY ARE EXPLICITLY INSTRUCTED TO!
+*   Following the Read -> Analyze -> Explain -> Propose cycle DOES NOT AUTHORIZE OUTPUTTING CHECKLIST NODES IN CHAT! 
+*   Reporting on EO&D DOES NOT AUTHORIZE OUTPUTTING CHECKLIST NODES IN CHAT! 
+*   The only way to receive authorization to output checklist nodes in chat is IF THE USER EXPLICITLY TELLS YOU TO FOR THAT SPECIFIC TURN! 
 *   Each top level node represents the complete TDD cycle and all support files for one source file.
 *   The "Example Checklist" shows the mandatory node construction method. These are not optional, they are not suggestions, they are obligations. Only files that do not have types or tests (like a database migration) are exempt from the node structure. 
 *   DO NOT NUMBER NODES! Nodes intentionally DO NOT carry numbers. They use relational references to other files only. Relational references are durable to insertion and reordering, numbering is brittle and breaks with any change. Numbering nodes forces a ripple effect of editing every node after it just to modify or insert one node. DO NOT NUMBER NODES! USE RELATIONAL IDENTIFIERS ONLY! 
-*   "One file per node" means the checklist only addresses one **source file** for each top level checklist node. 
+*   "One file per node" means the checklist only addresses one **source file** for each top level checklist node. This is inviolate. You cannot cram in a second source file "for just a little tweak", "one small edit", "no big deal". DO NOT INCLUDE MULTIPLE SOURCE FILES IN A SINGLE TOP LEVEL NODE! 
 *   Included in "one file per node" is **the entire support system** for that **one source file**, qualifying inclusions are demonstrated in the example checklist.
-*   All changes to a single file and its support system are described and performed within that file's node.
+*   All changes to a single file and its support system are described and performed within that file's node. DO NOT TRY TO WRITE MULTIPLE NODES FOR A SINGLE SOURCE FILE! INCLUDE ALL CHANGES TO THE SOURCE FILE AND ITS SUPPORT NETWORK IN A SINGLE NODE! 
 *   Types files (interfaces, enums) are exempt from RED/GREEN testing requirements.
 *   All intra and inter node work is dependency-ordered with lowest dependencies (producers) first.
 *   Preserve all existing detail when adding new requirements unless an existing requirement is explicitly changed by the user, we are incrementing and improving, not replacing.
@@ -247,19 +276,33 @@ The second exception to strict typing is for intentionally malformed objects in 
 *   NEVER suggest separating out type guard tests or guards from the interface that uses them, type guard tests are ALWAYS a step in the node for whatever function demands the type change
 *   NEVER suggest editing two source files in a single top level checklist node, function1.ts and function2.ts are different nodes
 
-## Example Cases in Creating Checklist Nodes
-*   "I'll suggest one node for the interface, one node for the type guards, and then one node for the unit test and source file!" NO! WRONG! NEVER SEPARATE INTERFACES AND TYPE GUARDS FROM THE FILE THAT NEEDS THEM UPDATED!  
-*   "I'll structure the checklist as function1, function1-test! " NO! WRONG! TESTS FIRST! 
-*   "I'll structure the checklist as function1-test, function2-test, function1, function2!" NO! WRONG! NEVER MIX MULTIPLE SOURCE FILES IN ONE NODE! 
-*   "I'll orphan an interface edit in its own node!" NO! WRONG! NEVER ORPHAN A TYPE EDIT! PUT IT WITH WHOEVER NEEDS THE TYPE CHANGE! AND UPDATE THE TYPE GUARDS! 
-*   "I have a few interfaces and type guards to change, then I'll need to update a few source files. I'll make those all separate nodes." NO! WRONG! 
-*   "I have a few interfaces and type guards to change, then I'll need to update a few source files. I'll make that all one node." NO! WRONG! 
-*   "I have a few interfaces and type guards to change. I'll group each change to an interface and its type guards with the source file that needs them first, and ensure each source file has its own top level node. I won't orphan any interfaces or type guards. And I won't cram a bunch of source file changes into the same node, those are all their own top level node." YES! MY GOD! THAT'S WHAT THE INSTRUCTIONS TELL YOU TO DO! 
-*   "I'll include a commit step at the end of every node." No, the user should not commit incomplete work. Only include the commit step when a defined set of work has been completed and the entire relevant call stack is updated. 
-*   "I won't include any commit steps, the user can decide." No, tell the user when it's time to commit. Include the commit step when a defined set of work has been completed and the entire relevant call stack is updated. 
-*   "After working on a set of nodes, the entire scope of work is completed. I'll create a separate node that includes a commit step." No, the commit step is included in the last node of the set of work.
-* "After working on a set of nodes, the entire scope of work is completed. I'll include a commit step as the last step in the last node in the set of work." Yes, this is correct. Include a commit set in the last node of the scoped set of work. 
-* "I'll add a new node for integration tests and commits at the end of a series of nodes." NO! DO NOT STRAND INTEGRATION TESTS OR COMMITS! The integration test step is an obligate inclusion in each node, when a call chain is updated, add the integration test to the last node in the dep sequence to prove that the modified call stack works. Then, after proving the call stack works, commit the work.  
+## Example Patterns For Checklist Nodes
+*   Pattern: "I'll suggest one node for the interface, one node for the type guards, and then one node for the unit test and source file!" 
+  * Response: Interface tests, interfaces, type guard tests, and type guards belong in the node for the first source file that consumes them.   
+*   Pattern: "I'll structure the checklist as function1, function1-test!" 
+  * Response: Tests define the requirements for a valid implementation. Tests must be written before the implementation.
+*   Pattern: "I'll structure the checklist as function1-test, function2-test, function1, function2!"
+  * Response: Every source file must have its own node that fully describes the changes to that source file and its support files, like interfaces, guards, and all tests.
+*   Pattern: "I have a few interfaces and type guards to change, then I'll need to update a few source files. I'll make those all separate nodes." 
+  * Response: Interfaces and type guards are never independent nodes. They are only ever edited so that the edit can be consumed by a source file. All interfaces and type guard edits, including their tests, belong in the node for the first source file that will rely on them being updated.   
+*   Pattern: "I have a few interfaces and type guards to change, then I'll need to update a few source files. I'll make that all one node." 
+  * Response: A single node can edit multiple interfaces and guards to provide for the implementation change, but a single node can only host a single implementation file.   
+*   Pattern: "I'll orphan an interface edit in its own node!" 
+  * Response: A type is only ever edited so that the update can be consumed by an implementation file. The type edit goes in the node for the implementation file that requires it. You must also update the interface test, the type guards, and the type guard tests, if they exist.  
+*   Pattern: "I have a few interfaces and type guards to change. I'll group each change to an interface and its type guards with the source file that needs them first, and ensure each source file has its own top level node. I won't orphan any interfaces or type guards. And I won't cram a bunch of source file changes into the same node, those are all their own top level node."  
+  * Response: Yes, this is what the instructions require.   
+*   Pattern: "I'll include a commit step at the end of every node." 
+  * Response: The implementer should not commit incomplete work. Only include the commit step when a defined set of work has been completed and the entire relevant call stack is updated. Generally this means you can add a commit step once a provider -> implementation -> consumer level integration test can be written and run. 
+*  Pattern: "I won't include any commit steps, the implementer can decide." 
+  * Response: Tell the implementer when it's time to commit. Include the commit step when a defined set of work has been completed and the entire relevant call stack is updated. Generally this means you can add a commit step once a provider -> implementation -> consumer level integration test can be written and run. 
+*  Pattern: "After working on a set of nodes, the entire scope of work is completed. I'll create a separate node that includes a commit step." 
+  * Response: The commit step is not an independent node. A commit step is included in the last node of the set of work.
+*  Pattern: "After working on a set of nodes, the entire scope of work is completed. I'll include a commit step as the last step in the last node in the set of work." 
+  * Response: Yes, this is correct. Include a commit set in the last node of the scoped set of work. 
+*  Pattern: "I'll add a new node for integration tests and commits at the end of a series of nodes." 
+  * Response: DO NOT STRAND INTEGRATION TESTS OR COMMITS! The integration test step is an obligate inclusion in each node that resolves a producer->implementation->consumer chain. When a call chain is updated, add the integration test to the last node in the dep sequence to prove that the modified call stack works. Then, after proving the call stack works, commit the work.  
+*  Pattern: "I'll add "grep for", "check if", "validate that", "determine whether", or something like that to a node!
+  * Response: The implementer's job is to IMPLEMENT. Not to check if the described work requirements are complete. Ensuring the described work is complete and correct is the job of the author of the checklist node. If you are writing a checklist node, YOU grep, YOU check, YOU validate, YOU determine. Don't push your work off to the implementer to do later. 
 
 ## Example Checklist
 *Groups are numbered and explained for improved understanding of how to build each segment. An actual node omits `### (number) (type)` sections.* 

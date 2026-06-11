@@ -304,6 +304,11 @@ export interface FetchProcessAssociationPayload {
   domainId: string;
 }
 
+export type InitializeMaxOutputTokensResult =
+  | { ok: true }
+  | { ok: true; skipped: true }
+  | { ok: false; error: ApiError };
+
 export interface DialecticStateValues {
   // New state for Domains
   domains: DialecticDomainRow[] | null;
@@ -358,6 +363,7 @@ export interface DialecticStateValues {
   
   // Output token cap configuration
   maxOutputTokens: number | null;
+  outputCapUserCustomized: boolean;
 
   // Cache for initial prompt file content
   initialPromptContentCache: { [resourceId: string]: InitialPromptCacheEntry };
@@ -417,8 +423,6 @@ export interface DialecticStateValues {
   stageRunProgress: Record<string, StageRunProgressSnapshot>;
   /** Hydration status per run/progress key; key `${sessionId}:${iterationNumber}` or `${sessionId}:${stageSlug}:${iterationNumber}`. */
   progressHydrationStatus: Record<string, 'idle' | 'pending' | 'success' | 'failed'>;
-  /** Error message when status is `failed`; key same as progressHydrationStatus. */
-  progressHydrationError: Record<string, string>;
   focusedStageDocument: Record<string, FocusedStageDocumentState | null>;
   stageDocumentContent: Record<string, StageDocumentContentState>;
   stageDocumentVersions: Record<string, StageDocumentVersionInfo>;
@@ -690,6 +694,7 @@ export interface DialecticActions {
   
   // Output token cap configuration
   setMaxOutputTokens: (maxTokens: number) => void;
+  initializeMaxOutputTokens: () => InitializeMaxOutputTokensResult;
 
   // New action for fetching process templates
   fetchProcessTemplate: (templateId: string) => Promise<void>;

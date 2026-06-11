@@ -230,4 +230,11 @@ describe('isComputeCostCeilingErrorReturn', () => {
             }),
         ).toBe(false);
     });
+
+    it('returns true when error is a real Error instance', () => {
+        const authError: Error = new Error('auth failed');
+        const value = buildComputeCostCeilingErrorReturn({ error: authError });
+        expect(isComputeCostCeilingErrorReturn(value)).toBe(true);
+        expect(value.error).toBe(authError);
+    });
 });
