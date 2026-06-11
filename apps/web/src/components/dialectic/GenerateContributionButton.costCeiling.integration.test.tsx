@@ -14,40 +14,30 @@ import {
   expect,
   it,
   vi,
-  type MockInstance,
 } from 'vitest';
 import type {
   AiModelExtendedConfig,
   AiProvidersRow,
-  DialecticProcessTemplate,
-  DialecticProject,
-  DialecticRecipeEdge,
-  DialecticSession,
   DialecticStage,
-  DialecticStageRecipe,
-  DialecticStageRecipeStep,
-  DialecticStore,
   GenerateContributionsResponse,
   GetAllStageProgressResponse,
-  ResumePausedNsfJobsResponse,
   SelectedModels,
-  StageRunProgressSnapshot,
   TokenWallet,
-  UnifiedProjectStatus,
+  UserTier,
 } from '@paynless/types';
-import {
-  computeCostCeiling,
-  buildComputeCostCeilingDeps,
-  buildComputeCostCeilingParams,
-  buildComputeCostCeilingPayload,
-  buildComputeCostCeilingStageInput,
-  isJson,
+import { computeCostCeiling, isApiError, isJson } from '@paynless/utils';
+import type {
+  ComputeCostCeilingDeps,
+  ComputeCostCeilingParams,
+  ComputeCostCeilingPayload,
+  ComputeCostCeilingReturn,
+  ComputeCostCeilingStageInput,
 } from '@paynless/utils';
-import type { ComputeCostCeilingStageInput } from '@paynless/utils';
 import { initializeApiClient, _resetApiClient } from '@paynless/api';
 import {
   selectCostCeiling,
   useAiStore,
+  useAuthStore,
   useDialecticStore,
   useWalletStore,
 } from '@paynless/store';
@@ -57,26 +47,25 @@ import {
   mockStageProgressEntry,
   mockAiProvidersRow,
   mockAiModelConfig,
+  mockDialecticStage,
+  mockSession,
+  mockDialecticProject,
+  mockDialecticProcessTemplate,
+  mockDialecticStageRecipe,
+  mockDialecticStageRecipeStep,
+  mockStageRunProgressSnapshot,
 } from '../../mocks/dialecticStore.mock';
 
 vi.mock('@paynless/api', async () => {
   return await vi.importActual<typeof import('@paynless/api')>('@paynless/api');
 });
 
-vi.mock('@supabase/supabase-js', () => {
-  const mockClient = {
-    auth: {
-      getSession: vi.fn(),
-    },
-    channel: vi.fn(() => ({
-      on: vi.fn().mockReturnThis(),
-      subscribe: vi.fn(),
-      unsubscribe: vi.fn(),
-    })),
-    removeChannel: vi.fn(),
-  };
+vi.mock('@supabase/supabase-js', async () => {
+  const supabaseMockModule =
+    await import('../../../../../packages/api/src/mocks/supabase.mock.ts');
+  const mockSupabaseClient = supabaseMockModule.createMockSupabaseClient();
   return {
-    createClient: vi.fn(() => mockClient),
+    createClient: vi.fn(() => mockSupabaseClient),
     SupabaseClient: vi.fn(),
   };
 });
@@ -104,23 +93,32 @@ const maxOutputTokens = 1000;
 const stageExpectedCount = 4;
 const outputTokenCostRate = 2;
 
-const ceilingStages: ComputeCostCeilingStageInput[] = [
-  buildComputeCostCeilingStageInput({
-    stageSlug,
-    expectedCount: stageExpectedCount,
-    contributions: [],
-  }),
-];
+const outputCapNotInitializedMessage =
+  'Output cap is not initialized in dialectic store.';
+const stageProgressHydrationFailedMessage = 'Stage progress hydration failed.';
 
-const ceilingComputationResult = computeCostCeiling(
-  buildComputeCostCeilingDeps(),
-  buildComputeCostCeilingParams(),
-  buildComputeCostCeilingPayload({
-    stages: ceilingStages,
-    maxOutputTokens,
-    outputTokenCostRates: [outputTokenCostRate],
-  }),
-);
+const integrationUserTier: UserTier = {
+  level: 0,
+  name: 'free',
+  output_cap_tokens: maxOutputTokens,
+  max_models_per_project: 1,
+};
+
+const ceilingStageInput: ComputeCostCeilingStageInput = {
+  stageSlug,
+  expectedCount: stageExpectedCount,
+  contributions: [],
+};
+
+const ceilingDeps: ComputeCostCeilingDeps = {};
+const ceilingParams: ComputeCostCeilingParams = {};
+const ceilingPayload: ComputeCostCeilingPayload = {
+  stages: [ceilingStageInput],
+  maxOutputTokens,
+  outputTokenCostRates: [outputTokenCostRate],
+};
+
+const ceilingComputationResult = computeCostCeiling(ceilingDeps, ceilingParams, ceilingPayload);
 
 if ('error' in ceilingComputationResult) {
   throw new Error('cost ceiling integration fixture computation failed');
@@ -133,6 +131,8 @@ const lowWalletBalance: string = '0';
 
 const modelConfig: AiModelExtendedConfig = mockAiModelConfig({
   output_token_cost_rate: outputTokenCostRate,
+  hard_cap_output_tokens: maxOutputTokens,
+  provider_max_output_tokens: maxOutputTokens,
 });
 if (!isJson(modelConfig)) {
   throw new Error('config is not a valid JSON object');
@@ -162,39 +162,35 @@ const successProgressResponse: GetAllStageProgressResponse = mockGetAllStageProg
   ],
 });
 
-const mockThesisStage: DialecticStage = {
+const thesisStage: DialecticStage = mockDialecticStage({
   id: `stage-${stageSlug}`,
   slug: stageSlug,
   display_name: 'Proposal',
-  description: null,
-  created_at: new Date().toISOString(),
   default_system_prompt_id: null,
-  expected_output_template_ids: [],
-  recipe_template_id: null,
-  active_recipe_instance_id: null,
-  minimum_balance: 100000,
-};
+});
 
 const server = setupServer();
 
-let generateContributionsSpy: MockInstance<
-  Parameters<DialecticStore['generateContributions']>,
-  ReturnType<DialecticStore['generateContributions']>
->;
-let resumePausedNsfJobsSpy: MockInstance<
-  Parameters<DialecticStore['resumePausedNsfJobs']>,
-  ReturnType<DialecticStore['resumePausedNsfJobs']>
->;
+let generateContributionsRequestCount = 0;
 
 function formatTokenCount(value: number): string {
   return new Intl.NumberFormat('en-US').format(value);
 }
 
+function resetGenerateContributionsRequestCount(): void {
+  generateContributionsRequestCount = 0;
+}
+
+function getGenerateContributionsRequestCount(): number {
+  return generateContributionsRequestCount;
+}
+
 function configureSupabaseAuthSession(): void {
-  const mockSupabaseClient = vi.mocked(createClient).mock.results[0]?.value;
-  if (mockSupabaseClient === undefined) {
+  const mockResults = vi.mocked(createClient).mock.results;
+  if (mockResults.length === 0) {
     throw new Error('Supabase mock client not initialized');
   }
+  const mockSupabaseClient = mockResults[0].value;
   vi.mocked(mockSupabaseClient.auth.getSession).mockResolvedValue({
     data: {
       session: {
@@ -227,6 +223,19 @@ function registerSuccessMswHandlers(): void {
       if (action === 'listModelCatalog') {
         return HttpResponse.json([catalogRow], { status: 200 });
       }
+      if (action === 'generateContributions') {
+        generateContributionsRequestCount += 1;
+        const generateContributionsResponse: GenerateContributionsResponse = {
+          sessionId,
+          projectId,
+          stage: stageSlug,
+          iteration: iterationNumber,
+          status: 'pending',
+          successfulContributions: [],
+          failedAttempts: [],
+        };
+        return HttpResponse.json(generateContributionsResponse, { status: 200 });
+      }
       return HttpResponse.json({ message: `Unhandled action: ${action}` }, { status: 500 });
     }),
   );
@@ -249,6 +258,10 @@ function registerGetAllStageProgressErrorHandler(): void {
       if (action === 'listModelCatalog') {
         return HttpResponse.json([catalogRow], { status: 200 });
       }
+      if (action === 'generateContributions') {
+        generateContributionsRequestCount += 1;
+        return HttpResponse.json({ message: 'Unexpected generateContributions' }, { status: 500 });
+      }
       return HttpResponse.json({ message: `Unhandled action: ${action}` }, { status: 500 });
     }),
   );
@@ -260,52 +273,6 @@ function renderWithRouter(ui: React.ReactElement) {
       <MemoryRouter>{children}</MemoryRouter>
     ),
   });
-}
-
-function buildStep(overrides: {
-  id: string;
-  step_key: string;
-  step_name: string;
-  job_type: 'PLAN' | 'EXECUTE' | 'RENDER';
-  execution_order: number;
-}): DialecticStageRecipeStep {
-  return {
-    id: overrides.id,
-    step_key: overrides.step_key,
-    step_slug: overrides.step_key,
-    step_name: overrides.step_name,
-    execution_order: overrides.execution_order,
-    job_type: overrides.job_type,
-    prompt_type: 'Planner',
-    output_type: 'header_context',
-    granularity_strategy: 'all_to_one',
-    inputs_required: [],
-  };
-}
-
-function buildRecipe(
-  steps: DialecticStageRecipeStep[],
-  edges: DialecticRecipeEdge[],
-  slug: string = stageSlug,
-  instanceId: string = 'instance-1',
-): DialecticStageRecipe {
-  return { stageSlug: slug, instanceId, steps, edges };
-}
-
-function buildProgressSnapshot(
-  stepStatuses: Record<string, UnifiedProjectStatus>,
-): StageRunProgressSnapshot {
-  return {
-    stepStatuses: { ...stepStatuses },
-    documents: {},
-    jobProgress: {},
-    progress: {
-      completedSteps: 0,
-      totalSteps: Object.keys(stepStatuses).length,
-      failedSteps: 0,
-    },
-    jobs: [],
-  };
 }
 
 function buildPersonalWallet(balance: string): TokenWallet {
@@ -322,10 +289,40 @@ function buildPersonalWallet(balance: string): TokenWallet {
 
 function resetIntegrationStores(): void {
   act(() => {
-    useDialecticStore.getState()._resetForTesting?.();
+    const dialecticStoreState = useDialecticStore.getState();
+    if (dialecticStoreState._resetForTesting !== undefined) {
+      dialecticStoreState._resetForTesting();
+    }
     useWalletStore.getState()._resetForTesting();
     useAiStore.setState({ newChatContext: 'personal' });
+    useAuthStore.setState(useAuthStore.getInitialState());
   });
+}
+
+function seedAuthForCostCeilingIntegration(): void {
+  act(() => {
+    useAuthStore.setState({
+      isLoading: false,
+      userTier: integrationUserTier,
+      error: null,
+      availableTiers: [integrationUserTier],
+    });
+  });
+}
+
+async function initializeOutputCapFromTier(): Promise<void> {
+  act(() => {
+    useDialecticStore.getState().initializeMaxOutputTokens();
+  });
+  await waitFor(() => {
+    const tokens: number | null = useDialecticStore.getState().maxOutputTokens;
+    expect(tokens).not.toBeNull();
+  });
+  const initializedTokens: number | null = useDialecticStore.getState().maxOutputTokens;
+  if (initializedTokens === null) {
+    throw new Error('maxOutputTokens remained null after initializeMaxOutputTokens');
+  }
+  expect(initializedTokens).toBe(maxOutputTokens);
 }
 
 function setWalletBalance(balance: string): void {
@@ -339,77 +336,95 @@ function setWalletBalance(balance: string): void {
   });
 }
 
-function seedSessionStore(maxOutputTokensOverride: number | null = maxOutputTokens): void {
-  const template: DialecticProcessTemplate = {
+function seedSessionStoreForTierInitPath(): void {
+  applySessionStoreSeed(false, null);
+}
+
+function seedSessionStoreWithNullMaxOutputTokens(): void {
+  applySessionStoreSeed(true, null);
+}
+
+function applySessionStoreSeed(
+  includeMaxOutputTokens: boolean,
+  maxOutputTokensValue: number | null,
+): void {
+  const template = mockDialecticProcessTemplate({
     id: 'template-1',
     name: 'Test',
-    description: null,
-    created_at: new Date().toISOString(),
-    starting_stage_id: mockThesisStage.id,
-    stages: [mockThesisStage],
+    starting_stage_id: thesisStage.id,
+    stages: [thesisStage],
     transitions: [],
-  };
-  const session: DialecticSession = {
+  });
+  const session = mockSession({
     id: sessionId,
     project_id: projectId,
-    session_description: null,
     iteration_count: iterationNumber,
-    current_stage_id: mockThesisStage.id,
-    status: 'active',
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-    user_input_reference_url: null,
-    associated_chat_id: null,
+    current_stage_id: thesisStage.id,
     selected_models: selectedModels,
-    dialectic_contributions: [],
-    dialectic_session_models: [],
-    viewing_stage_id: mockThesisStage.id,
-  };
-  const currentProjectDetail: DialecticProject = {
+    viewing_stage_id: thesisStage.id,
+  });
+  const currentProjectDetail = mockDialecticProject({
     id: projectId,
     user_id: userId,
     project_name: 'Cost Ceiling Test Project',
-    status: 'active',
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-    selected_domain_id: 'domain-1',
-    dialectic_domains: { name: 'Test' },
-    selected_domain_overlay_id: null,
-    initial_user_prompt: null,
-    initial_prompt_resource_id: null,
-    repo_url: null,
     process_template_id: template.id,
     dialectic_process_templates: template,
-    isLoadingProcessTemplate: false,
-    processTemplateError: null,
-    contributionGenerationStatus: 'idle',
-    generateContributionsError: null,
-    isSubmittingStageResponses: false,
-    submitStageResponsesError: null,
-    isSavingContributionEdit: false,
-    saveContributionEditError: null,
     dialectic_sessions: [session],
+  });
+  const recipe = mockDialecticStageRecipe({
+    stageSlug,
+    instanceId: 'instance-1',
+    steps: [
+      mockDialecticStageRecipeStep({
+        id: 's1',
+        step_key: 'plan',
+        step_slug: 'plan',
+        step_name: 'Plan',
+        execution_order: 0,
+        job_type: 'PLAN',
+        prompt_type: 'Planner',
+        output_type: 'header_context',
+        granularity_strategy: 'all_to_one',
+        inputs_required: [],
+        outputs_required: [],
+      }),
+    ],
+    edges: [],
+  });
+  const progress = mockStageRunProgressSnapshot({
+    stepStatuses: { plan: 'not_started' },
+    progress: {
+      completedSteps: 0,
+      totalSteps: 1,
+      failedSteps: 0,
+    },
+  });
+
+  const sessionStoreBase = {
+    currentProcessTemplate: template,
+    currentProjectDetail,
+    activeContextSessionId: sessionId,
+    viewingStageSlug: stageSlug,
+    selectedModels,
+    modelCatalog: [catalogRow],
+    recipesByStageSlug: { [stageSlug]: recipe },
+    stageRunProgress: { [progressKey]: progress },
+    generatingSessions: {},
+    stageExpectedCountsByRun: {},
   };
-  const steps: DialecticStageRecipeStep[] = [
-    buildStep({ id: 's1', step_key: 'plan', step_name: 'Plan', job_type: 'PLAN', execution_order: 0 }),
-  ];
-  const recipe = buildRecipe(steps, []);
-  const progress = buildProgressSnapshot({ plan: 'not_started' });
+
+  if (includeMaxOutputTokens) {
+    act(() => {
+      useDialecticStore.setState({
+        ...sessionStoreBase,
+        maxOutputTokens: maxOutputTokensValue,
+      });
+    });
+    return;
+  }
 
   act(() => {
-    useDialecticStore.setState({
-      currentProcessTemplate: template,
-      currentProjectDetail,
-      activeContextSessionId: sessionId,
-      viewingStageSlug: stageSlug,
-      selectedModels,
-      maxOutputTokens: maxOutputTokensOverride,
-      modelCatalog: [catalogRow],
-      recipesByStageSlug: { [stageSlug]: recipe },
-      stageRunProgress: { [progressKey]: progress },
-      generatingSessions: {},
-      stageExpectedCountsByRun: {},
-    });
+    useDialecticStore.setState(sessionStoreBase);
   });
 }
 
@@ -434,8 +449,6 @@ describe('GenerateContributionButton cost ceiling integration', () => {
   afterEach(() => {
     server.resetHandlers();
     _resetApiClient();
-    generateContributionsSpy.mockRestore();
-    resumePausedNsfJobsSpy.mockRestore();
   });
 
   beforeEach(() => {
@@ -444,48 +457,27 @@ describe('GenerateContributionButton cost ceiling integration', () => {
     initializeApiClient({ supabaseUrl: MOCK_SUPABASE_URL, supabaseAnonKey: MOCK_ANON_KEY });
     configureSupabaseAuthSession();
     resetIntegrationStores();
+    seedAuthForCostCeilingIntegration();
     setWalletBalance(sufficientWalletBalance);
+    resetGenerateContributionsRequestCount();
     registerSuccessMswHandlers();
-
-    const generateContributionsResponse: GenerateContributionsResponse = {
-      sessionId,
-      projectId,
-      stage: stageSlug,
-      iteration: iterationNumber,
-      status: 'pending',
-      successfulContributions: [],
-      failedAttempts: [],
-    };
-    generateContributionsSpy = vi
-      .spyOn(useDialecticStore.getState(), 'generateContributions')
-      .mockResolvedValue({
-        data: generateContributionsResponse,
-        status: 200,
-        error: undefined,
-      });
-    const resumePausedNsfJobsResponse: ResumePausedNsfJobsResponse = {
-      resumedCount: 0,
-    };
-    resumePausedNsfJobsSpy = vi
-      .spyOn(useDialecticStore.getState(), 'resumePausedNsfJobs')
-      .mockResolvedValue({
-        data: resumePausedNsfJobsResponse,
-        status: 200,
-        error: undefined,
-      });
   });
 
   it('success stack: API hydration → selectCostCeiling → hook → enabled generate and generateContributions on click', async () => {
-    seedSessionStore();
+    seedSessionStoreForTierInitPath();
 
     await hydrateStageProgressFromApi();
+    await initializeOutputCapFromTier();
 
     const storeState = useDialecticStore.getState();
-    expect(storeState.stageExpectedCountsByRun[runKey]?.[stageSlug]).toBe(stageExpectedCount);
+    const countsBySlug = storeState.stageExpectedCountsByRun[runKey];
+    if (countsBySlug === undefined) {
+      throw new Error(`stageExpectedCountsByRun missing for runKey ${runKey}`);
+    }
+    expect(countsBySlug[stageSlug]).toBe(stageExpectedCount);
 
-    const ceilingResult = selectCostCeiling(storeState, sessionId);
-    expect(ceilingResult).not.toBeNull();
-    if (ceilingResult === null || 'error' in ceilingResult) {
+    const ceilingResult: ComputeCostCeilingReturn = selectCostCeiling(storeState, sessionId);
+    if ('error' in ceilingResult) {
       throw new Error('selectCostCeiling should return success after hydration');
     }
     expect(ceilingResult.stageCeilings[stageSlug]).toBe(expectedStageCeiling);
@@ -494,95 +486,137 @@ describe('GenerateContributionButton cost ceiling integration', () => {
     renderWithRouter(<GenerateContributionButton />);
 
     await waitFor(() => {
-      expect(screen.getByTestId('generate-button-stage-cost-estimate')).toHaveTextContent(
-        formatTokenCount(expectedStageCeiling),
-      );
+      const stageCostEstimate = screen.getByTestId('generate-button-stage-cost-estimate');
+      expect(stageCostEstimate.textContent).toContain(formatTokenCount(expectedStageCeiling));
     });
 
     const button = screen.getByRole('button', { name: /Generate Proposal/i });
-    expect(button).toBeEnabled();
+    expect(button.hasAttribute('disabled')).toBe(false);
 
     const user = userEvent.setup();
     await user.click(button);
 
     await waitFor(() => {
-      expect(generateContributionsSpy).toHaveBeenCalledTimes(1);
+      expect(getGenerateContributionsRequestCount()).toBe(1);
     });
-    expect(resumePausedNsfJobsSpy).not.toHaveBeenCalled();
   });
 
-  it('null prerequisites: missing maxOutputTokens → no-estimate callout and generateContributions not called on click', async () => {
-    seedSessionStore(null);
+  it('null prerequisites: missing maxOutputTokens → estimate-error callout and generateContributions not called on click', async () => {
+    seedSessionStoreWithNullMaxOutputTokens();
 
     await hydrateStageProgressFromApi();
+
+    const storeState = useDialecticStore.getState();
+    const ceilingResult: ComputeCostCeilingReturn = selectCostCeiling(storeState, sessionId);
+    expect('error' in ceilingResult).toBe(true);
+    if (!('error' in ceilingResult)) {
+      throw new Error('selectCostCeiling should return OUTPUT_CAP_NOT_INITIALIZED error');
+    }
+    expect(isApiError(ceilingResult.error)).toBe(true);
+    if (!isApiError(ceilingResult.error)) {
+      throw new Error('selectCostCeiling error should be ApiError');
+    }
+    expect(ceilingResult.error.code).toBe('OUTPUT_CAP_NOT_INITIALIZED');
+    expect(ceilingResult.error.message).toBe(outputCapNotInitializedMessage);
 
     renderWithRouter(<GenerateContributionButton />);
 
     await waitFor(() => {
-      expect(screen.getByTestId('generate-button-no-estimate-callout')).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /No Estimate/i })).toBeDisabled();
+      expect(screen.getByTestId('generate-button-estimate-error-callout').textContent).toBe(
+        outputCapNotInitializedMessage,
+      );
+      expect(screen.getByRole('button', { name: /Estimate Failed/i }).hasAttribute('disabled')).toBe(
+        true,
+      );
+      expect(screen.queryByTestId('generate-button-no-estimate-callout')).toBeNull();
     });
 
     const user = userEvent.setup();
-    await user.click(screen.getByRole('button'));
+    await user.click(screen.getByRole('button', { name: /Estimate Failed/i }));
 
-    expect(generateContributionsSpy).not.toHaveBeenCalled();
+    expect(getGenerateContributionsRequestCount()).toBe(0);
   });
 
-  it('API progress error: getAllStageProgress 500 → no-estimate callout and generateContributions not called on click', async () => {
+  it('API progress error: getAllStageProgress 500 → estimate-error callout and generateContributions not called on click', async () => {
     registerGetAllStageProgressErrorHandler();
-    seedSessionStore();
+    seedSessionStoreForTierInitPath();
 
-    await hydrateStageProgressFromApi();
+    await expect(
+      useDialecticStore.getState().hydrateAllStageProgress({
+        sessionId,
+        iterationNumber,
+        userId,
+        projectId,
+      }),
+    ).rejects.toBeDefined();
 
-    // Real hydrateAllStageProgress catches the MSW 500, sets progressHydrationStatus[runKey] to failed,
-    // and leaves stageExpectedCountsByRun[runKey] unset; selectCostCeiling returns null at countsBySlug.
     const storeState = useDialecticStore.getState();
     expect(storeState.progressHydrationStatus[runKey]).toBe('failed');
     expect(storeState.stageExpectedCountsByRun[runKey]).toBeUndefined();
-    expect(selectCostCeiling(storeState, sessionId)).toBeNull();
+    const ceilingResult: ComputeCostCeilingReturn = selectCostCeiling(storeState, sessionId);
+    expect('error' in ceilingResult).toBe(true);
+    if (!('error' in ceilingResult)) {
+      throw new Error('selectCostCeiling should return STAGE_PROGRESS_HYDRATION_FAILED error');
+    }
+    expect(isApiError(ceilingResult.error)).toBe(true);
+    if (!isApiError(ceilingResult.error)) {
+      throw new Error('selectCostCeiling error should be ApiError');
+    }
+    expect(ceilingResult.error.code).toBe('STAGE_PROGRESS_HYDRATION_FAILED');
+    expect(ceilingResult.error.message).toBe(stageProgressHydrationFailedMessage);
 
     renderWithRouter(<GenerateContributionButton />);
 
     await waitFor(() => {
-      expect(screen.getByTestId('generate-button-no-estimate-callout')).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /No Estimate/i })).toBeDisabled();
+      expect(screen.getByTestId('generate-button-estimate-error-callout').textContent).toBe(
+        stageProgressHydrationFailedMessage,
+      );
+      expect(screen.getByRole('button', { name: /Estimate Failed/i }).hasAttribute('disabled')).toBe(
+        true,
+      );
+      expect(screen.queryByTestId('generate-button-no-estimate-callout')).toBeNull();
     });
 
     const user = userEvent.setup();
-    await user.click(screen.getByRole('button'));
+    await user.click(screen.getByRole('button', { name: /Estimate Failed/i }));
 
-    expect(generateContributionsSpy).not.toHaveBeenCalled();
+    expect(getGenerateContributionsRequestCount()).toBe(0);
   });
 
   it('insufficient wallet: balance below expectedStageCeiling → NSF callout and generateContributions not called on click', async () => {
-    seedSessionStore();
+    seedSessionStoreForTierInitPath();
     setWalletBalance(lowWalletBalance);
 
     await hydrateStageProgressFromApi();
+    await initializeOutputCapFromTier();
 
     renderWithRouter(<GenerateContributionButton />);
 
     await waitFor(() => {
-      expect(screen.getByTestId('generate-button-balance-callout')).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /Insufficient Balance/i })).toBeDisabled();
+      expect(screen.getByTestId('generate-button-balance-callout')).toBeDefined();
+      expect(screen.getByRole('button', { name: /Insufficient Balance/i }).hasAttribute('disabled')).toBe(
+        true,
+      );
     });
 
     const user = userEvent.setup();
-    await user.click(screen.getByRole('button'));
+    await user.click(screen.getByRole('button', { name: /Insufficient Balance/i }));
 
-    expect(generateContributionsSpy).not.toHaveBeenCalled();
+    expect(getGenerateContributionsRequestCount()).toBe(0);
   });
 
   it('hook callback guard: clearing maxOutputTokens after enable blocks spend on subsequent click attempt', async () => {
-    seedSessionStore();
+    seedSessionStoreForTierInitPath();
 
     await hydrateStageProgressFromApi();
+    await initializeOutputCapFromTier();
 
     renderWithRouter(<GenerateContributionButton />);
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /Generate Proposal/i })).toBeEnabled();
+      expect(screen.getByRole('button', { name: /Generate Proposal/i }).hasAttribute('disabled')).toBe(
+        false,
+      );
     });
 
     act(() => {
@@ -590,13 +624,18 @@ describe('GenerateContributionButton cost ceiling integration', () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByTestId('generate-button-no-estimate-callout')).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /No Estimate/i })).toBeDisabled();
+      expect(screen.getByTestId('generate-button-estimate-error-callout').textContent).toBe(
+        outputCapNotInitializedMessage,
+      );
+      expect(screen.getByRole('button', { name: /Estimate Failed/i }).hasAttribute('disabled')).toBe(
+        true,
+      );
+      expect(screen.queryByTestId('generate-button-no-estimate-callout')).toBeNull();
     });
 
     const user = userEvent.setup();
-    await user.click(screen.getByRole('button'));
+    await user.click(screen.getByRole('button', { name: /Estimate Failed/i }));
 
-    expect(generateContributionsSpy).not.toHaveBeenCalled();
+    expect(getGenerateContributionsRequestCount()).toBe(0);
   });
 });

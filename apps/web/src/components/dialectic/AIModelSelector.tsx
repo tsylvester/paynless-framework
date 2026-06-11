@@ -1,4 +1,4 @@
-import React, { useMemo, useEffect, useRef } from "react";
+import React, { useMemo, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { InternalDropdownButton } from "./InternalDropdownButton";
 import type { AiProvider, SelectedModels, UserTier } from "@paynless/types";
@@ -22,7 +22,6 @@ import {
 	useAiStore,
 	useAuthStore,
 	selectSelectedModels,
-	selectDefaultGenerationModels,
 } from "@paynless/store";
 import { MultiplicitySelector } from "./MultiplicitySelector";
 import { cn } from "@/lib/utils";
@@ -30,6 +29,10 @@ import { cn } from "@/lib/utils";
 interface AIModelSelectorProps {
 	disabled?: boolean;
 }
+
+const LOADING_SUBSCRIPTION_TIER_MESSAGE = "Loading subscription tier…";
+const SUBSCRIPTION_TIER_UNAVAILABLE_MESSAGE =
+	"Subscription tier is not available.";
 
 function tierDisplayName(level: number, availableTiers: UserTier[]): string {
 	for (const tier of availableTiers) {
@@ -45,14 +48,14 @@ function tierDisplayName(level: number, availableTiers: UserTier[]): string {
 
 function resolveNextTierName(
 	availableTiers: UserTier[],
-	effectiveUserTier: UserTier,
+	userTier: UserTier,
 	modelLimit: number | null,
 ): string {
 	const sortedTiers: UserTier[] = [...availableTiers].sort(
 		(a, b) => a.level - b.level,
 	);
 	for (const tier of sortedTiers) {
-		if (tier.level <= effectiveUserTier.level) {
+		if (tier.level <= userTier.level) {
 			continue;
 		}
 		if (tier.max_models_per_project === null) {
@@ -188,19 +191,13 @@ export const AIModelSelector: React.FC<AIModelSelectorProps> = ({
 		fetchAIModelCatalog,
 		isLoadingModelCatalog,
 		modelCatalog,
-		setSelectedModels,
-		activeContextSessionId,
 	} = useDialecticStore((state) => ({
 		selectedModels: selectSelectedModels(state),
 		setModelMultiplicity: state.setModelMultiplicity,
 		fetchAIModelCatalog: state.fetchAIModelCatalog,
 		isLoadingModelCatalog: state.isLoadingModelCatalog,
 		modelCatalog: state.modelCatalog,
-		setSelectedModels: state.setSelectedModels,
-		activeContextSessionId: state.activeContextSessionId,
 	}));
-	const defaultModels = useDialecticStore(selectDefaultGenerationModels);
-	const defaultsAppliedRef = useRef<boolean>(false);
 
 	const currentSelectedModelIds = useMemo(
 		() => selectedModels.map((m) => m.id),
@@ -221,28 +218,19 @@ export const AIModelSelector: React.FC<AIModelSelectorProps> = ({
 		return counts;
 	}, [selectedModels, availableProviders]);
 
-	const { userTier, availableTiers } = useAuthStore((state) => ({
-		userTier: state.userTier,
-		availableTiers: state.availableTiers,
-	}));
-
-	const effectiveUserTier: UserTier = useMemo(() => {
-		if (userTier !== null) {
-			return userTier;
-		}
-		for (const tier of availableTiers) {
-			if (tier.level === 0) {
-				return tier;
-			}
-		}
-		throw new Error(
-			"AIModelSelector: userTier is null and no level-0 tier in availableTiers",
-		);
-	}, [userTier, availableTiers]);
+	const { userTier, availableTiers, isLoading, authError } = useAuthStore(
+		(state) => ({
+			userTier: state.userTier,
+			availableTiers: state.availableTiers,
+			isLoading: state.isLoading,
+			authError: state.error,
+		}),
+	);
 
 	const totalSelectedCount: number = currentSelectedModelIds.length;
 
-	const modelLimit: number | null = effectiveUserTier.max_models_per_project;
+	const modelLimit: number | null =
+		userTier !== null ? userTier.max_models_per_project : null;
 
 	const atCap: boolean = useMemo(() => {
 		if (modelLimit === null) {
@@ -267,18 +255,6 @@ export const AIModelSelector: React.FC<AIModelSelectorProps> = ({
 		}
 	}, [fetchAIModelCatalog, isLoadingModelCatalog, modelCatalog.length]);
 
-	useEffect(() => {
-		if (
-			!defaultsAppliedRef.current &&
-			defaultModels.length > 0 &&
-			selectedModels.length === 0 &&
-			!activeContextSessionId
-		) {
-			defaultsAppliedRef.current = true;
-			setSelectedModels(defaultModels);
-		}
-	}, [defaultModels, selectedModels.length, activeContextSessionId, setSelectedModels]);
-
 	const handleMultiplicityChange = (modelId: string, newCount: number) => {
 		const provider = availableProviders?.find((p) => p.id === modelId);
 		if (provider === undefined) {
@@ -287,8 +263,12 @@ export const AIModelSelector: React.FC<AIModelSelectorProps> = ({
 			return;
 		}
 
+		if (userTier === null) {
+			return;
+		}
+
 		const tierLocked: boolean =
-			provider.min_plan_tier_level > effectiveUserTier.level;
+			provider.min_plan_tier_level > userTier.level;
 		if (tierLocked) {
 			return;
 		}
@@ -318,11 +298,20 @@ export const AIModelSelector: React.FC<AIModelSelectorProps> = ({
 	const hasContentProviders =
 		availableProviders && availableProviders.length > 0;
 
-	const finalIsDisabled =
-		disabled || (!isConfigLoading && !aiError && !hasContentProviders);
+	const authTierBlocked: boolean =
+		isLoading || userTier === null || authError !== null;
+
+	const finalIsDisabled: boolean =
+		disabled ||
+		authTierBlocked ||
+		(!isConfigLoading && !aiError && !hasContentProviders);
 
 	let dropdownContent: React.ReactNode = null;
-	if (isConfigLoading) {
+	if (isLoading) {
+		dropdownContent = (
+			<DropdownMenuLabel>{LOADING_SUBSCRIPTION_TIER_MESSAGE}</DropdownMenuLabel>
+		);
+	} else if (isConfigLoading) {
 		dropdownContent = <DropdownMenuLabel>Loading models...</DropdownMenuLabel>;
 	} else if (aiError) {
 		dropdownContent = (
@@ -330,7 +319,8 @@ export const AIModelSelector: React.FC<AIModelSelectorProps> = ({
 				Error: {aiError}
 			</DropdownMenuLabel>
 		);
-	} else if (hasContentProviders) {
+	} else if (hasContentProviders && userTier !== null) {
+		const activeUserTier: UserTier = userTier;
 		const uniqueSelectedCount = currentSelectedModelIds
 			? new Set(currentSelectedModelIds).size
 			: 0;
@@ -351,7 +341,7 @@ export const AIModelSelector: React.FC<AIModelSelectorProps> = ({
 								const isSelected: boolean = count > 0;
 								const tierLocked: boolean =
 									provider.min_plan_tier_level >
-									effectiveUserTier.level;
+									activeUserTier.level;
 								const requiredTierName: string = tierDisplayName(
 									provider.min_plan_tier_level,
 									availableTiers,
@@ -395,7 +385,7 @@ export const AIModelSelector: React.FC<AIModelSelectorProps> = ({
 									}
 									const capNextTierName: string = resolveNextTierName(
 										availableTiers,
-										effectiveUserTier,
+										activeUserTier,
 										modelLimit,
 									);
 									controls = (
@@ -542,11 +532,40 @@ export const AIModelSelector: React.FC<AIModelSelectorProps> = ({
 
 	const hasSelectedModels =
 		currentSelectedModelIds && currentSelectedModelIds.length > 0;
-	const needsAttention =
-		!hasSelectedModels && !finalIsDisabled && !isConfigLoading && !aiError;
+	const needsAttention: boolean =
+		!hasSelectedModels &&
+		!finalIsDisabled &&
+		!isConfigLoading &&
+		!aiError &&
+		!isLoading &&
+		userTier !== null;
 
 	return (
 		<div className="w-full">
+			{isLoading ? (
+				<p
+					data-testid="ai-model-selector-loading-notice"
+					className="text-xs text-muted-foreground mb-2"
+				>
+					{LOADING_SUBSCRIPTION_TIER_MESSAGE}
+				</p>
+			) : null}
+			{!isLoading && authError !== null ? (
+				<p
+					data-testid="ai-model-selector-tier-unavailable-notice"
+					className="text-xs text-muted-foreground mb-2"
+				>
+					{authError.message}
+				</p>
+			) : null}
+			{!isLoading && userTier === null && authError === null ? (
+				<p
+					data-testid="ai-model-selector-tier-unavailable-notice"
+					className="text-xs text-muted-foreground mb-2"
+				>
+					{SUBSCRIPTION_TIER_UNAVAILABLE_MESSAGE}
+				</p>
+			) : null}
 			<DropdownMenu>
 				<DropdownMenuTrigger asChild>
 					<InternalDropdownButton

@@ -26,22 +26,23 @@ import type {
   DialecticStore,
   DomainProcessAssociationRow,
   GetStageExpectedCountsResponse,
+  Json,
   SelectedModels,
   TokenWallet,
+  UserTier,
 } from '@paynless/types';
-import {
-  computeCostCeiling,
-  buildComputeCostCeilingDeps,
-  buildComputeCostCeilingParams,
-  buildComputeCostCeilingPayload,
-  buildComputeCostCeilingStageInput,
-  isJson,
+import { computeCostCeiling, isJson } from '@paynless/utils';
+import type {
+  ComputeCostCeilingDeps,
+  ComputeCostCeilingParams,
+  ComputeCostCeilingPayload,
+  ComputeCostCeilingStageInput,
 } from '@paynless/utils';
-import type { ComputeCostCeilingStageInput } from '@paynless/utils';
 import { initializeApiClient, _resetApiClient } from '@paynless/api';
 import {
   selectPreProjectCostCeiling,
   useAiStore,
+  useAuthStore,
   useDialecticStore,
   useWalletStore,
 } from '@paynless/store';
@@ -83,7 +84,7 @@ vi.mock('@paynless/platform', async (importOriginal) => {
   return {
     ...actual,
     usePlatform: vi.fn(() => ({
-      capabilities: { platform: 'web' as const },
+      capabilities: { platform: 'web' },
     })),
     platformEventEmitter: {
       on: vi.fn(),
@@ -138,12 +139,21 @@ const MOCK_FUNCTIONS_URL = `${MOCK_SUPABASE_URL}/functions/v1`;
 const MOCK_ACCESS_TOKEN = 'mock-test-access-token-local';
 const userId = 'create-form-cost-ceiling-user';
 
+const subscriptionTierUnavailableMessage = 'Subscription tier is not available.';
+
 const domainId = 'domain-cost-ceiling-int';
 const processTemplateId = 'pt-cost-ceiling-int';
 const firstStageSlug = 'thesis';
-const maxOutputTokens = 1000;
+const tierOutputCapTokens = 1000;
 const outputTokenCostRate = 2;
 const modelId = 'model-cost-ceiling-1';
+
+const integrationUserTier: UserTier = {
+  level: 0,
+  name: 'free',
+  output_cap_tokens: tierOutputCapTokens,
+  max_models_per_project: 1,
+};
 
 const thesisStage: DialecticStage = mockDialecticStage({
   id: 'stage-thesis-int',
@@ -187,25 +197,42 @@ const stageExpectedCountsResponse: GetStageExpectedCountsResponse = {
 };
 
 const ceilingStages: ComputeCostCeilingStageInput[] = stageExpectedCountsResponse.stages.map(
-  (entry) =>
-    buildComputeCostCeilingStageInput({
+  (entry) => {
+    const stageInput: ComputeCostCeilingStageInput = {
       stageSlug: entry.stageSlug,
       expectedCount: entry.expectedCount,
       contributions: [],
-    }),
+    };
+    return stageInput;
+  },
 );
 
-const outputTokenCostRates: number[] = [outputTokenCostRate];
+const rawModelConfig: AiModelExtendedConfig = mockAiModelConfig({
+  output_token_cost_rate: outputTokenCostRate,
+  hard_cap_output_tokens: tierOutputCapTokens,
+  provider_max_output_tokens: tierOutputCapTokens,
+});
+if (!isJson(rawModelConfig)) {
+  throw new Error('model config is not a valid JSON object');
+}
+const catalogConfig: Json = rawModelConfig;
 
-const ceilingComputationResult = computeCostCeiling(
-  buildComputeCostCeilingDeps(),
-  buildComputeCostCeilingParams(),
-  buildComputeCostCeilingPayload({
-    stages: ceilingStages,
-    maxOutputTokens,
-    outputTokenCostRates,
-  }),
+const bindingModelCap: number = tierOutputCapTokens;
+
+const expectedInitializedMaxOutputTokens: number = Math.min(
+  tierOutputCapTokens,
+  bindingModelCap,
 );
+
+const ceilingDeps: ComputeCostCeilingDeps = {};
+const ceilingParams: ComputeCostCeilingParams = {};
+const ceilingPayload: ComputeCostCeilingPayload = {
+  stages: ceilingStages,
+  maxOutputTokens: expectedInitializedMaxOutputTokens,
+  outputTokenCostRates: [outputTokenCostRate],
+};
+
+const ceilingComputationResult = computeCostCeiling(ceilingDeps, ceilingParams, ceilingPayload);
 
 if ('error' in ceilingComputationResult) {
   throw new Error('create form cost ceiling integration fixture computation failed');
@@ -217,22 +244,33 @@ const expectedProjectCeiling: number = ceilingComputationResult.projectCeiling;
 const sufficientWalletBalance: string = String(expectedFirstStageCeiling + 2000);
 const lowWalletBalance: string = String(expectedFirstStageCeiling - 1);
 
-const modelConfig: AiModelExtendedConfig = mockAiModelConfig({
-  output_token_cost_rate: outputTokenCostRate,
-});
-if (!isJson(modelConfig)) {
-  throw new Error('model config is not a valid JSON object');
-}
-
 const catalogRow: AiProvidersRow = mockAiProvidersRow({
   id: modelId,
   name: 'Default Model',
   is_default_generation: true,
   is_active: true,
-  config: modelConfig,
+  config: catalogConfig,
 });
 
-const selectedModels: SelectedModels[] = [{ id: modelId, displayName: 'Default Model' }];
+const defaultSelectedModels: SelectedModels[] = [
+  { id: modelId, displayName: 'Default Model' },
+];
+
+const emptySelectedModels: SelectedModels[] = [];
+
+const tierOutputCap8192: number = 8192;
+const modelOutputCap4096: number = 4096;
+const modelOutputCap8192: number = 8192;
+
+const integrationUserTier8192: UserTier = {
+  level: 1,
+  name: 'pro',
+  output_cap_tokens: tierOutputCap8192,
+  max_models_per_project: 1,
+};
+
+const noDefaultGenerationModelsInitErrorMessage =
+  'No default generation models are available in the catalog.';
 
 const server = setupServer();
 
@@ -265,7 +303,29 @@ function configureSupabaseAuthSession(): void {
   });
 }
 
-function registerSuccessMswHandlers(): void {
+function buildCatalogConfigForModelCap(modelCap: number): Json {
+  const rawConfig: AiModelExtendedConfig = mockAiModelConfig({
+    output_token_cost_rate: outputTokenCostRate,
+    hard_cap_output_tokens: modelCap,
+    provider_max_output_tokens: modelCap,
+  });
+  if (!isJson(rawConfig)) {
+    throw new Error('model config is not a valid JSON object');
+  }
+  return rawConfig;
+}
+
+function buildCatalogRowForModelCap(modelCap: number): AiProvidersRow {
+  return mockAiProvidersRow({
+    id: modelId,
+    name: 'Default Model',
+    is_default_generation: true,
+    is_active: true,
+    config: buildCatalogConfigForModelCap(modelCap),
+  });
+}
+
+function registerSuccessMswHandlersForCatalogRow(row: AiProvidersRow): void {
   server.use(
     http.post(`${MOCK_FUNCTIONS_URL}/dialectic-service`, async ({ request }) => {
       const body = await request.json();
@@ -277,7 +337,47 @@ function registerSuccessMswHandlers(): void {
         return HttpResponse.json({ message: 'Invalid request body' }, { status: 400 });
       }
       if (action === 'listModelCatalog') {
-        return HttpResponse.json([catalogRow], { status: 200 });
+        return HttpResponse.json([row], { status: 200 });
+      }
+      if (action === 'fetchProcessAssociation') {
+        return HttpResponse.json(domainProcessAssociation, { status: 200 });
+      }
+      if (action === 'fetchProcessTemplate') {
+        return HttpResponse.json(processTemplate, { status: 200 });
+      }
+      if (action === 'getStageExpectedCounts') {
+        return HttpResponse.json(stageExpectedCountsResponse, { status: 200 });
+      }
+      return HttpResponse.json({ message: `Unhandled action: ${action}` }, { status: 500 });
+    }),
+  );
+}
+
+function registerSuccessMswHandlers(): void {
+  registerSuccessMswHandlersForCatalogRow(catalogRow);
+}
+
+function registerNoDefaultGenerationModelsMswHandlers(): void {
+  const nonDefaultCatalogRow: AiProvidersRow = mockAiProvidersRow({
+    id: modelId,
+    name: 'Default Model',
+    is_default_generation: false,
+    is_active: true,
+    config: catalogConfig,
+  });
+
+  server.use(
+    http.post(`${MOCK_FUNCTIONS_URL}/dialectic-service`, async ({ request }) => {
+      const body = await request.json();
+      if (body == null || typeof body !== 'object' || !('action' in body)) {
+        return HttpResponse.json({ message: 'Invalid request body' }, { status: 400 });
+      }
+      const action: unknown = body['action'];
+      if (typeof action !== 'string') {
+        return HttpResponse.json({ message: 'Invalid request body' }, { status: 400 });
+      }
+      if (action === 'listModelCatalog') {
+        return HttpResponse.json([nonDefaultCatalogRow], { status: 200 });
       }
       if (action === 'fetchProcessAssociation') {
         return HttpResponse.json(domainProcessAssociation, { status: 200 });
@@ -346,40 +446,65 @@ function resetIntegrationStores(): void {
     useDialecticStore.getState()._resetForTesting?.();
     useWalletStore.getState()._resetForTesting();
     useAiStore.setState({ newChatContext: 'personal' });
+    useAuthStore.setState(useAuthStore.getInitialState());
   });
 }
 
-function setWalletBalance(balance: string): void {
+function seedAuthForCostCeilingIntegration(params: {
+  isLoading: boolean;
+  userTier: UserTier | null;
+  error: Error | null;
+}): void {
   act(() => {
-    useWalletStore.setState({
-      personalWallet: buildPersonalWallet(balance),
-      isLoadingPersonalWallet: false,
-      personalWalletError: null,
-      currentChatWalletDecision: null,
+    useAuthStore.setState({
+      isLoading: params.isLoading,
+      userTier: params.userTier,
+      error: params.error,
+      availableTiers: [integrationUserTier],
     });
   });
 }
 
-function seedPreProjectFormStore(maxOutputTokensOverride: number | null = maxOutputTokens): void {
+function seedPreProjectFormStore(models: SelectedModels[]): void {
   act(() => {
     useDialecticStore.setState({
       selectedDomain,
       domains: [selectedDomain],
-      selectedModels,
-      maxOutputTokens: maxOutputTokensOverride,
+      selectedModels: models,
     });
+  });
+}
+
+async function waitForHydrationComplete(): Promise<void> {
+  await waitFor(() => {
+    expect(screen.queryByTestId('create-project-estimate-loading-notice')).toBeNull();
   });
 }
 
 async function waitForCostPreview(): Promise<void> {
   await waitFor(() => {
-    expect(screen.getByTestId('create-project-cost-preview')).toHaveTextContent(
-      formatTokenCount(expectedProjectCeiling),
-    );
-    expect(screen.getByTestId('create-project-cost-preview')).toHaveTextContent(
-      formatTokenCount(expectedFirstStageCeiling),
-    );
+    const preview = screen.getByTestId('create-project-cost-preview');
+    expect(preview.textContent).toContain(formatTokenCount(expectedProjectCeiling));
+    expect(preview.textContent).toContain(formatTokenCount(expectedFirstStageCeiling));
   });
+}
+
+function expectSetupModeDemotionText(expectedMessage: string): void {
+  const setupModeElement: HTMLElement = screen.getByTestId('create-project-setup-mode');
+  const setupColumn: HTMLElement | null = setupModeElement.closest('div.shrink-0');
+  expect(setupColumn).not.toBeNull();
+  if (setupColumn === null) {
+    return;
+  }
+  const demotionParagraphs: NodeListOf<HTMLParagraphElement> =
+    setupColumn.querySelectorAll('p.text-sm.text-muted-foreground');
+  const demotionMessages: string[] = [];
+  demotionParagraphs.forEach((element: HTMLParagraphElement) => {
+    if (element.textContent !== null) {
+      demotionMessages.push(element.textContent);
+    }
+  });
+  expect(demotionMessages).toContain(expectedMessage);
 }
 
 describe('CreateDialecticProjectForm cost ceiling integration', () => {
@@ -404,6 +529,11 @@ describe('CreateDialecticProjectForm cost ceiling integration', () => {
     initializeApiClient({ supabaseUrl: MOCK_SUPABASE_URL, supabaseAnonKey: MOCK_ANON_KEY });
     configureSupabaseAuthSession();
     resetIntegrationStores();
+    seedAuthForCostCeilingIntegration({
+      isLoading: false,
+      userTier: integrationUserTier,
+      error: null,
+    });
     setWalletBalance(sufficientWalletBalance);
     registerSuccessMswHandlers();
 
@@ -417,16 +547,86 @@ describe('CreateDialecticProjectForm cost ceiling integration', () => {
       .mockResolvedValue(autoStartResult);
   });
 
-  it('success stack: API → store → selectPreProjectCostCeiling → preview → afford autostart submit', async () => {
-    seedPreProjectFormStore();
+  function setWalletBalance(balance: string): void {
+    act(() => {
+      useWalletStore.setState({
+        personalWallet: buildPersonalWallet(balance),
+        isLoadingPersonalWallet: false,
+        personalWalletError: null,
+        currentChatWalletDecision: null,
+      });
+    });
+  }
+
+  it('tier output_cap_tokens 8192 and model cap 4096 → maxOutputTokens 4096 after mount without popover', async () => {
+    seedAuthForCostCeilingIntegration({
+      isLoading: false,
+      userTier: integrationUserTier8192,
+      error: null,
+    });
+    registerSuccessMswHandlersForCatalogRow(buildCatalogRowForModelCap(modelOutputCap4096));
+    seedPreProjectFormStore(defaultSelectedModels);
     renderWithRouter(<CreateDialecticProjectForm />);
 
+    await waitForHydrationComplete();
+
     await waitFor(() => {
-      expect(screen.queryByText(/Loading models/i)).not.toBeInTheDocument();
+      expect(useDialecticStore.getState().maxOutputTokens).toBe(modelOutputCap4096);
     });
+  });
+
+  it('tier output_cap_tokens 8192 and model cap 8192 → maxOutputTokens 8192 after mount without popover', async () => {
+    seedAuthForCostCeilingIntegration({
+      isLoading: false,
+      userTier: integrationUserTier8192,
+      error: null,
+    });
+    registerSuccessMswHandlersForCatalogRow(buildCatalogRowForModelCap(modelOutputCap8192));
+    seedPreProjectFormStore(defaultSelectedModels);
+    renderWithRouter(<CreateDialecticProjectForm />);
+
+    await waitForHydrationComplete();
+
+    await waitFor(() => {
+      expect(useDialecticStore.getState().maxOutputTokens).toBe(modelOutputCap8192);
+    });
+  });
+
+  it('tier + catalog hydrated, popover closed → maxOutputTokens set → cost preview', async () => {
+    seedPreProjectFormStore(defaultSelectedModels);
+    renderWithRouter(<CreateDialecticProjectForm />);
+
+    await waitForHydrationComplete();
+
+    await waitFor(() => {
+      expect(useDialecticStore.getState().maxOutputTokens).toBe(expectedInitializedMaxOutputTokens);
+    });
+
+    const ceilingResult = selectPreProjectCostCeiling(useDialecticStore.getState());
+    if ('error' in ceilingResult) {
+      throw new Error('selectPreProjectCostCeiling should return success after tier init and API hydration');
+    }
+    expect(ceilingResult.stageCeilings[firstStageSlug]).toBe(expectedFirstStageCeiling);
+    expect(ceilingResult.projectCeiling).toBe(expectedProjectCeiling);
+
+    await waitForCostPreview();
+
+    await waitFor(() => {
+      expect(screen.getByRole('checkbox', { name: /Autostart/i }).getAttribute('aria-checked')).toBe(
+        'true',
+      );
+    });
+  });
+
+  it('success stack: API → store → selectPreProjectCostCeiling → preview → afford autostart submit', async () => {
+    seedPreProjectFormStore(defaultSelectedModels);
+    renderWithRouter(<CreateDialecticProjectForm />);
+
+    await waitForHydrationComplete();
 
     await waitFor(() => {
       const storeState = useDialecticStore.getState();
+      expect(storeState.maxOutputTokens).toBe(expectedInitializedMaxOutputTokens);
       expect(storeState.selectedDomainProcessAssociation?.process_template_id).toBe(
         processTemplateId,
       );
@@ -435,7 +635,7 @@ describe('CreateDialecticProjectForm cost ceiling integration', () => {
     });
 
     const ceilingResult = selectPreProjectCostCeiling(useDialecticStore.getState());
-    if (ceilingResult === null || 'error' in ceilingResult) {
+    if ('error' in ceilingResult) {
       throw new Error('selectPreProjectCostCeiling should return success after API hydration');
     }
     expect(ceilingResult.stageCeilings[firstStageSlug]).toBe(expectedFirstStageCeiling);
@@ -444,7 +644,9 @@ describe('CreateDialecticProjectForm cost ceiling integration', () => {
     await waitForCostPreview();
 
     await waitFor(() => {
-      expect(screen.getByRole('checkbox', { name: /Autostart/i })).toBeChecked();
+      expect(screen.getByRole('checkbox', { name: /Autostart/i }).getAttribute('aria-checked')).toBe(
+        'true',
+      );
     });
 
     const user = userEvent.setup();
@@ -467,34 +669,76 @@ describe('CreateDialecticProjectForm cost ceiling integration', () => {
     );
   });
 
-  it('null prerequisites: missing maxOutputTokens → no-estimate notice and Autostart off', async () => {
-    seedPreProjectFormStore(null);
+  it('null prerequisites: userTier null → subscription tier unavailable footer, not OUTPUT_CAP_NOT_INITIALIZED', async () => {
+    seedAuthForCostCeilingIntegration({
+      isLoading: false,
+      userTier: null,
+      error: null,
+    });
+    seedPreProjectFormStore(defaultSelectedModels);
     renderWithRouter(<CreateDialecticProjectForm />);
 
-    await waitFor(() => {
-      expect(screen.queryByText(/Loading models/i)).not.toBeInTheDocument();
-    });
+    await waitForHydrationComplete();
 
     await waitFor(() => {
-      expect(screen.getByTestId('create-project-no-estimate-notice')).toBeInTheDocument();
-      expect(screen.getByRole('checkbox', { name: /Autoconfig/i })).toHaveAttribute(
-        'aria-checked',
-        'mixed',
+      expect(screen.getByTestId('create-project-estimate-error-notice').textContent).toBe(
+        subscriptionTierUnavailableMessage,
       );
     });
-
-    expect(selectPreProjectCostCeiling(useDialecticStore.getState())).toBeNull();
-    expect(screen.queryByTestId('create-project-cost-preview')).not.toBeInTheDocument();
+    expect(screen.queryByText('Output cap is not initialized in dialectic store.')).toBeNull();
+    expect(screen.queryByTestId('create-project-no-estimate-notice')).toBeNull();
+    expect(screen.getByRole('checkbox', { name: /Autoconfig/i }).getAttribute('aria-checked')).toBe(
+      'mixed',
+    );
+    expectSetupModeDemotionText(subscriptionTierUnavailableMessage);
+    expect(screen.queryByTestId('create-project-cost-preview')).toBeNull();
   });
 
-  it('API counts error: getStageExpectedCounts 500 → no-estimate notice and Autostart off', async () => {
-    registerStageExpectedCountsErrorHandler();
-    seedPreProjectFormStore();
+  it('null prerequisites: auth still loading → loading notice only', async () => {
+    seedAuthForCostCeilingIntegration({
+      isLoading: true,
+      userTier: integrationUserTier,
+      error: null,
+    });
+    seedPreProjectFormStore(defaultSelectedModels);
     renderWithRouter(<CreateDialecticProjectForm />);
 
     await waitFor(() => {
-      expect(screen.queryByText(/Loading models/i)).not.toBeInTheDocument();
+      expect(screen.getByTestId('create-project-estimate-loading-notice').textContent).toContain(
+        'Loading subscription tier…',
+      );
     });
+    expect(screen.queryByTestId('create-project-estimate-error-notice')).toBeNull();
+    expect(screen.queryByTestId('create-project-no-estimate-notice')).toBeNull();
+  });
+
+  it('null prerequisites: tier loaded and catalog ready but cap init fails → pass-through init error', async () => {
+    registerNoDefaultGenerationModelsMswHandlers();
+    seedPreProjectFormStore(emptySelectedModels);
+    renderWithRouter(<CreateDialecticProjectForm />);
+
+    await waitForHydrationComplete();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('create-project-estimate-error-notice').textContent).toBe(
+        noDefaultGenerationModelsInitErrorMessage,
+      );
+      expect(useDialecticStore.getState().maxOutputTokens).toBeNull();
+    });
+    expect(screen.queryByTestId('create-project-no-estimate-notice')).toBeNull();
+    expect(screen.queryByTestId('create-project-cost-preview')).toBeNull();
+    expect(screen.getByRole('checkbox', { name: /Autoconfig/i }).getAttribute('aria-checked')).toBe(
+      'mixed',
+    );
+    expectSetupModeDemotionText(noDefaultGenerationModelsInitErrorMessage);
+  });
+
+  it('API counts error: getStageExpectedCounts 500 → selector error reference and estimate-error notice', async () => {
+    registerStageExpectedCountsErrorHandler();
+    seedPreProjectFormStore(defaultSelectedModels);
+    renderWithRouter(<CreateDialecticProjectForm />);
+
+    await waitForHydrationComplete();
 
     await waitFor(() => {
       const storeState = useDialecticStore.getState();
@@ -502,41 +746,52 @@ describe('CreateDialecticProjectForm cost ceiling integration', () => {
       expect(storeState.preProjectStageExpectedCounts).toBeNull();
     });
 
-    // Real fetchStageExpectedCounts surfaces the MSW 500; selector stays null at counts.
-    expect(selectPreProjectCostCeiling(useDialecticStore.getState())).toBeNull();
+    const storeState = useDialecticStore.getState();
+    const stageExpectedCountsError = storeState.stageExpectedCountsError;
+    if (stageExpectedCountsError === null) {
+      throw new Error('stageExpectedCountsError should be set after API 500');
+    }
+
+    const ceilingResult = selectPreProjectCostCeiling(storeState);
+    if (!('error' in ceilingResult)) {
+      throw new Error('selectPreProjectCostCeiling should return error when stage counts fail');
+    }
+    expect(ceilingResult.error).toBe(stageExpectedCountsError);
 
     await waitFor(() => {
-      expect(screen.getByTestId('create-project-no-estimate-notice')).toBeInTheDocument();
-      expect(screen.getByRole('checkbox', { name: /Autoconfig/i })).toHaveAttribute(
-        'aria-checked',
-        'mixed',
+      expect(screen.getByTestId('create-project-estimate-error-notice').textContent).toBe(
+        stageExpectedCountsError.message,
       );
     });
+    expect(screen.queryByTestId('create-project-no-estimate-notice')).toBeNull();
+    expect(screen.getByRole('checkbox', { name: /Autoconfig/i }).getAttribute('aria-checked')).toBe(
+      'mixed',
+    );
   });
 
   it('insufficient wallet: Autoconfig default, top-up link, Create enabled, autoconfig submit allowed', async () => {
-    seedPreProjectFormStore();
+    seedPreProjectFormStore(defaultSelectedModels);
     setWalletBalance(lowWalletBalance);
     renderWithRouter(<CreateDialecticProjectForm />);
 
-    await waitFor(() => {
-      expect(screen.queryByText(/Loading models/i)).not.toBeInTheDocument();
-    });
+    await waitForHydrationComplete();
 
     await waitForCostPreview();
 
     await waitFor(() => {
-      expect(screen.getByRole('checkbox', { name: /Autoconfig/i })).toHaveAttribute(
-        'aria-checked',
+      expect(screen.getByRole('checkbox', { name: /Autoconfig/i }).getAttribute('aria-checked')).toBe(
         'mixed',
       );
-      expect(screen.getByTestId('create-project-autostart-top-up-link')).toHaveAttribute(
-        'href',
+      expect(screen.getByTestId('create-project-autostart-top-up-link').getAttribute('href')).toBe(
         '/subscription?tab=top-up',
       );
     });
 
-    expect(screen.getByRole('button', { name: /Create Project/i })).toBeEnabled();
+    const createProjectButton: HTMLElement = screen.getByRole('button', { name: /Create Project/i });
+    if (!(createProjectButton instanceof HTMLButtonElement)) {
+      throw new Error('Expected create project control to be HTMLButtonElement');
+    }
+    expect(createProjectButton.disabled).toBe(false);
 
     const user = userEvent.setup();
     await user.click(screen.getByRole('button', { name: /Create Project/i }));

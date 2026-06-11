@@ -2,9 +2,18 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { AIModelSelectorList } from "@/components/dialectic/AIModelSelectorList";
 import { DomainMultiSelector } from "./DomainMultiSelector";
-import { useDialecticStore } from "@paynless/store";
+import {
+	useAiStore,
+	useAuthStore,
+	useDialecticStore,
+	useWalletStore,
+	selectDomains,
+	selectPreProjectCostCeiling,
+	selectSelectedModels,
+	selectSortedStages,
+} from "@paynless/store";
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
 	ChevronRight,
 	ChevronLeft,
@@ -12,18 +21,71 @@ import {
 	Settings,
 	Target,
 } from "lucide-react";
-
-import { useWalletStore } from "@paynless/store";
+import type {
+	AiProvider,
+	InitializeMaxOutputTokensResult,
+	SelectedModels,
+} from "@paynless/types";
+import { ComputeCostCeilingReturn } from "@paynless/utils";
 
 type WalkthroughStep = "domain" | "model" | "message";
 
-export default function Chat() {
-	const { fetchDomains } = useDialecticStore((state) => ({
-		fetchDomains: state.fetchDomains,
-	}));
+const subscriptionTierUnavailableMessage =
+	"Subscription tier is not available.";
 
-	const { personalWallet, personalWalletBalance } = useWalletStore((state) => ({
-		personalWallet: state.personalWallet,
+export default function Chat() {
+	const fetchDomains = useDialecticStore((state) => state.fetchDomains);
+	const fetchAIModelCatalog = useDialecticStore(
+		(state) => state.fetchAIModelCatalog,
+	);
+	const fetchProcessAssociation = useDialecticStore(
+		(state) => state.fetchProcessAssociation,
+	);
+	const fetchProcessTemplate = useDialecticStore(
+		(state) => state.fetchProcessTemplate,
+	);
+	const fetchStageExpectedCounts = useDialecticStore(
+		(state) => state.fetchStageExpectedCounts,
+	);
+	const setSelectedDomain = useDialecticStore(
+		(state) => state.setSelectedDomain,
+	);
+	const setSelectedModels = useDialecticStore(
+		(state) => state.setSelectedModels,
+	);
+	const initializeMaxOutputTokens = useDialecticStore(
+		(state) => state.initializeMaxOutputTokens,
+	);
+	const selectedDomainProcessAssociation = useDialecticStore(
+		(state) => state.selectedDomainProcessAssociation,
+	);
+	const isLoadingDomainProcessAssociation = useDialecticStore(
+		(state) => state.isLoadingDomainProcessAssociation,
+	);
+	const isLoadingStageExpectedCounts = useDialecticStore(
+		(state) => state.isLoadingStageExpectedCounts,
+	);
+	const isLoadingModelCatalog = useDialecticStore(
+		(state) => state.isLoadingModelCatalog,
+	);
+	const isLoadingProcessTemplate = useDialecticStore(
+		(state) => state.isLoadingProcessTemplate,
+	);
+	const modelCatalog = useDialecticStore((state) => state.modelCatalog);
+
+	const authIsLoading = useAuthStore((state) => state.isLoading);
+	const userTier = useAuthStore((state) => state.userTier);
+	const authError = useAuthStore((state) => state.error);
+
+	const availableProviders = useAiStore((state) => state.availableProviders);
+
+	const domains = useDialecticStore(selectDomains);
+	const selectedModels = useDialecticStore(selectSelectedModels);
+	const sortedStages = useDialecticStore(selectSortedStages);
+	const preProjectCostCeilingResult: ComputeCostCeilingReturn =
+		useDialecticStore(selectPreProjectCostCeiling);
+
+	const { personalWalletBalance } = useWalletStore((state) => ({
 		personalWalletBalance: state.personalWallet?.balance ?? null,
 	}));
 
@@ -31,11 +93,184 @@ export default function Chat() {
 	const [currentStep, setCurrentStep] = useState<WalkthroughStep>("domain");
 	const [isTransitioning, setIsTransitioning] = useState(false);
 	const [hasSelectedModel, setHasSelectedModel] = useState(false);
+	const [capInitResult, setCapInitResult] =
+		useState<InitializeMaxOutputTokensResult | null>(null);
 
 	useQuery({
 		queryKey: ["domains"],
 		queryFn: () => fetchDomains(),
 	});
+
+	const uniqueModelCount = new Set(selectedModels.map((model) => model.id))
+		.size;
+
+	useEffect(() => {
+		if (selectedDomainId === "") {
+			return;
+		}
+		const matchedDomain = domains.find(
+			(domain) => domain.id === selectedDomainId,
+		);
+		if (matchedDomain === undefined) {
+			return;
+		}
+		setSelectedDomain(matchedDomain);
+		fetchAIModelCatalog();
+	}, [
+		selectedDomainId,
+		domains,
+		setSelectedDomain,
+		fetchAIModelCatalog,
+	]);
+
+	useEffect(() => {
+		if (selectedDomainId === "") {
+			return;
+		}
+		fetchProcessAssociation({ domainId: selectedDomainId });
+	}, [selectedDomainId, fetchProcessAssociation]);
+
+	useEffect(() => {
+		const processTemplateId: string | undefined =
+			selectedDomainProcessAssociation?.process_template_id;
+		if (processTemplateId !== undefined && processTemplateId.length > 0) {
+			fetchProcessTemplate(processTemplateId);
+			if (uniqueModelCount >= 1) {
+				fetchStageExpectedCounts({
+					processTemplateId,
+					modelCount: uniqueModelCount,
+				});
+			}
+		}
+	}, [
+		selectedDomainProcessAssociation?.process_template_id,
+		uniqueModelCount,
+		fetchProcessTemplate,
+		fetchStageExpectedCounts,
+	]);
+
+	const isCapInitReady: boolean =
+		!authIsLoading &&
+		userTier !== null &&
+		!isLoadingModelCatalog &&
+		modelCatalog.length > 0;
+
+	useEffect(() => {
+		if (
+			!isCapInitReady ||
+			selectedDomainId === "" ||
+			selectedModels.length === 0
+		) {
+			setCapInitResult(null);
+			return;
+		}
+		const initResult: InitializeMaxOutputTokensResult =
+			initializeMaxOutputTokens();
+		if (initResult.ok === true) {
+			setCapInitResult(null);
+			return;
+		}
+		setCapInitResult(initResult);
+	}, [
+		authIsLoading,
+		userTier,
+		isLoadingModelCatalog,
+		modelCatalog.length,
+		selectedDomainId,
+		selectedModels.length,
+		initializeMaxOutputTokens,
+	]);
+
+	const isCostEstimateLoading: boolean =
+		authIsLoading ||
+		isLoadingModelCatalog ||
+		isLoadingDomainProcessAssociation ||
+		isLoadingProcessTemplate ||
+		isLoadingStageExpectedCounts;
+
+	let costEstimateLoadingNotice: string | null = null;
+	if (authIsLoading) {
+		costEstimateLoadingNotice = "Loading subscription tier…";
+	} else if (isLoadingModelCatalog) {
+		costEstimateLoadingNotice = "Loading model catalog…";
+	} else if (isLoadingDomainProcessAssociation) {
+		costEstimateLoadingNotice = "Loading domain process association…";
+	} else if (isLoadingProcessTemplate) {
+		costEstimateLoadingNotice = "Loading process template…";
+	} else if (isLoadingStageExpectedCounts) {
+		costEstimateLoadingNotice = "Loading stage expected counts…";
+	}
+
+	let costEstimateErrorMessage: string | null = null;
+	if (!isCostEstimateLoading) {
+		if (authError !== null) {
+			costEstimateErrorMessage = authError.message;
+		} else if (userTier === null) {
+			costEstimateErrorMessage = subscriptionTierUnavailableMessage;
+		} else if (capInitResult !== null && capInitResult.ok === false) {
+			costEstimateErrorMessage = capInitResult.error.message;
+		} else if ("error" in preProjectCostCeilingResult) {
+			costEstimateErrorMessage = preProjectCostCeilingResult.error.message;
+		}
+	}
+
+	const hasCostEstimateSuccess: boolean =
+		!isCostEstimateLoading &&
+		costEstimateErrorMessage === null &&
+		!("error" in preProjectCostCeilingResult);
+
+	const firstStageSlug: string | null = sortedStages[0]?.slug ?? null;
+
+	let firstStageCeiling: number | null = null;
+	if (
+		hasCostEstimateSuccess &&
+		firstStageSlug !== null &&
+		!("error" in preProjectCostCeilingResult)
+	) {
+		const rawFirstStageCeiling: number =
+			preProjectCostCeilingResult.stageCeilings[firstStageSlug];
+		if (
+			Number.isFinite(rawFirstStageCeiling) &&
+			rawFirstStageCeiling >= 0
+		) {
+			firstStageCeiling = rawFirstStageCeiling;
+		}
+	}
+
+	let projectCeiling: number | null = null;
+	if (hasCostEstimateSuccess && !("error" in preProjectCostCeilingResult)) {
+		const rawProjectCeiling: number =
+			preProjectCostCeilingResult.projectCeiling;
+		if (Number.isFinite(rawProjectCeiling) && rawProjectCeiling >= 0) {
+			projectCeiling = rawProjectCeiling;
+		}
+	}
+
+	const formatTokenCount = (tokenCount: number): string =>
+		new Intl.NumberFormat("en-US").format(tokenCount);
+
+	const showCostEstimateUi: boolean =
+		selectedDomainId !== "" &&
+		(currentStep === "model" || currentStep === "message");
+
+	const handleModelsCheckedChange = (modelsChecked: string[]): void => {
+		const selectedModelsMapped: SelectedModels[] = modelsChecked.map(
+			(providerId: string) => {
+				const providerFromStore = availableProviders.find(
+					(provider) => provider.id === providerId,
+				);
+				if (providerFromStore === undefined) {
+					throw new Error(
+						`Chat onboarding: no provider found for id ${providerId}`,
+					);
+				}
+				const provider: AiProvider = providerFromStore;
+				return { id: provider.id, displayName: provider.name };
+			},
+		);
+		setSelectedModels(selectedModelsMapped);
+		setHasSelectedModel(selectedModelsMapped.length > 0);
+	};
 
 	const handleStepTransition = (nextStep: WalkthroughStep) => {
 		setIsTransitioning(true);
@@ -43,7 +278,7 @@ export default function Chat() {
 			setCurrentStep(nextStep);
 			setTimeout(() => {
 				setIsTransitioning(false);
-			}, 50); // Small delay to ensure DOM update
+			}, 50);
 		}, 300);
 	};
 
@@ -73,6 +308,30 @@ export default function Chat() {
 	};
 
 	const tokensBalance = Number(personalWalletBalance).toLocaleString("en-US");
+
+	const costEstimateUi = showCostEstimateUi ? (
+		<div className="text-xs text-muted-foreground space-y-1">
+			{isCostEstimateLoading && costEstimateLoadingNotice !== null && (
+				<p data-testid="chat-onboarding-estimate-loading-notice">
+					{costEstimateLoadingNotice}
+				</p>
+			)}
+			{!isCostEstimateLoading && costEstimateErrorMessage !== null && (
+				<p data-testid="chat-onboarding-estimate-error-notice">
+					{costEstimateErrorMessage}
+				</p>
+			)}
+			{hasCostEstimateSuccess &&
+				firstStageCeiling !== null &&
+				projectCeiling !== null && (
+					<p data-testid="chat-onboarding-cost-preview">
+						Estimated token cost: ~
+						{formatTokenCount(projectCeiling)} for the full project, ~
+						{formatTokenCount(firstStageCeiling)} for the first stage.
+					</p>
+				)}
+		</div>
+	) : null;
 
 	return (
 		<div className="flex flex-col items-center justify-between min-h-screen px-4 py-20">
@@ -141,12 +400,8 @@ export default function Chat() {
 
 					{currentStep === "model" && (
 						<div className="space-y-6 animate-in fade-in-50 duration-500 flex-grow h-full">
-							<AIModelSelectorList
-								onChange={(modelsChecked: string[]) => {
-									// console.log("Selected models:", modelsChecked);
-									setHasSelectedModel(modelsChecked.length > 0);
-								}}
-							/>
+							<AIModelSelectorList onChange={handleModelsCheckedChange} />
+							{costEstimateUi}
 						</div>
 					)}
 
@@ -157,6 +412,7 @@ export default function Chat() {
 								placeholder="Type your message to start the conversation..."
 								autoFocus={true}
 							/>
+							{costEstimateUi}
 							<div className="text-xs text-right">
 								{tokensBalance} token balance
 							</div>

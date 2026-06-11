@@ -1,12 +1,13 @@
 "use client";
 
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   useAiStore,
   selectSelectedChatMessages,
   selectCurrentChatSelectionState,
   useDialecticStore,
+  useAuthStore,
   selectDomains,
   selectSelectedDomain,
   selectDefaultGenerationModels,
@@ -18,6 +19,7 @@ import type {
   CreateProjectAndAutoStartPayload,
   DialecticDomainRow,
   DialecticStage,
+  InitializeMaxOutputTokensResult,
 } from "@paynless/types";
 import { ComputeCostCeilingReturn, logger } from "@paynless/utils";
 import { toast } from "sonner";
@@ -25,8 +27,8 @@ import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { formatChatMessagesAsPrompt } from "@/utils/formatChatMessagesAsPrompt";
 
-const noEstimateToastCopy =
-  "No cost estimate yet. Set the output cap in Model Settings, then try again.";
+const subscriptionTierUnavailableMessage =
+  "Subscription tier is not available.";
 
 const nsfToastCopy =
   "Insufficient tokens for auto-start. Top up your wallet to continue.";
@@ -54,6 +56,39 @@ export const CreateProjectFromChatButton: React.FC = () => {
   const isAutoStarting = useDialecticStore((state) => state.isAutoStarting);
   const autoStartStep = useDialecticStore((state) => state.autoStartStep);
   const domains = useDialecticStore(selectDomains);
+  const isLoadingModelCatalog = useDialecticStore(
+    (state) => state.isLoadingModelCatalog
+  );
+  const modelCatalog = useDialecticStore((state) => state.modelCatalog);
+  const initializeMaxOutputTokens = useDialecticStore(
+    (state) => state.initializeMaxOutputTokens
+  );
+
+  const authIsLoading = useAuthStore((state) => state.isLoading);
+  const userTier = useAuthStore((state) => state.userTier);
+
+  const [_capInitResult, setCapInitResult] =
+    useState<InitializeMaxOutputTokensResult | null>(null);
+
+  const isCapInitReady: boolean =
+    !authIsLoading &&
+    userTier !== null &&
+    !isLoadingModelCatalog &&
+    modelCatalog.length > 0;
+
+  useEffect(() => {
+    if (!isCapInitReady) {
+      setCapInitResult(null);
+      return;
+    }
+    const initResult: InitializeMaxOutputTokensResult =
+      initializeMaxOutputTokens();
+    if (initResult.ok === true) {
+      setCapInitResult(null);
+      return;
+    }
+    setCapInitResult(initResult);
+  }, [authIsLoading, userTier, isLoadingModelCatalog, modelCatalog.length]);
 
   const isDisabled: boolean =
     selectionState === "none" ||
@@ -103,19 +138,62 @@ export const CreateProjectFromChatButton: React.FC = () => {
     ).size;
 
     if (defaultModelCount >= 1) {
+      const autostartCapInitResult: InitializeMaxOutputTokensResult =
+        initializeMaxOutputTokens();
+
       await fetchProcessTemplate(processTemplateId);
       await fetchStageExpectedCounts({
         processTemplateId,
         modelCount: defaultModelCount,
       });
 
-      const preProjectCostCeilingResult: ComputeCostCeilingReturn | null =
-        selectPreProjectCostCeiling(useDialecticStore.getState());
+      const authStateAtClick = useAuthStore.getState();
+      const dialecticStateAtClick = useDialecticStore.getState();
+      const walletInfoAtClick = selectActiveChatWalletInfo(
+        useWalletStore.getState(),
+        useAiStore.getState().newChatContext
+      );
 
-      if (preProjectCostCeilingResult === null) {
-        toast.error(noEstimateToastCopy);
+      const isCostEstimateLoading: boolean =
+        authStateAtClick.isLoading ||
+        dialecticStateAtClick.isLoadingModelCatalog ||
+        dialecticStateAtClick.isLoadingDomainProcessAssociation ||
+        dialecticStateAtClick.isLoadingProcessTemplate ||
+        dialecticStateAtClick.isLoadingStageExpectedCounts ||
+        walletInfoAtClick.isLoadingPrimaryWallet;
+
+      if (isCostEstimateLoading) {
+        if (authStateAtClick.isLoading) {
+          toast.error("Loading subscription tier…");
+        } else if (dialecticStateAtClick.isLoadingModelCatalog) {
+          toast.error("Loading model catalog…");
+        } else if (dialecticStateAtClick.isLoadingDomainProcessAssociation) {
+          toast.error("Loading domain process association…");
+        } else if (dialecticStateAtClick.isLoadingProcessTemplate) {
+          toast.error("Loading process template…");
+        } else if (dialecticStateAtClick.isLoadingStageExpectedCounts) {
+          toast.error("Loading stage expected counts…");
+        } else if (walletInfoAtClick.isLoadingPrimaryWallet) {
+          toast.error("Loading wallet balance…");
+        }
         return;
       }
+
+      if (authStateAtClick.error !== null) {
+        toast.error(authStateAtClick.error.message);
+        return;
+      }
+      if (authStateAtClick.userTier === null) {
+        toast.error(subscriptionTierUnavailableMessage);
+        return;
+      }
+      if (autostartCapInitResult.ok === false) {
+        toast.error(autostartCapInitResult.error.message);
+        return;
+      }
+
+      const preProjectCostCeilingResult: ComputeCostCeilingReturn =
+        selectPreProjectCostCeiling(dialecticStateAtClick);
 
       if ("error" in preProjectCostCeilingResult) {
         toast.error(preProjectCostCeilingResult.error.message);
@@ -123,7 +201,7 @@ export const CreateProjectFromChatButton: React.FC = () => {
       }
 
       const currentProcessTemplate =
-        useDialecticStore.getState().currentProcessTemplate;
+        dialecticStateAtClick.currentProcessTemplate;
       const startingStageId: string | null =
         currentProcessTemplate?.starting_stage_id ?? null;
       const stages: DialecticStage[] = currentProcessTemplate?.stages ?? [];
@@ -144,10 +222,7 @@ export const CreateProjectFromChatButton: React.FC = () => {
         }
       }
 
-      const walletBalance: string | null = selectActiveChatWalletInfo(
-        useWalletStore.getState(),
-        useAiStore.getState().newChatContext
-      ).balance;
+      const walletBalance: string | null = walletInfoAtClick.balance;
 
       if (
         firstStageCeiling === null ||

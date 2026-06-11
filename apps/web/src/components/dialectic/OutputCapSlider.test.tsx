@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { FormEvent, ReactElement } from 'react';
@@ -17,6 +17,8 @@ import { isJson } from '@paynless/utils';
 import { OutputCapSlider } from './OutputCapSlider';
 import { mockAllTiers, mockUserTier } from '../../mocks/profile.mock';
 import {
+	mockSetAuthError,
+	mockSetAuthIsLoading,
 	mockedUseAuthStoreHookLogic,
 	resetAuthStoreMock,
 } from '../../mocks/authStore.mock';
@@ -213,7 +215,7 @@ describe('OutputCapSlider', () => {
 		for (const tier of userFacingTiers) {
 			expect(
 				screen.getByRole('button', { name: new RegExp(tier.name, 'i') }),
-			).toBeInTheDocument();
+			).not.toBeNull();
 		}
 
 		const tierMarkerButtons = screen
@@ -224,7 +226,7 @@ describe('OutputCapSlider', () => {
 				),
 			);
 		expect(tierMarkerButtons).toHaveLength(userFacingTiers.length);
-		expect(screen.queryByText(/unreachable/i)).not.toBeInTheDocument();
+		expect(screen.queryByText(/unreachable/i)).toBeNull();
 	});
 
 	it('slider track max equals highest max_output_tokens from selected models catalog entries', () => {
@@ -250,10 +252,7 @@ describe('OutputCapSlider', () => {
 
 		renderWithRouter(<OutputCapSlider />);
 
-		expect(screen.getByRole('slider')).toHaveAttribute(
-			'aria-valuemax',
-			'200000',
-		);
+		expect(screen.getByRole('slider').getAttribute('aria-valuemax')).toBe('200000');
 	});
 
 	it('slider thumb cannot exceed userTier.output_cap_tokens while track extends to model max', async () => {
@@ -265,21 +264,15 @@ describe('OutputCapSlider', () => {
 		renderWithRouter(<OutputCapSlider />);
 
 		const slider = screen.getByRole('slider');
-		expect(slider).toHaveAttribute('aria-valuemax', '200000');
+		expect(slider.getAttribute('aria-valuemax')).toBe('200000');
 
 		slider.focus();
 		await userEvent.keyboard('{End}');
 
 		await waitFor(() => {
-			expect(screen.getByRole('slider')).toHaveAttribute(
-				'aria-valuenow',
-				'32768',
-			);
+			expect(screen.getByRole('slider').getAttribute('aria-valuenow')).toBe('32768');
 		});
-		expect(screen.getByRole('slider')).toHaveAttribute(
-			'aria-valuemax',
-			'200000',
-		);
+		expect(screen.getByRole('slider').getAttribute('aria-valuemax')).toBe('200000');
 	});
 
 	it('clicking a within-tier marker calls setMaxOutputTokens with that tier output_cap_tokens', async () => {
@@ -308,8 +301,8 @@ describe('OutputCapSlider', () => {
 
 		expect(
 			screen.getByText(byExactTextContent(upgradeCtaText('premium'))),
-		).toBeInTheDocument();
-		expect(screen.getByRole('button', { name: /^upgrade$/i })).toBeInTheDocument();
+		).not.toBeNull();
+		expect(screen.getByRole('button', { name: /^upgrade$/i })).not.toBeNull();
 		expect(setMaxOutputTokens).not.toHaveBeenCalled();
 	});
 
@@ -399,34 +392,31 @@ describe('OutputCapSlider', () => {
 		renderWithRouter(<OutputCapSlider />);
 
 		const slider = screen.getByRole('slider');
-		expect(slider).toHaveAttribute('aria-valuemax', '100000');
+		expect(slider.getAttribute('aria-valuemax')).toBe('100000');
 
 		slider.focus();
 		await userEvent.keyboard('{End}');
 
 		await waitFor(() => {
-			expect(screen.getByRole('slider')).toHaveAttribute(
-				'aria-valuenow',
-				'100000',
-			);
+			expect(screen.getByRole('slider').getAttribute('aria-valuenow')).toBe('100000');
 		});
-		expect(screen.queryByRole('button', { name: /^upgrade$/i })).not.toBeInTheDocument();
+		expect(screen.queryByRole('button', { name: /^upgrade$/i })).toBeNull();
 	});
 
-	it('when maxOutputTokens is null in store, component renders with tier default display', () => {
-		setupMockStores(
+	it('when maxOutputTokens is null in store, shows blocked notice and does not call setMaxOutputTokens', () => {
+		const { setMaxOutputTokens } = setupMockStores(
 			{ maxOutputTokens: null },
 			{ userTier: mockUserTier, availableTiers: mockAllTiers },
 		);
 
 		renderWithRouter(<OutputCapSlider />);
 
-		expect(screen.getAllByText('8.2k').length).toBeGreaterThan(0);
 		expect(
-			screen.getByText(
-				byExactTextContent('Your free tier allows up to 8.2k tokens'),
-			),
-		).toBeInTheDocument();
+			screen.getByTestId('output-cap-slider-blocked-notice'),
+		).not.toBeNull();
+		expect(screen.getByTestId('output-cap-slider-blocked-notice').textContent).toContain('Output cap is not initialized in dialectic store.');
+		expect(screen.queryByRole('slider')).toBeNull();
+		expect(setMaxOutputTokens).not.toHaveBeenCalled();
 	});
 
 	it('when availableTiers is empty, component handles gracefully without tier markers', () => {
@@ -441,21 +431,25 @@ describe('OutputCapSlider', () => {
 
 		setupMockStores(
 			{
+				maxOutputTokens: 8192,
 				modelCatalog,
 				selectedModels: mockSelectedModelsForCatalog(modelCatalog),
 			},
-			{ userTier: null, availableTiers: [] },
+			{ userTier: mockUserTier, availableTiers: [] },
 		);
 
 		const { container } = renderWithRouter(<OutputCapSlider />);
 
-		expect(screen.queryByText('free')).not.toBeInTheDocument();
-		expect(screen.queryByText('basic')).not.toBeInTheDocument();
-		expect(screen.queryByRole('button', { name: /free/i })).not.toBeInTheDocument();
-		expect(container.firstChild).toBeNull();
+		expect(
+			screen.getByTestId('output-cap-slider-blocked-notice'),
+		).not.toBeNull();
+		expect(screen.getByTestId('output-cap-slider-blocked-notice').textContent).toContain('Subscription tiers are not loaded.');
+		expect(container.firstChild).not.toBeNull();
+		expect(screen.queryByRole('button', { name: /free/i })).toBeNull();
+		expect(screen.queryByRole('button', { name: /basic/i })).toBeNull();
 	});
 
-	it('when selectedModels is empty, component returns null and does not render slider', () => {
+	it('when selectedModels is empty, shows blocked notice and does not render slider', () => {
 		if (!isJson(modelConfig)) {
 			throw new Error('config is not a valid JSON object');
 		}
@@ -476,8 +470,12 @@ describe('OutputCapSlider', () => {
 
 		const { container } = renderWithRouter(<OutputCapSlider />);
 
-		expect(screen.queryByRole('slider')).not.toBeInTheDocument();
-		expect(container.firstChild).toBeNull();
+		expect(
+			screen.getByTestId('output-cap-slider-blocked-notice'),
+		).not.toBeNull();
+		expect(screen.getByTestId('output-cap-slider-blocked-notice').textContent).toContain('No models selected.');
+		expect(screen.queryByRole('slider')).toBeNull();
+		expect(container.firstChild).not.toBeNull();
 	});
 
 	it('tier markers display approximate page counts and current value updates page equivalent on slider move', async () => {
@@ -534,7 +532,7 @@ describe('OutputCapSlider', () => {
 		await waitFor(() => {
 			expect(
 				screen.getByText(byExactTextContent(upgradeCtaText('premium'))),
-			).toBeInTheDocument();
+			).not.toBeNull();
 		});
 		await waitFor(() => {
 			const ariaValue: string | null = screen
@@ -545,8 +543,22 @@ describe('OutputCapSlider', () => {
 			expect(Number(ariaValue)).toBeLessThanOrEqual(basicThumbMax);
 		});
 
-		expect(setMaxOutputTokens).toHaveBeenCalled();
-		const persistedCalls: number[] = vi
+		await waitFor(() => {
+			expect(setMaxOutputTokens).toHaveBeenCalled();
+		});
+		let persistedCalls: number[] = vi
+			.mocked(setMaxOutputTokens)
+			.mock.calls.map((call) => call[0]);
+		for (const persistedTokens of persistedCalls) {
+			expect(persistedTokens).toBeLessThanOrEqual(basicThumbMax);
+		}
+
+		await userEvent.tab();
+
+		await waitFor(() => {
+			expect(setMaxOutputTokens).toHaveBeenCalled();
+		});
+		persistedCalls = vi
 			.mocked(setMaxOutputTokens)
 			.mock.calls.map((call) => call[0]);
 		for (const persistedTokens of persistedCalls) {
@@ -573,16 +585,31 @@ describe('OutputCapSlider', () => {
 		await waitFor(() => {
 			expect(
 				screen.getByText(byExactTextContent(upgradeCtaText('premium'))),
-			).toBeInTheDocument();
+			).not.toBeNull();
 		});
 		await waitFor(() => {
-			expect(screen.getByRole('slider')).toHaveAttribute(
-				'aria-valuenow',
+			expect(screen.getByRole('slider').getAttribute('aria-valuenow')).toBe(
 				String(basicThumbMax),
 			);
 		});
 
-		const persistedCalls: number[] = vi
+		await waitFor(() => {
+			expect(setMaxOutputTokens).toHaveBeenCalled();
+		});
+		let persistedCalls: number[] = vi
+			.mocked(setMaxOutputTokens)
+			.mock.calls.map((call) => call[0]);
+		for (const persistedTokens of persistedCalls) {
+			expect(persistedTokens).toBeLessThanOrEqual(basicThumbMax);
+		}
+		expect(persistedCalls.length).toBeGreaterThan(0);
+
+		await userEvent.tab();
+
+		await waitFor(() => {
+			expect(setMaxOutputTokens).toHaveBeenCalled();
+		});
+		persistedCalls = vi
 			.mocked(setMaxOutputTokens)
 			.mock.calls.map((call) => call[0]);
 		for (const persistedTokens of persistedCalls) {
@@ -594,13 +621,14 @@ describe('OutputCapSlider', () => {
 		expect(lastPersistedTokens).toBeLessThanOrEqual(basicThumbMax);
 	});
 
-	it('does not render slider when only selected model has config that fails isAiModelExtendedConfig', () => {
+	it('shows blocked notice when only selected model has config that fails isAiModelExtendedConfig', () => {
 		const malformedConfig: Json = { provider_max_output_tokens: MODEL_TRACK_MAX };
 		if (!isJson(malformedConfig)) {
 			throw new Error('config is not a valid JSON object');
 		}
 		const modelCatalog: AiProvidersRow[] = [
 			mockAiProvidersRow({
+				id: 'model-invalid-config',
 				config: malformedConfig,
 			}),
 		];
@@ -618,8 +646,14 @@ describe('OutputCapSlider', () => {
 
 		const { container } = renderWithRouter(<OutputCapSlider />);
 
-		expect(screen.queryByRole('slider')).not.toBeInTheDocument();
-		expect(container.firstChild).toBeNull();
+		expect(
+			screen.getByTestId('output-cap-slider-blocked-notice'),
+		).not.toBeNull();
+		expect(screen.getByTestId('output-cap-slider-blocked-notice').textContent).toContain(
+			'Model catalog config invalid for model id model-invalid-config.',
+		);
+		expect(screen.queryByRole('slider')).toBeNull();
+		expect(container.firstChild).not.toBeNull();
 	});
 
 	it('slider track max is 200000 when selected model has valid full config with provider_max_output_tokens 200000', () => {
@@ -645,9 +679,70 @@ describe('OutputCapSlider', () => {
 
 		renderWithRouter(<OutputCapSlider />);
 
-		expect(screen.getByRole('slider')).toHaveAttribute(
-			'aria-valuemax',
-			'200000',
+		expect(screen.getByRole('slider').getAttribute('aria-valuemax')).toBe('200000');
+	});
+
+	it('does not call setMaxOutputTokens on mount when maxOutputTokens already initialized', () => {
+		const { setMaxOutputTokens } = setupMockStores(
+			{ maxOutputTokens: 8192 },
+			{ userTier: mockUserTier, availableTiers: mockAllTiers },
 		);
+
+		renderWithRouter(<OutputCapSlider />);
+
+		expect(screen.getByRole('slider')).not.toBeNull();
+		expect(setMaxOutputTokens).not.toHaveBeenCalled();
+	});
+
+	it('shows loading notice while auth isLoading', () => {
+		setupMockStores(
+			{ maxOutputTokens: 8192 },
+			{ userTier: mockUserTier, availableTiers: mockAllTiers },
+		);
+		mockSetAuthIsLoading(true);
+
+		renderWithRouter(<OutputCapSlider />);
+
+		expect(
+			screen.getByTestId('output-cap-slider-loading-notice'),
+		).not.toBeNull();
+		expect(screen.getByTestId('output-cap-slider-loading-notice').textContent).toContain('Loading subscription tier…');
+		expect(screen.queryByRole('slider')).toBeNull();
+		expect(
+			screen.queryByTestId('output-cap-slider-blocked-notice'),
+		).toBeNull();
+	});
+
+	it('when userTier is null and auth not loading, shows tier unavailable blocked notice', () => {
+		setupMockStores(
+			{ maxOutputTokens: 8192 },
+			{ userTier: null, isLoading: false, availableTiers: mockAllTiers },
+		);
+
+		renderWithRouter(<OutputCapSlider />);
+
+		expect(
+			screen.getByTestId('output-cap-slider-blocked-notice'),
+		).not.toBeNull();
+		expect(screen.getByTestId('output-cap-slider-blocked-notice').textContent).toContain('Subscription tier is not available.');
+		expect(screen.queryByRole('slider')).toBeNull();
+	});
+
+	it('when auth error is set and not loading, shows pass-through blocked notice', () => {
+		setupMockStores(
+			{ maxOutputTokens: 8192 },
+			{ userTier: mockUserTier, availableTiers: mockAllTiers },
+		);
+		mockSetAuthError(new Error('Profile fetch failed.'));
+
+		renderWithRouter(<OutputCapSlider />);
+
+		expect(
+			screen.getByTestId('output-cap-slider-blocked-notice'),
+		).not.toBeNull();
+		expect(
+			screen.getByTestId('output-cap-slider-blocked-notice').textContent,
+		).toContain('Profile fetch failed.');
+		expect(screen.queryByRole('slider')).toBeNull();
 	});
 });

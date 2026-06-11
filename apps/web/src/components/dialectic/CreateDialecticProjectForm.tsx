@@ -4,6 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { ComputeCostCeilingReturn, logger } from "@paynless/utils";
 import { Link, useNavigate } from "react-router-dom";
 import {
+	useAuthStore,
 	useDialecticStore,
 	useWalletStore,
 	selectIsCreatingProject,
@@ -39,9 +40,9 @@ import {
 	type FileDropPayload,
 } from "@paynless/platform";
 import type {
-	ApiError,
 	CreateProjectPayload,
 	CreateProjectAndAutoStartPayload,
+	InitializeMaxOutputTokensResult,
 	SelectedModels,
 } from "@paynless/types";
 import { toast } from "sonner";
@@ -73,6 +74,9 @@ const SETUP_MODE_EXPLAINER =
 	"Autostart: Create project, open a session with default models, and start generation automatically.\n\n" +
 	"Autoconfig: Create project and open a session with default models; you choose when to start generation.\n\n" +
 	"Manual: Create project only; you create the session, pick models, and start when you're ready.";
+
+const subscriptionTierUnavailableMessage =
+	"Subscription tier is not available.";
 
 interface CreateDialecticProjectFormProps {
 	defaultProjectName?: string;
@@ -138,12 +142,23 @@ export const CreateDialecticProjectForm: React.FC<
 	const isLoadingModelCatalog = useDialecticStore(
 		(state) => state.isLoadingModelCatalog,
 	);
+	const isLoadingProcessTemplate = useDialecticStore(
+		(state) => state.isLoadingProcessTemplate,
+	);
+	const modelCatalog = useDialecticStore((state) => state.modelCatalog);
+	const initializeMaxOutputTokens = useDialecticStore(
+		(state) => state.initializeMaxOutputTokens,
+	);
+
+	const authIsLoading = useAuthStore((state) => state.isLoading);
+	const userTier = useAuthStore((state) => state.userTier);
+	const authError = useAuthStore((state) => state.error);
 
 	const walletInfo = useWalletStore((state) =>
 		selectActiveChatWalletInfo(state, null),
 	);
 	const sortedStages = useDialecticStore(selectSortedStages);
-	const preProjectCostCeilingResult: ComputeCostCeilingReturn | null =
+	const preProjectCostCeilingResult: ComputeCostCeilingReturn =
 		useDialecticStore(selectPreProjectCostCeiling);
 
 	const formatTokenCount = (n: number): string =>
@@ -154,8 +169,8 @@ export const CreateDialecticProjectForm: React.FC<
 		useState<boolean>(false);
 	const [configureManually, setConfigureManually] = useState<boolean>(false);
 	const [startGeneration, setStartGeneration] = useState<boolean>(true);
-	const [catalogFetchTriggered, setCatalogFetchTriggered] =
-		useState<boolean>(false);
+	const [capInitResult, setCapInitResult] =
+		useState<InitializeMaxOutputTokensResult | null>(null);
 	const navigate = useNavigate();
 
 	const {
@@ -419,8 +434,27 @@ export const CreateDialecticProjectForm: React.FC<
 
 	useEffect(() => {
 		fetchAIModelCatalog();
-		setCatalogFetchTriggered(true);
 	}, [fetchAIModelCatalog]);
+
+	const isCapInitReady: boolean =
+		!authIsLoading &&
+		userTier !== null &&
+		!isLoadingModelCatalog &&
+		modelCatalog.length > 0;
+
+	useEffect(() => {
+		if (!isCapInitReady) {
+			setCapInitResult(null);
+			return;
+		}
+		const initResult: InitializeMaxOutputTokensResult =
+			initializeMaxOutputTokens();
+		if (initResult.ok === true) {
+			setCapInitResult(null);
+			return;
+		}
+		setCapInitResult(initResult);
+	}, [authIsLoading, userTier, isLoadingModelCatalog, modelCatalog.length]);
 
 	useEffect(() => {
 		const domainId: string | undefined = selectedDomain?.id;
@@ -448,19 +482,51 @@ export const CreateDialecticProjectForm: React.FC<
 		fetchStageExpectedCounts,
 	]);
 
-	const preProjectCostCeilingError: ApiError | null =
-		preProjectCostCeilingResult !== null &&
-		"error" in preProjectCostCeilingResult
-			? preProjectCostCeilingResult.error
-			: null;
+	const isCostEstimateLoading: boolean =
+		authIsLoading ||
+		isLoadingModelCatalog ||
+		isLoadingDomainProcessAssociation ||
+		isLoadingProcessTemplate ||
+		isLoadingStageExpectedCounts;
+
+	let costEstimateLoadingNotice: string | null = null;
+	if (authIsLoading) {
+		costEstimateLoadingNotice = "Loading subscription tier…";
+	} else if (isLoadingModelCatalog) {
+		costEstimateLoadingNotice = "Loading model catalog…";
+	} else if (isLoadingDomainProcessAssociation) {
+		costEstimateLoadingNotice = "Loading domain process association…";
+	} else if (isLoadingProcessTemplate) {
+		costEstimateLoadingNotice = "Loading process template…";
+	} else if (isLoadingStageExpectedCounts) {
+		costEstimateLoadingNotice = "Loading stage expected counts…";
+	}
+
+	let costEstimateErrorMessage: string | null = null;
+	if (!isCostEstimateLoading) {
+		if (authError !== null) {
+			costEstimateErrorMessage = authError.message;
+		} else if (userTier === null) {
+			costEstimateErrorMessage = subscriptionTierUnavailableMessage;
+		} else if (capInitResult !== null && capInitResult.ok === false) {
+			costEstimateErrorMessage = capInitResult.error.message;
+		} else if ("error" in preProjectCostCeilingResult) {
+			costEstimateErrorMessage = preProjectCostCeilingResult.error.message;
+		}
+	}
+
+	const hasCostEstimateSuccess: boolean =
+		!isCostEstimateLoading &&
+		costEstimateErrorMessage === null &&
+		!("error" in preProjectCostCeilingResult);
 
 	const firstStageSlug: string | null = sortedStages[0]?.slug ?? null;
 
 	let firstStageCeiling: number | null = null;
 	if (
-		preProjectCostCeilingResult !== null &&
-		!("error" in preProjectCostCeilingResult) &&
-		firstStageSlug !== null
+		hasCostEstimateSuccess &&
+		firstStageSlug !== null &&
+		!("error" in preProjectCostCeilingResult)
 	) {
 		const rawFirstStageCeiling: number =
 			preProjectCostCeilingResult.stageCeilings[firstStageSlug];
@@ -473,10 +539,7 @@ export const CreateDialecticProjectForm: React.FC<
 	}
 
 	let projectCeiling: number | null = null;
-	if (
-		preProjectCostCeilingResult !== null &&
-		!("error" in preProjectCostCeilingResult)
-	) {
+	if (hasCostEstimateSuccess && !("error" in preProjectCostCeilingResult)) {
 		const rawProjectCeiling: number =
 			preProjectCostCeilingResult.projectCeiling;
 		if (Number.isFinite(rawProjectCeiling) && rawProjectCeiling >= 0) {
@@ -528,18 +591,18 @@ export const CreateDialecticProjectForm: React.FC<
 
 	let autoUncheckReason: string | null = null;
 	if (!configureManually && !startGeneration) {
-		const noDefaults = !isLoadingModelCatalog && defaultModels.length === 0;
-		if (noDefaults) {
+		if (isCostEstimateLoading && costEstimateLoadingNotice !== null) {
+			autoUncheckReason = costEstimateLoadingNotice;
+		} else if (authError !== null) {
+			autoUncheckReason = authError.message;
+		} else if (userTier === null) {
+			autoUncheckReason = subscriptionTierUnavailableMessage;
+		} else if (capInitResult !== null && capInitResult.ok === false) {
+			autoUncheckReason = capInitResult.error.message;
+		} else if ("error" in preProjectCostCeilingResult) {
+			autoUncheckReason = preProjectCostCeilingResult.error.message;
+		} else if (!isLoadingModelCatalog && defaultModels.length === 0) {
 			autoUncheckReason = "No default models available";
-		} else if (preProjectCostCeilingError !== null) {
-			autoUncheckReason = preProjectCostCeilingError.message;
-		} else if (
-			!isPreProjectCostEstimateKnown ||
-			isLoadingDomainProcessAssociation ||
-			isLoadingStageExpectedCounts
-		) {
-			autoUncheckReason =
-				"Cost estimate not ready yet. Select models, set the output cap, and wait for stage counts.";
 		}
 	}
 
@@ -605,8 +668,22 @@ export const CreateDialecticProjectForm: React.FC<
 		}
 
 		if (!configureManually && startGeneration) {
-			if (preProjectCostCeilingResult === null) {
-				toast.error("Cost estimate is not available yet.");
+			if (isCostEstimateLoading) {
+				if (costEstimateLoadingNotice !== null) {
+					toast.error(costEstimateLoadingNotice);
+				}
+				return;
+			}
+			if (authError !== null) {
+				toast.error(authError.message);
+				return;
+			}
+			if (userTier === null) {
+				toast.error(subscriptionTierUnavailableMessage);
+				return;
+			}
+			if (capInitResult !== null && capInitResult.ok === false) {
+				toast.error(capInitResult.error.message);
 				return;
 			}
 			if ("error" in preProjectCostCeilingResult) {
@@ -681,22 +758,6 @@ export const CreateDialecticProjectForm: React.FC<
 			toast.error(e instanceof Error ? e.message : "Auto-start failed");
 		}
 	};
-
-	const catalogReady = catalogFetchTriggered && !isLoadingModelCatalog;
-
-	if (!catalogReady) {
-		return (
-			<Card
-				className={containerClassName}
-				data-testid="create-dialectic-project-form"
-			>
-				<CardContent className="flex items-center justify-center p-8">
-					<Loader2 className="h-6 w-6 animate-spin" />
-					<span className="ml-2 text-sm">Loading models…</span>
-				</CardContent>
-			</Card>
-		);
-	}
 
 	return (
 		<Card
@@ -825,21 +886,18 @@ export const CreateDialecticProjectForm: React.FC<
 					</div>
 
 					<div className="text-xs text-muted-foreground space-y-1">
-						{preProjectCostCeilingResult === null && (
-							<p data-testid="create-project-no-estimate-notice">
-								No cost estimate yet. Select at least one model, set the
-								output cap, and wait for stage counts to finish loading.
+						{isCostEstimateLoading && costEstimateLoadingNotice !== null && (
+							<p data-testid="create-project-estimate-loading-notice">
+								{costEstimateLoadingNotice}
 							</p>
 						)}
-						{preProjectCostCeilingResult !== null &&
-							"error" in preProjectCostCeilingResult && (
+						{!isCostEstimateLoading &&
+							costEstimateErrorMessage !== null && (
 								<p data-testid="create-project-estimate-error-notice">
-									Cost estimate failed:{" "}
-									{preProjectCostCeilingResult.error.message}
+									{costEstimateErrorMessage}
 								</p>
 							)}
-						{preProjectCostCeilingResult !== null &&
-							!("error" in preProjectCostCeilingResult) &&
+						{hasCostEstimateSuccess &&
 							firstStageCeiling !== null &&
 							projectCeiling !== null && (
 								<p data-testid="create-project-cost-preview">
@@ -848,8 +906,7 @@ export const CreateDialecticProjectForm: React.FC<
 									{formatTokenCount(firstStageCeiling)} for the first stage.
 								</p>
 							)}
-						{preProjectCostCeilingResult !== null &&
-							!("error" in preProjectCostCeilingResult) &&
+						{hasCostEstimateSuccess &&
 							projectBalanceShortfall !== null &&
 							projectCeiling !== null && (
 								<p data-testid="create-project-project-balance-warning">

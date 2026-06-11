@@ -1,7 +1,8 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import {
 	useDialecticStore,
+	useAuthStore,
 	selectGenerateContributionsError,
 	selectUnifiedProjectProgress,
 	selectSelectedModels,
@@ -14,8 +15,12 @@ import {
 import {
 	DialecticProject,
 	DialecticSession,
+	InitializeMaxOutputTokensResult,
 } from "@paynless/types";
-import { ComputeCostCeilingReturn } from "@paynless/utils";
+import {
+	ComputeCostCeilingReturn,
+	ComputeCostCeilingSuccessReturn,
+} from "@paynless/utils";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -43,6 +48,9 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 
+const subscriptionTierUnavailableMessage =
+	"Subscription tier is not available.";
+
 export const SessionInfoCard: React.FC = () => {
 	const project: DialecticProject | null = useDialecticStore(
 		(state) => state.currentProjectDetail,
@@ -58,37 +66,125 @@ export const SessionInfoCard: React.FC = () => {
 		),
 	);
 	const generateContributionsError = useDialecticStore(selectGenerateContributionsError);
-	const costCeilingResult: ComputeCostCeilingReturn | null = useDialecticStore(
+	const costCeilingResult: ComputeCostCeilingReturn = useDialecticStore(
 		useShallow((state) => {
 			const sid: string | undefined = state.activeSessionDetail?.id;
 			if (sid === undefined) {
-				return null;
+				return {
+					error: {
+						code: "SESSION_NOT_READY",
+						message: "Session is not active.",
+					},
+				};
 			}
 			return selectCostCeiling(state, sid);
 		}),
 	);
 	const viewingStage = useDialecticStore(selectViewingStage);
+	const isLoadingModelCatalog = useDialecticStore(
+		(state) => state.isLoadingModelCatalog,
+	);
+	const isLoadingProcessTemplate = useDialecticStore(
+		(state) => state.isLoadingProcessTemplate,
+	);
+	const modelCatalog = useDialecticStore((state) => state.modelCatalog);
+	const progressHydrationStatus = useDialecticStore(
+		(state) => state.progressHydrationStatus,
+	);
 	const newChatContext = useAiStore((state) => state.newChatContext);
 	const activeWalletInfo = useWalletStore((state) =>
 		selectActiveChatWalletInfo(state, newChatContext),
 	);
+	const authIsLoading = useAuthStore((state) => state.isLoading);
+	const userTier = useAuthStore((state) => state.userTier);
+	const authError = useAuthStore((state) => state.error);
 	const navigate = useNavigate();
 	const [isPromptOpen, setIsPromptOpen] = useState(false);
 	const [isModelSelectorOpen, setIsModelSelectorOpen] = useState(false);
+	const [capInitResult, setCapInitResult] =
+		useState<InitializeMaxOutputTokensResult | null>(null);
 	const activeSeedPrompt = useDialecticStore((state) => state.activeSeedPrompt);
 	const isLoading = useDialecticStore(state => state.isLoadingActiveSessionDetail);
 
-	// Get selected model count
 	const selectedModels = useDialecticStore(selectSelectedModels);
 	const uniqueModelCount = new Set(selectedModels.map((model) => model.id)).size;
+
+	const isCapInitReady: boolean =
+		!authIsLoading &&
+		userTier !== null &&
+		!isLoadingModelCatalog &&
+		modelCatalog.length > 0;
+
+	useEffect(() => {
+		if (!isCapInitReady || session === null) {
+			setCapInitResult(null);
+			return;
+		}
+		const initResult: InitializeMaxOutputTokensResult =
+			useDialecticStore.getState().initializeMaxOutputTokens();
+		if (initResult.ok === true) {
+			setCapInitResult(null);
+			return;
+		}
+		setCapInitResult(initResult);
+	}, [
+		authIsLoading,
+		userTier,
+		isLoadingModelCatalog,
+		modelCatalog.length,
+		session?.id,
+		selectedModels.length,
+	]);
+
+	const runKey: string | null =
+		session !== null
+			? `${session.id}:${session.iteration_count}`
+			: null;
+
+	const isProgressHydrationPending: boolean =
+		runKey !== null && progressHydrationStatus[runKey] === "pending";
+
+	const isCostEstimateLoading: boolean =
+		authIsLoading ||
+		isLoadingModelCatalog ||
+		isLoadingProcessTemplate ||
+		isProgressHydrationPending;
+
+	let costEstimateLoadingNotice: string | null = null;
+	if (authIsLoading) {
+		costEstimateLoadingNotice = "Loading subscription tier…";
+	} else if (isLoadingModelCatalog) {
+		costEstimateLoadingNotice = "Loading model catalog…";
+	} else if (isLoadingProcessTemplate) {
+		costEstimateLoadingNotice = "Loading process template…";
+	} else if (isProgressHydrationPending) {
+		costEstimateLoadingNotice = "Loading stage progress…";
+	}
+
+	let costEstimateErrorMessage: string | null = null;
+	if (!isCostEstimateLoading) {
+		if (authError !== null) {
+			costEstimateErrorMessage = authError.message;
+		} else if (userTier === null) {
+			costEstimateErrorMessage = subscriptionTierUnavailableMessage;
+		} else if (capInitResult !== null && capInitResult.ok === false) {
+			costEstimateErrorMessage = capInitResult.error.message;
+		} else if ("error" in costCeilingResult) {
+			costEstimateErrorMessage = costCeilingResult.error.message;
+		}
+	}
 
 	const formatTokenCount = (n: number): string =>
 		new Intl.NumberFormat("en-US").format(n);
 
-	const costCeilingSuccessResult =
-		costCeilingResult !== null && !("error" in costCeilingResult)
-			? costCeilingResult
-			: null;
+	let costCeilingSuccessResult: ComputeCostCeilingSuccessReturn | null = null;
+	if (
+		!isCostEstimateLoading &&
+		costEstimateErrorMessage === null &&
+		!("error" in costCeilingResult)
+	) {
+		costCeilingSuccessResult = costCeilingResult;
+	}
 
 	const rawStageCeilingForViewingStage: number | undefined =
 		costCeilingSuccessResult !== null && viewingStage !== null
@@ -244,15 +340,14 @@ export const SessionInfoCard: React.FC = () => {
 			</div>
 
 			<div className="text-xs text-muted-foreground space-y-1">
-				{costCeilingResult === null && (
-					<p data-testid="session-info-no-estimate-notice">
-						No cost estimate yet. Open Model Settings, select at least one model,
-						set the output cap, and wait for stage counts to finish loading.
+				{isCostEstimateLoading && costEstimateLoadingNotice !== null && (
+					<p data-testid="session-info-estimate-loading-notice">
+						{costEstimateLoadingNotice}
 					</p>
 				)}
-				{costCeilingResult !== null && "error" in costCeilingResult && (
+				{!isCostEstimateLoading && costEstimateErrorMessage !== null && (
 					<p data-testid="session-info-estimate-error-notice">
-						Cost estimate failed: {costCeilingResult.error.message}
+						{costEstimateErrorMessage}
 					</p>
 				)}
 				{costCeilingSuccessResult !== null && (

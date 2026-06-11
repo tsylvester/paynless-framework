@@ -1157,6 +1157,7 @@ export interface UseStartContributionGenerationReturn {
   isCostEstimateKnown: boolean;
   showCostEstimateBlocked: boolean;
   showStageCostEstimate: boolean;
+  isCostEstimateLoading: boolean;
   isViewingAheadOfCurrentStage: boolean;
   viewingAheadReason: string | null;
 }

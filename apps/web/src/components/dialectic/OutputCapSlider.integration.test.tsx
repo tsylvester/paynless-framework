@@ -177,13 +177,15 @@ function seedIntegrationStores(
 		availableTiers: UserTier[];
 	},
 	dialecticOverrides: {
-		maxOutputTokens: number | null;
+		maxOutputTokens: number;
 	},
 ): void {
 	act(() => {
 		useAuthStore.setState({
 			userTier: authOverrides.userTier,
 			availableTiers: authOverrides.availableTiers,
+			isLoading: false,
+			error: null,
 		});
 		useDialecticStore.setState({
 			modelCatalog: [integrationModelCatalogEntry],
@@ -192,6 +194,9 @@ function seedIntegrationStores(
 		});
 	});
 }
+
+// Interaction tests seed a finite maxOutputTokens (parent-owned initializeMaxOutputTokens).
+// null store cap renders output-cap-slider-blocked-notice — no draggable slider.
 
 describe('OutputCapSlider integration', () => {
 	beforeEach(() => {
@@ -217,7 +222,7 @@ describe('OutputCapSlider integration', () => {
 		for (const tier of userFacingTiers) {
 			expect(
 				screen.getByRole('button', { name: new RegExp(tier.name, 'i') }),
-			).toBeInTheDocument();
+			).not.toBeNull();
 		}
 
 		const tierMarkerButtons = screen
@@ -228,7 +233,7 @@ describe('OutputCapSlider integration', () => {
 				),
 			);
 		expect(tierMarkerButtons).toHaveLength(userFacingTiers.length);
-		expect(screen.queryByText(/unreachable/i)).not.toBeInTheDocument();
+		expect(screen.queryByText(/unreachable/i)).toBeNull();
 	});
 
 	it('function → consumer: persists chosen cap to real dialectic store', async () => {
@@ -246,8 +251,10 @@ describe('OutputCapSlider integration', () => {
 
 		await dragSegmentedSliderToTokens(initialCap, freeTierThumbMax, trackMax);
 
+		const sliderAfterDrag = screen.getByRole('slider');
+		await userEvent.tab();
+
 		await waitFor(() => {
-			const sliderAfterDrag = screen.getByRole('slider');
 			const ariaValue = sliderAfterDrag.getAttribute('aria-valuenow');
 			expect(ariaValue).not.toBeNull();
 			const thumbTokens = Number(ariaValue);
@@ -267,7 +274,7 @@ describe('OutputCapSlider integration', () => {
 		renderWithRouter(<OutputCapSlider />);
 
 		const slider = screen.getByRole('slider');
-		expect(slider).toHaveAttribute('aria-valuemax', '200000');
+		expect(slider.getAttribute('aria-valuemax')).toBe('200000');
 
 		await userEvent.click(screen.getByRole('button', { name: /free/i }));
 		await waitFor(() => {
@@ -276,8 +283,10 @@ describe('OutputCapSlider integration', () => {
 
 		await dragSegmentedSliderToTokens(8192, 16384, MODEL_TRACK_MAX);
 
+		const sliderAfterDrag = screen.getByRole('slider');
+		await userEvent.tab();
+
 		await waitFor(() => {
-			const sliderAfterDrag = screen.getByRole('slider');
 			const ariaValue = sliderAfterDrag.getAttribute('aria-valuenow');
 			expect(ariaValue).not.toBeNull();
 			const thumbTokens = Number(ariaValue);
@@ -291,10 +300,10 @@ describe('OutputCapSlider integration', () => {
 
 		expect(
 			screen.getByText(byExactTextContent(upgradeCtaText('premium'))),
-		).toBeInTheDocument();
+		).not.toBeNull();
 		expect(
 			screen.getByRole('button', { name: /^upgrade$/i }),
-		).toBeInTheDocument();
+		).not.toBeNull();
 
 		await userEvent.click(screen.getByRole('button', { name: /^upgrade$/i }));
 

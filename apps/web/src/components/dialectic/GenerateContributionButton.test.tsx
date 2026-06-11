@@ -6,6 +6,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { toast } from 'sonner'; // Import the mocked toast
 import { GenerateContributionButton } from './GenerateContributionButton';
 import type {
+  ApiError,
   DialecticStage,
   DialecticContribution,
   DialecticProject,
@@ -206,6 +207,7 @@ function getDefaultHookReturn(
     projectCeiling: 400000,
     stageBalanceShortfall: null,
     isCostEstimateKnown: true,
+    isCostEstimateLoading: false,
     showCostEstimateBlocked: false,
     costCeilingError: null,
     showStageCostEstimate: true,
@@ -517,6 +519,7 @@ describe('GenerateContributionButton', () => {
     mockUseStartContributionGeneration.mockReturnValue(
       getDefaultHookReturn({
         isCostEstimateKnown: true,
+        isCostEstimateLoading: false,
         showCostEstimateBlocked: false,
         stageBalanceShortfall: 25000,
         showBalanceCallout: true,
@@ -528,22 +531,6 @@ describe('GenerateContributionButton', () => {
     expect(screen.getByTestId('generate-button-balance-callout')).toBeDefined();
     expect(screen.getByRole('link', { name: /Top up 25,000/i })).toBeDefined();
     expect(screen.queryByTestId('generate-button-no-estimate-callout')).toBeNull();
-  });
-
-  it('renders disabled button with no-estimate callout when cost estimate is not yet available instead of returning null', () => {
-    mockUseStartContributionGeneration.mockReturnValue(
-      getDefaultHookReturn({
-        stageCeiling: null,
-        isCostEstimateKnown: false,
-        showCostEstimateBlocked: true,
-        costCeilingError: null,
-        isDisabled: true,
-        showStageCostEstimate: false,
-      })
-    );
-    renderWithRouter(<GenerateContributionButton />);
-    expect(screen.getByRole('button', { name: /No Estimate/i }).hasAttribute('disabled')).toBe(true);
-    expect(screen.getByTestId('generate-button-no-estimate-callout')).toBeDefined();
   });
 
   it('closes DAG progress dialog when onOpenChange(false) is called', async () => {
@@ -759,5 +746,51 @@ describe('GenerateContributionButton', () => {
     );
     renderWithRouter(<GenerateContributionButton />);
     expect(screen.getByRole('button').hasAttribute('disabled')).toBe(true);
+  });
+
+  it('shows loading notice while isCostEstimateLoading', () => {
+    vi.mocked(selectIsStageReadyForSessionIteration).mockReturnValue(true);
+    mockUseStartContributionGeneration.mockReturnValue(
+      getDefaultHookReturn({
+        isCostEstimateLoading: true,
+        isDisabled: true,
+        showCostEstimateBlocked: false,
+        costCeilingError: null,
+      })
+    );
+    renderWithRouter(<GenerateContributionButton />);
+    expect(screen.getByTestId('generate-button-estimate-loading-notice').textContent).toBe(
+      'Loading cost estimate…',
+    );
+    const button = screen.getByRole('button', { name: /Loading Estimate/i });
+    expect(button.hasAttribute('disabled')).toBe(true);
+    expect(screen.queryByTestId('generate-button-estimate-error-callout')).toBeNull();
+    expect(screen.queryByTestId('generate-button-no-estimate-callout')).toBeNull();
+  });
+
+  it('shows estimate-error callout with pass-through message when blocked after loading', () => {
+    vi.mocked(selectIsStageReadyForSessionIteration).mockReturnValue(true);
+    const outputCapNotInitializedMessage =
+      'Output cap is not initialized in dialectic store.';
+    const costCeilingError: ApiError = {
+      code: 'OUTPUT_CAP_NOT_INITIALIZED',
+      message: outputCapNotInitializedMessage,
+    };
+    mockUseStartContributionGeneration.mockReturnValue(
+      getDefaultHookReturn({
+        isCostEstimateLoading: false,
+        showCostEstimateBlocked: true,
+        costCeilingError,
+        isDisabled: true,
+      })
+    );
+    renderWithRouter(<GenerateContributionButton />);
+    const button = screen.getByRole('button', { name: /Estimate Failed/i });
+    expect(button.hasAttribute('disabled')).toBe(true);
+    expect(screen.getByTestId('generate-button-estimate-error-callout').textContent).toBe(
+      outputCapNotInitializedMessage,
+    );
+    expect(screen.queryByTestId('generate-button-estimate-loading-notice')).toBeNull();
+    expect(screen.queryByTestId('generate-button-no-estimate-callout')).toBeNull();
   });
 }); 

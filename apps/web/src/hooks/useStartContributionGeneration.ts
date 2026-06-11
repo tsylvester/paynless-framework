@@ -3,6 +3,7 @@ import {
   useDialecticStore,
   useWalletStore,
   useAiStore,
+  useAuthStore,
   selectViewingStage,
   selectSessionById,
   selectIsStageReadyForSessionIteration,
@@ -19,11 +20,22 @@ import {
   type StartContributionGenerationResult,
   type UseStartContributionGenerationReturn,
 } from "@paynless/types";
-import { type ComputeCostCeilingReturn } from "@paynless/utils";
+import {
+  isApiError,
+  isComputeCostCeilingErrorReturn,
+  type ComputeCostCeilingReturn,
+} from "@paynless/utils";
 import { toast } from "sonner";
 
 const GENERATION_STARTED_DESCRIPTION =
   "The AI is working. We will notify you when it is complete.";
+
+const noActiveSessionApiError: ApiError = {
+  code: "NO_ACTIVE_SESSION",
+  message: "No active session.",
+};
+
+const loadingCostEstimateMessage = "Loading cost estimate…";
 
 export function useStartContributionGeneration(): UseStartContributionGenerationReturn {
   const generateContributions = useDialecticStore(
@@ -43,6 +55,13 @@ export function useStartContributionGeneration(): UseStartContributionGeneration
   );
   const activeContextSessionId = useDialecticStore(
     (state) => state.activeContextSessionId,
+  );
+  const authIsLoading = useAuthStore((state) => state.isLoading);
+  const isLoadingProcessTemplate = useDialecticStore(
+    (state) => state.isLoadingProcessTemplate,
+  );
+  const progressHydrationStatus = useDialecticStore(
+    (state) => state.progressHydrationStatus,
   );
 
   const unifiedProgress = useDialecticStore((state) => {
@@ -69,6 +88,20 @@ export function useStartContributionGeneration(): UseStartContributionGeneration
     const session = selectSessionById(state, sid);
     return session ?? null;
   });
+
+  const runKey: string | null =
+    activeContextSessionId !== null && activeSession !== null
+      ? `${activeContextSessionId}:${activeSession.iteration_count}`
+      : null;
+
+  const isProgressHydrationPending: boolean =
+    runKey !== null && progressHydrationStatus[runKey] === "pending";
+
+  const isCostEstimateLoading: boolean =
+    authIsLoading ||
+    isLoadingProcessTemplate ||
+    isProgressHydrationPending ||
+    activeWalletInfo.isLoadingPrimaryWallet;
 
   const isWalletReady =
     activeWalletInfo.status === "ok" && activeWalletInfo.walletId != null;
@@ -133,27 +166,37 @@ export function useStartContributionGeneration(): UseStartContributionGeneration
   const hasPausedNsfJobs = viewingStageProgress?.stageStatus === "paused_nsf";
   const hasPausedUserJobs = viewingStageProgress?.stageStatus === "paused_user";
 
-  const costCeilingResult: ComputeCostCeilingReturn | null = useDialecticStore(
+  const costCeilingResult: ComputeCostCeilingReturn = useDialecticStore(
     (state) => {
       const sid = state.activeContextSessionId;
-      if (sid === null) return null;
+      if (sid === null) {
+        const noActiveSessionResult: ComputeCostCeilingReturn = {
+          error: noActiveSessionApiError,
+        };
+        return noActiveSessionResult;
+      }
       return selectCostCeiling(state, sid);
     },
   );
 
   const costCeilingError: ApiError | null = useMemo(() => {
-    if (costCeilingResult !== null && "error" in costCeilingResult) {
+    if (isCostEstimateLoading) {
+      return null;
+    }
+    if (
+      isComputeCostCeilingErrorReturn(costCeilingResult) &&
+      isApiError(costCeilingResult.error)
+    ) {
       return costCeilingResult.error;
     }
     return null;
-  }, [costCeilingResult]);
+  }, [isCostEstimateLoading, costCeilingResult]);
 
   const stageCeiling: number | null = useMemo(() => {
-    if (
-      costCeilingResult === null ||
-      "error" in costCeilingResult ||
-      viewingStage === null
-    ) {
+    if (isCostEstimateLoading) {
+      return null;
+    }
+    if (isComputeCostCeilingErrorReturn(costCeilingResult) || viewingStage === null) {
       return null;
     }
     const ceiling = costCeilingResult.stageCeilings[viewingStage.slug];
@@ -161,10 +204,13 @@ export function useStartContributionGeneration(): UseStartContributionGeneration
       return null;
     }
     return ceiling;
-  }, [costCeilingResult, viewingStage]);
+  }, [isCostEstimateLoading, costCeilingResult, viewingStage]);
 
   const projectCeiling: number | null = useMemo(() => {
-    if (costCeilingResult === null || "error" in costCeilingResult) {
+    if (isCostEstimateLoading) {
+      return null;
+    }
+    if (isComputeCostCeilingErrorReturn(costCeilingResult)) {
       return null;
     }
     const ceiling = costCeilingResult.projectCeiling;
@@ -172,32 +218,47 @@ export function useStartContributionGeneration(): UseStartContributionGeneration
       return null;
     }
     return ceiling;
-  }, [costCeilingResult]);
+  }, [isCostEstimateLoading, costCeilingResult]);
 
   const isCostEstimateKnown: boolean = useMemo(() => {
+    if (isCostEstimateLoading) {
+      return false;
+    }
     return stageCeiling !== null;
-  }, [stageCeiling]);
+  }, [isCostEstimateLoading, stageCeiling]);
 
   const balanceMeetsThreshold = useMemo((): boolean => {
+    if (isCostEstimateLoading) {
+      return false;
+    }
     if (!isCostEstimateKnown || stageCeiling === null) return false;
     const balanceNum = Number(activeWalletInfo.balance);
     return !Number.isNaN(balanceNum) && balanceNum >= stageCeiling;
-  }, [isCostEstimateKnown, stageCeiling, activeWalletInfo.balance]);
+  }, [isCostEstimateLoading, isCostEstimateKnown, stageCeiling, activeWalletInfo.balance]);
 
   const stageBalanceShortfall: number | null = useMemo(() => {
+    if (isCostEstimateLoading) {
+      return null;
+    }
     if (!isCostEstimateKnown || stageCeiling === null) return null;
     const balanceNum = Number(activeWalletInfo.balance);
     if (Number.isNaN(balanceNum) || balanceNum >= stageCeiling) return null;
     return stageCeiling - balanceNum;
-  }, [isCostEstimateKnown, stageCeiling, activeWalletInfo.balance]);
+  }, [isCostEstimateLoading, isCostEstimateKnown, stageCeiling, activeWalletInfo.balance]);
 
   const showCostEstimateBlocked: boolean = useMemo(() => {
+    if (isCostEstimateLoading) {
+      return false;
+    }
     return viewingStage != null && !isCostEstimateKnown;
-  }, [viewingStage, isCostEstimateKnown]);
+  }, [isCostEstimateLoading, viewingStage, isCostEstimateKnown]);
 
   const showStageCostEstimate: boolean = useMemo(() => {
+    if (isCostEstimateLoading) {
+      return false;
+    }
     return isCostEstimateKnown && balanceMeetsThreshold;
-  }, [isCostEstimateKnown, balanceMeetsThreshold]);
+  }, [isCostEstimateLoading, isCostEstimateKnown, balanceMeetsThreshold]);
 
   const isResumeMode = (hasPausedNsfJobs && balanceMeetsThreshold) || hasPausedUserJobs;
   const isPauseMode = isSessionGenerating;
@@ -228,8 +289,12 @@ export function useStartContributionGeneration(): UseStartContributionGeneration
     !balanceMeetsThreshold ||
     isViewingAheadOfCurrentStage;
 
-  const showBalanceCallout =
-    viewingStage != null && !balanceMeetsThreshold;
+  const showBalanceCallout = useMemo((): boolean => {
+    if (isCostEstimateLoading) {
+      return false;
+    }
+    return viewingStage != null && !balanceMeetsThreshold;
+  }, [isCostEstimateLoading, viewingStage, balanceMeetsThreshold]);
 
   const startContributionGeneration = useCallback(
     async (
@@ -285,16 +350,28 @@ export function useStartContributionGeneration(): UseStartContributionGeneration
         return { success: false, error };
       }
 
+      const authIsLoadingAtCallTime = useAuthStore.getState().isLoading;
+      const isLoadingProcessTemplateAtCallTime = state.isLoadingProcessTemplate;
+      const runKeyAtCallTime = `${activeContextSessionId}:${activeSession.iteration_count}`;
+      const isProgressHydrationPendingAtCallTime =
+        state.progressHydrationStatus[runKeyAtCallTime] === "pending";
+      const isCostEstimateLoadingAtCallTime =
+        authIsLoadingAtCallTime ||
+        isLoadingProcessTemplateAtCallTime ||
+        isProgressHydrationPendingAtCallTime ||
+        activeWalletInfo.isLoadingPrimaryWallet;
+
+      if (isCostEstimateLoadingAtCallTime) {
+        toast.error(loadingCostEstimateMessage);
+        return { success: false, error: loadingCostEstimateMessage };
+      }
+
       const iterationNumber = activeSession.iteration_count;
       const costCeilingResult = selectCostCeiling(state, activeContextSessionId);
-      if (costCeilingResult === null) {
-        const error = "Cost estimate is not available.";
-        toast.error(error);
-        return { success: false, error };
-      }
-      if ("error" in costCeilingResult) {
-        toast.error(costCeilingResult.error.message);
-        return { success: false, error: costCeilingResult.error.message };
+      if (isComputeCostCeilingErrorReturn(costCeilingResult)) {
+        const selectorError = costCeilingResult.error;
+        toast.error(selectorError.message);
+        return { success: false, error: selectorError.message };
       }
       const stageCeilingValue = costCeilingResult.stageCeilings[viewingStage.slug];
       if (
@@ -411,6 +488,7 @@ export function useStartContributionGeneration(): UseStartContributionGeneration
     isCostEstimateKnown,
     showCostEstimateBlocked,
     showStageCostEstimate,
+    isCostEstimateLoading,
     isViewingAheadOfCurrentStage,
     viewingAheadReason,
   };

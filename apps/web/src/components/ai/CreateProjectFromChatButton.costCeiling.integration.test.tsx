@@ -28,21 +28,21 @@ import type {
   DomainProcessAssociationRow,
   GetStageExpectedCountsResponse,
   TokenWallet,
+  UserTier,
 } from '@paynless/types';
-import {
-  computeCostCeiling,
-  buildComputeCostCeilingDeps,
-  buildComputeCostCeilingParams,
-  buildComputeCostCeilingPayload,
-  buildComputeCostCeilingStageInput,
-  isJson,
+import { computeCostCeiling, isJson } from '@paynless/utils';
+import type {
+  ComputeCostCeilingDeps,
+  ComputeCostCeilingParams,
+  ComputeCostCeilingPayload,
+  ComputeCostCeilingStageInput,
 } from '@paynless/utils';
-import type { ComputeCostCeilingStageInput } from '@paynless/utils';
 import { initializeApiClient, _resetApiClient } from '@paynless/api';
 import {
   selectCurrentChatSelectionState,
   selectPreProjectCostCeiling,
   useAiStore,
+  useAuthStore,
   useDialecticStore,
   useWalletStore,
 } from '@paynless/store';
@@ -61,20 +61,12 @@ vi.mock('@paynless/api', async () => {
   return await vi.importActual<typeof import('@paynless/api')>('@paynless/api');
 });
 
-vi.mock('@supabase/supabase-js', () => {
-  const mockClient = {
-    auth: {
-      getSession: vi.fn(),
-    },
-    channel: vi.fn(() => ({
-      on: vi.fn().mockReturnThis(),
-      subscribe: vi.fn(),
-      unsubscribe: vi.fn(),
-    })),
-    removeChannel: vi.fn(),
-  };
+vi.mock('@supabase/supabase-js', async () => {
+  const supabaseMockModule =
+    await import('../../../../../packages/api/src/mocks/supabase.mock.ts');
+  const mockSupabaseClient = supabaseMockModule.createMockSupabaseClient();
   return {
-    createClient: vi.fn(() => mockClient),
+    createClient: vi.fn(() => mockSupabaseClient),
     SupabaseClient: vi.fn(),
   };
 });
@@ -110,11 +102,18 @@ const outputTokenCostRate = 2;
 const modelId = 'model-cost-ceiling-1';
 const chatIdForIntegration = 'chat-cost-ceiling-int';
 
-const noEstimateToastCopy =
-  'No cost estimate yet. Set the output cap in Model Settings, then try again.';
+const outputCapNotInitializedMessage =
+  'Output cap is not initialized in dialectic store.';
 
 const nsfToastCopy =
   'Insufficient tokens for auto-start. Top up your wallet to continue.';
+
+const integrationUserTier: UserTier = {
+  level: 10,
+  name: 'basic',
+  output_cap_tokens: maxOutputTokens,
+  max_models_per_project: 2,
+};
 
 const thesisStage: DialecticStage = mockDialecticStage({
   id: 'stage-thesis-int',
@@ -158,25 +157,25 @@ const stageExpectedCountsResponse: GetStageExpectedCountsResponse = {
 };
 
 const ceilingStages: ComputeCostCeilingStageInput[] = stageExpectedCountsResponse.stages.map(
-  (entry) =>
-    buildComputeCostCeilingStageInput({
+  (entry) => {
+    const stageInput: ComputeCostCeilingStageInput = {
       stageSlug: entry.stageSlug,
       expectedCount: entry.expectedCount,
       contributions: [],
-    }),
+    };
+    return stageInput;
+  },
 );
 
-const outputTokenCostRates: number[] = [outputTokenCostRate];
+const ceilingDeps: ComputeCostCeilingDeps = {};
+const ceilingParams: ComputeCostCeilingParams = {};
+const ceilingPayload: ComputeCostCeilingPayload = {
+  stages: ceilingStages,
+  maxOutputTokens,
+  outputTokenCostRates: [outputTokenCostRate],
+};
 
-const ceilingComputationResult = computeCostCeiling(
-  buildComputeCostCeilingDeps(),
-  buildComputeCostCeilingParams(),
-  buildComputeCostCeilingPayload({
-    stages: ceilingStages,
-    maxOutputTokens,
-    outputTokenCostRates,
-  }),
-);
+const ceilingComputationResult = computeCostCeiling(ceilingDeps, ceilingParams, ceilingPayload);
 
 if ('error' in ceilingComputationResult) {
   throw new Error('create chat cost ceiling integration fixture computation failed');
@@ -190,6 +189,8 @@ const lowWalletBalance: string = String(expectedFirstStageCeiling - 1);
 
 const modelConfig: AiModelExtendedConfig = mockAiModelConfig({
   output_token_cost_rate: outputTokenCostRate,
+  hard_cap_output_tokens: maxOutputTokens,
+  provider_max_output_tokens: maxOutputTokens,
 });
 if (!isJson(modelConfig)) {
   throw new Error('model config is not a valid JSON object');
@@ -248,10 +249,11 @@ let createProjectAndAutoStartSpy: MockInstance<
 >;
 
 function configureSupabaseAuthSession(): void {
-  const mockSupabaseClient = vi.mocked(createClient).mock.results[0]?.value;
-  if (mockSupabaseClient === undefined) {
+  const mockResults = vi.mocked(createClient).mock.results;
+  if (mockResults.length === 0) {
     throw new Error('Supabase mock client not initialized');
   }
+  const mockSupabaseClient = mockResults[0].value;
   vi.mocked(mockSupabaseClient.auth.getSession).mockResolvedValue({
     data: {
       session: {
@@ -348,6 +350,18 @@ function resetIntegrationStores(): void {
     useDialecticStore.getState()._resetForTesting?.();
     useWalletStore.getState()._resetForTesting();
     useAiStore.setState({ newChatContext: 'personal' });
+    useAuthStore.setState(useAuthStore.getInitialState());
+  });
+}
+
+function seedAuthForCostCeilingIntegration(): void {
+  act(() => {
+    useAuthStore.setState({
+      isLoading: false,
+      userTier: integrationUserTier,
+      error: null,
+      availableTiers: [integrationUserTier],
+    });
   });
 }
 
@@ -362,12 +376,11 @@ function setWalletBalance(balance: string): void {
   });
 }
 
-function seedChatButtonStore(maxOutputTokensOverride: number | null = maxOutputTokens): void {
+function seedChatButtonStore(): void {
   act(() => {
     useDialecticStore.setState({
       selectedDomain,
       domains: [selectedDomain],
-      maxOutputTokens: maxOutputTokensOverride,
       modelCatalog: [],
       isLoadingModelCatalog: false,
     });
@@ -388,6 +401,19 @@ function seedChatButtonStore(maxOutputTokensOverride: number | null = maxOutputT
 async function clickCreateProjectFromChatButton(): Promise<void> {
   const user = userEvent.setup();
   await user.click(screen.getByRole('button', { name: /Create Project/i }));
+}
+
+async function waitForClickOrchestrationHydration(): Promise<void> {
+  await waitFor(() => {
+    const storeState = useDialecticStore.getState();
+    expect(storeState.selectedDomainProcessAssociation?.process_template_id).toBe(
+      processTemplateId,
+    );
+    expect(storeState.preProjectStageExpectedCounts).toEqual(stageExpectedCountsResponse.stages);
+    expect(storeState.currentProcessTemplate?.id).toBe(processTemplateId);
+    expect(storeState.modelCatalog).toEqual([catalogRow]);
+    expect(storeState.maxOutputTokens).toBe(maxOutputTokens);
+  });
 }
 
 describe('CreateProjectFromChatButton cost ceiling integration', () => {
@@ -412,6 +438,7 @@ describe('CreateProjectFromChatButton cost ceiling integration', () => {
     initializeApiClient({ supabaseUrl: MOCK_SUPABASE_URL, supabaseAnonKey: MOCK_ANON_KEY });
     configureSupabaseAuthSession();
     resetIntegrationStores();
+    seedAuthForCostCeilingIntegration();
     setWalletBalance(sufficientWalletBalance);
     registerSuccessMswHandlers();
 
@@ -430,22 +457,17 @@ describe('CreateProjectFromChatButton cost ceiling integration', () => {
     renderWithRouter(<CreateProjectFromChatButton />);
 
     expect(selectCurrentChatSelectionState(useAiStore.getState())).toBe('some');
-    expect(screen.getByRole('button', { name: /Create Project/i })).toBeEnabled();
+    const createButton: HTMLElement = screen.getByRole('button', { name: /Create Project/i });
+    if (!(createButton instanceof HTMLButtonElement)) {
+      throw new Error('Expected create button to be HTMLButtonElement');
+    }
+    expect(createButton.disabled).toBe(false);
 
     await clickCreateProjectFromChatButton();
-
-    await waitFor(() => {
-      const storeState = useDialecticStore.getState();
-      expect(storeState.selectedDomainProcessAssociation?.process_template_id).toBe(
-        processTemplateId,
-      );
-      expect(storeState.preProjectStageExpectedCounts).toEqual(stageExpectedCountsResponse.stages);
-      expect(storeState.currentProcessTemplate?.id).toBe(processTemplateId);
-      expect(storeState.modelCatalog).toEqual([catalogRow]);
-    });
+    await waitForClickOrchestrationHydration();
 
     const ceilingResult = selectPreProjectCostCeiling(useDialecticStore.getState());
-    if (ceilingResult === null || 'error' in ceilingResult) {
+    if ('error' in ceilingResult) {
       throw new Error('selectPreProjectCostCeiling should return success after click orchestration');
     }
     expect(ceilingResult.stageCeilings[firstStageSlug]).toBe(expectedFirstStageCeiling);
@@ -462,16 +484,26 @@ describe('CreateProjectFromChatButton cost ceiling integration', () => {
     );
   });
 
-  it('null prerequisites: missing maxOutputTokens → toast error and no create', async () => {
-    seedChatButtonStore(null);
+  it('missing maxOutputTokens: OUTPUT_CAP_NOT_INITIALIZED pass-through toast and no create', async () => {
+    seedChatButtonStore();
+    act(() => {
+      useDialecticStore.setState({
+        outputCapUserCustomized: true,
+        maxOutputTokens: null,
+      });
+    });
     renderWithRouter(<CreateProjectFromChatButton />);
 
     await clickCreateProjectFromChatButton();
 
     await waitFor(() => {
-      expect(toast.error).toHaveBeenCalledWith(noEstimateToastCopy);
+      expect(toast.error).toHaveBeenCalledWith(outputCapNotInitializedMessage);
     });
-    expect(selectPreProjectCostCeiling(useDialecticStore.getState())).toBeNull();
+    const ceilingResult = selectPreProjectCostCeiling(useDialecticStore.getState());
+    if (!('error' in ceilingResult)) {
+      throw new Error('selectPreProjectCostCeiling should return OUTPUT_CAP_NOT_INITIALIZED error');
+    }
+    expect(ceilingResult.error.message).toBe(outputCapNotInitializedMessage);
     expect(createProjectAndAutoStartSpy).not.toHaveBeenCalled();
   });
 
@@ -488,8 +520,21 @@ describe('CreateProjectFromChatButton cost ceiling integration', () => {
       expect(storeState.preProjectStageExpectedCounts).toBeNull();
     });
 
-    // Real fetchStageExpectedCounts surfaces the MSW 500; selector stays null at click gate.
-    expect(selectPreProjectCostCeiling(useDialecticStore.getState())).toBeNull();
+    const storeState = useDialecticStore.getState();
+    const stageExpectedCountsError = storeState.stageExpectedCountsError;
+    if (stageExpectedCountsError === null) {
+      throw new Error('stageExpectedCountsError should be set after API 500');
+    }
+
+    const ceilingResult = selectPreProjectCostCeiling(storeState);
+    if (!('error' in ceilingResult)) {
+      throw new Error('selectPreProjectCostCeiling should return error when stage counts fail');
+    }
+    expect(ceilingResult.error).toBe(stageExpectedCountsError);
+
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledWith(stageExpectedCountsError.message);
+    });
     expect(createProjectAndAutoStartSpy).not.toHaveBeenCalled();
   });
 

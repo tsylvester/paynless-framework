@@ -2,6 +2,7 @@ import React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
+    ApiError,
     DialecticSession,
     DialecticProject,
     DialecticProcessTemplate,
@@ -14,6 +15,8 @@ import type {
     UnifiedProjectProgress,
     User,
 } from '@paynless/types';
+import { api } from '@paynless/api';
+import { logger } from '@paynless/utils';
 
 import { useStageRunProgressHydration } from './useStageRunProgressHydration';
 import { DynamicProgressBar } from '../components/common/DynamicProgressBar';
@@ -184,6 +187,7 @@ vi.mock('@paynless/api', async () => {
                     },
                 ],
                 edges: [],
+                expectedCount: 1,
             },
         ],
     };
@@ -301,28 +305,23 @@ describe('useStageRunProgressHydration integration', () => {
 
         const state = getDialecticStoreState();
         expect(state.progressHydrationStatus[runKey]).not.toBe('success');
+        expect('progressHydrationError' in state).toBe(false);
     });
 
-    it('after failed hydration, re-triggering the hook retries and succeeds when the API is available', async () => {
+    it('when progressHydrationStatus is failed, hook does not re-trigger hydration', async () => {
         setDialecticStateValues({ progressHydrationStatus: { [runKey]: 'failed' } });
+
+        const hydrateAllStageProgressMock = getDialecticStoreActionMock('hydrateAllStageProgress');
 
         render(<HydrationWrapper />);
 
         await waitFor(() => {
-            const state = getDialecticStoreState();
-            expect(state.progressHydrationStatus[runKey]).toBe('pending');
-        });
-
-        await waitFor(() => {
-            const state = getDialecticStoreState();
-            const thesisProgress = state.stageRunProgress[thesisProgressKey];
-            expect(thesisProgress?.progress.completedSteps).toBe(1);
+            expect(hydrateAllStageProgressMock).not.toHaveBeenCalled();
         });
 
         const state = getDialecticStoreState();
-        const progress: UnifiedProjectProgress = selectUnifiedProjectProgress(state, sessionId);
-        expect(progress.hydrationReady).toBe(true);
-        expect(progress.overallPercentage).toBeGreaterThan(0);
+        expect(state.progressHydrationStatus[runKey]).toBe('failed');
+        expect('progressHydrationError' in state).toBe(false);
     });
 
     it('DynamicProgressBar displays non-zero percentage when documents exist after hydration', async () => {
@@ -330,7 +329,7 @@ describe('useStageRunProgressHydration integration', () => {
 
         await waitFor(() => {
             const percentageText = screen.getByText(/\d+%/);
-            expect(percentageText).toBeInTheDocument();
+            expect(percentageText).toBeDefined();
             const textContent: string | null = percentageText.textContent;
             expect(textContent).not.toBeNull();
             if (textContent === null) return;
@@ -343,5 +342,31 @@ describe('useStageRunProgressHydration integration', () => {
             const value: number = Number.parseInt(digitGroup, 10);
             expect(value).toBeGreaterThan(0);
         });
+    });
+
+    it('when getAllStageProgress returns API error, store has no progressHydrationError, progressHydrationStatus is failed, and hook logs unchanged ApiError', async () => {
+        const apiError: ApiError = { code: 'SERVER_ERROR', message: 'getAllStageProgress API failure' };
+
+        const dialecticClient = api.dialectic();
+        vi.mocked(dialecticClient.getAllStageProgress).mockResolvedValue({
+            data: undefined,
+            error: apiError,
+            status: 500,
+        });
+
+        render(<HydrationWrapper />);
+
+        await waitFor(() => {
+            const state = getDialecticStoreState();
+            expect(state.progressHydrationStatus[runKey]).toBe('failed');
+        });
+
+        const state = getDialecticStoreState();
+        expect('progressHydrationError' in state).toBe(false);
+
+        expect(logger.error).toHaveBeenCalledWith(
+            '[useStageRunProgressHydration] Hydrate-all failed',
+            { errorDetails: apiError },
+        );
     });
 });

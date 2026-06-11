@@ -15,7 +15,12 @@ import {
   getDialecticStoreActions,
   getDialecticStoreActionMock,
 } from '../../mocks/dialecticStore.mock';
-import { mockedUseAuthStoreHookLogic, resetAuthStoreMock } from '../../mocks/authStore.mock';
+import {
+  mockedUseAuthStoreHookLogic,
+  mockSetAuthIsLoading,
+  mockSetAuthError,
+  resetAuthStoreMock,
+} from '../../mocks/authStore.mock';
 import { getAiStoreState, mockSetState, resetAiStoreMock } from '../../mocks/aiStore.mock';
 
 vi.mock('@paynless/store', async (importOriginal) => {
@@ -54,7 +59,11 @@ function mockTestAiProvider(overrides: Partial<AiProvidersRow>): AiProvider {
 function setupMockStores(
   dialecticOverrides: Partial<DialecticStateValues> = {},
   aiOverrides: Partial<AiState> = {},
-  authOverrides: { userTier?: UserTier; availableTiers?: UserTier[] } = {},
+  authOverrides: {
+    userTier?: UserTier | null;
+    availableTiers?: UserTier[];
+    isLoading?: boolean;
+  } = {},
 ) {
   resetDialecticStoreMock();
   resetAuthStoreMock();
@@ -71,6 +80,8 @@ function setupMockStores(
     mockedUseAuthStoreHookLogic.setState({
       userTier: authOverrides.userTier !== undefined ? authOverrides.userTier : mockUserTier,
       availableTiers: authOverrides.availableTiers !== undefined ? authOverrides.availableTiers : mockAllTiers,
+      isLoading: authOverrides.isLoading !== undefined ? authOverrides.isLoading : false,
+      error: null,
     });
   });
   const dialecticActions = getDialecticStoreActions();
@@ -171,7 +182,7 @@ describe('AIModelSelector', () => {
     setupMockStores({}, { isConfigLoading: true, availableProviders: [] });
     renderWithRouter(<AIModelSelector />);
     await userEvent.click(screen.getByRole('button'));
-    expect(await screen.findByText('Loading models...')).toBeInTheDocument();
+    expect(await screen.findByText('Loading models...')).not.toBeNull();
   });
 
   test('calls loadAiConfig on mount if providers not available and not loading', () => {
@@ -191,15 +202,15 @@ describe('AIModelSelector', () => {
     setupMockStores({}, { aiError: errorMsg, isConfigLoading: false, availableProviders: [] });
     renderWithRouter(<AIModelSelector />);
     await userEvent.click(screen.getByRole('button'));
-    expect(await screen.findByText(`Error: ${errorMsg}`)).toBeInTheDocument();
+    expect(await screen.findByText(`Error: ${errorMsg}`)).not.toBeNull();
   });
 
   test('renders no models available message', async () => {
     setupMockStores({}, { availableProviders: [], isConfigLoading: false, aiError: null });
     renderWithRouter(<AIModelSelector />);
-    expect(screen.getByText('No models available')).toBeInTheDocument();
+    expect(screen.getByText('No models available')).not.toBeNull();
     await userEvent.click(screen.getByRole('button'));
-    expect(await screen.findByText('No models available to select.')).toBeInTheDocument();
+    expect(await screen.findByText('No models available to select.')).not.toBeNull();
   });
 
   test('renders available providers and allows selection', async () => {
@@ -210,12 +221,12 @@ describe('AIModelSelector', () => {
     renderWithRouter(<AIModelSelector />);
     const user = userEvent.setup();
 
-    expect(screen.getByText('Click to select AI models')).toBeInTheDocument();
+    expect(screen.getByText('Click to select AI models')).not.toBeNull();
     await user.click(screen.getByRole('button', { name: /Select AI Models/i }));
 
     await waitFor(async () => {
-      expect(screen.getByText('GPT-4')).toBeInTheDocument();
-      expect(screen.getByText('Claude 3')).toBeInTheDocument();
+      expect(screen.getByText('GPT-4')).not.toBeNull();
+      expect(screen.getByText('Claude 3')).not.toBeNull();
     });
 
     const gpt4Item = await screen.findByTestId('model-item-model1');
@@ -240,10 +251,10 @@ describe('AIModelSelector', () => {
     );
     renderWithRouter(<AIModelSelector />);
 
-    expect(screen.getByText('GPT-4')).toBeInTheDocument();
-    expect(screen.getByText('Claude 3')).toBeInTheDocument();
-    expect(screen.queryByText('model1')).not.toBeInTheDocument();
-    expect(screen.queryByText('model2')).not.toBeInTheDocument();
+    expect(screen.getByText('GPT-4')).not.toBeNull();
+    expect(screen.getByText('Claude 3')).not.toBeNull();
+    expect(screen.queryByText('model1')).toBeNull();
+    expect(screen.queryByText('model2')).toBeNull();
   });
 
   test('displays selected models summary correctly', () => {
@@ -251,13 +262,13 @@ describe('AIModelSelector', () => {
 
     setupMockStores({ selectedModels: [] }, { availableProviders: mockAiProvidersData });
     ({ unmount } = renderWithRouter(<AIModelSelector />));
-    expect(screen.getByText('Click to select AI models')).toBeInTheDocument();
+    expect(screen.getByText('Click to select AI models')).not.toBeNull();
     unmount();
 
     setupMockStores({ selectedModels: selectedModelsFromIds(['model1']) }, { availableProviders: mockAiProvidersData });
     ({ unmount } = renderWithRouter(<AIModelSelector />));
-    expect(screen.getByText('GPT-4')).toBeInTheDocument();
-    expect(screen.queryByText('Claude 3')).not.toBeInTheDocument();
+    expect(screen.getByText('GPT-4')).not.toBeNull();
+    expect(screen.queryByText('Claude 3')).toBeNull();
     unmount();
 
     setupMockStores(
@@ -266,9 +277,9 @@ describe('AIModelSelector', () => {
       tierUltraAuthConfig
     );
     ({ unmount } = renderWithRouter(<AIModelSelector />));
-    expect(screen.getByText('GPT-4')).toBeInTheDocument();
-    expect(screen.getByText('2')).toBeInTheDocument();
-    expect(screen.queryByText('Claude 3')).not.toBeInTheDocument();
+    expect(screen.getByText('GPT-4')).not.toBeNull();
+    expect(screen.getByText('2')).not.toBeNull();
+    expect(screen.queryByText('Claude 3')).toBeNull();
     unmount();
 
     setupMockStores(
@@ -277,8 +288,8 @@ describe('AIModelSelector', () => {
       tierUltraAuthConfig
     );
     ({ unmount } = renderWithRouter(<AIModelSelector />));
-    expect(screen.getByText('GPT-4')).toBeInTheDocument();
-    expect(screen.getByText('Claude 3')).toBeInTheDocument();
+    expect(screen.getByText('GPT-4')).not.toBeNull();
+    expect(screen.getByText('Claude 3')).not.toBeNull();
     unmount();
 
     setupMockStores(
@@ -287,9 +298,9 @@ describe('AIModelSelector', () => {
       tierUltraAuthConfig
     );
     ({ unmount } = renderWithRouter(<AIModelSelector />));
-    expect(screen.getByText('GPT-4')).toBeInTheDocument();
-    expect(screen.getByText('2')).toBeInTheDocument();
-    expect(screen.getByText('Claude 3')).toBeInTheDocument();
+    expect(screen.getByText('GPT-4')).not.toBeNull();
+    expect(screen.getByText('2')).not.toBeNull();
+    expect(screen.getByText('Claude 3')).not.toBeNull();
     unmount();
 
     const manyProviders: AiProvider[] = [...mockAiProvidersData, geminiProvider];
@@ -300,9 +311,9 @@ describe('AIModelSelector', () => {
       tierUltraAuthConfig
     );
     ({ unmount } = renderWithRouter(<AIModelSelector />));
-    expect(screen.getByText('GPT-4')).toBeInTheDocument();
-    expect(screen.getByText('Claude 3')).toBeInTheDocument();
-    expect(screen.getByText('Gemini')).toBeInTheDocument();
+    expect(screen.getByText('GPT-4')).not.toBeNull();
+    expect(screen.getByText('Claude 3')).not.toBeNull();
+    expect(screen.getByText('Gemini')).not.toBeNull();
     unmount();
 
     setupMockStores(
@@ -311,10 +322,10 @@ describe('AIModelSelector', () => {
       tierUltraAuthConfig
     );
     ({ unmount } = renderWithRouter(<AIModelSelector />));
-    expect(screen.getByText('GPT-4')).toBeInTheDocument();
-    expect(screen.getByText('2')).toBeInTheDocument();
-    expect(screen.getByText('Claude 3')).toBeInTheDocument();
-    expect(screen.getByText('Gemini')).toBeInTheDocument();
+    expect(screen.getByText('GPT-4')).not.toBeNull();
+    expect(screen.getByText('2')).not.toBeNull();
+    expect(screen.getByText('Claude 3')).not.toBeNull();
+    expect(screen.getByText('Gemini')).not.toBeNull();
     unmount();
   });
 
@@ -329,9 +340,9 @@ describe('AIModelSelector', () => {
 
     for (const provider of mockAiProvidersData) {
       const modelItem = await screen.findByTestId(`model-item-${provider.id}`);
-      expect(within(modelItem).getByRole('button', { name: /Increment/i })).toBeInTheDocument();
-      expect(within(modelItem).getByRole('button', { name: /Decrement/i })).toBeInTheDocument();
-      expect(within(modelItem).getByText('0')).toBeInTheDocument();
+      expect(within(modelItem).getByRole('button', { name: /Increment/i })).not.toBeNull();
+      expect(within(modelItem).getByRole('button', { name: /Decrement/i })).not.toBeNull();
+      expect(within(modelItem).getByText('0')).not.toBeNull();
     }
   });
 
@@ -422,25 +433,25 @@ describe('AIModelSelector', () => {
   test('dropdown is disabled when disabled prop is true', () => {
     setupMockStores({}, { availableProviders: mockAiProvidersData });
     renderWithRouter(<AIModelSelector disabled={true} />);
-    expect(screen.getByRole('button')).toBeDisabled();
+    expect(screen.getByRole('button').hasAttribute('disabled')).toBe(true);
   });
 
   test('dropdown is NOT disabled when loading, so loading message can be shown', () => {
     setupMockStores({}, { availableProviders: [], isConfigLoading: true });
     renderWithRouter(<AIModelSelector />);
-    expect(screen.getByRole('button')).not.toBeDisabled();
+    expect(screen.getByRole('button').hasAttribute('disabled')).toBe(false);
   });
 
   test('dropdown is disabled when no models and not loading (and no error)', () => {
     setupMockStores({}, { availableProviders: [], isConfigLoading: false, aiError: null });
     renderWithRouter(<AIModelSelector />);
-    expect(screen.getByRole('button')).toBeDisabled();
+    expect(screen.getByRole('button').hasAttribute('disabled')).toBe(true);
   });
 
   test('dropdown is NOT disabled if there is an error, even if no models', () => {
     setupMockStores({}, { availableProviders: [], isConfigLoading: false, aiError: 'Some error' });
     renderWithRouter(<AIModelSelector />);
-    expect(screen.getByRole('button')).not.toBeDisabled();
+    expect(screen.getByRole('button').hasAttribute('disabled')).toBe(false);
   });
 
   test('when modelCatalog is empty and isLoadingModelCatalog is false, fetchAIModelCatalog is called on mount', () => {
@@ -464,75 +475,6 @@ describe('AIModelSelector', () => {
     expect(dialecticActions.fetchAIModelCatalog).not.toHaveBeenCalled();
   });
 
-  test('when selectedModels is empty, defaultModels is non-empty, and activeContextSessionId is null, setSelectedModels is called with the default models', () => {
-    const defaultModels: SelectedModels[] = [
-      mockSelectedModel({ id: 'default-1', displayName: 'Default One' }),
-    ];
-    const { dialecticActions } = setupMockStores(
-      {
-        modelCatalog: [defaultCatalogRow],
-        isLoadingModelCatalog: false,
-        selectedModels: [],
-        activeContextSessionId: null,
-      },
-      { availableProviders: mockAiProvidersData, isConfigLoading: false }
-    );
-    renderWithRouter(<AIModelSelector />);
-    expect(dialecticActions.setSelectedModels).toHaveBeenCalledTimes(1);
-    expect(dialecticActions.setSelectedModels).toHaveBeenCalledWith(defaultModels);
-  });
-
-  test('when selectedModels is already non-empty, setSelectedModels is NOT called for defaults', () => {
-    const { dialecticActions } = setupMockStores(
-      {
-        modelCatalog: [defaultCatalogRow],
-        isLoadingModelCatalog: false,
-        selectedModels: selectedModelsFromIds(['model1']),
-        activeContextSessionId: null,
-      },
-      { availableProviders: mockAiProvidersData, isConfigLoading: false }
-    );
-    renderWithRouter(<AIModelSelector />);
-    expect(dialecticActions.setSelectedModels).not.toHaveBeenCalled();
-  });
-
-  test('when activeContextSessionId is set, setSelectedModels is NOT called for defaults even if selectedModels is empty', () => {
-    const { dialecticActions } = setupMockStores(
-      {
-        modelCatalog: [defaultCatalogRow],
-        isLoadingModelCatalog: false,
-        selectedModels: [],
-        activeContextSessionId: 'session-123',
-      },
-      { availableProviders: mockAiProvidersData, isConfigLoading: false }
-    );
-    renderWithRouter(<AIModelSelector />);
-    expect(dialecticActions.setSelectedModels).not.toHaveBeenCalled();
-  });
-
-  test('after defaults are applied once, clearing all models does NOT re-apply defaults', () => {
-    const dialecticConfig: Partial<DialecticStateValues> = {
-      modelCatalog: [defaultCatalogRow],
-      isLoadingModelCatalog: false,
-      selectedModels: [],
-      activeContextSessionId: null,
-    };
-    const { dialecticActions } = setupMockStores(
-      { ...dialecticConfig },
-      { availableProviders: mockAiProvidersData, isConfigLoading: false }
-    );
-    const { rerender } = renderWithRouter(<AIModelSelector />);
-    expect(dialecticActions.setSelectedModels).toHaveBeenCalledTimes(1);
-    vi.mocked(getDialecticStoreActionMock('setSelectedModels')).mockClear();
-
-    setupMockStores(
-      { ...dialecticConfig, selectedModels: [] },
-      { availableProviders: mockAiProvidersData, isConfigLoading: false }
-    );
-    rerender(<MemoryRouter><AIModelSelector /></MemoryRouter>);
-    expect(dialecticActions.setSelectedModels).not.toHaveBeenCalled();
-  });
-
   test('model above user tier renders disabled without multiplicity controls', async () => {
     setupMockStores(
       {},
@@ -544,8 +486,8 @@ describe('AIModelSelector', () => {
     await user.click(screen.getByRole('button', { name: /Select AI Models/i }));
 
     expect(within(screen.getByTestId('model-item-model-premium')).queryByRole('button', { name: /Increment/i })).toBeNull();
-    expect(within(screen.getByTestId('model-item-model-premium')).getByTestId('tier-lock-model-premium')).toBeInTheDocument();
-    expect(within(screen.getByTestId('model-item-model-free')).getByRole('button', { name: /Increment/i })).toBeInTheDocument();
+    expect(within(screen.getByTestId('model-item-model-premium')).getByTestId('tier-lock-model-premium')).not.toBeNull();
+    expect(within(screen.getByTestId('model-item-model-free')).getByRole('button', { name: /Increment/i })).not.toBeNull();
   });
 
   test('tier-locked row shows upgrade CTA with link to subscription at lock interaction point', async () => {
@@ -564,7 +506,7 @@ describe('AIModelSelector', () => {
     const tierPlanMessages = screen.getAllByText(/This model requires a Premium plan/i);
     expect(tierPlanMessages.length).toBeGreaterThanOrEqual(1);
     const upgradeLinks = screen.getAllByTestId('upgrade-link-tier-model-premium');
-    expect(upgradeLinks[0]).toHaveAttribute('href', '/subscription');
+    expect(upgradeLinks[0].getAttribute('href')).toBe('/subscription');
   });
 
   test('at max_models_per_project unselected models cannot increment', async () => {
@@ -580,7 +522,7 @@ describe('AIModelSelector', () => {
     const freeBItem = screen.getByTestId('model-item-model-free-b');
     const incrementButton = within(freeBItem).queryByRole('button', { name: /Increment/i });
     if (incrementButton !== null) {
-      expect(incrementButton).toBeDisabled();
+      expect(incrementButton.hasAttribute('disabled')).toBe(true);
       await user.click(incrementButton);
     }
     expect(dialecticActions.setModelMultiplicity).not.toHaveBeenCalled();
@@ -597,7 +539,7 @@ describe('AIModelSelector', () => {
     await user.click(screen.getByRole('button', { name: /Select AI Models/i }));
 
     const freeBItem = screen.getByTestId('model-item-model-free-b');
-    expect(within(freeBItem).getByTestId('model-cap-controls-model-free-b')).toBeInTheDocument();
+    expect(within(freeBItem).getByTestId('model-cap-controls-model-free-b')).not.toBeNull();
 
     const incrementButton = within(freeBItem).getByRole('button', { name: /Increment/i });
     await user.hover(incrementButton);
@@ -608,7 +550,7 @@ describe('AIModelSelector', () => {
     expect(capLimitMessages.length).toBeGreaterThanOrEqual(1);
     const capUpgradeLinks = screen.getAllByTestId('upgrade-link-cap-model-free-b');
     expect(capUpgradeLinks.length).toBeGreaterThanOrEqual(1);
-    expect(capUpgradeLinks[0]).toHaveAttribute('href', '/subscription');
+    expect(capUpgradeLinks[0].getAttribute('href')).toBe('/subscription');
     expect(screen.queryByTestId('model-limit-footer')).toBeNull();
 
     await user.click(incrementButton);
@@ -645,7 +587,7 @@ describe('AIModelSelector', () => {
     await user.hover(within(cappedFreeItem).getByRole('button', { name: /Increment/i }));
     const capUpgradeLinks = screen.getAllByTestId('upgrade-link-cap-model-free');
     expect(capUpgradeLinks.length).toBeGreaterThanOrEqual(1);
-    expect(capUpgradeLinks[0]).toHaveAttribute('href', '/subscription');
+    expect(capUpgradeLinks[0].getAttribute('href')).toBe('/subscription');
     unmountAfterHover();
 
     const { dialecticActions: incrementActions } = setupMockStores(
@@ -715,7 +657,7 @@ describe('AIModelSelector', () => {
     await user.click(screen.getByRole('button', { name: /Select AI Models/i }));
 
     const premiumItem = screen.getByTestId('model-item-model-premium');
-    expect(within(premiumItem).getByRole('button', { name: /Increment/i })).toBeInTheDocument();
+    expect(within(premiumItem).getByRole('button', { name: /Increment/i })).not.toBeNull();
     expect(within(premiumItem).queryByTestId('tier-lock-model-premium')).toBeNull();
   });
 });
@@ -737,11 +679,15 @@ describe('AIModelSelector Pulsing animation', () => {
         availableProviders: mockAiProvidersData,
         isConfigLoading: false,
         aiError: null,
-      }
+      },
+      { userTier: mockUserTier, availableTiers: mockAllTiers, isLoading: false },
     );
+    mockSetAuthIsLoading(false);
     renderWithRouter(<AIModelSelector disabled={false} />);
     const pulsingButton = getPulsingButton();
-    expect(pulsingButton).toHaveClass('ring-2', 'ring-primary', 'animate-pulse');
+    expect(pulsingButton.getAttribute('class')).toContain('ring-2');
+    expect(pulsingButton.getAttribute('class')).toContain('ring-primary');
+    expect(pulsingButton.getAttribute('class')).toContain('animate-pulse');
   });
 
   test('does NOT apply pulsing animation if models ARE selected', () => {
@@ -751,7 +697,7 @@ describe('AIModelSelector Pulsing animation', () => {
     );
     renderWithRouter(<AIModelSelector disabled={false} />);
     const pulsingButton = getPulsingButton();
-    expect(pulsingButton).not.toHaveClass('animate-pulse');
+    expect(pulsingButton.getAttribute('class') ?? '').not.toContain('animate-pulse');
   });
 
   test('does NOT apply pulsing animation if disabled by prop', () => {
@@ -761,7 +707,7 @@ describe('AIModelSelector Pulsing animation', () => {
     );
     renderWithRouter(<AIModelSelector disabled={true} />);
     const pulsingButton = getPulsingButton();
-    expect(pulsingButton).not.toHaveClass('animate-pulse');
+    expect(pulsingButton.getAttribute('class') ?? '').not.toContain('animate-pulse');
   });
 
   test('does NOT apply pulsing animation if config is loading', () => {
@@ -771,7 +717,7 @@ describe('AIModelSelector Pulsing animation', () => {
     );
     renderWithRouter(<AIModelSelector disabled={false} />);
     const pulsingButton = getPulsingButton();
-    expect(pulsingButton).not.toHaveClass('animate-pulse');
+    expect(pulsingButton.getAttribute('class') ?? '').not.toContain('animate-pulse');
   });
 
   test('does NOT apply pulsing animation if there is an AI error', () => {
@@ -781,7 +727,7 @@ describe('AIModelSelector Pulsing animation', () => {
     );
     renderWithRouter(<AIModelSelector disabled={false} />);
     const pulsingButton = getPulsingButton();
-    expect(pulsingButton).not.toHaveClass('animate-pulse');
+    expect(pulsingButton.getAttribute('class') ?? '').not.toContain('animate-pulse');
   });
 
   test('does NOT apply pulsing animation if there are no available providers', () => {
@@ -791,7 +737,79 @@ describe('AIModelSelector Pulsing animation', () => {
     );
     renderWithRouter(<AIModelSelector disabled={false} />);
     const button = screen.getByRole('button', { name: /Select AI Models/i });
-    expect(button).toBeDisabled();
-    expect(button).not.toHaveClass('animate-pulse');
+    expect(button.hasAttribute('disabled')).toBe(true);
+    expect(button.getAttribute('class') ?? '').not.toContain('animate-pulse');
   });
+
+  test('does NOT pulse while auth isLoading', () => {
+    setupMockStores(
+      { selectedModels: [] },
+      { availableProviders: mockAiProvidersData, isConfigLoading: false, aiError: null },
+    );
+    mockSetAuthIsLoading(true);
+    renderWithRouter(<AIModelSelector disabled={false} />);
+    expect(getPulsingButton().getAttribute('class') ?? '').not.toContain('animate-pulse');
+  });
+});
+
+test('shows loading notice while auth isLoading', () => {
+  setupMockStores(
+    { selectedModels: [] },
+    { availableProviders: mockAiProvidersData, isConfigLoading: false },
+  );
+  mockSetAuthIsLoading(true);
+  renderWithRouter(<AIModelSelector />);
+  expect(screen.getByTestId('ai-model-selector-loading-notice').textContent).toContain(
+    'Loading subscription tier…',
+  );
+  expect(screen.getByRole('button', { name: /Select AI Models/i }).hasAttribute('disabled')).toBe(true);
+  expect(screen.queryByTestId(/^tier-lock-/)).toBeNull();
+});
+
+test('shows tier unavailable notice when auth loaded and userTier is null', () => {
+  setupMockStores(
+    { selectedModels: [] },
+    { availableProviders: mockAiProvidersData, isConfigLoading: false },
+    { userTier: null, availableTiers: mockAllTiers },
+  );
+  mockSetAuthIsLoading(false);
+  renderWithRouter(<AIModelSelector />);
+  expect(screen.getByTestId('ai-model-selector-tier-unavailable-notice').textContent).toContain(
+    'Subscription tier is not available.',
+  );
+  expect(screen.getByRole('button', { name: /Select AI Models/i }).hasAttribute('disabled')).toBe(true);
+});
+
+test('does not call setSelectedModels on mount when selectedModels empty', () => {
+  setupMockStores(
+    {
+      modelCatalog: [defaultCatalogRow],
+      isLoadingModelCatalog: false,
+      selectedModels: [],
+      activeContextSessionId: null,
+    },
+    { availableProviders: mockAiProvidersData, isConfigLoading: false },
+  );
+  renderWithRouter(<AIModelSelector />);
+  expect(getDialecticStoreActionMock('setSelectedModels')).not.toHaveBeenCalled();
+});
+
+test('shows auth error message in tier unavailable notice when auth loaded and authStore.error is set', () => {
+  const tierFetchError: Error = new Error('Profile tier fetch failed.');
+  setupMockStores(
+    { selectedModels: [] },
+    { availableProviders: mockAiProvidersData, isConfigLoading: false },
+    { userTier: mockUserTier, availableTiers: mockAllTiers },
+  );
+  mockSetAuthIsLoading(false);
+  mockSetAuthError(tierFetchError);
+  renderWithRouter(<AIModelSelector />);
+  expect(screen.getByTestId('ai-model-selector-tier-unavailable-notice').textContent).toBe(
+    'Profile tier fetch failed.',
+  );
+  expect(screen.getByRole('button', { name: /Select AI Models/i }).hasAttribute('disabled')).toBe(true);
+  expect(screen.queryByTestId(/^tier-lock-/)).toBeNull();
+  expect(screen.getByTestId('ai-model-selector-tier-unavailable-notice').textContent).not.toContain(
+    'Subscription tier is not available.',
+  );
 });

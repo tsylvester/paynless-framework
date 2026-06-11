@@ -16,6 +16,8 @@ import {
 } from '@/mocks/dialecticStore.mock';
 import {
   mockedUseAuthStoreHookLogic,
+  mockSetAuthError,
+  mockSetAuthIsLoading,
   resetAuthStoreMock,
 } from '@/mocks/authStore.mock';
 import { mockAllTiers, mockUserTier } from '@/mocks/profile.mock';
@@ -37,7 +39,6 @@ import type {
   DomainProcessAssociationRow,
 } from '@paynless/types';
 import {
-  buildComputeCostCeilingErrorReturn,
   ComputeCostCeilingReturn,
   ComputeCostCeilingSuccessReturn,
   isJson,
@@ -50,13 +51,25 @@ import type { TextInputAreaProps } from '@/components/common/TextInputArea';
 
 const projectNamePlaceholder = "A Notepad App with To Do lists";
 
+const subscriptionTierUnavailableMessage = 'Subscription tier is not available.';
+
+const outputCapNotInitializedError: ApiError = {
+  code: 'OUTPUT_CAP_NOT_INITIALIZED',
+  message: 'Output cap is not initialized in dialectic store.',
+};
+
+const selectorDecoyError: ApiError = {
+  code: 'COUNTS_ERROR',
+  message: 'Selector error should not display.',
+};
+
 const mockNavigate = vi.fn();
 
 const { selectPreProjectCostCeilingMock } = vi.hoisted(() => ({
   selectPreProjectCostCeilingMock: vi.fn<
     [DialecticStateValues],
-    ComputeCostCeilingReturn | null
-  >(() => null),
+    ComputeCostCeilingReturn
+  >(),
 }));
 
 vi.mock('@paynless/store', async () => {
@@ -253,6 +266,32 @@ function initializeAutostartFormTestState(
   vi.mocked(selectSelectedModels).mockReturnValue(defaultSelectedModels);
 }
 
+function expectSetupModeDemotionText(expectedMessage: string): void {
+  const setupModeElement: HTMLElement = screen.getByTestId('create-project-setup-mode');
+  const setupColumn: HTMLElement | null = setupModeElement.closest('div.shrink-0');
+  expect(setupColumn).not.toBeNull();
+  if (setupColumn === null) {
+    return;
+  }
+  const demotionParagraphs: NodeListOf<HTMLParagraphElement> =
+    setupColumn.querySelectorAll('p.text-sm.text-muted-foreground');
+  const demotionMessages: string[] = [];
+  demotionParagraphs.forEach((element: HTMLParagraphElement) => {
+    if (element.textContent !== null) {
+      demotionMessages.push(element.textContent);
+    }
+  });
+  expect(demotionMessages).toContain(expectedMessage);
+}
+
+function expectCreateProjectButtonDisabled(expectedDisabled: boolean): void {
+  const createProjectButton: HTMLElement = screen.getByRole('button', { name: /Create Project/i });
+  if (!(createProjectButton instanceof HTMLButtonElement)) {
+    throw new Error('Expected create project control to be HTMLButtonElement');
+  }
+  expect(createProjectButton.disabled).toBe(expectedDisabled);
+}
+
 const createMockPlatformContext = (overrides?: Partial<PlatformCapabilities>): CapabilitiesContextValue => {
   const localDefaultCaps: PlatformCapabilities = { platform: 'web', os: 'unknown', fileSystem: { isAvailable: false } };
   return {
@@ -265,9 +304,13 @@ const createMockPlatformContext = (overrides?: Partial<PlatformCapabilities>): C
 describe('CreateDialecticProjectForm (autostart)', () => {
   beforeEach(async () => {
     vi.clearAllMocks();
-    selectPreProjectCostCeilingMock.mockReturnValue(null);
+    selectPreProjectCostCeilingMock.mockReturnValue({
+      error: outputCapNotInitializedError,
+    });
     resetAuthStoreMock();
     mockedUseAuthStoreHookLogic.setState({
+      isLoading: false,
+      error: null,
       userTier: mockUserTier,
       availableTiers: mockAllTiers,
     });
@@ -297,7 +340,7 @@ describe('CreateDialecticProjectForm (autostart)', () => {
     renderForm();
     await waitFor(() => {
       const control = screen.getByRole('checkbox', { name: /Autoconfig/i });
-      expect(control).toHaveAttribute('aria-checked', 'mixed');
+      expect(control.getAttribute('aria-checked')).toBe('mixed');
     });
   });
 
@@ -307,11 +350,11 @@ describe('CreateDialecticProjectForm (autostart)', () => {
     const control = screen.getByRole('checkbox', { name: /Autoconfig/i });
     await user.hover(control);
     await waitFor(() => {
-      const explainerContent =
-        document.querySelector('[data-slot="tooltip-content"]') ??
-        (control.getAttribute('title') ? { textContent: control.getAttribute('title') } : null);
-      expect(explainerContent).toBeTruthy();
-      const text = explainerContent?.textContent ?? '';
+      const tooltip: HTMLElement = screen.getByRole('tooltip');
+      if (tooltip.textContent === null) {
+        throw new Error('Setup mode tooltip has no textContent');
+      }
+      const text: string = tooltip.textContent;
       expect(text).toMatch(/Autostart/i);
       expect(text).toMatch(/Autoconfig/i);
       expect(text).toMatch(/Manual/i);
@@ -325,10 +368,11 @@ describe('CreateDialecticProjectForm (autostart)', () => {
     const control = screen.getByRole('checkbox', { name: /Autoconfig/i });
     await user.hover(control);
     await waitFor(() => {
-      const explainerContent =
-        document.querySelector('[data-slot="tooltip-content"]') ??
-        (control.getAttribute('title') ? { textContent: control.getAttribute('title') } : null);
-      const text = explainerContent?.textContent ?? '';
+      const tooltip: HTMLElement = screen.getByRole('tooltip');
+      if (tooltip.textContent === null) {
+        throw new Error('Setup mode tooltip has no textContent');
+      }
+      const text: string = tooltip.textContent;
       expect(text).toMatch(/Autostart/i);
       expect(text).toMatch(/session|start|automatically/i);
     });
@@ -340,10 +384,11 @@ describe('CreateDialecticProjectForm (autostart)', () => {
     const control = screen.getByRole('checkbox', { name: /Autoconfig/i });
     await user.hover(control);
     await waitFor(() => {
-      const explainerContent =
-        document.querySelector('[data-slot="tooltip-content"]') ??
-        (control.getAttribute('title') ? { textContent: control.getAttribute('title') } : null);
-      const text = explainerContent?.textContent ?? '';
+      const tooltip: HTMLElement = screen.getByRole('tooltip');
+      if (tooltip.textContent === null) {
+        throw new Error('Setup mode tooltip has no textContent');
+      }
+      const text: string = tooltip.textContent;
       expect(text).toMatch(/Autoconfig/i);
       expect(text).toMatch(/default|model|start|when/i);
     });
@@ -355,10 +400,11 @@ describe('CreateDialecticProjectForm (autostart)', () => {
     const control = screen.getByRole('checkbox', { name: /Autoconfig/i });
     await user.hover(control);
     await waitFor(() => {
-      const explainerContent =
-        document.querySelector('[data-slot="tooltip-content"]') ??
-        (control.getAttribute('title') ? { textContent: control.getAttribute('title') } : null);
-      const text = explainerContent?.textContent ?? '';
+      const tooltip: HTMLElement = screen.getByRole('tooltip');
+      if (tooltip.textContent === null) {
+        throw new Error('Setup mode tooltip has no textContent');
+      }
+      const text: string = tooltip.textContent;
       expect(text).toMatch(/Manual/i);
       expect(text).toMatch(/project only|create.*session|manual/i);
     });
@@ -369,8 +415,8 @@ describe('CreateDialecticProjectForm (autostart)', () => {
     renderForm();
     await user.click(screen.getByRole('checkbox', { name: /Autoconfig/i }));
     const control = screen.getByRole('checkbox', { name: /Manual/i });
-    expect(control).toBeInTheDocument();
-    expect(control).not.toBeChecked();
+    expect(document.body.contains(control)).toBe(true);
+    expect(control.getAttribute('aria-checked')).not.toBe('true');
   });
 
   it('second click cycles setup mode from Manual back to Autoconfig when autostart is not affordable', async () => {
@@ -379,8 +425,8 @@ describe('CreateDialecticProjectForm (autostart)', () => {
     await user.click(screen.getByRole('checkbox', { name: /Autoconfig/i }));
     await user.click(screen.getByRole('checkbox', { name: /Manual/i }));
     const control = screen.getByRole('checkbox', { name: /Autoconfig/i });
-    expect(control).toBeInTheDocument();
-    expect(control).toHaveAttribute('aria-checked', 'mixed');
+    expect(document.body.contains(control)).toBe(true);
+    expect(control.getAttribute('aria-checked')).toBe('mixed');
   });
 
   it('third click cycles setup mode from Manual to Autostart when estimate and wallet allow autostart', async () => {
@@ -390,14 +436,14 @@ describe('CreateDialecticProjectForm (autostart)', () => {
     vi.mocked(selectActiveChatWalletInfo).mockReturnValue(defaultWalletInfo);
     renderForm();
     await waitFor(() => {
-      expect(screen.getByRole('checkbox', { name: /Autostart/i })).toBeChecked();
+      expect(screen.getByRole('checkbox', { name: /Autostart/i }).getAttribute('aria-checked')).toBe('true');
     });
     await user.click(screen.getByRole('checkbox', { name: /Autostart/i }));
     await user.click(screen.getByRole('checkbox', { name: /Autoconfig/i }));
     await user.click(screen.getByRole('checkbox', { name: /Manual/i }));
     const control = screen.getByRole('checkbox', { name: /Autostart/i });
-    expect(control).toBeInTheDocument();
-    expect(control).toBeChecked();
+    expect(document.body.contains(control)).toBe(true);
+    expect(control.getAttribute('aria-checked')).toBe('true');
   });
 
   it('submit with Manual mode calls createDialecticProject and navigates to project page', async () => {
@@ -498,7 +544,7 @@ describe('CreateDialecticProjectForm (autostart)', () => {
 
     renderForm();
     const control = screen.getByRole('checkbox', { name: /Autostart/i });
-    expect(control).toBeChecked();
+    expect(control.getAttribute('aria-checked')).toBe('true');
     await user.click(screen.getByRole('button', { name: /Create Project/i }));
 
     await waitFor(() => {
@@ -549,18 +595,23 @@ describe('CreateDialecticProjectForm (autostart)', () => {
         is_active: true,
       }),
     ];
+    const emptySelectedModels: SelectedModels[] = [];
+    selectPreProjectCostCeilingMock.mockReturnValue(autostartSuccessCeiling);
     initializeMockDialecticState({
       selectedDomain: mockSelectedDomain,
       modelCatalog: catalogNoDefaults,
+      selectedModels: emptySelectedModels,
+      maxOutputTokens: 8192,
       isLoadingModelCatalog: false,
     });
+    vi.mocked(selectSelectedModels).mockReturnValue(emptySelectedModels);
 
     renderForm();
     await waitFor(() => {
       const control = screen.getByRole('checkbox', { name: /Autoconfig/i });
-      expect(control).toHaveAttribute('aria-checked', 'mixed');
+      expect(control.getAttribute('aria-checked')).toBe('mixed');
     });
-    expect(screen.getByText(/No default models available/i)).toBeInTheDocument();
+    expectSetupModeDemotionText('No default models available');
   });
 
   it('defaults to Autoconfig (half-checked) when wallet balance is below first-stage ceiling and shows ceiling copy', async () => {
@@ -581,9 +632,9 @@ describe('CreateDialecticProjectForm (autostart)', () => {
     renderForm();
     await waitFor(() => {
       const control = screen.getByRole('checkbox', { name: /Autoconfig/i });
-      expect(control).toHaveAttribute('aria-checked', 'mixed');
+      expect(control.getAttribute('aria-checked')).toBe('mixed');
     });
-    expect(screen.getByText(/Estimated first-stage cost exceeds wallet balance for auto-start/i)).toBeInTheDocument();
+    expect(document.body.contains(screen.getByText(/Estimated first-stage cost exceeds wallet balance for auto-start/i))).toBe(true);
   });
 
   it('displays progressive loader from autoStartStep during auto-start', () => {
@@ -593,21 +644,21 @@ describe('CreateDialecticProjectForm (autostart)', () => {
     });
 
     renderForm();
-    expect(screen.getByText('Loading project details…')).toBeInTheDocument();
+    expect(document.body.contains(screen.getByText('Loading project details…'))).toBe(true);
   });
 
   it('disables submit button when isAutoStarting is true', () => {
     setDialecticStateValues({ isAutoStarting: true });
 
     renderForm();
-    expect(screen.getByRole('button', { name: /Create Project/i })).toBeDisabled();
+    expectCreateProjectButtonDisabled(true);
   });
 
   it('disables submit button when isCreatingProject is true', () => {
     setDialecticStateValues({ isCreatingProject: true });
 
     renderForm();
-    expect(screen.getByRole('button', { name: /Create Project/i })).toBeDisabled();
+    expectCreateProjectButtonDisabled(true);
   });
 
   it('shows error toast on createProjectAndAutoStart failure and form remains visible', async () => {
@@ -629,7 +680,7 @@ describe('CreateDialecticProjectForm (autostart)', () => {
     await waitFor(() => {
       expect(vi.mocked(toast.error)).toHaveBeenCalled();
     });
-    expect(screen.getByPlaceholderText(projectNamePlaceholder)).toBeInTheDocument();
+    expect(document.body.contains(screen.getByPlaceholderText(projectNamePlaceholder))).toBe(true);
   });
 
   it('calls fetchAIModelCatalog on mount', () => {
@@ -731,54 +782,65 @@ describe('CreateDialecticProjectForm (autostart)', () => {
 
     await waitFor(() => {
       const control = screen.getByRole('checkbox', { name: /Autostart/i });
-      expect(control).toBeChecked();
+      expect(control.getAttribute('aria-checked')).toBe('true');
     });
   });
 
-  it('shows no-estimate notice and disables Autostart when selector returns null', async () => {
+  it('shows estimate-error notice and demotes Autostart when selector returns OUTPUT_CAP_NOT_INITIALIZED', async () => {
+    selectPreProjectCostCeilingMock.mockReturnValue({
+      error: outputCapNotInitializedError,
+    });
+
     renderForm();
 
     await waitFor(() => {
-      expect(screen.getByTestId('create-project-no-estimate-notice')).toBeInTheDocument();
+      expect(screen.getByTestId('create-project-estimate-error-notice').textContent).toContain(
+        outputCapNotInitializedError.message,
+      );
     });
-    expect(screen.queryByTestId('create-project-cost-preview')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('create-project-no-estimate-notice')).toBeNull();
+    expect(screen.queryByTestId('create-project-cost-preview')).toBeNull();
     const control = screen.getByRole('checkbox', { name: /Autoconfig/i });
-    expect(control).toHaveAttribute('aria-checked', 'mixed');
-    expect(screen.getByText(/estimate not ready/i)).toBeInTheDocument();
+    expect(control.getAttribute('aria-checked')).toBe('mixed');
+    expectSetupModeDemotionText(outputCapNotInitializedError.message);
   });
 
   it('shows estimate-error notice when selector returns error', async () => {
     const estimateError: ApiError = { message: 'Invalid payload', code: 'INVALID_PAYLOAD' };
     selectPreProjectCostCeilingMock.mockReturnValue(
-      buildComputeCostCeilingErrorReturn({ error: estimateError }),
+      { error: estimateError },
     );
 
     renderForm();
 
     await waitFor(() => {
-      expect(screen.getByTestId('create-project-estimate-error-notice')).toHaveTextContent('Invalid payload');
+      expect(screen.getByTestId('create-project-estimate-error-notice').textContent).toContain('Invalid payload');
     });
-    expect(screen.queryByTestId('create-project-cost-preview')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('create-project-cost-preview')).toBeNull();
     const control = screen.getByRole('checkbox', { name: /Autoconfig/i });
-    expect(control).toHaveAttribute('aria-checked', 'mixed');
+    expect(control.getAttribute('aria-checked')).toBe('mixed');
   });
 
-  it('demotes to Autoconfig when estimate becomes null before submit and allows Autoconfig submit', async () => {
+  it('demotes to Autoconfig when estimate becomes error before submit and allows Autoconfig submit without selector toast', async () => {
     const user = userEvent.setup();
-    const result: CreateProjectAutoStartResult = { projectId: 'proj-demoted-null', sessionId: 'sess-demoted-null', hasDefaultModels: true };
+    const estimateBecameError: ApiError = {
+      code: 'STAGE_COUNTS_UNAVAILABLE',
+      message: 'Stage expected counts are unavailable.',
+    };
+    const result: CreateProjectAutoStartResult = { projectId: 'proj-demoted-error', sessionId: 'sess-demoted-error', hasDefaultModels: true };
     selectPreProjectCostCeilingMock.mockReturnValue(autostartSuccessCeiling);
     initializeAutostartFormTestState();
     vi.mocked(selectActiveChatWalletInfo).mockReturnValue(defaultWalletInfo);
     renderForm();
 
     await waitFor(() => {
-      expect(screen.getByRole('checkbox', { name: /Autostart/i })).toBeChecked();
+      expect(screen.getByRole('checkbox', { name: /Autostart/i }).getAttribute('aria-checked')).toBe('true');
     });
 
-    selectPreProjectCostCeilingMock.mockReturnValue(null);
+    selectPreProjectCostCeilingMock.mockReturnValue({ error: estimateBecameError });
     setDialecticStateValues({ preProjectStageExpectedCounts: null });
     await waitFor(() => {
-      expect(screen.getByRole('checkbox', { name: /Autoconfig/i })).toHaveAttribute('aria-checked', 'mixed');
+      expect(screen.getByRole('checkbox', { name: /Autoconfig/i }).getAttribute('aria-checked')).toBe('mixed');
     });
 
     vi.mocked(getDialecticStoreActionMock('createProjectAndAutoStart')).mockResolvedValueOnce(result);
@@ -787,7 +849,7 @@ describe('CreateDialecticProjectForm (autostart)', () => {
     await waitFor(() => {
       expect(getDialecticStoreActionMock('createProjectAndAutoStart')).toHaveBeenCalledTimes(1);
     });
-    expect(vi.mocked(toast.error)).not.toHaveBeenCalled();
+    expect(vi.mocked(toast.error)).not.toHaveBeenCalledWith(estimateBecameError.message);
   });
 
   it('demotes to Autoconfig when estimate becomes error before submit and allows Autoconfig submit', async () => {
@@ -800,15 +862,15 @@ describe('CreateDialecticProjectForm (autostart)', () => {
     renderForm();
 
     await waitFor(() => {
-      expect(screen.getByRole('checkbox', { name: /Autostart/i })).toBeChecked();
+      expect(screen.getByRole('checkbox', { name: /Autostart/i }).getAttribute('aria-checked')).toBe('true');
     });
 
     selectPreProjectCostCeilingMock.mockReturnValue(
-      buildComputeCostCeilingErrorReturn({ error: estimateError }),
+      { error: estimateError },
     );
     setDialecticStateValues({ stageExpectedCountsError: estimateError });
     await waitFor(() => {
-      expect(screen.getByRole('checkbox', { name: /Autoconfig/i })).toHaveAttribute('aria-checked', 'mixed');
+      expect(screen.getByRole('checkbox', { name: /Autoconfig/i }).getAttribute('aria-checked')).toBe('mixed');
     });
 
     vi.mocked(getDialecticStoreActionMock('createProjectAndAutoStart')).mockResolvedValueOnce(result);
@@ -820,9 +882,10 @@ describe('CreateDialecticProjectForm (autostart)', () => {
     expect(vi.mocked(toast.error)).not.toHaveBeenCalledWith('Ceiling computation failed');
   });
 
-  it('allows Autoconfig submit when selector returns null', async () => {
+  it('allows Autoconfig submit when selector returns error', async () => {
     const user = userEvent.setup();
-    const result: CreateProjectAutoStartResult = { projectId: 'proj-autoconfig-null', sessionId: 'sess-null', hasDefaultModels: true };
+    const result: CreateProjectAutoStartResult = { projectId: 'proj-autoconfig-error', sessionId: 'sess-error', hasDefaultModels: true };
+    selectPreProjectCostCeilingMock.mockReturnValue({ error: outputCapNotInitializedError });
     initializeAutostartFormTestState();
     vi.mocked(getDialecticStoreActionMock('createProjectAndAutoStart')).mockResolvedValueOnce(result);
 
@@ -832,6 +895,7 @@ describe('CreateDialecticProjectForm (autostart)', () => {
     await waitFor(() => {
       expect(getDialecticStoreActionMock('createProjectAndAutoStart')).toHaveBeenCalledTimes(1);
     });
+    expect(vi.mocked(toast.error)).not.toHaveBeenCalledWith(outputCapNotInitializedError.message);
   });
 
   it('calls createProjectAndAutoStart once on Autostart submit when estimate and wallet allow autostart', async () => {
@@ -871,10 +935,10 @@ describe('CreateDialecticProjectForm (autostart)', () => {
 
     await waitFor(() => {
       const preview = screen.getByTestId('create-project-cost-preview');
-      expect(preview).toHaveTextContent('~100,000');
-      expect(preview).toHaveTextContent('Estimated token cost');
-      expect(preview).toHaveTextContent('full project');
-      expect(preview).toHaveTextContent('first stage');
+      expect(preview.textContent).toContain('~100,000');
+      expect(preview.textContent).toContain('Estimated token cost');
+      expect(preview.textContent).toContain('full project');
+      expect(preview.textContent).toContain('first stage');
     });
   });
 
@@ -885,9 +949,9 @@ describe('CreateDialecticProjectForm (autostart)', () => {
     renderForm();
 
     await waitFor(() => {
-      expect(screen.getByTestId('create-project-project-balance-warning')).toBeInTheDocument();
+      expect(document.body.contains(screen.getByTestId('create-project-project-balance-warning'))).toBe(true);
     });
-    expect(screen.getByRole('button', { name: /Create Project/i })).toBeEnabled();
+    expectCreateProjectButtonDisabled(false);
   });
 
   it('shows autostart top-up link when balance blocks autostart', async () => {
@@ -903,26 +967,27 @@ describe('CreateDialecticProjectForm (autostart)', () => {
 
     await waitFor(() => {
       const topUpLink = screen.getByTestId('create-project-autostart-top-up-link');
-      expect(topUpLink).toHaveAttribute('href', '/subscription?tab=top-up');
+      expect(topUpLink.getAttribute('href')).toBe('/subscription?tab=top-up');
     });
   });
 
-  it('does not enable Autostart when cycling from Manual while estimate is null', async () => {
+  it('does not enable Autostart when cycling from Manual while selector returns OUTPUT_CAP_NOT_INITIALIZED', async () => {
     const user = userEvent.setup();
+    selectPreProjectCostCeilingMock.mockReturnValue({ error: outputCapNotInitializedError });
     renderForm();
     await user.click(screen.getByRole('checkbox', { name: /Autoconfig/i }));
     await user.click(screen.getByRole('checkbox', { name: /Manual/i }));
 
     const control = screen.getByRole('checkbox', { name: /Autoconfig/i });
-    expect(control).toHaveAttribute('aria-checked', 'mixed');
-    expect(screen.queryByRole('checkbox', { name: /Autostart/i })).not.toBeInTheDocument();
+    expect(control.getAttribute('aria-checked')).toBe('mixed');
+    expect(screen.queryByRole('checkbox', { name: /Autostart/i })).toBeNull();
   });
 
   it('does not enable Autostart when cycling from Manual while estimate returns error', async () => {
     const user = userEvent.setup();
     const estimateError: ApiError = { message: 'Counts unavailable', code: 'COUNTS_ERROR' };
     selectPreProjectCostCeilingMock.mockReturnValue(
-      buildComputeCostCeilingErrorReturn({ error: estimateError }),
+      { error: estimateError },
     );
 
     renderForm();
@@ -930,7 +995,377 @@ describe('CreateDialecticProjectForm (autostart)', () => {
     await user.click(screen.getByRole('checkbox', { name: /Manual/i }));
 
     const control = screen.getByRole('checkbox', { name: /Autoconfig/i });
-    expect(control).toHaveAttribute('aria-checked', 'mixed');
-    expect(screen.queryByRole('checkbox', { name: /Autostart/i })).not.toBeInTheDocument();
+    expect(control.getAttribute('aria-checked')).toBe('mixed');
+    expect(screen.queryByRole('checkbox', { name: /Autostart/i })).toBeNull();
+  });
+
+  it('calls initializeMaxOutputTokens once after auth tier and catalog are ready with popover closed', async () => {
+    initializeMockDialecticState({
+      selectedDomain: mockSelectedDomain,
+      modelCatalog: defaultCatalogWithDefaultModel,
+      selectedModels: defaultSelectedModels,
+      maxOutputTokens: 8192,
+      isLoadingModelCatalog: false,
+    });
+    mockedUseAuthStoreHookLogic.setState({
+      isLoading: false,
+      userTier: mockUserTier,
+      error: null,
+    });
+    selectPreProjectCostCeilingMock.mockReturnValue({ error: outputCapNotInitializedError });
+
+    renderForm();
+
+    await waitFor(() => {
+      expect(getDialecticStoreActionMock('initializeMaxOutputTokens')).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('does not call initializeMaxOutputTokens while model catalog is loading and shows catalog loading notice', async () => {
+    initializeMockDialecticState({
+      selectedDomain: mockSelectedDomain,
+      modelCatalog: [],
+      isLoadingModelCatalog: true,
+    });
+    mockedUseAuthStoreHookLogic.setState({
+      isLoading: false,
+      userTier: mockUserTier,
+      error: null,
+    });
+
+    renderForm();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('create-project-estimate-loading-notice').textContent).toContain(
+        'Loading model catalog…',
+      );
+    });
+    expect(getDialecticStoreActionMock('initializeMaxOutputTokens')).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('create-project-estimate-error-notice')).toBeNull();
+  });
+
+  it('shows tier loading notice while auth is loading and no error notice', async () => {
+    mockSetAuthIsLoading(true);
+    selectPreProjectCostCeilingMock.mockReturnValue({ error: outputCapNotInitializedError });
+
+    renderForm();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('create-project-estimate-loading-notice').textContent).toContain(
+        'Loading subscription tier…',
+      );
+    });
+    expect(screen.queryByTestId('create-project-estimate-error-notice')).toBeNull();
+  });
+
+  it('shows stage counts loading notice while isLoadingStageExpectedCounts is true', async () => {
+    initializeAutostartFormTestState({ isLoadingStageExpectedCounts: true });
+    selectPreProjectCostCeilingMock.mockReturnValue({ error: outputCapNotInitializedError });
+
+    renderForm();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('create-project-estimate-loading-notice').textContent).toContain(
+        'Loading stage expected counts…',
+      );
+    });
+    expect(screen.queryByTestId('create-project-estimate-error-notice')).toBeNull();
+    expect(screen.queryByTestId('create-project-no-estimate-notice')).toBeNull();
+  });
+
+  it('shows subscription tier unavailable in footer and demotion when userTier is null, not selector OUTPUT_CAP_NOT_INITIALIZED', async () => {
+    mockedUseAuthStoreHookLogic.setState({
+      isLoading: false,
+      userTier: null,
+      error: null,
+    });
+    selectPreProjectCostCeilingMock.mockReturnValue({ error: outputCapNotInitializedError });
+
+    renderForm();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('create-project-estimate-error-notice').textContent).toBe(
+        subscriptionTierUnavailableMessage,
+      );
+    });
+    expect(screen.queryByText(outputCapNotInitializedError.message)).toBeNull();
+    expectSetupModeDemotionText(subscriptionTierUnavailableMessage);
+  });
+
+  it('shows auth error in footer and demotion before selector error', async () => {
+    const tierFetchError: Error = new Error('Profile tier fetch failed.');
+    mockSetAuthError(tierFetchError);
+    selectPreProjectCostCeilingMock.mockReturnValue({ error: outputCapNotInitializedError });
+
+    renderForm();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('create-project-estimate-error-notice').textContent).toBe(
+        'Profile tier fetch failed.',
+      );
+    });
+    expectSetupModeDemotionText('Profile tier fetch failed.');
+    expect(screen.queryByText(outputCapNotInitializedError.message)).toBeNull();
+  });
+
+  it('shows cap-init NO_DEFAULT_GENERATION_MODELS error in footer before selector error', async () => {
+    const initError: ApiError = {
+      code: 'NO_DEFAULT_GENERATION_MODELS',
+      message: 'No default generation models are available in the catalog.',
+    };
+    selectPreProjectCostCeilingMock.mockReturnValue({ error: selectorDecoyError });
+    initializeAutostartFormTestState();
+    vi.mocked(getDialecticStoreActionMock('initializeMaxOutputTokens')).mockReturnValue({
+      ok: false,
+      error: initError,
+    });
+
+    renderForm();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('create-project-estimate-error-notice').textContent).toBe(initError.message);
+    });
+    expect(screen.queryByText(selectorDecoyError.message)).toBeNull();
+    expectSetupModeDemotionText(initError.message);
+  });
+
+  it('Autoconfig submit does not toast cap-init NO_DEFAULT_GENERATION_MODELS error; calls createProjectAndAutoStart', async () => {
+    const user = userEvent.setup();
+    const initError: ApiError = {
+      code: 'NO_DEFAULT_GENERATION_MODELS',
+      message: 'No default generation models are available in the catalog.',
+    };
+    const autoStartResult: CreateProjectAutoStartResult = {
+      projectId: 'proj-cap-init-no-defaults',
+      sessionId: 'sess-cap-init-no-defaults',
+      hasDefaultModels: true,
+    };
+    selectPreProjectCostCeilingMock.mockReturnValue({ error: selectorDecoyError });
+    initializeAutostartFormTestState();
+    vi.mocked(getDialecticStoreActionMock('initializeMaxOutputTokens')).mockReturnValue({
+      ok: false,
+      error: initError,
+    });
+    vi.mocked(getDialecticStoreActionMock('createProjectAndAutoStart')).mockResolvedValueOnce(autoStartResult);
+
+    renderForm();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('create-project-estimate-error-notice').textContent).toBe(initError.message);
+      expect(screen.getByRole('checkbox', { name: /Autoconfig/i }).getAttribute('aria-checked')).toBe('mixed');
+    });
+
+    await user.click(screen.getByRole('button', { name: /Create Project/i }));
+
+    await waitFor(() => {
+      expect(getDialecticStoreActionMock('createProjectAndAutoStart')).toHaveBeenCalledTimes(1);
+    });
+    expect(vi.mocked(toast.error)).not.toHaveBeenCalledWith(initError.message);
+    expect(vi.mocked(toast.error)).not.toHaveBeenCalledWith(selectorDecoyError.message);
+  });
+
+  it('shows cap-init MODEL_CATALOG_ENTRY_MISSING error in footer before selector error', async () => {
+    const initError: ApiError = {
+      code: 'MODEL_CATALOG_ENTRY_MISSING',
+      message: 'Model catalog entry missing for selected model id dft.',
+      details: { modelId: 'dft' },
+    };
+    selectPreProjectCostCeilingMock.mockReturnValue({ error: selectorDecoyError });
+    initializeAutostartFormTestState();
+    vi.mocked(getDialecticStoreActionMock('initializeMaxOutputTokens')).mockReturnValue({
+      ok: false,
+      error: initError,
+    });
+
+    renderForm();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('create-project-estimate-error-notice').textContent).toBe(initError.message);
+    });
+    expect(screen.queryByText(selectorDecoyError.message)).toBeNull();
+    expectSetupModeDemotionText(initError.message);
+  });
+
+  it('Autoconfig submit does not toast cap-init MODEL_CATALOG_ENTRY_MISSING error; calls createProjectAndAutoStart', async () => {
+    const user = userEvent.setup();
+    const initError: ApiError = {
+      code: 'MODEL_CATALOG_ENTRY_MISSING',
+      message: 'Model catalog entry missing for selected model id dft.',
+      details: { modelId: 'dft' },
+    };
+    const autoStartResult: CreateProjectAutoStartResult = {
+      projectId: 'proj-cap-init-missing-entry',
+      sessionId: 'sess-cap-init-missing-entry',
+      hasDefaultModels: true,
+    };
+    selectPreProjectCostCeilingMock.mockReturnValue({ error: selectorDecoyError });
+    initializeAutostartFormTestState();
+    vi.mocked(getDialecticStoreActionMock('initializeMaxOutputTokens')).mockReturnValue({
+      ok: false,
+      error: initError,
+    });
+    vi.mocked(getDialecticStoreActionMock('createProjectAndAutoStart')).mockResolvedValueOnce(autoStartResult);
+
+    renderForm();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('create-project-estimate-error-notice').textContent).toBe(initError.message);
+      expect(screen.getByRole('checkbox', { name: /Autoconfig/i }).getAttribute('aria-checked')).toBe('mixed');
+    });
+
+    await user.click(screen.getByRole('button', { name: /Create Project/i }));
+
+    await waitFor(() => {
+      expect(getDialecticStoreActionMock('createProjectAndAutoStart')).toHaveBeenCalledTimes(1);
+    });
+    expect(vi.mocked(toast.error)).not.toHaveBeenCalledWith(initError.message);
+    expect(vi.mocked(toast.error)).not.toHaveBeenCalledWith(selectorDecoyError.message);
+  });
+
+  it('shows cap-init MODEL_OUTPUT_CAP_UNAVAILABLE error in footer before selector error', async () => {
+    const initError: ApiError = {
+      code: 'MODEL_OUTPUT_CAP_UNAVAILABLE',
+      message: 'Model output cap is unavailable for model id dft.',
+      details: { modelId: 'dft' },
+    };
+    selectPreProjectCostCeilingMock.mockReturnValue({ error: selectorDecoyError });
+    initializeAutostartFormTestState();
+    vi.mocked(getDialecticStoreActionMock('initializeMaxOutputTokens')).mockReturnValue({
+      ok: false,
+      error: initError,
+    });
+
+    renderForm();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('create-project-estimate-error-notice').textContent).toBe(initError.message);
+    });
+    expect(screen.queryByText(selectorDecoyError.message)).toBeNull();
+    expectSetupModeDemotionText(initError.message);
+  });
+
+  it('Autoconfig submit does not toast cap-init MODEL_OUTPUT_CAP_UNAVAILABLE error; calls createProjectAndAutoStart', async () => {
+    const user = userEvent.setup();
+    const initError: ApiError = {
+      code: 'MODEL_OUTPUT_CAP_UNAVAILABLE',
+      message: 'Model output cap is unavailable for model id dft.',
+      details: { modelId: 'dft' },
+    };
+    const autoStartResult: CreateProjectAutoStartResult = {
+      projectId: 'proj-cap-init-no-cap',
+      sessionId: 'sess-cap-init-no-cap',
+      hasDefaultModels: true,
+    };
+    selectPreProjectCostCeilingMock.mockReturnValue({ error: selectorDecoyError });
+    initializeAutostartFormTestState();
+    vi.mocked(getDialecticStoreActionMock('initializeMaxOutputTokens')).mockReturnValue({
+      ok: false,
+      error: initError,
+    });
+    vi.mocked(getDialecticStoreActionMock('createProjectAndAutoStart')).mockResolvedValueOnce(autoStartResult);
+
+    renderForm();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('create-project-estimate-error-notice').textContent).toBe(initError.message);
+      expect(screen.getByRole('checkbox', { name: /Autoconfig/i }).getAttribute('aria-checked')).toBe('mixed');
+    });
+
+    await user.click(screen.getByRole('button', { name: /Create Project/i }));
+
+    await waitFor(() => {
+      expect(getDialecticStoreActionMock('createProjectAndAutoStart')).toHaveBeenCalledTimes(1);
+    });
+    expect(vi.mocked(toast.error)).not.toHaveBeenCalledWith(initError.message);
+    expect(vi.mocked(toast.error)).not.toHaveBeenCalledWith(selectorDecoyError.message);
+  });
+
+  it('shows cap-init MODEL_CATALOG_INVALID_CONFIG error in footer before selector error', async () => {
+    const initError: ApiError = {
+      code: 'MODEL_CATALOG_INVALID_CONFIG',
+      message: 'Model catalog config invalid for model id dft.',
+      details: { modelId: 'dft' },
+    };
+    selectPreProjectCostCeilingMock.mockReturnValue({ error: selectorDecoyError });
+    initializeAutostartFormTestState();
+    vi.mocked(getDialecticStoreActionMock('initializeMaxOutputTokens')).mockReturnValue({
+      ok: false,
+      error: initError,
+    });
+
+    renderForm();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('create-project-estimate-error-notice').textContent).toBe(initError.message);
+    });
+    expect(screen.queryByText(selectorDecoyError.message)).toBeNull();
+    expectSetupModeDemotionText(initError.message);
+  });
+
+  it('Autoconfig submit does not toast cap-init MODEL_CATALOG_INVALID_CONFIG error; calls createProjectAndAutoStart', async () => {
+    const user = userEvent.setup();
+    const initError: ApiError = {
+      code: 'MODEL_CATALOG_INVALID_CONFIG',
+      message: 'Model catalog config invalid for model id dft.',
+      details: { modelId: 'dft' },
+    };
+    const autoStartResult: CreateProjectAutoStartResult = {
+      projectId: 'proj-cap-init-invalid-config',
+      sessionId: 'sess-cap-init-invalid-config',
+      hasDefaultModels: true,
+    };
+    selectPreProjectCostCeilingMock.mockReturnValue({ error: selectorDecoyError });
+    initializeAutostartFormTestState();
+    vi.mocked(getDialecticStoreActionMock('initializeMaxOutputTokens')).mockReturnValue({
+      ok: false,
+      error: initError,
+    });
+    vi.mocked(getDialecticStoreActionMock('createProjectAndAutoStart')).mockResolvedValueOnce(autoStartResult);
+
+    renderForm();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('create-project-estimate-error-notice').textContent).toBe(initError.message);
+      expect(screen.getByRole('checkbox', { name: /Autoconfig/i }).getAttribute('aria-checked')).toBe('mixed');
+    });
+
+    await user.click(screen.getByRole('button', { name: /Create Project/i }));
+
+    await waitFor(() => {
+      expect(getDialecticStoreActionMock('createProjectAndAutoStart')).toHaveBeenCalledTimes(1);
+    });
+    expect(vi.mocked(toast.error)).not.toHaveBeenCalledWith(initError.message);
+    expect(vi.mocked(toast.error)).not.toHaveBeenCalledWith(selectorDecoyError.message);
+  });
+
+  it('Autoconfig submit does not toast auth error; calls createProjectAndAutoStart', async () => {
+    const user = userEvent.setup();
+    const tierFetchError: Error = new Error('Profile tier fetch failed.');
+    const autoStartResult: CreateProjectAutoStartResult = {
+      projectId: 'proj-auth-error-autoconfig',
+      sessionId: 'sess-auth-error-autoconfig',
+      hasDefaultModels: true,
+    };
+    mockSetAuthError(tierFetchError);
+    selectPreProjectCostCeilingMock.mockReturnValue({ error: selectorDecoyError });
+    initializeAutostartFormTestState();
+    vi.mocked(getDialecticStoreActionMock('createProjectAndAutoStart')).mockResolvedValueOnce(autoStartResult);
+
+    renderForm();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('create-project-estimate-error-notice').textContent).toBe(
+        'Profile tier fetch failed.',
+      );
+      expect(screen.getByRole('checkbox', { name: /Autoconfig/i }).getAttribute('aria-checked')).toBe('mixed');
+    });
+
+    await user.click(screen.getByRole('button', { name: /Create Project/i }));
+
+    await waitFor(() => {
+      expect(getDialecticStoreActionMock('createProjectAndAutoStart')).toHaveBeenCalledTimes(1);
+    });
+    expect(vi.mocked(toast.error)).not.toHaveBeenCalledWith('Profile tier fetch failed.');
+    expect(vi.mocked(toast.error)).not.toHaveBeenCalledWith(selectorDecoyError.message);
   });
 });

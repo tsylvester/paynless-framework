@@ -14,6 +14,12 @@ import {
   mockDomainProcessAssociationRow,
 } from '@/mocks/dialecticStore.mock';
 import { mockSetState, resetAiStoreMock } from '@/mocks/aiStore.mock';
+import {
+  mockedUseAuthStoreHookLogic,
+  mockSetAuthIsLoading,
+  resetAuthStoreMock,
+} from '@/mocks/authStore.mock';
+import { mockAllTiers, mockUserTier } from '@/mocks/profile.mock';
 import { selectActiveChatWalletInfo } from '@paynless/store';
 import type {
   ActiveChatWalletInfo,
@@ -29,13 +35,13 @@ import type {
   FetchProcessAssociationPayload,
 } from '@paynless/types';
 import {
-  buildComputeCostCeilingErrorReturn,
   ComputeCostCeilingReturn,
   ComputeCostCeilingSuccessReturn,
 } from '@paynless/utils';
 import { toast } from 'sonner';
 
 import { CreateProjectFromChatButton } from './CreateProjectFromChatButton.tsx';
+import { buildComputeCostCeilingErrorReturn } from '../../../../../packages/utils/src/computeCostCeiling/computeCostCeiling.mock';
 
 const mockNavigate = vi.fn();
 const mockFormatChatMessagesAsPrompt = vi.fn();
@@ -43,7 +49,7 @@ const mockFormatChatMessagesAsPrompt = vi.fn();
 const { selectPreProjectCostCeilingMock } = vi.hoisted(() => ({
   selectPreProjectCostCeilingMock: vi.fn<
     [DialecticStateValues],
-    ComputeCostCeilingReturn | null
+    ComputeCostCeilingReturn
   >(() => ({
     stageCeilings: { thesis: 120000 },
     projectCeiling: 350000,
@@ -61,8 +67,12 @@ vi.mock('@paynless/store', async (importOriginal) => {
   const aiStoreMock = await vi.importActual<typeof import('@/mocks/aiStore.mock')>(
     '@/mocks/aiStore.mock',
   );
+  const authStoreMock = await vi.importActual<typeof import('@/mocks/authStore.mock')>(
+    '@/mocks/authStore.mock',
+  );
   return {
     ...dialecticMock,
+    useAuthStore: authStoreMock.useAuthStore,
     useAiStore: aiStoreMock.useMockedAiStoreHookLogic,
     useWalletStore: walletStoreMock.useWalletStore,
     selectActiveChatWalletInfo: walletStoreMock.selectActiveChatWalletInfo,
@@ -102,8 +112,12 @@ const autostartSuccessCeiling: ComputeCostCeilingSuccessReturn = {
 
 const firstStageCeilingForAutostartTest = 120000;
 
-const noEstimateToastCopy =
-  'No cost estimate yet. Set the output cap in Model Settings, then try again.';
+const outputCapNotInitializedError: ApiError = {
+  code: 'OUTPUT_CAP_NOT_INITIALIZED',
+  message: 'Output cap is not initialized in dialectic store.',
+};
+
+const subscriptionTierUnavailableMessage = 'Subscription tier is not available.';
 
 const nsfToastCopy =
   'Insufficient tokens for auto-start. Top up your wallet to continue.';
@@ -253,6 +267,12 @@ function initializeAutostartChatHappyPath(
 ): void {
   selectPreProjectCostCeilingMock.mockReturnValue(autostartSuccessCeiling);
   vi.mocked(selectActiveChatWalletInfo).mockReturnValue(defaultWalletInfo);
+  mockedUseAuthStoreHookLogic.setState({
+    isLoading: false,
+    userTier: mockUserTier,
+    availableTiers: mockAllTiers,
+    error: null,
+  });
   initializeMockDialecticState({
     domains: [generalDomain, otherDomain],
     selectedDomain: generalDomain,
@@ -260,6 +280,9 @@ function initializeAutostartChatHappyPath(
     modelCatalog: defaultCatalogWithDefaultModel,
     maxOutputTokens: 8192,
     isLoadingModelCatalog: false,
+    isLoadingDomainProcessAssociation: false,
+    isLoadingProcessTemplate: false,
+    isLoadingStageExpectedCounts: false,
     currentProcessTemplate: processTemplateGeneral,
     isAutoStarting: false,
     autoStartStep: null,
@@ -287,6 +310,13 @@ let mockSelectionState: 'all' | 'some' | 'none' | 'empty';
 describe('CreateProjectFromChatButton', () => {
   beforeEach(async () => {
     vi.clearAllMocks();
+    resetAuthStoreMock();
+    mockedUseAuthStoreHookLogic.setState({
+      isLoading: false,
+      userTier: mockUserTier,
+      availableTiers: mockAllTiers,
+      error: null,
+    });
     mockSelectedMessages = [
       makeChatMessage({ id: '1', role: 'user', content: 'First user line\nSecond line' }),
       makeChatMessage({ id: '2', role: 'assistant', content: 'Reply' }),
@@ -318,7 +348,11 @@ describe('CreateProjectFromChatButton', () => {
         <CreateProjectFromChatButton />
       </MemoryRouter>,
     );
-    expect(screen.getByRole('button', { name: /Create Project/i })).toBeInTheDocument();
+    const createButton: HTMLElement = screen.getByRole('button', { name: /Create Project/i });
+    if (!(createButton instanceof HTMLButtonElement)) {
+      throw new Error('Expected create button to be HTMLButtonElement');
+    }
+    expect(createButton).toBeDefined();
   });
 
   it('button is disabled when selection state is "none"', () => {
@@ -329,7 +363,11 @@ describe('CreateProjectFromChatButton', () => {
         <CreateProjectFromChatButton />
       </MemoryRouter>,
     );
-    expect(screen.getByRole('button', { name: /Create Project/i })).toBeDisabled();
+    const createButton: HTMLElement = screen.getByRole('button', { name: /Create Project/i });
+    if (!(createButton instanceof HTMLButtonElement)) {
+      throw new Error('Expected create button to be HTMLButtonElement');
+    }
+    expect(createButton.disabled).toBe(true);
   });
 
   it('button is disabled when selection state is "empty"', () => {
@@ -340,7 +378,11 @@ describe('CreateProjectFromChatButton', () => {
         <CreateProjectFromChatButton />
       </MemoryRouter>,
     );
-    expect(screen.getByRole('button', { name: /Create Project/i })).toBeDisabled();
+    const createButton: HTMLElement = screen.getByRole('button', { name: /Create Project/i });
+    if (!(createButton instanceof HTMLButtonElement)) {
+      throw new Error('Expected create button to be HTMLButtonElement');
+    }
+    expect(createButton.disabled).toBe(true);
   });
 
   it('button is disabled when isAutoStarting is true', () => {
@@ -350,7 +392,11 @@ describe('CreateProjectFromChatButton', () => {
         <CreateProjectFromChatButton />
       </MemoryRouter>,
     );
-    expect(screen.getByTestId('create-project-from-chat-button')).toBeDisabled();
+    const createButton: HTMLElement = screen.getByTestId('create-project-from-chat-button');
+    if (!(createButton instanceof HTMLButtonElement)) {
+      throw new Error('Expected create button to be HTMLButtonElement');
+    }
+    expect(createButton.disabled).toBe(true);
   });
 
   it('button is enabled when selection state is "all" and not auto-starting', () => {
@@ -361,7 +407,11 @@ describe('CreateProjectFromChatButton', () => {
         <CreateProjectFromChatButton />
       </MemoryRouter>,
     );
-    expect(screen.getByRole('button', { name: /Create Project/i })).not.toBeDisabled();
+    const createButton: HTMLElement = screen.getByRole('button', { name: /Create Project/i });
+    if (!(createButton instanceof HTMLButtonElement)) {
+      throw new Error('Expected create button to be HTMLButtonElement');
+    }
+    expect(createButton.disabled).toBe(false);
   });
 
   it('button is enabled when selection state is "some" and not auto-starting', () => {
@@ -370,7 +420,11 @@ describe('CreateProjectFromChatButton', () => {
         <CreateProjectFromChatButton />
       </MemoryRouter>,
     );
-    expect(screen.getByRole('button', { name: /Create Project/i })).not.toBeDisabled();
+    const createButton: HTMLElement = screen.getByRole('button', { name: /Create Project/i });
+    if (!(createButton instanceof HTMLButtonElement)) {
+      throw new Error('Expected create button to be HTMLButtonElement');
+    }
+    expect(createButton.disabled).toBe(false);
   });
 
   it('on click, calls fetchDomains if domains array is empty', async () => {
@@ -696,7 +750,7 @@ describe('CreateProjectFromChatButton', () => {
         <CreateProjectFromChatButton />
       </MemoryRouter>,
     );
-    expect(screen.getByText('Creating project…')).toBeInTheDocument();
+    expect(document.body.contains(screen.getByText('Creating project…'))).toBe(true);
   });
 
   it('does not call createDialecticProject directly (only calls createProjectAndAutoStart)', async () => {
@@ -797,30 +851,12 @@ describe('CreateProjectFromChatButton', () => {
     expect(getDialecticStoreActionMock('createProjectAndAutoStart')).not.toHaveBeenCalled();
   });
 
-  it('on click, does not call createProjectAndAutoStart when cost estimate prerequisites are incomplete', async () => {
-    const user = userEvent.setup();
-    initializeAutostartChatHappyPath({ domains: [generalDomain] });
-    selectPreProjectCostCeilingMock.mockReturnValue(null);
-
-    render(
-      <MemoryRouter>
-        <CreateProjectFromChatButton />
-      </MemoryRouter>,
-    );
-    await user.click(screen.getByRole('button', { name: /Create Project/i }));
-
-    await waitFor(() => {
-      expect(toast.error).toHaveBeenCalledWith(noEstimateToastCopy);
-    });
-    expect(getDialecticStoreActionMock('createProjectAndAutoStart')).not.toHaveBeenCalled();
-  });
-
   it('on click, does not call createProjectAndAutoStart when cost estimate returns error', async () => {
     const user = userEvent.setup();
     const estimateError: ApiError = { message: 'Invalid payload', code: 'INVALID_PAYLOAD' };
     initializeAutostartChatHappyPath({ domains: [generalDomain] });
     selectPreProjectCostCeilingMock.mockReturnValue(
-      buildComputeCostCeilingErrorReturn({ error: estimateError }),
+      buildComputeCostCeilingErrorReturn({ error: { message: estimateError.message, code: estimateError.code } }),
     );
 
     render(
@@ -892,5 +928,203 @@ describe('CreateProjectFromChatButton', () => {
       );
     });
     expect(fetchStageExpectedCountsMock).not.toHaveBeenCalled();
+  });
+
+  it('does not call createProjectAndAutoStart when selectPreProjectCostCeiling returns OUTPUT_CAP_NOT_INITIALIZED', async () => {
+    const user = userEvent.setup();
+    initializeAutostartChatHappyPath({ domains: [generalDomain] });
+    selectPreProjectCostCeilingMock.mockReturnValue({
+      error: outputCapNotInitializedError,
+    });
+
+    render(
+      <MemoryRouter>
+        <CreateProjectFromChatButton />
+      </MemoryRouter>,
+    );
+    await user.click(screen.getByRole('button', { name: /Create Project/i }));
+
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledWith(outputCapNotInitializedError.message);
+    });
+    expect(toast.error).not.toHaveBeenCalledWith(
+      'No cost estimate yet. Set the output cap in Model Settings, then try again.',
+    );
+    expect(getDialecticStoreActionMock('createProjectAndAutoStart')).not.toHaveBeenCalled();
+  });
+
+  it('calls initializeMaxOutputTokens on mount when isCapInitReady', async () => {
+    initializeMockDialecticState({
+      domains: [generalDomain, otherDomain],
+      selectedDomain: generalDomain,
+      modelCatalog: defaultCatalogWithDefaultModel,
+      isLoadingModelCatalog: false,
+      isAutoStarting: false,
+      autoStartStep: null,
+    });
+    mockedUseAuthStoreHookLogic.setState({
+      isLoading: false,
+      userTier: mockUserTier,
+      availableTiers: mockAllTiers,
+      error: null,
+    });
+
+    render(
+      <MemoryRouter>
+        <CreateProjectFromChatButton />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(getDialecticStoreActionMock('initializeMaxOutputTokens')).toHaveBeenCalledTimes(1);
+    });
+
+    vi.clearAllMocks();
+
+    initializeMockDialecticState({
+      domains: [generalDomain, otherDomain],
+      selectedDomain: generalDomain,
+      modelCatalog: [],
+      isLoadingModelCatalog: true,
+      isAutoStarting: false,
+      autoStartStep: null,
+    });
+    mockedUseAuthStoreHookLogic.setState({
+      isLoading: false,
+      userTier: mockUserTier,
+      availableTiers: mockAllTiers,
+      error: null,
+    });
+
+    render(
+      <MemoryRouter>
+        <CreateProjectFromChatButton />
+      </MemoryRouter>,
+    );
+
+    expect(getDialecticStoreActionMock('initializeMaxOutputTokens')).not.toHaveBeenCalled();
+  });
+
+  it('on click autostart path calls initializeMaxOutputTokens before fetchProcessTemplate', async () => {
+    const user = userEvent.setup();
+    const invocationOrder: string[] = [];
+
+    function wireAutostartInvocationOrderSpies(): void {
+      const initializeMaxOutputTokensMock = getDialecticStoreActionMock('initializeMaxOutputTokens');
+      const fetchProcessTemplateMock = getDialecticStoreActionMock('fetchProcessTemplate');
+      vi.mocked(initializeMaxOutputTokensMock).mockImplementation(() => {
+        invocationOrder.push('initializeMaxOutputTokens');
+        return { ok: true };
+      });
+      vi.mocked(fetchProcessTemplateMock).mockImplementation(async (templateId: string) => {
+        invocationOrder.push('fetchProcessTemplate');
+        void templateId;
+      });
+    }
+
+    initializeAutostartChatHappyPath({ domains: [generalDomain] });
+    wireAutostartInvocationOrderSpies();
+    const result: CreateProjectAutoStartResult = {
+      projectId: 'proj-1',
+      sessionId: 'sess-1',
+      hasDefaultModels: true,
+    };
+    vi.mocked(getDialecticStoreActionMock('createProjectAndAutoStart')).mockResolvedValue(result);
+
+    render(
+      <MemoryRouter>
+        <CreateProjectFromChatButton />
+      </MemoryRouter>,
+    );
+
+    const initializeMaxOutputTokensMock = getDialecticStoreActionMock('initializeMaxOutputTokens');
+    await waitFor(() => {
+      expect(initializeMaxOutputTokensMock).toHaveBeenCalledTimes(1);
+    });
+
+    invocationOrder.length = 0;
+    vi.mocked(initializeMaxOutputTokensMock).mockClear();
+    vi.mocked(getDialecticStoreActionMock('fetchProcessTemplate')).mockClear();
+    wireAutostartInvocationOrderSpies();
+
+    await user.click(screen.getByRole('button', { name: /Create Project/i }));
+
+    await waitFor(() => {
+      expect(invocationOrder).toEqual(['initializeMaxOutputTokens', 'fetchProcessTemplate']);
+    });
+    expect(initializeMaxOutputTokensMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('while auth isLoading on click, toasts Loading subscription tier and does not create', async () => {
+    const user = userEvent.setup();
+    initializeAutostartChatHappyPath({ domains: [generalDomain] });
+    selectPreProjectCostCeilingMock.mockReturnValue({
+      error: outputCapNotInitializedError,
+    });
+    mockSetAuthIsLoading(true);
+
+    render(
+      <MemoryRouter>
+        <CreateProjectFromChatButton />
+      </MemoryRouter>,
+    );
+    await user.click(screen.getByRole('button', { name: /Create Project/i }));
+
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledWith('Loading subscription tier…');
+    });
+    expect(toast.error).not.toHaveBeenCalledWith(outputCapNotInitializedError.message);
+    expect(getDialecticStoreActionMock('createProjectAndAutoStart')).not.toHaveBeenCalled();
+  });
+
+  it('while isLoadingStageExpectedCounts after orchestration, toasts loading copy not selector error', async () => {
+    const user = userEvent.setup();
+    initializeAutostartChatHappyPath({
+      domains: [generalDomain],
+      isLoadingStageExpectedCounts: true,
+    });
+    selectPreProjectCostCeilingMock.mockReturnValue({
+      error: outputCapNotInitializedError,
+    });
+
+    render(
+      <MemoryRouter>
+        <CreateProjectFromChatButton />
+      </MemoryRouter>,
+    );
+    await user.click(screen.getByRole('button', { name: /Create Project/i }));
+
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledWith('Loading stage expected counts…');
+    });
+    expect(toast.error).not.toHaveBeenCalledWith(outputCapNotInitializedError.message);
+    expect(getDialecticStoreActionMock('createProjectAndAutoStart')).not.toHaveBeenCalled();
+  });
+
+  it('on click when userTier null after auth load, toasts Subscription tier is not available not selector error', async () => {
+    const user = userEvent.setup();
+    initializeAutostartChatHappyPath({ domains: [generalDomain] });
+    mockedUseAuthStoreHookLogic.setState({
+      isLoading: false,
+      userTier: null,
+      availableTiers: mockAllTiers,
+      error: null,
+    });
+    selectPreProjectCostCeilingMock.mockReturnValue({
+      error: outputCapNotInitializedError,
+    });
+
+    render(
+      <MemoryRouter>
+        <CreateProjectFromChatButton />
+      </MemoryRouter>,
+    );
+    await user.click(screen.getByRole('button', { name: /Create Project/i }));
+
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledWith(subscriptionTierUnavailableMessage);
+    });
+    expect(toast.error).not.toHaveBeenCalledWith(outputCapNotInitializedError.message);
+    expect(getDialecticStoreActionMock('createProjectAndAutoStart')).not.toHaveBeenCalled();
   });
 });

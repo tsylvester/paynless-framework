@@ -37,6 +37,7 @@ export const GenerateContributionButton: React.FC<
 		viewingStage,
 		activeSession,
 		isCostEstimateKnown,
+		isCostEstimateLoading,
 		showCostEstimateBlocked,
 		costCeilingError,
 		stageCeiling,
@@ -101,8 +102,14 @@ export const GenerateContributionButton: React.FC<
 			if (isViewingAheadOfCurrentStage) return "Prior Stage Not Submitted";
 			return "Previous Stage Incomplete";
 		}
-		if (showCostEstimateBlocked && costCeilingError === null) return "No Estimate";
-		if (showCostEstimateBlocked && costCeilingError !== null) return "Estimate Failed";
+		if (isCostEstimateLoading) return "Loading Estimate";
+		if (
+			!isCostEstimateLoading &&
+			showCostEstimateBlocked &&
+			costCeilingError !== null
+		) {
+			return "Estimate Failed";
+		}
 		if (isCostEstimateKnown && !balanceMeetsThreshold) return "Insufficient Balance";
 		const displayName = viewingStage.display_name;
 		if (isPauseMode)
@@ -164,15 +171,17 @@ export const GenerateContributionButton: React.FC<
 					{isPauseMode ? getButtonText() : <><RefreshCcw className="mr-2 h-4 w-4" />{" "}{getButtonText()}</>}
 				</Button>
 			)}
-			{showCostEstimateBlocked && costCeilingError === null && (
+			{isCostEstimateLoading && (
 				<p
 					className="mt-1.5 max-w-[280px] rounded-md border border-muted bg-muted/50 px-3 py-2 text-center text-xs text-muted-foreground"
-					data-testid="generate-button-no-estimate-callout"
+					data-testid="generate-button-estimate-loading-notice"
 				>
-					No cost estimate yet. Select models and set output cap to continue.
+					Loading cost estimate…
 				</p>
 			)}
-			{showCostEstimateBlocked && costCeilingError !== null && (
+			{!isCostEstimateLoading &&
+				showCostEstimateBlocked &&
+				costCeilingError !== null && (
 				<p
 					className="mt-1.5 max-w-[280px] rounded-md border border-destructive/60 bg-destructive/10 px-3 py-2 text-center text-xs font-medium text-destructive"
 					data-testid="generate-button-estimate-error-callout"

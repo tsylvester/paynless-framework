@@ -25,6 +25,13 @@ import { Sparkles, Lock, AlertCircle } from "lucide-react";
 const MIN_OUTPUT_TOKENS = 1024;
 const SLIDER_STEPS_PER_SEGMENT = 50;
 const UPGRADE_CTA_THRESHOLD_RATIO = 0.85;
+const LOADING_SUBSCRIPTION_TIER_MESSAGE = "Loading subscription tier…";
+const SUBSCRIPTION_TIER_UNAVAILABLE_MESSAGE =
+	"Subscription tier is not available.";
+const NO_TIERS_LOADED_MESSAGE = "Subscription tiers are not loaded.";
+const NO_MODELS_SELECTED_MESSAGE = "No models selected.";
+const OUTPUT_CAP_NOT_INITIALIZED_MESSAGE =
+	"Output cap is not initialized in dialectic store.";
 
 interface OutputCapSliderProps {
 	className?: string;
@@ -32,6 +39,8 @@ interface OutputCapSliderProps {
 
 export function OutputCapSlider({ className }: OutputCapSliderProps) {
 	const navigate = useNavigate();
+	const isLoading = useAuthStore((state) => state.isLoading);
+	const authError = useAuthStore((state) => state.error);
 	const userTier = useAuthStore((state) => state.userTier);
 	const availableTiers = useAuthStore((state) => state.availableTiers);
 	const maxOutputTokens = useDialecticStore((state) => state.maxOutputTokens);
@@ -94,6 +103,31 @@ export function OutputCapSlider({ className }: OutputCapSliderProps) {
 		return highest;
 	}, [selectedModels, modelCatalog]);
 
+	const invalidCatalogConfigModelId: string | null = useMemo(() => {
+		if (selectedModels === null) {
+			return null;
+		}
+		if (selectedModels === undefined) {
+			return null;
+		}
+		if (selectedModels.length === 0) {
+			return null;
+		}
+
+		for (const selectedModel of selectedModels) {
+			for (const catalogEntry of modelCatalog) {
+				if (catalogEntry.id !== selectedModel.id) {
+					continue;
+				}
+				if (!isAiModelExtendedConfig(catalogEntry.config)) {
+					return selectedModel.id;
+				}
+				break;
+			}
+		}
+		return null;
+	}, [selectedModels, modelCatalog]);
+
 	const displayTiers: UserTier[] = useMemo(() => {
 		const filteredTiers: UserTier[] = [];
 		for (const tier of availableTiers) {
@@ -148,23 +182,14 @@ export function OutputCapSlider({ className }: OutputCapSliderProps) {
 	const sliderRegionRef = useRef<HTMLDivElement>(null);
 
 	useEffect(() => {
-		if (userTier === null) {
+		if (maxOutputTokens === null) {
 			return;
 		}
-		if (sliderRangeMax === null) {
+		if (!Number.isFinite(maxOutputTokens)) {
 			return;
 		}
-
-		let nextValue: number;
-		if (maxOutputTokens !== null) {
-			nextValue = maxOutputTokens;
-		} else if (userTier.output_cap_tokens !== null) {
-			nextValue = userTier.output_cap_tokens;
-		} else {
-			nextValue = sliderRangeMax;
-		}
-		setSliderRealValue(nextValue);
-	}, [maxOutputTokens, userTier, sliderRangeMax]);
+		setSliderRealValue(maxOutputTokens);
+	}, [maxOutputTokens]);
 
 	useEffect(() => {
 		if (sliderRangeMax === null) {
@@ -312,17 +337,116 @@ export function OutputCapSlider({ className }: OutputCapSliderProps) {
 		navigate("/subscription");
 	}, [navigate]);
 
-	if (availableTiers.length === 0) {
-		return null;
+	if (isLoading) {
+		return (
+			<div className={cn("space-y-3", className)}>
+				<p
+					data-testid="output-cap-slider-loading-notice"
+					className="text-xs text-muted-foreground"
+				>
+					{LOADING_SUBSCRIPTION_TIER_MESSAGE}
+				</p>
+			</div>
+		);
 	}
+
+	if (authError !== null) {
+		return (
+			<div className={cn("space-y-3", className)}>
+				<p
+					data-testid="output-cap-slider-blocked-notice"
+					className="text-xs text-muted-foreground"
+				>
+					{authError.message}
+				</p>
+			</div>
+		);
+	}
+
 	if (userTier === null) {
-		return null;
+		return (
+			<div className={cn("space-y-3", className)}>
+				<p
+					data-testid="output-cap-slider-blocked-notice"
+					className="text-xs text-muted-foreground"
+				>
+					{SUBSCRIPTION_TIER_UNAVAILABLE_MESSAGE}
+				</p>
+			</div>
+		);
 	}
+
+	if (availableTiers.length === 0) {
+		return (
+			<div className={cn("space-y-3", className)}>
+				<p
+					data-testid="output-cap-slider-blocked-notice"
+					className="text-xs text-muted-foreground"
+				>
+					{NO_TIERS_LOADED_MESSAGE}
+				</p>
+			</div>
+		);
+	}
+
+	if (
+		selectedModels === null ||
+		selectedModels === undefined ||
+		selectedModels.length === 0
+	) {
+		return (
+			<div className={cn("space-y-3", className)}>
+				<p
+					data-testid="output-cap-slider-blocked-notice"
+					className="text-xs text-muted-foreground"
+				>
+					{NO_MODELS_SELECTED_MESSAGE}
+				</p>
+			</div>
+		);
+	}
+
+	if (invalidCatalogConfigModelId !== null) {
+		return (
+			<div className={cn("space-y-3", className)}>
+				<p
+					data-testid="output-cap-slider-blocked-notice"
+					className="text-xs text-muted-foreground"
+				>
+					{`Model catalog config invalid for model id ${invalidCatalogConfigModelId}.`}
+				</p>
+			</div>
+		);
+	}
+
+	if (maxOutputTokens === null || !Number.isFinite(maxOutputTokens)) {
+		return (
+			<div className={cn("space-y-3", className)}>
+				<p
+					data-testid="output-cap-slider-blocked-notice"
+					className="text-xs text-muted-foreground"
+				>
+					{OUTPUT_CAP_NOT_INITIALIZED_MESSAGE}
+				</p>
+			</div>
+		);
+	}
+
 	if (sliderRangeMax === null) {
-		return null;
+		return (
+			<div className={cn("space-y-3", className)}>
+				<p
+					data-testid="output-cap-slider-blocked-notice"
+					className="text-xs text-muted-foreground"
+				>
+					{OUTPUT_CAP_NOT_INITIALIZED_MESSAGE}
+				</p>
+			</div>
+		);
 	}
 
 	const activeUserTier: UserTier = userTier;
+	const activeMaxOutputTokens: number = maxOutputTokens;
 	const activeSliderRangeMax: number = sliderRangeMax;
 
 	let activeThumbMax: number;
@@ -335,14 +459,10 @@ export function OutputCapSlider({ className }: OutputCapSliderProps) {
 		activeThumbMax = activeSliderRangeMax;
 	}
 
-	let currentDisplayValue: number;
-	if (maxOutputTokens !== null) {
-		currentDisplayValue = Math.min(maxOutputTokens, activeThumbMax);
-	} else if (activeUserTier.output_cap_tokens !== null) {
-		currentDisplayValue = activeThumbMax;
-	} else {
-		currentDisplayValue = activeSliderRangeMax;
-	}
+	const currentDisplayValue: number = Math.min(
+		activeMaxOutputTokens,
+		activeThumbMax,
+	);
 
 	let clampedSliderValue: number;
 	if (sliderRealValue > activeThumbMax) {

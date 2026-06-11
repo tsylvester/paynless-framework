@@ -160,6 +160,7 @@ function getDefaultHookReturn(
     projectCeiling: 400000,
     stageBalanceShortfall: null,
     isCostEstimateKnown: true,
+    isCostEstimateLoading: false,
     showCostEstimateBlocked: false,
     costCeilingError: null,
     showStageCostEstimate: true,
@@ -482,11 +483,17 @@ describe('GenerateContributionButton NSF', () => {
     renderWithRouter(<GenerateContributionButton />);
     expect(screen.queryByTestId('generate-button-project-balance-callout')).toBeNull();
 
+    const outputCapNotInitializedError: ApiError = {
+      code: 'OUTPUT_CAP_NOT_INITIALIZED',
+      message: 'Output cap is not initialized in dialectic store.',
+    };
     mockUseStartContributionGeneration.mockReturnValue(
       getDefaultHookReturn({
+        isCostEstimateLoading: false,
         isCostEstimateKnown: false,
         projectCeiling: 500000,
         showCostEstimateBlocked: true,
+        costCeilingError: outputCapNotInitializedError,
       })
     );
     renderWithRouter(<GenerateContributionButton />);
@@ -511,27 +518,6 @@ describe('GenerateContributionButton NSF', () => {
     expect(screen.queryByTestId('generate-button-project-balance-callout')).toBeNull();
   });
 
-  it('when cost estimate is not yet available, button is disabled with "No Estimate" and no-estimate callout', () => {
-    mockUseStartContributionGeneration.mockReturnValue(
-      getDefaultHookReturn({
-        isCostEstimateKnown: false,
-        showCostEstimateBlocked: true,
-        costCeilingError: null,
-        isDisabled: true,
-        stageCeiling: null,
-        showStageCostEstimate: false,
-      })
-    );
-    renderWithRouter(<GenerateContributionButton />);
-    const button = screen.getByRole('button', { name: /No Estimate/i });
-    expect(button.hasAttribute('disabled')).toBe(true);
-    expect(screen.getByTestId('generate-button-no-estimate-callout')).toBeDefined();
-    expect(screen.getByText(/no cost estimate/i)).toBeDefined();
-    expect(screen.queryByText(/unknown cost/i)).toBeNull();
-    expect(screen.queryByTestId('generate-button-estimate-error-callout')).toBeNull();
-    expect(screen.queryByTestId('generate-button-balance-callout')).toBeNull();
-  });
-
   it('when cost estimate failed, button is disabled with "Estimate Failed" and estimate-error callout shows error message', () => {
     const costCeilingError: ApiError = {
       code: 'INVALID_PAYLOAD',
@@ -539,6 +525,7 @@ describe('GenerateContributionButton NSF', () => {
     };
     mockUseStartContributionGeneration.mockReturnValue(
       getDefaultHookReturn({
+        isCostEstimateLoading: false,
         isCostEstimateKnown: false,
         showCostEstimateBlocked: true,
         costCeilingError,
@@ -553,25 +540,36 @@ describe('GenerateContributionButton NSF', () => {
     expect(screen.getByTestId('generate-button-estimate-error-callout')).toBeDefined();
     expect(screen.getByText(/Invalid payload/i)).toBeDefined();
     expect(screen.queryByTestId('generate-button-no-estimate-callout')).toBeNull();
+    expect(screen.queryByTestId('generate-button-estimate-loading-notice')).toBeNull();
     expect(screen.queryByTestId('generate-button-balance-callout')).toBeNull();
   });
 
   it('when paused_nsf and cost estimate is blocked, resume control is disabled and click does not invoke startContributionGeneration', async () => {
     const startContributionGeneration = vi.fn().mockResolvedValue({ success: true });
+    const outputCapNotInitializedError: ApiError = {
+      code: 'OUTPUT_CAP_NOT_INITIALIZED',
+      message: 'Output cap is not initialized in dialectic store.',
+    };
     mockUseStartContributionGeneration.mockReturnValue(
       getDefaultHookReturn({
         hasPausedNsfJobs: true,
+        isCostEstimateLoading: false,
         showCostEstimateBlocked: true,
         isCostEstimateKnown: false,
-        costCeilingError: null,
+        costCeilingError: outputCapNotInitializedError,
         isDisabled: true,
         stageCeiling: null,
       })
     );
     const user = userEvent.setup();
     renderWithRouter(<GenerateContributionButton />);
-    const button = screen.getByRole('button');
+    const button = screen.getByRole('button', { name: /Estimate Failed/i });
     expect(button.hasAttribute('disabled')).toBe(true);
+    expect(screen.getByTestId('generate-button-estimate-error-callout')).toBeDefined();
+    expect(screen.getByTestId('generate-button-estimate-error-callout').textContent).toBe(
+      outputCapNotInitializedError.message,
+    );
+    expect(screen.queryByTestId('generate-button-no-estimate-callout')).toBeNull();
     await user.click(button);
     expect(startContributionGeneration).not.toHaveBeenCalled();
   });

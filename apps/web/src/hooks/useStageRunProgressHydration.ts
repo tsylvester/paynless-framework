@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { useDialecticStore, useAuthStore, selectSortedStages, selectUnifiedProjectProgress } from '@paynless/store';
+import { logger } from '@paynless/utils';
 
 export const useStageRunProgressHydration = (): void => {
     const user = useAuthStore((state) => state.user);
@@ -32,7 +33,7 @@ export const useStageRunProgressHydration = (): void => {
         const iterationNumber = activeSessionDetail.iteration_count;
         const runKey = `${activeContextSessionId}:${iterationNumber}`;
         const status = progressHydrationStatus[runKey];
-        if (status === 'pending') {
+        if (status === 'pending' || status === 'failed') {
             return;
         }
         if (status === 'success' && hydrationReady) {
@@ -51,9 +52,9 @@ export const useStageRunProgressHydration = (): void => {
                     .filter((stage) => !currentRecipes[stage.slug])
                     .map((stage) => stage.slug);
                 if (missingSlugs.length > 0) {
-                    console.error(
+                    logger.error(
                         '[useStageRunProgressHydration] Recipe fetch did not populate all stages; missing:',
-                        missingSlugs,
+                        { missingSlugs },
                     );
                     return;
                 }
@@ -71,7 +72,7 @@ export const useStageRunProgressHydration = (): void => {
                     projectId,
                 });
             } catch (err: unknown) {
-                console.error('[useStageRunProgressHydration] Hydrate-all failed:', err);
+                logger.error('[useStageRunProgressHydration] Hydrate-all failed', { errorDetails: err });
             }
         };
         void hydrateAll();
@@ -95,7 +96,7 @@ export const useStageRunProgressHydration = (): void => {
         const iterationNumber = activeSessionDetail.iteration_count;
         const progressKey = `${activeContextSessionId}:${viewingStageSlug}:${iterationNumber}`;
         const status = progressHydrationStatus[progressKey];
-        if (status === 'success' || status === 'pending') {
+        if (status === 'success' || status === 'pending' || status === 'failed') {
             return;
         }
         const userId = user.id;
@@ -131,7 +132,7 @@ export const useStageRunProgressHydration = (): void => {
                     });
                 }
             } catch (err: unknown) {
-                console.error('[useStageRunProgressHydration] Per-stage hydrate failed:', err);
+                logger.error('[useStageRunProgressHydration] Per-stage hydrate failed', { errorDetails: err });
             }
         };
         void runPerStage();

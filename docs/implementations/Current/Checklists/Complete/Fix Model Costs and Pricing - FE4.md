@@ -538,417 +538,417 @@
     * `[✅]`   Success estimates and project balance warning tests remain green.
     * `[✅]`   No edits outside `SessionInfoCard.tsx` and `SessionInfoCard.test.tsx` in this node.
 
-* `[ ]`   apps/web/src/components/dialectic/OutputCapSlider **Blocked/loading UI instead of silent null; store display + tier thumb max; persist cap only on user commit**
+* `[✅]`   apps/web/src/components/dialectic/OutputCapSlider **Blocked/loading UI instead of silent null; store display + tier thumb max; persist cap only on user commit**
 
-  * `[ ]`   `objective`
-    * `[ ]`   **Problem:** `OutputCapSlider` returns `null` silently when `availableTiers.length === 0`, `userTier === null`, or `sliderRangeMax === null` (lines 315–323), so the model-settings popover shows empty space with no diagnostic. Local `useEffect` (lines 150–167) seeds `sliderRealValue` from `userTier.output_cap_tokens` or `sliderRangeMax` when `maxOutputTokens === null`, duplicating init that nodes 3/4 delegate to `initializeMaxOutputTokens`. Display `currentDisplayValue` (lines 338–345) falls back to tier/model cap when store cap is null, masking uninitialized store state. Cost selectors require finite `dialecticStore.maxOutputTokens`; slider must not write the store except on explicit user override.
-    * `[ ]`   **Functional goal — no silent `return null`:** Replace all early `return null` guards with visible UI. Gate order (first match wins): (1) `isLoading === true` → `output-cap-slider-loading-notice` `"Loading subscription tier…"`. (2) `!isLoading && authStore.error !== null` → `output-cap-slider-blocked-notice` with **only** `authStore.error.message` (pass-through). (3) `!isLoading && userTier === null && authStore.error === null` → blocked with `{ code: 'SUBSCRIPTION_TIER_UNAVAILABLE', message: 'Subscription tier is not available.' }`. (4) `availableTiers.length === 0` → blocked with fixed `NO_TIERS_LOADED` message. (5) no selected models → blocked notice with **only** `'No models selected.'` (same text as selector — no prefix). (6) invalid catalog config for a selected model → blocked with **only** **`Model catalog config invalid for model id <id>.`** (exact node 1/2 message — never `"Model catalog config invalid for selected model."`). (7) `maxOutputTokens` not finite → blocked with **only** `'Output cap is not initialized in dialectic store.'` when not loading (parent must run cap init first). Never `return null`. Never reword pass-through messages. **Do not** subscribe dialectic error store fields — slider does not call `initializeMaxOutputTokens`.
-    * `[ ]`   **Functional goal — display reads store only:** Success-path slider reads **`maxOutputTokens` from store** for display and for `computeCostCeiling` input (via selectors). `activeThumbMax` / track bounds use existing tier-vs-model UI clamp logic for **interaction only**; do **not** write store except on user commit. Do **not** recalculate or persist tier default cap in this component.
-    * `[ ]`   **Functional goal — no init in this component:** Do not import or call `initializeMaxOutputTokens`. Do not call `setMaxOutputTokens` in `useEffect`, on mount, or when syncing display from tier/model cap. Parent nodes (`CreateDialecticProjectForm`, `SessionInfoCard`) own tier hydrate → store init.
-    * `[ ]`   **Functional goal — `setMaxOutputTokens` only on user commit:** Keep `applyOutputCapValue(..., persistToStore)` contract: `persistToStore: false` on `Slider` `onValueChange` (drag/live preview only — updates local `sliderRealValue` and upgrade CTA state). `persistToStore: true` only on `Slider` `onValueCommit` and accessible tier-marker button clicks (lines 515–518). When `persistToStore === true`, call `setMaxOutputTokens(requestedReal)` (node 1 sets `outputCapUserCustomized: true`). Do not add any other call sites for `setMaxOutputTokens` in this file.
-    * `[ ]`   **Functional goal — success path unchanged:** When all gates pass and `maxOutputTokens` is finite, retain existing segmented slider, tier markers, helper text, upgrade CTA, and `/subscription` navigate on Upgrade button (subscription deep-link URL change is a later FE4 node).
-    * `[ ]`   **Non-functional:** Do not edit `dialecticStore.ts`, selectors, `CreateDialecticProjectForm`, `SessionInfoCard`, or `AIModelSelector` in this node. Depends on nodes 1 (store init + `outputCapUserCustomized` on `setMaxOutputTokens`) and 3/4 (parents call initializer before slider mounts in popover).
+  * `[✅]`   `objective`
+    * `[✅]`   **Problem:** `OutputCapSlider` returns `null` silently when `availableTiers.length === 0`, `userTier === null`, or `sliderRangeMax === null` (lines 315–323), so the model-settings popover shows empty space with no diagnostic. Local `useEffect` (lines 150–167) seeds `sliderRealValue` from `userTier.output_cap_tokens` or `sliderRangeMax` when `maxOutputTokens === null`, duplicating init that nodes 3/4 delegate to `initializeMaxOutputTokens`. Display `currentDisplayValue` (lines 338–345) falls back to tier/model cap when store cap is null, masking uninitialized store state. Cost selectors require finite `dialecticStore.maxOutputTokens`; slider must not write the store except on explicit user override.
+    * `[✅]`   **Functional goal — no silent `return null`:** Replace all early `return null` guards with visible UI. Gate order (first match wins): (1) `isLoading === true` → `output-cap-slider-loading-notice` `"Loading subscription tier…"`. (2) `!isLoading && authStore.error !== null` → `output-cap-slider-blocked-notice` with **only** `authStore.error.message` (pass-through). (3) `!isLoading && userTier === null && authStore.error === null` → blocked with `{ code: 'SUBSCRIPTION_TIER_UNAVAILABLE', message: 'Subscription tier is not available.' }`. (4) `availableTiers.length === 0` → blocked with fixed `NO_TIERS_LOADED` message. (5) no selected models → blocked notice with **only** `'No models selected.'` (same text as selector — no prefix). (6) invalid catalog config for a selected model → blocked with **only** **`Model catalog config invalid for model id <id>.`** (exact node 1/2 message — never `"Model catalog config invalid for selected model."`). (7) `maxOutputTokens` not finite → blocked with **only** `'Output cap is not initialized in dialectic store.'` when not loading (parent must run cap init first). Never `return null`. Never reword pass-through messages. **Do not** subscribe dialectic error store fields — slider does not call `initializeMaxOutputTokens`.
+    * `[✅]`   **Functional goal — display reads store only:** Success-path slider reads **`maxOutputTokens` from store** for display and for `computeCostCeiling` input (via selectors). `activeThumbMax` / track bounds use existing tier-vs-model UI clamp logic for **interaction only**; do **not** write store except on user commit. Do **not** recalculate or persist tier default cap in this component.
+    * `[✅]`   **Functional goal — no init in this component:** Do not import or call `initializeMaxOutputTokens`. Do not call `setMaxOutputTokens` in `useEffect`, on mount, or when syncing display from tier/model cap. Parent nodes (`CreateDialecticProjectForm`, `SessionInfoCard`) own tier hydrate → store init.
+    * `[✅]`   **Functional goal — `setMaxOutputTokens` only on user commit:** Keep `applyOutputCapValue(..., persistToStore)` contract: `persistToStore: false` on `Slider` `onValueChange` (drag/live preview only — updates local `sliderRealValue` and upgrade CTA state). `persistToStore: true` only on `Slider` `onValueCommit` and accessible tier-marker button clicks (lines 515–518). When `persistToStore === true`, call `setMaxOutputTokens(requestedReal)` (node 1 sets `outputCapUserCustomized: true`). Do not add any other call sites for `setMaxOutputTokens` in this file.
+    * `[✅]`   **Functional goal — success path unchanged:** When all gates pass and `maxOutputTokens` is finite, retain existing segmented slider, tier markers, helper text, upgrade CTA, and `/subscription` navigate on Upgrade button (subscription deep-link URL change is a later FE4 node).
+    * `[✅]`   **Non-functional:** Do not edit `dialecticStore.ts`, selectors, `CreateDialecticProjectForm`, `SessionInfoCard`, or `AIModelSelector` in this node. Depends on nodes 1 (store init + `outputCapUserCustomized` on `setMaxOutputTokens`) and 3/4 (parents call initializer before slider mounts in popover).
 
-  * `[ ]`   `role`
-    * `[ ]`   Model-settings popover UI — displays output cap from initialized store value; persists user overrides only on commit; surfaces blocked/loading states instead of disappearing.
-    * `[ ]`   Out of scope: tier hydrate init, cost ceiling selectors, default model selection, subscription cart prefill.
+  * `[✅]`   `role`
+    * `[✅]`   Model-settings popover UI — displays output cap from initialized store value; persists user overrides only on commit; surfaces blocked/loading states instead of disappearing.
+    * `[✅]`   Out of scope: tier hydrate init, cost ceiling selectors, default model selection, subscription cart prefill.
 
-  * `[ ]`   `module`
-    * `[ ]`   `apps/web` dialectic output cap slider and co-located tests listed below.
+  * `[✅]`   `module`
+    * `[✅]`   `apps/web` dialectic output cap slider and co-located tests listed below.
 
-  * `[ ]`   `deps`
-    * `[ ]`   Node 1: `setMaxOutputTokens` sets `outputCapUserCustomized: true`; parents use `initializeMaxOutputTokens`.
-    * `[ ]`   `useAuthStore` — `isLoading`, `userTier`, `availableTiers`.
-    * `[ ]`   `useDialecticStore` — `maxOutputTokens`, `setMaxOutputTokens`, `modelCatalog`, `selectedModels`.
-    * `[ ]`   `isAiModelExtendedConfig` from `@paynless/utils` (unchanged usage for `sliderRangeMax`).
+  * `[✅]`   `deps`
+    * `[✅]`   Node 1: `setMaxOutputTokens` sets `outputCapUserCustomized: true`; parents use `initializeMaxOutputTokens`.
+    * `[✅]`   `useAuthStore` — `isLoading`, `userTier`, `availableTiers`.
+    * `[✅]`   `useDialecticStore` — `maxOutputTokens`, `setMaxOutputTokens`, `modelCatalog`, `selectedModels`.
+    * `[✅]`   `isAiModelExtendedConfig` from `@paynless/utils` (unchanged usage for `sliderRangeMax`).
 
-  * `[ ]`   `context_slice`
-    * `[ ]`   Reads: auth loading + tier + tier list; store cap + catalog + selection.
-    * `[ ]`   Writes: `setMaxOutputTokens` only via `applyOutputCapValue` with `persistToStore: true`.
+  * `[✅]`   `context_slice`
+    * `[✅]`   Reads: auth loading + tier + tier list; store cap + catalog + selection.
+    * `[✅]`   Writes: `setMaxOutputTokens` only via `applyOutputCapValue` with `persistToStore: true`.
 
-  * `[ ]`   apps/web/src/components/dialectic/OutputCapSlider.test.tsx
-    * `[ ]`   add test `does not call setMaxOutputTokens on mount when maxOutputTokens already initialized` — seed `maxOutputTokens: 8192`, tier + catalog + selection; render; expect `setMaxOutputTokens` not called.
-    * `[ ]`   add test `shows loading notice while auth isLoading` — `mockSetAuthIsLoading(true)`; expect `output-cap-slider-loading-notice` with `"Loading subscription tier…"`; no slider, no blocked notice.
-    * `[ ]`   replace `when maxOutputTokens is null in store, component renders with tier default display` — seed `maxOutputTokens: null` with otherwise valid tier/catalog/selection; expect `output-cap-slider-blocked-notice` text `"Output cap is not initialized in dialectic store."`; no slider; `setMaxOutputTokens` not called.
-    * `[ ]`   replace `when availableTiers is empty, component handles gracefully without tier markers` — expect `output-cap-slider-blocked-notice` `"Subscription tiers are not loaded."`; assert `container.firstChild` is not null; no tier marker buttons.
-    * `[ ]`   replace `when selectedModels is empty, component returns null and does not render slider` — expect blocked notice `"No models selected."`; not `container.firstChild === null`.
-    * `[ ]`   replace `does not render slider when only selected model has config that fails isAiModelExtendedConfig` — expect blocked notice text exactly **`Model catalog config invalid for model id model-invalid-config.`**; not silent null; not alternate copy.
-    * `[ ]`   add test `when userTier is null and auth not loading, shows tier unavailable blocked notice` — auth `userTier: null`, `isLoading: false`; expect `"Subscription tier is not available."`.
-    * `[ ]`   update drag tests — `onValueChange` path must not call `setMaxOutputTokens`; only commit paths (tier marker click, `onValueCommit`) increment mock call count (existing tier-marker and basic-marker tests remain valid).
-    * `[ ]`   keep success-path tests (tier markers, upgrade CTA, clamp at thumb max, page-equivalent copy, navigate to subscription) unchanged except remove any `container.firstChild` null expectations.
+  * `[✅]`   apps/web/src/components/dialectic/OutputCapSlider.test.tsx
+    * `[✅]`   add test `does not call setMaxOutputTokens on mount when maxOutputTokens already initialized` — seed `maxOutputTokens: 8192`, tier + catalog + selection; render; expect `setMaxOutputTokens` not called.
+    * `[✅]`   add test `shows loading notice while auth isLoading` — `mockSetAuthIsLoading(true)`; expect `output-cap-slider-loading-notice` with `"Loading subscription tier…"`; no slider, no blocked notice.
+    * `[✅]`   replace `when maxOutputTokens is null in store, component renders with tier default display` — seed `maxOutputTokens: null` with otherwise valid tier/catalog/selection; expect `output-cap-slider-blocked-notice` text `"Output cap is not initialized in dialectic store."`; no slider; `setMaxOutputTokens` not called.
+    * `[✅]`   replace `when availableTiers is empty, component handles gracefully without tier markers` — expect `output-cap-slider-blocked-notice` `"Subscription tiers are not loaded."`; assert `container.firstChild` is not null; no tier marker buttons.
+    * `[✅]`   replace `when selectedModels is empty, component returns null and does not render slider` — expect blocked notice `"No models selected."`; not `container.firstChild === null`.
+    * `[✅]`   replace `does not render slider when only selected model has config that fails isAiModelExtendedConfig` — expect blocked notice text exactly **`Model catalog config invalid for model id model-invalid-config.`**; not silent null; not alternate copy.
+    * `[✅]`   add test `when userTier is null and auth not loading, shows tier unavailable blocked notice` — auth `userTier: null`, `isLoading: false`; expect `"Subscription tier is not available."`.
+    * `[✅]`   update drag tests — `onValueChange` path must not call `setMaxOutputTokens`; only commit paths (tier marker click, `onValueCommit`) increment mock call count (existing tier-marker and basic-marker tests remain valid).
+    * `[✅]`   keep success-path tests (tier markers, upgrade CTA, clamp at thumb max, page-equivalent copy, navigate to subscription) unchanged except remove any `container.firstChild` null expectations.
 
-  * `[ ]`   apps/web/src/components/dialectic/OutputCapSlider.integration.test.tsx
-    * `[ ]`   seed `maxOutputTokens: initialCap` (finite) in all interaction tests — never rely on slider tier-fallback init; document that null cap shows blocked UI, not draggable slider.
-    * `[ ]`   in `function → consumer: persists chosen cap to real dialectic store` — after `dragSegmentedSliderToTokens`, if store not updated (keyboard may only fire `onValueChange`), add `await userEvent.tab()` on slider to trigger `onValueCommit`; then `waitFor` store `maxOutputTokens === thumbTokens`.
-    * `[ ]`   same tab/commit assist in `full chain: basic tier thumb cap…` drag segment before asserting stored cap.
-    * `[ ]`   `provider → function: filters unreachable tier` and tier-marker persist assertions remain green with finite initial cap.
+  * `[✅]`   apps/web/src/components/dialectic/OutputCapSlider.tsx
+    * `[✅]`   subscribe `isLoading` from `useAuthStore`.
+    * `[✅]`   replace lines 315–323 `return null` with gated loading/blocked JSX per objective (ordered gates 1–6).
+    * `[✅]`   narrow `useEffect` (lines 150–167) — sync `sliderRealValue` from finite `maxOutputTokens` only; drop tier/model fallback when store cap null.
+    * `[✅]`   success-path `currentDisplayValue` uses finite `maxOutputTokens` only (remove null-store tier/model fallback).
+    * `[✅]`   verify `setMaxOutputTokens` invoked only inside `applyOutputCapValue` when `persistToStore === true` (marker click + `onValueCommit`); `onValueChange` stays `persistToStore: false`.
 
-  * `[ ]`   apps/web/src/components/dialectic/OutputCapSlider.tsx
-    * `[ ]`   subscribe `isLoading` from `useAuthStore`.
-    * `[ ]`   replace lines 315–323 `return null` with gated loading/blocked JSX per objective (ordered gates 1–6).
-    * `[ ]`   narrow `useEffect` (lines 150–167) — sync `sliderRealValue` from finite `maxOutputTokens` only; drop tier/model fallback when store cap null.
-    * `[ ]`   success-path `currentDisplayValue` uses finite `maxOutputTokens` only (remove null-store tier/model fallback).
-    * `[ ]`   verify `setMaxOutputTokens` invoked only inside `applyOutputCapValue` when `persistToStore === true` (marker click + `onValueCommit`); `onValueChange` stays `persistToStore: false`.
+  * `[✅]`   apps/web/src/components/dialectic/OutputCapSlider.integration.test.tsx
+    * `[✅]`   seed `maxOutputTokens: initialCap` (finite) in all interaction tests — never rely on slider tier-fallback init; document that null cap shows blocked UI, not draggable slider.
+    * `[✅]`   in `function → consumer: persists chosen cap to real dialectic store` — after `dragSegmentedSliderToTokens`, if store not updated (keyboard may only fire `onValueChange`), add `await userEvent.tab()` on slider to trigger `onValueCommit`; then `waitFor` store `maxOutputTokens === thumbTokens`.
+    * `[✅]`   same tab/commit assist in `full chain: basic tier thumb cap…` drag segment before asserting stored cap.
+    * `[✅]`   `provider → function: filters unreachable tier` and tier-marker persist assertions remain green with finite initial cap.
 
-  * `[ ]`   `requirements`
-    * `[ ]`   Grep `OutputCapSlider.tsx`: zero `return null`; zero `initializeMaxOutputTokens`; zero `setMaxOutputTokens` outside `applyOutputCapValue` when `persistToStore` is true.
-    * `[ ]`   Grep `OutputCapSlider.test.tsx` and `OutputCapSlider.integration.test.tsx`: zero `container.firstChild).toBeNull()` for blocked prerequisite cases; zero test expecting tier-default display when `maxOutputTokens === null`.
-    * `[ ]`   Mount with `maxOutputTokens: 8192`, valid tier/catalog/selection: slider visible; `setMaxOutputTokens` not called on mount.
-    * `[ ]`   Mount with `maxOutputTokens: null`, valid prerequisites otherwise: `output-cap-slider-blocked-notice` visible; no slider.
-    * `[ ]`   Tier-marker click and slider commit persist cap to store; drag without commit does not (unit mock assertions).
-    * `[ ]`   Integration test: real store receives updated `maxOutputTokens` after commit interaction.
-    * `[ ]`   No edits outside `OutputCapSlider.tsx`, `OutputCapSlider.test.tsx`, and `OutputCapSlider.integration.test.tsx` in this node.
+  * `[✅]`   `requirements`
+    * `[✅]`   Grep `OutputCapSlider.tsx`: zero `return null`; zero `initializeMaxOutputTokens`; zero `setMaxOutputTokens` outside `applyOutputCapValue` when `persistToStore` is true.
+    * `[✅]`   Grep `OutputCapSlider.test.tsx` and `OutputCapSlider.integration.test.tsx`: zero `container.firstChild).toBeNull()` for blocked prerequisite cases; zero test expecting tier-default display when `maxOutputTokens === null`.
+    * `[✅]`   Mount with `maxOutputTokens: 8192`, valid tier/catalog/selection: slider visible; `setMaxOutputTokens` not called on mount.
+    * `[✅]`   Mount with `maxOutputTokens: null`, valid prerequisites otherwise: `output-cap-slider-blocked-notice` visible; no slider.
+    * `[✅]`   Tier-marker click and slider commit persist cap to store; drag without commit does not (unit mock assertions).
+    * `[✅]`   Integration test: real store receives updated `maxOutputTokens` after commit interaction.
+    * `[✅]`   No edits outside `OutputCapSlider.tsx`, `OutputCapSlider.test.tsx`, and `OutputCapSlider.integration.test.tsx` in this node.
 
-* `[ ]`   apps/web/src/components/dialectic/AIModelSelector **Auth tier loading gate; remove level-0 tier fallback; remove default-models effect (store owns defaults)**
+* `[✅]`   apps/web/src/components/dialectic/AIModelSelector **Auth tier loading gate; remove level-0 tier fallback; remove default-models effect (store owns defaults)**
 
-  * `[ ]`   `objective`
-    * `[ ]`   **Problem:** `AIModelSelector.tsx` lines 229–241 synthesize `effectiveUserTier` by falling back to `availableTiers` level `0` when `userTier === null`, masking auth hydrate failures and violating the no-fallback rule. Lines 270–280 apply default generation models via `setSelectedModels(defaultModels)` inside this component (gated on popover mount path), duplicating node 1 `initializeMaxOutputTokens` default-model application and node 3/4 parent `useEffect` tier-cap init lifecycle. Component does not subscribe `useAuthStore.isLoading`, so tier-gated model rows and cap logic run before profile tier is loaded.
-    * `[ ]`   **Functional goal:** Subscribe `isLoading` from `useAuthStore` alongside existing `userTier`, `availableTiers`. Delete `effectiveUserTier` `useMemo` entirely. After auth gate passes (`isLoading === false` and `userTier !== null`), use `userTier` directly for `modelLimit` (`userTier.max_models_per_project`), tier-lock comparisons (`provider.min_plan_tier_level > userTier.level`), and `resolveNextTierName(availableTiers, userTier, modelLimit)`.
-    * `[ ]`   **Functional goal — auth loading (gate order 1):** When `isLoading === true`, render `data-testid="ai-model-selector-loading-notice"` with text `"Loading subscription tier…"` above the dropdown trigger (inside root `div.w-full`, before `DropdownMenu`). Set `finalIsDisabled` true. Dropdown `dropdownContent` is `<DropdownMenuLabel>Loading subscription tier…</DropdownMenuLabel>`. Do not evaluate tier-lock or cap-upgrade tooltips against a synthetic tier.
-    * `[ ]`   **Functional goal — tier unavailable (gate order 2):** When `isLoading === false` and `authStore.error !== null`, render `ai-model-selector-tier-unavailable-notice` with **only** `authStore.error.message`. When `isLoading === false`, `userTier === null`, and `authStore.error === null`, render notice with `{ code: 'SUBSCRIPTION_TIER_UNAVAILABLE', message: 'Subscription tier is not available.' }`. Set `finalIsDisabled` true in both cases.
-    * `[ ]`   **Functional goal — success path (gates pass):** Keep existing `isConfigLoading` / `aiError` / provider list dropdown branches unchanged except replace every `effectiveUserTier` reference with `userTier`. Keep tier-lock upgrade `Link to="/subscription"` and cap upgrade links unchanged (subscription deep-link URL work is a later FE4 node). Keep `fetchAIModelCatalog` effect (lines 264–268) and `loadAiConfig` effect (lines 254–262).
-    * `[ ]`   **Functional goal — remove default-models effect:** Delete `defaultsAppliedRef`, delete `defaultModels` subscription (`useDialecticStore(selectDefaultGenerationModels)`), delete `useEffect` at lines 270–280 that calls `setSelectedModels(defaultModels)`. Do not call `setSelectedModels` for defaults anywhere in this file. Default model selection when `selectedModels` is empty is owned by node 1 store initializer (invoked from node 3/4 parent effects).
-    * `[ ]`   **Functional goal — pulsing (`needsAttention`):** `needsAttention` is false when `isLoading === true` or `userTier === null` (even if `selectedModels` empty). Existing condition otherwise unchanged: `!hasSelectedModels && !finalIsDisabled && !isConfigLoading && !aiError`.
-    * `[ ]`   **Non-functional:** Do not edit `dialecticStore.ts`, selectors, `CreateDialecticProjectForm`, `SessionInfoCard`, `OutputCapSlider`, or subscription CTA URL building in this node. No new files.
+  * `[✅]`   `objective`
+    * `[✅]`   **Problem:** `AIModelSelector.tsx` lines 229–241 synthesize `effectiveUserTier` by falling back to `availableTiers` level `0` when `userTier === null`, masking auth hydrate failures and violating the no-fallback rule. Lines 270–280 apply default generation models via `setSelectedModels(defaultModels)` inside this component (gated on popover mount path), duplicating node 1 `initializeMaxOutputTokens` default-model application and node 3/4 parent `useEffect` tier-cap init lifecycle. Component does not subscribe `useAuthStore.isLoading`, so tier-gated model rows and cap logic run before profile tier is loaded.
+    * `[✅]`   **Functional goal:** Subscribe `isLoading` from `useAuthStore` alongside existing `userTier`, `availableTiers`. Delete `effectiveUserTier` `useMemo` entirely. After auth gate passes (`isLoading === false` and `userTier !== null`), use `userTier` directly for `modelLimit` (`userTier.max_models_per_project`), tier-lock comparisons (`provider.min_plan_tier_level > userTier.level`), and `resolveNextTierName(availableTiers, userTier, modelLimit)`.
+    * `[✅]`   **Functional goal — auth loading (gate order 1):** When `isLoading === true`, render `data-testid="ai-model-selector-loading-notice"` with text `"Loading subscription tier…"` above the dropdown trigger (inside root `div.w-full`, before `DropdownMenu`). Set `finalIsDisabled` true. Dropdown `dropdownContent` is `<DropdownMenuLabel>Loading subscription tier…</DropdownMenuLabel>`. Do not evaluate tier-lock or cap-upgrade tooltips against a synthetic tier.
+    * `[✅]`   **Functional goal — tier unavailable (gate order 2):** When `isLoading === false` and `authStore.error !== null`, render `ai-model-selector-tier-unavailable-notice` with **only** `authStore.error.message`. When `isLoading === false`, `userTier === null`, and `authStore.error === null`, render notice with `{ code: 'SUBSCRIPTION_TIER_UNAVAILABLE', message: 'Subscription tier is not available.' }`. Set `finalIsDisabled` true in both cases.
+    * `[✅]`   **Functional goal — success path (gates pass):** Keep existing `isConfigLoading` / `aiError` / provider list dropdown branches unchanged except replace every `effectiveUserTier` reference with `userTier`. Keep tier-lock upgrade `Link to="/subscription"` and cap upgrade links unchanged (subscription deep-link URL work is a later FE4 node). Keep `fetchAIModelCatalog` effect (lines 264–268) and `loadAiConfig` effect (lines 254–262).
+    * `[✅]`   **Functional goal — remove default-models effect:** Delete `defaultsAppliedRef`, delete `defaultModels` subscription (`useDialecticStore(selectDefaultGenerationModels)`), delete `useEffect` at lines 270–280 that calls `setSelectedModels(defaultModels)`. Do not call `setSelectedModels` for defaults anywhere in this file. Default model selection when `selectedModels` is empty is owned by node 1 store initializer (invoked from node 3/4 parent effects).
+    * `[✅]`   **Functional goal — pulsing (`needsAttention`):** `needsAttention` is false when `isLoading === true` or `userTier === null` (even if `selectedModels` empty). Existing condition otherwise unchanged: `!hasSelectedModels && !finalIsDisabled && !isConfigLoading && !aiError`.
+    * `[✅]`   **Non-functional:** Do not edit `dialecticStore.ts`, selectors, `CreateDialecticProjectForm`, `SessionInfoCard`, `OutputCapSlider`, or subscription CTA URL building in this node. No new files.
 
-  * `[ ]`   `role`
-    * `[ ]`   Model-settings dropdown UI — tier-aware model multiplicity and upgrade affordances only.
-    * `[ ]`   Out of scope: output cap init, cost ceiling display, default model store logic, subscription cart prefill.
+  * `[✅]`   `role`
+    * `[✅]`   Model-settings dropdown UI — tier-aware model multiplicity and upgrade affordances only.
+    * `[✅]`   Out of scope: output cap init, cost ceiling display, default model store logic, subscription cart prefill.
 
-  * `[ ]`   `module`
-    * `[ ]`   `apps/web` dialectic AI model selector and `AIModelSelector.test.tsx` only.
+  * `[✅]`   `module`
+    * `[✅]`   `apps/web` dialectic AI model selector and `AIModelSelector.test.tsx` only.
 
-  * `[ ]`   `deps`
-    * `[ ]`   Node 1: default models applied in `initializeMaxOutputTokens` when selection empty (not in this component).
-    * `[ ]`   Nodes 3/4: parents call `initializeMaxOutputTokens` when auth tier loaded.
-    * `[ ]`   `useAuthStore` — `isLoading`, `userTier`, `availableTiers`.
-    * `[ ]`   Existing `useAiStore`, `useDialecticStore` subscriptions except remove `selectDefaultGenerationModels` / default effect.
+  * `[✅]`   `deps`
+    * `[✅]`   Node 1: default models applied in `initializeMaxOutputTokens` when selection empty (not in this component).
+    * `[✅]`   Nodes 3/4: parents call `initializeMaxOutputTokens` when auth tier loaded.
+    * `[✅]`   `useAuthStore` — `isLoading`, `userTier`, `availableTiers`.
+    * `[✅]`   Existing `useAiStore`, `useDialecticStore` subscriptions except remove `selectDefaultGenerationModels` / default effect.
 
-  * `[ ]`   `context_slice`
-    * `[ ]`   Reads: auth loading + tier; ai providers/config; dialectic `selectedModels`, `modelCatalog`, multiplicity actions.
-    * `[ ]`   Writes: `setModelMultiplicity` / implicit via multiplicity only — no `setSelectedModels` for defaults.
+  * `[✅]`   `context_slice`
+    * `[✅]`   Reads: auth loading + tier; ai providers/config; dialectic `selectedModels`, `modelCatalog`, multiplicity actions.
+    * `[✅]`   Writes: `setModelMultiplicity` / implicit via multiplicity only — no `setSelectedModels` for defaults.
 
-  * `[ ]`   apps/web/src/components/dialectic/AIModelSelector.test.tsx
-    * `[ ]`   Extend `setupMockStores` / `beforeEach` usage: import `mockSetAuthIsLoading` from `@/mocks/authStore.mock`; default auth mock keeps `isLoading: false` and `userTier: mockUserTier` (existing behavior).
-    * `[ ]`   add test `shows loading notice while auth isLoading` — call `mockSetAuthIsLoading(true)` in `setupMockStores` auth path before render; expect `ai-model-selector-loading-notice` text `"Loading subscription tier…"`; `screen.getByRole('button', { name: /Select AI Models/i })` has `disabled` attribute; `screen.queryByTestId(/^tier-lock-/)` is null.
-    * `[ ]`   add test `shows tier unavailable notice when auth loaded and userTier is null` — `mockSetAuthIsLoading(false)`, auth `{ userTier: null, availableTiers: mockAllTiers }`; expect `ai-model-selector-tier-unavailable-notice` text `"Subscription tier is not available."`; trigger button disabled.
-    * `[ ]`   delete test `when selectedModels is empty, defaultModels is non-empty, and activeContextSessionId is null, setSelectedModels is called with the default models` (lines 467–483).
-    * `[ ]`   delete test `when selectedModels is already non-empty, setSelectedModels is NOT called for defaults` (lines 485–497).
-    * `[ ]`   delete test `when activeContextSessionId is set, setSelectedModels is NOT called for defaults even if selectedModels is empty` (lines 499–511).
-    * `[ ]`   delete test `after defaults are applied once, clearing all models does NOT re-apply defaults` (lines 513–533).
-    * `[ ]`   add test `does not call setSelectedModels on mount when selectedModels empty` — seed empty `selectedModels`, non-empty `modelCatalog` with `is_default_generation` row, `activeContextSessionId: null`; render; expect `getDialecticStoreActionMock('setSelectedModels')` not called.
-    * `[ ]`   update `AIModelSelector Pulsing animation` test `applies pulsing animation when no models selected…` — seed auth `isLoading: false`, `userTier: mockUserTier`; pulsing still applies when providers exist and selection empty.
-    * `[ ]`   add pulsing test `does NOT pulse while auth isLoading` — `mockSetAuthIsLoading(true)`; expect trigger lacks `animate-pulse`.
-    * `[ ]`   tier-lock and cap-upgrade tests (`tier-lock-*`, `upgrade-link-*`, Ultra unlimited multiplicity) remain green using explicit `userTier` in auth mock (no level-0 fallback path).
+  * `[✅]`   apps/web/src/components/dialectic/AIModelSelector.test.tsx
+    * `[✅]`   Extend `setupMockStores` / `beforeEach` usage: import `mockSetAuthIsLoading` from `@/mocks/authStore.mock`; default auth mock keeps `isLoading: false` and `userTier: mockUserTier` (existing behavior).
+    * `[✅]`   add test `shows loading notice while auth isLoading` — call `mockSetAuthIsLoading(true)` in `setupMockStores` auth path before render; expect `ai-model-selector-loading-notice` text `"Loading subscription tier…"`; `screen.getByRole('button', { name: /Select AI Models/i })` has `disabled` attribute; `screen.queryByTestId(/^tier-lock-/)` is null.
+    * `[✅]`   add test `shows tier unavailable notice when auth loaded and userTier is null` — `mockSetAuthIsLoading(false)`, auth `{ userTier: null, availableTiers: mockAllTiers }`; expect `ai-model-selector-tier-unavailable-notice` text `"Subscription tier is not available."`; trigger button disabled.
+    * `[✅]`   delete test `when selectedModels is empty, defaultModels is non-empty, and activeContextSessionId is null, setSelectedModels is called with the default models` (lines 467–483).
+    * `[✅]`   delete test `when selectedModels is already non-empty, setSelectedModels is NOT called for defaults` (lines 485–497).
+    * `[✅]`   delete test `when activeContextSessionId is set, setSelectedModels is NOT called for defaults even if selectedModels is empty` (lines 499–511).
+    * `[✅]`   delete test `after defaults are applied once, clearing all models does NOT re-apply defaults` (lines 513–533).
+    * `[✅]`   add test `does not call setSelectedModels on mount when selectedModels empty` — seed empty `selectedModels`, non-empty `modelCatalog` with `is_default_generation` row, `activeContextSessionId: null`; render; expect `getDialecticStoreActionMock('setSelectedModels')` not called.
+    * `[✅]`   update `AIModelSelector Pulsing animation` test `applies pulsing animation when no models selected…` — seed auth `isLoading: false`, `userTier: mockUserTier`; pulsing still applies when providers exist and selection empty.
+    * `[✅]`   add pulsing test `does NOT pulse while auth isLoading` — `mockSetAuthIsLoading(true)`; expect trigger lacks `animate-pulse`.
+    * `[✅]`   tier-lock and cap-upgrade tests (`tier-lock-*`, `upgrade-link-*`, Ultra unlimited multiplicity) remain green using explicit `userTier` in auth mock (no level-0 fallback path).
 
-  * `[ ]`   apps/web/src/components/dialectic/AIModelSelector.tsx
-    * `[ ]`   add `isLoading` to `useAuthStore` subscription (line 224 area).
-    * `[ ]`   remove `effectiveUserTier` `useMemo` (lines 229–241); remove `selectDefaultGenerationModels` import and `defaultModels` / `defaultsAppliedRef` / default `useEffect` (lines 202–203, 270–280).
-    * `[ ]`   add auth gate UI (loading notice, tier-unavailable notice) before `DropdownMenu`; compute `finalIsDisabled` to include `isLoading || userTier === null` in addition to existing disabled/providers logic.
-    * `[ ]`   replace all `effectiveUserTier` identifiers with `userTier` in `handleMultiplicityChange`, provider map tier-lock branch, `resolveNextTierName` calls, and `atCap` footer — only in code paths reachable after `isLoading === false && userTier !== null` (TypeScript: early return UI branches before those handlers run, or narrow with guards at top of component body assigning `const tier: UserTier = userTier` only after gate).
-    * `[ ]`   update `needsAttention` to exclude auth loading and null tier per objective.
+  * `[✅]`   apps/web/src/components/dialectic/AIModelSelector.tsx
+    * `[✅]`   add `isLoading` to `useAuthStore` subscription (line 224 area).
+    * `[✅]`   remove `effectiveUserTier` `useMemo` (lines 229–241); remove `selectDefaultGenerationModels` import and `defaultModels` / `defaultsAppliedRef` / default `useEffect` (lines 202–203, 270–280).
+    * `[✅]`   add auth gate UI (loading notice, tier-unavailable notice) before `DropdownMenu`; compute `finalIsDisabled` to include `isLoading || userTier === null` in addition to existing disabled/providers logic.
+    * `[✅]`   replace all `effectiveUserTier` identifiers with `userTier` in `handleMultiplicityChange`, provider map tier-lock branch, `resolveNextTierName` calls, and `atCap` footer — only in code paths reachable after `isLoading === false && userTier !== null` (TypeScript: early return UI branches before those handlers run, or narrow with guards at top of component body assigning `const tier: UserTier = userTier` only after gate).
+    * `[✅]`   update `needsAttention` to exclude auth loading and null tier per objective.
 
-  * `[ ]`   `requirements`
-    * `[ ]`   Grep `AIModelSelector.tsx`: zero `effectiveUserTier`; zero `selectDefaultGenerationModels`; zero `defaultsAppliedRef`; zero `setSelectedModels` calls.
-    * `[ ]`   Grep `AIModelSelector.test.tsx`: zero tests asserting `setSelectedModels` called with default models on mount.
-    * `[ ]`   `isLoading: true` → loading notice visible, trigger disabled, no pulse.
-    * `[ ]`   `isLoading: false`, `userTier: null` → tier-unavailable notice visible, trigger disabled.
-    * `[ ]`   Loaded tier + providers: tier-lock and cap-upgrade tests pass unchanged.
-    * `[ ]`   No edits outside `AIModelSelector.tsx` and `AIModelSelector.test.tsx` in this node.
+  * `[✅]`   `requirements`
+    * `[✅]`   Grep `AIModelSelector.tsx`: zero `effectiveUserTier`; zero `selectDefaultGenerationModels`; zero `defaultsAppliedRef`; zero `setSelectedModels` calls.
+    * `[✅]`   Grep `AIModelSelector.test.tsx`: zero tests asserting `setSelectedModels` called with default models on mount.
+    * `[✅]`   `isLoading: true` → loading notice visible, trigger disabled, no pulse.
+    * `[✅]`   `isLoading: false`, `userTier: null` → tier-unavailable notice visible, trigger disabled.
+    * `[✅]`   Loaded tier + providers: tier-lock and cap-upgrade tests pass unchanged.
+    * `[✅]`   No edits outside `AIModelSelector.tsx` and `AIModelSelector.test.tsx` in this node.
 
-* `[ ]`   apps/web/src/components/dialectic/AIModelSelectorList **Auth tier loading gate; remove level-0 tier fallback (parity with AIModelSelector)**
+* `[✅]`   apps/web/src/components/dialectic/AIModelSelectorList **Auth tier loading gate; remove level-0 tier fallback (parity with AIModelSelector)**
 
-  * `[ ]`   `objective`
-    * `[ ]`   **Problem:** `AIModelSelectorList.tsx` lines 70–82 synthesize `effectiveUserTier` by falling back to `availableTiers` level `0` when `userTier === null`, masking auth hydrate failures and violating the no-fallback rule. Component does not subscribe `useAuthStore.isLoading`, so tier-lock comparisons (`provider.min_plan_tier_level > effectiveUserTier.level`), count-cap (`effectiveUserTier.max_models_per_project`), and cap-upgrade tooltips (`resolveNextTierName(availableTiers, effectiveUserTier, modelLimit)`) run before profile tier is loaded. Chat model step (`apps/web/src/components/chat/index.tsx`) renders this list without dialectic popover bootstrap — level-0 fallback is especially misleading there.
-    * `[ ]`   **Functional goal:** Subscribe `isLoading` from `useAuthStore` alongside existing `userTier`, `availableTiers`. Delete `effectiveUserTier` `useMemo` entirely. After auth gates pass (`isLoading === false` and `userTier !== null`), use `userTier` directly for `modelLimit` (`userTier.max_models_per_project`), tier-lock comparisons, and `resolveNextTierName(availableTiers, userTier, modelLimit)`.
-    * `[ ]`   **Functional goal — auth loading (gate order 1):** When `isLoading === true`, render root container with `data-testid="ai-model-selector-list-loading-notice"` and text `"Loading subscription tier…"` inside the existing bordered `div` (replace `ScrollArea` provider map — do not render provider rows). Honor `disabledProp` on root styling only; no checkbox interactions. Do not evaluate tier-lock or cap-upgrade tooltips against a synthetic tier.
-    * `[ ]`   **Functional goal — tier unavailable (gate order 2):** When `isLoading === false` and `authStore.error !== null`, render `ai-model-selector-list-tier-unavailable-notice` with **only** `authStore.error.message`. When `isLoading === false`, `userTier === null`, and `authStore.error === null`, render notice with `{ code: 'SUBSCRIPTION_TIER_UNAVAILABLE', message: 'Subscription tier is not available.' }`.
-    * `[ ]`   **Functional goal — success path (gates pass):** Keep existing `isConfigLoading` / `aiError` / `loadAiConfig` effect (lines 121–129), provider sort/map, checkbox toggle, tier-lock tooltips, count-cap tooltips, and `Link to="/subscription"` upgrade CTAs unchanged except replace every `effectiveUserTier` reference with `userTier`. Keep `disabledProp` passthrough to row `finalRowDisabled` in addition to tier-lock and cap blocks.
-    * `[ ]`   **Non-functional:** Do not edit `dialecticStore.ts`, selectors, `AIModelSelector.tsx`, or subscription CTA URL building in this node. Pre-project cost estimate for chat onboarding is node 8 (`chat/index.tsx`). No default-model store logic (not applicable).
+  * `[✅]`   `objective`
+    * `[✅]`   **Problem:** `AIModelSelectorList.tsx` lines 70–82 synthesize `effectiveUserTier` by falling back to `availableTiers` level `0` when `userTier === null`, masking auth hydrate failures and violating the no-fallback rule. Component does not subscribe `useAuthStore.isLoading`, so tier-lock comparisons (`provider.min_plan_tier_level > effectiveUserTier.level`), count-cap (`effectiveUserTier.max_models_per_project`), and cap-upgrade tooltips (`resolveNextTierName(availableTiers, effectiveUserTier, modelLimit)`) run before profile tier is loaded. Chat model step (`apps/web/src/components/chat/index.tsx`) renders this list without dialectic popover bootstrap — level-0 fallback is especially misleading there.
+    * `[✅]`   **Functional goal:** Subscribe `isLoading` from `useAuthStore` alongside existing `userTier`, `availableTiers`. Delete `effectiveUserTier` `useMemo` entirely. After auth gates pass (`isLoading === false` and `userTier !== null`), use `userTier` directly for `modelLimit` (`userTier.max_models_per_project`), tier-lock comparisons, and `resolveNextTierName(availableTiers, userTier, modelLimit)`.
+    * `[✅]`   **Functional goal — auth loading (gate order 1):** When `isLoading === true`, render root container with `data-testid="ai-model-selector-list-loading-notice"` and text `"Loading subscription tier…"` inside the existing bordered `div` (replace `ScrollArea` provider map — do not render provider rows). Honor `disabledProp` on root styling only; no checkbox interactions. Do not evaluate tier-lock or cap-upgrade tooltips against a synthetic tier.
+    * `[✅]`   **Functional goal — tier unavailable (gate order 2):** When `isLoading === false` and `authStore.error !== null`, render `ai-model-selector-list-tier-unavailable-notice` with **only** `authStore.error.message`. When `isLoading === false`, `userTier === null`, and `authStore.error === null`, render notice with `{ code: 'SUBSCRIPTION_TIER_UNAVAILABLE', message: 'Subscription tier is not available.' }`.
+    * `[✅]`   **Functional goal — success path (gates pass):** Keep existing `isConfigLoading` / `aiError` / `loadAiConfig` effect (lines 121–129), provider sort/map, checkbox toggle, tier-lock tooltips, count-cap tooltips, and `Link to="/subscription"` upgrade CTAs unchanged except replace every `effectiveUserTier` reference with `userTier`. Keep `disabledProp` passthrough to row `finalRowDisabled` in addition to tier-lock and cap blocks.
+    * `[✅]`   **Non-functional:** Do not edit `dialecticStore.ts`, selectors, `AIModelSelector.tsx`, or subscription CTA URL building in this node. Pre-project cost estimate for chat onboarding is node 8 (`chat/index.tsx`). No default-model store logic (not applicable).
 
-  * `[ ]`   `role`
-    * `[ ]`   Checkbox model picker list — tier-aware row lock, count cap, and upgrade affordances for chat onboarding and any other embedder.
-    * `[ ]`   Out of scope: output cap init, cost ceiling display, dialectic `selectedModels` sync (node 8 owns chat → store wiring), subscription cart prefill.
+  * `[✅]`   `role`
+    * `[✅]`   Checkbox model picker list — tier-aware row lock, count cap, and upgrade affordances for chat onboarding and any other embedder.
+    * `[✅]`   Out of scope: output cap init, cost ceiling display, dialectic `selectedModels` sync (node 8 owns chat → store wiring), subscription cart prefill.
 
-  * `[ ]`   `module`
-    * `[ ]`   `apps/web` dialectic AI model list and `AIModelSelectorList.test.tsx` only.
+  * `[✅]`   `module`
+    * `[✅]`   `apps/web` dialectic AI model list and `AIModelSelectorList.test.tsx` only.
 
-  * `[ ]`   `deps`
-    * `[ ]`   `useAuthStore` — `isLoading`, `userTier`, `availableTiers`.
-    * `[ ]`   `useAiStore` — `availableProviders`, `isConfigLoading`, `aiError`, `loadAiConfig` (unchanged).
-    * `[ ]`   Node 6 (`AIModelSelector`) shares auth-gate contract; implement independently in this file — do not edit node 6 in this node.
+  * `[✅]`   `deps`
+    * `[✅]`   `useAuthStore` — `isLoading`, `userTier`, `availableTiers`.
+    * `[✅]`   `useAiStore` — `availableProviders`, `isConfigLoading`, `aiError`, `loadAiConfig` (unchanged).
+    * `[✅]`   Node 6 (`AIModelSelector`) shares auth-gate contract; implement independently in this file — do not edit node 6 in this node.
 
-  * `[ ]`   `context_slice`
-    * `[ ]`   Reads: auth loading + tier; ai providers/config.
-    * `[ ]`   Writes: local `modelsChecked` state; `onChange(modelsChecked)` callback only.
+  * `[✅]`   `context_slice`
+    * `[✅]`   Reads: auth loading + tier; ai providers/config.
+    * `[✅]`   Writes: local `modelsChecked` state; `onChange(modelsChecked)` callback only.
 
-  * `[ ]`   apps/web/src/components/dialectic/AIModelSelectorList.test.tsx
-    * `[ ]`   **Mock deps (this file only — not a checklist node):** Extend `currentAuthState` and `setupMocks` `authPartial` with `isLoading?: boolean` (default `false`) and allow `userTier?: UserTier | null` override (existing `userTier` default `mockUserTier` unchanged).
-    * `[ ]`   add test `shows loading notice while auth isLoading` — `setupMocks({ availableProviders: [providerFree, providerPremium] }, { isLoading: true, userTier: tierFree })`; expect `ai-model-selector-list-loading-notice` text `"Loading subscription tier…"`; `screen.queryByTestId(/^tier-lock-/)` null; `screen.queryByTestId(/^model-list-item-/)` null; `onChange` not called on attempted interaction if any clickable surface exists.
-    * `[ ]`   add test `shows tier unavailable notice when auth loaded and userTier is null` — `setupMocks({ availableProviders: [providerFree] }, { isLoading: false, userTier: null, availableTiers: mockAllTiers })`; expect `ai-model-selector-list-tier-unavailable-notice` text `"Subscription tier is not available."`; no provider row testids; no tier-lock rows.
-    * `[ ]`   add test `does not synthesize level-0 tier when userTier is null` — same seed as tier-unavailable test; grep rendered output — no `tier-lock-*` for premium provider (would appear if level-0 fallback ran); tier-unavailable notice present instead.
-    * `[ ]`   keep existing tests (`model above user tier renders disabled`, tier-lock upgrade CTA, count cap, cap upgrade CTA, ultra unlimited) — ensure each seeds `isLoading: false` and explicit `userTier` in auth mock (no level-0 fallback path).
+  * `[✅]`   apps/web/src/components/dialectic/AIModelSelectorList.test.tsx
+    * `[✅]`   **Mock deps (this file only — not a checklist node):** Extend `currentAuthState` and `setupMocks` `authPartial` with `isLoading?: boolean` (default `false`) and allow `userTier?: UserTier | null` override (existing `userTier` default `mockUserTier` unchanged).
+    * `[✅]`   add test `shows loading notice while auth isLoading` — `setupMocks({ availableProviders: [providerFree, providerPremium] }, { isLoading: true, userTier: tierFree })`; expect `ai-model-selector-list-loading-notice` text `"Loading subscription tier…"`; `screen.queryByTestId(/^tier-lock-/)` null; `screen.queryByTestId(/^model-list-item-/)` null; `onChange` not called on attempted interaction if any clickable surface exists.
+    * `[✅]`   add test `shows tier unavailable notice when auth loaded and userTier is null` — `setupMocks({ availableProviders: [providerFree] }, { isLoading: false, userTier: null, availableTiers: mockAllTiers })`; expect `ai-model-selector-list-tier-unavailable-notice` text `"Subscription tier is not available."`; no provider row testids; no tier-lock rows.
+    * `[✅]`   add test `does not synthesize level-0 tier when userTier is null` — same seed as tier-unavailable test; grep rendered output — no `tier-lock-*` for premium provider (would appear if level-0 fallback ran); tier-unavailable notice present instead.
+    * `[✅]`   keep existing tests (`model above user tier renders disabled`, tier-lock upgrade CTA, count cap, cap upgrade CTA, ultra unlimited) — ensure each seeds `isLoading: false` and explicit `userTier` in auth mock (no level-0 fallback path).
 
-  * `[ ]`   apps/web/src/components/dialectic/AIModelSelectorList.tsx
-    * `[ ]`   add `isLoading` to `useAuthStore` subscription (line 67 area).
-    * `[ ]`   remove `effectiveUserTier` `useMemo` (lines 70–82).
-    * `[ ]`   add auth gate early returns before provider map — loading notice and tier-unavailable notice per objective (preserve outer bordered container classes).
-    * `[ ]`   replace all `effectiveUserTier` identifiers with `userTier` in `toggleModelChecked`, provider map tier-lock branch, `modelLimit` / `atCap`, and `resolveNextTierName` calls — only in code paths reachable after `isLoading === false && userTier !== null` (TypeScript: early-return UI branches before handlers, or assign `const tier: UserTier = userTier` after gate for closure use).
+  * `[✅]`   apps/web/src/components/dialectic/AIModelSelectorList.tsx
+    * `[✅]`   add `isLoading` to `useAuthStore` subscription (line 67 area).
+    * `[✅]`   remove `effectiveUserTier` `useMemo` (lines 70–82).
+    * `[✅]`   add auth gate early returns before provider map — loading notice and tier-unavailable notice per objective (preserve outer bordered container classes).
+    * `[✅]`   replace all `effectiveUserTier` identifiers with `userTier` in `toggleModelChecked`, provider map tier-lock branch, `modelLimit` / `atCap`, and `resolveNextTierName` calls — only in code paths reachable after `isLoading === false && userTier !== null` (TypeScript: early-return UI branches before handlers, or assign `const tier: UserTier = userTier` after gate for closure use).
 
-  * `[ ]`   `requirements`
-    * `[ ]`   Grep `AIModelSelectorList.tsx`: zero `effectiveUserTier`; zero level-`0` tier fallback in `useMemo`; zero `availableTiers` scan for synthetic tier when `userTier === null`.
-    * `[ ]`   Grep `AIModelSelectorList.test.tsx`: zero tests that pass with `userTier: null` expecting tier-lock or cap behavior without tier-unavailable notice.
-    * `[ ]`   `isLoading: true` → loading notice visible; no provider rows; no tier-lock testids.
-    * `[ ]`   `isLoading: false`, `userTier: null` → tier-unavailable notice visible; no provider rows.
-    * `[ ]`   Loaded tier + providers: existing tier-lock, cap-block, and ultra tests pass unchanged.
-    * `[ ]`   No edits outside `AIModelSelectorList.tsx` and `AIModelSelectorList.test.tsx` in this node.
+  * `[✅]`   `requirements`
+    * `[✅]`   Grep `AIModelSelectorList.tsx`: zero `effectiveUserTier`; zero level-`0` tier fallback in `useMemo`; zero `availableTiers` scan for synthetic tier when `userTier === null`.
+    * `[✅]`   Grep `AIModelSelectorList.test.tsx`: zero tests that pass with `userTier: null` expecting tier-lock or cap behavior without tier-unavailable notice.
+    * `[✅]`   `isLoading: true` → loading notice visible; no provider rows; no tier-lock testids.
+    * `[✅]`   `isLoading: false`, `userTier: null` → tier-unavailable notice visible; no provider rows.
+    * `[✅]`   Loaded tier + providers: existing tier-lock, cap-block, and ultra tests pass unchanged.
+    * `[✅]`   No edits outside `AIModelSelectorList.tsx` and `AIModelSelectorList.test.tsx` in this node.
 
-* `[ ]`   apps/web/src/components/chat/index.tsx **Chat onboarding pre-project cost estimate; sync models to dialectic store; cap init when deps ready**
+* `[✅]`   apps/web/src/components/chat/index.tsx **Chat onboarding pre-project cost estimate; sync models to dialectic store; cap init when deps ready**
 
-  * `[ ]`   `objective`
-    * `[ ]`   **Problem:** Chat walkthrough (`domain` → `model` → `message`) is the entry path for converting chat to a dialectic project. `AIModelSelectorList` keeps selection in local state only; dialectic store never receives `selectedModels`, pre-project fetches (association, template, stage counts), or `initializeMaxOutputTokens`. User cannot see pre-project cost estimate before `CreateProjectFromChatButton` click — conversion spend is opaque until click-time gate in node 11.
-    * `[ ]`   **Functional goal — sync model selection to store:** On `AIModelSelectorList` `onChange`, call `useDialecticStore.getState().setSelectedModels(modelsChecked)` (or equivalent store action) so `selectPreProjectCostCeiling` and cap init see the same models as the chat UI.
-    * `[ ]`   **Functional goal — pre-project fetch orchestration:** When user selects a domain (`selectedDomainId` set), set dialectic `selectedDomain` and run the same pre-project fetch chain as `CreateDialecticProjectForm`: `fetchAIModelCatalog`, `fetchProcessAssociation`, `fetchProcessTemplate`, `fetchStageExpectedCounts` for that domain — without opening dialectic Model Settings popover.
-    * `[ ]`   **Functional goal — cap init when deps ready:** Subscribe `useAuthStore` (`isLoading`, `userTier`). Define **`isCapInitReady`** (same as node 3): auth loaded, tier present, catalog loaded (`!isLoadingModelCatalog && modelCatalog.length > 0`). `useEffect` calls `initializeMaxOutputTokens()` only when `isCapInitReady && selectedDomainId !== '' && hasSelectedModel` (or equivalent: store `selectedModels.length > 0`).
-    * `[ ]`   **Functional goal — cost estimate UI on model/message steps:** Subscribe `selectPreProjectCostCeiling`, `authStore.error`; hold `capInitResult` from `initializeMaxOutputTokens()` in component-local state (same as node 3). Define `isCostEstimateLoading` with same flags as node 3 (auth, catalog, association, template, stage counts). While loading → `data-testid="chat-onboarding-estimate-loading-notice"` with first-match loading copy. After `!isCostEstimateLoading`, apply **same footer error gate order as node 3** (auth.error → tier-unavailable → `capInitResult` → selector) → `chat-onboarding-estimate-error-notice` with **only** the matching pass-through message. When success → show stage/project ceiling preview (reuse copy pattern from create form or minimal token estimate — no bundled “not ready” strings).
-    * `[ ]`   **Non-functional:** Do not edit `AIModelSelectorList.tsx` (node 7), `CreateProjectFromChatButton.tsx` (node 11), selectors, or `dialecticStore.ts` in this node. Depends on nodes 1–3 for store init, selector contract, and loading/error patterns.
+  * `[✅]`   `objective`
+    * `[✅]`   **Problem:** Chat walkthrough (`domain` → `model` → `message`) is the entry path for converting chat to a dialectic project. `AIModelSelectorList` keeps selection in local state only; dialectic store never receives `selectedModels`, pre-project fetches (association, template, stage counts), or `initializeMaxOutputTokens`. User cannot see pre-project cost estimate before `CreateProjectFromChatButton` click — conversion spend is opaque until click-time gate in node 11.
+    * `[✅]`   **Functional goal — sync model selection to store:** On `AIModelSelectorList` `onChange`, call `useDialecticStore.getState().setSelectedModels(modelsChecked)` (or equivalent store action) so `selectPreProjectCostCeiling` and cap init see the same models as the chat UI.
+    * `[✅]`   **Functional goal — pre-project fetch orchestration:** When user selects a domain (`selectedDomainId` set), set dialectic `selectedDomain` and run the same pre-project fetch chain as `CreateDialecticProjectForm`: `fetchAIModelCatalog`, `fetchProcessAssociation`, `fetchProcessTemplate`, `fetchStageExpectedCounts` for that domain — without opening dialectic Model Settings popover.
+    * `[✅]`   **Functional goal — cap init when deps ready:** Subscribe `useAuthStore` (`isLoading`, `userTier`). Define **`isCapInitReady`** (same as node 3): auth loaded, tier present, catalog loaded (`!isLoadingModelCatalog && modelCatalog.length > 0`). `useEffect` calls `initializeMaxOutputTokens()` only when `isCapInitReady && selectedDomainId !== '' && hasSelectedModel` (or equivalent: store `selectedModels.length > 0`).
+    * `[✅]`   **Functional goal — cost estimate UI on model/message steps:** Subscribe `selectPreProjectCostCeiling`, `authStore.error`; hold `capInitResult` from `initializeMaxOutputTokens()` in component-local state (same as node 3). Define `isCostEstimateLoading` with same flags as node 3 (auth, catalog, association, template, stage counts). While loading → `data-testid="chat-onboarding-estimate-loading-notice"` with first-match loading copy. After `!isCostEstimateLoading`, apply **same footer error gate order as node 3** (auth.error → tier-unavailable → `capInitResult` → selector) → `chat-onboarding-estimate-error-notice` with **only** the matching pass-through message. When success → show stage/project ceiling preview (reuse copy pattern from create form or minimal token estimate — no bundled “not ready” strings).
+    * `[✅]`   **Non-functional:** Do not edit `AIModelSelectorList.tsx` (node 7), `CreateProjectFromChatButton.tsx` (node 11), selectors, or `dialecticStore.ts` in this node. Depends on nodes 1–3 for store init, selector contract, and loading/error patterns.
 
-  * `[ ]`   `role`
-    * `[ ]`   Chat onboarding UI — wires domain/model walkthrough to dialectic pre-project cost estimate before project creation.
-    * `[ ]`   Out of scope: `CreateProjectFromChatButton` click orchestration, post-project session estimates, subscription CTAs.
+  * `[✅]`   `role`
+    * `[✅]`   Chat onboarding UI — wires domain/model walkthrough to dialectic pre-project cost estimate before project creation.
+    * `[✅]`   Out of scope: `CreateProjectFromChatButton` click orchestration, post-project session estimates, subscription CTAs.
 
-  * `[ ]`   `module`
-    * `[ ]`   `apps/web/src/components/chat/index.tsx` and co-located test file (create `index.test.tsx` if absent).
+  * `[✅]`   `module`
+    * `[✅]`   `apps/web/src/components/chat/index.tsx` and co-located test file (create `index.test.tsx` if absent).
 
-  * `[ ]`   `deps`
-    * `[ ]`   Node 1: `initializeMaxOutputTokens`, `setSelectedModels`.
-    * `[ ]`   Node 2: `selectPreProjectCostCeiling` → `ComputeCostCeilingReturn` only.
-    * `[ ]`   Node 3: `isCostEstimateLoading` / pass-through error contract (mirror, do not duplicate bundled copy).
-    * `[ ]`   Node 7: `AIModelSelectorList` auth gates (unchanged; this node consumes `onChange` only).
-    * `[ ]`   `useAuthStore`, `useDialecticStore`, existing fetch actions.
+  * `[✅]`   `deps`
+    * `[✅]`   Node 1: `initializeMaxOutputTokens`, `setSelectedModels`.
+    * `[✅]`   Node 2: `selectPreProjectCostCeiling` → `ComputeCostCeilingReturn` only.
+    * `[✅]`   Node 3: `isCostEstimateLoading` / pass-through error contract (mirror, do not duplicate bundled copy).
+    * `[✅]`   Node 7: `AIModelSelectorList` auth gates (unchanged; this node consumes `onChange` only).
+    * `[✅]`   `useAuthStore`, `useDialecticStore`, existing fetch actions.
 
-  * `[ ]`   `context_slice`
-    * `[ ]`   Reads: walkthrough step, `selectedDomainId`, local `hasSelectedModel`; auth + dialectic loading flags; `selectPreProjectCostCeiling`.
-    * `[ ]`   Writes: `setSelectedModels`, domain selection, fetch actions, `initializeMaxOutputTokens`.
+  * `[✅]`   `context_slice`
+    * `[✅]`   Reads: walkthrough step, `selectedDomainId`, local `hasSelectedModel`; auth + dialectic loading flags; `selectPreProjectCostCeiling`.
+    * `[✅]`   Writes: `setSelectedModels`, domain selection, fetch actions, `initializeMaxOutputTokens`.
 
-  * `[ ]`   apps/web/src/components/chat/index.test.tsx
-    * `[ ]`   add test `syncs AIModelSelectorList selection to dialectic store selectedModels`.
-    * `[ ]`   add test `does not call initializeMaxOutputTokens while isLoadingModelCatalog`.
-    * `[ ]`   add test `shows loading notice while stage counts loading, not selector error`.
-    * `[ ]`   add test `shows pass-through error.message when selector returns error after loading` (auth tier + init gates pass).
-    * `[ ]`   add test `shows tier-unavailable notice when auth loaded and userTier null, not OUTPUT_CAP_NOT_INITIALIZED` — selector mock init error; UI shows `'Subscription tier is not available.'`.
-    * `[ ]`   add test `shows cost preview when tier + catalog + counts ready and cap initialized`.
+  * `[✅]`   apps/web/src/components/chat/index.test.tsx
+    * `[✅]`   add test `syncs AIModelSelectorList selection to dialectic store selectedModels`.
+    * `[✅]`   add test `does not call initializeMaxOutputTokens while isLoadingModelCatalog`.
+    * `[✅]`   add test `shows loading notice while stage counts loading, not selector error`.
+    * `[✅]`   add test `shows pass-through error.message when selector returns error after loading` (auth tier + init gates pass).
+    * `[✅]`   add test `shows tier-unavailable notice when auth loaded and userTier null, not OUTPUT_CAP_NOT_INITIALIZED` — selector mock init error; UI shows `'Subscription tier is not available.'`.
+    * `[✅]`   add test `shows cost preview when tier + catalog + counts ready and cap initialized`.
 
-  * `[ ]`   apps/web/src/components/chat/index.tsx
-    * `[ ]`   wire domain fetch orchestration, `setSelectedModels` on model `onChange`, `isCapInitReady` effect, cost estimate loading/error/success UI per objective.
+  * `[✅]`   apps/web/src/components/chat/index.tsx
+    * `[✅]`   wire domain fetch orchestration, `setSelectedModels` on model `onChange`, `isCapInitReady` effect, cost estimate loading/error/success UI per objective.
 
-  * `[ ]`   `requirements`
-    * `[ ]`   Grep `chat/index.tsx`: zero bundled “No cost estimate yet” strings; zero selector `null` branches.
-    * `[ ]`   Model step: `selectedModels` in store matches checkbox selection.
-    * `[ ]`   Cap init runs only when `isCapInitReady`, not on tier hydrate alone.
-    * `[ ]`   Auth / hydration / API errors surface via pass-through `error.message` only after loading completes.
-    * `[ ]`   No edits outside `apps/web/src/components/chat/index.tsx` and `apps/web/src/components/chat/index.test.tsx` in this node.
+  * `[✅]`   `requirements`
+    * `[✅]`   Grep `chat/index.tsx`: zero bundled “No cost estimate yet” strings; zero selector `null` branches.
+    * `[✅]`   Model step: `selectedModels` in store matches checkbox selection.
+    * `[✅]`   Cap init runs only when `isCapInitReady`, not on tier hydrate alone.
+    * `[✅]`   Auth / hydration / API errors surface via pass-through `error.message` only after loading completes.
+    * `[✅]`   No edits outside `apps/web/src/components/chat/index.tsx` and `apps/web/src/components/chat/index.test.tsx` in this node.
 
-* `[ ]`   apps/web/src/hooks/useStartContributionGeneration **ComputeCostCeilingReturn-only selector consumption; loading gates before cost errors; pass-through ApiError on spend guard**
+* `[✅]`   apps/web/src/hooks/useStartContributionGeneration **ComputeCostCeilingReturn-only selector consumption; loading gates before cost errors; pass-through ApiError on spend guard**
 
-  * `[ ]`   `objective`
-    * `[ ]`   **Problem:** Hook types `costCeilingResult` as `ComputeCostCeilingReturn | null` (lines 136–142). Store subscription returns `null` when `activeContextSessionId === null` even though node 2 `selectCostCeiling` never returns `null`. Derived flags treat `costCeilingResult === null` like an unknown estimate with `costCeilingError: null`, which drives `GenerateContributionButton` bundled `"No Estimate"` (`showCostEstimateBlocked && costCeilingError === null`). `startContributionGeneration` toast `"Cost estimate is not available."` (lines 290–293) duplicates selector messaging instead of pass-through. No loading gates — while auth tier, process template, stage-progress hydration, or primary wallet is still loading, selector may return `OUTPUT_CAP_NOT_INITIALIZED` or other precondition errors that must not surface as spend-blocked errors yet (parity with nodes 3–4 `isCostEstimateLoading`).
-    * `[ ]`   **Functional goal — `ComputeCostCeilingReturn` only:** Change `costCeilingResult` type to `ComputeCostCeilingReturn` (remove `| null`). In the `useDialecticStore` subscription: when `activeContextSessionId === null`, return `{ error: { code: 'NO_ACTIVE_SESSION', message: 'No active session.' } }` (do not return `null`; do not call `selectCostCeiling`). When id is defined, return `selectCostCeiling(state, sid)` unchanged. Remove every `costCeilingResult === null` branch in derived memos and in `startContributionGeneration`.
-    * `[ ]`   **Functional goal — loading before errors:** Subscribe `useAuthStore` — `isLoading` (`authIsLoading`). Subscribe from dialectic store — `isLoadingProcessTemplate`, `progressHydrationStatus`. Compute `runKey = \`${activeContextSessionId}:${activeSession.iteration_count}\`` when `activeContextSessionId !== null && activeSession !== null`. Define `isCostEstimateLoading` true when **any** of: `authIsLoading === true`; `isLoadingProcessTemplate === true`; `progressHydrationStatus[runKey] === 'pending'`; `activeWalletInfo.isLoadingPrimaryWallet === true`. While `isCostEstimateLoading`: set `costCeilingError` to `null`; `isCostEstimateKnown` to `false`; `stageCeiling` / `projectCeiling` / `stageBalanceShortfall` to `null`; `showCostEstimateBlocked` to `false`; `balanceMeetsThreshold` to `false`; `showBalanceCallout` to `false`; `showStageCostEstimate` to `false`; `isDisabled` remains fail-closed via `!balanceMeetsThreshold` when other guards pass — **do not** expose selector `'error'` fields to consumers during loading.
-    * `[ ]`   **Functional goal — after loading (existing fail-safe ceiling semantics):** When `!isCostEstimateLoading`: if `'error' in costCeilingResult`, set `costCeilingError` to `costCeilingResult.error` (same reference); `isCostEstimateKnown` false; `showCostEstimateBlocked` true when `viewingStage !== null`; `balanceMeetsThreshold` false. On success, keep existing `stageCeiling` / `projectCeiling` / `stageBalanceShortfall` / `balanceMeetsThreshold` / `showBalanceCallout` / `showStageCostEstimate` / `showCostEstimateBlocked` math unchanged from FE3 (finite viewing slug ceiling vs wallet balance; NSF shortfall distinct from estimate-blocked).
-    * `[ ]`   **Functional goal — `startContributionGeneration` callback:** Before resume/generate, re-read `selectCostCeiling(state, activeContextSessionId)` and loading flags from store/auth/wallet at call time. When any loading flag true, toast `"Loading cost estimate…"` and return `{ success: false, error: 'Loading cost estimate…' }` — do not call `generateContributions` or `resumePausedNsfJobs`. Delete `costCeilingResult === null` branch and bundled toast `"Cost estimate is not available."`. When `'error' in costCeilingResult`, toast **only** `costCeilingResult.error.message` and return `{ success: false, error: costCeilingResult.error.message }` (unchanged pass-through). Keep finite ceiling + balance guards; retain local toast `"Cost estimate is invalid."` only when success result lacks finite ceiling for viewing slug (selector succeeded but slug missing — not a selector error pass-through case).
-    * `[ ]`   **Functional goal — return contract:** Add `isCostEstimateLoading: boolean` to `UseStartContributionGenerationReturn` in `@paynless/types`. Export it from the hook return object.
-    * `[ ]`   **Non-functional:** Do not edit `GenerateContributionButton.tsx`, `dialecticStore.selectors.ts`, `SessionInfoCard.tsx`, or subscription CTAs in this node. Depends on nodes 1–2 (cap SSOT + loud selectors) and node 4 (session parent calls `initializeMaxOutputTokens` so selector can succeed). Cap init is not duplicated in this hook.
+  * `[✅]`   `objective`
+    * `[✅]`   **Problem:** Hook types `costCeilingResult` as `ComputeCostCeilingReturn | null` (lines 136–142). Store subscription returns `null` when `activeContextSessionId === null` even though node 2 `selectCostCeiling` never returns `null`. Derived flags treat `costCeilingResult === null` like an unknown estimate with `costCeilingError: null`, which drives `GenerateContributionButton` bundled `"No Estimate"` (`showCostEstimateBlocked && costCeilingError === null`). `startContributionGeneration` toast `"Cost estimate is not available."` (lines 290–293) duplicates selector messaging instead of pass-through. No loading gates — while auth tier, process template, stage-progress hydration, or primary wallet is still loading, selector may return `OUTPUT_CAP_NOT_INITIALIZED` or other precondition errors that must not surface as spend-blocked errors yet (parity with nodes 3–4 `isCostEstimateLoading`).
+    * `[✅]`   **Functional goal — `ComputeCostCeilingReturn` only:** Change `costCeilingResult` type to `ComputeCostCeilingReturn` (remove `| null`). In the `useDialecticStore` subscription: when `activeContextSessionId === null`, return `{ error: { code: 'NO_ACTIVE_SESSION', message: 'No active session.' } }` (do not return `null`; do not call `selectCostCeiling`). When id is defined, return `selectCostCeiling(state, sid)` unchanged. Remove every `costCeilingResult === null` branch in derived memos and in `startContributionGeneration`.
+    * `[✅]`   **Functional goal — loading before errors:** Subscribe `useAuthStore` — `isLoading` (`authIsLoading`). Subscribe from dialectic store — `isLoadingProcessTemplate`, `progressHydrationStatus`. Compute `runKey = \`${activeContextSessionId}:${activeSession.iteration_count}\`` when `activeContextSessionId !== null && activeSession !== null`. Define `isCostEstimateLoading` true when **any** of: `authIsLoading === true`; `isLoadingProcessTemplate === true`; `progressHydrationStatus[runKey] === 'pending'`; `activeWalletInfo.isLoadingPrimaryWallet === true`. While `isCostEstimateLoading`: set `costCeilingError` to `null`; `isCostEstimateKnown` to `false`; `stageCeiling` / `projectCeiling` / `stageBalanceShortfall` to `null`; `showCostEstimateBlocked` to `false`; `balanceMeetsThreshold` to `false`; `showBalanceCallout` to `false`; `showStageCostEstimate` to `false`; `isDisabled` remains fail-closed via `!balanceMeetsThreshold` when other guards pass — **do not** expose selector `'error'` fields to consumers during loading.
+    * `[✅]`   **Functional goal — after loading (existing fail-safe ceiling semantics):** When `!isCostEstimateLoading`: if `'error' in costCeilingResult`, set `costCeilingError` to `costCeilingResult.error` (same reference); `isCostEstimateKnown` false; `showCostEstimateBlocked` true when `viewingStage !== null`; `balanceMeetsThreshold` false. On success, keep existing `stageCeiling` / `projectCeiling` / `stageBalanceShortfall` / `balanceMeetsThreshold` / `showBalanceCallout` / `showStageCostEstimate` / `showCostEstimateBlocked` math unchanged from FE3 (finite viewing slug ceiling vs wallet balance; NSF shortfall distinct from estimate-blocked).
+    * `[✅]`   **Functional goal — `startContributionGeneration` callback:** Before resume/generate, re-read `selectCostCeiling(state, activeContextSessionId)` and loading flags from store/auth/wallet at call time. When any loading flag true, toast `"Loading cost estimate…"` and return `{ success: false, error: 'Loading cost estimate…' }` — do not call `generateContributions` or `resumePausedNsfJobs`. Delete `costCeilingResult === null` branch and bundled toast `"Cost estimate is not available."`. When `'error' in costCeilingResult`, toast **only** `costCeilingResult.error.message` and return `{ success: false, error: costCeilingResult.error.message }` (unchanged pass-through). Keep finite ceiling + balance guards; retain local toast `"Cost estimate is invalid."` only when success result lacks finite ceiling for viewing slug (selector succeeded but slug missing — not a selector error pass-through case).
+    * `[✅]`   **Functional goal — return contract:** Add `isCostEstimateLoading: boolean` to `UseStartContributionGenerationReturn` in `@paynless/types`. Export it from the hook return object.
+    * `[✅]`   **Non-functional:** Do not edit `GenerateContributionButton.tsx`, `dialecticStore.selectors.ts`, `SessionInfoCard.tsx`, or subscription CTAs in this node. Depends on nodes 1–2 (cap SSOT + loud selectors) and node 4 (session parent calls `initializeMaxOutputTokens` so selector can succeed). Cap init is not duplicated in this hook.
 
-  * `[ ]`   `role`
-    * `[ ]`   Application hook — derives session spend guards and ceiling flags for Generate/Continue; fail-closed financial gate before `generateContributions` / `resumePausedNsfJobs`.
-    * `[ ]`   Out of scope: button markup/copy (`GenerateContributionButton` next node); store selector implementation; tier cap initialization.
+  * `[✅]`   `role`
+    * `[✅]`   Application hook — derives session spend guards and ceiling flags for Generate/Continue; fail-closed financial gate before `generateContributions` / `resumePausedNsfJobs`.
+    * `[✅]`   Out of scope: button markup/copy (`GenerateContributionButton` next node); store selector implementation; tier cap initialization.
 
-  * `[ ]`   `module`
-    * `[ ]`   `apps/web/src/hooks` — `useStartContributionGeneration.ts`, `useStartContributionGeneration.test.ts`, and `packages/types/src/dialectic.types.ts` return-field addition only.
+  * `[✅]`   `module`
+    * `[✅]`   `apps/web/src/hooks` — `useStartContributionGeneration.ts`, `useStartContributionGeneration.test.ts`, and `packages/types/src/dialectic.types.ts` return-field addition only.
 
-  * `[ ]`   `deps`
-    * `[ ]`   Node 2: `selectCostCeiling` → `ComputeCostCeilingReturn` only (never `null`).
-    * `[ ]`   Node 1: `maxOutputTokens` in store drives selector input (initialized by node 4, not this hook).
-    * `[ ]`   `useAuthStore` — `isLoading`.
-    * `[ ]`   `useDialecticStore` — `isLoadingProcessTemplate`, `progressHydrationStatus`, existing hook subscriptions unchanged.
-    * `[ ]`   `selectActiveChatWalletInfo` — `isLoadingPrimaryWallet` on wallet branch.
-    * `[ ]`   `ComputeCostCeilingReturn`, `buildComputeCostCeilingErrorReturn` from `@paynless/utils`; `ApiError` from `@paynless/types`.
+  * `[✅]`   `deps`
+    * `[✅]`   Node 2: `selectCostCeiling` → `ComputeCostCeilingReturn` only (never `null`).
+    * `[✅]`   Node 1: `maxOutputTokens` in store drives selector input (initialized by node 4, not this hook).
+    * `[✅]`   `useAuthStore` — `isLoading`.
+    * `[✅]`   `useDialecticStore` — `isLoadingProcessTemplate`, `progressHydrationStatus`, existing hook subscriptions unchanged.
+    * `[✅]`   `selectActiveChatWalletInfo` — `isLoadingPrimaryWallet` on wallet branch.
+    * `[✅]`   `ComputeCostCeilingReturn`, `buildComputeCostCeilingErrorReturn` from `@paynless/utils`; `ApiError` from `@paynless/types`.
 
-  * `[ ]`   `context_slice`
-    * `[ ]`   Reads: auth loading; template loading; progress hydration pending; wallet loading; `selectCostCeiling(activeContextSessionId)`; wallet balance; viewing stage slug.
-    * `[ ]`   Writes: none (read-only hook except action callbacks).
+  * `[✅]`   `context_slice`
+    * `[✅]`   Reads: auth loading; template loading; progress hydration pending; wallet loading; `selectCostCeiling(activeContextSessionId)`; wallet balance; viewing stage slug.
+    * `[✅]`   Writes: none (read-only hook except action callbacks).
 
-  * `[ ]`   packages/types/src/dialectic.types.ts
-    * `[ ]`   Add `isCostEstimateLoading: boolean` to `UseStartContributionGenerationReturn` (after `showStageCostEstimate` or adjacent cost-estimate flags).
+  * `[✅]`   packages/types/src/dialectic.types.ts
+    * `[✅]`   Add `isCostEstimateLoading: boolean` to `UseStartContributionGenerationReturn` (after `showStageCostEstimate` or adjacent cost-estimate flags).
 
-  * `[ ]`   apps/web/src/hooks/useStartContributionGeneration.test.ts
-    * `[ ]`   **Mock deps (this file only — not a checklist node):** Extend existing `vi.mock('@paynless/store', …)` to export `useAuthStore` from `@/mocks/authStore.mock` (`resetAuthStoreMock` in `beforeEach`; default `isLoading: false`). Change `selectCostCeilingMock` generic to `[DialecticStateValues, string], ComputeCostCeilingReturn` (remove `| null`). Update `beforeEach` default: `sessionId === 'sess-1' ? defaultCostCeiling : buildComputeCostCeilingErrorReturn({ error: { code: 'SESSION_NOT_FOUND', message: 'Session not found for id …' } })` — never return `null`.
-    * `[ ]`   replace test `when selectCostCeiling returns null, cost estimate flags block spend…` — mock `{ error: { code: 'OUTPUT_CAP_NOT_INITIALIZED', message: 'Output cap is not initialized in dialectic store.' } }`; expect `costCeilingError` equals injected error; `showCostEstimateBlocked` true; `isDisabled` true; callback does not call `generateContributions`; zero `null` mock.
-    * `[ ]`   replace `startContributionGeneration resume path does not call resumePausedNsfJobs when selectCostCeiling returns null` — use `OUTPUT_CAP_NOT_INITIALIZED` error mock; expect pass-through toast `error.message`, not `"Cost estimate is not available."`.
-    * `[ ]`   replace `startContributionGeneration generate path returns failure when selectCostCeiling returns null` — same error mock; assert toast is pass-through message only.
-    * `[ ]`   add test `while auth isLoading, isCostEstimateLoading is true and costCeilingError is null` — `mockSetAuthIsLoading(true)`; mock selector `{ error: OUTPUT_CAP_NOT_INITIALIZED }`; expect `isCostEstimateLoading` true, `costCeilingError` null, `showCostEstimateBlocked` false; `startContributionGeneration` toasts `"Loading cost estimate…"` and does not call `generateContributions`.
-    * `[ ]`   add test `while progressHydrationStatus runKey is pending, isCostEstimateLoading is true` — seed `progressHydrationStatus: { 'sess-1:1': 'pending' }`; selector error mock; expect `isCostEstimateLoading` true, `costCeilingError` null, `showCostEstimateBlocked` false.
-    * `[ ]`   add test `while isLoadingProcessTemplate, isCostEstimateLoading is true` — seed `isLoadingProcessTemplate: true`; same loading assertions.
-    * `[ ]`   add test `while isLoadingPrimaryWallet, isCostEstimateLoading is true` — wallet mock `{ ...defaultWalletInfo, isLoadingPrimaryWallet: true }`; same loading assertions.
-    * `[ ]`   add test `when activeContextSessionId is null, costCeilingResult is NO_ACTIVE_SESSION error not null` — set `activeContextSessionId: null`; expect derived `costCeilingError` matches after loading gate (or loading false → error exposed); grep mock never returns null.
-    * `[ ]`   update session-switch tests that use `selectCostCeiling` returning `null` for wrong sessionId — return `SESSION_NOT_FOUND` error instead.
-    * `[ ]`   keep all unrelated tests (payload, pause, viewing-ahead, resume/generate success, NSF shortfall, error pass-through with `buildComputeCostCeilingErrorReturn`).
+  * `[✅]`   apps/web/src/hooks/useStartContributionGeneration.test.ts
+    * `[✅]`   **Mock deps (this file only — not a checklist node):** Extend existing `vi.mock('@paynless/store', …)` to export `useAuthStore` from `@/mocks/authStore.mock` (`resetAuthStoreMock` in `beforeEach`; default `isLoading: false`). Change `selectCostCeilingMock` generic to `[DialecticStateValues, string], ComputeCostCeilingReturn` (remove `| null`). Update `beforeEach` default: `sessionId === 'sess-1' ? defaultCostCeiling : buildComputeCostCeilingErrorReturn({ error: { code: 'SESSION_NOT_FOUND', message: 'Session not found for id …' } })` — never return `null`.
+    * `[✅]`   replace test `when selectCostCeiling returns null, cost estimate flags block spend…` — mock `{ error: { code: 'OUTPUT_CAP_NOT_INITIALIZED', message: 'Output cap is not initialized in dialectic store.' } }`; expect `costCeilingError` equals injected error; `showCostEstimateBlocked` true; `isDisabled` true; callback does not call `generateContributions`; zero `null` mock.
+    * `[✅]`   replace `startContributionGeneration resume path does not call resumePausedNsfJobs when selectCostCeiling returns null` — use `OUTPUT_CAP_NOT_INITIALIZED` error mock; expect pass-through toast `error.message`, not `"Cost estimate is not available."`.
+    * `[✅]`   replace `startContributionGeneration generate path returns failure when selectCostCeiling returns null` — same error mock; assert toast is pass-through message only.
+    * `[✅]`   add test `while auth isLoading, isCostEstimateLoading is true and costCeilingError is null` — `mockSetAuthIsLoading(true)`; mock selector `{ error: OUTPUT_CAP_NOT_INITIALIZED }`; expect `isCostEstimateLoading` true, `costCeilingError` null, `showCostEstimateBlocked` false; `startContributionGeneration` toasts `"Loading cost estimate…"` and does not call `generateContributions`.
+    * `[✅]`   add test `while progressHydrationStatus runKey is pending, isCostEstimateLoading is true` — seed `progressHydrationStatus: { 'sess-1:1': 'pending' }`; selector error mock; expect `isCostEstimateLoading` true, `costCeilingError` null, `showCostEstimateBlocked` false.
+    * `[✅]`   add test `while isLoadingProcessTemplate, isCostEstimateLoading is true` — seed `isLoadingProcessTemplate: true`; same loading assertions.
+    * `[✅]`   add test `while isLoadingPrimaryWallet, isCostEstimateLoading is true` — wallet mock `{ ...defaultWalletInfo, isLoadingPrimaryWallet: true }`; same loading assertions.
+    * `[✅]`   add test `when activeContextSessionId is null, costCeilingResult is NO_ACTIVE_SESSION error not null` — set `activeContextSessionId: null`; expect derived `costCeilingError` matches after loading gate (or loading false → error exposed); grep mock never returns null.
+    * `[✅]`   update session-switch tests that use `selectCostCeiling` returning `null` for wrong sessionId — return `SESSION_NOT_FOUND` error instead.
+    * `[✅]`   keep all unrelated tests (payload, pause, viewing-ahead, resume/generate success, NSF shortfall, error pass-through with `buildComputeCostCeilingErrorReturn`).
 
-  * `[ ]`   apps/web/src/hooks/useStartContributionGeneration.ts
-    * `[ ]`   import `useAuthStore` from `@paynless/store`.
-    * `[ ]`   subscribe `authIsLoading`, `isLoadingProcessTemplate`, `progressHydrationStatus`; compute `isCostEstimateLoading` per objective.
-    * `[ ]`   change `costCeilingResult` to `ComputeCostCeilingReturn`; subscription returns local `NO_ACTIVE_SESSION` error when sid null; remove `| null` type.
-    * `[ ]`   wrap all cost-derived memos (`costCeilingError`, `stageCeiling`, `projectCeiling`, `isCostEstimateKnown`, `showCostEstimateBlocked`, etc.) with loading gate per objective.
-    * `[ ]`   remove all `costCeilingResult === null` checks; delete bundled toast `"Cost estimate is not available."`; add loading guard at top of `startContributionGeneration` spend path.
-    * `[ ]`   return `isCostEstimateLoading` from hook.
+  * `[✅]`   apps/web/src/hooks/useStartContributionGeneration.ts
+    * `[✅]`   import `useAuthStore` from `@paynless/store`.
+    * `[✅]`   subscribe `authIsLoading`, `isLoadingProcessTemplate`, `progressHydrationStatus`; compute `isCostEstimateLoading` per objective.
+    * `[✅]`   change `costCeilingResult` to `ComputeCostCeilingReturn`; subscription returns local `NO_ACTIVE_SESSION` error when sid null; remove `| null` type.
+    * `[✅]`   wrap all cost-derived memos (`costCeilingError`, `stageCeiling`, `projectCeiling`, `isCostEstimateKnown`, `showCostEstimateBlocked`, etc.) with loading gate per objective.
+    * `[✅]`   remove all `costCeilingResult === null` checks; delete bundled toast `"Cost estimate is not available."`; add loading guard at top of `startContributionGeneration` spend path.
+    * `[✅]`   return `isCostEstimateLoading` from hook.
 
-  * `[ ]`   `requirements`
-    * `[ ]`   Grep `useStartContributionGeneration.ts`: zero `ComputeCostCeilingReturn | null`; zero `costCeilingResult === null`; zero `"Cost estimate is not available."`.
-    * `[ ]`   Grep `useStartContributionGeneration.test.ts`: zero `selectCostCeiling).mockReturnValue(null)`; zero `ComputeCostCeilingReturn | null` on mock type.
-    * `[ ]`   `authIsLoading: true` with selector error → `isCostEstimateLoading` true, `costCeilingError` null, callback does not spend.
-    * `[ ]`   `'error' in selectCostCeiling` after loading → `costCeilingError` is same reference; callback toast equals `error.message` only.
-    * `[ ]`   Success path NSF / afford / resume tests remain green after null→error migration.
-    * `[ ]`   `UseStartContributionGenerationReturn` includes `isCostEstimateLoading`.
-    * `[ ]`   No edits outside `useStartContributionGeneration.ts`, `useStartContributionGeneration.test.ts`, and `dialectic.types.ts` field addition in this node.
+  * `[✅]`   `requirements`
+    * `[✅]`   Grep `useStartContributionGeneration.ts`: zero `ComputeCostCeilingReturn | null`; zero `costCeilingResult === null`; zero `"Cost estimate is not available."`.
+    * `[✅]`   Grep `useStartContributionGeneration.test.ts`: zero `selectCostCeiling).mockReturnValue(null)`; zero `ComputeCostCeilingReturn | null` on mock type.
+    * `[✅]`   `authIsLoading: true` with selector error → `isCostEstimateLoading` true, `costCeilingError` null, callback does not spend.
+    * `[✅]`   `'error' in selectCostCeiling` after loading → `costCeilingError` is same reference; callback toast equals `error.message` only.
+    * `[✅]`   Success path NSF / afford / resume tests remain green after null→error migration.
+    * `[✅]`   `UseStartContributionGenerationReturn` includes `isCostEstimateLoading`.
+    * `[✅]`   No edits outside `useStartContributionGeneration.ts`, `useStartContributionGeneration.test.ts`, and `dialectic.types.ts` field addition in this node.
 
 * `[ ]`   apps/web/src/components/dialectic/GenerateContributionButton **Remove bundled no-estimate UI; loading callout from hook; pass-through estimate errors only**
 
-  * `[ ]`   `objective`
-    * `[ ]`   **Problem:** `GenerateContributionButton.tsx` treats `showCostEstimateBlocked && costCeilingError === null` as a third “unknown estimate” state (lines 104, 167–173): button label `"No Estimate"` and `generate-button-no-estimate-callout` with bundled copy `"No cost estimate yet. Select models and set output cap to continue."` Node 2 selectors never return `null`; prior hook node removes `costCeilingResult === null` and sets `showCostEstimateBlocked: false` while `isCostEstimateLoading`. After loading, blocked spend always carries a concrete `costCeilingError` from the hook — the null-error branch is dead code that hides pass-through `ApiError.message`. Component does not consume `isCostEstimateLoading` from the hook, so loading hydration can flash estimate-error UI before data is ready (parity with nodes 3–4 / hook node).
-    * `[ ]`   **Functional goal — consume hook loading flag:** Destructure `isCostEstimateLoading` from `useStartContributionGeneration()` alongside existing cost fields.
-    * `[ ]`   **Functional goal — delete bundled no-estimate path:** Remove every branch keyed on `showCostEstimateBlocked && costCeilingError === null`. Delete `generate-button-no-estimate-callout` JSX and bundled copy entirely. Grep target strings: `"No Estimate"`, `"No cost estimate yet"`, `generate-button-no-estimate-callout`.
-    * `[ ]`   **Functional goal — `getButtonText` gate order (after existing prerequisite gates, before balance/pause/resume labels):** When `isCostEstimateLoading === true` → return `"Loading Estimate"`. When `!isCostEstimateLoading && showCostEstimateBlocked && costCeilingError !== null` → return `"Estimate Failed"`. Remove the former `showCostEstimateBlocked && costCeilingError === null → "No Estimate"` branch. Keep all other label branches unchanged (`Choose AI Models`, wallet/stage gates, `Insufficient Balance`, pause/resume/regenerate/generate).
-    * `[ ]`   **Functional goal — callout JSX (mutually exclusive after prerequisites pass):** (1) While `isCostEstimateLoading`, render `data-testid="generate-button-estimate-loading-notice"` with text `"Loading cost estimate…"`. Do not render estimate-error callout or balance/stage estimate callouts during loading. (2) When `!isCostEstimateLoading && showCostEstimateBlocked && costCeilingError !== null`, render existing `generate-button-estimate-error-callout` with **only** `costCeilingError.message` (unchanged styling). (3) When `!isCostEstimateLoading && isCostEstimateKnown`, keep existing `generate-button-balance-callout`, `generate-button-stage-cost-estimate`, and `generate-button-project-balance-callout` branches unchanged (including `/subscription?tab=top-up` links — subscription deep-link URL change is a later FE4 node).
-    * `[ ]`   **Functional goal — disabled state:** Continue using hook `isDisabled` on the button (hook remains fail-closed during loading and on estimate error). Do not add local selector calls or cap init in this component.
-    * `[ ]`   **Non-functional:** Do not edit `useStartContributionGeneration.ts`, `dialecticStore.ts`, `dialecticStore.selectors.ts`, `SessionInfoCard.tsx`, or subscription CTA URL building in this node. Depends on prior hook node (`isCostEstimateLoading`, null-free cost flags).
+  * `[✅]`   `objective`
+    * `[✅]`   **Problem:** `GenerateContributionButton.tsx` treats `showCostEstimateBlocked && costCeilingError === null` as a third “unknown estimate” state (lines 104, 167–173): button label `"No Estimate"` and `generate-button-no-estimate-callout` with bundled copy `"No cost estimate yet. Select models and set output cap to continue."` Node 2 selectors never return `null`; prior hook node removes `costCeilingResult === null` and sets `showCostEstimateBlocked: false` while `isCostEstimateLoading`. After loading, blocked spend always carries a concrete `costCeilingError` from the hook — the null-error branch is dead code that hides pass-through `ApiError.message`. Component does not consume `isCostEstimateLoading` from the hook, so loading hydration can flash estimate-error UI before data is ready (parity with nodes 3–4 / hook node).
+    * `[✅]`   **Functional goal — consume hook loading flag:** Destructure `isCostEstimateLoading` from `useStartContributionGeneration()` alongside existing cost fields.
+    * `[✅]`   **Functional goal — delete bundled no-estimate path:** Remove every branch keyed on `showCostEstimateBlocked && costCeilingError === null`. Delete `generate-button-no-estimate-callout` JSX and bundled copy entirely. Grep target strings: `"No Estimate"`, `"No cost estimate yet"`, `generate-button-no-estimate-callout`.
+    * `[✅]`   **Functional goal — `getButtonText` gate order (after existing prerequisite gates, before balance/pause/resume labels):** When `isCostEstimateLoading === true` → return `"Loading Estimate"`. When `!isCostEstimateLoading && showCostEstimateBlocked && costCeilingError !== null` → return `"Estimate Failed"`. Remove the former `showCostEstimateBlocked && costCeilingError === null → "No Estimate"` branch. Keep all other label branches unchanged (`Choose AI Models`, wallet/stage gates, `Insufficient Balance`, pause/resume/regenerate/generate).
+    * `[✅]`   **Functional goal — callout JSX (mutually exclusive after prerequisites pass):** (1) While `isCostEstimateLoading`, render `data-testid="generate-button-estimate-loading-notice"` with text `"Loading cost estimate…"`. Do not render estimate-error callout or balance/stage estimate callouts during loading. (2) When `!isCostEstimateLoading && showCostEstimateBlocked && costCeilingError !== null`, render existing `generate-button-estimate-error-callout` with **only** `costCeilingError.message` (unchanged styling). (3) When `!isCostEstimateLoading && isCostEstimateKnown`, keep existing `generate-button-balance-callout`, `generate-button-stage-cost-estimate`, and `generate-button-project-balance-callout` branches unchanged (including `/subscription?tab=top-up` links — subscription deep-link URL change is a later FE4 node).
+    * `[✅]`   **Functional goal — disabled state:** Continue using hook `isDisabled` on the button (hook remains fail-closed during loading and on estimate error). Do not add local selector calls or cap init in this component.
+    * `[✅]`   **Non-functional:** Do not edit `useStartContributionGeneration.ts`, `dialecticStore.ts`, `dialecticStore.selectors.ts`, `SessionInfoCard.tsx`, or subscription CTA URL building in this node. Depends on prior hook node (`isCostEstimateLoading`, null-free cost flags).
 
-  * `[ ]`   `role`
-    * `[ ]`   Session generate/pause control — displays cost-estimate loading, pass-through errors, NSF/balance callouts from hook flags only.
-    * `[ ]`   Out of scope: cost selector math, tier cap initialization, hook spend guards, subscription cart prefill.
+  * `[✅]`   `role`
+    * `[✅]`   Session generate/pause control — displays cost-estimate loading, pass-through errors, NSF/balance callouts from hook flags only.
+    * `[✅]`   Out of scope: cost selector math, tier cap initialization, hook spend guards, subscription cart prefill.
 
-  * `[ ]`   `module`
-    * `[ ]`   `apps/web` dialectic generate button and co-located tests listed below.
+  * `[✅]`   `module`
+    * `[✅]`   `apps/web` dialectic generate button and co-located tests listed below.
 
-  * `[ ]`   `deps`
-    * `[ ]`   Prior hook node: `UseStartContributionGenerationReturn.isCostEstimateLoading`; `showCostEstimateBlocked`, `costCeilingError`, `isCostEstimateKnown`, and existing affordance flags unchanged semantics after loading gate.
-    * `[ ]`   Node 4: session page calls `initializeMaxOutputTokens` so integration success path can rely on tier hydrate (integration tests seed auth + initializer per below).
-    * `[ ]`   `useStartContributionGeneration` — sole source of cost-estimate state for this component.
+  * `[✅]`   `deps`
+    * `[✅]`   Prior hook node: `UseStartContributionGenerationReturn.isCostEstimateLoading`; `showCostEstimateBlocked`, `costCeilingError`, `isCostEstimateKnown`, and existing affordance flags unchanged semantics after loading gate.
+    * `[✅]`   Node 4: session page calls `initializeMaxOutputTokens` so integration success path can rely on tier hydrate (integration tests seed auth + initializer per below).
+    * `[✅]`   `useStartContributionGeneration` — sole source of cost-estimate state for this component.
 
-  * `[ ]`   `context_slice`
-    * `[ ]`   Reads: hook return fields only (no direct `selectCostCeiling` in component).
-    * `[ ]`   Writes: none (callbacks via hook).
+  * `[✅]`   `context_slice`
+    * `[✅]`   Reads: hook return fields only (no direct `selectCostCeiling` in component).
+    * `[✅]`   Writes: none (callbacks via hook).
 
-  * `[ ]`   apps/web/src/components/dialectic/GenerateContributionButton.test.tsx
-    * `[ ]`   **Mock deps (this file only — not a checklist node):** Add `isCostEstimateLoading: false` to `getDefaultHookReturn` default object (required after hook node adds field to `UseStartContributionGenerationReturn`).
-    * `[ ]`   delete test `renders disabled button with no-estimate callout when cost estimate is not yet available instead of returning null` (lines ~533–547).
-    * `[ ]`   add test `shows loading notice while isCostEstimateLoading` — mock `{ isCostEstimateLoading: true, isDisabled: true, showCostEstimateBlocked: false, costCeilingError: null }`; expect `generate-button-estimate-loading-notice` text `"Loading cost estimate…"`; button `"Loading Estimate"` disabled; `generate-button-estimate-error-callout` and `generate-button-no-estimate-callout` absent.
-    * `[ ]`   add test `shows estimate-error callout with pass-through message when blocked after loading` — mock `{ isCostEstimateLoading: false, showCostEstimateBlocked: true, costCeilingError: { code: 'OUTPUT_CAP_NOT_INITIALIZED', message: 'Output cap is not initialized in dialectic store.' }, isDisabled: true }`; expect button `"Estimate Failed"` disabled; `generate-button-estimate-error-callout` text exactly equals message; no loading notice; no no-estimate callout.
-    * `[ ]`   keep balance callout, pause/resume, DAG dialog, viewing-ahead, and success generate tests unchanged except add `isCostEstimateLoading: false` where hook mock omits it.
+  * `[✅]`   apps/web/src/components/dialectic/GenerateContributionButton.test.tsx
+    * `[✅]`   **Mock deps (this file only — not a checklist node):** Add `isCostEstimateLoading: false` to `getDefaultHookReturn` default object (required after hook node adds field to `UseStartContributionGenerationReturn`).
+    * `[✅]`   delete test `renders disabled button with no-estimate callout when cost estimate is not yet available instead of returning null` (lines ~533–547).
+    * `[✅]`   add test `shows loading notice while isCostEstimateLoading` — mock `{ isCostEstimateLoading: true, isDisabled: true, showCostEstimateBlocked: false, costCeilingError: null }`; expect `generate-button-estimate-loading-notice` text `"Loading cost estimate…"`; button `"Loading Estimate"` disabled; `generate-button-estimate-error-callout` and `generate-button-no-estimate-callout` absent.
+    * `[✅]`   add test `shows estimate-error callout with pass-through message when blocked after loading` — mock `{ isCostEstimateLoading: false, showCostEstimateBlocked: true, costCeilingError: { code: 'OUTPUT_CAP_NOT_INITIALIZED', message: 'Output cap is not initialized in dialectic store.' }, isDisabled: true }`; expect button `"Estimate Failed"` disabled; `generate-button-estimate-error-callout` text exactly equals message; no loading notice; no no-estimate callout.
+    * `[✅]`   keep balance callout, pause/resume, DAG dialog, viewing-ahead, and success generate tests unchanged except add `isCostEstimateLoading: false` where hook mock omits it.
 
-  * `[ ]`   apps/web/src/components/dialectic/GenerateContributionButton.nsf.test.tsx
-    * `[ ]`   **Mock deps:** Add `isCostEstimateLoading: false` to local `getDefaultHookReturn` default.
-    * `[ ]`   delete test `when cost estimate is not yet available, button is disabled with "No Estimate" and no-estimate callout` (lines ~514–533).
-    * `[ ]`   replace `when cost estimate failed…` test — keep `"Estimate Failed"` + error callout assertions; assert `generate-button-no-estimate-callout` absent.
-    * `[ ]`   update `when paused_nsf and cost estimate is blocked` — seed `{ isCostEstimateLoading: false, showCostEstimateBlocked: true, costCeilingError: { code: 'OUTPUT_CAP_NOT_INITIALIZED', message: '…' }, isDisabled: true }` instead of `costCeilingError: null`; expect estimate-error callout, not no-estimate callout.
-    * `[ ]`   update project-balance-callout blocked case (~L485–493) — when estimate blocked with error, project callout still absent (unchanged assertion) but use error object not null sentinel.
-    * `[ ]`   NSF resume/balance success tests remain green with `isCostEstimateLoading: false`.
+  * `[✅]`   apps/web/src/components/dialectic/GenerateContributionButton.nsf.test.tsx
+    * `[✅]`   **Mock deps:** Add `isCostEstimateLoading: false` to local `getDefaultHookReturn` default.
+    * `[✅]`   delete test `when cost estimate is not yet available, button is disabled with "No Estimate" and no-estimate callout` (lines ~514–533).
+    * `[✅]`   replace `when cost estimate failed…` test — keep `"Estimate Failed"` + error callout assertions; assert `generate-button-no-estimate-callout` absent.
+    * `[✅]`   update `when paused_nsf and cost estimate is blocked` — seed `{ isCostEstimateLoading: false, showCostEstimateBlocked: true, costCeilingError: { code: 'OUTPUT_CAP_NOT_INITIALIZED', message: '…' }, isDisabled: true }` instead of `costCeilingError: null`; expect estimate-error callout, not no-estimate callout.
+    * `[✅]`   update project-balance-callout blocked case (~L485–493) — when estimate blocked with error, project callout still absent (unchanged assertion) but use error object not null sentinel.
+    * `[✅]`   NSF resume/balance success tests remain green with `isCostEstimateLoading: false`.
 
-  * `[ ]`   apps/web/src/components/dialectic/GenerateContributionButton.costCeiling.integration.test.tsx
-    * `[ ]`   **Mock deps:** Extend test setup to seed auth tier (`useAuthStore` mock or existing pattern in file): `isLoading: false`, `userTier.output_cap_tokens` matching fixture `maxOutputTokens`. In success-path `beforeEach` / `seedSessionStore`, **omit** manual `maxOutputTokens` override; after seed call `useDialecticStore.getState().initializeMaxOutputTokens()` and `waitFor` finite `maxOutputTokens` (parity with node 4 — button integration must not depend on popover/slider).
-    * `[ ]`   rename/replace `null prerequisites: missing maxOutputTokens → no-estimate callout…` — seed `maxOutputTokens: null` **without** tier init (or auth still loading → loading notice only); when loaded and cap still null, expect `generate-button-estimate-error-callout` with `OUTPUT_CAP_NOT_INITIALIZED` message, button `"Estimate Failed"`, not `generate-button-no-estimate-callout`; click does not call `generateContributions`.
-    * `[ ]`   replace `API progress error: getAllStageProgress 500 → no-estimate callout…` — seed hydration failure via real `hydrateAllStageProgress` (MSW 500): thunk sets `progressHydrationStatus[runKey] === 'failed'` and rejects with API `ApiError` unchanged; store has **no** `progressHydrationError` field; remove stale comments/assertions referencing `progressHydrationError`; `selectCostCeiling(storeState, sessionId)` returns `{ error: { code: 'STAGE_PROGRESS_HYDRATION_FAILED', … } }` (never `null`, never local `STAGE_COUNTS_BY_RUN_MISSING` when hydration status is failed); after loading false, expect `generate-button-estimate-error-callout` with pass-through selector `error.message` exactly; not no-estimate callout; button disabled.
-    * `[ ]`    grep `GenerateContributionButton.costCeiling.integration.test.tsx`: zero `progressHydrationError` references in comments, seeds, and assertions.
-    * `[ ]`   replace `hook callback guard: clearing maxOutputTokens after enable…` — after clearing cap, expect estimate-error callout + `"Estimate Failed"`, not no-estimate callout; click does not spend.
-    * `[ ]`   grep file — zero `generate-button-no-estimate-callout`, zero `/No Estimate/i` button expectations, zero `selectCostCeiling(...)).toBeNull()`.
-    * `[ ]`   success-stack test (`hydrate → stage/project ceiling → enabled generate`) passes with tier-init path instead of manual cap seed.
+  * `[✅]`   apps/web/src/components/dialectic/GenerateContributionButton.tsx
+    * `[✅]`   destructure `isCostEstimateLoading` from hook.
+    * `[✅]`   update `getButtonText` — add loading label; remove null-error `"No Estimate"` branch; keep `"Estimate Failed"` when blocked with error after loading.
+    * `[✅]`   remove `generate-button-no-estimate-callout` block; add loading notice JSX; keep estimate-error callout condition `!isCostEstimateLoading && showCostEstimateBlocked && costCeilingError !== null`.
 
-  * `[ ]`   apps/web/src/components/dialectic/GenerateContributionButton.integration.test.tsx
-    * `[ ]`   import `captureRealAuthStore` / seed auth in `beforeEach`: `isLoading: false`, `userTier.output_cap_tokens` matching fixture `maxOutputTokens` (`1000`).
-    * `[ ]`   in `setStoreForButton`, omit manual `maxOutputTokens` override on success paths; after `setDialecticStateValues`, call `useDialecticStore.getState().initializeMaxOutputTokens()`; `waitFor` finite cap before assertions that require enabled generate/resume.
-    * `[ ]`   existing NSF/balance/generate/resume tests remain green with tier-init path (real `selectCostCeiling` — never mock to `null`).
+  * `[✅]`   apps/web/src/components/dialectic/GenerateContributionButton.costCeiling.integration.test.tsx
+    * `[✅]`   **Mock deps:** Extend test setup to seed auth tier (`useAuthStore` mock or existing pattern in file): `isLoading: false`, `userTier.output_cap_tokens` matching fixture `maxOutputTokens`. In success-path `beforeEach` / `seedSessionStore`, **omit** manual `maxOutputTokens` override; after seed call `useDialecticStore.getState().initializeMaxOutputTokens()` and `waitFor` finite `maxOutputTokens` (parity with node 4 — button integration must not depend on popover/slider).
+    * `[✅]`   rename/replace `null prerequisites: missing maxOutputTokens → no-estimate callout…` — seed `maxOutputTokens: null` **without** tier init (or auth still loading → loading notice only); when loaded and cap still null, expect `generate-button-estimate-error-callout` with `OUTPUT_CAP_NOT_INITIALIZED` message, button `"Estimate Failed"`, not `generate-button-no-estimate-callout`; click does not call `generateContributions`.
+    * `[✅]`   replace `API progress error: getAllStageProgress 500 → no-estimate callout…` — seed hydration failure via real `hydrateAllStageProgress` (MSW 500): thunk sets `progressHydrationStatus[runKey] === 'failed'` and rejects with API `ApiError` unchanged; store has **no** `progressHydrationError` field; remove stale comments/assertions referencing `progressHydrationError`; `selectCostCeiling(storeState, sessionId)` returns `{ error: { code: 'STAGE_PROGRESS_HYDRATION_FAILED', … } }` (never `null`, never local `STAGE_COUNTS_BY_RUN_MISSING` when hydration status is failed); after loading false, expect `generate-button-estimate-error-callout` with pass-through selector `error.message` exactly; not no-estimate callout; button disabled.
+    * `[✅]`    grep `GenerateContributionButton.costCeiling.integration.test.tsx`: zero `progressHydrationError` references in comments, seeds, and assertions.
+    * `[✅]`   replace `hook callback guard: clearing maxOutputTokens after enable…` — after clearing cap, expect estimate-error callout + `"Estimate Failed"`, not no-estimate callout; click does not spend.
+    * `[✅]`   grep file — zero `generate-button-no-estimate-callout`, zero `/No Estimate/i` button expectations, zero `selectCostCeiling(...)).toBeNull()`.
+    * `[✅]`   success-stack test (`hydrate → stage/project ceiling → enabled generate`) passes with tier-init path instead of manual cap seed.
 
-  * `[ ]`   apps/web/src/components/dialectic/GenerateContributionButton.tsx
-    * `[ ]`   destructure `isCostEstimateLoading` from hook.
-    * `[ ]`   update `getButtonText` — add loading label; remove null-error `"No Estimate"` branch; keep `"Estimate Failed"` when blocked with error after loading.
-    * `[ ]`   remove `generate-button-no-estimate-callout` block; add loading notice JSX; keep estimate-error callout condition `!isCostEstimateLoading && showCostEstimateBlocked && costCeilingError !== null`.
+  * `[✅]`   apps/web/src/components/dialectic/GenerateContributionButton.integration.test.tsx
+    * `[✅]`   import `captureRealAuthStore` / seed auth in `beforeEach`: `isLoading: false`, `userTier.output_cap_tokens` matching fixture `maxOutputTokens` (`1000`).
+    * `[✅]`   in `setStoreForButton`, omit manual `maxOutputTokens` override on success paths; after `setDialecticStateValues`, call `useDialecticStore.getState().initializeMaxOutputTokens()`; `waitFor` finite cap before assertions that require enabled generate/resume.
+    * `[✅]`   existing NSF/balance/generate/resume tests remain green with tier-init path (real `selectCostCeiling` — never mock to `null`).
 
-  * `[ ]`   `requirements`
-    * `[ ]`   Grep `GenerateContributionButton.tsx`: zero `generate-button-no-estimate-callout`; zero `"No Estimate"`; zero `"No cost estimate yet"`; zero `costCeilingError === null` in estimate-blocked UI branches.
-    * `[ ]`   Grep `GenerateContributionButton.test.tsx`, `GenerateContributionButton.nsf.test.tsx`, `GenerateContributionButton.costCeiling.integration.test.tsx`: zero `generate-button-no-estimate-callout`; zero `/No Estimate/i` expectations.
-    * `[ ]`   `isCostEstimateLoading: true` → loading notice visible, button shows `"Loading Estimate"`, no error callout.
-    * `[ ]`   Blocked after loading with `costCeilingError` → `"Estimate Failed"` + callout text equals `error.message` exactly.
-    * `[ ]`   Success NSF/balance/stage-estimate integration paths remain green.
-    * `[ ]`   No edits outside `GenerateContributionButton.tsx`, `GenerateContributionButton.test.tsx`, `GenerateContributionButton.nsf.test.tsx`, `GenerateContributionButton.costCeiling.integration.test.tsx`, and `GenerateContributionButton.integration.test.tsx` in this node.
+  * `[✅]`   `requirements`
+    * `[✅]`   Grep `GenerateContributionButton.tsx`: zero `generate-button-no-estimate-callout`; zero `"No Estimate"`; zero `"No cost estimate yet"`; zero `costCeilingError === null` in estimate-blocked UI branches.
+    * `[✅]`   Grep `GenerateContributionButton.test.tsx`, `GenerateContributionButton.nsf.test.tsx`, `GenerateContributionButton.costCeiling.integration.test.tsx`: zero `generate-button-no-estimate-callout`; zero `/No Estimate/i` expectations.
+    * `[✅]`   `isCostEstimateLoading: true` → loading notice visible, button shows `"Loading Estimate"`, no error callout.
+    * `[✅]`   Blocked after loading with `costCeilingError` → `"Estimate Failed"` + callout text equals `error.message` exactly.
+    * `[✅]`   Success NSF/balance/stage-estimate integration paths remain green.
+    * `[✅]`   No edits outside `GenerateContributionButton.tsx`, `GenerateContributionButton.test.tsx`, `GenerateContributionButton.nsf.test.tsx`, `GenerateContributionButton.costCeiling.integration.test.tsx`, and `GenerateContributionButton.integration.test.tsx` in this node.
 
 * `[ ]`   apps/web/src/components/ai/CreateProjectFromChatButton **Tier cap init; ComputeCostCeilingReturn-only click gate; loading before selector errors; pass-through toast**
 
-  * `[ ]`   `objective`
-    * `[ ]`   **Problem:** `CreateProjectFromChatButton.tsx` types `preProjectCostCeilingResult` as `ComputeCostCeilingReturn | null` (lines 112–118). When selector returns `null`, click gate toasts bundled `noEstimateToastCopy` (`"No cost estimate yet. Set the output cap in Model Settings, then try again."`) instead of pass-through `ApiError.message`. Node 2 `selectPreProjectCostCeiling` never returns `null`. `maxOutputTokens` stays `null` until user visits dialectic UI with `OutputCapSlider` — chat has no cap init, so autostart spend path fail-closes on `OUTPUT_CAP_NOT_INITIALIZED` masked as bundled copy. No auth/catalog/association/template/counts/wallet loading gates — selector precondition errors surface at click while fetches are still in flight (parity violation vs node 3 `CreateDialecticProjectForm`).
-    * `[ ]`   **Functional goal — tier cap init:** Subscribe `useAuthStore` — `isLoading`, `userTier`. Subscribe `initializeMaxOutputTokens` from `useDialecticStore`. Define **`isCapInitReady`** (same as node 3): `!isLoading && userTier !== null && !isLoadingModelCatalog && modelCatalog.length > 0`. Add `useEffect` with deps `[isLoading, userTier, isLoadingModelCatalog, modelCatalog.length]`: when `isCapInitReady`, call `initializeMaxOutputTokens()`. In `handleClick`, on autostart spend path (`defaultModelCount >= 1`) after catalog is ready and **before** `fetchProcessTemplate`, call `initializeMaxOutputTokens()` again so cap is set after click-time fetches without Model Settings popover.
-    * `[ ]`   **Functional goal — `ComputeCostCeilingReturn` only:** Change `preProjectCostCeilingResult` type to `ComputeCostCeilingReturn` (remove `| null`). Delete `noEstimateToastCopy` constant and entire `preProjectCostCeilingResult === null` branch (lines 115–118). After loading gate passes, apply **same error gate order as node 3 footer** before reading selector for spend block: (1) `authStore.error` → toast `authStore.error.message`; (2) `userTier === null` → toast `'Subscription tier is not available.'`; (3) `capInitResult?.ok === false` → toast `capInitResult.error.message`; (4) `'error' in preProjectCostCeilingResult` → toast **only** `preProjectCostCeilingResult.error.message` (unchanged pass-through reference). On success, keep existing `firstStageCeiling` / wallet NSF gate and `nsfToastCopy` unchanged.
-    * `[ ]`   **Functional goal — loading before errors (click gate, autostart path only):** After `fetchProcessTemplate` / `fetchStageExpectedCounts` complete and before reading `selectPreProjectCostCeiling`, evaluate loading flags on fresh store/auth/wallet state. Define `isCostEstimateLoading` true when **any** of: `useAuthStore.getState().isLoading === true`; `isLoadingModelCatalog === true`; `isLoadingDomainProcessAssociation === true`; `isLoadingProcessTemplate === true`; `isLoadingStageExpectedCounts === true`; `selectActiveChatWalletInfo(...).isLoadingPrimaryWallet === true`. While `isCostEstimateLoading`, toast the **first** matching message in this order and return without `createProjectAndAutoStart`: tier → `"Loading subscription tier…"`; catalog → `"Loading model catalog…"`; association → `"Loading domain process association…"`; template → `"Loading process template…"`; stage counts → `"Loading stage expected counts…"`; wallet → `"Loading wallet balance…"`. **Do not** toast selector `'error'` messages (including `OUTPUT_CAP_NOT_INITIALIZED`) during loading.
-    * `[ ]`   **Functional goal — preserve FE3 orchestration:** Keep existing domain/association/catalog/template/counts click chain, `defaultModelCount` skip when zero, `processTemplateId` on payload, navigation, and disabled-button rules unchanged except null→error and loading gate additions above.
-    * `[ ]`   **Non-functional:** Do not edit `dialecticStore.ts`, `dialecticStore.selectors.ts`, `CreateDialecticProjectForm.tsx`, `computeCostCeiling`, or subscription CTAs in this node. Depends on nodes 1–2 (cap SSOT + loud selectors) and node 3 (pre-project selector contract parity).
+  * `[✅]`   `objective`
+    * `[✅]`   **Problem:** `CreateProjectFromChatButton.tsx` types `preProjectCostCeilingResult` as `ComputeCostCeilingReturn | null` (lines 112–118). When selector returns `null`, click gate toasts bundled `noEstimateToastCopy` (`"No cost estimate yet. Set the output cap in Model Settings, then try again."`) instead of pass-through `ApiError.message`. Node 2 `selectPreProjectCostCeiling` never returns `null`. `maxOutputTokens` stays `null` until user visits dialectic UI with `OutputCapSlider` — chat has no cap init, so autostart spend path fail-closes on `OUTPUT_CAP_NOT_INITIALIZED` masked as bundled copy. No auth/catalog/association/template/counts/wallet loading gates — selector precondition errors surface at click while fetches are still in flight (parity violation vs node 3 `CreateDialecticProjectForm`).
+    * `[✅]`   **Functional goal — tier cap init:** Subscribe `useAuthStore` — `isLoading`, `userTier`. Subscribe `initializeMaxOutputTokens` from `useDialecticStore`. Define **`isCapInitReady`** (same as node 3): `!isLoading && userTier !== null && !isLoadingModelCatalog && modelCatalog.length > 0`. Add `useEffect` with deps `[isLoading, userTier, isLoadingModelCatalog, modelCatalog.length]`: when `isCapInitReady`, call `initializeMaxOutputTokens()`. In `handleClick`, on autostart spend path (`defaultModelCount >= 1`) after catalog is ready and **before** `fetchProcessTemplate`, call `initializeMaxOutputTokens()` again so cap is set after click-time fetches without Model Settings popover.
+    * `[✅]`   **Functional goal — `ComputeCostCeilingReturn` only:** Change `preProjectCostCeilingResult` type to `ComputeCostCeilingReturn` (remove `| null`). Delete `noEstimateToastCopy` constant and entire `preProjectCostCeilingResult === null` branch (lines 115–118). After loading gate passes, apply **same error gate order as node 3 footer** before reading selector for spend block: (1) `authStore.error` → toast `authStore.error.message`; (2) `userTier === null` → toast `'Subscription tier is not available.'`; (3) `capInitResult?.ok === false` → toast `capInitResult.error.message`; (4) `'error' in preProjectCostCeilingResult` → toast **only** `preProjectCostCeilingResult.error.message` (unchanged pass-through reference). On success, keep existing `firstStageCeiling` / wallet NSF gate and `nsfToastCopy` unchanged.
+    * `[✅]`   **Functional goal — loading before errors (click gate, autostart path only):** After `fetchProcessTemplate` / `fetchStageExpectedCounts` complete and before reading `selectPreProjectCostCeiling`, evaluate loading flags on fresh store/auth/wallet state. Define `isCostEstimateLoading` true when **any** of: `useAuthStore.getState().isLoading === true`; `isLoadingModelCatalog === true`; `isLoadingDomainProcessAssociation === true`; `isLoadingProcessTemplate === true`; `isLoadingStageExpectedCounts === true`; `selectActiveChatWalletInfo(...).isLoadingPrimaryWallet === true`. While `isCostEstimateLoading`, toast the **first** matching message in this order and return without `createProjectAndAutoStart`: tier → `"Loading subscription tier…"`; catalog → `"Loading model catalog…"`; association → `"Loading domain process association…"`; template → `"Loading process template…"`; stage counts → `"Loading stage expected counts…"`; wallet → `"Loading wallet balance…"`. **Do not** toast selector `'error'` messages (including `OUTPUT_CAP_NOT_INITIALIZED`) during loading.
+    * `[✅]`   **Functional goal — preserve FE3 orchestration:** Keep existing domain/association/catalog/template/counts click chain, `defaultModelCount` skip when zero, `processTemplateId` on payload, navigation, and disabled-button rules unchanged except null→error and loading gate additions above.
+    * `[✅]`   **Non-functional:** Do not edit `dialecticStore.ts`, `dialecticStore.selectors.ts`, `CreateDialecticProjectForm.tsx`, `computeCostCeiling`, or subscription CTAs in this node. Depends on nodes 1–2 (cap SSOT + loud selectors) and node 3 (pre-project selector contract parity).
 
-  * `[ ]`   `role`
-    * `[ ]`   Chat toolbar UI — fail-safe autostart spend gate at click time; wires auth tier hydrate → store cap init; pass-through selector errors via toast.
-    * `[ ]`   Out of scope: cost preview markup, post-project `selectCostCeiling`, store action implementations, subscription deep links.
+  * `[✅]`   `role`
+    * `[✅]`   Chat toolbar UI — fail-safe autostart spend gate at click time; wires auth tier hydrate → store cap init; pass-through selector errors via toast.
+    * `[✅]`   Out of scope: cost preview markup, post-project `selectCostCeiling`, store action implementations, subscription deep links.
 
-  * `[ ]`   `module`
-    * `[ ]`   `apps/web/src/components/ai` — `CreateProjectFromChatButton.tsx`, `CreateProjectFromChatButton.test.tsx`, `CreateProjectFromChatButton.costCeiling.integration.test.tsx` only.
+  * `[✅]`   `module`
+    * `[✅]`   `apps/web/src/components/ai` — `CreateProjectFromChatButton.tsx`, `CreateProjectFromChatButton.test.tsx`, `CreateProjectFromChatButton.costCeiling.integration.test.tsx` only.
 
-  * `[ ]`   `deps`
-    * `[ ]`   Node 1: `initializeMaxOutputTokens` on `useDialecticStore`.
-    * `[ ]`   Node 2: `selectPreProjectCostCeiling` → `ComputeCostCeilingReturn` only (never `null`).
-    * `[ ]`   Node 3: same pre-project loading-flag order and pass-through error contract (this node applies at click, not footer UI).
-    * `[ ]`   `useAuthStore` — `isLoading`, `userTier`, `error`.
-    * `[ ]`   Dialectic store — `initializeMaxOutputTokens`, existing store actions/selectors: `fetchDomains`, `fetchProcessAssociation`, `fetchProcessTemplate`, `fetchStageExpectedCounts`, `fetchAIModelCatalog`, `selectSelectedDomain`, `selectDefaultGenerationModels`, `selectActiveChatWalletInfo`, `useWalletStore`, `useAiStore`; `isLoadingModelCatalog`, `modelCatalog`; component-local `capInitResult`.
-    * `[ ]`   `ComputeCostCeilingReturn`, `buildComputeCostCeilingErrorReturn` from `@paynless/utils`; `ApiError` from `@paynless/types`.
+  * `[✅]`   `deps`
+    * `[✅]`   Node 1: `initializeMaxOutputTokens` on `useDialecticStore`.
+    * `[✅]`   Node 2: `selectPreProjectCostCeiling` → `ComputeCostCeilingReturn` only (never `null`).
+    * `[✅]`   Node 3: same pre-project loading-flag order and pass-through error contract (this node applies at click, not footer UI).
+    * `[✅]`   `useAuthStore` — `isLoading`, `userTier`, `error`.
+    * `[✅]`   Dialectic store — `initializeMaxOutputTokens`, existing store actions/selectors: `fetchDomains`, `fetchProcessAssociation`, `fetchProcessTemplate`, `fetchStageExpectedCounts`, `fetchAIModelCatalog`, `selectSelectedDomain`, `selectDefaultGenerationModels`, `selectActiveChatWalletInfo`, `useWalletStore`, `useAiStore`; `isLoadingModelCatalog`, `modelCatalog`; component-local `capInitResult`.
+    * `[✅]`   `ComputeCostCeilingReturn`, `buildComputeCostCeilingErrorReturn` from `@paynless/utils`; `ApiError` from `@paynless/types`.
 
-  * `[ ]`   `context_slice`
-    * `[ ]`   Reads: auth loading + tier; dialectic loading flags; wallet loading; `selectPreProjectCostCeiling` after click orchestration on autostart path.
-    * `[ ]`   Writes: calls `initializeMaxOutputTokens` only (no direct `setMaxOutputTokens` in component).
+  * `[✅]`   `context_slice`
+    * `[✅]`   Reads: auth loading + tier; dialectic loading flags; wallet loading; `selectPreProjectCostCeiling` after click orchestration on autostart path.
+    * `[✅]`   Writes: calls `initializeMaxOutputTokens` only (no direct `setMaxOutputTokens` in component).
 
-  * `[ ]`   apps/web/src/components/ai/CreateProjectFromChatButton.test.tsx
-    * `[ ]`   **Mock deps (this file only — not a checklist node):** Extend `vi.mock('@paynless/store', …)` to export `useAuthStore` from `@/mocks/authStore.mock` (`resetAuthStoreMock` in `beforeEach`; default `isLoading: false`, `userTier` with finite `output_cap_tokens`). Change `selectPreProjectCostCeilingMock` generic to `[DialecticStateValues], ComputeCostCeilingReturn` (remove `| null`); never `mockReturnValue(null)`.
-    * `[ ]`   delete constant `noEstimateToastCopy` and test `does not call createProjectAndAutoStart when cost estimate prerequisites are incomplete` that mocks selector `null` + expects bundled toast.
-    * `[ ]`   add test `does not call createProjectAndAutoStart when selectPreProjectCostCeiling returns OUTPUT_CAP_NOT_INITIALIZED` — mock `{ error: { code: 'OUTPUT_CAP_NOT_INITIALIZED', message: 'Output cap is not initialized in dialectic store.' } }`; expect `toast.error` with **exactly** that message; not bundled no-estimate copy; `createProjectAndAutoStart` not called.
-    * `[ ]`   add test `calls initializeMaxOutputTokens on mount when isCapInitReady` — auth `isLoading: false`, `userTier` set, catalog loaded; render; expect `getDialecticStoreActionMock('initializeMaxOutputTokens')` called once; **not** called while `isLoadingModelCatalog: true`.
-    * `[ ]`   add test `on click autostart path calls initializeMaxOutputTokens before fetchProcessTemplate` — spy; click with default models; expect initializer called after catalog ready and before/at start of template fetch chain (≥1 call including mount).
-    * `[ ]`   add test `while auth isLoading on click, toasts Loading subscription tier and does not create` — `mockSetAuthIsLoading(true)` before click; expect toast `"Loading subscription tier…"`; `createProjectAndAutoStart` not called; selector error mock ignored for toast text.
-    * `[ ]`   add test `while isLoadingStageExpectedCounts after orchestration, toasts loading copy not selector error` — seed `isLoadingStageExpectedCounts: true` at click-read time; mock selector `{ error: OUTPUT_CAP_NOT_INITIALIZED }`; expect toast `"Loading stage expected counts…"`; not `OUTPUT_CAP_NOT_INITIALIZED` message.
-    * `[ ]`   add test `on click when userTier null after auth load, toasts Subscription tier is not available not selector error` — `userTier: null`, selector mock `OUTPUT_CAP_NOT_INITIALIZED`; expect tier-unavailable toast; not init error message.
-    * `[ ]`   keep existing tests for association null, selector `{ error }` pass-through, NSF wallet, no-default-models skip, navigation, idempotency — add `isCostEstimateLoading`-safe auth mock defaults where needed.
+  * `[✅]`   apps/web/src/components/ai/CreateProjectFromChatButton.test.tsx
+    * `[✅]`   **Mock deps (this file only — not a checklist node):** Extend `vi.mock('@paynless/store', …)` to export `useAuthStore` from `@/mocks/authStore.mock` (`resetAuthStoreMock` in `beforeEach`; default `isLoading: false`, `userTier` with finite `output_cap_tokens`). Change `selectPreProjectCostCeilingMock` generic to `[DialecticStateValues], ComputeCostCeilingReturn` (remove `| null`); never `mockReturnValue(null)`.
+    * `[✅]`   delete constant `noEstimateToastCopy` and test `does not call createProjectAndAutoStart when cost estimate prerequisites are incomplete` that mocks selector `null` + expects bundled toast.
+    * `[✅]`   add test `does not call createProjectAndAutoStart when selectPreProjectCostCeiling returns OUTPUT_CAP_NOT_INITIALIZED` — mock `{ error: { code: 'OUTPUT_CAP_NOT_INITIALIZED', message: 'Output cap is not initialized in dialectic store.' } }`; expect `toast.error` with **exactly** that message; not bundled no-estimate copy; `createProjectAndAutoStart` not called.
+    * `[✅]`   add test `calls initializeMaxOutputTokens on mount when isCapInitReady` — auth `isLoading: false`, `userTier` set, catalog loaded; render; expect `getDialecticStoreActionMock('initializeMaxOutputTokens')` called once; **not** called while `isLoadingModelCatalog: true`.
+    * `[✅]`   add test `on click autostart path calls initializeMaxOutputTokens before fetchProcessTemplate` — spy; click with default models; expect initializer called after catalog ready and before/at start of template fetch chain (≥1 call including mount).
+    * `[✅]`   add test `while auth isLoading on click, toasts Loading subscription tier and does not create` — `mockSetAuthIsLoading(true)` before click; expect toast `"Loading subscription tier…"`; `createProjectAndAutoStart` not called; selector error mock ignored for toast text.
+    * `[✅]`   add test `while isLoadingStageExpectedCounts after orchestration, toasts loading copy not selector error` — seed `isLoadingStageExpectedCounts: true` at click-read time; mock selector `{ error: OUTPUT_CAP_NOT_INITIALIZED }`; expect toast `"Loading stage expected counts…"`; not `OUTPUT_CAP_NOT_INITIALIZED` message.
+    * `[✅]`   add test `on click when userTier null after auth load, toasts Subscription tier is not available not selector error` — `userTier: null`, selector mock `OUTPUT_CAP_NOT_INITIALIZED`; expect tier-unavailable toast; not init error message.
+    * `[✅]`   keep existing tests for association null, selector `{ error }` pass-through, NSF wallet, no-default-models skip, navigation, idempotency — add `isCostEstimateLoading`-safe auth mock defaults where needed.
 
-  * `[ ]`   apps/web/src/components/ai/CreateProjectFromChatButton.costCeiling.integration.test.tsx
-    * `[ ]`   **Mock deps:** Import real `useAuthStore` from `@paynless/store`. In `beforeEach`, `useAuthStore.setState({ isLoading: false, userTier: { level: 10, name: 'basic', output_cap_tokens: maxOutputTokens, max_models_per_project: 2, …required UserTier fields } })` (mirror `OutputCapSlider.integration.test.tsx` tier seed pattern). Remove `noEstimateToastCopy` constant.
-    * `[ ]`   change `seedChatButtonStore` — **omit** `maxOutputTokens` override (store starts `null`); after seed + auth tier set, call `useDialecticStore.getState().initializeMaxOutputTokens()` inside success-path setup; `waitFor` finite `maxOutputTokens === maxOutputTokens` fixture value before click.
-    * `[ ]`   rename/replace `null prerequisites: missing maxOutputTokens → toast error and no create` — auth loaded, initializer **not** run (or cap cleared after init), click → `selectPreProjectCostCeiling` returns `{ error: OUTPUT_CAP_NOT_INITIALIZED }` (never `null`); `toast.error` with pass-through `error.message`; not bundled no-estimate copy; `createProjectAndAutoStart` not called.
-    * `[ ]`   replace `API counts error: getStageExpectedCounts 500 → click gate fail-closes without create` — after click, `selectPreProjectCostCeiling(storeState)` is `{ error: … }` with pass-through message from `stageExpectedCountsError` brigade (never `null`); assert `toast.error` called with that message when loading flags false; `createProjectAndAutoStart` not called.
-    * `[ ]`   grep file — zero `noEstimateToastCopy`, zero `.toBeNull()` on `selectPreProjectCostCeiling` result, zero bundled `"No cost estimate yet"`.
-    * `[ ]`   success-stack test passes with tier-init path instead of manual `maxOutputTokens` seed; insufficient-wallet test unchanged except auth seed.
+  * `[✅]`   apps/web/src/components/ai/CreateProjectFromChatButton.tsx
+    * `[✅]`   import `useAuthStore` from `@paynless/store`; subscribe `isLoading`, `userTier`; subscribe `initializeMaxOutputTokens`.
+    * `[✅]`   add mount `useEffect` with `isCapInitReady` per objective; call `initializeMaxOutputTokens()` on autostart path before template fetch.
+    * `[✅]`   change `preProjectCostCeilingResult` to `ComputeCostCeilingReturn`; remove `noEstimateToastCopy` and `=== null` branch; add post-orchestration loading-flag gate before selector error toast; keep `'error' in result` pass-through and NSF branch.
 
-  * `[ ]`   apps/web/src/components/ai/CreateProjectFromChatButton.tsx
-    * `[ ]`   import `useAuthStore` from `@paynless/store`; subscribe `isLoading`, `userTier`; subscribe `initializeMaxOutputTokens`.
-    * `[ ]`   add mount `useEffect` with `isCapInitReady` per objective; call `initializeMaxOutputTokens()` on autostart path before template fetch.
-    * `[ ]`   change `preProjectCostCeilingResult` to `ComputeCostCeilingReturn`; remove `noEstimateToastCopy` and `=== null` branch; add post-orchestration loading-flag gate before selector error toast; keep `'error' in result` pass-through and NSF branch.
+  * `[✅]`   apps/web/src/components/ai/CreateProjectFromChatButton.costCeiling.integration.test.tsx
+    * `[✅]`   **Mock deps:** Import real `useAuthStore` from `@paynless/store`. In `beforeEach`, `useAuthStore.setState({ isLoading: false, userTier: { level: 10, name: 'basic', output_cap_tokens: maxOutputTokens, max_models_per_project: 2, …required UserTier fields } })` (mirror `OutputCapSlider.integration.test.tsx` tier seed pattern). Remove `noEstimateToastCopy` constant.
+    * `[✅]`   change `seedChatButtonStore` — **omit** `maxOutputTokens` override (store starts `null`); after seed + auth tier set, call `useDialecticStore.getState().initializeMaxOutputTokens()` inside success-path setup; `waitFor` finite `maxOutputTokens === maxOutputTokens` fixture value before click.
+    * `[✅]`   rename/replace `null prerequisites: missing maxOutputTokens → toast error and no create` — auth loaded, initializer **not** run (or cap cleared after init), click → `selectPreProjectCostCeiling` returns `{ error: OUTPUT_CAP_NOT_INITIALIZED }` (never `null`); `toast.error` with pass-through `error.message`; not bundled no-estimate copy; `createProjectAndAutoStart` not called.
+    * `[✅]`   replace `API counts error: getStageExpectedCounts 500 → click gate fail-closes without create` — after click, `selectPreProjectCostCeiling(storeState)` is `{ error: … }` with pass-through message from `stageExpectedCountsError` brigade (never `null`); assert `toast.error` called with that message when loading flags false; `createProjectAndAutoStart` not called.
+    * `[✅]`   grep file — zero `noEstimateToastCopy`, zero `.toBeNull()` on `selectPreProjectCostCeiling` result, zero bundled `"No cost estimate yet"`.
+    * `[✅]`   success-stack test passes with tier-init path instead of manual `maxOutputTokens` seed; insufficient-wallet test unchanged except auth seed.
 
-  * `[ ]`   `requirements`
-    * `[ ]`   Grep `CreateProjectFromChatButton.tsx`: zero `ComputeCostCeilingReturn | null`; zero `preProjectCostCeilingResult === null`; zero `noEstimateToastCopy`; zero bundled `"No cost estimate yet"`.
-    * `[ ]`   Grep `CreateProjectFromChatButton.test.tsx` and `CreateProjectFromChatButton.costCeiling.integration.test.tsx`: zero `selectPreProjectCostCeilingMock.mockReturnValue(null)`; zero `.toBeNull()` on selector results; zero `noEstimateToastCopy`.
-    * `[ ]`   Auth tier + catalog loaded on mount (`isCapInitReady`): `initializeMaxOutputTokens` called without opening Model Settings.
-    * `[ ]`   Autostart click with `'error' in selectPreProjectCostCeiling` after loading: toast equals `error.message` only.
-    * `[ ]`   Auth or counts loading at click-read: loading toast only; no `OUTPUT_CAP_NOT_INITIALIZED` toast during loading.
-    * `[ ]`   Integration success path: tier init → finite cap → real selector success → `createProjectAndAutoStart` called once.
-    * `[ ]`   No edits outside `CreateProjectFromChatButton.tsx`, `CreateProjectFromChatButton.test.tsx`, and `CreateProjectFromChatButton.costCeiling.integration.test.tsx` in this node.
+  * `[✅]`   `requirements`
+    * `[✅]`   Grep `CreateProjectFromChatButton.tsx`: zero `ComputeCostCeilingReturn | null`; zero `preProjectCostCeilingResult === null`; zero `noEstimateToastCopy`; zero bundled `"No cost estimate yet"`.
+    * `[✅]`   Grep `CreateProjectFromChatButton.test.tsx` and `CreateProjectFromChatButton.costCeiling.integration.test.tsx`: zero `selectPreProjectCostCeilingMock.mockReturnValue(null)`; zero `.toBeNull()` on selector results; zero `noEstimateToastCopy`.
+    * `[✅]`   Auth tier + catalog loaded on mount (`isCapInitReady`): `initializeMaxOutputTokens` called without opening Model Settings.
+    * `[✅]`   Autostart click with `'error' in selectPreProjectCostCeiling` after loading: toast equals `error.message` only.
+    * `[✅]`   Auth or counts loading at click-read: loading toast only; no `OUTPUT_CAP_NOT_INITIALIZED` toast during loading.
+    * `[✅]`   Integration success path: tier init → finite cap → real selector success → `createProjectAndAutoStart` called once.
+    * `[✅]`   No edits outside `CreateProjectFromChatButton.tsx`, `CreateProjectFromChatButton.test.tsx`, and `CreateProjectFromChatButton.costCeiling.integration.test.tsx` in this node.
 
-  * `[ ]`   **Commit** `fix(dialectic): cost ceiling fix-forward — tier cap init, loud selectors, UI bootstrap`
-    * `[ ]`   Documents: `hydrateStageProgressLogic` / `hydrateAllStageProgressLogic` throw `ApiError` only (zero `throw new Error`); API errors pass through by reference; origin tests assert exact `HYDRATE_*` codes.
-    * `[ ]`   Store: `initializeMaxOutputTokensFromTier` **deleted**; only `initializeMaxOutputTokens` returns `InitializeMaxOutputTokensResult`; legacy error fields removed from types, store, mock, and relocated tests; guard-before-cap (no standalone `isRecord` branch); waits for cap-init deps; `min(tierCap, bindingModelCap)`; `outputCapUserCustomized`; hydration thunk rethrow; fire-and-forget void+catch on all four internal `hydrateAllStageProgress` invokers including `_handleContributionGenerationPausedNsf`; `projectId` / session-fetch / `sessionId` reset paths; guard alignment; pre-project template fetch silence.
-    * `[ ]`   Hook: `useStageRunProgressHydration` logs hydrate failures with `logger.error` and unchanged `errorDetails` (no `console.error`, no swallow-only catch, no rethrow through void async IIFE); session display via `progressHydrationStatus` + selector fallback.
-    * `[ ]`   Selectors: `ComputeCostCeilingReturn` only; pass-through auth errors and fetch errors; `progressHydrationStatus === 'failed'` → `STAGE_PROGRESS_HYDRATION_FAILED`; discrete local codes; `selectUnifiedProjectProgress` no-throw when session row missing.
-    * `[ ]`   UI: form/session/chat cap init without popover; `capInitResult` at call boundary; chat onboarding pre-project estimate; slider blocked states (pass-through messages); model selector auth gates; generate hook loading gates; generate button and chat button pass-through estimate errors.
+  * `[✅]`   **Commit** `fix(dialectic): cost ceiling fix-forward — tier cap init, loud selectors, UI bootstrap`
+    * `[✅]`   Documents: `hydrateStageProgressLogic` / `hydrateAllStageProgressLogic` throw `ApiError` only (zero `throw new Error`); API errors pass through by reference; origin tests assert exact `HYDRATE_*` codes.
+    * `[✅]`   Store: `initializeMaxOutputTokensFromTier` **deleted**; only `initializeMaxOutputTokens` returns `InitializeMaxOutputTokensResult`; legacy error fields removed from types, store, mock, and relocated tests; guard-before-cap (no standalone `isRecord` branch); waits for cap-init deps; `min(tierCap, bindingModelCap)`; `outputCapUserCustomized`; hydration thunk rethrow; fire-and-forget void+catch on all four internal `hydrateAllStageProgress` invokers including `_handleContributionGenerationPausedNsf`; `projectId` / session-fetch / `sessionId` reset paths; guard alignment; pre-project template fetch silence.
+    * `[✅]`   Hook: `useStageRunProgressHydration` logs hydrate failures with `logger.error` and unchanged `errorDetails` (no `console.error`, no swallow-only catch, no rethrow through void async IIFE); session display via `progressHydrationStatus` + selector fallback.
+    * `[✅]`   Selectors: `ComputeCostCeilingReturn` only; pass-through auth errors and fetch errors; `progressHydrationStatus === 'failed'` → `STAGE_PROGRESS_HYDRATION_FAILED`; discrete local codes; `selectUnifiedProjectProgress` no-throw when session row missing.
+    * `[✅]`   UI: form/session/chat cap init without popover; `capInitResult` at call boundary; chat onboarding pre-project estimate; slider blocked states (pass-through messages); model selector auth gates; generate hook loading gates; generate button and chat button pass-through estimate errors.
 
 * **Subscription checkout deep links — prepopulate cart from upgrade and top-up CTAs**
 
