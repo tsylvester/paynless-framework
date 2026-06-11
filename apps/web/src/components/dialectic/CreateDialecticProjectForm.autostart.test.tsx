@@ -935,7 +935,8 @@ describe('CreateDialecticProjectForm (autostart)', () => {
 
     await waitFor(() => {
       const preview = screen.getByTestId('create-project-cost-preview');
-      expect(preview.textContent).toContain('~100,000');
+      expect(preview.textContent).toContain('~100K');
+      expect(preview.textContent).not.toContain('100,000');
       expect(preview.textContent).toContain('Estimated token cost');
       expect(preview.textContent).toContain('full project');
       expect(preview.textContent).toContain('first stage');

@@ -31,7 +31,13 @@ import type {
   TokenWallet,
   UserTier,
 } from '@paynless/types';
-import { computeCostCeiling, isJson } from '@paynless/utils';
+import {
+  computeCostCeiling,
+  formatTokenCount,
+  isJson,
+  FormatTokenCountDeps,
+  FormatTokenCountParams,
+} from '@paynless/utils';
 import type {
   ComputeCostCeilingDeps,
   ComputeCostCeilingParams,
@@ -244,6 +250,57 @@ const expectedProjectCeiling: number = ceilingComputationResult.projectCeiling;
 const sufficientWalletBalance: string = String(expectedFirstStageCeiling + 2000);
 const lowWalletBalance: string = String(expectedFirstStageCeiling - 1);
 
+const largeTierOutputCapTokens: number = 7803;
+const largeOutputTokenCostRate: number = 1;
+
+const largeStageExpectedCountsResponse: GetStageExpectedCountsResponse = {
+  stages: [
+    { stageSlug: firstStageSlug, expectedCount: 5 },
+    { stageSlug: 'antithesis', expectedCount: 141 },
+  ],
+  totalStages: 2,
+};
+
+const largeCeilingStages: ComputeCostCeilingStageInput[] =
+  largeStageExpectedCountsResponse.stages.map((entry) => {
+    const stageInput: ComputeCostCeilingStageInput = {
+      stageSlug: entry.stageSlug,
+      expectedCount: entry.expectedCount,
+      contributions: [],
+    };
+    return stageInput;
+  });
+
+const largeCeilingPayload: ComputeCostCeilingPayload = {
+  stages: largeCeilingStages,
+  maxOutputTokens: largeTierOutputCapTokens,
+  outputTokenCostRates: [largeOutputTokenCostRate],
+};
+
+const largeCeilingComputationResult = computeCostCeiling(
+  ceilingDeps,
+  ceilingParams,
+  largeCeilingPayload,
+);
+
+if ('error' in largeCeilingComputationResult) {
+  throw new Error('large ceiling integration fixture computation failed');
+}
+
+const expectedLargeFirstStageCeiling: number =
+  largeCeilingComputationResult.stageCeilings[firstStageSlug];
+const expectedLargeProjectCeiling: number = largeCeilingComputationResult.projectCeiling;
+
+const integrationUserTierLargeCap: UserTier = {
+  level: 1,
+  name: 'pro',
+  output_cap_tokens: largeTierOutputCapTokens,
+  max_models_per_project: 1,
+};
+
+const formatTokenCountDeps: FormatTokenCountDeps = {};
+const formatTokenCountParams: FormatTokenCountParams = {};
+
 const catalogRow: AiProvidersRow = mockAiProvidersRow({
   id: modelId,
   name: 'Default Model',
@@ -279,8 +336,14 @@ let createProjectAndAutoStartSpy: MockInstance<
   ReturnType<DialecticStore['createProjectAndAutoStart']>
 >;
 
-function formatTokenCount(value: number): string {
-  return new Intl.NumberFormat('en-US').format(value);
+function expectedFormattedTokenCount(tokenCount: number): string {
+  const formatResult = formatTokenCount(formatTokenCountDeps, formatTokenCountParams, {
+    tokenCount,
+  });
+  if ('error' in formatResult) {
+    throw new Error(`formatTokenCount failed for token count ${tokenCount}`);
+  }
+  return formatResult.formatted;
 }
 
 function configureSupabaseAuthSession(): void {
@@ -355,6 +418,52 @@ function registerSuccessMswHandlersForCatalogRow(row: AiProvidersRow): void {
 
 function registerSuccessMswHandlers(): void {
   registerSuccessMswHandlersForCatalogRow(catalogRow);
+}
+
+function registerLargeCeilingMswHandlers(): void {
+  const largeRawModelConfig: AiModelExtendedConfig = mockAiModelConfig({
+    output_token_cost_rate: largeOutputTokenCostRate,
+    hard_cap_output_tokens: largeTierOutputCapTokens,
+    provider_max_output_tokens: largeTierOutputCapTokens,
+  });
+  if (!isJson(largeRawModelConfig)) {
+    throw new Error('large catalog config is not a valid JSON object');
+  }
+  const largeCatalogConfig: Json = largeRawModelConfig;
+
+  const largeCatalogRow: AiProvidersRow = mockAiProvidersRow({
+    id: modelId,
+    name: 'Default Model',
+    is_default_generation: true,
+    is_active: true,
+    config: largeCatalogConfig,
+  });
+
+  server.use(
+    http.post(`${MOCK_FUNCTIONS_URL}/dialectic-service`, async ({ request }) => {
+      const body = await request.json();
+      if (body == null || typeof body !== 'object' || !('action' in body)) {
+        return HttpResponse.json({ message: 'Invalid request body' }, { status: 400 });
+      }
+      const action: unknown = body['action'];
+      if (typeof action !== 'string') {
+        return HttpResponse.json({ message: 'Invalid request body' }, { status: 400 });
+      }
+      if (action === 'listModelCatalog') {
+        return HttpResponse.json([largeCatalogRow], { status: 200 });
+      }
+      if (action === 'fetchProcessAssociation') {
+        return HttpResponse.json(domainProcessAssociation, { status: 200 });
+      }
+      if (action === 'fetchProcessTemplate') {
+        return HttpResponse.json(processTemplate, { status: 200 });
+      }
+      if (action === 'getStageExpectedCounts') {
+        return HttpResponse.json(largeStageExpectedCountsResponse, { status: 200 });
+      }
+      return HttpResponse.json({ message: `Unhandled action: ${action}` }, { status: 500 });
+    }),
+  );
 }
 
 function registerNoDefaultGenerationModelsMswHandlers(): void {
@@ -484,8 +593,12 @@ async function waitForHydrationComplete(): Promise<void> {
 async function waitForCostPreview(): Promise<void> {
   await waitFor(() => {
     const preview = screen.getByTestId('create-project-cost-preview');
-    expect(preview.textContent).toContain(formatTokenCount(expectedProjectCeiling));
-    expect(preview.textContent).toContain(formatTokenCount(expectedFirstStageCeiling));
+    expect(preview.textContent).toContain(
+      expectedFormattedTokenCount(expectedProjectCeiling),
+    );
+    expect(preview.textContent).toContain(
+      expectedFormattedTokenCount(expectedFirstStageCeiling),
+    );
   });
 }
 
@@ -805,5 +918,37 @@ describe('CreateDialecticProjectForm cost ceiling integration', () => {
         state: expect.objectContaining({ autoStartGeneration: false }),
       }),
     );
+  });
+
+  it('cost preview shows abbreviated token counts for large ceilings', async () => {
+    registerLargeCeilingMswHandlers();
+    seedAuthForCostCeilingIntegration({
+      isLoading: false,
+      userTier: integrationUserTierLargeCap,
+      error: null,
+    });
+    seedPreProjectFormStore(defaultSelectedModels);
+    renderWithRouter(<CreateDialecticProjectForm />);
+
+    await waitForHydrationComplete();
+
+    await waitFor(() => {
+      expect(useDialecticStore.getState().maxOutputTokens).toBe(largeTierOutputCapTokens);
+    });
+
+    const ceilingResult = selectPreProjectCostCeiling(useDialecticStore.getState());
+    if ('error' in ceilingResult) {
+      throw new Error('selectPreProjectCostCeiling should return success for large ceiling fixture');
+    }
+    expect(ceilingResult.stageCeilings[firstStageSlug]).toBe(expectedLargeFirstStageCeiling);
+    expect(ceilingResult.projectCeiling).toBe(expectedLargeProjectCeiling);
+
+    await waitFor(() => {
+      const preview = screen.getByTestId('create-project-cost-preview');
+      expect(preview.textContent).toContain('39K');
+      expect(preview.textContent).not.toContain('39,015');
+      expect(preview.textContent).toContain('1.1M');
+      expect(preview.textContent).not.toContain('1,139,238');
+    });
   });
 });

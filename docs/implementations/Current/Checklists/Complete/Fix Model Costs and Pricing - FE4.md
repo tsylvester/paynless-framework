@@ -313,6 +313,94 @@
     * `[✅]`   Selector auth lines unchanged; TS2741 cleared after producer GREEN.
     * `[✅]`   Guard/interface/computeCostCeiling test suites remain green.
 
+* `[✅]`   packages/utils/src/formatTokenCount/formatTokenCount.ts **Compact B/M/K token count display for cost-ceiling UI; shared formatter replaces Intl.NumberFormat in consumers**
+
+  * `[✅]`   `objective`
+    * `[✅]`   **Problem:** Cost-ceiling UI surfaces raw `computeCostCeiling` numeric results (`projectCeiling`, `stageCeilings`, shortfalls) via inline `Intl.NumberFormat('en-US').format(n)` in `CreateDialecticProjectForm.tsx`, `SessionInfoCard.tsx`, `GenerateContributionButton.tsx`, and `chat/index.tsx`. Large values render as unreadable comma-separated strings (e.g. `1,139,238`, `39,015`) instead of compact abbreviations. `OutputCapSlider.tsx` already abbreviates locally but cost-ceiling copy does not share that logic.
+    * `[✅]`   **Functional goal:** Add `@paynless/utils` producer `formatTokenCount` — pure display formatter; **does not** alter `computeCostCeiling` math or numeric contracts. Input: finite non-negative token count. Output: abbreviated display string per rules below. Invalid input (non-finite or negative) returns `{ error: ApiError }` with `{ code: 'VALIDATION', message: 'tokenCount must be a finite non-negative number.' }` — same shape as `computeCostCeiling` error branch.
+    * `[✅]`   **Functional goal — abbreviation rules (success path):**
+      * `[✅]`   **Rounding:** Standard JavaScript rounding only — no bespoke modes. B/M use `(tokenCount / divisor).toFixed(1)` (one decimal). K uses `Math.round(tokenCount / 1_000)` (nearest integer). Evaluate tiers top-down (B → M → K → raw); first matching rule wins.
+      * `[✅]`   `tokenCount >= 1_000_000_000` → `(tokenCount / 1_000_000_000).toFixed(1)` + uppercase `B` suffix (e.g. `2_500_000_000` → `2.5B`).
+      * `[✅]`   `tokenCount >= 1_000_000`, **or** (`tokenCount >= 1_000` and `(tokenCount / 1_000_000).toFixed(1)` is `1.0` or greater) → `(tokenCount / 1_000_000).toFixed(1)` + uppercase `M` suffix. Examples: `1_139_238` → `1.1M`; `999_999` → `1.0M` (standard `toFixed(1)` rounds `0.999999` to `1.0`, not `1000K`).
+      * `[✅]`   `tokenCount >= 1_000` (M-tier rule above did not apply) → `Math.round(tokenCount / 1_000)` + uppercase `K` suffix. Examples: `39_015` → `39K`; `1_500` → `2K`.
+      * `[✅]`   `tokenCount < 1_000` → `new Intl.NumberFormat('en-US').format(tokenCount)` (e.g. `0` → `0`, `512` → `512`).
+    * `[✅]`   **Functional goal — consumer contract:** Downstream UI nodes (`CreateDialecticProjectForm`, `SessionInfoCard`, `GenerateContributionButton`, `chat/index`) **import `formatTokenCount` from `@paynless/utils`** and replace local `Intl.NumberFormat` formatters for cost-ceiling display strings only. **Numeric comparisons** (wallet shortfall, gating) remain on raw numbers from selectors/`computeCostCeiling` — never on formatted strings. Consumer node updates are separate checklist edits; this node delivers the producer only.
+    * `[✅]`   **Non-functional:** Do not edit `computeCostCeiling.ts`, selectors, or UI consumers in this node. One implementation file: `formatTokenCount.ts`. Follow `computeCostCeiling/` folder layout (interface, guards, mock, provides). Export via `formatTokenCount.provides.ts` and `packages/utils/src/index.ts`.
+
+  * `[✅]`   `role`
+    * `[✅]`   Utils producer — owns compact token-count display formatting for cost-ceiling UI consumers.
+    * `[✅]`   Out of scope: cost ceiling computation, wallet math, slider page-guidance copy, subscription CTAs.
+
+  * `[✅]`   `module`
+    * `[✅]`   `@paynless/utils` — `formatTokenCount/` bounded context (display formatting only; no store or API).
+
+  * `[✅]`   `deps`
+    * `[✅]`   `ApiError` from `@paynless/types` (validation error branch only).
+    * `[✅]`   No runtime deps on `computeCostCeiling` — formatter is independent; consumers compose numeric output from selectors with this display helper.
+
+  * `[✅]`   `context_slice`
+    * `[✅]`   Input: `FormatTokenCountPayload { tokenCount: number }`.
+    * `[✅]`   Output: `FormatTokenCountReturn` = `{ formatted: string }` success | `{ error: ApiError }` validation failure.
+
+  * `[✅]`   packages/utils/src/formatTokenCount/formatTokenCount.interface.test.ts
+    * `[✅]`   `FormatTokenCountPayload` accepts `{ tokenCount: 0 }` and `{ tokenCount: 1_139_238 }`.
+    * `[✅]`   `FormatTokenCountSuccessReturn` accepts `{ formatted: '1.1M' }`.
+    * `[✅]`   `FormatTokenCountErrorReturn` accepts `{ error: ApiError }` with `code: 'VALIDATION'`.
+    * `[✅]`   `FormatTokenCountFn` signature matches deps/params/payload/return union.
+
+  * `[✅]`   packages/utils/src/formatTokenCount/formatTokenCount.interface.ts
+    * `[✅]`   `FormatTokenCountDeps`, `FormatTokenCountParams` (empty interfaces).
+    * `[✅]`   `FormatTokenCountPayload { tokenCount: number }`.
+    * `[✅]`   `FormatTokenCountSuccessReturn { formatted: string }`.
+    * `[✅]`   `FormatTokenCountErrorReturn { error: ApiError }`.
+    * `[✅]`   `FormatTokenCountReturn` union; `FormatTokenCountFn` typed export.
+
+  * `[✅]`   packages/utils/src/formatTokenCount/formatTokenCount.guard.test.ts
+    * `[✅]`   `isFormatTokenCountPayload` true for `{ tokenCount: 0 }`, `{ tokenCount: 39_015 }`, `{ tokenCount: 1_139_238 }`.
+    * `[✅]`   `isFormatTokenCountPayload` false for `NaN`, `Infinity`, `-1`, non-number `tokenCount`, missing `tokenCount`.
+    * `[✅]`   `isFormatTokenCountSuccessReturn` / `isFormatTokenCountErrorReturn` accept valid contract objects; reject malformed shapes.
+
+  * `[✅]`   packages/utils/src/formatTokenCount/formatTokenCount.guard.ts
+    * `[✅]`   `isFormatTokenCountPayload`: `tokenCount` is `number`, `Number.isFinite(tokenCount)`, `tokenCount >= 0`.
+    * `[✅]`   Success/error return guards per interface; no coercion.
+
+  * `[✅]`   packages/utils/src/formatTokenCount/formatTokenCount.mock.ts
+    * `[✅]`   Trusted factories: `buildFormatTokenCountPayload`, `buildFormatTokenCountSuccessReturn`, `buildFormatTokenCountErrorReturn` — full typed objects with override hooks (including `null`/`undefined` overrides for guard tests).
+
+  * `[✅]`   packages/utils/src/formatTokenCount/formatTokenCount.test.ts
+    * `[✅]`   `1_139_238` → success `{ formatted: '1.1M' }`.
+    * `[✅]`   `39_015` → success `{ formatted: '39K' }`.
+    * `[✅]`   `1_000_000_000` → success `{ formatted: '1.0B' }`.
+    * `[✅]`   `999_999` → success `{ formatted: '1.0M' }` (M-tier via standard `toFixed(1)` millions rounding, not `1000K`).
+    * `[✅]`   `1_500` → success `{ formatted: '2K' }`.
+    * `[✅]`   `1_000` → success `{ formatted: '1K' }`.
+    * `[✅]`   `512` → success `{ formatted: '512' }`.
+    * `[✅]`   `0` → success `{ formatted: '0' }`.
+    * `[✅]`   `NaN` payload → `{ error: { code: 'VALIDATION', message: 'tokenCount must be a finite non-negative number.' } }`.
+    * `[✅]`   `-100` payload → same validation error.
+    * `[✅]`   `Infinity` payload → same validation error.
+
+  * `[✅]`   packages/utils/src/formatTokenCount/formatTokenCount.ts
+    * `[✅]`   `formatTokenCount(deps, params, payload): FormatTokenCountReturn` — guard payload; apply abbreviation rules (standard JS rounding; top-down B → M → K → raw); return success or validation error unchanged shape.
+
+  * `[✅]`   packages/utils/src/formatTokenCount/formatTokenCount.provides.ts
+    * `[✅]`   Export `formatTokenCount`, guards, types — public API surface for `@paynless/utils` consumers.
+
+  * `[✅]`   packages/utils/src/index.ts
+    * `[✅]`   Add `export * from './formatTokenCount/formatTokenCount.provides';` alongside existing `computeCostCeiling` export.
+
+  * `[✅]`   `directionality`
+    * `[✅]`   Layer: utils producer (inward deps: `@paynless/types` only).
+    * `[✅]`   Outward: exported via `formatTokenCount.provides.ts` → `index.ts` → UI consumers (later nodes).
+
+  * `[✅]`   `requirements`
+    * `[✅]`   Grep `formatTokenCount.ts`: zero edits to numeric values; formatter is display-only.
+    * `[✅]`   Grep `computeCostCeiling.ts`: unchanged by this node.
+    * `[✅]`   Unit tests assert all abbreviation rules and validation failures listed above.
+    * `[✅]`   Guard/interface/formatTokenCount test suites green.
+    * `[✅]`   `@paynless/utils` exports `formatTokenCount` from package entry.
+    * `[✅]`   No edits outside `packages/utils/src/formatTokenCount/*` and `packages/utils/src/index.ts` in this node.
+
 * `[✅]`   packages/store/src/dialecticStore.selectors **Cost ceiling selectors return ComputeCostCeilingReturn only; pass-through auth/fetch errors; hydration-failed status; selectUnifiedProjectProgress hydration-safe when session missing**
 
   * `[✅]`   `objective`
@@ -402,7 +490,7 @@
     * `[✅]`   Success tests for both cost-ceiling selectors still match hand-computed `computeCostCeiling` output.
     * `[✅]`   Existing `dialecticStore.selectors.progress.test.ts` suite remains green.
 
-* `[✅]`   apps/web/src/components/dialectic/CreateDialecticProjectForm **Tier cap autostart bootstrap; cost-ceiling UI from loading flags and pass-through errors; integration test without popover**
+* `[✅]`   apps/web/src/components/dialectic/CreateDialecticProjectForm **Tier cap autostart bootstrap; cost-ceiling UI from loading flags and pass-through errors; compact formatTokenCount display; integration test without popover**
 
   * `[✅]`   `objective`
     * `[✅]`   **Problem:** Pre-project cost estimate UI treats `selectPreProjectCostCeiling === null` as a bundled “not ready” state. `maxOutputTokens` is never initialized until `OutputCapSlider` mounts inside the closed model popover. Autostart demotion and submit gate use the same bundled copy instead of selector `error.message` or discrete codes from node 2.
@@ -414,7 +502,10 @@
     * `[✅]`   **Functional goal — footer error gate order (after `!isCostEstimateLoading`, first match wins; every failure surfaced; pass-through verbatim):** Subscribe `authStore.error` only (not dialectic error fields). Render `create-project-estimate-error-notice` with **only** the matching message — no prefix, no rewording: (1) `authStore.error !== null` → `authStore.error.message`. (2) `userTier === null` → `'Subscription tier is not available.'` (same copy as node 6 `AIModelSelector` tier-unavailable notice). (3) `capInitResult?.ok === false` → `capInitResult.error.message` (same reference). (4) `'error' in preProjectCostCeilingResult` → `preProjectCostCeilingResult.error.message`. **Do not** display selector `OUTPUT_CAP_NOT_INITIALIZED` when steps (1) or (2) apply. When no error in steps (1)–(4) and success with finite ceilings, keep existing preview / balance warnings.
     * `[✅]`   **Functional goal — autostart demotion copy (`autoUncheckReason`):** Remove bundled strings. Use the **same gate order** as footer error gate after loading: (1) while `isCostEstimateLoading`, loading copy matching footer; (2) `authStore.error !== null` → pass-through `authStore.error.message`; (3) `userTier === null` → `'Subscription tier is not available.'`; (4) `capInitResult?.ok === false` → pass-through `capInitResult.error.message`; (5) `'error' in preProjectCostCeilingResult` → pass-through `preProjectCostCeilingResult.error.message`; (6) retain `"No default models available"` only when `!isLoadingModelCatalog && defaultModels.length === 0`.
     * `[✅]`   **Functional goal — `onSubmit` autostart gate:** Remove `preProjectCostCeilingResult === null` branch and toast `"Cost estimate is not available yet."`. On autostart spend path after loading, apply **same gate order** as footer before calling `createProjectAndAutoStart`: toast and return on first match among `authStore.error.message`, tier-unavailable copy, `capInitResult.error.message` when `capInitResult?.ok === false`, then `preProjectCostCeilingResult.error.message` when `'error' in result`. Keep insufficient-balance toast unchanged.
+    * `[✅]`   **Problem (QOL):** Cost preview and balance-warning copy use local `Intl.NumberFormat('en-US').format(n)` (lines 164–165) for `projectCeiling`, `firstStageCeiling`, and `projectBalanceShortfall` — large estimates render as unreadable comma-separated strings (e.g. `1,139,238`) instead of compact B/M/K abbreviations from the shared utils formatter.
+    * `[✅]`   **Functional goal — compact cost-ceiling display:** Import `formatTokenCount` from `@paynless/utils`. Remove local inline `Intl.NumberFormat` formatter. Call `formatTokenCount({}, {}, { tokenCount: n })` for all cost-ceiling **display strings** in `create-project-cost-preview` and balance-warning branches; render success `{ formatted }` only. **Do not** use this helper for wallet balance or other non-ceiling numbers. **Numeric comparisons** (wallet shortfall math, autostart gates) remain on raw numbers from selector success — never on formatted strings. When `'error' in result`, surface validation `error` unchanged (must not occur for finite ceiling values on success path).
     * `[✅]`   **Non-functional:** Do not edit `OutputCapSlider`, `AIModelSelector`, selectors, or subscription CTA links in this node. Popover open state unchanged; cap init must not depend on popover.
+    * `[✅]`   **Non-functional (formatTokenCount):** Depends on `packages/utils` `formatTokenCount` node GREEN before implementation. Do not edit `computeCostCeiling.ts` or selectors in this node.
 
   * `[✅]`   `role`
     * `[✅]`   Create-project UI — wires auth tier hydrate → store cap init; displays cost ceiling from selector + loading flags.
@@ -428,6 +519,7 @@
     * `[✅]`   Node 2: `selectPreProjectCostCeiling` returns `ComputeCostCeilingReturn` only.
     * `[✅]`   `useAuthStore` from `@paynless/store` — `isLoading`, `userTier`, `error`.
     * `[✅]`   Dialectic store — `initializeMaxOutputTokens`, `isLoadingModelCatalog`, `modelCatalog`, `isLoadingDomainProcessAssociation`, `isLoadingProcessTemplate`, `isLoadingStageExpectedCounts`.
+    * `[✅]`   `formatTokenCount` from `@paynless/utils` — compact display for ceiling preview and shortfall copy (producer node must be GREEN first).
 
   * `[✅]`   `context_slice`
     * `[✅]`   Reads: auth tier + loading + `error`; component-local `capInitResult`; dialectic fetch loading flags; `selectPreProjectCostCeiling`; wallet via existing selector.
@@ -453,12 +545,14 @@
     * `[✅]`   replace test ~647 `shows create-project-no-estimate-notice when selector returns null` → `shows create-project-estimate-error-notice when selector returns OUTPUT_CAP_NOT_INITIALIZED`; expect notice text **exactly** `error.message`; assert `create-project-no-estimate-notice` absent.
     * `[✅]`   success test ~635–644: remove `queryByTestId('create-project-no-estimate-notice')` assertion.
     * `[✅]`   error test ~659–671 unchanged — pass-through `error.message` only.
+    * `[✅]`   add test `create-project-cost-preview shows abbreviated token counts for large ceilings` — mock selector success with `projectCeiling: 1_139_238`, finite `firstStageCeiling`; expect `create-project-cost-preview` text contains `'1.1M'` (not `'1,139,238'`); wallet/shortfall math assertions remain on raw numbers.
 
   * `[✅]`   apps/web/src/components/dialectic/CreateDialecticProjectForm.tsx
     * `[✅]`   import `useAuthStore`; subscribe `isLoading`, `userTier`, `error`; subscribe `initializeMaxOutputTokens` and `isLoadingProcessTemplate`; hold `capInitResult` in component-local state per objective.
     * `[✅]`   `useEffect` on `[isLoading, userTier, isLoadingModelCatalog, modelCatalog.length]` → call `initializeMaxOutputTokens()` only when `isCapInitReady` per objective; assign return to `capInitResult`.
     * `[✅]`   `preProjectCostCeilingResult: ComputeCostCeilingReturn` (no null); remove all `=== null` / `!== null` checks on selector result; use footer error gate order (auth → tier-unavailable → `capInitResult` → selector) after loading; success field access only when no error in gate.
     * `[✅]`   implement `isCostEstimateLoading` and loading-notice vs error-notice vs preview branches per objective; remove bundled strings from footer and `autoUncheckReason`; autostart submit uses same gate order.
+    * `[✅]`   remove local `formatTokenCount` `Intl.NumberFormat` helper (lines 164–165); import `formatTokenCount` from `@paynless/utils`; use for `projectCeiling`, `firstStageCeiling`, and `projectBalanceShortfall` display strings only per objective.
 
   * `[✅]`   apps/web/src/components/dialectic/CreateDialecticProjectForm.costCeiling.integration.test.tsx
     * `[✅]`   seed `useAuthStore` (or MSW profile/tier handler if integration uses real auth hydrate) with `isLoading: false`, `userTier.output_cap_tokens: 1000`, fixture model cap `1000` (or lower model cap → expect **`min(tier, model)`**); **do not** pass `maxOutputTokens` in `seedPreProjectFormStore` (omit override so store starts `null`).
@@ -466,19 +560,22 @@
     * `[✅]`   update `null prerequisites: missing maxOutputTokens` — auth `isLoading: false`, `userTier: null` → footer `'Subscription tier is not available.'`, **not** `OUTPUT_CAP_NOT_INITIALIZED`; auth still loading → loading notice only; auth tier loaded + catalog ready + init returns `{ ok: false, error }` → pass-through init error message, not bundled notice.
     * `[✅]`   update `API counts error` test — expect `selectPreProjectCostCeiling` returns `{ error: sameReference as stageExpectedCountsError }`; UI shows pass-through API error message via `create-project-estimate-error-notice`, not `create-project-no-estimate-notice`.
     * `[✅]`   update success-stack test — remove manual `maxOutputTokens` seed; rely on tier init + API hydration path.
+    * `[✅]`   replace local `formatTokenCount` helper (`Intl.NumberFormat`) with import from `@paynless/utils`; assert `create-project-cost-preview` contains abbreviated ceilings when fixture yields large raw values (e.g. `'1.1M'`, `'39K'`); keep hand-computed numeric assertions on raw selector output unchanged.
 
   * `[✅]`   `requirements`
     * `[✅]`   Grep `CreateDialecticProjectForm.tsx`: zero `preProjectCostCeilingResult === null`, zero `create-project-no-estimate-notice`, zero bundled “not ready” / “No cost estimate yet” strings.
+    * `[✅]`   Grep `CreateDialecticProjectForm.tsx`: zero local `Intl.NumberFormat` cost-ceiling formatter; import `formatTokenCount` from `@paynless/utils`.
     * `[✅]`   With tier `output_cap_tokens: 8192`, model cap `4096`, auth + catalog loaded, popover closed: after mount, `maxOutputTokens === 4096` (`min(tier, model)`) without opening popover.
     * `[✅]`   With tier `8192` and model cap `8192`, after mount, `maxOutputTokens === 8192`.
     * `[✅]`   Integration test passes: tier hydrated → cap set → preview → autostart affordance without popover interaction.
+    * `[✅]`   Success preview with large `projectCeiling` renders abbreviated display string (e.g. `1.1M`), not comma-separated full integer.
     * `[✅]`   API `stageExpectedCountsError` surfaces unchanged `message` in UI (selector pass-through from node 2) when auth/tier/init gates pass.
     * `[✅]`   Auth loaded with `userTier === null` and no `auth.error`: footer and autostart demotion show `'Subscription tier is not available.'`, not selector `OUTPUT_CAP_NOT_INITIALIZED`.
     * `[✅]`   `authStore.error` surfaces unchanged `message` in footer/demotion/submit before any selector error.
     * `[✅]`   `capInitResult.error.message` surfaces unchanged in footer/demotion/submit before selector error when tier is available and init returned `{ ok: false, error }` for **each** code: `NO_DEFAULT_GENERATION_MODELS`, `MODEL_CATALOG_ENTRY_MISSING`, `MODEL_OUTPUT_CAP_UNAVAILABLE`, `MODEL_CATALOG_INVALID_CONFIG`.
     * `[✅]`   Autostart test file: zero `.toBeNull()` on selector mock return type; zero assertions on removed bundled copy.
 
-* `[✅]`   apps/web/src/components/dialectic/SessionInfoCard **Session tier cap init; session cost-ceiling UI from loading flags and pass-through errors**
+* `[✅]`   apps/web/src/components/dialectic/SessionInfoCard **Session tier cap init; session cost-ceiling UI from loading flags and pass-through errors; compact formatTokenCount display**
 
   * `[✅]`   `objective`
     * `[✅]`   **Problem:** Session page cost footer treats `selectCostCeiling === null` as bundled `session-info-no-estimate-notice` (“Open Model Settings… output cap… stage counts”). `maxOutputTokens` stays `null` until `OutputCapSlider` mounts inside the closed model popover even though `userTier.output_cap_tokens` hydrated from profile. Node 2 selectors never return `null`; this component still types and branches on `null`. Error line prefixes `"Cost estimate failed:"` instead of pass-through `error.message`. Session progress hydration (`progressHydrationStatus`) has no loading line — missing run counts surface as selector errors while hydration is still `pending`.
@@ -489,7 +586,10 @@
     * `[✅]`   **Functional goal — cost estimate footer:** Define `isCostEstimateLoading` when any of: `authStore.isLoading`, `isLoadingProcessTemplate`, or `progressHydrationStatus[runKey] === 'pending'`. While loading, render `session-info-estimate-loading-notice` with copy for the **first** active flag in that order: tier → `"Loading subscription tier…"`; template → `"Loading process template…"`; progress pending → `"Loading stage progress…"`. **Never** render error or success estimate lines during loading. Subscribe `authStore.error` only.
     * `[✅]`   **Functional goal — footer error gate order (after `!isCostEstimateLoading`, first match wins; every failure surfaced; pass-through verbatim):** Render `session-info-estimate-error-notice` with **only** the matching message — no `"Cost estimate failed:"` prefix, no rewording: (1) `authStore.error !== null` → `authStore.error.message`. (2) `userTier === null` → `'Subscription tier is not available.'` (same copy as node 6). (3) `capInitResult?.ok === false` → `capInitResult.error.message`. (4) `'error' in costCeilingResult` → `costCeilingResult.error.message`. **Do not** display selector `OUTPUT_CAP_NOT_INITIALIZED` when steps (1) or (2) apply. When no error in steps (1)–(4), keep existing `session-info-stage-cost-estimate`, `session-info-project-cost-estimate`, and `session-info-project-balance-warning` branches unchanged (including `/subscription?tab=top-up` link on balance warning — subscription CTA deep link is a later FE4 node).
     * `[✅]`   **Functional goal:** Remove `session-info-no-estimate-notice` element and all bundled copy (`"No cost estimate yet. Open Model Settings…"`). Remove every `costCeilingResult === null` branch and `costCeilingSuccessResult` derivation that treats `null` as a third state — use footer error gate order after loading, then success only when no error in gate.
+    * `[✅]`   **Problem (QOL):** Session cost estimate and balance-warning copy use local `Intl.NumberFormat('en-US').format(n)` (lines 177–178) for `stageCeiling`, `projectCeiling`, and `projectBalanceShortfall` — large values render as unreadable comma-separated strings instead of compact B/M/K abbreviations.
+    * `[✅]`   **Functional goal — compact cost-ceiling display:** Import `formatTokenCount` from `@paynless/utils`. Remove local inline `Intl.NumberFormat` formatter. Call `formatTokenCount({}, {}, { tokenCount: n })` for all cost-ceiling **display strings** in `session-info-stage-cost-estimate`, `session-info-project-cost-estimate`, and `session-info-project-balance-warning`; render success `{ formatted }` only. **Numeric comparisons** (wallet shortfall math) remain on raw numbers — never on formatted strings.
     * `[✅]`   **Non-functional:** Do not edit `OutputCapSlider`, `AIModelSelector`, selectors, `dialecticStore.ts`, or subscription CTA URL building in this node.
+    * `[✅]`   **Non-functional (formatTokenCount):** Depends on `packages/utils` `formatTokenCount` node GREEN before implementation. Do not edit `computeCostCeiling.ts` or selectors in this node.
 
   * `[✅]`   `role`
     * `[✅]`   Session header UI — wires auth tier hydrate → store cap init after session load; displays session cost ceiling from `selectCostCeiling` + hydration/template loading flags.
@@ -503,6 +603,7 @@
     * `[✅]`   Node 2: `selectCostCeiling` returns `ComputeCostCeilingReturn` only.
     * `[✅]`   `useAuthStore` — `isLoading`, `userTier`, `error`.
     * `[✅]`   Dialectic store — `initializeMaxOutputTokens`, `isLoadingModelCatalog`, `modelCatalog`, `progressHydrationStatus`, `isLoadingProcessTemplate`, `selectSelectedModels`, `selectViewingStage`, `selectUnifiedProjectProgress`, wallet via `selectActiveChatWalletInfo`, `ComputeCostCeilingReturn` from `@paynless/utils`.
+    * `[✅]`   `formatTokenCount` from `@paynless/utils` — compact display for session ceiling and shortfall copy (producer node must be GREEN first).
 
   * `[✅]`   `context_slice`
     * `[✅]`   Reads: `activeSessionDetail`, `currentProjectDetail`, auth tier + loading + `error`, component-local `capInitResult`, `progressHydrationStatus`, `isLoadingProcessTemplate`, `selectCostCeiling(session.id)`.
@@ -522,15 +623,19 @@
     * `[✅]`   add test `passes through capInitResult error before selector error` — for each init failure code `NO_DEFAULT_GENERATION_MODELS`, `MODEL_CATALOG_ENTRY_MISSING`, `MODEL_OUTPUT_CAP_UNAVAILABLE`, `MODEL_CATALOG_INVALID_CONFIG`: mock init return `{ ok: false, error }`; selector mock different message → notice text **exactly** init error message.
     * `[✅]`   update layout tests at lines expecting `session-info-no-estimate-notice` (`Row 2 renders…`, seed-prompt layout test ~L404) — when mock selector returns error, expect `session-info-estimate-error-notice` or loading notice per seeded state; never expect `session-info-no-estimate-notice`.
     * `[✅]`   keep success-path tests (`stage`/`project` estimates, balance warning, top-up link) unchanged except remove `session-info-no-estimate-notice` null checks where success mock used.
+    * `[✅]`   add test `session cost estimates show abbreviated token counts for large ceilings` — mock selector success with `stageCeiling: 39_015`, `projectCeiling: 1_139_238`; expect `session-info-stage-cost-estimate` contains `'39K'`; expect `session-info-project-cost-estimate` contains `'1.1M'`; not comma-separated full integers.
 
   * `[✅]`   apps/web/src/components/dialectic/SessionInfoCard.tsx
     * `[✅]`   add `useEffect`, `useAuthStore` (`isLoading`, `userTier`, `error`), `initializeMaxOutputTokens`, `capInitResult` (component-local), `progressHydrationStatus`, `isLoadingProcessTemplate` subscriptions per objective.
     * `[✅]`   implement loading / error / success footer branches using footer error gate order; remove `session-info-no-estimate-notice` and null-selector branches; error notice pass-through message only.
     * `[✅]`   `costCeilingSuccessResult` — assign only when `!isCostEstimateLoading` and footer error gate (auth → tier-unavailable → `capInitResult` → selector) yields no error.
+    * `[✅]`   remove local `formatTokenCount` `Intl.NumberFormat` helper (lines 177–178); import `formatTokenCount` from `@paynless/utils`; use for `stageCeiling`, `projectCeiling`, and `projectBalanceShortfall` display strings only per objective.
 
   * `[✅]`   `requirements`
     * `[✅]`   Grep `SessionInfoCard.tsx`: zero `session-info-no-estimate-notice`, zero `costCeilingResult === null`, zero `"Cost estimate failed:"`, zero bundled “No cost estimate yet” / “Open Model Settings” strings.
+    * `[✅]`   Grep `SessionInfoCard.tsx`: zero local `Intl.NumberFormat` cost-ceiling formatter; import `formatTokenCount` from `@paynless/utils`.
     * `[✅]`   Grep `SessionInfoCard.test.tsx`: zero `session-info-no-estimate-notice`, zero `selectCostCeilingMock.mockReturnValue(null)`.
+    * `[✅]`   Success estimates with large raw ceilings render abbreviated display strings (e.g. `39K`, `1.1M`), not comma-separated full integers.
     * `[✅]`   With auth tier `output_cap_tokens: 8192`, model cap from fixture, catalog loaded, session active, popover closed: `initializeMaxOutputTokens` invoked when `isCapInitReady`.
     * `[✅]`   Injected selector `{ error: ApiError }` surfaces unchanged `message` in `session-info-estimate-error-notice` when auth/tier/init gates pass.
     * `[✅]`   Auth loaded with `userTier === null` and no `auth.error`: footer shows `'Subscription tier is not available.'`, not selector `OUTPUT_CAP_NOT_INITIALIZED`.
@@ -538,19 +643,20 @@
     * `[✅]`   Success estimates and project balance warning tests remain green.
     * `[✅]`   No edits outside `SessionInfoCard.tsx` and `SessionInfoCard.test.tsx` in this node.
 
-* `[✅]`   apps/web/src/components/dialectic/OutputCapSlider **Blocked/loading UI instead of silent null; store display + tier thumb max; persist cap only on user commit**
+* `[✅]`   apps/web/src/components/dialectic/OutputCapSlider **Blocked/loading UI instead of silent null; live header display during drag; store SSOT for selectors; persist cap only on user commit**
 
   * `[✅]`   `objective`
     * `[✅]`   **Problem:** `OutputCapSlider` returns `null` silently when `availableTiers.length === 0`, `userTier === null`, or `sliderRangeMax === null` (lines 315–323), so the model-settings popover shows empty space with no diagnostic. Local `useEffect` (lines 150–167) seeds `sliderRealValue` from `userTier.output_cap_tokens` or `sliderRangeMax` when `maxOutputTokens === null`, duplicating init that nodes 3/4 delegate to `initializeMaxOutputTokens`. Display `currentDisplayValue` (lines 338–345) falls back to tier/model cap when store cap is null, masking uninitialized store state. Cost selectors require finite `dialecticStore.maxOutputTokens`; slider must not write the store except on explicit user override.
+    * `[✅]`   **Problem (QOL):** The “Max Output Tokens” header binds to `currentDisplayValue`, which is derived from **`maxOutputTokens` in the store** (lines 462–465, 571–576). During drag, `onValueChange` updates local `sliderRealValue` via `applyOutputCapValue(..., persistToStore: false)` but the header stays frozen at the last committed store value until `onValueCommit` — the user cannot see the target cap while sliding.
     * `[✅]`   **Functional goal — no silent `return null`:** Replace all early `return null` guards with visible UI. Gate order (first match wins): (1) `isLoading === true` → `output-cap-slider-loading-notice` `"Loading subscription tier…"`. (2) `!isLoading && authStore.error !== null` → `output-cap-slider-blocked-notice` with **only** `authStore.error.message` (pass-through). (3) `!isLoading && userTier === null && authStore.error === null` → blocked with `{ code: 'SUBSCRIPTION_TIER_UNAVAILABLE', message: 'Subscription tier is not available.' }`. (4) `availableTiers.length === 0` → blocked with fixed `NO_TIERS_LOADED` message. (5) no selected models → blocked notice with **only** `'No models selected.'` (same text as selector — no prefix). (6) invalid catalog config for a selected model → blocked with **only** **`Model catalog config invalid for model id <id>.`** (exact node 1/2 message — never `"Model catalog config invalid for selected model."`). (7) `maxOutputTokens` not finite → blocked with **only** `'Output cap is not initialized in dialectic store.'` when not loading (parent must run cap init first). Never `return null`. Never reword pass-through messages. **Do not** subscribe dialectic error store fields — slider does not call `initializeMaxOutputTokens`.
-    * `[✅]`   **Functional goal — display reads store only:** Success-path slider reads **`maxOutputTokens` from store** for display and for `computeCostCeiling` input (via selectors). `activeThumbMax` / track bounds use existing tier-vs-model UI clamp logic for **interaction only**; do **not** write store except on user commit. Do **not** recalculate or persist tier default cap in this component.
+    * `[✅]`   **Functional goal — live header display during drag:** Success-path **header** (“Max Output Tokens” value + page-guidance subline) reads **`clampedSliderValue`** (local state derived from `sliderRealValue`, already computed lines 467–474) — **not** store `maxOutputTokens` / `currentDisplayValue`. When idle or after commit, `sliderRealValue` syncs from finite store cap via existing `useEffect`; header then matches store. **`dialecticStore.maxOutputTokens` remains SSOT for cost ceiling input** (selectors, `computeCostCeiling`) — this component does not change that contract. `activeThumbMax` / track bounds use existing tier-vs-model UI clamp logic for **interaction only**; do **not** write store except on user commit. Do **not** recalculate or persist tier default cap in this component.
     * `[✅]`   **Functional goal — no init in this component:** Do not import or call `initializeMaxOutputTokens`. Do not call `setMaxOutputTokens` in `useEffect`, on mount, or when syncing display from tier/model cap. Parent nodes (`CreateDialecticProjectForm`, `SessionInfoCard`) own tier hydrate → store init.
-    * `[✅]`   **Functional goal — `setMaxOutputTokens` only on user commit:** Keep `applyOutputCapValue(..., persistToStore)` contract: `persistToStore: false` on `Slider` `onValueChange` (drag/live preview only — updates local `sliderRealValue` and upgrade CTA state). `persistToStore: true` only on `Slider` `onValueCommit` and accessible tier-marker button clicks (lines 515–518). When `persistToStore === true`, call `setMaxOutputTokens(requestedReal)` (node 1 sets `outputCapUserCustomized: true`). Do not add any other call sites for `setMaxOutputTokens` in this file.
+    * `[✅]`   **Functional goal — `setMaxOutputTokens` only on user commit:** Keep `applyOutputCapValue(..., persistToStore)` contract: `persistToStore: false` on `Slider` `onValueChange` (drag/live preview — updates local `sliderRealValue`, upgrade CTA state, and **header display via `clampedSliderValue`**). `persistToStore: true` only on `Slider` `onValueCommit` and accessible tier-marker button clicks (lines 515–518). When `persistToStore === true`, call `setMaxOutputTokens(requestedReal)` (node 1 sets `outputCapUserCustomized: true`). Do not add any other call sites for `setMaxOutputTokens` in this file.
     * `[✅]`   **Functional goal — success path unchanged:** When all gates pass and `maxOutputTokens` is finite, retain existing segmented slider, tier markers, helper text, upgrade CTA, and `/subscription` navigate on Upgrade button (subscription deep-link URL change is a later FE4 node).
     * `[✅]`   **Non-functional:** Do not edit `dialecticStore.ts`, selectors, `CreateDialecticProjectForm`, `SessionInfoCard`, or `AIModelSelector` in this node. Depends on nodes 1 (store init + `outputCapUserCustomized` on `setMaxOutputTokens`) and 3/4 (parents call initializer before slider mounts in popover).
 
   * `[✅]`   `role`
-    * `[✅]`   Model-settings popover UI — displays output cap from initialized store value; persists user overrides only on commit; surfaces blocked/loading states instead of disappearing.
+    * `[✅]`   Model-settings popover UI — header shows live cap from `clampedSliderValue` during drag and store cap when idle; persists user overrides only on commit; surfaces blocked/loading states instead of disappearing.
     * `[✅]`   Out of scope: tier hydrate init, cost ceiling selectors, default model selection, subscription cart prefill.
 
   * `[✅]`   `module`
@@ -575,13 +681,14 @@
     * `[✅]`   replace `does not render slider when only selected model has config that fails isAiModelExtendedConfig` — expect blocked notice text exactly **`Model catalog config invalid for model id model-invalid-config.`**; not silent null; not alternate copy.
     * `[✅]`   add test `when userTier is null and auth not loading, shows tier unavailable blocked notice` — auth `userTier: null`, `isLoading: false`; expect `"Subscription tier is not available."`.
     * `[✅]`   update drag tests — `onValueChange` path must not call `setMaxOutputTokens`; only commit paths (tier marker click, `onValueCommit`) increment mock call count (existing tier-marker and basic-marker tests remain valid).
+    * `[✅]`   add test `header updates live during drag without persisting to store` — seed `maxOutputTokens: 8192`, tier + catalog + selection; render; fire `Slider` `onValueChange` to an intermediate token value (via existing drag helper or direct handler); assert header `formatTokenCount` / page-guidance text reflects intermediate `clampedSliderValue`; assert `setMaxOutputTokens` not called; then fire `onValueCommit` and assert store updated.
     * `[✅]`   keep success-path tests (tier markers, upgrade CTA, clamp at thumb max, page-equivalent copy, navigate to subscription) unchanged except remove any `container.firstChild` null expectations.
 
   * `[✅]`   apps/web/src/components/dialectic/OutputCapSlider.tsx
     * `[✅]`   subscribe `isLoading` from `useAuthStore`.
     * `[✅]`   replace lines 315–323 `return null` with gated loading/blocked JSX per objective (ordered gates 1–6).
     * `[✅]`   narrow `useEffect` (lines 150–167) — sync `sliderRealValue` from finite `maxOutputTokens` only; drop tier/model fallback when store cap null.
-    * `[✅]`   success-path `currentDisplayValue` uses finite `maxOutputTokens` only (remove null-store tier/model fallback).
+    * `[✅]`   header display (lines 571–576): bind `formatTokenCount` and `formatPageGuidance` to **`clampedSliderValue`**, not `currentDisplayValue` / store cap; remove `currentDisplayValue` if unused after change.
     * `[✅]`   verify `setMaxOutputTokens` invoked only inside `applyOutputCapValue` when `persistToStore === true` (marker click + `onValueCommit`); `onValueChange` stays `persistToStore: false`.
 
   * `[✅]`   apps/web/src/components/dialectic/OutputCapSlider.integration.test.tsx
@@ -596,6 +703,7 @@
     * `[✅]`   Mount with `maxOutputTokens: 8192`, valid tier/catalog/selection: slider visible; `setMaxOutputTokens` not called on mount.
     * `[✅]`   Mount with `maxOutputTokens: null`, valid prerequisites otherwise: `output-cap-slider-blocked-notice` visible; no slider.
     * `[✅]`   Tier-marker click and slider commit persist cap to store; drag without commit does not (unit mock assertions).
+    * `[✅]`   Drag (`onValueChange` only): header token count and page-guidance update to match `clampedSliderValue`; store `maxOutputTokens` unchanged until commit.
     * `[✅]`   Integration test: real store receives updated `maxOutputTokens` after commit interaction.
     * `[✅]`   No edits outside `OutputCapSlider.tsx`, `OutputCapSlider.test.tsx`, and `OutputCapSlider.integration.test.tsx` in this node.
 
@@ -703,7 +811,7 @@
     * `[✅]`   Loaded tier + providers: existing tier-lock, cap-block, and ultra tests pass unchanged.
     * `[✅]`   No edits outside `AIModelSelectorList.tsx` and `AIModelSelectorList.test.tsx` in this node.
 
-* `[✅]`   apps/web/src/components/chat/index.tsx **Chat onboarding pre-project cost estimate; sync models to dialectic store; cap init when deps ready**
+* `[✅]`   apps/web/src/components/chat/index.tsx **Chat onboarding pre-project cost estimate; sync models to dialectic store; cap init when deps ready; compact formatTokenCount display**
 
   * `[✅]`   `objective`
     * `[✅]`   **Problem:** Chat walkthrough (`domain` → `model` → `message`) is the entry path for converting chat to a dialectic project. `AIModelSelectorList` keeps selection in local state only; dialectic store never receives `selectedModels`, pre-project fetches (association, template, stage counts), or `initializeMaxOutputTokens`. User cannot see pre-project cost estimate before `CreateProjectFromChatButton` click — conversion spend is opaque until click-time gate in node 11.
@@ -711,7 +819,10 @@
     * `[✅]`   **Functional goal — pre-project fetch orchestration:** When user selects a domain (`selectedDomainId` set), set dialectic `selectedDomain` and run the same pre-project fetch chain as `CreateDialecticProjectForm`: `fetchAIModelCatalog`, `fetchProcessAssociation`, `fetchProcessTemplate`, `fetchStageExpectedCounts` for that domain — without opening dialectic Model Settings popover.
     * `[✅]`   **Functional goal — cap init when deps ready:** Subscribe `useAuthStore` (`isLoading`, `userTier`). Define **`isCapInitReady`** (same as node 3): auth loaded, tier present, catalog loaded (`!isLoadingModelCatalog && modelCatalog.length > 0`). `useEffect` calls `initializeMaxOutputTokens()` only when `isCapInitReady && selectedDomainId !== '' && hasSelectedModel` (or equivalent: store `selectedModels.length > 0`).
     * `[✅]`   **Functional goal — cost estimate UI on model/message steps:** Subscribe `selectPreProjectCostCeiling`, `authStore.error`; hold `capInitResult` from `initializeMaxOutputTokens()` in component-local state (same as node 3). Define `isCostEstimateLoading` with same flags as node 3 (auth, catalog, association, template, stage counts). While loading → `data-testid="chat-onboarding-estimate-loading-notice"` with first-match loading copy. After `!isCostEstimateLoading`, apply **same footer error gate order as node 3** (auth.error → tier-unavailable → `capInitResult` → selector) → `chat-onboarding-estimate-error-notice` with **only** the matching pass-through message. When success → show stage/project ceiling preview (reuse copy pattern from create form or minimal token estimate — no bundled “not ready” strings).
+    * `[✅]`   **Problem (QOL):** Chat onboarding cost preview uses local `Intl.NumberFormat('en-US').format(tokenCount)` (lines 249–250) for `projectCeiling` and `firstStageCeiling` — large values render as unreadable comma-separated strings instead of compact B/M/K abbreviations.
+    * `[✅]`   **Functional goal — compact cost-ceiling display:** Import `formatTokenCount` from `@paynless/utils`. Remove local inline `Intl.NumberFormat` formatter. Call `formatTokenCount({}, {}, { tokenCount: n })` for all cost-ceiling **display strings** in chat onboarding preview; render success `{ formatted }` only. **Numeric comparisons** remain on raw selector numbers — never on formatted strings.
     * `[✅]`   **Non-functional:** Do not edit `AIModelSelectorList.tsx` (node 7), `CreateProjectFromChatButton.tsx` (node 11), selectors, or `dialecticStore.ts` in this node. Depends on nodes 1–3 for store init, selector contract, and loading/error patterns.
+    * `[✅]`   **Non-functional (formatTokenCount):** Depends on `packages/utils` `formatTokenCount` node GREEN before implementation. Do not edit `computeCostCeiling.ts` or selectors in this node.
 
   * `[✅]`   `role`
     * `[✅]`   Chat onboarding UI — wires domain/model walkthrough to dialectic pre-project cost estimate before project creation.
@@ -726,6 +837,7 @@
     * `[✅]`   Node 3: `isCostEstimateLoading` / pass-through error contract (mirror, do not duplicate bundled copy).
     * `[✅]`   Node 7: `AIModelSelectorList` auth gates (unchanged; this node consumes `onChange` only).
     * `[✅]`   `useAuthStore`, `useDialecticStore`, existing fetch actions.
+    * `[✅]`   `formatTokenCount` from `@paynless/utils` — compact display for chat onboarding ceiling preview (producer node must be GREEN first).
 
   * `[✅]`   `context_slice`
     * `[✅]`   Reads: walkthrough step, `selectedDomainId`, local `hasSelectedModel`; auth + dialectic loading flags; `selectPreProjectCostCeiling`.
@@ -738,12 +850,16 @@
     * `[✅]`   add test `shows pass-through error.message when selector returns error after loading` (auth tier + init gates pass).
     * `[✅]`   add test `shows tier-unavailable notice when auth loaded and userTier null, not OUTPUT_CAP_NOT_INITIALIZED` — selector mock init error; UI shows `'Subscription tier is not available.'`.
     * `[✅]`   add test `shows cost preview when tier + catalog + counts ready and cap initialized`.
+    * `[✅]`   add test `chat onboarding cost preview shows abbreviated token counts for large ceilings` — mock selector success with `projectCeiling: 1_139_238`, finite `firstStageCeiling`; expect preview text contains `'1.1M'` (not `'1,139,238'`).
 
   * `[✅]`   apps/web/src/components/chat/index.tsx
     * `[✅]`   wire domain fetch orchestration, `setSelectedModels` on model `onChange`, `isCapInitReady` effect, cost estimate loading/error/success UI per objective.
+    * `[✅]`   remove local `formatTokenCount` `Intl.NumberFormat` helper (lines 249–250); import `formatTokenCount` from `@paynless/utils`; use for `projectCeiling` and `firstStageCeiling` display strings only per objective.
 
   * `[✅]`   `requirements`
     * `[✅]`   Grep `chat/index.tsx`: zero bundled “No cost estimate yet” strings; zero selector `null` branches.
+    * `[✅]`   Grep `chat/index.tsx`: zero local `Intl.NumberFormat` cost-ceiling formatter; import `formatTokenCount` from `@paynless/utils`.
+    * `[✅]`   Success preview with large raw ceilings renders abbreviated display strings (e.g. `1.1M`), not comma-separated full integers.
     * `[✅]`   Model step: `selectedModels` in store matches checkbox selection.
     * `[✅]`   Cap init runs only when `isCapInitReady`, not on tier hydrate alone.
     * `[✅]`   Auth / hydration / API errors surface via pass-through `error.message` only after loading completes.
@@ -812,7 +928,7 @@
     * `[✅]`   `UseStartContributionGenerationReturn` includes `isCostEstimateLoading`.
     * `[✅]`   No edits outside `useStartContributionGeneration.ts`, `useStartContributionGeneration.test.ts`, and `dialectic.types.ts` field addition in this node.
 
-* `[ ]`   apps/web/src/components/dialectic/GenerateContributionButton **Remove bundled no-estimate UI; loading callout from hook; pass-through estimate errors only**
+* `[✅]`   apps/web/src/components/dialectic/GenerateContributionButton **Remove bundled no-estimate UI; loading callout from hook; pass-through estimate errors only; compact formatTokenCount display**
 
   * `[✅]`   `objective`
     * `[✅]`   **Problem:** `GenerateContributionButton.tsx` treats `showCostEstimateBlocked && costCeilingError === null` as a third “unknown estimate” state (lines 104, 167–173): button label `"No Estimate"` and `generate-button-no-estimate-callout` with bundled copy `"No cost estimate yet. Select models and set output cap to continue."` Node 2 selectors never return `null`; prior hook node removes `costCeilingResult === null` and sets `showCostEstimateBlocked: false` while `isCostEstimateLoading`. After loading, blocked spend always carries a concrete `costCeilingError` from the hook — the null-error branch is dead code that hides pass-through `ApiError.message`. Component does not consume `isCostEstimateLoading` from the hook, so loading hydration can flash estimate-error UI before data is ready (parity with nodes 3–4 / hook node).
@@ -821,7 +937,10 @@
     * `[✅]`   **Functional goal — `getButtonText` gate order (after existing prerequisite gates, before balance/pause/resume labels):** When `isCostEstimateLoading === true` → return `"Loading Estimate"`. When `!isCostEstimateLoading && showCostEstimateBlocked && costCeilingError !== null` → return `"Estimate Failed"`. Remove the former `showCostEstimateBlocked && costCeilingError === null → "No Estimate"` branch. Keep all other label branches unchanged (`Choose AI Models`, wallet/stage gates, `Insufficient Balance`, pause/resume/regenerate/generate).
     * `[✅]`   **Functional goal — callout JSX (mutually exclusive after prerequisites pass):** (1) While `isCostEstimateLoading`, render `data-testid="generate-button-estimate-loading-notice"` with text `"Loading cost estimate…"`. Do not render estimate-error callout or balance/stage estimate callouts during loading. (2) When `!isCostEstimateLoading && showCostEstimateBlocked && costCeilingError !== null`, render existing `generate-button-estimate-error-callout` with **only** `costCeilingError.message` (unchanged styling). (3) When `!isCostEstimateLoading && isCostEstimateKnown`, keep existing `generate-button-balance-callout`, `generate-button-stage-cost-estimate`, and `generate-button-project-balance-callout` branches unchanged (including `/subscription?tab=top-up` links — subscription deep-link URL change is a later FE4 node).
     * `[✅]`   **Functional goal — disabled state:** Continue using hook `isDisabled` on the button (hook remains fail-closed during loading and on estimate error). Do not add local selector calls or cap init in this component.
+    * `[✅]`   **Problem (QOL):** Stage/project estimate and balance callouts use local `Intl.NumberFormat('en-US').format(n)` (lines 83–84) for `stageCeiling`, `projectCeiling`, `stageBalanceShortfall`, and `projectBalanceShortfall` — large values render as unreadable comma-separated strings instead of compact B/M/K abbreviations.
+    * `[✅]`   **Functional goal — compact cost-ceiling display:** Import `formatTokenCount` from `@paynless/utils`. Remove local inline `Intl.NumberFormat` formatter. Call `formatTokenCount({}, {}, { tokenCount: n })` for all cost-ceiling **display strings** in `generate-button-stage-cost-estimate`, `generate-button-balance-callout`, and `generate-button-project-balance-callout`; render success `{ formatted }` only. **Numeric comparisons** (`projectBalanceShortfall`, `stageBalanceShortfall`, `balanceMeetsThreshold`) remain on raw hook numbers — never on formatted strings.
     * `[✅]`   **Non-functional:** Do not edit `useStartContributionGeneration.ts`, `dialecticStore.ts`, `dialecticStore.selectors.ts`, `SessionInfoCard.tsx`, or subscription CTA URL building in this node. Depends on prior hook node (`isCostEstimateLoading`, null-free cost flags).
+    * `[✅]`   **Non-functional (formatTokenCount):** Depends on `packages/utils` `formatTokenCount` node GREEN before implementation. Do not edit `computeCostCeiling.ts` or selectors in this node.
 
   * `[✅]`   `role`
     * `[✅]`   Session generate/pause control — displays cost-estimate loading, pass-through errors, NSF/balance callouts from hook flags only.
@@ -834,6 +953,7 @@
     * `[✅]`   Prior hook node: `UseStartContributionGenerationReturn.isCostEstimateLoading`; `showCostEstimateBlocked`, `costCeilingError`, `isCostEstimateKnown`, and existing affordance flags unchanged semantics after loading gate.
     * `[✅]`   Node 4: session page calls `initializeMaxOutputTokens` so integration success path can rely on tier hydrate (integration tests seed auth + initializer per below).
     * `[✅]`   `useStartContributionGeneration` — sole source of cost-estimate state for this component.
+    * `[✅]`   `formatTokenCount` from `@paynless/utils` — compact display for stage/project estimate and shortfall callouts (producer node must be GREEN first).
 
   * `[✅]`   `context_slice`
     * `[✅]`   Reads: hook return fields only (no direct `selectCostCeiling` in component).
@@ -845,6 +965,7 @@
     * `[✅]`   add test `shows loading notice while isCostEstimateLoading` — mock `{ isCostEstimateLoading: true, isDisabled: true, showCostEstimateBlocked: false, costCeilingError: null }`; expect `generate-button-estimate-loading-notice` text `"Loading cost estimate…"`; button `"Loading Estimate"` disabled; `generate-button-estimate-error-callout` and `generate-button-no-estimate-callout` absent.
     * `[✅]`   add test `shows estimate-error callout with pass-through message when blocked after loading` — mock `{ isCostEstimateLoading: false, showCostEstimateBlocked: true, costCeilingError: { code: 'OUTPUT_CAP_NOT_INITIALIZED', message: 'Output cap is not initialized in dialectic store.' }, isDisabled: true }`; expect button `"Estimate Failed"` disabled; `generate-button-estimate-error-callout` text exactly equals message; no loading notice; no no-estimate callout.
     * `[✅]`   keep balance callout, pause/resume, DAG dialog, viewing-ahead, and success generate tests unchanged except add `isCostEstimateLoading: false` where hook mock omits it.
+    * `[✅]`   add test `stage and project cost callouts show abbreviated token counts for large ceilings` — mock hook success with `stageCeiling: 39_015`, `projectCeiling: 1_139_238`, `showStageCostEstimate: true`, `showProjectBalanceCallout: true`; expect `generate-button-stage-cost-estimate` contains `'39K'`; expect `generate-button-project-balance-callout` contains `'1.1M'`; not comma-separated full integers.
 
   * `[✅]`   apps/web/src/components/dialectic/GenerateContributionButton.nsf.test.tsx
     * `[✅]`   **Mock deps:** Add `isCostEstimateLoading: false` to local `getDefaultHookReturn` default.
@@ -858,6 +979,7 @@
     * `[✅]`   destructure `isCostEstimateLoading` from hook.
     * `[✅]`   update `getButtonText` — add loading label; remove null-error `"No Estimate"` branch; keep `"Estimate Failed"` when blocked with error after loading.
     * `[✅]`   remove `generate-button-no-estimate-callout` block; add loading notice JSX; keep estimate-error callout condition `!isCostEstimateLoading && showCostEstimateBlocked && costCeilingError !== null`.
+    * `[✅]`   remove local `formatTokenCount` `Intl.NumberFormat` helper (lines 83–84); import `formatTokenCount` from `@paynless/utils`; use for `stageCeiling`, `projectCeiling`, `stageBalanceShortfall`, and `projectBalanceShortfall` display strings only per objective.
 
   * `[✅]`   apps/web/src/components/dialectic/GenerateContributionButton.costCeiling.integration.test.tsx
     * `[✅]`   **Mock deps:** Extend test setup to seed auth tier (`useAuthStore` mock or existing pattern in file): `isLoading: false`, `userTier.output_cap_tokens` matching fixture `maxOutputTokens`. In success-path `beforeEach` / `seedSessionStore`, **omit** manual `maxOutputTokens` override; after seed call `useDialecticStore.getState().initializeMaxOutputTokens()` and `waitFor` finite `maxOutputTokens` (parity with node 4 — button integration must not depend on popover/slider).
@@ -867,6 +989,7 @@
     * `[✅]`   replace `hook callback guard: clearing maxOutputTokens after enable…` — after clearing cap, expect estimate-error callout + `"Estimate Failed"`, not no-estimate callout; click does not spend.
     * `[✅]`   grep file — zero `generate-button-no-estimate-callout`, zero `/No Estimate/i` button expectations, zero `selectCostCeiling(...)).toBeNull()`.
     * `[✅]`   success-stack test (`hydrate → stage/project ceiling → enabled generate`) passes with tier-init path instead of manual cap seed.
+    * `[✅]`   replace local `formatTokenCount` helper (`Intl.NumberFormat`) with import from `@paynless/utils`; assert `generate-button-stage-cost-estimate` contains abbreviated ceiling when fixture yields large raw value (e.g. `'39K'`); keep hand-computed numeric assertions on raw selector output unchanged.
 
   * `[✅]`   apps/web/src/components/dialectic/GenerateContributionButton.integration.test.tsx
     * `[✅]`   import `captureRealAuthStore` / seed auth in `beforeEach`: `isLoading: false`, `userTier.output_cap_tokens` matching fixture `maxOutputTokens` (`1000`).
@@ -875,13 +998,15 @@
 
   * `[✅]`   `requirements`
     * `[✅]`   Grep `GenerateContributionButton.tsx`: zero `generate-button-no-estimate-callout`; zero `"No Estimate"`; zero `"No cost estimate yet"`; zero `costCeilingError === null` in estimate-blocked UI branches.
+    * `[✅]`   Grep `GenerateContributionButton.tsx`: zero local `Intl.NumberFormat` cost-ceiling formatter; import `formatTokenCount` from `@paynless/utils`.
     * `[✅]`   Grep `GenerateContributionButton.test.tsx`, `GenerateContributionButton.nsf.test.tsx`, `GenerateContributionButton.costCeiling.integration.test.tsx`: zero `generate-button-no-estimate-callout`; zero `/No Estimate/i` expectations.
+    * `[✅]`   Success callouts with large raw ceilings render abbreviated display strings (e.g. `39K`, `1.1M`), not comma-separated full integers.
     * `[✅]`   `isCostEstimateLoading: true` → loading notice visible, button shows `"Loading Estimate"`, no error callout.
     * `[✅]`   Blocked after loading with `costCeilingError` → `"Estimate Failed"` + callout text equals `error.message` exactly.
     * `[✅]`   Success NSF/balance/stage-estimate integration paths remain green.
     * `[✅]`   No edits outside `GenerateContributionButton.tsx`, `GenerateContributionButton.test.tsx`, `GenerateContributionButton.nsf.test.tsx`, `GenerateContributionButton.costCeiling.integration.test.tsx`, and `GenerateContributionButton.integration.test.tsx` in this node.
 
-* `[ ]`   apps/web/src/components/ai/CreateProjectFromChatButton **Tier cap init; ComputeCostCeilingReturn-only click gate; loading before selector errors; pass-through toast**
+* `[✅]`   apps/web/src/components/ai/CreateProjectFromChatButton **Tier cap init; ComputeCostCeilingReturn-only click gate; loading before selector errors; pass-through toast**
 
   * `[✅]`   `objective`
     * `[✅]`   **Problem:** `CreateProjectFromChatButton.tsx` types `preProjectCostCeilingResult` as `ComputeCostCeilingReturn | null` (lines 112–118). When selector returns `null`, click gate toasts bundled `noEstimateToastCopy` (`"No cost estimate yet. Set the output cap in Model Settings, then try again."`) instead of pass-through `ApiError.message`. Node 2 `selectPreProjectCostCeiling` never returns `null`. `maxOutputTokens` stays `null` until user visits dialectic UI with `OutputCapSlider` — chat has no cap init, so autostart spend path fail-closes on `OUTPUT_CAP_NOT_INITIALIZED` masked as bundled copy. No auth/catalog/association/template/counts/wallet loading gates — selector precondition errors surface at click while fetches are still in flight (parity violation vs node 3 `CreateDialecticProjectForm`).

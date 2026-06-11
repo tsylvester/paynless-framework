@@ -25,13 +25,20 @@ import type {
   TokenWallet,
   UserTier,
 } from '@paynless/types';
-import { computeCostCeiling, isApiError, isJson } from '@paynless/utils';
+import {
+  computeCostCeiling,
+  formatTokenCount,
+  isApiError,
+  isJson,
+} from '@paynless/utils';
 import type {
   ComputeCostCeilingDeps,
   ComputeCostCeilingParams,
   ComputeCostCeilingPayload,
   ComputeCostCeilingReturn,
   ComputeCostCeilingStageInput,
+  FormatTokenCountDeps,
+  FormatTokenCountParams,
 } from '@paynless/utils';
 import { initializeApiClient, _resetApiClient } from '@paynless/api';
 import {
@@ -112,6 +119,8 @@ const ceilingStageInput: ComputeCostCeilingStageInput = {
 
 const ceilingDeps: ComputeCostCeilingDeps = {};
 const ceilingParams: ComputeCostCeilingParams = {};
+const formatTokenCountDeps: FormatTokenCountDeps = {};
+const formatTokenCountParams: FormatTokenCountParams = {};
 const ceilingPayload: ComputeCostCeilingPayload = {
   stages: [ceilingStageInput],
   maxOutputTokens,
@@ -126,6 +135,18 @@ if ('error' in ceilingComputationResult) {
 
 const expectedStageCeiling: number = ceilingComputationResult.stageCeilings[stageSlug];
 const expectedProjectCeiling: number = ceilingComputationResult.projectCeiling;
+
+const expectedStageCeilingFormatResult = formatTokenCount(
+  formatTokenCountDeps,
+  formatTokenCountParams,
+  { tokenCount: expectedStageCeiling },
+);
+if ('error' in expectedStageCeilingFormatResult) {
+  throw new Error('expectedStageCeiling formatTokenCount failed in integration fixture');
+}
+const expectedStageCeilingDisplay: string =
+  expectedStageCeilingFormatResult.formatted;
+
 const sufficientWalletBalance: string = String(expectedStageCeiling + 2000);
 const lowWalletBalance: string = '0';
 
@@ -172,10 +193,6 @@ const thesisStage: DialecticStage = mockDialecticStage({
 const server = setupServer();
 
 let generateContributionsRequestCount = 0;
-
-function formatTokenCount(value: number): string {
-  return new Intl.NumberFormat('en-US').format(value);
-}
 
 function resetGenerateContributionsRequestCount(): void {
   generateContributionsRequestCount = 0;
@@ -487,7 +504,10 @@ describe('GenerateContributionButton cost ceiling integration', () => {
 
     await waitFor(() => {
       const stageCostEstimate = screen.getByTestId('generate-button-stage-cost-estimate');
-      expect(stageCostEstimate.textContent).toContain(formatTokenCount(expectedStageCeiling));
+      expect(stageCostEstimate.textContent).toContain(expectedStageCeilingDisplay);
+      expect(stageCostEstimate.textContent).not.toContain(
+        new Intl.NumberFormat('en-US').format(expectedStageCeiling),
+      );
     });
 
     const button = screen.getByRole('button', { name: /Generate Proposal/i });

@@ -529,7 +529,7 @@ describe('GenerateContributionButton', () => {
     );
     renderWithRouter(<GenerateContributionButton />);
     expect(screen.getByTestId('generate-button-balance-callout')).toBeDefined();
-    expect(screen.getByRole('link', { name: /Top up 25,000/i })).toBeDefined();
+    expect(screen.getByRole('link', { name: /Top up 25K/i })).toBeDefined();
     expect(screen.queryByTestId('generate-button-no-estimate-callout')).toBeNull();
   });
 
@@ -792,5 +792,36 @@ describe('GenerateContributionButton', () => {
     );
     expect(screen.queryByTestId('generate-button-estimate-loading-notice')).toBeNull();
     expect(screen.queryByTestId('generate-button-no-estimate-callout')).toBeNull();
+  });
+
+  it('stage and project cost callouts show abbreviated token counts for large ceilings', () => {
+    vi.mocked(selectIsStageReadyForSessionIteration).mockReturnValue(true);
+    vi.mocked(selectActiveChatWalletInfo).mockReturnValue({
+      status: 'ok',
+      type: 'personal',
+      walletId: 'default-wallet-id',
+      orgId: null,
+      balance: '0',
+      isLoadingPrimaryWallet: false,
+    });
+    mockUseStartContributionGeneration.mockReturnValue(
+      getDefaultHookReturn({
+        isCostEstimateKnown: true,
+        isCostEstimateLoading: false,
+        showCostEstimateBlocked: false,
+        stageCeiling: 39_015,
+        projectCeiling: 1_139_238,
+        showStageCostEstimate: true,
+        balanceMeetsThreshold: true,
+        isDisabled: false,
+      })
+    );
+    renderWithRouter(<GenerateContributionButton />);
+    const stageCostEstimate = screen.getByTestId('generate-button-stage-cost-estimate');
+    expect(stageCostEstimate.textContent).toContain('39K');
+    expect(stageCostEstimate.textContent).not.toContain('39,015');
+    const projectBalanceCallout = screen.getByTestId('generate-button-project-balance-callout');
+    expect(projectBalanceCallout.textContent).toContain('1.1M');
+    expect(projectBalanceCallout.textContent).not.toContain('1,139,238');
   });
 }); 

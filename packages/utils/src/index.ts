@@ -8,3 +8,4 @@ export * from './dialecticUtils';
 export * from './sse.stream/sse.stream.provides';
 export * from './dialectic.guard';  
 export * from './computeCostCeiling/computeCostCeiling.provides';
+export * from './formatTokenCount/formatTokenCount.provides';

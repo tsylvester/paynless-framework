@@ -193,6 +193,11 @@ const formTestSuccessCeiling: ComputeCostCeilingSuccessReturn = {
   projectCeiling: 100000,
 };
 
+const largeCeilingSuccess: ComputeCostCeilingSuccessReturn = {
+  stageCeilings: { thesis: 39_015 },
+  projectCeiling: 1_139_238,
+};
+
 const catalogEntryOverrides: Partial<AiProvidersRow> = {
   provider: 'Provider',
   description: null,
@@ -668,7 +673,10 @@ describe('CreateDialecticProjectForm', () => {
     renderForm();
 
     await waitFor(() => {
-      expect(document.body.contains(screen.getByTestId('create-project-cost-preview'))).toBe(true);
+      const preview = screen.getByTestId('create-project-cost-preview');
+      expect(document.body.contains(preview)).toBe(true);
+      expect(preview.textContent).toContain('100K');
+      expect(preview.textContent).not.toContain('100,000');
     });
     expect(screen.queryByTestId('create-project-estimate-error-notice')).toBeNull();
   });
@@ -702,5 +710,29 @@ describe('CreateDialecticProjectForm', () => {
     });
     expect(screen.queryByTestId('create-project-cost-preview')).toBeNull();
     expect(screen.queryByTestId('create-project-no-estimate-notice')).toBeNull();
+  });
+
+  it('create-project-cost-preview shows abbreviated token counts for large ceilings', async () => {
+    selectPreProjectCostCeilingMock.mockReturnValue(largeCeilingSuccess);
+    vi.mocked(selectActiveChatWalletInfo).mockReturnValue({
+      ...defaultWalletInfo,
+      balance: '20000',
+    });
+
+    renderForm();
+
+    await waitFor(() => {
+      const preview = screen.getByTestId('create-project-cost-preview');
+      expect(preview.textContent).toContain('1.1M');
+      expect(preview.textContent).not.toContain('1,139,238');
+      expect(preview.textContent).toContain('39K');
+      expect(preview.textContent).not.toContain('39,015');
+    });
+
+    expect(screen.getByRole('checkbox', { name: /Autoconfig/i }).getAttribute('aria-checked')).toBe(
+      'mixed',
+    );
+    expect(document.body.contains(screen.getByText(/Estimated first-stage cost exceeds wallet balance for auto-start/i))).toBe(true);
+    expect(document.body.contains(screen.getByTestId('create-project-autostart-top-up-link'))).toBe(true);
   });
 });

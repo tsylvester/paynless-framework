@@ -57,6 +57,11 @@ const costCeilingBasicUserTier: UserTier = {
   max_models_per_project: 2,
 };
 
+const largeCeilingSuccess: ComputeCostCeilingSuccessReturn = {
+  stageCeilings: { thesis: 39_015 },
+  projectCeiling: 1_139_238,
+};
+
 const defaultCostCeilingCatalog: AiProvidersRow[] = [
   mockAiProvidersRow({ id: 'model-1', name: 'Model 1' }),
 ];
@@ -952,11 +957,13 @@ describe('SessionInfoCard', () => {
 
       const stageEstimate = screen.getByTestId('session-info-stage-cost-estimate');
       expect(stageEstimate.textContent).toContain('Estimated cost for this stage');
-      expect(stageEstimate.textContent).toContain('~120,000');
+      expect(stageEstimate.textContent).toContain('120K');
+      expect(stageEstimate.textContent).not.toContain('120,000');
 
       const projectEstimate = screen.getByTestId('session-info-project-cost-estimate');
       expect(projectEstimate.textContent).toContain('Estimated project cost');
-      expect(projectEstimate.textContent).toContain('~350,000');
+      expect(projectEstimate.textContent).toContain('350K');
+      expect(projectEstimate.textContent).not.toContain('350,000');
 
       expect(screen.queryByTestId('session-info-estimate-error-notice')).toBeNull();
     });
@@ -1020,7 +1027,10 @@ describe('SessionInfoCard', () => {
       expect(screen.getByTestId('session-info-project-cost-estimate')).not.toBeNull();
 
       const balanceWarning = screen.getByTestId('session-info-project-balance-warning');
-      expect(balanceWarning.textContent).toContain('150,000');
+      expect(balanceWarning.textContent).toContain('400K');
+      expect(balanceWarning.textContent).not.toContain('400,000');
+      expect(balanceWarning.textContent).toContain('150K');
+      expect(balanceWarning.textContent).not.toContain('150,000');
 
       const topUpLink = screen.getByRole('link', { name: /top up/i });
       expect(topUpLink.getAttribute('href')).toBe('/subscription?tab=top-up');
@@ -1212,5 +1222,19 @@ describe('SessionInfoCard', () => {
         expect(screen.queryByText(selectorDecoyError.message)).toBeNull();
       },
     );
+
+    it('session cost estimates show abbreviated token counts for large ceilings', () => {
+      selectCostCeilingMock.mockReturnValue(largeCeilingSuccess);
+      setupCostCeilingFixture();
+      renderComponent();
+
+      const stageEstimate = screen.getByTestId('session-info-stage-cost-estimate');
+      expect(stageEstimate.textContent).toContain('39K');
+      expect(stageEstimate.textContent).not.toContain('39,015');
+
+      const projectEstimate = screen.getByTestId('session-info-project-cost-estimate');
+      expect(projectEstimate.textContent).toContain('1.1M');
+      expect(projectEstimate.textContent).not.toContain('1,139,238');
+    });
   });
 });

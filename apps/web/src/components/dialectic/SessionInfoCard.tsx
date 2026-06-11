@@ -20,6 +20,9 @@ import {
 import {
 	ComputeCostCeilingReturn,
 	ComputeCostCeilingSuccessReturn,
+	formatTokenCount,
+	FormatTokenCountDeps,
+	FormatTokenCountParams,
 } from "@paynless/utils";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -50,6 +53,9 @@ import { cn } from "@/lib/utils";
 
 const subscriptionTierUnavailableMessage =
 	"Subscription tier is not available.";
+
+const formatTokenCountDeps: FormatTokenCountDeps = {};
+const formatTokenCountParams: FormatTokenCountParams = {};
 
 export const SessionInfoCard: React.FC = () => {
 	const project: DialecticProject | null = useDialecticStore(
@@ -174,9 +180,6 @@ export const SessionInfoCard: React.FC = () => {
 		}
 	}
 
-	const formatTokenCount = (n: number): string =>
-		new Intl.NumberFormat("en-US").format(n);
-
 	let costCeilingSuccessResult: ComputeCostCeilingSuccessReturn | null = null;
 	if (
 		!isCostEstimateLoading &&
@@ -218,6 +221,43 @@ export const SessionInfoCard: React.FC = () => {
 		walletBalance < projectCeiling
 			? projectCeiling - walletBalance
 			: null;
+
+	let stageCeilingDisplay: string | null = null;
+	if (stageCeiling !== null) {
+		const stageCeilingFormatResult = formatTokenCount(
+			formatTokenCountDeps,
+			formatTokenCountParams,
+			{ tokenCount: stageCeiling },
+		);
+		if (!("error" in stageCeilingFormatResult)) {
+			stageCeilingDisplay = stageCeilingFormatResult.formatted;
+		}
+	}
+
+	let projectCeilingDisplay: string | null = null;
+	if (projectCeiling !== null) {
+		const projectCeilingFormatResult = formatTokenCount(
+			formatTokenCountDeps,
+			formatTokenCountParams,
+			{ tokenCount: projectCeiling },
+		);
+		if (!("error" in projectCeilingFormatResult)) {
+			projectCeilingDisplay = projectCeilingFormatResult.formatted;
+		}
+	}
+
+	let projectBalanceShortfallDisplay: string | null = null;
+	if (projectBalanceShortfall !== null) {
+		const projectBalanceShortfallFormatResult = formatTokenCount(
+			formatTokenCountDeps,
+			formatTokenCountParams,
+			{ tokenCount: projectBalanceShortfall },
+		);
+		if (!("error" in projectBalanceShortfallFormatResult)) {
+			projectBalanceShortfallDisplay =
+				projectBalanceShortfallFormatResult.formatted;
+		}
+	}
 
 	if (!project || !session) {
 		return (
@@ -352,27 +392,28 @@ export const SessionInfoCard: React.FC = () => {
 				)}
 				{costCeilingSuccessResult !== null && (
 					<>
-						{stageCeiling !== null && (
+						{stageCeilingDisplay !== null && (
 							<p data-testid="session-info-stage-cost-estimate">
 								Estimated cost for this stage: ~
-								{formatTokenCount(stageCeiling)} tokens.
+								{stageCeilingDisplay} tokens.
 							</p>
 						)}
-						{projectCeiling !== null && (
+						{projectCeilingDisplay !== null && (
 							<p data-testid="session-info-project-cost-estimate">
 								Estimated project cost: ~
-								{formatTokenCount(projectCeiling)} tokens.
+								{projectCeilingDisplay} tokens.
 							</p>
 						)}
-						{projectBalanceShortfall !== null && projectCeiling !== null && (
+						{projectBalanceShortfallDisplay !== null &&
+							projectCeilingDisplay !== null && (
 							<p data-testid="session-info-project-balance-warning">
 								This project may need ~
-								{formatTokenCount(projectCeiling)} tokens total.{" "}
+								{projectCeilingDisplay} tokens total.{" "}
 								<Link
 									to="/subscription?tab=top-up"
 									className="font-semibold underline underline-offset-2 hover:no-underline"
 								>
-									Top up {formatTokenCount(projectBalanceShortfall)} to cover
+									Top up {projectBalanceShortfallDisplay} to cover
 									the full project.
 								</Link>
 							</p>

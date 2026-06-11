@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { FormEvent, ReactElement } from 'react';
@@ -744,5 +744,57 @@ describe('OutputCapSlider', () => {
 			screen.getByTestId('output-cap-slider-blocked-notice').textContent,
 		).toContain('Profile fetch failed.');
 		expect(screen.queryByRole('slider')).toBeNull();
+	});
+
+	it('header updates live during drag without persisting to store', async () => {
+		const intermediateTokens: number = 16384;
+		const { setMaxOutputTokens } = setupMockStores(
+			{ maxOutputTokens: 8192 },
+			{ userTier: tierBasic, availableTiers: mockAllTiers },
+		);
+
+		renderWithRouter(<OutputCapSlider />);
+
+		const maxOutputHeading = screen.getByRole('heading', {
+			name: 'Max Output Tokens',
+		});
+		const headerRow = maxOutputHeading.parentElement;
+		expect(headerRow).not.toBeNull();
+		const valueColumn = headerRow!.lastElementChild;
+		expect(valueColumn).not.toBeNull();
+		const tokenDisplay = valueColumn!.firstElementChild;
+		const pageGuidanceDisplay = valueColumn!.lastElementChild;
+		expect(tokenDisplay).not.toBeNull();
+		expect(pageGuidanceDisplay).not.toBeNull();
+
+		expect(tokenDisplay!.textContent).toBe('8.2k');
+		expect(pageGuidanceDisplay!.textContent).toBe('at most ~25 pages');
+
+		vi.mocked(setMaxOutputTokens).mockClear();
+
+		await dragSegmentedSliderToTokens(
+			8192,
+			intermediateTokens,
+			MODEL_TRACK_MAX,
+		);
+
+		await waitFor(() => {
+			const draggedTokens: number = Number(
+				screen.getByRole('slider').getAttribute('aria-valuenow'),
+			);
+			expect(draggedTokens).toBeGreaterThan(8192);
+			expect(tokenDisplay!.textContent).not.toBe('8.2k');
+			expect(pageGuidanceDisplay!.textContent).not.toBe('at most ~25 pages');
+		});
+
+		const draggedTokens: number = Number(
+			screen.getByRole('slider').getAttribute('aria-valuenow'),
+		);
+
+		await userEvent.tab();
+
+		await waitFor(() => {
+			expect(setMaxOutputTokens).toHaveBeenCalledWith(draggedTokens);
+		});
 	});
 });

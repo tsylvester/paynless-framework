@@ -295,7 +295,7 @@ describe('GenerateContributionButton NSF', () => {
     renderWithRouter(<GenerateContributionButton />);
     expect(screen.getByTestId('generate-button-balance-callout')).toBeDefined();
     expect(screen.getByText(/Insufficient tokens/i)).toBeDefined();
-    const topUpLink = screen.getByRole('link', { name: /Top up 50,000/i });
+    const topUpLink = screen.getByRole('link', { name: /Top up 50K/i });
     expect(topUpLink.getAttribute('href')).toBe('/subscription?tab=top-up');
     expect(screen.queryByTestId('generate-button-no-estimate-callout')).toBeNull();
     expect(screen.queryByTestId('generate-button-estimate-error-callout')).toBeNull();
@@ -316,7 +316,7 @@ describe('GenerateContributionButton NSF', () => {
     renderWithRouter(<GenerateContributionButton />);
     expect(screen.getByTestId('generate-button-balance-callout')).toBeDefined();
     expect(screen.getByText(/Insufficient tokens/i)).toBeDefined();
-    const topUpLink = screen.getByRole('link', { name: /Top up 50,000/i });
+    const topUpLink = screen.getByRole('link', { name: /Top up 50K/i });
     expect(topUpLink.getAttribute('href')).toBe('/subscription?tab=top-up');
   });
 
@@ -449,7 +449,7 @@ describe('GenerateContributionButton NSF', () => {
     renderWithRouter(<GenerateContributionButton />);
     expect(screen.getByTestId('generate-button-stage-cost-estimate')).toBeDefined();
     expect(screen.getByText(/Estimated cost for this stage/i)).toBeDefined();
-    expect(screen.getByText(/120,000/)).toBeDefined();
+    expect(screen.getByText(/120K/)).toBeDefined();
   });
 
   it('when projectCeiling exceeds wallet balance, project balance callout is present with shortfall and top-up link', () => {
@@ -471,7 +471,7 @@ describe('GenerateContributionButton NSF', () => {
     );
     renderWithRouter(<GenerateContributionButton />);
     expect(screen.getByTestId('generate-button-project-balance-callout')).toBeDefined();
-    const topUpLink = screen.getByRole('link', { name: /Top up 200,000/i });
+    const topUpLink = screen.getByRole('link', { name: /Top up 200K/i });
     expect(topUpLink.getAttribute('href')).toBe('/subscription?tab=top-up');
     expect(screen.getByRole('button', { name: /Generate Proposal/i }).hasAttribute('disabled')).toBe(false);
   });

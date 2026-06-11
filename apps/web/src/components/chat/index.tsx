@@ -26,12 +26,20 @@ import type {
 	InitializeMaxOutputTokensResult,
 	SelectedModels,
 } from "@paynless/types";
-import { ComputeCostCeilingReturn } from "@paynless/utils";
+import {
+	ComputeCostCeilingReturn,
+	formatTokenCount,
+	FormatTokenCountDeps,
+	FormatTokenCountParams,
+} from "@paynless/utils";
 
 type WalkthroughStep = "domain" | "model" | "message";
 
 const subscriptionTierUnavailableMessage =
 	"Subscription tier is not available.";
+
+const formatTokenCountDeps: FormatTokenCountDeps = {};
+const formatTokenCountParams: FormatTokenCountParams = {};
 
 export default function Chat() {
 	const fetchDomains = useDialecticStore((state) => state.fetchDomains);
@@ -246,8 +254,29 @@ export default function Chat() {
 		}
 	}
 
-	const formatTokenCount = (tokenCount: number): string =>
-		new Intl.NumberFormat("en-US").format(tokenCount);
+	let firstStageCeilingDisplay: string | null = null;
+	if (firstStageCeiling !== null) {
+		const firstStageCeilingFormatResult = formatTokenCount(
+			formatTokenCountDeps,
+			formatTokenCountParams,
+			{ tokenCount: firstStageCeiling },
+		);
+		if (!("error" in firstStageCeilingFormatResult)) {
+			firstStageCeilingDisplay = firstStageCeilingFormatResult.formatted;
+		}
+	}
+
+	let projectCeilingDisplay: string | null = null;
+	if (projectCeiling !== null) {
+		const projectCeilingFormatResult = formatTokenCount(
+			formatTokenCountDeps,
+			formatTokenCountParams,
+			{ tokenCount: projectCeiling },
+		);
+		if (!("error" in projectCeilingFormatResult)) {
+			projectCeilingDisplay = projectCeilingFormatResult.formatted;
+		}
+	}
 
 	const showCostEstimateUi: boolean =
 		selectedDomainId !== "" &&
@@ -322,12 +351,12 @@ export default function Chat() {
 				</p>
 			)}
 			{hasCostEstimateSuccess &&
-				firstStageCeiling !== null &&
-				projectCeiling !== null && (
+				firstStageCeilingDisplay !== null &&
+				projectCeilingDisplay !== null && (
 					<p data-testid="chat-onboarding-cost-preview">
 						Estimated token cost: ~
-						{formatTokenCount(projectCeiling)} for the full project, ~
-						{formatTokenCount(firstStageCeiling)} for the first stage.
+						{projectCeilingDisplay} for the full project, ~
+						{firstStageCeilingDisplay} for the first stage.
 					</p>
 				)}
 		</div>

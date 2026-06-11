@@ -10,8 +10,16 @@ import {
 import { Pause, RefreshCcw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import {
+	formatTokenCount,
+	FormatTokenCountDeps,
+	FormatTokenCountParams,
+} from "@paynless/utils";
 import { StageDAGProgressDialog } from "./StageDAGProgressDialog";
 import { useStartContributionGeneration } from "@/hooks/useStartContributionGeneration";
+
+const formatTokenCountDeps: FormatTokenCountDeps = {};
+const formatTokenCountParams: FormatTokenCountParams = {};
 
 interface GenerateContributionButtonProps {
 	className?: string;
@@ -80,9 +88,6 @@ export const GenerateContributionButton: React.FC<
 		};
 	}, []);
 
-	const formatTokenCount = (n: number): string =>
-		new Intl.NumberFormat("en-US").format(n);
-
 	const handleClick = () => {
 		const onOpenDag = (): void => setDagDialogOpen(true);
 		if (isPauseMode) {
@@ -140,6 +145,56 @@ export const GenerateContributionButton: React.FC<
 		projectBalanceShortfall = projectCeiling - walletBalanceNum;
 	}
 
+	let stageCeilingDisplay: string | null = null;
+	if (stageCeiling !== null) {
+		const stageCeilingFormatResult = formatTokenCount(
+			formatTokenCountDeps,
+			formatTokenCountParams,
+			{ tokenCount: stageCeiling },
+		);
+		if (!("error" in stageCeilingFormatResult)) {
+			stageCeilingDisplay = stageCeilingFormatResult.formatted;
+		}
+	}
+
+	let projectCeilingDisplay: string | null = null;
+	if (projectCeiling !== null) {
+		const projectCeilingFormatResult = formatTokenCount(
+			formatTokenCountDeps,
+			formatTokenCountParams,
+			{ tokenCount: projectCeiling },
+		);
+		if (!("error" in projectCeilingFormatResult)) {
+			projectCeilingDisplay = projectCeilingFormatResult.formatted;
+		}
+	}
+
+	let stageBalanceShortfallDisplay: string | null = null;
+	if (stageBalanceShortfall !== null) {
+		const stageBalanceShortfallFormatResult = formatTokenCount(
+			formatTokenCountDeps,
+			formatTokenCountParams,
+			{ tokenCount: stageBalanceShortfall },
+		);
+		if (!("error" in stageBalanceShortfallFormatResult)) {
+			stageBalanceShortfallDisplay =
+				stageBalanceShortfallFormatResult.formatted;
+		}
+	}
+
+	let projectBalanceShortfallDisplay: string | null = null;
+	if (projectBalanceShortfall !== null) {
+		const projectBalanceShortfallFormatResult = formatTokenCount(
+			formatTokenCountDeps,
+			formatTokenCountParams,
+			{ tokenCount: projectBalanceShortfall },
+		);
+		if (!("error" in projectBalanceShortfallFormatResult)) {
+			projectBalanceShortfallDisplay =
+				projectBalanceShortfallFormatResult.formatted;
+		}
+	}
+
 	return (
 		<div className="flex w-full flex-col items-stretch">
 			{isViewingAheadOfCurrentStage && viewingAheadReason ? (
@@ -193,7 +248,7 @@ export const GenerateContributionButton: React.FC<
 				showBalanceCallout &&
 				!showCostEstimateBlocked &&
 				viewingStage &&
-				stageBalanceShortfall !== null && (
+				stageBalanceShortfallDisplay !== null && (
 					<p
 						className="mt-1.5 max-w-[280px] rounded-md border border-primary/60 bg-primary/15 px-3 py-2 text-center text-xs font-medium text-primary shadow-md animate-pulse"
 						data-testid="generate-button-balance-callout"
@@ -203,31 +258,31 @@ export const GenerateContributionButton: React.FC<
 							to="/subscription?tab=top-up"
 							className="font-semibold underline underline-offset-2 hover:no-underline"
 						>
-							Top up {formatTokenCount(stageBalanceShortfall)} to continue.
+							Top up {stageBalanceShortfallDisplay} to continue.
 						</Link>
 					</p>
 				)}
-			{showStageCostEstimate && stageCeiling !== null && (
+			{showStageCostEstimate && stageCeilingDisplay !== null && (
 				<p
 					className="mt-1.5 text-center text-xs text-muted-foreground"
 					data-testid="generate-button-stage-cost-estimate"
 				>
-					Estimated cost for this stage: ~{formatTokenCount(stageCeiling)} tokens.
+					Estimated cost for this stage: ~{stageCeilingDisplay} tokens.
 				</p>
 			)}
 			{showProjectBalanceCallout &&
-				projectBalanceShortfall !== null &&
-				projectCeiling !== null && (
+				projectBalanceShortfallDisplay !== null &&
+				projectCeilingDisplay !== null && (
 					<p
 						className="mt-1.5 max-w-[280px] text-center text-xs text-muted-foreground"
 						data-testid="generate-button-project-balance-callout"
 					>
-						This project may need ~{formatTokenCount(projectCeiling)} tokens.{" "}
+						This project may need ~{projectCeilingDisplay} tokens.{" "}
 						<Link
 							to="/subscription?tab=top-up"
 							className="font-semibold underline underline-offset-2 hover:no-underline"
 						>
-							Top up {formatTokenCount(projectBalanceShortfall)} for the full project.
+							Top up {projectBalanceShortfallDisplay} for the full project.
 						</Link>
 					</p>
 				)}

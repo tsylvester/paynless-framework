@@ -446,7 +446,6 @@ export function OutputCapSlider({ className }: OutputCapSliderProps) {
 	}
 
 	const activeUserTier: UserTier = userTier;
-	const activeMaxOutputTokens: number = maxOutputTokens;
 	const activeSliderRangeMax: number = sliderRangeMax;
 
 	let activeThumbMax: number;
@@ -458,11 +457,6 @@ export function OutputCapSlider({ className }: OutputCapSliderProps) {
 	} else {
 		activeThumbMax = activeSliderRangeMax;
 	}
-
-	const currentDisplayValue: number = Math.min(
-		activeMaxOutputTokens,
-		activeThumbMax,
-	);
 
 	let clampedSliderValue: number;
 	if (sliderRealValue > activeThumbMax) {
@@ -569,10 +563,10 @@ export function OutputCapSlider({ className }: OutputCapSliderProps) {
 						<h4 className="text-sm font-medium mb-1">Max Output Tokens</h4>
 						<div className="flex flex-col items-end gap-0.5">
 							<span className="text-lg font-semibold">
-								{formatTokenCount(currentDisplayValue)}
+								{formatTokenCount(clampedSliderValue)}
 							</span>
 							<span className="text-[10px] text-muted-foreground">
-								{formatPageGuidance(currentDisplayValue)}
+								{formatPageGuidance(clampedSliderValue)}
 							</span>
 						</div>
 					</div>

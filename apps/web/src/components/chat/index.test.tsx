@@ -130,6 +130,11 @@ const chatSuccessCeiling: ComputeCostCeilingSuccessReturn = {
   projectCeiling: 200000,
 };
 
+const chatLargeCeilingSuccess: ComputeCostCeilingSuccessReturn = {
+  stageCeilings: { thesis: 39_015 },
+  projectCeiling: 1_139_238,
+};
+
 const expectedChatSelectedModel: SelectedModels = mockSelectedModel({
   id: chatFreeProvider.id,
   displayName: chatFreeProvider.name,
@@ -350,9 +355,29 @@ describe('Chat onboarding pre-project cost estimate', () => {
     expect(screen.getByTestId('chat-onboarding-cost-preview').textContent).toContain(
       'Estimated token cost:',
     );
-    expect(screen.getByTestId('chat-onboarding-cost-preview').textContent).toContain('200,000');
-    expect(screen.getByTestId('chat-onboarding-cost-preview').textContent).toContain('50,000');
+    expect(screen.getByTestId('chat-onboarding-cost-preview').textContent).toContain('200K');
+    expect(screen.getByTestId('chat-onboarding-cost-preview').textContent).toContain('50K');
     expect(selectSortedStages(useDialecticStore.getState())[0]?.slug).toBe('thesis');
+    expect(screen.queryByTestId('chat-onboarding-estimate-error-notice')).toBeNull();
+    expect(screen.queryByTestId('chat-onboarding-estimate-loading-notice')).toBeNull();
+  });
+
+  it('chat onboarding cost preview shows abbreviated token counts for large ceilings', async () => {
+    selectPreProjectCostCeilingMock.mockReturnValue(chatLargeCeilingSuccess);
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    renderChat();
+    await advanceWalkthroughToModelStep(user);
+    await selectModelInList(user, chatFreeProvider.id);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('chat-onboarding-cost-preview')).not.toBeNull();
+    });
+    const previewText: string | null =
+      screen.getByTestId('chat-onboarding-cost-preview').textContent;
+    expect(previewText).toContain('1.1M');
+    expect(previewText).not.toContain('1,139,238');
+    expect(previewText).toContain('39K');
+    expect(previewText).not.toContain('39,015');
     expect(screen.queryByTestId('chat-onboarding-estimate-error-notice')).toBeNull();
     expect(screen.queryByTestId('chat-onboarding-estimate-loading-notice')).toBeNull();
   });

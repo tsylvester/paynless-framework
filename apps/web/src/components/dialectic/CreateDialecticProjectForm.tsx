@@ -1,7 +1,13 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { useForm, Controller, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { ComputeCostCeilingReturn, logger } from "@paynless/utils";
+import {
+	ComputeCostCeilingReturn,
+	formatTokenCount,
+	logger,
+	FormatTokenCountDeps,
+	FormatTokenCountParams,
+} from "@paynless/utils";
 import { Link, useNavigate } from "react-router-dom";
 import {
 	useAuthStore,
@@ -77,6 +83,9 @@ const SETUP_MODE_EXPLAINER =
 
 const subscriptionTierUnavailableMessage =
 	"Subscription tier is not available.";
+
+const formatTokenCountDeps: FormatTokenCountDeps = {};
+const formatTokenCountParams: FormatTokenCountParams = {};
 
 interface CreateDialecticProjectFormProps {
 	defaultProjectName?: string;
@@ -161,8 +170,6 @@ export const CreateDialecticProjectForm: React.FC<
 	const preProjectCostCeilingResult: ComputeCostCeilingReturn =
 		useDialecticStore(selectPreProjectCostCeiling);
 
-	const formatTokenCount = (n: number): string =>
-		new Intl.NumberFormat("en-US").format(n);
 	const [isModelSelectorOpen, setIsModelSelectorOpen] = useState(false);
 	const [promptFile, setPromptFile] = useState<File | null>(null);
 	const [projectNameManuallySet, setProjectNameManuallySet] =
@@ -574,6 +581,43 @@ export const CreateDialecticProjectForm: React.FC<
 		projectBalanceShortfall = projectCeiling - walletBalanceNum;
 	}
 
+	let projectCeilingDisplay: string | null = null;
+	if (projectCeiling !== null) {
+		const projectCeilingFormatResult = formatTokenCount(
+			formatTokenCountDeps,
+			formatTokenCountParams,
+			{ tokenCount: projectCeiling },
+		);
+		if (!("error" in projectCeilingFormatResult)) {
+			projectCeilingDisplay = projectCeilingFormatResult.formatted;
+		}
+	}
+
+	let firstStageCeilingDisplay: string | null = null;
+	if (firstStageCeiling !== null) {
+		const firstStageCeilingFormatResult = formatTokenCount(
+			formatTokenCountDeps,
+			formatTokenCountParams,
+			{ tokenCount: firstStageCeiling },
+		);
+		if (!("error" in firstStageCeilingFormatResult)) {
+			firstStageCeilingDisplay = firstStageCeilingFormatResult.formatted;
+		}
+	}
+
+	let projectBalanceShortfallDisplay: string | null = null;
+	if (projectBalanceShortfall !== null) {
+		const projectBalanceShortfallFormatResult = formatTokenCount(
+			formatTokenCountDeps,
+			formatTokenCountParams,
+			{ tokenCount: projectBalanceShortfall },
+		);
+		if (!("error" in projectBalanceShortfallFormatResult)) {
+			projectBalanceShortfallDisplay =
+				projectBalanceShortfallFormatResult.formatted;
+		}
+	}
+
 	useEffect(() => {
 		if (configureManually) return;
 		const noDefaults = !isLoadingModelCatalog && defaultModels.length === 0;
@@ -898,26 +942,26 @@ export const CreateDialecticProjectForm: React.FC<
 								</p>
 							)}
 						{hasCostEstimateSuccess &&
-							firstStageCeiling !== null &&
-							projectCeiling !== null && (
+							firstStageCeilingDisplay !== null &&
+							projectCeilingDisplay !== null && (
 								<p data-testid="create-project-cost-preview">
 									Estimated token cost: ~
-									{formatTokenCount(projectCeiling)} for the full project, ~
-									{formatTokenCount(firstStageCeiling)} for the first stage.
+									{projectCeilingDisplay} for the full project, ~
+									{firstStageCeilingDisplay} for the first stage.
 								</p>
 							)}
 						{hasCostEstimateSuccess &&
-							projectBalanceShortfall !== null &&
-							projectCeiling !== null && (
+							projectBalanceShortfallDisplay !== null &&
+							projectCeilingDisplay !== null && (
 								<p data-testid="create-project-project-balance-warning">
 									This project may need ~
-									{formatTokenCount(projectCeiling)} tokens total.{" "}
+									{projectCeilingDisplay} tokens total.{" "}
 									<Link
 										to="/subscription?tab=top-up"
 										className="font-semibold underline underline-offset-2 hover:no-underline"
 									>
 										Top up{" "}
-										{formatTokenCount(projectBalanceShortfall)} to cover the
+										{projectBalanceShortfallDisplay} to cover the
 										full project.
 									</Link>
 								</p>
