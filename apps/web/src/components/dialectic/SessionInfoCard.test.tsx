@@ -1092,21 +1092,99 @@ describe('SessionInfoCard', () => {
       expect(screen.queryByTestId('session-info-estimate-error-notice')).toBeNull();
     });
 
-    it('calls initializeMaxOutputTokens when auth tier and catalog loaded and session active', async () => {
-      mockedUseAuthStoreHookLogic.setState({
-        isLoading: false,
-        userTier: costCeilingBasicUserTier,
-        error: null,
-      });
+    it('reconciliation calls initializeMaxOutputTokens when cap still null after loading and store orchestrator skipped or failed', async () => {
+      const reconciliationInitError: ApiError = {
+        code: 'NO_DEFAULT_GENERATION_MODELS',
+        message: 'No default generation models are available in the catalog.',
+      };
+      selectCostCeilingMock.mockReturnValue(
+        buildComputeCostCeilingErrorReturn({ error: selectorDecoyError }),
+      );
       setupCostCeilingFixture({
         modelCatalog: defaultCostCeilingCatalog,
         isLoadingModelCatalog: false,
+        isLoadingActiveSessionDetail: false,
+        isLoadingProcessTemplate: false,
+        maxOutputTokens: null,
+        outputCapUserCustomized: false,
+      });
+      vi.mocked(getDialecticStoreActionMock('initializeMaxOutputTokens')).mockReturnValue({
+        ok: false,
+        error: reconciliationInitError,
       });
       renderComponent();
 
       await waitFor(() => {
         expect(getDialecticStoreActionMock('initializeMaxOutputTokens')).toHaveBeenCalledTimes(1);
       });
+      await waitFor(() => {
+        expect(screen.getByTestId('session-info-estimate-error-notice').textContent).toBe(
+          reconciliationInitError.message,
+        );
+      });
+      expect(screen.queryByText(selectorDecoyError.message)).toBeNull();
+    });
+
+    it('does not call initializeMaxOutputTokens for bootstrap when maxOutputTokens already finite from store', async () => {
+      const hydratedFiniteCapSuccess: ComputeCostCeilingSuccessReturn = {
+        stageCeilings: { thesis: 120000 },
+        projectCeiling: 350000,
+      };
+      selectCostCeilingMock.mockReturnValue(hydratedFiniteCapSuccess);
+      setupCostCeilingFixture({
+        modelCatalog: defaultCostCeilingCatalog,
+        isLoadingModelCatalog: false,
+        isLoadingActiveSessionDetail: false,
+        isLoadingProcessTemplate: false,
+        maxOutputTokens: costCeilingBasicUserTier.output_cap_tokens,
+        outputCapUserCustomized: false,
+      });
+      renderComponent();
+
+      await waitFor(() => {
+        expect(screen.queryByTestId('session-info-estimate-loading-notice')).toBeNull();
+      });
+      expect(getDialecticStoreActionMock('initializeMaxOutputTokens')).not.toHaveBeenCalled();
+      expect(screen.queryByTestId('session-info-estimate-error-notice')).toBeNull();
+      expect(screen.getByTestId('session-info-stage-cost-estimate')).not.toBeNull();
+      expect(screen.getByTestId('session-info-project-cost-estimate')).not.toBeNull();
+      expect(screen.queryByText(outputCapNotInitializedError.message)).toBeNull();
+    });
+
+    it('shows catalog loading notice while isLoadingModelCatalog without OUTPUT_CAP_NOT_INITIALIZED error', async () => {
+      selectCostCeilingMock.mockReturnValue(
+        buildComputeCostCeilingErrorReturn({ error: outputCapNotInitializedError }),
+      );
+      setupCostCeilingFixture({
+        modelCatalog: [],
+        isLoadingModelCatalog: true,
+      });
+      renderComponent();
+
+      await waitFor(() => {
+        expect(screen.getByTestId('session-info-estimate-loading-notice').textContent).toBe(
+          'Loading model catalog…',
+        );
+      });
+      expect(screen.queryByTestId('session-info-estimate-error-notice')).toBeNull();
+    });
+
+    it('shows session loading notice while isLoadingActiveSessionDetail', async () => {
+      selectCostCeilingMock.mockReturnValue(
+        buildComputeCostCeilingErrorReturn({ error: outputCapNotInitializedError }),
+      );
+      setupCostCeilingFixture({
+        isLoadingActiveSessionDetail: true,
+      });
+      renderComponent();
+
+      await waitFor(() => {
+        expect(screen.getByTestId('session-info-estimate-loading-notice').textContent).toBe(
+          'Loading session…',
+        );
+      });
+      expect(screen.queryByTestId('session-info-estimate-error-notice')).toBeNull();
+      expect(getDialecticStoreActionMock('initializeMaxOutputTokens')).not.toHaveBeenCalled();
     });
 
     it('shows loading notice while progressHydrationStatus runKey is pending', async () => {
@@ -1207,6 +1285,10 @@ describe('SessionInfoCard', () => {
         setupCostCeilingFixture({
           modelCatalog: defaultCostCeilingCatalog,
           isLoadingModelCatalog: false,
+          isLoadingActiveSessionDetail: false,
+          isLoadingProcessTemplate: false,
+          maxOutputTokens: null,
+          outputCapUserCustomized: false,
         });
         vi.mocked(getDialecticStoreActionMock('initializeMaxOutputTokens')).mockReturnValue({
           ok: false,

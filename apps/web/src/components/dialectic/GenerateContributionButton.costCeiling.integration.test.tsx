@@ -18,10 +18,14 @@ import {
 import type {
   AiModelExtendedConfig,
   AiProvidersRow,
+  DialecticProject,
   DialecticStage,
+  DialecticStageRecipe,
   GenerateContributionsResponse,
   GetAllStageProgressResponse,
+  GetSessionDetailsResponse,
   SelectedModels,
+  StageRunProgressSnapshot,
   TokenWallet,
   UserTier,
 } from '@paynless/types';
@@ -190,6 +194,87 @@ const thesisStage: DialecticStage = mockDialecticStage({
   default_system_prompt_id: null,
 });
 
+interface IntegrationSessionFixtures {
+  template: ReturnType<typeof mockDialecticProcessTemplate>;
+  session: ReturnType<typeof mockSession>;
+  currentProjectDetail: ReturnType<typeof mockDialecticProject>;
+  recipe: DialecticStageRecipe;
+  progress: StageRunProgressSnapshot;
+  sessionDetailsResponse: GetSessionDetailsResponse;
+  projectDetailsResponse: DialecticProject;
+}
+
+function buildIntegrationSessionFixtures(): IntegrationSessionFixtures {
+  const template = mockDialecticProcessTemplate({
+    id: 'template-1',
+    name: 'Test',
+    starting_stage_id: thesisStage.id,
+    stages: [thesisStage],
+    transitions: [],
+  });
+  const session = mockSession({
+    id: sessionId,
+    project_id: projectId,
+    iteration_count: iterationNumber,
+    current_stage_id: thesisStage.id,
+    selected_models: selectedModels,
+    viewing_stage_id: thesisStage.id,
+  });
+  const currentProjectDetail = mockDialecticProject({
+    id: projectId,
+    user_id: userId,
+    project_name: 'Cost Ceiling Test Project',
+    process_template_id: template.id,
+    dialectic_process_templates: template,
+    dialectic_sessions: [session],
+  });
+  const recipe = mockDialecticStageRecipe({
+    stageSlug,
+    instanceId: 'instance-1',
+    steps: [
+      mockDialecticStageRecipeStep({
+        id: 's1',
+        step_key: 'plan',
+        step_slug: 'plan',
+        step_name: 'Plan',
+        execution_order: 0,
+        job_type: 'PLAN',
+        prompt_type: 'Planner',
+        output_type: 'header_context',
+        granularity_strategy: 'all_to_one',
+        inputs_required: [],
+        outputs_required: [],
+      }),
+    ],
+    edges: [],
+  });
+  const progress = mockStageRunProgressSnapshot({
+    stepStatuses: { plan: 'not_started' },
+    progress: {
+      completedSteps: 0,
+      totalSteps: 1,
+      failedSteps: 0,
+    },
+  });
+  const sessionDetailsResponse: GetSessionDetailsResponse = {
+    session,
+    currentStageDetails: thesisStage,
+    activeSeedPrompt: null,
+  };
+  return {
+    template,
+    session,
+    currentProjectDetail,
+    recipe,
+    progress,
+    sessionDetailsResponse,
+    projectDetailsResponse: currentProjectDetail,
+  };
+}
+
+const integrationSessionFixtures: IntegrationSessionFixtures =
+  buildIntegrationSessionFixtures();
+
 const server = setupServer();
 
 let generateContributionsRequestCount = 0;
@@ -240,6 +325,36 @@ function registerSuccessMswHandlers(): void {
       if (action === 'listModelCatalog') {
         return HttpResponse.json([catalogRow], { status: 200 });
       }
+      if (action === 'getProjectDetails') {
+        return HttpResponse.json(
+          integrationSessionFixtures.projectDetailsResponse,
+          { status: 200 },
+        );
+      }
+      if (action === 'getSessionDetails') {
+        return HttpResponse.json(
+          integrationSessionFixtures.sessionDetailsResponse,
+          { status: 200 },
+        );
+      }
+      if (action === 'fetchProcessTemplate') {
+        return HttpResponse.json(integrationSessionFixtures.template, { status: 200 });
+      }
+      if (action === 'getStageRecipe') {
+        const payload: unknown = body['payload'];
+        if (
+          payload != null &&
+          typeof payload === 'object' &&
+          'stageSlug' in payload &&
+          payload.stageSlug === stageSlug
+        ) {
+          return HttpResponse.json(integrationSessionFixtures.recipe, { status: 200 });
+        }
+        return HttpResponse.json({ message: 'Unknown stage recipe' }, { status: 404 });
+      }
+      if (action === 'updateViewingStage') {
+        return HttpResponse.json(integrationSessionFixtures.session, { status: 200 });
+      }
       if (action === 'generateContributions') {
         generateContributionsRequestCount += 1;
         const generateContributionsResponse: GenerateContributionsResponse = {
@@ -274,6 +389,36 @@ function registerGetAllStageProgressErrorHandler(): void {
       }
       if (action === 'listModelCatalog') {
         return HttpResponse.json([catalogRow], { status: 200 });
+      }
+      if (action === 'getProjectDetails') {
+        return HttpResponse.json(
+          integrationSessionFixtures.projectDetailsResponse,
+          { status: 200 },
+        );
+      }
+      if (action === 'getSessionDetails') {
+        return HttpResponse.json(
+          integrationSessionFixtures.sessionDetailsResponse,
+          { status: 200 },
+        );
+      }
+      if (action === 'fetchProcessTemplate') {
+        return HttpResponse.json(integrationSessionFixtures.template, { status: 200 });
+      }
+      if (action === 'getStageRecipe') {
+        const payload: unknown = body['payload'];
+        if (
+          payload != null &&
+          typeof payload === 'object' &&
+          'stageSlug' in payload &&
+          payload.stageSlug === stageSlug
+        ) {
+          return HttpResponse.json(integrationSessionFixtures.recipe, { status: 200 });
+        }
+        return HttpResponse.json({ message: 'Unknown stage recipe' }, { status: 404 });
+      }
+      if (action === 'updateViewingStage') {
+        return HttpResponse.json(integrationSessionFixtures.session, { status: 200 });
       }
       if (action === 'generateContributions') {
         generateContributionsRequestCount += 1;
@@ -327,17 +472,15 @@ function seedAuthForCostCeilingIntegration(): void {
   });
 }
 
-async function initializeOutputCapFromTier(): Promise<void> {
-  act(() => {
-    useDialecticStore.getState().initializeMaxOutputTokens();
-  });
+async function initializeOutputCapViaSessionHydration(): Promise<void> {
+  await useDialecticStore.getState().fetchAndSetCurrentSessionDetails(sessionId);
   await waitFor(() => {
     const tokens: number | null = useDialecticStore.getState().maxOutputTokens;
     expect(tokens).not.toBeNull();
   });
   const initializedTokens: number | null = useDialecticStore.getState().maxOutputTokens;
   if (initializedTokens === null) {
-    throw new Error('maxOutputTokens remained null after initializeMaxOutputTokens');
+    throw new Error('maxOutputTokens remained null after session hydration orchestrator');
   }
   expect(initializedTokens).toBe(maxOutputTokens);
 }
@@ -365,60 +508,14 @@ function applySessionStoreSeed(
   includeMaxOutputTokens: boolean,
   maxOutputTokensValue: number | null,
 ): void {
-  const template = mockDialecticProcessTemplate({
-    id: 'template-1',
-    name: 'Test',
-    starting_stage_id: thesisStage.id,
-    stages: [thesisStage],
-    transitions: [],
-  });
-  const session = mockSession({
-    id: sessionId,
-    project_id: projectId,
-    iteration_count: iterationNumber,
-    current_stage_id: thesisStage.id,
-    selected_models: selectedModels,
-    viewing_stage_id: thesisStage.id,
-  });
-  const currentProjectDetail = mockDialecticProject({
-    id: projectId,
-    user_id: userId,
-    project_name: 'Cost Ceiling Test Project',
-    process_template_id: template.id,
-    dialectic_process_templates: template,
-    dialectic_sessions: [session],
-  });
-  const recipe = mockDialecticStageRecipe({
-    stageSlug,
-    instanceId: 'instance-1',
-    steps: [
-      mockDialecticStageRecipeStep({
-        id: 's1',
-        step_key: 'plan',
-        step_slug: 'plan',
-        step_name: 'Plan',
-        execution_order: 0,
-        job_type: 'PLAN',
-        prompt_type: 'Planner',
-        output_type: 'header_context',
-        granularity_strategy: 'all_to_one',
-        inputs_required: [],
-        outputs_required: [],
-      }),
-    ],
-    edges: [],
-  });
-  const progress = mockStageRunProgressSnapshot({
-    stepStatuses: { plan: 'not_started' },
-    progress: {
-      completedSteps: 0,
-      totalSteps: 1,
-      failedSteps: 0,
-    },
-  });
+  const {
+    currentProjectDetail,
+    recipe,
+    progress,
+  } = integrationSessionFixtures;
 
   const sessionStoreBase = {
-    currentProcessTemplate: template,
+    currentProcessTemplate: integrationSessionFixtures.template,
     currentProjectDetail,
     activeContextSessionId: sessionId,
     viewingStageSlug: stageSlug,
@@ -484,7 +581,7 @@ describe('GenerateContributionButton cost ceiling integration', () => {
     seedSessionStoreForTierInitPath();
 
     await hydrateStageProgressFromApi();
-    await initializeOutputCapFromTier();
+    await initializeOutputCapViaSessionHydration();
 
     const storeState = useDialecticStore.getState();
     const countsBySlug = storeState.stageExpectedCountsByRun[runKey];
@@ -608,7 +705,7 @@ describe('GenerateContributionButton cost ceiling integration', () => {
     setWalletBalance(lowWalletBalance);
 
     await hydrateStageProgressFromApi();
-    await initializeOutputCapFromTier();
+    await initializeOutputCapViaSessionHydration();
 
     renderWithRouter(<GenerateContributionButton />);
 
@@ -629,7 +726,7 @@ describe('GenerateContributionButton cost ceiling integration', () => {
     seedSessionStoreForTierInitPath();
 
     await hydrateStageProgressFromApi();
-    await initializeOutputCapFromTier();
+    await initializeOutputCapViaSessionHydration();
 
     renderWithRouter(<GenerateContributionButton />);
 
@@ -657,5 +754,77 @@ describe('GenerateContributionButton cost ceiling integration', () => {
     await user.click(screen.getByRole('button', { name: /Estimate Failed/i }));
 
     expect(getGenerateContributionsRequestCount()).toBe(0);
+  });
+
+  it('deep-link with empty initial catalog shows loading then success without persistent OUTPUT_CAP_NOT_INITIALIZED', async () => {
+    const { recipe, progress } = integrationSessionFixtures;
+
+    act(() => {
+      useDialecticStore.setState({
+        modelCatalog: [],
+        maxOutputTokens: null,
+        outputCapUserCustomized: false,
+        isLoadingModelCatalog: false,
+        selectedModels: [],
+        activeContextSessionId: null,
+        activeContextProjectId: null,
+        currentProjectDetail: null,
+        currentProcessTemplate: null,
+        recipesByStageSlug: { [stageSlug]: recipe },
+        stageRunProgress: { [progressKey]: progress },
+        stageExpectedCountsByRun: {},
+        generatingSessions: {},
+        progressHydrationStatus: {},
+      });
+    });
+
+    renderWithRouter(<GenerateContributionButton />);
+
+    let deepLinkPromise: Promise<void> = Promise.resolve();
+    act(() => {
+      deepLinkPromise = useDialecticStore
+        .getState()
+        .activateProjectAndSessionContextForDeepLink(projectId, sessionId);
+    });
+
+    await waitFor(() => {
+      expect(
+        screen.getByTestId('generate-button-estimate-loading-notice'),
+      ).toBeDefined();
+    });
+
+    await act(async () => {
+      await deepLinkPromise;
+    });
+
+    await waitFor(() => {
+      const storeState = useDialecticStore.getState();
+      expect(storeState.processTemplateError).toBeNull();
+      expect(storeState.currentProcessTemplate).not.toBeNull();
+      expect(storeState.viewingStageSlug).toBe(stageSlug);
+      expect(storeState.activeContextSessionId).toBe(sessionId);
+    });
+
+    await hydrateStageProgressFromApi();
+
+    await waitFor(() => {
+      expect(useDialecticStore.getState().maxOutputTokens).toBe(maxOutputTokens);
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('generate-button-estimate-error-callout')).toBeNull();
+      expect(screen.queryByTestId('generate-button-estimate-loading-notice')).toBeNull();
+    });
+
+    await waitFor(() => {
+      const stageCostEstimate = screen.queryByTestId('generate-button-stage-cost-estimate');
+      const generateButton = screen.queryByRole('button', { name: /Generate Proposal/i });
+      const generateEnabled: boolean =
+        generateButton !== null && !generateButton.hasAttribute('disabled');
+      const hasStageEstimate: boolean = stageCostEstimate !== null;
+      expect(hasStageEstimate || generateEnabled).toBe(true);
+    });
+
+    expect(screen.queryByText(outputCapNotInitializedMessage)).toBeNull();
   });
 });

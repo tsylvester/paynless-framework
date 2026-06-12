@@ -83,6 +83,7 @@ import {
 } from '../../../../packages/store/src/dialecticStore.selectors';
 import { internalMockAuthStoreGetState } from './authStore.mock';
 import { isJson } from '@paynless/utils';
+import { api } from '@paynless/api/mocks';
 
 // ---- START: Define ALL controllable selectors as top-level vi.fn() mocks ----
 // These are kept if tests rely on setting their return values directly at a global level.
@@ -363,6 +364,8 @@ export const mockPauseActiveJobs = vi.fn().mockResolvedValue({ data: { pausedCou
 export const mockInitializeMaxOutputTokens: Mock<[], InitializeMaxOutputTokensResult> = vi
   .fn<[], InitializeMaxOutputTokensResult>()
   .mockReturnValue({ ok: true });
+
+export const mockFetchAIModelCatalog: Mock<[], Promise<void>> = vi.fn<[], Promise<void>>();
 
 export function mockDialecticDomain(
   overrides: Partial<DialecticDomainRow> = {},
@@ -1072,6 +1075,59 @@ const createActualMockStore = (initialOverrides?: Partial<DialecticStateValues>)
         reapplyDraftToNewBaselineLogic(state, key, newBaseline, newVersion, sourceContributionId, resourceType);
       };
 
+      const initializeOutputCap = async (): Promise<void> => {
+        const catalogState: DialecticStateValues = get();
+        if (catalogState.modelCatalog.length === 0 && !catalogState.isLoadingModelCatalog) {
+          await get().fetchAIModelCatalog();
+        }
+        const capInitState: DialecticStateValues = get();
+        const authState = internalMockAuthStoreGetState();
+        const capInitDepsReady: boolean =
+          !authState.isLoading
+          && authState.userTier !== null
+          && !capInitState.isLoadingModelCatalog
+          && capInitState.modelCatalog.length > 0
+          && !capInitState.outputCapUserCustomized;
+        if (!capInitDepsReady) {
+          return;
+        }
+        get().initializeMaxOutputTokens();
+      };
+
+      mockFetchAIModelCatalog.mockImplementation(async (): Promise<void> => {
+        set({ isLoadingModelCatalog: true, modelCatalogError: null });
+        try {
+          const response = await api.dialectic().listModelCatalog();
+          if (response.error) {
+            set({
+              modelCatalog: [],
+              isLoadingModelCatalog: false,
+              modelCatalogError: response.error,
+            });
+          } else {
+            set({
+              modelCatalog: response.data || [],
+              isLoadingModelCatalog: false,
+              modelCatalogError: null,
+            });
+            await initializeOutputCap();
+          }
+        } catch (error: unknown) {
+          const networkError: ApiError = {
+            message:
+              error instanceof Error
+                ? error.message
+                : 'An unknown network error occurred while fetching AI model catalog',
+            code: 'NETWORK_ERROR',
+          };
+          set({
+            modelCatalog: [],
+            isLoadingModelCatalog: false,
+            modelCatalogError: networkError,
+          });
+        }
+      });
+
       return {
       ...initialDialecticStateValues,
       ...(initialOverrides || {}),
@@ -1089,7 +1145,7 @@ const createActualMockStore = (initialOverrides?: Partial<DialecticStateValues>)
       createDialecticProject: vi.fn().mockResolvedValue({ data: undefined, error: undefined, status: 200 }),
       startDialecticSession: vi.fn().mockResolvedValue({ data: undefined, error: undefined, status: 200 }),
       updateSessionModels: vi.fn().mockResolvedValue({ data: undefined, error: undefined, status: 200 }),
-      fetchAIModelCatalog: vi.fn().mockResolvedValue(undefined),
+      fetchAIModelCatalog: mockFetchAIModelCatalog,
       createProjectAndAutoStart: vi.fn().mockResolvedValue({ projectId: '', sessionId: null, hasDefaultModels: false }),
       setShouldOpenDagProgress: vi.fn((open: boolean) => set({ shouldOpenDagProgress: open })),
       fetchContributionContent: vi.fn().mockImplementation(async (contributionId: string) => {
@@ -1438,6 +1494,7 @@ export const setDialecticStateValues = (newValues: Partial<DialecticStateValues>
 
 // 7. Function to re-initialize or update the mock store state for tests
 export const initializeMockDialecticState = (initialStateOverrides?: Partial<DialecticStateValues>) => {
+  mockFetchAIModelCatalog.mockClear();
   // Create a new store instance. This effectively resets all state and action mocks to their vi.fn() definitions.
   actualMockStore = createActualMockStore(initialStateOverrides);
 

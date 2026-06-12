@@ -300,6 +300,30 @@ export const useDialecticStore = create<DialecticStore>()(
 			reapplyDraftToNewBaselineLogic(state, key, newBaseline, newVersion, sourceContributionId, resourceType);
 		};
 
+		const initializeOutputCap = async (): Promise<void> => {
+			const catalogState = get();
+			if (catalogState.modelCatalog.length === 0 && !catalogState.isLoadingModelCatalog) {
+				await get().fetchAIModelCatalog();
+			}
+			const capInitState = get();
+			const authState = useAuthStore.getState();
+			const capInitDepsReady: boolean =
+				!authState.isLoading
+				&& authState.userTier !== null
+				&& !capInitState.isLoadingModelCatalog
+				&& capInitState.modelCatalog.length > 0
+				&& !capInitState.outputCapUserCustomized;
+			if (!capInitDepsReady) {
+				return;
+			}
+			const initResult: InitializeMaxOutputTokensResult = get().initializeMaxOutputTokens();
+			if (!initResult.ok) {
+				logger.error('[DialecticStore] initializeMaxOutputTokens failed', {
+					message: initResult.error.message,
+				});
+			}
+		};
+
     return {
       ...initialDialecticStateValues,
 
@@ -1028,6 +1052,7 @@ export const useDialecticStore = create<DialecticStore>()(
 					isLoadingModelCatalog: false,
 					modelCatalogError: null,
 				});
+				await initializeOutputCap();
 			}
 		} catch (error: unknown) {
 			const networkError: ApiError = {
@@ -2785,7 +2810,7 @@ export const useDialecticStore = create<DialecticStore>()(
 			activeContextStage: context.stage,
 			...(context.sessionId === null ? { activeSessionDetail: null, activeSessionDetailError: null } : {}),
 			...(shouldResetOutputCapState
-				? { outputCapUserCustomized: false }
+				? { outputCapUserCustomized: false, maxOutputTokens: null }
 				: {}),
 		});
 	},
@@ -3299,6 +3324,7 @@ export const useDialecticStore = create<DialecticStore>()(
 			// Set selected models from session response (single origin: selected_models)
 			const models = fetchedSession.selected_models;
 			set({ selectedModels: models });
+			await initializeOutputCap();
 
 			// Hydrate viewingStageSlug from session.viewing_stage_id or session.current_stage_id
 			const template = get().currentProcessTemplate;
@@ -3389,6 +3415,7 @@ export const useDialecticStore = create<DialecticStore>()(
     if (!get().projectDetailError) {
         logger.info(`[DialecticStore] Proceeding to fetch session details for ${sessionId}.`);
         await get().fetchAndSetCurrentSessionDetails(sessionId);
+        await initializeOutputCap();
         // viewingStageSlug is already set from session.viewing_stage_id by fetchAndSetCurrentSessionDetails; do not overwrite.
     }
   },

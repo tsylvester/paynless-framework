@@ -315,6 +315,16 @@ const lowBalanceWalletInfo: ActiveChatWalletInfo = {
   isLoadingPrimaryWallet: false,
 };
 
+const defaultActiveSessionDialecticState: Partial<DialecticStateValues> = {
+  currentProjectDetail: defaultProject,
+  currentProcessTemplate: defaultProcessTemplate,
+  activeContextSessionId: 'sess-1',
+  viewingStageSlug: 'thesis',
+  selectedModels: defaultSelectedModels,
+  isLoadingModelCatalog: false,
+  isLoadingActiveSessionDetail: false,
+};
+
 const setDialecticState = (overrides: Partial<DialecticStateValues>): void => {
   useDialecticStore.setState({
     ...initialDialecticStateValues,
@@ -327,11 +337,7 @@ describe('useStartContributionGeneration', () => {
   beforeEach(() => {
     resetAuthStoreMock();
     initializeMockDialecticState({
-      currentProjectDetail: defaultProject,
-      currentProcessTemplate: defaultProcessTemplate,
-      activeContextSessionId: 'sess-1',
-      viewingStageSlug: 'thesis',
-      selectedModels: defaultSelectedModels,
+      ...defaultActiveSessionDialecticState,
       generatingSessions: {},
     });
     vi.mocked(selectSessionById).mockImplementation((state, sessionId) => {
@@ -660,11 +666,7 @@ describe('useStartContributionGeneration', () => {
 
   it('isPauseMode is true when isSessionGenerating is true', () => {
     setDialecticState({
-      currentProjectDetail: defaultProject,
-      currentProcessTemplate: defaultProcessTemplate,
-      activeContextSessionId: 'sess-1',
-      viewingStageSlug: 'thesis',
-      selectedModels: defaultSelectedModels,
+      ...defaultActiveSessionDialecticState,
       generatingSessions: { 'sess-1': ['run-1'] },
     });
     const { result } = renderHook(() => useStartContributionGeneration());
@@ -697,11 +699,7 @@ describe('useStartContributionGeneration', () => {
 
   it('isDisabled is false when isSessionGenerating is true (button remains enabled for pause)', () => {
     setDialecticState({
-      currentProjectDetail: defaultProject,
-      currentProcessTemplate: defaultProcessTemplate,
-      activeContextSessionId: 'sess-1',
-      viewingStageSlug: 'thesis',
-      selectedModels: defaultSelectedModels,
+      ...defaultActiveSessionDialecticState,
       generatingSessions: { 'sess-1': ['run-1'] },
     });
     const { result } = renderHook(() => useStartContributionGeneration());
@@ -985,11 +983,7 @@ describe('useStartContributionGeneration', () => {
 
   it('resume mode path reads current store state at call time', async () => {
     initializeMockDialecticState({
-      currentProjectDetail: defaultProject,
-      currentProcessTemplate: defaultProcessTemplate,
-      activeContextSessionId: 'sess-1',
-      viewingStageSlug: 'thesis',
-      selectedModels: defaultSelectedModels,
+      ...defaultActiveSessionDialecticState,
       generatingSessions: {},
     });
     vi.mocked(selectUnifiedProjectProgress).mockReturnValue(defaultUnifiedProgress);
@@ -1046,6 +1040,10 @@ describe('useStartContributionGeneration', () => {
   });
 
   it('when selectCostCeiling returns OUTPUT_CAP_NOT_INITIALIZED error, cost estimate flags block spend and isDisabled is true', async () => {
+    setDialecticState({
+      ...defaultActiveSessionDialecticState,
+      maxOutputTokens: null,
+    });
     vi.mocked(selectCostCeiling).mockReturnValue(
       buildComputeCostCeilingErrorReturn({ error: outputCapNotInitializedError }),
     );
@@ -1199,6 +1197,10 @@ describe('useStartContributionGeneration', () => {
   });
 
   it('startContributionGeneration resume path does not call resumePausedNsfJobs when selectCostCeiling returns OUTPUT_CAP_NOT_INITIALIZED error', async () => {
+    setDialecticState({
+      ...defaultActiveSessionDialecticState,
+      maxOutputTokens: null,
+    });
     vi.mocked(selectCostCeiling).mockReturnValue(
       buildComputeCostCeilingErrorReturn({ error: outputCapNotInitializedError }),
     );
@@ -1257,6 +1259,10 @@ describe('useStartContributionGeneration', () => {
   });
 
   it('startContributionGeneration generate path returns failure when selectCostCeiling returns OUTPUT_CAP_NOT_INITIALIZED error', async () => {
+    setDialecticState({
+      ...defaultActiveSessionDialecticState,
+      maxOutputTokens: null,
+    });
     vi.mocked(selectCostCeiling).mockReturnValue(
       buildComputeCostCeilingErrorReturn({ error: outputCapNotInitializedError }),
     );
@@ -1296,6 +1302,7 @@ describe('useStartContributionGeneration', () => {
   });
 
   it('while auth isLoading, isCostEstimateLoading is true and costCeilingError is null', async () => {
+    setDialecticState(defaultActiveSessionDialecticState);
     mockSetAuthIsLoading(true);
     vi.mocked(selectCostCeiling).mockReturnValue(
       buildComputeCostCeilingErrorReturn({ error: outputCapNotInitializedError }),
@@ -1315,11 +1322,7 @@ describe('useStartContributionGeneration', () => {
 
   it('while progressHydrationStatus runKey is pending, isCostEstimateLoading is true', () => {
     setDialecticState({
-      currentProjectDetail: defaultProject,
-      currentProcessTemplate: defaultProcessTemplate,
-      activeContextSessionId: 'sess-1',
-      viewingStageSlug: 'thesis',
-      selectedModels: defaultSelectedModels,
+      ...defaultActiveSessionDialecticState,
       progressHydrationStatus: { 'sess-1:1': 'pending' },
     });
     vi.mocked(selectCostCeiling).mockReturnValue(
@@ -1332,7 +1335,10 @@ describe('useStartContributionGeneration', () => {
   });
 
   it('while isLoadingProcessTemplate, isCostEstimateLoading is true', () => {
-    setDialecticState({ isLoadingProcessTemplate: true });
+    setDialecticState({
+      ...defaultActiveSessionDialecticState,
+      isLoadingProcessTemplate: true,
+    });
     vi.mocked(selectCostCeiling).mockReturnValue(
       buildComputeCostCeilingErrorReturn({ error: outputCapNotInitializedError }),
     );
@@ -1343,6 +1349,7 @@ describe('useStartContributionGeneration', () => {
   });
 
   it('while isLoadingPrimaryWallet, isCostEstimateLoading is true', () => {
+    setDialecticState(defaultActiveSessionDialecticState);
     const loadingWalletInfo: ActiveChatWalletInfo = {
       ...defaultWalletInfo,
       isLoadingPrimaryWallet: true,
@@ -1359,16 +1366,88 @@ describe('useStartContributionGeneration', () => {
 
   it('when activeContextSessionId is null, costCeilingResult is NO_ACTIVE_SESSION error not null', () => {
     setDialecticState({
-      currentProjectDetail: defaultProject,
-      currentProcessTemplate: defaultProcessTemplate,
+      ...defaultActiveSessionDialecticState,
       activeContextSessionId: null,
-      viewingStageSlug: 'thesis',
-      selectedModels: defaultSelectedModels,
     });
     const { result } = renderHook(() => useStartContributionGeneration());
     expect(result.current.isCostEstimateLoading).toBe(false);
     expect(result.current.costCeilingError).toEqual(noActiveSessionError);
     expect(result.current.showCostEstimateBlocked).toBe(true);
     expect(vi.mocked(selectCostCeiling).mock.calls.length).toBe(0);
+  });
+
+  it('while isLoadingModelCatalog, isCostEstimateLoading is true and costCeilingError is null', async () => {
+    setDialecticState({
+      ...defaultActiveSessionDialecticState,
+      isLoadingModelCatalog: true,
+    });
+    vi.mocked(selectCostCeiling).mockReturnValue(
+      buildComputeCostCeilingErrorReturn({ error: outputCapNotInitializedError }),
+    );
+    const { result } = renderHook(() => useStartContributionGeneration());
+    expect(result.current.isCostEstimateLoading).toBe(true);
+    expect(result.current.costCeilingError).toBeNull();
+    expect(result.current.showCostEstimateBlocked).toBe(false);
+
+    const generateContributions = getDialecticStoreState().generateContributions;
+    await act(async () => {
+      await result.current.startContributionGeneration();
+    });
+    expect(toast.error).toHaveBeenCalledWith('Loading cost estimate…');
+    expect(generateContributions).not.toHaveBeenCalled();
+  });
+
+  it('while isLoadingActiveSessionDetail, isCostEstimateLoading is true and costCeilingError is null', async () => {
+    setDialecticState({
+      ...defaultActiveSessionDialecticState,
+      isLoadingActiveSessionDetail: true,
+    });
+    vi.mocked(selectCostCeiling).mockReturnValue(
+      buildComputeCostCeilingErrorReturn({ error: outputCapNotInitializedError }),
+    );
+    const { result } = renderHook(() => useStartContributionGeneration());
+    expect(result.current.isCostEstimateLoading).toBe(true);
+    expect(result.current.costCeilingError).toBeNull();
+    expect(result.current.showCostEstimateBlocked).toBe(false);
+
+    const generateContributions = getDialecticStoreState().generateContributions;
+    await act(async () => {
+      await result.current.startContributionGeneration();
+    });
+    expect(toast.error).toHaveBeenCalledWith('Loading cost estimate…');
+    expect(generateContributions).not.toHaveBeenCalled();
+  });
+
+  it('after session load completes with finite maxOutputTokens, loading clears and success exposes ceilings', () => {
+    setDialecticState({
+      ...defaultActiveSessionDialecticState,
+      maxOutputTokens: 8192,
+    });
+    vi.mocked(selectCostCeiling).mockReturnValue(defaultCostCeiling);
+    const { result } = renderHook(() => useStartContributionGeneration());
+    expect(result.current.isCostEstimateLoading).toBe(false);
+    expect(result.current.costCeilingError).toBeNull();
+    expect(result.current.isCostEstimateKnown).toBe(true);
+    expect(result.current.stageCeiling).toBe(defaultCostCeiling.stageCeilings['thesis']);
+    expect(result.current.projectCeiling).toBe(defaultCostCeiling.projectCeiling);
+    expect(result.current.showCostEstimateBlocked).toBe(false);
+    expect(result.current.balanceMeetsThreshold).toBe(true);
+    expect(result.current.showStageCostEstimate).toBe(true);
+  });
+
+  it('after session load completes with maxOutputTokens still null and init failed, loading clears and OUTPUT_CAP_NOT_INITIALIZED exposed', () => {
+    setDialecticState({
+      ...defaultActiveSessionDialecticState,
+      maxOutputTokens: null,
+    });
+    vi.mocked(selectCostCeiling).mockReturnValue(
+      buildComputeCostCeilingErrorReturn({ error: outputCapNotInitializedError }),
+    );
+    const { result } = renderHook(() => useStartContributionGeneration());
+    expect(result.current.isCostEstimateLoading).toBe(false);
+    expect(result.current.costCeilingError).toBe(outputCapNotInitializedError);
+    expect(result.current.isCostEstimateKnown).toBe(false);
+    expect(result.current.showCostEstimateBlocked).toBe(true);
+    expect(result.current.balanceMeetsThreshold).toBe(false);
   });
 });

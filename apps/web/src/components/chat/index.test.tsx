@@ -33,9 +33,11 @@ import {
   mockDialecticStage,
   mockDomainProcessAssociationRow,
   mockSelectedModel,
+  selectSelectedModels,
 } from '@/mocks/dialecticStore.mock';
 import {
   mockedUseAuthStoreHookLogic,
+  mockSetAuthError,
   resetAuthStoreMock,
 } from '@/mocks/authStore.mock';
 import { mockSetState, resetAiStoreMock } from '@/mocks/aiStore.mock';
@@ -51,6 +53,11 @@ const outputCapNotInitializedError: ApiError = {
 const selectorPassThroughError: ApiError = {
   code: 'COUNTS_ERROR',
   message: 'Stage expected counts are unavailable.',
+};
+
+const selectorDecoyError: ApiError = {
+  code: 'COUNTS_ERROR',
+  message: 'Selector error should not display.',
 };
 
 const { selectPreProjectCostCeilingMock } = vi.hoisted(() => ({
@@ -140,6 +147,24 @@ const expectedChatSelectedModel: SelectedModels = mockSelectedModel({
   displayName: chatFreeProvider.name,
 });
 
+function stubFetchAIModelCatalogNoOp(): void {
+  vi.mocked(getDialecticStoreActionMock('fetchAIModelCatalog')).mockImplementation(
+    async (): Promise<void> => undefined,
+  );
+}
+
+function wireSelectSelectedModelsFromStore(): void {
+  vi.mocked(selectSelectedModels).mockImplementation(
+    (state: DialecticStateValues): SelectedModels[] => {
+      const models: SelectedModels[] | null | undefined = state.selectedModels;
+      if (models === null || models === undefined) {
+        return [];
+      }
+      return models;
+    },
+  );
+}
+
 function initializeChatOnboardingTestState(
   overrides?: Partial<DialecticStateValues>,
 ): void {
@@ -158,6 +183,8 @@ function initializeChatOnboardingTestState(
     currentProcessTemplate: processTemplateForChat,
     ...overrides,
   });
+  wireSelectSelectedModelsFromStore();
+  stubFetchAIModelCatalogNoOp();
 }
 
 function renderChat(): ReturnType<typeof render> {
@@ -381,4 +408,79 @@ describe('Chat onboarding pre-project cost estimate', () => {
     expect(screen.queryByTestId('chat-onboarding-estimate-error-notice')).toBeNull();
     expect(screen.queryByTestId('chat-onboarding-estimate-loading-notice')).toBeNull();
   });
+
+  it('calls initializeMaxOutputTokens when auth tier, catalog, domain, and model are ready', async () => {
+    vi.mocked(getDialecticStoreActionMock('initializeMaxOutputTokens')).mockReturnValue({
+      ok: true,
+    });
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    renderChat();
+    await advanceWalkthroughToModelStep(user);
+    await selectModelInList(user, chatFreeProvider.id);
+
+    await waitFor(() => {
+      expect(getDialecticStoreActionMock('initializeMaxOutputTokens')).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('passes through authStore.error before selector error', async () => {
+    const tierFetchError: Error = new Error('Profile tier fetch failed.');
+    mockSetAuthError(tierFetchError);
+    selectPreProjectCostCeilingMock.mockReturnValue({ error: outputCapNotInitializedError });
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    renderChat();
+    await advanceWalkthroughToModelStep(user);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('chat-onboarding-estimate-error-notice').textContent).toBe(
+        tierFetchError.message,
+      );
+    });
+    expect(screen.queryByText(outputCapNotInitializedError.message)).toBeNull();
+    expect(screen.queryByTestId('chat-onboarding-estimate-loading-notice')).toBeNull();
+  });
+
+  it.each<ApiError>([
+    {
+      code: 'NO_DEFAULT_GENERATION_MODELS',
+      message: 'No default generation models are available in the catalog.',
+    },
+    {
+      code: 'MODEL_CATALOG_ENTRY_MISSING',
+      message: 'Model catalog entry missing for selected model id dft.',
+      details: { modelId: 'dft' },
+    },
+    {
+      code: 'MODEL_OUTPUT_CAP_UNAVAILABLE',
+      message: 'Model output cap is unavailable for model id dft.',
+      details: { modelId: 'dft' },
+    },
+    {
+      code: 'MODEL_CATALOG_INVALID_CONFIG',
+      message: 'Model catalog config invalid for model id dft.',
+      details: { modelId: 'dft' },
+    },
+  ])(
+    'passes through capInitResult error before selector error for $code',
+    async (initError: ApiError) => {
+      selectPreProjectCostCeilingMock.mockReturnValue({ error: selectorDecoyError });
+      initializeChatOnboardingTestState({ maxOutputTokens: null });
+      vi.mocked(getDialecticStoreActionMock('initializeMaxOutputTokens')).mockReturnValue({
+        ok: false,
+        error: initError,
+      });
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      renderChat();
+      await advanceWalkthroughToModelStep(user);
+      await selectModelInList(user, chatFreeProvider.id);
+
+      await waitFor(() => {
+        expect(screen.getByTestId('chat-onboarding-estimate-error-notice').textContent).toBe(
+          initError.message,
+        );
+      });
+      expect(screen.queryByText(selectorDecoyError.message)).toBeNull();
+      expect(screen.queryByTestId('chat-onboarding-estimate-loading-notice')).toBeNull();
+    },
+  );
 });

@@ -6,11 +6,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
   AiModelExtendedConfig,
   AiProvidersRow,
+  DialecticProject,
   DialecticRecipeEdge,
+  DialecticSession,
   DialecticStage,
   DialecticStageRecipe,
   DialecticStageRecipeStep,
   GenerateContributionsResponse,
+  GetSessionDetailsResponse,
   ResumePausedNsfJobsResponse,
   SelectedModels,
   StageRenderedDocumentDescriptor,
@@ -117,6 +120,55 @@ const thesisStage: DialecticStage = mockDialecticStage({
   display_name: 'Proposal',
   default_system_prompt_id: null,
 });
+
+const defaultSelectedModels: SelectedModels[] = [
+  { id: 'model-1', displayName: 'Model 1' },
+];
+
+const modelConfig: AiModelExtendedConfig = mockAiModelConfig({
+  output_token_cost_rate: outputTokenCostRate,
+  hard_cap_output_tokens: maxOutputTokens,
+  provider_max_output_tokens: maxOutputTokens,
+});
+if (!isJson(modelConfig)) {
+  throw new Error('config is not a valid JSON object');
+}
+
+const catalogRow: AiProvidersRow = mockAiProvidersRow({
+  id: 'model-1',
+  config: modelConfig,
+});
+
+function buildSessionForIntegration(
+  selectedModels: SelectedModels[] = defaultSelectedModels,
+): DialecticSession {
+  return mockSession({
+    id: sessionId,
+    project_id: projectId,
+    iteration_count: iterationNumber,
+    current_stage_id: thesisStage.id,
+    viewing_stage_id: thesisStage.id,
+    selected_models: selectedModels,
+  });
+}
+
+function buildProjectForIntegration(session: DialecticSession): DialecticProject {
+  const template = mockDialecticProcessTemplate({
+    id: 'template-1',
+    name: 'Test',
+    starting_stage_id: thesisStage.id,
+    stages: [thesisStage],
+    transitions: [],
+  });
+  return mockDialecticProject({
+    id: projectId,
+    user_id: 'user-1',
+    project_name: 'Test Project',
+    process_template_id: template.id,
+    dialectic_process_templates: template,
+    dialectic_sessions: [session],
+  });
+}
 
 function renderWithRouter(ui: React.ReactElement) {
   return render(ui, {
@@ -226,43 +278,14 @@ function setWalletBalance(balance: string): void {
 function setStoreForButton(
   recipe: DialecticStageRecipe,
   progress: StageRunProgressSnapshot,
-  selectedModels: SelectedModels[] = [{ id: 'model-1', displayName: 'Model 1' }],
+  session: DialecticSession,
+  selectedModels: SelectedModels[] = defaultSelectedModels,
 ): void {
-  const template = mockDialecticProcessTemplate({
-    id: 'template-1',
-    name: 'Test',
-    starting_stage_id: thesisStage.id,
-    stages: [thesisStage],
-    transitions: [],
-  });
-  const session = mockSession({
-    id: sessionId,
-    project_id: projectId,
-    iteration_count: iterationNumber,
-    current_stage_id: thesisStage.id,
-    viewing_stage_id: thesisStage.id,
-  });
-  const currentProjectDetail = mockDialecticProject({
-    id: projectId,
-    user_id: 'user-1',
-    project_name: 'Test Project',
-    process_template_id: template.id,
-    dialectic_process_templates: template,
-    dialectic_sessions: [session],
-  });
-
-  const modelConfig: AiModelExtendedConfig = mockAiModelConfig({
-    output_token_cost_rate: outputTokenCostRate,
-    hard_cap_output_tokens: maxOutputTokens,
-    provider_max_output_tokens: maxOutputTokens,
-  });
-  if (!isJson(modelConfig)) {
-    throw new Error('config is not a valid JSON object');
+  const currentProjectDetail: DialecticProject = buildProjectForIntegration(session);
+  const template = currentProjectDetail.dialectic_process_templates;
+  if (template === null || template === undefined) {
+    throw new Error('integration fixture project must include dialectic_process_templates');
   }
-  const catalogRow: AiProvidersRow = mockAiProvidersRow({
-    id: 'model-1',
-    config: modelConfig,
-  });
 
   act(() => {
     useDialecticStore.setState({
@@ -272,6 +295,7 @@ function setStoreForButton(
       viewingStageSlug: stageSlug,
       selectedModels,
       modelCatalog: [catalogRow],
+      outputCapUserCustomized: false,
       stageExpectedCountsByRun: {
         [runKey]: {
           [stageSlug]: stageExpectedCount,
@@ -284,28 +308,38 @@ function setStoreForButton(
   });
 }
 
-async function initializeOutputCapFromTier(): Promise<void> {
-  act(() => {
-    useDialecticStore.getState().initializeMaxOutputTokens();
+function mockGetSessionDetailsApiResponse(session: DialecticSession): void {
+  const sessionDetailsResponse: GetSessionDetailsResponse = {
+    session,
+    currentStageDetails: thesisStage,
+    activeSeedPrompt: null,
+  };
+  mockDialecticClient.getSessionDetails.mockResolvedValue({
+    data: sessionDetailsResponse,
+    status: 200,
+    error: undefined,
   });
+}
+
+async function initializeOutputCapViaSessionHydration(
+  session: DialecticSession,
+): Promise<void> {
+  mockGetSessionDetailsApiResponse(session);
+  await useDialecticStore.getState().fetchAndSetCurrentSessionDetails(sessionId);
   await waitFor(() => {
     const tokens: number | null = useDialecticStore.getState().maxOutputTokens;
-    expect(tokens).not.toBeNull();
+    expect(tokens).toBe(maxOutputTokens);
   });
-  const initializedTokens: number | null = useDialecticStore.getState().maxOutputTokens;
-  if (initializedTokens === null) {
-    throw new Error('maxOutputTokens remained null after initializeMaxOutputTokens');
-  }
-  expect(initializedTokens).toBe(maxOutputTokens);
 }
 
 async function seedStoreForButtonAndInitializeCap(
   recipe: DialecticStageRecipe,
   progress: StageRunProgressSnapshot,
-  selectedModels: SelectedModels[] = [{ id: 'model-1', displayName: 'Model 1' }],
+  selectedModels: SelectedModels[] = defaultSelectedModels,
 ): Promise<void> {
-  setStoreForButton(recipe, progress, selectedModels);
-  await initializeOutputCapFromTier();
+  const session: DialecticSession = buildSessionForIntegration(selectedModels);
+  setStoreForButton(recipe, progress, session, selectedModels);
+  await initializeOutputCapViaSessionHydration(session);
 }
 
 describe('GenerateContributionButton integration', () => {

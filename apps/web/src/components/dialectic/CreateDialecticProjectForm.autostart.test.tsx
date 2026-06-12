@@ -250,6 +250,12 @@ function buildMinimalDialecticProjectRow(overrides: { id: string; project_name: 
   };
 }
 
+function stubFetchAIModelCatalogNoOp(): void {
+  vi.mocked(getDialecticStoreActionMock('fetchAIModelCatalog')).mockImplementation(
+    async (): Promise<void> => undefined,
+  );
+}
+
 function initializeAutostartFormTestState(
   overrides?: Partial<DialecticStateValues>,
 ): void {
@@ -263,6 +269,7 @@ function initializeAutostartFormTestState(
     currentProcessTemplate: processTemplateForAutostartBalanceTest,
     ...overrides,
   });
+  stubFetchAIModelCatalogNoOp();
   vi.mocked(selectSelectedModels).mockReturnValue(defaultSelectedModels);
 }
 
@@ -321,6 +328,7 @@ describe('CreateDialecticProjectForm (autostart)', () => {
       maxOutputTokens: 8192,
       isLoadingModelCatalog: false,
     });
+    stubFetchAIModelCatalogNoOp();
     const { initializeMockWalletStore } = await import('@/mocks/walletStore.mock');
     initializeMockWalletStore();
     vi.mocked(selectActiveChatWalletInfo).mockReturnValue(defaultWalletInfo);
@@ -604,6 +612,7 @@ describe('CreateDialecticProjectForm (autostart)', () => {
       maxOutputTokens: 8192,
       isLoadingModelCatalog: false,
     });
+    stubFetchAIModelCatalogNoOp();
     vi.mocked(selectSelectedModels).mockReturnValue(emptySelectedModels);
 
     renderForm();
@@ -628,6 +637,7 @@ describe('CreateDialecticProjectForm (autostart)', () => {
       isLoadingModelCatalog: false,
       currentProcessTemplate: processTemplateForAutostartBalanceTest,
     });
+    stubFetchAIModelCatalogNoOp();
 
     renderForm();
     await waitFor(() => {
@@ -708,6 +718,7 @@ describe('CreateDialecticProjectForm (autostart)', () => {
       maxOutputTokens: 8192,
       isLoadingModelCatalog: false,
     });
+    stubFetchAIModelCatalogNoOp();
 
     renderForm();
 
@@ -727,6 +738,7 @@ describe('CreateDialecticProjectForm (autostart)', () => {
       maxOutputTokens: 8192,
       isLoadingModelCatalog: false,
     });
+    stubFetchAIModelCatalogNoOp();
 
     renderForm();
 
@@ -1000,7 +1012,7 @@ describe('CreateDialecticProjectForm (autostart)', () => {
     expect(screen.queryByRole('checkbox', { name: /Autostart/i })).toBeNull();
   });
 
-  it('calls initializeMaxOutputTokens once after auth tier and catalog are ready with popover closed', async () => {
+  it('calls initializeMaxOutputTokens from form after auth tier and catalog are ready with popover closed', async () => {
     initializeMockDialecticState({
       selectedDomain: mockSelectedDomain,
       modelCatalog: defaultCatalogWithDefaultModel,
@@ -1008,6 +1020,7 @@ describe('CreateDialecticProjectForm (autostart)', () => {
       maxOutputTokens: 8192,
       isLoadingModelCatalog: false,
     });
+    stubFetchAIModelCatalogNoOp();
     mockedUseAuthStoreHookLogic.setState({
       isLoading: false,
       userTier: mockUserTier,
@@ -1017,6 +1030,9 @@ describe('CreateDialecticProjectForm (autostart)', () => {
 
     renderForm();
 
+    await waitFor(() => {
+      expect(getDialecticStoreActionMock('fetchAIModelCatalog')).toHaveBeenCalled();
+    });
     await waitFor(() => {
       expect(getDialecticStoreActionMock('initializeMaxOutputTokens')).toHaveBeenCalledTimes(1);
     });
@@ -1028,6 +1044,7 @@ describe('CreateDialecticProjectForm (autostart)', () => {
       modelCatalog: [],
       isLoadingModelCatalog: true,
     });
+    stubFetchAIModelCatalogNoOp();
     mockedUseAuthStoreHookLogic.setState({
       isLoading: false,
       userTier: mockUserTier,

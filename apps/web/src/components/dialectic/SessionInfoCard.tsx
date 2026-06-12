@@ -93,6 +93,10 @@ export const SessionInfoCard: React.FC = () => {
 	const isLoadingProcessTemplate = useDialecticStore(
 		(state) => state.isLoadingProcessTemplate,
 	);
+	const maxOutputTokens = useDialecticStore((state) => state.maxOutputTokens);
+	const outputCapUserCustomized = useDialecticStore(
+		(state) => state.outputCapUserCustomized,
+	);
 	const modelCatalog = useDialecticStore((state) => state.modelCatalog);
 	const progressHydrationStatus = useDialecticStore(
 		(state) => state.progressHydrationStatus,
@@ -121,11 +125,47 @@ export const SessionInfoCard: React.FC = () => {
 		!isLoadingModelCatalog &&
 		modelCatalog.length > 0;
 
+	const runKey: string | null =
+		session !== null
+			? `${session.id}:${session.iteration_count}`
+			: null;
+
+	const isProgressHydrationPending: boolean =
+		runKey !== null && progressHydrationStatus[runKey] === "pending";
+
+	const isCostEstimateLoading: boolean =
+		authIsLoading ||
+		isLoadingModelCatalog ||
+		isLoading ||
+		isLoadingProcessTemplate ||
+		isProgressHydrationPending;
+
+	let costEstimateLoadingNotice: string | null = null;
+	if (authIsLoading) {
+		costEstimateLoadingNotice = "Loading subscription tier…";
+	} else if (isLoadingModelCatalog) {
+		costEstimateLoadingNotice = "Loading model catalog…";
+	} else if (isLoading) {
+		costEstimateLoadingNotice = "Loading session…";
+	} else if (isLoadingProcessTemplate) {
+		costEstimateLoadingNotice = "Loading process template…";
+	} else if (isProgressHydrationPending) {
+		costEstimateLoadingNotice = "Loading stage progress…";
+	}
+
 	useEffect(() => {
-		if (!isCapInitReady || session === null) {
-			setCapInitResult(null);
+		setCapInitResult(null);
+
+		if (
+			!isCapInitReady ||
+			session === null ||
+			isCostEstimateLoading ||
+			outputCapUserCustomized ||
+			(maxOutputTokens !== null && Number.isFinite(maxOutputTokens))
+		) {
 			return;
 		}
+
 		const initResult: InitializeMaxOutputTokensResult =
 			useDialecticStore.getState().initializeMaxOutputTokens();
 		if (initResult.ok === true) {
@@ -140,32 +180,10 @@ export const SessionInfoCard: React.FC = () => {
 		modelCatalog.length,
 		session?.id,
 		selectedModels.length,
+		isCostEstimateLoading,
+		maxOutputTokens,
+		outputCapUserCustomized,
 	]);
-
-	const runKey: string | null =
-		session !== null
-			? `${session.id}:${session.iteration_count}`
-			: null;
-
-	const isProgressHydrationPending: boolean =
-		runKey !== null && progressHydrationStatus[runKey] === "pending";
-
-	const isCostEstimateLoading: boolean =
-		authIsLoading ||
-		isLoadingModelCatalog ||
-		isLoadingProcessTemplate ||
-		isProgressHydrationPending;
-
-	let costEstimateLoadingNotice: string | null = null;
-	if (authIsLoading) {
-		costEstimateLoadingNotice = "Loading subscription tier…";
-	} else if (isLoadingModelCatalog) {
-		costEstimateLoadingNotice = "Loading model catalog…";
-	} else if (isLoadingProcessTemplate) {
-		costEstimateLoadingNotice = "Loading process template…";
-	} else if (isProgressHydrationPending) {
-		costEstimateLoadingNotice = "Loading stage progress…";
-	}
 
 	let costEstimateErrorMessage: string | null = null;
 	if (!isCostEstimateLoading) {

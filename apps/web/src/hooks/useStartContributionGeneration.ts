@@ -63,6 +63,12 @@ export function useStartContributionGeneration(): UseStartContributionGeneration
   const progressHydrationStatus = useDialecticStore(
     (state) => state.progressHydrationStatus,
   );
+  const isLoadingModelCatalog = useDialecticStore(
+    (state) => state.isLoadingModelCatalog,
+  );
+  const isLoadingActiveSessionDetail = useDialecticStore(
+    (state) => state.isLoadingActiveSessionDetail,
+  );
 
   const unifiedProgress = useDialecticStore((state) => {
     const sid = state.activeContextSessionId;
@@ -101,7 +107,9 @@ export function useStartContributionGeneration(): UseStartContributionGeneration
     authIsLoading ||
     isLoadingProcessTemplate ||
     isProgressHydrationPending ||
-    activeWalletInfo.isLoadingPrimaryWallet;
+    activeWalletInfo.isLoadingPrimaryWallet ||
+    isLoadingModelCatalog ||
+    isLoadingActiveSessionDetail;
 
   const isWalletReady =
     activeWalletInfo.status === "ok" && activeWalletInfo.walletId != null;
@@ -355,11 +363,16 @@ export function useStartContributionGeneration(): UseStartContributionGeneration
       const runKeyAtCallTime = `${activeContextSessionId}:${activeSession.iteration_count}`;
       const isProgressHydrationPendingAtCallTime =
         state.progressHydrationStatus[runKeyAtCallTime] === "pending";
+      const isLoadingModelCatalogAtCallTime = state.isLoadingModelCatalog;
+      const isLoadingActiveSessionDetailAtCallTime =
+        state.isLoadingActiveSessionDetail;
       const isCostEstimateLoadingAtCallTime =
         authIsLoadingAtCallTime ||
         isLoadingProcessTemplateAtCallTime ||
         isProgressHydrationPendingAtCallTime ||
-        activeWalletInfo.isLoadingPrimaryWallet;
+        activeWalletInfo.isLoadingPrimaryWallet ||
+        isLoadingModelCatalogAtCallTime ||
+        isLoadingActiveSessionDetailAtCallTime;
 
       if (isCostEstimateLoadingAtCallTime) {
         toast.error(loadingCostEstimateMessage);
