@@ -18,7 +18,13 @@
     "test:integration": "vitest run --config ./vitest.config.ts",
     "sync:types": "supabase gen types typescript --local > supabase/functions/types_db.ts && node supabase/scripts/sync-supabase-shared-types.mjs",
     "dev:load-prompts": "cd supabase/functions && deno --allow-all --env=../.env ../scripts/seed_prompt_templates.ts",
-    "dev:load-prompts:prod": "cd supabase/functions && deno --allow-all --env=../.env ../scripts/seed_prompt_templates.ts --production"
+    "dev:load-prompts:prod": "cd supabase/functions && deno --allow-all --env=../.env ../scripts/seed_prompt_templates.ts --production",
+    "e2e": "playwright test",
+    "e2e:ui": "playwright test --ui",
+    "e2e:headed": "playwright test --headed",
+    "e2e:debug": "playwright test --debug",
+    "e2e:report": "playwright show-report"
+
   },
   "keywords": [
     "supabase",
@@ -37,6 +43,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "2.1.1",
+    "@playwright/test": "^1.61.0",
     "@supabase/supabase-js": "^2.108.1",
     "@testing-library/react": "^16.3.2",
     "@types/node": "^20.19.42",
