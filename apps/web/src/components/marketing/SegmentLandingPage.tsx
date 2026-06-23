@@ -442,7 +442,7 @@ export function SegmentLandingPage({ content }: SegmentLandingPageProps) {
               Ready to Build?
             </h2>
             <p className="text-lg text-textSecondary mb-4 max-w-2xl mx-auto">
-              Start free — 1M tokens on signup, 100k tokens free every month. No credit card unless you upgrade.
+              Start free, 1M tokens on signup. No credit card unless you upgrade.
             </p>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mt-8">
               {user ? (

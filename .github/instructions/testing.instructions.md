@@ -1,14 +1,25 @@
+# Testing Behavior
+* The model never runs tests unless the user specifically tells them to. 
+* The model does not ask to run tests. If the user wants the model to run tests, the user will tell the model. 
+* The user does not need the model to suggest running tests or explain how to run the tests. 
+* The model does not attempt to run tests assuming that the user will permit the test to run. 
+
 # Testing Standards
+* Tests define the functions' requirements to be correct and complete. 
+* Tests assert that the requirements for the code to be correct and complete are met.
 * Tests assert the desired passing state (no RED/GREEN labels) and new tests are added to the end of the file.
-* Each test covers exactly one behavior.
+* Tests are not stateful, they do not discuss what was or used to be or will be later. Discussion regarding previous iterations of the test file or function are not relevant.  
+* Negative conditions are infinite and unbounded, while requirements are finite and bounded. Tests assert the finite bounded requirements are met, and do not attempt to assert the infinite unbounded negative conditions.
+* Each test covers one behavior so that a test failure demonstrate the exact error in the code.
 * Use real application functions/mocks, strict typing, and asserts.
 * Unit tests stay isolated and mock dependencies explicitly. Integration tests must exercise real code paths *within their approved boundary*.
 * Never change assertions to match broken code—fix the code instead.
 * Tests use the same production types, objects, structures, and helpers as the real code; do not invent parallel types or shadow implementations.
 * **Trusted Factories / Fixtures:** test factories are permitted under strict rules:
-  * Must live under `/tests/factories` or `tests/fixtures`.
-  * Must use production types and production constructors/adapters wherever possible.
-  * Must produce **full, valid** domain objects (no partials, no casts).
+  * Factories live in the mock file for the function being tested.
+  * Factories use production types and production constructors/adapters.
+  * Must produce **full, valid** domain objects (no partials, no casts) for tests that assert success paths.
+  * Factories may only produce partial or invalid objects for tests that assert failure paths.
   * May include tightly-scoped sensible defaults only when those defaults are domain-approved and documented in the factory code.
   * All factories are code-reviewed and versioned; changes to factories must be noted in the workplan.
 * **Test file organization:**

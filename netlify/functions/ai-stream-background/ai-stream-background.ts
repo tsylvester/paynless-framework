@@ -18,6 +18,17 @@ import type {
 
 const SOFT_TIMEOUT_MS: number = 14 * 60 * 1000;
 
+function snapshotResponseBody(bodyText: string): unknown {
+  if (bodyText.length === 0) {
+    return null;
+  }
+  try {
+    return JSON.parse(bodyText);
+  } catch {
+    return bodyText;
+  }
+}
+
 export function createAiStreamDeps(): AiStreamDeps {
   const providerMap = {
     'openai-': createOpenAINodeAdapter,
@@ -147,6 +158,20 @@ async function postAiStreamPayload(
     },
     body: JSON.stringify(payload),
   });
+  const responseBodyText: string = await response.text();
+  const responseBody: unknown = snapshotResponseBody(responseBodyText);
+  console.info('[ai-stream-background] saveResponse response received', {
+    saveResponseUrl,
+    payload,
+    response: {
+      ok: response.ok,
+      status: response.status,
+      statusText: response.statusText,
+      headers: Object.fromEntries(response.headers.entries()),
+      bodyText: responseBodyText,
+      body: responseBody,
+    },
+  });
   if (!response.ok) {
     throw new Error(
       `saveResponse failed with status ${String(response.status)}`,
@@ -159,16 +184,25 @@ export async function handleAiStreamWorkload(
   event: AsyncWorkloadEvent,
 ): Promise<void> {
   const raw: unknown = event.eventData;
-  if (!isAiStreamEvent(raw)) {
-    throw new ErrorDoNotRetry('invalid AiStreamEvent payload');
+  try {
+    if (!isAiStreamEvent(raw)) {
+      throw new ErrorDoNotRetry('invalid AiStreamEvent payload');
+    }
+    const validated: AiStreamEvent = raw;
+    const payload: AiStreamPayload = await collectAiStreamPayload(deps, validated);
+    await postAiStreamPayload(
+      deps.saveResponseUrl,
+      validated.sig,
+      payload,
+    );
+  } catch (error: unknown) {
+    console.error('[ai-stream-background] workload failure', {
+      event,
+      eventData: raw,
+      error,
+    });
+    throw error;
   }
-  const validated: AiStreamEvent = raw;
-  const payload: AiStreamPayload = await collectAiStreamPayload(deps, validated);
-  await postAiStreamPayload(
-    deps.saveResponseUrl,
-    validated.sig,
-    payload,
-  );
 }
 
 export const asyncWorkloadConfig: AsyncWorkloadConfig = {
