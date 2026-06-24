@@ -36,44 +36,44 @@ describe('SegmentLandingPageRoute', () => {
   describe('valid slugs render SegmentLandingPage with correct content', () => {
     it('renders SegmentLandingPage for vibecoder', () => {
       renderWithSegment('vibecoder');
-      expect(screen.getByTestId('segment-landing-page')).toBeInTheDocument();
-      expect(screen.getByText('Vibecoders')).toBeInTheDocument();
+      expect(screen.getByTestId('segment-landing-page')).toBeTruthy();
+      expect(screen.getByText('VibeCoders')).toBeTruthy();
     });
 
     it('renders SegmentLandingPage for indiehacker', () => {
       renderWithSegment('indiehacker');
-      expect(screen.getByTestId('segment-landing-page')).toBeInTheDocument();
-      expect(screen.getByText('Indiehackers & Solo Developers')).toBeInTheDocument();
+      expect(screen.getByTestId('segment-landing-page')).toBeTruthy();
+      expect(screen.getByText('IndieHackers & Solo Devs')).toBeTruthy();
     });
 
     it('renders SegmentLandingPage for startup', () => {
       renderWithSegment('startup');
-      expect(screen.getByTestId('segment-landing-page')).toBeInTheDocument();
-      expect(screen.getByText('Startups & Small Teams')).toBeInTheDocument();
+      expect(screen.getByTestId('segment-landing-page')).toBeTruthy();
+      expect(screen.getByText('Startups & Scale-ups')).toBeTruthy();
     });
 
     it('renders SegmentLandingPage for agency', () => {
       renderWithSegment('agency');
-      expect(screen.getByTestId('segment-landing-page')).toBeInTheDocument();
-      expect(screen.getByText('Agencies & Freelancers')).toBeInTheDocument();
+      expect(screen.getByTestId('segment-landing-page')).toBeTruthy();
+      expect(screen.getByText('Agencies & Consultancies')).toBeTruthy();
     });
   });
 
   describe('invalid slugs redirect to /', () => {
     it('redirects to / for invalid-slug', () => {
       renderWithSegment('invalid-slug');
-      expect(screen.getByTestId('home-redirect')).toBeInTheDocument();
-      expect(screen.queryByTestId('segment-landing-page')).not.toBeInTheDocument();
+      expect(screen.getByTestId('home-redirect')).toBeTruthy();
+      expect(screen.queryByTestId('segment-landing-page')).toBeFalsy();
     });
 
     it('redirects to / for random string', () => {
       renderWithSegment('foobar');
-      expect(screen.getByTestId('home-redirect')).toBeInTheDocument();
+      expect(screen.getByTestId('home-redirect')).toBeTruthy();
     });
 
     it('redirects to / for numeric segment', () => {
       renderWithSegment('12345');
-      expect(screen.getByTestId('home-redirect')).toBeInTheDocument();
+      expect(screen.getByTestId('home-redirect')).toBeTruthy();
     });
   });
 });

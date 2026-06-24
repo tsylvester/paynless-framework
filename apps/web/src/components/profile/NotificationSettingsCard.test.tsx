@@ -47,10 +47,11 @@ describe("NotificationSettingsCard", () => {
 			is_subscribed_to_newsletter: false,
 		});
 		render(<NotificationSettingsCard />);
-		expect(screen.getByText("Email Notifications")).toBeInTheDocument();
-		expect(
-			screen.getByLabelText("Subscribe to system notices and updates"),
-		).not.toBeChecked();
+		expect(screen.getByText(/Email Notifications/i)).toBeDefined();
+		const switchControl = screen.getByRole("checkbox", {
+			name: /Subscribe to system notices and updates/i,
+		});
+		expect(switchControl.hasAttribute("checked")).toBe(false);
 	});
 
 	it("should call toggleNewsletterSubscription with true when switch is clicked", () => {
@@ -61,9 +62,9 @@ describe("NotificationSettingsCard", () => {
 
 		render(<NotificationSettingsCard />);
 
-		const switchControl = screen.getByLabelText(
-			"Subscribe to system notices and updates",
-		);
+		const switchControl = screen.getByRole("checkbox", {
+			name: /Subscribe to system notices and updates/i,
+		});
 		fireEvent.click(switchControl);
 
 		expect(
@@ -79,10 +80,10 @@ describe("NotificationSettingsCard", () => {
 
 		render(<NotificationSettingsCard />);
 
-		const switchControl = screen.getByLabelText(
-			"Subscribe to system notices and updates",
-		);
-		expect(switchControl).toBeChecked();
+		const switchControl = screen.getByRole("checkbox", {
+			name: /Subscribe to system notices and updates/i,
+		});
+		expect(switchControl.hasAttribute("checked")).toBe(true);
 		fireEvent.click(switchControl);
 
 		expect(
@@ -97,10 +98,10 @@ describe("NotificationSettingsCard", () => {
 			is_subscribed_to_newsletter: false,
 		});
 		render(<NotificationSettingsCard />);
-		const switchControl = screen.getByLabelText(
-			"Subscribe to system notices and updates",
-		);
-		expect(switchControl).toBeDisabled();
+		const switchControl = screen.getByRole("checkbox", {
+			name: /Subscribe to system notices and updates/i,
+		});
+		expect(switchControl.hasAttribute("disabled")).toBe(true);
 	});
 
 	it("should display an error message when there is an error", () => {
@@ -111,10 +112,9 @@ describe("NotificationSettingsCard", () => {
 			is_subscribed_to_newsletter: false,
 		});
 		render(<NotificationSettingsCard />);
-		const errorContainer = screen.getByTestId("error-message");
-		expect(errorContainer).toBeInTheDocument();
-		expect(errorContainer).toHaveTextContent(
-			`Error updating settings: ${errorMessage}`,
-		);
+		expect(screen.getByTestId("error-message")).toBeDefined();
+		expect(
+			screen.getByText(new RegExp(`Error updating settings: ${errorMessage}`)),
+		).toBeDefined();
 	});
 });

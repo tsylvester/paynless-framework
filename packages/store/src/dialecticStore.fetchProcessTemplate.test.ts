@@ -9,6 +9,20 @@ import type {
   DialecticSession,
 } from '@paynless/types';
 
+vi.mock('@paynless/utils', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@paynless/utils')>();
+  return {
+    ...actual,
+    logger: {
+      ...actual.logger,
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      debug: vi.fn(),
+    },
+  };
+});
+
 vi.mock('@paynless/api', async () => {
   const { api, resetApiMock, getMockDialecticClient } = await import(
     '@paynless/api/mocks'
@@ -22,6 +36,7 @@ vi.mock('@paynless/api', async () => {
 });
 
 import { resetApiMock, getMockDialecticClient } from '@paynless/api/mocks';
+import { logger } from '@paynless/utils';
 
 const thesisStage: DialecticStage = {
   id: 'stage-1',
@@ -222,5 +237,29 @@ describe('fetchProcessTemplate stage guard', () => {
 
     const state = useDialecticStore.getState();
     expect(state.activeContextStage).toEqual(antithesisStage);
+  });
+
+  it('sets currentProcessTemplate without active-stage warn when currentProjectDetail is null', async () => {
+    const mockResponse: ApiResponse<DialecticProcessTemplate> = {
+      data: templateWithStages,
+      status: 200,
+    };
+    getMockDialecticClient().fetchProcessTemplate.mockResolvedValue(mockResponse);
+
+    useDialecticStore.setState({
+      currentProjectDetail: null,
+      isLoadingProcessTemplate: true,
+      currentProcessTemplate: null,
+    });
+
+    const { fetchProcessTemplate } = useDialecticStore.getState();
+    await fetchProcessTemplate('pt1');
+
+    const state = useDialecticStore.getState();
+    expect(state.currentProcessTemplate).toEqual(templateWithStages);
+    expect(state.isLoadingProcessTemplate).toBe(false);
+    expect(logger.warn).not.toHaveBeenCalledWith(
+      '[DialecticStore] Cannot determine active stage without project details or template stages.',
+    );
   });
 });

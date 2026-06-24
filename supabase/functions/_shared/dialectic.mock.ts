@@ -28,10 +28,8 @@ type SaveContributionEditFn = (payload: SaveContributionEditPayload) => Promise<
 type GetProjectDetailsFn = (projectId: string) => Promise<DialecticProject | null>;
 type ListProjectsFn = () => Promise<DialecticProject[]>;
 type ListModelCatalogFn = () => Promise<AiProvidersRow[]>;
-type ListAvailableDomainOverlaysFn = (payload: { stageAssociation: string }) => Promise<DomainOverlayDescriptor[]>;
 type GetContributionContentSignedUrlLogicFn = (contributionId: string) => Promise<{ data?: { signedUrl: string }; error?: any }>;
 type HandleInitialPromptUploadFn = (projectId: string, file: File) => Promise<DialecticProjectResource>;
-type ListAvailableDomainsFn = (payload?: { stageAssociation?: DialecticStage }) => Promise<any[] | { error: any }>;
 type UpdateProjectDomainFn = (payload: UpdateProjectDomainPayload) => Promise<{ data?: any; error?: any }>;
 type CloneProjectFn = (originalProjectId: string, newProjectName?: string) => Promise<{ data: DialecticProject | null; error: any | null }>;
 type DeleteProjectFn = (payload: { projectId: string }) => Promise<{ data?: null; error?: any }>;
@@ -48,10 +46,8 @@ export interface IDialecticService {
     getProjectDetails: GetProjectDetailsFn;
     listProjects: ListProjectsFn;
     listModelCatalog: ListModelCatalogFn;
-    listAvailableDomainOverlays: ListAvailableDomainOverlaysFn;
     getContributionContentSignedUrlLogic: GetContributionContentSignedUrlLogicFn;
     handleInitialPromptUpload: HandleInitialPromptUploadFn;
-    listAvailableDomains: ListAvailableDomainsFn;
     updateProjectDomain: UpdateProjectDomainFn;
     cloneProject: CloneProjectFn;
     deleteProject: DeleteProjectFn;
@@ -69,10 +65,8 @@ class _DialecticServiceDummyImpl implements IDialecticService {
     async getProjectDetails(_projectId: string): Promise<DialecticProject | null> { return undefined as any; }
     async listProjects(): Promise<DialecticProject[]> { return undefined as any; }
     async listModelCatalog(): Promise<AiProvidersRow[]> { return undefined as any; }
-    async listAvailableDomainOverlays(_payload: { stageAssociation: string }): Promise<DomainOverlayDescriptor[]> { return undefined as any; }
     async getContributionContentSignedUrlLogic(_contributionId: string): Promise<{ data?: { signedUrl: string }; error?: any }> { return undefined as any; }
     async handleInitialPromptUpload(_projectId: string, _file: File): Promise<DialecticProjectResource> { return undefined as any; }
-    async listAvailableDomains(_payload?: { stageAssociation?: DialecticStage }): Promise<any[] | { error: any }> { return undefined as any; }
     async updateProjectDomain(_payload: UpdateProjectDomainPayload): Promise<{ data?: any; error?: any }> { return undefined as any; }
     async cloneProject(_originalProjectId: string, _newProjectName?: string): Promise<{ data: DialecticProject | null; error: any | null }> { return undefined as any; }
     async deleteProject(_payload: { projectId: string }): Promise<{ data?: null; error?: any }> { return undefined as any; }
@@ -90,10 +84,8 @@ export type MockDialecticServiceSpies = {
     getProjectDetails: Spy<_DialecticServiceDummyImpl, Parameters<typeof _DialecticServiceDummyImpl.prototype.getProjectDetails>, ReturnType<typeof _DialecticServiceDummyImpl.prototype.getProjectDetails>>;
     listProjects: Spy<_DialecticServiceDummyImpl, Parameters<typeof _DialecticServiceDummyImpl.prototype.listProjects>, ReturnType<typeof _DialecticServiceDummyImpl.prototype.listProjects>>;
     listModelCatalog: Spy<_DialecticServiceDummyImpl, Parameters<typeof _DialecticServiceDummyImpl.prototype.listModelCatalog>, ReturnType<typeof _DialecticServiceDummyImpl.prototype.listModelCatalog>>;
-    listAvailableDomainOverlays: Spy<_DialecticServiceDummyImpl, Parameters<typeof _DialecticServiceDummyImpl.prototype.listAvailableDomainOverlays>, ReturnType<typeof _DialecticServiceDummyImpl.prototype.listAvailableDomainOverlays>>;
     getContributionContentSignedUrlLogic: Spy<_DialecticServiceDummyImpl, Parameters<typeof _DialecticServiceDummyImpl.prototype.getContributionContentSignedUrlLogic>, ReturnType<typeof _DialecticServiceDummyImpl.prototype.getContributionContentSignedUrlLogic>>;
     handleInitialPromptUpload: Spy<_DialecticServiceDummyImpl, Parameters<typeof _DialecticServiceDummyImpl.prototype.handleInitialPromptUpload>, ReturnType<typeof _DialecticServiceDummyImpl.prototype.handleInitialPromptUpload>>;
-    listAvailableDomains: Spy<_DialecticServiceDummyImpl, Parameters<typeof _DialecticServiceDummyImpl.prototype.listAvailableDomains>, ReturnType<typeof _DialecticServiceDummyImpl.prototype.listAvailableDomains>>;
     updateProjectDomain: Spy<_DialecticServiceDummyImpl, Parameters<typeof _DialecticServiceDummyImpl.prototype.updateProjectDomain>, ReturnType<typeof _DialecticServiceDummyImpl.prototype.updateProjectDomain>>;
     cloneProject: Spy<_DialecticServiceDummyImpl, Parameters<typeof _DialecticServiceDummyImpl.prototype.cloneProject>, ReturnType<typeof _DialecticServiceDummyImpl.prototype.cloneProject>>;
     deleteProject: Spy<_DialecticServiceDummyImpl, Parameters<typeof _DialecticServiceDummyImpl.prototype.deleteProject>, ReturnType<typeof _DialecticServiceDummyImpl.prototype.deleteProject>>;
@@ -118,10 +110,8 @@ export function createMockDialecticService(): {
         getProjectDetails: spy(dummyServiceInstance, "getProjectDetails"),
         listProjects: spy(dummyServiceInstance, "listProjects"),
         listModelCatalog: spy(dummyServiceInstance, "listModelCatalog"),
-        listAvailableDomainOverlays: spy(dummyServiceInstance, "listAvailableDomainOverlays"),
         getContributionContentSignedUrlLogic: spy(dummyServiceInstance, "getContributionContentSignedUrlLogic"),
         handleInitialPromptUpload: spy(dummyServiceInstance, "handleInitialPromptUpload"),
-        listAvailableDomains: spy(dummyServiceInstance, "listAvailableDomains"),
         updateProjectDomain: spy(dummyServiceInstance, "updateProjectDomain"),
         cloneProject: spy(dummyServiceInstance, "cloneProject"),
         deleteProject: spy(dummyServiceInstance, "deleteProject"),

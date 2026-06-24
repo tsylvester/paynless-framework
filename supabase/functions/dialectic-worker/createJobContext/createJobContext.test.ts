@@ -264,13 +264,13 @@ describe('createJobContext Factory and Slicers', () => {
       );
       const { client } = createMockSupabaseClient();
       const dbClient: SupabaseClient<Database> = DbClient(client);
-      const params = buildCalculateAffordabilityParams(dbClient, { tierOutputCapTokens: null });
+      const params = buildCalculateAffordabilityParams(dbClient, { userConfig: { tier_output_cap_tokens: null } });
       const payload = buildCalculateAffordabilityPayload();
 
       await result.calculateAffordability(params, payload);
 
       assertEquals(recordedAffordabilityParams.length, 1);
-      assertEquals(recordedAffordabilityParams[0].tierOutputCapTokens, null);
+      assertEquals(recordedAffordabilityParams[0].userConfig.tier_output_cap_tokens, null);
       assertEquals(recordedAffordabilityDeps.length, 1);
       assertEquals(recordedAffordabilityDeps[0].logger, root.logger);
       assertEquals(recordedAffordabilityDeps[0].countTokens, root.countTokens);
@@ -359,8 +359,8 @@ describe('createJobContext Factory and Slicers', () => {
     it('buildCalculateAffordabilityParams construction includes tierOutputCapTokens null', () => {
       const { client } = createMockSupabaseClient();
       const dbClient: SupabaseClient<Database> = DbClient(client);
-      const params = buildCalculateAffordabilityParams(dbClient, { tierOutputCapTokens: null });
-      assertEquals(params.tierOutputCapTokens, null);
+      const params = buildCalculateAffordabilityParams(dbClient, { userConfig: { tier_output_cap_tokens: null } });
+      assertEquals(params.userConfig.tier_output_cap_tokens, null);
     });
   });
 });

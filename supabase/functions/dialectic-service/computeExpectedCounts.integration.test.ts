@@ -18,6 +18,7 @@ const STRATEGIES_NEEDING_PREDECESSOR: readonly ProgressRecipeStep["granularity_s
 const STRATEGIES_NEEDING_PRIOR_CONTEXT: readonly ProgressRecipeStep["granularity_strategy"][] = [
 	"pairwise_by_origin",
 	"per_source_document_by_lineage",
+	"per_source_group",
 ];
 const STRATEGIES_SIMPLE: readonly ProgressRecipeStep["granularity_strategy"][] = [
 	"all_to_one",
@@ -212,5 +213,27 @@ Deno.test("computeExpectedCounts integration: topologicalSortSteps → computeEx
 			assertEquals(Number.isInteger(total), true);
 			assertEquals(total >= 0, true);
 		}
+	});
+
+	await t.step("per_source_group consolidation with prior stage context: expected equals lineageCount and total matches hand sum", () => {
+		const header = step("h1", "prepare-consolidation-header", "PLAN", "all_to_one");
+		const modelArtifact = step("m1", "per-model-artifact", "EXECUTE", "per_model");
+		const consolidation = step("c1", "consolidate-by-source-group", "EXECUTE", "per_source_group");
+		const steps: ProgressRecipeStep[] = [header, modelArtifact, consolidation];
+		const edges: ProgressRecipeEdge[] = [
+			edge("h1", "m1"),
+			edge("m1", "c1"),
+		];
+		const prior: PriorStageContext = { lineageCount: 2, reviewerCount: 2 };
+		const params: ComputeExpectedCountsParams = {
+			steps,
+			edges,
+			n: 2,
+			priorStageContext: prior,
+		};
+		const result = computeExpectedCounts(deps, params);
+		assertEquals(result.expected.get("consolidate-by-source-group"), prior.lineageCount);
+		const handTotal = 1 + params.n + prior.lineageCount;
+		assertEquals(totalExpected(result), handTotal, "all_to_one(1) + per_model(n) + per_source_group(lineageCount) at n=2, L=2 => 5");
 	});
 });

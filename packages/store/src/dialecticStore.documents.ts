@@ -1699,24 +1699,27 @@ export const hydrateStageProgressLogic = async (
 
 	const response = await api.dialectic().listStageDocuments(payload);
 
-	if (response.error || !response.data) {
-		throw new Error(
-			`[hydrateStageProgress] API error or null data; sessionId=${sessionId}, stageSlug=${stageSlug}, iterationNumber=${iterationNumber}`,
-		);
+	if (response.error) {
+		throw response.error;
+	}
+
+	if (!response.data) {
+		const error: ApiError = {
+			code: 'HYDRATE_STAGE_PROGRESS_DATA_MISSING',
+			message: `Stage progress response data missing; sessionId=${sessionId}, stageSlug=${stageSlug}, iterationNumber=${iterationNumber}.`,
+		};
+		throw error;
 	}
 
 	const data = response.data;
-	if (!data) {
-		throw new Error(
-			`[hydrateStageProgress] response data is null or undefined; sessionId=${sessionId}, stageSlug=${stageSlug}, iterationNumber=${iterationNumber}`,
-		);
-	}
 
 	const allValid = data.every(isStageRenderedDocumentChecklistEntry);
 	if (!allValid) {
-		throw new Error(
-			`[hydrateStageProgress] document validation failed: every document must have documentKey, modelId, jobId, latestRenderedResourceId as non-empty strings; sessionId=${sessionId}, stageSlug=${stageSlug}, iterationNumber=${iterationNumber}`,
-		);
+		const error: ApiError = {
+			code: 'HYDRATE_STAGE_PROGRESS_DOCUMENT_INVALID',
+			message: `Stage progress document validation failed; sessionId=${sessionId}, stageSlug=${stageSlug}, iterationNumber=${iterationNumber}.`,
+		};
+		throw error;
 	}
 
 	set((state) => {
@@ -1804,24 +1807,34 @@ export const hydrateAllStageProgressLogic = async (
 
 	const response = await api.dialectic().getAllStageProgress(payload);
 
-	if (response.error || response.data === undefined) {
-		throw new Error(
-			`[hydrateAllStageProgress] API error or undefined data; sessionId=${sessionId}, iterationNumber=${iterationNumber}`,
-		);
+	if (response.error) {
+		throw response.error;
+	}
+
+	if (response.data === undefined) {
+		const error: ApiError = {
+			code: 'HYDRATE_ALL_STAGE_PROGRESS_DATA_UNDEFINED',
+			message: `All-stage progress response data undefined; sessionId=${sessionId}, iterationNumber=${iterationNumber}.`,
+		};
+		throw error;
 	}
 
 	const { dagProgress, stages } = response.data;
 	if (stages.length === 0) {
-		throw new Error(
-			`[hydrateAllStageProgress] stages array is empty; sessionId=${sessionId}, iterationNumber=${iterationNumber}`,
-		);
+		const error: ApiError = {
+			code: 'HYDRATE_ALL_STAGE_PROGRESS_STAGES_EMPTY',
+			message: `All-stage progress stages array empty; sessionId=${sessionId}, iterationNumber=${iterationNumber}.`,
+		};
+		throw error;
 	}
 
 	for (const entry of stages) {
 		if (!Array.isArray(entry.steps)) {
-			throw new Error(
-				`[hydrateAllStageProgress] step data absent for stage ${entry.stageSlug}; sessionId=${sessionId}, iterationNumber=${iterationNumber}`,
-			);
+			const error: ApiError = {
+				code: 'HYDRATE_ALL_STAGE_PROGRESS_STEPS_ABSENT',
+				message: `All-stage progress step data absent for stage ${entry.stageSlug}; sessionId=${sessionId}, iterationNumber=${iterationNumber}.`,
+			};
+			throw error;
 		}
 	}
 
@@ -1836,16 +1849,30 @@ export const hydrateAllStageProgressLogic = async (
 		if (!responseValid) break;
 	}
 	if (!responseValid) {
-		throw new Error(
-			`[hydrateAllStageProgress] document validation failed: every document must have documentKey, modelId, jobId, latestRenderedResourceId as non-empty strings; sessionId=${sessionId}, iterationNumber=${iterationNumber}`,
-		);
+		const error: ApiError = {
+			code: 'HYDRATE_ALL_STAGE_PROGRESS_DOCUMENT_INVALID',
+			message: `All-stage progress document validation failed; sessionId=${sessionId}, iterationNumber=${iterationNumber}.`,
+		};
+		throw error;
+	}
+
+	for (const entry of stages) {
+		if (!Number.isInteger(entry.expectedCount) || entry.expectedCount < 0) {
+			const error: ApiError = {
+				code: 'HYDRATE_ALL_STAGE_PROGRESS_EXPECTED_COUNT_INVALID',
+				message: `All-stage progress expectedCount invalid for stage ${entry.stageSlug}; sessionId=${sessionId}, iterationNumber=${iterationNumber}.`,
+			};
+			throw error;
+		}
 	}
 
 	const runKey = `${sessionId}:${iterationNumber}`;
 
 	set((state) => {
 		state.dagProgressByRun[runKey] = dagProgress;
+		state.stageExpectedCountsByRun[runKey] = {};
 		for (const entry of stages) {
+			state.stageExpectedCountsByRun[runKey][entry.stageSlug] = entry.expectedCount;
 			const progressKey = `${sessionId}:${entry.stageSlug}:${iterationNumber}`;
 
 			if (!state.stageRunProgress[progressKey]) {

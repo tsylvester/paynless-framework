@@ -1,12 +1,12 @@
 import React from 'react';
 import { render, screen, waitFor, act, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import '@testing-library/jest-dom'; // Still useful for DOM assertions
 import { MemoryRouter } from 'react-router-dom';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { toast } from 'sonner'; // Import the mocked toast
 import { GenerateContributionButton } from './GenerateContributionButton';
 import type {
+  ApiError,
   DialecticStage,
   DialecticContribution,
   DialecticProject,
@@ -203,7 +203,14 @@ function getDefaultHookReturn(
     showBalanceCallout: false,
     viewingStage: mockThesisStage,
     activeSession: defaultSession,
-    stageThreshold: mockThesisStage.minimum_balance,
+    stageCeiling: 200000,
+    projectCeiling: 400000,
+    stageBalanceShortfall: null,
+    isCostEstimateKnown: true,
+    isCostEstimateLoading: false,
+    showCostEstimateBlocked: false,
+    costCeilingError: null,
+    showStageCostEstimate: true,
     isViewingAheadOfCurrentStage: false,
     viewingAheadReason: null,
     ...overrides,
@@ -237,13 +244,12 @@ describe('GenerateContributionButton', () => {
     vi.mocked(toast.error).mockClear();
     vi.mocked(toast.info).mockClear();
 
-    const thesisMinBalance = mockThesisStage.minimum_balance;
     vi.mocked(selectActiveChatWalletInfo).mockReturnValue({
       status: 'ok',
       type: 'personal',
       walletId: 'default-wallet-id',
       orgId: null,
-      balance: String(thesisMinBalance),
+      balance: '300000',
       isLoadingPrimaryWallet: false,
     });
   });
@@ -255,8 +261,8 @@ describe('GenerateContributionButton', () => {
   it('renders "Generate [StageName]" when models are selected and no other conditions met', () => {
     vi.mocked(selectIsStageReadyForSessionIteration).mockReturnValue(true);
     renderWithRouter(<GenerateContributionButton />);
-    expect(screen.getByRole('button', { name: /Generate Proposal/i })).toBeInTheDocument();
-    expect(screen.getByRole('button')).not.toBeDisabled();
+    expect(screen.getByRole('button', { name: /Generate Proposal/i })).toBeDefined();
+    expect(screen.getByRole('button', { name: /Generate Proposal/i }).hasAttribute('disabled')).toBe(false);
   });
 
   it('renders "Choose AI Models" and is disabled when no models are selected', () => {
@@ -265,8 +271,8 @@ describe('GenerateContributionButton', () => {
       getDefaultHookReturn({ areAnyModelsSelected: false, isDisabled: true })
     );
     renderWithRouter(<GenerateContributionButton />);
-    expect(screen.getByRole('button', { name: /Choose AI Models/i })).toBeInTheDocument();
-    expect(screen.getByRole('button')).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Choose AI Models/i })).toBeDefined();
+    expect(screen.getByRole('button').hasAttribute('disabled')).toBe(true);
   });
 
   it('is disabled and shows "Stage Not Ready" when no active stage is selected', () => {
@@ -275,8 +281,8 @@ describe('GenerateContributionButton', () => {
       getDefaultHookReturn({ activeSession: null, isDisabled: true })
     );
     renderWithRouter(<GenerateContributionButton />);
-    expect(screen.getByRole('button', { name: /Stage Not Ready/i })).toBeInTheDocument();
-    expect(screen.getByRole('button')).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Stage Not Ready/i })).toBeDefined();
+    expect(screen.getByRole('button').hasAttribute('disabled')).toBe(true);
   });
 
   it('is disabled and shows "Previous Stage Incomplete" when the stage is not ready', () => {
@@ -285,8 +291,8 @@ describe('GenerateContributionButton', () => {
       getDefaultHookReturn({ isStageReady: false, isDisabled: true })
     );
     renderWithRouter(<GenerateContributionButton />);
-    expect(screen.getByRole('button', { name: /Previous Stage Incomplete/i })).toBeInTheDocument();
-    expect(screen.getByRole('button')).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Previous Stage Incomplete/i })).toBeDefined();
+    expect(screen.getByRole('button').hasAttribute('disabled')).toBe(true);
   });
 
   it('renders "Regenerate [StageName]" when contributions for current stage and iteration exist', () => {
@@ -298,8 +304,8 @@ describe('GenerateContributionButton', () => {
       })
     );
     renderWithRouter(<GenerateContributionButton />);
-    expect(screen.getByRole('button', { name: /Regenerate Proposal/i })).toBeInTheDocument();
-    expect(screen.getByRole('button')).not.toBeDisabled();
+    expect(screen.getByRole('button', { name: /Regenerate Proposal/i })).toBeDefined();
+    expect(screen.getByRole('button', { name: /Regenerate Proposal/i }).hasAttribute('disabled')).toBe(false);
   });
 
   it('when isPauseMode is true, button shows "Pause [StageName]" with pause icon and is not disabled (for pause action)', () => {
@@ -312,10 +318,8 @@ describe('GenerateContributionButton', () => {
       })
     );
     renderWithRouter(<GenerateContributionButton />);
-    const button = screen.getByRole('button');
-    expect(button).toHaveTextContent('Pause');
-    expect(button).toHaveTextContent('Proposal');
-    expect(button).not.toBeDisabled();
+    const button = screen.getByRole('button', { name: /Pause Proposal/i });
+    expect(button.hasAttribute('disabled')).toBe(false);
   });
 
   it('renders "Regenerate [StageName]" when contributions for the current stage/iteration already exist', () => {
@@ -327,17 +331,18 @@ describe('GenerateContributionButton', () => {
       })
     );
     renderWithRouter(<GenerateContributionButton />);
-    expect(screen.getByRole('button', { name: /Regenerate Proposal/i })).toBeInTheDocument();
-    expect(screen.getByRole('button')).not.toBeDisabled();
+    expect(screen.getByRole('button', { name: /Regenerate Proposal/i })).toBeDefined();
+    expect(screen.getByRole('button', { name: /Regenerate Proposal/i }).hasAttribute('disabled')).toBe(false);
   });
 
 
   it('is disabled when the active stage cannot be found from the store', () => {
     mockUseStartContributionGeneration.mockReturnValue(
-      getDefaultHookReturn({ stageThreshold: undefined })
+      getDefaultHookReturn({ viewingStage: null, isDisabled: true })
     );
     renderWithRouter(<GenerateContributionButton />);
-    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    expect(screen.getByRole('button').hasAttribute('disabled')).toBe(true);
+    expect(screen.getByRole('button', { name: /Stage Not Ready/i })).toBeDefined();
   });
 
   it('is disabled and shows "Choose AI Models" when no models selected, overriding "Regenerate" label', () => {
@@ -350,17 +355,22 @@ describe('GenerateContributionButton', () => {
       })
     );
     renderWithRouter(<GenerateContributionButton />);
-    expect(screen.getByRole('button', { name: /Choose AI Models/i })).toBeInTheDocument();
-    expect(screen.getByRole('button')).toBeDisabled();
-    expect(screen.queryByRole('button', { name: /Regenerate Proposal/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Choose AI Models/i })).toBeDefined();
+    expect(screen.getByRole('button').hasAttribute('disabled')).toBe(true);
+    expect(screen.queryByRole('button', { name: /Regenerate Proposal/i })).toBeNull();
   });
 
   it('handles currentProjectDetail being null gracefully by being disabled', () => {
     mockUseStartContributionGeneration.mockReturnValue(
-      getDefaultHookReturn({ stageThreshold: undefined })
+      getDefaultHookReturn({
+        viewingStage: null,
+        activeSession: null,
+        isDisabled: true,
+      })
     );
     renderWithRouter(<GenerateContributionButton />);
-    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    expect(screen.getByRole('button').hasAttribute('disabled')).toBe(true);
+    expect(screen.getByRole('button', { name: /Stage Not Ready/i })).toBeDefined();
   });
 
   it('is disabled when no active wallet is available', () => {
@@ -369,7 +379,7 @@ describe('GenerateContributionButton', () => {
       getDefaultHookReturn({ isWalletReady: false, isDisabled: true })
     );
     renderWithRouter(<GenerateContributionButton />);
-    expect(screen.getByRole('button')).toBeDisabled();
+    expect(screen.getByRole('button').hasAttribute('disabled')).toBe(true);
   });
 
   it('reacts to chat context: personal wallet makes button enabled', () => {
@@ -377,7 +387,6 @@ describe('GenerateContributionButton', () => {
     vi.mocked(selectIsStageReadyForSessionIteration).mockReturnValue(true);
 
     // Selector returns ok only when ctx === 'personal'; otherwise loading
-    const thesisMinBalance = mockThesisStage.minimum_balance;
     vi.mocked(selectActiveChatWalletInfo).mockImplementation((state, ctx) => {
       void state;
       if (ctx === 'personal') {
@@ -386,7 +395,7 @@ describe('GenerateContributionButton', () => {
           type: 'personal',
           walletId: 'personal-wallet',
           orgId: null,
-          balance: String(thesisMinBalance),
+          balance: '300000',
           isLoadingPrimaryWallet: false,
         };
       }
@@ -402,7 +411,7 @@ describe('GenerateContributionButton', () => {
     });
 
     renderWithRouter(<GenerateContributionButton />);
-    expect(screen.getByRole('button', { name: /Generate Proposal/i })).not.toBeDisabled();
+    expect(screen.getByRole('button', { name: /Generate Proposal/i }).hasAttribute('disabled')).toBe(false);
   });
 
   it('handleClick calls hook\'s startContributionGeneration with an onOpenDagProgress callback', async () => {
@@ -433,14 +442,14 @@ describe('GenerateContributionButton', () => {
     );
     const user = userEvent.setup();
     renderWithRouter(<GenerateContributionButton />);
-    expect(screen.queryByTestId('stage-dag-progress-dialog')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('stage-dag-progress-dialog')).toBeNull();
     await user.click(screen.getByRole('button', { name: /Generate Proposal/i }));
     expect(capturedCallback).toBeDefined();
     act(() => {
       capturedCallback?.();
     });
     await waitFor(() => {
-      expect(screen.getByTestId('stage-dag-progress-dialog')).toBeInTheDocument();
+      expect(screen.getByTestId('stage-dag-progress-dialog')).toBeDefined();
     });
   });
 
@@ -448,13 +457,13 @@ describe('GenerateContributionButton', () => {
     vi.mocked(selectIsStageReadyForSessionIteration).mockReturnValue(true);
     mockUseStartContributionGeneration.mockReturnValue(getDefaultHookReturn());
     renderWithRouter(<GenerateContributionButton />);
-    expect(screen.queryByTestId('stage-dag-progress-dialog')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('stage-dag-progress-dialog')).toBeNull();
     const setShouldOpenDagProgress = getDialecticStoreState().setShouldOpenDagProgress;
     act(() => {
       useDialecticStore.setState({ shouldOpenDagProgress: true });
     });
     await waitFor(() => {
-      expect(screen.getByTestId('stage-dag-progress-dialog')).toBeInTheDocument();
+      expect(screen.getByTestId('stage-dag-progress-dialog')).toBeDefined();
     });
     expect(vi.mocked(setShouldOpenDagProgress)).toHaveBeenCalledWith(false);
   });
@@ -463,7 +472,7 @@ describe('GenerateContributionButton', () => {
     vi.mocked(selectIsStageReadyForSessionIteration).mockReturnValue(true);
     mockUseStartContributionGeneration.mockReturnValue(getDefaultHookReturn({ isDisabled: true }));
     renderWithRouter(<GenerateContributionButton />);
-    expect(screen.getByRole('button')).toBeDisabled();
+    expect(screen.getByRole('button').hasAttribute('disabled')).toBe(true);
   });
 
   it('button text is computed correctly from hook\'s derived state values', () => {
@@ -482,7 +491,7 @@ describe('GenerateContributionButton', () => {
       })
     );
     renderWithRouter(<GenerateContributionButton />);
-    expect(screen.getByRole('button', { name: /Generate Proposal/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Generate Proposal/i })).toBeDefined();
   });
 
   it('StageDAGProgressDialog renders with correct props when dagDialogOpen is true', async () => {
@@ -499,27 +508,29 @@ describe('GenerateContributionButton', () => {
     await user.click(screen.getByRole('button', { name: /Generate Proposal/i }));
     await waitFor(() => {
       const dialog = screen.getByTestId('stage-dag-progress-dialog');
-      expect(dialog).toHaveAttribute('data-stage-slug', 'thesis');
-      expect(dialog).toHaveAttribute('data-session-id', 'test-session-id');
-      expect(dialog).toHaveAttribute('data-iteration-number', '1');
+      expect(dialog.getAttribute('data-stage-slug')).toBe('thesis');
+      expect(dialog.getAttribute('data-session-id')).toBe('test-session-id');
+      expect(dialog.getAttribute('data-iteration-number')).toBe('1');
     });
   });
 
   it('balance callout renders when showBalanceCallout is true from hook', () => {
     vi.mocked(selectIsStageReadyForSessionIteration).mockReturnValue(true);
     mockUseStartContributionGeneration.mockReturnValue(
-      getDefaultHookReturn({ showBalanceCallout: true })
+      getDefaultHookReturn({
+        isCostEstimateKnown: true,
+        isCostEstimateLoading: false,
+        showCostEstimateBlocked: false,
+        stageBalanceShortfall: 25000,
+        showBalanceCallout: true,
+        balanceMeetsThreshold: false,
+        isDisabled: true,
+      })
     );
     renderWithRouter(<GenerateContributionButton />);
-    expect(screen.getByTestId('generate-button-balance-callout')).toBeInTheDocument();
-  });
-
-  it('component returns null when stageThreshold is falsy', () => {
-    mockUseStartContributionGeneration.mockReturnValue(
-      getDefaultHookReturn({ stageThreshold: undefined })
-    );
-    renderWithRouter(<GenerateContributionButton />);
-    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    expect(screen.getByTestId('generate-button-balance-callout')).toBeDefined();
+    expect(screen.getByRole('link', { name: /Top up 25K/i })).toBeDefined();
+    expect(screen.queryByTestId('generate-button-no-estimate-callout')).toBeNull();
   });
 
   it('closes DAG progress dialog when onOpenChange(false) is called', async () => {
@@ -535,7 +546,7 @@ describe('GenerateContributionButton', () => {
     renderWithRouter(<GenerateContributionButton />);
     await user.click(screen.getByRole('button', { name: /Generate Proposal/i }));
     await waitFor(() => {
-      expect(screen.getByTestId('stage-dag-progress-dialog')).toBeInTheDocument();
+      expect(screen.getByTestId('stage-dag-progress-dialog')).toBeDefined();
     });
     const { StageDAGProgressDialog } = await import('./StageDAGProgressDialog');
     const mockDialog = vi.mocked(StageDAGProgressDialog);
@@ -545,7 +556,7 @@ describe('GenerateContributionButton', () => {
       onOpenChange(false);
     });
     await waitFor(() => {
-      expect(screen.queryByTestId('stage-dag-progress-dialog')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('stage-dag-progress-dialog')).toBeNull();
     });
   });
 
@@ -580,7 +591,7 @@ describe('GenerateContributionButton', () => {
       })
     );
     renderWithRouter(<GenerateContributionButton />);
-    expect(screen.getByRole('button', { name: /Resume Proposal/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Resume Proposal/i })).toBeDefined();
   });
 
   it('when hasPausedUserJobs is true, clicking button calls startContributionGeneration (resume path)', async () => {
@@ -614,7 +625,7 @@ describe('GenerateContributionButton', () => {
       })
     );
     renderWithRouter(<GenerateContributionButton />);
-    expect(screen.getByRole('button', { name: /Resume Proposal/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Resume Proposal/i })).toBeDefined();
   });
 
   it('after click, button is disabled for 500ms debounce period then enters pause mode', async () => {
@@ -625,7 +636,7 @@ describe('GenerateContributionButton', () => {
     const button = screen.getByRole('button', { name: /Generate Proposal/i });
     // Use fireEvent to avoid userEvent's internal timer delays conflicting with fake timers
     fireEvent.click(button);
-    expect(button).toBeDisabled();
+    expect(button.hasAttribute('disabled')).toBe(true);
     // After click, generation is in progress — hook now returns isPauseMode
     mockUseStartContributionGeneration.mockReturnValue(
       getDefaultHookReturn({ isPauseMode: true, isSessionGenerating: true, isDisabled: false })
@@ -634,8 +645,8 @@ describe('GenerateContributionButton', () => {
       vi.advanceTimersByTime(500);
     });
     // Debounce cleared, button is now in pause mode and enabled
-    expect(screen.getByRole('button')).not.toBeDisabled();
-    expect(screen.getByRole('button')).toHaveTextContent(/Pause Proposal/i);
+    expect(screen.getByRole('button', { name: /Pause Proposal/i }).hasAttribute('disabled')).toBe(false);
+    expect(screen.getByRole('button', { name: /Pause Proposal/i })).toBeDefined();
     vi.useRealTimers();
   });
 
@@ -650,16 +661,14 @@ describe('GenerateContributionButton', () => {
       })
     );
     renderWithRouter(<GenerateContributionButton />);
-    const button = screen.getByRole('button');
-    expect(button).toHaveTextContent('Pause');
-    expect(button).toHaveTextContent('Proposal');
+    expect(screen.getByRole('button', { name: /Pause Proposal/i })).toBeDefined();
   });
 
   it('button renders at compact size (size sm) and full width suitable for sidebar', () => {
     vi.mocked(selectIsStageReadyForSessionIteration).mockReturnValue(true);
     renderWithRouter(<GenerateContributionButton />);
     const button = screen.getByRole('button');
-    expect(button).toBeInTheDocument();
+    expect(button).toBeDefined();
     expect(button.className).toMatch(/w-full|width.*100/);
   });
 
@@ -672,9 +681,7 @@ describe('GenerateContributionButton', () => {
       })
     );
     renderWithRouter(<GenerateContributionButton />);
-    const button = screen.getByRole('button');
-    expect(button).toHaveTextContent('Retry');
-    expect(button).toHaveTextContent('Proposal');
+    expect(screen.getByRole('button', { name: /Retry Proposal/i })).toBeDefined();
   });
 
   it('shows "Prior Stage Not Submitted" when viewing ahead and stage not ready', () => {
@@ -688,8 +695,8 @@ describe('GenerateContributionButton', () => {
       })
     );
     renderWithRouter(<GenerateContributionButton />);
-    expect(screen.getByRole('button')).toHaveTextContent('Prior Stage Not Submitted');
-    expect(screen.getByRole('button')).toBeDisabled();
+    const button = screen.getByRole('button', { name: /Prior Stage Not Submitted/i });
+    expect(button.hasAttribute('disabled')).toBe(true);
   });
 
   it('shows tooltip with viewingAheadReason when viewing ahead of current stage', async () => {
@@ -725,7 +732,7 @@ describe('GenerateContributionButton', () => {
       })
     );
     renderWithRouter(<GenerateContributionButton />);
-    expect(screen.getByRole('button')).toHaveTextContent('Previous Stage Incomplete');
+    expect(screen.getByRole('button', { name: /Previous Stage Incomplete/i })).toBeDefined();
   });
 
   it('button is disabled when isViewingAheadOfCurrentStage is true even if other conditions pass', () => {
@@ -738,6 +745,83 @@ describe('GenerateContributionButton', () => {
       })
     );
     renderWithRouter(<GenerateContributionButton />);
-    expect(screen.getByRole('button')).toBeDisabled();
+    expect(screen.getByRole('button').hasAttribute('disabled')).toBe(true);
+  });
+
+  it('shows loading notice while isCostEstimateLoading', () => {
+    vi.mocked(selectIsStageReadyForSessionIteration).mockReturnValue(true);
+    mockUseStartContributionGeneration.mockReturnValue(
+      getDefaultHookReturn({
+        isCostEstimateLoading: true,
+        isDisabled: true,
+        showCostEstimateBlocked: false,
+        costCeilingError: null,
+      })
+    );
+    renderWithRouter(<GenerateContributionButton />);
+    expect(screen.getByTestId('generate-button-estimate-loading-notice').textContent).toBe(
+      'Loading cost estimate…',
+    );
+    const button = screen.getByRole('button', { name: /Loading Estimate/i });
+    expect(button.hasAttribute('disabled')).toBe(true);
+    expect(screen.queryByTestId('generate-button-estimate-error-callout')).toBeNull();
+    expect(screen.queryByTestId('generate-button-no-estimate-callout')).toBeNull();
+  });
+
+  it('shows estimate-error callout with pass-through message when blocked after loading', () => {
+    vi.mocked(selectIsStageReadyForSessionIteration).mockReturnValue(true);
+    const outputCapNotInitializedMessage =
+      'Output cap is not initialized in dialectic store.';
+    const costCeilingError: ApiError = {
+      code: 'OUTPUT_CAP_NOT_INITIALIZED',
+      message: outputCapNotInitializedMessage,
+    };
+    mockUseStartContributionGeneration.mockReturnValue(
+      getDefaultHookReturn({
+        isCostEstimateLoading: false,
+        showCostEstimateBlocked: true,
+        costCeilingError,
+        isDisabled: true,
+      })
+    );
+    renderWithRouter(<GenerateContributionButton />);
+    const button = screen.getByRole('button', { name: /Estimate Failed/i });
+    expect(button.hasAttribute('disabled')).toBe(true);
+    expect(screen.getByTestId('generate-button-estimate-error-callout').textContent).toBe(
+      outputCapNotInitializedMessage,
+    );
+    expect(screen.queryByTestId('generate-button-estimate-loading-notice')).toBeNull();
+    expect(screen.queryByTestId('generate-button-no-estimate-callout')).toBeNull();
+  });
+
+  it('stage and project cost callouts show abbreviated token counts for large ceilings', () => {
+    vi.mocked(selectIsStageReadyForSessionIteration).mockReturnValue(true);
+    vi.mocked(selectActiveChatWalletInfo).mockReturnValue({
+      status: 'ok',
+      type: 'personal',
+      walletId: 'default-wallet-id',
+      orgId: null,
+      balance: '0',
+      isLoadingPrimaryWallet: false,
+    });
+    mockUseStartContributionGeneration.mockReturnValue(
+      getDefaultHookReturn({
+        isCostEstimateKnown: true,
+        isCostEstimateLoading: false,
+        showCostEstimateBlocked: false,
+        stageCeiling: 39_015,
+        projectCeiling: 1_139_238,
+        showStageCostEstimate: true,
+        balanceMeetsThreshold: true,
+        isDisabled: false,
+      })
+    );
+    renderWithRouter(<GenerateContributionButton />);
+    const stageCostEstimate = screen.getByTestId('generate-button-stage-cost-estimate');
+    expect(stageCostEstimate.textContent).toContain('39K');
+    expect(stageCostEstimate.textContent).not.toContain('39,015');
+    const projectBalanceCallout = screen.getByTestId('generate-button-project-balance-callout');
+    expect(projectBalanceCallout.textContent).toContain('1.1M');
+    expect(projectBalanceCallout.textContent).not.toContain('1,139,238');
   });
 }); 

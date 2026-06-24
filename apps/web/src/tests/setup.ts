@@ -1,4 +1,4 @@
-import '@testing-library/jest-dom/vitest';
+
 import { vi, beforeEach, afterEach, afterAll } from 'vitest';
 // Import the official mock creator from the api package using a relative path
 import { createMockSupabaseClient } from '../../../../packages/api/src/mocks/supabase.mock.ts';

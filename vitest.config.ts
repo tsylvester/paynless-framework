@@ -1,4 +1,3 @@
-/// <reference types="vitest" />
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
@@ -12,7 +11,6 @@ export default defineConfig({
     // setupFiles: ['./path/to/integration/setup.ts'],
     testTimeout: 30000, // Increase timeout for potentially longer integration tests
     hookTimeout: 30000, // Increase timeout for hooks like beforeAll/afterAll
-    threads: false, // Run integration tests sequentially to avoid DB conflicts if setup/teardown isn't perfectly isolated
     logHeapUsage: true // Helps debug memory leaks
   },
 }); 

@@ -1,9 +1,16 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { useForm, Controller, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { logger } from "@paynless/utils";
-import { useNavigate } from "react-router-dom";
 import {
+	ComputeCostCeilingReturn,
+	formatTokenCount,
+	logger,
+	FormatTokenCountDeps,
+	FormatTokenCountParams,
+} from "@paynless/utils";
+import { Link, useNavigate } from "react-router-dom";
+import {
+	useAuthStore,
 	useDialecticStore,
 	useWalletStore,
 	selectIsCreatingProject,
@@ -14,6 +21,7 @@ import {
 	selectActiveChatWalletInfo,
 	selectSortedStages,
 	selectSelectedModels,
+	selectPreProjectCostCeiling,
 } from "@paynless/store";
 import { DomainSelector } from "@/components/dialectic/DomainSelector";
 import { AIModelSelector } from "@/components/dialectic/AIModelSelector";
@@ -40,6 +48,7 @@ import {
 import type {
 	CreateProjectPayload,
 	CreateProjectAndAutoStartPayload,
+	InitializeMaxOutputTokensResult,
 	SelectedModels,
 } from "@paynless/types";
 import { toast } from "sonner";
@@ -72,6 +81,12 @@ const SETUP_MODE_EXPLAINER =
 	"Autoconfig: Create project and open a session with default models; you choose when to start generation.\n\n" +
 	"Manual: Create project only; you create the session, pick models, and start when you're ready.";
 
+const subscriptionTierUnavailableMessage =
+	"Subscription tier is not available.";
+
+const formatTokenCountDeps: FormatTokenCountDeps = {};
+const formatTokenCountParams: FormatTokenCountParams = {};
+
 interface CreateDialecticProjectFormProps {
 	defaultProjectName?: string;
 	defaultInitialPrompt?: string;
@@ -98,6 +113,24 @@ export const CreateDialecticProjectForm: React.FC<
 	const fetchAIModelCatalog = useDialecticStore(
 		(state) => state.fetchAIModelCatalog,
 	);
+	const fetchProcessAssociation = useDialecticStore(
+		(state) => state.fetchProcessAssociation,
+	);
+	const fetchProcessTemplate = useDialecticStore(
+		(state) => state.fetchProcessTemplate,
+	);
+	const fetchStageExpectedCounts = useDialecticStore(
+		(state) => state.fetchStageExpectedCounts,
+	);
+	const selectedDomainProcessAssociation = useDialecticStore(
+		(state) => state.selectedDomainProcessAssociation,
+	);
+	const isLoadingDomainProcessAssociation = useDialecticStore(
+		(state) => state.isLoadingDomainProcessAssociation,
+	);
+	const isLoadingStageExpectedCounts = useDialecticStore(
+		(state) => state.isLoadingStageExpectedCounts,
+	);
 	const isCreating = useDialecticStore(selectIsCreatingProject);
 	const creationError = useDialecticStore(selectCreateProjectError);
 	const selectedDomain = useDialecticStore(selectSelectedDomain);
@@ -118,19 +151,33 @@ export const CreateDialecticProjectForm: React.FC<
 	const isLoadingModelCatalog = useDialecticStore(
 		(state) => state.isLoadingModelCatalog,
 	);
+	const isLoadingProcessTemplate = useDialecticStore(
+		(state) => state.isLoadingProcessTemplate,
+	);
+	const modelCatalog = useDialecticStore((state) => state.modelCatalog);
+	const initializeMaxOutputTokens = useDialecticStore(
+		(state) => state.initializeMaxOutputTokens,
+	);
+
+	const authIsLoading = useAuthStore((state) => state.isLoading);
+	const userTier = useAuthStore((state) => state.userTier);
+	const authError = useAuthStore((state) => state.error);
 
 	const walletInfo = useWalletStore((state) =>
 		selectActiveChatWalletInfo(state, null),
 	);
 	const sortedStages = useDialecticStore(selectSortedStages);
+	const preProjectCostCeilingResult: ComputeCostCeilingReturn =
+		useDialecticStore(selectPreProjectCostCeiling);
+
 	const [isModelSelectorOpen, setIsModelSelectorOpen] = useState(false);
 	const [promptFile, setPromptFile] = useState<File | null>(null);
 	const [projectNameManuallySet, setProjectNameManuallySet] =
 		useState<boolean>(false);
 	const [configureManually, setConfigureManually] = useState<boolean>(false);
 	const [startGeneration, setStartGeneration] = useState<boolean>(true);
-	const [catalogFetchTriggered, setCatalogFetchTriggered] =
-		useState<boolean>(false);
+	const [capInitResult, setCapInitResult] =
+		useState<InitializeMaxOutputTokensResult | null>(null);
 	const navigate = useNavigate();
 
 	const {
@@ -394,17 +441,187 @@ export const CreateDialecticProjectForm: React.FC<
 
 	useEffect(() => {
 		fetchAIModelCatalog();
-		setCatalogFetchTriggered(true);
 	}, [fetchAIModelCatalog]);
+
+	const isCapInitReady: boolean =
+		!authIsLoading &&
+		userTier !== null &&
+		!isLoadingModelCatalog &&
+		modelCatalog.length > 0;
+
+	useEffect(() => {
+		if (!isCapInitReady) {
+			setCapInitResult(null);
+			return;
+		}
+		const initResult: InitializeMaxOutputTokensResult =
+			initializeMaxOutputTokens();
+		if (initResult.ok === true) {
+			setCapInitResult(null);
+			return;
+		}
+		setCapInitResult(initResult);
+	}, [authIsLoading, userTier, isLoadingModelCatalog, modelCatalog.length]);
+
+	useEffect(() => {
+		const domainId: string | undefined = selectedDomain?.id;
+		if (domainId !== undefined && domainId.length > 0) {
+			fetchProcessAssociation({ domainId });
+		}
+	}, [selectedDomain?.id, fetchProcessAssociation]);
+
+	useEffect(() => {
+		const processTemplateId: string | undefined =
+			selectedDomainProcessAssociation?.process_template_id;
+		if (processTemplateId !== undefined && processTemplateId.length > 0) {
+			fetchProcessTemplate(processTemplateId);
+			if (uniqueModelCount >= 1) {
+				fetchStageExpectedCounts({
+					processTemplateId,
+					modelCount: uniqueModelCount,
+				});
+			}
+		}
+	}, [
+		selectedDomainProcessAssociation?.process_template_id,
+		uniqueModelCount,
+		fetchProcessTemplate,
+		fetchStageExpectedCounts,
+	]);
+
+	const isCostEstimateLoading: boolean =
+		authIsLoading ||
+		isLoadingModelCatalog ||
+		isLoadingDomainProcessAssociation ||
+		isLoadingProcessTemplate ||
+		isLoadingStageExpectedCounts;
+
+	let costEstimateLoadingNotice: string | null = null;
+	if (authIsLoading) {
+		costEstimateLoadingNotice = "Loading subscription tier…";
+	} else if (isLoadingModelCatalog) {
+		costEstimateLoadingNotice = "Loading model catalog…";
+	} else if (isLoadingDomainProcessAssociation) {
+		costEstimateLoadingNotice = "Loading domain process association…";
+	} else if (isLoadingProcessTemplate) {
+		costEstimateLoadingNotice = "Loading process template…";
+	} else if (isLoadingStageExpectedCounts) {
+		costEstimateLoadingNotice = "Loading stage expected counts…";
+	}
+
+	let costEstimateErrorMessage: string | null = null;
+	if (!isCostEstimateLoading) {
+		if (authError !== null) {
+			costEstimateErrorMessage = authError.message;
+		} else if (userTier === null) {
+			costEstimateErrorMessage = subscriptionTierUnavailableMessage;
+		} else if (capInitResult !== null && capInitResult.ok === false) {
+			costEstimateErrorMessage = capInitResult.error.message;
+		} else if ("error" in preProjectCostCeilingResult) {
+			costEstimateErrorMessage = preProjectCostCeilingResult.error.message;
+		}
+	}
+
+	const hasCostEstimateSuccess: boolean =
+		!isCostEstimateLoading &&
+		costEstimateErrorMessage === null &&
+		!("error" in preProjectCostCeilingResult);
+
+	const firstStageSlug: string | null = sortedStages[0]?.slug ?? null;
+
+	let firstStageCeiling: number | null = null;
+	if (
+		hasCostEstimateSuccess &&
+		firstStageSlug !== null &&
+		!("error" in preProjectCostCeilingResult)
+	) {
+		const rawFirstStageCeiling: number =
+			preProjectCostCeilingResult.stageCeilings[firstStageSlug];
+		if (
+			Number.isFinite(rawFirstStageCeiling) &&
+			rawFirstStageCeiling >= 0
+		) {
+			firstStageCeiling = rawFirstStageCeiling;
+		}
+	}
+
+	let projectCeiling: number | null = null;
+	if (hasCostEstimateSuccess && !("error" in preProjectCostCeilingResult)) {
+		const rawProjectCeiling: number =
+			preProjectCostCeilingResult.projectCeiling;
+		if (Number.isFinite(rawProjectCeiling) && rawProjectCeiling >= 0) {
+			projectCeiling = rawProjectCeiling;
+		}
+	}
+
+	const isPreProjectCostEstimateKnown: boolean = firstStageCeiling !== null;
+
+	const walletBalanceNum: number = Number(walletInfo.balance);
+	const canAffordAutostart: boolean =
+		isPreProjectCostEstimateKnown &&
+		firstStageCeiling !== null &&
+		Number.isFinite(walletBalanceNum) &&
+		!Number.isNaN(walletBalanceNum) &&
+		walletBalanceNum >= firstStageCeiling;
+
+	const autostartBlockedByBalance: boolean =
+		isPreProjectCostEstimateKnown &&
+		firstStageCeiling !== null &&
+		Number.isFinite(walletBalanceNum) &&
+		!Number.isNaN(walletBalanceNum) &&
+		walletBalanceNum < firstStageCeiling;
+
+	let projectBalanceShortfall: number | null = null;
+	if (
+		projectCeiling !== null &&
+		Number.isFinite(walletBalanceNum) &&
+		!Number.isNaN(walletBalanceNum) &&
+		walletBalanceNum < projectCeiling
+	) {
+		projectBalanceShortfall = projectCeiling - walletBalanceNum;
+	}
+
+	let projectCeilingDisplay: string | null = null;
+	if (projectCeiling !== null) {
+		const projectCeilingFormatResult = formatTokenCount(
+			formatTokenCountDeps,
+			formatTokenCountParams,
+			{ tokenCount: projectCeiling },
+		);
+		if (!("error" in projectCeilingFormatResult)) {
+			projectCeilingDisplay = projectCeilingFormatResult.formatted;
+		}
+	}
+
+	let firstStageCeilingDisplay: string | null = null;
+	if (firstStageCeiling !== null) {
+		const firstStageCeilingFormatResult = formatTokenCount(
+			formatTokenCountDeps,
+			formatTokenCountParams,
+			{ tokenCount: firstStageCeiling },
+		);
+		if (!("error" in firstStageCeilingFormatResult)) {
+			firstStageCeilingDisplay = firstStageCeilingFormatResult.formatted;
+		}
+	}
+
+	let projectBalanceShortfallDisplay: string | null = null;
+	if (projectBalanceShortfall !== null) {
+		const projectBalanceShortfallFormatResult = formatTokenCount(
+			formatTokenCountDeps,
+			formatTokenCountParams,
+			{ tokenCount: projectBalanceShortfall },
+		);
+		if (!("error" in projectBalanceShortfallFormatResult)) {
+			projectBalanceShortfallDisplay =
+				projectBalanceShortfallFormatResult.formatted;
+		}
+	}
 
 	useEffect(() => {
 		if (configureManually) return;
 		const noDefaults = !isLoadingModelCatalog && defaultModels.length === 0;
-		const firstStageMinBalance = sortedStages[0]?.minimum_balance;
-		const lowBalance =
-			typeof firstStageMinBalance === "number" &&
-			Number(walletInfo.balance ?? "0") < firstStageMinBalance;
-		if (noDefaults || lowBalance) {
+		if (noDefaults || !canAffordAutostart) {
 			setStartGeneration(false);
 		} else {
 			setStartGeneration(true);
@@ -413,22 +630,25 @@ export const CreateDialecticProjectForm: React.FC<
 		configureManually,
 		isLoadingModelCatalog,
 		defaultModels.length,
-		walletInfo.balance,
-		sortedStages,
+		canAffordAutostart,
 	]);
 
-	const firstStageMinBalance = sortedStages[0]?.minimum_balance;
-	const lowBalanceForReason =
-		typeof firstStageMinBalance === "number" &&
-		Number(walletInfo.balance ?? "0") < firstStageMinBalance;
-	const autoUncheckReason: string | null =
-		!configureManually && !startGeneration
-			? !isLoadingModelCatalog && defaultModels.length === 0
-				? "No default models available"
-				: lowBalanceForReason
-					? "Wallet balance too low for auto-start"
-					: null
-			: null;
+	let autoUncheckReason: string | null = null;
+	if (!configureManually && !startGeneration) {
+		if (isCostEstimateLoading && costEstimateLoadingNotice !== null) {
+			autoUncheckReason = costEstimateLoadingNotice;
+		} else if (authError !== null) {
+			autoUncheckReason = authError.message;
+		} else if (userTier === null) {
+			autoUncheckReason = subscriptionTierUnavailableMessage;
+		} else if (capInitResult !== null && capInitResult.ok === false) {
+			autoUncheckReason = capInitResult.error.message;
+		} else if ("error" in preProjectCostCeilingResult) {
+			autoUncheckReason = preProjectCostCeilingResult.error.message;
+		} else if (!isLoadingModelCatalog && defaultModels.length === 0) {
+			autoUncheckReason = "No default models available";
+		}
+	}
 
 	const setupMode: SetupMode = configureManually
 		? "manual"
@@ -443,9 +663,13 @@ export const CreateDialecticProjectForm: React.FC<
 			setConfigureManually(true);
 		} else {
 			setConfigureManually(false);
-			setStartGeneration(true);
+			if (canAffordAutostart) {
+				setStartGeneration(true);
+			} else {
+				setStartGeneration(false);
+			}
 		}
-	}, [setupMode]);
+	}, [setupMode, canAffordAutostart]);
 
 	const setupModeLabel =
 		setupMode === "autostart"
@@ -471,8 +695,54 @@ export const CreateDialecticProjectForm: React.FC<
 			return;
 		}
 
+		const associationProcessTemplateId: string | undefined =
+			selectedDomainProcessAssociation?.process_template_id;
+		if (
+			associationProcessTemplateId === undefined ||
+			associationProcessTemplateId.length === 0
+		) {
+			logger.error(
+				"No process template association. Cannot create project.",
+			);
+			return;
+		}
+
 		if (creationError) {
 			resetCreateProjectError();
+		}
+
+		if (!configureManually && startGeneration) {
+			if (isCostEstimateLoading) {
+				if (costEstimateLoadingNotice !== null) {
+					toast.error(costEstimateLoadingNotice);
+				}
+				return;
+			}
+			if (authError !== null) {
+				toast.error(authError.message);
+				return;
+			}
+			if (userTier === null) {
+				toast.error(subscriptionTierUnavailableMessage);
+				return;
+			}
+			if (capInitResult !== null && capInitResult.ok === false) {
+				toast.error(capInitResult.error.message);
+				return;
+			}
+			if ("error" in preProjectCostCeilingResult) {
+				toast.error(preProjectCostCeilingResult.error.message);
+				return;
+			}
+			if (
+				firstStageCeiling === null ||
+				Number(walletInfo.balance) < firstStageCeiling
+			) {
+				toast.error(
+					"Insufficient wallet balance for auto-start.",
+				);
+				return;
+			}
 		}
 
 		const idempotencyKey: string = crypto.randomUUID();
@@ -483,6 +753,7 @@ export const CreateDialecticProjectForm: React.FC<
 			promptFile: promptFile,
 			selectedDomainId: selectedDomainId,
 			selectedDomainOverlayId: currentSelectedDomainOverlayId,
+			processTemplateId: associationProcessTemplateId,
 		};
 
 		if (configureManually) {
@@ -531,22 +802,6 @@ export const CreateDialecticProjectForm: React.FC<
 			toast.error(e instanceof Error ? e.message : "Auto-start failed");
 		}
 	};
-
-	const catalogReady = catalogFetchTriggered && !isLoadingModelCatalog;
-
-	if (!catalogReady) {
-		return (
-			<Card
-				className={containerClassName}
-				data-testid="create-dialectic-project-form"
-			>
-				<CardContent className="flex items-center justify-center p-8">
-					<Loader2 className="h-6 w-6 animate-spin" />
-					<span className="ml-2 text-sm">Loading models…</span>
-				</CardContent>
-			</Card>
-		);
-	}
 
 	return (
 		<Card
@@ -673,6 +928,45 @@ export const CreateDialecticProjectForm: React.FC<
 							</p>
 						)}
 					</div>
+
+					<div className="text-xs text-muted-foreground space-y-1">
+						{isCostEstimateLoading && costEstimateLoadingNotice !== null && (
+							<p data-testid="create-project-estimate-loading-notice">
+								{costEstimateLoadingNotice}
+							</p>
+						)}
+						{!isCostEstimateLoading &&
+							costEstimateErrorMessage !== null && (
+								<p data-testid="create-project-estimate-error-notice">
+									{costEstimateErrorMessage}
+								</p>
+							)}
+						{hasCostEstimateSuccess &&
+							firstStageCeilingDisplay !== null &&
+							projectCeilingDisplay !== null && (
+								<p data-testid="create-project-cost-preview">
+									Estimated token cost: ~
+									{projectCeilingDisplay} for the full project, ~
+									{firstStageCeilingDisplay} for the first stage.
+								</p>
+							)}
+						{hasCostEstimateSuccess &&
+							projectBalanceShortfallDisplay !== null &&
+							projectCeilingDisplay !== null && (
+								<p data-testid="create-project-project-balance-warning">
+									This project may need ~
+									{projectCeilingDisplay} tokens total.{" "}
+									<Link
+										to="/subscription?tab=top-up"
+										className="font-semibold underline underline-offset-2 hover:no-underline"
+									>
+										Top up{" "}
+										{projectBalanceShortfallDisplay} to cover the
+										full project.
+									</Link>
+								</p>
+							)}
+					</div>
 				</CardContent>
 				<CardFooter className="flex flex-row items-center justify-between gap-4">
 					<div className="flex flex-col gap-2 shrink-0 min-w-[7.5rem]">
@@ -703,13 +997,28 @@ export const CreateDialecticProjectForm: React.FC<
 								{SETUP_MODE_EXPLAINER}
 							</TooltipContent>
 						</Tooltip>
-						{!configureManually &&
-							!startGeneration &&
-							autoUncheckReason !== null && (
-								<p className="text-sm text-muted-foreground">
-									{autoUncheckReason}
-								</p>
-							)}
+						{!configureManually && !startGeneration && (
+							<>
+								{autoUncheckReason !== null && (
+									<p className="text-sm text-muted-foreground">
+										{autoUncheckReason}
+									</p>
+								)}
+								{autostartBlockedByBalance && (
+									<p className="text-sm text-muted-foreground">
+										Estimated first-stage cost exceeds wallet balance for
+										auto-start{" "}
+										<Link
+											to="/subscription?tab=top-up"
+											data-testid="create-project-autostart-top-up-link"
+											className="font-semibold underline underline-offset-2 hover:no-underline"
+										>
+											Top up
+										</Link>
+									</p>
+								)}
+							</>
+						)}
 					</div>
 					<Button
 						type="submit"

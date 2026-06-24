@@ -1,4 +1,4 @@
-import React, { Fragment, useEffect, useMemo, useState } from "react";
+import React, { Fragment, useEffect, useState } from "react";
 import { useAiStore, useAuthStore } from "@paynless/store";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -17,6 +17,10 @@ interface AIModelSelectorListProps {
 	onChange: (modelsChecked: string[]) => void;
 }
 
+const LOADING_SUBSCRIPTION_TIER_MESSAGE = "Loading subscription tier…";
+const SUBSCRIPTION_TIER_UNAVAILABLE_MESSAGE =
+	"Subscription tier is not available.";
+
 function tierDisplayName(level: number, availableTiers: UserTier[]): string {
 	for (const tier of availableTiers) {
 		if (tier.level === level) {
@@ -31,14 +35,14 @@ function tierDisplayName(level: number, availableTiers: UserTier[]): string {
 
 function resolveNextTierName(
 	availableTiers: UserTier[],
-	effectiveUserTier: UserTier,
+	userTier: UserTier,
 	modelLimit: number | null,
 ): string {
 	const sortedTiers: UserTier[] = [...availableTiers].sort(
 		(a, b) => a.level - b.level,
 	);
 	for (const tier of sortedTiers) {
-		if (tier.level <= effectiveUserTier.level) {
+		if (tier.level <= userTier.level) {
 			continue;
 		}
 		if (tier.max_models_per_project === null) {
@@ -66,22 +70,56 @@ export const AIModelSelectorList: React.FC<AIModelSelectorListProps> = ({
 
 	const userTier = useAuthStore((s) => s.userTier);
 	const availableTiers = useAuthStore((s) => s.availableTiers);
+	const isLoading = useAuthStore((s) => s.isLoading);
+	const authError = useAuthStore((s) => s.error);
 
-	const effectiveUserTier: UserTier = useMemo(() => {
-		if (userTier !== null) {
-			return userTier;
+	useEffect(() => {
+		if (
+			!isConfigLoading &&
+			(!availableProviders || availableProviders.length === 0) &&
+			!aiError
+		) {
+			loadAiConfig();
 		}
-		for (const tier of availableTiers) {
-			if (tier.level === 0) {
-				return tier;
-			}
-		}
-		throw new Error(
-			"AIModelSelectorList: userTier is null and no level-0 tier in availableTiers",
+	}, [loadAiConfig, isConfigLoading, availableProviders, aiError]);
+
+	const rootClassName: string = cn(
+		"border-gray-200 border-1 flex flex-col h-full flex-grow",
+		disabledProp && "opacity-50 cursor-not-allowed",
+	);
+
+	if (isLoading) {
+		return (
+			<div className={rootClassName}>
+				<p data-testid="ai-model-selector-list-loading-notice">
+					{LOADING_SUBSCRIPTION_TIER_MESSAGE}
+				</p>
+			</div>
 		);
-	}, [userTier, availableTiers]);
+	}
 
-	const modelLimit: number | null = effectiveUserTier.max_models_per_project;
+	if (authError !== null) {
+		return (
+			<div className={rootClassName}>
+				<p data-testid="ai-model-selector-list-tier-unavailable-notice">
+					{authError.message}
+				</p>
+			</div>
+		);
+	}
+
+	if (userTier === null) {
+		return (
+			<div className={rootClassName}>
+				<p data-testid="ai-model-selector-list-tier-unavailable-notice">
+					{SUBSCRIPTION_TIER_UNAVAILABLE_MESSAGE}
+				</p>
+			</div>
+		);
+	}
+
+	const tier: UserTier = userTier;
+	const modelLimit: number | null = tier.max_models_per_project;
 	const checkedCount: number = modelsChecked.length;
 	const atCap: boolean = modelLimit !== null && checkedCount >= modelLimit;
 
@@ -101,7 +139,7 @@ export const AIModelSelectorList: React.FC<AIModelSelectorListProps> = ({
 		const provider: AiProvider = providerFromStore;
 
 		const tierLocked: boolean =
-			provider.min_plan_tier_level > effectiveUserTier.level;
+			provider.min_plan_tier_level > tier.level;
 		const isChecked: boolean = modelsChecked.includes(provider.id);
 
 		if (tierLocked) {
@@ -118,24 +156,14 @@ export const AIModelSelectorList: React.FC<AIModelSelectorListProps> = ({
 		onChange(newModelsChecked);
 	};
 
-	useEffect(() => {
-		if (
-			!isConfigLoading &&
-			(!availableProviders || availableProviders.length === 0) &&
-			!aiError
-		) {
-			loadAiConfig();
-		}
-	}, [loadAiConfig, isConfigLoading, availableProviders, aiError]);
-
 	return (
-		<div className="border-gray-200 border-1 flex flex-col h-full flex-grow">
+		<div className={rootClassName}>
 			<ScrollArea className="h-full overflow-y-auto flex-grow w-[330px] mx-auto">
 				{availableProviders
 					.sort((a, b) => a.name.localeCompare(b.name))
 					.map((provider) => {
 						const tierLocked: boolean =
-							provider.min_plan_tier_level > effectiveUserTier.level;
+							provider.min_plan_tier_level > tier.level;
 						const isChecked: boolean = modelsChecked.includes(provider.id);
 						const blockedAdd: boolean = tierLocked || (atCap && !isChecked);
 						const finalRowDisabled: boolean =
@@ -231,7 +259,7 @@ export const AIModelSelectorList: React.FC<AIModelSelectorListProps> = ({
 							}
 							const capNextTierName: string = resolveNextTierName(
 								availableTiers,
-								effectiveUserTier,
+								tier,
 								modelLimit,
 							);
 							return (

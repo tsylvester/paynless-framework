@@ -150,6 +150,7 @@ describe('AiChatbox', () => {
         description: 'A default provider',
         is_default_embedding: false,
         is_default_generation: false,
+        min_plan_tier_level: 1,
       }], 
       availablePrompts: [{id: 'prompt-1', name: 'Default Prompt', prompt_text: 'Default Content', created_at: new Date().toISOString(), is_active: true, updated_at: new Date().toISOString(), user_selectable: true, version: 1, description: 'A default prompt', document_template_id: null }],
       selectedProviderId: 'provider-1', 
@@ -395,6 +396,7 @@ describe('AiChatbox', () => {
           description: 'Rewind test provider',
           is_default_embedding: false,
           is_default_generation: false,
+          min_plan_tier_level: 1,
         }],
         availablePrompts: [{ id: 'prompt-rewind-1', name: 'Rewind Prompt', prompt_text: 'Rewind', created_at: new Date().toISOString(), is_active: true, updated_at: new Date().toISOString(), user_selectable: true, version: 1, description: 'A rewind prompt', document_template_id: null } ],
       });

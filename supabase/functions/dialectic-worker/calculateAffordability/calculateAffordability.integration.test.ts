@@ -151,9 +151,9 @@ Deno.test("calculateAffordability integration: non-oversized → direct return (
   }
   const tokenizerDeps: CountTokensDeps = {
     getEncoding: (_name: string) => ({
-      encode: (input: string) => Array.from(input ?? "", (_ch, index: number) => index),
+      encode: (input: string) => Array.from(input, (_ch, index: number) => index),
     }),
-    countTokensAnthropic: (text: string) => (text ?? "").length,
+    countTokensAnthropic: (text: string) => (text).length,
     logger,
   };
   const fullPayload: CountableChatPayload = {
@@ -225,9 +225,24 @@ describe("calculateAffordability integration: oversized path with real compressP
     }
     formData.append("selectedDomainId", domain.id);
 
+    const associationResponse = await adminClient
+      .from("domain_process_associations")
+      .select("process_template_id")
+      .eq("domain_id", domain.id)
+      .eq("is_default_for_domain", true)
+      .single();
+    if (associationResponse.error !== null) {
+      throw associationResponse.error;
+    }
+    if (associationResponse.data === null) {
+      throw new Error("Default domain_process_associations row not found for Software Development");
+    }
+    const defaultProcessTemplateId: string = associationResponse.data.process_template_id;
+    formData.append("processTemplateId", defaultProcessTemplateId);
+
     const projectResult = await createProject(formData, adminClient, testUser);
     if (projectResult.error || !projectResult.data) {
-      throw new Error(`createProject failed: ${projectResult.error?.message ?? "no data"}`);
+      throw new Error(`createProject failed: ${projectResult.error?.message}`);
     }
     testProject = projectResult.data;
 
@@ -528,9 +543,9 @@ Deno.test("calculateAffordability integration: tierOutputCapTokens=32768 is bind
   }
   const tokenizerDeps: CountTokensDeps = {
     getEncoding: (_name: string) => ({
-      encode: (input: string) => Array.from(input ?? "", (_ch, index: number) => index),
+      encode: (input: string) => Array.from(input, (_ch, index: number) => index),
     }),
-    countTokensAnthropic: (text: string) => (text ?? "").length,
+    countTokensAnthropic: (text: string) => (text).length,
     logger,
   };
   const fullPayload: CountableChatPayload = {

@@ -1,14 +1,15 @@
 import type { ApiClient } from './apiClient';
 import type {
     ApiResponse,
+    ApiError,
+    ErrorResponse,
+    SuccessResponse,
     DialecticProject,
     DialecticStageRecipe,
     StartSessionPayload,
     DialecticSession,
     DialecticSessionRow,
     AiProvidersRow,
-    DomainDescriptor,
-    DomainOverlayDescriptor,
     UpdateProjectDomainPayload,
     DeleteProjectPayload,
     DialecticServiceActionPayload,
@@ -21,7 +22,9 @@ import type {
     IterationInitialPromptData,
     SaveContributionEditPayload,
     SaveContributionEditSuccessResponse,
-    DialecticDomain,
+    DialecticDomainRow,
+    DomainProcessAssociationRow,
+    FetchProcessAssociationPayload,
     DialecticProcessTemplate,
     UpdateSessionModelsPayload,
     GetContributionContentDataResponse,
@@ -37,6 +40,8 @@ import type {
     ListStageDocumentsResponse,
     GetAllStageProgressPayload,
     GetAllStageProgressResponse,
+    GetStageExpectedCountsPayload,
+    GetStageExpectedCountsResponse,
     ResumePausedNsfJobsPayload,
     ResumePausedNsfJobsResponse,
     PauseActiveJobsPayload,
@@ -96,76 +101,6 @@ export class DialecticApiClient {
         } catch (error: unknown) {
             const message = error instanceof Error ? error.message : 'A network error occurred';
             logger.error('Network error in fetchStageRecipe', { errorMessage: message, errorObject: error, stageSlug });
-            return {
-                data: undefined,
-                error: { code: 'NETWORK_ERROR', message },
-                status: 0,
-            };
-        }
-    }
-
-    /**
-     * Fetches the list of available domain tags for dialectic projects.
-     * Can be filtered by stageAssociation.
-     * This endpoint is public and does not require authentication.
-     */
-    async listAvailableDomains(params?: { stageAssociation?: string }): Promise<ApiResponse<DomainDescriptor[]>> {
-        logger.info('Fetching available domains for dialectic projects', { params });
-        
-        try {
-            // The Edge Function expects the parameters in the body for a POST request.
-            // We will send the action and an optional payload containing stageAssociation.
-            const requestBody: { action: string; payload?: { stageAssociation?: string } } = {
-                action: 'listAvailableDomains',
-            };
-            if (params?.stageAssociation) {
-                requestBody.payload = { stageAssociation: params.stageAssociation };
-            }
-
-            const response = await this.apiClient.post<DomainDescriptor[], typeof requestBody>(
-                'dialectic-service', 
-                requestBody 
-            );
-
-            if (response.error) {
-                logger.error('Error fetching available domains:', { error: response.error, params });
-            } else {
-                logger.info(`Fetched ${response.data?.length ?? 0} available domains`, { params });
-            }
-            return response;
-        } catch (error: unknown) {
-            const message = error instanceof Error ? error.message : 'A network error occurred';
-            logger.error('Network error in listAvailableDomains:', { errorMessage: message, errorObject: error, params });
-            return {
-                data: undefined,
-                error: { code: 'NETWORK_ERROR', message },
-                status: 0,
-            };
-        }
-    }
-
-    /**
-     * Fetches the list of available domain overlay details for a given stage association.
-     * Requires authentication.
-     */
-    async listAvailableDomainOverlays(payload: { stageAssociation: string }): Promise<ApiResponse<DomainOverlayDescriptor[]>> {
-        logger.info('Fetching available domain overlay details', { stageAssociation: payload.stageAssociation });
-
-        try {
-            const response = await this.apiClient.post<DomainOverlayDescriptor[], { action: string; payload: { stageAssociation: string } }>(
-                'dialectic-service',
-                { action: 'listAvailableDomainOverlays', payload }
-            );
-
-            if (response.error) {
-                logger.error('Error fetching domain overlay details:', { error: response.error, stageAssociation: payload.stageAssociation });
-            } else {
-                logger.info(`Successfully fetched ${response.data?.length ?? 0} domain overlay details`, { stageAssociation: payload.stageAssociation });
-            }
-            return response;
-        } catch (error: unknown) {
-            const message = error instanceof Error ? error.message : 'A network error occurred';
-            logger.error('Network error in listAvailableDomainOverlays:', { errorMessage: message, stageAssociation: payload.stageAssociation, errorObject: error });
             return {
                 data: undefined,
                 error: { code: 'NETWORK_ERROR', message },
@@ -692,6 +627,32 @@ export class DialecticApiClient {
         }
     }
 
+    async getStageExpectedCounts(payload: GetStageExpectedCountsPayload): Promise<ApiResponse<GetStageExpectedCountsResponse>> {
+        logger.info('Getting stage expected counts', { processTemplateId: payload.processTemplateId, modelCount: payload.modelCount });
+        const response: ApiResponse<GetStageExpectedCountsResponse> = await this.apiClient.post<GetStageExpectedCountsResponse, DialecticServiceActionPayload>(
+            'dialectic-service',
+            {
+                action: 'getStageExpectedCounts',
+                payload,
+            }
+        );
+
+        if (response.error) {
+            const apiError: ApiError = response.error;
+            const errorResponse: ErrorResponse = {
+                status: response.status,
+                data: undefined,
+                error: apiError,
+            };
+            logger.error('Error getting stage expected counts:', { error: apiError, status: errorResponse.status, processTemplateId: payload.processTemplateId, modelCount: payload.modelCount });
+            return errorResponse;
+        }
+
+        const successResponse: SuccessResponse<GetStageExpectedCountsResponse> = response;
+        logger.info('Successfully got stage expected counts', { status: successResponse.status, data: successResponse.data, processTemplateId: payload.processTemplateId, modelCount: payload.modelCount });
+        return successResponse;
+    }
+
     async resumePausedNsfJobs(payload: ResumePausedNsfJobsPayload): Promise<ApiResponse<ResumePausedNsfJobsResponse>> {
         logger.info('Resuming paused NSF jobs', { ...payload });
         const response = await this.apiClient.post<ResumePausedNsfJobsResponse, DialecticServiceActionPayload>(
@@ -845,31 +806,52 @@ export class DialecticApiClient {
      * Fetches the list of all available dialectic domains.
      * This endpoint is public and does not require authentication.
      */
-    async listDomains(): Promise<ApiResponse<DialecticDomain[]>> {
+    async listDomains(): Promise<ApiResponse<DialecticDomainRow[]>> {
         logger.info('Fetching all dialectic domains');
 
-        try {
-            const response = await this.apiClient.post<DialecticDomain[], { action: string }>(
-                'dialectic-service',
-                { action: 'listDomains' },
-                { isPublic: true }
-            );
+        const response: ApiResponse<DialecticDomainRow[]> = await this.apiClient.post<DialecticDomainRow[], DialecticServiceActionPayload>(
+            'dialectic-service',
+            { action: 'listDomains' },
+            { isPublic: true }
+        );
 
-            if (response.error) {
-                logger.error('Error fetching dialectic domains:', { error: response.error });
-            } else {
-                logger.info(`Fetched ${response.data?.length ?? 0} dialectic domains`);
-            }
-            return response;
-        } catch (error: unknown) {
-            const message = error instanceof Error ? error.message : 'A network error occurred';
-            logger.error('Network error in listDomains:', { errorMessage: message, errorObject: error });
-            return {
+        if (response.error) {
+            const apiError: ApiError = response.error;
+            const errorResponse: ErrorResponse = {
+                status: response.status,
                 data: undefined,
-                error: { code: 'NETWORK_ERROR', message },
-                status: 0,
+                error: apiError,
             };
+            logger.error('Error fetching dialectic domains:', { error: apiError, status: errorResponse.status });
+            return errorResponse;
         }
+
+        const successResponse: SuccessResponse<DialecticDomainRow[]> = response;
+        logger.info('Successfully fetched dialectic domains', { status: successResponse.status, data: successResponse.data });
+        return successResponse;
+    }
+
+    async fetchProcessAssociation(payload: FetchProcessAssociationPayload): Promise<ApiResponse<DomainProcessAssociationRow>> {
+        logger.info('Fetching process association for domain', { domainId: payload.domainId });
+        const response: ApiResponse<DomainProcessAssociationRow> = await this.apiClient.post<DomainProcessAssociationRow, DialecticServiceActionPayload>(
+            'dialectic-service',
+            { action: 'fetchProcessAssociation', payload }
+        );
+
+        if (response.error) {
+            const apiError: ApiError = response.error;
+            const errorResponse: ErrorResponse = {
+                status: response.status,
+                data: undefined,
+                error: apiError,
+            };
+            logger.error('Error fetching process association:', { error: apiError, status: errorResponse.status, domainId: payload.domainId });
+            return errorResponse;
+        }
+
+        const successResponse: SuccessResponse<DomainProcessAssociationRow> = response;
+        logger.info('Successfully fetched process association', { domainId: payload.domainId, status: successResponse.status, data: successResponse.data });
+        return successResponse;
     }
 
     async fetchProcessTemplate(payload: { templateId: string }): Promise<ApiResponse<DialecticProcessTemplate>> {

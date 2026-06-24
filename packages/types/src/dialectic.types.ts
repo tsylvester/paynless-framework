@@ -28,6 +28,10 @@ export type DialecticContributionRow = Database['public']['Tables']['dialectic_c
 
 export type DialecticJobRow = Database['public']['Tables']['dialectic_generation_jobs']['Row']
 
+export type DialecticDomainRow = Database['public']['Tables']['dialectic_domains']['Row'];
+
+export type DomainProcessAssociationRow = Database['public']['Tables']['domain_process_associations']['Row'];
+
 // New type for contribution generation status
   export type ContributionGenerationStatus = 'idle' | 'initiating' | 'generating' | 'failed' | 'retrying' | 'pending';
 
@@ -77,6 +81,7 @@ export interface CreateProjectPayload {
     initialUserPrompt?: string | null;
     selectedDomainId: string;
     selectedDomainOverlayId?: string | null;
+    processTemplateId: string;
     promptTemplateId?: string | null;
     promptFile?: File | null;
 }
@@ -182,7 +187,7 @@ export type PromptTemplate = Omit<SystemPromptsRow, 'variables_required'> & {
 export type RecipeJobType = 'PLAN' | 'EXECUTE' | 'RENDER';
 export type RecipePromptType = 'Seed' | 'Planner' | 'Turn' | 'Continuation';
 export type RecipeOutputType = string;
-export type RecipeGranularity = 'all_to_one' | 'per_source_document' | 'one_to_many' | 'many_to_one' | 'pairwise_by_origin' | 'per_source_group' | 'per_source_document_by_lineage' | 'per_model';
+export type RecipeGranularity = 'all_to_one' | 'per_source_document' | 'pairwise_by_origin' | 'per_source_group' | 'per_source_document_by_lineage' | 'per_model';
 
 export interface InputRequirement {
   type: 'seed_prompt' | 'document' | 'header_context' | 'feedback';
@@ -295,22 +300,24 @@ export interface DomainDescriptor {
   stage_association: string | null;
 }
 
-export interface DialecticDomain {
-  id: string;
-  name: string;
-  description: string | null;
-  parent_domain_id: string | null;
-  is_enabled: boolean;
+export interface FetchProcessAssociationPayload {
+  domainId: string;
 }
 
-
+export type InitializeMaxOutputTokensResult =
+  | { ok: true }
+  | { ok: true; skipped: true }
+  | { ok: false; error: ApiError };
 
 export interface DialecticStateValues {
   // New state for Domains
-  domains: DialecticDomain[] | null;
+  domains: DialecticDomainRow[] | null;
   isLoadingDomains: boolean;
   domainsError: ApiError | null;
-  selectedDomain: DialecticDomain | null;
+  selectedDomain: DialecticDomainRow | null;
+  selectedDomainProcessAssociation: DomainProcessAssociationRow | null;
+  isLoadingDomainProcessAssociation: boolean;
+  domainProcessAssociationError: ApiError | null;
 
   // New state for Domain Overlays
   selectedStageAssociation: DialecticStage | null;
@@ -356,6 +363,7 @@ export interface DialecticStateValues {
   
   // Output token cap configuration
   maxOutputTokens: number | null;
+  outputCapUserCustomized: boolean;
 
   // Cache for initial prompt file content
   initialPromptContentCache: { [resourceId: string]: InitialPromptCacheEntry };
@@ -407,11 +415,14 @@ export interface DialecticStateValues {
   recipesByStageSlug: Record<string, DialecticStageRecipe>;
   /** DAG-level progress per run; key `${sessionId}:${iterationNumber}`. */
   dagProgressByRun: Record<string, DagProgressDto>;
+  /** Per-stage expected job counts per run; key `${sessionId}:${iterationNumber}` then stage slug. Populated by documents hydration only. */
+  stageExpectedCountsByRun: Record<string, Record<string, number>>;
+  preProjectStageExpectedCounts: StageExpectedCount[] | null;
+  isLoadingStageExpectedCounts: boolean;
+  stageExpectedCountsError: ApiError | null;
   stageRunProgress: Record<string, StageRunProgressSnapshot>;
   /** Hydration status per run/progress key; key `${sessionId}:${iterationNumber}` or `${sessionId}:${stageSlug}:${iterationNumber}`. */
   progressHydrationStatus: Record<string, 'idle' | 'pending' | 'success' | 'failed'>;
-  /** Error message when status is `failed`; key same as progressHydrationStatus. */
-  progressHydrationError: Record<string, string>;
   focusedStageDocument: Record<string, FocusedStageDocumentState | null>;
   stageDocumentContent: Record<string, StageDocumentContentState>;
   stageDocumentVersions: Record<string, StageDocumentVersionInfo>;
@@ -651,7 +662,9 @@ export interface ClearFocusedStageDocumentPayload {
 
 export interface DialecticActions {
   fetchDomains: () => Promise<void>;
-  setSelectedDomain: (domain: DialecticDomain | null) => void;
+  setSelectedDomain: (domain: DialecticDomainRow | null) => void;
+  fetchProcessAssociation: (payload: FetchProcessAssociationPayload) => Promise<void>;
+  fetchStageExpectedCounts: (payload: GetStageExpectedCountsPayload) => Promise<void>;
   fetchAvailableDomainOverlays: (stageAssociation: DialecticStage) => Promise<void>;
   setSelectedStageAssociation: (stage: DialecticStage | null) => void;
   setSelectedDomainOverlayId: (overlayId: string | null) => void;
@@ -681,6 +694,7 @@ export interface DialecticActions {
   
   // Output token cap configuration
   setMaxOutputTokens: (maxTokens: number) => void;
+  initializeMaxOutputTokens: () => InitializeMaxOutputTokensResult;
 
   // New action for fetching process templates
   fetchProcessTemplate: (templateId: string) => Promise<void>;
@@ -1050,8 +1064,6 @@ export interface DialecticFeedback {
 
 export interface DialecticApiClient {
   fetchStageRecipe(stageSlug: string): Promise<ApiResponse<DialecticStageRecipe>>;
-  listAvailableDomains(): Promise<ApiResponse<{ data: DomainDescriptor[] }>>;
-  listAvailableDomainOverlays(payload: { stageAssociation: string }): Promise<ApiResponse<DomainOverlayDescriptor[]>>;
   createProject(payload: FormData): Promise<ApiResponse<DialecticProject>>;
   listProjects(): Promise<ApiResponse<DialecticProject[]>>;
   getProjectDetails(projectId: string): Promise<ApiResponse<DialecticProject>>;
@@ -1059,7 +1071,8 @@ export interface DialecticApiClient {
   updateSessionModels(payload: UpdateSessionModelsPayload): Promise<ApiResponse<DialecticSession>>;
   listModelCatalog(): Promise<ApiResponse<AiProvidersRow[]>>;
   getContributionContentData(contributionId: string): Promise<ApiResponse<GetContributionContentDataResponse | null>>;
-  listDomains(): Promise<ApiResponse<DialecticDomain[]>>;
+  listDomains(): Promise<ApiResponse<DialecticDomainRow[]>>;
+  fetchProcessAssociation(payload: FetchProcessAssociationPayload): Promise<ApiResponse<DomainProcessAssociationRow>>;
   fetchProcessTemplate(templateId: string): Promise<ApiResponse<DialecticProcessTemplate>>;
 
   updateProjectDomain(payload: UpdateProjectDomainPayload): Promise<ApiResponse<DialecticProject>>;
@@ -1082,6 +1095,7 @@ export interface DialecticApiClient {
   getStageDocumentFeedback(payload: GetStageDocumentFeedbackPayload): Promise<ApiResponse<StageDocumentFeedback[]>>;
   submitStageDocumentFeedback(payload: SubmitStageDocumentFeedbackPayload): Promise<ApiResponse<{ success: boolean }>>;
   listStageDocuments(payload: ListStageDocumentsPayload): Promise<ApiResponse<ListStageDocumentsResponse>>;
+  getStageExpectedCounts(payload: GetStageExpectedCountsPayload): Promise<ApiResponse<GetStageExpectedCountsResponse>>;
   resumePausedNsfJobs(payload: ResumePausedNsfJobsPayload): Promise<ApiResponse<ResumePausedNsfJobsResponse>>;
   pauseActiveJobs(payload: PauseActiveJobsPayload): Promise<ApiResponse<PauseActiveJobsResponse>>;
   regenerateDocument(payload: RegenerateDocumentPayload): Promise<ApiResponse<RegenerateDocumentResponse>>;
@@ -1136,7 +1150,14 @@ export interface UseStartContributionGenerationReturn {
   showBalanceCallout: boolean;
   viewingStage: DialecticStage | null;
   activeSession: DialecticSession | null;
-  stageThreshold: number | undefined;
+  stageCeiling: number | null;
+  projectCeiling: number | null;
+  stageBalanceShortfall: number | null;
+  costCeilingError: ApiError | null;
+  isCostEstimateKnown: boolean;
+  showCostEstimateBlocked: boolean;
+  showStageCostEstimate: boolean;
+  isCostEstimateLoading: boolean;
   isViewingAheadOfCurrentStage: boolean;
   viewingAheadReason: string | null;
 }
@@ -1257,6 +1278,7 @@ export interface StageProgressEntry {
   status: UnifiedProjectStatus;
   modelCount: number | null;
   progress: { completedSteps: number; totalSteps: number; failedSteps: number };
+  expectedCount: number;
   steps: StepProgressDto[];
   documents: StageDocumentChecklistEntry[];
   jobs: JobProgressDto[];
@@ -1266,6 +1288,21 @@ export interface StageProgressEntry {
 export interface GetAllStageProgressResponse {
   dagProgress: DagProgressDto;
   stages: StageProgressEntry[];
+}
+
+export interface GetStageExpectedCountsPayload {
+  processTemplateId: string;
+  modelCount: number;
+}
+
+export interface StageExpectedCount {
+  stageSlug: string;
+  expectedCount: number;
+}
+
+export interface GetStageExpectedCountsResponse {
+  stages: StageExpectedCount[];
+  totalStages: number;
 }
 
 export interface ResumePausedNsfJobsPayload {
@@ -1381,8 +1418,8 @@ export type DialecticServiceActionPayload = {
   action: 'listDomains';
   payload?: undefined;
 } | {
-  action: 'listAvailableDomainOverlays';
-  payload: { stageAssociation: DialecticStage };
+  action: 'fetchProcessAssociation';
+  payload: FetchProcessAssociationPayload;
 } | {
   action: 'getContributionContentData';
   payload: GetContributionContentDataPayload;
@@ -1433,6 +1470,9 @@ export type DialecticServiceActionPayload = {
 } | {
   action: 'getAllStageProgress';
   payload: GetAllStageProgressPayload;
+} | {
+  action: 'getStageExpectedCounts';
+  payload: GetStageExpectedCountsPayload;
 } | {
   action: 'resumePausedNsfJobs';
   payload: ResumePausedNsfJobsPayload;

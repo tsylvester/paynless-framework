@@ -83,61 +83,61 @@ describe('SegmentLandingPage', () => {
 
   it('renders hero section with segment headline and one-liner', () => {
     renderComponent();
-    expect(screen.getByText('Vibecoders')).toBeInTheDocument();
-    expect(screen.getByText("Stop burning money on 'please fix' — give your AI agent a real plan.")).toBeInTheDocument();
+    expect(screen.getByText('Vibecoders')).toBeTruthy();
+    expect(screen.getByText("Stop burning money on 'please fix' — give your AI agent a real plan.")).toBeTruthy();
   });
 
   it('renders scenario blockquote with segment story', () => {
     renderComponent();
-    expect(screen.getByText(/Jamie used Bolt to build a custom to-do list/)).toBeInTheDocument();
+    expect(screen.getByText(/Jamie used Bolt to build a custom to-do list/)).toBeTruthy();
   });
 
   it('renders tabbed doc reader with 2 tabs matching featured doc labels', () => {
     renderComponent();
-    expect(screen.getByRole('button', { name: 'Business Case' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Work Plan' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Business Case' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Work Plan' })).toBeTruthy();
   });
 
   it('renders all 18 document titles in the See All section', () => {
     renderComponent();
-    expect(screen.getByText('Business Case', { selector: '[data-testid="doc-title"]' })).toBeInTheDocument();
-    expect(screen.getByText('Feature Specifications', { selector: '[data-testid="doc-title"]' })).toBeInTheDocument();
-    expect(screen.getByText('Success Metrics', { selector: '[data-testid="doc-title"]' })).toBeInTheDocument();
-    expect(screen.getByText('Technical Approach', { selector: '[data-testid="doc-title"]' })).toBeInTheDocument();
-    expect(screen.getByText('Business Case Critique', { selector: '[data-testid="doc-title"]' })).toBeInTheDocument();
-    expect(screen.getByText('Dependency Map', { selector: '[data-testid="doc-title"]' })).toBeInTheDocument();
-    expect(screen.getByText('Non-Functional Requirements', { selector: '[data-testid="doc-title"]' })).toBeInTheDocument();
-    expect(screen.getByText('Risk Register', { selector: '[data-testid="doc-title"]' })).toBeInTheDocument();
-    expect(screen.getByText('Technical Feasibility', { selector: '[data-testid="doc-title"]' })).toBeInTheDocument();
-    expect(screen.getByText('Product Requirements', { selector: '[data-testid="doc-title"]' })).toBeInTheDocument();
-    expect(screen.getByText('System Architecture', { selector: '[data-testid="doc-title"]' })).toBeInTheDocument();
-    expect(screen.getByText('Tech Stack', { selector: '[data-testid="doc-title"]' })).toBeInTheDocument();
-    expect(screen.getByText('Master Plan', { selector: '[data-testid="doc-title"]' })).toBeInTheDocument();
-    expect(screen.getByText('Milestones', { selector: '[data-testid="doc-title"]' })).toBeInTheDocument();
-    expect(screen.getByText('Technical Requirements', { selector: '[data-testid="doc-title"]' })).toBeInTheDocument();
-    expect(screen.getByText('Work Plan', { selector: '[data-testid="doc-title"]' })).toBeInTheDocument();
-    expect(screen.getByText('Recommendations', { selector: '[data-testid="doc-title"]' })).toBeInTheDocument();
-    expect(screen.getByText('Updated Master Plan', { selector: '[data-testid="doc-title"]' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Business Case' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Feature Specifications' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Success Metrics' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Technical Approach' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Business Case Critique' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Dependency Map' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Non-Functional Requirements' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Risk Register' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Technical Feasibility' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Product Requirements' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'System Architecture' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Tech Stack' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Master Plan' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Milestones' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Technical Requirements' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Work Plan' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Recommendations' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Updated Master Plan' })).toBeTruthy();
   });
 
   it('renders 5 how-it-works steps with segment-specific descriptions', () => {
     renderComponent();
-    expect(screen.getByText('Proposal')).toBeInTheDocument();
-    expect(screen.getByText('Describe what you want in plain language.')).toBeInTheDocument();
-    expect(screen.getByText('Review')).toBeInTheDocument();
-    expect(screen.getByText('AI critiques the proposal and identifies gaps.')).toBeInTheDocument();
-    expect(screen.getByText('Refinement')).toBeInTheDocument();
-    expect(screen.getByText('Planning')).toBeInTheDocument();
-    expect(screen.getByText('Implementation')).toBeInTheDocument();
-    expect(screen.getByText('Get a work plan your AI agent can follow.')).toBeInTheDocument();
+    expect(screen.getByText('Proposal')).toBeTruthy();
+    expect(screen.getByText('Describe what you want in plain language.')).toBeTruthy();
+    expect(screen.getByText('Review')).toBeTruthy();
+    expect(screen.getByText('AI critiques the proposal and identifies gaps.')).toBeTruthy();
+    expect(screen.getByText('Refinement')).toBeTruthy();
+    expect(screen.getByText('Planning')).toBeTruthy();
+    expect(screen.getByText('Implementation')).toBeTruthy();
+    expect(screen.getByText('Get a work plan your AI agent can follow.')).toBeTruthy();
   });
 
   it('renders FAQ items with questions and answers', () => {
     renderComponent();
-    expect(screen.getByText("But I've already tried AI tools — they just break things.")).toBeInTheDocument();
-    expect(screen.getByText('Generic AI tools lose context after a few prompts.')).toBeInTheDocument();
-    expect(screen.getByText('What if my project is too simple for all this planning?')).toBeInTheDocument();
-    expect(screen.getByText('Even simple projects benefit from clear scope.')).toBeInTheDocument();
+    expect(screen.getByText("But I've already tried AI tools — they just break things.")).toBeTruthy();
+    expect(screen.getByText('Generic AI tools lose context after a few prompts.')).toBeTruthy();
+    expect(screen.getByText('What if my project is too simple for all this planning?')).toBeTruthy();
+    expect(screen.getByText('Even simple projects benefit from clear scope.')).toBeTruthy();
   });
 
   it('CTA links include correct ref param for the segment', () => {
@@ -145,7 +145,7 @@ describe('SegmentLandingPage', () => {
     const ctaLinks = screen.getAllByRole('link', { name: /get started free/i });
     expect(ctaLinks.length).toBeGreaterThan(0);
     ctaLinks.forEach((link) => {
-      expect(link).toHaveAttribute('href', '/register?ref=vibecoder');
+      expect(link.getAttribute('href')).toBe('/register?ref=vibecoder');
     });
   });
 
@@ -156,13 +156,13 @@ describe('SegmentLandingPage', () => {
     renderComponent();
     const dashboardLinks = screen.getAllByRole('link', { name: /go to dashboard/i });
     expect(dashboardLinks.length).toBeGreaterThan(0);
-    expect(screen.queryByRole('link', { name: /get started free/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /get started free/i })).toBeNull();
   });
 
   it('shows Get Started Free when user is not logged in', () => {
     renderComponent();
     const ctaLinks = screen.getAllByRole('link', { name: /get started free/i });
     expect(ctaLinks.length).toBeGreaterThan(0);
-    expect(screen.queryByRole('link', { name: /go to dashboard/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /go to dashboard/i })).toBeNull();
   });
 });

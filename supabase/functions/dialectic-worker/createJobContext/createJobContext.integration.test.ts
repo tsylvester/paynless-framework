@@ -400,7 +400,7 @@ Deno.test(
       inputRate: 0.001,
       outputRate: 0.002,
       isContinuationFlowInitial: false,
-      tierOutputCapTokens: null,
+      userConfig: { tier_output_cap_tokens: null },
     };
 
     const resourceDocuments: ResourceDocuments = [];
