@@ -32,7 +32,7 @@
     "react",
     "saas"
   ],
-  "author": "",
+  "author": "Tim Sylvester, t.j.sylvester@gmail.com || tim.sylvester@paynless.com || tim@timsylvester.com",
   "license": "ISC",
   "dependencies": {
     "@anthropic-ai/sdk": "^0.89.0",

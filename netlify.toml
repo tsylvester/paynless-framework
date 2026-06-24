@@ -12,3 +12,4 @@
 
 [dev]
   functionsTimeout = 900
+  address = "0.0.0.0"
