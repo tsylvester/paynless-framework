@@ -12,6 +12,7 @@ import type { CountTokensFn } from "../../_shared/types/tokenizer.types.ts";
 import { buildExtendedModelConfig } from "../../_shared/ai_service/ai_provider.mock.ts";
 import { MockLogger } from "../../_shared/logger.mock.ts";
 import { createMockCountTokens } from "../../_shared/utils/tokenizer_utils.mock.ts";
+import { getMaxOutputTokens } from "../../_shared/utils/affordability_utils.ts";
 import type { ICompressionStrategy } from "../../_shared/utils/vector_utils.interface.ts";
 import type { RelevanceRule } from "../../dialectic-service/dialectic.interface.ts";
 import type { Database } from "../../types_db.ts";
@@ -21,6 +22,7 @@ import {
   buildChatApiRequest,
   buildResourceDocument,
 } from "../compressPrompt/compressPrompt.mock.ts";
+
 import type {
   BoundCalculateAffordabilityFn,
   CalculateAffordabilityCompressedReturn,
@@ -31,6 +33,9 @@ import type {
   CalculateAffordabilityParams,
   CalculateAffordabilityPayload,
   CalculateAffordabilityReturn,
+  TierOutputCapTokens,
+  GetMaxOutputTokensFn,
+  UserConfig,
 } from "./calculateAffordability.interface.ts";
 
 const defaultCompressionStrategy: ICompressionStrategy = async () => {
@@ -41,6 +46,7 @@ export type CalculateAffordabilityDepsOverrides = {
   logger?: ILogger;
   countTokens?: CountTokensFn;
   compressPrompt?: BoundCompressPromptFn;
+  getMaxOutputTokens?: GetMaxOutputTokensFn;
 };
 
 export type CalculateAffordabilityParamsOverrides = {
@@ -55,6 +61,7 @@ export type CalculateAffordabilityParamsOverrides = {
   outputRate?: number;
   isContinuationFlowInitial?: boolean;
   inputsRelevance?: RelevanceRule[];
+  userConfig?: UserConfig;
 };
 
 export type CalculateAffordabilityPayloadOverrides = {
@@ -66,6 +73,18 @@ export type CalculateAffordabilityPayloadOverrides = {
   chatApiRequest?: ChatApiRequest;
 };
 
+export function buildMockGetMaxOutputTokens(): GetMaxOutputTokensFn {
+  return (
+    _user_balance_tokens: number,
+    _prompt_input_tokens: number,
+    _modelConfig: AiModelExtendedConfig,
+    _logger: ILogger,
+    _deficit_tokens_allowed: number,
+    _tierOutputCapTokens: TierOutputCapTokens | null,
+  ): number => {
+    return 0;
+  };
+}
 export function buildCalculateAffordabilityDeps(
   overrides?: CalculateAffordabilityDepsOverrides,
 ): CalculateAffordabilityDeps {
@@ -76,7 +95,10 @@ export function buildCalculateAffordabilityDeps(
   const compressPrompt: BoundCompressPromptFn = overrides?.compressPrompt !== undefined
     ? overrides.compressPrompt
     : buildBoundCompressPromptFn();
-  return { logger, countTokens, compressPrompt };
+  const getMaxOutputTokensDep: GetMaxOutputTokensFn = overrides?.getMaxOutputTokens !== undefined
+    ? overrides.getMaxOutputTokens
+    : getMaxOutputTokens;
+  return { logger, countTokens, compressPrompt, getMaxOutputTokens: getMaxOutputTokensDep };
 }
 
 export function buildCalculateAffordabilityParams(
@@ -102,6 +124,9 @@ export function buildCalculateAffordabilityParams(
     isContinuationFlowInitial: overrides?.isContinuationFlowInitial !== undefined
       ? overrides.isContinuationFlowInitial
       : false,
+    userConfig: {
+      tier_output_cap_tokens: overrides?.userConfig !== undefined ? overrides.userConfig.tier_output_cap_tokens : null,
+    },
   };
   if (overrides?.inputsRelevance !== undefined) {
     return { ...base, inputsRelevance: overrides.inputsRelevance };

@@ -32,6 +32,16 @@ export type SubscriptionTransaction = Database['public']['Tables']['subscription
 
 // Keep status types - Assuming these are TEXT fields with CHECK constraints in DB,
 // not ENUM types that would be generated in Database['public']['Enums'].
+/**
+ * Stripe subscription status strings that may appear on subscription objects from the payment system.
+ *
+ * Members such as `'trialing'` and other non-`'active'` values are valid on the wire when present
+ * on subscription payloads from Stripe or the billing API.
+ *
+ * Application billing logic in `@paynless/store` currently treats only `'active'` as “has active
+ * subscription” (`hasActiveSubscription`). Statuses not implemented by Paynless handlers (including
+ * `'trialing'`) must not be assumed to grant active paid access.
+ */
 export type SubscriptionStatus = 
   | 'free'
   | 'active'

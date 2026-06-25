@@ -1006,6 +1006,7 @@ export function isDialecticExecuteJobPayload(payload: unknown): payload is Diale
     if (('target_contribution_id' in payload) && typeof payload.target_contribution_id !== 'string') throw new Error('Invalid target_contribution_id.');
     if (('sourceContributionId' in payload) && payload.sourceContributionId !== null && typeof payload.sourceContributionId !== 'string') throw new Error('Invalid sourceContributionId.');
     if (('model_slug' in payload) && typeof payload.model_slug !== 'string') throw new Error('Invalid model_slug.');
+    if (('maxOutputTokens' in payload) && typeof payload.maxOutputTokens !== 'number') throw new Error('Invalid maxOutputTokens.');
 
     // Legacy property check
     if ('originalFileName' in payload) throw new Error('Legacy property originalFileName is not allowed.');
@@ -1018,7 +1019,7 @@ export function isDialecticExecuteJobPayload(payload: unknown): payload is Diale
         'document_relationships', 'isIntermediate', 'user_jwt', 'target_contribution_id', 'context_for_documents',
         // Base job payload fields that may be present on execute jobs
         'continueUntilComplete', 'maxRetries', 'continuation_count', 'is_test_job', 'model_slug',
-        'idempotencyKey',
+        'idempotencyKey', 'maxOutputTokens',
     ]);
 
     const unknownKeys = Object.keys(payload).filter(key => !allowedKeys.has(key));
@@ -1081,7 +1082,7 @@ export function isDialecticJobPayload(payload: unknown): payload is DialecticJob
     const allowedKeys: (keyof DialecticJobPayload)[] = [
         'sessionId', 'projectId', 'model_id', 'stageSlug',
         'iterationNumber', 'walletId', 'continueUntilComplete', 'maxRetries',
-        'continuation_count', 'target_contribution_id', 'model_slug'
+        'continuation_count', 'target_contribution_id', 'model_slug', 'maxOutputTokens',
     ];
 
     for (const key in payload) {
@@ -1234,6 +1235,7 @@ export function isDialecticPlanJobPayload(payload: unknown): payload is Dialecti
     if ('is_test_job' in payload && typeof payload.is_test_job !== 'boolean') return false;
     if ('sourceContributionId' in payload && payload.sourceContributionId !== null && typeof payload.sourceContributionId !== 'string') return false;
     if ('context_for_documents' in payload && payload.context_for_documents !== undefined && !isContextForDocumentArray(payload.context_for_documents)) return false;
+    if ('maxOutputTokens' in payload && typeof payload.maxOutputTokens !== 'number') return false;
 
     return true;
 }
@@ -1254,6 +1256,7 @@ export function isDialecticSkeletonJobPayload(payload: unknown): payload is Dial
     if (payload.planner_metadata.recipe_step_id.trim().length === 0) return false;
 
     if (!('step_info' in payload) || !isRecord(payload.step_info)) return false;
+    if ('maxOutputTokens' in payload && typeof payload.maxOutputTokens !== 'number') return false;
 
     return true;
 }
@@ -1285,6 +1288,7 @@ export function isDialecticRenderJobPayload(payload: unknown): payload is Dialec
     if (('target_contribution_id' in payload) && typeof payload.target_contribution_id !== 'string') throw new Error('Invalid target_contribution_id.');
     if (('model_slug' in payload) && typeof payload.model_slug !== 'string') throw new Error('Invalid model_slug.');
     if (('is_test_job' in payload) && typeof payload.is_test_job !== 'boolean') throw new Error('Invalid is_test_job.');
+    if (('maxOutputTokens' in payload) && typeof payload.maxOutputTokens !== 'number') throw new Error('Invalid maxOutputTokens.');
 
     // Final check for extraneous properties to enforce a strict shape.
     const allowedKeys = new Set<string>([
@@ -1292,7 +1296,7 @@ export function isDialecticRenderJobPayload(payload: unknown): payload is Dialec
         'documentIdentity', 'documentKey', 'sourceContributionId', 'user_jwt', 'template_filename',
         // Base job payload fields that may be present on render jobs
         'continueUntilComplete', 'maxRetries', 'continuation_count', 'target_contribution_id', 'is_test_job', 'model_slug',
-        'idempotencyKey',
+        'idempotencyKey', 'maxOutputTokens',
     ]);
 
     const unknownKeys = Object.keys(payload).filter(key => !allowedKeys.has(key));

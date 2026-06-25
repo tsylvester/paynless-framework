@@ -79,6 +79,7 @@ export function isStageProgressEntry(value: unknown): value is StageProgressEntr
 	if (typeof value.status !== "string" || !validUnifiedStageStatus.has(value.status)) return false;
 	if (value.modelCount !== null && (typeof value.modelCount !== "number" || !Number.isFinite(value.modelCount) || value.modelCount < 0)) return false;
 	if (!isStageProgressShape(value.progress)) return false;
+	if (!isFiniteNonNegativeInteger(value.expectedCount)) return false;
 	if (!Array.isArray(value.steps) || !value.steps.every((s: unknown) => isStepProgressDto(s))) return false;
 	if (!Array.isArray(value.documents)) return false;
 	return true;

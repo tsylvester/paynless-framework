@@ -44,6 +44,7 @@ import { BoundDebitTokens, DebitTokens } from '../../_shared/utils/debitTokens.i
 import { BoundEnqueueRenderJobFn } from '../enqueueRenderJob/enqueueRenderJob.interface.ts';
 import { BoundEnqueueModelCallFn } from '../enqueueModelCall/enqueueModelCall.interface.ts';
 import { BoundCalculateAffordabilityFn } from '../calculateAffordability/calculateAffordability.interface.ts';
+import type { GetMaxOutputTokensFn } from '../calculateAffordability/calculateAffordability.interface.ts';
 import { PrepareModelJobParams, PrepareModelJobPayload, PrepareModelJobReturn } from '../prepareModelJob/prepareModelJob.interface.ts';
 import { GatherArtifactsParams, GatherArtifactsPayload, GatherArtifactsReturn } from '../gatherArtifacts/gatherArtifacts.interface.ts';
 import { SanitizeJsonContentFn } from '../../_shared/utils/jsonSanitizer/jsonSanitizer.interface.ts';
@@ -302,6 +303,7 @@ export interface IJobContext extends
     readonly applyInputsRequiredScope: ApplyInputsRequiredScopeFn;
     readonly validateWalletBalance: ValidateWalletBalanceFn;
     readonly validateModelCostRates: ValidateModelCostRatesFn;
+    readonly getMaxOutputTokens: GetMaxOutputTokensFn;
     readonly continueJob: ContinueJobFn;
     readonly retryJob: RetryJobFn;
     readonly resolveFinishReason: ResolveFinishReasonFn;
@@ -356,6 +358,7 @@ export interface JobContextParams {
     readonly applyInputsRequiredScope: ApplyInputsRequiredScopeFn;
     readonly validateWalletBalance: ValidateWalletBalanceFn;
     readonly validateModelCostRates: ValidateModelCostRatesFn;
+    readonly getMaxOutputTokens: GetMaxOutputTokensFn;
     readonly resolveFinishReason: ResolveFinishReasonFn;
     readonly isIntermediateChunk: IsIntermediateChunkFn;
     readonly determineContinuation: DetermineContinuationFn;

@@ -19,7 +19,7 @@ import {
     ChatRole,
 } from '@paynless/types';
 import { createSseConnection } from '@paynless/utils';
-import { createMockSseConnection } from '../../utils/src/sse.stream.mock';
+import { createMockSseConnection } from '../../utils/src/sse.stream/sse.stream.mock';
 import {
     mockChatApiRequestStreaming,
     mockFetchOptionsStreaming,
@@ -65,8 +65,36 @@ describe('AiApiClient', () => {
         it('should return the providers array on successful response', async () => {
             // Arrange
             const mockProviders: AiProvider[] = [
-                { id: 'p1', name: 'Provider 1', description: 'Desc 1', api_identifier: 'gpt-4', config: {}, created_at: '2024-01-01T12:00:00.000Z', is_active: true, is_default_embedding: false, is_default_generation: false, is_enabled: true, provider: 'openai', updated_at: '2024-01-01T12:00:00.000Z' },
-                { id: 'p2', name: 'Provider 2', description: null, api_identifier: 'gpt-4', config: {}, created_at: '2024-01-01T12:00:00.000Z', is_active: true, is_default_embedding: false, is_default_generation: false, is_enabled: true, provider: 'openai', updated_at: '2024-01-01T12:00:00.000Z' },
+                { 
+                    id: 'p1', 
+                    name: 'Provider 1', 
+                    description: 'Desc 1', 
+                    api_identifier: 'gpt-4', 
+                    config: {}, 
+                    created_at: '2024-01-01T12:00:00.000Z', 
+                    is_active: true, 
+                    is_default_embedding: false, 
+                    is_default_generation: false, 
+                    is_enabled: true, 
+                    provider: 'openai', 
+                    updated_at: '2024-01-01T12:00:00.000Z',
+                    min_plan_tier_level: 1,
+                },
+                { 
+                    id: 'p2', 
+                    name: 'Provider 2', 
+                    description: null, 
+                    api_identifier: 'gpt-4', 
+                    config: {}, 
+                    created_at: '2024-01-01T12:00:00.000Z', 
+                    is_active: true, 
+                    is_default_embedding: false, 
+                    is_default_generation: false, 
+                    is_enabled: true, 
+                    provider: 'openai', 
+                    updated_at: '2024-01-01T12:00:00.000Z',
+                    min_plan_tier_level: 1,
+                },
             ];
             const mockResponse: ApiResponse<AiProvider[]> = {
                 data: mockProviders,

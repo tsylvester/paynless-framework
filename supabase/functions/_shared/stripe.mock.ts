@@ -544,6 +544,52 @@ export const createMockSubscriptionResponse = (
   };
 };
 
+export const createMockCustomerSubscriptionUpdatedEvent = (
+  subscriptionOverrides: Partial<Stripe.Subscription> = {},
+  previousAttributes?: Partial<Stripe.Subscription>,
+  eventOverrides: Partial<Omit<Stripe.CustomerSubscriptionUpdatedEvent, 'data' | 'type'>> = {},
+): Stripe.CustomerSubscriptionUpdatedEvent => {
+  const subscription: Stripe.Subscription = createMockSubscription(subscriptionOverrides);
+  const now = Math.floor(Date.now() / 1000);
+  return {
+    id: MOCK_DEFAULTS.eventId,
+    object: 'event',
+    api_version: '2023-10-16',
+    created: now,
+    data: {
+      object: subscription,
+      previous_attributes: previousAttributes,
+    },
+    livemode: false,
+    pending_webhooks: 0,
+    request: { id: `req_${now}`, idempotency_key: null },
+    type: 'customer.subscription.updated',
+    ...eventOverrides,
+  };
+};
+
+export const createMockCustomerSubscriptionDeletedEvent = (
+  subscriptionOverrides: Partial<Stripe.Subscription> = {},
+  eventOverrides: Partial<Omit<Stripe.CustomerSubscriptionDeletedEvent, 'data' | 'type'>> = {},
+): Stripe.CustomerSubscriptionDeletedEvent => {
+  const subscription: Stripe.Subscription = createMockSubscription(subscriptionOverrides);
+  const now = Math.floor(Date.now() / 1000);
+  return {
+    id: MOCK_DEFAULTS.eventId,
+    object: 'event',
+    api_version: '2023-10-16',
+    created: now,
+    data: {
+      object: subscription,
+    },
+    livemode: false,
+    pending_webhooks: 0,
+    request: { id: `req_${now}`, idempotency_key: null },
+    type: 'customer.subscription.deleted',
+    ...eventOverrides,
+  };
+};
+
 export const createMockInvoiceLineItem = (overrides: Partial<Stripe.InvoiceLineItem> = {}): Stripe.InvoiceLineItem => {
   const price = createMockPrice();
   

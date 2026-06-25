@@ -1,7 +1,8 @@
 import type Stripe from 'npm:stripe';
-import type { TablesInsert, Json } from '../../../../types_db.ts'; // Ensure TablesInsert is imported
+import type { Json } from '../../../../types_db.ts';
 import type { HandlerContext } from '../../../stripe.mock.ts';
 import type { PaymentConfirmation } from '../../../types/payment.types.ts';
+import { isRecord } from '../../../utils/type-guards/type_guards.common.ts';
 
 // Helper function to retrieve plan details from a Stripe Subscription
 async function retrieveSubscriptionPlanDetails(
@@ -27,7 +28,7 @@ async function retrieveSubscriptionPlanDetails(
 
     if (planError) {
       context.logger.error(`[retrieveSubscriptionPlanDetails] Error fetching plan details for Stripe Price ID ${stripePriceId} from subscription_plans. DB Error: ${planError.message}`);
-      throw planError; 
+      throw planError;
     }
     if (!planData) {
       context.logger.warn(`[retrieveSubscriptionPlanDetails] No plan found in subscription_plans for Stripe Price ID ${stripePriceId}.`);
@@ -67,10 +68,10 @@ export async function handleInvoicePaymentSucceeded(
   }
 
   const subscriptionIdFromLineItem = invoice.lines.data[0]?.subscription;
-  const subscriptionId = typeof subscriptionIdFromLineItem === 'string' ? subscriptionIdFromLineItem : (subscriptionIdFromLineItem?.id ?? undefined);
-  let paymentIntentId: string | undefined;
+  const subscriptionId = typeof subscriptionIdFromLineItem === 'string' ? subscriptionIdFromLineItem : subscriptionIdFromLineItem?.id;
+  let paymentIntentId = '';
   if (invoice.confirmation_secret?.client_secret) {
-      paymentIntentId = invoice.confirmation_secret.client_secret.split('_secret_')[0];
+    paymentIntentId = invoice.confirmation_secret.client_secret.split('_secret_')[0];
   }
 
   // Idempotency Check: See if we've already successfully processed this invoice_id
@@ -88,14 +89,14 @@ export async function handleInvoicePaymentSucceeded(
 
   if (existingSuccessfulTx) {
     context.logger.info(`[handleInvoicePaymentSucceeded] Invoice ${invoice.id} already successfully processed with transaction ID ${existingSuccessfulTx.id}. Skipping.`, { eventId: stripeEventId });
-    return { 
-      success: true, 
-      transactionId: existingSuccessfulTx.id, 
-      tokensAwarded: existingSuccessfulTx.tokens_to_award ?? 0,
-      message: 'Invoice already processed.' 
+    return {
+      success: true,
+      transactionId: existingSuccessfulTx.id,
+      tokensAwarded: existingSuccessfulTx.tokens_to_award,
+      message: 'Invoice already processed.',
     };
   }
-  
+
   // --- Get User and Wallet Details ---
   // 1. Get user_id from user_subscriptions using stripe_customer_id
   const { data: subscriptionData, error: subscriptionError } = await context.supabaseClient
@@ -128,40 +129,42 @@ export async function handleInvoicePaymentSucceeded(
 
   // --- Determine Tokens to Award ---
   let tokensToAward = 0;
-  let rawTokensValue: string | number | null | undefined = null;
-  let planItemIdInternal: string | null = null; // Added to store item_id_internal
-  
-  // Retrieve checkout_session_id earlier for potential use in metadata lookup
-  let checkoutSessionId: string | null = null;
-  const cs = invoice['checkout_session' as keyof Stripe.Invoice] as Stripe.Checkout.Session | string | null;
+  let rawTokensValue = '';
+  let planItemIdInternal = '';
 
-  if (cs && typeof cs === 'string') {
-    checkoutSessionId = cs;
-  } else if (cs && typeof cs === 'object' && cs.id && typeof cs.id === 'string') {
-    // It's an expanded Checkout.Session object on the Invoice
-    checkoutSessionId = cs.id;
+  // Retrieve checkout_session_id earlier for potential use in metadata lookup
+  let checkoutSessionId = '';
+  const checkoutSessionRefUnknown: unknown = Reflect.get(invoice, 'checkout_session');
+
+  if (typeof checkoutSessionRefUnknown === 'string') {
+    checkoutSessionId = checkoutSessionRefUnknown;
+  } else if (checkoutSessionRefUnknown !== null && typeof checkoutSessionRefUnknown === 'object') {
+    const expandedSessionId = Reflect.get(checkoutSessionRefUnknown, 'id');
+    if (typeof expandedSessionId === 'string') {
+      checkoutSessionId = expandedSessionId;
+    }
   }
 
   if (invoice.metadata && typeof invoice.metadata.tokens_to_award === 'string') {
     rawTokensValue = invoice.metadata.tokens_to_award;
   } else if (invoice.metadata && typeof invoice.metadata.tokens_to_award === 'number') {
-     rawTokensValue = invoice.metadata.tokens_to_award;
-  } else if (rawTokensValue === null && invoice.lines?.data?.[0]?.metadata && typeof invoice.lines.data[0].metadata.tokens_to_award === 'string') {
+    rawTokensValue = String(invoice.metadata.tokens_to_award);
+  } else if (rawTokensValue === '' && invoice.lines?.data?.[0]?.metadata && typeof invoice.lines.data[0].metadata.tokens_to_award === 'string') {
     rawTokensValue = invoice.lines.data[0].metadata.tokens_to_award;
-  } else if (rawTokensValue === null && invoice.lines?.data?.[0]?.metadata && typeof invoice.lines.data[0].metadata.tokens_to_award === 'number') {
-    rawTokensValue = invoice.lines.data[0].metadata.tokens_to_award;
-  } else if (rawTokensValue === null && subscriptionId && typeof subscriptionId === 'string') {
+  } else if (rawTokensValue === '' && invoice.lines?.data?.[0]?.metadata && typeof invoice.lines.data[0].metadata.tokens_to_award === 'number') {
+    rawTokensValue = String(invoice.lines.data[0].metadata.tokens_to_award);
+  } else if (rawTokensValue === '' && subscriptionId && typeof subscriptionId === 'string') {
     // If it's a subscription invoice and tokens not found in metadata, try to get from the plan
     context.logger.info(`[handleInvoicePaymentSucceeded] Tokens not in invoice/line_item metadata. Invoice ${invoice.id} is for subscription ${subscriptionId}. Attempting to check plan details.`, { eventId: stripeEventId });
     const planDetails = await retrieveSubscriptionPlanDetails(context, subscriptionId);
     if (planDetails && typeof planDetails.tokens_to_award === 'number') {
-      rawTokensValue = planDetails.tokens_to_award;
+      rawTokensValue = String(planDetails.tokens_to_award);
       planItemIdInternal = planDetails.item_id_internal; // Store item_id_internal
       context.logger.info(`[handleInvoicePaymentSucceeded] Found tokens_to_award (${rawTokensValue}) and item_id_internal (${planItemIdInternal}) from subscription plan for invoice ${invoice.id}.`, { eventId: stripeEventId });
     } else {
       context.logger.info(`[handleInvoicePaymentSucceeded] tokens_to_award not found via subscription plan for invoice ${invoice.id}. Proceeding to check CheckoutSession metadata if applicable.`, { eventId: stripeEventId });
     }
-  } else if (rawTokensValue === null && checkoutSessionId) {
+  } else if (rawTokensValue === '' && checkoutSessionId !== '') {
     context.logger.info(`[handleInvoicePaymentSucceeded] Tokens not in invoice/line_item metadata. Attempting to check Checkout Session ${checkoutSessionId}. Invoice ID: ${invoice.id}`, { eventId: stripeEventId });
     try {
       const checkoutSession = await context.stripe.checkout.sessions.retrieve(checkoutSessionId);
@@ -169,7 +172,7 @@ export async function handleInvoicePaymentSucceeded(
         rawTokensValue = checkoutSession.metadata.tokens_to_award;
         context.logger.info(`[handleInvoicePaymentSucceeded] Found tokens_to_award ('${rawTokensValue}') in Checkout Session ${checkoutSessionId} metadata. Invoice ID: ${invoice.id}`, { eventId: stripeEventId });
       } else if (checkoutSession.metadata && typeof checkoutSession.metadata.tokens_to_award === 'number') {
-        rawTokensValue = checkoutSession.metadata.tokens_to_award;
+        rawTokensValue = String(checkoutSession.metadata.tokens_to_award);
         context.logger.info(`[handleInvoicePaymentSucceeded] Found tokens_to_award (${rawTokensValue}) in Checkout Session ${checkoutSessionId} metadata. Invoice ID: ${invoice.id}`, { eventId: stripeEventId });
       } else {
         context.logger.info(`[handleInvoicePaymentSucceeded] tokens_to_award not found in metadata of Checkout Session ${checkoutSessionId}. Invoice ID: ${invoice.id}`, { eventId: stripeEventId });
@@ -179,7 +182,7 @@ export async function handleInvoicePaymentSucceeded(
     }
   }
 
-  if (rawTokensValue !== null) {
+  if (rawTokensValue !== '') {
     const parsedTokens = parseInt(String(rawTokensValue), 10);
     if (!isNaN(parsedTokens)) {
       tokensToAward = parsedTokens;
@@ -188,145 +191,199 @@ export async function handleInvoicePaymentSucceeded(
     }
   } else {
     let warningMessage = `[handleInvoicePaymentSucceeded] tokens_to_award not found in invoice metadata or line item metadata`;
-    if (checkoutSessionId) {
+    if (checkoutSessionId !== '') {
       warningMessage += `, nor in the metadata of associated Checkout Session ${checkoutSessionId}`;
     }
     warningMessage += `. Defaulting to 0. Invoice ID: ${invoice.id}`;
     context.logger.warn(warningMessage, { eventId: stripeEventId });
   }
-  
-  // --- Prepare New Payment Transaction Data ---
-  const newPaymentTxData: TablesInsert<'payment_transactions'> = {
-    user_id: userId,
-    organization_id: null,
-    target_wallet_id: targetWalletId,
-    payment_gateway_id: 'stripe',
-    gateway_transaction_id: invoice.id,
-    status: 'PROCESSING_RENEWAL',
-    tokens_to_award: tokensToAward,
-    amount_requested_fiat: invoice.total,
-    currency_requested_fiat: invoice.currency,
-    metadata_json: {
-      stripe_event_id: stripeEventId,
-      stripe_customer_id: stripeCustomerId,
-      stripe_subscription_id: subscriptionId,
-      stripe_invoice_id: invoice.id,
-      checkout_session_id: checkoutSessionId,
-      billing_reason: invoice.billing_reason,
-      payment_intent_id: paymentIntentId,
-    },
+
+  let subscriptionIdForUpdate = null;
+  let periodStartIso = null;
+  let periodEndIso = null;
+
+  for (const lineItem of invoice.lines.data) {
+    const subscriptionRef = lineItem.subscription;
+    let candidateSubscriptionId = null;
+    if (typeof subscriptionRef === 'string') {
+      candidateSubscriptionId = subscriptionRef;
+    } else if (subscriptionRef !== null && typeof subscriptionRef === 'object') {
+      const expandedId = Reflect.get(subscriptionRef, 'id');
+      if (typeof expandedId === 'string') {
+        candidateSubscriptionId = expandedId;
+      }
+    }
+
+    if (candidateSubscriptionId === null) {
+      continue;
+    }
+
+    const period = lineItem.period;
+    if (period === undefined || period === null) {
+      continue;
+    }
+
+    const startSec = period.start;
+    const endSec = period.end;
+    if (typeof startSec !== 'number' || typeof endSec !== 'number') {
+      continue;
+    }
+
+    subscriptionIdForUpdate = candidateSubscriptionId;
+    periodStartIso = new Date(startSec * 1000).toISOString();
+    periodEndIso = new Date(endSec * 1000).toISOString();
+  }
+
+  let rpcStripeSubscriptionMeta: Json = null;
+  if (subscriptionId !== undefined) {
+    rpcStripeSubscriptionMeta = subscriptionId;
+  }
+
+  let rpcPaymentIntentMeta: Json = null;
+  if (paymentIntentId !== '') {
+    rpcPaymentIntentMeta = paymentIntentId;
+  }
+
+  const rpcMetadata: Json = {
+    stripe_event_id: stripeEventId,
+    stripe_customer_id: stripeCustomerId,
+    stripe_subscription_id: rpcStripeSubscriptionMeta,
+    checkout_session_id: checkoutSessionId,
+    billing_reason: invoice.billing_reason,
+    payment_intent_id: rpcPaymentIntentMeta,
   };
 
-  // --- Insert New Payment Transaction ---
-  const { data: newPaymentTx, error: insertError } = await context.supabaseClient
-    .from('payment_transactions')
-    .insert(newPaymentTxData)
-    .select()
-    .single();
+  const rpcResult = await context.supabaseClient.rpc('complete_invoice_payment', {
+    p_user_id: userId,
+    p_target_wallet_id: targetWalletId,
+    p_gateway_transaction_id: invoice.id,
+    p_tokens_to_award: tokensToAward,
+    p_amount_fiat: invoice.total,
+    p_currency: invoice.currency,
+    p_metadata: rpcMetadata,
+    p_token_idempotency_key: event.id,
+    p_token_notes: JSON.stringify({
+      reason: invoice.billing_reason,
+      invoice_id: invoice.id,
+      stripe_event_id: stripeEventId,
+      item_id_internal: planItemIdInternal,
+    }),
+    p_stripe_subscription_id: subscriptionIdForUpdate,
+    p_period_start: periodStartIso,
+    p_period_end: periodEndIso,
+  });
 
-  if (insertError || !newPaymentTx) {
-    context.logger.error(`[handleInvoicePaymentSucceeded] Failed to insert new payment transaction for invoice ${invoice.id}.`, { error: insertError, eventId: stripeEventId });
-    return { success: false, transactionId: undefined, error: 'Failed to record new payment transaction.', status: 500 };
+  if (rpcResult.error) {
+    const rpcFailure = rpcResult.error;
+    let errMsg: string;
+    if (rpcFailure instanceof Error) {
+      errMsg = rpcFailure.message;
+    } else {
+      errMsg = 'complete_invoice_payment failed: error value is not an Error instance.';
+    }
+    context.logger.error('[handleInvoicePaymentSucceeded] complete_invoice_payment RPC failed.', {
+      rpcFailure,
+      eventId: stripeEventId,
+    });
+    return {
+      success: false,
+      transactionId: undefined,
+      error: errMsg,
+    };
   }
-  context.logger.info(`[handleInvoicePaymentSucceeded] New payment transaction ${newPaymentTx.id} created for invoice ${invoice.id}.`, { eventId: stripeEventId });
 
-  // --- Award Tokens ---
+  const rpcRowsUnknown: unknown = rpcResult.data;
+  if (!Array.isArray(rpcRowsUnknown) || rpcRowsUnknown.length === 0) {
+    const errMsg = 'complete_invoice_payment returned no rows.';
+    context.logger.error(`[handleInvoicePaymentSucceeded] ${errMsg}`, { eventId: stripeEventId });
+    return {
+      success: false,
+      transactionId: undefined,
+      error: errMsg,
+    };
+  }
+
+  const firstRowUnknown: unknown = rpcRowsUnknown[0];
+  if (!isRecord(firstRowUnknown)) {
+    const errMsg = 'complete_invoice_payment returned unexpected row shape.';
+    context.logger.error(`[handleInvoicePaymentSucceeded] ${errMsg}`, { eventId: stripeEventId });
+    return {
+      success: false,
+      transactionId: undefined,
+      error: errMsg,
+    };
+  }
+
+  const paymentTransactionIdUnknown: unknown = firstRowUnknown['payment_transaction_id'];
+  if (typeof paymentTransactionIdUnknown !== 'string') {
+    const errMsg = 'complete_invoice_payment row missing payment_transaction_id.';
+    context.logger.error(`[handleInvoicePaymentSucceeded] ${errMsg}`, { eventId: stripeEventId });
+    return {
+      success: false,
+      transactionId: undefined,
+      error: errMsg,
+    };
+  }
+  const paymentTransactionId: string = paymentTransactionIdUnknown;
+
+  if (
+    subscriptionIdForUpdate !== null &&
+    periodStartIso !== null &&
+    periodEndIso !== null
+  ) {
+    context.logger.info(`[handleInvoicePaymentSucceeded] Successfully updated user_subscription ${subscriptionIdForUpdate} for invoice ${invoice.id}.`, { eventId: stripeEventId });
+  }
+
   if (tokensToAward > 0) {
     try {
-      const notesObject = {
-        reason: 'Subscription Renewal',
-        invoice_id: invoice.id,
-        payment_transaction_id: newPaymentTx.id,
-        stripe_event_id: stripeEventId,
-        item_id_internal: planItemIdInternal, // Use the stored item_id_internal
-        // Add other relevant details if necessary
-      };
+      const { data: walletRowForNotify, error: walletLookupError } = await context.supabaseClient
+        .from('token_wallets')
+        .select('user_id')
+        .eq('wallet_id', targetWalletId)
+        .single();
 
-      const tokenTxResult = await context.tokenWalletService.recordTransaction({
-        walletId: targetWalletId,
-        type: 'CREDIT_PURCHASE', // Corrected to uppercase
-        amount: String(tokensToAward),
-        recordedByUserId: userId,
-        idempotencyKey: event.id, // Assuming event.id can serve as idempotency key
-        relatedEntityId: newPaymentTx.id, // Link to the new payment transaction
-        relatedEntityType: 'payment_transactions', // Specify entity type
-        paymentTransactionId: newPaymentTx.id, // Added, assuming newPaymentTx.id is the payment_transaction_id
-        notes: JSON.stringify(notesObject), // Pass stringified JSON
+      if (walletLookupError) {
+        throw new Error(`Failed to retrieve wallet owner for notification: ${walletLookupError.message}`);
+      }
+
+      if (!walletRowForNotify) {
+        throw new Error('Failed to retrieve wallet owner for notification: wallet row missing.');
+      }
+
+      const notificationUserId = walletRowForNotify.user_id;
+      if (!notificationUserId) {
+        throw new Error('Failed to retrieve wallet owner for notification: user_id missing on wallet row.');
+      }
+
+      await context.supabaseClient.rpc('create_notification_for_user', {
+        p_target_user_id: notificationUserId,
+        p_notification_type: 'WALLET_TRANSACTION',
+        p_notification_data: {
+          subject: 'Wallet Balance Updated',
+          message: `Your token balance has changed after invoice ${invoice.id} was paid.`,
+          target_path: '/transaction-history',
+          walletId: targetWalletId,
+          paymentTransactionId,
+        },
       });
-      context.logger.info(`[handleInvoicePaymentSucceeded] Tokens awarded successfully for new payment transaction ${newPaymentTx.id}. Invoice ID: ${invoice.id}. Token Tx ID: ${tokenTxResult.transactionId}`, { eventId: stripeEventId });
-    } catch (tokenError) {
-      context.logger.error(`[handleInvoicePaymentSucceeded] Failed to award tokens for new payment transaction ${newPaymentTx.id}. Invoice ID: ${invoice.id}. Attempting to mark PT as TOKEN_AWARD_FAILED.`, { error: tokenError, eventId: stripeEventId });
-      const errorMessage = tokenError instanceof Error ? tokenError.message : String(tokenError);
-      
-      // Attempt to update the payment transaction to reflect token award failure
-      const { error: updatePtxError } = await context.supabaseClient
-        .from('payment_transactions')
-        .update({ status: 'TOKEN_AWARD_FAILED', metadata_json: { ...(newPaymentTx.metadata_json), token_award_error: errorMessage } })
-        .eq('id', newPaymentTx.id);
-
-      if (updatePtxError) {
-        context.logger.error(`[handleInvoicePaymentSucceeded] CRITICAL: Also failed to update payment transaction ${newPaymentTx.id} status to TOKEN_AWARD_FAILED. Manual review required.`, { updateError: updatePtxError, eventId: stripeEventId });
-      }
-      // Return success: false because the primary action (awarding tokens) failed.
-      return { success: false, transactionId: newPaymentTx.id, error: `Failed to award tokens: ${errorMessage}`, tokensAwarded: 0, status: 500 };
+    } catch (notificationError) {
+      context.logger.error('[handleInvoicePaymentSucceeded] Failed to create wallet transaction notification.', {
+        walletId: targetWalletId,
+        error: notificationError,
+        eventId: stripeEventId,
+      });
     }
-  } else {
-    context.logger.info(`[handleInvoicePaymentSucceeded] No tokens to award for invoice ${invoice.id}. Payment transaction ${newPaymentTx.id} created, but no token transaction performed.`, { eventId: stripeEventId });
   }
 
-  // --- Final Update to Payment Transaction Status ---
-  const { data: finalPtx, error: finalUpdateError } = await context.supabaseClient
-    .from('payment_transactions')
-    .update({ status: 'COMPLETED' })
-    .eq('id', newPaymentTx.id)
-    .select()
-    .single();
-
-  if (finalUpdateError || !finalPtx) {
-    const finalErrorMessage = `CRITICAL: Failed to update payment transaction ${newPaymentTx.id} to 'COMPLETED' after processing invoice ${invoice.id}.`;
-    context.logger.error(`[handleInvoicePaymentSucceeded] ${finalErrorMessage}`, { error: finalUpdateError, eventId: stripeEventId });
-    // Even if this update fails, the core logic succeeded. Return success but log the critical failure.
-    // The transactionId is still the one we created.
-    return { success: true, transactionId: newPaymentTx.id, tokensAwarded: tokensToAward, error: finalErrorMessage };
-  }
-  
-  const finalMessageBase = `Successfully processed invoice ${invoice.id} and created payment transaction ${finalPtx.id}.`;
-  const finalMessage = tokensToAward > 0 
-    ? `${finalMessageBase} Awarded ${tokensToAward} tokens.`
-    : finalMessageBase;
-
-  const relevantLineItem = invoice.lines.data.find(li => li.subscription);
-  if (relevantLineItem) {
-      const subscriptionIdForUpdate = relevantLineItem.subscription;
-      const periodStart = relevantLineItem.period?.start;
-      const periodEnd = relevantLineItem.period?.end;
-
-      if (subscriptionIdForUpdate && periodStart && periodEnd) {
-        context.logger.info(`[handleInvoicePaymentSucceeded] Found subscription line item. Updating user_subscription ${subscriptionIdForUpdate} for invoice ${invoice.id}.`, { eventId: stripeEventId });
-        
-        const { error: subUpdateError } = await context.supabaseClient
-          .from('user_subscriptions')
-          .update({
-            status: 'active', // payment_succeeded implies the subscription is or becomes active
-            current_period_start: new Date(periodStart * 1000).toISOString(),
-            current_period_end: new Date(periodEnd * 1000).toISOString(),
-            updated_at: new Date().toISOString(),
-          })
-          .eq('stripe_subscription_id', subscriptionIdForUpdate);
-  
-        if (subUpdateError) {
-          context.logger.error(`[handleInvoicePaymentSucceeded] Failed to update user_subscription for subscription ${subscriptionIdForUpdate} on invoice ${invoice.id}.`, { error: subUpdateError, eventId: stripeEventId });
-        } else {
-          context.logger.info(`[handleInvoicePaymentSucceeded] Successfully updated user_subscription ${subscriptionIdForUpdate} for invoice ${invoice.id}.`, { eventId: stripeEventId });
-        }
-      } else {
-        context.logger.warn(`[handleInvoicePaymentSucceeded] Subscription line item found on invoice ${invoice.id}, but it is missing subscription_id or period details. Cannot update user_subscription.`, { lineItem: relevantLineItem, eventId: stripeEventId });
-      }
+  const finalMessageBase = `Successfully processed invoice ${invoice.id} and created payment transaction ${paymentTransactionId}.`;
+  let finalMessage = finalMessageBase;
+  if (tokensToAward > 0) {
+    finalMessage = `${finalMessageBase} Awarded ${tokensToAward} tokens.`;
   }
 
   return {
     success: true,
-    transactionId: newPaymentTx.id,
+    transactionId: paymentTransactionId,
     tokensAwarded: tokensToAward,
     message: finalMessage,
   };

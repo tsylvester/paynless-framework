@@ -6,10 +6,8 @@ import type {
     GetContributionContentDataResponse,
     StartSessionPayload, 
     DialecticSession, 
-    AIModelCatalogEntry,
-    DomainDescriptor,
+    AiProvidersRow,
     UpdateProjectDomainPayload,
-    DomainOverlayDescriptor,
     UpdateProjectInitialPromptPayload,
     GenerateContributionsPayload,
     GenerateContributionsResponse,
@@ -22,7 +20,11 @@ import type {
     EditedDocumentResource,
     GetProjectResourceContentPayload,
     GetProjectResourceContentResponse,
-    DialecticDomain,
+    DialecticDomainRow,
+    DomainProcessAssociationRow,
+    FetchProcessAssociationPayload,
+    GetStageExpectedCountsPayload,
+    GetStageExpectedCountsResponse,
     DialecticProcessTemplate,
     UpdateSessionModelsPayload,
     GetSessionDetailsResponse,
@@ -44,15 +46,13 @@ import type {
 
 // --- Dialectic Client Mock Setup ---
 export type MockDialecticApiClient = {
-    listAvailableDomains: ReturnType<typeof vi.fn<[], Promise<ApiResponse<{ data: DomainDescriptor[] }>>>>;
-    listAvailableDomainOverlays: ReturnType<typeof vi.fn<[payload: { stageAssociation: string }], Promise<ApiResponse<DomainOverlayDescriptor[]>>>>;
     fetchStageRecipe: ReturnType<typeof vi.fn<[stageSlug: string], Promise<ApiResponse<DialecticStageRecipe>>>>;
     createProject: ReturnType<typeof vi.fn<[payload: FormData], Promise<ApiResponse<DialecticProject>>>>;
     listProjects: ReturnType<typeof vi.fn<[], Promise<ApiResponse<DialecticProject[]>>>>;
     getContributionContentData: ReturnType<typeof vi.fn<[contributionId: string], Promise<ApiResponse<GetContributionContentDataResponse | null>>>>;
     startSession: ReturnType<typeof vi.fn<[payload: StartSessionPayload], Promise<ApiResponse<DialecticSession>>>>;
     getProjectDetails: ReturnType<typeof vi.fn<[projectId: string], Promise<ApiResponse<DialecticProject>>>>;
-    listModelCatalog: ReturnType<typeof vi.fn<[], Promise<ApiResponse<AIModelCatalogEntry[]>>>>;
+    listModelCatalog: ReturnType<typeof vi.fn<[], Promise<ApiResponse<AiProvidersRow[]>>>>;
     updateProjectDomain: ReturnType<typeof vi.fn<[payload: UpdateProjectDomainPayload], Promise<ApiResponse<DialecticProject>>>>;
     deleteProject: ReturnType<typeof vi.fn<[projectId: string], Promise<ApiResponse<void>>>>;
     cloneProject: ReturnType<typeof vi.fn<[projectId: string], Promise<ApiResponse<DialecticProject>>>>;
@@ -63,7 +63,8 @@ export type MockDialecticApiClient = {
     submitStageResponses: ReturnType<typeof vi.fn<[payload: SubmitStageResponsesPayload], Promise<ApiResponse<SubmitStageResponsesResponse>>>>;
     saveContributionEdit: ReturnType<typeof vi.fn<[payload: SaveContributionEditPayload], Promise<ApiResponse<SaveContributionEditSuccessResponse>>>>;
     getProjectResourceContent: ReturnType<typeof vi.fn<[payload: GetProjectResourceContentPayload], Promise<ApiResponse<GetProjectResourceContentResponse>>>>;
-    listDomains: ReturnType<typeof vi.fn<[], Promise<ApiResponse<DialecticDomain[]>>>>;
+    listDomains: ReturnType<typeof vi.fn<[], Promise<ApiResponse<DialecticDomainRow[]>>>>;
+    fetchProcessAssociation: ReturnType<typeof vi.fn<[payload: FetchProcessAssociationPayload], Promise<ApiResponse<DomainProcessAssociationRow>>>>;
     fetchProcessTemplate: ReturnType<typeof vi.fn<[templateId: string], Promise<ApiResponse<DialecticProcessTemplate>>>>;
     updateSessionModels: ReturnType<typeof vi.fn<[payload: UpdateSessionModelsPayload], Promise<ApiResponse<DialecticSession>>>>;
     getSessionDetails: ReturnType<typeof vi.fn<[sessionId: string], Promise<ApiResponse<GetSessionDetailsResponse>>>>;
@@ -71,6 +72,7 @@ export type MockDialecticApiClient = {
     submitStageDocumentFeedback: ReturnType<typeof vi.fn<[payload: SubmitStageDocumentFeedbackPayload], Promise<ApiResponse<{ success: boolean }>>>>;
     listStageDocuments: ReturnType<typeof vi.fn<[payload: ListStageDocumentsPayload], Promise<ApiResponse<ListStageDocumentsResponse>>>>;
     getAllStageProgress: ReturnType<typeof vi.fn<[payload: GetAllStageProgressPayload], Promise<ApiResponse<GetAllStageProgressResponse>>>>;
+    getStageExpectedCounts: ReturnType<typeof vi.fn<[payload: GetStageExpectedCountsPayload], Promise<ApiResponse<GetStageExpectedCountsResponse>>>>;
     resumePausedNsfJobs: ReturnType<typeof vi.fn<[payload: ResumePausedNsfJobsPayload], Promise<ApiResponse<ResumePausedNsfJobsResponse>>>>;
     pauseActiveJobs: ReturnType<typeof vi.fn<[payload: PauseActiveJobsPayload], Promise<ApiResponse<PauseActiveJobsResponse>>>>;
     regenerateDocument: ReturnType<typeof vi.fn<[payload: RegenerateDocumentPayload], Promise<ApiResponse<RegenerateDocumentResponse>>>>;
@@ -80,15 +82,13 @@ export type MockDialecticApiClient = {
 // Factory function to create a new mock instance
 export function createMockDialecticClient(): MockDialecticApiClient {
     return {
-        listAvailableDomains: vi.fn<[], Promise<ApiResponse<{ data: DomainDescriptor[] }>>>(),
-        listAvailableDomainOverlays: vi.fn<[{ stageAssociation: string }], Promise<ApiResponse<DomainOverlayDescriptor[]>>>(),
         fetchStageRecipe: vi.fn<[string], Promise<ApiResponse<DialecticStageRecipe>>>(),
         createProject: vi.fn<[FormData], Promise<ApiResponse<DialecticProject>>>(),
         listProjects: vi.fn<[], Promise<ApiResponse<DialecticProject[]>>>(),
         getContributionContentData: vi.fn<[string], Promise<ApiResponse<GetContributionContentDataResponse | null>>>(),
         startSession: vi.fn<[StartSessionPayload], Promise<ApiResponse<DialecticSession>>>(),
         getProjectDetails: vi.fn<[string], Promise<ApiResponse<DialecticProject>>>(),
-        listModelCatalog: vi.fn<[], Promise<ApiResponse<AIModelCatalogEntry[]>>>(),
+        listModelCatalog: vi.fn<[], Promise<ApiResponse<AiProvidersRow[]>>>(),
         updateProjectDomain: vi.fn<[UpdateProjectDomainPayload], Promise<ApiResponse<DialecticProject>>>(),
         deleteProject: vi.fn<[string], Promise<ApiResponse<void>>>(),
         cloneProject: vi.fn<[string], Promise<ApiResponse<DialecticProject>>>(),
@@ -99,7 +99,8 @@ export function createMockDialecticClient(): MockDialecticApiClient {
         submitStageResponses: vi.fn<[SubmitStageResponsesPayload], Promise<ApiResponse<SubmitStageResponsesResponse>>>(),
         saveContributionEdit: vi.fn<[SaveContributionEditPayload], Promise<ApiResponse<SaveContributionEditSuccessResponse>>>(),
         getProjectResourceContent: vi.fn<[GetProjectResourceContentPayload], Promise<ApiResponse<GetProjectResourceContentResponse>>>(),
-        listDomains: vi.fn<[], Promise<ApiResponse<DialecticDomain[]>>>(),
+        listDomains: vi.fn<[], Promise<ApiResponse<DialecticDomainRow[]>>>(),
+        fetchProcessAssociation: vi.fn<[FetchProcessAssociationPayload], Promise<ApiResponse<DomainProcessAssociationRow>>>(),
         fetchProcessTemplate: vi.fn<[string], Promise<ApiResponse<DialecticProcessTemplate>>>(),
         updateSessionModels: vi.fn<[UpdateSessionModelsPayload], Promise<ApiResponse<DialecticSession>>>(),
         getSessionDetails: vi.fn<[string], Promise<ApiResponse<GetSessionDetailsResponse>>>(),
@@ -107,6 +108,7 @@ export function createMockDialecticClient(): MockDialecticApiClient {
         submitStageDocumentFeedback: vi.fn<[SubmitStageDocumentFeedbackPayload], Promise<ApiResponse<{ success: boolean }>>>(),
         listStageDocuments: vi.fn<[ListStageDocumentsPayload], Promise<ApiResponse<ListStageDocumentsResponse>>>(),
         getAllStageProgress: vi.fn<[GetAllStageProgressPayload], Promise<ApiResponse<GetAllStageProgressResponse>>>(),
+        getStageExpectedCounts: vi.fn<[GetStageExpectedCountsPayload], Promise<ApiResponse<GetStageExpectedCountsResponse>>>(),
         resumePausedNsfJobs: vi.fn<[ResumePausedNsfJobsPayload], Promise<ApiResponse<ResumePausedNsfJobsResponse>>>(),
         pauseActiveJobs: vi.fn<[PauseActiveJobsPayload], Promise<ApiResponse<PauseActiveJobsResponse>>>(),
         regenerateDocument: vi.fn<[RegenerateDocumentPayload], Promise<ApiResponse<RegenerateDocumentResponse>>>(),
@@ -163,4 +165,42 @@ export function createMockSaveContributionEditSuccessResponse(
         resource,
         sourceContributionId: resource.source_contribution_id ?? 'contrib-original',
     };
+}
+
+export function buildFetchProcessAssociationPayload(
+    overrides?: Partial<FetchProcessAssociationPayload>
+): FetchProcessAssociationPayload {
+    const data: FetchProcessAssociationPayload = {
+        domainId: 'domain-uuid-default',
+    };
+    if (overrides === undefined) {
+        return data;
+    }
+    return { ...data, ...overrides };
+}
+
+export function buildGetStageExpectedCountsPayload(
+    overrides?: Partial<GetStageExpectedCountsPayload>
+): GetStageExpectedCountsPayload {
+    const data: GetStageExpectedCountsPayload = {
+        processTemplateId: 'template-uuid-default',
+        modelCount: 1,
+    };
+    if (overrides === undefined) {
+        return data;
+    }
+    return { ...data, ...overrides };
+}
+
+export function buildGetStageExpectedCountsResponse(
+    overrides?: Partial<GetStageExpectedCountsResponse>
+): GetStageExpectedCountsResponse {
+    const data: GetStageExpectedCountsResponse = {
+        stages: [],
+        totalStages: 0,
+    };
+    if (overrides === undefined) {
+        return data;
+    }
+    return { ...data, ...overrides };
 }

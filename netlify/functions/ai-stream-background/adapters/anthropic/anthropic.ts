@@ -8,12 +8,15 @@ import type {
   NodeChatMessage,
   NodeModelConfig,
   NodeOutboundDocument,
+  NodeUserConfig,
 } from '../ai-adapter.interface.ts';
+import { resolveOutputCap } from '../../resolveOutputCap/resolveOutputCap.provides.ts';
 
 function prepareAnthropicRequest(
   request: NodeChatApiRequest,
   modelIdentifier: string,
   modelConfig: NodeModelConfig,
+  userConfig: NodeUserConfig,
 ): {
   modelApiName: string;
   systemPrompt: string;
@@ -116,12 +119,12 @@ function prepareAnthropicRequest(
     throw new Error('Cannot send request to Anthropic: message history format invalid.');
   }
 
-  const maxTokensForPayload: number | undefined =
-    typeof request.max_tokens_to_generate === 'number'
-      ? request.max_tokens_to_generate
-      : typeof modelConfig.hard_cap_output_tokens === 'number'
-        ? modelConfig.hard_cap_output_tokens
-        : undefined;
+  const maxTokensForPayload: number | undefined = resolveOutputCap({
+    requestMax: request.max_tokens_to_generate,
+    hardCap: modelConfig.hard_cap_output_tokens,
+    providerMax: undefined,
+    tierCap: userConfig.tier_output_cap_tokens,
+  });
 
   return {
     modelApiName,
@@ -153,6 +156,7 @@ export function createAnthropicNodeAdapter(
   params: NodeAdapterConstructorParams,
 ): AiAdapter {
   const modelConfig: NodeModelConfig = params.modelConfig;
+  const userConfig: NodeUserConfig = params.userConfig;
   const client: Anthropic = new Anthropic({ apiKey: params.apiKey });
 
   return {
@@ -165,7 +169,7 @@ export function createAnthropicNodeAdapter(
         systemPrompt: string;
         anthropicMessages: MessageParam[];
         maxTokensForPayload: number | undefined;
-      } = prepareAnthropicRequest(request, apiIdentifier, modelConfig);
+      } = prepareAnthropicRequest(request, apiIdentifier, modelConfig, userConfig);
 
       const modelApiName: string = prepared.modelApiName;
       const systemPrompt: string = prepared.systemPrompt;

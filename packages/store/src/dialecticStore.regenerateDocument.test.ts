@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { useDialecticStore, initialDialecticStateValues } from './dialecticStore';
 import type {
+  ApiError,
   DialecticProject,
   GetAllStageProgressPayload,
   RegenerateDocumentPayload,
@@ -8,6 +9,22 @@ import type {
 } from '@paynless/types';
 import { resetApiMock, getMockDialecticClient } from '@paynless/api/mocks';
 import { useAuthStore } from './authStore';
+
+vi.mock('@paynless/utils', async (importOriginal) => {
+  const original = await importOriginal<typeof import('@paynless/utils')>();
+  return {
+    ...original,
+    logger: {
+      ...original.logger,
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      debug: vi.fn(),
+    },
+  };
+});
+
+import { logger } from '@paynless/utils';
 
 vi.mock('@paynless/api', async () => {
   const { api, resetApiMock, getMockDialecticClient } = await import('@paynless/api/mocks');
@@ -25,6 +42,7 @@ describe('dialecticStore regenerateDocument', () => {
   const stageSlug = 'thesis';
   const iterationNumber = 1;
   const userId = 'user-regen-1';
+  const runKey = `${sessionId}:${iterationNumber}`;
 
   const regeneratePayload: RegenerateDocumentPayload = {
     idempotencyKey: 'test-idem-regen',
@@ -72,9 +90,9 @@ describe('dialecticStore regenerateDocument', () => {
       data: {
         dagProgress: { completedStages: 0, totalStages: 3 },
         stages: [
-          { stageSlug: 'thesis', status: 'in_progress', modelCount: 2, steps: [], progress: { completedSteps: 0, totalSteps: 2, failedSteps: 0 }, documents: [], jobs: [], edges: [] },
-          { stageSlug: 'antithesis', status: 'not_started', modelCount: 1, steps: [], progress: { completedSteps: 0, totalSteps: 1, failedSteps: 0 }, documents: [], jobs: [], edges: [] },
-          { stageSlug: 'synthesis', status: 'not_started', modelCount: 1, steps: [], progress: { completedSteps: 0, totalSteps: 1, failedSteps: 0 }, documents: [], jobs: [], edges: [] },
+          { stageSlug: 'thesis', status: 'in_progress', modelCount: 2, steps: [], progress: { completedSteps: 0, totalSteps: 2, failedSteps: 0 }, documents: [], jobs: [], edges: [], expectedCount: 1   },
+          { stageSlug: 'antithesis', status: 'not_started', modelCount: 1, steps: [], progress: { completedSteps: 0, totalSteps: 1, failedSteps: 0 }, documents: [], jobs: [], edges: [], expectedCount: 1 },
+          { stageSlug: 'synthesis', status: 'not_started', modelCount: 1, steps: [], progress: { completedSteps: 0, totalSteps: 1, failedSteps: 0 }, documents: [], jobs: [], edges: [], expectedCount: 1 },
         ],
       },
       status: 200,
@@ -168,5 +186,29 @@ describe('dialecticStore regenerateDocument', () => {
 
     expect(result.error).toEqual(apiError);
     expect(result.status).toBe(400);
+  });
+
+  it('returns API success when hydrateAllStageProgress rejects after successful regenerate', async () => {
+    const hydrateError: ApiError = { code: 'SERVER_ERROR', message: 'Hydrate failed after regenerate' };
+    getMockDialecticClient().regenerateDocument.mockResolvedValue({
+      data: { jobIds: ['new-job-1', 'new-job-2'] },
+      status: 200,
+    });
+    getMockDialecticClient().getAllStageProgress.mockResolvedValue({
+      error: hydrateError,
+      status: 500,
+    });
+
+    const result = await useDialecticStore.getState().regenerateDocument(regeneratePayload);
+
+    expect(result.error).toBeUndefined();
+    expect(result.data).toEqual({ jobIds: ['new-job-1', 'new-job-2'] });
+    await vi.waitFor(() => {
+      expect(useDialecticStore.getState().progressHydrationStatus[runKey]).toBe('failed');
+    });
+    expect(logger.error).toHaveBeenCalledWith(
+      '[DialecticStore] hydrateAllStageProgress failed after action',
+      { errorDetails: hydrateError },
+    );
   });
 });

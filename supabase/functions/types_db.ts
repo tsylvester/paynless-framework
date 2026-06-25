@@ -45,6 +45,7 @@ export type Database = {
           is_default_embedding: boolean
           is_default_generation: boolean
           is_enabled: boolean
+          min_plan_tier_level: number
           name: string
           provider: string | null
           updated_at: string
@@ -59,6 +60,7 @@ export type Database = {
           is_default_embedding?: boolean
           is_default_generation?: boolean
           is_enabled?: boolean
+          min_plan_tier_level?: number
           name: string
           provider?: string | null
           updated_at?: string
@@ -73,11 +75,20 @@ export type Database = {
           is_default_embedding?: boolean
           is_default_generation?: boolean
           is_enabled?: boolean
+          min_plan_tier_level?: number
           name?: string
           provider?: string | null
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "ai_providers_min_plan_tier_level_fk"
+            columns: ["min_plan_tier_level"]
+            isOneToOne: false
+            referencedRelation: "tier_definitions"
+            referencedColumns: ["level"]
+          },
+        ]
       }
       chat_messages: {
         Row: {
@@ -1904,6 +1915,7 @@ export type Database = {
           plan_type: string
           stripe_price_id: string | null
           stripe_product_id: string | null
+          tier_level: number
           tokens_to_award: number | null
           updated_at: string
         }
@@ -1922,6 +1934,7 @@ export type Database = {
           plan_type?: string
           stripe_price_id?: string | null
           stripe_product_id?: string | null
+          tier_level?: number
           tokens_to_award?: number | null
           updated_at?: string
         }
@@ -1940,10 +1953,19 @@ export type Database = {
           plan_type?: string
           stripe_price_id?: string | null
           stripe_product_id?: string | null
+          tier_level?: number
           tokens_to_award?: number | null
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "subscription_plans_tier_level_fk"
+            columns: ["tier_level"]
+            isOneToOne: false
+            referencedRelation: "tier_definitions"
+            referencedColumns: ["level"]
+          },
+        ]
       }
       subscription_transactions: {
         Row: {
@@ -2053,6 +2075,27 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      tier_definitions: {
+        Row: {
+          level: number
+          max_models_per_project: number | null
+          name: string
+          output_cap_tokens: number | null
+        }
+        Insert: {
+          level: number
+          max_models_per_project?: number | null
+          name: string
+          output_cap_tokens?: number | null
+        }
+        Update: {
+          level?: number
+          max_models_per_project?: number | null
+          name?: string
+          output_cap_tokens?: number | null
+        }
+        Relationships: []
       }
       token_wallet_transactions: {
         Row: {
@@ -2227,11 +2270,13 @@ export type Database = {
           created_at: string
           current_period_end: string | null
           current_period_start: string | null
+          has_ever_paid: boolean
           id: string
           plan_id: string | null
           status: string
           stripe_customer_id: string | null
           stripe_subscription_id: string | null
+          tier_level: number
           updated_at: string
           user_id: string
         }
@@ -2240,11 +2285,13 @@ export type Database = {
           created_at?: string
           current_period_end?: string | null
           current_period_start?: string | null
+          has_ever_paid?: boolean
           id?: string
           plan_id?: string | null
           status: string
           stripe_customer_id?: string | null
           stripe_subscription_id?: string | null
+          tier_level?: number
           updated_at?: string
           user_id: string
         }
@@ -2253,11 +2300,13 @@ export type Database = {
           created_at?: string
           current_period_end?: string | null
           current_period_start?: string | null
+          has_ever_paid?: boolean
           id?: string
           plan_id?: string | null
           status?: string
           stripe_customer_id?: string | null
           stripe_subscription_id?: string | null
+          tier_level?: number
           updated_at?: string
           user_id?: string
         }
@@ -2268,6 +2317,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "subscription_plans"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_subscriptions_tier_level_fk"
+            columns: ["tier_level"]
+            isOneToOne: false
+            referencedRelation: "tier_definitions"
+            referencedColumns: ["level"]
           },
           {
             foreignKeyName: "user_subscriptions_user_id_fkey"
@@ -2335,6 +2391,51 @@ export type Database = {
           status: string
         }[]
       }
+      complete_checkout_payment: {
+        Args: {
+          p_user_id: string
+          p_is_subscription_mode: boolean
+          p_payment_transaction_id: string
+          p_gateway_transaction_id: string
+          p_plan_id?: string
+          p_subscription_status?: string
+          p_stripe_customer_id?: string
+          p_stripe_subscription_id?: string
+          p_period_start?: string
+          p_period_end?: string
+          p_cancel_at_period_end?: boolean
+          p_target_wallet_id?: string
+          p_tokens_to_award?: number
+          p_token_idempotency_key?: string
+          p_token_notes?: string
+        }
+        Returns: {
+          status: string
+          tier_level: number
+          token_transaction_id: string
+        }[]
+      }
+      complete_invoice_payment: {
+        Args: {
+          p_user_id: string
+          p_target_wallet_id: string
+          p_gateway_transaction_id: string
+          p_tokens_to_award: number
+          p_amount_fiat: number
+          p_currency: string
+          p_metadata: Json
+          p_token_idempotency_key?: string
+          p_token_notes?: string
+          p_stripe_subscription_id?: string
+          p_period_start?: string
+          p_period_end?: string
+        }
+        Returns: {
+          payment_transaction_id: string
+          tier_level: number
+          token_transaction_id: string
+        }[]
+      }
       create_notification_for_user: {
         Args: {
           p_target_user_id: string
@@ -2354,6 +2455,10 @@ export type Database = {
           p_org_visibility: string
         }
         Returns: string
+      }
+      current_plan_tier: {
+        Args: { p_user_id: string }
+        Returns: number
       }
       delete_chat_and_messages: {
         Args: { p_chat_id: string; p_user_id: string }
@@ -2473,6 +2578,10 @@ export type Database = {
           payment_transaction_id: string
         }[]
       }
+      refresh_user_tier: {
+        Args: { p_user_id: string; p_set_ratchet: boolean }
+        Returns: number
+      }
       resume_paused_nsf_jobs: {
         Args: {
           p_session_id: string
@@ -2562,6 +2671,33 @@ export type Database = {
       true_up_user: {
         Args: { p_user_id: string }
         Returns: undefined
+      }
+      update_subscription_with_tier: {
+        Args: {
+          p_stripe_subscription_id: string
+          p_status: string
+          p_plan_id?: string
+          p_period_start?: string
+          p_period_end?: string
+          p_cancel_at_period_end?: boolean
+          p_stripe_customer_id?: string
+          p_set_ratchet?: boolean
+        }
+        Returns: {
+          user_id: string
+          tier_level: number
+          rows_updated: number
+        }[]
+      }
+      validate_model_tier_access: {
+        Args: { p_model_ids: string[] }
+        Returns: {
+          valid: boolean
+          user_tier_level: number
+          max_models_per_project: number
+          over_model_limit: boolean
+          disallowed_model_ids: string[]
+        }[]
       }
     }
     Enums: {

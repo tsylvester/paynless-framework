@@ -6,6 +6,7 @@ import { DashboardPage } from './Dashboard.tsx';
 import { useAuthStore, useWalletStore, useAiStore, useDialecticStore } from '@paynless/store';
 import type { User, UserProfile, TokenWallet } from '@paynless/types';
 import { selectDialecticProjects, selectIsLoadingProjects } from '@paynless/store';
+import { mockUserTier, mockAllTiers } from '../mocks/profile.mock.ts';
 
 // --- Mocks ---
 vi.mock('react-router-dom', async (importOriginal) => {
@@ -61,6 +62,10 @@ const mockProfile: UserProfile = {
   is_subscribed_to_newsletter: false,
   last_selected_org_id: null,
   profile_privacy_setting: 'public',
+  signup_ref: 'test',
+  subscribed_at: new Date('2023-01-03T00:00:00Z').toISOString(),
+  synced_to_kit_at: new Date('2023-01-04T00:00:00Z').toISOString(),
+  unsubscribed_at: null,
 };
 
 const mockWallet: TokenWallet = {
@@ -86,6 +91,8 @@ describe('DashboardPage Component', () => {
       user: mockUser,
       profile: mockProfile,
       isLoading: false,
+      userTier: mockUserTier,
+      availableTiers: mockAllTiers,
     });
     vi.mocked(useWalletStore).mockReturnValue({
       personalWallet: mockWallet,
@@ -112,13 +119,25 @@ describe('DashboardPage Component', () => {
   });
 
   it('should render loading spinner if isLoading is true', () => {
-    vi.mocked(useAuthStore).mockReturnValue({ isLoading: true, user: null, profile: null });
+    vi.mocked(useAuthStore).mockReturnValue({
+      isLoading: true,
+      user: null,
+      profile: null,
+      userTier: null,
+      availableTiers: [],
+    });
     renderWithRouter(<DashboardPage />);
     expect(screen.getByRole('progressbar')).toBeInTheDocument();
   });
 
   it('should redirect to /login if user is not authenticated', () => {
-    vi.mocked(useAuthStore).mockReturnValue({ user: null, profile: null, isLoading: false });
+    vi.mocked(useAuthStore).mockReturnValue({
+      user: null,
+      profile: null,
+      isLoading: false,
+      userTier: null,
+      availableTiers: [],
+    });
     renderWithRouter(<DashboardPage />);
     expect(screen.getByTestId('navigate')).toHaveTextContent('Redirecting to /login');
   });
@@ -135,6 +154,8 @@ describe('DashboardPage Component', () => {
     expect(tokensCard).toBeInTheDocument();
     expect(chatsCard).toBeInTheDocument();
     expect(projectsCard).toBeInTheDocument();
+    const planCard = screen.getByText('Plan').closest('div[data-slot="card"]');
+    expect(planCard).toBeInTheDocument();
   });
 
   it('should render account summary details correctly', () => {
@@ -159,6 +180,80 @@ describe('DashboardPage Component', () => {
       expect(quickActions.getByText(/New Project/i)).toBeInTheDocument();
       expect(quickActions.getByText(/Organizations/i)).toBeInTheDocument();
       expect(quickActions.getByText(/Upgrade/i)).toBeInTheDocument();
+    }
+  });
+
+  it('Plan card shows tier name from store', () => {
+    renderWithRouter(<DashboardPage />);
+    const planCardContainer = screen.getByText('Plan').closest('div[data-slot="card"]');
+    expect(planCardContainer).toBeInstanceOf(HTMLElement);
+    if (planCardContainer instanceof HTMLElement) {
+      const planCard = within(planCardContainer);
+      expect(planCard.getByText('Free')).toBeInTheDocument();
+    }
+  });
+
+  it('Plan card shows Premium when user has premium tier', () => {
+    vi.mocked(useAuthStore).mockReturnValue({
+      user: mockUser,
+      profile: mockProfile,
+      isLoading: false,
+      userTier: mockAllTiers[2],
+      availableTiers: mockAllTiers,
+    });
+    renderWithRouter(<DashboardPage />);
+    const planCardContainer = screen.getByText('Plan').closest('div[data-slot="card"]');
+    expect(planCardContainer).toBeInstanceOf(HTMLElement);
+    if (planCardContainer instanceof HTMLElement) {
+      const planCard = within(planCardContainer);
+      expect(planCard.getByText('Premium')).toBeInTheDocument();
+    }
+  });
+
+  it('Plan card shows Upgrade to basic when user is on free tier', () => {
+    renderWithRouter(<DashboardPage />);
+    const planCardContainer = screen.getByText('Plan').closest('div[data-slot="card"]');
+    expect(planCardContainer).toBeInstanceOf(HTMLElement);
+    if (planCardContainer instanceof HTMLElement) {
+      const planCard = within(planCardContainer);
+      const upgradeLink = planCard.getByRole('link', { name: /upgrade to basic/i });
+      expect(upgradeLink).toHaveAttribute('href', '/subscription');
+    }
+  });
+
+  it('Plan card hides upgrade CTA when user is on highest tier', () => {
+    vi.mocked(useAuthStore).mockReturnValue({
+      user: mockUser,
+      profile: mockProfile,
+      isLoading: false,
+      userTier: mockAllTiers[3],
+      availableTiers: mockAllTiers,
+    });
+    renderWithRouter(<DashboardPage />);
+    const planCardContainer = screen.getByText('Plan').closest('div[data-slot="card"]');
+    expect(planCardContainer).toBeInstanceOf(HTMLElement);
+    if (planCardContainer instanceof HTMLElement) {
+      const planCard = within(planCardContainer);
+      expect(planCard.queryByRole('link', { name: /upgrade/i })).not.toBeInTheDocument();
+    }
+  });
+
+  it('Plan card shows fallback when userTier is null', () => {
+    vi.mocked(useAuthStore).mockReturnValue({
+      user: mockUser,
+      profile: mockProfile,
+      isLoading: false,
+      userTier: null,
+      availableTiers: [],
+    });
+    renderWithRouter(<DashboardPage />);
+    const planCardContainer = screen.getByText('Plan').closest('div[data-slot="card"]');
+    expect(planCardContainer).toBeInstanceOf(HTMLElement);
+    if (planCardContainer instanceof HTMLElement) {
+      const planCard = within(planCardContainer);
+      expect(planCard.getByText('Free')).toBeInTheDocument();
+      const upgradeLink = planCard.getByRole('link', { name: /upgrade/i });
+      expect(upgradeLink).toHaveAttribute('href', '/subscription');
     }
   });
 }); 

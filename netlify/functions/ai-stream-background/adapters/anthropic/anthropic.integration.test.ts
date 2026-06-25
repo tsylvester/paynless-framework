@@ -89,6 +89,7 @@ describe('createAnthropicNodeAdapter (integration)', () => {
         output_token_cost_rate: 0.002,
       },
       apiKey: 'sk-integration-anthropic',
+      userConfig: { tier_output_cap_tokens: null },
     };
     const adapter = createAnthropicNodeAdapter(params);
     expect(isAiAdapter(adapter)).toBe(true);
@@ -140,5 +141,45 @@ describe('createAnthropicNodeAdapter (integration)', () => {
       return c.type === 'done';
     });
     expect(doneChunks.length).toBe(1);
+  });
+
+  it('calls messages.stream with max_tokens from binding tier cap over request and hard cap', async () => {
+    const params: NodeAdapterConstructorParams = {
+      modelConfig: {
+        api_identifier: 'anthropic-claude-3-5-sonnet',
+        hard_cap_output_tokens: 131_072,
+        input_token_cost_rate: 0.001,
+        output_token_cost_rate: 0.002,
+      },
+      apiKey: 'sk-integration-anthropic-tier-cap',
+      userConfig: { tier_output_cap_tokens: 32_768 },
+    };
+    const adapter = createAnthropicNodeAdapter(params);
+
+    messagesStream.mockReturnValue(createIntegrationAnthropicStream());
+
+    const request: NodeChatApiRequest = {
+      message: 'integration tier cap message',
+      providerId: 'prov-integration-tier',
+      promptId: 'prompt-integration-tier',
+      max_tokens_to_generate: 50_000,
+    };
+    const apiIdentifier: string = 'anthropic-claude-3-5-sonnet';
+
+    const stream: AsyncGenerator<NodeAdapterStreamChunk> = adapter.sendMessageStream(
+      request,
+      apiIdentifier,
+    );
+    const collected: NodeAdapterStreamChunk[] = [];
+    for await (const chunk of stream) {
+      collected.push(chunk);
+    }
+    expect(collected.length >= 1).toBe(true);
+
+    expect(messagesStream).toHaveBeenCalledWith(
+      expect.objectContaining({
+        max_tokens: 32_768,
+      }),
+    );
   });
 });

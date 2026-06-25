@@ -1,4 +1,4 @@
-import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
+import { assertEquals, assertThrows } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import type {
 	ProgressRecipeStep,
 	ProgressRecipeEdge,
@@ -217,5 +217,47 @@ Deno.test("computeExpectedCounts", async (t) => {
 		};
 		const result = computeExpectedCounts(deps, params);
 		assertEquals(totalExpected(result), 10);
+	});
+
+	await t.step("per_source_group with priorStageContext sets expected and cardinality to lineageCount", () => {
+		const cons = step("cons-id", "consolidation", "EXECUTE", "per_source_group");
+		const prior: PriorStageContext = { lineageCount: 2, reviewerCount: 2 };
+		const params: ComputeExpectedCountsParams = {
+			steps: [cons],
+			edges: [],
+			n: 2,
+			priorStageContext: prior,
+		};
+		const result = computeExpectedCounts(deps, params);
+		assertEquals(result.expected.get("consolidation"), 2);
+		assertEquals(result.cardinality.get("cons-id"), 2);
+	});
+
+	await t.step("per_source_group count is independent of n", () => {
+		const cons = step("cons-id", "group_consolidation", "EXECUTE", "per_source_group");
+		const prior: PriorStageContext = { lineageCount: 3, reviewerCount: 1 };
+		const params: ComputeExpectedCountsParams = {
+			steps: [cons],
+			edges: [],
+			n: 5,
+			priorStageContext: prior,
+		};
+		const result = computeExpectedCounts(deps, params);
+		assertEquals(result.expected.get("group_consolidation"), 3);
+		assertEquals(result.cardinality.get("cons-id"), 3);
+	});
+
+	await t.step("per_source_group without priorStageContext throws", () => {
+		const cons = step("cons-id", "consolidation", "EXECUTE", "per_source_group");
+		const params: ComputeExpectedCountsParams = {
+			steps: [cons],
+			edges: [],
+			n: 2,
+		};
+		assertThrows(
+			() => computeExpectedCounts(deps, params),
+			Error,
+			`per_source_group step "consolidation" requires priorStageContext`,
+		);
 	});
 });

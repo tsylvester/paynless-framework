@@ -8,7 +8,6 @@ import {
   GetProjectDetailsPayload,
   GetSessionDetailsPayload,
   DialecticProject,
-  DomainOverlayDescriptor,
   StartSessionSuccessResponse,
   GetProjectResourceContentPayload,
   GetProjectResourceContentResponse,
@@ -47,7 +46,7 @@ import {
   PauseActiveJobsFn,
   RegenerateDocumentPayload,
   RegenerateDocumentFn,
-  AIModelCatalogEntry,
+  AiProvidersRow,
 } from "./dialectic.interface.ts";
 import { getStageRecipe } from "./getStageRecipe.ts";
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
@@ -64,11 +63,9 @@ import type {
   GetUserFn,
   ILogger
 } from '../_shared/types.ts';
-import type { DomainDescriptor } from "./listAvailableDomains.ts";
 import type { IFileManager } from "../_shared/types/file_manager.types.ts";
 import type { IStorageUtils } from "../_shared/types/storage_utils.types.ts";
 import { createProject } from "./createProject.ts";
-import { listAvailableDomains } from "./listAvailableDomains.ts";
 import { updateProjectDomain } from "./updateProjectDomain.ts";
 import { getProjectDetails } from "./getProjectDetails.ts";
 import { getSessionDetails } from "./getSessionDetails.ts";
@@ -76,7 +73,6 @@ import { getContributionContentHandler } from "./getContributionContent.ts";
 import { startSession } from "./startSession.ts";
 import { generateContributions } from "./generateContribution.ts";
 import { listProjects } from "./listProjects.ts";
-import { listAvailableDomainOverlays } from "./listAvailableDomainOverlays.ts";
 import { deleteProject } from './deleteProject.ts';
 import { cloneProject, CloneProjectResult } from './cloneProject.ts';
 import { exportProject } from './exportProject.ts';
@@ -84,7 +80,24 @@ import { getProjectResourceContent } from "./getProjectResourceContent.ts";
 import { saveContributionEdit } from './saveContributionEdit.ts';
 import { submitStageResponses } from './submitStageResponses.ts';
 import { downloadFromStorage, deleteFromStorage, createSignedUrlForPath } from '../_shared/supabase_storage_utils.ts';
-import { listDomains, type DialecticDomain } from './listDomains.ts';
+import { listDomains } from "./listDomains/listDomains.provides.ts";
+import type {
+  ListDomainsFn,
+  ListDomainsDeps,
+  ListDomainsParams,
+  ListDomainsPayload,
+  ListDomainsResult,
+} from "./listDomains/listDomains.interface.ts";
+import { isListDomainsSuccessReturn, isListDomainsErrorReturn } from "./listDomains/listDomains.guard.ts";
+import { fetchProcessAssociation } from "./fetchProcessAssociation/fetchProcessAssociation.provides.ts";
+import type {
+  FetchProcessAssociationFn,
+  FetchProcessAssociationDeps,
+  FetchProcessAssociationParams,
+  FetchProcessAssociationPayload,
+  FetchProcessAssociationResult,
+} from "./fetchProcessAssociation/fetchProcessAssociation.interface.ts";
+import { isFetchProcessAssociationSuccessReturn, isFetchProcessAssociationErrorReturn } from "./fetchProcessAssociation/fetchProcessAssociation.guard.ts";
 import { listModelCatalog } from './listModelCatalog.ts';
 import { fetchProcessTemplate } from './fetchProcessTemplate.ts';
 import { FileManagerService } from '../_shared/services/file_manager.ts';
@@ -109,6 +122,17 @@ import type { IIndexingService, IEmbeddingClient } from '../_shared/services/ind
 import type { DialecticServiceResponse, DialecticFeedbackRow, SaveContributionEditFn, SaveContributionEditContext, GetStageDocumentFeedbackDeps, GetAllStageProgressDeps } from './dialectic.interface.ts';
 import type { Database } from '../types_db.ts';
 import { assembleChunks } from "../_shared/utils/assembleChunks/assembleChunks.ts";
+import { computeTemplateStageCounts } from "./computeTemplateStageCounts/computeTemplateStageCounts.provides.ts";
+import { getStageExpectedCounts } from "./getStageExpectedCounts/getStageExpectedCounts.provides.ts";
+import type {
+  GetStageExpectedCountsDeps,
+  GetStageExpectedCountsErrorReturn,
+  GetStageExpectedCountsFn,
+  GetStageExpectedCountsParams,
+  GetStageExpectedCountsPayload,
+  GetStageExpectedCountsResult,
+} from "./getStageExpectedCounts/getStageExpectedCounts.interface.ts";
+import { isGetStageExpectedCountsSuccessReturn } from "./getStageExpectedCounts/getStageExpectedCounts.guard.ts";
 
 console.log("dialectic-service function started");
 
@@ -175,12 +199,11 @@ export const createSignedUrlDefaultFn: CreateSignedUrlFn = async (client, bucket
 // Define ActionHandlers interface
 export interface ActionHandlers {
   createProject: (payload: FormData, dbClient: SupabaseClient, user: User) => Promise<{ data?: DialecticProject; error?: ServiceError; status?: number }>;
-  listAvailableDomains: (dbClient: SupabaseClient, payload?: { stageAssociation?: string }) => Promise<DomainDescriptor[] | { error: ServiceError }>;
   updateProjectDomain: (getUserFn: GetUserFn, dbClient: SupabaseClient, payload: UpdateProjectDomainPayload, logger: ILogger) => Promise<{ data?: DialecticProject; error?: ServiceError }>;
   getProjectDetails: (payload: GetProjectDetailsPayload, dbClient: SupabaseClient, user: User) => Promise<{ data?: DialecticProject; error?: ServiceError; status?: number }>;
   getSessionDetails: (payload: GetSessionDetailsPayload, dbClient: SupabaseClient, user: User) => Promise<{ data?: GetSessionDetailsResponse; error?: ServiceError; status?: number }>;
   getContributionContentHandler: (getUserFn: GetUserFn, dbClient: SupabaseClient, logger: ILogger, payload: { contributionId: string }) => Promise<{ data?: GetContributionContentDataResponse; error?: ServiceError; status?: number }>;
-  startSession: (user: User, dbClient: SupabaseClient, payload: StartSessionPayload, dependencies: { logger: ILogger }) => Promise<{ data?: StartSessionSuccessResponse; error?: ServiceError }>;
+  startSession: (user: User, dbClient: SupabaseClient, userClient: SupabaseClient, payload: StartSessionPayload, dependencies: { logger: ILogger }) => Promise<{ data?: StartSessionSuccessResponse; error?: ServiceError }>;
   generateContributions: (
     dbClient: SupabaseClient,
     payload: GenerateContributionsPayload,
@@ -198,23 +221,24 @@ export interface ActionHandlers {
     };
   }>;
   listProjects: (user: User, dbClient: SupabaseClient) => Promise<{ data?: DialecticProject[]; error?: ServiceError; status?: number }>;
-  listAvailableDomainOverlays: (stageAssociation: string, dbClient: SupabaseClient) => Promise<DomainOverlayDescriptor[]>;
   deleteProject: (dbClient: SupabaseClient, payload: { projectId: string }, userId: string) => Promise<{data?: null, error?: { message: string; details?: string | undefined; }, status?: number}>;
-  cloneProject: (dbClient: SupabaseClient, fileManager: IFileManager, originalProjectId: string, newProjectName: string | undefined, cloningUserId: string) => Promise<CloneProjectResult>;
+  cloneProject: (dbClient: SupabaseClient, userClient: SupabaseClient, fileManager: IFileManager, originalProjectId: string, newProjectName: string | undefined, cloningUserId: string) => Promise<CloneProjectResult>;
   exportProject: (dbClient: SupabaseClient, fileManager: IFileManager, storageUtils: IStorageUtils, projectId: string, userId: string) => Promise<{ data?: { export_url: string }; error?: ServiceError; status?: number }>;
   getProjectResourceContent: (payload: GetProjectResourceContentPayload, dbClient: SupabaseClient, user: User) => Promise<{ data?: GetProjectResourceContentResponse; error?: ServiceError; status?: number }>;
   saveContributionEdit: SaveContributionEditFn;
   submitStageResponses: (payload: SubmitStageResponsesPayload, dbClient: SupabaseClient, user: User, dependencies: SubmitStageResponsesDependencies) => Promise<{ data?: SubmitStageResponsesResponse; error?: ServiceError; status?: number }>;
-  listDomains: (dbClient: SupabaseClient) => Promise<{ data?: DialecticDomain[]; error?: ServiceError }>;
-  listModelCatalog: (dbClient: SupabaseClient) => Promise<{ data?: AIModelCatalogEntry[]; error?: ServiceError }>;
+  listDomains: ListDomainsFn;
+  fetchProcessAssociation: FetchProcessAssociationFn;
+  listModelCatalog: (dbClient: SupabaseClient<Database>) => Promise<{ data?: AiProvidersRow[]; error?: ServiceError }>;
   fetchProcessTemplate: (dbClient: SupabaseClient, payload: FetchProcessTemplatePayload) => Promise<{ data?: DialecticProcessTemplate; error?: ServiceError; status?: number }>;
-  updateSessionModels: (dbClient: SupabaseClient, payload: UpdateSessionModelsPayload, userId: string) => Promise<{ data?: DialecticSession; error?: ServiceError; status?: number }>;
+  updateSessionModels: (dbClient: SupabaseClient, userClient: SupabaseClient, payload: UpdateSessionModelsPayload, userId: string) => Promise<{ data?: DialecticSession; error?: ServiceError; status?: number }>;
   updateViewingStage: UpdateViewingStageFn;
   getStageRecipe: (payload: { stageSlug: string }, dbClient: SupabaseClient) => Promise<{ data?: StageRecipeResponse; error?: ServiceError; status?: number }>;
   listStageDocuments: (payload: ListStageDocumentsPayload, dbClient: SupabaseClient) => Promise<{ status: number; data?: ListStageDocumentsResponse; error?: { message: string } }>;
   submitStageDocumentFeedback: (payload: SubmitStageDocumentFeedbackPayload, dbClient: SupabaseClient, deps: SubmitStageDocumentFeedbackDeps) => Promise<DialecticServiceResponse<DialecticFeedbackRow>>;
   getStageDocumentFeedback: (payload: GetStageDocumentFeedbackPayload, dbClient: SupabaseClient<Database>, deps: GetStageDocumentFeedbackDeps) => Promise<DialecticServiceResponse<GetStageDocumentFeedbackResponse>>;
   getAllStageProgress: (payload: GetAllStageProgressPayload, dbClient: SupabaseClient<Database>, user: User) => Promise<GetAllStageProgressResult>;
+  getStageExpectedCounts: GetStageExpectedCountsFn;
   resumePausedNsfJobs: ResumePausedNsfJobsFn;
   pauseActiveJobs: PauseActiveJobsFn;
   regenerateDocument: RegenerateDocumentFn;
@@ -299,6 +323,7 @@ export async function handleRequest(
         'submitStageDocumentFeedback',
         'getStageDocumentFeedback',
         'getAllStageProgress',
+        'getStageExpectedCounts',
         'resumePausedNsfJobs',
         'pauseActiveJobs',
         'regenerateDocument',
@@ -319,26 +344,43 @@ export async function handleRequest(
       // Route to the appropriate handler
       switch (requestBody.action) {
         // --- Unauthenticated Actions ---
-        case "listAvailableDomains": {
-          const result = await handlers.listAvailableDomains(adminClient, requestBody.payload);
-          if (result && 'error' in result) {
-            return createErrorResponse(result.error.message, result.error.status, req, result.error);
-          }
-          return createSuccessResponse(result, 200, req);
-        }
-        case "listAvailableDomainOverlays": {
-          if (!requestBody.payload || typeof requestBody.payload.stageAssociation !== 'string') {
-            return createErrorResponse("stageAssociation is required.", 400, req, { message: "stageAssociation is required.", status: 400 });
-          }
-          const data = await handlers.listAvailableDomainOverlays(requestBody.payload.stageAssociation, adminClient);
-          return createSuccessResponse(data, 200, req);
-        }
         case "listDomains": {
-            const { data, error } = await handlers.listDomains(adminClient);
-            if (error) {
-              return createErrorResponse(error.message, error.status, req, error);
-            }
-            return createSuccessResponse(data, 200, req);
+          const deps: ListDomainsDeps = { dbClient: adminClient as SupabaseClient<Database> };
+          const params: ListDomainsParams = {};
+          const payload: ListDomainsPayload = {};
+          const result: ListDomainsResult = await handlers.listDomains(deps, params, payload);
+          if (isListDomainsSuccessReturn(result)) {
+            return createSuccessResponse(result.data, result.status, req);
+          }
+          if (isListDomainsErrorReturn(result)) {
+            return createErrorResponse(result.error.message, result.status, req, result.error);
+          }
+          const invalidListDomainsHandlerResponse: ServiceError = {
+            message: "Invalid listDomains handler response.",
+            status: 500,
+            code: "INTERNAL_ERROR",
+          };
+          logger.error("[listDomains] Handler returned an invalid result shape.", { result });
+          return createErrorResponse(invalidListDomainsHandlerResponse.message, 500, req, invalidListDomainsHandlerResponse);
+        }
+        case "fetchProcessAssociation": {
+          const payload: FetchProcessAssociationPayload = requestBody.payload;
+          const deps: FetchProcessAssociationDeps = { dbClient: adminClient as SupabaseClient<Database> };
+          const params: FetchProcessAssociationParams = {};
+          const result: FetchProcessAssociationResult = await handlers.fetchProcessAssociation(deps, params, payload);
+          if (isFetchProcessAssociationSuccessReturn(result)) {
+            return createSuccessResponse(result.data, result.status, req);
+          }
+          if (isFetchProcessAssociationErrorReturn(result)) {
+            return createErrorResponse(result.error.message, result.status, req, result.error);
+          }
+          const invalidFetchProcessAssociationHandlerResponse: ServiceError = {
+            message: "Invalid fetchProcessAssociation handler response.",
+            status: 500,
+            code: "INTERNAL_ERROR",
+          };
+          logger.error("[fetchProcessAssociation] Handler returned an invalid result shape.", { result });
+          return createErrorResponse(invalidFetchProcessAssociationHandlerResponse.message, 500, req, invalidFetchProcessAssociationHandlerResponse);
         }
         case "listModelCatalog": {
             try {
@@ -422,6 +464,7 @@ export async function handleRequest(
           const { data, error } = await handlers.startSession(
             userForJson!,
             adminClient,
+            userClient,
             payload,
             { logger }
           );
@@ -502,7 +545,10 @@ export async function handleRequest(
           if (!payload || !payload.projectId) {
               return createErrorResponse("projectId is required for cloneProject.", 400, req, { message: "projectId is required for cloneProject.", status: 400 });
           }
-          const { data, error } = await handlers.cloneProject(adminClient, fileManager, payload.projectId, payload.newProjectName, userForJson!.id);
+          if (!userForJson) {
+            return createErrorResponse('User not authenticated for cloneProject', 401, req, { message: 'User not authenticated', status: 401, code: 'USER_AUTH_FAILED' });
+          }
+          const { data, error } = await handlers.cloneProject(adminClient, userClient, fileManager, payload.projectId, payload.newProjectName, userForJson.id);
           if (error) {
               return createErrorResponse(error.message, 500, req, error);
           }
@@ -517,7 +563,10 @@ export async function handleRequest(
             downloadFromStorage,
             createSignedUrlForPath
           };
-          const { data, error, status } = await handlers.exportProject(adminClient, fileManager, storageUtils, payload.projectId, userForJson!.id);
+          if (!userForJson) {
+            return createErrorResponse('User not authenticated for exportProject', 401, req, { message: 'User not authenticated', status: 401, code: 'USER_AUTH_FAILED' });
+          }
+          const { data, error, status } = await handlers.exportProject(adminClient, fileManager, storageUtils, payload.projectId, userForJson.id);
           if (error) {
             return createErrorResponse(error.message, status || 500, req, error);
           }
@@ -589,7 +638,7 @@ export async function handleRequest(
             return createErrorResponse('User not authenticated for updateSessionModels', 401, req, { message: "User not authenticated", status: 401, code: 'USER_AUTH_FAILED' });
           }
           const payload: UpdateSessionModelsPayload = requestBody.payload;
-          const { data, error, status } = await handlers.updateSessionModels(adminClient, payload, userForJson.id);
+          const { data, error, status } = await handlers.updateSessionModels(adminClient, userClient, payload, userForJson.id);
           if (error) {
             return createErrorResponse(error.message, status || 500, req, error);
           }
@@ -647,6 +696,26 @@ export async function handleRequest(
             return createErrorResponse(result.error.message, result.status || 500, req, result.error);
           }
           return createSuccessResponse(result.data, result.status || 200, req);
+        }
+        case "getStageExpectedCounts": {
+          if (!userForJson) {
+            return createErrorResponse('User not authenticated for getStageExpectedCounts', 401, req, { message: 'User not authenticated', status: 401, code: 'USER_AUTH_FAILED' });
+          }
+          const payload: GetStageExpectedCountsPayload = requestBody.payload;
+          const deps: GetStageExpectedCountsDeps = {
+            dbClient: adminClient as SupabaseClient<Database>,
+            user: userForJson,
+            computeTemplateStageCounts,
+            topologicalSortSteps,
+            computeExpectedCounts,
+          };
+          const params: GetStageExpectedCountsParams = {};
+          const result: GetStageExpectedCountsResult = await handlers.getStageExpectedCounts(deps, params, payload);
+          if (isGetStageExpectedCountsSuccessReturn(result)) {
+            return createSuccessResponse(result.data, result.status, req);
+          }
+          const errorReturn: GetStageExpectedCountsErrorReturn = result;
+          return createErrorResponse(errorReturn.error.message, errorReturn.status, req, errorReturn.error);
         }
         case "resumePausedNsfJobs": {
           if (!userForJson) {
@@ -724,13 +793,13 @@ async function handleGetAllStageProgress(
     computeExpectedCounts,
     buildDocumentDescriptors,
     buildJobProgressDtos,
+    computeTemplateStageCounts,
   };
   return getAllStageProgress(deps, { payload });
 }
 
 export const defaultHandlers: ActionHandlers = {
   createProject,
-  listAvailableDomains,
   updateProjectDomain,
   getProjectDetails,
   getSessionDetails,
@@ -738,7 +807,6 @@ export const defaultHandlers: ActionHandlers = {
   startSession,
   generateContributions,
   listProjects,
-  listAvailableDomainOverlays,
   deleteProject,
   cloneProject,
   exportProject,
@@ -746,6 +814,7 @@ export const defaultHandlers: ActionHandlers = {
   saveContributionEdit,
   submitStageResponses,
   listDomains,
+  fetchProcessAssociation,
   listModelCatalog,
   fetchProcessTemplate,
   updateSessionModels: handleUpdateSessionModels,
@@ -755,6 +824,7 @@ export const defaultHandlers: ActionHandlers = {
   submitStageDocumentFeedback,
   getStageDocumentFeedback,
   getAllStageProgress: handleGetAllStageProgress,
+  getStageExpectedCounts,
   resumePausedNsfJobs: handleResumePausedNsfJobs,
   pauseActiveJobs: handlePauseActiveJobs,
   regenerateDocument,

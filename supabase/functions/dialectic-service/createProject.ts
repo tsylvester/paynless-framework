@@ -65,20 +65,30 @@ export async function createProject(
       return { error: { message: "selectedDomainId is required and must be a string", status: 400 } };
     }
 
-    // Step 1: Find the default process template for the selected domain
+    const processTemplateIdRaw = payload.get('processTemplateId');
+    if (processTemplateIdRaw === null || processTemplateIdRaw === undefined) {
+      return { error: { message: "processTemplateId is required and must be a string", status: 400 } };
+    }
+    if (typeof processTemplateIdRaw !== 'string') {
+      return { error: { message: "processTemplateId is required and must be a string", status: 400 } };
+    }
+    const processTemplateId = processTemplateIdRaw.trim();
+    if (processTemplateId.length === 0) {
+      return { error: { message: "processTemplateId is required and must be a string", status: 400 } };
+    }
+
     const { data: association, error: associationError } = await dbAdminClient
       .from('domain_process_associations')
       .select('process_template_id')
       .eq('domain_id', selectedDomainId)
+      .eq('process_template_id', processTemplateId)
       .eq('is_default_for_domain', true)
       .single();
 
     if (associationError || !association) {
-      console.error(`Error finding default process for domain ${selectedDomainId}:`, associationError);
+      console.error(`Error validating default process association for domain ${selectedDomainId} and template ${processTemplateId}:`, associationError);
       return { error: { message: "Could not find a default process template for the selected domain.", status: 400 } };
     }
-
-    const defaultProcessTemplateId = association.process_template_id;
 
     const { data: newProjectData, error: createError } = await dbAdminClient
       .from('dialectic_projects')
@@ -88,7 +98,7 @@ export async function createProject(
         initial_user_prompt: "", // Always empty, we'll store everything as files
         selected_domain_id: selectedDomainId,
         selected_domain_overlay_id: selected_domain_overlay_id,
-        process_template_id: defaultProcessTemplateId,
+        process_template_id: processTemplateId,
         status: 'new',
         initial_prompt_resource_id: null, // Will be set after file upload
         idempotency_key: idempotencyKey,

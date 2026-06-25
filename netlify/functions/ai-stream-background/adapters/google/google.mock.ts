@@ -4,6 +4,7 @@ import type {
   NodeAdapterStreamChunk,
   NodeChatApiRequest,
   NodeModelConfig,
+  NodeUserConfig,
 } from '../ai-adapter.interface.ts';
 import type { GoogleFinalResponse, GoogleStreamChunk } from './google.interface.ts';
 
@@ -19,9 +20,14 @@ export const mockGoogleNodeModelConfig: NodeModelConfig = {
   output_token_cost_rate: 0.002,
 };
 
+export const mockGoogleNodeUserConfig: NodeUserConfig = {
+  tier_output_cap_tokens: null,
+};
+
 export const mockGoogleNodeAdapterConstructorParams: NodeAdapterConstructorParams = {
   modelConfig: { ...mockGoogleNodeModelConfig },
   apiKey: 'google-api-key-mock',
+  userConfig: { ...mockGoogleNodeUserConfig },
 };
 
 export const mockGoogleNodeChatApiRequest: NodeChatApiRequest = {
@@ -116,26 +122,45 @@ export function createMockGoogleNodeModelConfig(
   return { ...mockGoogleNodeModelConfig, ...overrides };
 }
 
+export function createMockGoogleNodeUserConfig(
+  overrides?: Partial<NodeUserConfig>,
+): NodeUserConfig {
+  if (overrides === undefined) {
+    return { ...mockGoogleNodeUserConfig };
+  }
+  const tier_output_cap_tokens: number | null =
+    overrides.tier_output_cap_tokens === undefined
+      ? mockGoogleNodeUserConfig.tier_output_cap_tokens
+      : overrides.tier_output_cap_tokens;
+  return { tier_output_cap_tokens };
+}
+
 export function createMockGoogleNodeAdapterConstructorParams(
   overrides?: Partial<NodeAdapterConstructorParams>,
 ): NodeAdapterConstructorParams {
   if (overrides === undefined) {
     return {
-      modelConfig: { ...mockGoogleNodeAdapterConstructorParams.modelConfig },
+      modelConfig: createMockGoogleNodeModelConfig(),
       apiKey: mockGoogleNodeAdapterConstructorParams.apiKey,
+      userConfig: createMockGoogleNodeUserConfig(),
     };
   }
   const modelConfig: NodeModelConfig =
     overrides.modelConfig === undefined
-      ? { ...mockGoogleNodeModelConfig }
-      : { ...mockGoogleNodeModelConfig, ...overrides.modelConfig };
+      ? createMockGoogleNodeModelConfig()
+      : createMockGoogleNodeModelConfig(overrides.modelConfig);
   const apiKey: string =
     overrides.apiKey === undefined
       ? mockGoogleNodeAdapterConstructorParams.apiKey
       : overrides.apiKey;
+  const userConfig: NodeUserConfig =
+    overrides.userConfig === undefined
+      ? createMockGoogleNodeUserConfig()
+      : createMockGoogleNodeUserConfig(overrides.userConfig);
   return {
     modelConfig,
     apiKey,
+    userConfig,
   };
 }
 

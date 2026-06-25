@@ -1,7 +1,7 @@
 // supabase/functions/sync-ai-models/openai_sync.test.ts
 import { testSyncContract, type MockProviderData } from "./sync_test_contract.ts";
 import { syncOpenAIModels } from "./openai_sync.ts";
-import { type DbAiProvider, type SyncResult } from "./index.ts";
+import { DbAiProvider } from "./sync-ai-models.interface.ts";
 import type { AiModelExtendedConfig, FinalAppModelConfig } from "../_shared/types.ts";
 import { isJson } from "../_shared/utils/type_guards.ts";
 import { assert, assertEquals, assertExists } from "jsr:@std/assert@0.225.3";
@@ -12,8 +12,10 @@ import type { Database } from "../types_db.ts";
 import { createMockSupabaseClient } from "../_shared/supabase.mock.ts";
 import { type SyncDeps } from "./sync_test_contract.ts";
 import { INTERNAL_MODEL_MAP } from "./openai_sync.ts";
+import { openaiIdentifiers } from "./openai_sync.mock.ts";
 import { AiModelExtendedConfigSchema } from "../chat/zodSchema.ts";
 import type { TiktokenEncoding } from "../_shared/types.ts";
+import { mockDbAiProvider } from "./diffAndPrepareDbOps.mock.ts";
 
 
 const PROVIDER_NAME = 'openai';
@@ -50,7 +52,7 @@ const assembledGptReactivate: FinalAppModelConfig = { api_identifier: `gpt-react
 
 const dbGpt4Config = createTestConfig('gpt-4-turbo');
 assert(isJson(dbGpt4Config), "dbGpt4Config must be valid JSON");
-const dbGpt4: DbAiProvider = {
+const dbGpt4: DbAiProvider = mockDbAiProvider({
     id: 'db-id-gpt-4',
     api_identifier: `gpt-4-turbo`,
     name: 'GPT-4 Turbo',
@@ -58,11 +60,11 @@ const dbGpt4: DbAiProvider = {
     is_active: true,
     provider: PROVIDER_NAME,
     config: dbGpt4Config,
-};
+});
 
 const dbStaleConfig = createTestConfig('gpt-stale');
 assert(isJson(dbStaleConfig), "dbStaleConfig must be valid JSON");
-const dbStale: DbAiProvider = {
+const dbStale: DbAiProvider = mockDbAiProvider({
     id: 'db-id-stale',
     api_identifier: `gpt-stale`,
     name: 'Stale Model',
@@ -70,11 +72,11 @@ const dbStale: DbAiProvider = {
     is_active: true,
     provider: PROVIDER_NAME,
     config: dbStaleConfig
-};
+});
 
 const dbInactiveConfig = createTestConfig('gpt-reactivate');
 assert(isJson(dbInactiveConfig), "dbInactiveConfig must be valid JSON");
-const dbInactive: DbAiProvider = {
+const dbInactive: DbAiProvider = mockDbAiProvider({
     id: 'db-id-inactive',
     api_identifier: `gpt-reactivate`,
     name: 'Reactivated',
@@ -82,7 +84,7 @@ const dbInactive: DbAiProvider = {
     is_active: false,
     provider: PROVIDER_NAME,
     config: dbInactiveConfig
-};
+});
 
 const mockOpenAIData: MockProviderData = {
     apiModels: [assembledGpt4],
@@ -123,7 +125,7 @@ Deno.test("syncOpenAIModels", {
             error: () => {},
         };
         
-        const assembleStub = stub(ConfigAssembler.prototype, "assemble", () => Promise.resolve(mockAssembledConfigs));
+        const assembleStub = stub(ConfigAssembler.prototype, "assemble", () => Promise.resolve({ models: mockAssembledConfigs, costProvenance: new Map() }));
 
         try {
             const { client: mockClient, spies } = createMockSupabaseClient(undefined, {
@@ -192,13 +194,13 @@ Deno.test("syncOpenAIModels", {
         const insertedRows = insertSpy.calls[0].args[0];
         const insertedModel = insertedRows[0];
         
-        // The dummy config has input/output cost of 1.
-        // The assembler rational defaults are significantly higher (e.g. 15).
-        // If the adapter spreads the dummy config, this will be 1.
-        assert(
-            (insertedModel.config.input_token_cost_rate) > 1, 
-            `New model input cost (${insertedModel.config.input_token_cost_rate}) should be > 1, indicating it did not inherit dummy config`
-        );
+        // An unmapped model has no trusted cost data (provenance: none).
+        // It is inserted disabled with null costs so a maintainer can configure it.
+        const cfg: AiModelExtendedConfig = insertedModel.config;
+        assertEquals(cfg.input_token_cost_rate, null, 'Unmapped model input cost should be null (no trusted source)');
+        assertEquals(cfg.output_token_cost_rate, null, 'Unmapped model output cost should be null (no trusted source)');
+        assertEquals(insertedModel.is_enabled, false, 'Unmapped model must be inserted disabled');
+        assertEquals(insertedModel.min_plan_tier_level, 99, 'Null-cost model defaults to min_plan_tier_level 99');
     });
 });
 
@@ -265,4 +267,47 @@ Deno.test("[Provider-Specific] openai: INTERNAL_MODEL_MAP sets expected provider
     assertExists(pmi, `provider_max_input_tokens missing for ${key}`);
     assertEquals(pmi, expectedMaxIn, `${key} should have provider_max_input_tokens = ${expectedMaxIn}`);
   }
+});
+
+Deno.test("every openai seed api_identifier resolves to Tier-3 INTERNAL_MODEL_MAP costs via longest-prefix match", () => {
+    for (const apiId of openaiIdentifiers) {
+        const partial: Partial<AiModelExtendedConfig> | undefined = ConfigAssembler.getLongestPrefixInternalMapPartial(apiId, INTERNAL_MODEL_MAP);
+        assert(partial !== undefined, `No INTERNAL_MODEL_MAP prefix matched seed api_identifier ${apiId}`);
+        assert(typeof partial.input_token_cost_rate === "number", `Tier-3 input cost missing for ${apiId}`);
+        assert(typeof partial.output_token_cost_rate === "number", `Tier-3 output cost missing for ${apiId}`);
+    }
+});
+
+Deno.test("official headline OpenAI rates on resolved longest-prefix partials", () => {
+    const g5: Partial<AiModelExtendedConfig> | undefined = ConfigAssembler.getLongestPrefixInternalMapPartial(
+        "openai-gpt-5",
+        INTERNAL_MODEL_MAP,
+    );
+    assert(g5 !== undefined);
+    assertEquals(g5.input_token_cost_rate, 1.25);
+    assertEquals(g5.output_token_cost_rate, 10.0);
+
+    const g52: Partial<AiModelExtendedConfig> | undefined = ConfigAssembler.getLongestPrefixInternalMapPartial(
+        "openai-gpt-5.2",
+        INTERNAL_MODEL_MAP,
+    );
+    assert(g52 !== undefined);
+    assertEquals(g52.input_token_cost_rate, 1.75);
+    assertEquals(g52.output_token_cost_rate, 14.0);
+
+    const mini: Partial<AiModelExtendedConfig> | undefined = ConfigAssembler.getLongestPrefixInternalMapPartial(
+        "openai-gpt-5-mini",
+        INTERNAL_MODEL_MAP,
+    );
+    assert(mini !== undefined);
+    assertEquals(mini.input_token_cost_rate, 1.0);
+    assertEquals(mini.output_token_cost_rate, 5.0);
+
+    const nano: Partial<AiModelExtendedConfig> | undefined = ConfigAssembler.getLongestPrefixInternalMapPartial(
+        "openai-gpt-5-nano",
+        INTERNAL_MODEL_MAP,
+    );
+    assert(nano !== undefined);
+    assertEquals(nano.input_token_cost_rate, 0.5);
+    assertEquals(nano.output_token_cost_rate, 2.0);
 });

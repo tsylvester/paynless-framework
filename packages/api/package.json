@@ -33,20 +33,20 @@
   "dependencies": {
     "@paynless/types": "workspace:*",
     "@paynless/utils": "workspace:*",
-    "@supabase/supabase-js": "^2.49.4",
-    "axios": "^1.6.7",
+    "@supabase/supabase-js": "^2.108.1",
+    "axios": "^1.17.0",
     "vite-plugin-node-polyfills": "^0.23.0",
-    "zustand": "^4.5.2"
+    "zustand": "^4.5.7"
   },
   "devDependencies": {
     "@paynless/db-types": "workspace:^",
-    "@types/node": "^20.11.20",
-    "@types/react": "^18",
+    "@types/node": "^20.19.42",
+    "@types/react": "^18.3.31",
     "@typescript-eslint/eslint-plugin": "^7.18.0",
     "@typescript-eslint/parser": "^7.18.0",
-    "eslint": "^8.57.0",
-    "msw": "^2.2.13",
-    "typescript": "^5.2.2",
+    "eslint": "10.4.1",
+    "msw": "^2.14.6",
+    "typescript": "^5.9.3",
     "vitest": "^1.6.1"
   },
   "peerDependencies": {

@@ -1,10 +1,20 @@
-import type Stripe from 'npm:stripe';
-import { type Stub } from 'jsr:@std/testing@0.225.1/mock';
-
 
 /**
  * @file Defines interfaces and types related to payment processing and gateways.
  */
+
+/**
+ * A single line item in a multi-item purchase request.
+ */
+export interface PurchaseRequestItem {
+  itemId: string;
+  quantity: number;
+}
+
+/**
+ * Stripe Checkout session mode for multi-item orchestration.
+ */
+export type PaymentCheckoutMode = 'payment' | 'subscription';
 
 /**
  * Represents a request to purchase an item (e.g., a package of tokens).
@@ -14,9 +24,51 @@ export interface PurchaseRequest {
   organizationId?: string | null;
   itemId: string; // e.g., package_1000_tokens
   quantity: number;
+  items?: PurchaseRequestItem[];
   currency: string; // e.g., USD, ETH
   paymentGatewayId: string; // e.g., 'stripe', 'coinbase', 'internal_tauri_wallet'
   metadata?: Record<string, unknown>;
+}
+
+/**
+ * A resolved plan line passed from initiate-payment to the payment gateway adapter.
+ */
+export interface OrchestrationLineItem {
+  itemId: string;
+  stripePriceId: string;
+  quantity: number;
+  tokensToAward: number;
+  planType: string;
+  amount: number;
+  currency: string;
+}
+
+/**
+ * Per-line entry JSON-encoded in Stripe Checkout session metadata.items (multi-item path).
+ */
+export interface OrchestrationLineItemMetadata {
+  itemId: string;
+  quantity: number;
+  tokensToAward: number;
+}
+
+/**
+ * Metadata attached to a Stripe Checkout session by StripePaymentAdapter.initiatePayment (single-item path).
+ */
+export interface StripeCheckoutSessionMetadata {
+  internal_payment_id: string;
+  user_id: string;
+  organization_id: string;
+  item_id: string;
+  tokens_to_award: string;
+  target_wallet_id: string;
+}
+
+/**
+ * Multi-item checkout session metadata; items is JSON.stringify(OrchestrationLineItemMetadata[]).
+ */
+export interface StripeCheckoutSessionMetadataMultiItem extends StripeCheckoutSessionMetadata {
+  items: string;
 }
 
 /**
@@ -53,6 +105,8 @@ export interface PaymentOrchestrationContext {
   tokensToAward: number;     // How many tokens this item yields, as determined by our system
   amountForGateway: number;  // The monetary amount the gateway should process, as determined by our system
   currencyForGateway: string;// The currency the gateway should use, as determined by our system
+  lineItems?: OrchestrationLineItem[];
+  checkoutMode?: PaymentCheckoutMode;
 }
 
 /**

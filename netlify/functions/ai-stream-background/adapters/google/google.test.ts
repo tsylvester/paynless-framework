@@ -434,8 +434,9 @@ describe('createGoogleNodeAdapter', () => {
     ).rejects.toThrow('Cannot send request to Google Gemini: message history format invalid.');
   });
 
-  it('uses request.max_tokens_to_generate over modelConfig.hard_cap_output_tokens for maxOutputTokens', async () => {
+  it('sets maxOutputTokens to min of request max and hard cap when tier_output_cap_tokens is null', async () => {
     const params = createMockGoogleNodeAdapterConstructorParams({
+      userConfig: { tier_output_cap_tokens: null },
       modelConfig: createMockGoogleNodeModelConfig({
         hard_cap_output_tokens: 200,
       }),
@@ -457,13 +458,14 @@ describe('createGoogleNodeAdapter', () => {
     );
     expect(googleSdk.startChat).toHaveBeenCalledWith(
       expect.objectContaining({
-        generationConfig: { maxOutputTokens: 777 },
+        generationConfig: { maxOutputTokens: 200 },
       }),
     );
   });
 
   it('uses modelConfig.hard_cap_output_tokens when max_tokens_to_generate is omitted', async () => {
     const params = createMockGoogleNodeAdapterConstructorParams({
+      userConfig: { tier_output_cap_tokens: null },
       modelConfig: createMockGoogleNodeModelConfig({
         hard_cap_output_tokens: 200,
       }),
@@ -484,6 +486,118 @@ describe('createGoogleNodeAdapter', () => {
     expect(googleSdk.startChat).toHaveBeenCalledWith(
       expect.objectContaining({
         generationConfig: { maxOutputTokens: 200 },
+      }),
+    );
+  });
+
+  it('sets maxOutputTokens to tier cap when tier_output_cap_tokens binds over request and hard cap', async () => {
+    const params = createMockGoogleNodeAdapterConstructorParams({
+      userConfig: { tier_output_cap_tokens: 32_768 },
+      modelConfig: createMockGoogleNodeModelConfig({
+        hard_cap_output_tokens: 131_072,
+      }),
+    });
+    const adapter = createGoogleNodeAdapter(params);
+    const request = createMockGoogleNodeChatApiRequest({
+      max_tokens_to_generate: 50_000,
+    });
+    const chunk: GoogleStreamChunk = {
+      candidates: [{ content: { parts: [{ text: 'z' }] } }],
+    };
+    const streamResult = createGoogleStreamResult({
+      chunks: [chunk],
+      response: createMockGoogleSdkFinalResponse(),
+    });
+    googleSdk.sendMessageStream.mockResolvedValue(streamResult);
+    await collectNodeAdapterStreamChunks(
+      adapter.sendMessageStream(request, 'google-gemini-2-5-pro'),
+    );
+    expect(googleSdk.startChat).toHaveBeenCalledWith(
+      expect.objectContaining({
+        generationConfig: { maxOutputTokens: 32_768 },
+      }),
+    );
+  });
+
+  it('sets maxOutputTokens to request max when tier_output_cap_tokens is null and request binds', async () => {
+    const params = createMockGoogleNodeAdapterConstructorParams({
+      userConfig: { tier_output_cap_tokens: null },
+      modelConfig: createMockGoogleNodeModelConfig({
+        hard_cap_output_tokens: 131_072,
+      }),
+    });
+    const adapter = createGoogleNodeAdapter(params);
+    const request = createMockGoogleNodeChatApiRequest({
+      max_tokens_to_generate: 50_000,
+    });
+    const chunk: GoogleStreamChunk = {
+      candidates: [{ content: { parts: [{ text: 'z' }] } }],
+    };
+    const streamResult = createGoogleStreamResult({
+      chunks: [chunk],
+      response: createMockGoogleSdkFinalResponse(),
+    });
+    googleSdk.sendMessageStream.mockResolvedValue(streamResult);
+    await collectNodeAdapterStreamChunks(
+      adapter.sendMessageStream(request, 'google-gemini-2-5-pro'),
+    );
+    expect(googleSdk.startChat).toHaveBeenCalledWith(
+      expect.objectContaining({
+        generationConfig: { maxOutputTokens: 50_000 },
+      }),
+    );
+  });
+
+  it('sets maxOutputTokens to hard cap when hard cap binds and request has no max', async () => {
+    const params = createMockGoogleNodeAdapterConstructorParams({
+      userConfig: { tier_output_cap_tokens: 131_072 },
+      modelConfig: createMockGoogleNodeModelConfig({
+        hard_cap_output_tokens: 64_000,
+      }),
+    });
+    const adapter = createGoogleNodeAdapter(params);
+    const request = createMockGoogleNodeChatApiRequest();
+    const chunk: GoogleStreamChunk = {
+      candidates: [{ content: { parts: [{ text: 'z' }] } }],
+    };
+    const streamResult = createGoogleStreamResult({
+      chunks: [chunk],
+      response: createMockGoogleSdkFinalResponse(),
+    });
+    googleSdk.sendMessageStream.mockResolvedValue(streamResult);
+    await collectNodeAdapterStreamChunks(
+      adapter.sendMessageStream(request, 'google-gemini-2-5-pro'),
+    );
+    expect(googleSdk.startChat).toHaveBeenCalledWith(
+      expect.objectContaining({
+        generationConfig: { maxOutputTokens: 64_000 },
+      }),
+    );
+  });
+
+  it('passes generationConfig undefined when no positive cap inputs are provided', async () => {
+    const params = createMockGoogleNodeAdapterConstructorParams({
+      userConfig: { tier_output_cap_tokens: null },
+      modelConfig: createMockGoogleNodeModelConfig({
+        hard_cap_output_tokens: undefined,
+      }),
+    });
+    const adapter = createGoogleNodeAdapter(params);
+    const request = createMockGoogleNodeChatApiRequest();
+    const chunk: GoogleStreamChunk = {
+      candidates: [{ content: { parts: [{ text: 'z' }] } }],
+    };
+    const streamResult = createGoogleStreamResult({
+      chunks: [chunk],
+      response: createMockGoogleSdkFinalResponse(),
+    });
+    googleSdk.sendMessageStream.mockResolvedValue(streamResult);
+    await collectNodeAdapterStreamChunks(
+      adapter.sendMessageStream(request, 'google-gemini-2-5-pro'),
+    );
+    expect(googleSdk.startChat).toHaveBeenCalledWith(
+      expect.objectContaining({
+        generationConfig: undefined,
       }),
     );
   });

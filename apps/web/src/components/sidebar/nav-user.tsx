@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import { useCallback, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { SimpleDropdown } from "@/components/ui/SimpleDropdown";
@@ -43,15 +43,16 @@ export function NavUser({
 		fetchNotifications: state.fetchNotifications,
 	}));
 
-	const { logout } = useAuthStore((state) => ({
+	const { logout, userTier, availableTiers } = useAuthStore((state) => ({
 		logout: state.logout,
+		userTier: state.userTier,
+		availableTiers: state.availableTiers,
 	}));
 
 	useQuery({
 		queryKey: ["notifications"],
 		queryFn: async () => {
-			const result = await fetchNotifications();
-			return result || [];
+			await fetchNotifications();
 		},
 	});
 
@@ -66,6 +67,9 @@ export function NavUser({
 		await logout();
 		navigate("/login");
 	};
+
+	const nextTier = availableTiers.find(t => t.level > (userTier?.level ?? -1));
+	const nextTierName = nextTier ? nextTier.name.charAt(0).toUpperCase() + nextTier.name.slice(1) : null;
 
 	return (
 		<div>
@@ -105,7 +109,6 @@ export function NavUser({
 						className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground w-full"
 					>
 						<Avatar className="h-8 w-8 rounded-lg">
-							<AvatarImage src={user.avatar} alt={user.name} />
 							<AvatarFallback className="rounded-lg">
 								{(user.email.charAt(0) + user.email.charAt(1)).toUpperCase()}
 							</AvatarFallback>
@@ -118,14 +121,25 @@ export function NavUser({
 				}
 			>
 				<div className="flex flex-col space-y-1 p-1">
-					<Button
-						variant="ghost"
-						className="w-full justify-start hover:underline"
-						onClick={() => navigate("/subscription")}
-					>
-						<Sparkles />
-						Upgrade to Pro
-					</Button>
+					{nextTierName ? (
+						<Button
+							variant="ghost"
+							className="w-full justify-start hover:underline"
+							onClick={() => navigate("/subscription")}
+						>
+							<Sparkles />
+							Upgrade to {nextTierName}
+						</Button>
+					) : userTier === null ? (
+						<Button
+							variant="ghost"
+							className="w-full justify-start hover:underline"
+							onClick={() => navigate("/subscription")}
+						>
+							<Sparkles />
+							Upgrade
+						</Button>
+					) : null}
 
 					<Button
 						variant="ghost"

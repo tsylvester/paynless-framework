@@ -1,26 +1,73 @@
-import { describe, it, expect, vi, beforeEach, beforeAll, afterAll, afterEach } from 'vitest';
-import { render, screen, act, within } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, beforeAll } from 'vitest';
+import {
+  installSubscriptionPageTestWindowLocation,
+  renderSubscriptionPage,
+  SubscriptionPageTestWindowLocation,
+  getMonthlyPlanGrid,
+  getPlanCardByPlanName,
+  getCurrentSubscriptionCard,
+  findProcessingManageButton,
+  findProcessingCancelButton,
+  requireHTMLElementFromElement,
+} from './Subscription.mock';
 import { SubscriptionPage } from './Subscription';
-import { useAuthStore, useSubscriptionStore, useWalletStore } from '@paynless/store'; // Import actual stores
-import React from 'react';
-import { MemoryRouter } from 'react-router-dom';
-import type { UserProfile, SubscriptionPlan, UserSubscription, PurchaseRequest, PaymentInitiationResult, Session, User } from '@paynless/types';
+import { screen, act, within, waitFor } from '@testing-library/react';
+import {
+  useAuthStore,
+  useSubscriptionStore,
+  useCartStore,
+  PrefillCartRequest,
+} from '@paynless/store';
+import {
+  mockSetSubscriptionItem,
+  mockAddOtpItem,
+  mockPrefillCart,
+  mockCheckoutCart,
+  initializeMockCartStore,
+  buildCartItem,
+  buildCheckoutCart,
+  buildPrefillCartRequest,
+} from '../../../../packages/store/src/cartStore/cartStore.mock';
+import { ComponentProps } from 'react';
+import {
+  UserTier,
+  SubscriptionPlan,
+  UserSubscription,
+  Session,
+  User,
+} from '@paynless/types';
 import userEvent from '@testing-library/user-event';
+import { mockUserTier, mockUserProfile, mockAllTiers } from '../mocks/profile.mock';
+import {
+  mockLoadSubscriptionData,
+  mockCreateBillingPortalSession,
+  mockCancelSubscription,
+} from '../mocks/subscriptionStore.mock';
+import { buildSubscriptionPlan } from '../components/subscription/PlanCard.mock';
+import { buildUserSubscription } from '../mocks/userSubscription.mock';
+import { Layout } from '../components/layout/Layout';
+import { Navigate } from 'react-router-dom';
 
-// --- Mocks --- 
-// Mock ONLY external dependencies or layout if needed
-vi.mock('../components/layout/Layout', () => ({ Layout: ({ children }: { children: React.ReactNode }) => <div data-testid="layout">{children}</div> }));
+vi.mock('../components/layout/Layout', () => ({
+  Layout: (props: ComponentProps<typeof Layout>) => (
+    <div data-testid="layout">{props.children}</div>
+  ),
+}));
 
-// Mock react-router-dom Navigate (Keep this for redirect tests)
 vi.mock('react-router-dom', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('react-router-dom')>()
+  const actual = await importOriginal<typeof import('react-router-dom')>();
   return {
     ...actual,
-    Navigate: ({ to }: { to: string }) => <div data-testid="navigate">Redirecting to {to}</div>,
-  }
-})
+    Navigate: (props: ComponentProps<typeof Navigate>) => {
+      const destination: string =
+        typeof props.to === 'string' ? props.to : '/';
+      return (
+        <div data-testid="navigate">Redirecting to {destination}</div>
+      );
+    },
+  };
+});
 
-// Mock logger 
 vi.mock('@paynless/utils', () => ({
   logger: {
     info: vi.fn(),
@@ -30,622 +77,801 @@ vi.mock('@paynless/utils', () => ({
   },
 }));
 
-// Mock Store Actions
-const mockLoadSubscriptionData = vi.fn();
-const mockCreateCheckoutSession = vi.fn();
-const mockCreateBillingPortalSession = vi.fn();
-const mockCancelSubscription = vi.fn();
-const mockResumeSubscription = vi.fn(); 
-const mockInitiatePurchase = vi.fn(); // Added for useWalletStore
-
-// Define Initial States for Stores (ensure stripe_subscription_id is present)
-// Add necessary fields for formatters (amount, currency, interval, intervalCount)
-const authStoreInitialState = {
-  user: { id: 'user-123' } as User, 
-  profile: { id: 'user-123' } as UserProfile, 
-  session: { access_token: 'mock-token' } as unknown as Session,
-  isLoading: false,
-  error: null,
-  login: vi.fn(), 
-  logout: vi.fn(),
-  initialize: vi.fn(),
-  refreshSession: vi.fn(),
-  register: vi.fn(),
-  updateProfile: vi.fn(), 
-  setUser: vi.fn(),
-  setSession: vi.fn(),
-  setProfile: vi.fn(),
-  setIsLoading: vi.fn(), 
-  setError: vi.fn(),    
-};
-
-const subscriptionStoreInitialState = {
-  availablePlans: [
-      { id: 'plan-1', name: 'Basic Monthly Plan', stripe_price_id: 'price_basic', amount: 1000, currency: 'usd', interval: 'month', interval_count: 1, description: { subtitle: 'Basic Sub', features: ['Feature 1'] }, tokens_to_award: 1000 } as unknown as SubscriptionPlan,
-      { id: 'plan-2', name: 'Pro Monthly Plan', stripe_price_id: 'price_pro', amount: 5000, currency: 'usd', interval: 'month', interval_count: 1, description: { subtitle: 'Pro Sub', features: ['Feature A', 'Feature B'] }, tokens_to_award: 5000 } as unknown as SubscriptionPlan
-  ],
-  userSubscription: {
-    id: 'sub-db-id-123', 
-    status: 'active', 
-    stripe_subscription_id: 'stripe_sub_abc', // Make sure this exists for cancel
-    plan_id: 'plan-1', // Added plan_id to match an available plan
-    currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(), // Add date for display
-    cancelAtPeriodEnd: false, // Add for display logic
-    // The 'plan' object here might be overridden by currentUserResolvedPlan in the component,
-    // but keeping it for now in case other selectors or direct access uses it.
-    // Ideally, the component relies on currentUserResolvedPlan for consistency.
-    plan: { id: 'plan-1', name: 'Basic Monthly Plan', stripe_price_id: 'price_basic', amount: 1000, currency: 'usd', interval: 'month', interval_count: 1, description: { subtitle: 'Basic Sub', features: ['Feature 1'] }, tokens_to_award: 1000 } 
-  } as unknown as UserSubscription,
-  isSubscriptionLoading: false,
-  hasActiveSubscription: true, // This is usually derived state, but set for mock
-  isTestMode: false,
-  error: null as Error | null,
-  loadSubscriptionData: mockLoadSubscriptionData,
-  createCheckoutSession: mockCreateCheckoutSession,
-  createBillingPortalSession: mockCreateBillingPortalSession,
-  cancelSubscription: mockCancelSubscription,
-  resumeSubscription: mockResumeSubscription,
-  setUserSubscription: vi.fn(),
-  setAvailablePlans: vi.fn(),
-  setIsLoading: vi.fn(),
-  setError: vi.fn(), 
-  getUsageMetrics: vi.fn(),
-  refreshSubscription: vi.fn(),
-};
-
-const walletStoreInitialState = {
-  currentWallet: null,
-  transactionHistory: [],
-  isLoadingWallet: false,
-  isLoadingHistory: false,
-  isLoadingPurchase: false,
-  walletError: null,
-  purchaseError: null,
-  loadWallet: vi.fn(),
-  loadTransactionHistory: vi.fn(),
-  initiatePurchase: mockInitiatePurchase,
-  _resetForTesting: vi.fn(),
-};
-
-// Mock the store module BUT use the actual hook implementation
 vi.mock('@paynless/store', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@paynless/store')>();
   return {
     ...actual,
     useAuthStore: actual.useAuthStore,
     useSubscriptionStore: actual.useSubscriptionStore,
-    useWalletStore: actual.useWalletStore, // Ensure useWalletStore is also using the actual hook
+    useCartStore: actual.useCartStore,
   };
 });
 
-// Helper function for rendering with router
-const renderWithRouter = (ui: React.ReactElement, { route = '/' } = {}) => {
-  window.history.pushState({}, 'Test page', route);
-  return render(ui, { wrapper: MemoryRouter });
+const subscriptionTestUser: User = {
+  id: 'user-123',
+  email: 'user@example.com',
 };
 
-// --- Test Suite --- 
+const subscriptionTestSession: Session = {
+  access_token: 'mock-token',
+  refresh_token: 'mock-refresh',
+  expiresAt: Date.now() + 3600000,
+};
+
+const mockBasicTier: UserTier = mockAllTiers[1];
+
+const mockPremiumTier: UserTier = mockAllTiers[2];
+
+const basicMonthlyPlan: SubscriptionPlan = buildSubscriptionPlan({
+  id: 'plan-1',
+  name: 'Basic Monthly Plan',
+  stripe_price_id: 'price_basic',
+  amount: 1000,
+  currency: 'usd',
+  interval: 'month',
+  interval_count: 1,
+  description: { subtitle: 'Basic Sub', features: ['Feature 1'] },
+  tier_level: 10,
+});
+
+const proMonthlyPlan: SubscriptionPlan = buildSubscriptionPlan({
+  id: 'plan-2',
+  name: 'Pro Monthly Plan',
+  stripe_price_id: 'price_pro',
+  amount: 5000,
+  currency: 'usd',
+  interval: 'month',
+  interval_count: 1,
+  description: { subtitle: 'Pro Sub', features: ['Feature A', 'Feature B'] },
+  tier_level: 20,
+});
+
+const topUpOtpPlan: SubscriptionPlan = buildSubscriptionPlan({
+  id: 'otp-1',
+  name: 'Top Up Pack',
+  stripe_price_id: 'price_otp',
+  amount: 500,
+  currency: 'usd',
+  interval: null,
+  interval_count: null,
+  plan_type: 'one_time_purchase',
+  description: { subtitle: 'OTP', features: ['Tokens'] },
+  tier_level: 0,
+});
+
+const freePlan: SubscriptionPlan = buildSubscriptionPlan({
+  id: 'plan-free',
+  name: 'Free Plan',
+  stripe_price_id: 'price_free',
+  amount: 0,
+  currency: 'usd',
+  interval: 'month',
+  interval_count: 1,
+  description: null,
+  tokens_to_award: null,
+  tier_level: 0,
+});
+
+const activeUserSubscription: UserSubscription = buildUserSubscription({
+  id: 'sub-db-id-123',
+  user_id: 'user-123',
+  stripe_subscription_id: 'stripe_sub_abc',
+  stripe_customer_id: 'cus_mock',
+  plan_id: 'plan-1',
+  current_period_end: new Date(
+    Date.now() + 30 * 24 * 60 * 60 * 1000,
+  ).toISOString(),
+});
+
+const freeUserSubscription: UserSubscription = buildUserSubscription({
+  id: 'sub-free',
+  user_id: 'user-123',
+  plan_id: 'plan-free',
+  status: 'free',
+  stripe_subscription_id: null,
+  stripe_customer_id: null,
+  current_period_start: null,
+  current_period_end: null,
+  cancel_at_period_end: null,
+  has_ever_paid: false,
+  tier_level: 0,
+});
+
 describe('SubscriptionPage Component', () => {
-  const user = userEvent.setup(); // Setup userEvent
-  let originalWindowLocation: Location;
-  let currentTestHref: string; // To track href assignments during a test
+  const user = userEvent.setup();
+  let testWindowLocation: SubscriptionPageTestWindowLocation;
 
   beforeAll(() => {
-    originalWindowLocation = window.location;
+    testWindowLocation = installSubscriptionPageTestWindowLocation();
+    expect(SubscriptionPage).toBeDefined();
   });
 
   beforeEach(() => {
-    currentTestHref = ''; // Reset for each test
-    // @ts-expect-error - delete is used to replace the read-only window.location for testing purposes
-    delete window.location;
-    // @ts-expect-error - window.location is mocked for testing purposes
-    window.location = {
-      ...originalWindowLocation, // Spread original non-function properties
-      // Mock specific properties that are functions or need controlled behavior
-      assign: vi.fn((url: string) => { currentTestHref = url; }),
-      replace: vi.fn((url: string) => { currentTestHref = url; }),
-      reload: vi.fn(),
-      ancestorOrigins: {} as DOMStringList, // Provide a default for properties that are objects
-      hash: '',
-      host: originalWindowLocation.host, // Keep real ones where it makes sense
-      hostname: originalWindowLocation.hostname,
-      origin: originalWindowLocation.origin,
-      pathname: originalWindowLocation.pathname,
-      port: originalWindowLocation.port,
-      protocol: originalWindowLocation.protocol,
-      search: '',
-      get href() {
-        return currentTestHref;
-      },
-      set href(url: string) {
-        currentTestHref = url;
-      },
-      toString: () => currentTestHref, // Provide a toString method
-    } as Location;
-
+    testWindowLocation.href = '';
     vi.clearAllMocks();
     mockLoadSubscriptionData.mockReset();
-    mockCreateCheckoutSession.mockReset();
     mockCreateBillingPortalSession.mockReset();
     mockCancelSubscription.mockReset();
-    mockResumeSubscription.mockReset();
-    mockInitiatePurchase.mockReset();
+    mockSetSubscriptionItem.mockReset();
+    mockAddOtpItem.mockReset();
+    mockPrefillCart.mockReset();
+    mockCheckoutCart.mockReset();
+    mockCheckoutCart.mockResolvedValue(undefined);
+    mockLoadSubscriptionData.mockResolvedValue(undefined);
 
-    // Set initial store states using direct setState
+    const cartStoreInitialState = initializeMockCartStore();
+
     act(() => {
-      useAuthStore.setState({ ...authStoreInitialState }, true);
-      useSubscriptionStore.setState({ ...subscriptionStoreInitialState }, true);
-      useWalletStore.setState({ ...walletStoreInitialState }, true);
+      useAuthStore.setState(
+        {
+          user: subscriptionTestUser,
+          profile: mockUserProfile,
+          session: subscriptionTestSession,
+          isLoading: false,
+          error: null,
+          userTier: mockUserTier,
+        },
+        true,
+      );
+      useSubscriptionStore.setState(
+        {
+          availablePlans: [basicMonthlyPlan, proMonthlyPlan, topUpOtpPlan],
+          userSubscription: activeUserSubscription,
+          isSubscriptionLoading: false,
+          hasActiveSubscription: true,
+          isTestMode: false,
+          error: null,
+          loadSubscriptionData: mockLoadSubscriptionData,
+          createBillingPortalSession: mockCreateBillingPortalSession,
+          cancelSubscription: mockCancelSubscription,
+        },
+        true,
+      );
+      useCartStore.setState(cartStoreInitialState, true);
     });
-    mockLoadSubscriptionData.mockResolvedValue(undefined); 
   });
 
-  afterEach(() => {
-    // @ts-expect-error - window.location is mocked for testing purposes
-    window.location = originalWindowLocation;
-  });
-
-  afterAll(() => {
-    // Final cleanup if needed
-  });
-
-  // --- Rendering tests ---
   it('should render loading spinner if auth is loading', () => {
-    act(() => { useAuthStore.setState({ isLoading: true, user: null }); });
-    renderWithRouter(<SubscriptionPage />); 
-    expect(screen.getByTestId('loading-spinner-container')).toBeInTheDocument(); 
+    act(() => {
+      useAuthStore.setState({ isLoading: true, user: null });
+    });
+    renderSubscriptionPage();
+    expect(screen.getByTestId('loading-spinner-container')).toBeInTheDocument();
   });
 
   it('should render loading spinner if subscription data is loading initially', () => {
-    act(() => { 
-        useAuthStore.setState({ isLoading: false, user: authStoreInitialState.user }); 
-        // Match the component's loading logic: isLoading AND no existing sub AND no plans
-        useSubscriptionStore.setState({ 
-            isSubscriptionLoading: true, 
-            userSubscription: null, 
-            availablePlans: [] 
-        });
+    act(() => {
+      useAuthStore.setState({
+        isLoading: false,
+        user: subscriptionTestUser,
+      });
+      useSubscriptionStore.setState({
+        isSubscriptionLoading: true,
+        userSubscription: null,
+        availablePlans: [],
+      });
     });
-    renderWithRouter(<SubscriptionPage />);
+    renderSubscriptionPage();
     expect(screen.getByTestId('loading-spinner-container')).toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: /Subscription Plans/i })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('heading', { name: /Subscription Plans/i }),
+    ).not.toBeInTheDocument();
   });
 
   it('should redirect to /login if user is not authenticated', () => {
-    act(() => { useAuthStore.setState({ user: null, isLoading: false }); });
-    renderWithRouter(<SubscriptionPage />);
-    expect(screen.getByTestId('navigate')).toHaveTextContent('Redirecting to /login');
+    act(() => {
+      useAuthStore.setState({ user: null, isLoading: false });
+    });
+    renderSubscriptionPage();
+    expect(screen.getByTestId('navigate')).toHaveTextContent(
+      'Redirecting to /login',
+    );
   });
 
   it('should display error message if subscription store has error', () => {
-    const testError = new Error('Something went wrong from store');
-    act(() => { useSubscriptionStore.setState({ error: testError, isSubscriptionLoading: false }); });
-    renderWithRouter(<SubscriptionPage />);
-    expect(screen.getByTestId('subscription-error-message')).toHaveTextContent(testError.message);
+    const testError: Error = new Error('Something went wrong from store');
+    act(() => {
+      useSubscriptionStore.setState({
+        error: testError,
+        isSubscriptionLoading: false,
+      });
+    });
+    renderSubscriptionPage();
+    expect(screen.getByTestId('subscription-error-message')).toHaveTextContent(
+      testError.message,
+    );
   });
 
   it('should display test mode warning if isTestMode is true', () => {
-    act(() => { useSubscriptionStore.setState({ isTestMode: true }); });
-    renderWithRouter(<SubscriptionPage />);
+    act(() => {
+      useSubscriptionStore.setState({ isTestMode: true });
+    });
+    renderSubscriptionPage();
     expect(screen.getByText(/Test Mode Active/i)).toBeInTheDocument();
   });
 
   it('should render page title and description when loaded', () => {
-    renderWithRouter(<SubscriptionPage />);
-    expect(screen.getByRole('heading', { name: /Subscription Plans/i })).toBeInTheDocument();
-    expect(screen.getByText(/Choose the plan that.s right for you/i)).toBeInTheDocument();
+    renderSubscriptionPage();
+    expect(
+      screen.getByRole('heading', { name: /Subscription Plans/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/Choose the plan that.s right for you/i),
+    ).toBeInTheDocument();
   });
 
   it('should render CurrentSubscriptionCard content if user has an active subscription with a plan', () => {
-    renderWithRouter(<SubscriptionPage />);
-    const currentSubHeading = screen.getByRole('heading', { name: /Current Subscription/i, level: 3 });
-    const currentSubCard = currentSubHeading.parentElement?.parentElement as HTMLElement; // Navigate two levels up to the card root
-    if (!currentSubCard) throw new Error('CurrentSubscriptionCard container not found');
-    
-    expect(within(currentSubCard).getByText(/Basic Monthly Plan/i)).toBeInTheDocument(); // Plan name (scoped)
-    expect(within(currentSubCard).getByRole('button', { name: /Manage Billing/i })).toBeInTheDocument();
-    expect(within(currentSubCard).getByRole('button', { name: /Cancel Subscription/i })).toBeInTheDocument(); 
+    renderSubscriptionPage();
+    const currentSubCard: HTMLElement = getCurrentSubscriptionCard();
+    expect(
+      within(currentSubCard).getByText(/Basic Monthly Plan/i),
+    ).toBeInTheDocument();
+    expect(
+      within(currentSubCard).getByRole('button', { name: /Manage Billing/i }),
+    ).toBeInTheDocument();
+    expect(
+      within(currentSubCard).getByRole('button', {
+        name: /Cancel Subscription/i,
+      }),
+    ).toBeInTheDocument();
   });
 
   it('should NOT render CurrentSubscriptionCard content if user subscription is null or has no plan', () => {
-    act(() => { useSubscriptionStore.setState({ userSubscription: null, hasActiveSubscription: false }); });
-    renderWithRouter(<SubscriptionPage />);
+    act(() => {
+      useSubscriptionStore.setState({
+        userSubscription: null,
+        hasActiveSubscription: false,
+      });
+    });
+    renderSubscriptionPage();
     expect(screen.queryByText(/Current Subscription/i)).not.toBeInTheDocument();
   });
-  
+
   it('should NOT render CurrentSubscriptionCard content if user subscription status is free', () => {
-    act(() => { 
-      useSubscriptionStore.setState({ 
-        userSubscription: { id: 'sub-free', plan_id: 'plan-free', status: 'free' } as unknown as UserSubscription, 
-        availablePlans: [
-          ...subscriptionStoreInitialState.availablePlans, 
-          {id: 'plan-free', name: 'Free Plan', stripe_price_id: 'price_free', amount: 0, currency: 'usd', interval: 'month', interval_count: 1} as unknown as SubscriptionPlan
-        ],
-        hasActiveSubscription: false 
-      }); 
+    act(() => {
+      useSubscriptionStore.setState({
+        userSubscription: freeUserSubscription,
+        availablePlans: [basicMonthlyPlan, proMonthlyPlan, freePlan],
+        hasActiveSubscription: false,
+      });
     });
-    renderWithRouter(<SubscriptionPage />);
+    renderSubscriptionPage();
     expect(screen.queryByText(/Current Subscription/i)).not.toBeInTheDocument();
   });
 
   it('should render PlanCard content for each available plan (user on Basic)', () => {
-    renderWithRouter(<SubscriptionPage />);
-    const planCardsContainer = screen.getByRole('heading', { name: /Subscription Plans/i }).parentElement?.parentElement?.querySelector('.grid.gap-8') as HTMLElement;
-    if (!planCardsContainer) throw new Error('Plan cards container not found');
-
-    const basicPlanCard = within(planCardsContainer).getByRole('heading', { name: /Basic Monthly Plan/i, level: 2 }).closest('div.border') as HTMLElement;
-    const proPlanCard = within(planCardsContainer).getByRole('heading', { name: /Pro Monthly Plan/i, level: 2 }).closest('div.border') as HTMLElement;
-    if (!basicPlanCard || !proPlanCard) throw new Error('Could not find specific plan card containers');
-
-    expect(within(basicPlanCard).getByRole('heading', { name: /Basic Monthly Plan/i, level: 2 })).toBeInTheDocument();
-    expect(within(proPlanCard).getByRole('heading', { name: /Pro Monthly Plan/i, level: 2 })).toBeInTheDocument();
+    renderSubscriptionPage();
+    const basicPlanCard: HTMLElement = getPlanCardByPlanName(
+      'Basic Monthly Plan',
+    );
+    const proPlanCard: HTMLElement = getPlanCardByPlanName('Pro Monthly Plan');
+    expect(
+      within(basicPlanCard).getByRole('heading', {
+        name: /Basic Monthly Plan/i,
+        level: 2,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      within(proPlanCard).getByRole('heading', {
+        name: /Pro Monthly Plan/i,
+        level: 2,
+      }),
+    ).toBeInTheDocument();
     expect(within(basicPlanCard).getByText('Feature 1')).toBeInTheDocument();
     expect(within(proPlanCard).getByText('Feature A')).toBeInTheDocument();
-    
-    expect(within(basicPlanCard).getByRole('button', { name: /Current Plan/i })).toBeInTheDocument();
-    expect(within(proPlanCard).getByRole('button', { name: /Change Plan/i })).toBeInTheDocument();
+    expect(
+      within(basicPlanCard).getByRole('button', { name: /Current Plan/i }),
+    ).toBeInTheDocument();
+    expect(
+      within(proPlanCard).getByRole('button', { name: /Select Plan/i }),
+    ).toBeInTheDocument();
   });
 
-  // This test was previously named 'should render PlanCard content for available plans'
-  // Renaming for clarity and ensuring it asserts correct button states for the default mock.
   it('should correctly display button texts on PlanCards based on user subscription state (user on Basic)', () => {
-    renderWithRouter(<SubscriptionPage />);
-
-    // Find the main container for all PlanCards first
-    const planCardsGrid = screen.getByRole('heading', { name: /Subscription Plans/i })
-                            .parentElement?.parentElement?.querySelector('.grid.gap-8') as HTMLElement;
-    if (!planCardsGrid) throw new Error('Plan cards grid container not found');
-
-    // Now find the Basic Monthly Plan card specifically within the grid
-    const basicPlanHeading = within(planCardsGrid).getByRole('heading', { name: /Basic Monthly Plan/i, level: 2 });
-    const basicPlanCard = basicPlanHeading.closest('div.border') as HTMLElement;
-    if (!basicPlanCard) throw new Error("Basic PlanCard not found within the grid");
-    expect(within(basicPlanCard).getByRole('button', { name: /Current Plan/i })).toBeInTheDocument();
-
-    // Find the Pro Plan card specifically within the grid
-    const proPlanHeading = within(planCardsGrid).getByRole('heading', { name: /Pro Monthly Plan/i, level: 2 });
-    const proPlanCard = proPlanHeading.closest('div.border') as HTMLElement;
-    if (!proPlanCard) throw new Error("Pro PlanCard not found within the grid");
-    expect(within(proPlanCard).getByRole('button', { name: /Change Plan/i })).toBeInTheDocument();
-
-    expect(screen.queryByRole('button', { name: /Subscribe/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /Downgrade to Free/i })).not.toBeInTheDocument(); 
+    renderSubscriptionPage();
+    const basicPlanCard: HTMLElement = getPlanCardByPlanName(
+      'Basic Monthly Plan',
+    );
+    const proPlanCard: HTMLElement = getPlanCardByPlanName('Pro Monthly Plan');
+    expect(
+      within(basicPlanCard).getByRole('button', { name: /Current Plan/i }),
+    ).toBeInTheDocument();
+    expect(
+      within(proPlanCard).getByRole('button', { name: /Select Plan/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /Subscribe/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /Downgrade to Free/i }),
+    ).not.toBeInTheDocument();
   });
 
-  // --- Interaction Tests (button clicks, loading states for subscription actions) ---
   describe('Subscription Management Interactions', () => {
     it('should call createBillingPortalSession when manage button on CurrentSubscriptionCard is clicked', async () => {
-      mockCreateBillingPortalSession.mockResolvedValue('mock-portal-url'); 
-      renderWithRouter(<SubscriptionPage />);
-      const currentSubHeading = screen.getByRole('heading', { name: /Current Subscription/i, level: 3 });
-      const currentSubCard = currentSubHeading.parentElement?.parentElement as HTMLElement;
-      if (!currentSubCard) throw new Error('CurrentSubscriptionCard not found');
-      const manageButton = within(currentSubCard).getByRole('button', { name: /Manage Billing/i });
-      
-      expect(manageButton).toBeEnabled(); 
+      mockCreateBillingPortalSession.mockResolvedValue('mock-portal-url');
+      renderSubscriptionPage();
+      const currentSubCard: HTMLElement = getCurrentSubscriptionCard();
+      const manageButton = within(currentSubCard).getByRole('button', {
+        name: /Manage Billing/i,
+      });
+      expect(manageButton).toBeEnabled();
       await user.click(manageButton);
       expect(mockCreateBillingPortalSession).toHaveBeenCalledTimes(1);
 
-      // Check for loading state on the correct button
-      act(() => { useSubscriptionStore.setState({ isSubscriptionLoading: true }); });
-      
-      const processingButtons = within(currentSubCard).getAllByRole('button', { name: /Processing.../i });
-      let processingManageButton: HTMLElement | null = null;
-      for (const btn of processingButtons) {
-        if (btn.querySelector('svg[class*="lucide-credit-card"]')) { // Check for the CreditCard icon
-          processingManageButton = btn;
-          break;
-        }
-      }
-      if (!processingManageButton) throw new Error('Could not find the processing "Manage Billing" button with CreditCard icon.');
-      
+      act(() => {
+        useSubscriptionStore.setState({ isSubscriptionLoading: true });
+      });
+      const processingManageButton: HTMLElement =
+        findProcessingManageButton(currentSubCard);
       expect(processingManageButton).toBeInTheDocument();
       expect(processingManageButton).toBeDisabled();
-      // Check that the icon is still there within the processing button by looking for an SVG tag
-      expect(processingManageButton.querySelector('svg')).toBeInTheDocument(); 
+      expect(processingManageButton.querySelector('svg')).toBeInTheDocument();
 
-      await act(async () => { await mockCreateBillingPortalSession.mock.results[0].value; });
-      act(() => { useSubscriptionStore.setState({ isSubscriptionLoading: false, error: null }); });
-      expect(within(currentSubCard).getByRole('button', { name: /Manage Billing/i })).toBeEnabled();
+      await act(async () => {
+        await mockCreateBillingPortalSession.mock.results[0].value;
+      });
+      act(() => {
+        useSubscriptionStore.setState({
+          isSubscriptionLoading: false,
+          error: null,
+        });
+      });
+      expect(
+        within(currentSubCard).getByRole('button', { name: /Manage Billing/i }),
+      ).toBeEnabled();
     });
 
-    it('should call initiatePurchase and redirect when subscribe button on a PlanCard is clicked (user has no sub)', async () => {
-      act(() => { 
+    it('should call setSubscriptionItem when Select Plan is clicked on a subscription PlanCard (user has no sub)', async () => {
+      act(() => {
         useSubscriptionStore.setState({
-          ...subscriptionStoreInitialState,
-          userSubscription: null, 
+          userSubscription: null,
           hasActiveSubscription: false,
-          isTestMode: false, // Explicitly ensure not in test mode
-        }, true);
-        // Ensure wallet store is clean for this test too
-        useWalletStore.setState({ ...walletStoreInitialState, purchaseError: null, isLoadingPurchase: false }, true);
+          isTestMode: false,
+        });
       });
-      
-      const mockRedirectUrl = 'https://stripe.com/checkout_mock_success_url';
-      mockInitiatePurchase.mockResolvedValue({ success: true, redirectUrl: mockRedirectUrl } as PaymentInitiationResult);
 
-      renderWithRouter(<SubscriptionPage />);
-
-      const planCardsGrid = screen.getByRole('heading', { name: /Subscription Plans/i })
-                              .parentElement?.parentElement?.querySelector('.grid.gap-8') as HTMLElement;
-      if (!planCardsGrid) throw new Error('Plan cards grid container not found for initiatePurchase test');
-      
-      const proPlan = subscriptionStoreInitialState.availablePlans.find(p => p.name === 'Pro Monthly Plan');
-      if (!proPlan) throw new Error("Pro Plan not found in initial state for test setup");
-
-      const proPlanHeading = within(planCardsGrid).getByRole('heading', { name: proPlan.name, level: 2 });
-      const proPlanCard = proPlanHeading.closest('div.border') as HTMLElement;
-      if (!proPlanCard) throw new Error('Pro PlanCard not found for initiatePurchase test');
-      
-      const subscribeButton = within(proPlanCard).getByRole('button', { name: /Subscribe/i });
-      
-      expect(subscribeButton).toBeEnabled();
-      await user.click(subscribeButton);
-
-      if (!proPlan.currency) throw new Error("Pro Plan currency is missing");
-      const expectedPurchaseRequest: PurchaseRequest = {
-        userId: authStoreInitialState.user.id,
-        itemId: proPlan.stripe_price_id ?? proPlan.id,
-        quantity: 1,
-        currency: proPlan.currency.toUpperCase(),
-        paymentGatewayId: 'stripe',
-        metadata: { planName: proPlan.name, planId: proPlan.id }
-      };
-      expect(mockInitiatePurchase).toHaveBeenCalledTimes(1);
-      expect(mockInitiatePurchase).toHaveBeenCalledWith(expectedPurchaseRequest);
-
-      // Check for redirect
-      await act(async () => { await mockInitiatePurchase.mock.results[0].value; });
-      expect(window.location.href).toBe(mockRedirectUrl);
-
-      // Check loading states during the process
-      // This part might be tricky as initiatePurchase resolves quickly in mock
-      // We'd ideally check that isLoadingPurchase was true *during* the call
-      // For now, let's check it's false after.
-      expect(useWalletStore.getState().isLoadingPurchase).toBe(false);
+      renderSubscriptionPage();
+      const proPlanCard: HTMLElement = getPlanCardByPlanName('Pro Monthly Plan');
+      const selectButton = within(proPlanCard).getByRole('button', {
+        name: /Select Plan/i,
+      });
+      expect(selectButton).toBeEnabled();
+      await user.click(selectButton);
+      expect(mockSetSubscriptionItem).toHaveBeenCalledTimes(1);
+      expect(mockSetSubscriptionItem).toHaveBeenCalledWith(proMonthlyPlan);
     });
 
     it('should call cancelSubscription when cancel button on CurrentSubscriptionCard is clicked', async () => {
-      const currentSubscription = subscriptionStoreInitialState.userSubscription;
-      if (!currentSubscription?.stripe_subscription_id) throw new Error('Initial state missing subscription or stripe ID');
-      mockCancelSubscription.mockResolvedValue(true); 
-      renderWithRouter(<SubscriptionPage />);
-      const currentSubHeading = screen.getByRole('heading', { name: /Current Subscription/i, level: 3 });
-      const currentSubCard = currentSubHeading.parentElement?.parentElement as HTMLElement;
-      if (!currentSubCard) throw new Error('CurrentSubscriptionCard not found');
-      const cancelButton = within(currentSubCard).getByRole('button', { name: /Cancel Subscription/i });
-
+      const subscriptionFromStore =
+        useSubscriptionStore.getState().userSubscription;
+      if (subscriptionFromStore === null) {
+        throw new Error('Initial state missing subscription');
+      }
+      const stripeSubscriptionId = subscriptionFromStore.stripe_subscription_id;
+      if (stripeSubscriptionId === null) {
+        throw new Error('Initial state missing stripe subscription ID');
+      }
+      mockCancelSubscription.mockResolvedValue(true);
+      renderSubscriptionPage();
+      const currentSubCard: HTMLElement = getCurrentSubscriptionCard();
+      const cancelButton = within(currentSubCard).getByRole('button', {
+        name: /Cancel Subscription/i,
+      });
       expect(cancelButton).toBeEnabled();
       await user.click(cancelButton);
       expect(mockCancelSubscription).toHaveBeenCalledTimes(1);
-      expect(mockCancelSubscription).toHaveBeenCalledWith(currentSubscription.stripe_subscription_id);
+      expect(mockCancelSubscription).toHaveBeenCalledWith(stripeSubscriptionId);
 
-      // Check for loading state on the correct button
-      act(() => { useSubscriptionStore.setState({ isSubscriptionLoading: true }); });
-      // The Cancel Subscription button does not have an SVG icon directly inside it in the same way.
-      // We need to distinguish it from the Manage Billing button if both are 'Processing...'
-      // Find all 'Processing...' buttons within the card and identify the correct one.
-      const processingButtons = within(currentSubCard).getAllByRole('button', { name: /Processing.../i });
-      let processingCancelButton: HTMLElement | null = null;
-      for (const btn of processingButtons) {
-        if (!btn.querySelector('svg')) { // The cancel button does not have an SVG child
-          processingCancelButton = btn;
-          break;
-        }
-      }
-      if (!processingCancelButton) throw new Error('Could not find processing cancel button');
-      
+      act(() => {
+        useSubscriptionStore.setState({ isSubscriptionLoading: true });
+      });
+      const processingCancelButton: HTMLElement =
+        findProcessingCancelButton(currentSubCard);
       expect(processingCancelButton).toBeInTheDocument();
       expect(processingCancelButton).toBeDisabled();
 
-      await act(async () => { await mockCancelSubscription.mock.results[0].value; });
-      act(() => { useSubscriptionStore.setState({ isSubscriptionLoading: false, error: null }); });
-      expect(within(currentSubCard).getByRole('button', { name: /Cancel Subscription/i })).toBeEnabled();
+      await act(async () => {
+        await mockCancelSubscription.mock.results[0].value;
+      });
+      act(() => {
+        useSubscriptionStore.setState({
+          isSubscriptionLoading: false,
+          error: null,
+        });
+      });
+      expect(
+        within(currentSubCard).getByRole('button', {
+          name: /Cancel Subscription/i,
+        }),
+      ).toBeEnabled();
     });
   });
 
-  // --- Functional tests for actions (direct calls, redirects) ---
   it('should call loadSubscriptionData on mount if user is present', () => {
-    renderWithRouter(<SubscriptionPage />);
-    expect(mockLoadSubscriptionData).toHaveBeenCalledWith(authStoreInitialState.user.id);
+    renderSubscriptionPage();
+    expect(mockLoadSubscriptionData).toHaveBeenCalledWith(subscriptionTestUser.id);
   });
 
   it('should call createBillingPortalSession and redirect when Manage Billing on CurrentSubCard is clicked and succeeds', async () => {
-    const portalUrl = 'https://stripe.com/billing_portal_mock_url';
+    const portalUrl: string = 'https://stripe.com/billing_portal_mock_url';
     mockCreateBillingPortalSession.mockResolvedValue(portalUrl);
-    // window.location is mocked in beforeEach
-
-    renderWithRouter(<SubscriptionPage />);
-    const currentSubHeading = screen.getByRole('heading', { name: /Current Subscription/i, level: 3 });
-    const currentSubCard = currentSubHeading.parentElement?.parentElement as HTMLElement;
-    if (!currentSubCard) throw new Error('CurrentSubscriptionCard not found');
-    const manageButton = within(currentSubCard).getByRole('button', { name: /Manage Billing/i });
+    renderSubscriptionPage();
+    const currentSubCard: HTMLElement = getCurrentSubscriptionCard();
+    const manageButton = within(currentSubCard).getByRole('button', {
+      name: /Manage Billing/i,
+    });
     await user.click(manageButton);
-
     expect(mockCreateBillingPortalSession).toHaveBeenCalledTimes(1);
-    await act(async () => { await mockCreateBillingPortalSession.mock.results[0].value; });
-    expect(window.location.href).toBe(portalUrl);
+    await act(async () => {
+      await mockCreateBillingPortalSession.mock.results[0].value;
+    });
+    expect(testWindowLocation.href).toBe(portalUrl);
   });
 
   it('should call cancelSubscription with correct ID when Cancel on CurrentSubCard is clicked', async () => {
-    renderWithRouter(<SubscriptionPage />);    
-    const currentSubHeading = screen.getByRole('heading', { name: /Current Subscription/i, level: 3 });
-    const currentSubCard = currentSubHeading.parentElement?.parentElement as HTMLElement;
-    if (!currentSubCard) throw new Error('CurrentSubscriptionCard not found');
-    const cancelButton = within(currentSubCard).getByRole('button', { name: /Cancel Subscription/i });
+    renderSubscriptionPage();
+    const currentSubCard: HTMLElement = getCurrentSubscriptionCard();
+    const cancelButton = within(currentSubCard).getByRole('button', {
+      name: /Cancel Subscription/i,
+    });
     await user.click(cancelButton);
-    expect(mockCancelSubscription).toHaveBeenCalledWith(subscriptionStoreInitialState.userSubscription.stripe_subscription_id);
+    expect(mockCancelSubscription).toHaveBeenCalledWith('stripe_sub_abc');
   });
 
-  // --- Tests for handleSubscribe and useWalletStore interaction ---
-  describe('handleSubscribe with useWalletStore (token purchase flow)', () => {
-          const basicPlan = subscriptionStoreInitialState.availablePlans[0]; // Basic Monthly Plan
+  describe('cart integration', () => {
+    it('should call addOtpItem with plan and quantity 1 when Add to Cart is clicked on an OTP PlanCard', async () => {
+      renderSubscriptionPage();
+      await user.click(screen.getByRole('tab', { name: /Top-Up/i }));
+      const otpCard: HTMLElement = screen.getByTestId(`plan-card-${topUpOtpPlan.id}`);
+      const addButton = within(otpCard).getByRole('button', {
+        name: /Add to Cart/i,
+      });
+      await user.click(addButton);
+      expect(mockAddOtpItem).toHaveBeenCalledTimes(1);
+      expect(mockAddOtpItem).toHaveBeenCalledWith(topUpOtpPlan, 1);
+    });
 
-    beforeEach(() => {
+    it('should call cancelSubscription when Downgrade to Free is clicked on the free PlanCard', async () => {
       act(() => {
         useSubscriptionStore.setState({
-          ...subscriptionStoreInitialState,
-          userSubscription: null,
-          hasActiveSubscription: false,
-        }, true);
-        useWalletStore.setState({
-          ...walletStoreInitialState,
-          isLoadingPurchase: false,
-          purchaseError: null,
-        }, true);
-      });
-      mockInitiatePurchase.mockReset();
-    });
-
-    it('should call initiatePurchase with correct PurchaseRequest and redirect on success', async () => {
-      const redirectUrl = 'https://stripe.com/checkout_mock_success_url';
-      mockInitiatePurchase.mockResolvedValue({ success: true, redirectUrl } as PaymentInitiationResult);
-      // window.location is mocked in beforeEach
-
-      renderWithRouter(<SubscriptionPage />);
-      const basicPlanCard = screen.getByText(basicPlan.name).closest('div.border') as HTMLElement;
-      if (!basicPlanCard) throw new Error("Basic PlanCard not found for subscribe test");
-      const subscribeButton = within(basicPlanCard).getByRole('button', { name: /Subscribe/i });
-      await user.click(subscribeButton);
-
-      if (!basicPlan.currency) throw new Error("Basic Plan currency is missing");
-      const expectedPurchaseRequest: PurchaseRequest = {
-        userId: authStoreInitialState.user.id,
-        itemId: basicPlan.stripe_price_id ?? basicPlan.id,
-        quantity: 1,
-        currency: basicPlan.currency.toUpperCase(),
-        paymentGatewayId: 'stripe',
-        metadata: { planName: basicPlan.name, planId: basicPlan.id }
-      };
-      expect(mockInitiatePurchase).toHaveBeenCalledWith(expectedPurchaseRequest);
-      await act(async () => { await mockInitiatePurchase.mock.results[0].value; });
-      expect(window.location.href).toBe(redirectUrl);
-      expect(screen.queryByTestId('purchase-error-message')).not.toBeInTheDocument();
-    });
-
-    it('should display purchaseError if initiatePurchase fails or returns no redirectUrl', async () => {
-      const errorMessage = 'Payment initiation failed.';
-      mockInitiatePurchase.mockImplementation(async () => {
-        act(() => {
-          useWalletStore.setState({ 
-            purchaseError: { message: errorMessage, code: 'PAYMENT_INITIATION_FAILED' }, 
-            isLoadingPurchase: false 
-          });
+          availablePlans: [
+            basicMonthlyPlan,
+            proMonthlyPlan,
+            topUpOtpPlan,
+            freePlan,
+          ],
+          hasActiveSubscription: true,
         });
-        return { success: false, error: errorMessage } as PaymentInitiationResult;
       });
-
-      renderWithRouter(<SubscriptionPage />);
-      
-      const planCardsGrid = screen.getByRole('heading', { name: /Subscription Plans/i })
-                              .parentElement?.parentElement?.querySelector('.grid.gap-8') as HTMLElement;
-      if (!planCardsGrid) throw new Error("Plan cards grid container not found for purchaseError test");
-
-      const basicPlanHeading = within(planCardsGrid).getByRole('heading', { name: basicPlan.name, level: 2 });
-      const basicPlanCard = basicPlanHeading.closest('div.border') as HTMLElement;
-      if (!basicPlanCard) throw new Error("Basic PlanCard not found for purchaseError test");
-      
-      const subscribeButton = within(basicPlanCard).getByRole('button', { name: /Subscribe/i });
-      await user.click(subscribeButton);
-
-      expect(mockInitiatePurchase).toHaveBeenCalled();
-      
-      // Wait for the error message to appear
-      const errorDisplay = await screen.findByTestId('purchase-error-message');
-      expect(errorDisplay).toHaveTextContent(errorMessage);
-      expect(useWalletStore.getState().isLoadingPurchase).toBe(false);
-    });
-    
-    it('should display purchaseError from useWalletStore if initiatePurchase itself throws', async () => {
-        const errorMessage = 'Network problem in initiatePurchase';
-        const networkApiError = { message: errorMessage, code: 'NETWORK_ERROR' }; 
-        mockInitiatePurchase.mockImplementation(async () => {
-            act(() => {
-                useWalletStore.setState({ purchaseError: networkApiError }); 
-            });
-            return { success: false, error: errorMessage } as PaymentInitiationResult; 
-        });
-
-        renderWithRouter(<SubscriptionPage />);
-        const planCardsGrid = screen.getByRole('heading', { name: /Subscription Plans/i })
-                                .parentElement?.parentElement?.querySelector('.grid.gap-8') as HTMLElement;
-        if (!planCardsGrid) throw new Error("Plan cards grid container not found for thrown purchaseError test");
-
-        const basicPlanHeading = within(planCardsGrid).getByRole('heading', { name: basicPlan.name, level: 2 });
-        const basicPlanCard = basicPlanHeading.closest('div.border') as HTMLElement;
-        if (!basicPlanCard) throw new Error("Basic PlanCard for thrown purchaseError test");
-        const subscribeButton = within(basicPlanCard).getByRole('button', { name: /Subscribe/i });
-        await user.click(subscribeButton);
-
-        expect(mockInitiatePurchase).toHaveBeenCalled();
-        expect(screen.getByTestId('purchase-error-message')).toHaveTextContent(errorMessage);
+      renderSubscriptionPage();
+      const downgradeButton = screen.getByRole('button', {
+        name: /Downgrade to Free/i,
+      });
+      await user.click(downgradeButton);
+      expect(mockCancelSubscription).toHaveBeenCalledWith('stripe_sub_abc');
     });
 
-    it('should show loading state on subscribe button (via PlanCard) when isLoadingPurchase is true', async () => {
-      let resolveLoadingPhase: (() => void) | undefined;
-      const loadingPhasePromise = new Promise<void>(resolve => {
-        resolveLoadingPhase = resolve;
-      });
-
-      mockInitiatePurchase.mockImplementation(async () => {
-        act(() => { useWalletStore.setState({ isLoadingPurchase: true }); });
-        await loadingPhasePromise; // Wait for the test to assert the loading state
-        act(() => { useWalletStore.setState({ isLoadingPurchase: false }); });
-        return { success: true, redirectUrl: 'some-successful-redirect-url' } as PaymentInitiationResult;
-      });
-
-      renderWithRouter(<SubscriptionPage />);
-      const planCardsGrid = screen.getByRole('heading', { name: /Subscription Plans/i })
-                              .parentElement?.parentElement?.querySelector('.grid.gap-8') as HTMLElement;
-      if (!planCardsGrid) throw new Error("Plan cards grid container not found for loading state test");
-
-      const basicPlanHeading = within(planCardsGrid).getByRole('heading', { name: basicPlan.name, level: 2 });
-      const basicPlanCard = basicPlanHeading.closest('div.border') as HTMLElement;
-      if (!basicPlanCard) throw new Error("Basic PlanCard for loading state test");
-      const subscribeButton = within(basicPlanCard).getByRole('button', { name: /Subscribe/i });
-      
-      const clickPromise = user.click(subscribeButton); 
-
-      // Scope the search for the processing button to within the basicPlanCard
-      await within(basicPlanCard).findByRole('button', { name: /Processing.../i });
-      expect(within(basicPlanCard).getByRole('button', { name: /Processing.../i })).toBeDisabled();
-
+    it('should render cart-summary when cart has a subscription item', () => {
       act(() => {
-        if (resolveLoadingPhase) {
-          resolveLoadingPhase(); 
-        } else {
-          // This case should ideally not be reached if the Promise constructor behaves as expected
-          throw new Error("resolveLoadingPhase was not assigned by the Promise constructor and is undefined at time of call.");
-        }
+        useCartStore.setState({
+          cart: buildCheckoutCart({
+            subscriptionItem: buildCartItem({
+              plan: basicMonthlyPlan,
+              quantity: 1,
+            }),
+          }),
+        });
       });
-      await clickPromise; 
+      renderSubscriptionPage();
+      expect(screen.getByTestId('cart-summary')).toBeInTheDocument();
+      expect(
+        screen.getByTestId('cart-summary-subscription-row'),
+      ).toBeInTheDocument();
+    });
 
-      // After processing, the processing button should be gone from the basicPlanCard
-      expect(within(basicPlanCard).queryByRole('button', { name: /Processing.../i })).not.toBeInTheDocument();
-      // Assuming it redirects on success, as per other tests
-      expect(window.location.href).toBe('some-successful-redirect-url'); 
+    it('should render cart-summary-empty when cart is empty', () => {
+      renderSubscriptionPage();
+      expect(screen.getByTestId('cart-summary')).toBeInTheDocument();
+      expect(screen.getByTestId('cart-summary-empty')).toBeInTheDocument();
+    });
+
+    it('should render Selected on PlanCard when subscription plan is in cart', () => {
+      act(() => {
+        useCartStore.setState({
+          cart: buildCheckoutCart({
+            subscriptionItem: buildCartItem({
+              plan: proMonthlyPlan,
+              quantity: 1,
+            }),
+          }),
+        });
+      });
+      renderSubscriptionPage();
+      const proPlanCard: HTMLElement = getPlanCardByPlanName('Pro Monthly Plan');
+      expect(
+        within(proPlanCard).getByRole('button', { name: /Selected/i }),
+      ).toBeInTheDocument();
+    });
+
+    it('should render OTP cart quantity on PlanCard when OTP item is in cart', async () => {
+      act(() => {
+        useCartStore.setState({
+          cart: buildCheckoutCart({
+            otpItems: [
+              buildCartItem({ plan: topUpOtpPlan, quantity: 3 }),
+            ],
+          }),
+        });
+      });
+      renderSubscriptionPage();
+      await user.click(screen.getByRole('tab', { name: /Top-Up/i }));
+      const otpCard: HTMLElement = screen.getByTestId(`plan-card-${topUpOtpPlan.id}`);
+      expect(within(otpCard).getByText(/×3/)).toBeInTheDocument();
+    });
+
+    it('should keep CartSummary subscription row visible after switching to Top-Up tab', async () => {
+      act(() => {
+        useCartStore.setState({
+          cart: buildCheckoutCart({
+            subscriptionItem: buildCartItem({
+              plan: basicMonthlyPlan,
+              quantity: 1,
+            }),
+          }),
+        });
+      });
+      renderSubscriptionPage();
+      expect(
+        screen.getByTestId('cart-summary-subscription-row'),
+      ).toBeInTheDocument();
+      await user.click(screen.getByRole('tab', { name: /Top-Up/i }));
+      expect(
+        screen.getByTestId('cart-summary-subscription-row'),
+      ).toBeInTheDocument();
+    });
+
+    it('should call checkoutCart when CartSummary checkout button is clicked', async () => {
+      const checkoutUrl: string = 'https://stripe.com/checkout_mock_success_url';
+      mockCheckoutCart.mockImplementation(async () => {
+        testWindowLocation.href = checkoutUrl;
+      });
+      act(() => {
+        useCartStore.setState({
+          cart: buildCheckoutCart({
+            subscriptionItem: buildCartItem({
+              plan: proMonthlyPlan,
+              quantity: 1,
+            }),
+          }),
+        });
+      });
+      renderSubscriptionPage();
+      const checkoutButton = screen.getByTestId('cart-summary-checkout-btn');
+      await user.click(checkoutButton);
+      expect(mockCheckoutCart).toHaveBeenCalledTimes(1);
+      await waitFor(() => {
+        expect(testWindowLocation.href).toBe(checkoutUrl);
+      });
+    });
+
+    it('should display checkoutError via CartSummary when checkoutError is set', () => {
+      const errorMessage: string = 'Payment initiation failed.';
+      const checkoutError: Error = new Error(errorMessage);
+      act(() => {
+        useCartStore.setState({
+          cart: buildCheckoutCart({
+            subscriptionItem: buildCartItem({
+              plan: basicMonthlyPlan,
+              quantity: 1,
+            }),
+          }),
+          checkoutError,
+        });
+      });
+      renderSubscriptionPage();
+      const alert: HTMLElement = screen.getByTestId('cart-summary-error');
+      expect(within(alert).getByText(errorMessage)).toBeInTheDocument();
+      expect(
+        screen.queryByTestId('purchase-error-message'),
+      ).not.toBeInTheDocument();
+    });
+
+    it('should show Processing on PlanCard when isCheckingOut is true', async () => {
+      act(() => {
+        useCartStore.setState({ isCheckingOut: true });
+      });
+      renderSubscriptionPage();
+      const proPlanCard: HTMLElement = getPlanCardByPlanName('Pro Monthly Plan');
+      expect(
+        within(proPlanCard).getByRole('button', { name: /Processing.../i }),
+      ).toBeDisabled();
+    });
+
+    it('should render cart-summary-panel with fixed upper-right placement classes', () => {
+      renderSubscriptionPage();
+      const panel: HTMLElement = screen.getByTestId('cart-summary-panel');
+      expect(panel.className).toContain('fixed');
+      expect(panel.className).toContain('top-20');
+      expect(panel.className).toContain('right-4');
+      expect(panel.className).toContain('z-40');
+    });
+
+    it('should render cart-summary inside cart-summary-panel', () => {
+      renderSubscriptionPage();
+      const panel: HTMLElement = screen.getByTestId('cart-summary-panel');
+      expect(within(panel).getByTestId('cart-summary')).toBeInTheDocument();
     });
   });
+
+  describe('URL prefill', () => {
+    it('should call prefillCart with subscriptionPlanId and clear query params on load', async () => {
+      const expectedPrefillRequest: PrefillCartRequest = buildPrefillCartRequest({
+        subscriptionPlanId: 'plan-1',
+        otpPlanIds: [],
+      });
+      const harness = renderSubscriptionPage({
+        initialEntries: ['/subscription?plan=plan-1'],
+      });
+      await waitFor(() => {
+        expect(mockPrefillCart).toHaveBeenCalledWith(expectedPrefillRequest);
+      });
+      await waitFor(() => {
+        expect(harness.router.state.location.search).toBe('');
+      });
+    });
+
+    it('should call prefillCart with subscription and otp plan ids on load', async () => {
+      const expectedPrefillRequest: PrefillCartRequest = buildPrefillCartRequest({
+        subscriptionPlanId: 'plan-1',
+        otpPlanIds: ['otp-1', 'otp-2'],
+      });
+      renderSubscriptionPage({
+        initialEntries: [
+          '/subscription?plan=plan-1&otp=otp-1&otp=otp-2',
+        ],
+      });
+      await waitFor(() => {
+        expect(mockPrefillCart).toHaveBeenCalledWith(expectedPrefillRequest);
+      });
+    });
+
+    it('should not call prefillCart when no query params are present', () => {
+      renderSubscriptionPage({ initialEntries: ['/subscription'] });
+      expect(mockPrefillCart).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('plan change warning', () => {
+    it('should render plan-change-warning when active user selects a different subscription plan in cart', () => {
+      act(() => {
+        useCartStore.setState({
+          cart: buildCheckoutCart({
+            subscriptionItem: buildCartItem({
+              plan: proMonthlyPlan,
+              quantity: 1,
+            }),
+          }),
+        });
+      });
+      renderSubscriptionPage();
+      expect(screen.getByTestId('plan-change-warning')).toHaveTextContent(
+        'Selecting a new plan will replace your current Basic Monthly Plan subscription.',
+      );
+    });
+
+    it('should not render plan-change-warning when cart subscription matches current plan', () => {
+      act(() => {
+        useCartStore.setState({
+          cart: buildCheckoutCart({
+            subscriptionItem: buildCartItem({
+              plan: basicMonthlyPlan,
+              quantity: 1,
+            }),
+          }),
+        });
+      });
+      renderSubscriptionPage();
+      expect(
+        screen.queryByTestId('plan-change-warning'),
+      ).not.toBeInTheDocument();
+    });
+
+    it('should not render plan-change-warning when user has no active subscription', () => {
+      act(() => {
+        useSubscriptionStore.setState({
+          userSubscription: null,
+          hasActiveSubscription: false,
+        });
+        useCartStore.setState({
+          cart: buildCheckoutCart({
+            subscriptionItem: buildCartItem({
+              plan: proMonthlyPlan,
+              quantity: 1,
+            }),
+          }),
+        });
+      });
+      renderSubscriptionPage();
+      expect(
+        screen.queryByTestId('plan-change-warning'),
+      ).not.toBeInTheDocument();
+    });
+  });
+
+  it("should render 'Your Tier' badge on plan cards matching user's tier level", () => {
+    act(() => {
+      useAuthStore.setState({ userTier: mockBasicTier });
+    });
+    renderSubscriptionPage();
+    const basicPlanHeading: HTMLElement = within(getMonthlyPlanGrid()).getByRole(
+      'heading',
+      { name: /Basic Monthly Plan/i, level: 2 },
+    );
+    const basicPlanWrapperCandidate = basicPlanHeading.closest('.relative');
+    if (basicPlanWrapperCandidate === null) {
+      throw new Error('Basic plan card wrapper not found');
+    }
+    const basicPlanWrapper: HTMLElement =
+      requireHTMLElementFromElement(basicPlanWrapperCandidate);
+    expect(within(basicPlanWrapper).getByText('Your Tier')).toBeInTheDocument();
+  });
+
+  it("should render 'Upgrade' badge on plan cards with higher tier level", () => {
+    renderSubscriptionPage();
+    const basicPlanHeading: HTMLElement = within(getMonthlyPlanGrid()).getByRole(
+      'heading',
+      { name: /Basic Monthly Plan/i, level: 2 },
+    );
+    const proPlanHeading: HTMLElement = within(getMonthlyPlanGrid()).getByRole(
+      'heading',
+      { name: /Pro Monthly Plan/i, level: 2 },
+    );
+    const basicPlanWrapperCandidate = basicPlanHeading.closest('.relative');
+    const proPlanWrapperCandidate = proPlanHeading.closest('.relative');
+    if (basicPlanWrapperCandidate === null || proPlanWrapperCandidate === null) {
+      throw new Error('Plan card wrappers not found');
+    }
+    const basicPlanWrapper: HTMLElement =
+      requireHTMLElementFromElement(basicPlanWrapperCandidate);
+    const proPlanWrapper: HTMLElement =
+      requireHTMLElementFromElement(proPlanWrapperCandidate);
+    expect(within(basicPlanWrapper).getByText('Upgrade')).toBeInTheDocument();
+    expect(within(proPlanWrapper).getByText('Upgrade')).toBeInTheDocument();
+  });
+
+  it("should not render 'Upgrade' badge on plan cards at or below user's tier level", () => {
+    act(() => {
+      useAuthStore.setState({ userTier: mockPremiumTier });
+    });
+    renderSubscriptionPage();
+    const basicPlanHeading: HTMLElement = within(getMonthlyPlanGrid()).getByRole(
+      'heading',
+      { name: /Basic Monthly Plan/i, level: 2 },
+    );
+    const proPlanHeading: HTMLElement = within(getMonthlyPlanGrid()).getByRole(
+      'heading',
+      { name: /Pro Monthly Plan/i, level: 2 },
+    );
+    const basicPlanWrapperCandidate = basicPlanHeading.closest('.relative');
+    const proPlanWrapperCandidate = proPlanHeading.closest('.relative');
+    if (basicPlanWrapperCandidate === null || proPlanWrapperCandidate === null) {
+      throw new Error('Plan card wrappers not found');
+    }
+    const basicPlanWrapper: HTMLElement =
+      requireHTMLElementFromElement(basicPlanWrapperCandidate);
+    const proPlanWrapper: HTMLElement =
+      requireHTMLElementFromElement(proPlanWrapperCandidate);
+    expect(within(basicPlanWrapper).queryByText('Upgrade')).not.toBeInTheDocument();
+    expect(within(proPlanWrapper).getByText('Your Tier')).toBeInTheDocument();
+  });
+
+  it('should not render any tier badge when userTier is null', () => {
+    act(() => {
+      useAuthStore.setState({ userTier: null });
+    });
+    renderSubscriptionPage();
+    expect(screen.queryByText('Your Tier')).not.toBeInTheDocument();
+    expect(screen.queryByText('Upgrade')).not.toBeInTheDocument();
+  });
 });
-
-// --- To consider for further tests (if not covered by integration tests) ---
-// - Test different subscription statuses (trialing, past_due, etc.) and their display.
-// - Test behavior when no plans are available.
-// - Test specific UI states for `cancelAtPeriodEnd`.
-// - Test `resumeSubscription` functionality if UI for it exists.
-// - Test `formatAmount` and `formatInterval` more directly if their logic becomes complex,
-//   though their usage in cards is implicitly tested.
-
-// Helper to find subscribe button for a specific plan
-// async function clickSubscribeButtonForPlan(planName: string) {
-//   const planCard = screen.getByText(planName).closest('.border'); // Adjust selector as needed
-//   if (!planCard) throw new Error(`Plan card for "${planName}" not found`);
-//   const subscribeButton = within(planCard).getByRole('button', { name: /Subscribe/i });
-//   await user.click(subscribeButton);
-// }
-
-//       renderWithRouter(<SubscriptionPage onSubscribe={mockSubscribeProp} />);
-//       const subscribeButton = screen.getAllByRole('button', { name: /Subscribe/i })[0];
-//       await user.click(subscribeButton);
-//       expect(mockSubscribeProp).toHaveBeenCalledWith(subscriptionStoreInitialState.availablePlans[0].id);
-//     });

@@ -1,21 +1,85 @@
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, within, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 import { SessionInfoCard } from './SessionInfoCard';
-import { DialecticSession, DialecticStage, DialecticProjectResource, DialecticProject, DialecticStateValues, ApiError, AssembledPrompt, UnifiedProjectProgress } from '@paynless/types';
+import {
+  DialecticSession,
+  DialecticStage,
+  DialecticProjectResource,
+  DialecticProject,
+  DialecticStateValues,
+  ApiError,
+  AssembledPrompt,
+  UnifiedProjectProgress,
+  ActiveChatWalletInfo,
+  SelectedModels,
+  DialecticProcessTemplate,
+  UserTier,
+  AiProvidersRow,
+} from '@paynless/types';
+import {
+  ComputeCostCeilingReturn,
+  ComputeCostCeilingSuccessReturn,
+} from '@paynless/utils';
 import {
   initializeMockDialecticState,
+  getDialecticStoreActionMock,
+  mockAiProvidersRow,
 } from '@/mocks/dialecticStore.mock';
+import {
+  mockedUseAuthStoreHookLogic,
+  mockSetAuthError,
+  mockSetAuthIsLoading,
+  resetAuthStoreMock,
+} from '@/mocks/authStore.mock';
 import { resetAiStoreMock } from '@/mocks/aiStore.mock';
-import { initializeMockWalletStore } from '@/mocks/walletStore.mock';
+import { initializeMockWalletStore, selectActiveChatWalletInfo } from '@/mocks/walletStore.mock';
 import { useDialecticStore } from '@paynless/store';
+import { buildComputeCostCeilingErrorReturn } from '../../../../../packages/utils/src/computeCostCeiling/computeCostCeiling.mock';
 
-const { selectUnifiedProjectProgressMock } = vi.hoisted(() => ({
+const subscriptionTierUnavailableMessage = 'Subscription tier is not available.';
+
+const outputCapNotInitializedError: ApiError = {
+  code: 'OUTPUT_CAP_NOT_INITIALIZED',
+  message: 'Output cap is not initialized in dialectic store.',
+};
+
+const selectorDecoyError: ApiError = {
+  code: 'COUNTS_ERROR',
+  message: 'Selector error should not display.',
+};
+
+const costCeilingBasicUserTier: UserTier = {
+  level: 10,
+  name: 'basic',
+  output_cap_tokens: 8192,
+  max_models_per_project: 2,
+};
+
+const largeCeilingSuccess: ComputeCostCeilingSuccessReturn = {
+  stageCeilings: { thesis: 39_015 },
+  projectCeiling: 1_139_238,
+};
+
+const defaultCostCeilingCatalog: AiProvidersRow[] = [
+  mockAiProvidersRow({ id: 'model-1', name: 'Model 1' }),
+];
+
+const { selectUnifiedProjectProgressMock, selectCostCeilingMock } = vi.hoisted(() => ({
   selectUnifiedProjectProgressMock: vi.fn<
     [DialecticStateValues, string],
     UnifiedProjectProgress
   >(),
+  selectCostCeilingMock: vi.fn<
+    [DialecticStateValues, string],
+    ComputeCostCeilingReturn
+  >(() => ({
+    error: {
+      code: 'OUTPUT_CAP_NOT_INITIALIZED',
+      message: 'Output cap is not initialized in dialectic store.',
+    },
+  })),
 }));
 
 vi.mock('@paynless/store', async () => {
@@ -28,6 +92,7 @@ vi.mock('@paynless/store', async () => {
   const organizationStoreMockModule = await vi.importActual<typeof import('@/mocks/organizationStore.mock')>('@/mocks/organizationStore.mock');
   const aiStoreMockModule = await vi.importActual<typeof import('@/mocks/aiStore.mock')>('@/mocks/aiStore.mock');
   const walletStoreMockModule = await vi.importActual<typeof import('@/mocks/walletStore.mock')>('@/mocks/walletStore.mock');
+  const authStoreMockModule = await vi.importActual<typeof import('@/mocks/authStore.mock')>('@/mocks/authStore.mock');
   const typesModule = await vi.importActual<typeof import('@paynless/types')>('@paynless/types');
 
   selectUnifiedProjectProgressMock.mockImplementation(
@@ -37,6 +102,7 @@ vi.mock('@paynless/store', async () => {
 
   return {
     useDialecticStore: dialecticMockModule.useDialecticStore,
+    useAuthStore: authStoreMockModule.useAuthStore,
     useOrganizationStore: organizationStoreMockModule.useOrganizationStore,
     useAiStore: aiStoreMockModule.useMockedAiStoreHookLogic,
     initialAiStateValues: typesModule.initialAiStateValues,
@@ -52,7 +118,10 @@ vi.mock('@paynless/store', async () => {
     selectIsLoadingPersonalWallet: walletStoreMockModule.selectIsLoadingPersonalWallet,
     selectPersonalWalletError: walletStoreMockModule.selectPersonalWalletError,
     selectViewingStageSlug: actualOriginalStoreModule.selectViewingStageSlug,
+    selectViewingStage: actualOriginalStoreModule.selectViewingStage,
     selectSortedStages: actualOriginalStoreModule.selectSortedStages,
+    selectCostCeiling: selectCostCeilingMock,
+    selectActiveChatWalletInfo: walletStoreMockModule.selectActiveChatWalletInfo,
   };
 });
 
@@ -188,13 +257,15 @@ const mockProject: DialecticProject = {
   saveContributionEditError: null,
 };
 
+const mockProcessTemplateWithStages: DialecticProcessTemplate = {
+  ...mockProject.dialectic_process_templates!,
+  stages: [mockStage],
+  transitions: [],
+};
+
 const mockProjectWithStages: DialecticProject = {
   ...mockProject,
-  dialectic_process_templates: {
-    ...mockProject.dialectic_process_templates!,
-    stages: [mockStage],
-    transitions: [],
-  },
+  dialectic_process_templates: mockProcessTemplateWithStages,
 };
 
 const mockUnifiedProgressWithBar: UnifiedProjectProgress = {
@@ -206,6 +277,37 @@ const mockUnifiedProgressWithBar: UnifiedProjectProgress = {
   projectStatus: 'not_started',
   hydrationReady: true,
   stageDetails: [],
+};
+
+const costTestSelectedModels: SelectedModels[] = [
+  { id: 'model-1', displayName: 'Model 1' },
+];
+
+const defaultActiveChatWalletInfo: ActiveChatWalletInfo = {
+  status: 'ok',
+  type: 'personal',
+  walletId: 'wallet-1',
+  orgId: null,
+  balance: '500000',
+  message: undefined,
+  isLoadingPrimaryWallet: false,
+};
+
+const resetCostCeilingAndWalletMocks = (): void => {
+  selectCostCeilingMock.mockReturnValue(
+    buildComputeCostCeilingErrorReturn({ error: outputCapNotInitializedError }),
+  );
+  initializeMockWalletStore();
+  vi.mocked(selectActiveChatWalletInfo).mockReturnValue(defaultActiveChatWalletInfo);
+};
+
+const seedCostCeilingAuthForFooter = (): void => {
+  resetAuthStoreMock();
+  mockedUseAuthStoreHookLogic.setState({
+    isLoading: false,
+    userTier: costCeilingBasicUserTier,
+    error: null,
+  });
 };
 
 const setupMockStore = (
@@ -231,6 +333,18 @@ const setupMockStore = (
   });
 };
 
+const setupCostCeilingFixture = (
+  initialStateOverrides: Partial<DialecticStateValues> = {},
+): void => {
+  setupMockStore({
+    currentProjectDetail: mockProjectWithStages,
+    currentProcessTemplate: mockProcessTemplateWithStages,
+    viewingStageSlug: mockStageSlug,
+    selectedModels: costTestSelectedModels,
+    ...initialStateOverrides,
+  });
+};
+
 describe('SessionInfoCard', () => {
   const renderComponent = () => {
     return render(
@@ -253,7 +367,7 @@ describe('SessionInfoCard', () => {
     beforeEach(() => {
       vi.clearAllMocks();
       resetAiStoreMock();
-      initializeMockWalletStore();
+      resetCostCeilingAndWalletMocks();
     });
 
     it('renders the prompt content directly from activeSeedPrompt', async () => {
@@ -266,7 +380,7 @@ describe('SessionInfoCard', () => {
       await openSeedPromptViaDropdown();
 
       const markdownRenderer = await screen.findByTestId('markdown-renderer-mock');
-      expect(markdownRenderer).toHaveTextContent(mockAssembledPrompt.promptContent);
+      expect(markdownRenderer.textContent).toBe(mockAssembledPrompt.promptContent);
       expect(screen.queryByTestId('iteration-prompt-loading')).toBeNull();
       expect(screen.queryByText('Error Loading Prompt')).toBeNull();
     });
@@ -281,7 +395,7 @@ describe('SessionInfoCard', () => {
 
         const { container } = renderComponent();
 
-        expect(container.querySelector('[data-slot="skeleton"]')).toBeInTheDocument();
+        expect(container.querySelector('[data-slot="skeleton"]')).not.toBeNull();
     });
 
 
@@ -294,7 +408,7 @@ describe('SessionInfoCard', () => {
       renderComponent();
       await openSeedPromptViaDropdown();
 
-      expect(await screen.findByText('No seed prompt available for this session.')).toBeInTheDocument();
+      expect(screen.getByText('No seed prompt available for this session.')).not.toBeNull();
     });
 
     it('does not call fetchInitialPromptContent', async () => {
@@ -318,10 +432,11 @@ describe('SessionInfoCard', () => {
       // Clear mocks and reset stores before each test in this block
       vi.clearAllMocks();
       resetAiStoreMock();
-      initializeMockWalletStore();
+      resetCostCeilingAndWalletMocks();
     });
 
     it('renders basic session information correctly when stage is ready', async () => {
+      seedCostCeilingAuthForFooter();
       setupMockStore(
         {
           currentProjectDetail: mockProjectWithStages,
@@ -338,11 +453,14 @@ describe('SessionInfoCard', () => {
       await openSeedPromptViaDropdown();
 
       const cardTitleElement = await screen.findByTestId(`session-info-title-${mockSession.id}`);
-      expect(cardTitleElement).toBeInTheDocument();
-      expect(cardTitleElement).toHaveTextContent(new RegExp(mockSession.session_description!));
-      expect(screen.getByText(/Iteration\s+1/)).toBeInTheDocument();
+      expect(cardTitleElement).not.toBeNull();
+      expect(cardTitleElement.textContent).toMatch(new RegExp(mockSession.session_description!));
+      expect(screen.getByText(/Iteration\s+1/)).not.toBeNull();
 
       expect(screen.queryByText('Loading Session Information...')).toBeNull();
+      expect(screen.getByTestId('session-info-estimate-error-notice').textContent).toBe(
+        outputCapNotInitializedError.message,
+      );
     });
 
     it('displays "no prompt" message when no seed prompt is available', async () => {
@@ -356,7 +474,7 @@ describe('SessionInfoCard', () => {
 
       expect(
         await screen.findByText('No seed prompt available for this session.'),
-      ).toBeInTheDocument();
+      ).not.toBeNull();
     });
 
     it('when generating, does not display duplicate Generating contributions... indicator', () => {
@@ -376,7 +494,7 @@ describe('SessionInfoCard', () => {
         generatingSessions: { [mockSessionId]: ['job-1', 'job-2'] },
       });
       renderComponent();
-      expect(screen.getByTestId('dynamic-progress-bar-mock')).toBeInTheDocument();
+      expect(screen.getByTestId('dynamic-progress-bar-mock')).not.toBeNull();
     });
     it('hides the spinner and displays generation error when a failure is recorded', () => {
       const error: ApiError = { message: 'Planner failure', code: 'MODEL_FAILURE' };
@@ -387,9 +505,9 @@ describe('SessionInfoCard', () => {
       renderComponent();
       expect(screen.queryByTestId('generating-contributions-indicator')).toBeNull();
       const errorAlert = screen.getByTestId('generate-contributions-error');
-      expect(errorAlert).toBeInTheDocument();
-      expect(within(errorAlert).getByText('Error Generating Contributions')).toBeInTheDocument();
-      expect(within(errorAlert).getByText(error.message)).toBeInTheDocument();
+      expect(errorAlert).not.toBeNull();
+      expect(within(errorAlert).getByText('Error Generating Contributions')).not.toBeNull();
+      expect(within(errorAlert).getByText(error.message)).not.toBeNull();
     });
 
     it('displays generation error if error is present', () => {
@@ -399,9 +517,9 @@ describe('SessionInfoCard', () => {
       );
       renderComponent();
       const errorAlert = screen.getByTestId('generate-contributions-error');
-      expect(errorAlert).toBeInTheDocument();
-      expect(within(errorAlert).getByText('Error Generating Contributions')).toBeInTheDocument();
-      expect(within(errorAlert).getByText(error.message)).toBeInTheDocument();
+      expect(errorAlert).not.toBeNull();
+      expect(within(errorAlert).getByText('Error Generating Contributions')).not.toBeNull();
+      expect(within(errorAlert).getByText(error.message)).not.toBeNull();
     });
 
     it('does not display generation error or indicator if not generating and no error', () => {
@@ -416,24 +534,24 @@ describe('SessionInfoCard', () => {
     beforeEach(() => {
       vi.clearAllMocks();
       resetAiStoreMock();
-      initializeMockWalletStore();
+      resetCostCeilingAndWalletMocks();
       selectUnifiedProjectProgressMock.mockReturnValue(mockUnifiedProgressWithBar);
     });
 
     it('displays single unified progress indicator from SSOT', () => {
       setupMockStore({ currentProjectDetail: mockProjectWithStages });
       renderComponent();
-      expect(screen.getByTestId('dynamic-progress-bar-mock')).toBeInTheDocument();
+      expect(screen.getByTestId('dynamic-progress-bar-mock')).not.toBeNull();
       expect(screen.queryByTestId('generating-contributions-indicator')).toBeNull();
     });
 
     it('session title and iteration badge are shown when project is loaded', () => {
       setupMockStore({ currentProjectDetail: mockProjectWithStages });
       renderComponent();
-      expect(screen.getByTestId(`session-info-title-${mockSession.id}`)).toHaveTextContent(
+      expect(screen.getByTestId(`session-info-title-${mockSession.id}`).textContent).toBe(
         mockSession.session_description!,
       );
-      expect(screen.getByText(/Iteration\s+1/)).toBeInTheDocument();
+      expect(screen.getByText(/Iteration\s+1/)).not.toBeNull();
     });
 
     it('removes duplicate Generating contributions... indicator when progress bar is active', () => {
@@ -444,13 +562,13 @@ describe('SessionInfoCard', () => {
       renderComponent();
       expect(screen.queryByTestId('generating-contributions-indicator')).toBeNull();
       expect(screen.queryByText(/Generating contributions, please wait.../i)).toBeNull();
-      expect(screen.getByTestId('dynamic-progress-bar-mock')).toBeInTheDocument();
+      expect(screen.getByTestId('dynamic-progress-bar-mock')).not.toBeNull();
     });
 
     it('progress bar is visible when unified progress has stages', () => {
       setupMockStore({ currentProjectDetail: mockProjectWithStages });
       renderComponent();
-      expect(screen.getByTestId('dynamic-progress-bar-mock')).toBeInTheDocument();
+      expect(screen.getByTestId('dynamic-progress-bar-mock')).not.toBeNull();
     });
   });
 
@@ -458,19 +576,21 @@ describe('SessionInfoCard', () => {
     beforeEach(() => {
       vi.clearAllMocks();
       resetAiStoreMock();
-      initializeMockWalletStore();
+      resetCostCeilingAndWalletMocks();
     });
 
     it('renders loading state if session is undefined', () => {
       setupMockStore({ currentProjectDetail: mockProject, activeSessionDetail: null });
       const { container } = renderComponent();
-      expect(container.querySelector('[data-slot="skeleton"]')).toBeInTheDocument();
+      expect(container.querySelector('[data-slot="skeleton"]')).not.toBeNull();
+      expect(screen.queryByTestId('session-info-estimate-error-notice')).toBeNull();
     });
 
     it('renders loading state if project is undefined', () => {
       setupMockStore({ currentProjectDetail: null });
       const { container } = renderComponent();
-      expect(container.querySelector('[data-slot="skeleton"]')).toBeInTheDocument();
+      expect(container.querySelector('[data-slot="skeleton"]')).not.toBeNull();
+      expect(screen.queryByTestId('session-info-estimate-error-notice')).toBeNull();
     });
   });
 
@@ -478,7 +598,7 @@ describe('SessionInfoCard', () => {
     beforeEach(() => {
       vi.clearAllMocks();
       resetAiStoreMock();
-      initializeMockWalletStore();
+      resetCostCeilingAndWalletMocks();
     });
 
     it('does not render "Export Final" button even when isFinalStageInProcess is true', async () => {
@@ -539,15 +659,15 @@ describe('SessionInfoCard', () => {
 
       // Step 6.b.iii: Assert that the "Export Final" button is NOT rendered,
       // even when isFinalStageInProcess is true
-      expect(screen.queryByText('Export Final')).not.toBeInTheDocument();
-      expect(screen.queryByRole('button', { name: /export final/i })).not.toBeInTheDocument();
+      expect(screen.queryByText('Export Final')).toBeNull();
+      expect(screen.queryByRole('button', { name: /export final/i })).toBeNull();
 
       // Step 6.b.iv: Assert that Export is available via the More actions dropdown
       const user = userEvent.setup();
       await user.click(screen.getByRole('button', { name: /more actions/i }));
       const exportAction = await screen.findByText('Export Project');
-      expect(exportAction).toBeInTheDocument();
-      expect(exportAction).not.toHaveTextContent('Export Final');
+      expect(exportAction).not.toBeNull();
+      expect(exportAction.textContent).not.toBe('Export Final');
     });
   });
 
@@ -555,7 +675,7 @@ describe('SessionInfoCard', () => {
     beforeEach(() => {
       vi.clearAllMocks();
       resetAiStoreMock();
-      initializeMockWalletStore();
+      resetCostCeilingAndWalletMocks();
     });
 
     it('renders Export button in final stage (isFinalStageInProcess is true)', async () => {
@@ -614,8 +734,8 @@ describe('SessionInfoCard', () => {
       const user = userEvent.setup();
       await user.click(screen.getByRole('button', { name: /more actions/i }));
       const exportAction = await screen.findByText('Export Project');
-      expect(exportAction).toBeInTheDocument();
-      expect(exportAction).not.toHaveTextContent('Export Final');
+      expect(exportAction).not.toBeNull();
+      expect(exportAction.textContent).not.toBe('Export Final');
     });
 
     it('renders Export button in non-final stage (isFinalStageInProcess is false)', async () => {
@@ -673,8 +793,8 @@ describe('SessionInfoCard', () => {
       const user = userEvent.setup();
       await user.click(screen.getByRole('button', { name: /more actions/i }));
       const exportAction = await screen.findByText('Export Project');
-      expect(exportAction).toBeInTheDocument();
-      expect(exportAction).not.toHaveTextContent('Export Final');
+      expect(exportAction).not.toBeNull();
+      expect(exportAction.textContent).not.toBe('Export Final');
     });
   });
 
@@ -682,7 +802,8 @@ describe('SessionInfoCard', () => {
     beforeEach(() => {
       vi.clearAllMocks();
       resetAiStoreMock();
-      initializeMockWalletStore();
+      resetCostCeilingAndWalletMocks();
+      seedCostCeilingAuthForFooter();
       selectUnifiedProjectProgressMock.mockReturnValue(mockUnifiedProgressWithBar);
     });
 
@@ -695,16 +816,16 @@ describe('SessionInfoCard', () => {
       const iterationBadge = screen.getByText(/Iteration\s+1/);
       const moreActionsButton = screen.getByRole('button', { name: /more actions/i });
 
-      expect(backButton).toBeInTheDocument();
-      expect(title).toBeInTheDocument();
-      expect(iterationBadge).toBeInTheDocument();
-      expect(moreActionsButton).toBeInTheDocument();
+      expect(backButton).not.toBeNull();
+      expect(title).not.toBeNull();
+      expect(iterationBadge).not.toBeNull();
+      expect(moreActionsButton).not.toBeNull();
 
       const row1 = backButton.closest('.flex');
-      expect(row1).toBeInTheDocument();
-      expect(row1).toContainElement(title);
-      expect(row1).toContainElement(iterationBadge);
-      expect(row1).toContainElement(moreActionsButton);
+      expect(row1).not.toBeNull();
+      expect(row1?.contains(title)).toBe(true);
+      expect(row1?.contains(iterationBadge)).toBe(true);
+      expect(row1?.contains(moreActionsButton)).toBe(true);
     });
 
     it('Row 2 renders Model Selector popover, Wallet Selector, and DynamicProgressBar in a single flex row', () => {
@@ -715,14 +836,17 @@ describe('SessionInfoCard', () => {
       const walletSelector = screen.getByTestId('mock-wallet-selector');
       const progressBar = screen.getByTestId('dynamic-progress-bar-mock');
 
-      expect(modelSelectorTrigger).toBeInTheDocument();
-      expect(walletSelector).toBeInTheDocument();
-      expect(progressBar).toBeInTheDocument();
+      expect(modelSelectorTrigger).not.toBeNull();
+      expect(walletSelector).not.toBeNull();
+      expect(progressBar).not.toBeNull();
 
       const row2 = progressBar.closest('.flex');
-      expect(row2).toBeInTheDocument();
-      expect(row2).toContainElement(modelSelectorTrigger);
-      expect(row2).toContainElement(walletSelector);
+      expect(row2).not.toBeNull();
+      expect(row2?.contains(modelSelectorTrigger)).toBe(true);
+      expect(row2?.contains(walletSelector)).toBe(true);
+      expect(screen.getByTestId('session-info-estimate-error-notice').textContent).toBe(
+        outputCapNotInitializedError.message,
+      );
     });
 
     it('... dropdown contains Export, Continue Until Complete, and Show/Hide Seed Prompt toggle', async () => {
@@ -732,11 +856,11 @@ describe('SessionInfoCard', () => {
       const user = userEvent.setup();
       await user.click(screen.getByRole('button', { name: /more actions/i }));
 
-      expect(await screen.findByText('Export Project')).toBeInTheDocument();
-      expect(screen.getByTestId('mock-continue-toggle')).toBeInTheDocument();
+      expect(await screen.findByText('Export Project')).not.toBeNull();
+      expect(screen.getByTestId('mock-continue-toggle')).not.toBeNull();
       expect(
         screen.getByRole('menuitem', { name: /show seed prompt|hide seed prompt/i })
-      ).toBeInTheDocument();
+      ).not.toBeNull();
     });
 
     it('clicking seed prompt dropdown item toggles the collapsible seed prompt section', async () => {
@@ -747,7 +871,7 @@ describe('SessionInfoCard', () => {
       renderComponent();
 
       const user = userEvent.setup();
-      expect(screen.queryByTestId('markdown-renderer-mock')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('markdown-renderer-mock')).toBeNull();
 
       await user.click(screen.getByRole('button', { name: /more actions/i }));
       const seedPromptItem = await screen.findByRole('menuitem', {
@@ -755,8 +879,8 @@ describe('SessionInfoCard', () => {
       });
       await user.click(seedPromptItem);
 
-      expect(await screen.findByTestId('markdown-renderer-mock')).toBeInTheDocument();
-      expect(screen.getByTestId('markdown-renderer-mock')).toHaveTextContent(
+      expect(await screen.findByTestId('markdown-renderer-mock')).not.toBeNull();
+      expect(screen.getByTestId('markdown-renderer-mock').textContent).toBe(
         mockAssembledPrompt.promptContent
       );
 
@@ -764,7 +888,7 @@ describe('SessionInfoCard', () => {
       const hideItem = await screen.findByRole('menuitem', { name: /hide seed prompt/i });
       await user.click(hideItem);
 
-      expect(screen.queryByTestId('markdown-renderer-mock')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('markdown-renderer-mock')).toBeNull();
     });
 
     it('header has sufficient left padding to clear the app sidebar trigger (pl-14 or equivalent)', () => {
@@ -772,7 +896,7 @@ describe('SessionInfoCard', () => {
       const { container } = renderComponent();
 
       const headerWrapper = container.querySelector('[aria-labelledby]');
-      expect(headerWrapper).toBeInTheDocument();
+      expect(headerWrapper).not.toBeNull();
       expect(headerWrapper?.className).toMatch(/pl-14/);
     });
 
@@ -785,9 +909,9 @@ describe('SessionInfoCard', () => {
       renderComponent();
 
       const errorAlert = screen.getByTestId('generate-contributions-error');
-      expect(errorAlert).toBeInTheDocument();
-      expect(within(errorAlert).getByText('Error Generating Contributions')).toBeInTheDocument();
-      expect(within(errorAlert).getByText(error.message)).toBeInTheDocument();
+      expect(errorAlert).not.toBeNull();
+      expect(within(errorAlert).getByText('Error Generating Contributions')).not.toBeNull();
+      expect(within(errorAlert).getByText(error.message)).not.toBeNull();
     });
 
     it('seed prompt collapsible section still renders below the rows when toggled open', async () => {
@@ -805,8 +929,394 @@ describe('SessionInfoCard', () => {
       await user.click(seedPromptItem);
 
       const seedSection = await screen.findByTestId('markdown-renderer-mock');
-      expect(seedSection).toBeInTheDocument();
-      expect(seedSection.closest('.rounded-lg')).toBeInTheDocument();
+      expect(seedSection).not.toBeNull();
+      expect(seedSection.closest('.rounded-lg')).not.toBeNull();
     });
   });
-}); 
+
+  describe('cost ceiling display (SessionInfoCard)', () => {
+    beforeEach(() => {
+      vi.clearAllMocks();
+      resetAiStoreMock();
+      resetCostCeilingAndWalletMocks();
+      seedCostCeilingAuthForFooter();
+      selectUnifiedProjectProgressMock.mockReturnValue(mockUnifiedProgressWithBar);
+      selectCostCeilingMock.mockReturnValue(
+        buildComputeCostCeilingErrorReturn({ error: outputCapNotInitializedError }),
+      );
+    });
+
+    it('renders stage and project cost estimates when selectCostCeiling returns success', () => {
+      const successCostCeiling: ComputeCostCeilingSuccessReturn = {
+        stageCeilings: { thesis: 120000 },
+        projectCeiling: 350000,
+      };
+      selectCostCeilingMock.mockReturnValue(successCostCeiling);
+      setupCostCeilingFixture();
+      renderComponent();
+
+      const stageEstimate = screen.getByTestId('session-info-stage-cost-estimate');
+      expect(stageEstimate.textContent).toContain('Estimated cost for this stage');
+      expect(stageEstimate.textContent).toContain('120K');
+      expect(stageEstimate.textContent).not.toContain('120,000');
+
+      const projectEstimate = screen.getByTestId('session-info-project-cost-estimate');
+      expect(projectEstimate.textContent).toContain('Estimated project cost');
+      expect(projectEstimate.textContent).toContain('350K');
+      expect(projectEstimate.textContent).not.toContain('350,000');
+
+      expect(screen.queryByTestId('session-info-estimate-error-notice')).toBeNull();
+    });
+
+    it('renders estimate error notice when selectCostCeiling returns OUTPUT_CAP_NOT_INITIALIZED', () => {
+      selectCostCeilingMock.mockReturnValue(
+        buildComputeCostCeilingErrorReturn({ error: outputCapNotInitializedError }),
+      );
+      setupCostCeilingFixture();
+      renderComponent();
+
+      expect(screen.getByTestId('session-info-estimate-error-notice').textContent).toBe(
+        outputCapNotInitializedError.message,
+      );
+
+      expect(screen.queryByTestId('session-info-stage-cost-estimate')).toBeNull();
+      expect(screen.queryByTestId('session-info-project-cost-estimate')).toBeNull();
+      expect(screen.queryByTestId('session-info-project-balance-warning')).toBeNull();
+    });
+
+    it('renders estimate error notice when selectCostCeiling returns error', () => {
+      const costCeilingError: ApiError = {
+        message: 'Invalid payload',
+        code: 'INVALID_PAYLOAD',
+      };
+      selectCostCeilingMock.mockReturnValue(
+        buildComputeCostCeilingErrorReturn({ error: costCeilingError }),
+      );
+      setupCostCeilingFixture();
+      renderComponent();
+
+      expect(screen.getByTestId('session-info-estimate-error-notice').textContent).toBe(
+        costCeilingError.message,
+      );
+
+      expect(screen.queryByTestId('session-info-stage-cost-estimate')).toBeNull();
+      expect(screen.queryByTestId('session-info-project-cost-estimate')).toBeNull();
+    });
+
+    it('renders project balance warning when wallet balance is below projectCeiling', () => {
+      const successCostCeiling: ComputeCostCeilingSuccessReturn = {
+        stageCeilings: { thesis: 120000 },
+        projectCeiling: 400000,
+      };
+      selectCostCeilingMock.mockReturnValue(successCostCeiling);
+      const lowBalanceWalletInfo: ActiveChatWalletInfo = {
+        status: 'ok',
+        type: 'personal',
+        walletId: 'wallet-1',
+        orgId: null,
+        balance: '250000',
+        message: undefined,
+        isLoadingPrimaryWallet: false,
+      };
+      initializeMockWalletStore();
+      vi.mocked(selectActiveChatWalletInfo).mockReturnValue(lowBalanceWalletInfo);
+      setupCostCeilingFixture();
+      renderComponent();
+
+      expect(screen.getByTestId('session-info-stage-cost-estimate')).not.toBeNull();
+      expect(screen.getByTestId('session-info-project-cost-estimate')).not.toBeNull();
+
+      const balanceWarning = screen.getByTestId('session-info-project-balance-warning');
+      expect(balanceWarning.textContent).toContain('400K');
+      expect(balanceWarning.textContent).not.toContain('400,000');
+      expect(balanceWarning.textContent).toContain('150K');
+      expect(balanceWarning.textContent).not.toContain('150,000');
+
+      const topUpLink = screen.getByRole('link', { name: /top up/i });
+      expect(topUpLink.getAttribute('href')).toBe('/subscription?tab=top-up');
+    });
+
+    it('does not render project balance warning when wallet balance meets or exceeds projectCeiling', () => {
+      const successCostCeiling: ComputeCostCeilingSuccessReturn = {
+        stageCeilings: { thesis: 120000 },
+        projectCeiling: 350000,
+      };
+      selectCostCeilingMock.mockReturnValue(successCostCeiling);
+      const sufficientWalletInfo: ActiveChatWalletInfo = {
+        status: 'ok',
+        type: 'personal',
+        walletId: 'wallet-1',
+        orgId: null,
+        balance: '350000',
+        message: undefined,
+        isLoadingPrimaryWallet: false,
+      };
+      vi.mocked(selectActiveChatWalletInfo).mockReturnValue(sufficientWalletInfo);
+      setupCostCeilingFixture();
+      renderComponent();
+
+      expect(screen.getByTestId('session-info-stage-cost-estimate')).not.toBeNull();
+      expect(screen.getByTestId('session-info-project-cost-estimate')).not.toBeNull();
+      expect(screen.queryByTestId('session-info-project-balance-warning')).toBeNull();
+    });
+
+    it('omits stage cost estimate when viewing stage slug is missing from stageCeilings', () => {
+      const successCostCeilingWithoutThesis: ComputeCostCeilingSuccessReturn = {
+        stageCeilings: { antithesis: 80000 },
+        projectCeiling: 350000,
+      };
+      selectCostCeilingMock.mockReturnValue(successCostCeilingWithoutThesis);
+      setupCostCeilingFixture();
+      renderComponent();
+
+      expect(screen.queryByTestId('session-info-stage-cost-estimate')).toBeNull();
+      expect(screen.getByTestId('session-info-project-cost-estimate')).not.toBeNull();
+    });
+
+    it('does not call initializeMaxOutputTokens while isLoadingModelCatalog', async () => {
+      mockedUseAuthStoreHookLogic.setState({
+        isLoading: false,
+        userTier: costCeilingBasicUserTier,
+        error: null,
+      });
+      setupCostCeilingFixture({
+        modelCatalog: [],
+        isLoadingModelCatalog: true,
+      });
+      renderComponent();
+
+      await waitFor(() => {
+        expect(screen.getByTestId('session-info-estimate-loading-notice')).not.toBeNull();
+      });
+      expect(getDialecticStoreActionMock('initializeMaxOutputTokens')).not.toHaveBeenCalled();
+      expect(screen.queryByTestId('session-info-estimate-error-notice')).toBeNull();
+    });
+
+    it('reconciliation calls initializeMaxOutputTokens when cap still null after loading and store orchestrator skipped or failed', async () => {
+      const reconciliationInitError: ApiError = {
+        code: 'NO_DEFAULT_GENERATION_MODELS',
+        message: 'No default generation models are available in the catalog.',
+      };
+      selectCostCeilingMock.mockReturnValue(
+        buildComputeCostCeilingErrorReturn({ error: selectorDecoyError }),
+      );
+      setupCostCeilingFixture({
+        modelCatalog: defaultCostCeilingCatalog,
+        isLoadingModelCatalog: false,
+        isLoadingActiveSessionDetail: false,
+        isLoadingProcessTemplate: false,
+        maxOutputTokens: null,
+        outputCapUserCustomized: false,
+      });
+      vi.mocked(getDialecticStoreActionMock('initializeMaxOutputTokens')).mockReturnValue({
+        ok: false,
+        error: reconciliationInitError,
+      });
+      renderComponent();
+
+      await waitFor(() => {
+        expect(getDialecticStoreActionMock('initializeMaxOutputTokens')).toHaveBeenCalledTimes(1);
+      });
+      await waitFor(() => {
+        expect(screen.getByTestId('session-info-estimate-error-notice').textContent).toBe(
+          reconciliationInitError.message,
+        );
+      });
+      expect(screen.queryByText(selectorDecoyError.message)).toBeNull();
+    });
+
+    it('does not call initializeMaxOutputTokens for bootstrap when maxOutputTokens already finite from store', async () => {
+      const hydratedFiniteCapSuccess: ComputeCostCeilingSuccessReturn = {
+        stageCeilings: { thesis: 120000 },
+        projectCeiling: 350000,
+      };
+      selectCostCeilingMock.mockReturnValue(hydratedFiniteCapSuccess);
+      setupCostCeilingFixture({
+        modelCatalog: defaultCostCeilingCatalog,
+        isLoadingModelCatalog: false,
+        isLoadingActiveSessionDetail: false,
+        isLoadingProcessTemplate: false,
+        maxOutputTokens: costCeilingBasicUserTier.output_cap_tokens,
+        outputCapUserCustomized: false,
+      });
+      renderComponent();
+
+      await waitFor(() => {
+        expect(screen.queryByTestId('session-info-estimate-loading-notice')).toBeNull();
+      });
+      expect(getDialecticStoreActionMock('initializeMaxOutputTokens')).not.toHaveBeenCalled();
+      expect(screen.queryByTestId('session-info-estimate-error-notice')).toBeNull();
+      expect(screen.getByTestId('session-info-stage-cost-estimate')).not.toBeNull();
+      expect(screen.getByTestId('session-info-project-cost-estimate')).not.toBeNull();
+      expect(screen.queryByText(outputCapNotInitializedError.message)).toBeNull();
+    });
+
+    it('shows catalog loading notice while isLoadingModelCatalog without OUTPUT_CAP_NOT_INITIALIZED error', async () => {
+      selectCostCeilingMock.mockReturnValue(
+        buildComputeCostCeilingErrorReturn({ error: outputCapNotInitializedError }),
+      );
+      setupCostCeilingFixture({
+        modelCatalog: [],
+        isLoadingModelCatalog: true,
+      });
+      renderComponent();
+
+      await waitFor(() => {
+        expect(screen.getByTestId('session-info-estimate-loading-notice').textContent).toBe(
+          'Loading model catalog…',
+        );
+      });
+      expect(screen.queryByTestId('session-info-estimate-error-notice')).toBeNull();
+    });
+
+    it('shows session loading notice while isLoadingActiveSessionDetail', async () => {
+      selectCostCeilingMock.mockReturnValue(
+        buildComputeCostCeilingErrorReturn({ error: outputCapNotInitializedError }),
+      );
+      setupCostCeilingFixture({
+        isLoadingActiveSessionDetail: true,
+      });
+      renderComponent();
+
+      await waitFor(() => {
+        expect(screen.getByTestId('session-info-estimate-loading-notice').textContent).toBe(
+          'Loading session…',
+        );
+      });
+      expect(screen.queryByTestId('session-info-estimate-error-notice')).toBeNull();
+      expect(getDialecticStoreActionMock('initializeMaxOutputTokens')).not.toHaveBeenCalled();
+    });
+
+    it('shows loading notice while progressHydrationStatus runKey is pending', async () => {
+      setupCostCeilingFixture({
+        progressHydrationStatus: {
+          [`${mockSessionId}:${mockIterationNumber}`]: 'pending',
+        },
+      });
+      renderComponent();
+
+      await waitFor(() => {
+        expect(screen.getByTestId('session-info-estimate-loading-notice').textContent).toContain(
+          'Loading stage progress…',
+        );
+      });
+      expect(screen.queryByTestId('session-info-estimate-error-notice')).toBeNull();
+    });
+
+    it('shows loading notice while auth isLoading', async () => {
+      mockSetAuthIsLoading(true);
+      selectCostCeilingMock.mockReturnValue(
+        buildComputeCostCeilingErrorReturn({ error: outputCapNotInitializedError }),
+      );
+      setupCostCeilingFixture();
+      renderComponent();
+
+      await waitFor(() => {
+        expect(screen.getByTestId('session-info-estimate-loading-notice').textContent).toContain(
+          'Loading subscription tier…',
+        );
+      });
+      expect(screen.queryByTestId('session-info-estimate-error-notice')).toBeNull();
+    });
+
+    it('shows tier-unavailable notice when auth loaded and userTier null', async () => {
+      mockedUseAuthStoreHookLogic.setState({
+        isLoading: false,
+        userTier: null,
+        error: null,
+      });
+      selectCostCeilingMock.mockReturnValue(
+        buildComputeCostCeilingErrorReturn({ error: outputCapNotInitializedError }),
+      );
+      setupCostCeilingFixture();
+      renderComponent();
+
+      await waitFor(() => {
+        expect(screen.getByTestId('session-info-estimate-error-notice').textContent).toBe(
+          subscriptionTierUnavailableMessage,
+        );
+      });
+      expect(screen.queryByText(outputCapNotInitializedError.message)).toBeNull();
+    });
+
+    it('passes through authStore.error before selector error', async () => {
+      const tierFetchError: Error = new Error('Profile tier fetch failed.');
+      mockSetAuthError(tierFetchError);
+      selectCostCeilingMock.mockReturnValue(
+        buildComputeCostCeilingErrorReturn({ error: selectorDecoyError }),
+      );
+      setupCostCeilingFixture();
+      renderComponent();
+
+      await waitFor(() => {
+        expect(screen.getByTestId('session-info-estimate-error-notice').textContent).toBe(
+          'Profile tier fetch failed.',
+        );
+      });
+      expect(screen.queryByText(selectorDecoyError.message)).toBeNull();
+    });
+
+    it.each<ApiError>([
+      {
+        code: 'NO_DEFAULT_GENERATION_MODELS',
+        message: 'No default generation models are available in the catalog.',
+      },
+      {
+        code: 'MODEL_CATALOG_ENTRY_MISSING',
+        message: 'Model catalog entry missing for selected model id dft.',
+        details: { modelId: 'dft' },
+      },
+      {
+        code: 'MODEL_OUTPUT_CAP_UNAVAILABLE',
+        message: 'Model output cap is unavailable for model id dft.',
+        details: { modelId: 'dft' },
+      },
+      {
+        code: 'MODEL_CATALOG_INVALID_CONFIG',
+        message: 'Model catalog config invalid for model id dft.',
+        details: { modelId: 'dft' },
+      },
+    ])(
+      'passes through capInitResult error before selector error for $code',
+      async (initError: ApiError) => {
+        selectCostCeilingMock.mockReturnValue(
+          buildComputeCostCeilingErrorReturn({ error: selectorDecoyError }),
+        );
+        setupCostCeilingFixture({
+          modelCatalog: defaultCostCeilingCatalog,
+          isLoadingModelCatalog: false,
+          isLoadingActiveSessionDetail: false,
+          isLoadingProcessTemplate: false,
+          maxOutputTokens: null,
+          outputCapUserCustomized: false,
+        });
+        vi.mocked(getDialecticStoreActionMock('initializeMaxOutputTokens')).mockReturnValue({
+          ok: false,
+          error: initError,
+        });
+        renderComponent();
+
+        await waitFor(() => {
+          expect(screen.getByTestId('session-info-estimate-error-notice').textContent).toBe(
+            initError.message,
+          );
+        });
+        expect(screen.queryByText(selectorDecoyError.message)).toBeNull();
+      },
+    );
+
+    it('session cost estimates show abbreviated token counts for large ceilings', () => {
+      selectCostCeilingMock.mockReturnValue(largeCeilingSuccess);
+      setupCostCeilingFixture();
+      renderComponent();
+
+      const stageEstimate = screen.getByTestId('session-info-stage-cost-estimate');
+      expect(stageEstimate.textContent).toContain('39K');
+      expect(stageEstimate.textContent).not.toContain('39,015');
+
+      const projectEstimate = screen.getByTestId('session-info-project-cost-estimate');
+      expect(projectEstimate.textContent).toContain('1.1M');
+      expect(projectEstimate.textContent).not.toContain('1,139,238');
+    });
+  });
+});

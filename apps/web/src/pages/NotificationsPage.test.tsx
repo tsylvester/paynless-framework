@@ -1,16 +1,14 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import { vi } from 'vitest';
 import { Notifications as NotificationsPage } from './Notifications'; // Rename to avoid confusion
-import { useNotificationStore } from '@paynless/store';
 import type { Notification } from '@paynless/types';
-import type { NotificationState } from '@paynless/store';
+
+const mockUseNotificationStore = vi.hoisted(() => vi.fn());
 
 // Mock the store
 vi.mock('@paynless/store', () => ({
-    useNotificationStore: vi.fn(),
+    useNotificationStore: mockUseNotificationStore,
 }));
-
-const mockedUseNotificationStore = useNotificationStore;
 
 // Mock the child component
 vi.mock('@/components/notifications/NotificationCard', () => ({
@@ -36,15 +34,15 @@ describe('Notifications Page', () => {
     });
 
     it('renders the heading and fetches notifications if the store is empty', async () => {
-        mockedUseNotificationStore.mockImplementation((selector: (state: NotificationState) => unknown) => selector({
+        mockUseNotificationStore.mockReturnValue({
             notifications: [],
             fetchNotifications: mockFetchNotifications,
-        } as unknown as NotificationState));
+        });
 
         render(<NotificationsPage />);
 
-        expect(screen.getByRole('heading', { name: /notification history/i })).toBeInTheDocument();
-        expect(screen.getByText(/you have no notifications/i)).toBeInTheDocument();
+        expect(screen.getByRole('heading', { name: /Notifications/i })).toBeDefined();
+        expect(screen.getByText(/No notifications yet/i)).toBeDefined();
         
         await waitFor(() => {
             expect(mockFetchNotifications).toHaveBeenCalledTimes(1);
@@ -53,24 +51,24 @@ describe('Notifications Page', () => {
 
     it('displays notifications from the store and does not fetch again', () => {
         const mockNotifications: Notification[] = [
-            { id: '1', data: { message: 'First notification' }, created_at: new Date().toISOString(), type: 'info', user_id: 'user-1', read: false },
-            { id: '2', data: { message: 'Second notification' }, created_at: new Date().toISOString(), type: 'info', user_id: 'user-1', read: false },
+            { id: '1', data: { message: 'First notification' }, created_at: new Date().toISOString(), type: 'info', user_id: 'user-1', read: false, is_internal_event: false, link_path: null, message: null, title: null },
+            { id: '2', data: { message: 'Second notification' }, created_at: new Date().toISOString(), type: 'info', user_id: 'user-1', read: false, is_internal_event: false, link_path: null, message: null, title: null },
         ];
 
-        mockedUseNotificationStore.mockImplementation((selector: (state: NotificationState) => unknown) => selector({
+        mockUseNotificationStore.mockReturnValue({
             notifications: mockNotifications,
             fetchNotifications: mockFetchNotifications,
-        } as unknown as NotificationState));
+        });
 
         render(<NotificationsPage />);
 
-        expect(screen.getByRole('heading', { name: /notification history/i })).toBeInTheDocument();
-        expect(screen.queryByText(/you have no notifications/i)).not.toBeInTheDocument();
+        expect(screen.getByRole('heading', { name: /Notifications/i })).toBeDefined();
+        expect(screen.queryByText(/No notifications yet/i)).toBeNull();
         
         const cards = screen.getAllByTestId('mock-notification-card');
         expect(cards).toHaveLength(2);
-        expect(screen.getByText('First notification')).toBeInTheDocument();
-        expect(screen.getByText('Second notification')).toBeInTheDocument();
+        expect(screen.getByText(/First notification/i)).toBeDefined();
+        expect(screen.getByText(/Second notification/i)).toBeDefined();
 
         expect(mockFetchNotifications).not.toHaveBeenCalled();
     });

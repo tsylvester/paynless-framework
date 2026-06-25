@@ -2,7 +2,6 @@ import React from 'react';
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter, type LinkProps } from 'react-router-dom';
-import '@testing-library/jest-dom';
 
 import { NotificationCard } from './NotificationCard';
 import type { Notification } from '@paynless/types';
@@ -36,6 +35,10 @@ describe('NotificationCard Component', () => {
         user_id: 'user-123',
         created_at: new Date('2024-01-01T12:00:00Z').toISOString(),
         type: 'test-type',
+        title: 'Test Title',
+        is_internal_event: false,
+        link_path: '/test-path',
+        message: 'Test Message',
     };
 
     it('should render the subject and message correctly', () => {
@@ -46,8 +49,8 @@ describe('NotificationCard Component', () => {
             data: { subject: 'Test Subject', message: 'This is a test message.' },
         };
         renderCard(notification);
-        expect(screen.getByText('Test Subject')).toBeInTheDocument();
-        expect(screen.getByText('This is a test message.')).toBeInTheDocument();
+        expect(screen.getByText('Test Subject')).toBeDefined();
+        expect(screen.getByText('This is a test message.')).toBeDefined();
     });
 
     it('should display an "Unread" badge for unread notifications', () => {
@@ -58,7 +61,7 @@ describe('NotificationCard Component', () => {
             data: {},
         };
         renderCard(notification);
-        expect(screen.getByText('Unread')).toBeInTheDocument();
+        expect(screen.getByText(/New/i)).toBeDefined();
     });
 
     it('should display a "Read" badge for read notifications', () => {
@@ -69,7 +72,7 @@ describe('NotificationCard Component', () => {
             data: {},
         };
         renderCard(notification);
-        expect(screen.getByText('Read')).toBeInTheDocument();
+        expect(screen.getByText('Read')).toBeDefined();
     });
 
     it('should render a "View Details" link for notifications with an explicit target_path', () => {
@@ -81,8 +84,8 @@ describe('NotificationCard Component', () => {
         };
         renderCard(notification);
         const link = screen.getByRole('link', { name: /View Details/i });
-        expect(link).toBeInTheDocument();
-        expect(link).toHaveAttribute('href', '/explicit/path');
+        expect(link).toBeDefined();
+        expect(link.getAttribute('href')).toBe('/explicit/path');
     });
 
     it('should construct and render a "View Details" link for Dialectic notifications', () => {
@@ -94,8 +97,8 @@ describe('NotificationCard Component', () => {
         };
         renderCard(notification);
         const link = screen.getByRole('link', { name: /View Details/i });
-        expect(link).toBeInTheDocument();
-        expect(link).toHaveAttribute('href', '/dialectic/proj-abc/session/sess-xyz');
+        expect(link).toBeDefined();
+        expect(link.getAttribute('href')).toBe('/dialectic/proj-abc/session/sess-xyz');
     });
 
     it('should not render a "View Details" link if no path information is available', () => {
@@ -106,7 +109,7 @@ describe('NotificationCard Component', () => {
             data: { message: 'Just a message, no link.' },
         };
         renderCard(notification);
-        expect(screen.queryByRole('link', { name: /View Details/i })).not.toBeInTheDocument();
+        expect(screen.queryByRole('link', { name: /View Details/i })).toBeNull();
     });
 
     it('should render default text when data object is null', () => {
@@ -117,7 +120,7 @@ describe('NotificationCard Component', () => {
             data: null,
         };
         const { container } = renderCard(notification);
-        expect(screen.getByText('System Notification')).toBeInTheDocument();
+        expect(screen.getByText('System Notification')).toBeDefined();
         // The message is conditionally rendered and should not be present.
         // We query for the message paragraph element and expect it to be null.
         const messageElement = container.querySelector('p.text-muted-foreground.mb-3');
@@ -132,6 +135,6 @@ describe('NotificationCard Component', () => {
             data: {},
         };
         renderCard(notification);
-        expect(screen.getByText('test-type')).toBeInTheDocument();
+        expect(screen.getByText('test-type')).toBeDefined();
     });
 }); 

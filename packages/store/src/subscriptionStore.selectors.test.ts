@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import type { SubscriptionState, UserSubscription, SubscriptionPlan } from '@paynless/types';
+import type { SubscriptionState, SubscriptionPlan } from '@paynless/types';
+import { buildSubscriptionPlan } from '../../../apps/web/src/components/subscription/PlanCard.mock';
+import {
+  buildUserSubscription,
+  mockUserSubscriptionTrialing,
+} from '../../../apps/web/src/mocks/userSubscription.mock';
 import {
   selectUserSubscription,
   selectAvailablePlans,
@@ -11,102 +16,66 @@ import {
   selectCurrentUserTokenBudget,
 } from './subscriptionStore.selectors';
 
-// Mock Data
-const mockPlan1: SubscriptionPlan = {
+const mockPlan1: SubscriptionPlan = buildSubscriptionPlan({
   id: 'plan_1',
-  active: true,
-  amount: 1000,
-  currency: 'usd',
-  interval: 'month',
-  interval_count: 1,
   name: 'Pro Plan',
+  amount: 1000,
   stripe_price_id: 'price_1',
   stripe_product_id: 'prod_1',
   metadata: { token_limit: 100000, features: ['feature_a'] },
-  created_at: new Date().toISOString(),
-  updated_at: new Date().toISOString(),
-  description: null,
-};
+  tokens_to_award: 100000,
+  tier_level: 10,
+});
 
-const mockPlan2: SubscriptionPlan = {
+const mockPlan2: SubscriptionPlan = buildSubscriptionPlan({
   id: 'plan_2',
-  active: true,
-  amount: 5000,
-  currency: 'usd',
-  interval: 'month',
-  interval_count: 1,
   name: 'Team Plan',
+  amount: 5000,
   stripe_price_id: 'price_2',
   stripe_product_id: 'prod_2',
   metadata: { token_limit: 500000, features: ['feature_a', 'feature_b'] },
-  created_at: new Date().toISOString(),
-  updated_at: new Date().toISOString(),
-  description: null,
-};
+  tokens_to_award: 500000,
+});
 
-const mockPlanNoLimit: SubscriptionPlan = {
+const mockPlanNoLimit: SubscriptionPlan = buildSubscriptionPlan({
   id: 'plan_free',
-  active: true,
-  amount: 0,
-  currency: 'usd',
-  interval: 'month',
-  interval_count: 1,
   name: 'Free Plan',
+  amount: 0,
   stripe_price_id: 'price_free',
   stripe_product_id: 'prod_free',
-  metadata: { features: ['basic_feature'] }, // No token_limit
-  created_at: new Date().toISOString(),
-  updated_at: new Date().toISOString(),
-  description: null,
-};
+  metadata: { features: ['basic_feature'] },
+  tokens_to_award: 0,
+  tier_level: 0,
+});
 
-const mockUserSubActivePlan1: UserSubscription = {
+const mockUserSubActivePlan1 = buildUserSubscription({
   id: 'sub_active_1',
   user_id: 'user_123',
   plan_id: 'plan_1',
   status: 'active',
   current_period_start: '2023-01-01T00:00:00Z',
   current_period_end: '2023-02-01T00:00:00Z',
-  created_at: new Date().toISOString(),
-  updated_at: new Date().toISOString(),
   cancel_at_period_end: null,
   stripe_customer_id: null,
   stripe_subscription_id: null,
-};
+});
 
-const mockUserSubTrialingPlan2: UserSubscription = {
-  id: 'sub_trial_2',
-  user_id: 'user_123',
-  plan_id: 'plan_2',
-  status: 'trialing',
-  current_period_start: '2023-03-01T00:00:00Z',
-  current_period_end: '2023-04-01T00:00:00Z',
-  created_at: new Date().toISOString(),
-  updated_at: new Date().toISOString(),
-  cancel_at_period_end: null,
-  stripe_customer_id: null,
-  stripe_subscription_id: null,
-};
-
-const mockUserSubNoPlanId: UserSubscription = {
-  ...mockUserSubActivePlan1,
+const mockUserSubNoPlanId = buildUserSubscription({
   id: 'sub_no_plan_id',
   plan_id: null,
-};
+});
 
-const mockUserSubNoPeriodDates: UserSubscription = {
-    ...mockUserSubActivePlan1,
-    id: 'sub_no_period',
-    current_period_start: null,
-    current_period_end: null,
-};
+const mockUserSubNoPeriodDates = buildUserSubscription({
+  id: 'sub_no_period',
+  current_period_start: null,
+  current_period_end: null,
+});
 
 const initialMockState: SubscriptionState = {
   userSubscription: null,
   availablePlans: [],
   isSubscriptionLoading: false,
   hasActiveSubscription: false,
-  isTestMode: false,
   error: null,
 };
 
@@ -137,6 +106,16 @@ describe('Subscription Selectors', () => {
     it('should return hasActiveSubscription state', () => {
       const state: SubscriptionState = { ...initialMockState, hasActiveSubscription: true };
       expect(selectHasActiveSubscription(state)).toBe(true);
+    });
+
+    it('returns false when store has trialing subscription and hasActiveSubscription false', () => {
+      const state: SubscriptionState = {
+        ...initialMockState,
+        userSubscription: mockUserSubscriptionTrialing,
+        hasActiveSubscription: false,
+      };
+      expect(selectHasActiveSubscription(state)).toBe(false);
+      expect(state.userSubscription?.status).toBe('trialing');
     });
   });
 
@@ -172,7 +151,7 @@ describe('Subscription Selectors', () => {
     it('should return null if plan_id does not exist in availablePlans', () => {
       const state = {
         ...stateWithPlans,
-        userSubscription: { ...mockUserSubActivePlan1, plan_id: 'non_existent_plan' },
+        userSubscription: buildUserSubscription({ plan_id: 'non_existent_plan' }),
       };
       expect(selectCurrentUserResolvedPlan(state)).toBeNull();
     });
@@ -193,12 +172,12 @@ describe('Subscription Selectors', () => {
     });
 
     it('should return null if current_period_start is missing', () => {
-      const state: SubscriptionState = { ...initialMockState, userSubscription: { ...mockUserSubActivePlan1, current_period_start: null } };
+      const state: SubscriptionState = { ...initialMockState, userSubscription: buildUserSubscription({ current_period_start: null }) };
       expect(selectCurrentUserSubscriptionPeriod(state)).toBeNull();
     });
 
     it('should return null if current_period_end is missing', () => {
-      const state: SubscriptionState = { ...initialMockState, userSubscription: { ...mockUserSubActivePlan1, current_period_end: null } };
+      const state: SubscriptionState = { ...initialMockState, userSubscription: buildUserSubscription({ current_period_end: null }) };
       expect(selectCurrentUserSubscriptionPeriod(state)).toBeNull();
     });
     it('should return null if both period dates are missing', () => {
@@ -224,11 +203,14 @@ describe('Subscription Selectors', () => {
     });
 
     it('should return null if resolved plan metadata is null', () => {
-      const planWithNullMeta: SubscriptionPlan = { ...mockPlan1, metadata: null };
+      const planWithNullMeta: SubscriptionPlan = buildSubscriptionPlan({
+        id: mockPlan1.id,
+        metadata: null,
+      });
       const state = {
         ...initialMockState,
         availablePlans: [planWithNullMeta],
-        userSubscription: { ...mockUserSubActivePlan1, plan_id: planWithNullMeta.id },
+        userSubscription: buildUserSubscription({ plan_id: planWithNullMeta.id }),
       };
       expect(selectCurrentUserTokenBudget(state)).toBeNull();
     });
@@ -237,20 +219,20 @@ describe('Subscription Selectors', () => {
       const state = {
         ...initialMockState,
         availablePlans: [mockPlanNoLimit],
-        userSubscription: { ...mockUserSubActivePlan1, plan_id: mockPlanNoLimit.id },
+        userSubscription: buildUserSubscription({ plan_id: mockPlanNoLimit.id }),
       };
       expect(selectCurrentUserTokenBudget(state)).toBeNull();
     });
 
     it('should return null if token_limit is not a number', () => {
-      const planWithInvalidLimit: SubscriptionPlan = {
-        ...mockPlan1,
+      const planWithInvalidLimit: SubscriptionPlan = buildSubscriptionPlan({
+        id: mockPlan1.id,
         metadata: { token_limit: 'not-a-number' },
-      };
+      });
       const state = {
         ...initialMockState,
         availablePlans: [planWithInvalidLimit],
-        userSubscription: { ...mockUserSubActivePlan1, plan_id: planWithInvalidLimit.id },
+        userSubscription: buildUserSubscription({ plan_id: planWithInvalidLimit.id }),
       };
       expect(selectCurrentUserTokenBudget(state)).toBeNull();
     });

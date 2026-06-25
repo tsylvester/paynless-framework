@@ -81,7 +81,7 @@ export async function mainHandler(req: Request, deps: AiProvidersHandlerDeps = d
     // Fetch provider column as well
     const { data: allActiveProviders, error } = await supabaseClient
       .from('ai_providers')
-      .select('id, name, description, api_identifier, provider, config') 
+      .select('*') 
       .eq('is_active', true)
       .eq('is_enabled', true);
 

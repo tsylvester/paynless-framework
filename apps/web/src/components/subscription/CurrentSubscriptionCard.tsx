@@ -1,38 +1,25 @@
-import type { UserSubscription, SubscriptionPlan } from '@paynless/types';
 import { Award, CreditCard } from 'lucide-react';
-
-interface CurrentSubscriptionCardProps {
-  userSubscription: UserSubscription & { plan: SubscriptionPlan }; // Ensure plan is not null
-  isProcessing: boolean;
-  handleManageSubscription: () => void;
-  handleCancelSubscription: () => void;
-  formatAmount: (amount: number, currency: string) => string;
-  formatInterval: (interval: string | null | undefined, count: number | null | undefined) => string;
-}
+import type { CurrentSubscriptionCardProps } from './CurrentSubscriptionCard.interface';
 
 export function CurrentSubscriptionCard({
-  userSubscription,
+  subscription,
+  plan,
   isProcessing,
   handleManageSubscription,
   handleCancelSubscription,
   formatAmount,
-  formatInterval
+  formatInterval,
 }: CurrentSubscriptionCardProps) {
-
-  const subscriptionPlan = userSubscription.plan;
-  if (!subscriptionPlan) {
-    return null;
-  }
-
-  const subscriptionAmount = subscriptionPlan.amount;
+  const subscriptionAmount = plan.amount;
   if (!subscriptionAmount) {
-    throw new Error("Subscription amount is missing");
+    throw new Error('Subscription amount is missing');
   }
 
-  const subscriptionCurrency = subscriptionPlan.currency;
+  const subscriptionCurrency = plan.currency;
   if (!subscriptionCurrency) {
-    throw new Error("Subscription currency is missing");
+    throw new Error('Subscription currency is missing');
   }
+
   return (
     <div className="mt-8 mx-auto max-w-2xl bg-primary/10 border border-primary/20 rounded-lg p-6">
       <div className="flex items-start gap-4">
@@ -42,35 +29,39 @@ export function CurrentSubscriptionCard({
         <div className="flex-1">
           <h3 className="text-lg font-medium text-textPrimary">Current Subscription</h3>
           <p className="mt-1 text-textSecondary">
-            You are currently subscribed to the <span className="font-semibold">{userSubscription.plan.name}</span> plan.
+            You are currently subscribed to the{' '}
+            <span className="font-semibold">{plan.name}</span> plan.
           </p>
           <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
             <div>
               <span className="text-sm text-textSecondary">Price: </span>
               <span className="font-medium">
-                {formatAmount(subscriptionAmount, subscriptionCurrency)}
-                {' '}{formatInterval(userSubscription.plan.interval, userSubscription.plan.interval_count)}
+                {formatAmount(subscriptionAmount, subscriptionCurrency)}{' '}
+                {formatInterval(plan.interval, plan.interval_count)}
               </span>
             </div>
             <div>
               <span className="text-sm text-textSecondary">Status: </span>
-              <span className={`font-medium capitalize ${
-                userSubscription.status === 'active' || userSubscription.status === 'trialing'
-                  ? 'text-green-600'
-                  : 'text-yellow-600'
-              }`}>
-                {userSubscription.status}
+              <span
+                data-testid="subscription-status"
+                className={`font-medium capitalize ${
+                  subscription.status === 'active'
+                    ? 'text-green-600'
+                    : 'text-yellow-600'
+                }`}
+              >
+                {subscription.status}
               </span>
             </div>
-            {userSubscription.current_period_end && (
+            {subscription.current_period_end && (
               <div>
                 <span className="text-sm text-textSecondary">Current period ends: </span>
                 <span className="font-medium">
-                  {new Date(userSubscription.current_period_end).toLocaleDateString()}
+                  {new Date(subscription.current_period_end).toLocaleDateString()}
                 </span>
               </div>
             )}
-            {userSubscription.cancel_at_period_end && (
+            {subscription.cancel_at_period_end && (
               <div className="col-span-full mt-1">
                 <span className="text-sm text-yellow-600">
                   Your subscription will be canceled at the end of the current billing period.
@@ -89,20 +80,21 @@ export function CurrentSubscriptionCard({
               <CreditCard className="mr-2 h-4 w-4" />
               {isProcessing ? 'Processing...' : 'Manage Billing / Payment'}
             </button>
-            {userSubscription.status === 'active' && !userSubscription.cancel_at_period_end && (
-               <button
-                 onClick={handleCancelSubscription}
-                 disabled={isProcessing}
-                 className={`inline-flex items-center px-4 py-2 border border-border rounded-md shadow-sm text-sm font-medium text-textPrimary hover:bg-surface focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary ${
-                   isProcessing ? 'opacity-75 cursor-not-allowed' : ''
-                 }`}
-               >
-                 {isProcessing ? 'Processing...' : 'Cancel Subscription'}
-               </button>
-            )}
+            {subscription.status === 'active' &&
+              !subscription.cancel_at_period_end && (
+                <button
+                  onClick={handleCancelSubscription}
+                  disabled={isProcessing}
+                  className={`inline-flex items-center px-4 py-2 border border-border rounded-md shadow-sm text-sm font-medium text-textPrimary hover:bg-surface focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary ${
+                    isProcessing ? 'opacity-75 cursor-not-allowed' : ''
+                  }`}
+                >
+                  {isProcessing ? 'Processing...' : 'Cancel Subscription'}
+                </button>
+              )}
           </div>
         </div>
       </div>
     </div>
   );
-} 
+}

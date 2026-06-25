@@ -1,15 +1,29 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import {
 	useDialecticStore,
+	useAuthStore,
 	selectGenerateContributionsError,
 	selectUnifiedProjectProgress,
 	selectSelectedModels,
+	selectCostCeiling,
+	selectViewingStage,
+	useWalletStore,
+	selectActiveChatWalletInfo,
+	useAiStore,
 } from "@paynless/store";
 import {
 	DialecticProject,
 	DialecticSession,
+	InitializeMaxOutputTokensResult,
 } from "@paynless/types";
+import {
+	ComputeCostCeilingReturn,
+	ComputeCostCeilingSuccessReturn,
+	formatTokenCount,
+	FormatTokenCountDeps,
+	FormatTokenCountParams,
+} from "@paynless/utils";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -17,7 +31,8 @@ import { MarkdownRenderer } from "@/components/common/MarkdownRenderer";
 import { ChevronDown, Download, MoreVertical, Cpu } from "lucide-react";
 import { WalletSelector } from "../ai/WalletSelector";
 import { AIModelSelector } from "./AIModelSelector";
-import { useNavigate } from "react-router-dom";
+import { OutputCapSlider } from "./OutputCapSlider";
+import { useNavigate, Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { ExportProjectButton } from "./ExportProjectButton";
 import { ContinueUntilCompleteToggle } from "../common/ContinueUntilCompleteToggle";
@@ -36,6 +51,12 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 
+const subscriptionTierUnavailableMessage =
+	"Subscription tier is not available.";
+
+const formatTokenCountDeps: FormatTokenCountDeps = {};
+const formatTokenCountParams: FormatTokenCountParams = {};
+
 export const SessionInfoCard: React.FC = () => {
 	const project: DialecticProject | null = useDialecticStore(
 		(state) => state.currentProjectDetail,
@@ -51,15 +72,210 @@ export const SessionInfoCard: React.FC = () => {
 		),
 	);
 	const generateContributionsError = useDialecticStore(selectGenerateContributionsError);
+	const costCeilingResult: ComputeCostCeilingReturn = useDialecticStore(
+		useShallow((state) => {
+			const sid: string | undefined = state.activeSessionDetail?.id;
+			if (sid === undefined) {
+				return {
+					error: {
+						code: "SESSION_NOT_READY",
+						message: "Session is not active.",
+					},
+				};
+			}
+			return selectCostCeiling(state, sid);
+		}),
+	);
+	const viewingStage = useDialecticStore(selectViewingStage);
+	const isLoadingModelCatalog = useDialecticStore(
+		(state) => state.isLoadingModelCatalog,
+	);
+	const isLoadingProcessTemplate = useDialecticStore(
+		(state) => state.isLoadingProcessTemplate,
+	);
+	const maxOutputTokens = useDialecticStore((state) => state.maxOutputTokens);
+	const outputCapUserCustomized = useDialecticStore(
+		(state) => state.outputCapUserCustomized,
+	);
+	const modelCatalog = useDialecticStore((state) => state.modelCatalog);
+	const progressHydrationStatus = useDialecticStore(
+		(state) => state.progressHydrationStatus,
+	);
+	const newChatContext = useAiStore((state) => state.newChatContext);
+	const activeWalletInfo = useWalletStore((state) =>
+		selectActiveChatWalletInfo(state, newChatContext),
+	);
+	const authIsLoading = useAuthStore((state) => state.isLoading);
+	const userTier = useAuthStore((state) => state.userTier);
+	const authError = useAuthStore((state) => state.error);
 	const navigate = useNavigate();
 	const [isPromptOpen, setIsPromptOpen] = useState(false);
 	const [isModelSelectorOpen, setIsModelSelectorOpen] = useState(false);
+	const [capInitResult, setCapInitResult] =
+		useState<InitializeMaxOutputTokensResult | null>(null);
 	const activeSeedPrompt = useDialecticStore((state) => state.activeSeedPrompt);
 	const isLoading = useDialecticStore(state => state.isLoadingActiveSessionDetail);
 
-	// Get selected model count
 	const selectedModels = useDialecticStore(selectSelectedModels);
 	const uniqueModelCount = new Set(selectedModels.map((model) => model.id)).size;
+
+	const isCapInitReady: boolean =
+		!authIsLoading &&
+		userTier !== null &&
+		!isLoadingModelCatalog &&
+		modelCatalog.length > 0;
+
+	const runKey: string | null =
+		session !== null
+			? `${session.id}:${session.iteration_count}`
+			: null;
+
+	const isProgressHydrationPending: boolean =
+		runKey !== null && progressHydrationStatus[runKey] === "pending";
+
+	const isCostEstimateLoading: boolean =
+		authIsLoading ||
+		isLoadingModelCatalog ||
+		isLoading ||
+		isLoadingProcessTemplate ||
+		isProgressHydrationPending;
+
+	let costEstimateLoadingNotice: string | null = null;
+	if (authIsLoading) {
+		costEstimateLoadingNotice = "Loading subscription tier…";
+	} else if (isLoadingModelCatalog) {
+		costEstimateLoadingNotice = "Loading model catalog…";
+	} else if (isLoading) {
+		costEstimateLoadingNotice = "Loading session…";
+	} else if (isLoadingProcessTemplate) {
+		costEstimateLoadingNotice = "Loading process template…";
+	} else if (isProgressHydrationPending) {
+		costEstimateLoadingNotice = "Loading stage progress…";
+	}
+
+	useEffect(() => {
+		setCapInitResult(null);
+
+		if (
+			!isCapInitReady ||
+			session === null ||
+			isCostEstimateLoading ||
+			outputCapUserCustomized ||
+			(maxOutputTokens !== null && Number.isFinite(maxOutputTokens))
+		) {
+			return;
+		}
+
+		const initResult: InitializeMaxOutputTokensResult =
+			useDialecticStore.getState().initializeMaxOutputTokens();
+		if (initResult.ok === true) {
+			setCapInitResult(null);
+			return;
+		}
+		setCapInitResult(initResult);
+	}, [
+		authIsLoading,
+		userTier,
+		isLoadingModelCatalog,
+		modelCatalog.length,
+		session?.id,
+		selectedModels.length,
+		isCostEstimateLoading,
+		maxOutputTokens,
+		outputCapUserCustomized,
+	]);
+
+	let costEstimateErrorMessage: string | null = null;
+	if (!isCostEstimateLoading) {
+		if (authError !== null) {
+			costEstimateErrorMessage = authError.message;
+		} else if (userTier === null) {
+			costEstimateErrorMessage = subscriptionTierUnavailableMessage;
+		} else if (capInitResult !== null && capInitResult.ok === false) {
+			costEstimateErrorMessage = capInitResult.error.message;
+		} else if ("error" in costCeilingResult) {
+			costEstimateErrorMessage = costCeilingResult.error.message;
+		}
+	}
+
+	let costCeilingSuccessResult: ComputeCostCeilingSuccessReturn | null = null;
+	if (
+		!isCostEstimateLoading &&
+		costEstimateErrorMessage === null &&
+		!("error" in costCeilingResult)
+	) {
+		costCeilingSuccessResult = costCeilingResult;
+	}
+
+	const rawStageCeilingForViewingStage: number | undefined =
+		costCeilingSuccessResult !== null && viewingStage !== null
+			? costCeilingSuccessResult.stageCeilings[viewingStage.slug]
+			: undefined;
+
+	const stageCeiling: number | null =
+		rawStageCeilingForViewingStage !== undefined &&
+		Number.isFinite(rawStageCeilingForViewingStage) &&
+		rawStageCeilingForViewingStage >= 0
+			? rawStageCeilingForViewingStage
+			: null;
+
+	const rawProjectCeiling: number | undefined =
+		costCeilingSuccessResult !== null
+			? costCeilingSuccessResult.projectCeiling
+			: undefined;
+
+	const projectCeiling: number | null =
+		rawProjectCeiling !== undefined &&
+		Number.isFinite(rawProjectCeiling) &&
+		rawProjectCeiling >= 0
+			? rawProjectCeiling
+			: null;
+
+	const walletBalance: number = Number(activeWalletInfo.balance);
+
+	const projectBalanceShortfall: number | null =
+		projectCeiling !== null &&
+		Number.isFinite(walletBalance) &&
+		walletBalance < projectCeiling
+			? projectCeiling - walletBalance
+			: null;
+
+	let stageCeilingDisplay: string | null = null;
+	if (stageCeiling !== null) {
+		const stageCeilingFormatResult = formatTokenCount(
+			formatTokenCountDeps,
+			formatTokenCountParams,
+			{ tokenCount: stageCeiling },
+		);
+		if (!("error" in stageCeilingFormatResult)) {
+			stageCeilingDisplay = stageCeilingFormatResult.formatted;
+		}
+	}
+
+	let projectCeilingDisplay: string | null = null;
+	if (projectCeiling !== null) {
+		const projectCeilingFormatResult = formatTokenCount(
+			formatTokenCountDeps,
+			formatTokenCountParams,
+			{ tokenCount: projectCeiling },
+		);
+		if (!("error" in projectCeilingFormatResult)) {
+			projectCeilingDisplay = projectCeilingFormatResult.formatted;
+		}
+	}
+
+	let projectBalanceShortfallDisplay: string | null = null;
+	if (projectBalanceShortfall !== null) {
+		const projectBalanceShortfallFormatResult = formatTokenCount(
+			formatTokenCountDeps,
+			formatTokenCountParams,
+			{ tokenCount: projectBalanceShortfall },
+		);
+		if (!("error" in projectBalanceShortfallFormatResult)) {
+			projectBalanceShortfallDisplay =
+				projectBalanceShortfallFormatResult.formatted;
+		}
+	}
 
 	if (!project || !session) {
 		return (
@@ -158,13 +374,16 @@ export const SessionInfoCard: React.FC = () => {
 							<ChevronDown className="h-3.5 w-3.5 opacity-50" />
 						</Button>
 					</PopoverTrigger>
-					<PopoverContent className="w-[420px] p-0 bg-background border shadow-lg" align="start">
+					<PopoverContent className="w-[480px] p-0 bg-background border shadow-lg" align="start">
 						<div className="p-3 border-b bg-background">
-							<p className="text-sm font-medium">AI Models</p>
-							<p className="text-xs text-muted-foreground">Select models for generation</p>
+							<p className="text-sm font-medium">Model Settings</p>
+							<p className="text-xs text-muted-foreground">Configure models and output limits</p>
 						</div>
-						<div className="p-3 bg-background">
+						<div className="p-3 bg-background space-y-4 max-h-[500px] overflow-y-auto">
 							<AIModelSelector />
+							<div className="border-t pt-3">
+								<OutputCapSlider />
+							</div>
 						</div>
 					</PopoverContent>
 				</Popover>
@@ -175,6 +394,49 @@ export const SessionInfoCard: React.FC = () => {
 					<div className="flex-1 min-w-0">
 						<DynamicProgressBar sessionId={session.id} />
 					</div>
+				)}
+			</div>
+
+			<div className="text-xs text-muted-foreground space-y-1">
+				{isCostEstimateLoading && costEstimateLoadingNotice !== null && (
+					<p data-testid="session-info-estimate-loading-notice">
+						{costEstimateLoadingNotice}
+					</p>
+				)}
+				{!isCostEstimateLoading && costEstimateErrorMessage !== null && (
+					<p data-testid="session-info-estimate-error-notice">
+						{costEstimateErrorMessage}
+					</p>
+				)}
+				{costCeilingSuccessResult !== null && (
+					<>
+						{stageCeilingDisplay !== null && (
+							<p data-testid="session-info-stage-cost-estimate">
+								Estimated cost for this stage: ~
+								{stageCeilingDisplay} tokens.
+							</p>
+						)}
+						{projectCeilingDisplay !== null && (
+							<p data-testid="session-info-project-cost-estimate">
+								Estimated project cost: ~
+								{projectCeilingDisplay} tokens.
+							</p>
+						)}
+						{projectBalanceShortfallDisplay !== null &&
+							projectCeilingDisplay !== null && (
+							<p data-testid="session-info-project-balance-warning">
+								This project may need ~
+								{projectCeilingDisplay} tokens total.{" "}
+								<Link
+									to="/subscription?tab=top-up"
+									className="font-semibold underline underline-offset-2 hover:no-underline"
+								>
+									Top up {projectBalanceShortfallDisplay} to cover
+									the full project.
+								</Link>
+							</p>
+						)}
+					</>
 				)}
 			</div>
 

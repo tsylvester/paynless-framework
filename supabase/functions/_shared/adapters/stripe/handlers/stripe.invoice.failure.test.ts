@@ -72,9 +72,7 @@ Deno.test('[stripe.invoicePaymentSucceeded.ts] Tests - handleInvoicePaymentSucce
     const mockSubscriptionId = 'sub_causes_retrieve_error';
     const mockInvoiceId = 'in_stripe_sub_retrieve_fails';
     const mockStripePriceId = 'price_for_sub_retrieve_fail';
-    const mockPlanItemIdInternal = 'item_sub_retrieve_fail';
     const tokensToAwardForPlan = 300; // This will NOT be awarded
-    const mockPaymentTxId = 'ptxn_sub_retrieve_fail_789';
 
     const mockEvent = createMockInvoicePaymentSucceededEvent({
       id: mockInvoiceId,
@@ -99,21 +97,6 @@ Deno.test('[stripe.invoicePaymentSucceeded.ts] Tests - handleInvoicePaymentSucce
             }
             return { data: null, error: new Error('Unexpected payment_transactions select'), count: 0, status: 500, statusText: 'Error' };
           },
-          insert: async (state: MockQueryBuilderState) => { 
-            const ins = state.insertData;
-            if (ins !== null && typeof ins === 'object' && !Array.isArray(ins) && 'gateway_transaction_id' in ins && ins['gateway_transaction_id'] === mockInvoiceId) {
-              return { data: [{ id: mockPaymentTxId }], error: null, count: 1, status: 201, statusText: 'Created' };
-            }
-            return { data: null, error: new Error('Unexpected payment_transactions insert'), count: 0, status: 500, statusText: 'Error' };
-          },
-          update: async (state: MockQueryBuilderState) => { 
-            const upd = state.updateData;
-            if (state.filters.some((f: any) => f.column === 'id' && f.value === mockPaymentTxId) && 
-                upd !== null && 'status' in upd && upd['status'] === 'FAILED_SUBSCRIPTION_SYNC') {
-                return { data: [{id: mockPaymentTxId, status: 'FAILED_SUBSCRIPTION_SYNC'}], error: null, count: 1, status: 200, statusText: 'OK' };
-            }
-            return { data: null, error: new Error('Unexpected payment_transactions update, expected FAILED_SUBSCRIPTION_SYNC'), count: 0, status: 500, statusText: 'Error' };
-          }
         },
         'user_subscriptions': {
           select: async (state: MockQueryBuilderState) => { 
@@ -122,9 +105,6 @@ Deno.test('[stripe.invoicePaymentSucceeded.ts] Tests - handleInvoicePaymentSucce
             }
             return { data: null, error: new Error('Unexpected user_subscriptions select'), count: 0, status: 500, statusText: 'Error' };
           },
-          update: async () => { 
-            throw new Error('user_subscriptions.update should not be called if subscriptions.retrieve fails');
-          }
         },
         'token_wallets': {
           select: async (state: MockQueryBuilderState) => { 
@@ -137,7 +117,7 @@ Deno.test('[stripe.invoicePaymentSucceeded.ts] Tests - handleInvoicePaymentSucce
         'subscription_plans': {
           select: async (state: MockQueryBuilderState) => { 
             if (state.filters.some((f: any) => f.column === 'stripe_price_id' && f.value === mockStripePriceId)) {
-              return { data: [{ item_id_internal: mockPlanItemIdInternal, tokens_to_award: tokensToAwardForPlan }], error: null, count: 1, status: 200, statusText: 'OK' };
+              return { data: [{ item_id_internal: 'item_sub_retrieve_fail', tokens_to_award: tokensToAwardForPlan }], error: null, count: 1, status: 200, statusText: 'OK' };
             }
             return { data: null, error: new Error('Unexpected subscription_plans select'), count: 0, status: 500, statusText: 'Error' };
           }
@@ -324,13 +304,6 @@ Deno.test('[stripe.invoicePaymentSucceeded.ts] Tests - handleInvoicePaymentSucce
             }
             return { data: null, error: new Error('Mock: Unexpected payment_transactions select query in Plan Not Found test'), count: 0, status: 500, statusText: 'Error' };
           },
-          insert: async (_state: MockQueryBuilderState) => {
-            console.log("[Test Mock] payment_transactions.insert called, will simulate DB error for plan not found test.");
-            throw new Error("Mock DB error during payment_transactions.insert for plan not found test");
-          },
-          update: async () => { /* ... no update expected if insert fails ... */ 
-            throw new Error("payment_transactions.update should not be called if insert fails");
-          }
         },
         'user_subscriptions': { /* ... returns user ... */ 
           select: async (state: MockQueryBuilderState) => {
@@ -432,6 +405,124 @@ Deno.test('[stripe.invoicePaymentSucceeded.ts] Tests - handleInvoicePaymentSucce
     
     assert(pgrst116LogFound, `Expected error log from retrieveSubscriptionPlanDetails for PGRST116 not found or did not match. Actual logs: ${JSON.stringify(errorLogSpy.calls.map(c => ({msg: c.args[0], meta: c.args[1]})))}`);
     
+    teardownInvoiceMocks();
+  });
+
+  await t.step('Error - complete_invoice_payment RPC returns error (no wallet notification)', async () => {
+    const rpcErrorMessage: string = 'complete_invoice_payment RPC failed for test';
+    const mockInvoiceId: string = 'in_rpc_error';
+    const mockCustomerId: string = 'cus_rpc_error';
+    const mockUserId: string = 'user_rpc_error';
+    const mockWalletId: string = 'wallet_rpc_error';
+    const mockSubscriptionId: string = 'sub_rpc_error';
+
+    const mockEvent = createMockInvoicePaymentSucceededEvent(
+      {
+        id: mockInvoiceId,
+        customer: mockCustomerId,
+        metadata: { tokens_to_award: '25' },
+        total: 2500,
+        currency: 'usd',
+        lines: {
+          object: 'list',
+          data: [
+            createMockInvoiceLineItem({
+              subscription: mockSubscriptionId,
+            }),
+          ],
+          has_more: false,
+          url: `/v1/invoices/${mockInvoiceId}/lines`,
+        },
+      },
+      {
+        id: 'evt_invoice_rpc_error_test',
+      },
+    );
+
+    setupInvoiceMocks({
+      genericMockResults: {
+        payment_transactions: {
+          select: async (state: MockQueryBuilderState) => {
+            if (
+              state.filters.some(
+                (f) => f.column === 'gateway_transaction_id' && f.value === mockInvoiceId,
+              )
+            ) {
+              return { data: null, error: null, count: 0, status: 200, statusText: 'OK' };
+            }
+            return {
+              data: null,
+              error: new Error('Unexpected payment_transactions select'),
+              count: 0,
+              status: 500,
+              statusText: 'Error',
+            };
+          },
+        },
+        user_subscriptions: {
+          select: async (state: MockQueryBuilderState) => {
+            if (
+              state.filters.some(
+                (f) => f.column === 'stripe_customer_id' && f.value === mockCustomerId,
+              )
+            ) {
+              return { data: [{ user_id: mockUserId }], error: null, count: 1, status: 200, statusText: 'OK' };
+            }
+            return {
+              data: null,
+              error: new Error('Unexpected user_subscriptions select'),
+              count: 0,
+              status: 500,
+              statusText: 'Error',
+            };
+          },
+        },
+        token_wallets: {
+          select: async (state: MockQueryBuilderState) => {
+            if (state.filters.some((f) => f.column === 'user_id' && f.value === mockUserId)) {
+              return { data: [{ wallet_id: mockWalletId }], error: null, count: 1, status: 200, statusText: 'OK' };
+            }
+            return {
+              data: null,
+              error: new Error('Unexpected token_wallets select'),
+              count: 0,
+              status: 500,
+              statusText: 'Error',
+            };
+          },
+        },
+      },
+      rpcResults: {
+        complete_invoice_payment: {
+          data: null,
+          error: new Error(rpcErrorMessage),
+        },
+      },
+    });
+
+    if (mockStripe.stubs.subscriptionsRetrieve && !mockStripe.stubs.subscriptionsRetrieve.restored) {
+      mockStripe.stubs.subscriptionsRetrieve.restore();
+    }
+    mockStripe.stubs.subscriptionsRetrieve = stub(
+      mockStripe.instance.subscriptions,
+      'retrieve',
+      () => {
+        throw new Error('stripe.subscriptions.retrieve must not run when tokens_to_award is on invoice metadata');
+      },
+    );
+
+    const result = await handleInvoicePaymentSucceeded(handlerContext, mockEvent);
+
+    assertEquals(result.success, false);
+    assertEquals(result.error, rpcErrorMessage);
+
+    const rpcCalls = mockSupabaseSetup.spies.rpcSpy.calls;
+    const notificationRpcCalls = rpcCalls.filter((call) => {
+      const rpcName: unknown = call.args[0];
+      return rpcName === 'create_notification_for_user';
+    });
+    assertEquals(notificationRpcCalls.length, 0);
+
     teardownInvoiceMocks();
   });
 

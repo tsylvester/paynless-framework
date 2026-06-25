@@ -65,12 +65,21 @@ export type UserProfileUpdate = {
 // Define UserProfile using the DB type for consistency
 export type UserProfile = Database['public']['Tables']['user_profiles']['Row'];
 
+export interface UserTier {
+  level: number;
+  name: string;
+  output_cap_tokens: number | null;
+  max_models_per_project: number | null;
+}
+
 // Keep the original AuthStore structure, but use mapped types
 export interface AuthStore {
   // Setters
   setUser: (user: User | null) => void // <<< Use mapped User type
   setSession: (session: Session | null) => void // <<< Use mapped Session type
   setProfile: (profile: UserProfile | null) => void // Uses UserProfile alias
+  setTier: (tier: UserTier | null) => void;
+  setAvailableTiers: (tiers: UserTier[]) => void;
   setIsLoading: (isLoading: boolean) => void
   setError: (error: Error | null) => void
   setNavigate: (navigateFn: NavigateFunction) => void
@@ -102,6 +111,8 @@ export interface AuthStore {
   session: Session | null; // <<< Use mapped Session type
   user: User | null; // <<< Use mapped User type
   profile: UserProfile | null; // Uses UserProfile alias
+  userTier: UserTier | null;
+  availableTiers: UserTier[];
   isLoading: boolean;
   error: Error | null;
   navigate: NavigateFunction | null;
@@ -129,6 +140,8 @@ export interface AuthResponse {
 export interface ProfileResponse {
   user: SupabaseUser // Corrected: Use the imported SupabaseUser type
   profile: Database['public']['Tables']['user_profiles']['Row'] | null // Use DB type and allow null
+  userTier?: UserTier;
+  tiers?: UserTier[];
 }
 
 // Custom error class for authentication failures

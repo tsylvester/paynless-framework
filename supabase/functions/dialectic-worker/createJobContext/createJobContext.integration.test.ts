@@ -17,6 +17,15 @@ import type {
 } from './JobContext.interface.ts';
 import { compressPrompt } from '../compressPrompt/compressPrompt.ts';
 import { calculateAffordability } from '../calculateAffordability/calculateAffordability.ts';
+import {
+  isCalculateAffordabilityDirectReturn,
+  isCalculateAffordabilityErrorReturn,
+} from '../calculateAffordability/calculateAffordability.guard.ts';
+import type {
+  CalculateAffordabilityFn,
+  CalculateAffordabilityParams,
+  CalculateAffordabilityPayload,
+} from '../calculateAffordability/calculateAffordability.interface.ts';
 import { BoundEnqueueModelCallFn } from '../enqueueModelCall/enqueueModelCall.interface.ts';
 import { enqueueModelCall } from '../enqueueModelCall/enqueueModelCall.ts';
 import { prepareModelJob } from '../prepareModelJob/prepareModelJob.ts';
@@ -30,7 +39,14 @@ import type {
   DialecticJobRow,
   DialecticSessionRow,
 } from '../../dialectic-service/dialectic.interface.ts';
-import type { ApiKeyForProviderFn } from '../../_shared/types.ts';
+import type {
+  AiModelExtendedConfig,
+  ApiKeyForProviderFn,
+  ChatApiRequest,
+  Messages,
+  ResourceDocuments,
+} from '../../_shared/types.ts';
+import { getMaxOutputTokens } from '../../_shared/utils/affordability_utils.ts';
 import type { Database, Tables } from '../../types_db.ts';
 import { FileType } from '../../_shared/types/file_manager.types.ts';
 import { MockLogger } from '../../_shared/logger.mock.ts';
@@ -176,6 +192,7 @@ Deno.test('Integration: Phase 1 chain — ctx.prepareModelJob wired through crea
     is_enabled: true,
     is_default_embedding: false,
     is_default_generation: false,
+    min_plan_tier_level: 0,
   };
 
   // Stub fetch — boundary; returns 200 OK for the Netlify queue POST
@@ -328,3 +345,92 @@ Deno.test('Integration: Phase 1 chain — ctx.prepareModelJob wired through crea
     fetchStub.restore();
   }
 });
+
+Deno.test(
+  'Integration: createPrepareModelJobContext bound calculateAffordability accepts CalculateAffordabilityParams with tierOutputCapTokens null',
+  async () => {
+    const root: IJobContext = createJobContext(createMockJobContextParams());
+    const boundEnqueueModelCall: BoundEnqueueModelCallFn = async () => ({
+      error: new Error('integration stub: enqueueModelCall not invoked by this scenario'),
+      retriable: false,
+    });
+
+    const calculateAffordabilityFn: CalculateAffordabilityFn = (deps, params, payload) =>
+      calculateAffordability(
+        {
+          logger: deps.logger,
+          countTokens: deps.countTokens,
+          compressPrompt: deps.compressPrompt,
+          getMaxOutputTokens,
+        },
+        params,
+        payload,
+      );
+
+    const prepCtx: IPrepareModelJobContext = createPrepareModelJobContext(
+      root,
+      boundEnqueueModelCall,
+      compressPrompt,
+      calculateAffordabilityFn,
+    );
+
+    const mockSetup = createMockSupabaseClient();
+    const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
+
+    const extendedModelConfig: AiModelExtendedConfig = {
+      model_id: 'integration-tier-cap-model',
+      api_identifier: 'tier-cap-api',
+      input_token_cost_rate: 0.001,
+      output_token_cost_rate: 0.002,
+      tokenization_strategy: { type: 'rough_char_count' },
+      context_window_tokens: 128000,
+      provider_max_input_tokens: 128000,
+      provider_max_output_tokens: 500,
+    };
+
+    const affordParams: CalculateAffordabilityParams = {
+      dbClient,
+      jobId: 'tier-cap-job',
+      projectOwnerUserId: 'tier-cap-owner',
+      sessionId: 'tier-cap-session',
+      stageSlug: 'thesis',
+      walletId: 'tier-cap-wallet',
+      walletBalance: 1_000_000,
+      extendedModelConfig,
+      inputRate: 0.001,
+      outputRate: 0.002,
+      isContinuationFlowInitial: false,
+      userConfig: { tier_output_cap_tokens: null },
+    };
+
+    const resourceDocuments: ResourceDocuments = [];
+    const conversationHistory: Messages[] = [];
+    const chatApiRequest: ChatApiRequest = {
+      message: 'integration tier cap prompt',
+      providerId: '00000000-0000-4000-8000-000000000001',
+      promptId: '__none__',
+      messages: [],
+      resourceDocuments,
+      walletId: affordParams.walletId,
+      systemInstruction: 'integration tier cap system',
+    };
+
+    const affordPayload: CalculateAffordabilityPayload = {
+      compressionStrategy: getSortedCompressionCandidates,
+      resourceDocuments,
+      conversationHistory,
+      currentUserPrompt: 'integration tier cap prompt',
+      systemInstruction: 'integration tier cap system',
+      chatApiRequest,
+    };
+
+    const result = await prepCtx.calculateAffordability(affordParams, affordPayload);
+
+    assertEquals(isCalculateAffordabilityErrorReturn(result), false);
+    assertEquals(isCalculateAffordabilityDirectReturn(result), true);
+    if (isCalculateAffordabilityDirectReturn(result)) {
+      assertEquals(result.wasCompressed, false);
+      assertEquals(typeof result.maxOutputTokens, 'number');
+    }
+  },
+);

@@ -8,6 +8,7 @@ import {
   SupabaseSession,
   Session,
   User,
+  UserTier,
 } from '@paynless/types'
 import { NavigateFunction } from '@paynless/types'
 import { logger, isUserRole } from '@paynless/utils'
@@ -56,6 +57,8 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
       user: null,
       session: null,
       profile: null,
+      userTier: null,
+      availableTiers: [],
       isLoading: true,
       error: null,
       navigate: null,
@@ -68,6 +71,10 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
       setSession: (session: Session | null) => set({ session }),
 
       setProfile: (profile: UserProfile | null) => set({ profile }),
+
+      setTier: (tier: UserTier | null) => set({ userTier: tier }),
+
+      setAvailableTiers: (tiers: UserTier[]) => set({ availableTiers: tiers }),
 
       setIsLoading: (isLoading: boolean) => set({ isLoading }),
 
@@ -524,6 +531,16 @@ export function initAuthListener(
             logger.debug(`[AuthListener Helper] Profile fetched successfully.`);
             useAuthStore.setState({ profile: fetchedProfile, error: null });
 
+            if (profileResponse.data.userTier && profileResponse.data.tiers) {
+              const userTier: UserTier = profileResponse.data.userTier;
+              const availableTiers: UserTier[] = profileResponse.data.tiers;
+              useAuthStore.setState({ userTier, availableTiers });
+              logger.debug('[AuthListener Helper] Tier hydrated.', { userTier, tierCount: availableTiers.length });
+            } else {
+              logger.error('[AuthListener Helper] Profile response missing tier data — cannot determine user privilege level.');
+              useAuthStore.setState({ userTier: null, availableTiers: [], error: new Error('Failed to load tier data') });
+            }
+
             // --- BEGIN Initialize Organization Context --- 
             const lastSelectedOrgId = fetchedProfile.last_selected_org_id; 
             logger.info(`[AuthListener Helper] Initializing organization context with lastSelectedOrgId: ${lastSelectedOrgId}`);
@@ -550,7 +567,7 @@ export function initAuthListener(
             // -----------------------------------
         } else {
             logger.error(`[AuthListener Helper] Failed to fetch profile`, { error: profileResponse.error });
-            useAuthStore.setState({ profile: null, error: new Error(profileResponse.error?.message || 'Failed fetch profile') });
+            useAuthStore.setState({ profile: null, userTier: null, availableTiers: [], error: new Error(profileResponse.error?.message || 'Failed fetch profile') });
             // Note: Subscription is NOT initiated if profile fetch fails
             // Set org context to null if profile fails
             try {
@@ -561,7 +578,7 @@ export function initAuthListener(
         logger.error(`[AuthListener Helper] Error during profile fetch`, { 
             error: asyncError instanceof Error ? asyncError.message : String(asyncError) 
         });
-         useAuthStore.setState({ profile: null, error: new Error('Failed fetch profile') });
+         useAuthStore.setState({ profile: null, userTier: null, availableTiers: [], error: new Error('Failed fetch profile') });
          // Set org context to null if profile fails
          try {
              useOrganizationStore.getState().setCurrentOrganizationId(null);
@@ -642,6 +659,8 @@ export function initAuthListener(
                 user: null,
                 session: null,
                 profile: null,
+                userTier: null,
+                availableTiers: [],
                 isLoading: false,
                 error: null,
               });

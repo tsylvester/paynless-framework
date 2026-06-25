@@ -107,10 +107,25 @@ import {
         throw new Error(`Software Development domain required: ${domainError?.message}`);
       }
       formData.append("selectedDomainId", domain.id);
-  
+
+      const associationResponse = await adminClient
+        .from("domain_process_associations")
+        .select("process_template_id")
+        .eq("domain_id", domain.id)
+        .eq("is_default_for_domain", true)
+        .single();
+      if (associationResponse.error !== null) {
+        throw associationResponse.error;
+      }
+      if (associationResponse.data === null) {
+        throw new Error("Default domain_process_associations row not found for Software Development");
+      }
+      const defaultProcessTemplateId: string = associationResponse.data.process_template_id;
+      formData.append("processTemplateId", defaultProcessTemplateId);
+
       const projectResult = await createProject(formData, adminClient, testUser);
       if (projectResult.error || !projectResult.data) {
-        throw new Error(`createProject failed: ${projectResult.error?.message ?? "no data"}`);
+        throw new Error(`createProject failed: ${projectResult.error?.message}`);
       }
       testProject = projectResult.data;
   
@@ -164,9 +179,9 @@ import {
         idempotencyKey: crypto.randomUUID(),
         sessionDescription: "compressPrompt integration session",
       };
-      const sessionResult = await startSession(testUser, adminClient, sessionPayload);
+      const sessionResult = await startSession(testUser, adminClient, userClient, sessionPayload);
       if (sessionResult.error || !sessionResult.data) {
-        throw new Error(`startSession failed: ${sessionResult.error?.message ?? "no data"}`);
+        throw new Error(`startSession failed: ${sessionResult.error?.message}`);
       }
       testSessionId = sessionResult.data.id;
     });

@@ -8,20 +8,31 @@ import type {
   DialecticStore,
   DialecticProject,
   DialecticSession,
+  DialecticSessionModel,
   DialecticStage,
-  DialecticDomain,
+  DialecticStageTransition,
+  DialecticDomainRow,
+  DagProgressDto,
+  DomainProcessAssociationRow,
   DialecticActions,
   ApiError,
   ApiResponse,
   DialecticFeedback,
+  DialecticContribution,
   ContributionGenerationStatus,
   DialecticProcessTemplate,
   DialecticStageRecipe,
   DialecticStageRecipeStep,
+  DomainOverlayDescriptor,
+  DialecticProjectResource,
+  AssembledPrompt,
   SetFocusedStageDocumentPayload,
   ClearFocusedStageDocumentPayload,
   StageRunProgressEntry,
+  StageProgressEntry,
   StageRunProgressSnapshot,
+  StageRenderedDocumentDescriptor,
+  StagePlannedDocumentDescriptor,
   RenderCompletedPayload,
   DocumentCompletedPayload,
   StageDocumentChecklistEntry,
@@ -30,12 +41,21 @@ import type {
   StageDocumentVersionInfo,
   ListStageDocumentsPayload,
   GetAllStageProgressPayload,
+  GetAllStageProgressResponse,
   EditedDocumentResource,
   SaveContributionEditSuccessResponse,
   SaveContributionEditPayload,
   SubmitStageDocumentFeedbackPayload,
   UnifiedProjectProgress,
   SelectedModels,
+  AiProvidersRow,
+  AiModelExtendedConfig,
+  JobProgressEntry,
+  JobProgressDto,
+  ContributionCacheEntry,
+  FocusedStageDocumentState,
+  InitializeMaxOutputTokensResult,
+  Json,
 } from '@paynless/types';
 import { STAGE_RUN_DOCUMENT_KEY_SEPARATOR } from '@paynless/types';
 import {
@@ -62,6 +82,8 @@ import {
   selectCanAdvanceStage,
 } from '../../../../packages/store/src/dialecticStore.selectors';
 import { internalMockAuthStoreGetState } from './authStore.mock';
+import { isJson } from '@paynless/utils';
+import { api } from '@paynless/api/mocks';
 
 // ---- START: Define ALL controllable selectors as top-level vi.fn() mocks ----
 // These are kept if tests rely on setting their return values directly at a global level.
@@ -339,41 +361,578 @@ export const mockFetchAndSetCurrentSessionDetails = vi.fn().mockResolvedValue(un
 
 export const mockResumePausedNsfJobs = vi.fn().mockResolvedValue({ data: { resumedCount: 0 }, error: undefined, status: 200 });
 export const mockPauseActiveJobs = vi.fn().mockResolvedValue({ data: { pausedCount: 0 }, error: undefined, status: 200 });
+export const mockInitializeMaxOutputTokens: Mock<[], InitializeMaxOutputTokensResult> = vi
+  .fn<[], InitializeMaxOutputTokensResult>()
+  .mockReturnValue({ ok: true });
 
-// Mock Session (used in some action mocks)
-const mockSession: DialecticSession = {
-  id: 'ses-1',
-  project_id: 'proj-1',
-  session_description: 'Mock Session',
-  user_input_reference_url: null,
-  iteration_count: 1,
-  selected_models: [],
-  status: 'active',
-  associated_chat_id: null,
-  current_stage_id: 'stage-1',
-  created_at: new Date().toISOString(),
-  updated_at: new Date().toISOString(),
-  dialectic_contributions: [],
-  dialectic_session_models: [],
-  viewing_stage_id: 'stage-1',
-};
+export const mockFetchAIModelCatalog: Mock<[], Promise<void>> = vi.fn<[], Promise<void>>();
 
-/** Empty stage run progress snapshot including step-based progress (for tests and overrides). Matches shape used by ensureRecipeForViewingStage. */
-export const emptyStageRunProgressSnapshot: StageRunProgressSnapshot = {
-  documents: {},
-  stepStatuses: {},
-  jobProgress: {},
-  progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
-  jobs: [],
-};
+export function mockDialecticDomain(
+  overrides: Partial<DialecticDomainRow> = {},
+): DialecticDomainRow {
+  const base: DialecticDomainRow = {
+    id: 'dom-1',
+    name: 'Domain 1',
+    description: 'Test domain',
+    parent_domain_id: null,
+    is_enabled: true,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+  return { ...base, ...overrides };
+}
 
-/** Minimal recipe for mock/tests; includes edges: [] per DialecticStageRecipe. */
-export const emptyDialecticStageRecipe: DialecticStageRecipe = {
-  stageSlug: '',
-  instanceId: '',
-  steps: [],
-  edges: [],
-};
+export function mockDomainOverlayDescriptor(
+  overrides: Partial<DomainOverlayDescriptor> = {},
+): DomainOverlayDescriptor {
+  const base: DomainOverlayDescriptor = {
+    id: 'ov-1',
+    domainId: 'dom-1',
+    domainName: 'Domain 1',
+    description: 'Overlay description',
+    stageAssociation: 'thesis',
+    overlay_values: {},
+  };
+  return { ...base, ...overrides };
+}
+
+export function mockDialecticStage(
+  overrides: Partial<DialecticStage> = {},
+): DialecticStage {
+  const base: DialecticStage = {
+    id: 'stage-1',
+    slug: 'thesis',
+    display_name: 'Thesis',
+    description: 'Initial hypothesis',
+    created_at: new Date().toISOString(),
+    default_system_prompt_id: 'sp-1',
+    expected_output_template_ids: [],
+    recipe_template_id: null,
+    active_recipe_instance_id: null,
+    minimum_balance: 100000,
+  };
+  return { ...base, ...overrides };
+}
+
+export function mockDialecticStageTransition(
+  overrides: Partial<DialecticStageTransition> = {},
+): DialecticStageTransition {
+  const base: DialecticStageTransition = {
+    id: 't-1',
+    process_template_id: 'pt-1',
+    source_stage_id: 'stage-1',
+    target_stage_id: 'stage-2',
+    created_at: new Date().toISOString(),
+    condition_description: null,
+  };
+  return { ...base, ...overrides };
+}
+
+export function mockDialecticStageRecipeStep(
+  overrides: Partial<DialecticStageRecipeStep> = {},
+): DialecticStageRecipeStep {
+  const base: DialecticStageRecipeStep = {
+    id: 'step-1',
+    step_key: 'doc_step',
+    step_slug: 'doc-step',
+    step_name: 'Doc Step',
+    execution_order: 1,
+    parallel_group: 1,
+    branch_key: 'b1',
+    job_type: 'EXECUTE',
+    prompt_type: 'Turn',
+    prompt_template_id: null,
+    output_type: 'assembled_document_json',
+    granularity_strategy: 'per_source_document',
+    inputs_required: [],
+    inputs_relevance: [],
+    outputs_required: [
+      { document_key: 'doc_a', artifact_class: 'rendered_document', file_type: 'markdown' },
+    ],
+  };
+  return { ...base, ...overrides };
+}
+
+export function mockDialecticStageRecipe(
+  overrides: Partial<DialecticStageRecipe> = {},
+): DialecticStageRecipe {
+  const base: DialecticStageRecipe = {
+    stageSlug: 'thesis',
+    instanceId: 'inst-1',
+    steps: [mockDialecticStageRecipeStep()],
+    edges: [],
+  };
+  return { ...base, ...overrides };
+}
+
+export function mockStageRenderedDocumentDescriptor(
+  overrides: Partial<StageRenderedDocumentDescriptor> = {},
+): StageRenderedDocumentDescriptor {
+  const base: StageRenderedDocumentDescriptor = {
+    descriptorType: 'rendered',
+    status: 'generating',
+    job_id: 'job-1',
+    latestRenderedResourceId: 'res-1',
+    modelId: 'model-1',
+    versionHash: 'hash-1',
+    lastRenderedResourceId: 'res-1',
+    lastRenderAtIso: new Date().toISOString(),
+    stepKey: 'doc_step',
+    error: null,
+  };
+  return { ...base, ...overrides };
+}
+
+export function mockStagePlannedDocumentDescriptor(
+  overrides: Partial<StagePlannedDocumentDescriptor> = {},
+): StagePlannedDocumentDescriptor {
+  const base: StagePlannedDocumentDescriptor = {
+    descriptorType: 'planned',
+    status: 'not_started',
+    stepKey: 'doc_step',
+    modelId: 'model-1',
+  };
+  return { ...base, ...overrides };
+}
+
+export function mockJobProgressDto(
+  overrides: Partial<JobProgressDto> = {},
+): JobProgressDto {
+  const base: JobProgressDto = {
+    id: 'job-1',
+    status: 'in_progress',
+    jobType: 'EXECUTE',
+    stepKey: 'doc_step',
+    modelId: 'model-1',
+    documentKey: 'doc_a',
+    parentJobId: null,
+    createdAt: new Date().toISOString(),
+    startedAt: new Date().toISOString(),
+    completedAt: null,
+    modelName: 'Model 1',
+  };
+  return { ...base, ...overrides };
+}
+
+export function mockJobProgressEntry(
+  overrides: Partial<JobProgressEntry> = {},
+): JobProgressEntry {
+  const base: JobProgressEntry = {
+    totalJobs: 3,
+    completedJobs: 2,
+    inProgressJobs: 0,
+    failedJobs: 0,
+  };
+  return { ...base, ...overrides };
+}
+
+export function mockStageRunProgressSnapshot(
+  overrides: Partial<StageRunProgressSnapshot> = {},
+): StageRunProgressSnapshot {
+  const documentKey = `doc_a${STAGE_RUN_DOCUMENT_KEY_SEPARATOR}model-1`;
+  const base: StageRunProgressSnapshot = {
+    stepStatuses: { doc_step: 'in_progress' },
+    documents: {
+      [documentKey]: mockStageRenderedDocumentDescriptor(),
+    },
+    jobProgress: {
+      doc_step: mockJobProgressEntry(),
+    },
+    progress: { completedSteps: 0, totalSteps: 1, failedSteps: 0 },
+    jobs: [mockJobProgressDto()],
+  };
+  return { ...base, ...overrides };
+}
+
+export function mockDomainProcessAssociationRow(
+  overrides: Partial<DomainProcessAssociationRow> = {},
+): DomainProcessAssociationRow {
+  const base: DomainProcessAssociationRow = {
+    id: 'association-uuid-default',
+    domain_id: 'domain-uuid-default',
+    process_template_id: 'pt-thesis',
+    is_default_for_domain: true,
+    created_at: '2025-01-01T00:00:00.000Z',
+    updated_at: '2025-01-01T01:00:00.000Z',
+  };
+  return { ...base, ...overrides };
+}
+
+export function mockStageProgressEntry(
+  overrides: Partial<StageProgressEntry> = {},
+): StageProgressEntry {
+  const base: StageProgressEntry = {
+    stageSlug: 'thesis',
+    status: 'not_started',
+    modelCount: 1,
+    progress: { completedSteps: 0, totalSteps: 0, failedSteps: 0 },
+    expectedCount: 0,
+    steps: [],
+    documents: [],
+    jobs: [],
+    edges: [],
+  };
+  return { ...base, ...overrides };
+}
+
+export function buildListStageDocumentsPayload(
+  overrides: Partial<ListStageDocumentsPayload> = {},
+): ListStageDocumentsPayload {
+  const base: ListStageDocumentsPayload = {
+    sessionId: 'ses-1',
+    stageSlug: 'thesis',
+    iterationNumber: 1,
+    userId: 'user-1',
+    projectId: 'proj-1',
+  };
+  return { ...base, ...overrides };
+}
+
+export function buildGetAllStageProgressPayload(
+  overrides: Partial<GetAllStageProgressPayload> = {},
+): GetAllStageProgressPayload {
+  const base: GetAllStageProgressPayload = {
+    sessionId: 'ses-1',
+    iterationNumber: 1,
+    userId: 'user-1',
+    projectId: 'proj-1',
+  };
+  return { ...base, ...overrides };
+}
+
+export function buildInitializeMaxOutputTokensResult(
+  error?: ApiError,
+  skipped?: boolean,
+): InitializeMaxOutputTokensResult {
+  if (error !== undefined) {
+    return { ok: false, error };
+  }
+  if (skipped === true) {
+    return { ok: true, skipped: true };
+  }
+  return { ok: true };
+}
+
+export function mockGetAllStageProgressResponse(
+  overrides: Partial<GetAllStageProgressResponse> = {},
+): GetAllStageProgressResponse {
+  const dagProgress: DagProgressDto = {
+    completedStages: 0,
+    totalStages: 0,
+  };
+  const base: GetAllStageProgressResponse = {
+    dagProgress,
+    stages: [mockStageProgressEntry()],
+  };
+  return { ...base, ...overrides };
+}
+
+export function mockSelectedModel(
+  overrides: Partial<SelectedModels> = {},
+): SelectedModels {
+  const base: SelectedModels = {
+    id: 'model-1',
+    displayName: 'Model 1',
+  };
+  return { ...base, ...overrides };
+}
+
+export function mockDialecticContribution(
+  overrides: Partial<DialecticContribution> = {},
+): DialecticContribution {
+  const base: DialecticContribution = {
+    id: 'contrib-1',
+    session_id: 'ses-1',
+    user_id: null,
+    stage: 'thesis',
+    iteration_number: 1,
+    model_id: 'model-1',
+    model_name: 'Model 1',
+    prompt_template_id_used: null,
+    seed_prompt_url: null,
+    edit_version: 1,
+    is_latest_edit: true,
+    original_model_contribution_id: null,
+    raw_response_storage_path: null,
+    target_contribution_id: null,
+    tokens_used_input: null,
+    tokens_used_output: null,
+    processing_time_ms: null,
+    error: null,
+    citations: null,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    contribution_type: 'business_case',
+    file_name: null,
+    storage_bucket: null,
+    storage_path: null,
+    size_bytes: null,
+    mime_type: null,
+  };
+  return { ...base, ...overrides };
+}
+
+export function mockDialecticFeedback(
+  overrides: Partial<DialecticFeedback> = {},
+): DialecticFeedback {
+  const base: DialecticFeedback = {
+    id: 'fb-1',
+    session_id: 'ses-1',
+    project_id: 'proj-1',
+    user_id: 'user-1',
+    stage_slug: 'thesis',
+    iteration_number: 1,
+    storage_bucket: 'test-bucket',
+    storage_path: 'path/to/feedback.md',
+    file_name: 'feedback.md',
+    mime_type: 'text/markdown',
+    size_bytes: 100,
+    feedback_type: 'StageReviewSummary_v1',
+    resource_description: null,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+  return { ...base, ...overrides };
+}
+
+export function mockDialecticProjectResource(
+  overrides: Partial<DialecticProjectResource> = {},
+): DialecticProjectResource {
+  const base: DialecticProjectResource = {
+    id: 'resource-1',
+    project_id: 'proj-1',
+    file_name: 'seed_prompt.md',
+    storage_path: 'path/to/seed_prompt.md',
+    mime_type: 'text/markdown',
+    size_bytes: 100,
+    resource_description: JSON.stringify({
+      type: 'seed_prompt',
+      session_id: 'ses-1',
+      stage_slug: 'thesis',
+      iteration: 1,
+    }),
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+  return { ...base, ...overrides };
+}
+
+export function mockAssembledPrompt(
+  overrides: Partial<AssembledPrompt> = {},
+): AssembledPrompt {
+  const base: AssembledPrompt = {
+    promptContent: 'Mock seed prompt content',
+    source_prompt_resource_id: 'resource-1',
+  };
+  return { ...base, ...overrides };
+}
+
+export function mockDialecticSessionModel(
+  overrides: Partial<DialecticSessionModel> = {},
+): DialecticSessionModel {
+  const base: DialecticSessionModel = {
+    id: 'ssm-1',
+    session_id: 'ses-1',
+    model_id: 'model-1',
+    model_role: null,
+    created_at: new Date().toISOString(),
+  };
+  return { ...base, ...overrides };
+}
+
+export function mockSession(
+  overrides: Partial<DialecticSession> = {},
+): DialecticSession {
+  const base: DialecticSession = {
+    id: 'ses-1',
+    project_id: 'proj-1',
+    session_description: 'Mock Session',
+    user_input_reference_url: null,
+    iteration_count: 1,
+    selected_models: [mockSelectedModel()],
+    status: 'active',
+    associated_chat_id: null,
+    current_stage_id: 'stage-1',
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    dialectic_contributions: [],
+    dialectic_session_models: [],
+    feedback: [],
+    viewing_stage_id: 'stage-1',
+  };
+  return { ...base, ...overrides };
+}
+
+export function mockDialecticProcessTemplate(
+  overrides: Partial<DialecticProcessTemplate> = {},
+): DialecticProcessTemplate {
+  const base: DialecticProcessTemplate = {
+    id: 'pt-1',
+    name: 'Test Template',
+    description: 'A test template',
+    created_at: new Date().toISOString(),
+    starting_stage_id: 'stage-1',
+    stages: [
+      mockDialecticStage({ id: 'stage-1', slug: 'thesis', display_name: 'Thesis' }),
+      mockDialecticStage({ id: 'stage-2', slug: 'antithesis', display_name: 'Antithesis' }),
+      mockDialecticStage({ id: 'stage-3', slug: 'synthesis', display_name: 'Synthesis' }),
+    ],
+    transitions: [
+      mockDialecticStageTransition({
+        id: 't-1',
+        source_stage_id: 'stage-1',
+        target_stage_id: 'stage-2',
+      }),
+      mockDialecticStageTransition({
+        id: 't-2',
+        source_stage_id: 'stage-2',
+        target_stage_id: 'stage-3',
+      }),
+    ],
+  };
+  return { ...base, ...overrides };
+}
+
+export function mockDialecticProject(
+  overrides: Partial<DialecticProject> = {},
+): DialecticProject {
+  const base: DialecticProject = {
+    id: 'proj-1',
+    user_id: 'user-1',
+    project_name: 'Mock Project',
+    initial_user_prompt: 'Initial prompt',
+    selected_domain_id: 'dom-1',
+    dialectic_domains: { name: 'Domain 1' },
+    selected_domain_overlay_id: null,
+    repo_url: null,
+    status: 'active',
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    dialectic_sessions: [mockSession()],
+    resources: [],
+    process_template_id: 'pt-1',
+    dialectic_process_templates: mockDialecticProcessTemplate(),
+    isLoadingProcessTemplate: false,
+    processTemplateError: null,
+    contributionGenerationStatus: 'idle',
+    generateContributionsError: null,
+    isSubmittingStageResponses: false,
+    submitStageResponsesError: null,
+    isSavingContributionEdit: false,
+    saveContributionEditError: null,
+  };
+  return { ...base, ...overrides };
+}
+
+export function mockContributionCacheEntry(
+  overrides: Partial<ContributionCacheEntry> = {},
+): ContributionCacheEntry {
+  const base: ContributionCacheEntry = {
+    content: 'Mock contribution content',
+    isLoading: false,
+    error: null,
+    mimeType: 'text/markdown',
+    sizeBytes: 100,
+    fileName: 'contribution.md',
+  };
+  return { ...base, ...overrides };
+}
+
+export function mockFocusedStageDocumentState(
+  overrides: Partial<FocusedStageDocumentState> = {},
+): FocusedStageDocumentState {
+  const base: FocusedStageDocumentState = {
+    modelId: 'model-1',
+    documentKey: 'doc_a',
+  };
+  return { ...base, ...overrides };
+}
+
+export function mockStageDocumentContentState(
+  overrides: Partial<StageDocumentContentState> = {},
+): StageDocumentContentState {
+  const base: StageDocumentContentState = {
+    baselineMarkdown: '# Baseline',
+    currentDraftMarkdown: '# Baseline',
+    isDirty: false,
+    isLoading: false,
+    error: null,
+    lastBaselineVersion: null,
+    pendingDiff: null,
+    lastAppliedVersionHash: null,
+    sourceContributionId: null,
+    feedbackDraftMarkdown: undefined,
+    feedbackIsDirty: false,
+    resourceType: 'rendered_document',
+  };
+  return { ...base, ...overrides };
+}
+
+export function mockAiModelConfig(
+  overrides: Partial<AiModelExtendedConfig> = {},
+): AiModelExtendedConfig {
+  const base: AiModelExtendedConfig = {
+    input_token_cost_rate: 0.001,
+    output_token_cost_rate: 0.002,
+    context_window_tokens: 1000,
+    hard_cap_output_tokens: 1000,
+    provider_max_input_tokens: 1000,
+    provider_max_output_tokens: 1000,
+    tokenization_strategy: {
+      type: 'tiktoken',
+      tiktoken_encoding_name: 'cl100k_base',
+      is_chatml_model: true,
+      api_identifier_for_tokenization: 'model-1',
+    },
+  };
+  return { ...base, ...overrides };
+}
+
+export function mockCatalogConfigMissingOutputCap(): Json {
+  const config = {
+    input_token_cost_rate: 1,
+    output_token_cost_rate: 1,
+    tokenization_strategy: { type: 'tiktoken' },
+  };
+  if (!isJson(config)) {
+    throw new Error('config is not a valid JSON object');
+  }
+  return config;
+}
+
+export function mockAiProvidersRow(
+  overrides: Partial<AiProvidersRow> = {},
+): AiProvidersRow {
+
+  const config = mockAiModelConfig();
+  if(!isJson(config)) {
+    throw new Error('config is not a valid JSON object');
+  }
+  const base: AiProvidersRow = {
+    id: 'model-1',
+    name: 'Model 1',
+    api_identifier: 'model-1',
+    provider: 'OpenAI',
+    description: 'Model 1',
+    is_active: true,
+    is_default_generation: false,
+    is_default_embedding: false,
+    is_enabled: true,
+    min_plan_tier_level: 0,
+    config: config,
+    created_at: '2025-01-01T00:00:00Z',
+    updated_at: '2025-01-01T00:00:00Z',
+  };
+  return { ...base, ...overrides };
+}
+
+export function mockSelectedModelsForCatalog(
+    catalog: AiProvidersRow[],
+): SelectedModels[] {
+  return catalog.map((entry) =>
+    mockSelectedModel({ id: entry.id, displayName: entry.name }),
+  );
+}
 
 // 1. Define initial state values
 export const initialDialecticStateValues: DialecticStateValues = {
@@ -439,7 +998,6 @@ export const initialDialecticStateValues: DialecticStateValues = {
   dagProgressByRun: {},
   stageRunProgress: {},
   progressHydrationStatus: {},
-  progressHydrationError: {},
   focusedStageDocument: {},
   stageDocumentContent: {},
   stageDocumentVersions: {},
@@ -455,6 +1013,15 @@ export const initialDialecticStateValues: DialecticStateValues = {
   isAutoStarting: false,
   autoStartError: null,
   shouldOpenDagProgress: false,
+  maxOutputTokens: null,
+  outputCapUserCustomized: false,
+  selectedDomainProcessAssociation: null,
+  isLoadingDomainProcessAssociation: false,
+  domainProcessAssociationError: null,
+  stageExpectedCountsByRun: {},
+  preProjectStageExpectedCounts: null,
+  isLoadingStageExpectedCounts: false,
+  stageExpectedCountsError: null,
 };
 
 // 2. Helper function to create a new mock store instance
@@ -508,12 +1075,67 @@ const createActualMockStore = (initialOverrides?: Partial<DialecticStateValues>)
         reapplyDraftToNewBaselineLogic(state, key, newBaseline, newVersion, sourceContributionId, resourceType);
       };
 
+      const initializeOutputCap = async (): Promise<void> => {
+        const catalogState: DialecticStateValues = get();
+        if (catalogState.modelCatalog.length === 0 && !catalogState.isLoadingModelCatalog) {
+          await get().fetchAIModelCatalog();
+        }
+        const capInitState: DialecticStateValues = get();
+        const authState = internalMockAuthStoreGetState();
+        const capInitDepsReady: boolean =
+          !authState.isLoading
+          && authState.userTier !== null
+          && !capInitState.isLoadingModelCatalog
+          && capInitState.modelCatalog.length > 0
+          && !capInitState.outputCapUserCustomized;
+        if (!capInitDepsReady) {
+          return;
+        }
+        get().initializeMaxOutputTokens();
+      };
+
+      mockFetchAIModelCatalog.mockImplementation(async (): Promise<void> => {
+        set({ isLoadingModelCatalog: true, modelCatalogError: null });
+        try {
+          const response = await api.dialectic().listModelCatalog();
+          if (response.error) {
+            set({
+              modelCatalog: [],
+              isLoadingModelCatalog: false,
+              modelCatalogError: response.error,
+            });
+          } else {
+            set({
+              modelCatalog: response.data || [],
+              isLoadingModelCatalog: false,
+              modelCatalogError: null,
+            });
+            await initializeOutputCap();
+          }
+        } catch (error: unknown) {
+          const networkError: ApiError = {
+            message:
+              error instanceof Error
+                ? error.message
+                : 'An unknown network error occurred while fetching AI model catalog',
+            code: 'NETWORK_ERROR',
+          };
+          set({
+            modelCatalog: [],
+            isLoadingModelCatalog: false,
+            modelCatalogError: networkError,
+          });
+        }
+      });
+
       return {
       ...initialDialecticStateValues,
       ...(initialOverrides || {}),
       // Actions - implemented using vi.fn() and using `set` for state changes
       fetchDomains: vi.fn().mockResolvedValue(undefined),
-      setSelectedDomain: vi.fn((domain: DialecticDomain | null) => set({ selectedDomain: domain })),
+      setSelectedDomain: vi.fn((domain: DialecticDomainRow | null) => set({ selectedDomain: domain })),
+      fetchProcessAssociation: vi.fn().mockResolvedValue(undefined),
+      fetchStageExpectedCounts: vi.fn().mockResolvedValue(undefined),
       fetchAvailableDomainOverlays: vi.fn().mockResolvedValue(undefined),
       setSelectedStageAssociation: vi.fn((stage: DialecticStage | null) => set({ selectedStageAssociation: stage })),
       setSelectedDomainOverlayId: vi.fn((id: string | null) => set({ selectedDomainOverlayId: id })),
@@ -523,7 +1145,7 @@ const createActualMockStore = (initialOverrides?: Partial<DialecticStateValues>)
       createDialecticProject: vi.fn().mockResolvedValue({ data: undefined, error: undefined, status: 200 }),
       startDialecticSession: vi.fn().mockResolvedValue({ data: undefined, error: undefined, status: 200 }),
       updateSessionModels: vi.fn().mockResolvedValue({ data: undefined, error: undefined, status: 200 }),
-      fetchAIModelCatalog: vi.fn().mockResolvedValue(undefined),
+      fetchAIModelCatalog: mockFetchAIModelCatalog,
       createProjectAndAutoStart: vi.fn().mockResolvedValue({ projectId: '', sessionId: null, hasDefaultModels: false }),
       setShouldOpenDagProgress: vi.fn((open: boolean) => set({ shouldOpenDagProgress: open })),
       fetchContributionContent: vi.fn().mockImplementation(async (contributionId: string) => {
@@ -549,6 +1171,10 @@ const createActualMockStore = (initialOverrides?: Partial<DialecticStateValues>)
         set({ selectedModels: newModels });
       }),
       resetSelectedModels: vi.fn(() => set({ selectedModels: [] })),
+      setMaxOutputTokens: vi.fn((maxTokens: number) =>
+        set({ maxOutputTokens: maxTokens, outputCapUserCustomized: true }),
+      ),
+      initializeMaxOutputTokens: mockInitializeMaxOutputTokens,
       fetchInitialPromptContent: vi.fn().mockResolvedValue(undefined),
       generateContributions: vi.fn().mockResolvedValue({ data: { message: 'ok', contributions: [] }, error: undefined, status: 200 }),
       resumePausedNsfJobs: mockResumePausedNsfJobs,
@@ -609,10 +1235,18 @@ const createActualMockStore = (initialOverrides?: Partial<DialecticStateValues>)
       setActiveContextSessionId: vi.fn((id: string | null) => set({ activeContextSessionId: id })),
       setActiveContextStage: vi.fn((stage: DialecticStage | null) => set({ activeContextStage: stage })),
       setActiveDialecticContext: vi.fn((context: { projectId: string | null; sessionId: string | null; stage: DialecticStage | null }) => {
+        const priorState = get();
+        const projectIdChanged: boolean = priorState.activeContextProjectId !== context.projectId;
+        const sessionIdChanged: boolean = priorState.activeContextSessionId !== context.sessionId;
+        const shouldResetOutputCapState: boolean = projectIdChanged || sessionIdChanged;
         set({
           activeContextProjectId: context.projectId,
           activeContextSessionId: context.sessionId,
           activeContextStage: context.stage,
+          ...(context.sessionId === null ? { activeSessionDetail: null, activeSessionDetailError: null } : {}),
+          ...(shouldResetOutputCapState
+            ? { outputCapUserCustomized: false }
+            : {}),
         });
       }),
       fetchFeedbackFileContent: vi.fn().mockResolvedValue(undefined),
@@ -761,18 +1395,50 @@ const createActualMockStore = (initialOverrides?: Partial<DialecticStateValues>)
             );
         },
       ),
-      hydrateStageProgress: vi.fn().mockImplementation((payload: ListStageDocumentsPayload) => {
-        hydrateStageProgressLogic(set, payload);
+      hydrateStageProgress: vi.fn().mockImplementation(async (payload: ListStageDocumentsPayload) => {
+        const progressKey = `${payload.sessionId}:${payload.stageSlug}:${payload.iterationNumber}`;
+        set((state) => {
+          state.progressHydrationStatus[progressKey] = 'pending';
+        });
+        try {
+          await hydrateStageProgressLogic(set, payload);
+          set((state) => {
+            state.progressHydrationStatus[progressKey] = 'success';
+          });
+        } catch (err: unknown) {
+          set((state) => {
+            state.progressHydrationStatus[progressKey] = 'failed';
+          });
+          throw err;
+        }
       }),
-      hydrateAllStageProgress: vi.fn().mockImplementation((payload: GetAllStageProgressPayload) => {
-        hydrateAllStageProgressLogic(set, payload);
+      hydrateAllStageProgress: vi.fn().mockImplementation(async (payload: GetAllStageProgressPayload) => {
+        const runKey = `${payload.sessionId}:${payload.iterationNumber}`;
+        set((state) => {
+          state.progressHydrationStatus[runKey] = 'pending';
+        });
+        try {
+          await hydrateAllStageProgressLogic(set, payload);
+          set((state) => {
+            state.progressHydrationStatus[runKey] = 'success';
+          });
+        } catch (err: unknown) {
+          set((state) => {
+            state.progressHydrationStatus[runKey] = 'failed';
+          });
+          throw err;
+        }
       }),
       setProgressHydrationRunPending: vi.fn().mockImplementation((runKey: string) => {
         set((state) => {
           state.progressHydrationStatus[runKey] = 'pending';
         });
       }),
-      resetProgressHydrationStatus: vi.fn(),
+      resetProgressHydrationStatus: vi.fn().mockImplementation((runKey: string) => {
+        set((state) => {
+          delete state.progressHydrationStatus[runKey];
+        });
+      }),
       initializeFeedbackDraft: vi.fn().mockImplementation(
         async (key: StageDocumentCompositeKey) => {
           const userId = internalMockAuthStoreGetState().user?.id ?? null;
@@ -828,6 +1494,7 @@ export const setDialecticStateValues = (newValues: Partial<DialecticStateValues>
 
 // 7. Function to re-initialize or update the mock store state for tests
 export const initializeMockDialecticState = (initialStateOverrides?: Partial<DialecticStateValues>) => {
+  mockFetchAIModelCatalog.mockClear();
   // Create a new store instance. This effectively resets all state and action mocks to their vi.fn() definitions.
   actualMockStore = createActualMockStore(initialStateOverrides);
 
@@ -843,6 +1510,7 @@ export const initializeMockDialecticState = (initialStateOverrides?: Partial<Dia
   // Resetting specific action mocks (ensure all relevant actions are included if needed for global mock state)
   mockActivateProjectAndSessionContextForDeepLink.mockClear();
   mockFetchAndSetCurrentSessionDetails.mockClear();
+  mockInitializeMaxOutputTokens.mockClear().mockReturnValue({ ok: true });
 };
 
 // 8. Reset Function for tests (full reset)
@@ -852,6 +1520,7 @@ export const resetDialecticStoreMock = () => {
   // Clear any top-level thunk mocks that are not part of the store's state
   mockActivateProjectAndSessionContextForDeepLink.mockClear();
   mockFetchAndSetCurrentSessionDetails.mockClear();
+  mockInitializeMaxOutputTokens.mockClear().mockReturnValue({ ok: true });
   // Global selectors are reset within initializeMockDialecticState
 };
 

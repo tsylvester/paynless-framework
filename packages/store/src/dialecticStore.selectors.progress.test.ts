@@ -1,81 +1,21 @@
 import { describe, it, expect } from 'vitest';
 import {
-    selectDomains,
-    selectIsLoadingDomains,
-    selectDomainsError,
-    selectSelectedDomain,
-    selectSelectedStageAssociation,
-    selectAvailableDomainOverlays,
-    selectIsLoadingDomainOverlays,
-    selectDomainOverlaysError,
-    selectOverlay,
-    selectSelectedDomainOverlayId,
-    selectDialecticProjects,
-    selectIsLoadingProjects,
-    selectProjectsError,
-    selectCurrentProjectDetail,
-    selectIsLoadingProjectDetail,
-    selectProjectDetailError,
-    selectModelCatalog,
-    selectIsLoadingModelCatalog,
-    selectModelCatalogError,
-    selectIsCreatingProject,
-    selectCreateProjectError,
-    selectIsStartingSession,
-    selectStartSessionError,
-    selectContributionContentCache,
-    selectCurrentProcessTemplate,
-    selectIsLoadingProcessTemplate,
-    selectProcessTemplateError,
-    selectCurrentProjectInitialPrompt,
-    selectCurrentProjectSessions,
-    selectIsUpdatingProjectPrompt,
-    selectCurrentProjectId,
-    selectSelectedModels,
-    selectContributionById,
-    selectSaveContributionEditError,
-    selectActiveContextProjectId,
-    selectActiveContextSessionId,
-    selectActiveContextStage,
-    selectIsStageReadyForSessionIteration,
-    selectContributionGenerationStatus,
-    selectGenerateContributionsError,
-    selectAllContributionsFromCurrentProject,
-    selectSessionById,
-    selectStageById,
-    selectFeedbackForStageIteration,
-    selectSortedStages,
-    selectStageProgressSummary,
-    selectStageDocumentResource,
-    selectEditedDocumentByKey,
-    selectValidMarkdownDocumentKeys,
     selectUnifiedProjectProgress,
     selectStageHasUnsavedChanges,
 } from './dialecticStore.selectors';
 import { initialDialecticStateValues } from './dialecticStore';
 import type {
     DialecticStateValues,
-    ApiError,
-    DomainOverlayDescriptor,
     DialecticProject,
-    AIModelCatalogEntry,
-    DialecticDomain,
     DialecticStage,
     DialecticProcessTemplate,
     DialecticSession,
-    DialecticContribution,
-    DialecticProjectResource,
-    DialecticFeedback,
-    DialecticStageTransition,
     DialecticStageRecipe,
-    DialecticStageRecipeStep,
-    AssembledPrompt,
     StageDocumentContentState,
     StageRenderedDocumentDescriptor,
     StageProgressDetail,
     StageRunProgressSnapshot,
     UnifiedProjectProgress,
-    SelectedModels,
     JobProgressEntry,
     JobProgressDto,
 } from '@paynless/types';
@@ -2479,6 +2419,20 @@ describe('selectUnifiedProjectProgress', () => {
       expect(detailStepsOnly?.completedDocuments).toBe(0);
       expect(detailStepsOnly?.totalDocuments).toBe(1);
       expect(detailStepsOnly?.stageStatus).not.toBe('completed');
+    });
+
+    it('when template has stages and sessionId not in project sessions, returns hydrationReady false without throwing', () => {
+      const state: DialecticStateValues = {
+        ...initialDialecticStateValues,
+        currentProjectDetail: projectBaseForUnified,
+        currentProcessTemplate: templateForUnified,
+      };
+
+      const result: UnifiedProjectProgress = selectUnifiedProjectProgress(state, sessionId);
+
+      expect(result.hydrationReady).toBe(false);
+      expect(result.totalStages).toBe(templateForUnified.stages.length);
+      expect(result.stageDetails.length).toBe(0);
     });
   });
 

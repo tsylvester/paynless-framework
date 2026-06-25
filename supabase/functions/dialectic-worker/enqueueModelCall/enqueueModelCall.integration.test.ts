@@ -45,6 +45,7 @@ const integrationProviderRow: Tables<"ai_providers"> = {
     is_default_embedding: false,
     is_default_generation: false,
     updated_at: new Date().toISOString(),
+    min_plan_tier_level: 0,
 };
 
 const integrationApiKeyForProvider: ApiKeyForProviderFn = (
@@ -81,6 +82,7 @@ Deno.test(
             providerRow: integrationProviderRow,
             userAuthToken: "integration-user-jwt",
             output_type: FileType.HeaderContext,
+            userConfig: { tier_output_cap_tokens: null },
         };
 
         const payload: EnqueueModelCallPayload = {
@@ -178,6 +180,7 @@ Deno.test(
             providerRow: integrationProviderRow,
             userAuthToken: "integration-user-jwt",
             output_type: FileType.HeaderContext,
+            userConfig: { tier_output_cap_tokens: null },
         };
 
         const payload: EnqueueModelCallPayload = {
@@ -212,6 +215,83 @@ Deno.test(
             );
             assertExists(updateSpy);
             assert(updateSpy.callCount >= 1);
+        } finally {
+            fetchStub.restore();
+        }
+    },
+);
+
+Deno.test(
+    "Integration: enqueueModelCall forwards tier_output_cap_tokens onto enqueued AiStreamEventData",
+    async () => {
+        const mockSetup = createMockSupabaseClient(undefined, {
+            genericMockResults: {
+                dialectic_generation_jobs: {
+                    update: { data: [{}], error: null },
+                },
+            },
+        });
+        const dbClient: SupabaseClient<Database> =
+            mockSetup.client as unknown as SupabaseClient<Database>;
+
+        const deps: EnqueueModelCallDeps = {
+            logger: new MockLogger(),
+            computeJobSig: mockComputeJobSig,
+            netlifyQueueUrl:
+                "https://integration.netlify/.netlify/functions/async-workloads-router",
+            netlifyApiKey: "integration-awl-api-key",
+            apiKeyForProvider: integrationApiKeyForProvider,
+        };
+
+        const job = createMockJobRow(createMockDialecticExecuteJobPayload());
+        const tierCap: number = 32768;
+
+        const params: EnqueueModelCallParams = {
+            dbClient,
+            job,
+            providerRow: integrationProviderRow,
+            userAuthToken: "integration-user-jwt",
+            output_type: FileType.HeaderContext,
+            userConfig: { tier_output_cap_tokens: tierCap },
+        };
+
+        const payload: EnqueueModelCallPayload = {
+            chatApiRequest: {
+                message: "integration tier cap message",
+                providerId: "00000000-0000-4000-8000-000000000001",
+                promptId: "__none__",
+            },
+            preflightInputTokens: 10,
+        };
+
+        const fetchStub = stub(
+            globalThis,
+            "fetch",
+            (): Promise<Response> =>
+                Promise.resolve(new Response("{}", { status: 200 })),
+        );
+
+        try {
+            const result: EnqueueModelCallReturn = await enqueueModelCall(
+                deps,
+                params,
+                payload,
+            );
+
+            assert("queued" in result);
+            assertEquals(result.queued, true);
+            assertEquals(fetchStub.calls.length, 1);
+
+            const initArg = fetchStub.calls[0].args[1];
+            assertExists(initArg);
+            assert(typeof initArg.body === "string");
+            const parsed = JSON.parse(initArg.body);
+            assert(isRecord(parsed));
+            assert(isRecord(parsed.data));
+            assertEquals("user_config" in parsed.data, true);
+            assert(isRecord(parsed.data.user_config));
+            assertEquals("tier_output_cap_tokens" in parsed.data.user_config, true);
+            assertEquals(parsed.data.user_config.tier_output_cap_tokens, tierCap);
         } finally {
             fetchStub.restore();
         }

@@ -4,9 +4,12 @@ import { assertEquals, assertStringIncludes } from "https://deno.land/std@0.224.
 import { ContextWindowError } from "../../_shared/utils/errors.ts";
 import type {
   CalculateAffordabilityCompressedReturn,
+  CalculateAffordabilityDeps,
   CalculateAffordabilityDirectReturn,
   CalculateAffordabilityErrorReturn,
+  CalculateAffordabilityParams,
   CalculateAffordabilityReturn,
+  UserConfig,
 } from "./calculateAffordability.interface.ts";
 import {
   buildCalculateAffordabilityCompressedReturn,
@@ -159,4 +162,36 @@ Deno.test("calculateAffordability contract: union result accepts error branch", 
     false,
   );
   assertEquals("error" in result, true);
+});
+
+Deno.test("UserConfig shape has exactly tier_output_cap_tokens number | null", () => {
+  const uc: UserConfig = { tier_output_cap_tokens: null };
+  const uc2: UserConfig = { tier_output_cap_tokens: 32768 };
+  assertEquals(uc.tier_output_cap_tokens, null);
+  assertEquals(uc2.tier_output_cap_tokens, 32768);
+});
+
+Deno.test(
+  "CalculateAffordabilityParams contract: userConfig is UserConfig per interface",
+  () => {
+    const whenNull: CalculateAffordabilityParams["userConfig"] = { tier_output_cap_tokens: null };
+    const whenNumber: CalculateAffordabilityParams["userConfig"] = { tier_output_cap_tokens: 32768 };
+    assertEquals(whenNull.tier_output_cap_tokens, null);
+    assertEquals(whenNumber.tier_output_cap_tokens, 32768);
+  },
+);
+
+Deno.test("userConfig with tier_output_cap_tokens null is valid", () => {
+  const userConfig: CalculateAffordabilityParams["userConfig"] = { tier_output_cap_tokens: null };
+  assertEquals(userConfig.tier_output_cap_tokens, null);
+});
+
+Deno.test("userConfig with tier_output_cap_tokens 32768 is valid", () => {
+  const userConfig: CalculateAffordabilityParams["userConfig"] = { tier_output_cap_tokens: 32768 };
+  assertEquals(userConfig.tier_output_cap_tokens, 32768);
+});
+
+Deno.test("CalculateAffordabilityDeps contract: getMaxOutputTokens is a required key", () => {
+  const key: keyof CalculateAffordabilityDeps = "getMaxOutputTokens";
+  assertEquals(key, "getMaxOutputTokens");
 });

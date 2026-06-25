@@ -7,11 +7,20 @@ import type {
   NodeChatMessage,
   NodeModelConfig,
   NodeOutboundDocument,
+  NodeUserConfig,
 } from '../ai-adapter.interface.ts';
+import { resolveOutputCap } from '../../resolveOutputCap/resolveOutputCap.provides.ts';
 
 type GoogleHistoryEntry = {
   role: string;
   parts: Array<{ text: string }>;
+};
+
+type GoogleRequestSnapshot = {
+  modelApiName: string;
+  history: GoogleHistoryEntry[];
+  finalParts: Array<{ text: string }>;
+  generationConfig: { maxOutputTokens: number } | undefined;
 };
 
 function googleResourceDocumentLabel(doc: NodeOutboundDocument): string {
@@ -32,6 +41,7 @@ function prepareGoogleChatAndParts(
   request: NodeChatApiRequest,
   apiIdentifier: string,
   modelConfig: NodeModelConfig,
+  userConfig: NodeUserConfig,
 ): {
   modelApiName: string;
   history: GoogleHistoryEntry[];
@@ -62,18 +72,14 @@ function prepareGoogleChatAndParts(
     throw new Error('Cannot send request to Google Gemini: message history format invalid.');
   }
 
-  const clientCap: number | undefined =
-    typeof request.max_tokens_to_generate === 'number'
-      ? request.max_tokens_to_generate
-      : undefined;
-  const modelHardCap: number | undefined =
-    typeof modelConfig.hard_cap_output_tokens === 'number'
-      ? modelConfig.hard_cap_output_tokens
-      : undefined;
-  const cap: number | undefined =
-    typeof clientCap === 'number' ? clientCap : modelHardCap;
+  const cap: number | undefined = resolveOutputCap({
+    requestMax: request.max_tokens_to_generate,
+    hardCap: modelConfig.hard_cap_output_tokens,
+    providerMax: undefined,
+    tierCap: userConfig.tier_output_cap_tokens,
+  });
   const generationConfig: { maxOutputTokens: number } | undefined =
-    typeof cap === 'number' ? { maxOutputTokens: cap } : undefined;
+    cap === undefined ? undefined : { maxOutputTokens: cap };
 
   let finalParts: Array<{ text: string }> = [...lastEntry.parts];
   if (request.resourceDocuments !== undefined && request.resourceDocuments.length > 0) {
@@ -114,6 +120,7 @@ export function createGoogleNodeAdapter(
   params: NodeAdapterConstructorParams,
 ): AiAdapter {
   const modelConfig: NodeModelConfig = params.modelConfig;
+  const userConfig: NodeUserConfig = params.userConfig;
   const apiKey: string = params.apiKey;
   const client: GoogleGenerativeAI = new GoogleGenerativeAI(apiKey);
 
@@ -122,91 +129,108 @@ export function createGoogleNodeAdapter(
       request: NodeChatApiRequest,
       apiIdentifier: string,
     ): AsyncGenerator<NodeAdapterStreamChunk> {
-      const prepared: {
-        modelApiName: string;
-        history: GoogleHistoryEntry[];
-        finalParts: Array<{ text: string }>;
-        generationConfig: { maxOutputTokens: number } | undefined;
-      } = prepareGoogleChatAndParts(request, apiIdentifier, modelConfig);
-
-      const model = client.getGenerativeModel({ model: prepared.modelApiName });
-      const chat = model.startChat({
-        history: prepared.history,
-        generationConfig: prepared.generationConfig,
-      });
-
-      const streamResult = await chat.sendMessageStream(prepared.finalParts);
-
-      let assembled: string = '';
       try {
-        for await (const chunk of streamResult.stream) {
-          const parts = chunk.candidates?.[0]?.content?.parts;
-          if (parts === undefined) {
-            continue;
-          }
-          for (const part of parts) {
-            const text: string | undefined = part.text;
-            if (typeof text === 'string' && text.length > 0) {
-              assembled += text;
-              const textDelta: NodeAdapterStreamChunk = {
-                type: 'text_delta',
-                text,
-              };
-              yield textDelta;
+        const prepared: GoogleRequestSnapshot = prepareGoogleChatAndParts(request, apiIdentifier, modelConfig, userConfig);
+        console.info('[ai-stream-background][google] request sent to Google', {
+          apiIdentifier,
+          request,
+          googleRequest: prepared,
+        });
+
+        const model = client.getGenerativeModel({ model: prepared.modelApiName });
+        const chat = model.startChat({
+          history: prepared.history,
+          generationConfig: prepared.generationConfig,
+        });
+
+        const streamResult = await chat.sendMessageStream(prepared.finalParts);
+
+        let assembled: string = '';
+        try {
+          for await (const chunk of streamResult.stream) {
+            const parts = chunk.candidates?.[0]?.content?.parts;
+            if (parts === undefined) {
+              continue;
+            }
+            for (const part of parts) {
+              const text: string | undefined = part.text;
+              if (typeof text === 'string' && text.length > 0) {
+                assembled += text;
+                const textDelta: NodeAdapterStreamChunk = {
+                  type: 'text_delta',
+                  text,
+                };
+                yield textDelta;
+              }
             }
           }
-        }
-      } catch (error) {
-        if (error instanceof Error) {
+        } catch (error: unknown) {
+          console.error('[ai-stream-background][google] stream iteration failed', {
+            apiIdentifier,
+            request,
+            googleRequest: prepared,
+            error,
+          });
           throw error;
         }
-        throw new Error(String(error));
-      }
+        if (assembled.trim().length === 0) {
+          throw new Error('Google Gemini stream completed with no assistant text.');
+        }
 
-      if (assembled.trim().length === 0) {
-        throw new Error('Google Gemini stream completed with no assistant text.');
-      }
+        const response = await streamResult.response;
+        console.info('[ai-stream-background][google] response received from Google', {
+          apiIdentifier,
+          request,
+          googleRequest: prepared,
+          response,
+        });
+        const candidate = response.candidates?.[0];
 
-      const response = await streamResult.response;
-      const candidate = response.candidates?.[0];
+        if (response.usageMetadata === undefined || response.usageMetadata === null) {
+          throw new Error('Google Gemini response did not include usageMetadata.');
+        }
+        const usageMeta = response.usageMetadata;
+        const ptRaw: unknown = usageMeta.promptTokenCount;
+        const ctRaw: unknown = usageMeta.candidatesTokenCount;
+        const ttRaw: unknown = usageMeta.totalTokenCount;
+        if (typeof ptRaw !== 'number' || typeof ctRaw !== 'number' || typeof ttRaw !== 'number') {
+          throw new Error('Google Gemini response usageMetadata is incomplete.');
+        }
+        const promptTokens: number = ptRaw;
+        const completionTokens: number = ctRaw;
+        const totalTokens: number = ttRaw;
 
-      if (response.usageMetadata === undefined || response.usageMetadata === null) {
-        throw new Error('Google Gemini response did not include usageMetadata.');
-      }
-      const usageMeta = response.usageMetadata;
-      const ptRaw: unknown = usageMeta.promptTokenCount;
-      const ctRaw: unknown = usageMeta.candidatesTokenCount;
-      const ttRaw: unknown = usageMeta.totalTokenCount;
-      if (typeof ptRaw !== 'number' || typeof ctRaw !== 'number' || typeof ttRaw !== 'number') {
-        throw new Error('Google Gemini response usageMetadata is incomplete.');
-      }
-      const promptTokens: number = ptRaw;
-      const completionTokens: number = ctRaw;
-      const totalTokens: number = ttRaw;
+        const usageChunk: NodeAdapterStreamChunk = {
+          type: 'usage',
+          tokenUsage: {
+            prompt_tokens: promptTokens,
+            completion_tokens: completionTokens,
+            total_tokens: totalTokens,
+          },
+        };
+        yield usageChunk;
 
-      const usageChunk: NodeAdapterStreamChunk = {
-        type: 'usage',
-        tokenUsage: {
-          prompt_tokens: promptTokens,
-          completion_tokens: completionTokens,
-          total_tokens: totalTokens,
-        },
-      };
-      yield usageChunk;
-
-      const finishReasonRaw: unknown = candidate?.finishReason;
-      let finishReasonStr: string | undefined;
-      if (typeof finishReasonRaw === 'string') {
-        finishReasonStr = finishReasonRaw;
-      } else {
-        finishReasonStr = undefined;
+        const finishReasonRaw: unknown = candidate?.finishReason;
+        let finishReasonStr: string | undefined;
+        if (typeof finishReasonRaw === 'string') {
+          finishReasonStr = finishReasonRaw;
+        } else {
+          finishReasonStr = undefined;
+        }
+        const mappedFinish: string = mapGoogleFinishReason(finishReasonStr);
+        const doneChunk: NodeAdapterStreamChunk = {
+          type: 'done',
+          finish_reason: mappedFinish,
+        };
+        yield doneChunk;
+      } catch (error: unknown) {
+        console.error('[ai-stream-background][google] Google SDK error', {
+          apiIdentifier,
+          request,
+          error,
+        });
+        throw error;
       }
-      const mappedFinish: string = mapGoogleFinishReason(finishReasonStr);
-      const doneChunk: NodeAdapterStreamChunk = {
-        type: 'done',
-        finish_reason: mappedFinish,
-      };
-      yield doneChunk;
     },
   };
 }

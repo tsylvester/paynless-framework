@@ -12,7 +12,7 @@ import {
   ApiError, 
   ApiResponse, 
   DialecticProject, 
-  AIModelCatalogEntry,
+  AiProvidersRow,
   DialecticContribution,
   DialecticProcessTemplate,
   DialecticStage,
@@ -36,6 +36,7 @@ import {
     getMockDialecticClient,
     MockDialecticApiClient,
 } from '@paynless/api/mocks';
+import { mockAiProvidersRow } from '../../../apps/web/src/mocks/dialecticStore.mock';
 
 vi.mock('@paynless/api', async () => {
     const { api, resetApiMock, getMockDialecticClient } = await import('@paynless/api/mocks');
@@ -57,9 +58,15 @@ describe('useDialecticStore', () => {
         vi.restoreAllMocks();
     });
 
-    const mockModelCatalog: AIModelCatalogEntry[] = [
-        { id: 'model-1', model_name: 'Test Model 1', provider_name: 'Provider A', api_identifier: 'm1', created_at: '', updated_at: '', context_window_tokens: 1000, input_token_cost_usd_millionths: 1, output_token_cost_usd_millionths: 1, max_output_tokens: 500, is_active: true, description: null, strengths: null, weaknesses: null, is_default_generation: false },
-        { id: 'model-2', model_name: 'Test Model 2', provider_name: 'Provider B', api_identifier: 'm2', created_at: '', updated_at: '', context_window_tokens: 1000, input_token_cost_usd_millionths: 1, output_token_cost_usd_millionths: 1, max_output_tokens: 500, is_active: true, description: null, strengths: null, weaknesses: null, is_default_generation: false },
+    const mockModelCatalog: AiProvidersRow[] = [
+        mockAiProvidersRow({ 
+            id: 'model-1', 
+            name: 'Test Model 1', 
+        }),
+        mockAiProvidersRow({ 
+            id: 'model-2', 
+            name: 'Test Model 2', 
+        }),
     ];
 
     describe('fetchContributionContent action', () => {
@@ -73,7 +80,7 @@ describe('useDialecticStore', () => {
         const mockApiError: ApiError = { message: 'API Failed', code: 'API_ERROR' };
 
         it('should fetch content data and update cache if not cached', async () => {
-            api.dialectic().getContributionContentData.mockResolvedValue({
+            getMockDialecticClient().getContributionContentData.mockResolvedValue({
                 data: mockContentData,
                 status: 200,
             });
@@ -83,7 +90,7 @@ describe('useDialecticStore', () => {
             const state = useDialecticStore.getState();
             const cacheEntry = state.contributionContentCache[testContributionId];
 
-            expect(api.dialectic().getContributionContentData).toHaveBeenCalledWith(testContributionId);
+            expect(getMockDialecticClient().getContributionContentData).toHaveBeenCalledWith(testContributionId);
             expect(cacheEntry.isLoading).toBe(false);
             expect(cacheEntry.content).toBe(mockContentData.content);
             expect(cacheEntry.mimeType).toBe(mockContentData.mimeType);

@@ -440,8 +440,9 @@ describe('createOpenAINodeAdapter', () => {
     ).rejects.toThrow('ResourceDocument has empty document_key');
   });
 
-  it('resolves token cap using Math.min of hard_cap_output_tokens and provider_max_output_tokens', async () => {
+  it('applies binding cap as min of hard_cap and provider_max when tier_output_cap_tokens is null and request has no max', async () => {
     const params = createMockNodeAdapterConstructorParams({
+      userConfig: { tier_output_cap_tokens: null },
       modelConfig: createMockNodeModelConfig({
         hard_cap_output_tokens: 50,
         provider_max_output_tokens: 200,
@@ -469,8 +470,10 @@ describe('createOpenAINodeAdapter', () => {
     );
   });
 
-  it('uses max_completion_tokens for gpt-4o when applying max_tokens_to_generate', async () => {
-    const params = createMockNodeAdapterConstructorParams();
+  it('uses max_completion_tokens for gpt-4o when max_tokens_to_generate binds and tier_output_cap_tokens is null', async () => {
+    const params = createMockNodeAdapterConstructorParams({
+      userConfig: { tier_output_cap_tokens: null },
+    });
     const adapter = createOpenAINodeAdapter(params);
     const request = createMockNodeChatApiRequest({
       max_tokens_to_generate: 777,
@@ -495,8 +498,9 @@ describe('createOpenAINodeAdapter', () => {
     );
   });
 
-  it('uses max_tokens for legacy gpt-4 model name when applying token cap', async () => {
+  it('uses max_tokens for legacy gpt-4 model name when hard cap binds and tier_output_cap_tokens is null', async () => {
     const params = createMockNodeAdapterConstructorParams({
+      userConfig: { tier_output_cap_tokens: null },
       modelConfig: createMockNodeModelConfig({
         api_identifier: 'openai-gpt-4',
         hard_cap_output_tokens: 50,
@@ -529,8 +533,9 @@ describe('createOpenAINodeAdapter', () => {
     );
   });
 
-  it('uses max_tokens for gpt-3.5-turbo model name when applying token cap', async () => {
+  it('uses max_tokens for gpt-3.5-turbo model name when hard cap binds and tier_output_cap_tokens is null', async () => {
     const params = createMockNodeAdapterConstructorParams({
+      userConfig: { tier_output_cap_tokens: null },
       modelConfig: createMockNodeModelConfig({
         api_identifier: 'openai-gpt-3.5-turbo-16k',
         hard_cap_output_tokens: 50,
@@ -558,6 +563,124 @@ describe('createOpenAINodeAdapter', () => {
         max_tokens: 50,
       }),
     );
+  });
+
+  it('sets max_completion_tokens to tier cap when tier_output_cap_tokens binds over request and hard cap', async () => {
+    const params = createMockNodeAdapterConstructorParams({
+      userConfig: { tier_output_cap_tokens: 32_768 },
+      modelConfig: createMockNodeModelConfig({
+        hard_cap_output_tokens: 131_072,
+      }),
+    });
+    const adapter = createOpenAINodeAdapter(params);
+    const request = createMockNodeChatApiRequest({
+      max_tokens_to_generate: 50_000,
+    });
+    const stream = asyncIterableFromSdkChunks([
+      {
+        choices: [{ delta: { content: 'z' }, finish_reason: null }],
+      },
+      {
+        choices: [{ delta: {}, finish_reason: 'stop' }],
+        usage: createMockOpenAIUsageDelta(),
+      },
+    ]);
+    chatCompletionsCreate.mockResolvedValue(stream);
+    await collectNodeAdapterStreamChunks(
+      adapter.sendMessageStream(request, 'openai-gpt-4o'),
+    );
+    expect(chatCompletionsCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        max_completion_tokens: 32_768,
+      }),
+    );
+  });
+
+  it('sets max_completion_tokens to request max when tier_output_cap_tokens is null and request binds', async () => {
+    const params = createMockNodeAdapterConstructorParams({
+      userConfig: { tier_output_cap_tokens: null },
+      modelConfig: createMockNodeModelConfig({
+        hard_cap_output_tokens: 131_072,
+      }),
+    });
+    const adapter = createOpenAINodeAdapter(params);
+    const request = createMockNodeChatApiRequest({
+      max_tokens_to_generate: 50_000,
+    });
+    const stream = asyncIterableFromSdkChunks([
+      {
+        choices: [{ delta: { content: 'z' }, finish_reason: null }],
+      },
+      {
+        choices: [{ delta: {}, finish_reason: 'stop' }],
+        usage: createMockOpenAIUsageDelta(),
+      },
+    ]);
+    chatCompletionsCreate.mockResolvedValue(stream);
+    await collectNodeAdapterStreamChunks(
+      adapter.sendMessageStream(request, 'openai-gpt-4o'),
+    );
+    expect(chatCompletionsCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        max_completion_tokens: 50_000,
+      }),
+    );
+  });
+
+  it('sets max_completion_tokens to hard cap when hard cap binds and request has no max', async () => {
+    const params = createMockNodeAdapterConstructorParams({
+      userConfig: { tier_output_cap_tokens: 131_072 },
+      modelConfig: createMockNodeModelConfig({
+        hard_cap_output_tokens: 64_000,
+      }),
+    });
+    const adapter = createOpenAINodeAdapter(params);
+    const request = createMockNodeChatApiRequest();
+    const stream = asyncIterableFromSdkChunks([
+      {
+        choices: [{ delta: { content: 'z' }, finish_reason: null }],
+      },
+      {
+        choices: [{ delta: {}, finish_reason: 'stop' }],
+        usage: createMockOpenAIUsageDelta(),
+      },
+    ]);
+    chatCompletionsCreate.mockResolvedValue(stream);
+    await collectNodeAdapterStreamChunks(
+      adapter.sendMessageStream(request, 'openai-gpt-4o'),
+    );
+    expect(chatCompletionsCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        max_completion_tokens: 64_000,
+      }),
+    );
+  });
+
+  it('omits max_completion_tokens and max_tokens when no positive cap inputs are provided', async () => {
+    const params = createMockNodeAdapterConstructorParams({
+      userConfig: { tier_output_cap_tokens: null },
+    });
+    const adapter = createOpenAINodeAdapter(params);
+    const request = createMockNodeChatApiRequest();
+    const stream = asyncIterableFromSdkChunks([
+      {
+        choices: [{ delta: { content: 'z' }, finish_reason: null }],
+      },
+      {
+        choices: [{ delta: {}, finish_reason: 'stop' }],
+        usage: createMockOpenAIUsageDelta(),
+      },
+    ]);
+    chatCompletionsCreate.mockResolvedValue(stream);
+    await collectNodeAdapterStreamChunks(
+      adapter.sendMessageStream(request, 'openai-gpt-4o'),
+    );
+    const firstCall = chatCompletionsCreate.mock.calls[0];
+    const firstArg = firstCall[0];
+    expect(Object.prototype.hasOwnProperty.call(firstArg, 'max_completion_tokens')).toBe(
+      false,
+    );
+    expect(Object.prototype.hasOwnProperty.call(firstArg, 'max_tokens')).toBe(false);
   });
 });
 describe('createMockOpenAINodeAdapter', () => {

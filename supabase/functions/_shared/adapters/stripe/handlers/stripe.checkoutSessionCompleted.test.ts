@@ -107,47 +107,32 @@ Deno.test('StripePaymentAdapter: handleWebhook', async (t) => {
             }
             return { data: [], error: new Error('Mock: Payment txn not found'), count: 0, status: 404, statusText: 'Not Found' };
           },
-          update: async (state: MockQueryBuilderState) => {
-            if (state.filters.some(f => f.column === 'id' && f.value === internalPaymentId)) {
-              return { data: [{ ...initialPaymentTxnData, status: 'COMPLETED', gateway_transaction_id: stripeSessionId }], error: null, count: 1, status: 200, statusText: 'OK' };
+        },
+        'token_wallets': {
+          select: async (state: MockQueryBuilderState) => {
+            if (state.filters.some(f => f.column === 'wallet_id' && f.value === walletId)) {
+              return { data: [{ user_id: userId }], error: null, count: 1, status: 200, statusText: 'OK' };
             }
-            return { data: null, error: new Error('Mock: Payment txn update failed'), count: 0, status: 500, statusText: 'Error' };
-          }
-        }
-      }
+            return { data: null, error: { name: 'PostgresError', message: 'Query returned no rows', code: 'PGRST116' }, count: 0, status: 406, statusText: 'OK' };
+          },
+        },
+      },
+      rpcResults: {
+        complete_checkout_payment: {
+          data: [{ status: 'COMPLETED_WITH_TOKEN_AWARD', tier_level: 1, token_transaction_id: 'ttx_webhook_otp' }],
+          error: null,
+        },
+        create_notification_for_user: {
+          data: null,
+          error: null,
+        },
+      },
     };
     setupMocksAndAdapterForWebhook(supabaseConfig);
 
     // Mock stripe.webhooks.constructEventAsync
     if (mockStripe.stubs.webhooksConstructEvent?.restore) mockStripe.stubs.webhooksConstructEvent.restore();
     mockStripe.stubs.webhooksConstructEvent = stub(mockStripe.instance.webhooks, "constructEventAsync", () => Promise.resolve(mockStripeEvent));
-
-    // Mock tokenWalletService.recordTransaction
-    const mockTokenTxResult: TokenWalletTransaction = { 
-        transactionId: 'tokentx_webhook_otp_123',
-        walletId: walletId,
-        type: 'CREDIT_PURCHASE',
-        amount: tokensToAward.toString(),
-        balanceAfterTxn: (parseInt(initialPaymentTxnData.status === 'PENDING' ? '0' : '0') + tokensToAward).toString(),
-        recordedByUserId: userId,
-        relatedEntityId: internalPaymentId,
-        relatedEntityType: 'payment_transaction',
-        idempotencyKey: `evt_webhook_otp_completed_789_${internalPaymentId}`,
-        timestamp: new Date(),
-        notes: 'Tokens awarded from Stripe payment'
-    };
-    if (mockTokenWalletService.stubs.recordTransaction?.restore) mockTokenWalletService.stubs.recordTransaction.restore();
-    mockTokenWalletService.stubs.recordTransaction = stub(
-        mockTokenWalletService.instance, 
-        "recordTransaction", 
-        (params): Promise<TokenWalletTransaction> => {
-            assertEquals(params.walletId, walletId);
-            assertEquals(params.amount, tokensToAward.toString());
-            assertEquals(params.type, 'CREDIT_PURCHASE');
-            assertEquals(params.relatedEntityId, internalPaymentId);
-            return Promise.resolve(mockTokenTxResult);
-        }
-    );
 
     // 4. Call handleWebhook
     const rawBodyString = JSON.stringify(mockStripeEvent);
@@ -165,32 +150,23 @@ Deno.test('StripePaymentAdapter: handleWebhook', async (t) => {
 
     // Check that constructEvent was called
     assertSpyCalls(mockStripe.stubs.webhooksConstructEvent, 1);
-    
-    // Assert that from('payment_transactions') was called (at least for select and update)
-    assert(mockSupabaseSetup.spies.fromSpy.calls.some(call => call.args[0] === 'payment_transactions'), "from('payment_transactions') should have been called at least once.");
-    const paymentTransactionsFromCalls = mockSupabaseSetup.spies.fromSpy.calls.filter(call => call.args[0] === 'payment_transactions').length;
-    console.log(`DEBUG: from('payment_transactions') called ${paymentTransactionsFromCalls} times (OTP).`);
 
-    // Check DB calls by iterating over historic builders
+    assert(mockSupabaseSetup.spies.fromSpy.calls.some(call => call.args[0] === 'payment_transactions'), "from('payment_transactions') should have been called.");
+
     const historicPaymentTxBuildersOtp = mockSupabaseSetup.client.getHistoricBuildersForTable('payment_transactions');
     assert(historicPaymentTxBuildersOtp && historicPaymentTxBuildersOtp.length > 0, "No historic query builders found for payment_transactions (OTP)");
 
     const totalSelectCallsOtp = historicPaymentTxBuildersOtp.reduce((sum, builder) => {
       return sum + (builder.methodSpies.select?.calls?.length || 0);
     }, 0);
-    assertEquals(totalSelectCallsOtp, 2, "select should have been called twice on payment_transactions (OTP)");
+    assertEquals(totalSelectCallsOtp, 1, "select should have been called once on payment_transactions (OTP)");
 
     const totalUpdateCallsOtp = historicPaymentTxBuildersOtp.reduce((sum, builder) => {
       return sum + (builder.methodSpies.update?.calls?.length || 0);
     }, 0);
-    assertEquals(totalUpdateCallsOtp, 1, "update should have been called once on payment_transactions (OTP)");
+    assertEquals(totalUpdateCallsOtp, 0, "update should not be called on payment_transactions (OTP)");
 
-    // Check token wallet service call
-    assertSpyCalls(mockTokenWalletService.stubs.recordTransaction, 1);
-    const recordTxArgs = mockTokenWalletService.stubs.recordTransaction.calls[0].args[0];
-    assertEquals(recordTxArgs.walletId, walletId, "recordTransaction called with incorrect walletId");
-    assertEquals(recordTxArgs.amount, tokensToAward.toString(), "recordTransaction called with incorrect amount");
-    assertEquals(recordTxArgs.type, 'CREDIT_PURCHASE', "recordTransaction called with incorrect type");
+    assert(mockSupabaseSetup.spies.rpcSpy.calls.some((c) => c.args[0] === 'complete_checkout_payment'), 'complete_checkout_payment RPC should have been called');
 
     teardownWebhookMocks();
   });
@@ -282,40 +258,41 @@ Deno.test('StripePaymentAdapter: handleWebhook', async (t) => {
     // 3. Setup Mocks
     const supabaseConfig: MockSupabaseDataConfig = {
       genericMockResults: {
-          'payment_transactions': {
-            select: async (state: MockQueryBuilderState) => {
-              if (state.filters.some(f => f.column === 'id' && f.value === internalPaymentId)) {
-                return { data: [initialPaymentTxnData], error: null, count: 1, status: 200, statusText: 'OK' };
-              }
-              return { data: [], error: new Error('Mock: Payment txn not found for subscription test'), count: 0, status: 404, statusText: 'Not Found' };
-            },
-            update: async (state: MockQueryBuilderState) => {
-              if (state.filters.some(f => f.column === 'id' && f.value === internalPaymentId)) {
-                return { data: [{ ...initialPaymentTxnData, status: 'COMPLETED', gateway_transaction_id: stripeSessionId }], error: null, count: 1, status: 200, statusText: 'OK' };
-              }
-              return { data: null, error: new Error('Mock: Payment txn update failed for subscription test'), count: 0, status: 500, statusText: 'Error' };
+        'payment_transactions': {
+          select: async (state: MockQueryBuilderState) => {
+            if (state.filters.some(f => f.column === 'id' && f.value === internalPaymentId)) {
+              return { data: [initialPaymentTxnData], error: null, count: 1, status: 200, statusText: 'OK' };
             }
+            return { data: [], error: new Error('Mock: Payment txn not found for subscription test'), count: 0, status: 404, statusText: 'Not Found' };
           },
-          'subscription_plans': {
-            select: async (state: MockQueryBuilderState) => {
-              if (state.filters.some(f => f.column === 'stripe_price_id' && f.value === itemIdInternal)) {
-                return { data: [{ id: internalPlanId }], error: null, count: 1, status: 200, statusText: 'OK' };
-              }
-              return { data: [], error: new Error(`Mock: Subscription plan not found for stripe_price_id ${itemIdInternal}`), count: 0, status: 404, statusText: 'Not Found' };
+        },
+        'subscription_plans': {
+          select: async (state: MockQueryBuilderState) => {
+            if (state.filters.some(f => f.column === 'stripe_price_id' && f.value === itemIdInternal)) {
+              return { data: [{ id: internalPlanId }], error: null, count: 1, status: 200, statusText: 'OK' };
             }
+            return { data: [], error: new Error(`Mock: Subscription plan not found for stripe_price_id ${itemIdInternal}`), count: 0, status: 404, statusText: 'Not Found' };
           },
-          'user_subscriptions': {
-            upsert: async (state: MockQueryBuilderState) => {
-              const data = state.upsertData;
-              assert(data !== null && !Array.isArray(data) && typeof data === 'object', 'Expected upsertData to be a plain object');
-              const entries = Object.entries(data);
-              assertEquals(entries.find(([k]) => k === 'user_id')?.[1], userId, 'wrong user_id in upsert');
-              assertEquals(entries.find(([k]) => k === 'plan_id')?.[1], internalPlanId, 'wrong plan_id in upsert');
-              assertEquals(entries.find(([k]) => k === 'status')?.[1], mockStripeSubscriptionObject.status, 'wrong status in upsert');
-              return { data: [{}], error: null, count: 1, status: 200, statusText: 'OK' };
+        },
+        'token_wallets': {
+          select: async (state: MockQueryBuilderState) => {
+            if (state.filters.some(f => f.column === 'wallet_id' && f.value === walletId)) {
+              return { data: [{ user_id: userId }], error: null, count: 1, status: 200, statusText: 'OK' };
             }
-          }
-      }
+            return { data: null, error: { name: 'PostgresError', message: 'Query returned no rows', code: 'PGRST116' }, count: 0, status: 406, statusText: 'OK' };
+          },
+        },
+      },
+      rpcResults: {
+        complete_checkout_payment: {
+          data: [{ status: 'COMPLETED_WITH_TOKEN_AWARD', tier_level: 2, token_transaction_id: 'ttx_webhook_sub' }],
+          error: null,
+        },
+        create_notification_for_user: {
+          data: null,
+          error: null,
+        },
+      },
     };
     setupMocksAndAdapterForWebhook(supabaseConfig);
 
@@ -335,35 +312,6 @@ Deno.test('StripePaymentAdapter: handleWebhook', async (t) => {
           lastResponse: { headers: {}, requestId: 'req_mock_sub_retrieve', statusCode: 200, apiVersion: undefined, idempotencyKey: undefined, stripeAccount: undefined } 
         } as Stripe.Response<Stripe.Subscription>);
       }
-    );
-
-
-    // Mock tokenWalletService.recordTransaction
-    const mockTokenTxResultSub: TokenWalletTransaction = { 
-        transactionId: 'tokentx_webhook_sub_xyz789', // New ID
-        walletId: walletId,
-        type: 'CREDIT_PURCHASE',
-        amount: tokensToAward.toString(),
-        balanceAfterTxn: (parseInt(initialPaymentTxnData.status === 'PENDING' ? '0' : '0') + tokensToAward).toString(), 
-        recordedByUserId: userId,
-        relatedEntityId: internalPaymentId,
-        relatedEntityType: 'payment_transactions',
-        idempotencyKey: `${mockStripeEvent.id}_${internalPaymentId}`,
-        timestamp: new Date(),
-        notes: `Tokens for Stripe Checkout Session ${stripeSessionId} (mode: subscription)` // Note updated
-    };
-    if (mockTokenWalletService.stubs.recordTransaction?.restore) mockTokenWalletService.stubs.recordTransaction.restore();
-    mockTokenWalletService.stubs.recordTransaction = stub(
-        mockTokenWalletService.instance, 
-        "recordTransaction", 
-        (params): Promise<TokenWalletTransaction> => {
-            assertEquals(params.walletId, walletId);
-            assertEquals(params.amount, tokensToAward.toString());
-            assertEquals(params.type, 'CREDIT_PURCHASE');
-            assertEquals(params.relatedEntityId, internalPaymentId);
-            assertEquals(params.notes, `Tokens for Stripe Checkout Session ${stripeSessionId} (mode: subscription)`);
-            return Promise.resolve(mockTokenTxResultSub);
-        }
     );
 
     // 4. Call handleWebhook
@@ -393,25 +341,14 @@ Deno.test('StripePaymentAdapter: handleWebhook', async (t) => {
     const totalSelectCallsSub = historicPaymentTxBuildersSub.reduce((sum, builder) => {
       return sum + (builder.methodSpies.select?.calls?.length || 0);
     }, 0);
-    assertEquals(totalSelectCallsSub, 2, "select should have been called twice on payment_transactions (Sub)");
+    assertEquals(totalSelectCallsSub, 1, "select should have been called once on payment_transactions (Sub)");
 
     const totalUpdateCallsSub = historicPaymentTxBuildersSub.reduce((sum, builder) => {
       return sum + (builder.methodSpies.update?.calls?.length || 0);
     }, 0);
-    assertEquals(totalUpdateCallsSub, 1, "update should have been called once on payment_transactions (Sub)");
+    assertEquals(totalUpdateCallsSub, 0, "update should not be called on payment_transactions (Sub)");
 
-    const updateBuilderInstanceSub = historicPaymentTxBuildersSub.find(
-      b => b.methodSpies.update?.calls && b.methodSpies.update.calls.length > 0
-    );
-    assert(updateBuilderInstanceSub, "Could not find the builder instance that performed the update (Sub)");
-    assert(updateBuilderInstanceSub.methodSpies.update?.calls?.length, "Update call arguments not found in spy calls (Sub)");
-    const updateArg = updateBuilderInstanceSub.methodSpies.update.calls[0].args[0];
-    assert(updateArg !== null && typeof updateArg === 'object', "update arg must be an object");
-    const updateFields = Object.entries(updateArg);
-    assertEquals(updateFields.find(([k]) => k === 'status')?.[1], 'COMPLETED', "wrong status in update");
-    assertEquals(updateFields.find(([k]) => k === 'gateway_transaction_id')?.[1], stripeSessionId, "wrong gateway_transaction_id in update");
-    assert(updateFields.some(([k]) => k === 'updated_at'), "update must include updated_at");
-    assert(updateFields.some(([k]) => k === 'metadata_json'), "update must include metadata_json");
+    assert(mockSupabaseSetup.spies.rpcSpy.calls.some((c) => c.args[0] === 'complete_checkout_payment'), 'complete_checkout_payment RPC should have been called (Sub)');
 
     const subPlansSelectSpies = mockSupabaseSetup.client.getHistoricBuildersForTable('subscription_plans');
     assert(subPlansSelectSpies && subPlansSelectSpies.length > 0, "Historic select spies info should exist for subscription_plans (Sub)");
@@ -423,21 +360,6 @@ Deno.test('StripePaymentAdapter: handleWebhook', async (t) => {
     const subPlansBuilderInstance = subPlansSelectSpies[0];
     assert(subPlansBuilderInstance?.methodSpies.eq?.calls?.length, "Eq spy not found or not called on subscription_plans builder");
     assertEquals(subPlansBuilderInstance.methodSpies.eq.calls[0].args, ['stripe_price_id', itemIdInternal], "eq on subscription_plans called with wrong stripe_price_id");
-
-    const userSubUpsertSpies = mockSupabaseSetup.client.getHistoricBuildersForTable('user_subscriptions');
-    assert(userSubUpsertSpies && userSubUpsertSpies.length > 0, "Historic upsert spies info should exist for user_subscriptions (Sub)");
-    const totalUserSubUpsertCalls = userSubUpsertSpies.reduce((sum, builder) => {
-      return sum + (builder.methodSpies.upsert?.calls?.length || 0);
-    }, 0);
-    assertEquals(totalUserSubUpsertCalls, 1, "upsert on user_subscriptions should have been called once (Sub)");
-
-
-    // Check token wallet service call
-    assertSpyCalls(mockTokenWalletService.stubs.recordTransaction, 1);
-    const recordTxArgsSub = mockTokenWalletService.stubs.recordTransaction.calls[0].args[0];
-    assertEquals(recordTxArgsSub.walletId, walletId, "recordTransaction called with incorrect walletId for sub");
-    assertEquals(recordTxArgsSub.amount, tokensToAward.toString(), "recordTransaction called with incorrect amount for sub");
-    assertEquals(recordTxArgsSub.type, 'CREDIT_PURCHASE', "recordTransaction called with incorrect type for sub");
 
     teardownWebhookMocks();
   });
@@ -464,6 +386,8 @@ Deno.test("[stripe.checkoutSessionCompleted.ts] Tests", async (t) => {
     userSubscriptionUpsertError?: Error | null;
     stripeSubscriptionRetrieveResult?: Partial<Stripe.Subscription> | Error | null;
     tokenWalletRecordTransactionResult?: TokenWalletTransaction | Error;
+    rpcResults?: MockSupabaseDataConfig['rpcResults'];
+    notifyTokenWallet?: { walletId: string; userId: string };
   }) => {
     mockTokenWalletService = createMockAdminTokenWalletService();
     mockUpdatePaymentTransaction = spy(
@@ -525,8 +449,22 @@ Deno.test("[stripe.checkoutSessionCompleted.ts] Tests", async (t) => {
             }
         };
     }
+    if (dbQueryResults?.notifyTokenWallet !== undefined) {
+      const nw: { walletId: string; userId: string } = dbQueryResults.notifyTokenWallet;
+      genericMockResults['token_wallets'] = {
+        select: async (state: MockQueryBuilderState) => {
+          if (state.filters.some(f => f.column === 'wallet_id' && f.value === nw.walletId)) {
+            return { data: [{ user_id: nw.userId }], error: null, count: 1, status: 200, statusText: 'OK' };
+          }
+          return { data: null, error: { name: 'PostgresError', message: 'Query returned no rows', code: 'PGRST116' }, count: 0, status: 406, statusText: 'OK' };
+        },
+      };
+    }
 
-    mockSupabaseSetup = createMockSupabaseClient(undefined, { genericMockResults });
+    mockSupabaseSetup = createMockSupabaseClient(undefined, {
+      genericMockResults,
+      rpcResults: dbQueryResults?.rpcResults,
+    });
     mockSupabaseClient = mockSupabaseSetup.client as unknown as SupabaseClient<Database>;
     
     // Restore the default stub for subscriptions.retrieve created by createMockStripe()
@@ -593,12 +531,13 @@ Deno.test("[stripe.checkoutSessionCompleted.ts] Tests", async (t) => {
     };
   };
 
-  await t.step("handleCheckoutSessionCompleted - one-time payment - success", async () => {
-    const internalPaymentId = "ptxn_otp_success";
-    const gatewayTxId = "cs_otp_success";
-    const userId = "user_otp_success";
-    const walletId = "wallet_otp_success";
-    const tokensToAward = 100;
+
+  await t.step("handleCheckoutSessionCompleted - payment mode uses complete_checkout_payment RPC with null subscription fields", async () => {
+    const internalPaymentId = "ptxn_rpc_payment_mode";
+    const gatewayTxId = "cs_rpc_payment_mode";
+    const userId = "user_rpc_payment_mode";
+    const walletId = "wallet_rpc_payment_mode";
+    const tokensToAward = 250;
 
     const mockPaymentTxData: Partial<PaymentTransaction> = {
       id: internalPaymentId,
@@ -607,503 +546,297 @@ Deno.test("[stripe.checkoutSessionCompleted.ts] Tests", async (t) => {
       tokens_to_award: tokensToAward,
       status: "PENDING",
       payment_gateway_id: "stripe",
-      gateway_transaction_id: null,
-      metadata_json: { itemId: "item_otp_success" },
-    };
-    const mockTokenTx: TokenWalletTransaction = {
-      transactionId: 'ttx_success_otp',
-      walletId,
-      type: 'CREDIT_PURCHASE',
-      amount: String(tokensToAward),
-      balanceAfterTxn: String(tokensToAward),
-      recordedByUserId: userId,
-      idempotencyKey: `otp_success_${internalPaymentId}`,
-      timestamp: new Date(),
+      metadata_json: { itemId: "item_rpc_payment_mode" },
     };
 
-    setup({ 
+    setup({
       paymentTransaction: mockPaymentTxData,
-      tokenWalletRecordTransactionResult: mockTokenTx 
-    });
-
-    const event = createMockCheckoutSessionCompletedEvent({
-      id: gatewayTxId,
-      mode: "payment",
-      metadata: { internal_payment_id: internalPaymentId },
-      client_reference_id: userId,
-    });
-
-    const result = await handleCheckoutSessionCompleted(handlerContext, event);
-
-    assert(result.success, `Expected success, got error: ${result.error}`);
-    assertEquals(result.transactionId, internalPaymentId);
-    assertEquals(result.paymentGatewayTransactionId, gatewayTxId);
-    assertEquals(result.tokensAwarded, tokensToAward);
-
-    assertSpyCalls(mockSupabaseSetup.spies.fromSpy, 1);
-    assertEquals(mockSupabaseSetup.spies.fromSpy.calls[0].args[0], "payment_transactions");
-    
-    const paymentTxBuilder = mockSupabaseSetup.client.getLatestBuilder('payment_transactions');
-    assert(paymentTxBuilder, "Payment transactions query builder was not used.");
-    assert(paymentTxBuilder.methodSpies.select, "Select spy not found on paymentTxBuilder");
-    assertSpyCalls(paymentTxBuilder.methodSpies.select, 1);
-    assertEquals(paymentTxBuilder.methodSpies.select.calls[0].args[0], "*");
-
-    assert(paymentTxBuilder.methodSpies.eq, "Eq spy not found on paymentTxBuilder");
-    assertSpyCalls(paymentTxBuilder.methodSpies.eq, 1);
-    assertEquals(paymentTxBuilder.methodSpies.eq.calls[0].args[0], "id");
-    assertEquals(paymentTxBuilder.methodSpies.eq.calls[0].args[1], internalPaymentId);
-
-    assert(paymentTxBuilder.methodSpies.single, "Single spy not found on paymentTxBuilder");
-    assertSpyCalls(paymentTxBuilder.methodSpies.single, 1);
-
-    assertEquals(mockUpdatePaymentTransaction.calls.length, 1);
-    assertEquals(mockUpdatePaymentTransaction.calls[0].args[0], internalPaymentId);
-    assertEquals(mockUpdatePaymentTransaction.calls[0].args[1], { status: "COMPLETED", gateway_transaction_id: gatewayTxId });
-    assertEquals(mockUpdatePaymentTransaction.calls[0].args[2], event.id);
-
-    assertEquals(recordTokenTransactionStub.calls.length, 1);
-    const recordTxArgs = recordTokenTransactionStub.calls[0].args[0];
-    assertEquals(recordTxArgs.walletId, walletId);
-    assertEquals(recordTxArgs.type, "CREDIT_PURCHASE");
-    assertEquals(recordTxArgs.amount, String(tokensToAward));
-    assertEquals(recordTxArgs.relatedEntityId, internalPaymentId);
-  });
-
-  await t.step("handleCheckoutSessionCompleted - payment transaction not found", async () => {
-    const internalPaymentId = "ptxn_not_found";
-    const gatewayTxId = "cs_not_found";
-
-    const errorSpy = spy(mockLogger, 'error');
-    setup({ 
-      paymentTransaction: null, // Simulate payment_transaction not found
-    });
-
-    const event = createMockCheckoutSessionCompletedEvent({
-      id: gatewayTxId,
-      mode: "payment",
-      metadata: { internal_payment_id: internalPaymentId },
-    });
-
-    const result = await handleCheckoutSessionCompleted(handlerContext, event);
-
-    assert(!result.success, "Expected failure when payment transaction is not found");
-    assertEquals(result.transactionId, internalPaymentId);
-    assertEquals(result.paymentGatewayTransactionId, gatewayTxId);
-    assert(result.error?.includes(`Payment transaction not found: ${internalPaymentId}`), `Expected error message about missing payment transaction, got: ${result.error}`);
-
-    // Verify logger was called
-    assertSpyCalls(errorSpy, 1);
-    assert(String(errorSpy.calls[0].args[0]).includes(`Payment transaction not found: ${internalPaymentId}`), `Unexpected logger error message: ${errorSpy.calls[0].args[0]}`);
-
-    // Verify other services were not called
-    assertSpyCalls(mockUpdatePaymentTransaction, 0);
-    assertSpyCalls(recordTokenTransactionStub, 0);
-    errorSpy.restore();
-  });
-
-  await t.step("handleCheckoutSessionCompleted - payment transaction already completed", async () => {
-    const internalPaymentId = "ptxn_already_completed";
-    const gatewayTxId = "cs_already_completed";
-    const userId = "user_already_completed";
-    const walletId = "wallet_already_completed";
-    const tokensToAward = 100;
-
-    const mockPaymentTxData: Partial<PaymentTransaction> = {
-      id: internalPaymentId,
-      user_id: userId,
-      target_wallet_id: walletId,
-      tokens_to_award: tokensToAward,
-      status: "COMPLETED", 
-      payment_gateway_id: "stripe",
-      gateway_transaction_id: "cs_old_id_original", 
-      metadata_json: { itemId: "item_already_completed" },
-    };
-
-    const infoSpy = spy(mockLogger, 'info');
-    setup({ 
-      paymentTransaction: mockPaymentTxData,
-    });
-
-    const event = createMockCheckoutSessionCompletedEvent({
-      id: gatewayTxId, 
-      mode: "payment",
-      metadata: { internal_payment_id: internalPaymentId },
-      client_reference_id: userId,
-    });
-
-    const result = await handleCheckoutSessionCompleted(handlerContext, event);
-
-    assert(result.success, "Expected success for an already completed transaction (idempotency)");
-    assertEquals(result.transactionId, internalPaymentId);
-    assertEquals(result.paymentGatewayTransactionId, mockPaymentTxData.gateway_transaction_id, "Expected original stored gateway_transaction_id to be returned");
-    assertEquals(result.tokensAwarded, tokensToAward, "Expected original tokens to be in result");
-    assert(result.message?.includes(`Transaction ${internalPaymentId} already processed with status COMPLETED`), `Unexpected message: ${result.message}`);
-
-    assertSpyCalls(infoSpy, 2);
-    assert(String(infoSpy.calls[0].args[0]).includes(`Processing for session ${gatewayTxId}, initial internalPaymentId from metadata: ${internalPaymentId}`),
-      `Expected first log message, got: ${infoSpy.calls[0].args[0]}`);
-    assert(String(infoSpy.calls[1].args[0]).includes(`Transaction ${internalPaymentId} already processed with status COMPLETED`),
-      `Expected second log message, got: ${infoSpy.calls[1].args[0]}`);
-
-    assertSpyCalls(mockUpdatePaymentTransaction, 0);
-    assertSpyCalls(recordTokenTransactionStub, 0);
-    infoSpy.restore();
-  });
-
-  await t.step("handleCheckoutSessionCompleted - payment transaction already failed", async () => {
-    const warnSpy = spy(mockLogger, 'warn');
-    const internalPaymentId = "ptxn_already_failed";
-    const gatewayTxId = "cs_event_for_already_failed"; // New event ID
-    const userId = "user_already_failed";
-
-    const mockPaymentTxData: Partial<PaymentTransaction> = {
-      id: internalPaymentId,
-      user_id: userId,
-      target_wallet_id: "wallet_already_failed",
-      tokens_to_award: 0, // Typically 0 for failed
-      status: "FAILED", // Already failed
-      payment_gateway_id: "stripe",
-      gateway_transaction_id: "cs_original_failed_id", // The gateway ID associated with the original failure
-      metadata_json: { itemId: "item_already_failed" },
-    };
-
-    setup({ 
-      paymentTransaction: mockPaymentTxData,
-    });
-
-    const event = createMockCheckoutSessionCompletedEvent({
-      id: gatewayTxId, 
-      mode: "payment",
-      metadata: { internal_payment_id: internalPaymentId },
-      client_reference_id: userId,
-      payment_status: "paid", // Event might look successful
-      status: "complete",
-    });
-
-    const result = await handleCheckoutSessionCompleted(handlerContext, event);
-
-    // Handler now returns success: true for successful idempotent handling of an already FAILED transaction
-    assert(result.success, "Expected success for idempotent handling of an already FAILED transaction");
-    assertEquals(result.transactionId, internalPaymentId);
-    assertEquals(result.paymentGatewayTransactionId, mockPaymentTxData.gateway_transaction_id, "Expected original stored gateway_transaction_id for already failed txn");
-    assertEquals(result.tokensAwarded, 0);
-    assert(result.message?.includes(`Transaction ${internalPaymentId} already processed with status FAILED. Original status: FAILED.`), `Unexpected message: ${result.message}`);
-    assert(result.error?.includes(`Payment transaction ${internalPaymentId} was previously marked as FAILED.`), `Unexpected error: ${result.error}`);
-
-    assertSpyCalls(warnSpy, 1);
-    assert(String(warnSpy.calls[0].args[0]).includes(`Transaction ${internalPaymentId} already processed with status FAILED`), `Unexpected logger warn message: ${warnSpy.calls[0].args[0]}`);
-
-    assertSpyCalls(mockUpdatePaymentTransaction, 0);
-    assertSpyCalls(recordTokenTransactionStub, 0);
-    warnSpy.restore();
-  });
-
-  await t.step("handleCheckoutSessionCompleted - one-time payment - token award fails", async () => {
-    const tokenErrorSpy = spy(mockLogger, 'error');
-    const internalPaymentId = "ptxn_token_award_fails";
-    const gatewayTxId = "cs_token_award_fails";
-    const userId = "user_token_award_fails";
-    const walletId = "wallet_token_award_fails";
-    const tokensToAward = 100;
-
-    const mockPaymentTxData: Partial<PaymentTransaction> = {
-      id: internalPaymentId,
-      user_id: userId,
-      target_wallet_id: walletId,
-      tokens_to_award: tokensToAward,
-      status: "PENDING",
-      payment_gateway_id: "stripe",
-      gateway_transaction_id: null,
-      metadata_json: { itemId: "item_token_award_fails" },
-    };
-
-    const tokenAwardErrorMessage = "Mock Token Wallet Service: Insufficient funds";
-    const tokenAwardError = new Error(tokenAwardErrorMessage);
-
-    setup({ 
-      paymentTransaction: mockPaymentTxData,
-      tokenWalletRecordTransactionResult: tokenAwardError, 
-    });
-
-    const event = createMockCheckoutSessionCompletedEvent({
-      id: gatewayTxId,
-      mode: "payment",
-      metadata: { internal_payment_id: internalPaymentId },
-      client_reference_id: userId,
-    });
-
-    const result = await handleCheckoutSessionCompleted(handlerContext, event);
-
-    assert(!result.success, "Expected failure when token award fails");
-    assertEquals(result.transactionId, internalPaymentId);
-    assertEquals(result.paymentGatewayTransactionId, gatewayTxId);
-    assert(result.error?.includes(`Failed to award tokens for payment transaction ${internalPaymentId}: ${tokenAwardErrorMessage}`), `Unexpected error: ${result.error}`);
-    assertEquals(result.tokensAwarded, 0);
-
-    assertSpyCalls(tokenErrorSpy, 1);
-    assert(String(tokenErrorSpy.calls[0].args[0]).includes(`Token awarding exception for ${internalPaymentId}`), `Unexpected logger error message: ${tokenErrorSpy.calls[0].args[0]}`);
-
-    assertSpyCalls(mockUpdatePaymentTransaction, 2); // Initial COMPLETED, then TOKEN_AWARD_FAILED
-    assertEquals(mockUpdatePaymentTransaction.calls[0].args[1]?.status, "COMPLETED");
-    assertEquals(mockUpdatePaymentTransaction.calls[1].args[1]?.status, "TOKEN_AWARD_FAILED");
-    
-    assertSpyCalls(recordTokenTransactionStub, 1);
-    tokenErrorSpy.restore();
-  });
-
-  await t.step("handleCheckoutSessionCompleted - subscription - stripe.subscriptions.retrieve fails", async () => {
-    const internalPaymentId = "ptxn_sub_retrieve_fails";
-    const gatewayTxId = "cs_sub_retrieve_fails"; 
-    const stripeSubscriptionId = "sub_retrieve_fails_id"; 
-    const userId = "user_sub_retrieve_fails";
-    const stripeCustomerId = "cus_sub_retrieve_fails";
-
-    const mockPaymentTxData: Partial<PaymentTransaction> = {
-      id: internalPaymentId,
-      user_id: userId,
-      target_wallet_id: "wallet_sub_retrieve_fails",
-      tokens_to_award: 1000,
-      status: "PENDING",
-      payment_gateway_id: "stripe",
-      metadata_json: { itemId: "item_sub_retrieve_fails" },
-    };
-
-    const retrieveErrorMessage = "Mock Stripe SDK: Subscription not found";
-    const retrieveError = new Error(retrieveErrorMessage);
-
-    setup({ 
-      paymentTransaction: mockPaymentTxData,
-      stripeSubscriptionRetrieveResult: retrieveError, 
-    });
-
-    const event = createMockCheckoutSessionCompletedEvent({
-      id: gatewayTxId, 
-      mode: "subscription",
-      subscription: stripeSubscriptionId, 
-      customer: stripeCustomerId, 
-      metadata: { internal_payment_id: internalPaymentId, item_id: "item_sub_retrieve_fails" },
-      client_reference_id: userId,
-    });
-
-    const retrieveErrorSpy = spy(mockLogger, 'error');
-    try {
-      await handleCheckoutSessionCompleted(handlerContext, event);
-      assert(false, "Expected handleCheckoutSessionCompleted to throw due to subscription retrieval failure.");
-    } catch (e) {
-      assert(e instanceof Error, "Expected thrown error to be an instance of Error.");
-      assertEquals(e.message, retrieveErrorMessage, "Thrown error message does not match expected.");
-      
-      const retrieveErrorLogCall = retrieveErrorSpy.calls.find(call => String(call.args[0]).includes(`Failed to retrieve Stripe subscription ${stripeSubscriptionId}`));
-      assert(retrieveErrorLogCall, `Expected logger error message about failing to retrieve subscription. Logged errors: ${retrieveErrorSpy.calls.map(c => String(c.args[0])).join("; ")}`);
-      
-      assertSpyCalls(subscriptionsRetrieveStub, 1);
-      assertEquals(subscriptionsRetrieveStub.calls[0].args[0], stripeSubscriptionId);
-
-      // The handler attempts to mark payment_transaction as FAILED
-      assertSpyCalls(mockUpdatePaymentTransaction, 1);
-      assertEquals(mockUpdatePaymentTransaction.calls[0].args[0], internalPaymentId);
-      assertEquals(mockUpdatePaymentTransaction.calls[0].args[1]?.status, "FAILED"); 
-      assertEquals(mockUpdatePaymentTransaction.calls[0].args[2], event.id);
-
-      assertSpyCalls(recordTokenTransactionStub, 0); 
-    } finally {
-      retrieveErrorSpy.restore();
-    }
-  });
-
-  await t.step("handleCheckoutSessionCompleted - subscription - subscription_plans lookup fails", async () => {
-    const planLookupErrorSpy = spy(mockLogger, 'error');
-    const internalPaymentId = "ptxn_sub_plan_lookup_fails";
-    const gatewayTxId = "cs_sub_plan_lookup_fails";
-    const stripeSubscriptionId = "sub_plan_lookup_fails_id";
-    const userId = "user_sub_plan_lookup_fails";
-    const itemId = "item_id_not_in_plans_table"; 
-    const stripeCustomerId = "cus_sub_plan_lookup_fails"; // Added customer ID
-
-    const mockPaymentTxData: Partial<PaymentTransaction> = {
-      id: internalPaymentId,
-      user_id: userId,
-      target_wallet_id: "wallet_sub_plan_lookup_fails",
-      tokens_to_award: 1000,
-      status: "PENDING",
-      payment_gateway_id: "stripe",
-      metadata_json: { itemId }, 
-    };
-
-    const mockStripeSub: Partial<Stripe.Subscription> = {
-      id: stripeSubscriptionId, status: 'active', customer: stripeCustomerId,
-      items: {
-        object: 'list',
-        data: [
-          {
-            id: 'si_mock_item_plan_lookup_fails',
-            object: 'subscription_item',
-            billing_thresholds: null,
-            created: Math.floor(Date.now() / 1000),
-            metadata: {},
-            plan: { id: 'plan_mock' } as Stripe.Plan,
-            price: { id: 'price_xyz', object: 'price', currency: 'usd', recurring: { interval: 'month' } } as Stripe.Price,
-            quantity: 1,
-            subscription: stripeSubscriptionId,
-            tax_rates: [],
-            discounts: [],
-            current_period_start: Math.floor(Date.now() / 1000),
-            current_period_end: Math.floor(Date.now() / 1000) + 2592000,
-          } as unknown as Stripe.SubscriptionItem,
-        ],
-        has_more: false,
-        url: `/v1/subscriptions/${stripeSubscriptionId}/items`,
+      rpcResults: {
+        complete_checkout_payment: {
+          data: [{ status: "COMPLETED_WITH_TOKEN_AWARD", tier_level: 3, token_transaction_id: "ttx_rpc_payment_mode" }],
+          error: null,
+        },
       },
-    };
-
-    setup({ 
-      paymentTransaction: mockPaymentTxData,
-      stripeSubscriptionRetrieveResult: mockStripeSub, 
-      subscriptionPlans: [], 
     });
 
     const event = createMockCheckoutSessionCompletedEvent({
       id: gatewayTxId,
-      mode: "subscription",
-      subscription: stripeSubscriptionId,
-      customer: stripeCustomerId, // Ensure customer is included
-      metadata: { internal_payment_id: internalPaymentId, item_id: itemId },
+      mode: "payment",
+      metadata: { internal_payment_id: internalPaymentId },
       client_reference_id: userId,
     });
 
-    const result = await handleCheckoutSessionCompleted(handlerContext, event);
+    await handleCheckoutSessionCompleted(handlerContext, event);
 
-    assert(!result.success, "Expected failure when internal subscription plan lookup fails");
-    assertEquals(result.transactionId, internalPaymentId);
-    assertEquals(result.paymentGatewayTransactionId, gatewayTxId);
-    assert(result.error?.includes(`Could not find internal subscription plan ID for item_id: ${itemId}`), `Unexpected error: ${result.error}`);
-
-    assertSpyCalls(planLookupErrorSpy, 1);
-    assert(String(planLookupErrorSpy.calls[0].args[0]).includes(`Could not find internal subscription plan ID for item_id: ${itemId}`), `Unexpected logger error message: ${planLookupErrorSpy.calls[0].args[0]}`);
-
-    assertSpyCalls(subscriptionsRetrieveStub, 1); 
-    
-    const subPlansBuilder = mockSupabaseSetup.client.getLatestBuilder('subscription_plans');
-    assert(subPlansBuilder, "Subscription plans query builder not used.");
-    assertSpyCalls(subPlansBuilder.methodSpies.select, 1);
-    assertSpyCalls(subPlansBuilder.methodSpies.eq, 1);
-    assertEquals(subPlansBuilder.methodSpies.eq.calls[0].args, ['stripe_price_id', itemId]);
-
-    // Handler also marks payment_transaction FAILED in this case
-    assertSpyCalls(mockUpdatePaymentTransaction, 1);
-    assertEquals(mockUpdatePaymentTransaction.calls[0].args[1]?.status, "FAILED");
-
-    const userSubBuilder = mockSupabaseSetup.client.getLatestBuilder('user_subscriptions');
-    assert(!userSubBuilder?.methodSpies.upsert || userSubBuilder.methodSpies.upsert.calls.length === 0, "user_subscriptions.upsert should not have been called");
-    assertSpyCalls(recordTokenTransactionStub, 0);
-    planLookupErrorSpy.restore();
+    assertSpyCalls(mockSupabaseSetup.spies.rpcSpy, 1);
+    assertEquals(mockSupabaseSetup.spies.rpcSpy.calls[0].args[0], "complete_checkout_payment");
+    assertEquals(mockSupabaseSetup.spies.rpcSpy.calls[0].args[1], {
+      p_user_id: userId,
+      p_is_subscription_mode: false,
+      p_payment_transaction_id: internalPaymentId,
+      p_gateway_transaction_id: gatewayTxId,
+      p_plan_id: null,
+      p_subscription_status: null,
+      p_stripe_customer_id: null,
+      p_stripe_subscription_id: null,
+      p_period_start: null,
+      p_period_end: null,
+      p_cancel_at_period_end: null,
+      p_target_wallet_id: walletId,
+      p_tokens_to_award: tokensToAward,
+      p_token_idempotency_key: event.id,
+      p_token_notes: `Tokens for Stripe Checkout Session ${gatewayTxId} (mode: payment)`,
+    });
   });
 
-  await t.step("handleCheckoutSessionCompleted - subscription - user_subscriptions upsert fails", async () => {
-    const upsertFailsErrorSpy = spy(mockLogger, 'error');
-    const internalPaymentId = "ptxn_user_sub_upsert_fails";
-    const gatewayTxId = "cs_user_sub_upsert_fails";
-    const stripeSubscriptionId = "sub_user_sub_upsert_fails_id";
-    const userId = "user_sub_upsert_fails";
-    const itemId = "item_for_user_sub_upsert_failure";
-    const internalPlanId = "plan_for_user_sub_upsert_failure";
-    const stripeCustomerId = "cus_user_sub_upsert_fails"; // Added customer ID
+  await t.step("handleCheckoutSessionCompleted - subscription mode uses complete_checkout_payment RPC with subscription fields", async () => {
+    const internalPaymentId = "ptxn_rpc_subscription_mode";
+    const gatewayTxId = "cs_rpc_subscription_mode";
+    const userId = "user_rpc_subscription_mode";
+    const walletId = "wallet_rpc_subscription_mode";
+    const tokensToAward = 1200;
+    const itemId = "item_rpc_subscription_mode";
+    const internalPlanId = "plan_rpc_subscription_mode";
+    const stripeSubscriptionId = "sub_rpc_subscription_mode";
+    const stripeCustomerId = "cus_rpc_subscription_mode";
+    const periodStart = Math.floor(Date.now() / 1000) - 1800;
+    const periodEnd = Math.floor(Date.now() / 1000) + 2592000;
 
     const mockPaymentTxData: Partial<PaymentTransaction> = {
       id: internalPaymentId,
       user_id: userId,
-      target_wallet_id: "wallet_user_sub_upsert_fails",
-      tokens_to_award: 1000,
+      target_wallet_id: walletId,
+      tokens_to_award: tokensToAward,
       status: "PENDING",
       payment_gateway_id: "stripe",
       metadata_json: { itemId },
     };
 
     const mockStripeSub: Partial<Stripe.Subscription> = {
-      id: stripeSubscriptionId, status: 'active', customer: stripeCustomerId,
+      id: stripeSubscriptionId,
+      status: "active",
+      customer: stripeCustomerId,
+      cancel_at_period_end: false,
       items: {
-        object: 'list',
-        data: [
-          {
-            id: 'si_mock_item_upsert_fails',
-            object: 'subscription_item',
-            billing_thresholds: null,
-            created: Math.floor(Date.now() / 1000),
-            metadata: {},
-            plan: { id: 'plan_mock' } as Stripe.Plan,
-            price: { id: 'price_abc' } as Stripe.Price,
-            quantity: 1,
-            subscription: stripeSubscriptionId,
-            tax_rates: [],
-            discounts: [],
-            current_period_start: Math.floor(Date.now() / 1000),
-            current_period_end: Math.floor(Date.now() / 1000) + 2592000,
-          } as unknown as Stripe.SubscriptionItem,
-        ],
+        object: "list",
+        data: [{
+          id: "si_rpc_subscription_mode",
+          object: "subscription_item",
+          billing_thresholds: null,
+          created: Math.floor(Date.now() / 1000),
+          metadata: {},
+          plan: { id: "plan_rpc_subscription_mode" } as Stripe.Plan,
+          price: { id: "price_rpc_subscription_mode" } as Stripe.Price,
+          quantity: 1,
+          subscription: stripeSubscriptionId,
+          tax_rates: [],
+          discounts: [],
+          current_period_start: periodStart,
+          current_period_end: periodEnd,
+        } as Stripe.SubscriptionItem],
         has_more: false,
         url: `/v1/subscriptions/${stripeSubscriptionId}/items`,
       },
     };
-    
-    const userSubUpsertErrorMessage = "Mock Supabase: RLS violation or other DB error";
-    const userSubUpsertError = new Error(userSubUpsertErrorMessage);
 
-    setup({ 
+    setup({
       paymentTransaction: mockPaymentTxData,
-      stripeSubscriptionRetrieveResult: mockStripeSub, 
+      stripeSubscriptionRetrieveResult: mockStripeSub,
       subscriptionPlans: [{ id: internalPlanId, item_id_internal: itemId }],
-      userSubscriptionUpsertError: userSubUpsertError, 
+      rpcResults: {
+        complete_checkout_payment: {
+          data: [{ status: "COMPLETED_WITH_TOKEN_AWARD", tier_level: 4, token_transaction_id: "ttx_rpc_subscription_mode" }],
+          error: null,
+        },
+      },
     });
 
     const event = createMockCheckoutSessionCompletedEvent({
       id: gatewayTxId,
       mode: "subscription",
       subscription: stripeSubscriptionId,
-      customer: stripeCustomerId, // Ensure customer is included
+      customer: stripeCustomerId,
       metadata: { internal_payment_id: internalPaymentId, item_id: itemId },
+      client_reference_id: userId,
+    });
+
+    await handleCheckoutSessionCompleted(handlerContext, event);
+
+    assertSpyCalls(mockSupabaseSetup.spies.rpcSpy, 1);
+    assertEquals(mockSupabaseSetup.spies.rpcSpy.calls[0].args[0], "complete_checkout_payment");
+    assertEquals(mockSupabaseSetup.spies.rpcSpy.calls[0].args[1], {
+      p_user_id: userId,
+      p_is_subscription_mode: true,
+      p_payment_transaction_id: internalPaymentId,
+      p_gateway_transaction_id: gatewayTxId,
+      p_plan_id: internalPlanId,
+      p_subscription_status: "active",
+      p_stripe_customer_id: stripeCustomerId,
+      p_stripe_subscription_id: stripeSubscriptionId,
+      p_period_start: new Date(periodStart * 1000).toISOString(),
+      p_period_end: new Date(periodEnd * 1000).toISOString(),
+      p_cancel_at_period_end: false,
+      p_target_wallet_id: walletId,
+      p_tokens_to_award: tokensToAward,
+      p_token_idempotency_key: event.id,
+      p_token_notes: `Tokens for Stripe Checkout Session ${gatewayTxId} (mode: subscription)`,
+    });
+  });
+
+  await t.step("handleCheckoutSessionCompleted - early validation failure does not call complete_checkout_payment RPC", async () => {
+    setup();
+
+    const event = createMockCheckoutSessionCompletedEvent({
+      id: "cs_rpc_validation_fail",
+      mode: "payment",
+      metadata: {},
+    });
+
+    const result = await handleCheckoutSessionCompleted(handlerContext, event);
+
+    assert(!result.success, "Expected failure when internal_payment_id is missing");
+    assertSpyCalls(mockSupabaseSetup.spies.rpcSpy, 0);
+  });
+
+  await t.step("handleCheckoutSessionCompleted - RPC error returns failure with RPC error message", async () => {
+    const internalPaymentId = "ptxn_rpc_error";
+    const gatewayTxId = "cs_rpc_error";
+    const userId = "user_rpc_error";
+
+    const mockPaymentTxData: Partial<PaymentTransaction> = {
+      id: internalPaymentId,
+      user_id: userId,
+      target_wallet_id: "wallet_rpc_error",
+      tokens_to_award: 100,
+      status: "PENDING",
+      payment_gateway_id: "stripe",
+      metadata_json: { itemId: "item_rpc_error" },
+    };
+
+    setup({
+      paymentTransaction: mockPaymentTxData,
+      rpcResults: {
+        complete_checkout_payment: {
+          data: null,
+          error: new Error("RPC complete_checkout_payment failed"),
+        },
+      },
+    });
+
+    const event = createMockCheckoutSessionCompletedEvent({
+      id: gatewayTxId,
+      mode: "payment",
+      metadata: { internal_payment_id: internalPaymentId },
       client_reference_id: userId,
     });
 
     const result = await handleCheckoutSessionCompleted(handlerContext, event);
 
-    assert(!result.success, "Expected failure when user_subscriptions upsert fails");
-    assertEquals(result.transactionId, internalPaymentId);
-    assertEquals(result.paymentGatewayTransactionId, gatewayTxId);
-    assert(result.error?.includes(`Failed to upsert user_subscription for ${stripeSubscriptionId}: ${userSubUpsertErrorMessage}`), `Unexpected error: ${result.error}`);
-    assertEquals(result.tokensAwarded, 0);
-
-
-    assertSpyCalls(upsertFailsErrorSpy, 1);
-    assert(String(upsertFailsErrorSpy.calls[0].args[0]).includes(`Failed to upsert user_subscription for ${stripeSubscriptionId}`), `Unexpected logger error message: ${upsertFailsErrorSpy.calls[0].args[0]}`);
-
-    assertSpyCalls(subscriptionsRetrieveStub, 1);
-    const subPlansBuilder = mockSupabaseSetup.client.getLatestBuilder('subscription_plans');
-    assert(subPlansBuilder?.methodSpies.select?.calls.length === 1, "subscription_plans.select should have been called");
-    
-    const userSubBuilder = mockSupabaseSetup.client.getLatestBuilder('user_subscriptions');
-    assert(userSubBuilder?.methodSpies.upsert?.calls.length === 1, "user_subscriptions.upsert should have been called");
-
-    // Handler marks payment_transaction COMPLETED even if user_sub upsert fails, but returns error for the handler.
-    assertSpyCalls(mockUpdatePaymentTransaction, 1);
-    assertEquals(mockUpdatePaymentTransaction.calls[0].args[1]?.status, "COMPLETED");
-
-    assertSpyCalls(recordTokenTransactionStub, 0);
-    upsertFailsErrorSpy.restore();
+    assert(!result.success, "Expected failure when complete_checkout_payment RPC returns error");
+    assert(result.error?.includes("RPC complete_checkout_payment failed"), `Expected RPC error message, got: ${result.error}`);
+    assertSpyCalls(mockSupabaseSetup.spies.rpcSpy, 1);
+    assertEquals(mockSupabaseSetup.spies.rpcSpy.calls[0].args[0], "complete_checkout_payment");
   });
 
-  // TODO: Add more test steps for other scenarios
-});
+  await t.step("handleCheckoutSessionCompleted - RPC success triggers wallet notification and returns tier_level and tokens_awarded", async () => {
+    const internalPaymentId = "ptxn_rpc_notify";
+    const gatewayTxId = "cs_rpc_notify";
+    const userId = "user_rpc_notify";
+    const walletId = "wallet_rpc_notify";
+    const tokensToAward = 500;
 
-// Test suite for the handleCheckoutSessionCompleted handler directly
-Deno.test('handleCheckoutSessionCompleted directly', async (t) => {
-  // Mock setup for individual handler tests
-  let mockStripeInternal: MockStripe; // Renamed to avoid conflict with outer scope mockStripe if Deno.test scopes behave unexpectedly
-  let mockSupabaseClientForHandler: SupabaseClient<Database>; 
-  let mockTokenWalletServiceForHandler: MockAdminTokenWalletService;
-  let recordTokenTransactionStub: Stub<IAdminTokenWalletService, Parameters<IAdminTokenWalletService['recordTransaction']>, ReturnType<IAdminTokenWalletService['recordTransaction']>>;
-  let updatePaymentTransactionSpy: Spy<object, Parameters<UpdatePaymentTransactionFn>, ReturnType<UpdatePaymentTransactionFn>>;
+    const mockPaymentTxData: Partial<PaymentTransaction> = {
+      id: internalPaymentId,
+      user_id: userId,
+      target_wallet_id: walletId,
+      tokens_to_award: tokensToAward,
+      status: "PENDING",
+      payment_gateway_id: "stripe",
+      metadata_json: { itemId: "item_rpc_notify" },
+    };
 
-  const defaultUserIdForHandler = 'user-handler-direct-test';
-  // ... existing code ...
+    setup({
+      paymentTransaction: mockPaymentTxData,
+      notifyTokenWallet: { walletId, userId },
+      rpcResults: {
+        complete_checkout_payment: {
+          data: [{ status: "COMPLETED_WITH_TOKEN_AWARD", tier_level: 5, token_transaction_id: "ttx_rpc_notify" }],
+          error: null,
+        },
+        create_notification_for_user: {
+          data: null,
+          error: null,
+        },
+      },
+    });
+
+    const event = createMockCheckoutSessionCompletedEvent({
+      id: gatewayTxId,
+      mode: "payment",
+      metadata: { internal_payment_id: internalPaymentId },
+      client_reference_id: userId,
+    });
+
+    const result = await handleCheckoutSessionCompleted(handlerContext, event);
+
+    assert(result.success, `Expected success from RPC completion, got error: ${result.error}`);
+    assertEquals(result.tokensAwarded, tokensToAward);
+    assertEquals(mockSupabaseSetup.spies.rpcSpy.calls.some((call) => call.args[0] === "create_notification_for_user"), true);
+  });
+
+  await t.step("handleCheckoutSessionCompleted - zero tokens_to_award still calls complete_checkout_payment RPC", async () => {
+    const internalPaymentId = "ptxn_rpc_zero_tokens";
+    const gatewayTxId = "cs_rpc_zero_tokens";
+    const userId = "user_rpc_zero_tokens";
+    const walletId = "wallet_rpc_zero_tokens";
+
+    const mockPaymentTxData: Partial<PaymentTransaction> = {
+      id: internalPaymentId,
+      user_id: userId,
+      target_wallet_id: walletId,
+      tokens_to_award: 0,
+      status: "PENDING",
+      payment_gateway_id: "stripe",
+      metadata_json: { itemId: "item_rpc_zero_tokens" },
+    };
+
+    setup({
+      paymentTransaction: mockPaymentTxData,
+      rpcResults: {
+        complete_checkout_payment: {
+          data: [{ status: "COMPLETED_NO_TOKEN_AWARD", tier_level: 2, token_transaction_id: null }],
+          error: null,
+        },
+      },
+    });
+
+    const event = createMockCheckoutSessionCompletedEvent({
+      id: gatewayTxId,
+      mode: "payment",
+      metadata: { internal_payment_id: internalPaymentId },
+      client_reference_id: userId,
+    });
+
+    await handleCheckoutSessionCompleted(handlerContext, event);
+
+    assertSpyCalls(mockSupabaseSetup.spies.rpcSpy, 1);
+    assertEquals(mockSupabaseSetup.spies.rpcSpy.calls[0].args[0], "complete_checkout_payment");
+    assertEquals(mockSupabaseSetup.spies.rpcSpy.calls[0].args[1], {
+      p_user_id: userId,
+      p_is_subscription_mode: false,
+      p_payment_transaction_id: internalPaymentId,
+      p_gateway_transaction_id: gatewayTxId,
+      p_plan_id: null,
+      p_subscription_status: null,
+      p_stripe_customer_id: null,
+      p_stripe_subscription_id: null,
+      p_period_start: null,
+      p_period_end: null,
+      p_cancel_at_period_end: null,
+      p_target_wallet_id: walletId,
+      p_tokens_to_award: 0,
+      p_token_idempotency_key: event.id,
+      p_token_notes: `Tokens for Stripe Checkout Session ${gatewayTxId} (mode: payment)`,
+    });
+  });
 });

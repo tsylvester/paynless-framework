@@ -9,4 +9,21 @@ packages:
   # Supabase functions (for sharing types)
   - 'supabase/functions'
   # exclude packages that are inside test directories
-  - '!**/test/**' 
+  - '!**/test/**'
+allowBuilds:
+  '@netlify/content-engine': true
+  '@parcel/watcher': true
+  '@swc/core': true
+  content-engine: true
+  contentful: true
+  core-js: true
+  es5-ext: true
+  esbuild: true
+  lmdb: true
+  msgpackr-extract: true
+  msw: true
+  netlify: true
+  netlify-cli: true
+  puppeteer: true
+  sharp: true
+  unix-dgram: true

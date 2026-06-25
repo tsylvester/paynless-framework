@@ -1,4 +1,5 @@
 import type { AiModelExtendedConfig, ILogger } from '../types.ts';
+import type { TierOutputCapTokens } from '../../dialectic-worker/calculateAffordability/calculateAffordability.interface.ts';
 
 /**
  * Calculates the maximum number of output tokens a user can generate based on their balance,
@@ -9,6 +10,7 @@ import type { AiModelExtendedConfig, ILogger } from '../types.ts';
  * @param modelConfig The extended configuration for the AI model.
  * @param logger The logger instance for logging errors or warnings.
  * @param deficit_tokens_allowed The number of wallet tokens the user is allowed to go into deficit (default: 0).
+ * @param tierOutputCapTokens Optional tier-based output cap from `tier_definitions.output_cap_tokens`; null skips tier capping.
  * @returns The maximum number of output tokens the user can afford and is allowed to generate.
  */
 export function getMaxOutputTokens(
@@ -17,6 +19,13 @@ export function getMaxOutputTokens(
   modelConfig: AiModelExtendedConfig,
   logger: ILogger,
   deficit_tokens_allowed = 0,
+  /**
+   * Two chat call sites (`supabase/functions/chat/streamChat/StreamChat.ts:203`,
+   * `supabase/functions/chat/streamRewind/streamRewind.ts:214`) intentionally omit this argument so
+   * chat stays out of scope for tier capping. The default `null` preserves those call sites without edits.
+   * The default is a deliberate part of the contract, not an oversight.
+   */
+  tierOutputCapTokens: TierOutputCapTokens | null = null,
 ): number {
   const { 
     input_token_cost_rate,
@@ -103,5 +112,9 @@ export function getMaxOutputTokens(
   const non_negative_available_context = Math.max(0, available_context_for_output);
 
   // The final result is the minimum of what's affordable and what fits in the remaining context window.
-  return Math.max(0, Math.min(max_affordable_tokens, non_negative_available_context));
+  let result: number = Math.max(0, Math.min(max_affordable_tokens, non_negative_available_context));
+  if (tierOutputCapTokens !== null && result > tierOutputCapTokens) {
+    result = tierOutputCapTokens;
+  }
+  return result;
 }

@@ -31,6 +31,10 @@ export interface NodeModelConfig {
   output_token_cost_rate: number | null;
 }
 
+export interface NodeUserConfig {
+  readonly tier_output_cap_tokens: number | null;
+}
+
 export interface NodeTokenUsage {
   prompt_tokens: number;
   completion_tokens: number;
@@ -60,6 +64,7 @@ export type NodeAdapterStreamChunk =
 export interface NodeAdapterConstructorParams {
   modelConfig: NodeModelConfig;
   apiKey: string;
+  userConfig: NodeUserConfig;
 }
 
 export interface AiAdapter {

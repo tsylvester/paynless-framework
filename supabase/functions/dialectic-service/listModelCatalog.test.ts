@@ -6,8 +6,7 @@ import {
 import type { SupabaseClient } from "npm:@supabase/supabase-js";
 import type { Database } from "../types_db.ts";
 import { listModelCatalog } from "./listModelCatalog.ts";
-
-type AiProvidersRow = Database["public"]["Tables"]["ai_providers"]["Row"];
+import type { AiProvidersRow } from "./dialectic.interface.ts";
 
 function aiProviderRow(overrides: Partial<AiProvidersRow>): AiProvidersRow {
   return {
@@ -20,6 +19,7 @@ function aiProviderRow(overrides: Partial<AiProvidersRow>): AiProvidersRow {
     is_default_generation: false,
     is_default_embedding: false,
     is_enabled: true,
+    min_plan_tier_level: 0,
     config: null,
     created_at: "2025-01-01T00:00:00Z",
     updated_at: "2025-01-01T00:00:00Z",
@@ -27,12 +27,12 @@ function aiProviderRow(overrides: Partial<AiProvidersRow>): AiProvidersRow {
   };
 }
 
-Deno.test("listModelCatalog should fetch and return catalog entries successfully", async () => {
+Deno.test("listModelCatalog should return ai_providers rows from the database without reshaping", async () => {
   const mockRows: AiProvidersRow[] = [
-    aiProviderRow({ id: "a", name: "Alpha", provider: "openai", is_default_generation: true }),
-    aiProviderRow({ id: "b", name: "Beta", provider: "anthropic", is_default_generation: false }),
+    aiProviderRow({ id: "a", name: "Alpha", provider: "openai", is_default_generation: true, min_plan_tier_level: 0 }),
+    aiProviderRow({ id: "b", name: "Beta", provider: "anthropic", is_default_generation: false, min_plan_tier_level: 10 }),
   ];
-  const sortedRows = [...mockRows].sort((a, b) => a.name.localeCompare(b.name));
+  const sortedRows: AiProvidersRow[] = [...mockRows].sort((a, b) => a.name.localeCompare(b.name));
 
   const mockSupabaseClient = {
     from: (table: string) => {
@@ -69,22 +69,15 @@ Deno.test("listModelCatalog should fetch and return catalog entries successfully
   assert(error === undefined, "Expected no error");
   assertExists(data, "Expected data to be returned");
   assertEquals(data?.length, 2);
-  assertEquals(data?.[0].id, "a");
-  assertEquals(data?.[0].model_name, "Alpha");
-  assertEquals(data?.[0].provider_name, "openai");
-  assertEquals(data?.[0].is_default_generation, true);
-  assertEquals(data?.[1].id, "b");
-  assertEquals(data?.[1].model_name, "Beta");
-  assertEquals(data?.[1].provider_name, "anthropic");
-  assertEquals(data?.[1].is_default_generation, false);
+  assertEquals(data, sortedRows);
 });
 
 Deno.test("listModelCatalog should return entries ordered by name ascending", async () => {
   const mockRows: AiProvidersRow[] = [
-    aiProviderRow({ id: "z", name: "Zeta" }),
-    aiProviderRow({ id: "a", name: "Alpha" }),
+    aiProviderRow({ id: "z", name: "Zeta", min_plan_tier_level: 20 }),
+    aiProviderRow({ id: "a", name: "Alpha", min_plan_tier_level: 0 }),
   ];
-  const sortedRows = [...mockRows].sort((a, b) => a.name.localeCompare(b.name));
+  const sortedRows: AiProvidersRow[] = [...mockRows].sort((a, b) => a.name.localeCompare(b.name));
 
   const mockSupabaseClient = {
     from: () => ({
@@ -101,8 +94,11 @@ Deno.test("listModelCatalog should return entries ordered by name ascending", as
   const { data } = await listModelCatalog(mockSupabaseClient);
 
   assertExists(data);
-  assertEquals(data?.[0].model_name, "Alpha");
-  assertEquals(data?.[1].model_name, "Zeta");
+  assertEquals(data, sortedRows);
+  assertEquals(data?.[0].name, "Alpha");
+  assertEquals(data?.[0].min_plan_tier_level, 0);
+  assertEquals(data?.[1].name, "Zeta");
+  assertEquals(data?.[1].min_plan_tier_level, 20);
 });
 
 Deno.test("listModelCatalog should return empty array when no active providers", async () => {
@@ -148,8 +144,13 @@ Deno.test("listModelCatalog should return error when database call fails", async
   assertEquals(error?.message, "Could not fetch AI model catalog.");
 });
 
-Deno.test("listModelCatalog should map row with null provider to provider_name empty string", async () => {
-  const rowWithNullProvider = aiProviderRow({ id: "n", name: "NullProvider", provider: null });
+Deno.test("listModelCatalog should return ai_providers rows including null provider values from the database", async () => {
+  const rowWithNullProvider: AiProvidersRow = aiProviderRow({
+    id: "n",
+    name: "NullProvider",
+    provider: null,
+    min_plan_tier_level: 30,
+  });
   const mockSupabaseClient = {
     from: () => ({
       select: () => ({
@@ -166,7 +167,39 @@ Deno.test("listModelCatalog should map row with null provider to provider_name e
 
   assert(error === undefined);
   assertExists(data);
-  assertEquals(data?.length, 1);
-  assertEquals(data?.[0].provider_name, "");
-  assertEquals(data?.[0].model_name, "NullProvider");
+  assertEquals(data, [rowWithNullProvider]);
+});
+
+Deno.test("listModelCatalog should return ai_providers rows with config JSON preserved", async () => {
+  const geminiFlashRow: AiProvidersRow = aiProviderRow({
+    id: "gemini-flash",
+    name: "Gemini 3 Flash Preview",
+    api_identifier: "google-gemini-3-flash-preview",
+    provider: "google",
+    is_default_generation: true,
+    config: {
+      api_identifier: "google-gemini-3-flash-preview",
+      context_window_tokens: 1048576,
+      hard_cap_output_tokens: 65536,
+      provider_max_output_tokens: 65536,
+    },
+  });
+  const mockSupabaseClient = {
+    from: () => ({
+      select: () => ({
+        eq: () => ({
+          eq: () => ({
+            order: () => Promise.resolve({ data: [geminiFlashRow], error: null }),
+          }),
+        }),
+      }),
+    }),
+  } as unknown as SupabaseClient<Database>;
+
+  const { data, error } = await listModelCatalog(mockSupabaseClient);
+
+  assert(error === undefined);
+  assertExists(data);
+  assertEquals(data, [geminiFlashRow]);
+  assertEquals(data?.[0].config, geminiFlashRow.config);
 });

@@ -4,10 +4,15 @@ import { Buffer } from "node:buffer";
 import { Database } from '../../../types_db.ts'; // Assuming Price & Product might come from here or Stripe SDK
 import {
   IPaymentGatewayAdapter,
+  OrchestrationLineItem,
+  OrchestrationLineItemMetadata,
+  PaymentCheckoutMode,
   PaymentInitiationResult,
   PaymentConfirmation,
   PaymentOrchestrationContext,
+  StripeCheckoutSessionMetadataMultiItem,
 } from '../../types/payment.types.ts';
+import { isOrchestrationLineItem } from '../../types/payment.guard.ts';
 import { IAdminTokenWalletService } from '../../services/tokenwallet/admin/adminTokenWalletService.interface.ts';
 import { logger } from '../../logger.ts'; // Import the logger instance
 import { updatePaymentTransaction } from './utils/stripe.updatePaymentTransaction.ts';
@@ -65,6 +70,137 @@ export class StripePaymentAdapter implements IPaymentGatewayAdapter {
   async initiatePayment(context: PaymentOrchestrationContext): Promise<PaymentInitiationResult> {
     this.handlerContext.logger.info('[StripePaymentAdapter initiatePayment] Called with context:', { context: JSON.stringify(context, null, 2) });
     try {
+      if (context.lineItems && Array.isArray(context.lineItems) && context.lineItems.length > 0) {
+        this.handlerContext.logger.info('[StripePaymentAdapter initiatePayment] Multi-item path: processing lineItems', { count: context.lineItems.length });
+        if (!context.checkoutMode) {
+          return { success: false, transactionId: context.internalPaymentId, error: 'checkoutMode is required when lineItems are provided' };
+        }
+        for (let i = 0; i < context.lineItems.length; i++) {
+          if (!isOrchestrationLineItem(context.lineItems[i])) {
+            return { success: false, transactionId: context.internalPaymentId, error: 'Invalid lineItem at index ' + i };
+          }
+        }
+        const line_items: Stripe.Checkout.SessionCreateParams.LineItem[] = [];
+        for (let lineIndex = 0; lineIndex < context.lineItems.length; lineIndex++) {
+          const orchestrationLineItem: OrchestrationLineItem = context.lineItems[lineIndex];
+          const stripeLineItem: Stripe.Checkout.SessionCreateParams.LineItem = {
+            price: orchestrationLineItem.stripePriceId,
+            quantity: orchestrationLineItem.quantity,
+          };
+          line_items.push(stripeLineItem);
+        }
+        const stripeMode: PaymentCheckoutMode = context.checkoutMode;
+        let itemForMetadata: OrchestrationLineItem = context.lineItems[0];
+        for (let subIndex = 0; subIndex < context.lineItems.length; subIndex++) {
+          const candidateLineItem: OrchestrationLineItem = context.lineItems[subIndex];
+          if (candidateLineItem.planType === 'subscription') {
+            itemForMetadata = candidateLineItem;
+            break;
+          }
+        }
+        let organization_id: string;
+        if (context.organizationId === undefined) {
+          organization_id = '';
+        } else if (context.organizationId === null) {
+          organization_id = '';
+        } else {
+          organization_id = context.organizationId;
+        }
+        const lineItemMetadataEntries: OrchestrationLineItemMetadata[] = [];
+        for (let metaIndex = 0; metaIndex < context.lineItems.length; metaIndex++) {
+          const sourceLineItem: OrchestrationLineItem = context.lineItems[metaIndex];
+          const metadataEntry: OrchestrationLineItemMetadata = {
+            itemId: sourceLineItem.itemId,
+            quantity: sourceLineItem.quantity,
+            tokensToAward: sourceLineItem.tokensToAward,
+          };
+          lineItemMetadataEntries.push(metadataEntry);
+        }
+        const metadata: StripeCheckoutSessionMetadataMultiItem = {
+          internal_payment_id: context.internalPaymentId,
+          user_id: context.userId,
+          organization_id: organization_id,
+          item_id: itemForMetadata.itemId,
+          tokens_to_award: String(context.tokensToAward),
+          target_wallet_id: context.targetWalletId,
+          items: JSON.stringify(lineItemMetadataEntries),
+        };
+        let siteUrl: string | undefined = context.request_origin;
+        if (siteUrl === undefined && context.metadata !== undefined) {
+          const originFromMetadata: unknown = context.metadata['request_origin'];
+          if (typeof originFromMetadata === 'string') {
+            siteUrl = originFromMetadata;
+          }
+        }
+        if (siteUrl === undefined) {
+          return {
+            success: false,
+            transactionId: context.internalPaymentId,
+            error: 'request_origin is required for checkout redirect URLs',
+          };
+        }
+        const successUrl: string = siteUrl + '/SubscriptionSuccess?payment_id=' + context.internalPaymentId + '&session_id={CHECKOUT_SESSION_ID}';
+        const cancelUrl: string = siteUrl + '/subscription?payment_id=' + context.internalPaymentId;
+        const stripeCheckoutMetadata: Stripe.MetadataParam = {
+          internal_payment_id: metadata.internal_payment_id,
+          user_id: metadata.user_id,
+          organization_id: metadata.organization_id,
+          item_id: metadata.item_id,
+          tokens_to_award: metadata.tokens_to_award,
+          target_wallet_id: metadata.target_wallet_id,
+          items: metadata.items,
+        };
+        const sessionParams: Stripe.Checkout.SessionCreateParams = {
+          line_items: line_items,
+          mode: stripeMode,
+          success_url: successUrl,
+          cancel_url: cancelUrl,
+          client_reference_id: context.userId,
+          metadata: stripeCheckoutMetadata,
+        };
+        const stripeSession: Stripe.Checkout.Session = await this.stripe.checkout.sessions.create(sessionParams);
+        this.handlerContext.logger.info('[StripePaymentAdapter initiatePayment] Multi-item Stripe session created.', { sessionId: stripeSession.id });
+        let redirectUrl: string | undefined = undefined;
+        if (stripeSession.url !== null) {
+          redirectUrl = stripeSession.url;
+        }
+        let clientSecret: string | undefined = undefined;
+        if (stripeSession.payment_intent !== null && typeof stripeSession.payment_intent === 'string') {
+          const retrievedPaymentIntent: Stripe.PaymentIntent = await this.stripe.paymentIntents.retrieve(stripeSession.payment_intent);
+          if (typeof retrievedPaymentIntent !== 'object' || retrievedPaymentIntent === null) {
+            return {
+              success: false,
+              transactionId: context.internalPaymentId,
+              error: 'PaymentIntent retrieve returned no data for checkout session payment_intent',
+            };
+          }
+          if (retrievedPaymentIntent.client_secret === null) {
+            return {
+              success: false,
+              transactionId: context.internalPaymentId,
+              error: 'PaymentIntent client_secret is missing after retrieve',
+            };
+          }
+          clientSecret = retrievedPaymentIntent.client_secret;
+        } else if (stripeSession.payment_intent !== null && typeof stripeSession.payment_intent === 'object') {
+          if (stripeSession.payment_intent.client_secret === null) {
+            return {
+              success: false,
+              transactionId: context.internalPaymentId,
+              error: 'PaymentIntent client_secret is missing on checkout session payment_intent',
+            };
+          }
+          clientSecret = stripeSession.payment_intent.client_secret;
+        }
+        return {
+          success: true,
+          transactionId: context.internalPaymentId,
+          paymentGatewayTransactionId: stripeSession.id,
+          redirectUrl: redirectUrl,
+          clientSecret: clientSecret,
+        };
+      }
+
       const { data: planData, error: planError } = await this.handlerContext.supabaseClient
         .from('subscription_plans')
         .select('stripe_price_id, item_id_internal, plan_type, tokens_to_award, amount, currency')
@@ -133,16 +269,45 @@ export class StripePaymentAdapter implements IPaymentGatewayAdapter {
       const stripeSession = await this.stripe.checkout.sessions.create(sessionParams);
       this.handlerContext.logger.info('[StripePaymentAdapter initiatePayment] Stripe session created.', { sessionId: stripeSession.id });
 
+      let redirectUrlSingle: string | undefined = undefined;
+      if (stripeSession.url !== null) {
+        redirectUrlSingle = stripeSession.url;
+      }
+      let clientSecretSingle: string | undefined = undefined;
+      if (stripeSession.payment_intent !== null && typeof stripeSession.payment_intent === 'string') {
+        const retrievedPaymentIntentSingle: Stripe.PaymentIntent = await this.stripe.paymentIntents.retrieve(stripeSession.payment_intent);
+        if (typeof retrievedPaymentIntentSingle !== 'object' || retrievedPaymentIntentSingle === null) {
+          return {
+            success: false,
+            transactionId: internalPaymentId,
+            error: 'PaymentIntent retrieve returned no data for checkout session payment_intent',
+          };
+        }
+        if (retrievedPaymentIntentSingle.client_secret === null) {
+          return {
+            success: false,
+            transactionId: internalPaymentId,
+            error: 'PaymentIntent client_secret is missing after retrieve',
+          };
+        }
+        clientSecretSingle = retrievedPaymentIntentSingle.client_secret;
+      } else if (stripeSession.payment_intent !== null && typeof stripeSession.payment_intent === 'object') {
+        if (stripeSession.payment_intent.client_secret === null) {
+          return {
+            success: false,
+            transactionId: internalPaymentId,
+            error: 'PaymentIntent client_secret is missing on checkout session payment_intent',
+          };
+        }
+        clientSecretSingle = stripeSession.payment_intent.client_secret;
+      }
+
       return {
         success: true,
         transactionId: internalPaymentId,
         paymentGatewayTransactionId: stripeSession.id,
-        redirectUrl: stripeSession.url ?? undefined,
-        clientSecret: stripeSession.payment_intent && typeof stripeSession.payment_intent === 'string' 
-                        ? (await this.stripe.paymentIntents.retrieve(stripeSession.payment_intent)).client_secret ?? undefined
-                        : typeof stripeSession.payment_intent === 'object' && stripeSession.payment_intent?.client_secret 
-                        ? stripeSession.payment_intent.client_secret
-                        : undefined, // Extract client_secret if available (for Payment Intents mode)
+        redirectUrl: redirectUrlSingle,
+        clientSecret: clientSecretSingle,
       };
 
     } catch (error) {

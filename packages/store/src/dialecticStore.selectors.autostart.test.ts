@@ -1,30 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { selectDefaultGenerationModels } from './dialecticStore.selectors';
 import { initialDialecticStateValues } from './dialecticStore';
-import type { DialecticStateValues, AIModelCatalogEntry, SelectedModels } from '@paynless/types';
+import type { AiProvidersRow, DialecticStateValues, SelectedModels } from '@paynless/types';
+import { mockAiProvidersRow } from '../../../apps/web/src/mocks/dialecticStore.mock';
 
-function catalogEntry(overrides: Partial<AIModelCatalogEntry>): AIModelCatalogEntry {
-  const base: AIModelCatalogEntry = {
-    id: 'base-id',
-    provider_name: 'Provider',
-    model_name: 'Base Model',
-    api_identifier: 'api-id',
-    description: null,
-    strengths: null,
-    weaknesses: null,
-    context_window_tokens: null,
-    input_token_cost_usd_millionths: null,
-    output_token_cost_usd_millionths: null,
-    max_output_tokens: null,
-    is_active: true,
-    created_at: '2025-01-01T00:00:00Z',
-    updated_at: '2025-01-01T00:00:00Z',
-    is_default_generation: false,
-  };
-  return { ...base, ...overrides };
-}
-
-function stateWithCatalog(entries: AIModelCatalogEntry[]): DialecticStateValues {
+function stateWithCatalog(entries: AiProvidersRow[]): DialecticStateValues {
   return { ...initialDialecticStateValues, modelCatalog: entries };
 }
 
@@ -37,8 +17,8 @@ describe('selectDefaultGenerationModels', () => {
 
   it('returns empty array when no models have is_default_generation === true', () => {
     const state: DialecticStateValues = stateWithCatalog([
-      catalogEntry({ id: 'm1', model_name: 'Model One', is_default_generation: false, is_active: true }),
-      catalogEntry({ id: 'm2', model_name: 'Model Two', is_default_generation: false, is_active: true }),
+      mockAiProvidersRow({ id: 'm1', name: 'Model One', is_default_generation: false, is_active: true }),
+      mockAiProvidersRow({ id: 'm2', name: 'Model Two', is_default_generation: false, is_active: true }),
     ]);
     const result: SelectedModels[] = selectDefaultGenerationModels(state);
     expect(result).toEqual([]);
@@ -46,8 +26,8 @@ describe('selectDefaultGenerationModels', () => {
 
   it('returns only models where both is_default_generation === true and is_active === true', () => {
     const state: DialecticStateValues = stateWithCatalog([
-      catalogEntry({ id: 'default-active', model_name: 'Default Active', is_default_generation: true, is_active: true }),
-      catalogEntry({ id: 'not-default', model_name: 'Not Default', is_default_generation: false, is_active: true }),
+      mockAiProvidersRow({ id: 'default-active', name: 'Default Active', is_default_generation: true, is_active: true }),
+      mockAiProvidersRow({ id: 'not-default', name: 'Not Default', is_default_generation: false, is_active: true }),
     ]);
     const result: SelectedModels[] = selectDefaultGenerationModels(state);
     expect(result).toEqual([{ id: 'default-active', displayName: 'Default Active' }]);
@@ -55,15 +35,15 @@ describe('selectDefaultGenerationModels', () => {
 
   it('excludes models where is_default_generation === true but is_active === false', () => {
     const state: DialecticStateValues = stateWithCatalog([
-      catalogEntry({ id: 'default-inactive', model_name: 'Default Inactive', is_default_generation: true, is_active: false }),
+      mockAiProvidersRow({ id: 'default-inactive', name: 'Default Inactive', is_default_generation: true, is_active: false }),
     ]);
     const result: SelectedModels[] = selectDefaultGenerationModels(state);
     expect(result).toEqual([]);
   });
 
-  it('returns correct SelectedModels shape { id, displayName } mapped from AIModelCatalogEntry', () => {
+  it('returns correct SelectedModels shape { id, displayName } mapped from AiProvidersRow', () => {
     const state: DialecticStateValues = stateWithCatalog([
-      catalogEntry({ id: 'model-a', model_name: 'Model A Display', is_default_generation: true, is_active: true }),
+      mockAiProvidersRow({ id: 'model-a', name: 'Model A Display', is_default_generation: true, is_active: true }),
     ]);
     const result: SelectedModels[] = selectDefaultGenerationModels(state);
     expect(result).toHaveLength(1);
@@ -74,14 +54,30 @@ describe('selectDefaultGenerationModels', () => {
 
   it('handles multiple default models correctly and returns all matching', () => {
     const state: DialecticStateValues = stateWithCatalog([
-      catalogEntry({ id: 'd1', model_name: 'Default One', is_default_generation: true, is_active: true }),
-      catalogEntry({ id: 'd2', model_name: 'Default Two', is_default_generation: true, is_active: true }),
-      catalogEntry({ id: 'other', model_name: 'Other', is_default_generation: false, is_active: true }),
+      mockAiProvidersRow({ id: 'd1', name: 'Default One', is_default_generation: true, is_active: true }),
+      mockAiProvidersRow({ id: 'd2', name: 'Default Two', is_default_generation: true, is_active: true }),
+      mockAiProvidersRow({ id: 'other', name: 'Other', is_default_generation: false, is_active: true }),
     ]);
     const result: SelectedModels[] = selectDefaultGenerationModels(state);
     expect(result).toEqual([
       { id: 'd1', displayName: 'Default One' },
       { id: 'd2', displayName: 'Default Two' },
+    ]);
+  });
+
+  it('selectDefaultGenerationModels does not filter by min_plan_tier_level', () => {
+    const state: DialecticStateValues = stateWithCatalog([
+      mockAiProvidersRow({
+        id: 'high-tier-default',
+        name: 'High Tier Default',
+        is_default_generation: true,
+        is_active: true,
+        min_plan_tier_level: 30,
+      }),
+    ]);
+    const result: SelectedModels[] = selectDefaultGenerationModels(state);
+    expect(result).toEqual([
+      { id: 'high-tier-default', displayName: 'High Tier Default' },
     ]);
   });
 });

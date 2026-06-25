@@ -119,7 +119,38 @@ export interface Messages {
   name?: string; // Optional, for function calls
 }
 
+export interface TokenizationStrategyTiktoken {
+  type: 'tiktoken';
+  tiktoken_encoding_name?: TiktokenEncoding;
+  is_chatml_model?: boolean;
+  api_identifier_for_tokenization?: string;
+}
 
+export interface TokenizationStrategyRoughCharCount {
+  type: 'rough_char_count';
+  chars_per_token_ratio?: number;
+}
+
+export interface TokenizationStrategyAnthropicTokenizer {
+  type: 'anthropic_tokenizer';
+  model: string;
+}
+
+export interface TokenizationStrategyGoogleGeminiTokenizer {
+  type: 'google_gemini_tokenizer';
+  chars_per_token_ratio?: number;
+}
+
+export interface TokenizationStrategyNone {
+  type: 'none';
+}
+
+export type TokenizationStrategy =
+  | TokenizationStrategyTiktoken
+  | TokenizationStrategyRoughCharCount
+  | TokenizationStrategyAnthropicTokenizer
+  | TokenizationStrategyGoogleGeminiTokenizer
+  | TokenizationStrategyNone;
 
 /**
  * Extended configuration for an AI model, stored in the `ai_providers.config` JSON column.
@@ -135,18 +166,7 @@ export interface AiModelExtendedConfig {
   context_window_tokens?: number | null;   // Provider's max context window (input + output usually)
 
   // Input Token Estimation Strategy (for client-side estimateInputTokens)
-  tokenization_strategy: {
-    type: 'tiktoken' | 'rough_char_count' | 'provider_specific_api' | 'unknown';
-    // For 'tiktoken'
-    tiktoken_encoding_name?: TiktokenEncoding; // e.g., 'cl100k_base', 'p50k_base', 'r50k_base', 'gpt2'
-    is_chatml_model?: boolean; // If true, apply ChatML counting rules (like in tokenizer_utils.ts)
-                                // We might need more granular rules here if ChatML varies.
-    api_identifier_for_tokenization?: string; // e.g., "gpt-4o", "gpt-3.5-turbo", for direct use with tiktoken's encodingForModel
-    // For 'rough_char_count'
-    chars_per_token_ratio?: number; // e.g., 4.0 (average chars per token)
-    // For 'provider_specific_api'
-    // No extra fields needed here; implies server-side call or pre-fetched from provider if available
-  };
+  tokenization_strategy: TokenizationStrategy;
 
   // Optional: Provider-returned limits (can be synced automatically if API provides them)
   provider_max_input_tokens?: number;

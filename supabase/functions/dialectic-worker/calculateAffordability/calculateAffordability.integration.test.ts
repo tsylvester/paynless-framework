@@ -44,7 +44,6 @@ import type {
   CountableChatPayload,
   CountTokensDeps,
 } from "../../_shared/types/tokenizer.types.ts";
-import { getMaxOutputTokens } from "../../_shared/utils/affordability_utils.ts";
 import { countTokens } from "../../_shared/utils/tokenizer_utils.ts";
 import type { Database } from "../../types_db.ts";
 import { createProject } from "../../dialectic-service/createProject.ts";
@@ -69,6 +68,11 @@ import type {
   CalculateAffordabilityParams,
   CalculateAffordabilityPayload,
 } from "./calculateAffordability.interface.ts";
+import {
+  buildCalculateAffordabilityDeps,
+  buildCalculateAffordabilityParams,
+  buildCalculateAffordabilityPayload,
+} from "./calculateAffordability.mock.ts";
 
 function buildIntegrationResourceDocuments(): ResourceDocuments {
   const docId: string = "integration-doc-id";
@@ -115,13 +119,12 @@ Deno.test("calculateAffordability integration: non-oversized → direct return (
   ): Promise<CompressPromptReturn> => {
     throw new Error("compressPrompt must not be called on non-oversized path");
   };
-  const deps: CalculateAffordabilityDeps = {
+  const deps: CalculateAffordabilityDeps = buildCalculateAffordabilityDeps({
     logger,
     countTokens,
     compressPrompt,
-  };
-  const params: CalculateAffordabilityParams = {
-    dbClient,
+  });
+  const params: CalculateAffordabilityParams = buildCalculateAffordabilityParams(dbClient, {
     jobId: "integration-job-id",
     projectOwnerUserId: "integration-owner-id",
     sessionId: "integration-session-id",
@@ -132,7 +135,7 @@ Deno.test("calculateAffordability integration: non-oversized → direct return (
     inputRate: 0.01,
     outputRate: 0.01,
     isContinuationFlowInitial: false,
-  };
+  });
   const payload: CalculateAffordabilityPayload = {
     compressionStrategy: async () => [],
     resourceDocuments,
@@ -148,9 +151,9 @@ Deno.test("calculateAffordability integration: non-oversized → direct return (
   }
   const tokenizerDeps: CountTokensDeps = {
     getEncoding: (_name: string) => ({
-      encode: (input: string) => Array.from(input ?? "", (_ch, index: number) => index),
+      encode: (input: string) => Array.from(input, (_ch, index: number) => index),
     }),
-    countTokensAnthropic: (text: string) => (text ?? "").length,
+    countTokensAnthropic: (text: string) => (text).length,
     logger,
   };
   const fullPayload: CountableChatPayload = {
@@ -164,11 +167,13 @@ Deno.test("calculateAffordability integration: non-oversized → direct return (
     fullPayload,
     extendedModelConfig,
   );
-  const expectedMax: number = getMaxOutputTokens(
+  const expectedMax: number = deps.getMaxOutputTokens(
     params.walletBalance,
     initialTokenCount,
     extendedModelConfig,
-    logger,
+    deps.logger,
+    0,
+    params.userConfig.tier_output_cap_tokens,
   );
   assertEquals(result.maxOutputTokens, expectedMax);
 });
@@ -220,9 +225,24 @@ describe("calculateAffordability integration: oversized path with real compressP
     }
     formData.append("selectedDomainId", domain.id);
 
+    const associationResponse = await adminClient
+      .from("domain_process_associations")
+      .select("process_template_id")
+      .eq("domain_id", domain.id)
+      .eq("is_default_for_domain", true)
+      .single();
+    if (associationResponse.error !== null) {
+      throw associationResponse.error;
+    }
+    if (associationResponse.data === null) {
+      throw new Error("Default domain_process_associations row not found for Software Development");
+    }
+    const defaultProcessTemplateId: string = associationResponse.data.process_template_id;
+    formData.append("processTemplateId", defaultProcessTemplateId);
+
     const projectResult = await createProject(formData, adminClient, testUser);
     if (projectResult.error || !projectResult.data) {
-      throw new Error(`createProject failed: ${projectResult.error?.message ?? "no data"}`);
+      throw new Error(`createProject failed: ${projectResult.error?.message}`);
     }
     testProject = projectResult.data;
 
@@ -276,9 +296,9 @@ describe("calculateAffordability integration: oversized path with real compressP
       idempotencyKey: crypto.randomUUID(),
       sessionDescription: "calculateAffordability integration session",
     };
-    const sessionResult = await startSession(testUser, adminClient, sessionPayload);
+    const sessionResult = await startSession(testUser, adminClient, userClient, sessionPayload);
     if (sessionResult.error || !sessionResult.data) {
-      throw new Error(`startSession failed: ${sessionResult.error?.message ?? "no data"}`);
+      throw new Error(`startSession failed: ${sessionResult.error?.message}`);
     }
     testSessionId = sessionResult.data.id;
   });
@@ -379,13 +399,12 @@ describe("calculateAffordability integration: oversized path with real compressP
       params: CompressPromptParams,
       payload: CompressPromptPayload,
     ) => compressPrompt(compressPromptDeps, params, payload);
-    const deps: CalculateAffordabilityDeps = {
+    const deps: CalculateAffordabilityDeps = buildCalculateAffordabilityDeps({
       logger: testLogger,
       countTokens,
       compressPrompt: boundCompressPrompt,
-    };
-    const params: CalculateAffordabilityParams = {
-      dbClient: adminClient,
+    });
+    const params: CalculateAffordabilityParams = buildCalculateAffordabilityParams(adminClient, {
       jobId: crypto.randomUUID(),
       projectOwnerUserId: testUserId,
       sessionId: testSessionId,
@@ -397,7 +416,7 @@ describe("calculateAffordability integration: oversized path with real compressP
       outputRate: 0.0001,
       isContinuationFlowInitial: false,
       inputsRelevance,
-    };
+    });
     const payload: CalculateAffordabilityPayload = {
       compressionStrategy,
       resourceDocuments,
@@ -440,13 +459,12 @@ Deno.test("calculateAffordability integration: NSF (non-oversized) → error ret
     _payload: CountableChatPayload,
     _modelConfig: AiModelExtendedConfig,
   ): number => 1000;
-  const deps: CalculateAffordabilityDeps = {
+  const deps: CalculateAffordabilityDeps = buildCalculateAffordabilityDeps({
     logger,
     countTokens: countTokensFixed,
     compressPrompt,
-  };
-  const params: CalculateAffordabilityParams = {
-    dbClient,
+  });
+  const params: CalculateAffordabilityParams = buildCalculateAffordabilityParams(dbClient, {
     jobId: "integration-job-nsf",
     projectOwnerUserId: "integration-owner-id",
     sessionId: "integration-session-id",
@@ -457,7 +475,7 @@ Deno.test("calculateAffordability integration: NSF (non-oversized) → error ret
     inputRate: 0.01,
     outputRate: 0.01,
     isContinuationFlowInitial: false,
-  };
+  });
   const payload: CalculateAffordabilityPayload = {
     compressionStrategy: async () => [],
     resourceDocuments,
@@ -472,4 +490,83 @@ Deno.test("calculateAffordability integration: NSF (non-oversized) → error ret
     return;
   }
   assertEquals(result.retriable, false);
+});
+
+Deno.test("calculateAffordability integration: tierOutputCapTokens=32768 is binding → maxOutputTokens capped at 32768", async () => {
+  const logger: MockLogger = new MockLogger();
+  const { client } = createMockSupabaseClient();
+  const dbClient: SupabaseClient<Database> = client as unknown as SupabaseClient<Database>;
+  const extendedModelConfig: AiModelExtendedConfig = buildExtendedModelConfig({
+    context_window_tokens: 500_000,
+    provider_max_input_tokens: 500_000,
+    hard_cap_output_tokens: 200_000,
+    provider_max_output_tokens: 200_000,
+    input_token_cost_rate: 0.0001,
+    output_token_cost_rate: 0.0001,
+  });
+  const resourceDocuments: ResourceDocuments = buildIntegrationResourceDocuments();
+  const currentUserPrompt: string = "tier cap binding test";
+  const compressPromptFn: BoundCompressPromptFn = async (
+    _params: CompressPromptParams,
+    _payload: CompressPromptPayload,
+  ): Promise<CompressPromptReturn> => {
+    throw new Error("compressPrompt must not be called on tier-cap binding path");
+  };
+  const deps: CalculateAffordabilityDeps = buildCalculateAffordabilityDeps({
+    logger,
+    countTokens,
+    compressPrompt: compressPromptFn,
+  });
+  const params: CalculateAffordabilityParams = buildCalculateAffordabilityParams(dbClient, {
+    jobId: "integration-job-tier-cap",
+    projectOwnerUserId: "integration-owner-id",
+    sessionId: "integration-session-id",
+    stageSlug: "thesis",
+    walletId: "integration-wallet-id",
+    walletBalance: 1_000_000,
+    extendedModelConfig,
+    inputRate: 0.0001,
+    outputRate: 0.0001,
+    isContinuationFlowInitial: false,
+    userConfig: { tier_output_cap_tokens: 32768 },
+  });
+  const payload: CalculateAffordabilityPayload = buildCalculateAffordabilityPayload({
+    resourceDocuments,
+    currentUserPrompt,
+    systemInstruction: "integration system instruction",
+    chatApiRequest: buildIntegrationChatApiRequest(resourceDocuments, currentUserPrompt),
+  });
+  const result = await calculateAffordability(deps, params, payload);
+  assertEquals(isCalculateAffordabilityDirectReturn(result), true);
+  if (!isCalculateAffordabilityDirectReturn(result)) {
+    return;
+  }
+  const tokenizerDeps: CountTokensDeps = {
+    getEncoding: (_name: string) => ({
+      encode: (input: string) => Array.from(input, (_ch, index: number) => index),
+    }),
+    countTokensAnthropic: (text: string) => (text).length,
+    logger,
+  };
+  const fullPayload: CountableChatPayload = {
+    systemInstruction: payload.systemInstruction,
+    message: payload.currentUserPrompt,
+    messages: [],
+    resourceDocuments: payload.resourceDocuments,
+  };
+  const initialTokenCount: number = countTokens(
+    tokenizerDeps,
+    fullPayload,
+    extendedModelConfig,
+  );
+  const expectedMax: number = deps.getMaxOutputTokens(
+    params.walletBalance,
+    initialTokenCount,
+    extendedModelConfig,
+    deps.logger,
+    0,
+    params.userConfig.tier_output_cap_tokens,
+  );
+  assertEquals(result.maxOutputTokens, expectedMax);
+  assertEquals(expectedMax, 32768);
 });

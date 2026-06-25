@@ -22,6 +22,107 @@ const ALL_DOC_TITLES = {
   implementation: ['Work Plan', 'Recommendations', 'Updated Master Plan'],
 };
 
+const GITHUB_REPO_BY_SEGMENT: Record<SegmentContent['slug'], string> = {
+  vibecoder: 'tsylvester/vibecoder',
+  indiehacker: 'tsylvester/indiehacker',
+  startup: 'tsylvester/startup',
+  agency: 'tsylvester/agency',
+};
+
+const DOC_FILENAME_BY_SEGMENT: Record<SegmentContent['slug'], Record<string, string>> = {
+  vibecoder: {
+    'Business Case': 'google-gemini-3.1-pro-preview_0_business_case_8d649667.md',
+    'Feature Specifications': 'google-gemini-3.1-pro-preview_0_feature_spec_8d649667.md',
+    'Success Metrics': 'google-gemini-3.1-pro-preview_0_success_metrics_8d649667.md',
+    'Technical Approach': 'google-gemini-3.1-pro-preview_0_technical_approach_8d649667.md',
+    'Business Case Critique': 'google-gemini-3.1-pro-preview_0_business_case_critique_bc374ec1.md',
+    'Dependency Map': 'google-gemini-3.1-pro-preview_0_dependency_map_bc374ec1.md',
+    'Non-Functional Requirements': 'google-gemini-3.1-pro-preview_0_non_functional_requirements_bc374ec1.md',
+    'Risk Register': 'google-gemini-3.1-pro-preview_0_risk_register_bc374ec1.md',
+    'Technical Feasibility': 'google-gemini-3.1-pro-preview_0_technical_feasibility_assessment_bc374ec1.md',
+    'Product Requirements': 'google-gemini-3.1-pro-preview_0_product_requirements_e1e8d587.md',
+    'System Architecture': 'google-gemini-3.1-pro-preview_0_system_architecture_e1e8d587.md',
+    'Tech Stack': 'google-gemini-3.1-pro-preview_0_tech_stack_e1e8d587.md',
+    'Master Plan': 'google-gemini-3.1-pro-preview_0_master_plan_94d0e7cd.md',
+    Milestones: 'google-gemini-3.1-pro-preview_0_milestone_schema_6e7b10ae.md',
+    'Technical Requirements': 'google-gemini-3.1-pro-preview_0_technical_requirements_18d84ec2.md',
+    'Work Plan': 'google-gemini-3.1-pro-preview_0_actionable_checklist_2fa6aef2.md',
+    Recommendations: 'google-gemini-3.1-pro-preview_0_advisor_recommendations_7fd1f626.md',
+    'Updated Master Plan': 'google-gemini-3.1-pro-preview_0_updated_master_plan_9667a5ae.md',
+  },
+  indiehacker: {
+    'Business Case': 'google-gemini-3.1-pro-preview_0_business_case_a6bda673.md',
+    'Feature Specifications': 'google-gemini-3.1-pro-preview_0_feature_spec_a6bda673.md',
+    'Success Metrics': 'google-gemini-3.1-pro-preview_0_success_metrics_a6bda673.md',
+    'Technical Approach': 'google-gemini-3.1-pro-preview_0_technical_approach_a6bda673.md',
+    'Business Case Critique': 'google-gemini-3.1-pro-preview_0_business_case_critique_87cc405c.md',
+    'Dependency Map': 'google-gemini-3.1-pro-preview_0_dependency_map_87cc405c.md',
+    'Non-Functional Requirements': 'google-gemini-3.1-pro-preview_0_non_functional_requirements_87cc405c.md',
+    'Risk Register': 'google-gemini-3.1-pro-preview_0_risk_register_87cc405c.md',
+    'Technical Feasibility': 'google-gemini-3.1-pro-preview_0_technical_feasibility_assessment_87cc405c.md',
+    'Product Requirements': 'google-gemini-3.1-pro-preview_0_product_requirements_d06d1631.md',
+    'System Architecture': 'google-gemini-3.1-pro-preview_0_system_architecture_d06d1631.md',
+    'Tech Stack': 'google-gemini-3.1-pro-preview_0_tech_stack_d06d1631.md',
+    'Master Plan': 'google-gemini-3.1-pro-preview_0_master_plan_b224b5be.md',
+    Milestones: 'google-gemini-3.1-pro-preview_0_milestone_schema_55569f98.md',
+    'Technical Requirements': 'google-gemini-3.1-pro-preview_0_technical_requirements_6025319e.md',
+    'Work Plan': 'google-gemini-3.1-pro-preview_0_actionable_checklist_50a9c9cf.md',
+    Recommendations: 'google-gemini-3.1-pro-preview_0_advisor_recommendations_fe091566.md',
+    'Updated Master Plan': 'google-gemini-3.1-pro-preview_0_updated_master_plan_7a78b6a2.md',
+  },
+  startup: {
+    'Business Case': 'google-gemini-3.1-pro-preview_0_business_case_f111e2dd.md',
+    'Feature Specifications': 'google-gemini-3.1-pro-preview_0_feature_spec_f111e2dd.md',
+    'Success Metrics': 'google-gemini-3.1-pro-preview_0_success_metrics_f111e2dd.md',
+    'Technical Approach': 'google-gemini-3.1-pro-preview_0_technical_approach_f111e2dd.md',
+    'Business Case Critique': 'google-gemini-3.1-pro-preview_0_business_case_critique_d5dc708d.md',
+    'Dependency Map': 'google-gemini-3.1-pro-preview_0_dependency_map_d5dc708d.md',
+    'Non-Functional Requirements': 'google-gemini-3.1-pro-preview_0_non_functional_requirements_d5dc708d.md',
+    'Risk Register': 'google-gemini-3.1-pro-preview_0_risk_register_d5dc708d.md',
+    'Technical Feasibility': 'google-gemini-3.1-pro-preview_0_technical_feasibility_assessment_d5dc708d.md',
+    'Product Requirements': 'google-gemini-3.1-pro-preview_0_product_requirements_c1253617.md',
+    'System Architecture': 'google-gemini-3.1-pro-preview_0_system_architecture_c1253617.md',
+    'Tech Stack': 'google-gemini-3.1-pro-preview_0_tech_stack_c1253617.md',
+    'Master Plan': 'google-gemini-3.1-pro-preview_0_master_plan_64dbf8ac.md',
+    Milestones: 'google-gemini-3.1-pro-preview_0_milestone_schema_44c874ef.md',
+    'Technical Requirements': 'google-gemini-3.1-pro-preview_0_technical_requirements_e77ea168.md',
+    'Work Plan': 'google-gemini-3.1-pro-preview_1_actionable_checklist_03b721f1.md',
+    Recommendations: 'google-gemini-3.1-pro-preview_0_advisor_recommendations_6aa4e507.md',
+    'Updated Master Plan': 'google-gemini-3.1-pro-preview_0_updated_master_plan_b4efb581.md',
+  },
+  agency: {
+    'Business Case': 'google-gemini-3.1-pro-preview_0_business_case_ee5fe066.md',
+    'Feature Specifications': 'google-gemini-3.1-pro-preview_0_feature_spec_ee5fe066.md',
+    'Success Metrics': 'google-gemini-3.1-pro-preview_0_success_metrics_ee5fe066.md',
+    'Technical Approach': 'google-gemini-3.1-pro-preview_0_technical_approach_ee5fe066.md',
+    'Business Case Critique': 'google-gemini-3.1-pro-preview_0_business_case_critique_1c5c3eb4.md',
+    'Dependency Map': 'google-gemini-3.1-pro-preview_0_dependency_map_1c5c3eb4.md',
+    'Non-Functional Requirements': 'google-gemini-3.1-pro-preview_0_non_functional_requirements_1c5c3eb4.md',
+    'Risk Register': 'google-gemini-3.1-pro-preview_0_risk_register_1c5c3eb4.md',
+    'Technical Feasibility': 'google-gemini-3.1-pro-preview_0_technical_feasibility_assessment_1c5c3eb4.md',
+    'Product Requirements': 'google-gemini-3.1-pro-preview_0_product_requirements_efddd975.md',
+    'System Architecture': 'google-gemini-3.1-pro-preview_0_system_architecture_efddd975.md',
+    'Tech Stack': 'google-gemini-3.1-pro-preview_0_tech_stack_efddd975.md',
+    'Master Plan': 'google-gemini-3.1-pro-preview_0_master_plan_847222a7.md',
+    Milestones: 'google-gemini-3.1-pro-preview_0_milestone_schema_ca890d0f.md',
+    'Technical Requirements': 'google-gemini-3.1-pro-preview_0_technical_requirements_74921cb5.md',
+    'Work Plan': 'google-gemini-3.1-pro-preview_0_actionable_checklist_6b5bb2f2.md',
+    Recommendations: 'google-gemini-3.1-pro-preview_0_advisor_recommendations_dbd7e7b5.md',
+    'Updated Master Plan': 'google-gemini-3.1-pro-preview_0_updated_master_plan_1690d2f3.md',
+  },
+};
+
+function getGithubDocUrl(segment: SegmentContent['slug'], title: string): string | null {
+  const repo = GITHUB_REPO_BY_SEGMENT[segment];
+  const filename = DOC_FILENAME_BY_SEGMENT[segment][title];
+
+  if (!repo || !filename) {
+    return null;
+  }
+
+  return `https://github.com/${repo}/blob/main/${filename}`;
+}
+
 const STAGE_GRADIENTS = [
   'from-blue-600 to-cyan-500',
   'from-red-600 to-rose-500', 
@@ -307,11 +408,26 @@ export function SegmentLandingPage({ content }: SegmentLandingPageProps) {
                   {stage}
                 </h3>
                 <ul className="space-y-2">
-                  {titles.map((title) => (
-                    <li key={title} data-testid="doc-title" className="text-sm text-textSecondary">
-                      {title}
-                    </li>
-                  ))}
+                  {titles.map((title) => {
+                    const url = getGithubDocUrl(content.slug, title);
+
+                    return (
+                      <li key={title} data-testid="doc-title" className="text-sm text-textSecondary">
+                        {url ? (
+                          <a
+                            href={url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="hover:text-primary hover:underline underline-offset-4 transition-colors"
+                          >
+                            {title}
+                          </a>
+                        ) : (
+                          title
+                        )}
+                      </li>
+                    );
+                  })}
                 </ul>
               </motion.div>
             ))}
@@ -442,7 +558,7 @@ export function SegmentLandingPage({ content }: SegmentLandingPageProps) {
               Ready to Build?
             </h2>
             <p className="text-lg text-textSecondary mb-4 max-w-2xl mx-auto">
-              Start free — 1M tokens on signup, 100k tokens free every month. No credit card unless you upgrade.
+              Start free, 1M tokens on signup. No credit card unless you upgrade.
             </p>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mt-8">
               {user ? (

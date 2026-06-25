@@ -16,7 +16,7 @@ import { assertSpyCall, assertSpyCalls, spy, stub, type Spy, type SpyCall } from
 import { assert, assertEquals, assertExists } from "jsr:@std/assert@0.225.3";
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { ConfigAssembler } from "./config_assembler.ts";
-import { type DbAiProvider, type SyncResult } from "./index.ts";
+import { DbAiProvider, SyncResult } from "./sync-ai-models.interface.ts";
 import type { ProviderModelInfo, FinalAppModelConfig } from "../_shared/types.ts";
 import type { Database } from "../types_db.ts";
 import { createMockSupabaseClient } from "../_shared/supabase.mock.ts";
@@ -75,7 +75,7 @@ export async function testSyncContract(
         const mockDeps = createMockSyncDeps({
             getCurrentDbModels: spy(async (_client: SupabaseClient<Database>, _provider: string) => []),
         });
-        const assembleStub = stub(ConfigAssembler.prototype, "assemble", () => Promise.resolve([mockProviderData.newApiModel]));
+        const assembleStub = stub(ConfigAssembler.prototype, "assemble", () => Promise.resolve({ models: [mockProviderData.newApiModel], costProvenance: new Map() }));
 
         try {
             const { client: mockClient, spies } = createMockSupabaseClient(undefined, {
@@ -106,7 +106,7 @@ export async function testSyncContract(
         const mockDeps = createMockSyncDeps({
              getCurrentDbModels: spy(async (_client: SupabaseClient<Database>, _provider: string) => [mockProviderData.dbModel]),
         });
-        const assembleStub = stub(ConfigAssembler.prototype, "assemble", () => Promise.resolve([mockProviderData.apiModels[0]]));
+        const assembleStub = stub(ConfigAssembler.prototype, "assemble", () => Promise.resolve({ models: [mockProviderData.apiModels[0]], costProvenance: new Map() }));
 
         try {
             const { client: mockClient, spies } = createMockSupabaseClient();
@@ -126,7 +126,7 @@ export async function testSyncContract(
              getCurrentDbModels: spy(async (_client: SupabaseClient<Database>, _provider: string) => [mockProviderData.staleDbModel]),
         });
         // Assembler returns an empty list, making the DB model stale.
-        const assembleStub = stub(ConfigAssembler.prototype, "assemble", () => Promise.resolve([]));
+        const assembleStub = stub(ConfigAssembler.prototype, "assemble", () => Promise.resolve({ models: [], costProvenance: new Map() }));
         
         try {
             const { client: mockClient, spies } = createMockSupabaseClient(undefined, {
@@ -148,7 +148,7 @@ export async function testSyncContract(
         const mockDeps = createMockSyncDeps({
             getCurrentDbModels: spy(async (_client: SupabaseClient<Database>, _provider: string) => [mockProviderData.inactiveDbModel]),
         });
-        const assembleStub = stub(ConfigAssembler.prototype, "assemble", () => Promise.resolve([mockProviderData.reactivateApiModel]));
+        const assembleStub = stub(ConfigAssembler.prototype, "assemble", () => Promise.resolve({ models: [mockProviderData.reactivateApiModel], costProvenance: new Map() }));
 
         try {
             const { client: mockClient, spies } = createMockSupabaseClient(undefined, {
@@ -172,7 +172,7 @@ export async function testSyncContract(
         const mockDeps = createMockSyncDeps({
              getCurrentDbModels: spy(async (_client: SupabaseClient<Database>, _provider: string) => [mockProviderData.dbModel]),
         });
-        const assembleStub = stub(ConfigAssembler.prototype, "assemble", () => Promise.resolve([mockProviderData.updatedApiModel]));
+        const assembleStub = stub(ConfigAssembler.prototype, "assemble", () => Promise.resolve({ models: [mockProviderData.updatedApiModel], costProvenance: new Map() }));
         
         try {
             const { client: mockClient, spies } = createMockSupabaseClient(undefined, {
@@ -198,7 +198,7 @@ export async function testSyncContract(
             listProviderModels: spy(async (_apiKey: string) => Promise.reject(apiError)),
         });
         const { client: mockClient } = createMockSupabaseClient();
-        const assembleStub = stub(ConfigAssembler.prototype, "assemble", () => Promise.resolve([]));
+        const assembleStub = stub(ConfigAssembler.prototype, "assemble", () => Promise.resolve({ models: [], costProvenance: new Map() }));
 
         try {
             const result = await syncFunction(mockClient as unknown as SupabaseClient<Database>, MOCK_API_KEY, mockDeps);
@@ -218,7 +218,7 @@ export async function testSyncContract(
             getCurrentDbModels: spy(async (_client: SupabaseClient<Database>, _provider: string) => Promise.reject(dbError)),
         });
         const { client: mockClient } = createMockSupabaseClient();
-        const assembleStub = stub(ConfigAssembler.prototype, "assemble", () => Promise.resolve([]));
+        const assembleStub = stub(ConfigAssembler.prototype, "assemble", () => Promise.resolve({ models: [], costProvenance: new Map() }));
 
         try {
             const result = await syncFunction(mockClient as unknown as SupabaseClient<Database>, MOCK_API_KEY, mockDeps);
@@ -254,7 +254,7 @@ export async function testSyncContract(
         const mockDeps = createMockSyncDeps({
             getCurrentDbModels: spy(async (_client: SupabaseClient<Database>, _provider: string) => []),
         });
-        const assembleStub = stub(ConfigAssembler.prototype, "assemble", () => Promise.resolve([mockProviderData.newApiModel]));
+        const assembleStub = stub(ConfigAssembler.prototype, "assemble", () => Promise.resolve({ models: [mockProviderData.newApiModel], costProvenance: new Map() }));
 
         try {
             const { client: mockClient } = createMockSupabaseClient(undefined, {
@@ -275,7 +275,7 @@ export async function testSyncContract(
         const mockDeps = createMockSyncDeps({
              getCurrentDbModels: spy(async (_client: SupabaseClient<Database>, _provider: string) => [mockProviderData.dbModel]),
         });
-        const assembleStub = stub(ConfigAssembler.prototype, "assemble", () => Promise.resolve([mockProviderData.updatedApiModel]));
+        const assembleStub = stub(ConfigAssembler.prototype, "assemble", () => Promise.resolve({ models: [mockProviderData.updatedApiModel], costProvenance: new Map() }));
         
         try {
             const { client: mockClient } = createMockSupabaseClient(undefined, {
@@ -296,7 +296,7 @@ export async function testSyncContract(
         const mockDeps = createMockSyncDeps({
              getCurrentDbModels: spy(async (_client: SupabaseClient<Database>, _provider: string) => [mockProviderData.staleDbModel]),
         });
-        const assembleStub = stub(ConfigAssembler.prototype, "assemble", () => Promise.resolve([]));
+        const assembleStub = stub(ConfigAssembler.prototype, "assemble", () => Promise.resolve({ models: [], costProvenance: new Map() }));
         
         try {
             const { client: mockClient } = createMockSupabaseClient(undefined, {
@@ -312,32 +312,38 @@ export async function testSyncContract(
         }
     });
 
-    // Provider configs must never have zero cost rates
-    await t.step(`[Contract] ${providerName}: rejects models with zero or missing cost rates (RED)`, async () => {
+    // Non billable costs (0 / null / undefined) are not valid pricing — row is still persisted disabled until configured.
+    await t.step(`[Contract] ${providerName}: inserts new model disabled when assembled costs are not billable`, async () => {
         const zeroCostModel = {
             ...mockProviderData.newApiModel,
             config: {
                 ...mockProviderData.newApiModel.config,
-                input_token_cost_rate: 0,
-                output_token_cost_rate: 0,
+                input_token_cost_rate: null,
+                output_token_cost_rate: null,
             },
         };
         const mockDeps = createMockSyncDeps({
             getCurrentDbModels: spy(async (_client: SupabaseClient<Database>, _provider: string) => []),
         });
-        const assembleStub = stub(ConfigAssembler.prototype, "assemble", () => Promise.resolve([zeroCostModel]));
+        const assembleStub = stub(ConfigAssembler.prototype, "assemble", () => Promise.resolve({ models: [zeroCostModel], costProvenance: new Map() }));
 
         try {
             const { client: mockClient, spies } = createMockSupabaseClient(undefined, {
-                genericMockResults: { ai_providers: { insert: { data: [], error: null } } }
+                genericMockResults: { ai_providers: { insert: { data: [], error: null, count: 1 } } }
             });
 
             const result = await syncFunction(mockClient as unknown as SupabaseClient<Database>, MOCK_API_KEY, mockDeps);
 
-            // Expect an error to be reported by the sync when encountering zero-cost rates
-            assertExists(result.error, 'Sync should report an error for zero-cost provider rates');
-            // Ensure no DB writes occurred
-            assertEquals(spies.fromSpy.calls.length, 0, 'No DB operations should occur for zero-cost models');
+            assertEquals(result.error, undefined);
+            assertEquals(result.inserted, 1);
+
+            const insertSpy = spies.fromSpy.calls[0]?.returned.insert;
+            assertExists(insertSpy);
+            assertSpyCalls(insertSpy, 1);
+            const insertArgs = insertSpy.calls[0].args[0];
+            assertEquals(insertArgs.length, 1);
+            assertEquals(insertArgs[0].api_identifier, mockProviderData.newApiModel.api_identifier);
+            assertEquals(insertArgs[0].is_enabled, false);
         } finally {
             assembleStub.restore();
         }

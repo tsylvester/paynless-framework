@@ -12,6 +12,7 @@
 import { Client } from "https://deno.land/x/postgres@v0.19.2/mod.ts";
 import { resolve } from "https://deno.land/std@0.224.0/path/mod.ts";
 import { AiModelExtendedConfigSchema } from "../functions/chat/zodSchema.ts";
+import { PROVIDERS_TO_SYNC } from "../functions/sync-ai-models/sync-ai-models.interface.ts";
 
 // --- Configuration ---
 const DB_URL = "postgresql://postgres:postgres@127.0.0.1:54322/postgres";
@@ -39,7 +40,8 @@ export async function updateSeedFile() {
     // 1. Connect and fetch data, sorted for consistent output
     await client.connect();
     console.log("✅ Successfully connected to the local database.");
-    const queryText = `SELECT * FROM ${quoteIdent(SCHEMA_NAME)}.${quoteIdent(TABLE_NAME)} ORDER BY provider, api_identifier`;
+    const providerNames = PROVIDERS_TO_SYNC.map(p => quoteLiteral(p.providerName)).join(', ');
+    const queryText = `SELECT * FROM ${quoteIdent(SCHEMA_NAME)}.${quoteIdent(TABLE_NAME)} WHERE provider IN (${providerNames}) ORDER BY provider, api_identifier`;
     const result = await client.queryObject(queryText);
     const rows = result.rows;
     console.log(`Found ${rows.length} rows to seed.`);

@@ -250,11 +250,12 @@ describe('createJobContext Factory and Slicers', () => {
       assertEquals(typeof result.calculateAffordability, 'function');
     });
 
-    it('calculateAffordability delegates to calculateAffordabilityFn with logger, countTokens, and compressPrompt bound from root and compressPromptFn', async () => {
+    it('calculateAffordability delegates to calculateAffordabilityFn with logger, countTokens, compressPrompt, and getMaxOutputTokens bound from root and compressPromptFn', async () => {
       const root = buildIJobContext();
       const boundEnqueueModelCall = createMockBoundEnqueueModelCall();
       const { compressPromptFn, recordedCompressDeps } = createCompressPromptFn();
-      const { calculateAffordabilityFn, recordedAffordabilityDeps } = createCalculateAffordabilityFn();
+      const { calculateAffordabilityFn, recordedAffordabilityDeps, recordedAffordabilityParams } =
+        createCalculateAffordabilityFn();
       const result = createPrepareModelJobContext(
         root,
         boundEnqueueModelCall,
@@ -263,14 +264,17 @@ describe('createJobContext Factory and Slicers', () => {
       );
       const { client } = createMockSupabaseClient();
       const dbClient: SupabaseClient<Database> = DbClient(client);
-      const params = buildCalculateAffordabilityParams(dbClient);
+      const params = buildCalculateAffordabilityParams(dbClient, { userConfig: { tier_output_cap_tokens: null } });
       const payload = buildCalculateAffordabilityPayload();
 
       await result.calculateAffordability(params, payload);
 
+      assertEquals(recordedAffordabilityParams.length, 1);
+      assertEquals(recordedAffordabilityParams[0].userConfig.tier_output_cap_tokens, null);
       assertEquals(recordedAffordabilityDeps.length, 1);
       assertEquals(recordedAffordabilityDeps[0].logger, root.logger);
       assertEquals(recordedAffordabilityDeps[0].countTokens, root.countTokens);
+      assertEquals(recordedAffordabilityDeps[0].getMaxOutputTokens, root.getMaxOutputTokens);
       await recordedAffordabilityDeps[0].compressPrompt(
         buildCompressPromptParams(dbClient),
         buildCompressPromptPayload(),
@@ -348,6 +352,15 @@ describe('createJobContext Factory and Slicers', () => {
       const result = createJobContext(params);
 
       assertEquals(typeof result.computeJobSig, 'function');
+    });
+  });
+
+  describe('CalculateAffordabilityParams for prepare-model slice', () => {
+    it('buildCalculateAffordabilityParams construction includes tierOutputCapTokens null', () => {
+      const { client } = createMockSupabaseClient();
+      const dbClient: SupabaseClient<Database> = DbClient(client);
+      const params = buildCalculateAffordabilityParams(dbClient, { userConfig: { tier_output_cap_tokens: null } });
+      assertEquals(params.userConfig.tier_output_cap_tokens, null);
     });
   });
 });

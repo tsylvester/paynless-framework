@@ -5,6 +5,7 @@ import { stub, type Stub, spy } from "https://deno.land/std@0.224.0/testing/mock
 import type { SupabaseClient } from "npm:@supabase/supabase-js@^2.43.4";
 import type { Database, TablesInsert, Tables } from "../types_db.ts";
 import { cloneProject } from "./cloneProject.ts";
+import { mockCloneProject } from "./cloneProject.mock.ts";
 import { FileType } from "../_shared/types/file_manager.types.ts";
 import type { FileRecord, UploadContext, PathContext, FileManagerResponse } from "../_shared/types/file_manager.types.ts";
 import { createMockSupabaseClient, type MockSupabaseClientSetup, type MockQueryBuilderState } from "../_shared/supabase.mock.ts";
@@ -25,6 +26,7 @@ import {
 
 describe("cloneProject", () => {
     let mockSupabaseSetup: MockSupabaseClientSetup;
+    let mockUserClientSetup: MockSupabaseClientSetup;
     let mockFileManager: MockFileManagerService;
     let cryptoMock: Stub<Crypto>;
 
@@ -38,6 +40,7 @@ describe("cloneProject", () => {
 
     beforeEach(() => {
         mockSupabaseSetup = createMockSupabaseClient(cloningUserId, {});
+        mockUserClientSetup = createMockSupabaseClient(cloningUserId, {});
         mockFileManager = createMockFileManagerService();
 
         uuidCallCount = 0;
@@ -186,8 +189,15 @@ describe("cloneProject", () => {
             }
         }).client;
 
-        const typedClientForL149: SupabaseClient<Database> = mockSupabaseSetup.client as unknown as SupabaseClient<Database>;
-        const result = await cloneProject(typedClientForL149, mockFileManager, originalProjectId, "New Cloned Project Alpha", cloningUserId);
+        const invoke = mockCloneProject({
+            supabaseClient: mockSupabaseSetup.client as unknown as SupabaseClient<Database>,
+            userClient: mockUserClientSetup.client as unknown as SupabaseClient<Database>,
+            fileManager: mockFileManager,
+            originalProjectId,
+            newProjectName: "New Cloned Project Alpha",
+            cloningUserId,
+        });
+        const result = await cloneProject(invoke.supabaseClient, invoke.userClient, invoke.fileManager, invoke.originalProjectId, invoke.newProjectName, invoke.cloningUserId);
 
         assert(result.data, "Expected data to be returned for a successful clone.");
         assertEquals(result.error, null);
@@ -290,8 +300,15 @@ describe("cloneProject", () => {
             }
         }).client;
 
-        const typedClientForL229: SupabaseClient<Database> = mockSupabaseSetup.client as unknown as SupabaseClient<Database>;
-        const result = await cloneProject(typedClientForL229, mockFileManager, originalProjectId, "Cloned Resource Project", cloningUserId);
+        const invoke = mockCloneProject({
+            supabaseClient: mockSupabaseSetup.client as unknown as SupabaseClient<Database>,
+            userClient: mockUserClientSetup.client as unknown as SupabaseClient<Database>,
+            fileManager: mockFileManager,
+            originalProjectId,
+            newProjectName: "Cloned Resource Project",
+            cloningUserId,
+        });
+        const result = await cloneProject(invoke.supabaseClient, invoke.userClient, invoke.fileManager, invoke.originalProjectId, invoke.newProjectName, invoke.cloningUserId);
 
         assert(result.data, "Expected data for successful resource clone.");
         assertEquals(result.error, null);
@@ -357,8 +374,15 @@ describe("cloneProject", () => {
             }
         }).client;
 
-        const typedClientForL264: SupabaseClient<Database> = mockSupabaseSetup.client as unknown as SupabaseClient<Database>;
-        const result = await cloneProject(typedClientForL264, mockFileManager, "non-existent-id", "Clone Test", cloningUserId);
+        const invoke = mockCloneProject({
+            supabaseClient: mockSupabaseSetup.client as unknown as SupabaseClient<Database>,
+            userClient: mockUserClientSetup.client as unknown as SupabaseClient<Database>,
+            fileManager: mockFileManager,
+            originalProjectId: "non-existent-id",
+            newProjectName: "Clone Test",
+            cloningUserId,
+        });
+        const result = await cloneProject(invoke.supabaseClient, invoke.userClient, invoke.fileManager, invoke.originalProjectId, invoke.newProjectName, invoke.cloningUserId);
         assert(result.error, "Error should be returned");
         assertEquals(result.error?.message, "Original project not found or database error.");
         assertEquals(result.data, null);
@@ -381,8 +405,15 @@ describe("cloneProject", () => {
             }
         }).client;
 
-        const typedClientForL287: SupabaseClient<Database> = mockSupabaseSetup.client as unknown as SupabaseClient<Database>;
-        const result = await cloneProject(typedClientForL287, mockFileManager, originalProjectId, "Clone Test", cloningUserId);
+        const invoke = mockCloneProject({
+            supabaseClient: mockSupabaseSetup.client as unknown as SupabaseClient<Database>,
+            userClient: mockUserClientSetup.client as unknown as SupabaseClient<Database>,
+            fileManager: mockFileManager,
+            originalProjectId,
+            newProjectName: "Clone Test",
+            cloningUserId,
+        });
+        const result = await cloneProject(invoke.supabaseClient, invoke.userClient, invoke.fileManager, invoke.originalProjectId, invoke.newProjectName, invoke.cloningUserId);
         assert(result.error, "Error should be returned for authorization failure.");
         assertEquals(result.error?.message, "Original project not found or not accessible.");
         assertEquals(result.data, null);
@@ -452,7 +483,7 @@ describe("cloneProject", () => {
         let capturedNewProjectIdLocal = "";
         let capturedNewSessionId1Local = "";
 
-        mockSupabaseSetup.client = createMockSupabaseClient(cloningUserId, {
+        mockSupabaseSetup = createMockSupabaseClient(cloningUserId, {
             genericMockResults: {
                 dialectic_projects: {
                     select: (state: MockQueryBuilderState) => {
@@ -519,10 +550,34 @@ describe("cloneProject", () => {
                     return Promise.resolve({ data: null, error: new Error(`Mock download error: path ${path} not found`) });
                 }
             }
-        }).client;
+        });
+        mockUserClientSetup = createMockSupabaseClient(cloningUserId, {
+            rpcResults: {
+                validate_model_tier_access: {
+                    data: [{
+                        valid: true,
+                        user_tier_level: 1,
+                        max_models_per_project: 3,
+                        over_model_limit: false,
+                        disallowed_model_ids: [],
+                    }],
+                    error: null,
+                },
+            },
+        });
 
-        const typedClient = mockSupabaseSetup.client as unknown as SupabaseClient<Database>;       
-        const result = await cloneProject(typedClient, mockFileManager, originalProjectId, "Cloned Complex Project", cloningUserId);
+        const invokeComplex = mockCloneProject({
+            supabaseClient: mockSupabaseSetup.client as unknown as SupabaseClient<Database>,
+            userClient: mockUserClientSetup.client as unknown as SupabaseClient<Database>,
+            fileManager: mockFileManager,
+            originalProjectId,
+            newProjectName: "Cloned Complex Project",
+            cloningUserId,
+        });
+        const result = await cloneProject(invokeComplex.supabaseClient, invokeComplex.userClient, invokeComplex.fileManager, invokeComplex.originalProjectId, invokeComplex.newProjectName, invokeComplex.cloningUserId);
+
+        assertEquals(mockUserClientSetup.spies.rpcSpy.calls.filter((c) => c.args[0] === "validate_model_tier_access").length, 1);
+        assertEquals(mockSupabaseSetup.spies.rpcSpy.calls.filter((c) => c.args[0] === "validate_model_tier_access").length, 0);
 
         assert(result.data, "Expected data for successful complex clone.");
         assertEquals(result.error, null);
@@ -740,7 +795,7 @@ describe("cloneProject", () => {
             }
         );
 
-        mockSupabaseSetup.client = createMockSupabaseClient(cloningUserId, {
+        mockSupabaseSetup = createMockSupabaseClient(cloningUserId, {
             genericMockResults: {
                 dialectic_projects: {
                     select: (state: MockQueryBuilderState) => {
@@ -807,10 +862,34 @@ describe("cloneProject", () => {
                     return Promise.resolve({ data: null, error: new Error(`Mock download error: path ${path} not found`) });
                 }
             }
-        }).client;
+        });
+        mockUserClientSetup = createMockSupabaseClient(cloningUserId, {
+            rpcResults: {
+                validate_model_tier_access: {
+                    data: [{
+                        valid: true,
+                        user_tier_level: 1,
+                        max_models_per_project: 3,
+                        over_model_limit: false,
+                        disallowed_model_ids: [],
+                    }],
+                    error: null,
+                },
+            },
+        });
 
-        const typedClient = mockSupabaseSetup.client as unknown as SupabaseClient<Database>;
-        await cloneProject(typedClient, mockFileManager, originalProjectId, "Deep Clone Project - Copy", cloningUserId);
+        const invokeDeep = mockCloneProject({
+            supabaseClient: mockSupabaseSetup.client as unknown as SupabaseClient<Database>,
+            userClient: mockUserClientSetup.client as unknown as SupabaseClient<Database>,
+            fileManager: mockFileManager,
+            originalProjectId,
+            newProjectName: "Deep Clone Project - Copy",
+            cloningUserId,
+        });
+        await cloneProject(invokeDeep.supabaseClient, invokeDeep.userClient, invokeDeep.fileManager, invokeDeep.originalProjectId, invokeDeep.newProjectName, invokeDeep.cloningUserId);
+
+        assertEquals(mockUserClientSetup.spies.rpcSpy.calls.filter((c) => c.args[0] === "validate_model_tier_access").length, 1);
+        assertEquals(mockSupabaseSetup.spies.rpcSpy.calls.filter((c) => c.args[0] === "validate_model_tier_access").length, 0);
 
         // --- PROOF #1: UNIFIED FILE HANDLING ---
         const fmCalls = mockFileManager.uploadAndRegisterFile.calls;
@@ -849,6 +928,646 @@ describe("cloneProject", () => {
 
         assert(expectedNewSourceId, "Could not find the new, cloned ID for the original source contribution in the ID map.");
         assertEquals(clonedMemory.source_contribution_id, expectedNewSourceId, "Memory's source_contribution_id was NOT remapped to the new cloned contribution's ID");
+    });
+
+    it("should preserve selected_model_ids when all original models are within the user's tier", async () => {
+        const originalProjectData: Tables<'dialectic_projects'> = {
+            id: originalProjectId,
+            user_id: cloningUserId,
+            project_name: "Tier Safe Clone",
+            initial_user_prompt: "Clone me safely",
+            status: "active",
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            process_template_id: "proc-tier-safe",
+            selected_domain_id: "domain-tier-safe",
+            initial_prompt_resource_id: null,
+            repo_url: null,
+            selected_domain_overlay_id: null,
+            user_domain_overlay_values: null,
+            idempotency_key: null,
+        };
+        const originalSessionData: Tables<'dialectic_sessions'> = {
+            id: "orig-session-tier-safe",
+            project_id: originalProjectId,
+            session_description: "Tier safe session",
+            iteration_count: 1,
+            selected_model_ids: ["model-allowed-1", "model-allowed-2"],
+            user_input_reference_url: null,
+            current_stage_id: "stage-tier-safe",
+            status: "active",
+            associated_chat_id: null,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            idempotency_key: null,
+            viewing_stage_id: null,
+        };
+        const insertedSelections: Array<string[] | null | undefined> = [];
+        let tierSafeProjectId = "";
+
+        mockSupabaseSetup = createMockSupabaseClient(cloningUserId, {
+            genericMockResults: {
+                dialectic_projects: {
+                    select: (state: MockQueryBuilderState) => {
+                        if (state.filters.some((filter) => filter.column === "id" && filter.value === originalProjectId)) {
+                            return Promise.resolve({ data: [originalProjectData], error: null, count: 1, status: 200, statusText: "OK" });
+                        }
+                        if (state.filters.some((filter) => filter.column === "id" && filter.value === tierSafeProjectId)) {
+                            return Promise.resolve({ data: [{ ...originalProjectData, id: tierSafeProjectId }], error: null, count: 1, status: 200, statusText: "OK" });
+                        }
+                        return Promise.resolve({ data: [], error: null, count: 0, status: 200, statusText: "OK" });
+                    },
+                    insert: (state: MockQueryBuilderState) => {
+                        const insertPayloadRaw = state.insertData;
+                        const insertPayload = isArrayWithOptionalId(insertPayloadRaw)
+                            ? insertPayloadRaw[0]
+                            : (isObjectWithOptionalId(insertPayloadRaw) ? insertPayloadRaw : {});
+                        tierSafeProjectId = insertPayload.id ?? "";
+                        return Promise.resolve({ data: [{ ...originalProjectData, ...insertPayload }], error: null, count: 1, status: 201, statusText: "Created" });
+                    },
+                },
+                dialectic_sessions: {
+                    select: (state: MockQueryBuilderState) => {
+                        if (state.filters.some((filter) => filter.column === "project_id" && filter.value === originalProjectId)) {
+                            return Promise.resolve({ data: [originalSessionData], error: null, count: 1, status: 200, statusText: "OK" });
+                        }
+                        return Promise.resolve({ data: [], error: null, count: 0, status: 200, statusText: "OK" });
+                    },
+                    insert: (state: MockQueryBuilderState) => {
+                        const insertData = state.insertData;
+                        if (Array.isArray(insertData)) {
+                            for (const entry of insertData) {
+                                if (entry && typeof entry === "object" && "selected_model_ids" in entry) {
+                                    const selectedModelIds = entry.selected_model_ids;
+                                    if (selectedModelIds === null || selectedModelIds === undefined || Array.isArray(selectedModelIds)) {
+                                        insertedSelections.push(selectedModelIds);
+                                    }
+                                }
+                            }
+                        } else if (insertData && typeof insertData === "object" && "selected_model_ids" in insertData) {
+                            const selectedModelIds = insertData.selected_model_ids;
+                            if (selectedModelIds === null || selectedModelIds === undefined || Array.isArray(selectedModelIds)) {
+                                insertedSelections.push(selectedModelIds);
+                            }
+                        }
+                        return Promise.resolve({ data: [{ ...originalSessionData, id: capturedNewSessionId1, project_id: tierSafeProjectId }], error: null, count: 1, status: 201, statusText: "Created" });
+                    },
+                },
+                dialectic_project_resources: {
+                    select: () => Promise.resolve({ data: [], error: null, count: 0, status: 200, statusText: "OK" }),
+                },
+                dialectic_contributions: {
+                    select: () => Promise.resolve({ data: [], error: null, count: 0, status: 200, statusText: "OK" }),
+                },
+                dialectic_feedback: {
+                    select: () => Promise.resolve({ data: [], error: null, count: 0, status: 200, statusText: "OK" }),
+                },
+                dialectic_memory: {
+                    select: () => Promise.resolve({ data: [], error: null, count: 0, status: 200, statusText: "OK" }),
+                },
+            },
+        });
+        mockUserClientSetup = createMockSupabaseClient(cloningUserId, {
+            rpcResults: {
+                validate_model_tier_access: {
+                    data: [{
+                        valid: true,
+                        user_tier_level: 1,
+                        max_models_per_project: 3,
+                        over_model_limit: false,
+                        disallowed_model_ids: [],
+                    }],
+                    error: null,
+                },
+            },
+        });
+
+        const invokeTierSafe = mockCloneProject({
+            supabaseClient: mockSupabaseSetup.client as unknown as SupabaseClient<Database>,
+            userClient: mockUserClientSetup.client as unknown as SupabaseClient<Database>,
+            fileManager: mockFileManager,
+            originalProjectId,
+            newProjectName: "Tier Safe Clone Copy",
+            cloningUserId,
+        });
+        const result = await cloneProject(invokeTierSafe.supabaseClient, invokeTierSafe.userClient, invokeTierSafe.fileManager, invokeTierSafe.originalProjectId, invokeTierSafe.newProjectName, invokeTierSafe.cloningUserId);
+
+        assert(result.data, "Expected clone to succeed when all selected models are allowed.");
+        assertEquals(result.error, null);
+        assertEquals(insertedSelections, [originalSessionData.selected_model_ids]);
+        assertEquals(mockUserClientSetup.spies.rpcSpy.calls.length, 1);
+        assertEquals(mockUserClientSetup.spies.rpcSpy.calls[0].args[0], "validate_model_tier_access");
+        assertEquals(mockUserClientSetup.spies.rpcSpy.calls[0].args[1], { p_model_ids: originalSessionData.selected_model_ids });
+        assertEquals(mockSupabaseSetup.spies.rpcSpy.calls.filter((c) => c.args[0] === "validate_model_tier_access").length, 0);
+    });
+
+    it("should exclude a model above the user's tier while preserving allowed models", async () => {
+        const originalProjectData: Tables<'dialectic_projects'> = {
+            id: originalProjectId,
+            user_id: cloningUserId,
+            project_name: "Tier Filter Clone",
+            initial_user_prompt: "Filter one model",
+            status: "active",
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            process_template_id: "proc-tier-filter",
+            selected_domain_id: "domain-tier-filter",
+            initial_prompt_resource_id: null,
+            repo_url: null,
+            selected_domain_overlay_id: null,
+            user_domain_overlay_values: null,
+            idempotency_key: null,
+        };
+        const originalSessionData: Tables<'dialectic_sessions'> = {
+            id: "orig-session-tier-filter",
+            project_id: originalProjectId,
+            session_description: "Tier filter session",
+            iteration_count: 1,
+            selected_model_ids: ["model-allowed", "model-premium"],
+            user_input_reference_url: null,
+            current_stage_id: "stage-tier-filter",
+            status: "active",
+            associated_chat_id: null,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            idempotency_key: null,
+            viewing_stage_id: null,
+        };
+        const insertedSelections: Array<string[] | null | undefined> = [];
+        let tierFilterProjectId = "";
+
+        mockSupabaseSetup = createMockSupabaseClient(cloningUserId, {
+            genericMockResults: {
+                dialectic_projects: {
+                    select: (state: MockQueryBuilderState) => {
+                        if (state.filters.some((filter) => filter.column === "id" && filter.value === originalProjectId)) {
+                            return Promise.resolve({ data: [originalProjectData], error: null, count: 1, status: 200, statusText: "OK" });
+                        }
+                        if (state.filters.some((filter) => filter.column === "id" && filter.value === tierFilterProjectId)) {
+                            return Promise.resolve({ data: [{ ...originalProjectData, id: tierFilterProjectId }], error: null, count: 1, status: 200, statusText: "OK" });
+                        }
+                        return Promise.resolve({ data: [], error: null, count: 0, status: 200, statusText: "OK" });
+                    },
+                    insert: (state: MockQueryBuilderState) => {
+                        const insertPayloadRaw = state.insertData;
+                        const insertPayload = isArrayWithOptionalId(insertPayloadRaw)
+                            ? insertPayloadRaw[0]
+                            : (isObjectWithOptionalId(insertPayloadRaw) ? insertPayloadRaw : {});
+                        tierFilterProjectId = insertPayload.id ?? "";
+                        return Promise.resolve({ data: [{ ...originalProjectData, ...insertPayload }], error: null, count: 1, status: 201, statusText: "Created" });
+                    },
+                },
+                dialectic_sessions: {
+                    select: (state: MockQueryBuilderState) => {
+                        if (state.filters.some((filter) => filter.column === "project_id" && filter.value === originalProjectId)) {
+                            return Promise.resolve({ data: [originalSessionData], error: null, count: 1, status: 200, statusText: "OK" });
+                        }
+                        return Promise.resolve({ data: [], error: null, count: 0, status: 200, statusText: "OK" });
+                    },
+                    insert: (state: MockQueryBuilderState) => {
+                        const insertData = state.insertData;
+                        if (Array.isArray(insertData)) {
+                            for (const entry of insertData) {
+                                if (entry && typeof entry === "object" && "selected_model_ids" in entry) {
+                                    const selectedModelIds = entry.selected_model_ids;
+                                    if (selectedModelIds === null || selectedModelIds === undefined || Array.isArray(selectedModelIds)) {
+                                        insertedSelections.push(selectedModelIds);
+                                    }
+                                }
+                            }
+                        } else if (insertData && typeof insertData === "object" && "selected_model_ids" in insertData) {
+                            const selectedModelIds = insertData.selected_model_ids;
+                            if (selectedModelIds === null || selectedModelIds === undefined || Array.isArray(selectedModelIds)) {
+                                insertedSelections.push(selectedModelIds);
+                            }
+                        }
+                        return Promise.resolve({ data: [{ ...originalSessionData, id: capturedNewSessionId1, project_id: tierFilterProjectId }], error: null, count: 1, status: 201, statusText: "Created" });
+                    },
+                },
+                dialectic_project_resources: {
+                    select: () => Promise.resolve({ data: [], error: null, count: 0, status: 200, statusText: "OK" }),
+                },
+                dialectic_contributions: {
+                    select: () => Promise.resolve({ data: [], error: null, count: 0, status: 200, statusText: "OK" }),
+                },
+                dialectic_feedback: {
+                    select: () => Promise.resolve({ data: [], error: null, count: 0, status: 200, statusText: "OK" }),
+                },
+                dialectic_memory: {
+                    select: () => Promise.resolve({ data: [], error: null, count: 0, status: 200, statusText: "OK" }),
+                },
+            },
+        });
+        mockUserClientSetup = createMockSupabaseClient(cloningUserId, {
+            rpcResults: {
+                validate_model_tier_access: {
+                    data: [{
+                        valid: false,
+                        user_tier_level: 0,
+                        max_models_per_project: 3,
+                        over_model_limit: false,
+                        disallowed_model_ids: ["model-premium"],
+                    }],
+                    error: null,
+                },
+            },
+        });
+
+        const invokeTierFilter = mockCloneProject({
+            supabaseClient: mockSupabaseSetup.client as unknown as SupabaseClient<Database>,
+            userClient: mockUserClientSetup.client as unknown as SupabaseClient<Database>,
+            fileManager: mockFileManager,
+            originalProjectId,
+            newProjectName: "Tier Filter Clone Copy",
+            cloningUserId,
+        });
+        const result = await cloneProject(invokeTierFilter.supabaseClient, invokeTierFilter.userClient, invokeTierFilter.fileManager, invokeTierFilter.originalProjectId, invokeTierFilter.newProjectName, invokeTierFilter.cloningUserId);
+
+        assert(result.data, "Expected clone to succeed even when one model is filtered out.");
+        assertEquals(result.error, null);
+        assertEquals(insertedSelections, [["model-allowed"]]);
+        assertEquals(mockUserClientSetup.spies.rpcSpy.calls.length, 1);
+        assertEquals(mockUserClientSetup.spies.rpcSpy.calls[0].args[0], "validate_model_tier_access");
+        assertEquals(mockUserClientSetup.spies.rpcSpy.calls[0].args[1], { p_model_ids: originalSessionData.selected_model_ids });
+        assertEquals(mockSupabaseSetup.spies.rpcSpy.calls.filter((c) => c.args[0] === "validate_model_tier_access").length, 0);
+    });
+
+    it("should clone the session with an empty selected_model_ids array when all original models are above the user's tier", async () => {
+        const originalProjectData: Tables<'dialectic_projects'> = {
+            id: originalProjectId,
+            user_id: cloningUserId,
+            project_name: "Tier Empty Clone",
+            initial_user_prompt: "Filter all models",
+            status: "active",
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            process_template_id: "proc-tier-empty",
+            selected_domain_id: "domain-tier-empty",
+            initial_prompt_resource_id: null,
+            repo_url: null,
+            selected_domain_overlay_id: null,
+            user_domain_overlay_values: null,
+            idempotency_key: null,
+        };
+        const originalSessionData: Tables<'dialectic_sessions'> = {
+            id: "orig-session-tier-empty",
+            project_id: originalProjectId,
+            session_description: "Tier empty session",
+            iteration_count: 1,
+            selected_model_ids: ["model-premium-a", "model-premium-b"],
+            user_input_reference_url: null,
+            current_stage_id: "stage-tier-empty",
+            status: "active",
+            associated_chat_id: null,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            idempotency_key: null,
+            viewing_stage_id: null,
+        };
+        const insertedSelections: Array<string[] | null | undefined> = [];
+        let tierEmptyProjectId = "";
+
+        mockSupabaseSetup = createMockSupabaseClient(cloningUserId, {
+            genericMockResults: {
+                dialectic_projects: {
+                    select: (state: MockQueryBuilderState) => {
+                        if (state.filters.some((filter) => filter.column === "id" && filter.value === originalProjectId)) {
+                            return Promise.resolve({ data: [originalProjectData], error: null, count: 1, status: 200, statusText: "OK" });
+                        }
+                        if (state.filters.some((filter) => filter.column === "id" && filter.value === tierEmptyProjectId)) {
+                            return Promise.resolve({ data: [{ ...originalProjectData, id: tierEmptyProjectId }], error: null, count: 1, status: 200, statusText: "OK" });
+                        }
+                        return Promise.resolve({ data: [], error: null, count: 0, status: 200, statusText: "OK" });
+                    },
+                    insert: (state: MockQueryBuilderState) => {
+                        const insertPayloadRaw = state.insertData;
+                        const insertPayload = isArrayWithOptionalId(insertPayloadRaw)
+                            ? insertPayloadRaw[0]
+                            : (isObjectWithOptionalId(insertPayloadRaw) ? insertPayloadRaw : {});
+                        tierEmptyProjectId = insertPayload.id ?? "";
+                        return Promise.resolve({ data: [{ ...originalProjectData, ...insertPayload }], error: null, count: 1, status: 201, statusText: "Created" });
+                    },
+                },
+                dialectic_sessions: {
+                    select: (state: MockQueryBuilderState) => {
+                        if (state.filters.some((filter) => filter.column === "project_id" && filter.value === originalProjectId)) {
+                            return Promise.resolve({ data: [originalSessionData], error: null, count: 1, status: 200, statusText: "OK" });
+                        }
+                        return Promise.resolve({ data: [], error: null, count: 0, status: 200, statusText: "OK" });
+                    },
+                    insert: (state: MockQueryBuilderState) => {
+                        const insertData = state.insertData;
+                        if (Array.isArray(insertData)) {
+                            for (const entry of insertData) {
+                                if (entry && typeof entry === "object" && "selected_model_ids" in entry) {
+                                    const selectedModelIds = entry.selected_model_ids;
+                                    if (selectedModelIds === null || selectedModelIds === undefined || Array.isArray(selectedModelIds)) {
+                                        insertedSelections.push(selectedModelIds);
+                                    }
+                                }
+                            }
+                        } else if (insertData && typeof insertData === "object" && "selected_model_ids" in insertData) {
+                            const selectedModelIds = insertData.selected_model_ids;
+                            if (selectedModelIds === null || selectedModelIds === undefined || Array.isArray(selectedModelIds)) {
+                                insertedSelections.push(selectedModelIds);
+                            }
+                        }
+                        return Promise.resolve({ data: [{ ...originalSessionData, id: capturedNewSessionId1, project_id: tierEmptyProjectId }], error: null, count: 1, status: 201, statusText: "Created" });
+                    },
+                },
+                dialectic_project_resources: {
+                    select: () => Promise.resolve({ data: [], error: null, count: 0, status: 200, statusText: "OK" }),
+                },
+                dialectic_contributions: {
+                    select: () => Promise.resolve({ data: [], error: null, count: 0, status: 200, statusText: "OK" }),
+                },
+                dialectic_feedback: {
+                    select: () => Promise.resolve({ data: [], error: null, count: 0, status: 200, statusText: "OK" }),
+                },
+                dialectic_memory: {
+                    select: () => Promise.resolve({ data: [], error: null, count: 0, status: 200, statusText: "OK" }),
+                },
+            },
+        });
+        mockUserClientSetup = createMockSupabaseClient(cloningUserId, {
+            rpcResults: {
+                validate_model_tier_access: {
+                    data: [{
+                        valid: false,
+                        user_tier_level: 0,
+                        max_models_per_project: 3,
+                        over_model_limit: false,
+                        disallowed_model_ids: ["model-premium-a", "model-premium-b"],
+                    }],
+                    error: null,
+                },
+            },
+        });
+
+        const invokeTierEmpty = mockCloneProject({
+            supabaseClient: mockSupabaseSetup.client as unknown as SupabaseClient<Database>,
+            userClient: mockUserClientSetup.client as unknown as SupabaseClient<Database>,
+            fileManager: mockFileManager,
+            originalProjectId,
+            newProjectName: "Tier Empty Clone Copy",
+            cloningUserId,
+        });
+        const result = await cloneProject(invokeTierEmpty.supabaseClient, invokeTierEmpty.userClient, invokeTierEmpty.fileManager, invokeTierEmpty.originalProjectId, invokeTierEmpty.newProjectName, invokeTierEmpty.cloningUserId);
+
+        assert(result.data, "Expected clone to succeed even when all models are filtered out.");
+        assertEquals(result.error, null);
+        assertEquals(insertedSelections, [[]]);
+        assertEquals(mockUserClientSetup.spies.rpcSpy.calls.length, 1);
+        assertEquals(mockUserClientSetup.spies.rpcSpy.calls[0].args[0], "validate_model_tier_access");
+        assertEquals(mockUserClientSetup.spies.rpcSpy.calls[0].args[1], { p_model_ids: originalSessionData.selected_model_ids });
+        assertEquals(mockSupabaseSetup.spies.rpcSpy.calls.filter((c) => c.args[0] === "validate_model_tier_access").length, 0);
+    });
+
+    it("should keep the original selected_model_ids and log a warning when model tier validation RPC fails", async () => {
+        const originalProjectData: Tables<'dialectic_projects'> = {
+            id: originalProjectId,
+            user_id: cloningUserId,
+            project_name: "Tier Warning Clone",
+            initial_user_prompt: "Warn and continue",
+            status: "active",
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            process_template_id: "proc-tier-warning",
+            selected_domain_id: "domain-tier-warning",
+            initial_prompt_resource_id: null,
+            repo_url: null,
+            selected_domain_overlay_id: null,
+            user_domain_overlay_values: null,
+            idempotency_key: null,
+        };
+        const originalSessionData: Tables<'dialectic_sessions'> = {
+            id: "orig-session-tier-warning",
+            project_id: originalProjectId,
+            session_description: "Tier warning session",
+            iteration_count: 1,
+            selected_model_ids: ["model-keep-a", "model-keep-b"],
+            user_input_reference_url: null,
+            current_stage_id: "stage-tier-warning",
+            status: "active",
+            associated_chat_id: null,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            idempotency_key: null,
+            viewing_stage_id: null,
+        };
+        const insertedSelections: Array<string[] | null | undefined> = [];
+        let tierWarningProjectId = "";
+        const warnStub = stub(console, "warn");
+
+        try {
+            mockSupabaseSetup = createMockSupabaseClient(cloningUserId, {
+                genericMockResults: {
+                    dialectic_projects: {
+                        select: (state: MockQueryBuilderState) => {
+                            if (state.filters.some((filter) => filter.column === "id" && filter.value === originalProjectId)) {
+                                return Promise.resolve({ data: [originalProjectData], error: null, count: 1, status: 200, statusText: "OK" });
+                            }
+                            if (state.filters.some((filter) => filter.column === "id" && filter.value === tierWarningProjectId)) {
+                                return Promise.resolve({ data: [{ ...originalProjectData, id: tierWarningProjectId }], error: null, count: 1, status: 200, statusText: "OK" });
+                            }
+                            return Promise.resolve({ data: [], error: null, count: 0, status: 200, statusText: "OK" });
+                        },
+                        insert: (state: MockQueryBuilderState) => {
+                            const insertPayloadRaw = state.insertData;
+                            const insertPayload = isArrayWithOptionalId(insertPayloadRaw)
+                                ? insertPayloadRaw[0]
+                                : (isObjectWithOptionalId(insertPayloadRaw) ? insertPayloadRaw : {});
+                            tierWarningProjectId = insertPayload.id ?? "";
+                            return Promise.resolve({ data: [{ ...originalProjectData, ...insertPayload }], error: null, count: 1, status: 201, statusText: "Created" });
+                        },
+                    },
+                    dialectic_sessions: {
+                        select: (state: MockQueryBuilderState) => {
+                            if (state.filters.some((filter) => filter.column === "project_id" && filter.value === originalProjectId)) {
+                                return Promise.resolve({ data: [originalSessionData], error: null, count: 1, status: 200, statusText: "OK" });
+                            }
+                            return Promise.resolve({ data: [], error: null, count: 0, status: 200, statusText: "OK" });
+                        },
+                        insert: (state: MockQueryBuilderState) => {
+                            const insertData = state.insertData;
+                            if (Array.isArray(insertData)) {
+                                for (const entry of insertData) {
+                                    if (entry && typeof entry === "object" && "selected_model_ids" in entry) {
+                                        const selectedModelIds = entry.selected_model_ids;
+                                        if (selectedModelIds === null || selectedModelIds === undefined || Array.isArray(selectedModelIds)) {
+                                            insertedSelections.push(selectedModelIds);
+                                        }
+                                    }
+                                }
+                            } else if (insertData && typeof insertData === "object" && "selected_model_ids" in insertData) {
+                                const selectedModelIds = insertData.selected_model_ids;
+                                if (selectedModelIds === null || selectedModelIds === undefined || Array.isArray(selectedModelIds)) {
+                                    insertedSelections.push(selectedModelIds);
+                                }
+                            }
+                            return Promise.resolve({ data: [{ ...originalSessionData, id: capturedNewSessionId1, project_id: tierWarningProjectId }], error: null, count: 1, status: 201, statusText: "Created" });
+                        },
+                    },
+                    dialectic_project_resources: {
+                        select: () => Promise.resolve({ data: [], error: null, count: 0, status: 200, statusText: "OK" }),
+                    },
+                    dialectic_contributions: {
+                        select: () => Promise.resolve({ data: [], error: null, count: 0, status: 200, statusText: "OK" }),
+                    },
+                    dialectic_feedback: {
+                        select: () => Promise.resolve({ data: [], error: null, count: 0, status: 200, statusText: "OK" }),
+                    },
+                    dialectic_memory: {
+                        select: () => Promise.resolve({ data: [], error: null, count: 0, status: 200, statusText: "OK" }),
+                    },
+                },
+            });
+            mockUserClientSetup = createMockSupabaseClient(cloningUserId, {
+                rpcResults: {
+                    validate_model_tier_access: {
+                        data: null,
+                        error: new Error("Simulated tier validation failure"),
+                    },
+                },
+            });
+
+            const invokeTierWarning = mockCloneProject({
+                supabaseClient: mockSupabaseSetup.client as unknown as SupabaseClient<Database>,
+                userClient: mockUserClientSetup.client as unknown as SupabaseClient<Database>,
+                fileManager: mockFileManager,
+                originalProjectId,
+                newProjectName: "Tier Warning Clone Copy",
+                cloningUserId,
+            });
+            const result = await cloneProject(invokeTierWarning.supabaseClient, invokeTierWarning.userClient, invokeTierWarning.fileManager, invokeTierWarning.originalProjectId, invokeTierWarning.newProjectName, invokeTierWarning.cloningUserId);
+
+            assert(result.data, "Expected clone to succeed when tier validation fails and the original model ids are retained.");
+            assertEquals(result.error, null);
+            assertEquals(insertedSelections, [originalSessionData.selected_model_ids]);
+            assertEquals(mockUserClientSetup.spies.rpcSpy.calls.length, 1);
+            assertEquals(mockUserClientSetup.spies.rpcSpy.calls[0].args[0], "validate_model_tier_access");
+            assertEquals(mockUserClientSetup.spies.rpcSpy.calls[0].args[1], { p_model_ids: originalSessionData.selected_model_ids });
+            assertEquals(mockSupabaseSetup.spies.rpcSpy.calls.filter((c) => c.args[0] === "validate_model_tier_access").length, 0);
+            assertEquals(warnStub.calls.length, 1);
+        } finally {
+            warnStub.restore();
+        }
+    });
+
+    it("should skip tier validation when original selected_model_ids is null and clone null as-is", async () => {
+        const originalProjectData: Tables<'dialectic_projects'> = {
+            id: originalProjectId,
+            user_id: cloningUserId,
+            project_name: "Tier Null Clone",
+            initial_user_prompt: "Clone null model ids",
+            status: "active",
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            process_template_id: "proc-tier-null",
+            selected_domain_id: "domain-tier-null",
+            initial_prompt_resource_id: null,
+            repo_url: null,
+            selected_domain_overlay_id: null,
+            user_domain_overlay_values: null,
+            idempotency_key: null,
+        };
+        const originalSessionData: Tables<'dialectic_sessions'> = {
+            id: "orig-session-tier-null",
+            project_id: originalProjectId,
+            session_description: "Tier null session",
+            iteration_count: 1,
+            selected_model_ids: null,
+            user_input_reference_url: null,
+            current_stage_id: "stage-tier-null",
+            status: "active",
+            associated_chat_id: null,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            idempotency_key: null,
+            viewing_stage_id: null,
+        };
+        const insertedSelections: Array<string[] | null | undefined> = [];
+        let tierNullProjectId = "";
+
+        mockSupabaseSetup = createMockSupabaseClient(cloningUserId, {
+            genericMockResults: {
+                dialectic_projects: {
+                    select: (state: MockQueryBuilderState) => {
+                        if (state.filters.some((filter) => filter.column === "id" && filter.value === originalProjectId)) {
+                            return Promise.resolve({ data: [originalProjectData], error: null, count: 1, status: 200, statusText: "OK" });
+                        }
+                        if (state.filters.some((filter) => filter.column === "id" && filter.value === tierNullProjectId)) {
+                            return Promise.resolve({ data: [{ ...originalProjectData, id: tierNullProjectId }], error: null, count: 1, status: 200, statusText: "OK" });
+                        }
+                        return Promise.resolve({ data: [], error: null, count: 0, status: 200, statusText: "OK" });
+                    },
+                    insert: (state: MockQueryBuilderState) => {
+                        const insertPayloadRaw = state.insertData;
+                        const insertPayload = isArrayWithOptionalId(insertPayloadRaw)
+                            ? insertPayloadRaw[0]
+                            : (isObjectWithOptionalId(insertPayloadRaw) ? insertPayloadRaw : {});
+                        tierNullProjectId = insertPayload.id ?? "";
+                        return Promise.resolve({ data: [{ ...originalProjectData, ...insertPayload }], error: null, count: 1, status: 201, statusText: "Created" });
+                    },
+                },
+                dialectic_sessions: {
+                    select: (state: MockQueryBuilderState) => {
+                        if (state.filters.some((filter) => filter.column === "project_id" && filter.value === originalProjectId)) {
+                            return Promise.resolve({ data: [originalSessionData], error: null, count: 1, status: 200, statusText: "OK" });
+                        }
+                        return Promise.resolve({ data: [], error: null, count: 0, status: 200, statusText: "OK" });
+                    },
+                    insert: (state: MockQueryBuilderState) => {
+                        const insertData = state.insertData;
+                        if (Array.isArray(insertData)) {
+                            for (const entry of insertData) {
+                                if (entry && typeof entry === "object" && "selected_model_ids" in entry) {
+                                    const selectedModelIds = entry.selected_model_ids;
+                                    if (selectedModelIds === null || selectedModelIds === undefined || Array.isArray(selectedModelIds)) {
+                                        insertedSelections.push(selectedModelIds);
+                                    }
+                                }
+                            }
+                        } else if (insertData && typeof insertData === "object" && "selected_model_ids" in insertData) {
+                            const selectedModelIds = insertData.selected_model_ids;
+                            if (selectedModelIds === null || selectedModelIds === undefined || Array.isArray(selectedModelIds)) {
+                                insertedSelections.push(selectedModelIds);
+                            }
+                        }
+                        return Promise.resolve({ data: [{ ...originalSessionData, id: capturedNewSessionId1, project_id: tierNullProjectId }], error: null, count: 1, status: 201, statusText: "Created" });
+                    },
+                },
+                dialectic_project_resources: {
+                    select: () => Promise.resolve({ data: [], error: null, count: 0, status: 200, statusText: "OK" }),
+                },
+                dialectic_contributions: {
+                    select: () => Promise.resolve({ data: [], error: null, count: 0, status: 200, statusText: "OK" }),
+                },
+                dialectic_feedback: {
+                    select: () => Promise.resolve({ data: [], error: null, count: 0, status: 200, statusText: "OK" }),
+                },
+                dialectic_memory: {
+                    select: () => Promise.resolve({ data: [], error: null, count: 0, status: 200, statusText: "OK" }),
+                },
+            },
+        });
+        mockUserClientSetup = createMockSupabaseClient(cloningUserId, {});
+
+        const invokeTierNull = mockCloneProject({
+            supabaseClient: mockSupabaseSetup.client as unknown as SupabaseClient<Database>,
+            userClient: mockUserClientSetup.client as unknown as SupabaseClient<Database>,
+            fileManager: mockFileManager,
+            originalProjectId,
+            newProjectName: "Tier Null Clone Copy",
+            cloningUserId,
+        });
+        const result = await cloneProject(invokeTierNull.supabaseClient, invokeTierNull.userClient, invokeTierNull.fileManager, invokeTierNull.originalProjectId, invokeTierNull.newProjectName, invokeTierNull.cloningUserId);
+
+        assert(result.data, "Expected clone to succeed when selected_model_ids is null.");
+        assertEquals(result.error, null);
+        assertEquals(insertedSelections, [null]);
+        assertEquals(mockSupabaseSetup.spies.rpcSpy.calls.filter((c) => c.args[0] === "validate_model_tier_access").length, 0);
+        assertEquals(mockUserClientSetup.spies.rpcSpy.calls.length, 0);
     });
 
 });

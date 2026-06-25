@@ -370,6 +370,7 @@ Deno.test("Type Guard: isStageProgressEntry", async (t) => {
 		status: "in_progress",
 		modelCount: 3,
 		progress: { completedSteps: 5, totalSteps: 13, failedSteps: 0 },
+		expectedCount: 13,
 		steps: [validStep],
 		documents: [],
 		jobs: [],
@@ -459,6 +460,7 @@ Deno.test("Type Guard: isGetAllStageProgressResponse", async (t) => {
 		status: "completed",
 		modelCount: 3,
 		progress: { completedSteps: 13, totalSteps: 13, failedSteps: 0 },
+		expectedCount: 13,
 		steps: [],
 		documents: [],
 		jobs: [],
@@ -519,5 +521,96 @@ Deno.test("Type Guard: isGetAllStageProgressResponse", async (t) => {
 	await t.step("returns false for old response shape (plain array without dagProgress)", () => {
 		const oldShape: unknown = [validStage];
 		assertEquals(isGetAllStageProgressResponse(oldShape), false);
+	});
+});
+
+Deno.test("Type Guard: isStageProgressEntry expectedCount", async (t) => {
+	const validStep: StepProgressDto = {
+		stepKey: "plan_header",
+		status: "completed",
+	};
+	const validEntry: StageProgressEntry = {
+		stageSlug: "thesis",
+		status: "in_progress",
+		modelCount: 3,
+		progress: { completedSteps: 5, totalSteps: 13, failedSteps: 0 },
+		expectedCount: 13,
+		steps: [validStep],
+		documents: [],
+		jobs: [],
+		edges: [],
+	};
+
+	await t.step("returns true when expectedCount is a valid finite non-negative integer", () => {
+		assertEquals(isStageProgressEntry(validEntry), true);
+	});
+
+	await t.step("returns false when expectedCount is missing", () => {
+		const invalid: Record<string, unknown> = { ...validEntry };
+		delete invalid.expectedCount;
+		assertEquals(isStageProgressEntry(invalid), false);
+	});
+
+	await t.step("returns false when expectedCount is negative", () => {
+		const invalid: StageProgressEntry = { ...validEntry, expectedCount: -1 };
+		assertEquals(isStageProgressEntry(invalid), false);
+	});
+
+	await t.step("returns false when expectedCount is not an integer", () => {
+		const invalid = { ...validEntry, expectedCount: 1.5 };
+		assertEquals(isStageProgressEntry(invalid), false);
+	});
+
+	await t.step("returns false when expectedCount is not a number", () => {
+		const invalid = { ...validEntry, expectedCount: "thirteen" };
+		assertEquals(isStageProgressEntry(invalid), false);
+	});
+});
+
+Deno.test("Type Guard: isGetAllStageProgressResponse expectedCount", async (t) => {
+	const validDag: DagProgressDto = { completedStages: 1, totalStages: 5 };
+	const validStage: StageProgressEntry = {
+		stageSlug: "thesis",
+		status: "completed",
+		modelCount: 3,
+		progress: { completedSteps: 13, totalSteps: 13, failedSteps: 0 },
+		expectedCount: 13,
+		steps: [],
+		documents: [],
+		jobs: [],
+		edges: [],
+	};
+	const validResponse: GetAllStageProgressResponse = {
+		dagProgress: validDag,
+		stages: [validStage],
+	};
+
+	await t.step("returns true when every stage has a valid expectedCount", () => {
+		assertEquals(isGetAllStageProgressResponse(validResponse), true);
+	});
+
+	await t.step("returns false when a stage lacks a valid expectedCount", () => {
+		const invalidStage: Record<string, unknown> = { ...validStage };
+		delete invalidStage.expectedCount;
+		const invalid = { dagProgress: validDag, stages: [invalidStage] };
+		assertEquals(isGetAllStageProgressResponse(invalid), false);
+	});
+
+	await t.step("returns false when a stage has a negative expectedCount", () => {
+		const invalidStage: StageProgressEntry = { ...validStage, expectedCount: -1 };
+		const invalid = { dagProgress: validDag, stages: [invalidStage] };
+		assertEquals(isGetAllStageProgressResponse(invalid), false);
+	});
+
+	await t.step("returns false when a stage has a non-integer expectedCount", () => {
+		const invalidStage = { ...validStage, expectedCount: 2.5 };
+		const invalid = { dagProgress: validDag, stages: [invalidStage] };
+		assertEquals(isGetAllStageProgressResponse(invalid), false);
+	});
+
+	await t.step("returns false when a stage has a non-number expectedCount", () => {
+		const invalidStage = { ...validStage, expectedCount: "bad" };
+		const invalid = { dagProgress: validDag, stages: [invalidStage] };
+		assertEquals(isGetAllStageProgressResponse(invalid), false);
 	});
 });

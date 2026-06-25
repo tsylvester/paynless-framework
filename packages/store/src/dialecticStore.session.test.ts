@@ -14,8 +14,9 @@ import {
 import type { 
   ApiError, 
   ApiResponse, 
+  AiModelExtendedConfig,
   DialecticProject, 
-  AIModelCatalogEntry,
+  AiProvidersRow,
   DialecticSession,
   SelectedModels,
   StartSessionPayload,
@@ -23,8 +24,20 @@ import type {
   DialecticStage,
   AssembledPrompt,
   StartSessionSuccessResponse,
+  UserTier,
 } from '@paynless/types';
 import { api } from '@paynless/api';
+import { useAuthStore } from './authStore';
+import { selectCostCeiling } from './dialecticStore.selectors';
+import { isJson, type ComputeCostCeilingReturn } from '@paynless/utils';
+import {
+    mockAiModelConfig,
+    mockAiProvidersRow,
+    mockDialecticProject,
+    mockDialecticStage,
+    mockDialecticProcessTemplate,
+    mockDialecticStageRecipe,
+} from '../../../apps/web/src/mocks/dialecticStore.mock';
 
 // Mock for @paynless/utils to spy on the logger
 vi.mock('@paynless/utils', async (importOriginal) => {
@@ -69,6 +82,7 @@ describe('useDialecticStore', () => {
     beforeEach(() => {
         resetApiMock(); // Resets all mocks defined in @paynless/api/mocks
         useDialecticStore.getState()._resetForTesting?.();
+        useAuthStore.setState({ isLoading: false, userTier: null, error: null });
         vi.clearAllMocks(); // resetApiMock should handle this for the api calls
     });
     describe('startDialecticSession action', () => {
@@ -264,43 +278,39 @@ describe('useDialecticStore', () => {
 
     describe('fetchAIModelCatalog action', () => {
         it('should fetch and set AI model catalog on success', async () => {
-            const mockCatalog: AIModelCatalogEntry[] = [
+            const mockCatalog: AiProvidersRow[] = [
                 {
                     id: 'model1',
-                    provider_name: 'OpenAI',
-                    model_name: 'GPT-4',
+                    provider: 'OpenAI',
+                    name: 'GPT-4',
                     api_identifier: 'gpt-4',
                     created_at: '2023-01-01T00:00:00.000Z',
                     updated_at: '2023-01-01T00:00:00.000Z',
                     is_active: true,
                     is_default_generation: false,
                     description: null,
-                    strengths: null,
-                    weaknesses: null,
-                    context_window_tokens: null,
-                    input_token_cost_usd_millionths: null,
-                    output_token_cost_usd_millionths: null,
-                    max_output_tokens: null,
+                    is_default_embedding: false,
+                    is_enabled: true,
+                    min_plan_tier_level: 0,
+                    config: null,
                 },
                 {
                     id: 'model2',
-                    provider_name: 'Anthropic',
-                    model_name: 'Claude 3',
+                    provider: 'Anthropic',
+                    name: 'Claude 3',
                     api_identifier: 'claude-3',
                     created_at: '2023-01-01T00:00:00.000Z',
                     updated_at: '2023-01-01T00:00:00.000Z',
                     is_active: true,
                     is_default_generation: false,
                     description: null,
-                    strengths: null,
-                    weaknesses: null,
-                    context_window_tokens: null,
-                    input_token_cost_usd_millionths: null,
-                    output_token_cost_usd_millionths: null,
-                    max_output_tokens: null,
+                    is_default_embedding: false,
+                    is_enabled: true,
+                    min_plan_tier_level: 10,
+                    config: null,
                 },
             ];
-            const mockResponse: ApiResponse<AIModelCatalogEntry[]> = { data: mockCatalog, status: 200 };
+            const mockResponse: ApiResponse<AiProvidersRow[]> = { data: mockCatalog, status: 200 };
             getMockDialecticClient().listModelCatalog.mockResolvedValue(mockResponse);
 
             const { fetchAIModelCatalog } = useDialecticStore.getState();
@@ -315,7 +325,7 @@ describe('useDialecticStore', () => {
 
         it('should set error state if listModelCatalog API returns an error', async () => {
             const mockError: ApiError = { code: 'CATALOG_ERROR', message: 'Failed to fetch model catalog' };
-            const mockResponse: ApiResponse<AIModelCatalogEntry[]> = { error: mockError, status: 500 };
+            const mockResponse: ApiResponse<AiProvidersRow[]> = { error: mockError, status: 500 };
             getMockDialecticClient().listModelCatalog.mockResolvedValue(mockResponse);
 
             const { fetchAIModelCatalog } = useDialecticStore.getState();
@@ -591,6 +601,7 @@ describe('useDialecticStore', () => {
             getMockDialecticClient().updateSessionModels.mockResolvedValue({ error: mockApiError, status: 500 });
             vi.mocked(logger).error.mockClear();
 
+            useDialecticStore.setState({ selectedModels: initialModelsSelected });
             const { setSelectedModels } = useDialecticStore.getState();
             setSelectedModels(newModelsSelected);
 
@@ -604,6 +615,60 @@ describe('useDialecticStore', () => {
                     }
                 );
             });
+            expect(useDialecticStore.getState().selectedModels).toEqual(initialModelsSelected);
+            expect(useDialecticStore.getState().updateSessionModelsError).toEqual(mockApiError);
+        });
+
+        it('setSelectedModels reverts and sets updateSessionModelsError on MODEL_TIER_DISALLOWED', async () => {
+            const mockApiError: ApiError = {
+                code: 'MODEL_TIER_DISALLOWED',
+                message: 'Selected models are not available on your plan',
+            };
+            getMockDialecticClient().updateSessionModels.mockResolvedValue({ error: mockApiError, status: 403 });
+            vi.mocked(logger).error.mockClear();
+
+            useDialecticStore.setState({ selectedModels: initialModelsSelected });
+            const { setSelectedModels } = useDialecticStore.getState();
+            setSelectedModels(newModelsSelected);
+
+            await vi.waitFor(() => {
+                expect(getMockDialecticClient().updateSessionModels).toHaveBeenCalled();
+                expect(vi.mocked(logger).error).toHaveBeenCalledWith(
+                    '[DialecticStore] Post-setSelectedModels: Failed to update session models on backend',
+                    {
+                        sessionId: activeSessionId,
+                        error: mockApiError,
+                    }
+                );
+            });
+            expect(useDialecticStore.getState().selectedModels).toEqual(initialModelsSelected);
+            expect(useDialecticStore.getState().updateSessionModelsError?.code).toBe('MODEL_TIER_DISALLOWED');
+        });
+
+        it('setSelectedModels reverts and sets updateSessionModelsError on MODEL_LIMIT_EXCEEDED', async () => {
+            const mockApiError: ApiError = {
+                code: 'MODEL_LIMIT_EXCEEDED',
+                message: 'Model selection exceeds the limit for your plan',
+            };
+            getMockDialecticClient().updateSessionModels.mockResolvedValue({ error: mockApiError, status: 403 });
+            vi.mocked(logger).error.mockClear();
+
+            useDialecticStore.setState({ selectedModels: initialModelsSelected });
+            const { setSelectedModels } = useDialecticStore.getState();
+            setSelectedModels(newModelsSelected);
+
+            await vi.waitFor(() => {
+                expect(getMockDialecticClient().updateSessionModels).toHaveBeenCalled();
+                expect(vi.mocked(logger).error).toHaveBeenCalledWith(
+                    '[DialecticStore] Post-setSelectedModels: Failed to update session models on backend',
+                    {
+                        sessionId: activeSessionId,
+                        error: mockApiError,
+                    }
+                );
+            });
+            expect(useDialecticStore.getState().selectedModels).toEqual(initialModelsSelected);
+            expect(useDialecticStore.getState().updateSessionModelsError?.code).toBe('MODEL_LIMIT_EXCEEDED');
         });
     });
 
@@ -706,6 +771,8 @@ describe('useDialecticStore', () => {
                     }
                 );
             });
+            expect(useDialecticStore.getState().selectedModels).toEqual(selectedModelsThree);
+            expect(useDialecticStore.getState().updateSessionModelsError).toEqual(mockApiError);
         });
 
         it('should handle setting multiplicity to 0 (removing the model)', async () => {
@@ -738,6 +805,64 @@ describe('useDialecticStore', () => {
                 expect(selected).toBeDefined();
                 expect(selected!.map((m) => m.id)).toEqual([initialOtherModelObj.id]);
             });
+        });
+
+        it('setModelMultiplicity reverts and sets updateSessionModelsError on MODEL_TIER_DISALLOWED', async () => {
+            const mockApiError: ApiError = {
+                code: 'MODEL_TIER_DISALLOWED',
+                message: 'Selected models are not available on your plan',
+            };
+            getMockDialecticClient().updateSessionModels.mockResolvedValue({ error: mockApiError, status: 403 });
+            const count = 2;
+            vi.mocked(logger).error.mockClear();
+
+            useDialecticStore.setState({ selectedModels: selectedModelsThree });
+            const { setModelMultiplicity } = useDialecticStore.getState();
+            setModelMultiplicity(modelToChangeObj, count);
+
+            await vi.waitFor(() => {
+                expect(getMockDialecticClient().updateSessionModels).toHaveBeenCalled();
+                expect(vi.mocked(logger).error).toHaveBeenCalledWith(
+                    '[DialecticStore] Post-setModelMultiplicity: Failed to update session models on backend',
+                    {
+                        sessionId: activeSessionId,
+                        modelId: modelToChangeObj.id,
+                        count: count,
+                        error: mockApiError,
+                    }
+                );
+            });
+            expect(useDialecticStore.getState().selectedModels).toEqual(selectedModelsThree);
+            expect(useDialecticStore.getState().updateSessionModelsError?.code).toBe('MODEL_TIER_DISALLOWED');
+        });
+
+        it('setModelMultiplicity reverts and sets updateSessionModelsError on MODEL_LIMIT_EXCEEDED', async () => {
+            const mockApiError: ApiError = {
+                code: 'MODEL_LIMIT_EXCEEDED',
+                message: 'Model selection exceeds the limit for your plan',
+            };
+            getMockDialecticClient().updateSessionModels.mockResolvedValue({ error: mockApiError, status: 403 });
+            const count = 2;
+            vi.mocked(logger).error.mockClear();
+
+            useDialecticStore.setState({ selectedModels: selectedModelsThree });
+            const { setModelMultiplicity } = useDialecticStore.getState();
+            setModelMultiplicity(modelToChangeObj, count);
+
+            await vi.waitFor(() => {
+                expect(getMockDialecticClient().updateSessionModels).toHaveBeenCalled();
+                expect(vi.mocked(logger).error).toHaveBeenCalledWith(
+                    '[DialecticStore] Post-setModelMultiplicity: Failed to update session models on backend',
+                    {
+                        sessionId: activeSessionId,
+                        modelId: modelToChangeObj.id,
+                        count: count,
+                        error: mockApiError,
+                    }
+                );
+            });
+            expect(useDialecticStore.getState().selectedModels).toEqual(selectedModelsThree);
+            expect(useDialecticStore.getState().updateSessionModelsError?.code).toBe('MODEL_LIMIT_EXCEEDED');
         });
     });
 
@@ -837,6 +962,183 @@ describe('useDialecticStore', () => {
             expect(state.activeContextStage).toEqual(mockStageDetails);
             expect(state.activeSeedPrompt).toEqual(mockSeedPrompt);
             expect(state.selectedModels).toEqual(mockSessionData.selected_models);
+        });
+
+        it('resets outputCapUserCustomized to false when loading a session whose id differs from prior activeContextSessionId', async () => {
+            const tierWithOutputCap: UserTier = {
+                level: 1,
+                name: 'Pro',
+                output_cap_tokens: 8192,
+                max_models_per_project: 4,
+            };
+            const modelConfig: AiModelExtendedConfig = mockAiModelConfig({
+                provider_max_output_tokens: 4096,
+                hard_cap_output_tokens: 4096,
+            });
+            if (!isJson(modelConfig)) {
+                throw new Error('modelConfig is not a valid Json');
+            }
+            const catalogModel: AiProvidersRow = mockAiProvidersRow({
+                id: 'session-cap-model',
+                name: 'Session Cap Model',
+                config: modelConfig,
+            });
+            const selectedModelsFromSession: SelectedModels[] = [
+                { id: 'session-cap-model', displayName: 'Session Cap Model' },
+            ];
+            const sessionWithModels: DialecticSession = {
+                ...mockSessionData,
+                selected_models: selectedModelsFromSession,
+            };
+            const apiResponseWithModels: ApiResponse<{
+                session: DialecticSession;
+                currentStageDetails: DialecticStage;
+                activeSeedPrompt: AssembledPrompt | null;
+            }> = {
+                data: {
+                    session: sessionWithModels,
+                    currentStageDetails: mockStageDetails,
+                    activeSeedPrompt: mockSeedPrompt,
+                },
+                status: 200,
+            };
+
+            getMockDialecticClient().getSessionDetails.mockResolvedValue(apiResponseWithModels);
+            useAuthStore.setState({ isLoading: false, userTier: tierWithOutputCap });
+            useDialecticStore.setState({
+                ...initialDialecticStateValues,
+                outputCapUserCustomized: true,
+                maxOutputTokens: 5000,
+                activeContextProjectId: mockProjectId,
+                activeContextSessionId: 'session-prior',
+                isLoadingModelCatalog: false,
+                modelCatalog: [catalogModel],
+                selectedModels: [],
+            });
+
+            await useDialecticStore.getState().fetchAndSetCurrentSessionDetails(mockSessionId);
+
+            const state = useDialecticStore.getState();
+            expect(state.activeContextSessionId).toEqual(mockSessionId);
+            expect(state.outputCapUserCustomized).toBe(false);
+            expect(state.selectedModels).toEqual(selectedModelsFromSession);
+            expect(state.maxOutputTokens).toBe(4096);
+        });
+
+        it('sets finite maxOutputTokens after thunk when tier catalog and session selected_models are valid', async () => {
+            const tierWithOutputCap: UserTier = {
+                level: 1,
+                name: 'Pro',
+                output_cap_tokens: 8192,
+                max_models_per_project: 4,
+            };
+            const modelConfig: AiModelExtendedConfig = mockAiModelConfig({
+                provider_max_output_tokens: 8192,
+                hard_cap_output_tokens: 8192,
+            });
+            if (!isJson(modelConfig)) {
+                throw new Error('modelConfig is not a valid Json');
+            }
+            const catalogModel: AiProvidersRow = mockAiProvidersRow({
+                id: 'session-model-8192',
+                name: 'Session Model 8192',
+                config: modelConfig,
+            });
+            const selectedModelsFromSession: SelectedModels[] = [
+                { id: 'session-model-8192', displayName: 'Session Model 8192' },
+            ];
+            const sessionWithModels: DialecticSession = {
+                ...mockSessionData,
+                selected_models: selectedModelsFromSession,
+            };
+            const apiResponseWithModels: ApiResponse<{
+                session: DialecticSession;
+                currentStageDetails: DialecticStage;
+                activeSeedPrompt: AssembledPrompt | null;
+            }> = {
+                data: {
+                    session: sessionWithModels,
+                    currentStageDetails: mockStageDetails,
+                    activeSeedPrompt: mockSeedPrompt,
+                },
+                status: 200,
+            };
+
+            getMockDialecticClient().getSessionDetails.mockResolvedValue(apiResponseWithModels);
+            useAuthStore.setState({ isLoading: false, userTier: tierWithOutputCap });
+            useDialecticStore.setState({
+                ...initialDialecticStateValues,
+                outputCapUserCustomized: false,
+                maxOutputTokens: null,
+                isLoadingModelCatalog: false,
+                modelCatalog: [catalogModel],
+                selectedModels: [],
+            });
+
+            await useDialecticStore.getState().fetchAndSetCurrentSessionDetails(mockSessionId);
+
+            const state = useDialecticStore.getState();
+            expect(state.selectedModels).toEqual(selectedModelsFromSession);
+            expect(state.maxOutputTokens).toBe(8192);
+        });
+
+        it('does not overwrite maxOutputTokens when outputCapUserCustomized is true for the same session', async () => {
+            const tierWithOutputCap: UserTier = {
+                level: 1,
+                name: 'Pro',
+                output_cap_tokens: 8192,
+                max_models_per_project: 4,
+            };
+            const modelConfig: AiModelExtendedConfig = mockAiModelConfig({
+                provider_max_output_tokens: 4096,
+                hard_cap_output_tokens: 4096,
+            });
+            if (!isJson(modelConfig)) {
+                throw new Error('modelConfig is not a valid Json');
+            }
+            const catalogModel: AiProvidersRow = mockAiProvidersRow({
+                id: 'session-cap-model',
+                name: 'Session Cap Model',
+                config: modelConfig,
+            });
+            const selectedModelsFromSession: SelectedModels[] = [
+                { id: 'session-cap-model', displayName: 'Session Cap Model' },
+            ];
+            const sessionWithModels: DialecticSession = {
+                ...mockSessionData,
+                selected_models: selectedModelsFromSession,
+            };
+            const apiResponseWithModels: ApiResponse<{
+                session: DialecticSession;
+                currentStageDetails: DialecticStage;
+                activeSeedPrompt: AssembledPrompt | null;
+            }> = {
+                data: {
+                    session: sessionWithModels,
+                    currentStageDetails: mockStageDetails,
+                    activeSeedPrompt: mockSeedPrompt,
+                },
+                status: 200,
+            };
+
+            getMockDialecticClient().getSessionDetails.mockResolvedValue(apiResponseWithModels);
+            useAuthStore.setState({ isLoading: false, userTier: tierWithOutputCap });
+            useDialecticStore.setState({
+                ...initialDialecticStateValues,
+                activeContextProjectId: mockProjectId,
+                activeContextSessionId: mockSessionId,
+                outputCapUserCustomized: true,
+                maxOutputTokens: 5555,
+                isLoadingModelCatalog: false,
+                modelCatalog: [catalogModel],
+                selectedModels: selectedModelsFromSession,
+            });
+
+            await useDialecticStore.getState().fetchAndSetCurrentSessionDetails(mockSessionId);
+
+            const state = useDialecticStore.getState();
+            expect(state.outputCapUserCustomized).toBe(true);
+            expect(state.maxOutputTokens).toBe(5555);
         });
 
         it('should persist selectedModels from session response (single origin)', async () => {
@@ -1143,6 +1445,46 @@ describe('useDialecticStore', () => {
             const state = useDialecticStore.getState();
             expect(state.activeSessionDetail).toEqual(mockSessionDetail);
         });
+
+        it('resets outputCapUserCustomized to false and maxOutputTokens to null when sessionId changes', () => {
+            useDialecticStore.setState({
+                outputCapUserCustomized: true,
+                maxOutputTokens: 5000,
+                activeContextProjectId: 'project-1',
+                activeContextSessionId: 'session-1',
+            });
+
+            const { setActiveDialecticContext } = useDialecticStore.getState();
+            setActiveDialecticContext({
+                projectId: 'project-1',
+                sessionId: 'session-2',
+                stage: null,
+            });
+
+            const state = useDialecticStore.getState();
+            expect(state.outputCapUserCustomized).toBe(false);
+            expect(state.maxOutputTokens).toBeNull();
+        });
+
+        it('resets outputCapUserCustomized to false and maxOutputTokens to null when projectId changes and sessionId is unchanged', () => {
+            useDialecticStore.setState({
+                outputCapUserCustomized: true,
+                maxOutputTokens: 5000,
+                activeContextProjectId: 'project-1',
+                activeContextSessionId: 'session-1',
+            });
+
+            const { setActiveDialecticContext } = useDialecticStore.getState();
+            setActiveDialecticContext({
+                projectId: 'project-2',
+                sessionId: 'session-1',
+                stage: null,
+            });
+
+            const state = useDialecticStore.getState();
+            expect(state.outputCapUserCustomized).toBe(false);
+            expect(state.maxOutputTokens).toBeNull();
+        });
     });
 
     describe('startDialecticSession — context after success', () => {
@@ -1221,6 +1563,425 @@ describe('useDialecticStore', () => {
 
             const state = useDialecticStore.getState();
             expect(state.activeContextProjectId).toBe(startPayload.projectId);
+        });
+    });
+
+    describe('activateProjectAndSessionContextForDeepLink — output cap orchestration', () => {
+        const deepLinkProjectId = 'deep-cap-proj-123';
+        const deepLinkSessionId = 'deep-cap-sess-456';
+        const tierWithOutputCap: UserTier = {
+            level: 1,
+            name: 'Pro',
+            output_cap_tokens: 8192,
+            max_models_per_project: 4,
+        };
+
+        it('loads catalog and sets finite maxOutputTokens when modelCatalog starts empty', async () => {
+            const sessionModelConfig: AiModelExtendedConfig = mockAiModelConfig({
+                provider_max_output_tokens: 4096,
+                hard_cap_output_tokens: 4096,
+            });
+            if (!isJson(sessionModelConfig)) {
+                throw new Error('sessionModelConfig is not a valid Json');
+            }
+            const sessionCatalogModel: AiProvidersRow = mockAiProvidersRow({
+                id: 'deep-link-session-model',
+                name: 'Deep Link Session Model',
+                is_default_generation: false,
+                is_active: true,
+                config: sessionModelConfig,
+            });
+            const selectedModelsFromSession: SelectedModels[] = [
+                { id: 'deep-link-session-model', displayName: 'Deep Link Session Model' },
+            ];
+            const mockStageDetailsDeepLink: DialecticStage = {
+                id: 'synthesis-id',
+                slug: 'synthesis',
+                display_name: 'Synthesis',
+                description: 'Test stage',
+                default_system_prompt_id: 'p1',
+                expected_output_template_ids: [],
+                recipe_template_id: null,
+                active_recipe_instance_id: null,
+                created_at: 'now',
+                minimum_balance: 0,
+            };
+            const mockSessionDeepLink: DialecticSession = {
+                id: deepLinkSessionId,
+                project_id: deepLinkProjectId,
+                session_description: 'Deep link session',
+                iteration_count: 1,
+                current_stage_id: 'synthesis-id',
+                status: 'active',
+                user_input_reference_url: null,
+                associated_chat_id: null,
+                created_at: '2023-01-01T00:00:00.000Z',
+                updated_at: '2023-01-01T00:00:00.000Z',
+                dialectic_session_models: [],
+                dialectic_contributions: [],
+                feedback: [],
+                selected_models: selectedModelsFromSession,
+                viewing_stage_id: null,
+            };
+            const mockProjectDeepLink: DialecticProject = mockDialecticProject({
+                id: deepLinkProjectId,
+                dialectic_sessions: [],
+            });
+
+            getMockDialecticClient().listModelCatalog.mockResolvedValue({
+                data: [sessionCatalogModel],
+                status: 200,
+            });
+            getMockDialecticClient().getProjectDetails.mockResolvedValue({
+                data: mockProjectDeepLink,
+                status: 200,
+            });
+            getMockDialecticClient().getSessionDetails.mockResolvedValue({
+                data: {
+                    session: mockSessionDeepLink,
+                    currentStageDetails: mockStageDetailsDeepLink,
+                    activeSeedPrompt: null,
+                },
+                status: 200,
+            });
+
+            useAuthStore.setState({ isLoading: false, userTier: tierWithOutputCap });
+            useDialecticStore.setState({
+                ...initialDialecticStateValues,
+                modelCatalog: [],
+                isLoadingModelCatalog: false,
+                outputCapUserCustomized: false,
+                maxOutputTokens: null,
+                selectedModels: [],
+                activeContextProjectId: null,
+                currentProjectDetail: null,
+            });
+
+            const { activateProjectAndSessionContextForDeepLink } = useDialecticStore.getState();
+            await activateProjectAndSessionContextForDeepLink(deepLinkProjectId, deepLinkSessionId);
+
+            const state = useDialecticStore.getState();
+            expect(state.modelCatalog.length).toBeGreaterThan(0);
+            expect(state.maxOutputTokens).toBe(4096);
+            expect(state.selectedModels).toEqual(selectedModelsFromSession);
+        });
+
+        it('initializes maxOutputTokens from session selected_models after fetch, not default generation models', async () => {
+            const defaultModelConfig: AiModelExtendedConfig = mockAiModelConfig({
+                provider_max_output_tokens: 4096,
+                hard_cap_output_tokens: 4096,
+            });
+            const sessionModelConfig: AiModelExtendedConfig = mockAiModelConfig({
+                provider_max_output_tokens: 8192,
+                hard_cap_output_tokens: 8192,
+            });
+            if (!isJson(defaultModelConfig)) {
+                throw new Error('defaultModelConfig is not a valid Json');
+            }
+            if (!isJson(sessionModelConfig)) {
+                throw new Error('sessionModelConfig is not a valid Json');
+            }
+            const defaultGenerationModel: AiProvidersRow = mockAiProvidersRow({
+                id: 'default-gen-model',
+                name: 'Default Generation',
+                is_default_generation: true,
+                is_active: true,
+                config: defaultModelConfig,
+            });
+            const sessionCatalogModel: AiProvidersRow = mockAiProvidersRow({
+                id: 'session-model-8192',
+                name: 'Session Model 8192',
+                is_default_generation: false,
+                is_active: true,
+                config: sessionModelConfig,
+            });
+            const selectedModelsFromSession: SelectedModels[] = [
+                { id: 'session-model-8192', displayName: 'Session Model 8192' },
+            ];
+            const mockStageDetailsDeepLink: DialecticStage = {
+                id: 'synthesis-id',
+                slug: 'synthesis',
+                display_name: 'Synthesis',
+                description: 'Test stage',
+                default_system_prompt_id: 'p1',
+                expected_output_template_ids: [],
+                recipe_template_id: null,
+                active_recipe_instance_id: null,
+                created_at: 'now',
+                minimum_balance: 0,
+            };
+            const mockSessionDeepLink: DialecticSession = {
+                id: deepLinkSessionId,
+                project_id: deepLinkProjectId,
+                session_description: 'Deep link session',
+                iteration_count: 1,
+                current_stage_id: 'synthesis-id',
+                status: 'active',
+                user_input_reference_url: null,
+                associated_chat_id: null,
+                created_at: '2023-01-01T00:00:00.000Z',
+                updated_at: '2023-01-01T00:00:00.000Z',
+                dialectic_session_models: [],
+                dialectic_contributions: [],
+                feedback: [],
+                selected_models: selectedModelsFromSession,
+                viewing_stage_id: null,
+            };
+            const mockProjectDeepLink: DialecticProject = mockDialecticProject({
+                id: deepLinkProjectId,
+                dialectic_sessions: [],
+            });
+
+            getMockDialecticClient().listModelCatalog.mockResolvedValue({
+                data: [defaultGenerationModel, sessionCatalogModel],
+                status: 200,
+            });
+            getMockDialecticClient().getProjectDetails.mockResolvedValue({
+                data: mockProjectDeepLink,
+                status: 200,
+            });
+            getMockDialecticClient().getSessionDetails.mockResolvedValue({
+                data: {
+                    session: mockSessionDeepLink,
+                    currentStageDetails: mockStageDetailsDeepLink,
+                    activeSeedPrompt: null,
+                },
+                status: 200,
+            });
+
+            useAuthStore.setState({ isLoading: false, userTier: tierWithOutputCap });
+            useDialecticStore.setState({
+                ...initialDialecticStateValues,
+                modelCatalog: [],
+                isLoadingModelCatalog: false,
+                outputCapUserCustomized: false,
+                maxOutputTokens: null,
+                selectedModels: [],
+                activeContextProjectId: null,
+                currentProjectDetail: null,
+            });
+
+            const { activateProjectAndSessionContextForDeepLink } = useDialecticStore.getState();
+            await activateProjectAndSessionContextForDeepLink(deepLinkProjectId, deepLinkSessionId);
+
+            const state = useDialecticStore.getState();
+            expect(state.selectedModels).toEqual(selectedModelsFromSession);
+            expect(state.selectedModels).not.toEqual([
+                { id: 'default-gen-model', displayName: 'Default Generation' },
+            ]);
+            expect(state.maxOutputTokens).toBe(8192);
+        });
+
+        it('does not overwrite maxOutputTokens when outputCapUserCustomized is true', async () => {
+            const sessionModelConfig: AiModelExtendedConfig = mockAiModelConfig({
+                provider_max_output_tokens: 4096,
+                hard_cap_output_tokens: 4096,
+            });
+            if (!isJson(sessionModelConfig)) {
+                throw new Error('sessionModelConfig is not a valid Json');
+            }
+            const sessionCatalogModel: AiProvidersRow = mockAiProvidersRow({
+                id: 'deep-link-session-model',
+                name: 'Deep Link Session Model',
+                is_default_generation: false,
+                is_active: true,
+                config: sessionModelConfig,
+            });
+            const selectedModelsFromSession: SelectedModels[] = [
+                { id: 'deep-link-session-model', displayName: 'Deep Link Session Model' },
+            ];
+            const mockStageDetailsDeepLink: DialecticStage = {
+                id: 'synthesis-id',
+                slug: 'synthesis',
+                display_name: 'Synthesis',
+                description: 'Test stage',
+                default_system_prompt_id: 'p1',
+                expected_output_template_ids: [],
+                recipe_template_id: null,
+                active_recipe_instance_id: null,
+                created_at: 'now',
+                minimum_balance: 0,
+            };
+            const mockSessionDeepLink: DialecticSession = {
+                id: deepLinkSessionId,
+                project_id: deepLinkProjectId,
+                session_description: 'Deep link session',
+                iteration_count: 1,
+                current_stage_id: 'synthesis-id',
+                status: 'active',
+                user_input_reference_url: null,
+                associated_chat_id: null,
+                created_at: '2023-01-01T00:00:00.000Z',
+                updated_at: '2023-01-01T00:00:00.000Z',
+                dialectic_session_models: [],
+                dialectic_contributions: [],
+                feedback: [],
+                selected_models: selectedModelsFromSession,
+                viewing_stage_id: null,
+            };
+            const mockProjectDeepLink: DialecticProject = mockDialecticProject({
+                id: deepLinkProjectId,
+                dialectic_sessions: [],
+            });
+
+            getMockDialecticClient().listModelCatalog.mockResolvedValue({
+                data: [sessionCatalogModel],
+                status: 200,
+            });
+            getMockDialecticClient().getProjectDetails.mockResolvedValue({
+                data: mockProjectDeepLink,
+                status: 200,
+            });
+            getMockDialecticClient().getSessionDetails.mockResolvedValue({
+                data: {
+                    session: mockSessionDeepLink,
+                    currentStageDetails: mockStageDetailsDeepLink,
+                    activeSeedPrompt: null,
+                },
+                status: 200,
+            });
+
+            useAuthStore.setState({ isLoading: false, userTier: tierWithOutputCap });
+            useDialecticStore.setState({
+                ...initialDialecticStateValues,
+                modelCatalog: [],
+                isLoadingModelCatalog: false,
+                outputCapUserCustomized: true,
+                maxOutputTokens: 5555,
+                selectedModels: selectedModelsFromSession,
+                activeContextProjectId: deepLinkProjectId,
+                activeContextSessionId: deepLinkSessionId,
+                currentProjectDetail: mockProjectDeepLink,
+            });
+
+            const { activateProjectAndSessionContextForDeepLink } = useDialecticStore.getState();
+            await activateProjectAndSessionContextForDeepLink(deepLinkProjectId, deepLinkSessionId);
+
+            const state = useDialecticStore.getState();
+            expect(state.outputCapUserCustomized).toBe(true);
+            expect(state.maxOutputTokens).toBe(5555);
+        });
+
+        it('selectCostCeiling does not return OUTPUT_CAP_NOT_INITIALIZED after deep-link hydration when node 2 success preconditions are met', async () => {
+            const iterationNumber = 1;
+            const runKey = `${deepLinkSessionId}:${iterationNumber}`;
+            const stageSlug = 'synthesis';
+            const sessionModelConfig: AiModelExtendedConfig = mockAiModelConfig({
+                provider_max_output_tokens: 4096,
+                hard_cap_output_tokens: 4096,
+                output_token_cost_rate: 3,
+            });
+            if (!isJson(sessionModelConfig)) {
+                throw new Error('sessionModelConfig is not a valid Json');
+            }
+            const sessionCatalogModel: AiProvidersRow = mockAiProvidersRow({
+                id: 'deep-link-session-model',
+                name: 'Deep Link Session Model',
+                is_default_generation: false,
+                is_active: true,
+                config: sessionModelConfig,
+            });
+            const selectedModelsFromSession: SelectedModels[] = [
+                { id: 'deep-link-session-model', displayName: 'Deep Link Session Model' },
+            ];
+            const synthesisStage: DialecticStage = mockDialecticStage({
+                id: 'synthesis-id',
+                slug: stageSlug,
+                display_name: 'Synthesis',
+            });
+            const processTemplate = mockDialecticProcessTemplate({
+                starting_stage_id: 'synthesis-id',
+                stages: [synthesisStage],
+                transitions: [],
+            });
+            const synthesisStageRecipe = mockDialecticStageRecipe({ stageSlug });
+            const mockSessionDeepLink: DialecticSession = {
+                id: deepLinkSessionId,
+                project_id: deepLinkProjectId,
+                session_description: 'Deep link session',
+                iteration_count: iterationNumber,
+                current_stage_id: 'synthesis-id',
+                status: 'active',
+                user_input_reference_url: null,
+                associated_chat_id: null,
+                created_at: '2023-01-01T00:00:00.000Z',
+                updated_at: '2023-01-01T00:00:00.000Z',
+                dialectic_session_models: [],
+                dialectic_contributions: [],
+                feedback: [],
+                selected_models: selectedModelsFromSession,
+                viewing_stage_id: null,
+            };
+            const mockProjectDeepLink: DialecticProject = mockDialecticProject({
+                id: deepLinkProjectId,
+                dialectic_sessions: [],
+                process_template_id: processTemplate.id,
+                dialectic_process_templates: processTemplate,
+            });
+
+            getMockDialecticClient().listModelCatalog.mockResolvedValue({
+                data: [sessionCatalogModel],
+                status: 200,
+            });
+            getMockDialecticClient().getProjectDetails.mockResolvedValue({
+                data: mockProjectDeepLink,
+                status: 200,
+            });
+            getMockDialecticClient().getSessionDetails.mockResolvedValue({
+                data: {
+                    session: mockSessionDeepLink,
+                    currentStageDetails: synthesisStage,
+                    activeSeedPrompt: null,
+                },
+                status: 200,
+            });
+            getMockDialecticClient().fetchProcessTemplate.mockResolvedValue({
+                data: processTemplate,
+                status: 200,
+            });
+            getMockDialecticClient().fetchStageRecipe.mockResolvedValue({
+                data: synthesisStageRecipe,
+                status: 200,
+            });
+
+            useAuthStore.setState({ isLoading: false, userTier: tierWithOutputCap, error: null });
+            useDialecticStore.setState({
+                ...initialDialecticStateValues,
+                modelCatalog: [],
+                isLoadingModelCatalog: false,
+                outputCapUserCustomized: false,
+                maxOutputTokens: null,
+                selectedModels: [],
+                activeContextProjectId: null,
+                currentProjectDetail: null,
+                currentProcessTemplate: processTemplate,
+                stageExpectedCountsByRun: {
+                    [runKey]: {
+                        [stageSlug]: 4,
+                    },
+                },
+                recipesByStageSlug: {
+                    [stageSlug]: synthesisStageRecipe,
+                },
+            });
+
+            const { activateProjectAndSessionContextForDeepLink } = useDialecticStore.getState();
+            await activateProjectAndSessionContextForDeepLink(deepLinkProjectId, deepLinkSessionId);
+
+            const state = useDialecticStore.getState();
+            expect(state.maxOutputTokens).toBe(4096);
+            expect(state.currentProcessTemplate).not.toBeNull();
+            if (state.currentProcessTemplate === null) {
+                throw new Error('currentProcessTemplate must be set after deep-link hydration');
+            }
+            expect(state.currentProcessTemplate.stages).toBeDefined();
+            if (state.currentProcessTemplate.stages === undefined) {
+                throw new Error('currentProcessTemplate.stages must be set after deep-link hydration');
+            }
+            expect(state.currentProcessTemplate.stages.length).toBeGreaterThan(0);
+
+            const costCeilingResult: ComputeCostCeilingReturn = selectCostCeiling(state, deepLinkSessionId);
+            expect('error' in costCeilingResult).toBe(false);
         });
     });
 

@@ -47,6 +47,7 @@ const MOCK_PROVIDER: Tables<'ai_providers'> = {
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
     config: MOCK_MODEL_CONFIG,
+    min_plan_tier_level: 0,
 };
 
 /** Trimmed assistant text matching the legacy batch mock (`General Kenobi!`). */

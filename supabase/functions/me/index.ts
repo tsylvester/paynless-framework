@@ -13,16 +13,8 @@ import {
 } from '../_shared/auth.ts';
 import { getEmailMarketingService } from '../_shared/email_service/factory.ts';
 import type { UserData } from '../_shared/types.ts';
-
-// Define dependencies interface (Restoring)
-export interface MeHandlerDeps {
-    handleCorsPreflightRequest: typeof handleCorsPreflightRequest;
-    createUnauthorizedResponse: typeof createUnauthorizedResponse;
-    createErrorResponse: typeof createErrorResponse;
-    createSuccessResponse: typeof createSuccessResponse;
-    createSupabaseClient: typeof createSupabaseClient;
-    getEmailMarketingService: typeof getEmailMarketingService;
-}
+import { Database } from '../types_db.ts';
+import { MeGetResponse, MeHandlerDeps, TierRow } from './index.interface.ts';
 
 // Default dependencies (Restoring)
 const defaultDeps: MeHandlerDeps = {
@@ -106,12 +98,44 @@ export async function handleMeRequest(
         }
 
         console.log(`[me/index.ts] Profile ready for user ${user.id}. Returning data.`);
-        
-        const responseData = {
-            user: user,
-            profile: profileData,
+
+        const { data: subscriptionData, error: subscriptionError } = await supabase
+          .from('user_subscriptions')
+          .select('tier_level')
+          .eq('user_id', user.id)
+          .maybeSingle();
+        console.log('[me/index.ts] Subscription fetch: data=%s, error=%s', !!subscriptionData, subscriptionError?.message);
+        if (subscriptionError) {
+          return deps.createErrorResponse("Failed to fetch user subscription", 500, req);
+        }
+        if (!subscriptionData) {
+          return deps.createErrorResponse("No subscription found for user", 500, req);
+        }
+        const { data: allTiers, error: tiersError } = await supabase
+          .from('tier_definitions')
+          .select('level, name, output_cap_tokens, max_models_per_project')
+          .order('level', { ascending: true });
+        console.log('[me/index.ts] Tier definitions fetch: count=%s, error=%s', allTiers?.length, tiersError?.message);
+        if (tiersError) {
+          return deps.createErrorResponse("Failed to fetch tier definitions", 500, req);
+        }
+        if (!allTiers || allTiers.length === 0) {
+          return deps.createErrorResponse("No tier definitions configured", 500, req);
+        }
+        const userTier: TierRow | undefined = (allTiers as TierRow[]).find(
+          (t) => t.level === (subscriptionData as { tier_level: number }).tier_level,
+        );
+        if (!userTier) {
+          return deps.createErrorResponse("User tier level not found in definitions", 500, req);
+        }
+
+        const responseData: MeGetResponse = {
+          user,
+          profile: profileData as Database['public']['Tables']['user_profiles']['Row'],
+          userTier,
+          tiers: allTiers as TierRow[],
         };
-        
+
         return deps.createSuccessResponse(responseData, 200, req);
       }
 
@@ -149,7 +173,6 @@ export async function handleMeRequest(
             provider: Deno.env.get('EMAIL_MARKETING_PROVIDER') ?? '',
             kitApiKey: Deno.env.get('EMAIL_MARKETING_API_KEY') ?? '',
             kitBaseUrl: Deno.env.get('EMAIL_MARKETING_API_URL') ?? '',
-            kitTagId: Deno.env.get('EMAIL_MARKETING_NEWSLETTER_TAG_ID') ?? '',
             kitCustomUserIdField: Deno.env.get('EMAIL_MARKETING_USER_ID_FIELD') ?? '',
             kitCustomCreatedAtField: Deno.env.get('EMAIL_MARKETING_CREATED_AT_FIELD') ?? '',
           });

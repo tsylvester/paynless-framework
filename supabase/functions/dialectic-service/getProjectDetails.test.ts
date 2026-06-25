@@ -2,14 +2,11 @@ import { assertEquals, assertExists, assertRejects } from "https://deno.land/std
 import { describe, it, beforeEach, afterEach } from "https://deno.land/std@0.190.0/testing/bdd.ts";
 import { stub } from "https://deno.land/std@0.190.0/testing/mock.ts";
 import { getProjectDetails } from "./getProjectDetails.ts";
-import * as sharedLogger from "../_shared/logger.ts";
+import { MockLogger } from "../_shared/logger.mock.ts";
 import { 
     DialecticProject, 
     DialecticContribution, 
     GetProjectDetailsPayload, 
-    DialecticSession, 
-    DialecticSessionModel, 
-    AIModelCatalogEntry,
     DialecticProcessTemplate,
     DialecticFeedback
 } from "./dialectic.interface.ts";
@@ -54,7 +51,7 @@ describe("getProjectDetails", () => {
   let currentClientSpies: IMockClientSpies;
   let supabaseTestSetup: ReturnType<typeof createMockSupabaseClient>;
   let debugStub: any, infoStub: any, warnStub: any, errorStub: any;
-
+  let mockLogger: MockLogger;
   beforeEach(() => {
     const defaultConfig: MockSupabaseDataConfig = {
       mockUser: getMockUser(MOCK_USER_ID),
@@ -62,18 +59,10 @@ describe("getProjectDetails", () => {
     supabaseTestSetup = createMockSupabaseClient(MOCK_USER_ID, defaultConfig);
     currentMockDbClient = supabaseTestSetup.client;
     currentClientSpies = supabaseTestSetup.spies;
-
-    debugStub = stub(sharedLogger.logger, "debug", () => {});
-    infoStub = stub(sharedLogger.logger, "info", () => {});
-    warnStub = stub(sharedLogger.logger, "warn", () => {});
-    errorStub = stub(sharedLogger.logger, "error", () => {});
+     mockLogger = new MockLogger();
   });
 
   afterEach(() => {
-    debugStub?.restore();
-    infoStub?.restore();
-    warnStub?.restore();
-    errorStub?.restore();
     
     if (supabaseTestSetup && supabaseTestSetup.clearAllStubs) {
       supabaseTestSetup.clearAllStubs();
@@ -124,10 +113,10 @@ describe("getProjectDetails", () => {
     supabaseTestSetup = createMockSupabaseClient(MOCK_USER_ID, dbConfig);
     currentMockDbClient = supabaseTestSetup.client;
 
-    debugStub = stub(sharedLogger.logger, "debug", () => {});
-    infoStub = stub(sharedLogger.logger, "info", () => {});
-    warnStub = stub(sharedLogger.logger, "warn", () => {});
-    errorStub = stub(sharedLogger.logger, "error", () => {});
+    debugStub = stub(mockLogger, "debug", () => {});
+    infoStub = stub(mockLogger, "info", () => {});
+    warnStub = stub(mockLogger, "warn", () => {});
+    errorStub = stub(mockLogger, "error", () => {});
     
     const payload: GetProjectDetailsPayload = { projectId: "non-existent-project-id" };
     const result = await getProjectDetails(payload, currentMockDbClient as any, getMockUser(MOCK_USER_ID));
@@ -162,10 +151,10 @@ describe("getProjectDetails", () => {
     supabaseTestSetup = createMockSupabaseClient(MOCK_USER_ID, dbConfig);
     currentMockDbClient = supabaseTestSetup.client;
 
-    debugStub = stub(sharedLogger.logger, "debug", () => {});
-    infoStub = stub(sharedLogger.logger, "info", () => {});
-    warnStub = stub(sharedLogger.logger, "warn", () => {});
-    errorStub = stub(sharedLogger.logger, "error", () => {});
+    debugStub = stub(mockLogger, "debug", () => {});
+    infoStub = stub(mockLogger, "info", () => {});
+    warnStub = stub(mockLogger, "warn", () => {});
+    errorStub = stub(mockLogger, "error", () => {});
 
     const payload: GetProjectDetailsPayload = { projectId: "non-existent-project-id-no-pgrst-error" };
     const result = await getProjectDetails(payload, currentMockDbClient as any, getMockUser(MOCK_USER_ID));
@@ -201,10 +190,10 @@ describe("getProjectDetails", () => {
     supabaseTestSetup = createMockSupabaseClient(MOCK_USER_ID, dbConfig);
     currentMockDbClient = supabaseTestSetup.client;
 
-    debugStub = stub(sharedLogger.logger, "debug", () => {});
-    infoStub = stub(sharedLogger.logger, "info", () => {});
-    warnStub = stub(sharedLogger.logger, "warn", () => {});
-    errorStub = stub(sharedLogger.logger, "error", () => {});
+    debugStub = stub(mockLogger, "debug", () => {});
+    infoStub = stub(mockLogger, "info", () => {});
+    warnStub = stub(mockLogger, "warn", () => {});
+    errorStub = stub(mockLogger, "error", () => {});
 
     const payload: GetProjectDetailsPayload = { projectId: "test-project-id" };
     const result = await getProjectDetails(payload, currentMockDbClient as any, getMockUser(MOCK_USER_ID));
@@ -339,10 +328,10 @@ describe("getProjectDetails", () => {
     currentMockDbClient = supabaseTestSetup.client;
     currentClientSpies = supabaseTestSetup.spies;
 
-    debugStub = stub(sharedLogger.logger, "debug", () => {});
-    infoStub = stub(sharedLogger.logger, "info", () => {});
-    warnStub = stub(sharedLogger.logger, "warn", () => {});
-    errorStub = stub(sharedLogger.logger, "error", () => {});
+    debugStub = stub(mockLogger, "debug", () => {});
+    infoStub = stub(mockLogger, "info", () => {});
+    warnStub = stub(mockLogger, "warn", () => {});
+    errorStub = stub(mockLogger, "error", () => {});
     
     const payload: GetProjectDetailsPayload = { projectId: "test-project-id" };
     const result = await getProjectDetails(payload, currentMockDbClient as any, getMockUser(MOCK_USER_ID));
@@ -435,10 +424,10 @@ describe("getProjectDetails", () => {
     supabaseTestSetup = createMockSupabaseClient(MOCK_USER_ID, dbConfig);
     currentMockDbClient = supabaseTestSetup.client;
 
-    debugStub = stub(sharedLogger.logger, "debug", () => {});
-    infoStub = stub(sharedLogger.logger, "info", () => {});
-    warnStub = stub(sharedLogger.logger, "warn", () => {});
-    errorStub = stub(sharedLogger.logger, "error", () => {});
+    debugStub = stub(mockLogger, "debug", () => {});
+    infoStub = stub(mockLogger, "info", () => {});
+    warnStub = stub(mockLogger, "warn", () => {});
+    errorStub = stub(mockLogger, "error", () => {});
     
     const payload: GetProjectDetailsPayload = { projectId: "project-no-sessions" };
     const result = await getProjectDetails(payload, currentMockDbClient as any, getMockUser(MOCK_USER_ID));
@@ -487,16 +476,16 @@ describe("getProjectDetails", () => {
     supabaseTestSetup = createMockSupabaseClient(MOCK_USER_ID, dbConfig);
     currentMockDbClient = supabaseTestSetup.client;
 
-    debugStub = stub(sharedLogger.logger, "debug", () => {});
-    infoStub = stub(sharedLogger.logger, "info", () => {});
-    warnStub = stub(sharedLogger.logger, "warn", () => {});
-    errorStub = stub(sharedLogger.logger, "error", () => {});
+    debugStub = stub(mockLogger, "debug", () => {});
+    infoStub = stub(mockLogger, "info", () => {});
+    warnStub = stub(mockLogger, "warn", () => {});
+    errorStub = stub(mockLogger, "error", () => {});
         
     const payload: GetProjectDetailsPayload = { projectId: "project-null-sessions" };
     const result = await getProjectDetails(payload, currentMockDbClient as any, getMockUser(MOCK_USER_ID));
 
     assertExists(result.data);
-    const resultData = result.data as any;
+    const resultData: DialecticProject = result.data;
     assertEquals(resultData.id, "project-null-sessions");
     assertEquals(resultData.dialectic_sessions, null); 
   });
