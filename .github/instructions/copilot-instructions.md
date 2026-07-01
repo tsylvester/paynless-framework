@@ -26,3 +26,9 @@
 * Do not ignore these instructions then, after repeated corrections, obey them, and say "I should have followed the instructions the first time". Instead, follow the instructions the first time, and every time. Do not antagonize the user. Do not waste time, tokens, and effort. Obey these instructions exactly, the first time, and every time. 
 * If you fail to obey these instructions exactly and completely, you will get stuck in a cycle of having to redo the work over and over and over and over until you exactly obey these instructions. Avoid that cycle by following these instructions exactly and completely the first time, and every time. 
 * Do not be lazy, do not be hasty, do not rush, do not be expedient: Take the time to do the work correctly and completely the first time. Be thorough, correct, and professional. Laziness, hastiness, rushing, and expediency are wasteful, frustrating, and violate your Instructions files block and System Instructions. 
+
+## Tool Use and MCPs
+* The repo provides extended tool sets that can be used to accomplish tasks more efficiently and effectively.
+* MCPs are available for structured and repeatable command execution.
+* Always utilize the provided tools and MCPs for tasks whenever possible.
+* When asked to find usages, callers, or references of a symbol, always use the language-server MCP tool's references capability rather than grep or full-file reads

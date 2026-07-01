@@ -1369,6 +1369,1030 @@
          * `[ ]`   Supabase queue event and callback payload shapes now encode explicit operation discrimination and branch-safe field ownership.
          * `[ ]`   saveResponse payload and runtime guards enforce operation-specific shape validity and reject mixed/invalid variants.
 
+* `[ ]`   supabase/functions/_shared/services/file_manager.ts **[BE] Persist compression summary artifacts as first-class resources with canonical identity metadata and deterministic registration semantics**
+
+   * `[ ]`   `objective`
+      * `[ ]`   Solve the artifact-registration gap where compression summaries can be uploaded as generic resources but are not enforced as a strict, queryable contract for resume/overlay workflows.
+      * `[ ]`   Functional goals:
+         * `[ ]`   Introduce explicit upload-context contract for `FileType.RagContextSummary` in `file_manager` type layer, including required metadata fields for downstream resolution.
+         * `[ ]`   Enforce runtime validation in `uploadAndRegisterFile` so rag summary uploads are rejected unless required identity metadata is present.
+         * `[ ]`   Persist deterministic `dialectic_project_resources` rows for rag summaries with stable `resource_type` and structured `resource_description` keys consumed by later nodes.
+         * `[ ]`   Preserve existing behavior for `GeneralResource`, `SeedPrompt`, `ProjectExportZip`, and model contribution upload paths.
+      * `[ ]`   Non-functional constraints:
+         * `[ ]`   No regressions to upload retry behavior (`MAX_TRANSIENT_RETRIES`) and collision handling (`MAX_UPLOAD_ATTEMPTS`) already covered by `file_manager.errors.test.ts` and `file_manager.upload.test.ts`.
+         * `[ ]`   No changes to path-construction algorithms in `path_constructor.ts` or path parsing in `path_deconstructor.ts` in this node.
+         * `[ ]`   No callback/enqueue/netlify worker edits in this node.
+      * `[ ]`   Each goal is atomic and testable through updated type-guard, unit, and integration coverage for `file_manager` boundaries.
+
+   * `[ ]`   `role`
+      * `[ ]`   Node role is shared storage-registration boundary implementation and immediate support system for `file_manager.ts`.
+      * `[ ]`   This role is correct because `file_manager.ts` is the first Workstream C source file that writes storage objects and DB metadata rows used later by compression writer and resume overlay consumers.
+      * `[ ]`   Out-of-scope responsibilities:
+         * `[ ]`   Do not implement artifact consume/overlay logic (`gatherArtifacts`, `applyInputsRequiredScope`, `processComplexJob`) in this node.
+         * `[ ]`   Do not implement compression prompt production logic (`compressPrompt.ts`) in this node.
+         * `[ ]`   Do not alter render decision semantics (`shouldEnqueueRenderJob`) beyond required non-regression assertions.
+
+   * `[ ]`   `module`
+      * `[ ]`   Bounded context is `supabase/functions/_shared/services/file_manager.ts` and its immediate type/guard/test support files.
+      * `[ ]`   Inside boundary:
+         * `[ ]`   upload input typing and runtime narrowing for resource uploads.
+         * `[ ]`   resource row persistence payload shaping (`resource_type`, `resource_description`, `storage_path`, `file_name`).
+         * `[ ]`   service-level error behavior for missing/invalid compression artifact metadata.
+      * `[ ]`   Outside boundary:
+         * `[ ]`   canonical path segment construction details (handled by `path_constructor.ts` node).
+         * `[ ]`   canonical path parsing/deconstruction details (handled by `path_deconstructor.ts` node).
+         * `[ ]`   orchestration of compression attempts and parent resume.
+
+   * `[ ]`   `deps`
+      * `[ ]`   Provider: `supabase/functions/_shared/types/file_manager.types.ts`.
+         * `[ ]`   Layer classification: local contract producer.
+         * `[ ]`   Direction: consumed by `file_manager.ts`, guards, and tests.
+         * `[ ]`   Purpose: define strict metadata shape for rag summary upload context.
+      * `[ ]`   Provider: `supabase/functions/_shared/utils/type-guards/type_guards.file_manager.ts`.
+         * `[ ]`   Layer classification: runtime boundary guard producer.
+         * `[ ]`   Direction: consumed by `file_manager.ts` and tests.
+         * `[ ]`   Purpose: narrow resource upload contexts and enforce compression-artifact-specific contract.
+      * `[ ]`   Provider: `supabase/functions/_shared/utils/path_constructor.ts` (read-only in this node).
+         * `[ ]`   Layer classification: shared infra helper dependency.
+         * `[ ]`   Direction: consumed unchanged by `file_manager.ts`.
+         * `[ ]`   Purpose: preserve canonical storage path construction while registration contract is strengthened.
+      * `[ ]`   Provider: Supabase storage + `dialectic_project_resources` persistence boundary.
+         * `[ ]`   Layer classification: external infrastructure dependency.
+         * `[ ]`   Direction: inbound dependency used by `uploadAndRegisterFile`.
+         * `[ ]`   Purpose: persist artifact files and metadata rows deterministically.
+      * `[ ]`   Confirm:
+         * `[ ]`   No reverse dependency from `_shared/services/file_manager.ts` into dialectic-worker orchestration modules.
+         * `[ ]`   No lateral coupling introduced with netlify worker adapters.
+
+   * `[ ]`   `context_slice`
+      * `[ ]`   Minimal dependency interfaces required:
+         * `[ ]`   existing `constructStoragePath` signature and return shape (`storagePath`, `fileName`) only.
+         * `[ ]`   existing Supabase storage upload/remove and table upsert interfaces only.
+         * `[ ]`   existing shared type-guard helpers (`isRecord`, context guards) with additive rag-summary guard coverage.
+      * `[ ]`   Injection shape remains `new FileManagerService(supabaseClient, { constructStoragePath, logger, assembleChunks })` with no constructor-surface expansion.
+      * `[ ]`   Confirm:
+         * `[ ]`   No over-fetching of unrelated DB tables for rag summary persistence.
+         * `[ ]`   No hidden coupling to downstream enqueue/callback payload formats.
+
+   * `[ ]`   `supabase/functions/_shared/types/file_manager.types.ts`
+      * `[ ]`   Add `FileType.RagContextSummary` as a discriminated union variant of `ResourceUploadContext` that requires `resourceDescriptionForDb` with the following fields:
+         * `[ ]`   `target_document_id: string` — the `dialectic_project_resources.id` of the exact source document row that was compressed; matched against `gathered_doc.id` by the overlay consumer.
+         * `[ ]`   `target_document_key: string` — the `document_key` of the source document; used for human-readable diagnostics.
+         * `[ ]`   `source_fingerprint: string` — SHA-256 hex digest of the source document content at compression time; used by the overlay consumer to verify the artifact is still fresh before applying; must be a non-empty string.         
+         * `[ ]`   `compressed_by_model_id: string` — the `api_identifier` of the model that produced the compression.
+         * `[ ]`   `compressed_for_job_id: string` — the `id` of the job that triggered compression.
+      * `[ ]`   Add/extend resource upload context union so `FileType.RagContextSummary` requires this metadata contract at type level.
+      * `[ ]`   Preserve existing `UploadContext` behavior for non-rag resource file types.
+
+   * `[ ]`   `supabase/functions/_shared/utils/type-guards/type_guards.file_manager.test.ts`
+      * `[ ]`   Add guard coverage for new rag summary context/type contract:
+         * `[ ]`   accept valid rag summary context with complete required metadata.
+         * `[ ]`   reject rag summary context missing `target_document_id` equivalent identity field.
+         * `[ ]`   reject rag summary context missing source fingerprint metadata.
+         * `[ ]`   reject rag summary context with empty string `source_fingerprint`.         
+         * `[ ]`   reject malformed metadata primitive types (non-string identity, non-object metadata container).
+      * `[ ]`   Preserve existing guard assertions for non-rag resource/model/feedback contexts.
+
+   * `[ ]`   `supabase/functions/_shared/utils/type-guards/type_guards.file_manager.ts`
+      * `[ ]`   Implement runtime guard logic for rag summary metadata completeness and primitive-type correctness.
+      * `[ ]`   Ensure `isResourceContext` narrowing remains backward-compatible for non-rag resource types.
+      * `[ ]`   Keep `isModelContributionContext`, `isUserFeedbackContext`, `isModelContributionFileType`, and document-key guards unchanged except strictly required additive type compatibility.
+
+   * `[ ]`   `supabase/functions/_shared/services/file_manager.mock.ts`
+      * `[ ]`   Add rag summary upload fixture factory helpers with override support for required metadata fields.
+      * `[ ]`   Add malformed rag summary fixtures used by negative tests (missing identity, missing fingerprint, invalid metadata types).
+      * `[ ]`   Preserve existing default mock behavior for `uploadAndRegisterFile`, `getFileSignedUrl`, and `assembleAndSaveFinalDocument`.
+
+   * `[ ]`   `supabase/functions/_shared/services/file_manager.upload.test.ts`
+      * `[ ]`   Add RED/GREEN unit tests for rag summary registration path:
+         * `[ ]`   valid rag summary upload writes storage object and upserts `dialectic_project_resources` row with expected `resource_type` and metadata keys.
+         * `[ ]`   valid rag summary upload preserves caller-provided canonical identity fields verbatim in persisted `resource_description`.
+         * `[ ]`   rag summary missing required metadata returns explicit `FileManagerError` and removes uploaded blob when DB insert is blocked.
+         * `[ ]`   rag summary malformed metadata type returns explicit error before successful registration side effects.
+      * `[ ]`   Preserve existing tests for project resources, seed prompt resources, model contribution uploads, and feedback flows.
+
+   * `[ ]`   `supabase/functions/_shared/services/file_manager.errors.test.ts`
+      * `[ ]`   Extend transient/non-transient retry regression suite to include rag summary registration failure surfaces:
+         * `[ ]`   transient storage failure on rag summary upload retries bounded times then errors.
+         * `[ ]`   non-transient validation failure for rag summary metadata does not retry.
+         * `[ ]`   transient DB insert error for rag summary row retries bounded times then errors.
+      * `[ ]`   Preserve existing retry count contracts and constants alignment assertions.
+
+   * `[ ]`   `supabase/functions/_shared/services/file_manager.getFile.test.ts`
+      * `[ ]`   Add signed URL retrieval assertion for rag summary resource table rows to prove retrieval contract parity with other resource types.
+      * `[ ]`   Preserve existing not-found and storage-signing error behavior assertions.
+
+   * `[ ]`   `supabase/functions/_shared/services/file_manager.assemble.test.ts`
+      * `[ ]`   Add non-regression assertion that rag summary registration changes do not alter `assembleAndSaveFinalDocument` JSON assembly path semantics.
+      * `[ ]`   Preserve existing chunk chain, merged JSON object, upload destination, and `is_latest_edit` update behavior assertions.
+
+   * `[ ]`   `supabase/integration_tests/services/file_manager.integration.test.ts`
+      * `[ ]`   Add integration scenario proving end-to-end rag summary persistence:
+         * `[ ]`   upload rag summary via `FileManagerService.uploadAndRegisterFile`.
+         * `[ ]`   assert storage object exists at returned canonical path.
+         * `[ ]`   assert `dialectic_project_resources` row contains expected `resource_type` and structured identity/fingerprint metadata.
+         * `[ ]`   assert non-rag resource and contribution persistence scenarios remain green.
+
+   * `[ ]`   `supabase/integration_tests/services/file_manager.assemble.integration.test.ts`
+      * `[ ]`   Add non-regression assertion that introducing rag summary registration contract does not break final document assembly integration workflow.
+      * `[ ]`   Preserve existing execute/continue/assemble call chain semantics and output assertions.
+
+   * `[ ]`   `supabase/integration_tests/services/file_manager.assembleChunks.integration.test.ts`
+      * `[ ]`   Add non-regression assertion that real `assembleChunks` integration behavior remains unchanged after rag summary registration additions.
+      * `[ ]`   Preserve existing schema-fill placeholder and merged JSON parity checks.
+
+   * `[ ]`   `supabase/functions/_shared/services/file_manager.ts`
+      * `[ ]`   Implement strict rag summary upload validation and registration branch within `uploadAndRegisterFile` resource path:
+         * `[ ]`   reject rag summary uploads missing required identity/fingerprint metadata.
+         * `[ ]`   persist normalized rag summary metadata keys in `resource_description` for downstream deterministic lookup.
+         * `[ ]`   keep existing resource upsert key (`storage_bucket,storage_path,file_name`) and cleanup-on-failure behavior.
+      * `[ ]`   Preserve existing upload retry/collision logic, contribution insert/update logic, feedback upsert logic, and signed URL/assembly method behavior.
+
+   * `[ ]`   `construction`
+      * `[ ]`   `FileManagerService` construction remains unchanged: explicit dependencies (`constructStoragePath`, `logger`, `assembleChunks`) and env bucket requirement.
+      * `[ ]`   No partial construction path is introduced.
+      * `[ ]`   Initialization order remains env bucket validation before storage operations.
+
+   * `[ ]`   `directionality`
+      * `[ ]`   Node layer is shared infrastructure service boundary.
+      * `[ ]`   Dependencies remain inward-facing from shared types/guards/path utils and Supabase clients.
+      * `[ ]`   Outbound effects remain storage/database writes via existing interfaces.
+      * `[ ]`   No cycles introduced with dialectic-worker orchestration sources.
+
+   * `[ ]`   `requirements`
+      * `[ ]`   Rag context summary artifacts are first-class typed uploads with mandatory canonical identity and freshness metadata.
+      * `[ ]`   Runtime validation rejects incomplete/malformed rag summary metadata before successful registration.
+      * `[ ]`   Persisted resource rows expose deterministic metadata fields required by later overlay-consumer nodes.
+      * `[ ]`   Existing file manager behavior for non-rag resource uploads, model contributions, feedback, signed URLs, and assembly remains unchanged and covered by regression tests.
+      * `[ ]`   Node scope remains limited to `file_manager.ts` and its immediate support system; path constructor/deconstructor source changes remain in subsequent Workstream C nodes.
+
+* `[ ]`   supabase/functions/_shared/utils/path_constructor.ts **[BE] Extend RagContextSummary path construction to encode target document identity and prevent cross-document filename collisions within a stage**
+
+   * `[ ]`   `objective`
+      * `[ ]`   Solve the RagContextSummary filename collision gap where multiple compression artifacts targeting different documents within the same session/iteration/stage produce identical storage paths, making per-target artifact lookup and stale-artifact freshness enforcement impossible.
+      * `[ ]`   Functional goals:
+         * `[ ]`   Require `documentKey` in `constructStoragePath` for `FileType.RagContextSummary` so the target document identity is encoded in every compression artifact filename.
+         * `[ ]`   Update the RagContextSummary filename pattern from `{modelSlug}_compressing_{sourceModelSlugs}_rag_summary.txt` to `{modelSlug}_compressing_{sourceModelSlugs}_for_{documentKey}_rag_summary.txt`.
+         * `[ ]`   Produce a deterministic, descriptive error when `documentKey` is absent or empty from a `RagContextSummary` path context, before any path string concatenation.
+         * `[ ]`   Apply `sanitizeForPath` to `documentKey` using the same mechanism already applied to `modelSlug` and `sourceModelSlugs`.
+         * `[ ]`   Preserve all existing non-RagContextSummary path construction behavior unchanged.
+      * `[ ]`   Non-functional constraints:
+         * `[ ]`   No regressions to any existing file type path construction or round-trip assertions in `path_constructor.test.ts`, `path_constructor.fragment.test.ts`, or `path_constructor.continuation.test.ts`.
+         * `[ ]`   No changes to `path_deconstructor.ts` in this node; the RagContextSummary round-trip integration test covering the new filename format will be RED until the next Workstream C node updates the deconstructor.
+         * `[ ]`   No changes to `file_manager.types.ts` PathContext interface; the existing optional `documentKey: string` field is reused as the target document identity carrier for RagContextSummary.
+         * `[ ]`   No changes to `file_manager.ts` upload logic in this node.
+      * `[ ]`   Each goal is atomic and testable through updated and new test coverage in `path_constructor.test.ts` and the new `path_constructor.integration.test.ts`.
+
+   * `[ ]`   `role`
+      * `[ ]`   Node role is shared path-construction utility implementation update and its immediate test and documentation files.
+      * `[ ]`   This role is correct because `path_constructor.ts` is the single canonical source of truth for deterministic storage path and filename generation; all artifact identity encoding must originate here before any upload, row registration, or downstream lookup.
+      * `[ ]`   Out-of-scope responsibilities:
+         * `[ ]`   Do not update `path_deconstructor.ts` to parse the new `_for_{documentKey}` filename segment in this node.
+         * `[ ]`   Do not update `compressPrompt.ts` to supply `documentKey` in its `PathContext` in this node.
+         * `[ ]`   Do not update `file_manager.ts` upload validation or registration logic in this node.
+         * `[ ]`   Do not update `gatherArtifacts.ts` or `prepareModelJob.ts` artifact lookup logic in this node.
+
+   * `[ ]`   `module`
+      * `[ ]`   Bounded context is `supabase/functions/_shared/utils/path_constructor.ts` and its immediate test and documentation files.
+      * `[ ]`   Inside boundary:
+         * `[ ]`   Canonical filename pattern for every `FileType` including the updated `RagContextSummary` pattern.
+         * `[ ]`   Validation rules enforcing required `PathContext` fields per file type, including the new `documentKey` requirement for `RagContextSummary`.
+         * `[ ]`   Path-segment construction helpers: `sanitizeForPath`, `generateShortId`, `mapStageSlugToDirName`.
+      * `[ ]`   Outside boundary:
+         * `[ ]`   Storage upload execution and retry logic.
+         * `[ ]`   Path parsing and deconstruction logic (`path_deconstructor.ts`).
+         * `[ ]`   Orchestration, artifact retrieval, and overlay logic in worker nodes.
+         * `[ ]`   Database row registration and resource metadata persistence.
+
+   * `[ ]`   `deps`
+      * `[ ]`   Provider: `../types/file_manager.types.ts` (`FileType`, `PathContext`).
+         * `[ ]`   Layer classification: shared type contract producer.
+         * `[ ]`   Direction: inbound; consumed by path constructor for type discriminants and context field access.
+         * `[ ]`   Purpose: `FileType.RagContextSummary` case discriminant; `PathContext.documentKey` field reused as target document identity for the updated filename pattern.
+      * `[ ]`   Provider: `./path_utils.ts` (`extractSourceGroupFragment`).
+         * `[ ]`   Layer classification: shared utility helper.
+         * `[ ]`   Direction: inbound; consumed unchanged by non-RagContextSummary path cases.
+         * `[ ]`   Purpose: source group fragment extraction for antithesis and synthesis intermediate artifact paths.
+      * `[ ]`   Provider: `./type-guards/type_guards.file_manager.ts` (`isDocumentKey`).
+         * `[ ]`   Layer classification: shared runtime guard.
+         * `[ ]`   Direction: inbound; consumed unchanged for document-key file type validation.
+         * `[ ]`   Purpose: identify document file types that require `documentKey` for the top-of-function validation block.
+      * `[ ]`   Confirm:
+         * `[ ]`   No reverse dependencies introduced.
+         * `[ ]`   No lateral layer violations introduced.
+
+   * `[ ]`   `context_slice`
+      * `[ ]`   Minimal dependency interfaces required from `PathContext` for the RagContextSummary case:
+         * `[ ]`   `documentKey: string` — non-empty; reused as the canonical target document identity in the updated filename.
+         * `[ ]`   `sourceModelSlugs: string[]` — non-empty array sorted alphabetically before sanitization and join.
+         * `[ ]`   `modelSlug: string` — the compression model producing the summary.
+         * `[ ]`   `sessionId`, `iteration`, `stageSlug`, `projectId` — unchanged; supply the `stageRootPath` segment that prefixes the `_work` storage directory.
+      * `[ ]`   No new PathContext fields introduced; all required fields already exist on the interface.
+      * `[ ]`   Confirm:
+         * `[ ]`   No over-fetching of PathContext fields beyond what is required for RagContextSummary path construction.
+         * `[ ]`   No hidden coupling to upload context, database row structures, or orchestration payloads.
+
+   * `[ ]`   `supabase/functions/_shared/utils/path_constructor.test.ts`
+      * `[ ]`   Update the existing `FileType.RagContextSummary` entry in the `fileTypeTestCases` array:
+         * `[ ]`   Add `documentKey: documentKey` (the file-scoped constant `'executive_summary'`) to the context object built for `RagContextSummary`.
+         * `[ ]`   The expected `fileName` in the round-trip assertion must now match `{modelSlug}_compressing_{sourceModelSlugs}_for_executive_summary_rag_summary.txt` where `{sourceModelSlugs}` is the sorted, sanitized, `_and_`-joined result of the file-scoped `sourceModelSlugs` constant.
+      * `[ ]`   Add standalone unit test: `RagContextSummary with documentKey produces identity-encoded filename`:
+         * `[ ]`   `context`: `projectId: 'proj-1'`, `sessionId: 'session-uuid-4567890'`, `iteration: 1`, `stageSlug: 'synthesis'`, `modelSlug: 'gpt-4-turbo'`, `attemptCount: 0`, `sourceModelSlugs: ['claude-3-opus', 'gemini-1.5-pro']`, `documentKey: 'business_case'`, `fileType: FileType.RagContextSummary`.
+         * `[ ]`   Assert `fileName === 'gpt-4-turbo_compressing_claude-3-opus_and_gemini-1.5-pro_for_business_case_rag_summary.txt'`.
+         * `[ ]`   Assert `storagePath` ends with `/_work` (full value: `proj-1/session_{shortId}/iteration_1/3_synthesis/_work`).
+      * `[ ]`   Add standalone unit test: `RagContextSummary without documentKey throws descriptive error`:
+         * `[ ]`   `context`: valid synthesis stage context with `modelSlug`, non-empty `sourceModelSlugs`, and all session fields, but `documentKey` omitted entirely.
+         * `[ ]`   Assert `constructStoragePath` throws an error whose message contains both the string `'documentKey'` and the string `'rag_context_summary'`.
+      * `[ ]`   Add standalone unit test: `RagContextSummary with empty string documentKey throws descriptive error`:
+         * `[ ]`   `context`: same as above but `documentKey: ''`.
+         * `[ ]`   Assert `constructStoragePath` throws with message containing `'documentKey'` and `'rag_context_summary'`.
+      * `[ ]`   Add standalone unit test: `RagContextSummary documentKey is sanitized before insertion into filename`:
+         * `[ ]`   `context`: valid RagContextSummary context with `documentKey: 'My Complex Key!!'`.
+         * `[ ]`   Assert the resulting `fileName` contains `'_for_my_complex_key_'` (the output of `sanitizeForPath('My Complex Key!!')` is `'my_complex_key'`).
+      * `[ ]`   Add standalone unit test: `Two RagContextSummary contexts identical except documentKey produce distinct filenames`:
+         * `[ ]`   Construct `contextA` with `documentKey: 'business_case'` and `contextB` with `documentKey: 'feature_spec'`, all other fields identical.
+         * `[ ]`   Assert `constructStoragePath(contextA).fileName !== constructStoragePath(contextB).fileName`.
+      * `[ ]`   Preserve all existing assertions and the full `fileTypeTestCases` array round-trip test loop for all other file types unchanged.
+
+   * `[ ]`   `supabase/functions/_shared/utils/path_constructor.ts`
+      * `[ ]`   In the `FileType.RagContextSummary` switch case body:
+         * `[ ]`   Confirm `documentKey` is already destructured from `context` at the top of `constructStoragePath`; it is — no new destructuring is needed.
+         * `[ ]`   Extend the existing guard condition from:
+            `if (!stageRootPath || !modelSlugSanitized || !sourceModelSlugs || sourceModelSlugs.length === 0)`
+            to:
+            `if (!stageRootPath || !modelSlugSanitized || !sourceModelSlugs || sourceModelSlugs.length === 0 || !documentKey || typeof documentKey !== 'string' || documentKey.trim() === '')`
+         * `[ ]`   Update the thrown error message to: `'Required context missing for rag_context_summary: stageRootPath, modelSlug, sourceModelSlugs (non-empty array), and documentKey (non-empty string) are all required.'`
+         * `[ ]`   Add `const documentKeySanitized = sanitizeForPath(documentKey);` immediately after the guard block, before the `sourceModelSlugsSanitized` derivation line.
+         * `[ ]`   Update the `fileName` construction from:
+            `` const fileName = `${modelSlugSanitized}_compressing_${sourceModelSlugsSanitized}_rag_summary.txt`; ``
+            to:
+            `` const fileName = `${modelSlugSanitized}_compressing_${sourceModelSlugsSanitized}_for_${documentKeySanitized}_rag_summary.txt`; ``
+         * `[ ]`   Keep the `return { storagePath: \`${stageRootPath}/_work\`, fileName }` statement unchanged.
+      * `[ ]`   Keep all other switch cases, the top-of-function `isDocumentKey` validation block, and all helper functions (`sanitizeForPath`, `generateShortId`, `mapStageSlugToDirName`) unchanged.
+
+   * `[ ]`   `supabase/functions/_shared/utils/path_constructor.readme.md`
+      * `[ ]`   In the `RAG Context Summary` subsection under `### Utility Artifacts`:
+         * `[ ]`   Update `Primitive` line from `{model_slug}_compressing_{source_model_slugs}_rag_summary.txt` to `{model_slug}_compressing_{source_model_slugs}_for_{document_key}_rag_summary.txt`.
+         * `[ ]`   Update `Example` line from `gpt-4-turbo_compressing_claude-3-opus_and_gpt-4-turbo_rag_summary.txt` to `gpt-4-turbo_compressing_claude-3-opus_and_gpt-4-turbo_for_business_case_rag_summary.txt`.
+         * `[ ]`   Update `Rationale` to: `Describes the action (compressing) and the sources being compressed. The \`_for_{document_key}\` segment encodes the target document identity so that multiple compression artifacts for different documents within the same session/iteration/stage have distinct filenames and can be individually retrieved and freshness-checked. Placed in the \`_work\` directory as it is a machine-only artifact.`
+      * `[ ]`   Preserve all other sections of the readme unchanged.
+
+   * `[ ]`   `supabase/functions/_shared/utils/path_constructor.integration.test.ts`
+      * `[ ]`   Create this new file to prove the `constructStoragePath` → `deconstructStoragePath` round-trip for the updated RagContextSummary filename pattern.
+      * `[ ]`   This test file will be in RED state until `path_deconstructor.ts` is updated in the next Workstream C node to parse the `_for_{documentKey}` segment.
+      * `[ ]`   Test: `RagContextSummary constructStoragePath and deconstructStoragePath are inverses for new filename pattern`:
+         * `[ ]`   Call `constructStoragePath` with `projectId: 'proj-abc'`, `sessionId: 'session-uuid-4567890'`, `iteration: 1`, `stageSlug: 'synthesis'`, `modelSlug: 'gpt-4-turbo'`, `attemptCount: 0`, `sourceModelSlugs: ['claude-3-opus', 'gemini-1.5-pro']`, `documentKey: 'business_case'`, `fileType: FileType.RagContextSummary`.
+         * `[ ]`   Assemble the full storage path as `${storagePath}/${fileName}`.
+         * `[ ]`   Call `deconstructStoragePath` on the assembled full path.
+         * `[ ]`   Assert `deconstructedInfo.fileTypeGuess === FileType.RagContextSummary`.
+         * `[ ]`   Assert `deconstructedInfo.originalProjectId === 'proj-abc'`.
+         * `[ ]`   Assert `deconstructedInfo.modelSlug === 'gpt-4-turbo'`.
+         * `[ ]`   Assert `deconstructedInfo.sourceModelSlugs` deep-equals `['claude-3-opus', 'gemini-1.5-pro']` (sorted).
+         * `[ ]`   Assert `deconstructedInfo.documentKey === 'business_case'` (this assertion drives the RED state until path_deconstructor is updated).
+      * `[ ]`   Test: `RagContextSummary round-trip preserves different documentKey values distinctly`:
+         * `[ ]`   Run the same round-trip for `documentKey: 'feature_spec'` and assert `deconstructedInfo.documentKey === 'feature_spec'`.
+      * `[ ]`   Import `constructStoragePath` from `./path_constructor.ts` and `deconstructStoragePath` from `./path_deconstructor.ts`; no external service calls.
+
+   * `[ ]`   `construction`
+      * `[ ]`   `constructStoragePath` remains a pure function; it accepts a `PathContext` value object and returns a `ConstructedPath` value object with no side effects.
+      * `[ ]`   No partial construction paths are introduced.
+      * `[ ]`   `documentKey` must be a non-empty string for `FileType.RagContextSummary`; an absent or empty value causes an explicit throw before any path string concatenation.
+      * `[ ]`   Initialization order within the RagContextSummary case: guard check → `documentKeySanitized` derivation → `sourceModelSlugsSanitized` derivation → `fileName` assembly → return.
+
+   * `[ ]`   `directionality`
+      * `[ ]`   Node layer is shared path-construction utility (`_shared/utils`).
+      * `[ ]`   Dependencies remain inward-facing from shared type contracts, path utilities, and runtime guards.
+      * `[ ]`   Outputs remain outward-facing `ConstructedPath` values consumed upstream by `file_manager.ts` for upload path construction and downstream by `path_deconstructor.ts` for round-trip parsing.
+      * `[ ]`   No cycles introduced.
+
+   * `[ ]`   `requirements`
+      * `[ ]`   `constructStoragePath` for `FileType.RagContextSummary` with a valid `documentKey` produces a `fileName` matching `{modelSlug}_compressing_{sourceModelSlugs}_for_{documentKeySanitized}_rag_summary.txt` and a `storagePath` of `{stageRootPath}/_work`.
+      * `[ ]`   `constructStoragePath` for `FileType.RagContextSummary` with absent or empty `documentKey` throws an error whose message contains both `'documentKey'` and `'rag_context_summary'`.
+      * `[ ]`   `sanitizeForPath` is applied to `documentKey` before filename assembly, producing the same safety guarantees as for `modelSlug` and each `sourceModelSlug`.
+      * `[ ]`   Two `RagContextSummary` contexts with identical model/sources/session/stage fields but different `documentKey` values produce distinct `fileName` values.
+      * `[ ]`   All existing `path_constructor.test.ts`, `path_constructor.fragment.test.ts`, and `path_constructor.continuation.test.ts` assertions remain GREEN.
+      * `[ ]`   The new `path_constructor.integration.test.ts` round-trip assertions are RED until `path_deconstructor.ts` is updated in the next Workstream C node.
+      * `[ ]`   Node scope remains limited to `path_constructor.ts` and its immediate test and documentation files; `path_deconstructor.ts` source changes remain in the next Workstream C node.
+
+* `[ ]`   supabase/functions/_shared/utils/path_deconstructor.ts **[BE] Update RagContextSummary path parsing to extract target document identity from the new `_for_{documentKey}` filename segment**
+
+   * `[ ]`   `objective`
+      * `[ ]`   Solve the RagContextSummary deconstruction gap where the existing regex cannot parse the new `{modelSlug}_compressing_{sourceModelSlugs}_for_{documentKey}_rag_summary.txt` filename format introduced by the path_constructor node, leaving `documentKey` unparsed and the `path_constructor.integration.test.ts` round-trip assertions in RED state.
+      * `[ ]`   Functional goals:
+         * `[ ]`   Update `ragSummaryPatternString` to add a `_for_(.+)` capture group between the sourceModelSlugs segment and `_rag_summary.txt` so that `documentKey` is extracted as a distinct named result.
+         * `[ ]`   Populate `info.documentKey` from the new capture group in the RagContextSummary matching block.
+         * `[ ]`   Keep `info.sourceModelSlugs` split from `matches[6]` using the existing `_and_` delimiter (group index shifts by one new group).
+         * `[ ]`   Turn the `path_constructor.integration.test.ts` round-trip assertions GREEN by correctly parsing the new format.
+         * `[ ]`   Preserve all other file-type matching behavior unchanged.
+      * `[ ]`   Non-functional constraints:
+         * `[ ]`   No regressions to any existing non-RagContextSummary deconstruction assertions in `path_deconstructor.test.ts`, `path_deconstructor.fragment.test.ts`, or `path_deconstructor.continuation.test.ts`.
+         * `[ ]`   Old-format RagContextSummary paths (without `_for_{documentKey}`) will no longer match the new regex and will fall through to a generic `_work` pattern; this is intentional because path_constructor now requires documentKey for all new RagContextSummary artifacts and no old-format artifacts are in scope for resume/overlay consumption.
+         * `[ ]`   No changes to `path_deconstructor.types.ts`; `DeconstructedPathInfo.documentKey?: string` already exists.
+         * `[ ]`   No changes to `path_constructor.ts` in this node.
+      * `[ ]`   Each goal is atomic and testable through updated and new assertions in `path_deconstructor.test.ts` and the now-GREEN `path_constructor.integration.test.ts`.
+
+   * `[ ]`   `role`
+      * `[ ]`   Node role is shared path-parsing utility implementation update and its immediate test files.
+      * `[ ]`   This role is correct because `path_deconstructor.ts` is the single canonical source of truth for parsing storage paths back into structured identity fields; only it can resolve the new `_for_{documentKey}` segment into `DeconstructedPathInfo.documentKey`.
+      * `[ ]`   Out-of-scope responsibilities:
+         * `[ ]`   Do not update `compressPrompt.ts` or any consumer that supplies `documentKey` to the path context in this node.
+         * `[ ]`   Do not update `gatherArtifacts.ts` or `prepareModelJob.ts` artifact lookup logic in this node.
+         * `[ ]`   Do not alter `path_constructor.ts` in this node.
+
+   * `[ ]`   `module`
+      * `[ ]`   Bounded context is `supabase/functions/_shared/utils/path_deconstructor.ts` and its immediate test files.
+      * `[ ]`   Inside boundary:
+         * `[ ]`   All regex pattern strings and their corresponding `matches` blocks.
+         * `[ ]`   The `ragSummaryPatternString` regex and its match handler.
+         * `[ ]`   Population of `DeconstructedPathInfo` fields from captured regex groups.
+      * `[ ]`   Outside boundary:
+         * `[ ]`   Storage upload execution and path construction algorithms.
+         * `[ ]`   Artifact retrieval, overlay, and resume logic in worker nodes.
+         * `[ ]`   Database row registration and metadata persistence.
+
+   * `[ ]`   `deps`
+      * `[ ]`   Provider: `../types/file_manager.types.ts` (`FileType`).
+         * `[ ]`   Layer classification: shared type contract producer.
+         * `[ ]`   Direction: inbound; consumed by deconstructor for `FileType.RagContextSummary` assignment in `info.fileTypeGuess`.
+         * `[ ]`   Purpose: unchanged; `FileType.RagContextSummary` enum value assigned to `fileTypeGuess` after a successful match.
+      * `[ ]`   Provider: `./path_deconstructor.types.ts` (`DeconstructedPathInfo`).
+         * `[ ]`   Layer classification: local type contract producer.
+         * `[ ]`   Direction: inbound; defines the output shape populated by the deconstructor.
+         * `[ ]`   Purpose: `documentKey?: string` field already present; no additions required.
+      * `[ ]`   Provider: `./type_guards.ts` (`isContributionType`).
+         * `[ ]`   Layer classification: shared runtime guard helper.
+         * `[ ]`   Direction: inbound; consumed unchanged by non-RagContextSummary path branches.
+         * `[ ]`   Purpose: unchanged; contribution type validation for intermediate work file branches.
+      * `[ ]`   Confirm:
+         * `[ ]`   No reverse dependencies introduced.
+         * `[ ]`   No lateral layer violations introduced.
+
+   * `[ ]`   `context_slice`
+      * `[ ]`   Minimal interface required from `DeconstructedPathInfo` for the RagContextSummary case:
+         * `[ ]`   `documentKey?: string` — populated from new regex group 7 (the value between `_for_` and `_rag_summary.txt`).
+         * `[ ]`   `sourceModelSlugs?: string[]` — populated from regex group 6, split by `'_and_'` (unchanged semantics, group index remains 6).
+         * `[ ]`   `modelSlug?: string`, `originalProjectId?`, `shortSessionId?`, `iteration?`, `stageDirName?`, `stageSlug?`, `fileTypeGuess?` — populated unchanged from groups 1–5.
+      * `[ ]`   No new fields required on `DeconstructedPathInfo`; all fields already exist.
+      * `[ ]`   Confirm:
+         * `[ ]`   No over-fetching of path segments beyond the updated RagContextSummary pattern.
+         * `[ ]`   No hidden coupling to upload context or orchestration payloads.
+
+   * `[ ]`   `supabase/functions/_shared/utils/path_deconstructor.test.ts`
+      * `[ ]`   Update the `'[path_deconstructor] direct - rag_context_summary'` test:
+         * `[ ]`   Add `documentKey: 'executive_summary'` to the `context` object so that `constructStoragePath` generates the new `_for_executive_summary` format.
+         * `[ ]`   Add assertion: `assertEquals(info.documentKey, 'executive_summary')`.
+         * `[ ]`   Add assertion: `assertEquals(info.sourceModelSlugs, ['model-a', 'model-b'])`.
+         * `[ ]`   Keep all existing assertions (`originalProjectId`, `shortSessionId`, `iteration`, `stageSlug`, `fileTypeGuess`, `error`) unchanged.
+      * `[ ]`   Update the parameterized `'rag_context_summary'` case in the test matrix:
+         * `[ ]`   Add `documentKey: 'business_case'` to the context object.
+         * `[ ]`   Update `expectedFixedFileNameInPath` from `'text-embedder_compressing_model-a_and_model-b_rag_summary.txt'` to `'text-embedder_compressing_model-a_and_model-b_for_business_case_rag_summary.txt'`.
+      * `[ ]`   Add standalone unit test: `RagContextSummary direct parse extracts documentKey from new format`:
+         * `[ ]`   Construct `fullPath` directly as: `'proj-rcs/session_sessrcsuu/iteration_1/3_synthesis/_work/model-embed_compressing_model-a_and_model-b_for_business_case_rag_summary.txt'` (using `generateShortId('sess-rcs-uuid')` for the short session ID segment).
+         * `[ ]`   Split into `storageDir` and `fileName` at the last `/`.
+         * `[ ]`   Call `deconstructStoragePath({ storageDir, fileName })`.
+         * `[ ]`   Assert `info.fileTypeGuess === FileType.RagContextSummary`.
+         * `[ ]`   Assert `info.documentKey === 'business_case'`.
+         * `[ ]`   Assert `info.sourceModelSlugs` deep-equals `['model-a', 'model-b']`.
+         * `[ ]`   Assert `info.modelSlug === 'model-embed'`.
+         * `[ ]`   Assert `info.error === undefined`.
+      * `[ ]`   Add standalone unit test: `RagContextSummary extracts multi-part documentKey containing underscores`:
+         * `[ ]`   Construct `fullPath` with `documentKey: 'business_case_critique'` by calling `constructStoragePath` with a valid context including `documentKey: 'business_case_critique'` and `fileType: FileType.RagContextSummary`.
+         * `[ ]`   Call `deconstructStoragePath` on the assembled path.
+         * `[ ]`   Assert `info.documentKey === 'business_case_critique'`.
+         * `[ ]`   Assert `info.fileTypeGuess === FileType.RagContextSummary`.
+      * `[ ]`   Add standalone unit test: `RagContextSummary old format (without _for_ segment) does not match as RagContextSummary`:
+         * `[ ]`   Construct `fullPath` in the OLD format: `'proj-old/session_sessolduu/iteration_1/3_synthesis/_work/model-embed_compressing_model-a_and_model-b_rag_summary.txt'` (no `_for_` segment).
+         * `[ ]`   Call `deconstructStoragePath({ storageDir, fileName })`.
+         * `[ ]`   Assert `info.fileTypeGuess !== FileType.RagContextSummary` (old format no longer parsed as RagContextSummary; it falls through to a generic `_work` pattern).
+         * `[ ]`   Assert `info.documentKey === undefined`.
+      * `[ ]`   Preserve all other direct and parameterized test assertions unchanged.
+
+   * `[ ]`   `supabase/functions/_shared/utils/path_deconstructor.ts`
+      * `[ ]`   Update the `ragSummaryPatternString` declaration from:
+         `"^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/_work/([^_]+)_compressing_(.+)_rag_summary\\.txt$"`
+         to:
+         `"^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/_work/([^_]+)_compressing_(.+)_for_(.+)_rag_summary\\.txt$"`
+         so that group 6 captures sourceModelSlugs (everything between `_compressing_` and `_for_`) and group 7 captures documentKey (everything between `_for_` and `_rag_summary.txt`).
+      * `[ ]`   In the `ragSummaryPatternString` match block, update the comment from:
+         `// Path: .../_work/{modelSlug}_compressing_{source_model_slugs}_rag_summary.txt`
+         to:
+         `// Path: .../_work/{modelSlug}_compressing_{sourceModelSlugs}_for_{documentKey}_rag_summary.txt`
+      * `[ ]`   In the `ragSummaryPatternString` match block, add the following line after `info.sourceModelSlugs = matches[6].split('_and_');`:
+         `info.documentKey = matches[7]; // Target document identity encoded in the filename`
+      * `[ ]`   Keep all other lines in the RagContextSummary match block (`originalProjectId`, `shortSessionId`, `iteration`, `stageDirName`, `stageSlug`, `modelSlug`, `sourceModelSlugs`, `fileTypeGuess`, and `return info`) unchanged; only the regex string and the new `documentKey` assignment are modified.
+      * `[ ]`   Keep all other pattern strings and match blocks unchanged.
+
+   * `[ ]`   `construction`
+      * `[ ]`   `deconstructStoragePath` remains a pure function over `{ storageDir, fileName, dbOriginalFileName? }` returning `DeconstructedPathInfo` with no side effects.
+      * `[ ]`   No partial construction paths are introduced.
+      * `[ ]`   Initialization order within the RagContextSummary match block: project/session/iteration/stage fields from groups 1–4 → modelSlug from group 5 → sourceModelSlugs from group 6 split by `'_and_'` → documentKey from group 7 → fileTypeGuess assignment → return.
+
+   * `[ ]`   `directionality`
+      * `[ ]`   Node layer is shared path-parsing utility (`_shared/utils`).
+      * `[ ]`   Dependencies remain inward-facing from shared type contracts and guards.
+      * `[ ]`   Outputs remain outward-facing `DeconstructedPathInfo` values consumed by artifact retrieval and overlay logic in later Workstream C and D nodes.
+      * `[ ]`   No cycles introduced.
+
+   * `[ ]`   `requirements`
+      * `[ ]`   `deconstructStoragePath` for a RagContextSummary path in the new `_for_{documentKey}` format correctly populates `info.documentKey`, `info.sourceModelSlugs`, `info.modelSlug`, `info.fileTypeGuess`, and all session/stage fields.
+      * `[ ]`   `info.sourceModelSlugs` is produced by splitting group 6 on `'_and_'`, preserving the existing split semantics; only the group index changes because a new capture group was inserted.
+      * `[ ]`   `info.documentKey` correctly round-trips for documentKey values containing underscores (e.g., `'business_case_critique'`).
+      * `[ ]`   Old-format RagContextSummary paths (without `_for_`) do not match the updated regex and produce `fileTypeGuess !== FileType.RagContextSummary`.
+      * `[ ]`   All existing `path_deconstructor.test.ts`, `path_deconstructor.fragment.test.ts`, and `path_deconstructor.continuation.test.ts` assertions remain GREEN.
+      * `[ ]`   The `path_constructor.integration.test.ts` assertions introduced in the prior node — including `deconstructedInfo.documentKey === 'business_case'` — are now GREEN.
+      * `[ ]`   Node scope remains limited to `path_deconstructor.ts` and its immediate test files; `compressPrompt.ts` and `prepareModelJob.ts` changes remain in subsequent Workstream C nodes.
+
+* `[ ]`   supabase/functions/dialectic-worker/compressPrompt/compressPrompt.ts **[BE] Persist each successful RAG context summary to canonical artifact storage and include resource identity references in the compression return value**
+
+   * `[ ]`   `objective`
+      * `[ ]`   Solve the compression artifact persistence gap where `compressPrompt.ts` produces a RAG context summary string in memory but does not write it to canonical storage or register a `dialectic_project_resources` row, leaving the compressed summary unreachable by any parent-resume overlay consumer.
+      * `[ ]`   Functional goals:
+         * `[ ]`   After each successful `ragService.getContextForModel()` call for a `sourceType === "document"` victim, call `deps.fileManager.uploadAndRegisterFile()` with a `ResourceUploadContext` whose `pathContext.fileType` is `FileType.RagContextSummary`, `pathContext.documentKey` is the victim document's `document_key`, `pathContext.sourceModelSlugs` is `[params.extendedModelConfig.api_identifier]` (the model being compressed for), and `pathContext.modelSlug` is `params.embeddingModelSlug` (the embedding model generating the summary).
+         * `[ ]`   Collect each persisted artifact's `resourceId` (from `uploadResult.record.id`) and `documentKey` into a `ragArtifacts: RagArtifactRef[]` array and include it in the `CompressPromptSuccessReturn`.
+         * `[ ]`   If `fileManager.uploadAndRegisterFile()` returns an error for any document victim, return a `CompressPromptErrorReturn` immediately, aborting the compression loop.
+         * `[ ]`   Do not call `uploadAndRegisterFile` for `sourceType === "history"` victims; their content is already ephemeral session context and has no stable document identity.
+         * `[ ]`   Add `projectId: string`, `iteration: number`, and `embeddingModelSlug: string` to `CompressPromptParams` so the `PathContext` for each artifact can be fully constructed.
+         * `[ ]`   Add `fileManager: IFileManager` to `CompressPromptDeps` as the injection point for artifact storage.
+         * `[ ]`   Export a `RagArtifactRef` interface from `compressPrompt.interface.ts` and from `compressPrompt.provides.ts`.
+      * `[ ]`   Non-functional constraints:
+         * `[ ]`   No changes to `path_constructor.ts`, `path_deconstructor.ts`, `file_manager.ts`, `prepareModelJob.ts`, or `IFileManager`.
+         * `[ ]`   All existing `compressPrompt.test.ts`, `compressPrompt.interface.test.ts`, `compressPrompt.guard.test.ts` assertions remain GREEN (no regressions); existing tests that use `buildCompressPromptDeps` and `buildCompressPromptParams` adopt new defaults via updated builders.
+         * `[ ]`   The wallet debit idempotency key `rag:{jobId}:{candidateId}` and its semantics are unchanged.
+         * `[ ]`   No silent swallow of persist errors; every file manager failure surfaces as a `CompressPromptErrorReturn` with `retriable: false`.
+      * `[ ]`   Each goal is atomic and testable through updated and new assertions in `compressPrompt.test.ts` and `compressPrompt.guard.test.ts`.
+
+   * `[ ]`   `role`
+      * `[ ]`   Node role is compression worker implementation update and its full bounded-context file set (interface, guard, mock, test, source, provides).
+      * `[ ]`   This role is correct because `compressPrompt.ts` is the sole execution site where a RAG summary string is produced; only it can initiate artifact persistence at the canonical point of production.
+      * `[ ]`   Out-of-scope responsibilities:
+         * `[ ]`   Do not modify `prepareModelJob.ts` to consume `ragArtifacts` in this node; that is the next Workstream C node.
+         * `[ ]`   Do not modify `gatherArtifacts.ts` or overlay resolution logic in this node.
+         * `[ ]`   Do not modify `file_manager.ts` or its interface in this node.
+         * `[ ]`   Do not add `model_slug` to `ResourceDocument` in this node; `sourceModelSlugs` is derived from the injected `extendedModelConfig.api_identifier`.
+
+   * `[ ]`   `module`
+      * `[ ]`   Bounded context is `supabase/functions/dialectic-worker/compressPrompt/` (all seven files in that directory).
+      * `[ ]`   Inside boundary:
+         * `[ ]`   The `CompressPromptDeps`, `CompressPromptParams`, `CompressPromptSuccessReturn`, and `RagArtifactRef` type contracts.
+         * `[ ]`   The `isCompressPromptDeps`, `isCompressPromptParams`, and `isCompressPromptSuccessReturn` runtime guards.
+         * `[ ]`   The `buildCompressPromptDeps`, `buildCompressPromptParams`, and `buildCompressPromptSuccessReturn` mock builders.
+         * `[ ]`   The `compressPrompt` function and its artifact-persistence loop.
+      * `[ ]`   Outside boundary:
+         * `[ ]`   File manager upload logic, storage bucket configuration, and transient retry handling.
+         * `[ ]`   Parent-resume overlay resolution in `prepareModelJob.ts`.
+         * `[ ]`   Embedding model selection and indexing strategy.
+
+   * `[ ]`   `deps`
+      * `[ ]`   Provider: `../../_shared/services/file_manager.mock.ts` (`MockFileManagerService`, `createMockFileManagerService`).
+         * `[ ]`   Layer classification: test-only mock producer.
+         * `[ ]`   Direction: inbound; used in `compressPrompt.mock.ts` and `compressPrompt.test.ts` to provide a configurable `IFileManager` spy for artifact persistence assertions.
+         * `[ ]`   Purpose: allows tests to spy on `uploadAndRegisterFile` calls and configure success/error responses per test case.
+      * `[ ]`   Provider: `../../_shared/types/file_manager.types.ts` (`IFileManager`, `ResourceUploadContext`, `FileType`).
+         * `[ ]`   Layer classification: shared type contract producer.
+         * `[ ]`   Direction: inbound; `IFileManager` is added to `CompressPromptDeps`; `ResourceUploadContext` is constructed in the compression loop; `FileType.RagContextSummary` is the `pathContext.fileType`.
+         * `[ ]`   Purpose: defines the storage abstraction interface and the upload context shape that `compressPrompt.ts` constructs before calling `fileManager.uploadAndRegisterFile`.
+      * `[ ]`   Provider: `../../_shared/types.ts` (`AiModelExtendedConfig`).
+         * `[ ]`   Layer classification: shared type contract producer.
+         * `[ ]`   Direction: inbound; `extendedModelConfig.api_identifier` is read to populate `pathContext.sourceModelSlugs`.
+         * `[ ]`   Purpose: unchanged consumer; `api_identifier` is a new read site for the embedding model path context.
+      * `[ ]`   Confirm:
+         * `[ ]`   No reverse dependencies introduced.
+         * `[ ]`   No lateral layer violations introduced.
+         * `[ ]`   `compressPrompt.ts` does not import from `path_constructor.ts` or `path_deconstructor.ts` directly; path construction is fully encapsulated inside `fileManager.uploadAndRegisterFile`.
+
+   * `[ ]`   `context_slice`
+      * `[ ]`   Minimal interface required from `IFileManager` for this node:
+         * `[ ]`   `uploadAndRegisterFile(context: UploadContext): Promise<FileManagerResponse>` — called once per `sourceType === "document"` victim after successful RAG; returns `{ record: FileRecord; error: null }` on success or `{ record: null; error: FileManagerError }` on failure.
+      * `[ ]`   Minimal fields read from `dialectic_project_resources.Row` (via `FileRecord`):
+         * `[ ]`   `id: string` — the `resourceId` stored in `RagArtifactRef`; common to all `FileRecord` union members.
+      * `[ ]`   Minimal new fields on `CompressPromptParams`:
+         * `[ ]`   `projectId: string` — used as `pathContext.projectId`.
+         * `[ ]`   `iteration: number` — used as `pathContext.iteration`.
+         * `[ ]`   `embeddingModelSlug: string` — used as `pathContext.modelSlug`; identifies the embedding model generating the summary.
+      * `[ ]`   Minimal new field on `CompressPromptDeps`:
+         * `[ ]`   `fileManager: IFileManager`.
+      * `[ ]`   Confirm:
+         * `[ ]`   No over-fetching of schema fields beyond `id`.
+         * `[ ]`   No hidden coupling to job results or payload shape of calling contexts.
+
+   * `[ ]`   `supabase/functions/dialectic-worker/compressPrompt/compressPrompt.interface.test.ts`
+      * `[ ]`   Update `buildCompressPromptSuccessReturn` calls to include `ragArtifacts: []` in the value argument (via the updated builder).
+      * `[ ]`   Add assertion in the `'valid single candidate compressed outcome shape'` test: `assertEquals(Array.isArray(result.ragArtifacts), true)`.
+      * `[ ]`   Preserve all other contract assertions unchanged.
+
+   * `[ ]`   `supabase/functions/dialectic-worker/compressPrompt/compressPrompt.interface.ts`
+      * `[ ]`   Add import: `import type { IFileManager } from "../../_shared/types/file_manager.types.ts";`
+      * `[ ]`   Add `fileManager: IFileManager` to `CompressPromptDeps`.
+      * `[ ]`   Add `projectId: string`, `iteration: number`, `embeddingModelSlug: string` to `CompressPromptParams`.
+      * `[ ]`   Add new exported interface:
+         ```typescript
+         export interface RagArtifactRef {
+           documentKey: string;
+           resourceId: string | null;
+         }
+         ```
+      * `[ ]`   Extend `CompressPromptSuccessReturn` with `ragArtifacts: RagArtifactRef[]`.
+
+   * `[ ]`   `supabase/functions/dialectic-worker/compressPrompt/compressPrompt.guard.ts`
+      * `[ ]`   Add `isRecord(value.fileManager)` check to `isCompressPromptDeps` (after the existing `tokenWalletService` check) so that a missing or non-object `fileManager` causes the guard to return `false`.
+      * `[ ]`   Add string checks for `projectId`, `iteration` (number), and `embeddingModelSlug` (string) to `isCompressPromptParams` (after the existing `walletBalance` check).
+      * `[ ]`   Add `ragArtifacts` array check to `isCompressPromptSuccessReturn`: `if (!("ragArtifacts" in value) || !Array.isArray(value.ragArtifacts)) { return false; }`.
+      * `[ ]`   Keep all other checks in all three guards unchanged.
+
+   * `[ ]`   `supabase/functions/dialectic-worker/compressPrompt/compressPrompt.guard.test.ts`
+      * `[ ]`   Update the `isCompressPromptDeps` test: the existing negative case that omits `countTokens` should also omit `fileManager`; add a new negative case that includes all existing fields plus `countTokens` but omits `fileManager` (assert returns `false`).
+      * `[ ]`   Update the `isCompressPromptParams` test: the existing negative case supplying all-but-walletBalance should also include `projectId`, `iteration`, `embeddingModelSlug`; add a new negative case that includes all existing plus new fields but sets `projectId` to a number (assert returns `false`).
+      * `[ ]`   Update the `isCompressPromptSuccessReturn` test: update `buildCompressPromptSuccessReturn` call (via mock) to include `ragArtifacts: []`; add a negative case that omits `ragArtifacts` (assert returns `false`).
+      * `[ ]`   Preserve all existing positive-case and negative-case assertions; add the new negative cases alongside.
+
+   * `[ ]`   `supabase/functions/dialectic-worker/compressPrompt/compressPrompt.mock.ts`
+      * `[ ]`   Add import: `import { createMockFileManagerService } from "../../_shared/services/file_manager.mock.ts";`
+      * `[ ]`   Extend `CompressPromptDepsOverrides` type with `fileManager?: IFileManager`.
+      * `[ ]`   In `buildCompressPromptDeps`: add `fileManager` to the returned object, defaulting to a `createMockFileManagerService()` instance configured via `setUploadAndRegisterFileResponse({ id: 'mock-rag-resource-id', ... }, null)` for a success response (providing a minimal `dialectic_project_resources.Row`-compatible object with at least `id: 'mock-rag-resource-id'`).
+      * `[ ]`   Extend `CompressPromptParamsOverrides` type with `projectId?: string`, `iteration?: number`, `embeddingModelSlug?: string`.
+      * `[ ]`   In `buildCompressPromptParams`: add `projectId`, `iteration`, `embeddingModelSlug` to the returned object with defaults `'contract-project-id'`, `1`, and `'text-embedding-3-small'` respectively.
+      * `[ ]`   In `buildCompressPromptSuccessReturn`: add `ragArtifacts: value.ragArtifacts ?? []` to the returned object.
+      * `[ ]`   Keep all existing exported symbols and their signatures unchanged.
+
+   * `[ ]`   `supabase/functions/dialectic-worker/compressPrompt/compressPrompt.test.ts`
+      * `[ ]`   Add import: `import { createMockFileManagerService } from "../../_shared/services/file_manager.mock.ts";`
+      * `[ ]`   All existing tests continue to pass because `buildCompressPromptDeps` now includes a default mock `fileManager` that returns a success response.
+      * `[ ]`   Add standalone test: `document victim artifact is persisted via fileManager after successful RAG compression`:
+         * `[ ]`   Create `MockFileManagerService` via `createMockFileManagerService()`; call `setUploadAndRegisterFileResponse` with a minimal record object containing `id: 'rag-res-1'`.
+         * `[ ]`   Configure `MockRagService` with `mockContextResult: "compressed-text"`, `mockTokensUsed: 50`.
+         * `[ ]`   Set up one document victim whose `document_key` is `'business_case'` and `sourceType` is `"document"`.
+         * `[ ]`   Call `compressPrompt` with these deps, a params object including `projectId: 'proj-test'`, `iteration: 1`, `embeddingModelSlug: 'text-embedding-3-small'`, and a strategy returning the one victim.
+         * `[ ]`   Assert result is `CompressPromptSuccessReturn`.
+         * `[ ]`   Assert `fileManagerMock.uploadAndRegisterFile.calls.length === 1`.
+         * `[ ]`   Assert the call argument's `pathContext.fileType === FileType.RagContextSummary`.
+         * `[ ]`   Assert the call argument's `pathContext.documentKey === 'business_case'`.
+         * `[ ]`   Assert the call argument's `pathContext.modelSlug === 'text-embedding-3-small'`.
+         * `[ ]`   Assert `fileManagerMock.uploadAndRegisterFile.calls[0].args[0].resourceDescriptionForDb.target_document_id === victimDoc.id`.
+         * `[ ]`   Assert `fileManagerMock.uploadAndRegisterFile.calls[0].args[0].resourceDescriptionForDb.target_document_key === 'business_case'`.
+         * `[ ]`   Assert `typeof fileManagerMock.uploadAndRegisterFile.calls[0].args[0].resourceDescriptionForDb.source_fingerprint === 'string'` and the value is a non-empty 64-character lowercase hex string.         
+         * `[ ]`   Assert `result.ragArtifacts.length === 1`.
+         * `[ ]`   Assert `result.ragArtifacts[0].documentKey === 'business_case'`.
+         * `[ ]`   Assert `result.ragArtifacts[0].resourceId === 'rag-res-1'`.
+      * `[ ]`   Add standalone test: `history victim does not trigger fileManager call and ragArtifacts is empty`:
+         * `[ ]`   Create `MockFileManagerService` via `createMockFileManagerService()`.
+         * `[ ]`   Set up one history victim with `sourceType: "history"` (construct a `Messages` entry in `conversationHistory` matching the victim's `id`).
+         * `[ ]`   Call `compressPrompt` with `MockRagService` returning `"compressed-history"`.
+         * `[ ]`   Assert result is `CompressPromptSuccessReturn`.
+         * `[ ]`   Assert `fileManagerMock.uploadAndRegisterFile.calls.length === 0`.
+         * `[ ]`   Assert `result.ragArtifacts.length === 0`.
+      * `[ ]`   Add standalone test: `fileManager failure on document victim returns CompressPromptErrorReturn`:
+         * `[ ]`   Create `MockFileManagerService` via `createMockFileManagerService()`; call `setUploadAndRegisterFileResponse(null, { message: 'storage unavailable' })` to simulate failure.
+         * `[ ]`   Set up one document victim.
+         * `[ ]`   Call `compressPrompt` with `MockRagService` returning a valid context string.
+         * `[ ]`   Assert result is `CompressPromptErrorReturn`.
+         * `[ ]`   Assert `result.retriable === false`.
+         * `[ ]`   Assert `result.error.message` includes the victim document's `document_key`.
+
+   * `[ ]`   `supabase/functions/dialectic-worker/compressPrompt/compressPrompt.ts`
+      * `[ ]`   Add imports:
+         * `[ ]`   `import type { IFileManager, ResourceUploadContext, FileType as FileTypePkg } from "../../_shared/types/file_manager.types.ts";` (import `FileType` directly from `file_manager.types.ts` as the canonical enum; use existing `FileType` import if already present in the file, otherwise add it).
+         * `[ ]`   Add `RagArtifactRef` to the import from `"./compressPrompt.interface.ts"`.
+      * `[ ]`   At the top of the `compressPrompt` function body (after existing variable declarations), declare `const collectedArtifacts: RagArtifactRef[] = [];`.
+      * `[ ]`   In the `payload.compressionStrategy(...)` call, change the second argument from `{ inputsRelevance: params.inputsRelevance }` to `{ inputsRelevance: params.inputsRelevance, embeddingModelApiIdentifier: params.embeddingModelSlug }`.
+      * `[ ]`   In the compression `while` loop, inside the `victim.sourceType !== "history"` branch where `docIndex > -1`, immediately BEFORE `resourceDocuments[docIndex].content = newContent;`:
+         * `[ ]`   Look up the victim document: `const victimDoc = resourceDocuments.find((d) => d.id === victim.id);`
+         * `[ ]`   If `victimDoc` is defined, compute the source fingerprint from the original content before it is overwritten: `const sourceHash = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(victimDoc.content)))).map(b => b.toString(16).padStart(2, '0')).join('');`
+         * `[ ]`   Then execute `resourceDocuments[docIndex].content = newContent;` to apply the compressed content.
+         * `[ ]`   If `victimDoc` is defined (reuse the already-resolved reference):
+            ```typescript
+            const uploadCtx: ResourceUploadContext = {
+              pathContext: {
+                fileType: FileType.RagContextSummary,
+                projectId: params.projectId,
+                sessionId: params.sessionId,
+                iteration: params.iteration,
+                stageSlug: params.stageSlug,
+                modelSlug: params.embeddingModelSlug,
+                sourceModelSlugs: [params.extendedModelConfig.api_identifier],
+                documentKey: victimDoc.document_key,
+              },
+              fileContent: newContent,
+              mimeType: 'text/plain',
+              sizeBytes: new TextEncoder().encode(newContent).length,
+              userId: params.projectOwnerUserId,
+              description: `RAG context summary for ${victimDoc.document_key} (job ${params.jobId})`,
+              resourceDescriptionForDb: {
+                target_document_id: victimDoc.id,
+                target_document_key: victimDoc.document_key,
+                source_fingerprint: sourceHash,
+                compressed_by_model_id: params.extendedModelConfig.api_identifier,
+                compressed_for_job_id: params.jobId,
+              },
+            };
+      * `[ ]`   In the final success `return` statement, extend the return object with `ragArtifacts: collectedArtifacts`.
+      * `[ ]`   Keep all existing logic (wallet debit, history enforcement, message assembly, token counting, context window checks, affordability checks) exactly as-is; only the document persist block and the final return shape change.
+
+   * `[ ]`   `supabase/functions/dialectic-worker/compressPrompt/compressPrompt.provides.ts`
+      * `[ ]`   Add `RagArtifactRef` to the `export type { ... }` block from `"./compressPrompt.interface.ts"`.
+      * `[ ]`   Keep all other exports unchanged.
+
+   * `[ ]`   `construction`
+      * `[ ]`   `compressPrompt` remains a pure async function over `(deps, params, payload)` with no global state; all new state lives in `collectedArtifacts` within the function scope.
+      * `[ ]`   Artifact persistence is attempted strictly AFTER the content replacement in `resourceDocuments[docIndex]`, so if persist fails, the in-memory content has been replaced but we abort immediately with an error — the caller is responsible for not using a partial success.
+      * `[ ]`   Initialization order for each document victim: RAG call → wallet debit → content replacement → persistence → ref collection → loop continue.
+      * `[ ]`   History victims still undergo RAG call and wallet debit but skip persistence; their compression loop body is unchanged.
+
+   * `[ ]`   `directionality`
+      * `[ ]`   Node layer is dialectic-worker execution utility.
+      * `[ ]`   `IFileManager` is a shared-service dependency; consuming it from a worker utility is a downward call through the shared layer.
+      * `[ ]`   `compressPrompt.ts` does not import from `prepareModelJob.ts` or any other worker utility; no peer-layer lateral coupling is introduced.
+      * `[ ]`   The `ragArtifacts` on `CompressPromptSuccessReturn` flows outward to callers; the next consumer (`prepareModelJob.ts`) will read these references in the subsequent Workstream C node.
+
+   * `[ ]`   `requirements`
+      * `[ ]`   After successful RAG compression of a document victim, `fileManager.uploadAndRegisterFile` is called exactly once with `pathContext.fileType === FileType.RagContextSummary`, `pathContext.documentKey` equal to the victim's `document_key`, `pathContext.modelSlug` equal to `params.embeddingModelSlug`, and `pathContext.sourceModelSlugs` equal to `[params.extendedModelConfig.api_identifier]`.
+      * `[ ]`   History victims do not trigger `uploadAndRegisterFile`; `ragArtifacts` is empty when only history victims are compressed.
+      * `[ ]`   A `fileManager.uploadAndRegisterFile` failure for any document victim causes `compressPrompt` to return a `CompressPromptErrorReturn` with `retriable: false` and an error message including the victim's `document_key`.
+      * `[ ]`   The `ragArtifacts` array in `CompressPromptSuccessReturn` has one entry per successfully persisted document victim, each containing `documentKey` and `resourceId`.
+      * `[ ]`   `isCompressPromptDeps` returns `false` when `fileManager` is absent or non-object.
+      * `[ ]`   `isCompressPromptParams` returns `false` when `projectId`, `iteration`, or `embeddingModelSlug` is absent or of the wrong type.
+      * `[ ]`   `isCompressPromptSuccessReturn` returns `false` when `ragArtifacts` is absent or not an array.
+      * `[ ]`   All previously passing tests in `compressPrompt.test.ts`, `compressPrompt.guard.test.ts`, and `compressPrompt.interface.test.ts` remain GREEN; no regression to existing compression, debit, token-count, or context-window behavior.
+      * `[ ]`   Node scope covers all seven files in `supabase/functions/dialectic-worker/compressPrompt/`; `prepareModelJob.ts` changes remain in the next Workstream C node.
+
+* `[ ]`   supabase/functions/dialectic-worker/calculateAffordability/calculateAffordability.ts **[BE] Thread projectId, iteration, and embeddingModelSlug from CalculateAffordabilityParams into CompressPromptParams construction to satisfy the updated compression artifact persistence contract**
+
+   * `[ ]`   `objective`
+      * `[ ]`   Solve the `calculateAffordability` params gap where `calculateAffordability.ts` constructs `CompressPromptParams` and calls `deps.compressPrompt` but does not supply `projectId`, `iteration`, or `embeddingModelSlug` — fields now required by `compressPrompt.ts` for artifact path construction and embedding model identification.
+      * `[ ]`   Functional goals:
+         * `[ ]`   Add `projectId: string`, `iteration: number`, and `embeddingModelSlug: string` to `CalculateAffordabilityParams`.
+         * `[ ]`   Thread the three new fields from `params` into the `compressParams` object constructed in the oversized execution path before `deps.compressPrompt` is called.
+         * `[ ]`   Add runtime guards for the three new fields in `isCalculateAffordabilityParams`.
+         * `[ ]`   Add default values for the three new fields in `buildCalculateAffordabilityParams` so all existing callers compile and run without changes.
+         * `[ ]`   Add unit test coverage asserting the three new fields are passed to `deps.compressPrompt` in the oversized path.
+      * `[ ]`   Non-functional constraints:
+         * `[ ]`   No change to affordability logic: NSF detection, rationality thresholds, context window checks, token counting, `getMaxOutputTokens` calls, and direct-return paths are unchanged.
+         * `[ ]`   All existing tests in `calculateAffordability.test.ts`, `calculateAffordability.guard.test.ts`, `calculateAffordability.interface.test.ts`, and `calculateAffordability.integration.test.ts` remain GREEN.
+         * `[ ]`   No edits to `compressPrompt.ts`, `prepareModelJob.ts`, or any file outside the `calculateAffordability/` folder in this node.
+      * `[ ]`   Each goal is atomic and testable through updated interface, guard, mock, unit, and integration assertions in this module scope.
+
+   * `[ ]`   `role`
+      * `[ ]`   Node role is consumer params update: `calculateAffordability.ts` is a cross-cutting consumer of `BoundCompressPromptFn` and must supply the updated `CompressPromptParams` contract established by the prior Workstream C node.
+      * `[ ]`   This role is correct because `calculateAffordability.ts` is the only site where `CompressPromptParams` is constructed and `deps.compressPrompt` is invoked; the interface, guard, mock, and tests must be updated to reflect the new required fields.
+      * `[ ]`   Out-of-scope responsibilities:
+         * `[ ]`   Do not modify how `compressPrompt.ts` persists artifacts in this node.
+         * `[ ]`   Do not modify `prepareModelJob.ts` bindings or params in this node.
+         * `[ ]`   Do not add new dependencies to `CalculateAffordabilityDeps`.
+
+   * `[ ]`   `module`
+      * `[ ]`   Bounded context is `supabase/functions/dialectic-worker/calculateAffordability/` (all nine files in that directory).
+      * `[ ]`   Inside boundary:
+         * `[ ]`   The three new fields in `CalculateAffordabilityParams` and their guard/mock/test coverage.
+         * `[ ]`   The `compressParams` construction inside `calculateAffordability.ts` that passes the new fields to `deps.compressPrompt`.
+      * `[ ]`   Outside boundary:
+         * `[ ]`   What `compressPrompt.ts` does with `projectId`, `iteration`, and `embeddingModelSlug` internally.
+         * `[ ]`   File manager persistence, path construction, and artifact registration details.
+         * `[ ]`   How `prepareModelJob.ts` binds and supplies these fields to `calculateAffordability`.
+
+   * `[ ]`   `deps`
+      * `[ ]`   No new dependencies added to `CalculateAffordabilityDeps`.
+      * `[ ]`   Provider: `../compressPrompt/compressPrompt.interface.ts` (`CompressPromptParams`).
+         * `[ ]`   Layer classification: peer-module contract producer.
+         * `[ ]`   Direction: inbound; `calculateAffordability.ts` constructs `CompressPromptParams` which now requires `projectId`, `iteration`, and `embeddingModelSlug`.
+         * `[ ]`   Purpose: the three new fields in `CalculateAffordabilityParams` exist solely to satisfy the updated `CompressPromptParams` contract from the prior Workstream C node.
+      * `[ ]`   Confirm:
+         * `[ ]`   No reverse dependencies introduced.
+         * `[ ]`   No lateral layer violations introduced.
+
+   * `[ ]`   `context_slice`
+      * `[ ]`   Minimal new interface required from dependencies:
+         * `[ ]`   `CompressPromptParams.projectId: string` — threaded from `CalculateAffordabilityParams.projectId`.
+         * `[ ]`   `CompressPromptParams.iteration: number` — threaded from `CalculateAffordabilityParams.iteration`.
+         * `[ ]`   `CompressPromptParams.embeddingModelSlug: string` — threaded from `CalculateAffordabilityParams.embeddingModelSlug`.
+      * `[ ]`   Injection shape remains `CalculateAffordabilityDeps`, `CalculateAffordabilityParams`, `CalculateAffordabilityPayload`; only `CalculateAffordabilityParams` gains three additive required fields.
+      * `[ ]`   Confirm:
+         * `[ ]`   No over-fetching; no field beyond the three is newly required from any dependency.
+         * `[ ]`   No hidden coupling to job results, wallet state, or file storage schema.
+
+   * `[ ]`   `supabase/functions/dialectic-worker/calculateAffordability/calculateAffordability.interface.test.ts`
+      * `[ ]`   Add imports: `import { createMockSupabaseClient } from "../../_shared/supabase.mock.ts"` and `import { DbClient } from "../compressPrompt/compressPrompt.mock.ts"` to support params builder calls.
+      * `[ ]`   Add contract assertion `CalculateAffordabilityParams shape includes projectId, iteration, embeddingModelSlug`:
+         * `[ ]`   Call `buildCalculateAffordabilityParams(DbClient(client), { projectId: 'proj-abc', iteration: 3, embeddingModelSlug: 'text-embedding-3-small' })`.
+         * `[ ]`   Assert `typeof params.projectId === 'string'` and `params.projectId === 'proj-abc'`.
+         * `[ ]`   Assert `typeof params.iteration === 'number'` and `params.iteration === 3`.
+         * `[ ]`   Assert `typeof params.embeddingModelSlug === 'string'` and `params.embeddingModelSlug === 'text-embedding-3-small'`.
+      * `[ ]`   Preserve all existing return-shape contract assertions (DirectReturn, CompressedReturn, ErrorReturn) unchanged.
+
+   * `[ ]`   `supabase/functions/dialectic-worker/calculateAffordability/calculateAffordability.interface.ts`
+      * `[ ]`   Add `projectId: string` to `CalculateAffordabilityParams` after `sessionId: string`.
+      * `[ ]`   Add `iteration: number` to `CalculateAffordabilityParams` after `projectId: string`.
+      * `[ ]`   Add `embeddingModelSlug: string` to `CalculateAffordabilityParams` after `iteration: number`.
+      * `[ ]`   Keep all other fields and all other interfaces (`CalculateAffordabilityDeps`, `CalculateAffordabilityPayload`, all return types, `UserConfig`, `GetMaxOutputTokensFn`, `TierOutputCapTokens`, `CalculateAffordabilityFn`, `BoundCalculateAffordabilityFn`) unchanged.
+
+   * `[ ]`   `supabase/functions/dialectic-worker/calculateAffordability/calculateAffordability.guard.test.ts`
+      * `[ ]`   Update the existing positive-case `isCalculateAffordabilityParams` test: the `buildCalculateAffordabilityParams` call already supplies the three new fields via updated defaults; no assertion change needed for the positive case.
+      * `[ ]`   Add negative guard test `isCalculateAffordabilityParams rejects params missing projectId`:
+         * `[ ]`   Construct a params-like object with all existing valid fields plus `iteration: 1` and `embeddingModelSlug: 'text-embedding-3-small'` but omitting `projectId`.
+         * `[ ]`   Assert `isCalculateAffordabilityParams(value) === false`.
+      * `[ ]`   Add negative guard test `isCalculateAffordabilityParams rejects params where iteration is a string`:
+         * `[ ]`   Construct a params-like object with all existing valid fields plus `projectId: 'test'` and `embeddingModelSlug: 'text-embedding-3-small'` but with `iteration: 'not-a-number'`.
+         * `[ ]`   Assert `isCalculateAffordabilityParams(value) === false`.
+      * `[ ]`   Add negative guard test `isCalculateAffordabilityParams rejects params missing embeddingModelSlug`:
+         * `[ ]`   Construct a params-like object with all existing valid fields plus `projectId: 'test'` and `iteration: 1` but omitting `embeddingModelSlug`.
+         * `[ ]`   Assert `isCalculateAffordabilityParams(value) === false`.
+      * `[ ]`   Preserve all other existing positive and negative guard test assertions unchanged.
+
+   * `[ ]`   `supabase/functions/dialectic-worker/calculateAffordability/calculateAffordability.guard.ts`
+      * `[ ]`   Add the following three checks to `isCalculateAffordabilityParams` after the existing `userConfig` / `tier_output_cap_tokens` check:
+         * `[ ]`   `if (!("projectId" in value) || typeof value.projectId !== "string") { return false; }`
+         * `[ ]`   `if (!("iteration" in value) || typeof value.iteration !== "number") { return false; }`
+         * `[ ]`   `if (!("embeddingModelSlug" in value) || typeof value.embeddingModelSlug !== "string") { return false; }`
+      * `[ ]`   Keep all other guards (`isCalculateAffordabilityDeps`, `isCalculateAffordabilityPayload`, `isCalculateAffordabilityDirectReturn`, `isCalculateAffordabilityCompressedReturn`, `isCalculateAffordabilityErrorReturn`, `isBoundCalculateAffordabilityFn`) completely unchanged.
+
+   * `[ ]`   `supabase/functions/dialectic-worker/calculateAffordability/calculateAffordability.mock.ts`
+      * `[ ]`   Add `projectId?: string`, `iteration?: number`, `embeddingModelSlug?: string` to `CalculateAffordabilityParamsOverrides`.
+      * `[ ]`   In `buildCalculateAffordabilityParams`, add to the `base` object:
+         * `[ ]`   `projectId: overrides?.projectId !== undefined ? overrides.projectId : 'contract-project-id',`
+         * `[ ]`   `iteration: overrides?.iteration !== undefined ? overrides.iteration : 1,`
+         * `[ ]`   `embeddingModelSlug: overrides?.embeddingModelSlug !== undefined ? overrides.embeddingModelSlug : 'text-embedding-3-small',`
+      * `[ ]`   Keep all other exported symbols, existing defaults, and override patterns unchanged.
+
+   * `[ ]`   `supabase/functions/dialectic-worker/calculateAffordability/calculateAffordability.test.ts`
+      * `[ ]`   All existing tests pass without modification because `buildCalculateAffordabilityParams` now supplies default values for the three new fields.
+      * `[ ]`   Add unit test `Oversized: compressPrompt is called with projectId, iteration, and embeddingModelSlug threaded from calculateAffordability params`:
+         * `[ ]`   Use `createCompressPromptMock` configured to return `buildCompressPromptSuccessReturn({ chatApiRequest: buildChatApiRequest(resourceDocuments, 'prompt'), resolvedInputTokenCount: 42, resourceDocuments })`.
+         * `[ ]`   Call `buildCalculateAffordabilityParams(DbClient(client), { projectId: 'threading-test-project', iteration: 5, embeddingModelSlug: 'text-embedding-ada-002', walletBalance: 10_000_000, extendedModelConfig: buildExtendedModelConfig({ context_window_tokens: 50_000, provider_max_input_tokens: 128000 }), inputRate: 0.01, outputRate: 0.01, inputsRelevance: [{ document_key: 'thesis_plan', relevance: 1 }] })`.
+         * `[ ]`   Use `createMockCountTokens` returning `100_000` to force the oversized path.
+         * `[ ]`   Assert `calls.length >= 1`.
+         * `[ ]`   Assert `calls[0].params.projectId === 'threading-test-project'`.
+         * `[ ]`   Assert `calls[0].params.iteration === 5`.
+         * `[ ]`   Assert `calls[0].params.embeddingModelSlug === 'text-embedding-ada-002'`.
+
+   * `[ ]`   `supabase/functions/dialectic-worker/calculateAffordability/calculateAffordability.ts`
+      * `[ ]`   In the `compressParams: CompressPromptParams` object construction in the oversized path (after the existing `walletBalance` field), add:
+         * `[ ]`   `projectId: params.projectId,`
+         * `[ ]`   `iteration: params.iteration,`
+         * `[ ]`   `embeddingModelSlug: params.embeddingModelSlug,`
+      * `[ ]`   Keep all other implementation logic unchanged: token counting, NSF checks, rationality threshold evaluations, `solveTargetForBalance`, `balanceAfterCompression` computation, `compressPayload` construction, and `compressResult` success/error handling.
+
+   * `[ ]`   `supabase/functions/dialectic-worker/calculateAffordability/calculateAffordability.integration.test.ts`
+      * `[ ]`   Existing integration test scenarios pass without modification because `buildCalculateAffordabilityParams` now includes defaults for the three new fields, which flow through to the real `compressPrompt` call.
+      * `[ ]`   Add assertion in the oversized integration scenario: after `calculateAffordability` returns, assert `isCalculateAffordabilityCompressedReturn(result) === true` and `result.resolvedInputTokenCount > 0` — proving the three new fields flowed through the real `calculateAffordability` → real `compressPrompt` call chain without type or runtime error.
+      * `[ ]`   Confirm that `buildCalculateAffordabilityDeps` consumes the updated `buildCompressPromptDeps` from the prior node, which now includes a default mock `fileManager`; no explicit `fileManager` injection is required in this integration test.
+
+   * `[ ]`   `construction`
+      * `[ ]`   `calculateAffordability` remains a pure async function over `(deps, params, payload)` with no global state or constructor.
+      * `[ ]`   No partial construction path is introduced.
+      * `[ ]`   The three new params fields are required at call time; no lazy defaults or optional fallbacks are used in the source implementation.
+
+   * `[ ]`   `directionality`
+      * `[ ]`   Node layer is dialectic-worker execution utility.
+      * `[ ]`   The three new fields flow inward from the calling context (`prepareModelJob.ts`) through `CalculateAffordabilityParams` and outward into `CompressPromptParams` via the existing `deps.compressPrompt` call.
+      * `[ ]`   No new dependency cycles or layer violations are introduced.
+
+   * `[ ]`   `requirements`
+      * `[ ]`   `CalculateAffordabilityParams` includes required `projectId: string`, `iteration: number`, and `embeddingModelSlug: string` fields.
+      * `[ ]`   `isCalculateAffordabilityParams` returns `false` when any of `projectId`, `iteration`, or `embeddingModelSlug` is absent or of the wrong primitive type.
+      * `[ ]`   `calculateAffordability` passes `params.projectId`, `params.iteration`, and `params.embeddingModelSlug` into the `compressParams` object in the oversized execution path before calling `deps.compressPrompt`.
+      * `[ ]`   The new unit test proves the three fields are threaded through by asserting on `calls[0].params` captured from the `compressPrompt` mock.
+      * `[ ]`   All previously passing tests in `calculateAffordability.test.ts`, `calculateAffordability.guard.test.ts`, `calculateAffordability.interface.test.ts`, and `calculateAffordability.integration.test.ts` remain GREEN.
+      * `[ ]`   Node scope is limited to the nine files in `calculateAffordability/`; `prepareModelJob.ts` changes remain in the next Workstream C node.
+
+* `[ ]`   supabase/functions/dialectic-worker/prepareModelJob/prepareModelJob.ts **[BE] Supply projectId, iteration, and embeddingModelSlug to CalculateAffordabilityParams by resolving the default embedding provider from the database before affordability preflight**
+
+   * `[ ]`   `objective`
+      * `[ ]`   Solve the `affordParams` construction gap where `prepareModelJob.ts` builds `CalculateAffordabilityParams` without the `projectId`, `iteration`, and `embeddingModelSlug` fields now required by `calculateAffordability.ts` for artifact-safe compression.
+      * `[ ]`   Functional goals:
+         * `[ ]`   Query `ai_providers` for the single row where `is_default_embedding = true` and `is_active = true` before building `affordParams`, and extract its `api_identifier` as `embeddingModelSlug`.
+         * `[ ]`   Return a retriable error if the embedding provider DB query fails.
+         * `[ ]`   Return a non-retriable error if no default embedding provider row is found or `api_identifier` is not a string.
+         * `[ ]`   Add `projectId: projectIdRaw`, `iteration: iterationNumberRaw`, and `embeddingModelSlug` to the `affordParams: CalculateAffordabilityParams` object construction.
+         * `[ ]`   Preserve all existing validation steps, field extraction, wallet query, cost-rate validation, and enqueue call behavior unchanged.
+      * `[ ]`   Non-functional constraints:
+         * `[ ]`   No new fields added to `PrepareModelJobDeps`, `PrepareModelJobParams`, or `PrepareModelJobPayload`; the embedding model slug is resolved from the DB using the existing `params.dbClient`.
+         * `[ ]`   All existing tests in `prepareModelJob.test.ts`, `prepareModelJob.inputsRequired.test.ts`, and `prepareModelJob.integration.test.ts` remain GREEN after mock client is updated to return embedding provider data.
+         * `[ ]`   No edits to `calculateAffordability.ts`, `compressPrompt.ts`, `index.ts`, or any file outside `prepareModelJob/` in this node.
+      * `[ ]`   Each goal is atomic and testable through updated mock setup and new unit assertions in this module scope.
+
+   * `[ ]`   `role`
+      * `[ ]`   Node role is orchestration implementation update: `prepareModelJob.ts` is the call-site that constructs `CalculateAffordabilityParams` and must supply the three fields now required by the prior Workstream C nodes.
+      * `[ ]`   This role is correct because `prepareModelJob.ts` is the only file that builds and passes `affordParams` to `deps.calculateAffordability`, and it already has access to `projectId` and `iteration` from `job.payload`; `embeddingModelSlug` is the only new runtime resolution needed.
+      * `[ ]`   Out-of-scope responsibilities:
+         * `[ ]`   Do not change how `calculateAffordability.ts` builds or passes `compressParams` in this node.
+         * `[ ]`   Do not add `embeddingModelSlug` or embedding model resolution to `PrepareModelJobDeps`.
+         * `[ ]`   Do not change the `enqueueModelCall` invocation shape in this node.
+
+   * `[ ]`   `module`
+      * `[ ]`   Bounded context is `supabase/functions/dialectic-worker/prepareModelJob/` (all ten files in that directory).
+      * `[ ]`   Inside boundary:
+         * `[ ]`   The new `ai_providers` DB query and its error handling.
+         * `[ ]`   The three additive fields in the `affordParams` object literal.
+         * `[ ]`   Mock helper for a default embedding provider row.
+         * `[ ]`   Test coverage for the two new error paths and for field threading.
+      * `[ ]`   Outside boundary:
+         * `[ ]`   How `calculateAffordability.ts` or `compressPrompt.ts` uses `embeddingModelSlug` internally.
+         * `[ ]`   `index.ts` DI wiring for `calculateAffordability` deps.
+         * `[ ]`   Artifact lifecycle management and parent-resume overlay resolution.
+
+   * `[ ]`   `deps`
+      * `[ ]`   No new fields added to `PrepareModelJobDeps`.
+      * `[ ]`   Provider: `params.dbClient` (`SupabaseClient<Database>`).
+         * `[ ]`   Layer classification: existing injected infrastructure dependency.
+         * `[ ]`   Direction: inbound; already present in `PrepareModelJobParams`.
+         * `[ ]`   Purpose: execute the new `ai_providers` query for the default embedding provider alongside the existing `user_subscriptions` tier-cap query.
+      * `[ ]`   Confirm:
+         * `[ ]`   No reverse dependencies introduced.
+         * `[ ]`   No lateral layer violations introduced.
+
+   * `[ ]`   `context_slice`
+      * `[ ]`   Minimal new interface required from dependencies:
+         * `[ ]`   `ai_providers.api_identifier: string` — the only field selected from the embedding provider row; used as `embeddingModelSlug` in `affordParams`.
+      * `[ ]`   All other injected interfaces (`BoundCalculateAffordabilityFn`, `BoundEnqueueModelCallFn`, wallet service, cost-rate validator, scope filter) remain unchanged.
+      * `[ ]`   Confirm:
+         * `[ ]`   No over-fetching; only `api_identifier` is selected from `ai_providers`.
+         * `[ ]`   No hidden coupling to artifact DB rows or file storage schema.
+
+   * `[ ]`   `supabase/functions/dialectic-worker/prepareModelJob/prepareModelJob.interface.test.ts`
+      * `[ ]`   Preserve all existing contract assertions unchanged.
+      * `[ ]`   Add assertion `PrepareModelJobDeps still declares exactly seven dependency keys after embedding resolution is moved to source implementation` to confirm no new dep is added:
+         * `[ ]`   Build `surface: Record<keyof PrepareModelJobDeps, true>` with the same seven keys as before.
+         * `[ ]`   Assert `Object.keys(surface).length === 7`.
+
+   * `[ ]`   `supabase/functions/dialectic-worker/prepareModelJob/prepareModelJob.mock.ts`
+      * `[ ]`   Add `mockDefaultEmbeddingProviderRow()` factory that returns a minimal `ai_providers`-compatible object with `{ api_identifier: 'text-embedding-3-small', is_default_embedding: true, is_active: true }` plus any required non-nullable DB columns from `Tables<'ai_providers'>` defaulted to inert values.
+      * `[ ]`   Keep all existing mock factory functions and override types unchanged.
+
+   * `[ ]`   `supabase/functions/dialectic-worker/prepareModelJob/prepareModelJob.test.ts`
+      * `[ ]`   Update every `createMockSupabaseClient` call's `genericMockResults` to add or replace the `ai_providers.select` mock so it returns `{ data: mockDefaultEmbeddingProviderRow(), error: null }` (single object, matching the `maybeSingle()` return shape) alongside the existing `token_wallets` and `user_subscriptions` mocks, so existing tests continue to resolve `embeddingModelSlug` without error.
+      * `[ ]`   Add unit test `prepareModelJob returns retriable error when embedding provider query fails`:
+         * `[ ]`   Mock `ai_providers.select` to return `{ data: null, error: { message: 'db-down', code: '500' } }`.
+         * `[ ]`   Assert `isPrepareModelJobErrorReturn(result) === true`.
+         * `[ ]`   Assert `result.retriable === true`.
+      * `[ ]`   Add unit test `prepareModelJob returns non-retriable error when no default embedding provider row exists`:
+         * `[ ]`   Mock `ai_providers.select` to return `{ data: null, error: null }`.
+         * `[ ]`   Assert `isPrepareModelJobErrorReturn(result) === true`.
+         * `[ ]`   Assert `result.retriable === false`.
+         * `[ ]`   Assert `result.error.message` includes `'No default embedding provider'`.
+      * `[ ]`   Add unit test `prepareModelJob passes projectId, iteration, embeddingModelSlug to calculateAffordability`:
+         * `[ ]`   Use a capturing `BoundCalculateAffordabilityFn` spy (`spy(async () => buildCalculateAffordabilityDirectReturn(0))`).
+         * `[ ]`   Build a job with `mockDialecticExecuteJobPayload({ projectId: 'threading-proj', iterationNumber: 3 })`.
+         * `[ ]`   Mock `ai_providers.select` to return `{ data: { api_identifier: 'text-embedding-ada-002' }, error: null }`.
+         * `[ ]`   Assert the spy was called at least once.
+         * `[ ]`   Assert `spy.calls[0].args[0].projectId === 'threading-proj'`.
+         * `[ ]`   Assert `spy.calls[0].args[0].iteration === 3`.
+         * `[ ]`   Assert `spy.calls[0].args[0].embeddingModelSlug === 'text-embedding-ada-002'`.
+
+   * `[ ]`   `supabase/functions/dialectic-worker/prepareModelJob/prepareModelJob.inputsRequired.test.ts`
+      * `[ ]`   Update every `createMockSupabaseClient` call to include `ai_providers.select` returning `{ data: mockDefaultEmbeddingProviderRow(), error: null }` so all existing inputsRequired tests pass without change to their assertions.
+
+   * `[ ]`   `supabase/functions/dialectic-worker/prepareModelJob/prepareModelJob.ts`
+      * `[ ]`   After the `tierCapQueryResult` block (the `user_subscriptions` query and its error/data handling, ending at the `userConfig` declaration), add a new DB query block for the default embedding provider:
+         * `[ ]`   `const embeddingProviderResult = await dbClient.from('ai_providers').select('api_identifier').eq('is_default_embedding', true).eq('is_active', true).maybeSingle();`
+         * `[ ]`   `if (embeddingProviderResult.error !== null) { deps.logger.warn('[prepareModelJob] Failed to load default embedding provider', { jobId: job.id, message: embeddingProviderResult.error.message }); return { error: embeddingProviderResult.error, retriable: true }; }`
+         * `[ ]`   `if (embeddingProviderResult.data === null || typeof embeddingProviderResult.data.api_identifier !== 'string') { return { error: new Error('No default embedding provider configured; cannot build compression artifact paths.'), retriable: false }; }`
+         * `[ ]`   `const embeddingModelSlug: string = embeddingProviderResult.data.api_identifier;`
+      * `[ ]`   In the `affordParams: CalculateAffordabilityParams` object construction, add alongside existing fields:
+         * `[ ]`   `projectId: projectIdRaw,`
+         * `[ ]`   `iteration: iterationNumberRaw,`
+         * `[ ]`   `embeddingModelSlug,`
+      * `[ ]`   Keep all other implementation logic unchanged: tier-cap query, payload extraction, model config validation, wallet balance load, cost-rate validation, scope application, base chat request construction, affordability call, enqueue call, and error-catch boundary.
+
+   * `[ ]`   `supabase/functions/dialectic-worker/prepareModelJob/prepareModelJob.provides.ts`
+      * `[ ]`   Add `mockDefaultEmbeddingProviderRow` to the value exports from `"./prepareModelJob.mock.ts"` so consumers that build full test setups can use the factory without importing the mock file directly.
+
+   * `[ ]`   `supabase/functions/dialectic-worker/prepareModelJob/prepareModelJob.integration.test.ts`
+      * `[ ]`   Update every `createMockSupabaseClient` call to return `{ data: mockDefaultEmbeddingProviderRow(), error: null }` from the `ai_providers.select` mock so existing integration paths resolve the embedding provider without error.
+      * `[ ]`   Add assertion in the `calculateAffordability direct return flows through enqueueModelCall to success` integration path: capture the `calculateAffordability` spy call and assert `spy.calls[0].args[0].projectId === executePayload.projectId`, `spy.calls[0].args[0].iteration === executePayload.iterationNumber`, and `spy.calls[0].args[0].embeddingModelSlug === 'text-embedding-3-small'` (matching the mock embedding provider `api_identifier`).
+
+   * `[ ]`   `construction`
+      * `[ ]`   `prepareModelJob` remains a pure async function over `(deps, params, payload)` with no global state.
+      * `[ ]`   No partial construction path is introduced.
+      * `[ ]`   Initialization order: tier-cap query → embedding provider query → payload extraction → validation → model config → wallet balance → cost rates → scope application → `baseChatApiRequest` → `affordParams` → affordability call → enqueue call.
+
+   * `[ ]`   `directionality`
+      * `[ ]`   Node layer is dialectic-worker orchestration.
+      * `[ ]`   The new `ai_providers` query is an inward infrastructure call (db → local variable); `embeddingModelSlug` then flows outward into `affordParams` passed to `deps.calculateAffordability`.
+      * `[ ]`   No new dependency cycles or layer violations introduced.
+
+   * `[ ]`   `requirements`
+      * `[ ]`   `prepareModelJob` queries `ai_providers` for `is_default_embedding = true` before building `affordParams` and extracts `api_identifier` as `embeddingModelSlug`.
+      * `[ ]`   `prepareModelJob` returns a retriable error if the `ai_providers` query returns a DB error.
+      * `[ ]`   `prepareModelJob` returns a non-retriable error with message including `'No default embedding provider'` if the query returns no row or `api_identifier` is not a string.
+      * `[ ]`   `deps.calculateAffordability` is called with `affordParams` that includes `projectId`, `iteration`, and `embeddingModelSlug` matching the values from `job.payload` and the resolved embedding provider.
+      * `[ ]`   All previously passing tests in `prepareModelJob.test.ts`, `prepareModelJob.inputsRequired.test.ts`, and `prepareModelJob.integration.test.ts` remain GREEN after the mock client is updated to return embedding provider data.
+      * `[ ]`   Node scope is limited to the ten files in `prepareModelJob/`; `index.ts` DI wiring changes remain in the next Workstream C node.
+
+* `[ ]`   supabase/functions/dialectic-worker/index.ts **[BE] Wire fileManager into compressPrompt DI closure to complete compression artifact persistence chain**
+
+   * `[ ]`   `objective`
+      * `[ ]`   Solve the `boundCompressPrompt` closure gap where `createDialecticWorkerDeps` builds `boundCompressPrompt` with `{ logger, ragService, embeddingClient, tokenWalletService: adminTokenWalletService, countTokens }` but omits `fileManager`, leaving the updated `CompressPromptDeps.fileManager: IFileManager` requirement from the prior Workstream C node (`compressPrompt.ts`) unsatisfied at the call site and producing a type error at compile time.
+      * `[ ]`   Functional goals:
+         * `[ ]`   Add `fileManager` to the deps object literal inside the `boundCompressPrompt` closure in `createDialecticWorkerDeps`, making the call read `compressPrompt({ logger, ragService, embeddingClient, tokenWalletService: adminTokenWalletService, countTokens, fileManager }, cpParams, cpPayload)`.
+         * `[ ]`   Add `embeddingModelApiIdentifier: modelProvider.api_identifier` to the `RagService` constructor deps object so the call reads `new RagService({ dbClient: adminClient, logger, indexingService, embeddingClient, tokenWalletService: adminTokenWalletService, embeddingModelApiIdentifier: modelProvider.api_identifier })`.
+         * `[ ]`   Keep all existing DI bindings and construction order in `createDialecticWorkerDeps` unchanged except the two additions above.
+         * `[ ]`   Keep the `serve()` HTTP handler body unchanged.
+         * `[ ]`   Update `index.test.ts`, `index.integration.test.ts`, and `index.nsf-pause.integration.test.ts` to mock the `ai_providers.select('api_identifier').eq('is_default_embedding', true).eq('is_active', true).maybeSingle()` call added by the prior `prepareModelJob.ts` node so all existing test scenarios continue to pass.
+      * `[ ]`   Non-functional constraints:
+         * `[ ]`   No new imports added to `index.ts`; `fileManager` is already declared in `createDialecticWorkerDeps` scope before the `prepareModelJob` factory lambda is defined.
+         * `[ ]`   No changes to `compressPrompt.ts`, `calculateAffordability.ts`, `prepareModelJob.ts`, `file_manager.ts`, or any file outside the four root files listed above.
+         * `[ ]`   The `boundCompressPrompt` variable type remains `BoundCompressPromptFn`; the updated deps object must satisfy `CompressPromptDeps` without any cast or type assertion.
+      * `[ ]`   Each goal is atomic and testable through the unit and integration test updates in this node.
+
+   * `[ ]`   `role`
+      * `[ ]`   Node role is DI factory entrypoint update plus the three immediate test files that prove the wiring is correct.
+      * `[ ]`   This role is correct because `index.ts` owns `createDialecticWorkerDeps`, which is the only file that constructs `boundCompressPrompt` and is therefore the canonical wiring site for supplying the updated `CompressPromptDeps.fileManager` dependency.
+      * `[ ]`   Out-of-scope responsibilities:
+         * `[ ]`   Do not change the `compressPrompt.ts` implementation or its `CompressPromptDeps` interface in this node.
+         * `[ ]`   Do not change the `prepareModelJob.ts` embedding provider query or `affordParams` construction in this node.
+         * `[ ]`   Do not change the `calculateAffordability.ts` compression params threading in this node.
+
+   * `[ ]`   `module`
+      * `[ ]`   Bounded context is `supabase/functions/dialectic-worker/` root: `index.ts`, `index.test.ts`, `index.integration.test.ts`, and `index.nsf-pause.integration.test.ts`.
+      * `[ ]`   Inside boundary:
+         * `[ ]`   DI factory construction in `createDialecticWorkerDeps`: `FileManagerService` instantiation, closure assembly for `boundCompressPrompt` and `boundCalculateAffordability`, and the full `createJobContext` call.
+         * `[ ]`   HTTP serve handler: method gate, job payload parse, `adminClient` construction, `createDialecticWorkerDeps` invocation, and `processJob` dispatch.
+      * `[ ]`   Outside boundary:
+         * `[ ]`   Compression algorithm logic, artifact persistence, and RAG context construction inside `compressPrompt.ts`.
+         * `[ ]`   Affordability calculation and token counting inside `calculateAffordability.ts`.
+         * `[ ]`   Model job orchestration, embedding provider DB query, and `affordParams` construction inside `prepareModelJob.ts`.
+         * `[ ]`   File upload, retry, and path construction logic inside `file_manager.ts`.
+
+   * `[ ]`   `deps`
+      * `[ ]`   Provider: `./compressPrompt/compressPrompt.provides.ts` (`compressPrompt`, `BoundCompressPromptFn`).
+         * `[ ]`   Layer classification: dialectic-worker utility producer.
+         * `[ ]`   Direction: inbound; already imported and invoked in `index.ts`.
+         * `[ ]`   Purpose: `compressPrompt` receives the updated deps closure now including `fileManager`.
+      * `[ ]`   Provider: `../_shared/services/file_manager.ts` (`FileManagerService`).
+         * `[ ]`   Layer classification: shared infrastructure service producer.
+         * `[ ]`   Direction: inbound; already imported at line 24 of `index.ts` and instantiated as `const fileManager = new FileManagerService(adminClient, { constructStoragePath, logger, assembleChunks })`.
+         * `[ ]`   Purpose: `fileManager` satisfies the `IFileManager` field now required in `CompressPromptDeps`.
+      * `[ ]`   Confirm:
+         * `[ ]`   No reverse dependencies introduced.
+         * `[ ]`   No lateral layer violations introduced.
+
+   * `[ ]`   `context_slice`
+      * `[ ]`   Minimal dependency interface required from `fileManager` in the `boundCompressPrompt` closure: `IFileManager` in its entirety, passed through to `compressPrompt`; no methods are invoked on `fileManager` directly in `index.ts`.
+      * `[ ]`   The `fileManager` variable is already in scope at the point where `boundCompressPrompt` is constructed inside the `prepareModelJob` factory lambda; the only change is adding it to the deps object literal passed to `compressPrompt`.
+      * `[ ]`   Confirm:
+         * `[ ]`   No over-fetching; no new methods or fields on `fileManager` are accessed in `index.ts`.
+         * `[ ]`   No hidden coupling to Netlify worker payloads or callback handler state.
+
+   * `[ ]`   `supabase/functions/dialectic-worker/index.test.ts`
+      * `[ ]`   Update every `createMockSupabaseClient` invocation whose mock results are consumed by the `createDialecticWorkerDeps` code path to add an `ai_providers.select('api_identifier').eq('is_default_embedding', true).eq('is_active', true).maybeSingle()` mock returning `{ data: { api_identifier: 'text-embedding-3-small' }, error: null }` so that the embedding slug query added by the prior `prepareModelJob.ts` node does not throw in existing test scenarios.
+      * `[ ]`   Add unit test `createDialecticWorkerDeps constructs fileManager and exposes it on the returned IJobContext`:
+         * `[ ]`   Construct a minimal `mockAdminClient` whose `from('ai_providers').select('*').eq('is_default_embedding', true).single()` returns `{ data: { id: 'emb-provider-1', api_identifier: 'text-embedding-3-small', is_default_embedding: true, is_active: true, config: {}, provider: 'openai', model: 'text-embedding-3-small' }, error: null }`.
+         * `[ ]`   Set `Deno.env.get('OPENAI_API_KEY')`, `HMAC_SECRET`, `NETLIFY_QUEUE_URL`, and `AWL_API_KEY` to non-empty test strings before the call.
+         * `[ ]`   Call `const ctx = await createDialecticWorkerDeps(mockAdminClient)`.
+         * `[ ]`   Assert `ctx.fileManager instanceof FileManagerService`.
+         * `[ ]`   Assert `typeof ctx.prepareModelJob === 'function'`.
+
+   * `[ ]`   `supabase/functions/dialectic-worker/index.ts`
+      * `[ ]`   Locate the `boundCompressPrompt` closure in the `prepareModelJob` factory lambda inside `createDialecticWorkerDeps`. The closure currently reads: `compressPrompt({ logger, ragService, embeddingClient, tokenWalletService: adminTokenWalletService, countTokens }, cpParams, cpPayload)`.
+      * `[ ]`   Add `fileManager` to the deps object so the closure reads: `compressPrompt({ logger, ragService, embeddingClient, tokenWalletService: adminTokenWalletService, countTokens, fileManager }, cpParams, cpPayload)`.
+      * `[ ]`   In the `RagService` constructor call at `const ragService = new RagService(...)`, add `embeddingModelApiIdentifier: modelProvider.api_identifier` to the deps object so the call reads: `new RagService({ dbClient: adminClient, logger, indexingService, embeddingClient, tokenWalletService: adminTokenWalletService, embeddingModelApiIdentifier: modelProvider.api_identifier })`.
+      * `[ ]`   Keep all other lines in `createDialecticWorkerDeps` unchanged: the outer `ai_providers` query and `modelProvider` extraction for `EmbeddingClient` construction, `embeddingAdapter`, `EmbeddingClient`, `IndexingService`, `PromptAssembler`, `documentRenderer`, `boundGatherArtifacts`, queue env reads, `computeJobSig`, `apiKeyForProvider`, `boundEnqueueModelCall`, and the full `createJobContext` call with all its fields.
+      * `[ ]`   Keep all import statements unchanged; no new imports are required.
+      * `[ ]`   Keep the `serve()` HTTP handler body unchanged.
+
+   * `[ ]`   `supabase/functions/dialectic-worker/index.integration.test.ts`
+      * `[ ]`   Update every `createMockSupabaseClient` call in this file to add an `ai_providers.select('api_identifier').eq('is_default_embedding', true).eq('is_active', true).maybeSingle()` mock returning `{ data: mockDefaultEmbeddingProviderRow(), error: null }` (importing `mockDefaultEmbeddingProviderRow` from `./prepareModelJob/prepareModelJob.provides.ts`) so that all existing integration scenarios resolve the embedding slug without error.
+      * `[ ]`   Add integration test `createDialecticWorkerDeps + prepareModelJob: fileManager.uploadAndRegisterFile is called through the wired DI closure when compression is triggered`:
+         * `[ ]`   Construct `mockAdminClient` with: `ai_providers.select('*').eq('is_default_embedding', true).single()` returning the full embedding provider row; `ai_providers.select('api_identifier')...maybeSingle()` returning `{ api_identifier: 'text-embedding-3-small' }`; `ai_providers.select('*').eq('id', modelId).single()` returning a model config row where the `config` field encodes a `contextWindowTokens: 100`; `token_wallets` returning `{ balance: 10000 }`; `user_subscriptions` returning the tier mock from `mockDefaultEmbeddingProviderRow`.
+         * `[ ]`   Call `const ctx = await createDialecticWorkerDeps(mockAdminClient)`.
+         * `[ ]`   Add spy: `const uploadSpy = vi.spyOn(ctx.fileManager, 'uploadAndRegisterFile').mockResolvedValue({ success: true, ragResourceId: 'integration-rag-1', filePath: 'tenant/project/iter/model/context.json', fileSize: 200 })`.
+         * `[ ]`   Build `mockUserDbClient` (mock Supabase client with same `ai_providers` and wallet mocks, used as `params.dbClient` for the `prepareModelJob` call).
+         * `[ ]`   Build `mockParams` with `dbClient: mockUserDbClient` and `job` set to a `dialectic_generation_jobs` row with `modelId: 'model-1'`, `projectId: 'project-1'`, `iterationNumber: 2`.
+         * `[ ]`   Build `mockPayload` as a `DialecticExecuteJobPayload` with `userPrompt` set to a 200-token string (exceeding the 100-token mock `contextWindowTokens`), so `calculateAffordability` routes to `compressPrompt`.
+         * `[ ]`   Call `await ctx.prepareModelJob(mockParams, mockPayload)`.
+         * `[ ]`   Assert `uploadSpy.mock.calls.length >= 1`, proving `fileManager.uploadAndRegisterFile` is reachable through the complete DI chain wired in `createDialecticWorkerDeps`.
+
+   * `[ ]`   `supabase/functions/dialectic-worker/index.nsf-pause.integration.test.ts`
+      * `[ ]`   Update every `createMockSupabaseClient` call in this file to add the `ai_providers.select('api_identifier').eq('is_default_embedding', true).eq('is_active', true).maybeSingle()` mock returning `{ data: mockDefaultEmbeddingProviderRow(), error: null }` so all existing NSF-pause integration scenarios pass without change to their assertions.
+
+   * `[ ]`   `construction`
+      * `[ ]`   `createDialecticWorkerDeps` remains an async factory function with signature `(adminClient: SupabaseClient<Database>) => Promise<IJobContext>` with no global state.
+      * `[ ]`   No partial construction path is introduced.
+      * `[ ]`   Construction order within `createDialecticWorkerDeps` is preserved: `NotificationService` → outer `ai_providers` query (for `EmbeddingClient`) → `OPENAI_API_KEY` env read → `fileManager` construction → `embeddingAdapter` → `EmbeddingClient` → `AdminTokenWalletService` / `UserTokenWalletService` → `IndexingService` → `RagService` → `PromptAssembler` → `documentRenderer` → `boundGatherArtifacts` → queue env reads → `computeJobSig` → `apiKeyForProvider` → `boundEnqueueModelCall` → `createJobContext` with the updated `prepareModelJob` lambda that now includes `fileManager` in the `boundCompressPrompt` deps.
+
+   * `[ ]`   `directionality`
+      * `[ ]`   Node layer is DI entrypoint / composition root.
+      * `[ ]`   `fileManager` flows inward from the `FileManagerService` constructor (infrastructure) and then outward through the `boundCompressPrompt` closure into `compressPrompt.ts` (worker utility).
+      * `[ ]`   No new imports introduce cycles; all dependencies remain in the existing inward direction from shared infrastructure and utilities toward the entrypoint.
+      * `[ ]`   No new dependency cycles with any Workstream B or C producer are introduced.
+
+   * `[ ]`   `requirements`
+      * `[ ]`   After this node, the `boundCompressPrompt` closure in `createDialecticWorkerDeps` satisfies the updated `CompressPromptDeps` contract including `fileManager: IFileManager` without any type cast or assertion.
+      * `[ ]`   `RagService` is constructed with `embeddingModelApiIdentifier: modelProvider.api_identifier`, satisfying the updated `IRagServiceDependencies.embeddingModelApiIdentifier` contract added by the Workstream E `rag_service.ts` node.
+      * `[ ]`   `index.ts` compiles without type errors on the `compressPrompt({ ..., fileManager }, ...)` call and `new RagService({ ..., embeddingModelApiIdentifier: modelProvider.api_identifier })` call after the prior Workstream C and Workstream E nodes have updated their respective interfaces.
+      * `[ ]`   All existing assertions in `index.test.ts`, `index.integration.test.ts`, and `index.nsf-pause.integration.test.ts` remain GREEN after adding the `ai_providers.select('api_identifier')...maybeSingle()` mock to each file's Supabase client setup.
+      * `[ ]`   The new unit test in `index.test.ts` asserts `ctx.fileManager instanceof FileManagerService` and `typeof ctx.prepareModelJob === 'function'` after calling `createDialecticWorkerDeps`.
+      * `[ ]`   The new integration test in `index.integration.test.ts` asserts `uploadSpy.mock.calls.length >= 1` after calling `ctx.prepareModelJob` with an oversized prompt, proving the full `createDialecticWorkerDeps → ctx.prepareModelJob → calculateAffordability → compressPrompt → fileManager.uploadAndRegisterFile` chain executes end-to-end.
+      * `[ ]`   Node scope remains limited to `index.ts` and its three immediate test files.
+
+   * `[ ]`   **Commit** `feat(dialectic-worker): complete Workstream C — wire fileManager through DI closure to close artifact-persistence chain`
+      * `[ ]`   Structural changes:
+         * `[ ]`   `index.ts` `boundCompressPrompt` closure now includes `fileManager` in the deps object, satisfying the updated `CompressPromptDeps` interface from the `compressPrompt.ts` node.
+         * `[ ]`   `index.test.ts`, `index.integration.test.ts`, and `index.nsf-pause.integration.test.ts` add the `ai_providers.select('api_identifier')...maybeSingle()` mock to align with the embedding slug query added by the `prepareModelJob.ts` node.
+      * `[ ]`   Behavioral changes:
+         * `[ ]`   RAG context summary artifacts produced during compression are now persisted to storage via `fileManager.uploadAndRegisterFile` during live execution because `fileManager` is correctly wired at the DI factory boundary.
+         * `[ ]`   All existing HTTP handler behavior, DI bindings, and job dispatch logic remain unchanged.
+      * `[ ]`   Contract changes:
+         * `[ ]`   The `compressPrompt` deps closure in `createDialecticWorkerDeps` is fully aligned with the updated `CompressPromptDeps` interface from the prior Workstream C node.
+         * `[ ]`   Workstream C exit condition is satisfied: the artifact-persistence chain `file_manager.ts → path_constructor.ts → path_deconstructor.ts → compressPrompt.ts → calculateAffordability.ts → prepareModelJob.ts → index.ts` is complete, coherent, and proven by the integration test in this node.
 
 
 # To-Do List
