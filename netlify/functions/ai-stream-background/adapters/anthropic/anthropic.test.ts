@@ -1,6 +1,9 @@
+import Anthropic from '@anthropic-ai/sdk';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
   AiAdapter,
+  NodeEmbeddingRequest,
+  NodeEmbeddingResponse,
   NodeAdapterStreamChunk,
   NodeChatApiRequest,
 } from '../ai-adapter.interface.ts';
@@ -11,15 +14,17 @@ import {
   type AnthropicSdkStreamEvent,
   collectNodeAdapterStreamChunks,
   createAnthropicMessagesStreamResult,
-  createMockAnthropicNodeAdapter,
-  createMockAnthropicNodeAdapterConstructorParams,
+  createMockAnthropicEmbeddingResponse,
+  buildMockAnthropicNodeAdapter,
+  buildMockAnthropicNodeAdapterConstructorParams,
   createMockAnthropicNodeChatApiRequest,
   createMockAnthropicNodeModelConfig,
   createMockAnthropicSdkFinalMessagePayload,
 } from './anthropic.mock.ts';
 
-const { messagesStream } = vi.hoisted(() => {
+const { embeddingsCreate, messagesStream } = vi.hoisted(() => {
   return {
+    embeddingsCreate: vi.fn(),
     messagesStream: vi.fn(),
   };
 });
@@ -28,9 +33,18 @@ vi.mock('@anthropic-ai/sdk', () => {
   class APIError extends Error {
     public status: number | undefined;
 
-    public constructor(message?: string) {
-      super(message);
+    public constructor(
+      statusOrMessage?: number | string,
+      _headers?: unknown,
+      message?: string,
+      _body?: unknown,
+    ) {
+      const resolvedMessage: string | undefined =
+        typeof statusOrMessage === 'string' ? statusOrMessage : message;
+      super(resolvedMessage);
       this.name = 'APIError';
+      this.status =
+        typeof statusOrMessage === 'number' ? statusOrMessage : undefined;
     }
   }
 
@@ -41,9 +55,16 @@ vi.mock('@anthropic-ai/sdk', () => {
       stream: typeof messagesStream;
     };
 
+    public embeddings: {
+      create: typeof embeddingsCreate;
+    };
+
     public constructor() {
       this.messages = {
         stream: messagesStream,
+      };
+      this.embeddings = {
+        create: embeddingsCreate,
       };
     }
   }
@@ -55,11 +76,12 @@ vi.mock('@anthropic-ai/sdk', () => {
 
 describe('createAnthropicNodeAdapter', () => {
   beforeEach(() => {
+    embeddingsCreate.mockReset();
     messagesStream.mockReset();
   });
 
   it('yields text_delta chunks for content_block_delta text_delta events', async () => {
-    const params = createMockAnthropicNodeAdapterConstructorParams();
+    const params = buildMockAnthropicNodeAdapterConstructorParams();
     const adapter = createAnthropicNodeAdapter(params);
     const request = createMockAnthropicNodeChatApiRequest();
     const stream = createAnthropicMessagesStreamResult({
@@ -89,7 +111,7 @@ describe('createAnthropicNodeAdapter', () => {
   });
 
   it('yields usage chunk with NodeTokenUsage mapped from finalMessage usage', async () => {
-    const params = createMockAnthropicNodeAdapterConstructorParams();
+    const params = buildMockAnthropicNodeAdapterConstructorParams();
     const adapter = createAnthropicNodeAdapter(params);
     const request = createMockAnthropicNodeChatApiRequest();
     const stream = createAnthropicMessagesStreamResult({
@@ -118,7 +140,7 @@ describe('createAnthropicNodeAdapter', () => {
   });
 
   it('yields done with finish_reason stop when finalMessage stop_reason is end_turn', async () => {
-    const params = createMockAnthropicNodeAdapterConstructorParams();
+    const params = buildMockAnthropicNodeAdapterConstructorParams();
     const adapter = createAnthropicNodeAdapter(params);
     const request = createMockAnthropicNodeChatApiRequest();
     const stream = createAnthropicMessagesStreamResult({
@@ -144,7 +166,7 @@ describe('createAnthropicNodeAdapter', () => {
   });
 
   it('yields done with finish_reason stop when finalMessage stop_reason is stop_sequence', async () => {
-    const params = createMockAnthropicNodeAdapterConstructorParams();
+    const params = buildMockAnthropicNodeAdapterConstructorParams();
     const adapter = createAnthropicNodeAdapter(params);
     const request = createMockAnthropicNodeChatApiRequest();
     const stream = createAnthropicMessagesStreamResult({
@@ -170,7 +192,7 @@ describe('createAnthropicNodeAdapter', () => {
   });
 
   it('yields done with finish_reason max_tokens when finalMessage stop_reason is max_tokens', async () => {
-    const params = createMockAnthropicNodeAdapterConstructorParams();
+    const params = buildMockAnthropicNodeAdapterConstructorParams();
     const adapter = createAnthropicNodeAdapter(params);
     const request = createMockAnthropicNodeChatApiRequest();
     const stream = createAnthropicMessagesStreamResult({
@@ -196,7 +218,7 @@ describe('createAnthropicNodeAdapter', () => {
   });
 
   it('yields done with finish_reason tool_use when finalMessage stop_reason is tool_use', async () => {
-    const params = createMockAnthropicNodeAdapterConstructorParams();
+    const params = buildMockAnthropicNodeAdapterConstructorParams();
     const adapter = createAnthropicNodeAdapter(params);
     const request = createMockAnthropicNodeChatApiRequest();
     const stream = createAnthropicMessagesStreamResult({
@@ -222,7 +244,7 @@ describe('createAnthropicNodeAdapter', () => {
   });
 
   it('yields done with finish_reason unknown when finalMessage stop_reason is null', async () => {
-    const params = createMockAnthropicNodeAdapterConstructorParams();
+    const params = buildMockAnthropicNodeAdapterConstructorParams();
     const adapter = createAnthropicNodeAdapter(params);
     const request = createMockAnthropicNodeChatApiRequest();
     const stream = createAnthropicMessagesStreamResult({
@@ -248,7 +270,7 @@ describe('createAnthropicNodeAdapter', () => {
   });
 
   it('yields done with finish_reason unknown when stop_reason is absent on finalMessage', async () => {
-    const params = createMockAnthropicNodeAdapterConstructorParams();
+    const params = buildMockAnthropicNodeAdapterConstructorParams();
     const adapter = createAnthropicNodeAdapter(params);
     const request = createMockAnthropicNodeChatApiRequest();
     const stream = createAnthropicMessagesStreamResult({
@@ -277,7 +299,7 @@ describe('createAnthropicNodeAdapter', () => {
   });
 
   it('yields done with finish_reason unknown when stop_reason is unrecognized', async () => {
-    const params = createMockAnthropicNodeAdapterConstructorParams();
+    const params = buildMockAnthropicNodeAdapterConstructorParams();
     const adapter = createAnthropicNodeAdapter(params);
     const request = createMockAnthropicNodeChatApiRequest();
     const stream = createAnthropicMessagesStreamResult({
@@ -307,7 +329,7 @@ describe('createAnthropicNodeAdapter', () => {
   });
 
   it('propagates errors when the SDK stream throws mid-iteration', async () => {
-    const params = createMockAnthropicNodeAdapterConstructorParams();
+    const params = buildMockAnthropicNodeAdapterConstructorParams();
     const adapter = createAnthropicNodeAdapter(params);
     const request = createMockAnthropicNodeChatApiRequest();
     const streamResult: {
@@ -334,7 +356,7 @@ describe('createAnthropicNodeAdapter', () => {
   });
 
   it('calls messages.stream with model stripped from anthropic- prefix', async () => {
-    const params = createMockAnthropicNodeAdapterConstructorParams();
+    const params = buildMockAnthropicNodeAdapterConstructorParams();
     const adapter = createAnthropicNodeAdapter(params);
     const request = createMockAnthropicNodeChatApiRequest();
     const stream = createAnthropicMessagesStreamResult({
@@ -358,7 +380,7 @@ describe('createAnthropicNodeAdapter', () => {
   });
 
   it('throws when tier_output_cap_tokens is null and no positive cap inputs are provided', async () => {
-    const params = createMockAnthropicNodeAdapterConstructorParams({
+    const params = buildMockAnthropicNodeAdapterConstructorParams({
       userConfig: { tier_output_cap_tokens: null },
       modelConfig: createMockAnthropicNodeModelConfig({
         hard_cap_output_tokens: undefined,
@@ -379,7 +401,7 @@ describe('createAnthropicNodeAdapter', () => {
   });
 
   it('maps system prompt, merges user messages, injects resource documents, and appends request.message', async () => {
-    const params = createMockAnthropicNodeAdapterConstructorParams({
+    const params = buildMockAnthropicNodeAdapterConstructorParams({
       modelConfig: createMockAnthropicNodeModelConfig({
         hard_cap_output_tokens: 1024,
       }),
@@ -440,7 +462,7 @@ describe('createAnthropicNodeAdapter', () => {
   });
 
   it('applies binding max_tokens as min of request and hard cap when both are provided', async () => {
-    const params = createMockAnthropicNodeAdapterConstructorParams({
+    const params = buildMockAnthropicNodeAdapterConstructorParams({
       modelConfig: createMockAnthropicNodeModelConfig({
         hard_cap_output_tokens: 200,
       }),
@@ -470,7 +492,7 @@ describe('createAnthropicNodeAdapter', () => {
   });
 
   it('resolves max_tokens from modelConfig.hard_cap_output_tokens when request omits max_tokens_to_generate', async () => {
-    const params = createMockAnthropicNodeAdapterConstructorParams({
+    const params = buildMockAnthropicNodeAdapterConstructorParams({
       modelConfig: createMockAnthropicNodeModelConfig({
         hard_cap_output_tokens: 512,
       }),
@@ -498,7 +520,7 @@ describe('createAnthropicNodeAdapter', () => {
   });
 
   it('throws when resource document has empty document_key', async () => {
-    const params = createMockAnthropicNodeAdapterConstructorParams({
+    const params = buildMockAnthropicNodeAdapterConstructorParams({
       modelConfig: createMockAnthropicNodeModelConfig({
         hard_cap_output_tokens: 100,
       }),
@@ -527,7 +549,7 @@ describe('createAnthropicNodeAdapter', () => {
   });
 
   it('sets max_tokens to tier cap when tier_output_cap_tokens binds over request and hard cap', async () => {
-    const params = createMockAnthropicNodeAdapterConstructorParams({
+    const params = buildMockAnthropicNodeAdapterConstructorParams({
       userConfig: { tier_output_cap_tokens: 32_768 },
       modelConfig: createMockAnthropicNodeModelConfig({
         hard_cap_output_tokens: 131_072,
@@ -558,7 +580,7 @@ describe('createAnthropicNodeAdapter', () => {
   });
 
   it('sets max_tokens to request max when tier_output_cap_tokens is null and request binds', async () => {
-    const params = createMockAnthropicNodeAdapterConstructorParams({
+    const params = buildMockAnthropicNodeAdapterConstructorParams({
       userConfig: { tier_output_cap_tokens: null },
       modelConfig: createMockAnthropicNodeModelConfig({
         hard_cap_output_tokens: 131_072,
@@ -589,7 +611,7 @@ describe('createAnthropicNodeAdapter', () => {
   });
 
   it('sets max_tokens to hard cap when hard cap binds and request has no max', async () => {
-    const params = createMockAnthropicNodeAdapterConstructorParams({
+    const params = buildMockAnthropicNodeAdapterConstructorParams({
       userConfig: { tier_output_cap_tokens: 131_072 },
       modelConfig: createMockAnthropicNodeModelConfig({
         hard_cap_output_tokens: 64_000,
@@ -616,11 +638,132 @@ describe('createAnthropicNodeAdapter', () => {
       }),
     );
   });
+
+  it('invokes Anthropic embedding SDK call with resolved model and input', async () => {
+    const params = buildMockAnthropicNodeAdapterConstructorParams();
+    const adapter = createAnthropicNodeAdapter(params);
+    const request: NodeEmbeddingRequest = { input: 'embedding input' };
+
+    embeddingsCreate.mockResolvedValue(createMockAnthropicEmbeddingResponse());
+
+    expect(adapter.getEmbedding !== undefined).toBe(true);
+    if (adapter.getEmbedding === undefined) {
+      throw new Error('Expected Anthropic adapter to expose getEmbedding.');
+    }
+
+    await adapter.getEmbedding(request, 'anthropic-claude-3-5-sonnet');
+
+    expect(embeddingsCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        model: 'claude-3-5-sonnet',
+        input: 'embedding input',
+      }),
+    );
+  });
+
+  it('maps embedding response to NodeEmbeddingResponse', async () => {
+    const params = buildMockAnthropicNodeAdapterConstructorParams();
+    const adapter = createAnthropicNodeAdapter(params);
+    const request: NodeEmbeddingRequest = { input: 'embedding input' };
+
+    embeddingsCreate.mockResolvedValue(
+      createMockAnthropicEmbeddingResponse({
+        embedding: [0.25, 0.5, 0.75],
+        usage: {
+          input_tokens: 11,
+          total_tokens: 11,
+        },
+      }),
+    );
+
+    expect(adapter.getEmbedding !== undefined).toBe(true);
+    if (adapter.getEmbedding === undefined) {
+      throw new Error('Expected Anthropic adapter to expose getEmbedding.');
+    }
+
+    const response: NodeEmbeddingResponse = await adapter.getEmbedding(
+      request,
+      'anthropic-claude-3-5-sonnet',
+    );
+
+    expect(response).toEqual({
+      embedding: [0.25, 0.5, 0.75],
+      tokenUsage: {
+        prompt_tokens: 11,
+        completion_tokens: 0,
+        total_tokens: 11,
+      },
+    });
+  });
+
+  it('throws on malformed embedding payload', async () => {
+    const params = buildMockAnthropicNodeAdapterConstructorParams();
+    const adapter = createAnthropicNodeAdapter(params);
+    const request: NodeEmbeddingRequest = { input: 'embedding input' };
+
+    embeddingsCreate.mockResolvedValue({
+      embedding: 'not-an-array',
+      usage: {
+        input_tokens: 6,
+        total_tokens: 6,
+      },
+    });
+
+    expect(adapter.getEmbedding !== undefined).toBe(true);
+    if (adapter.getEmbedding === undefined) {
+      throw new Error('Expected Anthropic adapter to expose getEmbedding.');
+    }
+
+    await expect(
+      adapter.getEmbedding(request, 'anthropic-claude-3-5-sonnet'),
+    ).rejects.toThrow();
+  });
+
+  it('throws on missing or invalid embedding usage metadata', async () => {
+    const params = buildMockAnthropicNodeAdapterConstructorParams();
+    const adapter = createAnthropicNodeAdapter(params);
+    const request: NodeEmbeddingRequest = { input: 'embedding input' };
+
+    embeddingsCreate.mockResolvedValue({
+      embedding: [0.1, 0.2, 0.3],
+      usage: {
+        input_tokens: 'bad',
+        total_tokens: 6,
+      },
+    });
+
+    expect(adapter.getEmbedding !== undefined).toBe(true);
+    if (adapter.getEmbedding === undefined) {
+      throw new Error('Expected Anthropic adapter to expose getEmbedding.');
+    }
+
+    await expect(
+      adapter.getEmbedding(request, 'anthropic-claude-3-5-sonnet'),
+    ).rejects.toThrow();
+  });
+
+  it('surfaces SDK embedding failures exactly as provided by the SDK', async () => {
+    const params = buildMockAnthropicNodeAdapterConstructorParams();
+    const adapter = createAnthropicNodeAdapter(params);
+    const request: NodeEmbeddingRequest = { input: 'embedding input' };
+    const apiError = new Anthropic.APIError(429, undefined, 'rate limited', undefined);
+
+    embeddingsCreate.mockRejectedValue(apiError);
+
+    expect(adapter.getEmbedding !== undefined).toBe(true);
+    if (adapter.getEmbedding === undefined) {
+      throw new Error('Expected Anthropic adapter to expose getEmbedding.');
+    }
+
+    await expect(
+      adapter.getEmbedding(request, 'anthropic-claude-3-5-sonnet'),
+    ).rejects.toBe(apiError);
+  });
 });
 
-describe('createMockAnthropicNodeAdapter', () => {
+describe('buildMockAnthropicNodeAdapter', () => {
   it('returns AiAdapter satisfying isAiAdapter with default stream chunks', async () => {
-    const adapter: AiAdapter = createMockAnthropicNodeAdapter();
+    const adapter: AiAdapter = buildMockAnthropicNodeAdapter();
     expect(isAiAdapter(adapter)).toBe(true);
     const chunks: NodeAdapterStreamChunk[] = await collectNodeAdapterStreamChunks(
       adapter.sendMessageStream(
@@ -643,7 +786,7 @@ describe('createMockAnthropicNodeAdapter', () => {
   });
 
   it('allows sendMessageStream override that throws', async () => {
-    const adapter: AiAdapter = createMockAnthropicNodeAdapter({
+    const adapter: AiAdapter = buildMockAnthropicNodeAdapter({
       sendMessageStream: async function* (
         _request: NodeChatApiRequest,
         _apiIdentifier: string,

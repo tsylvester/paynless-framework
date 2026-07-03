@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import type {
+  AnthropicEmbeddingResponse,
+  AnthropicEmbeddingUsage,
   AnthropicFinalMessage,
   AnthropicUsage,
 } from './anthropic.interface.ts';
 import {
   isAnthropicContentBlockDeltaEvent,
+  isAnthropicEmbeddingResponse,
+  isAnthropicEmbeddingUsage,
   isAnthropicFinalMessage,
   isAnthropicStopReason,
   isAnthropicTextDelta,
@@ -270,6 +274,102 @@ describe('anthropic.guard', () => {
       expect(isAnthropicFinalMessage(maxTokens)).toBe(true);
       expect(isAnthropicFinalMessage(toolUse)).toBe(true);
       expect(isAnthropicFinalMessage(nullReason)).toBe(true);
+    });
+  });
+
+  describe('isAnthropicEmbeddingUsage', () => {
+    it('accepts valid embedding usage metadata', () => {
+      const usage: AnthropicEmbeddingUsage = {
+        input_tokens: 12,
+        total_tokens: 12,
+      };
+      expect(isAnthropicEmbeddingUsage(usage)).toBe(true);
+    });
+
+    it('rejects missing input_tokens', () => {
+      expect(
+        isAnthropicEmbeddingUsage({
+          total_tokens: 2,
+        }),
+      ).toBe(false);
+    });
+
+    it('rejects malformed usage metadata fields', () => {
+      expect(
+        isAnthropicEmbeddingUsage({
+          input_tokens: '2',
+          total_tokens: null,
+        }),
+      ).toBe(false);
+    });
+  });
+
+  describe('isAnthropicEmbeddingResponse', () => {
+    it('accepts valid embedding response and usage', () => {
+      const usage: AnthropicEmbeddingUsage = {
+        input_tokens: 9,
+        total_tokens: 9,
+      };
+      const response: AnthropicEmbeddingResponse = {
+        embedding: [0.1, 0.2, 0.3],
+        usage,
+      };
+      expect(isAnthropicEmbeddingResponse(response)).toBe(true);
+    });
+
+    it('rejects missing embedding vector', () => {
+      expect(
+        isAnthropicEmbeddingResponse({
+          usage: {
+            input_tokens: 5,
+            total_tokens: 5,
+          },
+        }),
+      ).toBe(false);
+    });
+
+    it('rejects non-array embedding vector', () => {
+      expect(
+        isAnthropicEmbeddingResponse({
+          embedding: 1,
+          usage: {
+            input_tokens: 5,
+            total_tokens: 5,
+          },
+        }),
+      ).toBe(false);
+    });
+
+    it('rejects non-number embedding vector elements', () => {
+      expect(
+        isAnthropicEmbeddingResponse({
+          embedding: [0.1, '0.2', 0.3],
+          usage: {
+            input_tokens: 5,
+            total_tokens: 5,
+          },
+        }),
+      ).toBe(false);
+    });
+
+    it('rejects missing usage metadata', () => {
+      expect(
+        isAnthropicEmbeddingResponse({
+          embedding: [0.1, 0.2],
+        }),
+      ).toBe(false);
+    });
+
+    it('rejects malformed usage metadata', () => {
+      expect(
+        isAnthropicEmbeddingResponse({
+          embedding: [0.1, 0.2],
+          usage: {
+            input_tokens: -1,
+            total_tokens: 2,
+          },
+        }),
+      ).toBe(false);
     });
   });
 });

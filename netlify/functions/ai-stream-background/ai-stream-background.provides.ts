@@ -4,18 +4,40 @@ export {
   createAiStreamDeps,
   handleAiStreamWorkload,
 } from './ai-stream-background.ts';
+
 export type {
   AiStreamDeps,
-  AiStreamEvent,
-  AiStreamPayload,
+  AiWorkloadOperation,
+  AiWorkloadEventBase,
+  AiWorkloadStreamEvent,
+  AiWorkloadEmbeddingEvent,
+  AiWorkloadEvent,
+  AiWorkloadPayloadBase,
+  AiWorkloadStreamPayload,
+  AiWorkloadEmbeddingPayload,
+  AiWorkloadPayload,
   GetApiKeyFn,
 } from './ai-stream-background.interface.ts';
+
 export {
   isAiStreamDeps,
-  isAiStreamEvent,
-  isAiStreamPayload,
+  isAiWorkloadEvent,
+  isAiWorkloadPayload,
 } from './ai-stream-background.guard.ts';
+
 export {
-  createMockAiStreamDeps,
+  buildMockAiStreamDeps,
+  buildMockAiWorkloadStreamEvent,
+  buildAiWorkloadEmbeddingEvent,
+  buildAiWorkloadEvent,
+  buildAiWorkloadStreamPayload,
+  buildAiWorkloadEmbeddingPayload,
+  buildMockAiWorkloadPayload,
+  buildMockAiStreamEvent,
+  buildMockAsyncWorkloadEvent,
+  mockAiWorkloadStreamEvent,
+  mockAiWorkloadEmbeddingEvent,
+  mockAiWorkloadStreamPayload,
+  mockAiWorkloadEmbeddingPayload,
   mockAiStreamSaveResponseUrl,
 } from './ai-stream-background.mock.ts';

@@ -1,5 +1,7 @@
 import type {
   AnthropicContentBlockDeltaEvent,
+  AnthropicEmbeddingResponse,
+  AnthropicEmbeddingUsage,
   AnthropicFinalMessage,
   AnthropicStopReason,
   AnthropicTextDelta,
@@ -78,6 +80,44 @@ export function isAnthropicUsage(v: unknown): v is AnthropicUsage {
   const inputTokens: unknown = v['input_tokens'];
   const outputTokens: unknown = v['output_tokens'];
   if (!isNonNegativeInteger(inputTokens) || !isNonNegativeInteger(outputTokens)) {
+    return false;
+  }
+  return true;
+}
+
+export function isAnthropicEmbeddingUsage(v: unknown): v is AnthropicEmbeddingUsage {
+  if (!isPlainRecord(v)) {
+    return false;
+  }
+  const inputTokens: unknown = v['input_tokens'];
+  const totalTokens: unknown = v['total_tokens'];
+  if (!isNonNegativeInteger(inputTokens) || !isNonNegativeInteger(totalTokens)) {
+    return false;
+  }
+  return true;
+}
+
+export function isAnthropicEmbeddingResponse(v: unknown): v is AnthropicEmbeddingResponse {
+  if (!isPlainRecord(v)) {
+    return false;
+  }
+  if (!('embedding' in v)) {
+    return false;
+  }
+  if (!('usage' in v)) {
+    return false;
+  }
+  const embeddingValue: unknown = v['embedding'];
+  if (!Array.isArray(embeddingValue)) {
+    return false;
+  }
+  for (const item of embeddingValue) {
+    if (typeof item !== 'number') {
+      return false;
+    }
+  }
+  const usageValue: unknown = v['usage'];
+  if (!isAnthropicEmbeddingUsage(usageValue)) {
     return false;
   }
   return true;

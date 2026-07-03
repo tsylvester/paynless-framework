@@ -2,10 +2,12 @@ import { describe, expect, it } from 'vitest';
 import {
   isGoogleCandidate,
   isGoogleContent,
+  isGoogleEmbeddingResponse,
   isGoogleFinalResponse,
   isGoogleFinishReason,
   isGooglePart,
   isGoogleStreamChunk,
+  isGoogleTokenCountResponse,
   isGoogleUsageMetadata,
 } from './google.guard.ts';
 
@@ -304,6 +306,59 @@ describe('google.guard', () => {
     it('accepts interface-shaped GoogleFinalResponse with usageMetadata null', () => {
       const value: unknown = { usageMetadata: null };
       expect(isGoogleFinalResponse(value)).toBe(true);
+    });
+  });
+
+  describe('embedding guard coverage', () => {
+    it('accepts valid embedding response shape', () => {
+      const value = {
+        embedding: {
+          values: [0.1, 0.2, 0.3],
+        },
+      };
+      expect(isGoogleEmbeddingResponse(value)).toBe(true);
+    });
+
+    it('rejects missing embedding vector', () => {
+      const value = {
+        embedding: {},
+      };
+      expect(isGoogleEmbeddingResponse(value)).toBe(false);
+    });
+
+    it('rejects non-array embedding vector', () => {
+      const value = {
+        embedding: {
+          values: 123,
+        },
+      };
+      expect(isGoogleEmbeddingResponse(value)).toBe(false);
+    });
+
+    it('rejects embedding arrays with non-number elements', () => {
+      const value = {
+        embedding: {
+          values: [0.1, 'bad', 0.3],
+        },
+      };
+      expect(isGoogleEmbeddingResponse(value)).toBe(false);
+    });
+
+    it('accepts valid token-count response', () => {
+      const value = {
+        totalTokenCount: 12,
+      };
+      expect(isGoogleTokenCountResponse(value)).toBe(true);
+    });
+
+    it('rejects missing/invalid token-count metadata', () => {
+      const missingValue = {};
+      const invalidTypeValue = { totalTokenCount: '12' };
+      const negativeValue = { totalTokenCount: -1 };
+
+      expect(isGoogleTokenCountResponse(missingValue)).toBe(false);
+      expect(isGoogleTokenCountResponse(invalidTypeValue)).toBe(false);
+      expect(isGoogleTokenCountResponse(negativeValue)).toBe(false);
     });
   });
 });

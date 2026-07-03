@@ -10,6 +10,7 @@ import type {
 } from './ai-adapter.interface.ts';
 import type {
   GetNodeAiAdapterDeps,
+  NodeAdapterOperation,
   GetNodeAiAdapterParams,
 } from './getNodeAiAdapter.interface.ts';
 
@@ -52,6 +53,46 @@ export const mockAiAdapter: AiAdapter = {
     yield done;
   },
 };
+
+export function mockEmbeddingCapableAiAdapter(): AiAdapter {
+  return {
+    async *sendMessageStream(
+      _request: NodeChatApiRequest,
+      _apiIdentifier: string,
+    ): AsyncGenerator<NodeAdapterStreamChunk> {
+      const done: NodeAdapterStreamChunk = {
+        type: 'done',
+        finish_reason: 'stop',
+      };
+      yield done;
+    },
+    async getEmbedding() {
+      return {
+        embedding: [0.1, 0.2, 0.3],
+        tokenUsage: {
+          prompt_tokens: 1,
+          completion_tokens: 0,
+          total_tokens: 1,
+        },
+      };
+    },
+  };
+}
+
+export function mockStreamOnlyAiAdapter(): AiAdapter {
+  return {
+    async *sendMessageStream(
+      _request: NodeChatApiRequest,
+      _apiIdentifier: string,
+    ): AsyncGenerator<NodeAdapterStreamChunk> {
+      const done: NodeAdapterStreamChunk = {
+        type: 'done',
+        finish_reason: 'stop',
+      };
+      yield done;
+    },
+  };
+}
 
 const defaultNodeAdapterFactory = (
   _params: NodeAdapterConstructorParams,
@@ -111,10 +152,13 @@ export function createMockGetNodeAiAdapterParams(
     overrides?.userConfig === undefined
       ? { ...defaultNodeUserConfig }
       : overrides.userConfig;
+  const operation: NodeAdapterOperation =
+    overrides?.operation === undefined ? 'stream' : overrides.operation;
   return {
     apiIdentifier,
     apiKey,
     modelConfig,
     userConfig,
+    operation,
   };
 }

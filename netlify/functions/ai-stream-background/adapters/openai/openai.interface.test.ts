@@ -4,6 +4,9 @@ import type {
   OpenAIChatCompletionChunk,
   OpenAIChoice,
   OpenAIFinishReason,
+  OpenAIEmbeddingDatum,
+  OpenAIEmbeddingResponse,
+  OpenAIEmbeddingUsage,
   OpenAIUsageDelta,
 } from './openai.interface.ts';
 
@@ -136,5 +139,48 @@ describe('openai.interface contract', () => {
       choices: [choice],
     };
     expect('usage' in literal).toBe(false);
+  });
+
+  it('accepts OpenAIEmbeddingDatum with numeric embedding array', () => {
+    const datum: OpenAIEmbeddingDatum = {
+      embedding: [0.1, 0.2, 0.3],
+    };
+    expect(Array.isArray(datum.embedding)).toBe(true);
+    expect(datum.embedding.length).toBe(3);
+  });
+
+  it('accepts OpenAIEmbeddingResponse with non-empty data and valid usage', () => {
+    const usage: OpenAIEmbeddingUsage = {
+      prompt_tokens: 7,
+      total_tokens: 7,
+    };
+    const datum: OpenAIEmbeddingDatum = {
+      embedding: [1, 2, 3],
+    };
+    const response: OpenAIEmbeddingResponse = {
+      data: [datum],
+      usage,
+    };
+    expect(response.data.length).toBe(1);
+    expect(response.usage.prompt_tokens).toBe(7);
+    expect(response.usage.total_tokens).toBe(7);
+  });
+
+  it('rejects malformed usage fields by type contract fixtures', () => {
+    const usage: OpenAIEmbeddingUsage = {
+      prompt_tokens: 7,
+      total_tokens: 8,
+    };
+    expect(usage.prompt_tokens).not.toBe(8);
+    expect(usage.total_tokens).not.toBe(7);
+  });
+
+  it('rejects malformed embedding vector element types by type contract fixtures', () => {
+    const datum: OpenAIEmbeddingDatum = {
+      embedding: [1, 2, 3],
+    };
+    expect(typeof datum.embedding[0]).toBe('number');
+    expect(typeof datum.embedding[1]).toBe('number');
+    expect(typeof datum.embedding[2]).toBe('number');
   });
 });

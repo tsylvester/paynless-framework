@@ -20,6 +20,20 @@ export interface OpenAIUsageDelta {
   total_tokens: number;
 }
 
+export interface OpenAIEmbeddingDatum {
+  embedding: number[];
+}
+
+export interface OpenAIEmbeddingUsage {
+  prompt_tokens: number;
+  total_tokens: number;
+}
+
+export interface OpenAIEmbeddingResponse {
+  data: OpenAIEmbeddingDatum[];
+  usage: OpenAIEmbeddingUsage;
+}
+
 export interface OpenAIChatCompletionChunk {
   choices: OpenAIChoice[];
   usage?: OpenAIUsageDelta | null;

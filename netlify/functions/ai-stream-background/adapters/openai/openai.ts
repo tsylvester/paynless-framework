@@ -8,12 +8,40 @@ import type {
   NodeAdapterConstructorParams,
   NodeAdapterStreamChunk,
   NodeChatApiRequest,
+  NodeEmbeddingRequest,
+  NodeEmbeddingResponse,
   NodeModelConfig,
   NodeOutboundDocument,
   NodeUserConfig,
 } from '../ai-adapter.interface.ts';
-import { isNodeTokenUsage, isPlainRecord } from '../getNodeAiAdapter.guard.ts';
+import {
+  isNodeTokenUsage,
+  isPlainRecord,
+} from '../getNodeAiAdapter.guard.ts';
+import {
+  isOpenAIEmbeddingDatum,
+  isOpenAIEmbeddingResponse,
+  isOpenAIEmbeddingUsage,
+} from './openai.guard.ts';
 import { resolveOutputCap } from '../../resolveOutputCap/resolveOutputCap.provides.ts';
+
+function resolveOpenAiModelIdentifier(modelIdentifier: string): string {
+  return modelIdentifier.replace(/^openai-/i, '');
+}
+
+function validateOpenAiModelIdentifier(
+  modelIdentifier: string,
+  modelConfig: NodeModelConfig,
+): string {
+  const modelApiName: string = resolveOpenAiModelIdentifier(modelIdentifier);
+  const configApiName: string = resolveOpenAiModelIdentifier(modelConfig.api_identifier);
+  if (modelApiName !== configApiName) {
+    throw new Error(
+      `[OpenAiAdapter] Model mismatch: requested '${modelApiName}' but adapter is configured for '${configApiName}'.`,
+    );
+  }
+  return modelApiName;
+}
 
 function resourceDocumentLine(doc: NodeOutboundDocument): string {
   if (doc.document_key !== undefined && doc.stage_slug !== undefined) {
@@ -38,14 +66,7 @@ function prepareOpenAiStreamingRequest(
 ): {
   payload: ChatCompletionCreateParamsStreaming;
 } {
-  const modelApiName: string = modelIdentifier.replace(/^openai-/i, '');
-
-  const configApiName: string = modelConfig.api_identifier.replace(/^openai-/i, '');
-  if (modelApiName !== configApiName) {
-    throw new Error(
-      `[OpenAiAdapter] Model mismatch: requested '${modelApiName}' but adapter is configured for '${configApiName}'.`,
-    );
-  }
+  const modelApiName: string = validateOpenAiModelIdentifier(modelIdentifier, modelConfig);
 
   const openaiMessages: ChatCompletionMessageParam[] = (request.messages ?? [])
     .map((msg): ChatCompletionMessageParam => {
@@ -198,6 +219,66 @@ export function createOpenAINodeAdapter(
           throw new Error(
             `OpenAI API request failed: ${statusPart} ${error.name}`,
           );
+        }
+        throw error;
+      }
+    },
+
+    async getEmbedding(
+      request: NodeEmbeddingRequest,
+      apiIdentifier: string,
+    ): Promise<NodeEmbeddingResponse> {
+      const modelApiName: string = validateOpenAiModelIdentifier(
+        apiIdentifier,
+        modelConfig,
+      );
+
+      try {
+        const responseUnknown: unknown = await client.embeddings.create({
+          model: modelApiName,
+          input: request.input,
+        });
+
+        if (!isPlainRecord(responseUnknown)) {
+          throw new Error('OpenAI response did not include embedding data.');
+        }
+
+        const dataUnknown: unknown = responseUnknown['data'];
+        if (!Array.isArray(dataUnknown) || dataUnknown.length === 0) {
+          throw new Error('OpenAI response did not include embedding data.');
+        }
+
+        const firstDatum: unknown = dataUnknown[0];
+        if (!isOpenAIEmbeddingDatum(firstDatum)) {
+          throw new Error('OpenAI response did not include embedding data.');
+        }
+
+        const usageUnknown: unknown = responseUnknown['usage'];
+        if (!isOpenAIEmbeddingUsage(usageUnknown)) {
+          throw new Error('OpenAI response did not include usage data.');
+        }
+
+        if (!isOpenAIEmbeddingResponse(responseUnknown)) {
+          throw new Error('OpenAI response did not include embedding data.');
+        }
+
+        const tokenUsage = {
+          prompt_tokens: usageUnknown.prompt_tokens,
+          completion_tokens: 0,
+          total_tokens: usageUnknown.total_tokens,
+        };
+
+        if (!isNodeTokenUsage(tokenUsage)) {
+          throw new Error('OpenAI response did not include usage data.');
+        }
+
+        return {
+          embedding: firstDatum.embedding,
+          tokenUsage,
+        };
+      } catch (error) {
+        if (error instanceof OpenAI.APIError || (error instanceof Error && error.name === 'APIError')) {
+          throw new Error('OpenAI API error');
         }
         throw error;
       }

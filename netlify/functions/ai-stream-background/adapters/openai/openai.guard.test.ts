@@ -1,16 +1,27 @@
 import { describe, expect, it } from 'vitest';
-import type { OpenAIChatCompletionChunk } from './openai.interface.ts';
+import type {
+  OpenAIChatCompletionChunk,
+  OpenAIEmbeddingDatum,
+  OpenAIEmbeddingResponse,
+  OpenAIEmbeddingUsage,
+} from './openai.interface.ts';
 import {
-  createMockOpenAIChatCompletionChunk,
-  createMockOpenAIChoice,
-  createMockOpenAIDelta,
-  createMockOpenAIUsageDelta,
+  buildOpenAIChatCompletionChunk,
+  buildOpenAIChoice,
+  buildOpenAIDelta,
+  buildOpenAIEmbeddingDatum,
+  buildOpenAIEmbeddingResponse,
+  buildOpenAIEmbeddingUsage,
+  buildOpenAIUsageDelta,
 } from './openai.mock.ts';
 import {
   isOpenAIChatCompletionChunk,
   isOpenAIChoice,
   isOpenAIDelta,
   isOpenAIFinishReason,
+  isOpenAIEmbeddingDatum,
+  isOpenAIEmbeddingResponse,
+  isOpenAIEmbeddingUsage,
   isOpenAIUsageDelta,
 } from './openai.guard.ts';
 
@@ -67,7 +78,7 @@ describe('openai.guard', () => {
     });
 
     it('accepts valid delta from default mock factory', () => {
-      expect(isOpenAIDelta(createMockOpenAIDelta())).toBe(true);
+      expect(isOpenAIDelta(buildOpenAIDelta())).toBe(true);
     });
 
     it('rejects content with wrong type', () => {
@@ -87,7 +98,7 @@ describe('openai.guard', () => {
     it('accepts choice with finish_reason stop', () => {
       expect(
         isOpenAIChoice(
-          createMockOpenAIChoice({ finish_reason: 'stop', delta: { content: 'a' } }),
+          buildOpenAIChoice({ finish_reason: 'stop', delta: { content: 'a' } }),
         ),
       ).toBe(true);
     });
@@ -95,7 +106,7 @@ describe('openai.guard', () => {
     it('accepts choice with finish_reason length', () => {
       expect(
         isOpenAIChoice(
-          createMockOpenAIChoice({ finish_reason: 'length', delta: { content: 'a' } }),
+          buildOpenAIChoice({ finish_reason: 'length', delta: { content: 'a' } }),
         ),
       ).toBe(true);
     });
@@ -103,7 +114,7 @@ describe('openai.guard', () => {
     it('accepts choice with finish_reason tool_calls', () => {
       expect(
         isOpenAIChoice(
-          createMockOpenAIChoice({
+          buildOpenAIChoice({
             finish_reason: 'tool_calls',
             delta: { content: 'a' },
           }),
@@ -114,7 +125,7 @@ describe('openai.guard', () => {
     it('accepts choice with finish_reason content_filter', () => {
       expect(
         isOpenAIChoice(
-          createMockOpenAIChoice({
+          buildOpenAIChoice({
             finish_reason: 'content_filter',
             delta: { content: 'a' },
           }),
@@ -125,7 +136,7 @@ describe('openai.guard', () => {
     it('accepts choice with finish_reason function_call', () => {
       expect(
         isOpenAIChoice(
-          createMockOpenAIChoice({
+          buildOpenAIChoice({
             finish_reason: 'function_call',
             delta: { content: 'a' },
           }),
@@ -134,7 +145,7 @@ describe('openai.guard', () => {
     });
 
     it('accepts choice with finish_reason null', () => {
-      expect(isOpenAIChoice(createMockOpenAIChoice({ finish_reason: null }))).toBe(true);
+      expect(isOpenAIChoice(buildOpenAIChoice({ finish_reason: null }))).toBe(true);
     });
 
     it('rejects object missing delta field', () => {
@@ -166,7 +177,7 @@ describe('openai.guard', () => {
 
   describe('isOpenAIUsageDelta', () => {
     it('accepts valid usage from default mock factory', () => {
-      expect(isOpenAIUsageDelta(createMockOpenAIUsageDelta())).toBe(true);
+      expect(isOpenAIUsageDelta(buildOpenAIUsageDelta())).toBe(true);
     });
 
     it('rejects usage with missing field', () => {
@@ -181,7 +192,7 @@ describe('openai.guard', () => {
     it('rejects negative prompt_tokens', () => {
       expect(
         isOpenAIUsageDelta(
-          createMockOpenAIUsageDelta({ prompt_tokens: -1 }),
+          buildOpenAIUsageDelta({ prompt_tokens: -1 }),
         ),
       ).toBe(false);
     });
@@ -189,7 +200,7 @@ describe('openai.guard', () => {
     it('rejects non-integer total_tokens', () => {
       expect(
         isOpenAIUsageDelta(
-          createMockOpenAIUsageDelta({ total_tokens: 1.5 }),
+          buildOpenAIUsageDelta({ total_tokens: 1.5 }),
         ),
       ).toBe(false);
     });
@@ -197,7 +208,7 @@ describe('openai.guard', () => {
 
   describe('isOpenAIChatCompletionChunk', () => {
     it('accepts valid chunk from default mock factory', () => {
-      expect(isOpenAIChatCompletionChunk(createMockOpenAIChatCompletionChunk())).toBe(
+      expect(isOpenAIChatCompletionChunk(buildOpenAIChatCompletionChunk())).toBe(
         true,
       );
     });
@@ -205,14 +216,14 @@ describe('openai.guard', () => {
     it('accepts chunk with usage null', () => {
       expect(
         isOpenAIChatCompletionChunk(
-          createMockOpenAIChatCompletionChunk({ usage: null }),
+          buildOpenAIChatCompletionChunk({ usage: null }),
         ),
       ).toBe(true);
     });
 
     it('accepts chunk with usage property omitted', () => {
       const chunkUsageOmitted: OpenAIChatCompletionChunk = {
-        choices: [createMockOpenAIChoice({ delta: { content: 'y' }, finish_reason: null })],
+        choices: [buildOpenAIChoice({ delta: { content: 'y' }, finish_reason: null })],
       };
       expect(isOpenAIChatCompletionChunk(chunkUsageOmitted)).toBe(true);
     });
@@ -220,7 +231,7 @@ describe('openai.guard', () => {
     it('accepts chunk with empty choices', () => {
       expect(
         isOpenAIChatCompletionChunk(
-          createMockOpenAIChatCompletionChunk({ choices: [] }),
+          buildOpenAIChatCompletionChunk({ choices: [] }),
         ),
       ).toBe(true);
     });
@@ -243,7 +254,7 @@ describe('openai.guard', () => {
 
     it('rejects usage present with invalid shape', () => {
       const validChoice: OpenAIChatCompletionChunk['choices'][number] =
-        createMockOpenAIChoice({ finish_reason: null });
+        buildOpenAIChoice({ finish_reason: null });
       expect(
         isOpenAIChatCompletionChunk({
           choices: [validChoice],
@@ -286,7 +297,7 @@ describe('openai.guard', () => {
     it('accepts OpenAIUsageDelta shape exercised by openai.interface.test', () => {
       expect(
         isOpenAIUsageDelta(
-          createMockOpenAIUsageDelta({
+          buildOpenAIUsageDelta({
             prompt_tokens: 10,
             completion_tokens: 20,
             total_tokens: 30,
@@ -300,7 +311,7 @@ describe('openai.guard', () => {
         delta: { content: 'x' },
         finish_reason: null,
       };
-      const usage = createMockOpenAIUsageDelta({
+      const usage = buildOpenAIUsageDelta({
         prompt_tokens: 1,
         completion_tokens: 2,
         total_tokens: 3,
@@ -336,6 +347,81 @@ describe('openai.guard', () => {
         ],
       };
       expect(isOpenAIChatCompletionChunk(chunkOmitted)).toBe(true);
+    });
+
+    it('accepts valid embedding response', () => {
+      const datum: OpenAIEmbeddingDatum = buildOpenAIEmbeddingDatum({
+        embedding: [0.1, 0.2, 0.3],
+      });
+      const usage: OpenAIEmbeddingUsage = buildOpenAIEmbeddingUsage({
+        prompt_tokens: 4,
+        total_tokens: 4,
+      });
+      const response: OpenAIEmbeddingResponse = buildOpenAIEmbeddingResponse({
+        data: [datum],
+        usage,
+      });
+      expect(isOpenAIEmbeddingResponse(response)).toBe(true);
+    });
+
+    it('rejects missing usage', () => {
+      const datum: OpenAIEmbeddingDatum = buildOpenAIEmbeddingDatum({
+        embedding: [1, 2, 3],
+      });
+      const responseWithoutUsage: Record<string, unknown> = {
+        ...buildOpenAIEmbeddingResponse({
+          data: [datum],
+          usage: buildOpenAIEmbeddingUsage(),
+        }),
+      };
+      delete responseWithoutUsage['usage'];
+      expect(isOpenAIEmbeddingResponse(responseWithoutUsage)).toBe(false);
+    });
+
+    it('rejects empty data array', () => {
+      const usage: OpenAIEmbeddingUsage = buildOpenAIEmbeddingUsage({
+        prompt_tokens: 4,
+        total_tokens: 4,
+      });
+      const response: OpenAIEmbeddingResponse = buildOpenAIEmbeddingResponse({ data: [], usage });
+      expect(isOpenAIEmbeddingResponse(response)).toBe(false);
+    });
+
+    it('rejects non-array embedding field', () => {
+      const datum: OpenAIEmbeddingDatum = buildOpenAIEmbeddingDatum({
+        embedding: [1, 2, 3],
+      });
+      const malformedDatum = {
+        ...buildOpenAIEmbeddingDatum(),
+        embedding: 'not-array',
+      };
+      expect(isOpenAIEmbeddingDatum(malformedDatum)).toBe(false);
+      expect(isOpenAIEmbeddingDatum(datum)).toBe(true);
+    });
+
+    it('rejects embedding arrays containing non-number elements', () => {
+      const usage: OpenAIEmbeddingUsage = buildOpenAIEmbeddingUsage({
+        prompt_tokens: 4,
+        total_tokens: 4,
+      });
+      const response = {
+        ...buildOpenAIEmbeddingResponse({ usage }),
+        data: [
+          {
+            ...buildOpenAIEmbeddingDatum({ embedding: [1, 2, 3] }),
+            embedding: [1, 2, 'bad'],
+          },
+        ],
+      };
+      expect(isOpenAIEmbeddingResponse(response)).toBe(false);
+    });
+
+    it('accepts embedding usage object', () => {
+      const usage: OpenAIEmbeddingUsage = buildOpenAIEmbeddingUsage({
+        prompt_tokens: 4,
+        total_tokens: 4,
+      });
+      expect(isOpenAIEmbeddingUsage(usage)).toBe(true);
     });
   });
 });

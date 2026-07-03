@@ -16,840 +16,862 @@
 
 * **Embedding Jobs Implementation** 
 
-* `[ ]`   netlify/functions/ai-stream-background/adapters/openai/openai.ts **[BE] Add embedding operation support to the OpenAI adapter while preserving chat stream behavior**
-
-   * `[ ]`   `objective`
-      * `[ ]`   Solve the missing provider-adapter embedding capability so embedding workloads can execute through the same adapter boundary as chat workloads.
-      * `[ ]`   Functional goals:
-         * `[ ]`   Add adapter-level embedding request and response contracts.
-         * `[ ]`   Implement `getEmbedding` in the OpenAI adapter using the OpenAI embeddings API.
-         * `[ ]`   Preserve existing `sendMessageStream` behavior and output chunk semantics.
-         * `[ ]`   Keep embedding support additive so existing adapters remain valid while this node is completed.
-      * `[ ]`   Non-functional constraints:
-         * `[ ]`   No behavior regressions in existing OpenAI stream tests.
-         * `[ ]`   Deterministic runtime validation and explicit error signaling for malformed embedding responses.
-         * `[ ]`   No handler, queue, or Supabase worker changes in this node.
-      * `[ ]`   Each goal is atomic and testable through existing and added adapter tests.
-
-   * `[ ]`   `role`
-      * `[ ]`   Node role is provider adapter implementation plus immediate contract support files consumed by that implementation.
-      * `[ ]`   This role is correct because `openai.ts` is the first source file that must consume embedding contracts, guards, and mocks.
-      * `[ ]`   Out-of-scope responsibilities:
-         * `[ ]`   Do not edit handler routing (`ai-stream-background.ts`) in this node.
-         * `[ ]`   Do not edit enqueue/callback schemas in this node.
-         * `[ ]`   Do not edit non-OpenAI provider source files in this node.
-
-   * `[ ]`   `module`
-      * `[ ]`   Bounded context is `netlify/functions/ai-stream-background/adapters` and OpenAI adapter internals.
-      * `[ ]`   Inside boundary:
-         * `[ ]`   Adapter contracts used by provider adapters.
-         * `[ ]`   OpenAI request shaping and response normalization.
-         * `[ ]`   OpenAI runtime guards, mocks, and tests.
-      * `[ ]`   Outside boundary:
-         * `[ ]`   Workload dispatch mode selection.
-         * `[ ]`   Netlify callback persistence behavior.
-         * `[ ]`   Supabase worker orchestration.
-
-   * `[ ]`   `deps`
-      * `[ ]`   Provider: `openai` package client.
-         * `[ ]`   Layer classification: external adapter dependency.
-         * `[ ]`   Direction: inbound to adapter implementation.
-         * `[ ]`   Purpose: invoke `chat.completions.create` and `embeddings.create`.
-      * `[ ]`   Provider: `../ai-adapter.interface.ts`.
-         * `[ ]`   Layer classification: internal adapter contract.
-         * `[ ]`   Direction: producer contract consumed by OpenAI adapter.
-         * `[ ]`   Purpose: `AiAdapter`, constructor params, stream chunk, and embedding contract types.
-      * `[ ]`   Provider: `../getNodeAiAdapter.guard.ts`.
-         * `[ ]`   Layer classification: shared runtime guard utility.
-         * `[ ]`   Direction: producer guard consumed by OpenAI adapter.
-         * `[ ]`   Purpose: validate usage records and plain records safely.
-      * `[ ]`   Provider: `../resolveOutputCap.ts`.
-         * `[ ]`   Layer classification: shared helper.
-         * `[ ]`   Direction: producer helper consumed by chat path only.
-         * `[ ]`   Purpose: preserve existing output-cap behavior.
-      * `[ ]`   Confirm:
-         * `[ ]`   No reverse dependencies introduced.
-         * `[ ]`   No lateral layer violations introduced.
-
-   * `[ ]`   `context_slice`
-      * `[ ]`   Minimal dependency interfaces required:
-         * `[ ]`   OpenAI client methods for streaming chat and embeddings only.
-         * `[ ]`   Adapter contract method signatures and token usage shape.
-         * `[ ]`   Runtime record/token-usage guard helpers.
-      * `[ ]`   Injection shape remains `NodeAdapterConstructorParams` and no new constructor dependencies are added.
-      * `[ ]`   Confirm:
-         * `[ ]`   No over-fetching of dependency surfaces.
-         * `[ ]`   No hidden coupling to queue payload structures.
-
-   * `[ ]`   `netlify/functions/ai-stream-background/adapters/ai-adapter.interface.test.ts`
-      * `[ ]`   Add valid and invalid contract assertions for new embedding boundary types:
-         * `[ ]`   Valid `NodeEmbeddingRequest` with non-empty `input`.
-         * `[ ]`   Invalid request with non-string `input`.
-         * `[ ]`   Valid `NodeEmbeddingResponse` with numeric `embedding` vector and token usage.
-         * `[ ]`   Invalid response with non-numeric vector elements.
-      * `[ ]`   Add contract assertions for `AiAdapter` compatibility:
-         * `[ ]`   Adapter with `sendMessageStream` only remains valid.
-         * `[ ]`   Adapter with both `sendMessageStream` and optional `getEmbedding` remains valid.
-
-   * `[ ]`   `netlify/functions/ai-stream-background/adapters/ai-adapter.interface.ts`
-      * `[ ]`   Add `NodeEmbeddingRequest` with `input: string`.
-      * `[ ]`   Add `NodeEmbeddingResponse` with:
-         * `[ ]`   `embedding: number[]`
-         * `[ ]`   `tokenUsage: NodeTokenUsage`
-      * `[ ]`   Extend `AiAdapter` interface with optional method:
-         * `[ ]`   `getEmbedding?(request: NodeEmbeddingRequest, apiIdentifier: string): Promise<NodeEmbeddingResponse>`
-      * `[ ]`   Keep existing stream method signatures unchanged.
-
-   * `[ ]`   `netlify/functions/ai-stream-background/adapters/openai/openai.interaction.spec`
-      * `[ ]`   Define OpenAI adapter interactions for both supported operations.
-      * `[ ]`   Chat stream interaction constraints:
-         * `[ ]`   Preserve current request shaping.
-         * `[ ]`   Preserve `text_delta` then `usage` then `done` stream semantics.
-         * `[ ]`   Preserve output-cap resolution.
-      * `[ ]`   Embedding interaction constraints:
-         * `[ ]`   Validate OpenAI model suffix resolution from `apiIdentifier`.
-         * `[ ]`   Call `embeddings.create` with resolved model and request input.
-         * `[ ]`   Require non-empty embedding data.
-         * `[ ]`   Require usage object with `prompt_tokens` and `total_tokens`.
-         * `[ ]`   Normalize returned usage into `NodeTokenUsage` with `completion_tokens` fixed to `0`.
-      * `[ ]`   Failure modes:
-         * `[ ]`   Model mismatch throws explicit adapter error.
-         * `[ ]`   Missing usage throws explicit adapter error.
-         * `[ ]`   Empty embedding data throws explicit adapter error.
-         * `[ ]`   SDK APIError is surfaced through existing adapter error normalization.
-
-   * `[ ]`   `netlify/functions/ai-stream-background/adapters/getNodeAiAdapter.guard.test.ts`
-      * `[ ]`   Add coverage for optional embedding method validation:
-         * `[ ]`   Accept adapter object with only valid `sendMessageStream`.
-         * `[ ]`   Accept adapter object with valid `sendMessageStream` and function `getEmbedding`.
-         * `[ ]`   Reject adapter object with non-function `getEmbedding`.
-
-   * `[ ]`   `netlify/functions/ai-stream-background/adapters/getNodeAiAdapter.guard.ts`
-      * `[ ]`   Keep `sendMessageStream` function requirement unchanged.
-      * `[ ]`   Add optional `getEmbedding` runtime function check.
-
-   * `[ ]`   `netlify/functions/ai-stream-background/adapters/openai/openai.interface.test.ts`
-      * `[ ]`   Add embedding interface contract tests:
-         * `[ ]`   Accept embedding datum with numeric `embedding` array.
-         * `[ ]`   Accept embedding response with non-empty `data` and valid `usage`.
-         * `[ ]`   Reject malformed usage fields by type contract fixtures.
-         * `[ ]`   Reject malformed embedding vector element types by type contract fixtures.
-
-   * `[ ]`   `netlify/functions/ai-stream-background/adapters/openai/openai.interface.ts`
-      * `[ ]`   Add `OpenAIEmbeddingDatum` containing `embedding: number[]`.
-      * `[ ]`   Add `OpenAIEmbeddingUsage` containing `prompt_tokens: number` and `total_tokens: number`.
-      * `[ ]`   Add `OpenAIEmbeddingResponse` containing `data: OpenAIEmbeddingDatum[]` and `usage: OpenAIEmbeddingUsage`.
-      * `[ ]`   Preserve existing chat interface types unchanged.
-
-   * `[ ]`   `netlify/functions/ai-stream-background/adapters/openai/openai.guard.test.ts`
-      * `[ ]`   Add guard tests for embedding runtime validation:
-         * `[ ]`   Accept valid embedding response.
-         * `[ ]`   Reject missing usage.
-         * `[ ]`   Reject empty data array.
-         * `[ ]`   Reject non-array embedding field.
-         * `[ ]`   Reject embedding arrays containing non-number elements.
-
-   * `[ ]`   `netlify/functions/ai-stream-background/adapters/openai/openai.guard.ts`
-      * `[ ]`   Add type guards for:
-         * `[ ]`   embedding usage object
-         * `[ ]`   embedding datum vector
-         * `[ ]`   embedding response object
-      * `[ ]`   Preserve all existing chat chunk guards unchanged.
-
-   * `[ ]`   `netlify/functions/ai-stream-background/adapters/openai/openai.mock.ts`
-      * `[ ]`   Add embedding fixtures and factories:
-         * `[ ]`   Valid embedding response fixture.
-         * `[ ]`   Valid embedding usage fixture.
-         * `[ ]`   Override-capable factory for malformed usage and malformed vectors.
-      * `[ ]`   Extend adapter mock factory to optionally provide deterministic `getEmbedding` implementation.
-      * `[ ]`   Preserve existing stream mock defaults unchanged.
-
-   * `[ ]`   `netlify/functions/ai-stream-background/adapters/openai/openai.test.ts`
-      * `[ ]`   Add RED/GREEN unit tests for new `getEmbedding` behavior:
-         * `[ ]`   Calls `embeddings.create` with resolved model and request input.
-         * `[ ]`   Returns first embedding vector and normalized token usage.
-         * `[ ]`   Throws on model mismatch before API call.
-         * `[ ]`   Throws on missing usage.
-         * `[ ]`   Throws on empty embedding data.
-         * `[ ]`   Surfaces normalized API errors consistently with existing style.
-      * `[ ]`   Keep current stream tests and assertions unchanged.
-
-   * `[ ]`   `netlify/functions/ai-stream-background/adapters/openai/openai.ts`
-      * `[ ]`   Implement `getEmbedding` on the returned adapter object using the new interface contract.
-      * `[ ]`   Resolve and validate model identifier in the same style as stream path.
-      * `[ ]`   Call OpenAI embeddings API, validate guard-safe response, and map to `NodeEmbeddingResponse`.
-      * `[ ]`   Keep `sendMessageStream` behavior unchanged.
-      * `[ ]`   Keep constructor shape and dependency injection unchanged.
-
-   * `[ ]`   `netlify/functions/ai-stream-background/adapters/openai/openai.provides.ts`
-      * `[ ]`   Export newly added embedding types, guards, and mock helpers introduced by this node.
-      * `[ ]`   Preserve all existing exports used by current tests and consumers.
-
-   * `[ ]`   `netlify/functions/ai-stream-background/adapters/openai/openai.integration.test.ts`
-      * `[ ]`   Add integration assertions covering provider -> selector -> adapter chain for embeddings:
-         * `[ ]`   Construct a real provider map that registers the OpenAI factory.
-         * `[ ]`   Resolve the adapter through `getNodeAiAdapter` (do not construct OpenAI adapter directly in the embedding integration path).
-         * `[ ]`   Invoke embedding through the returned `AiAdapter` boundary and assert normalized `NodeEmbeddingResponse` output.
-         * `[ ]`   Assert the selected adapter still satisfies runtime adapter guard checks.
-         * `[ ]`   Keep existing stream integration behavior valid in the same test file.
-      * `[ ]`   Use only mocked external SDK interactions.
-
-   * `[ ]`   `construction`
-      * `[ ]`   `createOpenAINodeAdapter` returns a fully constructed adapter object with required stream function and optional embedding function implemented for OpenAI.
-      * `[ ]`   No partial construction path is introduced.
-      * `[ ]`   Initialization order keeps existing client construction before method use.
-
-   * `[ ]`   `directionality`
-      * `[ ]`   Node layer is provider adapter implementation.
-      * `[ ]`   Dependencies remain inward-facing from shared contracts/guards/helpers and external SDK.
-      * `[ ]`   Exposed API remains outward-facing through provides exports.
-      * `[ ]`   No cycles with handler or worker layers.
-
-   * `[ ]`   `requirements`
-      * `[ ]`   Embedding operation is available at OpenAI adapter boundary through typed optional adapter contract.
-      * `[ ]`   OpenAI adapter embedding behavior is fully validated and test-covered for success and failure paths.
-      * `[ ]`   Existing chat stream behavior remains unchanged and passing.
-      * `[ ]`   Guard and interface layers cover embedding shapes and reject malformed data.
-      * `[ ]`   Integration test confirms provider map -> adapter selector -> OpenAI adapter embedding chain with mocked external provider interaction.
-      * `[ ]`   No non-node-scope source files are modified.
-
-* `[ ]`   netlify/functions/ai-stream-background/adapters/google/google.ts **[BE] Add embedding operation support to Google adapter while preserving Gemini stream semantics**
-
-   * `[ ]`   `objective`
-      * `[ ]`   Solve the missing Google provider embedding capability so embedding workloads can execute through the same adapter boundary used by generation workloads.
-      * `[ ]`   Functional goals:
-         * `[ ]`   Add Google embedding response/request contract coverage at interface and guard layers.
-         * `[ ]`   Implement `getEmbedding` in Google adapter using Google embeddings API surface.
-         * `[ ]`   Preserve current `sendMessageStream` behavior, output-cap handling, and finish-reason mapping.
-         * `[ ]`   Keep adapter return shape compatible with optional embedding contract introduced in shared adapter interface.
-      * `[ ]`   Non-functional constraints:
-         * `[ ]`   No regressions to existing stream unit and integration assertions.
-         * `[ ]`   Deterministic runtime validation of embedding responses prior to normalization.
-         * `[ ]`   No workload-handler, selector-source, or Supabase source edits in this node.
-      * `[ ]`   Each goal is atomic and testable via contract, unit, and integration files in Google adapter scope.
-
-   * `[ ]`   `role`
-      * `[ ]`   Node role is provider adapter implementation plus immediate Google support files (interface, guards, mocks, tests, provides).
-      * `[ ]`   This role is correct because `google.ts` is the source file that must consume shared adapter embedding capability and produce Google-specific behavior.
-      * `[ ]`   Out-of-scope responsibilities:
-         * `[ ]`   Do not edit selector source (`getNodeAiAdapter.ts`) in this node.
-         * `[ ]`   Do not edit handler source (`ai-stream-background.ts`) in this node.
-         * `[ ]`   Do not edit OpenAI/Anthropic source files in this node.
-
-   * `[ ]`   `module`
-      * `[ ]`   Bounded context is Google adapter implementation under `netlify/functions/ai-stream-background/adapters/google`.
-      * `[ ]`   Inside boundary:
-         * `[ ]`   Google request preparation and response normalization.
-         * `[ ]`   Google runtime guards for chunk/final/embedding payloads.
-         * `[ ]`   Google mock factories and tests proving stream and embedding behavior.
-      * `[ ]`   Outside boundary:
-         * `[ ]`   Workload mode routing.
-         * `[ ]`   Provider selection logic.
-         * `[ ]`   Callback persistence and wallet/debit logic.
-
-   * `[ ]`   `deps`
-      * `[ ]`   Provider: `@google/generative-ai` client.
-         * `[ ]`   Layer classification: external provider SDK dependency.
-         * `[ ]`   Direction: inbound to adapter implementation.
-         * `[ ]`   Purpose: stream chat completions and compute embeddings.
-      * `[ ]`   Provider: `../ai-adapter.interface.ts`.
-         * `[ ]`   Layer classification: shared adapter contract producer.
-         * `[ ]`   Direction: consumed by Google adapter.
-         * `[ ]`   Purpose: stream chunk contract plus optional embedding contract types.
-      * `[ ]`   Provider: `../getNodeAiAdapter.guard.ts`.
-         * `[ ]`   Layer classification: shared runtime guard helpers.
-         * `[ ]`   Direction: consumed by Google guard layer.
-         * `[ ]`   Purpose: plain record and token usage validation helpers.
-      * `[ ]`   Provider: `../../resolveOutputCap/resolveOutputCap.provides.ts`.
-         * `[ ]`   Layer classification: shared helper producer.
-         * `[ ]`   Direction: consumed by Google stream request preparation.
-         * `[ ]`   Purpose: enforce token cap policy for stream requests.
-      * `[ ]`   Confirm:
-         * `[ ]`   No reverse dependencies introduced.
-         * `[ ]`   No lateral layer violations introduced.
-
-   * `[ ]`   `context_slice`
-      * `[ ]`   Minimal dependency interfaces required:
-         * `[ ]`   SDK calls for stream and embedding operations only.
-         * `[ ]`   Shared adapter stream and embedding output shapes.
-         * `[ ]`   Shared validation helpers for record/token checks.
-      * `[ ]`   Injection shape remains `NodeAdapterConstructorParams` with existing `modelConfig`, `apiKey`, and `userConfig`.
-      * `[ ]`   Confirm:
-         * `[ ]`   No over-fetching of SDK/client surfaces.
-         * `[ ]`   No hidden coupling to handler event payloads.
-
-   * `[ ]`   `netlify/functions/ai-stream-background/adapters/google/google.interface.test.ts`
-      * `[ ]`   Add contract tests for Google embedding payload shapes:
-         * `[ ]`   Valid embedding value with numeric vector output.
-         * `[ ]`   Valid embedding response with non-empty embedding container and usage metadata.
-         * `[ ]`   Invalid embedding response fixtures for missing vector and invalid usage numeric fields.
-      * `[ ]`   Preserve all current stream contract assertions.
-
-   * `[ ]`   `netlify/functions/ai-stream-background/adapters/google/google.interface.ts`
-      * `[ ]`   Add Google embedding interfaces required by runtime validation and adapter normalization:
-         * `[ ]`   embedding vector item type.
-         * `[ ]`   embedding response type.
-         * `[ ]`   embedding usage metadata type.
-      * `[ ]`   Preserve existing stream-related Google interface definitions unchanged.
-
-   * `[ ]`   `netlify/functions/ai-stream-background/adapters/google/google.interaction.spec`
-      * `[ ]`   Define stream operation interactions:
-         * `[ ]`   prepare history and final parts.
-         * `[ ]`   send stream request.
-         * `[ ]`   emit `text_delta`, then `usage`, then `done`.
-      * `[ ]`   Define embedding operation interactions:
-         * `[ ]`   resolve model identifier from `google-` API identifier.
-         * `[ ]`   invoke Google embedding API call with request input.
-         * `[ ]`   validate embedding response and usage metadata.
-         * `[ ]`   normalize usage to `NodeTokenUsage` (`completion_tokens` fixed to `0`).
-      * `[ ]`   Failure modes:
-         * `[ ]`   empty or malformed embedding payload throws explicit adapter error.
-         * `[ ]`   missing or malformed embedding usage metadata throws explicit adapter error.
-         * `[ ]`   SDK errors are surfaced through adapter error path without swallowing.
-
-   * `[ ]`   `netlify/functions/ai-stream-background/adapters/google/google.guard.test.ts`
-      * `[ ]`   Add embedding guard tests:
-         * `[ ]`   accept valid embedding response shape.
-         * `[ ]`   reject missing embedding vector.
-         * `[ ]`   reject non-array embedding vector.
-         * `[ ]`   reject embedding arrays with non-number elements.
-         * `[ ]`   reject missing/invalid embedding usage metadata.
-      * `[ ]`   Preserve existing stream guard coverage.
-
-   * `[ ]`   `netlify/functions/ai-stream-background/adapters/google/google.guard.ts`
-      * `[ ]`   Add runtime guards for Google embedding response and usage metadata.
-      * `[ ]`   Reuse shared plain-record validation patterns.
-      * `[ ]`   Preserve existing stream chunk/final response guards unchanged.
-
-   * `[ ]`   `netlify/functions/ai-stream-background/adapters/google/google.mock.ts`
-      * `[ ]`   Add deterministic Google embedding fixtures and factory overrides:
-         * `[ ]`   success embedding response fixture with numeric vector + usage.
-         * `[ ]`   malformed embedding response fixtures for negative tests.
-      * `[ ]`   Extend adapter mock creation to optionally provide `getEmbedding` implementation.
-      * `[ ]`   Preserve current stream mock defaults and helpers.
-
-   * `[ ]`   `netlify/functions/ai-stream-background/adapters/google/google.test.ts`
-      * `[ ]`   Add RED/GREEN unit tests for `getEmbedding`:
-         * `[ ]`   invokes SDK embedding API with resolved model and input text.
-         * `[ ]`   returns normalized `NodeEmbeddingResponse` with first embedding vector and token usage.
-         * `[ ]`   throws on malformed embedding payload.
-         * `[ ]`   throws on missing/invalid usage metadata.
-         * `[ ]`   surfaces SDK embedding failures.
-      * `[ ]`   Preserve all current stream tests and assertions.
-
-   * `[ ]`   `netlify/functions/ai-stream-background/adapters/google/google.ts`
-      * `[ ]`   Implement `getEmbedding` on returned adapter object.
-      * `[ ]`   Resolve model name for embedding path with same identifier normalization style used by stream path.
-      * `[ ]`   Call Google embedding API, validate with Google embedding guards, and map to `NodeEmbeddingResponse`.
-      * `[ ]`   Keep `sendMessageStream` behavior unchanged.
-      * `[ ]`   Keep constructor/dependency injection shape unchanged.
-
-   * `[ ]`   `netlify/functions/ai-stream-background/adapters/google/google.provides.ts`
-      * `[ ]`   Export new embedding interfaces/guards/mocks added in this node.
-      * `[ ]`   Preserve all existing exports used by tests and consumers.
-
-   * `[ ]`   `netlify/functions/ai-stream-background/adapters/google/google.integration.test.ts`
-      * `[ ]`   Add integration assertions covering provider -> selector -> adapter chain for Google embedding path:
-         * `[ ]`   register a real provider map entry for Google factory.
-         * `[ ]`   resolve adapter through selector boundary (`getNodeAiAdapter`) for Google identifier.
-         * `[ ]`   invoke embedding through returned `AiAdapter` boundary and assert normalized `NodeEmbeddingResponse`.
-         * `[ ]`   preserve and reassert existing stream integration behavior in same file.
-      * `[ ]`   Use mocks only for external SDK interactions.
-
-   * `[ ]`   `construction`
-      * `[ ]`   `createGoogleNodeAdapter` returns fully-constructed adapter object with required stream method and embedding method.
-      * `[ ]`   No partial construction path is introduced.
-      * `[ ]`   Initialization order remains client construction before operation methods are executed.
-
-   * `[ ]`   `directionality`
-      * `[ ]`   Node layer is provider adapter implementation.
-      * `[ ]`   Dependencies remain inward-facing from shared contracts/helpers and Google SDK.
-      * `[ ]`   Outward API remains through Google provides surface and `AiAdapter` contract.
-      * `[ ]`   No cycles with selector or handler layers introduced.
-
-   * `[ ]`   `requirements`
-      * `[ ]`   Google adapter exposes embedding capability through optional adapter contract.
-      * `[ ]`   Google embedding path is validated and normalized with deterministic error handling.
-      * `[ ]`   Existing Google stream behavior remains intact and fully covered.
-      * `[ ]`   Integration path verifies selector-resolved Google adapter embedding behavior with external SDK mocked.
-      * `[ ]`   Node changes remain scoped to Google source file and its support system.
-
-* `[ ]`   netlify/functions/ai-stream-background/adapters/anthropic/anthropic.ts **[BE] Add embedding operation support to Anthropic adapter while preserving Claude stream semantics**
-
-   * `[ ]`   `objective`
-      * `[ ]`   Solve the missing Anthropic provider embedding capability so embedding workloads can execute through the shared adapter boundary without bypassing provider adapters.
-      * `[ ]`   Functional goals:
-         * `[ ]`   Add Anthropic embedding contract coverage in interface and guard layers.
-         * `[ ]`   Implement `getEmbedding` in Anthropic adapter using Anthropic embedding API surface.
-         * `[ ]`   Preserve existing `sendMessageStream` behavior, message preparation rules, and stop-reason mapping.
-         * `[ ]`   Keep return shape compatible with optional embedding contract from shared adapter interface.
-      * `[ ]`   Non-functional constraints:
-         * `[ ]`   No regressions to existing stream unit and integration tests.
-         * `[ ]`   Deterministic runtime validation before embedding normalization.
-         * `[ ]`   No edits to selector source, handler source, or Supabase source files in this node.
-      * `[ ]`   Each goal is atomic and testable via Anthropic contract, guard, unit, and integration tests.
-
-   * `[ ]`   `role`
-      * `[ ]`   Node role is provider adapter implementation and complete immediate support system for Anthropic adapter.
-      * `[ ]`   This role is correct because `anthropic.ts` is the source file that consumes shared embedding contract and provides Anthropic-specific runtime behavior.
-      * `[ ]`   Out-of-scope responsibilities:
-         * `[ ]`   Do not edit `getNodeAiAdapter.ts` in this node.
-         * `[ ]`   Do not edit `ai-stream-background.ts` in this node.
-         * `[ ]`   Do not edit OpenAI or Google source files in this node.
-
-   * `[ ]`   `module`
-      * `[ ]`   Bounded context is `netlify/functions/ai-stream-background/adapters/anthropic`.
-      * `[ ]`   Inside boundary:
-         * `[ ]`   Anthropic request shaping and stream/embedding response normalization.
-         * `[ ]`   Anthropic runtime guards for stream and embedding payload shapes.
-         * `[ ]`   Anthropic test and mock fixtures for stream and embedding paths.
-      * `[ ]`   Outside boundary:
-         * `[ ]`   Workload mode routing and queue event contracts.
-         * `[ ]`   Adapter selection and provider-map dispatch.
-         * `[ ]`   Save-response callback persistence.
-
-   * `[ ]`   `deps`
-      * `[ ]`   Provider: `@anthropic-ai/sdk` client.
-         * `[ ]`   Layer classification: external provider SDK dependency.
-         * `[ ]`   Direction: inbound to adapter implementation.
-         * `[ ]`   Purpose: run stream generation and compute embeddings.
-      * `[ ]`   Provider: `../ai-adapter.interface.ts`.
-         * `[ ]`   Layer classification: shared adapter contract producer.
-         * `[ ]`   Direction: consumed by Anthropic adapter.
-         * `[ ]`   Purpose: stream chunk and embedding request/response contract types.
-      * `[ ]`   Provider: `../getNodeAiAdapter.guard.ts`.
-         * `[ ]`   Layer classification: shared runtime guard helper producer.
-         * `[ ]`   Direction: consumed by Anthropic guard layer.
-         * `[ ]`   Purpose: plain record validation utility reuse.
-      * `[ ]`   Provider: `../../resolveOutputCap/resolveOutputCap.provides.ts`.
-         * `[ ]`   Layer classification: shared helper producer.
-         * `[ ]`   Direction: consumed by stream request preparation.
-         * `[ ]`   Purpose: output-cap enforcement for stream calls.
-      * `[ ]`   Confirm:
-         * `[ ]`   No reverse dependencies introduced.
-         * `[ ]`   No lateral layer violations introduced.
-
-   * `[ ]`   `context_slice`
-      * `[ ]`   Minimal dependency interfaces required:
-         * `[ ]`   SDK stream and embedding calls.
-         * `[ ]`   Shared adapter contract types.
-         * `[ ]`   Shared plain-record validation helper.
-      * `[ ]`   Injection shape remains `NodeAdapterConstructorParams` (`modelConfig`, `apiKey`, `userConfig`).
-      * `[ ]`   Confirm:
-         * `[ ]`   No over-fetching of SDK surfaces.
-         * `[ ]`   No hidden coupling to handler event payloads.
-
-   * `[ ]`   `netlify/functions/ai-stream-background/adapters/anthropic/anthropic.interface.test.ts`
-      * `[ ]`   Add contract tests for Anthropic embedding payload shapes:
-         * `[ ]`   valid embedding vector response with numeric values.
-         * `[ ]`   valid embedding usage payload.
-         * `[ ]`   invalid embedding fixtures for missing vector and malformed usage fields.
-      * `[ ]`   Preserve all current stream contract assertions.
-
-   * `[ ]`   `netlify/functions/ai-stream-background/adapters/anthropic/anthropic.interface.ts`
-      * `[ ]`   Add Anthropic embedding interfaces required by guards and adapter normalization:
-         * `[ ]`   embedding vector item type.
-         * `[ ]`   embedding response container type.
-         * `[ ]`   embedding usage metadata type.
-      * `[ ]`   Preserve existing stream-related interface types unchanged.
-
-   * `[ ]`   `netlify/functions/ai-stream-background/adapters/anthropic/anthropic.interaction.spec`
-      * `[ ]`   Define stream operation interactions:
-         * `[ ]`   prepare Anthropic messages and caps.
-         * `[ ]`   iterate stream deltas and emit `text_delta` chunks.
-         * `[ ]`   emit `usage` then `done` with mapped stop reason.
-      * `[ ]`   Define embedding operation interactions:
-         * `[ ]`   resolve Anthropic model identifier from `anthropic-` API identifier.
-         * `[ ]`   invoke Anthropic embedding API with request input.
-         * `[ ]`   validate response embedding vector and usage metadata.
-         * `[ ]`   normalize to `NodeEmbeddingResponse` with `completion_tokens` fixed to `0`.
-      * `[ ]`   Failure modes:
-         * `[ ]`   malformed embedding response throws explicit adapter error.
-         * `[ ]`   missing/invalid usage metadata throws explicit adapter error.
-         * `[ ]`   Anthropic SDK APIError is surfaced through normalized adapter error path.
-
-   * `[ ]`   `netlify/functions/ai-stream-background/adapters/anthropic/anthropic.guard.test.ts`
-      * `[ ]`   Add embedding guard tests:
-         * `[ ]`   accept valid embedding response and usage.
-         * `[ ]`   reject missing embedding vector.
-         * `[ ]`   reject non-array embedding vector.
-         * `[ ]`   reject non-number embedding vector elements.
-         * `[ ]`   reject missing or malformed embedding usage metadata.
-      * `[ ]`   Preserve existing stream guard coverage.
-
-   * `[ ]`   `netlify/functions/ai-stream-background/adapters/anthropic/anthropic.guard.ts`
-      * `[ ]`   Add runtime guards for Anthropic embedding response and usage metadata.
-      * `[ ]`   Reuse existing plain-record validation style.
-      * `[ ]`   Preserve existing stream guards unchanged.
-
-   * `[ ]`   `netlify/functions/ai-stream-background/adapters/anthropic/anthropic.mock.ts`
-      * `[ ]`   Add deterministic embedding fixtures and override-capable factories:
-         * `[ ]`   success embedding response fixture.
-         * `[ ]`   malformed embedding fixtures for negative tests.
-      * `[ ]`   Extend adapter mock builder to optionally provide `getEmbedding` implementation.
-      * `[ ]`   Preserve current stream mock behavior.
-
-   * `[ ]`   `netlify/functions/ai-stream-background/adapters/anthropic/anthropic.test.ts`
-      * `[ ]`   Add RED/GREEN unit tests for `getEmbedding`:
-         * `[ ]`   invokes Anthropic embedding SDK call with resolved model and input.
-         * `[ ]`   maps embedding response to `NodeEmbeddingResponse`.
-         * `[ ]`   throws on malformed embedding payload.
-         * `[ ]`   throws on missing/invalid embedding usage metadata.
-         * `[ ]`   surfaces SDK embedding failures and normalized APIError path.
-      * `[ ]`   Preserve all existing stream tests and assertions.
-
-   * `[ ]`   `netlify/functions/ai-stream-background/adapters/anthropic/anthropic.ts`
-      * `[ ]`   Implement `getEmbedding` on returned adapter object.
-      * `[ ]`   Resolve embedding model name using existing Anthropic identifier normalization pattern.
-      * `[ ]`   Call Anthropic embedding API, validate with new Anthropic embedding guards, and map to `NodeEmbeddingResponse`.
-      * `[ ]`   Keep `sendMessageStream` behavior unchanged.
-      * `[ ]`   Keep constructor and dependency injection shape unchanged.
-
-   * `[ ]`   `netlify/functions/ai-stream-background/adapters/anthropic/anthropic.provides.ts`
-      * `[ ]`   Export newly added embedding interfaces/guards/mock helpers.
-      * `[ ]`   Preserve all existing exports consumed by tests and consumers.
-
-   * `[ ]`   `netlify/functions/ai-stream-background/adapters/anthropic/anthropic.integration.test.ts`
-      * `[ ]`   Add integration assertions covering provider -> selector -> adapter chain for Anthropic embedding path:
-         * `[ ]`   register provider map entry with Anthropic factory.
-         * `[ ]`   resolve adapter via selector boundary (`getNodeAiAdapter`) for Anthropic identifier.
-         * `[ ]`   invoke embedding via returned `AiAdapter` and assert normalized `NodeEmbeddingResponse`.
-         * `[ ]`   preserve and reassert current stream integration behavior in same file.
-      * `[ ]`   Use mocks only for external SDK interactions.
-
-   * `[ ]`   `construction`
-      * `[ ]`   `createAnthropicNodeAdapter` returns fully constructed adapter object with stream and embedding methods.
-      * `[ ]`   No partial construction path is introduced.
-      * `[ ]`   Initialization order remains client construction before operation execution.
-
-   * `[ ]`   `directionality`
-      * `[ ]`   Node layer is provider adapter implementation.
-      * `[ ]`   Dependencies remain inward-facing from shared contracts/helpers and Anthropic SDK.
-      * `[ ]`   Outward API remains via Anthropic provides exports and `AiAdapter` contract.
-      * `[ ]`   No selector or handler cycles are introduced.
-
-   * `[ ]`   `requirements`
-      * `[ ]`   Anthropic adapter exposes embedding capability through optional adapter contract.
-      * `[ ]`   Anthropic embedding path is validated and normalized with deterministic error handling.
-      * `[ ]`   Existing stream behavior remains unchanged and fully covered.
-      * `[ ]`   Integration path verifies selector-resolved Anthropic embedding behavior with external SDK mocked.
-      * `[ ]`   Node changes remain scoped to Anthropic source file and its support system.
-
-* `[ ]`   netlify/functions/ai-stream-background/adapters/getNodeAiAdapter.ts **[BE] Make selector operation-aware and enforce embedding capability compatibility**
-
-   * `[ ]`   `objective`
-      * `[ ]`   Solve selector ambiguity where provider prefix matching alone can return adapters that do not support the requested operation.
-      * `[ ]`   Functional goals:
-         * `[ ]`   Add explicit operation intent to selector params (`stream` or `embedding`).
-         * `[ ]`   Preserve existing stream selection behavior for current workloads.
-         * `[ ]`   Reject embedding selection when resolved adapter lacks embedding capability.
-         * `[ ]`   Keep provider-prefix matching and factory invocation deterministic.
-      * `[ ]`   Non-functional constraints:
-         * `[ ]`   No regression in case-insensitive prefix matching.
-         * `[ ]`   No silent fallback from embedding intent to stream-only adapters.
-         * `[ ]`   No handler source edits in this node.
-      * `[ ]`   Each goal is atomic and testable via selector contract, guard, unit, and integration tests.
-
-   * `[ ]`   `role`
-      * `[ ]`   Node role is adapter selector implementation plus immediate selector support system files.
-      * `[ ]`   This role is correct because `getNodeAiAdapter.ts` composes provider adapters and is the runtime gate between handler intent and provider capability.
-      * `[ ]`   Out-of-scope responsibilities:
-         * `[ ]`   Do not edit provider adapter source files in this node.
-         * `[ ]`   Do not edit `ai-stream-background.ts` workload routing in this node.
-         * `[ ]`   Do not edit Supabase source files in this node.
-
-   * `[ ]`   `module`
-      * `[ ]`   Bounded context is selector composition under `netlify/functions/ai-stream-background/adapters`.
-      * `[ ]`   Inside boundary:
-         * `[ ]`   provider prefix resolution.
-         * `[ ]`   factory invocation with model/user/api-key inputs.
-         * `[ ]`   operation-capability validation for resolved adapter.
-      * `[ ]`   Outside boundary:
-         * `[ ]`   provider-specific request/response logic.
-         * `[ ]`   workload mode parsing in handler.
-         * `[ ]`   callback persistence.
-
-   * `[ ]`   `deps`
-      * `[ ]`   Provider: `./ai-adapter.interface.ts`.
-         * `[ ]`   Layer classification: shared adapter contract producer.
-         * `[ ]`   Direction: consumed by selector implementation/guards/tests.
-         * `[ ]`   Purpose: adapter shape and provider factory contracts.
-      * `[ ]`   Provider: `./getNodeAiAdapter.interface.ts`.
-         * `[ ]`   Layer classification: selector contract producer.
-         * `[ ]`   Direction: consumed by selector implementation and tests.
-         * `[ ]`   Purpose: selector params/deps with operation intent.
-      * `[ ]`   Provider: `./getNodeAiAdapter.guard.ts`.
-         * `[ ]`   Layer classification: selector runtime guard producer.
-         * `[ ]`   Direction: consumed by selector implementation and tests.
-         * `[ ]`   Purpose: validate params and adapter capabilities.
-      * `[ ]`   Confirm:
-         * `[ ]`   No reverse dependencies introduced.
-         * `[ ]`   No lateral layer violations introduced.
-
-   * `[ ]`   `context_slice`
-      * `[ ]`   Minimal dependency interfaces required:
-         * `[ ]`   provider map lookup by prefix.
-         * `[ ]`   factory constructor payload.
-         * `[ ]`   runtime capability check for embedding support.
-      * `[ ]`   Injection shape remains `GetNodeAiAdapterDeps` and `GetNodeAiAdapterParams`.
-      * `[ ]`   Confirm:
-         * `[ ]`   No over-fetching of handler event fields.
-         * `[ ]`   No hidden coupling to provider internals.
-
-   * `[ ]`   `netlify/functions/ai-stream-background/adapters/getNodeAiAdapter.interface.test.ts`
-      * `[ ]`   Add contract tests for operation-aware selector params:
-         * `[ ]`   valid params include `operation: 'stream'`.
-         * `[ ]`   valid params include `operation: 'embedding'`.
-         * `[ ]`   invalid params reject unknown operation value.
-      * `[ ]`   Preserve current deps/model/user/api-key contract coverage.
-
-   * `[ ]`   `netlify/functions/ai-stream-background/adapters/getNodeAiAdapter.interface.ts`
-      * `[ ]`   Add selector operation type:
-         * `[ ]`   `NodeAdapterOperation = 'stream' | 'embedding'`
-      * `[ ]`   Extend `GetNodeAiAdapterParams` with required `operation` field.
-      * `[ ]`   Preserve selector return contract (`AiAdapter | null`).
-
-   * `[ ]`   `netlify/functions/ai-stream-background/adapters/getNodeAiAdapter.interaction.spec`
-      * `[ ]`   Define selector interaction semantics:
-         * `[ ]`   normalize `apiIdentifier` to lowercase.
-         * `[ ]`   resolve prefix match from provider map.
-         * `[ ]`   instantiate candidate adapter from factory.
-         * `[ ]`   gate adapter by requested operation capability.
-      * `[ ]`   Failure modes:
-         * `[ ]`   empty identifier returns `null`.
-         * `[ ]`   unknown prefix returns `null`.
-         * `[ ]`   embedding operation with stream-only adapter returns `null`.
-
-   * `[ ]`   `netlify/functions/ai-stream-background/adapters/getNodeAiAdapter.guard.test.ts`
-      * `[ ]`   Add guard coverage for operation-aware params and embedding capability:
-         * `[ ]`   `isGetNodeAiAdapterParams` accepts `operation: 'stream'`.
-         * `[ ]`   `isGetNodeAiAdapterParams` accepts `operation: 'embedding'`.
-         * `[ ]`   `isGetNodeAiAdapterParams` rejects unknown operation.
-         * `[ ]`   embedding-capability guard accepts adapter with function `getEmbedding`.
-         * `[ ]`   embedding-capability guard rejects adapter without `getEmbedding`.
-      * `[ ]`   Preserve existing provider map and stream chunk guard coverage.
-
-   * `[ ]`   `netlify/functions/ai-stream-background/adapters/getNodeAiAdapter.guard.ts`
-      * `[ ]`   Add runtime guard for selector operation value.
-      * `[ ]`   Add runtime guard that validates embedding capability (`getEmbedding` function presence).
-      * `[ ]`   Keep current `isAiAdapter` semantics for stream path unchanged.
-
-   * `[ ]`   `netlify/functions/ai-stream-background/adapters/getNodeAiAdapter.mock.ts`
-      * `[ ]`   Extend selector params mock factory with default `operation: 'stream'`.
-      * `[ ]`   Add embedding-capable adapter mock helper.
-      * `[ ]`   Add explicit stream-only adapter mock helper for negative embedding selection tests.
-
-   * `[ ]`   `netlify/functions/ai-stream-background/adapters/getNodeAiAdapter.test.ts`
-      * `[ ]`   Add unit tests for operation-aware selection:
-         * `[ ]`   stream selection resolves adapter for matching provider prefix.
-         * `[ ]`   embedding selection resolves adapter when provider adapter has `getEmbedding`.
-         * `[ ]`   embedding selection returns `null` when resolved adapter lacks `getEmbedding`.
-         * `[ ]`   unknown prefix and empty identifier behavior remains unchanged.
-
-   * `[ ]`   `netlify/functions/ai-stream-background/adapters/getNodeAiAdapter.ts`
-      * `[ ]`   Read `operation` from params.
-      * `[ ]`   Preserve current lowercased prefix matching and factory call payload.
-      * `[ ]`   Add operation capability gating:
-         * `[ ]`   for `stream`, preserve existing acceptance behavior.
-         * `[ ]`   for `embedding`, return `null` unless resolved adapter is embedding-capable.
-
-   * `[ ]`   `netlify/functions/ai-stream-background/adapters/getNodeAiAdapter.provides.ts`
-      * `[ ]`   Export new selector operation type and embedding-capability guard.
-      * `[ ]`   Preserve existing exports used by adapter consumers and tests.
-
-   * `[ ]`   `netlify/functions/ai-stream-background/adapters/getNodeAiAdapter.integration.test.ts`
-      * `[ ]`   Create selector integration test file to validate composed selector behavior:
-         * `[ ]`   real provider-map entry + embedding-capable adapter resolves for embedding operation.
-         * `[ ]`   real provider-map entry + stream-only adapter returns `null` for embedding operation.
-         * `[ ]`   stream operation remains resolvable with existing provider map behavior.
-      * `[ ]`   Use mocks only for external SDK interactions.
-
-   * `[ ]`   `construction`
-      * `[ ]`   Selector remains pure function over deps and params.
-      * `[ ]`   No partial params accepted; operation is required.
-      * `[ ]`   Initialization order remains normalize identifier -> prefix resolve -> factory call -> capability gate.
-
-   * `[ ]`   `directionality`
-      * `[ ]`   Node layer is adapter selection/composition.
-      * `[ ]`   Dependencies remain inward-facing from shared contracts and guards.
-      * `[ ]`   Output remains outward-facing `AiAdapter | null` boundary for handler consumers.
-      * `[ ]`   No cycles introduced with provider adapter implementations.
-
-   * `[ ]`   `requirements`
-      * `[ ]`   Selector params include explicit operation intent.
-      * `[ ]`   Stream selection remains backward-compatible.
-      * `[ ]`   Embedding selection is capability-safe and does not silently degrade.
-      * `[ ]`   Selector contract, guard, unit, and integration tests prove operation-aware behavior.
-      * `[ ]`   Node scope remains limited to selector source file and its support system.
-
-* `[ ]`   netlify/functions/ai-stream-background/ai-stream-background.ts **[BE] Add workload operation routing for stream and embedding paths with deterministic callback payload shaping**
-
-   * `[ ]`   `objective`
-      * `[ ]`   Solve handler single-mode execution where every workload is treated as streaming chat and cannot execute embedding jobs through the same queue worker.
-      * `[ ]`   Functional goals:
-         * `[ ]`   Extend workload event handling to include explicit operation mode selection.
-         * `[ ]`   Route stream mode through existing chunk assembly behavior unchanged.
-         * `[ ]`   Route embedding mode through adapter embedding call and build callback payload with embedding output semantics.
-         * `[ ]`   Preserve saveResponse POST boundary and signature propagation.
-      * `[ ]`   Non-functional constraints:
-         * `[ ]`   Keep existing generation path behavior stable.
-         * `[ ]`   Fail fast with deterministic `ErrorDoNotRetry` for unsupported operation or capability mismatch.
-         * `[ ]`   No Supabase callback/schema source edits in this node.
-      * `[ ]`   Each goal is atomic and testable via interface/guard/unit/integration coverage in this module.
-
-   * `[ ]`   `role`
-      * `[ ]`   Node role is workload orchestrator implementation and immediate support files for event/payload contracts, guards, mocks, tests, and provides.
-      * `[ ]`   This role is correct because `ai-stream-background.ts` consumes selector output and publishes normalized callback payloads for downstream persistence.
-      * `[ ]`   Out-of-scope responsibilities:
-         * `[ ]`   Do not edit provider adapter source files in this node.
-         * `[ ]`   Do not edit selector source logic in this node.
-         * `[ ]`   Do not edit Supabase response handlers in this node.
-
-   * `[ ]`   `module`
-      * `[ ]`   Bounded context is Netlify async workload handler under `netlify/functions/ai-stream-background`.
-      * `[ ]`   Inside boundary:
-         * `[ ]`   environment dependency construction and API-key resolution.
-         * `[ ]`   selector invocation with operation intent.
-         * `[ ]`   mode-specific payload assembly and callback POST.
-      * `[ ]`   Outside boundary:
-         * `[ ]`   provider implementation internals.
-         * `[ ]`   Supabase callback persistence decisions.
-         * `[ ]`   queue enqueue event emission.
-
-   * `[ ]`   `deps`
-      * `[ ]`   Provider: `./ai-stream-background.interface.ts`.
-         * `[ ]`   Layer classification: local contract producer.
-         * `[ ]`   Direction: consumed by handler and tests.
-         * `[ ]`   Purpose: event/deps/payload shape with operation-aware fields.
-      * `[ ]`   Provider: `./ai-stream-background.guard.ts`.
-         * `[ ]`   Layer classification: local runtime validation producer.
-         * `[ ]`   Direction: consumed by handler entrypoint and tests.
-         * `[ ]`   Purpose: validate operation-aware incoming event and outgoing payload.
-      * `[ ]`   Provider: `./adapters/getNodeAiAdapter.ts`.
-         * `[ ]`   Layer classification: adapter selector producer.
-         * `[ ]`   Direction: consumed by handler.
-         * `[ ]`   Purpose: resolve provider adapter by identifier and requested operation.
-      * `[ ]`   Provider: provider adapter factories (openai/anthropic/google).
-         * `[ ]`   Layer classification: provider adapter producers.
-         * `[ ]`   Direction: consumed by dependency factory map.
-         * `[ ]`   Purpose: runtime adapter creation for stream and embedding operations.
-      * `[ ]`   Confirm:
-         * `[ ]`   No reverse dependencies introduced.
-         * `[ ]`   No lateral layer violations introduced.
-
-   * `[ ]`   `context_slice`
-      * `[ ]`   Minimal dependency interfaces required:
-         * `[ ]`   selector returns `AiAdapter | null` for requested operation.
-         * `[ ]`   adapter stream and optional embedding calls.
-         * `[ ]`   callback POST endpoint and auth key.
-      * `[ ]`   Injection shape remains `AiStreamDeps` with provider map, save URL, and API-key resolver.
-      * `[ ]`   Confirm:
-         * `[ ]`   No over-fetching of event payload fields.
-         * `[ ]`   No hidden coupling to Supabase database schema.
-
-   * `[ ]`   `netlify/functions/ai-stream-background/ai-stream-background.interface.test.ts`
-      * `[ ]`   Add contract tests for operation-aware event and payload semantics:
-         * `[ ]`   stream event contract includes required mode marker and chat request fields.
-         * `[ ]`   embedding event contract includes required mode marker and embedding input fields.
-         * `[ ]`   payload contract covers stream output fields and embedding output fields without ambiguity.
-      * `[ ]`   Preserve existing baseline event/payload contract assertions.
-
-   * `[ ]`   `netlify/functions/ai-stream-background/ai-stream-background.interface.ts`
-      * `[ ]`   Extend `AiStreamEvent` with explicit workload operation field.
-      * `[ ]`   Add operation-specific request shape for embedding input.
-      * `[ ]`   Extend `AiStreamPayload` with operation-aware output fields for embedding results while preserving stream fields.
-      * `[ ]`   Keep `AiStreamDeps` constructor shape unchanged.
-
-   * `[ ]`   `netlify/functions/ai-stream-background/ai-stream-background.interaction.spec`
-      * `[ ]`   Define stream operation interactions:
-         * `[ ]`   resolve adapter with stream operation.
-         * `[ ]`   iterate stream chunks and assemble content/usage/done finish reason.
-         * `[ ]`   post stream payload to saveResponse.
-      * `[ ]`   Define embedding operation interactions:
-         * `[ ]`   resolve adapter with embedding operation.
-         * `[ ]`   call adapter embedding path.
-         * `[ ]`   build embedding payload with normalized usage and no text assembly.
-         * `[ ]`   post embedding payload to saveResponse.
-      * `[ ]`   Failure modes:
-         * `[ ]`   invalid event shape throws `ErrorDoNotRetry`.
-         * `[ ]`   missing adapter or operation mismatch throws `ErrorDoNotRetry`.
-         * `[ ]`   callback non-OK response throws retryable error.
-
-   * `[ ]`   `netlify/functions/ai-stream-background/ai-stream-background.guard.test.ts`
-      * `[ ]`   Add guard tests for operation-aware event and payload:
-         * `[ ]`   accept valid stream event shape.
-         * `[ ]`   accept valid embedding event shape.
-         * `[ ]`   reject event missing operation discriminator.
-         * `[ ]`   accept payload variants for stream and embedding outputs.
-         * `[ ]`   reject payload with mixed/invalid operation output fields.
-      * `[ ]`   Preserve existing deps and baseline payload guard coverage.
-
-   * `[ ]`   `netlify/functions/ai-stream-background/ai-stream-background.guard.ts`
-      * `[ ]`   Add runtime validation for new operation discriminator.
-      * `[ ]`   Add operation-aware validation of required request fields.
-      * `[ ]`   Add operation-aware payload guard validation.
-      * `[ ]`   Preserve existing deps guard behavior.
-
-   * `[ ]`   `netlify/functions/ai-stream-background/ai-stream-background.mock.ts`
-      * `[ ]`   Extend event mock factory with operation-aware defaults and overrides.
-      * `[ ]`   Add embedding event fixtures and payload fixtures.
-      * `[ ]`   Preserve existing stream mock fixtures and dependency factory helpers.
-
-   * `[ ]`   `netlify/functions/ai-stream-background/ai-stream-background.test.ts`
-      * `[ ]`   Add RED/GREEN unit tests for operation routing:
-         * `[ ]`   stream operation uses selector stream mode and preserves existing stream POST payload behavior.
-         * `[ ]`   embedding operation uses selector embedding mode and posts embedding payload variant.
-         * `[ ]`   embedding mode with non-embedding-capable adapter fails deterministically.
-         * `[ ]`   invalid operation/event shape fails with `ErrorDoNotRetry`.
-      * `[ ]`   Preserve existing stream behavior assertions and environment-key failure tests.
-
-   * `[ ]`   `netlify/functions/ai-stream-background/ai-stream-background.ts`
-      * `[ ]`   Read operation discriminator from validated event.
-      * `[ ]`   Pass operation intent into selector call.
-      * `[ ]`   Branch execution:
-         * `[ ]`   stream branch preserves current collect loop and payload fields.
-         * `[ ]`   embedding branch invokes adapter embedding method and maps embedding output payload fields.
-      * `[ ]`   Keep callback POST/auth boundary unchanged.
-      * `[ ]`   Keep dependency factory wiring for providers unchanged except operation-aware selector call requirements.
-
-   * `[ ]`   `netlify/functions/ai-stream-background/ai-stream-background.provides.ts`
-      * `[ ]`   Export new operation-aware contract types and guard symbols.
-      * `[ ]`   Preserve existing exports used by tests and consumers.
-
-   * `[ ]`   `netlify/functions/ai-stream-background/ai-stream-background.integration.test.ts`
-      * `[ ]`   Extend integration coverage to operation-aware full chain:
-         * `[ ]`   stream path: real deps factory -> selector -> provider adapter -> mocked SDK -> callback POST.
-         * `[ ]`   embedding path: real deps factory -> selector -> provider adapter embedding call -> callback POST.
-         * `[ ]`   verify posted payload variant matches operation.
-      * `[ ]`   Use mocks only for external SDK and network boundaries.
-
-   * `[ ]`   `construction`
-      * `[ ]`   `createAiStreamDeps` remains explicit dependency factory with provider map, save URL, and API-key resolver.
-      * `[ ]`   No partial construction path is introduced.
-      * `[ ]`   Initialization order remains dependency creation -> event validation -> operation dispatch -> callback post.
-
-   * `[ ]`   `directionality`
-      * `[ ]`   Node layer is workload orchestration/adapter consumer.
-      * `[ ]`   Dependencies remain inward-facing from selector/contracts/providers.
-      * `[ ]`   Output remains outward-facing callback payload boundary.
-      * `[ ]`   No cycles introduced with provider adapter modules.
-
-   * `[ ]`   `requirements`
-      * `[ ]`   Worker supports explicit stream and embedding operation routing.
-      * `[ ]`   Stream behavior remains backward-compatible.
-      * `[ ]`   Embedding behavior is capability-safe and produces deterministic callback payload.
-      * `[ ]`   Unit and integration tests prove operation-aware routing and payload correctness.
-      * `[ ]`   Node scope remains limited to worker source file and its support system.
-
-   * `[ ]`   **Commit** `feat(ai-stream-background): add operation-aware adapter routing for stream and embedding workloads`
-      * `[ ]`   Structural changes:
-         * `[ ]`   Provider adapters (OpenAI, Google, Anthropic) include embedding-capable adapter contract support.
-         * `[ ]`   Selector and worker contracts are operation-aware for stream vs embedding execution.
-      * `[ ]`   Behavioral changes:
-         * `[ ]`   Stream workloads preserve existing behavior.
-         * `[ ]`   Embedding workloads route through provider adapters and produce deterministic callback payloads.
-      * `[ ]`   Contract changes:
-         * `[ ]`   Adapter, selector, and worker interface/guard layers include explicit operation and embedding payload semantics.
+* `[✅]`   netlify/functions/ai-stream-background/adapters/openai/openai.ts **[BE] Add embedding operation support to the OpenAI adapter while preserving chat stream behavior**
+
+   * `[✅]`   `objective`
+      * `[✅]`   Solve the missing provider-adapter embedding capability so embedding workloads can execute through the same adapter boundary as chat workloads.
+      * `[✅]`   Functional goals:
+         * `[✅]`   Add adapter-level embedding request and response contracts.
+         * `[✅]`   Implement `getEmbedding` in the OpenAI adapter using the OpenAI embeddings API.
+         * `[✅]`   Preserve existing `sendMessageStream` behavior and output chunk semantics.
+         * `[✅]`   Keep embedding support additive so existing adapters remain valid while this node is completed.
+      * `[✅]`   Non-functional constraints:
+         * `[✅]`   No behavior regressions in existing OpenAI stream tests.
+         * `[✅]`   Deterministic runtime validation and explicit error signaling for malformed embedding responses.
+         * `[✅]`   No handler, queue, or Supabase worker changes in this node.
+      * `[✅]`   Each goal is atomic and testable through existing and added adapter tests.
+
+   * `[✅]`   `role`
+      * `[✅]`   Node role is provider adapter implementation plus immediate contract support files consumed by that implementation.
+      * `[✅]`   This role is correct because `openai.ts` is the first source file that must consume embedding contracts, guards, and mocks.
+      * `[✅]`   Out-of-scope responsibilities:
+         * `[✅]`   Do not edit handler routing (`ai-stream-background.ts`) in this node.
+         * `[✅]`   Do not edit enqueue/callback schemas in this node.
+         * `[✅]`   Do not edit non-OpenAI provider source files in this node.
+
+   * `[✅]`   `module`
+      * `[✅]`   Bounded context is `netlify/functions/ai-stream-background/adapters` and OpenAI adapter internals.
+      * `[✅]`   Inside boundary:
+         * `[✅]`   Adapter contracts used by provider adapters.
+         * `[✅]`   OpenAI request shaping and response normalization.
+         * `[✅]`   OpenAI runtime guards, mocks, and tests.
+      * `[✅]`   Outside boundary:
+         * `[✅]`   Workload dispatch mode selection.
+         * `[✅]`   Netlify callback persistence behavior.
+         * `[✅]`   Supabase worker orchestration.
+
+   * `[✅]`   `deps`
+      * `[✅]`   Provider: `openai` package client.
+         * `[✅]`   Layer classification: external adapter dependency.
+         * `[✅]`   Direction: inbound to adapter implementation.
+         * `[✅]`   Purpose: invoke `chat.completions.create` and `embeddings.create`.
+      * `[✅]`   Provider: `../ai-adapter.interface.ts`.
+         * `[✅]`   Layer classification: internal adapter contract.
+         * `[✅]`   Direction: producer contract consumed by OpenAI adapter.
+         * `[✅]`   Purpose: `AiAdapter`, constructor params, stream chunk, and embedding contract types.
+      * `[✅]`   Provider: `../getNodeAiAdapter.guard.ts`.
+         * `[✅]`   Layer classification: shared runtime guard utility.
+         * `[✅]`   Direction: producer guard consumed by OpenAI adapter.
+         * `[✅]`   Purpose: validate usage records and plain records safely.
+      * `[✅]`   Provider: `../resolveOutputCap.ts`.
+         * `[✅]`   Layer classification: shared helper.
+         * `[✅]`   Direction: producer helper consumed by chat path only.
+         * `[✅]`   Purpose: preserve existing output-cap behavior.
+      * `[✅]`   Confirm:
+         * `[✅]`   No reverse dependencies introduced.
+         * `[✅]`   No lateral layer violations introduced.
+
+   * `[✅]`   `context_slice`
+      * `[✅]`   Minimal dependency interfaces required:
+         * `[✅]`   OpenAI client methods for streaming chat and embeddings only.
+         * `[✅]`   Adapter contract method signatures and token usage shape.
+         * `[✅]`   Runtime record/token-usage guard helpers.
+      * `[✅]`   Injection shape remains `NodeAdapterConstructorParams` and no new constructor dependencies are added.
+      * `[✅]`   Confirm:
+         * `[✅]`   No over-fetching of dependency surfaces.
+         * `[✅]`   No hidden coupling to queue payload structures.
+
+   * `[✅]`   `netlify/functions/ai-stream-background/adapters/ai-adapter.interface.test.ts`
+      * `[✅]`   Add valid and invalid contract assertions for new embedding boundary types:
+         * `[✅]`   Valid `NodeEmbeddingRequest` with non-empty `input`.
+         * `[✅]`   Invalid request with non-string `input`.
+         * `[✅]`   Valid `NodeEmbeddingResponse` with numeric `embedding` vector and token usage.
+         * `[✅]`   Invalid response with non-numeric vector elements.
+      * `[✅]`   Add contract assertions for `AiAdapter` compatibility:
+         * `[✅]`   Adapter with `sendMessageStream` only remains valid.
+         * `[✅]`   Adapter with both `sendMessageStream` and optional `getEmbedding` remains valid.
+
+   * `[✅]`   `netlify/functions/ai-stream-background/adapters/ai-adapter.interface.ts`
+      * `[✅]`   Add `NodeEmbeddingRequest` with `input: string`.
+      * `[✅]`   Add `NodeEmbeddingResponse` with:
+         * `[✅]`   `embedding: number[]`
+         * `[✅]`   `tokenUsage: NodeTokenUsage`
+      * `[✅]`   Extend `AiAdapter` interface with optional method:
+         * `[✅]`   `getEmbedding?(request: NodeEmbeddingRequest, apiIdentifier: string): Promise<NodeEmbeddingResponse>`
+      * `[✅]`   Keep existing stream method signatures unchanged.
+
+   * `[✅]`   `netlify/functions/ai-stream-background/adapters/openai/openai.interaction.spec`
+      * `[✅]`   Define OpenAI adapter interactions for both supported operations.
+      * `[✅]`   Chat stream interaction constraints:
+         * `[✅]`   Preserve current request shaping.
+         * `[✅]`   Preserve `text_delta` then `usage` then `done` stream semantics.
+         * `[✅]`   Preserve output-cap resolution.
+      * `[✅]`   Embedding interaction constraints:
+         * `[✅]`   Validate OpenAI model suffix resolution from `apiIdentifier`.
+         * `[✅]`   Call `embeddings.create` with resolved model and request input.
+         * `[✅]`   Require non-empty embedding data.
+         * `[✅]`   Require usage object with `prompt_tokens` and `total_tokens`.
+         * `[✅]`   Normalize returned usage into `NodeTokenUsage` with `completion_tokens` fixed to `0`.
+      * `[✅]`   Failure modes:
+         * `[✅]`   Model mismatch throws explicit adapter error.
+         * `[✅]`   Missing usage throws explicit adapter error.
+         * `[✅]`   Empty embedding data throws explicit adapter error.
+         * `[✅]`   SDK APIError is surfaced through existing adapter error normalization.
+
+   * `[✅]`   `netlify/functions/ai-stream-background/adapters/getNodeAiAdapter.guard.test.ts`
+      * `[✅]`   Add coverage for optional embedding method validation:
+         * `[✅]`   Accept adapter object with only valid `sendMessageStream`.
+         * `[✅]`   Accept adapter object with valid `sendMessageStream` and function `getEmbedding`.
+         * `[✅]`   Reject adapter object with non-function `getEmbedding`.
+
+   * `[✅]`   `netlify/functions/ai-stream-background/adapters/getNodeAiAdapter.guard.ts`
+      * `[✅]`   Keep `sendMessageStream` function requirement unchanged.
+      * `[✅]`   Add optional `getEmbedding` runtime function check.
+
+   * `[✅]`   `netlify/functions/ai-stream-background/adapters/openai/openai.interface.test.ts`
+      * `[✅]`   Add embedding interface contract tests:
+         * `[✅]`   Accept embedding datum with numeric `embedding` array.
+         * `[✅]`   Accept embedding response with non-empty `data` and valid `usage`.
+         * `[✅]`   Reject malformed usage fields by type contract fixtures.
+         * `[✅]`   Reject malformed embedding vector element types by type contract fixtures.
+
+   * `[✅]`   `netlify/functions/ai-stream-background/adapters/openai/openai.interface.ts`
+      * `[✅]`   Add `OpenAIEmbeddingDatum` containing `embedding: number[]`.
+      * `[✅]`   Add `OpenAIEmbeddingUsage` containing `prompt_tokens: number` and `total_tokens: number`.
+      * `[✅]`   Add `OpenAIEmbeddingResponse` containing `data: OpenAIEmbeddingDatum[]` and `usage: OpenAIEmbeddingUsage`.
+      * `[✅]`   Preserve existing chat interface types unchanged.
+
+   * `[✅]`   `netlify/functions/ai-stream-background/adapters/openai/openai.guard.test.ts`
+      * `[✅]`   Add guard tests for embedding runtime validation:
+         * `[✅]`   Accept valid embedding response.
+         * `[✅]`   Reject missing usage.
+         * `[✅]`   Reject empty data array.
+         * `[✅]`   Reject non-array embedding field.
+         * `[✅]`   Reject embedding arrays containing non-number elements.
+
+   * `[✅]`   `netlify/functions/ai-stream-background/adapters/openai/openai.guard.ts`
+      * `[✅]`   Add type guards for:
+         * `[✅]`   embedding usage object
+         * `[✅]`   embedding datum vector
+         * `[✅]`   embedding response object
+      * `[✅]`   Preserve all existing chat chunk guards unchanged.
+
+   * `[✅]`   `netlify/functions/ai-stream-background/adapters/openai/openai.mock.ts`
+      * `[✅]`   Add embedding fixtures and factories:
+         * `[✅]`   Valid embedding response fixture.
+         * `[✅]`   Valid embedding usage fixture.
+         * `[✅]`   Override-capable factory for malformed usage and malformed vectors.
+      * `[✅]`   Extend adapter mock factory to optionally provide deterministic `getEmbedding` implementation.
+      * `[✅]`   Preserve existing stream mock defaults unchanged.
+
+   * `[✅]`   `netlify/functions/ai-stream-background/adapters/openai/openai.test.ts`
+      * `[✅]`   Add RED/GREEN unit tests for new `getEmbedding` behavior:
+         * `[✅]`   Calls `embeddings.create` with resolved model and request input.
+         * `[✅]`   Returns first embedding vector and normalized token usage.
+         * `[✅]`   Throws on model mismatch before API call.
+         * `[✅]`   Throws on missing usage.
+         * `[✅]`   Throws on empty embedding data.
+         * `[✅]`   Surfaces normalized API errors consistently with existing style.
+      * `[✅]`   Keep current stream tests and assertions unchanged.
+
+   * `[✅]`   `netlify/functions/ai-stream-background/adapters/openai/openai.ts`
+      * `[✅]`   Implement `getEmbedding` on the returned adapter object using the new interface contract.
+      * `[✅]`   Resolve and validate model identifier in the same style as stream path.
+      * `[✅]`   Call OpenAI embeddings API, validate guard-safe response, and map to `NodeEmbeddingResponse`.
+      * `[✅]`   Keep `sendMessageStream` behavior unchanged.
+      * `[✅]`   Keep constructor shape and dependency injection unchanged.
+
+   * `[✅]`   `netlify/functions/ai-stream-background/adapters/openai/openai.provides.ts`
+      * `[✅]`   Export newly added embedding types, guards, and mock helpers introduced by this node.
+      * `[✅]`   Preserve all existing exports used by current tests and consumers.
+
+   * `[✅]`   `netlify/functions/ai-stream-background/adapters/openai/openai.integration.test.ts`
+      * `[✅]`   Add integration assertions covering provider -> selector -> adapter chain for embeddings:
+         * `[✅]`   Construct a real provider map that registers the OpenAI factory.
+         * `[✅]`   Resolve the adapter through `getNodeAiAdapter` (do not construct OpenAI adapter directly in the embedding integration path).
+         * `[✅]`   Invoke embedding through the returned `AiAdapter` boundary and assert normalized `NodeEmbeddingResponse` output.
+         * `[✅]`   Assert the selected adapter still satisfies runtime adapter guard checks.
+         * `[✅]`   Keep existing stream integration behavior valid in the same test file.
+      * `[✅]`   Use only mocked external SDK interactions.
+
+   * `[✅]`   `construction`
+      * `[✅]`   `createOpenAINodeAdapter` returns a fully constructed adapter object with required stream function and optional embedding function implemented for OpenAI.
+      * `[✅]`   No partial construction path is introduced.
+      * `[✅]`   Initialization order keeps existing client construction before method use.
+
+   * `[✅]`   `directionality`
+      * `[✅]`   Node layer is provider adapter implementation.
+      * `[✅]`   Dependencies remain inward-facing from shared contracts/guards/helpers and external SDK.
+      * `[✅]`   Exposed API remains outward-facing through provides exports.
+      * `[✅]`   No cycles with handler or worker layers.
+
+   * `[✅]`   `requirements`
+      * `[✅]`   Embedding operation is available at OpenAI adapter boundary through typed optional adapter contract.
+      * `[✅]`   OpenAI adapter embedding behavior is fully validated and test-covered for success and failure paths.
+      * `[✅]`   Existing chat stream behavior remains unchanged and passing.
+      * `[✅]`   Guard and interface layers cover embedding shapes and reject malformed data.
+      * `[✅]`   Integration test confirms provider map -> adapter selector -> OpenAI adapter embedding chain with mocked external provider interaction.
+      * `[✅]`   No non-node-scope source files are modified.
+
+* `[✅]`   netlify/functions/ai-stream-background/adapters/google/google.ts **[BE] Add embedding operation support to Google adapter while preserving Gemini stream semantics**
+
+   * `[✅]`   `objective`
+      * `[✅]`   Solve the missing Google provider embedding capability so embedding workloads can execute through the same adapter boundary used by generation workloads.
+      * `[✅]`   Functional goals:
+         * `[✅]`   Add Google embedding response/request contract coverage at interface and guard layers using the real Google SDK response shape.
+         * `[✅]`   Implement `getEmbedding` in Google adapter using Google `embedContent` plus a validated token-count path for `NodeTokenUsage` normalization.
+         * `[✅]`   Preserve current `sendMessageStream` behavior, output-cap handling, and finish-reason mapping.
+         * `[✅]`   Keep adapter return shape compatible with optional embedding contract introduced in shared adapter interface.
+      * `[✅]`   Non-functional constraints:
+         * `[✅]`   No regressions to existing stream unit and integration assertions.
+         * `[✅]`   Deterministic runtime validation of embedding responses prior to normalization.
+         * `[✅]`   Do not invent embedding `usageMetadata` fields that are not present on the Google SDK `embedContent` response.
+         * `[✅]`   No workload-handler, selector-source, or Supabase source edits in this node.
+      * `[✅]`   Each goal is atomic and testable via contract, unit, and integration files in Google adapter scope.
+
+   * `[✅]`   `role`
+      * `[✅]`   Node role is provider adapter implementation plus immediate Google support files (interface, guards, mocks, tests, provides).
+      * `[✅]`   This role is correct because `google.ts` is the source file that must consume shared adapter embedding capability and produce Google-specific behavior.
+      * `[✅]`   Out-of-scope responsibilities:
+         * `[✅]`   Do not edit selector source (`getNodeAiAdapter.ts`) in this node.
+         * `[✅]`   Do not edit handler source (`ai-stream-background.ts`) in this node.
+         * `[✅]`   Do not edit OpenAI/Anthropic source files in this node.
+
+   * `[✅]`   `module`
+      * `[✅]`   Bounded context is Google adapter implementation under `netlify/functions/ai-stream-background/adapters/google`.
+      * `[✅]`   Inside boundary:
+         * `[✅]`   Google request preparation and response normalization.
+         * `[✅]`   Google runtime guards for chunk/final/embedding/count-token payloads.
+         * `[✅]`   Google mock factories and tests proving stream and embedding behavior.
+      * `[✅]`   Outside boundary:
+         * `[✅]`   Workload mode routing.
+         * `[✅]`   Provider selection logic source implementation.
+         * `[✅]`   Callback persistence and wallet/debit logic.
+
+   * `[✅]`   `deps`
+      * `[✅]`   Provider: `@google/generative-ai` client.
+         * `[✅]`   Layer classification: external provider SDK dependency.
+         * `[✅]`   Direction: inbound to adapter implementation.
+         * `[✅]`   Purpose: stream chat completions, compute embeddings, and derive token counts for embedding normalization.
+      * `[✅]`   Provider: `../ai-adapter.interface.ts`.
+         * `[✅]`   Layer classification: shared adapter contract producer.
+         * `[✅]`   Direction: consumed by Google adapter.
+         * `[✅]`   Purpose: stream chunk contract plus optional embedding contract types.
+      * `[✅]`   Provider: `../getNodeAiAdapter.guard.ts`.
+         * `[✅]`   Layer classification: shared runtime guard helpers.
+         * `[✅]`   Direction: consumed by Google guard layer.
+         * `[✅]`   Purpose: plain record and token usage validation helpers.
+      * `[✅]`   Provider: `../../resolveOutputCap/resolveOutputCap.provides.ts`.
+         * `[✅]`   Layer classification: shared helper producer.
+         * `[✅]`   Direction: consumed by Google stream request preparation.
+         * `[✅]`   Purpose: enforce token cap policy for stream requests.
+      * `[✅]`   Confirm:
+         * `[✅]`   No reverse dependencies introduced.
+         * `[✅]`   No lateral layer violations introduced.
+
+   * `[✅]`   `context_slice`
+      * `[✅]`   Minimal dependency interfaces required:
+         * `[✅]`   SDK calls for stream, `embedContent`, and token counting only.
+         * `[✅]`   Shared adapter stream and embedding output shapes.
+         * `[✅]`   Shared validation helpers for record/token checks.
+      * `[✅]`   Injection shape remains `NodeAdapterConstructorParams` with existing `modelConfig`, `apiKey`, and `userConfig`.
+      * `[✅]`   Confirm:
+         * `[✅]`   No over-fetching of SDK/client surfaces.
+         * `[✅]`   No hidden coupling to handler event payloads.
+
+   * `[✅]`   `netlify/functions/ai-stream-background/adapters/google/google.interface.test.ts`
+      * `[✅]`   Add contract tests for Google embedding payload shapes:
+         * `[✅]`   Valid embedding response with `embedding.values` numeric vector output.
+         * `[✅]`   Valid token-count response with numeric total token count used for embedding normalization.
+         * `[✅]`   Invalid embedding response fixtures for missing vector and non-numeric vector elements.
+         * `[✅]`   Invalid token-count response fixtures for missing or non-numeric token totals.
+      * `[✅]`   Preserve all current stream contract assertions.
+
+   * `[✅]`   `netlify/functions/ai-stream-background/adapters/google/google.interface.ts`
+      * `[✅]`   Add Google embedding interfaces required by runtime validation and adapter normalization:
+         * `[✅]`   embedding vector item type.
+         * `[✅]`   embedding container type matching Google `embedContent` response shape.
+         * `[✅]`   embedding response type.
+         * `[✅]`   token-count response type required to derive `NodeTokenUsage` for embeddings.
+      * `[✅]`   Preserve existing stream-related Google interface definitions unchanged.
+
+   * `[✅]`   `netlify/functions/ai-stream-background/adapters/google/google.interaction.spec`
+      * `[✅]`   Define stream operation interactions:
+         * `[✅]`   prepare history and final parts.
+         * `[✅]`   send stream request.
+         * `[✅]`   emit `text_delta`, then `usage`, then `done`.
+      * `[✅]`   Define embedding operation interactions:
+         * `[✅]`   resolve model identifier from `google-` API identifier.
+         * `[✅]`   invoke Google `embedContent` API call with request input.
+         * `[✅]`   validate `embedding.values` response shape.
+         * `[✅]`   invoke Google token-count path required to normalize `NodeTokenUsage`.
+         * `[✅]`   normalize usage to `NodeTokenUsage` (`completion_tokens` fixed to `0`).
+      * `[✅]`   Failure modes:
+         * `[✅]`   empty or malformed embedding payload throws explicit adapter error.
+         * `[✅]`   missing or malformed token-count payload throws explicit adapter error.
+         * `[✅]`   SDK errors are surfaced through adapter error path without swallowing.
+
+   * `[✅]`   `netlify/functions/ai-stream-background/adapters/google/google.guard.test.ts`
+      * `[✅]`   Add embedding guard tests:
+         * `[✅]`   accept valid embedding response shape.
+         * `[✅]`   reject missing embedding vector.
+         * `[✅]`   reject non-array embedding vector.
+         * `[✅]`   reject embedding arrays with non-number elements.
+         * `[✅]`   accept valid token-count response.
+         * `[✅]`   reject missing/invalid token-count metadata.
+      * `[✅]`   Preserve existing stream guard coverage.
+
+   * `[✅]`   `netlify/functions/ai-stream-background/adapters/google/google.guard.ts`
+      * `[✅]`   Add runtime guards for Google embedding response and token-count response.
+      * `[✅]`   Reuse shared plain-record validation patterns.
+      * `[✅]`   Preserve existing stream chunk/final response guards unchanged.
+
+   * `[✅]`   `netlify/functions/ai-stream-background/adapters/google/google.mock.ts`
+      * `[✅]`   Add deterministic Google embedding fixtures and factory overrides:
+         * `[✅]`   success embedding response fixture with numeric vector.
+         * `[✅]`   success token-count response fixture for normalized embedding usage.
+         * `[✅]`   malformed embedding and token-count fixtures for negative tests.
+      * `[✅]`   Extend adapter mock creation to optionally provide `getEmbedding` implementation.
+      * `[✅]`   Preserve current stream mock defaults and helpers.
+
+   * `[✅]`   `netlify/functions/ai-stream-background/adapters/google/google.test.ts`
+      * `[✅]`   Add RED/GREEN unit tests for `getEmbedding`:
+         * `[✅]`   invokes Google `embedContent` API with resolved model and input text.
+         * `[✅]`   invokes Google token-count path required to derive embedding usage.
+         * `[✅]`   returns normalized `NodeEmbeddingResponse` with first embedding vector and token usage.
+         * `[✅]`   throws on malformed embedding payload.
+         * `[✅]`   throws on missing/invalid token-count payload.
+         * `[✅]`   surfaces SDK embedding failures.
+      * `[✅]`   Preserve all current stream tests and assertions.
+
+   * `[✅]`   `netlify/functions/ai-stream-background/adapters/google/google.ts`
+      * `[✅]`   Implement `getEmbedding` on returned adapter object.
+      * `[✅]`   Resolve model name for embedding path with same identifier normalization style used by stream path.
+      * `[✅]`   Call Google `embedContent`, validate with Google embedding guards, call the Google token-count path required for usage normalization, and map to `NodeEmbeddingResponse`.
+      * `[✅]`   Keep `sendMessageStream` behavior unchanged.
+      * `[✅]`   Keep constructor/dependency injection shape unchanged.
+
+   * `[✅]`   `netlify/functions/ai-stream-background/adapters/google/google.provides.ts`
+      * `[✅]`   Export new embedding interfaces/guards/mocks added in this node.
+      * `[✅]`   Preserve all existing exports used by tests and consumers.
+
+   * `[✅]`   `netlify/functions/ai-stream-background/adapters/google/google.integration.test.ts`
+      * `[✅]`   Add integration assertions covering provider -> selector -> adapter chain for Google embedding path:
+         * `[✅]`   register a real provider map entry for Google factory.
+         * `[✅]`   resolve adapter through selector boundary (`getNodeAiAdapter`) for Google identifier.
+         * `[✅]`   invoke embedding through returned `AiAdapter` boundary and assert normalized `NodeEmbeddingResponse`.
+         * `[✅]`   assert the selected adapter satisfies runtime adapter guard checks for stream and optional embedding capability.
+         * `[✅]`   preserve and reassert existing stream integration behavior in same file.
+      * `[✅]`   Use mocks only for external SDK interactions.
+
+   * `[✅]`   `construction`
+      * `[✅]`   `createGoogleNodeAdapter` returns fully-constructed adapter object with required stream method and embedding method.
+      * `[✅]`   No partial construction path is introduced.
+      * `[✅]`   Initialization order remains client construction before operation methods are executed.
+
+   * `[✅]`   `directionality`
+      * `[✅]`   Node layer is provider adapter implementation.
+      * `[✅]`   Dependencies remain inward-facing from shared contracts/helpers and Google SDK.
+      * `[✅]`   Outward API remains through Google provides surface and `AiAdapter` contract.
+      * `[✅]`   No cycles with selector or handler layers introduced.
+
+   * `[✅]`   `requirements`
+      * `[✅]`   Google adapter exposes embedding capability through optional adapter contract.
+      * `[✅]`   Google embedding path validates `embedding.values` from `embedContent` and derives deterministic token usage through a validated Google token-count response.
+      * `[✅]`   Existing Google stream behavior remains intact and fully covered.
+      * `[✅]`   Integration path verifies selector-resolved Google adapter embedding behavior with external SDK mocked.
+      * `[✅]`   Node changes remain scoped to Google source file and its support system.
+
+* `[✅]`   netlify/functions/ai-stream-background/adapters/anthropic/anthropic.ts **[BE] Add embedding operation support to Anthropic adapter while preserving Claude stream semantics**
+
+   * `[✅]`   `objective`
+      * `[✅]`   Solve the missing Anthropic provider embedding capability so embedding workloads can execute through the shared adapter boundary without bypassing provider adapters.
+      * `[✅]`   Functional goals:
+         * `[✅]`   Add Anthropic embedding contract coverage in interface and guard layers.
+         * `[✅]`   Implement `getEmbedding` in Anthropic adapter using Anthropic embedding API surface.
+         * `[✅]`   Preserve existing `sendMessageStream` behavior, message preparation rules, and stop-reason mapping.
+         * `[✅]`   Keep return shape compatible with optional embedding contract from shared adapter interface.
+      * `[✅]`   Non-functional constraints:
+         * `[✅]`   No regressions to existing stream unit and integration tests.
+         * `[✅]`   Deterministic runtime validation before embedding normalization.
+         * `[✅]`   No edits to selector source, handler source, or Supabase source files in this node.
+      * `[✅]`   Each goal is atomic and testable via Anthropic contract, guard, unit, and integration tests.
+
+   * `[✅]`   `role`
+      * `[✅]`   Node role is provider adapter implementation and complete immediate support system for Anthropic adapter.
+      * `[✅]`   This role is correct because `anthropic.ts` is the source file that consumes shared embedding contract and provides Anthropic-specific runtime behavior.
+      * `[✅]`   Out-of-scope responsibilities:
+         * `[✅]`   Do not edit `getNodeAiAdapter.ts` in this node.
+         * `[✅]`   Do not edit `ai-stream-background.ts` in this node.
+         * `[✅]`   Do not edit OpenAI or Google source files in this node.
+
+   * `[✅]`   `module`
+      * `[✅]`   Bounded context is `netlify/functions/ai-stream-background/adapters/anthropic`.
+      * `[✅]`   Inside boundary:
+         * `[✅]`   Anthropic request shaping and stream/embedding response normalization.
+         * `[✅]`   Anthropic runtime guards for stream and embedding payload shapes.
+         * `[✅]`   Anthropic test and mock fixtures for stream and embedding paths.
+      * `[✅]`   Outside boundary:
+         * `[✅]`   Workload mode routing and queue event contracts.
+         * `[✅]`   Adapter selection and provider-map dispatch.
+         * `[✅]`   Save-response callback persistence.
+
+   * `[✅]`   `deps`
+      * `[✅]`   Provider: `@anthropic-ai/sdk` client.
+         * `[✅]`   Layer classification: external provider SDK dependency.
+         * `[✅]`   Direction: inbound to adapter implementation.
+         * `[✅]`   Purpose: run stream generation and compute embeddings.
+      * `[✅]`   Provider: `../ai-adapter.interface.ts`.
+         * `[✅]`   Layer classification: shared adapter contract producer.
+         * `[✅]`   Direction: consumed by Anthropic adapter.
+         * `[✅]`   Purpose: stream chunk and embedding request/response contract types.
+      * `[✅]`   Provider: `../getNodeAiAdapter.guard.ts`.
+         * `[✅]`   Layer classification: shared runtime guard helper producer.
+         * `[✅]`   Direction: consumed by Anthropic guard layer.
+         * `[✅]`   Purpose: plain record validation utility reuse.
+      * `[✅]`   Provider: `../../resolveOutputCap/resolveOutputCap.provides.ts`.
+         * `[✅]`   Layer classification: shared helper producer.
+         * `[✅]`   Direction: consumed by stream request preparation.
+         * `[✅]`   Purpose: output-cap enforcement for stream calls.
+      * `[✅]`   Confirm:
+         * `[✅]`   No reverse dependencies introduced.
+         * `[✅]`   No lateral layer violations introduced.
+
+   * `[✅]`   `context_slice`
+      * `[✅]`   Minimal dependency interfaces required:
+         * `[✅]`   SDK stream and embedding calls.
+         * `[✅]`   Shared adapter contract types.
+         * `[✅]`   Shared plain-record validation helper.
+      * `[✅]`   Injection shape remains `NodeAdapterConstructorParams` (`modelConfig`, `apiKey`, `userConfig`).
+      * `[✅]`   Confirm:
+         * `[✅]`   No over-fetching of SDK surfaces.
+         * `[✅]`   No hidden coupling to handler event payloads.
+
+   * `[✅]`   `netlify/functions/ai-stream-background/adapters/anthropic/anthropic.interface.test.ts`
+      * `[✅]`   Add contract tests for Anthropic embedding payload shapes:
+         * `[✅]`   valid embedding vector response with numeric values.
+         * `[✅]`   valid embedding usage payload.
+         * `[✅]`   invalid embedding fixtures for missing vector and malformed usage fields.
+      * `[✅]`   Preserve all current stream contract assertions.
+
+   * `[✅]`   `netlify/functions/ai-stream-background/adapters/anthropic/anthropic.interface.ts`
+      * `[✅]`   Add Anthropic embedding interfaces required by guards and adapter normalization:
+         * `[✅]`   embedding vector item type.
+         * `[✅]`   embedding response container type.
+         * `[✅]`   embedding usage metadata type.
+      * `[✅]`   Preserve existing stream-related interface types unchanged.
+
+   * `[✅]`   `netlify/functions/ai-stream-background/adapters/anthropic/anthropic.interaction.spec`
+      * `[✅]`   Define stream operation interactions:
+         * `[✅]`   prepare Anthropic messages and caps.
+         * `[✅]`   iterate stream deltas and emit `text_delta` chunks.
+         * `[✅]`   emit `usage` then `done` with mapped stop reason.
+      * `[✅]`   Define embedding operation interactions:
+         * `[✅]`   resolve Anthropic model identifier from `anthropic-` API identifier.
+         * `[✅]`   invoke Anthropic embedding API with request input.
+         * `[✅]`   validate response embedding vector and usage metadata.
+         * `[✅]`   normalize to `NodeEmbeddingResponse` with `completion_tokens` fixed to `0`.
+      * `[✅]`   Failure modes:
+         * `[✅]`   malformed embedding response throws explicit adapter error.
+         * `[✅]`   missing/invalid usage metadata throws explicit adapter error.
+         * `[✅]`   Anthropic SDK APIError is surfaced through normalized adapter error path.
+
+   * `[✅]`   `netlify/functions/ai-stream-background/adapters/anthropic/anthropic.guard.test.ts`
+      * `[✅]`   Add embedding guard tests:
+         * `[✅]`   accept valid embedding response and usage.
+         * `[✅]`   reject missing embedding vector.
+         * `[✅]`   reject non-array embedding vector.
+         * `[✅]`   reject non-number embedding vector elements.
+         * `[✅]`   reject missing or malformed embedding usage metadata.
+      * `[✅]`   Preserve existing stream guard coverage.
+
+   * `[✅]`   `netlify/functions/ai-stream-background/adapters/anthropic/anthropic.guard.ts`
+      * `[✅]`   Add runtime guards for Anthropic embedding response and usage metadata.
+      * `[✅]`   Reuse existing plain-record validation style.
+      * `[✅]`   Preserve existing stream guards unchanged.
+
+   * `[✅]`   `netlify/functions/ai-stream-background/adapters/anthropic/anthropic.mock.ts`
+      * `[✅]`   Add deterministic embedding fixtures and override-capable factories:
+         * `[✅]`   success embedding response fixture.
+         * `[✅]`   malformed embedding fixtures for negative tests.
+      * `[✅]`   Extend adapter mock builder to optionally provide `getEmbedding` implementation.
+      * `[✅]`   Preserve current stream mock behavior.
+
+   * `[✅]`   `netlify/functions/ai-stream-background/adapters/anthropic/anthropic.test.ts`
+      * `[✅]`   Add RED/GREEN unit tests for `getEmbedding`:
+         * `[✅]`   invokes Anthropic embedding SDK call with resolved model and input.
+         * `[✅]`   maps embedding response to `NodeEmbeddingResponse`.
+         * `[✅]`   throws on malformed embedding payload.
+         * `[✅]`   throws on missing/invalid embedding usage metadata.
+         * `[✅]`   surfaces SDK embedding failures and normalized APIError path.
+      * `[✅]`   Preserve all existing stream tests and assertions.
+
+   * `[✅]`   `netlify/functions/ai-stream-background/adapters/anthropic/anthropic.ts`
+      * `[✅]`   Implement `getEmbedding` on returned adapter object.
+      * `[✅]`   Resolve embedding model name using existing Anthropic identifier normalization pattern.
+      * `[✅]`   Call Anthropic embedding API, validate with new Anthropic embedding guards, and map to `NodeEmbeddingResponse`.
+      * `[✅]`   Keep `sendMessageStream` behavior unchanged.
+      * `[✅]`   Keep constructor and dependency injection shape unchanged.
+
+   * `[✅]`   `netlify/functions/ai-stream-background/adapters/anthropic/anthropic.provides.ts`
+      * `[✅]`   Export newly added embedding interfaces/guards/mock helpers.
+      * `[✅]`   Preserve all existing exports consumed by tests and consumers.
+
+   * `[✅]`   `netlify/functions/ai-stream-background/adapters/anthropic/anthropic.integration.test.ts`
+      * `[✅]`   Add integration assertions covering provider -> selector -> adapter chain for Anthropic embedding path:
+         * `[✅]`   register provider map entry with Anthropic factory.
+         * `[✅]`   resolve adapter via selector boundary (`getNodeAiAdapter`) for Anthropic identifier.
+         * `[✅]`   invoke embedding via returned `AiAdapter` and assert normalized `NodeEmbeddingResponse`.
+         * `[✅]`   preserve and reassert current stream integration behavior in same file.
+      * `[✅]`   Use mocks only for external SDK interactions.
+
+   * `[✅]`   `construction`
+      * `[✅]`   `createAnthropicNodeAdapter` returns fully constructed adapter object with stream and embedding methods.
+      * `[✅]`   No partial construction path is introduced.
+      * `[✅]`   Initialization order remains client construction before operation execution.
+
+   * `[✅]`   `directionality`
+      * `[✅]`   Node layer is provider adapter implementation.
+      * `[✅]`   Dependencies remain inward-facing from shared contracts/helpers and Anthropic SDK.
+      * `[✅]`   Outward API remains via Anthropic provides exports and `AiAdapter` contract.
+      * `[✅]`   No selector or handler cycles are introduced.
+
+   * `[✅]`   `requirements`
+      * `[✅]`   Anthropic adapter exposes embedding capability through optional adapter contract.
+      * `[✅]`   Anthropic embedding path is validated and normalized with deterministic error handling.
+      * `[✅]`   Existing stream behavior remains unchanged and fully covered.
+      * `[✅]`   Integration path verifies selector-resolved Anthropic embedding behavior with external SDK mocked.
+      * `[✅]`   Node changes remain scoped to Anthropic source file and its support system.
+
+* `[✅]`   netlify/functions/ai-stream-background/adapters/getNodeAiAdapter.ts **[BE] Make selector operation-aware and enforce embedding capability compatibility**
+
+   * `[✅]`   `objective`
+      * `[✅]`   Solve selector ambiguity where provider prefix matching alone can return adapters that do not support the requested operation.
+      * `[✅]`   Functional goals:
+         * `[✅]`   Add explicit operation intent to selector params (`stream` or `embedding`).
+         * `[✅]`   Preserve existing stream selection behavior for current workloads.
+         * `[✅]`   Reject embedding selection when resolved adapter lacks embedding capability.
+         * `[✅]`   Keep provider-prefix matching and factory invocation deterministic.
+      * `[✅]`   Non-functional constraints:
+         * `[✅]`   No regression in case-insensitive prefix matching.
+         * `[✅]`   No silent fallback from embedding intent to stream-only adapters.
+         * `[✅]`   No handler source edits in this node.
+      * `[✅]`   Each goal is atomic and testable via selector contract, guard, unit, and integration tests.
+
+   * `[✅]`   `role`
+      * `[✅]`   Node role is adapter selector implementation plus immediate selector support system files.
+      * `[✅]`   This role is correct because `getNodeAiAdapter.ts` composes provider adapters and is the runtime gate between handler intent and provider capability.
+      * `[✅]`   Out-of-scope responsibilities:
+         * `[✅]`   Do not edit provider adapter source files in this node.
+         * `[✅]`   Do not edit `ai-stream-background.ts` workload routing in this node.
+         * `[✅]`   Do not edit Supabase source files in this node.
+
+   * `[✅]`   `module`
+      * `[✅]`   Bounded context is selector composition under `netlify/functions/ai-stream-background/adapters`.
+      * `[✅]`   Inside boundary:
+         * `[✅]`   provider prefix resolution.
+         * `[✅]`   factory invocation with model/user/api-key inputs.
+         * `[✅]`   operation-capability validation for resolved adapter.
+      * `[✅]`   Outside boundary:
+         * `[✅]`   provider-specific request/response logic.
+         * `[✅]`   workload mode parsing in handler.
+         * `[✅]`   callback persistence.
+
+   * `[✅]`   `deps`
+      * `[✅]`   Provider: `./ai-adapter.interface.ts`.
+         * `[✅]`   Layer classification: shared adapter contract producer.
+         * `[✅]`   Direction: consumed by selector implementation/guards/tests.
+         * `[✅]`   Purpose: adapter shape and provider factory contracts.
+      * `[✅]`   Provider: `./getNodeAiAdapter.interface.ts`.
+         * `[✅]`   Layer classification: selector contract producer.
+         * `[✅]`   Direction: consumed by selector implementation and tests.
+         * `[✅]`   Purpose: selector params/deps with operation intent.
+      * `[✅]`   Provider: `./getNodeAiAdapter.guard.ts`.
+         * `[✅]`   Layer classification: selector runtime guard producer.
+         * `[✅]`   Direction: consumed by selector implementation and tests.
+         * `[✅]`   Purpose: validate params and adapter capabilities.
+      * `[✅]`   Confirm:
+         * `[✅]`   No reverse dependencies introduced.
+         * `[✅]`   No lateral layer violations introduced.
+
+   * `[✅]`   `context_slice`
+      * `[✅]`   Minimal dependency interfaces required:
+         * `[✅]`   provider map lookup by prefix.
+         * `[✅]`   factory constructor payload.
+         * `[✅]`   runtime capability check for embedding support.
+      * `[✅]`   Injection shape remains `GetNodeAiAdapterDeps` and `GetNodeAiAdapterParams`.
+      * `[✅]`   Confirm:
+         * `[✅]`   No over-fetching of handler event fields.
+         * `[✅]`   No hidden coupling to provider internals.
+
+   * `[✅]`   `netlify/functions/ai-stream-background/adapters/getNodeAiAdapter.interface.test.ts`
+      * `[✅]`   Add contract tests for operation-aware selector params:
+         * `[✅]`   valid params include `operation: 'stream'`.
+         * `[✅]`   valid params include `operation: 'embedding'`.
+         * `[✅]`   invalid params reject unknown operation value.
+      * `[✅]`   Preserve current deps/model/user/api-key contract coverage.
+
+   * `[✅]`   `netlify/functions/ai-stream-background/adapters/getNodeAiAdapter.interface.ts`
+      * `[✅]`   Add selector operation type:
+         * `[✅]`   `NodeAdapterOperation = 'stream' | 'embedding'`
+      * `[✅]`   Extend `GetNodeAiAdapterParams` with required `operation` field.
+      * `[✅]`   Preserve selector return contract (`AiAdapter | null`).
+
+   * `[✅]`   `netlify/functions/ai-stream-background/adapters/getNodeAiAdapter.interaction.spec`
+      * `[✅]`   Define selector interaction semantics:
+         * `[✅]`   normalize `apiIdentifier` to lowercase.
+         * `[✅]`   resolve prefix match from provider map.
+         * `[✅]`   instantiate candidate adapter from factory.
+         * `[✅]`   gate adapter by requested operation capability.
+      * `[✅]`   Failure modes:
+         * `[✅]`   empty identifier returns `null`.
+         * `[✅]`   unknown prefix returns `null`.
+         * `[✅]`   embedding operation with stream-only adapter returns `null`.
+
+   * `[✅]`   `netlify/functions/ai-stream-background/adapters/getNodeAiAdapter.guard.test.ts`
+      * `[✅]`   Add guard coverage for operation-aware params and embedding capability:
+         * `[✅]`   `isGetNodeAiAdapterParams` accepts `operation: 'stream'`.
+         * `[✅]`   `isGetNodeAiAdapterParams` accepts `operation: 'embedding'`.
+         * `[✅]`   `isGetNodeAiAdapterParams` rejects unknown operation.
+         * `[✅]`   embedding-capability guard accepts adapter with function `getEmbedding`.
+         * `[✅]`   embedding-capability guard rejects adapter without `getEmbedding`.
+      * `[✅]`   Preserve existing provider map and stream chunk guard coverage.
+
+   * `[✅]`   `netlify/functions/ai-stream-background/adapters/getNodeAiAdapter.guard.ts`
+      * `[✅]`   Add runtime guard for selector operation value.
+      * `[✅]`   Add runtime guard that validates embedding capability (`getEmbedding` function presence).
+      * `[✅]`   Keep current `isAiAdapter` semantics for stream path unchanged.
+
+   * `[✅]`   `netlify/functions/ai-stream-background/adapters/getNodeAiAdapter.mock.ts`
+      * `[✅]`   Extend selector params mock factory with default `operation: 'stream'`.
+      * `[✅]`   Add embedding-capable adapter mock helper.
+      * `[✅]`   Add explicit stream-only adapter mock helper for negative embedding selection tests.
+
+   * `[✅]`   `netlify/functions/ai-stream-background/adapters/getNodeAiAdapter.test.ts`
+      * `[✅]`   Add unit tests for operation-aware selection:
+         * `[✅]`   stream selection resolves adapter for matching provider prefix.
+         * `[✅]`   embedding selection resolves adapter when provider adapter has `getEmbedding`.
+         * `[✅]`   embedding selection returns `null` when resolved adapter lacks `getEmbedding`.
+         * `[✅]`   unknown prefix and empty identifier behavior remains unchanged.
+
+   * `[✅]`   `netlify/functions/ai-stream-background/adapters/getNodeAiAdapter.ts`
+      * `[✅]`   Read `operation` from params.
+      * `[✅]`   Preserve current lowercased prefix matching and factory call payload.
+      * `[✅]`   Add operation capability gating:
+         * `[✅]`   for `stream`, preserve existing acceptance behavior.
+         * `[✅]`   for `embedding`, return `null` unless resolved adapter is embedding-capable.
+
+   * `[✅]`   `netlify/functions/ai-stream-background/adapters/getNodeAiAdapter.provides.ts`
+      * `[✅]`   Export new selector operation type and embedding-capability guard.
+      * `[✅]`   Preserve existing exports used by adapter consumers and tests.
+
+   * `[✅]`   `netlify/functions/ai-stream-background/adapters/getNodeAiAdapter.integration.test.ts`
+      * `[✅]`   Create selector integration test file to validate composed selector behavior:
+         * `[✅]`   real provider-map entry + embedding-capable adapter resolves for embedding operation.
+         * `[✅]`   real provider-map entry + stream-only adapter returns `null` for embedding operation.
+         * `[✅]`   stream operation remains resolvable with existing provider map behavior.
+      * `[✅]`   Use mocks only for external SDK interactions.
+
+   * `[✅]`   `construction`
+      * `[✅]`   Selector remains pure function over deps and params.
+      * `[✅]`   No partial params accepted; operation is required.
+      * `[✅]`   Initialization order remains normalize identifier -> prefix resolve -> factory call -> capability gate.
+
+   * `[✅]`   `directionality`
+      * `[✅]`   Node layer is adapter selection/composition.
+      * `[✅]`   Dependencies remain inward-facing from shared contracts and guards.
+      * `[✅]`   Output remains outward-facing `AiAdapter | null` boundary for handler consumers.
+      * `[✅]`   No cycles introduced with provider adapter implementations.
+
+   * `[✅]`   `requirements`
+      * `[✅]`   Selector params include explicit operation intent.
+      * `[✅]`   Stream selection remains backward-compatible.
+      * `[✅]`   Embedding selection is capability-safe and does not silently degrade.
+      * `[✅]`   Selector contract, guard, unit, and integration tests prove operation-aware behavior.
+      * `[✅]`   Node scope remains limited to selector source file and its support system.
+
+* `[✅]`   netlify/functions/ai-stream-background/ai-stream-background.ts **[BE] Add workload operation routing for stream and embedding paths with deterministic callback payload shaping**
+
+   * `[✅]`   `objective`
+      * `[✅]`   Solve handler single-mode execution where every workload is treated as streaming chat and cannot execute embedding jobs through the same queue worker.
+      * `[✅]`   Functional goals:
+         * `[✅]`   Extend workload event handling to include explicit operation mode selection.
+         * `[✅]`   Route stream mode through existing chunk assembly behavior unchanged.
+         * `[✅]`   Route embedding mode through adapter embedding call and build callback payload with embedding output semantics.
+         * `[✅]`   Preserve saveResponse POST boundary and signature propagation.
+      * `[✅]`   Non-functional constraints:
+         * `[✅]`   Keep existing generation path behavior stable.
+         * `[✅]`   Fail fast with deterministic `ErrorDoNotRetry` for unsupported operation or capability mismatch.
+         * `[✅]`   No Supabase callback/schema source edits in this node.
+      * `[✅]`   Each goal is atomic and testable via interface/guard/unit/integration coverage in this module.
+
+   * `[✅]`   `role`
+      * `[✅]`   Node role is workload orchestrator implementation and immediate support files for event/payload contracts, guards, mocks, tests, and provides.
+      * `[✅]`   This role is correct because `ai-stream-background.ts` consumes selector output and publishes normalized callback payloads for downstream persistence.
+      * `[✅]`   Out-of-scope responsibilities:
+         * `[✅]`   Do not edit provider adapter source files in this node.
+         * `[✅]`   Do not edit selector source logic in this node.
+         * `[✅]`   Do not edit Supabase response handlers in this node.
+
+   * `[✅]`   `module`
+      * `[✅]`   Bounded context is Netlify async workload handler under `netlify/functions/ai-stream-background`.
+      * `[✅]`   Inside boundary:
+         * `[✅]`   environment dependency construction and API-key resolution.
+         * `[✅]`   selector invocation with operation intent.
+         * `[✅]`   mode-specific payload assembly and callback POST.
+      * `[✅]`   Outside boundary:
+         * `[✅]`   provider implementation internals.
+         * `[✅]`   Supabase callback persistence decisions.
+         * `[✅]`   queue enqueue event emission.
+
+   * `[✅]`   `deps`
+      * `[✅]`   Provider: `./ai-stream-background.interface.ts`.
+         * `[✅]`   Layer classification: local contract producer.
+         * `[✅]`   Direction: consumed by handler and tests.
+         * `[✅]`   Purpose: event/deps/payload shape with operation-aware fields.
+      * `[✅]`   Provider: `./ai-stream-background.guard.ts`.
+         * `[✅]`   Layer classification: local runtime validation producer.
+         * `[✅]`   Direction: consumed by handler entrypoint and tests.
+         * `[✅]`   Purpose: validate operation-aware incoming event and outgoing payload.
+      * `[✅]`   Provider: `./adapters/getNodeAiAdapter.ts`.
+         * `[✅]`   Layer classification: adapter selector producer.
+         * `[✅]`   Direction: consumed by handler.
+         * `[✅]`   Purpose: resolve provider adapter by identifier and requested operation.
+      * `[✅]`   Provider: provider adapter factories (openai/anthropic/google).
+         * `[✅]`   Layer classification: provider adapter producers.
+         * `[✅]`   Direction: consumed by dependency factory map.
+         * `[✅]`   Purpose: runtime adapter creation for stream and embedding operations.
+      * `[✅]`   Confirm:
+         * `[✅]`   No reverse dependencies introduced.
+         * `[✅]`   No lateral layer violations introduced.
+
+   * `[✅]`   `context_slice`
+      * `[✅]`   Minimal dependency interfaces required:
+         * `[✅]`   selector returns `AiAdapter | null` for requested operation.
+         * `[✅]`   adapter stream and optional embedding calls.
+         * `[✅]`   callback POST endpoint and auth key.
+      * `[✅]`   Injection shape remains `AiStreamDeps` with provider map, save URL, and API-key resolver.
+      * `[✅]`   Confirm:
+         * `[✅]`   No over-fetching of event payload fields.
+         * `[✅]`   No hidden coupling to Supabase database schema.
+
+   * `[✅]`   `netlify/functions/ai-stream-background/ai-stream-background.interface.test.ts`
+      * `[✅]`   Add contract tests for operation-aware event and payload semantics:
+         * `[✅]`   stream event contract includes required mode marker and chat request fields.
+         * `[✅]`   embedding event contract includes required mode marker and embedding input fields.
+         * `[✅]`   payload contract covers stream output fields and embedding output fields without ambiguity.
+      * `[✅]`   Preserve existing baseline event/payload contract assertions.
+
+   * `[✅]`   `netlify/functions/ai-stream-background/ai-stream-background.interface.ts`
+      * `[✅]`   Replace existing `AiStreamOperation`, `AiStreamEventBase`, `AiStreamChatEvent`, `AiStreamEmbeddingEvent`, `AiStreamEvent`, `AiStreamPayloadBase`, `AiStreamChatPayload`, `AiStreamEmbeddingPayload`, and `AiStreamPayload` with the `AiWorkload*` equivalents defined in the bullets below.
+      * `[✅]`   Add `AiWorkloadOperation = 'stream' | 'embedding'` discriminator type.
+      * `[✅]`   Add `AiWorkloadEventBase` with shared event fields: `job_id`, `api_identifier`, `model_config`, `sig`, `user_config`.
+      * `[✅]`   Add `AiWorkloadStreamEvent extends AiWorkloadEventBase` with `operation: 'stream'` and `chat_api_request: NodeChatApiRequest`.
+      * `[✅]`   Add `AiWorkloadEmbeddingEvent extends AiWorkloadEventBase` with `operation: 'embedding'` and `embedding_api_request: NodeEmbeddingRequest`.
+      * `[✅]`   Define `AiWorkloadEvent = AiWorkloadStreamEvent | AiWorkloadEmbeddingEvent`.
+      * `[✅]`   Add `AiWorkloadPayloadBase` with shared payload fields: `job_id`, `sig`.
+      * `[✅]`   Add `AiWorkloadStreamPayload extends AiWorkloadPayloadBase` with `operation: 'stream'`, `assembled_content: string`, `token_usage: NodeTokenUsage | null`, `finish_reason: string | null`.
+      * `[✅]`   Add `AiWorkloadEmbeddingPayload extends AiWorkloadPayloadBase` with `operation: 'embedding'`, `embedding: NodeEmbeddingVector`, `token_usage: NodeTokenUsage`.
+      * `[✅]`   Define `AiWorkloadPayload = AiWorkloadStreamPayload | AiWorkloadEmbeddingPayload`.
+      * `[✅]`   Keep `AiStreamDeps` and `GetApiKeyFn` shapes unchanged.
+
+   * `[✅]`   `netlify/functions/ai-stream-background/ai-stream-background.interaction.spec`
+      * `[✅]`   Define stream operation interactions:
+         * `[✅]`   resolve adapter with stream operation.
+         * `[✅]`   iterate stream chunks and assemble content/usage/done finish reason.
+         * `[✅]`   post stream payload to saveResponse.
+      * `[✅]`   Define embedding operation interactions:
+         * `[✅]`   resolve adapter with embedding operation.
+         * `[✅]`   call adapter embedding path.
+         * `[✅]`   build embedding payload with normalized usage and no text assembly.
+         * `[✅]`   post embedding payload to saveResponse.
+      * `[✅]`   Failure modes:
+         * `[✅]`   invalid event shape throws `ErrorDoNotRetry`.
+         * `[✅]`   missing adapter or operation mismatch throws `ErrorDoNotRetry`.
+         * `[✅]`   callback non-OK response throws retryable error.
+
+   * `[✅]`   `netlify/functions/ai-stream-background/ai-stream-background.guard.test.ts`
+      * `[✅]`   Update all imports and type references from the renamed `AiStream*` event/payload types to the `AiWorkload*` equivalents.
+      * `[✅]`   Add guard tests for operation-aware event and payload:
+         * `[✅]`   accept valid stream event shape.
+         * `[✅]`   accept valid embedding event shape.
+         * `[✅]`   reject event missing operation discriminator.
+         * `[✅]`   accept payload variants for stream and embedding outputs.
+         * `[✅]`   reject payload with mixed/invalid operation output fields.
+      * `[✅]`   Preserve existing deps and baseline payload guard coverage.
+
+   * `[✅]`   `netlify/functions/ai-stream-background/ai-stream-background.guard.ts`
+      * `[✅]`   Update all imports and type references from the renamed `AiStream*` event/payload types to the `AiWorkload*` equivalents.
+      * `[✅]`   Add runtime validation for new operation discriminator.
+      * `[✅]`   Add operation-aware validation of required request fields.
+      * `[✅]`   Add operation-aware payload guard validation.
+      * `[✅]`   Preserve existing deps guard behavior.
+
+   * `[✅]`   `netlify/functions/ai-stream-background/ai-stream-background.mock.ts`
+      * `[✅]`   Update all imports and type references from the renamed `AiStream*` event/payload types to the `AiWorkload*` equivalents.
+      * `[✅]`   Extend event mock factory with operation-aware defaults and overrides.
+      * `[✅]`   Add embedding event fixtures and payload fixtures.
+      * `[✅]`   Preserve existing stream mock fixtures and dependency factory helpers.
+
+   * `[✅]`   `netlify/functions/ai-stream-background/ai-stream-background.test.ts`
+      * `[✅]`   Update all imports and type references from the renamed `AiStream*` event/payload types to the `AiWorkload*` equivalents.
+      * `[✅]`   Add RED/GREEN unit tests for operation routing:
+         * `[✅]`   stream operation uses selector stream mode and preserves existing stream POST payload behavior.
+         * `[✅]`   embedding operation uses selector embedding mode and posts embedding payload variant.
+         * `[✅]`   embedding mode with non-embedding-capable adapter fails deterministically.
+         * `[✅]`   invalid operation/event shape fails with `ErrorDoNotRetry`.
+      * `[✅]`   Preserve existing stream behavior assertions and environment-key failure tests.
+
+   * `[✅]`   `netlify/functions/ai-stream-background/ai-stream-background.ts`
+      * `[✅]`   Update all imports and type references from the renamed `AiStream*` event/payload types to the `AiWorkload*` equivalents.
+      * `[✅]`   Read operation discriminator from validated event.
+      * `[✅]`   Pass operation intent into selector call.
+      * `[✅]`   Branch execution:
+         * `[✅]`   stream branch preserves current collect loop and payload fields.
+         * `[✅]`   embedding branch invokes adapter embedding method and maps embedding output payload fields.
+      * `[✅]`   Keep callback POST/auth boundary unchanged.
+      * `[✅]`   Keep dependency factory wiring for providers unchanged except operation-aware selector call requirements.
+
+   * `[✅]`   `netlify/functions/ai-stream-background/ai-stream-background.provides.ts`
+      * `[✅]`   Update all imports and type references from the renamed `AiStream*` event/payload types to the `AiWorkload*` equivalents.
+      * `[✅]`   Export new operation-aware contract types and guard symbols.
+      * `[✅]`   Preserve existing exports used by tests and consumers.
+
+   * `[✅]`   `netlify/functions/ai-stream-background/ai-stream-background.integration.test.ts`
+      * `[✅]`   Update all imports and type references from the renamed `AiStream*` event/payload types to the `AiWorkload*` equivalents.
+      * `[✅]`   Extend integration coverage to operation-aware full chain:
+         * `[✅]`   stream path: real deps factory -> selector -> provider adapter -> mocked SDK -> callback POST.
+         * `[✅]`   embedding path: real deps factory -> selector -> provider adapter embedding call -> callback POST.
+         * `[✅]`   verify posted payload variant matches operation.
+      * `[✅]`   Use mocks only for external SDK and network boundaries.
+
+   * `[✅]`   `construction`
+      * `[✅]`   `createAiStreamDeps` remains explicit dependency factory with provider map, save URL, and API-key resolver.
+      * `[✅]`   No partial construction path is introduced.
+      * `[✅]`   Initialization order remains dependency creation -> event validation -> operation dispatch -> callback post.
+
+   * `[✅]`   `directionality`
+      * `[✅]`   Node layer is workload orchestration/adapter consumer.
+      * `[✅]`   Dependencies remain inward-facing from selector/contracts/providers.
+      * `[✅]`   Output remains outward-facing callback payload boundary.
+      * `[✅]`   No cycles introduced with provider adapter modules.
+
+   * `[✅]`   `requirements`
+      * `[✅]`   Worker supports explicit stream and embedding operation routing.
+      * `[✅]`   Stream behavior remains backward-compatible.
+      * `[✅]`   Embedding behavior is capability-safe and produces deterministic callback payload.
+      * `[✅]`   Unit and integration tests prove operation-aware routing and payload correctness.
+      * `[✅]`   Node scope remains limited to worker source file and its support system.
+
+   * `[✅]`   **Commit** `feat(ai-stream-background): add operation-aware adapter routing for stream and embedding workloads`
+      * `[✅]`   Structural changes:
+         * `[✅]`   Provider adapters (OpenAI, Google, Anthropic) include embedding-capable adapter contract support.
+         * `[✅]`   Selector and worker contracts are operation-aware for stream vs embedding execution.
+      * `[✅]`   Behavioral changes:
+         * `[✅]`   Stream workloads preserve existing behavior.
+         * `[✅]`   Embedding workloads route through provider adapters and produce deterministic callback payloads.
+      * `[✅]`   Contract changes:
+         * `[✅]`   Adapter, selector, and worker interface/guard layers include explicit operation and embedding payload semantics.
 
 * `[ ]`   supabase/functions/dialectic-worker/enqueueModelCall/enqueueModelCall.ts **[BE] Align Supabase enqueue contract to operation-aware Netlify worker payloads while preserving queued-job guarantees**
 

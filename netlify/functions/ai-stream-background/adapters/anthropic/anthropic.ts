@@ -3,6 +3,8 @@ import type { MessageParam } from '@anthropic-ai/sdk/resources/messages';
 import type {
   AiAdapter,
   NodeAdapterConstructorParams,
+  NodeEmbeddingRequest,
+  NodeEmbeddingResponse,
   NodeAdapterStreamChunk,
   NodeChatApiRequest,
   NodeChatMessage,
@@ -10,7 +12,25 @@ import type {
   NodeOutboundDocument,
   NodeUserConfig,
 } from '../ai-adapter.interface.ts';
+import { isPlainRecord } from '../getNodeAiAdapter.guard.ts';
+import {
+  isAnthropicEmbeddingResponse,
+  isAnthropicEmbeddingUsage,
+} from './anthropic.guard.ts';
 import { resolveOutputCap } from '../../resolveOutputCap/resolveOutputCap.provides.ts';
+
+interface AnthropicEmbeddingCreateParams {
+  model: string;
+  input: string;
+}
+
+interface AnthropicEmbeddingsApi {
+  create(params: AnthropicEmbeddingCreateParams): Promise<unknown>;
+}
+
+interface AnthropicClientWithEmbeddings extends Anthropic {
+  embeddings: AnthropicEmbeddingsApi;
+}
 
 function prepareAnthropicRequest(
   request: NodeChatApiRequest,
@@ -152,12 +172,18 @@ function mapAnthropicStreamStopReason(
   return 'unknown';
 }
 
+function resolveAnthropicModelIdentifier(modelIdentifier: string): string {
+  return modelIdentifier.replace(/^anthropic-/i, '');
+}
+
 export function createAnthropicNodeAdapter(
   params: NodeAdapterConstructorParams,
 ): AiAdapter {
   const modelConfig: NodeModelConfig = params.modelConfig;
   const userConfig: NodeUserConfig = params.userConfig;
-  const client: Anthropic = new Anthropic({ apiKey: params.apiKey });
+  const client: AnthropicClientWithEmbeddings = new Anthropic({
+    apiKey: params.apiKey,
+  }) as AnthropicClientWithEmbeddings;
 
   return {
     async *sendMessageStream(
@@ -221,13 +247,44 @@ export function createAnthropicNodeAdapter(
         };
         yield doneChunk;
       } catch (error) {
-        if (error instanceof Anthropic.APIError) {
-          const statusPart: string =
-            error.status === undefined ? 'unknown' : String(error.status);
-          throw new Error(
-            `Anthropic API request failed: ${statusPart} ${error.name}`,
-          );
+        throw error;
+      }
+    },
+
+    async getEmbedding(
+      request: NodeEmbeddingRequest,
+      apiIdentifier: string,
+    ): Promise<NodeEmbeddingResponse> {
+      const modelApiName: string = resolveAnthropicModelIdentifier(apiIdentifier);
+
+      try {
+        const responseUnknown: unknown = await client.embeddings.create({
+          model: modelApiName,
+          input: request.input,
+        });
+
+        if (!isPlainRecord(responseUnknown)) {
+          throw new Error('Anthropic embedding response was malformed.');
         }
+
+        const usageUnknown: unknown = responseUnknown['usage'];
+        if (!isAnthropicEmbeddingUsage(usageUnknown)) {
+          throw new Error('Anthropic embedding response did not include usage metadata.');
+        }
+
+        if (!isAnthropicEmbeddingResponse(responseUnknown)) {
+          throw new Error('Anthropic embedding response was malformed.');
+        }
+
+        return {
+          embedding: [...responseUnknown.embedding],
+          tokenUsage: {
+            prompt_tokens: usageUnknown.input_tokens,
+            completion_tokens: 0,
+            total_tokens: usageUnknown.total_tokens,
+          },
+        };
+      } catch (error) {
         throw error;
       }
     },

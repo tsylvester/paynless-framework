@@ -3,6 +3,9 @@ import type {
   OpenAIChoice,
   OpenAIDelta,
   OpenAIFinishReason,
+  OpenAIEmbeddingDatum,
+  OpenAIEmbeddingResponse,
+  OpenAIEmbeddingUsage,
   OpenAIUsageDelta,
 } from './openai.interface.ts';
 import { isPlainRecord } from '../getNodeAiAdapter.guard.ts';
@@ -85,6 +88,59 @@ export function isOpenAIUsageDelta(v: unknown): v is OpenAIUsageDelta {
     return false;
   }
   return true;
+}
+
+export function isOpenAIEmbeddingUsage(v: unknown): v is OpenAIEmbeddingUsage {
+  if (!isPlainRecord(v)) {
+    return false;
+  }
+  const promptTokens: unknown = v['prompt_tokens'];
+  const totalTokens: unknown = v['total_tokens'];
+  if (!isNonNegativeInteger(promptTokens) || !isNonNegativeInteger(totalTokens)) {
+    return false;
+  }
+  return true;
+}
+
+export function isOpenAIEmbeddingDatum(v: unknown): v is OpenAIEmbeddingDatum {
+  if (!isPlainRecord(v)) {
+    return false;
+  }
+  if (!('embedding' in v)) {
+    return false;
+  }
+  const embeddingValue: unknown = v['embedding'];
+  if (!Array.isArray(embeddingValue)) {
+    return false;
+  }
+  for (const item of embeddingValue) {
+    if (typeof item !== 'number' || Number.isNaN(item)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+export function isOpenAIEmbeddingResponse(
+  v: unknown,
+): v is OpenAIEmbeddingResponse {
+  if (!isPlainRecord(v)) {
+    return false;
+  }
+  if (!('data' in v) || !('usage' in v)) {
+    return false;
+  }
+  const dataValue: unknown = v['data'];
+  const usageValue: unknown = v['usage'];
+  if (!Array.isArray(dataValue) || dataValue.length === 0) {
+    return false;
+  }
+  for (const item of dataValue) {
+    if (!isOpenAIEmbeddingDatum(item)) {
+      return false;
+    }
+  }
+  return isOpenAIEmbeddingUsage(usageValue);
 }
 
 export function isOpenAIChatCompletionChunk(

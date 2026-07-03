@@ -41,6 +41,17 @@ export interface NodeTokenUsage {
   total_tokens: number;
 }
 
+export interface NodeEmbeddingRequest {
+  input: string;
+}
+
+export type NodeEmbeddingVector = number[];
+
+export interface NodeEmbeddingResponse {
+  embedding: NodeEmbeddingVector;
+  tokenUsage: NodeTokenUsage;
+}
+
 export interface NodeAdapterStreamChunkTextDelta {
   type: 'text_delta';
   text: string;
@@ -72,6 +83,10 @@ export interface AiAdapter {
     request: NodeChatApiRequest,
     apiIdentifier: string,
   ): AsyncGenerator<NodeAdapterStreamChunk>;
+  getEmbedding?(
+    request: NodeEmbeddingRequest,
+    apiIdentifier: string,
+  ): Promise<NodeEmbeddingResponse>;
 }
 
 export type NodeAdapterFactory = (

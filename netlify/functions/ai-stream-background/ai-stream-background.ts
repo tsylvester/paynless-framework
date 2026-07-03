@@ -9,11 +9,15 @@ import { createAnthropicNodeAdapter } from './adapters/anthropic/anthropic.ts';
 import { createGoogleNodeAdapter } from './adapters/google/google.ts';
 import { getNodeAiAdapter } from './adapters/getNodeAiAdapter.ts';
 import { createOpenAINodeAdapter } from './adapters/openai/openai.ts';
-import { isAiStreamEvent } from './ai-stream-background.guard.ts';
+import { isAiWorkloadEvent } from './ai-stream-background.guard.ts';
 import type {
+  AiWorkloadEmbeddingEvent,
+  AiWorkloadEmbeddingPayload,
+  AiWorkloadEvent,
+  AiWorkloadPayload,
+  AiWorkloadStreamEvent,
+  AiWorkloadStreamPayload,
   AiStreamDeps,
-  AiStreamEvent,
-  AiStreamPayload,
 } from './ai-stream-background.interface.ts';
 
 const SOFT_TIMEOUT_MS: number = 14 * 60 * 1000;
@@ -85,10 +89,10 @@ export function createAiStreamDeps(): AiStreamDeps {
   };
 }
 
-async function collectAiStreamPayload(
+async function collectAiWorkloadStreamPayload(
   deps: AiStreamDeps,
-  event: AiStreamEvent,
-): Promise<AiStreamPayload> {
+  event: AiWorkloadStreamEvent,
+): Promise<AiWorkloadStreamPayload> {
   const apiKey: string = deps.getApiKey(event.api_identifier);
   if (apiKey.length === 0) {
     throw new ErrorDoNotRetry(
@@ -99,6 +103,7 @@ async function collectAiStreamPayload(
     { providerMap: deps.providerMap },
     {
       apiIdentifier: event.api_identifier,
+      operation: event.operation,
       apiKey,
       modelConfig: event.model_config,
       userConfig: event.user_config,
@@ -111,8 +116,8 @@ async function collectAiStreamPayload(
   }
   const startTime: number = Date.now();
   let assembledContent: string = '';
-  let tokenUsage: AiStreamPayload['token_usage'] = null;
-  let finishReason: AiStreamPayload['finish_reason'] = null;
+  let tokenUsage: AiWorkloadStreamPayload['token_usage'] = null;
+  let finishReason: AiWorkloadStreamPayload['finish_reason'] = null;
   const stream: AsyncGenerator<NodeAdapterStreamChunk> = adapter.sendMessageStream(
     event.chat_api_request,
     event.api_identifier,
@@ -132,6 +137,7 @@ async function collectAiStreamPayload(
   }
   return {
     job_id: event.job_id,
+    operation: 'stream',
     assembled_content: assembledContent,
     token_usage: tokenUsage,
     finish_reason: finishReason,
@@ -139,10 +145,48 @@ async function collectAiStreamPayload(
   };
 }
 
-async function postAiStreamPayload(
+async function collectAiWorkloadEmbeddingPayload(
+  deps: AiStreamDeps,
+  event: AiWorkloadEmbeddingEvent,
+): Promise<AiWorkloadEmbeddingPayload> {
+  const apiKey: string = deps.getApiKey(event.api_identifier);
+  if (apiKey.length === 0) {
+    throw new ErrorDoNotRetry(
+      'getApiKey returned an empty string; fix AiStreamDeps.getApiKey or set the provider API key in the environment.',
+    );
+  }
+  const adapter: AiAdapter | null = getNodeAiAdapter(
+    { providerMap: deps.providerMap },
+    {
+      apiIdentifier: event.api_identifier,
+      operation: event.operation,
+      apiKey,
+      modelConfig: event.model_config,
+      userConfig: event.user_config,
+    },
+  );
+  if (adapter === null || adapter.getEmbedding === undefined) {
+    throw new ErrorDoNotRetry(
+      'No embedding-capable adapter factory matched api_identifier after prefix lookup (check deps.providerMap keys and adapter getEmbedding support).',
+    );
+  }
+  const embeddingResponse = await adapter.getEmbedding(
+    event.embedding_api_request,
+    event.api_identifier,
+  );
+  return {
+    job_id: event.job_id,
+    operation: 'embedding',
+    embedding: embeddingResponse.embedding,
+    token_usage: embeddingResponse.tokenUsage,
+    sig: event.sig,
+  };
+}
+
+async function postAiWorkloadPayload(
   saveResponseUrl: string,
   _sig: string,
-  payload: AiStreamPayload,
+  payload: AiWorkloadPayload,
 ): Promise<void> {
   const anonKey: string | undefined = process.env['SUPABASE_ANON_KEY'];
   if (anonKey === undefined || anonKey.length === 0) {
@@ -185,12 +229,19 @@ export async function handleAiStreamWorkload(
 ): Promise<void> {
   const raw: unknown = event.eventData;
   try {
-    if (!isAiStreamEvent(raw)) {
-      throw new ErrorDoNotRetry('invalid AiStreamEvent payload');
+    if (!isAiWorkloadEvent(raw)) {
+      throw new ErrorDoNotRetry('invalid AiWorkloadEvent payload');
     }
-    const validated: AiStreamEvent = raw;
-    const payload: AiStreamPayload = await collectAiStreamPayload(deps, validated);
-    await postAiStreamPayload(
+    const validated: AiWorkloadEvent = raw;
+    let payload: AiWorkloadPayload;
+    if (validated.operation === 'stream') {
+      payload = await collectAiWorkloadStreamPayload(deps, validated);
+    } else if (validated.operation === 'embedding') {
+      payload = await collectAiWorkloadEmbeddingPayload(deps, validated);
+    } else {
+      throw new ErrorDoNotRetry('unsupported AiWorkload operation');
+    }
+    await postAiWorkloadPayload(
       deps.saveResponseUrl,
       validated.sig,
       payload,

@@ -7,6 +7,7 @@ import type {
   GetNodeAiAdapterDeps,
   GetNodeAiAdapterParams,
 } from './getNodeAiAdapter.interface.ts';
+import { isEmbeddingCapableAiAdapter } from './getNodeAiAdapter.guard.ts';
 
 export const defaultNodeProviderMap: NodeProviderMap = {};
 
@@ -14,6 +15,7 @@ export function getNodeAiAdapter(
   deps: GetNodeAiAdapterDeps,
   params: GetNodeAiAdapterParams,
 ): AiAdapter | null {
+  const operation = params.operation;
   const lower: string = params.apiIdentifier.toLowerCase();
   if (lower.length === 0) {
     return null;
@@ -25,9 +27,17 @@ export function getNodeAiAdapter(
     return null;
   }
   const factory: NodeAdapterFactory = deps.providerMap[prefix];
-  return factory({
+  const adapter = factory({
     modelConfig: params.modelConfig,
     apiKey: params.apiKey,
     userConfig: params.userConfig,
   });
+
+  if (operation === 'stream') {
+    return adapter;
+  }
+  if (operation === 'embedding') {
+    return isEmbeddingCapableAiAdapter(adapter) ? adapter : null;
+  }
+  return null;
 }

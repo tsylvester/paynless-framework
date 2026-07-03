@@ -1,10 +1,12 @@
 import type {
   GoogleCandidate,
   GoogleContent,
+  GoogleEmbeddingResponse,
   GoogleFinalResponse,
   GoogleFinishReason,
   GooglePart,
   GoogleStreamChunk,
+  GoogleTokenCountResponse,
   GoogleUsageMetadata,
 } from './google.interface.ts';
 import { isPlainRecord } from '../getNodeAiAdapter.guard.ts';
@@ -149,4 +151,41 @@ export function isGoogleFinalResponse(v: unknown): v is GoogleFinalResponse {
     }
   }
   return true;
+}
+
+export function isGoogleEmbeddingResponse(v: unknown): v is GoogleEmbeddingResponse {
+  if (!isPlainRecord(v)) {
+    return false;
+  }
+  if (!('embedding' in v)) {
+    return false;
+  }
+  const embeddingValue: unknown = v['embedding'];
+  if (!isPlainRecord(embeddingValue)) {
+    return false;
+  }
+  if (!('values' in embeddingValue)) {
+    return false;
+  }
+  const valuesValue: unknown = embeddingValue['values'];
+  if (!Array.isArray(valuesValue)) {
+    return false;
+  }
+  for (const element of valuesValue) {
+    if (typeof element !== 'number') {
+      return false;
+    }
+  }
+  return true;
+}
+
+export function isGoogleTokenCountResponse(v: unknown): v is GoogleTokenCountResponse {
+  if (!isPlainRecord(v)) {
+    return false;
+  }
+  if (!('totalTokenCount' in v)) {
+    return false;
+  }
+  const totalTokenCount: unknown = v['totalTokenCount'];
+  return isNonNegativeInteger(totalTokenCount);
 }

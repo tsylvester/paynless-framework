@@ -1,11 +1,21 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
+  NodeAdapterFactory,
   NodeAdapterConstructorParams,
   NodeAdapterStreamChunk,
   NodeChatApiRequest,
+  NodeEmbeddingRequest,
+  NodeEmbeddingResponse,
+  NodeProviderMap,
 } from '../ai-adapter.interface.ts';
+import { getNodeAiAdapter } from '../getNodeAiAdapter.ts';
+import type {
+  GetNodeAiAdapterDeps,
+  GetNodeAiAdapterParams,
+} from '../getNodeAiAdapter.interface.ts';
 import {
   isAiAdapter,
+  isAiAdapterWithEmbedding,
   isNodeAdapterStreamChunk,
 } from '../getNodeAiAdapter.guard.ts';
 import { createGoogleNodeAdapter } from './google.ts';
@@ -16,6 +26,8 @@ const googleSdk = vi.hoisted(() => {
     getGenerativeModel: vi.fn(),
     startChat: vi.fn(),
     sendMessageStream: vi.fn(),
+    embedContent: vi.fn(),
+    countTokens: vi.fn(),
   };
 });
 
@@ -64,8 +76,12 @@ describe('createGoogleNodeAdapter (integration)', () => {
     googleSdk.getGenerativeModel.mockReset();
     googleSdk.startChat.mockReset();
     googleSdk.sendMessageStream.mockReset();
+    googleSdk.embedContent.mockReset();
+    googleSdk.countTokens.mockReset();
     googleSdk.getGenerativeModel.mockReturnValue({
       startChat: googleSdk.startChat,
+      embedContent: googleSdk.embedContent,
+      countTokens: googleSdk.countTokens,
     });
     googleSdk.startChat.mockReturnValue({
       sendMessageStream: googleSdk.sendMessageStream,
@@ -171,6 +187,72 @@ describe('createGoogleNodeAdapter (integration)', () => {
     expect(googleSdk.startChat).toHaveBeenCalledWith(
       expect.objectContaining({
         generationConfig: { maxOutputTokens: 32_768 },
+      }),
+    );
+  });
+
+  it('resolves provider map -> selector -> adapter and returns normalized embedding response', async () => {
+    const googleFactory: NodeAdapterFactory = createGoogleNodeAdapter;
+    const providerMap: NodeProviderMap = {
+      google: googleFactory,
+    };
+    const deps: GetNodeAiAdapterDeps = { providerMap };
+    const params: GetNodeAiAdapterParams = {
+      apiIdentifier: 'google-gemini-2-5-pro',
+      apiKey: 'google-integration-embedding-key',
+      modelConfig: {
+        api_identifier: 'google-gemini-2-5-pro',
+        hard_cap_output_tokens: 4096,
+        input_token_cost_rate: 0.001,
+        output_token_cost_rate: 0.002,
+      },
+      userConfig: { tier_output_cap_tokens: null },
+      operation: 'embedding',
+    };
+
+    const adapter = getNodeAiAdapter(deps, params);
+    expect(adapter !== null).toBe(true);
+    if (adapter === null) {
+      throw new Error('Expected adapter from selector for google provider.');
+    }
+
+    expect(isAiAdapter(adapter)).toBe(true);
+    expect(isAiAdapterWithEmbedding(adapter)).toBe(true);
+
+    googleSdk.embedContent.mockResolvedValue({
+      embedding: {
+        values: [0.2, 0.4, 0.6],
+      },
+    });
+    googleSdk.countTokens.mockResolvedValue({
+      totalTokenCount: 7,
+    });
+
+    expect(adapter.getEmbedding !== undefined).toBe(true);
+    if (adapter.getEmbedding === undefined) {
+      throw new Error('Expected embedding-capable adapter from selector.');
+    }
+
+    const request: NodeEmbeddingRequest = { input: 'integration embedding input' };
+    const response: NodeEmbeddingResponse = await adapter.getEmbedding(
+      request,
+      params.apiIdentifier,
+    );
+
+    expect(response).toEqual({
+      embedding: [0.2, 0.4, 0.6],
+      tokenUsage: {
+        prompt_tokens: 7,
+        completion_tokens: 0,
+        total_tokens: 7,
+      },
+    });
+
+    expect(googleSdk.embedContent).toHaveBeenCalledWith('integration embedding input');
+    expect(googleSdk.countTokens).toHaveBeenCalledWith('integration embedding input');
+    expect(googleSdk.getGenerativeModel).toHaveBeenCalledWith(
+      expect.objectContaining({
+        model: 'gemini-2-5-pro',
       }),
     );
   });

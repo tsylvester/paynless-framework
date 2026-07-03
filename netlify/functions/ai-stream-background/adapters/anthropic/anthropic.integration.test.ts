@@ -1,17 +1,28 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
+  NodeAdapterFactory,
   NodeAdapterConstructorParams,
   NodeAdapterStreamChunk,
   NodeChatApiRequest,
+  NodeEmbeddingRequest,
+  NodeEmbeddingResponse,
+  NodeProviderMap,
 } from '../ai-adapter.interface.ts';
+import { getNodeAiAdapter } from '../getNodeAiAdapter.ts';
+import type {
+  GetNodeAiAdapterDeps,
+  GetNodeAiAdapterParams,
+} from '../getNodeAiAdapter.interface.ts';
 import {
   isAiAdapter,
+  isAiAdapterWithEmbedding,
   isNodeAdapterStreamChunk,
 } from '../getNodeAiAdapter.guard.ts';
 import { createAnthropicNodeAdapter } from './anthropic.ts';
 
-const { messagesStream } = vi.hoisted(() => {
+const { embeddingsCreate, messagesStream } = vi.hoisted(() => {
   return {
+    embeddingsCreate: vi.fn(),
     messagesStream: vi.fn(),
   };
 });
@@ -33,9 +44,16 @@ vi.mock('@anthropic-ai/sdk', () => {
       stream: typeof messagesStream;
     };
 
+    public embeddings: {
+      create: typeof embeddingsCreate;
+    };
+
     public constructor() {
       this.messages = {
         stream: messagesStream,
+      };
+      this.embeddings = {
+        create: embeddingsCreate,
       };
     }
   }
@@ -77,6 +95,7 @@ function createIntegrationAnthropicStream(): {
 
 describe('createAnthropicNodeAdapter (integration)', () => {
   beforeEach(() => {
+    embeddingsCreate.mockReset();
     messagesStream.mockReset();
   });
 
@@ -179,6 +198,70 @@ describe('createAnthropicNodeAdapter (integration)', () => {
     expect(messagesStream).toHaveBeenCalledWith(
       expect.objectContaining({
         max_tokens: 32_768,
+      }),
+    );
+  });
+
+  it('resolves provider map -> selector -> adapter and returns normalized embedding response', async () => {
+    const anthropicFactory: NodeAdapterFactory = createAnthropicNodeAdapter;
+    const providerMap: NodeProviderMap = {
+      anthropic: anthropicFactory,
+    };
+    const deps: GetNodeAiAdapterDeps = { providerMap };
+    const params: GetNodeAiAdapterParams = {
+      apiIdentifier: 'anthropic-claude-3-5-sonnet',
+      apiKey: 'sk-integration-anthropic-embedding',
+      modelConfig: {
+        api_identifier: 'anthropic-claude-3-5-sonnet',
+        hard_cap_output_tokens: 4096,
+        input_token_cost_rate: 0.001,
+        output_token_cost_rate: 0.002,
+      },
+      userConfig: { tier_output_cap_tokens: null },
+      operation: 'embedding',
+    };
+
+    const adapter = getNodeAiAdapter(deps, params);
+    expect(adapter !== null).toBe(true);
+    if (adapter === null) {
+      throw new Error('Expected adapter from selector for anthropic provider.');
+    }
+
+    expect(isAiAdapter(adapter)).toBe(true);
+    expect(isAiAdapterWithEmbedding(adapter)).toBe(true);
+
+    embeddingsCreate.mockResolvedValue({
+      embedding: [0.12, 0.34, 0.56],
+      usage: {
+        input_tokens: 8,
+        total_tokens: 8,
+      },
+    });
+
+    expect(adapter.getEmbedding !== undefined).toBe(true);
+    if (adapter.getEmbedding === undefined) {
+      throw new Error('Expected embedding-capable adapter from selector.');
+    }
+
+    const request: NodeEmbeddingRequest = { input: 'integration embedding input' };
+    const response: NodeEmbeddingResponse = await adapter.getEmbedding(
+      request,
+      params.apiIdentifier,
+    );
+
+    expect(response).toEqual({
+      embedding: [0.12, 0.34, 0.56],
+      tokenUsage: {
+        prompt_tokens: 8,
+        completion_tokens: 0,
+        total_tokens: 8,
+      },
+    });
+
+    expect(embeddingsCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        model: 'claude-3-5-sonnet',
+        input: 'integration embedding input',
       }),
     );
   });

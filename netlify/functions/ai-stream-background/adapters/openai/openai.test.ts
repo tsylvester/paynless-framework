@@ -3,22 +3,29 @@ import type {
   AiAdapter,
   NodeAdapterStreamChunk,
   NodeChatApiRequest,
+  NodeEmbeddingRequest,
 } from '../ai-adapter.interface.ts';
 import { isAiAdapter } from '../getNodeAiAdapter.guard.ts';
 import { createOpenAINodeAdapter } from './openai.ts';
 import {
   asyncIterableFromSdkChunks,
+  asyncIterableFromSdkShapedChunks,
   collectNodeAdapterStreamChunks,
-  createMockNodeAdapterConstructorParams,
-  createMockNodeChatApiRequest,
-  createMockNodeModelConfig,
-  createMockOpenAIUsageDelta,
-  createMockOpenAINodeAdapter,
+  buildOpenAISdkStreamChunk,
+  buildOpenAIEmbeddingDatum,
+  buildOpenAIEmbeddingResponse,
+  buildOpenAIEmbeddingUsage,
+  buildNodeAdapterConstructorParams,
+  buildNodeChatApiRequest,
+  buildNodeModelConfig,
+  buildOpenAIUsageDelta,
+  buildOpenAINodeAdapter,
 } from './openai.mock.ts';
 
-const { chatCompletionsCreate } = vi.hoisted(() => {
+const { chatCompletionsCreate, embeddingsCreate } = vi.hoisted(() => {
   return {
     chatCompletionsCreate: vi.fn(),
+    embeddingsCreate: vi.fn(),
   };
 });
 
@@ -41,11 +48,18 @@ vi.mock('openai', () => {
       };
     };
 
+    public embeddings: {
+      create: typeof embeddingsCreate;
+    };
+
     public constructor() {
       this.chat = {
         completions: {
           create: chatCompletionsCreate,
         },
+      };
+      this.embeddings = {
+        create: embeddingsCreate,
       };
     }
   }
@@ -58,12 +72,13 @@ vi.mock('openai', () => {
 describe('createOpenAINodeAdapter', () => {
   beforeEach(() => {
     chatCompletionsCreate.mockReset();
+    embeddingsCreate.mockReset();
   });
 
   it('yields text_delta chunks with correct text for a sequence of stream chunks', async () => {
-    const params = createMockNodeAdapterConstructorParams();
+    const params = buildNodeAdapterConstructorParams();
     const adapter = createOpenAINodeAdapter(params);
-    const request = createMockNodeChatApiRequest();
+    const request = buildNodeChatApiRequest();
     const stream = asyncIterableFromSdkChunks([
       {
         choices: [{ delta: { content: 'hello' }, finish_reason: null }],
@@ -73,7 +88,7 @@ describe('createOpenAINodeAdapter', () => {
       },
       {
         choices: [{ delta: {}, finish_reason: 'stop' }],
-        usage: createMockOpenAIUsageDelta({
+        usage: buildOpenAIUsageDelta({
           prompt_tokens: 1,
           completion_tokens: 2,
           total_tokens: 3,
@@ -94,10 +109,10 @@ describe('createOpenAINodeAdapter', () => {
   });
 
   it('yields usage chunk with correct NodeTokenUsage when final chunk includes usage', async () => {
-    const params = createMockNodeAdapterConstructorParams();
+    const params = buildNodeAdapterConstructorParams();
     const adapter = createOpenAINodeAdapter(params);
-    const request = createMockNodeChatApiRequest();
-    const usage = createMockOpenAIUsageDelta({
+    const request = buildNodeChatApiRequest();
+    const usage = buildOpenAIUsageDelta({
       prompt_tokens: 5,
       completion_tokens: 6,
       total_tokens: 11,
@@ -125,9 +140,9 @@ describe('createOpenAINodeAdapter', () => {
   });
 
   it('throws when stream ends without usage data', async () => {
-    const params = createMockNodeAdapterConstructorParams();
+    const params = buildNodeAdapterConstructorParams();
     const adapter = createOpenAINodeAdapter(params);
-    const request = createMockNodeChatApiRequest();
+    const request = buildNodeChatApiRequest();
     const stream = asyncIterableFromSdkChunks([
       {
         choices: [{ delta: { content: 'only' }, finish_reason: null }],
@@ -145,16 +160,16 @@ describe('createOpenAINodeAdapter', () => {
   });
 
   it('throws when assembled content is only whitespace', async () => {
-    const params = createMockNodeAdapterConstructorParams();
+    const params = buildNodeAdapterConstructorParams();
     const adapter = createOpenAINodeAdapter(params);
-    const request = createMockNodeChatApiRequest();
+    const request = buildNodeChatApiRequest();
     const stream = asyncIterableFromSdkChunks([
       {
         choices: [{ delta: { content: '   \n\t' }, finish_reason: null }],
       },
       {
         choices: [{ delta: {}, finish_reason: 'stop' }],
-        usage: createMockOpenAIUsageDelta(),
+        usage: buildOpenAIUsageDelta(),
       },
     ]);
     chatCompletionsCreate.mockResolvedValue(stream);
@@ -166,16 +181,16 @@ describe('createOpenAINodeAdapter', () => {
   });
 
   it('yields done with finish_reason stop when SDK finish_reason is stop', async () => {
-    const params = createMockNodeAdapterConstructorParams();
+    const params = buildNodeAdapterConstructorParams();
     const adapter = createOpenAINodeAdapter(params);
-    const request = createMockNodeChatApiRequest();
+    const request = buildNodeChatApiRequest();
     const stream = asyncIterableFromSdkChunks([
       {
         choices: [{ delta: { content: 'body' }, finish_reason: null }],
       },
       {
         choices: [{ delta: {}, finish_reason: 'stop' }],
-        usage: createMockOpenAIUsageDelta(),
+        usage: buildOpenAIUsageDelta(),
       },
     ]);
     chatCompletionsCreate.mockResolvedValue(stream);
@@ -190,16 +205,16 @@ describe('createOpenAINodeAdapter', () => {
   });
 
   it('yields done with finish_reason length when SDK finish_reason is length', async () => {
-    const params = createMockNodeAdapterConstructorParams();
+    const params = buildNodeAdapterConstructorParams();
     const adapter = createOpenAINodeAdapter(params);
-    const request = createMockNodeChatApiRequest();
+    const request = buildNodeChatApiRequest();
     const stream = asyncIterableFromSdkChunks([
       {
         choices: [{ delta: { content: 'body' }, finish_reason: null }],
       },
       {
         choices: [{ delta: {}, finish_reason: 'length' }],
-        usage: createMockOpenAIUsageDelta(),
+        usage: buildOpenAIUsageDelta(),
       },
     ]);
     chatCompletionsCreate.mockResolvedValue(stream);
@@ -214,16 +229,16 @@ describe('createOpenAINodeAdapter', () => {
   });
 
   it('yields done with finish_reason tool_calls when SDK finish_reason is tool_calls', async () => {
-    const params = createMockNodeAdapterConstructorParams();
+    const params = buildNodeAdapterConstructorParams();
     const adapter = createOpenAINodeAdapter(params);
-    const request = createMockNodeChatApiRequest();
+    const request = buildNodeChatApiRequest();
     const stream = asyncIterableFromSdkChunks([
       {
         choices: [{ delta: { content: 'body' }, finish_reason: null }],
       },
       {
         choices: [{ delta: {}, finish_reason: 'tool_calls' }],
-        usage: createMockOpenAIUsageDelta(),
+        usage: buildOpenAIUsageDelta(),
       },
     ]);
     chatCompletionsCreate.mockResolvedValue(stream);
@@ -238,16 +253,16 @@ describe('createOpenAINodeAdapter', () => {
   });
 
   it('yields done with finish_reason content_filter when SDK finish_reason is content_filter', async () => {
-    const params = createMockNodeAdapterConstructorParams();
+    const params = buildNodeAdapterConstructorParams();
     const adapter = createOpenAINodeAdapter(params);
-    const request = createMockNodeChatApiRequest();
+    const request = buildNodeChatApiRequest();
     const stream = asyncIterableFromSdkChunks([
       {
         choices: [{ delta: { content: 'body' }, finish_reason: null }],
       },
       {
         choices: [{ delta: {}, finish_reason: 'content_filter' }],
-        usage: createMockOpenAIUsageDelta(),
+        usage: buildOpenAIUsageDelta(),
       },
     ]);
     chatCompletionsCreate.mockResolvedValue(stream);
@@ -262,16 +277,16 @@ describe('createOpenAINodeAdapter', () => {
   });
 
   it('yields done with finish_reason function_call when SDK finish_reason is function_call', async () => {
-    const params = createMockNodeAdapterConstructorParams();
+    const params = buildNodeAdapterConstructorParams();
     const adapter = createOpenAINodeAdapter(params);
-    const request = createMockNodeChatApiRequest();
+    const request = buildNodeChatApiRequest();
     const stream = asyncIterableFromSdkChunks([
       {
         choices: [{ delta: { content: 'body' }, finish_reason: null }],
       },
       {
         choices: [{ delta: {}, finish_reason: 'function_call' }],
-        usage: createMockOpenAIUsageDelta(),
+        usage: buildOpenAIUsageDelta(),
       },
     ]);
     chatCompletionsCreate.mockResolvedValue(stream);
@@ -286,22 +301,17 @@ describe('createOpenAINodeAdapter', () => {
   });
 
   it('yields done with finish_reason equal to provider finish_reason string', async () => {
-    const params = createMockNodeAdapterConstructorParams();
+    const params = buildNodeAdapterConstructorParams();
     const adapter = createOpenAINodeAdapter(params);
-    const request = createMockNodeChatApiRequest();
-    const stream = asyncIterableFromSdkChunks([
-      {
+    const request = buildNodeChatApiRequest();
+    const stream = asyncIterableFromSdkShapedChunks([
+      buildOpenAISdkStreamChunk({
         choices: [{ delta: { content: 'body' }, finish_reason: null }],
-      },
-      {
-        choices: [
-          {
-            delta: {},
-            finish_reason: 'nonstandard_sdk_value',
-          },
-        ],
-        usage: createMockOpenAIUsageDelta(),
-      },
+      }),
+      buildOpenAISdkStreamChunk({
+        choices: [{ delta: {}, finish_reason: 'nonstandard_sdk_value' }],
+        usage: buildOpenAIUsageDelta(),
+      }),
     ]);
     chatCompletionsCreate.mockResolvedValue(stream);
     const chunks: NodeAdapterStreamChunk[] = await collectNodeAdapterStreamChunks(
@@ -315,9 +325,9 @@ describe('createOpenAINodeAdapter', () => {
   });
 
   it('propagates errors when the SDK stream throws mid-iteration', async () => {
-    const params = createMockNodeAdapterConstructorParams();
+    const params = buildNodeAdapterConstructorParams();
     const adapter = createOpenAINodeAdapter(params);
-    const request = createMockNodeChatApiRequest();
+    const request = buildNodeChatApiRequest();
     async function* failingStream() {
       yield {
         choices: [{ delta: { content: 'a' }, finish_reason: null }],
@@ -333,16 +343,16 @@ describe('createOpenAINodeAdapter', () => {
   });
 
   it('calls chat.completions.create with model stripped from openai- prefix', async () => {
-    const params = createMockNodeAdapterConstructorParams();
+    const params = buildNodeAdapterConstructorParams();
     const adapter = createOpenAINodeAdapter(params);
-    const request = createMockNodeChatApiRequest();
+    const request = buildNodeChatApiRequest();
     const stream = asyncIterableFromSdkChunks([
       {
         choices: [{ delta: { content: 'x' }, finish_reason: null }],
       },
       {
         choices: [{ delta: {}, finish_reason: 'stop' }],
-        usage: createMockOpenAIUsageDelta(),
+        usage: buildOpenAIUsageDelta(),
       },
     ]);
     chatCompletionsCreate.mockResolvedValue(stream);
@@ -357,11 +367,11 @@ describe('createOpenAINodeAdapter', () => {
   });
 
   it('throws when apiIdentifier model does not match modelConfig api_identifier', async () => {
-    const params = createMockNodeAdapterConstructorParams({
-      modelConfig: createMockNodeModelConfig({ api_identifier: 'openai-gpt-4-turbo' }),
+    const params = buildNodeAdapterConstructorParams({
+      modelConfig: buildNodeModelConfig({ api_identifier: 'openai-gpt-4-turbo' }),
     });
     const adapter = createOpenAINodeAdapter(params);
-    const request = createMockNodeChatApiRequest();
+    const request = buildNodeChatApiRequest();
     const stream = asyncIterableFromSdkChunks([]);
     chatCompletionsCreate.mockResolvedValue(stream);
     await expect(
@@ -372,9 +382,9 @@ describe('createOpenAINodeAdapter', () => {
   });
 
   it('maps messages, injects resource documents, and appends request.message as final user message', async () => {
-    const params = createMockNodeAdapterConstructorParams();
+    const params = buildNodeAdapterConstructorParams();
     const adapter = createOpenAINodeAdapter(params);
-    const request = createMockNodeChatApiRequest({
+    const request = buildNodeChatApiRequest({
       messages: [
         { role: 'system', content: 'sys-line' },
         { role: 'user', content: 'earlier-user' },
@@ -395,7 +405,7 @@ describe('createOpenAINodeAdapter', () => {
       },
       {
         choices: [{ delta: {}, finish_reason: 'stop' }],
-        usage: createMockOpenAIUsageDelta(),
+        usage: buildOpenAIUsageDelta(),
       },
     ]);
     chatCompletionsCreate.mockResolvedValue(stream);
@@ -419,9 +429,9 @@ describe('createOpenAINodeAdapter', () => {
   });
 
   it('throws when resource document has empty document_key', async () => {
-    const params = createMockNodeAdapterConstructorParams();
+    const params = buildNodeAdapterConstructorParams();
     const adapter = createOpenAINodeAdapter(params);
-    const request = createMockNodeChatApiRequest({
+    const request = buildNodeChatApiRequest({
       resourceDocuments: [
         {
           id: 'doc-1',
@@ -441,22 +451,22 @@ describe('createOpenAINodeAdapter', () => {
   });
 
   it('applies binding cap as min of hard_cap and provider_max when tier_output_cap_tokens is null and request has no max', async () => {
-    const params = createMockNodeAdapterConstructorParams({
+    const params = buildNodeAdapterConstructorParams({
       userConfig: { tier_output_cap_tokens: null },
-      modelConfig: createMockNodeModelConfig({
+      modelConfig: buildNodeModelConfig({
         hard_cap_output_tokens: 50,
         provider_max_output_tokens: 200,
       }),
     });
     const adapter = createOpenAINodeAdapter(params);
-    const request = createMockNodeChatApiRequest();
+    const request = buildNodeChatApiRequest();
     const stream = asyncIterableFromSdkChunks([
       {
         choices: [{ delta: { content: 'z' }, finish_reason: null }],
       },
       {
         choices: [{ delta: {}, finish_reason: 'stop' }],
-        usage: createMockOpenAIUsageDelta(),
+        usage: buildOpenAIUsageDelta(),
       },
     ]);
     chatCompletionsCreate.mockResolvedValue(stream);
@@ -471,11 +481,11 @@ describe('createOpenAINodeAdapter', () => {
   });
 
   it('uses max_completion_tokens for gpt-4o when max_tokens_to_generate binds and tier_output_cap_tokens is null', async () => {
-    const params = createMockNodeAdapterConstructorParams({
+    const params = buildNodeAdapterConstructorParams({
       userConfig: { tier_output_cap_tokens: null },
     });
     const adapter = createOpenAINodeAdapter(params);
-    const request = createMockNodeChatApiRequest({
+    const request = buildNodeChatApiRequest({
       max_tokens_to_generate: 777,
     });
     const stream = asyncIterableFromSdkChunks([
@@ -484,7 +494,7 @@ describe('createOpenAINodeAdapter', () => {
       },
       {
         choices: [{ delta: {}, finish_reason: 'stop' }],
-        usage: createMockOpenAIUsageDelta(),
+        usage: buildOpenAIUsageDelta(),
       },
     ]);
     chatCompletionsCreate.mockResolvedValue(stream);
@@ -499,22 +509,22 @@ describe('createOpenAINodeAdapter', () => {
   });
 
   it('uses max_tokens for legacy gpt-4 model name when hard cap binds and tier_output_cap_tokens is null', async () => {
-    const params = createMockNodeAdapterConstructorParams({
+    const params = buildNodeAdapterConstructorParams({
       userConfig: { tier_output_cap_tokens: null },
-      modelConfig: createMockNodeModelConfig({
+      modelConfig: buildNodeModelConfig({
         api_identifier: 'openai-gpt-4',
         hard_cap_output_tokens: 50,
       }),
     });
     const adapter = createOpenAINodeAdapter(params);
-    const request = createMockNodeChatApiRequest();
+    const request = buildNodeChatApiRequest();
     const stream = asyncIterableFromSdkChunks([
       {
         choices: [{ delta: { content: 'z' }, finish_reason: null }],
       },
       {
         choices: [{ delta: {}, finish_reason: 'stop' }],
-        usage: createMockOpenAIUsageDelta(),
+        usage: buildOpenAIUsageDelta(),
       },
     ]);
     chatCompletionsCreate.mockResolvedValue(stream);
@@ -534,22 +544,22 @@ describe('createOpenAINodeAdapter', () => {
   });
 
   it('uses max_tokens for gpt-3.5-turbo model name when hard cap binds and tier_output_cap_tokens is null', async () => {
-    const params = createMockNodeAdapterConstructorParams({
+    const params = buildNodeAdapterConstructorParams({
       userConfig: { tier_output_cap_tokens: null },
-      modelConfig: createMockNodeModelConfig({
+      modelConfig: buildNodeModelConfig({
         api_identifier: 'openai-gpt-3.5-turbo-16k',
         hard_cap_output_tokens: 50,
       }),
     });
     const adapter = createOpenAINodeAdapter(params);
-    const request = createMockNodeChatApiRequest();
+    const request = buildNodeChatApiRequest();
     const stream = asyncIterableFromSdkChunks([
       {
         choices: [{ delta: { content: 'z' }, finish_reason: null }],
       },
       {
         choices: [{ delta: {}, finish_reason: 'stop' }],
-        usage: createMockOpenAIUsageDelta(),
+        usage: buildOpenAIUsageDelta(),
       },
     ]);
     chatCompletionsCreate.mockResolvedValue(stream);
@@ -566,14 +576,14 @@ describe('createOpenAINodeAdapter', () => {
   });
 
   it('sets max_completion_tokens to tier cap when tier_output_cap_tokens binds over request and hard cap', async () => {
-    const params = createMockNodeAdapterConstructorParams({
+    const params = buildNodeAdapterConstructorParams({
       userConfig: { tier_output_cap_tokens: 32_768 },
-      modelConfig: createMockNodeModelConfig({
+      modelConfig: buildNodeModelConfig({
         hard_cap_output_tokens: 131_072,
       }),
     });
     const adapter = createOpenAINodeAdapter(params);
-    const request = createMockNodeChatApiRequest({
+    const request = buildNodeChatApiRequest({
       max_tokens_to_generate: 50_000,
     });
     const stream = asyncIterableFromSdkChunks([
@@ -582,7 +592,7 @@ describe('createOpenAINodeAdapter', () => {
       },
       {
         choices: [{ delta: {}, finish_reason: 'stop' }],
-        usage: createMockOpenAIUsageDelta(),
+        usage: buildOpenAIUsageDelta(),
       },
     ]);
     chatCompletionsCreate.mockResolvedValue(stream);
@@ -597,14 +607,14 @@ describe('createOpenAINodeAdapter', () => {
   });
 
   it('sets max_completion_tokens to request max when tier_output_cap_tokens is null and request binds', async () => {
-    const params = createMockNodeAdapterConstructorParams({
+    const params = buildNodeAdapterConstructorParams({
       userConfig: { tier_output_cap_tokens: null },
-      modelConfig: createMockNodeModelConfig({
+      modelConfig: buildNodeModelConfig({
         hard_cap_output_tokens: 131_072,
       }),
     });
     const adapter = createOpenAINodeAdapter(params);
-    const request = createMockNodeChatApiRequest({
+    const request = buildNodeChatApiRequest({
       max_tokens_to_generate: 50_000,
     });
     const stream = asyncIterableFromSdkChunks([
@@ -613,7 +623,7 @@ describe('createOpenAINodeAdapter', () => {
       },
       {
         choices: [{ delta: {}, finish_reason: 'stop' }],
-        usage: createMockOpenAIUsageDelta(),
+        usage: buildOpenAIUsageDelta(),
       },
     ]);
     chatCompletionsCreate.mockResolvedValue(stream);
@@ -628,21 +638,21 @@ describe('createOpenAINodeAdapter', () => {
   });
 
   it('sets max_completion_tokens to hard cap when hard cap binds and request has no max', async () => {
-    const params = createMockNodeAdapterConstructorParams({
+    const params = buildNodeAdapterConstructorParams({
       userConfig: { tier_output_cap_tokens: 131_072 },
-      modelConfig: createMockNodeModelConfig({
+      modelConfig: buildNodeModelConfig({
         hard_cap_output_tokens: 64_000,
       }),
     });
     const adapter = createOpenAINodeAdapter(params);
-    const request = createMockNodeChatApiRequest();
+    const request = buildNodeChatApiRequest();
     const stream = asyncIterableFromSdkChunks([
       {
         choices: [{ delta: { content: 'z' }, finish_reason: null }],
       },
       {
         choices: [{ delta: {}, finish_reason: 'stop' }],
-        usage: createMockOpenAIUsageDelta(),
+        usage: buildOpenAIUsageDelta(),
       },
     ]);
     chatCompletionsCreate.mockResolvedValue(stream);
@@ -657,18 +667,18 @@ describe('createOpenAINodeAdapter', () => {
   });
 
   it('omits max_completion_tokens and max_tokens when no positive cap inputs are provided', async () => {
-    const params = createMockNodeAdapterConstructorParams({
+    const params = buildNodeAdapterConstructorParams({
       userConfig: { tier_output_cap_tokens: null },
     });
     const adapter = createOpenAINodeAdapter(params);
-    const request = createMockNodeChatApiRequest();
+    const request = buildNodeChatApiRequest();
     const stream = asyncIterableFromSdkChunks([
       {
         choices: [{ delta: { content: 'z' }, finish_reason: null }],
       },
       {
         choices: [{ delta: {}, finish_reason: 'stop' }],
-        usage: createMockOpenAIUsageDelta(),
+        usage: buildOpenAIUsageDelta(),
       },
     ]);
     chatCompletionsCreate.mockResolvedValue(stream);
@@ -682,13 +692,109 @@ describe('createOpenAINodeAdapter', () => {
     );
     expect(Object.prototype.hasOwnProperty.call(firstArg, 'max_tokens')).toBe(false);
   });
+
+  it('calls embeddings.create with resolved model and request input', async () => {
+    const params = buildNodeAdapterConstructorParams();
+    const adapter = createOpenAINodeAdapter(params);
+    const request: NodeEmbeddingRequest = { input: 'embed this text' };
+    embeddingsCreate.mockResolvedValue(
+      buildOpenAIEmbeddingResponse({
+        data: [buildOpenAIEmbeddingDatum()],
+        usage: buildOpenAIEmbeddingUsage(),
+      }),
+    );
+
+    await adapter.getEmbedding!(request, 'openai-gpt-4o');
+
+    expect(embeddingsCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        model: 'gpt-4o',
+        input: 'embed this text',
+      }),
+    );
+  });
+
+  it('returns first embedding vector and normalized token usage', async () => {
+    const params = buildNodeAdapterConstructorParams();
+    const adapter = createOpenAINodeAdapter(params);
+    const request: NodeEmbeddingRequest = { input: 'normalize me' };
+    embeddingsCreate.mockResolvedValue(
+      buildOpenAIEmbeddingResponse({
+        data: [
+          buildOpenAIEmbeddingDatum({ embedding: [0.11, 0.22, 0.33] }),
+          buildOpenAIEmbeddingDatum({ embedding: [9, 9, 9] }),
+        ],
+        usage: buildOpenAIEmbeddingUsage({ prompt_tokens: 8, total_tokens: 8 }),
+      }),
+    );
+
+    const response = await adapter.getEmbedding!(request, 'openai-gpt-4o');
+
+    expect(response.embedding).toEqual([0.11, 0.22, 0.33]);
+    expect(response.tokenUsage).toEqual({
+      prompt_tokens: 8,
+      completion_tokens: 0,
+      total_tokens: 8,
+    });
+  });
+
+  it('throws on model mismatch before API call', async () => {
+    const params = buildNodeAdapterConstructorParams();
+    const adapter = createOpenAINodeAdapter(params);
+    const request: NodeEmbeddingRequest = { input: 'model mismatch' };
+
+    await expect(adapter.getEmbedding!(request, 'openai-other-model')).rejects.toThrow(
+      'Model mismatch',
+    );
+    expect(embeddingsCreate).not.toHaveBeenCalled();
+  });
+
+  it('throws on missing usage', async () => {
+    const params = buildNodeAdapterConstructorParams();
+    const adapter = createOpenAINodeAdapter(params);
+    const request: NodeEmbeddingRequest = { input: 'missing usage' };
+    embeddingsCreate.mockResolvedValue({
+      data: [buildOpenAIEmbeddingDatum()],
+    });
+
+    await expect(adapter.getEmbedding!(request, 'openai-gpt-4o')).rejects.toThrow(
+      'OpenAI response did not include usage data.',
+    );
+  });
+
+  it('throws on empty embedding data', async () => {
+    const params = buildNodeAdapterConstructorParams();
+    const adapter = createOpenAINodeAdapter(params);
+    const request: NodeEmbeddingRequest = { input: 'empty embedding data' };
+    embeddingsCreate.mockResolvedValue(
+      buildOpenAIEmbeddingResponse({ data: [] }),
+    );
+
+    await expect(adapter.getEmbedding!(request, 'openai-gpt-4o')).rejects.toThrow(
+      'OpenAI response did not include embedding data.',
+    );
+  });
+
+  it('surfaces normalized API errors consistently with existing style', async () => {
+    const params = buildNodeAdapterConstructorParams();
+    const adapter = createOpenAINodeAdapter(params);
+    const request: NodeEmbeddingRequest = { input: 'api error' };
+    const error = new Error('API exploded');
+    error.name = 'APIError';
+    embeddingsCreate.mockRejectedValue(error);
+
+    await expect(adapter.getEmbedding!(request, 'openai-gpt-4o')).rejects.toThrow(
+      'OpenAI API error',
+    );
+  });
 });
-describe('createMockOpenAINodeAdapter', () => {
+
+describe('buildOpenAINodeAdapter', () => {
   it('returns AiAdapter satisfying isAiAdapter with default stream chunks', async () => {
-    const adapter: AiAdapter = createMockOpenAINodeAdapter();
+    const adapter: AiAdapter = buildOpenAINodeAdapter();
     expect(isAiAdapter(adapter)).toBe(true);
     const chunks: NodeAdapterStreamChunk[] = await collectNodeAdapterStreamChunks(
-      adapter.sendMessageStream(createMockNodeChatApiRequest(), 'openai-gpt-4o'),
+      adapter.sendMessageStream(buildNodeChatApiRequest(), 'openai-gpt-4o'),
     );
     expect(chunks).toEqual([
       { type: 'text_delta', text: 'mock openai response' },
@@ -705,7 +811,7 @@ describe('createMockOpenAINodeAdapter', () => {
   });
 
   it('allows sendMessageStream override that throws mock openai stream error', async () => {
-    const adapter: AiAdapter = createMockOpenAINodeAdapter({
+    const adapter: AiAdapter = buildOpenAINodeAdapter({
       sendMessageStream: async function* (
         _request: NodeChatApiRequest,
         _apiIdentifier: string,
@@ -721,7 +827,7 @@ describe('createMockOpenAINodeAdapter', () => {
     expect(isAiAdapter(adapter)).toBe(true);
     await expect(async () => {
       const stream: AsyncGenerator<NodeAdapterStreamChunk> = adapter.sendMessageStream(
-        createMockNodeChatApiRequest(),
+        buildNodeChatApiRequest(),
         'openai-gpt-4o',
       );
       await stream.next();

@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { AiStreamEvent } from './ai-stream-background.interface.ts';
-import { isAiStreamEvent, isAiStreamPayload } from './ai-stream-background.guard.ts';
+import type {
+  AiWorkloadEmbeddingEvent,
+  AiWorkloadStreamEvent,
+} from './ai-stream-background.interface.ts';
+import { isAiWorkloadEvent, isAiWorkloadPayload } from './ai-stream-background.guard.ts';
 import type { OpenAIChatCompletionChunk } from './adapters/openai/openai.interface.ts';
 import type {
   AnthropicContentBlockDeltaEvent,
@@ -27,6 +30,7 @@ const netlifyMock = vi.hoisted(() => {
 const openaiSdk = vi.hoisted(() => {
   return {
     chatCompletionsCreate: vi.fn(),
+    embeddingsCreate: vi.fn(),
   };
 });
 
@@ -88,11 +92,18 @@ vi.mock('openai', () => {
       };
     };
 
+    public embeddings: {
+      create: typeof openaiSdk.embeddingsCreate;
+    };
+
     public constructor() {
       this.chat = {
         completions: {
           create: openaiSdk.chatCompletionsCreate,
         },
+      };
+      this.embeddings = {
+        create: openaiSdk.embeddingsCreate,
       };
     }
   }
@@ -282,6 +293,7 @@ describe('ai-stream integration', () => {
     vi.restoreAllMocks();
 
     openaiSdk.chatCompletionsCreate.mockReset();
+    openaiSdk.embeddingsCreate.mockReset();
     anthropicSdk.messagesStream.mockReset();
     googleSdk.getGenerativeModel.mockReset();
     googleSdk.startChat.mockReset();
@@ -309,7 +321,7 @@ describe('ai-stream integration', () => {
   it('full chain — OpenAI: real createAiStreamDeps → real getNodeAiAdapter → real createOpenAINodeAdapter → mocked SDK → POST', async () => {
     openaiSdk.chatCompletionsCreate.mockResolvedValue(openaiSdkStream());
 
-    const eventPayload: AiStreamEvent = {
+    const eventPayload: AiWorkloadStreamEvent = {
       job_id: 'integration-openai',
       api_identifier: 'openai-gpt-4o',
       model_config: {
@@ -317,6 +329,7 @@ describe('ai-stream integration', () => {
         input_token_cost_rate: 0.001,
         output_token_cost_rate: 0.002,
       },
+      operation: 'stream',
       chat_api_request: {
         message: 'integration test openai',
         providerId: 'prov-1',
@@ -332,9 +345,12 @@ describe('ai-stream integration', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const posted = extractFetchPostArgs(fetchMock);
     expect(posted.url).toBe(TEST_SAVE_RESPONSE_URL);
-    expect(isAiStreamPayload(posted.body)).toBe(true);
-    if (!isAiStreamPayload(posted.body)) {
-      throw new Error('POST body must satisfy AiStreamPayload');
+    expect(isAiWorkloadPayload(posted.body)).toBe(true);
+    if (!isAiWorkloadPayload(posted.body)) {
+      throw new Error('POST body must satisfy AiWorkloadPayload');
+    }
+    if (posted.body.operation !== 'stream') {
+      throw new Error('expected stream payload');
     }
     expect(posted.body.sig).toBe('hmac-openai-integration');
     expect(posted.body.job_id).toBe('integration-openai');
@@ -351,7 +367,7 @@ describe('ai-stream integration', () => {
   it('full chain — Anthropic: real createAiStreamDeps → real getNodeAiAdapter → real createAnthropicNodeAdapter → mocked SDK → POST', async () => {
     anthropicSdk.messagesStream.mockReturnValue(createAnthropicSdkStream());
 
-    const eventPayload: AiStreamEvent = {
+    const eventPayload: AiWorkloadStreamEvent = {
       job_id: 'integration-anthropic',
       api_identifier: 'anthropic-claude-3-5-sonnet',
       model_config: {
@@ -360,6 +376,7 @@ describe('ai-stream integration', () => {
         input_token_cost_rate: 0.001,
         output_token_cost_rate: 0.002,
       },
+      operation: 'stream',
       chat_api_request: {
         message: 'integration test anthropic',
         providerId: 'prov-1',
@@ -375,9 +392,12 @@ describe('ai-stream integration', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const posted = extractFetchPostArgs(fetchMock);
     expect(posted.url).toBe(TEST_SAVE_RESPONSE_URL);
-    expect(isAiStreamPayload(posted.body)).toBe(true);
-    if (!isAiStreamPayload(posted.body)) {
-      throw new Error('POST body must satisfy AiStreamPayload');
+    expect(isAiWorkloadPayload(posted.body)).toBe(true);
+    if (!isAiWorkloadPayload(posted.body)) {
+      throw new Error('POST body must satisfy AiWorkloadPayload');
+    }
+    if (posted.body.operation !== 'stream') {
+      throw new Error('expected stream payload');
     }
     expect(posted.body.sig).toBe('hmac-anthropic-integration');
     expect(posted.body.job_id).toBe('integration-anthropic');
@@ -402,7 +422,7 @@ describe('ai-stream integration', () => {
       createGoogleSdkStreamResult(),
     );
 
-    const eventPayload: AiStreamEvent = {
+    const eventPayload: AiWorkloadStreamEvent = {
       job_id: 'integration-google',
       api_identifier: 'google-gemini-2-5-pro',
       model_config: {
@@ -411,6 +431,7 @@ describe('ai-stream integration', () => {
         input_token_cost_rate: 0.001,
         output_token_cost_rate: 0.002,
       },
+      operation: 'stream',
       chat_api_request: {
         message: 'integration test google',
         providerId: 'prov-1',
@@ -426,9 +447,12 @@ describe('ai-stream integration', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const posted = extractFetchPostArgs(fetchMock);
     expect(posted.url).toBe(TEST_SAVE_RESPONSE_URL);
-    expect(isAiStreamPayload(posted.body)).toBe(true);
-    if (!isAiStreamPayload(posted.body)) {
-      throw new Error('POST body must satisfy AiStreamPayload');
+    expect(isAiWorkloadPayload(posted.body)).toBe(true);
+    if (!isAiWorkloadPayload(posted.body)) {
+      throw new Error('POST body must satisfy AiWorkloadPayload');
+    }
+    if (posted.body.operation !== 'stream') {
+      throw new Error('expected stream payload');
     }
     expect(posted.body.sig).toBe('hmac-google-integration');
     expect(posted.body.job_id).toBe('integration-google');
@@ -447,7 +471,7 @@ describe('ai-stream integration', () => {
       new Error('SDK connection error'),
     );
 
-    const eventPayload: AiStreamEvent = {
+    const eventPayload: AiWorkloadStreamEvent = {
       job_id: 'integration-step-error',
       api_identifier: 'openai-gpt-4o',
       model_config: {
@@ -455,6 +479,7 @@ describe('ai-stream integration', () => {
         input_token_cost_rate: 0.001,
         output_token_cost_rate: 0.002,
       },
+      operation: 'stream',
       chat_api_request: {
         message: 'integration step error test',
         providerId: 'prov-1',
@@ -477,7 +502,7 @@ describe('ai-stream integration', () => {
     fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 400 }));
     vi.stubGlobal('fetch', fetchMock);
 
-    const eventPayload: AiStreamEvent = {
+    const eventPayload: AiWorkloadStreamEvent = {
       job_id: 'integration-post-failure',
       api_identifier: 'openai-gpt-4o',
       model_config: {
@@ -485,6 +510,7 @@ describe('ai-stream integration', () => {
         input_token_cost_rate: 0.001,
         output_token_cost_rate: 0.002,
       },
+      operation: 'stream',
       chat_api_request: {
         message: 'integration post failure test',
         providerId: 'prov-1',
@@ -500,10 +526,10 @@ describe('ai-stream integration', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it('full chain — OpenAI with user_config tier_output_cap_tokens 32768: guard accepts event and handler POSTs AiStreamPayload', async () => {
+  it('full chain — OpenAI with user_config tier_output_cap_tokens 32768: guard accepts event and handler POSTs stream workload payload', async () => {
     openaiSdk.chatCompletionsCreate.mockResolvedValue(openaiSdkStream());
 
-    const eventPayload: AiStreamEvent = {
+    const eventPayload: AiWorkloadStreamEvent = {
       job_id: 'integration-openai-tier-cap',
       api_identifier: 'openai-gpt-4o',
       model_config: {
@@ -511,6 +537,7 @@ describe('ai-stream integration', () => {
         input_token_cost_rate: 0.001,
         output_token_cost_rate: 0.002,
       },
+      operation: 'stream',
       chat_api_request: {
         message: 'integration test openai tier cap',
         providerId: 'prov-1',
@@ -519,7 +546,7 @@ describe('ai-stream integration', () => {
       sig: 'hmac-openai-tier-cap',
       user_config: { tier_output_cap_tokens: 32_768 },
     };
-    expect(isAiStreamEvent(eventPayload)).toBe(true);
+    expect(isAiWorkloadEvent(eventPayload)).toBe(true);
 
     const mockEvent: unknown = createMockWorkloadEvent(eventPayload);
 
@@ -528,13 +555,66 @@ describe('ai-stream integration', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const posted = extractFetchPostArgs(fetchMock);
     expect(posted.url).toBe(TEST_SAVE_RESPONSE_URL);
-    expect(isAiStreamPayload(posted.body)).toBe(true);
-    if (!isAiStreamPayload(posted.body)) {
-      throw new Error('POST body must satisfy AiStreamPayload');
+    expect(isAiWorkloadPayload(posted.body)).toBe(true);
+    if (!isAiWorkloadPayload(posted.body)) {
+      throw new Error('POST body must satisfy AiWorkloadPayload');
+    }
+    if (posted.body.operation !== 'stream') {
+      throw new Error('expected stream payload');
     }
     expect(posted.body.sig).toBe('hmac-openai-tier-cap');
     expect(posted.body.job_id).toBe('integration-openai-tier-cap');
     expect(posted.body.assembled_content).toBe('integration-openai');
     expect(posted.body.finish_reason).toBe('stop');
+  });
+
+  it('full chain — OpenAI embedding: real deps factory -> selector -> provider adapter embedding call -> mocked SDK -> callback POST', async () => {
+    openaiSdk.embeddingsCreate.mockResolvedValue({
+      data: [{ embedding: [0.11, 0.22, 0.33] }],
+      usage: {
+        prompt_tokens: 9,
+        total_tokens: 9,
+      },
+    });
+
+    const eventPayload: AiWorkloadEmbeddingEvent = {
+      job_id: 'integration-openai-embedding',
+      api_identifier: 'openai-gpt-4o',
+      model_config: {
+        api_identifier: 'openai-gpt-4o',
+        input_token_cost_rate: 0.001,
+        output_token_cost_rate: 0.002,
+      },
+      operation: 'embedding',
+      embedding_api_request: {
+        input: 'integration embedding openai',
+      },
+      sig: 'hmac-openai-embedding-integration',
+      user_config: { tier_output_cap_tokens: null },
+    };
+
+    expect(isAiWorkloadEvent(eventPayload)).toBe(true);
+    const mockEvent: unknown = createMockWorkloadEvent(eventPayload);
+
+    await getHandler()(mockEvent);
+
+    expect(openaiSdk.embeddingsCreate).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    const posted = extractFetchPostArgs(fetchMock);
+    expect(posted.url).toBe(TEST_SAVE_RESPONSE_URL);
+    expect(isAiWorkloadPayload(posted.body)).toBe(true);
+    if (!isAiWorkloadPayload(posted.body)) {
+      throw new Error('POST body must satisfy AiWorkloadPayload');
+    }
+    if (posted.body.operation !== 'embedding') {
+      throw new Error('expected embedding payload');
+    }
+    expect(posted.body.sig).toBe('hmac-openai-embedding-integration');
+    expect(posted.body.job_id).toBe('integration-openai-embedding');
+    expect(posted.body.embedding).toEqual([0.11, 0.22, 0.33]);
+    expect(posted.body.token_usage.prompt_tokens).toBe(9);
+    expect(posted.body.token_usage.completion_tokens).toBe(0);
+    expect(posted.body.token_usage.total_tokens).toBe(9);
   });
 });

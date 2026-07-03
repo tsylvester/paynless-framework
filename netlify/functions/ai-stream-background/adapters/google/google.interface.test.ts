@@ -2,10 +2,12 @@ import { describe, expect, it } from 'vitest';
 import type {
   GoogleCandidate,
   GoogleContent,
+  GoogleEmbeddingResponse,
   GoogleFinalResponse,
   GoogleFinishReason,
   GooglePart,
   GoogleStreamChunk,
+  GoogleTokenCountResponse,
   GoogleUsageMetadata,
 } from './google.interface.ts';
 
@@ -97,5 +99,56 @@ describe('google.interface contract', () => {
   it('accepts GoogleFinalResponse with usageMetadata null', () => {
     const literal: GoogleFinalResponse = { usageMetadata: null };
     expect(literal.usageMetadata).toBe(null);
+  });
+
+  it('accepts GoogleEmbeddingResponse with embedding.values numeric vector output', () => {
+    const literal: GoogleEmbeddingResponse = {
+      embedding: {
+        values: [0.12, 0.34, 0.56],
+      },
+    };
+    expect(Array.isArray(literal.embedding.values)).toBe(true);
+    const allNumeric: boolean = literal.embedding.values.every((value) => {
+      return typeof value === 'number';
+    });
+    expect(allNumeric).toBe(true);
+  });
+
+  it('accepts GoogleTokenCountResponse with numeric total token count', () => {
+    const literal: GoogleTokenCountResponse = {
+      totalTokenCount: 42,
+    };
+    expect(typeof literal.totalTokenCount).toBe('number');
+  });
+
+  it('invalid embedding fixture: missing vector property', () => {
+    const literal = {
+      embedding: {},
+    };
+    expect('values' in literal.embedding).toBe(false);
+  });
+
+  it('invalid embedding fixture: non-numeric vector elements', () => {
+    const literal = {
+      embedding: {
+        values: [0.1, 'oops', 0.3],
+      },
+    };
+    const allNumeric: boolean = literal.embedding.values.every((value) => {
+      return typeof value === 'number';
+    });
+    expect(allNumeric).toBe(false);
+  });
+
+  it('invalid token-count fixture: missing token total', () => {
+    const literal = {};
+    expect('totalTokenCount' in literal).toBe(false);
+  });
+
+  it('invalid token-count fixture: non-numeric token total', () => {
+    const literal = {
+      totalTokenCount: '42',
+    };
+    expect(typeof literal.totalTokenCount).not.toBe('number');
   });
 });

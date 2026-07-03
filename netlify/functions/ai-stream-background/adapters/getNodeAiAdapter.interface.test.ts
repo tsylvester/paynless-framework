@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type {
   GetNodeAiAdapterDeps,
+  NodeAdapterOperation,
   GetNodeAiAdapterParams,
 } from './getNodeAiAdapter.interface.ts';
 import type {
@@ -38,6 +39,7 @@ describe('getNodeAiAdapter.interface contract', () => {
         output_token_cost_rate: 0.002,
       },
       userConfig: { tier_output_cap_tokens: null },
+      operation: 'stream',
     };
     expect(params.apiIdentifier.length >= 1).toBe(true);
     expect(params.apiKey.length >= 1).toBe(true);
@@ -45,5 +47,55 @@ describe('getNodeAiAdapter.interface contract', () => {
     expect(typeof params.modelConfig.api_identifier).toBe('string');
     expect(params.modelConfig.api_identifier.length >= 1).toBe(true);
     expect(params.userConfig.tier_output_cap_tokens).toBe(null);
+  });
+
+  it("accepts GetNodeAiAdapterParams with operation: 'stream'", () => {
+    const operation: NodeAdapterOperation = 'stream';
+    const params: GetNodeAiAdapterParams = {
+      apiIdentifier: 'openai-gpt-4o',
+      apiKey: 'sk-test',
+      modelConfig: {
+        api_identifier: 'openai-gpt-4o',
+        input_token_cost_rate: 0.001,
+        output_token_cost_rate: 0.002,
+      },
+      userConfig: { tier_output_cap_tokens: null },
+      operation,
+    };
+    expect(params.operation).toBe('stream');
+  });
+
+  it("accepts GetNodeAiAdapterParams with operation: 'embedding'", () => {
+    const operation: NodeAdapterOperation = 'embedding';
+    const params: GetNodeAiAdapterParams = {
+      apiIdentifier: 'openai-gpt-4o',
+      apiKey: 'sk-test',
+      modelConfig: {
+        api_identifier: 'openai-gpt-4o',
+        input_token_cost_rate: 0.001,
+        output_token_cost_rate: 0.002,
+      },
+      userConfig: { tier_output_cap_tokens: null },
+      operation,
+    };
+    expect(params.operation).toBe('embedding');
+  });
+
+  it('rejects unknown operation value', () => {
+    const invalidOperationParams = {
+      apiIdentifier: 'openai-gpt-4o',
+      apiKey: 'sk-test',
+      modelConfig: {
+        api_identifier: 'openai-gpt-4o',
+        input_token_cost_rate: 0.001,
+        output_token_cost_rate: 0.002,
+      },
+      userConfig: { tier_output_cap_tokens: null },
+      operation: 'unknown',
+    };
+    expect(
+      invalidOperationParams.operation === 'stream' ||
+        invalidOperationParams.operation === 'embedding',
+    ).toBe(false);
   });
 });

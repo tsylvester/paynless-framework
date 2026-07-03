@@ -2,6 +2,8 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import type {
   AiAdapter,
   NodeAdapterConstructorParams,
+  NodeEmbeddingRequest,
+  NodeEmbeddingResponse,
   NodeAdapterStreamChunk,
   NodeChatApiRequest,
   NodeChatMessage,
@@ -10,6 +12,10 @@ import type {
   NodeUserConfig,
 } from '../ai-adapter.interface.ts';
 import { resolveOutputCap } from '../../resolveOutputCap/resolveOutputCap.provides.ts';
+import {
+  isGoogleEmbeddingResponse,
+  isGoogleTokenCountResponse,
+} from './google.guard.ts';
 
 type GoogleHistoryEntry = {
   role: string;
@@ -225,6 +231,41 @@ export function createGoogleNodeAdapter(
         yield doneChunk;
       } catch (error: unknown) {
         console.error('[ai-stream-background][google] Google SDK error', {
+          apiIdentifier,
+          request,
+          error,
+        });
+        throw error;
+      }
+    },
+    async getEmbedding(
+      request: NodeEmbeddingRequest,
+      apiIdentifier: string,
+    ): Promise<NodeEmbeddingResponse> {
+      try {
+        const modelApiName: string = apiIdentifier.replace(/^google-/i, '');
+        const model = client.getGenerativeModel({ model: modelApiName });
+
+        const embeddingResponse: unknown = await model.embedContent(request.input);
+        if (!isGoogleEmbeddingResponse(embeddingResponse)) {
+          throw new Error('Google Gemini embedding response was malformed.');
+        }
+
+        const tokenCountResponse: unknown = await model.countTokens(request.input);
+        if (!isGoogleTokenCountResponse(tokenCountResponse)) {
+          throw new Error('Google Gemini token-count response was malformed.');
+        }
+
+        return {
+          embedding: [...embeddingResponse.embedding.values],
+          tokenUsage: {
+            prompt_tokens: tokenCountResponse.totalTokenCount,
+            completion_tokens: 0,
+            total_tokens: tokenCountResponse.totalTokenCount,
+          },
+        };
+      } catch (error: unknown) {
+        console.error('[ai-stream-background][google] Google embedding error', {
           apiIdentifier,
           request,
           error,

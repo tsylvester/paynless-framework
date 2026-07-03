@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
   isAiStreamDeps,
-  isAiStreamEvent,
-  isAiStreamPayload,
+  isAiWorkloadEvent,
+  isAiWorkloadPayload,
 } from './ai-stream-background.guard.ts';
 
 describe('ai-stream.guard', () => {
-  describe('isAiStreamEvent', () => {
-    it('accepts valid event with model_config and chat_api_request in corrected shapes', () => {
+  describe('isAiWorkloadEvent', () => {
+    it('accepts valid stream event with model_config and chat_api_request in corrected shapes', () => {
       const value = {
         job_id: 'job-1',
         api_identifier: 'openai-gpt-4o',
@@ -16,6 +16,7 @@ describe('ai-stream.guard', () => {
           input_token_cost_rate: 0.001,
           output_token_cost_rate: 0.002,
         },
+        operation: 'stream',
         chat_api_request: {
           message: 'hello',
           providerId: 'prov-1',
@@ -24,11 +25,30 @@ describe('ai-stream.guard', () => {
         sig: 'hmac-sig-value',
         user_config: { tier_output_cap_tokens: null },
       };
-      expect(isAiStreamEvent(value)).toBe(true);
+      expect(isAiWorkloadEvent(value)).toBe(true);
+    });
+
+    it('accepts valid embedding event shape', () => {
+      const value = {
+        job_id: 'job-embed-1',
+        api_identifier: 'openai-text-embedding-3-large',
+        model_config: {
+          api_identifier: 'openai-text-embedding-3-large',
+          input_token_cost_rate: 0.001,
+          output_token_cost_rate: 0,
+        },
+        operation: 'embedding',
+        embedding_api_request: {
+          input: 'embed this text',
+        },
+        sig: 'hmac-sig-value',
+        user_config: { tier_output_cap_tokens: null },
+      };
+      expect(isAiWorkloadEvent(value)).toBe(true);
     });
 
     it('rejects missing fields', () => {
-      expect(isAiStreamEvent({})).toBe(false);
+      expect(isAiWorkloadEvent({})).toBe(false);
     });
 
     it('rejects invalid model_config', () => {
@@ -46,7 +66,7 @@ describe('ai-stream.guard', () => {
         },
         sig: 'hmac-sig-value',
       };
-      expect(isAiStreamEvent(value)).toBe(false);
+      expect(isAiWorkloadEvent(value)).toBe(false);
     });
 
     it('rejects invalid chat_api_request', () => {
@@ -65,10 +85,10 @@ describe('ai-stream.guard', () => {
         },
         sig: 'hmac-sig-value',
       };
-      expect(isAiStreamEvent(value)).toBe(false);
+      expect(isAiWorkloadEvent(value)).toBe(false);
     });
 
-    it('rejects AiStreamEvent missing sig', () => {
+    it('rejects AiWorkloadEvent missing sig', () => {
       const value = {
         job_id: 'job-1',
         api_identifier: 'openai-gpt-4o',
@@ -84,10 +104,10 @@ describe('ai-stream.guard', () => {
         },
         user_config: { tier_output_cap_tokens: null },
       };
-      expect(isAiStreamEvent(value)).toBe(false);
+      expect(isAiWorkloadEvent(value)).toBe(false);
     });
 
-    it('rejects AiStreamEvent with user_jwt in place of sig', () => {
+    it('rejects AiWorkloadEvent with user_jwt in place of sig', () => {
       const value = {
         job_id: 'job-1',
         api_identifier: 'openai-gpt-4o',
@@ -104,10 +124,52 @@ describe('ai-stream.guard', () => {
         user_jwt: 'jwt-token',
         user_config: { tier_output_cap_tokens: null },
       };
-      expect(isAiStreamEvent(value)).toBe(false);
+      expect(isAiWorkloadEvent(value)).toBe(false);
     });
 
-    it('isAiStreamEvent accepts valid event with user_config: { tier_output_cap_tokens: null }', () => {
+    it('isAiWorkloadEvent accepts valid event with user_config: { tier_output_cap_tokens: null }', () => {
+      const value = {
+        job_id: 'job-1',
+        api_identifier: 'openai-gpt-4o',
+        model_config: {
+          api_identifier: 'openai-gpt-4o',
+          input_token_cost_rate: 0.001,
+          output_token_cost_rate: 0.002,
+        },
+        operation: 'stream',
+        chat_api_request: {
+          message: 'hello',
+          providerId: 'prov-1',
+          promptId: 'prompt-1',
+        },
+        sig: 'hmac-sig-value',
+        user_config: { tier_output_cap_tokens: null },
+      };
+      expect(isAiWorkloadEvent(value)).toBe(true);
+    });
+
+    it('isAiWorkloadEvent accepts valid event with user_config: { tier_output_cap_tokens: 32768 }', () => {
+      const value = {
+        job_id: 'job-1',
+        api_identifier: 'openai-gpt-4o',
+        model_config: {
+          api_identifier: 'openai-gpt-4o',
+          input_token_cost_rate: 0.001,
+          output_token_cost_rate: 0.002,
+        },
+        operation: 'stream',
+        chat_api_request: {
+          message: 'hello',
+          providerId: 'prov-1',
+          promptId: 'prompt-1',
+        },
+        sig: 'hmac-sig-value',
+        user_config: { tier_output_cap_tokens: 32_768 },
+      };
+      expect(isAiWorkloadEvent(value)).toBe(true);
+    });
+
+    it('rejects event missing operation discriminator', () => {
       const value = {
         job_id: 'job-1',
         api_identifier: 'openai-gpt-4o',
@@ -124,30 +186,10 @@ describe('ai-stream.guard', () => {
         sig: 'hmac-sig-value',
         user_config: { tier_output_cap_tokens: null },
       };
-      expect(isAiStreamEvent(value)).toBe(true);
+      expect(isAiWorkloadEvent(value)).toBe(false);
     });
 
-    it('isAiStreamEvent accepts valid event with user_config: { tier_output_cap_tokens: 32768 }', () => {
-      const value = {
-        job_id: 'job-1',
-        api_identifier: 'openai-gpt-4o',
-        model_config: {
-          api_identifier: 'openai-gpt-4o',
-          input_token_cost_rate: 0.001,
-          output_token_cost_rate: 0.002,
-        },
-        chat_api_request: {
-          message: 'hello',
-          providerId: 'prov-1',
-          promptId: 'prompt-1',
-        },
-        sig: 'hmac-sig-value',
-        user_config: { tier_output_cap_tokens: 32_768 },
-      };
-      expect(isAiStreamEvent(value)).toBe(true);
-    });
-
-    it('isAiStreamEvent rejects event missing user_config field entirely', () => {
+    it('isAiWorkloadEvent rejects event missing user_config field entirely', () => {
       const value = {
         job_id: 'job-1',
         api_identifier: 'openai-gpt-4o',
@@ -163,14 +205,15 @@ describe('ai-stream.guard', () => {
         },
         sig: 'hmac-sig-value',
       };
-      expect(isAiStreamEvent(value)).toBe(false);
+      expect(isAiWorkloadEvent(value)).toBe(false);
     });
   });
 
-  describe('isAiStreamPayload', () => {
-    it('accepts valid payload with sig', () => {
+  describe('isAiWorkloadPayload', () => {
+    it('accepts valid stream payload with sig', () => {
       const value = {
         job_id: 'job-1',
+        operation: 'stream',
         assembled_content: 'text',
         token_usage: {
           prompt_tokens: 1,
@@ -180,7 +223,22 @@ describe('ai-stream.guard', () => {
         finish_reason: 'stop',
         sig: 'hmac-sig-value',
       };
-      expect(isAiStreamPayload(value)).toBe(true);
+      expect(isAiWorkloadPayload(value)).toBe(true);
+    });
+
+    it('accepts embedding payload variant', () => {
+      const value = {
+        job_id: 'job-embed-1',
+        operation: 'embedding',
+        embedding: [0.11, -0.22, 0.33],
+        token_usage: {
+          prompt_tokens: 7,
+          completion_tokens: 0,
+          total_tokens: 7,
+        },
+        sig: 'hmac-sig-value',
+      };
+      expect(isAiWorkloadPayload(value)).toBe(true);
     });
 
     it('rejects missing job_id', () => {
@@ -189,23 +247,25 @@ describe('ai-stream.guard', () => {
         token_usage: null,
         finish_reason: null,
       };
-      expect(isAiStreamPayload(value)).toBe(false);
+      expect(isAiWorkloadPayload(value)).toBe(false);
     });
 
     it('accepts null token_usage', () => {
       const value = {
         job_id: 'job-1',
+        operation: 'stream',
         assembled_content: 'text',
         token_usage: null,
         finish_reason: 'stop',
         sig: 'hmac-sig-value',
       };
-      expect(isAiStreamPayload(value)).toBe(true);
+      expect(isAiWorkloadPayload(value)).toBe(true);
     });
 
     it('accepts null finish_reason', () => {
       const value = {
         job_id: 'job-1',
+        operation: 'stream',
         assembled_content: 'text',
         token_usage: {
           prompt_tokens: 0,
@@ -215,17 +275,30 @@ describe('ai-stream.guard', () => {
         finish_reason: null,
         sig: 'hmac-sig-value',
       };
-      expect(isAiStreamPayload(value)).toBe(true);
+      expect(isAiWorkloadPayload(value)).toBe(true);
     });
 
-    it('rejects AiStreamPayload missing sig', () => {
+    it('rejects payload with mixed/invalid operation output fields', () => {
+      const value = {
+        job_id: 'job-1',
+        operation: 'stream',
+        assembled_content: 'text',
+        embedding: [0.01, 0.02],
+        token_usage: null,
+        finish_reason: 'stop',
+        sig: 'hmac-sig-value',
+      };
+      expect(isAiWorkloadPayload(value)).toBe(false);
+    });
+
+    it('rejects AiWorkloadPayload missing sig', () => {
       const value = {
         job_id: 'job-1',
         assembled_content: 'text',
         token_usage: null,
         finish_reason: 'stop',
       };
-      expect(isAiStreamPayload(value)).toBe(false);
+      expect(isAiWorkloadPayload(value)).toBe(false);
     });
 
     it('rejects missing finish_reason field entirely', () => {
@@ -234,7 +307,7 @@ describe('ai-stream.guard', () => {
         assembled_content: 'text',
         token_usage: null,
       };
-      expect(isAiStreamPayload(value)).toBe(false);
+      expect(isAiWorkloadPayload(value)).toBe(false);
     });
   });
 

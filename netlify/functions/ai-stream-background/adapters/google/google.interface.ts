@@ -23,6 +23,20 @@ export interface GoogleUsageMetadata {
   totalTokenCount: number;
 }
 
+export type GoogleEmbeddingVectorItem = number;
+
+export interface GoogleEmbeddingContent {
+  values: GoogleEmbeddingVectorItem[];
+}
+
+export interface GoogleEmbeddingResponse {
+  embedding: GoogleEmbeddingContent;
+}
+
+export interface GoogleTokenCountResponse {
+  totalTokenCount: number;
+}
+
 export interface GoogleStreamChunk {
   candidates?: GoogleCandidate[];
 }

@@ -1,11 +1,17 @@
 import type {
   AiAdapter,
   NodeAdapterConstructorParams,
+  NodeEmbeddingRequest,
+  NodeEmbeddingResponse,
   NodeAdapterStreamChunk,
   NodeChatApiRequest,
   NodeModelConfig,
   NodeUserConfig,
 } from '../ai-adapter.interface.ts';
+import type {
+  AnthropicEmbeddingResponse,
+  AnthropicEmbeddingUsage,
+} from './anthropic.interface.ts';
 
 export type AnthropicSdkStreamEvent = {
   type: 'content_block_delta';
@@ -52,6 +58,16 @@ export const mockAnthropicSdkFinalMessagePayload: AnthropicSdkFinalMessagePayloa
     output_tokens: 20,
   },
   stop_reason: 'end_turn',
+};
+
+export const mockAnthropicEmbeddingUsage: AnthropicEmbeddingUsage = {
+  input_tokens: 9,
+  total_tokens: 9,
+};
+
+export const mockAnthropicEmbeddingResponse: AnthropicEmbeddingResponse = {
+  embedding: [0.101, 0.202, 0.303],
+  usage: { ...mockAnthropicEmbeddingUsage },
 };
 
 export function createAnthropicMessagesStreamResult(options: {
@@ -112,6 +128,49 @@ export function createMockAnthropicSdkFinalMessagePayload(
   return result;
 }
 
+export function createMockAnthropicEmbeddingUsage(
+  overrides?: Partial<AnthropicEmbeddingUsage>,
+): AnthropicEmbeddingUsage {
+  if (overrides === undefined) {
+    return { ...mockAnthropicEmbeddingUsage };
+  }
+  const input_tokens: number =
+    overrides.input_tokens === undefined
+      ? mockAnthropicEmbeddingUsage.input_tokens
+      : overrides.input_tokens;
+  const total_tokens: number =
+    overrides.total_tokens === undefined
+      ? mockAnthropicEmbeddingUsage.total_tokens
+      : overrides.total_tokens;
+  return {
+    input_tokens,
+    total_tokens,
+  };
+}
+
+export function createMockAnthropicEmbeddingResponse(
+  overrides?: Partial<AnthropicEmbeddingResponse>,
+): AnthropicEmbeddingResponse {
+  if (overrides === undefined) {
+    return {
+      embedding: [...mockAnthropicEmbeddingResponse.embedding],
+      usage: createMockAnthropicEmbeddingUsage(),
+    };
+  }
+  const embedding: number[] =
+    overrides.embedding === undefined
+      ? [...mockAnthropicEmbeddingResponse.embedding]
+      : overrides.embedding;
+  const usage: AnthropicEmbeddingUsage =
+    overrides.usage === undefined
+      ? createMockAnthropicEmbeddingUsage()
+      : createMockAnthropicEmbeddingUsage(overrides.usage);
+  return {
+    embedding,
+    usage,
+  };
+}
+
 export function createMockAnthropicNodeModelConfig(
   overrides?: Partial<NodeModelConfig>,
 ): NodeModelConfig {
@@ -134,7 +193,7 @@ export function createMockAnthropicNodeUserConfig(
   return { tier_output_cap_tokens };
 }
 
-export function createMockAnthropicNodeAdapterConstructorParams(
+export function buildMockAnthropicNodeAdapterConstructorParams(
   overrides?: Partial<NodeAdapterConstructorParams>,
 ): NodeAdapterConstructorParams {
   if (overrides === undefined) {
@@ -182,7 +241,21 @@ export async function collectNodeAdapterStreamChunks(
   return result;
 }
 
-export function createMockAnthropicNodeAdapter(overrides?: Partial<AiAdapter>): AiAdapter {
+export const mockAnthropicGetEmbedding: AiAdapter['getEmbedding'] = async (
+  _request: NodeEmbeddingRequest,
+  _apiIdentifier: string,
+): Promise<NodeEmbeddingResponse> => {
+  return {
+    embedding: [...mockAnthropicEmbeddingResponse.embedding],
+    tokenUsage: {
+      prompt_tokens: mockAnthropicEmbeddingUsage.input_tokens,
+      completion_tokens: 0,
+      total_tokens: mockAnthropicEmbeddingUsage.total_tokens,
+    },
+  };
+};
+
+export function buildMockAnthropicNodeAdapter(overrides?: Partial<AiAdapter>): AiAdapter {
   async function* defaultSendMessageStream(
     _request: NodeChatApiRequest,
     _apiIdentifier: string,
@@ -215,5 +288,9 @@ export function createMockAnthropicNodeAdapter(overrides?: Partial<AiAdapter>): 
     overrides.sendMessageStream === undefined
       ? defaultSendMessageStream
       : overrides.sendMessageStream;
-  return { sendMessageStream };
+  const adapter: AiAdapter = { sendMessageStream };
+  if (overrides.getEmbedding !== undefined) {
+    adapter.getEmbedding = overrides.getEmbedding;
+  }
+  return adapter;
 }

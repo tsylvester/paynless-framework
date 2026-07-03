@@ -12,6 +12,7 @@ import type {
 import type {
   GetNodeAiAdapterDeps,
   GetNodeAiAdapterParams,
+  NodeAdapterOperation,
 } from './getNodeAiAdapter.interface.ts';
 
 export function isPlainRecord(value: unknown): value is Record<string, unknown> {
@@ -232,6 +233,32 @@ export function isAiAdapter(v: unknown): v is AiAdapter {
   return typeof streamValue === 'function';
 }
 
+export function isAiAdapterWithEmbedding(v: unknown): v is AiAdapter {
+  if (!isAiAdapter(v)) {
+    return false;
+  }
+  if (!('getEmbedding' in v) || v['getEmbedding'] === undefined) {
+    return true;
+  }
+  const embeddingValue: unknown = v['getEmbedding'];
+  return typeof embeddingValue === 'function';
+}
+
+export function isNodeAdapterOperation(v: unknown): v is NodeAdapterOperation {
+  return v === 'stream' || v === 'embedding';
+}
+
+export function isEmbeddingCapableAiAdapter(v: unknown): v is AiAdapter {
+  if (!isAiAdapter(v)) {
+    return false;
+  }
+  if (!('getEmbedding' in v)) {
+    return false;
+  }
+  const embeddingValue: unknown = v['getEmbedding'];
+  return typeof embeddingValue === 'function';
+}
+
 export function isNodeProviderMap(v: unknown): v is NodeProviderMap {
   if (!isPlainRecord(v)) {
     return false;
@@ -268,11 +295,15 @@ export function isGetNodeAiAdapterParams(
   }
   const apiIdentifierValue: unknown = v['apiIdentifier'];
   const apiKeyValue: unknown = v['apiKey'];
+  const operationValue: unknown = v['operation'];
   const modelConfigValue: unknown = v['modelConfig'];
   if (typeof apiIdentifierValue !== 'string' || apiIdentifierValue.length === 0) {
     return false;
   }
   if (typeof apiKeyValue !== 'string' || apiKeyValue.length === 0) {
+    return false;
+  }
+  if (!isNodeAdapterOperation(operationValue)) {
     return false;
   }
   const userConfigValue: unknown = v['userConfig'];

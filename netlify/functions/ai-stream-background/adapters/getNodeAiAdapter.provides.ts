@@ -3,6 +3,7 @@ export type {
   GetNodeAiAdapterDeps,
   GetNodeAiAdapterFn,
   GetNodeAiAdapterParams,
+  NodeAdapterOperation,
 } from './getNodeAiAdapter.interface.ts';
 export type {
   AiAdapter,
@@ -18,6 +19,7 @@ export type {
 } from './ai-adapter.interface.ts';
 export {
   isAiAdapter,
+  isEmbeddingCapableAiAdapter,
   isNodeAdapterStreamChunk,
   isNodeTokenUsage,
   isNodeUserConfig,
@@ -29,5 +31,7 @@ export {
   createMockNodeProviderMap,
   defaultNodeChatApiRequest,
   defaultNodeModelConfig,
+  mockEmbeddingCapableAiAdapter,
   mockAiAdapter,
+  mockStreamOnlyAiAdapter,
 } from './getNodeAiAdapter.mock.ts';

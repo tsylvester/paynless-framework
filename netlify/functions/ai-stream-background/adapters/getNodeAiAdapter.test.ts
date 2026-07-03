@@ -4,17 +4,20 @@ import {
   createMockGetNodeAiAdapterDeps,
   createMockGetNodeAiAdapterParams,
   createMockNodeProviderMap,
+  mockEmbeddingCapableAiAdapter,
   mockAiAdapter,
+  mockStreamOnlyAiAdapter,
 } from './getNodeAiAdapter.mock.ts';
 
 describe('getNodeAiAdapter', () => {
-  it('returns factory result for known prefix openai-gpt-4o and calls factory with modelConfig, apiKey, and userConfig', () => {
+  it('resolves stream operation adapter for matching provider prefix and calls factory with modelConfig, apiKey, and userConfig', () => {
     const factorySpy = vi.fn(() => mockAiAdapter);
     const providerMap = createMockNodeProviderMap({ 'openai-': factorySpy });
     const deps = createMockGetNodeAiAdapterDeps({ providerMap });
     const params = createMockGetNodeAiAdapterParams({
       apiIdentifier: 'openai-gpt-4o',
       apiKey: 'sk-expected',
+      operation: 'stream',
     });
     const adapter = getNodeAiAdapter(deps, params);
     expect(adapter).toBe(mockAiAdapter);
@@ -26,13 +29,14 @@ describe('getNodeAiAdapter', () => {
     });
   });
 
-  it('matches known prefix case-insensitively for OPENAI-GPT-4O', () => {
+  it('matches known prefix case-insensitively for stream operation', () => {
     const factorySpy = vi.fn(() => mockAiAdapter);
     const providerMap = createMockNodeProviderMap({ 'openai-': factorySpy });
     const deps = createMockGetNodeAiAdapterDeps({ providerMap });
     const params = createMockGetNodeAiAdapterParams({
       apiIdentifier: 'OPENAI-GPT-4O',
       apiKey: 'sk-case',
+      operation: 'stream',
     });
     const adapter = getNodeAiAdapter(deps, params);
     expect(adapter).toBe(mockAiAdapter);
@@ -50,6 +54,7 @@ describe('getNodeAiAdapter', () => {
     const deps = createMockGetNodeAiAdapterDeps({ providerMap });
     const params = createMockGetNodeAiAdapterParams({
       apiIdentifier: 'totally-unknown-model-id',
+      operation: 'stream',
     });
     const adapter = getNodeAiAdapter(deps, params);
     expect(adapter).toBe(null);
@@ -62,6 +67,7 @@ describe('getNodeAiAdapter', () => {
     const deps = createMockGetNodeAiAdapterDeps({ providerMap });
     const params = createMockGetNodeAiAdapterParams({
       apiIdentifier: '',
+      operation: 'stream',
     });
     const adapter = getNodeAiAdapter(deps, params);
     expect(adapter).toBe(null);
@@ -70,8 +76,42 @@ describe('getNodeAiAdapter', () => {
 
   it('resolves adapter using default mock NodeProviderMap from createMockGetNodeAiAdapterDeps', () => {
     const deps = createMockGetNodeAiAdapterDeps();
-    const params = createMockGetNodeAiAdapterParams();
+    const params = createMockGetNodeAiAdapterParams({
+      operation: 'stream',
+    });
     const adapter = getNodeAiAdapter(deps, params);
     expect(adapter).toBe(mockAiAdapter);
+  });
+
+  it('resolves embedding operation adapter when resolved adapter has getEmbedding', () => {
+    const embeddingAdapter = mockEmbeddingCapableAiAdapter();
+    const factorySpy = vi.fn(() => embeddingAdapter);
+    const providerMap = createMockNodeProviderMap({ 'openai-': factorySpy });
+    const deps = createMockGetNodeAiAdapterDeps({ providerMap });
+    const params = createMockGetNodeAiAdapterParams({
+      apiIdentifier: 'openai-text-embedding-3-large',
+      operation: 'embedding',
+    });
+
+    const adapter = getNodeAiAdapter(deps, params);
+
+    expect(adapter).toBe(embeddingAdapter);
+    expect(factorySpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns null for embedding operation when resolved adapter lacks getEmbedding', () => {
+    const streamOnlyAdapter = mockStreamOnlyAiAdapter();
+    const factorySpy = vi.fn(() => streamOnlyAdapter);
+    const providerMap = createMockNodeProviderMap({ 'openai-': factorySpy });
+    const deps = createMockGetNodeAiAdapterDeps({ providerMap });
+    const params = createMockGetNodeAiAdapterParams({
+      apiIdentifier: 'openai-text-embedding-3-large',
+      operation: 'embedding',
+    });
+
+    const adapter = getNodeAiAdapter(deps, params);
+
+    expect(adapter).toBe(null);
+    expect(factorySpy).toHaveBeenCalledTimes(1);
   });
 });

@@ -1,25 +1,42 @@
 import type {
   AiAdapter,
   NodeAdapterConstructorParams,
-  NodeChatApiRequest,
-  NodeModelConfig,
+  NodeEmbeddingRequest,
+  NodeEmbeddingVector,
   NodeProviderMap,
+  NodeTokenUsage,
   NodeUserConfig,
 } from './adapters/ai-adapter.interface.ts';
-import { createMockAnthropicNodeAdapter } from './adapters/anthropic/anthropic.mock.ts';
-import { createMockGoogleNodeAdapter } from './adapters/google/google.mock.ts';
+import { buildMockAnthropicNodeAdapter } from './adapters/anthropic/anthropic.mock.ts';
+import { buildGoogleNodeAdapter } from './adapters/google/google.mock.ts';
 import {
-  createMockOpenAINodeAdapter,
+  buildOpenAINodeAdapter,
   mockNodeChatApiRequest,
   mockNodeModelConfig,
 } from './adapters/openai/openai.mock.ts';
 import type { AsyncWorkloadEvent } from '@netlify/async-workloads';
-import type { AiStreamDeps, AiStreamEvent, GetApiKeyFn } from './ai-stream-background.interface.ts';
+import type {
+  AiStreamDeps,
+  AiWorkloadEmbeddingEvent,
+  AiWorkloadEmbeddingPayload,
+  AiWorkloadEvent,
+  AiWorkloadPayload,
+  AiWorkloadStreamEvent,
+  AiWorkloadStreamPayload,
+  GetApiKeyFn,
+} from './ai-stream-background.interface.ts';
 
 export const mockAiStreamSaveResponseUrl: string =
   'http://localhost/mock-saveResponse';
 
 const defaultUserConfig: NodeUserConfig = { tier_output_cap_tokens: null };
+const defaultTokenUsage: NodeTokenUsage = {
+  prompt_tokens: 10,
+  completion_tokens: 20,
+  total_tokens: 30,
+};
+const defaultEmbeddingVector: NodeEmbeddingVector = [0.123, 0.456, 0.789];
+const defaultEmbeddingRequest: NodeEmbeddingRequest = { input: 'embed this text' };
 
 const defaultGetApiKey: GetApiKeyFn = (): string => {
   return 'mock-key';
@@ -28,19 +45,19 @@ const defaultGetApiKey: GetApiKeyFn = (): string => {
 const defaultOpenAiFactory = (
   _params: NodeAdapterConstructorParams,
 ): AiAdapter => {
-  return createMockOpenAINodeAdapter();
+  return buildOpenAINodeAdapter();
 };
 
 const defaultAnthropicFactory = (
   _params: NodeAdapterConstructorParams,
 ): AiAdapter => {
-  return createMockAnthropicNodeAdapter();
+  return buildMockAnthropicNodeAdapter();
 };
 
 const defaultGoogleFactory = (
   _params: NodeAdapterConstructorParams,
 ): AiAdapter => {
-  return createMockGoogleNodeAdapter();
+  return buildGoogleNodeAdapter();
 };
 
 const defaultProviderMap: NodeProviderMap = {
@@ -49,7 +66,7 @@ const defaultProviderMap: NodeProviderMap = {
   'google-': defaultGoogleFactory,
 };
 
-export function createMockAiStreamDeps(
+export function buildMockAiStreamDeps(
   overrides?: Partial<AiStreamDeps>,
 ): AiStreamDeps {
   const providerMap: NodeProviderMap =
@@ -69,47 +86,249 @@ export function createMockAiStreamDeps(
   };
 }
 
-export function createMockAiStreamEvent(
-  overrides?: Partial<AiStreamEvent>,
-): AiStreamEvent {
-  const job_id: string =
-    overrides?.job_id === undefined ? 'mock-job-id' : overrides.job_id;
-  const api_identifier: string =
-    overrides?.api_identifier === undefined
-      ? 'openai-gpt-4o'
-      : overrides.api_identifier;
-  const model_config: NodeModelConfig =
-    overrides?.model_config === undefined
-      ? { ...mockNodeModelConfig }
-      : overrides.model_config;
-  const chat_api_request: NodeChatApiRequest =
-    overrides?.chat_api_request === undefined
-      ? { ...mockNodeChatApiRequest }
-      : overrides.chat_api_request;
-  const sig: string =
-    overrides?.sig === undefined ? 'mock-hmac-sig' : overrides.sig;
-  const user_config: NodeUserConfig =
-    overrides?.user_config === undefined
-      ? defaultUserConfig
-      : overrides.user_config;
+export type AiWorkloadStreamEventOverrides = {
+  [K in keyof AiWorkloadStreamEvent]?: AiWorkloadStreamEvent[K] | null;
+};
+
+export type AiWorkloadEmbeddingEventOverrides = {
+  [K in keyof AiWorkloadEmbeddingEvent]?: AiWorkloadEmbeddingEvent[K] | null;
+};
+
+export type AiWorkloadStreamPayloadOverrides = {
+  [K in keyof AiWorkloadStreamPayload]?: AiWorkloadStreamPayload[K] | null;
+};
+
+export type AiWorkloadEmbeddingPayloadOverrides = {
+  [K in keyof AiWorkloadEmbeddingPayload]?: AiWorkloadEmbeddingPayload[K] | null;
+};
+
+export const mockAiWorkloadStreamEvent: AiWorkloadStreamEvent = {
+  job_id: 'mock-job-id',
+  api_identifier: 'openai-gpt-4o',
+  model_config: { ...mockNodeModelConfig },
+  operation: 'stream',
+  chat_api_request: { ...mockNodeChatApiRequest },
+  sig: 'mock-hmac-sig',
+  user_config: { ...defaultUserConfig },
+};
+
+export const mockAiWorkloadEmbeddingEvent: AiWorkloadEmbeddingEvent = {
+  job_id: 'mock-embedding-job-id',
+  api_identifier: 'openai-text-embedding-3-large',
+  model_config: {
+    ...mockNodeModelConfig,
+    api_identifier: 'openai-text-embedding-3-large',
+    output_token_cost_rate: 0,
+  },
+  operation: 'embedding',
+  embedding_api_request: { ...defaultEmbeddingRequest },
+  sig: 'mock-hmac-sig',
+  user_config: { ...defaultUserConfig },
+};
+
+export const mockAiWorkloadStreamPayload: AiWorkloadStreamPayload = {
+  job_id: 'mock-job-id',
+  operation: 'stream',
+  assembled_content: 'mock stream content',
+  token_usage: { ...defaultTokenUsage },
+  finish_reason: 'stop',
+  sig: 'mock-hmac-sig',
+};
+
+export const mockAiWorkloadEmbeddingPayload: AiWorkloadEmbeddingPayload = {
+  job_id: 'mock-embedding-job-id',
+  operation: 'embedding',
+  embedding: [...defaultEmbeddingVector],
+  token_usage: { ...defaultTokenUsage, completion_tokens: 0, total_tokens: 10 },
+  sig: 'mock-hmac-sig',
+};
+
+export function buildMockAiWorkloadStreamEvent(
+  overrides?: AiWorkloadStreamEventOverrides,
+): AiWorkloadStreamEvent {
+  if (overrides === undefined) {
+    return {
+      ...mockAiWorkloadStreamEvent,
+      model_config: { ...mockAiWorkloadStreamEvent.model_config },
+      chat_api_request: { ...mockAiWorkloadStreamEvent.chat_api_request },
+      user_config: { ...mockAiWorkloadStreamEvent.user_config },
+    };
+  }
   return {
-    job_id,
-    api_identifier,
-    model_config,
-    chat_api_request,
-    sig,
-    user_config,
+    job_id:
+      overrides.job_id !== undefined && overrides.job_id !== null
+        ? overrides.job_id
+        : mockAiWorkloadStreamEvent.job_id,
+    api_identifier:
+      overrides.api_identifier !== undefined && overrides.api_identifier !== null
+        ? overrides.api_identifier
+        : mockAiWorkloadStreamEvent.api_identifier,
+    model_config:
+      overrides.model_config !== undefined && overrides.model_config !== null
+        ? overrides.model_config
+        : { ...mockAiWorkloadStreamEvent.model_config },
+    operation: 'stream',
+    chat_api_request:
+      overrides.chat_api_request !== undefined && overrides.chat_api_request !== null
+        ? overrides.chat_api_request
+        : { ...mockAiWorkloadStreamEvent.chat_api_request },
+    sig:
+      overrides.sig !== undefined && overrides.sig !== null
+        ? overrides.sig
+        : mockAiWorkloadStreamEvent.sig,
+    user_config:
+      overrides.user_config !== undefined && overrides.user_config !== null
+        ? overrides.user_config
+        : { ...mockAiWorkloadStreamEvent.user_config },
   };
 }
 
-export function createMockAsyncWorkloadEvent(
+export function buildAiWorkloadEmbeddingEvent(
+  overrides?: AiWorkloadEmbeddingEventOverrides,
+): AiWorkloadEmbeddingEvent {
+  if (overrides === undefined) {
+    return {
+      ...mockAiWorkloadEmbeddingEvent,
+      model_config: { ...mockAiWorkloadEmbeddingEvent.model_config },
+      embedding_api_request: { ...mockAiWorkloadEmbeddingEvent.embedding_api_request },
+      user_config: { ...mockAiWorkloadEmbeddingEvent.user_config },
+    };
+  }
+  return {
+    job_id:
+      overrides.job_id !== undefined && overrides.job_id !== null
+        ? overrides.job_id
+        : mockAiWorkloadEmbeddingEvent.job_id,
+    api_identifier:
+      overrides.api_identifier !== undefined && overrides.api_identifier !== null
+        ? overrides.api_identifier
+        : mockAiWorkloadEmbeddingEvent.api_identifier,
+    model_config:
+      overrides.model_config !== undefined && overrides.model_config !== null
+        ? overrides.model_config
+        : { ...mockAiWorkloadEmbeddingEvent.model_config },
+    operation: 'embedding',
+    embedding_api_request:
+      overrides.embedding_api_request !== undefined && overrides.embedding_api_request !== null
+        ? overrides.embedding_api_request
+        : { ...mockAiWorkloadEmbeddingEvent.embedding_api_request },
+    sig:
+      overrides.sig !== undefined && overrides.sig !== null
+        ? overrides.sig
+        : mockAiWorkloadEmbeddingEvent.sig,
+    user_config:
+      overrides.user_config !== undefined && overrides.user_config !== null
+        ? overrides.user_config
+        : { ...mockAiWorkloadEmbeddingEvent.user_config },
+  };
+}
+
+export function buildAiWorkloadEvent(
+  overrides?: Partial<AiWorkloadEvent>,
+): AiWorkloadEvent {
+  if (overrides?.operation === 'embedding') {
+    return buildAiWorkloadEmbeddingEvent(overrides);
+  }
+  if (overrides?.operation === 'stream') {
+    return buildMockAiWorkloadStreamEvent(overrides);
+  }
+  return buildMockAiWorkloadStreamEvent();
+}
+
+export function buildAiWorkloadStreamPayload(
+  overrides?: AiWorkloadStreamPayloadOverrides,
+): AiWorkloadStreamPayload {
+  if (overrides === undefined) {
+    return {
+      ...mockAiWorkloadStreamPayload,
+      token_usage:
+        mockAiWorkloadStreamPayload.token_usage === null
+          ? null
+          : { ...mockAiWorkloadStreamPayload.token_usage },
+    };
+  }
+  return {
+    job_id:
+      overrides.job_id !== undefined && overrides.job_id !== null
+        ? overrides.job_id
+        : mockAiWorkloadStreamPayload.job_id,
+    operation: 'stream',
+    assembled_content:
+      overrides.assembled_content !== undefined && overrides.assembled_content !== null
+        ? overrides.assembled_content
+        : mockAiWorkloadStreamPayload.assembled_content,
+    token_usage:
+      overrides.token_usage !== undefined
+        ? overrides.token_usage
+        : mockAiWorkloadStreamPayload.token_usage,
+    finish_reason:
+      overrides.finish_reason !== undefined
+        ? overrides.finish_reason
+        : mockAiWorkloadStreamPayload.finish_reason,
+    sig:
+      overrides.sig !== undefined && overrides.sig !== null
+        ? overrides.sig
+        : mockAiWorkloadStreamPayload.sig,
+  };
+}
+
+export function buildAiWorkloadEmbeddingPayload(
+  overrides?: AiWorkloadEmbeddingPayloadOverrides,
+): AiWorkloadEmbeddingPayload {
+  if (overrides === undefined) {
+    return {
+      ...mockAiWorkloadEmbeddingPayload,
+      embedding: [...mockAiWorkloadEmbeddingPayload.embedding],
+      token_usage: { ...mockAiWorkloadEmbeddingPayload.token_usage },
+    };
+  }
+  return {
+    job_id:
+      overrides.job_id !== undefined && overrides.job_id !== null
+        ? overrides.job_id
+        : mockAiWorkloadEmbeddingPayload.job_id,
+    operation: 'embedding',
+    embedding:
+      overrides.embedding !== undefined && overrides.embedding !== null
+        ? overrides.embedding
+        : [...mockAiWorkloadEmbeddingPayload.embedding],
+    token_usage:
+      overrides.token_usage !== undefined && overrides.token_usage !== null
+        ? overrides.token_usage
+        : { ...mockAiWorkloadEmbeddingPayload.token_usage },
+    sig:
+      overrides.sig !== undefined && overrides.sig !== null
+        ? overrides.sig
+        : mockAiWorkloadEmbeddingPayload.sig,
+  };
+}
+
+export function buildMockAiWorkloadPayload(
+  overrides?: Partial<AiWorkloadPayload>,
+): AiWorkloadPayload {
+  if (overrides?.operation === 'embedding') {
+    return buildAiWorkloadEmbeddingPayload(overrides);
+  }
+  if (overrides?.operation === 'stream') {
+    return buildAiWorkloadStreamPayload(overrides);
+  }
+  return buildAiWorkloadStreamPayload();
+}
+
+export function buildMockAiStreamEvent(
+  overrides?: Partial<AiWorkloadStreamEvent>,
+): AiWorkloadStreamEvent {
+  return buildMockAiWorkloadStreamEvent(overrides);
+}
+
+export function buildMockAsyncWorkloadEvent(
   overrides?: Partial<AsyncWorkloadEvent>,
 ): AsyncWorkloadEvent {
   const eventName: string =
     overrides?.eventName === undefined ? 'ai-stream' : overrides.eventName;
   const eventData: unknown =
     overrides?.eventData === undefined
-      ? createMockAiStreamEvent()
+      ? buildMockAiWorkloadStreamEvent()
       : overrides.eventData;
   const eventId: string =
     overrides?.eventId === undefined ? 'mock-event-id' : overrides.eventId;

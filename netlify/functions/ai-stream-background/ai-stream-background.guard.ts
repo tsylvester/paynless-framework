@@ -1,7 +1,8 @@
 import type {
   AiStreamDeps,
-  AiStreamEvent,
-  AiStreamPayload,
+  AiWorkloadEvent,
+  AiWorkloadOperation,
+  AiWorkloadPayload,
 } from './ai-stream-background.interface.ts';
 import {
   isNodeChatApiRequest,
@@ -11,7 +12,40 @@ import {
   isPlainRecord,
 } from './adapters/getNodeAiAdapter.guard.ts';
 
-export function isAiStreamEvent(v: unknown): v is AiStreamEvent {
+function isAiWorkloadOperation(value: unknown): value is AiWorkloadOperation {
+  return value === 'stream' || value === 'embedding';
+}
+
+function isNodeEmbeddingRequest(value: unknown): boolean {
+  if (!isPlainRecord(value)) {
+    return false;
+  }
+  if (!('input' in value)) {
+    return false;
+  }
+  const inputValue: unknown = value['input'];
+  if (typeof inputValue !== 'string') {
+    return false;
+  }
+  return inputValue.length > 0;
+}
+
+function isNodeEmbeddingVector(value: unknown): boolean {
+  if (!Array.isArray(value)) {
+    return false;
+  }
+  if (value.length === 0) {
+    return false;
+  }
+  for (const item of value) {
+    if (typeof item !== 'number') {
+      return false;
+    }
+  }
+  return true;
+}
+
+export function isAiWorkloadEvent(v: unknown): v is AiWorkloadEvent {
   if (!isPlainRecord(v)) {
     return false;
   }
@@ -34,53 +68,101 @@ export function isAiStreamEvent(v: unknown): v is AiStreamEvent {
   if (!isNodeModelConfig(modelConfigValue)) {
     return false;
   }
-  if (!('chat_api_request' in v)) {
-    return false;
-  }
-  const chatApiValue: unknown = v['chat_api_request'];
-  if (!isNodeChatApiRequest(chatApiValue)) {
-    return false;
-  }
-  if (chatApiValue.message.length === 0) {
-    return false;
-  }
   if (!('user_config' in v) || !isNodeUserConfig(v['user_config'])) {
+    return false;
+  }
+  if (!('operation' in v)) {
+    return false;
+  }
+  const operationValue: unknown = v['operation'];
+  if (!isAiWorkloadOperation(operationValue)) {
+    return false;
+  }
+  if (operationValue === 'stream') {
+    if (!('chat_api_request' in v)) {
+      return false;
+    }
+    const chatApiValue: unknown = v['chat_api_request'];
+    if (!isNodeChatApiRequest(chatApiValue)) {
+      return false;
+    }
+    if (chatApiValue.message.length === 0) {
+      return false;
+    }
+    if ('embedding_api_request' in v) {
+      return false;
+    }
+    return true;
+  }
+  if (!('embedding_api_request' in v)) {
+    return false;
+  }
+  const embeddingRequestValue: unknown = v['embedding_api_request'];
+  if (!isNodeEmbeddingRequest(embeddingRequestValue)) {
+    return false;
+  }
+  if ('chat_api_request' in v) {
     return false;
   }
   return true;
 }
 
-export function isAiStreamPayload(v: unknown): v is AiStreamPayload {
+export function isAiWorkloadPayload(v: unknown): v is AiWorkloadPayload {
   if (!isPlainRecord(v)) {
     return false;
   }
   const jobIdValue: unknown = v['job_id'];
-  const assembledContentValue: unknown = v['assembled_content'];
-  if (typeof jobIdValue !== 'string') {
+  const sigValue: unknown = v['sig'];
+  if (typeof jobIdValue !== 'string' || typeof sigValue !== 'string') {
     return false;
   }
-  if (typeof assembledContentValue !== 'string') {
+  if (!('operation' in v)) {
+    return false;
+  }
+  const operationValue: unknown = v['operation'];
+  if (!isAiWorkloadOperation(operationValue)) {
     return false;
   }
   if (!('token_usage' in v)) {
     return false;
   }
   const tokenUsageValue: unknown = v['token_usage'];
-  if (tokenUsageValue !== null && !isNodeTokenUsage(tokenUsageValue)) {
+
+  if (operationValue === 'stream') {
+    if (!('assembled_content' in v)) {
+      return false;
+    }
+    const assembledContentValue: unknown = v['assembled_content'];
+    if (typeof assembledContentValue !== 'string') {
+      return false;
+    }
+    if (tokenUsageValue !== null && !isNodeTokenUsage(tokenUsageValue)) {
+      return false;
+    }
+    if (!('finish_reason' in v)) {
+      return false;
+    }
+    const finishReasonValue: unknown = v['finish_reason'];
+    if (finishReasonValue !== null && typeof finishReasonValue !== 'string') {
+      return false;
+    }
+    if ('embedding' in v) {
+      return false;
+    }
+    return true;
+  }
+
+  if (!isNodeTokenUsage(tokenUsageValue)) {
     return false;
   }
-  if (!('finish_reason' in v)) {
+  if (!('embedding' in v)) {
     return false;
   }
-  const finishReasonValue: unknown = v['finish_reason'];
-  if (finishReasonValue !== null && typeof finishReasonValue !== 'string') {
+  const embeddingValue: unknown = v['embedding'];
+  if (!isNodeEmbeddingVector(embeddingValue)) {
     return false;
   }
-  if (!('sig' in v)) {
-    return false;
-  }
-  const sigValue: unknown = v['sig'];
-  if (typeof sigValue !== 'string') {
+  if ('assembled_content' in v || 'finish_reason' in v) {
     return false;
   }
   return true;

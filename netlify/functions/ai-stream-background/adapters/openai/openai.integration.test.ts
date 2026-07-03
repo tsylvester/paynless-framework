@@ -1,18 +1,29 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
+  NodeAdapterFactory,
   NodeAdapterConstructorParams,
   NodeAdapterStreamChunk,
   NodeChatApiRequest,
+  NodeEmbeddingRequest,
+  NodeEmbeddingResponse,
+  NodeProviderMap,
 } from '../ai-adapter.interface.ts';
+import { getNodeAiAdapter } from '../getNodeAiAdapter.ts';
+import type {
+  GetNodeAiAdapterDeps,
+  GetNodeAiAdapterParams,
+} from '../getNodeAiAdapter.interface.ts';
 import {
   isAiAdapter,
+  isAiAdapterWithEmbedding,
   isNodeAdapterStreamChunk,
 } from '../getNodeAiAdapter.guard.ts';
 import { createOpenAINodeAdapter } from './openai.ts';
 
-const { chatCompletionsCreate } = vi.hoisted(() => {
+const { chatCompletionsCreate, embeddingsCreate } = vi.hoisted(() => {
   return {
     chatCompletionsCreate: vi.fn(),
+    embeddingsCreate: vi.fn(),
   };
 });
 
@@ -35,11 +46,18 @@ vi.mock('openai', () => {
       };
     };
 
+    public embeddings: {
+      create: typeof embeddingsCreate;
+    };
+
     public constructor() {
       this.chat = {
         completions: {
           create: chatCompletionsCreate,
         },
+      };
+      this.embeddings = {
+        create: embeddingsCreate,
       };
     }
   }
@@ -66,6 +84,7 @@ async function* integrationSdkStream(): AsyncGenerator<unknown, void, undefined>
 describe('createOpenAINodeAdapter (integration)', () => {
   beforeEach(() => {
     chatCompletionsCreate.mockReset();
+    embeddingsCreate.mockReset();
   });
 
   it('constructs an adapter that satisfies isAiAdapter, streams through mocked SDK for openai-gpt-4o, and yields NodeAdapterStreamChunk values', async () => {
@@ -158,6 +177,68 @@ describe('createOpenAINodeAdapter (integration)', () => {
     expect(chatCompletionsCreate).toHaveBeenCalledWith(
       expect.objectContaining({
         max_completion_tokens: 32_768,
+      }),
+    );
+  });
+
+  it('resolves provider map -> selector -> adapter and returns normalized embedding response', async () => {
+    const openAiFactory: NodeAdapterFactory = createOpenAINodeAdapter;
+    const providerMap: NodeProviderMap = {
+      openai: openAiFactory,
+    };
+    const deps: GetNodeAiAdapterDeps = { providerMap };
+    const params: GetNodeAiAdapterParams = {
+      apiIdentifier: 'openai-gpt-4o',
+      apiKey: 'sk-integration-openai-embedding',
+      modelConfig: {
+        api_identifier: 'openai-gpt-4o',
+        input_token_cost_rate: 0.001,
+        output_token_cost_rate: 0.002,
+      },
+      userConfig: { tier_output_cap_tokens: null },
+    };
+
+    const adapter = getNodeAiAdapter(deps, params);
+    expect(adapter !== null).toBe(true);
+    if (adapter === null) {
+      throw new Error('Expected adapter from selector for openai provider.');
+    }
+
+    expect(isAiAdapter(adapter)).toBe(true);
+    expect(isAiAdapterWithEmbedding(adapter)).toBe(true);
+
+    embeddingsCreate.mockResolvedValue({
+      data: [{ embedding: [0.25, 0.5, 0.75] }],
+      usage: {
+        prompt_tokens: 12,
+        total_tokens: 12,
+      },
+    });
+
+    expect(adapter.getEmbedding !== undefined).toBe(true);
+    if (adapter.getEmbedding === undefined) {
+      throw new Error('Expected embedding-capable adapter from selector.');
+    }
+
+    const request: NodeEmbeddingRequest = { input: 'integration embedding input' };
+    const response: NodeEmbeddingResponse = await adapter.getEmbedding(
+      request,
+      params.apiIdentifier,
+    );
+
+    expect(response).toEqual({
+      embedding: [0.25, 0.5, 0.75],
+      tokenUsage: {
+        prompt_tokens: 12,
+        completion_tokens: 0,
+        total_tokens: 12,
+      },
+    });
+
+    expect(embeddingsCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        model: 'gpt-4o',
+        input: 'integration embedding input',
       }),
     );
   });

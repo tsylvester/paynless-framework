@@ -5,6 +5,8 @@ import type {
   NodeAdapterStreamChunk,
   NodeChatApiRequest,
   NodeChatMessage,
+  NodeEmbeddingRequest,
+  NodeEmbeddingResponse,
   NodeModelConfig,
   NodeOutboundDocument,
   NodeTokenUsage,
@@ -219,5 +221,75 @@ describe('ai-adapter.interface contract', () => {
     expect(params.userConfig.tier_output_cap_tokens).toBe(null);
     expect(params.modelConfig.api_identifier).toBe('openai-gpt-4o');
     expect(params.apiKey).toBe('sk-test');
+  });
+
+  it('accepts NodeEmbeddingRequest with a string input', () => {
+    const request: NodeEmbeddingRequest = {
+      input: 'embed me',
+    };
+    expect(typeof request.input).toBe('string');
+  });
+
+  it('accepts NodeEmbeddingResponse with numeric embedding and token usage', () => {
+    const tokenUsage: NodeTokenUsage = {
+      prompt_tokens: 1,
+      completion_tokens: 0,
+      total_tokens: 1,
+    };
+    const response: NodeEmbeddingResponse = {
+      embedding: [0, 1, 2],
+      tokenUsage,
+    };
+    expect(Array.isArray(response.embedding)).toBe(true);
+    expect(response.embedding[0]).toBe(0);
+    expect(response.tokenUsage.total_tokens).toBe(1);
+  });
+
+  it('accepts AiAdapter with optional getEmbedding alongside sendMessageStream', () => {
+    const adapter: AiAdapter = {
+      async *sendMessageStream() {
+        const chunk: NodeAdapterStreamChunk = {
+          type: 'done',
+          finish_reason: 'stop',
+        };
+        yield chunk;
+      },
+      async getEmbedding(
+        request: NodeEmbeddingRequest,
+        apiIdentifier: string,
+      ): Promise<NodeEmbeddingResponse> {
+        const tokenUsage: NodeTokenUsage = {
+          prompt_tokens: 1,
+          completion_tokens: 0,
+          total_tokens: 1,
+        };
+        return {
+          embedding: [request.input.length],
+          tokenUsage,
+        };
+      },
+    };
+    expect(typeof adapter.sendMessageStream).toBe('function');
+    expect(typeof adapter.getEmbedding).toBe('function');
+  });
+
+  it('rejects NodeEmbeddingRequest with non-string input', () => {
+    const request: NodeEmbeddingRequest = {
+      input: 123,
+    };
+    expect(typeof request.input).not.toBe('string');
+  });
+
+  it('rejects NodeEmbeddingResponse with non-numeric embedding elements', () => {
+    const tokenUsage: NodeTokenUsage = {
+      prompt_tokens: 1,
+      completion_tokens: 0,
+      total_tokens: 1,
+    };
+    const response: NodeEmbeddingResponse = {
+      embedding: [0, 'bad'],
+      tokenUsage,
+    };
+    expect(typeof response.embedding[1]).not.toBe('number');
   });
 });

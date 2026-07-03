@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { AiAdapter } from './ai-adapter.interface.ts';
 import {
   createMockGetNodeAiAdapterDeps,
   createMockGetNodeAiAdapterParams,
@@ -7,8 +8,10 @@ import {
 } from './getNodeAiAdapter.mock.ts';
 import {
   isAiAdapter,
+  isEmbeddingCapableAiAdapter,
   isGetNodeAiAdapterDeps,
   isGetNodeAiAdapterParams,
+  isAiAdapterWithEmbedding,
   isNodeAdapterStreamChunk,
   isNodeModelConfig,
   isNodeProviderMap,
@@ -74,6 +77,29 @@ describe('getNodeAiAdapter.guard', () => {
       const { userConfig: _userConfig, ...missingUserConfig } = valid;
       expect(isGetNodeAiAdapterParams(missingUserConfig)).toBe(false);
     });
+
+    it("accepts operation: 'stream'", () => {
+      const params = createMockGetNodeAiAdapterParams({
+        operation: 'stream',
+      });
+      expect(isGetNodeAiAdapterParams(params)).toBe(true);
+    });
+
+    it("accepts operation: 'embedding'", () => {
+      const params = createMockGetNodeAiAdapterParams({
+        operation: 'embedding',
+      });
+      expect(isGetNodeAiAdapterParams(params)).toBe(true);
+    });
+
+    it('rejects unknown operation value', () => {
+      const validParams = createMockGetNodeAiAdapterParams();
+      const params = {
+        ...validParams,
+        operation: 'unknown',
+      };
+      expect(isGetNodeAiAdapterParams(params)).toBe(false);
+    });
   });
 
   describe('isAiAdapter', () => {
@@ -89,6 +115,73 @@ describe('getNodeAiAdapter.guard', () => {
     it('rejects non-function sendMessageStream', () => {
       const invalid = { sendMessageStream: 'not-fn' };
       expect(isAiAdapter(invalid)).toBe(false);
+    });
+  });
+
+  describe('isAiAdapterWithEmbedding', () => {
+    it('accepts adapter object with valid sendMessageStream and function getEmbedding', () => {
+      const adapter: AiAdapter = {
+        async *sendMessageStream() {
+          yield {
+            type: 'done',
+            finish_reason: 'stop',
+          };
+        },
+        async getEmbedding() {
+          return {
+            embedding: [1],
+            tokenUsage: {
+              prompt_tokens: 1,
+              completion_tokens: 0,
+              total_tokens: 1,
+            },
+          };
+        },
+      };
+      expect(isAiAdapterWithEmbedding(adapter)).toBe(true);
+    });
+
+    it('rejects adapter object with non-function getEmbedding', () => {
+      const invalidAdapter: AiAdapter = Object.assign({}, mockAiAdapter, {
+        getEmbedding: 'not-fn',
+      });
+      expect(isAiAdapterWithEmbedding(invalidAdapter)).toBe(false);
+    });
+  });
+
+  describe('isEmbeddingCapableAiAdapter', () => {
+    it('accepts adapter with function getEmbedding', () => {
+      const adapter: AiAdapter = {
+        async *sendMessageStream() {
+          yield {
+            type: 'done',
+            finish_reason: 'stop',
+          };
+        },
+        async getEmbedding() {
+          return {
+            embedding: [1],
+            tokenUsage: {
+              prompt_tokens: 1,
+              completion_tokens: 0,
+              total_tokens: 1,
+            },
+          };
+        },
+      };
+      expect(isEmbeddingCapableAiAdapter(adapter)).toBe(true);
+    });
+
+    it('rejects adapter without getEmbedding', () => {
+      const adapter: AiAdapter = {
+        async *sendMessageStream() {
+          yield {
+            type: 'done',
+            finish_reason: 'stop',
+          };
+        },
+      };
+      expect(isEmbeddingCapableAiAdapter(adapter)).toBe(false);
     });
   });
 

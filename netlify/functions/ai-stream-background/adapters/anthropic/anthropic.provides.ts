@@ -1,6 +1,9 @@
 export { createAnthropicNodeAdapter } from './anthropic.ts';
 export type {
   AnthropicContentBlockDeltaEvent,
+  AnthropicEmbeddingResponse,
+  AnthropicEmbeddingUsage,
+  AnthropicEmbeddingVectorItem,
   AnthropicFinalMessage,
   AnthropicStopReason,
   AnthropicTextDelta,
@@ -8,6 +11,8 @@ export type {
 } from './anthropic.interface.ts';
 export {
   isAnthropicContentBlockDeltaEvent,
+  isAnthropicEmbeddingResponse,
+  isAnthropicEmbeddingUsage,
   isAnthropicFinalMessage,
   isAnthropicStopReason,
   isAnthropicTextDelta,
@@ -16,11 +21,16 @@ export {
 export {
   collectNodeAdapterStreamChunks,
   createAnthropicMessagesStreamResult,
-  createMockAnthropicNodeAdapter,
-  createMockAnthropicNodeAdapterConstructorParams,
+  createMockAnthropicEmbeddingResponse,
+  createMockAnthropicEmbeddingUsage,
+  buildMockAnthropicNodeAdapter,
+  buildMockAnthropicNodeAdapterConstructorParams,
   createMockAnthropicNodeChatApiRequest,
   createMockAnthropicNodeModelConfig,
   createMockAnthropicSdkFinalMessagePayload,
+  mockAnthropicEmbeddingResponse,
+  mockAnthropicEmbeddingUsage,
+  mockAnthropicGetEmbedding,
   mockAnthropicNodeAdapterConstructorParams,
   mockAnthropicNodeChatApiRequest,
   mockAnthropicNodeModelConfig,

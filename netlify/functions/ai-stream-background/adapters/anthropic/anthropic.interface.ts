@@ -19,6 +19,18 @@ export interface AnthropicUsage {
   output_tokens: number;
 }
 
+export type AnthropicEmbeddingVectorItem = number;
+
+export interface AnthropicEmbeddingUsage {
+  input_tokens: number;
+  total_tokens: number;
+}
+
+export interface AnthropicEmbeddingResponse {
+  embedding: AnthropicEmbeddingVectorItem[];
+  usage: AnthropicEmbeddingUsage;
+}
+
 export interface AnthropicFinalMessage {
   usage: AnthropicUsage;
   stop_reason: AnthropicStopReason | null;
