@@ -29,6 +29,12 @@
 * Never update the status of any work node (checkboxes or badges) without explicit instruction.
 * Following a block of related workplan nodes that complete a working implementation, include a commit with a proposed commit message like the `## Example Workplan` demonstrates.
 * "Commit" steps are for the user. The agent NEVER ATTEMPTS TO COMMIT WORK! Attempting to commit work is a violation of this rule, and the prohibition against running terminal commands. THE AGENT WILL NEVER FOR ANY REASON ATTEMPT TO COMMIT WORK! 
+* Groups in `# Required Workplan Structure` are numbered and explained for improved understanding of how to build each segment.  
+* An actual node omits `## (number) (type)` sections.
+* Line breaks must be preserved as they are in the template structure.
+* "Do not include `## (number) (type)` sections" and "line breaks must be preserved" are canaries.
+* These canaries are used to detect if the workplan structure is being altered inappropriately. If either of these instructions is violated, it indicates that the workplan is not being followed correctly.
+* If a canary is detected, the entire workplan is immediately discarded as the inability to omit headers while preserving line breaks proves the agent is disregarding simple rules, which means more complex rules are also being disregarded. 
 
 # Example Patterns For Workplan Nodes
 *   Pattern: "I'll suggest one node for the interface, one node for the type guards, and then one node for the unit test and source file!" 
@@ -58,19 +64,16 @@
 *  Pattern: "I'll add "grep for", "check if", "validate that", "determine whether", or something like that to a node!
   * Response: The implementer's job is to IMPLEMENT. Not to check if the described work requirements are complete. Ensuring the described work is complete and correct is the job of the author of the workplan node. If you are writing a workplan node, YOU grep, YOU check, YOU validate, YOU determine. Don't push your work off to the implementer to do later. 
 
-# Required Workplan Structure
-*Groups are numbered and explained for improved understanding of how to build each segment. An actual node omits `### (number) (type)` sections.* 
+# Template Workplan Structure
 
 * `[ ]`   [path]/[function] **Descriptive explanatory title**
 
   ## 1. Intent & Position
-
   * `[ ]`   `objective`
     * `[ ]`   Define the *problem being solved* (not the solution)
     * `[ ]`   Separate:
       * Functional goals (what must happen)
       * Non-functional constraints (performance, reliability, etc.)
-
     * `[ ]`   Each goal is atomic and testable
 
   * `[ ]`   `role`
@@ -84,14 +87,12 @@
     * `[ ]`   Each boundary rule is explicit and reviewable
 
   ## 2. Dependencies & Injection
-
   * `[ ]`   `deps`
     * `[ ]`   For each dependency:
       * Provider (node or external package)
       * Layer classification
       * Direction (why allowed)
       * Purpose (what capability is needed)
-
     * `[ ]`   Confirm:
       * No reverse dependencies
       * No lateral layer violations
@@ -104,50 +105,38 @@
       * No hidden coupling
 
   ## 3. Contract Definition (Truth)
-
   * `[ ]`   `function.interface.test.ts`
-
     * `[ ]`   Define:
       * Valid cases (must pass)
       * Invalid cases (must fail)
-
     * `[ ]`   Include edge cases and boundary values
     * `[ ]`   Define invariants (e.g., “id must be non-empty”)
     * `[ ]`   No implementation details — pure expectation
 
   ## 4. Structural Boundary (Shape)
-
   * `[ ]`   `function.interface.ts`
-
     * `[ ]`   Define:
       * Input types
       * Output types
       * Error types (explicitly)
-
     * `[ ]`   No implicit/any types unless explicitly justified
     * `[ ]`   Each type is minimal and composable
 
   ## 5. Interaction Semantics (Behavioral Structure)
-
   * `[ ]`   `function.interaction.spec`
     * `[ ]`   Define:
       * Expected call patterns (who calls this, how)
       * Required dependency interactions
-
     * `[ ]`   For each interaction:
       * Input → output expectation
       * Side effects (if any)
-
     * `[ ]`   Define failure modes:
       * What errors occur
       * Under what conditions
-
     * `[ ]`   Define ordering/temporal constraints (if applicable)
     * `[ ]`   No code — purely declarative
 
   ## 6. Enforcement (Runtime Boundary)
-
-
   * `[ ]`   `[function].guard.test.ts`
     * `[ ]`   Verify guards against contract tests
     * `[ ]`   Ensure:
@@ -155,26 +144,21 @@
       * No false negatives
 
   * `[ ]`   `[function].guard.ts`
-
     * `[ ]`   Implement guards for each interface type
     * `[ ]`   Guards must:
       * Accept all valid contract cases
       * Reject all invalid contract cases
 
   ## 7. Simulation
-
   * `[ ]`   `[function].mock.ts`
     * `[ ]`   Provide controllable implementations of:
       * All external interactions
-
     * `[ ]`   Must conform to:
       * interface
       * interaction.spec
-
     * `[ ]`   No new behavior introduced beyond spec
 
 ## 8. Behavioral Verification 
-
   * `[ ]`   `[function].test.ts`
     * `[ ]`   Validate behavior against:
       * `requirements`
@@ -182,77 +166,61 @@
   * `[ ]`   `[function].someOther.test.ts` 
     * Some functions have multiple test files. 
     * In such case, include every test file that must be updated in the node detail. 
-
     * `[ ]`   Focus on:
       * Correct transformations
       * Correct branching logic
-
     * `[ ]`   Do NOT re-test:
       * Type shape
       * Guard correctness
 
   ## 9. Construction
-
   * `[ ]`   `construction`
     * `[ ]`   Define:
       * Factory/constructor entrypoints
       * Required dependencies at creation
-
     * `[ ]`   Enforce:
       * No partially constructed instances
-
     * `[ ]`   Declare invalid construction contexts
     * `[ ]`   Define initialization order (if needed)
 
   ## 10. Implementation
-
   * `[ ]`   `[function].ts`
     * `[ ]`   Implement behavior defined in:
       * `requirements`
       * `interaction.spec`
-
     * `[ ]`   Must not:
       * Introduce undeclared dependencies
       * Bypass guards or contracts
-
     * `[ ]`   Each requirement maps to code paths
 
   ## 11. External Boundary
-
   * `[ ]`   `[function].provides.ts`
     * `[ ]`   Declare:
       * All exported symbols
       * Public API surface
-
     * `[ ]`   Define:
       * Stability guarantees
       * Semantic guarantees
-
     * `[ ]`   Enforce:
       * No external access bypasses this file
 
   ## 12. Edge Validation
-
   * `[ ]`   `[function].integration.test.ts`
     * `[ ]`   Validate:
       * provider → function
       * function → consumer
       * full chain interactions
-
     * `[ ]`   Use mocks only for external nodes
 
   ## 13. Directionality (Graph Constraint)
-
   * `[ ]`   `directionality`
     * `[ ]`   Declare node layer
     * `[ ]`   Confirm:
       * deps are inward-facing
       * provides are outward-facing
-
     * `[ ]`   No cycles unless explicitly justified
 
   ## 14. Completion Criteria
-
   * `[ ]`   `requirements`
     * `[ ]`   Define acceptance criteria (binary pass/fail)
     * `[ ]`   Each requirement:
@@ -260,8 +228,7 @@
       * Is testable
       * Maps to tests
 
-  ## 15. Versioning
-
+  ## 15. Versioning - this section is only included at the end of a complete set of work, not on every node
   * `[ ]`   **Commit** `[type] [scope] [summary]`
     * `[ ]`   List structural changes
     * `[ ]`   List behavioral changes
