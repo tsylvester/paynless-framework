@@ -16,6 +16,449 @@
 
 * **Embedding Jobs Implementation** 
 
+## WS-0 — FOUNDATION: schema + shared contracts
+
+* `[ ]`   supabase/migrations/`<ts>_embedding_jobs_schema_foundation.sql` **[DB] Establish the embedding-jobs schema foundation: add the EMBED job type and promote dialectic_memory to a first-class, attributable, polymorphically-sourced artifact store**
+
+  * `[ ]`   `objective`
+    * `[ ]`   Solve two foundational schema defects that block job-driven embedding: (a) there is no `EMBED` job type to route embedding work, and (b) `dialectic_memory` cannot record valid attribution or a non-contribution source, which breaks economics, RLS, ownership, and provenance.
+    * `[ ]`   Functional goals:
+      * `[ ]`   Add `EMBED` to `public.dialectic_job_type_enum`.
+      * `[ ]`   Add real attribution to `dialectic_memory`: `user_id` (FK `auth.users`) and `wallet_id` (FK `public.token_wallets`).
+      * `[ ]`   Replace contribution-only `source_contribution_id` with a polymorphic reference (`source_type` + `source_id`) spanning `dialectic_contributions`, `dialectic_project_resources`, and `dialectic_feedback`.
+      * `[ ]`   Extend `match_dialectic_chunks` RPC to return `source_type`/`source_id` so retrieval can link a chunk back to its originating row type.
+      * `[ ]`   Regenerate `supabase/functions/types_db.ts` as the single schema-truth source.
+    * `[ ]`   Non-functional constraints:
+      * `[ ]`   Preserve the existing vector dimension `extensions.vector(3072)` (dimension is formalized in provider config in a separate node, not changed here).
+      * `[ ]`   Preserve the existing hybrid FTS + vector RRF ranking behavior of `match_dialectic_chunks`.
+      * `[ ]`   New attribution/source columns are `NOT NULL` so no junk/nullable attribution can be written.
+      * `[ ]`   All schema changes occur in this single migration (one pass, no follow-up schema migration for WS-0).
+
+  * `[ ]`   `role`
+    * `[ ]`   Infrastructure / persistence-schema node. It defines the routing enum and the storage contract that every downstream embedding node (worker routing, saveResponse, indexing/rag restructure, retrieval) depends on.
+    * `[ ]`   Out of scope (each its own node): the embedding-dimension config object + accessor; the `DialecticEmbeddingJobPayload` type + guard; the `CompressionCandidate` union; any application code.
+
+  * `[ ]`   `module`
+    * `[ ]`   Bounded context: `public.dialectic_job_type_enum`, `public.dialectic_memory` table, and `public.match_dialectic_chunks` RPC only.
+    * `[ ]`   Inside boundary: the enum value set, memory row shape, attribution FKs, polymorphic source columns, dedup index, RPC return shape.
+    * `[ ]`   Outside boundary: job routing code, payload types, service logic, provider config.
+
+  * `[ ]`   `deps`
+    * `[ ]`   `auth.users` (existing) — provider of `user_id` FK target. Direction allowed: schema→auth is standard for ownership.
+    * `[ ]`   `public.token_wallets` (existing; PK `wallet_id`, nullable `user_id`→user_profiles) — provider of `wallet_id` FK target for economics.
+    * `[ ]`   `public.dialectic_sessions` (existing) — unchanged `session_id` FK.
+    * `[ ]`   `dialectic_contributions` / `dialectic_project_resources` / `dialectic_feedback` — logical targets of the polymorphic `source_id`; enforced by the `source_type` enum + application layer, NOT by a single FK (polymorphic association pattern).
+    * `[ ]`   `public.dialectic_job_type_enum` (existing type) — extended in place.
+    * `[ ]`   Confirm: no reverse dependency (no table depends on dialectic_memory), no lateral violation.
+
+  * `[ ]`   `construction`
+    * `[ ]`   Statement order inside the single migration:
+      * `[ ]`   `alter type public.dialectic_job_type_enum add value if not exists 'EMBED';` (value added, NOT used in this migration).
+      * `[ ]`   `create type public.dialectic_memory_source_type_enum as enum ('dialectic_contribution','dialectic_project_resource','dialectic_feedback','rag_query');` (brand-new type; safe to create and consume in the same migration — the same-transaction restriction only applies to ADD VALUE on a pre-existing type). `'rag_query'` is required by Phase B of the WS-D compression state machine: query texts are EMBED-jobbed with `source_type='rag_query'` so query embeddings are stored in `dialectic_memory` under a distinct source type and can be retrieved deterministically on Phase C resume by `source_id` (a deterministic UUID derived from query text + session_id + stage_slug).
+      * `[ ]`   `alter table public.dialectic_memory add column user_id uuid not null references auth.users(id) on delete cascade;`
+      * `[ ]`   `alter table public.dialectic_memory add column wallet_id uuid not null references public.token_wallets(wallet_id) on delete restrict;`
+      * `[ ]`   `alter table public.dialectic_memory add column source_type public.dialectic_memory_source_type_enum not null;`
+      * `[ ]`   `alter table public.dialectic_memory add column source_id uuid not null;`
+      * `[ ]`   `alter table public.dialectic_memory drop column source_contribution_id;` (removes the narrow contribution-only column and its FK `dialectic_memory_source_contribution_id_fkey`).
+      * `[ ]`   `create index dialectic_memory_source_idx on public.dialectic_memory (session_id, source_type, source_id);` (dedup / "already embedded?" lookup).
+    * `[ ]`   No partially-migrated state: all statements in one migration transaction (safe — the migration adds but does not use the new enum value).
+
+  * `[ ]`   `[migration].sql` (implementation = the SQL body)
+    * `[ ]`   Perform the enum add + column/constraint/index changes above.
+    * `[ ]`   Recreate `public.match_dialectic_chunks(query_embedding extensions.vector(3072), query_text, match_threshold, match_count, session_id_filter, rrf_k)`:
+      * `[ ]`   FIRST `drop function if exists public.match_dialectic_chunks(extensions.vector, text, double precision, integer, uuid, integer);` — REQUIRED: adding columns to `returns table (...)` changes the function's return type, and Postgres rejects that under `create or replace function` ("cannot change return type of existing function; use DROP FUNCTION first"). Drop-by-signature (defaults omitted; `float`→`double precision`, `int`→`integer`, `vector(3072)`→`extensions.vector`) then create is the only valid path.
+      * `[ ]`   Then `create function public.match_dialectic_chunks(...)` preserving the existing `vector_results` / `keyword_results` / `combined_results` / `ranked_results` RRF CTE pipeline verbatim.
+      * `[ ]`   Extend `returns table (...)` with `source_type public.dialectic_memory_source_type_enum, source_id uuid`.
+      * `[ ]`   Extend the final projection (which joins `ranked_results rr` to `dialectic_memory dm`) to also select `dm.source_type, dm.source_id`.
+    * `[ ]`   Preserve the existing RLS read policy (session→project→user) and service-role write model unchanged.
+    * `[ ]`   Regenerate `supabase/functions/types_db.ts` (generated file, exempt from tests):
+      * `[ ]`   `Enums.dialectic_job_type_enum` gains `"EMBED"` in both the union type and the runtime const array.
+      * `[ ]`   `Enums` gains a new `dialectic_memory_source_type_enum` = `"dialectic_contribution" | "dialectic_project_resource" | "dialectic_feedback" | "rag_query"` (union + runtime const array).
+      * `[ ]`   `dialectic_memory` Row/Insert/Update gain `user_id`, `wallet_id`, `source_id` (uuid) and `source_type` (typed as the new enum union); lose `source_contribution_id`.
+      * `[ ]`   `dialectic_memory` Relationships lose the contribution FK, gain user/wallet FKs.
+      * `[ ]`   `match_dialectic_chunks` Returns type gains `source_type` (enum union)/`source_id`.
+
+  * `[ ]`   `directionality`
+    * `[ ]`   Layer: infrastructure/persistence (lowest producer). deps are inward (auth/wallets/sessions/enum); provides outward (schema truth consumed by app nodes).
+    * `[ ]`   No cycles.
+
+  * `[ ]`   `requirements` (binary, observable)
+    * `[ ]`   `dialectic_job_type_enum` includes `EMBED` (union + const array in types_db).
+    * `[ ]`   `dialectic_memory` has NOT NULL `user_id`, `wallet_id`, `source_type`, `source_id`; `source_contribution_id` no longer exists.
+    * `[ ]`   `source_type` is a Postgres enum (`dialectic_memory_source_type_enum`) that rejects any value outside the four allowed values (`dialectic_contribution`, `dialectic_project_resource`, `dialectic_feedback`, `rag_query`); it surfaces as a generated union type in types_db.
+    * `[ ]`   `match_dialectic_chunks` returns `source_type`/`source_id` alongside existing columns and preserves RRF ordering; the migration DROPs the old function before recreating it (return-type change).
+    * `[ ]`   `types_db.ts` regenerated to match the new `DialecticMemoryRow` shape and both enums. This regeneration alone leaves `indexing_service.ts` non-compiling (it still writes the dropped `source_contribution_id` and omits the new NOT NULL columns); compilation is restored by the `indexing_service.ts` node that runs IMMEDIATELY AFTER this migration within WS-0, before any commit.
+
+* `[ ]`   supabase/functions/sync-ai-models/`openai_sync.ts` **[BE] Carry the embedding model's output dimensionality (`dimensions`) through the default embedding provider's assembled config so vector storage/retrieval read it from provider config instead of a hardcoded 3072**
+
+  * `[ ]`   `objective`
+    * `[ ]`   Solve the "magic number" defect: the embedding output dimension (3072 for `text-embedding-3-large`) is hardcoded in `indexing_service.ts`/`rag_service.ts`, and the provider config that flows to `ai_providers.config` does not carry the model's dimensionality — so there is no config-driven source of truth for those consumers to read.
+    * `[ ]`   Functional goals:
+      * `[ ]`   `INTERNAL_MODEL_MAP['openai-text-embedding-3-large']` carries `dimensions: 3072`.
+      * `[ ]`   `AiModelExtendedConfig` carries an optional `dimensions?: number | null`.
+      * `[ ]`   `AiModelExtendedConfigSchema.parse(...)` PRESERVES `dimensions` instead of stripping it.
+      * `[ ]`   The assembled `ai_providers.config` for the default embedding model contains `dimensions: 3072`.
+    * `[ ]`   Non-functional constraints:
+      * `[ ]`   NO change to `config_assembler.ts` logic (it is a generic spread-merge; the only cause of loss is the zod strip, fixed at the schema).
+      * `[ ]`   Do not alter existing cost/context fields on any map entry.
+      * `[ ]`   Non-embedding models are unaffected (`dimensions` absent/undefined).
+
+  * `[ ]`   `role`
+    * `[ ]`   Adapter / config-provider node (sync-ai-models). It declares OpenAI model capability metadata that `config_assembler` merges into `ai_providers.config`.
+    * `[ ]`   Appropriate because this is the single place OpenAI model capabilities are authored; dimensionality is a model capability.
+    * `[ ]`   Out of scope (each its own node/context): CONSUMING `dimensions` (indexing_service/rag_service); `google_sync.ts`/`anthropic_sync.ts` maps; the pgvector column dimension (migration node); `config_assembler.ts` merge logic.
+
+  * `[ ]`   `module`
+    * `[ ]`   Bounded context: the OpenAI capability map (`modelMapSource`/`INTERNAL_MODEL_MAP`) plus the shared config contract that transports it (`AiModelExtendedConfig`, `AiModelExtendedConfigSchema`).
+    * `[ ]`   Inside boundary: the `dimensions` field on the contract, its zod validation, and its value for `text-embedding-3-large`.
+    * `[ ]`   Outside boundary: how `dimensions` is consumed, other providers' maps, DB column shape.
+
+  * `[ ]`   `deps`
+    * `[ ]`   `supabase/functions/_shared/types.ts` `AiModelExtendedConfig` (shared-contract layer) — extended to carry `dimensions`; depending inward on shared types is standard.
+    * `[ ]`   `supabase/functions/chat/zodSchema.ts` `AiModelExtendedConfigSchema` (validator layer) — must accept + preserve `dimensions`; it is the runtime boundary consumed by `config_assembler`.
+    * `[ ]`   `supabase/functions/sync-ai-models/config_assembler.ts` (consumer, NOT edited) — calls `AiModelExtendedConfigSchema.parse(mergedConfig)` at ~L90; this is the evidence the plain `z.object` strips unknown keys.
+    * `[ ]`   Confirm: no reverse dependency (shared types/schema do not import openai_sync); no lateral violation (openai_sync → shared, lower layer).
+
+  * `[ ]`   `context_slice`
+    * `[ ]`   From `types.ts`: only the `AiModelExtendedConfig` shape (add one optional field) — nothing else imported.
+    * `[ ]`   From `zodSchema.ts`: only the `AiModelExtendedConfigSchema` object (add one optional field).
+    * `[ ]`   No over-fetch / hidden coupling: `config_assembler.ts` untouched; no new imports added to `openai_sync.ts`.
+
+  * `[ ]`   `_shared/types.ts` (structural boundary — the type edits here; types are exempt from RED/GREEN)
+    * `[ ]`   Add `dimensions?: number | null;` to `AiModelExtendedConfig` (interface at ~L457), grouped with the capability fields (adjacent to `context_window_tokens`). Optional + nullable to mirror DB-config nullability and the absence on non-embedding models.
+    * `[ ]`   No other change to the interface.
+
+  * `[ ]`   `chat/zodSchema.ts` + `zodSchema.test.ts` (enforcement — runtime boundary; guard test before guard)
+    * `[ ]`   `zodSchema.test.ts` (guard test): a config containing `dimensions: 3072` parses AND the parsed result RETAINS `dimensions` (locks the anti-strip requirement); a non-integer or non-positive `dimensions` is REJECTED; absence of `dimensions` still parses (optional). No false positives/negatives.
+    * `[ ]`   `chat/zodSchema.ts` (guard): add `dimensions: z.number().int().positive().optional()` to `AiModelExtendedConfigSchema` (~L21) so `.parse()` preserves the key. Without this, the plain `z.object` (verified) drops `dimensions` at `config_assembler.ts:90`.
+
+  * `[ ]`   `openai_sync.test.ts` + `config_assembler.test.ts` (behavioral verification)
+    * `[ ]`   `openai_sync.test.ts`: assert `INTERNAL_MODEL_MAP.get('openai-text-embedding-3-large')?.dimensions === 3072` (the map builder returns entries keyed by the ORIGINAL prefixed key — `return [key, ...]` at ~L186, so the key keeps its `openai-` prefix); assert a non-embedding entry has no `dimensions`.
+    * `[ ]`   `config_assembler.test.ts`: assembling the default embedding model yields a config whose `dimensions === 3072` SURVIVES `AiModelExtendedConfigSchema.parse` (end-to-end proof the strip is fixed).
+    * `[ ]`   Do NOT re-test: zod shape internals or guard correctness (covered in `zodSchema.test.ts`); the full map contents.
+
+  * `[ ]`   `construction`
+    * `[ ]`   `INTERNAL_MODEL_MAP` is a module-level `Map<string, Partial<AiModelExtendedConfig>>` built once from `modelMapSource` via `Object.entries(...).map(([key, value]) => [key, { ...value, ...providerMaxTokens, tokenization_strategy }])` (~L167–187). No constructor.
+    * `[ ]`   `dimensions` is added declaratively to the `modelMapSource` object literal, so it flows through the existing spread (`...value`) into the map with no builder change; no partially-constructed state (static literal).
+
+  * `[ ]`   `openai_sync.ts` (implementation)
+    * `[ ]`   Edit ~L163: `'openai-text-embedding-3-large': { context_window_tokens: 8191, input_token_cost_rate: 0.13, output_token_cost_rate: 1.0, dimensions: 3072 },`.
+    * `[ ]`   No change to the `INTERNAL_MODEL_MAP` builder, `selectOpenAIEncoding`, `providerMaxTokens`, or any other map entry.
+    * `[ ]`   Each requirement maps to a single edit: field literal (map), interface field (types.ts), schema field (zodSchema.ts).
+
+  * `[ ]`   `directionality`
+    * `[ ]`   Layer: adapter/config-provider. deps are inward (shared `AiModelExtendedConfig` + validator); provides are outward (config metadata → `config_assembler` → `ai_providers.config`).
+    * `[ ]`   No cycles.
+
+  * `[ ]`   `requirements` (binary, observable)
+    * `[ ]`   `AiModelExtendedConfig` exposes optional `dimensions?: number | null`.
+    * `[ ]`   `AiModelExtendedConfigSchema.parse({ ..., dimensions: 3072 })` returns an object with `dimensions === 3072` (not stripped); rejects non-integer/non-positive `dimensions`; accepts its absence.
+    * `[ ]`   `INTERNAL_MODEL_MAP.get('openai-text-embedding-3-large')?.dimensions === 3072`.
+    * `[ ]`   Assembling the default embedding provider yields `ai_providers.config.dimensions === 3072` (proven by `config_assembler.test.ts`).
+    * `[ ]`   `config_assembler.ts` is unchanged.
+    * `[ ]`   No commit step in this node — WS-0 is not independently consumer-testable; commit lands in the last node of the first working end-to-end slice.
+
+* `[ ]`   supabase/functions/_shared/services/`rag_service.ts` **[BE] Convert RagService to a retrieval-only service: remove synchronous just-in-time indexing, derive the query-embedding dimension from provider config, and consume the polymorphic source columns returned by the updated match_dialectic_chunks RPC**
+
+  * `[ ]`   `objective`
+    * `[ ]`   Solve three defects introduced or exposed by the WS-0 migration: (a) `ensureDocumentsAreIndexed` queries the dropped `source_contribution_id` column, breaking compilation; (b) the dimension guard hardcodes `3072` instead of reading from the provider config added in the previous node; (c) the context assembler reads `metadata.source_contribution_id` to label retrieved chunks, but `match_dialectic_chunks` now returns `source_type`/`source_id` as proper first-class columns.
+    * `[ ]`   Functional goals:
+      * `[ ]`   Remove `ensureDocumentsAreIndexed` and the `_retry` helper that exclusively served it; `getContextForModel` goes directly to retrieval.
+      * `[ ]`   Remove `indexingService: IIndexingService` from `IRagServiceDependencies`; rag_service has no indexing responsibility.
+      * `[ ]`   Thread `modelConfig.dimensions` (from `AiModelExtendedConfig`, added in node 2) through to the query-embedding dimension guard, replacing the hardcoded constant.
+      * `[ ]`   Update `allChunks` accumulation and `CandidateChunk` type to carry `source_type`/`source_id` from the RPC result; replace `metadata.source_contribution_id` in the context assembler label with those columns.
+    * `[ ]`   Non-functional constraints:
+      * `[ ]`   `IRagService.getContextForModel` public signature is unchanged — callers are not updated in this node.
+      * `[ ]`   `LangchainTextSplitter` and `EmbeddingClient` remain in `indexing_service.ts`; `IEmbeddingClient` import is retained.
+      * `[ ]`   The MMR re-ranking pipeline (`performMmrSelection`), multi-query strategy, and token-wallet debit for query embeddings are unchanged.
+
+  * `[ ]`   `role`
+    * `[ ]`   Application-layer retrieval service (`_shared/services`). After this node its single responsibility is: embed query strings, retrieve relevant chunks from `dialectic_memory` via the RPC, re-rank with MMR, assemble context text.
+    * `[ ]`   Appropriate because rag_service is the highest-level consumer of `dialectic_memory` retrieval and the sole assembler of compression context.
+    * `[ ]`   Out of scope (own nodes): calling `indexingService.insertChunk` (WS-B `saveResponse`); EMBED job creation (WS-S); `indexing_service.ts` reshape (node 4); `compressPrompt` orchestration (WS-C/D).
+
+  * `[ ]`   `module`
+    * `[ ]`   Bounded context: `rag_service.ts`, `rag_service.interface.ts`, `rag_service.test.ts`.
+    * `[ ]`   Inside boundary: multi-query strategy, MMR selection, RPC invocation, `IRagServiceDependencies` contract.
+    * `[ ]`   Outside boundary: how/when chunks are written to `dialectic_memory` (WS-S/WS-B); compression decision logic (WS-C/D); `IIndexingService.insertChunk` contract (node 4); `match_dialectic_chunks` SQL body (node 1).
+
+  * `[ ]`   `deps`
+    * `[ ]`   `SupabaseClient<Database>` (inward, external package) — RPC call + `dialectic_memory.select('id, embedding')` for MMR candidate re-fetch; unchanged.
+    * `[ ]`   `IEmbeddingClient` (inward, `indexing_service.interface.ts`) — generates query embeddings; `getEmbedding` gains `embeddingModelApiIdentifier: string` as 2nd param in this node (type change here as first/only consumer after the WS-0 reshape removed embedding calls from `IndexingService`).
+    * `[ ]`   `AiModelExtendedConfig` (inward, `_shared/types.ts`) — carries `dimensions?: number | null` after node 2; consumed for the query-embedding dimension guard.
+    * `[ ]`   `IAdminTokenWalletService?` (inward, optional) — token debits for query embeddings; unchanged.
+    * `[ ]`   `ILogger` (inward) — unchanged.
+    * `[ ]`   **REMOVED dep**: `IIndexingService` (previously inward, `indexing_service.interface.ts`) — rag_service no longer indexes documents; this dep and its import are removed from both the interface and the constructor.
+    * `[ ]`   Confirm: no reverse dependency; no lateral violation.
+
+  * `[ ]`   `context_slice`
+    * `[ ]`   From `AiModelExtendedConfig`: `dimensions?: number | null` (added in node 2) and `api_identifier: string` — `modelConfig.api_identifier` IS the `embeddingModelApiIdentifier` passed to `getEmbedding`; no redundant 6th param on `getContextForModel` is needed.
+    * `[ ]`   From `SupabaseClient`: `.from('dialectic_memory').select('id, embedding')` (unchanged); `.rpc('match_dialectic_chunks', ...)` typed result now includes `source_type`/`source_id`.
+    * `[ ]`   `IIndexingService` import removed entirely from this boundary.
+
+  * `[ ]`   `rag_service.interface.ts` (structural boundary — type edit with first consumer)
+    * `[ ]`   Remove `indexingService: IIndexingService` field from `IRagServiceDependencies`.
+    * `[ ]`   Change the import line `import { IEmbeddingClient, IIndexingService } from './indexing_service.interface.ts';` to `import { IEmbeddingClient } from './indexing_service.interface.ts';` (retain `IEmbeddingClient`; remove `IIndexingService`).
+    * `[ ]`   `IRagService.getContextForModel` signature unchanged (all 5 params; return type unchanged).
+    * `[ ]`   `IRagSourceDocument` and `IRagContextResult` unchanged.
+
+  * `[ ]`   `indexing_service.interface.ts` (IEmbeddingClient contract — type edits with rag_service as first/only consumer of the updated signature)
+    * `[ ]`   Change `getEmbedding(text: string): Promise<EmbeddingResponse>` to `getEmbedding(text: string, embeddingModelApiIdentifier: string): Promise<EmbeddingResponse>` in `IEmbeddingClient`.
+    * `[ ]`   No other changes to this file in this node (`InsertChunkAttribution`/`InsertChunkResult`/`IIndexingService.insertChunk` additions  with the `indexing_service.ts` node).
+
+  * `[ ]`   `rag_service.test.ts` (behavioral verification — RED before GREEN)
+    * `[ ]`   **Remove** the entire `describe('Just-in-Time Indexing', ...)` block (2 tests): these test `ensureDocumentsAreIndexed` logic that is fully removed.
+    * `[ ]`   **Remove** the entire `describe('Resiliency and Retries', ...)` block (4 tests): all four tests exercise the `_retry` wrapper around the DB query and `indexDocument` calls inside `ensureDocumentsAreIndexed` — both are removed.
+    * `[ ]`   **Remove** `describe('Financial Tracking', ...)` (1 test): "should return the total tokens used for indexing new documents" tests `tokensUsedForIndexing` from `indexDocument` stubs — no longer relevant.
+    * `[ ]`   **Remove** from the top-level describe block: `let mockIndexingService: IIndexingService;`, `let indexDocumentStub: Stub | undefined;`, the `indexDocumentStub?.restore()` line in `afterEach`, and all `spy(deps.indexingService, 'indexDocument')` / `stub(deps.indexingService, 'indexDocument', ...)` usage. Remove `IIndexingService` import from the test file.
+    * `[ ]`   **Update** `initializeService` helper: remove `indexingService: mockIndexingService` from the `deps` object literal; remove the `mockIndexingService = { indexDocument: ... }` assignment.
+    * `[ ]`   **Update** `mockModelConfig` in the top-level `describe('RagService', ...)` block to include `dimensions: 3072` (the dimension guard now reads from config; all existing retrieval tests must pass a config that declares the expected dimension).
+    * `[ ]`   **Add** test in `describe('Advanced Retrieval', ...)`: "dimension guard reads modelConfig.dimensions — passes when embedding length matches, fails when it does not". Two assertions in one test: (1) construct service with a `WrongDimEmbeddingClient` returning 16-element arrays and pass `mockModelConfig` with `dimensions: 16` → `result.error` is `undefined`; (2) same client (16-element) but `dimensions: 32` in modelConfig → `result.error instanceof RagServiceError` and `rpcSpy.calls.length === 0`. This pair proves the guard reads from config rather than a hardcoded constant.
+    * `[ ]`   **Update** the "should generate multiple queries, call embedding client for each, call RPC, and assemble a final context" test: add `source_type: 'dialectic_contribution'` and `source_id: 'src-id-1'` (or any UUID) to each entry in `mockRpcResponse`; assert the assembled `result.context` includes a label containing those values (e.g., `dialectic_contribution:src-id-1`) rather than `metadata.source_contribution_id`.
+    * `[ ]`   **Update** standalone `Deno.test("RagService issues RPC with 3072-d query embedding...")`: remove `indexingService` from the `deps` object; remove `indexDocumentSpy` and its call-count assertions; remove `res.tokensUsedForIndexing === 10` assertion; add `dimensions: 3072` to the model config argument in the `.getContextForModel(...)` call. The core assertion — RPC receives a 3072-element query embedding — is preserved unchanged.
+    * `[ ]`   **Update** standalone `Deno.test("RagService guard: rejects when query embedding dim != 3072...")`: rename to "RagService guard: rejects when query embedding dim does not match modelConfig.dimensions"; remove `indexingService` from the `deps` object; keep `WrongDimEmbeddingClient` returning 32-element arrays; pass `dimensions: 64` in the model config argument (32 ≠ 64 → guard fires); assertions unchanged (`result.error instanceof Error`, `rpcSpy.calls.length === 0`).
+    * `[ ]`   **Update** `WrongDimEmbeddingClient` class definition in both standalone `Deno.test` blocks: change `async getEmbedding(text: string)` to `async getEmbedding(text: string, _embeddingModelApiIdentifier: string)` to satisfy the updated `IEmbeddingClient` interface. Body unchanged.
+    * `[ ]`   **Update** any inline `IEmbeddingClient` object literals in test helpers: arrow functions typed as `getEmbedding: async (text) => ...` become `getEmbedding: async (text, _embeddingModelApiIdentifier) => ...`; the `new EmbeddingClient(dummyAdapter)` construction in `initializeService` does NOT need change (class is updated in the `indexing_service.ts` node).
+    * `[ ]`   Do NOT re-test: `isDialecticChunkMetadata` guard correctness; `cosineSimilarity` math; `LangchainTextSplitter` or `EmbeddingClient` behavior (own nodes).
+
+  * `[ ]`   `construction`
+    * `[ ]`   `RagService` constructor signature unchanged; `IRagServiceDependencies` no longer carries `indexingService` — no partially-constructed instances possible with the reduced dep set.
+    * `[ ]`   `performAdvancedRetrieval` gains two additional parameters threaded from `getContextForModel`: `dimensions: number` and `embeddingModelApiIdentifier: string`. Guards remain at the `getContextForModel` call site: if `modelConfig.dimensions` is `null` or `undefined`, throw `new RagServiceError('modelConfig.dimensions is required for query embedding dimension validation')` before calling `performAdvancedRetrieval`. `embeddingModelApiIdentifier` is sourced from `modelConfig.api_identifier`.
+
+  * `[ ]`   `rag_service.ts` (implementation)
+    * `[ ]`   Remove `import { isDialecticChunkMetadata } from '../utils/type_guards.ts';` (no longer used after the assembler change below).
+    * `[ ]`   Remove the `_retry<T>` helper method and the `ensureDocumentsAreIndexed` method in their entirety.
+    * `[ ]`   Rename `_modelConfig` parameter to `modelConfig` in `getContextForModel`; guard `modelConfig.dimensions` (throw `RagServiceError` if null/undefined); call `performAdvancedRetrieval(sessionId, stageSlug, modelConfig.dimensions, modelConfig.api_identifier)` directly.
+    * `[ ]`   Remove the `indexingResult` block (call + success-check + early-return) from `getContextForModel`; remove `tokensUsedForIndexing` from the return value.
+    * `[ ]`   `performAdvancedRetrieval(sessionId, stageSlug, dimensions: number, embeddingModelApiIdentifier: string)`: replace `primaryQueryEmbedding.length !== 3072` with `primaryQueryEmbedding.length !== dimensions`.
+    * `[ ]`   All three `this.deps.embeddingClient.getEmbedding(queryText)` calls in `performAdvancedRetrieval` become `this.deps.embeddingClient.getEmbedding(queryText, embeddingModelApiIdentifier)`.
+    * `[ ]`   Update query debit idempotency keys: `rag:query:${sessionId}:${stageSlug}:${qi + 1}` → `` `rag:query:${sessionId}:${stageSlug}:${embeddingModelApiIdentifier}:${qi + 1}` `` in both the primary-query debit and the per-query-loop debit.
+    * `[ ]`   Update `allChunks` Map value type to include `source_type: string; source_id: string`. In the RPC result iteration: `allChunks.set(chunk.id, { content: chunk.content, metadata: chunk.metadata, rank: chunk.rank, source_type: chunk.source_type, source_id: chunk.source_id })`.
+    * `[ ]`   Update `CandidateChunk` local type: add `source_type: string; source_id: string`.
+    * `[ ]`   Update `isCandidateChunk` guard: add `typeof item.source_type === 'string' && typeof item.source_id === 'string'` to the conjunction.
+    * `[ ]`   In the final context assembler loop: replace `const sourceId = isDialecticChunkMetadata(metadata) ? metadata.source_contribution_id : 'Unknown';` with `const sourceRef = \`${chunk.source_type}:${chunk.source_id}\`;` and update the label to `retrievedContext += \`[Context Snippet ${index + 1} | Source: ${sourceRef}]\n\`;`.
+
+  * `[ ]`   `directionality`
+    * `[ ]`   Layer: application service (`_shared/services`). Deps are inward (shared types, DB client, embedding client, wallet service); provides outward (context string to `compressPrompt` / WS-D callers).
+    * `[ ]`   `IIndexingService` dep removed — dependency graph simplified by one edge.
+    * `[ ]`   No cycles.
+
+  * `[ ]`   `requirements` (binary, observable)
+    * `[ ]`   `IRagServiceDependencies` no longer declares `indexingService`; constructing `RagService` without it compiles.
+    * `[ ]`   `getContextForModel` called with `modelConfig.dimensions: null` returns `result.error instanceof RagServiceError` before any embedding call.
+    * `[ ]`   `getContextForModel` called with `modelConfig.dimensions: 16` and a client returning 16-element arrays: `result.error === undefined`.
+    * `[ ]`   `getContextForModel` called with `modelConfig.dimensions: 32` and a client returning 16-element arrays: `result.error instanceof RagServiceError`; RPC never called.
+    * `[ ]`   `getContextForModel` does not call any method named `indexDocument` (no such dep exists on `IRagServiceDependencies`).
+    * `[ ]`   Assembled context string contains a label derived from `source_type` and `source_id` from the RPC result (not `metadata.source_contribution_id`).
+    * `[ ]`   `tokensUsedForIndexing` is `undefined` in the returned `IRagContextResult`.
+    * `[ ]`   `IEmbeddingClient.getEmbedding` requires `embeddingModelApiIdentifier: string` as its 2nd param; all `IEmbeddingClient` implementations in the test file conform.
+    * `[ ]`   All `embeddingClient.getEmbedding` calls in `rag_service.ts` pass `modelConfig.api_identifier` as the 2nd arg (via `embeddingModelApiIdentifier` threaded into `performAdvancedRetrieval`).
+    * `[ ]`   Query embedding debit idempotency keys include `embeddingModelApiIdentifier` as a segment.
+    * `[ ]`   No commit step in this node — WS-0 is not independently consumer-testable; commit lands in the last node of the first working end-to-end slice.
+
+* `[ ]`   supabase/functions/_shared/services/`indexing_service.ts` **[BE] Reshape IndexingService from a synchronous chunk-embed-insert pipeline to a single-chunk insert service with real attribution: rename `indexDocument` → `insertChunk`, receive a pre-computed vector + real attribution as inputs, remove the embedded LLM call and text-splitting from the class**
+
+  * `[ ]`   `objective`
+    * `[ ]`   Solve the compilation break introduced by the WS-0 migration: `indexDocument` writes `source_contribution_id` (dropped column) and omits the NOT NULL columns `user_id`, `wallet_id`, `source_type`, `source_id`. The fix is a correct reshape, not demolition: IndexingService keeps its ownership of `dialectic_memory` persistence; what changes is the method signature so callers supply pre-computed attribution rather than junk constants.
+    * `[ ]`   Functional goals:
+      * `[ ]`   Replace `indexDocument(sessionId, sourceContributionId, documentContent, metadata)` with `insertChunk(chunkText, embeddingVector, dimensions, attribution)` where `attribution: InsertChunkAttribution` carries real `user_id`, `wallet_id`, `source_type`, `source_id`, `idempotency_key`.
+      * `[ ]`   Remove from `IndexingService`: the embedded LLM call (`embeddingClient.getEmbedding`) and text-splitting (`textSplitter.splitText`) — those responsibilities belong to the EMBED job (embedding) and WS-S pre-job chunking respectively. `LangchainTextSplitter` and `EmbeddingClient` stay in the file as standalone exported classes.
+      * `[ ]`   Replace junk attribution constants (`walletId:'embedding-${sessionId}'`, `recordedByUserId:'system'`) with real values supplied via `attribution`. Debit only when `attribution.tokens_used` is provided and non-zero.
+      * `[ ]`   Replace hardcoded `expectedEmbeddingDim=3072` dimension guard with the `dimensions` parameter.
+      * `[ ]`   Remove `IndexDocumentResult` (has `tokensUsed` output — now an input); introduce `InsertChunkResult = { success: boolean; error?: Error }`.
+    * `[ ]`   Non-functional constraints:
+      * `[ ]`   `LangchainTextSplitter` is unchanged and remains exported from this file. `EmbeddingClient.getEmbedding` gains `_embeddingModelApiIdentifier: string` as a 2nd parameter (ignored at the adapter call site) to satisfy the updated `IEmbeddingClient` interface whose type change s with the rag_service node (node 3).
+      * `[ ]`   `ITextSplitter` and `IEmbeddingClient` remain in `indexing_service.interface.ts`.
+      * `[ ]`   `JobContext.mock.ts` does not require editing: `new MockIndexingService()` call site is unchanged; `indexingService` property name in `JobContextParams` is unchanged.
+
+  * `[ ]`   `role`
+    * `[ ]`   Persistence service (`_shared/services`). IndexingService's single remaining responsibility is: validate the vector dimension, optionally record a token debit, and insert one pre-embedded chunk row into `dialectic_memory` with correct attribution.
+    * `[ ]`   Appropriate because IndexingService is the only service authorized to write `dialectic_memory` rows; ownership stays here rather than being distributed across every caller.
+    * `[ ]`   Out of scope (own nodes): text splitting before EMBED job creation (WS-S); calling `insertChunk` from `saveResponse` (WS-B `saveResponse.ts` node); `rag_service.ts` removal of `IIndexingService` dep (node 3, already specified).
+
+  * `[ ]`   `module`
+    * `[ ]`   Bounded context: `indexing_service.ts`, `indexing_service.interface.ts`, `indexing_service.test.ts`, `indexing_service.mock.ts`.
+    * `[ ]`   Inside boundary: `insertChunk` signature + behavior, `InsertChunkAttribution`/`InsertChunkResult` types, `IndexingService` constructor, `MockIndexingService` shape.
+    * `[ ]`   Outside boundary: who calls `insertChunk` (WS-B); how EMBED jobs are created (WS-S); `dialectic_memory` schema (node 1); JobContext wiring (WS-B/WS-R factory node).
+
+  * `[ ]`   `deps`
+    * `[ ]`   `SupabaseClient<Database>` (inward, external package) — `dialectic_memory` insert only.
+    * `[ ]`   `IAdminTokenWalletService` (inward, same layer) — records debit when `attribution.tokens_used` provided; real `wallet_id`/`user_id` from attribution.
+    * `[ ]`   `ILogger` (inward) — unchanged.
+    * `[ ]`   `TablesInsert<'dialectic_memory'>` from `types_db.ts` (inward, generated schema) — provides the row type for the insert, including the `source_type` enum union.
+    * `[ ]`   **REMOVED from `IndexingService` constructor**: `ITextSplitter` and `IEmbeddingClient` — no longer needed by `IndexingService`; both interfaces and their implementations remain in the file for other consumers.
+    * `[ ]`   Confirm: no reverse dependency on `IndexingService` within `_shared`; `JobContext.mock.ts` uses `MockIndexingService` (updated in this node) without any call-site changes.
+
+  * `[ ]`   `context_slice`
+    * `[ ]`   From `types_db.ts`: `TablesInsert<'dialectic_memory'>` row shape — specifically `user_id`, `wallet_id`, `source_type`, `source_id`, `session_id`, `content`, `embedding`, `metadata`. The `source_type` column type is `Enums['dialectic_memory_source_type_enum']` (`"dialectic_contribution" | "dialectic_project_resource" | "dialectic_feedback"`), generated by node 1.
+    * `[ ]`   From `IAdminTokenWalletService`: only `recordTransaction(...)` — unchanged call shape, but now with real attribution values.
+    * `[ ]`   No hidden coupling: `LangchainTextSplitter` and `EmbeddingClient` are standalone exports; they do NOT depend on `IndexingService`.
+
+  * `[ ]`   `indexing_service.interface.ts` (structural boundary — type edit s with first consumer)
+    * `[ ]`   Add `InsertChunkAttribution` interface:
+      ```
+      session_id: string;
+      user_id: string;
+      wallet_id: string;
+      source_type: TablesInsert<'dialectic_memory'>['source_type'];
+      source_id: string;
+      idempotency_key: string;
+      tokens_used?: number;
+      metadata?: Record<string, unknown>;
+      ```
+      Add the required `TablesInsert` import: `import type { TablesInsert } from '../../../functions/types_db.ts';`.
+    * `[ ]`   Add `InsertChunkResult` interface: `{ success: boolean; error?: Error }`.
+    * `[ ]`   Replace `IIndexingService.indexDocument(...)` with `insertChunk(chunkText: string, embeddingVector: number[], dimensions: number, attribution: InsertChunkAttribution): Promise<InsertChunkResult>`.
+    * `[ ]`   Remove `IndexDocumentResult` interface (replaced by `InsertChunkResult`).
+    * `[ ]`   Retain `ITextSplitter` and `IEmbeddingClient` unchanged.
+
+  * `[ ]`   `indexing_service.test.ts` (behavioral verification — RED before GREEN)
+    * `[ ]`   **Remove** the following tests in their entirety (all test `indexDocument` behavior):
+      * `[ ]`   "IndexingService should process and index a document successfully"
+      * `[ ]`   "IndexingService uses DummyAdapter embeddings (deterministic vector, non-zero usage, persisted length 3072)"
+      * `[ ]`   "IndexingService guard: returns error when embedding dimension != 3072 (no insert)"
+      * `[ ]`   "IndexingService bills embeddings 1:1 per chunk with idempotent keys"
+    * `[ ]`   **Retain** unchanged: "EmbeddingClient should be instantiable with any valid AiProviderAdapter".
+    * `[ ]`   **Remove** the `MockTextSplitter` helper class (no longer needed by `IndexingService`).
+    * `[ ]`   **Update** imports: replace `IndexDocumentResult` with `InsertChunkResult`; add `InsertChunkAttribution`; remove `ITextSplitter`; remove `mockOpenAiAdapter`/`mockGetEmbeddingSpy` imports (no longer needed for IndexingService construction).
+    * `[ ]`   **Add** test: "insertChunk inserts one row into dialectic_memory with correct attribution columns": construct `IndexingService` (new minimal constructor: `supabaseClient`, `logger`, `tokenWalletService`); call `insertChunk('chunk text', Array(16).fill(0.1), 16, { session_id, user_id, wallet_id, source_type: 'dialectic_contribution', source_id, idempotency_key, tokens_used: 5 })`; assert `result.success === true`; assert insert was called once on `dialectic_memory`; assert inserted row has `user_id`, `wallet_id`, `source_type: 'dialectic_contribution'`, `source_id`, `content: 'chunk text'`; assert `embedding` parses to a 16-element array.
+    * `[ ]`   **Add** test: "dimension guard: returns InsertChunkResult error when vector length != dimensions (no insert)": call `insertChunk` with a 16-element vector but `dimensions: 32`; assert `result.success === false`; assert `result.error.message` includes `'32'`; assert no insert attempted.
+    * `[ ]`   **Add** test: "records 1:1 token wallet debit with real attribution when tokens_used is provided": call `insertChunk` with `tokens_used: 42` in attribution; assert `tokenWalletService.recordTransaction` called once with `walletId === attribution.wallet_id`, `recordedByUserId === attribution.user_id`, `idempotencyKey === attribution.idempotency_key`, `amount === '42'`.
+    * `[ ]`   **Add** test: "skips token wallet debit when tokens_used is absent": call `insertChunk` with no `tokens_used` in attribution; assert `tokenWalletService.recordTransaction` not called.
+    * `[ ]`   **Add** test: "returns InsertChunkResult error when DB insert fails": configure mock Supabase to return an insert error; call `insertChunk`; assert `result.success === false`; assert `result.error` is set.
+    * `[ ]`   Do NOT re-test: `LangchainTextSplitter` chunking behavior; `EmbeddingClient` delegation (own independent concerns already tested in retained tests).
+
+  * `[ ]`   `construction`
+    * `[ ]`   `IndexingService` constructor signature changes from `(supabaseClient, logger, textSplitter, embeddingClient, tokenWalletService)` to `(supabaseClient, logger, tokenWalletService)`. No partially-constructed state possible; all remaining deps are required.
+    * `[ ]`   `MockIndexingService` changes from `extends IndexingService` to `class MockIndexingService implements IIndexingService` — constructor becomes a no-arg no-op; the `super()` call and all mock deps (mock logger, mock splitter, mock embedding client, mock wallet) passed to it are removed.
+
+  * `[ ]`   `indexing_service.ts` (implementation)
+    * `[ ]`   Remove `textSplitter: ITextSplitter` and `embeddingClient: IEmbeddingClient` from the `IndexingService` constructor parameters and private fields.
+    * `[ ]`   Remove the `indexDocument` method in its entirety.
+    * `[ ]`   Update `EmbeddingClient.getEmbedding`: change signature from `async getEmbedding(text: string)` to `async getEmbedding(text: string, _embeddingModelApiIdentifier: string)` — the adapter call `this.adapter.getEmbedding(text)` is unchanged; identifier ignored at this stage but required by the updated `IEmbeddingClient` interface (type change s with rag_service node 3).
+    * `[ ]`   Update `import { ITextSplitter, IEmbeddingClient, IndexDocumentResult } from './indexing_service.interface.ts';` to `import { IEmbeddingClient, ITextSplitter, InsertChunkAttribution, InsertChunkResult } from './indexing_service.interface.ts';` (`ITextSplitter`/`IEmbeddingClient` retained for `LangchainTextSplitter`/`EmbeddingClient` class declarations in the same file; `IndexDocumentResult` removed).
+    * `[ ]`   Add `insertChunk(chunkText: string, embeddingVector: number[], dimensions: number, attribution: InsertChunkAttribution): Promise<InsertChunkResult>` method:
+      * `[ ]`   Guard: if `embeddingVector.length !== dimensions` → log error, return `{ success: false, error: new IndexingError(`Embedding dimension mismatch; expected ${dimensions}.`) }`.
+      * `[ ]`   Token debit (conditional on `attribution.tokens_used`): call `this.tokenWalletService.recordTransaction({ walletId: attribution.wallet_id, type: 'DEBIT_USAGE', amount: String(attribution.tokens_used), recordedByUserId: attribution.user_id, idempotencyKey: attribution.idempotency_key, relatedEntityId: attribution.source_id, relatedEntityType: attribution.source_type, notes: 'Embedding chunk debit (1:1)' })`; catch and log warn on failure (non-fatal, matches existing pattern).
+      * `[ ]`   DB insert: `this.supabaseClient.from('dialectic_memory').insert({ session_id: attribution.session_id, user_id: attribution.user_id, wallet_id: attribution.wallet_id, source_type: attribution.source_type, source_id: attribution.source_id, content: chunkText, embedding: `[${embeddingVector.join(',')}]`, metadata: attribution.metadata ?? {} })`; on error return `{ success: false, error: new IndexingError(...) }`.
+      * `[ ]`   On success return `{ success: true }`.
+
+  * `[ ]`   `indexing_service.mock.ts` (simulation — updated consistently)
+    * `[ ]`   Change `export class MockIndexingService extends IndexingService` to `export class MockIndexingService implements IIndexingService`.
+    * `[ ]`   Remove the constructor body entirely (no `super()` call; no mock dep construction).
+    * `[ ]`   Replace `over indexDocument = (...): Promise<IndexDocumentResult> => { ... }` with `insertChunk(_chunkText: string, _embeddingVector: number[], _dimensions: number, _attribution: InsertChunkAttribution): Promise<InsertChunkResult> { return Promise.resolve({ success: true }); }`.
+    * `[ ]`   Update imports: remove `IndexingService` class import (no longer extended); add `IIndexingService`, `InsertChunkAttribution`, `InsertChunkResult` from `indexing_service.interface.ts`; remove `createMockSupabaseClient`, `MockLogger`, `createMockAdminTokenWalletService`, `ILogger`, `SupabaseClient`, `Database` (no longer needed by the mock constructor).
+
+  * `[ ]`   `directionality`
+    * `[ ]`   Layer: application service (`_shared/services`). Deps are inward (DB client, logger, wallet service, schema types); provides outward (`insertChunk` to `saveResponse`/WS-B).
+    * `[ ]`   Constructor dep count reduced from 5 to 3 — dependency graph simplified.
+    * `[ ]`   No cycles.
+
+  * `[ ]`   `requirements` (binary, observable)
+    * `[ ]`   `IIndexingService` declares `insertChunk`; `indexDocument` no longer exists on the interface.
+    * `[ ]`   `InsertChunkAttribution` type is exported from `indexing_service.interface.ts` with all required fields typed against `TablesInsert<'dialectic_memory'>['source_type']`.
+    * `[ ]`   `InsertChunkResult` is exported from `indexing_service.interface.ts`; `IndexDocumentResult` is removed.
+    * `[ ]`   `IndexingService` constructor takes exactly 3 args (`supabaseClient`, `logger`, `tokenWalletService`).
+    * `[ ]`   `insertChunk` called with vector length matching `dimensions` param: inserts one row into `dialectic_memory` with `user_id`, `wallet_id`, `source_type`, `source_id` from `attribution`; returns `{ success: true }`.
+    * `[ ]`   `insertChunk` called with mismatched vector length: returns `{ success: false, error.message includes dimensions value }`; no insert attempted.
+    * `[ ]`   `insertChunk` called with `tokens_used: 42`: `tokenWalletService.recordTransaction` called once with `walletId === attribution.wallet_id` and `recordedByUserId === attribution.user_id` (not `'system'`).
+    * `[ ]`   `insertChunk` called without `tokens_used`: `tokenWalletService.recordTransaction` not called.
+    * `[ ]`   `MockIndexingService implements IIndexingService` (not `extends IndexingService`); `new MockIndexingService()` takes no arguments.
+    * `[ ]`   `EmbeddingClient.getEmbedding` accepts `(text: string, _embeddingModelApiIdentifier: string)` — 2nd param ignored; adapter call unchanged (`this.adapter.getEmbedding(text)`); class continues to implement `IEmbeddingClient`.
+    * `[ ]`   No commit step in this node — WS-0 is not independently consumer-testable; commit lands in the last node of the first working end-to-end slice.
+
+
+* `[ ]`   supabase/functions/_shared/utils/`vector_utils.ts` **[BE] Widen CompressionCandidate.sourceType to the dialectic-memory DB source-type union; thread embeddingModelApiIdentifier through scoreResourceDocuments and getSortedCompressionCandidates to satisfy the updated IEmbeddingClient two-arg contract; fix dropped-column diagnostic query**
+
+  * `[ ]`   `objective`
+    * `[ ]`   Solve two separate but co-located breaks introduced by WS-0:
+      * `[ ]`   (Migration break) `CompressionCandidate.sourceType: 'history' | 'document'` no longer reflects the identity carried by the `dialectic_memory` schema; after the migration, the DB column is `source_type: dialectic_memory_source_type_enum` with values `'dialectic_contribution' | 'dialectic_project_resource' | 'dialectic_feedback'`. The `'document'` literal must be replaced so the union matches the DB enum and `sourceType` carries real row identity.
+      * `[ ]`   (Migration break) The diagnostic DB query inside `getSortedCompressionCandidates` references `source_contribution_id`, which is dropped in the WS-0 migration; this causes a runtime/type error and must be updated to `source_id`.
+      * `[ ]`   (WS-E threading — same file, folds in here) `IEmbeddingClient.getEmbedding` gained `embeddingModelApiIdentifier: string` as a 2nd parameter in the rag_service node (node 3); both `getEmbedding` call sites in `scoreResourceDocuments` still pass one argument, breaking type-checking. The identifier must be threaded through `CompressionStrategyParams.embeddingModelApiIdentifier` → `getSortedCompressionCandidates` → `scoreResourceDocuments` parameter → both `getEmbedding` call sites.
+    * `[ ]`   Functional goals:
+      * `[ ]`   `CompressionCandidate.sourceType` becomes `'history' | 'dialectic_contribution' | 'dialectic_project_resource' | 'dialectic_feedback'`.
+      * `[ ]`   `scoreResourceDocuments` derives `sourceType` from `doc.type` (cast to the new union) rather than hardcoding `'document'`.
+      * `[ ]`   Both `deps.embeddingClient.getEmbedding` calls in `scoreResourceDocuments` pass `embeddingModelApiIdentifier` as the 2nd argument.
+      * `[ ]`   `getSortedCompressionCandidates` reads `params.embeddingModelApiIdentifier` and forwards it to `scoreResourceDocuments`.
+      * `[ ]`   All internal guards that previously branched on `c.sourceType === 'document'` are updated to `c.sourceType !== 'history'` to handle the three-value DB union.
+      * `[ ]`   The diagnostic DB query is updated from `.select('source_contribution_id').in('source_contribution_id', candidateIds)` to `.select('source_id').in('source_id', candidateIds)`.
+    * `[ ]`   Non-functional constraints:
+      * `[ ]`   `scoreHistory` is unchanged; it assigns `sourceType: 'history'` which remains a valid union member.
+      * `[ ]`   `cosineSimilarity`, `dotProduct`, `magnitude` are unchanged.
+      * `[ ]`   `mockCompressionStrategy` in `vector_utils.mock.ts` is `async () => []` — it ignores all params and still satisfies `ICompressionStrategy`; no change needed.
+      * `[ ]`   External callers that pass `CompressionStrategyParams` (e.g. `processSimpleJob.ts`, `prepareModelJob.ts`, integration tests) must add `embeddingModelApiIdentifier` to their params — those are separate call-site nodes; they are NOT changed in this node.
+
+  * `[ ]`   `role`
+    * `[ ]`   Shared utility function boundary (`_shared/utils`). `vector_utils.ts` is the single producer of `CompressionCandidate[]` consumed by `compressPrompt.ts` and Workstream C callers; it is also the only call site for `IEmbeddingClient.getEmbedding` outside of `rag_service.ts`.
+    * `[ ]`   Out-of-scope: `compressPrompt.ts` call-site update (own WS-C node); `processSimpleJob.ts` / `prepareModelJob.ts` / integration-test call-site updates (own nodes per caller).
+
+  * `[ ]`   `module`
+    * `[ ]`   Bounded context: `vector_utils.ts`, `vector_utils.interface.ts`, `vector_utils.test.ts`, `vector_utils.mock.ts`.
+    * `[ ]`   Inside boundary: `CompressionCandidate` type definition; `scoreResourceDocuments` and `getSortedCompressionCandidates` function bodies; `CompressionStrategyParams.embeddingModelApiIdentifier` contract.
+    * `[ ]`   Outside boundary: `IEmbeddingClient.getEmbedding` signature (type change s with rag_service node 3, already done); `compressPrompt.ts` `ICompressionStrategy` call site; external integration test callers; `ResourceDocument.type` values (set by `gatherArtifacts` callers).
+
+  * `[ ]`   `deps`
+    * `[ ]`   `IEmbeddingClient` (inward, `indexing_service.interface.ts`) — `getEmbedding(text, embeddingModelApiIdentifier)` 2-arg form is already the interface contract as of node 3; this node is the consuming implementation update.
+    * `[ ]`   `SupabaseClient<Database>` (inward, external) — diagnostic query only; `source_contribution_id` column reference replaced with `source_id`.
+    * `[ ]`   `CompressionStrategyParams` (inward, `vector_utils.interface.ts`) — gains `embeddingModelApiIdentifier: string`; callers must supply it.
+    * `[ ]`   `ILogger` (inward, optional in deps) — unchanged.
+    * `[ ]`   Confirm: no reverse dependency; no lateral violation.
+
+  * `[ ]`   `context_slice`
+    * `[ ]`   `CompressionCandidate.sourceType`: `'history' | Exclude<Enums<'dialectic_memory_source_type_enum'>, 'rag_query'>` — import `Enums` from `../../types_db.ts` in `vector_utils.ts`. `ResourceDocument.type` stays `string` (100+ call sites use `'rendered_document'` and other non-enum literals); a `as Exclude<Enums<'dialectic_memory_source_type_enum'>, 'rag_query'>` cast at the assignment site in `scoreResourceDocuments` bridges the gap. `'rag_query'` is excluded from the candidate type because query-embedding records stored in `dialectic_memory` are retrieval inputs, not compression candidates.
+    * `[ ]`   `CompressionStrategyParams.embeddingModelApiIdentifier: string` — required; callers not yet updated will get a compile error (expected and intentional — those are separate nodes).
+    * `[ ]`   `dialectic_memory` diagnostic query: `source_id` column exists after migration; `candidateIds` are IDs from `ResourceDocument.id` and `Messages.id`; the lookup remains diagnostic only (non-fatal warn on error; no exclusion logic).
+
+  * `[ ]`   `vector_utils.interface.ts` (structural boundary — type edit s with first consumer, which is this node)
+    * `[ ]`   In `CompressionStrategyParams`: add `embeddingModelApiIdentifier: string` as a required field (not optional) immediately after the existing `inputsRelevance?: RelevanceRule[]` field.
+    * `[ ]`   All other interfaces (`CompressionStrategyDeps`, `CompressionStrategyPayload`, `ICompressionStrategy`) are unchanged.
+
+  * `[ ]`   `vector_utils.test.ts` (behavioral verification — RED before GREEN)
+    * `[ ]`   **Update** `mockEmbeddingClient` definition: change `getEmbedding: async (text: string): Promise<EmbeddingResponse>` to `getEmbedding: async (text: string, _embeddingModelApiIdentifier: string): Promise<EmbeddingResponse>`. Body unchanged.
+    * `[ ]`   **Update** all `ResourceDocuments` fixture literals that use `type: 'document'`: replace with `type: 'dialectic_contribution'` (the most representative value for test purposes). Affected locations: `scoreResourceDocuments` describe block, `getSortedCompressionCandidates` outer block, blended-scoring `Deno.test` block.
+    * `[ ]`   **Update** `assertEquals(highRelevanceDoc.sourceType, 'document')` in `scoreResourceDocuments` → `assertEquals(highRelevanceDoc.sourceType, 'dialectic_contribution')` to match the updated fixture.
+    * `[ ]`   **Update** all `getSortedCompressionCandidates` / `compressionStrategy(...)` call sites: add `embeddingModelApiIdentifier: 'text-embedding-3-large'` to every `params` object (`{}` becomes `{ embeddingModelApiIdentifier: 'text-embedding-3-large' }`; `{ inputsRelevance }` becomes `{ inputsRelevance, embeddingModelApiIdentifier: 'text-embedding-3-large' }`).
+    * `[ ]`   **Update** `result.filter(c => c.sourceType === 'document')` in the blended-scoring test → `result.filter(c => c.sourceType !== 'history')`.
+    * `[ ]`   **Update** `assert(hasDocument, ...)` companion checks in combine-and-sort test: the `hasDocument` guard uses `.some(c => c.sourceType === 'document')` — update to `.some(c => c.sourceType !== 'history')`.
+    * `[ ]`   **Do NOT** remove or modify `scoreHistory` tests — function and its `'history'` sourceType assignment are unchanged.
+    * `[ ]`   **Do NOT** remove or modify `cosineSimilarity` tests.
+
+  * `[ ]`   `construction`
+    * `[ ]`   `scoreResourceDocuments` and `getSortedCompressionCandidates` are stateless exported functions — no constructor, no class, no factory. No construction concerns.
+    * `[ ]`   `embeddingModelApiIdentifier` is a per-call param threaded through `params`; it is not a dep injected at module level.
+
+  * `[ ]`   `vector_utils.ts` (implementation)
+    * `[ ]`   Add import: `import type { Enums } from '../../types_db.ts';`.
+    * `[ ]`   **Update** `CompressionCandidate` type: change `sourceType: 'history' | 'document'` to `sourceType: 'history' | Exclude<Enums<'dialectic_memory_source_type_enum'>, 'rag_query'>`. `'rag_query'` is excluded because query-embedding records are never compression candidates.
+    * `[ ]`   **Update** `scoreResourceDocuments` signature: add `embeddingModelApiIdentifier: string` as 4th parameter — full signature becomes `export async function scoreResourceDocuments(deps: CompressionStrategyDeps, documents: ResourceDocuments, currentUserPrompt: string, embeddingModelApiIdentifier: string): Promise<CompressionCandidate[]>`.
+    * `[ ]`   **Update** `scoreResourceDocuments` body:
+      * `[ ]`   `await deps.embeddingClient.getEmbedding(currentUserPrompt)` → `await deps.embeddingClient.getEmbedding(currentUserPrompt, embeddingModelApiIdentifier)`.
+      * `[ ]`   `await deps.embeddingClient.getEmbedding(doc.content)` → `await deps.embeddingClient.getEmbedding(doc.content, embeddingModelApiIdentifier)`.
+      * `[ ]`   `sourceType: 'document'` hardcode → `sourceType: doc.type as Exclude<Enums<'dialectic_memory_source_type_enum'>, 'rag_query'>` — explicit cast required because `ResourceDocument.type` stays `string`; callers of `scoreResourceDocuments` supply valid `dialectic_memory` source types.
+    * `[ ]`   **Update** `getSortedCompressionCandidates` body:
+      * `[ ]`   Destructure `embeddingModelApiIdentifier` from `params`: add `const embeddingModelApiIdentifier: CompressionStrategyParams['embeddingModelApiIdentifier'] = params.embeddingModelApiIdentifier;` alongside the existing `inputsRelevance` destructure line.
+      * `[ ]`   Forward to `scoreResourceDocuments`: `const documentCandidates = await scoreResourceDocuments(deps, documents, currentUserPrompt, embeddingModelApiIdentifier)`.
+      * `[ ]`   In `allCandidates.map()`: change `if (c.sourceType === 'document')` to `if (c.sourceType !== 'history')`.
+      * `[ ]`   In the debug payload `sortedCandidates.map()`: change `if (c.sourceType === 'document')` to `if (c.sourceType !== 'history')`.
+      * `[ ]`   In the diagnostic DB query: change `.select('source_contribution_id').in('source_contribution_id', candidateIds)` to `.select('source_id').in('source_id', candidateIds)`.
+
+  * `[ ]`   `directionality`
+    * `[ ]`   Layer: shared utility (`_shared/utils`). Deps are inward (`IEmbeddingClient` from services, `SupabaseClient` from external package, `RelevanceRule` from dialectic-service interface, types from `_shared/types.ts`); provides outward (`CompressionCandidate[]` to `compressPrompt.ts`/WS-C callers and the `ICompressionStrategy` function type).
+    * `[ ]`   No new dependencies added; no cycles introduced.
+
+  * `[ ]`   `requirements` (binary, observable)
+    * `[ ]`   `CompressionCandidate.sourceType` is `'history' | Exclude<Enums<'dialectic_memory_source_type_enum'>, 'rag_query'>` — `'document'` and `'rag_query'` are not valid values; `ResourceDocument.type` is unchanged (remains `string`).
+    * `[ ]`   `scoreResourceDocuments` called with a document whose `type` is `'dialectic_project_resource'`: returned candidate `sourceType === 'dialectic_project_resource'` — no cast, no fallback.
+    * `[ ]`   Both `getEmbedding` calls in `scoreResourceDocuments` pass `embeddingModelApiIdentifier` as 2nd arg — compiles against updated `IEmbeddingClient` interface.
+    * `[ ]`   `CompressionStrategyParams` without `embeddingModelApiIdentifier` fails TypeScript type-checking.
+    * `[ ]`   `getSortedCompressionCandidates` called with `embeddingModelApiIdentifier: 'text-embedding-3-large'` in params: forwards that value to `scoreResourceDocuments`; all existing sort-order and matrix-weight assertions continue to pass.
+    * `[ ]`   Diagnostic DB query uses `source_id`, not `source_contribution_id`; a mock Supabase client returning an error for `source_id` query causes a `logger.warn` call but does not throw or modify the returned candidates list.
+    * `[ ]`   `scoreHistory` and `cosineSimilarity` test suites pass without modification.
+    * `[ ]`   No commit step in this node — WS-0 is not independently consumer-testable; commit lands in the last node of the first working end-to-end slice.
+
+
+## WS-A — NETLIFY ADAPTERS
+
 * `[✅]`   netlify/functions/ai-stream-background/adapters/openai/openai.ts **[BE] Add embedding operation support to the OpenAI adapter while preserving chat stream behavior**
 
    * `[✅]`   `objective`
@@ -160,7 +603,7 @@
       * `[✅]`   Add embedding fixtures and factories:
          * `[✅]`   Valid embedding response fixture.
          * `[✅]`   Valid embedding usage fixture.
-         * `[✅]`   Override-capable factory for malformed usage and malformed vectors.
+         * `[✅]`   Over-capable factory for malformed usage and malformed vectors.
       * `[✅]`   Extend adapter mock factory to optionally provide deterministic `getEmbedding` implementation.
       * `[✅]`   Preserve existing stream mock defaults unchanged.
 
@@ -327,7 +770,7 @@
       * `[✅]`   Preserve existing stream chunk/final response guards unchanged.
 
    * `[✅]`   `netlify/functions/ai-stream-background/adapters/google/google.mock.ts`
-      * `[✅]`   Add deterministic Google embedding fixtures and factory overrides:
+      * `[✅]`   Add deterministic Google embedding fixtures and factory overs:
          * `[✅]`   success embedding response fixture with numeric vector.
          * `[✅]`   success token-count response fixture for normalized embedding usage.
          * `[✅]`   malformed embedding and token-count fixtures for negative tests.
@@ -491,7 +934,7 @@
       * `[✅]`   Preserve existing stream guards unchanged.
 
    * `[✅]`   `netlify/functions/ai-stream-background/adapters/anthropic/anthropic.mock.ts`
-      * `[✅]`   Add deterministic embedding fixtures and override-capable factories:
+      * `[✅]`   Add deterministic embedding fixtures and over-capable factories:
          * `[✅]`   success embedding response fixture.
          * `[✅]`   malformed embedding fixtures for negative tests.
       * `[✅]`   Extend adapter mock builder to optionally provide `getEmbedding` implementation.
@@ -809,7 +1252,7 @@
 
    * `[✅]`   `netlify/functions/ai-stream-background/ai-stream-background.mock.ts`
       * `[✅]`   Update all imports and type references from the renamed `AiStream*` event/payload types to the `AiWorkload*` equivalents.
-      * `[✅]`   Extend event mock factory with operation-aware defaults and overrides.
+      * `[✅]`   Extend event mock factory with operation-aware defaults and overs.
       * `[✅]`   Add embedding event fixtures and payload fixtures.
       * `[✅]`   Preserve existing stream mock fixtures and dependency factory helpers.
 
@@ -873,1549 +1316,988 @@
       * `[✅]`   Contract changes:
          * `[✅]`   Adapter, selector, and worker interface/guard layers include explicit operation and embedding payload semantics.
 
-* `[ ]`   supabase/functions/dialectic-worker/enqueueModelCall/enqueueModelCall.ts **[BE] Align Supabase enqueue contract to operation-aware Netlify worker payloads while preserving queued-job guarantees**
+## WS-R — EMBED BECOMES FIRST-CLASS IN THE WORKER
 
-   * `[ ]`   `objective`
-      * `[ ]`   Solve the enqueue contract mismatch where Supabase currently emits chat-only queue payloads and cannot enqueue embedding workloads with explicit operation semantics.
-      * `[ ]`   Functional goals:
-         * `[ ]`   Add operation-aware enqueue payload contracts that support stream and embedding requests.
-         * `[ ]`   Preserve existing queued state transition (`dialectic_generation_jobs.status = 'queued'`) before queue POST.
-         * `[ ]`   Preserve job signature generation and event size enforcement semantics.
-         * `[ ]`   Emit deterministic Netlify event body shape that matches `ai-stream-background` operation routing contract.
-      * `[ ]`   Non-functional constraints:
-         * `[ ]`   Keep stream enqueue behavior backward-compatible for existing generation jobs.
-         * `[ ]`   Keep invalid-contract failures deterministic and explicitly non-retriable.
-         * `[ ]`   Keep transient queue/network failures retriable.
-         * `[ ]`   Do not edit callback ingest or response persistence source files in this node.
-      * `[ ]`   Each goal is atomic and testable through interface, guard, unit, and integration updates in this module scope.
+* `[ ]`   supabase/functions/dialectic-worker/processEmbedJob/`processEmbedJob.ts` **[BE] Process an EMBED job by validating its payload and enqueuing the embedding workload to the Netlify background worker**
 
-   * `[ ]`   `role`
-      * `[ ]`   Node role is Supabase queue-emitter implementation plus immediate enqueue support files (interfaces, guards, mocks, tests, provides).
-      * `[ ]`   This role is correct because `enqueueModelCall.ts` is the first Supabase source file that consumes Workstream A queue/worker operation contract outputs.
-      * `[ ]`   Out-of-scope responsibilities:
-         * `[ ]`   Do not edit `netlifyResponseHandler.ts` source behavior in this node.
-         * `[ ]`   Do not edit `saveResponse.ts` source behavior in this node.
-         * `[ ]`   Do not edit Netlify worker source files in this node.
+  * `[ ]`   `objective`
+    * `[ ]`   Solve the missing EMBED job processor: after WS-0 adds `EMBED` to `dialectic_job_type_enum`, EMBED job rows inserted by `createEmbedJobs` (WS-S) arrive in the worker queue and hit `processJob`'s `default` throw case. The fix is `processEmbedJob`: a DI-compliant processor that receives the `DialecticEmbeddingJobPayload`, looks up the embedding provider row, and calls `enqueueModelCall` with `operation: 'embedding'` to dispatch the actual embedding work to the Netlify background worker.
+    * `[ ]`   Functional goals:
+      * `[ ]`   Accept a `DialecticJobRow` whose payload is a `DialecticEmbeddingJobPayload`; return a non-retriable error if the payload is invalid.
+      * `[ ]`   Query `ai_providers` for the row identified by `payload.embedding_model_provider_id`; return a non-retriable error if no row is found.
+      * `[ ]`   Compute `preflightInputTokens` by calling `deps.countTokens` on `payload.chunk_text`.
+      * `[ ]`   Build an `EnqueueModelCallEmbeddingPayload` and call `deps.enqueueModelCall` with `output_type: FileType.EmbeddingChunk`.
+      * `[ ]`   Return `{ queued: true }` on success or `{ error: Error; retriable: boolean }` on failure, mirroring `EnqueueModelCallReturn` semantics.
+    * `[ ]`   Non-functional constraints:
+      * `[ ]`   Does NOT write to `dialectic_memory` (that is `saveResponse` — WS-B).
+      * `[ ]`   Does NOT update the parent job status (that is `createEmbedJobs` caller — WS-D).
+      * `[ ]`   Does NOT perform any text splitting (that is `createEmbedJobs` — WS-S).
+      * `[ ]`   Payload validation failure and provider-not-found are non-retriable; errors from `enqueueModelCall` preserve the `retriable` flag from that return value.
 
-   * `[ ]`   `module`
-      * `[ ]`   Bounded context is `supabase/functions/dialectic-worker/enqueueModelCall`.
-      * `[ ]`   Inside boundary:
-         * `[ ]`   Queue event contract assembly and validation.
-         * `[ ]`   Job signature and queue-post sequencing.
-         * `[ ]`   Runtime guard coverage for enqueue params/payload/return and event shape.
-      * `[ ]`   Outside boundary:
-         * `[ ]`   Upstream prompt-scoping and affordability logic.
-         * `[ ]`   Downstream callback ingest branching and artifact persistence.
-         * `[ ]`   Provider adapter execution internals.
+  * `[ ]`   `role`
+    * `[ ]`   Application worker node (`dialectic-worker`). Single responsibility: bridge the EMBED job row to the Netlify embedding worker via `enqueueModelCall`.
+    * `[ ]`   This role is appropriate because `processEmbedJob` is the Supabase-side dispatch half of the async embedding pipeline: it enqueues work; the Netlify adapter executes it; `saveResponse` (WS-B) persists the result.
+    * `[ ]`   Out of scope:
+      * `[ ]`   Embedding computation (Netlify adapter — WS-A, already complete).
+      * `[ ]`   Persisting the vector to `dialectic_memory` (`saveResponse` — WS-B).
+      * `[ ]`   Creating EMBED child jobs (`createEmbedJobs` — WS-S).
+      * `[ ]`   Pausing/resuming the parent job (`compressPrompt` — WS-D).
+      * `[ ]`   Wiring `processEmbedJob` into `IJobProcessors` (`dialectic.interface.ts` s with `processJob.ts` — next WS-R node).
 
-   * `[ ]`   `deps`
-      * `[ ]`   Provider: `../prepareModelJob/prepareModelJob.ts` enqueue caller contract.
-         * `[ ]`   Layer classification: immediate producer for enqueue params/payload.
-         * `[ ]`   Direction: producer input consumed by enqueue function.
-         * `[ ]`   Purpose: provide operation-specific payload data for queue emission.
-      * `[ ]`   Provider: `../../_shared/utils/type-guards/type_guards.chat.ts` and `type_guards.file_manager.ts`.
-         * `[ ]`   Layer classification: shared runtime guard utilities.
-         * `[ ]`   Direction: inbound dependency to enqueue runtime validation.
-         * `[ ]`   Purpose: validate provider config and output-type compatibility before queue POST.
-      * `[ ]`   Provider: Netlify queue endpoint contract (`eventName: 'ai-stream-background'` + operation-aware data).
-         * `[ ]`   Layer classification: external consumer boundary.
-         * `[ ]`   Direction: outbound payload emitted by enqueue implementation.
-         * `[ ]`   Purpose: ensure queued events are consumable by operation-aware worker routing.
-      * `[ ]`   Confirm:
-         * `[ ]`   No reverse dependency from enqueue into callback handler/persistence source modules.
-         * `[ ]`   No lateral layer violations across Supabase workstream boundaries.
+  * `[ ]`   `module`
+    * `[ ]`   Bounded context: `processEmbedJob/processEmbedJob.ts` and its full support system (interface, guard, mock, tests, provides). s: `_shared/types/file_manager.types.ts` (`FileType.EmbeddingChunk`, `EmbeddingOutputFileTypes`), `_shared/utils/type-guards/type_guards.file_manager.ts` (`isEmbeddingOutputFileType`), `_shared/utils/type-guards/type_guards.file_manager.test.ts`.
+    * `[ ]`   Inside boundary: EMBED payload validation, provider row lookup, `enqueueModelCall` dispatch.
+    * `[ ]`   Outside boundary: `IJobProcessors` interface (processJob.ts node); `dialectic.interface.ts` union extension (processJob.ts node); `isDialecticEmbeddingJobPayload` imported from `processEmbedJob.provides.ts` and used inside `isDialecticJobPayload` union check in `type_guards.dialectic.ts` (processJob.ts node — not re-exported from there); `DialecticJobPayload` union (processJob.ts node).
 
-   * `[ ]`   `context_slice`
-      * `[ ]`   Minimal dependency interfaces required:
-         * `[ ]`   `computeJobSig(job.id, job.user_id, job.created_at)` returning deterministic signature string.
-         * `[ ]`   Provider-row extended model config guard-safe shape.
-         * `[ ]`   Queue payload discriminator and request payload fields required by Netlify worker operation routing.
-      * `[ ]`   Injection shape remains `EnqueueModelCallDeps`, `EnqueueModelCallParams`, and `EnqueueModelCallPayload` with additive operation-aware fields only.
-      * `[ ]`   Confirm:
-         * `[ ]`   No over-fetching of producer-only fields not required for queue emission.
-         * `[ ]`   No hidden coupling to callback persistence tables.
+  * `[ ]`   `deps`
+    * `[ ]`   `ILogger` (inward, `_shared/types.ts`) — structured logging. Provider: `IJobContext.logger` (composition root). Direction: inward (shared utility). No reverse dep.
+    * `[ ]`   `BoundEnqueueModelCallFn` (inward, `enqueueModelCall/enqueueModelCall.interface.ts`) — pre-bound enqueue callable. Provider: composition root closure in `index.ts` (WS-S). Direction: inward (sibling worker function). No reverse dep.
+    * `[ ]`   `CountTokensFn` (inward, `_shared/types/tokenizer.types.ts`) — token count for `preflightInputTokens`. Provider: `IJobContext.countTokens` (composition root). Direction: inward (shared utility). No reverse dep.
+    * `[ ]`   `SupabaseClient<Database>` (inward, `npm:@supabase/supabase-js@2`) — `ai_providers` row lookup only. Direction: inward (infrastructure). No reverse dep.
+    * `[ ]`   `UserConfig` (inward, `calculateAffordability/calculateAffordability.interface.ts`) — passed through to `EnqueueModelCallParams`; not read directly by this function. Direction: inward (shared type). No reverse dep.
+    * `[ ]`   Confirm: no reverse dependency; `enqueueModelCall` does not import from this module; `IJobContext` is not extended here (that is WS-S).
 
-   * `[ ]`   `supabase/functions/dialectic-worker/enqueueModelCall/enqueueModelCall.interface.test.ts`
-      * `[ ]`   Add contract assertions for operation-aware enqueue payload shape:
-         * `[ ]`   stream payload variant includes required `chatApiRequest` and excludes embedding-only fields.
-         * `[ ]`   embedding payload variant includes required embedding input contract and excludes stream-only fields.
-         * `[ ]`   unknown operation discriminator is rejected by contract fixtures.
-      * `[ ]`   Add contract assertions for operation-aware `AiStreamEventData`:
-         * `[ ]`   includes operation discriminator.
-         * `[ ]`   includes exactly one request variant payload per operation.
-         * `[ ]`   preserves `sig` and `user_config` requirements.
-      * `[ ]`   Preserve existing queued success/error return contract assertions.
+  * `[ ]`   `context_slice`
+    * `[ ]`   From `BoundEnqueueModelCallFn`: only the `(params, payload) => Promise<EnqueueModelCallReturn>` call surface. No dep fields accessed.
+    * `[ ]`   From `SupabaseClient`: only `.from('ai_providers').select('*').eq('id', payload.embedding_model_provider_id).single()`.
+    * `[ ]`   From `CountTokensFn`: only `countTokens(payload.chunk_text)` returning `number`.
+    * `[ ]`   From `DialecticJobRow`: only `id`, `session_id`, `user_id`, `payload`.
+    * `[ ]`   No over-fetching; no hidden coupling.
 
-   * `[ ]`   `supabase/functions/dialectic-worker/enqueueModelCall/enqueueModelCall.interface.ts`
-      * `[ ]`   Extend `EnqueueModelCallPayload` to an explicit operation-discriminated union consumed by enqueue source.
-      * `[ ]`   Extend `AiStreamEventData` to operation-discriminated union aligning with Netlify worker event expectations.
-      * `[ ]`   Keep `EnqueueModelCallReturn` success/error union unchanged.
-      * `[ ]`   Keep dependency and params interfaces stable except strictly required additive fields.
+  * `[ ]`   `processEmbedJob.interface.test.ts`
+    * `[ ]`   Valid `ProcessEmbedJobDeps`: `logger` conforms to `ILogger`; `enqueueModelCall` conforms to `BoundEnqueueModelCallFn`; `countTokens` conforms to `CountTokensFn`.
+    * `[ ]`   Valid `ProcessEmbedJobParams`: `dbClient` is `SupabaseClient<Database>`; `job` is `DialecticJobRow`; `projectOwnerUserId` non-empty string; `authToken` non-empty string; `userConfig` has `tier_output_cap_tokens`.
+    * `[ ]`   `ProcessEmbedJobSuccessReturn`: shape `{ queued: true }`.
+    * `[ ]`   `ProcessEmbedJobErrorReturn`: shape `{ error: PostgrestError | Error; retriable: boolean }`.
+    * `[ ]`   `DialecticEmbeddingJobPayload`: valid object has all required string/number fields with `job_type: 'EMBED'`.
+    * `[ ]`   `DialecticEmbeddingJobPayload`: object with `job_type !== 'EMBED'` fails the contract invariant.
 
-   * `[ ]`   `supabase/functions/dialectic-worker/enqueueModelCall/enqueueModelCall.interaction.spec`
-      * `[ ]`   Add interaction-spec file for enqueue sequencing and branch semantics:
-         * `[ ]`   validate output/provider/api-key/job-user-id prerequisites.
-         * `[ ]`   compute signature.
-         * `[ ]`   update job to queued.
-         * `[ ]`   build operation-aware event payload.
-         * `[ ]`   enforce 500 KB serialized payload guard.
-         * `[ ]`   POST to Netlify queue with authorization header.
-      * `[ ]`   Define operation branch constraints:
-         * `[ ]`   stream operation serializes stream request fields only.
-         * `[ ]`   embedding operation serializes embedding request fields only.
-      * `[ ]`   Failure modes:
-         * `[ ]`   contract/validation failures return non-retriable errors.
-         * `[ ]`   DB update failure returns retriable error and aborts fetch.
-         * `[ ]`   non-2xx queue response and network errors return retriable errors.
+  * `[ ]`   `processEmbedJob.interface.ts`
+    * `[ ]`   Import `BoundEnqueueModelCallFn`, `EnqueueModelCallParams`, `EnqueueModelCallReturn` from `'../enqueueModelCall/enqueueModelCall.interface.ts'`.
+    * `[ ]`   Import `ILogger` from `'../../_shared/types.ts'`.
+    * `[ ]`   Import `CountTokensFn` from `'../../_shared/types/tokenizer.types.ts'`.
+    * `[ ]`   Import `SupabaseClient`, `PostgrestError` from `'npm:@supabase/supabase-js@2'`.
+    * `[ ]`   Import `Database`, `Enums` from `'../../types_db.ts'`.
+    * `[ ]`   Import `DialecticJobRow` from `'../../dialectic-service/dialectic.interface.ts'`.
+    * `[ ]`   Import `UserConfig` from `'../calculateAffordability/calculateAffordability.interface.ts'`.
+    * `[ ]`   `DialecticEmbeddingJobPayload` interface:
+      ```
+      export interface DialecticEmbeddingJobPayload {
+        job_type: 'EMBED';
+        chunk_text: string;
+        source_type: Enums<'dialectic_memory_source_type_enum'>;
+        source_id: string;
+        wallet_id: string;
+        chunk_index: number;
+        embedding_model_provider_id: string;
+      }
+      ```
+    * `[ ]`   `ProcessEmbedJobDeps` interface:
+      ```
+      export interface ProcessEmbedJobDeps {
+        logger: ILogger;
+        enqueueModelCall: BoundEnqueueModelCallFn;
+        countTokens: CountTokensFn;
+      }
+      ```
+    * `[ ]`   `ProcessEmbedJobParams` interface:
+      ```
+      export interface ProcessEmbedJobParams {
+        dbClient: SupabaseClient<Database>;
+        job: DialecticJobRow;
+        projectOwnerUserId: string;
+        authToken: string;
+        userConfig: UserConfig;
+      }
+      ```
+    * `[ ]`   `export interface ProcessEmbedJobSuccessReturn { queued: true; }`
+    * `[ ]`   `export interface ProcessEmbedJobErrorReturn { error: PostgrestError | Error; retriable: boolean; }`
+    * `[ ]`   `export type ProcessEmbedJobReturn = ProcessEmbedJobSuccessReturn | ProcessEmbedJobErrorReturn;`
+    * `[ ]`   `export type ProcessEmbedJobFn = (deps: ProcessEmbedJobDeps, params: ProcessEmbedJobParams, payload: DialecticEmbeddingJobPayload) => Promise<ProcessEmbedJobReturn>;`
 
-   * `[ ]`   `supabase/functions/dialectic-worker/enqueueModelCall/enqueueModelCall.guard.test.ts`
-      * `[ ]`   Add guard tests for operation-aware payload and event shape:
-         * `[ ]`   accept valid stream payload/event variant.
-         * `[ ]`   accept valid embedding payload/event variant.
-         * `[ ]`   reject mixed stream+embedding fields in a single variant.
-         * `[ ]`   reject unknown operation discriminator.
-      * `[ ]`   Add regression tests for event name literal consistency:
-         * `[ ]`   guard accepts `eventName: 'ai-stream-background'`.
-         * `[ ]`   guard rejects stale literal values.
-      * `[ ]`   Preserve existing deps/params/return guard coverage.
+  * `[ ]`   `processEmbedJob.interaction.spec`
+    * `[ ]`   Caller: `processJob.ts` dispatches to `processors.processEmbedJob(dbClient, job, projectOwnerUserId, ctx, authToken)` on `case 'EMBED'`. The wrapper (constructed in `index.ts` WS-S) calls `isDialecticEmbeddingJobPayload(job.payload)` — if false, returns `{ error: new Error('...'), retriable: false }` without calling `processEmbedJob`. When the guard passes, the wrapper calls `processEmbedJob(deps, params, job.payload)` and throws on `result.error`.
+    * `[ ]`   Interaction with `SupabaseClient` (`ai_providers` lookup): `.from('ai_providers').select('*').eq('id', payload.embedding_model_provider_id).single()`. If `providerError` → `return { error: providerError, retriable: false }` — `providerError` passed through unchanged. If `!providerRow` (no error) → `return { error: new Error('No provider row found for id: ' + payload.embedding_model_provider_id), retriable: false }`.
+    * `[ ]`   Interaction with `CountTokensFn`: called once with `payload.chunk_text`; result is `preflightInputTokens`.
+    * `[ ]`   Interaction with `BoundEnqueueModelCallFn`: called once with `(enqueueParams, embedPayload)` where `enqueueParams.job = params.job`, `enqueueParams.providerRow = providerRow`, `enqueueParams.userAuthToken = params.authToken`, `enqueueParams.output_type = FileType.EmbeddingChunk` (`'embedding_chunk'`), `enqueueParams.userConfig = params.userConfig`; `embedPayload = { operation: 'embedding', embeddingApiRequest: { input: payload.chunk_text }, preflightInputTokens }`. Result is `EnqueueModelCallReturn` — returned verbatim.
+    * `[ ]`   Ordering: provider lookup → token count → enqueue. Each step halts on error without proceeding.
+    * `[ ]`   Failure modes:
+      * `providerError` from Supabase: returned unchanged as `{ error: providerError, retriable: false }`.
+      * `!providerRow` with no error: `{ error: new Error('...'), retriable: false }`.
+      * `enqueueModelCall` returns `{ error, retriable }`: returned verbatim — `return result`.
+    * `[ ]`   No side effects beyond the `enqueueModelCall` invocation (which sets job status to `'queued'` internally).
 
-   * `[ ]`   `supabase/functions/dialectic-worker/enqueueModelCall/enqueueModelCall.guard.ts`
-      * `[ ]`   Update payload and event guards to enforce operation-discriminated union semantics.
-      * `[ ]`   Correct `isAiStreamEventBody` event-name literal to `ai-stream-background`.
-      * `[ ]`   Preserve strict validation for `sig` and `user_config.tier_output_cap_tokens`.
-      * `[ ]`   Preserve deps and params guard behavior except required operation-aware additions.
+  * `[ ]`   `processEmbedJob.guard.test.ts` (RED before GREEN)
+    * `[ ]`   `isDialecticEmbeddingJobPayload` accepts `{ job_type: 'EMBED', chunk_text: 'x', source_type: 'dialectic_contribution', source_id: 'abc', wallet_id: 'w', chunk_index: 0, embedding_model_provider_id: 'p' }`.
+    * `[ ]`   Rejects: missing `job_type`; `job_type !== 'EMBED'`; missing `chunk_text`; non-string `chunk_text`; missing `source_type`; missing `source_id`; missing `wallet_id`; non-number `chunk_index`; missing `embedding_model_provider_id`; non-string `embedding_model_provider_id`.
+    * `[ ]`   `isProcessEmbedJobDeps` accepts valid deps object; rejects missing `logger`; rejects missing `enqueueModelCall`.
+    * `[ ]`   `isProcessEmbedJobParams` accepts valid params object; rejects missing `dbClient`; rejects missing `job`; rejects missing `authToken`.
+    * `[ ]`   Do NOT re-test: `EnqueueModelCallReturn` guards (own module); `ILogger` shape (not this boundary).
 
-   * `[ ]`   `supabase/functions/dialectic-worker/enqueueModelCall/enqueueModelCall.mock.ts`
-      * `[ ]`   Add operation-aware payload/event mock factories:
-         * `[ ]`   stream payload/event defaults.
-         * `[ ]`   embedding payload/event defaults.
-         * `[ ]`   override-capable malformed variants for negative tests.
-      * `[ ]`   Preserve existing typed defaults for deps/params and queued return fixtures.
+  * `[ ]`   `processEmbedJob.guard.ts`
+    * `[ ]`   `isDialecticEmbeddingJobPayload(value: unknown): value is DialecticEmbeddingJobPayload` — checks `isRecord(value)`, `value.job_type === 'EMBED'`, `typeof value.chunk_text === 'string'`, `typeof value.source_type === 'string'`, `typeof value.source_id === 'string'`, `typeof value.wallet_id === 'string'`, `typeof value.chunk_index === 'number'`, `typeof value.embedding_model_provider_id === 'string'`.
+    * `[ ]`   `isProcessEmbedJobDeps(value: unknown): value is ProcessEmbedJobDeps` — checks `isRecord(value)`, `typeof value.logger === 'object' && value.logger !== null`, `typeof value.enqueueModelCall === 'function'`, `typeof value.countTokens === 'function'`.
+    * `[ ]`   `isProcessEmbedJobParams(value: unknown): value is ProcessEmbedJobParams` — checks `isRecord(value)`, `typeof value.dbClient === 'object' && value.dbClient !== null`, `typeof value.job === 'object' && value.job !== null`, `typeof value.projectOwnerUserId === 'string'`, `typeof value.authToken === 'string'`.
 
-   * `[ ]`   `supabase/functions/dialectic-worker/enqueueModelCall/enqueueModelCall.test.ts`
-      * `[ ]`   Add RED/GREEN unit coverage for operation-aware enqueue behavior:
-         * `[ ]`   stream payload path posts stream event variant and remains queued-success compatible.
-         * `[ ]`   embedding payload path posts embedding event variant and remains queued-success compatible.
-         * `[ ]`   invalid operation payload is rejected before DB update/fetch.
-         * `[ ]`   oversized payload handling remains non-retriable and fetch is not called.
-      * `[ ]`   Preserve sequencing assertions that DB queued update occurs before queue fetch on success.
-      * `[ ]`   Preserve retriable vs non-retriable classification assertions for failure paths.
+  * `[ ]`   `_shared/types/file_manager.types.ts` (type addition s with first consumer — this node)
+    * `[ ]`   Add `EmbeddingChunk = 'embedding_chunk'` to `FileType` enum, after the last existing member.
+
+  * `[ ]`   `_shared/utils/type-guards/type_guards.file_manager.test.ts` (guard test — RED before GREEN)
+    * `[ ]`   Add `isEmbeddingOutputFileType` test block: accepts `'embedding_chunk'`; rejects any other string (e.g. `'synthesis'`); rejects non-string (e.g. `42`, `null`).
+    * `[ ]`   Do NOT re-test `isModelContributionFileType` or any other existing guard.
+
+  * `[ ]`   `_shared/utils/type-guards/type_guards.file_manager.ts` (guard)
+    * `[ ]`   `FileType` is already imported; no new import required.
+    * `[ ]`   Add `export function isEmbeddingOutputFileType(value: unknown): value is FileType.EmbeddingChunk { return value === FileType.EmbeddingChunk; }` after `isModelContributionFileType`.
+
+  * `[ ]`   `processEmbedJob.mock.ts`
+    * `[ ]`   `createMockProcessEmbedJobDeps(overs?: Partial<ProcessEmbedJobDeps>): ProcessEmbedJobDeps` — returns `{ logger: createMockLogger(), enqueueModelCall: vi.fn().mockResolvedValue({ queued: true }), countTokens: vi.fn().mockReturnValue(10), ...overs }`.
+    * `[ ]`   `createMockProcessEmbedJobParams(overs?: Partial<ProcessEmbedJobParams>): ProcessEmbedJobParams` — returns params with a stub `dbClient` (mock Supabase client), a `job` row with `job_type: 'EMBED'` and valid `DialecticEmbeddingJobPayload` as payload, valid `projectOwnerUserId`, `authToken`, `userConfig`.
+    * `[ ]`   `createMockDialecticEmbeddingJobPayload(overs?: Partial<DialecticEmbeddingJobPayload>): DialecticEmbeddingJobPayload` — returns `{ job_type: 'EMBED', chunk_text: 'test chunk', source_type: 'dialectic_contribution', source_id: 'src-uuid', wallet_id: 'wallet-uuid', chunk_index: 0, embedding_model_provider_id: 'provider-uuid', ...overs }`.
+    * `[ ]`   `createMockProcessEmbedJobFn(result?: ProcessEmbedJobReturn): ProcessEmbedJobFn` — returns `vi.fn().mockResolvedValue(result ?? { queued: true })`.
+    * `[ ]`   No new behavior beyond interface conformance.
+
+  * `[ ]`   `processEmbedJob.test.ts` (RED before GREEN)
+    * `[ ]`   All tests call `processEmbedJob(deps, params, payload)` with a pre-constructed `DialecticEmbeddingJobPayload` as the third argument. Guard validation is the wrapper's responsibility — not tested here.
+    * `[ ]`   **Happy path — provider found, enqueue succeeds**: mock DB `ai_providers` single() returns a valid row; mock `enqueueModelCall` resolves `{ queued: true }`. Assert result is `{ queued: true }`. Assert `enqueueModelCall` called once with `params.output_type === FileType.EmbeddingChunk`, `embedPayload.operation === 'embedding'`, `embedPayload.embeddingApiRequest.input === payload.chunk_text`.
+    * `[ ]`   **Provider DB error — error returned unchanged**: DB client `ai_providers` single() returns `{ data: null, error: postgrestError }` where `postgrestError` is a specific mock `PostgrestError`. Assert `result.error === postgrestError` (same object reference — not rewritten).
+    * `[ ]`   **Provider row null, no DB error**: DB client returns `{ data: null, error: null }`. Assert result is `{ error: Error, retriable: false }`. Assert `enqueueModelCall` NOT called.
+    * `[ ]`   **enqueueModelCall returns retriable error — returned unchanged**: `enqueueModelCall` returns `errorReturn = { error: new Error('queue unavailable'), retriable: true }`. Assert `result === errorReturn` (same object reference — not rewritten).
+    * `[ ]`   **enqueueModelCall returns non-retriable error — returned unchanged**: `enqueueModelCall` returns `errorReturn = { error: new Error('bad payload'), retriable: false }`. Assert `result === errorReturn` (same object reference).
+    * `[ ]`   **preflightInputTokens threaded correctly**: mock `countTokens` returns `42`. Assert `enqueueModelCall` called with `embedPayload.preflightInputTokens === 42`.
+    * `[ ]`   Do NOT re-test: `isDialecticEmbeddingJobPayload` guard correctness (processEmbedJob.guard.test.ts); `enqueueModelCall` behavior internals.
+
+  * `[ ]`   `construction`
+    * `[ ]`   `processEmbedJob` is a plain `async function` with no class or constructor.
+    * `[ ]`   Created by: the `index.ts` composition root (WS-S) constructs a wrapper that calls `isDialecticEmbeddingJobPayload(job.payload)`, and on success calls `processEmbedJob(deps, params, job.payload)`. The wrapper supplies `ProcessEmbedJobDeps` from the worker deps bundle.
+    * `[ ]`   No partially constructed state. All deps in `ProcessEmbedJobDeps` are required at call time; all runtime data in `ProcessEmbedJobParams` and the typed `payload` argument.
+    * `[ ]`   Invalid construction: the wrapper must supply all three of `logger`, `enqueueModelCall`, and `countTokens`; omitting any one fails the `isProcessEmbedJobDeps` guard in the wrapper before `processEmbedJob` is called.
+
+  * `[ ]`   `processEmbedJob.ts` (implementation)
+    * `[ ]`   Import `ProcessEmbedJobDeps`, `ProcessEmbedJobParams`, `ProcessEmbedJobReturn`, `DialecticEmbeddingJobPayload` from `'./processEmbedJob.interface.ts'`.
+    * `[ ]`   Import `FileType` from `'../../_shared/types/file_manager.types.ts'`.
+    * `[ ]`   Import `EnqueueModelCallEmbeddingPayload`, `EnqueueModelCallParams` from `'../enqueueModelCall/enqueueModelCall.interface.ts'`.
+    * `[ ]`   Implement `export async function processEmbedJob(deps: ProcessEmbedJobDeps, params: ProcessEmbedJobParams, payload: DialecticEmbeddingJobPayload): Promise<ProcessEmbedJobReturn>`.
+    * `[ ]`   Step 1: `const { data: providerRow, error: providerError } = await params.dbClient.from('ai_providers').select('*').eq('id', payload.embedding_model_provider_id).single();` If `providerError` → `return { error: providerError, retriable: false };` If `!providerRow` → `return { error: new Error('No provider row found for id: ' + payload.embedding_model_provider_id), retriable: false };`
+    * `[ ]`   Step 2: `const preflightInputTokens = deps.countTokens(payload.chunk_text);`
+    * `[ ]`   Step 3: `const enqueueParams: EnqueueModelCallParams = { dbClient: params.dbClient, job: params.job, providerRow, userAuthToken: params.authToken, output_type: FileType.EmbeddingChunk, userConfig: params.userConfig };`
+    * `[ ]`   Step 4: `const embedPayload: EnqueueModelCallEmbeddingPayload = { operation: 'embedding', embeddingApiRequest: { input: payload.chunk_text }, preflightInputTokens };`
+    * `[ ]`   Step 5: `return await deps.enqueueModelCall(enqueueParams, embedPayload);`
+    * `[ ]`   No `any` types. No casts. No undeclared deps. Each code path maps to a test.
+
+  * `[ ]`   `processEmbedJob.provides.ts`
+    * `[ ]`   `export { processEmbedJob } from './processEmbedJob.ts'`
+    * `[ ]`   `export type { ProcessEmbedJobFn, ProcessEmbedJobDeps, ProcessEmbedJobParams, ProcessEmbedJobReturn, ProcessEmbedJobSuccessReturn, ProcessEmbedJobErrorReturn, DialecticEmbeddingJobPayload } from './processEmbedJob.interface.ts'`
+    * `[ ]`   `export { isDialecticEmbeddingJobPayload, isProcessEmbedJobDeps, isProcessEmbedJobParams } from './processEmbedJob.guard.ts'`
+    * `[ ]`   Stability: internal worker function; not exported from the Deno function entry point.
+
+  * `[ ]`   `processEmbedJob.integration.test.ts`
+    * `[ ]`   Integration boundary: real `isDialecticEmbeddingJobPayload` guard + real `processEmbedJob` + real `enqueueModelCall` + real `countTokens` → mock `fetch` (external HTTP boundary to Netlify queue) + mock `dbClient` (external Supabase boundary). No internal functions mocked.
+    * `[ ]`   Test — valid job, full real chain: construct a `DialecticJobRow` with a valid `DialecticEmbeddingJobPayload` using `createMockDialecticEmbeddingJobPayload()`. Mock `fetch` to return a 200 response. Mock `dbClient` `ai_providers` lookup to return a valid provider row; mock `dbClient` job-status update to succeed. Call `isDialecticEmbeddingJobPayload(job.payload)` — assert true. Call `processEmbedJob(realDeps, params, job.payload)` where `realDeps.enqueueModelCall` is the real `enqueueModelCall` bound with real deps (except `fetch` and `dbClient` mocked). Assert result is `{ queued: true }`. Capture the body passed to mock `fetch` and assert: `parsedBody.data.operation === 'embedding'`, `parsedBody.data.embedding_api_request.input === payload.chunk_text`, `parsedBody.data.job_id === job.id`.
+    * `[ ]`   Confirms: the full real internal call chain — guard validates, processEmbedJob assembles params, enqueueModelCall signs and posts — is correct end-to-end with only true external boundaries (HTTP, DB) mocked.
+
+  * `[ ]`   `directionality`
+    * `[ ]`   Layer: worker orchestration (`dialectic-worker`). Deps are inward (`BoundEnqueueModelCallFn` from sibling worker module, `ILogger`/`CountTokensFn` from shared, `SupabaseClient` from infrastructure, `DialecticJobRow` from `dialectic-service`). Provides outward: `ProcessEmbedJobReturn` to the wrapper in `index.ts`.
+    * `[ ]`   No cycles: `processEmbedJob` does not import from `processJob`, `createEmbedJobs`, `saveResponse`, or `compressPrompt`.
+
+  * `[ ]`   `requirements` (binary, observable)
+    * `[ ]`   Called with a valid `DialecticEmbeddingJobPayload` and mock `enqueueModelCall` resolving `{ queued: true }`: returns `{ queued: true }`.
+    * `[ ]`   Called with valid payload and Supabase returning `providerError`: returns `{ error: providerError, retriable: false }` — `providerError` is the exact same object, not rewritten.
+    * `[ ]`   Called with valid payload and `!providerRow` (no DB error): returns `{ error: Error, retriable: false }` without calling `enqueueModelCall`.
+    * `[ ]`   Called with valid payload and `enqueueModelCall` returning `errorReturn = { error, retriable: true }`: returns `errorReturn` — same object, not rewritten.
+    * `[ ]`   `isDialecticEmbeddingJobPayload` is exported from `processEmbedJob.guard.ts` and from `processEmbedJob.provides.ts`.
+    * `[ ]`   `FileType.EmbeddingChunk === 'embedding_chunk'` compiles and evaluates correctly after this node.
+    * `[ ]`   `isEmbeddingOutputFileType('embedding_chunk')` returns `true`; any other value returns `false`.
+    * `[ ]`   `enqueueModelCall` is called with `output_type: FileType.EmbeddingChunk` (`'embedding_chunk'`), `payload.operation === 'embedding'`, `payload.embeddingApiRequest.input === payload.chunk_text`, `payload.preflightInputTokens` equal to result of `countTokens(payload.chunk_text)`.
+
+* `[ ]`   supabase/functions/dialectic-worker/`processJob.ts` **[BE] Add EMBED dispatch case; extend `dialectic.interface.ts` + `type_guards.dialectic.ts` to wire EMBED as a first-class routable job type**
+
+  * `[ ]`   `objective`
+    * `[ ]`   After WS-0 adds `'EMBED'` to `dialectic_job_type_enum`, EMBED rows reach `processJob`'s `switch (job.job_type)` and fall through to the `default` case, throwing `"Unsupported or null job_type"`. This node adds the `EMBED` dispatch case and extends every contract that must understand the new type in a single, atomic touch.
+    * `[ ]`   Functional goals:
+      * `[ ]`   Add `case 'EMBED':` to the switch in `processJob.ts`, dispatching to `processors.processEmbedJob(dbClient, job, projectOwnerUserId, ctx, authToken)`.
+      * `[ ]`   Extend `JobType` union and `JobTypes` const in `dialectic.interface.ts` to include `"EMBED"`.
+      * `[ ]`   Extend `DialecticJobPayload` union in `dialectic.interface.ts` to include `DialecticEmbeddingJobPayload` (imported from `processEmbedJob.interface.ts`).
+      * `[ ]`   Add `processEmbedJob: ProcessEmbedJobFn` to `IJobProcessors` in `dialectic.interface.ts` (imports `ProcessEmbedJobFn` from `processEmbedJob.interface.ts`).
+      * `[ ]`   Add `isDialecticEmbeddingJobPayload` guard to `type_guards.dialectic.ts` + update `isDialecticJobPayload` to include the new branch + update `type_guards.ts` barrel re-export.
+      * `[ ]`   Update `_JobProcessorsDummyImpl`, `MockJobProcessorsSpies`, and `createMockJobProcessors` in `dialectic.mock.ts` to satisfy the updated `IJobProcessors` contract.
+    * `[ ]`   Non-functional constraints:
+      * `[ ]`   No existing dispatch cases (EXECUTE, PLAN, RENDER) are touched.
+      * `[ ]`   `dialectic.interface.ts` is touched exactly once across all workstreams — this node is that single touch.
+      * `[ ]`   `type_guards.dialectic.ts` is touched exactly once across all workstreams — this node is that single touch.
+      * `[ ]`   `dialectic.mock.ts` is touched exactly once — this node is that single touch.
+
+  * `[ ]`   `role`
+    * `[ ]`   Router node. Single responsibility: dispatch each `job_type` to the correct processor via the `IJobProcessors` interface. No business logic.
+    * `[ ]`   This node also carries the shared-contract layer changes (`dialectic.interface.ts`, `type_guards.dialectic.ts`, `dialectic.mock.ts`) because `processJob.ts` is the first implementation consumer of `IJobProcessors.processEmbedJob` after `processEmbedJob.ts` is defined in the prior node.
+    * `[ ]`   Out of scope: real EMBED embedding logic (`processEmbedJob.ts` — prior node); `index.ts` factory wiring (WS-S); `buildJobProgressDtos.ts` EMBED loop guard (own later node — contains NO interface changes after this node lands).
+
+  * `[ ]`   `module`
+    * `[ ]`   Bounded context: `processJob.ts`, `processJob.test.ts`. Shared-contract changes ride here: `dialectic.interface.ts`, `type_guards.dialectic.ts` + its test, `type_guards.ts` barrel, `dialectic.mock.ts`.
+    * `[ ]`   Inside boundary: the `switch` body in `processJob.ts`; `JobType`, `JobTypes`, `DialecticJobPayload` union, `IJobProcessors` in `dialectic.interface.ts`; `isDialecticEmbeddingJobPayload` + `isDialecticJobPayload` in `type_guards.dialectic.ts`; `_JobProcessorsDummyImpl` / `MockJobProcessorsSpies` / `createMockJobProcessors` in `dialectic.mock.ts`.
+    * `[ ]`   Outside boundary: `processEmbedJob.interface.ts` (prior node — source of `ProcessEmbedJobFn` and `DialecticEmbeddingJobPayload`); `index.ts` (WS-S); `buildJobProgressDtos.ts` (later node — only adds a loop guard, no interface changes).
+
+  * `[ ]`   `deps`
+    * `[ ]`   `ProcessEmbedJobFn` (inward, `processEmbedJob.interface.ts` — prior node) — function type for the EMBED processor; imported by `dialectic.interface.ts` in this node. No reverse dep.
+    * `[ ]`   `DialecticEmbeddingJobPayload` (inward, `processEmbedJob.interface.ts` — prior node) — payload shape for EMBED job rows; imported into `dialectic.interface.ts` union extension in this node. No reverse dep.
+    * `[ ]`   `IJobProcessors` (inward, `dialectic.interface.ts` — extended in this node) — consumed by `processJob`'s `processors` parameter and by `_JobProcessorsDummyImpl` in `dialectic.mock.ts`.
+    * `[ ]`   `IJobContext` (inward, `JobContext.interface.ts`) — already imported in `processJob.ts`; passed as `ctx` to `processEmbedJob`.
+    * `[ ]`   Confirm: no reverse dependency from `processJob.ts` into `processEmbedJob.ts`; `processJob` dispatches via the `IJobProcessors` interface only, not the concrete implementation. No lateral layer violations.
+
+  * `[ ]`   `context_slice`
+    * `[ ]`   From `processEmbedJob.interface.ts`: only `ProcessEmbedJobFn` type and `DialecticEmbeddingJobPayload` interface — nothing else imported.
+    * `[ ]`   From `IJobContext`: only the type itself (already imported in `processJob.ts`); no new fields accessed in the EMBED case.
+    * `[ ]`   No over-fetching; no hidden coupling to `processEmbedJob`'s implementation.
+
+  * `[ ]`   `_shared/utils/type-guards/type_guards.dialectic.test.ts` (guard test — RED before GREEN)
+    * `[ ]`   **Add** `isDialecticEmbeddingJobPayload` guard tests:
+      * `[ ]`   Accepts a fully-valid payload: `{ job_type: 'EMBED', chunk_text: 'x', source_type: 'dialectic_contribution', source_id: 'abc', wallet_id: 'w', chunk_index: 0, embedding_model_provider_id: 'p' }`.
+      * `[ ]`   Rejects missing `job_type`.
+      * `[ ]`   Rejects `job_type !== 'EMBED'` (e.g. `'EXECUTE'`).
+      * `[ ]`   Rejects missing `chunk_text`.
+      * `[ ]`   Rejects non-number `chunk_index` (e.g. string `'0'`).
+      * `[ ]`   Rejects missing `embedding_model_provider_id`.
+    * `[ ]`   **Add** `isDialecticJobPayload` regression test: a payload with `job_type: 'EMBED'` and all required fields is accepted by `isDialecticJobPayload`.
+    * `[ ]`   Do NOT re-test existing PLAN/EXECUTE/RENDER payload guard coverage.
+
+  * `[ ]`   `_shared/utils/type-guards/type_guards.dialectic.ts` (guard)
+    * `[ ]`   Add `isDialecticEmbeddingJobPayload(payload: unknown): payload is DialecticEmbeddingJobPayload`. Checks: `isRecord(payload)`, `payload.job_type === 'EMBED'`, `typeof payload.chunk_text === 'string'`, `typeof payload.source_type === 'string'`, `typeof payload.source_id === 'string'`, `typeof payload.wallet_id === 'string'`, `typeof payload.chunk_index === 'number'`, `typeof payload.embedding_model_provider_id === 'string'`.
+    * `[ ]`   Update `isDialecticJobPayload`: append `|| isDialecticEmbeddingJobPayload(payload)` to the union check.
+    * `[ ]`   No other changes.
+
+  * `[ ]`   `_shared/utils/type_guards.ts` (barrel)
+    * `[ ]`   Add `isDialecticEmbeddingJobPayload` to the re-export list from `./type-guards/type_guards.dialectic.ts`.
+
+  * `[ ]`   `dialectic-service/dialectic.interface.ts` (all changes land here — single touch)
+    * `[ ]`   Add import: `import { ProcessEmbedJobFn, DialecticEmbeddingJobPayload } from '../dialectic-worker/processEmbedJob/processEmbedJob.interface.ts';`
+    * `[ ]`   Line ~129: change `export type JobType = "PLAN" | "EXECUTE" | "RENDER";` → `export type JobType = "PLAN" | "EXECUTE" | "RENDER" | "EMBED";`
+    * `[ ]`   Line ~130: change `export const JobTypes: readonly JobType[] = ["PLAN", "EXECUTE", "RENDER"];` → `export const JobTypes: readonly JobType[] = ["PLAN", "EXECUTE", "RENDER", "EMBED"];`
+    * `[ ]`   Extend `DialecticJobPayload` union: append `| DialecticEmbeddingJobPayload`.
+    * `[ ]`   In `IJobProcessors` (~line 114): add `processEmbedJob: ProcessEmbedJobFn;` after `processRenderJob`.
+    * `[ ]`   No other changes to `dialectic.interface.ts`.
+
+  * `[ ]`   `dialectic-service/dialectic.mock.ts` (test infrastructure — must satisfy updated `IJobProcessors`)
+    * `[ ]`   In `_JobProcessorsDummyImpl`: add `processEmbedJob = async (..._args: Parameters<ProcessEmbedJobFn>): Promise<void> => { /* dummy */ }` after `processRenderJob`.
+    * `[ ]`   In `MockJobProcessorsSpies` type: add `processEmbedJob: Spy<...>` entry following the pattern of `processRenderJob`.
+    * `[ ]`   In `createMockJobProcessors`: add `processEmbedJob: spy(dummyInstance, "processEmbedJob")` to the `spies` object.
+    * `[ ]`   No other changes.
+
+  * `[ ]`   `processJob.test.ts` (behavioral verification — RED before GREEN)
+    * `[ ]`   **Add** a new `Deno.test`: `'processJob - EMBED job routes to processEmbedJob'`. Follow the pattern of existing EXECUTE/PLAN tests: construct a `mockJob` with `job_type: 'EMBED'` and a valid `DialecticEmbeddingJobPayload`, call `processJob`, assert `spies.processEmbedJob.calls.length === 1`, assert `spies.processSimpleJob.calls.length === 0`, assert `spies.processComplexJob.calls.length === 0`.
+    * `[ ]`   Do NOT re-test: EXECUTE dispatch; PLAN dispatch; RENDER dispatch; the `default` throw path.
+
+  * `[ ]`   `construction`
+    * `[ ]`   `processJob` is a plain `async function`. No construction concerns.
+
+  * `[ ]`   `processJob.ts` (implementation)
+    * `[ ]`   Before the `default:` case in the switch (line ~69), add:
+      ```typescript
+      case 'EMBED': {
+        ctx.logger.info(`[dialectic-worker] [processJob] Delegating 'embed' job ${jobId} to embed processor.`);
+        await processors.processEmbedJob(dbClient, job, projectOwnerUserId, ctx, authToken);
+        return;
+      }
+      ```
+    * `[ ]`   No other changes to `processJob.ts`.
+
+  * `[ ]`   `directionality`
+    * `[ ]`   Layer: worker router (`dialectic-worker`). Deps are inward (DB client, job row types, processor interface, job context); provides outward (dispatched call to each processor).
+    * `[ ]`   No new dependency cycles. `processJob.ts` imports from `processEmbedJob.interface.ts` (prior node) via `dialectic.interface.ts` — direction is inward-to-consumer, standard.
+
+  * `[ ]`   `requirements` (binary, observable)
+    * `[ ]`   `processJob` called with `job.job_type === 'EMBED'`: `processors.processEmbedJob` is called exactly once; `processSimpleJob` and `processComplexJob` are not called.
+    * `[ ]`   `processJob` called with `job.job_type === 'EXECUTE'`: existing behavior unchanged.
+    * `[ ]`   `JobType` includes `"EMBED"` — `JobTypes` const includes `"EMBED"`.
+    * `[ ]`   `IJobProcessors` includes `processEmbedJob: ProcessEmbedJobFn` — `_JobProcessorsDummyImpl implements IJobProcessors` compiles without error.
+    * `[ ]`   `isDialecticEmbeddingJobPayload` returns `true` for a valid EMBED payload; returns `false` for any other value.
+    * `[ ]`   `isDialecticJobPayload` returns `true` for a valid EMBED payload.
+    * `[ ]`   `dialectic.interface.ts` is touched exactly once across all workstreams; no downstream node touches it again.
+
+* `[ ]`   supabase/functions/_shared/prompt-assembler/`assembleContinuationPrompt.ts` **[BE] Guard against EMBED jobs reaching the LLM continuation assembler**
+
+  * `[ ]`   `objective`
+    * `[ ]`   `assembleContinuationPrompt` assembles a multi-part LLM continuation prompt. It has no logic for EMBED jobs, which write vector embeddings to `dialectic_memory` rather than generating text continuations. After WS-0 adds EMBED to `dialectic_job_type_enum`, an EMBED job could reach this function if `processJob.ts` dispatch is misconfigured. The function must return an empty `AssembledPrompt` immediately — before any DB access, session check, or payload check — so no side-effectful assembly work is attempted.
+    * `[ ]`   Functional goals:
+      * `[ ]`   Add `if (job.job_type === 'EMBED') { return { promptContent: '', source_prompt_resource_id: '' }; }` as the very first statement in the function body, before the existing `if (!session.selected_model_ids ...)` check (~line 37).
+    * `[ ]`   Non-functional constraints:
+      * `[ ]`   No DB calls, no storage calls, no payload inspection when `job_type === 'EMBED'`.
+      * `[ ]`   No change to any logic below the new guard.
+      * `[ ]`   No interface changes — `DialecticJobRow` already includes `'EMBED'` after WS-0; the comparison is type-safe with no new imports.
+
+  * `[ ]`   `role`
+    * `[ ]`   Defensive early-return guard. Single responsibility of this change: return an empty `AssembledPrompt` when an EMBED job arrives, before any assembly side-effects.
+    * `[ ]`   Out of scope: `processJob.ts` EMBED dispatch routing (own prior node — the correct fix that prevents EMBED reaching here at all); `buildJobProgressDtos.ts` and `deriveStepStatuses.ts` exclusions (own prior nodes); changes to `gatherContinuationInputs` or `assembleChunks`.
+
+  * `[ ]`   `module`
+    * `[ ]`   Bounded context: `assembleContinuationPrompt.ts` and `assembleContinuationPrompt.test.ts`.
+    * `[ ]`   Inside boundary: the first line of the function body.
+    * `[ ]`   Outside boundary: `prompt-assembler.interface.ts` (not modified — `AssembledPrompt` type is already `{ promptContent: string; source_prompt_resource_id: string; messages?: Messages[] }`); callers of this function (not modified); `processJob.ts` (own prior node).
+
+  * `[ ]`   `deps`
+    * `[ ]`   `DialecticJobRow` (inward, via `AssembleContinuationPromptDeps.job`, destructured at function entry) — `job_type` field is the DB-derived union; `=== 'EMBED'` comparison is type-safe after WS-0. No new import.
+    * `[ ]`   `AssembledPrompt` (inward, `prompt-assembler.interface.ts`, already imported) — the return type; empty value is `{ promptContent: '', source_prompt_resource_id: '' }`. No new import.
+    * `[ ]`   Confirm: no reverse dependency; callers of `assembleContinuationPrompt` are not touched.
+
+  * `[ ]`   `context_slice`
+    * `[ ]`   Only `job.job_type` is read by the guard — already destructured from `AssembleContinuationPromptDeps` at the function's parameter destructuring.
+    * `[ ]`   No new imports; no hidden coupling.
+
+  * `[ ]`   `assembleContinuationPrompt.test.ts` (behavioral verification — RED before GREEN)
+    * `[ ]`   **Add** new `t.step` inside `Deno.test("assembleContinuationPrompt", async (t) => {` within "Category D: Universal Error Handling and Preconditions": `"D.x: returns empty AssembledPrompt immediately for EMBED job without any DB calls or assembly logic"`.
+      * `[ ]`   Construct a mock job using the existing `createMockJob` helper with `job_type: 'EMBED'` (valid for `DialecticJobRow["job_type"]` after WS-0). Set `id: 'job-embed-guard'`.
+      * `[ ]`   Construct minimal deps using the existing `setup({})` helper with an empty `genericMockResults` config (no DB responses needed — no DB calls should occur).
+      * `[ ]`   Call `assembleContinuationPrompt` with the EMBED job and the minimal deps.
+      * `[ ]`   Assert `result.promptContent === ''`.
+      * `[ ]`   Assert `result.source_prompt_resource_id === ''`.
+      * `[ ]`   Assert that `client.from` was NOT called (spy call count === 0) — no DB access occurred before the early return.
+    * `[ ]`   Do NOT re-test: `target_contribution_id` missing (existing D.1 coverage); any continuation-assembly logic; `session.selected_model_ids` check.
+
+  * `[ ]`   `construction`
+    * `[ ]`   `assembleContinuationPrompt` is a plain `async function`. No construction concerns.
+
+  * `[ ]`   `assembleContinuationPrompt.ts` (implementation)
+    * `[ ]`   After the opening brace of the function body, as the first statement (immediately before the existing `if (!session.selected_model_ids || session.selected_model_ids.length === 0) {` check on ~line 37), add:
+      ```typescript
+      if (job.job_type === 'EMBED') {
+        return { promptContent: '', source_prompt_resource_id: '' };
+      }
+      ```
+    * `[ ]`   No other changes to the function body.
+
+  * `[ ]`   `directionality`
+    * `[ ]`   Layer: shared utility (`_shared/prompt-assembler`). Deps are inward (DB row types, storage); provides outward (`AssembledPrompt` to callers in `dialectic-worker`).
+    * `[ ]`   No new dependencies introduced; no cycles.
+
+  * `[ ]`   `requirements` (binary, observable)
+    * `[ ]`   `assembleContinuationPrompt` called with `job.job_type === 'EMBED'`: returns `{ promptContent: '', source_prompt_resource_id: '' }` without any DB calls or errors.
+    * `[ ]`   `assembleContinuationPrompt` called with `job.job_type === 'EXECUTE'`: existing behavior unchanged; all existing tests pass.
+    * `[ ]`   `assembleContinuationPrompt` called with `job.job_type === 'PLAN'`: existing behavior unchanged; all existing tests pass.
+
+* `[ ]`   supabase/functions/dialectic-service/`deriveStepStatuses.ts` **[BE] Exclude EMBED jobs from step-status derivation so infrastructure embedding rows do not corrupt recipe-step progress counts**
+
+  * `[ ]`   `objective`
+    * `[ ]`   Solve the EMBED contamination defect: after WS-0 adds EMBED to `dialectic_job_type_enum`, EMBED rows appear in `dialectic_generation_jobs`. `deriveStepStatuses` iterates every job in `params.jobs` and attempts to extract `planner_metadata.recipe_step_id`. EMBED rows carry no such metadata and exit through the `recipeStepId === undefined` continue guard silently today — but the RENDER exclusion pattern establishes the convention that infrastructure job types are explicitly guarded before the metadata extraction path. Adding an explicit EMBED guard mirrors that pattern and makes the intent unambiguous to future maintainers.
+    * `[ ]`   Functional goals:
+      * `[ ]`   After the existing `if (job.job_type === "RENDER") continue;` guard (line 57), add `if (job.job_type === "EMBED") continue;` to explicitly exclude EMBED rows from all step-status computation.
+    * `[ ]`   Non-functional constraints:
+      * `[ ]`   No change to the step-status computation logic below the guards.
+      * `[ ]`   No change to the RENDER exclusion, `target_contribution_id` filter, or `SUPERSEDED` filter.
+      * `[ ]`   No interface changes in this node — `DialecticJobRow["job_type"]` already includes `"EMBED"` after WS-0 via the DB-derived enum union.
+
+  * `[ ]`   `role`
+    * `[ ]`   Read-only consumer of `DialecticJobRow[]` from `getAllStageProgress.ts`. Single responsibility: translate raw job rows + recipe DAG structure into per-step `UnifiedStageStatus` values.
+    * `[ ]`   This node adds one guard line; it does NOT introduce new data sources, DB queries, or orchestration logic.
+    * `[ ]`   Out of scope: `buildJobProgressDtos.ts` EMBED exclusion (own next node); `JobProgressDto.jobType` type fix (s with `buildJobProgressDtos.ts`); `processJob.ts` dispatch routing (own later node).
+
+  * `[ ]`   `module`
+    * `[ ]`   Bounded context: `deriveStepStatuses.ts` and `deriveStepStatuses.test.ts`.
+    * `[ ]`   Inside boundary: the job-iteration loop guard sequence in `deriveStepStatuses`.
+    * `[ ]`   Outside boundary: `getAllStageProgress.ts` (caller — not modified); `dialectic.interface.ts` `JobType` (recipe-layer type, not changed here); `buildJobProgressDtos.ts` (sibling — own node 2).
+
+  * `[ ]`   `deps`
+    * `[ ]`   `DialecticJobRow` (inward, `dialectic.interface.ts` → `types_db.ts`) — `job_type` field is the DB-derived enum `"PLAN" | "EXECUTE" | "RENDER" | "EMBED" | null` after WS-0; the new guard `=== "EMBED"` is type-safe against this union with no imports added.
+    * `[ ]`   `DeriveStepStatusesParams.jobs: DialecticJobRow[]` (inward, same file's interface) — no shape change.
+    * `[ ]`   Confirm: no reverse dependency; `getAllStageProgress.ts` calls this function but is not touched.
+
+  * `[ ]`   `context_slice`
+    * `[ ]`   Only `job.job_type` is read for the guard — already accessed on line 57 by the RENDER guard.
+    * `[ ]`   No new imports, no new dep surfaces.
+
+  * `[ ]`   `deriveStepStatuses.test.ts` (behavioral verification — RED before GREEN)
+    * `[ ]`   **Add** sub-step within `Deno.test("deriveStepStatuses", ...)`: "EMBED jobs are excluded from step-status derivation and do not affect counts". Construct two jobs for the same step:
+      * `[ ]`   `embedJob = job('embed-1', 'EMBED', 'processing', execPayload('step-1'), null)` — uses existing `execPayload` helper; the `'EMBED'` value is valid for `DialecticJobRow["job_type"]` after WS-0.
+      * `[ ]`   `execJob = job('exec-1', 'EXECUTE', 'pending', execPayload('step-1'), null)` — the normal EXECUTE job.
+      * `[ ]`   Pass `jobs: [embedJob, execJob]` with a matching `steps` and `stepIdToStepKey` pointing `'step-1'` to `'step_a'`.
+      * `[ ]`   Assert `result.get('step_a')` equals `'active'` (driven by the EXECUTE job alone — same as if the EMBED job were absent).
+      * `[ ]`   Assert the result is identical to a run with `jobs: [execJob]` (EMBED has zero effect on output).
+    * `[ ]`   Do NOT re-test: the RENDER exclusion path; the `target_contribution_id` filter; the SUPERSEDED filter; `cosineSimilarity` or unrelated utilities.
+
+  * `[ ]`   `construction`
+    * `[ ]`   `deriveStepStatuses` is a pure stateless function. No construction concerns.
+
+  * `[ ]`   `deriveStepStatuses.ts` (implementation)
+    * `[ ]`   After line 57 (`if (job.job_type === "RENDER") continue;`), add on line 58: `if (job.job_type === "EMBED") continue;`
+    * `[ ]`   No other changes.
+
+  * `[ ]`   `directionality`
+    * `[ ]`   Layer: application-service consumer (`dialectic-service`). Deps are inward (DB row types, DAG step interfaces); provides outward (`Map<string, UnifiedStageStatus>` to `getAllStageProgress.ts`).
+    * `[ ]`   No new dependencies; no cycles.
+
+  * `[ ]`   `requirements` (binary, observable)
+    * `[ ]`   `deriveStepStatuses` called with `jobs` containing an EMBED job and an EXECUTE job for the same step: result map value for that step is `'active'` and is IDENTICAL to a call with only the EXECUTE job.
+    * `[ ]`   `deriveStepStatuses` called with `jobs` containing ONLY an EMBED job: result map is empty.
+
+* `[ ]`   supabase/functions/dialectic-service/`buildJobProgressDtos.ts` **[BE] Exclude EMBED jobs from progress DTOs**
+
+  * `[ ]`   `objective`
+    * `[ ]`   After WS-0 adds `EMBED` to `dialectic_job_type_enum`, `buildJobProgressDtos` maps every EMBED row into a `JobProgressDto` and surfaces it to the frontend as if it were a recipe-step job. EMBED jobs are infrastructure workers that produce no user-visible document and have no recipe step. The guard `if (job.job_type === "EMBED") continue;` at the top of the job-iteration loop excludes EMBED rows before any DTO construction.
+    * `[ ]`   Functional goals:
+      * `[ ]`   Add `if (job.job_type === "EMBED") continue;` as the first statement of the `for (const job of params.jobs)` loop body (line 16), before the `payload` variable extraction.
+    * `[ ]`   Non-functional constraints:
+      * `[ ]`   No changes to DTO field extraction logic for PLAN / EXECUTE / RENDER jobs.
+      * `[ ]`   No changes to `dialectic.interface.ts` — `JobType | "EMBED"` and `JobProgressDto.jobType: JobType | null` are already updated in the prior `processJob.ts` node.
+      * `[ ]`   `getAllStageProgress.ts` (caller) is not modified; it receives the same `Map<string, JobProgressDto[]>` shape with EMBED rows absent.
+
+  * `[ ]`   `role`
+    * `[ ]`   Read-only consumer of `DialecticJobRow[]`. Single responsibility: translate job rows into a `Map<string, JobProgressDto[]>` keyed by `stage_slug` for frontend stage-progress display.
+    * `[ ]`   This node adds one loop guard line. It introduces no new data sources, DB queries, or orchestration logic.
+    * `[ ]`   Out of scope: `deriveStepStatuses.ts` EMBED exclusion (prior node); `assembleContinuationPrompt.ts` guard (prior node); `processJob.ts` dispatch routing (prior node); `dialectic.interface.ts` changes (prior `processJob.ts` node).
+
+  * `[ ]`   `module`
+    * `[ ]`   Bounded context: `buildJobProgressDtos.ts` and `buildJobProgressDtos.test.ts`.
+    * `[ ]`   Inside boundary: the job-iteration loop body.
+    * `[ ]`   Outside boundary: `getAllStageProgress.ts` (caller — not modified); `dialectic.interface.ts` (not touched — changes are in the prior `processJob.ts` node); `deriveStepStatuses.ts` (prior node — not touched).
+
+  * `[ ]`   `deps`
+    * `[ ]`   `DialecticJobRow` (inward, `dialectic.interface.ts` → `types_db.ts`) — after WS-0, `job_type` includes `"EMBED"`; the guard comparison `=== "EMBED"` is type-safe against `JobType | null` (which includes `"EMBED"` after the prior `processJob.ts` node) with no new imports.
+    * `[ ]`   `BuildJobProgressDtosDeps` and `BuildJobProgressDtosParams` (inward, `dialectic.interface.ts`) — no shape change in this node.
+    * `[ ]`   Confirm: `getAllStageProgress.ts` calls this function but is not modified; no reverse dependency created.
+
+  * `[ ]`   `context_slice`
+    * `[ ]`   Only `job.job_type` is read for the guard — the first field access in the loop body.
+    * `[ ]`   No new imports; no hidden coupling.
+
+  * `[ ]`   `buildJobProgressDtos.test.ts` (behavioral verification — RED before GREEN)
+    * `[ ]`   **Add** inside `Deno.test("buildJobProgressDtos", ...)`: sub-step `"EMBED job alone produces empty result map"`. Call `jobRow('embed-1', 'EMBED', 'processing', {})`. Call `buildJobProgressDtos(deps, { jobs: [embedJob], stepIdToStepKey: new Map() })`. Assert `result.size === 0`.
+    * `[ ]`   **Add** sub-step `"EMBED job alongside EXECUTE job for same stage — only EXECUTE job appears in DTOs"`. Pass `[jobRow('embed-1', 'EMBED', 'processing', {}), jobRow('exec-1', 'EXECUTE', 'pending', {})]` with the default `stage_slug: 'thesis'` for both. Assert `result.size === 1`, `result.get('thesis')?.length === 1`, and `result.get('thesis')![0].id === 'exec-1'`.
+    * `[ ]`   Do NOT re-test: `stepKey` lookup logic; `modelId`/`modelName`/`documentKey` extraction; multi-stage grouping; PLAN/RENDER DTO construction.
+
+  * `[ ]`   `construction`
+    * `[ ]`   `buildJobProgressDtos` is a pure stateless function. No construction concerns.
+
+  * `[ ]`   `buildJobProgressDtos.ts` (implementation)
+    * `[ ]`   After the opening brace of `for (const job of params.jobs) {` on line 16, add as the first statement of the loop body: `if (job.job_type === "EMBED") continue;`
+    * `[ ]`   No other changes to the function body.
+
+  * `[ ]`   `directionality`
+    * `[ ]`   Layer: application-service consumer (`dialectic-service`). Deps are inward (DB row types, DTO interfaces from `dialectic.interface.ts`); provides outward (`Map<string, JobProgressDto[]>` to `getAllStageProgress.ts`).
+    * `[ ]`   No new dependencies introduced; no cycles.
+
+  * `[ ]`   `requirements` (binary, observable)
+    * `[ ]`   `buildJobProgressDtos` called with only EMBED jobs: result map is empty (`result.size === 0`).
+    * `[ ]`   `buildJobProgressDtos` called with one EMBED job and one EXECUTE job for the same stage: result map has exactly one entry with one DTO whose `id` matches the EXECUTE job.
+    * `[ ]`   `buildJobProgressDtos` called with PLAN / EXECUTE / RENDER jobs: existing behavior unchanged.
+
+## WS-S — Chunk + spawn EMBED jobs, then pause/resume
+
+* `[ ]`   `supabase/functions/dialectic-worker/createEmbedJobs/createEmbedJobs.ts` **Create async EMBED child jobs for source documents pending vector-store indexing**
+
+  * `[ ]`   `objective`
+    * `[ ]`   Problem: No path exists to create `EMBED` job rows as async prerequisites. The old synchronous path (`IndexingService.indexDocument`) blocked Supabase Edge Functions on LLM embedding calls. There is no function that takes a set of source documents, splits them into text chunks, checks whether each source is already indexed in `dialectic_memory`, and creates a `dialectic_generation_jobs` row (`job_type='EMBED'`) per chunk for the Netlify embedding workers to process.
+    * `[ ]`   Functional goals:
+      * `[ ]`   Given a parent job and a list of source documents, split each document into text chunks using `ITextSplitter`.
+      * `[ ]`   For each source document, query `dialectic_memory` for rows matching `(session_id, source_type, source_id)`. If any rows exist, the source is already indexed — skip it.
+      * `[ ]`   For each chunk of an un-indexed source, insert one row into `dialectic_generation_jobs` with: `job_type = 'EMBED'`, `parent_job_id = parentJob.id`, `session_id`, `user_id`, `stage_slug`, `iteration_number` copied from the parent job row, and `payload: DialecticEmbeddingJobPayload`.
+      * `[ ]`   Return `{ createdCount: N }` where N is the total number of EMBED job rows inserted.
+      * `[ ]`   On DB insert failure, return `{ createdCount: N_before_failure, error: Error }` and stop without attempting further inserts.
+    * `[ ]`   Non-functional constraints:
+      * `[ ]`   Does NOT update the parent job status (that is the caller's responsibility — WS-S node 2).
+      * `[ ]`   Does NOT call `enqueueModelCall` (that happens in `processEmbedJob` — WS-S node 2).
+      * `[ ]`   Does NOT insert into `dialectic_memory` (that happens in `saveResponse` — WS-B).
+      * `[ ]`   Dedup check error (query fail) is non-fatal: log a warning and proceed to create for that source.
+  * `[ ]`   `role`
+    * `[ ]`   Layer: worker orchestration (`dialectic-worker`) — the coordinator that creates the async work units.
+    * `[ ]`   This role is appropriate because `createEmbedJobs` is the scheduling half of the embedding pipeline. It creates work; the Netlify adapter (`processEmbedJob` + `enqueueModelCall`) executes it; `saveResponse` (WS-B) persists the result.
+    * `[ ]`   Out of scope:
+      * Updating parent job status to `waiting_for_prerequisite` — that is the caller's job (WS-S node 2, parent pause/resume).
+      * Enqueuing work to Netlify (`enqueueModelCall`) — that is `processEmbedJob`.
+      * Embedding computation — that is the Netlify function.
+      * Persisting chunk+embedding to `dialectic_memory` — that is `saveResponse` (WS-B).
+      * Deciding whether to trigger embedding at all — that is the calling function (WS-C `compressPrompt` / `prepareModelJob`).
+
+  * `[ ]`   `module`
+    * `[ ]`   Bounded context: `dialectic-worker` embedding scheduling.
+    * `[ ]`   Belongs inside: job-row creation logic, dedup check against `dialectic_memory`, text splitting.
+    * `[ ]`   Belongs outside: embedding computation, Netlify queue management, `dialectic_memory` write, parent job pause status update.
+
+  * `[ ]`   `deps`
+    * `[ ]`   `SupabaseClient<Database>` (from `npm:@supabase/supabase-js@2`) — DB layer; used to query `dialectic_memory` (dedup check) and insert into `dialectic_generation_jobs`. Direction: inward (infrastructure). No reverse dep.
+    * `[ ]`   `ITextSplitter` (from `_shared/services/indexing_service.interface.ts`) — splits document text into chunks. Provider: `LangchainTextSplitter` class in `indexing_service.ts` (standalone, does not go through `IndexingService`). Direction: inward (shared utility). No reverse dep.
+    * `[ ]`   `ILogger` (from `_shared/types.ts`) — structured logging. Provider: `index.ts` composition root. Direction: inward. No reverse dep.
+    * `[ ]`   `DialecticJobRow` (from `dialectic.interface.ts`) — provides `id`, `session_id`, `user_id`, `stage_slug`, `iteration_number` from the parent job row. Direction: inward (data shape). No reverse dep.
+    * `[ ]`   `DialecticEmbeddingJobPayload` (from `dialectic.interface.ts`, defined in WS-R `buildJobProgressDtos.ts` node) — payload shape for each inserted EMBED job row.
+    * `[ ]`   `Enums<'dialectic_memory_source_type_enum'>` (from `types_db.ts`, added in WS-0) — discriminator for `source_type` in `dialectic_memory` dedup query and EMBED payload. Requires WS-0 to be complete.
+    * `[ ]`   `Database['public']['Tables']['dialectic_generation_jobs']['Insert']` (from `types_db.ts`) — shapes the insert row. `job_type` column requires WS-0's `dialectic_job_type_enum: 'EMBED'` to be present in types.
+
+  * `[ ]`   `context_slice`
+    * `[ ]`   From `ITextSplitter`: only `splitText(text: string): Promise<string[]>`. No other methods.
+    * `[ ]`   From `SupabaseClient`: only `.from('dialectic_memory').select('id').eq('session_id', ...).eq('source_type', ...).eq('source_id', ...).limit(1)` for dedup; and `.from('dialectic_generation_jobs').insert({...}).select('id').single()` for job creation. No RPC, no other tables.
+    * `[ ]`   From `DialecticJobRow`: only `id`, `session_id`, `user_id`, `stage_slug`, `iteration_number`. No payload fields are read by `createEmbedJobs`.
+    * `[ ]`   From `ILogger`: only `info(...)` and `warn(...)`.
+
+  * `[ ]`   `createEmbedJobs.interface.test.ts`
+    * `[ ]`   Valid `CreateEmbedJobsDeps`: `logger` conforms to `ILogger`, `textSplitter` conforms to `ITextSplitter`.
+    * `[ ]`   Valid `CreateEmbedJobsParams`: `dbClient` is a `SupabaseClient<Database>`, `parentJob` has all required fields (`id`, `session_id`, `user_id`, `stage_slug`, `iteration_number`), `sourceDocuments` is a non-empty array each with `{ content: string; source_type: string; source_id: string }`, `embeddingModelProviderId` is a non-empty string, `walletId` is a non-empty string.
+    * `[ ]`   Invalid `CreateEmbedJobsParams`: missing `parentJob`, missing `sourceDocuments`, `sourceDocuments` with item missing `source_id` — each fails the guard.
+    * `[ ]`   `CreateEmbedJobsResult`: `{ createdCount: number }` on success; `{ createdCount: number; error: Error }` on failure.
+    * `[ ]`   `DialecticEmbeddingJobPayload` valid: has `job_type: 'EMBED'`, `chunk_text`, `source_type`, `source_id`, `wallet_id`, `chunk_index` (number), `embedding_model_provider_id` — all string/number present.
+    * `[ ]`   `DialecticEmbeddingJobPayload` invalid: missing `job_type`, missing `chunk_text`, `chunk_index` is a string — each fails the guard.
+
+  * `[ ]`   `createEmbedJobs.interface.ts`
+    * `[ ]`   `CreateEmbedJobsSourceDocument`:
+      * `content: string`
+      * `source_type: Enums<'dialectic_memory_source_type_enum'>` (post-WS-0)
+      * `source_id: string`
+    * `[ ]`   `CreateEmbedJobsDeps`:
+      * `logger: ILogger`
+      * `textSplitter: ITextSplitter`
+    * `[ ]`   `CreateEmbedJobsParams`:
+      * `dbClient: SupabaseClient<Database>`
+      * `parentJob: DialecticJobRow`
+      * `sourceDocuments: CreateEmbedJobsSourceDocument[]`
+      * `embeddingModelProviderId: string`
+      * `walletId: string`
+    * `[ ]`   `CreateEmbedJobsResult`:
+      * `createdCount: number`
+      * `error?: Error`
+    * `[ ]`   `CreateEmbedJobsFn`:
+      * `(deps: CreateEmbedJobsDeps, params: CreateEmbedJobsParams) => Promise<CreateEmbedJobsResult>`
+  * `[ ]`   `createEmbedJobs.interaction.spec`
+    * `[ ]`   Caller: WS-C `compressPrompt` or `prepareModelJob` (not yet implemented) calls `createEmbedJobs(deps, params)` after detecting oversized inputs. Returns `CreateEmbedJobsResult`.
+    * `[ ]`   Interaction with `ITextSplitter`: for each source document, call `textSplitter.splitText(sourceDoc.content)` once. Returns `string[]` of chunk texts.
+    * `[ ]`   Interaction with `SupabaseClient` (dedup): for each source document, query `dialectic_memory` for `session_id = parentJob.session_id AND source_type = sourceDoc.source_type AND source_id = sourceDoc.source_id`. Returns `{ data: { id: string }[] | null, error: PostgrestError | null }`.
+    * `[ ]`   Interaction with `SupabaseClient` (insert): for each chunk of an un-indexed source, call `.from('dialectic_generation_jobs').insert({...}).select('id').single()`. Returns `{ data: { id: string } | null, error: PostgrestError | null }`.
+    * `[ ]`   Failure modes:
+      * Dedup query error → log `warn`, proceed as if source is not indexed (create for that source anyway).
+      * Insert error → return immediately with `{ createdCount: N, error: new Error(insertError.message) }`. Do not attempt further inserts.
+    * `[ ]`   Ordering: dedup check before split (avoid expensive text splitting if already indexed). Split before insert.
+    * `[ ]`   No side effects beyond `dialectic_generation_jobs` inserts and `logger` calls.
+
+  * `[ ]`   `createEmbedJobs.guard.test.ts`
+    * `[ ]`   `isCreateEmbedJobsSourceDocument`: accepts `{ content, source_type, source_id }`, rejects missing fields, rejects non-string values.
+    * `[ ]`   `isCreateEmbedJobsParams`: accepts valid params object, rejects missing `parentJob`, rejects empty `sourceDocuments`, rejects `parentJob` without `session_id`.
+
+  * `[ ]`   `createEmbedJobs.guard.ts`
+    * `[ ]`   `isCreateEmbedJobsSourceDocument(value: unknown): value is CreateEmbedJobsSourceDocument`
+    * `[ ]`   `isCreateEmbedJobsParams(value: unknown): value is CreateEmbedJobsParams`
+
+  * `[ ]`   `createEmbedJobs.mock.ts`
+    * `[ ]`   `createMockCreateEmbedJobsDeps(overs?)`: returns `{ logger: createMockLogger(), textSplitter: createMockTextSplitter() }` with vi.fn()-backed methods.
+    * `[ ]`   `createMockCreateEmbedJobsFn(result?)`: returns a vi.fn() that resolves to `result ?? { createdCount: 0 }`.
+    * `[ ]`   No new behavior beyond interface conformance.
+
+  * `[ ]`   `createEmbedJobs.test.ts`
+    * `[ ]`   Uses `createMockSupabase` (existing pattern from `continueJob.test.ts` — `getHistoricQueryBuilderSpies`).
+    * `[ ]`   **Happy path — no existing chunks**: given one source doc with no matching rows in `dialectic_memory`, `splitText` returns 3 chunks → 3 EMBED job inserts → `{ createdCount: 3 }`. Verify each insert has `job_type: 'EMBED'`, `parent_job_id = parentJob.id`, `session_id`, `user_id`, `stage_slug`, `iteration_number` matching parent job, and `payload.chunk_text` matching the chunk.
+    * `[ ]`   **Dedup skip**: given one source doc with existing rows in `dialectic_memory` → `splitText` is NOT called, no inserts, `{ createdCount: 0 }`.
+    * `[ ]`   **Multiple sources — partial dedup**: given 2 source docs where doc A has existing `dialectic_memory` rows and doc B does not → doc A is skipped, doc B is split and created. `createdCount` equals chunks in doc B only.
+    * `[ ]`   **Dedup query error — fallback to create**: given dedup query returns an error → log `warn`, proceed to split and insert for that source. `createdCount` = chunk count. Warning log emitted once.
+    * `[ ]`   **Insert failure — stops early**: given `splitText` returns 3 chunks but second insert fails → `{ createdCount: 1, error: Error }`. Third insert NOT attempted. Error message matches `insertError.message`.
+    * `[ ]`   **Empty source documents array**: `{ createdCount: 0 }`, no DB calls.
+    * `[ ]`   **Each insert payload shape**: `payload.job_type === 'EMBED'`, `payload.chunk_index` matches loop index, `payload.embedding_model_provider_id` matches `params.embeddingModelProviderId`, `payload.wallet_id` matches `params.walletId`.
+
+  * `[ ]`   `construction`
+    * `[ ]`   `createEmbedJobs` is a plain async function; no class or constructor.
+    * `[ ]`   Created/called by: initially WS-C `compressPrompt` or `prepareModelJob`; injected via `IJobContext` or a specialized sub-context.
+    * `[ ]`   No partially constructed state. All deps provided in `CreateEmbedJobsDeps`; all runtime data in `CreateEmbedJobsParams`.
+    * `[ ]`   Invalid construction: calling without a valid `ITextSplitter` or without `dbClient` is rejected by the guard.
+
+  * `[ ]`   `createEmbedJobs.ts`
+    * `[ ]`   Implement `createEmbedJobs(deps: CreateEmbedJobsDeps, params: CreateEmbedJobsParams): Promise<CreateEmbedJobsResult>`.
+    * `[ ]`   Destructure `parentJob.id`, `parentJob.session_id`, `parentJob.user_id`, `parentJob.stage_slug`, `parentJob.iteration_number` at function entry.
+    * `[ ]`   For each `sourceDoc` in `params.sourceDocuments`:
+      1. Query `dialectic_memory` for `(session_id, source_type, source_id)` match with `.limit(1)`. On query error, log `warn` and continue (treat as not indexed).
+      2. If rows exist, log `info` and `continue`.
+      3. Call `deps.textSplitter.splitText(sourceDoc.content)` to get chunks.
+      4. For each `(chunk, chunkIndex)`:
+         a. Build `payload: DialecticEmbeddingJobPayload = { job_type: 'EMBED', chunk_text: chunk, source_type: sourceDoc.source_type, source_id: sourceDoc.source_id, wallet_id: params.walletId, chunk_index: chunkIndex, embedding_model_provider_id: params.embeddingModelProviderId }`.
+         b. Insert row: `{ session_id, user_id, stage_slug, iteration_number, job_type: 'EMBED', payload, parent_job_id: parentJobId, status: 'pending' }` into `dialectic_generation_jobs`.
+         c. On insert error, return `{ createdCount, error: new Error(insertError.message) }` immediately.
+         d. Increment `createdCount`.
+    * `[ ]`   Return `{ createdCount }`.
+    * `[ ]`   No `any` types. No undeclared deps. Each code path maps to a requirement.
+
+  * `[ ]`   `createEmbedJobs.provides.ts`
+    * `[ ]`   Export `createEmbedJobs` function.
+    * `[ ]`   Export `CreateEmbedJobsFn` type alias.
+    * `[ ]`   Stability: internal worker utility; not exported from the function's public Deno entry point.
+
+  * `[ ]`   `createEmbedJobs.integration.test.ts`
+    * `[ ]`   Integration test: `LangchainTextSplitter` (real) → `createEmbedJobs` → mock Supabase client.
+    * `[ ]`   Confirm: given a 2000-character source document and a `LangchainTextSplitter` with default options, the real splitter produces ≥ 2 chunks, and `createEmbedJobs` inserts that many EMBED job rows (all with correct fields).
+    * `[ ]`   Confirms: chain from text-splitting through DB-row creation works end-to-end with the real `ITextSplitter` implementation.
+
+  * `[ ]`   `directionality`
+    * `[ ]`   Layer: worker orchestration.
+    * `[ ]`   Deps inward: `SupabaseClient` (infrastructure), `ITextSplitter` (shared util), `ILogger` (shared util), `DialecticJobRow` (domain type).
+    * `[ ]`   Provides outward: `CreateEmbedJobsResult` to WS-D's `compressPrompt.ts` (the caller that detects oversized input, calls `createEmbedJobs`, and sets `waiting_for_children` if `createdCount > 0`).
+    * `[ ]`   No cycles. `createEmbedJobs` does not import from `processEmbedJob`, `enqueueModelCall`, `saveResponse`, or `compressPrompt`.
+
+  * `[ ]`   `requirements`
+    * `[ ]`   `DialecticEmbeddingJobPayload` is exported from `dialectic.interface.ts` (defined in WS-R `buildJobProgressDtos.ts` node). `DialecticJobPayload` union includes `DialecticEmbeddingJobPayload`. `isDialecticEmbeddingJobPayload` is exported from `type_guards.dialectic.ts` (defined in WS-R `buildJobProgressDtos.ts` node).
+    * `[ ]`   Source with no matching rows in `dialectic_memory`: `createEmbedJobs` inserts exactly `chunks.length` EMBED job rows, each with `job_type='EMBED'`, `parent_job_id = parentJob.id`, `session_id / user_id / stage_slug / iteration_number` matching the parent job row, and `payload.chunk_index` values `0..N-1`.
+    * `[ ]`   Source with existing rows in `dialectic_memory`: no EMBED job rows inserted for that source. `textSplitter.splitText` not called for that source.
+    * `[ ]`   DB insert failure on chunk K: `createdCount = K`, `error` is an `Error` with `message` matching the Supabase `PostgrestError.message`. No further inserts for subsequent chunks.
+    * `[ ]`   Dedup query failure: `warn` log emitted; insert proceeds for that source as if no existing rows found.
+    * `[ ]`   Empty `sourceDocuments`: returns `{ createdCount: 0 }` without any DB calls.
+
+* `[ ]`   supabase/functions/dialectic-worker/enqueueModelCall/enqueueModelCall.ts **[BE] Align Supabase enqueue contract to operation-aware Netlify worker payloads while preserving queued-job guarantees; fix output_type validation to be operation-discriminated**
+
+   * `[✅]`   `objective`
+      * `[✅]`   Solve the enqueue contract mismatch where Supabase currently emits chat-only queue payloads and cannot enqueue embedding workloads with explicit operation semantics.
+      * `[✅]`   Functional goals:
+         * `[✅]`   Add operation-aware enqueue payload contracts that support stream and embedding requests.
+         * `[✅]`   Preserve existing queued state transition (`dialectic_generation_jobs.status = 'queued'`) before queue POST.
+         * `[✅]`   Preserve job signature generation and event size enforcement semantics.
+         * `[✅]`   Emit deterministic Netlify event body shape that matches `ai-stream-background` operation routing contract.
+         * `[ ]`   Fix `output_type` validation to be operation-discriminated: `operation === 'stream'` validates via `isModelContributionFileType`; `operation === 'embedding'` validates via `isEmbeddingOutputFileType` (accepting `FileType.EmbeddingChunk`). Non-retriable error returned if invalid for either branch.
+      * `[✅]`   Non-functional constraints:
+         * `[✅]`   Keep stream enqueue behavior backward-compatible for existing generation jobs.
+         * `[✅]`   Keep invalid-contract failures deterministic and explicitly non-retriable.
+         * `[✅]`   Keep transient queue/network failures retriable.
+         * `[✅]`   Do not edit callback ingest or response persistence source files in this node.
+      * `[✅]`   Each goal is atomic and testable through interface, guard, unit, and integration updates in this module scope.
+
+   * `[✅]`   `role`
+      * `[✅]`   Node role is Supabase queue-emitter implementation plus immediate enqueue support files (interfaces, guards, mocks, tests, provides).
+      * `[✅]`   This role is correct because `enqueueModelCall.ts` is the first Supabase source file that consumes Workstream A queue/worker operation contract outputs.
+      * `[✅]`   Out-of-scope responsibilities:
+         * `[✅]`   Do not edit `netlifyResponseHandler.ts` source behavior in this node.
+         * `[✅]`   Do not edit `saveResponse.ts` source behavior in this node.
+         * `[✅]`   Do not edit Netlify worker source files in this node.
+
+   * `[✅]`   `module`
+      * `[✅]`   Bounded context is `supabase/functions/dialectic-worker/enqueueModelCall`.
+      * `[✅]`   Inside boundary:
+         * `[✅]`   Queue event contract assembly and validation.
+         * `[✅]`   Job signature and queue-post sequencing.
+         * `[✅]`   Runtime guard coverage for enqueue params/payload/return and event shape.
+         * `[ ]`   `FileType.EmbeddingChunk` definition and `EmbeddingOutputFileTypes` union in `_shared/types/file_manager.types.ts` (type s with first consumer — this node).
+         * `[ ]`   `isEmbeddingOutputFileType` guard in `_shared/utils/type-guards/type_guards.file_manager.ts` and its test in `type_guards.file_manager.test.ts` ( with first consumer — this node).
+      * `[✅]`   Outside boundary:
+         * `[✅]`   Upstream prompt-scoping and affordability logic.
+         * `[✅]`   Downstream callback ingest branching and artifact persistence.
+         * `[✅]`   Provider adapter execution internals.
+
+   * `[✅]`   `deps`
+      * `[✅]`   Provider: `../prepareModelJob/prepareModelJob.ts` enqueue caller contract.
+         * `[✅]`   Layer classification: immediate producer for enqueue params/payload.
+         * `[✅]`   Direction: producer input consumed by enqueue function.
+         * `[✅]`   Purpose: provide operation-specific payload data for queue emission.
+      * `[✅]`   Provider: `../../_shared/utils/type-guards/type_guards.chat.ts` and `type_guards.file_manager.ts`.
+         * `[✅]`   Layer classification: shared runtime guard utilities.
+         * `[✅]`   Direction: inbound dependency to enqueue runtime validation.
+         * `[✅]`   Purpose: validate provider config and output-type compatibility before queue POST.
+      * `[✅]`   Provider: Netlify queue endpoint contract (`eventName: 'ai-stream-background'` + operation-aware data).
+         * `[✅]`   Layer classification: external consumer boundary.
+         * `[✅]`   Direction: outbound payload emitted by enqueue implementation.
+         * `[✅]`   Purpose: ensure queued events are consumable by operation-aware worker routing.
+      * `[✅]`   Confirm:
+         * `[✅]`   No reverse dependency from enqueue into callback handler/persistence source modules.
+         * `[✅]`   No lateral layer violations across Supabase workstream boundaries.
+
+   * `[✅]`   `context_slice`
+      * `[✅]`   Minimal dependency interfaces required:
+         * `[✅]`   `computeJobSig(job.id, job.user_id, job.created_at)` returning deterministic signature string.
+         * `[✅]`   Provider-row extended model config guard-safe shape.
+         * `[✅]`   Queue payload discriminator and request payload fields required by Netlify worker operation routing.
+      * `[✅]`   Injection shape remains `EnqueueModelCallDeps`, `EnqueueModelCallParams`, and `EnqueueModelCallPayload` with additive operation-aware fields only.
+      * `[✅]`   Confirm:
+         * `[✅]`   No over-fetching of producer-only fields not required for queue emission.
+         * `[✅]`   No hidden coupling to callback persistence tables.
+
+   * `[ ]`   `supabase/functions/_shared/types/file_manager.types.ts` (type addition s with first consumer)
+      * `[ ]`   Add `EmbeddingChunk = 'embedding_chunk'` to `FileType` enum.
+      * `[ ]`   Add `export type EmbeddingOutputFileTypes = FileType.EmbeddingChunk;`
+
+   * `[ ]`   `supabase/functions/_shared/utils/type-guards/type_guards.file_manager.test.ts` (guard test — RED before GREEN)
+      * `[ ]`   Add test: `isEmbeddingOutputFileType` accepts `'embedding_chunk'`; rejects any other string value; rejects non-string.
+      * `[ ]`   Do NOT re-test `isModelContributionFileType` or any existing guard.
+
+   * `[ ]`   `supabase/functions/_shared/utils/type-guards/type_guards.file_manager.ts` (guard)
+      * `[ ]`   Add `isEmbeddingOutputFileType(value: unknown): value is EmbeddingOutputFileTypes` — checks `value === FileType.EmbeddingChunk`.
+      * `[ ]`   No other changes to existing guards.
+
+   * `[✅]`   `supabase/functions/dialectic-worker/enqueueModelCall/enqueueModelCall.interface.test.ts`
+      * `[✅]`   Add contract assertions for operation-aware enqueue payload shape:
+         * `[✅]`   stream payload variant includes required `chatApiRequest` and excludes embedding-only fields.
+         * `[✅]`   embedding payload variant includes required embedding input contract and excludes stream-only fields.
+         * `[✅]`   unknown operation discriminator is rejected by contract fixtures.
+      * `[✅]`   Add contract assertions for operation-aware event type shape:
+         * `[✅]`   stream event variant is typed as `AiWorkloadStreamEvent` — compile error if `embedding_api_request` is assigned.
+         * `[✅]`   embedding event variant is typed as `AiWorkloadEmbeddingEvent` — compile error if `chat_api_request` is assigned.
+         * `[✅]`   both variants preserve `sig` and `user_config` requirements inherited from shared base.
+      * `[✅]`   Preserve existing queued success/error return contract assertions.
+
+   * `[✅]`   `supabase/functions/dialectic-worker/enqueueModelCall/enqueueModelCall.interface.ts`
+      * `[✅]`   Extend `EnqueueModelCallPayload` to an explicit operation-discriminated union consumed by enqueue source.
+      * `[✅]`   Delete `AiStreamEventData` entirely. Define `AiWorkloadStreamEvent` with `operation: 'stream'` and `chat_api_request`, `AiWorkloadEmbeddingEvent` with `operation: 'embedding'` and `embedding_api_request`, and `AiWorkloadEvent = AiWorkloadStreamEvent | AiWorkloadEmbeddingEvent` — identical names and structure to the Netlify side, since this module constructs the event body the Netlify worker receives as `AiWorkloadEvent`.
+      * `[✅]`   Keep `EnqueueModelCallReturn` success/error union unchanged.
+      * `[✅]`   Keep dependency and params interfaces stable except strictly required additive fields.
+
+   * `[✅]`   `supabase/functions/dialectic-worker/enqueueModelCall/enqueueModelCall.interaction.spec`
+      * `[✅]`   Add interaction-spec file for enqueue sequencing and branch semantics:
+         * `[✅]`   validate output/provider/api-key/job-user-id prerequisites.
+         * `[✅]`   compute signature.
+         * `[✅]`   update job to queued.
+         * `[✅]`   build operation-aware event payload.
+         * `[✅]`   enforce 500 KB serialized payload guard.
+         * `[✅]`   POST to Netlify queue with authorization header.
+      * `[✅]`   Define operation branch constraints:
+         * `[✅]`   stream operation serializes stream request fields only.
+         * `[✅]`   embedding operation serializes embedding request fields only.
+      * `[✅]`   Failure modes:
+         * `[✅]`   contract/validation failures return non-retriable errors.
+         * `[✅]`   DB update failure returns retriable error and aborts fetch.
+         * `[✅]`   non-2xx queue response and network errors return retriable errors.
+
+   * `[✅]`   `supabase/functions/dialectic-worker/enqueueModelCall/enqueueModelCall.guard.test.ts`
+      * `[✅]`   Update all imports and type references from `AiStreamEventData` to `AiWorkloadStreamEvent`, `AiWorkloadEmbeddingEvent`, and `AiWorkloadEvent`.
+      * `[✅]`   Add guard tests for operation-aware payload and event shape:
+         * `[✅]`   accept valid stream payload/event variant.
+         * `[✅]`   accept valid embedding payload/event variant.
+         * `[✅]`   reject mixed stream+embedding fields in a single variant.
+         * `[✅]`   reject unknown operation discriminator.
+      * `[✅]`   Add regression tests for event name literal consistency:
+         * `[✅]`   guard accepts `eventName: 'ai-stream-background'`.
+         * `[✅]`   guard rejects stale literal values.
+      * `[✅]`   Preserve existing deps/params/return guard coverage.
+
+   * `[✅]`   `supabase/functions/dialectic-worker/enqueueModelCall/enqueueModelCall.guard.ts`
+      * `[✅]`   Update all imports and type references from `AiStreamEventData` to `AiWorkloadStreamEvent`, `AiWorkloadEmbeddingEvent`, and `AiWorkloadEvent`.
+      * `[✅]`   Update payload and event guards to enforce operation-discriminated union semantics.
+      * `[✅]`   Correct `isAiStreamEventBody` event-name literal to `ai-stream-background`.
+      * `[✅]`   Preserve strict validation for `sig` and `user_config.tier_output_cap_tokens`.
+      * `[✅]`   Preserve deps and params guard behavior except required operation-aware additions.
+
+   * `[✅]`   `supabase/functions/dialectic-worker/enqueueModelCall/enqueueModelCall.mock.ts`
+      * `[✅]`   Update all imports and type references from `AiStreamEventData` to `AiWorkloadStreamEvent`, `AiWorkloadEmbeddingEvent`, and `AiWorkloadEvent`.
+      * `[✅]`   Add operation-aware payload/event mock factories:
+         * `[✅]`   stream payload/event defaults.
+         * `[✅]`   embedding payload/event defaults.
+      * `[✅]`   Preserve existing typed defaults for deps/params and queued return fixtures.
+
+   * `[✅]`   `supabase/functions/dialectic-worker/enqueueModelCall/enqueueModelCall.test.ts`
+      * `[✅]`   Update all imports and type references from `AiStreamEventData` to `AiWorkloadStreamEvent`, `AiWorkloadEmbeddingEvent`, and `AiWorkloadEvent`.
+      * `[✅]`   Add RED/GREEN unit coverage for operation-aware enqueue behavior:
+         * `[✅]`   stream payload path posts stream event variant and remains queued-success compatible.
+         * `[✅]`   embedding payload path posts embedding event variant and remains queued-success compatible.
+         * `[✅]`   invalid operation payload is rejected before DB update/fetch.
+         * `[✅]`   oversized payload handling remains non-retriable and fetch is not called.
+      * `[✅]`   Preserve sequencing assertions that DB queued update occurs before queue fetch on success.
+      * `[✅]`   Preserve retriable vs non-retriable classification assertions for failure paths.
 
    * `[ ]`   `supabase/functions/dialectic-worker/enqueueModelCall/enqueueModelCall.ts`
-      * `[ ]`   Implement operation-aware event-body construction from discriminated enqueue payload.
-      * `[ ]`   Keep prerequisite validation order unchanged:
-         * `[ ]`   output type validity.
-         * `[ ]`   provider config validity.
-         * `[ ]`   API key availability.
-         * `[ ]`   `job.user_id` presence.
-         * `[ ]`   signature compute.
-         * `[ ]`   queued DB update before fetch.
-      * `[ ]`   Keep event size limit enforcement and queue POST auth/header semantics unchanged.
-      * `[ ]`   Preserve existing retriable/non-retriable error mapping semantics.
+      * `[✅]`   Update all imports and type references from `AiStreamEventData` to `AiWorkloadStreamEvent`, `AiWorkloadEmbeddingEvent`, and `AiWorkloadEvent`.
+      * `[✅]`   Implement operation-aware event-body construction from discriminated enqueue payload.
+      * `[ ]`   Replace the unconditional `isModelContributionFileType(params.output_type)` check (line 24) with an operation-discriminated branch: if `payload.operation === 'stream'` validate `isModelContributionFileType(params.output_type)`; if `payload.operation === 'embedding'` validate `isEmbeddingOutputFileType(params.output_type)`. Return non-retriable error if either check fails.
+      * `[✅]`   Keep prerequisite validation order unchanged:
+         * `[✅]`   output type validity (now operation-discriminated — see above).
+         * `[✅]`   provider config validity.
+         * `[✅]`   API key availability.
+         * `[✅]`   `job.user_id` presence.
+         * `[✅]`   signature compute.
+         * `[✅]`   queued DB update before fetch.
+      * `[✅]`   Keep event size limit enforcement and queue POST auth/header semantics unchanged.
+      * `[✅]`   Preserve existing retriable/non-retriable error mapping semantics.
 
-   * `[ ]`   `supabase/functions/dialectic-worker/enqueueModelCall/enqueueModelCall.provides.ts`
-      * `[ ]`   Export operation-aware contract and guard symbols introduced by this node.
-      * `[ ]`   Preserve existing exports consumed by prepareModelJob tests and enqueue module consumers.
+   * `[✅]`   `supabase/functions/dialectic-worker/enqueueModelCall/enqueueModelCall.provides.ts`
+      * `[✅]`   Update all imports and type references from `AiStreamEventData` to `AiWorkloadStreamEvent`, `AiWorkloadEmbeddingEvent`, and `AiWorkloadEvent`.
+      * `[✅]`   Export operation-aware contract and guard symbols introduced by this node.
+      * `[✅]`   Preserve existing exports consumed by prepareModelJob tests and enqueue module consumers.
 
-   * `[ ]`   `supabase/functions/dialectic-worker/enqueueModelCall/enqueueModelCall.integration.test.ts`
-      * `[ ]`   Extend integration coverage for producer -> enqueue -> consumer-boundary payload correctness:
-         * `[ ]`   stream variant integration path verifies queued DB update and posted stream event shape.
-         * `[ ]`   embedding variant integration path verifies queued DB update and posted embedding event shape.
-         * `[ ]`   both variants verify event name, signature presence, and operation-consistent request fields.
-      * `[ ]`   Keep external boundaries mocked (network + external provider dependencies) while exercising real enqueue implementation and Supabase mock client behavior.
+   * `[✅]`   `supabase/functions/dialectic-worker/enqueueModelCall/enqueueModelCall.integration.test.ts`
+      * `[✅]`   Update all imports and type references from `AiStreamEventData` to `AiWorkloadStreamEvent`, `AiWorkloadEmbeddingEvent`, and `AiWorkloadEvent`.
+      * `[✅]`   Extend integration coverage for producer -> enqueue -> consumer-boundary payload correctness:
+         * `[✅]`   stream variant integration path verifies queued DB update and posted stream event shape.
+         * `[✅]`   embedding variant integration path verifies queued DB update and posted embedding event shape.
+         * `[✅]`   both variants verify event name, signature presence, and operation-consistent request fields.
+      * `[✅]`   Keep external boundaries mocked (network + external provider dependencies) while exercising real enqueue implementation and Supabase mock client behavior.
 
-   * `[ ]`   `construction`
-      * `[ ]`   Enqueue remains a pure DI function (`deps`, `params`, `payload`) with no hidden singleton dependencies.
-      * `[ ]`   No partial construction path is introduced.
-      * `[ ]`   Initialization order remains deterministic and preserved by tests.
+   * `[✅]`   `construction`
+      * `[✅]`   Enqueue remains a pure DI function (`deps`, `params`, `payload`) with no hidden singleton dependencies.
+      * `[✅]`   No partial construction path is introduced.
+      * `[✅]`   Initialization order remains deterministic and preserved by tests.
 
-   * `[ ]`   `directionality`
-      * `[ ]`   Node layer is Supabase orchestration-to-queue boundary adapter.
-      * `[ ]`   Dependencies remain inward-facing from shared guards, signatures, DB client, and env-backed queue config.
-      * `[ ]`   Outbound interface remains Netlify event payload boundary.
-      * `[ ]`   No new dependency cycles with callback ingest or persistence modules.
-
-   * `[ ]`   `requirements`
-      * `[ ]`   Enqueue supports operation-aware stream and embedding queue payload emission.
-      * `[ ]`   Existing stream enqueue behavior stays backward-compatible and fully covered.
-      * `[ ]`   Queued-state DB transition, signature generation, and payload-size guard remain deterministic.
-      * `[ ]`   Guard/interface/mock/unit/integration files prove operation-discriminated contract correctness and failure classification behavior.
-      * `[ ]`   Node scope remains limited to `enqueueModelCall.ts` and its immediate support system.
-
-* `[ ]`   supabase/functions/netlifyResponse/netlifyResponseHandler.ts **[BE] Add operation-aware callback ingest branching and typed handoff into saveResponse boundary**
-
-   * `[ ]`   `objective`
-      * `[ ]`   Solve callback ingest mismatch where `netlifyResponseHandler` only accepts stream-shaped payloads and cannot safely ingest embedding callback payload variants.
-      * `[ ]`   Functional goals:
-         * `[ ]`   Extend callback body contracts to explicit operation-discriminated variants.
-         * `[ ]`   Preserve HMAC signature verification and job TTL authorization semantics.
-         * `[ ]`   Branch request-to-saveResponse payload mapping by operation with deterministic field ownership.
-         * `[ ]`   Preserve existing HTTP status semantics for method/JSON/body validation/auth/saveResponse outcomes.
-      * `[ ]`   Non-functional constraints:
-         * `[ ]`   Stream callback behavior remains backward-compatible.
-         * `[ ]`   Invalid operation/body combinations fail fast with 400 responses before saveResponse invocation.
-         * `[ ]`   saveResponse source implementation is not changed in this node.
-         * `[ ]`   Boundary wiring in `netlifyResponse/index.ts` remains unchanged in this node.
-      * `[ ]`   Each goal is atomic and testable via interface, guard, mock, unit, and integration updates.
-
-   * `[ ]`   `role`
-      * `[ ]`   Node role is Supabase callback-ingest handler implementation plus immediate callback support files.
-      * `[ ]`   This role is correct because `netlifyResponseHandler.ts` is the first Supabase callback consumer that must interpret operation-aware Netlify payloads before saveResponse source execution.
-      * `[ ]`   Out-of-scope responsibilities:
-         * `[ ]`   Do not edit `saveResponse.ts` source behavior in this node.
-         * `[ ]`   Do not edit Netlify worker source behavior in this node.
-         * `[ ]`   Do not edit enqueue source behavior in this node.
-
-   * `[ ]`   `module`
-      * `[ ]`   Bounded context is `supabase/functions/netlifyResponse` callback verification and handoff.
-      * `[ ]`   Inside boundary:
-         * `[ ]`   HTTP body parsing and operation-aware request validation.
-         * `[ ]`   Job lookup, signature verification, and TTL authorization.
-         * `[ ]`   Operation-specific payload mapping into `SaveResponsePayload` contract variants.
-      * `[ ]`   Outside boundary:
-         * `[ ]`   Queue payload construction and enqueue state transitions.
-         * `[ ]`   saveResponse persistence, debit, continuation, and render-enqueue logic.
-         * `[ ]`   Provider adapter execution internals.
-
-   * `[ ]`   `deps`
-      * `[ ]`   Provider: `../dialectic-worker/saveResponse/saveResponse.interface.ts` and `SaveResponseFn` boundary.
-         * `[ ]`   Layer classification: immediate consumer contract.
-         * `[ ]`   Direction: callback handler passes validated payload into saveResponse boundary.
-         * `[ ]`   Purpose: preserve strict handoff typing for operation-specific callback semantics.
-      * `[ ]`   Provider: `../_shared/utils/computeJobSig/computeJobSig.interface.ts`.
-         * `[ ]`   Layer classification: shared auth/security utility contract.
-         * `[ ]`   Direction: inbound dependency consumed by callback handler.
-         * `[ ]`   Purpose: deterministic HMAC verification over persisted job row identity.
-      * `[ ]`   Provider: `netlify/functions/ai-stream-background` callback payload contract output.
-         * `[ ]`   Layer classification: external producer boundary.
-         * `[ ]`   Direction: inbound request consumed by callback handler.
-         * `[ ]`   Purpose: ensure operation-aware stream and embedding payload variants are accepted and mapped correctly.
-      * `[ ]`   Confirm:
-         * `[ ]`   No reverse dependency from callback handler into saveResponse source internals.
-         * `[ ]`   No lateral layer violations across Supabase workstream B nodes.
-
-   * `[ ]`   `context_slice`
-      * `[ ]`   Minimal dependency interfaces required:
-         * `[ ]`   `computeJobSig(job.id, job.user_id, job.created_at)` for authorization.
-         * `[ ]`   `SaveResponseFn` accepting operation-aware payload union.
-         * `[ ]`   `adminClient` read access to `dialectic_generation_jobs` identity fields.
-      * `[ ]`   Injection shape remains `NetlifyResponseDeps` with additive operation-aware type support only.
-      * `[ ]`   Confirm:
-         * `[ ]`   No over-fetching of non-identity DB columns during signature verification.
-         * `[ ]`   No hidden coupling to persistence internals beyond `SaveResponseFn` contract.
-
-   * `[ ]`   `supabase/functions/dialectic-worker/saveResponse/saveResponse.interface.test.ts`
-      * `[ ]`   Extend contract assertions for operation-aware save-response payload variants consumed by `netlifyResponseHandler`:
-         * `[ ]`   valid stream payload variant (assembled content + token usage + finish reason).
-         * `[ ]`   valid embedding payload variant (embedding output + embedding token usage + operation discriminator).
-         * `[ ]`   reject mixed variant fixtures in type-level contract coverage.
-      * `[ ]`   Preserve existing status/dep contract assertions.
-
-   * `[ ]`   `supabase/functions/dialectic-worker/saveResponse/saveResponse.interface.ts`
-      * `[ ]`   Introduce explicit operation-discriminated payload union for `SaveResponsePayload`.
-      * `[ ]`   Keep `SaveResponseParams`, return union, and dependency contract unchanged.
-      * `[ ]`   Preserve existing stream variant field names to maintain backward compatibility.
-
-   * `[ ]`   `supabase/functions/netlifyResponse/netlifyResponse.interface.test.ts`
-      * `[ ]`   Add operation-aware callback body contract assertions:
-         * `[ ]`   valid stream callback body variant.
-         * `[ ]`   valid embedding callback body variant.
-         * `[ ]`   invalid unknown operation discriminator variant.
-         * `[ ]`   invalid mixed variant fields.
-      * `[ ]`   Preserve dependency-surface and handler-signature contract assertions.
-
-   * `[ ]`   `supabase/functions/netlifyResponse/netlifyResponse.interface.ts`
-      * `[ ]`   Convert `NetlifyResponseBody` into explicit operation-discriminated union.
-      * `[ ]`   Keep `NetlifyResponseDeps` and `NetlifyResponseHandlerFn` signatures stable.
-      * `[ ]`   Ensure callback body union aligns to updated `SaveResponsePayload` contract variants.
-
-   * `[ ]`   `supabase/functions/netlifyResponse/netlifyResponse.interaction.spec`
-      * `[ ]`   Add interaction-spec file capturing callback flow and branching:
-         * `[ ]`   method gate and JSON parse gate.
-         * `[ ]`   operation-aware body guard gate.
-         * `[ ]`   job lookup and signature/TTL authorization.
-         * `[ ]`   stream-to-saveResponse payload mapping.
-         * `[ ]`   embedding-to-saveResponse payload mapping.
-      * `[ ]`   Define failure modes:
-         * `[ ]`   invalid method/JSON/body shape -> deterministic 4xx.
-         * `[ ]`   signature mismatch or expired job -> deterministic 401.
-         * `[ ]`   saveResponse error return -> 503 for retriable, 500 for non-retriable.
-
-   * `[ ]`   `supabase/functions/netlifyResponse/netlifyResponse.guard.test.ts`
-      * `[ ]`   Add guard coverage for operation-aware body variants:
-         * `[ ]`   accept valid stream callback body.
-         * `[ ]`   accept valid embedding callback body.
-         * `[ ]`   reject missing operation discriminator.
-         * `[ ]`   reject unknown operation discriminator.
-         * `[ ]`   reject mixed stream and embedding fields in one payload.
-      * `[ ]`   Preserve dependency guard coverage for computeJobSig/adminClient/saveResponse/saveResponseDeps.
-
-   * `[ ]`   `supabase/functions/netlifyResponse/netlifyResponse.guard.ts`
-      * `[ ]`   Update callback body guard to enforce operation-discriminated union semantics.
-      * `[ ]`   Keep dependency guard semantics unchanged.
-      * `[ ]`   Preserve strict object-shape gating and null/non-object rejection behavior.
-
-   * `[ ]`   `supabase/functions/netlifyResponse/netlifyResponse.mock.ts`
-      * `[ ]`   Add operation-aware callback body fixtures and factories:
-         * `[ ]`   stream callback body default fixture.
-         * `[ ]`   embedding callback body default fixture.
-         * `[ ]`   malformed mixed/unknown-operation fixtures for negative tests.
-      * `[ ]`   Preserve dependency mock factory behavior and saveResponse default mock.
-
-   * `[ ]`   `supabase/functions/netlifyResponse/netlifyResponseHandler.test.ts`
-      * `[ ]`   Add RED/GREEN unit tests for operation-aware handler branching:
-         * `[ ]`   valid stream callback body -> maps stream variant to saveResponse and returns 200 on success.
-         * `[ ]`   valid embedding callback body -> maps embedding variant to saveResponse and returns 200 on success.
-         * `[ ]`   invalid operation/mixed fields -> returns 400 and does not call saveResponse.
-      * `[ ]`   Preserve existing tests for method, JSON parsing, signature mismatch, TTL expiration, and saveResponse retriable classification.
-
-   * `[ ]`   `supabase/functions/netlifyResponse/netlifyResponseHandler.ts`
-      * `[ ]`   Implement operation-aware callback body handling after guard validation.
-      * `[ ]`   Preserve existing authorization flow order:
-         * `[ ]`   DB identity lookup.
-         * `[ ]`   compute expected signature.
-         * `[ ]`   constant-time signature mismatch check.
-         * `[ ]`   TTL expiry check.
-      * `[ ]`   Build and pass operation-specific `SaveResponsePayload` variant to `saveResponse`.
-      * `[ ]`   Preserve existing HTTP response mapping for saveResponse success/retriable/non-retriable returns.
-
-   * `[ ]`   `supabase/functions/netlifyResponse/netlifyResponse.integration.test.ts`
-      * `[ ]`   Extend integration coverage for producer-callback-consumer boundary behavior:
-         * `[ ]`   valid stream callback path verifies 200 and saveResponse invocation.
-         * `[ ]`   valid embedding callback path verifies 200 and saveResponse invocation.
-         * `[ ]`   invalid signature path verifies 401 and no saveResponse invocation.
-         * `[ ]`   invalid body variant path verifies 400 and no saveResponse invocation.
-      * `[ ]`   Keep external boundaries mocked while exercising real callback handler logic and mock Supabase client behavior.
-
-   * `[ ]`   `construction`
-      * `[ ]`   `netlifyResponseHandler` remains a pure DI function over `NetlifyResponseDeps` and `Request`.
-      * `[ ]`   No partial construction path is introduced.
-      * `[ ]`   Initialization and execution order remain deterministic and test-covered.
-
-   * `[ ]`   `directionality`
-      * `[ ]`   Node layer is callback boundary adapter between Netlify worker output and saveResponse input.
-      * `[ ]`   Dependencies remain inward-facing from shared security utility, admin DB client, and saveResponse contract.
-      * `[ ]`   Outbound boundary remains saveResponse invocation plus HTTP response semantics.
-      * `[ ]`   No dependency cycle is introduced with enqueue source or saveResponse source.
+   * `[✅]`   `directionality`
+      * `[✅]`   Node layer is Supabase orchestration-to-queue boundary adapter.
+      * `[✅]`   Dependencies remain inward-facing from shared guards, signatures, DB client, and env-backed queue config.
+      * `[✅]`   Outbound interface remains Netlify event payload boundary.
+      * `[✅]`   No new dependency cycles with callback ingest or persistence modules.
 
    * `[ ]`   `requirements`
-      * `[ ]`   Callback handler accepts and validates operation-aware stream and embedding callback payload variants.
-      * `[ ]`   Signature verification and TTL authorization behavior remain unchanged and fully covered.
-      * `[ ]`   Handler maps each valid operation variant into the updated saveResponse payload contract without mixed-field ambiguity.
-      * `[ ]`   Interface/guard/mock/unit/integration files prove deterministic 200/400/401/503/500 behavior remains correct.
-      * `[ ]`   Node scope remains limited to `netlifyResponseHandler.ts` and immediate support contracts; `saveResponse.ts` source work remains in the next node.
-
-* `[ ]`   supabase/functions/dialectic-worker/saveResponse/saveResponse.ts **[BE] Implement operation-aware persistence branching for stream and embedding results with canonical artifact identity preservation**
-
-   * `[ ]`   `objective`
-      * `[ ]`   Solve persistence mismatch where `saveResponse.ts` is stream-content-centric and cannot correctly persist embedding callback payload variants without ambiguous field interpretation.
-      * `[ ]`   Functional goals:
-         * `[ ]`   Add operation-aware processing branch so stream and embedding payload variants are interpreted deterministically.
-         * `[ ]`   Preserve existing stream continuation/retry/finalization behavior and canonical file identity contracts.
-         * `[ ]`   Persist embedding outputs in a deterministic, typed form consumable by downstream retrieval/indexing paths.
-         * `[ ]`   Preserve token debit semantics and job status transitions for both operation paths.
-      * `[ ]`   Non-functional constraints:
-         * `[ ]`   Keep existing stream regression surface stable (continuation, path context, plan validation, notifications, raw-json paths).
-         * `[ ]`   Reject malformed operation payload variants with explicit non-retriable errors at guard/validation boundary.
-         * `[ ]`   Do not modify callback handler authorization logic in this node.
-         * `[ ]`   Do not modify enqueue source behavior in this node.
-      * `[ ]`   Each goal is atomic and testable through interface, guard, mock, unit, and integration coverage within saveResponse scope.
-
-   * `[ ]`   `role`
-      * `[ ]`   Node role is persistence orchestration implementation and complete immediate support system for `saveResponse.ts`.
-      * `[ ]`   This role is correct because `saveResponse.ts` is the Workstream B consumer of operation-aware callback payload contracts and producer of persisted contribution state.
-      * `[ ]`   Out-of-scope responsibilities:
-         * `[ ]`   Do not edit `netlifyResponseHandler.ts` source behavior in this node.
-         * `[ ]`   Do not edit Netlify worker source behavior in this node.
-         * `[ ]`   Do not edit gatherArtifacts/applyInputs/processComplexJob sources in this node.
-
-   * `[ ]`   `module`
-      * `[ ]`   Bounded context is `supabase/functions/dialectic-worker/saveResponse` persistence, continuation, and completion orchestration.
-      * `[ ]`   Inside boundary:
-         * `[ ]`   Payload validation and operation-specific transformation into persistence artifacts.
-         * `[ ]`   Debit/retry/continue/finalization control flow.
-         * `[ ]`   Contribution upload context assembly and canonical-path-safe artifact persistence.
-      * `[ ]`   Outside boundary:
-         * `[ ]`   Callback request authorization and signature validation.
-         * `[ ]`   Queue enqueue event construction.
-         * `[ ]`   Later resume-consumption overlay logic in downstream workstreams.
-
-   * `[ ]`   `deps`
-      * `[ ]`   Provider: `./saveResponse.interface.ts` and `./saveResponse.guard.ts`.
-         * `[ ]`   Layer classification: local contract and runtime boundary producer.
-         * `[ ]`   Direction: consumed by `saveResponse.ts` and its tests.
-         * `[ ]`   Purpose: enforce operation-discriminated payload shape before persistence orchestration.
-      * `[ ]`   Provider: `../createJobContext/JobContext.interface.ts` deps (`continueJob`, `retryJob`, `determineContinuation`, etc.).
-         * `[ ]`   Layer classification: orchestration dependency contracts.
-         * `[ ]`   Direction: inbound dependencies consumed by saveResponse implementation.
-         * `[ ]`   Purpose: preserve existing continuation and retry behavior for stream path.
-      * `[ ]`   Provider: `_shared` file manager/path/type guards/json sanitizer/debit utilities.
-         * `[ ]`   Layer classification: shared infrastructure utilities.
-         * `[ ]`   Direction: inbound dependencies consumed by persistence implementation.
-         * `[ ]`   Purpose: canonical pathing, safe parse/sanitize, debit accounting, and contribution registration.
-      * `[ ]`   Confirm:
-         * `[ ]`   No reverse dependency from saveResponse into callback handler source logic.
-         * `[ ]`   No lateral layer violations with enqueue module boundaries.
-
-   * `[ ]`   `context_slice`
-      * `[ ]`   Minimal dependency interfaces required:
-         * `[ ]`   `SaveResponsePayload` operation-discriminated union from prior node.
-         * `[ ]`   `fileManager.uploadAndRegisterFile` + `assembleAndSaveFinalDocument` canonical persistence boundary.
-         * `[ ]`   debit/retry/continue function contracts with existing return semantics.
-      * `[ ]`   Injection shape remains `SaveResponseDeps`, `SaveResponseParams`, `SaveResponsePayload` with additive operation fields only.
-      * `[ ]`   Confirm:
-         * `[ ]`   No over-fetching of unrelated DB/project state beyond existing validated requirements.
-         * `[ ]`   No hidden coupling to netlifyResponse request envelope.
-
-   * `[ ]`   `supabase/functions/dialectic-worker/saveResponse/saveResponse.interface.test.ts`
-      * `[ ]`   Finalize operation-aware contract assertions for `SaveResponsePayload` and `SaveResponseRequestBody`:
-         * `[ ]`   valid stream payload variant contract.
-         * `[ ]`   valid embedding payload variant contract.
-         * `[ ]`   invalid mixed-field and unknown-operation fixtures rejected at contract level.
-      * `[ ]`   Preserve existing deps and return-contract assertions.
-
-   * `[ ]`   `supabase/functions/dialectic-worker/saveResponse/saveResponse.interface.ts`
-      * `[ ]`   Keep operation-discriminated `SaveResponsePayload` contract aligned with callback node updates.
-      * `[ ]`   Add any strictly required embedding payload subtypes used by saveResponse implementation.
-      * `[ ]`   Preserve `SaveResponseDeps`, params, and return unions unchanged unless required by operation-specific persistence behavior.
-
-   * `[ ]`   `supabase/functions/dialectic-worker/saveResponse/saveResponse.interaction.spec`
-      * `[ ]`   Add interaction-spec file defining operation-aware saveResponse semantics:
-         * `[ ]`   shared preconditions (job/provider/session validation).
-         * `[ ]`   stream branch continuation/retry/finalization sequencing.
-         * `[ ]`   embedding branch persistence sequencing and completion semantics.
-         * `[ ]`   debit and notification side-effect expectations per branch.
-      * `[ ]`   Define failure modes:
-         * `[ ]`   contract invalidity -> non-retriable error return.
-         * `[ ]`   DB/provider/session lookup failures -> non-retriable error return.
-         * `[ ]`   debit transient failure -> retriable error return.
-         * `[ ]`   malformed content in stream branch -> retry path with existing semantics.
-
-   * `[ ]`   `supabase/functions/dialectic-worker/saveResponse/saveResponse.guard.test.ts`
-      * `[ ]`   Extend payload/request guard coverage for operation-discriminated variants:
-         * `[ ]`   accept valid stream payload variant.
-         * `[ ]`   accept valid embedding payload variant.
-         * `[ ]`   reject mixed stream+embedding fields.
-         * `[ ]`   reject missing/unknown operation discriminator.
-      * `[ ]`   Preserve dependency and return guard coverage.
-
-   * `[ ]`   `supabase/functions/dialectic-worker/saveResponse/saveResponse.guard.ts`
-      * `[ ]`   Implement operation-aware request/payload guard logic consistent with updated interface contracts.
-      * `[ ]`   Preserve strict type checks for token usage and return guards.
-      * `[ ]`   Keep `SaveResponseDeps` guard semantics unchanged.
-
-   * `[ ]`   `supabase/functions/dialectic-worker/saveResponse/saveResponse.mock.ts`
-      * `[ ]`   Add operation-aware payload/request mock builders:
-         * `[ ]`   stream defaults used by existing tests.
-         * `[ ]`   embedding defaults for new branch coverage.
-         * `[ ]`   malformed override fixtures for negative guard/unit tests.
-      * `[ ]`   Preserve existing dependency and contribution fixture factories.
-
-   * `[ ]`   `supabase/functions/dialectic-worker/saveResponse/saveResponse.test.ts`
-      * `[ ]`   Add RED/GREEN unit coverage for operation-aware core behavior:
-         * `[ ]`   stream branch remains backward-compatible with existing success/retry/continuation expectations.
-         * `[ ]`   embedding branch persists embedding result path with deterministic completion semantics.
-         * `[ ]`   invalid operation payload returns non-retriable error before persistence side effects.
-      * `[ ]`   Preserve existing enqueueRenderJob dispatch gating coverage.
-
-   * `[ ]`   `supabase/functions/dialectic-worker/saveResponse/saveResponse.continue.test.ts`
-      * `[ ]`   Keep stream continuation regression suite green with operation-aware payload defaults.
-      * `[ ]`   Add targeted assertions that embedding payload variants do not enter stream continuation branch logic.
-
-   * `[ ]`   `supabase/functions/dialectic-worker/saveResponse/saveResponse.pathContext.test.ts`
-      * `[ ]`   Preserve canonical path/deconstructor behavior for stream document artifacts.
-      * `[ ]`   Assert operation-aware branching does not mutate stream path-context semantics.
-
-   * `[ ]`   `supabase/functions/dialectic-worker/saveResponse/saveResponse.planValidation.test.ts`
-      * `[ ]`   Preserve plan-validation behavior for header-context/document artifact stream paths.
-      * `[ ]`   Add operation-branch assertions ensuring embedding payloads bypass stream-plan JSON validation paths where not applicable.
-
-   * `[ ]`   `supabase/functions/dialectic-worker/saveResponse/saveResponse.rawJsonOnly.test.ts`
-      * `[ ]`   Preserve raw-json stream behavior and sanitization/retry semantics.
-      * `[ ]`   Ensure embedding branch does not regress raw-json stream-only expectations.
-
-   * `[ ]`   `supabase/functions/dialectic-worker/saveResponse/saveResponse.notifications.test.ts`
-      * `[ ]`   Preserve existing notification semantics for stream completion/continuation/retry.
-      * `[ ]`   Add explicit notification expectations for embedding completion path (or explicit no-op where required by current product semantics).
-
-   * `[ ]`   `supabase/functions/dialectic-worker/saveResponse/saveResponse.assembleDocument.test.ts`
-      * `[ ]`   Preserve terminal assembly behavior for stream document artifacts.
-      * `[ ]`   Verify embedding branch does not call stream-only final-document assembly paths.
-
-   * `[ ]`   `supabase/functions/dialectic-worker/saveResponse/saveResponse.integration.test.ts`
-      * `[ ]`   Extend integration coverage for operation-aware persistence boundary behavior:
-         * `[ ]`   stream integration path remains green for completion/retry/continuation.
-         * `[ ]`   embedding integration path validates deterministic persistence and status behavior.
-         * `[ ]`   malformed operation payload integration path returns non-retriable error and avoids side effects.
-      * `[ ]`   Keep external boundaries mocked while exercising real saveResponse orchestration.
-
-   * `[ ]`   `supabase/functions/dialectic-worker/saveResponse/saveResponse.ts`
-      * `[ ]`   Implement operation-aware branching after payload guard pass.
-      * `[ ]`   Preserve current stream sequencing for validation, sanitization, continuation determination, debit, and finalization.
-      * `[ ]`   Add embedding processing path that:
-         * `[ ]`   validates embedding payload fields.
-         * `[ ]`   persists embedding-related contribution output using canonical identity-safe pathing.
-         * `[ ]`   applies debit/status/notification handling deterministically.
-      * `[ ]`   Preserve existing success/error return union semantics.
-
-   * `[ ]`   `supabase/functions/dialectic-worker/saveResponse/saveResponse.provides.ts`
-      * `[ ]`   Export any new operation-aware payload/request types, guards, and mock builders introduced by this node.
-      * `[ ]`   Preserve existing public exports consumed by `netlifyResponse` and test surfaces.
-
-   * `[ ]`   `construction`
-      * `[ ]`   `saveResponse` remains a pure DI function over deps/params/payload.
-      * `[ ]`   No partial construction path is introduced.
-      * `[ ]`   Branch initialization order is deterministic and test-covered.
-
-   * `[ ]`   `directionality`
-      * `[ ]`   Node layer is persistence orchestration boundary between callback ingest contract and contribution storage domain.
-      * `[ ]`   Dependencies remain inward-facing from shared utilities and continuation/retry/debit interfaces.
-      * `[ ]`   Outbound effects remain DB/file-manager/notification side effects behind existing dependency interfaces.
-      * `[ ]`   No new dependency cycle introduced with enqueue or callback handler modules.
-
-   * `[ ]`   `requirements`
-      * `[ ]`   saveResponse supports operation-aware stream and embedding payload variants with deterministic branch semantics.
-      * `[ ]`   Existing stream continuation and canonical artifact identity behavior remains intact and fully covered.
-      * `[ ]`   Embedding persistence path is explicitly typed, validated, and integration-tested.
-      * `[ ]`   Guard/interface/mock/unit/integration surfaces are synchronized to operation-aware contracts.
-      * `[ ]`   Node scope remains limited to `saveResponse.ts` and its immediate support system in this module.
-
-   * `[ ]`   **Commit** `feat(supabase-worker): complete operation-aware callback ingest and save-response persistence routing`
-      * `[ ]`   Structural changes:
-         * `[ ]`   `enqueueModelCall`, `netlifyResponseHandler`, and `saveResponse` contract surfaces are operation-aware and aligned across Supabase callback boundaries.
-         * `[ ]`   Interface, guard, mock, unit, and integration files for Workstream B source nodes are synchronized to operation-discriminated payload semantics.
-      * `[ ]`   Behavioral changes:
-         * `[ ]`   Supabase callback flow accepts operation-aware payloads, authorizes deterministically, and maps branch-specific payloads into persistence orchestration.
-         * `[ ]`   saveResponse persistence and completion paths now support stream and embedding branches while preserving existing stream continuation/retry behavior.
-      * `[ ]`   Contract changes:
-         * `[ ]`   Supabase queue event and callback payload shapes now encode explicit operation discrimination and branch-safe field ownership.
-         * `[ ]`   saveResponse payload and runtime guards enforce operation-specific shape validity and reject mixed/invalid variants.
-
-* `[ ]`   supabase/functions/_shared/services/file_manager.ts **[BE] Persist compression summary artifacts as first-class resources with canonical identity metadata and deterministic registration semantics**
-
-   * `[ ]`   `objective`
-      * `[ ]`   Solve the artifact-registration gap where compression summaries can be uploaded as generic resources but are not enforced as a strict, queryable contract for resume/overlay workflows.
-      * `[ ]`   Functional goals:
-         * `[ ]`   Introduce explicit upload-context contract for `FileType.RagContextSummary` in `file_manager` type layer, including required metadata fields for downstream resolution.
-         * `[ ]`   Enforce runtime validation in `uploadAndRegisterFile` so rag summary uploads are rejected unless required identity metadata is present.
-         * `[ ]`   Persist deterministic `dialectic_project_resources` rows for rag summaries with stable `resource_type` and structured `resource_description` keys consumed by later nodes.
-         * `[ ]`   Preserve existing behavior for `GeneralResource`, `SeedPrompt`, `ProjectExportZip`, and model contribution upload paths.
-      * `[ ]`   Non-functional constraints:
-         * `[ ]`   No regressions to upload retry behavior (`MAX_TRANSIENT_RETRIES`) and collision handling (`MAX_UPLOAD_ATTEMPTS`) already covered by `file_manager.errors.test.ts` and `file_manager.upload.test.ts`.
-         * `[ ]`   No changes to path-construction algorithms in `path_constructor.ts` or path parsing in `path_deconstructor.ts` in this node.
-         * `[ ]`   No callback/enqueue/netlify worker edits in this node.
-      * `[ ]`   Each goal is atomic and testable through updated type-guard, unit, and integration coverage for `file_manager` boundaries.
-
-   * `[ ]`   `role`
-      * `[ ]`   Node role is shared storage-registration boundary implementation and immediate support system for `file_manager.ts`.
-      * `[ ]`   This role is correct because `file_manager.ts` is the first Workstream C source file that writes storage objects and DB metadata rows used later by compression writer and resume overlay consumers.
-      * `[ ]`   Out-of-scope responsibilities:
-         * `[ ]`   Do not implement artifact consume/overlay logic (`gatherArtifacts`, `applyInputsRequiredScope`, `processComplexJob`) in this node.
-         * `[ ]`   Do not implement compression prompt production logic (`compressPrompt.ts`) in this node.
-         * `[ ]`   Do not alter render decision semantics (`shouldEnqueueRenderJob`) beyond required non-regression assertions.
-
-   * `[ ]`   `module`
-      * `[ ]`   Bounded context is `supabase/functions/_shared/services/file_manager.ts` and its immediate type/guard/test support files.
-      * `[ ]`   Inside boundary:
-         * `[ ]`   upload input typing and runtime narrowing for resource uploads.
-         * `[ ]`   resource row persistence payload shaping (`resource_type`, `resource_description`, `storage_path`, `file_name`).
-         * `[ ]`   service-level error behavior for missing/invalid compression artifact metadata.
-      * `[ ]`   Outside boundary:
-         * `[ ]`   canonical path segment construction details (handled by `path_constructor.ts` node).
-         * `[ ]`   canonical path parsing/deconstruction details (handled by `path_deconstructor.ts` node).
-         * `[ ]`   orchestration of compression attempts and parent resume.
-
-   * `[ ]`   `deps`
-      * `[ ]`   Provider: `supabase/functions/_shared/types/file_manager.types.ts`.
-         * `[ ]`   Layer classification: local contract producer.
-         * `[ ]`   Direction: consumed by `file_manager.ts`, guards, and tests.
-         * `[ ]`   Purpose: define strict metadata shape for rag summary upload context.
-      * `[ ]`   Provider: `supabase/functions/_shared/utils/type-guards/type_guards.file_manager.ts`.
-         * `[ ]`   Layer classification: runtime boundary guard producer.
-         * `[ ]`   Direction: consumed by `file_manager.ts` and tests.
-         * `[ ]`   Purpose: narrow resource upload contexts and enforce compression-artifact-specific contract.
-      * `[ ]`   Provider: `supabase/functions/_shared/utils/path_constructor.ts` (read-only in this node).
-         * `[ ]`   Layer classification: shared infra helper dependency.
-         * `[ ]`   Direction: consumed unchanged by `file_manager.ts`.
-         * `[ ]`   Purpose: preserve canonical storage path construction while registration contract is strengthened.
-      * `[ ]`   Provider: Supabase storage + `dialectic_project_resources` persistence boundary.
-         * `[ ]`   Layer classification: external infrastructure dependency.
-         * `[ ]`   Direction: inbound dependency used by `uploadAndRegisterFile`.
-         * `[ ]`   Purpose: persist artifact files and metadata rows deterministically.
-      * `[ ]`   Confirm:
-         * `[ ]`   No reverse dependency from `_shared/services/file_manager.ts` into dialectic-worker orchestration modules.
-         * `[ ]`   No lateral coupling introduced with netlify worker adapters.
-
-   * `[ ]`   `context_slice`
-      * `[ ]`   Minimal dependency interfaces required:
-         * `[ ]`   existing `constructStoragePath` signature and return shape (`storagePath`, `fileName`) only.
-         * `[ ]`   existing Supabase storage upload/remove and table upsert interfaces only.
-         * `[ ]`   existing shared type-guard helpers (`isRecord`, context guards) with additive rag-summary guard coverage.
-      * `[ ]`   Injection shape remains `new FileManagerService(supabaseClient, { constructStoragePath, logger, assembleChunks })` with no constructor-surface expansion.
-      * `[ ]`   Confirm:
-         * `[ ]`   No over-fetching of unrelated DB tables for rag summary persistence.
-         * `[ ]`   No hidden coupling to downstream enqueue/callback payload formats.
-
-   * `[ ]`   `supabase/functions/_shared/types/file_manager.types.ts`
-      * `[ ]`   Add `FileType.RagContextSummary` as a discriminated union variant of `ResourceUploadContext` that requires `resourceDescriptionForDb` with the following fields:
-         * `[ ]`   `target_document_id: string` — the `dialectic_project_resources.id` of the exact source document row that was compressed; matched against `gathered_doc.id` by the overlay consumer.
-         * `[ ]`   `target_document_key: string` — the `document_key` of the source document; used for human-readable diagnostics.
-         * `[ ]`   `source_fingerprint: string` — SHA-256 hex digest of the source document content at compression time; used by the overlay consumer to verify the artifact is still fresh before applying; must be a non-empty string.         
-         * `[ ]`   `compressed_by_model_id: string` — the `api_identifier` of the model that produced the compression.
-         * `[ ]`   `compressed_for_job_id: string` — the `id` of the job that triggered compression.
-      * `[ ]`   Add/extend resource upload context union so `FileType.RagContextSummary` requires this metadata contract at type level.
-      * `[ ]`   Preserve existing `UploadContext` behavior for non-rag resource file types.
-
-   * `[ ]`   `supabase/functions/_shared/utils/type-guards/type_guards.file_manager.test.ts`
-      * `[ ]`   Add guard coverage for new rag summary context/type contract:
-         * `[ ]`   accept valid rag summary context with complete required metadata.
-         * `[ ]`   reject rag summary context missing `target_document_id` equivalent identity field.
-         * `[ ]`   reject rag summary context missing source fingerprint metadata.
-         * `[ ]`   reject rag summary context with empty string `source_fingerprint`.         
-         * `[ ]`   reject malformed metadata primitive types (non-string identity, non-object metadata container).
-      * `[ ]`   Preserve existing guard assertions for non-rag resource/model/feedback contexts.
-
-   * `[ ]`   `supabase/functions/_shared/utils/type-guards/type_guards.file_manager.ts`
-      * `[ ]`   Implement runtime guard logic for rag summary metadata completeness and primitive-type correctness.
-      * `[ ]`   Ensure `isResourceContext` narrowing remains backward-compatible for non-rag resource types.
-      * `[ ]`   Keep `isModelContributionContext`, `isUserFeedbackContext`, `isModelContributionFileType`, and document-key guards unchanged except strictly required additive type compatibility.
-
-   * `[ ]`   `supabase/functions/_shared/services/file_manager.mock.ts`
-      * `[ ]`   Add rag summary upload fixture factory helpers with override support for required metadata fields.
-      * `[ ]`   Add malformed rag summary fixtures used by negative tests (missing identity, missing fingerprint, invalid metadata types).
-      * `[ ]`   Preserve existing default mock behavior for `uploadAndRegisterFile`, `getFileSignedUrl`, and `assembleAndSaveFinalDocument`.
-
-   * `[ ]`   `supabase/functions/_shared/services/file_manager.upload.test.ts`
-      * `[ ]`   Add RED/GREEN unit tests for rag summary registration path:
-         * `[ ]`   valid rag summary upload writes storage object and upserts `dialectic_project_resources` row with expected `resource_type` and metadata keys.
-         * `[ ]`   valid rag summary upload preserves caller-provided canonical identity fields verbatim in persisted `resource_description`.
-         * `[ ]`   rag summary missing required metadata returns explicit `FileManagerError` and removes uploaded blob when DB insert is blocked.
-         * `[ ]`   rag summary malformed metadata type returns explicit error before successful registration side effects.
-      * `[ ]`   Preserve existing tests for project resources, seed prompt resources, model contribution uploads, and feedback flows.
-
-   * `[ ]`   `supabase/functions/_shared/services/file_manager.errors.test.ts`
-      * `[ ]`   Extend transient/non-transient retry regression suite to include rag summary registration failure surfaces:
-         * `[ ]`   transient storage failure on rag summary upload retries bounded times then errors.
-         * `[ ]`   non-transient validation failure for rag summary metadata does not retry.
-         * `[ ]`   transient DB insert error for rag summary row retries bounded times then errors.
-      * `[ ]`   Preserve existing retry count contracts and constants alignment assertions.
-
-   * `[ ]`   `supabase/functions/_shared/services/file_manager.getFile.test.ts`
-      * `[ ]`   Add signed URL retrieval assertion for rag summary resource table rows to prove retrieval contract parity with other resource types.
-      * `[ ]`   Preserve existing not-found and storage-signing error behavior assertions.
-
-   * `[ ]`   `supabase/functions/_shared/services/file_manager.assemble.test.ts`
-      * `[ ]`   Add non-regression assertion that rag summary registration changes do not alter `assembleAndSaveFinalDocument` JSON assembly path semantics.
-      * `[ ]`   Preserve existing chunk chain, merged JSON object, upload destination, and `is_latest_edit` update behavior assertions.
-
-   * `[ ]`   `supabase/integration_tests/services/file_manager.integration.test.ts`
-      * `[ ]`   Add integration scenario proving end-to-end rag summary persistence:
-         * `[ ]`   upload rag summary via `FileManagerService.uploadAndRegisterFile`.
-         * `[ ]`   assert storage object exists at returned canonical path.
-         * `[ ]`   assert `dialectic_project_resources` row contains expected `resource_type` and structured identity/fingerprint metadata.
-         * `[ ]`   assert non-rag resource and contribution persistence scenarios remain green.
-
-   * `[ ]`   `supabase/integration_tests/services/file_manager.assemble.integration.test.ts`
-      * `[ ]`   Add non-regression assertion that introducing rag summary registration contract does not break final document assembly integration workflow.
-      * `[ ]`   Preserve existing execute/continue/assemble call chain semantics and output assertions.
-
-   * `[ ]`   `supabase/integration_tests/services/file_manager.assembleChunks.integration.test.ts`
-      * `[ ]`   Add non-regression assertion that real `assembleChunks` integration behavior remains unchanged after rag summary registration additions.
-      * `[ ]`   Preserve existing schema-fill placeholder and merged JSON parity checks.
-
-   * `[ ]`   `supabase/functions/_shared/services/file_manager.ts`
-      * `[ ]`   Implement strict rag summary upload validation and registration branch within `uploadAndRegisterFile` resource path:
-         * `[ ]`   reject rag summary uploads missing required identity/fingerprint metadata.
-         * `[ ]`   persist normalized rag summary metadata keys in `resource_description` for downstream deterministic lookup.
-         * `[ ]`   keep existing resource upsert key (`storage_bucket,storage_path,file_name`) and cleanup-on-failure behavior.
-      * `[ ]`   Preserve existing upload retry/collision logic, contribution insert/update logic, feedback upsert logic, and signed URL/assembly method behavior.
-
-   * `[ ]`   `construction`
-      * `[ ]`   `FileManagerService` construction remains unchanged: explicit dependencies (`constructStoragePath`, `logger`, `assembleChunks`) and env bucket requirement.
-      * `[ ]`   No partial construction path is introduced.
-      * `[ ]`   Initialization order remains env bucket validation before storage operations.
-
-   * `[ ]`   `directionality`
-      * `[ ]`   Node layer is shared infrastructure service boundary.
-      * `[ ]`   Dependencies remain inward-facing from shared types/guards/path utils and Supabase clients.
-      * `[ ]`   Outbound effects remain storage/database writes via existing interfaces.
-      * `[ ]`   No cycles introduced with dialectic-worker orchestration sources.
-
-   * `[ ]`   `requirements`
-      * `[ ]`   Rag context summary artifacts are first-class typed uploads with mandatory canonical identity and freshness metadata.
-      * `[ ]`   Runtime validation rejects incomplete/malformed rag summary metadata before successful registration.
-      * `[ ]`   Persisted resource rows expose deterministic metadata fields required by later overlay-consumer nodes.
-      * `[ ]`   Existing file manager behavior for non-rag resource uploads, model contributions, feedback, signed URLs, and assembly remains unchanged and covered by regression tests.
-      * `[ ]`   Node scope remains limited to `file_manager.ts` and its immediate support system; path constructor/deconstructor source changes remain in subsequent Workstream C nodes.
-
-* `[ ]`   supabase/functions/_shared/utils/path_constructor.ts **[BE] Extend RagContextSummary path construction to encode target document identity and prevent cross-document filename collisions within a stage**
-
-   * `[ ]`   `objective`
-      * `[ ]`   Solve the RagContextSummary filename collision gap where multiple compression artifacts targeting different documents within the same session/iteration/stage produce identical storage paths, making per-target artifact lookup and stale-artifact freshness enforcement impossible.
-      * `[ ]`   Functional goals:
-         * `[ ]`   Require `documentKey` in `constructStoragePath` for `FileType.RagContextSummary` so the target document identity is encoded in every compression artifact filename.
-         * `[ ]`   Update the RagContextSummary filename pattern from `{modelSlug}_compressing_{sourceModelSlugs}_rag_summary.txt` to `{modelSlug}_compressing_{sourceModelSlugs}_for_{documentKey}_rag_summary.txt`.
-         * `[ ]`   Produce a deterministic, descriptive error when `documentKey` is absent or empty from a `RagContextSummary` path context, before any path string concatenation.
-         * `[ ]`   Apply `sanitizeForPath` to `documentKey` using the same mechanism already applied to `modelSlug` and `sourceModelSlugs`.
-         * `[ ]`   Preserve all existing non-RagContextSummary path construction behavior unchanged.
-      * `[ ]`   Non-functional constraints:
-         * `[ ]`   No regressions to any existing file type path construction or round-trip assertions in `path_constructor.test.ts`, `path_constructor.fragment.test.ts`, or `path_constructor.continuation.test.ts`.
-         * `[ ]`   No changes to `path_deconstructor.ts` in this node; the RagContextSummary round-trip integration test covering the new filename format will be RED until the next Workstream C node updates the deconstructor.
-         * `[ ]`   No changes to `file_manager.types.ts` PathContext interface; the existing optional `documentKey: string` field is reused as the target document identity carrier for RagContextSummary.
-         * `[ ]`   No changes to `file_manager.ts` upload logic in this node.
-      * `[ ]`   Each goal is atomic and testable through updated and new test coverage in `path_constructor.test.ts` and the new `path_constructor.integration.test.ts`.
-
-   * `[ ]`   `role`
-      * `[ ]`   Node role is shared path-construction utility implementation update and its immediate test and documentation files.
-      * `[ ]`   This role is correct because `path_constructor.ts` is the single canonical source of truth for deterministic storage path and filename generation; all artifact identity encoding must originate here before any upload, row registration, or downstream lookup.
-      * `[ ]`   Out-of-scope responsibilities:
-         * `[ ]`   Do not update `path_deconstructor.ts` to parse the new `_for_{documentKey}` filename segment in this node.
-         * `[ ]`   Do not update `compressPrompt.ts` to supply `documentKey` in its `PathContext` in this node.
-         * `[ ]`   Do not update `file_manager.ts` upload validation or registration logic in this node.
-         * `[ ]`   Do not update `gatherArtifacts.ts` or `prepareModelJob.ts` artifact lookup logic in this node.
-
-   * `[ ]`   `module`
-      * `[ ]`   Bounded context is `supabase/functions/_shared/utils/path_constructor.ts` and its immediate test and documentation files.
-      * `[ ]`   Inside boundary:
-         * `[ ]`   Canonical filename pattern for every `FileType` including the updated `RagContextSummary` pattern.
-         * `[ ]`   Validation rules enforcing required `PathContext` fields per file type, including the new `documentKey` requirement for `RagContextSummary`.
-         * `[ ]`   Path-segment construction helpers: `sanitizeForPath`, `generateShortId`, `mapStageSlugToDirName`.
-      * `[ ]`   Outside boundary:
-         * `[ ]`   Storage upload execution and retry logic.
-         * `[ ]`   Path parsing and deconstruction logic (`path_deconstructor.ts`).
-         * `[ ]`   Orchestration, artifact retrieval, and overlay logic in worker nodes.
-         * `[ ]`   Database row registration and resource metadata persistence.
-
-   * `[ ]`   `deps`
-      * `[ ]`   Provider: `../types/file_manager.types.ts` (`FileType`, `PathContext`).
-         * `[ ]`   Layer classification: shared type contract producer.
-         * `[ ]`   Direction: inbound; consumed by path constructor for type discriminants and context field access.
-         * `[ ]`   Purpose: `FileType.RagContextSummary` case discriminant; `PathContext.documentKey` field reused as target document identity for the updated filename pattern.
-      * `[ ]`   Provider: `./path_utils.ts` (`extractSourceGroupFragment`).
-         * `[ ]`   Layer classification: shared utility helper.
-         * `[ ]`   Direction: inbound; consumed unchanged by non-RagContextSummary path cases.
-         * `[ ]`   Purpose: source group fragment extraction for antithesis and synthesis intermediate artifact paths.
-      * `[ ]`   Provider: `./type-guards/type_guards.file_manager.ts` (`isDocumentKey`).
-         * `[ ]`   Layer classification: shared runtime guard.
-         * `[ ]`   Direction: inbound; consumed unchanged for document-key file type validation.
-         * `[ ]`   Purpose: identify document file types that require `documentKey` for the top-of-function validation block.
-      * `[ ]`   Confirm:
-         * `[ ]`   No reverse dependencies introduced.
-         * `[ ]`   No lateral layer violations introduced.
-
-   * `[ ]`   `context_slice`
-      * `[ ]`   Minimal dependency interfaces required from `PathContext` for the RagContextSummary case:
-         * `[ ]`   `documentKey: string` — non-empty; reused as the canonical target document identity in the updated filename.
-         * `[ ]`   `sourceModelSlugs: string[]` — non-empty array sorted alphabetically before sanitization and join.
-         * `[ ]`   `modelSlug: string` — the compression model producing the summary.
-         * `[ ]`   `sessionId`, `iteration`, `stageSlug`, `projectId` — unchanged; supply the `stageRootPath` segment that prefixes the `_work` storage directory.
-      * `[ ]`   No new PathContext fields introduced; all required fields already exist on the interface.
-      * `[ ]`   Confirm:
-         * `[ ]`   No over-fetching of PathContext fields beyond what is required for RagContextSummary path construction.
-         * `[ ]`   No hidden coupling to upload context, database row structures, or orchestration payloads.
-
-   * `[ ]`   `supabase/functions/_shared/utils/path_constructor.test.ts`
-      * `[ ]`   Update the existing `FileType.RagContextSummary` entry in the `fileTypeTestCases` array:
-         * `[ ]`   Add `documentKey: documentKey` (the file-scoped constant `'executive_summary'`) to the context object built for `RagContextSummary`.
-         * `[ ]`   The expected `fileName` in the round-trip assertion must now match `{modelSlug}_compressing_{sourceModelSlugs}_for_executive_summary_rag_summary.txt` where `{sourceModelSlugs}` is the sorted, sanitized, `_and_`-joined result of the file-scoped `sourceModelSlugs` constant.
-      * `[ ]`   Add standalone unit test: `RagContextSummary with documentKey produces identity-encoded filename`:
-         * `[ ]`   `context`: `projectId: 'proj-1'`, `sessionId: 'session-uuid-4567890'`, `iteration: 1`, `stageSlug: 'synthesis'`, `modelSlug: 'gpt-4-turbo'`, `attemptCount: 0`, `sourceModelSlugs: ['claude-3-opus', 'gemini-1.5-pro']`, `documentKey: 'business_case'`, `fileType: FileType.RagContextSummary`.
-         * `[ ]`   Assert `fileName === 'gpt-4-turbo_compressing_claude-3-opus_and_gemini-1.5-pro_for_business_case_rag_summary.txt'`.
-         * `[ ]`   Assert `storagePath` ends with `/_work` (full value: `proj-1/session_{shortId}/iteration_1/3_synthesis/_work`).
-      * `[ ]`   Add standalone unit test: `RagContextSummary without documentKey throws descriptive error`:
-         * `[ ]`   `context`: valid synthesis stage context with `modelSlug`, non-empty `sourceModelSlugs`, and all session fields, but `documentKey` omitted entirely.
-         * `[ ]`   Assert `constructStoragePath` throws an error whose message contains both the string `'documentKey'` and the string `'rag_context_summary'`.
-      * `[ ]`   Add standalone unit test: `RagContextSummary with empty string documentKey throws descriptive error`:
-         * `[ ]`   `context`: same as above but `documentKey: ''`.
-         * `[ ]`   Assert `constructStoragePath` throws with message containing `'documentKey'` and `'rag_context_summary'`.
-      * `[ ]`   Add standalone unit test: `RagContextSummary documentKey is sanitized before insertion into filename`:
-         * `[ ]`   `context`: valid RagContextSummary context with `documentKey: 'My Complex Key!!'`.
-         * `[ ]`   Assert the resulting `fileName` contains `'_for_my_complex_key_'` (the output of `sanitizeForPath('My Complex Key!!')` is `'my_complex_key'`).
-      * `[ ]`   Add standalone unit test: `Two RagContextSummary contexts identical except documentKey produce distinct filenames`:
-         * `[ ]`   Construct `contextA` with `documentKey: 'business_case'` and `contextB` with `documentKey: 'feature_spec'`, all other fields identical.
-         * `[ ]`   Assert `constructStoragePath(contextA).fileName !== constructStoragePath(contextB).fileName`.
-      * `[ ]`   Preserve all existing assertions and the full `fileTypeTestCases` array round-trip test loop for all other file types unchanged.
-
-   * `[ ]`   `supabase/functions/_shared/utils/path_constructor.ts`
-      * `[ ]`   In the `FileType.RagContextSummary` switch case body:
-         * `[ ]`   Confirm `documentKey` is already destructured from `context` at the top of `constructStoragePath`; it is — no new destructuring is needed.
-         * `[ ]`   Extend the existing guard condition from:
-            `if (!stageRootPath || !modelSlugSanitized || !sourceModelSlugs || sourceModelSlugs.length === 0)`
-            to:
-            `if (!stageRootPath || !modelSlugSanitized || !sourceModelSlugs || sourceModelSlugs.length === 0 || !documentKey || typeof documentKey !== 'string' || documentKey.trim() === '')`
-         * `[ ]`   Update the thrown error message to: `'Required context missing for rag_context_summary: stageRootPath, modelSlug, sourceModelSlugs (non-empty array), and documentKey (non-empty string) are all required.'`
-         * `[ ]`   Add `const documentKeySanitized = sanitizeForPath(documentKey);` immediately after the guard block, before the `sourceModelSlugsSanitized` derivation line.
-         * `[ ]`   Update the `fileName` construction from:
-            `` const fileName = `${modelSlugSanitized}_compressing_${sourceModelSlugsSanitized}_rag_summary.txt`; ``
-            to:
-            `` const fileName = `${modelSlugSanitized}_compressing_${sourceModelSlugsSanitized}_for_${documentKeySanitized}_rag_summary.txt`; ``
-         * `[ ]`   Keep the `return { storagePath: \`${stageRootPath}/_work\`, fileName }` statement unchanged.
-      * `[ ]`   Keep all other switch cases, the top-of-function `isDocumentKey` validation block, and all helper functions (`sanitizeForPath`, `generateShortId`, `mapStageSlugToDirName`) unchanged.
-
-   * `[ ]`   `supabase/functions/_shared/utils/path_constructor.readme.md`
-      * `[ ]`   In the `RAG Context Summary` subsection under `### Utility Artifacts`:
-         * `[ ]`   Update `Primitive` line from `{model_slug}_compressing_{source_model_slugs}_rag_summary.txt` to `{model_slug}_compressing_{source_model_slugs}_for_{document_key}_rag_summary.txt`.
-         * `[ ]`   Update `Example` line from `gpt-4-turbo_compressing_claude-3-opus_and_gpt-4-turbo_rag_summary.txt` to `gpt-4-turbo_compressing_claude-3-opus_and_gpt-4-turbo_for_business_case_rag_summary.txt`.
-         * `[ ]`   Update `Rationale` to: `Describes the action (compressing) and the sources being compressed. The \`_for_{document_key}\` segment encodes the target document identity so that multiple compression artifacts for different documents within the same session/iteration/stage have distinct filenames and can be individually retrieved and freshness-checked. Placed in the \`_work\` directory as it is a machine-only artifact.`
-      * `[ ]`   Preserve all other sections of the readme unchanged.
-
-   * `[ ]`   `supabase/functions/_shared/utils/path_constructor.integration.test.ts`
-      * `[ ]`   Create this new file to prove the `constructStoragePath` → `deconstructStoragePath` round-trip for the updated RagContextSummary filename pattern.
-      * `[ ]`   This test file will be in RED state until `path_deconstructor.ts` is updated in the next Workstream C node to parse the `_for_{documentKey}` segment.
-      * `[ ]`   Test: `RagContextSummary constructStoragePath and deconstructStoragePath are inverses for new filename pattern`:
-         * `[ ]`   Call `constructStoragePath` with `projectId: 'proj-abc'`, `sessionId: 'session-uuid-4567890'`, `iteration: 1`, `stageSlug: 'synthesis'`, `modelSlug: 'gpt-4-turbo'`, `attemptCount: 0`, `sourceModelSlugs: ['claude-3-opus', 'gemini-1.5-pro']`, `documentKey: 'business_case'`, `fileType: FileType.RagContextSummary`.
-         * `[ ]`   Assemble the full storage path as `${storagePath}/${fileName}`.
-         * `[ ]`   Call `deconstructStoragePath` on the assembled full path.
-         * `[ ]`   Assert `deconstructedInfo.fileTypeGuess === FileType.RagContextSummary`.
-         * `[ ]`   Assert `deconstructedInfo.originalProjectId === 'proj-abc'`.
-         * `[ ]`   Assert `deconstructedInfo.modelSlug === 'gpt-4-turbo'`.
-         * `[ ]`   Assert `deconstructedInfo.sourceModelSlugs` deep-equals `['claude-3-opus', 'gemini-1.5-pro']` (sorted).
-         * `[ ]`   Assert `deconstructedInfo.documentKey === 'business_case'` (this assertion drives the RED state until path_deconstructor is updated).
-      * `[ ]`   Test: `RagContextSummary round-trip preserves different documentKey values distinctly`:
-         * `[ ]`   Run the same round-trip for `documentKey: 'feature_spec'` and assert `deconstructedInfo.documentKey === 'feature_spec'`.
-      * `[ ]`   Import `constructStoragePath` from `./path_constructor.ts` and `deconstructStoragePath` from `./path_deconstructor.ts`; no external service calls.
-
-   * `[ ]`   `construction`
-      * `[ ]`   `constructStoragePath` remains a pure function; it accepts a `PathContext` value object and returns a `ConstructedPath` value object with no side effects.
-      * `[ ]`   No partial construction paths are introduced.
-      * `[ ]`   `documentKey` must be a non-empty string for `FileType.RagContextSummary`; an absent or empty value causes an explicit throw before any path string concatenation.
-      * `[ ]`   Initialization order within the RagContextSummary case: guard check → `documentKeySanitized` derivation → `sourceModelSlugsSanitized` derivation → `fileName` assembly → return.
-
-   * `[ ]`   `directionality`
-      * `[ ]`   Node layer is shared path-construction utility (`_shared/utils`).
-      * `[ ]`   Dependencies remain inward-facing from shared type contracts, path utilities, and runtime guards.
-      * `[ ]`   Outputs remain outward-facing `ConstructedPath` values consumed upstream by `file_manager.ts` for upload path construction and downstream by `path_deconstructor.ts` for round-trip parsing.
-      * `[ ]`   No cycles introduced.
-
-   * `[ ]`   `requirements`
-      * `[ ]`   `constructStoragePath` for `FileType.RagContextSummary` with a valid `documentKey` produces a `fileName` matching `{modelSlug}_compressing_{sourceModelSlugs}_for_{documentKeySanitized}_rag_summary.txt` and a `storagePath` of `{stageRootPath}/_work`.
-      * `[ ]`   `constructStoragePath` for `FileType.RagContextSummary` with absent or empty `documentKey` throws an error whose message contains both `'documentKey'` and `'rag_context_summary'`.
-      * `[ ]`   `sanitizeForPath` is applied to `documentKey` before filename assembly, producing the same safety guarantees as for `modelSlug` and each `sourceModelSlug`.
-      * `[ ]`   Two `RagContextSummary` contexts with identical model/sources/session/stage fields but different `documentKey` values produce distinct `fileName` values.
-      * `[ ]`   All existing `path_constructor.test.ts`, `path_constructor.fragment.test.ts`, and `path_constructor.continuation.test.ts` assertions remain GREEN.
-      * `[ ]`   The new `path_constructor.integration.test.ts` round-trip assertions are RED until `path_deconstructor.ts` is updated in the next Workstream C node.
-      * `[ ]`   Node scope remains limited to `path_constructor.ts` and its immediate test and documentation files; `path_deconstructor.ts` source changes remain in the next Workstream C node.
-
-* `[ ]`   supabase/functions/_shared/utils/path_deconstructor.ts **[BE] Update RagContextSummary path parsing to extract target document identity from the new `_for_{documentKey}` filename segment**
-
-   * `[ ]`   `objective`
-      * `[ ]`   Solve the RagContextSummary deconstruction gap where the existing regex cannot parse the new `{modelSlug}_compressing_{sourceModelSlugs}_for_{documentKey}_rag_summary.txt` filename format introduced by the path_constructor node, leaving `documentKey` unparsed and the `path_constructor.integration.test.ts` round-trip assertions in RED state.
-      * `[ ]`   Functional goals:
-         * `[ ]`   Update `ragSummaryPatternString` to add a `_for_(.+)` capture group between the sourceModelSlugs segment and `_rag_summary.txt` so that `documentKey` is extracted as a distinct named result.
-         * `[ ]`   Populate `info.documentKey` from the new capture group in the RagContextSummary matching block.
-         * `[ ]`   Keep `info.sourceModelSlugs` split from `matches[6]` using the existing `_and_` delimiter (group index shifts by one new group).
-         * `[ ]`   Turn the `path_constructor.integration.test.ts` round-trip assertions GREEN by correctly parsing the new format.
-         * `[ ]`   Preserve all other file-type matching behavior unchanged.
-      * `[ ]`   Non-functional constraints:
-         * `[ ]`   No regressions to any existing non-RagContextSummary deconstruction assertions in `path_deconstructor.test.ts`, `path_deconstructor.fragment.test.ts`, or `path_deconstructor.continuation.test.ts`.
-         * `[ ]`   Old-format RagContextSummary paths (without `_for_{documentKey}`) will no longer match the new regex and will fall through to a generic `_work` pattern; this is intentional because path_constructor now requires documentKey for all new RagContextSummary artifacts and no old-format artifacts are in scope for resume/overlay consumption.
-         * `[ ]`   No changes to `path_deconstructor.types.ts`; `DeconstructedPathInfo.documentKey?: string` already exists.
-         * `[ ]`   No changes to `path_constructor.ts` in this node.
-      * `[ ]`   Each goal is atomic and testable through updated and new assertions in `path_deconstructor.test.ts` and the now-GREEN `path_constructor.integration.test.ts`.
-
-   * `[ ]`   `role`
-      * `[ ]`   Node role is shared path-parsing utility implementation update and its immediate test files.
-      * `[ ]`   This role is correct because `path_deconstructor.ts` is the single canonical source of truth for parsing storage paths back into structured identity fields; only it can resolve the new `_for_{documentKey}` segment into `DeconstructedPathInfo.documentKey`.
-      * `[ ]`   Out-of-scope responsibilities:
-         * `[ ]`   Do not update `compressPrompt.ts` or any consumer that supplies `documentKey` to the path context in this node.
-         * `[ ]`   Do not update `gatherArtifacts.ts` or `prepareModelJob.ts` artifact lookup logic in this node.
-         * `[ ]`   Do not alter `path_constructor.ts` in this node.
-
-   * `[ ]`   `module`
-      * `[ ]`   Bounded context is `supabase/functions/_shared/utils/path_deconstructor.ts` and its immediate test files.
-      * `[ ]`   Inside boundary:
-         * `[ ]`   All regex pattern strings and their corresponding `matches` blocks.
-         * `[ ]`   The `ragSummaryPatternString` regex and its match handler.
-         * `[ ]`   Population of `DeconstructedPathInfo` fields from captured regex groups.
-      * `[ ]`   Outside boundary:
-         * `[ ]`   Storage upload execution and path construction algorithms.
-         * `[ ]`   Artifact retrieval, overlay, and resume logic in worker nodes.
-         * `[ ]`   Database row registration and metadata persistence.
-
-   * `[ ]`   `deps`
-      * `[ ]`   Provider: `../types/file_manager.types.ts` (`FileType`).
-         * `[ ]`   Layer classification: shared type contract producer.
-         * `[ ]`   Direction: inbound; consumed by deconstructor for `FileType.RagContextSummary` assignment in `info.fileTypeGuess`.
-         * `[ ]`   Purpose: unchanged; `FileType.RagContextSummary` enum value assigned to `fileTypeGuess` after a successful match.
-      * `[ ]`   Provider: `./path_deconstructor.types.ts` (`DeconstructedPathInfo`).
-         * `[ ]`   Layer classification: local type contract producer.
-         * `[ ]`   Direction: inbound; defines the output shape populated by the deconstructor.
-         * `[ ]`   Purpose: `documentKey?: string` field already present; no additions required.
-      * `[ ]`   Provider: `./type_guards.ts` (`isContributionType`).
-         * `[ ]`   Layer classification: shared runtime guard helper.
-         * `[ ]`   Direction: inbound; consumed unchanged by non-RagContextSummary path branches.
-         * `[ ]`   Purpose: unchanged; contribution type validation for intermediate work file branches.
-      * `[ ]`   Confirm:
-         * `[ ]`   No reverse dependencies introduced.
-         * `[ ]`   No lateral layer violations introduced.
-
-   * `[ ]`   `context_slice`
-      * `[ ]`   Minimal interface required from `DeconstructedPathInfo` for the RagContextSummary case:
-         * `[ ]`   `documentKey?: string` — populated from new regex group 7 (the value between `_for_` and `_rag_summary.txt`).
-         * `[ ]`   `sourceModelSlugs?: string[]` — populated from regex group 6, split by `'_and_'` (unchanged semantics, group index remains 6).
-         * `[ ]`   `modelSlug?: string`, `originalProjectId?`, `shortSessionId?`, `iteration?`, `stageDirName?`, `stageSlug?`, `fileTypeGuess?` — populated unchanged from groups 1–5.
-      * `[ ]`   No new fields required on `DeconstructedPathInfo`; all fields already exist.
-      * `[ ]`   Confirm:
-         * `[ ]`   No over-fetching of path segments beyond the updated RagContextSummary pattern.
-         * `[ ]`   No hidden coupling to upload context or orchestration payloads.
-
-   * `[ ]`   `supabase/functions/_shared/utils/path_deconstructor.test.ts`
-      * `[ ]`   Update the `'[path_deconstructor] direct - rag_context_summary'` test:
-         * `[ ]`   Add `documentKey: 'executive_summary'` to the `context` object so that `constructStoragePath` generates the new `_for_executive_summary` format.
-         * `[ ]`   Add assertion: `assertEquals(info.documentKey, 'executive_summary')`.
-         * `[ ]`   Add assertion: `assertEquals(info.sourceModelSlugs, ['model-a', 'model-b'])`.
-         * `[ ]`   Keep all existing assertions (`originalProjectId`, `shortSessionId`, `iteration`, `stageSlug`, `fileTypeGuess`, `error`) unchanged.
-      * `[ ]`   Update the parameterized `'rag_context_summary'` case in the test matrix:
-         * `[ ]`   Add `documentKey: 'business_case'` to the context object.
-         * `[ ]`   Update `expectedFixedFileNameInPath` from `'text-embedder_compressing_model-a_and_model-b_rag_summary.txt'` to `'text-embedder_compressing_model-a_and_model-b_for_business_case_rag_summary.txt'`.
-      * `[ ]`   Add standalone unit test: `RagContextSummary direct parse extracts documentKey from new format`:
-         * `[ ]`   Construct `fullPath` directly as: `'proj-rcs/session_sessrcsuu/iteration_1/3_synthesis/_work/model-embed_compressing_model-a_and_model-b_for_business_case_rag_summary.txt'` (using `generateShortId('sess-rcs-uuid')` for the short session ID segment).
-         * `[ ]`   Split into `storageDir` and `fileName` at the last `/`.
-         * `[ ]`   Call `deconstructStoragePath({ storageDir, fileName })`.
-         * `[ ]`   Assert `info.fileTypeGuess === FileType.RagContextSummary`.
-         * `[ ]`   Assert `info.documentKey === 'business_case'`.
-         * `[ ]`   Assert `info.sourceModelSlugs` deep-equals `['model-a', 'model-b']`.
-         * `[ ]`   Assert `info.modelSlug === 'model-embed'`.
-         * `[ ]`   Assert `info.error === undefined`.
-      * `[ ]`   Add standalone unit test: `RagContextSummary extracts multi-part documentKey containing underscores`:
-         * `[ ]`   Construct `fullPath` with `documentKey: 'business_case_critique'` by calling `constructStoragePath` with a valid context including `documentKey: 'business_case_critique'` and `fileType: FileType.RagContextSummary`.
-         * `[ ]`   Call `deconstructStoragePath` on the assembled path.
-         * `[ ]`   Assert `info.documentKey === 'business_case_critique'`.
-         * `[ ]`   Assert `info.fileTypeGuess === FileType.RagContextSummary`.
-      * `[ ]`   Add standalone unit test: `RagContextSummary old format (without _for_ segment) does not match as RagContextSummary`:
-         * `[ ]`   Construct `fullPath` in the OLD format: `'proj-old/session_sessolduu/iteration_1/3_synthesis/_work/model-embed_compressing_model-a_and_model-b_rag_summary.txt'` (no `_for_` segment).
-         * `[ ]`   Call `deconstructStoragePath({ storageDir, fileName })`.
-         * `[ ]`   Assert `info.fileTypeGuess !== FileType.RagContextSummary` (old format no longer parsed as RagContextSummary; it falls through to a generic `_work` pattern).
-         * `[ ]`   Assert `info.documentKey === undefined`.
-      * `[ ]`   Preserve all other direct and parameterized test assertions unchanged.
-
-   * `[ ]`   `supabase/functions/_shared/utils/path_deconstructor.ts`
-      * `[ ]`   Update the `ragSummaryPatternString` declaration from:
-         `"^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/_work/([^_]+)_compressing_(.+)_rag_summary\\.txt$"`
-         to:
-         `"^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/_work/([^_]+)_compressing_(.+)_for_(.+)_rag_summary\\.txt$"`
-         so that group 6 captures sourceModelSlugs (everything between `_compressing_` and `_for_`) and group 7 captures documentKey (everything between `_for_` and `_rag_summary.txt`).
-      * `[ ]`   In the `ragSummaryPatternString` match block, update the comment from:
-         `// Path: .../_work/{modelSlug}_compressing_{source_model_slugs}_rag_summary.txt`
-         to:
-         `// Path: .../_work/{modelSlug}_compressing_{sourceModelSlugs}_for_{documentKey}_rag_summary.txt`
-      * `[ ]`   In the `ragSummaryPatternString` match block, add the following line after `info.sourceModelSlugs = matches[6].split('_and_');`:
-         `info.documentKey = matches[7]; // Target document identity encoded in the filename`
-      * `[ ]`   Keep all other lines in the RagContextSummary match block (`originalProjectId`, `shortSessionId`, `iteration`, `stageDirName`, `stageSlug`, `modelSlug`, `sourceModelSlugs`, `fileTypeGuess`, and `return info`) unchanged; only the regex string and the new `documentKey` assignment are modified.
-      * `[ ]`   Keep all other pattern strings and match blocks unchanged.
-
-   * `[ ]`   `construction`
-      * `[ ]`   `deconstructStoragePath` remains a pure function over `{ storageDir, fileName, dbOriginalFileName? }` returning `DeconstructedPathInfo` with no side effects.
-      * `[ ]`   No partial construction paths are introduced.
-      * `[ ]`   Initialization order within the RagContextSummary match block: project/session/iteration/stage fields from groups 1–4 → modelSlug from group 5 → sourceModelSlugs from group 6 split by `'_and_'` → documentKey from group 7 → fileTypeGuess assignment → return.
-
-   * `[ ]`   `directionality`
-      * `[ ]`   Node layer is shared path-parsing utility (`_shared/utils`).
-      * `[ ]`   Dependencies remain inward-facing from shared type contracts and guards.
-      * `[ ]`   Outputs remain outward-facing `DeconstructedPathInfo` values consumed by artifact retrieval and overlay logic in later Workstream C and D nodes.
-      * `[ ]`   No cycles introduced.
-
-   * `[ ]`   `requirements`
-      * `[ ]`   `deconstructStoragePath` for a RagContextSummary path in the new `_for_{documentKey}` format correctly populates `info.documentKey`, `info.sourceModelSlugs`, `info.modelSlug`, `info.fileTypeGuess`, and all session/stage fields.
-      * `[ ]`   `info.sourceModelSlugs` is produced by splitting group 6 on `'_and_'`, preserving the existing split semantics; only the group index changes because a new capture group was inserted.
-      * `[ ]`   `info.documentKey` correctly round-trips for documentKey values containing underscores (e.g., `'business_case_critique'`).
-      * `[ ]`   Old-format RagContextSummary paths (without `_for_`) do not match the updated regex and produce `fileTypeGuess !== FileType.RagContextSummary`.
-      * `[ ]`   All existing `path_deconstructor.test.ts`, `path_deconstructor.fragment.test.ts`, and `path_deconstructor.continuation.test.ts` assertions remain GREEN.
-      * `[ ]`   The `path_constructor.integration.test.ts` assertions introduced in the prior node — including `deconstructedInfo.documentKey === 'business_case'` — are now GREEN.
-      * `[ ]`   Node scope remains limited to `path_deconstructor.ts` and its immediate test files; `compressPrompt.ts` and `prepareModelJob.ts` changes remain in subsequent Workstream C nodes.
-
-* `[ ]`   supabase/functions/dialectic-worker/compressPrompt/compressPrompt.ts **[BE] Persist each successful RAG context summary to canonical artifact storage and include resource identity references in the compression return value**
-
-   * `[ ]`   `objective`
-      * `[ ]`   Solve the compression artifact persistence gap where `compressPrompt.ts` produces a RAG context summary string in memory but does not write it to canonical storage or register a `dialectic_project_resources` row, leaving the compressed summary unreachable by any parent-resume overlay consumer.
-      * `[ ]`   Functional goals:
-         * `[ ]`   After each successful `ragService.getContextForModel()` call for a `sourceType === "document"` victim, call `deps.fileManager.uploadAndRegisterFile()` with a `ResourceUploadContext` whose `pathContext.fileType` is `FileType.RagContextSummary`, `pathContext.documentKey` is the victim document's `document_key`, `pathContext.sourceModelSlugs` is `[params.extendedModelConfig.api_identifier]` (the model being compressed for), and `pathContext.modelSlug` is `params.embeddingModelSlug` (the embedding model generating the summary).
-         * `[ ]`   Collect each persisted artifact's `resourceId` (from `uploadResult.record.id`) and `documentKey` into a `ragArtifacts: RagArtifactRef[]` array and include it in the `CompressPromptSuccessReturn`.
-         * `[ ]`   If `fileManager.uploadAndRegisterFile()` returns an error for any document victim, return a `CompressPromptErrorReturn` immediately, aborting the compression loop.
-         * `[ ]`   Do not call `uploadAndRegisterFile` for `sourceType === "history"` victims; their content is already ephemeral session context and has no stable document identity.
-         * `[ ]`   Add `projectId: string`, `iteration: number`, and `embeddingModelSlug: string` to `CompressPromptParams` so the `PathContext` for each artifact can be fully constructed.
-         * `[ ]`   Add `fileManager: IFileManager` to `CompressPromptDeps` as the injection point for artifact storage.
-         * `[ ]`   Export a `RagArtifactRef` interface from `compressPrompt.interface.ts` and from `compressPrompt.provides.ts`.
-      * `[ ]`   Non-functional constraints:
-         * `[ ]`   No changes to `path_constructor.ts`, `path_deconstructor.ts`, `file_manager.ts`, `prepareModelJob.ts`, or `IFileManager`.
-         * `[ ]`   All existing `compressPrompt.test.ts`, `compressPrompt.interface.test.ts`, `compressPrompt.guard.test.ts` assertions remain GREEN (no regressions); existing tests that use `buildCompressPromptDeps` and `buildCompressPromptParams` adopt new defaults via updated builders.
-         * `[ ]`   The wallet debit idempotency key `rag:{jobId}:{candidateId}` and its semantics are unchanged.
-         * `[ ]`   No silent swallow of persist errors; every file manager failure surfaces as a `CompressPromptErrorReturn` with `retriable: false`.
-      * `[ ]`   Each goal is atomic and testable through updated and new assertions in `compressPrompt.test.ts` and `compressPrompt.guard.test.ts`.
-
-   * `[ ]`   `role`
-      * `[ ]`   Node role is compression worker implementation update and its full bounded-context file set (interface, guard, mock, test, source, provides).
-      * `[ ]`   This role is correct because `compressPrompt.ts` is the sole execution site where a RAG summary string is produced; only it can initiate artifact persistence at the canonical point of production.
-      * `[ ]`   Out-of-scope responsibilities:
-         * `[ ]`   Do not modify `prepareModelJob.ts` to consume `ragArtifacts` in this node; that is the next Workstream C node.
-         * `[ ]`   Do not modify `gatherArtifacts.ts` or overlay resolution logic in this node.
-         * `[ ]`   Do not modify `file_manager.ts` or its interface in this node.
-         * `[ ]`   Do not add `model_slug` to `ResourceDocument` in this node; `sourceModelSlugs` is derived from the injected `extendedModelConfig.api_identifier`.
-
-   * `[ ]`   `module`
-      * `[ ]`   Bounded context is `supabase/functions/dialectic-worker/compressPrompt/` (all seven files in that directory).
-      * `[ ]`   Inside boundary:
-         * `[ ]`   The `CompressPromptDeps`, `CompressPromptParams`, `CompressPromptSuccessReturn`, and `RagArtifactRef` type contracts.
-         * `[ ]`   The `isCompressPromptDeps`, `isCompressPromptParams`, and `isCompressPromptSuccessReturn` runtime guards.
-         * `[ ]`   The `buildCompressPromptDeps`, `buildCompressPromptParams`, and `buildCompressPromptSuccessReturn` mock builders.
-         * `[ ]`   The `compressPrompt` function and its artifact-persistence loop.
-      * `[ ]`   Outside boundary:
-         * `[ ]`   File manager upload logic, storage bucket configuration, and transient retry handling.
-         * `[ ]`   Parent-resume overlay resolution in `prepareModelJob.ts`.
-         * `[ ]`   Embedding model selection and indexing strategy.
-
-   * `[ ]`   `deps`
-      * `[ ]`   Provider: `../../_shared/services/file_manager.mock.ts` (`MockFileManagerService`, `createMockFileManagerService`).
-         * `[ ]`   Layer classification: test-only mock producer.
-         * `[ ]`   Direction: inbound; used in `compressPrompt.mock.ts` and `compressPrompt.test.ts` to provide a configurable `IFileManager` spy for artifact persistence assertions.
-         * `[ ]`   Purpose: allows tests to spy on `uploadAndRegisterFile` calls and configure success/error responses per test case.
-      * `[ ]`   Provider: `../../_shared/types/file_manager.types.ts` (`IFileManager`, `ResourceUploadContext`, `FileType`).
-         * `[ ]`   Layer classification: shared type contract producer.
-         * `[ ]`   Direction: inbound; `IFileManager` is added to `CompressPromptDeps`; `ResourceUploadContext` is constructed in the compression loop; `FileType.RagContextSummary` is the `pathContext.fileType`.
-         * `[ ]`   Purpose: defines the storage abstraction interface and the upload context shape that `compressPrompt.ts` constructs before calling `fileManager.uploadAndRegisterFile`.
-      * `[ ]`   Provider: `../../_shared/types.ts` (`AiModelExtendedConfig`).
-         * `[ ]`   Layer classification: shared type contract producer.
-         * `[ ]`   Direction: inbound; `extendedModelConfig.api_identifier` is read to populate `pathContext.sourceModelSlugs`.
-         * `[ ]`   Purpose: unchanged consumer; `api_identifier` is a new read site for the embedding model path context.
-      * `[ ]`   Confirm:
-         * `[ ]`   No reverse dependencies introduced.
-         * `[ ]`   No lateral layer violations introduced.
-         * `[ ]`   `compressPrompt.ts` does not import from `path_constructor.ts` or `path_deconstructor.ts` directly; path construction is fully encapsulated inside `fileManager.uploadAndRegisterFile`.
-
-   * `[ ]`   `context_slice`
-      * `[ ]`   Minimal interface required from `IFileManager` for this node:
-         * `[ ]`   `uploadAndRegisterFile(context: UploadContext): Promise<FileManagerResponse>` — called once per `sourceType === "document"` victim after successful RAG; returns `{ record: FileRecord; error: null }` on success or `{ record: null; error: FileManagerError }` on failure.
-      * `[ ]`   Minimal fields read from `dialectic_project_resources.Row` (via `FileRecord`):
-         * `[ ]`   `id: string` — the `resourceId` stored in `RagArtifactRef`; common to all `FileRecord` union members.
-      * `[ ]`   Minimal new fields on `CompressPromptParams`:
-         * `[ ]`   `projectId: string` — used as `pathContext.projectId`.
-         * `[ ]`   `iteration: number` — used as `pathContext.iteration`.
-         * `[ ]`   `embeddingModelSlug: string` — used as `pathContext.modelSlug`; identifies the embedding model generating the summary.
-      * `[ ]`   Minimal new field on `CompressPromptDeps`:
-         * `[ ]`   `fileManager: IFileManager`.
-      * `[ ]`   Confirm:
-         * `[ ]`   No over-fetching of schema fields beyond `id`.
-         * `[ ]`   No hidden coupling to job results or payload shape of calling contexts.
-
-   * `[ ]`   `supabase/functions/dialectic-worker/compressPrompt/compressPrompt.interface.test.ts`
-      * `[ ]`   Update `buildCompressPromptSuccessReturn` calls to include `ragArtifacts: []` in the value argument (via the updated builder).
-      * `[ ]`   Add assertion in the `'valid single candidate compressed outcome shape'` test: `assertEquals(Array.isArray(result.ragArtifacts), true)`.
-      * `[ ]`   Preserve all other contract assertions unchanged.
-
-   * `[ ]`   `supabase/functions/dialectic-worker/compressPrompt/compressPrompt.interface.ts`
-      * `[ ]`   Add import: `import type { IFileManager } from "../../_shared/types/file_manager.types.ts";`
-      * `[ ]`   Add `fileManager: IFileManager` to `CompressPromptDeps`.
-      * `[ ]`   Add `projectId: string`, `iteration: number`, `embeddingModelSlug: string` to `CompressPromptParams`.
-      * `[ ]`   Add new exported interface:
-         ```typescript
-         export interface RagArtifactRef {
-           documentKey: string;
-           resourceId: string | null;
-         }
-         ```
-      * `[ ]`   Extend `CompressPromptSuccessReturn` with `ragArtifacts: RagArtifactRef[]`.
-
-   * `[ ]`   `supabase/functions/dialectic-worker/compressPrompt/compressPrompt.guard.ts`
-      * `[ ]`   Add `isRecord(value.fileManager)` check to `isCompressPromptDeps` (after the existing `tokenWalletService` check) so that a missing or non-object `fileManager` causes the guard to return `false`.
-      * `[ ]`   Add string checks for `projectId`, `iteration` (number), and `embeddingModelSlug` (string) to `isCompressPromptParams` (after the existing `walletBalance` check).
-      * `[ ]`   Add `ragArtifacts` array check to `isCompressPromptSuccessReturn`: `if (!("ragArtifacts" in value) || !Array.isArray(value.ragArtifacts)) { return false; }`.
-      * `[ ]`   Keep all other checks in all three guards unchanged.
-
-   * `[ ]`   `supabase/functions/dialectic-worker/compressPrompt/compressPrompt.guard.test.ts`
-      * `[ ]`   Update the `isCompressPromptDeps` test: the existing negative case that omits `countTokens` should also omit `fileManager`; add a new negative case that includes all existing fields plus `countTokens` but omits `fileManager` (assert returns `false`).
-      * `[ ]`   Update the `isCompressPromptParams` test: the existing negative case supplying all-but-walletBalance should also include `projectId`, `iteration`, `embeddingModelSlug`; add a new negative case that includes all existing plus new fields but sets `projectId` to a number (assert returns `false`).
-      * `[ ]`   Update the `isCompressPromptSuccessReturn` test: update `buildCompressPromptSuccessReturn` call (via mock) to include `ragArtifacts: []`; add a negative case that omits `ragArtifacts` (assert returns `false`).
-      * `[ ]`   Preserve all existing positive-case and negative-case assertions; add the new negative cases alongside.
-
-   * `[ ]`   `supabase/functions/dialectic-worker/compressPrompt/compressPrompt.mock.ts`
-      * `[ ]`   Add import: `import { createMockFileManagerService } from "../../_shared/services/file_manager.mock.ts";`
-      * `[ ]`   Extend `CompressPromptDepsOverrides` type with `fileManager?: IFileManager`.
-      * `[ ]`   In `buildCompressPromptDeps`: add `fileManager` to the returned object, defaulting to a `createMockFileManagerService()` instance configured via `setUploadAndRegisterFileResponse({ id: 'mock-rag-resource-id', ... }, null)` for a success response (providing a minimal `dialectic_project_resources.Row`-compatible object with at least `id: 'mock-rag-resource-id'`).
-      * `[ ]`   Extend `CompressPromptParamsOverrides` type with `projectId?: string`, `iteration?: number`, `embeddingModelSlug?: string`.
-      * `[ ]`   In `buildCompressPromptParams`: add `projectId`, `iteration`, `embeddingModelSlug` to the returned object with defaults `'contract-project-id'`, `1`, and `'text-embedding-3-small'` respectively.
-      * `[ ]`   In `buildCompressPromptSuccessReturn`: add `ragArtifacts: value.ragArtifacts ?? []` to the returned object.
-      * `[ ]`   Keep all existing exported symbols and their signatures unchanged.
-
-   * `[ ]`   `supabase/functions/dialectic-worker/compressPrompt/compressPrompt.test.ts`
-      * `[ ]`   Add import: `import { createMockFileManagerService } from "../../_shared/services/file_manager.mock.ts";`
-      * `[ ]`   All existing tests continue to pass because `buildCompressPromptDeps` now includes a default mock `fileManager` that returns a success response.
-      * `[ ]`   Add standalone test: `document victim artifact is persisted via fileManager after successful RAG compression`:
-         * `[ ]`   Create `MockFileManagerService` via `createMockFileManagerService()`; call `setUploadAndRegisterFileResponse` with a minimal record object containing `id: 'rag-res-1'`.
-         * `[ ]`   Configure `MockRagService` with `mockContextResult: "compressed-text"`, `mockTokensUsed: 50`.
-         * `[ ]`   Set up one document victim whose `document_key` is `'business_case'` and `sourceType` is `"document"`.
-         * `[ ]`   Call `compressPrompt` with these deps, a params object including `projectId: 'proj-test'`, `iteration: 1`, `embeddingModelSlug: 'text-embedding-3-small'`, and a strategy returning the one victim.
-         * `[ ]`   Assert result is `CompressPromptSuccessReturn`.
-         * `[ ]`   Assert `fileManagerMock.uploadAndRegisterFile.calls.length === 1`.
-         * `[ ]`   Assert the call argument's `pathContext.fileType === FileType.RagContextSummary`.
-         * `[ ]`   Assert the call argument's `pathContext.documentKey === 'business_case'`.
-         * `[ ]`   Assert the call argument's `pathContext.modelSlug === 'text-embedding-3-small'`.
-         * `[ ]`   Assert `fileManagerMock.uploadAndRegisterFile.calls[0].args[0].resourceDescriptionForDb.target_document_id === victimDoc.id`.
-         * `[ ]`   Assert `fileManagerMock.uploadAndRegisterFile.calls[0].args[0].resourceDescriptionForDb.target_document_key === 'business_case'`.
-         * `[ ]`   Assert `typeof fileManagerMock.uploadAndRegisterFile.calls[0].args[0].resourceDescriptionForDb.source_fingerprint === 'string'` and the value is a non-empty 64-character lowercase hex string.         
-         * `[ ]`   Assert `result.ragArtifacts.length === 1`.
-         * `[ ]`   Assert `result.ragArtifacts[0].documentKey === 'business_case'`.
-         * `[ ]`   Assert `result.ragArtifacts[0].resourceId === 'rag-res-1'`.
-      * `[ ]`   Add standalone test: `history victim does not trigger fileManager call and ragArtifacts is empty`:
-         * `[ ]`   Create `MockFileManagerService` via `createMockFileManagerService()`.
-         * `[ ]`   Set up one history victim with `sourceType: "history"` (construct a `Messages` entry in `conversationHistory` matching the victim's `id`).
-         * `[ ]`   Call `compressPrompt` with `MockRagService` returning `"compressed-history"`.
-         * `[ ]`   Assert result is `CompressPromptSuccessReturn`.
-         * `[ ]`   Assert `fileManagerMock.uploadAndRegisterFile.calls.length === 0`.
-         * `[ ]`   Assert `result.ragArtifacts.length === 0`.
-      * `[ ]`   Add standalone test: `fileManager failure on document victim returns CompressPromptErrorReturn`:
-         * `[ ]`   Create `MockFileManagerService` via `createMockFileManagerService()`; call `setUploadAndRegisterFileResponse(null, { message: 'storage unavailable' })` to simulate failure.
-         * `[ ]`   Set up one document victim.
-         * `[ ]`   Call `compressPrompt` with `MockRagService` returning a valid context string.
-         * `[ ]`   Assert result is `CompressPromptErrorReturn`.
-         * `[ ]`   Assert `result.retriable === false`.
-         * `[ ]`   Assert `result.error.message` includes the victim document's `document_key`.
-
-   * `[ ]`   `supabase/functions/dialectic-worker/compressPrompt/compressPrompt.ts`
-      * `[ ]`   Add imports:
-         * `[ ]`   `import type { IFileManager, ResourceUploadContext, FileType as FileTypePkg } from "../../_shared/types/file_manager.types.ts";` (import `FileType` directly from `file_manager.types.ts` as the canonical enum; use existing `FileType` import if already present in the file, otherwise add it).
-         * `[ ]`   Add `RagArtifactRef` to the import from `"./compressPrompt.interface.ts"`.
-      * `[ ]`   At the top of the `compressPrompt` function body (after existing variable declarations), declare `const collectedArtifacts: RagArtifactRef[] = [];`.
-      * `[ ]`   In the `payload.compressionStrategy(...)` call, change the second argument from `{ inputsRelevance: params.inputsRelevance }` to `{ inputsRelevance: params.inputsRelevance, embeddingModelApiIdentifier: params.embeddingModelSlug }`.
-      * `[ ]`   In the compression `while` loop, inside the `victim.sourceType !== "history"` branch where `docIndex > -1`, immediately BEFORE `resourceDocuments[docIndex].content = newContent;`:
-         * `[ ]`   Look up the victim document: `const victimDoc = resourceDocuments.find((d) => d.id === victim.id);`
-         * `[ ]`   If `victimDoc` is defined, compute the source fingerprint from the original content before it is overwritten: `const sourceHash = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(victimDoc.content)))).map(b => b.toString(16).padStart(2, '0')).join('');`
-         * `[ ]`   Then execute `resourceDocuments[docIndex].content = newContent;` to apply the compressed content.
-         * `[ ]`   If `victimDoc` is defined (reuse the already-resolved reference):
-            ```typescript
-            const uploadCtx: ResourceUploadContext = {
-              pathContext: {
-                fileType: FileType.RagContextSummary,
-                projectId: params.projectId,
-                sessionId: params.sessionId,
-                iteration: params.iteration,
-                stageSlug: params.stageSlug,
-                modelSlug: params.embeddingModelSlug,
-                sourceModelSlugs: [params.extendedModelConfig.api_identifier],
-                documentKey: victimDoc.document_key,
-              },
-              fileContent: newContent,
-              mimeType: 'text/plain',
-              sizeBytes: new TextEncoder().encode(newContent).length,
-              userId: params.projectOwnerUserId,
-              description: `RAG context summary for ${victimDoc.document_key} (job ${params.jobId})`,
-              resourceDescriptionForDb: {
-                target_document_id: victimDoc.id,
-                target_document_key: victimDoc.document_key,
-                source_fingerprint: sourceHash,
-                compressed_by_model_id: params.extendedModelConfig.api_identifier,
-                compressed_for_job_id: params.jobId,
-              },
-            };
-      * `[ ]`   In the final success `return` statement, extend the return object with `ragArtifacts: collectedArtifacts`.
-      * `[ ]`   Keep all existing logic (wallet debit, history enforcement, message assembly, token counting, context window checks, affordability checks) exactly as-is; only the document persist block and the final return shape change.
-
-   * `[ ]`   `supabase/functions/dialectic-worker/compressPrompt/compressPrompt.provides.ts`
-      * `[ ]`   Add `RagArtifactRef` to the `export type { ... }` block from `"./compressPrompt.interface.ts"`.
-      * `[ ]`   Keep all other exports unchanged.
-
-   * `[ ]`   `construction`
-      * `[ ]`   `compressPrompt` remains a pure async function over `(deps, params, payload)` with no global state; all new state lives in `collectedArtifacts` within the function scope.
-      * `[ ]`   Artifact persistence is attempted strictly AFTER the content replacement in `resourceDocuments[docIndex]`, so if persist fails, the in-memory content has been replaced but we abort immediately with an error — the caller is responsible for not using a partial success.
-      * `[ ]`   Initialization order for each document victim: RAG call → wallet debit → content replacement → persistence → ref collection → loop continue.
-      * `[ ]`   History victims still undergo RAG call and wallet debit but skip persistence; their compression loop body is unchanged.
-
-   * `[ ]`   `directionality`
-      * `[ ]`   Node layer is dialectic-worker execution utility.
-      * `[ ]`   `IFileManager` is a shared-service dependency; consuming it from a worker utility is a downward call through the shared layer.
-      * `[ ]`   `compressPrompt.ts` does not import from `prepareModelJob.ts` or any other worker utility; no peer-layer lateral coupling is introduced.
-      * `[ ]`   The `ragArtifacts` on `CompressPromptSuccessReturn` flows outward to callers; the next consumer (`prepareModelJob.ts`) will read these references in the subsequent Workstream C node.
-
-   * `[ ]`   `requirements`
-      * `[ ]`   After successful RAG compression of a document victim, `fileManager.uploadAndRegisterFile` is called exactly once with `pathContext.fileType === FileType.RagContextSummary`, `pathContext.documentKey` equal to the victim's `document_key`, `pathContext.modelSlug` equal to `params.embeddingModelSlug`, and `pathContext.sourceModelSlugs` equal to `[params.extendedModelConfig.api_identifier]`.
-      * `[ ]`   History victims do not trigger `uploadAndRegisterFile`; `ragArtifacts` is empty when only history victims are compressed.
-      * `[ ]`   A `fileManager.uploadAndRegisterFile` failure for any document victim causes `compressPrompt` to return a `CompressPromptErrorReturn` with `retriable: false` and an error message including the victim's `document_key`.
-      * `[ ]`   The `ragArtifacts` array in `CompressPromptSuccessReturn` has one entry per successfully persisted document victim, each containing `documentKey` and `resourceId`.
-      * `[ ]`   `isCompressPromptDeps` returns `false` when `fileManager` is absent or non-object.
-      * `[ ]`   `isCompressPromptParams` returns `false` when `projectId`, `iteration`, or `embeddingModelSlug` is absent or of the wrong type.
-      * `[ ]`   `isCompressPromptSuccessReturn` returns `false` when `ragArtifacts` is absent or not an array.
-      * `[ ]`   All previously passing tests in `compressPrompt.test.ts`, `compressPrompt.guard.test.ts`, and `compressPrompt.interface.test.ts` remain GREEN; no regression to existing compression, debit, token-count, or context-window behavior.
-      * `[ ]`   Node scope covers all seven files in `supabase/functions/dialectic-worker/compressPrompt/`; `prepareModelJob.ts` changes remain in the next Workstream C node.
-
-* `[ ]`   supabase/functions/dialectic-worker/calculateAffordability/calculateAffordability.ts **[BE] Thread projectId, iteration, and embeddingModelSlug from CalculateAffordabilityParams into CompressPromptParams construction to satisfy the updated compression artifact persistence contract**
-
-   * `[ ]`   `objective`
-      * `[ ]`   Solve the `calculateAffordability` params gap where `calculateAffordability.ts` constructs `CompressPromptParams` and calls `deps.compressPrompt` but does not supply `projectId`, `iteration`, or `embeddingModelSlug` — fields now required by `compressPrompt.ts` for artifact path construction and embedding model identification.
-      * `[ ]`   Functional goals:
-         * `[ ]`   Add `projectId: string`, `iteration: number`, and `embeddingModelSlug: string` to `CalculateAffordabilityParams`.
-         * `[ ]`   Thread the three new fields from `params` into the `compressParams` object constructed in the oversized execution path before `deps.compressPrompt` is called.
-         * `[ ]`   Add runtime guards for the three new fields in `isCalculateAffordabilityParams`.
-         * `[ ]`   Add default values for the three new fields in `buildCalculateAffordabilityParams` so all existing callers compile and run without changes.
-         * `[ ]`   Add unit test coverage asserting the three new fields are passed to `deps.compressPrompt` in the oversized path.
-      * `[ ]`   Non-functional constraints:
-         * `[ ]`   No change to affordability logic: NSF detection, rationality thresholds, context window checks, token counting, `getMaxOutputTokens` calls, and direct-return paths are unchanged.
-         * `[ ]`   All existing tests in `calculateAffordability.test.ts`, `calculateAffordability.guard.test.ts`, `calculateAffordability.interface.test.ts`, and `calculateAffordability.integration.test.ts` remain GREEN.
-         * `[ ]`   No edits to `compressPrompt.ts`, `prepareModelJob.ts`, or any file outside the `calculateAffordability/` folder in this node.
-      * `[ ]`   Each goal is atomic and testable through updated interface, guard, mock, unit, and integration assertions in this module scope.
-
-   * `[ ]`   `role`
-      * `[ ]`   Node role is consumer params update: `calculateAffordability.ts` is a cross-cutting consumer of `BoundCompressPromptFn` and must supply the updated `CompressPromptParams` contract established by the prior Workstream C node.
-      * `[ ]`   This role is correct because `calculateAffordability.ts` is the only site where `CompressPromptParams` is constructed and `deps.compressPrompt` is invoked; the interface, guard, mock, and tests must be updated to reflect the new required fields.
-      * `[ ]`   Out-of-scope responsibilities:
-         * `[ ]`   Do not modify how `compressPrompt.ts` persists artifacts in this node.
-         * `[ ]`   Do not modify `prepareModelJob.ts` bindings or params in this node.
-         * `[ ]`   Do not add new dependencies to `CalculateAffordabilityDeps`.
-
-   * `[ ]`   `module`
-      * `[ ]`   Bounded context is `supabase/functions/dialectic-worker/calculateAffordability/` (all nine files in that directory).
-      * `[ ]`   Inside boundary:
-         * `[ ]`   The three new fields in `CalculateAffordabilityParams` and their guard/mock/test coverage.
-         * `[ ]`   The `compressParams` construction inside `calculateAffordability.ts` that passes the new fields to `deps.compressPrompt`.
-      * `[ ]`   Outside boundary:
-         * `[ ]`   What `compressPrompt.ts` does with `projectId`, `iteration`, and `embeddingModelSlug` internally.
-         * `[ ]`   File manager persistence, path construction, and artifact registration details.
-         * `[ ]`   How `prepareModelJob.ts` binds and supplies these fields to `calculateAffordability`.
-
-   * `[ ]`   `deps`
-      * `[ ]`   No new dependencies added to `CalculateAffordabilityDeps`.
-      * `[ ]`   Provider: `../compressPrompt/compressPrompt.interface.ts` (`CompressPromptParams`).
-         * `[ ]`   Layer classification: peer-module contract producer.
-         * `[ ]`   Direction: inbound; `calculateAffordability.ts` constructs `CompressPromptParams` which now requires `projectId`, `iteration`, and `embeddingModelSlug`.
-         * `[ ]`   Purpose: the three new fields in `CalculateAffordabilityParams` exist solely to satisfy the updated `CompressPromptParams` contract from the prior Workstream C node.
-      * `[ ]`   Confirm:
-         * `[ ]`   No reverse dependencies introduced.
-         * `[ ]`   No lateral layer violations introduced.
-
-   * `[ ]`   `context_slice`
-      * `[ ]`   Minimal new interface required from dependencies:
-         * `[ ]`   `CompressPromptParams.projectId: string` — threaded from `CalculateAffordabilityParams.projectId`.
-         * `[ ]`   `CompressPromptParams.iteration: number` — threaded from `CalculateAffordabilityParams.iteration`.
-         * `[ ]`   `CompressPromptParams.embeddingModelSlug: string` — threaded from `CalculateAffordabilityParams.embeddingModelSlug`.
-      * `[ ]`   Injection shape remains `CalculateAffordabilityDeps`, `CalculateAffordabilityParams`, `CalculateAffordabilityPayload`; only `CalculateAffordabilityParams` gains three additive required fields.
-      * `[ ]`   Confirm:
-         * `[ ]`   No over-fetching; no field beyond the three is newly required from any dependency.
-         * `[ ]`   No hidden coupling to job results, wallet state, or file storage schema.
-
-   * `[ ]`   `supabase/functions/dialectic-worker/calculateAffordability/calculateAffordability.interface.test.ts`
-      * `[ ]`   Add imports: `import { createMockSupabaseClient } from "../../_shared/supabase.mock.ts"` and `import { DbClient } from "../compressPrompt/compressPrompt.mock.ts"` to support params builder calls.
-      * `[ ]`   Add contract assertion `CalculateAffordabilityParams shape includes projectId, iteration, embeddingModelSlug`:
-         * `[ ]`   Call `buildCalculateAffordabilityParams(DbClient(client), { projectId: 'proj-abc', iteration: 3, embeddingModelSlug: 'text-embedding-3-small' })`.
-         * `[ ]`   Assert `typeof params.projectId === 'string'` and `params.projectId === 'proj-abc'`.
-         * `[ ]`   Assert `typeof params.iteration === 'number'` and `params.iteration === 3`.
-         * `[ ]`   Assert `typeof params.embeddingModelSlug === 'string'` and `params.embeddingModelSlug === 'text-embedding-3-small'`.
-      * `[ ]`   Preserve all existing return-shape contract assertions (DirectReturn, CompressedReturn, ErrorReturn) unchanged.
-
-   * `[ ]`   `supabase/functions/dialectic-worker/calculateAffordability/calculateAffordability.interface.ts`
-      * `[ ]`   Add `projectId: string` to `CalculateAffordabilityParams` after `sessionId: string`.
-      * `[ ]`   Add `iteration: number` to `CalculateAffordabilityParams` after `projectId: string`.
-      * `[ ]`   Add `embeddingModelSlug: string` to `CalculateAffordabilityParams` after `iteration: number`.
-      * `[ ]`   Keep all other fields and all other interfaces (`CalculateAffordabilityDeps`, `CalculateAffordabilityPayload`, all return types, `UserConfig`, `GetMaxOutputTokensFn`, `TierOutputCapTokens`, `CalculateAffordabilityFn`, `BoundCalculateAffordabilityFn`) unchanged.
-
-   * `[ ]`   `supabase/functions/dialectic-worker/calculateAffordability/calculateAffordability.guard.test.ts`
-      * `[ ]`   Update the existing positive-case `isCalculateAffordabilityParams` test: the `buildCalculateAffordabilityParams` call already supplies the three new fields via updated defaults; no assertion change needed for the positive case.
-      * `[ ]`   Add negative guard test `isCalculateAffordabilityParams rejects params missing projectId`:
-         * `[ ]`   Construct a params-like object with all existing valid fields plus `iteration: 1` and `embeddingModelSlug: 'text-embedding-3-small'` but omitting `projectId`.
-         * `[ ]`   Assert `isCalculateAffordabilityParams(value) === false`.
-      * `[ ]`   Add negative guard test `isCalculateAffordabilityParams rejects params where iteration is a string`:
-         * `[ ]`   Construct a params-like object with all existing valid fields plus `projectId: 'test'` and `embeddingModelSlug: 'text-embedding-3-small'` but with `iteration: 'not-a-number'`.
-         * `[ ]`   Assert `isCalculateAffordabilityParams(value) === false`.
-      * `[ ]`   Add negative guard test `isCalculateAffordabilityParams rejects params missing embeddingModelSlug`:
-         * `[ ]`   Construct a params-like object with all existing valid fields plus `projectId: 'test'` and `iteration: 1` but omitting `embeddingModelSlug`.
-         * `[ ]`   Assert `isCalculateAffordabilityParams(value) === false`.
-      * `[ ]`   Preserve all other existing positive and negative guard test assertions unchanged.
-
-   * `[ ]`   `supabase/functions/dialectic-worker/calculateAffordability/calculateAffordability.guard.ts`
-      * `[ ]`   Add the following three checks to `isCalculateAffordabilityParams` after the existing `userConfig` / `tier_output_cap_tokens` check:
-         * `[ ]`   `if (!("projectId" in value) || typeof value.projectId !== "string") { return false; }`
-         * `[ ]`   `if (!("iteration" in value) || typeof value.iteration !== "number") { return false; }`
-         * `[ ]`   `if (!("embeddingModelSlug" in value) || typeof value.embeddingModelSlug !== "string") { return false; }`
-      * `[ ]`   Keep all other guards (`isCalculateAffordabilityDeps`, `isCalculateAffordabilityPayload`, `isCalculateAffordabilityDirectReturn`, `isCalculateAffordabilityCompressedReturn`, `isCalculateAffordabilityErrorReturn`, `isBoundCalculateAffordabilityFn`) completely unchanged.
-
-   * `[ ]`   `supabase/functions/dialectic-worker/calculateAffordability/calculateAffordability.mock.ts`
-      * `[ ]`   Add `projectId?: string`, `iteration?: number`, `embeddingModelSlug?: string` to `CalculateAffordabilityParamsOverrides`.
-      * `[ ]`   In `buildCalculateAffordabilityParams`, add to the `base` object:
-         * `[ ]`   `projectId: overrides?.projectId !== undefined ? overrides.projectId : 'contract-project-id',`
-         * `[ ]`   `iteration: overrides?.iteration !== undefined ? overrides.iteration : 1,`
-         * `[ ]`   `embeddingModelSlug: overrides?.embeddingModelSlug !== undefined ? overrides.embeddingModelSlug : 'text-embedding-3-small',`
-      * `[ ]`   Keep all other exported symbols, existing defaults, and override patterns unchanged.
-
-   * `[ ]`   `supabase/functions/dialectic-worker/calculateAffordability/calculateAffordability.test.ts`
-      * `[ ]`   All existing tests pass without modification because `buildCalculateAffordabilityParams` now supplies default values for the three new fields.
-      * `[ ]`   Add unit test `Oversized: compressPrompt is called with projectId, iteration, and embeddingModelSlug threaded from calculateAffordability params`:
-         * `[ ]`   Use `createCompressPromptMock` configured to return `buildCompressPromptSuccessReturn({ chatApiRequest: buildChatApiRequest(resourceDocuments, 'prompt'), resolvedInputTokenCount: 42, resourceDocuments })`.
-         * `[ ]`   Call `buildCalculateAffordabilityParams(DbClient(client), { projectId: 'threading-test-project', iteration: 5, embeddingModelSlug: 'text-embedding-ada-002', walletBalance: 10_000_000, extendedModelConfig: buildExtendedModelConfig({ context_window_tokens: 50_000, provider_max_input_tokens: 128000 }), inputRate: 0.01, outputRate: 0.01, inputsRelevance: [{ document_key: 'thesis_plan', relevance: 1 }] })`.
-         * `[ ]`   Use `createMockCountTokens` returning `100_000` to force the oversized path.
-         * `[ ]`   Assert `calls.length >= 1`.
-         * `[ ]`   Assert `calls[0].params.projectId === 'threading-test-project'`.
-         * `[ ]`   Assert `calls[0].params.iteration === 5`.
-         * `[ ]`   Assert `calls[0].params.embeddingModelSlug === 'text-embedding-ada-002'`.
-
-   * `[ ]`   `supabase/functions/dialectic-worker/calculateAffordability/calculateAffordability.ts`
-      * `[ ]`   In the `compressParams: CompressPromptParams` object construction in the oversized path (after the existing `walletBalance` field), add:
-         * `[ ]`   `projectId: params.projectId,`
-         * `[ ]`   `iteration: params.iteration,`
-         * `[ ]`   `embeddingModelSlug: params.embeddingModelSlug,`
-      * `[ ]`   Keep all other implementation logic unchanged: token counting, NSF checks, rationality threshold evaluations, `solveTargetForBalance`, `balanceAfterCompression` computation, `compressPayload` construction, and `compressResult` success/error handling.
-
-   * `[ ]`   `supabase/functions/dialectic-worker/calculateAffordability/calculateAffordability.integration.test.ts`
-      * `[ ]`   Existing integration test scenarios pass without modification because `buildCalculateAffordabilityParams` now includes defaults for the three new fields, which flow through to the real `compressPrompt` call.
-      * `[ ]`   Add assertion in the oversized integration scenario: after `calculateAffordability` returns, assert `isCalculateAffordabilityCompressedReturn(result) === true` and `result.resolvedInputTokenCount > 0` — proving the three new fields flowed through the real `calculateAffordability` → real `compressPrompt` call chain without type or runtime error.
-      * `[ ]`   Confirm that `buildCalculateAffordabilityDeps` consumes the updated `buildCompressPromptDeps` from the prior node, which now includes a default mock `fileManager`; no explicit `fileManager` injection is required in this integration test.
-
-   * `[ ]`   `construction`
-      * `[ ]`   `calculateAffordability` remains a pure async function over `(deps, params, payload)` with no global state or constructor.
-      * `[ ]`   No partial construction path is introduced.
-      * `[ ]`   The three new params fields are required at call time; no lazy defaults or optional fallbacks are used in the source implementation.
-
-   * `[ ]`   `directionality`
-      * `[ ]`   Node layer is dialectic-worker execution utility.
-      * `[ ]`   The three new fields flow inward from the calling context (`prepareModelJob.ts`) through `CalculateAffordabilityParams` and outward into `CompressPromptParams` via the existing `deps.compressPrompt` call.
-      * `[ ]`   No new dependency cycles or layer violations are introduced.
-
-   * `[ ]`   `requirements`
-      * `[ ]`   `CalculateAffordabilityParams` includes required `projectId: string`, `iteration: number`, and `embeddingModelSlug: string` fields.
-      * `[ ]`   `isCalculateAffordabilityParams` returns `false` when any of `projectId`, `iteration`, or `embeddingModelSlug` is absent or of the wrong primitive type.
-      * `[ ]`   `calculateAffordability` passes `params.projectId`, `params.iteration`, and `params.embeddingModelSlug` into the `compressParams` object in the oversized execution path before calling `deps.compressPrompt`.
-      * `[ ]`   The new unit test proves the three fields are threaded through by asserting on `calls[0].params` captured from the `compressPrompt` mock.
-      * `[ ]`   All previously passing tests in `calculateAffordability.test.ts`, `calculateAffordability.guard.test.ts`, `calculateAffordability.interface.test.ts`, and `calculateAffordability.integration.test.ts` remain GREEN.
-      * `[ ]`   Node scope is limited to the nine files in `calculateAffordability/`; `prepareModelJob.ts` changes remain in the next Workstream C node.
-
-* `[ ]`   supabase/functions/dialectic-worker/prepareModelJob/prepareModelJob.ts **[BE] Supply projectId, iteration, and embeddingModelSlug to CalculateAffordabilityParams by resolving the default embedding provider from the database before affordability preflight**
-
-   * `[ ]`   `objective`
-      * `[ ]`   Solve the `affordParams` construction gap where `prepareModelJob.ts` builds `CalculateAffordabilityParams` without the `projectId`, `iteration`, and `embeddingModelSlug` fields now required by `calculateAffordability.ts` for artifact-safe compression.
-      * `[ ]`   Functional goals:
-         * `[ ]`   Query `ai_providers` for the single row where `is_default_embedding = true` and `is_active = true` before building `affordParams`, and extract its `api_identifier` as `embeddingModelSlug`.
-         * `[ ]`   Return a retriable error if the embedding provider DB query fails.
-         * `[ ]`   Return a non-retriable error if no default embedding provider row is found or `api_identifier` is not a string.
-         * `[ ]`   Add `projectId: projectIdRaw`, `iteration: iterationNumberRaw`, and `embeddingModelSlug` to the `affordParams: CalculateAffordabilityParams` object construction.
-         * `[ ]`   Preserve all existing validation steps, field extraction, wallet query, cost-rate validation, and enqueue call behavior unchanged.
-      * `[ ]`   Non-functional constraints:
-         * `[ ]`   No new fields added to `PrepareModelJobDeps`, `PrepareModelJobParams`, or `PrepareModelJobPayload`; the embedding model slug is resolved from the DB using the existing `params.dbClient`.
-         * `[ ]`   All existing tests in `prepareModelJob.test.ts`, `prepareModelJob.inputsRequired.test.ts`, and `prepareModelJob.integration.test.ts` remain GREEN after mock client is updated to return embedding provider data.
-         * `[ ]`   No edits to `calculateAffordability.ts`, `compressPrompt.ts`, `index.ts`, or any file outside `prepareModelJob/` in this node.
-      * `[ ]`   Each goal is atomic and testable through updated mock setup and new unit assertions in this module scope.
-
-   * `[ ]`   `role`
-      * `[ ]`   Node role is orchestration implementation update: `prepareModelJob.ts` is the call-site that constructs `CalculateAffordabilityParams` and must supply the three fields now required by the prior Workstream C nodes.
-      * `[ ]`   This role is correct because `prepareModelJob.ts` is the only file that builds and passes `affordParams` to `deps.calculateAffordability`, and it already has access to `projectId` and `iteration` from `job.payload`; `embeddingModelSlug` is the only new runtime resolution needed.
-      * `[ ]`   Out-of-scope responsibilities:
-         * `[ ]`   Do not change how `calculateAffordability.ts` builds or passes `compressParams` in this node.
-         * `[ ]`   Do not add `embeddingModelSlug` or embedding model resolution to `PrepareModelJobDeps`.
-         * `[ ]`   Do not change the `enqueueModelCall` invocation shape in this node.
-
-   * `[ ]`   `module`
-      * `[ ]`   Bounded context is `supabase/functions/dialectic-worker/prepareModelJob/` (all ten files in that directory).
-      * `[ ]`   Inside boundary:
-         * `[ ]`   The new `ai_providers` DB query and its error handling.
-         * `[ ]`   The three additive fields in the `affordParams` object literal.
-         * `[ ]`   Mock helper for a default embedding provider row.
-         * `[ ]`   Test coverage for the two new error paths and for field threading.
-      * `[ ]`   Outside boundary:
-         * `[ ]`   How `calculateAffordability.ts` or `compressPrompt.ts` uses `embeddingModelSlug` internally.
-         * `[ ]`   `index.ts` DI wiring for `calculateAffordability` deps.
-         * `[ ]`   Artifact lifecycle management and parent-resume overlay resolution.
-
-   * `[ ]`   `deps`
-      * `[ ]`   No new fields added to `PrepareModelJobDeps`.
-      * `[ ]`   Provider: `params.dbClient` (`SupabaseClient<Database>`).
-         * `[ ]`   Layer classification: existing injected infrastructure dependency.
-         * `[ ]`   Direction: inbound; already present in `PrepareModelJobParams`.
-         * `[ ]`   Purpose: execute the new `ai_providers` query for the default embedding provider alongside the existing `user_subscriptions` tier-cap query.
-      * `[ ]`   Confirm:
-         * `[ ]`   No reverse dependencies introduced.
-         * `[ ]`   No lateral layer violations introduced.
-
-   * `[ ]`   `context_slice`
-      * `[ ]`   Minimal new interface required from dependencies:
-         * `[ ]`   `ai_providers.api_identifier: string` — the only field selected from the embedding provider row; used as `embeddingModelSlug` in `affordParams`.
-      * `[ ]`   All other injected interfaces (`BoundCalculateAffordabilityFn`, `BoundEnqueueModelCallFn`, wallet service, cost-rate validator, scope filter) remain unchanged.
-      * `[ ]`   Confirm:
-         * `[ ]`   No over-fetching; only `api_identifier` is selected from `ai_providers`.
-         * `[ ]`   No hidden coupling to artifact DB rows or file storage schema.
-
-   * `[ ]`   `supabase/functions/dialectic-worker/prepareModelJob/prepareModelJob.interface.test.ts`
-      * `[ ]`   Preserve all existing contract assertions unchanged.
-      * `[ ]`   Add assertion `PrepareModelJobDeps still declares exactly seven dependency keys after embedding resolution is moved to source implementation` to confirm no new dep is added:
-         * `[ ]`   Build `surface: Record<keyof PrepareModelJobDeps, true>` with the same seven keys as before.
-         * `[ ]`   Assert `Object.keys(surface).length === 7`.
-
-   * `[ ]`   `supabase/functions/dialectic-worker/prepareModelJob/prepareModelJob.mock.ts`
-      * `[ ]`   Add `mockDefaultEmbeddingProviderRow()` factory that returns a minimal `ai_providers`-compatible object with `{ api_identifier: 'text-embedding-3-small', is_default_embedding: true, is_active: true }` plus any required non-nullable DB columns from `Tables<'ai_providers'>` defaulted to inert values.
-      * `[ ]`   Keep all existing mock factory functions and override types unchanged.
-
-   * `[ ]`   `supabase/functions/dialectic-worker/prepareModelJob/prepareModelJob.test.ts`
-      * `[ ]`   Update every `createMockSupabaseClient` call's `genericMockResults` to add or replace the `ai_providers.select` mock so it returns `{ data: mockDefaultEmbeddingProviderRow(), error: null }` (single object, matching the `maybeSingle()` return shape) alongside the existing `token_wallets` and `user_subscriptions` mocks, so existing tests continue to resolve `embeddingModelSlug` without error.
-      * `[ ]`   Add unit test `prepareModelJob returns retriable error when embedding provider query fails`:
-         * `[ ]`   Mock `ai_providers.select` to return `{ data: null, error: { message: 'db-down', code: '500' } }`.
-         * `[ ]`   Assert `isPrepareModelJobErrorReturn(result) === true`.
-         * `[ ]`   Assert `result.retriable === true`.
-      * `[ ]`   Add unit test `prepareModelJob returns non-retriable error when no default embedding provider row exists`:
-         * `[ ]`   Mock `ai_providers.select` to return `{ data: null, error: null }`.
-         * `[ ]`   Assert `isPrepareModelJobErrorReturn(result) === true`.
-         * `[ ]`   Assert `result.retriable === false`.
-         * `[ ]`   Assert `result.error.message` includes `'No default embedding provider'`.
-      * `[ ]`   Add unit test `prepareModelJob passes projectId, iteration, embeddingModelSlug to calculateAffordability`:
-         * `[ ]`   Use a capturing `BoundCalculateAffordabilityFn` spy (`spy(async () => buildCalculateAffordabilityDirectReturn(0))`).
-         * `[ ]`   Build a job with `mockDialecticExecuteJobPayload({ projectId: 'threading-proj', iterationNumber: 3 })`.
-         * `[ ]`   Mock `ai_providers.select` to return `{ data: { api_identifier: 'text-embedding-ada-002' }, error: null }`.
-         * `[ ]`   Assert the spy was called at least once.
-         * `[ ]`   Assert `spy.calls[0].args[0].projectId === 'threading-proj'`.
-         * `[ ]`   Assert `spy.calls[0].args[0].iteration === 3`.
-         * `[ ]`   Assert `spy.calls[0].args[0].embeddingModelSlug === 'text-embedding-ada-002'`.
-
-   * `[ ]`   `supabase/functions/dialectic-worker/prepareModelJob/prepareModelJob.inputsRequired.test.ts`
-      * `[ ]`   Update every `createMockSupabaseClient` call to include `ai_providers.select` returning `{ data: mockDefaultEmbeddingProviderRow(), error: null }` so all existing inputsRequired tests pass without change to their assertions.
-
-   * `[ ]`   `supabase/functions/dialectic-worker/prepareModelJob/prepareModelJob.ts`
-      * `[ ]`   After the `tierCapQueryResult` block (the `user_subscriptions` query and its error/data handling, ending at the `userConfig` declaration), add a new DB query block for the default embedding provider:
-         * `[ ]`   `const embeddingProviderResult = await dbClient.from('ai_providers').select('api_identifier').eq('is_default_embedding', true).eq('is_active', true).maybeSingle();`
-         * `[ ]`   `if (embeddingProviderResult.error !== null) { deps.logger.warn('[prepareModelJob] Failed to load default embedding provider', { jobId: job.id, message: embeddingProviderResult.error.message }); return { error: embeddingProviderResult.error, retriable: true }; }`
-         * `[ ]`   `if (embeddingProviderResult.data === null || typeof embeddingProviderResult.data.api_identifier !== 'string') { return { error: new Error('No default embedding provider configured; cannot build compression artifact paths.'), retriable: false }; }`
-         * `[ ]`   `const embeddingModelSlug: string = embeddingProviderResult.data.api_identifier;`
-      * `[ ]`   In the `affordParams: CalculateAffordabilityParams` object construction, add alongside existing fields:
-         * `[ ]`   `projectId: projectIdRaw,`
-         * `[ ]`   `iteration: iterationNumberRaw,`
-         * `[ ]`   `embeddingModelSlug,`
-      * `[ ]`   Keep all other implementation logic unchanged: tier-cap query, payload extraction, model config validation, wallet balance load, cost-rate validation, scope application, base chat request construction, affordability call, enqueue call, and error-catch boundary.
-
-   * `[ ]`   `supabase/functions/dialectic-worker/prepareModelJob/prepareModelJob.provides.ts`
-      * `[ ]`   Add `mockDefaultEmbeddingProviderRow` to the value exports from `"./prepareModelJob.mock.ts"` so consumers that build full test setups can use the factory without importing the mock file directly.
-
-   * `[ ]`   `supabase/functions/dialectic-worker/prepareModelJob/prepareModelJob.integration.test.ts`
-      * `[ ]`   Update every `createMockSupabaseClient` call to return `{ data: mockDefaultEmbeddingProviderRow(), error: null }` from the `ai_providers.select` mock so existing integration paths resolve the embedding provider without error.
-      * `[ ]`   Add assertion in the `calculateAffordability direct return flows through enqueueModelCall to success` integration path: capture the `calculateAffordability` spy call and assert `spy.calls[0].args[0].projectId === executePayload.projectId`, `spy.calls[0].args[0].iteration === executePayload.iterationNumber`, and `spy.calls[0].args[0].embeddingModelSlug === 'text-embedding-3-small'` (matching the mock embedding provider `api_identifier`).
-
-   * `[ ]`   `construction`
-      * `[ ]`   `prepareModelJob` remains a pure async function over `(deps, params, payload)` with no global state.
-      * `[ ]`   No partial construction path is introduced.
-      * `[ ]`   Initialization order: tier-cap query → embedding provider query → payload extraction → validation → model config → wallet balance → cost rates → scope application → `baseChatApiRequest` → `affordParams` → affordability call → enqueue call.
-
-   * `[ ]`   `directionality`
-      * `[ ]`   Node layer is dialectic-worker orchestration.
-      * `[ ]`   The new `ai_providers` query is an inward infrastructure call (db → local variable); `embeddingModelSlug` then flows outward into `affordParams` passed to `deps.calculateAffordability`.
-      * `[ ]`   No new dependency cycles or layer violations introduced.
-
-   * `[ ]`   `requirements`
-      * `[ ]`   `prepareModelJob` queries `ai_providers` for `is_default_embedding = true` before building `affordParams` and extracts `api_identifier` as `embeddingModelSlug`.
-      * `[ ]`   `prepareModelJob` returns a retriable error if the `ai_providers` query returns a DB error.
-      * `[ ]`   `prepareModelJob` returns a non-retriable error with message including `'No default embedding provider'` if the query returns no row or `api_identifier` is not a string.
-      * `[ ]`   `deps.calculateAffordability` is called with `affordParams` that includes `projectId`, `iteration`, and `embeddingModelSlug` matching the values from `job.payload` and the resolved embedding provider.
-      * `[ ]`   All previously passing tests in `prepareModelJob.test.ts`, `prepareModelJob.inputsRequired.test.ts`, and `prepareModelJob.integration.test.ts` remain GREEN after the mock client is updated to return embedding provider data.
-      * `[ ]`   Node scope is limited to the ten files in `prepareModelJob/`; `index.ts` DI wiring changes remain in the next Workstream C node.
-
-* `[ ]`   supabase/functions/dialectic-worker/index.ts **[BE] Wire fileManager into compressPrompt DI closure to complete compression artifact persistence chain**
-
-   * `[ ]`   `objective`
-      * `[ ]`   Solve the `boundCompressPrompt` closure gap where `createDialecticWorkerDeps` builds `boundCompressPrompt` with `{ logger, ragService, embeddingClient, tokenWalletService: adminTokenWalletService, countTokens }` but omits `fileManager`, leaving the updated `CompressPromptDeps.fileManager: IFileManager` requirement from the prior Workstream C node (`compressPrompt.ts`) unsatisfied at the call site and producing a type error at compile time.
-      * `[ ]`   Functional goals:
-         * `[ ]`   Add `fileManager` to the deps object literal inside the `boundCompressPrompt` closure in `createDialecticWorkerDeps`, making the call read `compressPrompt({ logger, ragService, embeddingClient, tokenWalletService: adminTokenWalletService, countTokens, fileManager }, cpParams, cpPayload)`.
-         * `[ ]`   Add `embeddingModelApiIdentifier: modelProvider.api_identifier` to the `RagService` constructor deps object so the call reads `new RagService({ dbClient: adminClient, logger, indexingService, embeddingClient, tokenWalletService: adminTokenWalletService, embeddingModelApiIdentifier: modelProvider.api_identifier })`.
-         * `[ ]`   Keep all existing DI bindings and construction order in `createDialecticWorkerDeps` unchanged except the two additions above.
-         * `[ ]`   Keep the `serve()` HTTP handler body unchanged.
-         * `[ ]`   Update `index.test.ts`, `index.integration.test.ts`, and `index.nsf-pause.integration.test.ts` to mock the `ai_providers.select('api_identifier').eq('is_default_embedding', true).eq('is_active', true).maybeSingle()` call added by the prior `prepareModelJob.ts` node so all existing test scenarios continue to pass.
-      * `[ ]`   Non-functional constraints:
-         * `[ ]`   No new imports added to `index.ts`; `fileManager` is already declared in `createDialecticWorkerDeps` scope before the `prepareModelJob` factory lambda is defined.
-         * `[ ]`   No changes to `compressPrompt.ts`, `calculateAffordability.ts`, `prepareModelJob.ts`, `file_manager.ts`, or any file outside the four root files listed above.
-         * `[ ]`   The `boundCompressPrompt` variable type remains `BoundCompressPromptFn`; the updated deps object must satisfy `CompressPromptDeps` without any cast or type assertion.
-      * `[ ]`   Each goal is atomic and testable through the unit and integration test updates in this node.
-
-   * `[ ]`   `role`
-      * `[ ]`   Node role is DI factory entrypoint update plus the three immediate test files that prove the wiring is correct.
-      * `[ ]`   This role is correct because `index.ts` owns `createDialecticWorkerDeps`, which is the only file that constructs `boundCompressPrompt` and is therefore the canonical wiring site for supplying the updated `CompressPromptDeps.fileManager` dependency.
-      * `[ ]`   Out-of-scope responsibilities:
-         * `[ ]`   Do not change the `compressPrompt.ts` implementation or its `CompressPromptDeps` interface in this node.
-         * `[ ]`   Do not change the `prepareModelJob.ts` embedding provider query or `affordParams` construction in this node.
-         * `[ ]`   Do not change the `calculateAffordability.ts` compression params threading in this node.
-
-   * `[ ]`   `module`
-      * `[ ]`   Bounded context is `supabase/functions/dialectic-worker/` root: `index.ts`, `index.test.ts`, `index.integration.test.ts`, and `index.nsf-pause.integration.test.ts`.
-      * `[ ]`   Inside boundary:
-         * `[ ]`   DI factory construction in `createDialecticWorkerDeps`: `FileManagerService` instantiation, closure assembly for `boundCompressPrompt` and `boundCalculateAffordability`, and the full `createJobContext` call.
-         * `[ ]`   HTTP serve handler: method gate, job payload parse, `adminClient` construction, `createDialecticWorkerDeps` invocation, and `processJob` dispatch.
-      * `[ ]`   Outside boundary:
-         * `[ ]`   Compression algorithm logic, artifact persistence, and RAG context construction inside `compressPrompt.ts`.
-         * `[ ]`   Affordability calculation and token counting inside `calculateAffordability.ts`.
-         * `[ ]`   Model job orchestration, embedding provider DB query, and `affordParams` construction inside `prepareModelJob.ts`.
-         * `[ ]`   File upload, retry, and path construction logic inside `file_manager.ts`.
-
-   * `[ ]`   `deps`
-      * `[ ]`   Provider: `./compressPrompt/compressPrompt.provides.ts` (`compressPrompt`, `BoundCompressPromptFn`).
-         * `[ ]`   Layer classification: dialectic-worker utility producer.
-         * `[ ]`   Direction: inbound; already imported and invoked in `index.ts`.
-         * `[ ]`   Purpose: `compressPrompt` receives the updated deps closure now including `fileManager`.
-      * `[ ]`   Provider: `../_shared/services/file_manager.ts` (`FileManagerService`).
-         * `[ ]`   Layer classification: shared infrastructure service producer.
-         * `[ ]`   Direction: inbound; already imported at line 24 of `index.ts` and instantiated as `const fileManager = new FileManagerService(adminClient, { constructStoragePath, logger, assembleChunks })`.
-         * `[ ]`   Purpose: `fileManager` satisfies the `IFileManager` field now required in `CompressPromptDeps`.
-      * `[ ]`   Confirm:
-         * `[ ]`   No reverse dependencies introduced.
-         * `[ ]`   No lateral layer violations introduced.
-
-   * `[ ]`   `context_slice`
-      * `[ ]`   Minimal dependency interface required from `fileManager` in the `boundCompressPrompt` closure: `IFileManager` in its entirety, passed through to `compressPrompt`; no methods are invoked on `fileManager` directly in `index.ts`.
-      * `[ ]`   The `fileManager` variable is already in scope at the point where `boundCompressPrompt` is constructed inside the `prepareModelJob` factory lambda; the only change is adding it to the deps object literal passed to `compressPrompt`.
-      * `[ ]`   Confirm:
-         * `[ ]`   No over-fetching; no new methods or fields on `fileManager` are accessed in `index.ts`.
-         * `[ ]`   No hidden coupling to Netlify worker payloads or callback handler state.
-
-   * `[ ]`   `supabase/functions/dialectic-worker/index.test.ts`
-      * `[ ]`   Update every `createMockSupabaseClient` invocation whose mock results are consumed by the `createDialecticWorkerDeps` code path to add an `ai_providers.select('api_identifier').eq('is_default_embedding', true).eq('is_active', true).maybeSingle()` mock returning `{ data: { api_identifier: 'text-embedding-3-small' }, error: null }` so that the embedding slug query added by the prior `prepareModelJob.ts` node does not throw in existing test scenarios.
-      * `[ ]`   Add unit test `createDialecticWorkerDeps constructs fileManager and exposes it on the returned IJobContext`:
-         * `[ ]`   Construct a minimal `mockAdminClient` whose `from('ai_providers').select('*').eq('is_default_embedding', true).single()` returns `{ data: { id: 'emb-provider-1', api_identifier: 'text-embedding-3-small', is_default_embedding: true, is_active: true, config: {}, provider: 'openai', model: 'text-embedding-3-small' }, error: null }`.
-         * `[ ]`   Set `Deno.env.get('OPENAI_API_KEY')`, `HMAC_SECRET`, `NETLIFY_QUEUE_URL`, and `AWL_API_KEY` to non-empty test strings before the call.
-         * `[ ]`   Call `const ctx = await createDialecticWorkerDeps(mockAdminClient)`.
-         * `[ ]`   Assert `ctx.fileManager instanceof FileManagerService`.
-         * `[ ]`   Assert `typeof ctx.prepareModelJob === 'function'`.
-
-   * `[ ]`   `supabase/functions/dialectic-worker/index.ts`
-      * `[ ]`   Locate the `boundCompressPrompt` closure in the `prepareModelJob` factory lambda inside `createDialecticWorkerDeps`. The closure currently reads: `compressPrompt({ logger, ragService, embeddingClient, tokenWalletService: adminTokenWalletService, countTokens }, cpParams, cpPayload)`.
-      * `[ ]`   Add `fileManager` to the deps object so the closure reads: `compressPrompt({ logger, ragService, embeddingClient, tokenWalletService: adminTokenWalletService, countTokens, fileManager }, cpParams, cpPayload)`.
-      * `[ ]`   In the `RagService` constructor call at `const ragService = new RagService(...)`, add `embeddingModelApiIdentifier: modelProvider.api_identifier` to the deps object so the call reads: `new RagService({ dbClient: adminClient, logger, indexingService, embeddingClient, tokenWalletService: adminTokenWalletService, embeddingModelApiIdentifier: modelProvider.api_identifier })`.
-      * `[ ]`   Keep all other lines in `createDialecticWorkerDeps` unchanged: the outer `ai_providers` query and `modelProvider` extraction for `EmbeddingClient` construction, `embeddingAdapter`, `EmbeddingClient`, `IndexingService`, `PromptAssembler`, `documentRenderer`, `boundGatherArtifacts`, queue env reads, `computeJobSig`, `apiKeyForProvider`, `boundEnqueueModelCall`, and the full `createJobContext` call with all its fields.
-      * `[ ]`   Keep all import statements unchanged; no new imports are required.
-      * `[ ]`   Keep the `serve()` HTTP handler body unchanged.
-
-   * `[ ]`   `supabase/functions/dialectic-worker/index.integration.test.ts`
-      * `[ ]`   Update every `createMockSupabaseClient` call in this file to add an `ai_providers.select('api_identifier').eq('is_default_embedding', true).eq('is_active', true).maybeSingle()` mock returning `{ data: mockDefaultEmbeddingProviderRow(), error: null }` (importing `mockDefaultEmbeddingProviderRow` from `./prepareModelJob/prepareModelJob.provides.ts`) so that all existing integration scenarios resolve the embedding slug without error.
-      * `[ ]`   Add integration test `createDialecticWorkerDeps + prepareModelJob: fileManager.uploadAndRegisterFile is called through the wired DI closure when compression is triggered`:
-         * `[ ]`   Construct `mockAdminClient` with: `ai_providers.select('*').eq('is_default_embedding', true).single()` returning the full embedding provider row; `ai_providers.select('api_identifier')...maybeSingle()` returning `{ api_identifier: 'text-embedding-3-small' }`; `ai_providers.select('*').eq('id', modelId).single()` returning a model config row where the `config` field encodes a `contextWindowTokens: 100`; `token_wallets` returning `{ balance: 10000 }`; `user_subscriptions` returning the tier mock from `mockDefaultEmbeddingProviderRow`.
-         * `[ ]`   Call `const ctx = await createDialecticWorkerDeps(mockAdminClient)`.
-         * `[ ]`   Add spy: `const uploadSpy = vi.spyOn(ctx.fileManager, 'uploadAndRegisterFile').mockResolvedValue({ success: true, ragResourceId: 'integration-rag-1', filePath: 'tenant/project/iter/model/context.json', fileSize: 200 })`.
-         * `[ ]`   Build `mockUserDbClient` (mock Supabase client with same `ai_providers` and wallet mocks, used as `params.dbClient` for the `prepareModelJob` call).
-         * `[ ]`   Build `mockParams` with `dbClient: mockUserDbClient` and `job` set to a `dialectic_generation_jobs` row with `modelId: 'model-1'`, `projectId: 'project-1'`, `iterationNumber: 2`.
-         * `[ ]`   Build `mockPayload` as a `DialecticExecuteJobPayload` with `userPrompt` set to a 200-token string (exceeding the 100-token mock `contextWindowTokens`), so `calculateAffordability` routes to `compressPrompt`.
-         * `[ ]`   Call `await ctx.prepareModelJob(mockParams, mockPayload)`.
-         * `[ ]`   Assert `uploadSpy.mock.calls.length >= 1`, proving `fileManager.uploadAndRegisterFile` is reachable through the complete DI chain wired in `createDialecticWorkerDeps`.
-
-   * `[ ]`   `supabase/functions/dialectic-worker/index.nsf-pause.integration.test.ts`
-      * `[ ]`   Update every `createMockSupabaseClient` call in this file to add the `ai_providers.select('api_identifier').eq('is_default_embedding', true).eq('is_active', true).maybeSingle()` mock returning `{ data: mockDefaultEmbeddingProviderRow(), error: null }` so all existing NSF-pause integration scenarios pass without change to their assertions.
-
-   * `[ ]`   `construction`
-      * `[ ]`   `createDialecticWorkerDeps` remains an async factory function with signature `(adminClient: SupabaseClient<Database>) => Promise<IJobContext>` with no global state.
-      * `[ ]`   No partial construction path is introduced.
-      * `[ ]`   Construction order within `createDialecticWorkerDeps` is preserved: `NotificationService` → outer `ai_providers` query (for `EmbeddingClient`) → `OPENAI_API_KEY` env read → `fileManager` construction → `embeddingAdapter` → `EmbeddingClient` → `AdminTokenWalletService` / `UserTokenWalletService` → `IndexingService` → `RagService` → `PromptAssembler` → `documentRenderer` → `boundGatherArtifacts` → queue env reads → `computeJobSig` → `apiKeyForProvider` → `boundEnqueueModelCall` → `createJobContext` with the updated `prepareModelJob` lambda that now includes `fileManager` in the `boundCompressPrompt` deps.
-
-   * `[ ]`   `directionality`
-      * `[ ]`   Node layer is DI entrypoint / composition root.
-      * `[ ]`   `fileManager` flows inward from the `FileManagerService` constructor (infrastructure) and then outward through the `boundCompressPrompt` closure into `compressPrompt.ts` (worker utility).
-      * `[ ]`   No new imports introduce cycles; all dependencies remain in the existing inward direction from shared infrastructure and utilities toward the entrypoint.
-      * `[ ]`   No new dependency cycles with any Workstream B or C producer are introduced.
-
-   * `[ ]`   `requirements`
-      * `[ ]`   After this node, the `boundCompressPrompt` closure in `createDialecticWorkerDeps` satisfies the updated `CompressPromptDeps` contract including `fileManager: IFileManager` without any type cast or assertion.
-      * `[ ]`   `RagService` is constructed with `embeddingModelApiIdentifier: modelProvider.api_identifier`, satisfying the updated `IRagServiceDependencies.embeddingModelApiIdentifier` contract added by the Workstream E `rag_service.ts` node.
-      * `[ ]`   `index.ts` compiles without type errors on the `compressPrompt({ ..., fileManager }, ...)` call and `new RagService({ ..., embeddingModelApiIdentifier: modelProvider.api_identifier })` call after the prior Workstream C and Workstream E nodes have updated their respective interfaces.
-      * `[ ]`   All existing assertions in `index.test.ts`, `index.integration.test.ts`, and `index.nsf-pause.integration.test.ts` remain GREEN after adding the `ai_providers.select('api_identifier')...maybeSingle()` mock to each file's Supabase client setup.
-      * `[ ]`   The new unit test in `index.test.ts` asserts `ctx.fileManager instanceof FileManagerService` and `typeof ctx.prepareModelJob === 'function'` after calling `createDialecticWorkerDeps`.
-      * `[ ]`   The new integration test in `index.integration.test.ts` asserts `uploadSpy.mock.calls.length >= 1` after calling `ctx.prepareModelJob` with an oversized prompt, proving the full `createDialecticWorkerDeps → ctx.prepareModelJob → calculateAffordability → compressPrompt → fileManager.uploadAndRegisterFile` chain executes end-to-end.
-      * `[ ]`   Node scope remains limited to `index.ts` and its three immediate test files.
-
-   * `[ ]`   **Commit** `feat(dialectic-worker): complete Workstream C — wire fileManager through DI closure to close artifact-persistence chain`
-      * `[ ]`   Structural changes:
-         * `[ ]`   `index.ts` `boundCompressPrompt` closure now includes `fileManager` in the deps object, satisfying the updated `CompressPromptDeps` interface from the `compressPrompt.ts` node.
-         * `[ ]`   `index.test.ts`, `index.integration.test.ts`, and `index.nsf-pause.integration.test.ts` add the `ai_providers.select('api_identifier')...maybeSingle()` mock to align with the embedding slug query added by the `prepareModelJob.ts` node.
-      * `[ ]`   Behavioral changes:
-         * `[ ]`   RAG context summary artifacts produced during compression are now persisted to storage via `fileManager.uploadAndRegisterFile` during live execution because `fileManager` is correctly wired at the DI factory boundary.
-         * `[ ]`   All existing HTTP handler behavior, DI bindings, and job dispatch logic remain unchanged.
-      * `[ ]`   Contract changes:
-         * `[ ]`   The `compressPrompt` deps closure in `createDialecticWorkerDeps` is fully aligned with the updated `CompressPromptDeps` interface from the prior Workstream C node.
-         * `[ ]`   Workstream C exit condition is satisfied: the artifact-persistence chain `file_manager.ts → path_constructor.ts → path_deconstructor.ts → compressPrompt.ts → calculateAffordability.ts → prepareModelJob.ts → index.ts` is complete, coherent, and proven by the integration test in this node.
-
+      * `[✅]`   Enqueue supports operation-aware stream and embedding queue payload emission.
+      * `[✅]`   Existing stream enqueue behavior stays backward-compatible and fully covered.
+      * `[✅]`   Queued-state DB transition, signature generation, and payload-size guard remain deterministic.
+      * `[✅]`   Guard/interface/mock/unit/integration files prove operation-discriminated contract correctness and failure classification behavior.
+      * `[ ]`   `output_type` for stream payloads must satisfy `isModelContributionFileType`; non-retriable error returned if invalid.
+      * `[ ]`   `output_type` for embedding payloads must satisfy `isEmbeddingOutputFileType` (accepts `FileType.EmbeddingChunk = 'embedding_chunk'` only); non-retriable error returned if invalid.
+      * `[ ]`   `isEmbeddingOutputFileType('embedding_chunk')` returns `true`; any other value returns `false`.
+      * `[ ]`   Node scope extended to include `file_manager.types.ts`, `type_guards.file_manager.ts`, and `type_guards.file_manager.test.ts`.
+
+* `[ ]`   createJobContext/`createJobContext.ts` **[BE] Thread `enqueueModelCall` as a raw field through `IJobContext`, `JobContextParams`, the factory, guard, mock, and all test files so `processEmbedJob` can receive a pre-bound model-call closure directly from the root context**
+
+  * `[ ]`   `objective`
+    * `[ ]`   Solve the missing-field defect: `IJobContext` and `JobContextParams` do not carry `enqueueModelCall: BoundEnqueueModelCallFn`, so `processEmbedJob` (WS-R) cannot receive it from the root context, and `index.ts` (WS-S final node) cannot wire it through `createJobContext`.
+    * `[ ]`   Functional goals:
+      * `IJobContext` exposes `enqueueModelCall: BoundEnqueueModelCallFn` as a raw field alongside the other pre-bound closures (`prepareModelJob`, `gatherArtifacts`).
+      * `JobContextParams` requires `enqueueModelCall: BoundEnqueueModelCallFn` so `createJobContext` can copy it without inference gaps.
+      * `createJobContext` passes the field through unchanged.
+      * `isIJobContext` guard enforces the field's presence at runtime.
+      * All mock helpers and test files remain compilable and structurally correct after the change.
+    * `[ ]`   Non-functional constraint: `index.ts` will not compile after this node (it does not yet pass `enqueueModelCall` to `createJobContext`); the break is resolved in the immediately-following `index.ts` node (last WS-S node, where the WS-S commit also lands). No other file outside the scope of this node is affected.
+
+  * `[ ]`   `role`
+    * `[ ]`   Composition-root factory (`dialectic-worker/createJobContext`). Its single responsibility is to assemble a fully-typed `IJobContext` from all required raw dependencies at the application boundary.
+    * `[ ]`   This role is appropriate because `createJobContext` is already the authoritative construction point for `IJobContext`; adding one raw field follows the established pattern (`prepareModelJob`, `gatherArtifacts`, `computeJobSig` are all pre-bound closures already on the context).
+    * `[ ]`   Out of scope: how `enqueueModelCall` is used inside `processEmbedJob` (WS-R node); constructing `boundEnqueueModelCall` from Netlify env vars (WS-S `index.ts` node); the `createPrepareModelJobContext` slicer (it already takes `boundEnqueueModelCall` as its own parameter and is NOT changed by this node).
+
+  * `[ ]`   `module`
+    * `[ ]`   Bounded context: `createJobContext/` directory — `JobContext.interface.ts`, `createJobContext.ts`, `JobContext.guard.ts`, `JobContext.guard.test.ts`, `JobContext.mock.ts`, `createJobContext.test.ts`, `createJobContext.interface.test.ts`, `createJobContext.integration.test.ts`.
+    * `[ ]`   Inside boundary: the `IJobContext` shape, `JobContextParams` construction contract, `isIJobContext` runtime guard, mock helpers that produce valid instances, and all tests that verify those contracts.
+    * `[ ]`   Outside boundary: `enqueueModelCall.ts` implementation (provider node, already ✅); `processEmbedJob.ts` consumer (WS-R); `index.ts` wiring (next WS-S node).
+
+  * `[ ]`   `deps`
+    * `[ ]`   `BoundEnqueueModelCallFn` from `enqueueModelCall/enqueueModelCall.interface.ts` — already imported in `JobContext.interface.ts` (~L47) and in `createJobContext.ts` (~L9). Layer: adapter (WS-A). Direction: inward (interface contract only, no concrete import). Purpose: type the pre-bound closure carried on the context.
+    * `[ ]`   All other existing deps unchanged — no new imports needed in any file.
+    * `[ ]`   Confirm: no reverse dependency (nothing in `enqueueModelCall.interface.ts` imports `JobContext`); no lateral violation.
+
+  * `[ ]`   `context_slice`
+    * `[ ]`   From `BoundEnqueueModelCallFn`: only the type — `(params: EnqueueModelCallParams, payload: EnqueueModelCallPayload) => Promise<EnqueueModelCallReturn>`. No concrete implementation crossed.
+    * `[ ]`   No over-fetching: no additional imports from `enqueueModelCall.interface.ts` beyond the already-imported `BoundEnqueueModelCallFn`.
+    * `[ ]`   No hidden coupling: the field is stored and passed through; no call site exists inside this node's files.
+
+  * `[ ]`   `createJobContext.interface.test.ts` (contract — structural boundary satisfaction)
+    * `[ ]`   In the existing `describe('IJobContext', ...)` plain-object construction block: add `enqueueModelCall: createMockBoundEnqueueModelCall()` to the `IJobContext` literal so the TypeScript assignment compiles (structural satisfaction of the new required field). `createMockBoundEnqueueModelCall` is already imported from `JobContext.mock.ts` in this file.
+    * `[ ]`   In the existing `describe('JobContextParams', ...)` plain-object construction block: add `enqueueModelCall: createMockBoundEnqueueModelCall()` for the same reason.
+    * `[ ]`   Do NOT add new test cases in this file — existing cases cover all other fields; the additions above are purely structural to prevent compile failure after the interface change.
+
+  * `[ ]`   `JobContext.interface.ts` (structural boundary — type edits; exempt from RED/GREEN)
+    * `[ ]`   In `IJobContext` raw-fields block (after `readonly computeJobSig: ComputeJobSig;` and before the closing `}`): add `readonly enqueueModelCall: BoundEnqueueModelCallFn;`. Placement is adjacent to the other pre-bound orchestration closures (`prepareModelJob`, `gatherArtifacts`, `computeJobSig`).
+    * `[ ]`   In `JobContextParams` (after `readonly computeJobSig: ComputeJobSig;` and before the closing `}`): add `readonly enqueueModelCall: BoundEnqueueModelCallFn;`. Mirrors the `IJobContext` addition; all `JobContextParams` fields are required.
+    * `[ ]`   `BoundEnqueueModelCallFn` import already present at ~L47 — no import change required.
+    * `[ ]`   No other change to any interface in this file.
+
+  * `[ ]`   `JobContext.guard.test.ts` (enforcement — guard tests before guard)
+    * `[ ]`   In the existing `describe('isIJobContext', ...)` block, add two tests after the last existing `isIJobContext` test:
+      * Test 1: `'returns true when all required fields including enqueueModelCall are present'` — construct an object from `buildIJobContext()` (which will include `enqueueModelCall` after the mock update) and assert `isIJobContext(result) === true`.
+      * Test 2: `'returns false when enqueueModelCall is absent'` — spread a valid `buildIJobContext()` result and delete `enqueueModelCall`, then assert `isIJobContext(result) === false`.
+    * `[ ]`   Do NOT re-test any other field — all other field checks are already covered by existing tests.
+
+  * `[ ]`   `JobContext.guard.ts` (enforcement — runtime boundary)
+    * `[ ]`   In `isIJobContext`: append `'enqueueModelCall' in value && typeof value.enqueueModelCall === 'function' &&` to the conjunction of field checks in the final `return (...)` statement. Placement: after the `computeJobSig` check (last existing check), as the new final condition before the closing `)`.
+    * `[ ]`   No other guard function changes.
+
+  * `[ ]`   `JobContext.mock.ts` (simulation)
+    * `[ ]`   In `createMockJobContextParams` `baseParams` object literal: add `enqueueModelCall: createMockBoundEnqueueModelCall(),` after `computeJobSig`. `createMockBoundEnqueueModelCall` is already defined in this file (~L63) and returns `async () => ({ error: new Error('mock bound enqueueModelCall not implemented'), retriable: false })`.
+    * `[ ]`   In `buildIJobContext`: add `enqueueModelCall: params.enqueueModelCall,` to the returned object literal after `computeJobSig`. This copies the value from the `createMockJobContextParams()` result, maintaining the round-trip used by guard tests.
+    * `[ ]`   No other change to this file. All existing exported helpers (`buildIPlanJobContext`, `buildIRenderJobContext`, `buildIPrepareModelJobContext`, `createCompressPromptFn`, `createCalculateAffordabilityFn`, etc.) are unaffected.
+
+  * `[ ]`   `createJobContext.test.ts` (behavioral verification)
+    * `[ ]`   In the existing `describe('createJobContext', ...)` block, add two tests after the last existing `createJobContext` test:
+      * Test 1: `'copies enqueueModelCall from params onto root IJobContext'` — `createMockJobContextParams()` → `createJobContext(params)` → `assertEquals(result.enqueueModelCall, params.enqueueModelCall)`.
+      * Test 2: `'enqueueModelCall is present and callable on the IJobContext result'` — `createMockJobContextParams()` → `createJobContext(params)` → `assertEquals(typeof result.enqueueModelCall, 'function')`.
+    * `[ ]`   Do NOT re-test guard correctness (covered in `JobContext.guard.test.ts`) or field types (covered in `createJobContext.interface.test.ts`).
+
+  * `[ ]`   `construction`
+    * `[ ]`   `createJobContext(params: JobContextParams): IJobContext` is the single factory entrypoint; it remains a plain object return (no class, no constructor).
+    * `[ ]`   After this node, `JobContextParams` requires `enqueueModelCall`; any caller that omits it will not compile — this is the intended enforcement, resolved by the `index.ts` node (next WS-S).
+    * `[ ]`   No partially-constructed instances are possible: `createJobContext` is a synchronous total function with no conditional field omissions.
+    * `[ ]`   Invalid construction context: calling `createJobContext` without `enqueueModelCall` in params is a compile error; no runtime guard needed at the factory.
+
+  * `[ ]`   `createJobContext.ts` (implementation)
+    * `[ ]`   In the `createJobContext` factory return object: add `enqueueModelCall: params.enqueueModelCall,` after `computeJobSig: params.computeJobSig,` (last existing field in the returned object, ~L82). No other change to the function body.
+    * `[ ]`   The `createPrepareModelJobContext`, `createPlanJobContext`, `createRenderJobContext`, and `createSaveResponseContext` slicers are NOT modified; they are unrelated to this field.
+    * `[ ]`   `BoundEnqueueModelCallFn` is already imported (~L9); no import change required.
+
+  * `[ ]`   `createJobContext.integration.test.ts` (edge validation)
+    * `[ ]`   In `Deno.test('Integration: constructed context passes structural check against IJobContext and slicers build expected objects', ...)`: after the existing `assertEquals(rootContext.debitTokens, params.debitTokens)` assertion, add `assertEquals(rootContext.enqueueModelCall, params.enqueueModelCall)`. This asserts the factory round-trip at the integration boundary.
+    * `[ ]`   No other test in this file requires modification: the slicer tests (`createPrepareModelJobContext`, `calculateAffordability` delegation, Phase 1 chain) do not involve `IJobContext.enqueueModelCall` directly.
+
+  * `[ ]`   `directionality`
+    * `[ ]`   Layer: composition root / factory (`dialectic-worker` application boundary). This is the outermost wiring layer for the worker; it depends inward on interfaces and utility types.
+    * `[ ]`   Deps are inward-facing: `BoundEnqueueModelCallFn` originates in `enqueueModelCall.interface.ts` (adapter layer, already ✅).
+    * `[ ]`   Provides are outward-facing: `IJobContext` (with `enqueueModelCall`) is consumed by `processJob` → `processEmbedJob` (WS-R) and `index.ts` (WS-S final node).
+    * `[ ]`   No cycles: `enqueueModelCall.interface.ts` does not import anything from `createJobContext/`.
+
+  * `[ ]`   `requirements`
+    * `[ ]`   `IJobContext` has `readonly enqueueModelCall: BoundEnqueueModelCallFn` — verified by TypeScript structural assignment in `createJobContext.interface.test.ts`.
+    * `[ ]`   `JobContextParams` has `readonly enqueueModelCall: BoundEnqueueModelCallFn` — verified by TypeScript structural assignment in `createJobContext.interface.test.ts`.
+    * `[ ]`   `createJobContext(params).enqueueModelCall === params.enqueueModelCall` — verified by `createJobContext.test.ts` Test 1.
+    * `[ ]`   `typeof createJobContext(params).enqueueModelCall === 'function'` — verified by `createJobContext.test.ts` Test 2.
+    * `[ ]`   `isIJobContext(value)` returns `false` when `enqueueModelCall` is absent — verified by `JobContext.guard.test.ts` Test 2.
+    * `[ ]`   `isIJobContext(buildIJobContext())` returns `true` — verified by `JobContext.guard.test.ts` Test 1 (which uses the updated `buildIJobContext`).
+    * `[ ]`   `createMockJobContextParams()` produces a `JobContextParams` that compiles without supplying `enqueueModelCall` at the call site — verified implicitly by every existing test that calls `createMockJobContextParams()`.
+    * `[ ]`   `buildIJobContext().enqueueModelCall` is a function — verified by `JobContext.guard.test.ts` Test 1.
+    * `[ ]`   Integration structural check: `rootContext.enqueueModelCall === params.enqueueModelCall` — verified by `createJobContext.integration.test.ts`.
+
+* `[ ]`   supabase/functions/dialectic-worker/`index.ts` **[BE] Wire real `processEmbedJob` into worker composition root and thread `enqueueModelCall` through job context — WS-R + WS-S commit**
+
+  * `[ ]`   `objective`
+    * `[ ]`   Two gaps prevent EMBED jobs from executing after WS-R and WS-S nodes land: (a) `defaultProcessors` in `handleJob` has no `processEmbedJob` entry, so `IJobProcessors` is unsatisfied and the file will not compile once WS-R adds that field; (b) `createJobContext(...)` does not receive `enqueueModelCall`, so `IJobContext.enqueueModelCall` (added in WS-S `createJobContext.ts` node) cannot be populated at the composition root.
+    * `[ ]`   Functional goals:
+      * `[ ]`   Import `processEmbedJob` from `./processEmbedJob/processEmbedJob.ts` (created in WS-R).
+      * `[ ]`   Pass `enqueueModelCall: boundEnqueueModelCall` to the `createJobContext(...)` call in `createDialecticWorkerDeps`. `boundEnqueueModelCall` is already constructed in that factory; only the pass-through is missing.
+      * `[ ]`   Add `processEmbedJob` to the `defaultProcessors` object in `handleJob`, bridging `IJobContext.enqueueModelCall` → `ProcessEmbedJobDeps.enqueueModelCall`.
+    * `[ ]`   Non-functional constraints:
+      * `[ ]`   This is the ONLY touch of `index.ts` across all workstreams. No stub was added in WS-R.
+      * `[ ]`   No existing processor entries in `defaultProcessors` are modified.
+      * `[ ]`   `boundEnqueueModelCall` construction logic is unchanged — only the pass-through to `createJobContext` is added.
+      * `[ ]`   All prior `createDialecticWorkerDeps` tests remain valid (additive only).
+
+  * `[ ]`   `role`
+    * `[ ]`   Composition root (`dialectic-worker`). Single responsibility: construct every dependency and wire every processor for the worker's request lifecycle.
+    * `[ ]`   This role is appropriate because `index.ts` is the only file that knows all concrete implementations and can bridge the `IJobContext` surface to the `ProcessEmbedJobDeps` contract.
+    * `[ ]`   Out of scope: real EMBED embedding logic (lives in `processEmbedJob.ts`, WS-R); `enqueueModelCall` construction logic (already present, unchanged); any other processor implementations.
+
+  * `[ ]`   `module`
+    * `[ ]`   Bounded context: `index.ts` and `index.test.ts` only.
+    * `[ ]`   Inside boundary: `defaultProcessors` object literal in `handleJob`; the `createJobContext(...)` call in `createDialecticWorkerDeps`.
+    * `[ ]`   Outside boundary: `createDialecticWorkerDeps` env-var validation logic (not touched); `serve()` request handler (not touched); all existing processor implementations (not touched); `processEmbedJob` business logic (WS-R node).
+
+  * `[ ]`   `deps`
+    * `[ ]`   `processEmbedJob` (inward, `./processEmbedJob/processEmbedJob.ts`, WS-R) — the real EMBED handler. Direction: inward (worker sub-module). Purpose: called inside the `defaultProcessors.processEmbedJob` closure.
+    * `[ ]`   `BoundEnqueueModelCallFn` (inward, `./enqueueModelCall/enqueueModelCall.interface.ts`, already imported) — type for `boundEnqueueModelCall`; already constructed in factory; no new import needed.
+    * `[ ]`   `IJobProcessors` (inward, `dialectic-service/dialectic.interface.ts`, updated in WS-R `processJob.ts` node) — now requires `processEmbedJob: ProcessEmbedJobFn`; satisfied by the new `defaultProcessors` entry.
+    * `[ ]`   `IJobContext` (inward, `./createJobContext/JobContext.interface.ts`, updated in WS-S `createJobContext.ts` node) — now requires `enqueueModelCall: BoundEnqueueModelCallFn`; satisfied by the new pass-through.
+    * `[ ]`   Confirm: no reverse dependency introduced; `index.ts` is a leaf composition root with no consumers.
+
+  * `[ ]`   `context_slice`
+    * `[ ]`   From `processEmbedJob`: only the default export function `processEmbedJob(deps, params)`.
+    * `[ ]`   From `IJobContext`: only `ctx.enqueueModelCall` (accessed inside the `defaultProcessors.processEmbedJob` closure).
+    * `[ ]`   From `boundEnqueueModelCall`: only the already-constructed value — no new surface fetched.
+    * `[ ]`   No over-fetching; no hidden coupling.
+
+  * `[ ]`   supabase/functions/dialectic-worker/`index.test.ts` 
+    * `[ ]`   **Add** `Deno.test('createDialecticWorkerDeps: wires enqueueModelCall onto returned context', ...)` following the pattern of the existing `wires computeJobSig as a function` test (~L1619). Call `createDialecticWorkerDeps(mockSupabaseClientDeps.client ...)`. Assert `typeof deps.enqueueModelCall === 'function'`. Do NOT test `enqueueModelCall` behavior (own unit in `enqueueModelCall.test.ts`).
+    * `[ ]`   **Add** `Deno.test('handleJob: EMBED job routes to processEmbedJob and no other processor', ...)` following the pattern of existing `handleJob` dispatch tests. Call `handleJob` with a mock job (`job_type: 'EMBED'`) and a `testProcessors` spy set built from `createMockJobProcessors()` (updated in WS-R `processJob.ts` node to include `processEmbedJob`). Assert `spies.processEmbedJob.calls.length === 1`. Assert `spies.processSimpleJob.calls.length === 0`. Assert `spies.processComplexJob.calls.length === 0`. Assert `spies.processRenderJob.calls.length === 0`.
+    * `[ ]`   Do NOT re-test: existing `createDialecticWorkerDeps` dep wiring; existing dispatch paths for EXECUTE/PLAN/RENDER; `processEmbedJob` internal behavior.
+
+  * `[ ]`   `construction`
+    * `[ ]`   `handleJob` and `createDialecticWorkerDeps` are plain exported async functions. No constructor concerns.
+    * `[ ]`   `boundEnqueueModelCall` is already constructed before the `createJobContext(...)` call — initialization order is unchanged.
+    * `[ ]`   `defaultProcessors` is built inside `handleJob` after `deps` is available — `deps.enqueueModelCall` (from `IJobContext`) is in scope when the closure executes.
+    * `[ ]`   No partially constructed state: `processEmbedJob` closure captures `ctx.enqueueModelCall` at call time (not at construction time), consistent with the pattern used by all other processor closures.
+
+  * `[ ]`   supabase/functions/dialectic-worker/`index.ts`
+    * `[ ]`   After the `import { processRenderJob }` line (~L39), add: `import { processEmbedJob } from './processEmbedJob/processEmbedJob.ts';`
+    * `[ ]`   In `createDialecticWorkerDeps`, in the `return createJobContext({...})` argument object, after the `computeJobSig` field, add: `enqueueModelCall: boundEnqueueModelCall,`
+    * `[ ]`   In `handleJob`, in the `defaultProcessors` object literal (~L275), after the `processRenderJob` entry (~L287–289), add:
+      ```typescript
+      processEmbedJob: async (_dbClient, job, _projectOwnerUserId, ctx, token) => {
+        await processEmbedJob(
+          { enqueueModelCall: ctx.enqueueModelCall },
+          { dbClient: adminClient, job, authToken: token },
+        );
+      },
+      ```
+      Note: `adminClient` is already in scope in `handleJob` (it is the first parameter). `_dbClient` is the processor-contract parameter (same value, prefixed with `_` because the closure captures `adminClient` directly, matching the pattern of `processSimpleJob` and `processComplexJob` closures). `_projectOwnerUserId` is unused — the EMBED handler derives attribution from the job payload.
+    * `[ ]`   No other changes.
+
+  * `[ ]`   `directionality`
+    * `[ ]`   Layer: composition root (`dialectic-worker`). All deps are inward (sub-modules, shared interfaces, infrastructure services). No outward deps introduced.
+    * `[ ]`   No cycles. `index.ts` is a terminal composition node; no module in this codebase imports from it.
+
+  * `[ ]`   `requirements` (binary, observable)
+    * `[ ]`   `defaultProcessors` satisfies `IJobProcessors` — `index.ts` compiles without error after WS-R adds `processEmbedJob: ProcessEmbedJobFn` to the interface.
+    * `[ ]`   `createDialecticWorkerDeps(...)` returns an `IJobContext` with `enqueueModelCall` set to a function — `typeof deps.enqueueModelCall === 'function'` is `true`.
+    * `[ ]`   `handleJob` called with a job whose `job_type === 'EMBED'`: `processEmbedJob` is called exactly once; no other processor is called.
+    * `[ ]`   All existing `createDialecticWorkerDeps` tests pass unchanged.
+
+  * `[ ]`   **Commit** `feat(dialectic-worker): WS-R + WS-S — EMBED first-class job type, processEmbedJob wired, enqueueModelCall in context`
+    * `[ ]`   Structural: `processEmbedJob` added to `IJobProcessors`; `enqueueModelCall` added to `IJobContext`; `processEmbedJob/` directory created.
+    * `[ ]`   Behavioral: EMBED jobs now route to the real `processEmbedJob` handler via `defaultProcessors`; `enqueueModelCall` is available to all job-context consumers.
+    * `[ ]`   Contract: `IJobProcessors.processEmbedJob: ProcessEmbedJobFn` (WS-R); `IJobContext.enqueueModelCall: BoundEnqueueModelCallFn` (WS-S).
 
 # To-Do List
 

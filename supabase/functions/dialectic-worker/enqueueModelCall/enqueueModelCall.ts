@@ -1,8 +1,11 @@
 import type { AiModelExtendedConfig } from '../../_shared/types.ts';
 import { isAiModelExtendedConfig } from '../../_shared/utils/type-guards/type_guards.chat.ts';
 import { isModelContributionFileType } from '../../_shared/utils/type-guards/type_guards.file_manager.ts';
+import { isEnqueueModelCallPayload } from './enqueueModelCall.guard.ts';
 import type {
-  AiStreamEventData,
+  AiWorkloadEmbeddingEvent,
+  AiWorkloadEvent,
+  AiWorkloadStreamEvent,
   AiStreamEventBody,
   EnqueueModelCallDeps,
   EnqueueModelCallFn,
@@ -55,10 +58,21 @@ export const enqueueModelCall: EnqueueModelCallFn = async (
   let sig: string;
   try {
     sig = await deps.computeJobSig(params.job.id, params.job.user_id, params.job.created_at);
-  } catch (err: unknown) {
+  } catch (err) {
+    if (!(err instanceof Error)) {
+      throw err;
+    }
     deps.logger.error('enqueueModelCall: computeJobSig threw', { error: err });
     return {
-      error: err instanceof Error ? err : new Error(String(err)),
+      error: err,
+      retriable: false,
+    };
+  }
+
+  if (!isEnqueueModelCallPayload(payload)) {
+    deps.logger.error('enqueueModelCall: invalid payload contract', { payload });
+    return {
+      error: new Error('Invalid payload contract for enqueueModelCall'),
       retriable: false,
     };
   }
@@ -71,19 +85,35 @@ export const enqueueModelCall: EnqueueModelCallFn = async (
   if (dbError) {
     deps.logger.error('enqueueModelCall: DB update failed', { error: dbError });
     return {
-      error: new Error(dbError.message),
+      error: dbError,
       retriable: true,
     };
   }
 
-  const eventData: AiStreamEventData = {
-    job_id: params.job.id,
-    api_identifier: params.providerRow.api_identifier,
-    model_config: extendedConfig,
-    chat_api_request: payload.chatApiRequest,
-    sig,
-    user_config: params.userConfig,
-  };
+  let eventData: AiWorkloadEvent;
+  if (payload.operation === 'stream') {
+    const streamEventData: AiWorkloadStreamEvent = {
+      operation: 'stream',
+      job_id: params.job.id,
+      api_identifier: params.providerRow.api_identifier,
+      model_config: extendedConfig,
+      chat_api_request: payload.chatApiRequest,
+      sig,
+      user_config: params.userConfig,
+    };
+    eventData = streamEventData;
+  } else {
+    const embeddingEventData: AiWorkloadEmbeddingEvent = {
+      operation: 'embedding',
+      job_id: params.job.id,
+      api_identifier: params.providerRow.api_identifier,
+      model_config: extendedConfig,
+      embedding_api_request: payload.embeddingApiRequest,
+      sig,
+      user_config: params.userConfig,
+    };
+    eventData = embeddingEventData;
+  }
 
   const eventBody: AiStreamEventBody = {
     eventName: 'ai-stream-background',
@@ -121,10 +151,13 @@ export const enqueueModelCall: EnqueueModelCallFn = async (
     }
 
     return { queued: true };
-  } catch (err: unknown) {
+  } catch (err) {
+    if (!(err instanceof Error)) {
+      throw err;
+    }
     deps.logger.error('enqueueModelCall: fetch threw network error', { error: err });
     return {
-      error: err instanceof Error ? err : new Error(String(err)),
+      error: err,
       retriable: true,
     };
   }

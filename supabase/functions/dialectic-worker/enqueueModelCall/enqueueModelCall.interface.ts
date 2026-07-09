@@ -9,6 +9,7 @@ import type {
 import type { DialecticJobRow } from '../../dialectic-service/dialectic.interface.ts';
 import type { ComputeJobSig } from "../../_shared/utils/computeJobSig/computeJobSig.interface.ts";
 import type { UserConfig } from '../calculateAffordability/calculateAffordability.interface.ts';
+
 export interface EnqueueModelCallDeps {
   logger: ILogger;
   netlifyQueueUrl: string;
@@ -26,10 +27,30 @@ export interface EnqueueModelCallParams {
   userConfig: UserConfig;
 }
 
-export interface EnqueueModelCallPayload {
-  chatApiRequest: ChatApiRequest;
+export type EnqueueModelCallOperation = 'stream' | 'embedding';
+
+export interface EnqueueModelCallEmbeddingApiRequest {
+  input: string;
+}
+
+export interface EnqueueModelCallPayloadBase {
+  operation: EnqueueModelCallOperation;
   preflightInputTokens: number;
 }
+
+export interface EnqueueModelCallStreamPayload extends EnqueueModelCallPayloadBase {
+  operation: 'stream';
+  chatApiRequest: ChatApiRequest;
+}
+
+export interface EnqueueModelCallEmbeddingPayload extends EnqueueModelCallPayloadBase {
+  operation: 'embedding';
+  embeddingApiRequest: EnqueueModelCallEmbeddingApiRequest;
+}
+
+export type EnqueueModelCallPayload =
+  | EnqueueModelCallStreamPayload
+  | EnqueueModelCallEmbeddingPayload;
 
 export type EnqueueModelCallSuccessReturn = {
   queued: true;
@@ -44,18 +65,29 @@ export type EnqueueModelCallReturn =
   | EnqueueModelCallSuccessReturn
   | EnqueueModelCallErrorReturn;
 
-export interface AiStreamEventData {
+export interface AiWorkloadEventBase {
   job_id: string;
   api_identifier: string;
   model_config: AiModelExtendedConfig;
-  chat_api_request: ChatApiRequest;
   sig: string;
   user_config: UserConfig;
 }
 
+export interface AiWorkloadStreamEvent extends AiWorkloadEventBase {
+  operation: 'stream';
+  chat_api_request: ChatApiRequest;
+}
+
+export interface AiWorkloadEmbeddingEvent extends AiWorkloadEventBase {
+  operation: 'embedding';
+  embedding_api_request: EnqueueModelCallEmbeddingApiRequest;
+}
+
+export type AiWorkloadEvent = AiWorkloadStreamEvent | AiWorkloadEmbeddingEvent;
+
 export interface AiStreamEventBody {
   eventName: 'ai-stream-background';
-  data: AiStreamEventData;
+  data: AiWorkloadEvent;
 }
 
 export type EnqueueModelCallFn = (

@@ -16,12 +16,15 @@ import {
     createMockJobRow,
 } from "../saveResponse/saveResponse.mock.ts";
 import type {
+    AiWorkloadEmbeddingEvent,
+    AiWorkloadStreamEvent,
     EnqueueModelCallDeps,
     EnqueueModelCallParams,
     EnqueueModelCallPayload,
     EnqueueModelCallReturn,
 } from "./enqueueModelCall.interface.ts";
 import { enqueueModelCall } from "./enqueueModelCall.ts";
+import { isAiStreamEventData } from "./enqueueModelCall.guard.ts";
 import { mockComputeJobSig } from "../../_shared/utils/computeJobSig/computeJobSig.mock.ts";
 import type { ComputeJobSig } from "../../_shared/utils/computeJobSig/computeJobSig.interface.ts";
 const integrationProviderRow: Tables<"ai_providers"> = {
@@ -53,7 +56,7 @@ const integrationApiKeyForProvider: ApiKeyForProviderFn = (
 ): string | null => "integration-provider-api-key";
 
 Deno.test(
-    "Integration: enqueueModelCall writes DB status then POSTs to Netlify and returns queued true",
+    "Integration: enqueueModelCall stream variant writes queued DB status and posts stream event payload",
     async () => {
         const mockSetup = createMockSupabaseClient(undefined, {
             genericMockResults: {
@@ -86,6 +89,7 @@ Deno.test(
         };
 
         const payload: EnqueueModelCallPayload = {
+            operation: "stream",
             chatApiRequest: {
                 message: "integration test message",
                 providerId: "00000000-0000-4000-8000-000000000001",
@@ -129,11 +133,121 @@ Deno.test(
             assert(isRecord(parsed));
             assertEquals(parsed.eventName, "ai-stream-background");
             assert(isRecord(parsed.data));
-            assertEquals(parsed.data.job_id, job.id);
-            assertEquals(parsed.data.api_identifier, integrationProviderRow.api_identifier);
-            assertEquals(parsed.data.sig, "mock-sig");
-            assert(isRecord(parsed.data.chat_api_request));
-            assertEquals(parsed.data.chat_api_request.message, payload.chatApiRequest.message);
+            if (!isAiStreamEventData(parsed.data)) {
+                throw new Error("Expected stream integration payload to satisfy AiWorkloadEvent guard");
+            }
+            if (parsed.data.operation !== "stream") {
+                throw new Error("Expected stream integration payload operation to be stream");
+            }
+            const streamData: AiWorkloadStreamEvent = parsed.data;
+            assertEquals(streamData.job_id, job.id);
+            assertEquals(streamData.api_identifier, integrationProviderRow.api_identifier);
+            assertEquals(streamData.sig, "mock-sig");
+            assert(isRecord(streamData.chat_api_request));
+            assertEquals(streamData.chat_api_request.message, payload.chatApiRequest.message);
+            assertEquals("embedding_api_request" in streamData, false);
+
+            const updateSpy = mockSetup.spies.getHistoricQueryBuilderSpies(
+                "dialectic_generation_jobs",
+                "update",
+            );
+            assertExists(updateSpy);
+            assert(updateSpy.callCount >= 1);
+            const updatePayload = updateSpy.callsArgs[0][0];
+            assert(isRecord(updatePayload));
+            assertEquals(updatePayload.status, "queued");
+        } finally {
+            fetchStub.restore();
+        }
+    },
+);
+
+Deno.test(
+    "Integration: enqueueModelCall embedding variant writes queued DB status and posts embedding event payload",
+    async () => {
+        const mockSetup = createMockSupabaseClient(undefined, {
+            genericMockResults: {
+                dialectic_generation_jobs: {
+                    update: { data: [{}], error: null },
+                },
+            },
+        });
+        const dbClient: SupabaseClient<Database> =
+            mockSetup.client as unknown as SupabaseClient<Database>;
+
+        const deps: EnqueueModelCallDeps = {
+            logger: new MockLogger(),
+            computeJobSig: mockComputeJobSig,
+            netlifyQueueUrl:
+                "https://integration.netlify/.netlify/functions/async-workloads-router",
+            netlifyApiKey: "integration-awl-api-key",
+            apiKeyForProvider: integrationApiKeyForProvider,
+        };
+
+        const job = createMockJobRow(createMockDialecticExecuteJobPayload());
+
+        const params: EnqueueModelCallParams = {
+            dbClient,
+            job,
+            providerRow: integrationProviderRow,
+            userAuthToken: "integration-user-jwt",
+            output_type: FileType.HeaderContext,
+            userConfig: { tier_output_cap_tokens: null },
+        };
+
+        const payload: EnqueueModelCallPayload = {
+            operation: "embedding",
+            embeddingApiRequest: {
+                input: "integration embedding payload",
+            },
+            preflightInputTokens: 10,
+        };
+
+        const fetchStub = stub(
+            globalThis,
+            "fetch",
+            (): Promise<Response> => {
+                const updateSpy = mockSetup.spies.getHistoricQueryBuilderSpies(
+                    "dialectic_generation_jobs",
+                    "update",
+                );
+                assertExists(updateSpy);
+                assert(updateSpy.callCount >= 1, "DB update must precede fetch POST");
+                return Promise.resolve(new Response("{}", { status: 200 }));
+            },
+        );
+
+        try {
+            const result: EnqueueModelCallReturn = await enqueueModelCall(
+                deps,
+                params,
+                payload,
+            );
+
+            assert("queued" in result);
+            assertEquals(result.queued, true);
+            assertEquals(fetchStub.calls.length, 1);
+
+            const initArg = fetchStub.calls[0].args[1];
+            assertExists(initArg);
+            assert(typeof initArg.body === "string");
+            const parsed = JSON.parse(initArg.body);
+            assert(isRecord(parsed));
+            assertEquals(parsed.eventName, "ai-stream-background");
+            assert(isRecord(parsed.data));
+            if (!isAiStreamEventData(parsed.data)) {
+                throw new Error("Expected embedding integration payload to satisfy AiWorkloadEvent guard");
+            }
+            if (parsed.data.operation !== "embedding") {
+                throw new Error("Expected embedding integration payload operation to be embedding");
+            }
+            const embeddingData: AiWorkloadEmbeddingEvent = parsed.data;
+            assertEquals(embeddingData.job_id, job.id);
+            assertEquals(embeddingData.api_identifier, integrationProviderRow.api_identifier);
+            assertEquals(embeddingData.sig, "mock-sig");
+            assert(isRecord(embeddingData.embedding_api_request));
+            assertEquals(embeddingData.embedding_api_request.input, payload.embeddingApiRequest.input);
+            assertEquals("chat_api_request" in embeddingData, false);
 
             const updateSpy = mockSetup.spies.getHistoricQueryBuilderSpies(
                 "dialectic_generation_jobs",
@@ -184,6 +298,7 @@ Deno.test(
         };
 
         const payload: EnqueueModelCallPayload = {
+            operation: "stream",
             chatApiRequest: {
                 message: "integration test message",
                 providerId: "00000000-0000-4000-8000-000000000001",
@@ -222,7 +337,7 @@ Deno.test(
 );
 
 Deno.test(
-    "Integration: enqueueModelCall forwards tier_output_cap_tokens onto enqueued AiStreamEventData",
+    "Integration: enqueueModelCall forwards tier_output_cap_tokens onto enqueued AiWorkload stream event",
     async () => {
         const mockSetup = createMockSupabaseClient(undefined, {
             genericMockResults: {
@@ -256,6 +371,7 @@ Deno.test(
         };
 
         const payload: EnqueueModelCallPayload = {
+            operation: "stream",
             chatApiRequest: {
                 message: "integration tier cap message",
                 providerId: "00000000-0000-4000-8000-000000000001",
@@ -287,7 +403,11 @@ Deno.test(
             assert(typeof initArg.body === "string");
             const parsed = JSON.parse(initArg.body);
             assert(isRecord(parsed));
+            assertEquals(parsed.eventName, "ai-stream-background");
             assert(isRecord(parsed.data));
+            assertEquals(parsed.data.operation, "stream");
+            assertEquals(parsed.data.sig, "mock-sig");
+            assertEquals("embedding_api_request" in parsed.data, false);
             assertEquals("user_config" in parsed.data, true);
             assert(isRecord(parsed.data.user_config));
             assertEquals("tier_output_cap_tokens" in parsed.data.user_config, true);

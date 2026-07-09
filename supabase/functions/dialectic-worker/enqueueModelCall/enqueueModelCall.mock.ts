@@ -14,11 +14,15 @@ import {
 } from "../saveResponse/saveResponse.mock.ts";
 import type {
     AiStreamEventBody,
-    AiStreamEventData,
     EnqueueModelCallDeps,
+    AiWorkloadEmbeddingEvent,
+    AiWorkloadEvent,
+    AiWorkloadStreamEvent,
     EnqueueModelCallErrorReturn,
     EnqueueModelCallParams,
     EnqueueModelCallPayload,
+    EnqueueModelCallEmbeddingPayload,
+    EnqueueModelCallStreamPayload,
     EnqueueModelCallSuccessReturn,
 } from "./enqueueModelCall.interface.ts";
 import { mockComputeJobSig } from "../../_shared/utils/computeJobSig/computeJobSig.mock.ts";
@@ -66,9 +70,21 @@ export type EnqueueModelCallParamsOverrides = {
     [K in keyof EnqueueModelCallParams]?: EnqueueModelCallParams[K] | null;
 };
 
-export type EnqueueModelCallPayloadOverrides = {
-    [K in keyof EnqueueModelCallPayload]?: EnqueueModelCallPayload[K] | null;
+export type EnqueueModelCallStreamPayloadOverrides = {
+    [K in keyof EnqueueModelCallStreamPayload]?:
+        | EnqueueModelCallStreamPayload[K]
+        | null;
 };
+
+export type EnqueueModelCallEmbeddingPayloadOverrides = {
+    [K in keyof EnqueueModelCallEmbeddingPayload]?:
+        | EnqueueModelCallEmbeddingPayload[K]
+        | null;
+};
+
+export type EnqueueModelCallPayloadOverrides =
+    | EnqueueModelCallStreamPayloadOverrides
+    | EnqueueModelCallEmbeddingPayloadOverrides;
 
 export type EnqueueModelCallSuccessReturnOverrides = {
     [K in keyof EnqueueModelCallSuccessReturn]?:
@@ -207,7 +223,20 @@ export function createMockEnqueueModelCallParams(
 export function createMockEnqueueModelCallPayload(
     overrides?: EnqueueModelCallPayloadOverrides,
 ): EnqueueModelCallPayload {
-    const base: EnqueueModelCallPayload = {
+    if (overrides?.operation === "embedding") {
+        return createMockEnqueueModelCallEmbeddingPayload(overrides);
+    }
+    if (overrides && "chatApiRequest" in overrides) {
+        return createMockEnqueueModelCallStreamPayload(overrides);
+    }
+    return createMockEnqueueModelCallStreamPayload();
+}
+
+export function createMockEnqueueModelCallStreamPayload(
+    overrides?: EnqueueModelCallStreamPayloadOverrides,
+): EnqueueModelCallStreamPayload {
+    const base: EnqueueModelCallStreamPayload = {
+        operation: "stream",
         chatApiRequest: {
             message: "mock-message",
             providerId: "00000000-0000-4000-8000-000000000001",
@@ -219,6 +248,10 @@ export function createMockEnqueueModelCallPayload(
         return base;
     }
     return {
+        operation:
+            overrides.operation !== undefined && overrides.operation !== null
+                ? overrides.operation
+                : base.operation,
         chatApiRequest:
             overrides.chatApiRequest !== undefined &&
                 overrides.chatApiRequest !== null
@@ -229,6 +262,37 @@ export function createMockEnqueueModelCallPayload(
                 overrides.preflightInputTokens !== null
             ? overrides.preflightInputTokens
             : base.preflightInputTokens,
+    };
+}
+
+export function createMockEnqueueModelCallEmbeddingPayload(
+    overrides?: EnqueueModelCallEmbeddingPayloadOverrides,
+): EnqueueModelCallEmbeddingPayload {
+    const base: EnqueueModelCallEmbeddingPayload = {
+        operation: "embedding",
+        embeddingApiRequest: {
+            input: "mock-embedding-input",
+        },
+        preflightInputTokens: 0,
+    };
+    if (!overrides) {
+        return base;
+    }
+    return {
+        operation:
+            overrides.operation !== undefined && overrides.operation !== null
+                ? overrides.operation
+                : base.operation,
+        embeddingApiRequest:
+            overrides.embeddingApiRequest !== undefined &&
+                overrides.embeddingApiRequest !== null
+                ? overrides.embeddingApiRequest
+                : base.embeddingApiRequest,
+        preflightInputTokens:
+            overrides.preflightInputTokens !== undefined &&
+                overrides.preflightInputTokens !== null
+                ? overrides.preflightInputTokens
+                : base.preflightInputTokens,
     };
 }
 
@@ -267,9 +331,17 @@ export function createMockEnqueueModelCallErrorReturn(
     };
 }
 
-export type AiStreamEventDataOverrides = {
-    [K in keyof AiStreamEventData]?: AiStreamEventData[K] | null;
+export type AiWorkloadStreamEventOverrides = {
+    [K in keyof AiWorkloadStreamEvent]?: AiWorkloadStreamEvent[K] | null;
 };
+
+export type AiWorkloadEmbeddingEventOverrides = {
+    [K in keyof AiWorkloadEmbeddingEvent]?: AiWorkloadEmbeddingEvent[K] | null;
+};
+
+export type AiWorkloadEventOverrides =
+    | AiWorkloadStreamEventOverrides
+    | AiWorkloadEmbeddingEventOverrides;
 
 export type AiStreamEventBodyOverrides = {
     [K in keyof AiStreamEventBody]?: AiStreamEventBody[K] | null;
@@ -291,10 +363,23 @@ const defaultAiStreamEventChatApiRequest: ChatApiRequest = {
     promptId: "__none__",
 };
 
-export function createMockAiStreamEventData(
-    overrides?: AiStreamEventDataOverrides,
-): AiStreamEventData {
-    const base: AiStreamEventData = {
+export function createMockAiWorkloadEventData(
+    overrides?: AiWorkloadEventOverrides,
+): AiWorkloadEvent {
+    if (overrides?.operation === "embedding") {
+        return createMockAiWorkloadEmbeddingEventData(overrides);
+    }
+    if (overrides?.operation === "stream") {
+        return createMockAiWorkloadStreamEventData(overrides);
+    }
+    return createMockAiWorkloadStreamEventData();
+}
+
+export function createMockAiWorkloadStreamEventData(
+    overrides?: AiWorkloadStreamEventOverrides,
+): AiWorkloadStreamEvent {
+    const base: AiWorkloadStreamEvent = {
+        operation: "stream",
         job_id: "mock-job-id",
         api_identifier: "mock-ai-v1",
         model_config: defaultAiStreamEventModelConfig,
@@ -306,6 +391,10 @@ export function createMockAiStreamEventData(
         return base;
     }
     return {
+        operation:
+            overrides.operation !== undefined && overrides.operation !== null
+                ? overrides.operation
+                : base.operation,
         job_id: overrides.job_id !== undefined && overrides.job_id !== null
             ? overrides.job_id
             : base.job_id,
@@ -334,12 +423,62 @@ export function createMockAiStreamEventData(
     };
 }
 
+export function createMockAiWorkloadEmbeddingEventData(
+    overrides?: AiWorkloadEmbeddingEventOverrides,
+): AiWorkloadEmbeddingEvent {
+    const base: AiWorkloadEmbeddingEvent = {
+        operation: "embedding",
+        job_id: "mock-job-id",
+        api_identifier: "mock-ai-v1",
+        model_config: defaultAiStreamEventModelConfig,
+        embedding_api_request: {
+            input: "mock-embedding-input",
+        },
+        sig: "mock-sig",
+        user_config: { tier_output_cap_tokens: null },
+    };
+    if (!overrides) {
+        return base;
+    }
+    return {
+        operation:
+            overrides.operation !== undefined && overrides.operation !== null
+                ? overrides.operation
+                : base.operation,
+        job_id: overrides.job_id !== undefined && overrides.job_id !== null
+            ? overrides.job_id
+            : base.job_id,
+        api_identifier:
+            overrides.api_identifier !== undefined &&
+                overrides.api_identifier !== null
+                ? overrides.api_identifier
+                : base.api_identifier,
+        model_config:
+            overrides.model_config !== undefined &&
+                overrides.model_config !== null
+                ? overrides.model_config
+                : base.model_config,
+        embedding_api_request:
+            overrides.embedding_api_request !== undefined &&
+                overrides.embedding_api_request !== null
+                ? overrides.embedding_api_request
+                : base.embedding_api_request,
+        sig: overrides.sig !== undefined && overrides.sig !== null
+            ? overrides.sig
+            : base.sig,
+        user_config:
+            overrides.user_config !== undefined && overrides.user_config !== null
+                ? overrides.user_config
+                : base.user_config,
+    };
+}
+
 export function createMockAiStreamEventBody(
     overrides?: AiStreamEventBodyOverrides,
 ): AiStreamEventBody {
     const base: AiStreamEventBody = {
         eventName: "ai-stream-background",
-        data: createMockAiStreamEventData(),
+        data: createMockAiWorkloadEventData(),
     };
     if (!overrides) {
         return base;

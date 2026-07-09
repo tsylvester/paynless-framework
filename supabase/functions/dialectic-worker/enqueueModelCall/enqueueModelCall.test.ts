@@ -17,12 +17,14 @@ import type {
 import { enqueueModelCall } from "./enqueueModelCall.ts";
 import {
     createMockEnqueueModelCallDeps,
+    createMockEnqueueModelCallEmbeddingPayload,
     createMockEnqueueModelCallParams,
     createMockEnqueueModelCallPayload,
+    createMockEnqueueModelCallStreamPayload,
 } from "./enqueueModelCall.mock.ts";
 import { mockComputeJobSig, mockComputeJobSigThrows } from "../../_shared/utils/computeJobSig/computeJobSig.mock.ts";
 Deno.test(
-    "enqueueModelCall posts to netlify with chat_api_request and api_identifier from params and payload",
+    "enqueueModelCall stream payload path posts AiWorkload stream event variant and remains queued-success compatible",
     async () => {
         const payloadMarker: string = "unique-payload-marker-enqueue";
         const mockSetup = createMockSupabaseClient(undefined, {
@@ -44,7 +46,8 @@ Deno.test(
             },
             userConfig: { tier_output_cap_tokens: null },
         }, { mockSetup });
-        const payload = createMockEnqueueModelCallPayload({
+        const payload = createMockEnqueueModelCallStreamPayload({
+            operation: "stream",
             chatApiRequest: {
                 message: payloadMarker,
                 providerId: "00000000-0000-4000-8000-000000000001",
@@ -72,12 +75,120 @@ Deno.test(
             assertEquals(parsed.eventName, "ai-stream-background");
             assert(isRecord(parsed.data));
             const data = parsed.data;
+            assertEquals(data.operation, "stream");
             assert(isRecord(data.chat_api_request));
             assertEquals(data.chat_api_request.message, payloadMarker);
+            assertEquals("embedding_api_request" in data, false);
             assertEquals(data.api_identifier, "expected-api-id-enqueue");
             assertEquals("user_config" in data, true);
             assert(isRecord(data.user_config));
             assertEquals(data.user_config.tier_output_cap_tokens, null);
+        } finally {
+            fetchStub.restore();
+        }
+    },
+);
+
+Deno.test(
+    "enqueueModelCall embedding payload path posts AiWorkload embedding event variant and remains queued-success compatible",
+    async () => {
+        const embeddingInput: string = "embed-this-unit-test-value";
+        const mockSetup = createMockSupabaseClient(undefined, {
+            genericMockResults: {
+                dialectic_generation_jobs: {
+                    update: { data: [{}], error: null },
+                },
+            },
+        });
+        const baseParams = createMockEnqueueModelCallParams({
+            userConfig: { tier_output_cap_tokens: null },
+        }, {
+            mockSetup,
+        });
+        const params = createMockEnqueueModelCallParams({
+            providerRow: {
+                ...baseParams.providerRow,
+                api_identifier: "expected-embedding-api-id-enqueue",
+            },
+            userConfig: { tier_output_cap_tokens: null },
+        }, { mockSetup });
+        const payload = createMockEnqueueModelCallEmbeddingPayload({
+            operation: "embedding",
+            embeddingApiRequest: {
+                input: embeddingInput,
+            },
+        });
+        const deps = createMockEnqueueModelCallDeps();
+        const fetchStub = stub(
+            globalThis,
+            "fetch",
+            (): Promise<Response> =>
+                Promise.resolve(new Response("{}", { status: 200 })),
+        );
+        try {
+            const result: EnqueueModelCallReturn = await enqueueModelCall(
+                deps,
+                params,
+                payload,
+            );
+            assert("queued" in result);
+            assertEquals(result.queued, true);
+            assertEquals(fetchStub.calls.length, 1);
+            const callUrl: string = String(fetchStub.calls[0].args[0]);
+            assertEquals(callUrl, deps.netlifyQueueUrl);
+            const initArg = fetchStub.calls[0].args[1];
+            assert(initArg !== undefined);
+            const bodyRaw = initArg.body;
+            assert(typeof bodyRaw === "string");
+            const parsed = JSON.parse(bodyRaw);
+            assert(isRecord(parsed));
+            assertEquals(parsed.eventName, "ai-stream-background");
+            assert(isRecord(parsed.data));
+            const data = parsed.data;
+            assertEquals(data.operation, "embedding");
+            assert(isRecord(data.embedding_api_request));
+            assertEquals(data.embedding_api_request.input, embeddingInput);
+            assertEquals("chat_api_request" in data, false);
+            assertEquals(data.api_identifier, "expected-embedding-api-id-enqueue");
+            assertEquals("user_config" in data, true);
+            assert(isRecord(data.user_config));
+            assertEquals(data.user_config.tier_output_cap_tokens, null);
+        } finally {
+            fetchStub.restore();
+        }
+    },
+);
+
+Deno.test(
+    "enqueueModelCall invalid operation payload is rejected before DB update and fetch",
+    async () => {
+        const mockSetup = createMockSupabaseClient(undefined, {
+            genericMockResults: {
+                dialectic_generation_jobs: {
+                    update: { data: [{}], error: null },
+                },
+            },
+        });
+        const invalidPayload = JSON.parse(
+            '{"operation":"invalid-operation","chatApiRequest":{"message":"m","providerId":"00000000-0000-4000-8000-000000000001","promptId":"__none__"},"preflightInputTokens":1}',
+        );
+        const fetchStub = stub(globalThis, "fetch");
+        try {
+            const result: EnqueueModelCallReturn = await enqueueModelCall(
+                createMockEnqueueModelCallDeps(),
+                createMockEnqueueModelCallParams({
+                    userConfig: { tier_output_cap_tokens: null },
+                }, { mockSetup }),
+                invalidPayload,
+            );
+            assert("error" in result);
+            assertEquals(result.retriable, false);
+            assertEquals(fetchStub.calls.length, 0);
+            const updateSpy = mockSetup.spies.getHistoricQueryBuilderSpies(
+                "dialectic_generation_jobs",
+                "update",
+            );
+            assertEquals(updateSpy?.callCount ?? 0, 0);
         } finally {
             fetchStub.restore();
         }
@@ -307,7 +418,7 @@ Deno.test(
 );
 
 Deno.test(
-    "enqueueModelCall fetch sends Authorization, Content-Type, and AiStreamEvent fields",
+    "enqueueModelCall fetch sends Authorization, Content-Type, and AiWorkload event fields",
     async () => {
         const mockSetup = createMockSupabaseClient(undefined, {
             genericMockResults: {
@@ -473,7 +584,7 @@ Deno.test(
 );
 
 Deno.test(
-    "enqueueModelCall serializes AiStreamEvent under Netlify size limit for large-but-valid chatApiRequest",
+    "enqueueModelCall serializes AiWorkload event under Netlify size limit for large-but-valid chatApiRequest",
     async () => {
         const mockSetup = createMockSupabaseClient(undefined, {
             genericMockResults: {

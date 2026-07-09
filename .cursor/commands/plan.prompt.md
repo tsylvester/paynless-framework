@@ -25,7 +25,7 @@ Prohibitions:
 - You do NOT insert node elements that say "no change required", no-op inclusions are noisy waste.
 - When creating NEW packages, we rigidly adhere to the entire example node structure, we do NOT omit node elements. This guarantees new work is aligned to current standards. 
 - When editing EXISTING files or packages, we do not attempt to align the existing namespaces to the complete example node unless the user explicitly directs such alignment. This minimizes rework of otherwise-working components that would have to be modified to realign to the current standard and is beyond the scope of fixes for existing files and pacakges. 
-- Every line of every element of every section of every node must completely represent the ./cursor/rules/rules.md rules file. Any proposed line that violates a rule is automatically invalid. 
+- Every line of every element of every section of every node must completely represent the repo's instructions, rules, requirements, and standards. Any proposed line that violates any repo obligation is automatically invalid. 
 
 You will do the work EXACTLY as described, COMPLETELY, COMPREHENSIVELY, and make certain that the NEXT NODE IN THE SEQUENCE is correct. Then you HALT and WAIT to be told to do the NEXT NODE until the work is done. When transforming a scope or spec into a node, we must carefully check that the entire scope and entire spec is included in the nodes.    
 

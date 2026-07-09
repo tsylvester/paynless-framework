@@ -1,13 +1,19 @@
 export type {
   AiStreamEventBody,
-  AiStreamEventData,
+  AiWorkloadEmbeddingEvent,
+  AiWorkloadEvent,
+  AiWorkloadStreamEvent,
   BoundEnqueueModelCallFn,
   EnqueueModelCallDeps,
+  EnqueueModelCallEmbeddingPayload,
   EnqueueModelCallErrorReturn,
   EnqueueModelCallFn,
+  EnqueueModelCallOperation,
   EnqueueModelCallParams,
+  EnqueueModelCallPayloadBase,
   EnqueueModelCallPayload,
   EnqueueModelCallReturn,
+  EnqueueModelCallStreamPayload,
   EnqueueModelCallSuccessReturn,
 } from "./enqueueModelCall.interface.ts";
 
@@ -25,21 +31,29 @@ export { enqueueModelCall } from "./enqueueModelCall.ts";
 
 export type {
   AiStreamEventBodyOverrides,
-  AiStreamEventDataOverrides,
+  AiWorkloadEmbeddingEventOverrides,
+  AiWorkloadEventOverrides,
+  AiWorkloadStreamEventOverrides,
   CreateMockEnqueueModelCallParamsOptions,
   EnqueueModelCallDepsOverrides,
+  EnqueueModelCallEmbeddingPayloadOverrides,
   EnqueueModelCallErrorReturnOverrides,
   EnqueueModelCallParamsOverrides,
   EnqueueModelCallPayloadOverrides,
+  EnqueueModelCallStreamPayloadOverrides,
   EnqueueModelCallSuccessReturnOverrides,
 } from "./enqueueModelCall.mock.ts";
 
 export {
   createMockAiStreamEventBody,
-  createMockAiStreamEventData,
+  createMockAiWorkloadEmbeddingEventData,
+  createMockAiWorkloadEventData,
+  createMockAiWorkloadStreamEventData,
   createMockEnqueueModelCallDeps,
+  createMockEnqueueModelCallEmbeddingPayload,
   createMockEnqueueModelCallErrorReturn,
   createMockEnqueueModelCallParams,
   createMockEnqueueModelCallPayload,
+  createMockEnqueueModelCallStreamPayload,
   createMockEnqueueModelCallSuccessReturn,
 } from "./enqueueModelCall.mock.ts";

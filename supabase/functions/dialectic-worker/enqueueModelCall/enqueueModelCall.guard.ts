@@ -1,7 +1,7 @@
 import { isRecord } from "../../_shared/utils/type-guards/type_guards.common.ts";
 import type {
   AiStreamEventBody,
-  AiStreamEventData,
+  AiWorkloadEvent,
   EnqueueModelCallDeps,
   EnqueueModelCallErrorReturn,
   EnqueueModelCallParams,
@@ -93,7 +93,7 @@ export function isEnqueueModelCallPayload(
   if (!isRecord(v)) {
     return false;
   }
-  if (!("chatApiRequest" in v) || !isRecord(v.chatApiRequest)) {
+  if (!("operation" in v) || typeof v.operation !== "string") {
     return false;
   }
   if (
@@ -102,7 +102,28 @@ export function isEnqueueModelCallPayload(
   ) {
     return false;
   }
-  return true;
+
+  if (v.operation === "stream") {
+    if (!("chatApiRequest" in v) || !isRecord(v.chatApiRequest)) {
+      return false;
+    }
+    if ("embeddingApiRequest" in v) {
+      return false;
+    }
+    return true;
+  }
+
+  if (v.operation === "embedding") {
+    if (!("embeddingApiRequest" in v) || !isRecord(v.embeddingApiRequest)) {
+      return false;
+    }
+    if ("chatApiRequest" in v) {
+      return false;
+    }
+    return true;
+  }
+
+  return false;
 }
 
 export function isEnqueueModelCallSuccessReturn(
@@ -135,8 +156,11 @@ export function isEnqueueModelCallErrorReturn(
   return true;
 }
 
-export function isAiStreamEventData(v: unknown): v is AiStreamEventData {
+export function isAiStreamEventData(v: unknown): v is AiWorkloadEvent {
   if (!isRecord(v)) {
+    return false;
+  }
+  if (!("operation" in v) || typeof v.operation !== "string") {
     return false;
   }
   if (!("job_id" in v) || typeof v.job_id !== "string") {
@@ -146,9 +170,6 @@ export function isAiStreamEventData(v: unknown): v is AiStreamEventData {
     return false;
   }
   if (!("model_config" in v) || !isRecord(v.model_config)) {
-    return false;
-  }
-  if (!("chat_api_request" in v) || !isRecord(v.chat_api_request)) {
     return false;
   }
   if (!("sig" in v) || typeof v.sig !== "string") {
@@ -163,17 +184,41 @@ export function isAiStreamEventData(v: unknown): v is AiStreamEventData {
   ) {
     return false;
   }
-  return true;
+
+  if (v.operation === "stream") {
+    if (!("chat_api_request" in v) || !isRecord(v.chat_api_request)) {
+      return false;
+    }
+    if ("embedding_api_request" in v) {
+      return false;
+    }
+    return true;
+  }
+
+  if (v.operation === "embedding") {
+    if (!("embedding_api_request" in v) || !isRecord(v.embedding_api_request)) {
+      return false;
+    }
+    if ("chat_api_request" in v) {
+      return false;
+    }
+    return true;
+  }
+
+  return false;
 }
 
 export function isAiStreamEventBody(v: unknown): v is AiStreamEventBody {
   if (!isRecord(v)) {
     return false;
   }
-  if (!("eventName" in v) || v.eventName !== "ai-stream") {
+  if (!("eventName" in v) || v.eventName !== "ai-stream-background") {
     return false;
   }
   if (!("data" in v) || !isRecord(v.data)) {
+    return false;
+  }
+  if (!isAiStreamEventData(v.data)) {
     return false;
   }
   return true;

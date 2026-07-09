@@ -1,5 +1,12 @@
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import type { EnqueueModelCallDeps } from "./enqueueModelCall.interface.ts";
+import type {
+    AiWorkloadEmbeddingEvent,
+    AiWorkloadEvent,
+    AiWorkloadStreamEvent,
+    EnqueueModelCallDeps,
+    EnqueueModelCallEmbeddingPayload,
+    EnqueueModelCallStreamPayload,
+} from "./enqueueModelCall.interface.ts";
 import {
     createMockEnqueueModelCallDeps,
     createMockEnqueueModelCallErrorReturn,
@@ -197,11 +204,60 @@ Deno.test(
 );
 
 Deno.test(
-    "Type Guard: isEnqueueModelCallPayload returns true for full mock payload",
+    "Type Guard: isEnqueueModelCallPayload accepts valid stream payload variant",
     () => {
         assertEquals(
             isEnqueueModelCallPayload(createMockEnqueueModelCallPayload()),
             true,
+        );
+    },
+);
+
+Deno.test(
+    "Type Guard: isEnqueueModelCallPayload accepts valid embedding payload variant",
+    () => {
+        const payload: EnqueueModelCallEmbeddingPayload = {
+            operation: "embedding",
+            embeddingApiRequest: {
+                input: "embed this",
+            },
+            preflightInputTokens: 42,
+        };
+        assertEquals(isEnqueueModelCallPayload(payload), true);
+    },
+);
+
+Deno.test(
+    "Type Guard: isEnqueueModelCallPayload rejects mixed stream and embedding fields in a single variant",
+    () => {
+        assertEquals(
+            isEnqueueModelCallPayload({
+                operation: "stream",
+                chatApiRequest: {
+                    message: "m",
+                    providerId: "p",
+                    promptId: "q",
+                },
+                embeddingApiRequest: {
+                    input: "embed this",
+                },
+                preflightInputTokens: 1,
+            }),
+            false,
+        );
+    },
+);
+
+Deno.test(
+    "Type Guard: isEnqueueModelCallPayload rejects unknown operation discriminator",
+    () => {
+        assertEquals(
+            isEnqueueModelCallPayload({
+                operation: "unknown",
+                chatApiRequest: { message: "m", providerId: "p", promptId: "q" },
+                preflightInputTokens: 1,
+            }),
+            false,
         );
     },
 );
@@ -222,10 +278,14 @@ Deno.test(
 Deno.test(
     "Type Guard: isEnqueueModelCallPayload returns false when preflightInputTokens is missing",
     () => {
-        const full = createMockEnqueueModelCallPayload();
         assertEquals(
             isEnqueueModelCallPayload({
-                chatApiRequest: full.chatApiRequest,
+                operation: "stream",
+                chatApiRequest: {
+                    message: "m",
+                    providerId: "p",
+                    promptId: "q",
+                },
             }),
             false,
         );
@@ -327,95 +387,99 @@ Deno.test(
 );
 
 Deno.test(
-    "Type Guard: isAiStreamEventData returns true for valid object with sig field",
+    "Type Guard: isAiStreamEventData accepts valid stream event variant",
+    () => {
+        const streamEvent: AiWorkloadStreamEvent = {
+            operation: "stream",
+            job_id: "job-1",
+            api_identifier: "api-id",
+            model_config: {
+                api_identifier: "api-id",
+                tokenization_strategy: { type: "rough_char_count" },
+                context_window_tokens: 10000,
+                input_token_cost_rate: 0.001,
+                output_token_cost_rate: 0.002,
+                provider_max_input_tokens: 100,
+                provider_max_output_tokens: 50,
+            },
+            chat_api_request: { message: "m", providerId: "p", promptId: "q" },
+            sig: "mock-sig",
+            user_config: { tier_output_cap_tokens: null },
+        };
+        assertEquals(isAiStreamEventData(streamEvent), true);
+    },
+);
+
+Deno.test(
+    "Type Guard: isAiStreamEventData accepts valid embedding event variant",
+    () => {
+        const embeddingEvent: AiWorkloadEmbeddingEvent = {
+            operation: "embedding",
+            job_id: "job-1",
+            api_identifier: "api-id",
+            model_config: {
+                api_identifier: "api-id",
+                tokenization_strategy: { type: "rough_char_count" },
+                context_window_tokens: 10000,
+                input_token_cost_rate: 0.001,
+                output_token_cost_rate: 0.002,
+                provider_max_input_tokens: 100,
+                provider_max_output_tokens: 50,
+            },
+            embedding_api_request: { input: "embed this" },
+            sig: "mock-sig",
+            user_config: { tier_output_cap_tokens: null },
+        };
+        assertEquals(isAiStreamEventData(embeddingEvent), true);
+    },
+);
+
+Deno.test(
+    "Type Guard: isAiStreamEventData rejects mixed stream and embedding fields in a single variant",
     () => {
         assertEquals(
             isAiStreamEventData({
+                operation: "stream",
                 job_id: "job-1",
                 api_identifier: "api-id",
-                model_config: { api_identifier: "api-id" },
+                model_config: {
+                    api_identifier: "api-id",
+                    tokenization_strategy: { type: "rough_char_count" },
+                    context_window_tokens: 10000,
+                    input_token_cost_rate: 0.001,
+                    output_token_cost_rate: 0.002,
+                    provider_max_input_tokens: 100,
+                    provider_max_output_tokens: 50,
+                },
                 chat_api_request: { message: "m", providerId: "p", promptId: "q" },
+                embedding_api_request: { input: "embed this" },
                 sig: "mock-sig",
                 user_config: { tier_output_cap_tokens: null },
             }),
-            true,
-        );
-    },
-);
-
-Deno.test(
-    "Type Guard: isAiStreamEventData returns false when job_id is missing",
-    () => {
-        assertEquals(
-            isAiStreamEventData({
-                api_identifier: "api-id",
-                model_config: { api_identifier: "api-id" },
-                chat_api_request: { message: "m", providerId: "p", promptId: "q" },
-                user_jwt: "jwt-token",
-                user_config: { tier_output_cap_tokens: null },
-            }),
             false,
         );
     },
 );
 
 Deno.test(
-    "Type Guard: isAiStreamEventData returns false when api_identifier is missing",
+    "Type Guard: isAiStreamEventData rejects unknown operation discriminator",
     () => {
         assertEquals(
             isAiStreamEventData({
-                job_id: "job-1",
-                model_config: { api_identifier: "api-id" },
-                chat_api_request: { message: "m", providerId: "p", promptId: "q" },
-                user_jwt: "jwt-token",
-                user_config: { tier_output_cap_tokens: null },
-            }),
-            false,
-        );
-    },
-);
-
-Deno.test(
-    "Type Guard: isAiStreamEventData returns false when model_config is missing",
-    () => {
-        assertEquals(
-            isAiStreamEventData({
+                operation: "unknown",
                 job_id: "job-1",
                 api_identifier: "api-id",
+                model_config: {
+                    api_identifier: "api-id",
+                    tokenization_strategy: { type: "rough_char_count" },
+                    context_window_tokens: 10000,
+                    input_token_cost_rate: 0.001,
+                    output_token_cost_rate: 0.002,
+                    provider_max_input_tokens: 100,
+                    provider_max_output_tokens: 50,
+                },
                 chat_api_request: { message: "m", providerId: "p", promptId: "q" },
-                user_jwt: "jwt-token",
-                user_config: { tier_output_cap_tokens: null },
-            }),
-            false,
-        );
-    },
-);
-
-Deno.test(
-    "Type Guard: isAiStreamEventData returns false when chat_api_request is missing",
-    () => {
-        assertEquals(
-            isAiStreamEventData({
-                job_id: "job-1",
-                api_identifier: "api-id",
-                model_config: { api_identifier: "api-id" },
-                user_jwt: "jwt-token",
-                user_config: { tier_output_cap_tokens: null },
-            }),
-            false,
-        );
-    },
-);
-
-Deno.test(
-    "Type Guard: isAiStreamEventData returns false when sig is missing",
-    () => {
-        assertEquals(
-            isAiStreamEventData({
-                job_id: "job-1",
-                api_identifier: "api-id",
-                model_config: { api_identifier: "api-id" },
-                chat_api_request: { message: "m", providerId: "p", promptId: "q" },
+                sig: "mock-sig",
                 user_config: { tier_output_cap_tokens: null },
             }),
             false,
@@ -432,19 +496,29 @@ Deno.test(
 );
 
 Deno.test(
-    "Type Guard: isAiStreamEventBody returns true for valid object with eventName and data",
+    "Type Guard: isAiStreamEventBody accepts eventName ai-stream-background",
     () => {
+        const streamEvent: AiWorkloadStreamEvent = {
+            operation: "stream",
+            job_id: "job-1",
+            api_identifier: "api-id",
+            model_config: {
+                api_identifier: "api-id",
+                tokenization_strategy: { type: "rough_char_count" },
+                context_window_tokens: 10000,
+                input_token_cost_rate: 0.001,
+                output_token_cost_rate: 0.002,
+                provider_max_input_tokens: 100,
+                provider_max_output_tokens: 50,
+            },
+            chat_api_request: { message: "m", providerId: "p", promptId: "q" },
+            sig: "mock-sig",
+            user_config: { tier_output_cap_tokens: null },
+        };
         assertEquals(
             isAiStreamEventBody({
-                eventName: "ai-stream",
-                data: {
-                    job_id: "job-1",
-                    api_identifier: "api-id",
-                    model_config: { api_identifier: "api-id" },
-                    chat_api_request: { message: "m", providerId: "p", promptId: "q" },
-                    user_jwt: "jwt-token",
-                    tier_output_cap_tokens: null,
-                },
+                eventName: "ai-stream-background",
+                data: streamEvent,
             }),
             true,
         );
@@ -471,19 +545,29 @@ Deno.test(
 );
 
 Deno.test(
-    "Type Guard: isAiStreamEventBody returns false when eventName is not ai-stream",
+    "Type Guard: isAiStreamEventBody rejects stale eventName literals",
     () => {
+        const streamEvent: AiWorkloadStreamEvent = {
+            operation: "stream",
+            job_id: "job-1",
+            api_identifier: "api-id",
+            model_config: {
+                api_identifier: "api-id",
+                tokenization_strategy: { type: "rough_char_count" },
+                context_window_tokens: 10000,
+                input_token_cost_rate: 0.001,
+                output_token_cost_rate: 0.002,
+                provider_max_input_tokens: 100,
+                provider_max_output_tokens: 50,
+            },
+            chat_api_request: { message: "m", providerId: "p", promptId: "q" },
+            sig: "mock-sig",
+            user_config: { tier_output_cap_tokens: null },
+        };
         assertEquals(
             isAiStreamEventBody({
-                eventName: "other-event",
-                data: {
-                    job_id: "job-1",
-                    api_identifier: "api-id",
-                    model_config: { api_identifier: "api-id" },
-                    chat_api_request: { message: "m", providerId: "p", promptId: "q" },
-                    user_jwt: "jwt-token",
-                    tier_output_cap_tokens: null,
-                },
+                eventName: "ai-stream",
+                data: streamEvent,
             }),
             false,
         );
@@ -495,7 +579,7 @@ Deno.test(
     () => {
         assertEquals(
             isAiStreamEventBody({
-                eventName: "ai-stream",
+                eventName: "ai-stream-background",
             }),
             false,
         );
@@ -544,66 +628,73 @@ Deno.test(
 );
 
 Deno.test(
-    "Type Guard: isAiStreamEventData returns false when user_jwt is present instead of sig",
-    () => {
-        assertEquals(
-            isAiStreamEventData({
-                job_id: "job-1",
-                api_identifier: "api-id",
-                model_config: { api_identifier: "api-id" },
-                chat_api_request: { message: "m", providerId: "p", promptId: "q" },
-                user_jwt: "jwt-token",
-                tier_output_cap_tokens: null,
-            }),
-            false,
-        );
-    },
-);
-
-Deno.test(
     "Type Guard: isAiStreamEventData returns true when tier_output_cap_tokens is null",
     () => {
-        assertEquals(
-            isAiStreamEventData({
-                job_id: "job-1",
+        const streamEvent: AiWorkloadStreamEvent = {
+            operation: "stream",
+            job_id: "job-1",
+            api_identifier: "api-id",
+            model_config: {
                 api_identifier: "api-id",
-                model_config: { api_identifier: "api-id" },
-                chat_api_request: { message: "m", providerId: "p", promptId: "q" },
-                sig: "mock-sig",
-                user_config: { tier_output_cap_tokens: null },
-            }),
-            true,
-        );
+                tokenization_strategy: { type: "rough_char_count" },
+                context_window_tokens: 10000,
+                input_token_cost_rate: 0.001,
+                output_token_cost_rate: 0.002,
+                provider_max_input_tokens: 100,
+                provider_max_output_tokens: 50,
+            },
+            chat_api_request: { message: "m", providerId: "p", promptId: "q" },
+            sig: "mock-sig",
+            user_config: { tier_output_cap_tokens: null },
+        };
+        assertEquals(isAiStreamEventData(streamEvent), true);
     },
 );
 
 Deno.test(
     "Type Guard: isAiStreamEventData returns true when tier_output_cap_tokens is 32768",
     () => {
-        assertEquals(
-            isAiStreamEventData({
-                job_id: "job-1",
+        const streamEvent: AiWorkloadStreamEvent = {
+            operation: "stream",
+            job_id: "job-1",
+            api_identifier: "api-id",
+            model_config: {
                 api_identifier: "api-id",
-                model_config: { api_identifier: "api-id" },
-                chat_api_request: { message: "m", providerId: "p", promptId: "q" },
-                sig: "mock-sig",
-                user_config: { tier_output_cap_tokens: 32768 },
-            }),
-            true,
-        );
+                tokenization_strategy: { type: "rough_char_count" },
+                context_window_tokens: 10000,
+                input_token_cost_rate: 0.001,
+                output_token_cost_rate: 0.002,
+                provider_max_input_tokens: 100,
+                provider_max_output_tokens: 50,
+            },
+            chat_api_request: { message: "m", providerId: "p", promptId: "q" },
+            sig: "mock-sig",
+            user_config: { tier_output_cap_tokens: 32768 },
+        };
+        assertEquals(isAiStreamEventData(streamEvent), true);
     },
 );
 
 Deno.test(
-    "Type Guard: isAiStreamEventData returns false when tier_output_cap_tokens is missing",
+    "Type Guard: isAiStreamEventData returns false when user_config.tier_output_cap_tokens is missing",
     () => {
         assertEquals(
             isAiStreamEventData({
+                operation: "stream",
                 job_id: "job-1",
                 api_identifier: "api-id",
-                model_config: { api_identifier: "api-id" },
+                model_config: {
+                    api_identifier: "api-id",
+                    tokenization_strategy: { type: "rough_char_count" },
+                    context_window_tokens: 10000,
+                    input_token_cost_rate: 0.001,
+                    output_token_cost_rate: 0.002,
+                    provider_max_input_tokens: 100,
+                    provider_max_output_tokens: 50,
+                },
                 chat_api_request: { message: "m", providerId: "p", promptId: "q" },
                 sig: "mock-sig",
+                user_config: {},
             }),
             false,
         );
