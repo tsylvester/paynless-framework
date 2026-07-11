@@ -19,14 +19,30 @@
 ## Component Organization Architecture
 
 ### Standard Component Structure
+- All components are built as independent modules that only rely on explicit named imports. 
+- All dependencies of a function are explicit injected dependencies. 
+- Type guards are not dependencies. 
+- This tree defines the dependency ordered build, if you build in this order you will always have access to all dependencies at all points during construction so all tests can always run. 
+- All functions are defined as `Function(FunctionDeps, FunctionParams, FunctionPayload): FunctionFn => FunctionReturn = FunctionSuccessReturn | FunctionErrorReturn`.
+- All deps are in a `FunctionDeps` so it is always testable.
+- All params are supplied in `FunctionParams` so the function is fully controlled in tests. 
+- All payload elements are in `FunctionPayload` so it can be tested against any supplied payload.
+- All functions are defined as `FunctionFn` so that its signature is explicit. 
+- All `FunctionReturns` are members of the `FunctionSuccessReturn | FunctionErrorReturn` so that all return products are explicit, named, and testable. 
+- All mocks are built using typed factories with overrides that support undefined and null so that all tests can be fully typed yet accommodate optional fields and intentional forced-error conditions to prove function meets contract in all conditions. 
 ```
 component/
-├── interface.ts          # ALL types + contracts for this component
-├── adapter.ts           # Concrete implementation using interface types
-├── mocks.ts             # Official mocks/stubs/test doubles for this component
-├── component.test.ts    # Tests using local mocks and test utilities
-├── tasks.md            # All maintenance, improvement, development, testing, etc. tasks to be completed 
-└── README.md           # Documentation including type contracts and mock usage
+├── interfaceTest.ts     # ALL contract proofs for this component
+├── interface.ts         # ALL types + contracts for this component
+├── mocks.ts             # ALL mocks, stubs, test doubles, and object factories for this component
+├── guardTest.ts         # ALL guard proofs for this component
+├── guard.ts             # ALL guards for this component
+├── unit.test.ts         # ALL unit tests for this component
+├── component.ts         # Main component implementation
+├── integration.test.ts  # ALL integration tests for this component
+├── provides.ts          # ALL exports from this module
+├── tasks.md             # All maintenance, improvement, development, testing, etc. tasks to be completed 
+└── README.md            # Documentation including type contracts and mock usage
 ```
 
 ### Type System Architecture

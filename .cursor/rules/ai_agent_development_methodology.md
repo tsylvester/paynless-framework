@@ -30,52 +30,11 @@ Create a detailed, step-by-step implementation plan that:
 - **Defines validation points**: How to verify each step is complete and working
 - **Specifies commit boundaries**: Where to commit working increments
 
-## Development Cycle Methodology
-
-### Phase 1: Build Test Shell
-**Objective**: Create the testing infrastructure before any implementation
-- [ ] Create test files for all components in the feature scope
-- [ ] Set up test runners and validation scripts
-- [ ] Verify test infrastructure works (tests can run, even if empty)
-- [ ] Commit: "feat: add test shell for [feature-name]"
-
-### Phase 2: Build Red Tests (TDD Foundation)
-**Objective**: Define feature contracts through failing tests
-- [ ] Write comprehensive unit tests that define expected behavior
-- [ ] Write integration tests for component interactions
-- [ ] Write end-to-end tests for complete user workflows
-- [ ] Verify all tests fail as expected (red state)
-- [ ] Commit: "test: add failing tests for [feature-name] contracts"
-
-### Phase 3: Build Minimal Functions (Green Implementation)
-**Objective**: Implement just enough code to make tests pass
-- [ ] Implement minimal viable code to satisfy test contracts
-- [ ] Focus on making tests pass, not on optimization or features beyond scope
-- [ ] Maintain strict adherence to defined interfaces and types
-- [ ] Verify all tests now pass (green state)
-- [ ] Commit: "feat: implement [feature-name] core functionality"
-
-### Phase 4: Prove Green Tests (Validation)
-**Objective**: Comprehensive validation of feature completion
-- [ ] Run complete test suite (unit + integration + e2e)
-- [ ] Verify application builds successfully
-- [ ] Test feature functionality manually in development environment
-- [ ] Validate no regressions in existing functionality
-- [ ] Commit: "test: validate [feature-name] complete implementation"
-
-### Phase 5: Iterate to Next Set
-**Objective**: Prepare for next development cycle
-- [ ] Update workplan with lessons learned
-- [ ] Identify next feature or component in dependency order
-- [ ] Clean up any temporary code or comments
-- [ ] Update documentation if interfaces changed
-- [ ] Commit: "docs: update for [feature-name] completion"
-
 ## Environment & Workspace Management
 
 ### Monorepo Workflow Standards
 - **Workspace Dependencies**: Manage inter-component dependencies within monorepo structure
-- **Build Orchestration**: Use tools like Nx, Lerna, or Rush for coordinated builds
+- **Build Orchestration**: Prefer pnpm unless otherwise specified
 - **Shared Tooling**: Consistent linting, testing, and build configurations across workspace
 - **Selective Builds**: Only build affected components based on change detection
 - **Version Coordination**: Synchronized versioning across related components
@@ -90,7 +49,7 @@ Create a detailed, step-by-step implementation plan that:
 ## Multi-Feature Development
 
 ### Feature Set Completion
-- Complete ALL features in the defined scope before pushing to remote
+- Complete ALL features in the defined scope before pushing to origin
 - Each feature follows the full 5-phase cycle
 - Validate the entire feature set works together
 - Run full regression testing on the complete feature set
@@ -138,7 +97,7 @@ Create a detailed, step-by-step implementation plan that:
 - [ ] No type errors or warnings
 - [ ] Feature functionality works as expected
 
-### Before Remote Push
+### Before Push
 - [ ] Complete feature set implemented and tested
 - [ ] Full regression test suite passes
 - [ ] Cross-component integration tests pass
@@ -152,60 +111,15 @@ Create a detailed, step-by-step implementation plan that:
 - [ ] API contract compatibility verified
 - [ ] Monitoring and alerting configured
 
-## Agent Instruction Templates
-
-### Workplan Creation Prompt
-```
-Create a detailed workplan for implementing [feature description]. The plan must:
-1. Break down the feature into dependency-ordered steps
-2. Identify all required components, types, and interfaces
-3. Specify test requirements for each step
-4. Define clear commit boundaries
-5. Ensure the application remains working at every step
-Format as a checklist with clear phase demarcations.
-```
-
-### Implementation Phase Prompt
-```
-Implement Phase [X] of the workplan for [feature name]:
-- Current phase objective: [specific objective]
-- Previous phase completion status: [status]
-- Required deliverables: [specific items]
-- Success criteria: [how to validate completion]
-Follow TDD methodology and maintain working application state.
-```
-
-### Cross-Component Validation Prompt
-```
-Validate cross-component integration for [feature name]:
-- Test all component interactions and data flow
-- Verify mock consistency with real component interfaces
-- Run end-to-end scenarios across multiple components
-- Check performance impact of component composition
-- Validate error handling across component boundaries
-- Confirm monitoring and observability work correctly
-Report any integration issues and remediation steps.
-```
-
-### Validation Phase Prompt
-```
-Validate current implementation status:
-- Run all test suites and report results
-- Verify application builds and runs successfully
-- Test feature functionality manually
-- Check for any regressions in existing features
-- Confirm readiness for next phase or remote push
-```
-
 ## Common Anti-Patterns to Avoid
 
 ### Development Process Anti-Patterns
-- **Big Bang Implementation**: Never implement entire features in one commit
+- **Big Bang Implementation**: Never implement multiple interlinked features in one commit
 - **Test-After Development**: Never write implementation before tests
 - **Broken State Commits**: Never commit with failing tests or build errors
 - **Forward Reference Implementation**: Never implement features before their dependencies
 - **Incomplete Feature Pushes**: Never push partially implemented features
-- **Cross-Component Coupling**: Never create direct dependencies between components without proper interfaces
+- **Cross-Component Coupling**: Never create direct dependencies between components, use interfaces and adapters to abstract dependencies
 - **Environment Inconsistency**: Never deploy to production without testing in staging
 - **Mock Drift**: Never allow mocks to become inconsistent with real component interfaces
 
