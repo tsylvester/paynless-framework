@@ -1,6 +1,8 @@
 // supabase/functions/_shared/utils/type_guards.ts
 import {
   FileType,
+  CompressionSourceType,
+  CompressionMode,
   CanonicalPathParams,
   ModelContributionUploadContext,
   UserFeedbackUploadContext,
@@ -76,6 +78,7 @@ const RESOURCE_FILE_TYPES_MAP: { [K in ResourceFileTypes]: true } = {
     [FileType.AssembledDocumentJson]: true,
     [FileType.RenderedDocument]: true,
     [FileType.RagContextSummary]: true,
+    [FileType.CompressedContext]: true,
 };
 
 export function isResourceFileType(value: unknown): value is ResourceFileTypes {
@@ -106,6 +109,18 @@ export function isFileType(value: unknown): value is FileType {
         }
     }
     return false;
+}
+
+export function isCompressedContextFileType(value: unknown): value is FileType.CompressedContext {
+    return typeof value === 'string' && value === FileType.CompressedContext;
+}
+
+export function isCompressionSourceType(value: unknown): value is CompressionSourceType {
+    return typeof value === 'string' && (value === 'contribution' || value === 'resource' || value === 'feedback' || value === 'history');
+}
+
+export function isCompressionMode(value: unknown): value is CompressionMode {
+    return typeof value === 'string' && (value === 'json' || value === 'text');
 }
 
 // Build a compile-time enforced map of model contribution file types, then derive a Set

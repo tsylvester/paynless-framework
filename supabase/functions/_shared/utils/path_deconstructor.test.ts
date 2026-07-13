@@ -1115,4 +1115,106 @@ Deno.test('[path_deconstructor] direct - user_feedback alongside original docume
   assertEquals(info.error, undefined);
 });
 
+Deno.test('[path_deconstructor] direct - compressed_context round-trips', async (t) => {
+  const projectId = 'proj-cc';
+  const sessionId = 'sess-cc-uuid';
+  const shortSessionId = generateShortId(sessionId);
+  const iteration = 2;
+  const stageSlug = 'synthesis';
+  const mappedStageDir = mapStageSlugToDirName(stageSlug);
+  const targetKey = 'business_case';
+  const targetKeySanitized = sanitizeForPath(targetKey);
+  const baseDir = `${projectId}/session_${shortSessionId}/iteration_${iteration}/${mappedStageDir}/_work`;
+
+  await t.step('round-trips documentKey-sourced final artifact', () => {
+    const documentKey = 'executive_summary';
+    const context: PathContext = {
+      projectId,
+      sessionId,
+      iteration,
+      stageSlug,
+      fileType: FileType.CompressedContext,
+      targetKey,
+      sourceType: 'contribution',
+      documentKey,
+    };
+    const { storagePath, fileName } = constructStoragePath(context);
+    const info = deconstructStoragePath({ storageDir: storagePath, fileName });
+
+    assertEquals(info.error, undefined, `Deconstruction failed with error: ${info.error}`);
+    assertEquals(info.originalProjectId, projectId);
+    assertEquals(info.shortSessionId, shortSessionId);
+    assertEquals(info.iteration, iteration);
+    assertEquals(info.stageDirName, mappedStageDir);
+    assertEquals(info.stageSlug, stageSlug);
+    assertEquals(info.documentKey, sanitizeForPath(documentKey));
+    assertEquals(info.targetKey, targetKeySanitized);
+    assertEquals(info.chunkIndex, undefined);
+    assertEquals(info.chunkTotal, undefined);
+    assertEquals(info.fileTypeGuess, FileType.CompressedContext);
+  });
+
+  await t.step('round-trips sourceId-sourced final artifact', () => {
+    const sourceId = '550e8400-e29b-41d4-a716-446655440000';
+    const sourceShortId = generateShortId(sourceId);
+    const context: PathContext = {
+      projectId,
+      sessionId,
+      iteration,
+      stageSlug,
+      fileType: FileType.CompressedContext,
+      targetKey,
+      sourceType: 'history',
+      sourceId,
+    };
+    const { storagePath, fileName } = constructStoragePath(context);
+    const info = deconstructStoragePath({ storageDir: storagePath, fileName });
+
+    assertEquals(info.error, undefined, `Deconstruction failed with error: ${info.error}`);
+    assertEquals(info.originalProjectId, projectId);
+    assertEquals(info.shortSessionId, shortSessionId);
+    assertEquals(info.iteration, iteration);
+    assertEquals(info.stageDirName, mappedStageDir);
+    assertEquals(info.stageSlug, stageSlug);
+    assertEquals(info.documentKey, undefined);
+    assertEquals(info.targetKey, targetKeySanitized);
+    assertEquals(info.chunkIndex, undefined);
+    assertEquals(info.chunkTotal, undefined);
+    assertEquals(info.fileTypeGuess, FileType.CompressedContext);
+    assertEquals(info.parsedFileNameFromPath, `source_${sourceShortId}_compressed_for_${targetKeySanitized}.md`);
+  });
+
+  await t.step('round-trips chunked documentKey-sourced artifact', () => {
+    const documentKey = 'executive_summary';
+    const chunkIndex = 1;
+    const chunkTotal = 3;
+    const context: PathContext = {
+      projectId,
+      sessionId,
+      iteration,
+      stageSlug,
+      fileType: FileType.CompressedContext,
+      targetKey,
+      sourceType: 'contribution',
+      documentKey,
+      chunkIndex,
+      chunkTotal,
+    };
+    const { storagePath, fileName } = constructStoragePath(context);
+    const info = deconstructStoragePath({ storageDir: storagePath, fileName });
+
+    assertEquals(info.error, undefined, `Deconstruction failed with error: ${info.error}`);
+    assertEquals(info.originalProjectId, projectId);
+    assertEquals(info.shortSessionId, shortSessionId);
+    assertEquals(info.iteration, iteration);
+    assertEquals(info.stageDirName, mappedStageDir);
+    assertEquals(info.stageSlug, stageSlug);
+    assertEquals(info.documentKey, sanitizeForPath(documentKey));
+    assertEquals(info.targetKey, targetKeySanitized);
+    assertEquals(info.chunkIndex, chunkIndex);
+    assertEquals(info.chunkTotal, chunkTotal);
+    assertEquals(info.fileTypeGuess, FileType.CompressedContext);
+    assertEquals(info.parsedFileNameFromPath, `${sanitizeForPath(documentKey)}_compressed_for_${targetKeySanitized}_chunk_${chunkIndex}of${chunkTotal}.md`);
+  });
+});
 

@@ -870,6 +870,30 @@ Deno.test('constructStoragePath', async (t) => {
       assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/3_synthesis/_work`);
       assertEquals(fileName, 'gpt-4-turbo_compressing_claude-3-opus_and_gemini-1.5-pro_rag_summary.txt');
     });
+
+    await t.step('constructs path for compressed_context (contribution)', () => {
+      const targetKey = 'business_case';
+      const context: PathContext = { ...baseContext, stageSlug: 'synthesis', fileType: FileType.CompressedContext, targetKey, sourceType: 'contribution', documentKey: 'executive_summary' };
+      const { storagePath, fileName } = constructStoragePath(context);
+      assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/3_synthesis/_work`);
+      assertEquals(fileName, 'executive_summary_compressed_for_business_case.md');
+    });
+
+    await t.step('constructs path for compressed_context (history)', () => {
+      const targetKey = 'business_case';
+      const sourceId = 'feedback-uuid-123';
+      const context: PathContext = { ...baseContext, stageSlug: 'synthesis', fileType: FileType.CompressedContext, targetKey, sourceType: 'history', sourceId };
+      const { fileName } = constructStoragePath(context);
+      assert(fileName.startsWith(`source_${generateShortId(sourceId)}_compressed_for_business_case.md`), `fileName should start with source_${generateShortId(sourceId)}_compressed_for_business_case.md; got: ${fileName}`);
+    });
+
+    await t.step('constructs path for compressed_context with chunk suffix', () => {
+      const targetKey = 'business_case';
+      const context: PathContext = { ...baseContext, stageSlug: 'synthesis', fileType: FileType.CompressedContext, targetKey, sourceType: 'contribution', documentKey: 'executive_summary', chunkIndex: 1, chunkTotal: 3 };
+      const { storagePath, fileName } = constructStoragePath(context);
+      assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/3_synthesis/_work`);
+      assertEquals(fileName, 'executive_summary_compressed_for_business_case_chunk_1of3.md');
+    });
   });
 
   await t.step('should throw errors for missing context', async (t) => {
@@ -908,6 +932,18 @@ Deno.test('constructStoragePath', async (t) => {
     await t.step('throws if sourceAnchorType and sourceAnchorModelSlug are missing for reduced synthesis', () => {
         const context: PathContext = { ...baseContext, stageSlug: 'synthesis', contributionType: 'reduced_synthesis', fileType: FileType.ReducedSynthesis, sourceAnchorType: undefined, sourceAnchorModelSlug: undefined };
         assertThrows(() => constructStoragePath(context), Error, 'Required sourceAnchorType and sourceAnchorModelSlug missing for reduced_synthesis.');
+    });
+
+    await t.step('throws if required context is missing for compressed_context', () => {
+        const targetKey = 'business_case';
+        const validContext: PathContext = { ...baseContext, stageSlug: 'synthesis', fileType: FileType.CompressedContext, targetKey, sourceType: 'contribution', documentKey: 'executive_summary' };
+
+        assertThrows(() => constructStoragePath({ ...validContext, targetKey: undefined }), Error, 'targetKey');
+        assertThrows(() => constructStoragePath({ ...validContext, sourceType: undefined }), Error, 'sourceType');
+        assertThrows(() => constructStoragePath({ ...validContext, sourceType: 'resource', sourceId: 'some-id', documentKey: undefined }), Error, 'documentKey');
+        assertThrows(() => constructStoragePath({ ...validContext, sourceType: 'history', documentKey: 'executive_summary', sourceId: undefined }), Error, 'sourceId');
+        assertThrows(() => constructStoragePath({ ...validContext, chunkIndex: undefined, chunkTotal: 3 }), Error, 'chunkIndex');
+        assertThrows(() => constructStoragePath({ ...validContext, chunkIndex: 1, chunkTotal: undefined }), Error, 'chunkTotal');
     });
   });
 

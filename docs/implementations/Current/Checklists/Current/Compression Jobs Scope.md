@@ -148,7 +148,9 @@ transport.
 - Touch-once is per-epic: within this epic, all changes to a file aggregate into its single
   node — get everything together before touching it, so the file and its support system
   (interfaces, guards, tests) are updated exactly once, never incrementally. Enumerated
-  exceptions, each justified: (1) `dialectic-worker/index.ts` — THREE touches (WS-R wiring;
+  exceptions, each justified: (1) `dialectic-worker/index.ts` — FOUR touches (WS-R wiring;
+  WS-D `applyCompressionOverlay` wiring into `boundGatherArtifacts` — omitted from the original
+  three-touch count when `gatherArtifacts.ts`'s Deps were widened; corrected 2026-07-12;
   WS-B renderer-import repoint; WS-X removal wiring): the composition root must reflect every
   wiring phase, and aggregating any touch into another would leave an intermediate sprint
   commit non-compilable. (2) The WS-B renderer relocation (ratified 2026-07-11: the
@@ -502,21 +504,65 @@ oracle before its cases are redistributed. Strict node order: `resolveTemplateFi
 * **COMMIT Sprint 4.**
 
 ## WS-D — COMPRESSION ORCHESTRATION CUTOVER (Sprint 5a; depends WS-B)
-Strict node order (each file depends on the previous; transient breaks resolve within the
-sprint): `vector_utils` → `compressPrompt` → `applyCompressionOverlay` → `gatherArtifacts` →
-`calculateAffordability` → `prepareModelJob` → `processSimpleJob`.
+Strict node order (ratified 2026-07-11, reordered from the original draft): `applyCompressionOverlay`
+→ `gatherArtifacts` → `vector_utils` → `compressPrompt` → `calculateAffordability` →
+`prepareModelJob` → `processSimpleJob`. `applyCompressionOverlay` and `gatherArtifacts` have no
+import dependency on `vector_utils`/`compressPrompt` (verified against source — they depend only
+on already-landed WS-C machinery); `gatherArtifacts` is the SOLE PRODUCER of `ResourceDocument.type`,
+which `vector_utils` consumes. Running the producer pair first means `vector_utils` is written
+against an already-conformant type from day one — zero nodes of transient type-mismatch/lint-nag,
+rather than merely tolerating a multi-node window. `calculateAffordability`/`prepareModelJob`/
+`processSimpleJob` are unaffected — their dependency is strictly on `compressPrompt`/`gatherArtifacts`
+respectively, both already landed by the time each is reached.
+* ✏️ `supabase/functions/dialectic-worker/applyCompressionOverlay/applyCompressionOverlay.ts`
+  — load CompressedContext artifacts by canonical path (path_deconstructor dep); match targets
+  by (sourceType, sourceId) — resource documents AND history messages; swap content, preserving
+  id/document_key/stage_slug/type. Support: applyCompressionOverlay.test.ts.
+* ✏️ `supabase/functions/dialectic-worker/gatherArtifacts/gatherArtifacts.ts` — MOVED ahead of
+  `vector_utils`/`compressPrompt` (ratified 2026-07-11): this node is the sole producer of
+  `ResourceDocument.type`, so its type-alignment work must land before any consumer assumes a
+  conformant value. Wire `applyCompressionOverlay` as an injected dep post-gather; add
+  `stageSlug` param for artifact lookup. Tighten `ResourceDocument.type` (owned in
+  `_shared/types.ts`, riding here as gatherArtifacts's support-file edit) from a loose `string`
+  to a new 3-member union `'resource' | 'feedback' | 'system'` — `'contribution'` is never a
+  valid `ResourceDocument.type` value (it is resolved later, from a selected `'resource'`
+  victim's own provenance, by `enqueueCompressJobs`); `'history'` only applies to `Messages`,
+  never `ResourceDocument`. Remap all five push sites per the ratified taxonomy (agent-rendered
+  documents and user-submitted resources are both text objects for compression purposes;
+  header_context/seed_prompt are required model-call inclusions but system objects, never
+  compression candidates): the `rType === 'document'` branch (:139, rendered documents) and the
+  `rType === 'project_resource'` branch (:355, user-submitted references) both → `'resource'`;
+  the `rType === 'feedback'` branch (:236) stays `'feedback'`; the `rType === 'seed_prompt'`
+  branch (:295, the project's original kickoff input — already transformed into a different
+  object before any later model call, never a compression candidate) and the generic catch-all
+  `dialectic_contributions` branch (:449, header_context and other internal pipeline artifacts)
+  both → `'system'`. Support: gatherArtifacts.test.ts (assert each of the five branches emits
+  the correct one of the three literals).
 * ✏️ `supabase/functions/_shared/utils/vector_utils.ts` (+ interface) — single full rewrite.
-  Selection becomes embedding-free: `effectiveScore = candidateTokens × (1 − relevanceWeight)`
+  MOVED after `applyCompressionOverlay`/`gatherArtifacts` (ratified 2026-07-11) so
+  `ResourceDocument.type` already carries the tightened 3-member union when this node is
+  written. Selection becomes embedding-free: `effectiveScore = candidateTokens × importance`,
   where candidateTokens comes from `deps.countTokens` (same tokenizer/modelConfig as the
-  preflight, threaded via CompressionStrategyDeps/Params) and relevanceWeight from
-  `inputsRelevance` (the existing stage-specific/general key lookup is KEPT). DELETE the
-  `getEmbedding` calls, `embeddingClient` from `CompressionStrategyDeps`, the dialectic_memory
-  diagnostic query, and `cosineSimilarity` (its sole remaining consumer, rag_service, is
-  deleted later this sprint — transient break resolves in-sprint).
-  `CompressionCandidate.sourceType` becomes `CompressionSourceType`, IMPORTED from
-  `file_manager.types.ts` (Sprint-2 owner — no duplicate definition) so overlays link
-  compressed artifacts back to their originals. Positional history scoring KEPT. Sort ascending; lowest
-  effectiveScore = next victim. Support: vector_utils.test.ts.
+  preflight, threaded via CompressionStrategyDeps/Params) and `importance` is the existing 0..1
+  preservation-priority value — from the `inputsRelevance` stage-specific/general key lookup
+  (KEPT) for document candidates, and from `scoreHistory`'s existing positional `valueScore`
+  (KEPT: 0=oldest/least-preserved, 1=newest/most-preserved) for history candidates. CORRECTED
+  2026-07-11: the originally-stated `tokens × (1 − relevanceWeight)` form inverted victim
+  priority (plugging `importance` directly into a `(1 − x)` term makes the MOST important/recent
+  content the FIRST victim); `effectiveScore = tokens × importance` is the form that reproduces
+  the pre-rewrite selection order for both the document-matrix case and the position-anchored
+  history case. Sort ascending; lowest effectiveScore = next victim (unimportant + large =
+  compress first; important + small = preserve). Only `ResourceDocument`s with
+  `type !== 'system'` are scored — `scoreResourceDocuments` filters system-typed artifacts
+  (header_context, seed_prompt) out of the candidate pool entirely; they are required prompt
+  inclusions but structurally never compressible. `CompressionCandidate.sourceType` becomes
+  `CompressionSourceType`, narrowed directly from `ResourceDocument.type`'s `'resource' |
+  'feedback'` (`'system'` never reaches a candidate; `'contribution'` is never assigned here —
+  only later, by `enqueueCompressJobs`, from a `'resource'` victim's provenance), IMPORTED from
+  `file_manager.types.ts` (Sprint-2 owner — no duplicate definition). DELETE the `getEmbedding`
+  calls, `embeddingClient` from `CompressionStrategyDeps`, the dialectic_memory diagnostic
+  query, and `cosineSimilarity` (its sole remaining consumer, rag_service, is deleted later
+  this sprint — transient break resolves in-sprint). Support: vector_utils.test.ts.
 * ✏️ `supabase/functions/dialectic-worker/compressPrompt/compressPrompt.ts` — full rewrite as
   a two-phase machine driven by artifact existence. Interface changes ride this node
   (compressPrompt.interface.ts is obligately part of its support system):
@@ -537,13 +583,6 @@ sprint): `vector_utils` → `compressPrompt` → `applyCompressionOverlay` → `
   and history (the same identity matching applyCompressionOverlay uses), recount; loop to the
   next victim or fall through to the existing window/affordability finalization when it fits.
   Also removes the dialectic_memory indexed-ids query. Support: compressPrompt.test.ts.
-* ✏️ `supabase/functions/dialectic-worker/applyCompressionOverlay/applyCompressionOverlay.ts`
-  — load CompressedContext artifacts by canonical path (path_deconstructor dep); match targets
-  by (sourceType, sourceId) — resource documents AND history messages; swap content, preserving
-  id/document_key/stage_slug/type. Support: applyCompressionOverlay.test.ts.
-* ✏️ `supabase/functions/dialectic-worker/gatherArtifacts/gatherArtifacts.ts` — wire
-  `applyCompressionOverlay` as an injected dep post-gather; add `stageSlug` param for artifact
-  lookup. Support: gatherArtifacts.test.ts.
 * ✏️ `supabase/functions/dialectic-worker/calculateAffordability/calculateAffordability.ts` —
   thread `parentJob` into CompressPromptParams; propagate `waiting_for_children: true` as a
   matching pending variant. Support: calculateAffordability.test.ts.

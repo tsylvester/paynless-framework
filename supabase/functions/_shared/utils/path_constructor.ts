@@ -72,6 +72,11 @@ export function constructStoragePath(context: PathContext): ConstructedPath {
     sourceGroupFragment,
     originalStoragePath,
     originalBaseName,
+    targetKey,
+    sourceType,
+    sourceId,
+    chunkIndex,
+    chunkTotal,
   } = context;
 
   // Validate ALL required values for document file types BEFORE any path construction logic
@@ -293,6 +298,42 @@ export function constructStoragePath(context: PathContext): ConstructedPath {
       const sourceModelSlugsSanitized = [...sourceModelSlugs].sort().map(sanitizeForPath).join('_and_');
       const fileName = `${modelSlugSanitized}_compressing_${sourceModelSlugsSanitized}_rag_summary.txt`;
       return { storagePath: `${stageRootPath}/_work`, fileName };
+    }
+
+    case FileType.CompressedContext: {
+      const missingFields: string[] = [];
+      if (!stageRootPath) missingFields.push('stageRootPath (projectId, sessionId, iteration, stageSlug)');
+      if (!targetKey) missingFields.push('targetKey');
+      if (!sourceType) missingFields.push('sourceType');
+      if (missingFields.length > 0) {
+        throw new Error(`Required context missing for compressed_context: ${missingFields.join(', ')}.`);
+      }
+
+      if (sourceType === 'contribution' || sourceType === 'resource') {
+        if (!documentKey) {
+          throw new Error(`documentKey is required for compressed_context sourceType '${sourceType}'.`);
+        }
+      } else if (sourceType === 'feedback' || sourceType === 'history') {
+        if (!sourceId) {
+          throw new Error(`sourceId is required for compressed_context sourceType '${sourceType}'.`);
+        }
+      } else {
+        throw new Error(`Unrecognized sourceType '${sourceType}' for compressed_context.`);
+      }
+
+      if ((chunkIndex === undefined && chunkTotal !== undefined) || (chunkIndex !== undefined && chunkTotal === undefined)) {
+        throw new Error('chunkIndex and chunkTotal must both be present or both absent for compressed_context.');
+      }
+      if (chunkIndex !== undefined && (chunkIndex < 1 || chunkTotal === undefined || chunkTotal < chunkIndex)) {
+        throw new Error('chunkIndex must be >= 1 and chunkTotal must be >= chunkIndex for compressed_context.');
+      }
+
+      const sourceBasename = sourceType === 'contribution' || sourceType === 'resource'
+        ? sanitizeForPath(documentKey!)
+        : `source_${generateShortId(sourceId!)}`;
+      const targetKeySanitized = sanitizeForPath(targetKey!);
+      const chunkSuffix = chunkIndex !== undefined ? `_chunk_${chunkIndex}of${chunkTotal}` : '';
+      return { storagePath: `${stageRootPath}/_work`, fileName: `${sourceBasename}_compressed_for_${targetKeySanitized}${chunkSuffix}.md` };
     }
 
     // --- All Model Contributions (Main, Raw, and Intermediate Types) ---

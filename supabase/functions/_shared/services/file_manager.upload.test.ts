@@ -331,6 +331,76 @@ Deno.test('FileManagerService', async (t) => {
     }
   });
 
+  await t.step('uploadAndRegisterFile should register a CompressedContext resource for contribution and history sources', async () => {
+    const baseCompressedPathContext = {
+      projectId: 'project-compressed-contract',
+      sessionId: 'session-compressed-contract',
+      iteration: 2,
+      stageSlug: 'thesis',
+      fileType: FileType.CompressedContext,
+      targetKey: 'executive_summary',
+    } as const;
+
+    const runCase = async (
+      sourceType: 'contribution' | 'history',
+      documentKey: string | undefined,
+      sourceId: string | undefined,
+    ) => {
+      const pathContext: ResourceUploadContext['pathContext'] = {
+        ...baseCompressedPathContext,
+        sourceType,
+        ...(documentKey ? { documentKey } : {}),
+        ...(sourceId ? { sourceId } : {}),
+      };
+
+      const expectedPathParts = constructStoragePath(pathContext);
+
+      const config: MockSupabaseDataConfig = {
+        genericMockResults: {
+          dialectic_project_resources: {
+            upsert: { data: [{ id: `compressed-${sourceType}` }], error: null },
+          },
+        },
+      };
+      beforeEach(config);
+
+      try {
+        const context: ResourceUploadContext = {
+          ...baseUploadContext,
+          pathContext,
+          fileContent: '# Compressed context content',
+          mimeType: 'text/markdown',
+          description: 'Compressed context for target',
+        };
+
+        const { record, error } = await fileManager.uploadAndRegisterFile(context);
+
+        assertEquals(error, null);
+        assertExists(record);
+
+        const upsertSpy = setup.spies.getLatestQueryBuilderSpies('dialectic_project_resources')?.upsert;
+        assertExists(upsertSpy);
+        const upsertArgs = upsertSpy.calls[0].args;
+        const insertData = upsertArgs[0];
+        const upsertOptions: { onConflict?: string } | undefined = upsertArgs[1];
+
+        assertEquals(insertData.resource_type, FileType.CompressedContext);
+        assertEquals(insertData.session_id, baseCompressedPathContext.sessionId);
+        assertEquals(insertData.stage_slug, baseCompressedPathContext.stageSlug);
+        assertEquals(insertData.iteration_number, baseCompressedPathContext.iteration);
+        assertEquals(insertData.storage_path, expectedPathParts.storagePath);
+        assertEquals(insertData.file_name, expectedPathParts.fileName);
+        assertExists(upsertOptions);
+        assertEquals(upsertOptions?.onConflict, 'storage_bucket,storage_path,file_name');
+      } finally {
+        afterEach();
+      }
+    };
+
+    await runCase('contribution', 'feature_spec', undefined);
+    await runCase('history', undefined, 'history-source-uuid');
+  });
+
   await t.step('uploadAndRegisterFile should register a project export zip at project root',
     async () => {
       try {

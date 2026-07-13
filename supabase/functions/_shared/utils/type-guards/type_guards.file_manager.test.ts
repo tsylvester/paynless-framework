@@ -6,9 +6,13 @@ import {
   isUserFeedbackContext,
   isModelContributionFileType,
   isResourceContext,
+  isResourceFileType,
   isOutputType,
   isDocumentKey,
   isDocumentRelated,
+  isCompressedContextFileType,
+  isCompressionSourceType,
+  isCompressionMode,
 } from './type_guards.file_manager.ts'
 import {
   CanonicalPathParams,
@@ -377,4 +381,63 @@ Deno.test('Type Guard: isDocumentRelated', async (t) => {
         assert(!isDocumentRelated(undefined));
         assert(!isDocumentRelated(123));
     });
+});
+
+Deno.test('Type Guard: isCompressedContextFileType', async (t) => {
+    await t.step('returns true for CompressedContext enum and string value', () => {
+        assert(isCompressedContextFileType(FileType.CompressedContext));
+        assert(isCompressedContextFileType('compressed_context'));
+    });
+
+    await t.step('returns false for every other FileType value', () => {
+        for (const fileType of Object.values(FileType)) {
+            if (fileType === FileType.CompressedContext) continue;
+            assert(!isCompressedContextFileType(fileType));
+        }
+    });
+
+    await t.step('returns false for non-string and arbitrary string values', () => {
+        assert(!isCompressedContextFileType(null));
+        assert(!isCompressedContextFileType(undefined));
+        assert(!isCompressedContextFileType(123));
+        assert(!isCompressedContextFileType('foo'));
+    });
+});
+
+Deno.test('Type Guard: isCompressionSourceType', async (t) => {
+    await t.step('returns true for all CompressionSourceType values', () => {
+        assert(isCompressionSourceType('contribution'));
+        assert(isCompressionSourceType('resource'));
+        assert(isCompressionSourceType('feedback'));
+        assert(isCompressionSourceType('history'));
+    });
+
+    await t.step('returns false for invalid values', () => {
+        assert(!isCompressionSourceType('foo'));
+        assert(!isCompressionSourceType(null));
+        assert(!isCompressionSourceType(undefined));
+        assert(!isCompressionSourceType(123));
+    });
+});
+
+Deno.test('Type Guard: isCompressionMode', async (t) => {
+    await t.step('returns true for all CompressionMode values', () => {
+        assert(isCompressionMode('json'));
+        assert(isCompressionMode('text'));
+    });
+
+    await t.step('returns false for invalid values', () => {
+        assert(!isCompressionMode('foo'));
+        assert(!isCompressionMode(null));
+        assert(!isCompressionMode(undefined));
+        assert(!isCompressionMode(123));
+    });
+});
+
+Deno.test('Type Guard: isResourceFileType recognizes CompressedContext', () => {
+    assert(isResourceFileType(FileType.CompressedContext));
+});
+
+Deno.test('Type Guard: isFileType recognizes compressed_context', () => {
+    assert(isFileType('compressed_context'));
 });

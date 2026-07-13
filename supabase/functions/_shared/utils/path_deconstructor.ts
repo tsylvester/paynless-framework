@@ -56,6 +56,7 @@ export function deconstructStoragePath(
   const pairwiseSynthesisPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/_work/(?:raw_responses/)?([^_]+)_synthesizing_([^_]+)_with_([^_]+)_on_([^_]+)_(\\d+)_pairwise_synthesis_chunk(?:_raw\\.json|\\.md)$";
   const reducedSynthesisPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/_work/(?:raw_responses/)?([^_]+)_reducing_([^_]+)_by_([^_]+)_(\\d+)_reduced_synthesis(?:_raw\\.json|\\.md)$";
   const ragSummaryPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/_work/([^_]+)_compressing_(.+)_rag_summary\\.txt$";
+  const compressedContentPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/_work/(.+)_compressed_for_(.+?)(?:_chunk_(\\d+)of(\\d+))?\\.md$";
   
   // Document-centric artifact patterns
   const plannerPromptPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/_work/prompts/(.+)_(\\d+)_?(.*?)_planner_prompt\\.md$";
@@ -632,6 +633,27 @@ export function deconstructStoragePath(
     // The sourceModelSlugs are joined by '_and_', so we split them back.
     info.sourceModelSlugs = matches[6].split('_and_');
     info.fileTypeGuess = FileType.RagContextSummary;
+    return info;
+  }
+
+  // Path: .../_work/{sourceBasename}_compressed_for_{targetKey}[_chunk_{chunkIndex}of{chunkTotal}].md
+  matches = fullPath.match(new RegExp(compressedContentPatternString));
+  if (matches) {
+    info.originalProjectId = matches[1];
+    info.shortSessionId = matches[2];
+    info.iteration = parseInt(matches[3], 10);
+    info.stageDirName = matches[4];
+    info.stageSlug = mapDirNameToStageSlug(info.stageDirName);
+    const sourceBasename = matches[5];
+    if (!/^source_[0-9a-f]{8}$/.test(sourceBasename)) {
+      info.documentKey = sourceBasename;
+    }
+    info.targetKey = matches[6];
+    if (matches[7]) {
+      info.chunkIndex = parseInt(matches[7], 10);
+      info.chunkTotal = parseInt(matches[8], 10);
+    }
+    info.fileTypeGuess = FileType.CompressedContext;
     return info;
   }
 

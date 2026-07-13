@@ -7,7 +7,7 @@ export interface DeconstructedPathInfo {
   iteration?: number;            // Iteration number parsed from the path
   stageDirName?: string;         // Stage directory name (e.g., "1_hypothesis") parsed from the path
   stageSlug?: string;            // Stage slug derived from stageDirName (e.g., "hypothesis")
-  contributionType?: string;   // Contribution type, if parsable from the filename
+  contributionType?: string;    // Contribution type, if parsable from the filename
   modelSlug?: string;            // Model slug, if parsable from path or filename
   sourceModelSlugs?: string[];   // For works that depend on multiple source models (e.g., RAG summaries)
   sourceModelSlug?: string;      // Source model slug for derivative works (e.g., antithesis)
@@ -24,6 +24,9 @@ export interface DeconstructedPathInfo {
   documentKey?: string;          // The document key for document-centric artifacts
   stepName?: string;             // The step name for planner prompts
   sourceGroupFragment?: string;  // First 8 characters of source_group UUID (sanitized) extracted from filename for disambiguation
+  targetKey?: string;             // The target document key for documents being compressed by chunk
+  chunkIndex?: number;          // The index of this chunk for documents being compressed by chunk
+  chunkTotal?: number;          // Total number of chunks in a document being compressed by chunks
 }
 
 export interface DeconstructStoragePathParams {
