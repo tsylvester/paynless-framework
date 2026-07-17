@@ -21,7 +21,7 @@ import { getAiProviderAdapter } from '../_shared/ai_service/factory.ts';
 import { defaultProviderMap } from '../_shared/ai_service/factory.ts';
 import { constructStoragePath } from '../_shared/utils/path_constructor.ts';
 import { StartSessionDeps, SeedPromptRecipeStep } from './dialectic.interface.ts';
-import { gatherInputsForStage } from "../_shared/prompt-assembler/gatherInputsForStage.ts";
+import { gatherInputsForStage } from "../_shared/prompt-assembler/gatherInputsForStage/gatherInputsForStage.ts";
 import { renderPrompt } from "../_shared/prompt-renderer.ts";
 import { createAssembleChunksMock } from "../_shared/utils/assembleChunks/assembleChunks.mock.ts";
 
