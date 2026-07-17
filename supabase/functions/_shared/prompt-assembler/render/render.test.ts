@@ -1,15 +1,15 @@
 import { assertEquals, assertRejects } from "jsr:@std/assert@0.225.3";
-import { render } from "./render.ts";
+import { render } from "../render/render.ts";
 import {
   DynamicContextVariables,
   RenderPromptFunctionType,
   StageContext,
-} from "./prompt-assembler.interface.ts";
-import { isRecord } from "../utils/type_guards.ts";
-import type { Json } from "../../types_db.ts";
-import { DialecticRecipeStep, OutputRule, RenderedDocumentArtifact } from "../../dialectic-service/dialectic.interface.ts";
-import { FileType } from "../types/file_manager.types.ts";
-import { renderPrompt } from "../prompt-renderer.ts";
+} from "../prompt-assembler.interface.ts";
+import { isRecord } from "../../utils/type_guards.ts";
+import type { Json } from "../../../types_db.ts";
+import { DialecticRecipeStep, OutputRule, RenderedDocumentArtifact } from "../../../dialectic-service/dialectic.interface.ts";
+import { FileType } from "../../types/file_manager.types.ts";
+import { renderPrompt } from "../../prompt-renderer.ts";
 
 // Define a type for the mock implementation of renderPrompt
 type RenderPromptMock = (

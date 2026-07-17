@@ -2,14 +2,14 @@ import {
   AssembledPrompt,
   AssembleTurnPromptDeps,
   AssembleTurnPromptParams,
-} from "./prompt-assembler.interface.ts";
-import { isRecord } from "../utils/type_guards.ts";
-import { FileManagerResponse, FileType } from "../types/file_manager.types.ts";
-import { ContentToInclude, HeaderContext, OutputRule } from "../../dialectic-service/dialectic.interface.ts";
-import { isHeaderContext, isContentToInclude, isOutputRule } from "../utils/type-guards/type_guards.dialectic.ts";
-import { Database } from "../../types_db.ts";
-import { gatherInputsForStage } from "./gatherInputsForStage.ts";
-import { renderPrompt } from "../prompt-renderer.ts";
+} from "../prompt-assembler.interface.ts";
+import { isRecord } from "../../utils/type_guards.ts";
+import { FileManagerResponse, FileType } from "../../types/file_manager.types.ts";
+import { ContentToInclude, HeaderContext, OutputRule } from "../../../dialectic-service/dialectic.interface.ts";
+import { isHeaderContext, isContentToInclude, isOutputRule } from "../../utils/type-guards/type_guards.dialectic.ts";
+import { Database } from "../../../types_db.ts";
+import { gatherInputsForStage } from "../gatherInputsForStage/gatherInputsForStage.ts";
+import { renderPrompt } from "../../prompt-renderer.ts";
 
 export async function assembleTurnPrompt(
   deps: AssembleTurnPromptDeps,

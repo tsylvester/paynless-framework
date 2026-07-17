@@ -14,15 +14,15 @@ import {
     type MockSupabaseDataConfig,
     type MockSupabaseClientSetup,
     type MockQueryBuilderState,
-} from "../supabase.mock.ts";
-import { isRecord } from "../utils/type_guards.ts";
+} from "../../supabase.mock.ts";
+import { isRecord } from "../../utils/type_guards.ts";
 import { SupabaseClient } from "npm:@supabase/supabase-js@2";
-import { Database } from "../../types_db.ts";
-import { DownloadStorageResult, downloadFromStorage } from "../supabase_storage_utils.ts";
-import { createAssembleChunksMock } from "../utils/assembleChunks/assembleChunks.mock.ts";
-import { AssembleChunksSignature } from "../utils/assembleChunks/assembleChunks.interface.ts";
-import { ContextForDocument } from "../../dialectic-service/dialectic.interface.ts";
-import { FileType } from "../types/file_manager.types.ts";
+import { Database } from "../../../types_db.ts";
+import { DownloadStorageResult, downloadFromStorage } from "../../supabase_storage_utils.ts";
+import { createAssembleChunksMock } from "../../utils/assembleChunks/assembleChunks.mock.ts";
+import { AssembleChunksSignature } from "../../utils/assembleChunks/assembleChunks.interface.ts";
+import { ContextForDocument } from "../../../dialectic-service/dialectic.interface.ts";
+import { FileType } from "../../types/file_manager.types.ts";
 
 const GENERIC_CONTINUE = "continue from where it ends";
 

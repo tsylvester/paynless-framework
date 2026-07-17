@@ -1,7 +1,7 @@
 import { assertEquals, assertRejects, assert } from "jsr:@std/assert@0.225.3";
 import { spy, stub, Spy } from "jsr:@std/testing@0.225.1/mock";
-import { gatherContext } from "./gatherContext.ts";
-import type { GatherInputsForStageFn } from "./gatherInputsForStage.ts";
+import { gatherContext } from "../gatherContext/gatherContext.ts";
+import type { GatherInputsForStageFn } from "../gatherInputsForStage/gatherInputsForStage.ts";
 import {
   ProjectContext,
   SessionContext,
@@ -9,20 +9,20 @@ import {
   AssemblerSourceDocument,
   GatheredRecipeContext,
   DynamicContextVariables,
-} from "./prompt-assembler.interface.ts";
+} from "../prompt-assembler.interface.ts";
 import {
   createMockSupabaseClient,
   type MockSupabaseDataConfig,
   type MockSupabaseClientSetup,
-} from "../supabase.mock.ts";
+} from "../../supabase.mock.ts";
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
-import type { Database, Tables } from "../../types_db.ts";
-import { downloadFromStorage } from "../supabase_storage_utils.ts";
+import type { Database, Tables } from "../../../types_db.ts";
+import { downloadFromStorage } from "../../supabase_storage_utils.ts";
 import {
   DialecticRecipeStep,
   DialecticRecipeTemplateStep,
-} from "../../dialectic-service/dialectic.interface.ts";
-import { FileType } from "../types/file_manager.types.ts";
+} from "../../../dialectic-service/dialectic.interface.ts";
+import { FileType } from "../../types/file_manager.types.ts";
 
 const mockSimpleRecipeStep: DialecticRecipeTemplateStep = {
   id: "step-123",

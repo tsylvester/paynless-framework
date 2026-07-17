@@ -1,14 +1,14 @@
 import {
   AssembledPrompt,
   AssemblePlannerPromptDeps,
-} from "./prompt-assembler.interface.ts";
-import { isRecord } from "../utils/type_guards.ts";
-import { downloadFromStorage } from "../supabase_storage_utils.ts";
-import { gatherInputsForStage } from "./gatherInputsForStage.ts";
-import { renderPrompt } from "../prompt-renderer.ts";
-import { FileType } from "../types/file_manager.types.ts";
-import { ContextForDocument } from "../../dialectic-service/dialectic.interface.ts";
-import { isContextForDocumentArray } from "../utils/type-guards/type_guards.dialectic.ts";
+} from "../prompt-assembler.interface.ts";
+import { isRecord } from "../../utils/type_guards.ts";
+import { downloadFromStorage } from "../../supabase_storage_utils.ts";
+import { gatherInputsForStage } from "../gatherInputsForStage/gatherInputsForStage.ts";
+import { renderPrompt } from "../../prompt-renderer.ts";
+import { FileType } from "../../types/file_manager.types.ts";
+import { ContextForDocument } from "../../../dialectic-service/dialectic.interface.ts";
+import { isContextForDocumentArray } from "../../utils/type-guards/type_guards.dialectic.ts";
 
 export async function assemblePlannerPrompt(
   {
@@ -198,7 +198,7 @@ export async function assemblePlannerPrompt(
 
   const context = await gatherContext(
     dbClient,
-    (bucket, path) => downloadFromStorage(dbClient, bucket, path),
+    (bucket: string, path: string) => downloadFromStorage(dbClient, bucket, path),
     gatherInputsForStage,
     project,
     session,

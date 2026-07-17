@@ -1,6 +1,6 @@
 import { assertEquals, assertRejects } from "jsr:@std/assert@0.225.3";
 import { spy, Spy } from "jsr:@std/testing@0.225.1/mock";
-import { assemblePlannerPrompt } from "./assemblePlannerPrompt.ts";
+import { assemblePlannerPrompt } from "../assemblePlannerPrompt/assemblePlannerPrompt.ts";
 import {
   ProjectContext,
   SessionContext,
@@ -9,31 +9,31 @@ import {
   DynamicContextVariables,
   RenderFn,
   AssemblerSourceDocument,
-} from "./prompt-assembler.interface.ts";
-import { type GatherContextFn } from "./gatherContext.ts";
+} from "../prompt-assembler.interface.ts";
+import { type GatherContextFn } from "../gatherContext/gatherContext.ts";
 import {
   createMockSupabaseClient,
   type MockSupabaseDataConfig,
   type MockSupabaseClientSetup,
-} from "../supabase.mock.ts";
+} from "../../supabase.mock.ts";
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
-import type { Database } from "../../types_db.ts";
+import type { Database } from "../../../types_db.ts";
 import {
   createMockFileManagerService,
   MockFileManagerService,
-} from "../services/file_manager.mock.ts";
+} from "../../services/file_manager.mock.ts";
 import {
   FileType,
   type FileRecord,
   type ResourceUploadContext,
-} from "../types/file_manager.types.ts";
+} from "../../types/file_manager.types.ts";
 import {
   DialecticJobRow,
   DialecticRecipeStep,
   ContextForDocument,
-} from "../../dialectic-service/dialectic.interface.ts";
+} from "../../../dialectic-service/dialectic.interface.ts";
 import { assertSpyCall, assertSpyCalls } from "jsr:@std/testing@0.225.1/mock";
-import { isRecord } from "../utils/type_guards.ts";
+import { isRecord } from "../../utils/type_guards.ts";
 import { assert } from "jsr:@std/assert@0.225.3";
 
 const defaultMockContext: DynamicContextVariables = {

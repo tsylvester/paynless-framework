@@ -1,8 +1,8 @@
-import { Database } from "../../types_db.ts";
-import { ContextForDocument } from "../../dialectic-service/dialectic.interface.ts";
-import { sanitizeJsonContent } from "../utils/jsonSanitizer/jsonSanitizer.ts";
-import { isRecord } from "../utils/type-guards/type_guards.common.ts";
-import { Messages } from "../types.ts";
+import { Database } from "@paynless/db-types";
+import { ContextForDocument } from "../../../dialectic-service/dialectic.interface.ts";
+import { sanitizeJsonContent } from "../../utils/jsonSanitizer/jsonSanitizer.ts";
+import { isRecord } from "../../utils/type-guards/type_guards.common.ts";
+import { Messages } from "../../types.ts";
 import {
     GatherContinuationInputsError,
     GatherContinuationInputsReturn,

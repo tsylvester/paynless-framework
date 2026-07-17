@@ -3,34 +3,34 @@
   import { spy, stub, Spy } from "jsr:@std/testing@0.225.1/mock";
   import {
     assembleContinuationPrompt,
-  } from "./assembleContinuationPrompt.ts";
+  } from "../assembleContinuationPrompt/assembleContinuationPrompt.ts";
   import {
     ProjectContext,
     SessionContext,
     StageContext,
     AssembledPrompt,
     AssembleContinuationPromptDeps,
-  } from "./prompt-assembler.interface.ts";
+  } from "../prompt-assembler.interface.ts";
   import {
     createMockSupabaseClient,
     type MockSupabaseDataConfig,
     type MockSupabaseClientSetup,
     type MockQueryBuilderState,
-  } from "../supabase.mock.ts";
+  } from "../../supabase.mock.ts";
   import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
-  import type { Database } from "../../types_db.ts";
-  import { createMockFileManagerService } from "../services/file_manager.mock.ts";
-  import { FileType } from "../types/file_manager.types.ts";
-  import { FileRecord } from "../types/file_manager.types.ts";
+  import type { Database } from "../../../types_db.ts";
+  import { createMockFileManagerService } from "../../services/file_manager.mock.ts";
+  import { FileType } from "../../types/file_manager.types.ts";
+  import { FileRecord } from "../../types/file_manager.types.ts";
   import {
     DialecticExecuteJobPayload,
     DialecticJobRow,
     DialecticRecipeStep,
     HeaderContext,
-  } from "../../dialectic-service/dialectic.interface.ts";
+  } from "../../../dialectic-service/dialectic.interface.ts";
   import { assertSpyCall } from "jsr:@std/testing@0.225.1/mock";
-  import { isRecord, isJson } from "../utils/type_guards.ts";
-  import { DynamicContextVariables } from "./prompt-assembler.interface.ts";
+  import { isRecord, isJson } from "../../utils/type_guards.ts";
+  import { DynamicContextVariables } from "../prompt-assembler.interface.ts";
   import {
     GatherContinuationInputsSignature,
     GatherContinuationInputsDeps,
@@ -38,13 +38,13 @@
     GatherContinuationInputsPayload,
     GatherContinuationInputsSuccess,
     GatherContinuationInputsError,
-  } from "./gatherContinuationInputs.interface.ts";
+  } from "../gatherContinuationInputs/gatherContinuationInputs.interface.ts";
   import {
     downloadFromStorage,
     type DownloadStorageResult,
-  } from "../supabase_storage_utils.ts";
-  import { Messages } from "../types.ts";
-  import { AssembleChunksSignature } from "../utils/assembleChunks/assembleChunks.interface.ts";
+  } from "../../supabase_storage_utils.ts";
+  import { Messages } from "../../types.ts";
+  import { AssembleChunksSignature } from "../../utils/assembleChunks/assembleChunks.interface.ts";
 
   const stubAssembleChunks: AssembleChunksSignature = async () => ({
     success: false,

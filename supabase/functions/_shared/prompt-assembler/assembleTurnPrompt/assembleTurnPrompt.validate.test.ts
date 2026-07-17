@@ -9,24 +9,24 @@ import {
   StageContext,
   AssembleTurnPromptDeps,
   AssembleTurnPromptParams,
-} from "./prompt-assembler.interface.ts";
+} from "../prompt-assembler.interface.ts";
 import {
   createMockSupabaseClient,
   type MockSupabaseDataConfig,
   type MockSupabaseClientSetup,
   type MockQueryBuilderState,
-} from "../supabase.mock.ts";
+} from "../../supabase.mock.ts";
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
-import type { Database } from "../../types_db.ts";
-import { createMockFileManagerService } from "../services/file_manager.mock.ts";
-import { FileType } from "../types/file_manager.types.ts";
-import { DialecticJobRow } from "../../dialectic-service/dialectic.interface.ts";
+import type { Database } from "../../../types_db.ts";
+import { createMockFileManagerService } from "../../services/file_manager.mock.ts";
+import { FileType } from "../../types/file_manager.types.ts";
+import { DialecticJobRow } from "../../../dialectic-service/dialectic.interface.ts";
 import {
   type DialecticStageRecipeStep,
-} from "../../dialectic-service/dialectic.interface.ts";
-import { isRecord } from "../utils/type_guards.ts";
-import { GatherContextFn } from "./gatherContext.ts";
-import { createMockDownloadFromStorage } from "../supabase_storage_utils.mock.ts";
+} from "../../../dialectic-service/dialectic.interface.ts";
+import { isRecord } from "../../utils/type_guards.ts";
+import { GatherContextFn } from "../gatherContext/gatherContext.ts";
+import { createMockDownloadFromStorage } from "../../supabase_storage_utils.mock.ts";
 
 const STAGE_SLUG = "synthesis";
 const BUSINESS_CASE_DOCUMENT_KEY = FileType.business_case;

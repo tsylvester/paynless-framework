@@ -1,9 +1,9 @@
 import { SupabaseClient } from "npm:@supabase/supabase-js@2";
-import { Database } from "../../types_db.ts";
-import { ContextForDocument } from "../../dialectic-service/dialectic.interface.ts";
-import { DownloadStorageResult } from "../supabase_storage_utils.ts";
-import { Messages } from "../types.ts";
-import { AssembleChunksSignature } from "../utils/assembleChunks/assembleChunks.interface.ts";
+import { Database } from "../../../types_db.ts";
+import { ContextForDocument } from "../../../dialectic-service/dialectic.interface.ts";
+import { DownloadStorageResult } from "../../supabase_storage_utils.ts";
+import { Messages } from "../../types.ts";
+import { AssembleChunksSignature } from "../../utils/assembleChunks/assembleChunks.interface.ts";
 
 export interface GatherContinuationInputsDeps {
     assembleChunks: AssembleChunksSignature;

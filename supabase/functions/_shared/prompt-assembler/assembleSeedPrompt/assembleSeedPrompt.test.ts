@@ -1,32 +1,32 @@
 import { assertEquals, assertRejects, assert } from "jsr:@std/assert@0.225.3";
 import { spy, stub, Spy } from "jsr:@std/testing@0.225.1/mock";
-import { assembleSeedPrompt } from "./assembleSeedPrompt.ts";
+import { assembleSeedPrompt } from "../assembleSeedPrompt/assembleSeedPrompt.ts";
 import {
   ProjectContext,
   SessionContext,
   StageContext,
   DynamicContextVariables,
   AssembledPrompt,
-} from "./prompt-assembler.interface.ts";
+} from "../prompt-assembler.interface.ts";
 import {
   createMockSupabaseClient,
   type MockSupabaseDataConfig,
   type MockSupabaseClientSetup,
-} from "../supabase.mock.ts";
-import { isRecord } from "../utils/type_guards.ts";
+} from "../../supabase.mock.ts";
+import { isRecord } from "../../utils/type_guards.ts";
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
-import type { Json, Database } from "../../types_db.ts";
-import { downloadFromStorage } from "../supabase_storage_utils.ts";
-import { renderPrompt } from "../prompt-renderer.ts";
-import { gatherInputsForStage } from "./gatherInputsForStage.ts";
-import { createMockFileManagerService } from "../services/file_manager.mock.ts";
-import { FileType, UploadContext } from "../types/file_manager.types.ts";
-import { FileRecord } from "../types/file_manager.types.ts";
+import type { Json, Database } from "../../../types_db.ts";
+import { downloadFromStorage } from "../../supabase_storage_utils.ts";
+import { renderPrompt } from "../../prompt-renderer.ts";
+import { gatherInputsForStage } from "../gatherInputsForStage/gatherInputsForStage.ts";
+import { createMockFileManagerService } from "../../services/file_manager.mock.ts";
+import { FileType, UploadContext } from "../../types/file_manager.types.ts";
+import { FileRecord } from "../../types/file_manager.types.ts";
 import {
   DialecticStageRecipeStep,
   OutputRule,
   SeedPromptRecipeStep,
-} from "../../dialectic-service/dialectic.interface.ts";
+} from "../../../dialectic-service/dialectic.interface.ts";
 
 // Define a type for the mock implementation of renderPrompt
 type RenderPromptMock = (

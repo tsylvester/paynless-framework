@@ -1,14 +1,14 @@
 import { type SupabaseClient } from "npm:@supabase/supabase-js@2";
-import { Database } from "../../types_db.ts";
+import { Database } from "../../../types_db.ts";
 import {
   DynamicContextVariables,
   ProjectContext,
   SessionContext,
   StageContext,
   GatheredRecipeContext,
-} from "./prompt-assembler.interface.ts";
-import { DownloadStorageResult } from "../supabase_storage_utils.ts";
-import { GatherInputsForStageFn } from "./gatherInputsForStage.ts";
+} from "../prompt-assembler.interface.ts";
+import { DownloadStorageResult } from "../../supabase_storage_utils.ts";
+import { GatherInputsForStageFn } from "../gatherInputsForStage/gatherInputsForStage.ts";
 
 export type GatherContextFn = (
   dbClient: SupabaseClient<Database>,

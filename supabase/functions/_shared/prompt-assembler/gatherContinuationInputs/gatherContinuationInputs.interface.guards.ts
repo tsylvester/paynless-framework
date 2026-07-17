@@ -2,8 +2,8 @@ import {
     GatherContinuationInputsError,
     GatherContinuationInputsReturn,
     GatherContinuationInputsSuccess,
-} from "./gatherContinuationInputs.interface.ts";
-import { isRecord } from "../utils/type-guards/type_guards.common.ts";
+} from "../gatherContinuationInputs/gatherContinuationInputs.interface.ts";
+import { isRecord } from "../../utils/type-guards/type_guards.common.ts";
 
 function isMessagesRole(value: unknown): value is GatherContinuationInputsSuccess["messages"][number]["role"] {
     return (

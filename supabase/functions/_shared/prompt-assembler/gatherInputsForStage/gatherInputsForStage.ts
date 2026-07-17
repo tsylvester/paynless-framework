@@ -1,18 +1,18 @@
 import { type SupabaseClient } from "npm:@supabase/supabase-js@2";
-import { Database } from "../../types_db.ts";
+import { Database } from "../../../types_db.ts";
 import {
   InputRule,
-} from "../../dialectic-service/dialectic.interface.ts";
+} from "../../../dialectic-service/dialectic.interface.ts";
 import {
   ProjectContext,
   SessionContext,
   StageContext,
   GatheredRecipeContext,
-} from "./prompt-assembler.interface.ts";
-import type { DownloadStorageResult } from "../supabase_storage_utils.ts";
-import { parseInputArtifactRules } from "../utils/input-artifact-parser.ts";
-import { deconstructStoragePath } from "../utils/path_deconstructor.ts";
-import { FileType } from "../types/file_manager.types.ts";
+} from "../prompt-assembler.interface.ts";
+import type { DownloadStorageResult } from "../../supabase_storage_utils.ts";
+import { parseInputArtifactRules } from "../../utils/input-artifact-parser.ts";
+import { deconstructStoragePath } from "../../utils/path_deconstructor.ts";
+import { FileType } from "../../types/file_manager.types.ts";
 
 export type GatherInputsForStageFn = (
   dbClient: SupabaseClient<Database>,

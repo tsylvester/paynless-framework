@@ -1,10 +1,10 @@
 import {
   AssembledPrompt,
   AssembleSeedPromptDeps,
-} from "./prompt-assembler.interface.ts";
-import { gatherContext } from "./gatherContext.ts";
-import { render } from "./render.ts";
-import { FileType } from "../types/file_manager.types.ts";
+} from "../prompt-assembler.interface.ts";
+import { gatherContext } from "../gatherContext/gatherContext.ts";
+import { render } from "../render/render.ts";
+import { FileType } from "../../types/file_manager.types.ts";
 
 export async function assembleSeedPrompt(
   {

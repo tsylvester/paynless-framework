@@ -1,22 +1,22 @@
 import { assertEquals, assertRejects, assert } from "jsr:@std/assert@0.225.3";
 import { spy, stub, Spy } from "jsr:@std/testing@0.225.1/mock";
-import { gatherInputsForStage } from "./gatherInputsForStage.ts";
+import { gatherInputsForStage } from "../gatherInputsForStage/gatherInputsForStage.ts";
 import {
   ProjectContext,
   SessionContext,
   StageContext,
   AssemblerSourceDocument,
   GatheredRecipeContext,
-} from "./prompt-assembler.interface.ts";
-import { FileManagerService } from "../services/file_manager.ts";
-import { type DialecticRecipeStep, type DialecticContribution, type DialecticRecipeTemplateStep } from '../../dialectic-service/dialectic.interface.ts';
-import { createMockSupabaseClient, type MockSupabaseDataConfig, type IMockSupabaseClient, type IMockClientSpies, type MockSupabaseClientSetup, type MockQueryBuilderState } from "../supabase.mock.ts";
+} from "../prompt-assembler.interface.ts";
+import { FileManagerService } from "../../services/file_manager.ts";
+import { type DialecticRecipeStep, type DialecticContribution, type DialecticRecipeTemplateStep } from '../../../dialectic-service/dialectic.interface.ts';
+import { createMockSupabaseClient, type MockSupabaseDataConfig, type IMockSupabaseClient, type IMockClientSpies, type MockSupabaseClientSetup, type MockQueryBuilderState } from "../../supabase.mock.ts";
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
-import { downloadFromStorage } from '../supabase_storage_utils.ts';
-import type { Json, Tables } from "../../types_db.ts";
-import { Database } from "../../types_db.ts";
-import { constructStoragePath } from '../utils/path_constructor.ts';
-import { FileType } from "../types/file_manager.types.ts";
+import { downloadFromStorage } from '../../supabase_storage_utils.ts';
+import type { Json, Tables } from "../../../types_db.ts";
+import { Database } from "../../../types_db.ts";
+import { constructStoragePath } from '../../utils/path_constructor.ts';
+import { FileType } from "../../types/file_manager.types.ts";
 import { join } from "jsr:@std/path/join";
 
 // Helper to create a minimal valid recipe step
@@ -750,8 +750,8 @@ Deno.test("gatherInputsForStage", async (t) => {
 
                 assertEquals(result.sourceDocuments.length, 2);
                 
-                const contribDoc = result.sourceDocuments.find(d => d.type === 'document');
-                const feedbackDoc = result.sourceDocuments.find(d => d.type === 'feedback');
+                const contribDoc = result.sourceDocuments.find((d: AssemblerSourceDocument) => d.type === 'document');
+                const feedbackDoc = result.sourceDocuments.find((d: AssemblerSourceDocument) => d.type === 'feedback');
 
                 assertEquals(!!contribDoc, true, "Contribution document not found in result");
                 assertEquals(contribDoc?.id, "contrib-both");

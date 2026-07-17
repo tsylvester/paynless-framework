@@ -1,10 +1,10 @@
-import { Json } from "../../types_db.ts";
+import { Json } from "../../../types_db.ts";
 import {
   DynamicContextVariables,
   RenderPromptFunctionType,
   StageContext,
-} from "./prompt-assembler.interface.ts";
-import { isJson, isRecord } from "../utils/type_guards.ts";
+} from "../prompt-assembler.interface.ts";
+import { isJson, isRecord } from "../../utils/type_guards.ts";
 
 export function render(
   renderPromptFn: RenderPromptFunctionType,
