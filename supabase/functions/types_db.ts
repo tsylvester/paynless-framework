@@ -2701,7 +2701,7 @@ export type Database = {
       }
     }
     Enums: {
-      dialectic_job_type_enum: "PLAN" | "EXECUTE" | "RENDER"
+      dialectic_job_type_enum: "PLAN" | "EXECUTE" | "RENDER" | "COMPRESS"
       dialectic_stage_enum:
         | "THESIS"
         | "ANTITHESIS"
@@ -2828,7 +2828,7 @@ export const Constants = {
   },
   public: {
     Enums: {
-      dialectic_job_type_enum: ["PLAN", "EXECUTE", "RENDER"],
+      dialectic_job_type_enum: ["PLAN", "EXECUTE", "RENDER", "COMPRESS"],
       dialectic_stage_enum: [
         "THESIS",
         "ANTITHESIS",

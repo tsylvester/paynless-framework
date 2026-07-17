@@ -308,189 +308,193 @@ Oversized model inputs compress incrementally until the preflight fits: the pare
 
 ## WS-R — ROUTING & SPAWN (Sprint 3; depends WS-C)
 
-* `[ ]`   supabase/functions/_shared/utils/`text_splitter.ts` **[BE] Copy LangchainTextSplitter out of indexing_service.ts into its own shared module for map-reduce chunking**
+* `[✅]`   supabase/functions/_shared/utils/`text_splitter.ts` **[BE] Copy LangchainTextSplitter out of indexing_service.ts into its own shared module for map-reduce chunking**
 
-  * `[ ]`   `objective`
-    * `[ ]`   Give `enqueueCompressJobs` (next node) a `textSplitter` dependency that doesn't require importing `indexing_service.ts` (deleted in WS-X). Copy `LangchainTextSplitter` (`indexing_service.ts:10-23`) and `ITextSplitter` (`indexing_service.interface.ts:33-35`) into a new, self-contained module; the originals in `indexing_service.ts`/`indexing_service.interface.ts` are left untouched and deleted with that file in WS-X.
-    * `[ ]`   No mock file: `RecursiveCharacterTextSplitter` is local, deterministic text processing with no external call; consumers inject the real `LangchainTextSplitter` in their tests, and any test-only stub belongs to the consumer's own mock file (`enqueueCompressJobs.mock.ts`), not here.
+  * `[✅]`   `objective`
+    * `[✅]`   Give `enqueueCompressJobs` (next node) a `textSplitter` dependency that doesn't require importing `indexing_service.ts` (deleted in WS-X). Copy `LangchainTextSplitter` (`indexing_service.ts:10-23`) and `ITextSplitter` (`indexing_service.interface.ts:33-35`) into a new, self-contained module; the originals in `indexing_service.ts`/`indexing_service.interface.ts` are left untouched and deleted with that file in WS-X.
+    * `[✅]`   No mock file: `RecursiveCharacterTextSplitter` is local, deterministic text processing with no external call; consumers inject the real `LangchainTextSplitter` in their tests, and any test-only stub belongs to the consumer's own mock file (`enqueueCompressJobs.mock.ts`), not here.
 
-  * `[ ]`   `text_splitter.interface.ts`
-    * `[ ]`   Define `export interface ITextSplitter { splitText(text: string): Promise<string[]>; }`, identical to `indexing_service.interface.ts:33-35`.
+  * `[✅]`   `text_splitter.interface.ts`
+    * `[✅]`   Define `export interface ITextSplitter { splitText(text: string): Promise<string[]>; }`, identical to `indexing_service.interface.ts:33-35`.
 
-  * `[ ]`   `text_splitter.ts` (Implementation)
-    * `[ ]`   `import { RecursiveCharacterTextSplitter } from 'npm:@langchain/textsplitters';` — identical, unpinned specifier already resolved in `supabase/deno.lock` and `supabase/functions/deno.lock`.
-    * `[ ]`   `import type { ITextSplitter } from './text_splitter.interface.ts';`
-    * `[ ]`   Copy the `LangchainTextSplitter` class verbatim from `indexing_service.ts:10-23`: constructor `(options?: { chunkSize?: number; chunkOverlap?: number })` defaulting to `chunkSize: 1000, chunkOverlap: 200`; `splitText(text)` delegates to the wrapped splitter. No behavior change.
+  * `[✅]`   `text_splitter.test.ts` (Behavioral Verification)
+    * `[✅]`   No existing test exercises `LangchainTextSplitter`'s real chunking behavior — `indexing_service.test.ts:20,34` only spies on a hand-rolled `ITextSplitter` mock — so these are new tests, not a lift.
+    * `[✅]`   Default construction (`new LangchainTextSplitter()`): text longer than 1000 characters splits into multiple chunks; adjacent chunks overlap, consistent with `chunkSize: 1000`/`chunkOverlap: 200`.
+    * `[✅]`   Text shorter than `chunkSize` returns a single chunk equal to the input.
+    * `[✅]`   Custom `{ chunkSize, chunkOverlap }` options are honored (a small `chunkSize` on a fixed-length input produces a predictable chunk count).
+    * `[✅]`   Empty string input returns whatever `RecursiveCharacterTextSplitter.splitText('')` actually returns — assert against its real behavior, not an assumption.
 
-  * `[ ]`   `text_splitter.test.ts` (Behavioral Verification)
-    * `[ ]`   No existing test exercises `LangchainTextSplitter`'s real chunking behavior — `indexing_service.test.ts:20,34` only spies on a hand-rolled `ITextSplitter` mock — so these are new tests, not a lift.
-    * `[ ]`   Default construction (`new LangchainTextSplitter()`): text longer than 1000 characters splits into multiple chunks; adjacent chunks overlap, consistent with `chunkSize: 1000`/`chunkOverlap: 200`.
-    * `[ ]`   Text shorter than `chunkSize` returns a single chunk equal to the input.
-    * `[ ]`   Custom `{ chunkSize, chunkOverlap }` options are honored (a small `chunkSize` on a fixed-length input produces a predictable chunk count).
-    * `[ ]`   Empty string input returns whatever `RecursiveCharacterTextSplitter.splitText('')` actually returns — assert against its real behavior, not an assumption.
+  * `[✅]`   `text_splitter.ts` (Implementation)
+    * `[✅]`   `import { RecursiveCharacterTextSplitter } from 'npm:@langchain/textsplitters';` — identical, unpinned specifier already resolved in `supabase/deno.lock` and `supabase/functions/deno.lock`.
+    * `[✅]`   `import type { ITextSplitter } from './text_splitter.interface.ts';`
+    * `[✅]`   Copy the `LangchainTextSplitter` class verbatim from `indexing_service.ts:10-23`: constructor `(options?: { chunkSize?: number; chunkOverlap?: number })` defaulting to `chunkSize: 1000, chunkOverlap: 200`; `splitText(text)` delegates to the wrapped splitter. No behavior change.
 
-  * `[ ]`   `requirements`
-    * `[ ]`   `new LangchainTextSplitter().splitText(text)` and `new LangchainTextSplitter({ chunkSize, chunkOverlap }).splitText(text)` behave identically to the existing `indexing_service.ts` class for the same inputs.
-    * `[ ]`   `indexing_service.ts` and `indexing_service.interface.ts` are unmodified by this node.
-    * `[ ]`   `text_splitter.ts`/`text_splitter.interface.ts` import nothing from `dialectic-worker/` or any node that will consume them.
+  * `[✅]`   `requirements`
+    * `[✅]`   `new LangchainTextSplitter().splitText(text)` and `new LangchainTextSplitter({ chunkSize, chunkOverlap }).splitText(text)` behave identically to the existing `indexing_service.ts` class for the same inputs.
+    * `[✅]`   `indexing_service.ts` and `indexing_service.interface.ts` are unmodified by this node.
+    * `[✅]`   `text_splitter.ts`/`text_splitter.interface.ts` import nothing from `dialectic-worker/` or any node that will consume them.
 
-* `[ ]`   supabase/functions/dialectic-worker/enqueueCompressJobs/`enqueueCompressJobs.ts` **[BE] Spawn one or more COMPRESS child jobs for a single compression victim, deduplicating against the canonical CompressedContext artifact and splitting into map-reduce chunks only when the victim doesn't fit the model window**
+* `[✅]`   supabase/functions/dialectic-worker/enqueueCompressJobs/`enqueueCompressJobs.ts` **[BE] Spawn one or more COMPRESS child jobs for a single compression victim, deduplicating against the canonical CompressedContext artifact and splitting into map-reduce chunks only when the victim doesn't fit the model window**
 
-  * `[ ]`   `objective`
-    * `[ ]`   Solve the missing spawn step between victim selection (future `compressPrompt.ts`) and COMPRESS job execution (future `processCompressJob.ts`): given ONE selected victim, decide whether it fits the parent model's window as a single COMPRESS child or must be map-reduce-chunked, re-verify (dedup layer 1) that its canonical artifact doesn't already exist, and insert the child row(s) atomically.
-    * `[ ]`   Functional goals:
-      * `[ ]`   Own `DialecticCompressJobPayload` (canonical shape in `Compression Jobs Scope.md`'s CANONICAL CONTRACTS) in `enqueueCompressJobs.interface.ts`, and `isDialecticCompressJobPayload` in this node's own guard file — creator-owns-the-data, per the module-first rule (`dialectic.interface.ts` gains NOTHING new; `processJob.ts`, WS-R, imports it from here). `CompressionMode` is imported from `_shared/types/file_manager.types.ts` (owned by the `path_constructor.ts` node, not here) — `assembleCompressionPrompt.ts` in `_shared/prompt-assembler/` also needs it, and `_shared/` code must never import from `dialectic-worker/`, so the type lives where every layer can import it downward.
-      * `[ ]`   Validate `payload.victim` by EXPLICIT branch on `sourceType`, never an OR/fallback: `'contribution'|'resource'` require `documentKey`; `'feedback'|'history'` require `sourceId`; an unrecognized `sourceType` throws — mirroring the same rule already applied in the `path_constructor.ts` node. ADDITIONALLY, by explicit branch on `mode`: `mode:'json'` requires `documentKey` + `docType` + `sourceStageSlug` — the source document's template identity, which `saveResponse`'s json-mode save-time rendering resolves against (WS-B, per the ratified 2026-07-11 canonical-contract amendment); `mode:'text'` requires none of `docType`/`sourceStageSlug`.
-      * `[ ]`   Dedup layer 1: recompute the victim's canonical FINAL-artifact path via `deps.constructStoragePath` (the `FileType.CompressedContext` case, no chunk fields) and query `dialectic_project_resources` by `(storage_path, file_name)`; if a row exists, return `{ createdCount: 0 }` without inserting anything — this is success, not error, and is a re-verification of a check `compressPrompt.ts` (later node) already performed once, guarding the race window between selection and spawn.
-      * `[ ]`   Size the victim: `deps.countTokens` against `params.tokenizerDeps`/`params.modelConfig` on the RAW victim content (a `{ message: content }` `CountableChatPayload` — not the assembled compression prompt, which doesn't exist yet); compare against `params.modelConfig.provider_max_input_tokens` minus a fixed 500-token template-overhead reserve minus the existing 32-token safety buffer (`compressPrompt.ts`'s own established constant). Fits → ONE child, `mode` as given. Exceeds → split via `deps.textSplitter.splitText(content)` → one child PER CHUNK, each forced to `mode: 'text'` with `chunk_index`/`chunk_total` (1-based) set — chunking JSON would destroy the structure `saveResponse` (later node) validates, so a chunked json-mode victim's pieces are always text-mode, per the ratified design.
-      * `[ ]`   Build a deterministic `idempotency_key` per child: `${parentJob.id}_compress_${sourceType}_${documentKey ?? sourceId}_${sanitizeForPath(targetKey)}`, with `_chunk_${chunk_index}of${chunk_total}` appended for chunk children — guards against duplicate child rows on a re-invocation, independent of the artifact-existence check above.
-      * `[ ]`   Insert all child row(s) in ONE batch `.insert([...])` call — the ratified "no partial success" rule is satisfied structurally by a single multi-row insert statement (atomic in Postgres), not by per-row recovery logic.
-    * `[ ]`   Non-functional constraints:
-      * `[ ]`   Does NOT set `parentJob.status`; the caller (`compressPrompt.ts`) owns transitioning the parent to `waiting_for_children` after this function returns.
-      * `[ ]`   Unlike `enqueueRenderJob.ts` (`enqueueRenderJob.ts:313-343`), a duplicate-`idempotency_key` insert error (Postgres `23505`) is NOT recovered by looking up the existing row — it is treated as any other insert failure: a hard, non-retriable stop. This is a deliberate divergence: the pre-insert existence check above is expected to catch the ordinary "already compressed" case, and under the `parent_job_id`/`waiting_for_children` gating this function is not re-entered for the same victim until all its prior children finish, so collision recovery is not load-bearing here.
-      * `[ ]`   Payload is never empty: `content` must be a non-empty string; an empty victim is a validation error, not silently accepted.
+  * `[✅]`   `objective`
+    * `[✅]`   Solve the missing spawn step between victim selection (future `compressPrompt.ts`) and COMPRESS job execution (future `processCompressJob.ts`): given ONE selected victim, decide whether it fits the parent model's window as a single COMPRESS child or must be map-reduce-chunked, re-verify (dedup layer 1) that its canonical artifact doesn't already exist, and insert the child row(s) atomically.
+    * `[✅]`   Functional goals:
+      * `[✅]`   Own `DialecticCompressJobPayload` (canonical shape in `Compression Jobs Scope.md`'s CANONICAL CONTRACTS) in `enqueueCompressJobs.interface.ts`, and `isDialecticCompressJobPayload` in this node's own guard file — creator-owns-the-data, per the module-first rule (`dialectic.interface.ts` gains NOTHING new; `processJob.ts`, WS-R, imports it from here). `CompressionMode` is imported from `_shared/types/file_manager.types.ts` (owned by the `path_constructor.ts` node, not here) — `assembleCompressionPrompt.ts` in `_shared/prompt-assembler/` also needs it, and `_shared/` code must never import from `dialectic-worker/`, so the type lives where every layer can import it downward.
+      * `[✅]`   Validate `payload.victim` by EXPLICIT branch on `sourceType`, never an OR/fallback: `'contribution'|'resource'` require `documentKey`; `'feedback'|'history'` require `sourceId`; an unrecognized `sourceType` throws — mirroring the same rule already applied in the `path_constructor.ts` node. ADDITIONALLY, by explicit branch on `mode`: `mode:'json'` requires `documentKey` + `docType` + `sourceStageSlug` — the source document's template identity, which `saveResponse`'s json-mode save-time rendering resolves against (WS-B, per the ratified 2026-07-11 canonical-contract amendment); `mode:'text'` requires none of `docType`/`sourceStageSlug`.
+      * `[✅]`   Dedup layer 1: recompute the victim's canonical FINAL-artifact path via `deps.constructStoragePath` (the `FileType.CompressedContext` case, no chunk fields) and query `dialectic_project_resources` by `(storage_path, file_name)`; if a row exists, return `{ createdCount: 0 }` without inserting anything — this is success, not error, and is a re-verification of a check `compressPrompt.ts` (later node) already performed once, guarding the race window between selection and spawn.
+      * `[✅]`   Size the victim: `deps.countTokens` against `params.tokenizerDeps`/`params.modelConfig` on the RAW victim content (a `{ message: content }` `CountableChatPayload` — not the assembled compression prompt, which doesn't exist yet); compare against `params.modelConfig.provider_max_input_tokens` minus a fixed 500-token template-overhead reserve minus the existing 32-token safety buffer (`compressPrompt.ts`'s own established constant). Fits → ONE child, `mode` as given. Exceeds → split via `deps.textSplitter.splitText(content)` → one child PER CHUNK, each forced to `mode: 'text'` with `chunk_index`/`chunk_total` (1-based) set — chunking JSON would destroy the structure `saveResponse` (later node) validates, so a chunked json-mode victim's pieces are always text-mode, per the ratified design.
+      * `[✅]`   Build a deterministic `idempotency_key` per child: `${parentJob.id}_compress_${sourceType}_${documentKey ?? sourceId}_${sanitizeForPath(targetKey)}`, with `_chunk_${chunk_index}of${chunk_total}` appended for chunk children — guards against duplicate child rows on a re-invocation, independent of the artifact-existence check above.
+      * `[✅]`   Insert all child row(s) in ONE batch `.insert([...])` call — the ratified "no partial success" rule is satisfied structurally by a single multi-row insert statement (atomic in Postgres), not by per-row recovery logic.
+    * `[✅]`   Non-functional constraints:
+      * `[✅]`   Does NOT set `parentJob.status`; the caller (`compressPrompt.ts`) owns transitioning the parent to `waiting_for_children` after this function returns.
+      * `[✅]`   Unlike `enqueueRenderJob.ts` (`enqueueRenderJob.ts:313-343`), a duplicate-`idempotency_key` insert error (Postgres `23505`) is NOT recovered by looking up the existing row — it is treated as any other insert failure: a hard, non-retriable stop. This is a deliberate divergence: the pre-insert existence check above is expected to catch the ordinary "already compressed" case, and under the `parent_job_id`/`waiting_for_children` gating this function is not re-entered for the same victim until all its prior children finish, so collision recovery is not load-bearing here.
+      * `[✅]`   Payload is never empty: `content` must be a non-empty string; an empty victim is a validation error, not silently accepted.
 
-  * `[ ]`   `enqueueCompressJobs.interface.test.ts`
-    * `[ ]`   Valid cases: `sourceType:'contribution'`/`'resource'` with `documentKey` (no `sourceId`) validates; `sourceType:'feedback'`/`'history'` with `sourceId` (no `documentKey`) validates; both `mode:'json'` and `mode:'text'`.
-    * `[ ]`   Invalid cases: `sourceType:'contribution'` missing `documentKey` (even with `sourceId` present); `sourceType:'history'` missing `sourceId` (even with `documentKey` present); an unrecognized `sourceType`; empty `content`; an invalid `mode`; a `mode:'json'` victim missing any of `docType`/`sourceStageSlug` (even with its `sourceType`-branch field present).
-    * `[ ]`   `enqueueCompressJobsSuccessReturn { createdCount }` and `enqueueCompressJobsErrorReturn { error, retriable }` never co-occur.
+  * `[✅]`   `enqueueCompressJobs.interface.test.ts`
+    * `[✅]`   Imports ONLY `assertEquals` and this node's own exports from `./enqueueCompressJobs.interface.ts` — no import of `CompressionMode`/`CompressionSourceType`, no `.guard.ts`, no `.mock.ts`, no `SupabaseClient`/`Database`, matching the `enqueueModelCall.interface.test.ts`/`listDomains.interface.test.ts` precedent.
+    * `[✅]`   `Record<keyof enqueueCompressJobsDeps, true>` surface check declares exactly `logger`/`textSplitter`/`countTokens`/`constructStoragePath` (4 keys).
+    * `[✅]`   `Record<keyof enqueueCompressJobsParams, true>` surface check declares exactly the 11 documented fields.
+    * `[✅]`   A minimal `enqueueCompressJobsPayload` literal type-checks, using `enqueueCompressJobsPayload["victim"]["mode"]`/`["sourceType"]` indexed-access to type each field's literal value — no import of `CompressionMode`/`CompressionSourceType` needed to construct it.
+    * `[✅]`   `enqueueCompressJobsSuccessReturn { createdCount: number }` and `enqueueCompressJobsErrorReturn { error: CompressJobValidationError | CompressJobEnqueueError; retriable: boolean }` each type-check individually; a `enqueueCompressJobsReturn`-typed value constructed from each is assignable, proving the union — no runtime accept/reject logic, no `isDialecticCompressJobPayload` call (that belongs to `enqueueCompressJobs.guard.test.ts`).
+    * `[✅]`   `enqueueCompressJobsFn`/`BoundenqueueCompressJobsFn` signature check: a locally-declared stub function assignable to each type, called once, return value's `typeof` asserted.
 
-  * `[ ]`   `enqueueCompressJobs.interface.ts`
-    * `[ ]`   Define `export interface DialecticCompressJobPayload` exactly per the canonical shape in `Compression Jobs Scope.md` (field census above), using the imported `CompressionMode` for its `mode` field.
-    * `[ ]`   Define `enqueueCompressJobsDeps { logger: ILogger; textSplitter: ITextSplitter; countTokens: CountTokensFn; constructStoragePath: ConstructStoragePathFn; }`, importing `ITextSplitter` from `../../_shared/utils/text_splitter.interface.ts`, `CountTokensFn`/`CountTokensDeps` from `../../_shared/types/tokenizer.types.ts`, `ConstructStoragePathFn` from `../../_shared/utils/path_constructor.types.ts`.
-    * `[ ]`   Define `enqueueCompressJobsParams { dbClient: SupabaseClient<Database>; parentJob: DialecticJobRow; sessionId: string; projectId: string; stageSlug: string; targetKey: string; iterationNumber: number; modelId: string; walletId: string; modelConfig: AiModelExtendedConfig; tokenizerDeps: CountTokensDeps; }`.
-    * `[ ]`   Define `enqueueCompressJobsPayload { victim: { mode: CompressionMode; content: string; sourceType: CompressionSourceType; sourceId?: string; documentKey?: string; docType?: string; sourceStageSlug?: string; } }`, importing `CompressionMode` AND `CompressionSourceType` together from `../../_shared/types/file_manager.types.ts` — neither is defined in this file.
-    * `[ ]`   Define `enqueueCompressJobsSuccessReturn { createdCount: number }`, `enqueueCompressJobsErrorReturn { error: CompressJobValidationError | CompressJobEnqueueError; retriable: boolean }`, `enqueueCompressJobsReturn = SuccessReturn | ErrorReturn`.
-    * `[ ]`   Define `enqueueCompressJobsFn(deps, params, payload) => Promise<enqueueCompressJobsReturn>` and `BoundenqueueCompressJobsFn(params, payload) => Promise<enqueueCompressJobsReturn>`.
+  * `[✅]`   `enqueueCompressJobs.interface.ts`
+    * `[✅]`   Define `export interface DialecticCompressJobPayload` exactly per the canonical shape in `Compression Jobs Scope.md` (field census above), using the imported `CompressionMode` for its `mode` field.
+    * `[✅]`   Define `enqueueCompressJobsDeps { logger: ILogger; textSplitter: ITextSplitter; countTokens: CountTokensFn; constructStoragePath: ConstructStoragePathFn; }`, importing `ITextSplitter` from `../../_shared/utils/text_splitter.interface.ts`, `CountTokensFn`/`CountTokensDeps` from `../../_shared/types/tokenizer.types.ts`, `ConstructStoragePathFn` from `../../_shared/utils/path_constructor.types.ts`.
+    * `[✅]`   Define `enqueueCompressJobsParams { dbClient: SupabaseClient<Database>; parentJob: DialecticJobRow; sessionId: string; projectId: string; stageSlug: string; targetKey: string; iterationNumber: number; modelId: string; walletId: string; modelConfig: AiModelExtendedConfig; tokenizerDeps: CountTokensDeps; }`.
+    * `[✅]`   Define `enqueueCompressJobsPayload { victim: { mode: CompressionMode; content: string; sourceType: CompressionSourceType; sourceId?: string; documentKey?: string; docType?: string; sourceStageSlug?: string; } }`, importing `CompressionMode` AND `CompressionSourceType` together from `../../_shared/types/file_manager.types.ts` — neither is defined in this file.
+    * `[✅]`   Define `CompressJobValidationError` and `CompressJobEnqueueError`.
+    * `[✅]`   Define `enqueueCompressJobsSuccessReturn { createdCount: number }`, `enqueueCompressJobsErrorReturn { error: CompressJobValidationError | CompressJobEnqueueError; retriable: boolean }`, `enqueueCompressJobsReturn = SuccessReturn | ErrorReturn`.
+    * `[✅]`   Define `enqueueCompressJobsFn(deps, params, payload) => Promise<enqueueCompressJobsReturn>` and `BoundenqueueCompressJobsFn(params, payload) => Promise<enqueueCompressJobsReturn>`.
 
-  * `[ ]`   `enqueueCompressJobs.interaction.spec` (prose; no file, matching `enqueueRenderJob`'s precedent of no literal `.interaction.spec`)
-    * `[ ]`   Called by: `compressPrompt.ts` (later node), once per selected victim.
-    * `[ ]`   Required interactions: one `dialectic_project_resources` existence read; when not found, one `dialectic_generation_jobs` batch insert. No writes when the artifact already exists.
-    * `[ ]`   Failure modes: validation errors (non-retriable), existence-check query failure (retriable — a transient DB read failure, not treated as "proceed as if missing"), insert failure (non-retriable, per the no-recovery divergence above).
+  * `[✅]`   `enqueueCompressJobs.interaction.spec` (prose; no file, matching `enqueueRenderJob`'s precedent of no literal `.interaction.spec`)
+    * `[✅]`   Called by: `compressPrompt.ts` (later node), once per selected victim.
+    * `[✅]`   Required interactions: one `dialectic_project_resources` existence read; when not found, one `dialectic_generation_jobs` batch insert. No writes when the artifact already exists.
+    * `[✅]`   Failure modes: validation errors (non-retriable), existence-check query failure (retriable — a transient DB read failure, not treated as "proceed as if missing"), insert failure (non-retriable, per the no-recovery divergence above).
 
-  * `[ ]`   `enqueueCompressJobs.guard.test.ts`
-    * `[ ]`   `isDialecticCompressJobPayload` accepts a fully-populated payload for each `sourceType` branch; rejects one missing its branch-required field, an unrecognized `sourceType`, and a payload missing `job_type:'COMPRESS'`.
-    * `[ ]`   `isDialecticCompressJobPayload` enforces the json-mode invariant: rejects a `mode:'json'` payload missing any of `documentKey`/`docType`/`sourceStageSlug`; accepts a `mode:'text'` payload without `docType`/`sourceStageSlug`.
-    * `[ ]`   `isenqueueCompressJobsDeps`/`isenqueueCompressJobsParams`/`isenqueueCompressJobsPayload` mirror `isEnqueueRenderJobDeps`/`isEnqueueRenderJobParams`/`isEnqueueRenderJobPayload`'s exact structure (`enqueueRenderJob.interface.guards.ts:48-134`): required-key presence, then per-field type/shape checks.
-    * `[ ]`   `isenqueueCompressJobsSuccessReturn`/`isenqueueCompressJobsErrorReturn` mirror `isEnqueueRenderJobSuccessReturn`/`isEnqueueRenderJobErrorReturn`'s mutual-exclusion pattern (`enqueueRenderJob.interface.guards.ts:177-203`).
+  * `[✅]`   `enqueueCompressJobs.guard.test.ts`
+    * `[✅]`   `isDialecticCompressJobPayload` accepts a fully-populated payload for each `sourceType` branch; rejects one missing its branch-required field, an unrecognized `sourceType`, and a payload missing `job_type:'COMPRESS'`.
+    * `[✅]`   `isDialecticCompressJobPayload` enforces the json-mode invariant: rejects a `mode:'json'` payload missing any of `documentKey`/`docType`/`sourceStageSlug`; accepts a `mode:'text'` payload without `docType`/`sourceStageSlug`.
+    * `[✅]`   `isenqueueCompressJobsDeps`/`isenqueueCompressJobsParams`/`isenqueueCompressJobsPayload` mirror `isEnqueueRenderJobDeps`/`isEnqueueRenderJobParams`/`isEnqueueRenderJobPayload`'s exact structure (`enqueueRenderJob.interface.guards.ts:48-134`): required-key presence, then per-field type/shape checks.
+    * `[✅]`   `isenqueueCompressJobsSuccessReturn`/`isenqueueCompressJobsErrorReturn` mirror `isEnqueueRenderJobSuccessReturn`/`isEnqueueRenderJobErrorReturn`'s mutual-exclusion pattern (`enqueueRenderJob.interface.guards.ts:177-203`).
 
-  * `[ ]`   `enqueueCompressJobs.guard.ts`
-    * `[ ]`   Implement `isDialecticCompressJobPayload` using `isCompressionSourceType`/`isCompressionMode` (both imported from `type_guards.file_manager.ts`, `path_constructor.ts` node — neither is defined here) plus the explicit per-branch required-field check, plus the explicit `mode` branch: `mode:'json'` requires `documentKey`, `docType`, and `sourceStageSlug` (never an OR-fallback).
-    * `[ ]`   Implement `isenqueueCompressJobsDeps`/`Params`/`Payload`/`SuccessReturn`/`ErrorReturn`, structured exactly like `enqueueRenderJob.interface.guards.ts`.
+  * `[✅]`   `enqueueCompressJobs.guard.ts`
+    * `[✅]`   Implement `isDialecticCompressJobPayload` using `isCompressionSourceType`/`isCompressionMode` (both imported from `type_guards.file_manager.ts`, `path_constructor.ts` node — neither is defined here) plus the explicit per-branch required-field check, plus the explicit `mode` branch: `mode:'json'` requires `documentKey`, `docType`, and `sourceStageSlug` (never an OR-fallback).
+    * `[✅]`   Implement `isenqueueCompressJobsDeps`/`Params`/`Payload`/`SuccessReturn`/`ErrorReturn`, structured exactly like `enqueueRenderJob.interface.guards.ts`.
 
-  * `[ ]`   `enqueueCompressJobs.mock.ts`
-    * `[ ]`   `createenqueueCompressJobsMock(options?: { result?, handler? })` returning `{ enqueueCompressJobs, calls }`, structured exactly like `createEnqueueRenderJobMock` (`enqueueRenderJob.mock.ts:23-49`); default fallback result `{ createdCount: 0 }`.
-    * `[ ]`   Trusted Factories: `buildenqueueCompressJobsParams(overrides?)`, `buildenqueueCompressJobsPayload(overrides?)` (default a valid `'contribution'`+`documentKey` victim; overridable to the `'history'`+`sourceId` branch), `buildDialecticCompressJobPayload(overrides?)`.
+  * `[✅]`   `enqueueCompressJobs.mock.ts`
+    * `[✅]`   `createenqueueCompressJobsMock(options?: { result?, handler? })` returning `{ enqueueCompressJobs, calls }`, structured exactly like `createEnqueueRenderJobMock` (`enqueueRenderJob.mock.ts:23-49`); default fallback result `{ createdCount: 0 }`.
+    * `[✅]`   Trusted Factories: `buildenqueueCompressJobsParams(overrides?)`, `buildenqueueCompressJobsPayload(overrides?)` (default a valid `'contribution'`+`documentKey` victim; overridable to the `'history'`+`sourceId` branch), `buildDialecticCompressJobPayload(overrides?)`.
 
-  * `[ ]`   `enqueueCompressJobs.test.ts`
-    * `[ ]`   Existence check finds a row → `{ createdCount: 0 }`; no insert call made (assert the insert spy was never invoked).
-    * `[ ]`   Existence check errors → `{ error, retriable: true }`; no insert attempted.
-    * `[ ]`   Victim under the token budget → one row inserted, `job_type:'COMPRESS'`, `parent_job_id: parentJob.id`, `payload.chunk_index`/`chunk_total` both `undefined`.
-    * `[ ]`   Victim over the token budget → `deps.textSplitter.splitText` is called; N rows inserted, each with `chunk_index`/`chunk_total` set and `payload.mode === 'text'` even when the original victim was `mode:'json'`.
-    * `[ ]`   Insert failure (including a simulated `23505`) → `{ error, retriable: false }`; no lookup/recovery query is issued (assert no second `select` call follows the failed insert).
-    * `[ ]`   Each child's `idempotency_key` matches the documented derivation; two calls for the same victim produce the same key.
+  * `[✅]`   `enqueueCompressJobs.test.ts`
+    * `[✅]`   Existence check finds a row → `{ createdCount: 0 }`; no insert call made (assert the insert spy was never invoked).
+    * `[✅]`   Existence check errors → `{ error, retriable: true }`; no insert attempted.
+    * `[✅]`   Victim under the token budget → one row inserted, `job_type:'COMPRESS'`, `parent_job_id: parentJob.id`, `payload.chunk_index`/`chunk_total` both `undefined`.
+    * `[✅]`   Victim over the token budget → `deps.textSplitter.splitText` is called; N rows inserted, each with `chunk_index`/`chunk_total` set and `payload.mode === 'text'` even when the original victim was `mode:'json'`.
+    * `[✅]`   Insert failure (including a simulated `23505`) → `{ error, retriable: false }`; no lookup/recovery query is issued (assert no second `select` call follows the failed insert).
+    * `[✅]`   Each child's `idempotency_key` matches the documented derivation; two calls for the same victim produce the same key.
 
-  * `[ ]`   `construction`
-    * `[ ]`   No factory beyond the exported function. Validate victim (explicit branch) → existence check → size/split → build payload(s) + idempotency key(s) → single batch insert — no DB write happens before validation and the existence check both pass.
+  * `[✅]`   `construction`
+    * `[✅]`   No factory beyond the exported function. Validate victim (explicit branch) → existence check → size/split → build payload(s) + idempotency key(s) → single batch insert — no DB write happens before validation and the existence check both pass.
 
-  * `[ ]`   `enqueueCompressJobs.ts` (Implementation)
-    * `[ ]`   Implements the objective's functional goals in the order given in `construction`, using `params.dbClient`, `TablesInsert<'dialectic_generation_jobs'>[]` for the batch insert, and `sanitizeForPath` (imported from `../../_shared/utils/path_constructor.ts`) for the idempotency-key's `targetKey` segment.
-    * `[ ]`   Add `CompressJobValidationError` and `CompressJobEnqueueError` to `_shared/utils/errors.ts`, identical in shape to `RenderJobValidationError`/`RenderJobEnqueueError` (`errors.ts:30-41`).
+  * `[✅]`   `enqueueCompressJobs.ts` (Implementation)
+    * `[✅]`   Implements the objective's functional goals in the order given in `construction`, using `params.dbClient`, `TablesInsert<'dialectic_generation_jobs'>[]` for the batch insert, and `sanitizeForPath` (imported from `../../_shared/utils/path_constructor.ts`) for the idempotency-key's `targetKey` segment.
 
-  * `[ ]`   `enqueueCompressJobs.provides.ts`
-    * `[ ]`   Re-export `enqueueCompressJobs`, all interface types, all guards, and all mock builders.
+  * `[✅]`   `enqueueCompressJobs.provides.ts`
+    * `[✅]`   Re-export `enqueueCompressJobs`, all interface types, all guards, and all mock builders.
 
-  * `[ ]`   `enqueueCompressJobs.integration.test.ts`
-    * `[ ]`   Bounded subsystem: real `enqueueCompressJobs`, real `constructStoragePath`, real `LangchainTextSplitter`, real `countTokens`; only the Supabase client is mocked (external boundary).
-    * `[ ]`   A victim sized just over the budget produces child rows whose combined chunk content, reassembled in `chunk_index` order, reproduces the original victim content (proves the real splitter's chunks round-trip losslessly through this function's payload construction).
+  * `[✅]`   `enqueueCompressJobs.integration.test.ts`
+    * `[✅]`   Bounded subsystem: real `enqueueCompressJobs`, real `constructStoragePath`, real `LangchainTextSplitter`, real `countTokens` with a real `modelConfig` and real tokenizer deps; only the Supabase client is mocked (external boundary).
+    * `[✅]`   Dedup path identity: the existence query's `storage_path`/`file_name` filter values equal `constructStoragePath`'s CompressedContext FINAL-artifact output exactly, for BOTH the `documentKey`-sourced and `sourceId`-sourced branches; a preloaded row at exactly that path → `{ createdCount: 0 }`, no insert; a row at the CHUNK path for the same identity does NOT satisfy the final check.
+    * `[✅]`   Spawn→consume contract: every inserted row's `payload` passes the real `isDialecticCompressJobPayload` — the fitting `mode:'json'` single child (json invariant intact), the fitting `mode:'text'` child, and every forced-text chunk child of a json victim.
+    * `[✅]`   Budget boundary with the real tokenizer: content tokenizing just under `provider_max_input_tokens − 500 − 32` → one child, mode preserved; just over → N chunk children.
+    * `[✅]`   Chunk coverage/order (corrected from "reassembled content reproduces the original": the real splitter overlaps and trims, so lossless concat is not its contract): chunks appear in source order, every chunk is a substring of the source, and their union covers it — no span of the source is absent from all chunks; `chunk_index` is 1-based and dense through `chunk_total`.
+    * `[✅]`   Downstream row fields: each inserted row carries `user_id`/`is_test_job` from `parentJob` and `session_id`/`stage_slug`/`iteration_number` from params — the fields the completion trigger and saveResponse attribution depend on.  
+  
+  * `[✅]`   `directionality`
+    * `[✅]`   Layer: worker orchestration (spawn). Deps inward: `text_splitter.ts`, `path_constructor.ts`'s `constructStoragePath`/`sanitizeForPath`, `tokenizer.types.ts`'s `countTokens` shape, `file_manager.types.ts`'s `CompressionSourceType`/`CompressionMode`/guards — all Sprint 1–2 nodes; this node imports `CompressionMode`, it does not provide it. Provides outward: `DialecticCompressJobPayload` to every remaining Sprint-3 node and to `saveResponse`/`compressPrompt` (Sprints 4–5).
 
-  * `[ ]`   `directionality`
-    * `[ ]`   Layer: worker orchestration (spawn). Deps inward: `text_splitter.ts`, `path_constructor.ts`'s `constructStoragePath`/`sanitizeForPath`, `tokenizer.types.ts`'s `countTokens` shape, `file_manager.types.ts`'s `CompressionSourceType`/`CompressionMode`/guards — all Sprint 1–2 nodes; this node imports `CompressionMode`, it does not provide it. Provides outward: `DialecticCompressJobPayload` to every remaining Sprint-3 node and to `saveResponse`/`compressPrompt` (Sprints 4–5).
-
-  * `[ ]`   `requirements`
-    * `[ ]`   A victim whose artifact already exists produces no insert and `{ createdCount: 0 }`.
-    * `[ ]`   A victim under budget produces exactly one COMPRESS child row with no chunk fields.
-    * `[ ]`   A victim over budget produces N chunk rows, all `mode:'text'`, with correct `chunk_index`/`chunk_total`.
-    * `[ ]`   A `sourceType` branch missing its required field throws, regardless of whether the other identity field is present.
-    * `[ ]`   Insert failure never triggers idempotency-key-collision recovery.
+  * `[✅]`   `requirements`
+    * `[✅]`   A victim whose artifact already exists produces no insert and `{ createdCount: 0 }`.
+    * `[✅]`   A victim under budget produces exactly one COMPRESS child row with no chunk fields.
+    * `[✅]`   A victim over budget produces N chunk rows, all `mode:'text'`, with correct `chunk_index`/`chunk_total`.
+    * `[✅]`   A `sourceType` branch missing its required field throws, regardless of whether the other identity field is present.
+    * `[✅]`   Insert failure never triggers idempotency-key-collision recovery.
 
 * `[ ]`   supabase/functions/_shared/prompt-assembler/`assembleCompressionPrompt.ts` **[BE] Assemble the mode-aware compression prompt for a COMPRESS job by loading the seeded template and rendering it against the victim content and the consuming step's target schema**
 
-  * `[ ]`   `objective`
-    * `[ ]`   Solve the missing link between a COMPRESS job's raw inputs (victim content, its mode, chunk lineage) and a renderable model prompt. COMPRESS jobs are not recipe steps — they carry no `recipe_step.prompt_template_id` and no `stage` of their own — so nothing in the existing prompt-assembler family (`assembleSeedPrompt`, `assemblePlannerPrompt`, `assembleTurnPrompt`, `assembleContinuationPrompt`, all keyed on `StageContext`/`recipe_step.prompt_template_id`) can produce this prompt.
-    * `[ ]`   Functional goals:
-      * `[ ]`   Load the single seeded `system_prompts` row by its unique `name` (`'compression_context_v1'`, seeded by the Sprint-1 migration node) — not by `prompt_template_id`, since COMPRESS jobs have none.
-      * `[ ]`   Render in exactly one of two modes per call, driven by `payload.mode` (`CompressionMode`, imported from `file_manager.types.ts` — owned there, not redefined here, per the corrected TYPE OWNERSHIP): `'json'` keeps the template's `json_mode` section and strips `text_mode`; `'text'` does the inverse.
-      * `[ ]`   Inject the CONSUMING step's target schema (`params.consumingStep.outputs_required`, `dialectic.interface.ts:174/193`) and stage intent (`params.consumingStep.step_description`, `types_db.ts:1235`) into the rendered prompt so the compressor preserves exactly what the next agent needs.
-      * `[ ]`   Render the `chunk_context` section only when both `payload.chunk_index` and `payload.chunk_total` are supplied (map-reduce chunk jobs), and omit both chunk placeholders otherwise.
-      * `[ ]`   Return `{ prompt: string }` on success; return a typed `{ error: Error; retriable: boolean }` on every precondition failure — never throw past the function boundary (DI-boundary function per `composition.instructions.md`, unlike the lower-level `renderPrompt` it calls, which is a pure synchronous string transform).
-    * `[ ]`   Non-functional constraints:
-      * `[ ]`   No network/model call in this function — it only queries `system_prompts` and performs local string templating; the compression model call is `processCompressJob`'s responsibility (next node).
-      * `[ ]`   No fallbacks: a missing/empty `step_description`, a missing/empty/non-JSON-compatible `outputs_required`, an empty `content`, or (in `json` mode) a `content` string that fails `JSON.parse` are explicit precondition failures, not silently defaulted or skipped.
-      * `[ ]`   Do NOT use `RenderFn`/`RenderPromptFunctionType` (`prompt-assembler.interface.ts:17-22, 158-163`) — both are shape-locked to `DynamicContextVariables` (`prompt-assembler.interface.ts:123-135`), which REQUIRES `user_objective`/`domain`/`context_description`/`original_user_request`/`recipeStep` — fields a compression prompt has no reason to supply and no correct values for. Depend directly on the real `renderPrompt` (`prompt-renderer.ts:57-62`, signature `(basePromptText: string, dynamicContextVariables: Record<string, unknown>, systemDefaultOverlayValues?: Json | null, userProjectOverlayValues?: Json | null) => string`) via a FRESH dep type this node defines to match that real signature — do not force-fit the wrong-shaped existing alias.
-      * `[ ]`   Each goal is atomic and testable through interface, guard, mock, unit, and integration coverage within this node's scope.
+  * `[✅]`   `objective`
+    * `[✅]`   Solve the missing link between a COMPRESS job's raw inputs (victim content, its mode, chunk lineage) and a renderable model prompt. COMPRESS jobs are not recipe steps — they carry no `recipe_step.prompt_template_id` and no `stage` of their own — so nothing in the existing prompt-assembler family (`assembleSeedPrompt`, `assemblePlannerPrompt`, `assembleTurnPrompt`, `assembleContinuationPrompt`, all keyed on `StageContext`/`recipe_step.prompt_template_id`) can produce this prompt.
+    * `[✅]`   Functional goals:
+      * `[✅]`   Load the single seeded `system_prompts` row by its unique `name` (`'compression_context_v1'`, seeded by the Sprint-1 migration node) — not by `prompt_template_id`, since COMPRESS jobs have none.
+      * `[✅]`   Render in exactly one of two modes per call, driven by `payload.mode` (`CompressionMode`, imported from `file_manager.types.ts` — owned there, not redefined here, per the corrected TYPE OWNERSHIP): `'json'` keeps the template's `json_mode` section and strips `text_mode`; `'text'` does the inverse.
+      * `[✅]`   Inject the CONSUMING step's target schema (`params.consumingStep.outputs_required`, `dialectic.interface.ts:174/193`) and stage intent (`params.consumingStep.step_description`, `types_db.ts:1235`) into the rendered prompt so the compressor preserves exactly what the next agent needs.
+      * `[✅]`   Render the `chunk_context` section only when both `payload.chunk_index` and `payload.chunk_total` are supplied (map-reduce chunk jobs), and omit both chunk placeholders otherwise.
+      * `[✅]`   Return `{ prompt: string }` on success; return a typed `{ error: Error; retriable: boolean }` on every precondition failure — never throw past the function boundary (DI-boundary function per `composition.instructions.md`, unlike the lower-level `renderPrompt` it calls, which is a pure synchronous string transform).
+    * `[✅]`   Non-functional constraints:
+      * `[✅]`   No network/model call in this function — it only queries `system_prompts` and performs local string templating; the compression model call is `processCompressJob`'s responsibility (next node).
+      * `[✅]`   No fallbacks: a missing/empty `step_description`, a missing/empty/non-JSON-compatible `outputs_required`, an empty `content`, or (in `json` mode) a `content` string that fails `JSON.parse` are explicit precondition failures, not silently defaulted or skipped.
+      * `[✅]`   Do NOT use `RenderFn`/`RenderPromptFunctionType` (`prompt-assembler.interface.ts:17-22, 158-163`) — both are shape-locked to `DynamicContextVariables` (`prompt-assembler.interface.ts:123-135`), which REQUIRES `user_objective`/`domain`/`context_description`/`original_user_request`/`recipeStep` — fields a compression prompt has no reason to supply and no correct values for. Depend directly on the real `renderPrompt` (`prompt-renderer.ts:57-62`, signature `(basePromptText: string, dynamicContextVariables: Record<string, unknown>, systemDefaultOverlayValues?: Json | null, userProjectOverlayValues?: Json | null) => string`) via a FRESH dep type this node defines to match that real signature — do not force-fit the wrong-shaped existing alias.
+      * `[✅]`   Each goal is atomic and testable through interface, guard, mock, unit, and integration coverage within this node's scope.
 
-  * `[ ]`   `role`
-    * `[ ]`   Node role is prompt-assembly implementation and complete immediate support system for `assembleCompressionPrompt.ts`, a new sibling to `assembleSeedPrompt.ts`/`assemblePlannerPrompt.ts`/`assembleTurnPrompt.ts` in `_shared/prompt-assembler/`.
-    * `[ ]`   Out-of-scope responsibilities:
-      * `[ ]`   Do not call `enqueueModelCall` or make any model/network call (that is `processCompressJob.ts`, next node).
-      * `[ ]`   Do not decide chunking, victim selection, or mode (that is `enqueueCompressJobs.ts`/`compressPrompt.ts`, already-written or later nodes) — this function only renders what it is told.
-      * `[ ]`   Do not validate or persist the compressor's OUTPUT (structural JSON-drift validation is `saveResponse.ts`'s responsibility, Sprint 4).
+  * `[✅]`   `role`
+    * `[✅]`   Node role is prompt-assembly implementation and complete immediate support system for `assembleCompressionPrompt.ts`, a new sibling to `assembleSeedPrompt.ts`/`assemblePlannerPrompt.ts`/`assembleTurnPrompt.ts` in `_shared/prompt-assembler/`.
+    * `[✅]`   Out-of-scope responsibilities:
+      * `[✅]`   Do not call `enqueueModelCall` or make any model/network call (that is `processCompressJob.ts`, next node).
+      * `[✅]`   Do not decide chunking, victim selection, or mode (that is `enqueueCompressJobs.ts`/`compressPrompt.ts`, already-written or later nodes) — this function only renders what it is told.
+      * `[✅]`   Do not validate or persist the compressor's OUTPUT (structural JSON-drift validation is `saveResponse.ts`'s responsibility, Sprint 4).
 
-  * `[ ]`   `module`
-    * `[ ]`   Bounded context: `_shared/prompt-assembler/` — prompt construction from typed inputs to a rendered string.
-    * `[ ]`   Inside boundary: template lookup by name, mode-section selection, target-schema/stage-intent injection, chunk-context injection, delegation to `renderPrompt` for substitution.
-    * `[ ]`   Outside boundary: job persistence, model invocation, response persistence, victim selection, chunking.
+  * `[✅]`   `module`
+    * `[✅]`   Bounded context: `_shared/prompt-assembler/` — prompt construction from typed inputs to a rendered string.
+    * `[✅]`   Inside boundary: template lookup by name, mode-section selection, target-schema/stage-intent injection, chunk-context injection, delegation to `renderPrompt` for substitution.
+    * `[✅]`   Outside boundary: job persistence, model invocation, response persistence, victim selection, chunking.
 
-  * `[ ]`   `deps`
-    * `[ ]`   Provider: `SupabaseClient<Database>` (`npm:@supabase/supabase-js@2`) — same pattern as every sibling assembler (e.g. `AssembleSeedPromptDeps.dbClient`, `prompt-assembler.interface.ts:70`). Purpose: read the seeded `system_prompts` row.
-    * `[ ]`   Provider: the real `renderPrompt` (`prompt-renderer.ts:57`), typed via a fresh `RenderCompressionPromptFn` this node defines locally (matching `renderPrompt`'s actual general signature — see the non-functional constraint above) — NOT `RenderPromptFunctionType`.
-    * `[ ]`   Provider: `ILogger` (`_shared/types.ts`) — structured logging on precondition failure, matching every sibling assembler's `logger` dep.
-    * `[ ]`   Confirm: no reverse dependency; no lateral violation — this node does not import from `dialectic-worker/` (its `CompressionMode` dependency is satisfied from `_shared/types/file_manager.types.ts`, not from `enqueueCompressJobs.interface.ts`).
+  * `[✅]`   `deps`
+    * `[✅]`   Provider: `SupabaseClient<Database>` (`npm:@supabase/supabase-js@2`) — same pattern as every sibling assembler (e.g. `AssembleSeedPromptDeps.dbClient`, `prompt-assembler.interface.ts:70`). Purpose: read the seeded `system_prompts` row.
+    * `[✅]`   Provider: the real `renderPrompt` (`prompt-renderer.ts:57`), typed via a fresh `RenderCompressionPromptFn` this node defines locally (matching `renderPrompt`'s actual general signature — see the non-functional constraint above) — NOT `RenderPromptFunctionType`.
+    * `[✅]`   Provider: `ILogger` (`_shared/types.ts`) — structured logging on precondition failure, matching every sibling assembler's `logger` dep.
+    * `[✅]`   Confirm: no reverse dependency; no lateral violation — this node does not import from `dialectic-worker/` (its `CompressionMode` dependency is satisfied from `_shared/types/file_manager.types.ts`, not from `enqueueCompressJobs.interface.ts`).
 
-  * `[ ]`   `assembleCompressionPrompt.interface.test.ts`
-    * `[ ]`   Valid: `mode:'json'` with valid JSON-parseable `content`, non-empty `outputs_required`, non-empty `step_description`, no chunk fields → success return whose `prompt` contains the rendered `source_content`, the JSON-mode instruction text, and the stringified `outputs_required`, and does NOT contain the text-mode instruction text.
-    * `[ ]`   Valid: `mode:'text'` → inverse of the above.
-    * `[ ]`   Valid: `chunk_index`/`chunk_total` both supplied → `prompt` contains the chunk-context instruction text and both numbers; neither supplied → `prompt` contains neither.
-    * `[ ]`   Invalid: `system_prompts` query returns no row/a DB error → `retriable: true`, message names the missing template by name.
-    * `[ ]`   Invalid: `consumingStep.step_description` null/empty → `retriable: false`.
-    * `[ ]`   Invalid: `consumingStep.outputs_required` empty or not JSON-compatible → `retriable: false`.
-    * `[ ]`   Invalid: `content` empty string → `retriable: false` (payload is never empty).
-    * `[ ]`   Invalid: `mode:'json'` with non-JSON `content` → `retriable: false`.
-    * `[ ]`   Invalid: exactly one of `chunk_index`/`chunk_total` supplied → `retriable: false`.
-    * `[ ]`   Invariants: `prompt` is always a non-empty string on success; the returned object never carries both `prompt` and `error`.
+  * `[✅]`   `assembleCompressionPrompt.interface.test.ts`
+    * `[✅]`   Imports ONLY `assertEquals` and this node's own exports from `./assembleCompressionPrompt.interface.ts` — no import of `CompressionMode`, no `SupabaseClient`/`Database`, no `DialecticStageRecipeStep`; all such types are referenced via indexed access on this file's own exported types, matching the `enqueueModelCall.interface.test.ts` precedent. (The DB-query/rendering/retriable-flag behavior these old bullets described belongs to `assembleCompressionPrompt.test.ts`, the behavioral-verification file — not here.)
+    * `[✅]`   `Record<keyof AssembleCompressionPromptDeps, true>` surface check declares exactly `dbClient`/`renderPromptFn`/`logger` (3 keys).
+    * `[✅]`   `AssembleCompressionPromptDeps["renderPromptFn"]` indexed-access typed stub (returning a fixed string) is assignable to that field, proving the signature without importing `RenderCompressionPromptFn` — it's already exported from this same file, imported directly instead.
+    * `[✅]`   `AssembleCompressionPromptParams` surface check: `Record<keyof AssembleCompressionPromptParams, true>` declares exactly `consumingStep`.
+    * `[✅]`   `AssembleCompressionPromptPayload` type-checks with `mode` typed via `AssembleCompressionPromptPayload["mode"]` indexed-access (no `CompressionMode` import); a second literal omits `chunk_index`/`chunk_total` to prove they're optional.
+    * `[✅]`   `AssembleCompressionPromptSuccessReturn { prompt: string }` and `AssembleCompressionPromptErrorReturn { error: Error; retriable: boolean }` each type-check individually; a `AssembleCompressionPromptReturn`-typed value constructed from each is assignable, proving the union.
+    * `[✅]`   `AssembleCompressionPromptFn`/`BoundAssembleCompressionPromptFn` signature check: a locally-declared stub function assignable to each type.
 
-  * `[ ]`   `assembleCompressionPrompt.interface.ts`
-    * `[ ]`   Define `RenderCompressionPromptFn = (basePromptText: string, dynamicContextVariables: Record<string, unknown>, systemDefaultOverlayValues?: Json | null, userProjectOverlayValues?: Json | null) => string`.
-    * `[ ]`   Define `AssembleCompressionPromptDeps { dbClient: SupabaseClient<Database>; renderPromptFn: RenderCompressionPromptFn; logger: ILogger }`.
-    * `[ ]`   Define `AssembleCompressionPromptParams { consumingStep: DialecticStageRecipeStep }` — carries real `outputs_required: OutputRule` and `step_description: string | null`; not the broader `DialecticRecipeStep` union, which also admits shapes lacking these fields.
-    * `[ ]`   Define `AssembleCompressionPromptPayload { mode: CompressionMode; content: string; chunk_index?: number; chunk_total?: number }`, importing `CompressionMode` from `../types/file_manager.types.ts` — matches the corrected canonical contract in `Compression Jobs Scope.md` exactly (`sourceType`/`sourceId`/`targetKey` are deliberately absent: rendering doesn't consume them, and provenance persists on the job row and the artifact path).
-    * `[ ]`   Define `AssembleCompressionPromptSuccessReturn { prompt: string }`, `AssembleCompressionPromptErrorReturn { error: Error; retriable: boolean }`, `AssembleCompressionPromptReturn = SuccessReturn | ErrorReturn`.
-    * `[ ]`   Define `AssembleCompressionPromptFn(deps, params, payload) => Promise<AssembleCompressionPromptReturn>` and `BoundAssembleCompressionPromptFn(params, payload) => Promise<AssembleCompressionPromptReturn>`.
+  * `[✅]`   `assembleCompressionPrompt.interface.ts`
+    * `[✅]`   Define `RenderCompressionPromptFn = (basePromptText: string, dynamicContextVariables: Record<string, unknown>, systemDefaultOverlayValues?: Json | null, userProjectOverlayValues?: Json | null) => string`.
+    * `[✅]`   Define `AssembleCompressionPromptDeps { dbClient: SupabaseClient<Database>; renderPromptFn: RenderCompressionPromptFn; logger: ILogger }`.
+    * `[✅]`   Define `AssembleCompressionPromptParams { consumingStep: DialecticStageRecipeStep }` — carries real `outputs_required: OutputRule` and `step_description: string | null`; not the broader `DialecticRecipeStep` union, which also admits shapes lacking these fields.
+    * `[✅]`   Define `AssembleCompressionPromptPayload { mode: CompressionMode; content: string; chunk_index?: number; chunk_total?: number }`, importing `CompressionMode` from `../types/file_manager.types.ts` — matches the corrected canonical contract in `Compression Jobs Scope.md` exactly (`sourceType`/`sourceId`/`targetKey` are deliberately absent: rendering doesn't consume them, and provenance persists on the job row and the artifact path).
+    * `[✅]`   Define `AssembleCompressionPromptSuccessReturn { prompt: string }`, `AssembleCompressionPromptErrorReturn { error: Error; retriable: boolean }`, `AssembleCompressionPromptReturn = SuccessReturn | ErrorReturn`.
+    * `[✅]`   Define `AssembleCompressionPromptFn(deps, params, payload) => Promise<AssembleCompressionPromptReturn>` and `BoundAssembleCompressionPromptFn(params, payload) => Promise<AssembleCompressionPromptReturn>`.
 
-  * `[ ]`   `assembleCompressionPrompt.interaction.spec` (prose; no file, matching this directory's `gatherContinuationInputs` precedent of no literal `.interaction.spec` file)
-    * `[ ]`   Called by: `processCompressJob.ts` (next node) — one call per COMPRESS job; `params.consumingStep` sourced from the CONSUMING stage's recipe step row (not the COMPRESS job's own row, which has none); `payload` built from the job's `DialecticCompressJobPayload`.
-    * `[ ]`   Required interaction: exactly one `system_prompts` read; exactly one `renderPromptFn` call; no writes anywhere.
-    * `[ ]`   Failure modes: template-not-found (retriable), any missing/invalid step or payload precondition (not retriable — retrying without a data/code change fails identically).
+  * `[✅]`   `assembleCompressionPrompt.interaction.spec` (prose; no file, matching this directory's `gatherContinuationInputs` precedent of no literal `.interaction.spec` file)
+    * `[✅]`   Called by: `processCompressJob.ts` (next node) — one call per COMPRESS job; `params.consumingStep` sourced from the CONSUMING stage's recipe step row (not the COMPRESS job's own row, which has none); `payload` built from the job's `DialecticCompressJobPayload`.
+    * `[✅]`   Required interaction: exactly one `system_prompts` read; exactly one `renderPromptFn` call; no writes anywhere.
+    * `[✅]`   Failure modes: template-not-found (retriable), any missing/invalid step or payload precondition (not retriable — retrying without a data/code change fails identically).
 
-  * `[ ]`   `assembleCompressionPrompt.interface.guards.test.ts`
-    * `[ ]`   `isAssembleCompressionPromptDeps` accepts a full valid deps object; rejects missing `dbClient`, missing/non-function `renderPromptFn`, missing `logger`.
-    * `[ ]`   `isAssembleCompressionPromptParams` accepts a valid `{ consumingStep }`; rejects a `consumingStep` missing `outputs_required` or `step_description` keys.
-    * `[ ]`   `isAssembleCompressionPromptPayload` accepts a valid payload in both modes; rejects an invalid `mode` (via `isCompressionMode`, imported from `type_guards.file_manager.ts`), missing `content`, and a payload with only one of `chunk_index`/`chunk_total`.
-    * `[ ]`   `isAssembleCompressionPromptSuccessReturn`/`isAssembleCompressionPromptErrorReturn` reject a value carrying both `prompt` and `error`.
+  * `[✅]`   `assembleCompressionPrompt.guard.test.ts`
+    * `[✅]`   `isAssembleCompressionPromptDeps` accepts a full valid deps object; rejects missing `dbClient`, missing/non-function `renderPromptFn`, missing `logger`.
+    * `[✅]`   `isAssembleCompressionPromptParams` accepts a valid `{ consumingStep }`; rejects a `consumingStep` missing `outputs_required` or `step_description` keys.
+    * `[✅]`   `isAssembleCompressionPromptPayload` accepts a valid payload in both modes; rejects an invalid `mode` (via `isCompressionMode`, imported from `type_guards.file_manager.ts`), missing `content`, and a payload with only one of `chunk_index`/`chunk_total`.
+    * `[✅]`   `isAssembleCompressionPromptSuccessReturn`/`isAssembleCompressionPromptErrorReturn` reject a value carrying both `prompt` and `error`.
 
-  * `[ ]`   `assembleCompressionPrompt.interface.guards.ts`
-    * `[ ]`   Implement `isAssembleCompressionPromptDeps` using `isRecord` (`type_guards.common.ts`) then checking `dbClient` is a record, `renderPromptFn` is a function, `logger` is a record — mirroring `isEnqueueRenderJobDeps`'s structure (`enqueueRenderJob.interface.guards.ts:48-65`).
-    * `[ ]`   Implement `isAssembleCompressionPromptParams` checking `consumingStep` is a record containing `outputs_required` and `step_description` keys.
-    * `[ ]`   Implement `isAssembleCompressionPromptPayload` checking `mode` via `isCompressionMode` (imported, not redefined), `content` is a string, and — when either `chunk_index` or `chunk_total` is present — both are present and are numbers.
-    * `[ ]`   Implement `isAssembleCompressionPromptSuccessReturn`/`isAssembleCompressionPromptErrorReturn` mirroring `isEnqueueRenderJobSuccessReturn`/`isEnqueueRenderJobErrorReturn`'s mutual-exclusion pattern (`enqueueRenderJob.interface.guards.ts:177-203`).
+  * `[✅]`   `assembleCompressionPrompt.guard.ts`
+    * `[✅]`   Implement `isAssembleCompressionPromptDeps` using `isRecord` (`type_guards.common.ts`) then checking `dbClient` is a record, `renderPromptFn` is a function, `logger` is a record — mirroring `isEnqueueRenderJobDeps`'s structure (`enqueueRenderJob.interface.guards.ts:48-65`).
+    * `[✅]`   Implement `isAssembleCompressionPromptParams` checking `consumingStep` is a record containing `outputs_required` and `step_description` keys.
+    * `[✅]`   Implement `isAssembleCompressionPromptPayload` checking `mode` via `isCompressionMode` (imported, not redefined), `content` is a string, and — when either `chunk_index` or `chunk_total` is present — both are present and are numbers.
+    * `[✅]`   Implement `isAssembleCompressionPromptSuccessReturn`/`isAssembleCompressionPromptErrorReturn` mirroring `isEnqueueRenderJobSuccessReturn`/`isEnqueueRenderJobErrorReturn`'s mutual-exclusion pattern (`enqueueRenderJob.interface.guards.ts:177-203`).
 
-  * `[ ]`   `assembleCompressionPrompt.mock.ts`
-    * `[ ]`   `buildDialecticStageRecipeStep(overrides?)` — Trusted Factory producing a full valid row (non-empty `step_description`, non-empty `outputs_required`), overridable to `null`/empty for failure-path tests.
-    * `[ ]`   `buildAssembleCompressionPromptDeps(overrides?)` — default `dbClient` from `createMockSupabaseClient` pre-seeded so the `system_prompts` lookup by `name = 'compression_context_v1'` resolves to a realistic template fixture (the actual seeded template body, not a placeholder string); default `renderPromptFn` is the REAL `renderPrompt` from `../prompt-renderer.ts` (repo-owned pure function — not mocked, per the repo's no-mock-repo-owned-functions rule already applied to `LangchainTextSplitter`); default `logger` from `_shared/logger.mock.ts`.
-    * `[ ]`   `buildAssembleCompressionPromptParams(overrides?)`, `buildAssembleCompressionPromptPayload(overrides?)` (default `mode:'text'`; overridable to `mode:'json'` with a valid JSON-stringified fixture).
-    * `[ ]`   `createAssembleCompressionPromptMock(options: { handler?; result? })` returning `{ assembleCompressionPrompt, calls }`, structured exactly like `createEnqueueRenderJobMock` (`enqueueRenderJob.mock.ts:23-49`).
-    * `[ ]`   `buildBoundAssembleCompressionPromptFn(depsOverrides?)` — binds the REAL implementation for `processCompressJob`'s own integration test.
+  * `[✅]`   `assembleCompressionPrompt.mock.ts`
+    * `[✅]`   `buildDialecticStageRecipeStep(overrides?)` — Trusted Factory producing a full valid row (non-empty `step_description`, non-empty `outputs_required`), overridable to `null`/empty for failure-path tests.
+    * `[✅]`   `buildAssembleCompressionPromptDeps(overrides?)` — default `dbClient` from `createMockSupabaseClient` pre-seeded so the `system_prompts` lookup by `name = 'compression_context_v1'` resolves to a realistic template fixture (the actual seeded template body, not a placeholder string); default `renderPromptFn` is the REAL `renderPrompt` from `../prompt-renderer.ts` (repo-owned pure function — not mocked, per the repo's no-mock-repo-owned-functions rule already applied to `LangchainTextSplitter`); default `logger` from `_shared/logger.mock.ts`.
+    * `[✅]`   `buildAssembleCompressionPromptParams(overrides?)`, `buildAssembleCompressionPromptPayload(overrides?)` (default `mode:'text'`; overridable to `mode:'json'` with a valid JSON-stringified fixture).
+    * `[✅]`   `createAssembleCompressionPromptMock(options: { handler?; result? })` returning `{ assembleCompressionPrompt, calls }`, structured exactly like `createEnqueueRenderJobMock` (`enqueueRenderJob.mock.ts:23-49`).
+    * `[✅]`   `buildBoundAssembleCompressionPromptFn(depsOverrides?)` — binds the REAL implementation for `processCompressJob`'s own integration test.
 
   * `[ ]`   `assembleCompressionPrompt.test.ts`
     * `[ ]`   Using the real implementation + real `renderPrompt` + mock `dbClient`: `mode:'json'` renders the JSON-mode block and strips text-mode; `mode:'text'` the inverse.
@@ -636,8 +640,12 @@ Oversized model inputs compress incrementally until the preflight fits: the pare
     * `[ ]`   Confirm: no reverse dependency; no lateral violation.
 
   * `[ ]`   `processCompressJob.interface.test.ts`
-    * `[ ]`   Valid/invalid cases for `isProcessCompressJobDeps`/`Params`/`Payload`/`Return` mirroring the shape-testing style already used in `enqueueCompressJobs.interface.test.ts`.
-    * `[ ]`   `ProcessCompressJobSuccessReturn { queued: boolean }` and `ProcessCompressJobErrorReturn { error, retriable }` never co-occur.
+    * `[ ]`   Imports ONLY `assertEquals` and this node's own exports from `./processCompressJob.interface.ts` — no `.guard.ts` import, no `isProcessCompressJobDeps`/`Params`/`Payload`/`Return` calls (those belong to `processCompressJob.guard.test.ts`), no `SupabaseClient`/`Database`/`BoundAssembleCompressionPromptFn`/`BoundEnqueueModelCallFn` imports; each is referenced via `keyof`/indexed access on this file's own exported types, matching the `enqueueModelCall.interface.test.ts` shape-testing style.
+    * `[ ]`   `Record<keyof ProcessCompressJobDeps, true>` surface check declares exactly `assembleCompressionPrompt`/`enqueueModelCall`/`countTokens`/`constructStoragePath`/`logger` (5 keys).
+    * `[ ]`   `Record<keyof ProcessCompressJobParams, true>` surface check declares exactly `dbClient`/`jobId`/`projectOwnerUserId`/`authToken` (4 keys).
+    * `[ ]`   `ProcessCompressJobPayload` (the `DialecticCompressJobPayload` alias) type-checks using only this file's own re-exported type — no re-import from `enqueueCompressJobs.interface.ts`.
+    * `[ ]`   `ProcessCompressJobSuccessReturn { queued: boolean }` and `ProcessCompressJobErrorReturn { error: Error; retriable: boolean }` each type-check individually; a `ProcessCompressJobReturn`-typed value constructed from each is assignable, proving the union.
+    * `[ ]`   `ProcessCompressJobFn`/`BoundProcessCompressJobFn` signature check: a locally-declared stub function assignable to each type.
 
   * `[ ]`   `processCompressJob.interface.ts`
     * `[ ]`   Define `ProcessCompressJobDeps { assembleCompressionPrompt: BoundAssembleCompressionPromptFn; enqueueModelCall: BoundEnqueueModelCallFn; countTokens: CountTokensFn; constructStoragePath: ConstructStoragePathFn; logger: ILogger }`.
@@ -1126,8 +1134,8 @@ Oversized model inputs compress incrementally until the preflight fits: the pare
 
   * `[ ]`   `enqueueRenderJob.interface.test.ts`
     * `[ ]`   The `'Contract: EnqueueRenderJobDeps accepts dbClient, logger, shouldEnqueueRenderJob'` test (:21-45) and the two `_missingDb`-style negative tests (:164, :221) each gain `resolveTemplateFilename: <stub returning a fixed success>` in their `EnqueueRenderJobDeps` literal, plus the first test's title/assertions extend to also assert `typeof deps.resolveTemplateFilename === 'function'`.
-    * `[ ]`   New test: `isEnqueueRenderJobDeps` returns `false` for an otherwise-valid deps object missing `resolveTemplateFilename`.
-    * `[ ]`   New test: `isEnqueueRenderJobErrorReturn` accepts `{ error: new TemplateResolutionError('x'), retriable: false }`.
+    * `[ ]`   New test: a `@ts-expect-error`-style compile-time check that an `EnqueueRenderJobDeps` literal omitting `resolveTemplateFilename` is rejected by the type checker — mirrors this file's existing `_missingDb`/`_missingJobId` pattern (:202-240); no `isEnqueueRenderJobDeps` call (that belongs to `enqueueRenderJob.interface.guards.test.ts` or equivalent guard-test file, not here).
+    * `[ ]`   New test: `EnqueueRenderJobErrorReturn` accepts `{ error: new TemplateResolutionError('x'), retriable: false }` by direct construction and type assignment — no `isEnqueueRenderJobErrorReturn` call.
 
   * `[ ]`   `enqueueRenderJob.test.ts`
     * `[ ]`   Import `resolveTemplateFilename` (the real function, `_shared/utils/resolveTemplateFilename/resolveTemplateFilename.ts`) and `createResolveTemplateFilenameMock` (`resolveTemplateFilename.mock.ts`, prior node).

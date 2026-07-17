@@ -3,13 +3,13 @@ import {
   DialecticJobRow,
   DialecticRecipeStep,
 } from "../../dialectic-service/dialectic.interface.ts";
-import { GatherContextFn } from "./gatherContext.ts";
-import { GatherContinuationInputsSignature } from "./gatherContinuationInputs.interface.ts";
+import { GatherContextFn } from "./gatherContext/gatherContext.ts";
+import { GatherContinuationInputsSignature } from "./gatherContinuationInputs/gatherContinuationInputs.interface.ts";
 import { AssembleChunksSignature } from "../utils/assembleChunks/assembleChunks.interface.ts";
 import { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { IFileManager, FileType } from "../types/file_manager.types.ts";
 import { DownloadStorageResult, DownloadFromStorageFn } from "../supabase_storage_utils.ts";
-import { GatherInputsForStageFn } from "./gatherInputsForStage.ts";
+import { GatherInputsForStageFn } from "./gatherInputsForStage/gatherInputsForStage.ts";
 import { Json } from "../../types_db.ts";
 import { InputRule } from "../../dialectic-service/dialectic.interface.ts";
 import { Messages } from "../types.ts";

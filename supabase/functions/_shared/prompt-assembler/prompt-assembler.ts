@@ -18,18 +18,18 @@ import {
 } from "./prompt-assembler.interface.ts";
 import type { DownloadStorageResult } from "../supabase_storage_utils.ts";
 import type { IPromptAssembler } from "./prompt-assembler.interface.ts";
-import { gatherInputsForStage, GatherInputsForStageFn } from "./gatherInputsForStage.ts";
-import { gatherContext, GatherContextFn } from "./gatherContext.ts";
-import { gatherContinuationInputs } from "./gatherContinuationInputs.ts";
-import { GatherContinuationInputsSignature } from "./gatherContinuationInputs.interface.ts";
-import { assembleSeedPrompt } from "./assembleSeedPrompt.ts";
-import { assemblePlannerPrompt } from "./assemblePlannerPrompt.ts";
-import { assembleTurnPrompt } from "./assembleTurnPrompt.ts";
-import { assembleContinuationPrompt } from "./assembleContinuationPrompt.ts";
+import { gatherInputsForStage, GatherInputsForStageFn } from "./gatherInputsForStage/gatherInputsForStage.ts";
+import { gatherContext, GatherContextFn } from "./gatherContext/gatherContext.ts";
+import { gatherContinuationInputs } from "./gatherContinuationInputs/gatherContinuationInputs.ts";
+import { GatherContinuationInputsSignature } from "./gatherContinuationInputs/gatherContinuationInputs.interface.ts";
+import { assembleSeedPrompt } from "./assembleSeedPrompt/assembleSeedPrompt.ts";
+import { assemblePlannerPrompt } from "./assemblePlannerPrompt/assemblePlannerPrompt.ts";
+import { assembleTurnPrompt } from "./assembleTurnPrompt/assembleTurnPrompt.ts";
+import { assembleContinuationPrompt } from "./assembleContinuationPrompt/assembleContinuationPrompt.ts";
 import { IFileManager } from "../types/file_manager.types.ts";
 import { isRecord } from "../utils/type_guards.ts";
 import { RenderFn } from "./prompt-assembler.interface.ts";
-import { render } from "./render.ts";
+import { render } from "./render/render.ts";
 import { assembleChunks } from "../utils/assembleChunks/assembleChunks.ts";
 
 /**

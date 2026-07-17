@@ -30,8 +30,8 @@ import {
   type DynamicContextVariables,
   type GatheredRecipeContext,
 } from "./prompt-assembler.interface.ts";
-import { gatherInputsForStage, type GatherInputsForStageFn } from "./gatherInputsForStage.ts";
-import type { GatherContextFn } from "./gatherContext.ts";
+import { gatherInputsForStage, type GatherInputsForStageFn } from "./gatherInputsForStage/gatherInputsForStage.ts";
+import type { GatherContextFn } from "./gatherContext/gatherContext.ts";
 import {
   IFileManager,
   FileType,
@@ -45,8 +45,8 @@ import {
   DialecticStageRecipeStep,
   OutputRule,
 } from "../../dialectic-service/dialectic.interface.ts";
-import type { GatherContinuationInputsSignature } from "./gatherContinuationInputs.interface.ts";
-import { gatherContinuationInputs } from "./gatherContinuationInputs.ts";
+import type { GatherContinuationInputsSignature } from "./gatherContinuationInputs/gatherContinuationInputs.interface.ts";
+import { gatherContinuationInputs } from "./gatherContinuationInputs/gatherContinuationInputs.ts";
 import { createAssembleChunksMock } from "../utils/assembleChunks/assembleChunks.mock.ts";
 
 // Mock implementations for standalone functions

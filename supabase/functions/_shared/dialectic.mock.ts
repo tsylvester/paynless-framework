@@ -16,8 +16,16 @@ import type {
     UpdateProjectDomainPayload,
     GetProjectResourceContentPayload,
     GetProjectResourceContentResponse,
-    DialecticStage 
+    DialecticStage,
+    DialecticStageRecipeStep,
+    InputRule,
+    OutputRule,
+    RelevanceRule,
+    JobType,
+    PromptType,
+    GranularityStrategy,
 } from '../dialectic-service/dialectic.interface.ts';
+import { FileType } from './types/file_manager.types.ts';
 
 // 1. Define Function Signature Types
 type CreateProjectFn = (payload: FormData | CreateProjectPayload) => Promise<DialecticProject>;
@@ -220,4 +228,103 @@ export function createMockProcessJob(): {
         processJob: processJobSpy,
         restore: () => processJobSpy.restore(),
     };
+}
+
+// --- Recipe Step / Rule Factories ---
+
+export function buildInputRule(
+    overrides?: Partial<InputRule>,
+): InputRule {
+    const base: InputRule = {
+        type: 'document',
+        slug: 'thesis',
+        document_key: FileType.business_case,
+        required: true,
+    };
+    return { ...base, ...overrides };
+}
+
+export function buildRelevanceRule(
+    overrides?: Partial<RelevanceRule>,
+): RelevanceRule {
+    const base: RelevanceRule = {
+        document_key: FileType.business_case,
+        relevance: 1,
+        type: 'document',
+        slug: 'thesis',
+    };
+    return { ...base, ...overrides };
+}
+
+export function buildOutputRule(
+    overrides?: Partial<OutputRule>,
+): OutputRule {
+    const base: OutputRule = {
+        system_materials: {
+            stage_rationale: 'Compress context to fit target schema.',
+            agent_notes_to_self: 'Preserve facts relevant to the target schema.',
+            input_artifacts_summary: 'Source content to compress.',
+            document_order: ['business_case'],
+            current_document: 'business_case',
+        },
+        header_context_artifact: {
+            type: 'header_context',
+            document_key: 'header_context',
+            artifact_class: 'header_context',
+            file_type: 'json',
+        },
+        context_for_documents: [
+            {
+                document_key: FileType.business_case,
+                content_to_include: {
+                    focus: 'target schema relevance',
+                    reasoning_chain: true,
+                },
+            },
+        ],
+        documents: [
+            {
+                artifact_class: 'rendered_document',
+                file_type: 'markdown',
+                document_key: FileType.business_case,
+                template_filename: 'business_case.md',
+            },
+        ],
+    };
+    return { ...base, ...overrides };
+}
+
+export function buildDialecticStageRecipeStep(
+    overrides?: Partial<DialecticStageRecipeStep> | null,
+): DialecticStageRecipeStep | null {
+    if (overrides === null) {
+        return null;
+    }
+    const base: DialecticStageRecipeStep = {
+        id: 'a000000e-0000-4000-a000-00000000000e',
+        instance_id: 'a000000d-0000-4000-a000-00000000000d',
+        template_step_id: 'a000000b-0000-4000-a000-00000000000b',
+        created_at: '2025-01-01T00:00:00.000Z',
+        updated_at: '2025-01-01T00:00:00.000Z',
+        step_key: 'compress_consuming',
+        step_slug: 'compress',
+        step_name: 'Compression Consuming Step',
+        step_description: 'Compress context for downstream document generation.',
+        job_type: 'EXECUTE',
+        prompt_type: 'Turn',
+        output_type: FileType.business_case,
+        granularity_strategy: 'per_source_document',
+        inputs_required: [buildInputRule()],
+        inputs_relevance: [buildRelevanceRule()],
+        outputs_required: buildOutputRule(),
+        config_override: {},
+        object_filter: {},
+        output_overrides: {},
+        is_skipped: false,
+        parallel_group: null,
+        branch_key: null,
+        prompt_template_id: null,
+        execution_order: 1,
+    };
+    return { ...base, ...overrides };
 } 
