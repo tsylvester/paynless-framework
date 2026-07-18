@@ -48,6 +48,13 @@ import {
 import type { GatherContinuationInputsSignature } from "./gatherContinuationInputs/gatherContinuationInputs.interface.ts";
 import { gatherContinuationInputs } from "./gatherContinuationInputs/gatherContinuationInputs.ts";
 import { createAssembleChunksMock } from "../utils/assembleChunks/assembleChunks.mock.ts";
+import { assembleCompressionPrompt } from "./assembleCompressionPrompt/assembleCompressionPrompt.ts";
+import {
+  createAssembleCompressionPromptMock,
+  buildAssembleCompressionPromptDeps,
+  buildAssembleCompressionPromptParams,
+  buildAssembleCompressionPromptPayload,
+} from "./assembleCompressionPrompt/assembleCompressionPrompt.mock.ts";
 
 // Mock implementations for standalone functions
 const assembleChunksMock = createAssembleChunksMock()
@@ -537,6 +544,66 @@ Deno.test("PromptAssembler", async (t) => {
       }
     },
   );
+
+  await t.step("assembleCompressionPrompt should call the injected function", async () => {
+    try {
+      const { client, fileManager } = setup({
+        "SB_CONTENT_STORAGE_BUCKET": "test-bucket",
+      });
+      const mock = createAssembleCompressionPromptMock();
+      const assembler = new PromptAssembler(
+        client,
+        fileManager!,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        mock.assembleCompressionPrompt,
+      );
+
+      const deps = buildAssembleCompressionPromptDeps();
+      const params = buildAssembleCompressionPromptParams() ?? { consumingStep: mockRecipeStep };
+      const payload = buildAssembleCompressionPromptPayload() ?? { mode: "text", content: "Source content to compress." };
+
+      await assembler.assembleCompressionPrompt(deps, params, payload);
+
+      assertEquals(mock.calls.length, 1);
+      assertEquals(mock.calls[0].deps, deps);
+      assertEquals(mock.calls[0].params, params);
+      assertEquals(mock.calls[0].payload, payload);
+    } finally {
+      teardown();
+    }
+  });
+
+  await t.step("assembleCompressionPrompt should default to the real function", async () => {
+    try {
+      const { client, fileManager } = setup({
+        "SB_CONTENT_STORAGE_BUCKET": "test-bucket",
+      });
+      const assembler = new PromptAssembler(
+        client,
+        fileManager!,
+      );
+
+      const deps = buildAssembleCompressionPromptDeps();
+      const params = buildAssembleCompressionPromptParams() ?? { consumingStep: mockRecipeStep };
+      const payload = buildAssembleCompressionPromptPayload() ?? { mode: "text", content: "Source content to compress." };
+
+      const result = await assembler.assembleCompressionPrompt(deps, params, payload);
+      const expected = await assembleCompressionPrompt(deps, params, payload);
+
+      assertEquals(result, expected);
+    } finally {
+      teardown();
+    }
+  });
 
   await t.step(
     "assemble router should delegate to assembleSeedPrompt",

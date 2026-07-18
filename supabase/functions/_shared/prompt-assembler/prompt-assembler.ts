@@ -26,6 +26,14 @@ import { assembleSeedPrompt } from "./assembleSeedPrompt/assembleSeedPrompt.ts";
 import { assemblePlannerPrompt } from "./assemblePlannerPrompt/assemblePlannerPrompt.ts";
 import { assembleTurnPrompt } from "./assembleTurnPrompt/assembleTurnPrompt.ts";
 import { assembleContinuationPrompt } from "./assembleContinuationPrompt/assembleContinuationPrompt.ts";
+import { assembleCompressionPrompt } from "./assembleCompressionPrompt/assembleCompressionPrompt.ts";
+import {
+    AssembleCompressionPromptDeps,
+    AssembleCompressionPromptParams,
+    AssembleCompressionPromptPayload,
+    AssembleCompressionPromptReturn,
+    AssembleCompressionPromptFn,
+} from "./assembleCompressionPrompt/assembleCompressionPrompt.interface.ts";
 import { IFileManager } from "../types/file_manager.types.ts";
 import { isRecord } from "../utils/type_guards.ts";
 import { RenderFn } from "./prompt-assembler.interface.ts";
@@ -48,6 +56,7 @@ export class PromptAssembler implements IPromptAssembler {
     private assemblePlannerPromptFn: (deps: AssemblePlannerPromptDeps) => Promise<AssembledPrompt>;
     private assembleTurnPromptFn: (deps: AssembleTurnPromptDeps, params: AssembleTurnPromptParams) => Promise<AssembledPrompt>;
     private assembleContinuationPromptFn: (deps: AssembleContinuationPromptDeps) => Promise<AssembledPrompt>;
+    private assembleCompressionPromptFn: AssembleCompressionPromptFn;
     private gatherContextFn: GatherContextFn;
     private renderFn: RenderFn;
     private gatherInputsForStageFn: GatherInputsForStageFn;
@@ -65,7 +74,8 @@ export class PromptAssembler implements IPromptAssembler {
         gatherContextFn?: GatherContextFn,
         renderFn?: RenderFn,
         gatherInputsForStageFn?: GatherInputsForStageFn,
-        gatherContinuationInputsFn?: GatherContinuationInputsSignature
+        gatherContinuationInputsFn?: GatherContinuationInputsSignature,
+        assembleCompressionPromptFn?: AssembleCompressionPromptFn
     ) {
         this.dbClient = dbClient;
         this.fileManager = fileManager;
@@ -79,6 +89,7 @@ export class PromptAssembler implements IPromptAssembler {
         this.renderFn = renderFn || render;
         this.gatherInputsForStageFn = gatherInputsForStageFn || ((dbClient: SupabaseClient<Database>, downloadFromStorageFn: (bucket: string, path: string) => Promise<DownloadStorageResult>, stage: StageContext, project: ProjectContext, session: SessionContext, iterationNumber: number, modelId?: string) => gatherInputsForStage(dbClient, downloadFromStorageFn, stage, project, session, iterationNumber, modelId));
         this.gatherContinuationInputsFn = gatherContinuationInputsFn || gatherContinuationInputs;
+        this.assembleCompressionPromptFn = assembleCompressionPromptFn || assembleCompressionPrompt;
 
         const bucketFromEnv = Deno.env.get("SB_CONTENT_STORAGE_BUCKET");
         if (!bucketFromEnv) {
@@ -178,6 +189,14 @@ export class PromptAssembler implements IPromptAssembler {
         deps: AssembleContinuationPromptDeps
     ): Promise<AssembledPrompt> {
         return this.assembleContinuationPromptFn(deps);
+    }
+
+    assembleCompressionPrompt(
+        deps: AssembleCompressionPromptDeps,
+        params: AssembleCompressionPromptParams,
+        payload: AssembleCompressionPromptPayload
+    ): Promise<AssembleCompressionPromptReturn> {
+        return this.assembleCompressionPromptFn(deps, params, payload);
     }
 
     private resolveSourceContributionId(options: AssemblePromptOptions): string | null {

@@ -10,6 +10,13 @@ import {
 	AssembleContinuationPromptDeps,
 } from './prompt-assembler.interface.ts';
 import { PromptAssembler } from "./prompt-assembler.ts";
+import {
+	AssembleCompressionPromptDeps,
+	AssembleCompressionPromptParams,
+	AssembleCompressionPromptPayload,
+	AssembleCompressionPromptReturn,
+	AssembleCompressionPromptFn,
+} from "./assembleCompressionPrompt/assembleCompressionPrompt.interface.ts";
 import { createMockSupabaseClient } from "../supabase.mock.ts";
 import { IFileManager } from '../types/file_manager.types.ts';
 import { MockFileManagerService } from '../services/file_manager.mock.ts';
@@ -20,6 +27,7 @@ export class MockPromptAssembler extends PromptAssembler {
 	public override assemblePlannerPrompt: Spy<PromptAssembler['assemblePlannerPrompt']>;
 	public override assembleTurnPrompt: Spy<PromptAssembler['assembleTurnPrompt']>;
 	public override assembleContinuationPrompt: Spy<PromptAssembler['assembleContinuationPrompt']>;
+	public override assembleCompressionPrompt: Spy<AssembleCompressionPromptFn>;
 
 	constructor(
 		supabaseClient?: SupabaseClient<Database>,
@@ -72,6 +80,16 @@ export class MockPromptAssembler extends PromptAssembler {
 				return await Promise.resolve(MOCK_ASSEMBLED_CONTINUATION_PROMPT);
 			},
 		);
+
+		this.assembleCompressionPrompt = spy(
+			async (
+				_deps: AssembleCompressionPromptDeps,
+				_params: AssembleCompressionPromptParams,
+				_payload: AssembleCompressionPromptPayload,
+			): Promise<AssembleCompressionPromptReturn> => {
+				return await Promise.resolve(MOCK_ASSEMBLED_COMPRESSION_PROMPT);
+			},
+		);
 	}
 }
 
@@ -105,4 +123,8 @@ export const MOCK_ASSEMBLED_TURN_PROMPT: AssembledPrompt = {
 export const MOCK_ASSEMBLED_CONTINUATION_PROMPT: AssembledPrompt = {
     promptContent: 'mock assembled continuation prompt',
     source_prompt_resource_id: 'mock-continuation-resource-id',
+};
+
+export const MOCK_ASSEMBLED_COMPRESSION_PROMPT: AssembleCompressionPromptReturn = {
+    prompt: 'mock assembled compression prompt',
 };

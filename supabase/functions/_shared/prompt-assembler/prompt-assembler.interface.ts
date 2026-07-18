@@ -10,6 +10,12 @@ import { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { IFileManager, FileType } from "../types/file_manager.types.ts";
 import { DownloadStorageResult, DownloadFromStorageFn } from "../supabase_storage_utils.ts";
 import { GatherInputsForStageFn } from "./gatherInputsForStage/gatherInputsForStage.ts";
+import {
+  AssembleCompressionPromptDeps,
+  AssembleCompressionPromptParams,
+  AssembleCompressionPromptPayload,
+  AssembleCompressionPromptReturn,
+} from "./assembleCompressionPrompt/assembleCompressionPrompt.interface.ts";
 import { Json } from "../../types_db.ts";
 import { InputRule } from "../../dialectic-service/dialectic.interface.ts";
 import { Messages } from "../types.ts";
@@ -102,6 +108,11 @@ export interface IPromptAssembler {
     assembleContinuationPrompt(
         deps: AssembleContinuationPromptDeps,
     ): Promise<AssembledPrompt>;
+    assembleCompressionPrompt(
+        deps: AssembleCompressionPromptDeps,
+        params: AssembleCompressionPromptParams,
+        payload: AssembleCompressionPromptPayload,
+    ): Promise<AssembleCompressionPromptReturn>;
 }
 
 export type AssembledPrompt = {

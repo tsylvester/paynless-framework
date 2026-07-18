@@ -1,10 +1,9 @@
 import { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { Database, Tables } from "../../../types_db.ts";
-import { CompressionMode } from "../../types/file_manager.types.ts";
+import { CompressionMode, FileType } from "../../types/file_manager.types.ts";
 import { createMockSupabaseClient } from "../../supabase.mock.ts";
 import { MockLogger } from "../../logger.mock.ts";
 import { renderPrompt } from "../../prompt-renderer.ts";
-import { buildDialecticStageRecipeStep } from "../../dialectic.mock.ts";
 import {
   AssembleCompressionPromptDeps,
   AssembleCompressionPromptParams,
@@ -14,6 +13,7 @@ import {
   AssembleCompressionPromptReturn,
   AssembleCompressionPromptFn,
   BoundAssembleCompressionPromptFn,
+  CompressionTargetStep,
 } from "./assembleCompressionPrompt.interface.ts";
 
 const UUID_SYSTEM_PROMPT = "a000000a-0000-4000-a000-00000000000a";
@@ -81,18 +81,40 @@ export function buildAssembleCompressionPromptDeps(
   return { ...deps, ...overrides };
 }
 
+export function buildCompressionTargetStep(
+  overrides?: Partial<CompressionTargetStep> | null,
+): CompressionTargetStep | null {
+  if (overrides === null) {
+    return null;
+  }
+
+  const step: CompressionTargetStep = {
+    outputs_required: {
+      documents: [{
+        artifact_class: "rendered_document",
+        file_type: "markdown",
+        document_key: FileType.business_case,
+        template_filename: "business_case.md",
+      }],
+    },
+    step_description: "Compress the source for the downstream agent.",
+  };
+
+  return { ...step, ...overrides };
+}
+
 export function buildAssembleCompressionPromptParams(
   overrides?: Partial<AssembleCompressionPromptParams> | null,
 ): AssembleCompressionPromptParams | null {
-  const consumingStep = buildDialecticStageRecipeStep();
-  if (consumingStep === null) {
-    throw new Error(
-      "buildDialecticStageRecipeStep returned null for a default request",
-    );
-  }
-
   if (overrides === null) {
     return null;
+  }
+
+  const consumingStep = buildCompressionTargetStep();
+  if (consumingStep === null) {
+    throw new Error(
+      "buildCompressionTargetStep returned null for a default request",
+    );
   }
 
   const params: AssembleCompressionPromptParams = {
