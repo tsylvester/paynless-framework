@@ -1,5 +1,5 @@
 # Output Constraints
-* Never output large code blocks (entire files or multi-function dumps) in chat unless the user explicitly requests them.
+* Never output code blocks (entire files, parts of files, snippets, proposed functions, edits, or multi-function dumps) in chat unless the user explicitly requests them.
 * Never print an entire function and tell the user to paste it in; edit the file directly or provide the minimal diff required.
 * Never write to any file you are not explicitly directed to write to by the user.
 * Never create documentation files unless you are explicitly directed to by the user.

@@ -136,7 +136,21 @@
     * `[ ]`   Define ordering/temporal constraints (if applicable)
     * `[ ]`   No code — purely declarative
 
-  ## 6. Enforcement (Runtime Boundary)
+  ## 6. Simulation
+  * `[ ]`   `[function].mock.ts`
+    * `[ ]`   Provide controllable implementations of all external interaction boundaries
+      * Must provide a mock for every symbol exported by the interface
+      * Must provide a default object with overrides for every element
+      * Must accept null and undefined for default objects to test invalid objects
+      * Must not alias, typecast, or use overloads to produce the build/create functions
+      * Must not create or export mocks of any symbols not defined in the interface 
+    * `[ ]`   Must conform to:
+      * interface
+      * interaction.spec
+    * `[ ]`   No new behavior introduced beyond spec
+      * You are writing the mock before you write the guards so that you can use the builders in the guard test 
+
+ ## 7. Enforcement (Runtime Boundary)
   * `[ ]`   `[function].guard.test.ts`
     * `[ ]`   Verify guards against contract tests
     * `[ ]`   Ensure:
@@ -148,15 +162,6 @@
     * `[ ]`   Guards must:
       * Accept all valid contract cases
       * Reject all invalid contract cases
-
-  ## 7. Simulation
-  * `[ ]`   `[function].mock.ts`
-    * `[ ]`   Provide controllable implementations of:
-      * All external interactions
-    * `[ ]`   Must conform to:
-      * interface
-      * interaction.spec
-    * `[ ]`   No new behavior introduced beyond spec
 
 ## 8. Behavioral Verification 
   * `[ ]`   `[function].test.ts`

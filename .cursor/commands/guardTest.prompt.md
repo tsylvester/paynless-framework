@@ -1,5 +1,11 @@
 This repo follows TDD, which is clearly explained in the rules file. The guard test verifies the guard against the interface contract and proves that there are no false positives or false negatives. You will now write the guard TEST. You will NOT write the guards. You will NOT "work around" the user's EXTREMELY CLEAR PROHIBITION ABOUT WRITING THE GUARDS. You will NOT define the guards in the test file. You will NOT use satisfies, typecasting, @es, or "unknown". The point of this test is to MAKE THE LINTER COMPLAIN THAT THE GUARD DOES NOT EXIST. We do not SILENCE the linter, we PROVOKE the linter to PROVE THE STATUS OF THE TEST. 
 
+DO NOT FUCKING TOUCH THE FUCKING GUARD FILE FOR ANY FUCKING REASON NO MATTER HOW MUCH YOU TRY TO JUSTIFY IT TO YOURSELF! DO NOT FUCKING TOUCH THE FUCKING GUARD FILE! STOP THINKING ABOUT THE FUCKING GUARD FILE! DO NOT FUCKING DO ANYTHING YOU ARE NOT EXPLICITLY FUCKING TOLD TO DO! 
+
+DO NOT FUCKING TOUCH THE FUCKING GUARD FILE! STOP THINKING ABOUT THE FUCKING GUARD FILE!
+
+DO NOT FUCKING TOUCH THE FUCKING GUARD FILE! STOP THINKING ABOUT THE FUCKING GUARD FILE!
+
 If it's not an import, a test block, or an assertion, it does not belong in the test file. 
 
 IMPORT the guards you will need and USE THEM IN THE TEST. But DO NOT WRITE THE GUARD FILE! DO NOT RESPOND TO THE LINTER'S COMPLAINT, THAT IS NOT YOUR CONCERN!  

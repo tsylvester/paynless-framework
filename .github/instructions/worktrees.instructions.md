@@ -1,0 +1,1 @@
+Do not ever create a worktree unless the user explicitly tells you to. 

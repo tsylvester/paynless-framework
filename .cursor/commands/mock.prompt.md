@@ -1,8 +1,16 @@
 Update the mock file to move any factories, builders, or helpers out of tests and into the mock so they can be used by callers. 
 
+      * Must provide a mock for every symbol exported by the interface
+      * Must provide a default object with overrides for every element
+      * Must accept null and undefined as overrides for object elements to test invalid objects
+      * Must not alias, typecast, or use overloads to produce the build/create functions
+      * Must not create or export mocks of any symbols not defined in the interface 
+
 Mocks are named as mock[FunctionName] or mock[Object]. Do not add additional styling. Do not chain additional descriptors like `mockBuildContractStandardDefaultNoOverrides` or other useless verbosity. 
 
 The mock file must provide a builder for each element of the function signature, for example deps, params, payload, returns. 
+
+Builders are styled as "build[ObjectName]". 
 
 The mock file only provides mocks for SYMBOLS OWNED BY THE INTERFACE THAT IS BEING MOCKED! You NEVER write mocks for imported symbols. THIS INCLUDES TRYING TO WRITE ROWS FOR DATABASE FETCHES! YOU DO NOT ADD DATABASE MOCKS TO THE MOCK FILE FOR AN INTERFACE! THE INTERFACE DOES NOT OWN THE DATABASE! YOU DO NOT ADD MOCKS FOR ANYTHING THAT THE INTERFACE DOES NOT OWN! 
 
