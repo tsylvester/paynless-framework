@@ -60,8 +60,8 @@ export const SUPABASE_JWT_SECRET = Deno.env.get("SUPABASE_JWT_SECRET");
 export const CHAT_FUNCTION_URL = SUPABASE_URL ? `${SUPABASE_URL}/functions/v1/chat` : 'http://localhost:54321/functions/v1/chat';
 export const MOCK_MODEL_CONFIG: AiModelExtendedConfig = {
     api_identifier: 'mock-model',
-    input_token_cost_rate: 0,
-    output_token_cost_rate: 0,
+    input_token_cost_rate: 1,
+    output_token_cost_rate: 1,
     tokenization_strategy: { type: 'none' },
 };
 
@@ -958,6 +958,7 @@ export async function coreUpsertTestProviders(adminClient: SupabaseClient<Databa
                 input_token_cost_rate: 5.0,
                 output_token_cost_rate: 15.0,
                 context_window_tokens: 128000,
+                provider_max_input_tokens: 128000,
             },
             is_active: true,
         },
@@ -971,6 +972,7 @@ export async function coreUpsertTestProviders(adminClient: SupabaseClient<Databa
                 input_token_cost_rate: 3.00,
                 output_token_cost_rate: 15.00,
                 context_window_tokens: 200000,
+                provider_max_input_tokens: 200000,
             },
             is_active: true,
         },

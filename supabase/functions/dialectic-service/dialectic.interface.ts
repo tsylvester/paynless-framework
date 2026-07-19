@@ -51,6 +51,8 @@ import type {
 	IPlanJobContext,
 	IRenderJobContext,
 } from "../dialectic-worker/createJobContext/JobContext.interface.ts";
+import type { DialecticCompressJobPayload } from "../dialectic-worker/enqueueCompressJobs/enqueueCompressJobs.interface.ts";
+import type { ProcessCompressJobFn } from "../dialectic-worker/processCompressJob/processCompressJob.interface.ts";
 import type { Database, Json, Tables } from "../types_db.ts";
 import type { ComputeTemplateStageCountsFn } from "./computeTemplateStageCounts/computeTemplateStageCounts.interface.ts";
 import type { GetStageExpectedCountsPayload } from "./getStageExpectedCounts/getStageExpectedCounts.interface.ts";
@@ -116,6 +118,7 @@ export interface IJobProcessors {
 	processComplexJob: ProcessComplexJobFn;
 	planComplexStage: PlanComplexStageFn;
 	processRenderJob: ProcessRenderJobFn;
+	processCompressJob: ProcessCompressJobFn;
 }
 
 export interface IRenderJobDeps {
@@ -126,8 +129,8 @@ export interface IRenderJobDeps {
 	notificationService: NotificationServiceType;
 }
 
-export type JobType = "PLAN" | "EXECUTE" | "RENDER";
-export const JobTypes: readonly JobType[] = ["PLAN", "EXECUTE", "RENDER"];
+export type JobType = "PLAN" | "EXECUTE" | "RENDER" | "COMPRESS";
+export const JobTypes: readonly JobType[] = ["PLAN", "EXECUTE", "RENDER", "COMPRESS"];
 export type PromptType = "Seed" | "Planner" | "Turn" | "Continuation";
 export const PromptTypes: readonly PromptType[] = [
 	"Seed",
@@ -1410,7 +1413,8 @@ export type DialecticJobPayload =
 	| DialecticSimpleJobPayload // Assuming this exists for non-complex jobs
 	| DialecticPlanJobPayload
 	| DialecticSkeletonJobPayload
-	| DialecticExecuteJobPayload;
+	| DialecticExecuteJobPayload
+	| DialecticCompressJobPayload;
 
 /**
  * PathContext-inspired identity for required artifacts.

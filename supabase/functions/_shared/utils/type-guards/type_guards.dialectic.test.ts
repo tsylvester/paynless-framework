@@ -91,6 +91,7 @@ import {
 } from '../../../dialectic-service/dialectic.interface.ts';
 import { FileType } from '../../types/file_manager.types.ts';
 import { ContinueReason, FinishReason } from '../../types.ts';
+import { buildDialecticCompressJobPayload } from '../../../dialectic-worker/enqueueCompressJobs/enqueueCompressJobs.mock.ts';
 
 Deno.test('Type Guard: isGitHubRepoSettings', async (t) => {
     const valid: GitHubRepoSettings = {
@@ -1020,6 +1021,10 @@ Deno.test('Type Guard: isDialecticJobPayload', async (t) => {
             maxOutputTokens: 8192,
         };
         assert(isDialecticJobPayload(payload));
+    });
+
+    await t.step('returns true for a payload built by buildDialecticCompressJobPayload', () => {
+        assert(isDialecticJobPayload(buildDialecticCompressJobPayload()));
     });
 });
 
@@ -1990,6 +1995,7 @@ Deno.test('Type Guard: validatePayload', async (t) => {
             target_contribution_id: 'target-contrib',
         };
         const validated = validatePayload(payload);
+        assert('continueUntilComplete' in validated);
         assert(validated.stageSlug === 'test-stage');
         assert(validated.iterationNumber === 1);
         assert(validated.walletId === 'test-wallet');

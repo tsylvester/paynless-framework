@@ -43,9 +43,11 @@ import {
     ISaveResponseContext,
     JobContextParams,
     BoundPrepareModelJobFn,
+    BuildUploadContextFn,
 } from './JobContext.interface.ts';
 import { BoundGatherArtifactsFn } from '../gatherArtifacts/gatherArtifacts.interface.ts';
 import { BoundEnqueueModelCallFn } from '../enqueueModelCall/enqueueModelCall.interface.ts';
+import { FileType, ResourceUploadContext } from '../../_shared/types/file_manager.types.ts';
 import { sanitizeJsonContent } from '../../_shared/utils/jsonSanitizer/jsonSanitizer.ts';
 import type { ComputeJobSig } from '../../_shared/utils/computeJobSig/computeJobSig.interface.ts';
 
@@ -224,6 +226,10 @@ describe('JobContext.interface.ts contracts', () => {
                 error: new Error('interface test stub'),
                 retriable: false,
             });
+            const enqueueModelCall: BoundEnqueueModelCallFn = async () => ({
+                error: new Error('interface test stub'),
+                retriable: false,
+            });
             const boundGatherArtifacts: BoundGatherArtifactsFn = async () => ({
                 artifacts: [],
             });
@@ -300,6 +306,7 @@ describe('JobContext.interface.ts contracts', () => {
                 determineContinuation: determineContinuation,
                 buildUploadContext: buildUploadContext,
                 gatherArtifacts: boundGatherArtifacts,
+                enqueueModelCall: enqueueModelCall,
                 sanitizeJsonContent: sanitizeJsonContent,
                 computeJobSig: computeJobSig,
             };
@@ -321,6 +328,7 @@ describe('JobContext.interface.ts contracts', () => {
                 promptAssembler: params.promptAssembler,
                 getSeedPromptForStage: params.getSeedPromptForStage,
                 gatherArtifacts: params.gatherArtifacts,
+                enqueueModelCall: params.enqueueModelCall,
                 continueJob: params.continueJob,
                 retryJob: params.retryJob,
                 pickLatest: params.pickLatest,
@@ -351,6 +359,29 @@ describe('JobContext.interface.ts contracts', () => {
             assertEquals(typeof job.getGranularityPlanner, 'function');
             assertEquals(typeof params.getMaxOutputTokens, 'function');
             assertEquals(typeof job.getMaxOutputTokens, 'function');
+            assertEquals(typeof job.enqueueModelCall, 'function');
+            assertEquals(job.enqueueModelCall, params.enqueueModelCall);
+        });
+
+        it('BuildUploadContextFn return type accepts ResourceUploadContext', () => {
+            const resourceContext: ResourceUploadContext = {
+                fileContent: 'compressed markdown',
+                mimeType: 'text/markdown',
+                sizeBytes: 19,
+                userId: null,
+                description: 'CompressedContext artifact',
+                pathContext: {
+                    projectId: 'proj-1',
+                    fileType: FileType.CompressedContext,
+                    sessionId: 'sess-1',
+                    stageSlug: 'thesis',
+                    targetKey: 'business_case',
+                    sourceType: 'resource',
+                    documentKey: 'market_analysis',
+                },
+            };
+            const uploadContext: ReturnType<BuildUploadContextFn> = resourceContext;
+            assertEquals(uploadContext.pathContext.fileType, FileType.CompressedContext);
         });
     });
 

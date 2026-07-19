@@ -173,6 +173,7 @@ export function isIJobContext(value: unknown): value is IJobContext {
         'promptAssembler' in value && typeof value.promptAssembler === 'object' && value.promptAssembler !== null &&
         'getSeedPromptForStage' in value && typeof value.getSeedPromptForStage === 'function' &&
         'prepareModelJob' in value && typeof value.prepareModelJob === 'function' &&
+        'enqueueModelCall' in value && typeof value.enqueueModelCall === 'function' &&
         'sanitizeJsonContent' in value && typeof value.sanitizeJsonContent === 'function' &&
         'computeJobSig' in value && typeof value.computeJobSig === 'function'
     );

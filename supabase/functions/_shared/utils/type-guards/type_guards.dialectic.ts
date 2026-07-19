@@ -1077,21 +1077,6 @@ export function isDialecticJobPayload(payload: unknown): payload is DialecticJob
         return false;
     }
     
-    // Ensure that if other properties exist, they are of the correct type.
-    // This part is crucial for robust validation beyond the required fields.
-    const allowedKeys: (keyof DialecticJobPayload)[] = [
-        'sessionId', 'projectId', 'model_id', 'stageSlug',
-        'iterationNumber', 'walletId', 'continueUntilComplete', 'maxRetries',
-        'continuation_count', 'target_contribution_id', 'model_slug', 'maxOutputTokens',
-    ];
-
-    for (const key in payload) {
-        if (!allowedKeys.some(k => k === key)) {
-            // If you want to be strict and reject unknown properties, you can return false here.
-            // console.log(`Unknown key: ${key}`);
-        }
-    }
-    
     return true;
 }
 

@@ -13,6 +13,8 @@ import type {
 import { FileType } from "../_shared/types/file_manager.types.ts";
 import { deriveStepStatuses } from "./deriveStepStatuses.ts";
 import { isJson } from "../_shared/utils/type-guards/type_guards.common.ts";
+import type { DialecticCompressJobPayload } from "../dialectic-worker/enqueueCompressJobs/enqueueCompressJobs.interface.ts";
+import { buildDialecticCompressJobPayload } from "../dialectic-worker/enqueueCompressJobs/enqueueCompressJobs.mock.ts";
 
 const SESSION_ID = "session-1";
 const STAGE_SLUG = "thesis";
@@ -25,7 +27,7 @@ function job(
 	id: string,
 	job_type: DialecticJobRow["job_type"],
 	status: string,
-	payload: DialecticExecuteJobPayload | DialecticPlanJobPayload | DialecticRenderJobPayload,
+	payload: DialecticExecuteJobPayload | DialecticPlanJobPayload | DialecticRenderJobPayload | DialecticCompressJobPayload,
 	target_contribution_id: string | null,
 ): DialecticJobRow {
 	if (!isJson(payload)) {
@@ -252,6 +254,21 @@ Deno.test("deriveStepStatuses", async (t) => {
 		const stepIdToStepKey: Map<string, string> = new Map([["e1", "business_case"]]);
 		const jobs: DialecticJobRow[] = [
 			job("render-1", "RENDER", "completed", renderPayload, null),
+		];
+		const params: DeriveStepStatusesParams = { steps, edges: [], jobs, stepIdToStepKey };
+		const result = deriveStepStatuses(deps, params);
+		assertEquals(result.get("business_case"), "not_started");
+	});
+
+	await t.step("COMPRESS jobs excluded from step attribution", () => {
+		const compressPayload = buildDialecticCompressJobPayload({
+			sourceType: "resource",
+			documentKey: FileType.business_case,
+		});
+		const steps: ProgressRecipeStep[] = [step("e1", "business_case", "EXECUTE", "per_source_document")];
+		const stepIdToStepKey: Map<string, string> = new Map([["e1", "business_case"]]);
+		const jobs: DialecticJobRow[] = [
+			job("compress-1", "COMPRESS", "completed", compressPayload, null),
 		];
 		const params: DeriveStepStatusesParams = { steps, edges: [], jobs, stepIdToStepKey };
 		const result = deriveStepStatuses(deps, params);

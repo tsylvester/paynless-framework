@@ -18,6 +18,10 @@ type SelectedAiProviderRow = Database['public']['Tables']['ai_providers']['Row']
 export function isAiModelExtendedConfig(obj: unknown): obj is AiModelExtendedConfig {
     if (!isRecord(obj)) return false;
 
+    if (!('api_identifier' in obj) || typeof obj.api_identifier !== 'string') return false;
+    if (!('input_token_cost_rate' in obj) || typeof obj.input_token_cost_rate !== 'number' || obj.input_token_cost_rate < 0) return false;
+    if (!('output_token_cost_rate' in obj) || typeof obj.output_token_cost_rate !== 'number' || obj.output_token_cost_rate <= 0) return false;
+
     // Check for a few key properties to be reasonably sure it's the right type.
     // This isn't exhaustive but prevents the most common errors.
     const hasTokenization = 'tokenization_strategy' in obj && isRecord(obj.tokenization_strategy);

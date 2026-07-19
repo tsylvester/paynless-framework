@@ -244,6 +244,7 @@ export function createMockJobContextParams(overrides?: JobContextParamsOverrides
         determineContinuation: determineContinuation,
         buildUploadContext: buildUploadContext,
         gatherArtifacts: boundGatherArtifacts,
+        enqueueModelCall: createMockBoundEnqueueModelCall(),
         sanitizeJsonContent: sanitizeJsonContent,
         computeJobSig: async (_jobId: string, _userId: string, _createdAt: string): Promise<string> => 'mock-job-sig',
     };
@@ -281,6 +282,7 @@ export function buildIJobContext(): IJobContext {
         promptAssembler: params.promptAssembler,
         getSeedPromptForStage: params.getSeedPromptForStage,
         gatherArtifacts: params.gatherArtifacts,
+        enqueueModelCall: params.enqueueModelCall,
         continueJob: params.continueJob,
         retryJob: params.retryJob,
         pickLatest: params.pickLatest,

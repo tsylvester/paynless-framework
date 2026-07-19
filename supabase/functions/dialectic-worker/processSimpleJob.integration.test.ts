@@ -523,21 +523,25 @@ Deno.test({
         throw new Error(`Stage for recipe instance ${recipeInstance.id} not found.`);
       }
 
-      // Get an AI provider whose config passes isAiModelExtendedConfig
+      // Get the deterministic AI provider seeded by coreUpsertTestProviders
       // (prepareModelJob validates config before calling enqueueModelCall)
-      const { data: allProviders } = await admin
+      const { data: providerRow, error: providerErr } = await admin
         .from("ai_providers")
         .select("*")
-        .eq("is_active", true);
+        .eq("api_identifier", "openai-gpt-4o")
+        .single();
 
-      if (!allProviders || allProviders.length === 0) {
-        throw new Error("No active AI providers found.");
-      }
-      const providerRow = allProviders.find((p) => isAiModelExtendedConfig(p.config));
-      if (!providerRow) {
+      if (providerErr || !providerRow) {
         throw new Error(
-          "No active AI provider has a valid config (tokenization_strategy). " +
-          "Seed the DB with at least one properly configured provider.",
+          "No active AI provider with api_identifier 'openai-gpt-4o' found. " +
+          "Seed the DB with coreUpsertTestProviders before running this test.",
+        );
+      }
+      if (!isAiModelExtendedConfig(providerRow.config)) {
+        throw new Error(
+          "Seeded provider 'openai-gpt-4o' does not have a valid AiModelExtendedConfig. " +
+          "Check that its config has api_identifier, non-negative input_token_cost_rate, " +
+          "positive output_token_cost_rate, and a valid tokenization_strategy.",
         );
       }
 

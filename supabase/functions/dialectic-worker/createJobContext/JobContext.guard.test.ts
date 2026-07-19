@@ -356,6 +356,13 @@ describe('JobContexts Type Guards', () => {
             assertEquals(isIJobContext(contextMissingPrepareModelJob), false);
         });
 
+        it('returns false when enqueueModelCall is missing', () => {
+            const rootContext = buildIJobContext();
+            const { enqueueModelCall, ...contextMissing } = rootContext;
+
+            assertEquals(isIJobContext(contextMissing), false);
+        });
+
         it('returns false when getSeedPromptForStage is missing', () => {
             const rootContext = buildIJobContext();
             const { getSeedPromptForStage, ...contextMissingSeed } = rootContext;
@@ -394,6 +401,13 @@ describe('JobContexts Type Guards', () => {
         it('returns false when getMaxOutputTokens is not a function', () => {
             const rootContext = buildIJobContext();
             const context = { ...rootContext, getMaxOutputTokens: 'not-a-function' };
+
+            assertEquals(isIJobContext(context), false);
+        });
+
+        it('returns false when enqueueModelCall is not a function', () => {
+            const rootContext = buildIJobContext();
+            const context = { ...rootContext, enqueueModelCall: 'not-a-function' };
 
             assertEquals(isIJobContext(context), false);
         });

@@ -53,6 +53,7 @@ export function deriveStepStatuses(
 
 	for (const job of jobs) {
 		if (job.job_type === "RENDER") continue;
+		if (job.job_type === "COMPRESS") continue;
 		if (job.target_contribution_id !== null) continue;
 		if (SUPERSEDED_STATUSES.has(job.status)) continue;
 		const recipeStepId: string | undefined = getRecipeStepIdFromPayload(job.payload);

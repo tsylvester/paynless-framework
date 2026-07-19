@@ -21,7 +21,9 @@ import {
     SeedPromptData, 
     IContinueJobResult,
     PromptConstructionPayload,
+    Job,
 } from '../dialectic-service/dialectic.interface.ts';
+import type { DialecticCompressJobPayload } from './enqueueCompressJobs/enqueueCompressJobs.interface.ts';
 import { MockFileManagerService } from '../_shared/services/file_manager.mock.ts';
 import { DownloadStorageResult } from '../_shared/supabase_storage_utils.ts';
 import { SupabaseClient } from 'npm:@supabase/supabase-js@2';
@@ -61,7 +63,9 @@ import {
 import {
     createMockSaveResponseSuccessReturn,
     createMockSaveResponseErrorReturn,
+    createMockJobRow,
 } from './saveResponse/saveResponse.mock.ts';
+import { buildDialecticCompressJobPayload } from './enqueueCompressJobs/enqueueCompressJobs.mock.ts';
 type MockJob = Database['public']['Tables']['dialectic_generation_jobs']['Row'];
 
 // Global mock objects
@@ -987,6 +991,51 @@ Deno.test('handleJob - RENDER routes via provided processors and propagates args
     assertEquals('planComplexStage' in renderCtx, false);
 });
 
+Deno.test('handleJob - COMPRESS routes via provided processors and propagates args unchanged', async () => {
+    const { processors, spies } = createMockJobProcessors();
+
+    const payload: DialecticCompressJobPayload = buildDialecticCompressJobPayload();
+    const rowJob: Job = createMockJobRow(payload, {
+        id: 'job-compress-handle',
+        user_id: payload.user_id,
+        session_id: payload.sessionId,
+        stage_slug: payload.stageSlug,
+        status: 'pending',
+        job_type: 'COMPRESS',
+        idempotency_key: 'idempotency-key-1',
+    });
+
+    const { client: dbClient } = createMockSupabaseClient(undefined, {
+        genericMockResults: {
+            'dialectic_generation_jobs': {
+                update: { data: [{ id: rowJob.id }], error: null },
+            },
+        },
+    });
+
+    const deps = createJobContext(createMockJobContextParams());
+    const authToken = 'auth-compress';
+
+    await handleJob(dbClient as unknown as SupabaseClient<Database>, rowJob, deps, authToken, processors);
+
+    assertEquals(spies.processCompressJob.calls.length, 1, 'processCompressJob should be called once');
+    const call = spies.processCompressJob.calls[0];
+    assertStrictEquals(call.args[2], payload, 'payload forwarded unchanged');
+
+    assert(typeof call.args[0] === 'object' && call.args[0] !== null, 'deps should be an object');
+    assertEquals(typeof call.args[0].enqueueModelCall, 'function');
+    assertEquals(typeof call.args[0].countTokens, 'function');
+    assertEquals(typeof call.args[0].constructStoragePath, 'function');
+    assertEquals(typeof call.args[0].assembleCompressionPrompt, 'function');
+    assertExists(call.args[0].logger, 'logger should be present');
+
+    assertStrictEquals(call.args[1].dbClient, dbClient, 'dbClient forwarded unchanged');
+    assertStrictEquals(call.args[1].projectOwnerUserId, rowJob.user_id, 'projectOwnerUserId forwarded unchanged');
+    assertStrictEquals(call.args[1].authToken, authToken, 'authToken forwarded unchanged');
+    assertExists(call.args[1].job, 'job should be present on params');
+    assertStrictEquals(call.args[1].job.id, rowJob.id, 'job id forwarded unchanged');
+});
+
 Deno.test('createDialecticWorkerDeps: returns IJobContext including findSourceDocuments', async () => {
     Deno.env.set('NETLIFY_QUEUE_URL', 'https://mock-netlify-queue');
     Deno.env.set('AWL_API_KEY', 'mock-awl-key');
@@ -1624,6 +1673,22 @@ Deno.test('createDialecticWorkerDeps: wires computeJobSig as a function on the r
     try {
         const deps = await createDialecticWorkerDeps(mockSupabaseClientDeps.client as unknown as SupabaseClient<Database>);
         assertEquals(typeof deps.computeJobSig, 'function');
+    } finally {
+        Deno.env.delete('NETLIFY_QUEUE_URL');
+        Deno.env.delete('AWL_API_KEY');
+        Deno.env.delete('HMAC_SECRET');
+        Deno.env.delete('OPENAI_API_KEY');
+    }
+});
+
+Deno.test('createDialecticWorkerDeps: wires enqueueModelCall as a function on the returned context', async () => {
+    Deno.env.set('NETLIFY_QUEUE_URL', 'https://mock-netlify-queue');
+    Deno.env.set('AWL_API_KEY', 'mock-awl-key');
+    Deno.env.set('HMAC_SECRET', 'mock-hmac-secret-32-chars-xxxxxxx');
+    Deno.env.set('OPENAI_API_KEY', 'mock-openai-key');
+    try {
+        const deps = await createDialecticWorkerDeps(mockSupabaseClientDeps.client as unknown as SupabaseClient<Database>);
+        assertEquals(typeof deps.enqueueModelCall, 'function');
     } finally {
         Deno.env.delete('NETLIFY_QUEUE_URL');
         Deno.env.delete('AWL_API_KEY');

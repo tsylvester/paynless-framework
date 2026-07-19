@@ -1,4 +1,5 @@
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
+import { isJson } from "../_shared/utils/type-guards/type_guards.common.ts";
 import type {
 	BuildJobProgressDtosDeps,
 	BuildJobProgressDtosParams,
@@ -7,6 +8,8 @@ import type {
 } from "./dialectic.interface.ts";
 import type { Json } from "../types_db.ts";
 import { buildJobProgressDtos } from "./buildJobProgressDtos.ts";
+import { buildDialecticCompressJobPayload } from "../dialectic-worker/enqueueCompressJobs/enqueueCompressJobs.mock.ts";
+import { createMockDialecticExecuteJobPayload } from "../dialectic-worker/saveResponse/saveResponse.mock.ts";
 
 const SESSION_ID = "session-1";
 const USER_ID = "user-1";
@@ -283,6 +286,37 @@ Deno.test("buildJobProgressDtos", async (t) => {
 		assertEquals(dtos[0].createdAt, createdAt);
 		assertEquals(dtos[0].startedAt, startedAt);
 		assertEquals(dtos[0].completedAt, completedAt);
+	});
+
+	await t.step("COMPRESS job row is excluded from the output DTO map", () => {
+		const stepIdToStepKey: Map<string, string> = new Map<string, string>();
+		const compressPayload = buildDialecticCompressJobPayload();
+		if (!isJson(compressPayload)) throw new Error("compressPayload is not valid Json");
+		const jobs: DialecticJobRow[] = [
+			jobRow("compress-1", "COMPRESS", "completed", compressPayload),
+		];
+		const params: BuildJobProgressDtosParams = { jobs, stepIdToStepKey };
+		const result: Map<string, JobProgressDto[]> = buildJobProgressDtos(deps, params);
+		assertEquals(result.size, 0);
+	});
+
+	await t.step("mixed EXECUTE and COMPRESS jobs produce only the EXECUTE DTO", () => {
+		const stepIdToStepKey: Map<string, string> = new Map<string, string>();
+		const executePayload = createMockDialecticExecuteJobPayload();
+		if (!isJson(executePayload)) throw new Error("executePayload is not valid Json");
+		const compressPayload = buildDialecticCompressJobPayload();
+		if (!isJson(compressPayload)) throw new Error("compressPayload is not valid Json");
+		const jobs: DialecticJobRow[] = [
+			jobRow("job-exec-1", "EXECUTE", "completed", executePayload),
+			jobRow("compress-1", "COMPRESS", "completed", compressPayload),
+		];
+		const params: BuildJobProgressDtosParams = { jobs, stepIdToStepKey };
+		const result: Map<string, JobProgressDto[]> = buildJobProgressDtos(deps, params);
+		assertEquals(result.size, 1);
+		const dtos: JobProgressDto[] = result.get("thesis") ?? [];
+		assertEquals(dtos.length, 1);
+		assertEquals(dtos[0].jobType, "EXECUTE");
+		assertEquals(dtos[0].id, "job-exec-1");
 	});
 
 	await t.step("empty jobs array produces empty map", () => {

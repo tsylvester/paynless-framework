@@ -13,6 +13,7 @@ export function buildJobProgressDtos(
 	const result: Map<string, JobProgressDto[]> = new Map<string, JobProgressDto[]>();
 
 	for (const job of params.jobs) {
+		if (job.job_type === "COMPRESS") continue;
 		const payload: unknown = job.payload;
 
 		let stepKey: string | null = null;

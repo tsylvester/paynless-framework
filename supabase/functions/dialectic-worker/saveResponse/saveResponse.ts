@@ -70,6 +70,8 @@ import {
   isDialecticStageSlug,
   isEnqueueRenderJobSuccessReturn,
 } from "../enqueueRenderJob/enqueueRenderJob.interface.guards.ts";
+import { isModelContributionContext } from "../../_shared/utils/type-guards/type_guards.file_manager.ts"
+import { BuildUploadContextFn } from "../createJobContext/JobContext.interface.ts";
 
 function readOptionalPreflightInputTokens(payload: unknown): number {
   if (!isRecord(payload)) {
@@ -801,7 +803,7 @@ const wallet: TokenWallet = {
     return out;
   }
 
-  const uploadContext: ModelContributionUploadContext = deps.buildUploadContext({
+  const builtContext: ReturnType<BuildUploadContextFn> = deps.buildUploadContext({
     projectId: payloadProjectIdStr,
     storageFileType,
     sessionId: jobSessionId,
@@ -828,6 +830,13 @@ const wallet: TokenWallet = {
     documentRelationships: document_relationships,
     isIntermediate: isRecord(jobPayloadUnknown) && jobPayloadUnknown.isIntermediate === true,
   });
+
+  if (!isModelContributionContext(builtContext)) {
+    const err: Error = new Error('buildUploadContext returned a non-contribution context for the EXECUTE save path');
+    const out: SaveResponseErrorReturn = { error: err, retriable: false };
+    return out;
+  }
+  const uploadContext: ModelContributionUploadContext = builtContext;
 
   deps.logger.info('[saveResponse] Saving validated JSON to raw file', {
     jobId,

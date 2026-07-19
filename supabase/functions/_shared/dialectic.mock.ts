@@ -164,6 +164,7 @@ export const mockSubmitStageResponsesError = (
 
 // Import types for the processor functions
 import type { IJobProcessors } from '../dialectic-service/dialectic.interface.ts';
+import type { ProcessCompressJobReturn } from '../dialectic-worker/processCompressJob/processCompressJob.interface.ts';
 
 // Dummy implementation class for job processors
 class _JobProcessorsDummyImpl implements IJobProcessors {
@@ -174,6 +175,8 @@ class _JobProcessorsDummyImpl implements IJobProcessors {
     // deno-lint-ignore no-explicit-any
     processRenderJob = async (..._args: any[]): Promise<void> => { /* dummy */ }
     // deno-lint-ignore no-explicit-any
+    processCompressJob = async (..._args: any[]): Promise<ProcessCompressJobReturn> => ({ queued: false })
+    // deno-lint-ignore no-explicit-any
     planComplexStage = async (..._args: any[]): Promise<any> => { /* dummy */ }
 }
 
@@ -182,6 +185,7 @@ export type MockJobProcessorsSpies = {
     processSimpleJob: Spy<_JobProcessorsDummyImpl, Parameters<typeof _JobProcessorsDummyImpl.prototype.processSimpleJob>, ReturnType<typeof _JobProcessorsDummyImpl.prototype.processSimpleJob>>;
     processComplexJob: Spy<_JobProcessorsDummyImpl, Parameters<typeof _JobProcessorsDummyImpl.prototype.processComplexJob>, ReturnType<typeof _JobProcessorsDummyImpl.prototype.processComplexJob>>;
     processRenderJob: Spy<_JobProcessorsDummyImpl, Parameters<typeof _JobProcessorsDummyImpl.prototype.processRenderJob>, ReturnType<typeof _JobProcessorsDummyImpl.prototype.processRenderJob>>;
+    processCompressJob: Spy<_JobProcessorsDummyImpl, Parameters<typeof _JobProcessorsDummyImpl.prototype.processCompressJob>, ReturnType<typeof _JobProcessorsDummyImpl.prototype.processCompressJob>>;
     planComplexStage: Spy<_JobProcessorsDummyImpl, Parameters<typeof _JobProcessorsDummyImpl.prototype.planComplexStage>, ReturnType<typeof _JobProcessorsDummyImpl.prototype.planComplexStage>>;
 };
 
@@ -196,6 +200,7 @@ export function createMockJobProcessors(): {
         processSimpleJob: spy(dummyInstance, "processSimpleJob"),
         processComplexJob: spy(dummyInstance, "processComplexJob"),
         processRenderJob: spy(dummyInstance, "processRenderJob"),
+        processCompressJob: spy(dummyInstance, "processCompressJob"),
         planComplexStage: spy(dummyInstance, "planComplexStage"),
     };
 

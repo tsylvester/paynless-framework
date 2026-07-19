@@ -37,6 +37,7 @@ import { defaultProviderMap } from '../_shared/ai_service/factory.ts';
 import { AdminTokenWalletService } from '../_shared/services/tokenwallet/admin/adminTokenWalletService.ts';
 import { UserTokenWalletService } from '../_shared/services/tokenwallet/client/userTokenWalletService.ts';
 import { processRenderJob } from './processRenderJob.ts';
+import { processCompressJob } from './processCompressJob/processCompressJob.ts';
 import { isAiModelExtendedConfig } from '../_shared/utils/type_guards.ts';
 import { renderDocument } from '../_shared/services/document_renderer.ts';
 import { shouldEnqueueRenderJob } from '../_shared/utils/shouldEnqueueRenderJob.ts';
@@ -219,6 +220,7 @@ export async function createDialecticWorkerDeps(
     sanitizeJsonContent,
     computeJobSig,
     gatherArtifacts: boundGatherArtifacts,
+    enqueueModelCall: boundEnqueueModelCall,
     getMaxOutputTokens: getMaxOutputTokens,
   });
 }
@@ -285,6 +287,7 @@ export async function handleJob(
     processRenderJob: async (dbClient, renderJob, projectOwnerUserId, renderCtx, token) => {
       await processRenderJob(dbClient, renderJob, projectOwnerUserId, renderCtx, token);
     },
+    processCompressJob: processCompressJob,
   };
   const effectiveProcessors = testProcessors || defaultProcessors;
   //console.log('[handleJob] Entered function for job:', job.id);

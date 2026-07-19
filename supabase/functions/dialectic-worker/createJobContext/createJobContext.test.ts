@@ -63,6 +63,16 @@ describe('createJobContext Factory and Slicers', () => {
       assertEquals('callUnifiedAIModel' in result, false);
     });
 
+    it('copies enqueueModelCall from params onto root IJobContext', () => {
+      const override = createMockBoundEnqueueModelCall();
+      const params = createMockJobContextParams({
+        enqueueModelCall: override,
+      });
+      const result = createJobContext(params);
+
+      assertEquals(result.enqueueModelCall, override);
+    });
+
     it('returns an object that passes isIJobContext with new context structure', () => {
       const params = createMockJobContextParams();
       const result = createJobContext(params);

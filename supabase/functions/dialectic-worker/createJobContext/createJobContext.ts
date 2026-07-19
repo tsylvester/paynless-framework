@@ -76,6 +76,7 @@ export function createJobContext(params: JobContextParams): IJobContext {
 
         // From IJobContext (orchestration)
         prepareModelJob: params.prepareModelJob,
+        enqueueModelCall: params.enqueueModelCall,
         debitTokens: params.debitTokens,
         sanitizeJsonContent: params.sanitizeJsonContent,
         computeJobSig: params.computeJobSig,

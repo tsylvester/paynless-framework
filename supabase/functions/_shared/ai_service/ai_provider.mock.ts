@@ -13,8 +13,8 @@ import { isJson } from '../utils/type_guards.ts';
 
 const MOCK_MODEL_CONFIG: AiModelExtendedConfig = {
   api_identifier: "dummy-model-v1",
-  input_token_cost_rate: 0,
-  output_token_cost_rate: 0,
+  input_token_cost_rate: 1,
+  output_token_cost_rate: 1,
   tokenization_strategy: { 
       type: 'tiktoken', 
       tiktoken_encoding_name: 'cl100k_base' 

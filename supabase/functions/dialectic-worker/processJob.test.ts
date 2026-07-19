@@ -1,5 +1,5 @@
 
-import { assertEquals, assertStrictEquals } from 'https://deno.land/std@0.170.0/testing/asserts.ts';
+import { assert, assertEquals, assertStrictEquals } from 'https://deno.land/std@0.170.0/testing/asserts.ts';
 import { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import { Database } from '../types_db.ts';
 import { createMockSupabaseClient } from '../_shared/supabase.mock.ts';
@@ -17,6 +17,9 @@ import {
 } from './createJobContext/createJobContext.ts';
 import { IJobContext } from './createJobContext/JobContext.interface.ts';
 import { createMockJobContextParams } from './createJobContext/JobContext.mock.ts';
+import { buildDialecticCompressJobPayload } from './enqueueCompressJobs/enqueueCompressJobs.mock.ts';
+import { createMockJobRow } from './saveResponse/saveResponse.mock.ts';
+import { ProcessCompressJobError, ProcessCompressJobReturn } from './processCompressJob/processCompressJob.interface.ts';
 
 type MockJob = Database['public']['Tables']['dialectic_generation_jobs']['Row'];
 
@@ -39,28 +42,15 @@ Deno.test('processJob - dispatches by job.job_type: PLAN routes to processComple
     };
     if (!isJson(executeShapedPayload)) throw new Error('Test setup failed: executeShapedPayload not Json');
 
-    const mockJob: MockJob = {
+    const mockJob = createMockJobRow(executeShapedPayload, {
         id: 'job-id-plan-dispatch',
         user_id: 'user-id',
         session_id: 'session-id-plan-dispatch',
         stage_slug: 'thesis',
-        payload: executeShapedPayload,
-        iteration_number: 1,
         status: 'pending',
-        attempt_count: 0,
-        max_retries: 3,
-        created_at: new Date().toISOString(),
-        started_at: null,
-        completed_at: null,
-        results: null,
-        error_details: null,
-        parent_job_id: null,
-        target_contribution_id: null,
-        prerequisite_job_id: null,
-        is_test_job: false,
         job_type: 'PLAN',
         idempotency_key: "idempotency-key-1",
-    };
+    });
 
     const mockSupabase = createMockSupabaseClient();
 
@@ -99,28 +89,15 @@ Deno.test('processJob - dispatches by job.job_type: EXECUTE routes to processSim
     };
     if (!isJson(planShapedPayload)) throw new Error('Test setup failed: planShapedPayload not Json');
 
-    const mockJob: MockJob = {
+    const mockJob = createMockJobRow(planShapedPayload, {
         id: 'job-id-exec-dispatch',
         user_id: 'user-id',
         session_id: 'session-id-exec-dispatch',
         stage_slug: 'antithesis',
-        payload: planShapedPayload,
-        iteration_number: 1,
         status: 'pending',
-        attempt_count: 0,
-        max_retries: 3,
-        created_at: new Date().toISOString(),
-        started_at: null,
-        completed_at: null,
-        results: null,
-        error_details: null,
-        parent_job_id: null,
-        target_contribution_id: null,
-        prerequisite_job_id: null,
-        is_test_job: false,
         job_type: 'EXECUTE',
         idempotency_key: "idempotency-key-1",
-    };
+    });
 
     // Provide a stage stub that would have driven legacy logic to complex, ensuring RED against new expectation
     const mockSupabase = createMockSupabaseClient(undefined, {
@@ -163,28 +140,15 @@ Deno.test('processJob - ignores processing_strategy; PLAN always routes to proce
     };
     if (!isJson(planPayload)) throw new Error('Test setup failed: planPayload not Json');
 
-    const mockJob: MockJob = {
+    const mockJob = createMockJobRow(planPayload, {
         id: 'job-id-ignore-strategy',
         user_id: 'user-id',
         session_id: 'session-id-ignore-strategy',
         stage_slug: 'thesis',
-        payload: planPayload,
-        iteration_number: 1,
         status: 'pending',
-        attempt_count: 0,
-        max_retries: 3,
-        created_at: new Date().toISOString(),
-        started_at: null,
-        completed_at: null,
-        results: null,
-        error_details: null,
-        parent_job_id: null,
-        target_contribution_id: null,
-        prerequisite_job_id: null,
-        is_test_job: false,
         job_type: 'PLAN',
         idempotency_key: "idempotency-key-1",
-    };
+    });
 
     // Legacy code would look at input_artifact_rules.processing_strategy and route simple if unsupported
     const mockSupabase = createMockSupabaseClient(undefined, {
@@ -229,28 +193,15 @@ Deno.test('processJob - PLAN passes job unchanged and propagates args', async ()
     };
     if (!isJson(planPayload)) throw new Error('Test setup failed: planPayload not Json');
 
-    const rowJob: MockJob = {
+    const rowJob = createMockJobRow(planPayload, {
         id: 'job-id-propagation-plan',
         user_id: 'user-id-plan',
         session_id: 'session-id-propagation-plan',
         stage_slug: 'thesis',
-        payload: planPayload,
-        iteration_number: 1,
         status: 'pending',
-        attempt_count: 0,
-        max_retries: 3,
-        created_at: new Date().toISOString(),
-        started_at: null,
-        completed_at: null,
-        results: null,
-        error_details: null,
-        parent_job_id: null,
-        target_contribution_id: null,
-        prerequisite_job_id: null,
-        is_test_job: false,
         job_type: 'PLAN',
         idempotency_key: "idempotency-key-1",
-    };
+    });
 
     const mockSupabase = createMockSupabaseClient();
     const authToken = 'propagation-token-plan';
@@ -293,28 +244,15 @@ Deno.test('processJob - EXECUTE passes job unchanged and propagates args', async
     };
     if (!isJson(planShaped)) throw new Error('Test setup failed: planShaped not Json');
 
-    const rowJob: MockJob = {
+    const rowJob = createMockJobRow(planShaped, {
         id: 'job-id-propagation-exec',
         user_id: 'user-id-exec',
         session_id: 'session-id-propagation-exec',
         stage_slug: 'antithesis',
-        payload: planShaped,
-        iteration_number: 1,
         status: 'pending',
-        attempt_count: 0,
-        max_retries: 3,
-        created_at: new Date().toISOString(),
-        started_at: null,
-        completed_at: null,
-        results: null,
-        error_details: null,
-        parent_job_id: null,
-        target_contribution_id: null,
-        prerequisite_job_id: null,
-        is_test_job: false,
         job_type: 'EXECUTE',
         idempotency_key: "idempotency-key-1",
-    };
+    });
 
     const mockSupabase = createMockSupabaseClient();
     const authToken = 'propagation-token-exec';
@@ -356,28 +294,15 @@ Deno.test('processJob - PLAN does not query dialectic_stages in router', async (
     };
     if (!isJson(payload)) throw new Error('Test setup failed: payload not Json');
 
-    const rowJob: MockJob = {
+    const rowJob = createMockJobRow(payload, {
         id: 'job-id-no-stage-plan',
         user_id: 'user-id-no-stage-plan',
         session_id: 'session-id-no-stage-plan',
         stage_slug: 'thesis',
-        payload,
-        iteration_number: 1,
         status: 'pending',
-        attempt_count: 0,
-        max_retries: 3,
-        created_at: new Date().toISOString(),
-        started_at: null,
-        completed_at: null,
-        results: null,
-        error_details: null,
-        parent_job_id: null,
-        target_contribution_id: null,
-        prerequisite_job_id: null,
-        is_test_job: false,
         job_type: 'PLAN',
         idempotency_key: "idempotency-key-1",
-    };
+    });
 
     const mockSupabase = createMockSupabaseClient();
 
@@ -416,28 +341,15 @@ Deno.test('processJob - EXECUTE does not query dialectic_stages in router', asyn
     };
     if (!isJson(payload)) throw new Error('Test setup failed: payload not Json');
 
-    const rowJob: MockJob = {
+    const rowJob = createMockJobRow(payload, {
         id: 'job-id-no-stage-exec',
         user_id: 'user-id-no-stage-exec',
         session_id: 'session-id-no-stage-exec',
         stage_slug: 'antithesis',
-        payload,
-        iteration_number: 1,
         status: 'pending',
-        attempt_count: 0,
-        max_retries: 3,
-        created_at: new Date().toISOString(),
-        started_at: null,
-        completed_at: null,
-        results: null,
-        error_details: null,
-        parent_job_id: null,
-        target_contribution_id: null,
-        prerequisite_job_id: null,
-        is_test_job: false,
         job_type: 'EXECUTE',
         idempotency_key: "idempotency-key-1",
-    };
+    });
 
     const mockSupabase = createMockSupabaseClient();
 
@@ -476,28 +388,15 @@ Deno.test('processJob - null job_type should throw and not dispatch', async () =
     };
     if (!isJson(payload)) throw new Error('Test setup failed: payload not Json');
 
-    const rowJob: MockJob = {
+    const rowJob = createMockJobRow(payload, {
         id: 'job-id-null-type',
         user_id: 'user-id-null-type',
         session_id: 'session-id-null-type',
         stage_slug: 'thesis',
-        payload,
-        iteration_number: 1,
         status: 'pending',
-        attempt_count: 0,
-        max_retries: 3,
-        created_at: new Date().toISOString(),
-        started_at: null,
-        completed_at: null,
-        results: null,
-        error_details: null,
-        parent_job_id: null,
-        target_contribution_id: null,
-        prerequisite_job_id: null,
-        is_test_job: false,
         job_type: null,
         idempotency_key: null,
-    };
+    });
 
     const mockSupabase = createMockSupabaseClient();
 
@@ -539,28 +438,15 @@ Deno.test('processJob - bubbles errors from downstream processor', async () => {
     };
     if (!isJson(payload)) throw new Error('Test setup failed: payload not Json');
 
-    const rowJob: MockJob = {
+    const rowJob = createMockJobRow(payload, {
         id: 'job-id-bubble',
         user_id: 'user-id-bubble',
         session_id: 'session-id-bubble',
         stage_slug: 'thesis',
-        payload,
-        iteration_number: 1,
         status: 'pending',
-        attempt_count: 0,
-        max_retries: 3,
-        created_at: new Date().toISOString(),
-        started_at: null,
-        completed_at: null,
-        results: null,
-        error_details: null,
-        parent_job_id: null,
-        target_contribution_id: null,
-        prerequisite_job_id: null,
-        is_test_job: false,
         job_type: 'EXECUTE',
         idempotency_key: "idempotency-key-1",
-    };
+    });
 
     // Make the EXECUTE processor throw
     const err = new Error('processor failed');
@@ -609,28 +495,15 @@ Deno.test('processJob - dispatches by job.job_type: RENDER routes to processRend
     };
     if (!isJson(planShapedPayload)) throw new Error('Test setup failed: planShapedPayload not Json');
 
-    const mockJob: MockJob = {
+    const mockJob = createMockJobRow(planShapedPayload, {
         id: 'job-id-render-dispatch',
         user_id: 'user-id',
         session_id: 'session-id-render-dispatch',
         stage_slug: 'synthesis',
-        payload: planShapedPayload,
-        iteration_number: 1,
         status: 'pending',
-        attempt_count: 0,
-        max_retries: 3,
-        created_at: new Date().toISOString(),
-        started_at: null,
-        completed_at: null,
-        results: null,
-        error_details: null,
-        parent_job_id: null,
-        target_contribution_id: null,
-        prerequisite_job_id: null,
-        is_test_job: false,
         job_type: 'RENDER',
         idempotency_key: "idempotency-key-1",
-    };
+    });
 
     const mockSupabase = createMockSupabaseClient();
 
@@ -670,28 +543,15 @@ Deno.test('processJob - RENDER passes job unchanged and propagates args', async 
     };
     if (!isJson(planShapedPayload)) throw new Error('Test setup failed: planShapedPayload not Json');
 
-    const rowJob: MockJob = {
+    const rowJob = createMockJobRow(planShapedPayload, {
         id: 'job-id-render-propagation',
         user_id: 'user-id-render',
         session_id: 'session-id-render-propagation',
         stage_slug: 'parenthesis',
-        payload: planShapedPayload,
-        iteration_number: 1,
         status: 'pending',
-        attempt_count: 0,
-        max_retries: 3,
-        created_at: new Date().toISOString(),
-        started_at: null,
-        completed_at: null,
-        results: null,
-        error_details: null,
-        parent_job_id: null,
-        target_contribution_id: null,
-        prerequisite_job_id: null,
-        is_test_job: false,
         job_type: 'RENDER',
         idempotency_key: "idempotency-key-1",
-    };
+    });
 
     const mockSupabase = createMockSupabaseClient();
     const authToken = 'propagation-token-render';
@@ -734,28 +594,15 @@ Deno.test('processJob - RENDER does not query dialectic_stages in router', async
     };
     if (!isJson(planShapedPayload)) throw new Error('Test setup failed: planShapedPayload not Json');
 
-    const rowJob: MockJob = {
+    const rowJob = createMockJobRow(planShapedPayload, {
         id: 'job-id-no-stage-render',
         user_id: 'user-id-no-stage-render',
         session_id: 'session-id-no-stage-render',
         stage_slug: 'paralysis',
-        payload: planShapedPayload,
-        iteration_number: 1,
         status: 'pending',
-        attempt_count: 0,
-        max_retries: 3,
-        created_at: new Date().toISOString(),
-        started_at: null,
-        completed_at: null,
-        results: null,
-        error_details: null,
-        parent_job_id: null,
-        target_contribution_id: null,
-        prerequisite_job_id: null,
-        is_test_job: false,
         job_type: 'RENDER',
         idempotency_key: "idempotency-key-1",
-    };
+    });
 
     const mockSupabase = createMockSupabaseClient();
 
@@ -795,28 +642,15 @@ Deno.test('processJob - passes root IJobContext for EXECUTE jobs', async () => {
     };
     if (!isJson(payload)) throw new Error('Test setup failed: payload not Json');
 
-    const mockJob: MockJob = {
+    const mockJob = createMockJobRow(payload, {
         id: 'job-id-slice-execute',
         user_id: 'user-id',
         session_id: 'session-id-slice-execute',
         stage_slug: 'thesis',
-        payload,
-        iteration_number: 1,
         status: 'pending',
-        attempt_count: 0,
-        max_retries: 3,
-        created_at: new Date().toISOString(),
-        started_at: null,
-        completed_at: null,
-        results: null,
-        error_details: null,
-        parent_job_id: null,
-        target_contribution_id: null,
-        prerequisite_job_id: null,
-        is_test_job: false,
         job_type: 'EXECUTE',
         idempotency_key: "idempotency-key-1",
-    };
+    });
 
     const mockSupabase = createMockSupabaseClient();
 
@@ -869,28 +703,15 @@ Deno.test('processJob - slices to IPlanJobContext for PLAN jobs', async () => {
     };
     if (!isJson(payload)) throw new Error('Test setup failed: payload not Json');
 
-    const mockJob: MockJob = {
+    const mockJob = createMockJobRow(payload, {
         id: 'job-id-slice-plan',
         user_id: 'user-id',
         session_id: 'session-id-slice-plan',
         stage_slug: 'antithesis',
-        payload,
-        iteration_number: 1,
         status: 'pending',
-        attempt_count: 0,
-        max_retries: 3,
-        created_at: new Date().toISOString(),
-        started_at: null,
-        completed_at: null,
-        results: null,
-        error_details: null,
-        parent_job_id: null,
-        target_contribution_id: null,
-        prerequisite_job_id: null,
-        is_test_job: false,
         job_type: 'PLAN',
         idempotency_key: "idempotency-key-1",
-    };
+    });
 
     const mockSupabase = createMockSupabaseClient();
 
@@ -945,28 +766,15 @@ Deno.test('processJob - slices to IRenderJobContext for RENDER jobs', async () =
     };
     if (!isJson(payload)) throw new Error('Test setup failed: payload not Json');
 
-    const mockJob: MockJob = {
+    const mockJob = createMockJobRow(payload, {
         id: 'job-id-slice-render',
         user_id: 'user-id',
         session_id: 'session-id-slice-render',
         stage_slug: 'synthesis',
-        payload,
-        iteration_number: 1,
         status: 'pending',
-        attempt_count: 0,
-        max_retries: 3,
-        created_at: new Date().toISOString(),
-        started_at: null,
-        completed_at: null,
-        results: null,
-        error_details: null,
-        parent_job_id: null,
-        target_contribution_id: null,
-        prerequisite_job_id: null,
-        is_test_job: false,
         job_type: 'RENDER',
         idempotency_key: "idempotency-key-1",
-    };
+    });
 
     const mockSupabase = createMockSupabaseClient();
 
@@ -1000,6 +808,182 @@ Deno.test('processJob - slices to IRenderJobContext for RENDER jobs', async () =
         assertEquals(Reflect.has(receivedCtx, 'ragService'), false, 'IRenderJobContext should NOT have ragService');
         assertEquals(Reflect.has(receivedCtx, 'planComplexStage'), false, 'IRenderJobContext should NOT have planComplexStage');
     } finally {
+        spies.processSimpleJob.restore();
+        spies.processComplexJob.restore();
+        spies.processRenderJob.restore();
+        mockSupabase.clearAllStubs?.();
+    }
+});
+
+// Dispatch strictly by job.job_type: COMPRESS -> processCompressJob
+Deno.test('processJob - dispatches by job.job_type: COMPRESS routes to processCompressJob', async () => {
+    const { processors, spies } = createMockJobProcessors();
+
+    const payload = buildDialecticCompressJobPayload();
+    if (!isJson(payload)) throw new Error('Test setup failed: payload not Json');
+
+    const rowJob = createMockJobRow(payload, {
+        id: 'job-id-compress-dispatch',
+        user_id: 'user-id',
+        session_id: payload.sessionId,
+        stage_slug: payload.stageSlug,
+        status: 'pending',
+        job_type: 'COMPRESS',
+        idempotency_key: 'idempotency-key-1',
+    });
+
+    const mockSupabase = createMockSupabaseClient();
+
+    try {
+        await processJob(
+            mockSupabase.client as unknown as SupabaseClient<Database>,
+            { ...rowJob, payload },
+            'user-id',
+            processors,
+            mockCtx,
+            'mock-token',
+        );
+
+        assertEquals(spies.processCompressJob.calls.length, 1, 'COMPRESS must dispatch to processCompressJob');
+        assertEquals(spies.processSimpleJob.calls.length, 0, 'processSimpleJob must not be called for COMPRESS');
+        assertEquals(spies.processComplexJob.calls.length, 0, 'processComplexJob must not be called for COMPRESS');
+        assertEquals(spies.processRenderJob.calls.length, 0, 'processRenderJob must not be called for COMPRESS');
+    } finally {
+        spies.processCompressJob.restore();
+        spies.processSimpleJob.restore();
+        spies.processComplexJob.restore();
+        spies.processRenderJob.restore();
+        mockSupabase.clearAllStubs?.();
+    }
+});
+
+Deno.test('processJob - COMPRESS throws Invalid COMPRESS payload when payload fails isDialecticCompressJobPayload', async () => {
+    const { processors, spies } = createMockJobProcessors();
+
+    const payload = buildDialecticCompressJobPayload();
+    Reflect.set(payload, 'sessionId', 123);
+    if (!isJson(payload)) throw new Error('Test setup failed: payload not Json');
+
+    const rowJob = createMockJobRow(payload, {
+        id: 'job-id-compress-invalid',
+        user_id: 'user-id',
+        session_id: payload.sessionId,
+        stage_slug: payload.stageSlug,
+        status: 'pending',
+        job_type: 'COMPRESS',
+        idempotency_key: 'idempotency-key-1',
+    });
+
+    const mockSupabase = createMockSupabaseClient();
+
+    let threw = false;
+    let message = '';
+    try {
+        await processJob(
+            mockSupabase.client as unknown as SupabaseClient<Database>,
+            { ...rowJob, payload },
+            'user-id',
+            processors,
+            mockCtx,
+            'mock-token',
+        );
+    } catch (e) {
+        threw = true;
+        message = e instanceof Error ? e.message : String(e);
+    } finally {
+        assertEquals(spies.processCompressJob.calls.length, 0, 'processCompressJob must not be called with invalid payload');
+        spies.processCompressJob.restore();
+        spies.processSimpleJob.restore();
+        spies.processComplexJob.restore();
+        spies.processRenderJob.restore();
+        mockSupabase.clearAllStubs?.();
+    }
+
+    assertEquals(threw, true, 'router should throw for invalid COMPRESS payload');
+    assertEquals(message, 'Invalid COMPRESS payload for job job-id-compress-invalid');
+});
+
+Deno.test('processJob - COMPRESS updates job status to failed on ProcessCompressJobErrorReturn', async () => {
+    const { processors, spies } = createMockJobProcessors();
+
+    const payload = buildDialecticCompressJobPayload();
+    if (!isJson(payload)) throw new Error('Test setup failed: payload not Json');
+
+    const errorReturn: ProcessCompressJobReturn = { error: new ProcessCompressJobError('compress failed'), retriable: false };
+    processors.processCompressJob = async () => errorReturn;
+
+    const rowJob = createMockJobRow(payload, {
+        id: 'job-id-compress-error',
+        user_id: 'user-id',
+        session_id: payload.sessionId,
+        stage_slug: payload.stageSlug,
+        status: 'pending',
+        job_type: 'COMPRESS',
+        idempotency_key: 'idempotency-key-1',
+    });
+
+    const mockSupabase = createMockSupabaseClient();
+
+    try {
+        await processJob(
+            mockSupabase.client as unknown as SupabaseClient<Database>,
+            { ...rowJob, payload },
+            'user-id',
+            processors,
+            mockCtx,
+            'mock-token',
+        );
+    } finally {
+        const updateResult = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'update');
+        assertEquals(updateResult?.callCount, 1, 'processJob should update dialectic_generation_jobs once on error');
+        const updateData = updateResult?.callsArgs[0][0];
+        assert(updateData !== null && typeof updateData === 'object');
+        assertEquals(Reflect.get(updateData, 'status'), 'failed');
+        const errorDetails = Reflect.get(updateData, 'error_details');
+        assert(errorDetails !== null && typeof errorDetails === 'object');
+        assertEquals(Reflect.get(errorDetails, 'message'), 'compress failed');
+        spies.processCompressJob.restore();
+        spies.processSimpleJob.restore();
+        spies.processComplexJob.restore();
+        spies.processRenderJob.restore();
+        mockSupabase.clearAllStubs?.();
+    }
+});
+
+Deno.test('processJob - COMPRESS does not update dialectic_generation_jobs on success return', async () => {
+    const { processors, spies } = createMockJobProcessors();
+
+    const payload = buildDialecticCompressJobPayload();
+    if (!isJson(payload)) throw new Error('Test setup failed: payload not Json');
+
+    const successReturn: ProcessCompressJobReturn = { queued: true };
+    processors.processCompressJob = async () => successReturn;
+
+    const rowJob = createMockJobRow(payload, {
+        id: 'job-id-compress-success',
+        user_id: 'user-id',
+        session_id: payload.sessionId,
+        stage_slug: payload.stageSlug,
+        status: 'pending',
+        job_type: 'COMPRESS',
+        idempotency_key: 'idempotency-key-1',
+    });
+
+    const mockSupabase = createMockSupabaseClient();
+
+    try {
+        await processJob(
+            mockSupabase.client as unknown as SupabaseClient<Database>,
+            { ...rowJob, payload },
+            'user-id',
+            processors,
+            mockCtx,
+            'mock-token',
+        );
+    } finally {
+        const updateResult = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'update');
+        assertEquals(updateResult?.callCount, 0, 'processJob should not update dialectic_generation_jobs on success');
+        spies.processCompressJob.restore();
         spies.processSimpleJob.restore();
         spies.processComplexJob.restore();
         spies.processRenderJob.restore();

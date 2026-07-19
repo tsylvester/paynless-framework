@@ -53,10 +53,149 @@ Deno.test('Type Guard: isAiModelExtendedConfig', async (t) => {
         assert(isAiModelExtendedConfig(config));
     });
 
+    await t.step('should return true with zero input_token_cost_rate and positive output_token_cost_rate', () => {
+        const config: AiModelExtendedConfig = {
+            api_identifier: 'gpt-4',
+            input_token_cost_rate: 0,
+            output_token_cost_rate: 0.03,
+            tokenization_strategy: {
+                type: 'tiktoken',
+                tiktoken_encoding_name: 'cl100k_base',
+            },
+        };
+        assert(isAiModelExtendedConfig(config));
+    });
+
+    await t.step('should return false if api_identifier is missing', () => {
+        const config = {
+            input_token_cost_rate: 0.01,
+            output_token_cost_rate: 0.03,
+            tokenization_strategy: {
+                type: 'tiktoken',
+                tiktoken_encoding_name: 'cl100k_base',
+            },
+        };
+        assert(!isAiModelExtendedConfig(config));
+    });
+
+    await t.step('should return false if api_identifier is not a string', () => {
+        const config = {
+            api_identifier: 123,
+            input_token_cost_rate: 0.01,
+            output_token_cost_rate: 0.03,
+            tokenization_strategy: {
+                type: 'tiktoken',
+                tiktoken_encoding_name: 'cl100k_base',
+            },
+        };
+        assert(!isAiModelExtendedConfig(config));
+    });
+
+    await t.step('should return false if input_token_cost_rate is missing', () => {
+        const config = {
+            api_identifier: 'gpt-4',
+            output_token_cost_rate: 0.03,
+            tokenization_strategy: {
+                type: 'tiktoken',
+                tiktoken_encoding_name: 'cl100k_base',
+            },
+        };
+        assert(!isAiModelExtendedConfig(config));
+    });
+
+    await t.step('should return false if output_token_cost_rate is missing', () => {
+        const config = {
+            api_identifier: 'gpt-4',
+            input_token_cost_rate: 0.01,
+            tokenization_strategy: {
+                type: 'tiktoken',
+                tiktoken_encoding_name: 'cl100k_base',
+            },
+        };
+        assert(!isAiModelExtendedConfig(config));
+    });
+
+    await t.step('should return false if either rate is null', () => {
+        assert(!isAiModelExtendedConfig({
+            api_identifier: 'gpt-4',
+            input_token_cost_rate: null,
+            output_token_cost_rate: 0.03,
+            tokenization_strategy: {
+                type: 'tiktoken',
+                tiktoken_encoding_name: 'cl100k_base',
+            },
+        }));
+        assert(!isAiModelExtendedConfig({
+            api_identifier: 'gpt-4',
+            input_token_cost_rate: 0.01,
+            output_token_cost_rate: null,
+            tokenization_strategy: {
+                type: 'tiktoken',
+                tiktoken_encoding_name: 'cl100k_base',
+            },
+        }));
+    });
+
+    await t.step('should return false if either rate is a string', () => {
+        assert(!isAiModelExtendedConfig({
+            api_identifier: 'gpt-4',
+            input_token_cost_rate: '0.01',
+            output_token_cost_rate: 0.03,
+            tokenization_strategy: {
+                type: 'tiktoken',
+                tiktoken_encoding_name: 'cl100k_base',
+            },
+        }));
+        assert(!isAiModelExtendedConfig({
+            api_identifier: 'gpt-4',
+            input_token_cost_rate: 0.01,
+            output_token_cost_rate: '0.03',
+            tokenization_strategy: {
+                type: 'tiktoken',
+                tiktoken_encoding_name: 'cl100k_base',
+            },
+        }));
+    });
+
+    await t.step('should return false if input_token_cost_rate is negative', () => {
+        const config = {
+            api_identifier: 'gpt-4',
+            input_token_cost_rate: -0.01,
+            output_token_cost_rate: 0.03,
+            tokenization_strategy: {
+                type: 'tiktoken',
+                tiktoken_encoding_name: 'cl100k_base',
+            },
+        };
+        assert(!isAiModelExtendedConfig(config));
+    });
+
+    await t.step('should return false if output_token_cost_rate is zero or negative', () => {
+        assert(!isAiModelExtendedConfig({
+            api_identifier: 'gpt-4',
+            input_token_cost_rate: 0.01,
+            output_token_cost_rate: 0,
+            tokenization_strategy: {
+                type: 'tiktoken',
+                tiktoken_encoding_name: 'cl100k_base',
+            },
+        }));
+        assert(!isAiModelExtendedConfig({
+            api_identifier: 'gpt-4',
+            input_token_cost_rate: 0.01,
+            output_token_cost_rate: -0.01,
+            tokenization_strategy: {
+                type: 'tiktoken',
+                tiktoken_encoding_name: 'cl100k_base',
+            },
+        }));
+    });
+
     await t.step('should return false if tokenization_strategy is missing', () => {
         const config = {
             api_identifier: 'gpt-4',
             input_token_cost_rate: 0.01,
+            output_token_cost_rate: 0.03,
         };
         assert(!isAiModelExtendedConfig(config));
     });
@@ -64,6 +203,8 @@ Deno.test('Type Guard: isAiModelExtendedConfig', async (t) => {
     await t.step('should return false if tokenization_strategy is not an object', () => {
         const config = {
             api_identifier: 'gpt-4',
+            input_token_cost_rate: 0.01,
+            output_token_cost_rate: 0.03,
             tokenization_strategy: 'tiktoken',
         };
         assert(!isAiModelExtendedConfig(config));
@@ -72,6 +213,8 @@ Deno.test('Type Guard: isAiModelExtendedConfig', async (t) => {
     await t.step('should return false if tiktoken_encoding_name is missing for tiktoken strategy', () => {
         const config = {
             api_identifier: 'gpt-4',
+            input_token_cost_rate: 0.01,
+            output_token_cost_rate: 0.03,
             tokenization_strategy: {
                 type: 'tiktoken',
             },
@@ -82,6 +225,8 @@ Deno.test('Type Guard: isAiModelExtendedConfig', async (t) => {
     await t.step('should return false if chars_per_token_ratio is not a number', () => {
         const config = {
             api_identifier: 'claude-3',
+            input_token_cost_rate: 0.01,
+            output_token_cost_rate: 0.03,
             tokenization_strategy: {
                 type: 'rough_char_count',
                 chars_per_token_ratio: 'four',

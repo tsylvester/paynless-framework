@@ -1,7 +1,7 @@
 // supabase/functions/dialectic-worker/JobContext.interface.ts
 
 import { FinishReason, GetAiProviderAdapterFn, ILogger, ResourceDocument } from '../../_shared/types.ts';
-import { IFileManager, ModelContributionUploadContext } from '../../_shared/types/file_manager.types.ts';
+import { IFileManager, ModelContributionUploadContext, ResourceUploadContext } from '../../_shared/types/file_manager.types.ts';
 import { DownloadFromStorageFn } from '../../_shared/supabase_storage_utils.ts';
 import { DeleteFromStorageFn } from '../../_shared/supabase_storage_utils.ts';
 import { IRagService } from '../../_shared/services/rag_service.interface.ts';
@@ -142,12 +142,13 @@ export type DetermineContinuationFn = (
 ) => DetermineContinuationResult;
 
 /**
- * Assembles `ModelContributionUploadContext` from pre-resolved fields.
+ * Assembles `ModelContributionUploadContext | ResourceUploadContext` from pre-resolved fields.
+ * `buildUploadContext.ts` produces the contribution arm; the resource arm's producer is WS-B's `saveResponse` path (Sprint 4).
  * Matches `_shared/utils/buildUploadContext/buildUploadContext.ts`.
  */
 export type BuildUploadContextFn = (
     params: BuildUploadContextParams,
-) => ModelContributionUploadContext;
+) => ModelContributionUploadContext | ResourceUploadContext;
 
 /**
  * Base context providing logging capabilities.
@@ -316,6 +317,7 @@ export interface IJobContext extends
     readonly gatherArtifacts: BoundGatherArtifactsFn;
     // Top-level orchestration — pre-bound closure for job processing
     readonly prepareModelJob: BoundPrepareModelJobFn;
+    readonly enqueueModelCall: BoundEnqueueModelCallFn;
     readonly sanitizeJsonContent: SanitizeJsonContentFn;
     readonly computeJobSig: ComputeJobSig;
 }
@@ -353,6 +355,7 @@ export interface JobContextParams {
     readonly retryJob: RetryJobFn;
     readonly gatherArtifacts: BoundGatherArtifactsFn;
     readonly prepareModelJob: BoundPrepareModelJobFn;
+    readonly enqueueModelCall: BoundEnqueueModelCallFn;
     readonly debitTokens: DebitTokens;
     readonly pickLatest: PickLatestFn;
     readonly applyInputsRequiredScope: ApplyInputsRequiredScopeFn;
