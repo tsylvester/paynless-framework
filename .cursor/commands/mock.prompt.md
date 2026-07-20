@@ -1,41 +1,227 @@
-Update the mock file to move any factories, builders, or helpers out of tests and into the mock so they can be used by callers. 
+# Mock Generation
 
-      * Must provide a mock for every symbol exported by the interface
-      * Must provide a default object with overrides for every element
-      * Must accept null and undefined as overrides for object elements to test invalid objects
-      * Must not alias, typecast, or use overloads to produce the build/create functions
-      * Must not create or export mocks of any symbols not defined in the interface 
+Generate a single mock file for the interface.
 
-Mocks are named as mock[FunctionName] or mock[Object]. Do not add additional styling. Do not chain additional descriptors like `mockBuildContractStandardDefaultNoOverrides` or other useless verbosity. 
+## Purpose
 
-The mock file must provide a builder for each element of the function signature, for example deps, params, payload, returns. 
+The mock file provides reusable builders and function mocks for unit tests, integration tests, and runtime type guard tests.
 
-Builders are styled as "build[ObjectName]". 
+Builders generate valid objects only. Corruption is handled by per-type invalidators in the same file, which return unknown.
 
-The mock file only provides mocks for SYMBOLS OWNED BY THE INTERFACE THAT IS BEING MOCKED! You NEVER write mocks for imported symbols. THIS INCLUDES TRYING TO WRITE ROWS FOR DATABASE FETCHES! YOU DO NOT ADD DATABASE MOCKS TO THE MOCK FILE FOR AN INTERFACE! THE INTERFACE DOES NOT OWN THE DATABASE! YOU DO NOT ADD MOCKS FOR ANYTHING THAT THE INTERFACE DOES NOT OWN! 
+Interface tests do not use mocks.
 
-The mock file must EXACTLY MATCH the ACTUAL FUNCTION AND ITS TYPES. 
+---
 
-You must use the ACTUAL NAMES of the existing types and functions, with "mock" prefixed for a function or "build" prefixed for an object constructor. 
+## Ownership
 
-You will not invent new types for the mock. You will not invent new shapes for the mock. You will not invent new names for the mock. 
+The mock file only provides mocks for symbols **owned by the interface being mocked**.
 
-You are mocking the ACTUAL FUNCTION THAT EXISTS (or will soon exist). You are NOT imagining an entirely new function, types, and naming conventions. 
+Generate mocks for every symbol exported by the interface.
 
-Each builder must provide a default value and accept an override for each value it owns, including undefined or null, for any value that is a member of the object. 
+Do **not** generate mocks for:
 
-Do not build mocks specific to a single override value. We do not want `mockFunctionMissingSomeDependency`. That is what the default type and override values are for. 
+* imported symbols
+* databases
+* repositories
+* APIs
+* external services
+* objects owned by another interface
+* wrappers around another interface's mock
 
-Interface tests do not use mocks. Interface tests must not depend on any implementation detail. Do not write mocks for interface tests. 
+The mock file owns only the symbols defined by the interface.
 
-The mock factory plus selected overrides must suffice for the type guards, unit tests, and integration test boundaries. 
+---
 
-If you find yourself writing `mockFunctionContractDeps` for the interface test, then `mockFunctionGuardDeps` for the type guard, then `mockFunctionUnitDeps` for the unit tests, that means you have completely ignored the requirements for producing a default mock with overrides. 
+## Naming
 
-Do not write mocks for FunctionA that repackage a mock for FunctionB - the FunctionB mock will be obtained from mockFunctionB. 
+Use the production names.
 
-Do not write mocks that wrap and reprovide existing mocks - `mockFunctionMissingDeps` as a wrapper for `mockFunctionDeps delete missingDep` is invalid. That is what the overrides are for, and why overrides must accept null and undefined. 
+Functions are named:
 
-Every object handled by the function must have a defined type and a mock. The mock for the namespace only mocks the functions and objects defined in the interface for the namespace. mockFunctionX never provides mocks for objects defined in the interface for FunctionY - mockFunctionY is owned by FunctionY. 
+```ts
+mockFunctionName
+```
 
-Ensure that the mock is complete and provides the entire controllable function and type surface so that callers can correctly mock the function for interface, guard, unit, and integration tests tests. 
+Object builders are named:
+
+```ts
+buildObjectName
+```
+
+Override types are named:
+
+```ts
+ObjectNameOverrides
+```
+
+Invalidator types are named: 
+
+```ts
+InvalidObjectName
+
+ObjectNameCorruptions
+``` 
+
+Do not invent new names.
+
+Do not append unnecessary descriptors such as:
+
+* `Default`
+* `NoOverrides`
+* `MissingDependency`
+* `Contract`
+* `Guard`
+* `Unit`
+* `Integration`
+
+Builders with overrides replace specialized mock variants.
+
+---
+
+## Builders
+
+Generate one builder for every object type owned by the interface.
+
+Each builder produces one valid default object and accepts typed overrides for every property.
+
+Use this pattern.
+
+```ts
+// Builder — valid objects only, returnType always preserved
+export type MyObjectOverrides = Partial<MyObject>;
+
+export function buildMyObject(overrides?: MyObjectOverrides): MyObject {
+  const base: MyObject = {
+    foo: buildFoo(),
+    bar: buildBar(),
+  };
+  return overrides ? { ...base, ...overrides } : base;
+}
+```
+
+To test a missing required field, rest-destructure the builder output — 
+
+```ts
+const { foo: _omit, ...missingFoo } = buildMyObject();
+```
+
+which is honestly typed as `Omit<MyObject, "foo">` and feeds the guard as `unknown`.
+
+Requirements:
+
+* every property has a default value
+* callers provide only the properties they wish to override
+* omitted properties retain their default values
+* builders always return valid production objects
+* builders must exactly match the production types
+* builders must use the production type names
+* builders must not invent new object shapes
+
+---
+
+## Function Mocks
+
+Generate one mock function for every exported function.
+
+Mock functions should compose the generated builders rather than duplicating object construction.
+
+---
+
+## Invalid Objects
+
+Mock builders do **not** generate invalid objects.
+
+Negative tests intentionally construct malformed runtime data using the invalidators generated in the mock file.
+
+Do not widen production interfaces to permit invalid values.
+
+Do not modify production types to accommodate tests.
+
+Production interfaces remain the single source of truth.
+
+---
+
+## Forbidden
+
+Do not:
+
+* modify production interfaces
+* widen production types
+* invent new object shapes
+* invent new type names
+* use type assertions (`as`)
+* use `satisfies`
+* use overloads
+* use type aliases to weaken type checking
+* use generic merge helpers
+* generate specialized mock variants instead of using overrides
+* wrap one mock with another mock
+* duplicate builders
+* mock imported symbols
+* mock databases, repositories, or external services
+* create generic or shared invalidators (`invalidate<T>`)
+
+When in doubt, mirror the production interface exactly. The mock file exists to provide reusable builders and function mocks for the symbols owned by that interface—nothing more.
+
+## Invalidator Pattern
+
+Runtime type guards validate data received from external systems.
+
+Negative tests must construct malformed runtime objects using the invalidator pattern rather than weakening the production types or the builders.
+
+Builders always produce valid production objects.
+
+The invalidator is responsible for intentionally corrupting an otherwise valid object.
+
+Generate one invalidator for every object type owned by the interface, in the mock file. Each invalidator composes its builder for the valid baseline.
+
+Use this pattern:
+
+```ts
+// Invalidator — one per owned object type, generated in the mock file alongside its builder
+export type MyObjectCorruptions = { [K in keyof MyObject]?: unknown };
+
+export function invalidateMyObject(corruptions: MyObjectCorruptions): unknown {
+  return { ...buildMyObject(), ...corruptions };
+}
+
+// valid path — returnType preserved
+const object = buildMyObject({ foo: someFoo });
+
+// invalid path — keys typo-checked, values unrestricted, no cast, guard takes unknown
+expect(isMyObject(invalidateMyObject({ foo: null }))).toBe(false);
+expect(isMyObject(invalidateMyObject({ bar: 42 }))).toBe(false);
+```
+
+The invalidator exists specifically to simulate untrusted runtime data, such as:
+
+* external APIs
+* databases
+* network payloads
+* deserialized JSON
+* user input
+
+Runtime type safety is never bypassed anywhere, including the invalidator. The invalidator returns unknown — the honest type for untrusted runtime data — and only the runtime type guard classifies it.
+
+Builders remain fully type-safe.
+
+Do not modify production interfaces or builder signatures to accommodate invalid objects.
+
+## Architecture Pattern
+
+production interface
+        │
+        ▼
+ typed builder
+        │
+        ▼
+ valid object
+        │
+        ▼
+ invalidate(...)
+        │
+        ▼
+ malformed runtime object
+        │
+        ▼
+ runtime type guard
