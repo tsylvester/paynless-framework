@@ -1,27 +1,14 @@
-The work node has been nominally completed. Now we must review the work and check that it complies with: 
+Enter Reviewer mode (`docs/agents/modes.md`) and review the nominally-completed node.
 
-../rules/rules.mdc
-- Objective
-- Role
-- Interaction spec
-- Construction
-- Direction
-- Requirements
+Re-read every file the node describes from scratch and check the final state against
+the node's requirements and the topics each element conforms to
+(`docs/agents/workplan-structure.md`).
 
-Review every file described in the node and compile a report on any errors, omissions, and discrepencies from the original work plan. 
+Produce the EO&D report exactly as `docs/agents/modes.md` defines it — findings grouped
+by file, each with its nature, severity, and a proposed solution, and (per this repo's
+TDD) a test that fails now and passes once the defect is fixed (`docs/agents/tests.md`).
 
-For each EO&D, identify its nature, severity, and propose a solution that brings the work in line with the original description and requirements. 
-
-This repo uses TDD. If you find an EO|D, you must PROPOSE A TEST THAT PROVES THE PROBLEM EXISTS BY FAILING, such that when the test passes, it proves the problem is fixed. 
-
-"The work has been done correctly in compliance with the node and meets all requirements" is a complete statement. 
-
-Do not ignore issues that are divergent from the work plan. 
-
-Do not surface non-issues just to say you found something. 
-
-Do not complain about things that are not problems to look productive.
-
-This is a VERIFICATION AND VALIDATION STEP. DO NOT RETURN WITH "VERIFY IF", "CHECK THAT", "CONFIRM WHETHER", AND OTHER STATEMENTS THAT PROVE YOU DID NOT ACTUALLY PERFORM THE TASK YOU WERE GIVEN! 
-
-YOU MUST FOLLOW THE RULES EXACTLY AND COMPLETELY! THE RULES SAY VERY CLEARLY THAT THE AGENT DOES NOT TOUCH THE TERMINAL AND DOES NOT RUN TESTS! 
+"The work has been done correctly and matches the node" is a complete finding. Do not
+manufacture non-issues to look productive, and do not return "verify if" / "check that"
+placeholders — this is verification, so perform it now. Do not edit files, run tests, or
+use the terminal (`docs/agents/environment.md`). Explain, propose, halt.

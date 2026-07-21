@@ -1,7 +1,8 @@
-Write the integration test exactly as described in the work plan. 
+Write the integration test for the current node, exactly as the node describes.
 
-Integration tests only mock at the boundaries of the application scope being integrated.
+Exercise the real implementations of the functions being integrated; mock only at the
+outer boundary of the integrated scope, never the functions under integration.
 
-Integration tests DO NOT USE MOCKS OR MOCK FACTORIES OR UTILITIES FOR THE FUNCTIONS BEING INTEGRATED! 
+Conforms to: `docs/agents/tests.md#integration`.
 
-If the integration test covers f(x) -> ... -> f(z), and f(x) consumes f(a), while f(z) calls f(b), you mock f(a) and f(b) and use the REAL IMPLEMENTATION for f(x) -> ... -> f(z). 
+Do only the integration test. Follow `docs/agents/loop.md` and `docs/agents/precedence.md`.

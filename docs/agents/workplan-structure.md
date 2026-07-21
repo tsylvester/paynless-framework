@@ -1,0 +1,266 @@
+# Workplan Structure
+
+A workplan is an ordered set of nodes. Each node is the complete unit of work for
+**one source file**. This topic owns node anatomy, how the agent handles the
+workplan, and the correct/incorrect node constructions.
+[tdd-ordering](tdd-ordering.md) owns the RED→GREEN cycle and element order the node
+carries; this topic owns the container.
+
+Cited by: construction view (the workplan author builds nodes) and, for handling
+rules, every turn. Governed by all Process topics.
+
+## Node anatomy
+
+- A top-level node addresses exactly **one source file** and its entire support
+  system — its interface, interface test, mock, guard test, guard, tests, provides,
+  and integration test, to the extent the work requires them. This is inviolate.
+- One source file per node. You cannot add a second source file "for one small
+  edit." `function1.ts` and `function2.ts` are different nodes.
+- All changes to a source file and its support live in **that file's one node**. Do
+  not split a single source file across multiple nodes, and do not create multiple
+  sequential nodes that edit the same set of files.
+- Files that have no types and no tests (e.g. a database migration) are the only
+  ones exempt from the full support-file structure.
+
+## New packages vs. existing files
+
+- A **new** package's node adheres to the entire node template — omit no element — so
+  new work is born aligned to current standards.
+- When editing an **existing** file or package, the node includes only the elements
+  the work requires. Do not retrofit an existing file to the full template unless the
+  user explicitly directs it — that would rework otherwise-functional components for
+  no reason.
+
+## Planning sections and conditional omission
+
+Some node elements are **planning sections**, not files: intent and position (§1),
+dependencies and injection (§2), interaction semantics (§5, `interaction.spec`),
+construction (§9), directionality (§13), and completion criteria (§14). The node
+reasons through them; it does not create a file for them.
+
+An element — file or planning section — is included whenever the work touches its
+concern, and omitted **only** when the work's nature removes that concern (for example,
+a minor edit to an existing, well-constructed file that changes no interaction pattern
+and touches nothing about construction). This is conditional, not discretionary: the
+context decides whether an element applies, never the author's preference or
+convenience. When in doubt, include it.
+
+## What is never its own node
+
+- **Types and interfaces are never independent nodes.** A type is only ever edited
+  so a source file can consume it, so the type edit lives in the node for the first
+  source file that requires it — together with that type's interface test, guards,
+  and guard tests.
+- **Guards and guard tests are never separated** from the interface that uses them;
+  they are steps in the consuming source file's node.
+- **A commit is never its own node.** The commit step is the last step of the last
+  node in a completed set of work (see Handling → Commits).
+
+A single node **may** edit several interfaces and guards to provide for its one
+implementation file. Many producers, one implementation, per node.
+
+## Identity and ordering
+
+- **Nodes are not numbered.** They use relational references to other files only.
+  Relational references survive insertion and reordering; numbering is brittle and
+  forces a ripple edit of every later node on any change.
+- A node is addressed by its deepest unique path segment.
+- Intra-node and inter-node work is dependency-ordered, producers first. The order
+  itself is owned by [tdd-ordering](tdd-ordering.md); the author confirms nodes sit
+  in that order and moves a dependent node after its provider if not.
+
+## Incrementing an existing workplan
+
+- Preserve all existing detail when adding requirements. We increment and improve,
+  not replace — unless the user explicitly changes an existing requirement.
+- If a prior version of a node exists, copy its state and revise that state to match
+  the new requirements.
+- Console logs and fixes derived from test output are not documented in the
+  workplan **unless** the output shows a requirement is misstated and must be
+  corrected.
+
+## Handling the workplan
+
+- Do not edit the workplan, or any node's status (checkboxes, badges), without
+  explicit instruction. When instructed, change only the specified portion, exactly
+  as described.
+- Do not emit full workplan nodes in chat unless explicitly told to for that turn.
+  The Read → Analyze → Explain → Propose cycle and EO&D reporting do **not** by
+  themselves authorize emitting node content (see [output](output.md), [loop](loop.md)).
+- Document every edit within the workplan. If required edits are missing from the
+  plan, explain the discovery, propose the new node, and halt — do not improvise
+  (see [discovery-halt](discovery-halt.md)).
+- Obey the user first, then the Instructions topics, then the workplan. Never hide
+  behind the workplan to ignore a direct user correction (see [precedence](precedence.md)).
+  If the user tells you to work without updating the workplan, obey without complaint.
+- **Commits:** a commit step belongs in the last node of a completed set of work —
+  generally once a producer → implementation → consumer chain can be integration-tested.
+  The integration test is an obligate inclusion in the last node of that chain; never
+  strand integration tests or commits in a node of their own. The agent never runs the
+  commit itself (see [environment](environment.md)).
+
+## Canaries
+
+The node template carries two canaries: an actual node **omits** the `## (number)
+(type)` section headers that the template uses for teaching, and **preserves the
+template's line breaks**. Violating either proves the structure is not being
+followed — if a canary trips, the node is discarded. (The canary mechanism itself is
+owned by [traceability](traceability.md); these are its specific applications to the
+node template.)
+
+## Node constructions — wrong vs. right
+
+The author does the thinking so the implementer does not. Every node must be
+grounded, complete, and self-contained enough that the implementer can act from the
+node and the referenced file alone.
+
+| Wrong construction | Correct construction |
+|---|---|
+| One node for the interface, one for the guards, one for the test+source | Interface tests, interfaces, guard tests, and guards go in the node for the **first source file** that consumes them |
+| `function1`, then `function1-test` | The test is written **before** the implementation |
+| `func1-test`, `func2-test`, `func1`, `func2` | Each source file gets **its own node** fully describing its changes and support files |
+| An interface or guard edit orphaned in its own node | The type edit goes in the node for the implementation file that requires it, along with its interface test, guards, and guard tests |
+| Cramming several implementation files into one node | One node hosts a single implementation file (but may edit several interfaces/guards for it) |
+| A commit step at the end of every node | A commit step only where a defined set of work completes and the whole call stack is updated |
+| A separate node for integration tests or commits | The integration test and commit are steps in the **last node** of the chain they prove |
+| A node step that says "grep for", "check if", "validate that", "determine whether" | The author greps, checks, validates, and determines **now**, before writing the node. The implementer implements; it does not verify the work is complete |
+| A node step that says "no change required" | Omit it. No-op inclusions are noise |
+
+## Precedence
+
+This topic outranks the workplan it describes. A node that numbers its entries,
+hosts two source files, orphans a type or guard edit, strands a commit or integration
+test, or pushes verification onto the implementer is malformed — the author corrects
+it before it reaches an implementer.
+
+## Node template
+
+The groups are numbered `## N. Title` for teaching only. An **actual node omits every
+`## (number) (type)` header** and preserves the bullet line breaks (the two canaries
+above). Each file element names the topic(s) it **conforms to**; the topic owns the
+rules, and the node supplies only what is specific to this file's work. **Do not
+restate a topic's rules in a node — cite the topic.**
+
+```
+  ## 1. Intent & Position
+  * `[ ]`   `objective`
+    * `[ ]`   Define the *problem being solved* (not the solution)
+    * `[ ]`   Separate functional goals (what must happen) from non-functional constraints
+    * `[ ]`   Each goal is atomic and testable
+  * `[ ]`   `role`
+    * `[ ]`   Declare the node's role (domain/app/port/adapter/infra) and why it is appropriate
+    * `[ ]`   Identify what this node must NOT do (out-of-scope responsibilities)
+  * `[ ]`   `module`
+    * Conforms to: boundaries
+    * `[ ]`   Define the bounded context; what concepts/data belong inside vs outside
+
+  ## 2. Dependencies & Injection
+  * Conforms to: dependency-injection, boundaries
+  * `[ ]`   `deps`
+    * `[ ]`   For each dependency: provider, layer, direction (why allowed), purpose
+    * `[ ]`   Confirm no reverse dependencies and no lateral layer violations
+  * `[ ]`   `context_slice`
+    * `[ ]`   The minimal interface required from each dependency; injection shape (pure interface)
+
+  ## 3. Contract Definition (Truth)
+  * Conforms to: tests#interface, composition, types, errors-and-returns
+  * `[ ]`   `[function].interface.test.ts`
+    * `[ ]`   Prove this function's contract for this work: type membership, return-union arms and flavors, invariants
+
+  ## 4. Structural Boundary (Shape)
+  * Conforms to: composition, types, errors-and-returns, dependency-injection
+  * `[ ]`   `[function].interface.ts`
+    * `[ ]`   Declare this function's signature: deps, params, payload, and the Success | Error return union
+
+  ## 5. Interaction Semantics (Behavioral Structure)
+  * Conforms to: composition, errors-and-returns
+  * `[ ]`   `[function].interaction.spec`
+    * `[ ]`   Declare call patterns, dependency interactions, side effects, failure modes, ordering — declarative, no code
+
+  ## 6. Simulation
+  * Conforms to: mocks
+  * `[ ]`   `[function].mock.ts`
+    * `[ ]`   Provide the builders, invalidators, and function mocks this interface owns (before the guard test consumes them)
+
+  ## 7. Enforcement (Runtime Boundary)
+  * Conforms to: tests#guard, guards
+  * `[ ]`   `[function].guard.test.ts`
+    * `[ ]`   Prove each owned guard: no false positives, no false negatives (the case checklist)
+  * `[ ]`   `[function].guard.ts`
+    * `[ ]`   Implement each owned guard
+
+  ## 8. Behavioral Verification
+  * Conforms to: tests#unit, errors-and-returns, composition
+  * `[ ]`   `[function].test.ts`
+    * `[ ]`   Validate transformations and branching against requirements and the interaction spec
+    * `[ ]`   Do NOT re-test type shape or guard correctness
+  * `[ ]`   `[function].someOther.test.ts`
+    * `[ ]`   If the function has multiple test files, include every one that must be updated
+
+  ## 9. Construction
+  * Conforms to: dependency-injection, composition
+  * `[ ]`   `construction`
+    * `[ ]`   Factory/constructor entrypoints; required deps at creation; no partially constructed instances
+
+  ## 10. Implementation
+  * Conforms to: composition, dependency-injection, types, errors-and-returns, guards, logging
+  * `[ ]`   `[function].ts`
+    * `[ ]`   Implement the behavior from requirements and the interaction spec
+    * `[ ]`   Introduce no undeclared dependencies; bypass no guards or contracts
+
+  ## 11. External Boundary
+  * Conforms to: boundaries
+  * `[ ]`   `[function].provides.ts`
+    * `[ ]`   Export the public surface: interfaces, guards, functions, mocks
+
+  ## 12. Edge Validation
+  * Conforms to: tests#integration
+  * `[ ]`   `[function].integration.test.ts`
+    * `[ ]`   Validate provider → function → consumer across the approved boundary; mock only at the outer edge
+
+  ## 13. Directionality (Graph Constraint)
+  * Conforms to: boundaries
+  * `[ ]`   `directionality`
+    * `[ ]`   Confirm deps inward, provides outward, no unjustified cycles
+
+  ## 14. Completion Criteria
+  * Conforms to: tdd-ordering
+  * `[ ]`   `requirements`
+    * `[ ]`   Binary, observable, testable acceptance criteria, each mapped to a test
+
+  ## 15. Versioning — only at the end of a complete set of work, not on every node
+  * Conforms to: workplan-structure
+  * `[ ]`   **Commit** `[type] [scope] [summary]`
+    * `[ ]`   List structural, behavioral, and contract changes
+```
+
+Element → topic citations, clickable: `module` → [boundaries](boundaries.md);
+`deps` → [dependency-injection](dependency-injection.md); `interface.test` →
+[tests](tests.md#interface); `interface` → [composition](composition.md) +
+[types](types.md) + [errors-and-returns](errors-and-returns.md); `mock` →
+[mocks](mocks.md); `guard.test` / `guard` → [tests](tests.md#guard) +
+[guards](guards.md); `test` → [tests](tests.md#unit); `implementation` →
+[composition](composition.md) + [dependency-injection](dependency-injection.md) +
+[types](types.md) + [errors-and-returns](errors-and-returns.md) + [guards](guards.md) +
+[logging](logging.md); `provides` → [boundaries](boundaries.md); `integration.test` →
+[tests](tests.md#integration).
+
+## Legend
+
+You must use the EXACT format of the node structure. Do not modify, adapt, or
+"improve" the bullets, square braces, ticks, nesting, or node structuring — they are
+mandatory and unalterable.
+
+```
+*   `[ ]` [path]/[workspace] Unstarted work step in a node. Each node is addressed by its deepest unique segment.
+    *   `[ ]` [subfolder]/`filename`. Elements nest as shown; subnodes show the path/file to address that element.
+        *   `[ ]` [subfolder]/[subfolder]/`filename` Nesting can be as deep as logically required.
+*   `[✅]` Represents a completed step at any depth.
+```
+
+## Component type labels
+
+`[DB]` migration · `[RLS]` row-level security · `[BE]` backend logic · `[API]` API
+client library · `[STORE]` state management · `[UI]` frontend component · `[CLI]` ·
+`[IDE]` · `[TEST-UNIT]` · `[TEST-INT]` · `[TEST-E2E]` · `[DOCS]` · `[REFACTOR]` ·
+`[PROMPT]` · `[CONFIG]` · `[COMMIT]` · `[DEPLOY]`.

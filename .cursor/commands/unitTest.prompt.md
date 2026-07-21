@@ -1,21 +1,11 @@
-This repo follows TDD, which is clearly explained in the rules file. The unit test defines the contract that the implementation must uphold. You will now write the unit TEST. You will NOT write the implementation. You will NOT "work around" the user's EXTREMELY CLEAR PROHIBITION ABOUT WRITING THE IMPLEMENTATION. You will NOT define the implementation in the test file. You will NOT use satisfies, typecasting, @es, or "unknown". The point of this test is to MAKE THE LINTER COMPLAIN THAT THE IMPLEMENTATION DOES NOT EXIST. We do not SILENCE the linter, we PROVOKE the linter to PROVE THE STATUS OF THE TEST. 
+Write the unit test for the current node's function, exactly as the node describes.
 
-If it's not an import, a test block, or an assertion, it does not belong in the test file. 
+Validate transformations and branching — not type shape or guard correctness. The
+implementation not yet existing is the RED deliverable: never create or edit the
+implementation file. When updating an existing suite for new requirements, update the
+existing tests in the same pass. Factories and helpers go in the mock file.
 
-IMPORT the implementation elements you will need and USE THEM IN THE TEST. But DO NOT WRITE THE IMPLEMENTATION FILE! DO NOT RESPOND TO THE LINTER'S COMPLAINT, THAT IS NOT YOUR CONCERN!  
+Conforms to: `docs/agents/tests.md#unit`, `docs/agents/errors-and-returns.md`,
+`docs/agents/composition.md`.
 
-YOU MUST IMPORT FUNCTIONS FROM THE IMPLEMENTATION FILE. Do not complain that the implementation is empty. The implementation is empty on purpose! THIS IS TDD RED IT IS INVALID ON PURPOSE! IMPORT THE IMPLEMENTATION FROM THE EMPTY FILE! DO NOT TOUCH THE IMPLEMENTATION FILE! 
-
-THIS IS A TDD RED TEST YOU WILL HAVE LINTER ERRORS YOU JUST DO EXACTLY WHAT YOU"RE TOLD! 
-
-For any factories or other helpers, place them in the mock file. If you need to touch the mock file, you MUST obey ./mock.md and ../rules/rules.mdc
-
-DO NOT DUPLICATE FUNCTIONALITY! CONSUME WHAT EXISTS BEFORE BUILDING SOMETHING NEW! 
-
-When you're updating an EXISTING test suite because of new requirements, YOU MUST UPDATE THE EXISTING TESTS SO THAT THEY ARE VALID FOR TESTING THE NEW REQUIREMENTS! DO NOT LEAVE EXISTING TESTS UNTOUCHED, WHICH FORCES A SECOND PASS ON THE TEST FILE ONCE THE IMPLEMENTATION IS UPDATED! ADD THE NEW TESTS AND UPDATE THE EXISTING TESTS TO BE VALID FOR THE NEW REQUIREMENTS! 
-
-DO NOT BUILD MOCKS FOR IMPORTED FUNCTIONS! THEY PROVIDE THEIR OWN MOCKS! LOCATE THOSE MOCKS AND USE THEM! 
-
-You have those two files, and those two files only, to work with.
-
-Do not touch ANY OTHER FILE for ANY REASON. If FOR ANY REASON you start to think about touching another file, you will EXPLAIN WHY and HALT! 
+Do only the unit test. Follow `docs/agents/loop.md` and `docs/agents/precedence.md`.
