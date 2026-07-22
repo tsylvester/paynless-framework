@@ -37,6 +37,20 @@ Do **not** mock:
 Imported types are mocked by their own home package — locate and use those (search
 for `buildSomeType`); if none exists, halt and report per [discovery-halt](discovery-halt.md).
 
+## Which mock does an owned symbol get?
+
+For each symbol the interface owns, ask what it is:
+
+1. An **object type** → a builder and an invalidator (`buildX`, `invalidateX`).
+2. A **function** → a function mock (`mockX`).
+3. A **union type** → nothing for the union itself; each object-type member gets its
+   own builder (step 1).
+4. An **enum, primitive/string-literal alias, or constant** → nothing. It is used
+   directly by its production value or type.
+5. A **guard** → nothing here; guards are their own element (see [guards](guards.md)).
+
+If a symbol is none of these, it does not belong to this interface — do not mock it.
+
 ## Naming — four symbols per owned object type
 
 Use production names. Per owned object type, generate exactly:
@@ -101,8 +115,8 @@ export function invalidateMyObject(corruptions: MyObjectCorruptions): unknown {
 const object = buildMyObject({ foo: someFoo });
 
 // invalid — keys typo-checked, values unrestricted, no cast, guard takes unknown
-expect(isMyObject(invalidateMyObject({ foo: null }))).toBe(false);
-expect(isMyObject(invalidateMyObject({ bar: 42 }))).toBe(false);
+assert(!isMyObject(invalidateMyObject({ foo: null })));
+assert(!isMyObject(invalidateMyObject({ bar: 42 })));
 ```
 
 Runtime type safety is never bypassed anywhere, **including the invalidator**. It

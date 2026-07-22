@@ -31,6 +31,10 @@ guardTest, unitTest, integrate prompts). Governed by all Process topics.
   tests in nested `Deno.test` / `t.step` blocks.
 - The agent never runs tests (see [environment](environment.md)). A test's RED or
   GREEN state is proven by compiler/linter output, not by execution.
+- Examples in this topic use `test(...)` for a test block and `assert(...)` for a truthy
+  assertion as neutral placeholders. Substitute your project's own runner and assertion
+  library — `Deno.test` + `@std/assert`, `test` / `it` + `expect`, and so on — and its
+  module-resolution convention for import paths.
 
 ---
 
@@ -46,21 +50,20 @@ assignment.
   an assignment that only compiles if the contract holds:
 
 ```ts
-import { assert } from "jsr:@std/assert";
 import type {
   MyFunctionSuccessReturn,
   MyFunctionReturn,
   EnqueuedReturn,
 } from "./myFunction.interface.ts";
 
-Deno.test("MyFunctionSuccessReturn is a member of MyFunctionReturn", () => {
-  const success: MyFunctionSuccessReturn = buildMyFunctionSuccessReturn();
+test("MyFunctionSuccessReturn is a member of MyFunctionReturn", () => {
+  const success: MyFunctionSuccessReturn = { createdCount: 1 };  // typed literal, never a builder
   const result: MyFunctionReturn = success;   // compiles only if membership holds
   assert(result === success);
 });
 
-Deno.test("EnqueuedReturn is a member of MyFunctionSuccessReturn", () => {
-  const enqueued: EnqueuedReturn = buildEnqueuedReturn();
+test("EnqueuedReturn is a member of MyFunctionSuccessReturn", () => {
+  const enqueued: EnqueuedReturn = { enqueued: true, jobId: "job-1" };  // typed literal
   const success: MyFunctionSuccessReturn = enqueued;   // flavor membership (see errors-and-returns)
   assert(success === enqueued);
 });
@@ -114,6 +117,35 @@ For `isOwnedObject`:
    its own guard test's job).
 5. Each required property omitted (rest-destructure the builder output) → `false`
 6. Each optional property absent → `true`; present but corrupted → `false`
+
+Rendered — copy this shape, one test file per owned guard:
+
+```ts
+import { isOwnedObject } from "./myInterface.guard.ts";
+import { buildOwnedObject, invalidateOwnedObject } from "./myInterface.mock.ts";
+
+test("isOwnedObject accepts the valid default", () => {
+  assert(isOwnedObject(buildOwnedObject()));
+});
+
+test("isOwnedObject accepts valid overrides", () => {
+  assert(isOwnedObject(buildOwnedObject({ foo: someValidFoo })));
+});
+
+test("isOwnedObject rejects non-objects", () => {
+  for (const x of [null, undefined, 7, "x", []]) assert(!isOwnedObject(x));
+});
+
+test("isOwnedObject rejects each corrupted property", () => {
+  assert(!isOwnedObject(invalidateOwnedObject({ foo: null })));
+  assert(!isOwnedObject(invalidateOwnedObject({ bar: 42 })));
+});
+
+test("isOwnedObject rejects each omitted required property", () => {
+  const { foo: _f, ...missingFoo } = buildOwnedObject();
+  assert(!isOwnedObject(missingFoo));
+});
+```
 
 Scope: test only guards for types this interface owns. A foreign guard is tested in
 its home package and is exercised here only indirectly through case 4 — never

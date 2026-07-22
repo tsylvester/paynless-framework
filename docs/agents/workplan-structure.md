@@ -45,6 +45,25 @@ and touches nothing about construction). This is conditional, not discretionary:
 context decides whether an element applies, never the author's preference or
 convenience. When in doubt, include it.
 
+## The interaction spec is a branch contract
+
+The implementation body is the one element no template can capture — its logic is the
+variable. The `interaction.spec` (§5) fills that gap: it specifies the body as a
+**branch contract** so the implementer assembles it rather than inventing it.
+
+For each branch the function takes, the spec states:
+
+- **Condition** — the input state or check that selects this branch.
+- **Decision** — the guard or comparison applied (see [guards](guards.md)).
+- **Dependency call** — which injected dependency is invoked, if any.
+- **Outcome** — the exact success flavor returned, or the error propagated or raised
+  (see [errors-and-returns](errors-and-returns.md)).
+
+Every branch ends in a member of the return union; none falls through untyped. With the
+branch contract complete, the implementation is assembly — guard the payload on entry,
+then realize each branch exactly as specified. A branch contract stops at the contract;
+it is not pseudocode for the whole function body.
+
 ## What is never its own node
 
 - **Types and interfaces are never independent nodes.** A type is only ever edited
@@ -108,6 +127,28 @@ followed — if a canary trips, the node is discarded. (The canary mechanism its
 owned by [traceability](traceability.md); these are its specific applications to the
 node template.)
 
+## Resolve decisions in the node, do not defer them
+
+The author turns ambiguity into named, reusable components so the implementer
+instantiates rather than invents. Whenever the answer is knowable at authoring time, the
+node states it outright — exact paths to touch or import from, exact existing symbols to
+reuse (located, not assumed), the exact owning interface of every new symbol, and a
+copy-worthy pattern to follow (a topic's template, or a named prior node).
+
+Resolution follows three tiers, in order:
+
+1. **Name it.** If the author can determine the path, symbol, guard, or import, the node
+   names it. This is the default and covers most cases.
+2. **Search it.** If the node does not name it, the implementer uses the topic's
+   deterministic search procedure — never a guess (the predicate search in
+   [guards](guards.md), locate-before-create in [tdd-ordering](tdd-ordering.md)).
+3. **Halt.** If neither the node nor a search resolves it, that is a discovery: report
+   and halt (see [discovery-halt](discovery-halt.md)).
+
+Guessing is never a tier. A node that tells the implementer to "infer," "determine
+whether," or "figure out" which symbol to use has deferred an authoring decision — the
+"check if / validate that" defect below. The author resolves it now.
+
 ## Node constructions — wrong vs. right
 
 The author does the thinking so the implementer does not. Every node must be
@@ -118,6 +159,8 @@ node and the referenced file alone.
 |---|---|
 | One node for the interface, one for the guards, one for the test+source | Interface tests, interfaces, guard tests, and guards go in the node for the **first source file** that consumes them |
 | `function1`, then `function1-test` | The test is written **before** the implementation |
+| Moving a test after the implementation it covers | The test always precedes its implementation — RED before green; the order is immutable ([tdd-ordering](tdd-ordering.md)) |
+| Lumping a test and its implementation into one step | Each element is its own step in the fixed order; a test and its implementation are never merged ([tdd-ordering](tdd-ordering.md)) |
 | `func1-test`, `func2-test`, `func1`, `func2` | Each source file gets **its own node** fully describing its changes and support files |
 | An interface or guard edit orphaned in its own node | The type edit goes in the node for the implementation file that requires it, along with its interface test, guards, and guard tests |
 | Cramming several implementation files into one node | One node hosts a single implementation file (but may edit several interfaces/guards for it) |
@@ -173,9 +216,9 @@ restate a topic's rules in a node — cite the topic.**
     * `[ ]`   Declare this function's signature: deps, params, payload, and the Success | Error return union
 
   ## 5. Interaction Semantics (Behavioral Structure)
-  * Conforms to: composition, errors-and-returns
+  * Conforms to: composition, errors-and-returns, guards
   * `[ ]`   `[function].interaction.spec`
-    * `[ ]`   Declare call patterns, dependency interactions, side effects, failure modes, ordering — declarative, no code
+    * `[ ]`   Declare the branch contract — per branch: condition, decision, dependency call, and the exact return-union outcome; plus side effects and ordering. Declarative, no code
 
   ## 6. Simulation
   * Conforms to: mocks

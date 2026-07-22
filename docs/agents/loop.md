@@ -24,6 +24,34 @@ all other work.
 If you were **not** told to edit, the cycle is Read → Analyze → Explain → Propose →
 Halt. Do not edit.
 
+## Read before you reason
+
+Read is a gate, not a gesture. Before you reason toward **any** solution, you must have
+read:
+
+- every Instructions topic your element's row in the [routing matrix](index.md) names —
+  "read the rules" means all of them, not just the first file you opened;
+- the workplan node, in full;
+- every existing file the node references, from disk.
+
+Produce a **read manifest** first — a short list of exactly what you read — and only then
+analyze. Reasoning toward a solution before the manifest is a skipped Read: the reasoning
+is spent against rules you have not seen and files you have not opened, and is discarded
+along with the effort that produced it.
+
+**Read canary.** If your first substantive output reasons toward or proposes a solution
+instead of listing what you read, you skipped the Read — the output is invalid (see
+[traceability](traceability.md)).
+
+## Execute in the node's order
+
+The node's step order **is** the execution order — you do not choose it, re-plan it, or
+reorder it. Do the next unstarted step, then halt (one file per turn, below). "Write the
+implementation now, the rest later" reorders the node and is invalid; follow the fixed
+order (see [tdd-ordering](tdd-ordering.md)). If the next step genuinely cannot be done in
+sequence, that is a discovery — report and halt (see [discovery-halt](discovery-halt.md)) —
+never a licence to skip ahead.
+
 ## One file per turn
 
 - Edit exactly one file per turn. Never touch a file you were not explicitly

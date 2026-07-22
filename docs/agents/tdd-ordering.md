@@ -37,6 +37,21 @@ guard test so the guard test can use its builders; the guard precedes the unit t
 so the implementation can rely on it; provides precedes the integration test so the
 consumer can import the finished surface.
 
+### The order is immutable
+
+You may **omit** an element the work does not require (see
+[workplan-structure](workplan-structure.md) — conditional omission), but you may never
+**reorder** the elements you include, and you may never **merge** two elements into one
+step. A test always precedes the code it tests; the mock always precedes the guard test;
+the guard always precedes the unit test. "Write the implementation, then the tests" and
+"do the test and the implementation together" do not reorder a list — they invert the
+dependency graph. They are defects, not alternative orderings.
+
+**Order canary.** A node, or a proposed plan, in which an implementation precedes its
+test, or in which a test and its implementation share one step, is malformed and
+discarded (see [traceability](traceability.md)). The order is checkable at a glance, so
+getting it wrong is proof the sequence was not followed.
+
 ## Bottom-up across files and modules
 
 - Construct types, interfaces, and helpers before their consumers. Write consumer

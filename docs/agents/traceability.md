@@ -18,6 +18,7 @@ correct when a problem repeats. Sign every response, regardless of harness.
 Each response includes:
 
 - its [mode](modes.md) declaration;
+- the read manifest — the topics and files read before any reasoning (see [loop](loop.md));
 - plan bullets (Builder) or the EO&D findings (Reviewer);
 - the workplan node it fulfils or reviews;
 - lint and test evidence (see [linting-proof](linting-proof.md));

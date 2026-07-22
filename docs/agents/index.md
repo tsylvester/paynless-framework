@@ -46,3 +46,21 @@ to this index.
   node template names, per element, the standards topic(s) that element must conform to.
 - **Implementation view** (file author): each element prompt points at the same
   standards topic(s) as its node element, plus all Process topics.
+
+## Implementation routing
+
+A map from the file you are building to the topic that governs it, the template or
+example to copy, and its most common halt trigger. Every element is also governed by
+all Process topics.
+
+| Building | Conforms to | Copy from | Halt if |
+|---|---|---|---|
+| interface test | [tests](tests.md#interface), [composition](composition.md), [types](types.md), [errors-and-returns](errors-and-returns.md) | typed-assignment example ([tests#interface](tests.md#interface)) | a type it needs lives in another interface that does not exist yet |
+| interface | [composition](composition.md), [types](types.md), [errors-and-returns](errors-and-returns.md), [dependency-injection](dependency-injection.md) | signature template ([composition](composition.md)) | a required type has no locatable definition |
+| mock | [mocks](mocks.md) | builder / invalidator / function-mock templates ([mocks](mocks.md)) | an imported type's mock is missing from its home package |
+| guard test | [tests](tests.md#guard), [guards](guards.md), [mocks](mocks.md) | case-checklist example ([tests#guard](tests.md#guard)) | a needed builder or invalidator belongs to an imported type and is absent |
+| guard | [guards](guards.md) | guard skeleton + forbidden substitutes ([guards](guards.md)) | an imported type's guard is absent after the predicate search |
+| unit test | [tests](tests.md#unit), [errors-and-returns](errors-and-returns.md), [composition](composition.md) | no positive template — the branch contract (§5) and the forbidden catalog | the implementation's producer does not exist yet |
+| implementation | [composition](composition.md), [dependency-injection](dependency-injection.md), [types](types.md), [errors-and-returns](errors-and-returns.md), [guards](guards.md), [logging](logging.md) | guard-on-entry skeleton ([guards](guards.md)); body from the branch contract | an undeclared dependency or a missing guard is required |
+| provides | [boundaries](boundaries.md) | export-surface example ([boundaries](boundaries.md)) | a symbol a consumer needs is not available to export |
+| integration test | [tests](tests.md#integration) | boundary-mocking example ([tests#integration](tests.md#integration)) | a function in the integrated chain is not built yet |

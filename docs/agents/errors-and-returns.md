@@ -22,6 +22,19 @@ prompt). Governed by all Process topics.
 - You get an error, you pass the error along — unchanged. Surface it so it can be
   fixed; do not hide it or reshape it.
 
+## Which error does a function return?
+
+When a function hits a failure, classify it:
+
+1. A dependency or callee already returned a **typed error** → propagate it unchanged.
+   Never convert, coerce, or re-wrap it.
+2. The failure is **this function's own** — a validation failure, a violated
+   precondition → return a **new, specific typed error this function owns**, naming
+   exactly what failed and where.
+
+There is no third option. You never convert one error type into another, and you never
+invent an untyped or generic error to stand in for a specific one.
+
 ## The return is always the union
 
 - The function returns a member of `SuccessReturn | ErrorReturn`. "This function
