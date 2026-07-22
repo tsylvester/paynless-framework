@@ -69,7 +69,7 @@ import type {
 import {
   isDialecticStageSlug,
   isEnqueueRenderJobSuccessReturn,
-} from "../enqueueRenderJob/enqueueRenderJob.interface.guards.ts";
+} from "../enqueueRenderJob/enqueueRenderJob.guards.ts";
 import { isModelContributionContext } from "../../_shared/utils/type-guards/type_guards.file_manager.ts"
 import { BuildUploadContextFn } from "../createJobContext/JobContext.interface.ts";
 

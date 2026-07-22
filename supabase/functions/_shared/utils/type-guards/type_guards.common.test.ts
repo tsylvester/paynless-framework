@@ -2,10 +2,14 @@ import { assert } from 'https://deno.land/std@0.224.0/assert/mod.ts';
 import { 
     isJson, 
     isKeyOf,
+    isLoggerShape,
+    isNonEmptyString,
+    isNonNegativeInteger,
     isPlainObject,
     isPostgrestError,
     isRecord, 
-    isStringRecord 
+    isStringRecord,
+    isSupabaseClientShape 
 } from "./type_guards.common.ts";
 
 Deno.test('Type Guard: isJson', async (t) => {
@@ -142,5 +146,83 @@ Deno.test('Type Guard: isStringRecord', async (t) => {
         assert(!isStringRecord(null));
         assert(!isStringRecord('a string'));
         assert(!isStringRecord(['a', 'b']));
+    });
+});
+
+Deno.test('Type Guard: isNonEmptyString', async (t) => {
+    await t.step('should return true for a non-empty string', () => {
+        assert(isNonEmptyString('a string'));
+    });
+
+    await t.step('should return false for an empty string', () => {
+        assert(!isNonEmptyString(''));
+    });
+
+    await t.step('should return false for non-string values', () => {
+        assert(!isNonEmptyString(0));
+        assert(!isNonEmptyString(null));
+        assert(!isNonEmptyString(undefined));
+        assert(!isNonEmptyString({}));
+        assert(!isNonEmptyString([]));
+    });
+});
+
+Deno.test('Type Guard: isNonNegativeInteger', async (t) => {
+    await t.step('should return true for non-negative integers', () => {
+        assert(isNonNegativeInteger(0));
+        assert(isNonNegativeInteger(1));
+        assert(isNonNegativeInteger(Number.MAX_SAFE_INTEGER));
+    });
+
+    await t.step('should return false for negative numbers', () => {
+        assert(!isNonNegativeInteger(-1));
+    });
+
+    await t.step('should return false for non-integer numbers', () => {
+        assert(!isNonNegativeInteger(1.5));
+        assert(!isNonNegativeInteger(NaN));
+    });
+
+    await t.step('should return false for non-number values', () => {
+        assert(!isNonNegativeInteger('1'));
+        assert(!isNonNegativeInteger(null));
+    });
+});
+
+Deno.test('Type Guard: isLoggerShape', async (t) => {
+    await t.step('should return true for an object with all logger methods', () => {
+        const logger = {
+            debug: () => {},
+            info: () => {},
+            warn: () => {},
+            error: () => {},
+        };
+        assert(isLoggerShape(logger));
+    });
+
+    await t.step('should return false for an object missing a logger method', () => {
+        assert(!isLoggerShape({ debug: () => {}, info: () => {}, warn: () => {} }));
+    });
+
+    await t.step('should return false for a non-object', () => {
+        assert(!isLoggerShape(null));
+        assert(!isLoggerShape('logger'));
+    });
+});
+
+Deno.test('Type Guard: isSupabaseClientShape', async (t) => {
+    await t.step('should return true for an object with a from function', () => {
+        const client = { from: () => ({}) };
+        assert(isSupabaseClientShape(client));
+    });
+
+    await t.step('should return false for an object without a from function', () => {
+        assert(!isSupabaseClientShape({}));
+        assert(!isSupabaseClientShape({ from: 'not a function' }));
+    });
+
+    await t.step('should return false for a non-object', () => {
+        assert(!isSupabaseClientShape(null));
+        assert(!isSupabaseClientShape('client'));
     });
 });

@@ -1,5 +1,9 @@
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
+  FileType,
+  DialecticStageSlug,
+} from "../../_shared/types/file_manager.types.ts";
+import {
   CompressJobEnqueueError,
   CompressJobValidationError,
   BoundenqueueCompressJobsFn,
@@ -39,21 +43,25 @@ Deno.test("Contract: enqueueCompressJobsParams declares 11 fields", () => {
   assertEquals(Object.keys(surface).length, 11);
 });
 
-Deno.test("Contract: enqueueCompressJobsPayload victim accepts mode and sourceType literals", () => {
-  const mode: enqueueCompressJobsPayload["victim"]["mode"] = "text";
+Deno.test("Contract: enqueueCompressJobsPayload literal type-checks with enum members", () => {
+  const mode: enqueueCompressJobsPayload["victim"]["mode"] = "json";
   const sourceType: enqueueCompressJobsPayload["victim"]["sourceType"] = "contribution";
   const payload: enqueueCompressJobsPayload = {
     victim: {
       mode,
       content: "some content",
       sourceType,
-      documentKey: "business_case",
+      documentKey: FileType.business_case,
+      docType: FileType.business_case,
+      sourceStageSlug: DialecticStageSlug.Thesis,
     },
   };
-  assertEquals(payload.victim.mode, "text");
+  assertEquals(payload.victim.mode, "json");
   assertEquals(payload.victim.sourceType, "contribution");
   assertEquals(payload.victim.content, "some content");
-  assertEquals(payload.victim.documentKey, "business_case");
+  assertEquals(payload.victim.documentKey, FileType.business_case);
+  assertEquals(payload.victim.docType, FileType.business_case);
+  assertEquals(payload.victim.sourceStageSlug, DialecticStageSlug.Thesis);
 });
 
 Deno.test("Contract: enqueueCompressJobsSuccessReturn and ErrorReturn form a union", () => {

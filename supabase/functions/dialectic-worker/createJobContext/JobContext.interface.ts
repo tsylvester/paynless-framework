@@ -30,7 +30,7 @@ import { IPromptAssembler } from '../../_shared/prompt-assembler/prompt-assemble
 import { GetExtensionFromMimeTypeFn } from '../../_shared/path_utils.ts';
 import { ExtractSourceGroupFragmentFn } from '../../_shared/utils/path_utils.ts';
 import { ShouldEnqueueRenderJobFn } from '../../_shared/types/shouldEnqueueRenderJob.interface.ts';
-import { IDocumentRenderer } from '../../_shared/services/document_renderer.interface.ts';
+import { IDocumentRenderer } from '../../_shared/services/document_renderer/renderDocument/renderDocument.interface.ts';
 import { GetGranularityPlannerFn } from '../../dialectic-service/dialectic.interface.ts';
 import { Database } from '../../types_db.ts';
 import { SupabaseClient } from 'npm:@supabase/supabase-js@2';

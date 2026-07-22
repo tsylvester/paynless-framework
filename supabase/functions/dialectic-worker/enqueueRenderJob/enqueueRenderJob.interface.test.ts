@@ -1,55 +1,57 @@
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
-import type { Database } from "../../types_db.ts";
-import { createMockSupabaseClient } from "../../_shared/supabase.mock.ts";
-import { logger } from "../../_shared/logger.ts";
 import {
   DialecticStageSlug,
   FileType,
 } from "../../_shared/types/file_manager.types.ts";
-import type { ShouldEnqueueRenderJobResult } from "../../_shared/types/shouldEnqueueRenderJob.interface.ts";
-import { RenderJobEnqueueError, RenderJobValidationError } from "../../_shared/utils/errors.ts";
+import {
+  RenderJobEnqueueError,
+  RenderJobValidationError,
+} from "../../_shared/utils/errors.ts";
+import { TemplateResolutionError } from "../../_shared/utils/resolveTemplateFilename/resolveTemplateFilename.ts";
 import type {
+  BoundEnqueueRenderJobFn,
   EnqueueRenderJobDeps,
   EnqueueRenderJobErrorReturn,
   EnqueueRenderJobFn,
   EnqueueRenderJobParams,
   EnqueueRenderJobPayload,
+  EnqueueRenderJobReturn,
   EnqueueRenderJobSuccessReturn,
 } from "./enqueueRenderJob.interface.ts";
 
-Deno.test(
-  "Contract: EnqueueRenderJobDeps accepts dbClient, logger, shouldEnqueueRenderJob",
-  () => {
-    const mockSetup = createMockSupabaseClient(undefined, {});
-    const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
+Deno.test("EnqueueRenderJobDeps declares the expected dependency keys", () => {
+  const surface: Record<keyof EnqueueRenderJobDeps, true> = {
+    dbClient: true,
+    logger: true,
+    shouldEnqueueRenderJob: true,
+    resolveTemplateFilename: true,
+  };
+  assertEquals(Object.keys(surface).length, 4);
+});
 
-    const shouldEnqueueRenderJob = async (
-      _deps: unknown,
-      _params: unknown,
-    ): Promise<ShouldEnqueueRenderJobResult> => ({
-      shouldRender: false,
-      reason: "is_json",
+Deno.test(
+  "EnqueueRenderJobParams declares all job context fields",
+  async (t) => {
+    await t.step("surface keys", () => {
+      const surface: Record<keyof EnqueueRenderJobParams, true> = {
+        jobId: true,
+        sessionId: true,
+        stageSlug: true,
+        iterationNumber: true,
+        outputType: true,
+        projectId: true,
+        projectOwnerUserId: true,
+        userAuthToken: true,
+        modelId: true,
+        walletId: true,
+        isTestJob: true,
+      };
+      assertEquals(Object.keys(surface).length, 11);
     });
 
-    const deps: EnqueueRenderJobDeps = {
-      dbClient,
-      logger,
-      shouldEnqueueRenderJob,
-    };
-
-    assertEquals(typeof deps.dbClient.from, "function");
-    assertEquals(typeof deps.logger.info, "function");
-    assertEquals(typeof deps.shouldEnqueueRenderJob, "function");
-  },
-);
-
-Deno.test(
-  "Contract: EnqueueRenderJobParams accepts all job context fields",
-  async (t) => {
-    await t.step("all keys present with typed values", () => {
+    await t.step("literal type-checks", () => {
       const params: EnqueueRenderJobParams = {
-        jobId: "exec-job-1",
+        jobId: "job-1",
         sessionId: "session-1",
         stageSlug: DialecticStageSlug.Thesis,
         iterationNumber: 1,
@@ -61,18 +63,6 @@ Deno.test(
         walletId: "wallet-1",
         isTestJob: false,
       };
-
-      assertEquals("jobId" in params, true);
-      assertEquals("sessionId" in params, true);
-      assertEquals("stageSlug" in params, true);
-      assertEquals("iterationNumber" in params, true);
-      assertEquals("outputType" in params, true);
-      assertEquals("projectId" in params, true);
-      assertEquals("projectOwnerUserId" in params, true);
-      assertEquals("userAuthToken" in params, true);
-      assertEquals("modelId" in params, true);
-      assertEquals("walletId" in params, true);
-      assertEquals("isTestJob" in params, true);
       assertEquals(typeof params.jobId, "string");
       assertEquals(typeof params.iterationNumber, "number");
       assertEquals(typeof params.isTestJob, "boolean");
@@ -81,9 +71,9 @@ Deno.test(
 );
 
 Deno.test(
-  "Contract: EnqueueRenderJobPayload accepts all contribution-derived fields",
+  "EnqueueRenderJobPayload literal type-checks with optional fields",
   async (t) => {
-    await t.step("all keys present; optional fields may be undefined", () => {
+    await t.step("all keys present", () => {
       const payload: EnqueueRenderJobPayload = {
         contributionId: "contrib-1",
         needsContinuation: false,
@@ -101,7 +91,7 @@ Deno.test(
       assertEquals("storageFileType" in payload, true);
     });
 
-    await t.step("documentKey and stageRelationshipForStage may be undefined", () => {
+    await t.step("optional fields may be undefined", () => {
       const payload: EnqueueRenderJobPayload = {
         contributionId: "contrib-2",
         needsContinuation: true,
@@ -117,124 +107,46 @@ Deno.test(
 );
 
 Deno.test(
-  "Contract: EnqueueRenderJobSuccessReturn accepts renderJobId string or null",
+  "EnqueueRenderJobSuccessReturn and ErrorReturn form a union",
   () => {
-    const withId: EnqueueRenderJobSuccessReturn = { renderJobId: "render-job-1" };
+    const success: EnqueueRenderJobSuccessReturn = { renderJobId: "render-job-1" };
     const skipped: EnqueueRenderJobSuccessReturn = { renderJobId: null };
-
-    assertEquals(withId.renderJobId, "render-job-1");
-    assertEquals(skipped.renderJobId, null);
-    assertEquals("renderJobId" in withId, true);
-    assertEquals("renderJobId" in skipped, true);
-  },
-);
-
-Deno.test(
-  "Contract: EnqueueRenderJobErrorReturn accepts error and retriable",
-  () => {
-    const validationErr: EnqueueRenderJobErrorReturn = {
+    const validationError: EnqueueRenderJobErrorReturn = {
       error: new RenderJobValidationError("validation failed"),
       retriable: false,
     };
-    const enqueueErr: EnqueueRenderJobErrorReturn = {
+    const enqueueError: EnqueueRenderJobErrorReturn = {
       error: new RenderJobEnqueueError("enqueue failed"),
       retriable: true,
     };
+    const templateResolutionError: EnqueueRenderJobErrorReturn = {
+      error: new TemplateResolutionError("template missing"),
+      retriable: false,
+    };
 
-    assertEquals(validationErr.error instanceof RenderJobValidationError, true);
-    assertEquals(validationErr.retriable, false);
-    assertEquals(enqueueErr.error instanceof RenderJobEnqueueError, true);
-    assertEquals(enqueueErr.retriable, true);
-    assertEquals("error" in validationErr, true);
-    assertEquals("retriable" in validationErr, true);
+    const result1: EnqueueRenderJobReturn = success;
+    const result2: EnqueueRenderJobReturn = skipped;
+    const result3: EnqueueRenderJobReturn = validationError;
+    const result4: EnqueueRenderJobReturn = enqueueError;
+    const result5: EnqueueRenderJobReturn = templateResolutionError;
+
+    assertEquals("renderJobId" in result1, true);
+    assertEquals("renderJobId" in result2, true);
+    assertEquals("error" in result3, true);
+    assertEquals("retriable" in result3, true);
+    assertEquals("error" in result4, true);
+    assertEquals("error" in result5, true);
+    assertEquals("retriable" in result5, true);
+    assertEquals("error" in success, false);
+    assertEquals("renderJobId" in validationError, false);
+    assertEquals("renderJobId" in templateResolutionError, false);
   },
 );
 
-Deno.test(
-  "Contract: EnqueueRenderJobFn matches (deps, params, payload) => Promise<EnqueueRenderJobReturn>",
-  async () => {
-    const mockSetup = createMockSupabaseClient(undefined, {});
-    const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
+Deno.test("EnqueueRenderJobFn and BoundEnqueueRenderJobFn signatures", () => {
+  const fn: EnqueueRenderJobFn = async () => ({ renderJobId: "render-job-1" });
+  const bound: BoundEnqueueRenderJobFn = async () => ({ renderJobId: "render-job-1" });
 
-    const shouldEnqueueRenderJob = async (): Promise<ShouldEnqueueRenderJobResult> => ({
-      shouldRender: false,
-      reason: "is_json",
-    });
-
-    const deps: EnqueueRenderJobDeps = {
-      dbClient,
-      logger,
-      shouldEnqueueRenderJob,
-    };
-
-    const params: EnqueueRenderJobParams = {
-      jobId: "exec-job-fn",
-      sessionId: "session-fn",
-      stageSlug: DialecticStageSlug.Thesis,
-      iterationNumber: 1,
-      outputType: FileType.business_case,
-      projectId: "project-fn",
-      projectOwnerUserId: "owner-fn",
-      userAuthToken: "jwt-fn",
-      modelId: "model-fn",
-      walletId: "wallet-fn",
-      isTestJob: false,
-    };
-
-    const payload: EnqueueRenderJobPayload = {
-      contributionId: "contrib-fn",
-      needsContinuation: false,
-      documentKey: FileType.business_case,
-      stageRelationshipForStage: "stage-rel-fn",
-      fileType: FileType.business_case,
-      storageFileType: FileType.ModelContributionRawJson,
-    };
-
-    const fn: EnqueueRenderJobFn = async () => ({ renderJobId: null });
-    const result = await fn(deps, params, payload);
-    assertEquals("renderJobId" in result, true);
-    if ("renderJobId" in result) {
-      assertEquals(result.renderJobId, null);
-    }
-  },
-);
-
-Deno.test(
-  "compile-time: missing required fields are rejected by the type checker",
-  () => {
-    // @ts-expect-error jobId is required on EnqueueRenderJobParams
-    const _missingJobId: EnqueueRenderJobParams = {
-      sessionId: "s",
-      stageSlug: DialecticStageSlug.Thesis,
-      iterationNumber: 1,
-      outputType: FileType.business_case,
-      projectId: "p",
-      projectOwnerUserId: "u",
-      userAuthToken: "jwt",
-      modelId: "m",
-      walletId: "w",
-      isTestJob: false,
-    };
-    void _missingJobId;
-
-    // @ts-expect-error dbClient is required on EnqueueRenderJobDeps
-    const _missingDb: EnqueueRenderJobDeps = {
-      logger,
-      shouldEnqueueRenderJob: async () => ({
-        shouldRender: false,
-        reason: "is_json",
-      }),
-    };
-    void _missingDb;
-
-    // @ts-expect-error contributionId is required on EnqueueRenderJobPayload
-    const _missingContribution: EnqueueRenderJobPayload = {
-      needsContinuation: false,
-      documentKey: undefined,
-      stageRelationshipForStage: undefined,
-      fileType: FileType.business_case,
-      storageFileType: FileType.ModelContributionRawJson,
-    };
-    void _missingContribution;
-  },
-);
+  assertEquals(typeof fn, "function");
+  assertEquals(typeof bound, "function");
+});

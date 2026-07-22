@@ -1,25 +1,38 @@
 import { sanitizeForPath } from "../../_shared/utils/path_constructor.ts";
 import { FileType } from "../../_shared/types/file_manager.types.ts";
 import { isJson } from "../../_shared/utils/type-guards/type_guards.common.ts";
+import {
+  isFileType,
+  isModelContributionFileType,
+} from "../../_shared/utils/type-guards/type_guards.file_manager.ts";
+import { isDialecticStageSlug } from "../enqueueRenderJob/enqueueRenderJob.guards.ts";
 import type { TablesInsert } from "../../types_db.ts";
 import {
   CompressJobEnqueueError,
   CompressJobValidationError,
   DialecticCompressJobPayload,
   enqueueCompressJobsDeps,
+  enqueueCompressJobsFn,
   enqueueCompressJobsParams,
-  enqueueCompressJobsPayload,
   enqueueCompressJobsReturn,
 } from "./enqueueCompressJobs.interface.ts";
+import { isenqueueCompressJobsPayload } from "./enqueueCompressJobs.guard.ts";
 
 const TEMPLATE_OVERHEAD_TOKENS = 500;
 const SAFETY_BUFFER_TOKENS = 32;
 
-export async function enqueueCompressJobs(
+export const enqueueCompressJobs: enqueueCompressJobsFn = async (
   deps: enqueueCompressJobsDeps,
   params: enqueueCompressJobsParams,
-  payload: enqueueCompressJobsPayload,
-): Promise<enqueueCompressJobsReturn> {
+  payload,
+): Promise<enqueueCompressJobsReturn> => {
+  if (!isenqueueCompressJobsPayload(payload)) {
+    return {
+      error: new CompressJobValidationError("Invalid enqueueCompressJobs payload."),
+      retriable: false,
+    };
+  }
+
   const { victim } = payload;
 
   // 1. Validate victim content
@@ -34,7 +47,7 @@ export async function enqueueCompressJobs(
   let identity: string;
 
   if (victim.sourceType === "contribution" || victim.sourceType === "resource") {
-    if (typeof victim.documentKey !== "string" || victim.documentKey === "") {
+    if (!isFileType(victim.documentKey)) {
       return {
         error: new CompressJobValidationError(
           `sourceType '${victim.sourceType}' requires a non-empty documentKey.`,
@@ -65,9 +78,9 @@ export async function enqueueCompressJobs(
   // 3. Explicit mode branch
   if (victim.mode === "json") {
     if (
-      typeof victim.documentKey !== "string" || victim.documentKey === "" ||
-      typeof victim.docType !== "string" || victim.docType === "" ||
-      typeof victim.sourceStageSlug !== "string" || victim.sourceStageSlug === ""
+      !isFileType(victim.documentKey) ||
+      !isModelContributionFileType(victim.docType) ||
+      !isDialecticStageSlug(victim.sourceStageSlug)
     ) {
       return {
         error: new CompressJobValidationError(

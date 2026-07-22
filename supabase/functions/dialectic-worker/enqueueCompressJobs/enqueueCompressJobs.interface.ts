@@ -1,7 +1,13 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import type { Database } from "../../types_db.ts";
 import type { AiModelExtendedConfig, ILogger } from "../../_shared/types.ts";
-import type { CompressionMode, CompressionSourceType } from "../../_shared/types/file_manager.types.ts";
+import type {
+  CompressionMode,
+  CompressionSourceType,
+  FileType,
+  ModelContributionFileTypes,
+  DialecticStageSlug,
+} from "../../_shared/types/file_manager.types.ts";
 import type { CountTokensDeps, CountTokensFn } from "../../_shared/types/tokenizer.types.ts";
 import type { ConstructStoragePathFn } from "../../_shared/utils/path_constructor.types.ts";
 import type { ITextSplitter } from "../../_shared/utils/text_splitter.interface.ts";
@@ -11,17 +17,17 @@ export interface DialecticCompressJobPayload {
   job_type: "COMPRESS";
   sessionId: string;
   projectId: string;
-  stageSlug: string;
-  targetKey: string;
+  stageSlug: DialecticStageSlug;
+  targetKey: ModelContributionFileTypes;
   iterationNumber: number;
   model_id: string;
   mode: CompressionMode;
   content: string;
   sourceType: CompressionSourceType;
   sourceId?: string;
-  documentKey?: string;
-  docType?: string;
-  sourceStageSlug?: string;
+  documentKey?: FileType;
+  docType?: ModelContributionFileTypes;
+  sourceStageSlug?: DialecticStageSlug;
   chunk_index?: number;
   chunk_total?: number;
   walletId: string;
@@ -40,8 +46,8 @@ export interface enqueueCompressJobsParams {
   parentJob: DialecticJobRow;
   sessionId: string;
   projectId: string;
-  stageSlug: string;
-  targetKey: string;
+  stageSlug: DialecticStageSlug;
+  targetKey: ModelContributionFileTypes;
   iterationNumber: number;
   modelId: string;
   walletId: string;
@@ -55,9 +61,9 @@ export interface enqueueCompressJobsPayload {
     content: string;
     sourceType: CompressionSourceType;
     sourceId?: string;
-    documentKey?: string;
-    docType?: string;
-    sourceStageSlug?: string;
+    documentKey?: FileType;
+    docType?: ModelContributionFileTypes;
+    sourceStageSlug?: DialecticStageSlug;
   };
 }
 
@@ -91,7 +97,7 @@ export type enqueueCompressJobsReturn =
 export type enqueueCompressJobsFn = (
   deps: enqueueCompressJobsDeps,
   params: enqueueCompressJobsParams,
-  payload: enqueueCompressJobsPayload,
+  payload: unknown,
 ) => Promise<enqueueCompressJobsReturn>;
 
 export type BoundenqueueCompressJobsFn = (

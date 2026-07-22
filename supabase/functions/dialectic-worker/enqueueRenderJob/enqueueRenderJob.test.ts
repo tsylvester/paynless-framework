@@ -8,7 +8,7 @@ import {
 } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { spy } from "https://deno.land/std@0.224.0/testing/mock.ts";
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
-import type { Database, Json, Tables } from "../../types_db.ts";
+import type { Database, Tables } from "../../types_db.ts";
 import {
   createMockSupabaseClient,
   type MockQueryBuilderState,
@@ -21,15 +21,24 @@ import {
 } from "../../_shared/types/file_manager.types.ts";
 import type { ShouldEnqueueRenderJobResult } from "../../_shared/types/shouldEnqueueRenderJob.interface.ts";
 import { RenderJobEnqueueError, RenderJobValidationError } from "../../_shared/utils/errors.ts";
+import {
+  resolveTemplateFilename as resolveTemplateFilenameFn,
+  TemplateResolutionError,
+} from "../../_shared/utils/resolveTemplateFilename/resolveTemplateFilename.ts";
 import { isRecord } from "../../_shared/utils/type-guards/type_guards.common.ts";
 import type {
-  EnqueueRenderJobDeps,
   EnqueueRenderJobParams,
   EnqueueRenderJobPayload,
   EnqueueRenderJobReturn,
 } from "./enqueueRenderJob.interface.ts";
 import { enqueueRenderJob } from "./enqueueRenderJob.ts";
 import { isFileType } from "../../_shared/utils/type-guards/type_guards.file_manager.ts";
+import {
+  buildEnqueueRenderJobDeps,
+  buildEnqueueRenderJobParams,
+  buildEnqueueRenderJobPayload,
+} from "./enqueueRenderJob.mock.ts";
+import { mockStageRow, mockTemplateStepRow, recipeChainConfig } from "../../_shared/utils/resolveTemplateFilename/resolveTemplateFilename.mock.ts";
 
 function setupMockClient(
   configOverrides: NonNullable<MockSupabaseDataConfig["genericMockResults"]> = {},
@@ -39,122 +48,6 @@ function setupMockClient(
       ...configOverrides,
     },
   });
-}
-
-function baseParams(overrides: Partial<EnqueueRenderJobParams> = {}): EnqueueRenderJobParams {
-  const defaults: EnqueueRenderJobParams = {
-    jobId: "exec-job-1",
-    sessionId: "session-1",
-    stageSlug: DialecticStageSlug.Thesis,
-    iterationNumber: 1,
-    outputType: FileType.business_case,
-    projectId: "project-1",
-    projectOwnerUserId: "owner-1",
-    userAuthToken: "jwt-token",
-    modelId: "model-1",
-    walletId: "wallet-1",
-    isTestJob: false,
-  };
-  return { ...defaults, ...overrides };
-}
-
-function basePayload(overrides: Partial<EnqueueRenderJobPayload> = {}): EnqueueRenderJobPayload {
-  const defaults: EnqueueRenderJobPayload = {
-    contributionId: "contrib-1",
-    needsContinuation: false,
-    documentKey: FileType.business_case,
-    stageRelationshipForStage: "doc-identity-1",
-    fileType: FileType.business_case,
-    storageFileType: FileType.ModelContributionRawJson,
-  };
-  return { ...defaults, ...overrides };
-}
-
-const mockStageRow: Tables<"dialectic_stages"> = {
-  id: "stage-1",
-  slug: DialecticStageSlug.Thesis,
-  display_name: "Thesis",
-  description: null,
-  default_system_prompt_id: null,
-  recipe_template_id: "template-1",
-  active_recipe_instance_id: "instance-1",
-  expected_output_template_ids: [],
-  created_at: new Date().toISOString(),
-  minimum_balance: 0,
-};
-
-function mockInstanceRow(isCloned: boolean): Tables<"dialectic_stage_recipe_instances"> {
-  return {
-    id: "instance-1",
-    stage_id: "stage-1",
-    template_id: "template-1",
-    is_cloned: isCloned,
-    cloned_at: null,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  };
-}
-
-function mockTemplateStepRow(): Tables<"dialectic_recipe_template_steps"> {
-  return {
-    id: "step-1",
-    template_id: "template-1",
-    step_number: 1,
-    step_key: "execute_business_case",
-    step_slug: "execute-business-case",
-    step_name: "Execute Business Case",
-    step_description: null,
-    job_type: "EXECUTE",
-    prompt_type: "Turn",
-    prompt_template_id: null,
-    output_type: "business_case",
-    granularity_strategy: "per_source_document",
-    inputs_required: [],
-    inputs_relevance: [],
-    outputs_required: {
-      files_to_generate: [
-        {
-          from_document_key: "business_case",
-          template_filename: "thesis_business_case.md",
-        },
-      ],
-    },
-    parallel_group: null,
-    branch_key: null,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  };
-}
-
-function mockClonedStepRow(): Tables<"dialectic_stage_recipe_steps"> {
-  const t = mockTemplateStepRow();
-  const cloned: Tables<"dialectic_stage_recipe_steps"> = {
-    id: "cloned-step-1",
-    instance_id: "instance-1",
-    branch_key: t.branch_key,
-    config_override: {},
-    created_at: t.created_at,
-    execution_order: 1,
-    granularity_strategy: t.granularity_strategy,
-    inputs_relevance: t.inputs_relevance,
-    inputs_required: t.inputs_required,
-    is_skipped: false,
-    job_type: t.job_type,
-    object_filter: {},
-    output_overrides: {},
-    output_type: t.output_type,
-    outputs_required: t.outputs_required,
-    parallel_group: t.parallel_group,
-    prompt_template_id: t.prompt_template_id,
-    prompt_type: t.prompt_type,
-    step_description: t.step_description,
-    step_key: t.step_key,
-    step_name: t.step_name,
-    step_slug: t.step_slug,
-    template_step_id: null,
-    updated_at: t.updated_at,
-  };
-  return cloned;
 }
 
 function mockRenderJobRow(overrides: Partial<Tables<"dialectic_generation_jobs">> = {}): Tables<"dialectic_generation_jobs"> {
@@ -183,24 +76,6 @@ function mockRenderJobRow(overrides: Partial<Tables<"dialectic_generation_jobs">
   return { ...base, ...overrides };
 }
 
-function recipeChainConfig(
-  isCloned: boolean,
-): NonNullable<MockSupabaseDataConfig["genericMockResults"]> {
-  const instance: Tables<"dialectic_stage_recipe_instances"> = mockInstanceRow(isCloned);
-  const templateSteps = { select: { data: [mockTemplateStepRow()], error: null as Error | null } };
-  const clonedSteps = { select: { data: [mockClonedStepRow()], error: null as Error | null } };
-  const base: NonNullable<MockSupabaseDataConfig["genericMockResults"]> = {
-    dialectic_stages: { select: { data: [mockStageRow], error: null } },
-    dialectic_stage_recipe_instances: { select: { data: [instance], error: null } },
-  };
-  if (isCloned) {
-    base.dialectic_stage_recipe_steps = clonedSteps;
-  } else {
-    base.dialectic_recipe_template_steps = templateSteps;
-  }
-  return base;
-}
-
 Deno.test(
   "enqueueRenderJob: when payload.needsContinuation is true, returns success with renderJobId null without calling shouldEnqueueRenderJob or inserting",
   async () => {
@@ -212,17 +87,15 @@ Deno.test(
     );
     const mockSetup = setupMockClient({});
     const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
-    const mockLogger = new MockLogger();
-    const deps: EnqueueRenderJobDeps = {
+    const deps = buildEnqueueRenderJobDeps({
       dbClient,
-      logger: mockLogger,
       shouldEnqueueRenderJob,
-    };
+    });
 
     const result = await enqueueRenderJob(
       deps,
-      baseParams(),
-      basePayload({ needsContinuation: true }),
+      buildEnqueueRenderJobParams(),
+      buildEnqueueRenderJobPayload({ needsContinuation: true }),
     );
 
     assertEquals(shouldEnqueueRenderJob.calls.length, 0);
@@ -249,13 +122,13 @@ Deno.test(
     const infoSpy = spy(mockLogger, "info");
     const mockSetup = setupMockClient({});
     const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
-    const deps: EnqueueRenderJobDeps = {
+    const deps = buildEnqueueRenderJobDeps({
       dbClient,
       logger: mockLogger,
       shouldEnqueueRenderJob,
-    };
+    });
 
-    const result = await enqueueRenderJob(deps, baseParams(), basePayload());
+    const result = await enqueueRenderJob(deps, buildEnqueueRenderJobParams(), buildEnqueueRenderJobPayload());
 
     assertEquals(shouldEnqueueRenderJob.calls.length, 1);
     assertEquals("renderJobId" in result, true);
@@ -278,13 +151,12 @@ Deno.test(
     );
     const mockSetup = setupMockClient({});
     const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
-    const deps: EnqueueRenderJobDeps = {
+    const deps = buildEnqueueRenderJobDeps({
       dbClient,
-      logger: new MockLogger(),
       shouldEnqueueRenderJob,
-    };
+    });
 
-    const result = await enqueueRenderJob(deps, baseParams(), basePayload());
+    const result = await enqueueRenderJob(deps, buildEnqueueRenderJobParams(), buildEnqueueRenderJobPayload());
 
     assertEquals("error" in result, true);
     if ("error" in result) {
@@ -311,13 +183,12 @@ Deno.test(
       },
     });
     const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
-    const deps: EnqueueRenderJobDeps = {
+    const deps = buildEnqueueRenderJobDeps({
       dbClient,
-      logger: new MockLogger(),
       shouldEnqueueRenderJob,
-    };
+    });
 
-    const result = await enqueueRenderJob(deps, baseParams(), basePayload());
+    const result = await enqueueRenderJob(deps, buildEnqueueRenderJobParams(), buildEnqueueRenderJobPayload());
 
     assertEquals("renderJobId" in result, true);
     if ("renderJobId" in result) {
@@ -343,13 +214,12 @@ Deno.test(
       },
     });
     const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
-    const deps: EnqueueRenderJobDeps = {
+    const deps = buildEnqueueRenderJobDeps({
       dbClient,
-      logger: new MockLogger(),
       shouldEnqueueRenderJob,
-    };
+    });
 
-    await enqueueRenderJob(deps, baseParams({ jobId: "parent-job-x" }), basePayload());
+    await enqueueRenderJob(deps, buildEnqueueRenderJobParams({ jobId: "parent-job-x" }), buildEnqueueRenderJobPayload());
 
     const insertCalls = mockSetup.spies.getHistoricQueryBuilderSpies("dialectic_generation_jobs", "insert");
     assertExists(insertCalls);
@@ -405,13 +275,12 @@ Deno.test(
       },
     });
     const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
-    const deps: EnqueueRenderJobDeps = {
+    const deps = buildEnqueueRenderJobDeps({
       dbClient,
-      logger: new MockLogger(),
       shouldEnqueueRenderJob,
-    };
+    });
 
-    const result = await enqueueRenderJob(deps, baseParams(), basePayload());
+    const result = await enqueueRenderJob(deps, buildEnqueueRenderJobParams(), buildEnqueueRenderJobPayload());
 
     assertEquals("renderJobId" in result, true);
     if ("renderJobId" in result) {
@@ -457,13 +326,12 @@ Deno.test(
       },
     });
     const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
-    const deps: EnqueueRenderJobDeps = {
+    const deps = buildEnqueueRenderJobDeps({
       dbClient,
-      logger: new MockLogger(),
       shouldEnqueueRenderJob,
-    };
+    });
 
-    const result = await enqueueRenderJob(deps, baseParams(), basePayload());
+    const result = await enqueueRenderJob(deps, buildEnqueueRenderJobParams(), buildEnqueueRenderJobPayload());
 
     assertEquals("error" in result, true);
     if ("error" in result) {
@@ -498,13 +366,12 @@ Deno.test(
       },
     });
     const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
-    const deps: EnqueueRenderJobDeps = {
+    const deps = buildEnqueueRenderJobDeps({
       dbClient,
-      logger: new MockLogger(),
       shouldEnqueueRenderJob,
-    };
+    });
 
-    const result = await enqueueRenderJob(deps, baseParams(), basePayload());
+    const result = await enqueueRenderJob(deps, buildEnqueueRenderJobParams(), buildEnqueueRenderJobPayload());
 
     assertEquals("error" in result, true);
     if ("error" in result) {
@@ -540,13 +407,12 @@ Deno.test(
       },
     });
     const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
-    const deps: EnqueueRenderJobDeps = {
+    const deps = buildEnqueueRenderJobDeps({
       dbClient,
-      logger: new MockLogger(),
       shouldEnqueueRenderJob,
-    };
+    });
 
-    const result = await enqueueRenderJob(deps, baseParams(), basePayload());
+    const result = await enqueueRenderJob(deps, buildEnqueueRenderJobParams(), buildEnqueueRenderJobPayload());
 
     assertEquals("error" in result, true);
     if ("error" in result) {
@@ -569,16 +435,15 @@ Deno.test(
       ...recipeChainConfig(false),
     });
     const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
-    const deps: EnqueueRenderJobDeps = {
+    const deps = buildEnqueueRenderJobDeps({
       dbClient,
-      logger: new MockLogger(),
       shouldEnqueueRenderJob,
-    };
+    });
 
     const result = await enqueueRenderJob(
       deps,
-      baseParams(),
-      basePayload({ documentKey: undefined }),
+      buildEnqueueRenderJobParams(),
+      buildEnqueueRenderJobPayload({ documentKey: undefined }),
     );
 
     assertEquals("error" in result, true);
@@ -602,16 +467,15 @@ Deno.test(
       ...recipeChainConfig(false),
     });
     const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
-    const deps: EnqueueRenderJobDeps = {
+    const deps = buildEnqueueRenderJobDeps({
       dbClient,
-      logger: new MockLogger(),
       shouldEnqueueRenderJob,
-    };
+    });
 
     const result = await enqueueRenderJob(
       deps,
-      baseParams(),
-      basePayload({ stageRelationshipForStage: undefined }),
+      buildEnqueueRenderJobParams(),
+      buildEnqueueRenderJobPayload({ stageRelationshipForStage: undefined }),
     );
 
     assertEquals("error" in result, true);
@@ -639,13 +503,14 @@ Deno.test(
       },
     });
     const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
-    const deps: EnqueueRenderJobDeps = {
+    const deps = buildEnqueueRenderJobDeps({
       dbClient,
-      logger: new MockLogger(),
       shouldEnqueueRenderJob,
-    };
+      resolveTemplateFilename: (params, payload) =>
+        resolveTemplateFilenameFn({}, { dbClient: params.dbClient ?? dbClient }, payload),
+    });
 
-    await enqueueRenderJob(deps, baseParams(), basePayload());
+    await enqueueRenderJob(deps, buildEnqueueRenderJobParams(), buildEnqueueRenderJobPayload());
 
     const fromSpy = mockSetup.spies.fromSpy;
     const tableNames: string[] = fromSpy.calls.map((c) => String(c.args[0]));
@@ -671,18 +536,60 @@ Deno.test(
       },
     });
     const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
-    const deps: EnqueueRenderJobDeps = {
+    const deps = buildEnqueueRenderJobDeps({
       dbClient,
-      logger: new MockLogger(),
       shouldEnqueueRenderJob,
-    };
+      resolveTemplateFilename: (params, payload) =>
+        resolveTemplateFilenameFn({}, { dbClient: params.dbClient ?? dbClient }, payload),
+    });
 
-    await enqueueRenderJob(deps, baseParams(), basePayload());
+    await enqueueRenderJob(deps, buildEnqueueRenderJobParams(), buildEnqueueRenderJobPayload());
 
     const fromSpy = mockSetup.spies.fromSpy;
     const tableNames: string[] = fromSpy.calls.map((c) => String(c.args[0]));
     assertEquals(tableNames.includes("dialectic_recipe_template_steps"), true);
     assertEquals(tableNames.includes("dialectic_stage_recipe_steps"), false);
+  },
+);
+
+Deno.test(
+  "enqueueRenderJob: a resolveTemplateFilename failure surfaces through enqueueRenderJob as the exact TemplateResolutionError object, untouched",
+  async () => {
+    const shouldEnqueueRenderJob = spy(
+      async (): Promise<ShouldEnqueueRenderJobResult> => ({
+        shouldRender: true,
+        reason: "is_markdown",
+      }),
+    );
+    const stageNoActive = { ...mockStageRow, active_recipe_instance_id: null };
+    const mockSetup = setupMockClient({
+      ...recipeChainConfig(false),
+      dialectic_stages: { select: { data: [stageNoActive], error: null } },
+    });
+    const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
+    const deps = buildEnqueueRenderJobDeps({
+      dbClient,
+      shouldEnqueueRenderJob,
+      resolveTemplateFilename: (params, payload) =>
+        resolveTemplateFilenameFn({}, { dbClient: params.dbClient ?? dbClient }, payload),
+    });
+
+    const result = await enqueueRenderJob(
+      deps,
+      buildEnqueueRenderJobParams(),
+      buildEnqueueRenderJobPayload(),
+    );
+
+    assertEquals("error" in result, true);
+    if ("error" in result) {
+      assertEquals(result.error instanceof TemplateResolutionError, true);
+      assertEquals(result.retriable, false);
+      assert(
+        result.error.message.includes(
+          `Stage '${DialecticStageSlug.Thesis}' has no active recipe instance`,
+        ),
+      );
+    }
   },
 );
 
@@ -703,13 +610,12 @@ Deno.test(
       },
     });
     const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
-    const deps: EnqueueRenderJobDeps = {
+    const deps = buildEnqueueRenderJobDeps({
       dbClient,
-      logger: new MockLogger(),
       shouldEnqueueRenderJob,
-    };
+    });
 
-    await enqueueRenderJob(deps, baseParams(), basePayload({ documentKey: FileType.business_case }));
+    await enqueueRenderJob(deps, buildEnqueueRenderJobParams(), buildEnqueueRenderJobPayload({ documentKey: FileType.business_case }));
 
     const insertCalls = mockSetup.spies.getHistoricQueryBuilderSpies("dialectic_generation_jobs", "insert");
     assertExists(insertCalls);
@@ -753,17 +659,16 @@ Deno.test(
       },
     });
     const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
-    const deps: EnqueueRenderJobDeps = {
+    const deps = buildEnqueueRenderJobDeps({
       dbClient,
-      logger: new MockLogger(),
       shouldEnqueueRenderJob,
-    };
+    });
 
     const documentIdentityFromSavedContribution: string = "contrib-123";
 
     await enqueueRenderJob(
       deps,
-      baseParams({
+      buildEnqueueRenderJobParams({
         jobId: "job-id-123",
         sessionId: "session-456",
         projectId: "project-abc",
@@ -772,7 +677,7 @@ Deno.test(
         modelId: "model-def",
         walletId: "wallet-ghi",
       }),
-      basePayload({
+      buildEnqueueRenderJobPayload({
         contributionId: documentIdentityFromSavedContribution,
         stageRelationshipForStage: documentIdentityFromSavedContribution,
         documentKey: FileType.business_case,
@@ -816,16 +721,15 @@ Deno.test(
     );
     const mockSetup = setupMockClient({});
     const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
-    const deps: EnqueueRenderJobDeps = {
+    const deps = buildEnqueueRenderJobDeps({
       dbClient,
-      logger: new MockLogger(),
       shouldEnqueueRenderJob,
-    };
+    });
 
     const result = await enqueueRenderJob(
       deps,
-      baseParams({ outputType: FileType.HeaderContext }),
-      basePayload({ fileType: FileType.HeaderContext }),
+      buildEnqueueRenderJobParams({ outputType: FileType.HeaderContext }),
+      buildEnqueueRenderJobPayload({ fileType: FileType.HeaderContext }),
     );
 
     assertEquals(shouldEnqueueRenderJob.calls.length, 1);
@@ -860,11 +764,10 @@ Deno.test(
       },
     });
     const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
-    const deps: EnqueueRenderJobDeps = {
+    const deps = buildEnqueueRenderJobDeps({
       dbClient,
-      logger: new MockLogger(),
       shouldEnqueueRenderJob,
-    };
+    });
 
     const businessCaseProjectId: string = "project-abc";
     const businessCaseSessionId: string = "session-456";
@@ -872,13 +775,13 @@ Deno.test(
 
     await enqueueRenderJob(
       deps,
-      baseParams({
+      buildEnqueueRenderJobParams({
         jobId: "job-id-123",
         sessionId: businessCaseSessionId,
         projectId: businessCaseProjectId,
         outputType: FileType.business_case,
       }),
-      basePayload({
+      buildEnqueueRenderJobPayload({
         contributionId: documentIdentityFromSavedContribution,
         stageRelationshipForStage: documentIdentityFromSavedContribution,
         documentKey: FileType.business_case,
@@ -929,17 +832,15 @@ Deno.test(
     );
     const mockSetup = setupMockClient({});
     const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
-    const mockLogger = new MockLogger();
-    const deps: EnqueueRenderJobDeps = {
+    const deps = buildEnqueueRenderJobDeps({
       dbClient,
-      logger: mockLogger,
       shouldEnqueueRenderJob,
-    };
+    });
 
     const result = await enqueueRenderJob(
       deps,
-      baseParams(),
-      basePayload({ needsContinuation: true }),
+      buildEnqueueRenderJobParams(),
+      buildEnqueueRenderJobPayload({ needsContinuation: true }),
     );
 
     assertEquals(shouldEnqueueRenderJob.calls.length, 0);
@@ -963,16 +864,15 @@ Deno.test("intermediate continuation must not enqueue RENDER (Zone H)",
     );
     const mockSetup = setupMockClient({});
     const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
-    const deps: EnqueueRenderJobDeps = {
+    const deps = buildEnqueueRenderJobDeps({
       dbClient,
-      logger: new MockLogger(),
       shouldEnqueueRenderJob,
-    };
+    });
 
     const result = await enqueueRenderJob(
       deps,
-      baseParams(),
-      basePayload({ needsContinuation: true }),
+      buildEnqueueRenderJobParams(),
+      buildEnqueueRenderJobPayload({ needsContinuation: true }),
     );
 
     assertEquals(shouldEnqueueRenderJob.calls.length, 0);
@@ -1002,16 +902,15 @@ Deno.test("RENDER insert payload includes documentKey from payload.documentKey",
       },
     });
     const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
-    const deps: EnqueueRenderJobDeps = {
+    const deps = buildEnqueueRenderJobDeps({
       dbClient,
-      logger: new MockLogger(),
       shouldEnqueueRenderJob,
-    };
+    });
 
     await enqueueRenderJob(
       deps,
-      baseParams(),
-      basePayload({ documentKey: FileType.business_case }),
+      buildEnqueueRenderJobParams(),
+      buildEnqueueRenderJobPayload({ documentKey: FileType.business_case }),
     );
 
     const insertCalls = mockSetup.spies.getHistoricQueryBuilderSpies("dialectic_generation_jobs", "insert");
@@ -1046,11 +945,10 @@ Deno.test("RENDER insert payload contains all required DialecticRenderJobPayload
       },
     });
     const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
-    const deps: EnqueueRenderJobDeps = {
+    const deps = buildEnqueueRenderJobDeps({
       dbClient,
-      logger: new MockLogger(),
       shouldEnqueueRenderJob,
-    };
+    });
 
     const jobId: string = "job-all-fields";
     const projectId: string = "project-all";
@@ -1063,7 +961,7 @@ Deno.test("RENDER insert payload contains all required DialecticRenderJobPayload
 
     await enqueueRenderJob(
       deps,
-      baseParams({
+      buildEnqueueRenderJobParams({
         jobId,
         sessionId,
         projectId,
@@ -1071,7 +969,7 @@ Deno.test("RENDER insert payload contains all required DialecticRenderJobPayload
         modelId,
         walletId,
       }),
-      basePayload({
+      buildEnqueueRenderJobPayload({
         contributionId,
         stageRelationshipForStage: stageRel,
         documentKey: FileType.business_case,
@@ -1146,19 +1044,18 @@ Deno.test("sourceContributionId is actual contribution id, not semantic document
       },
     });
     const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
-    const deps: EnqueueRenderJobDeps = {
+    const deps = buildEnqueueRenderJobDeps({
       dbClient,
-      logger: new MockLogger(),
       shouldEnqueueRenderJob,
-    };
+    });
 
     const actualContributionId: string = "contrib-actual-7";
     const semanticIdentity: string = "semantic-doc-999";
 
     await enqueueRenderJob(
       deps,
-      baseParams(),
-      basePayload({
+      buildEnqueueRenderJobParams(),
+      buildEnqueueRenderJobPayload({
         contributionId: actualContributionId,
         stageRelationshipForStage: semanticIdentity,
         documentKey: FileType.business_case,
@@ -1197,11 +1094,10 @@ Deno.test("root and continuation final chunks each enqueue RENDER with distinct 
       },
     });
     const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
-    const deps: EnqueueRenderJobDeps = {
+    const deps = buildEnqueueRenderJobDeps({
       dbClient,
-      logger: new MockLogger(),
       shouldEnqueueRenderJob,
-    };
+    });
 
     const rootContributionId: string = "contrib-root-123";
     const continuationContributionId: string = "contrib-continuation-456";
@@ -1209,8 +1105,8 @@ Deno.test("root and continuation final chunks each enqueue RENDER with distinct 
 
     await enqueueRenderJob(
       deps,
-      baseParams({ jobId: "exec-root-8" }),
-      basePayload({
+      buildEnqueueRenderJobParams({ jobId: "exec-root-8" }),
+      buildEnqueueRenderJobPayload({
         contributionId: rootContributionId,
         stageRelationshipForStage: rootContributionId,
         documentKey: FileType.business_case,
@@ -1220,8 +1116,8 @@ Deno.test("root and continuation final chunks each enqueue RENDER with distinct 
 
     await enqueueRenderJob(
       deps,
-      baseParams({ jobId: "exec-cont-8" }),
-      basePayload({
+      buildEnqueueRenderJobParams({ jobId: "exec-cont-8" }),
+      buildEnqueueRenderJobPayload({
         contributionId: continuationContributionId,
         stageRelationshipForStage: documentChainIdentity,
         documentKey: FileType.business_case,
@@ -1279,14 +1175,13 @@ Deno.test("RENDER payload includes user_jwt and all renderer identity fields",
       },
     });
     const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
-    const deps: EnqueueRenderJobDeps = {
+    const deps = buildEnqueueRenderJobDeps({
       dbClient,
-      logger: new MockLogger(),
       shouldEnqueueRenderJob,
-    };
+    });
 
     const testJwt: string = "test-jwt-token-12345";
-    const paramsIn: EnqueueRenderJobParams = baseParams({
+    const paramsIn: EnqueueRenderJobParams = buildEnqueueRenderJobParams({
       projectId: "proj-9",
       sessionId: "sess-9",
       userAuthToken: testJwt,
@@ -1298,7 +1193,7 @@ Deno.test("RENDER payload includes user_jwt and all renderer identity fields",
     await enqueueRenderJob(
       deps,
       paramsIn,
-      basePayload({
+      buildEnqueueRenderJobPayload({
         contributionId: contribId,
         stageRelationshipForStage: contribId,
         documentKey: FileType.business_case,
@@ -1341,18 +1236,17 @@ Deno.test("empty userAuthToken fails DialecticRenderJobPayload validation",
       ...recipeChainConfig(false),
     });
     const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
-    const deps: EnqueueRenderJobDeps = {
+    const deps = buildEnqueueRenderJobDeps({
       dbClient,
-      logger: new MockLogger(),
       shouldEnqueueRenderJob,
-    };
+    });
 
     await assertRejects(
       () =>
         enqueueRenderJob(
           deps,
-          baseParams({ userAuthToken: "" }),
-          basePayload(),
+          buildEnqueueRenderJobParams({ userAuthToken: "" }),
+          buildEnqueueRenderJobPayload(),
         ),
       Error,
     );
@@ -1375,18 +1269,17 @@ Deno.test("user_jwt on RENDER payload matches params.userAuthToken exactly",
       },
     });
     const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
-    const deps: EnqueueRenderJobDeps = {
+    const deps = buildEnqueueRenderJobDeps({
       dbClient,
-      logger: new MockLogger(),
       shouldEnqueueRenderJob,
-    };
+    });
 
     const specificToken: string = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.specific.token.value";
 
     await enqueueRenderJob(
       deps,
-      baseParams({ userAuthToken: specificToken }),
-      basePayload(),
+      buildEnqueueRenderJobParams({ userAuthToken: specificToken }),
+      buildEnqueueRenderJobPayload(),
     );
 
     const insertCalls = mockSetup.spies.getHistoricQueryBuilderSpies("dialectic_generation_jobs", "insert");
@@ -1419,18 +1312,17 @@ Deno.test("documentIdentity matches stageRelationshipForStage for root-equivalen
       },
     });
     const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
-    const deps: EnqueueRenderJobDeps = {
+    const deps = buildEnqueueRenderJobDeps({
       dbClient,
-      logger: new MockLogger(),
       shouldEnqueueRenderJob,
-    };
+    });
 
     const rootId: string = "root-id-12";
 
     await enqueueRenderJob(
       deps,
-      baseParams(),
-      basePayload({
+      buildEnqueueRenderJobParams(),
+      buildEnqueueRenderJobPayload({
         contributionId: rootId,
         stageRelationshipForStage: rootId,
         documentKey: FileType.business_case,
@@ -1468,19 +1360,18 @@ Deno.test("continuation chunk — documentIdentity is chain root, sourceContribu
       },
     });
     const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
-    const deps: EnqueueRenderJobDeps = {
+    const deps = buildEnqueueRenderJobDeps({
       dbClient,
-      logger: new MockLogger(),
       shouldEnqueueRenderJob,
-    };
+    });
 
     const rootContributionId: string = "root-id-13";
     const continuationContributionId: string = "continuation-id-13";
 
     await enqueueRenderJob(
       deps,
-      baseParams(),
-      basePayload({
+      buildEnqueueRenderJobParams(),
+      buildEnqueueRenderJobPayload({
         contributionId: continuationContributionId,
         stageRelationshipForStage: rootContributionId,
         documentKey: FileType.business_case,
@@ -1519,19 +1410,18 @@ Deno.test("documentIdentity is caller-provided stageRelationshipForStage (single
       },
     });
     const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
-    const deps: EnqueueRenderJobDeps = {
+    const deps = buildEnqueueRenderJobDeps({
       dbClient,
-      logger: new MockLogger(),
       shouldEnqueueRenderJob,
-    };
+    });
 
     const thesisIdentity: string = "thesis-correct-id";
     const wrongOtherStage: string = "wrong-antithesis-id";
 
     await enqueueRenderJob(
       deps,
-      baseParams({ stageSlug: DialecticStageSlug.Thesis }),
-      basePayload({
+      buildEnqueueRenderJobParams({ stageSlug: DialecticStageSlug.Thesis }),
+      buildEnqueueRenderJobPayload({
         contributionId: thesisIdentity,
         stageRelationshipForStage: thesisIdentity,
         documentKey: FileType.business_case,
@@ -1565,16 +1455,15 @@ Deno.test("missing documentIdentity (stageRelationshipForStage) returns validati
       ...recipeChainConfig(false),
     });
     const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
-    const deps: EnqueueRenderJobDeps = {
+    const deps = buildEnqueueRenderJobDeps({
       dbClient,
-      logger: new MockLogger(),
       shouldEnqueueRenderJob,
-    };
+    });
 
     const result = await enqueueRenderJob(
       deps,
-      baseParams(),
-      basePayload({ stageRelationshipForStage: undefined }),
+      buildEnqueueRenderJobParams(),
+      buildEnqueueRenderJobPayload({ stageRelationshipForStage: undefined }),
     );
 
     assertEquals("error" in result, true);
@@ -1596,16 +1485,15 @@ Deno.test("undefined documentKey returns validation error (no RENDER)",
       ...recipeChainConfig(false),
     });
     const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
-    const deps: EnqueueRenderJobDeps = {
+    const deps = buildEnqueueRenderJobDeps({
       dbClient,
-      logger: new MockLogger(),
       shouldEnqueueRenderJob,
-    };
+    });
 
     const result = await enqueueRenderJob(
       deps,
-      baseParams(),
-      basePayload({ documentKey: undefined }),
+      buildEnqueueRenderJobParams(),
+      buildEnqueueRenderJobPayload({ documentKey: undefined }),
     );
 
     assertEquals("error" in result, true);
@@ -1628,13 +1516,12 @@ Deno.test("skips insert when shouldEnqueueRenderJob returns is_json",
     );
     const mockSetup = setupMockClient({});
     const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
-    const deps: EnqueueRenderJobDeps = {
+    const deps = buildEnqueueRenderJobDeps({
       dbClient,
-      logger: new MockLogger(),
       shouldEnqueueRenderJob,
-    };
+    });
 
-    const result = await enqueueRenderJob(deps, baseParams(), basePayload());
+    const result = await enqueueRenderJob(deps, buildEnqueueRenderJobParams(), buildEnqueueRenderJobPayload());
 
     assertEquals(shouldEnqueueRenderJob.calls.length, 1);
     const insertCalls = mockSetup.spies.getHistoricQueryBuilderSpies("dialectic_generation_jobs", "insert");
@@ -1657,13 +1544,12 @@ Deno.test("shouldEnqueueRenderJob stage_not_found returns EnqueueRenderJobErrorR
     );
     const mockSetup = setupMockClient({});
     const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
-    const deps: EnqueueRenderJobDeps = {
+    const deps = buildEnqueueRenderJobDeps({
       dbClient,
-      logger: new MockLogger(),
       shouldEnqueueRenderJob,
-    };
+    });
 
-    const result = await enqueueRenderJob(deps, baseParams(), basePayload());
+    const result = await enqueueRenderJob(deps, buildEnqueueRenderJobParams(), buildEnqueueRenderJobPayload());
 
     assertEquals("error" in result, true);
     if ("error" in result) {
@@ -1701,13 +1587,14 @@ Deno.test("template_filename on insert payload comes from recipe step files_to_g
       },
     });
     const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
-    const deps: EnqueueRenderJobDeps = {
+    const deps = buildEnqueueRenderJobDeps({
       dbClient,
-      logger: new MockLogger(),
       shouldEnqueueRenderJob,
-    };
+      resolveTemplateFilename: (params, payload) =>
+        resolveTemplateFilenameFn({}, { dbClient: params.dbClient ?? dbClient }, payload),
+    });
 
-    await enqueueRenderJob(deps, baseParams(), basePayload());
+    await enqueueRenderJob(deps, buildEnqueueRenderJobParams(), buildEnqueueRenderJobPayload());
 
     const insertCalls = mockSetup.spies.getHistoricQueryBuilderSpies("dialectic_generation_jobs", "insert");
     assertExists(insertCalls);
@@ -1760,16 +1647,15 @@ Deno.test("23505 on idempotency_key recovers existing render job id",
       },
     });
     const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
-    const deps: EnqueueRenderJobDeps = {
+    const deps = buildEnqueueRenderJobDeps({
       dbClient,
-      logger: new MockLogger(),
       shouldEnqueueRenderJob,
-    };
+    });
 
     const result = await enqueueRenderJob(
       deps,
-      baseParams({ jobId: "exec-job-20" }),
-      basePayload(),
+      buildEnqueueRenderJobParams({ jobId: "exec-job-20" }),
+      buildEnqueueRenderJobPayload(),
     );
 
     assertEquals("renderJobId" in result, true);
@@ -1801,16 +1687,15 @@ Deno.test(
       },
     });
     const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
-    const deps: EnqueueRenderJobDeps = {
+    const deps = buildEnqueueRenderJobDeps({
       dbClient,
-      logger: new MockLogger(),
       shouldEnqueueRenderJob,
-    };
+    });
 
     const result: EnqueueRenderJobReturn = await enqueueRenderJob(
       deps,
-      baseParams(),
-      basePayload(),
+      buildEnqueueRenderJobParams(),
+      buildEnqueueRenderJobPayload(),
     );
 
     assertEquals("error" in result, true);
@@ -1836,15 +1721,14 @@ Deno.test(
     );
     const mockSetup = setupMockClient({});
     const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
-    const deps: EnqueueRenderJobDeps = {
+    const deps = buildEnqueueRenderJobDeps({
       dbClient,
-      logger: new MockLogger(),
       shouldEnqueueRenderJob,
-    };
+    });
 
     await assertRejects(
       async () => {
-        await enqueueRenderJob(deps, baseParams(), basePayload());
+        await enqueueRenderJob(deps, buildEnqueueRenderJobParams(), buildEnqueueRenderJobPayload());
       },
       Error,
       "Database connection failed",

@@ -1,4 +1,4 @@
-import { isRecord } from "../../_shared/utils/type-guards/type_guards.common.ts";
+import { isNonEmptyString, isRecord } from "../../_shared/utils/type-guards/type_guards.common.ts";
 import { isDialecticCompressJobPayload } from "../enqueueCompressJobs/enqueueCompressJobs.guard.ts";
 import type {
     BoundProcessCompressJobFn,
@@ -10,10 +10,6 @@ import type {
     ProcessCompressJobReturn,
     ProcessCompressJobSuccessReturn,
 } from "./processCompressJob.interface.ts";
-
-function isNonEmptyString(value: unknown): value is string {
-    return typeof value === "string" && value !== "";
-}
 
 export function isProcessCompressJobDeps(
     value: unknown,

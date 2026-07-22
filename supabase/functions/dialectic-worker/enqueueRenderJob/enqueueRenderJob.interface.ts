@@ -3,12 +3,15 @@ import type { Database } from '../../types_db.ts';
 import type { ILogger } from '../../_shared/types.ts';
 import type { ShouldEnqueueRenderJobFn } from '../../_shared/types/shouldEnqueueRenderJob.interface.ts';
 import type { RenderJobEnqueueError, RenderJobValidationError } from '../../_shared/utils/errors.ts';
+import type { BoundResolveTemplateFilenameFn } from '../../_shared/utils/resolveTemplateFilename/resolveTemplateFilename.interface.ts';
+import type { TemplateResolutionError } from '../../_shared/utils/resolveTemplateFilename/resolveTemplateFilename.ts';
 import type { FileType, ModelContributionFileTypes, DialecticStageSlug } from '../../_shared/types/file_manager.types.ts';
 
 export interface EnqueueRenderJobDeps {
   dbClient: SupabaseClient<Database>;
   logger: ILogger;
   shouldEnqueueRenderJob: ShouldEnqueueRenderJobFn;
+  resolveTemplateFilename: BoundResolveTemplateFilenameFn;
 }
 
 export interface EnqueueRenderJobParams {
@@ -39,7 +42,7 @@ export type EnqueueRenderJobSuccessReturn = {
 };
 
 export type EnqueueRenderJobErrorReturn = {
-  error: RenderJobValidationError | RenderJobEnqueueError;
+  error: RenderJobValidationError | RenderJobEnqueueError | TemplateResolutionError;
   retriable: boolean;
 };
 

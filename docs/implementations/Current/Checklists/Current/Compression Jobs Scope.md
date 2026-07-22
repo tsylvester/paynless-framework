@@ -381,7 +381,9 @@ satellite files are DELETED (no facade file left behind as an attractive nuisanc
 `text_splitter` pattern): module nodes land as copies with their own focused tests while the
 monolith stays untouched; the single relocation node then swaps internals, and the UNMODIFIED
 ~5.9k-line monolith suite — pinned to the unchanged public signature — is the regression
-oracle before its cases are redistributed. Strict node order: `resolveTemplateFilename` →
+oracle, then retained IN FULL as the module's `renderDocument.integration.test.ts` (the durable
+whole-chain guard) while the sibling module tests add part-in-isolation coverage — additive, not
+a redistribution that thins the suite. Strict node order: `resolveTemplateFilename` →
 `enqueueRenderJob` → `loadDocumentTemplate` → `renderStructuredDocument` →
 `assembleContributionChain` → `mergeChunkContent` → `renderDocument` (relocation + deletion)
 → `saveResponse` → `netlifyResponse/index.ts` (capstone wiring, mirroring WS-R's
@@ -450,15 +452,19 @@ oracle before its cases are redistributed. Strict node order: `resolveTemplateFi
   562-658`) — that tail is RENDER-flow-specific and stays in the orchestrator. The module's
   interface file re-homes `RenderDocumentParams`/`RenderDocumentResult`/`DocumentRendererDeps`/
   `IDocumentRenderer`/`ContributionRowMinimal`; its mock re-homes `createDocumentRendererMock`.
-  Proof sequence INSIDE this node, in order: (1) repoint the untouched
+  Proof sequence INSIDE this node, in order (revised 2026-07-21 — the monolith suite is
+  RETAINED as a persistent chain-integration test, not pruned): (1) repoint the untouched
   `document_renderer.test.ts` + `document_renderer.examples.test.ts` suites at the new module
-  and run green — the regression oracle; (2) THEN redistribute: prune monolith cases now
-  covered by the module nodes' own test files, retaining orchestration-level cases
-  (end-to-end contract, chain-walk parity, path/notification behavior) as the module's test
-  file; (3) DELETE `document_renderer.ts`, `document_renderer.interface.ts`,
-  `document_renderer.mock.ts`, `document_renderer.test.ts`,
-  `document_renderer.examples.test.ts`, and `verify_renderer.ts` (dev-only harness with
-  hardcoded local paths — dies with the monolith); (4) repoint every importer —
+  and run green — the regression oracle; (2) THEN RENAME both suites in full into the module
+  folder as `renderDocument.integration.test.ts` + `renderDocument.examples.integration.test.ts`,
+  keeping EVERY case — the persistent whole-chain guard (real siblings, only DB/storage mocked)
+  that fails the instant a future edit mis-wires the orchestrator; the siblings' own unit tests
+  add part-in-isolation coverage but never replace these end-to-end cases; ALSO author a lean
+  `renderDocument.test.ts` unit tier (four siblings mocked) pinning delegation / order /
+  error-passthrough / persist-notify wiring; (3) DELETE ONLY `document_renderer.ts`,
+  `document_renderer.interface.ts`, `document_renderer.mock.ts`, and `verify_renderer.ts`
+  (dev-only harness with hardcoded local paths — dies with the monolith); the two `*.test.ts`
+  suites are renamed per step 2, not deleted; (4) repoint every importer —
   `dialectic-worker/index.ts:41` (import repoint = the composition root's SECOND enumerated
   touch), `processRenderJob.ts:5`, `dialectic.interface.ts:8`,
   `createJobContext/JobContext.interface.ts:33`, `createJobContext/JobContext.mock.ts:9`,
@@ -664,13 +670,15 @@ TYPE OWNERSHIP (module-first; owner file → landing node):
     is required so this function can independently re-verify dedup layer 1 — compressPrompt's
     own candidate-exclusion query is a coarser, earlier check subject to a race against
     sibling jobs; this function recomputes the victim's canonical path and re-checks)
-  - Params `{ dbClient, parentJob: DialecticJobRow, sessionId, projectId, stageSlug, targetKey,
+  - Params `{ dbClient, parentJob: DialecticJobRow, sessionId, projectId,
+    stageSlug: DialecticStageSlug, targetKey: ModelContributionFileTypes,
     iterationNumber, modelId, walletId, modelConfig, tokenizerDeps }`
     (`stageSlug`/`targetKey` describe the CONSUMING stage/schema — the compression target;
     `modelId`/`walletId` are the parent's own, propagated to every child; `parentJob` supplies
     `parent_job_id`, `is_test_job`, and `user_id` for the child rows)
   - Payload `{ victim: { mode: CompressionMode, content, sourceType: CompressionSourceType,
-    sourceId?, documentKey?, docType?, sourceStageSlug? } }` — `sourceId`/`documentKey` are
+    sourceId?, documentKey?: FileType, docType?: ModelContributionFileTypes,
+    sourceStageSlug?: DialecticStageSlug } }` — `sourceId`/`documentKey` are
     each optional because exactly one is required per `sourceType` (`'contribution'|'resource'`
     require `documentKey`; `'feedback'|'history'` require `sourceId`), validated as an explicit
     branch, never an OR-fallback (matches the `path_constructor.ts` rule). ADDITIONALLY
@@ -682,9 +690,11 @@ TYPE OWNERSHIP (module-first; owner file → landing node):
   - Return `{ createdCount } | { error, retriable }`; bound form `BoundenqueueCompressJobsFn(params, payload)`.
 * `DialecticCompressJobPayload` (owned by `enqueueCompressJobs.interface.ts`, landed by the
   enqueueCompressJobs node):
-  `{ job_type:'COMPRESS', sessionId, projectId, stageSlug, targetKey, iterationNumber,
-  model_id (parent's), mode: CompressionMode, content, sourceType, sourceId?, documentKey?,
-  docType?, sourceStageSlug?, chunk_index?, chunk_total?, walletId, user_id }` — `chunk_index`/
+  `{ job_type:'COMPRESS', sessionId, projectId, stageSlug: DialecticStageSlug,
+  targetKey: ModelContributionFileTypes, iterationNumber, model_id (parent's),
+  mode: CompressionMode, content, sourceType, sourceId?, documentKey?: FileType,
+  docType?: ModelContributionFileTypes, sourceStageSlug?: DialecticStageSlug,
+  chunk_index?, chunk_total?, walletId, user_id }` — `chunk_index`/
   `chunk_total` are optional (present only for map-reduce chunk children); `mode:'json'`
   requires `documentKey` + `docType` + `sourceStageSlug` (template identity for WS-B save-time
   rendering; enforced by `isDialecticCompressJobPayload`); `content` is the
@@ -756,12 +766,18 @@ Crib hazards (verified against source):
 relocation node; the workplan author copies the relevant rows into each node so the
 implementer is told exactly what goes where — nothing is left to implementer judgment)
 
-Dispositions: **MOVE(module)** — the case's assertions are recreated against the module's
-DIRECT API in that module node's own test file (authored at module-node time, BEFORE the
-relocation node); the original monolith case is pruned by the relocation node only AFTER the
-oracle run. **RETAIN** — the case survives as the relocated `renderDocument` module's test,
-import repoint only (orchestration-level behavior exercised through the unchanged public
-signature). Line numbers reference the current `document_renderer.test.ts` baseline.
+Dispositions (revised 2026-07-21 — the full monolith suite is RETAINED, not pruned): every
+baseline case is kept and repointed into the persistent `renderDocument.integration.test.ts`
+(real siblings, only DB/storage mocked) — the chain-level regression guard that fails the
+moment a future edit mis-wires the orchestrator. The MOVE/RETAIN label now records ONLY
+whether a case ALSO gains direct isolation coverage, not whether it is deleted (nothing is):
+**MOVE(module)** — the case's assertions are ADDITIONALLY recreated against that module's
+DIRECT API in the module node's own unit `.test.ts` (authored at module-node time, BEFORE the
+relocation node) — part-in-isolation coverage, additive to (never a replacement for) the
+retained integration case; the intentional duplication tests a different layer (the part in
+isolation vs the part as wired by the orchestrator). **RETAIN** — pure orchestration behavior
+with no sibling-level equivalent; it lives ONLY in the integration suite. Line numbers
+reference the current `document_renderer.test.ts` baseline.
 
 `Deno.test("DocumentRenderer - end-to-end contract (skeleton)")` (:104)
 | t.step (line) | Disposition |
@@ -828,7 +844,9 @@ rendering patterns")` (:451), all four t.steps (:457 system_architecture flat/st
 features, :1019 feature_spec per-item) | MOVE(renderStructuredDocument) — pure
 data-pattern→markdown fixtures; becomes `renderStructuredDocument`'s examples test file.
 
-Tally: 10 RETAIN (the relocated `renderDocument` module's test file), 9 MOVE
+Tally: 10 RETAIN (orchestration-only — integration-suite exclusive), 9 MOVE
 assembleContributionChain, 13 MOVE mergeChunkContent, 4 MOVE loadDocumentTemplate, 7 + 4
-examples MOVE renderStructuredDocument. Every one of the 37 baseline cases is assigned; the
-relocation node's prune step deletes exactly the MOVE rows and nothing else.
+examples MOVE renderStructuredDocument. Every baseline case is RETAINED in
+`renderDocument.integration.test.ts`; the MOVE rows ADDITIONALLY gain a direct isolation copy
+in their sibling's unit test. There is NO prune step — the relocation node repoints and
+renames the monolith suite in full, it does not delete cases from it.

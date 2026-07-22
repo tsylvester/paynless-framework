@@ -11,6 +11,7 @@ import {
   buildenqueueCompressJobsDeps,
   buildenqueueCompressJobsParams,
   buildenqueueCompressJobsPayload,
+  invalidateEnqueueCompressJobsPayload
 } from "./enqueueCompressJobs.mock.ts";
 import { CompressJobValidationError } from "./enqueueCompressJobs.interface.ts";
 
@@ -165,9 +166,6 @@ Deno.test("enqueueCompressJobs: over-budget victim splits into text-mode chunks 
         mode: "json",
         content: "some content that is over budget",
         sourceType: "contribution",
-        documentKey: "business_case",
-        docType: "business_case",
-        sourceStageSlug: "THESIS",
       },
     });
 
@@ -327,7 +325,7 @@ Deno.test("enqueueCompressJobs: contribution victim missing documentKey returns 
     const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
     const deps = buildenqueueCompressJobsDeps();
     const params = buildenqueueCompressJobsParams({ dbClient });
-    const payload = buildenqueueCompressJobsPayload({
+    const basePayload = buildenqueueCompressJobsPayload({
       victim: {
         mode: "text",
         content: "some content",
@@ -335,8 +333,15 @@ Deno.test("enqueueCompressJobs: contribution victim missing documentKey returns 
         sourceId: "source-1",
       },
     });
+    const invalidVictim: unknown = {
+      ...basePayload.victim,
+      documentKey: null,
+    };
+    const invalidPayload: unknown = invalidateEnqueueCompressJobsPayload({
+      victim: invalidVictim,
+    });
 
-    const result = await enqueueCompressJobs(deps, params, payload);
+    const result = await enqueueCompressJobs(deps, params, invalidPayload);
 
     assertEquals("error" in result, true);
     if ("error" in result) {

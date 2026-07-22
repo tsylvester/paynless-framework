@@ -13,6 +13,7 @@ import {
   isCompressedContextFileType,
   isCompressionSourceType,
   isCompressionMode,
+  isDialecticStageSlug,
 } from './type_guards.file_manager.ts'
 import {
   CanonicalPathParams,
@@ -20,6 +21,7 @@ import {
   ModelContributionUploadContext,
   ResourceUploadContext,
   UserFeedbackUploadContext,
+  DialecticStageSlug,
 } from '../../types/file_manager.types.ts'
 import { Buffer } from 'https://deno.land/std@0.177.0/node/buffer.ts'
 
@@ -440,4 +442,23 @@ Deno.test('Type Guard: isResourceFileType recognizes CompressedContext', () => {
 
 Deno.test('Type Guard: isFileType recognizes compressed_context', () => {
     assert(isFileType('compressed_context'));
+});
+
+Deno.test('Type Guard: isDialecticStageSlug', async (t) => {
+    await t.step('returns true for all DialecticStageSlug values', () => {
+        assert(isDialecticStageSlug(DialecticStageSlug.Thesis));
+        assert(isDialecticStageSlug(DialecticStageSlug.Antithesis));
+        assert(isDialecticStageSlug(DialecticStageSlug.Synthesis));
+        assert(isDialecticStageSlug(DialecticStageSlug.Parenthesis));
+        assert(isDialecticStageSlug(DialecticStageSlug.Paralysis));
+    });
+
+    await t.step('returns false for invalid strings and non-strings', () => {
+        assert(!isDialecticStageSlug('foo'));
+        assert(!isDialecticStageSlug(null));
+        assert(!isDialecticStageSlug(undefined));
+        assert(!isDialecticStageSlug(123));
+        assert(!isDialecticStageSlug({}));
+        assert(!isDialecticStageSlug([]));
+    });
 });

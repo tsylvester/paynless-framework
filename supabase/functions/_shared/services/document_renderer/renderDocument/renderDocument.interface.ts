@@ -1,10 +1,9 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
-import type { Database } from "../../types_db.ts";
-import type { DownloadFromStorageFn } from "../supabase_storage_utils.ts";
-import type { IFileManager, PathContext } from "../types/file_manager.types.ts";
-import type { NotificationServiceType } from "../types/notification.service.types.ts";
-import type { FileType } from "../types/file_manager.types.ts";
-import type { ILogger } from "../types.ts";
+import type { Database } from "../../../../types_db.ts";
+import type { DownloadFromStorageFn } from "../../../supabase_storage_utils.ts";
+import type { FileType, IFileManager, PathContext } from "../../../types/file_manager.types.ts";
+import type { NotificationServiceType } from "../../../types/notification.service.types.ts";
+import type { ILogger } from "../../../types.ts";
 export type ContributionRowMinimal = {
     id: string;
     session_id: string;
@@ -38,13 +37,6 @@ export type RenderDocumentParams = {
 export type RenderDocumentResult = {
   pathContext: PathContext;
   renderedBytes: Uint8Array;
-};
-
-/** One downloaded chunk's text for the concatenate-then-sanitize/parse pipeline in renderDocument. */
-export type DownloadedChunkText = {
-  chunkId: string;
-  text: string;
-  rawJsonPath: string;
 };
 
 export interface DocumentRendererDeps {

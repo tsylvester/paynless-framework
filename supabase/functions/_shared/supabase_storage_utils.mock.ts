@@ -3,8 +3,9 @@ import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 
 /**
  * Configuration for the mock download function's behavior.
- * You can specify one of three modes:
+ * You can specify one of four modes:
  * - 'success': The mock will successfully return the provided ArrayBuffer.
+ * - 'pathKeyed': The mock will return the ArrayBuffer mapped to the requested path.
  * - 'error': The mock will return null data and the provided Error object.
  * - 'empty': The mock will return null data and a generic "No data" error.
  */
@@ -12,6 +13,11 @@ export type MockDownloadConfig =
   | {
       mode: 'success';
       data: ArrayBuffer;
+      mimeType?: string;
+    }
+  | {
+      mode: 'pathKeyed';
+      pathToData: Record<string, ArrayBuffer>;
       mimeType?: string;
     }
   | {
@@ -41,9 +47,23 @@ export function createMockDownloadFromStorage(
       case 'success':
         return Promise.resolve({
           data: config.data,
-          mimeType: config.mimeType || 'application/octet-stream',
+          mimeType: config.mimeType,
           error: null,
         });
+      case 'pathKeyed': {
+        const data = config.pathToData[_path];
+        if (data === undefined) {
+          return Promise.resolve({
+            data: null,
+            error: new Error(`No mock data configured for path: ${_path}`),
+          });
+        }
+        return Promise.resolve({
+          data,
+          mimeType: config.mimeType,
+          error: null,
+        });
+      }
       case 'error':
         return Promise.resolve({
           data: null,

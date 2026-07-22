@@ -1,8 +1,17 @@
 import {
   isCompressionMode,
   isCompressionSourceType,
+  isFileType,
+  isModelContributionFileType,
 } from "../../_shared/utils/type-guards/type_guards.file_manager.ts";
-import { isRecord } from "../../_shared/utils/type-guards/type_guards.common.ts";
+import {
+  isLoggerShape,
+  isNonEmptyString,
+  isNonNegativeInteger,
+  isRecord,
+  isSupabaseClientShape,
+} from "../../_shared/utils/type-guards/type_guards.common.ts";
+import { isDialecticStageSlug } from "../enqueueRenderJob/enqueueRenderJob.guards.ts";
 import {
   CompressJobEnqueueError,
   CompressJobValidationError,
@@ -13,28 +22,6 @@ import {
   enqueueCompressJobsSuccessReturn,
   type DialecticCompressJobPayload,
 } from "./enqueueCompressJobs.interface.ts";
-
-function isSupabaseClientShape(value: unknown): value is { from: Function } {
-  return isRecord(value) && typeof value.from === "function";
-}
-
-function isLoggerShape(value: unknown): value is { debug: Function; info: Function; warn: Function; error: Function } {
-  return (
-    isRecord(value) &&
-    typeof value.debug === "function" &&
-    typeof value.info === "function" &&
-    typeof value.warn === "function" &&
-    typeof value.error === "function"
-  );
-}
-
-function isNonEmptyString(value: unknown): value is string {
-  return typeof value === "string" && value !== "";
-}
-
-function isNonNegativeInteger(value: unknown): value is number {
-  return typeof value === "number" && Number.isInteger(value) && value >= 0;
-}
 
 export function isDialecticCompressJobPayload(value: unknown): value is DialecticCompressJobPayload {
   if (!isRecord(value)) {
@@ -70,10 +57,10 @@ export function isDialecticCompressJobPayload(value: unknown): value is Dialecti
   if (!isNonEmptyString(value.projectId)) {
     return false;
   }
-  if (!isNonEmptyString(value.stageSlug)) {
+  if (!isDialecticStageSlug(value.stageSlug)) {
     return false;
   }
-  if (!isNonEmptyString(value.targetKey)) {
+  if (!isModelContributionFileType(value.targetKey)) {
     return false;
   }
   if (!isNonNegativeInteger(value.iterationNumber)) {
@@ -99,7 +86,7 @@ export function isDialecticCompressJobPayload(value: unknown): value is Dialecti
   }
 
   if (value.sourceType === "contribution" || value.sourceType === "resource") {
-    if (!isNonEmptyString(value.documentKey)) {
+    if (!isFileType(value.documentKey)) {
       return false;
     }
   } else if (value.sourceType === "feedback" || value.sourceType === "history") {
@@ -110,9 +97,9 @@ export function isDialecticCompressJobPayload(value: unknown): value is Dialecti
 
   if (value.mode === "json") {
     if (
-      !isNonEmptyString(value.documentKey) ||
-      !isNonEmptyString(value.docType) ||
-      !isNonEmptyString(value.sourceStageSlug)
+      !isFileType(value.documentKey) ||
+      !isModelContributionFileType(value.docType) ||
+      !isDialecticStageSlug(value.sourceStageSlug)
     ) {
       return false;
     }
@@ -150,7 +137,7 @@ export function isenqueueCompressJobsPayload(value: unknown): value is enqueueCo
   }
 
   if (victim.sourceType === "contribution" || victim.sourceType === "resource") {
-    if (!isNonEmptyString(victim.documentKey)) {
+    if (!isFileType(victim.documentKey)) {
       return false;
     }
   } else if (victim.sourceType === "feedback" || victim.sourceType === "history") {
@@ -161,9 +148,9 @@ export function isenqueueCompressJobsPayload(value: unknown): value is enqueueCo
 
   if (victim.mode === "json") {
     if (
-      !isNonEmptyString(victim.documentKey) ||
-      !isNonEmptyString(victim.docType) ||
-      !isNonEmptyString(victim.sourceStageSlug)
+      !isFileType(victim.documentKey) ||
+      !isModelContributionFileType(victim.docType) ||
+      !isDialecticStageSlug(victim.sourceStageSlug)
     ) {
       return false;
     }
@@ -242,10 +229,10 @@ export function isenqueueCompressJobsParams(value: unknown): value is enqueueCom
   if (!isNonEmptyString(value.projectId)) {
     return false;
   }
-  if (!isNonEmptyString(value.stageSlug)) {
+  if (!isDialecticStageSlug(value.stageSlug)) {
     return false;
   }
-  if (!isNonEmptyString(value.targetKey)) {
+  if (!isModelContributionFileType(value.targetKey)) {
     return false;
   }
   if (!isNonNegativeInteger(value.iterationNumber)) {

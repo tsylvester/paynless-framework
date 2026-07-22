@@ -4,6 +4,7 @@ import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import type { Database } from '../../types_db.ts';
 import { DialecticStageSlug } from '../../_shared/types/file_manager.types.ts';
 import { RenderJobEnqueueError, RenderJobValidationError } from '../../_shared/utils/errors.ts';
+import { TemplateResolutionError } from '../../_shared/utils/resolveTemplateFilename/resolveTemplateFilename.ts';
 import { isFileType, isModelContributionFileType } from '../../_shared/utils/type-guards/type_guards.file_manager.ts';
 import { isRecord } from '../../_shared/utils/type-guards/type_guards.common.ts';
 import type {
@@ -49,7 +50,7 @@ export function isEnqueueRenderJobDeps(value: unknown): value is EnqueueRenderJo
   if (!isRecord(value)) {
     return false;
   }
-  if (!('dbClient' in value) || !('logger' in value) || !('shouldEnqueueRenderJob' in value)) {
+  if (!('dbClient' in value) || !('logger' in value) || !('shouldEnqueueRenderJob' in value) || !('resolveTemplateFilename' in value)) {
     return false;
   }
   if (!isSupabaseClientShape(value.dbClient)) {
@@ -59,6 +60,9 @@ export function isEnqueueRenderJobDeps(value: unknown): value is EnqueueRenderJo
     return false;
   }
   if (typeof value.shouldEnqueueRenderJob !== 'function') {
+    return false;
+  }
+  if (typeof value.resolveTemplateFilename !== 'function') {
     return false;
   }
   return true;
@@ -199,5 +203,5 @@ export function isEnqueueRenderJobErrorReturn(value: unknown): value is EnqueueR
   if (typeof value.retriable !== 'boolean') {
     return false;
   }
-  return err instanceof RenderJobValidationError || err instanceof RenderJobEnqueueError;
+  return err instanceof RenderJobValidationError || err instanceof RenderJobEnqueueError || err instanceof TemplateResolutionError;
 }

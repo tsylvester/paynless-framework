@@ -8,6 +8,10 @@ import { LangchainTextSplitter } from "../../_shared/utils/text_splitter.ts";
 import { constructStoragePath } from "../../_shared/utils/path_constructor.ts";
 import { createMockSupabaseClient } from "../../_shared/supabase.mock.ts";
 import {
+  FileType,
+  DialecticStageSlug,
+} from "../../_shared/types/file_manager.types.ts";
+import {
   createMockDialecticExecuteJobPayload,
   createMockJobRow,
 } from "../saveResponse/saveResponse.mock.ts";
@@ -102,8 +106,8 @@ export function buildenqueueCompressJobsParams(
     parentJob,
     sessionId: "session-1",
     projectId: "project-1",
-    stageSlug: "THESIS",
-    targetKey: "business_case",
+    stageSlug: DialecticStageSlug.Thesis,
+    targetKey: FileType.business_case,
     iterationNumber: 1,
     modelId: "model-1",
     walletId: "wallet-1",
@@ -163,7 +167,9 @@ export function buildenqueueCompressJobsPayload(
       mode: "text",
       content: "some content",
       sourceType: "contribution",
-      documentKey: "business_case",
+      documentKey: FileType.business_case,
+      docType: FileType.business_case,
+      sourceStageSlug: DialecticStageSlug.Thesis,
     },
   };
   if (!overrides) {
@@ -171,7 +177,7 @@ export function buildenqueueCompressJobsPayload(
   }
   return {
     victim: overrides.victim !== undefined && overrides.victim !== null
-      ? overrides.victim
+      ? { ...base.victim, ...overrides.victim }
       : base.victim,
   };
 }
@@ -183,14 +189,16 @@ export function buildDialecticCompressJobPayload(
     job_type: "COMPRESS",
     sessionId: "session-1",
     projectId: "project-1",
-    stageSlug: "THESIS",
-    targetKey: "business_case",
+    stageSlug: DialecticStageSlug.Thesis,
+    targetKey: FileType.business_case,
     iterationNumber: 1,
     model_id: "model-1",
     mode: "text",
     content: "some content",
     sourceType: "contribution",
-    documentKey: "business_case",
+    documentKey: FileType.business_case,
+    docType: FileType.business_case,
+    sourceStageSlug: DialecticStageSlug.Thesis,
     walletId: "wallet-1",
     user_id: "user-1",
   };
@@ -344,23 +352,52 @@ export function buildenqueueCompressJobsErrorReturn(
   };
 }
 
-export function mockEnqueueCompressJobsFn(options?: {
-  result?: enqueueCompressJobsReturn;
-  handler?: enqueueCompressJobsFn;
-}): enqueueCompressJobsFn {
-  return async (
-    deps: enqueueCompressJobsDeps,
-    params: enqueueCompressJobsParams,
-    payload: enqueueCompressJobsPayload,
-  ): Promise<enqueueCompressJobsReturn> => {
-    if (options?.handler !== undefined) {
-      return await options.handler(deps, params, payload);
-    }
-    if (options?.result !== undefined) {
-      return options.result;
-    }
-    return buildenqueueCompressJobsSuccessReturn();
-  };
+export type enqueueCompressJobsDepsCorruptions = { [K in keyof enqueueCompressJobsDeps]?: unknown };
+
+export function invalidateEnqueueCompressJobsDeps(
+  corruptions: enqueueCompressJobsDepsCorruptions,
+): unknown {
+  return { ...buildenqueueCompressJobsDeps(), ...corruptions };
+}
+
+export type enqueueCompressJobsParamsCorruptions = { [K in keyof enqueueCompressJobsParams]?: unknown };
+
+export function invalidateEnqueueCompressJobsParams(
+  corruptions: enqueueCompressJobsParamsCorruptions,
+): unknown {
+  return { ...buildenqueueCompressJobsParams(), ...corruptions };
+}
+
+export type enqueueCompressJobsPayloadCorruptions = { [K in keyof enqueueCompressJobsPayload]?: unknown };
+
+export function invalidateEnqueueCompressJobsPayload(
+  corruptions: enqueueCompressJobsPayloadCorruptions,
+): unknown {
+  return { ...buildenqueueCompressJobsPayload(), ...corruptions };
+}
+
+export type DialecticCompressJobPayloadCorruptions = { [K in keyof DialecticCompressJobPayload]?: unknown };
+
+export function invalidateDialecticCompressJobPayload(
+  corruptions: DialecticCompressJobPayloadCorruptions,
+): unknown {
+  return { ...buildDialecticCompressJobPayload(), ...corruptions };
+}
+
+export type enqueueCompressJobsSuccessReturnCorruptions = { [K in keyof enqueueCompressJobsSuccessReturn]?: unknown };
+
+export function invalidateEnqueueCompressJobsSuccessReturn(
+  corruptions: enqueueCompressJobsSuccessReturnCorruptions,
+): unknown {
+  return { ...buildenqueueCompressJobsSuccessReturn(), ...corruptions };
+}
+
+export type enqueueCompressJobsErrorReturnCorruptions = { [K in keyof enqueueCompressJobsErrorReturn]?: unknown };
+
+export function invalidateEnqueueCompressJobsErrorReturn(
+  corruptions: enqueueCompressJobsErrorReturnCorruptions,
+): unknown {
+  return { ...buildenqueueCompressJobsErrorReturn(), ...corruptions };
 }
 
 export function mockBoundenqueueCompressJobsFn(options?: {

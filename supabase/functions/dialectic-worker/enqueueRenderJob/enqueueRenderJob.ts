@@ -28,7 +28,7 @@ export async function enqueueRenderJob(
   params: EnqueueRenderJobParams,
   payload: EnqueueRenderJobPayload,
 ): Promise<EnqueueRenderJobReturn> {
-  const { dbClient, logger, shouldEnqueueRenderJob } = deps;
+  const { dbClient, logger, shouldEnqueueRenderJob, resolveTemplateFilename } = deps;
   const {
     jobId,
     sessionId,
@@ -133,134 +133,16 @@ export async function enqueueRenderJob(
   }
   const sourceContributionIdStrict: string = payload.contributionId;
 
-  let templateFilename: string | undefined = undefined;
+  const templateResult = await resolveTemplateFilename(
+    { dbClient },
+    { stageSlug, outputType, documentKey: documentKeyAsFileType },
+  );
 
-  try {
-    const { data: stageData, error: stageError } = await dbClient
-      .from("dialectic_stages")
-      .select("active_recipe_instance_id")
-      .eq("slug", stageSlug)
-      .single();
-
-    if (stageError || !stageData) {
-      throw new RenderJobValidationError(
-        `Failed to query stage for template_filename extraction: ${stageError?.message || "Stage not found"}`,
-      );
-    }
-    if (!stageData.active_recipe_instance_id) {
-      throw new RenderJobValidationError(
-        `Stage '${stageSlug}' has no active recipe instance`,
-      );
-    }
-
-    const { data: instance, error: instanceError } = await dbClient
-      .from("dialectic_stage_recipe_instances")
-      .select("*")
-      .eq("id", stageData.active_recipe_instance_id)
-      .single();
-
-    if (instanceError || !instance) {
-      throw new RenderJobValidationError(
-        `Failed to query recipe instance for template_filename extraction: ${instanceError?.message || "Instance not found"}`,
-      );
-    }
-
-    let steps: unknown[] = [];
-
-    if (instance.is_cloned === true) {
-      const { data: stepRows, error: stepErr } = await dbClient
-        .from("dialectic_stage_recipe_steps")
-        .select("*")
-        .eq("instance_id", instance.id);
-
-      if (stepErr || !stepRows || stepRows.length === 0) {
-        throw new RenderJobValidationError(
-          `Failed to query cloned recipe steps for template_filename extraction: ${stepErr?.message || "Steps not found"}`,
-        );
-      }
-
-      steps = stepRows;
-    } else {
-      const { data: stepRows, error: stepErr } = await dbClient
-        .from("dialectic_recipe_template_steps")
-        .select("*")
-        .eq("template_id", instance.template_id);
-
-      if (stepErr || !stepRows || stepRows.length === 0) {
-        throw new RenderJobValidationError(
-          `Failed to query template recipe steps for template_filename extraction: ${stepErr?.message || "Steps not found"}`,
-        );
-      }
-
-      steps = stepRows;
-    }
-
-    const matchingStep: unknown = steps.find((step) => {
-      if (!isRecord(step)) {
-        return false;
-      }
-      return step.output_type === outputType;
-    });
-
-    if (!matchingStep || !isRecord(matchingStep)) {
-      throw new RenderJobValidationError(
-        `No recipe step found with output_type '${outputType}' for stage '${stageSlug}'`,
-      );
-    }
-
-    const outputsRequired: unknown = matchingStep.outputs_required;
-    if (!outputsRequired || !isRecord(outputsRequired)) {
-      throw new RenderJobValidationError(
-        `Recipe step with output_type '${outputType}' has missing or invalid outputs_required`,
-      );
-    }
-
-    const filesToGenerate: unknown = outputsRequired.files_to_generate;
-    if (!Array.isArray(filesToGenerate) || filesToGenerate.length === 0) {
-      throw new RenderJobValidationError(
-        `Recipe step with output_type '${outputType}' has missing or empty files_to_generate array`,
-      );
-    }
-
-    const matchingFileEntry: unknown = filesToGenerate.find((entry) => {
-      if (!isRecord(entry)) {
-        return false;
-      }
-      return entry.from_document_key === documentKeyAsFileType;
-    });
-
-    if (!matchingFileEntry || !isRecord(matchingFileEntry)) {
-      throw new RenderJobValidationError(
-        `No files_to_generate entry found with from_document_key '${documentKeyAsFileType}' in recipe step with output_type '${outputType}'`,
-      );
-    }
-
-    const extractedTemplateFilename: unknown = matchingFileEntry.template_filename;
-    if (typeof extractedTemplateFilename !== "string" || extractedTemplateFilename.trim() === "") {
-      throw new RenderJobValidationError(
-        `template_filename is missing or invalid in files_to_generate entry for from_document_key '${documentKeyAsFileType}'`,
-      );
-    }
-
-    templateFilename = extractedTemplateFilename.trim();
-  } catch (error: unknown) {
-    if (error instanceof RenderJobValidationError) {
-      return { error, retriable: false };
-    }
-    const message: string =
-      error instanceof Error ? error.message : "Unknown error";
-    const wrapped: RenderJobValidationError = new RenderJobValidationError(
-      `Failed to extract template_filename from recipe step: ${message}`,
-    );
-    return { error: wrapped, retriable: false };
+  if ("error" in templateResult) {
+    return templateResult;
   }
 
-  if (!templateFilename || templateFilename.trim() === "") {
-    const validationErr: RenderJobValidationError = new RenderJobValidationError(
-      "template_filename must be a non-empty string",
-    );
-    return { error: validationErr, retriable: false };
-  }
+  const { templateFilename } = templateResult;
 
   const renderPayload: DialecticRenderJobPayload = {
     idempotencyKey: `${jobId}_render`,

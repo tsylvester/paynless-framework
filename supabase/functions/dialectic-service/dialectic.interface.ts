@@ -5,7 +5,7 @@ import type {
 	AssembledPrompt,
 	IPromptAssembler,
 } from "../_shared/prompt-assembler/prompt-assembler.interface.ts";
-import type { IDocumentRenderer } from "../_shared/services/document_renderer.interface.ts";
+import type { IDocumentRenderer } from "../_shared/services/document_renderer/renderDocument/renderDocument.interface.ts";
 import type {
 	IEmbeddingClient,
 	IIndexingService,

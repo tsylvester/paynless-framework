@@ -1,23 +1,23 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { Buffer } from "https://deno.land/std@0.177.0/node/buffer.ts";
-import type { Database } from "../../types_db.ts";
-import { FileType, type PathContext } from "../types/file_manager.types.ts";
-import { deconstructStoragePath } from "../utils/path_deconstructor.ts";
-import { extractSourceGroupFragment } from "../utils/path_utils.ts";
+import type { Database } from "../../../../types_db.ts";
+import { FileType, type PathContext } from "../../../types/file_manager.types.ts";
+import { deconstructStoragePath } from "../../../utils/path_deconstructor.ts";
+import { extractSourceGroupFragment } from "../../../utils/path_utils.ts";
 import type {
   RenderDocumentParams,
   RenderDocumentResult,
   DocumentRendererDeps,
-  DownloadedChunkText,
-} from "./document_renderer.interface.ts";
-import type { ResourceUploadContext } from "../types/file_manager.types.ts";
-import type { DownloadFromStorageFn } from "../supabase_storage_utils.ts";
-import type { DialecticContributionRow } from "../../dialectic-service/dialectic.interface.ts";
-import { renderPrompt } from "../prompt-renderer.ts";
-import { isRecord } from "../utils/type_guards.ts";
-import { sanitizeJsonContent } from "../utils/jsonSanitizer/jsonSanitizer.ts";
-import { isJsonSanitizationResult } from "../utils/jsonSanitizer/jsonSanitizer.guard.ts";
-import type { JsonSanitizationResult } from "../utils/jsonSanitizer/jsonSanitizer.interface.ts";
+} from "./renderDocument.interface.ts";
+import type { DownloadedChunkText } from "../mergeChunkContent/mergeChunkContent.interface.ts"
+import type { ResourceUploadContext } from "../../../types/file_manager.types.ts";
+import type { DownloadFromStorageFn } from "../../../supabase_storage_utils.ts";
+import type { DialecticContributionRow } from "../../../../dialectic-service/dialectic.interface.ts";
+import { renderPrompt } from "../../../prompt-renderer.ts";
+import { isRecord } from "../../../utils/type_guards.ts";
+import { sanitizeJsonContent } from "../../../utils/jsonSanitizer/jsonSanitizer.ts";
+import { isJsonSanitizationResult } from "../../../utils/jsonSanitizer/jsonSanitizer.guard.ts";
+import type { JsonSanitizationResult } from "../../../utils/jsonSanitizer/jsonSanitizer.interface.ts";
  
 function titleFromDocumentKey(documentKey: string): string {
   const withSpaces = documentKey.replace(/_/g, " ");

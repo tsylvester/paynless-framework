@@ -5,8 +5,8 @@
 // Verification script - calls the ACTUAL renderDocument function
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import type { Database } from "../../types_db.ts";
-import { renderDocument } from "./document_renderer.ts";
-import type { DocumentRendererDeps, RenderDocumentParams, ContributionRowMinimal } from "./document_renderer.interface.ts";
+import { renderDocument } from "./document_renderer/renderDocument/renderDocument.ts";
+import type { DocumentRendererDeps, RenderDocumentParams, ContributionRowMinimal } from "./document_renderer/renderDocument/renderDocument.interface.ts";
 import type { IFileManager, FileManagerResponse } from "../types/file_manager.types.ts";
 import { FileType } from "../types/file_manager.types.ts";
 import type { NotificationServiceType } from "../types/notification.service.types.ts";
@@ -133,6 +133,7 @@ const notificationService: NotificationServiceType = {
   sendContributionGenerationContinuedEvent: () => Promise.resolve(),
   sendContributionGenerationFailedEvent: () => Promise.resolve(),
   sendJobNotificationEvent: () => Promise.resolve(),
+  sendContributionGenerationPausedNsfEvent: () => Promise.resolve(),
 };
 
 // Properly typed Logger

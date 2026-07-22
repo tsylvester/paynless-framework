@@ -3,6 +3,7 @@ import { spy, type Spy } from 'https://deno.land/std@0.218.2/testing/mock.ts';
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import type { Database } from '../../types_db.ts';
 import type { ServiceError } from '../types.ts';
+import { FileType } from '../types/file_manager.types.ts';
 import type {
   FileRecord,
   UploadContext,
@@ -10,6 +11,41 @@ import type {
   FileManagerResponse,
 } from '../types/file_manager.types.ts';
 import type { ContextForDocument } from '../../dialectic-service/dialectic.interface.ts';
+
+export type FileRecordOverrides = Partial<Database['public']['Tables']['dialectic_project_resources']['Row']>;
+
+export type FileRecordCorruptions = {
+  [K in keyof Database['public']['Tables']['dialectic_project_resources']['Row']]?: unknown;
+};
+
+export function buildFileRecord(overrides?: FileRecordOverrides): FileRecord {
+  const now = new Date().toISOString();
+  const base: Database['public']['Tables']['dialectic_project_resources']['Row'] = {
+    id: 'resource-id-1',
+    project_id: 'project_123',
+    session_id: 'session_abc',
+    user_id: 'user_123',
+    stage_slug: 'thesis',
+    iteration_number: 1,
+    resource_type: FileType.RenderedDocument,
+    file_name: 'rendered_document.md',
+    mime_type: 'text/markdown',
+    size_bytes: 100,
+    storage_bucket: 'content',
+    storage_path: 'project_123/session_abc/iteration_1/thesis/documents',
+    resource_description: { type: FileType.RenderedDocument },
+    source_contribution_id: null,
+    created_at: now,
+    updated_at: now,
+  };
+  return { ...base, ...overrides };
+}
+
+export function invalidateFileRecord(
+  corruptions: FileRecordCorruptions,
+): unknown {
+  return { ...buildFileRecord(), ...corruptions };
+}
 
 /**
  * A mock implementation of the IFileManager for testing purposes.

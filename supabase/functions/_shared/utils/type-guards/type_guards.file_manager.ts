@@ -3,6 +3,7 @@ import {
   FileType,
   CompressionSourceType,
   CompressionMode,
+  DialecticStageSlug,
   CanonicalPathParams,
   ModelContributionUploadContext,
   UserFeedbackUploadContext,
@@ -121,6 +122,18 @@ export function isCompressionSourceType(value: unknown): value is CompressionSou
 
 export function isCompressionMode(value: unknown): value is CompressionMode {
     return typeof value === 'string' && (value === 'json' || value === 'text');
+}
+
+export function isDialecticStageSlug(value: unknown): value is DialecticStageSlug {
+    if (typeof value !== 'string') {
+        return false;
+    }
+    for (const slug of Object.values(DialecticStageSlug)) {
+        if (slug === value) {
+            return true;
+        }
+    }
+    return false;
 }
 
 // Build a compile-time enforced map of model contribution file types, then derive a Set
