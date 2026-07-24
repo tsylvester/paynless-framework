@@ -3,6 +3,9 @@ import type { Json } from "../../../types_db.ts";
 import type {
   CanonicalPathParams,
   ModelContributionFileTypes,
+  FileType,
+  CompressionSourceType,
+  DialecticStageSlug,
 } from "../../types/file_manager.types.ts";
 
 /**
@@ -48,4 +51,39 @@ export interface BuildUploadContextParams {
   targetContributionId: string | undefined;
   documentRelationships: Json | null;
   isIntermediate: boolean | undefined;
+}
+
+/**
+ * Pre-resolved inputs for assembling `ResourceUploadContext` (COMPRESS jobs).
+ * Every identity field is sourced 1:1 from `DialecticCompressJobPayload`.
+ */
+export interface BuildUploadContextResourceParams {
+  /** Project UUID from the COMPRESS job payload. */
+  projectId: string;
+  /** Which compressed artifact this context targets: raw JSON or rendered Markdown. */
+  storageFileType: FileType.CompressedContext | FileType.CompressedContextRawJson;
+  /** Session UUID from the COMPRESS job payload. */
+  sessionId: string;
+  /** Iteration number from the COMPRESS job payload. */
+  iterationNumber: number;
+  /** Stage slug for path construction (e.g., 'thesis', 'synthesis'). */
+  stageSlug: DialecticStageSlug;
+  /** The compression target's document key / file type (e.g., FileType.business_case). */
+  targetKey: ModelContributionFileTypes;
+  /** The victim's source discriminator: 'contribution' | 'resource' | 'feedback' | 'history'. */
+  sourceType: CompressionSourceType;
+  /** Required when sourceType is 'contribution' or 'resource'; undefined otherwise. */
+  documentKey: FileType | undefined;
+  /** Required when sourceType is 'feedback' or 'history'; undefined otherwise. */
+  sourceId: string | undefined;
+  /** Map-reduce chunk index (1-based); undefined when not a chunked job. */
+  chunkIndex: number | undefined;
+  /** Map-reduce chunk total; undefined when not a chunked job. */
+  chunkTotal: number | undefined;
+  /** The compressed content to persist (JSON string or rendered Markdown). */
+  contentForStorage: string;
+  /** The project owner's user UUID for storage registration. */
+  projectOwnerUserId: string;
+  /** Human-readable description for the resource record. */
+  description: string;
 }

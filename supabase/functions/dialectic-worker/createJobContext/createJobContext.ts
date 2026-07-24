@@ -73,6 +73,9 @@ export function createJobContext(params: JobContextParams): IJobContext {
 
         // From IRenderJobContext (RENDER-specific)
         documentRenderer: params.documentRenderer,
+        assembleContributionChain: params.assembleContributionChain,
+        loadDocumentTemplate: params.loadDocumentTemplate,
+        mergeChunkContent: params.mergeChunkContent,
 
         // From IJobContext (orchestration)
         prepareModelJob: params.prepareModelJob,
@@ -185,6 +188,9 @@ export function createRenderJobContext(root: IJobContext): IRenderJobContext {
 
         // RENDER-specific utilities
         documentRenderer: root.documentRenderer,
+        assembleContributionChain: root.assembleContributionChain,
+        loadDocumentTemplate: root.loadDocumentTemplate,
+        mergeChunkContent: root.mergeChunkContent,
     };
 }
 

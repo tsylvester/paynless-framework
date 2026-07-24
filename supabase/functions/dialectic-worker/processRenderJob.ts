@@ -2,7 +2,7 @@ import { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import { Database } from '../types_db.ts';
 import { isRecord, isDialecticRenderJobPayload } from '../_shared/utils/type_guards.ts';
 import { IRenderJobContext } from './createJobContext/JobContext.interface.ts';
-import { RenderDocumentParams, DocumentRendererDeps } from '../_shared/services/document_renderer.interface.ts';
+import { RenderDocumentParams, DocumentRendererDeps } from '../_shared/services/document_renderer/renderDocument/renderDocument.interface.ts';
 import { isFileType } from '../_shared/utils/type_guards.ts';
 import { isString, isNumber } from "node:util";
 import type {
@@ -10,6 +10,7 @@ import type {
   RenderChunkCompletedPayload,
   JobFailedPayload,
 } from '../_shared/types/notification.service.types.ts';
+import { isDialecticStageSlug } from "../_shared/utils/type-guards/type_guards.file_manager.ts";
 
 export async function processRenderJob(
   dbClient: SupabaseClient<Database>,
@@ -61,6 +62,11 @@ export async function processRenderJob(
     if(!isString(template_filename) || template_filename.trim() === '') {
       throw new Error('template_filename must be a non-empty string');
     }
+
+    if(!isDialecticStageSlug(stageSlug)) {
+      throw new Error('stageSlug must be a valid DialecticStageSlug');
+    }
+
     const params: RenderDocumentParams = {
       projectId,
       sessionId,
@@ -95,6 +101,9 @@ export async function processRenderJob(
       notificationService: ctx.notificationService,
       notifyUserId: projectOwnerUserId,
       logger: ctx.logger,
+      assembleContributionChain: ctx.assembleContributionChain,
+      loadDocumentTemplate: ctx.loadDocumentTemplate,
+      mergeChunkContent: ctx.mergeChunkContent,
     };
 
     ctx.logger.info('[processRenderJob] DEBUG: About to call renderDocument', { 

@@ -300,6 +300,7 @@ export function constructStoragePath(context: PathContext): ConstructedPath {
       return { storagePath: `${stageRootPath}/_work`, fileName };
     }
 
+    case FileType.CompressedContextRawJson:
     case FileType.CompressedContext: {
       const missingFields: string[] = [];
       if (!stageRootPath) missingFields.push('stageRootPath (projectId, sessionId, iteration, stageSlug)');
@@ -333,6 +334,9 @@ export function constructStoragePath(context: PathContext): ConstructedPath {
         : `source_${generateShortId(sourceId!)}`;
       const targetKeySanitized = sanitizeForPath(targetKey!);
       const chunkSuffix = chunkIndex !== undefined ? `_chunk_${chunkIndex}of${chunkTotal}` : '';
+      if (fileType === FileType.CompressedContextRawJson) {
+        return { storagePath: `${stageRootPath}/_work/raw_responses`, fileName: `${sourceBasename}_compressed_for_${targetKeySanitized}${chunkSuffix}_raw.json` };
+      }
       return { storagePath: `${stageRootPath}/_work`, fileName: `${sourceBasename}_compressed_for_${targetKeySanitized}${chunkSuffix}.md` };
     }
 

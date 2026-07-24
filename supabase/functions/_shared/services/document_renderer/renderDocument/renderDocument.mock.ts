@@ -1,9 +1,12 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
-import { FileType, type PathContext } from "../../../types/file_manager.types.ts";
+import { DialecticStageSlug, FileType, type PathContext } from "../../../types/file_manager.types.ts";
 import { MockLogger } from "../../../logger.mock.ts";
 import { createMockDownloadFromStorage } from "../../../supabase_storage_utils.mock.ts";
 import { MockFileManagerService } from "../../file_manager.mock.ts";
 import { mockNotificationService } from "../../../utils/notification.service.mock.ts";
+import { mockAssembleContributionChain } from "../assembleContributionChain/assembleContributionChain.provides.ts";
+import { mockLoadDocumentTemplate } from "../loadDocumentTemplate/loadDocumentTemplate.provides.ts";
+import { mockMergeChunkContent } from "../mergeChunkContent/mergeChunkContent.provides.ts";
 import type {
   ContributionRowMinimal,
   DocumentRendererDeps,
@@ -63,7 +66,7 @@ export function buildRenderDocumentParams(
     projectId: "project_123",
     sessionId: "session-abc",
     iterationNumber: 1,
-    stageSlug: "thesis",
+    stageSlug: DialecticStageSlug.Thesis,
     documentIdentity: "root-1",
     documentKey: FileType.business_case,
     sourceContributionId: "root-1",
@@ -128,6 +131,9 @@ export function buildDocumentRendererDeps(
     notificationService: mockNotificationService,
     notifyUserId: "user_123",
     logger: new MockLogger(),
+    assembleContributionChain: mockAssembleContributionChain,
+    loadDocumentTemplate: mockLoadDocumentTemplate,
+    mergeChunkContent: mockMergeChunkContent,
   };
   return overrides ? { ...base, ...overrides } : base;
 }

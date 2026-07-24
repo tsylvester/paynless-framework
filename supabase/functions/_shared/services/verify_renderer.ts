@@ -8,10 +8,13 @@ import type { Database } from "../../types_db.ts";
 import { renderDocument } from "./document_renderer/renderDocument/renderDocument.ts";
 import type { DocumentRendererDeps, RenderDocumentParams, ContributionRowMinimal } from "./document_renderer/renderDocument/renderDocument.interface.ts";
 import type { IFileManager, FileManagerResponse } from "../types/file_manager.types.ts";
-import { FileType } from "../types/file_manager.types.ts";
+import { DialecticStageSlug, FileType } from "../types/file_manager.types.ts";
 import type { NotificationServiceType } from "../types/notification.service.types.ts";
 import type { ILogger } from "../types.ts";
 import { createMockSupabaseClient, type MockSupabaseDataConfig } from "../supabase.mock.ts";
+import { assembleContributionChain } from "./document_renderer/assembleContributionChain/assembleContributionChain.ts";
+import { loadDocumentTemplate } from "./document_renderer/loadDocumentTemplate/loadDocumentTemplate.ts";
+import { mergeChunkContent } from "./document_renderer/mergeChunkContent/mergeChunkContent.ts";
 
 // Actual file paths
 const jsonPath = "I:/Downloads/google-gemini-2.5-flash_0_feature_spec_a0fc0d7d_raw.json";
@@ -150,13 +153,16 @@ const deps: DocumentRendererDeps = {
   notificationService,
   notifyUserId: "user_123",
   logger,
+  assembleContributionChain,
+  loadDocumentTemplate,
+  mergeChunkContent,
 };
 
 const params: RenderDocumentParams = {
   projectId: "project_123",
   sessionId,
   iterationNumber: 1,
-  stageSlug: "thesis",
+  stageSlug: DialecticStageSlug.Thesis,
   documentIdentity: rootId,
   documentKey: FileType.feature_spec,
   sourceContributionId: rootId,

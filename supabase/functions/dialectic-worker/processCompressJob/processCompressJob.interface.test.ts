@@ -9,6 +9,7 @@ import type {
     ProcessCompressJobReturn,
     ProcessCompressJobSuccessReturn,
 } from "./processCompressJob.interface.ts";
+import { FileType, DialecticStageSlug } from "../../_shared/types/file_manager.types.ts";
 
 Deno.test(
     "Contract: ProcessCompressJobDeps declares seven dependency keys",
@@ -46,14 +47,14 @@ Deno.test(
             job_type: "COMPRESS",
             sessionId: "session-1",
             projectId: "project-1",
-            stageSlug: "THESIS",
-            targetKey: "business_case",
+            stageSlug: DialecticStageSlug.Thesis,
+            targetKey: FileType.business_case,
             iterationNumber: 1,
             model_id: "model-1",
             mode: "text",
             content: "some content",
             sourceType: "contribution",
-            documentKey: "business_case",
+            documentKey: FileType.business_case,
             walletId: "wallet-1",
             user_id: "user-1",
         };

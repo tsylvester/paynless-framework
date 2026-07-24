@@ -6,11 +6,14 @@ import { downloadFromStorage } from "../../../supabase_storage_utils.ts";
 import { renderDocument } from "./renderDocument.ts";
 import type { ContributionRowMinimal, RenderDocumentParams, RenderDocumentResult } from "./renderDocument.interface.ts";
 import { buildFileRecord, MockFileManagerService } from "../../file_manager.mock.ts";
-import { FileType } from "../../../types/file_manager.types.ts";
+import { DialecticStageSlug, FileType } from "../../../types/file_manager.types.ts";
 import { mockNotificationService, resetMockNotificationService } from "../../../utils/notification.service.mock.ts";
 import { logger } from "../../../logger.ts";
 import { renderPrompt } from "../../../prompt-renderer.ts";
 import { isResourceContext } from "../../../utils/type-guards/type_guards.file_manager.ts";
+import { assembleContributionChain } from "../assembleContributionChain/assembleContributionChain.provides.ts";
+import { loadDocumentTemplate } from "../loadDocumentTemplate/loadDocumentTemplate.provides.ts";
+import { mergeChunkContent } from "../mergeChunkContent/mergeChunkContent.provides.ts";
 const REAL_THESIS_BUSINESS_CASE_TEMPLATE = Deno.readTextFileSync(
   new URL("../../../../../../docs/templates/thesis/thesis_business_case.md", import.meta.url),
 );
@@ -27,7 +30,7 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
     // End-state: renderer accepts explicit job signature and returns { pathContext, renderedBytes }
     const rootId = "root-1";
     const sessionId = "session_abc";
-    const stageSlug = "thesis";
+    const stageSlug: DialecticStageSlug= DialecticStageSlug.Thesis;
 
     const contributions: Array<Database['public']['Tables']['dialectic_contributions']['Row']> = [
       {
@@ -120,7 +123,10 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
         fileManager: mockFileManager, 
         notificationService: mockNotificationService, 
         notifyUserId: "user_123", 
-        logger: logger },
+        logger: logger,
+        assembleContributionChain,
+        loadDocumentTemplate,
+        mergeChunkContent },
       params,
     );
 
@@ -139,7 +145,7 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
 
 
   await t.step("renders chunks into markdown using a stage/file-type template (@templates)", async () => {
-    // Expectation: selects a template based on stageSlug or file type; fills with ordered content
+    // Expectation: selects a template based on stageSlug: DialecticStageSlugor file type; fills with ordered content
     // - Do not rely on file system templates directly in unit test; mock the template loader
     // - Resulting markdown is deterministic given the same chunk set
     const rootId = "root-contribution-id-2";
@@ -245,7 +251,7 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
       projectId: "project_123",
       sessionId,
       iterationNumber: 1,
-      stageSlug: "thesis",
+      stageSlug: DialecticStageSlug.Thesis,
       documentIdentity: rootId,
       documentKey: FileType.business_case,
       sourceContributionId: rootId,
@@ -264,6 +270,9 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
         notificationService: mockNotificationService, 
         notifyUserId: "user_123", 
         logger: logger,
+        assembleContributionChain,
+        loadDocumentTemplate,
+        mergeChunkContent,
       },
       params,
     );
@@ -281,12 +290,12 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
     // End-state: renderer calls fileManager.uploadAndRegisterFile once with a pathContext aligned to root identity
     const rootId = "root-render-1";
     const sessionId = "session_r1";
-    const stageSlug = "thesis";
+    const stageSlug: DialecticStageSlug = DialecticStageSlug.Thesis;
 
     const root: Database['public']['Tables']['dialectic_contributions']['Row'] = {
       id: rootId,
       session_id: sessionId,
-      stage: "THESIS",
+      stage: stageSlug,
       iteration_number: 1,
       storage_bucket: "content",
       storage_path: "project_123/session_abcd/iteration_1/thesis/documents",
@@ -383,6 +392,9 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
       notificationService: mockNotificationService, 
       notifyUserId: "user_123", 
       logger: logger,
+      assembleContributionChain,
+      loadDocumentTemplate,
+      mergeChunkContent,
     }, params);
 
     assert(fm.uploadAndRegisterFile.calls.length === 1);
@@ -415,7 +427,7 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
     // End-state: call deps.notificationService with signature { projectId, sessionId, iterationNumber, stageSlug, documentIdentity, latestRenderedResourceId }
     const rootId = "root-render-2";
     const sessionId = "session_r2";
-    const stageSlug = "thesis";
+    const stageSlug: DialecticStageSlug = DialecticStageSlug.Thesis;
     const expectedResourceId = "resource-id-render-2";
     const contributionsNotif: Array<Database['public']['Tables']['dialectic_contributions']['Row']> = [
       {
@@ -498,6 +510,9 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
       notificationService: mockNotificationService,
       notifyUserId: "user_123", 
       logger: logger,
+      assembleContributionChain,
+      loadDocumentTemplate,
+      mergeChunkContent,
     }, params);
 
     assert(mockNotificationService.sendJobNotificationEvent.calls.length === 1);
@@ -522,12 +537,12 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
     // - Adding a new continuation chunk → output includes the new body appended; path unchanged
     const rootId = "root-render-3";
     const sessionId = "session_r3";
-    const stageSlug = "thesis";
+    const stageSlug: DialecticStageSlug= DialecticStageSlug.Thesis;
 
     const root: Database['public']['Tables']['dialectic_contributions']['Row'] = {
       id: rootId,
       session_id: sessionId,
-      stage: "THESIS",
+      stage: stageSlug,
       iteration_number: 1,
       storage_bucket: "content",
       storage_path: "project_123/session_abcd/iteration_1/thesis/documents",
@@ -629,6 +644,9 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
         notificationService: mockNotificationService,
         notifyUserId: "user_123",
         logger: logger,
+        assembleContributionChain,
+        loadDocumentTemplate,
+        mergeChunkContent,
       }, paramsIdem);
 
     const rendered1 = new TextDecoder().decode(r1.renderedBytes);
@@ -641,6 +659,9 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
             notificationService: mockNotificationService,
             notifyUserId: "user_123",
             logger: logger,
+            assembleContributionChain,
+            loadDocumentTemplate,
+            mergeChunkContent,
           }, paramsIdem);
 
     const rendered2 = new TextDecoder().decode(r2.renderedBytes);
@@ -657,8 +678,11 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
             notificationService: mockNotificationService,
             notifyUserId: "user_123",
             logger: logger,
+            assembleContributionChain,
+            loadDocumentTemplate,
+            mergeChunkContent,
           }, paramsIdem);
-                    
+
     const rendered3 = new TextDecoder().decode(r3.renderedBytes);
     assert(rendered3.includes("C1 executive summary") && rendered3.includes("C2 executive summary") && rendered3.includes("C3 executive summary"), "rendered document should contain all three chunks");
 
@@ -680,7 +704,7 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
   await t.step("passes the originating contribution id to FileManager", async () => {
     const rootId = "root-contrib-123";
     const sessionId = "session_source_check";
-    const stageSlug = "thesis";
+    const stageSlug: DialecticStageSlug = DialecticStageSlug.Thesis;
 
     const contributions: Array<Database['public']['Tables']['dialectic_contributions']['Row']> = [
       {
@@ -784,6 +808,9 @@ Deno.test("DocumentRenderer - end-to-end contract (skeleton)", async (t) => {
         notificationService: mockNotificationService,
         notifyUserId: "user_123",
         logger: logger,
+        assembleContributionChain,
+        loadDocumentTemplate,
+        mergeChunkContent,
       },
       params,
     );
@@ -817,7 +844,7 @@ Deno.test("DocumentRenderer - JSON parsing and content extraction", async (t) =>
     // of uploadAndRegisterFile, silently ignoring errors.
     const rootId = "root-upload-error-test";
     const sessionId = "session_upload_error";
-    const stageSlug = "thesis";
+    const stageSlug: DialecticStageSlug = DialecticStageSlug.Thesis;
     const documentKey = FileType.business_case;
 
     const contributions: Array<Database['public']['Tables']['dialectic_contributions']['Row']> = [
@@ -932,6 +959,9 @@ Deno.test("DocumentRenderer - JSON parsing and content extraction", async (t) =>
           notificationService: mockNotificationService,
           notifyUserId: "user_123",
           logger: logger,
+          assembleContributionChain,
+          loadDocumentTemplate,
+          mergeChunkContent,
         },
         params,
       );
@@ -962,7 +992,7 @@ Deno.test("DocumentRenderer - correctly calls FileManagerService to save the ren
     await t.step("ensures uploadAndRegisterFile is called with correct data", async () => {
         const rootId = "root-save-correctly-1";
         const sessionId = "session_save_correctly";
-        const stageSlug = "thesis";
+        const stageSlug: DialecticStageSlug = DialecticStageSlug.Thesis;
         const documentKey = FileType.business_case;
 
         const contributions: Array<Database['public']['Tables']['dialectic_contributions']['Row']> = [
@@ -1047,6 +1077,9 @@ Deno.test("DocumentRenderer - correctly calls FileManagerService to save the ren
                 notificationService: mockNotificationService,
                 notifyUserId: "user_123",
                 logger: logger,
+                assembleContributionChain,
+                loadDocumentTemplate,
+                mergeChunkContent,
             },
             params,
         );
@@ -1082,7 +1115,7 @@ Deno.test("DocumentRenderer - PathContext includes sourceGroupFragment when base
     await t.step("PathContext includes sourceGroupFragment extracted from base chunk document_relationships.source_group", async () => {
         const rootId = "root-fragment-test-1";
         const sessionId = "session_fragment_test";
-        const stageSlug = "thesis";
+        const stageSlug: DialecticStageSlug = DialecticStageSlug.Thesis;
         const documentKey = FileType.business_case;
         const sourceGroup = "550e8400-e29b-41d4-a716-446655440000";
         const expectedFragment = "550e8400";
@@ -1172,6 +1205,9 @@ Deno.test("DocumentRenderer - PathContext includes sourceGroupFragment when base
                 notificationService: mockNotificationService,
                 notifyUserId: "user_123",
                 logger: logger,
+                assembleContributionChain,
+                loadDocumentTemplate,
+                mergeChunkContent,
             },
             params,
         );
@@ -1197,7 +1233,7 @@ Deno.test("DocumentRenderer - PathContext works without source_group", async (t)
     await t.step("PathContext does not include sourceGroupFragment when contribution lacks document_relationships.source_group", async () => {
         const rootId = "root-no-fragment-1";
         const sessionId = "session_no_fragment";
-        const stageSlug = "thesis";
+        const stageSlug: DialecticStageSlug = DialecticStageSlug.Thesis;
         const documentKey = FileType.business_case;
 
         const contributions: Array<Database['public']['Tables']['dialectic_contributions']['Row']> = [
@@ -1285,6 +1321,9 @@ Deno.test("DocumentRenderer - PathContext works without source_group", async (t)
                 notificationService: mockNotificationService,
                 notifyUserId: "user_123",
                 logger: logger,
+                assembleContributionChain,
+                loadDocumentTemplate,
+                mergeChunkContent,
             },
             params,
         );

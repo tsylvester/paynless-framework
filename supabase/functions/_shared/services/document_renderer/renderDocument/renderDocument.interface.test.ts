@@ -7,7 +7,10 @@ import {
   RenderDocumentFn,
   IDocumentRenderer,
 } from "./renderDocument.interface.ts";
-import { FileType, type PathContext } from "../../../types/file_manager.types.ts";
+import { DialecticStageSlug, FileType, type PathContext } from "../../../types/file_manager.types.ts";
+import type { AssembleContributionChainFn } from "../assembleContributionChain/assembleContributionChain.provides.ts";
+import type { LoadDocumentTemplateFn } from "../loadDocumentTemplate/loadDocumentTemplate.provides.ts";
+import type { MergeChunkContentFn } from "../mergeChunkContent/mergeChunkContent.provides.ts";
 
 Deno.test("RenderDocumentParams has the required surface", () => {
   const paramsSurface: Record<keyof RenderDocumentParams, true> = {
@@ -28,7 +31,7 @@ Deno.test("RenderDocumentParams accepts a FileType documentKey", () => {
     projectId: "project-1",
     sessionId: "session-1",
     iterationNumber: 1,
-    stageSlug: "thesis",
+    stageSlug: DialecticStageSlug.Thesis,
     documentIdentity: "doc-id-1",
     documentKey: FileType.business_case,
     sourceContributionId: "contrib-1",
@@ -65,8 +68,35 @@ Deno.test("DocumentRendererDeps has the required surface", () => {
     notificationService: true,
     notifyUserId: true,
     logger: true,
+    assembleContributionChain: true,
+    loadDocumentTemplate: true,
+    mergeChunkContent: true,
   };
-  assertEquals(Object.keys(depsSurface).length, 5);
+  assertEquals(Object.keys(depsSurface).length, 8);
+});
+
+Deno.test("DocumentRendererDeps.assembleContributionChain is AssembleContributionChainFn", () => {
+  const fn: AssembleContributionChainFn = async () => ({
+    orderedChunks: [],
+    modelSlug: "",
+    attemptCount: 0,
+    sourceGroupFragment: undefined,
+    sourceAnchorModelSlug: undefined,
+  });
+  const field: DocumentRendererDeps["assembleContributionChain"] = fn;
+  assertEquals(field, fn);
+});
+
+Deno.test("DocumentRendererDeps.loadDocumentTemplate is LoadDocumentTemplateFn", () => {
+  const fn: LoadDocumentTemplateFn = async () => ({ templateText: "" });
+  const field: DocumentRendererDeps["loadDocumentTemplate"] = fn;
+  assertEquals(field, fn);
+});
+
+Deno.test("DocumentRendererDeps.mergeChunkContent is MergeChunkContentFn", () => {
+  const fn: MergeChunkContentFn = async () => ({ mergedStructuredData: {} });
+  const field: DocumentRendererDeps["mergeChunkContent"] = fn;
+  assertEquals(field, fn);
 });
 
 Deno.test("RenderDocumentFn is assignable from a matching implementation", () => {

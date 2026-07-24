@@ -1216,5 +1216,96 @@ Deno.test('[path_deconstructor] direct - compressed_context round-trips', async 
     assertEquals(info.fileTypeGuess, FileType.CompressedContext);
     assertEquals(info.parsedFileNameFromPath, `${sanitizeForPath(documentKey)}_compressed_for_${targetKeySanitized}_chunk_${chunkIndex}of${chunkTotal}.md`);
   });
+
+  await t.step('round-trips documentKey-sourced raw JSON artifact', () => {
+    const documentKey = 'executive_summary';
+    const context: PathContext = {
+      projectId,
+      sessionId,
+      iteration,
+      stageSlug,
+      fileType: FileType.CompressedContextRawJson,
+      targetKey,
+      sourceType: 'contribution',
+      documentKey,
+    };
+    const { storagePath, fileName } = constructStoragePath(context);
+    const info = deconstructStoragePath({ storageDir: storagePath, fileName });
+
+    assertEquals(info.error, undefined, `Deconstruction failed with error: ${info.error}`);
+    assertEquals(info.originalProjectId, projectId);
+    assertEquals(info.shortSessionId, shortSessionId);
+    assertEquals(info.iteration, iteration);
+    assertEquals(info.stageDirName, mappedStageDir);
+    assertEquals(info.stageSlug, stageSlug);
+    assertEquals(info.documentKey, sanitizeForPath(documentKey));
+    assertEquals(info.targetKey, targetKeySanitized);
+    assertEquals(info.chunkIndex, undefined);
+    assertEquals(info.chunkTotal, undefined);
+    assertEquals(info.fileTypeGuess, FileType.CompressedContextRawJson);
+  });
+
+  await t.step('round-trips sourceId-sourced raw JSON artifact', () => {
+    const sourceId = '550e8400-e29b-41d4-a716-446655440000';
+    const sourceShortId = generateShortId(sourceId);
+    const context: PathContext = {
+      projectId,
+      sessionId,
+      iteration,
+      stageSlug,
+      fileType: FileType.CompressedContextRawJson,
+      targetKey,
+      sourceType: 'history',
+      sourceId,
+    };
+    const { storagePath, fileName } = constructStoragePath(context);
+    const info = deconstructStoragePath({ storageDir: storagePath, fileName });
+
+    assertEquals(info.error, undefined, `Deconstruction failed with error: ${info.error}`);
+    assertEquals(info.originalProjectId, projectId);
+    assertEquals(info.shortSessionId, shortSessionId);
+    assertEquals(info.iteration, iteration);
+    assertEquals(info.stageDirName, mappedStageDir);
+    assertEquals(info.stageSlug, stageSlug);
+    assertEquals(info.documentKey, undefined);
+    assertEquals(info.targetKey, targetKeySanitized);
+    assertEquals(info.chunkIndex, undefined);
+    assertEquals(info.chunkTotal, undefined);
+    assertEquals(info.fileTypeGuess, FileType.CompressedContextRawJson);
+    assertEquals(info.parsedFileNameFromPath, `source_${sourceShortId}_compressed_for_${targetKeySanitized}_raw.json`);
+  });
+
+  await t.step('round-trips chunked documentKey-sourced raw JSON artifact', () => {
+    const documentKey = 'executive_summary';
+    const chunkIndex = 1;
+    const chunkTotal = 3;
+    const context: PathContext = {
+      projectId,
+      sessionId,
+      iteration,
+      stageSlug,
+      fileType: FileType.CompressedContextRawJson,
+      targetKey,
+      sourceType: 'contribution',
+      documentKey,
+      chunkIndex,
+      chunkTotal,
+    };
+    const { storagePath, fileName } = constructStoragePath(context);
+    const info = deconstructStoragePath({ storageDir: storagePath, fileName });
+
+    assertEquals(info.error, undefined, `Deconstruction failed with error: ${info.error}`);
+    assertEquals(info.originalProjectId, projectId);
+    assertEquals(info.shortSessionId, shortSessionId);
+    assertEquals(info.iteration, iteration);
+    assertEquals(info.stageDirName, mappedStageDir);
+    assertEquals(info.stageSlug, stageSlug);
+    assertEquals(info.documentKey, sanitizeForPath(documentKey));
+    assertEquals(info.targetKey, targetKeySanitized);
+    assertEquals(info.chunkIndex, chunkIndex);
+    assertEquals(info.chunkTotal, chunkTotal);
+    assertEquals(info.fileTypeGuess, FileType.CompressedContextRawJson);
+    assertEquals(info.parsedFileNameFromPath, `${sanitizeForPath(documentKey)}_compressed_for_${targetKeySanitized}_chunk_${chunkIndex}of${chunkTotal}_raw.json`);
+  });
 });
 

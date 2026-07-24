@@ -140,7 +140,13 @@ export function isIRenderJobContext(value: unknown): value is IRenderJobContext 
     return (
         'documentRenderer' in value &&
         typeof value.documentRenderer === 'object' &&
-        value.documentRenderer !== null
+        value.documentRenderer !== null &&
+        'assembleContributionChain' in value &&
+        typeof value.assembleContributionChain === 'function' &&
+        'loadDocumentTemplate' in value &&
+        typeof value.loadDocumentTemplate === 'function' &&
+        'mergeChunkContent' in value &&
+        typeof value.mergeChunkContent === 'function'
     );
 }
 

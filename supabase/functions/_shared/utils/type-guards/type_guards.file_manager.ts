@@ -80,6 +80,7 @@ const RESOURCE_FILE_TYPES_MAP: { [K in ResourceFileTypes]: true } = {
     [FileType.RenderedDocument]: true,
     [FileType.RagContextSummary]: true,
     [FileType.CompressedContext]: true,
+    [FileType.CompressedContextRawJson]: true,
 };
 
 export function isResourceFileType(value: unknown): value is ResourceFileTypes {
@@ -114,6 +115,10 @@ export function isFileType(value: unknown): value is FileType {
 
 export function isCompressedContextFileType(value: unknown): value is FileType.CompressedContext {
     return typeof value === 'string' && value === FileType.CompressedContext;
+}
+
+export function isCompressedContextRawJsonFileType(value: unknown): value is FileType.CompressedContextRawJson {
+    return typeof value === 'string' && value === FileType.CompressedContextRawJson;
 }
 
 export function isCompressionSourceType(value: unknown): value is CompressionSourceType {

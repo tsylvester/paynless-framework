@@ -44,8 +44,9 @@ guardTest, unitTest, integrate prompts). Governed by all Process topics.
 Written **before** the interface (TDD). Proves the interface's contract by typed
 assignment.
 
-- Contains only imports, test blocks, and typed assertions — nothing else.
+- Contains only type/interface imports, test blocks, and typed assertions — nothing else.
 - Every type and symbol is imported from the interface file by its production name.
+- Never relies on implementation details. 
 - Contract is proven by typed assignment — a value annotated with the imported type,
   an assignment that only compiles if the contract holds:
 
@@ -82,7 +83,7 @@ Report them verbatim and stop. That is success, not a halt.
   interface that does not exist in its home — a dependency-ordering violation. Report
   and halt (see [discovery-halt](discovery-halt.md)).
 
-Forbidden: defining types locally ("temporary, I'll move it later"); silencing the
+Forbidden: importing an implementation, defining types locally ("temporary, I'll move it later"); silencing the
 compiler (`@ts-expect-error`, `as`, `satisfies`, `unknown`); importing mocks,
 builders, or guards; a broad primitive where a narrow type exists; redefining an
 imported type locally. A file that compiles cleanly at this stage is a failed task.
@@ -95,7 +96,7 @@ imported type locally. A file that compiles cleanly at this stage is a failed ta
 The interface and mock file exist and compile. The guard file may not export the
 guard yet. Proves the guard has no false positives and no false negatives.
 
-- Only imports, test blocks, and assertions. Guards imported by production name
+- Only type/interface imports, test blocks, and assertions. Guards imported by production name
   (`isObjectName`); fixtures from builders and invalidators.
 - The compiler reports missing exports from the **guard file and nothing else** —
   interface and mock imports resolve cleanly. An error elsewhere means the test is
@@ -103,6 +104,8 @@ guard yet. Proves the guard has no false positives and no false negatives.
 - No cast anywhere: the guard takes `unknown` and the invalidator returns `unknown`.
   If you reach for `as`, `satisfies`, or a fitting annotation, the fixture is built
   wrong — use the builder or invalidator.
+- Never relies on implementation details. 
+
 
 ### Case checklist — mechanical, per owned guard
 
@@ -151,7 +154,7 @@ Scope: test only guards for types this interface owns. A foreign guard is tested
 its home package and is exercised here only indirectly through case 4 — never
 imported into this test.
 
-Forbidden: creating/editing the guard file; defining a guard in the test; silencing
+Forbidden: importing the implementation, creating/editing the guard file; defining a guard in the test; silencing
 the compiler; hand-rolled fixtures duplicating builders; testing a foreign guard;
 hand-building fixtures for imported types. If the mock file lacks a needed builder or
 invalidator, add it there in the four-symbol form (see [mocks](mocks.md)); if it

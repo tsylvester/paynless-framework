@@ -342,12 +342,14 @@ Deno.test('FileManagerService', async (t) => {
     } as const;
 
     const runCase = async (
+      fileType: FileType.CompressedContext | FileType.CompressedContextRawJson,
       sourceType: 'contribution' | 'history',
       documentKey: string | undefined,
       sourceId: string | undefined,
     ) => {
       const pathContext: ResourceUploadContext['pathContext'] = {
         ...baseCompressedPathContext,
+        fileType,
         sourceType,
         ...(documentKey ? { documentKey } : {}),
         ...(sourceId ? { sourceId } : {}),
@@ -365,11 +367,12 @@ Deno.test('FileManagerService', async (t) => {
       beforeEach(config);
 
       try {
+        const isRawJson = fileType === FileType.CompressedContextRawJson;
         const context: ResourceUploadContext = {
           ...baseUploadContext,
           pathContext,
-          fileContent: '# Compressed context content',
-          mimeType: 'text/markdown',
+          fileContent: isRawJson ? '{"executive_summary":"compressed"}' : '# Compressed context content',
+          mimeType: isRawJson ? 'application/json' : 'text/markdown',
           description: 'Compressed context for target',
         };
 
@@ -384,12 +387,16 @@ Deno.test('FileManagerService', async (t) => {
         const insertData = upsertArgs[0];
         const upsertOptions: { onConflict?: string } | undefined = upsertArgs[1];
 
-        assertEquals(insertData.resource_type, FileType.CompressedContext);
+        assertEquals(insertData.resource_type, fileType);
         assertEquals(insertData.session_id, baseCompressedPathContext.sessionId);
         assertEquals(insertData.stage_slug, baseCompressedPathContext.stageSlug);
         assertEquals(insertData.iteration_number, baseCompressedPathContext.iteration);
         assertEquals(insertData.storage_path, expectedPathParts.storagePath);
         assertEquals(insertData.file_name, expectedPathParts.fileName);
+        if (fileType === FileType.CompressedContextRawJson) {
+          assert(expectedPathParts.storagePath.endsWith('/_work/raw_responses'));
+          assert(expectedPathParts.fileName.endsWith('_raw.json'));
+        }
         assertExists(upsertOptions);
         assertEquals(upsertOptions?.onConflict, 'storage_bucket,storage_path,file_name');
       } finally {
@@ -397,8 +404,10 @@ Deno.test('FileManagerService', async (t) => {
       }
     };
 
-    await runCase('contribution', 'feature_spec', undefined);
-    await runCase('history', undefined, 'history-source-uuid');
+    await runCase(FileType.CompressedContext, 'contribution', 'feature_spec', undefined);
+    await runCase(FileType.CompressedContext, 'history', undefined, 'history-source-uuid');
+    await runCase(FileType.CompressedContextRawJson, 'contribution', 'feature_spec', undefined);
+    await runCase(FileType.CompressedContextRawJson, 'history', undefined, 'history-source-uuid');
   });
 
   await t.step('uploadAndRegisterFile should register a project export zip at project root',

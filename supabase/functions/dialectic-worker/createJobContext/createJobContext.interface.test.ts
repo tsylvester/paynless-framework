@@ -1,439 +1,324 @@
-// supabase/functions/dialectic-worker/createJobContext.interface.test.ts
-//
-// Contract-only: satisfies interfaces with plain objects and dependency mocks from their
-// home modules. Does not import createJobContext.ts. Shared stream helper from JobContext.mock.ts.
+import { assertEquals } from "jsr:@std/assert";
+import type {
+  ILoggerContext,
+  IFileContext,
+  IModelContext,
+  IRagContext,
+  ITokenContext,
+  INotificationContext,
+  IPrepareModelJobContext,
+  IPlanJobContext,
+  IRenderJobContext,
+  ISaveResponseContext,
+  IJobContext,
+  JobContextParams,
+  BuildUploadContextFn,
+  BoundPrepareModelJobFn,
+} from "./JobContext.interface.ts";
+import type { BuildUploadContextResourceParams } from "../../_shared/utils/buildUploadContext/buildUploadContext.interface.ts";
+import { FileType, DialecticStageSlug } from "../../_shared/types/file_manager.types.ts";
 
-import { describe, it } from 'https://deno.land/std@0.170.0/testing/bdd.ts';
-import { assertEquals } from 'https://deno.land/std@0.170.0/testing/asserts.ts';
-import { mockSendMessageStream } from '../../_shared/ai_service/ai_provider.mock.ts';
-import { MockLogger } from '../../_shared/logger.mock.ts';
-import { MockFileManagerService } from '../../_shared/services/file_manager.mock.ts';
-import { MockRagService } from '../../_shared/services/rag_service.mock.ts';
-import { MockIndexingService } from '../../_shared/services/indexing_service.mock.ts';
-import { createMockAdminTokenWalletService } from '../../_shared/services/tokenwallet/admin/adminTokenWalletService.mock.ts';
-import { createMockUserTokenWalletService } from '../../_shared/services/tokenwallet/client/userTokenWalletService.mock.ts';
-import { createDocumentRendererMock } from '../../_shared/services/document_renderer.mock.ts';
-import { MockPromptAssembler } from '../../_shared/prompt-assembler/prompt-assembler.mock.ts';
-import { mockNotificationService } from '../../_shared/utils/notification.service.mock.ts';
-import { createMockDownloadFromStorage } from '../../_shared/supabase_storage_utils.mock.ts';
-import { extractSourceGroupFragment } from '../../_shared/utils/path_utils.ts';
-import { pickLatest } from '../../_shared/utils/pickLatest.ts';
-import { applyInputsRequiredScope } from '../../_shared/utils/applyInputsRequiredScope.ts';
-import { validateWalletBalance } from '../../_shared/utils/validateWalletBalance.ts';
-import { validateModelCostRates } from '../../_shared/utils/validateModelCostRates.ts';
-import { getMaxOutputTokens } from '../../_shared/utils/affordability_utils.ts';
-import { resolveFinishReason } from '../../_shared/utils/resolveFinishReason.ts';
-import { isIntermediateChunk } from '../../_shared/utils/isIntermediateChunk.ts';
-import { determineContinuation } from '../../_shared/utils/determineContinuation/determineContinuation.ts';
-import { buildUploadContext } from '../../_shared/utils/buildUploadContext/buildUploadContext.ts';
-import type { BoundDebitTokens, DebitTokens } from '../../_shared/utils/debitTokens.interface.ts';
-import { createMockFindSourceDocuments } from '../findSourceDocuments.mock.ts';
-import { buildMockBoundCalculateAffordabilityFn } from '../calculateAffordability/calculateAffordability.mock.ts';
-import {
-    IFileContext,
-    IJobContext,
-    ILoggerContext,
-    IModelContext,
-    INotificationContext,
-    IPlanJobContext,
-    IPrepareModelJobContext,
-    IRagContext,
-    IRenderJobContext,
-    ITokenContext,
-    ISaveResponseContext,
-    JobContextParams,
-    BoundPrepareModelJobFn,
-    BuildUploadContextFn,
-} from './JobContext.interface.ts';
-import { BoundGatherArtifactsFn } from '../gatherArtifacts/gatherArtifacts.interface.ts';
-import { BoundEnqueueModelCallFn } from '../enqueueModelCall/enqueueModelCall.interface.ts';
-import { FileType, ResourceUploadContext } from '../../_shared/types/file_manager.types.ts';
-import { sanitizeJsonContent } from '../../_shared/utils/jsonSanitizer/jsonSanitizer.ts';
-import type { ComputeJobSig } from '../../_shared/utils/computeJobSig/computeJobSig.interface.ts';
+Deno.test("ILoggerContext has the required surface", () => {
+  const surface: Record<keyof ILoggerContext, true> = {
+    logger: true,
+  };
+  assertEquals(Object.keys(surface).length, 1);
+});
 
-describe('JobContext.interface.ts contracts', () => {
-    describe('ILoggerContext', () => {
-        it('requires logger', () => {
-            const ctx: ILoggerContext = { logger: new MockLogger() };
-            assertEquals(typeof ctx.logger, 'object');
-            assertEquals(ctx.logger === null, false);
-        });
-    });
+Deno.test("IFileContext has the required surface", () => {
+  const surface: Record<keyof IFileContext, true> = {
+    fileManager: true,
+    downloadFromStorage: true,
+    deleteFromStorage: true,
+  };
+  assertEquals(Object.keys(surface).length, 3);
+});
 
-    describe('IFileContext', () => {
-        it('requires fileManager, downloadFromStorage, deleteFromStorage', () => {
-            const ctx: IFileContext = {
-                fileManager: new MockFileManagerService(),
-                downloadFromStorage: createMockDownloadFromStorage({ mode: 'success', data: new ArrayBuffer(0) }),
-                deleteFromStorage: async () => ({ error: null }),
-            };
-            assertEquals(typeof ctx.fileManager, 'object');
-            assertEquals(ctx.fileManager === null, false);
-            assertEquals(typeof ctx.downloadFromStorage, 'function');
-            assertEquals(typeof ctx.deleteFromStorage, 'function');
-        });
-    });
+Deno.test("IModelContext has the required surface", () => {
+  const surface: Record<keyof IModelContext, true> = {
+    getAiProviderAdapter: true,
+    getAiProviderConfig: true,
+  };
+  assertEquals(Object.keys(surface).length, 2);
+});
 
-    describe('IModelContext', () => {
-        it('requires getAiProviderAdapter and getAiProviderConfig', () => {
-            const ctx: IModelContext = {
-                getAiProviderAdapter: () => ({
-                    sendMessage: async () => ({
-                        role: 'assistant',
-                        content: 'mock',
-                        ai_provider_id: null,
-                        system_prompt_id: null,
-                        token_usage: null,
-                    }),
-                    sendMessageStream: mockSendMessageStream,
-                    listModels: async () => [],
-                }),
-                getAiProviderConfig: async () => ({
-                    api_identifier: 'mock-model',
-                    input_token_cost_rate: 0.001,
-                    output_token_cost_rate: 0.002,
-                    tokenization_strategy: { type: 'none' },
-                }),
-            };
-            assertEquals(typeof ctx.getAiProviderAdapter, 'function');
-            assertEquals(typeof ctx.getAiProviderConfig, 'function');
-        });
-    });
+Deno.test("IRagContext has the required surface", () => {
+  const surface: Record<keyof IRagContext, true> = {
+    ragService: true,
+    indexingService: true,
+    embeddingClient: true,
+    countTokens: true,
+  };
+  assertEquals(Object.keys(surface).length, 4);
+});
 
-    describe('IRagContext', () => {
-        it('requires ragService, indexingService, embeddingClient, countTokens', () => {
-            const ctx: IRagContext = {
-                ragService: new MockRagService(),
-                indexingService: new MockIndexingService(),
-                embeddingClient: {
-                    getEmbedding: async () => ({
-                        embedding: [],
-                        usage: { prompt_tokens: 0, total_tokens: 0 },
-                    }),
-                },
-                countTokens: () => 0,
-            };
-            assertEquals(typeof ctx.ragService, 'object');
-            assertEquals(ctx.ragService === null, false);
-            assertEquals(typeof ctx.indexingService, 'object');
-            assertEquals(ctx.indexingService === null, false);
-            assertEquals(typeof ctx.embeddingClient, 'object');
-            assertEquals(ctx.embeddingClient === null, false);
-            assertEquals(typeof ctx.countTokens, 'function');
-        });
-    });
+Deno.test("ITokenContext has the required surface", () => {
+  const surface: Record<keyof ITokenContext, true> = {
+    adminTokenWalletService: true,
+    userTokenWalletService: true,
+  };
+  assertEquals(Object.keys(surface).length, 2);
+});
 
-    describe('ITokenContext', () => {
-        it('requires adminTokenWalletService and userTokenWalletService', () => {
-            const ctx: ITokenContext = {
-                adminTokenWalletService: createMockAdminTokenWalletService().instance,
-                userTokenWalletService: createMockUserTokenWalletService().instance,
-            };
-            assertEquals(typeof ctx.adminTokenWalletService, 'object');
-            assertEquals(ctx.adminTokenWalletService === null, false);
-            assertEquals(typeof ctx.userTokenWalletService, 'object');
-            assertEquals(ctx.userTokenWalletService === null, false);
-        });
-    });
+Deno.test("INotificationContext has the required surface", () => {
+  const surface: Record<keyof INotificationContext, true> = {
+    notificationService: true,
+  };
+  assertEquals(Object.keys(surface).length, 1);
+});
 
-    describe('INotificationContext', () => {
-        it('requires notificationService', () => {
-            const ctx: INotificationContext = { notificationService: mockNotificationService };
-            assertEquals(typeof ctx.notificationService, 'object');
-            assertEquals(ctx.notificationService === null, false);
-        });
-    });
+Deno.test("IPrepareModelJobContext has the required surface", () => {
+  const surface: Record<keyof IPrepareModelJobContext, true> = {
+    logger: true,
+    applyInputsRequiredScope: true,
+    countTokens: true,
+    adminTokenWalletService: true,
+    validateWalletBalance: true,
+    validateModelCostRates: true,
+    ragService: true,
+    embeddingClient: true,
+    enqueueModelCall: true,
+    calculateAffordability: true,
+  };
+  assertEquals(Object.keys(surface).length, 10);
+});
 
-    describe('IPrepareModelJobContext', () => {
-        it('requires eleven members including enqueueModelCall, excluding enqueueRenderJob', () => {
-            const logger = new MockLogger();
-            const ragService = new MockRagService();
-            const adminTokenWalletService = createMockAdminTokenWalletService().instance;
-            const enqueueModelCall: BoundEnqueueModelCallFn = async () => ({
-                error: new Error('interface test stub'),
-                retriable: false,
-            });
-            const ctx: IPrepareModelJobContext = {
-                logger: logger,
-                applyInputsRequiredScope: applyInputsRequiredScope,
-                countTokens: () => 0,
-                adminTokenWalletService: adminTokenWalletService,
-                validateWalletBalance: validateWalletBalance,
-                validateModelCostRates: validateModelCostRates,
-                ragService: ragService,
-                embeddingClient: {
-                    getEmbedding: async () => ({
-                        embedding: [],
-                        usage: { prompt_tokens: 0, total_tokens: 0 },
-                    }),
-                },
-                enqueueModelCall: enqueueModelCall,
-                calculateAffordability: buildMockBoundCalculateAffordabilityFn(),
-            };
-            assertEquals(typeof ctx.calculateAffordability, 'function');
-            assertEquals(typeof ctx.enqueueModelCall, 'function');
-        });
-    });
+Deno.test("IPlanJobContext has the required surface", () => {
+  const surface: Record<keyof IPlanJobContext, true> = {
+    logger: true,
+    notificationService: true,
+    getGranularityPlanner: true,
+    planComplexStage: true,
+    findSourceDocuments: true,
+  };
+  assertEquals(Object.keys(surface).length, 5);
+});
 
-    describe('IPlanJobContext', () => {
-        it('extends logger and notification plus plan utilities', () => {
-            const ctx: IPlanJobContext = {
-                logger: new MockLogger(),
-                notificationService: mockNotificationService,
-                getGranularityPlanner: () => () => [],
-                planComplexStage: async () => [],
-                findSourceDocuments: createMockFindSourceDocuments({ mode: 'empty' }),
-            };
-            assertEquals(typeof ctx.getGranularityPlanner, 'function');
-            assertEquals(typeof ctx.planComplexStage, 'function');
-            assertEquals(typeof ctx.findSourceDocuments, 'function');
-        });
-    });
+Deno.test("IRenderJobContext has the required surface", () => {
+  const surface: Record<keyof IRenderJobContext, true> = {
+    logger: true,
+    fileManager: true,
+    downloadFromStorage: true,
+    deleteFromStorage: true,
+    notificationService: true,
+    documentRenderer: true,
+    assembleContributionChain: true,
+    loadDocumentTemplate: true,
+    mergeChunkContent: true,
+  };
+  assertEquals(Object.keys(surface).length, 9);
+});
 
-    describe('IRenderJobContext', () => {
-        it('extends logger, file, notification, documentRenderer', () => {
-            const documentRenderer = createDocumentRendererMock().renderer;
-            const ctx: IRenderJobContext = {
-                logger: new MockLogger(),
-                fileManager: new MockFileManagerService(),
-                downloadFromStorage: createMockDownloadFromStorage({ mode: 'success', data: new ArrayBuffer(0) }),
-                deleteFromStorage: async () => ({ error: null }),
-                notificationService: mockNotificationService,
-                documentRenderer: documentRenderer,
-            };
-            assertEquals(typeof ctx.documentRenderer, 'object');
-            assertEquals(ctx.documentRenderer === null, false);
-        });
-    });
+Deno.test("ISaveResponseContext has the required surface", () => {
+  const surface: Record<keyof ISaveResponseContext, true> = {
+    enqueueRenderJob: true,
+    debitTokens: true,
+  };
+  assertEquals(Object.keys(surface).length, 2);
+});
 
-    describe('JobContextParams and IJobContext', () => {
-        it('JobContextParams lists every factory field; IJobContext maps those fields without createJobContext', () => {
-            const fileManager = new MockFileManagerService();
-            const ragService = new MockRagService();
-            const indexingService = new MockIndexingService();
-            const adminTokenWalletService = createMockAdminTokenWalletService().instance;
-            const userTokenWalletService = createMockUserTokenWalletService().instance;
-            const documentRenderer = createDocumentRendererMock().renderer;
-            const promptAssembler = new MockPromptAssembler();
-            const logger = new MockLogger();
-            const mockDownloadFn = createMockDownloadFromStorage({ mode: 'success', data: new ArrayBuffer(0) });
-            const findSourceDocuments = createMockFindSourceDocuments({ mode: 'empty' });
-            const prepareModelJob: BoundPrepareModelJobFn = async () => ({
-                error: new Error('interface test stub'),
-                retriable: false,
-            });
-            const debitTokens: DebitTokens = async () => ({
-                error: new Error('interface test stub'),
-                retriable: false,
-            });
-            const enqueueModelCall: BoundEnqueueModelCallFn = async () => ({
-                error: new Error('interface test stub'),
-                retriable: false,
-            });
-            const boundGatherArtifacts: BoundGatherArtifactsFn = async () => ({
-                artifacts: [],
-            });
-            const computeJobSig: ComputeJobSig = async (
-                _jobId: string,
-                _userId: string,
-                _createdAt: string,
-            ): Promise<string> => 'test-sig';
+Deno.test("IJobContext has the required surface", () => {
+  const surface: Record<keyof IJobContext, true> = {
+    logger: true,
+    notificationService: true,
+    getGranularityPlanner: true,
+    planComplexStage: true,
+    findSourceDocuments: true,
+    fileManager: true,
+    downloadFromStorage: true,
+    deleteFromStorage: true,
+    documentRenderer: true,
+    assembleContributionChain: true,
+    loadDocumentTemplate: true,
+    mergeChunkContent: true,
+    getAiProviderAdapter: true,
+    getAiProviderConfig: true,
+    ragService: true,
+    indexingService: true,
+    embeddingClient: true,
+    countTokens: true,
+    adminTokenWalletService: true,
+    userTokenWalletService: true,
+    pickLatest: true,
+    applyInputsRequiredScope: true,
+    validateWalletBalance: true,
+    validateModelCostRates: true,
+    getMaxOutputTokens: true,
+    continueJob: true,
+    retryJob: true,
+    resolveFinishReason: true,
+    isIntermediateChunk: true,
+    determineContinuation: true,
+    buildUploadContext: true,
+    debitTokens: true,
+    promptAssembler: true,
+    getSeedPromptForStage: true,
+    gatherArtifacts: true,
+    prepareModelJob: true,
+    enqueueModelCall: true,
+    sanitizeJsonContent: true,
+    computeJobSig: true,
+  };
+  assertEquals(Object.keys(surface).length, 39);
+});
 
-            const params: JobContextParams = {
-                logger: logger,
-                fileManager: fileManager,
-                downloadFromStorage: mockDownloadFn,
-                deleteFromStorage: async () => ({ error: null }),
-                getAiProviderAdapter: () => ({
-                    sendMessage: async () => ({
-                        role: 'assistant',
-                        content: 'mock',
-                        ai_provider_id: null,
-                        system_prompt_id: null,
-                        token_usage: null,
-                    }),
-                    sendMessageStream: mockSendMessageStream,
-                    listModels: async () => [],
-                }),
-                getAiProviderConfig: async () => ({
-                    api_identifier: 'mock-model',
-                    input_token_cost_rate: 0.001,
-                    output_token_cost_rate: 0.002,
-                    tokenization_strategy: { type: 'none' },
-                }),
-                ragService: ragService,
-                indexingService: indexingService,
-                embeddingClient: {
-                    getEmbedding: async () => ({
-                        embedding: [],
-                        usage: { prompt_tokens: 0, total_tokens: 0 },
-                    }),
-                },
-                countTokens: () => 0,
-                adminTokenWalletService: adminTokenWalletService,
-                userTokenWalletService: userTokenWalletService,
-                notificationService: mockNotificationService,
-                getSeedPromptForStage: async () => ({
-                    content: 'Seed prompt content',
-                    fullPath: 'test/path/seed.txt',
-                    bucket: 'test-bucket',
-                    path: 'test/path',
-                    fileName: 'seed.txt',
-                }),
-                promptAssembler: promptAssembler,
-                getExtensionFromMimeType: () => '.txt',
-                extractSourceGroupFragment: extractSourceGroupFragment,
-                randomUUID: () => 'test-uuid',
-                shouldEnqueueRenderJob: async () => ({
-                    shouldRender: false,
-                    reason: 'is_json',
-                }),
-                getGranularityPlanner: () => () => [],
-                planComplexStage: async () => [],
-                findSourceDocuments: findSourceDocuments,
-                documentRenderer: documentRenderer,
-                continueJob: async () => ({ enqueued: false }),
-                retryJob: async () => ({}),
-                prepareModelJob: prepareModelJob,
-                debitTokens: debitTokens,
-                pickLatest: pickLatest,
-                applyInputsRequiredScope: applyInputsRequiredScope,
-                validateWalletBalance: validateWalletBalance,
-                validateModelCostRates: validateModelCostRates,
-                getMaxOutputTokens: getMaxOutputTokens,
-                resolveFinishReason: resolveFinishReason,
-                isIntermediateChunk: isIntermediateChunk,
-                determineContinuation: determineContinuation,
-                buildUploadContext: buildUploadContext,
-                gatherArtifacts: boundGatherArtifacts,
-                enqueueModelCall: enqueueModelCall,
-                sanitizeJsonContent: sanitizeJsonContent,
-                computeJobSig: computeJobSig,
-            };
+Deno.test("JobContextParams has the required surface", () => {
+  const surface: Record<keyof JobContextParams, true> = {
+    logger: true,
+    fileManager: true,
+    downloadFromStorage: true,
+    deleteFromStorage: true,
+    getAiProviderAdapter: true,
+    getAiProviderConfig: true,
+    ragService: true,
+    indexingService: true,
+    embeddingClient: true,
+    countTokens: true,
+    adminTokenWalletService: true,
+    userTokenWalletService: true,
+    notificationService: true,
+    getSeedPromptForStage: true,
+    promptAssembler: true,
+    getExtensionFromMimeType: true,
+    extractSourceGroupFragment: true,
+    randomUUID: true,
+    shouldEnqueueRenderJob: true,
+    getGranularityPlanner: true,
+    planComplexStage: true,
+    findSourceDocuments: true,
+    documentRenderer: true,
+    assembleContributionChain: true,
+    loadDocumentTemplate: true,
+    mergeChunkContent: true,
+    continueJob: true,
+    retryJob: true,
+    gatherArtifacts: true,
+    prepareModelJob: true,
+    enqueueModelCall: true,
+    debitTokens: true,
+    pickLatest: true,
+    applyInputsRequiredScope: true,
+    validateWalletBalance: true,
+    validateModelCostRates: true,
+    getMaxOutputTokens: true,
+    resolveFinishReason: true,
+    isIntermediateChunk: true,
+    determineContinuation: true,
+    buildUploadContext: true,
+    sanitizeJsonContent: true,
+    computeJobSig: true,
+  };
+  assertEquals(Object.keys(surface).length, 43);
+});
 
-            const job: IJobContext = {
-                logger: params.logger,
-                fileManager: params.fileManager,
-                downloadFromStorage: params.downloadFromStorage,
-                deleteFromStorage: params.deleteFromStorage,
-                getAiProviderAdapter: params.getAiProviderAdapter,
-                getAiProviderConfig: params.getAiProviderConfig,
-                ragService: params.ragService,
-                indexingService: params.indexingService,
-                embeddingClient: params.embeddingClient,
-                countTokens: params.countTokens,
-                adminTokenWalletService: params.adminTokenWalletService,
-                userTokenWalletService: params.userTokenWalletService,
-                notificationService: params.notificationService,
-                promptAssembler: params.promptAssembler,
-                getSeedPromptForStage: params.getSeedPromptForStage,
-                gatherArtifacts: params.gatherArtifacts,
-                enqueueModelCall: params.enqueueModelCall,
-                continueJob: params.continueJob,
-                retryJob: params.retryJob,
-                pickLatest: params.pickLatest,
-                applyInputsRequiredScope: params.applyInputsRequiredScope,
-                validateWalletBalance: params.validateWalletBalance,
-                validateModelCostRates: params.validateModelCostRates,
-                getMaxOutputTokens: params.getMaxOutputTokens,
-                resolveFinishReason: params.resolveFinishReason,
-                isIntermediateChunk: params.isIntermediateChunk,
-                determineContinuation: params.determineContinuation,
-                buildUploadContext: params.buildUploadContext,
-                getGranularityPlanner: params.getGranularityPlanner,
-                planComplexStage: params.planComplexStage,
-                findSourceDocuments: params.findSourceDocuments,
-                documentRenderer: params.documentRenderer,
-                prepareModelJob: params.prepareModelJob,
-                debitTokens: params.debitTokens,
-                sanitizeJsonContent: params.sanitizeJsonContent,
-                computeJobSig: params.computeJobSig,
-            };
+Deno.test("IJobContext.prepareModelJob is BoundPrepareModelJobFn", () => {
+  const fn: BoundPrepareModelJobFn = async () => ({
+    error: new Error("interface test stub"),
+    retriable: false,
+  });
+  const field: IJobContext["prepareModelJob"] = fn;
+  assertEquals(field, fn);
+});
 
-            assertEquals(typeof params.logger, 'object');
-            assertEquals(typeof params.fileManager, 'object');
-            assertEquals(typeof params.prepareModelJob, 'function');
-            assertEquals(typeof job.prepareModelJob, 'function');
-            assertEquals(job.logger, params.logger);
-            assertEquals(job.ragService, params.ragService);
-            assertEquals(typeof job.getGranularityPlanner, 'function');
-            assertEquals(typeof params.getMaxOutputTokens, 'function');
-            assertEquals(typeof job.getMaxOutputTokens, 'function');
-            assertEquals(typeof job.enqueueModelCall, 'function');
-            assertEquals(job.enqueueModelCall, params.enqueueModelCall);
-        });
+Deno.test("IJobContext.enqueueModelCall is BoundEnqueueModelCallFn", () => {
+  const fn: IJobContext["enqueueModelCall"] = async () => ({
+    error: new Error("interface test stub"),
+    retriable: false,
+  });
+  assertEquals(typeof fn, "function");
+});
 
-        it('BuildUploadContextFn return type accepts ResourceUploadContext', () => {
-            const resourceContext: ResourceUploadContext = {
-                fileContent: 'compressed markdown',
-                mimeType: 'text/markdown',
-                sizeBytes: 19,
-                userId: null,
-                description: 'CompressedContext artifact',
-                pathContext: {
-                    projectId: 'proj-1',
-                    fileType: FileType.CompressedContext,
-                    sessionId: 'sess-1',
-                    stageSlug: 'thesis',
-                    targetKey: 'business_case',
-                    sourceType: 'resource',
-                    documentKey: 'market_analysis',
-                },
-            };
-            const uploadContext: ReturnType<BuildUploadContextFn> = resourceContext;
-            assertEquals(uploadContext.pathContext.fileType, FileType.CompressedContext);
-        });
-    });
+Deno.test("IJobContext.buildUploadContext is BuildUploadContextFn", () => {
+  const fn: BuildUploadContextFn = (_params: Parameters<BuildUploadContextFn>[0]) => ({
+    fileContent: "",
+    mimeType: "text/markdown",
+    sizeBytes: 0,
+    userId: null,
+    description: "",
+    pathContext: {
+      projectId: "",
+      fileType: "" as never,
+    },
+  });
+  const field: IJobContext["buildUploadContext"] = fn;
+  assertEquals(field, fn);
+});
 
-    describe('ISaveResponseContext', () => {
-        it('back-half context slice includes enqueueRenderJob and debitTokens', () => {
-            const debitTokens: BoundDebitTokens = async () => ({
-                error: new Error('interface test stub'),
-                retriable: false,
-            });
-            const ctx: ISaveResponseContext = {
-                enqueueRenderJob: async () => ({
-                    error: new Error('interface test stub'),
-                    retriable: false,
-                }),
-                debitTokens,
-            };
-            assertEquals(typeof ctx.enqueueRenderJob, 'function');
-            assertEquals(typeof ctx.debitTokens, 'function');
-        });
-    });
+Deno.test("BuildUploadContextFn params accept BuildUploadContextResourceParams", () => {
+  const resourceParams: BuildUploadContextResourceParams = {
+    projectId: "proj-1",
+    storageFileType: FileType.CompressedContextRawJson,
+    sessionId: "sess-1",
+    iterationNumber: 1,
+    stageSlug: DialecticStageSlug.Thesis,
+    targetKey: FileType.business_case,
+    sourceType: "contribution",
+    documentKey: undefined,
+    sourceId: undefined,
+    chunkIndex: undefined,
+    chunkTotal: undefined,
+    contentForStorage: "{}",
+    projectOwnerUserId: "owner-1",
+    description: "desc",
+  };
+  const fnParams: Parameters<BuildUploadContextFn>[0] = resourceParams;
+  assertEquals(fnParams, resourceParams);
+});
 
-    describe('sanitizeJsonContent', () => {
-        it('JobContextParams requires sanitizeJsonContent typed as SanitizeJsonContentFn', () => {
-            const fn: JobContextParams['sanitizeJsonContent'] = sanitizeJsonContent;
-            assertEquals(typeof fn, 'function');
-        });
+Deno.test("IJobContext.computeJobSig is ComputeJobSig", () => {
+  const fn: IJobContext["computeJobSig"] = async (
+    _jobId: string,
+    _userId: string,
+    _createdAt: string,
+  ): Promise<string> => "test-sig";
+  assertEquals(typeof fn, "function");
+});
 
-        it('IJobContext requires sanitizeJsonContent typed as SanitizeJsonContentFn', () => {
-            const fn: IJobContext['sanitizeJsonContent'] = sanitizeJsonContent;
-            assertEquals(typeof fn, 'function');
-        });
-    });
+Deno.test("IJobContext.sanitizeJsonContent is SanitizeJsonContentFn", () => {
+  const fn: IJobContext["sanitizeJsonContent"] = (content: string) => ({
+    sanitized: content.trim(),
+    originalLength: content.length,
+    wasSanitized: false,
+    wasStructurallyFixed: false,
+    hasDuplicateKeys: false,
+    duplicateKeysResolved: [],
+  });
+  assertEquals(typeof fn, "function");
+});
 
-    describe('computeJobSig', () => {
-        it('JobContextParams requires computeJobSig typed as a string-returning HMAC function', () => {
-            const computeJobSig: ComputeJobSig = async (
-                _jobId: string,
-                _userId: string,
-                _createdAt: string,
-            ): Promise<string> => 'test-sig';
-            const fn: JobContextParams['computeJobSig'] = computeJobSig;
-            assertEquals(typeof fn, 'function');
-        });
+Deno.test("JobContextParams.computeJobSig is ComputeJobSig", () => {
+  const fn: JobContextParams["computeJobSig"] = async (
+    _jobId: string,
+    _userId: string,
+    _createdAt: string,
+  ): Promise<string> => "test-sig";
+  assertEquals(typeof fn, "function");
+});
 
-        it('IJobContext requires computeJobSig typed as a string-returning HMAC function', () => {
-            const computeJobSig: ComputeJobSig = async (
-                _jobId: string,
-                _userId: string,
-                _createdAt: string,
-            ): Promise<string> => 'test-sig';
-            const fn: IJobContext['computeJobSig'] = computeJobSig;
-            assertEquals(typeof fn, 'function');
-        });
-    });
+Deno.test("JobContextParams.sanitizeJsonContent is SanitizeJsonContentFn", () => {
+  const fn: JobContextParams["sanitizeJsonContent"] = (content: string) => ({
+    sanitized: content.trim(),
+    originalLength: content.length,
+    wasSanitized: false,
+    wasStructurallyFixed: false,
+    hasDuplicateKeys: false,
+    duplicateKeysResolved: [],
+  });
+  assertEquals(typeof fn, "function");
+});
+
+Deno.test("ISaveResponseContext.enqueueRenderJob is BoundEnqueueRenderJobFn", () => {
+  const fn: ISaveResponseContext["enqueueRenderJob"] = async () => ({
+    error: new Error("interface test stub"),
+    retriable: false,
+  });
+  assertEquals(typeof fn, "function");
+});
+
+Deno.test("ISaveResponseContext.debitTokens is BoundDebitTokens", () => {
+  const fn: ISaveResponseContext["debitTokens"] = async () => ({
+    error: new Error("interface test stub"),
+    retriable: false,
+  });
+  assertEquals(typeof fn, "function");
 });

@@ -8,7 +8,7 @@ import type { AiModelExtendedConfig } from "../../_shared/types.ts";
 import type { CountTokensDeps } from "../../_shared/types/tokenizer.types.ts";
 import { MockLogger } from "../../_shared/logger.mock.ts";
 import { createMockSupabaseClient, type MockQueryBuilderState } from "../../_shared/supabase.mock.ts";
-import { FileType } from "../../_shared/types/file_manager.types.ts";
+import { FileType, DialecticStageSlug } from "../../_shared/types/file_manager.types.ts";
 import { isRecord } from "../../_shared/utils/type_guards.ts";
 import { isKnownTiktokenEncoding } from "../../_shared/utils/type-guards/type_guards.chat.ts";
 import { renderPrompt } from "../../_shared/prompt-renderer.ts";
@@ -27,8 +27,7 @@ import {
 } from "../saveResponse/saveResponse.mock.ts";
 import { createComputeJobSig } from "../../_shared/utils/computeJobSig/computeJobSig.ts";
 import { MOCK_MODEL_CONFIG } from "../../_shared/_integration.test.utils.ts";
-import type { DialecticJobPayload } from "../../dialectic-service/dialectic.interface.ts";
-import type { DialecticStageRecipeStep, DialecticRecipeTemplateStep } from "../../dialectic-service/dialectic.interface.ts";
+import type { DialecticJobPayload, DialecticStageRecipeStep, DialecticRecipeTemplateStep } from "../../dialectic-service/dialectic.interface.ts";
 import type {
   EnqueueModelCallDeps,
   EnqueueModelCallParams,
@@ -47,6 +46,7 @@ import type {
   enqueueCompressJobsDeps,
   enqueueCompressJobsParams,
 } from "../enqueueCompressJobs/enqueueCompressJobs.interface.ts";
+import { isModelContributionFileType } from "../../_shared/utils/type-guards/type_guards.file_manager.ts";
 
 const computeJobSig = await createComputeJobSig("integration-secret");
 
@@ -184,8 +184,8 @@ function buildRealEnqueueParams(
     parentJob,
     sessionId: "session-abc",
     projectId: "project-xyz",
-    stageSlug: "THESIS",
-    targetKey: "business_case",
+    stageSlug: DialecticStageSlug.Thesis,
+    targetKey: FileType.business_case,
     iterationNumber: 1,
     modelId: "model-1",
     walletId: "wallet-1",
@@ -377,7 +377,7 @@ function buildMockSupabaseForFullChain(
 async function runSpawnProcessSeam(
   mockSetup: ReturnType<typeof createMockSupabaseClient>,
   victimPayload: { mode: "json" | "text"; content: string; sourceType: "contribution" | "resource" | "history"; documentKey: string; docType?: string; sourceStageSlug?: string },
-  targetKey = "business_case",
+  targetKey = FileType.business_case,
 ): Promise<{
   enqueueResult: Awaited<ReturnType<typeof enqueueCompressJobs>>;
   capturedPayload: DialecticCompressJobPayload;
@@ -386,6 +386,11 @@ async function runSpawnProcessSeam(
   capturedEnqueueParams: EnqueueModelCallParams;
   processJob: ReturnType<typeof createMockJobRow>;
 }> {
+
+  if(!isModelContributionFileType(targetKey))
+  {
+    throw new Error("Target key must be a model contribution file type");
+  }
   const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
   const enqueueParams = buildRealEnqueueParams(dbClient, { targetKey });
   const enqueueResult = await enqueueCompressJobs(
@@ -469,9 +474,9 @@ Deno.test("processCompressJob integration: spawn->process seam with a real json 
     mode: "json",
     content: victimContent,
     sourceType: "contribution",
-    documentKey: "business_case",
+    documentKey: FileType.business_case,
     docType: "business_case",
-    sourceStageSlug: "THESIS",
+    sourceStageSlug: DialecticStageSlug.Thesis,
   });
 
   assert("queued" in processResult && processResult.queued === true, "expected queued=true");
@@ -570,7 +575,7 @@ Deno.test("processCompressJob integration: dedup coherence across layers", async
 
   const enqueueResult = await enqueueCompressJobs(
     buildRealEnqueueDeps(),
-    buildRealEnqueueParams(dbClient, { targetKey: "business_case" }),
+    buildRealEnqueueParams(dbClient, { targetKey: FileType.business_case }),
     {
       victim: {
         mode: "text",
@@ -595,14 +600,14 @@ Deno.test("processCompressJob integration: dedup coherence across layers", async
     job_type: "COMPRESS",
     sessionId: "session-abc",
     projectId: "project-xyz",
-    stageSlug: "THESIS",
-    targetKey: "business_case",
+    stageSlug: DialecticStageSlug.Thesis,
+    targetKey: FileType.business_case,
     iterationNumber: 1,
     model_id: "model-1",
     mode: "text",
     content: "compress me",
     sourceType: "contribution",
-    documentKey: "business_case",
+    documentKey: FileType.business_case,
     walletId: "wallet-1",
     user_id: "user-789",
   };
@@ -646,15 +651,15 @@ Deno.test("processCompressJob integration: chunked seam produces text chunks and
   const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
   const enqueueResult = await enqueueCompressJobs(
     buildRealEnqueueDeps(),
-    buildRealEnqueueParams(dbClient, { targetKey: "business_case" }),
+    buildRealEnqueueParams(dbClient, { targetKey: FileType.business_case }),
     {
       victim: {
         mode: "json",
         content: justOver,
         sourceType: "contribution",
-        documentKey: "business_case",
+        documentKey: FileType.business_case,
         docType: "business_case",
-        sourceStageSlug: "THESIS",
+        sourceStageSlug: DialecticStageSlug.Thesis,
       },
     },
   );
@@ -742,7 +747,7 @@ Deno.test("processCompressJob integration: is_cloned=true branch runs spawn->pro
       sourceType: "contribution",
       documentKey: "business_case",
     },
-    "business_case",
+    FileType.business_case,
   );
 
   assert("queued" in processResult && processResult.queued === true, "expected queued=true");
@@ -777,7 +782,7 @@ Deno.test("processCompressJob integration: is_cloned=false branch runs spawn->pr
       sourceType: "contribution",
       documentKey: "business_case",
     },
-    "business_case",
+    FileType.business_case,
   );
 
   assert("queued" in processResult && processResult.queued === true, "expected queued=true");

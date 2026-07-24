@@ -31,6 +31,9 @@ import { GetExtensionFromMimeTypeFn } from '../../_shared/path_utils.ts';
 import { ExtractSourceGroupFragmentFn } from '../../_shared/utils/path_utils.ts';
 import { ShouldEnqueueRenderJobFn } from '../../_shared/types/shouldEnqueueRenderJob.interface.ts';
 import { IDocumentRenderer } from '../../_shared/services/document_renderer/renderDocument/renderDocument.interface.ts';
+import type { AssembleContributionChainFn } from '../../_shared/services/document_renderer/assembleContributionChain/assembleContributionChain.provides.ts';
+import type { LoadDocumentTemplateFn } from '../../_shared/services/document_renderer/loadDocumentTemplate/loadDocumentTemplate.provides.ts';
+import type { MergeChunkContentFn } from '../../_shared/services/document_renderer/mergeChunkContent/mergeChunkContent.provides.ts';
 import { GetGranularityPlannerFn } from '../../dialectic-service/dialectic.interface.ts';
 import { Database } from '../../types_db.ts';
 import { SupabaseClient } from 'npm:@supabase/supabase-js@2';
@@ -39,7 +42,7 @@ import {
     DetermineContinuationParams,
     DetermineContinuationResult,
 } from '../../_shared/utils/determineContinuation/determineContinuation.interface.ts';
-import { BuildUploadContextParams } from '../../_shared/utils/buildUploadContext/buildUploadContext.interface.ts';
+import { BuildUploadContextParams, BuildUploadContextResourceParams } from '../../_shared/utils/buildUploadContext/buildUploadContext.interface.ts';
 import { BoundDebitTokens, DebitTokens } from '../../_shared/utils/debitTokens.interface.ts';
 import { BoundEnqueueRenderJobFn } from '../enqueueRenderJob/enqueueRenderJob.interface.ts';
 import { BoundEnqueueModelCallFn } from '../enqueueModelCall/enqueueModelCall.interface.ts';
@@ -143,11 +146,12 @@ export type DetermineContinuationFn = (
 
 /**
  * Assembles `ModelContributionUploadContext | ResourceUploadContext` from pre-resolved fields.
- * `buildUploadContext.ts` produces the contribution arm; the resource arm's producer is WS-B's `saveResponse` path (Sprint 4).
+ * `buildUploadContext.ts` produces BOTH arms: the contribution arm (EXECUTE jobs) and the
+ * resource arm (COMPRESS jobs). The resource arm's consumer is `saveResponse.ts`'s COMPRESS tail.
  * Matches `_shared/utils/buildUploadContext/buildUploadContext.ts`.
  */
 export type BuildUploadContextFn = (
-    params: BuildUploadContextParams,
+    params: BuildUploadContextParams | BuildUploadContextResourceParams,
 ) => ModelContributionUploadContext | ResourceUploadContext;
 
 /**
@@ -260,6 +264,9 @@ export interface IRenderJobContext extends
     IFileContext,
     INotificationContext {
     readonly documentRenderer: IDocumentRenderer;
+    readonly assembleContributionChain: AssembleContributionChainFn;
+    readonly loadDocumentTemplate: LoadDocumentTemplateFn;
+    readonly mergeChunkContent: MergeChunkContentFn;
 }
 
 /**
@@ -351,6 +358,9 @@ export interface JobContextParams {
     readonly planComplexStage: PlanComplexStageFn;
     readonly findSourceDocuments: FindSourceDocumentsFn;
     readonly documentRenderer: IDocumentRenderer;
+    readonly assembleContributionChain: AssembleContributionChainFn;
+    readonly loadDocumentTemplate: LoadDocumentTemplateFn;
+    readonly mergeChunkContent: MergeChunkContentFn;
     readonly continueJob: ContinueJobFn;
     readonly retryJob: RetryJobFn;
     readonly gatherArtifacts: BoundGatherArtifactsFn;

@@ -332,6 +332,27 @@ describe('JobContexts Type Guards', () => {
 
             assertEquals(isIRenderJobContext(context), false);
         });
+
+        it('returns false when assembleContributionChain is missing', () => {
+            const rootContext = buildIJobContext();
+            const { assembleContributionChain: _omit, ...context } = buildIRenderJobContext(rootContext);
+
+            assertEquals(isIRenderJobContext(context), false);
+        });
+
+        it('returns false when loadDocumentTemplate is missing', () => {
+            const rootContext = buildIJobContext();
+            const { loadDocumentTemplate: _omit, ...context } = buildIRenderJobContext(rootContext);
+
+            assertEquals(isIRenderJobContext(context), false);
+        });
+
+        it('returns false when mergeChunkContent is missing', () => {
+            const rootContext = buildIJobContext();
+            const { mergeChunkContent: _omit, ...context } = buildIRenderJobContext(rootContext);
+
+            assertEquals(isIRenderJobContext(context), false);
+        });
     });
 
     describe('isIJobContext', () => {

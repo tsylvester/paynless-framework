@@ -146,6 +146,7 @@ Deno.test("submitStageResponses", async (t) => {
       assemblePlannerPrompt: spy(),
       assembleTurnPrompt: spy(),
       assembleContinuationPrompt: spy(),
+      assembleCompressionPrompt: spy(),
     },
     indexingService: { indexDocument: spy() },
     embeddingClient: { getEmbedding: spy() },

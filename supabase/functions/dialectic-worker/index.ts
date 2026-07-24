@@ -39,7 +39,7 @@ import { UserTokenWalletService } from '../_shared/services/tokenwallet/client/u
 import { processRenderJob } from './processRenderJob.ts';
 import { processCompressJob } from './processCompressJob/processCompressJob.ts';
 import { isAiModelExtendedConfig } from '../_shared/utils/type_guards.ts';
-import { renderDocument } from '../_shared/services/document_renderer.ts';
+import { renderDocument } from '../_shared/services/document_renderer/renderDocument/renderDocument.ts';
 import { shouldEnqueueRenderJob } from '../_shared/utils/shouldEnqueueRenderJob.ts';
 import { IJobContext } from './createJobContext/JobContext.interface.ts';
 import { createJobContext } from './createJobContext/createJobContext.ts';
@@ -64,6 +64,9 @@ import { sanitizeJsonContent } from '../_shared/utils/jsonSanitizer/jsonSanitize
 import { createComputeJobSig } from '../_shared/utils/computeJobSig/computeJobSig.ts';
 import type { ComputeJobSig } from '../_shared/utils/computeJobSig/computeJobSig.interface.ts';
 import { getMaxOutputTokens } from '../_shared/utils/affordability_utils.ts';
+import { assembleContributionChain } from '../_shared/services/document_renderer/assembleContributionChain/assembleContributionChain.ts';
+import { loadDocumentTemplate } from '../_shared/services/document_renderer/loadDocumentTemplate/loadDocumentTemplate.ts';
+import { mergeChunkContent } from '../_shared/services/document_renderer/mergeChunkContent/mergeChunkContent.ts';
 
 type Job = Database['public']['Tables']['dialectic_generation_jobs']['Row'];
 
@@ -187,6 +190,9 @@ export async function createDialecticWorkerDeps(
     planComplexStage,
     findSourceDocuments,
     documentRenderer,
+    assembleContributionChain,
+    loadDocumentTemplate,
+    mergeChunkContent,
     continueJob,
     retryJob,
     prepareModelJob: (params, payload) => {

@@ -38,6 +38,7 @@ import { createComputeJobSig } from '../_shared/utils/computeJobSig/computeJobSi
 import type { ComputeJobSig } from '../_shared/utils/computeJobSig/computeJobSig.interface.ts';
 import { netlifyResponseHandler } from '../netlifyResponse/netlifyResponseHandler.ts';
 import type { NetlifyResponseDeps } from '../netlifyResponse/netlifyResponse.interface.ts';
+import { resolveTemplateFilename, type BoundResolveTemplateFilenameFn } from "../_shared/utils/resolveTemplateFilename/resolveTemplateFilename.provides.ts";
 
 const TEST_SECRET = 'index-integration-test-hmac-secret';
 const JOB_ID = 'job-id-123';
@@ -150,9 +151,10 @@ async function buildNetlifyDeps(
   saveResponseDepsOverrides?: Partial<SaveResponseDeps>,
 ): Promise<{ deps: NetlifyResponseDeps; computeJobSig: ComputeJobSig }> {
   const computeJobSig = await createComputeJobSig(TEST_SECRET);
-
+  const boundResolveTemplateFilename: BoundResolveTemplateFilenameFn = (params, payload) => 
+    resolveTemplateFilename(deps, params, payload);
   const boundEnqueueRenderJob: BoundEnqueueRenderJobFn = (params, payload) =>
-    enqueueRenderJob({ dbClient: adminClient, logger, shouldEnqueueRenderJob }, params, payload);
+    enqueueRenderJob({ dbClient: adminClient, logger, shouldEnqueueRenderJob, resolveTemplateFilename: boundResolveTemplateFilename }, params, payload);
 
   const srDeps: SaveResponseDeps = {
     logger,

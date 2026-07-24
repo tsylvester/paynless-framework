@@ -6,7 +6,7 @@ import { MockRagService } from '../../_shared/services/rag_service.mock.ts';
 import { MockIndexingService } from '../../_shared/services/indexing_service.mock.ts';
 import { createMockAdminTokenWalletService } from '../../_shared/services/tokenwallet/admin/adminTokenWalletService.mock.ts';
 import { createMockUserTokenWalletService } from '../../_shared/services/tokenwallet/client/userTokenWalletService.mock.ts';
-import { createDocumentRendererMock } from '../../_shared/services/document_renderer.mock.ts';
+import { buildIDocumentRenderer } from '../../_shared/services/document_renderer/renderDocument/renderDocument.mock.ts';
 import { MockPromptAssembler } from '../../_shared/prompt-assembler/prompt-assembler.mock.ts';
 import { mockNotificationService } from '../../_shared/utils/notification.service.mock.ts';
 import { MockLogger } from '../../_shared/logger.mock.ts';
@@ -60,6 +60,9 @@ import {
 } from '../calculateAffordability/calculateAffordability.mock.ts';
 import { createJobContext } from './createJobContext.ts';
 import { sanitizeJsonContent } from '../../_shared/utils/jsonSanitizer/jsonSanitizer.ts';
+import { mockAssembleContributionChain } from '../../_shared/services/document_renderer/assembleContributionChain/assembleContributionChain.mock.ts';
+import { mockLoadDocumentTemplate } from '../../_shared/services/document_renderer/loadDocumentTemplate/loadDocumentTemplate.mock.ts';
+import { mockMergeChunkContent } from '../../_shared/services/document_renderer/mergeChunkContent/mergeChunkContent.mock.ts';
 
 type JobContextParamsOverrides = { [K in keyof JobContextParams]?: JobContextParams[K] };
 
@@ -163,7 +166,7 @@ export function createMockJobContextParams(overrides?: JobContextParamsOverrides
     const indexingService = new MockIndexingService();
     const adminTokenWalletService = createMockAdminTokenWalletService().instance;
     const userTokenWalletService = createMockUserTokenWalletService().instance;
-    const documentRenderer = createDocumentRendererMock().renderer;
+    const documentRenderer = buildIDocumentRenderer();
     const promptAssembler = new MockPromptAssembler();
     const logger = new MockLogger();
     const mockDownloadFn = createMockDownloadFromStorage({ mode: 'success', data: new ArrayBuffer(0) });
@@ -230,6 +233,9 @@ export function createMockJobContextParams(overrides?: JobContextParamsOverrides
         planComplexStage: async () => [],
         findSourceDocuments: findSourceDocuments,
         documentRenderer: documentRenderer,
+        assembleContributionChain: mockAssembleContributionChain,
+        loadDocumentTemplate: mockLoadDocumentTemplate,
+        mergeChunkContent: mockMergeChunkContent,
         continueJob: async () => ({ enqueued: false }),
         retryJob: async () => ({}),
         prepareModelJob: prepareModelJob,
@@ -298,6 +304,9 @@ export function buildIJobContext(): IJobContext {
         planComplexStage: params.planComplexStage,
         findSourceDocuments: params.findSourceDocuments,
         documentRenderer: params.documentRenderer,
+        assembleContributionChain: mockAssembleContributionChain,
+        loadDocumentTemplate: mockLoadDocumentTemplate,
+        mergeChunkContent: mockMergeChunkContent,
         prepareModelJob: params.prepareModelJob,
         debitTokens: params.debitTokens,
         sanitizeJsonContent: params.sanitizeJsonContent,
@@ -331,6 +340,9 @@ export function buildIRenderJobContext(root?: IJobContext): IRenderJobContext {
         deleteFromStorage: r.deleteFromStorage,
         notificationService: r.notificationService,
         documentRenderer: r.documentRenderer,
+        assembleContributionChain: r.assembleContributionChain,
+        loadDocumentTemplate: r.loadDocumentTemplate,
+        mergeChunkContent: r.mergeChunkContent,
     };
 }
 

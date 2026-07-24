@@ -5,12 +5,13 @@ import type { Database } from '../../types_db.ts';
 import type { ServiceError } from '../types.ts';
 import { FileType } from '../types/file_manager.types.ts';
 import type {
+  CanonicalPathParams,
   FileRecord,
   UploadContext,
   IFileManager,
   FileManagerResponse,
 } from '../types/file_manager.types.ts';
-import type { ContextForDocument } from '../../dialectic-service/dialectic.interface.ts';
+import type { ContextForDocument, ContributionType } from '../../dialectic-service/dialectic.interface.ts';
 
 export type FileRecordOverrides = Partial<Database['public']['Tables']['dialectic_project_resources']['Row']>;
 
@@ -45,6 +46,28 @@ export function invalidateFileRecord(
   corruptions: FileRecordCorruptions,
 ): unknown {
   return { ...buildFileRecord(), ...corruptions };
+}
+
+export type CanonicalPathParamsOverrides = Partial<CanonicalPathParams>;
+
+export function buildCanonicalPathParams(
+  overrides?: CanonicalPathParamsOverrides,
+): CanonicalPathParams {
+  const base: CanonicalPathParams = {
+    contributionType: 'thesis',
+    stageSlug: 'thesis',
+  };
+  return overrides ? { ...base, ...overrides } : base;
+}
+
+export type CanonicalPathParamsCorruptions = {
+  [K in keyof CanonicalPathParams]?: unknown;
+};
+
+export function invalidateCanonicalPathParams(
+  corruptions: CanonicalPathParamsCorruptions,
+): unknown {
+  return { ...buildCanonicalPathParams(), ...corruptions };
 }
 
 /**

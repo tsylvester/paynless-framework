@@ -56,7 +56,7 @@ export function deconstructStoragePath(
   const pairwiseSynthesisPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/_work/(?:raw_responses/)?([^_]+)_synthesizing_([^_]+)_with_([^_]+)_on_([^_]+)_(\\d+)_pairwise_synthesis_chunk(?:_raw\\.json|\\.md)$";
   const reducedSynthesisPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/_work/(?:raw_responses/)?([^_]+)_reducing_([^_]+)_by_([^_]+)_(\\d+)_reduced_synthesis(?:_raw\\.json|\\.md)$";
   const ragSummaryPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/_work/([^_]+)_compressing_(.+)_rag_summary\\.txt$";
-  const compressedContentPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/_work/(.+)_compressed_for_(.+?)(?:_chunk_(\\d+)of(\\d+))?\\.md$";
+  const compressedContentPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/_work/(?:raw_responses/)?(.+)_compressed_for_(.+?)(?:_chunk_(\\d+)of(\\d+))?(?:_raw\\.json|\\.md)$";
   
   // Document-centric artifact patterns
   const plannerPromptPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/_work/prompts/(.+)_(\\d+)_?(.*?)_planner_prompt\\.md$";
@@ -653,7 +653,7 @@ export function deconstructStoragePath(
       info.chunkIndex = parseInt(matches[7], 10);
       info.chunkTotal = parseInt(matches[8], 10);
     }
-    info.fileTypeGuess = FileType.CompressedContext;
+    info.fileTypeGuess = fullPath.endsWith('_raw.json') ? FileType.CompressedContextRawJson : FileType.CompressedContext;
     return info;
   }
 

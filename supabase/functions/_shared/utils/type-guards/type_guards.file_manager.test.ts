@@ -11,6 +11,7 @@ import {
   isDocumentKey,
   isDocumentRelated,
   isCompressedContextFileType,
+  isCompressedContextRawJsonFileType,
   isCompressionSourceType,
   isCompressionMode,
   isDialecticStageSlug,
@@ -440,8 +441,37 @@ Deno.test('Type Guard: isResourceFileType recognizes CompressedContext', () => {
     assert(isResourceFileType(FileType.CompressedContext));
 });
 
+Deno.test('Type Guard: isResourceFileType recognizes CompressedContextRawJson', () => {
+    assert(isResourceFileType(FileType.CompressedContextRawJson));
+});
+
 Deno.test('Type Guard: isFileType recognizes compressed_context', () => {
     assert(isFileType('compressed_context'));
+});
+
+Deno.test('Type Guard: isFileType recognizes compressed_context_raw_json', () => {
+    assert(isFileType('compressed_context_raw_json'));
+});
+
+Deno.test('Type Guard: isCompressedContextRawJsonFileType', async (t) => {
+    await t.step('returns true for CompressedContextRawJson enum and string value', () => {
+        assert(isCompressedContextRawJsonFileType(FileType.CompressedContextRawJson));
+        assert(isCompressedContextRawJsonFileType('compressed_context_raw_json'));
+    });
+
+    await t.step('returns false for every other FileType value', () => {
+        for (const fileType of Object.values(FileType)) {
+            if (fileType === FileType.CompressedContextRawJson) continue;
+            assert(!isCompressedContextRawJsonFileType(fileType));
+        }
+    });
+
+    await t.step('returns false for non-string and arbitrary string values', () => {
+        assert(!isCompressedContextRawJsonFileType(null));
+        assert(!isCompressedContextRawJsonFileType(undefined));
+        assert(!isCompressedContextRawJsonFileType(123));
+        assert(!isCompressedContextRawJsonFileType('foo'));
+    });
 });
 
 Deno.test('Type Guard: isDialecticStageSlug', async (t) => {

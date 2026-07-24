@@ -20,7 +20,7 @@ sprints) — that seam is the commit marker. Transient non-compilable states are
 WITHIN a sprint (the sprint is not done until it compiles); they are never permitted at a
 commit. Detailed per-file workplans (interface tests → interfaces → guard tests → guards →
 unit tests → implementation → integration, per workplan.instructions.md) are generated after
-this plan is ratified, one node at a time.
+this plan is completed, one node at a time.
 
 ## BASELINE
 Branch `feat/compress`, cut from `development`. (The `feat/embedding` branch is abandoned
@@ -29,11 +29,14 @@ adapters and enqueueModelCall on the baseline are the production stream-only ver
 file references in this plan are against this baseline; any text lifted from earlier checklist
 material must be re-validated against it.
 
-## DESIGN DECISIONS (ratified 2026-07-09)
+## DESIGN DECISIONS
 1. **COMPRESS job type**, analogous to RENDER: an as-needed infrastructure job, NOT part of
    recipe steps, excluded from step status and progress DTOs, never routed through
    recipe-step machinery. COMPRESS jobs NEVER trigger compression themselves (recursion guard:
-   a COMPRESS call that cannot fit its model window is a hard failure, not a nested compression).
+   a COMPRESS call whose INPUT cannot fit its model window is a hard failure, not a nested
+   compression). The recursion guard bounds INPUT-window fit only; it is not a continuation
+   ban — a COMPRESS response whose OUTPUT is incomplete continues through the ordinary
+   continuation path, like any other agent response (see decision 8).
 2. **Parent job's own model** performs compression — `model_id` is already in the parent
    payload; no provider lookup, no new provider flag. This is a spawning convenience only:
    persisted artifacts are model-agnostic, and reuse never considers which model compressed
@@ -69,13 +72,18 @@ material must be re-validated against it.
    **Text mode** (user feedback documents, history messages, and ALL map-reduce chunks —
    chunking JSON would destroy the structure being validated): source text plus the target
    skeleton; freeform compressed text out (there is no structure to drift from).
-8. **Drift is a validated invariant, not a hope**: in JSON mode, saveResponse structurally
-   diffs the compressor output against the source JSON (recursive key-shape match) before
-   accepting it; a mismatch fails the COMPRESS job explicitly. The validated compressed JSON
-   is then rendered SYNCHRONOUSLY through the SAME document template that rendered the
-   original document — the renderer is an internal service (no external API call), so the
-   sync/async rule permits it — persisting a compressed markdown artifact format-identical to
-   its uncompressed siblings in the payload.
+8. **Completeness is verified against the source.** A compressor is an agent completing a
+   template, so its output is validated by the same completeness check every completed template
+   uses — the missing-keys comparison in `determineContinuation` (does the returned object still
+   contain every key of the source it was sent?). An incomplete result is not a failure: the
+   missing keys return to the agent via the ordinary continuation path, exactly as for any agent
+   response. Only the survival of the SOURCE keys is verified — that is what governs
+   renderability; compression-against-target is subjective and is not judged. Rendering is a
+   job, not a synchronous step: a completed compressed object is persisted as `CompressedContext`
+   (its FileType routes it to the consuming stage's `_work`, never the user-facing finished
+   directory), and — if its preserved source OutputType is renderable — a RENDER job renders it
+   (single file, `CompressedContext` output to `_work`, no user notification) into a markdown
+   artifact format-identical to its uncompressed siblings.
 9. **Compress once per target, reuse across agents** — three-layer opportunistic dedup:
    `enqueueCompressJobs` skips when the canonical artifact exists; `processCompressJob`
    re-checks existence immediately before enqueuing the model call and completes without
@@ -110,12 +118,17 @@ material must be re-validated against it.
    assembled call fits the model window (hard fail otherwise — recursion guard); calls the
    bound `enqueueModelCall` with `output_type: FileType.CompressedContext` and the parent's
    model. This is the same model-call transport EXECUTE jobs use.
-5. The stream callback returns → `saveResponse` routes by the job row's
-   `job_type='COMPRESS'`. JSON mode: structurally validate the output against the source JSON
-   (carried in the payload) — mismatch fails the job explicitly — then synchronously render
-   through the source document's original template into compressed markdown. Text mode:
-   persist the compressed text directly. Either way: persist via fileManager as a
-   `ResourceUploadContext` at the canonical path, idempotently (dedup layer 3). Wallet debit
+5. The stream callback returns → `saveResponse` handles a COMPRESS response through the same
+   path an EXECUTE response takes, diverging only at the tail. Parse / sanitize / retry on
+   malformed or empty output; verify completeness against the source via
+   `determineContinuation` (incomplete → continue via the ordinary continuation path, NOT a
+   failure); on a complete result persist via fileManager using the source's own upload-context
+   arm with `fileType: CompressedContext` at the canonical `_work` path, idempotently (dedup
+   layer 3); if the preserved source OutputType is renderable, dispatch a RENDER job
+   (source-identity keyed) to render it to `_work`, and set the COMPRESS job
+   `waiting_for_children` to await that RENDER child (the existing completion trigger wakes it,
+   and then the parent, once the render finishes — no new state). No user-facing notifications.
+   Wallet debit
    with real user/wallet attribution flows through the normal stream persistence machinery.
    (`netlifyResponseHandler` is untouched — a COMPRESS response is an ordinary stream
    response.)
@@ -123,7 +136,8 @@ material must be re-validated against it.
    but no final artifact → concatenate in `chunk_index` order (fileManager read, synchronous);
    still over the per-victim target → spawn ONE re-compress COMPRESS child → pause again;
    else persist the concatenation as the victim's final artifact (fileManager write,
-   synchronous). Rule: external model call = async job; internal DB/storage call = synchronous.
+   synchronous). Rule: external model call = async job; a transform such as rendering is also a
+   job; only an internal DB/storage call — like this reduce concatenation — is synchronous.
 7. `gatherArtifacts` → `applyCompressionOverlay` swaps victim content (resource documents AND
    history messages) by (sourceType, sourceId) identity with the persisted CompressedContext,
    preserving id/document_key/stage_slug/type. The orchestrator never knows a swap occurred.
@@ -148,20 +162,14 @@ transport.
 - Touch-once is per-epic: within this epic, all changes to a file aggregate into its single
   node — get everything together before touching it, so the file and its support system
   (interfaces, guards, tests) are updated exactly once, never incrementally. Enumerated
-  exceptions, each justified: (1) `dialectic-worker/index.ts` — FOUR touches (WS-R wiring;
-  WS-D `applyCompressionOverlay` wiring into `boundGatherArtifacts` — omitted from the original
-  three-touch count when `gatherArtifacts.ts`'s Deps were widened; corrected 2026-07-12;
-  WS-B renderer-import repoint; WS-X removal wiring): the composition root must reflect every
+  exceptions, each justified: (1) `dialectic-worker/index.ts` — FOUR touches: the composition root must reflect every
   wiring phase, and aggregating any touch into another would leave an intermediate sprint
-  commit non-compilable. (2) The WS-B renderer relocation (ratified 2026-07-11: the
-  document_renderer monolith is decomposed into function-folder modules and the loose files
-  DELETED — no facade file left behind) forces import-path-ONLY repoints in files whose
+  commit non-compilable. (2) The WS-B renderer relocation forces import-path-ONLY repoints in files whose
   aggregated touches land in Sprint 3, BEFORE the relocated paths exist, so the repoints
   cannot aggregate backward: `dialectic.interface.ts` (:8, second touch),
   `createJobContext/JobContext.interface.ts` (:33, second touch), and `processRenderJob.ts`
   (:5, its only touch this epic). Each is a one-line import-path edit with zero behavior
-  change, compile-checked at the Sprint-4 commit. (3) `netlifyResponse/index.ts` (ratified
-  2026-07-11) is WS-B's OWN composition root — it builds `EnqueueRenderJobDeps` inline
+  change, compile-checked at the Sprint-4 commit. (3) `netlifyResponse/index.ts` is WS-B's OWN composition root — it builds `EnqueueRenderJobDeps` inline
   (:45-46) for production and is where `SaveResponseDeps` is assembled (:48-61) — mirroring
   WS-R's `dialectic-worker/index.ts` pattern exactly: every WS-B node that adds a required
   dep to `EnqueueRenderJobDeps` or `SaveResponseDeps` (the `resolveTemplateFilename` node's
@@ -369,15 +377,21 @@ touched. Strict node order: `text_splitter` → `enqueueCompressJobs` →
 * **COMMIT Sprint 3 (WS-R).**
 
 ## WS-B — RENDERER DECOMPOSITION + CALLBACK / PERSISTENCE (Sprint 4; depends WS-R)
-Ratified 2026-07-11: saveResponse's COMPRESS json mode must synchronously render compressed
-JSON through the source document's ORIGINAL template, but the monolithic
-`document_renderer.ts` cannot be handed data — it re-reads the contributions chain and
-self-persists as RenderedDocument — and its `template_filename` input is resolved only by an
-inline, unexported walk in `enqueueRenderJob.ts:138-256`. Rather than duplicate either piece,
-the renderer is FULLY decomposed into function-folder modules and the monolith + its loose
-satellite files are DELETED (no facade file left behind as an attractive nuisance; the
-`renderDocument` orchestrator survives as a proper module with its signature unchanged, so
-`IDocumentRenderer` consumers re-point imports only). COPY-FIRST sequencing (the
+The RENDER flow renders a compressed object — a single `CompressedContext` file — to the
+consuming stage's `_work` directory, but the monolithic `document_renderer.ts` cannot be handed
+data: it re-reads the contributions chain and self-persists as `RenderedDocument`, and its
+`template_filename` input is resolved only by an inline, unexported walk in
+`enqueueRenderJob.ts:138-256`. So the renderer is FULLY decomposed into function-folder modules
+and the monolith + its loose satellite files are DELETED (no facade file left behind as an
+attractive nuisance; the `renderDocument` orchestrator survives as a proper module with its
+signature unchanged, so `IDocumentRenderer` consumers re-point imports only). `renderDocument`
+gains a `CompressedContext`-source case: a single file (no contribution-chain assembly), output
+as `CompressedContext` to `_work` (`path_constructor` already routes it there), no
+`render_completed` notification. saveResponse itself does not render — it handles a COMPRESS
+response through the shared EXECUTE response path (parse/retry → `determineContinuation`
+completeness against the source → continue-if-incomplete → persist as `CompressedContext` via
+the source's own upload-context arm → dispatch a RENDER job when the preserved source OutputType
+is renderable → debit → complete), with no user notifications. COPY-FIRST sequencing (the
 `text_splitter` pattern): module nodes land as copies with their own focused tests while the
 monolith stays untouched; the single relocation node then swaps internals, and the UNMODIFIED
 ~5.9k-line monolith suite — pinned to the unchanged public signature — is the regression
@@ -394,17 +408,10 @@ a redistribution that thins the suite. Strict node order: `resolveTemplateFilena
   entry by `from_document_key` walk against the DB, with typed failure modes), extracted as a
   COPY of the inline block at `enqueueRenderJob.ts:138-256`. Canonical repo shape
   `Fn(deps, params, payload) => Success{ templateFilename } | Error{ error, retriable }`.
-  Consumed by `enqueueRenderJob` (next node) and `saveResponse`'s json-mode COMPRESS branch
-  (save-time resolution from the payload's `sourceStageSlug`/`docType`/`documentKey` — chosen
-  over spawn-time resolution so the ratified `DialecticCompressJobPayload` census is
-  unchanged). Support: full module per the new-package rule (interface, guards, mock, tests,
-  provides).
+  Consumed by `enqueueRenderJob` (next node) and `saveResponse`'s json-mode COMPRESS branch.
 * ✏️ `supabase/functions/dialectic-worker/enqueueRenderJob/enqueueRenderJob.ts` — replace the
   inline walk (:138-256) with a call to the INJECTED `resolveTemplateFilename` dependency
-  (ratified 2026-07-11: every dependency is injected via Deps, without exception — no direct
-  import of a cross-module function, however deterministic; every error returned by an
-  injected dependency is surfaced as the exact object it was produced as, never reconstructed
-  or paraphrased into a different error class). `EnqueueRenderJobDeps` gains
+  `EnqueueRenderJobDeps` gains
   `resolveTemplateFilename: BoundResolveTemplateFilenameFn` (required, no default);
   `EnqueueRenderJobErrorReturn.error` widens to
   `RenderJobValidationError | RenderJobEnqueueError | TemplateResolutionError` and
@@ -452,8 +459,7 @@ a redistribution that thins the suite. Strict node order: `resolveTemplateFilena
   562-658`) — that tail is RENDER-flow-specific and stays in the orchestrator. The module's
   interface file re-homes `RenderDocumentParams`/`RenderDocumentResult`/`DocumentRendererDeps`/
   `IDocumentRenderer`/`ContributionRowMinimal`; its mock re-homes `createDocumentRendererMock`.
-  Proof sequence INSIDE this node, in order (revised 2026-07-21 — the monolith suite is
-  RETAINED as a persistent chain-integration test, not pruned): (1) repoint the untouched
+  Proof sequence INSIDE this node, in order: (1) repoint the untouched
   `document_renderer.test.ts` + `document_renderer.examples.test.ts` suites at the new module
   and run green — the regression oracle; (2) THEN RENAME both suites in full into the module
   folder as `renderDocument.integration.test.ts` + `renderDocument.examples.integration.test.ts`,
@@ -470,48 +476,43 @@ a redistribution that thins the suite. Strict node order: `resolveTemplateFilena
   `createJobContext/JobContext.interface.ts:33`, `createJobContext/JobContext.mock.ts:9`,
   `createJobContext/createJobContext.interface.test.ts:15`, `index.test.ts:36` — all
   import-path-only, enumerated under NODE & SPRINT RULES.
-* ✏️ `supabase/functions/dialectic-worker/saveResponse/saveResponse.ts` — route by the job
-  row's `job_type` FIRST, before the EXECUTE path's `isModelContributionFileType(output_type)`
-  check (`saveResponse.ts:162`) — the COMPRESS payload census has no `output_type` and would
-  be rejected there. COMPRESS → mode-aware persistence. JSON mode: structurally validate the
-  compressor output against the source JSON carried in the payload (recursive key-shape
-  match — every key present, same object shape; arrays may shorten, strings condense,
-  nothing added or removed; mismatch = explicit job failure); resolve the SOURCE document's
-  template via `resolveTemplateFilename` (payload `sourceStageSlug`/`docType`/`documentKey` —
-  guaranteed present in json mode by the tightened `isDialecticCompressJobPayload`); load it
-  via `loadDocumentTemplate`; render via `renderStructuredDocument` (applying
-  `mergeChunkContent`'s content-unwrap rule to the single source) into compressed markdown.
-  Text mode: the response text is the artifact — no renderer involvement. Either way: build a
-  `ResourceUploadContext` (`fileType: FileType.CompressedContext`, canonical pathContext from
-  WS-C), persist through `fileManager.uploadAndRegisterFile(context)` — the real API takes a
-  single `UploadContext` argument — idempotently (dedup layer 3: an existing artifact at the
-  canonical path is not an error). Wallet debit with real user/wallet attribution flows
-  through the existing stream persistence machinery. Deps ADD three narrow fns —
-  `resolveTemplateFilename`, `loadDocumentTemplate`, `renderStructuredDocument` (NOT
-  `IDocumentRenderer`; minimal DI surface). Imports `DialecticCompressJobPayload`/
-  `CompressionMode` + the payload guard from the enqueueCompressJobs module.
+* ✏️ `supabase/functions/dialectic-worker/saveResponse/saveResponse.ts` — a COMPRESS response
+  is handled through the same path an EXECUTE response takes, diverging only at the tail. Route
+  on the job row's `job_type` before the EXECUTE path's `isModelContributionFileType(output_type)`
+  check (`saveResponse.ts:162`), since the COMPRESS payload census has no `output_type`. Parse /
+  sanitize / retry on malformed or empty output (shared with EXECUTE). For a structured
+  (`mode:'json'`) source, verify completeness against the source via `determineContinuation` — an
+  incomplete result continues via the ordinary continuation path, it is not a failure; a
+  `mode:'text'` source (feedback/history) has no key structure to verify and persists as-is.
+  Persist the completed compressed content as `FileType.CompressedContext` through the source's
+  own upload-context arm (`buildUploadContext`, whose resource arm the Sprint-3 createJobContext
+  node widened for exactly this) at the canonical `_work` path from WS-C, via
+  `fileManager.uploadAndRegisterFile(context)`, idempotently (dedup layer 3: an existing artifact
+  at the canonical path is not an error). When the preserved source OutputType is renderable,
+  dispatch a RENDER job keyed on the source identity (rendering to `_work` is the RENDER flow's
+  `CompressedContext`-source case above). saveResponse gains no
+  renderer deps and does no rendering. Wallet debit with real user/wallet attribution flows
+  through the existing stream persistence machinery. Imports `DialecticCompressJobPayload`/
+  `CompressionMode` + the payload guard from the enqueueCompressJobs module;
   `saveResponse.interface.ts` (:9/:51) picks up the widened `BuildUploadContextFn` from the
   Sprint-3 createJobContext node.
-  Support: saveResponse tests (route matrix: EXECUTE→contribution unchanged, COMPRESS json→
-  validated+rendered resource, COMPRESS text→resource, structural-mismatch→failure,
-  existing-artifact→idempotent completion, json-mode template-identity fields missing→
-  failure).
+  Support: saveResponse tests (route matrix: EXECUTE→contribution unchanged; COMPRESS json
+  complete→persisted CompressedContext + RENDER job when renderable; COMPRESS json incomplete→
+  continuation, not failure; COMPRESS text→persisted as-is; existing-artifact→idempotent
+  completion; no notifications on any COMPRESS path).
 * ✏️ `supabase/functions/netlifyResponse/index.ts` — WS-B's capstone composition-root wiring
   node (mirrors WS-R's `dialectic-worker/index.ts`; this file has had no prior touch this
-  epic). Resolves the transient non-compilable states left by two earlier nodes: (1) binds a
-  `BoundResolveTemplateFilenameFn` closure over `adminClient` and adds it to
-  `boundEnqueueRenderJob`'s `EnqueueRenderJobDeps` literal (:45-46); (2) binds the THREE new
-  `saveResponse` deps (`resolveTemplateFilename`, `loadDocumentTemplate`,
-  `renderStructuredDocument`) and adds them to `saveResponseDeps` (:48-61). RIDES HERE (same
-  reasoning as WS-R's index.ts test-harness parity): `dialectic-worker/index.integration.test.ts`
-  `buildNetlifyDeps` (:148-169) gets the identical two wiring additions — it is test
-  infrastructure for this composition root, not a second production entrypoint, so it does not
-  get its own node.
+  epic). Binds a `BoundResolveTemplateFilenameFn` closure over `adminClient` and adds it to
+  `boundEnqueueRenderJob`'s `EnqueueRenderJobDeps` literal (:45-46), resolving the transient
+  non-compilable state the `enqueueRenderJob` node leaves open. saveResponse gains no renderer
+  deps, so `saveResponseDeps` needs no addition here. RIDES HERE (same reasoning as WS-R's
+  index.ts test-harness parity): `dialectic-worker/index.integration.test.ts` `buildNetlifyDeps`
+  (:148-169) gets the identical wiring addition — it is test infrastructure for this composition
+  root, not a second production entrypoint, so it does not get its own node.
 * **COMMIT Sprint 4.**
 
 ## WS-D — COMPRESSION ORCHESTRATION CUTOVER (Sprint 5a; depends WS-B)
-Strict node order (ratified 2026-07-11, reordered from the original draft): `applyCompressionOverlay`
-→ `gatherArtifacts` → `vector_utils` → `compressPrompt` → `calculateAffordability` →
+Strict node order: `applyCompressionOverlay`→ `gatherArtifacts` → `vector_utils` → `compressPrompt` → `calculateAffordability` →
 `prepareModelJob` → `processSimpleJob`. `applyCompressionOverlay` and `gatherArtifacts` have no
 import dependency on `vector_utils`/`compressPrompt` (verified against source — they depend only
 on already-landed WS-C machinery); `gatherArtifacts` is the SOLE PRODUCER of `ResourceDocument.type`,
@@ -525,7 +526,7 @@ respectively, both already landed by the time each is reached.
   by (sourceType, sourceId) — resource documents AND history messages; swap content, preserving
   id/document_key/stage_slug/type. Support: applyCompressionOverlay.test.ts.
 * ✏️ `supabase/functions/dialectic-worker/gatherArtifacts/gatherArtifacts.ts` — MOVED ahead of
-  `vector_utils`/`compressPrompt` (ratified 2026-07-11): this node is the sole producer of
+  `vector_utils`/`compressPrompt`: this node is the sole producer of
   `ResourceDocument.type`, so its type-alignment work must land before any consumer assumes a
   conformant value. Wire `applyCompressionOverlay` as an injected dep post-gather; add
   `stageSlug` param for artifact lookup. Tighten `ResourceDocument.type` (owned in
@@ -533,7 +534,7 @@ respectively, both already landed by the time each is reached.
   to a new 3-member union `'resource' | 'feedback' | 'system'` — `'contribution'` is never a
   valid `ResourceDocument.type` value (it is resolved later, from a selected `'resource'`
   victim's own provenance, by `enqueueCompressJobs`); `'history'` only applies to `Messages`,
-  never `ResourceDocument`. Remap all five push sites per the ratified taxonomy (agent-rendered
+  never `ResourceDocument`. Remap all five push sites per the taxonomy (agent-rendered
   documents and user-submitted resources are both text objects for compression purposes;
   header_context/seed_prompt are required model-call inclusions but system objects, never
   compression candidates): the `rType === 'document'` branch (:139, rendered documents) and the
@@ -545,17 +546,14 @@ respectively, both already landed by the time each is reached.
   both → `'system'`. Support: gatherArtifacts.test.ts (assert each of the five branches emits
   the correct one of the three literals).
 * ✏️ `supabase/functions/_shared/utils/vector_utils.ts` (+ interface) — single full rewrite.
-  MOVED after `applyCompressionOverlay`/`gatherArtifacts` (ratified 2026-07-11) so
+  MOVED after `applyCompressionOverlay`/`gatherArtifacts` so
   `ResourceDocument.type` already carries the tightened 3-member union when this node is
   written. Selection becomes embedding-free: `effectiveScore = candidateTokens × importance`,
   where candidateTokens comes from `deps.countTokens` (same tokenizer/modelConfig as the
   preflight, threaded via CompressionStrategyDeps/Params) and `importance` is the existing 0..1
   preservation-priority value — from the `inputsRelevance` stage-specific/general key lookup
   (KEPT) for document candidates, and from `scoreHistory`'s existing positional `valueScore`
-  (KEPT: 0=oldest/least-preserved, 1=newest/most-preserved) for history candidates. CORRECTED
-  2026-07-11: the originally-stated `tokens × (1 − relevanceWeight)` form inverted victim
-  priority (plugging `importance` directly into a `(1 − x)` term makes the MOST important/recent
-  content the FIRST victim); `effectiveScore = tokens × importance` is the form that reproduces
+  (KEPT: 0=oldest/least-preserved, 1=newest/most-preserved) for history candidates. `effectiveScore = tokens × importance` is the form that reproduces
   the pre-rewrite selection order for both the document-matrix case and the position-anchored
   history case. Sort ascending; lowest effectiveScore = next victim (unimportant + large =
   compress first; important + small = preserve). Only `ResourceDocument`s with
@@ -653,7 +651,7 @@ TYPE OWNERSHIP (module-first; owner file → landing node):
   layer that needs it can import downward. NOTE: this re-anchors the already-written
   `enqueueCompressJobs` node — its `CompressionMode` definition and `isCompressionMode` guard
   move to the `path_constructor.ts` node; `enqueueCompressJobs.interface.ts` should import it
-  instead of defining it. That node has not yet been revised to match; flag before Sprint 3 closes.
+  instead of defining it. 
 * `DialecticCompressJobPayload` (+ `isDialecticCompressJobPayload` in the module guard file)
   → `enqueueCompressJobs.interface.ts`, landed by the Sprint-3 `enqueueCompressJobs.ts` node
   (creator-owns-the-data — only this payload shape, not the shared `CompressionMode` type).
@@ -681,8 +679,7 @@ TYPE OWNERSHIP (module-first; owner file → landing node):
     sourceStageSlug?: DialecticStageSlug } }` — `sourceId`/`documentKey` are
     each optional because exactly one is required per `sourceType` (`'contribution'|'resource'`
     require `documentKey`; `'feedback'|'history'` require `sourceId`), validated as an explicit
-    branch, never an OR-fallback (matches the `path_constructor.ts` rule). ADDITIONALLY
-    (ratified 2026-07-11): `mode:'json'` requires `documentKey` + `docType` + `sourceStageSlug`
+    branch, never an OR-fallback (matches the `path_constructor.ts` rule). ADDITIONALLY: `mode:'json'` requires `documentKey` + `docType` + `sourceStageSlug`
     — the template identity saveResponse's save-time rendering resolves against (WS-B) —
     validated as an explicit mode branch. ONE victim per call —
     incremental compression is the point; `content` is the completed source JSON in json mode,
@@ -766,8 +763,7 @@ Crib hazards (verified against source):
 relocation node; the workplan author copies the relevant rows into each node so the
 implementer is told exactly what goes where — nothing is left to implementer judgment)
 
-Dispositions (revised 2026-07-21 — the full monolith suite is RETAINED, not pruned): every
-baseline case is kept and repointed into the persistent `renderDocument.integration.test.ts`
+Dispositions: every baseline case is kept and repointed into the persistent `renderDocument.integration.test.ts`
 (real siblings, only DB/storage mocked) — the chain-level regression guard that fails the
 moment a future edit mis-wires the orchestrator. The MOVE/RETAIN label now records ONLY
 whether a case ALSO gains direct isolation coverage, not whether it is deleted (nothing is):

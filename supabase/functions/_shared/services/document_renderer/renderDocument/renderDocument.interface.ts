@@ -1,9 +1,12 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import type { Database } from "../../../../types_db.ts";
 import type { DownloadFromStorageFn } from "../../../supabase_storage_utils.ts";
-import type { FileType, IFileManager, PathContext } from "../../../types/file_manager.types.ts";
+import type { DialecticStageSlug, FileType, IFileManager, PathContext } from "../../../types/file_manager.types.ts";
 import type { NotificationServiceType } from "../../../types/notification.service.types.ts";
 import type { ILogger } from "../../../types.ts";
+import type { AssembleContributionChainFn } from "../assembleContributionChain/assembleContributionChain.provides.ts";
+import type { LoadDocumentTemplateFn } from "../loadDocumentTemplate/loadDocumentTemplate.provides.ts";
+import type { MergeChunkContentFn } from "../mergeChunkContent/mergeChunkContent.provides.ts";
 export type ContributionRowMinimal = {
     id: string;
     session_id: string;
@@ -27,7 +30,7 @@ export type RenderDocumentParams = {
   projectId: string;
   sessionId: string;
   iterationNumber: number;
-  stageSlug: string;
+  stageSlug: DialecticStageSlug;
   documentIdentity: string; // true-root id for this document chain
   documentKey: FileType;
   sourceContributionId: string;
@@ -45,6 +48,9 @@ export interface DocumentRendererDeps {
   notificationService: NotificationServiceType;
   notifyUserId: string;
   logger: ILogger;
+  assembleContributionChain: AssembleContributionChainFn;
+  loadDocumentTemplate: LoadDocumentTemplateFn;
+  mergeChunkContent: MergeChunkContentFn;
 }
 
 export type RenderDocumentFn = (

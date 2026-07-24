@@ -29,13 +29,12 @@ import { DownloadStorageResult } from '../_shared/supabase_storage_utils.ts';
 import { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import { 
     createMockJobProcessors, 
-    createMockProcessJob
 } from '../_shared/dialectic.mock.ts';
 import { getMockAiProviderAdapter } from '../_shared/ai_service/ai_provider.mock.ts';
 import { NotificationService } from '../_shared/utils/notification.service.ts';
 import { MockRagService } from '../_shared/services/rag_service.mock.ts';
 import { OpenAiAdapter } from '../_shared/ai_service/openai_adapter.ts';
-import { renderDocument } from '../_shared/services/document_renderer.ts';
+import { renderDocument } from '../_shared/services/document_renderer/renderDocument/renderDocument.ts';
 import { createMockJobContextParams } from './createJobContext/JobContext.mock.ts';
 import { createJobContext } from './createJobContext/createJobContext.ts';
 import { pickLatest } from '../_shared/utils/pickLatest.ts';
@@ -54,15 +53,6 @@ import {
 } from './prepareModelJob/prepareModelJob.interface.ts';
 import { getSortedCompressionCandidates } from '../_shared/utils/vector_utils.ts';
 import {
-    SaveResponseDeps,
-    SaveResponseParams,
-    SaveResponsePayload,
-    SaveResponseRequestBody,
-    SaveResponseReturn,
-} from './saveResponse/saveResponse.interface.ts';
-import {
-    createMockSaveResponseSuccessReturn,
-    createMockSaveResponseErrorReturn,
     createMockJobRow,
 } from './saveResponse/saveResponse.mock.ts';
 import { buildDialecticCompressJobPayload } from './enqueueCompressJobs/enqueueCompressJobs.mock.ts';
@@ -77,9 +67,6 @@ const mockSupabaseClient = createMockSupabaseClient(undefined, {
         }
     }
 });
-const mockJobProcessors = createMockJobProcessors();
-const mockProcessJob = createMockProcessJob();
-
 // Global mock supabase client for deps factory test
 const mockSupabaseClientDeps = createMockSupabaseClient(undefined, {
     genericMockResults: {

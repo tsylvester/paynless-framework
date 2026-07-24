@@ -140,7 +140,7 @@ export const mockLoadDocumentTemplate: LoadDocumentTemplateFn = async (
 
 // Real template structure from docs/templates/thesis/thesis_business_case.md
 export const REAL_THESIS_BUSINESS_CASE_TEMPLATE = Deno.readTextFileSync(
-  new URL("../../../../../../../docs/templates/thesis/thesis_business_case.md", import.meta.url),
+  new URL("../../../../../../docs/templates/thesis/thesis_business_case.md", import.meta.url),
 );
 
 export function mockProjectRow(domainId: string): Tables<"dialectic_projects"> {

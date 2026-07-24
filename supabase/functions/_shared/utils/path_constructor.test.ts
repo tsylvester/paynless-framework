@@ -894,6 +894,37 @@ Deno.test('constructStoragePath', async (t) => {
       assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/3_synthesis/_work`);
       assertEquals(fileName, 'executive_summary_compressed_for_business_case_chunk_1of3.md');
     });
+
+    await t.step('constructs path for compressed_context_raw_json (contribution)', () => {
+      const targetKey = 'business_case';
+      const context: PathContext = { ...baseContext, stageSlug: 'synthesis', fileType: FileType.CompressedContextRawJson, targetKey, sourceType: 'contribution', documentKey: 'executive_summary' };
+      const { storagePath, fileName } = constructStoragePath(context);
+      assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/3_synthesis/_work/raw_responses`);
+      assertEquals(fileName, 'executive_summary_compressed_for_business_case_raw.json');
+    });
+
+    await t.step('compressed_context and compressed_context_raw_json share identity stem', () => {
+      const targetKey = 'business_case';
+      const baseCompressedContext: PathContext = { ...baseContext, stageSlug: 'synthesis', fileType: FileType.CompressedContext, targetKey, sourceType: 'contribution', documentKey: 'executive_summary' };
+      const rawJsonContext: PathContext = { ...baseCompressedContext, fileType: FileType.CompressedContextRawJson };
+      const md = constructStoragePath(baseCompressedContext);
+      const raw = constructStoragePath(rawJsonContext);
+      const mdStem = md.fileName.replace(/\.md$/, '');
+      const rawStem = raw.fileName.replace(/_raw\.json$/, '');
+      assertEquals(mdStem, rawStem);
+      assert(md.storagePath.endsWith('/_work'));
+      assert(raw.storagePath.endsWith('/_work/raw_responses'));
+      assert(md.fileName.endsWith('.md'));
+      assert(raw.fileName.endsWith('_raw.json'));
+    });
+
+    await t.step('constructs path for compressed_context_raw_json with chunk suffix', () => {
+      const targetKey = 'business_case';
+      const context: PathContext = { ...baseContext, stageSlug: 'synthesis', fileType: FileType.CompressedContextRawJson, targetKey, sourceType: 'contribution', documentKey: 'executive_summary', chunkIndex: 1, chunkTotal: 3 };
+      const { storagePath, fileName } = constructStoragePath(context);
+      assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/3_synthesis/_work/raw_responses`);
+      assertEquals(fileName, 'executive_summary_compressed_for_business_case_chunk_1of3_raw.json');
+    });
   });
 
   await t.step('should throw errors for missing context', async (t) => {

@@ -3,10 +3,18 @@ import type {
   BuildUploadContextAiResponseSlice,
   BuildUploadContextParams,
   BuildUploadContextProviderDetails,
+  BuildUploadContextResourceParams,
 } from "./buildUploadContext.interface.ts";
 import { isContributionType } from "../type-guards/type_guards.dialectic.ts";
 import { isJson, isRecord } from "../type-guards/type_guards.common.ts";
-import { isModelContributionFileType } from "../type-guards/type_guards.file_manager.ts";
+import {
+  isCompressedContextFileType,
+  isCompressedContextRawJsonFileType,
+  isCompressionSourceType,
+  isDialecticStageSlug,
+  isFileType,
+  isModelContributionFileType,
+} from "../type-guards/type_guards.file_manager.ts";
 
 /**
  * Validates `restOfCanonicalPathParams` after `contributionType` is split out: requires `stageSlug` per `CanonicalPathParams`.
@@ -223,6 +231,96 @@ export function isBuildUploadContextParams(
   }
   if (!("isIntermediate" in value) || typeof value.isIntermediate !== "boolean") {
     return false;
+  }
+
+  return true;
+}
+
+/**
+ * Validates that `value` satisfies `BuildUploadContextResourceParams`: all required fields present with correct types,
+ * identity fields validated per `sourceType` branch, chunk pair both-or-neither.
+ */
+export function isBuildUploadContextResourceParams(
+  value: unknown,
+): value is BuildUploadContextResourceParams {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  if (!("projectId" in value) || typeof value.projectId !== "string") {
+    return false;
+  }
+  if (
+    !("storageFileType" in value) ||
+    !(isCompressedContextFileType(value.storageFileType) ||
+      isCompressedContextRawJsonFileType(value.storageFileType))
+  ) {
+    return false;
+  }
+  if (!("sessionId" in value) || typeof value.sessionId !== "string") {
+    return false;
+  }
+  if (
+    !("iterationNumber" in value) ||
+    typeof value.iterationNumber !== "number"
+  ) {
+    return false;
+  }
+  if (!("stageSlug" in value) || !isDialecticStageSlug(value.stageSlug)) {
+    return false;
+  }
+  if (!("targetKey" in value) || !isModelContributionFileType(value.targetKey)) {
+    return false;
+  }
+  if (!("sourceType" in value) || !isCompressionSourceType(value.sourceType)) {
+    return false;
+  }
+  if (!("contentForStorage" in value) || typeof value.contentForStorage !== "string") {
+    return false;
+  }
+  if (
+    !("projectOwnerUserId" in value) ||
+    typeof value.projectOwnerUserId !== "string"
+  ) {
+    return false;
+  }
+  if (!("description" in value) || typeof value.description !== "string") {
+    return false;
+  }
+
+  const sourceType: unknown = value.sourceType;
+  if (sourceType === "contribution" || sourceType === "resource") {
+    if (!("documentKey" in value) || !isFileType(value.documentKey)) {
+      return false;
+    }
+    if ("sourceId" in value && value.sourceId !== undefined) {
+      if (typeof value.sourceId !== "string") {
+        return false;
+      }
+    }
+  } else if (sourceType === "feedback" || sourceType === "history") {
+    if (!("sourceId" in value) || typeof value.sourceId !== "string") {
+      return false;
+    }
+    if ("documentKey" in value && value.documentKey !== undefined) {
+      if (!isFileType(value.documentKey)) {
+        return false;
+      }
+    }
+  }
+
+  const hasChunkIndex: boolean = "chunkIndex" in value && value.chunkIndex !== undefined;
+  const hasChunkTotal: boolean = "chunkTotal" in value && value.chunkTotal !== undefined;
+  if (hasChunkIndex !== hasChunkTotal) {
+    return false;
+  }
+  if (hasChunkIndex) {
+    if (typeof value.chunkIndex !== "number") {
+      return false;
+    }
+    if (typeof value.chunkTotal !== "number") {
+      return false;
+    }
   }
 
   return true;

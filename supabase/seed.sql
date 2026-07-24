@@ -338,6 +338,31 @@ ON CONFLICT (api_identifier) DO UPDATE SET
   is_enabled           = EXCLUDED.is_enabled,
   is_default_embedding = EXCLUDED.is_default_embedding;
 
+-- Set min_plan_tier_level based on output_token_cost_rate cost bands.
+-- Mirrors logic from migration 20260501204427_tier_infrastructure.sql
+-- and refinement from 20260505023238_tier_infrastructure_invalid.sql:
+--   null cost (non-dummy) → 99 (inaccessible, not free)
+--   < 10  → 0  (free)
+--   10-19 → 10 (basic)
+--   ≥ 20  → 20 (premium)
+UPDATE public.ai_providers SET min_plan_tier_level = 0
+  WHERE api_identifier LIKE 'dummy-%';
+
+UPDATE public.ai_providers SET min_plan_tier_level = 99
+  WHERE config->>'output_token_cost_rate' IS NULL
+    AND api_identifier NOT LIKE 'dummy-%';
+
+UPDATE public.ai_providers SET min_plan_tier_level = 0
+  WHERE (config->>'output_token_cost_rate')::NUMERIC < 10
+    AND api_identifier NOT LIKE 'dummy-%';
+
+UPDATE public.ai_providers SET min_plan_tier_level = 10
+  WHERE (config->>'output_token_cost_rate')::NUMERIC >= 10
+    AND (config->>'output_token_cost_rate')::NUMERIC < 20;
+
+UPDATE public.ai_providers SET min_plan_tier_level = 20
+  WHERE (config->>'output_token_cost_rate')::NUMERIC >= 20;
+
 -- END AI PROVIDERS
 
 -- Enable realtime for the notifications table
