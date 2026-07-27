@@ -12,6 +12,8 @@ import type { ShouldEnqueueRenderJobFn } from "../../_shared/types/shouldEnqueue
 import type { BoundResolveTemplateFilenameFn } from "../../_shared/utils/resolveTemplateFilename/resolveTemplateFilename.interface.ts";
 import { RenderJobValidationError } from "../../_shared/utils/errors.ts";
 import type {
+  DialecticRenderCompressedContextJobPayload,
+  EnqueueRenderCompressedContextPayload,
   EnqueueRenderJobDeps,
   EnqueueRenderJobErrorReturn,
   EnqueueRenderJobFn,
@@ -32,6 +34,12 @@ export type EnqueueRenderJobSuccessReturnOverrides =
 export type EnqueueRenderJobErrorReturnOverrides =
   Partial<EnqueueRenderJobErrorReturn>;
 
+export type EnqueueRenderCompressedContextPayloadOverrides =
+  Partial<EnqueueRenderCompressedContextPayload>;
+
+export type DialecticRenderCompressedContextJobPayloadOverrides =
+  Partial<DialecticRenderCompressedContextJobPayload>;
+
 export type EnqueueRenderJobDepsCorruptions = {
   [K in keyof EnqueueRenderJobDeps]?: unknown;
 };
@@ -50,6 +58,14 @@ export type EnqueueRenderJobSuccessReturnCorruptions = {
 
 export type EnqueueRenderJobErrorReturnCorruptions = {
   [K in keyof EnqueueRenderJobErrorReturn]?: unknown;
+};
+
+export type EnqueueRenderCompressedContextPayloadCorruptions = {
+  [K in keyof EnqueueRenderCompressedContextPayload]?: unknown;
+};
+
+export type DialecticRenderCompressedContextJobPayloadCorruptions = {
+  [K in keyof DialecticRenderCompressedContextJobPayload]?: unknown;
 };
 
 const defaultShouldEnqueueRenderJob: ShouldEnqueueRenderJobFn = async () => ({
@@ -155,10 +171,55 @@ export function invalidateEnqueueRenderJobErrorReturn(
   return { ...buildEnqueueRenderJobErrorReturn(), ...corruptions };
 }
 
+export function buildEnqueueRenderCompressedContextPayload(
+  overrides?: EnqueueRenderCompressedContextPayloadOverrides,
+): EnqueueRenderCompressedContextPayload {
+  const base: EnqueueRenderCompressedContextPayload = {
+    sourceType: "contribution",
+    documentKey: FileType.business_case,
+    docType: FileType.business_case,
+    sourceStageSlug: DialecticStageSlug.Thesis,
+    targetKey: FileType.technical_approach,
+  };
+  return overrides ? { ...base, ...overrides } : base;
+}
+
+export function buildDialecticRenderCompressedContextJobPayload(
+  overrides?: DialecticRenderCompressedContextJobPayloadOverrides,
+): DialecticRenderCompressedContextJobPayload {
+  const base: DialecticRenderCompressedContextJobPayload = {
+    idempotencyKey: "session-1_1_thesis_compress_render_contribution_business_case_technical_approach",
+    projectId: "project-1",
+    sessionId: "session-1",
+    iterationNumber: 1,
+    stageSlug: DialecticStageSlug.Thesis,
+    targetKey: FileType.technical_approach,
+    sourceType: "contribution",
+    documentKey: FileType.business_case,
+    template_filename: "thesis_business_case.md",
+    user_jwt: "jwt-token",
+    model_id: "model-1",
+    walletId: "wallet-1",
+  };
+  return overrides ? { ...base, ...overrides } : base;
+}
+
+export function invalidateEnqueueRenderCompressedContextPayload(
+  corruptions: EnqueueRenderCompressedContextPayloadCorruptions,
+): unknown {
+  return { ...buildEnqueueRenderCompressedContextPayload(), ...corruptions };
+}
+
+export function invalidateDialecticRenderCompressedContextJobPayload(
+  corruptions: DialecticRenderCompressedContextJobPayloadCorruptions,
+): unknown {
+  return { ...buildDialecticRenderCompressedContextJobPayload(), ...corruptions };
+}
+
 export const mockEnqueueRenderJob: EnqueueRenderJobFn = async (
   _deps: EnqueueRenderJobDeps,
   _params: EnqueueRenderJobParams,
-  _payload: EnqueueRenderJobPayload,
+  _payload: EnqueueRenderJobPayload | EnqueueRenderCompressedContextPayload,
 ): Promise<EnqueueRenderJobSuccessReturn> => {
   return buildEnqueueRenderJobSuccessReturn();
 };

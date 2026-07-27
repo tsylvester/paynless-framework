@@ -5,7 +5,7 @@ import type { ShouldEnqueueRenderJobFn } from '../../_shared/types/shouldEnqueue
 import type { RenderJobEnqueueError, RenderJobValidationError } from '../../_shared/utils/errors.ts';
 import type { BoundResolveTemplateFilenameFn } from '../../_shared/utils/resolveTemplateFilename/resolveTemplateFilename.interface.ts';
 import type { TemplateResolutionError } from '../../_shared/utils/resolveTemplateFilename/resolveTemplateFilename.ts';
-import type { FileType, ModelContributionFileTypes, DialecticStageSlug } from '../../_shared/types/file_manager.types.ts';
+import type { FileType, ModelContributionFileTypes, DialecticStageSlug, CompressionSourceType } from '../../_shared/types/file_manager.types.ts';
 
 export interface EnqueueRenderJobDeps {
   dbClient: SupabaseClient<Database>;
@@ -50,13 +50,36 @@ export type EnqueueRenderJobReturn =
   | EnqueueRenderJobSuccessReturn
   | EnqueueRenderJobErrorReturn;
 
+export interface EnqueueRenderCompressedContextPayload {
+  sourceType: CompressionSourceType;
+  documentKey: FileType;
+  docType: ModelContributionFileTypes;
+  sourceStageSlug: DialecticStageSlug;
+  targetKey: ModelContributionFileTypes;
+}
+
+export interface DialecticRenderCompressedContextJobPayload {
+  idempotencyKey: string;
+  projectId: string;
+  sessionId: string;
+  iterationNumber: number;
+  stageSlug: DialecticStageSlug;
+  targetKey: ModelContributionFileTypes;
+  sourceType: CompressionSourceType;
+  documentKey: FileType;
+  template_filename: string;
+  user_jwt: string;
+  model_id: string;
+  walletId: string;
+}
+
 export type EnqueueRenderJobFn = (
   deps: EnqueueRenderJobDeps,
   params: EnqueueRenderJobParams,
-  payload: EnqueueRenderJobPayload,
+  payload: EnqueueRenderJobPayload | EnqueueRenderCompressedContextPayload,
 ) => Promise<EnqueueRenderJobReturn>;
 
 export type BoundEnqueueRenderJobFn = (
   params: EnqueueRenderJobParams,
-  payload: EnqueueRenderJobPayload,
+  payload: EnqueueRenderJobPayload | EnqueueRenderCompressedContextPayload,
 ) => Promise<EnqueueRenderJobReturn>;

@@ -14,6 +14,8 @@ import { isResourceContext } from "../../../utils/type-guards/type_guards.file_m
 import { assembleContributionChain } from "../assembleContributionChain/assembleContributionChain.provides.ts";
 import { loadDocumentTemplate } from "../loadDocumentTemplate/loadDocumentTemplate.provides.ts";
 import { mergeChunkContent } from "../mergeChunkContent/mergeChunkContent.provides.ts";
+import { constructStoragePath } from "../../../utils/path_constructor.ts";
+import { buildRenderCompressedContextParams } from "./renderDocument.mock.ts";
 const REAL_THESIS_BUSINESS_CASE_TEMPLATE = Deno.readTextFileSync(
   new URL("../../../../../../docs/templates/thesis/thesis_business_case.md", import.meta.url),
 );
@@ -1344,6 +1346,136 @@ Deno.test("DocumentRenderer - PathContext works without source_group", async (t)
 
 
 
+
+Deno.test("DocumentRenderer - COMPRESS end-to-end", async (t) => {
+  const setup = (config: MockSupabaseDataConfig = {}) => {
+    const { client, spies, clearAllStubs } = createMockSupabaseClient(undefined, config);
+    return { dbClient: client as unknown as SupabaseClient<Database>, spies, clearAllStubs };
+  };
+
+  await t.step("renders compressed context through real loadDocumentTemplate and renderStructuredDocument", async () => {
+    const compressParams = buildRenderCompressedContextParams();
+
+    const rawJsonArtifact = constructStoragePath({
+      projectId: compressParams.projectId,
+      fileType: FileType.CompressedContextRawJson,
+      sessionId: compressParams.sessionId,
+      iteration: compressParams.iterationNumber,
+      stageSlug: compressParams.stageSlug,
+      targetKey: compressParams.targetKey,
+      sourceType: compressParams.sourceType,
+      documentKey: compressParams.documentKey,
+    });
+
+    const compressedArtifact = constructStoragePath({
+      projectId: compressParams.projectId,
+      fileType: FileType.CompressedContext,
+      sessionId: compressParams.sessionId,
+      iteration: compressParams.iterationNumber,
+      stageSlug: compressParams.stageSlug,
+      targetKey: compressParams.targetKey,
+      sourceType: compressParams.sourceType,
+      documentKey: compressParams.documentKey,
+    });
+
+    const resourceRow = buildFileRecord({
+      storage_bucket: "content",
+      storage_path: rawJsonArtifact.storagePath,
+      file_name: rawJsonArtifact.fileName,
+    });
+
+    const templateRecord: Database['public']['Tables']['dialectic_document_templates']['Row'] = {
+      id: "template-compress-1",
+      created_at: new Date().toISOString(),
+      description: null,
+      domain_id: "domain-1",
+      file_name: "thesis_business_case.md",
+      is_active: true,
+      name: "thesis_business_case",
+      storage_bucket: "prompt-templates",
+      storage_path: "templates/thesis",
+      updated_at: new Date().toISOString(),
+    };
+
+    const compressedBody = {
+      content: {
+        executive_summary: "Compressed executive summary for integration",
+        market_opportunity: "Compressed market opportunity for integration",
+      },
+    };
+
+    const { dbClient, clearAllStubs } = setup({
+      genericMockResults: {
+        dialectic_project_resources: {
+          select: { data: [resourceRow], error: null, count: 1, status: 200, statusText: "OK" },
+        },
+        dialectic_projects: {
+          select: { data: [{ id: compressParams.projectId, selected_domain_id: "domain-1" }], error: null, count: null, status: 200, statusText: "OK" },
+        },
+        dialectic_document_templates: {
+          select: { data: [templateRecord], error: null, count: null, status: 200, statusText: "OK" },
+        },
+      },
+      storageMock: {
+        downloadResult: async (_bucketId: string, path: string) => {
+          if (path === `${rawJsonArtifact.storagePath}/${rawJsonArtifact.fileName}`) {
+            return { data: new Blob([JSON.stringify(compressedBody)], { type: "application/json" }), error: null };
+          }
+          if (path.endsWith("thesis_business_case.md")) {
+            return { data: new Blob([REAL_THESIS_BUSINESS_CASE_TEMPLATE], { type: "text/markdown" }), error: null };
+          }
+          return { data: new Blob([""], { type: "text/plain" }), error: null };
+        },
+      },
+    });
+
+    const fileManager = new MockFileManagerService();
+    fileManager.setUploadAndRegisterFileResponse(buildFileRecord({ id: "compressed-int-1" }), null);
+    resetMockNotificationService();
+
+    const result = await renderDocument(
+      dbClient,
+      {
+        downloadFromStorage,
+        fileManager,
+        notificationService: mockNotificationService,
+        notifyUserId: "user_123",
+        logger: logger,
+        assembleContributionChain,
+        loadDocumentTemplate,
+        mergeChunkContent,
+      },
+      compressParams,
+    );
+
+    assertEquals(fileManager.uploadAndRegisterFile.calls.length, 1, "should upload exactly once");
+
+    const uploadArg = fileManager.uploadAndRegisterFile.calls[0].args[0];
+    assert(isResourceContext(uploadArg), "upload context should be a ResourceUploadContext");
+
+    assertEquals(uploadArg.pathContext.fileType, FileType.CompressedContext);
+    assertEquals(uploadArg.pathContext.projectId, compressParams.projectId);
+    assertEquals(uploadArg.pathContext.sessionId, compressParams.sessionId);
+    assertEquals(uploadArg.pathContext.iteration, compressParams.iterationNumber);
+    assertEquals(uploadArg.pathContext.stageSlug, compressParams.stageSlug);
+    assertEquals(uploadArg.pathContext.targetKey, compressParams.targetKey);
+    assertEquals(uploadArg.pathContext.sourceType, compressParams.sourceType);
+    assertEquals(uploadArg.pathContext.documentKey, compressParams.documentKey);
+
+    assert(compressedArtifact.storagePath.endsWith("/_work"), "compressed artifact storagePath should end with /_work");
+    assert(compressedArtifact.fileName.endsWith(`_compressed_for_${compressParams.targetKey}.md`), "compressed artifact fileName should end with _compressed_for_<targetKey>.md");
+
+    const rendered = new TextDecoder().decode(result.renderedBytes);
+    assert(rendered.includes("# Executive Summary"), "rendered output should contain Executive Summary section");
+    assert(rendered.includes("Compressed executive summary for integration"), "rendered output should contain compressed executive summary value");
+    assert(rendered.includes("# Market Opportunity"), "rendered output should contain Market Opportunity section");
+    assert(rendered.includes("Compressed market opportunity for integration"), "rendered output should contain compressed market opportunity value");
+
+    assertEquals(mockNotificationService.sendJobNotificationEvent.calls.length, 0, "sendJobNotificationEvent should never be called for COMPRESS");
+
+    clearAllStubs?.();
+  });
+});
 
 // Template for feature_spec with flat field placeholders
 const FEATURE_SPEC_TEMPLATE = `{{#section:feature_name}}

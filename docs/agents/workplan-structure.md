@@ -83,6 +83,11 @@ implementation file. Many producers, one implementation, per node.
 - **Nodes are not numbered.** They use relational references to other files only.
   Relational references survive insertion and reordering; numbering is brittle and
   forces a ripple edit of every later node on any change.
+- **Nothing else is numbered either.** The prohibition is not specific to nodes — it
+  covers sprints, epics, phases, workstreams, milestones, and any other container an
+  author might invent. Numbering a group is the same brittleness one level up: insert or
+  reorder one item and every later ordinal must be rewritten. Address every grouping by
+  its dependency role, never an ordinal — "Sprint 2" or "Phase 3" is numbering.
 - A node is addressed by its deepest unique path segment.
 - Intra-node and inter-node work is dependency-ordered, producers first. The order
   itself is owned by [tdd-ordering](tdd-ordering.md); the author confirms nodes sit
@@ -97,6 +102,19 @@ implementation file. Many producers, one implementation, per node.
 - Console logs and fixes derived from test output are not documented in the
   workplan **unless** the output shows a requirement is misstated and must be
   corrected.
+
+## The workplan states what is, never what it was
+
+A node is an instruction to the implementer, not a change log. It states the current
+requirement as fact. It does not litigate the file's history, and it carries no
+`AMENDED` / `CORRECTED` / `REVISED` / `RATIFIED` / `UPDATED` / `RESOLVED` markers, dated
+amendments, or "was X, now Y" narration.
+
+When a requirement changes, revise the node **in place** so it reads as the single
+current instruction — the superseded wording is deleted, not annotated. What the author
+once thought and later corrected is irrelevant to the implementer; only what the
+implementer must do now belongs in the node. Tests follow the same rule (see
+[tests](tests.md)).
 
 ## Handling the workplan
 
@@ -168,6 +186,8 @@ node and the referenced file alone.
 | A separate node for integration tests or commits | The integration test and commit are steps in the **last node** of the chain they prove |
 | A node step that says "grep for", "check if", "validate that", "determine whether" | The author greps, checks, validates, and determines **now**, before writing the node. The implementer implements; it does not verify the work is complete |
 | A node step that says "no change required" | Omit it. No-op inclusions are noise |
+| A node carrying `AMENDED:` / `REVISED:` / "was X, now Y" history | State the current instruction as fact; delete superseded wording rather than annotate it |
+| Numbering sprints, epics, phases, or workstreams | Everything is addressed relationally by dependency — no ordinals at any level, not just on nodes |
 
 ## Precedence
 

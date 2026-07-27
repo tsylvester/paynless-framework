@@ -9,7 +9,7 @@ import { stub } from "https://deno.land/std@0.224.0/testing/mock.ts";
 import { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { Database } from "../types_db.ts";
 import { createMockSupabaseClient } from "../_shared/supabase.mock.ts";
-import { FileType } from "../_shared/types/file_manager.types.ts";
+import { FileType, DialecticStageSlug } from "../_shared/types/file_manager.types.ts";
 import { isRecord, isDialecticRenderJobPayload } from "../_shared/utils/type_guards.ts";
 import { processRenderJob } from "./processRenderJob.ts";
 import { mockNotificationService, resetMockNotificationService } from "../_shared/utils/notification.service.mock.ts";
@@ -18,6 +18,7 @@ import { isJson } from "../_shared/utils/type-guards/type_guards.common.ts";
 import { IRenderJobContext } from "./createJobContext/JobContext.interface.ts";
 import { createRenderJobContext } from "./createJobContext/createJobContext.ts";
 import { buildIJobContext } from "./createJobContext/JobContext.mock.ts";
+import type { DialecticRenderCompressedContextJobPayload } from "./enqueueRenderJob/enqueueRenderJob.interface.ts";
 
 // Helpers
 type MockJob = Database['public']['Tables']['dialectic_generation_jobs']['Row'];
@@ -68,6 +69,52 @@ const makeRenderJob = (payloadOverrides: Partial<DialecticRenderJobPayload> = {}
   return row;
 };
 
+const makeCompressedRenderJob = (payloadOverrides: Partial<DialecticRenderCompressedContextJobPayload> = {}): MockJob => {
+  const payload: DialecticRenderCompressedContextJobPayload = {
+    idempotencyKey: "idempotency-key-compressed-1",
+    projectId: "project_123",
+    sessionId: "session_abc",
+    iterationNumber: 1,
+    stageSlug: DialecticStageSlug.Thesis,
+    targetKey: FileType.business_case,
+    sourceType: "contribution",
+    documentKey: FileType.business_case,
+    template_filename: "thesis_business_case.md",
+    user_jwt: "test-jwt-token",
+    model_id: "renderer",
+    walletId: "wallet-123",
+    ...payloadOverrides,
+  };
+
+  if (!isJson(payload)) {
+    throw new Error("Test payload is not valid JSON. Please check the mock payload object.");
+  }
+
+  const row: MockJob = {
+    id: "job-render-compressed-1",
+    user_id: "user-123",
+    session_id: String(payload.sessionId),
+    stage_slug: String(payload.stageSlug),
+    payload,
+    iteration_number: Number(payload.iterationNumber),
+    status: "pending",
+    attempt_count: 0,
+    max_retries: 0,
+    created_at: new Date().toISOString(),
+    started_at: null,
+    completed_at: null,
+    results: null,
+    error_details: null,
+    parent_job_id: null,
+    target_contribution_id: null,
+    prerequisite_job_id: null,
+    is_test_job: false,
+    job_type: "RENDER",
+    idempotency_key: "idempotency-key-compressed-1",
+  };
+  return row;
+};
+
 Deno.test("processRenderJob - calls renderer with job signature and marks job completed", async () => {
   // Arrange
   // - Build a mock Dialectic job row (job_type: 'RENDER') whose payload contains:
@@ -83,19 +130,22 @@ Deno.test("processRenderJob - calls renderer with job signature and marks job co
   const renderDocumentStub = stub(
     rootCtx.documentRenderer,
     "renderDocument",
-    async (_dbc, _deps, params) => ({
-      pathContext: {
-        projectId: params.projectId,
-        fileType: FileType.RenderedDocument,
-        sessionId: params.sessionId,
-        iteration: params.iterationNumber,
-        stageSlug: params.stageSlug,
-        documentKey: params.documentKey,
-        modelSlug: "mock-model",
-        sourceContributionId: params.sourceContributionId,
-      },
-      renderedBytes: new Uint8Array(),
-    }),
+    async (_dbc, _deps, params) => {
+      if (!("documentIdentity" in params)) throw new Error("expected RenderDocumentParams");
+      return {
+        pathContext: {
+          projectId: params.projectId,
+          fileType: FileType.RenderedDocument,
+          sessionId: params.sessionId,
+          iteration: params.iterationNumber,
+          stageSlug: params.stageSlug,
+          documentKey: params.documentKey,
+          modelSlug: "mock-model",
+          sourceContributionId: params.sourceContributionId,
+        },
+        renderedBytes: new Uint8Array(),
+      };
+    },
   );
 
   // Act
@@ -114,6 +164,7 @@ Deno.test("processRenderJob - calls renderer with job signature and marks job co
   assertEquals(renderDocumentStub.calls.length, 1);
   const call = renderDocumentStub.calls[0];
   const params = call.args[2];
+  if (!("documentIdentity" in params)) throw new Error("expected RenderDocumentParams");
   assertEquals(params.projectId, "project_123");
   assertEquals(params.sessionId, "session_abc");
   assertEquals(params.iterationNumber, 1);
@@ -148,19 +199,22 @@ Deno.test("processRenderJob - passes originating contribution id to renderer pay
   const renderDocumentStub = stub(
     rootCtx.documentRenderer,
     "renderDocument",
-    async (_dbc, _deps, params) => ({
-      pathContext: {
-        projectId: params.projectId,
-        fileType: FileType.RenderedDocument,
-        sessionId: params.sessionId,
-        iteration: params.iterationNumber,
-        stageSlug: params.stageSlug,
-        documentKey: params.documentKey,
-        modelSlug: "mock-model",
-        sourceContributionId: params.sourceContributionId,
-      },
-      renderedBytes: new Uint8Array(),
-    }),
+    async (_dbc, _deps, params) => {
+      if (!("documentIdentity" in params)) throw new Error("expected RenderDocumentParams");
+      return {
+        pathContext: {
+          projectId: params.projectId,
+          fileType: FileType.RenderedDocument,
+          sessionId: params.sessionId,
+          iteration: params.iterationNumber,
+          stageSlug: params.stageSlug,
+          documentKey: params.documentKey,
+          modelSlug: "mock-model",
+          sourceContributionId: params.sourceContributionId,
+        },
+        renderedBytes: new Uint8Array(),
+      };
+    },
   );
 
   await processRenderJob(
@@ -173,6 +227,7 @@ Deno.test("processRenderJob - passes originating contribution id to renderer pay
 
   assertEquals(renderDocumentStub.calls.length, 1);
   const params = renderDocumentStub.calls[0].args[2];
+  if (!("documentIdentity" in params)) throw new Error("expected RenderDocumentParams");
   assertEquals(params.sourceContributionId, sourceContributionId, "sourceContributionId should be passed correctly to renderDocument");
   assertEquals(params.documentIdentity, documentIdentity, "documentIdentity should be passed correctly to renderDocument");
 
@@ -313,6 +368,7 @@ Deno.test("processRenderJob - forwards dbClient and args unchanged; does not mut
     async (dbc, _deps, params) => {
       receivedDbClient = dbc;
       receivedParams = params;
+      if (!("documentIdentity" in params)) throw new Error("expected RenderDocumentParams");
       return {
         pathContext: {
           projectId: params.projectId,
@@ -360,19 +416,22 @@ Deno.test("processRenderJob - success path performs a single deterministic job u
   const renderDocumentStub = stub(
     rootCtx.documentRenderer,
     "renderDocument",
-    async (_dbc, _deps, params) => ({
-      pathContext: {
-        projectId: params.projectId,
-        fileType: FileType.RenderedDocument,
-        sessionId: params.sessionId,
-        iteration: params.iterationNumber,
-        stageSlug: params.stageSlug,
-        documentKey: params.documentKey,
-        modelSlug: "mock-model",
-        sourceContributionId: params.sourceContributionId,
-      },
-      renderedBytes: new Uint8Array(),
-    }),
+    async (_dbc, _deps, params) => {
+      if (!("documentIdentity" in params)) throw new Error("expected RenderDocumentParams");
+      return {
+        pathContext: {
+          projectId: params.projectId,
+          fileType: FileType.RenderedDocument,
+          sessionId: params.sessionId,
+          iteration: params.iterationNumber,
+          stageSlug: params.stageSlug,
+          documentKey: params.documentKey,
+          modelSlug: "mock-model",
+          sourceContributionId: params.sourceContributionId,
+        },
+        renderedBytes: new Uint8Array(),
+      };
+    },
   );
 
   // Act
@@ -415,19 +474,22 @@ Deno.test("processRenderJob - persists renderer pathContext into job results", a
   const renderDocumentStub = stub(
     rootCtx.documentRenderer,
     "renderDocument",
-    async (_dbc, _deps, params) => ({
-      pathContext: {
-        projectId: params.projectId,
-        fileType: FileType.RenderedDocument,
-        sessionId: params.sessionId,
-        iteration: params.iterationNumber,
-        stageSlug: params.stageSlug,
-        documentKey: params.documentKey,
-        modelSlug: "mock-model",
-        sourceContributionId: params.sourceContributionId,
-      },
-      renderedBytes: new Uint8Array(),
-    }),
+    async (_dbc, _deps, params) => {
+      if (!("documentIdentity" in params)) throw new Error("expected RenderDocumentParams");
+      return {
+        pathContext: {
+          projectId: params.projectId,
+          fileType: FileType.RenderedDocument,
+          sessionId: params.sessionId,
+          iteration: params.iterationNumber,
+          stageSlug: params.stageSlug,
+          documentKey: params.documentKey,
+          modelSlug: "mock-model",
+          sourceContributionId: params.sourceContributionId,
+        },
+        renderedBytes: new Uint8Array(),
+      };
+    },
   );
 
   await processRenderJob(
@@ -482,6 +544,7 @@ Deno.test("processRenderJob - forwards notifyUserId to renderer deps", async () 
     async (_dbc, deps, params) => {
       receivedNotifyUserId = deps.notifyUserId;
       receivedNotificationService = deps.notificationService;
+      if (!("documentIdentity" in params)) throw new Error("expected RenderDocumentParams");
       return {
         pathContext: {
           projectId: params.projectId,
@@ -523,6 +586,7 @@ Deno.test("processRenderJob - converts string iterationNumber to number", async 
     "renderDocument",
     async (_dbc, _deps, params) => {
       receivedIteration = params.iterationNumber;
+      if (!("documentIdentity" in params)) throw new Error("expected RenderDocumentParams");
       return {
         pathContext: {
           projectId: params.projectId,
@@ -566,19 +630,22 @@ Deno.test("processRenderJob - fails and does not call renderer when projectId mi
   const renderDocumentStub = stub(
     rootCtx.documentRenderer,
     "renderDocument",
-    async (_dbc, _deps, params) => ({
-      pathContext: {
-        projectId: params.projectId,
-        fileType: FileType.RenderedDocument,
-        sessionId: params.sessionId,
-        iteration: params.iterationNumber,
-        stageSlug: params.stageSlug,
-        documentKey: params.documentKey,
-        modelSlug: "mock-model",
-        sourceContributionId: params.sourceContributionId,
-      },
-      renderedBytes: new Uint8Array(),
-    }),
+    async (_dbc, _deps, params) => {
+      if (!("documentIdentity" in params)) throw new Error("expected RenderDocumentParams");
+      return {
+        pathContext: {
+          projectId: params.projectId,
+          fileType: FileType.RenderedDocument,
+          sessionId: params.sessionId,
+          iteration: params.iterationNumber,
+          stageSlug: params.stageSlug,
+          documentKey: params.documentKey,
+          modelSlug: "mock-model",
+          sourceContributionId: params.sourceContributionId,
+        },
+        renderedBytes: new Uint8Array(),
+      };
+    },
   );
 
   await processRenderJob(
@@ -613,19 +680,22 @@ Deno.test("processRenderJob - fails when sessionId missing", async () => {
   const renderDocumentStub = stub(
     rootCtx.documentRenderer,
     "renderDocument",
-    async (_dbc, _deps, params) => ({
-      pathContext: {
-        projectId: params.projectId,
-        fileType: FileType.RenderedDocument,
-        sessionId: params.sessionId,
-        iteration: params.iterationNumber,
-        stageSlug: params.stageSlug,
-        documentKey: params.documentKey,
-        modelSlug: "mock-model",
-        sourceContributionId: params.sourceContributionId,
-      },
-      renderedBytes: new Uint8Array(),
-    }),
+    async (_dbc, _deps, params) => {
+      if (!("documentIdentity" in params)) throw new Error("expected RenderDocumentParams");
+      return {
+        pathContext: {
+          projectId: params.projectId,
+          fileType: FileType.RenderedDocument,
+          sessionId: params.sessionId,
+          iteration: params.iterationNumber,
+          stageSlug: params.stageSlug,
+          documentKey: params.documentKey,
+          modelSlug: "mock-model",
+          sourceContributionId: params.sourceContributionId,
+        },
+        renderedBytes: new Uint8Array(),
+      };
+    },
   );
 
   await processRenderJob(
@@ -659,19 +729,22 @@ Deno.test("processRenderJob - fails when stageSlug missing", async () => {
   const renderDocumentStub = stub(
     rootCtx.documentRenderer,
     "renderDocument",
-    async (_dbc, _deps, params) => ({
-      pathContext: {
-        projectId: params.projectId,
-        fileType: FileType.RenderedDocument,
-        sessionId: params.sessionId,
-        iteration: params.iterationNumber,
-        stageSlug: params.stageSlug,
-        documentKey: params.documentKey,
-        modelSlug: "mock-model",
-        sourceContributionId: params.sourceContributionId,
-      },
-      renderedBytes: new Uint8Array(),
-    }),
+    async (_dbc, _deps, params) => {
+      if (!("documentIdentity" in params)) throw new Error("expected RenderDocumentParams");
+      return {
+        pathContext: {
+          projectId: params.projectId,
+          fileType: FileType.RenderedDocument,
+          sessionId: params.sessionId,
+          iteration: params.iterationNumber,
+          stageSlug: params.stageSlug,
+          documentKey: params.documentKey,
+          modelSlug: "mock-model",
+          sourceContributionId: params.sourceContributionId,
+        },
+        renderedBytes: new Uint8Array(),
+      };
+    },
   );
 
   await processRenderJob(
@@ -705,19 +778,22 @@ Deno.test("processRenderJob - fails when documentIdentity missing", async () => 
   const renderDocumentStub = stub(
     rootCtx.documentRenderer,
     "renderDocument",
-    async (_dbc, _deps, params) => ({
-      pathContext: {
-        projectId: params.projectId,
-        fileType: FileType.RenderedDocument,
-        sessionId: params.sessionId,
-        iteration: params.iterationNumber,
-        stageSlug: params.stageSlug,
-        documentKey: params.documentKey,
-        modelSlug: "mock-model",
-        sourceContributionId: params.sourceContributionId,
-      },
-      renderedBytes: new Uint8Array(),
-    }),
+    async (_dbc, _deps, params) => {
+      if (!("documentIdentity" in params)) throw new Error("expected RenderDocumentParams");
+      return {
+        pathContext: {
+          projectId: params.projectId,
+          fileType: FileType.RenderedDocument,
+          sessionId: params.sessionId,
+          iteration: params.iterationNumber,
+          stageSlug: params.stageSlug,
+          documentKey: params.documentKey,
+          modelSlug: "mock-model",
+          sourceContributionId: params.sourceContributionId,
+        },
+        renderedBytes: new Uint8Array(),
+      };
+    },
   );
 
   await processRenderJob(
@@ -751,19 +827,22 @@ Deno.test("processRenderJob - fails when iterationNumber missing or invalid", as
   const renderDocumentStub = stub(
     rootCtx.documentRenderer,
     "renderDocument",
-    async (_dbc, _deps, params) => ({
-      pathContext: {
-        projectId: params.projectId,
-        fileType: FileType.RenderedDocument,
-        sessionId: params.sessionId,
-        iteration: params.iterationNumber,
-        stageSlug: params.stageSlug,
-        documentKey: params.documentKey,
-        modelSlug: "mock-model",
-        sourceContributionId: params.sourceContributionId,
-      },
-      renderedBytes: new Uint8Array(),
-    }),
+    async (_dbc, _deps, params) => {
+      if (!("documentIdentity" in params)) throw new Error("expected RenderDocumentParams");
+      return {
+        pathContext: {
+          projectId: params.projectId,
+          fileType: FileType.RenderedDocument,
+          sessionId: params.sessionId,
+          iteration: params.iterationNumber,
+          stageSlug: params.stageSlug,
+          documentKey: params.documentKey,
+          modelSlug: "mock-model",
+          sourceContributionId: params.sourceContributionId,
+        },
+        renderedBytes: new Uint8Array(),
+      };
+    },
   );
 
   await processRenderJob(
@@ -800,19 +879,22 @@ Deno.test("processRenderJob - fails when iterationNumber is non-numeric string",
   const renderDocumentStub = stub(
     rootCtx.documentRenderer,
     "renderDocument",
-    async (_dbc, _deps, params) => ({
-      pathContext: {
-        projectId: params.projectId,
-        fileType: FileType.RenderedDocument,
-        sessionId: params.sessionId,
-        iteration: params.iterationNumber,
-        stageSlug: params.stageSlug,
-        documentKey: params.documentKey,
-        modelSlug: "mock-model",
-        sourceContributionId: params.sourceContributionId,
-      },
-      renderedBytes: new Uint8Array(),
-    }),
+    async (_dbc, _deps, params) => {
+      if (!("documentIdentity" in params)) throw new Error("expected RenderDocumentParams");
+      return {
+        pathContext: {
+          projectId: params.projectId,
+          fileType: FileType.RenderedDocument,
+          sessionId: params.sessionId,
+          iteration: params.iterationNumber,
+          stageSlug: params.stageSlug,
+          documentKey: params.documentKey,
+          modelSlug: "mock-model",
+          sourceContributionId: params.sourceContributionId,
+        },
+        renderedBytes: new Uint8Array(),
+      };
+    },
   );
 
   await processRenderJob(
@@ -849,19 +931,22 @@ Deno.test("processRenderJob - fails when documentKey is not a FileType", async (
   const renderDocumentStub = stub(
     rootCtx.documentRenderer,
     "renderDocument",
-    async (_dbc, _deps, params) => ({
-      pathContext: {
-        projectId: params.projectId,
-        fileType: FileType.RenderedDocument,
-        sessionId: params.sessionId,
-        iteration: params.iterationNumber,
-        stageSlug: params.stageSlug,
-        documentKey: params.documentKey,
-        modelSlug: "mock-model",
-        sourceContributionId: params.sourceContributionId,
-      },
-      renderedBytes: new Uint8Array(),
-    }),
+    async (_dbc, _deps, params) => {
+      if (!("documentIdentity" in params)) throw new Error("expected RenderDocumentParams");
+      return {
+        pathContext: {
+          projectId: params.projectId,
+          fileType: FileType.RenderedDocument,
+          sessionId: params.sessionId,
+          iteration: params.iterationNumber,
+          stageSlug: params.stageSlug,
+          documentKey: params.documentKey,
+          modelSlug: "mock-model",
+          sourceContributionId: params.sourceContributionId,
+        },
+        renderedBytes: new Uint8Array(),
+      };
+    },
   );
 
   await processRenderJob(
@@ -904,19 +989,22 @@ Deno.test("processRenderJob - accepts sourceContributionId that differs from doc
   const renderDocumentStub = stub(
     rootCtx.documentRenderer,
     "renderDocument",
-    async (_dbc, _deps, params) => ({
-      pathContext: {
-        projectId: params.projectId,
-        fileType: FileType.RenderedDocument,
-        sessionId: params.sessionId,
-        iteration: params.iterationNumber,
-        stageSlug: params.stageSlug,
-        documentKey: params.documentKey,
-        modelSlug: "mock-model",
-        sourceContributionId: params.sourceContributionId,
-      },
-      renderedBytes: new Uint8Array(),
-    }),
+    async (_dbc, _deps, params) => {
+      if (!("documentIdentity" in params)) throw new Error("expected RenderDocumentParams");
+      return {
+        pathContext: {
+          projectId: params.projectId,
+          fileType: FileType.RenderedDocument,
+          sessionId: params.sessionId,
+          iteration: params.iterationNumber,
+          stageSlug: params.stageSlug,
+          documentKey: params.documentKey,
+          modelSlug: "mock-model",
+          sourceContributionId: params.sourceContributionId,
+        },
+        renderedBytes: new Uint8Array(),
+      };
+    },
   );
 
   // Act: processRenderJob should accept this configuration without throwing
@@ -939,6 +1027,7 @@ Deno.test("processRenderJob - accepts sourceContributionId that differs from doc
   // Assert: renderer should be called with the correct parameters
   assertEquals(renderDocumentStub.calls.length, 1, "Renderer should be called exactly once");
   const renderParams = renderDocumentStub.calls[0].args[2];
+  if (!("documentIdentity" in renderParams)) throw new Error("expected RenderDocumentParams");
   assertEquals(renderParams.sourceContributionId, actualContributionId, "sourceContributionId should be the actual contribution ID");
   assertEquals(renderParams.documentIdentity, semanticIdentifier, "documentIdentity should be the semantic identifier");
   assert(renderParams.sourceContributionId !== renderParams.documentIdentity, "sourceContributionId and documentIdentity should be different when document_relationships contains a semantic identifier");
@@ -971,19 +1060,22 @@ Deno.test("processRenderJob - processes RENDER job successfully for root chunk w
   const renderDocumentStub = stub(
     rootCtx.documentRenderer,
     "renderDocument",
-    async (_dbc, _deps, params) => ({
-      pathContext: {
-        projectId: params.projectId,
-        fileType: FileType.RenderedDocument,
-        sessionId: params.sessionId,
-        iteration: params.iterationNumber,
-        stageSlug: params.stageSlug,
-        documentKey: params.documentKey,
-        modelSlug: "mock-model",
-        sourceContributionId: params.sourceContributionId,
-      },
-      renderedBytes: new Uint8Array(),
-    }),
+    async (_dbc, _deps, params) => {
+      if (!("documentIdentity" in params)) throw new Error("expected RenderDocumentParams");
+      return {
+        pathContext: {
+          projectId: params.projectId,
+          fileType: FileType.RenderedDocument,
+          sessionId: params.sessionId,
+          iteration: params.iterationNumber,
+          stageSlug: params.stageSlug,
+          documentKey: params.documentKey,
+          modelSlug: "mock-model",
+          sourceContributionId: params.sourceContributionId,
+        },
+        renderedBytes: new Uint8Array(),
+      };
+    },
   );
   
   // (2) Call processRenderJob with the job
@@ -998,6 +1090,7 @@ Deno.test("processRenderJob - processes RENDER job successfully for root chunk w
   // (3) Verify renderDocument is called with sourceContributionId: rootId and documentIdentity: rootId
   assertEquals(renderDocumentStub.calls.length, 1, "renderDocument should be called exactly once");
   const renderParams = renderDocumentStub.calls[0].args[2];
+  if (!("documentIdentity" in renderParams)) throw new Error("expected RenderDocumentParams");
   assertEquals(renderParams.sourceContributionId, rootId, "sourceContributionId should equal rootId");
   assertEquals(renderParams.documentIdentity, rootId, "documentIdentity should equal rootId");
   
@@ -1042,19 +1135,22 @@ Deno.test("processRenderJob - processes RENDER job successfully for continuation
   const renderDocumentStub = stub(
     rootCtx.documentRenderer,
     "renderDocument",
-    async (_dbc, _deps, params) => ({
-      pathContext: {
-        projectId: params.projectId,
-        fileType: FileType.RenderedDocument,
-        sessionId: params.sessionId,
-        iteration: params.iterationNumber,
-        stageSlug: params.stageSlug,
-        documentKey: params.documentKey,
-        modelSlug: "mock-model",
-        sourceContributionId: params.sourceContributionId,
-      },
-      renderedBytes: new Uint8Array(),
-    }),
+    async (_dbc, _deps, params) => {
+      if (!("documentIdentity" in params)) throw new Error("expected RenderDocumentParams");
+      return {
+        pathContext: {
+          projectId: params.projectId,
+          fileType: FileType.RenderedDocument,
+          sessionId: params.sessionId,
+          iteration: params.iterationNumber,
+          stageSlug: params.stageSlug,
+          documentKey: params.documentKey,
+          modelSlug: "mock-model",
+          sourceContributionId: params.sourceContributionId,
+        },
+        renderedBytes: new Uint8Array(),
+      };
+    },
   );
   
   // (2) Call processRenderJob with the job
@@ -1069,6 +1165,7 @@ Deno.test("processRenderJob - processes RENDER job successfully for continuation
   // (3) Verify renderDocument is called with sourceContributionId: continuationId and documentIdentity: rootId (different values)
   assertEquals(renderDocumentStub.calls.length, 1, "renderDocument should be called exactly once");
   const renderParams = renderDocumentStub.calls[0].args[2];
+  if (!("documentIdentity" in renderParams)) throw new Error("expected RenderDocumentParams");
   assertEquals(renderParams.sourceContributionId, continuationId, "sourceContributionId should equal continuationId");
   assertEquals(renderParams.documentIdentity, rootId, "documentIdentity should equal rootId");
   assert(renderParams.sourceContributionId !== renderParams.documentIdentity, "sourceContributionId and documentIdentity should be different for continuation chunks");
@@ -1115,19 +1212,22 @@ Deno.test("processRenderJob - passes sourceContributionId and documentIdentity t
   const renderDocumentStub = stub(
     rootCtx.documentRenderer,
     "renderDocument",
-    async (_dbc, _deps, params) => ({
-      pathContext: {
-        projectId: params.projectId,
-        fileType: FileType.RenderedDocument,
-        sessionId: params.sessionId,
-        iteration: params.iterationNumber,
-        stageSlug: params.stageSlug,
-        documentKey: params.documentKey,
-        modelSlug: "mock-model",
-        sourceContributionId: params.sourceContributionId,
-      },
-      renderedBytes: new Uint8Array(),
-    }),
+    async (_dbc, _deps, params) => {
+      if (!("documentIdentity" in params)) throw new Error("expected RenderDocumentParams");
+      return {
+        pathContext: {
+          projectId: params.projectId,
+          fileType: FileType.RenderedDocument,
+          sessionId: params.sessionId,
+          iteration: params.iterationNumber,
+          stageSlug: params.stageSlug,
+          documentKey: params.documentKey,
+          modelSlug: "mock-model",
+          sourceContributionId: params.sourceContributionId,
+        },
+        renderedBytes: new Uint8Array(),
+      };
+    },
   );
   
   // (2) Call processRenderJob with the job
@@ -1142,6 +1242,7 @@ Deno.test("processRenderJob - passes sourceContributionId and documentIdentity t
   // (3) Verify renderDocument is called with exactly the values from the payload (no coercion or equality checks)
   assertEquals(renderDocumentStub.calls.length, 1, "renderDocument should be called exactly once");
   const renderParams = renderDocumentStub.calls[0].args[2];
+  if (!("documentIdentity" in renderParams)) throw new Error("expected RenderDocumentParams");
   assertEquals(renderParams.sourceContributionId, anyId, "sourceContributionId should equal the payload value (no coercion)");
   assertEquals(renderParams.documentIdentity, differentId, "documentIdentity should equal the payload value (no coercion)");
   assert(renderParams.sourceContributionId !== renderParams.documentIdentity, "sourceContributionId and documentIdentity should remain different");
@@ -1194,6 +1295,7 @@ Deno.test("processRenderJob - extracts template_filename from payload and passes
     "renderDocument",
     async (_dbc, _deps, params) => {
       receivedTemplateFilename = params.template_filename;
+      if (!("documentIdentity" in params)) throw new Error("expected RenderDocumentParams");
       return {
         pathContext: {
           projectId: params.projectId,
@@ -1249,19 +1351,22 @@ Deno.test("processRenderJob - emits render_started event when RENDER job begins 
   const renderDocumentStub = stub(
     rootCtx.documentRenderer,
     "renderDocument",
-    async (_dbc, _deps, params) => ({
-      pathContext: {
-        projectId: params.projectId,
-        fileType: FileType.RenderedDocument,
-        sessionId: params.sessionId,
-        iteration: params.iterationNumber,
-        stageSlug: params.stageSlug,
-        documentKey: params.documentKey,
-        modelSlug: "mock-model",
-        sourceContributionId: params.sourceContributionId,
-      },
-      renderedBytes: new Uint8Array(),
-    }),
+    async (_dbc, _deps, params) => {
+      if (!("documentIdentity" in params)) throw new Error("expected RenderDocumentParams");
+      return {
+        pathContext: {
+          projectId: params.projectId,
+          fileType: FileType.RenderedDocument,
+          sessionId: params.sessionId,
+          iteration: params.iterationNumber,
+          stageSlug: params.stageSlug,
+          documentKey: params.documentKey,
+          modelSlug: "mock-model",
+          sourceContributionId: params.sourceContributionId,
+        },
+        renderedBytes: new Uint8Array(),
+      };
+    },
   );
 
   await processRenderJob(
@@ -1309,19 +1414,22 @@ Deno.test("processRenderJob - emits render_chunk_completed event when RENDER job
   const renderDocumentStub = stub(
     rootCtx.documentRenderer,
     "renderDocument",
-    async (_dbc, _deps, params) => ({
-      pathContext: {
-        projectId: params.projectId,
-        fileType: FileType.RenderedDocument,
-        sessionId: params.sessionId,
-        iteration: params.iterationNumber,
-        stageSlug: params.stageSlug,
-        documentKey: params.documentKey,
-        modelSlug: "mock-model",
-        sourceContributionId: params.sourceContributionId,
-      },
-      renderedBytes: new Uint8Array(),
-    }),
+    async (_dbc, _deps, params) => {
+      if (!("documentIdentity" in params)) throw new Error("expected RenderDocumentParams");
+      return {
+        pathContext: {
+          projectId: params.projectId,
+          fileType: FileType.RenderedDocument,
+          sessionId: params.sessionId,
+          iteration: params.iterationNumber,
+          stageSlug: params.stageSlug,
+          documentKey: params.documentKey,
+          modelSlug: "mock-model",
+          sourceContributionId: params.sourceContributionId,
+        },
+        renderedBytes: new Uint8Array(),
+      };
+    },
   );
 
   await processRenderJob(
@@ -1370,20 +1478,23 @@ Deno.test("processRenderJob - emits render_completed event when RENDER job finis
   const renderDocumentStub = stub(
     rootCtx.documentRenderer,
     "renderDocument",
-    async (_dbc, _deps, params) => ({
-      pathContext: {
-        projectId: params.projectId,
-        fileType: FileType.RenderedDocument,
-        sessionId: params.sessionId,
-        iteration: params.iterationNumber,
-        stageSlug: params.stageSlug,
-        documentKey: params.documentKey,
-        modelSlug: "mock-model",
-        sourceContributionId: params.sourceContributionId,
-      },
-      renderedBytes: new Uint8Array(),
-      latestRenderedResourceId: latestResourceId,
-    }),
+    async (_dbc, _deps, params) => {
+      if (!("documentIdentity" in params)) throw new Error("expected RenderDocumentParams");
+      return {
+        pathContext: {
+          projectId: params.projectId,
+          fileType: FileType.RenderedDocument,
+          sessionId: params.sessionId,
+          iteration: params.iterationNumber,
+          stageSlug: params.stageSlug,
+          documentKey: params.documentKey,
+          modelSlug: "mock-model",
+          sourceContributionId: params.sourceContributionId,
+        },
+        renderedBytes: new Uint8Array(),
+        latestRenderedResourceId: latestResourceId,
+      };
+    },
   );
 
   await processRenderJob(
@@ -1431,20 +1542,23 @@ Deno.test("processRenderJob - all RENDER notification payloads include sessionId
   const renderDocumentStub = stub(
     rootCtx.documentRenderer,
     "renderDocument",
-    async (_dbc, _deps, params) => ({
-      pathContext: {
-        projectId: params.projectId,
-        fileType: FileType.RenderedDocument,
-        sessionId: params.sessionId,
-        iteration: params.iterationNumber,
-        stageSlug: params.stageSlug,
-        documentKey: params.documentKey,
-        modelSlug: "mock-model",
-        sourceContributionId: params.sourceContributionId,
-      },
-      renderedBytes: new Uint8Array(),
-      latestRenderedResourceId: "res-1",
-    }),
+    async (_dbc, _deps, params) => {
+      if (!("documentIdentity" in params)) throw new Error("expected RenderDocumentParams");
+      return {
+        pathContext: {
+          projectId: params.projectId,
+          fileType: FileType.RenderedDocument,
+          sessionId: params.sessionId,
+          iteration: params.iterationNumber,
+          stageSlug: params.stageSlug,
+          documentKey: params.documentKey,
+          modelSlug: "mock-model",
+          sourceContributionId: params.sourceContributionId,
+        },
+        renderedBytes: new Uint8Array(),
+        latestRenderedResourceId: "res-1",
+      };
+    },
   );
 
   await processRenderJob(
@@ -1520,6 +1634,290 @@ Deno.test("processRenderJob - job_failed notification is sent to projectOwnerUse
   const targetUserId: string | undefined = failedCalls[0].args[1];
   assertExists(targetUserId, "job_failed notification must have target user id");
   assertEquals(targetUserId, ownerId, "job_failed notification must be sent to projectOwnerUserId");
+
+  renderDocumentStub.restore();
+  clearAllStubs?.();
+});
+
+Deno.test("processRenderJob - renders a compressed row through documentRenderer and marks the job completed", async () => {
+  const { client: dbClient, spies, clearAllStubs } = createMockSupabaseClient();
+  const job = makeCompressedRenderJob();
+  const ownerId = job.user_id;
+  assertExists(ownerId, "Expected job.user_id to be defined for test setup");
+  const rootCtx = buildIJobContext();
+  const renderCtx: IRenderJobContext = createRenderJobContext(rootCtx);
+  const renderDocumentStub = stub(
+    rootCtx.documentRenderer,
+    "renderDocument",
+    async (_dbc, _deps, params) => {
+      if (!("targetKey" in params)) throw new Error("expected RenderCompressedContextParams");
+      return {
+        pathContext: {
+          projectId: params.projectId,
+          fileType: FileType.RenderedDocument,
+          sessionId: params.sessionId,
+          iteration: params.iterationNumber,
+          stageSlug: params.stageSlug,
+          documentKey: params.documentKey,
+          targetKey: params.targetKey,
+          sourceType: params.sourceType,
+        },
+        renderedBytes: new Uint8Array(),
+      };
+    },
+  );
+
+  await processRenderJob(
+    dbClient as unknown as SupabaseClient<Database>,
+    job,
+    ownerId,
+    renderCtx,
+    "auth-token",
+  );
+
+  assertEquals(renderDocumentStub.calls.length, 1);
+  const params = renderDocumentStub.calls[0].args[2];
+  if (!("targetKey" in params)) throw new Error("expected RenderCompressedContextParams");
+  assertEquals(params.projectId, "project_123");
+  assertEquals(params.sessionId, "session_abc");
+  assertEquals(params.iterationNumber, 1);
+  assertEquals(params.stageSlug, "thesis");
+  assertEquals(params.targetKey, FileType.business_case);
+  assertEquals(params.sourceType, "contribution");
+  assertEquals(params.documentKey, FileType.business_case);
+  assertEquals(params.template_filename, "thesis_business_case.md");
+
+  const updates = spies.getHistoricQueryBuilderSpies("dialectic_generation_jobs", "update");
+  assertExists(updates);
+  assertEquals(updates.callCount, 1);
+  const [updatePayload] = updates.callsArgs[0];
+  assert(isRecord(updatePayload) && "status" in updatePayload);
+  assertEquals(updatePayload.status, "completed");
+  assert(isRecord(updatePayload) && "results" in updatePayload);
+  const results = updatePayload["results"];
+  assert(isRecord(results) && "pathContext" in results);
+  const pathContext = results["pathContext"];
+  assert(isRecord(pathContext));
+  assert("targetKey" in pathContext, "pathContext should carry targetKey");
+  assert("sourceType" in pathContext, "pathContext should carry sourceType");
+  assert("documentKey" in pathContext, "pathContext should carry documentKey");
+  assert("fileType" in pathContext, "pathContext should carry fileType");
+
+  renderDocumentStub.restore();
+  clearAllStubs?.();
+});
+
+Deno.test("processRenderJob - sends no notification on any compressed-row outcome", async () => {
+  const { client: dbClient, clearAllStubs } = createMockSupabaseClient();
+  const ownerId = "user-123";
+  resetMockNotificationService();
+  const rootCtx = buildIJobContext();
+  const renderCtx: IRenderJobContext = createRenderJobContext(rootCtx);
+
+  const happyStub = stub(
+    rootCtx.documentRenderer,
+    "renderDocument",
+    async (_dbc, _deps, params) => {
+      if (!("targetKey" in params)) throw new Error("expected RenderCompressedContextParams");
+      return {
+        pathContext: {
+          projectId: params.projectId,
+          fileType: FileType.RenderedDocument,
+          sessionId: params.sessionId,
+          iteration: params.iterationNumber,
+          stageSlug: params.stageSlug,
+          documentKey: params.documentKey,
+          targetKey: params.targetKey,
+          sourceType: params.sourceType,
+        },
+        renderedBytes: new Uint8Array(),
+      };
+    },
+  );
+
+  const jobHappy = makeCompressedRenderJob();
+  await processRenderJob(
+    dbClient as unknown as SupabaseClient<Database>,
+    jobHappy,
+    ownerId,
+    renderCtx,
+    "auth-token",
+  );
+
+  happyStub.restore();
+
+  const throwStub = stub(
+    rootCtx.documentRenderer,
+    "renderDocument",
+    async () => {
+      throw new Error("compressed render failed");
+    },
+  );
+
+  const jobThrow = makeCompressedRenderJob();
+  await processRenderJob(
+    dbClient as unknown as SupabaseClient<Database>,
+    jobThrow,
+    ownerId,
+    renderCtx,
+    "auth-token",
+  );
+
+  throwStub.restore();
+
+  assertEquals(
+    mockNotificationService.sendJobNotificationEvent.calls.length,
+    0,
+    "sendJobNotificationEvent must have ZERO calls across both compressed-row outcomes",
+  );
+
+  clearAllStubs?.();
+});
+
+Deno.test("processRenderJob - records a compressed-row render failure as failed with error_details and does not rethrow", async () => {
+  const { client: dbClient, spies, clearAllStubs } = createMockSupabaseClient();
+  const job = makeCompressedRenderJob();
+  const ownerId = job.user_id;
+  assertExists(ownerId, "Expected job.user_id to be defined for test setup");
+  resetMockNotificationService();
+  const rootCtx = buildIJobContext();
+  const renderCtx: IRenderJobContext = createRenderJobContext(rootCtx);
+  const renderDocumentStub = stub(rootCtx.documentRenderer, "renderDocument", async () => {
+    throw new Error("compressed render failed");
+  });
+
+  await processRenderJob(
+    dbClient as unknown as SupabaseClient<Database>,
+    job,
+    ownerId,
+    renderCtx,
+    "auth-token",
+  );
+
+  const updates = spies.getHistoricQueryBuilderSpies("dialectic_generation_jobs", "update");
+  assertExists(updates);
+  assertEquals(updates.callCount, 1);
+  const [updatePayload] = updates.callsArgs[0];
+  assert(isRecord(updatePayload) && "status" in updatePayload && "error_details" in updatePayload);
+  assertEquals(updatePayload.status, "failed");
+  const errorDetails = updatePayload.error_details;
+  assert(typeof errorDetails === "string" && errorDetails.includes("compressed render failed"));
+
+  const failedNotifications = mockNotificationService.sendJobNotificationEvent.calls.filter(
+    (c) => c.args[0] && typeof c.args[0] === "object" && (c.args[0]).type === "job_failed",
+  );
+  assertEquals(failedNotifications.length, 0, "no notification must fire on compressed-row failure");
+
+  renderDocumentStub.restore();
+  clearAllStubs?.();
+});
+
+Deno.test("processRenderJob - a compressed payload never reaches the contribution gate", async () => {
+  const { client: dbClient, spies, clearAllStubs } = createMockSupabaseClient();
+  const job = makeCompressedRenderJob();
+  const ownerId = job.user_id;
+  assertExists(ownerId, "Expected job.user_id to be defined for test setup");
+  const rootCtx = buildIJobContext();
+  const renderCtx: IRenderJobContext = createRenderJobContext(rootCtx);
+  const renderDocumentStub = stub(
+    rootCtx.documentRenderer,
+    "renderDocument",
+    async (_dbc, _deps, params) => {
+      if (!("targetKey" in params)) throw new Error("expected RenderCompressedContextParams");
+      return {
+        pathContext: {
+          projectId: params.projectId,
+          fileType: FileType.RenderedDocument,
+          sessionId: params.sessionId,
+          iteration: params.iterationNumber,
+          stageSlug: params.stageSlug,
+          documentKey: params.documentKey,
+          targetKey: params.targetKey,
+          sourceType: params.sourceType,
+        },
+        renderedBytes: new Uint8Array(),
+      };
+    },
+  );
+
+  await processRenderJob(
+    dbClient as unknown as SupabaseClient<Database>,
+    job,
+    ownerId,
+    renderCtx,
+    "auth-token",
+  );
+
+  assertEquals(renderDocumentStub.calls.length, 1, "renderer must be called for a compressed row");
+
+  const updates = spies.getHistoricQueryBuilderSpies("dialectic_generation_jobs", "update");
+  assertExists(updates);
+  assertEquals(updates.callCount, 1);
+  const [updatePayload] = updates.callsArgs[0];
+  assert(isRecord(updatePayload) && "status" in updatePayload);
+  assertEquals(updatePayload.status, "completed", "compressed row must not be written failed by the contribution gate");
+
+  if (isRecord(updatePayload) && "error_details" in updatePayload) {
+    const errorDetails = updatePayload["error_details"];
+    assert(
+      !(typeof errorDetails === "string" && errorDetails.includes("Invalid payload")),
+      "compressed row must not produce 'Invalid payload' failure",
+    );
+  }
+
+  renderDocumentStub.restore();
+  clearAllStubs?.();
+});
+
+Deno.test("processRenderJob - a contribution payload never selects the compressed branch", async () => {
+  const { client: dbClient, clearAllStubs } = createMockSupabaseClient();
+  const job = makeRenderJob();
+  const ownerId = job.user_id;
+  assertExists(ownerId, "Expected job.user_id to be defined for test setup");
+  resetMockNotificationService();
+  const rootCtx = buildIJobContext();
+  const renderCtx: IRenderJobContext = createRenderJobContext(rootCtx);
+  const renderDocumentStub = stub(
+    rootCtx.documentRenderer,
+    "renderDocument",
+    async (_dbc, _deps, params) => {
+      if (!("documentIdentity" in params)) throw new Error("expected RenderDocumentParams");
+      return {
+        pathContext: {
+          projectId: params.projectId,
+          fileType: FileType.RenderedDocument,
+          sessionId: params.sessionId,
+          iteration: params.iterationNumber,
+          stageSlug: params.stageSlug,
+          documentKey: params.documentKey,
+          modelSlug: "mock-model",
+          sourceContributionId: params.sourceContributionId,
+        },
+        renderedBytes: new Uint8Array(),
+      };
+    },
+  );
+
+  await processRenderJob(
+    dbClient as unknown as SupabaseClient<Database>,
+    job,
+    ownerId,
+    renderCtx,
+    "auth-token",
+  );
+
+  assertEquals(renderDocumentStub.calls.length, 1);
+  const params = renderDocumentStub.calls[0].args[2];
+  if (!("documentIdentity" in params)) throw new Error("expected RenderDocumentParams");
+  assertEquals(params.documentIdentity, "doc-root-1");
+  assertEquals(params.sourceContributionId, "doc-root-1");
+  assert(!("targetKey" in params), "contribution params must not carry targetKey");
+  assert(!("sourceType" in params), "contribution params must not carry sourceType");
+
+  const startedCalls = mockNotificationService.sendJobNotificationEvent.calls.filter(
+    (c) => c.args[0] && typeof c.args[0] === "object" && (c.args[0]).type === "render_started",
+  );
+  assertEquals(startedCalls.length, 1, "render_started must still fire for a contribution payload");
 
   renderDocumentStub.restore();
   clearAllStubs?.();

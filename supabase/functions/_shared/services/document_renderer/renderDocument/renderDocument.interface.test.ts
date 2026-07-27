@@ -6,8 +6,15 @@ import {
   DocumentRendererDeps,
   RenderDocumentFn,
   IDocumentRenderer,
+  RenderCompressedContextParams,
 } from "./renderDocument.interface.ts";
-import { DialecticStageSlug, FileType, type PathContext } from "../../../types/file_manager.types.ts";
+import {
+  DialecticStageSlug,
+  FileType,
+  type PathContext,
+  type ModelContributionFileTypes,
+  type CompressionSourceType,
+} from "../../../types/file_manager.types.ts";
 import type { AssembleContributionChainFn } from "../assembleContributionChain/assembleContributionChain.provides.ts";
 import type { LoadDocumentTemplateFn } from "../loadDocumentTemplate/loadDocumentTemplate.provides.ts";
 import type { MergeChunkContentFn } from "../mergeChunkContent/mergeChunkContent.provides.ts";
@@ -151,4 +158,54 @@ Deno.test("ContributionRowMinimal has the required surface", () => {
     user_id: true,
   };
   assertEquals(Object.keys(rowSurface).length, 16);
+});
+
+Deno.test("RenderCompressedContextParams has the required surface", () => {
+  const paramsSurface: Record<keyof RenderCompressedContextParams, true> = {
+    projectId: true,
+    sessionId: true,
+    iterationNumber: true,
+    stageSlug: true,
+    targetKey: true,
+    sourceType: true,
+    documentKey: true,
+    template_filename: true,
+  };
+  assertEquals(Object.keys(paramsSurface).length, 8);
+});
+
+Deno.test("RenderCompressedContextParams accepts a full literal and round-trips values", () => {
+  const params: RenderCompressedContextParams = {
+    projectId: "project-1",
+    sessionId: "session-1",
+    iterationNumber: 1,
+    stageSlug: DialecticStageSlug.Thesis,
+    targetKey: FileType.business_case,
+    sourceType: "contribution",
+    documentKey: FileType.business_case,
+    template_filename: "thesis_business_case.md",
+  };
+  assertEquals(params.projectId, "project-1");
+  assertEquals(params.sessionId, "session-1");
+  assertEquals(params.iterationNumber, 1);
+  assertEquals(params.stageSlug, DialecticStageSlug.Thesis);
+  assertEquals(params.targetKey, FileType.business_case);
+  assertEquals(params.sourceType, "contribution");
+  assertEquals(params.documentKey, FileType.business_case);
+  assertEquals(params.template_filename, "thesis_business_case.md");
+});
+
+Deno.test("RenderCompressedContextParams is assignable to Parameters<RenderDocumentFn>[2]", () => {
+  const compressedParams: RenderCompressedContextParams = {
+    projectId: "project-1",
+    sessionId: "session-1",
+    iterationNumber: 1,
+    stageSlug: DialecticStageSlug.Thesis,
+    targetKey: FileType.business_case,
+    sourceType: "contribution",
+    documentKey: FileType.business_case,
+    template_filename: "thesis_business_case.md",
+  };
+  const params: Parameters<RenderDocumentFn>[2] = compressedParams;
+  assertEquals(params, compressedParams);
 });

@@ -2,7 +2,7 @@ import { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import { Database } from '../types_db.ts';
 import { isRecord, isDialecticRenderJobPayload } from '../_shared/utils/type_guards.ts';
 import { IRenderJobContext } from './createJobContext/JobContext.interface.ts';
-import { RenderDocumentParams, DocumentRendererDeps } from '../_shared/services/document_renderer/renderDocument/renderDocument.interface.ts';
+import { RenderDocumentParams, RenderCompressedContextParams, DocumentRendererDeps } from '../_shared/services/document_renderer/renderDocument/renderDocument.interface.ts';
 import { isFileType } from '../_shared/utils/type_guards.ts';
 import { isString, isNumber } from "node:util";
 import type {
@@ -11,6 +11,8 @@ import type {
   JobFailedPayload,
 } from '../_shared/types/notification.service.types.ts';
 import { isDialecticStageSlug } from "../_shared/utils/type-guards/type_guards.file_manager.ts";
+import { isDialecticRenderCompressedContextJobPayload } from './enqueueRenderJob/enqueueRenderJob.guards.ts';
+import type { DialecticRenderCompressedContextJobPayload } from './enqueueRenderJob/enqueueRenderJob.interface.ts';
 
 export async function processRenderJob(
   dbClient: SupabaseClient<Database>,
@@ -20,6 +22,10 @@ export async function processRenderJob(
   _authToken: string,
 ): Promise<void> {
   const { id: jobId } = job;
+
+  if (isRecord(job.payload) && isDialecticRenderCompressedContextJobPayload(job.payload)) {
+    return await processCompressedRenderJob(dbClient, job, ctx, job.payload, projectOwnerUserId);
+  }
 
   try {
     // Normalize payload (Supabase may return JSON as string)
@@ -221,5 +227,76 @@ export async function processRenderJob(
         // best-effort; ignore notification errors
       }
     }
+  }
+}
+
+async function processCompressedRenderJob(
+  dbClient: SupabaseClient<Database>,
+  job: Database['public']['Tables']['dialectic_generation_jobs']['Row'],
+  ctx: IRenderJobContext,
+  payload: DialecticRenderCompressedContextJobPayload,
+  projectOwnerUserId: string,
+): Promise<void> {
+  const { id: jobId } = job;
+
+  const params: RenderCompressedContextParams = {
+    projectId: payload.projectId,
+    sessionId: payload.sessionId,
+    iterationNumber: payload.iterationNumber,
+    stageSlug: payload.stageSlug,
+    targetKey: payload.targetKey,
+    sourceType: payload.sourceType,
+    documentKey: payload.documentKey,
+    template_filename: payload.template_filename,
+  };
+
+  const rendererDeps: DocumentRendererDeps = {
+    downloadFromStorage: ctx.downloadFromStorage,
+    fileManager: ctx.fileManager,
+    notificationService: ctx.notificationService,
+    notifyUserId: projectOwnerUserId,
+    logger: ctx.logger,
+    assembleContributionChain: ctx.assembleContributionChain,
+    loadDocumentTemplate: ctx.loadDocumentTemplate,
+    mergeChunkContent: ctx.mergeChunkContent,
+  };
+
+  try {
+    const renderResult = await ctx.documentRenderer.renderDocument(dbClient, rendererDeps, params);
+
+    await dbClient
+      .from('dialectic_generation_jobs')
+      .update({
+        status: 'completed',
+        completed_at: new Date().toISOString(),
+        results: {
+          pathContext: {
+            projectId: renderResult.pathContext.projectId,
+            sessionId: renderResult.pathContext.sessionId,
+            iteration: renderResult.pathContext.iteration,
+            stageSlug: renderResult.pathContext.stageSlug,
+            fileType: renderResult.pathContext.fileType,
+            documentKey: renderResult.pathContext.documentKey,
+            targetKey: renderResult.pathContext.targetKey,
+            sourceType: renderResult.pathContext.sourceType,
+          },
+        },
+      })
+      .eq('id', jobId);
+  } catch (e) {
+    const err = e instanceof Error ? e : new Error(String(e));
+    ctx.logger.error('[processCompressedRenderJob] Failed to render compressed context', {
+      jobId,
+      error: err.message,
+    });
+
+    await dbClient
+      .from('dialectic_generation_jobs')
+      .update({
+        status: 'failed',
+        completed_at: new Date().toISOString(),
+        error_details: err.message,
+      })
+      .eq('id', jobId);
   }
 }

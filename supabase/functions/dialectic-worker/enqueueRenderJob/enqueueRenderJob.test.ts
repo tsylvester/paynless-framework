@@ -22,7 +22,7 @@ import {
 import type { ShouldEnqueueRenderJobResult } from "../../_shared/types/shouldEnqueueRenderJob.interface.ts";
 import { RenderJobEnqueueError, RenderJobValidationError } from "../../_shared/utils/errors.ts";
 import {
-  resolveTemplateFilename as resolveTemplateFilenameFn,
+  resolveTemplateFilename,
   TemplateResolutionError,
 } from "../../_shared/utils/resolveTemplateFilename/resolveTemplateFilename.ts";
 import { isRecord } from "../../_shared/utils/type-guards/type_guards.common.ts";
@@ -34,10 +34,12 @@ import type {
 import { enqueueRenderJob } from "./enqueueRenderJob.ts";
 import { isFileType } from "../../_shared/utils/type-guards/type_guards.file_manager.ts";
 import {
+  buildEnqueueRenderCompressedContextPayload,
   buildEnqueueRenderJobDeps,
   buildEnqueueRenderJobParams,
   buildEnqueueRenderJobPayload,
 } from "./enqueueRenderJob.mock.ts";
+import { isDialecticRenderCompressedContextJobPayload } from "./enqueueRenderJob.guards.ts";
 import { mockStageRow, mockTemplateStepRow, recipeChainConfig } from "../../_shared/utils/resolveTemplateFilename/resolveTemplateFilename.mock.ts";
 
 function setupMockClient(
@@ -507,7 +509,7 @@ Deno.test(
       dbClient,
       shouldEnqueueRenderJob,
       resolveTemplateFilename: (params, payload) =>
-        resolveTemplateFilenameFn({}, { dbClient: params.dbClient ?? dbClient }, payload),
+        resolveTemplateFilename({}, { dbClient: params.dbClient }, payload),
     });
 
     await enqueueRenderJob(deps, buildEnqueueRenderJobParams(), buildEnqueueRenderJobPayload());
@@ -540,7 +542,7 @@ Deno.test(
       dbClient,
       shouldEnqueueRenderJob,
       resolveTemplateFilename: (params, payload) =>
-        resolveTemplateFilenameFn({}, { dbClient: params.dbClient ?? dbClient }, payload),
+        resolveTemplateFilename({}, { dbClient: params.dbClient }, payload),
     });
 
     await enqueueRenderJob(deps, buildEnqueueRenderJobParams(), buildEnqueueRenderJobPayload());
@@ -571,7 +573,7 @@ Deno.test(
       dbClient,
       shouldEnqueueRenderJob,
       resolveTemplateFilename: (params, payload) =>
-        resolveTemplateFilenameFn({}, { dbClient: params.dbClient ?? dbClient }, payload),
+        resolveTemplateFilename({}, { dbClient: params.dbClient }, payload),
     });
 
     const result = await enqueueRenderJob(
@@ -1591,7 +1593,7 @@ Deno.test("template_filename on insert payload comes from recipe step files_to_g
       dbClient,
       shouldEnqueueRenderJob,
       resolveTemplateFilename: (params, payload) =>
-        resolveTemplateFilenameFn({}, { dbClient: params.dbClient ?? dbClient }, payload),
+        resolveTemplateFilename({}, { dbClient: params.dbClient }, payload),
     });
 
     await enqueueRenderJob(deps, buildEnqueueRenderJobParams(), buildEnqueueRenderJobPayload());
@@ -1733,5 +1735,288 @@ Deno.test(
       Error,
       "Database connection failed",
     );
+  },
+);
+
+Deno.test(
+  "COMPRESS-dispatch happy path: enqueues RENDER with source coordinates and DialecticRenderCompressedContextJobPayload",
+  async () => {
+    const shouldEnqueueRenderJob = spy(
+      async (): Promise<ShouldEnqueueRenderJobResult> => ({
+        shouldRender: true,
+        reason: "is_markdown",
+      }),
+    );
+    const resolveTemplateFilename = spy(
+      async () => ({ templateFilename: "thesis_business_case.md" }),
+    );
+    const insertedRow = mockRenderJobRow({ id: "compress-render-1" });
+    const mockSetup = setupMockClient({
+      dialectic_generation_jobs: {
+        insert: { data: [insertedRow], error: null },
+      },
+    });
+    const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
+    const deps = buildEnqueueRenderJobDeps({
+      dbClient,
+      shouldEnqueueRenderJob,
+      resolveTemplateFilename,
+    });
+    const params = buildEnqueueRenderJobParams();
+    const payload = buildEnqueueRenderCompressedContextPayload();
+
+    const result = await enqueueRenderJob(deps, params, payload);
+
+    assertEquals(shouldEnqueueRenderJob.calls.length, 1);
+    const decisionArgs = shouldEnqueueRenderJob.calls[0].args as unknown[];
+    assert(isRecord(decisionArgs[1]));
+    assertEquals(decisionArgs[1]["outputType"], payload.docType);
+    assertEquals(decisionArgs[1]["stageSlug"], payload.sourceStageSlug);
+
+    assertEquals(resolveTemplateFilename.calls.length, 1);
+    const templateArgs = resolveTemplateFilename.calls[0].args as unknown[];
+    assert(isRecord(templateArgs[1]));
+    assertEquals(templateArgs[1]["stageSlug"], payload.sourceStageSlug);
+    assertEquals(templateArgs[1]["outputType"], payload.docType);
+    assertEquals(templateArgs[1]["documentKey"], payload.documentKey);
+
+    const insertCalls = mockSetup.spies.getHistoricQueryBuilderSpies("dialectic_generation_jobs", "insert");
+    assertExists(insertCalls);
+    assertEquals(insertCalls.callCount, 1);
+    const insertedArg = insertCalls.callsArgs[0][0];
+    let inserted: unknown = insertedArg;
+    if (Array.isArray(insertedArg)) {
+      inserted = insertedArg[0];
+    }
+    assert(isRecord(inserted));
+    assertEquals(inserted["job_type"], "RENDER");
+    assertEquals(inserted["parent_job_id"], params.jobId);
+    assertEquals(inserted["stage_slug"], params.stageSlug);
+    const expectedIdempotencyKey = `${params.sessionId}_${params.iterationNumber}_${params.stageSlug}_compress_render_${payload.sourceType}_${payload.documentKey}_${payload.targetKey}`;
+    assertEquals(inserted["idempotency_key"], expectedIdempotencyKey);
+
+    const pl: unknown = inserted["payload"];
+    assert(isDialecticRenderCompressedContextJobPayload(pl));
+    assertEquals(pl.template_filename, "thesis_business_case.md");
+    assertEquals(pl.stageSlug, params.stageSlug);
+
+    assertEquals("renderJobId" in result, true);
+    if ("renderJobId" in result) {
+      assertEquals(result.renderJobId, "compress-render-1");
+    }
+  },
+);
+
+Deno.test(
+  "COMPRESS-dispatch: not renderable (is_json) returns renderJobId null, insert never called",
+  async () => {
+    const shouldEnqueueRenderJob = spy(
+      async (): Promise<ShouldEnqueueRenderJobResult> => ({
+        shouldRender: false,
+        reason: "is_json",
+      }),
+    );
+    const mockSetup = setupMockClient({});
+    const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
+    const deps = buildEnqueueRenderJobDeps({
+      dbClient,
+      shouldEnqueueRenderJob,
+    });
+
+    const result = await enqueueRenderJob(
+      deps,
+      buildEnqueueRenderJobParams(),
+      buildEnqueueRenderCompressedContextPayload(),
+    );
+
+    assertEquals(shouldEnqueueRenderJob.calls.length, 1);
+    const insertCalls = mockSetup.spies.getHistoricQueryBuilderSpies("dialectic_generation_jobs", "insert");
+    assertExists(insertCalls);
+    assertEquals(insertCalls.callCount, 0);
+    assertEquals("renderJobId" in result, true);
+    if ("renderJobId" in result) {
+      assertEquals(result.renderJobId, null);
+    }
+  },
+);
+
+Deno.test(
+  "COMPRESS-dispatch: decision-query failure returns RenderJobEnqueueError, retriable false, insert never called",
+  async () => {
+    const shouldEnqueueRenderJob = spy(
+      async (): Promise<ShouldEnqueueRenderJobResult> => ({
+        shouldRender: false,
+        reason: "stage_not_found",
+      }),
+    );
+    const mockSetup = setupMockClient({});
+    const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
+    const deps = buildEnqueueRenderJobDeps({
+      dbClient,
+      shouldEnqueueRenderJob,
+    });
+
+    const result = await enqueueRenderJob(
+      deps,
+      buildEnqueueRenderJobParams(),
+      buildEnqueueRenderCompressedContextPayload(),
+    );
+
+    assertEquals("error" in result, true);
+    if ("error" in result) {
+      assertEquals(result.error instanceof RenderJobEnqueueError, true);
+      assertEquals(result.retriable, false);
+    }
+    const insertCalls = mockSetup.spies.getHistoricQueryBuilderSpies("dialectic_generation_jobs", "insert");
+    assertExists(insertCalls);
+    assertEquals(insertCalls.callCount, 0);
+  },
+);
+
+Deno.test(
+  "COMPRESS-dispatch: template failure returns the exact TemplateResolutionError object, insert never called",
+  async () => {
+    const shouldEnqueueRenderJob = spy(
+      async (): Promise<ShouldEnqueueRenderJobResult> => ({
+        shouldRender: true,
+        reason: "is_markdown",
+      }),
+    );
+    const templateError = new TemplateResolutionError(
+      "Failed to query stage for template_filename extraction: stage not found",
+    );
+    const resolveTemplateFilename = spy(async () => ({
+      error: templateError,
+      retriable: false,
+    }));
+    const mockSetup = setupMockClient({});
+    const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
+    const deps = buildEnqueueRenderJobDeps({
+      dbClient,
+      shouldEnqueueRenderJob,
+      resolveTemplateFilename,
+    });
+
+    const result = await enqueueRenderJob(
+      deps,
+      buildEnqueueRenderJobParams(),
+      buildEnqueueRenderCompressedContextPayload(),
+    );
+
+    assertEquals("error" in result, true);
+    if ("error" in result) {
+      assertEquals(result.error instanceof TemplateResolutionError, true);
+      assertEquals(result.error, templateError);
+      assertEquals(result.error.message, templateError.message);
+    }
+    const insertCalls = mockSetup.spies.getHistoricQueryBuilderSpies("dialectic_generation_jobs", "insert");
+    assertExists(insertCalls);
+    assertEquals(insertCalls.callCount, 0);
+  },
+);
+
+Deno.test(
+  "COMPRESS-dispatch: idempotent re-dispatch recovers via source-identity key, not jobId_render",
+  async () => {
+    const shouldEnqueueRenderJob = spy(
+      async (): Promise<ShouldEnqueueRenderJobResult> => ({
+        shouldRender: true,
+        reason: "is_markdown",
+      }),
+    );
+    const params = buildEnqueueRenderJobParams();
+    const payload = buildEnqueueRenderCompressedContextPayload();
+    const expectedIdempotencyKey = `${params.sessionId}_${params.iterationNumber}_${params.stageSlug}_compress_render_${payload.sourceType}_${payload.documentKey}_${payload.targetKey}`;
+    const recovered = mockRenderJobRow({
+      id: "recovered-compress-render",
+      idempotency_key: expectedIdempotencyKey,
+    });
+    const duplicateError = {
+      name: "PostgresError",
+      message:
+        'duplicate key value violates unique constraint "dialectic_generation_jobs_idempotency_key_key" (idempotency_key)',
+      code: "23505",
+      details: "",
+      hint: "",
+    };
+    const mockSetup = setupMockClient({
+      dialectic_generation_jobs: {
+        insert: async () => ({
+          data: null,
+          error: duplicateError,
+        }),
+        select: async (state: MockQueryBuilderState) => {
+          const idem = state.filters.find((f) => f.column === "idempotency_key");
+          if (idem && idem.value === expectedIdempotencyKey) {
+            return { data: [recovered], error: null };
+          }
+          return { data: [], error: null };
+        },
+      },
+    });
+    const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
+    const deps = buildEnqueueRenderJobDeps({
+      dbClient,
+      shouldEnqueueRenderJob,
+    });
+
+    const result = await enqueueRenderJob(deps, params, payload);
+
+    assertEquals("renderJobId" in result, true);
+    if ("renderJobId" in result) {
+      assertEquals(result.renderJobId, "recovered-compress-render");
+    }
+  },
+);
+
+Deno.test(
+  "COMPRESS-dispatch: discrimination — EnqueueRenderJobPayload drives EXECUTE branch, compressed payload never reads needsContinuation/contributionId",
+  async () => {
+    const shouldEnqueueRenderJob = spy(
+      async (): Promise<ShouldEnqueueRenderJobResult> => ({
+        shouldRender: true,
+        reason: "is_markdown",
+      }),
+    );
+    const resolveTemplateFilename = spy(
+      async () => ({ templateFilename: "thesis_business_case.md" }),
+    );
+    const insertedRow = mockRenderJobRow({ id: "render-discrimination" });
+    const mockSetup = setupMockClient({
+      ...recipeChainConfig(false),
+      dialectic_generation_jobs: {
+        insert: { data: [insertedRow], error: null },
+      },
+    });
+    const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
+    const deps = buildEnqueueRenderJobDeps({
+      dbClient,
+      shouldEnqueueRenderJob,
+      resolveTemplateFilename,
+    });
+    const params = buildEnqueueRenderJobParams();
+
+    await enqueueRenderJob(deps, params, buildEnqueueRenderJobPayload());
+
+    assertEquals(shouldEnqueueRenderJob.calls.length, 1);
+    const execArgs = shouldEnqueueRenderJob.calls[0].args as unknown[];
+    assert(isRecord(execArgs[1]));
+    assertEquals(execArgs[1]["outputType"], params.outputType);
+    assertEquals(execArgs[1]["stageSlug"], params.stageSlug);
+
+    shouldEnqueueRenderJob.calls.length = 0;
+    resolveTemplateFilename.calls.length = 0;
+
+    const compressPayload = buildEnqueueRenderCompressedContextPayload({
+      sourceStageSlug: DialecticStageSlug.Antithesis,
+    });
+    await enqueueRenderJob(deps, params, compressPayload);
+
+    assertEquals(shouldEnqueueRenderJob.calls.length, 1);
+    const compressArgs = shouldEnqueueRenderJob.calls[0].args as unknown[];
+    assert(isRecord(compressArgs[1]));
+    assertEquals(compressArgs[1]["outputType"], compressPayload.docType);
+    assertEquals(compressArgs[1]["stageSlug"], compressPayload.sourceStageSlug);
+    assert(compressArgs[1]["stageSlug"] !== params.stageSlug);
   },
 );

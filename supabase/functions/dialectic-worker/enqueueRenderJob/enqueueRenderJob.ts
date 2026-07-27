@@ -6,13 +6,20 @@ import { RenderJobEnqueueError, RenderJobValidationError } from "../../_shared/u
 import { isJson, isRecord } from "../../_shared/utils/type-guards/type_guards.common.ts";
 import { isDialecticRenderJobPayload } from "../../_shared/utils/type-guards/type_guards.dialectic.ts";
 import { isFileType } from "../../_shared/utils/type-guards/type_guards.file_manager.ts";
+import { sanitizeForPath } from "../../_shared/utils/path_constructor.ts";
 import type { TablesInsert } from "../../types_db.ts";
 import type {
+  DialecticRenderCompressedContextJobPayload,
+  EnqueueRenderCompressedContextPayload,
   EnqueueRenderJobDeps,
   EnqueueRenderJobParams,
   EnqueueRenderJobPayload,
   EnqueueRenderJobReturn,
 } from "./enqueueRenderJob.interface.ts";
+import {
+  isDialecticRenderCompressedContextJobPayload,
+  isEnqueueRenderCompressedContextPayload,
+} from "./enqueueRenderJob.guards.ts";
 
 const RENDER_DECISION_QUERY_FAILURE_REASONS: readonly string[] = [
   "stage_not_found",
@@ -26,7 +33,7 @@ const RENDER_DECISION_QUERY_FAILURE_REASONS: readonly string[] = [
 export async function enqueueRenderJob(
   deps: EnqueueRenderJobDeps,
   params: EnqueueRenderJobParams,
-  payload: EnqueueRenderJobPayload,
+  payload: EnqueueRenderJobPayload | EnqueueRenderCompressedContextPayload,
 ): Promise<EnqueueRenderJobReturn> {
   const { dbClient, logger, shouldEnqueueRenderJob, resolveTemplateFilename } = deps;
   const {
@@ -43,134 +50,229 @@ export async function enqueueRenderJob(
     isTestJob,
   } = params;
 
-  if (payload.needsContinuation) {
-    return { renderJobId: null };
-  }
+  let renderPayload: DialecticRenderJobPayload | DialecticRenderCompressedContextJobPayload;
+  let idempotencyKey: string;
 
-  const renderDecision = await shouldEnqueueRenderJob(
-    { dbClient, logger },
-    { outputType, stageSlug },
-  );
+  if (isEnqueueRenderCompressedContextPayload(payload)) {
+    const renderDecision = await shouldEnqueueRenderJob(
+      { dbClient, logger },
+      { outputType: payload.docType, stageSlug: payload.sourceStageSlug },
+    );
 
-  if (
-    !renderDecision.shouldRender &&
-    RENDER_DECISION_QUERY_FAILURE_REASONS.includes(renderDecision.reason)
-  ) {
-    logger.error(
-      "[enqueueRenderJob] Failed to determine if RENDER job required due to query/config error",
-      {
-        reason: renderDecision.reason,
-        details: renderDecision.details,
+    if (
+      !renderDecision.shouldRender &&
+      RENDER_DECISION_QUERY_FAILURE_REASONS.includes(renderDecision.reason)
+    ) {
+      logger.error(
+        "[enqueueRenderJob] Failed to determine if RENDER job required due to query/config error",
+        {
+          reason: renderDecision.reason,
+          details: renderDecision.details,
+          outputType: payload.docType,
+          stageSlug: payload.sourceStageSlug,
+        },
+      );
+      const message: string =
+        `Cannot determine render requirement: ${renderDecision.reason}${
+          renderDecision.details ? ` - ${renderDecision.details}` : ""
+        }`;
+      const err: RenderJobEnqueueError = new RenderJobEnqueueError(message);
+      return { error: err, retriable: false };
+    }
+
+    if (!renderDecision.shouldRender && renderDecision.reason === "is_json") {
+      logger.info("[enqueueRenderJob] Skipping RENDER job for JSON output", {
+        outputType: payload.docType,
+      });
+      return { renderJobId: null };
+    }
+
+    if (!(renderDecision.shouldRender && renderDecision.reason === "is_markdown")) {
+      return { renderJobId: null };
+    }
+
+    logger.info("[enqueueRenderJob] Preparing to enqueue RENDER job (COMPRESS dispatch)", {
+      jobId,
+      sourceType: payload.sourceType,
+      documentKey: payload.documentKey,
+      docType: payload.docType,
+      sourceStageSlug: payload.sourceStageSlug,
+      targetKey: payload.targetKey,
+    });
+
+    const templateResult = await resolveTemplateFilename(
+      { dbClient },
+      { stageSlug: payload.sourceStageSlug, outputType: payload.docType, documentKey: payload.documentKey },
+    );
+
+    if ("error" in templateResult) {
+      return templateResult;
+    }
+
+    const { templateFilename } = templateResult;
+
+    idempotencyKey = `${sessionId}_${iterationNumber}_${stageSlug}_compress_render_${payload.sourceType}_${payload.documentKey}_${sanitizeForPath(payload.targetKey)}`;
+
+    renderPayload = {
+      idempotencyKey,
+      projectId,
+      sessionId,
+      iterationNumber,
+      stageSlug,
+      targetKey: payload.targetKey,
+      sourceType: payload.sourceType,
+      documentKey: payload.documentKey,
+      template_filename: templateFilename,
+      user_jwt: userAuthToken,
+      model_id: modelId,
+      walletId,
+    };
+
+    if (!isDialecticRenderCompressedContextJobPayload(renderPayload)) {
+      const validationErr: RenderJobValidationError = new RenderJobValidationError(
+        "renderPayload is not a valid DialecticRenderCompressedContextJobPayload",
+      );
+      return { error: validationErr, retriable: false };
+    }
+
+    if (!isJson(renderPayload)) {
+      const validationErr: RenderJobValidationError = new RenderJobValidationError(
+        "renderPayload is not a valid JSON object",
+      );
+      return { error: validationErr, retriable: false };
+    }
+  } else {
+    if (payload.needsContinuation) {
+      return { renderJobId: null };
+    }
+
+    const renderDecision = await shouldEnqueueRenderJob(
+      { dbClient, logger },
+      { outputType, stageSlug },
+    );
+
+    if (
+      !renderDecision.shouldRender &&
+      RENDER_DECISION_QUERY_FAILURE_REASONS.includes(renderDecision.reason)
+    ) {
+      logger.error(
+        "[enqueueRenderJob] Failed to determine if RENDER job required due to query/config error",
+        {
+          reason: renderDecision.reason,
+          details: renderDecision.details,
+          outputType,
+          stageSlug,
+        },
+      );
+      const message: string =
+        `Cannot determine render requirement: ${renderDecision.reason}${
+          renderDecision.details ? ` - ${renderDecision.details}` : ""
+        }`;
+      const err: RenderJobEnqueueError = new RenderJobEnqueueError(message);
+      return { error: err, retriable: false };
+    }
+
+    if (!renderDecision.shouldRender && renderDecision.reason === "is_json") {
+      logger.info("[enqueueRenderJob] Skipping RENDER job for JSON output", {
         outputType,
-        stageSlug,
-      },
-    );
-    const message: string =
-      `Cannot determine render requirement: ${renderDecision.reason}${
-        renderDecision.details ? ` - ${renderDecision.details}` : ""
-      }`;
-    const err: RenderJobEnqueueError = new RenderJobEnqueueError(message);
-    return { error: err, retriable: false };
-  }
+      });
+      return { renderJobId: null };
+    }
 
-  if (!renderDecision.shouldRender && renderDecision.reason === "is_json") {
-    logger.info("[enqueueRenderJob] Skipping RENDER job for JSON output", {
+    if (!(renderDecision.shouldRender && renderDecision.reason === "is_markdown")) {
+      return { renderJobId: null };
+    }
+
+    logger.info("[enqueueRenderJob] Preparing to enqueue RENDER job", {
+      jobId,
       outputType,
-    });
-    return { renderJobId: null };
-  }
-
-  if (!(renderDecision.shouldRender && renderDecision.reason === "is_markdown")) {
-    return { renderJobId: null };
-  }
-
-  logger.info("[enqueueRenderJob] Preparing to enqueue RENDER job", {
-    jobId,
-    outputType,
-    fileType: payload.fileType,
-    storageFileType: payload.storageFileType,
-    documentKey: payload.documentKey,
-  });
-
-  const documentIdentityValue: string | undefined = payload.stageRelationshipForStage;
-  if (typeof documentIdentityValue !== "string" || documentIdentityValue.trim() === "") {
-    logger.error("[enqueueRenderJob] Cannot enqueue RENDER job: documentIdentity is missing or invalid", {
-      jobId,
-      documentIdentity: documentIdentityValue,
-    });
-    const validationErr: RenderJobValidationError = new RenderJobValidationError(
-      `document_relationships[${stageSlug}] is required and must be a non-empty string before RENDER job creation. Contribution ID: ${payload.contributionId}`,
-    );
-    return { error: validationErr, retriable: false };
-  }
-  const documentIdentityStrict: string = documentIdentityValue;
-
-  const documentKeyRaw: FileType | undefined = payload.documentKey;
-  if (!documentKeyRaw || typeof documentKeyRaw !== "string" || documentKeyRaw.trim() === "") {
-    logger.error("[enqueueRenderJob] Cannot enqueue RENDER job: documentKey is missing or invalid", {
-      jobId,
       fileType: payload.fileType,
-      documentKey: documentKeyRaw,
+      storageFileType: payload.storageFileType,
+      documentKey: payload.documentKey,
     });
-    const validationErr: RenderJobValidationError = new RenderJobValidationError(
-      "documentKey is required for RENDER job but is missing or invalid",
+
+    const documentIdentityValue: string | undefined = payload.stageRelationshipForStage;
+    if (typeof documentIdentityValue !== "string" || documentIdentityValue.trim() === "") {
+      logger.error("[enqueueRenderJob] Cannot enqueue RENDER job: documentIdentity is missing or invalid", {
+        jobId,
+        documentIdentity: documentIdentityValue,
+      });
+      const validationErr: RenderJobValidationError = new RenderJobValidationError(
+        `document_relationships[${stageSlug}] is required and must be a non-empty string before RENDER job creation. Contribution ID: ${payload.contributionId}`,
+      );
+      return { error: validationErr, retriable: false };
+    }
+    const documentIdentityStrict: string = documentIdentityValue;
+
+    const documentKeyRaw: FileType | undefined = payload.documentKey;
+    if (!documentKeyRaw || typeof documentKeyRaw !== "string" || documentKeyRaw.trim() === "") {
+      logger.error("[enqueueRenderJob] Cannot enqueue RENDER job: documentKey is missing or invalid", {
+        jobId,
+        fileType: payload.fileType,
+        documentKey: documentKeyRaw,
+      });
+      const validationErr: RenderJobValidationError = new RenderJobValidationError(
+        "documentKey is required for RENDER job but is missing or invalid",
+      );
+      return { error: validationErr, retriable: false };
+    }
+    if (!isFileType(documentKeyRaw)) {
+      const validationErr: RenderJobValidationError = new RenderJobValidationError(
+        "documentKey is not a valid FileType",
+      );
+      return { error: validationErr, retriable: false };
+    }
+    const documentKeyAsFileType: FileType = documentKeyRaw;
+
+    if (!payload.contributionId || typeof payload.contributionId !== "string" || payload.contributionId.trim() === "") {
+      const validationErr: RenderJobValidationError = new RenderJobValidationError(
+        "contribution.id is required for RENDER job but is missing or invalid",
+      );
+      return { error: validationErr, retriable: false };
+    }
+    const sourceContributionIdStrict: string = payload.contributionId;
+
+    const templateResult = await resolveTemplateFilename(
+      { dbClient },
+      { stageSlug, outputType, documentKey: documentKeyAsFileType },
     );
-    return { error: validationErr, retriable: false };
-  }
-  if (!isFileType(documentKeyRaw)) {
-    const validationErr: RenderJobValidationError = new RenderJobValidationError(
-      "documentKey is not a valid FileType",
-    );
-    return { error: validationErr, retriable: false };
-  }
-  const documentKeyAsFileType: FileType = documentKeyRaw;
 
-  if (!payload.contributionId || typeof payload.contributionId !== "string" || payload.contributionId.trim() === "") {
-    const validationErr: RenderJobValidationError = new RenderJobValidationError(
-      "contribution.id is required for RENDER job but is missing or invalid",
-    );
-    return { error: validationErr, retriable: false };
-  }
-  const sourceContributionIdStrict: string = payload.contributionId;
+    if ("error" in templateResult) {
+      return templateResult;
+    }
 
-  const templateResult = await resolveTemplateFilename(
-    { dbClient },
-    { stageSlug, outputType, documentKey: documentKeyAsFileType },
-  );
+    const { templateFilename } = templateResult;
 
-  if ("error" in templateResult) {
-    return templateResult;
-  }
+    idempotencyKey = `${jobId}_render`;
 
-  const { templateFilename } = templateResult;
+    renderPayload = {
+      idempotencyKey,
+      projectId,
+      sessionId,
+      iterationNumber,
+      stageSlug,
+      documentIdentity: documentIdentityStrict,
+      documentKey: documentKeyAsFileType,
+      sourceContributionId: sourceContributionIdStrict,
+      template_filename: templateFilename,
+      user_jwt: userAuthToken,
+      model_id: modelId,
+      walletId,
+    };
 
-  const renderPayload: DialecticRenderJobPayload = {
-    idempotencyKey: `${jobId}_render`,
-    projectId,
-    sessionId,
-    iterationNumber,
-    stageSlug,
-    documentIdentity: documentIdentityStrict,
-    documentKey: documentKeyAsFileType,
-    sourceContributionId: sourceContributionIdStrict,
-    template_filename: templateFilename,
-    user_jwt: userAuthToken,
-    model_id: modelId,
-    walletId,
-  };
+    if (!isDialecticRenderJobPayload(renderPayload)) {
+      const validationErr: RenderJobValidationError = new RenderJobValidationError(
+        "renderPayload is not a valid DialecticRenderJobPayload",
+      );
+      return { error: validationErr, retriable: false };
+    }
 
-  if (!isDialecticRenderJobPayload(renderPayload)) {
-    const validationErr: RenderJobValidationError = new RenderJobValidationError(
-      "renderPayload is not a valid DialecticRenderJobPayload",
-    );
-    return { error: validationErr, retriable: false };
-  }
-
-  if (!isJson(renderPayload)) {
-    const validationErr: RenderJobValidationError = new RenderJobValidationError(
-      "renderPayload is not a valid JSON object",
-    );
-    return { error: validationErr, retriable: false };
+    if (!isJson(renderPayload)) {
+      const validationErr: RenderJobValidationError = new RenderJobValidationError(
+        "renderPayload is not a valid JSON object",
+      );
+      return { error: validationErr, retriable: false };
+    }
   }
 
   const insertObj: TablesInsert<"dialectic_generation_jobs"> = {
@@ -183,7 +285,7 @@ export async function enqueueRenderJob(
     is_test_job: isTestJob,
     status: "pending",
     user_id: projectOwnerUserId,
-    idempotency_key: `${jobId}_render`,
+    idempotency_key: idempotencyKey,
   };
 
   const { data: renderInsertData, error: renderInsertError } = await dbClient
@@ -197,11 +299,10 @@ export async function enqueueRenderJob(
     const errorCode: string = renderInsertError.code || "";
 
     if (errorCode === "23505" && errorMessage.includes("idempotency_key")) {
-      const renderIdempotencyKey: string = `${jobId}_render`;
       const { data: existingRow, error: selectError } = await dbClient
         .from("dialectic_generation_jobs")
         .select("*")
-        .eq("idempotency_key", renderIdempotencyKey)
+        .eq("idempotency_key", idempotencyKey)
         .single();
 
       if (!selectError && existingRow && isRecord(existingRow) && typeof existingRow["id"] === "string") {

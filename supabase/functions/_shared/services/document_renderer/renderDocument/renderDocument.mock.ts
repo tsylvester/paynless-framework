@@ -14,6 +14,7 @@ import type {
   RenderDocumentFn,
   RenderDocumentParams,
   RenderDocumentResult,
+  RenderCompressedContextParams,
 } from "./renderDocument.interface.ts";
 
 export type ContributionRowMinimalOverrides = Partial<ContributionRowMinimal>;
@@ -79,6 +80,34 @@ export function invalidateRenderDocumentParams(
   corruptions: RenderDocumentParamsCorruptions,
 ): unknown {
   return { ...buildRenderDocumentParams(), ...corruptions };
+}
+
+export type RenderCompressedContextParamsOverrides = Partial<RenderCompressedContextParams>;
+
+export type RenderCompressedContextParamsCorruptions = {
+  [K in keyof RenderCompressedContextParams]?: unknown;
+};
+
+export function buildRenderCompressedContextParams(
+  overrides?: RenderCompressedContextParamsOverrides,
+): RenderCompressedContextParams {
+  const base: RenderCompressedContextParams = {
+    projectId: "project_123",
+    sessionId: "session-abc",
+    iterationNumber: 1,
+    stageSlug: DialecticStageSlug.Thesis,
+    targetKey: FileType.business_case,
+    sourceType: "contribution",
+    documentKey: FileType.business_case,
+    template_filename: "thesis_business_case.md",
+  };
+  return overrides ? { ...base, ...overrides } : base;
+}
+
+export function invalidateRenderCompressedContextParams(
+  corruptions: RenderCompressedContextParamsCorruptions,
+): unknown {
+  return { ...buildRenderCompressedContextParams(), ...corruptions };
 }
 
 export type RenderDocumentResultOverrides = Partial<RenderDocumentResult>;
@@ -173,7 +202,7 @@ export function invalidateIDocumentRenderer(
 export const mockRenderDocument: RenderDocumentFn = async (
   _dbClient: SupabaseClient,
   _deps: DocumentRendererDeps,
-  _params: RenderDocumentParams,
+  _params: RenderDocumentParams | RenderCompressedContextParams,
 ): Promise<RenderDocumentResult> => {
   return buildRenderDocumentResult();
 };

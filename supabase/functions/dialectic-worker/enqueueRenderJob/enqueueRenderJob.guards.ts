@@ -5,9 +5,11 @@ import type { Database } from '../../types_db.ts';
 import { DialecticStageSlug } from '../../_shared/types/file_manager.types.ts';
 import { RenderJobEnqueueError, RenderJobValidationError } from '../../_shared/utils/errors.ts';
 import { TemplateResolutionError } from '../../_shared/utils/resolveTemplateFilename/resolveTemplateFilename.ts';
-import { isFileType, isModelContributionFileType } from '../../_shared/utils/type-guards/type_guards.file_manager.ts';
-import { isRecord } from '../../_shared/utils/type-guards/type_guards.common.ts';
+import { isCompressionSourceType, isFileType, isModelContributionFileType, isDialecticStageSlug } from '../../_shared/utils/type-guards/type_guards.file_manager.ts';
+import { isRecord, isLoggerShape, isSupabaseClientShape } from '../../_shared/utils/type-guards/type_guards.common.ts';
 import type {
+  DialecticRenderCompressedContextJobPayload,
+  EnqueueRenderCompressedContextPayload,
   EnqueueRenderJobDeps,
   EnqueueRenderJobErrorReturn,
   EnqueueRenderJobParams,
@@ -15,36 +17,6 @@ import type {
   EnqueueRenderJobSuccessReturn,
 } from './enqueueRenderJob.interface.ts';
 
-export function isDialecticStageSlug(value: unknown): value is DialecticStageSlug {
-  if (typeof value !== 'string') {
-    return false;
-  }
-  for (const slug of Object.values(DialecticStageSlug)) {
-    if (slug === value) {
-      return true;
-    }
-  }
-  return false;
-}
-
-function isSupabaseClientShape(value: unknown): value is SupabaseClient<Database> {
-  if (!isRecord(value)) {
-    return false;
-  }
-  return typeof value.from === 'function';
-}
-
-function isLoggerShape(value: unknown): value is EnqueueRenderJobDeps['logger'] {
-  if (!isRecord(value)) {
-    return false;
-  }
-  return (
-    typeof value.debug === 'function' &&
-    typeof value.info === 'function' &&
-    typeof value.warn === 'function' &&
-    typeof value.error === 'function'
-  );
-}
 
 export function isEnqueueRenderJobDeps(value: unknown): value is EnqueueRenderJobDeps {
   if (!isRecord(value)) {
@@ -204,4 +176,112 @@ export function isEnqueueRenderJobErrorReturn(value: unknown): value is EnqueueR
     return false;
   }
   return err instanceof RenderJobValidationError || err instanceof RenderJobEnqueueError || err instanceof TemplateResolutionError;
+}
+
+export function isEnqueueRenderCompressedContextPayload(value: unknown): value is EnqueueRenderCompressedContextPayload {
+  if (!isRecord(value)) {
+    return false;
+  }
+  if (
+    !('sourceType' in value) ||
+    !('documentKey' in value) ||
+    !('docType' in value) ||
+    !('sourceStageSlug' in value) ||
+    !('targetKey' in value)
+  ) {
+    return false;
+  }
+  if (!isCompressionSourceType(value.sourceType)) {
+    return false;
+  }
+  if (value.sourceType !== 'contribution' && value.sourceType !== 'resource') {
+    return false;
+  }
+  if (!isFileType(value.documentKey)) {
+    return false;
+  }
+  if (!isModelContributionFileType(value.docType)) {
+    return false;
+  }
+  if (!isModelContributionFileType(value.targetKey)) {
+    return false;
+  }
+  if (!isDialecticStageSlug(value.sourceStageSlug)) {
+    return false;
+  }
+  return true;
+}
+
+export function isDialecticRenderCompressedContextJobPayload(value: unknown): value is DialecticRenderCompressedContextJobPayload {
+  if (!isRecord(value)) {
+    return false;
+  }
+  const keys: (keyof DialecticRenderCompressedContextJobPayload)[] = [
+    'idempotencyKey',
+    'projectId',
+    'sessionId',
+    'iterationNumber',
+    'stageSlug',
+    'targetKey',
+    'sourceType',
+    'documentKey',
+    'template_filename',
+    'user_jwt',
+    'model_id',
+    'walletId',
+  ];
+  for (const key of keys) {
+    if (!(key in value)) {
+      return false;
+    }
+  }
+  const idempotencyKey = value.idempotencyKey;
+  const projectId = value.projectId;
+  const sessionId = value.sessionId;
+  const iterationNumber = value.iterationNumber;
+  const stageSlug = value.stageSlug;
+  const targetKey = value.targetKey;
+  const sourceType = value.sourceType;
+  const documentKey = value.documentKey;
+  const templateFilename = value.template_filename;
+  const userJwt = value.user_jwt;
+  const modelId = value.model_id;
+  const walletId = value.walletId;
+  if (typeof idempotencyKey !== 'string' || idempotencyKey === '') {
+    return false;
+  }
+  if (typeof projectId !== 'string' || projectId === '') {
+    return false;
+  }
+  if (typeof sessionId !== 'string' || sessionId === '') {
+    return false;
+  }
+  if (typeof iterationNumber !== 'number' || !Number.isInteger(iterationNumber) || iterationNumber < 0) {
+    return false;
+  }
+  if (!isDialecticStageSlug(stageSlug)) {
+    return false;
+  }
+  if (!isModelContributionFileType(targetKey)) {
+    return false;
+  }
+  if (!isCompressionSourceType(sourceType)) {
+    return false;
+  }
+  if (!isFileType(documentKey)) {
+    return false;
+  }
+  if (typeof templateFilename !== 'string' || templateFilename === '') {
+    return false;
+  }
+  if (typeof userJwt !== 'string' || userJwt === '') {
+    return false;
+  }
+  if (typeof modelId !== 'string' || modelId === '') {
+    return false;
+  }
+  if (typeof walletId !== 'string' || walletId === '') {
+    return false;
+  }
+  return true;
 }

@@ -5,6 +5,9 @@ import type { Database } from "../../../../types_db.ts";
 import { createMockSupabaseClient } from "../../../supabase.mock.ts";
 import { FileType } from "../../../types/file_manager.types.ts";
 import type { ServiceError } from "../../../types.ts";
+import { constructStoragePath } from "../../../utils/path_constructor.ts";
+import { createMockDownloadFromStorage } from "../../../supabase_storage_utils.mock.ts";
+import type { DownloadFromStorageFn } from "../../../supabase_storage_utils.ts";
 
 import { renderDocument } from "./renderDocument.ts";
 import type {
@@ -13,6 +16,7 @@ import type {
 import {
   buildDocumentRendererDeps,
   buildRenderDocumentParams,
+  buildRenderCompressedContextParams,
 } from "./renderDocument.mock.ts";
 import { buildFileRecord, MockFileManagerService } from "../../file_manager.mock.ts";
 import {
@@ -585,5 +589,644 @@ Deno.test("renderDocument - tail: persistence and notification", async (t) => {
     const result = await renderDocument(dbClient, deps, params);
 
     assertEquals(result.pathContext.sourceAnchorModelSlug, "claude-3-opus");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// COMPRESS-branch unit tests
+// ---------------------------------------------------------------------------
+
+const compressParams = buildRenderCompressedContextParams();
+
+const rawJsonArtifact = constructStoragePath({
+  projectId: compressParams.projectId,
+  fileType: FileType.CompressedContextRawJson,
+  sessionId: compressParams.sessionId,
+  iteration: compressParams.iterationNumber,
+  stageSlug: compressParams.stageSlug,
+  targetKey: compressParams.targetKey,
+  sourceType: compressParams.sourceType,
+  documentKey: compressParams.documentKey,
+});
+
+const compressResourceRow = buildFileRecord({
+  storage_bucket: "content",
+  storage_path: rawJsonArtifact.storagePath,
+  file_name: rawJsonArtifact.fileName,
+});
+
+const compressTemplateSuccess = buildLoadDocumentTemplateSuccessReturn({
+  templateText: "# Template\n\n{{executive_summary}}",
+});
+
+Deno.test("renderDocument - COMPRESS happy path", async (t) => {
+  await t.step("does not call assembleContributionChain or mergeChunkContent", async () => {
+    const { client } = createMockSupabaseClient(undefined, {
+      genericMockResults: {
+        dialectic_project_resources: {
+          select: { data: [compressResourceRow], error: null, count: 1, status: 200, statusText: "OK" },
+        },
+      },
+    });
+    const dbClient = client as unknown as SupabaseClient<Database>;
+
+    const assembleFn: AssembleContributionChainFn = async () => mockChainSuccess;
+    const mergeFn: MergeChunkContentFn = async () => mockMergeSuccess;
+    const assembleSpy = spy(assembleFn);
+    const mergeSpy = spy(mergeFn);
+
+    const fileManager = new MockFileManagerService();
+    fileManager.setUploadAndRegisterFileResponse(buildFileRecord({ id: "compressed-1" }), null);
+    resetMockNotificationService();
+
+    const downloadData = await new Blob([JSON.stringify({
+      content: { executive_summary: "Compressed summary" },
+    })]).arrayBuffer();
+
+    const deps = buildDocumentRendererDeps({
+      downloadFromStorage: createMockDownloadFromStorage({
+        mode: "pathKeyed",
+        pathToData: {
+          [`${compressResourceRow.storage_path}/${compressResourceRow.file_name}`]: downloadData,
+        },
+      }),
+      fileManager,
+      loadDocumentTemplate: async () => compressTemplateSuccess,
+      assembleContributionChain: assembleSpy,
+      mergeChunkContent: mergeSpy,
+    });
+
+    await renderDocument(dbClient, deps, compressParams);
+
+    assertEquals(assembleSpy.calls.length, 0, "assembleContributionChain should NOT be called");
+    assertEquals(mergeSpy.calls.length, 0, "mergeChunkContent should NOT be called");
+  });
+
+  await t.step("calls downloadFromStorage with the row's bucket and path", async () => {
+    const { client } = createMockSupabaseClient(undefined, {
+      genericMockResults: {
+        dialectic_project_resources: {
+          select: { data: [compressResourceRow], error: null, count: 1, status: 200, statusText: "OK" },
+        },
+      },
+    });
+    const dbClient = client as unknown as SupabaseClient<Database>;
+
+    const downloadData = await new Blob([JSON.stringify({ executive_summary: "Compressed summary" })]).arrayBuffer();
+    const downloadFn: DownloadFromStorageFn = createMockDownloadFromStorage({
+      mode: "success",
+      data: downloadData,
+    });
+    const downloadSpy = spy(downloadFn);
+
+    const fileManager = new MockFileManagerService();
+    fileManager.setUploadAndRegisterFileResponse(buildFileRecord({ id: "compressed-1" }), null);
+    resetMockNotificationService();
+
+    const deps = buildDocumentRendererDeps({
+      downloadFromStorage: downloadSpy,
+      fileManager,
+      loadDocumentTemplate: async () => compressTemplateSuccess,
+    });
+
+    await renderDocument(dbClient, deps, compressParams);
+
+    assertEquals(downloadSpy.calls.length, 1);
+    const downloadArgs = downloadSpy.calls[0].args;
+    assertEquals(downloadArgs[1], compressResourceRow.storage_bucket);
+    assertEquals(downloadArgs[2], `${compressResourceRow.storage_path}/${compressResourceRow.file_name}`);
+  });
+
+  await t.step("calls loadDocumentTemplate with projectId and templateFilename", async () => {
+    const { client } = createMockSupabaseClient(undefined, {
+      genericMockResults: {
+        dialectic_project_resources: {
+          select: { data: [compressResourceRow], error: null, count: 1, status: 200, statusText: "OK" },
+        },
+      },
+    });
+    const dbClient = client as unknown as SupabaseClient<Database>;
+
+    const loadFn: LoadDocumentTemplateFn = async () => compressTemplateSuccess;
+    const loadSpy = spy(loadFn);
+
+    const fileManager = new MockFileManagerService();
+    fileManager.setUploadAndRegisterFileResponse(buildFileRecord({ id: "compressed-1" }), null);
+    resetMockNotificationService();
+
+    const downloadData = await new Blob([JSON.stringify({ executive_summary: "Compressed summary" })]).arrayBuffer();
+
+    const deps = buildDocumentRendererDeps({
+      downloadFromStorage: createMockDownloadFromStorage({
+        mode: "success",
+        data: downloadData,
+      }),
+      fileManager,
+      loadDocumentTemplate: loadSpy,
+    });
+
+    await renderDocument(dbClient, deps, compressParams);
+
+    assertEquals(loadSpy.calls.length, 1);
+    const loadArgs = loadSpy.calls[0].args;
+    assertEquals(loadArgs[0].downloadFromStorage, deps.downloadFromStorage);
+    assertEquals(loadArgs[1].dbClient, dbClient);
+    assertEquals(loadArgs[2].projectId, compressParams.projectId);
+    assertEquals(loadArgs[2].templateFilename, compressParams.template_filename);
+  });
+
+  await t.step("uploads with pathContext.fileType === CompressedContext and correct identity", async () => {
+    const { client } = createMockSupabaseClient(undefined, {
+      genericMockResults: {
+        dialectic_project_resources: {
+          select: { data: [compressResourceRow], error: null, count: 1, status: 200, statusText: "OK" },
+        },
+      },
+    });
+    const dbClient = client as unknown as SupabaseClient<Database>;
+
+    const fileManager = new MockFileManagerService();
+    fileManager.setUploadAndRegisterFileResponse(buildFileRecord({ id: "compressed-1" }), null);
+    resetMockNotificationService();
+
+    const downloadData = await new Blob([JSON.stringify({ executive_summary: "Compressed summary" })]).arrayBuffer();
+
+    const deps = buildDocumentRendererDeps({
+      downloadFromStorage: createMockDownloadFromStorage({
+        mode: "success",
+        data: downloadData,
+      }),
+      fileManager,
+      loadDocumentTemplate: async () => compressTemplateSuccess,
+    });
+
+    await renderDocument(dbClient, deps, compressParams);
+
+    assertEquals(fileManager.uploadAndRegisterFile.calls.length, 1);
+    const uploadArg = fileManager.uploadAndRegisterFile.calls[0].args[0];
+    assertEquals(uploadArg.pathContext.fileType, FileType.CompressedContext);
+    assertEquals(uploadArg.pathContext.projectId, compressParams.projectId);
+    assertEquals(uploadArg.pathContext.sessionId, compressParams.sessionId);
+    assertEquals(uploadArg.pathContext.iteration, compressParams.iterationNumber);
+    assertEquals(uploadArg.pathContext.stageSlug, compressParams.stageSlug);
+    assertEquals(uploadArg.pathContext.targetKey, compressParams.targetKey);
+    assertEquals(uploadArg.pathContext.sourceType, compressParams.sourceType);
+    assertEquals(uploadArg.pathContext.documentKey, compressParams.documentKey);
+    assertEquals(uploadArg.mimeType, "text/markdown");
+    assertEquals(uploadArg.userId, deps.notifyUserId);
+  });
+
+  await t.step("never calls sendJobNotificationEvent", async () => {
+    const { client } = createMockSupabaseClient(undefined, {
+      genericMockResults: {
+        dialectic_project_resources: {
+          select: { data: [compressResourceRow], error: null, count: 1, status: 200, statusText: "OK" },
+        },
+      },
+    });
+    const dbClient = client as unknown as SupabaseClient<Database>;
+
+    const fileManager = new MockFileManagerService();
+    fileManager.setUploadAndRegisterFileResponse(buildFileRecord({ id: "compressed-1" }), null);
+    resetMockNotificationService();
+
+    const downloadData = await new Blob([JSON.stringify({ executive_summary: "Compressed summary" })]).arrayBuffer();
+
+    const deps = buildDocumentRendererDeps({
+      downloadFromStorage: createMockDownloadFromStorage({
+        mode: "success",
+        data: downloadData,
+      }),
+      fileManager,
+      loadDocumentTemplate: async () => compressTemplateSuccess,
+    });
+
+    await renderDocument(dbClient, deps, compressParams);
+
+    assertEquals(mockNotificationService.sendJobNotificationEvent.calls.length, 0);
+  });
+
+  await t.step("returns pathContext and renderedBytes matching the upload", async () => {
+    const { client } = createMockSupabaseClient(undefined, {
+      genericMockResults: {
+        dialectic_project_resources: {
+          select: { data: [compressResourceRow], error: null, count: 1, status: 200, statusText: "OK" },
+        },
+      },
+    });
+    const dbClient = client as unknown as SupabaseClient<Database>;
+
+    const fileManager = new MockFileManagerService();
+    fileManager.setUploadAndRegisterFileResponse(buildFileRecord({ id: "compressed-1" }), null);
+    resetMockNotificationService();
+
+    const downloadData = await new Blob([JSON.stringify({ executive_summary: "Compressed summary" })]).arrayBuffer();
+
+    const deps = buildDocumentRendererDeps({
+      downloadFromStorage: createMockDownloadFromStorage({
+        mode: "success",
+        data: downloadData,
+      }),
+      fileManager,
+      loadDocumentTemplate: async () => compressTemplateSuccess,
+    });
+
+    const result = await renderDocument(dbClient, deps, compressParams);
+
+    assertEquals(result.pathContext.fileType, FileType.CompressedContext);
+    assertEquals(result.pathContext.projectId, compressParams.projectId);
+    assert(result.renderedBytes instanceof Uint8Array);
+    assert(result.renderedBytes.length > 0);
+  });
+});
+
+Deno.test("renderDocument - COMPRESS normalization", async (t) => {
+  await t.step("unwraps { content: {...} } body identically to bare record", async () => {
+    const { client } = createMockSupabaseClient(undefined, {
+      genericMockResults: {
+        dialectic_project_resources: {
+          select: { data: [compressResourceRow], error: null, count: 1, status: 200, statusText: "OK" },
+        },
+      },
+    });
+    const dbClient = client as unknown as SupabaseClient<Database>;
+
+    const fileManager = new MockFileManagerService();
+    fileManager.setUploadAndRegisterFileResponse(buildFileRecord({ id: "compressed-1" }), null);
+    resetMockNotificationService();
+
+    const downloadData = await new Blob([JSON.stringify({ content: { executive_summary: "Unwrapped summary" } })]).arrayBuffer();
+
+    const deps = buildDocumentRendererDeps({
+      downloadFromStorage: createMockDownloadFromStorage({
+        mode: "success",
+        data: downloadData,
+      }),
+      fileManager,
+      loadDocumentTemplate: async () => compressTemplateSuccess,
+    });
+
+    const result = await renderDocument(dbClient, deps, compressParams);
+
+    const decoded = new TextDecoder().decode(result.renderedBytes);
+    assert(decoded.includes("Unwrapped summary"), "rendered output should contain the unwrapped value");
+  });
+
+  await t.step("renders bare record (no content wrapper) identically", async () => {
+    const { client } = createMockSupabaseClient(undefined, {
+      genericMockResults: {
+        dialectic_project_resources: {
+          select: { data: [compressResourceRow], error: null, count: 1, status: 200, statusText: "OK" },
+        },
+      },
+    });
+    const dbClient = client as unknown as SupabaseClient<Database>;
+
+    const fileManager = new MockFileManagerService();
+    fileManager.setUploadAndRegisterFileResponse(buildFileRecord({ id: "compressed-1" }), null);
+    resetMockNotificationService();
+
+    const downloadData = await new Blob([JSON.stringify({ executive_summary: "Bare summary" })]).arrayBuffer();
+
+    const deps = buildDocumentRendererDeps({
+      downloadFromStorage: createMockDownloadFromStorage({
+        mode: "success",
+        data: downloadData,
+      }),
+      fileManager,
+      loadDocumentTemplate: async () => compressTemplateSuccess,
+    });
+
+    const result = await renderDocument(dbClient, deps, compressParams);
+
+    const decoded = new TextDecoder().decode(result.renderedBytes);
+    assert(decoded.includes("Bare summary"), "rendered output should contain the bare value");
+  });
+
+  await t.step("joins non-empty string arrays with double-newline before render", async () => {
+    const { client } = createMockSupabaseClient(undefined, {
+      genericMockResults: {
+        dialectic_project_resources: {
+          select: { data: [compressResourceRow], error: null, count: 1, status: 200, statusText: "OK" },
+        },
+      },
+    });
+    const dbClient = client as unknown as SupabaseClient<Database>;
+
+    const fileManager = new MockFileManagerService();
+    fileManager.setUploadAndRegisterFileResponse(buildFileRecord({ id: "compressed-1" }), null);
+    resetMockNotificationService();
+
+    const downloadData = await new Blob([JSON.stringify({
+      content: {
+        executive_summary: ["Part one", "Part two"],
+      },
+    })]).arrayBuffer();
+
+    const deps = buildDocumentRendererDeps({
+      downloadFromStorage: createMockDownloadFromStorage({
+        mode: "success",
+        data: downloadData,
+      }),
+      fileManager,
+      loadDocumentTemplate: async () => compressTemplateSuccess,
+    });
+
+    const result = await renderDocument(dbClient, deps, compressParams);
+
+    const decoded = new TextDecoder().decode(result.renderedBytes);
+    assert(decoded.includes("Part one"), "rendered output should contain first array element");
+    assert(decoded.includes("Part two"), "rendered output should contain second array element");
+  });
+
+  await t.step("continuation_needed and stop_reason never reach the renderer", async () => {
+    const { client } = createMockSupabaseClient(undefined, {
+      genericMockResults: {
+        dialectic_project_resources: {
+          select: { data: [compressResourceRow], error: null, count: 1, status: 200, statusText: "OK" },
+        },
+      },
+    });
+    const dbClient = client as unknown as SupabaseClient<Database>;
+
+    const fileManager = new MockFileManagerService();
+    fileManager.setUploadAndRegisterFileResponse(buildFileRecord({ id: "compressed-1" }), null);
+    resetMockNotificationService();
+
+    const downloadData = await new Blob([JSON.stringify({
+      content: {
+        executive_summary: "Real content",
+        continuation_needed: false,
+        stop_reason: "stop",
+      },
+    })]).arrayBuffer();
+
+    const deps = buildDocumentRendererDeps({
+      downloadFromStorage: createMockDownloadFromStorage({
+        mode: "success",
+        data: downloadData,
+      }),
+      fileManager,
+      loadDocumentTemplate: async () => compressTemplateSuccess,
+    });
+
+    const result = await renderDocument(dbClient, deps, compressParams);
+
+    const decoded = new TextDecoder().decode(result.renderedBytes);
+    assert(!decoded.includes("continuation_needed"), "continuation_needed must not appear in rendered output");
+    assert(!decoded.includes("stop_reason"), "stop_reason must not appear in rendered output");
+  });
+});
+
+Deno.test("renderDocument - COMPRESS error cases", async (t) => {
+  await t.step("resources query error rethrown identity-equal", async () => {
+    const queryError = new Error("DB connection lost");
+    const { client } = createMockSupabaseClient(undefined, {
+      genericMockResults: {
+        dialectic_project_resources: {
+          select: { data: null, error: queryError, count: 0, status: 400, statusText: "Error" },
+        },
+      },
+    });
+    const dbClient = client as unknown as SupabaseClient<Database>;
+
+    const fileManager = new MockFileManagerService();
+    fileManager.setUploadAndRegisterFileResponse(buildFileRecord({ id: "compressed-1" }), null);
+    resetMockNotificationService();
+
+    const deps = buildDocumentRendererDeps({
+      downloadFromStorage: createMockDownloadFromStorage({ mode: "empty" }),
+      fileManager,
+      loadDocumentTemplate: async () => compressTemplateSuccess,
+    });
+
+    let thrown: unknown;
+    try {
+      await renderDocument(dbClient, deps, compressParams);
+    } catch (e) {
+      thrown = e;
+    }
+    assert(thrown === queryError, "resources query error must be rethrown identity-equal");
+  });
+
+  await t.step("no matching row throws fresh Error naming the canonical path", async () => {
+    const { client } = createMockSupabaseClient(undefined, {
+      genericMockResults: {
+        dialectic_project_resources: {
+          select: { data: [], error: null, count: 0, status: 200, statusText: "OK" },
+        },
+      },
+    });
+    const dbClient = client as unknown as SupabaseClient<Database>;
+
+    const fileManager = new MockFileManagerService();
+    fileManager.setUploadAndRegisterFileResponse(buildFileRecord({ id: "compressed-1" }), null);
+    resetMockNotificationService();
+
+    const deps = buildDocumentRendererDeps({
+      downloadFromStorage: createMockDownloadFromStorage({ mode: "empty" }),
+      fileManager,
+      loadDocumentTemplate: async () => compressTemplateSuccess,
+    });
+
+    await assertRejects(
+      () => renderDocument(dbClient, deps, compressParams),
+      Error,
+      rawJsonArtifact.storagePath,
+    );
+  });
+
+  await t.step("download error rethrown identity-equal", async () => {
+    const { client } = createMockSupabaseClient(undefined, {
+      genericMockResults: {
+        dialectic_project_resources: {
+          select: { data: [compressResourceRow], error: null, count: 1, status: 200, statusText: "OK" },
+        },
+      },
+    });
+    const dbClient = client as unknown as SupabaseClient<Database>;
+
+    const downloadError = new Error("storage download failed");
+
+    const fileManager = new MockFileManagerService();
+    fileManager.setUploadAndRegisterFileResponse(buildFileRecord({ id: "compressed-1" }), null);
+    resetMockNotificationService();
+
+    const deps = buildDocumentRendererDeps({
+      downloadFromStorage: createMockDownloadFromStorage({ mode: "error", error: downloadError }),
+      fileManager,
+      loadDocumentTemplate: async () => compressTemplateSuccess,
+    });
+
+    let thrown: unknown;
+    try {
+      await renderDocument(dbClient, deps, compressParams);
+    } catch (e) {
+      thrown = e;
+    }
+    assert(thrown === downloadError, "download error must be rethrown identity-equal");
+  });
+
+  await t.step("loadDocumentTemplate error rethrown identity-equal", async () => {
+    const { client } = createMockSupabaseClient(undefined, {
+      genericMockResults: {
+        dialectic_project_resources: {
+          select: { data: [compressResourceRow], error: null, count: 1, status: 200, statusText: "OK" },
+        },
+      },
+    });
+    const dbClient = client as unknown as SupabaseClient<Database>;
+
+    const templateError = buildLoadDocumentTemplateErrorReturn({
+      error: new Error("template not found"),
+      retriable: false,
+    });
+
+    const fileManager = new MockFileManagerService();
+    fileManager.setUploadAndRegisterFileResponse(buildFileRecord({ id: "compressed-1" }), null);
+    resetMockNotificationService();
+
+    const downloadData = await new Blob([JSON.stringify({ executive_summary: "Compressed summary" })]).arrayBuffer();
+
+    const deps = buildDocumentRendererDeps({
+      downloadFromStorage: createMockDownloadFromStorage({
+        mode: "success",
+        data: downloadData,
+      }),
+      fileManager,
+      loadDocumentTemplate: async () => templateError,
+    });
+
+    let thrown: unknown;
+    try {
+      await renderDocument(dbClient, deps, compressParams);
+    } catch (e) {
+      thrown = e;
+    }
+    assert(thrown === templateError.error, "loadDocumentTemplate error must be rethrown identity-equal");
+  });
+
+  await t.step("unparseable body throws fresh Error", async () => {
+    const { client } = createMockSupabaseClient(undefined, {
+      genericMockResults: {
+        dialectic_project_resources: {
+          select: { data: [compressResourceRow], error: null, count: 1, status: 200, statusText: "OK" },
+        },
+      },
+    });
+    const dbClient = client as unknown as SupabaseClient<Database>;
+
+    const fileManager = new MockFileManagerService();
+    fileManager.setUploadAndRegisterFileResponse(buildFileRecord({ id: "compressed-1" }), null);
+    resetMockNotificationService();
+
+    const downloadData = await new Blob(["not valid json {{{"]).arrayBuffer();
+
+    const deps = buildDocumentRendererDeps({
+      downloadFromStorage: createMockDownloadFromStorage({
+        mode: "success",
+        data: downloadData,
+      }),
+      fileManager,
+      loadDocumentTemplate: async () => compressTemplateSuccess,
+    });
+
+    await assertRejects(
+      () => renderDocument(dbClient, deps, compressParams),
+      Error,
+    );
+  });
+
+  await t.step("non-record parsed body throws fresh Error", async () => {
+    const { client } = createMockSupabaseClient(undefined, {
+      genericMockResults: {
+        dialectic_project_resources: {
+          select: { data: [compressResourceRow], error: null, count: 1, status: 200, statusText: "OK" },
+        },
+      },
+    });
+    const dbClient = client as unknown as SupabaseClient<Database>;
+
+    const fileManager = new MockFileManagerService();
+    fileManager.setUploadAndRegisterFileResponse(buildFileRecord({ id: "compressed-1" }), null);
+    resetMockNotificationService();
+
+    const downloadData = await new Blob([JSON.stringify("just a string")]).arrayBuffer();
+
+    const deps = buildDocumentRendererDeps({
+      downloadFromStorage: createMockDownloadFromStorage({
+        mode: "success",
+        data: downloadData,
+      }),
+      fileManager,
+      loadDocumentTemplate: async () => compressTemplateSuccess,
+    });
+
+    await assertRejects(
+      () => renderDocument(dbClient, deps, compressParams),
+      Error,
+    );
+  });
+
+  await t.step("upload error return throws Error via existing conversion", async () => {
+    const { client } = createMockSupabaseClient(undefined, {
+      genericMockResults: {
+        dialectic_project_resources: {
+          select: { data: [compressResourceRow], error: null, count: 1, status: 200, statusText: "OK" },
+        },
+      },
+    });
+    const dbClient = client as unknown as SupabaseClient<Database>;
+
+    const uploadError: ServiceError = { message: "Database registration failed after successful upload." };
+    const fileManager = new MockFileManagerService();
+    fileManager.setUploadAndRegisterFileResponse(null, uploadError);
+    resetMockNotificationService();
+
+    const downloadData = await new Blob([JSON.stringify({ executive_summary: "Compressed summary" })]).arrayBuffer();
+
+    const deps = buildDocumentRendererDeps({
+      downloadFromStorage: createMockDownloadFromStorage({
+        mode: "success",
+        data: downloadData,
+      }),
+      fileManager,
+      loadDocumentTemplate: async () => compressTemplateSuccess,
+    });
+
+    await assertRejects(
+      () => renderDocument(dbClient, deps, compressParams),
+      Error,
+      "Failed to save rendered document",
+    );
+  });
+
+  await t.step("every pre-upload error short-circuits before uploadAndRegisterFile", async () => {
+    const { client } = createMockSupabaseClient(undefined, {
+      genericMockResults: {
+        dialectic_project_resources: {
+          select: { data: [], error: null, count: 0, status: 200, statusText: "OK" },
+        },
+      },
+    });
+    const dbClient = client as unknown as SupabaseClient<Database>;
+
+    const fileManager = new MockFileManagerService();
+    fileManager.setUploadAndRegisterFileResponse(buildFileRecord({ id: "compressed-1" }), null);
+    resetMockNotificationService();
+
+    const deps = buildDocumentRendererDeps({
+      downloadFromStorage: createMockDownloadFromStorage({ mode: "empty" }),
+      fileManager,
+      loadDocumentTemplate: async () => compressTemplateSuccess,
+    });
+
+    try {
+      await renderDocument(dbClient, deps, compressParams);
+    } catch {
+      // expected
+    }
+
+    assertEquals(fileManager.uploadAndRegisterFile.calls.length, 0, "uploadAndRegisterFile should not be called on pre-upload error");
   });
 });

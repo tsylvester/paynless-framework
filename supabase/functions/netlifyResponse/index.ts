@@ -20,6 +20,8 @@ import type { BoundDebitTokens } from '../_shared/utils/debitTokens.interface.ts
 import { enqueueRenderJob } from '../dialectic-worker/enqueueRenderJob/enqueueRenderJob.ts';
 import type { BoundEnqueueRenderJobFn } from '../dialectic-worker/enqueueRenderJob/enqueueRenderJob.interface.ts';
 import { shouldEnqueueRenderJob } from '../_shared/utils/shouldEnqueueRenderJob.ts';
+import { resolveTemplateFilename } from '../_shared/utils/resolveTemplateFilename/resolveTemplateFilename.ts';
+import type { BoundResolveTemplateFilenameFn } from '../_shared/utils/resolveTemplateFilename/resolveTemplateFilename.interface.ts';
 import { saveResponse } from '../dialectic-worker/saveResponse/saveResponse.ts';
 import type { SaveResponseDeps } from '../dialectic-worker/saveResponse/saveResponse.interface.ts';
 import { createComputeJobSig } from '../_shared/utils/computeJobSig/computeJobSig.ts';
@@ -42,8 +44,11 @@ const notificationService = new NotificationService(adminClient);
 const boundDebitTokens: BoundDebitTokens = (params, payload) =>
     debitTokens({ logger, tokenWalletService: adminTokenWalletService }, params, payload);
 
+const boundResolveTemplateFilename: BoundResolveTemplateFilenameFn = (params, payload) =>
+    resolveTemplateFilename({}, params, payload);
+
 const boundEnqueueRenderJob: BoundEnqueueRenderJobFn = (params, payload) =>
-    enqueueRenderJob({ dbClient: adminClient, logger, shouldEnqueueRenderJob }, params, payload);
+    enqueueRenderJob({ dbClient: adminClient, logger, shouldEnqueueRenderJob, resolveTemplateFilename: boundResolveTemplateFilename }, params, payload);
 
 const saveResponseDeps: SaveResponseDeps = {
     logger,

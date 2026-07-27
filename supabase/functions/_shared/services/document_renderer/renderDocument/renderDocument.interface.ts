@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import type { Database } from "../../../../types_db.ts";
 import type { DownloadFromStorageFn } from "../../../supabase_storage_utils.ts";
-import type { DialecticStageSlug, FileType, IFileManager, PathContext } from "../../../types/file_manager.types.ts";
+import type { CompressionSourceType, DialecticStageSlug, FileType, IFileManager, ModelContributionFileTypes, PathContext } from "../../../types/file_manager.types.ts";
 import type { NotificationServiceType } from "../../../types/notification.service.types.ts";
 import type { ILogger } from "../../../types.ts";
 import type { AssembleContributionChainFn } from "../assembleContributionChain/assembleContributionChain.provides.ts";
@@ -37,6 +37,17 @@ export type RenderDocumentParams = {
   template_filename: string; // canonical template filename from recipe step's outputs_required.files_to_generate[] array, matching file_name in dialectic_document_templates table
 };
 
+export type RenderCompressedContextParams = {
+  projectId: string;
+  sessionId: string;
+  iterationNumber: number;
+  stageSlug: DialecticStageSlug;
+  targetKey: ModelContributionFileTypes;
+  sourceType: CompressionSourceType;
+  documentKey: FileType;
+  template_filename: string;
+};
+
 export type RenderDocumentResult = {
   pathContext: PathContext;
   renderedBytes: Uint8Array;
@@ -56,7 +67,7 @@ export interface DocumentRendererDeps {
 export type RenderDocumentFn = (
   dbClient: SupabaseClient<Database>,
   deps: DocumentRendererDeps,
-  params: RenderDocumentParams,
+  params: RenderDocumentParams | RenderCompressedContextParams,
 ) => Promise<RenderDocumentResult>;
 
 export interface IDocumentRenderer {

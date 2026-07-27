@@ -10,6 +10,8 @@ import {
 import { TemplateResolutionError } from "../../_shared/utils/resolveTemplateFilename/resolveTemplateFilename.ts";
 import type {
   BoundEnqueueRenderJobFn,
+  DialecticRenderCompressedContextJobPayload,
+  EnqueueRenderCompressedContextPayload,
   EnqueueRenderJobDeps,
   EnqueueRenderJobErrorReturn,
   EnqueueRenderJobFn,
@@ -150,3 +152,60 @@ Deno.test("EnqueueRenderJobFn and BoundEnqueueRenderJobFn signatures", () => {
   assertEquals(typeof fn, "function");
   assertEquals(typeof bound, "function");
 });
+
+Deno.test(
+  "EnqueueRenderCompressedContextPayload declares all five keys",
+  () => {
+    const surface: Record<keyof EnqueueRenderCompressedContextPayload, true> = {
+      sourceType: true,
+      documentKey: true,
+      docType: true,
+      sourceStageSlug: true,
+      targetKey: true,
+    };
+    assertEquals(Object.keys(surface).length, 5);
+  },
+);
+
+Deno.test(
+  "DialecticRenderCompressedContextJobPayload declares all twelve keys",
+  () => {
+    const surface: Record<
+      keyof DialecticRenderCompressedContextJobPayload,
+      true
+    > = {
+      idempotencyKey: true,
+      projectId: true,
+      sessionId: true,
+      iterationNumber: true,
+      stageSlug: true,
+      targetKey: true,
+      sourceType: true,
+      documentKey: true,
+      template_filename: true,
+      user_jwt: true,
+      model_id: true,
+      walletId: true,
+    };
+    assertEquals(Object.keys(surface).length, 12);
+  },
+);
+
+Deno.test(
+  "EnqueueRenderCompressedContextPayload assigns to EnqueueRenderJobFn and BoundEnqueueRenderJobFn payload parameters",
+  () => {
+    const payload: EnqueueRenderCompressedContextPayload = {
+      sourceType: "contribution",
+      documentKey: FileType.business_case,
+      docType: FileType.business_case,
+      sourceStageSlug: DialecticStageSlug.Thesis,
+      targetKey: FileType.technical_approach,
+    };
+
+    const fnParam: Parameters<EnqueueRenderJobFn>[2] = payload;
+    const boundParam: Parameters<BoundEnqueueRenderJobFn>[1] = payload;
+
+    assertEquals(fnParam, payload);
+    assertEquals(boundParam, payload);
+  },
+);
