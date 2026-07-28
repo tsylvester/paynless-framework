@@ -1,8 +1,9 @@
-import type { FileType } from '../types/file_manager.types.ts';
+import type { FileType, CompressionSourceType, DialecticStageSlug } from '../types/file_manager.types.ts';
+import type { Messages } from '../types.ts';
 
 export interface DeconstructedPathInfo {
   originalProjectId?: string;    // Project ID parsed directly from the path
-  fileTypeGuess?: FileType;      // Best guess of FileType based on path structure/name
+  fileTypeGuess?: FileType | undefined;      // Best guess of FileType based on path structure/name
   shortSessionId?: string;       // Short session ID parsed from the path
   iteration?: number;            // Iteration number parsed from the path
   stageDirName?: string;         // Stage directory name (e.g., "1_hypothesis") parsed from the path
@@ -25,6 +26,9 @@ export interface DeconstructedPathInfo {
   stepName?: string;             // The step name for planner prompts
   sourceGroupFragment?: string;  // First 8 characters of source_group UUID (sanitized) extracted from filename for disambiguation
   targetKey?: string;             // The target document key for documents being compressed by chunk
+  sourceType?: CompressionSourceType; // The recovered compression source discriminator
+  sourceId?: string;                  // The victim's originating row id, recovered in full for a 'history' source
+  role?: Messages['role'];            // Recovered for a 'history' source only
   chunkIndex?: number;          // The index of this chunk for documents being compressed by chunk
   chunkTotal?: number;          // Total number of chunks in a document being compressed by chunks
 }

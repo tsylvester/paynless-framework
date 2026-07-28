@@ -4,7 +4,7 @@ import {
 import { constructStoragePath, generateShortId } from './path_constructor.ts';
 import { deconstructStoragePath } from './path_deconstructor.ts';
 import type { DeconstructedPathInfo } from './path_deconstructor.types.ts';
-import { FileType, PathContext } from '../types/file_manager.types.ts';
+import { FileType, PathContext, DialecticStageSlug } from '../types/file_manager.types.ts';
 
 const projectId = 'project-uuid-cont';
 const sessionId = 'session-uuid-4567890';
@@ -12,7 +12,7 @@ const iteration = 1;
 const attemptCount = 0;
 
 const modelSlug = 'gpt-4-turbo';
-const headerContextDocumentKey = 'header_context';
+const headerContextDocumentKey = FileType.HeaderContext;
 
 Deno.test('[path_deconstructor.continuation] HeaderContext + SynthesisHeaderContext', async (t) => {
   await t.step('HeaderContext antithesis - continuation parses isContinuation + turnIndex', () => {
@@ -20,7 +20,7 @@ Deno.test('[path_deconstructor.continuation] HeaderContext + SynthesisHeaderCont
       projectId,
       sessionId,
       iteration,
-      stageSlug: 'antithesis',
+      stageSlug: DialecticStageSlug.Antithesis,
       sourceAnchorModelSlug: 'claude-3-opus',
       modelSlug,
       attemptCount,
@@ -49,7 +49,7 @@ Deno.test('[path_deconstructor.continuation] HeaderContext + SynthesisHeaderCont
       projectId,
       sessionId,
       iteration,
-      stageSlug: 'thesis',
+      stageSlug: DialecticStageSlug.Thesis,
       modelSlug,
       attemptCount,
       documentKey: headerContextDocumentKey,
@@ -77,7 +77,7 @@ Deno.test('[path_deconstructor.continuation] HeaderContext + SynthesisHeaderCont
       projectId,
       sessionId,
       iteration,
-      stageSlug: 'antithesis',
+      stageSlug: DialecticStageSlug.Antithesis,
       sourceAnchorModelSlug: 'claude-3-opus',
       modelSlug,
       attemptCount,
@@ -101,7 +101,7 @@ Deno.test('[path_deconstructor.continuation] HeaderContext + SynthesisHeaderCont
       projectId,
       sessionId,
       iteration,
-      stageSlug: 'thesis',
+      stageSlug: DialecticStageSlug.Thesis,
       modelSlug,
       attemptCount,
       documentKey: headerContextDocumentKey,
@@ -123,7 +123,7 @@ Deno.test('[path_deconstructor.continuation] HeaderContext + SynthesisHeaderCont
       projectId,
       sessionId,
       iteration,
-      stageSlug: 'synthesis',
+      stageSlug: DialecticStageSlug.Synthesis,
       modelSlug,
       attemptCount,
       fileType: FileType.SynthesisHeaderContext,
@@ -149,7 +149,7 @@ Deno.test('[path_deconstructor.continuation] HeaderContext + SynthesisHeaderCont
       projectId,
       sessionId,
       iteration,
-      stageSlug: 'synthesis',
+      stageSlug: DialecticStageSlug.Synthesis,
       modelSlug,
       attemptCount,
       fileType: FileType.SynthesisHeaderContext,

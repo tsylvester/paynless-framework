@@ -2,7 +2,7 @@
 import { DialecticExecuteJobPayload, GranularityPlannerFn } from "../../../dialectic-service/dialectic.interface.ts";
 import { createCanonicalPathParams } from "../canonical_context_builder.ts";
 import { isContributionType, isContentToInclude } from "../../../_shared/utils/type-guards/type_guards.dialectic.ts";
-import { isModelContributionFileType } from "../../../_shared/utils/type-guards/type_guards.file_manager.ts";
+import { isModelContributionFileType, isDialecticStageSlug } from "../../../_shared/utils/type-guards/type_guards.file_manager.ts";
 import { selectAnchorSourceDocument } from "../helpers.ts";
 import { selectAnchorForCanonicalPathParams } from "../selectAnchorForCanonicalPathParams.ts";
 
@@ -17,7 +17,7 @@ export const planAllToOne: GranularityPlannerFn = (
     }
 
     const stageSlug = parentJob.payload.stageSlug;
-    if (!stageSlug || !isContributionType(stageSlug)) {
+    if (!stageSlug || !isContributionType(stageSlug) || !isDialecticStageSlug(stageSlug)) {
         throw new Error(`planAllToOne requires a valid ContributionType stageSlug, but received: ${stageSlug}`);
     }
 

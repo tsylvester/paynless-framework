@@ -10,10 +10,9 @@ import {
 import { createCanonicalPathParams } from '../canonical_context_builder.ts';
 import { FileType } from '../../../_shared/types/file_manager.types.ts';
 import { 
-    isContributionType, 
     isContentToInclude 
 } from '../../../_shared/utils/type-guards/type_guards.dialectic.ts';
-import { isModelContributionFileType } from '../../../_shared/utils/type-guards/type_guards.file_manager.ts';
+import { isDialecticStageSlug, isModelContributionFileType } from '../../../_shared/utils/type-guards/type_guards.file_manager.ts';
 import { selectAnchorSourceDocument } from '../helpers.ts';
 import { deconstructStoragePath } from '../../../_shared/utils/path_deconstructor.ts';
 
@@ -36,9 +35,9 @@ export const planPerSourceDocumentByLineageInternal: IPlanPerSourceDocumentByLin
     }
 
     const stageSlug = parentJob.payload.stageSlug;
-    if (!stageSlug || !isContributionType(stageSlug)) {
+    if (!stageSlug || !isDialecticStageSlug(stageSlug)) {
         throw new Error(
-            `planPerSourceDocumentByLineage requires a valid ContributionType stageSlug, but received: ${stageSlug}`
+            `planPerSourceDocumentByLineage requires a valid DialecticStageSlug stageSlug, but received: ${stageSlug}`
         );
     }
 

@@ -21,6 +21,7 @@ import {
   ContributionMetadata,
   PathContext,
   UserFeedbackUploadContext,
+  DialecticStageSlug,
 } from '../types/file_manager.types.ts'
 import { constructStoragePath } from '../utils/path_constructor.ts'
 import { 
@@ -37,6 +38,7 @@ import {
   isServiceError 
 } from '../utils/type-guards/type_guards.file_manager.ts'
 import { MockLogger } from '../logger.mock.ts'
+import type { Messages } from '../types.ts'
 import { createAssembleChunksMock } from '../utils/assembleChunks/assembleChunks.mock.ts'
 
 const assembleChunksMock = createAssembleChunksMock()
@@ -296,7 +298,7 @@ Deno.test('FileManagerService', async (t) => {
         projectId: 'project-seed-contract',
         sessionId: 'session-seed-contract',
         iteration: 2,
-        stageSlug: 'thesis',
+        stageSlug: DialecticStageSlug.Thesis,
         fileType: FileType.SeedPrompt,
         // sourceContributionId should be null for this test case
       };
@@ -336,16 +338,17 @@ Deno.test('FileManagerService', async (t) => {
       projectId: 'project-compressed-contract',
       sessionId: 'session-compressed-contract',
       iteration: 2,
-      stageSlug: 'thesis',
+      stageSlug: DialecticStageSlug.Thesis,
       fileType: FileType.CompressedContext,
-      targetKey: 'executive_summary',
-    } as const;
+      targetKey: FileType.business_case,
+    };
 
     const runCase = async (
       fileType: FileType.CompressedContext | FileType.CompressedContextRawJson,
       sourceType: 'contribution' | 'history',
-      documentKey: string | undefined,
+      documentKey: FileType | undefined,
       sourceId: string | undefined,
+      role: Messages['role'] | undefined,
     ) => {
       const pathContext: ResourceUploadContext['pathContext'] = {
         ...baseCompressedPathContext,
@@ -353,6 +356,7 @@ Deno.test('FileManagerService', async (t) => {
         sourceType,
         ...(documentKey ? { documentKey } : {}),
         ...(sourceId ? { sourceId } : {}),
+        ...(role ? { role } : {}),
       };
 
       const expectedPathParts = constructStoragePath(pathContext);
@@ -404,10 +408,10 @@ Deno.test('FileManagerService', async (t) => {
       }
     };
 
-    await runCase(FileType.CompressedContext, 'contribution', 'feature_spec', undefined);
-    await runCase(FileType.CompressedContext, 'history', undefined, 'history-source-uuid');
-    await runCase(FileType.CompressedContextRawJson, 'contribution', 'feature_spec', undefined);
-    await runCase(FileType.CompressedContextRawJson, 'history', undefined, 'history-source-uuid');
+    await runCase(FileType.CompressedContext, 'contribution', FileType.feature_spec, undefined, undefined);
+    await runCase(FileType.CompressedContext, 'history', undefined, 'history-source-uuid', 'assistant');
+    await runCase(FileType.CompressedContextRawJson, 'contribution', FileType.feature_spec, undefined, undefined);
+    await runCase(FileType.CompressedContextRawJson, 'history', undefined, 'history-source-uuid', 'assistant');
   });
 
   await t.step('uploadAndRegisterFile should register a project export zip at project root',
@@ -619,10 +623,10 @@ Deno.test('FileManagerService', async (t) => {
             projectId: 'project-uuid-123',
             sessionId: 'session-uuid-456',
             iteration: 2,
-            stageSlug: '2_antithesis',
+            stageSlug: DialecticStageSlug.Antithesis,
             modelSlug: 'claude-3-sonnet',
             attemptCount: 0,
-            documentKey: 'business_case',
+            documentKey: FileType.business_case,
         };
         const expectedPathPartsAttempt0 = constructStoragePath(pathContextAttempt0);
         const expectedFullUploadPathAttempt0 = `${expectedPathPartsAttempt0.storagePath}/${expectedPathPartsAttempt0.fileName}`;
@@ -668,7 +672,7 @@ Deno.test('FileManagerService', async (t) => {
         assertExists(insertSpy);
         const insertData = insertSpy.calls[0].args[0];
         assertEquals(insertData.session_id, 'session-uuid-456')
-        assertEquals(insertData.stage, '2_antithesis')
+        assertEquals(insertData.stage, DialecticStageSlug.Antithesis)
         assertEquals(insertData.file_name, expectedPathPartsAttempt0.fileName);
         assertEquals(insertData.storage_path, expectedPathPartsAttempt0.storagePath);
         // raw_response_storage_path now points to the same file (fileContent IS the raw JSON)
@@ -689,7 +693,7 @@ Deno.test('FileManagerService', async (t) => {
           projectId: 'project-intermediate',
           sessionId: 'session-intermediate',
           iteration: 1,
-          stageSlug: 'synthesis',
+          stageSlug: DialecticStageSlug.Synthesis,
           modelSlug: 'test-model',
           sourceModelSlugs: ['model-a', 'model-b'],
           sourceAnchorType: 'thesis',
@@ -716,7 +720,7 @@ Deno.test('FileManagerService', async (t) => {
           modelIdUsed: 'model-id-123',
           modelNameDisplay: 'Test Model',
           sessionId: 'session-intermediate',
-          stageSlug: 'synthesis',
+          stageSlug: DialecticStageSlug.Synthesis,
           document_relationships: { derived_from: ['id-a', 'id-b'] },
         };
 
@@ -750,9 +754,9 @@ Deno.test('FileManagerService', async (t) => {
           projectId: 'project-retry-proj',
           sessionId: 'session-retry-sess',
           iteration: 1,
-          stageSlug: 'thesis',
+          stageSlug: DialecticStageSlug.Thesis,
           modelSlug: 'claude-opus',
-          documentKey: 'business_case',
+          documentKey: FileType.business_case,
         };
 
         const failedAttempt0PathContext: ModelContributionUploadContext['pathContext'] = {
@@ -805,7 +809,7 @@ Deno.test('FileManagerService', async (t) => {
           modelIdUsed: 'model-id-opus',
           modelNameDisplay: 'Claude Opus',
           sessionId: 'session-retry-sess',
-          stageSlug: 'thesis',
+          stageSlug: DialecticStageSlug.Thesis,
         };
 
         const context: ModelContributionUploadContext = {
@@ -852,7 +856,7 @@ Deno.test('FileManagerService', async (t) => {
         const projectId = 'project-feedback-proj';
         const sessionId = 'session-feedback-sess';
         const iteration = 3;
-        const stageSlug = '3_synthesis';
+        const stageSlug = DialecticStageSlug.Synthesis;
         const sourceDocPathContext: PathContext = {
           projectId,
           sessionId,
@@ -860,7 +864,7 @@ Deno.test('FileManagerService', async (t) => {
           stageSlug,
           modelSlug: 'claude-3-opus',
           attemptCount: 0,
-          documentKey: 'business_case',
+          documentKey: FileType.business_case,
           fileType: FileType.business_case,
         };
         const sourceDocPath = constructStoragePath(sourceDocPathContext);
@@ -874,7 +878,7 @@ Deno.test('FileManagerService', async (t) => {
           stageSlug,
           originalStoragePath,
           originalBaseName,
-          documentKey: 'business_case',
+          documentKey: FileType.business_case,
           modelSlug: 'claude-3-opus',
         };
         const context: UserFeedbackUploadContext = {
@@ -935,13 +939,13 @@ Deno.test('FileManagerService', async (t) => {
   await t.step('uploadAndRegisterFile user_feedback with no existing logical doc row inserts a new row',
     async () => {
       try {
-        const documentKey = 'synthesis_document_business_case';
+        const documentKey = FileType.business_case;
         const modelId = 'model-abc-123';
         const newRow = { id: 'new-feedback-id', project_id: 'proj-upsert', session_id: 'sess-upsert' };
         const projectId = 'proj-upsert';
         const sessionId = 'sess-upsert';
         const iteration = 2;
-        const stageSlug = '2_synthesis';
+        const stageSlug = DialecticStageSlug.Synthesis;
         const sourceDocPathContext: PathContext = {
           projectId,
           sessionId,
@@ -1008,14 +1012,14 @@ Deno.test('FileManagerService', async (t) => {
   await t.step('uploadAndRegisterFile user_feedback with existing logical doc row updates that row (no second insert)',
     async () => {
       try {
-        const documentKey = 'business_case';
+        const documentKey = FileType.business_case;
         const modelId = 'model-existing';
         const existingId = 'existing-feedback-uuid';
         const updatedRow = { id: existingId, project_id: 'proj-upd', session_id: 'sess-upd', file_name: 'updated_feedback.md' };
         const projectId = 'proj-upd';
         const sessionId = 'sess-upd';
         const iteration = 1;
-        const stageSlug = '1_thesis';
+        const stageSlug = DialecticStageSlug.Thesis;
         const sourceDocPathContext: PathContext = {
           projectId,
           sessionId,
@@ -1083,12 +1087,12 @@ Deno.test('FileManagerService', async (t) => {
   await t.step('uploadAndRegisterFile user_feedback logical doc lookup filters by session_id project_id stage_slug iteration_number document_key model_id',
     async () => {
       try {
-        const documentKey = 'feature_spec';
+        const documentKey = FileType.feature_spec;
         const modelId = 'model-filter-test';
         const projectId = 'p';
         const sessionId = 's';
         const iteration = 1;
-        const stageSlug = '1_thesis';
+        const stageSlug = DialecticStageSlug.Thesis;
         const sourceDocPathContext: PathContext = {
           projectId,
           sessionId,
@@ -1171,7 +1175,7 @@ Deno.test('FileManagerService', async (t) => {
         const projectId = 'path-proj';
         const sessionId = 'path-sess';
         const iteration = 2;
-        const stageSlug = '2_synthesis';
+        const stageSlug = DialecticStageSlug.Synthesis;
         const sourceDocPathContext: PathContext = {
           projectId,
           sessionId,
@@ -1179,7 +1183,7 @@ Deno.test('FileManagerService', async (t) => {
           stageSlug,
           modelSlug: 'path-model',
           attemptCount: 0,
-          documentKey: 'synthesis_document_feature_spec',
+          documentKey: FileType.feature_spec,
           fileType: FileType.synthesis_document_feature_spec,
         };
         const sourceDocPath = constructStoragePath(sourceDocPathContext);
@@ -1193,7 +1197,7 @@ Deno.test('FileManagerService', async (t) => {
           stageSlug,
           originalStoragePath,
           originalBaseName,
-          documentKey: 'synthesis_document_feature_spec',
+          documentKey: FileType.synthesis_document_feature_spec,
           modelSlug: 'path-model',
         };
         const context: UserFeedbackUploadContext = {
@@ -1350,10 +1354,10 @@ Deno.test('FileManagerService', async (t) => {
           projectId: 'project-missing-link',
           sessionId: 'session-missing-link',
           iteration: 1,
-          stageSlug: 'thesis',
+          stageSlug: DialecticStageSlug.Thesis,
           modelSlug: 'test-model',
           attemptCount: 0,
-          documentKey: 'business_case',
+          documentKey: FileType.business_case,
           isContinuation: true,
           turnIndex: 1,
         };
@@ -1376,7 +1380,7 @@ Deno.test('FileManagerService', async (t) => {
           modelIdUsed: 'model-id-test',
           modelNameDisplay: 'Test Model',
           sessionId: 'session-missing-link',
-          stageSlug: 'thesis',
+          stageSlug: DialecticStageSlug.Thesis,
         };
         
         assertEquals(contributionMetadata.isContinuation, undefined);
@@ -1448,11 +1452,11 @@ Deno.test('FileManagerService', async (t) => {
           fileType: FileType.business_case,
           projectId: 'project-chunk-test',
           sessionId: 'session-chunk-test',
-          stageSlug: '1_thesis',
+          stageSlug: DialecticStageSlug.Thesis,
           iteration: 1,
           modelSlug: 'Claude Opus', // Correctly provide modelSlug in the base path context
           contributionType: 'thesis', // Correctly provide contributionType in the base path context
-          documentKey: 'business_case',
+          documentKey: FileType.business_case,
           isContinuation: true,
           turnIndex: 1,
         },
@@ -1466,10 +1470,10 @@ Deno.test('FileManagerService', async (t) => {
         projectId: 'project-chunk-test',
         sessionId: 'session-chunk-test',
         iteration: 1,
-        stageSlug: '1_thesis',
+        stageSlug: DialecticStageSlug.Thesis,
         modelSlug: contributionMetadata.modelNameDisplay,
         attemptCount: 0,
-        documentKey: 'business_case',
+        documentKey: FileType.business_case,
         isContinuation: true,
         turnIndex: 1,
       };
@@ -1549,7 +1553,7 @@ Deno.test('FileManagerService', async (t) => {
         projectId: 'project-doc-centric',
         sessionId: 'session-doc-centric',
         iteration: 1,
-        stageSlug: 'thesis',
+        stageSlug: DialecticStageSlug.Thesis,
         modelSlug: 'test-model',
         stepName,
         sourceContributionId: 'planner-source-contrib-123',
@@ -1592,7 +1596,7 @@ Deno.test('FileManagerService', async (t) => {
         modelIdUsed: 'model-id-123',
         modelNameDisplay: 'Test Model',
         sessionId: 'session-doc-centric',
-        stageSlug: 'thesis',
+        stageSlug: DialecticStageSlug.Thesis,
       };
 
       const plannerContext: ResourceUploadContext = {
@@ -1638,13 +1642,13 @@ Deno.test('FileManagerService', async (t) => {
   await t.step('should handle TurnPrompt correctly', async () => {
     try {
       const fileType = FileType.TurnPrompt;
-      const documentKey = 'business_case';
+      const documentKey = FileType.business_case;
       const pathContext: ResourceUploadContext['pathContext'] = {
         fileType,
         projectId: 'project-doc-centric',
         sessionId: 'session-doc-centric',
         iteration: 1,
-        stageSlug: 'thesis',
+        stageSlug: DialecticStageSlug.Thesis,
         modelSlug: 'test-model',
         documentKey,
       };
@@ -1686,7 +1690,7 @@ Deno.test('FileManagerService', async (t) => {
         modelIdUsed: 'model-id-123',
         modelNameDisplay: 'Test Model',
         sessionId: 'session-doc-centric',
-        stageSlug: 'thesis',
+        stageSlug: DialecticStageSlug.Thesis,
       };
 
       const turnContext: ResourceUploadContext = {
@@ -1722,7 +1726,7 @@ Deno.test('FileManagerService', async (t) => {
         projectId: 'project-doc-centric',
         sessionId: 'session-doc-centric',
         iteration: 1,
-        stageSlug: 'thesis',
+        stageSlug: DialecticStageSlug.Thesis,
         modelSlug: 'test-model',
       };
   
@@ -1762,7 +1766,7 @@ Deno.test('FileManagerService', async (t) => {
         modelIdUsed: 'model-id-123',
         modelNameDisplay: 'Test Model',
         sessionId: 'session-doc-centric',
-        stageSlug: 'thesis',
+        stageSlug: DialecticStageSlug.Thesis,
       };
 
       const headerContext: ModelContributionUploadContext = {
@@ -1794,13 +1798,13 @@ Deno.test('FileManagerService', async (t) => {
   await t.step('should handle AssembledDocumentJson correctly', async () => {
     try {
       const fileType = FileType.AssembledDocumentJson;
-      const documentKey = 'feature_spec';
+      const documentKey = FileType.feature_spec;
       const pathContext: ResourceUploadContext['pathContext'] = {
         fileType,
         projectId: 'project-doc-centric',
         sessionId: 'session-doc-centric',
         iteration: 1,
-        stageSlug: 'thesis',
+        stageSlug: DialecticStageSlug.Thesis,
         modelSlug: 'test-model',
         documentKey,
       };
@@ -1841,7 +1845,7 @@ Deno.test('FileManagerService', async (t) => {
         modelIdUsed: 'model-id-123',
         modelNameDisplay: 'Test Model',
         sessionId: 'session-doc-centric',
-        stageSlug: 'thesis',
+        stageSlug: DialecticStageSlug.Thesis,
       };
 
       const assembledJsonContext: ResourceUploadContext = {
@@ -1872,13 +1876,13 @@ Deno.test('FileManagerService', async (t) => {
   await t.step('should handle RenderedDocument correctly', async () => {
     try {
       const fileType = FileType.RenderedDocument;
-      const documentKey = 'technical_approach';
+      const documentKey = FileType.technical_approach;
       const pathContext: ResourceUploadContext['pathContext'] = {
         fileType,
         projectId: 'project-doc-centric',
         sessionId: 'session-doc-centric',
         iteration: 1,
-        stageSlug: 'thesis',
+        stageSlug: DialecticStageSlug.Thesis,
         modelSlug: 'test-model',
         documentKey,
       };
@@ -1919,7 +1923,7 @@ Deno.test('FileManagerService', async (t) => {
         modelIdUsed: 'model-id-123',
         modelNameDisplay: 'Test Model',
         sessionId: 'session-doc-centric',
-        stageSlug: 'thesis',
+        stageSlug: DialecticStageSlug.Thesis,
       };
 
       const renderedDocContext: ResourceUploadContext = {
@@ -1966,7 +1970,7 @@ Deno.test('FileManagerService', async (t) => {
         modelIdUsed: 'model-id-final',
         modelNameDisplay: 'Final Model',
         sessionId: 'sess-final-ctn',
-        stageSlug: 'thesis',
+        stageSlug: DialecticStageSlug.Thesis,
         contributionType: 'thesis',
       };
 
@@ -1978,10 +1982,10 @@ Deno.test('FileManagerService', async (t) => {
           projectId: 'proj-final-ctn',
           sessionId: 'sess-final-ctn',
           iteration: 1,
-          stageSlug: 'thesis',
+          stageSlug: DialecticStageSlug.Thesis,
           modelSlug: 'final-model',
           attemptCount: 0,
-          documentKey: 'business_case',
+          documentKey: FileType.business_case,
         },
         contributionMetadata,
         mimeType: 'text/markdown',
@@ -2047,7 +2051,7 @@ Deno.test('FileManagerService', async (t) => {
         fileType: FileType.business_case,
         projectId: 'project-merge-test',
         sessionId: 'session-merge-test',
-        stageSlug: 'test-stage',
+        stageSlug: DialecticStageSlug.Thesis,
         iteration: 1,
         modelSlug: 'base-model-slug', // This should be PRESERVED
         contributionType: 'thesis', // This should be PRESERVED. Use a valid enum member.
@@ -2091,7 +2095,7 @@ Deno.test('FileManagerService', async (t) => {
       try { assertEquals(passedContext.modelSlug, 'base-model-slug', "modelSlug should be preserved from base context"); }
       catch (e) { errors.push(e instanceof Error ? e.message : String(e)); }
 
-      try { assertEquals(passedContext.stageSlug, 'test-stage', "stageSlug should be preserved from base context"); }
+      try { assertEquals(passedContext.stageSlug, DialecticStageSlug.Thesis, "stageSlug should be preserved from base context"); }
       catch (e) { errors.push(e instanceof Error ? e.message : String(e)); }
 
       try { assertEquals(passedContext.contributionType, 'thesis', "contributionType should be preserved from base context"); }
@@ -2145,9 +2149,9 @@ Deno.test('FileManagerService', async (t) => {
           projectId: 'project-deprecation-test',
           sessionId: 'session-deprecation-test',
           iteration: 1,
-          stageSlug: 'test-stage',
+          stageSlug: DialecticStageSlug.Thesis,
           modelSlug: 'test-model',
-          documentKey: 'business_case',
+          documentKey: FileType.business_case,
         },
         contributionMetadata: {
           ...contributionMetadata,
@@ -2179,10 +2183,10 @@ Deno.test('FileManagerService', async (t) => {
         projectId: 'project-raw-json-test',
         sessionId: 'session-raw-json-test',
         iteration: 1,
-        stageSlug: 'thesis',
+        stageSlug: DialecticStageSlug.Thesis,
         modelSlug: 'claude-3-sonnet',
         attemptCount: 0,
-        documentKey: 'business_case',
+        documentKey: FileType.business_case,
       };
       const expectedPathParts = constructStoragePath(pathContext);
       const expectedFullPath = `${expectedPathParts.storagePath}/${expectedPathParts.fileName}`;
@@ -2226,7 +2230,7 @@ Deno.test('FileManagerService', async (t) => {
         modelIdUsed: 'model-id-sonnet',
         modelNameDisplay: 'Claude 3 Sonnet',
         sessionId: 'session-raw-json-test',
-        stageSlug: 'thesis',
+        stageSlug: DialecticStageSlug.Thesis,
       };
 
       const context: ModelContributionUploadContext = {
@@ -2289,9 +2293,9 @@ Deno.test('FileManagerService', async (t) => {
         projectId: 'project-continuation-raw-json',
         sessionId: 'session-continuation-raw-json',
         iteration: 1,
-        stageSlug: 'thesis',
+        stageSlug: DialecticStageSlug.Thesis,
         modelSlug: 'claude-3-sonnet',
-        documentKey: 'business_case',
+        documentKey: FileType.business_case,
         isContinuation: true,
         turnIndex: 2,
       };
@@ -2336,7 +2340,7 @@ Deno.test('FileManagerService', async (t) => {
         modelIdUsed: 'model-id-sonnet',
         modelNameDisplay: 'Claude 3 Sonnet',
         sessionId: 'session-continuation-raw-json',
-        stageSlug: 'thesis',
+        stageSlug: DialecticStageSlug.Thesis,
         target_contribution_id: 'parent-contrib-id-123',
       };
 
@@ -2396,9 +2400,9 @@ Deno.test('FileManagerService', async (t) => {
         projectId: 'project-missing-content',
         sessionId: 'session-missing-content',
         iteration: 1,
-        stageSlug: 'thesis',
+        stageSlug: DialecticStageSlug.Thesis,
         modelSlug: 'claude-3-sonnet',
-        documentKey: 'business_case',
+        documentKey: FileType.business_case,
       };
 
       beforeEach();
@@ -2408,7 +2412,7 @@ Deno.test('FileManagerService', async (t) => {
         modelIdUsed: 'model-id-sonnet',
         modelNameDisplay: 'Claude 3 Sonnet',
         sessionId: 'session-missing-content',
-        stageSlug: 'thesis',
+        stageSlug: DialecticStageSlug.Thesis,
       };
 
       const context: ModelContributionUploadContext = {
@@ -2438,10 +2442,10 @@ Deno.test('FileManagerService', async (t) => {
         projectId: 'project-no-separate-upload',
         sessionId: 'session-no-separate-upload',
         iteration: 1,
-        stageSlug: 'thesis',
+        stageSlug: DialecticStageSlug.Thesis,
         modelSlug: 'claude-3-sonnet',
         attemptCount: 0,
-        documentKey: 'business_case',
+        documentKey: FileType.business_case,
       };
       const expectedPathParts = constructStoragePath(pathContext);
       const expectedFullPath = `${expectedPathParts.storagePath}/${expectedPathParts.fileName}`;
@@ -2481,7 +2485,7 @@ Deno.test('FileManagerService', async (t) => {
         modelIdUsed: 'model-id-sonnet',
         modelNameDisplay: 'Claude 3 Sonnet',
         sessionId: 'session-no-separate-upload',
-        stageSlug: 'thesis',
+        stageSlug: DialecticStageSlug.Thesis,
         // Include rawJsonResponseContent to test that separate upload block is NOT executed
       };
 
@@ -2787,10 +2791,10 @@ Deno.test('FileManagerService', async (t) => {
         projectId: 'project-corruption-test',
         sessionId: 'session-corruption-test',
         iteration: 1,
-        stageSlug: 'thesis',
+        stageSlug: DialecticStageSlug.Thesis,
         modelSlug: 'claude-3-sonnet',
         attemptCount: 0,
-        documentKey: 'business_case',
+        documentKey: FileType.business_case,
         isContinuation: false,
         turnIndex: undefined,
       };
@@ -2803,9 +2807,9 @@ Deno.test('FileManagerService', async (t) => {
         projectId: 'project-corruption-test',
         sessionId: 'session-corruption-test',
         iteration: 1,
-        stageSlug: 'thesis',
+        stageSlug: DialecticStageSlug.Thesis,
         modelSlug: 'claude-3-sonnet',
-        documentKey: 'business_case',
+        documentKey: FileType.business_case,
         isContinuation: true,
         turnIndex: 1,
       };
@@ -2864,7 +2868,7 @@ Deno.test('FileManagerService', async (t) => {
         modelIdUsed: 'model-id-sonnet',
         modelNameDisplay: 'Claude 3 Sonnet',
         sessionId: 'session-corruption-test',
-        stageSlug: 'thesis',
+        stageSlug: DialecticStageSlug.Thesis,
       };
 
       const rootContext: ModelContributionUploadContext = {
@@ -2899,7 +2903,7 @@ Deno.test('FileManagerService', async (t) => {
         modelIdUsed: 'model-id-sonnet',
         modelNameDisplay: 'Claude 3 Sonnet',
         sessionId: 'session-corruption-test',
-        stageSlug: 'thesis',
+        stageSlug: DialecticStageSlug.Thesis,
       };
 
       const continuationContext: ModelContributionUploadContext = {
@@ -2975,10 +2979,10 @@ Deno.test('FileManagerService', async (t) => {
           projectId: 'project-logging-test',
           sessionId: 'session-logging-test',
           iteration: 1,
-          stageSlug: 'thesis',
+          stageSlug: DialecticStageSlug.Thesis,
           modelSlug: 'claude-3-sonnet',
           attemptCount: 0,
-          documentKey: 'business_case',
+          documentKey: FileType.business_case,
           isContinuation: false,
           turnIndex: undefined,
         };
@@ -2988,9 +2992,9 @@ Deno.test('FileManagerService', async (t) => {
           projectId: 'project-logging-test',
           sessionId: 'session-logging-test',
           iteration: 1,
-          stageSlug: 'thesis',
+          stageSlug: DialecticStageSlug.Thesis,
           modelSlug: 'claude-3-sonnet',
-          documentKey: 'business_case',
+          documentKey: FileType.business_case,
           isContinuation: true,
           turnIndex: 1,
         };
@@ -3022,7 +3026,7 @@ Deno.test('FileManagerService', async (t) => {
           modelIdUsed: 'model-id-sonnet',
           modelNameDisplay: 'Claude 3 Sonnet',
           sessionId: 'session-logging-test',
-          stageSlug: 'thesis',
+          stageSlug: DialecticStageSlug.Thesis,
         };
 
         const rootContext: ModelContributionUploadContext = {
@@ -3042,7 +3046,7 @@ Deno.test('FileManagerService', async (t) => {
           modelIdUsed: 'model-id-sonnet',
           modelNameDisplay: 'Claude 3 Sonnet',
           sessionId: 'session-logging-test',
-          stageSlug: 'thesis',
+          stageSlug: DialecticStageSlug.Thesis,
         };
 
         const continuationContext: ModelContributionUploadContext = {
@@ -3109,10 +3113,10 @@ Deno.test('FileManagerService', async (t) => {
         projectId: 'project-collision-test',
         sessionId: 'session-collision-test',
         iteration: 1,
-        stageSlug: 'thesis',
+        stageSlug: DialecticStageSlug.Thesis,
         modelSlug: 'claude-3-sonnet',
         attemptCount: 0,
-        documentKey: 'business_case',
+        documentKey: FileType.business_case,
         isContinuation: false,
         turnIndex: undefined,
       };
@@ -3124,9 +3128,9 @@ Deno.test('FileManagerService', async (t) => {
         projectId: 'project-collision-test',
         sessionId: 'session-collision-test',
         iteration: 1,
-        stageSlug: 'thesis',
+        stageSlug: DialecticStageSlug.Thesis,
         modelSlug: 'claude-3-sonnet',
-        documentKey: 'business_case',
+        documentKey: FileType.business_case,
         isContinuation: true,
         turnIndex: 1,
       };
@@ -3211,7 +3215,7 @@ Deno.test('FileManagerService', async (t) => {
         modelIdUsed: 'model-id-sonnet',
         modelNameDisplay: 'Claude 3 Sonnet',
         sessionId: 'session-collision-test',
-        stageSlug: 'thesis',
+        stageSlug: DialecticStageSlug.Thesis,
       };
 
       const rootContext: ModelContributionUploadContext = {
@@ -3245,7 +3249,7 @@ Deno.test('FileManagerService', async (t) => {
         modelIdUsed: 'model-id-sonnet',
         modelNameDisplay: 'Claude 3 Sonnet',
         sessionId: 'session-collision-test',
-        stageSlug: 'thesis',
+        stageSlug: DialecticStageSlug.Thesis,
       };
 
       const continuationContext: ModelContributionUploadContext = {
@@ -3328,8 +3332,8 @@ Deno.test('FileManagerService', async (t) => {
         projectId: 'project-uuid-123',
         sessionId: 'session-uuid-456',
         iteration: 1,
-        stageSlug: 'test-stage',
-        documentKey: 'test-doc',
+        stageSlug: DialecticStageSlug.Thesis,
+        documentKey: FileType.business_case,
         modelSlug: 'test-model',
         attemptCount: 0,
       };
@@ -3379,8 +3383,8 @@ Deno.test('FileManagerService', async (t) => {
       };
       beforeEach(config);
 
-      const extraFields: { documentKey: string; sourceContributionId: string } = {
-        documentKey: 'feature_spec',
+      const extraFields: { documentKey: FileType; sourceContributionId: string } = {
+        documentKey: FileType.feature_spec,
         sourceContributionId: 'contrib-uuid-merge-test',
       };
       const resourceDescriptionForDb: Json = extraFields;
@@ -3390,8 +3394,8 @@ Deno.test('FileManagerService', async (t) => {
         projectId: 'project-uuid-123',
         sessionId: 'session-uuid-456',
         iteration: 1,
-        stageSlug: 'thesis',
-        documentKey: 'feature_spec',
+        stageSlug: DialecticStageSlug.Thesis,
+        documentKey: FileType.feature_spec,
         modelSlug: 'test-model',
         attemptCount: 0,
       };

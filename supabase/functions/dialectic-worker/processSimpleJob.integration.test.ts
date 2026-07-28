@@ -2,7 +2,7 @@ import { assertEquals, assertExists, assert } from "https://deno.land/std@0.224.
 import { spy, type Spy } from "https://deno.land/std@0.224.0/testing/mock.ts";
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import type { Database, Tables } from "../types_db.ts";
-import { FileType } from "../_shared/types/file_manager.types.ts";
+import { FileType, DialecticStageSlug } from "../_shared/types/file_manager.types.ts";
 import type { AiModelExtendedConfig, ChatApiRequest, OutboundDocument, ResourceDocument } from "../_shared/types.ts";
 import { MockLogger } from "../_shared/logger.mock.ts";
 import { MockRagService } from "../_shared/services/rag_service.mock.ts";
@@ -82,7 +82,7 @@ import { pickLatest } from "../_shared/utils/pickLatest.ts";
 import { MockPromptAssembler } from "../_shared/prompt-assembler/prompt-assembler.mock.ts";
 import { MockFileManagerService } from "../_shared/services/file_manager.mock.ts";
 import { isDialecticStageRecipeStep } from "../_shared/utils/type-guards/type_guards.dialectic.recipe.ts";
-import { isModelContributionFileType } from "../_shared/utils/type-guards/type_guards.file_manager.ts";
+import { isDialecticStageSlug, isModelContributionFileType } from "../_shared/utils/type-guards/type_guards.file_manager.ts";
 import { isAiModelExtendedConfig } from "../_shared/utils/type-guards/type_guards.chat.ts";
 import { isJson } from "../_shared/utils/type-guards/type_guards.common.ts";
 
@@ -645,8 +645,8 @@ Deno.test({
       type ExpectedArtifact = {
         id: string;
         content: string;
-        document_key: string;
-        stage_slug: string;
+        document_key: FileType;
+        stage_slug: DialecticStageSlug;
         type: string;
       };
       const expectedArtifacts: ExpectedArtifact[] = [];
@@ -654,6 +654,9 @@ Deno.test({
       for (let i = 0; i < recipeInputRules.length; i++) {
         const rule = recipeInputRules[i];
         if (!rule.document_key) continue;
+        if (!isDialecticStageSlug(rule.slug)) {
+          throw new Error(`Invalid stage slug: ${rule.slug}`);
+        }
 
         const stubContent = `STUB_CONTENT_${rule.type}_${rule.document_key}_${i}`;
         const contentBuffer: ArrayBuffer = toArrayBuffer(stubContent);

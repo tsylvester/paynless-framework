@@ -396,7 +396,7 @@ Deno.test('FileManagerService', async (t) => {
       const rootChunk: DialecticContributionRow = {
         id: rootContributionId,
         storage_bucket: 'test-bucket',
-        storage_path: `${projectId}/session_${shortSessionId}/iteration_1/2_parenthesis/raw_responses`,
+        storage_path: `${projectId}/session_${shortSessionId}/iteration_1/4_parenthesis/raw_responses`,
         file_name: 'model_0_business_case_raw.json',
         document_relationships: { parenthesis: rootContributionId },
         created_at: '2025-01-01T10:00:00Z',
@@ -429,7 +429,7 @@ Deno.test('FileManagerService', async (t) => {
       const continuationChunk1: DialecticContributionRow = {
         id: 'parenthesis-cont-1',
         storage_bucket: 'test-bucket',
-        storage_path: `${projectId}/session_${shortSessionId}/iteration_1/2_parenthesis/_work/raw_responses`,
+        storage_path: `${projectId}/session_${shortSessionId}/iteration_1/4_parenthesis/_work/raw_responses`,
         file_name: 'model_0_business_case_continuation_1_raw.json',
         document_relationships: { parenthesis: rootContributionId },
         created_at: '2025-01-01T10:01:00Z',
@@ -462,7 +462,7 @@ Deno.test('FileManagerService', async (t) => {
       const continuationChunk2: DialecticContributionRow = {
         id: 'parenthesis-cont-2',
         storage_bucket: 'test-bucket',
-        storage_path: `${projectId}/session_${shortSessionId}/iteration_1/2_parenthesis/_work/raw_responses`,
+        storage_path: `${projectId}/session_${shortSessionId}/iteration_1/4_parenthesis/_work/raw_responses`,
         file_name: 'model_0_business_case_continuation_2_raw.json',
         document_relationships: { parenthesis: rootContributionId },
         created_at: '2025-01-01T10:02:00Z',

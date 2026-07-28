@@ -16,7 +16,7 @@ import { deconstructStoragePath } from "../_shared/utils/path_deconstructor.ts";
 import { generateShortId } from "../_shared/utils/path_constructor.ts";
 import type { DialecticProjectRow, DialecticProjectInsert, DialecticSessionInsert, DialecticContributionRow, DialecticProjectResourceRow, DialecticFeedbackRow } from "../dialectic-service/dialectic.interface.ts";
 import { isContributionType, isFileType } from "../_shared/utils/type_guards.ts";
-import { isDocumentKey } from "../_shared/utils/type-guards/type_guards.file_manager.ts";
+import { isDocumentKey, isDialecticStageSlug } from "../_shared/utils/type-guards/type_guards.file_manager.ts";
 
 function isModelContributionFileType(fileType: FileType): fileType is ModelContributionFileTypes {
     // This is a simplified check. A more robust implementation might involve
@@ -115,7 +115,9 @@ function buildUploadContextForAsset(
             pathContext.fileType !== FileType.ProjectReadme &&
             pathContext.fileType !== FileType.PendingFile &&
             pathContext.fileType !== FileType.CurrentFile &&
-            pathContext.fileType !== FileType.CompleteFile)) {
+            pathContext.fileType !== FileType.CompleteFile &&
+            pathContext.fileType !== FileType.CompressedContext &&
+            pathContext.fileType !== FileType.CompressedContextRawJson)) {
             throw new Error(`Asset from resources table has unexpected fileType: ${pathContext.fileType}`);
         }
         
@@ -337,11 +339,11 @@ export async function cloneProject(
                 originalFileName: deconstructed.parsedFileNameFromPath || asset.file_name,
                 sessionId: newSessionId,
                 iteration: deconstructed.iteration,
-                stageSlug: deconstructed.stageSlug,
+                stageSlug: (deconstructed.stageSlug && isDialecticStageSlug(deconstructed.stageSlug)) ? deconstructed.stageSlug : undefined,
                 modelSlug: deconstructed.modelSlug,
                 attemptCount: deconstructed.attemptCount,
                 contributionType: (typeof deconstructed.contributionType === 'string' && isContributionType(deconstructed.contributionType)) ? deconstructed.contributionType : undefined,
-                documentKey: documentKey,
+                documentKey: (documentKey && isFileType(documentKey)) ? documentKey : undefined,
                 stepName: deconstructed.stepName,
                 sourceModelSlugs: deconstructed.sourceModelSlug ? [deconstructed.sourceModelSlug] : deconstructed.sourceModelSlugs,
                 sourceAnchorType: deconstructed.sourceAnchorType || deconstructed.sourceContributionType,
@@ -350,6 +352,12 @@ export async function cloneProject(
                 pairedModelSlug: deconstructed.pairedModelSlug,
                 isContinuation: deconstructed.isContinuation,
                 turnIndex: deconstructed.turnIndex,
+                targetKey: (deconstructed.targetKey && isFileType(deconstructed.targetKey)) ? deconstructed.targetKey : undefined,
+                sourceType: deconstructed.sourceType,
+                sourceId: deconstructed.sourceId,
+                role: deconstructed.role,
+                chunkIndex: deconstructed.chunkIndex,
+                chunkTotal: deconstructed.chunkTotal,
                 ...(asset.sourceTable === 'dialectic_project_resources' && { sourceContributionId: asset.source_contribution_id }),
                 ...(fileType === FileType.UserFeedback &&
                     asset.sourceTable === 'dialectic_feedback' &&

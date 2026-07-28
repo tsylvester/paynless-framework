@@ -35,6 +35,7 @@ import {
 import { assertSpyCall, assertSpyCalls } from "jsr:@std/testing@0.225.1/mock";
 import { isRecord } from "../../utils/type_guards.ts";
 import { assert } from "jsr:@std/assert@0.225.3";
+import { isDialecticStageSlug } from "../../utils/type-guards/type_guards.file_manager.ts";
 
 const defaultMockContext: DynamicContextVariables = {
   user_objective: "mock user objective",
@@ -339,6 +340,9 @@ Deno.test("assemblePlannerPrompt", async (t) => {
         }
         if (typeof mockPlannerJob.payload.model_id !== 'string') {
           throw new Error("Test setup error: mockPlannerJob.payload.model_id is not a string.");
+        }
+        if(!isDialecticStageSlug(defaultStage.slug)){
+          throw new Error("Test setup error: defaultStage.slug is not a valid dialectic stage slug.");
         }
         const expectedUploadContext: ResourceUploadContext = {
           pathContext: {

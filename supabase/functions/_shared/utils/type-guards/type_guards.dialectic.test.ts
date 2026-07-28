@@ -89,7 +89,7 @@ import {
     SyncToGitHubPayload,
     SyncToGitHubResponse,
 } from '../../../dialectic-service/dialectic.interface.ts';
-import { FileType } from '../../types/file_manager.types.ts';
+import { DialecticStageSlug, FileType } from '../../types/file_manager.types.ts';
 import { ContinueReason, FinishReason } from '../../types.ts';
 import { buildDialecticCompressJobPayload } from '../../../dialectic-worker/enqueueCompressJobs/enqueueCompressJobs.mock.ts';
 
@@ -605,7 +605,7 @@ Deno.test('Type Guard: isDialecticExecuteJobPayload', async (t) => {
         output_type: FileType.business_case,
         canonicalPathParams: {
             contributionType: 'thesis',
-            stageSlug: 'thesis',
+            stageSlug: DialecticStageSlug.Thesis,
         },
         inputs: {
             seed_prompt: 'resource-id-1',

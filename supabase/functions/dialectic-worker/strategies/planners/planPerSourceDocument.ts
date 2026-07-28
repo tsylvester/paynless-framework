@@ -11,7 +11,7 @@ import type {
 import { createCanonicalPathParams } from '../canonical_context_builder.ts';
 import { selectAnchorSourceDocument } from '../helpers.ts';
 import { isContributionType, isContentToInclude } from '../../../_shared/utils/type-guards/type_guards.dialectic.ts';
-import { isModelContributionFileType } from '../../../_shared/utils/type-guards/type_guards.file_manager.ts';
+import { isDialecticStageSlug, isModelContributionFileType } from '../../../_shared/utils/type-guards/type_guards.file_manager.ts';
 import { ModelContributionFileTypes } from '../../../_shared/types/file_manager.types.ts';
 
 const deriveSourceContributionId = (
@@ -62,9 +62,9 @@ export const planPerSourceDocument: GranularityPlannerFn = (
 	}
 
 	const stageSlug = parentJob.payload.stageSlug;
-	if (!stageSlug || !isContributionType(stageSlug)) {
+	if (!stageSlug || !isDialecticStageSlug(stageSlug)) {
 		throw new Error(
-			`planPerSourceDocument requires a valid ContributionType stageSlug, but received: ${stageSlug}`
+			`planPerSourceDocument requires a valid DialecticStageSlug stageSlug, but received: ${stageSlug}`
 		);
 	}
 

@@ -1,7 +1,7 @@
 // supabase/functions/dialectic-worker/prepareModelJob/prepareModelJob.mock.ts
 
 import { MockLogger } from "../../_shared/logger.mock.ts";
-import { FileType } from "../../_shared/types/file_manager.types.ts";
+import { DialecticStageSlug, FileType } from "../../_shared/types/file_manager.types.ts";
 import { isJson } from "../../_shared/utils/type_guards.ts";
 import { applyInputsRequiredScope } from "../../_shared/utils/applyInputsRequiredScope.ts";
 import { validateWalletBalance } from "../../_shared/utils/validateWalletBalance.ts";
@@ -59,7 +59,7 @@ export function mockDialecticExecuteJobPayload(
     user_jwt: "jwt.contract",
     canonicalPathParams: {
       contributionType: "thesis",
-      stageSlug: "thesis",
+      stageSlug: DialecticStageSlug.Thesis,
     },
     idempotencyKey: "contract-idem",
   };

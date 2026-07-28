@@ -48,6 +48,7 @@ import {
   isResourceContext,
   isFileType,
   isDocumentKey,
+  isDialecticStageSlug,
 } from '../utils/type-guards/type_guards.file_manager.ts'
 import { deconstructStoragePath } from '../utils/path_deconstructor.ts'
 import { shouldEnqueueRenderJob } from '../utils/shouldEnqueueRenderJob.ts'
@@ -878,7 +879,7 @@ export class FileManagerService implements IFileManager {
         }
       }
 
-      if (!pathInfo.originalProjectId || !pathInfo.stageSlug || !pathInfo.modelSlug || pathInfo.attemptCount === undefined || !pathInfo.documentKey) {
+      if (!pathInfo.originalProjectId || !isDialecticStageSlug(pathInfo.stageSlug) || !pathInfo.modelSlug || pathInfo.attemptCount === undefined || !pathInfo.documentKey) {
         throw new Error(`Cannot construct AssembledDocumentJson path: missing required path context. ProjectId: ${pathInfo.originalProjectId}, StageSlug: ${pathInfo.stageSlug}, ModelSlug: ${pathInfo.modelSlug}, AttemptCount: ${pathInfo.attemptCount}, DocumentKey: ${pathInfo.documentKey}`);
       }
 

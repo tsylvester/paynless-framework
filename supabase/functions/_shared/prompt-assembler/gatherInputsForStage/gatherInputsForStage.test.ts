@@ -8,15 +8,13 @@ import {
   AssemblerSourceDocument,
   GatheredRecipeContext,
 } from "../prompt-assembler.interface.ts";
-import { FileManagerService } from "../../services/file_manager.ts";
-import { type DialecticRecipeStep, type DialecticContribution, type DialecticRecipeTemplateStep } from '../../../dialectic-service/dialectic.interface.ts';
-import { createMockSupabaseClient, type MockSupabaseDataConfig, type IMockSupabaseClient, type IMockClientSpies, type MockSupabaseClientSetup, type MockQueryBuilderState } from "../../supabase.mock.ts";
+import { type DialecticRecipeTemplateStep } from '../../../dialectic-service/dialectic.interface.ts';
+import { createMockSupabaseClient, type MockSupabaseDataConfig, type MockSupabaseClientSetup, type MockQueryBuilderState } from "../../supabase.mock.ts";
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { downloadFromStorage } from '../../supabase_storage_utils.ts';
-import type { Json, Tables } from "../../../types_db.ts";
 import { Database } from "../../../types_db.ts";
 import { constructStoragePath } from '../../utils/path_constructor.ts';
-import { FileType } from "../../types/file_manager.types.ts";
+import { FileType, DialecticStageSlug } from "../../types/file_manager.types.ts";
 import { join } from "jsr:@std/path/join";
 
 // Helper to create a minimal valid recipe step
@@ -395,7 +393,7 @@ Deno.test("gatherInputsForStage", async (t) => {
         });
 
         await tCtx.step("should fetch and format only feedback when rules specify feedback", async () => {
-            const feedbackStageSlug = "prev-stage-feedback";
+            const feedbackStageSlug = DialecticStageSlug.Antithesis;
             const mockStageDisplayName = "Previous Feedback Stage";
             const feedbackContent = "This is user feedback content.";
             const projectId = "p100";
@@ -552,8 +550,8 @@ Deno.test("gatherInputsForStage", async (t) => {
         });
 
         await tCtx.step("should fetch and format both documents and feedback when rules specify both", async () => {
-            const contribSlug = "prev-contrib-for-both";
-            const feedbackSlug = "prev-feedback-for-both";
+            const contribSlug = DialecticStageSlug.Thesis;
+            const feedbackSlug = DialecticStageSlug.Antithesis;
             const contribDisplayName = "Previous Contribution Stage (Both)";
             const feedbackDisplayName = "Previous Feedback Stage (Both)";
             const modelName = "Model Gamma";
@@ -2316,12 +2314,12 @@ Deno.test("gatherInputsForStage", async (t) => {
 
         await tCtx.step("feedback query includes order by created_at descending for deterministic selection", async () => {
             let capturedFeedbackState: MockQueryBuilderState | null = null;
-            const feedbackStageSlug = "stage-order-test";
+            const feedbackStageSlug = DialecticStageSlug.Thesis;
             const projectId = "p-ord";
             const userId = "u-ord";
             const sessionId = "s-ord";
             const iterationNumber = 2;
-            const orderTestSourceStageSlug = "stage-order-contrib";
+            const orderTestSourceStageSlug = DialecticStageSlug.Thesis;
             const orderTestSourceDocPath = constructStoragePath({
                 projectId,
                 sessionId,
@@ -2390,13 +2388,13 @@ Deno.test("gatherInputsForStage", async (t) => {
 
         await tCtx.step("feedback query filters by resource_description document_key when rule.document_key is present", async () => {
             let capturedFeedbackState: MockQueryBuilderState | null = null;
-            const feedbackStageSlug = "stage-dockey-test";
+            const feedbackStageSlug = DialecticStageSlug.Thesis;
             const documentKey = FileType.business_case;
             const projectId = "p-dk";
             const userId = "u-dk";
             const sessionId = "s-dk";
             const iterationNumber = 1;
-            const dockeySourceStageSlug = "stage-dockey-contrib";
+            const dockeySourceStageSlug = DialecticStageSlug.Thesis;
             const dockeySourceDocPath = constructStoragePath({
                 projectId,
                 sessionId,
@@ -2467,12 +2465,12 @@ Deno.test("gatherInputsForStage", async (t) => {
 
         await tCtx.step("feedback query uses iterationNumber directly not iterationNumber minus one", async () => {
             let capturedIteration: number | null = null;
-            const feedbackStageSlug = "stage-iter-test";
+            const feedbackStageSlug = DialecticStageSlug.Thesis;
             const projectId = "p-iter";
             const userId = "u-iter";
             const sessionId = "s-iter";
             const iterationNumber = 5;
-            const iterSourceStageSlug = "stage-iter-contrib";
+            const iterSourceStageSlug = DialecticStageSlug.Thesis;
             const iterSourceDocPath = constructStoragePath({
                 projectId,
                 sessionId,
@@ -2574,13 +2572,13 @@ Deno.test("gatherInputsForStage", async (t) => {
 
         await tCtx.step("feedback is correctly selected when rule.document_key is present and multiple feedback rows exist for different documents", async () => {
             let capturedFeedbackState: MockQueryBuilderState | null = null;
-            const feedbackStageSlug = "stage-multi-doc";
+            const feedbackStageSlug = DialecticStageSlug.Thesis;
             const documentKeyA = FileType.business_case;
             const projectId = "p-multi";
             const userId = "u-multi";
             const sessionId = "s-multi";
             const iterationNumber = 1;
-            const multiSourceStageSlug = "stage-multi-contrib";
+            const multiSourceStageSlug = DialecticStageSlug.Thesis;
             const multiSourceDocPath = constructStoragePath({
                 projectId,
                 sessionId,
@@ -2658,14 +2656,14 @@ Deno.test("gatherInputsForStage", async (t) => {
 
         await tCtx.step("when modelId is provided feedback query includes filter resource_description->>model_id eq modelId", async () => {
             let capturedFeedbackState: MockQueryBuilderState | null = null;
-            const feedbackStageSlug = "stage-modelid-filter";
+            const feedbackStageSlug = DialecticStageSlug.Thesis;
             const documentKey = FileType.business_case;
             const projectId = "p-mid";
             const userId = "u-mid";
             const sessionId = "s-mid";
             const iterationNumber = 1;
             const modelId = "model-m1";
-            const sourceStageSlug = "stage-mid-contrib";
+            const sourceStageSlug = DialecticStageSlug.Thesis;
             const sourceDocPath = constructStoragePath({
                 projectId,
                 sessionId,
@@ -2734,7 +2732,7 @@ Deno.test("gatherInputsForStage", async (t) => {
         });
 
         await tCtx.step("when modelId is provided and two models have feedback for same document_key only specified model feedback is returned", async () => {
-            const feedbackStageSlug = "stage-two-models";
+            const feedbackStageSlug = DialecticStageSlug.Thesis;
             const documentKey = FileType.business_case;
             const projectId = "p-two";
             const userId = "u-two";
@@ -2742,7 +2740,7 @@ Deno.test("gatherInputsForStage", async (t) => {
             const iterationNumber = 1;
             const requestedModelId = "model-requested";
             const otherModelId = "model-other";
-            const sourceStageSlug = "stage-two-contrib";
+            const sourceStageSlug = DialecticStageSlug.Thesis;
             const sourceDocPath = constructStoragePath({
                 projectId,
                 sessionId,
@@ -2824,13 +2822,13 @@ Deno.test("gatherInputsForStage", async (t) => {
 
         await tCtx.step("when modelId is absent all feedback rows for document_key are returned and all downloaded and pushed to sourceDocuments", async () => {
             let capturedFeedbackState: MockQueryBuilderState | null = null;
-            const feedbackStageSlug = "stage-no-modelid";
+            const feedbackStageSlug = DialecticStageSlug.Thesis;
             const documentKey = FileType.business_case;
             const projectId = "p-nomid";
             const userId = "u-nomid";
             const sessionId = "s-nomid";
             const iterationNumber = 1;
-            const sourceStageSlug = "stage-nomid-contrib";
+            const sourceStageSlug = DialecticStageSlug.Thesis;
             const sourceDocPath = constructStoragePath({
                 projectId,
                 sessionId,
@@ -2921,7 +2919,7 @@ Deno.test("gatherInputsForStage", async (t) => {
             const userId = "u-doc-key";
             const sessionId = "s-doc-key";
             const iterationNumber = 1;
-            const docStageSlug = "thesis";
+            const docStageSlug = DialecticStageSlug.Thesis;
             const documentKey = FileType.business_case;
             const modelSlug = "gpt4";
             const attemptCount = 0;
@@ -2991,9 +2989,9 @@ Deno.test("gatherInputsForStage", async (t) => {
             const userId = "u-fb-key";
             const sessionId = "s-fb-key";
             const iterationNumber = 1;
-            const feedbackStageSlug = "antithesis";
+            const feedbackStageSlug = DialecticStageSlug.Antithesis;
             const documentKey = FileType.business_case;
-            const sourceStageSlug = "thesis";
+            const sourceStageSlug = DialecticStageSlug.Thesis;
             const sourceDocPath = constructStoragePath({
                 projectId,
                 sessionId,
@@ -3068,7 +3066,7 @@ Deno.test("gatherInputsForStage", async (t) => {
             const userId = "u-hc-key";
             const sessionId = "s-hc-key";
             const iterationNumber = 1;
-            const hcStageSlug = "synthesis";
+            const hcStageSlug = DialecticStageSlug.Synthesis;
             const documentKey = FileType.HeaderContext;
             const modelName = "claude-sonnet";
             const contributionId = "contrib-hc-1";
@@ -3138,7 +3136,7 @@ Deno.test("gatherInputsForStage", async (t) => {
             const userId = "u-no-key";
             const sessionId = "s-no-key";
             const iterationNumber = 1;
-            const docStageSlug = "thesis";
+            const docStageSlug = DialecticStageSlug.Thesis;
             const modelSlug = "gpt4";
             const attemptCount = 0;
             const documentKey = FileType.business_case;

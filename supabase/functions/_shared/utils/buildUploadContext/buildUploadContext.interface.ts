@@ -37,7 +37,7 @@ export interface BuildUploadContextParams {
   modelSlug: string;
   attemptCount: number;
   restOfCanonicalPathParams: Omit<CanonicalPathParams, "contributionType">;
-  documentKey: string;
+  documentKey: FileType;
   contributionType: ContributionType | undefined;
   isContinuationForStorage: boolean;
   continuationCount: number | undefined;

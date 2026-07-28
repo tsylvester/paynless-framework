@@ -9,6 +9,7 @@ import { renderPrompt } from "../../prompt-renderer.ts";
 import { FileType } from "../../types/file_manager.types.ts";
 import { ContextForDocument } from "../../../dialectic-service/dialectic.interface.ts";
 import { isContextForDocumentArray } from "../../utils/type-guards/type_guards.dialectic.ts";
+import { isDialecticStageSlug } from "../../utils/type-guards/type_guards.file_manager.ts";
 
 export async function assemblePlannerPrompt(
   {
@@ -335,6 +336,10 @@ The context_for_documents array below contains empty content_to_include object m
     project.user_domain_overlay_values,
   );
 
+
+  if(!isDialecticStageSlug(stage.slug)){
+    throw new Error("Stage slug is not a valid dialectic stage slug.");
+  }
   const response = await fileManager.uploadAndRegisterFile({
     pathContext: {
       projectId: project.id,

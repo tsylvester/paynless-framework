@@ -37,7 +37,7 @@ import {
 } from '../_shared/utils/type_guards.ts';
 import { isDialecticStageRecipeStep } from '../_shared/utils/type-guards/type_guards.dialectic.recipe.ts';
 import { createMockSupabaseClient, MockQueryBuilderState } from '../_shared/supabase.mock.ts';
-import { FileType } from '../_shared/types/file_manager.types.ts';
+import { DialecticStageSlug, FileType } from '../_shared/types/file_manager.types.ts';
 import { constructStoragePath } from '../_shared/utils/path_constructor.ts';
 import { generateShortId } from '../_shared/utils/path_constructor.ts';
 
@@ -584,7 +584,7 @@ describe('planComplexStage', () => {
             const projectId = 'proj-1';
             const sessionId = 'sess-1';
             const iteration = 1;
-            const stageSlug = 'synthesis';
+            const stageSlug = DialecticStageSlug.Synthesis;
             
             // Generate paths for rendered_document files using constructStoragePath
             const olderPath = constructStoragePath({
@@ -1244,7 +1244,7 @@ describe('planComplexStage', () => {
                 iterationNumber: mockParentJob.payload.iterationNumber,
                 walletId: mockParentJob.payload.walletId,
                 user_jwt: mockParentJob.payload.user_jwt,
-                canonicalPathParams: { contributionType: 'thesis', stageSlug: 'st1' },
+                canonicalPathParams: { contributionType: 'thesis', stageSlug: DialecticStageSlug.Thesis },
                 idempotencyKey: "idempotency-key-1",
             };
             const plannerFn = () => [minimalPayload];

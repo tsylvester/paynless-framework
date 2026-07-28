@@ -777,7 +777,7 @@ Deno.test("assembleTurnPrompt", async (t) => {
         ...mockTurnJob,
         payload: {
             ...mockTurnJob.payload,
-            document_key: "non_existent_key",
+            document_key: FileType.feature_spec,
             model_slug: "test-model",
         }
     };
@@ -803,7 +803,7 @@ Deno.test("assembleTurnPrompt", async (t) => {
             await assembleTurnPrompt(deps, params);
         },
         Error,
-        "No files_to_generate entry found with from_document_key 'non_existent_key' in recipe step."
+        `No files_to_generate entry found with from_document_key \'${FileType.feature_spec}\' in recipe step.`
     );
     } finally {
       teardown();

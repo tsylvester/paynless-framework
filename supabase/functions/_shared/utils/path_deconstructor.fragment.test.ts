@@ -8,7 +8,8 @@ import {
 } from './path_constructor.ts';
 import { 
     FileType, 
-    PathContext 
+    PathContext,
+    DialecticStageSlug 
 } from '../types/file_manager.types.ts';
 
 // RED tests for fragment parsing - these tests must initially FAIL because fragment parsing
@@ -232,9 +233,9 @@ Deno.test('[path_deconstructor.fragment] 70.c.xii - Round-trip consistency: cons
       projectId,
       sessionId,
       iteration,
-      stageSlug: 'thesis',
+      stageSlug: DialecticStageSlug.Thesis,
       fileType: FileType.HeaderContext,
-      documentKey: 'header_context',
+      documentKey: FileType.HeaderContext,
       modelSlug: 'gpt-4-turbo',
       attemptCount: 0,
       sourceGroupFragment: fragment,
@@ -254,9 +255,9 @@ Deno.test('[path_deconstructor.fragment] 70.c.xii - Round-trip consistency: cons
       projectId,
       sessionId,
       iteration,
-      stageSlug: 'antithesis',
+      stageSlug: DialecticStageSlug.Antithesis,
       fileType: FileType.HeaderContext,
-      documentKey: 'header_context',
+      documentKey: FileType.HeaderContext,
       modelSlug: 'claude',
       sourceAnchorModelSlug: 'gpt-4',
       attemptCount: 0,
@@ -279,11 +280,11 @@ Deno.test('[path_deconstructor.fragment] 70.c.xii - Round-trip consistency: cons
       projectId,
       sessionId,
       iteration,
-      stageSlug: 'thesis',
+      stageSlug: DialecticStageSlug.Thesis,
       fileType: FileType.TurnPrompt,
       modelSlug: 'claude-3-5-sonnet',
       attemptCount: 1,
-      documentKey: 'business_case',
+      documentKey: FileType.business_case,
       sourceGroupFragment: 'f5e6d7c8',
     };
     const { storagePath, fileName } = constructStoragePath(context);
@@ -302,12 +303,12 @@ Deno.test('[path_deconstructor.fragment] 70.c.xii - Round-trip consistency: cons
       projectId,
       sessionId,
       iteration,
-      stageSlug: 'antithesis',
+      stageSlug: DialecticStageSlug.Antithesis,
       fileType: FileType.TurnPrompt,
       modelSlug: 'claude',
       sourceAnchorModelSlug: 'gpt-4',
       attemptCount: 1,
-      documentKey: 'business_case_critique',
+      documentKey: FileType.business_case_critique,
       sourceGroupFragment: '98765432',
     };
     const { storagePath, fileName } = constructStoragePath(context);
@@ -328,11 +329,11 @@ Deno.test('[path_deconstructor.fragment] 70.c.xii - Round-trip consistency: cons
       projectId,
       sessionId,
       iteration,
-      stageSlug: 'thesis',
+      stageSlug: DialecticStageSlug.Thesis,
       fileType: FileType.ModelContributionRawJson,
       modelSlug: 'gemini-1.5-pro',
       attemptCount: 2,
-      documentKey: 'feature_spec',
+      documentKey: FileType.feature_spec,
       sourceGroupFragment: '12345678',
     };
     const { storagePath, fileName } = constructStoragePath(context);
@@ -351,11 +352,11 @@ Deno.test('[path_deconstructor.fragment] 70.c.xii - Round-trip consistency: cons
       projectId,
       sessionId,
       iteration,
-      stageSlug: 'thesis',
+      stageSlug: DialecticStageSlug.Thesis,
       fileType: FileType.AssembledDocumentJson,
       modelSlug: 'gpt-4',
       attemptCount: 0,
-      documentKey: 'technical_approach',
+      documentKey: FileType.technical_approach,
       sourceGroupFragment: 'abcdef12',
     };
     const { storagePath, fileName } = constructStoragePath(context);
@@ -374,12 +375,12 @@ Deno.test('[path_deconstructor.fragment] 70.c.xii - Round-trip consistency: cons
       projectId,
       sessionId,
       iteration,
-      stageSlug: 'antithesis',
+      stageSlug: DialecticStageSlug.Antithesis,
       fileType: FileType.AssembledDocumentJson,
       modelSlug: 'claude',
       sourceAnchorModelSlug: 'gpt-4',
       attemptCount: 1,
-      documentKey: 'business_case_critique',
+      documentKey: FileType.business_case_critique,
       sourceGroupFragment: '98765432',
     };
     const { storagePath, fileName } = constructStoragePath(context);
@@ -400,11 +401,11 @@ Deno.test('[path_deconstructor.fragment] 70.c.xii - Round-trip consistency: cons
       projectId,
       sessionId,
       iteration,
-      stageSlug: 'thesis',
+      stageSlug: DialecticStageSlug.Thesis,
       fileType: FileType.RenderedDocument,
       modelSlug: 'gpt-4',
       attemptCount: 0,
-      documentKey: 'technical_approach',
+      documentKey: FileType.technical_approach,
       sourceGroupFragment: 'abcdef12',
     };
     const { storagePath, fileName } = constructStoragePath(context);
@@ -423,12 +424,12 @@ Deno.test('[path_deconstructor.fragment] 70.c.xii - Round-trip consistency: cons
       projectId,
       sessionId,
       iteration,
-      stageSlug: 'antithesis',
+      stageSlug: DialecticStageSlug.Antithesis,
       fileType: FileType.RenderedDocument,
       modelSlug: 'claude',
       sourceAnchorModelSlug: 'gpt-4',
       attemptCount: 1,
-      documentKey: 'business_case_critique',
+      documentKey: FileType.business_case_critique,
       sourceGroupFragment: '98765432',
     };
     const { storagePath, fileName } = constructStoragePath(context);

@@ -12,8 +12,10 @@ import {
   isDocumentRelated,
   isCompressedContextFileType,
   isCompressedContextRawJsonFileType,
+  isCompressionPromptFileType,
   isCompressionSourceType,
   isCompressionMode,
+  isCompressionHistoryRole,
   isDialecticStageSlug,
 } from './type_guards.file_manager.ts'
 import {
@@ -34,7 +36,7 @@ const mockModelContributionContext: ModelContributionUploadContext = {
     projectId: 'project-123',
     sessionId: 'session-123',
     iteration: 1,
-    stageSlug: 'test-stage',
+    stageSlug: DialecticStageSlug.Thesis,
     modelSlug: 'test-model',
     attemptCount: 1,
   },
@@ -58,7 +60,7 @@ const mockUserFeedbackContext: UserFeedbackUploadContext = {
     projectId: 'project-123',
     sessionId: 'session-123',
     iteration: 1,
-    stageSlug: 'feedback-stage',
+    stageSlug: DialecticStageSlug.Thesis,
   },
   feedbackTypeForDb: 'general-feedback',
   fileContent: Buffer.from('feedback'),
@@ -85,7 +87,7 @@ Deno.test('Type Guard: isCanonicalPathParams', async (t) => {
     const params: CanonicalPathParams = {
             contributionType: 'thesis',
             sourceModelSlugs: ['model-1', 'model-2'],
-            stageSlug: 'test-stage',
+            stageSlug: DialecticStageSlug.Thesis,
         };
         assert(isCanonicalPathParams(params));
     });
@@ -93,7 +95,7 @@ Deno.test('Type Guard: isCanonicalPathParams', async (t) => {
     await t.step('should return true for a minimal CanonicalPathParams object', () => {
         const params: CanonicalPathParams = {
             contributionType: 'synthesis',
-            stageSlug: 'test-stage',
+            stageSlug: DialecticStageSlug.Thesis,
         };
         assert(isCanonicalPathParams(params));
     });
@@ -437,6 +439,26 @@ Deno.test('Type Guard: isCompressionMode', async (t) => {
     });
 });
 
+Deno.test('Type Guard: isCompressionHistoryRole', async (t) => {
+    await t.step('returns true for every Messages role', () => {
+        assert(isCompressionHistoryRole('system'));
+        assert(isCompressionHistoryRole('user'));
+        assert(isCompressionHistoryRole('assistant'));
+        assert(isCompressionHistoryRole('function'));
+    });
+
+    await t.step('returns false for invalid values', () => {
+        assert(!isCompressionHistoryRole('model'));
+        assert(!isCompressionHistoryRole('tool'));
+        assert(!isCompressionHistoryRole(''));
+        assert(!isCompressionHistoryRole('User'));
+        assert(!isCompressionHistoryRole(null));
+        assert(!isCompressionHistoryRole(undefined));
+        assert(!isCompressionHistoryRole(123));
+        assert(!isCompressionHistoryRole({}));
+    });
+});
+
 Deno.test('Type Guard: isResourceFileType recognizes CompressedContext', () => {
     assert(isResourceFileType(FileType.CompressedContext));
 });
@@ -471,6 +493,26 @@ Deno.test('Type Guard: isCompressedContextRawJsonFileType', async (t) => {
         assert(!isCompressedContextRawJsonFileType(undefined));
         assert(!isCompressedContextRawJsonFileType(123));
         assert(!isCompressedContextRawJsonFileType('foo'));
+    });
+});
+
+Deno.test('Type Guard: isCompressionPromptFileType', async (t) => {
+    await t.step('returns true for CompressionPrompt enum and string value', () => {
+        assert(isCompressionPromptFileType(FileType.CompressionPrompt));
+        assert(isCompressionPromptFileType('compression_prompt'));
+    });
+
+    await t.step('returns false for other compression FileTypes, prompt FileTypes, and invalid values', () => {
+        assert(!isCompressionPromptFileType(FileType.CompressedContext));
+        assert(!isCompressionPromptFileType(FileType.CompressedContextRawJson));
+        assert(!isCompressionPromptFileType(FileType.TurnPrompt));
+        assert(!isCompressionPromptFileType(FileType.PlannerPrompt));
+        assert(!isCompressionPromptFileType('compression_prompt '));
+        assert(!isCompressionPromptFileType(''));
+        assert(!isCompressionPromptFileType(null));
+        assert(!isCompressionPromptFileType(undefined));
+        assert(!isCompressionPromptFileType(123));
+        assert(!isCompressionPromptFileType({}));
     });
 });
 

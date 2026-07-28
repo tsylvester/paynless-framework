@@ -124,7 +124,7 @@ export function buildRenderDocumentResult(
     fileType: FileType.RenderedDocument,
     sessionId: "session-abc",
     iteration: 1,
-    stageSlug: "thesis",
+    stageSlug: DialecticStageSlug.Thesis,
     documentKey: FileType.business_case,
     modelSlug: "mock-model",
     sourceContributionId: "root-1",

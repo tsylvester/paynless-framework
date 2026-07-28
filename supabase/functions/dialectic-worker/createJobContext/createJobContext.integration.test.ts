@@ -48,7 +48,7 @@ import type {
 } from '../../_shared/types.ts';
 import { getMaxOutputTokens } from '../../_shared/utils/affordability_utils.ts';
 import type { Database, Tables } from '../../types_db.ts';
-import { FileType } from '../../_shared/types/file_manager.types.ts';
+import { DialecticStageSlug, FileType } from '../../_shared/types/file_manager.types.ts';
 import { MockLogger } from '../../_shared/logger.mock.ts';
 import { createMockSupabaseClient } from '../../_shared/supabase.mock.ts';
 import { isRecord, isJson } from '../../_shared/utils/type-guards/type_guards.common.ts';
@@ -256,7 +256,7 @@ Deno.test('Integration: Phase 1 chain — ctx.prepareModelJob wired through crea
       user_jwt: 'integration-user-jwt',
       prompt_template_id: 'phase1-prompt-template-id',
       output_type: FileType.HeaderContext,
-      canonicalPathParams: { contributionType: 'thesis', stageSlug: 'thesis' },
+      canonicalPathParams: { contributionType: 'thesis', stageSlug: DialecticStageSlug.Thesis },
       inputs: {},
       idempotencyKey: 'phase1-idem',
     };

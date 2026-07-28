@@ -21,7 +21,7 @@ import type {
     SystemMaterials,
 } from "../../dialectic-service/dialectic.interface.ts";
 import type { ServiceError } from "../../_shared/types.ts";
-import { FileType } from "../../_shared/types/file_manager.types.ts";
+import { FileType, DialecticStageSlug } from "../../_shared/types/file_manager.types.ts";
 import { isJson } from "../../_shared/utils/type_guards.ts";
 import type {
     NodeTokenUsage,
@@ -97,7 +97,7 @@ export function createMockDialecticContributionRow(
     user_jwt: 'jwt.token.here',
     canonicalPathParams: {
       contributionType: 'thesis',
-      stageSlug: 'thesis',
+      stageSlug: DialecticStageSlug.Thesis,
     },
     idempotencyKey: 'job-id-123_render',
   };
@@ -378,7 +378,7 @@ export const saveResponseTestPayload: DialecticExecuteJobPayload = {
     user_jwt: "jwt.token.here",
     canonicalPathParams: {
         contributionType: "thesis",
-        stageSlug: "thesis",
+        stageSlug: DialecticStageSlug.Thesis,
     },
     idempotencyKey: "job-id-123_execute",
 };

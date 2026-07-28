@@ -20,11 +20,9 @@ import { downloadFromStorage } from "../../supabase_storage_utils.ts";
 import { renderPrompt } from "../../prompt-renderer.ts";
 import { gatherInputsForStage } from "../gatherInputsForStage/gatherInputsForStage.ts";
 import { createMockFileManagerService } from "../../services/file_manager.mock.ts";
-import { FileType, UploadContext } from "../../types/file_manager.types.ts";
+import { DialecticStageSlug, FileType } from "../../types/file_manager.types.ts";
 import { FileRecord } from "../../types/file_manager.types.ts";
 import {
-  DialecticStageRecipeStep,
-  OutputRule,
   SeedPromptRecipeStep,
 } from "../../../dialectic-service/dialectic.interface.ts";
 
@@ -127,7 +125,7 @@ Deno.test("assembleSeedPrompt", async (t) => {
     id: "stage-123",
     system_prompts: { prompt_text: stageSystemPromptText },
     domain_specific_prompt_overlays: [{ overlay_values: stageOverlayValues }],
-    slug: "initial-hypothesis",
+    slug: DialecticStageSlug.Thesis,
     display_name: "Initial hypothesis",
     description: "Initial hypothesis stage",
     created_at: new Date().toISOString(),
@@ -376,7 +374,7 @@ Deno.test("assembleSeedPrompt", async (t) => {
   );
 
   await t.step("should correctly assemble for a subsequent stage with prior inputs", async () => {
-      const stageSlug = "prev-stage";
+      const stageSlug = DialecticStageSlug.Thesis;
       const contribContent = "AI contribution content.";
       const feedbackContent = "User feedback content.";
 
@@ -469,7 +467,7 @@ Deno.test("assembleSeedPrompt", async (t) => {
         const subsequentStage: StageContext = {
           ...defaultStage,
           id: "stage-subsequent",
-          slug: "subsequent-stage",
+          slug: DialecticStageSlug.Antithesis,
           recipe_step: {
             ...mockStageRecipeStep,
             inputs_required: [], // Conforms to the SeedPromptRecipeStep type
@@ -516,7 +514,7 @@ Deno.test("assembleSeedPrompt", async (t) => {
   await t.step(
     "should propagate errors from the general input gathering stage",
     async () => {
-      const stageSlug = "prev-stage";
+      const stageSlug = DialecticStageSlug.Thesis;
       const errorMessage = "Database query failed";
       const config: MockSupabaseDataConfig = {
         genericMockResults: {

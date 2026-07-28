@@ -1,6 +1,6 @@
   // Helper function to create header context contribution mocks
   import { assertEquals, assertRejects, assert } from "jsr:@std/assert@0.225.3";
-  import { spy, stub, Spy } from "jsr:@std/testing@0.225.1/mock";
+  import { spy } from "jsr:@std/testing@0.225.1/mock";
   import {
     assembleContinuationPrompt,
   } from "../assembleContinuationPrompt/assembleContinuationPrompt.ts";
@@ -9,7 +9,6 @@
     SessionContext,
     StageContext,
     AssembledPrompt,
-    AssembleContinuationPromptDeps,
   } from "../prompt-assembler.interface.ts";
   import {
     createMockSupabaseClient,
@@ -20,17 +19,14 @@
   import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
   import type { Database } from "../../../types_db.ts";
   import { createMockFileManagerService } from "../../services/file_manager.mock.ts";
-  import { FileType } from "../../types/file_manager.types.ts";
-  import { FileRecord } from "../../types/file_manager.types.ts";
+  import { FileType, FileRecord, DialecticStageSlug } from "../../types/file_manager.types.ts";
   import {
     DialecticExecuteJobPayload,
     DialecticJobRow,
-    DialecticRecipeStep,
     HeaderContext,
   } from "../../../dialectic-service/dialectic.interface.ts";
   import { assertSpyCall } from "jsr:@std/testing@0.225.1/mock";
   import { isRecord, isJson } from "../../utils/type_guards.ts";
-  import { DynamicContextVariables } from "../prompt-assembler.interface.ts";
   import {
     GatherContinuationInputsSignature,
     GatherContinuationInputsDeps,
@@ -41,7 +37,6 @@
   } from "../gatherContinuationInputs/gatherContinuationInputs.interface.ts";
   import {
     downloadFromStorage,
-    type DownloadStorageResult,
   } from "../../supabase_storage_utils.ts";
   import { Messages } from "../../types.ts";
   import { AssembleChunksSignature } from "../../utils/assembleChunks/assembleChunks.interface.ts";
@@ -243,7 +238,7 @@
       output_type: FileType.business_case,
       canonicalPathParams: {
         contributionType: "antithesis",
-        stageSlug: "stage-default",
+        stageSlug: DialecticStageSlug.Antithesis,
       },
       inputs: {},
       target_contribution_id: "target-contrib-default",

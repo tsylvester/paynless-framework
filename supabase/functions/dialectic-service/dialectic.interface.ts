@@ -17,6 +17,7 @@ import type {
 } from "../_shared/supabase_storage_utils.ts";
 import type {
 	CanonicalPathParams,
+	DialecticStageSlug,
 	DocumentKey,
 	FileType,
 	IFileManager,
@@ -1945,7 +1946,7 @@ export interface IPlanPerSourceDocumentByLineageDeps {
 		sourceDocs: SourceDocument[],
 		outputType: FileType | ContributionType,
 		anchorDoc: SourceDocument | null,
-		stage: ContributionType,
+		stage: DialecticStageSlug,
 	) => CanonicalPathParams;
 }
 

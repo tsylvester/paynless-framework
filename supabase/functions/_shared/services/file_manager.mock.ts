@@ -3,7 +3,7 @@ import { spy, type Spy } from 'https://deno.land/std@0.218.2/testing/mock.ts';
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import type { Database } from '../../types_db.ts';
 import type { ServiceError } from '../types.ts';
-import { FileType } from '../types/file_manager.types.ts';
+import { DialecticStageSlug, FileType } from '../types/file_manager.types.ts';
 import type {
   CanonicalPathParams,
   FileRecord,
@@ -55,7 +55,7 @@ export function buildCanonicalPathParams(
 ): CanonicalPathParams {
   const base: CanonicalPathParams = {
     contributionType: 'thesis',
-    stageSlug: 'thesis',
+    stageSlug: DialecticStageSlug.Thesis,
   };
   return overrides ? { ...base, ...overrides } : base;
 }

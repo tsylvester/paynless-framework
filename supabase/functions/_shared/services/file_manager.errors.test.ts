@@ -25,6 +25,7 @@ import {
   ModelContributionUploadContext,
   FileType,
   ContributionMetadata,
+  DialecticStageSlug
 } from '../types/file_manager.types.ts';
 import { constructStoragePath } from '../utils/path_constructor.ts';
 import { SupabaseClient } from 'npm:@supabase/supabase-js@2';
@@ -92,10 +93,10 @@ Deno.test('FileManagerService transient error retry behavior', async (t) => {
     projectId: 'project-uuid-123',
     sessionId: 'session-uuid-456',
     iteration: 2,
-    stageSlug: '2_antithesis',
+    stageSlug: DialecticStageSlug.Antithesis,
     modelSlug: 'claude-3-sonnet',
     attemptCount: 0,
-    documentKey: 'business_case',
+    documentKey: FileType.business_case,
   };
 
   const contributionMetadata: ContributionMetadata = {

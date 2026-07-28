@@ -1,4 +1,4 @@
-import { assertEquals, assertRejects, assert } from "https://deno.land/std@0.224.0/assert/mod.ts";
+import { assertEquals, assertRejects, assert, assertStringIncludes } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { describe, it, beforeEach, afterEach } from "https://deno.land/std@0.224.0/testing/bdd.ts";
 import { stub, type Stub, spy } from "https://deno.land/std@0.224.0/testing/mock.ts";
 
@@ -6,8 +6,9 @@ import type { SupabaseClient } from "npm:@supabase/supabase-js@^2.43.4";
 import type { Database, TablesInsert, Tables } from "../types_db.ts";
 import { cloneProject } from "./cloneProject.ts";
 import { mockCloneProject } from "./cloneProject.mock.ts";
-import { FileType } from "../_shared/types/file_manager.types.ts";
-import type { FileRecord, UploadContext, PathContext, FileManagerResponse } from "../_shared/types/file_manager.types.ts";
+import { DialecticStageSlug, FileType } from "../_shared/types/file_manager.types.ts";
+import type { FileRecord, UploadContext, PathContext, FileManagerResponse, CompressionSourceType } from "../_shared/types/file_manager.types.ts";
+import type { Messages } from "../_shared/types.ts";
 import { createMockSupabaseClient, type MockSupabaseClientSetup, type MockQueryBuilderState } from "../_shared/supabase.mock.ts";
 import { createMockFileManagerService, MockFileManagerService } from "../_shared/services/file_manager.mock.ts";
 import { constructStoragePath } from '../_shared/utils/path_constructor.ts';
@@ -330,6 +331,12 @@ describe("cloneProject", () => {
         assertEquals(firstCallArgs.pathContext.iteration, undefined, "Iteration should be undefined for simple resource1");
         assertEquals(firstCallArgs.pathContext.stageSlug, undefined, "StageSlug should be undefined for simple resource1");
         assertEquals(firstCallArgs.pathContext.modelSlug, undefined, "ModelSlug should be undefined for simple resource1");
+        assertEquals(firstCallArgs.pathContext.targetKey, undefined, "targetKey should be undefined for simple resource1");
+        assertEquals(firstCallArgs.pathContext.sourceType, undefined, "sourceType should be undefined for simple resource1");
+        assertEquals(firstCallArgs.pathContext.sourceId, undefined, "sourceId should be undefined for simple resource1");
+        assertEquals(firstCallArgs.pathContext.role, undefined, "role should be undefined for simple resource1");
+        assertEquals(firstCallArgs.pathContext.chunkIndex, undefined, "chunkIndex should be undefined for simple resource1");
+        assertEquals(firstCallArgs.pathContext.chunkTotal, undefined, "chunkTotal should be undefined for simple resource1");
         const firstCallResult = await fmCalls[0].returned;
         assert(firstCallResult);
         const firstCallRecord = firstCallResult.record;
@@ -1568,6 +1575,221 @@ describe("cloneProject", () => {
         assertEquals(insertedSelections, [null]);
         assertEquals(mockSupabaseSetup.spies.rpcSpy.calls.filter((c) => c.args[0] === "validate_model_tier_access").length, 0);
         assertEquals(mockUserClientSetup.spies.rpcSpy.calls.length, 0);
+    });
+
+    it("should clone compressed context artifacts of every source form to the same relative canonical paths under the new project and session ids", async () => {
+        const originalProjectData: Tables<'dialectic_projects'> = {
+            id: originalProjectId, user_id: cloningUserId, project_name: "Compression Clone Project",
+            initial_user_prompt: "Compression prompt", status: "active",
+            created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+            process_template_id: "pt-comp", selected_domain_id: "domain-comp",
+            initial_prompt_resource_id: null, repo_url: null, selected_domain_overlay_id: null, user_domain_overlay_values: null,
+            idempotency_key: null,
+        };
+
+        const originalSessionId = "orig-session-comp-uuid";
+
+        const originalSessionsData: Tables<'dialectic_sessions'>[] = [
+            {
+                id: originalSessionId, project_id: originalProjectId, session_description: "Compression session",
+                iteration_count: 1, status: "in_progress", current_stage_id: "stage_3_synthesis",
+                created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+                selected_model_ids: ["mc_claude_3_opus"], user_input_reference_url: null, associated_chat_id: null,
+                idempotency_key: null, viewing_stage_id: null,
+            }
+        ];
+
+        const historySourceId = "550e8400-e29b-41d4-a716-446655440000";
+
+        const compressionIdentities: Array<{
+            label: string;
+            fileType: FileType.CompressedContext | FileType.CompressedContextRawJson;
+            sourceType: CompressionSourceType;
+            documentKey: FileType | undefined;
+            sourceId: string | undefined;
+            role: Messages['role'] | undefined;
+            chunkIndex: number | undefined;
+            chunkTotal: number | undefined;
+        }> = [
+            { label: "row1-resource-cc", fileType: FileType.CompressedContext, sourceType: "resource", documentKey: FileType.business_case_critique, sourceId: undefined, role: undefined, chunkIndex: undefined, chunkTotal: undefined },
+            { label: "row2-feedback-cc", fileType: FileType.CompressedContext, sourceType: "feedback", documentKey: FileType.business_case_critique, sourceId: undefined, role: undefined, chunkIndex: undefined, chunkTotal: undefined },
+            { label: "row3-history-cc", fileType: FileType.CompressedContext, sourceType: "history", documentKey: undefined, sourceId: historySourceId, role: "assistant", chunkIndex: undefined, chunkTotal: undefined },
+            { label: "row4-history-chunk-cc", fileType: FileType.CompressedContext, sourceType: "history", documentKey: undefined, sourceId: historySourceId, role: "user", chunkIndex: 2, chunkTotal: 3 },
+            { label: "row5-resource-raw", fileType: FileType.CompressedContextRawJson, sourceType: "resource", documentKey: FileType.business_case_critique, sourceId: undefined, role: undefined, chunkIndex: undefined, chunkTotal: undefined },
+            { label: "row6-feedback-raw", fileType: FileType.CompressedContextRawJson, sourceType: "feedback", documentKey: FileType.business_case_critique, sourceId: undefined, role: undefined, chunkIndex: undefined, chunkTotal: undefined },
+        ];
+
+        const originalResourcesData: DialecticProjectResourceRow[] = compressionIdentities.map((identity, i) => {
+            const constructed = constructStoragePath({
+                projectId: originalProjectId,
+                sessionId: originalSessionId,
+                iteration: 1,
+                stageSlug: DialecticStageSlug.Synthesis,
+                targetKey: FileType.business_case,
+                fileType: identity.fileType,
+                sourceType: identity.sourceType,
+                documentKey: identity.documentKey,
+                sourceId: identity.sourceId,
+                role: identity.role,
+                chunkIndex: identity.chunkIndex,
+                chunkTotal: identity.chunkTotal,
+            });
+            return {
+                id: `comp-res-${i + 1}`, project_id: originalProjectId, user_id: cloningUserId,
+                file_name: constructed.fileName, storage_bucket: "test-bucket",
+                storage_path: constructed.storagePath,
+                mime_type: "text/markdown", size_bytes: 500,
+                resource_description: { originalDescription: identity.label },
+                created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+                iteration_number: 1, resource_type: identity.fileType,
+                session_id: originalSessionId, source_contribution_id: null, stage_slug: "synthesis",
+            };
+        });
+
+        let compNewProjectId = "";
+        let compNewSessionId = "";
+
+        mockFileManager.uploadAndRegisterFile = spy(
+            (context: UploadContext): Promise<FileManagerResponse> => {
+                const fileRecordId = crypto.randomUUID();
+                const nowIso = new Date().toISOString();
+                const newPath = constructStoragePath(context.pathContext);
+                const record: DialecticProjectResourceRow = {
+                    id: fileRecordId, created_at: nowIso, updated_at: nowIso, project_id: context.pathContext.projectId,
+                    user_id: context.userId!, file_name: newPath.fileName, storage_bucket: "test-bucket",
+                    storage_path: newPath.storagePath, mime_type: context.mimeType, size_bytes: context.sizeBytes,
+                    resource_description: context.description ?? null, iteration_number: null, resource_type: null,
+                    session_id: null, source_contribution_id: context.pathContext.sourceContributionId ?? null, stage_slug: null,
+                };
+                return Promise.resolve({ record, error: null });
+            }
+        );
+
+        mockSupabaseSetup = createMockSupabaseClient(cloningUserId, {
+            genericMockResults: {
+                dialectic_projects: {
+                    select: (state: MockQueryBuilderState) => {
+                        if (state.filters.some(f => f.column === 'id' && f.value === originalProjectId)) return Promise.resolve({ data: [originalProjectData], error: null });
+                        if (state.filters.some(f => f.column === 'id' && f.value === compNewProjectId)) return Promise.resolve({ data: [{ ...originalProjectData, id: compNewProjectId }], error: null });
+                        return Promise.resolve({ data: [], error: null });
+                    },
+                    insert: (state: MockQueryBuilderState) => {
+                        const payload = (Array.isArray(state.insertData) ? state.insertData[0] : state.insertData);
+                        compNewProjectId = payload.id;
+                        return Promise.resolve({ data: [{ ...payload }], error: null, count: 1, status: 201 });
+                    },
+                },
+                dialectic_project_resources: {
+                    select: (state: MockQueryBuilderState) => {
+                        if (state.filters.some(f => f.column === 'project_id' && f.value === originalProjectId)) return Promise.resolve({ data: originalResourcesData, error: null });
+                        return Promise.resolve({ data: [], error: null });
+                    },
+                },
+                dialectic_sessions: {
+                    select: (state: MockQueryBuilderState) => {
+                        if (state.filters.some(f => f.column === 'project_id' && f.value === originalProjectId)) return Promise.resolve({ data: originalSessionsData, error: null });
+                        return Promise.resolve({ data: [], error: null });
+                    },
+                    insert: (state: MockQueryBuilderState) => {
+                        const payload = (Array.isArray(state.insertData) ? state.insertData[0] : state.insertData);
+                        compNewSessionId = payload.id;
+                        return Promise.resolve({ data: [{ ...payload, project_id: compNewProjectId }], error: null, count: 1, status: 201 });
+                    },
+                },
+                dialectic_contributions: {
+                    select: () => Promise.resolve({ data: [], error: null }),
+                },
+                dialectic_feedback: {
+                    select: () => Promise.resolve({ data: [], error: null }),
+                },
+            },
+            storageMock: {
+                downloadResult: (_bucketId: string, path: string) => {
+                    for (const res of originalResourcesData) {
+                        if (path === `${res.storage_path}/${res.file_name}`) return Promise.resolve({ data: new Blob(["compressed content"]), error: null });
+                    }
+                    return Promise.resolve({ data: null, error: new Error(`Mock download error: path ${path} not found`) });
+                }
+            }
+        });
+        mockUserClientSetup = createMockSupabaseClient(cloningUserId, {
+            rpcResults: {
+                validate_model_tier_access: {
+                    data: [{ valid: true, user_tier_level: 1, max_models_per_project: 3, over_model_limit: false, disallowed_model_ids: [] }],
+                    error: null,
+                },
+            },
+        });
+
+        const invokeComp = mockCloneProject({
+            supabaseClient: mockSupabaseSetup.client as unknown as SupabaseClient<Database>,
+            userClient: mockUserClientSetup.client as unknown as SupabaseClient<Database>,
+            fileManager: mockFileManager,
+            originalProjectId,
+            newProjectName: "Cloned Compression Project",
+            cloningUserId,
+        });
+        const result = await cloneProject(invokeComp.supabaseClient, invokeComp.userClient, invokeComp.fileManager, invokeComp.originalProjectId, invokeComp.newProjectName, invokeComp.cloningUserId);
+
+        assert(result.data, "Expected clone to succeed for compression artifacts.");
+        assertEquals(result.error, null, "Expected no error for compression clone");
+
+        const fmCalls = mockFileManager.uploadAndRegisterFile.calls;
+        assertEquals(fmCalls.length, 6, "Expected exactly 6 uploadAndRegisterFile calls");
+
+        for (let i = 0; i < 6; i++) {
+            const identity = compressionIdentities[i];
+            const callArgs = fmCalls[i].args[0];
+            const callResult = await fmCalls[i].returned;
+
+            assertEquals(callArgs.pathContext.projectId, compNewProjectId, `Row ${i + 1}: projectId should be the clone's new project id`);
+            assertEquals(callArgs.pathContext.sessionId, compNewSessionId, `Row ${i + 1}: sessionId should be the clone's new session id`);
+            assertEquals(callArgs.pathContext.targetKey, "business_case", `Row ${i + 1}: targetKey should be preserved`);
+            assertEquals(callArgs.pathContext.sourceType, identity.sourceType, `Row ${i + 1}: sourceType should be preserved`);
+            assertEquals(callArgs.pathContext.documentKey, identity.documentKey, `Row ${i + 1}: documentKey should be preserved`);
+            assertEquals(callArgs.pathContext.sourceId, identity.sourceId, `Row ${i + 1}: sourceId should be preserved`);
+            assertEquals(callArgs.pathContext.role, identity.role, `Row ${i + 1}: role should be preserved`);
+            assertEquals(callArgs.pathContext.chunkIndex, identity.chunkIndex, `Row ${i + 1}: chunkIndex should be preserved`);
+            assertEquals(callArgs.pathContext.chunkTotal, identity.chunkTotal, `Row ${i + 1}: chunkTotal should be preserved`);
+
+            assert(callResult, `Row ${i + 1}: expected a return value`);
+            assert(callResult.record, `Row ${i + 1}: expected a record on the return value`);
+            const expectedClonePath = constructStoragePath({
+                projectId: compNewProjectId,
+                sessionId: compNewSessionId,
+                iteration: 1,
+                stageSlug: DialecticStageSlug.Synthesis,
+                targetKey: FileType.business_case,
+                fileType: identity.fileType,
+                sourceType: identity.sourceType,
+                documentKey: identity.documentKey,
+                sourceId: identity.sourceId,
+                role: identity.role,
+                chunkIndex: identity.chunkIndex,
+                chunkTotal: identity.chunkTotal,
+            });
+            assertEquals(callResult.record.storage_path, expectedClonePath.storagePath, `Row ${i + 1}: round-trip storage_path should match clone's canonical path`);
+            assertEquals(callResult.record.file_name, expectedClonePath.fileName, `Row ${i + 1}: round-trip file_name should match clone's canonical path`);
+        }
+
+        const row3Result = await fmCalls[2].returned;
+        assert(row3Result?.record, "Row 3: expected a record");
+        const row3FileName = row3Result.record.file_name;
+        assert(typeof row3FileName === "string", "Row 3: file_name should be a string");
+        assertStringIncludes(row3FileName, historySourceId, "Row 3 cloned file name should contain the full sourceId");
+        assertEquals(row3FileName.startsWith("source_"), false, "Row 3 cloned file name should not begin with source_");
+
+        const row4Result = await fmCalls[3].returned;
+        assert(row4Result?.record, "Row 4: expected a record");
+        const row4FileName = row4Result.record.file_name;
+        assert(typeof row4FileName === "string", "Row 4: file_name should be a string");
+        assertStringIncludes(row4FileName, historySourceId, "Row 4 cloned file name should contain the full sourceId");
+        assertEquals(row4FileName.startsWith("source_"), false, "Row 4 cloned file name should not begin with source_");
+
+        const row1Result = await fmCalls[0].returned;
+        const row2Result = await fmCalls[1].returned;
+        assert(row1Result?.record && row2Result?.record, "Rows 1 and 2: expected records");
+        assert(row1Result.record.file_name !== row2Result.record.file_name, "Rows 1 and 2 should clone to different file names despite sharing documentKey and targetKey");
     });
 
 });

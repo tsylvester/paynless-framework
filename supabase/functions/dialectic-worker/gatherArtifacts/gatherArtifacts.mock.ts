@@ -3,7 +3,7 @@ import type { Database } from "../../types_db.ts";
 import { MockLogger } from "../../_shared/logger.mock.ts";
 import type { ResourceDocuments } from "../../_shared/types.ts";
 import { createMockDownloadFromStorage } from "../../_shared/supabase_storage_utils.mock.ts";
-import { FileType } from "../../_shared/types/file_manager.types.ts";
+import { DialecticStageSlug, FileType } from "../../_shared/types/file_manager.types.ts";
 import { constructStoragePath } from "../../_shared/utils/path_constructor.ts";
 import type {
   DialecticContributionRow,
@@ -179,10 +179,10 @@ export function buildDialecticFeedbackRow(
     fileType: FileType.RenderedDocument,
     sessionId: "session-456",
     iteration: 1,
-    stageSlug: "thesis",
+    stageSlug: DialecticStageSlug.Thesis,
     modelSlug: "model-collect",
     attemptCount: 1,
-    documentKey: "business_case",
+    documentKey: FileType.business_case,
   });
   // Build the feedback path from the original document
   const feedbackPath = constructStoragePath({
@@ -190,7 +190,7 @@ export function buildDialecticFeedbackRow(
     fileType: FileType.UserFeedback,
     sessionId: "session-456",
     iteration: 1,
-    stageSlug: "thesis",
+    stageSlug: DialecticStageSlug.Thesis,
     originalStoragePath: docPath.storagePath,
     originalBaseName: docPath.fileName.replace(".md", ""),
   });

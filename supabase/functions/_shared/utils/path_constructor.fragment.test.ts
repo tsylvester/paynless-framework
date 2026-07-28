@@ -2,7 +2,8 @@ import { assertEquals } from 'https://deno.land/std@0.177.0/testing/asserts.ts';
 import { constructStoragePath } from './path_constructor.ts';
 import { 
     FileType, 
-    PathContext 
+    PathContext,
+    DialecticStageSlug
 } from '../types/file_manager.types.ts';
 import { extractSourceGroupFragment } from './path_utils.ts';
 
@@ -14,7 +15,7 @@ Deno.test('path_constructor fragment support', async (t) => {
     projectId,
     sessionId,
     iteration,
-    stageSlug: 'thesis',
+    stageSlug: DialecticStageSlug.Thesis,
     modelSlug: 'gpt-4-turbo',
     attemptCount: 0,
   };
@@ -23,7 +24,7 @@ Deno.test('path_constructor fragment support', async (t) => {
     const context: PathContext = {
       ...baseContext,
       fileType: FileType.HeaderContext,
-      documentKey: 'header_context',
+      documentKey: FileType.HeaderContext,
       sourceGroupFragment: 'a1b2c3d4',
     };
     const { fileName } = constructStoragePath(context);
@@ -36,9 +37,9 @@ Deno.test('path_constructor fragment support', async (t) => {
       fileType: FileType.TurnPrompt,
       modelSlug: 'claude-3-5-sonnet',
       attemptCount: 1,
-      documentKey: 'business_case',
+      documentKey: FileType.business_case,
       sourceGroupFragment: 'f5e6d7c8',
-      stageSlug: 'thesis',
+      stageSlug: DialecticStageSlug.Thesis,
     };
     const { fileName } = constructStoragePath(context);
     assertEquals(fileName, 'claude-3-5-sonnet_1_business_case_f5e6d7c8_prompt.md', 'Fragment should appear after documentKey in simple pattern');
@@ -51,9 +52,9 @@ Deno.test('path_constructor fragment support', async (t) => {
       modelSlug: 'claude',
       sourceAnchorModelSlug: 'gpt-4',
       attemptCount: 1,
-      documentKey: 'business_case_critique',
+      documentKey: FileType.business_case_critique,
       sourceGroupFragment: 'f5e6d7c8',
-      stageSlug: 'antithesis',
+      stageSlug: DialecticStageSlug.Antithesis,
     };
     const { fileName } = constructStoragePath(context);
     assertEquals(fileName, 'claude_critiquing_gpt-4_f5e6d7c8_1_business_case_critique_prompt.md', 'Fragment should appear between sourceAnchorModelSlug and attemptCount in antithesis pattern');
@@ -65,9 +66,9 @@ Deno.test('path_constructor fragment support', async (t) => {
       fileType: FileType.ModelContributionRawJson,
       modelSlug: 'gemini-1.5-pro',
       attemptCount: 2,
-      documentKey: 'feature_spec',
+      documentKey: FileType.feature_spec,
       sourceGroupFragment: '12345678',
-      stageSlug: 'thesis',
+      stageSlug: DialecticStageSlug.Thesis,
     };
     const { fileName } = constructStoragePath(context);
     assertEquals(fileName, 'gemini-1.5-pro_2_feature_spec_12345678_raw.json', 'Fragment should appear after documentKey in simple pattern');
@@ -83,9 +84,9 @@ Deno.test('path_constructor fragment support', async (t) => {
       sourceAttemptCount: 0,
       contributionType: 'antithesis',
       attemptCount: 1,
-      documentKey: 'business_case_critique',
+      documentKey: FileType.business_case_critique,
       sourceGroupFragment: '98765432',
-      stageSlug: 'antithesis',
+      stageSlug: DialecticStageSlug.Antithesis,
     };
     const { fileName } = constructStoragePath(context);
     // Pattern: ${modelSlug}_critiquing_(${sourceModelSlug}'s_${sourceAnchorType}_${sourceAttemptCount})_${fragment}_${attemptCount}_${documentKey}_raw.json
@@ -98,9 +99,9 @@ Deno.test('path_constructor fragment support', async (t) => {
       fileType: FileType.AssembledDocumentJson,
       modelSlug: 'gpt-4',
       attemptCount: 0,
-      documentKey: 'technical_approach',
+      documentKey: FileType.technical_approach,
       sourceGroupFragment: 'abcdef12',
-      stageSlug: 'thesis',
+      stageSlug: DialecticStageSlug.Thesis,
     };
     const { fileName } = constructStoragePath(context);
     assertEquals(fileName, 'gpt-4_0_technical_approach_abcdef12_assembled.json', 'Fragment should appear after documentKey in simple pattern');
@@ -113,9 +114,9 @@ Deno.test('path_constructor fragment support', async (t) => {
       modelSlug: 'claude',
       sourceAnchorModelSlug: 'gpt-4',
       attemptCount: 1,
-      documentKey: 'business_case_critique',
+      documentKey: FileType.business_case_critique,
       sourceGroupFragment: '98765432',
-      stageSlug: 'antithesis',
+      stageSlug: DialecticStageSlug.Antithesis,
     };
     const { fileName } = constructStoragePath(context);
     assertEquals(fileName, 'claude_critiquing_gpt-4_98765432_1_business_case_critique_assembled.json', 'Fragment should appear between sourceAnchorModelSlug and attemptCount in antithesis pattern');
@@ -127,9 +128,9 @@ Deno.test('path_constructor fragment support', async (t) => {
       fileType: FileType.RenderedDocument,
       modelSlug: 'gpt-4',
       attemptCount: 0,
-      documentKey: 'technical_approach',
+      documentKey: FileType.technical_approach,
       sourceGroupFragment: 'abcdef12',
-      stageSlug: 'thesis',
+      stageSlug: DialecticStageSlug.Thesis,
     };
     const { fileName } = constructStoragePath(context);
     assertEquals(fileName, 'gpt-4_0_technical_approach_abcdef12.md', 'Fragment should appear after documentKey in simple pattern');
@@ -142,9 +143,9 @@ Deno.test('path_constructor fragment support', async (t) => {
       modelSlug: 'claude',
       sourceAnchorModelSlug: 'gpt-4',
       attemptCount: 1,
-      documentKey: 'business_case_critique',
+      documentKey: FileType.business_case_critique,
       sourceGroupFragment: '98765432',
-      stageSlug: 'antithesis',
+      stageSlug: DialecticStageSlug.Antithesis,
     };
     const { fileName } = constructStoragePath(context);
     assertEquals(fileName, 'claude_critiquing_gpt-4_98765432_1_business_case_critique.md', 'Fragment should appear between sourceAnchorModelSlug and attemptCount in antithesis pattern');
@@ -154,12 +155,12 @@ Deno.test('path_constructor fragment support', async (t) => {
     const context: PathContext = {
       ...baseContext,
       fileType: FileType.HeaderContext,
-      documentKey: 'header_context',
+      documentKey: FileType.HeaderContext,
       modelSlug: 'claude',
       sourceAnchorModelSlug: 'gpt-4',
       attemptCount: 0,
       sourceGroupFragment: '98765432',
-      stageSlug: 'antithesis',
+      stageSlug: DialecticStageSlug.Antithesis,
     };
     const { fileName } = constructStoragePath(context);
     assertEquals(fileName, 'claude_critiquing_gpt-4_98765432_0_header_context.json', 'Fragment should appear between sourceAnchorModelSlug and attemptCount in antithesis pattern');
@@ -169,11 +170,11 @@ Deno.test('path_constructor fragment support', async (t) => {
     const context: PathContext = {
       ...baseContext,
       fileType: FileType.HeaderContext,
-      documentKey: 'header_context',
+      documentKey: FileType.HeaderContext,
       modelSlug: 'gpt-4-turbo',
       attemptCount: 0,
       sourceGroupFragment: 'a1b2c3d4',
-      stageSlug: 'thesis',
+      stageSlug: DialecticStageSlug.Thesis,
     };
     const { fileName } = constructStoragePath(context);
     assertEquals(fileName, 'gpt-4-turbo_0_a1b2c3d4_header_context.json', 'Fragment should appear after attemptCount in simple pattern, no critiquing pattern');
@@ -183,10 +184,10 @@ Deno.test('path_constructor fragment support', async (t) => {
     const headerContextSimple: PathContext = {
       ...baseContext,
       fileType: FileType.HeaderContext,
-      documentKey: 'header_context',
+      documentKey: FileType.HeaderContext,
       modelSlug: 'gpt-4-turbo',
       attemptCount: 0,
-      stageSlug: 'thesis',
+      stageSlug: DialecticStageSlug.Thesis,
       // sourceGroupFragment is undefined
     };
     const { fileName: headerSimpleFileName } = constructStoragePath(headerContextSimple);
@@ -195,11 +196,11 @@ Deno.test('path_constructor fragment support', async (t) => {
     const headerContextAntithesis: PathContext = {
       ...baseContext,
       fileType: FileType.HeaderContext,
-      documentKey: 'header_context',
+      documentKey: FileType.HeaderContext,
       modelSlug: 'claude',
       sourceAnchorModelSlug: 'gpt-4',
       attemptCount: 0,
-      stageSlug: 'antithesis',
+      stageSlug: DialecticStageSlug.Antithesis,
       // sourceGroupFragment is undefined
     };
     const { fileName: headerAntithesisFileName } = constructStoragePath(headerContextAntithesis);
@@ -210,11 +211,11 @@ Deno.test('path_constructor fragment support', async (t) => {
     const context: PathContext = {
       ...baseContext,
       fileType: FileType.HeaderContext,
-      documentKey: 'header_context',
+      documentKey: FileType.HeaderContext,
       modelSlug: 'gpt-4-turbo',
       attemptCount: 0,
       sourceGroupFragment: 'A1-B2-C3', // Contains hyphens - should be sanitized
-      stageSlug: 'thesis',
+      stageSlug: DialecticStageSlug.Thesis,
     };
     // The fragment should be sanitized by extractSourceGroupFragment helper
     // 'A1-B2-C3' -> remove hyphens -> 'A1B2C3' -> first 8 chars -> 'A1B2C3' -> lowercase -> 'a1b2c3'
@@ -230,7 +231,7 @@ Deno.test('path_constructor fragment support', async (t) => {
     const contextEmptyString: PathContext = {
       ...baseContext,
       fileType: FileType.HeaderContext,
-      documentKey: 'header_context',
+      documentKey: FileType.HeaderContext,
       sourceGroupFragment: '', // Empty string should result in undefined fragment
     };
     const { fileName: fileNameEmpty } = constructStoragePath(contextEmptyString);
@@ -239,7 +240,7 @@ Deno.test('path_constructor fragment support', async (t) => {
     const contextUndefined: PathContext = {
       ...baseContext,
       fileType: FileType.HeaderContext,
-      documentKey: 'header_context',
+      documentKey: FileType.HeaderContext,
       sourceGroupFragment: undefined,
     };
     const { fileName: fileNameUndefined } = constructStoragePath(contextUndefined);
@@ -249,7 +250,7 @@ Deno.test('path_constructor fragment support', async (t) => {
     const turnPromptContextEmpty: PathContext = {
       ...baseContext,
       fileType: FileType.TurnPrompt,
-      documentKey: 'business_case',
+      documentKey: FileType.business_case,
       sourceGroupFragment: '',
     };
     const { fileName: turnPromptFileNameEmpty } = constructStoragePath(turnPromptContextEmpty);
@@ -260,12 +261,12 @@ Deno.test('path_constructor fragment support', async (t) => {
     const context: PathContext = {
       ...baseContext,
       fileType: FileType.HeaderContext,
-      documentKey: 'header_context',
+      documentKey: FileType.HeaderContext,
       modelSlug: 'claude',
       sourceAnchorModelSlug: 'gpt-4', // Exists but stageSlug is 'thesis'
       attemptCount: 0,
       sourceGroupFragment: '98765432',
-      stageSlug: 'thesis', // NOT 'antithesis'
+      stageSlug: DialecticStageSlug.Thesis, // NOT 'antithesis'
     };
     const { fileName } = constructStoragePath(context);
     // Should use simple pattern, NOT critiquing pattern (both conditions must be met)
@@ -278,9 +279,9 @@ Deno.test('path_constructor fragment support', async (t) => {
       modelSlug: 'claude',
       sourceAnchorModelSlug: 'gpt-4',
       attemptCount: 1,
-      documentKey: 'business_case_critique',
+      documentKey: FileType.business_case_critique,
       sourceGroupFragment: 'f5e6d7c8',
-      stageSlug: 'thesis', // NOT 'antithesis'
+      stageSlug: DialecticStageSlug.Thesis, // NOT 'antithesis'
     };
     const { fileName: turnPromptFileName } = constructStoragePath(turnPromptContext);
     assertEquals(turnPromptFileName, 'claude_1_business_case_critique_f5e6d7c8_prompt.md', 'TurnPrompt should use simple pattern when stageSlug is not antithesis even if sourceAnchorModelSlug exists');
@@ -290,12 +291,12 @@ Deno.test('path_constructor fragment support', async (t) => {
     const context: PathContext = {
       ...baseContext,
       fileType: FileType.HeaderContext,
-      documentKey: 'header_context',
+      documentKey: FileType.HeaderContext,
       modelSlug: 'claude',
       sourceAnchorModelSlug: undefined, // Missing even though stageSlug is 'antithesis'
       attemptCount: 0,
       sourceGroupFragment: '98765432',
-      stageSlug: 'antithesis', // Is 'antithesis' but sourceAnchorModelSlug is missing
+      stageSlug: DialecticStageSlug.Antithesis, // Is 'antithesis' but sourceAnchorModelSlug is missing
     };
     const { fileName } = constructStoragePath(context);
     // Should use simple pattern, NOT critiquing pattern (both conditions must be met)
@@ -308,9 +309,9 @@ Deno.test('path_constructor fragment support', async (t) => {
       modelSlug: 'claude',
       sourceAnchorModelSlug: undefined,
       attemptCount: 1,
-      documentKey: 'business_case_critique',
+      documentKey: FileType.business_case_critique,
       sourceGroupFragment: 'f5e6d7c8',
-      stageSlug: 'antithesis', // Is 'antithesis' but sourceAnchorModelSlug is missing
+      stageSlug: DialecticStageSlug.Antithesis, // Is 'antithesis' but sourceAnchorModelSlug is missing
     };
     const { fileName: turnPromptFileName } = constructStoragePath(turnPromptContext);
     assertEquals(turnPromptFileName, 'claude_1_business_case_critique_f5e6d7c8_prompt.md', 'TurnPrompt should use simple pattern when sourceAnchorModelSlug is missing even if stageSlug is antithesis');

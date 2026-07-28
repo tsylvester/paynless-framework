@@ -49,6 +49,7 @@ import {
   mockDeps,
   mockExecutePayload,
 } from './processSimpleJob.mock.ts';
+import { isDialecticStageSlug } from "../_shared/utils/type-guards/type_guards.file_manager.ts";
 
 Deno.test('processSimpleJob - Happy Path', async (t) => {
     const { client: dbClient, clearAllStubs } = mockClient();
@@ -685,6 +686,9 @@ Deno.test('processSimpleJob - continuations push sourceContributionId into FileM
     const promptContent = jobPayload.promptConstructionPayload.currentUserPrompt;
     if (typeof promptContent !== 'string' || promptContent.length === 0) {
       throw new Error('Test setup failed: prompt content missing for continuation job.');
+    }
+    if(!isDialecticStageSlug(executePayload.stageSlug)){
+      throw new Error('Test setup failed: stageSlug is not a valid DialecticStageSlug.');
     }
 
     const pathContext: ModelContributionUploadContext['pathContext'] = {

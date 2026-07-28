@@ -231,7 +231,7 @@ export async function renderDocument(
     sessionId,
     iteration: iterationNumber,
     stageSlug,
-    documentKey: String(documentKey),
+    documentKey,
     modelSlug,
     attemptCount,
     sourceContributionId: sourceContributionId,

@@ -12,7 +12,7 @@ import type {
   InputRule,
 } from '../../../dialectic-service/dialectic.interface.ts';
 import { planAllToOne } from './planAllToOne.ts';
-import { FileType, type PathContext } from '../../../_shared/types/file_manager.types.ts';
+import { DialecticStageSlug, FileType, type PathContext } from '../../../_shared/types/file_manager.types.ts';
 import { isDialecticExecuteJobPayload } from '../../../_shared/utils/type-guards/type_guards.dialectic.ts';
 import { constructStoragePath } from '../../../_shared/utils/path_constructor.ts';
 
@@ -21,7 +21,7 @@ import { constructStoragePath } from '../../../_shared/utils/path_constructor.ts
 const createMockSourceDocument = (
   id: string,
   fileName: string | null,
-  stage: string,
+  stage: DialecticStageSlug,
   documentKey: FileType
 ): SourceDocument => {
   const session_id = 'session-1';
@@ -184,7 +184,7 @@ Deno.test('104.c.i: planAllToOne PLAN branch selects anchor from highest relevan
       createMockSourceDocument(
         'doc-1',
         'gpt-4_0_business_case.md',
-        'thesis',
+        DialecticStageSlug.Thesis,
         FileType.business_case
       ),
     ];
@@ -213,7 +213,7 @@ Deno.test('104.c.ii: planAllToOne PLAN branch with empty inputs_relevance result
       createMockSourceDocument(
         'doc-1',
         'gpt-4_0_business_case.md',
-        'thesis',
+        DialecticStageSlug.Thesis,
         FileType.business_case
       ),
     ];
@@ -246,11 +246,11 @@ Deno.test('104.c.iii: planAllToOne PLAN branch selects highest-relevance thesis 
         { type: 'seed_prompt', slug: 'thesis', document_key: FileType.SeedPrompt, required: true }
     ];
     const sourceDocs = [
-      createMockSourceDocument('seed-prompt', null, 'thesis', FileType.SeedPrompt),
+      createMockSourceDocument('seed-prompt', null, DialecticStageSlug.Thesis, FileType.SeedPrompt),
       createMockSourceDocument(
         'doc-1',
         'gpt-4-turbo_0_business_case.md',
-        'thesis',
+        DialecticStageSlug.Thesis,
         FileType.business_case
       ),
     ];
@@ -289,13 +289,13 @@ Deno.test('104.c.iv: planAllToOne PLAN branch selects doc with highest relevance
       createMockSourceDocument(
         'doc-low-relevance',
         'claude-3_0_feature_spec.md',
-        'thesis',
+        DialecticStageSlug.Thesis,
         FileType.feature_spec
       ),
       createMockSourceDocument(
         'doc-high-relevance',
         'gemini-1.5_0_business_case.md',
-        'thesis',
+        DialecticStageSlug.Thesis,
         FileType.business_case
       ),
     ];
@@ -330,7 +330,7 @@ Deno.test('104.c.v: planAllToOne PLAN branch with inputs_relevance but no matchi
       createMockSourceDocument( // This doc does not match the relevance rule
         'doc-1',
         'gpt-4_0_feature_spec.md',
-        'thesis',
+        DialecticStageSlug.Thesis,
         FileType.feature_spec
       ),
     ];
@@ -369,13 +369,13 @@ Deno.test('104.d.i: planAllToOne EXECUTE branch selects doc with highest relevan
       createMockSourceDocument(
         'doc-low-relevance',
         'claude-3_0_feature_spec.md',
-        'thesis',
+        DialecticStageSlug.Thesis,
         FileType.feature_spec
       ),
       createMockSourceDocument(
         'doc-high-relevance',
         'gemini-1.5_0_business_case.md',
-        'thesis',
+        DialecticStageSlug.Thesis,
         FileType.business_case
       ),
     ];
@@ -408,11 +408,11 @@ Deno.test('104.d.ii: planAllToOne EXECUTE branch selects highest-relevance thesi
         { type: 'seed_prompt', slug: 'thesis', document_key: FileType.SeedPrompt, required: true }
     ];
     const sourceDocs = [
-      createMockSourceDocument('seed-prompt', null, 'thesis', FileType.SeedPrompt),
+      createMockSourceDocument('seed-prompt', null, DialecticStageSlug.Thesis, FileType.SeedPrompt),
       createMockSourceDocument(
         'doc-1',
         'gpt-4-turbo_0_business_case.md',
-        'thesis',
+        DialecticStageSlug.Thesis,
         FileType.business_case
       ),
     ];
@@ -447,7 +447,7 @@ Deno.test('104.d.iii: planAllToOne EXECUTE branch with inputs_relevance but no m
       createMockSourceDocument( // This doc does not match the relevance rule
         'doc-1',
         'gpt-4_0_feature_spec.md',
-        'thesis',
+        DialecticStageSlug.Thesis,
         FileType.feature_spec
       ),
     ];
@@ -479,7 +479,7 @@ Deno.test('104.d.iv: planAllToOne EXECUTE branch throws error when relevance met
       createMockSourceDocument(
         'doc-1',
         'gpt-4_0_business_case.md',
-        'thesis',
+        DialecticStageSlug.Thesis,
         FileType.business_case
       ),
     ];
@@ -511,7 +511,7 @@ Deno.test('104.e.i: planAllToOne PLAN branch throws error when relevance metadat
       createMockSourceDocument(
         'doc-1',
         'gpt-4_0_business_case.md',
-        'thesis',
+        DialecticStageSlug.Thesis,
         FileType.business_case
       ),
     ];

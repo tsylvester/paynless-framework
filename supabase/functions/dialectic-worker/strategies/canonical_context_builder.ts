@@ -3,6 +3,7 @@ import { ContributionType, SourceDocument } from '../../dialectic-service/dialec
 import { CanonicalPathParams, FileType } from '../../_shared/types/file_manager.types.ts';
 import { isFileType } from '../../_shared/utils/type-guards/type_guards.file_manager.ts';
 import { deconstructStoragePath } from '../../_shared/utils/path_deconstructor.ts';
+import { DialecticStageSlug } from '../../_shared/types/file_manager.types.ts';
 
 const intermediateFileTypeMap: Partial<Record<FileType, ContributionType>> = {
     [FileType.PairwiseSynthesisChunk]: 'pairwise_synthesis_chunk',
@@ -15,7 +16,7 @@ export function createCanonicalPathParams(
     sourceDocs: SourceDocument[],
     outputType: FileType | ContributionType,
     anchorDoc: SourceDocument | null,
-    stage: ContributionType,
+    stage: DialecticStageSlug,
 ): CanonicalPathParams {
     let resolvedContributionType: ContributionType;
 

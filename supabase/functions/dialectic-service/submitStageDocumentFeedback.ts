@@ -11,6 +11,7 @@ import {
   type DialecticServiceResponse,
   type SubmitStageDocumentFeedbackPayload,
 } from './dialectic.interface.ts';
+import { isDialecticStageSlug, isFileType } from "../_shared/utils/type-guards/type_guards.file_manager.ts";
 
 export interface SubmitStageDocumentFeedbackDeps {
   fileManager: IFileManager;
@@ -43,6 +44,18 @@ export async function submitStageDocumentFeedback(
     deps.logger.warn('Missing required fields in feedback payload.', { payload });
     return {
       error: { message: 'Missing required fields in feedback payload.' },
+    };
+  }
+  if(!isDialecticStageSlug(stageSlug)){
+    deps.logger.warn('Invalid stage slug in feedback payload.', { payload });
+    return {
+      error: { message: 'Invalid stage slug in feedback payload.' },
+    };
+  }
+  if(!isFileType(documentKey)){
+    deps.logger.warn('Invalid document key in feedback payload.', { payload });
+    return {
+      error: { message: 'Invalid document key in feedback payload.' },
     };
   }
 

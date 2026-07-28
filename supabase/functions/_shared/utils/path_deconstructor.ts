@@ -1,15 +1,16 @@
-import { FileType } from '../types/file_manager.types.ts';
+import { DialecticStageSlug, FileType } from '../types/file_manager.types.ts';
 import type { DeconstructedPathInfo } from './path_deconstructor.types.ts';
 import { isContributionType } from './type_guards.ts';
+import { isCompressionHistoryRole } from './type-guards/type_guards.file_manager.ts';
 
-export function mapDirNameToStageSlug(dirName: string): string {
+export function mapDirNameToStageSlug(dirName: string): DialecticStageSlug | string {
   const lowerCaseDirName = dirName.toLowerCase();
   switch (lowerCaseDirName) {
-    case '1_thesis': return 'thesis';
-    case '2_antithesis': return 'antithesis';
-    case '3_synthesis': return 'synthesis';
-    case '4_parenthesis': return 'parenthesis';
-    case '5_paralysis': return 'paralysis';
+    case '1_thesis': return DialecticStageSlug.Thesis;
+    case '2_antithesis': return DialecticStageSlug.Antithesis;
+    case '3_synthesis': return DialecticStageSlug.Synthesis;
+    case '4_parenthesis': return DialecticStageSlug.Parenthesis;
+    case '5_paralysis': return DialecticStageSlug.Paralysis;
     default: return lowerCaseDirName;
   }
 }
@@ -645,7 +646,16 @@ export function deconstructStoragePath(
     info.stageDirName = matches[4];
     info.stageSlug = mapDirNameToStageSlug(info.stageDirName);
     const sourceBasename = matches[5];
-    if (!/^source_[0-9a-f]{8}$/.test(sourceBasename)) {
+    const historyMatch = sourceBasename.match(/^message_([^_]+)_(.+)$/);
+    if (historyMatch && isCompressionHistoryRole(historyMatch[1])) {
+      info.sourceType = 'history';
+      info.role = historyMatch[1];
+      info.sourceId = historyMatch[2];
+    } else if (sourceBasename.endsWith('_feedback') && sourceBasename.length > '_feedback'.length) {
+      info.sourceType = 'feedback';
+      info.documentKey = sourceBasename.slice(0, -'_feedback'.length);
+    } else {
+      info.sourceType = 'resource';
       info.documentKey = sourceBasename;
     }
     info.targetKey = matches[6];

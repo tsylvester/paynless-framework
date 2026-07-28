@@ -2,7 +2,7 @@
 import { assertEquals, assertExists, assertThrows } from "jsr:@std/assert";
 import { createCanonicalPathParams } from "./canonical_context_builder.ts";
 import { SourceDocument, ContributionType } from "../../dialectic-service/dialectic.interface.ts";
-import { FileType } from "../../_shared/types/file_manager.types.ts";
+import { DialecticStageSlug, FileType } from "../../_shared/types/file_manager.types.ts";
 
 const mockSourceDocument1: SourceDocument = {
     model_name: 'a-model',
@@ -153,7 +153,7 @@ Deno.test('createCanonicalPathParams correctly sorts model slugs', () => {
         mockSourceDocument2,
         mockSourceDocument3,
     ];
-    const stage: ContributionType = 'thesis';
+    const stage: DialecticStageSlug = DialecticStageSlug.Thesis;
     const params = createCanonicalPathParams(sourceDocs, 'thesis', mockSourceDocument1, stage);
 
     assertEquals(params.sourceModelSlugs, ['a-model', 'b-model', 'c-model']);
@@ -165,7 +165,7 @@ Deno.test('createCanonicalPathParams handles missing model names', () => {
         mockSourceDocument2,
         mockSourceDocument3,
     ];
-    const stage: ContributionType = 'thesis';
+    const stage: DialecticStageSlug = DialecticStageSlug.Thesis;
     const params = createCanonicalPathParams(sourceDocs, 'thesis', mockSourceDocument2, stage);
 
     // With universal extraction, all docs extract from filename when model_name is missing
@@ -178,7 +178,7 @@ Deno.test('createCanonicalPathParams identifies anchor document properties', () 
         mockAntithesisDocument,
     ];
     const anchorDoc = mockSourceDocument1;
-    const stage: ContributionType = 'synthesis';
+    const stage: DialecticStageSlug = DialecticStageSlug.Synthesis;
     const params = createCanonicalPathParams(sourceDocs, 'pairwise_synthesis_chunk', anchorDoc, stage);
 
     assertExists(params.sourceAnchorType);
@@ -194,7 +194,7 @@ Deno.test('createCanonicalPathParams identifies paired document properties', () 
         mockAntithesisDocument, // The paired document
     ];
     const anchorDoc = mockSourceDocument1;
-    const stage: ContributionType = 'synthesis';
+    const stage: DialecticStageSlug = DialecticStageSlug.Synthesis;
     const params = createCanonicalPathParams(sourceDocs, 'pairwise_synthesis_chunk', anchorDoc, stage);
 
     assertExists(params.pairedModelSlug);
@@ -206,7 +206,7 @@ Deno.test('createCanonicalPathParams identifies anchor document attempt count', 
         mockSourceDocument1,
     ];
     const anchorDoc = mockSourceDocument1;
-    const stage: ContributionType = 'antithesis';
+    const stage: DialecticStageSlug = DialecticStageSlug.Antithesis;
     const params = createCanonicalPathParams(sourceDocs, 'antithesis', anchorDoc, stage);
 
     assertExists(params.sourceAttemptCount);
@@ -215,7 +215,7 @@ Deno.test('createCanonicalPathParams identifies anchor document attempt count', 
 
 Deno.test('createCanonicalPathParams handles empty source docs array', () => {
     const sourceDocs: SourceDocument[] = [];
-    const stage: ContributionType = 'thesis';
+    const stage: DialecticStageSlug = DialecticStageSlug.Thesis;
     const params = createCanonicalPathParams(sourceDocs, 'thesis', mockSourceDocument1, stage);
 
     assertEquals(params.sourceModelSlugs, undefined);
@@ -226,21 +226,21 @@ Deno.test('createCanonicalPathParams handles empty source docs array', () => {
 
 Deno.test('createCanonicalPathParams uses stage for specific FileType when appropriate', () => {
     const sourceDocs: SourceDocument[] = [mockSourceDocument1];
-    const stage: ContributionType = 'antithesis'; // The stage should dictate the type
+    const stage: DialecticStageSlug = DialecticStageSlug.Antithesis; // The stage should dictate the type
     const params = createCanonicalPathParams(sourceDocs, FileType.business_case, mockSourceDocument1, stage);
     assertEquals(params.contributionType, 'antithesis');
 });
 
 Deno.test('createCanonicalPathParams uses stage for generic FileType', () => {
     const sourceDocs: SourceDocument[] = [mockSourceDocument1];
-    const stage: ContributionType = 'synthesis'; // The stage is the only source of truth here
+    const stage: DialecticStageSlug = DialecticStageSlug.Synthesis; // The stage is the only source of truth here
     const params = createCanonicalPathParams(sourceDocs, FileType.business_case, mockSourceDocument1, stage);
     assertEquals(params.contributionType, 'synthesis');
 });
 
 Deno.test('createCanonicalPathParams preserves intermediate ContributionType regardless of stage', () => {
     const sourceDocs: SourceDocument[] = [mockSourceDocument1, mockAntithesisDocument];
-    const stage: ContributionType = 'synthesis'; // Stage is synthesis
+    const stage: DialecticStageSlug = DialecticStageSlug.Synthesis; // Stage is synthesis
     // But the output type is a specific, non-stage-related intermediate artifact
     const params = createCanonicalPathParams(sourceDocs, FileType.PairwiseSynthesisChunk, mockSourceDocument1, stage);
     assertEquals(params.contributionType, 'pairwise_synthesis_chunk');
@@ -261,7 +261,7 @@ Deno.test('createCanonicalPathParams extracts sourceAnchorModelSlug from HeaderC
         [mockAntithesisHeaderContext],
         FileType.TurnPrompt,
         mockAntithesisHeaderContext,
-        'antithesis'
+        DialecticStageSlug.Antithesis
     );
     
     assertEquals(params.sourceAnchorModelSlug, 'gpt-4');
@@ -282,7 +282,7 @@ Deno.test('createCanonicalPathParams uses model_name for simple HeaderContext wh
         [mockSimpleHeaderContext],
         FileType.TurnPrompt,
         mockSimpleHeaderContext,
-        'thesis'
+        DialecticStageSlug.Thesis
     );
     
     assertEquals(params.sourceAnchorModelSlug, 'gpt-4');
@@ -304,7 +304,7 @@ Deno.test('createCanonicalPathParams extracts sourceAnchorModelSlug from rendere
         [mockRenderedDocument],
         FileType.HeaderContext,
         mockRenderedDocument,
-        'antithesis'
+        DialecticStageSlug.Antithesis
     );
     
     assertExists(params.sourceAnchorModelSlug);
@@ -329,7 +329,7 @@ Deno.test('createCanonicalPathParams extracts sourceAnchorModelSlug from rendere
         [mockRenderedDocument],
         FileType.HeaderContext,
         mockRenderedDocument,
-        'antithesis'
+        DialecticStageSlug.Antithesis
     );
     
     // Should extract 'mock-model' from filename, NOT use 'wrong-model' from model_name
@@ -353,7 +353,7 @@ Deno.test('createCanonicalPathParams extracts sourceAttemptCount from rendered d
         [mockRenderedDocument],
         FileType.HeaderContext,
         mockRenderedDocument,
-        'antithesis'
+        DialecticStageSlug.Antithesis
     );
 
     assertExists(params.sourceAttemptCount);
@@ -376,7 +376,7 @@ Deno.test('createCanonicalPathParams extracts sourceAnchorModelSlug from rendere
         [mockRenderedDocumentFromThesis],
         FileType.HeaderContext,
         mockRenderedDocumentFromThesis,
-        'antithesis'
+        DialecticStageSlug.Antithesis
     );
     
     assertExists(params.sourceAnchorModelSlug);
@@ -403,7 +403,7 @@ Deno.test('createCanonicalPathParams extracts sourceAnchorModelSlug from filenam
         [mockRenderedDocumentFromThesis],
         FileType.HeaderContext,
         mockRenderedDocumentFromThesis,
-        'antithesis'
+        DialecticStageSlug.Antithesis
     );
     
     // Should extract 'gpt-4' from filename, NOT use 'claude' from model_name
@@ -429,7 +429,7 @@ Deno.test('createCanonicalPathParams extracts sourceAnchorModelSlug from filenam
         [mockThesisAnchor],
         'synthesis', // NOT HeaderContext - testing universal extraction
         mockThesisAnchor,
-        'synthesis'
+        DialecticStageSlug.Synthesis
     );
     
     // Should extract 'correct-model' from filename, NOT use 'wrong-model' from model_name
@@ -456,7 +456,7 @@ Deno.test('createCanonicalPathParams extracts sourceAttemptCount from filename w
         [mockAnchor],
         'synthesis', // Any output type
         mockAnchor,
-        'synthesis'
+        DialecticStageSlug.Synthesis
     );
     
     // Should extract attempt count 7 from filename when DB field is undefined
@@ -486,7 +486,7 @@ Deno.test('createCanonicalPathParams throws error when anchor document missing s
                 [mockAnchorWithoutFile],
                 'synthesis',
                 mockAnchorWithoutFile,
-                'synthesis'
+                DialecticStageSlug.Synthesis
             );
         },
         Error,
@@ -502,7 +502,7 @@ Deno.test('createCanonicalPathParams handles null anchorDoc by leaving sourceAnc
         mockSourceDocument1,
         mockSourceDocument2,
     ];
-    const stage: ContributionType = 'thesis';
+    const stage: DialecticStageSlug = DialecticStageSlug.Thesis;
     const params = createCanonicalPathParams(sourceDocs, 'thesis', null, stage);
     
     assertEquals(params.sourceAnchorModelSlug, undefined, 'sourceAnchorModelSlug should be undefined when anchorDoc is null');
@@ -511,7 +511,7 @@ Deno.test('createCanonicalPathParams handles null anchorDoc by leaving sourceAnc
 Deno.test('createCanonicalPathParams handles null anchorDoc with empty sourceDocs array', () => {
     // When anchorDoc is null and sourceDocs is empty, function should return valid result without throwing
     const sourceDocs: SourceDocument[] = [];
-    const stage: ContributionType = 'thesis';
+    const stage: DialecticStageSlug = DialecticStageSlug.Thesis;
     const params = createCanonicalPathParams(sourceDocs, 'thesis', null, stage);
     
     assertEquals(params.sourceModelSlugs, undefined);
@@ -558,7 +558,7 @@ Deno.test('createCanonicalPathParams handles null anchorDoc for THESIS stage', (
     };
     
     const sourceDocs: SourceDocument[] = [seedPromptDoc];
-    const stage: ContributionType = 'thesis';
+    const stage: DialecticStageSlug = DialecticStageSlug.Thesis;
     const params = createCanonicalPathParams(sourceDocs, 'thesis', null, stage);
     
     assertEquals(params.sourceAnchorModelSlug, undefined, 'sourceAnchorModelSlug should be undefined when anchorDoc is null for THESIS stage');

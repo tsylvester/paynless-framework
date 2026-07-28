@@ -16,7 +16,7 @@ import {
 } from '../../types/file_manager.types.ts'
 import { OutputType } from '../../../dialectic-service/dialectic.interface.ts'
 import { StorageError } from '../../../dialectic-service/dialectic.interface.ts'
-import { ServiceError } from '../../types.ts'
+import { ServiceError, Messages } from '../../types.ts'
 import { isRecord, isPostgrestError } from './type_guards.common.ts'
 
 export function isModelContributionContext(
@@ -81,6 +81,7 @@ const RESOURCE_FILE_TYPES_MAP: { [K in ResourceFileTypes]: true } = {
     [FileType.RagContextSummary]: true,
     [FileType.CompressedContext]: true,
     [FileType.CompressedContextRawJson]: true,
+    [FileType.CompressionPrompt]: true,
 };
 
 export function isResourceFileType(value: unknown): value is ResourceFileTypes {
@@ -121,12 +122,20 @@ export function isCompressedContextRawJsonFileType(value: unknown): value is Fil
     return typeof value === 'string' && value === FileType.CompressedContextRawJson;
 }
 
+export function isCompressionPromptFileType(value: unknown): value is FileType.CompressionPrompt {
+    return typeof value === 'string' && value === FileType.CompressionPrompt;
+}
+
 export function isCompressionSourceType(value: unknown): value is CompressionSourceType {
     return typeof value === 'string' && (value === 'contribution' || value === 'resource' || value === 'feedback' || value === 'history');
 }
 
 export function isCompressionMode(value: unknown): value is CompressionMode {
     return typeof value === 'string' && (value === 'json' || value === 'text');
+}
+
+export function isCompressionHistoryRole(value: unknown): value is Messages['role'] {
+    return typeof value === 'string' && (value === 'system' || value === 'user' || value === 'assistant' || value === 'function');
 }
 
 export function isDialecticStageSlug(value: unknown): value is DialecticStageSlug {

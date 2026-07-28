@@ -1,5 +1,5 @@
 import { FileType, type PathContext } from '../types/file_manager.types.ts';
-import { isDocumentKey } from './type-guards/type_guards.file_manager.ts';
+import { isDocumentKey, isCompressionHistoryRole } from './type-guards/type_guards.file_manager.ts';
 import { extractSourceGroupFragment } from './path_utils.ts';
 
 /**
@@ -75,6 +75,7 @@ export function constructStoragePath(context: PathContext): ConstructedPath {
     targetKey,
     sourceType,
     sourceId,
+    role,
     chunkIndex,
     chunkTotal,
   } = context;
@@ -310,14 +311,26 @@ export function constructStoragePath(context: PathContext): ConstructedPath {
         throw new Error(`Required context missing for compressed_context: ${missingFields.join(', ')}.`);
       }
 
+      let sourceBasename: string;
+
       if (sourceType === 'contribution' || sourceType === 'resource') {
         if (!documentKey) {
           throw new Error(`documentKey is required for compressed_context sourceType '${sourceType}'.`);
         }
-      } else if (sourceType === 'feedback' || sourceType === 'history') {
+        sourceBasename = sanitizeForPath(documentKey);
+      } else if (sourceType === 'feedback') {
+        if (!documentKey) {
+          throw new Error(`documentKey is required for compressed_context sourceType '${sourceType}'.`);
+        }
+        sourceBasename = `${sanitizeForPath(documentKey)}_feedback`;
+      } else if (sourceType === 'history') {
         if (!sourceId) {
           throw new Error(`sourceId is required for compressed_context sourceType '${sourceType}'.`);
         }
+        if (!isCompressionHistoryRole(role)) {
+          throw new Error(`role is required for compressed_context sourceType '${sourceType}'.`);
+        }
+        sourceBasename = `message_${role}_${sanitizeForPath(sourceId)}`;
       } else {
         throw new Error(`Unrecognized sourceType '${sourceType}' for compressed_context.`);
       }
@@ -329,9 +342,6 @@ export function constructStoragePath(context: PathContext): ConstructedPath {
         throw new Error('chunkIndex must be >= 1 and chunkTotal must be >= chunkIndex for compressed_context.');
       }
 
-      const sourceBasename = sourceType === 'contribution' || sourceType === 'resource'
-        ? sanitizeForPath(documentKey!)
-        : `source_${generateShortId(sourceId!)}`;
       const targetKeySanitized = sanitizeForPath(targetKey!);
       const chunkSuffix = chunkIndex !== undefined ? `_chunk_${chunkIndex}of${chunkTotal}` : '';
       if (fileType === FileType.CompressedContextRawJson) {

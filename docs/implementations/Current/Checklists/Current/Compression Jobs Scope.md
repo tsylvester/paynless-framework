@@ -183,7 +183,7 @@ ordinal.
 | WS-B Renderer module extraction | WS-R | five renderer modules + the resource upload arm exist with their own tests; monolith and enqueueRenderJob untouched and still serving production |
 | WS-N Renderer relocation + RENDER dispatch | WS-B | monolith deleted, renderer modular; compressed RENDER rows dispatchable and processable end to end; nothing dispatches one yet |
 | WS-I Compression source identity | WS-N | every victim has a semantically named canonical path that round-trips losslessly; project clone carries it, GitHub sync ignores it; no writer exists yet |
-| WS-P COMPRESS response persistence | WS-I | continuation path accepts a COMPRESS job; saveResponse persists COMPRESS raw output, dispatches RENDER for a renderable source and writes the extracted artifact for a text source; no COMPRESS jobs exist yet |
+| WS-P COMPRESS response persistence | WS-I | continuation path accepts a COMPRESS job; every COMPRESS prompt persists as a first-class artifact; saveResponse persists COMPRESS raw output, dispatches RENDER for a renderable source and writes the extracted artifact for a text source; no COMPRESS jobs exist yet |
 | WS-D Orchestration cutover + WS-X RAG removal | WS-P | Compression loop live; RAG core gone; every production tokenizer real; full-chain test green |
 
 Workplan-file split: `Compression Jobs.md` carries WS-0, WS-C, WS-R, WS-B and is retired;
@@ -544,7 +544,7 @@ This workstream lands decision 6's naming and identity split before anything con
 `saveResponse` (WS-P) writes at these paths, and `applyCompressionOverlay` (WS-D) reads at
 them, so both are blocked on it.
 
-Strict node order: `path_constructor` → `path_deconstructor` → `cloneProject` → `syncToGitHub` → `enqueueCompressJobs` → `buildUploadContext`. `buildUploadContext` sits last because its resource params are sourced 1:1 from `DialecticCompressJobPayload`, so the payload census `enqueueCompressJobs` owns is its upstream definition even though there is no import edge between them. The two service files sit here because they are the only callers that
+Strict node order: `path_constructor` → `path_deconstructor` → `cloneProject` → `enqueueCompressJobs` → `buildUploadContext`. `buildUploadContext` sits last because its resource params are sourced 1:1 from `DialecticCompressJobPayload`, so the payload census `enqueueCompressJobs` owns is its upstream definition even though there is no import edge between them. The two service files sit here because they are the only callers that
 meet a compressed path without expecting one: every other `deconstructStoragePath` caller reads
 `dialectic_contributions` (`findSourceDocuments`, `selectAnchorForCanonicalPathParams`,
 `strategies/helpers`, `canonical_context_builder`, both planners, `assembleContributionChain`),
@@ -564,47 +564,96 @@ type is forced to change.
   holds both a document and the user's feedback on that same document (Synthesis takes
   `business_case_critique` and its feedback; Parenthesis takes `product_requirements` and its
   feedback), so without it the two collide on one path.
-  Support: path_constructor.test.ts, type_guards.file_manager tests.
+  RIDES HERE: `FileType.CompressionPrompt = 'compression_prompt'` (ResourceFileTypes, adjacent to
+  the compression pair) and its own arm in `constructStoragePath`. Every prompt a COMPRESS job
+  sends is an artifact of that job and has to be addressable, and no existing arm can name one:
+  `TurnPrompt` requires `documentKey` and reads no compression identity at all, so a `'history'`
+  victim throws for want of a documentKey, and a document victim and its own feedback collide on
+  one path — the same collision the `_feedback` suffix exists to prevent, reappearing for the
+  prompt. Arm: `{stageRootPath}/_work/prompts`, file name
+  `{modelSlug}_{attemptCount}_{sourceBasename}_compressed_for_{targetKey}` plus the chunk suffix
+  when chunked, plus `_continuation_{turnIndex}` when `isContinuation`, ending `_prompt.md`.
+  Required members are `stageRootPath`, `targetKey`, `sourceType`, `modelSlug`, `attemptCount`,
+  the same per-`sourceType` identity the artifact arms require, and `turnIndex` when
+  `isContinuation` is true. `sourceBasename` is computed ONCE and shared by the artifact arms and
+  this one, never duplicated, so a prompt is exactly as distinct as the artifact it produces.
+  Consumed by `assembleCompressionPrompt` (WS-R), which persists the first-pass prompt, and by
+  `assembleContinuationPrompt`'s COMPRESS branch (WS-P), which persists the continuation prompt
+  at the same identity with `isContinuation: true`. Both take `modelSlug` from
+  `DialecticCompressJobPayload.model_slug`, which every COMPRESS row carries because
+  `enqueueCompressJobs` copies it from the parent EXECUTE payload's own `model_slug`. No
+  consumer on the compression path queries `ai_providers` for a slug: the payload is handed the
+  value precisely so the consumer does not have to fetch it, and a round-trip for data already
+  in hand is a defect wherever it appears.
+  Support: path_constructor.test.ts, type_guards.file_manager tests (`isCompressionPromptFileType`
+  alongside the two existing compression FileType guards).
 * ✏️ `supabase/functions/_shared/utils/path_deconstructor.ts` — restore the lossless
   round-trip WS-C requires. The `source_<8 hex>` carve-out that currently suppresses
   `documentKey` is deleted; `documentKey` is recovered for every document-identity form, the
   `_feedback` suffix recovers `sourceType: 'feedback'`, and a history path recovers its real
   `sourceId` and `role`. `DeconstructedPathInfo` gains the `sourceType`/`sourceId`/`role`
   members it lacks today — without them the round-trip cannot be expressed, let alone lossless.
-  Support: path_deconstructor.test.ts (round-trip case per source form).
+  RIDES HERE: a `compressionPromptPatternString` arm for `FileType.CompressionPrompt`, and it is
+  an ORDERING fix as much as a parsing one. A compression prompt lands at
+  `_work/prompts/{modelSlug}_{attemptCount}_{sourceBasename}_compressed_for_{targetKey}…_prompt.md`,
+  and TWO existing patterns already match that string. `turnPromptPatternString` matches it with
+  `documentKey` swallowing the entire `{sourceBasename}_compressed_for_{targetKey}` stem, and
+  `compressedContentPatternString` matches it with `sourceBasename` swallowing the `prompts/`
+  segment and `targetKey` swallowing a trailing `_prompt`. Neither errors — each returns a
+  confidently wrong identity, which `cloneProject` then writes to a wrong path inside a clone that
+  reports success. The new pattern is therefore checked BEFORE both, and it recovers `targetKey`,
+  the per-form source identity through the SAME three-arm basename interpretation the artifact
+  branch uses, plus `modelSlug`, `attemptCount`, the chunk pair, and `isContinuation`/`turnIndex`.
+  Support: path_deconstructor.test.ts (round-trip case per source form, for the artifact pair AND
+  the prompt; plus a case pinning that a compression prompt does not deconstruct as a turn prompt).
 * ✏️ `supabase/functions/dialectic-service/cloneProject.ts` — carry compression identity through
   the clone's deconstruct → reconstruct round-trip. This function deconstructs EVERY asset it
   clones, throws on a deconstruction error, and rebuilds a `PathContext` from the recovered
-  members to write the copy. That `PathContext` literal carries no `targetKey`, `sourceType`,
-  `sourceId`, or `role`, so a `CompressedContext` or `CompressedContextRawJson` asset — both
-  `dialectic_project_resources` rows, both cloned — reaches `constructStoragePath` with a
-  compression fileType and none of its required members and throws
-  `Required context missing for compressed_context`. The literal gains the four members, sourced
-  from the deconstructed info the WS-I `path_deconstructor` node makes recoverable. This is the
-  concrete consumer that makes the lossless round-trip load-bearing rather than theoretical.
+  members to write the copy. A `CompressedContext` or `CompressedContextRawJson` asset — both
+  `dialectic_project_resources` rows, both swept by the unfiltered resource query, both cloned —
+  hits two stops, and either one throws inside the asset loop's `try`, driving the catch's
+  rollback and DELETING the partially cloned project. FIRST: `buildUploadContextForAsset`'s
+  resources arm admits a closed list (`InitialUserPrompt`, `GeneralResource`, `PlannerPrompt`,
+  `ProjectReadme`, `PendingFile`, `CurrentFile`, `CompleteFile`) and throws
+  `Asset from resources table has unexpected fileType: compressed_context` before any path is
+  constructed; the arm admits all THREE compression FileTypes — `CompressedContext`,
+  `CompressedContextRawJson` and `CompressionPrompt` — each already a `ResourceFileTypes` member
+  that `ResourceUploadContext` accepts, so no type changes. SECOND, reachable only once the arm
+  admits the type: the `PathContext` literal carries no `targetKey` and no `sourceType`, so
+  `constructStoragePath` throws `Required context missing for compressed_context`. The literal
+  gains SIX members — `targetKey`, `sourceType`, `sourceId`, `role`, `chunkIndex`, `chunkTotal` —
+  sourced from the deconstructed info the WS-I `path_deconstructor` node makes recoverable.
+  The chunk pair is the load-bearing half: it is optional and both-or-neither, so dropping it
+  does not throw — it constructs the FINAL artifact's path, so every retained map-reduce chunk
+  clones on top of its victim's final artifact and on top of the other chunks, inside a clone
+  that reports success. A throw loses the clone; this loses data inside a clone that looks
+  healthy. This is the concrete consumer that makes the lossless round-trip load-bearing rather
+  than theoretical.
   Support: cloneProject tests (a clone whose session carries a compressed artifact of each
-  source form round-trips to the same relative path under the new project id).
-* ✏️ `supabase/functions/dialectic-service/syncToGitHub.ts` — exclude compression artifacts from
-  the sync. This function sweeps every `dialectic_project_resources` row and returns a 500 for
-  the WHOLE sync when a row's path yields no `documentKey`, then again when it yields no
-  `modelSlug`. A compressed artifact has no `modelSlug` in any form, and a history artifact has
-  no `documentKey` — so once any compression has run, a project's GitHub sync fails outright.
-  Compression artifacts are machine-only `_work` intermediates and are never user-facing
-  (decision 6), so they are filtered out before the parse rather than parsed as deliverables.
-  Filter on `resource_type` against the two compression FileTypes — the same column
-  `gatherInputsForStage` already filters on, and the one `file_manager` defaults from
-  `pathContext.fileType`. Support: syncToGitHub tests (a session holding compressed artifacts of
-  each source form syncs its selected documents and fails on none of them).
+  source form, including a chunked intermediate, round-trips to the same relative path under the
+  new project id).
 * ✏️ `supabase/functions/dialectic-worker/enqueueCompressJobs/enqueueCompressJobs.ts` — the
   victim payload and `DialecticCompressJobPayload` follow the identity split: a `'feedback'`
   victim is keyed by `documentKey`, not `sourceId`, and a `'history'` victim carries `role`
   alongside `sourceId`. `isDialecticCompressJobPayload` moves the feedback arm with it and
   gains the `role` requirement on the history arm. Dedup layer 1's canonical-path recomputation
-  is unchanged in shape — it passes the victim's own identity to `constructStoragePath` exactly
-  as it does now, and picks up the new naming for free.
+  gains role on its pathContext literal; the naming itself still comes free from the constructor.
+  `DialecticCompressJobPayload` ALSO gains `continuation_count?: number` here, with its guard,
+  builder and case checklist. This module never writes the member — it creates first-dispatch
+  children, which carry no continuation count — but it owns the type, and one source file's
+  changes may not be split across two nodes. `continueJob` (WS-P) is the member's first writer
+  and `processCompressJob` (WS-P) selects continuation assembly on it, so the type must carry it
+  before either is written; landing it in this node puts it one workstream ahead of both.
+  `DialecticCompressJobPayload` ALSO gains a REQUIRED `model_slug: string` here, with its guard,
+  builder and case checklist, and `enqueueCompressJobsParams` gains `modelSlug: string`
+  alongside its existing `modelId`. Unlike `continuation_count`, this module DOES write the
+  member: every child row it inserts carries the parent EXECUTE payload's own `model_slug`,
+  threaded in through params exactly as `modelId` and `walletId` already are. It exists because
+  a `CompressionPrompt` artifact is named `{modelSlug}_{attemptCount}_…` and both prompt
+  assemblers would otherwise have to query `ai_providers` for a value the parent already holds.
   Support: enqueueCompressJobs tests, interface, guards, mock.
- * ✏️ `supabase/functions/_shared/utils/buildUploadContext/buildUploadContext.ts` — the resource arm's params follow the identity split. `BuildUploadContextResourceParams` requires `documentKey` for `'contribution'`, `'resource'` AND `'feedback'`, narrows `sourceId` to `'history'` alone, and gains `role: Messages['role']` required on that same arm — an explicit per-`sourceType` branch, never an OR-fallback (matching the `path_constructor.ts` rule). Those members flow straight into the compression `PathContext` this arm builds, so the artifact lands at the canonical path `path_constructor.ts` names. This is the sole builder of the compression `ResourceUploadContext` and the only writer path a text-mode victim has: `saveResponse`'s COMPRESS tail (WS-P) persists every feedback and history artifact through it, while `renderDocument`'s CompressedContext case reaches only the `documentKey` arm, because `isRenderCompressedContextParams` narrows `sourceType` to `'contribution' | 'resource'` and a text source is never rendered. Its guards move the feedback arm with them. The contribution arm is unchanged, so every existing caller compiles untouched. Support: buildUploadContext tests, interface, guards, mock.
- * **COMMIT WS-I** — every compression victim has a semantically named canonical path that round-trips losslessly; the upload-context builder that writes at those paths speaks the same identity; project clone carries it and GitHub sync ignores it; no writer of a compressed artifact exists yet, so no production behavior changes.
+* ✏️ `supabase/functions/_shared/utils/buildUploadContext/buildUploadContext.ts` — the resource arm's params follow the identity split. `BuildUploadContextResourceParams` requires `documentKey` for `'contribution'`, `'resource'` AND `'feedback'`, narrows `sourceId` to `'history'` alone, and gains `role: Messages['role']` required on that same arm — an explicit per-`sourceType` branch, never an OR-fallback (matching the `path_constructor.ts` rule). Those members flow straight into the compression `PathContext` this arm builds, so the artifact lands at the canonical path `path_constructor.ts` names. This is the sole builder of the compression `ResourceUploadContext` and the only writer path a text-mode victim has: `saveResponse`'s COMPRESS tail (WS-P) persists every feedback and history artifact through it, while `renderDocument`'s CompressedContext case reaches only the `documentKey` arm, because `isRenderCompressedContextParams` narrows `sourceType` to `'contribution' | 'resource'` and a text source is never rendered. Its guards move the feedback arm with them. The contribution arm is unchanged, so every existing caller compiles untouched. Support: buildUploadContext tests, interface, guards, mock.
+* **COMMIT WS-I** — every compression victim has a semantically named canonical path that round-trips losslessly; the upload-context builder that writes at those paths speaks the same identity; project clone carries it and GitHub sync ignores it; no writer of a compressed artifact exists yet, so no production behavior changes.
 
 ## WS-P — COMPRESS RESPONSE PERSISTENCE (depends WS-I)
 The COMPRESS stream callback becomes a real terminal step. Decision 8 routes an incomplete
@@ -653,7 +702,12 @@ Out of scope: removing the `continueUntilComplete` member from the payload, its 
 mocks, or the control that writes it.
 
 Strict node order: `determineContinuation` → `continueJob` → `assembleContinuationPrompt` →
-`processCompressJob` → `processJob` → `saveResponse`. No composition-root touch:
+`assembleCompressionPrompt` → `enqueueModelCall` → `processCompressJob` → `processJob` →
+`saveResponse`. The two added producers both sit before `processCompressJob`, which consumes
+them: it reads `assembleCompressionPrompt`'s changed return and calls `enqueueModelCall` with the
+widened `output_type`. Neither is a WS-R change — WS-R is closed; each is a new node in this
+workstream against a file that workstream built, exactly as WS-I takes new nodes against
+`path_constructor.ts` and `enqueueCompressJobs.ts`. No composition-root touch:
 `saveResponse` gains no dependency, the three renderer deps it sheds were never wired into
 `netlifyResponse/index.ts`, and `IPromptAssembler` already declares
 `assembleContinuationPrompt`, so the facade and both composition roots are untouched — the only
@@ -668,7 +722,24 @@ wiring edit is `processJob.ts`, which builds `ProcessCompressJobDeps` inline.
   `DetermineContinuationParams` retains the `continueUntilComplete` member so callers compile;
   the function does not branch on it. The two cases in `determineContinuation.test.ts` that pin
   flag-gated behavior are rewritten to assert the unconditional behavior.
-  Support: determineContinuation tests.
+  Support: the module's FULL support system, because the new member is required and puts a new
+  check in a guard whose cases are unproven today — `determineContinuation.interface.test.ts`
+  (the seventh member's contract, by typed assignment); `determineContinuation.mock.ts` (NEW —
+  the module has no mock file, and the four-symbol builder/invalidator pair is owed to each
+  owned object type, `DetermineContinuationParams` and `DetermineContinuationResult`);
+  `determineContinuation.interface.guards.test.ts` (NEW — the case checklist for the member
+  this entry introduces, fixtures drawn from those builders and invalidators, never
+  hand-rolled, and it does not retrofit checklists for the six pre-existing members);
+  `determineContinuation.interface.guards.ts` (a presence-only check, the member being
+  `unknown`); and `determineContinuation.test.ts`. The mock precedes the guard test that
+  consumes it.
+  RIDES HERE: `dialectic.mock.ts` gains `buildContextForDocument` and
+  `invalidateContextForDocument`. `contextForDocuments` is `ContextForDocument[]`, an imported
+  type whose builders belong to its home package and may never be hand-built or locally
+  mocked, and no builder for it exists anywhere in the repo — so the mock file above cannot be
+  authored without them. They ride this entry rather than taking an entry of their own: they
+  exist solely so this module's builder can populate one member, and no other node in the epic
+  consumes them.
 * ✏️ `supabase/functions/dialectic-worker/continueJob.ts` — accept a COMPRESS job. The function
   requires `payload.output_type` passing `isModelContributionFileType`, requires
   `payload.user_jwt` and `payload.continueUntilComplete`, and takes a
@@ -703,8 +774,36 @@ wiring edit is `processJob.ts`, which builds `ProcessCompressJobDeps` inline.
   and `assembleChunks` — recipe-stage context a COMPRESS job has none of. The deps shape
   accommodates a caller that supplies only what the COMPRESS branch reads, and the EXECUTE/PLAN
   branch continues to require every member it reads today. The EXECUTE/PLAN branch is otherwise
-  unchanged.
+  unchanged. It persists through the `fileManager.uploadAndRegisterFile` call and the FileType
+  switch it ALREADY owns — the switch that selects `PlannerPrompt` for a PLAN job and
+  `TurnPrompt` otherwise gains a COMPRESS arm selecting `CompressionPrompt`. No second
+  persistence site, and no hand-built second upload context.
   Support: assembleContinuationPrompt tests.
+* ✏️ `supabase/functions/_shared/prompt-assembler/assembleCompressionPrompt/assembleCompressionPrompt.ts`
+  — persist the prompt it renders, as every other `IPromptAssembler` member already does. Today it
+  loads its template, validates params and payload, renders through `deps.renderPromptFn` and
+  returns a bare `{ prompt }`; it holds no `fileManager` and no `constructStoragePath`, and
+  `processCompressJob` puts that string straight into `chatApiRequest.message` with
+  `promptId: '__none__'`. A COMPRESS job's prompt is therefore the only prompt in the pipeline
+  with no artifact and no provenance, and `FileType.CompressionPrompt` would have no producer.
+  It persists as `CompressionPrompt` at the canonical path the WS-I `path_constructor` node
+  defines, through the same `uploadAndRegisterFile` call its sibling assemblers use, and its
+  success arm becomes `AssembledPrompt` (`{ promptContent, source_prompt_resource_id }`), so the
+  facade method, `IPromptAssembler`, and the `Error` arm all keep the shapes the other assemblers
+  have. Deps gain `fileManager` and `constructStoragePath`; params gain the `modelSlug`, sourced
+  from the COMPRESS payload's own `model_slug`, which every child row carries because
+  `enqueueCompressJobs` copies it from the parent. `processCompressJob` forwards that member and
+  resolves no provider row for it: the payload was given the slug so that no consumer on this
+  path has to fetch one.
+  Support: assembleCompressionPrompt tests, interface, mock.
+* ✏️ `supabase/functions/dialectic-worker/enqueueModelCall/enqueueModelCall.ts` — widen the
+  `output_type` guard to accept `FileType.CompressedContextRawJson` alongside
+  `FileType.CompressedContext`. The model call's output IS the raw response: `saveResponse`
+  persists it as `CompressedContextRawJson` under `_work/raw_responses` and a RENDER job writes
+  the `CompressedContext` markdown (decision 8), so the enqueue must declare the raw type. The
+  guard admits contribution types plus `isCompressedContextFileType` only, and
+  `isCompressedContextRawJsonFileType` is already exported from `type_guards.file_manager.ts`
+  for it to reuse. Support: enqueueModelCall.test.ts.
  * ✏️ `supabase/functions/dialectic-worker/processCompressJob/processCompressJob.ts` — route a continuation job to continuation assembly, and carry the victim's full identity into dedup layer 2. The function calls `assembleCompressionPrompt` unconditionally, which rebuilds the original compression prompt from the payload's `content`, so a continuation job re-compresses its source from scratch and discards the partial output that caused the continuation. On `continuation_count` greater than zero the function calls `assembleContinuationPrompt` instead, passing the deps that function's COMPRESS branch requires, and enqueues the model call with the returned prompt; on zero, or absent, it calls `assembleCompressionPrompt` as it does now. The window assertion, the recursion guard, dedup layer 2, and the `output_type: FileType.CompressedContextRawJson` enqueue apply identically to both branches — a continuation call that does not fit the model window is the same hard, non-retriable failure a first call is.
  Dedup layer 2's `PathContext` literal carries `documentKey` for a `'feedback'` victim and `role` alongside `sourceId` for a `'history'` victim, sourced from `DialecticCompressJobPayload` per WS-I's identity split. The literal carries `sourceType`/`documentKey`/`sourceId` alone today, so a history victim throws inside the canonical-path construction and returns a non-retriable error before the job can spend anything. It lands here rather than in WS-I because nothing reaches it earlier: no production path dispatches a COMPRESS job until WS-D's cutover, and every payload in `processCompressJob`'s own suites is `sourceType: 'contribution'` — `'history'` appears only as an unexercised member of a test helper's parameter type. WS-P precedes WS-D, so the fix lands before the gap is reachable, and `processCompressJob` keeps one node for one file.
  `processCompressJob` gains a bound `assembleContinuationPrompt` dep alongside `assembleCompressionPrompt`.
@@ -714,8 +813,10 @@ wiring edit is `processJob.ts`, which builds `ProcessCompressJobDeps` inline.
   case builds `ProcessCompressJobDeps` inline, binding `ctx.promptAssembler.assembleCompressionPrompt`
   into a closure; it binds `ctx.promptAssembler.assembleContinuationPrompt` the same way and adds
   it to the literal. `ctx.promptAssembler` is typed `IPromptAssembler`, which already declares the
-  method, so no facade, context, or composition-root edit is required. The `EXECUTE`, `PLAN`, and
-  `RENDER` cases are unchanged.
+  method, so no facade, context, or composition-root edit is required. The
+  `assembleCompressionPrompt` closure additionally supplies the `fileManager` and
+  `constructStoragePath` that node adds to its deps, both already on `ctx`. The `EXECUTE`, `PLAN`,
+  and `RENDER` cases are unchanged.
   Support: processJob tests.
 * ✏️ `supabase/functions/dialectic-worker/saveResponse/saveResponse.ts` — a COMPRESS response
   is handled through the same path an EXECUTE response takes, diverging only at the tail. Route
@@ -724,7 +825,12 @@ wiring edit is `processJob.ts`, which builds `ProcessCompressJobDeps` inline.
   malformed or empty output (shared with EXECUTE). For a structured (`mode:'json'`) source,
   verify completeness against the source via `determineContinuation` — an incomplete result
   continues via the ordinary continuation path, it is not a failure; a `mode:'text'` source
-  (feedback/history) has no key structure to verify and does not continue. Persist the completed
+  (feedback/history) has no key structure to verify and does not continue. This file holds the
+  ONLY `determineContinuation({ ... })` literal in the repo — every other consumer holds the
+  function itself — so this node supplies the required `sourceObject` member that entry adds:
+  the parsed source object from the COMPRESS payload's `content` on the COMPRESS path, and
+  `undefined` on the EXECUTE path, whose own `documentKey`/`contextForDocuments` comparison is
+  unchanged. Both paths reach the one call site, so both populate the member explicitly. Persist the completed
   compressed response as `FileType.CompressedContextRawJson` through the source's own
   upload-context arm (`buildUploadContext`'s resource arm) at the canonical
   `_work/raw_responses` path from WS-C, via `fileManager.uploadAndRegisterFile(context)`,
@@ -988,9 +1094,11 @@ TYPE OWNERSHIP (module-first; owner file → landing node):
     sibling jobs; this function recomputes the victim's canonical path and re-checks)
   - Params `{ dbClient, parentJob: DialecticJobRow, sessionId, projectId,
     stageSlug: DialecticStageSlug, targetKey: ModelContributionFileTypes,
-    iterationNumber, modelId, walletId, modelConfig, tokenizerDeps }`
+    iterationNumber, modelId, modelSlug, walletId, modelConfig, tokenizerDeps }`
     (`stageSlug`/`targetKey` describe the CONSUMING stage/schema — the compression target;
-    `modelId`/`walletId` are the parent's own, propagated to every child; `parentJob` supplies
+    `modelId`/`modelSlug`/`walletId` are the parent's own, propagated to every child —
+    `modelSlug` is the parent EXECUTE payload's `model_slug`, threaded through so no consumer
+    of a COMPRESS row ever queries `ai_providers` for it; `parentJob` supplies
     `parent_job_id`, `is_test_job`, and `user_id` for the child rows)
   - Payload `{ victim: { mode: CompressionMode, content, sourceType: CompressionSourceType,
     sourceId?, role?, documentKey?: FileType, docType?: ModelContributionFileTypes,
@@ -1008,10 +1116,14 @@ TYPE OWNERSHIP (module-first; owner file → landing node):
   enqueueCompressJobs node):
   `{ job_type:'COMPRESS', sessionId, projectId, stageSlug: DialecticStageSlug,
   targetKey: ModelContributionFileTypes, iterationNumber, model_id (parent's),
-  mode: CompressionMode, content, sourceType, sourceId?, role?, documentKey?: FileType,
-  docType?: ModelContributionFileTypes, sourceStageSlug?: DialecticStageSlug,
-  chunk_index?, chunk_total?, continuation_count?, walletId, user_id }` — `chunk_index`/
-  `chunk_total` are optional (present only for map-reduce chunk children); `continuation_count`
+  model_slug (parent's), mode: CompressionMode, content, sourceType, sourceId?, role?,
+  documentKey?: FileType, docType?: ModelContributionFileTypes,
+  sourceStageSlug?: DialecticStageSlug,
+  chunk_index?, chunk_total?, continuation_count?, walletId, user_id }` — `model_slug` is
+  REQUIRED and is the parent EXECUTE payload's own, copied onto every child: it is what
+  `assembleCompressionPrompt` and `assembleContinuationPrompt` name their `CompressionPrompt`
+  artifact with, and carrying it removes the only reason either would touch `ai_providers`;
+  `chunk_index`/`chunk_total` are optional (present only for map-reduce chunk children); `continuation_count`
   is optional (present only on a continuation row, and the member `processCompressJob` selects
   continuation assembly on); source identity is required per `sourceType` exactly as the victim
   payload above requires it (`'contribution'|'resource'|'feedback'` → `documentKey`;

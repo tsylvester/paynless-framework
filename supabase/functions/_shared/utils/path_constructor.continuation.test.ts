@@ -3,7 +3,7 @@ import {
   assert,
 } from 'https://deno.land/std@0.177.0/testing/asserts.ts';
 import { constructStoragePath, generateShortId } from './path_constructor.ts';
-import { FileType, PathContext } from '../types/file_manager.types.ts';
+import { FileType, PathContext, DialecticStageSlug } from '../types/file_manager.types.ts';
 
 const projectId = 'project-uuid-cont';
 const sessionId = 'session-uuid-4567890';
@@ -18,11 +18,11 @@ Deno.test('HeaderContext and SynthesisHeaderContext continuation suffix', async 
       projectId,
       sessionId,
       iteration,
-      stageSlug: 'antithesis',
+      stageSlug: DialecticStageSlug.Antithesis,
       sourceAnchorModelSlug: 'claude-3-opus',
       modelSlug,
       attemptCount,
-      documentKey: 'header_context',
+      documentKey: FileType.HeaderContext,
       fileType: FileType.HeaderContext,
       isContinuation: true,
       turnIndex: 3,
@@ -40,10 +40,10 @@ Deno.test('HeaderContext and SynthesisHeaderContext continuation suffix', async 
       projectId,
       sessionId,
       iteration,
-      stageSlug: 'thesis',
+      stageSlug: DialecticStageSlug.Thesis,
       modelSlug,
       attemptCount,
-      documentKey: 'header_context',
+      documentKey: FileType.HeaderContext,
       fileType: FileType.HeaderContext,
       isContinuation: true,
       turnIndex: 2,
@@ -61,11 +61,11 @@ Deno.test('HeaderContext and SynthesisHeaderContext continuation suffix', async 
       projectId,
       sessionId,
       iteration,
-      stageSlug: 'antithesis',
+      stageSlug: DialecticStageSlug.Antithesis,
       sourceAnchorModelSlug: 'claude-3-opus',
       modelSlug,
       attemptCount,
-      documentKey: 'header_context',
+      documentKey: FileType.HeaderContext,
       fileType: FileType.HeaderContext,
       isContinuation: false,
     };
@@ -82,10 +82,10 @@ Deno.test('HeaderContext and SynthesisHeaderContext continuation suffix', async 
       projectId,
       sessionId,
       iteration,
-      stageSlug: 'thesis',
+      stageSlug: DialecticStageSlug.Thesis,
       modelSlug,
       attemptCount,
-      documentKey: 'header_context',
+      documentKey: FileType.HeaderContext,
       fileType: FileType.HeaderContext,
     };
     const { fileName } = constructStoragePath(context);
@@ -101,7 +101,7 @@ Deno.test('HeaderContext and SynthesisHeaderContext continuation suffix', async 
       projectId,
       sessionId,
       iteration,
-      stageSlug: 'synthesis',
+      stageSlug: DialecticStageSlug.Synthesis,
       modelSlug,
       attemptCount,
       fileType: FileType.SynthesisHeaderContext,
@@ -125,7 +125,7 @@ Deno.test('HeaderContext and SynthesisHeaderContext continuation suffix', async 
       projectId,
       sessionId,
       iteration,
-      stageSlug: 'synthesis',
+      stageSlug: DialecticStageSlug.Synthesis,
       modelSlug,
       attemptCount,
       fileType: FileType.SynthesisHeaderContext,

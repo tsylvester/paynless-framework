@@ -27,8 +27,9 @@ import { IJobContext, JobContextParams } from './createJobContext/JobContext.int
 import { createMockJobContextParams } from './createJobContext/JobContext.mock.ts';
 import { IPromptAssembler } from '../_shared/prompt-assembler/prompt-assembler.interface.ts';
 import { IFileManager } from '../_shared/types/file_manager.types.ts';
+import { DialecticStageSlug } from '../_shared/types/file_manager.types.ts';
 
-export const defaultStepSlug = 'thesis';
+export const defaultStepSlug = DialecticStageSlug.Thesis;
 
 // Deterministic valid-hex UUIDs for processSimpleJob mock fixtures.
 // Each encodes the entity name using only hex-safe letters (a-f) and digits.
