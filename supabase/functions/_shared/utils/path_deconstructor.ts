@@ -15,6 +15,24 @@ export function mapDirNameToStageSlug(dirName: string): DialecticStageSlug | str
   }
 }
 
+function interpretCompressionSourceBasename(
+  sourceBasename: string,
+  info: Partial<DeconstructedPathInfo>,
+): void {
+  const historyMatch = sourceBasename.match(/^message_([^_]+)_(.+)$/);
+  if (historyMatch && isCompressionHistoryRole(historyMatch[1])) {
+    info.sourceType = 'history';
+    info.role = historyMatch[1];
+    info.sourceId = historyMatch[2];
+  } else if (sourceBasename.endsWith('_feedback') && sourceBasename.length > '_feedback'.length) {
+    info.sourceType = 'feedback';
+    info.documentKey = sourceBasename.slice(0, -'_feedback'.length);
+  } else {
+    info.sourceType = 'resource';
+    info.documentKey = sourceBasename;
+  }
+}
+
 export function deconstructStoragePath(
   params: { storageDir: string; fileName: string; dbOriginalFileName?: string },
 ): DeconstructedPathInfo {
@@ -58,6 +76,7 @@ export function deconstructStoragePath(
   const reducedSynthesisPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/_work/(?:raw_responses/)?([^_]+)_reducing_([^_]+)_by_([^_]+)_(\\d+)_reduced_synthesis(?:_raw\\.json|\\.md)$";
   const ragSummaryPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/_work/([^_]+)_compressing_(.+)_rag_summary\\.txt$";
   const compressedContentPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/_work/(?:raw_responses/)?(.+)_compressed_for_(.+?)(?:_chunk_(\\d+)of(\\d+))?(?:_raw\\.json|\\.md)$";
+  const compressionPromptPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/_work/prompts/(.+?)_(\\d+)_(.+)_compressed_for_(.+?)(?:_chunk_(\\d+)of(\\d+))?(?:_continuation_(\\d+))?_prompt\\.md$";
   
   // Document-centric artifact patterns
   const plannerPromptPatternString = "^([^/]+)/session_([^/]+)/iteration_(\\d+)/([^/]+)/_work/prompts/(.+)_(\\d+)_?(.*?)_planner_prompt\\.md$";
@@ -196,6 +215,30 @@ export function deconstructStoragePath(
     info.isContinuation = true;
     info.turnIndex = parseInt(matches[9], 10);
     info.fileTypeGuess = FileType.ModelContributionRawJson;
+    return info;
+  }
+
+  // Path: .../_work/prompts/{modelSlug}_{attemptCount}_{sourceBasename}_compressed_for_{targetKey}[_chunk_{i}of{n}][_continuation_{n}]_prompt.md
+  matches = fullPath.match(new RegExp(compressionPromptPatternString));
+  if (matches) {
+    info.originalProjectId = matches[1];
+    info.shortSessionId = matches[2];
+    info.iteration = parseInt(matches[3], 10);
+    info.stageDirName = matches[4];
+    info.stageSlug = mapDirNameToStageSlug(info.stageDirName);
+    info.modelSlug = matches[5];
+    info.attemptCount = parseInt(matches[6], 10);
+    interpretCompressionSourceBasename(matches[7], info);
+    info.targetKey = matches[8];
+    if (matches[9]) {
+      info.chunkIndex = parseInt(matches[9], 10);
+      info.chunkTotal = parseInt(matches[10], 10);
+    }
+    if (matches[11]) {
+      info.isContinuation = true;
+      info.turnIndex = parseInt(matches[11], 10);
+    }
+    info.fileTypeGuess = FileType.CompressionPrompt;
     return info;
   }
 
@@ -645,19 +688,7 @@ export function deconstructStoragePath(
     info.iteration = parseInt(matches[3], 10);
     info.stageDirName = matches[4];
     info.stageSlug = mapDirNameToStageSlug(info.stageDirName);
-    const sourceBasename = matches[5];
-    const historyMatch = sourceBasename.match(/^message_([^_]+)_(.+)$/);
-    if (historyMatch && isCompressionHistoryRole(historyMatch[1])) {
-      info.sourceType = 'history';
-      info.role = historyMatch[1];
-      info.sourceId = historyMatch[2];
-    } else if (sourceBasename.endsWith('_feedback') && sourceBasename.length > '_feedback'.length) {
-      info.sourceType = 'feedback';
-      info.documentKey = sourceBasename.slice(0, -'_feedback'.length);
-    } else {
-      info.sourceType = 'resource';
-      info.documentKey = sourceBasename;
-    }
+    interpretCompressionSourceBasename(matches[5], info);
     info.targetKey = matches[6];
     if (matches[7]) {
       info.chunkIndex = parseInt(matches[7], 10);

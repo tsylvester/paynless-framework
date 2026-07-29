@@ -17,8 +17,12 @@ This document is the scope-and-order plan: per-file summary tickets in strict bu
 order, grouped into workstreams. Each workstream terminates at an integration seam where the
 application builds, runs, and passes tests (new code paths may be unreachable until a later
 workstream) — that seam is the commit marker. Transient non-compilable states are permitted
-WITHIN a workstream (it is not done until it compiles); they are never permitted at a
-commit. Detailed per-file workplans (interface tests → interfaces → guard tests → guards →
+WITHIN a workstream (it is not done until it compiles). One seam carries one deliberately: WS-P
+ends with `saveResponse.ts` broken on `determineContinuation`'s required `sourceObject`, whose
+only call site in the repo sits inside that function, and WS-S closes it by decomposing the
+function that holds it. The break is confined to that one file, every other suite runs, and no
+production path reaches the compression chain until WS-D regardless — the alternative is editing
+a ratified contract mid-flight to buy a compile that nothing can use. Detailed per-file workplans (interface tests → interfaces → guard tests → guards →
 unit tests → implementation → integration, per workplan.instructions.md) are generated after
 this plan is completed, one node at a time.
 
@@ -183,12 +187,14 @@ ordinal.
 | WS-B Renderer module extraction | WS-R | five renderer modules + the resource upload arm exist with their own tests; monolith and enqueueRenderJob untouched and still serving production |
 | WS-N Renderer relocation + RENDER dispatch | WS-B | monolith deleted, renderer modular; compressed RENDER rows dispatchable and processable end to end; nothing dispatches one yet |
 | WS-I Compression source identity | WS-N | every victim has a semantically named canonical path that round-trips losslessly; project clone carries it, GitHub sync ignores it; no writer exists yet |
-| WS-P COMPRESS response persistence | WS-I | continuation path accepts a COMPRESS job; every COMPRESS prompt persists as a first-class artifact; saveResponse persists COMPRESS raw output, dispatches RENDER for a renderable source and writes the extracted artifact for a text source; no COMPRESS jobs exist yet |
-| WS-D Orchestration cutover + WS-X RAG removal | WS-P | Compression loop live; RAG core gone; every production tokenizer real; full-chain test green |
+| WS-P COMPRESS continuation & provenance | WS-I | continuation path accepts a COMPRESS job; every COMPRESS prompt persists as a first-class artifact; the provenance column exists with both its writers; `saveResponse.ts` alone does not compile, by decision |
+| WS-S saveResponse decomposition + COMPRESS persistence | WS-P | saveResponse is a thin orchestrator over nine modules with `SaveResponseDeps` unchanged; a COMPRESS response persists, continues when incomplete, dispatches its render for a renderable source and writes its extracted artifact for a text source; the repo compiles again; no COMPRESS jobs exist yet |
+| WS-D Orchestration cutover + WS-X RAG removal | WS-S | Compression loop live; RAG core gone; every production tokenizer real; full-chain test green |
 
 Workplan-file split: `Compression Jobs.md` carries WS-0, WS-C, WS-R, WS-B and is retired;
-`Compression Jobs 2.md` carries WS-N, WS-I, WS-P, WS-D, WS-X. Split further at a workstream
-boundary when a file approaches ~1800 lines.
+`Compression Jobs 2.md` carries WS-N, WS-I and WS-P through `processCompressJob`;
+`Compression Jobs 3.md` carries the remainder of WS-P, then WS-S, WS-D and WS-X. Split further at
+a workstream boundary when a file approaches ~1800 lines.
 
 ---
 
@@ -662,19 +668,21 @@ type is forced to change.
 * ✏️ `supabase/functions/_shared/utils/buildUploadContext/buildUploadContext.ts` — the resource arm's params follow the identity split. `BuildUploadContextResourceParams` requires `documentKey` for `'contribution'`, `'resource'` AND `'feedback'`, narrows `sourceId` to `'history'` alone, and gains `role: Messages['role']` required on that same arm — an explicit per-`sourceType` branch, never an OR-fallback (matching the `path_constructor.ts` rule). Those members flow straight into the compression `PathContext` this arm builds, so the artifact lands at the canonical path `path_constructor.ts` names. This is the sole builder of the compression `ResourceUploadContext` and the only writer path a text-mode victim has: `saveResponse`'s COMPRESS tail (WS-P) persists every feedback and history artifact through it, while `renderDocument`'s CompressedContext case reaches only the `documentKey` arm, because `isRenderCompressedContextParams` narrows `sourceType` to `'contribution' | 'resource'` and a text source is never rendered. Its guards move the feedback arm with them. The contribution arm is unchanged, so every existing caller compiles untouched. Support: buildUploadContext tests, interface, guards, mock.
 * **COMMIT WS-I** — every compression victim has a semantically named canonical path that round-trips losslessly; the upload-context builder that writes at those paths speaks the same identity; project clone carries it and GitHub sync ignores it; no writer of a compressed artifact exists yet, so no production behavior changes.
 
-## WS-P — COMPRESS RESPONSE PERSISTENCE (depends WS-I)
-The COMPRESS stream callback becomes a real terminal step. Decision 8 routes an incomplete
-compression back through the ordinary continuation path, and decision 1 states the recursion
-guard is not a continuation ban. That path is contribution-anchored end to end and is widened to
+## WS-P — COMPRESS CONTINUATION & PROVENANCE (depends WS-I)
+Every producer the COMPRESS stream callback will consume is built and proven here. Decision 8
+routes an incomplete compression back through the ordinary continuation path, and decision 1
+states the recursion guard is not a continuation ban. That path is contribution-anchored end to end and is widened to
 accept a COMPRESS job before `saveResponse` is allowed to send one down it: `determineContinuation`
 compares the returned object against the SOURCE it was sent rather than a recipe step's
 `context_for_documents`; `continueJob` accepts a job whose payload carries no `output_type` and
 whose saved output is a resource rather than a contribution; `processCompressJob` routes a
 continuation job to continuation assembly instead of re-compressing its source from scratch;
 `assembleContinuationPrompt` anchors on a resource artifact rather than a
-`target_contribution_id` chain. Only then does `saveResponse` gain its COMPRESS tail. At this
-seam a COMPRESS response persists, continues when incomplete, and dispatches its render — no
-COMPRESS jobs exist yet.
+`target_contribution_id` chain. The provenance column every compression artifact records its
+prompt in lands here too, with both of its writers. `saveResponse` itself is untouched: its
+COMPRESS tail is a module in WS-S, written against a decomposed orchestrator rather than as a
+branch inside a 1,280-line function. At this seam every producer the COMPRESS response path
+consumes exists and is proven, and nothing yet persists a COMPRESS response.
 
 A COMPRESS continuation is anchored by its own payload, not by a row pointer.
 `dialectic_generation_jobs.target_contribution_id` addresses `dialectic_contributions`, and a
@@ -710,18 +718,18 @@ mocks, or the control that writes it.
 
 Strict node order: `determineContinuation` → `continueJob` → `assembleContinuationPrompt` →
 `assembleCompressionPrompt` → `enqueueModelCall` → `processCompressJob` → `processJob` →
-compression-prompt-provenance migration → `file_manager` → `buildUploadContext` →
-`saveResponse`. The migration and the two writers it unblocks sit immediately before
-`saveResponse` because it is their only caller: the column must exist before the type that
-carries it, the type before the arm that sets it, and the arm before the tail that calls it. The two added producers both sit before `processCompressJob`, which consumes
+compression-prompt-provenance migration → `file_manager` → `buildUploadContext`. The migration and
+the two writers it unblocks close the workstream because they are the last producers WS-S's
+COMPRESS arm consumes: the column must exist before the type that carries it, and the type before
+the arm that sets it. The two added producers both sit before `processCompressJob`, which consumes
 them: it reads `assembleCompressionPrompt`'s changed return and calls `enqueueModelCall` with the
 widened `output_type`. Neither is a WS-R change — WS-R is closed; each is a new node in this
 workstream against a file that workstream built, exactly as WS-I takes new nodes against
-`path_constructor.ts` and `enqueueCompressJobs.ts`. No composition-root touch:
-`saveResponse` gains no dependency, the three renderer deps it sheds were never wired into
-`netlifyResponse/index.ts`, and `IPromptAssembler` already declares
-`assembleContinuationPrompt`, so the facade and both composition roots are untouched — the only
-wiring edit is `processJob.ts`, which builds `ProcessCompressJobDeps` inline.
+`path_constructor.ts` and `enqueueCompressJobs.ts`. No composition-root touch: the three renderer
+deps `saveResponse` never needed were never wired into `netlifyResponse/index.ts`, and
+`IPromptAssembler` already declares `assembleContinuationPrompt`, so the facade and both
+composition roots are untouched — the only wiring edit is `processJob.ts`, which builds
+`ProcessCompressJobDeps` inline.
 * ✏️ `supabase/functions/_shared/utils/determineContinuation/determineContinuation.ts` — the
   completeness comparison gains the compression case: the missing-keys check runs against the
   SOURCE object a COMPRESS job was sent (its payload's `content`), not against a recipe step's
@@ -896,19 +904,135 @@ wiring edit is `processJob.ts`, which builds `ProcessCompressJobDeps` inline.
   the same reason `path_constructor` and `enqueueCompressJobs` take one node per workstream: the
   member does not exist until the migration above lands, and WS-I must commit green without it.
   Support: buildUploadContext tests, interface, guards, mock.
-* ✏️ `supabase/functions/dialectic-worker/saveResponse/saveResponse.ts` — a COMPRESS response
-  is handled through the same path an EXECUTE response takes, diverging only at the tail. Route
-  on the job row's `job_type` before the EXECUTE path's `isModelContributionFileType(output_type)`
-  check, since the COMPRESS payload census has no `output_type`. Parse / sanitize / retry on
-  malformed or empty output (shared with EXECUTE). For a structured (`mode:'json'`) source,
-  verify completeness against the source via `determineContinuation` — an incomplete result
-  continues via the ordinary continuation path, it is not a failure; a `mode:'text'` source
-  (feedback/history) has no key structure to verify and does not continue. This file holds the
-  ONLY `determineContinuation({ ... })` literal in the repo — every other consumer holds the
-  function itself — so this node supplies the required `sourceObject` member that entry adds:
-  the parsed source object from the COMPRESS payload's `content` on the COMPRESS path, and
-  `undefined` on the EXECUTE path, whose own `documentKey`/`contextForDocuments` comparison is
-  unchanged. Both paths reach the one call site, so both populate the member explicitly. Persist the completed
+* **COMMIT WS-P** — the continuation path accepts a COMPRESS job, every COMPRESS prompt persists as
+  a first-class artifact, and the provenance column exists with both of its writers. One file does
+  not compile: `saveResponse.ts` holds the repo's only `determineContinuation` literal and therefore
+  its only unsupplied `sourceObject`. WS-S removes that body. No COMPRESS jobs exist yet.
+
+## WS-S — saveResponse DECOMPOSITION + COMPRESS RESPONSE PERSISTENCE (depends WS-P; gates WS-D)
+`saveResponse.ts` is one 1,280-line function carrying twenty-eight responsibilities in a straight
+line, twelve injected deps and eight database round trips. Adding the COMPRESS tail as another
+branch inside it would push it past 1,500 lines and interleave two persistence models in one body,
+so the function is decomposed first and the COMPRESS tail lands as a module beside the contribution
+one rather than as a branch inside it.
+
+The cut follows the axis the data flow already has. A SHARED FRONT HALF — job and provider
+resolution, response assembly, content preparation, debit — is job-type agnostic and serves both
+arms. A CONTRIBUTION BACK HALF — canonical identity, upload, `document_relationships` persistence,
+render dispatch, notifications, continuation, final status — is anchored on `dialectic_contributions`
+end to end and is what a COMPRESS response has no use for. `saveResponse.ts` ends as a thin
+orchestrator with its public signature UNCHANGED: guard, load context, route on `job.job_type`,
+call one arm, return what that arm returns.
+
+`SaveResponseDeps` DOES NOT CHANGE, and that is this workstream's load-bearing decision. The
+sub-modules are internal siblings of one function, not external collaborators, so the orchestrator
+imports them directly and slices its existing deps into each one's narrower typed `Deps` at the call
+site — the treatment `createPlanJobContext`/`createRenderJobContext` already give `processJob`.
+Injecting them instead would add nine members to a contract that fifteen files outside the module
+depend on — `netlifyResponse/index.ts` with its handler, interface, mock, guard, guard test,
+interface test and integration test; `createJobContext`'s `ISaveResponseContext`, factory, guard,
+guard test and two suites; and `dialectic-worker/index.integration.test.ts` — and would need a
+composition-root capstone node exactly like the one WS-N needed for `resolveTemplateFilename`. Every
+one of those files stays shut. The accepted cost: the orchestrator's unit tier cannot stub a sibling
+to force its error branch, and drives those branches through the shared deps it forwards, which is
+where the observable effects already are.
+
+COPY-FIRST sequencing (the WS-B pattern): every module lands as a COPY with its own tests while
+`saveResponse.ts` stays untouched, so the duplication is deliberate and dormant, and the single
+relocation node at the end retires it. The seven existing suites — `saveResponse.test.ts`,
+`.continue`, `.notifications`, `.pathContext`, `.rawJsonOnly`, `.planValidation` and
+`.assembleDocument` — are the relocation's regression oracle, pinned to the unchanged public
+signature, then retained IN FULL as the orchestrator's integration tier while the module tests add
+part-in-isolation coverage. No case is deleted.
+
+The repo does not compile until this workstream's last node: the monolith's `determineContinuation`
+literal lacks the member WS-P made required, and that literal dies with the body the relocation
+deletes. Every module below is authored and tested against its own copy, so the break blocks nothing
+in between.
+
+Extraction surfaces four conditions this workstream resolves rather than carries. The
+`dialectic_sessions` read selects `*` and uses no column, so the module that inherits it narrows the
+select to the existence check it actually is. `processingTimeMs` is hardcoded to `0` and flows into
+the response, the retry records and the contribution metadata, so every timing this path reports is
+zero. `contribution.document_relationships` is mutated in place and read afterwards, so the module
+that owns that block returns the updated row instead. `shouldRender` gates both
+`assembleAndSaveFinalDocument` calls, so it is computed and consumed inside one module rather than
+crossing a seam as a mutable flag.
+
+Strict node order: `assembleAiResponse` → `loadJobContext` → `prepareResponseContent` →
+`debitForResponse` → `resolveContributionIdentity` → `persistContributionRelationships` →
+`finalizeContributionJob` → `saveContributionResponse` → `saveCompressedResponse` → `saveResponse`.
+The four shared modules come first because both arms consume them; the three contribution modules
+before the arm that composes them; both arms before the orchestrator that routes to them. Every one
+is a function-folder module under `dialectic-worker/saveResponse/`, canonical shape
+`Fn(deps, params, payload) => Success | Error`, with the full support system per the new-package
+rule.
+* 🆕 `supabase/functions/dialectic-worker/saveResponse/assembleAiResponse/assembleAiResponse.ts` —
+  PURE, no deps and no I/O: the `UnifiedAIResponse` assembly. Trims `assembled_content` to null when
+  empty, takes the stream's `token_usage` when present and synthesizes one from the payload's
+  preflight input tokens plus the completion's character count when it is not, narrows
+  `finish_reason` through `isFinishReason` with `unknown` as its fallback, and composes
+  `rawProviderResponse`. `processingTimeMs` is a literal `0` at its only construction site today;
+  this node makes it a parameter the caller supplies. No mock (the `path_constructor` precedent).
+  Support: interface + tests.
+* 🆕 `supabase/functions/dialectic-worker/saveResponse/loadJobContext/loadJobContext.ts` — the
+  `dialectic_generation_jobs` read with its not-found and non-record failures, the payload member
+  census and its six validations (`iterationNumber`, `stageSlug`, `sessionId`, `model_id`,
+  `walletId`, `projectId` — every one of which `DialecticCompressJobPayload` also carries, under the
+  same names), the `ai_providers` read with `isSelectedAiProvider` and `isAiModelExtendedConfig`, the
+  `dialectic_sessions` existence read, and `projectOwnerUserId`/`attempt_count`. It does NOT narrow
+  the payload per arm: the two payload types differ and the orchestrator is what discriminates.
+  Returns the job row, the provider row, the validated config and the owner id.
+  Support: full module (three DB boundaries → mock required).
+* 🆕 `supabase/functions/dialectic-worker/saveResponse/prepareResponseContent/prepareResponseContent.ts`
+  — the empty-or-error retry, the error-finish-reason retry, `resolveFinishReason`,
+  `isIntermediateChunk`, the intermediate passthrough, the sanitize → parse → retry sequence, and the
+  repo's ONLY `determineContinuation` call. OWNS the `sourceObject` member WS-P made required,
+  supplied per arm: the object parsed from a COMPRESS payload's own `content`, `undefined` for an
+  EXECUTE job. A `mode:'text'` COMPRESS response takes neither sanitize nor parse — its content is
+  freeform prose, `JSON.parse` would fail every attempt to the retry cap, and there is no structure
+  to drift from — so its content passes through verbatim and no completeness check runs. The two
+  retry outcomes are a distinct success flavor on the return, never flattened into `completed`.
+  Support: full module.
+* 🆕 `supabase/functions/dialectic-worker/saveResponse/debitForResponse/debitForResponse.ts` — the
+  `token_wallets` read, the currency and balance validations, the `TokenWallet` construction, the
+  `DebitTokensParams` literal with its two-`ChatMessageRow` `databaseOperation` closure, and the
+  `debitTokens` call. Consumed by both arms at the position the block occupies today, so EXECUTE's
+  ordering relative to every surrounding validation is unchanged. Extracted rather than hoisted:
+  hoisting would debit an EXECUTE job whose `canonicalPathParams` is malformed before that
+  validation could reject it. Support: full module.
+* 🆕 `supabase/functions/dialectic-worker/saveResponse/resolveContributionIdentity/resolveContributionIdentity.ts`
+  — EXECUTE-only identity resolution: `canonicalPathParams` validation and the
+  `restOfCanonicalPathParams` assembly, `targetContributionId` resolution from payload then row and
+  the `isContinuationForStorage` it implies, the continuation-count validation trio, the
+  `rawProviderResponse` check, the document-related required-values sweep with its single composed
+  message, `storageFileType` selection, `source_group` resolution including the two recipe-step reads
+  that admit the `per_model` consolidation exception, `sourceGroupFragment`, and `document_key`.
+  Support: full module.
+* 🆕 `supabase/functions/dialectic-worker/saveResponse/persistContributionRelationships/persistContributionRelationships.ts`
+  — the continuation branch, the init-and-merge branch, both `dialectic_contributions` updates, the
+  four `RenderJobValidationError` validations, and the `stageRelationshipForStage` extraction.
+  RETURNS the updated contribution row: the block mutates it in place today and later code reads that
+  mutation, which no module boundary can carry. Support: full module.
+* 🆕 `supabase/functions/dialectic-worker/saveResponse/finalizeContributionJob/finalizeContributionJob.ts`
+  — the RENDER dispatch and the `shouldRender` it yields, the prompt-resource back-link, the chunk
+  notification, the `ModelProcessingResult`, the continuation call with its limit-reached cap assembly
+  and continued notification, the final-chunk notification and `assembleAndSaveFinalDocument`, the
+  job-row update, and the three completion notifications. Support: full module.
+* 🆕 `supabase/functions/dialectic-worker/saveResponse/saveContributionResponse/saveContributionResponse.ts`
+  — the EXECUTE arm: composes `resolveContributionIdentity`, the contribution upload
+  (`buildUploadContext`'s contribution arm, `isModelContributionContext`, `uploadAndRegisterFile`,
+  `isDialecticContribution`), `persistContributionRelationships` and `finalizeContributionJob`, and
+  returns the `SaveResponseReturn` the orchestrator passes straight through. Support: full module.
+* 🆕 `supabase/functions/dialectic-worker/saveResponse/saveCompressedResponse/saveCompressedResponse.ts`
+  — the COMPRESS arm, reached with the payload already narrowed by the orchestrator and the content
+  already prepared. A structured (`mode:'json'`) source was verified against the source it was sent —
+  an incomplete result continues via the ordinary continuation path, it is not a failure; a
+  `mode:'text'` source (feedback/history) has no key structure to verify and does not continue. The completeness
+  judgement itself is `prepareResponseContent`'s, made before this module is reached; this arm
+  consumes its result. The continuation gate is `shouldContinue` alone: the EXECUTE path conjoins it
+  with `continueUntilComplete`, a COMPRESS payload carries no such member, and that conjunction would
+  close decision 8's continuation permanently. Persist the completed
   compressed response as `FileType.CompressedContextRawJson` through the source's own
   upload-context arm (`buildUploadContext`'s resource arm) at the canonical
   `_work/raw_responses` path from WS-C, via `fileManager.uploadAndRegisterFile(context)`,
@@ -927,17 +1051,37 @@ wiring edit is `processJob.ts`, which builds `ProcessCompressJobDeps` inline.
   machinery. Imports `DialecticCompressJobPayload`/`CompressionMode` + the payload guard from
   the enqueueCompressJobs module, and `EnqueueRenderCompressedContextPayload` from the
   enqueueRenderJob module.
-  Support: saveResponse tests (route matrix: EXECUTE→contribution unchanged; COMPRESS json
-  complete→persisted CompressedContextRawJson + RENDER job dispatched and
-  `waiting_for_children` set when renderable; COMPRESS json incomplete→continuation, not
-  failure; COMPRESS text→raw persisted AND the extracted string persisted as CompressedContext,
-  no RENDER dispatch, job completed; existing-artifact→idempotent completion; no
-  notifications on any COMPRESS path).
-* **COMMIT WS-P** — a COMPRESS response persists, continues when incomplete, dispatches its
-  render when the source is renderable, and writes its extracted artifact directly when the
-  source is text; no COMPRESS jobs exist yet.
+  Support: full module (COMPRESS json complete→persisted CompressedContextRawJson + RENDER job
+  dispatched and `waiting_for_children` set when renderable; COMPRESS json incomplete→continuation,
+  not failure; COMPRESS text→raw persisted AND the extracted string persisted as CompressedContext,
+  no RENDER dispatch, job completed; existing-artifact→idempotent completion; no notifications, no
+  back-link and no `assembleAndSaveFinalDocument` on any path).
+* ✏️🗑️ `supabase/functions/dialectic-worker/saveResponse/saveResponse.ts` — the relocation node.
+  The body becomes an orchestrator with the UNCHANGED public signature `(deps, params, payload)`:
+  guard params and payload, call `loadJobContext`, call `assembleAiResponse`, call
+  `prepareResponseContent`, call `debitForResponse`, then discriminate on the job row's `job_type`
+  and call `saveCompressedResponse` with a payload narrowed by `isDialecticCompressJobPayload` or
+  `saveContributionResponse` with one gated by today's `isModelContributionFileType(output_type)`
+  check, and return what that arm returns. The `job_type` discrimination sits ahead of the
+  contribution gate because the COMPRESS payload census has no `output_type`. Each sibling's deps
+  are sliced from the unchanged `SaveResponseDeps` at its call site; nothing is added to that
+  contract and no composition root is touched. RIDES HERE: `SaveResponseSuccessReturn['status']`
+  gains `waiting_for_children` — a COMPRESS job awaiting its render child is neither completed nor
+  continuing — and `saveResponse.guard.ts`'s allowed-status list admits it;
+  `netlifyResponseHandler.ts` tests `'status' in result` and echoes the string without enumerating
+  the members, so no consumer is edited. Proof sequence INSIDE this node, in order: (1) repoint the
+  seven untouched suites at the orchestrator and run green — the regression oracle; (2) THEN retain
+  them in full as `saveResponse.integration.test.ts`, keeping EVERY case, and ALSO author a lean
+  `saveResponse.test.ts` unit tier pinning routing, delegation order and error passthrough; (3)
+  DELETE the monolith body, which is what finally supplies the `sourceObject` WS-P left unsupplied
+  and returns the repo to compiling.
+* **COMMIT WS-S** — `saveResponse` is a thin orchestrator over nine modules with `SaveResponseDeps`
+  unchanged and every composition root untouched; a COMPRESS response persists, continues when
+  incomplete, dispatches its render when the source is renderable, and writes its extracted artifact
+  directly when the source is text; the repo compiles and every suite is green. No COMPRESS jobs
+  exist yet.
 
-## WS-D — COMPRESSION ORCHESTRATION CUTOVER (depends WS-P)
+## WS-D — COMPRESSION ORCHESTRATION CUTOVER (depends WS-S)
 Strict node order: `applyCompressionOverlay`→ `gatherArtifacts` → `vector_utils` →
 `compressPrompt` → `calculateAffordability` → `prepareModelJob` → `StreamChat` → `streamRewind`
 → `index.ts` → `processSimpleJob`. `applyCompressionOverlay` and `gatherArtifacts` have no
@@ -1285,6 +1429,14 @@ TYPE OWNERSHIP (module-first; owner file → landing node):
 * `ContinueJobFn`'s saved-output parameter widens to
   `DialecticContributionRow | DialecticProjectResourceRow`, discriminated by payload structure.
   `IContinueJobDeps` and `IContinueJobResult` are unchanged.
+* `SaveResponseSuccessReturn['status']` gains `waiting_for_children`, landed by the WS-S
+  `saveResponse.ts` relocation node — a flavor inside the success arm, never a third top-level arm.
+  `SaveResponseDeps`, `SaveResponseParams`, `SaveResponsePayload`, `SaveResponseErrorReturn` and
+  `SaveResponseFn` are unchanged, and `SaveResponseDeps` in particular is unchanged BY DESIGN: WS-S's
+  nine modules are internal siblings the orchestrator imports and slices deps for, not injected
+  collaborators, so `netlifyResponse/index.ts`, `ISaveResponseContext` and every mock, guard and
+  harness built on that contract stay shut. Each module declares its own `Deps`/`Params`/`Payload`
+  and `Success | Error` return in its own interface file, per the canonical repo shape.
 * `DeconstructedPathInfo` gains `sourceType`, `sourceId`, and `role`, landed by the WS-I
   `path_deconstructor.ts` node — without them a compressed artifact's identity cannot be
   expressed on the return, and the lossless round-trip WS-C requires cannot be asserted.

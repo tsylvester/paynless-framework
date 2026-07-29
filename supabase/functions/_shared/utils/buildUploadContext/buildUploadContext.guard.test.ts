@@ -250,8 +250,8 @@ Deno.test("isBuildUploadContextResourceParams accepts each storageFileType and i
       buildBuildUploadContextResourceParams({
         storageFileType: FileType.CompressedContextRawJson,
         sourceType: "feedback",
-        documentKey: undefined,
-        sourceId: "src-1",
+        documentKey: FileType.business_case_critique,
+        sourceId: undefined,
       }),
     ),
   );
@@ -260,8 +260,9 @@ Deno.test("isBuildUploadContextResourceParams accepts each storageFileType and i
       buildBuildUploadContextResourceParams({
         storageFileType: FileType.CompressedContextRawJson,
         sourceType: "history",
-        documentKey: undefined,
         sourceId: "src-1",
+        role: "assistant",
+        documentKey: undefined,
       }),
     ),
   );
@@ -290,8 +291,8 @@ Deno.test("isBuildUploadContextResourceParams accepts each storageFileType and i
       buildBuildUploadContextResourceParams({
         storageFileType: FileType.CompressedContext,
         sourceType: "feedback",
-        documentKey: undefined,
-        sourceId: "src-1",
+        documentKey: FileType.business_case_critique,
+        sourceId: undefined,
       }),
     ),
   );
@@ -300,8 +301,9 @@ Deno.test("isBuildUploadContextResourceParams accepts each storageFileType and i
       buildBuildUploadContextResourceParams({
         storageFileType: FileType.CompressedContext,
         sourceType: "history",
-        documentKey: undefined,
         sourceId: "src-1",
+        role: "assistant",
+        documentKey: undefined,
       }),
     ),
   );
@@ -327,6 +329,10 @@ Deno.test("isBuildUploadContextResourceParams accepts chunk pair absent", () => 
       }),
     ),
   );
+});
+
+Deno.test("isBuildUploadContextResourceParams accepts default contribution builder without role key", () => {
+  assert(isBuildUploadContextResourceParams(buildBuildUploadContextResourceParams()));
 });
 
 Deno.test("isBuildUploadContextResourceParams rejects non-objects", () => {
@@ -468,13 +474,39 @@ Deno.test("isBuildUploadContextResourceParams rejects sourceType 'resource' with
   );
 });
 
-Deno.test("isBuildUploadContextResourceParams rejects sourceType 'feedback' without sourceId", () => {
+Deno.test("isBuildUploadContextResourceParams rejects sourceType 'feedback' without documentKey", () => {
   assertFalse(
     isBuildUploadContextResourceParams(
-      buildBuildUploadContextResourceParams({
+      invalidateBuildUploadContextResourceParams({
         sourceType: "feedback",
-        documentKey: FileType.feature_spec,
-        sourceId: undefined,
+        documentKey: undefined,
+        sourceId: "src-1",
+      }),
+    ),
+  );
+});
+
+Deno.test("isBuildUploadContextResourceParams rejects sourceType 'history' with role undefined", () => {
+  assertFalse(
+    isBuildUploadContextResourceParams(
+      invalidateBuildUploadContextResourceParams({
+        sourceType: "history",
+        sourceId: "src-1",
+        documentKey: undefined,
+        role: undefined,
+      }),
+    ),
+  );
+});
+
+Deno.test("isBuildUploadContextResourceParams rejects sourceType 'history' with role 'model' (not a Messages role)", () => {
+  assertFalse(
+    isBuildUploadContextResourceParams(
+      invalidateBuildUploadContextResourceParams({
+        sourceType: "history",
+        sourceId: "src-1",
+        documentKey: undefined,
+        role: "model",
       }),
     ),
   );
@@ -483,10 +515,11 @@ Deno.test("isBuildUploadContextResourceParams rejects sourceType 'feedback' with
 Deno.test("isBuildUploadContextResourceParams rejects sourceType 'history' without sourceId", () => {
   assertFalse(
     isBuildUploadContextResourceParams(
-      buildBuildUploadContextResourceParams({
+      invalidateBuildUploadContextResourceParams({
         sourceType: "history",
-        documentKey: FileType.feature_spec,
         sourceId: undefined,
+        documentKey: undefined,
+        role: "assistant",
       }),
     ),
   );

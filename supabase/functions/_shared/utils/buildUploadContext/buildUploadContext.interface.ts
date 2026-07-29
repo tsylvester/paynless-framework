@@ -1,5 +1,6 @@
 import type { ContributionType } from "../../../dialectic-service/dialectic.interface.ts";
 import type { Json } from "../../../types_db.ts";
+import type { Messages } from "../../types.ts";
 import type {
   CanonicalPathParams,
   ModelContributionFileTypes,
@@ -72,10 +73,12 @@ export interface BuildUploadContextResourceParams {
   targetKey: ModelContributionFileTypes;
   /** The victim's source discriminator: 'contribution' | 'resource' | 'feedback' | 'history'. */
   sourceType: CompressionSourceType;
-  /** Required when sourceType is 'contribution' or 'resource'; undefined otherwise. */
+  /** Required when sourceType is 'contribution', 'resource' or 'feedback'; undefined otherwise. */
   documentKey: FileType | undefined;
-  /** Required when sourceType is 'feedback' or 'history'; undefined otherwise. */
+  /** Required when sourceType is 'history', with role; undefined otherwise. */
   sourceId: string | undefined;
+  /** Required when sourceType is 'history'; undefined otherwise. */
+  role?: Messages['role'];
   /** Map-reduce chunk index (1-based); undefined when not a chunked job. */
   chunkIndex: number | undefined;
   /** Map-reduce chunk total; undefined when not a chunked job. */

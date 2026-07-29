@@ -60,6 +60,7 @@ export function buildUploadContext(
     sourceType: params.sourceType,
     documentKey: params.documentKey,
     sourceId: params.sourceId,
+    role: params.role,
     chunkIndex: params.chunkIndex,
     chunkTotal: params.chunkTotal,
   };

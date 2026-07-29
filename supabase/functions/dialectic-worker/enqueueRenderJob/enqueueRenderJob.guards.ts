@@ -268,6 +268,9 @@ export function isDialecticRenderCompressedContextJobPayload(value: unknown): va
   if (!isCompressionSourceType(sourceType)) {
     return false;
   }
+  if (sourceType !== 'contribution' && sourceType !== 'resource') {
+    return false;
+  }
   if (!isFileType(documentKey)) {
     return false;
   }

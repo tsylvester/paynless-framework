@@ -15,7 +15,6 @@ import { countTokens } from "../../_shared/utils/tokenizer_utils.ts";
 import { LangchainTextSplitter } from "../../_shared/utils/text_splitter.ts";
 import {
   constructStoragePath,
-  generateShortId,
   sanitizeForPath,
 } from "../../_shared/utils/path_constructor.ts";
 import { DialecticStageSlug, FileType } from "../../_shared/types/file_manager.types.ts";
@@ -76,7 +75,7 @@ function buildRealParams(
 ): enqueueCompressJobsParams {
   return buildenqueueCompressJobsParams({
     dbClient,
-    targetKey: overrides?.targetKey,
+    ...(overrides?.targetKey !== undefined ? { targetKey: overrides.targetKey } : {}),
     modelConfig: realModelConfig,
     tokenizerDeps: buildRealTokenizerDeps(),
   });
@@ -195,6 +194,7 @@ Deno.test("enqueueCompressJobs integration: dedup existence query filters on the
         content: "compress me",
         sourceType: "history",
         sourceId,
+        role: "assistant",
       },
     };
 
@@ -221,11 +221,80 @@ Deno.test("enqueueCompressJobs integration: dedup existence query filters on the
       targetKey: params.targetKey,
       sourceType: payload.victim.sourceType,
       sourceId,
+      role: "assistant",
     });
     assert(expectedPath.storagePath.endsWith("/_work"));
     assertEquals(
       expectedPath.fileName,
-      `source_${generateShortId(sourceId)}_compressed_for_${
+      `message_assistant_${sourceId}_compressed_for_${
+        sanitizeForPath("success_metrics")
+      }.md`,
+    );
+
+    const eqCalls = mockSetup.spies.getHistoricQueryBuilderSpies(
+      "dialectic_project_resources",
+      "eq",
+    );
+    assertExists(eqCalls);
+    assertEquals(eqCalls.callsArgs, [
+      ["storage_path", expectedPath.storagePath],
+      ["file_name", expectedPath.fileName],
+    ]);
+  },
+);
+
+Deno.test("enqueueCompressJobs integration: dedup existence query filters on the exact canonical final-artifact path for the feedback branch",
+  async () => {
+    const mockSetup = createMockSupabaseClient("user-789", {
+      genericMockResults: {
+        dialectic_project_resources: {
+          select: { data: [{ id: "existing-artifact" }], error: null },
+        },
+        dialectic_generation_jobs: {
+          insert: { data: [], error: null },
+        },
+      },
+    });
+    const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
+    const deps = buildRealDeps();
+    const params = buildRealParams(dbClient, { targetKey: FileType.success_metrics });
+    const payload: enqueueCompressJobsPayload = {
+      victim: {
+        mode: "text",
+        content: "compress me",
+        sourceType: "feedback",
+        documentKey: FileType.business_case,
+      },
+    };
+
+    const result = await enqueueCompressJobs(deps, params, payload);
+
+    assertEquals("createdCount" in result, true);
+    if ("createdCount" in result) {
+      assertEquals(result.createdCount, 0);
+    }
+
+    const insertCalls = mockSetup.spies.getHistoricQueryBuilderSpies(
+      "dialectic_generation_jobs",
+      "insert",
+    );
+    assertExists(insertCalls);
+    assertEquals(insertCalls.callCount, 0);
+
+    const expectedPath = constructStoragePath({
+      fileType: FileType.CompressedContext,
+      projectId: params.projectId,
+      sessionId: params.sessionId,
+      iteration: params.iterationNumber,
+      stageSlug: params.stageSlug,
+      targetKey: params.targetKey,
+      sourceType: payload.victim.sourceType,
+      documentKey: payload.victim.documentKey,
+    });
+    assert(expectedPath.storagePath.endsWith("/_work"));
+    assertEquals(
+      expectedPath.fileName,
+      `${sanitizeForPath("business_case")}_feedback_compressed_for_${
         sanitizeForPath("success_metrics")
       }.md`,
     );

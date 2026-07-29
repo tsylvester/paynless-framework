@@ -117,7 +117,8 @@ function buildUploadContextForAsset(
             pathContext.fileType !== FileType.CurrentFile &&
             pathContext.fileType !== FileType.CompleteFile &&
             pathContext.fileType !== FileType.CompressedContext &&
-            pathContext.fileType !== FileType.CompressedContextRawJson)) {
+            pathContext.fileType !== FileType.CompressedContextRawJson &&
+            pathContext.fileType !== FileType.CompressionPrompt)) {
             throw new Error(`Asset from resources table has unexpected fileType: ${pathContext.fileType}`);
         }
         

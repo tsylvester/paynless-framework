@@ -7,6 +7,7 @@ import {
   CompressJobEnqueueError,
   CompressJobValidationError,
   BoundenqueueCompressJobsFn,
+  DialecticCompressJobPayload,
   enqueueCompressJobsDeps,
   enqueueCompressJobsErrorReturn,
   enqueueCompressJobsFn,
@@ -26,7 +27,7 @@ Deno.test("Contract: enqueueCompressJobsDeps declares four dependency keys", () 
   assertEquals(Object.keys(surface).length, 4);
 });
 
-Deno.test("Contract: enqueueCompressJobsParams declares 11 fields", () => {
+Deno.test("Contract: enqueueCompressJobsParams declares 12 fields", () => {
   const surface: Record<keyof enqueueCompressJobsParams, true> = {
     dbClient: true,
     parentJob: true,
@@ -36,11 +37,12 @@ Deno.test("Contract: enqueueCompressJobsParams declares 11 fields", () => {
     targetKey: true,
     iterationNumber: true,
     modelId: true,
+    modelSlug: true,
     walletId: true,
     modelConfig: true,
     tokenizerDeps: true,
   };
-  assertEquals(Object.keys(surface).length, 11);
+  assertEquals(Object.keys(surface).length, 12);
 });
 
 Deno.test("Contract: enqueueCompressJobsPayload literal type-checks with enum members", () => {
@@ -62,6 +64,100 @@ Deno.test("Contract: enqueueCompressJobsPayload literal type-checks with enum me
   assertEquals(payload.victim.documentKey, FileType.business_case);
   assertEquals(payload.victim.docType, FileType.business_case);
   assertEquals(payload.victim.sourceStageSlug, DialecticStageSlug.Thesis);
+});
+
+Deno.test("Contract: enqueueCompressJobsPayload victim carries role for history", () => {
+  const role: enqueueCompressJobsPayload["victim"]["role"] = "assistant";
+  const payload: enqueueCompressJobsPayload = {
+    victim: {
+      mode: "text",
+      content: "some content",
+      sourceType: "history",
+      sourceId: "history-1",
+      role,
+    },
+  };
+  assertEquals(payload.victim.role, "assistant");
+});
+
+Deno.test("Contract: DialecticCompressJobPayload carries role for history", () => {
+  const payload: DialecticCompressJobPayload = {
+    job_type: "COMPRESS",
+    sessionId: "session-1",
+    projectId: "project-1",
+    stageSlug: DialecticStageSlug.Thesis,
+    targetKey: FileType.business_case,
+    iterationNumber: 1,
+    model_id: "model-1",
+    model_slug: "gpt-4o",
+    mode: "text",
+    content: "some content",
+    sourceType: "history",
+    sourceId: "history-1",
+    role: "user",
+    walletId: "wallet-1",
+    user_id: "user-1",
+  };
+  assertEquals(payload.role, "user");
+});
+
+Deno.test("Contract: DialecticCompressJobPayload continuation_count is optional", () => {
+  const withContinuation: DialecticCompressJobPayload = {
+    job_type: "COMPRESS",
+    sessionId: "session-1",
+    projectId: "project-1",
+    stageSlug: DialecticStageSlug.Thesis,
+    targetKey: FileType.business_case,
+    iterationNumber: 1,
+    model_id: "model-1",
+    model_slug: "gpt-4o",
+    mode: "text",
+    content: "some content",
+    sourceType: "contribution",
+    documentKey: FileType.business_case,
+    walletId: "wallet-1",
+    user_id: "user-1",
+    continuation_count: 1,
+  };
+  assertEquals(withContinuation.continuation_count, 1);
+
+  const withoutContinuation: DialecticCompressJobPayload = {
+    job_type: "COMPRESS",
+    sessionId: "session-1",
+    projectId: "project-1",
+    stageSlug: DialecticStageSlug.Thesis,
+    targetKey: FileType.business_case,
+    iterationNumber: 1,
+    model_id: "model-1",
+    model_slug: "gpt-4o",
+    mode: "text",
+    content: "some content",
+    sourceType: "contribution",
+    documentKey: FileType.business_case,
+    walletId: "wallet-1",
+    user_id: "user-1",
+  };
+  assertEquals(withoutContinuation.continuation_count, undefined);
+});
+
+Deno.test("Contract: DialecticCompressJobPayload model_slug is required", () => {
+  const payload: DialecticCompressJobPayload = {
+    job_type: "COMPRESS",
+    sessionId: "session-1",
+    projectId: "project-1",
+    stageSlug: DialecticStageSlug.Thesis,
+    targetKey: FileType.business_case,
+    iterationNumber: 1,
+    model_id: "model-1",
+    model_slug: "gpt-4o",
+    mode: "text",
+    content: "some content",
+    sourceType: "contribution",
+    documentKey: FileType.business_case,
+    walletId: "wallet-1",
+    user_id: "user-1",
+  };
+  assertEquals(payload.model_slug, "gpt-4o");
 });
 
 Deno.test("Contract: enqueueCompressJobsSuccessReturn and ErrorReturn form a union", () => {

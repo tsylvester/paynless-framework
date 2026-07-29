@@ -6,8 +6,14 @@ import type { ServiceError } from '../types.ts';
 import { DialecticStageSlug, FileType } from '../types/file_manager.types.ts';
 import type {
   CanonicalPathParams,
+  ContributionMetadata,
   FileRecord,
+  IDownloadContentResult,
+  ModelContributionUploadContext,
+  PathContext,
+  ResourceUploadContext,
   UploadContext,
+  UserFeedbackUploadContext,
   IFileManager,
   FileManagerResponse,
 } from '../types/file_manager.types.ts';
@@ -68,6 +74,185 @@ export function invalidateCanonicalPathParams(
   corruptions: CanonicalPathParamsCorruptions,
 ): unknown {
   return { ...buildCanonicalPathParams(), ...corruptions };
+}
+
+export type PathContextOverrides = Partial<PathContext>;
+
+export function buildPathContext(
+  overrides?: PathContextOverrides,
+): PathContext {
+  const base: PathContext = {
+    projectId: 'project-uuid-123',
+    fileType: FileType.RenderedDocument,
+    sessionId: 'session-uuid-456',
+    iteration: 1,
+    stageSlug: DialecticStageSlug.Thesis,
+    modelSlug: 'mock-model',
+    attemptCount: 0,
+  };
+  return overrides ? { ...base, ...overrides } : base;
+}
+
+export type PathContextCorruptions = {
+  [K in keyof PathContext]?: unknown;
+};
+
+export function invalidatePathContext(
+  corruptions: PathContextCorruptions,
+): unknown {
+  return { ...buildPathContext(), ...corruptions };
+}
+
+export type ContributionMetadataOverrides = Partial<ContributionMetadata>;
+
+export function buildContributionMetadata(
+  overrides?: ContributionMetadataOverrides,
+): ContributionMetadata {
+  const base: ContributionMetadata = {
+    sessionId: 'session-uuid-456',
+    modelIdUsed: 'mock-model-id',
+    modelNameDisplay: 'Mock Model',
+    stageSlug: 'thesis',
+    iterationNumber: 1,
+  };
+  return overrides ? { ...base, ...overrides } : base;
+}
+
+export type ContributionMetadataCorruptions = {
+  [K in keyof ContributionMetadata]?: unknown;
+};
+
+export function invalidateContributionMetadata(
+  corruptions: ContributionMetadataCorruptions,
+): unknown {
+  return { ...buildContributionMetadata(), ...corruptions };
+}
+
+export type ModelContributionUploadContextOverrides = Omit<Partial<ModelContributionUploadContext>, 'pathContext'>;
+
+export function buildModelContributionUploadContext(
+  pathContext: ModelContributionUploadContext['pathContext'],
+  overrides?: ModelContributionUploadContextOverrides,
+): ModelContributionUploadContext {
+  const base: ModelContributionUploadContext = {
+    fileContent: '{"key":"value"}',
+    mimeType: 'application/json',
+    sizeBytes: 100,
+    userId: 'user-123',
+    description: 'Mock model contribution upload context',
+    pathContext,
+    contributionMetadata: buildContributionMetadata(),
+  };
+  return overrides ? { ...base, ...overrides } : base;
+}
+
+export type ModelContributionUploadContextCorruptions = {
+  [K in keyof ModelContributionUploadContext]?: unknown;
+};
+
+export function invalidateModelContributionUploadContext(
+  corruptions: ModelContributionUploadContextCorruptions,
+): unknown {
+  return { ...buildModelContributionUploadContext({
+    projectId: 'project-uuid-123',
+    fileType: FileType.ModelContributionRawJson,
+    sessionId: 'session-uuid-456',
+    iteration: 1,
+    stageSlug: DialecticStageSlug.Thesis,
+    modelSlug: 'mock-model',
+    attemptCount: 0,
+  }), ...corruptions };
+}
+
+export type UserFeedbackUploadContextOverrides = Omit<Partial<UserFeedbackUploadContext>, 'pathContext'>;
+
+export function buildUserFeedbackUploadContext(
+  pathContext: UserFeedbackUploadContext['pathContext'],
+  overrides?: UserFeedbackUploadContextOverrides,
+): UserFeedbackUploadContext {
+  const base: UserFeedbackUploadContext = {
+    fileContent: '# Feedback content',
+    mimeType: 'text/markdown',
+    sizeBytes: 50,
+    userId: 'user-123',
+    description: 'Mock user feedback upload context',
+    pathContext,
+    feedbackTypeForDb: 'stage_feedback',
+  };
+  return overrides ? { ...base, ...overrides } : base;
+}
+
+export type UserFeedbackUploadContextCorruptions = {
+  [K in keyof UserFeedbackUploadContext]?: unknown;
+};
+
+export function invalidateUserFeedbackUploadContext(
+  corruptions: UserFeedbackUploadContextCorruptions,
+): unknown {
+  return { ...buildUserFeedbackUploadContext({
+    projectId: 'project-uuid-123',
+    fileType: FileType.UserFeedback,
+    sessionId: 'session-uuid-456',
+    iteration: 1,
+    stageSlug: DialecticStageSlug.Thesis,
+  }), ...corruptions };
+}
+
+export type ResourceUploadContextOverrides = Omit<Partial<ResourceUploadContext>, 'pathContext'>;
+
+export function buildResourceUploadContext(
+  pathContext: ResourceUploadContext['pathContext'],
+  overrides?: ResourceUploadContextOverrides,
+): ResourceUploadContext {
+  const base: ResourceUploadContext = {
+    fileContent: 'Mock resource content',
+    mimeType: 'text/plain',
+    sizeBytes: 50,
+    userId: 'user-123',
+    description: 'Mock resource upload context',
+    pathContext,
+  };
+  return overrides ? { ...base, ...overrides } : base;
+}
+
+export type ResourceUploadContextCorruptions = {
+  [K in keyof ResourceUploadContext]?: unknown;
+};
+
+export function invalidateResourceUploadContext(
+  corruptions: ResourceUploadContextCorruptions,
+): unknown {
+  return { ...buildResourceUploadContext({
+    projectId: 'project-uuid-123',
+    fileType: FileType.GeneralResource,
+    sessionId: 'session-uuid-456',
+    iteration: 1,
+    stageSlug: DialecticStageSlug.Thesis,
+  }), ...corruptions };
+}
+
+export type IDownloadContentResultOverrides = Partial<IDownloadContentResult>;
+
+export function buildIDownloadContentResult(
+  overrides?: IDownloadContentResultOverrides,
+): IDownloadContentResult {
+  const base: IDownloadContentResult = {
+    fileName: 'mock-file.md',
+    content: 'Mock file content',
+    mimeType: 'text/markdown',
+    sizeBytes: 100,
+  };
+  return overrides ? { ...base, ...overrides } : base;
+}
+
+export type IDownloadContentResultCorruptions = {
+  [K in keyof IDownloadContentResult]?: unknown;
+};
+
+export function invalidateIDownloadContentResult(
+  corruptions: IDownloadContentResultCorruptions,
+): unknown {
+  return { ...buildIDownloadContentResult(), ...corruptions };
 }
 
 /**

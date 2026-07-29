@@ -423,3 +423,82 @@ Deno.test(
     assertEquals(result.pathContext.documentKey, undefined);
   },
 );
+
+Deno.test(
+  "resource arm: feedback sourceType produces pathContext with documentKey and undefined sourceId and role",
+  () => {
+    const params: BuildUploadContextResourceParams = minimalResourceParams({
+      sourceType: "feedback",
+      documentKey: FileType.business_case_critique,
+      sourceId: undefined,
+    });
+    const result: ModelContributionUploadContext | ResourceUploadContext = buildUploadContext(params);
+    if (!isResourceContext(result)) {
+      throw new Error("expected ResourceUploadContext");
+    }
+    assertEquals(result.pathContext.sourceType, "feedback");
+    assertEquals(result.pathContext.documentKey, FileType.business_case_critique);
+    assertEquals(result.pathContext.sourceId, undefined);
+    assertEquals(result.pathContext.role, undefined);
+  },
+);
+
+Deno.test(
+  "resource arm: history sourceType with role produces pathContext carrying sourceId and role",
+  () => {
+    const params: BuildUploadContextResourceParams = minimalResourceParams({
+      sourceType: "history",
+      sourceId: "src-hist",
+      role: "assistant",
+      documentKey: undefined,
+    });
+    const result: ModelContributionUploadContext | ResourceUploadContext = buildUploadContext(params);
+    if (!isResourceContext(result)) {
+      throw new Error("expected ResourceUploadContext");
+    }
+    assertEquals(result.pathContext.sourceType, "history");
+    assertEquals(result.pathContext.sourceId, "src-hist");
+    assertEquals(result.pathContext.role, "assistant");
+    assertEquals(result.pathContext.documentKey, undefined);
+  },
+);
+
+Deno.test(
+  "resource arm: chunked history params carry role alongside chunkIndex/chunkTotal on pathContext",
+  () => {
+    const params: BuildUploadContextResourceParams = minimalResourceParams({
+      sourceType: "history",
+      sourceId: "src-hist",
+      role: "user",
+      documentKey: undefined,
+      chunkIndex: 1,
+      chunkTotal: 3,
+    });
+    const result: ModelContributionUploadContext | ResourceUploadContext = buildUploadContext(params);
+    if (!isResourceContext(result)) {
+      throw new Error("expected ResourceUploadContext");
+    }
+    assertEquals(result.pathContext.sourceType, "history");
+    assertEquals(result.pathContext.sourceId, "src-hist");
+    assertEquals(result.pathContext.role, "user");
+    assertEquals(result.pathContext.chunkIndex, 1);
+    assertEquals(result.pathContext.chunkTotal, 3);
+  },
+);
+
+Deno.test(
+  "resource arm: contribution-sourced build produces pathContext with no role key",
+  () => {
+    const params: BuildUploadContextResourceParams = minimalResourceParams({
+      sourceType: "contribution",
+      documentKey: FileType.feature_spec,
+      sourceId: undefined,
+    });
+    const result: ModelContributionUploadContext | ResourceUploadContext = buildUploadContext(params);
+    if (!isResourceContext(result)) {
+      throw new Error("expected ResourceUploadContext");
+    }
+    assertEquals(result.pathContext.sourceType, "contribution");
+    assertEquals(result.pathContext.role, undefined);
+  },
+);

@@ -36,6 +36,56 @@ guardTest, unitTest, integrate prompts). Governed by all Process topics.
   library — `Deno.test` + `@std/assert`, `test` / `it` + `expect`, and so on — and its
   module-resolution convention for import paths.
 
+## Fixtures: call the builder directly
+
+Every fixture is a direct call to the mock's builder, passing **only** the overrides
+that test needs; the builder fills every other field with a valid default. The builder
+call *is* the fixture — there is nothing to stage, spread, or assemble around it, and no
+fixture in the file is exempt.
+
+```ts
+// RIGHT — call the builder at each point of need, overriding only what matters
+const active  = buildMyObject({ status: "active" });
+const expired = buildMyObject({ status: "expired" });
+```
+
+Each of the following defeats the builder and is forbidden — the builder already does
+every one of them for you:
+
+```ts
+// FORBIDDEN 1 — a hand-written object the builder would produce
+const x = { id: "1", status: "active", createdAt: 0 /* ...every field by hand... */ };
+
+// FORBIDDEN 2 — build once, then spread into variants
+const base = buildMyObject();
+const a = { ...base, status: "active" };    // → buildMyObject({ status: "active" })
+const b = { ...base, status: "expired" };   // → buildMyObject({ status: "expired" })
+
+// FORBIDDEN 3 — spread a built value back through the builder
+buildMyObject({ ...base, status: "active" });   // the ...base is redundant
+
+// FORBIDDEN 4 — decompose fields, then reassemble by hand
+const id = "1"; const status = "active";
+const x = { id, status /* ... */ };
+
+// FORBIDDEN 5 — re-wrap the builder in a local helper
+const make = (o) => buildMyObject({ ...fixed, ...o });   // buildMyObject already is that helper
+```
+
+If you catch yourself writing a local object, spreading a built value, reassembling
+fields by hand, or wrapping the builder, stop — the builder replaces all of it. One
+direct `buildMyObject({ … })` per fixture, with only the overrides that fixture needs.
+The same applies to invalidators: `invalidateMyObject({ … })` directly, never staged or
+spread.
+
+**Overrides are scoped to the test's objective.** Pass only the fields this test asserts
+on or depends on; every other field takes the builder's default. When adapting an
+existing test, do not carry the old literal's incidental values into the builder call —
+overriding `irrelevantField` merely because the pre-builder object happened to set it
+rebuilds the hand-rolled object one override at a time, which is the same defeat. Ask of
+each field: does this test's objective depend on it? If not, omit the override and let
+the default stand.
+
 ---
 
 <a id="interface"></a>

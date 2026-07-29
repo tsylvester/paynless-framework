@@ -138,12 +138,15 @@ implementer must do now belongs in the node. Tests follow the same rule (see
 
 ## Canaries
 
-The node template carries two canaries: an actual node **omits** the `## (number)
-(type)` section headers that the template uses for teaching, and **preserves the
-template's line breaks**. Violating either proves the structure is not being
-followed — if a canary trips, the node is discarded. (The canary mechanism itself is
-owned by [traceability](traceability.md); these are its specific applications to the
-node template.)
+The node template carries three canaries. An actual node **omits** two teaching-only
+elements the template shows — the `## (number) (type)` section headers and the
+`Conforms to:` lines — and **preserves the template's line breaks**. The `Conforms to:`
+citations are authoring guidance: the author reads each element's topics and obeys them
+while writing that element, but never prints the citation into the node, where it is only
+noise. Violating any of the three proves the structure is not being followed — if a canary
+trips, the node is discarded. (The canary mechanism itself is owned by
+[traceability](traceability.md); these are its specific applications to the node
+template.)
 
 ## Resolve decisions in the node, do not defer them
 
@@ -199,10 +202,11 @@ it before it reaches an implementer.
 ## Node template
 
 The groups are numbered `## N. Title` for teaching only. An **actual node omits every
-`## (number) (type)` header** and preserves the bullet line breaks (the two canaries
-above). Each file element names the topic(s) it **conforms to**; the topic owns the
-rules, and the node supplies only what is specific to this file's work. **Do not
-restate a topic's rules in a node — cite the topic.**
+`## (number) (type)` header and every `Conforms to:` line**, and preserves the bullet line
+breaks (the three canaries above). The `Conforms to:` citations tell the author which
+topics govern each element — obey them while writing, but do not copy them into the node.
+Supply only what is specific to this file's work, and never restate a topic's rules in a
+node.
 
 ```
   ## 1. Intent & Position

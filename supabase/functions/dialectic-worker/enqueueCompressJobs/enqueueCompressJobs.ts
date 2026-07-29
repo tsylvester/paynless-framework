@@ -1,11 +1,12 @@
 import { sanitizeForPath } from "../../_shared/utils/path_constructor.ts";
-import { FileType } from "../../_shared/types/file_manager.types.ts";
+import { FileType, type PathContext } from "../../_shared/types/file_manager.types.ts";
 import { isJson } from "../../_shared/utils/type-guards/type_guards.common.ts";
 import {
+  isCompressionHistoryRole,
   isFileType,
   isModelContributionFileType,
 } from "../../_shared/utils/type-guards/type_guards.file_manager.ts";
-import { isDialecticStageSlug } from "../enqueueRenderJob/enqueueRenderJob.guards.ts";
+import { isDialecticStageSlug } from "../../_shared/utils/type-guards/type_guards.file_manager.ts";
 import type { TablesInsert } from "../../types_db.ts";
 import {
   CompressJobEnqueueError,
@@ -46,7 +47,7 @@ export const enqueueCompressJobs: enqueueCompressJobsFn = async (
   // 2. Explicit sourceType branch + identity determination
   let identity: string;
 
-  if (victim.sourceType === "contribution" || victim.sourceType === "resource") {
+  if (victim.sourceType === "contribution" || victim.sourceType === "resource" || victim.sourceType === "feedback") {
     if (!isFileType(victim.documentKey)) {
       return {
         error: new CompressJobValidationError(
@@ -56,12 +57,18 @@ export const enqueueCompressJobs: enqueueCompressJobsFn = async (
       };
     }
     identity = victim.documentKey;
-  } else if (victim.sourceType === "feedback" || victim.sourceType === "history") {
+  } else if (victim.sourceType === "history") {
     if (typeof victim.sourceId !== "string" || victim.sourceId === "") {
       return {
         error: new CompressJobValidationError(
           `sourceType '${victim.sourceType}' requires a non-empty sourceId.`,
         ),
+        retriable: false,
+      };
+    }
+    if (!isCompressionHistoryRole(victim.role)) {
+      return {
+        error: new CompressJobValidationError("sourceType 'history' requires a role."),
         retriable: false,
       };
     }
@@ -99,7 +106,7 @@ export const enqueueCompressJobs: enqueueCompressJobsFn = async (
   }
 
   // 4. Dedup layer: canonical final-artifact existence check
-  const pathContext = {
+  const pathContext: PathContext = {
     fileType: FileType.CompressedContext,
     projectId: params.projectId,
     sessionId: params.sessionId,
@@ -109,6 +116,7 @@ export const enqueueCompressJobs: enqueueCompressJobsFn = async (
     sourceType: victim.sourceType,
     documentKey: victim.documentKey,
     sourceId: victim.sourceId,
+    role: victim.role,
   };
 
   let artifactPath: { storagePath: string; fileName: string };
@@ -220,6 +228,7 @@ export const enqueueCompressJobs: enqueueCompressJobsFn = async (
       targetKey: params.targetKey,
       iterationNumber: params.iterationNumber,
       model_id: params.modelId,
+      model_slug: params.modelSlug,
       mode: effectiveMode,
       content: chunk,
       sourceType: victim.sourceType,
@@ -229,6 +238,9 @@ export const enqueueCompressJobs: enqueueCompressJobsFn = async (
 
     if (victim.sourceId !== undefined) {
       childPayload.sourceId = victim.sourceId;
+    }
+    if (victim.role !== undefined) {
+      childPayload.role = victim.role;
     }
     if (victim.documentKey !== undefined) {
       childPayload.documentKey = victim.documentKey;

@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import type { Database } from "../../types_db.ts";
-import type { AiModelExtendedConfig, ILogger } from "../../_shared/types.ts";
+import type { AiModelExtendedConfig, ILogger, Messages } from "../../_shared/types.ts";
 import type {
   CompressionMode,
   CompressionSourceType,
@@ -21,15 +21,18 @@ export interface DialecticCompressJobPayload {
   targetKey: ModelContributionFileTypes;
   iterationNumber: number;
   model_id: string;
+  model_slug: string; // parent EXECUTE payload's own slug, so prompt assemblers can name a CompressionPrompt without a provider lookup
   mode: CompressionMode;
   content: string;
   sourceType: CompressionSourceType;
   sourceId?: string;
+  role?: Messages['role']; // REQUIRED when sourceType is 'history'
   documentKey?: FileType;
   docType?: ModelContributionFileTypes;
   sourceStageSlug?: DialecticStageSlug;
   chunk_index?: number;
   chunk_total?: number;
+  continuation_count?: number; // present only on a continuation row, written by continueJob
   walletId: string;
   user_id: string;
 }
@@ -50,6 +53,7 @@ export interface enqueueCompressJobsParams {
   targetKey: ModelContributionFileTypes;
   iterationNumber: number;
   modelId: string;
+  modelSlug: string; // parent EXECUTE payload's own slug, so prompt assemblers can name a CompressionPrompt without a provider lookup
   walletId: string;
   modelConfig: AiModelExtendedConfig;
   tokenizerDeps: CountTokensDeps;
@@ -61,6 +65,7 @@ export interface enqueueCompressJobsPayload {
     content: string;
     sourceType: CompressionSourceType;
     sourceId?: string;
+    role?: Messages['role']; // REQUIRED when sourceType is 'history'
     documentKey?: FileType;
     docType?: ModelContributionFileTypes;
     sourceStageSlug?: DialecticStageSlug;

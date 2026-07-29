@@ -5,8 +5,9 @@ import { PostgrestError } from "npm:@supabase/supabase-js@2";
 import type { Database } from "../../types_db.ts";
 import { createMockSupabaseClient } from "../../_shared/supabase.mock.ts";
 import { isRecord } from "../../_shared/utils/type-guards/type_guards.common.ts";
-import { sanitizeForPath } from "../../_shared/utils/path_constructor.ts";
+import { sanitizeForPath, constructStoragePath } from "../../_shared/utils/path_constructor.ts";
 import { enqueueCompressJobs } from "./enqueueCompressJobs.ts";
+import { isDialecticCompressJobPayload } from "./enqueueCompressJobs.guard.ts";
 import {
   buildenqueueCompressJobsDeps,
   buildenqueueCompressJobsParams,
@@ -355,5 +356,379 @@ Deno.test("enqueueCompressJobs: contribution victim missing documentKey returns 
     );
     assertExists(insertCalls);
     assertEquals(insertCalls.callCount, 0);
+  },
+);
+
+Deno.test("enqueueCompressJobs: feedback victim with documentKey and no sourceId succeeds",
+  async () => {
+    const mockSetup = createMockSupabaseClient("user-1", {
+      genericMockResults: {
+        dialectic_project_resources: {
+          select: { data: [], error: null },
+        },
+        dialectic_generation_jobs: {
+          insert: { data: [], error: null },
+        },
+      },
+    });
+    const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
+    const deps = buildenqueueCompressJobsDeps();
+    const params = buildenqueueCompressJobsParams({ dbClient });
+    const payload = buildenqueueCompressJobsPayload({
+      victim: {
+        sourceType: "feedback",
+      },
+    });
+
+    const result = await enqueueCompressJobs(deps, params, payload);
+
+    assertEquals("createdCount" in result, true);
+    if ("createdCount" in result) {
+      assertEquals(result.createdCount, 1);
+    }
+
+    const insertCalls = mockSetup.spies.getHistoricQueryBuilderSpies(
+      "dialectic_generation_jobs",
+      "insert",
+    );
+    assertExists(insertCalls);
+    assertEquals(insertCalls.callCount, 1);
+    assertExists(insertCalls.callsArgs[0]);
+
+    const insertedRows = insertCalls.callsArgs[0][0];
+    assert(Array.isArray(insertedRows));
+    assertEquals(insertedRows.length, 1);
+
+    const firstRow = insertedRows[0];
+    assert(isRecord(firstRow));
+    const documentKey = payload.victim.documentKey;
+    assert(documentKey);
+    const expectedSegment = `_compress_feedback_${documentKey}_`;
+    assertEquals(
+      String(firstRow.idempotency_key).includes(expectedSegment),
+      true,
+    );
+  },
+);
+
+Deno.test("enqueueCompressJobs: feedback victim with no documentKey returns validation error naming documentKey",
+  async () => {
+    const mockSetup = createMockSupabaseClient("user-1", {
+      genericMockResults: {
+        dialectic_project_resources: {
+          select: { data: [], error: null },
+        },
+        dialectic_generation_jobs: {
+          insert: { data: [], error: null },
+        },
+      },
+    });
+    const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
+    const deps = buildenqueueCompressJobsDeps();
+    const params = buildenqueueCompressJobsParams({ dbClient });
+    const basePayload = buildenqueueCompressJobsPayload({
+      victim: {
+        sourceType: "feedback",
+      },
+    });
+    const invalidVictim: unknown = {
+      ...basePayload.victim,
+      documentKey: null,
+    };
+    const invalidPayload: unknown = invalidateEnqueueCompressJobsPayload({
+      victim: invalidVictim,
+    });
+
+    const result = await enqueueCompressJobs(deps, params, invalidPayload);
+
+    assertEquals("error" in result, true);
+    if ("error" in result) {
+      assertEquals(result.error instanceof CompressJobValidationError, true);
+      assertEquals(result.retriable, false);
+    }
+
+    const insertCalls = mockSetup.spies.getHistoricQueryBuilderSpies(
+      "dialectic_generation_jobs",
+      "insert",
+    );
+    assertExists(insertCalls);
+    assertEquals(insertCalls.callCount, 0);
+  },
+);
+
+Deno.test("enqueueCompressJobs: history victim with sourceId and role succeeds and carries role in payload",
+  async () => {
+    const constructStoragePathSpy = spy(constructStoragePath);
+    const mockSetup = createMockSupabaseClient("user-1", {
+      genericMockResults: {
+        dialectic_project_resources: {
+          select: { data: [], error: null },
+        },
+        dialectic_generation_jobs: {
+          insert: { data: [], error: null },
+        },
+      },
+    });
+    const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
+    const deps = buildenqueueCompressJobsDeps({
+      constructStoragePath: constructStoragePathSpy,
+    });
+    const params = buildenqueueCompressJobsParams({ dbClient });
+    const payload = buildenqueueCompressJobsPayload({
+      victim: {
+        sourceType: "history",
+        sourceId: "history-1",
+        role: "assistant",
+      },
+    });
+
+    const result = await enqueueCompressJobs(deps, params, payload);
+
+    assertEquals("createdCount" in result, true);
+    if ("createdCount" in result) {
+      assertEquals(result.createdCount, 1);
+    }
+
+    assertEquals(constructStoragePathSpy.calls.length, 1);
+    const pathContext = constructStoragePathSpy.calls[0].args[0];
+    assert(isRecord(pathContext));
+    assertEquals(pathContext.sourceType, "history");
+    assertEquals(pathContext.sourceId, "history-1");
+    assertEquals(pathContext.role, "assistant");
+
+    const insertCalls = mockSetup.spies.getHistoricQueryBuilderSpies(
+      "dialectic_generation_jobs",
+      "insert",
+    );
+    assertExists(insertCalls);
+    assertEquals(insertCalls.callCount, 1);
+    assertExists(insertCalls.callsArgs[0]);
+
+    const insertedRows = insertCalls.callsArgs[0][0];
+    assert(Array.isArray(insertedRows));
+    assertEquals(insertedRows.length, 1);
+
+    const firstRow = insertedRows[0];
+    assert(isRecord(firstRow));
+    assert(isRecord(firstRow.payload));
+    assertEquals(isDialecticCompressJobPayload(firstRow.payload), true);
+    assertEquals(firstRow.payload.role, "assistant");
+  },
+);
+
+Deno.test("enqueueCompressJobs: history victim with sourceId and no role returns validation error naming role",
+  async () => {
+    const constructStoragePathSpy = spy(constructStoragePath);
+    const mockSetup = createMockSupabaseClient("user-1", {
+      genericMockResults: {
+        dialectic_project_resources: {
+          select: { data: [], error: null },
+        },
+        dialectic_generation_jobs: {
+          insert: { data: [], error: null },
+        },
+      },
+    });
+    const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
+    const deps = buildenqueueCompressJobsDeps({
+      constructStoragePath: constructStoragePathSpy,
+    });
+    const params = buildenqueueCompressJobsParams({ dbClient });
+    const payload = buildenqueueCompressJobsPayload({
+      victim: {
+        sourceType: "history",
+        sourceId: "history-1",
+      },
+    });
+
+    const result = await enqueueCompressJobs(deps, params, payload);
+
+    assertEquals("error" in result, true);
+    if ("error" in result) {
+      assertEquals(result.error instanceof CompressJobValidationError, true);
+      assertEquals(result.retriable, false);
+    }
+
+    assertEquals(constructStoragePathSpy.calls.length, 0);
+
+    const selectCalls = mockSetup.spies.getHistoricQueryBuilderSpies(
+      "dialectic_project_resources",
+      "select",
+    );
+    assertExists(selectCalls);
+    assertEquals(selectCalls.callCount, 0);
+
+    const insertCalls = mockSetup.spies.getHistoricQueryBuilderSpies(
+      "dialectic_generation_jobs",
+      "insert",
+    );
+    assertExists(insertCalls);
+    assertEquals(insertCalls.callCount, 0);
+  },
+);
+
+Deno.test("enqueueCompressJobs: history victim with role outside Messages is refused",
+  async () => {
+    const constructStoragePathSpy = spy(constructStoragePath);
+    const mockSetup = createMockSupabaseClient("user-1", {
+      genericMockResults: {
+        dialectic_project_resources: {
+          select: { data: [], error: null },
+        },
+        dialectic_generation_jobs: {
+          insert: { data: [], error: null },
+        },
+      },
+    });
+    const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
+    const deps = buildenqueueCompressJobsDeps({
+      constructStoragePath: constructStoragePathSpy,
+    });
+    const params = buildenqueueCompressJobsParams({ dbClient });
+    const basePayload = buildenqueueCompressJobsPayload({
+      victim: {
+        sourceType: "history",
+        sourceId: "history-1",
+        role: "assistant",
+      },
+    });
+    const invalidVictim: unknown = {
+      ...basePayload.victim,
+      role: "model",
+    };
+    const invalidPayload: unknown = invalidateEnqueueCompressJobsPayload({
+      victim: invalidVictim,
+    });
+
+    const result = await enqueueCompressJobs(deps, params, invalidPayload);
+
+    assertEquals("error" in result, true);
+    if ("error" in result) {
+      assertEquals(result.error instanceof CompressJobValidationError, true);
+      assertEquals(result.retriable, false);
+    }
+
+    assertEquals(constructStoragePathSpy.calls.length, 0);
+
+    const insertCalls = mockSetup.spies.getHistoricQueryBuilderSpies(
+      "dialectic_generation_jobs",
+      "insert",
+    );
+    assertExists(insertCalls);
+    assertEquals(insertCalls.callCount, 0);
+  },
+);
+
+Deno.test("enqueueCompressJobs: chunked history victim carries role and model_slug on every chunk",
+  async () => {
+    const splitText = spy(async (_text: string) => ["chunk1", "chunk2", "chunk3"]);
+    const countTokens = spy(() => 1000);
+    const mockSetup = createMockSupabaseClient("user-1", {
+      genericMockResults: {
+        dialectic_project_resources: {
+          select: { data: [], error: null },
+        },
+        dialectic_generation_jobs: {
+          insert: { data: [], error: null },
+        },
+      },
+    });
+    const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
+    const deps = buildenqueueCompressJobsDeps({
+      countTokens,
+      textSplitter: { splitText },
+    });
+    const params = buildenqueueCompressJobsParams({ dbClient });
+    const payload = buildenqueueCompressJobsPayload({
+      victim: {
+        mode: "text",
+        content: "some content that is over budget",
+        sourceType: "history",
+        sourceId: "history-1",
+        role: "assistant",
+      },
+    });
+
+    const result = await enqueueCompressJobs(deps, params, payload);
+
+    assertEquals("createdCount" in result, true);
+    if ("createdCount" in result) {
+      assertEquals(result.createdCount, 3);
+    }
+
+    const insertCalls = mockSetup.spies.getHistoricQueryBuilderSpies(
+      "dialectic_generation_jobs",
+      "insert",
+    );
+    assertExists(insertCalls);
+    assertEquals(insertCalls.callCount, 1);
+    assertExists(insertCalls.callsArgs[0]);
+
+    const insertedRows = insertCalls.callsArgs[0][0];
+    assert(Array.isArray(insertedRows));
+    assertEquals(insertedRows.length, 3);
+
+    for (let i = 0; i < 3; i += 1) {
+      const row = insertedRows[i];
+      assert(isRecord(row));
+      assert(isRecord(row.payload));
+      assertEquals(row.payload.role, "assistant");
+      assertEquals(row.payload.model_slug, params.modelSlug);
+      assertEquals(row.payload.chunk_index, i + 1);
+      assertEquals(row.payload.chunk_total, 3);
+    }
+  },
+);
+
+Deno.test("enqueueCompressJobs: inserted payload model_slug equals params.modelSlug not params.modelId",
+  async () => {
+    const mockSetup = createMockSupabaseClient("user-1", {
+      genericMockResults: {
+        dialectic_project_resources: {
+          select: { data: [], error: null },
+        },
+        dialectic_generation_jobs: {
+          insert: { data: [], error: null },
+        },
+      },
+    });
+    const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
+    const deps = buildenqueueCompressJobsDeps();
+    const params = buildenqueueCompressJobsParams({
+      dbClient,
+      modelId: "distinct-model-id",
+      modelSlug: "distinct-model-slug",
+    });
+    const payload = buildenqueueCompressJobsPayload();
+
+    const result = await enqueueCompressJobs(deps, params, payload);
+
+    assertEquals("createdCount" in result, true);
+    if ("createdCount" in result) {
+      assertEquals(result.createdCount, 1);
+    }
+
+    const insertCalls = mockSetup.spies.getHistoricQueryBuilderSpies(
+      "dialectic_generation_jobs",
+      "insert",
+    );
+    assertExists(insertCalls);
+    assertEquals(insertCalls.callCount, 1);
+    assertExists(insertCalls.callsArgs[0]);
+
+    const insertedRows = insertCalls.callsArgs[0][0];
+    assert(Array.isArray(insertedRows));
+    assertEquals(insertedRows.length, 1);
+
+    const firstRow = insertedRows[0];
+    assert(isRecord(firstRow));
+    assert(isRecord(firstRow.payload));
+    assertEquals(firstRow.payload.model_slug, "distinct-model-slug");
+    assertEquals(
+      firstRow.payload.model_slug === params.modelSlug, true,
+    );
+    assertEquals(
+      firstRow.payload.model_slug === params.modelId, false,
+    );
   },
 );

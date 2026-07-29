@@ -213,3 +213,75 @@ Deno.test(
     );
   },
 );
+
+Deno.test(
+  "Contract: BuildUploadContextResourceParams accepts sourceType 'history' with role and reads role back",
+  () => {
+    const params: BuildUploadContextResourceParams = {
+      projectId: "proj-1",
+      storageFileType: FileType.CompressedContextRawJson,
+      sessionId: "sess-1",
+      iterationNumber: 1,
+      stageSlug: DialecticStageSlug.Thesis,
+      targetKey: FileType.business_case,
+      sourceType: "history",
+      documentKey: undefined,
+      sourceId: "src-1",
+      role: "assistant",
+      chunkIndex: undefined,
+      chunkTotal: undefined,
+      contentForStorage: '{"compressed":true}',
+      projectOwnerUserId: "owner-1",
+      description: "compressed_context_raw_json for stage 'thesis' history artifact",
+    };
+    assertEquals(params.role, "assistant");
+  },
+);
+
+Deno.test(
+  "Contract: BuildUploadContextResourceParams accepts sourceType 'feedback' keyed by documentKey with no role key",
+  () => {
+    const params: BuildUploadContextResourceParams = {
+      projectId: "proj-1",
+      storageFileType: FileType.CompressedContextRawJson,
+      sessionId: "sess-1",
+      iterationNumber: 1,
+      stageSlug: DialecticStageSlug.Thesis,
+      targetKey: FileType.business_case,
+      sourceType: "feedback",
+      documentKey: FileType.business_case_critique,
+      sourceId: undefined,
+      chunkIndex: undefined,
+      chunkTotal: undefined,
+      contentForStorage: '{"compressed":true}',
+      projectOwnerUserId: "owner-1",
+      description: "compressed_context_raw_json for stage 'thesis' feedback artifact",
+    };
+    assertEquals(params.sourceType, "feedback");
+    assertEquals(params.documentKey, FileType.business_case_critique);
+  },
+);
+
+Deno.test(
+  "Contract: BuildUploadContextResourceParams accepts renderDocument's exact call shape — contribution with no role key",
+  () => {
+    const params: BuildUploadContextResourceParams = {
+      projectId: "proj-1",
+      storageFileType: FileType.CompressedContextRawJson,
+      sessionId: "sess-1",
+      iterationNumber: 1,
+      stageSlug: DialecticStageSlug.Thesis,
+      targetKey: FileType.business_case,
+      sourceType: "contribution",
+      documentKey: FileType.feature_spec,
+      sourceId: undefined,
+      chunkIndex: undefined,
+      chunkTotal: undefined,
+      contentForStorage: '{"compressed":true}',
+      projectOwnerUserId: "owner-1",
+      description: "compressed_context_raw_json for stage 'thesis' contribution",
+    };
+    assertEquals(params.sourceType, "contribution");
+    assertEquals("role" in params, false);
+  },
+);

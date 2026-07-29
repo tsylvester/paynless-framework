@@ -124,6 +124,353 @@ Oversized model inputs compress incrementally until the preflight fits: the pare
     * `[ ]`   `processJob.ts` adds exactly one import, declares no type, and edits no file outside itself and `processJob.test.ts`.
     * `[ ]`   Every pre-existing `EXECUTE`, `PLAN`, `RENDER`, `null`-type and COMPRESS case in `processJob.test.ts` passes with its assertions unmodified.
 
+* `[ ]`   supabase/migrations/`<ts>_compression_prompt_provenance.sql` **[DB] Give `dialectic_project_resources` the same `source_prompt_resource_id` column and self-referencing foreign key `dialectic_contributions` already carries, and land the shared four-symbol `DialecticProjectResourceRow` builder the regenerated Row demands, so this widening and the next one cost one fixture file instead of eighty-three literals**
+
+  * `[ ]`   `objective`
+    * `[ ]`   The problem is that the EXECUTE path records provenance on the row it produces and the compression path cannot. `dialectic_contributions` carries `source_prompt_resource_id UUID` with `fk_source_prompt_resource_id` referencing `public.dialectic_project_resources(id)`, added by `20250922165259_document_centric_generation.sql`, and `saveResponse` writes it from the job payload's own `source_prompt_resource_id`. A compression artifact is a `dialectic_project_resources` row, and that table's only provenance column is `source_contribution_id`, which references `dialectic_contributions` and cannot hold a prompt resource id. Without this column the `CompressionPrompt` artifact `assembleCompressionPrompt` persists is unreachable from the artifact it produced, and `saveResponse`'s COMPRESS tail has nowhere to record it.
+    * `[ ]`   Functional goal, schema: `dialectic_project_resources` gains `source_prompt_resource_id UUID`, nullable, constrained by `ADD CONSTRAINT fk_project_resources_source_prompt_resource_id FOREIGN KEY (source_prompt_resource_id) REFERENCES public.dialectic_project_resources(id)`. The reference is self-referencing because a prompt IS a `dialectic_project_resources` row — `TurnPrompt`, `PlannerPrompt` and `CompressionPrompt` are all `ResourceFileTypes` — so every produced artifact records the prompt that produced it through one column of one name, whether that artifact is a contribution or a resource.
+    * `[ ]`   The constraint is named `fk_project_resources_source_prompt_resource_id` rather than reusing `dialectic_contributions`' `fk_source_prompt_resource_id`. Postgres scopes constraint names per table, so the duplicate would be legal, but the generated `types_db.ts` `Relationships` entries carry `foreignKeyName` as their only discriminator and PostgREST resolves embedded resources by that name — two relationships called the same thing, one on each side of the same pair of tables, is a trap with no upside.
+    * `[ ]`   Functional goal, the type face — and the reason this node is larger than its one SQL statement: Supabase generates a nullable column as an OPTIONAL member on `Insert` and `Update` but a REQUIRED one on `Row`, exactly as the table's existing `source_contribution_id?: string | null` versus `source_contribution_id: string | null` shows. Regenerating `types_db.ts` therefore compiles every writer untouched — both `TablesInsert<'dialectic_project_resources'>` sites, `file_manager.ts`'s `recordData` and `getAllStageProgress.integration.test.ts`'s fixture, take an optional member — and breaks every hand-rolled `Row` literal in the repo, of which there are eighty-three across twelve files. This is a correction to the scope entry's "compile-safe" note, which holds for `Insert`/`Update` and not for `Row`.
+    * `[ ]`   Functional goal, the fixture: `_shared/dialectic.mock.ts` gains the four-symbol set for `DialecticProjectResourceRow` — `DialecticProjectResourceRowOverrides`, `buildDialecticProjectResourceRow`, `DialecticProjectResourceRowCorruptions`, `invalidateDialecticProjectResourceRow` — and every construction site below consumes it. The completeness of a database row then lives in exactly one place: the next column added to this table is one edit to one builder, and every suite inherits it. `_shared/dialectic.mock.ts` is the home because it is already the package-level shared mock consumed from `dialectic-worker` and `dialectic-service` alike — `processJob.test.ts` takes `createMockJobProcessors` from it — and it already holds the cross-cutting builders `buildInputRule`, `buildRelevanceRule`, `buildOutputRule` and `buildDialecticStageRecipeStep`. It holds no DB-row builder yet; this is the first.
+    * `[ ]`   Functional goal, the guard: `isDialecticProjectResourceRow` in `_shared/utils/type-guards/type_guards.dialectic.ts` checks all sixteen of the table's current columns. After the column lands it checks sixteen of seventeen and narrows `unknown` to a type declaring a member it never inspected, so it gains the seventeenth check and its test gains the matching case.
+    * `[ ]`   Non-functional constraints:
+      * `[ ]`   Nullable and additive: no `NOT NULL`, no `DEFAULT`, no backfill, no data migration. Every existing row keeps a null. No index is created — no consumer in this epic filters or joins on the column; `file_manager.ts` writes it and `saveResponse` supplies it from a payload it already holds.
+      * `[ ]`   No existing column, constraint, index, trigger, RLS policy or grant on `dialectic_project_resources` is altered, and `dialectic_contributions` is not touched: its column and constraint already exist and are what this mirrors. Adding a nullable column changes no policy predicate, so the table's RLS from `20260226233329_dialectic_tables_rls.sql` is unaffected.
+      * `[ ]`   Forward-only, matching every migration in this directory; the repo carries no down scripts. `<ts>` is a UTC timestamp greater than `20260712162753_add_type_to_recipes.sql`, the highest in `supabase/migrations/`.
+      * `[ ]`   This is the second of the epic's three migrations. WS-0's `20260711195713_compression_jobs_foundation.sql` is committed, so this lands as its own migration rather than an amendment to it, and WS-X's REMOVE migration closes the set. It depends on neither: it touches nothing WS-0 created and nothing WS-X drops.
+      * `[ ]`   The fixture sweep is mechanical and changes no assertion. A literal becomes a `buildDialecticProjectResourceRow({ … })` call carrying ONLY the fields that case varies from the default; every other field comes from the builder. No test's expected values, query stubs, or control flow change, and no case is added or removed by the sweep.
+      * `[ ]`   Outside the sweep, and untouched: every annotation of a query result or `.find()` return (`getAllStageProgress.ts`, `syncToGitHub.ts`, `findSourceDocuments.ts`, `gatherArtifacts.ts`, `cloneProject.ts`, `file_manager.types.ts`, `gatherInputsForStage.integration.test.ts`), both `TablesInsert` sites, and `type_guards.dialectic.test.ts`'s fixtures for the guard itself, which are deliberately untyped so the guard sees the shapes it must reject.
+
+  * `[ ]`   `role`
+    * `[ ]`   Schema layer plus the fixture that gives the schema its test-side face. A migration has no types and no tests of its own and is exempt from the full support-file structure per [workplan-structure](../../../../agents/workplan-structure.md); its TypeScript face arrives through the generated `types_db.ts`, and its first behavioral proof is the `file_manager.ts` node's own tests, which are the first code to write the column.
+    * `[ ]`   Out of scope: `ResourceUploadContext.sourcePromptResourceId` and the insert literal that writes the column (WS-P `file_manager.ts` node, which owns both); the params member that feeds it (WS-P `buildUploadContext.ts` node); reading it off the COMPRESS payload (WS-P `saveResponse.ts` node); and the contribution-side back-link, which does not run on the COMPRESS path because that column references `dialectic_contributions`.
+
+  * `[ ]`   `module`
+    * Conforms to: [boundaries](../../../../agents/boundaries.md)
+    * `[ ]`   Bounded context: one new migration file, the regenerated `supabase/functions/types_db.ts`, the `_shared/dialectic.mock.ts` builder set, the `type_guards.dialectic.ts` guard and its test, and the construction sites enumerated below. Everything after the migration exists only because the generated `Row` widened.
+    * `[ ]`   `_shared/dialectic.mock.ts` already imports from `dialectic-service/dialectic.interface.ts`, so `DialecticProjectResourceRow` joins that existing type-only import and no new module edge is created.
+
+  * `[ ]`   `deps`
+    * Conforms to: [dependency-injection](../../../../agents/dependency-injection.md), [boundaries](../../../../agents/boundaries.md)
+    * `[ ]`   Schema: `public.dialectic_project_resources` with its `id UUID` primary key — the same target `dialectic_contributions`' existing `fk_source_prompt_resource_id` already references. No extension, function, type or enum value is required.
+    * `[ ]`   `DialecticProjectResourceRow` (`dialectic-service/dialectic.interface.ts`, the existing alias for `Database["public"]["Tables"]["dialectic_project_resources"]["Row"]`) — added to `_shared/dialectic.mock.ts`'s existing type-only import from that file.
+    * `[ ]`   `isResourceDocumentType` and the other guards in `type_guards.dialectic.ts` are untouched; the guard edit adds one check to one function.
+    * `[ ]`   Confirm: no reverse dependency and no lateral violation. The builder sits in `_shared/`, is imported downward by `dialectic-worker/` and `dialectic-service/` suites, and imports nothing from either.
+
+  * `[ ]`   `<ts>_compression_prompt_provenance.sql`
+    * Conforms to: [workplan-structure](../../../../agents/workplan-structure.md)
+    * `[ ]`   One statement, in the two-clause `ADD COLUMN` + `ADD CONSTRAINT` form `20250922165259_document_centric_generation.sql` uses for this same pair on `dialectic_contributions`. No `IF NOT EXISTS` guard: the column is new and this directory's migrations apply once, in order.
+      ```sql
+      ALTER TABLE public.dialectic_project_resources
+      ADD COLUMN source_prompt_resource_id UUID,
+      ADD CONSTRAINT fk_project_resources_source_prompt_resource_id FOREIGN KEY (source_prompt_resource_id) REFERENCES public.dialectic_project_resources(id);
+      ```
+
+  * `[ ]`   `supabase/functions/types_db.ts` (regenerated, never hand-edited)
+    * Conforms to: [types](../../../../agents/types.md)
+    * `[ ]`   `dialectic_project_resources.Row` gains `source_prompt_resource_id: string | null`; `Insert` and `Update` each gain `source_prompt_resource_id?: string | null`.
+    * `[ ]`   `Relationships` gains one entry: `foreignKeyName: "fk_project_resources_source_prompt_resource_id"`, `columns: ["source_prompt_resource_id"]`, `isOneToOne: false`, `referencedRelation: "dialectic_project_resources"`, `referencedColumns: ["id"]`.
+    * `[ ]`   The node states what regeneration must produce so the implementer verifies the output rather than authors it. If the generated file differs from the above, the migration is wrong, not the file.
+
+  * `[ ]`   `supabase/functions/_shared/dialectic.mock.ts`
+    * Conforms to: [mocks](../../../../agents/mocks.md)
+    * `[ ]`   `export type DialecticProjectResourceRowOverrides = Partial<DialecticProjectResourceRow>;`
+    * `[ ]`   `export function buildDialecticProjectResourceRow(overrides?: DialecticProjectResourceRowOverrides): DialecticProjectResourceRow` — a `base` annotated `DialecticProjectResourceRow` setting EVERY column explicitly, `source_prompt_resource_id: null` among them, returning `overrides ? { ...base, ...overrides } : base`. Copy the shape of `buildContributionRow` in `_shared/services/document_renderer/assembleContributionChain/assembleContributionChain.mock.ts`, which is the same builder over `dialectic_contributions` and already carries that column.
+    * `[ ]`   `export type DialecticProjectResourceRowCorruptions = { [K in keyof DialecticProjectResourceRow]?: unknown };`
+    * `[ ]`   `export function invalidateDialecticProjectResourceRow(corruptions: DialecticProjectResourceRowCorruptions): unknown` — `{ ...buildDialecticProjectResourceRow(), ...corruptions }`, returning `unknown` so no call site casts.
+    * `[ ]`   Defaults are the neutral rendered-document resource the existing worker-side builder already uses, so the sweep below is a substitution rather than a re-baselining: `resource_type: "rendered_document"`, a `thesis` stage slug, iteration 1, `source_contribution_id: null`, `resource_description: null`, and a single `new Date().toISOString()` for `created_at`/`updated_at`.
+    * `[ ]`   The builder is the ONLY definition of a complete `dialectic_project_resources` row in the repo when this node lands. `buildDialecticProjectResourceRow` currently living in `dialectic-worker/gatherArtifacts/gatherArtifacts.mock.ts` is DELETED, not delegated to — [mocks](../../../../agents/mocks.md) forbids duplicate builders, and two builders for one row is the condition this node exists to end. The name moves with it, so its consumers repoint their import and change nothing else.
+
+  * `[ ]`   `supabase/functions/_shared/utils/type-guards/type_guards.dialectic.test.ts`
+    * Conforms to: [tests#guard](../../../../agents/tests.md#guard), [guards](../../../../agents/guards.md)
+    * `[ ]`   `Deno.test('Type Guard: isDialecticProjectResourceRow')`'s `baseResource` gains `source_prompt_resource_id: 'prompt-resource-123'`, and its nullable-properties step gains `source_prompt_resource_id: null` to the object it spreads — the present-and-absent pair for the new member.
+    * `[ ]`   New step: `isDialecticProjectResourceRow` returns false for `{ ...baseResource, source_prompt_resource_id: 42 }` — the corruption case for the member the guard is about to check. RED until the guard checks it.
+    * `[ ]`   The fixtures in this file stay untyped literals, as they are today: a guard test feeds shapes the guard must reject, and annotating them would make the invalid cases uncompilable.
+
+  * `[ ]`   `supabase/functions/_shared/utils/type-guards/type_guards.dialectic.ts`
+    * Conforms to: [guards](../../../../agents/guards.md)
+    * `[ ]`   `isDialecticProjectResourceRow` gains `if (value.source_prompt_resource_id !== null && typeof value.source_prompt_resource_id !== 'string') return false;`, beside the identical check it already performs for `source_contribution_id`. Every other guard in the file is unchanged.
+
+  * `[ ]`   `consuming construction sites` (every hand-rolled `dialectic_project_resources` row in the repo; each becomes a `buildDialecticProjectResourceRow({ … })` call carrying only the fields its case varies)
+    * Conforms to: [mocks](../../../../agents/mocks.md), [tests](../../../../agents/tests.md)
+    * `[ ]`   `_shared/services/file_manager.mock.ts` — 1 site. `buildFileRecord`'s `base` stops enumerating the row and becomes `buildDialecticProjectResourceRow({ … its own rendered-document defaults … })`; `buildFileRecord`, `FileRecordOverrides`, `FileRecordCorruptions` and `invalidateFileRecord` keep their names, signatures and return types, so its consumers `renderDocument.test.ts` and `renderDocument.integration.test.ts` are untouched.
+    * `[ ]`   `dialectic-worker/gatherArtifacts/gatherArtifacts.mock.ts` — 1 site. Its `buildDialecticProjectResourceRow` is deleted; `gatherArtifacts.provides.ts` drops the re-export it can no longer own; `gatherArtifacts.test.ts`, `gatherArtifacts.integration.test.ts` and `processSimpleJob.integration.test.ts` repoint that one import to `_shared/dialectic.mock.ts` and keep every call and assertion as written.
+    * `[ ]`   `_shared/services/verify_renderer.ts` — 1 site, a `record` literal in this dev-only harness.
+    * `[ ]`   `dialectic-worker/findSourceDocuments.test.ts` — 26 sites.
+    * `[ ]`   `dialectic-worker/task_isolator.planComplexStage.test.ts` — 16 sites: 15 annotated declarations plus the `mockProjectResources = [{ … }]` assignment in its setup block, which is contextually typed by the `let mockProjectResources: DialecticProjectResourceRow[]` above it and breaks identically.
+    * `[ ]`   `dialectic-worker/task_isolator.parallel.test.ts` — 12 sites, on the same split: 11 annotated declarations plus the one setup-block assignment.
+    * `[ ]`   `dialectic-worker/task_isolator.test.ts` — 8 sites, seven of them array declarations whose every element is an inline literal.
+    * `[ ]`   `dialectic-service/submitStageResponses.test.ts` — 9 sites.
+    * `[ ]`   `dialectic-service/cloneProject.test.ts` — 3 sites, one of them the `record` literal inside the compression-identity `.map` callback.
+    * `[ ]`   `dialectic-service/listStageDocuments.test.ts` — 3 sites, all array declarations with inline elements.
+    * `[ ]`   `dialectic-service/saveContributionEdit.test.ts` — 2 sites.
+    * `[ ]`   `dialectic-service/getAllStageProgress.test.ts` — 1 site, `renderResource`. The `resources` array below it references that variable and needs nothing.
+    * `[ ]`   `dialectic-service/exportProject.test.ts` — 1 site, `bucketResourceDataInit`.
+    * `[ ]`   `dialectic-worker/processComplexJob.intraStageDependency.test.ts` — 1 site: the local `createProjectResource(stageSlug, documentKey, fileName, storagePath)` factory's returned literal becomes a builder call with those four values as overrides. The factory keeps its name and signature.
+    * `[ ]`   `dialectic-worker/findSourceDocuments.ts` is NOT in this list although it declares the type: its declaration is an empty array, which has no member to supply. It is named here only because a census that silently omits a matching file cannot be checked.
+
+  * `[ ]`   `construction`
+    * Conforms to: [tdd-ordering](../../../../agents/tdd-ordering.md)
+    * `[ ]`   Order is bottom-up and not negotiable: migration → `types_db.ts` regen → builder → guard test → guard → the consuming sites. The builder cannot set the new member before the regen carries it, and the guard test cannot corrupt a member the guard does not yet check.
+    * `[ ]`   The repo does not compile between the regen and the last consuming site. That window is transient inside this node and closed by its own last step; the workstream's commit seam is `saveResponse.ts`, several nodes later.
+    * `[ ]`   No factory beyond the builder, and the builder has no conditional logic: one `base`, one spread, one return.
+
+  * `[ ]`   `directionality`
+    * Conforms to: [boundaries](../../../../agents/boundaries.md)
+    * `[ ]`   Layer: database schema, the innermost layer, plus the shared fixture that mirrors it. The schema depends on no application code; every layer reaches it through the generated `types_db.ts`.
+    * `[ ]`   Provides outward: the column to `file_manager.ts` (next node), its only writer this epic; the builder to every suite in `dialectic-worker/` and `dialectic-service/` that constructs a resource row.
+    * `[ ]`   No cycle: `_shared/dialectic.mock.ts` imports `DialecticProjectResourceRow` from `dialectic-service/dialectic.interface.ts`, which imports nothing from `_shared/dialectic.mock.ts`.
+
+  * `[ ]`   `requirements` (binary, observable)
+    * Conforms to: [tdd-ordering](../../../../agents/tdd-ordering.md)
+    * `[ ]`   `dialectic_project_resources` has a nullable `source_prompt_resource_id UUID` constrained by `fk_project_resources_source_prompt_resource_id` referencing `public.dialectic_project_resources(id)`.
+    * `[ ]`   Inserting a resource row that omits the column succeeds and stores null; inserting one whose value is not an existing `dialectic_project_resources.id` is rejected by the foreign key.
+    * `[ ]`   Every pre-existing row holds null, and no other column, constraint, index, policy or trigger on the table differs after the migration.
+    * `[ ]`   `types_db.ts` declares the member on `Row`, `Insert` and `Update` with the stated optionality, and carries the one new relationship entry.
+    * `[ ]`   `buildDialecticProjectResourceRow` is exported from `_shared/dialectic.mock.ts`, returns a row with every column set, and is the only definition of a complete `dialectic_project_resources` row in the repo — a repo-wide search for a second one finds nothing.
+    * `[ ]`   `isDialecticProjectResourceRow` rejects a row whose `source_prompt_resource_id` is neither a string nor null, and accepts it in both valid states.
+    * `[ ]`   No `dialectic_project_resources` row literal remains anywhere in the repo: every construction site enumerated above calls the builder, and each passes only the fields its own case varies.
+    * `[ ]`   Every test touched by the sweep passes with its assertions, fixtures-under-test, query stubs and case list unchanged.
+
+* `[ ]`   supabase/functions/_shared/services/`file_manager.ts` **[BE] Write the prompt-provenance column on the resource path: `ResourceUploadContext` gains `sourcePromptResourceId` and the `dialectic_project_resources` insert literal records it beside the `source_contribution_id` line that already carries provenance the same way**
+
+  * `[ ]`   `objective`
+    * `[ ]`   The problem is that the column the prior node adds has no writer. `uploadAndRegisterFile`'s resource arm builds a `TablesInsert<'dialectic_project_resources'>` literal that sets `source_contribution_id` and nothing else about provenance, so a `CompressedContext`, `CompressedContextRawJson` or `CompressionPrompt` artifact registers with `source_prompt_resource_id` null no matter what its caller knows. `saveResponse`'s COMPRESS tail has a prompt resource id in hand and no member to put it in, and `buildUploadContext`'s resource arm has nothing to set.
+    * `[ ]`   Functional goal, the type: `ResourceUploadContext` gains `sourcePromptResourceId?: string`, adjacent to `resourceTypeForDb` and `resourceDescriptionForDb`. It belongs on the upload context rather than on `PathContext` for two reasons: it addresses nothing about where the file goes, and the contribution path already carries its own equivalent on the upload context as `contributionMetadata.source_prompt_resource_id`. One concept, one layer, on both arms.
+    * `[ ]`   Functional goal, the write: the resource arm's `recordData` literal gains `source_prompt_resource_id: resourceContext.sourcePromptResourceId ?? null`, placed immediately after `source_contribution_id`, which reads its own provenance member in exactly that form.
+    * `[ ]`   The `?? null` is a representation conversion at the persistence boundary, not a production default. The column's absent state is `null` and an omitted optional TypeScript member is `undefined`; the expression maps one spelling of "absent" onto the other and supplies no value the caller did not have. There is nothing to heal: absent prompt provenance is a real, permanent state for every resource no prompt produced — `InitialUserPrompt`, `GeneralResource`, `ProjectReadme`, `ProjectExportZip` — and the adjacent `source_contribution_id` line has expressed exactly this for the same reason since the column existed.
+    * `[ ]`   Functional goal, the guard: `isResourceContext` does not guard the object it narrows. It proves the context is a record, is not a contribution or feedback context, has six keys PRESENT, and that `pathContext.fileType` is a resource file type — and checks the TYPE of nothing else. `fileContent` may be a number, `sizeBytes` a string, `userId` an object, and `pathContext` may be `{ fileType }` and nothing more: all four narrow to `ResourceUploadContext` today. It is the vacuous-`isRecord`-where-the-type-has-structure substitute [guards](../../../../agents/guards.md) names outright, and this node fixes it — every member checked for its real type, `pathContext` delegated to the guard its own type is owed.
+    * `[ ]`   Functional goal, the missing owned guard: `PathContext` is owned by `file_manager.types.ts`, and its guard file exports none for it, which is why `isResourceContext` inlines a two-line stand-in. `isPathContext` is authored here, in the owning interface's guard file, and `isResourceContext` calls it. Every property whose type belongs to another interface is delegated to that interface's own predicate — `isFileType`, `isDialecticStageSlug`, `isCompressionSourceType`, `isCompressionHistoryRole`, `isDocumentKey` from this same file, and `isContributionType` from `type_guards.dialectic.ts`, located by predicate search and CALLED, never re-authored. `isContributionType` takes `string`, so the caller narrows with `typeof` first and passes the narrowed value.
+    * `[ ]`   Functional goal, fixtures: a builder exists once this node lands, so every test that CONSTRUCTS a `ResourceUploadContext` consumes it. The twelve hand-declared contexts in `file_manager.upload.test.ts` and the `mockResourceContext` fixture in `type_guards.file_manager.test.ts` become `buildResourceUploadContext({ … only what the case varies … })` calls. This is a substitution, not a re-baselining: each call carries the fields its own case asserted on, and no expectation moves.
+    * `[ ]`   Blast radius, enumerated. The member is optional, so nothing fails to compile. Sixteen annotated `ResourceUploadContext` literals exist: twelve in `file_manager.upload.test.ts` and one in `type_guards.file_manager.test.ts` are fixtures and are converted by this node. `renderDocument.ts` and `cloneProject.ts` are production code, which does not import a mock file — their contexts are assembled from live runtime values, not fixture defaults. The builder produces an object of the same production type, valid in the same way, which is precisely what makes the guard tests below evidence about production shapes rather than about a fixture. `assemblePlannerPrompt.test.ts`'s literal is an EXPECTED VALUE inside an assertion — the context the assembler must have passed — and a builder call there would collapse the assertion into a comparison of a value against itself. Fixtures come from builders; expected values are spelled out. Those three are not touched.
+    * `[ ]`   Non-functional constraints:
+      * `[ ]`   The contribution arm of `uploadAndRegisterFile` is untouched, as are the feedback arm, the model-contribution storage-upload loop with its collision and transient-retry handling, the non-model upload path, every `FileManagerError` return, the `resource_description` merge, the `resourceTypeForDb` fallback, and the upsert's `onConflict` target.
+      * `[ ]`   `isModelContributionContext` and `isUserFeedbackContext` are unchanged. They are equally shallow and equally owed a fix, but each guards a different type and neither is what this node's arm narrows; fixing them would edit contracts this node does not consume.
+      * `[ ]`   The guard fix is a tightening, so it can reject a context a caller builds today. Every check it adds is type-shaped — the same contract the compiler already enforces at every site typed `ResourceUploadContext` — so a production context that compiles satisfies it, and the guard is what re-asserts that contract at runtime where the compiler has no jurisdiction. `buildResourceUploadContext` returns that same production type with valid values, so the guard tests below are evidence about the production shape.
+      * `[ ]`   Exactly one row is written per call, as today. This node adds no query, no read, no second write and no notification.
+
+  * `[ ]`   `role`
+    * `[ ]`   Infrastructure service: the single place a file becomes a storage object plus a metadata row. The role is appropriate because recording which prompt produced an artifact is registration, not orchestration — the caller knows the id, and this function is what turns a context into a row.
+    * `[ ]`   Out of scope: deciding what the id is (`assembleCompressionPrompt` produces it, `processCompressJob` writes it onto the job payload); assembling the context that carries it (`buildUploadContext`'s resource arm, next node); forwarding it from the payload (`saveResponse`'s COMPRESS tail); and the column and constraint themselves (prior node).
+    * `[ ]`   Also out of scope: the contribution arm's own `source_prompt_resource_id`, which `buildUploadContext` sets on `contributionMetadata` and the contribution insert literal does not carry. It belongs to that literal, not this one.
+    * `[ ]`   `file_manager.mock.ts` is owed four-symbol sets for `ModelContributionUploadContext`, `UserFeedbackUploadContext` and `ContributionMetadata` as well. They are not authored here: no element of this node constructs one, and the guard tests that name a contribution or feedback context use them only as the wrong-arm cases for a guard this node does not change.
+
+  * `[ ]`   `module`
+    * Conforms to: [boundaries](../../../../agents/boundaries.md)
+    * `[ ]`   Bounded context: `_shared/services/file_manager.ts` and its support system — `file_manager.upload.test.ts`, the mock file `_shared/services/file_manager.mock.ts`.
+    * `[ ]`   Riders, each edited only for what this one implementation consumes: `_shared/types/file_manager.types.ts` (the `ResourceUploadContext` member, owner) and `_shared/utils/type-guards/type_guards.file_manager.ts` with `type_guards.file_manager.test.ts` (the guard this arm narrows with, plus the `PathContext` guard it delegates to, both owed by this interface).
+    * `[ ]`   Depends on the prior node for the column and its regenerated `Insert` member. This node declares neither and consumes both.
+    * `[ ]`   Inside boundary: what the resource row records about its own provenance. Outside boundary: where the id comes from, and what any consumer reads it back for.
+
+  * `[ ]`   `deps`
+    * Conforms to: [dependency-injection](../../../../agents/dependency-injection.md), [boundaries](../../../../agents/boundaries.md)
+    * `[ ]`   No new import in any file this node touches. `ResourceUploadContext` and `TablesInsert` are already imported by `file_manager.ts`; `ResourceUploadContext` is already imported by `type_guards.file_manager.ts` and by `file_manager.upload.test.ts`; `file_manager.mock.ts` already imports from `../types/file_manager.types.ts`.
+    * `[ ]`   No new injected collaborator: the value arrives on the context this function is called with, and `this.supabase` performs the same single upsert it performs today.
+    * `[ ]`   Confirm: every edge runs `_shared/services/` → `_shared/types/`. No reverse dependency, no lateral violation, no cycle.
+
+  * `[ ]`   `context_slice`
+    * Conforms to: [dependency-injection](../../../../agents/dependency-injection.md)
+    * `[ ]`   From the narrowed `resourceContext` the arm reads one member more than it reads today: `sourcePromptResourceId`. It already reads `mimeType`, `sizeBytes`, `userId`, `description`, `resourceTypeForDb` and `resourceDescriptionForDb`, and takes the rest of the row from `pathContextForStorage` and the resolved upload path.
+    * `[ ]`   Confirm: no over-fetching. The id is handed to this function; it is not looked up, validated against `dialectic_project_resources`, or dereferenced. The foreign key the prior node adds is what rejects an id that does not exist.
+
+  * `[ ]`   `_shared/types/file_manager.types.ts`
+    * Conforms to: [types](../../../../agents/types.md), [composition](../../../../agents/composition.md)
+    * `[ ]`   `ResourceUploadContext` gains `sourcePromptResourceId?: string;` beside `resourceTypeForDb` and `resourceDescriptionForDb`, commented as the id of the prompt artifact that produced this resource.
+    * `[ ]`   `UploadContextBase`, `ModelContributionUploadContext`, `UserFeedbackUploadContext`, `UploadContext`, `ContributionMetadata`, `PathContext`, `FileRecord` and `IFileManager` are unchanged. `ContributionMetadata` in particular already declares its own `source_prompt_resource_id` and is not touched by this node.
+
+  * `[ ]`   `file_manager.interaction.spec` (prose; no file — this service declares no literal `.interaction.spec`)
+    * Conforms to: [composition](../../../../agents/composition.md), [errors-and-returns](../../../../agents/errors-and-returns.md), [guards](../../../../agents/guards.md)
+    * `[ ]`   Called by: every producer of a first-class artifact, through `IFileManager.uploadAndRegisterFile`. Asynchronous; on the resource path its side effects are one storage upload and one row upsert.
+    * `[ ]`   Branch — arm selection. Condition: `isResourceContext(context)`. Decision: that guard alone, unchanged, and still evaluated after the upload and before any row is written. On the true arm the context is narrowed to `ResourceUploadContext` for the whole block.
+    * `[ ]`   Branch — record construction. Decision: none; the literal is built from values already held. It gains one member, `source_prompt_resource_id`, set to the context's `sourcePromptResourceId` when present and `null` when absent. Every other member of the literal, including `source_contribution_id`, is unchanged.
+    * `[ ]`   Branch — upsert. Dependency call: one `dialectic_project_resources` upsert on `storage_bucket,storage_path,file_name`, then `.select().single()`. Outcome on error: the error is thrown and reaches the existing catch, which returns `{ record: null, error }`. On success: `{ record: newRecord, error: null }`. Unchanged.
+    * `[ ]`   Branch — foreign key rejection. Condition: the supplied id is not an existing `dialectic_project_resources.id`. Decision: made by the database, not by this function — the constraint the prior node adds. Outcome: the upsert errors and takes the existing error path, with the Postgres message surfaced unaltered. This function performs no existence check of its own; a check would be a second round-trip that the constraint already performs authoritatively.
+    * `[ ]`   Side effects and ordering are unchanged: upload precedes record construction, construction precedes the single upsert, and the upsert precedes the single return.
+
+  * `[ ]`   `file_manager.mock.ts`
+    * Conforms to: [mocks](../../../../agents/mocks.md)
+    * `[ ]`   Add the four-symbol form for `PathContext`, which this file owes as the home mock of `file_manager.types.ts` and does not have today, and which the guard below and the context builder both consume: `PathContextOverrides = Partial<PathContext>`, `buildPathContext(overrides?): PathContext`, `PathContextCorruptions = { [K in keyof PathContext]?: unknown }`, `invalidatePathContext(corruptions): unknown`.
+    * `[ ]`   `buildPathContext`'s `base` sets the two required members — `projectId` and a `fileType` — and omits all twenty-eight optional ones, so the default is the minimal valid context and each optional member's own case supplies it by override. Authored before the context builder that composes it.
+    * `[ ]`   Add the four-symbol form for `ResourceUploadContext` on the same terms: `ResourceUploadContextOverrides = Partial<ResourceUploadContext>`, `buildResourceUploadContext(overrides?): ResourceUploadContext` returning `overrides ? { ...base, ...overrides } : base`, `ResourceUploadContextCorruptions = { [K in keyof ResourceUploadContext]?: unknown }`, and `invalidateResourceUploadContext(corruptions): unknown`.
+    * `[ ]`   Its `base` sets every required member: `pathContext` as `{ ...buildPathContext(), fileType: FileType.GeneralResource }` — the spread composes the owned builder rather than re-declaring a path context, and the literal `fileType` is what satisfies `ResourceUploadContext['pathContext']`'s `PathContext & { fileType: ResourceFileTypes }` intersection, which `buildPathContext`'s broader `FileType` return cannot on its own — plus `fileContent`, `mimeType`, `sizeBytes`, `userId` and `description`. It omits all three optional members, so the default builder is the absent-provenance case and only the carrying case takes an override.
+    * `[ ]`   `buildFileRecord`, `invalidateFileRecord`, `buildCanonicalPathParams`, `invalidateCanonicalPathParams`, `MockFileManagerService` and `createMockFileManagerService` are unchanged.
+
+  * `[ ]`   `_shared/utils/type-guards/type_guards.file_manager.test.ts`
+    * Conforms to: [tests#guard](../../../../agents/tests.md#guard), [guards](../../../../agents/guards.md)
+    * `[ ]`   New `Deno.test('Type Guard: isPathContext')` carrying the mechanical case checklist for all thirty members, fixtures from `buildPathContext` and `invalidatePathContext` and never hand-rolled: the valid default; valid overrides; non-objects; each property corrupted, one case per property; each of `projectId` and `fileType` omitted; and each optional property absent then present-but-corrupted.
+    * `[ ]`   The corruptions that matter are the delegated ones, one per borrowed predicate, because each proves the guard calls rather than re-implements: `fileType`/`documentKey`/`targetKey` set to a string that is no `FileType` member, `stageSlug` to a non-slug string, `contributionType` to a string that is no contribution type, `sourceType` to a string outside `CompressionSourceType`, `role` to a string outside `Messages['role']`, and `sourceModelSlugs` to an array holding a number.
+    * `[ ]`   `Deno.test('Type Guard: isResourceContext')`'s `mockResourceContext` fixture is replaced by `buildResourceUploadContext()`; its existing steps — the two wrong-arm rejections, the missing-`pathContext` case, the missing-`fileType` case, the non-resource-`fileType` case, and the `requiredBaseKeys` omission loop — keep their assertions and read their fixture from the builder.
+    * `[ ]`   New steps, each drawn from `invalidateResourceUploadContext`: `fileContent` a number, `mimeType` a number, `sizeBytes` a string, `userId` an object, and `description` a number are each rejected — the five members whose type the guard does not check today, and the exact reason it does not guard what it narrows.
+    * `[ ]`   New step: a context whose `pathContext` is corrupted in a way only `isPathContext` catches — a non-string `projectId`, with a valid resource `fileType` still in place — is rejected. One corruption proves the delegation; `PathContext`'s own invalid states are the checklist above's job.
+    * `[ ]`   New steps for the three optional members: each absent is accepted, and each present-but-corrupted is rejected — `sourcePromptResourceId` a number, `resourceTypeForDb` a number, `resourceDescriptionForDb` a function.
+    * `[ ]`   `mockModelContributionContext` and `mockUserFeedbackContext` stay as declared: they are the wrong-arm inputs for guards this node does not change, and no builder for either type exists to draw them from.
+
+  * `[ ]`   `_shared/utils/type-guards/type_guards.file_manager.ts`
+    * Conforms to: [guards](../../../../agents/guards.md)
+    * `[ ]`   NEW `isPathContext(value: unknown): value is PathContext`, authored here because `file_manager.types.ts` owns `PathContext` and this is its guard file. `isRecord` first; `projectId` a non-empty string; `fileType` through `isFileType`. Then every optional member is absent-or-typed, with each borrowed type delegated to its owner's predicate and none of them re-authored: `stageSlug` through `isDialecticStageSlug`, `documentKey` and `targetKey` through `isFileType`, `sourceType` through `isCompressionSourceType`, `role` through `isCompressionHistoryRole`, and `contributionType` through `isContributionType` from `type_guards.dialectic.ts` — narrowed with `typeof === 'string'` first, since that predicate takes `string` rather than `unknown`, and admitting `null`, which the type declares. The remaining members are string, number, boolean, nullable-string, or `string[]` checks written out explicitly.
+    * `[ ]`   `isResourceContext` keeps its discrimination — not a record, or carrying `contributionMetadata` or `feedbackTypeForDb`, is still an immediate false — and keeps its `requiredKeys` presence sweep, whose `Omit` annotation gains `'sourcePromptResourceId'` beside the optional members it already excludes.
+    * `[ ]`   After the presence sweep it gains the type checks it has never had: `fileContent` a `Buffer`, `ArrayBuffer` or string; `mimeType` a non-empty string; `sizeBytes` a number; `userId` a string or null; `description` a string; `pathContext` through `isPathContext` in place of today's `isRecord` plus `typeof fileType === 'string'` stand-in; and `isResourceFileType(context.pathContext.fileType)` retained as the last check, since it is what makes a `PathContext` a RESOURCE path context.
+    * `[ ]`   The three optional members are absent-or-typed: `resourceTypeForDb` a string, `sourcePromptResourceId` a string, `resourceDescriptionForDb` valid `Json` or null.
+    * `[ ]`   `isModelContributionContext`, `isUserFeedbackContext`, `isResourceFileType`, `RESOURCE_FILE_TYPES_MAP` and every other guard in the file are unchanged.
+
+  * `[ ]`   `file_manager.upload.test.ts`
+    * Conforms to: [tests#unit](../../../../agents/tests.md#unit), [errors-and-returns](../../../../agents/errors-and-returns.md)
+    * `[ ]`   Two `t.step`s appended to the existing `Deno.test('FileManagerService')` block, both using this file's established resource-upload setup: a `MockSupabaseDataConfig` stubbing the `dialectic_project_resources` upsert, `beforeEach(config)`, and assertions read off `setup.spies.getLatestQueryBuilderSpies('dialectic_project_resources')?.upsert.calls[0].args[0]`.
+    * `[ ]`   New: a resource upload whose context carries the member registers it — context from `buildResourceUploadContext({ sourcePromptResourceId: 'prompt-resource-1' })`; assert the upserted record's `source_prompt_resource_id` equals `'prompt-resource-1'`.
+    * `[ ]`   New: a resource upload whose context omits the member registers null — context from `buildResourceUploadContext()`; assert the upserted record's `source_prompt_resource_id` is `null` and that the key is present on the record, so the column is written explicitly rather than left to the database's own default.
+    * `[ ]`   Every `ResourceUploadContext` this suite constructs consumes the builder: the twelve hand-declared contexts in this file become `buildResourceUploadContext({ … })` calls carrying only what each case varies — its `fileType`, its `originalFileName`, its `resourceTypeForDb`, whichever member that case asserts on — with each declaration keeping its own annotation and every assertion, stub and `MockSupabaseDataConfig` around it unchanged. Substitution, not re-baselining.
+    * `[ ]`   `file_manager.errors.test.ts`'s `baseUploadContext` converts on the same rule: it is a resource context annotated as the `UploadContext` union, so it keeps that annotation — a `ResourceUploadContext` satisfies it — and takes its `fileType`, `originalFileName` and the rest as overrides. `file_manager.getFile.test.ts` and `file_manager.assemble.test.ts` construct no upload context of any arm and are not touched; they are named so the census can be checked rather than assumed.
+    * `[ ]`   Do NOT re-test: path construction, the upsert conflict target, the resource-description merge, the `resourceTypeForDb` fallback, or either of the other two arms.
+
+  * `[ ]`   `construction`
+    * Conforms to: [dependency-injection](../../../../agents/dependency-injection.md), [composition](../../../../agents/composition.md)
+    * `[ ]`   No factory and no constructor change. `FileManagerService` keeps its existing construction, its injected `supabase`, `logger`, `constructStoragePath` and storage bucket, and `uploadAndRegisterFile` keeps its single-argument signature.
+    * `[ ]`   Body order is unchanged: path resolution → upload → arm selection → record construction → single write → return. This node adds one member to one literal inside the fourth step.
+
+  * `[ ]`   `file_manager.ts` (Implementation)
+    * Conforms to: [composition](../../../../agents/composition.md), [dependency-injection](../../../../agents/dependency-injection.md), [types](../../../../agents/types.md), [errors-and-returns](../../../../agents/errors-and-returns.md), [guards](../../../../agents/guards.md), [logging](../../../../agents/logging.md)
+    * `[ ]`   In the resource arm's `recordData: TablesInsert<'dialectic_project_resources'>` literal, add `source_prompt_resource_id: resourceContext.sourcePromptResourceId ?? null,` immediately after the `source_contribution_id` line. Nothing else in that block moves.
+    * `[ ]`   No other line of the file changes: no logging is added or removed, no `console` call is introduced, no error is caught, converted or re-wrapped, and no member of any other literal is touched.
+
+  * `[ ]`   `directionality`
+    * Conforms to: [boundaries](../../../../agents/boundaries.md)
+    * `[ ]`   Layer: infrastructure service at the storage and metadata boundary. Deps inward: `_shared/types/file_manager.types.ts`, `_shared/utils/type-guards/`, `types_db.ts`. Provides outward: `IFileManager.uploadAndRegisterFile` to every producer of an artifact.
+    * `[ ]`   Consumed next by `buildUploadContext`'s resource arm, which sets the new member from its own params, and by `saveResponse`'s COMPRESS tail, which forwards it from the job payload. Neither exists yet; both are later nodes in this workstream, and this member is why they compile.
+    * `[ ]`   No cycle: `_shared/types/file_manager.types.ts` imports nothing from this service.
+
+  * `[ ]`   `requirements` (binary, observable)
+    * Conforms to: [tdd-ordering](../../../../agents/tdd-ordering.md)
+    * `[ ]`   `ResourceUploadContext` declares `sourcePromptResourceId?: string`, and a context omitting it type-checks.
+    * `[ ]`   A resource upload carrying the member registers a `dialectic_project_resources` row whose `source_prompt_resource_id` equals the supplied id.
+    * `[ ]`   A resource upload omitting the member registers a row whose `source_prompt_resource_id` is null, with the key written explicitly on the insert.
+    * `[ ]`   The contribution and feedback arms produce byte-identical records to the ones they produce today.
+    * `[ ]`   `isPathContext` is exported from `type_guards.file_manager.ts`, accepts `buildPathContext()` and every valid override of it, and rejects a corruption of each of `PathContext`'s thirty members.
+    * `[ ]`   `isResourceContext` rejects a context whose `fileContent`, `mimeType`, `sizeBytes`, `userId` or `description` holds the wrong type, and one whose `pathContext` fails `isPathContext` — six values it accepts today.
+    * `[ ]`   `isResourceContext` accepts a context with any of its three optional members absent, and rejects each one present with the wrong type.
+    * `[ ]`   Every production `ResourceUploadContext` construction — `renderDocument.ts`, `cloneProject.ts`, and the four prompt assemblers — passes the tightened guard unchanged.
+    * `[ ]`   No test constructs a `ResourceUploadContext` by hand: every fixture in `file_manager.upload.test.ts`, `file_manager.errors.test.ts` and `type_guards.file_manager.test.ts` comes from `buildResourceUploadContext`, and every converted case keeps the assertions it has today.
+    * `[ ]`   `buildResourceUploadContext()` returns a context `isResourceContext` accepts, and both invalidators return `unknown`, so no call site casts.
+
+* `[ ]`   supabase/functions/_shared/utils/buildUploadContext/`buildUploadContext.ts` **[BE] Carry prompt provenance through the resource arm: `BuildUploadContextResourceParams` gains `sourcePromptResourceId` under the same name, type and optionality the contribution params already declare, and the arm sets it on the `ResourceUploadContext` it returns — one builder, two arms, one spelling**
+
+  * `[ ]`   `objective`
+    * `[ ]`   The problem is that this function is the sole builder of the compression `ResourceUploadContext` and it cannot express provenance. Its contribution arm reads `params.sourcePromptResourceId` and writes it to `contributionMetadata.source_prompt_resource_id`; its resource arm has no such param and returns a context with no such member, so the column the prior node writes and the member the node before it added have no way to be populated. `saveResponse`'s COMPRESS tail holds the id and has nowhere to put it.
+    * `[ ]`   Functional goal, the type: `BuildUploadContextResourceParams` gains `sourcePromptResourceId: string | undefined;` — a required key whose value may be `undefined`, which is precisely what `BuildUploadContextParams` declares for the contribution arm. The same name, the same type, the same optionality, so a reader of either arm learns the convention once.
+    * `[ ]`   Functional goal, the write: the resource arm's returned literal gains `sourcePromptResourceId: params.sourcePromptResourceId`, beside `description`. The member is written unconditionally, so the key is present on every context this arm returns and `file_manager.ts`'s `?? null` sees `undefined` rather than a missing property — the same shape the contribution arm produces for `contributionMetadata.source_prompt_resource_id`.
+    * `[ ]`   Functional goal, the guard: `isBuildUploadContextResourceParams` gains the key-present-then-absent-or-string check, copied in form from the block `isBuildUploadContextParams` already runs for this exact member in this same file. A params object omitting the key is rejected, one carrying `undefined` is accepted, one carrying a non-string is rejected.
+    * `[ ]`   Blast radius, enumerated. A required key breaks every literal that must satisfy the type. There are six, and no more: `buildBuildUploadContextResourceParams`'s `base` and the three `BuildUploadContextResourceParams` literals in `buildUploadContext.interface.test.ts`, which are this module's own; `minimalResourceParams`'s `defaults` in `buildUploadContext.test.ts`, which this node deletes outright; the inline argument literal at `renderDocument.ts`'s `buildUploadContext` call, the arm's only production caller today; and the typed literal in `createJobContext.interface.test.ts` that proves `BuildUploadContextFn` accepts resource params. The last two are one added member each, and they are enumerated below rather than left to the compiler.
+    * `[ ]`   Non-functional constraints:
+      * `[ ]`   The contribution arm is untouched in every respect: its `pathContext` assembly, its `restOfCanonicalPathParams` spread, its `turnIndex` ternary, its `sourceGroupFragment` conditional spread, and every member of its `contributionMetadata` literal, `source_prompt_resource_id` included.
+      * `[ ]`   The resource arm's `pathContext` is untouched. `sourcePromptResourceId` addresses nothing about the path and belongs on the upload context, which is where `ResourceUploadContext` declares it and where the contribution arm carries its own.
+      * `[ ]`   The discriminator is unchanged: this function still selects its arm on `"restOfCanonicalPathParams" in params`, and the new member — present on both params types under one name — cannot be used to discriminate and is not.
+      * `[ ]`   `BuildUploadContextFn` on `JobContext.interface.ts` is unchanged. Its params are already the union of the two types, so widening one member of one union member reaches every consumer without a signature edit, and no composition root, context or facade is touched.
+
+  * `[ ]`   `role`
+    * `[ ]`   Pure assembler at the persistence boundary: pre-resolved values in, a typed upload context out, no I/O and no decisions. The role is appropriate because provenance is a value its caller already holds, and this function's whole job is to put held values into the shape `fileManager` accepts.
+    * `[ ]`   Out of scope: producing the id (`assembleCompressionPrompt`); writing it onto the COMPRESS payload (`processCompressJob`); reading it off that payload and calling this arm (`saveResponse`'s COMPRESS tail); persisting the column (prior node); and the identity split this file takes in its WS-I node, which this node consumes and does not restate.
+    * `[ ]`   `buildUploadContext.test.ts` carries three local factories — `minimalResourceParams`, `minimalParams` and `minimalRest` — each a duplicate of a canonical builder this module or `file_manager.mock.ts` already exports. All three go in this node. The file is open for the resource-side one regardless, and leaving its twin behind would put two fixture conventions in one file, which is the condition the canonical builder exists to end.
+
+  * `[ ]`   `module`
+    * Conforms to: [boundaries](../../../../agents/boundaries.md)
+    * `[ ]`   Bounded context: `_shared/utils/buildUploadContext/` — `buildUploadContext.ts`, `.interface.ts`, `.interface.test.ts`, `.guards.ts`, `.guard.test.ts`, `.mock.ts` and `.test.ts`. All seven exist and all seven are touched.
+    * `[ ]`   This module has no `.provides.ts` and none is created: every consumer imports its interface, its guards and its mock directly, and adding a barrel would edit consumers this node does not own.
+    * `[ ]`   Depends on the `file_manager.ts` node for `ResourceUploadContext.sourcePromptResourceId`, and on this file's own WS-I node for the identity split its resource params already carry. This node declares neither.
+    * `[ ]`   Inside boundary: what the resource arm is given and what it returns. Outside boundary: where the id comes from and what the row does with it.
+
+  * `[ ]`   `deps`
+    * Conforms to: [dependency-injection](../../../../agents/dependency-injection.md), [boundaries](../../../../agents/boundaries.md)
+    * `[ ]`   No new import in any file this node touches, and no new injected collaborator. This function takes one params argument and returns a value; it has no deps object by design, being pure assembly with no I/O.
+    * `[ ]`   `ResourceUploadContext` is already imported by `buildUploadContext.ts` and `buildUploadContext.mock.ts`; `isCompressedContextRawJsonFileType` and the guard file's imports are unchanged.
+    * `[ ]`   Confirm: every edge runs `_shared/utils/` → `_shared/types/`. No reverse dependency, no lateral violation, no cycle.
+
+  * `[ ]`   `context_slice`
+    * Conforms to: [dependency-injection](../../../../agents/dependency-injection.md)
+    * `[ ]`   From `params` the resource arm reads one member more than it reads today: `sourcePromptResourceId`. It already reads `projectId`, `storageFileType`, `sessionId`, `iterationNumber`, `stageSlug`, `targetKey`, `sourceType`, `documentKey`, `sourceId`, `chunkIndex`, `chunkTotal`, `contentForStorage`, `projectOwnerUserId` and `description`.
+    * `[ ]`   Confirm: no over-fetching and no fetching. The member is forwarded, never resolved, validated against a row, or defaulted.
+
+  * `[ ]`   `buildUploadContext.interface.test.ts`
+    * Conforms to: [tests#interface](../../../../agents/tests.md#interface), [composition](../../../../agents/composition.md), [types](../../../../agents/types.md)
+    * `[ ]`   All three `BuildUploadContextResourceParams` literals in `Deno.test("Contract: BuildUploadContextResourceParams requires all fields as specified")` gain the member: the all-keys-present step carries a string, and the undefined-fields step and the `BuildUploadContextFn`-assignability step each carry `undefined` — the two states the type admits, proven by direct typed assignment.
+    * `[ ]`   The all-keys-present step's assertion block gains `assertEquals("sourcePromptResourceId" in params, true)` alongside its thirteen siblings, and `assertEquals(typeof params.sourcePromptResourceId, "string")` alongside its own.
+    * `[ ]`   The undefined-fields step gains `assertEquals(params.sourcePromptResourceId, undefined)` beside its existing `documentKey`/`chunkIndex`/`chunkTotal` assertions — the member is a required key that accepts `undefined`, exactly like `sourceId` beside it.
+    * `[ ]`   RED is the interface not yet declaring the member: the three literals carry a property the type does not have, and that compiler error is this step's deliverable.
+    * `[ ]`   The `BuildUploadContextParams` contract test above is unchanged — it already declares and asserts this member for the contribution arm, and this node adds nothing to it.
+
+  * `[ ]`   `buildUploadContext.interface.ts`
+    * Conforms to: [composition](../../../../agents/composition.md), [types](../../../../agents/types.md)
+    * `[ ]`   `BuildUploadContextResourceParams` gains `sourcePromptResourceId: string | undefined;`, declared after `description`, with a one-line comment naming it as the id of the `CompressionPrompt` artifact that produced this content and `undefined` when no prompt produced it.
+    * `[ ]`   `BuildUploadContextParams`, `BuildUploadContextProviderDetails`, `BuildUploadContextAiResponseSlice` and every other member of the resource params are unchanged.
+
+  * `[ ]`   `buildUploadContext.interaction.spec` (prose; no file — this module declares no literal `.interaction.spec`)
+    * Conforms to: [composition](../../../../agents/composition.md), [errors-and-returns](../../../../agents/errors-and-returns.md), [guards](../../../../agents/guards.md)
+    * `[ ]`   Called by: `renderDocument`'s CompressedContext case today, `saveResponse`'s COMPRESS tail once it exists, and the EXECUTE path through `ctx.buildUploadContext`. Synchronous, pure, no side effects; it returns a value and never throws.
+    * `[ ]`   Branch — arm selection. Condition: `"restOfCanonicalPathParams" in params`. Decision: that structural test alone, unchanged. This function validates nothing: its guards exist for its callers, and the params it is handed are already narrowed.
+    * `[ ]`   Branch — contribution arm. Unchanged in every respect, `contributionMetadata.source_prompt_resource_id: params.sourcePromptResourceId` included.
+    * `[ ]`   Branch — resource arm. Decision: none; the literal is built from values already held. It gains one member, `sourcePromptResourceId: params.sourcePromptResourceId`, set unconditionally so the key is always present. `pathContext`, `fileContent`, the `isCompressedContextRawJsonFileType` mime selection, `sizeBytes`, `userId` and `description` are unchanged.
+    * `[ ]`   Side effects and ordering: none and none. One params object in, one context out, on both arms.
+
+  * `[ ]`   `buildUploadContext.mock.ts`
+    * Conforms to: [mocks](../../../../agents/mocks.md)
+    * `[ ]`   `buildBuildUploadContextResourceParams`'s `base` gains `sourcePromptResourceId: undefined`, declared exactly as `buildBuildUploadContextParams`'s `base` declares the same member — the default is the no-prompt case, and the carrying case takes an override.
+    * `[ ]`   `BuildUploadContextResourceParamsOverrides`, `BuildUploadContextResourceParamsCorruptions` and `invalidateBuildUploadContextResourceParams` need no edit: the overrides type is `Partial<T>` and the corruptions type is a mapped type over `keyof T`, so both pick the new member up from the interface.
+    * `[ ]`   `buildBuildUploadContextParams`, both provider-details symbols, both ai-response-slice symbols and `mockBuildUploadContext` are unchanged.
+
+  * `[ ]`   `buildUploadContext.guard.test.ts`
+    * Conforms to: [tests#guard](../../../../agents/tests.md#guard), [guards](../../../../agents/guards.md)
+    * `[ ]`   `"isBuildUploadContextResourceParams rejects each corrupted property"` gains `invalidateBuildUploadContextResourceParams({ sourcePromptResourceId: 123 })` → false, appended to its fourteen existing corruption assertions.
+    * `[ ]`   `"isBuildUploadContextResourceParams rejects each omitted required property"` gains the rest-destructured `const { sourcePromptResourceId: _sp, ...missingSourcePromptResourceId } = buildBuildUploadContextResourceParams();` → false, in the same form as its ten existing omissions.
+    * `[ ]`   New: `buildBuildUploadContextResourceParams({ sourcePromptResourceId: "prompt-resource-1" })` is accepted — the carrying state.
+    * `[ ]`   New: `buildBuildUploadContextResourceParams()` is accepted with the member `undefined`, mirroring `"isBuildUploadContextParams accepts undefined-valued optional properties"` for the contribution arm — the key is required, its value is not.
+    * `[ ]`   Every other case in the file is unchanged, including both cross-arm rejections, which still hold: neither params type is assignable to the other on the strength of one shared member.
+
+  * `[ ]`   `buildUploadContext.guards.ts`
+    * Conforms to: [guards](../../../../agents/guards.md)
+    * `[ ]`   `isBuildUploadContextResourceParams` gains, among the flat member checks and before the per-`sourceType` branch, the two-part check `isBuildUploadContextParams` already runs for this member: `if (!("sourcePromptResourceId" in value)) return false;` then a local `const sourcePromptResourceId: unknown = value.sourcePromptResourceId;` rejected when it is neither `undefined` nor a string. Same form, same order of tests, same local-binding style as its contribution twin.
+    * `[ ]`   `isBuildUploadContextParams`, `isRestOfCanonicalPathParams`, `isBuildUploadContextProviderDetails`, `isBuildUploadContextAiResponseSlice`, the resource guard's per-`sourceType` branch and its both-or-neither chunk pair are all unchanged.
+
+  * `[ ]`   `buildUploadContext.test.ts`
+    * Conforms to: [tests#unit](../../../../agents/tests.md#unit), [composition](../../../../agents/composition.md)
+    * `[ ]`   All three local factories are DELETED — `minimalResourceParams`, `minimalParams` and `minimalRest`. Each is a second builder for a type whose builder already exists, which [mocks](../../../../agents/mocks.md) forbids and [tests](../../../../agents/tests.md) places in the mock file rather than the test. The file is open for the resource-side one anyway, since its `defaults` literal is one of the six sites the new required key breaks.
+    * `[ ]`   `minimalResourceParams`'s seven call sites take `buildBuildUploadContextResourceParams(…)` with the same override object, and `minimalResourceParams({})` becomes `buildBuildUploadContextResourceParams()`. That substitution is behavior-preserving by inspection: the two default sets are field-for-field identical — `proj-1`, `CompressedContextRawJson`, `sess-1`, iteration 1, `DialecticStageSlug.Thesis`, `business_case`, `contribution`, `feature_spec`, `undefined` source id, `undefined` chunk pair, `owner-1` — so every assertion in the six resource-arm tests stands unchanged.
+    * `[ ]`   `minimalParams`'s fifteen call sites take `buildBuildUploadContextParams(…)`, and here the two default sets DIFFER, so the substitution is not blind: `iterationNumber` 2 vs 1, `modelSlug` `"model-api-id"` vs `"gpt-4"`, `attemptCount` 1 vs 0, `contentForStorage` `'{"a":1}'` vs `'{"key":"value"}'`, `description` `"desc"` vs the mock's descriptive string, `providerDetails` `{ id: "mid", name: "Model Name" }` vs `{ id: "prov-1", name: "Test Provider" }`, `aiResponse` 10/20/30 vs 100/200/500, and `sourcePromptResourceId` `"spr-1"` vs `undefined`. Every call site whose assertions read one of those eight values passes that value as an override, so each assertion keeps the literal it has today and no expectation moves to match a fixture.
+    * `[ ]`   `minimalRest` needs no substitute: it returns `{ stageSlug: DialecticStageSlug.Thesis }`, which is exactly what `buildBuildUploadContextParams`'s base already carries in `restOfCanonicalPathParams`, derived from `buildCanonicalPathParams()` with `contributionType` split off. The two call sites that supply their own `restOfCanonicalPathParams` pass it as an override, as they do now.
+    * `[ ]`   `buildBuildUploadContextParams` spreads `{ ...base, ...overrides }` with no re-assignment of `restOfCanonicalPathParams`, where `minimalParams` guards that member with a ternary against an explicitly-`undefined` override. No call site passes `restOfCanonicalPathParams: undefined`, so the guard covers a case that does not exist; per this repo's builder convention a caller omits a member rather than passing `undefined`, and none is introduced here.
+    * `[ ]`   `expectContribution`, the narrowing helper, stays: it is an assertion helper, not a fixture factory, and no canonical equivalent exists.
+    * `[ ]`   New: the resource arm sets `sourcePromptResourceId` on the returned context from the params — `buildBuildUploadContextResourceParams({ sourcePromptResourceId: "prompt-resource-1" })` produces a context whose `sourcePromptResourceId` is `"prompt-resource-1"`, narrowed through `isResourceContext` as this file's other resource cases do.
+    * `[ ]`   New: params carrying `undefined` produce a context whose `sourcePromptResourceId` is `undefined` AND whose `"sourcePromptResourceId" in result` is `true` — the key is written unconditionally, which is what makes `file_manager.ts`'s `?? null` a conversion rather than a lookup of a missing property.
+    * `[ ]`   The contribution-arm test that asserts `contributionMetadata.source_prompt_resource_id` passes through is unchanged, and the six resource-arm tests keep their assertions.
+    * `[ ]`   Do NOT re-test: the arm discriminator, the mime selection, path construction, or the guard's checklist.
+
+  * `[ ]`   `construction`
+    * Conforms to: [dependency-injection](../../../../agents/dependency-injection.md), [composition](../../../../agents/composition.md)
+    * `[ ]`   No factory. `buildUploadContext` stays one exported function taking one params argument, pure, with no deps object — the shape it has, and the shape a value assembler with no collaborators should have.
+    * `[ ]`   Control flow is unchanged: discriminate, build that arm's literal, return it. This node adds one member to one literal in the second arm.
+
+  * `[ ]`   `buildUploadContext.ts` (Implementation)
+    * Conforms to: [composition](../../../../agents/composition.md), [types](../../../../agents/types.md), [errors-and-returns](../../../../agents/errors-and-returns.md), [guards](../../../../agents/guards.md)
+    * `[ ]`   In the resource arm's returned object literal, add `sourcePromptResourceId: params.sourcePromptResourceId,` after `description`. Nothing else in either arm moves, no `pathContext` member changes, and no conditional spread is introduced.
+
+  * `[ ]`   `consuming construction sites`
+    * Conforms to: [types](../../../../agents/types.md), [tests](../../../../agents/tests.md)
+    * `[ ]`   `_shared/services/document_renderer/renderDocument/renderDocument.ts` — the CompressedContext case's inline `buildUploadContext({ … })` argument gains `sourcePromptResourceId: undefined`. This is the only value it can supply and the correct one: the renderer produces the markdown from the already-persisted raw artifact, and it holds no prompt id — `RenderCompressedContextParams` carries the identity tuple and `template_filename` and nothing else. One added member, no behavior change, no other line of that file touched.
+    * `[ ]`   `dialectic-worker/createJobContext/createJobContext.interface.test.ts` — the `BuildUploadContextResourceParams` literal in `Deno.test("BuildUploadContextFn params accept BuildUploadContextResourceParams")` gains `sourcePromptResourceId: undefined`. It is a typed-assignment proof of the union's membership, so it must carry every required key for the assignment to mean anything.
+    * `[ ]`   No other consumer is reached. `JobContext.interface.ts` names the union in `BuildUploadContextFn`'s signature and constructs nothing; `saveResponse`'s COMPRESS tail is a later node and will construct this params object with the member from its first line.
+
+  * `[ ]`   `directionality`
+    * Conforms to: [boundaries](../../../../agents/boundaries.md)
+    * `[ ]`   Layer: shared pure utility. Deps inward: `_shared/types/file_manager.types.ts` and `_shared/utils/type-guards/`. Provides outward: `buildUploadContext` and its two params types to `renderDocument`, to `saveResponse`, and to every EXECUTE-path consumer through `ctx.buildUploadContext`.
+    * `[ ]`   No cycle: `file_manager.types.ts` imports nothing from this module, and this module imports nothing from `dialectic-worker/` except the `BuildUploadContextFn` type its mock already borrows.
+    * `[ ]`   This node closes the chain the migration opened: column, then upload-context member, then the params member that feeds it. `saveResponse`'s COMPRESS tail is the first caller to set it to anything but `undefined`.
+
+  * `[ ]`   `requirements` (binary, observable)
+    * Conforms to: [tdd-ordering](../../../../agents/tdd-ordering.md)
+    * `[ ]`   `BuildUploadContextResourceParams` declares `sourcePromptResourceId: string | undefined`, and a literal omitting the key does not type-check.
+    * `[ ]`   The resource arm returns a context whose `sourcePromptResourceId` equals the params member, and whose key is present even when that value is `undefined`.
+    * `[ ]`   The contribution arm returns a context identical, member for member, to the one it returns today.
+    * `[ ]`   `isBuildUploadContextResourceParams` rejects a params object omitting the key or carrying a non-string, and accepts one carrying a string or `undefined`.
+    * `[ ]`   No params factory of either arm remains in `buildUploadContext.test.ts`: every contribution case draws from `buildBuildUploadContextParams` and every resource case from `buildBuildUploadContextResourceParams`, and every pre-existing assertion in this module's four test files passes with the literal it has today.
+    * `[ ]`   The repo compiles: both consuming construction sites carry the new key.
+
 ## WS-D — COMPRESSION ORCHESTRATION CUTOVER (depends WS-P)
 
 * `[ ]`   supabase/functions/dialectic-worker/applyCompressionOverlay/`applyCompressionOverlay.ts` **[BE] Swap already-compressed victim content (resource documents and history messages) into the working document set by canonical-path existence check, so a resumed job's re-gather reflects prior compression without ever re-triggering it**

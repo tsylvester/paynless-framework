@@ -302,48 +302,65 @@ export function constructStoragePath(context: PathContext): ConstructedPath {
     }
 
     case FileType.CompressedContextRawJson:
-    case FileType.CompressedContext: {
+    case FileType.CompressedContext:
+    case FileType.CompressionPrompt: {
       const missingFields: string[] = [];
       if (!stageRootPath) missingFields.push('stageRootPath (projectId, sessionId, iteration, stageSlug)');
       if (!targetKey) missingFields.push('targetKey');
       if (!sourceType) missingFields.push('sourceType');
+      if (fileType === FileType.CompressionPrompt) {
+        if (!modelSlugSanitized) missingFields.push('modelSlug');
+        if (attemptCount === undefined) missingFields.push('attemptCount');
+      }
       if (missingFields.length > 0) {
-        throw new Error(`Required context missing for compressed_context: ${missingFields.join(', ')}.`);
+        throw new Error(`Required context missing for ${fileType}: ${missingFields.join(', ')}.`);
       }
 
       let sourceBasename: string;
 
       if (sourceType === 'contribution' || sourceType === 'resource') {
         if (!documentKey) {
-          throw new Error(`documentKey is required for compressed_context sourceType '${sourceType}'.`);
+          throw new Error(`documentKey is required for ${fileType} sourceType '${sourceType}'.`);
         }
         sourceBasename = sanitizeForPath(documentKey);
       } else if (sourceType === 'feedback') {
         if (!documentKey) {
-          throw new Error(`documentKey is required for compressed_context sourceType '${sourceType}'.`);
+          throw new Error(`documentKey is required for ${fileType} sourceType '${sourceType}'.`);
         }
         sourceBasename = `${sanitizeForPath(documentKey)}_feedback`;
       } else if (sourceType === 'history') {
         if (!sourceId) {
-          throw new Error(`sourceId is required for compressed_context sourceType '${sourceType}'.`);
+          throw new Error(`sourceId is required for ${fileType} sourceType '${sourceType}'.`);
         }
         if (!isCompressionHistoryRole(role)) {
-          throw new Error(`role is required for compressed_context sourceType '${sourceType}'.`);
+          throw new Error(`role is required for ${fileType} sourceType '${sourceType}'.`);
         }
         sourceBasename = `message_${role}_${sanitizeForPath(sourceId)}`;
       } else {
-        throw new Error(`Unrecognized sourceType '${sourceType}' for compressed_context.`);
+        throw new Error(`Unrecognized sourceType '${sourceType}' for ${fileType}.`);
       }
 
       if ((chunkIndex === undefined && chunkTotal !== undefined) || (chunkIndex !== undefined && chunkTotal === undefined)) {
-        throw new Error('chunkIndex and chunkTotal must both be present or both absent for compressed_context.');
+        throw new Error(`chunkIndex and chunkTotal must both be present or both absent for ${fileType}.`);
       }
       if (chunkIndex !== undefined && (chunkIndex < 1 || chunkTotal === undefined || chunkTotal < chunkIndex)) {
-        throw new Error('chunkIndex must be >= 1 and chunkTotal must be >= chunkIndex for compressed_context.');
+        throw new Error(`chunkIndex must be >= 1 and chunkTotal must be >= chunkIndex for ${fileType}.`);
       }
 
       const targetKeySanitized = sanitizeForPath(targetKey!);
       const chunkSuffix = chunkIndex !== undefined ? `_chunk_${chunkIndex}of${chunkTotal}` : '';
+
+      if (fileType === FileType.CompressionPrompt) {
+        if (isContinuation === true) {
+          if (turnIndex === undefined || typeof turnIndex !== 'number' || turnIndex <= 0) {
+            throw new Error('turnIndex is required and must be a number > 0 for continuation compression_prompt');
+          }
+        }
+        const continuationSuffix = isContinuation ? `_continuation_${turnIndex}` : '';
+        const fileName = `${modelSlugSanitized}_${attemptCount}_${sourceBasename}_compressed_for_${targetKeySanitized}${chunkSuffix}${continuationSuffix}_prompt.md`;
+        return { storagePath: `${stageRootPath}/_work/prompts`, fileName };
+      }
+
       if (fileType === FileType.CompressedContextRawJson) {
         return { storagePath: `${stageRootPath}/_work/raw_responses`, fileName: `${sourceBasename}_compressed_for_${targetKeySanitized}${chunkSuffix}_raw.json` };
       }

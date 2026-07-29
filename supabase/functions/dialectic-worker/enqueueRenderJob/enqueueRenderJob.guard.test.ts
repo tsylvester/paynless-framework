@@ -516,3 +516,18 @@ Deno.test("isDialecticRenderCompressedContextJobPayload rejects a DialecticRende
   };
   assertEquals(isDialecticRenderCompressedContextJobPayload(renderJobPayloadShaped), false);
 });
+
+Deno.test("isDialecticRenderCompressedContextJobPayload rejects text-mode sourceTypes (feedback and history are never rendered)", () => {
+  assertEquals(
+    isDialecticRenderCompressedContextJobPayload(
+      invalidateDialecticRenderCompressedContextJobPayload({ sourceType: "feedback" }),
+    ),
+    false,
+  );
+  assertEquals(
+    isDialecticRenderCompressedContextJobPayload(
+      invalidateDialecticRenderCompressedContextJobPayload({ sourceType: "history" }),
+    ),
+    false,
+  );
+});

@@ -10,6 +10,7 @@ import { isJson, isRecord } from "../type-guards/type_guards.common.ts";
 import {
   isCompressedContextFileType,
   isCompressedContextRawJsonFileType,
+  isCompressionHistoryRole,
   isCompressionSourceType,
   isDialecticStageSlug,
   isFileType,
@@ -289,7 +290,7 @@ export function isBuildUploadContextResourceParams(
   }
 
   const sourceType: unknown = value.sourceType;
-  if (sourceType === "contribution" || sourceType === "resource") {
+  if (sourceType === "contribution" || sourceType === "resource" || sourceType === "feedback") {
     if (!("documentKey" in value) || !isFileType(value.documentKey)) {
       return false;
     }
@@ -298,8 +299,11 @@ export function isBuildUploadContextResourceParams(
         return false;
       }
     }
-  } else if (sourceType === "feedback" || sourceType === "history") {
+  } else if (sourceType === "history") {
     if (!("sourceId" in value) || typeof value.sourceId !== "string") {
+      return false;
+    }
+    if (!isCompressionHistoryRole(value.role)) {
       return false;
     }
     if ("documentKey" in value && value.documentKey !== undefined) {

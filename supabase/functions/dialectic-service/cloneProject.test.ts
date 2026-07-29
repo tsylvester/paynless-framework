@@ -1603,20 +1603,26 @@ describe("cloneProject", () => {
 
         const compressionIdentities: Array<{
             label: string;
-            fileType: FileType.CompressedContext | FileType.CompressedContextRawJson;
+            fileType: FileType.CompressedContext | FileType.CompressedContextRawJson | FileType.CompressionPrompt;
             sourceType: CompressionSourceType;
             documentKey: FileType | undefined;
             sourceId: string | undefined;
             role: Messages['role'] | undefined;
             chunkIndex: number | undefined;
             chunkTotal: number | undefined;
+            modelSlug: string | undefined;
+            attemptCount: number | undefined;
+            isContinuation: boolean | undefined;
+            turnIndex: number | undefined;
         }> = [
-            { label: "row1-resource-cc", fileType: FileType.CompressedContext, sourceType: "resource", documentKey: FileType.business_case_critique, sourceId: undefined, role: undefined, chunkIndex: undefined, chunkTotal: undefined },
-            { label: "row2-feedback-cc", fileType: FileType.CompressedContext, sourceType: "feedback", documentKey: FileType.business_case_critique, sourceId: undefined, role: undefined, chunkIndex: undefined, chunkTotal: undefined },
-            { label: "row3-history-cc", fileType: FileType.CompressedContext, sourceType: "history", documentKey: undefined, sourceId: historySourceId, role: "assistant", chunkIndex: undefined, chunkTotal: undefined },
-            { label: "row4-history-chunk-cc", fileType: FileType.CompressedContext, sourceType: "history", documentKey: undefined, sourceId: historySourceId, role: "user", chunkIndex: 2, chunkTotal: 3 },
-            { label: "row5-resource-raw", fileType: FileType.CompressedContextRawJson, sourceType: "resource", documentKey: FileType.business_case_critique, sourceId: undefined, role: undefined, chunkIndex: undefined, chunkTotal: undefined },
-            { label: "row6-feedback-raw", fileType: FileType.CompressedContextRawJson, sourceType: "feedback", documentKey: FileType.business_case_critique, sourceId: undefined, role: undefined, chunkIndex: undefined, chunkTotal: undefined },
+            { label: "row1-resource-cc", fileType: FileType.CompressedContext, sourceType: "resource", documentKey: FileType.business_case_critique, sourceId: undefined, role: undefined, chunkIndex: undefined, chunkTotal: undefined, modelSlug: undefined, attemptCount: undefined, isContinuation: undefined, turnIndex: undefined },
+            { label: "row2-feedback-cc", fileType: FileType.CompressedContext, sourceType: "feedback", documentKey: FileType.business_case_critique, sourceId: undefined, role: undefined, chunkIndex: undefined, chunkTotal: undefined, modelSlug: undefined, attemptCount: undefined, isContinuation: undefined, turnIndex: undefined },
+            { label: "row3-history-cc", fileType: FileType.CompressedContext, sourceType: "history", documentKey: undefined, sourceId: historySourceId, role: "assistant", chunkIndex: undefined, chunkTotal: undefined, modelSlug: undefined, attemptCount: undefined, isContinuation: undefined, turnIndex: undefined },
+            { label: "row4-history-chunk-cc", fileType: FileType.CompressedContext, sourceType: "history", documentKey: undefined, sourceId: historySourceId, role: "user", chunkIndex: 2, chunkTotal: 3, modelSlug: undefined, attemptCount: undefined, isContinuation: undefined, turnIndex: undefined },
+            { label: "row5-resource-raw", fileType: FileType.CompressedContextRawJson, sourceType: "resource", documentKey: FileType.business_case_critique, sourceId: undefined, role: undefined, chunkIndex: undefined, chunkTotal: undefined, modelSlug: undefined, attemptCount: undefined, isContinuation: undefined, turnIndex: undefined },
+            { label: "row6-feedback-raw", fileType: FileType.CompressedContextRawJson, sourceType: "feedback", documentKey: FileType.business_case_critique, sourceId: undefined, role: undefined, chunkIndex: undefined, chunkTotal: undefined, modelSlug: undefined, attemptCount: undefined, isContinuation: undefined, turnIndex: undefined },
+            { label: "row7-resource-prompt", fileType: FileType.CompressionPrompt, sourceType: "resource", documentKey: FileType.business_case_critique, sourceId: undefined, role: undefined, chunkIndex: undefined, chunkTotal: undefined, modelSlug: "gpt-4o", attemptCount: 0, isContinuation: undefined, turnIndex: undefined },
+            { label: "row8-history-continuation-prompt", fileType: FileType.CompressionPrompt, sourceType: "history", documentKey: undefined, sourceId: historySourceId, role: "assistant", chunkIndex: undefined, chunkTotal: undefined, modelSlug: "gpt-4o", attemptCount: 0, isContinuation: true, turnIndex: 2 },
         ];
 
         const originalResourcesData: DialecticProjectResourceRow[] = compressionIdentities.map((identity, i) => {
@@ -1633,6 +1639,10 @@ describe("cloneProject", () => {
                 role: identity.role,
                 chunkIndex: identity.chunkIndex,
                 chunkTotal: identity.chunkTotal,
+                modelSlug: identity.modelSlug,
+                attemptCount: identity.attemptCount,
+                isContinuation: identity.isContinuation,
+                turnIndex: identity.turnIndex,
             });
             return {
                 id: `comp-res-${i + 1}`, project_id: originalProjectId, user_id: cloningUserId,
@@ -1735,9 +1745,9 @@ describe("cloneProject", () => {
         assertEquals(result.error, null, "Expected no error for compression clone");
 
         const fmCalls = mockFileManager.uploadAndRegisterFile.calls;
-        assertEquals(fmCalls.length, 6, "Expected exactly 6 uploadAndRegisterFile calls");
+        assertEquals(fmCalls.length, 8, "Expected exactly 8 uploadAndRegisterFile calls");
 
-        for (let i = 0; i < 6; i++) {
+        for (let i = 0; i < 8; i++) {
             const identity = compressionIdentities[i];
             const callArgs = fmCalls[i].args[0];
             const callResult = await fmCalls[i].returned;
@@ -1751,6 +1761,10 @@ describe("cloneProject", () => {
             assertEquals(callArgs.pathContext.role, identity.role, `Row ${i + 1}: role should be preserved`);
             assertEquals(callArgs.pathContext.chunkIndex, identity.chunkIndex, `Row ${i + 1}: chunkIndex should be preserved`);
             assertEquals(callArgs.pathContext.chunkTotal, identity.chunkTotal, `Row ${i + 1}: chunkTotal should be preserved`);
+            assertEquals(callArgs.pathContext.modelSlug, identity.modelSlug, `Row ${i + 1}: modelSlug should be preserved`);
+            assertEquals(callArgs.pathContext.attemptCount, identity.attemptCount, `Row ${i + 1}: attemptCount should be preserved`);
+            assertEquals(callArgs.pathContext.isContinuation, identity.isContinuation, `Row ${i + 1}: isContinuation should be preserved`);
+            assertEquals(callArgs.pathContext.turnIndex, identity.turnIndex, `Row ${i + 1}: turnIndex should be preserved`);
 
             assert(callResult, `Row ${i + 1}: expected a return value`);
             assert(callResult.record, `Row ${i + 1}: expected a record on the return value`);
@@ -1767,6 +1781,10 @@ describe("cloneProject", () => {
                 role: identity.role,
                 chunkIndex: identity.chunkIndex,
                 chunkTotal: identity.chunkTotal,
+                modelSlug: identity.modelSlug,
+                attemptCount: identity.attemptCount,
+                isContinuation: identity.isContinuation,
+                turnIndex: identity.turnIndex,
             });
             assertEquals(callResult.record.storage_path, expectedClonePath.storagePath, `Row ${i + 1}: round-trip storage_path should match clone's canonical path`);
             assertEquals(callResult.record.file_name, expectedClonePath.fileName, `Row ${i + 1}: round-trip file_name should match clone's canonical path`);

@@ -1,4 +1,5 @@
 import {
+  isCompressionHistoryRole,
   isCompressionMode,
   isCompressionSourceType,
   isFileType,
@@ -11,7 +12,7 @@ import {
   isRecord,
   isSupabaseClientShape,
 } from "../../_shared/utils/type-guards/type_guards.common.ts";
-import { isDialecticStageSlug } from "../enqueueRenderJob/enqueueRenderJob.guards.ts";
+import { isDialecticStageSlug } from "../../_shared/utils/type-guards/type_guards.file_manager.ts";
 import {
   CompressJobEnqueueError,
   CompressJobValidationError,
@@ -36,6 +37,7 @@ export function isDialecticCompressJobPayload(value: unknown): value is Dialecti
     "targetKey",
     "iterationNumber",
     "model_id",
+    "model_slug",
     "mode",
     "content",
     "sourceType",
@@ -69,6 +71,9 @@ export function isDialecticCompressJobPayload(value: unknown): value is Dialecti
   if (!isNonEmptyString(value.model_id)) {
     return false;
   }
+  if (!isNonEmptyString(value.model_slug)) {
+    return false;
+  }
   if (!isCompressionMode(value.mode)) {
     return false;
   }
@@ -85,12 +90,15 @@ export function isDialecticCompressJobPayload(value: unknown): value is Dialecti
     return false;
   }
 
-  if (value.sourceType === "contribution" || value.sourceType === "resource") {
+  if (value.sourceType === "contribution" || value.sourceType === "resource" || value.sourceType === "feedback") {
     if (!isFileType(value.documentKey)) {
       return false;
     }
-  } else if (value.sourceType === "feedback" || value.sourceType === "history") {
+  } else if (value.sourceType === "history") {
     if (!isNonEmptyString(value.sourceId)) {
+      return false;
+    }
+    if (!isCompressionHistoryRole(value.role)) {
       return false;
     }
   }
@@ -109,6 +117,9 @@ export function isDialecticCompressJobPayload(value: unknown): value is Dialecti
     return false;
   }
   if (value.chunk_total !== undefined && !isNonNegativeInteger(value.chunk_total)) {
+    return false;
+  }
+  if (value.continuation_count !== undefined && !isNonNegativeInteger(value.continuation_count)) {
     return false;
   }
 
@@ -136,12 +147,15 @@ export function isenqueueCompressJobsPayload(value: unknown): value is enqueueCo
     return false;
   }
 
-  if (victim.sourceType === "contribution" || victim.sourceType === "resource") {
+  if (victim.sourceType === "contribution" || victim.sourceType === "resource" || victim.sourceType === "feedback") {
     if (!isFileType(victim.documentKey)) {
       return false;
     }
-  } else if (victim.sourceType === "feedback" || victim.sourceType === "history") {
+  } else if (victim.sourceType === "history") {
     if (!isNonEmptyString(victim.sourceId)) {
+      return false;
+    }
+    if (!isCompressionHistoryRole(victim.role)) {
       return false;
     }
   }
@@ -199,6 +213,7 @@ export function isenqueueCompressJobsParams(value: unknown): value is enqueueCom
     "targetKey",
     "iterationNumber",
     "modelId",
+    "modelSlug",
     "walletId",
     "modelConfig",
     "tokenizerDeps",
@@ -239,6 +254,9 @@ export function isenqueueCompressJobsParams(value: unknown): value is enqueueCom
     return false;
   }
   if (!isNonEmptyString(value.modelId)) {
+    return false;
+  }
+  if (!isNonEmptyString(value.modelSlug)) {
     return false;
   }
   if (!isNonEmptyString(value.walletId)) {
