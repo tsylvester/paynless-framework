@@ -21,7 +21,8 @@ import {
     isDialecticJobRow 
 } from '../_shared/utils/type_guards.ts';
 import { type Messages } from '../_shared/types.ts';
-import { FileType } from '../_shared/types/file_manager.types.ts';
+import { DialecticStageSlug, FileType } from '../_shared/types/file_manager.types.ts';
+import { isDialecticStageSlug } from "../_shared/utils/type-guards/type_guards.file_manager.ts";
 type Job = Database['public']['Tables']['dialectic_generation_jobs']['Row'];
 type JobInsert = Database['public']['Tables']['dialectic_generation_jobs']['Insert'];
 
@@ -36,11 +37,14 @@ function createMockJob(payload: DialecticJobPayload, overrides: Partial<Job> = {
     if (!isJson(payload)) {
         throw new Error("Test payload is not valid JSON. Please check the mock payload object.");
     }
+    if (!isDialecticStageSlug(payload.stageSlug)) {
+        throw new Error("Test payload stageSlug is not a valid DialecticStageSlug. Please check the mock payload object.");
+    }
   
     const baseJob: Job = {
         id: 'job-id-123',
         session_id: payload.sessionId,
-        stage_slug: payload.stageSlug ?? 'default-stage',
+        stage_slug: payload.stageSlug,
         iteration_number: payload.iterationNumber ?? 1,
         status: 'pending',
         user_id: 'user-id-123',
@@ -74,7 +78,7 @@ Deno.test('continueJob', async (t) => {
     sessionId: 'session-1',
     projectId: 'project-1',
     model_id: 'model-1',
-    stageSlug: 'test-stage',
+    stageSlug: DialecticStageSlug.Thesis,
     iterationNumber: 1,
     prompt_template_id: 'test_template',
     inputs: { source: 'some_input' },
@@ -85,7 +89,7 @@ Deno.test('continueJob', async (t) => {
     maxRetries: 5,
     canonicalPathParams: {
         contributionType: 'thesis',
-        stageSlug: 'thesis',    
+        stageSlug: DialecticStageSlug.Thesis,    
     },
     user_jwt: 'jwt.token.here',
     idempotencyKey: 'idem-continue-job-1',
@@ -512,7 +516,7 @@ const baseSavedContribution: DialecticContributionRow = {
             sessionId: 'session-1',
             projectId: 'project-1',
             model_id: 'model-1',
-            stageSlug: 'test-stage',
+            stageSlug: DialecticStageSlug.Thesis,
             iterationNumber: 1,
             prompt_template_id: 'test_template',
             inputs: { source: 'some_input' },
@@ -521,7 +525,7 @@ const baseSavedContribution: DialecticContributionRow = {
             continuation_count: 0,
             canonicalPathParams: {
                 contributionType: 'thesis',
-                stageSlug: 'test-stage',
+                stageSlug: DialecticStageSlug.Thesis,
             },
             walletId: 'wallet-default',
             user_jwt: 'jwt.token.here',
@@ -561,7 +565,7 @@ const baseSavedContribution: DialecticContributionRow = {
             sessionId: 'session-1',
             projectId: 'project-1',
             model_id: 'model-1',
-            stageSlug: 'test-stage',
+            stageSlug: DialecticStageSlug.Thesis,
             iterationNumber: 1,
             prompt_template_id: 'test_template',
             inputs: { source: 'some_input' },
@@ -571,7 +575,7 @@ const baseSavedContribution: DialecticContributionRow = {
             walletId: 'only-wallet-id',
             canonicalPathParams: {
                 contributionType: 'thesis',
-                stageSlug: 'test-stage',
+                stageSlug: DialecticStageSlug.Thesis,
             },
             user_jwt: 'jwt.token.here',
             idempotencyKey: 'idem-continue-job-3',
@@ -608,7 +612,7 @@ const baseSavedContribution: DialecticContributionRow = {
             sessionId: 'session-1',
             projectId: 'project-1',
             model_id: 'model-1',
-            stageSlug: 'test-stage',
+            stageSlug: DialecticStageSlug.Thesis,
             iterationNumber: 1,
             prompt_template_id: 'test_template',
             // NOTE: prompt_template_name intentionally omitted
@@ -618,7 +622,7 @@ const baseSavedContribution: DialecticContributionRow = {
             continuation_count: 0,
             canonicalPathParams: {
                 contributionType: 'thesis',
-                stageSlug: 'test-stage',
+                stageSlug: DialecticStageSlug.Thesis,
             },
             walletId: 'wallet-default',
             user_jwt: 'jwt.token.here',
@@ -666,7 +670,7 @@ const baseSavedContribution: DialecticContributionRow = {
             sessionId: 'session-1',
             projectId: 'project-1',
             model_id: 'model-1',
-            stageSlug: 'test-stage',
+            stageSlug: DialecticStageSlug.Thesis,
             iterationNumber: 1,
             prompt_template_id: 'test_template',
             inputs: { source: 'some_input' },
@@ -675,7 +679,7 @@ const baseSavedContribution: DialecticContributionRow = {
             continuation_count: 0,
             canonicalPathParams: {
                 contributionType: 'thesis',
-                stageSlug: 'test-stage',
+                stageSlug: DialecticStageSlug.Thesis,
             },
             walletId: 'wallet-default',
             user_jwt: 'jwt.token.here',
@@ -891,7 +895,7 @@ const baseSavedContribution: DialecticContributionRow = {
         assertObjectMatch(newJobData, {
             user_id: 'user-1',
             session_id: 'session-1',
-            stage_slug: 'test-stage',
+            stage_slug: 'thesis',
             iteration_number: 1,
             status: 'pending_continuation',
             attempt_count: 0
@@ -1229,7 +1233,7 @@ Deno.test("continueJob enqueues with full original payload preserved and overlay
       sessionId: "sess-1",
       projectId: "proj-1",
       model_id: "model-1",
-      stageSlug: "thesis",
+      stageSlug: DialecticStageSlug.Thesis,
       iterationNumber: 1,
       continueUntilComplete: true,
       continuation_count: 2,
@@ -1237,7 +1241,7 @@ Deno.test("continueJob enqueues with full original payload preserved and overlay
       maxRetries: 3,
       prompt_template_id: "template-A",
       output_type: FileType.HeaderContext,
-      canonicalPathParams: { contributionType: "thesis", stageSlug: "test-stage" },
+      canonicalPathParams: { contributionType: "thesis", stageSlug: DialecticStageSlug.Thesis },
       inputs: { seed_prompt_resource_id: "res-1" },
       document_relationships: { thesis: "contrib-root-1" },
       isIntermediate: false,
@@ -1401,7 +1405,7 @@ Deno.test('continueJob enforces user_jwt presence: missing user_jwt fails and do
         sessionId: 'session-1',
         projectId: 'project-1',
         model_id: 'model-1',
-        stageSlug: 'test-stage',
+        stageSlug: DialecticStageSlug.Thesis,
         iterationNumber: 1,
         prompt_template_id: 'test_template',
         inputs: { source: 'some_input' },
@@ -1410,7 +1414,7 @@ Deno.test('continueJob enforces user_jwt presence: missing user_jwt fails and do
         continuation_count: 0,
         walletId: 'wallet-1',
         maxRetries: 5,
-        canonicalPathParams: { contributionType: 'thesis', stageSlug: 'test-stage' },
+        canonicalPathParams: { contributionType: 'thesis', stageSlug: DialecticStageSlug.Thesis },
         // user_jwt is intentionally omitted to test missing case
     } as unknown as DialecticJobPayload;
 
@@ -1447,7 +1451,7 @@ Deno.test('continueJob enforces user_jwt presence: empty user_jwt fails and does
         sessionId: 'session-1',
         projectId: 'project-1',
         model_id: 'model-1',
-        stageSlug: 'test-stage',
+        stageSlug: DialecticStageSlug.Thesis,
         iterationNumber: 1,
         prompt_template_id: 'test_template',
         inputs: { source: 'some_input' },
@@ -1456,7 +1460,7 @@ Deno.test('continueJob enforces user_jwt presence: empty user_jwt fails and does
         continuation_count: 0,
         walletId: 'wallet-1',
         maxRetries: 5,
-        canonicalPathParams: { contributionType: 'thesis', stageSlug: 'test-stage' },
+        canonicalPathParams: { contributionType: 'thesis', stageSlug: DialecticStageSlug.Thesis },
         user_jwt: '',
     } as unknown as DialecticJobPayload;
 
@@ -1494,7 +1498,7 @@ Deno.test('JWT_PRESERVATION: when payload.user_jwt is present, continueJob enque
         sessionId: 'session-1',
         projectId: 'project-1',
         model_id: 'model-1',
-        stageSlug: 'test-stage',
+        stageSlug: DialecticStageSlug.Thesis,
         iterationNumber: 1,
         prompt_template_id: 'test_template',
         inputs: { source: 'some_input' },
@@ -1502,7 +1506,7 @@ Deno.test('JWT_PRESERVATION: when payload.user_jwt is present, continueJob enque
         continueUntilComplete: true,
         continuation_count: 0,
         walletId: 'wallet-1',
-        canonicalPathParams: { contributionType: 'thesis', stageSlug: 'test-stage' },
+        canonicalPathParams: { contributionType: 'thesis', stageSlug: DialecticStageSlug.Thesis },
         user_jwt: 'jwt.token.here',
         idempotencyKey: 'idem-continue-job-7',
     };
@@ -1575,14 +1579,14 @@ Deno.test('is_test_job propagation', async (t) => {
         sessionId: 'session-1',
         projectId: 'project-1',
         model_id: 'model-1',
-        stageSlug: 'test-stage',
+        stageSlug: DialecticStageSlug.Thesis,
         iterationNumber: 1,
         output_type: FileType.HeaderContext,
         continueUntilComplete: true,
         walletId: 'wallet-1',
         user_jwt: 'jwt.token.here',
         prompt_template_id: 'test_template',
-        canonicalPathParams: { contributionType: 'thesis', stageSlug: 'test-stage' },
+        canonicalPathParams: { contributionType: 'thesis', stageSlug: DialecticStageSlug.Thesis },
         inputs: { seed_prompt_resource_id: 'res-1' },
         idempotencyKey: 'idem-continue-job-8',
     };
@@ -1646,7 +1650,7 @@ Deno.test('CONTINUATION_CONTEXT: enqueues on continuable finish_reason', async (
         sessionId: 'session-1',
         projectId: 'project-1',
         model_id: 'model-1',
-        stageSlug: 'test-stage',
+        stageSlug: DialecticStageSlug.Thesis,
         iterationNumber: 1,
         prompt_template_id: 'test_template',
         inputs: { source: 'some_input' },
@@ -1654,7 +1658,7 @@ Deno.test('CONTINUATION_CONTEXT: enqueues on continuable finish_reason', async (
         continueUntilComplete: true,
         continuation_count: 0,
         walletId: 'wallet-1',
-        canonicalPathParams: { contributionType: 'thesis', stageSlug: 'test-stage' },
+        canonicalPathParams: { contributionType: 'thesis', stageSlug: DialecticStageSlug.Thesis },
         user_jwt: 'jwt.token.here',
         idempotencyKey: 'idem-continue-job-9',
     };
@@ -1695,7 +1699,7 @@ Deno.test('JSON_MALFORMED: malformed JSON content enqueues continuation (overrid
         sessionId: 'session-1',
         projectId: 'project-1',
         model_id: 'model-1',
-        stageSlug: 'test-stage',
+        stageSlug: DialecticStageSlug.Thesis,
         iterationNumber: 1,
         prompt_template_id: 'test_template',
         inputs: { source: 'some_input' },
@@ -1703,7 +1707,7 @@ Deno.test('JSON_MALFORMED: malformed JSON content enqueues continuation (overrid
         continueUntilComplete: true,
         continuation_count: 0,
         walletId: 'wallet-1',
-        canonicalPathParams: { contributionType: 'thesis', stageSlug: 'test-stage' },
+        canonicalPathParams: { contributionType: 'thesis', stageSlug: DialecticStageSlug.Thesis },
         user_jwt: 'jwt.token.here',
         idempotencyKey: 'idem-continue-job-10',
     };
@@ -1744,7 +1748,7 @@ Deno.test('NO_STEP_INFO: continuation payload must not contain deprecated "step_
         sessionId: 'session-1',
         projectId: 'project-1',
         model_id: 'model-1',
-        stageSlug: 'test-stage',
+        stageSlug: DialecticStageSlug.Thesis,
         iterationNumber: 1,
         prompt_template_id: 'test_template',
         inputs: { source: 'x' },
@@ -1752,7 +1756,7 @@ Deno.test('NO_STEP_INFO: continuation payload must not contain deprecated "step_
         continueUntilComplete: true,
         continuation_count: 0,
         walletId: 'wallet-1',
-        canonicalPathParams: { contributionType: 'thesis', stageSlug: 'test-stage' },
+        canonicalPathParams: { contributionType: 'thesis', stageSlug: DialecticStageSlug.Thesis },
         user_jwt: 'jwt.token.here',
         idempotencyKey: 'idem-continue-job-11',
     });
@@ -1795,7 +1799,7 @@ Deno.test('STEP_IDENTITY: preserves planner_metadata.recipe_step_id and core ide
         sessionId: 'session-1',
         projectId: 'project-1',
         model_id: 'model-1',
-        stageSlug: 'test-stage',
+        stageSlug: DialecticStageSlug.Thesis,
         iterationNumber: 1,
         prompt_template_id: 'test_template',
         inputs: { source: 'x' },
@@ -1803,7 +1807,7 @@ Deno.test('STEP_IDENTITY: preserves planner_metadata.recipe_step_id and core ide
         continueUntilComplete: true,
         continuation_count: 0,
         walletId: 'wallet-1',
-        canonicalPathParams: { contributionType: 'thesis', stageSlug: 'test-stage' },
+        canonicalPathParams: { contributionType: 'thesis', stageSlug: DialecticStageSlug.Thesis },
         user_jwt: 'jwt.token.here',
         planner_metadata: { recipe_step_id: 'step-123' },
         idempotencyKey: 'idem-continue-job-12',
@@ -1858,7 +1862,7 @@ Deno.test('NO_INPUT_RULES: continuation payload omits inputs_required and inputs
         sessionId: 'session-1',
         projectId: 'project-1',
         model_id: 'model-1',
-        stageSlug: 'test-stage',
+        stageSlug: DialecticStageSlug.Thesis,
         iterationNumber: 1,
         prompt_template_id: 'test_template',
         inputs: { source: 'x' },
@@ -1866,7 +1870,7 @@ Deno.test('NO_INPUT_RULES: continuation payload omits inputs_required and inputs
         continueUntilComplete: true,
         continuation_count: 0,
         walletId: 'wallet-1',
-        canonicalPathParams: { contributionType: 'thesis', stageSlug: 'test-stage' },
+        canonicalPathParams: { contributionType: 'thesis', stageSlug: DialecticStageSlug.Thesis },
         user_jwt: 'jwt.token.here',
         idempotencyKey: 'idem-continue-job-13',
     });
@@ -1914,7 +1918,7 @@ Deno.test('SOURCE_GROUP_PRESERVATION: should preserve document_relationships.sou
     
     const sourceGroupUuid = '550e8400-e29b-41d4-a716-446655440000';
     const rootContributionId = 'root-contrib-123';
-    const stageSlug = 'thesis';
+    const stageSlug = DialecticStageSlug.Thesis;
     
     const savedContribution: DialecticContributionRow = {
         id: rootContributionId,
@@ -2012,7 +2016,7 @@ Deno.test('SOURCE_GROUP_PRESERVATION: should preserve document_relationships.sou
     
     const sourceGroupUuid = 'test-uuid-1234-5678-90ab-cdef12345678';
     const rootId = 'root-id-456';
-    const stageSlug = 'thesis';
+    const stageSlug = DialecticStageSlug.Thesis;
     
     const payload: DialecticJobPayload = {
         sessionId: 'session-1',
@@ -2109,7 +2113,7 @@ Deno.test('SOURCE_GROUP_PRESERVATION: should handle missing source_group gracefu
     const depsLocal: IContinueJobDeps = { logger: new MockLogger() };
     
     const rootContributionId = 'root-contrib-789';
-    const stageSlug = 'thesis';
+    const stageSlug = DialecticStageSlug.Thesis;
     
     const savedContribution: DialecticContributionRow = {
         id: rootContributionId,
@@ -2219,7 +2223,7 @@ Deno.test('continueJob idempotency: continuation job insert includes idempotency
         sessionId: 'session-1',
         projectId: 'project-1',
         model_id: 'model-1',
-        stageSlug: 'test-stage',
+        stageSlug: DialecticStageSlug.Thesis,
         iterationNumber: 1,
         prompt_template_id: 'test_template',
         inputs: { source: 'some_input' },
@@ -2227,7 +2231,7 @@ Deno.test('continueJob idempotency: continuation job insert includes idempotency
         continueUntilComplete: true,
         continuation_count: 0,
         walletId: 'wallet-1',
-        canonicalPathParams: { contributionType: 'thesis', stageSlug: 'test-stage' },
+        canonicalPathParams: { contributionType: 'thesis', stageSlug: DialecticStageSlug.Thesis },
         user_jwt: 'jwt.token.here',
         idempotencyKey: 'idem-continuation-insert-test',
     };
@@ -2304,7 +2308,7 @@ Deno.test('continueJob idempotency: on unique constraint violation (23505 on ide
         sessionId: 'session-1',
         projectId: 'project-1',
         model_id: 'model-1',
-        stageSlug: 'test-stage',
+        stageSlug: DialecticStageSlug.Thesis,
         iterationNumber: 1,
         prompt_template_id: 'test_template',
         inputs: { source: 'some_input' },
@@ -2312,7 +2316,7 @@ Deno.test('continueJob idempotency: on unique constraint violation (23505 on ide
         continueUntilComplete: true,
         continuation_count: 0,
         walletId: 'wallet-1',
-        canonicalPathParams: { contributionType: 'thesis', stageSlug: 'test-stage' },
+        canonicalPathParams: { contributionType: 'thesis', stageSlug: DialecticStageSlug.Thesis },
         user_jwt: 'jwt.token.here',
         idempotencyKey: 'idem-23505-test',
     };

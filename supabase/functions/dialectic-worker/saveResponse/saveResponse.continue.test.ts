@@ -206,7 +206,7 @@ Deno.test("saveResponse - Continuation Handling", async (t) => {
       const deps: SaveResponseDeps = depsWithFinishReason("max_tokens", {
         fileManager,
       });
-      const stageSlug: string = "thesis";
+      const stageSlug: DialecticStageSlug = DialecticStageSlug.Thesis;
       const documentRelationship: DocumentRelationships = {
         [stageSlug]: "thesis-id-abc",
       };
@@ -282,7 +282,7 @@ Deno.test("saveResponse - Continuation Handling", async (t) => {
   await t.step(
     'should trigger final assembly when a continuation job receives a "stop" signal',
     async () => {
-      const stageSlug: string = "thesis";
+      const stageSlug: DialecticStageSlug = DialecticStageSlug.Thesis;
       const rootId: string = "thesis-id-abc";
       const newChunkContribution: DialecticContributionRow =
         createMockContributionRow({
@@ -315,7 +315,7 @@ Deno.test("saveResponse - Continuation Handling", async (t) => {
           id: "job-id-789",
           idempotency_key: "job-id-123_execute",
           session_id: "session-456",
-          stage_slug: "thesis",
+          stage_slug: DialecticStageSlug.Thesis,
         },
       );
       await saveResponse(
@@ -351,7 +351,7 @@ Deno.test(
       contribution: createMockContributionRow(),
     });
     const deps: SaveResponseDeps = depsWithFinishReason("stop", { fileManager });
-    const stageSlug: string = "thesis";
+    const stageSlug: DialecticStageSlug = DialecticStageSlug.Thesis;
     const rootId: string = "root-abc";
     const rel: DocumentRelationships = { [stageSlug]: rootId };
     const jobPayload: DialecticExecuteJobPayload = {
@@ -479,7 +479,7 @@ Deno.test(
 Deno.test(
   "saveResponse - final assembly triggers using SAVED relationships when payload is missing",
   async (t) => {
-    const stageSlug: string = "thesis";
+    const stageSlug: DialecticStageSlug = DialecticStageSlug.Thesis;
     const rootId: string = "root-xyz";
     const relSaved: DocumentRelationships = { [stageSlug]: rootId };
     const fileManager: MockFileManagerService = createMockFileManager({
@@ -535,7 +535,7 @@ Deno.test(
 Deno.test(
   "saveResponse - sets dynamic document_relationships key based on stage slug for initial chunk",
   async (t) => {
-    const stageSlug: string = "parenthesis";
+    const stageSlug: DialecticStageSlug = DialecticStageSlug.Parenthesis;
     const savedId: string = "contrib-parenthesis-1";
     const fileManager: MockFileManagerService = createMockFileManager({
       outcome: "success",
@@ -615,7 +615,7 @@ Deno.test(
 Deno.test(
   "saveResponse - continuation persists payload document_relationships and skips initializer",
   async (t) => {
-    const stageSlug: string = "thesis";
+    const stageSlug: DialecticStageSlug = DialecticStageSlug.Thesis;
     const parentId: string = "parent-001";
     const relationships: DocumentRelationships = {
       [stageSlug]: parentId,
@@ -711,7 +711,7 @@ Deno.test(
 Deno.test(
   "saveResponse - should trigger final document assembly when continuations are exhausted",
   async () => {
-    const stageSlug: string = "thesis";
+    const stageSlug: DialecticStageSlug = DialecticStageSlug.Thesis;
     const rootId: string = "root-id-123";
     const relationships: DocumentRelationships = { [stageSlug]: rootId };
     const fileManager: MockFileManagerService = createMockFileManager({
@@ -770,7 +770,7 @@ Deno.test(
     const deps: SaveResponseDeps = depsWithFinishReason("max_tokens", {
       fileManager,
     });
-    const stageSlug: string = "thesis";
+    const stageSlug: DialecticStageSlug = DialecticStageSlug.Thesis;
     const rootId: string = "prev-id-123";
     const jobPayload: DialecticExecuteJobPayload = {
       ...saveResponseTestPayload,
@@ -809,7 +809,7 @@ Deno.test(
 Deno.test(
   "saveResponse - three-chunk finalization uses saved root id and provides chunks in correct order for assembly",
   async () => {
-    const stageSlug: string = "thesis";
+    const stageSlug: DialecticStageSlug = DialecticStageSlug.Thesis;
     const rootId: string = "root-thesis-001";
     const cont1Id: string = "cont-001";
     const cont2Id: string = "cont-002";
@@ -1595,7 +1595,7 @@ const continuationCountInvalidMessage: string =
 Deno.test(
   "saveResponse - Step 12.b: requires continuation_count for continuation chunks",
   async (t) => {
-    const stageSlug: string = "thesis";
+    const stageSlug: DialecticStageSlug = DialecticStageSlug.Thesis;
     const documentKey: FileType = FileType.business_case;
 
     await t.step(
@@ -1946,7 +1946,7 @@ Deno.test(
 Deno.test(
   "saveResponse - Fix 2: continuation_limit_reached handling",
   async (t) => {
-    const stageSlug: string = "thesis";
+    const stageSlug: DialecticStageSlug = DialecticStageSlug.Thesis;
     const documentKey: FileType = FileType.business_case;
     const rootId: string = "root-contrib-abc";
 
@@ -2292,7 +2292,7 @@ Deno.test(
 Deno.test(
   "saveResponse - enforces document_relationships[stageSlug] = contribution.id for JSON-only root chunks",
   async () => {
-    const stageSlug: string = DialecticStageSlug.Thesis;
+    const stageSlug: DialecticStageSlug = DialecticStageSlug.Thesis;
     const invalidStageValue: string = "some-anchor-id";
     const newContributionId: string = "new-contribution-id";
     const sourceGroupId: string = "source-group-anchor-id";
@@ -2393,7 +2393,7 @@ Deno.test(
 Deno.test(
   "saveResponse - enforces document_relationships[stageSlug] = contribution.id for document root chunks even when planner sets invalid value",
   async () => {
-    const stageSlug: string = DialecticStageSlug.Thesis;
+    const stageSlug: DialecticStageSlug = DialecticStageSlug.Thesis;
     const invalidStageValue: string = "some-anchor-id";
     const newContributionId: string = "new-contribution-id";
     const sourceGroupId: string = "source-group-anchor-id";
@@ -2488,7 +2488,7 @@ Deno.test(
 Deno.test(
   "saveResponse - does not overwrite document_relationships[stageSlug] for continuation chunks",
   async () => {
-    const stageSlug: string = DialecticStageSlug.Thesis;
+    const stageSlug: DialecticStageSlug = DialecticStageSlug.Thesis;
     const rootContributionId: string = "root-contribution-id";
     const continuationContributionId: string = "continuation-contribution-id";
     const targetContributionId: string = rootContributionId;

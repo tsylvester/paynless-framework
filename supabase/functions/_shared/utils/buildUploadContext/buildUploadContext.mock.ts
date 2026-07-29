@@ -71,7 +71,7 @@ export function buildBuildUploadContextParams(
     modelSlug: "gpt-4",
     attemptCount: 0,
     restOfCanonicalPathParams,
-    documentKey: "business_case",
+    documentKey: FileType.business_case,
     contributionType: "thesis",
     isContinuationForStorage: false,
     continuationCount: undefined,

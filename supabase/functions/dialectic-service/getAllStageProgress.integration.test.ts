@@ -8,7 +8,7 @@ import type { User } from "npm:@supabase/supabase-js@2";
 import type { ServiceError } from "../_shared/types.ts";
 import type { TablesInsert } from "../types_db.ts";
 import { FileType } from "../_shared/types/file_manager.types.ts";
-import type { CanonicalPathParams } from "../_shared/types/file_manager.types.ts";
+import { CanonicalPathParams, DialecticStageSlug } from "../_shared/types/file_manager.types.ts";
 import { isJson } from "../_shared/utils/type_guards.ts";
 import { isGetAllStageProgressResponse } from "../_shared/utils/type-guards/type_guards.dialectic.progress.ts";
 import type { TestTierIntent } from "../_shared/_integration.test.interface.ts";
@@ -288,7 +288,7 @@ Deno.test("getAllStageProgress integration: DB template, real core, expectedCoun
 		});
 
 		await t.step("thesis layering: completed jobs surface jobs documents steps and statuses", async () => {
-			const stageSlug: string = THESIS_STAGE_SLUG;
+			const stageSlug: DialecticStageSlug = DialecticStageSlug.Thesis;
 			const iterationNumber: number = 1;
 			const modelId: string = selectedModels[0].id;
 

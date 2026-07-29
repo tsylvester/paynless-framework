@@ -15,7 +15,7 @@ function expectContribution(result: ModelContributionUploadContext | ResourceUpl
 
 function minimalRest(): Omit<CanonicalPathParams, "contributionType"> {
   return {
-    stageSlug: "thesis",
+    stageSlug: DialecticStageSlug.Thesis,
   };
 }
 
@@ -30,7 +30,7 @@ function minimalParams(
     modelSlug: "model-api-id",
     attemptCount: 1,
     restOfCanonicalPathParams: minimalRest(),
-    documentKey: "business_case",
+    documentKey: FileType.business_case,
     contributionType: "thesis",
     isContinuationForStorage: false,
     continuationCount: undefined,
@@ -69,7 +69,7 @@ Deno.test(
       iterationNumber: 7,
       modelSlug: "slug-x",
       attemptCount: 3,
-      documentKey: "feature_spec",
+      documentKey: FileType.feature_spec,
       contentForStorage: "{}",
     });
     const result: ModelContributionUploadContext = expectContribution(buildUploadContext(params));
@@ -97,7 +97,7 @@ Deno.test(
   "spreads restOfCanonicalPathParams into pathContext",
   () => {
     const restOfCanonicalPathParams: Omit<CanonicalPathParams, "contributionType"> = {
-      stageSlug: "antithesis",
+      stageSlug: DialecticStageSlug.Antithesis,
       sourceAnchorModelSlug: "anchor-model",
       pairedModelSlug: "paired-model",
     };
@@ -237,7 +237,7 @@ Deno.test(
       targetContributionId: "tgt-meta",
       documentRelationships: { r: 1 },
       restOfCanonicalPathParams: {
-        stageSlug: "synthesis",
+        stageSlug: DialecticStageSlug.Synthesis,
       },
     });
     const result: ModelContributionUploadContext = expectContribution(buildUploadContext(params));

@@ -10,14 +10,14 @@ import type {
 	DeriveStepStatusesParams,
 	DeriveStepStatusesResult,
 } from "./dialectic.interface.ts";
-import { FileType } from "../_shared/types/file_manager.types.ts";
+import { DialecticStageSlug, FileType } from "../_shared/types/file_manager.types.ts";
 import { deriveStepStatuses } from "./deriveStepStatuses.ts";
 import { isJson } from "../_shared/utils/type-guards/type_guards.common.ts";
 import type { DialecticCompressJobPayload } from "../dialectic-worker/enqueueCompressJobs/enqueueCompressJobs.interface.ts";
 import { buildDialecticCompressJobPayload } from "../dialectic-worker/enqueueCompressJobs/enqueueCompressJobs.mock.ts";
 
 const SESSION_ID = "session-1";
-const STAGE_SLUG = "thesis";
+const STAGE_SLUG = DialecticStageSlug.Thesis;
 const USER_ID = "user-1";
 const ITERATION = 1;
 const WALLET_ID = "wallet-1";

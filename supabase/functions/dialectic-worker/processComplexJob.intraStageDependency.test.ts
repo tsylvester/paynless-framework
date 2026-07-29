@@ -24,7 +24,7 @@ import { createMockJobProcessors, MockJobProcessorsSpies } from '../_shared/dial
 import { isRecord, isJson, isDialecticPlanJobPayload } from '../_shared/utils/type_guards.ts';
 import { describe, it, beforeEach } from 'https://deno.land/std@0.170.0/testing/bdd.ts';
 import { mockNotificationService, resetMockNotificationService } from '../_shared/utils/notification.service.mock.ts';
-import { FileType, ModelContributionFileTypes } from '../_shared/types/file_manager.types.ts';
+import { FileType, ModelContributionFileTypes, DialecticStageSlug } from '../_shared/types/file_manager.types.ts';
 import { IJobProcessors } from '../dialectic-service/dialectic.interface.ts';
 import { IPlanJobContext } from './createJobContext/JobContext.interface.ts';
 import { createPlanJobContext, createJobContext } from './createJobContext/createJobContext.ts';
@@ -171,7 +171,7 @@ const ITERATION = 1;
 const MODEL_SLUG = 'model-id-parenthesis';
 const USER_ID = 'user-id-parenthesis';
 
-function createPathContext(stageSlug: string, fileType: FileType, documentKey: FileType): PathContext {
+function createPathContext(stageSlug: DialecticStageSlug, fileType: FileType, documentKey: FileType): PathContext {
     return {
         projectId: PROJECT_ID,
         sessionId: SESSION_ID,
@@ -459,19 +459,19 @@ describe('processComplexJob - Intra-Stage Dependency Filtering', () => {
     });
 
     it('schedules job with waiting_for_prerequisite when step has missing intra-stage dependency and prerequisite step is identified', async () => {
-        const headerPathCtx = createPathContext('parenthesis', FileType.HeaderContext, FileType.HeaderContext);
+        const headerPathCtx = createPathContext(DialecticStageSlug.Parenthesis, FileType.HeaderContext, FileType.HeaderContext);
         const { storagePath: headerPath, fileName: headerFileName } = constructStoragePath(headerPathCtx);
         const headerContribution = createContribution('parenthesis', 'header_context', FileType.HeaderContext, headerFileName, headerPath);
 
-        const systemArchPathCtx = createPathContext('synthesis', FileType.RenderedDocument, FileType.system_architecture);
+        const systemArchPathCtx = createPathContext(DialecticStageSlug.Synthesis, FileType.RenderedDocument, FileType.system_architecture);
         const { storagePath: systemArchPath, fileName: systemArchFileName } = constructStoragePath(systemArchPathCtx);
         const systemArchResource = createProjectResource('synthesis', FileType.system_architecture, systemArchFileName, systemArchPath);
 
-        const techStackPathCtx = createPathContext('synthesis', FileType.RenderedDocument, FileType.tech_stack);
+        const techStackPathCtx = createPathContext(DialecticStageSlug.Synthesis, FileType.RenderedDocument, FileType.tech_stack);
         const { storagePath: techStackPath, fileName: techStackFileName } = constructStoragePath(techStackPathCtx);
         const techStackResource = createProjectResource('synthesis', FileType.tech_stack, techStackFileName, techStackPath);
 
-        const productReqPathCtx = createPathContext('synthesis', FileType.RenderedDocument, FileType.product_requirements);
+        const productReqPathCtx = createPathContext(DialecticStageSlug.Synthesis, FileType.RenderedDocument, FileType.product_requirements);
         const { storagePath: productReqPath, fileName: productReqFileName } = constructStoragePath(productReqPathCtx);
         const productReqResource = createProjectResource('synthesis', FileType.product_requirements, productReqFileName, productReqPath);
 
@@ -546,19 +546,19 @@ describe('processComplexJob - Intra-Stage Dependency Filtering', () => {
         // The code should use resolveNextBlocker to find the pending RENDER job and create a skeleton job
         // that waits for the RENDER job to complete, instead of throwing an error.
 
-        const headerPathCtx = createPathContext('parenthesis', FileType.HeaderContext, FileType.HeaderContext);
+        const headerPathCtx = createPathContext(DialecticStageSlug.Parenthesis, FileType.HeaderContext, FileType.HeaderContext);
         const { storagePath: headerPath, fileName: headerFileName } = constructStoragePath(headerPathCtx);
         const headerContribution = createContribution('parenthesis', 'header_context', FileType.HeaderContext, headerFileName, headerPath);
 
-        const systemArchPathCtx = createPathContext('synthesis', FileType.RenderedDocument, FileType.system_architecture);
+        const systemArchPathCtx = createPathContext(DialecticStageSlug.Synthesis, FileType.RenderedDocument, FileType.system_architecture);
         const { storagePath: systemArchPath, fileName: systemArchFileName } = constructStoragePath(systemArchPathCtx);
         const systemArchResource = createProjectResource('synthesis', FileType.system_architecture, systemArchFileName, systemArchPath);
 
-        const techStackPathCtx = createPathContext('synthesis', FileType.RenderedDocument, FileType.tech_stack);
+        const techStackPathCtx = createPathContext(DialecticStageSlug.Synthesis, FileType.RenderedDocument, FileType.tech_stack);
         const { storagePath: techStackPath, fileName: techStackFileName } = constructStoragePath(techStackPathCtx);
         const techStackResource = createProjectResource('synthesis', FileType.tech_stack, techStackFileName, techStackPath);
 
-        const productReqPathCtx = createPathContext('synthesis', FileType.RenderedDocument, FileType.product_requirements);
+        const productReqPathCtx = createPathContext(DialecticStageSlug.Synthesis, FileType.RenderedDocument, FileType.product_requirements);
         const { storagePath: productReqPath, fileName: productReqFileName } = constructStoragePath(productReqPathCtx);
         const productReqResource = createProjectResource('synthesis', FileType.product_requirements, productReqFileName, productReqPath);
 
@@ -741,19 +741,19 @@ describe('processComplexJob - Intra-Stage Dependency Filtering', () => {
     });
 
     it('schedules job with waiting_for_prerequisite when prerequisite step is in filteredReadySteps', async () => {
-        const headerPathCtx = createPathContext('parenthesis', FileType.HeaderContext, FileType.HeaderContext);
+        const headerPathCtx = createPathContext(DialecticStageSlug.Parenthesis, FileType.HeaderContext, FileType.HeaderContext);
         const { storagePath: headerPath, fileName: headerFileName } = constructStoragePath(headerPathCtx);
         const headerContribution = createContribution('parenthesis', 'header_context', FileType.HeaderContext, headerFileName, headerPath);
 
-        const systemArchPathCtx = createPathContext('synthesis', FileType.RenderedDocument, FileType.system_architecture);
+        const systemArchPathCtx = createPathContext(DialecticStageSlug.Synthesis, FileType.RenderedDocument, FileType.system_architecture);
         const { storagePath: systemArchPath, fileName: systemArchFileName } = constructStoragePath(systemArchPathCtx);
         const systemArchResource = createProjectResource('synthesis', FileType.system_architecture, systemArchFileName, systemArchPath);
 
-        const techStackPathCtx = createPathContext('synthesis', FileType.RenderedDocument, FileType.tech_stack);
+        const techStackPathCtx = createPathContext(DialecticStageSlug.Synthesis, FileType.RenderedDocument, FileType.tech_stack);
         const { storagePath: techStackPath, fileName: techStackFileName } = constructStoragePath(techStackPathCtx);
         const techStackResource = createProjectResource('synthesis', FileType.tech_stack, techStackFileName, techStackPath);
 
-        const productReqPathCtx = createPathContext('synthesis', FileType.RenderedDocument, FileType.product_requirements);
+        const productReqPathCtx = createPathContext(DialecticStageSlug.Synthesis, FileType.RenderedDocument, FileType.product_requirements);
         const { storagePath: productReqPath, fileName: productReqFileName } = constructStoragePath(productReqPathCtx);
         const productReqResource = createProjectResource('synthesis', FileType.product_requirements, productReqFileName, productReqPath);
 
@@ -909,19 +909,19 @@ describe('processComplexJob - Intra-Stage Dependency Filtering', () => {
     });
 
     it('finds prerequisite job ID from childJobs array after planning prerequisite step', async () => {
-        const headerPathCtx = createPathContext('parenthesis', FileType.HeaderContext, FileType.HeaderContext);
+        const headerPathCtx = createPathContext(DialecticStageSlug.Parenthesis, FileType.HeaderContext, FileType.HeaderContext);
         const { storagePath: headerPath, fileName: headerFileName } = constructStoragePath(headerPathCtx);
         const headerContribution = createContribution('parenthesis', 'header_context', FileType.HeaderContext, headerFileName, headerPath);
 
-        const systemArchPathCtx = createPathContext('synthesis', FileType.RenderedDocument, FileType.system_architecture);
+        const systemArchPathCtx = createPathContext(DialecticStageSlug.Synthesis, FileType.RenderedDocument, FileType.system_architecture);
         const { storagePath: systemArchPath, fileName: systemArchFileName } = constructStoragePath(systemArchPathCtx);
         const systemArchResource = createProjectResource('synthesis', FileType.system_architecture, systemArchFileName, systemArchPath);
 
-        const techStackPathCtx = createPathContext('synthesis', FileType.RenderedDocument, FileType.tech_stack);
+        const techStackPathCtx = createPathContext(DialecticStageSlug.Synthesis, FileType.RenderedDocument, FileType.tech_stack);
         const { storagePath: techStackPath, fileName: techStackFileName } = constructStoragePath(techStackPathCtx);
         const techStackResource = createProjectResource('synthesis', FileType.tech_stack, techStackFileName, techStackPath);
 
-        const productReqPathCtx = createPathContext('synthesis', FileType.RenderedDocument, FileType.product_requirements);
+        const productReqPathCtx = createPathContext(DialecticStageSlug.Synthesis, FileType.RenderedDocument, FileType.product_requirements);
         const { storagePath: productReqPath, fileName: productReqFileName } = constructStoragePath(productReqPathCtx);
         const productReqResource = createProjectResource('synthesis', FileType.product_requirements, productReqFileName, productReqPath);
 
@@ -993,19 +993,19 @@ describe('processComplexJob - Intra-Stage Dependency Filtering', () => {
     });
 
     it('modifies waiting jobs to have waiting_for_prerequisite status and prerequisite_job_id before insertion', async () => {
-        const headerPathCtx = createPathContext('parenthesis', FileType.HeaderContext, FileType.HeaderContext);
+        const headerPathCtx = createPathContext(DialecticStageSlug.Parenthesis, FileType.HeaderContext, FileType.HeaderContext);
         const { storagePath: headerPath, fileName: headerFileName } = constructStoragePath(headerPathCtx);
         const headerContribution = createContribution('parenthesis', 'header_context', FileType.HeaderContext, headerFileName, headerPath);
 
-        const systemArchPathCtx = createPathContext('synthesis', FileType.RenderedDocument, FileType.system_architecture);
+        const systemArchPathCtx = createPathContext(DialecticStageSlug.Synthesis, FileType.RenderedDocument, FileType.system_architecture);
         const { storagePath: systemArchPath, fileName: systemArchFileName } = constructStoragePath(systemArchPathCtx);
         const systemArchResource = createProjectResource('synthesis', FileType.system_architecture, systemArchFileName, systemArchPath);
 
-        const techStackPathCtx = createPathContext('synthesis', FileType.RenderedDocument, FileType.tech_stack);
+        const techStackPathCtx = createPathContext(DialecticStageSlug.Synthesis, FileType.RenderedDocument, FileType.tech_stack);
         const { storagePath: techStackPath, fileName: techStackFileName } = constructStoragePath(techStackPathCtx);
         const techStackResource = createProjectResource('synthesis', FileType.tech_stack, techStackFileName, techStackPath);
 
-        const productReqPathCtx = createPathContext('synthesis', FileType.RenderedDocument, FileType.product_requirements);
+        const productReqPathCtx = createPathContext(DialecticStageSlug.Synthesis, FileType.RenderedDocument, FileType.product_requirements);
         const { storagePath: productReqPath, fileName: productReqFileName } = constructStoragePath(productReqPathCtx);
         const productReqResource = createProjectResource('synthesis', FileType.product_requirements, productReqFileName, productReqPath);
 
@@ -1075,19 +1075,19 @@ describe('processComplexJob - Intra-Stage Dependency Filtering', () => {
     });
 
     it('plans steps with available inputs normally with pending status', async () => {
-        const headerPathCtx = createPathContext('parenthesis', FileType.HeaderContext, FileType.HeaderContext);
+        const headerPathCtx = createPathContext(DialecticStageSlug.Parenthesis, FileType.HeaderContext, FileType.HeaderContext);
         const { storagePath: headerPath, fileName: headerFileName } = constructStoragePath(headerPathCtx);
         const headerContribution = createContribution('parenthesis', 'header_context', FileType.HeaderContext, headerFileName, headerPath);
 
-        const systemArchPathCtx = createPathContext('synthesis', FileType.RenderedDocument, FileType.system_architecture);
+        const systemArchPathCtx = createPathContext(DialecticStageSlug.Synthesis, FileType.RenderedDocument, FileType.system_architecture);
         const { storagePath: systemArchPath, fileName: systemArchFileName } = constructStoragePath(systemArchPathCtx);
         const systemArchResource = createProjectResource('synthesis', FileType.system_architecture, systemArchFileName, systemArchPath);
 
-        const techStackPathCtx = createPathContext('synthesis', FileType.RenderedDocument, FileType.tech_stack);
+        const techStackPathCtx = createPathContext(DialecticStageSlug.Synthesis, FileType.RenderedDocument, FileType.tech_stack);
         const { storagePath: techStackPath, fileName: techStackFileName } = constructStoragePath(techStackPathCtx);
         const techStackResource = createProjectResource('synthesis', FileType.tech_stack, techStackFileName, techStackPath);
 
-        const productReqPathCtx = createPathContext('synthesis', FileType.RenderedDocument, FileType.product_requirements);
+        const productReqPathCtx = createPathContext(DialecticStageSlug.Synthesis, FileType.RenderedDocument, FileType.product_requirements);
         const { storagePath: productReqPath, fileName: productReqFileName } = constructStoragePath(productReqPathCtx);
         const productReqResource = createProjectResource('synthesis', FileType.product_requirements, productReqFileName, productReqPath);
 
@@ -1156,19 +1156,19 @@ describe('processComplexJob - Intra-Stage Dependency Filtering', () => {
         //
         // POSITIVE CASE: No existing job with waiting_for_prerequisite status exists for this step,
         // so a new skeleton PLAN job should be created.
-        const headerPathCtx = createPathContext('parenthesis', FileType.HeaderContext, FileType.HeaderContext);
+        const headerPathCtx = createPathContext(DialecticStageSlug.Parenthesis, FileType.HeaderContext, FileType.HeaderContext);
         const { storagePath: headerPath, fileName: headerFileName } = constructStoragePath(headerPathCtx);
         const headerContribution = createContribution('parenthesis', 'header_context', FileType.HeaderContext, headerFileName, headerPath);
 
-        const systemArchPathCtx = createPathContext('synthesis', FileType.RenderedDocument, FileType.system_architecture);
+        const systemArchPathCtx = createPathContext(DialecticStageSlug.Synthesis, FileType.RenderedDocument, FileType.system_architecture);
         const { storagePath: systemArchPath, fileName: systemArchFileName } = constructStoragePath(systemArchPathCtx);
         const systemArchResource = createProjectResource('synthesis', FileType.system_architecture, systemArchFileName, systemArchPath);
 
-        const techStackPathCtx = createPathContext('synthesis', FileType.RenderedDocument, FileType.tech_stack);
+        const techStackPathCtx = createPathContext(DialecticStageSlug.Synthesis, FileType.RenderedDocument, FileType.tech_stack);
         const { storagePath: techStackPath, fileName: techStackFileName } = constructStoragePath(techStackPathCtx);
         const techStackResource = createProjectResource('synthesis', FileType.tech_stack, techStackFileName, techStackPath);
 
-        const productReqPathCtx = createPathContext('synthesis', FileType.RenderedDocument, FileType.product_requirements);
+        const productReqPathCtx = createPathContext(DialecticStageSlug.Synthesis, FileType.RenderedDocument, FileType.product_requirements);
         const { storagePath: productReqPath, fileName: productReqFileName } = constructStoragePath(productReqPathCtx);
         const productReqResource = createProjectResource('synthesis', FileType.product_requirements, productReqFileName, productReqPath);
 
@@ -1352,19 +1352,19 @@ describe('processComplexJob - Intra-Stage Dependency Filtering', () => {
         // When a step has missing intra-stage prerequisites and a skeleton job with
         // waiting_for_prerequisite status already exists, no additional job is created.
         // The existing skeleton job will be triggered when its prerequisite completes.
-        const headerPathCtx = createPathContext('parenthesis', FileType.HeaderContext, FileType.HeaderContext);
+        const headerPathCtx = createPathContext(DialecticStageSlug.Parenthesis, FileType.HeaderContext, FileType.HeaderContext);
         const { storagePath: headerPath, fileName: headerFileName } = constructStoragePath(headerPathCtx);
         const headerContribution = createContribution('parenthesis', 'header_context', FileType.HeaderContext, headerFileName, headerPath);
 
-        const systemArchPathCtx = createPathContext('synthesis', FileType.RenderedDocument, FileType.system_architecture);
+        const systemArchPathCtx = createPathContext(DialecticStageSlug.Synthesis, FileType.RenderedDocument, FileType.system_architecture);
         const { storagePath: systemArchPath, fileName: systemArchFileName } = constructStoragePath(systemArchPathCtx);
         const systemArchResource = createProjectResource('synthesis', FileType.system_architecture, systemArchFileName, systemArchPath);
 
-        const techStackPathCtx = createPathContext('synthesis', FileType.RenderedDocument, FileType.tech_stack);
+        const techStackPathCtx = createPathContext(DialecticStageSlug.Synthesis, FileType.RenderedDocument, FileType.tech_stack);
         const { storagePath: techStackPath, fileName: techStackFileName } = constructStoragePath(techStackPathCtx);
         const techStackResource = createProjectResource('synthesis', FileType.tech_stack, techStackFileName, techStackPath);
 
-        const productReqPathCtx = createPathContext('synthesis', FileType.RenderedDocument, FileType.product_requirements);
+        const productReqPathCtx = createPathContext(DialecticStageSlug.Synthesis, FileType.RenderedDocument, FileType.product_requirements);
         const { storagePath: productReqPath, fileName: productReqFileName } = constructStoragePath(productReqPathCtx);
         const productReqResource = createProjectResource('synthesis', FileType.product_requirements, productReqFileName, productReqPath);
 
@@ -1491,15 +1491,15 @@ describe('processComplexJob - Deferred Planning (106.c)', () => {
         // 5. Insert resulting EXECUTE job(s) with pending status
 
         // Setup: technical_requirements document now exists (prerequisite completed)
-        const headerPathCtx = createPathContext('parenthesis', FileType.HeaderContext, FileType.HeaderContext);
+        const headerPathCtx = createPathContext(DialecticStageSlug.Parenthesis, FileType.HeaderContext, FileType.HeaderContext);
         const { storagePath: headerPath, fileName: headerFileName } = constructStoragePath(headerPathCtx);
         const headerContribution = createContribution('parenthesis', 'header_context', FileType.HeaderContext, headerFileName, headerPath);
 
-        const techReqPathCtx = createPathContext('parenthesis', FileType.RenderedDocument, FileType.technical_requirements);
+        const techReqPathCtx = createPathContext(DialecticStageSlug.Parenthesis, FileType.RenderedDocument, FileType.technical_requirements);
         const { storagePath: techReqPath, fileName: techReqFileName } = constructStoragePath(techReqPathCtx);
         const techReqResource = createProjectResource('parenthesis', FileType.technical_requirements, techReqFileName, techReqPath);
 
-        const productReqPathCtx = createPathContext('synthesis', FileType.RenderedDocument, FileType.product_requirements);
+        const productReqPathCtx = createPathContext(DialecticStageSlug.Synthesis, FileType.RenderedDocument, FileType.product_requirements);
         const { storagePath: productReqPath, fileName: productReqFileName } = constructStoragePath(productReqPathCtx);
         const productReqResource = createProjectResource('synthesis', FileType.product_requirements, productReqFileName, productReqPath);
 
@@ -1712,15 +1712,15 @@ describe('processComplexJob - Deferred Planning (106.c)', () => {
         // waiting_for_children with prerequisite_job_id = null. This prevents
         // re-entering the deferred planning path if the job is triggered again.
 
-        const headerPathCtx = createPathContext('parenthesis', FileType.HeaderContext, FileType.HeaderContext);
+        const headerPathCtx = createPathContext(DialecticStageSlug.Parenthesis, FileType.HeaderContext, FileType.HeaderContext);
         const { storagePath: headerPath, fileName: headerFileName } = constructStoragePath(headerPathCtx);
         const headerContribution = createContribution('parenthesis', 'header_context', FileType.HeaderContext, headerFileName, headerPath);
 
-        const techReqPathCtx = createPathContext('parenthesis', FileType.RenderedDocument, FileType.technical_requirements);
+        const techReqPathCtx = createPathContext(DialecticStageSlug.Parenthesis, FileType.RenderedDocument, FileType.technical_requirements);
         const { storagePath: techReqPath, fileName: techReqFileName } = constructStoragePath(techReqPathCtx);
         const techReqResource = createProjectResource('parenthesis', FileType.technical_requirements, techReqFileName, techReqPath);
 
-        const productReqPathCtx = createPathContext('synthesis', FileType.RenderedDocument, FileType.product_requirements);
+        const productReqPathCtx = createPathContext(DialecticStageSlug.Synthesis, FileType.RenderedDocument, FileType.product_requirements);
         const { storagePath: productReqPath, fileName: productReqFileName } = constructStoragePath(productReqPathCtx);
         const productReqResource = createProjectResource('synthesis', FileType.product_requirements, productReqFileName, productReqPath);
 
@@ -1895,15 +1895,15 @@ describe('processComplexJob - Deferred Planning (106.c)', () => {
     });
 
     it('deferred planning path (skeleton job insert at line 288) includes UUID idempotency_key', async () => {
-        const headerPathCtx = createPathContext('parenthesis', FileType.HeaderContext, FileType.HeaderContext);
+        const headerPathCtx = createPathContext(DialecticStageSlug.Parenthesis, FileType.HeaderContext, FileType.HeaderContext);
         const { storagePath: headerPath, fileName: headerFileName } = constructStoragePath(headerPathCtx);
         const headerContribution = createContribution('parenthesis', 'header_context', FileType.HeaderContext, headerFileName, headerPath);
 
-        const techReqPathCtx = createPathContext('parenthesis', FileType.RenderedDocument, FileType.technical_requirements);
+        const techReqPathCtx = createPathContext(DialecticStageSlug.Parenthesis, FileType.RenderedDocument, FileType.technical_requirements);
         const { storagePath: techReqPath, fileName: techReqFileName } = constructStoragePath(techReqPathCtx);
         const techReqResource = createProjectResource('parenthesis', FileType.technical_requirements, techReqFileName, techReqPath);
 
-        const productReqPathCtx = createPathContext('synthesis', FileType.RenderedDocument, FileType.product_requirements);
+        const productReqPathCtx = createPathContext(DialecticStageSlug.Synthesis, FileType.RenderedDocument, FileType.product_requirements);
         const { storagePath: productReqPath, fileName: productReqFileName } = constructStoragePath(productReqPathCtx);
         const productReqResource = createProjectResource('synthesis', FileType.product_requirements, productReqFileName, productReqPath);
 
@@ -1924,7 +1924,7 @@ describe('processComplexJob - Deferred Planning (106.c)', () => {
             walletId: 'wallet-id-parenthesis',
             user_jwt: 'user-jwt-parenthesis',
             idempotencyKey: 'idem-deferred-exec',
-            canonicalPathParams: { contributionType: 'thesis', stageSlug: 'parenthesis' },
+            canonicalPathParams: { contributionType: 'thesis', stageSlug: DialecticStageSlug.Parenthesis },
             planner_metadata: { recipe_step_id: step.id, recipe_template_id: step.template_id },
         };
         if (!isJson(execPayload)) {
@@ -2093,15 +2093,15 @@ describe('processComplexJob - Deferred Planning (106.c)', () => {
     });
 
     it('on unique constraint violation during deferred planning insert, existing jobs are used and processing continues', async () => {
-        const headerPathCtx = createPathContext('parenthesis', FileType.HeaderContext, FileType.HeaderContext);
+        const headerPathCtx = createPathContext(DialecticStageSlug.Parenthesis, FileType.HeaderContext, FileType.HeaderContext);
         const { storagePath: headerPath, fileName: headerFileName } = constructStoragePath(headerPathCtx);
         const headerContribution = createContribution('parenthesis', 'header_context', FileType.HeaderContext, headerFileName, headerPath);
 
-        const techReqPathCtx = createPathContext('parenthesis', FileType.RenderedDocument, FileType.technical_requirements);
+        const techReqPathCtx = createPathContext(DialecticStageSlug.Parenthesis, FileType.RenderedDocument, FileType.technical_requirements);
         const { storagePath: techReqPath, fileName: techReqFileName } = constructStoragePath(techReqPathCtx);
         const techReqResource = createProjectResource('parenthesis', FileType.technical_requirements, techReqFileName, techReqPath);
 
-        const productReqPathCtx = createPathContext('synthesis', FileType.RenderedDocument, FileType.product_requirements);
+        const productReqPathCtx = createPathContext(DialecticStageSlug.Synthesis, FileType.RenderedDocument, FileType.product_requirements);
         const { storagePath: productReqPath, fileName: productReqFileName } = constructStoragePath(productReqPathCtx);
         const productReqResource = createProjectResource('synthesis', FileType.product_requirements, productReqFileName, productReqPath);
 
@@ -2318,15 +2318,15 @@ describe('processComplexJob - Deferred Planning (106.c)', () => {
         it('109.d.i: When skeleton job wakes and findSourceDocuments succeeds, proceeds to plan (existing behavior preserved)', async () => {
             // This test verifies that when a skeleton job wakes and the artifact is ready,
             // it proceeds with deferred planning as before (backward compatible behavior)
-            const headerPathCtx = createPathContext('parenthesis', FileType.HeaderContext, FileType.HeaderContext);
+            const headerPathCtx = createPathContext(DialecticStageSlug.Parenthesis, FileType.HeaderContext, FileType.HeaderContext);
             const { storagePath: headerPath, fileName: headerFileName } = constructStoragePath(headerPathCtx);
             const headerContribution = createContribution('parenthesis', 'header_context', FileType.HeaderContext, headerFileName, headerPath);
 
-            const techReqPathCtx = createPathContext('parenthesis', FileType.RenderedDocument, FileType.technical_requirements);
+            const techReqPathCtx = createPathContext(DialecticStageSlug.Parenthesis, FileType.RenderedDocument, FileType.technical_requirements);
             const { storagePath: techReqPath, fileName: techReqFileName } = constructStoragePath(techReqPathCtx);
             const techReqResource = createProjectResource('parenthesis', FileType.technical_requirements, techReqFileName, techReqPath);
 
-            const productReqPathCtx = createPathContext('synthesis', FileType.RenderedDocument, FileType.product_requirements);
+            const productReqPathCtx = createPathContext(DialecticStageSlug.Synthesis, FileType.RenderedDocument, FileType.product_requirements);
             const { storagePath: productReqPath, fileName: productReqFileName } = constructStoragePath(productReqPathCtx);
             const productReqResource = createProjectResource('synthesis', FileType.product_requirements, productReqFileName, productReqPath);
 
@@ -2516,7 +2516,7 @@ describe('processComplexJob - Deferred Planning (106.c)', () => {
                 output_type: FileType.technical_requirements as ModelContributionFileTypes,
                 canonicalPathParams: {
                     contributionType: 'parenthesis',
-                    stageSlug: 'parenthesis',
+                    stageSlug: DialecticStageSlug.Parenthesis,
                     sourceModelSlugs: [],
                 },
                 inputs: {},
@@ -3016,7 +3016,7 @@ describe('processComplexJob - Deferred Planning (106.c)', () => {
                 output_type: FileType.technical_requirements as ModelContributionFileTypes,
                 canonicalPathParams: {
                     contributionType: 'parenthesis',
-                    stageSlug: 'parenthesis',
+                    stageSlug: DialecticStageSlug.Parenthesis,
                     sourceModelSlugs: [],
                 },
                 inputs: {},

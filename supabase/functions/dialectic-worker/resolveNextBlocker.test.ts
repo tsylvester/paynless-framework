@@ -20,13 +20,13 @@ import {
     ResolveNextBlockerParams,
     ResolveNextBlockerResult,
 } from '../dialectic-service/dialectic.interface.ts';
-import { FileType, ModelContributionFileTypes } from '../_shared/types/file_manager.types.ts';
+import { DialecticStageSlug, FileType, ModelContributionFileTypes } from '../_shared/types/file_manager.types.ts';
 import { isJson } from '../_shared/utils/type_guards.ts';
 import { resolveNextBlocker } from './resolveNextBlocker.ts';
 
 const PROJECT_ID = 'project-uuid-123';
 const SESSION_ID = 'session-uuid-456';
-const STAGE_SLUG = 'parenthesis';
+const STAGE_SLUG = DialecticStageSlug.Antithesis;
 const ITERATION = 1;
 const MODEL_SLUG_A = 'gpt-4';
 const MODEL_SLUG_B = 'claude-3-opus';

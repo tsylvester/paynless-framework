@@ -38,7 +38,7 @@ import {
     MockQueryBuilderState, 
     MockSupabaseDataConfig 
 } from '../_shared/supabase.mock.ts';
-import { FileType } from '../_shared/types/file_manager.types.ts';
+import { DialecticStageSlug, FileType } from '../_shared/types/file_manager.types.ts';
 
 describe('planComplexStage', () => {
     let mockSupabase: ReturnType<typeof createMockSupabaseClient>;
@@ -190,7 +190,7 @@ describe('planComplexStage', () => {
             project_id: 'proj-1',
             user_id: 'user-123',
             target_contribution_id: 'doc-1-thesis',
-            stage_slug: 'thesis',
+            stage_slug: DialecticStageSlug.Thesis,
             iteration_number: 1,
             storage_bucket: 'test-bucket',
             storage_path: 'projects/proj-1/sessions/sess-1/iteration_1/thesis/_feedback',
@@ -391,7 +391,7 @@ describe('planComplexStage', () => {
                 model_id: 'model-1',
                 projectId: 'proj-1',
                 sessionId: 'sess-1',
-                stageSlug: 'test-stage',
+                stageSlug: DialecticStageSlug.Thesis,
                 iterationNumber: 1,
                 walletId: 'wallet-1',
                 continueUntilComplete: false,
@@ -412,7 +412,7 @@ describe('planComplexStage', () => {
             results: null,
             session_id: 'sess-1',
             started_at: null,
-            stage_slug: 'test-stage',
+            stage_slug: DialecticStageSlug.Thesis,
             target_contribution_id: null,
             is_test_job: false,
             job_type: 'PLAN',
@@ -536,7 +536,7 @@ describe('planComplexStage', () => {
                 sourceModelSlugs: ['Test Model'],
                 sourceAnchorType: 'thesis',
                 sourceAnchorModelSlug: 'Test Model',
-                stageSlug: 'test-stage',
+                stageSlug: DialecticStageSlug.Thesis,
             },
             user_jwt: 'user-jwt-123',
             idempotencyKey: "idempotency-key-1",
@@ -718,7 +718,7 @@ describe('planComplexStage', () => {
             continueUntilComplete: false,
             maxRetries: 3,
             continuation_count: 0,
-            canonicalPathParams: { contributionType: 'synthesis', stageSlug: 'test-stage' },
+            canonicalPathParams: { contributionType: 'synthesis', stageSlug: DialecticStageSlug.Thesis },
             user_jwt: 'user-jwt-123',
             idempotencyKey: "idempotency-key-1",
         };
@@ -809,7 +809,7 @@ describe('planComplexStage', () => {
                 continueUntilComplete: false,
                 maxRetries: 3,
                 continuation_count: 0,
-                canonicalPathParams: { contributionType: 'synthesis', stageSlug: 'test-stage' },
+                canonicalPathParams: { contributionType: 'synthesis', stageSlug: DialecticStageSlug.Thesis },
                 user_jwt: 'user-jwt-123',
                 idempotencyKey: "idempotency-key-1",
             }];
@@ -1137,7 +1137,7 @@ describe('planComplexStage', () => {
             continueUntilComplete: false,
             maxRetries: 3,
             continuation_count: 0,
-            canonicalPathParams: { contributionType: 'synthesis', stageSlug: 'test-stage' },
+            canonicalPathParams: { contributionType: 'synthesis', stageSlug: DialecticStageSlug.Thesis },
             user_jwt: mockParentJob.payload.user_jwt,
             idempotencyKey: "idempotency-key-1",
         };
@@ -1186,7 +1186,7 @@ describe('planComplexStage', () => {
             continueUntilComplete: false,
             maxRetries: 3,
             continuation_count: 0,
-            canonicalPathParams: { contributionType: 'synthesis', stageSlug: 'test-stage' },
+            canonicalPathParams: { contributionType: 'synthesis', stageSlug: DialecticStageSlug.Thesis },
             user_jwt: mockParentJob.payload.user_jwt,
             idempotencyKey: "idempotency-key-1",
         };
@@ -1237,7 +1237,7 @@ describe('planComplexStage', () => {
             continueUntilComplete: false,
             maxRetries: 3,
             continuation_count: 0,
-            canonicalPathParams: { contributionType: 'synthesis', stageSlug: 'test-stage' },
+            canonicalPathParams: { contributionType: 'synthesis', stageSlug: DialecticStageSlug.Thesis },
             user_jwt: 'user-jwt-123',
             idempotencyKey: "idempotency-key-1",
         }];
@@ -1273,7 +1273,7 @@ describe('planComplexStage', () => {
             continueUntilComplete: false,
             maxRetries: 3,
             continuation_count: 0,
-            canonicalPathParams: { contributionType: 'synthesis', stageSlug: 'test-stage' },
+            canonicalPathParams: { contributionType: 'synthesis', stageSlug: DialecticStageSlug.Thesis },
             user_jwt: 'user-jwt-123',
             idempotencyKey: "idempotency-key-1",
         }];
@@ -1309,7 +1309,7 @@ describe('planComplexStage', () => {
             continueUntilComplete: false,
             maxRetries: 3,
             continuation_count: 0,
-            canonicalPathParams: { contributionType: 'synthesis', stageSlug: 'test-stage' },
+            canonicalPathParams: { contributionType: 'synthesis', stageSlug: DialecticStageSlug.Thesis },
             user_jwt: 'user-jwt-123',
             idempotencyKey: "idempotency-key-1",
         }];
@@ -1353,7 +1353,7 @@ describe('planComplexStage', () => {
             continueUntilComplete: false,
             maxRetries: 3,
             continuation_count: 0,
-            canonicalPathParams: { contributionType: 'synthesis', stageSlug: 'test-stage' },
+            canonicalPathParams: { contributionType: 'synthesis', stageSlug: DialecticStageSlug.Thesis },
             user_jwt: 'user-jwt-123',
             idempotencyKey: "idempotency-key-1",
         }];
@@ -1390,7 +1390,7 @@ describe('planComplexStage', () => {
             resource_type: 'seed_prompt',
             session_id: 'sess-1',
             source_contribution_id: null,
-            stage_slug: 'thesis',
+            stage_slug: DialecticStageSlug.Thesis,
         };
         mockProjectResources.push(seedPromptResource);
 
@@ -1505,7 +1505,7 @@ describe('planComplexStage', () => {
             resource_type: 'rendered_document',
             session_id: 'sess-1',
             source_contribution_id: null,
-            stage_slug: 'test-stage',
+            stage_slug: DialecticStageSlug.Thesis,
         };
 
         const doc2Resource: DialecticProjectResourceRow = {
@@ -1528,7 +1528,7 @@ describe('planComplexStage', () => {
             resource_type: 'rendered_document',
             session_id: 'sess-1',
             source_contribution_id: null,
-            stage_slug: 'test-stage',
+            stage_slug: DialecticStageSlug.Thesis,
         };
 
         const doc3Resource: DialecticProjectResourceRow = {
@@ -1551,7 +1551,7 @@ describe('planComplexStage', () => {
             resource_type: 'rendered_document',
             session_id: 'sess-1',
             source_contribution_id: null,
-            stage_slug: 'test-stage',
+            stage_slug: DialecticStageSlug.Thesis,
         };
 
         mockProjectResources = [doc1Resource, doc2Resource, doc3Resource];
@@ -1601,7 +1601,7 @@ describe('planComplexStage', () => {
             resource_type: 'rendered_document',
             session_id: 'sess-1',
             source_contribution_id: null,
-            stage_slug: 'test-stage',
+            stage_slug: DialecticStageSlug.Thesis,
         };
         const doc2Resource: DialecticProjectResourceRow = {
             id: 'resource-doc-2',
@@ -1623,7 +1623,7 @@ describe('planComplexStage', () => {
             resource_type: 'rendered_document',
             session_id: 'sess-1',
             source_contribution_id: null,
-            stage_slug: 'test-stage',
+            stage_slug: DialecticStageSlug.Thesis,
         };
         mockProjectResources = [doc1Resource, doc2Resource];
 
@@ -1671,7 +1671,7 @@ describe('planComplexStage', () => {
             resource_type: 'rendered_document',
             session_id: 'sess-1',
             source_contribution_id: null,
-            stage_slug: 'test-stage',
+            stage_slug: DialecticStageSlug.Thesis,
         };
         const doc2Resource: DialecticProjectResourceRow = {
             id: 'resource-doc-2',
@@ -1693,7 +1693,7 @@ describe('planComplexStage', () => {
             resource_type: 'rendered_document',
             session_id: 'sess-1',
             source_contribution_id: null,
-            stage_slug: 'test-stage',
+            stage_slug: DialecticStageSlug.Thesis,
         };
         mockProjectResources = [doc1Resource, doc2Resource];
 
@@ -1737,7 +1737,7 @@ describe('planComplexStage', () => {
             resource_type: 'rendered_document',
             session_id: 'sess-1',
             source_contribution_id: null,
-            stage_slug: 'test-stage',
+            stage_slug: DialecticStageSlug.Thesis,
         };
         const doc2Missing: DialecticProjectResourceRow = {
             id: 'resource-doc-2',
@@ -1759,7 +1759,7 @@ describe('planComplexStage', () => {
             resource_type: 'rendered_document',
             session_id: 'sess-1',
             source_contribution_id: null,
-            stage_slug: 'test-stage',
+            stage_slug: DialecticStageSlug.Thesis,
         };
         const doc3Null: DialecticProjectResourceRow = {
             id: 'resource-doc-3',
@@ -1781,7 +1781,7 @@ describe('planComplexStage', () => {
             resource_type: 'rendered_document',
             session_id: 'sess-1',
             source_contribution_id: null,
-            stage_slug: 'test-stage',
+            stage_slug: DialecticStageSlug.Thesis,
         };
         const doc4Empty: DialecticProjectResourceRow = {
             id: 'resource-doc-4',
@@ -1803,7 +1803,7 @@ describe('planComplexStage', () => {
             resource_type: 'rendered_document',
             session_id: 'sess-1',
             source_contribution_id: null,
-            stage_slug: 'test-stage',
+            stage_slug: DialecticStageSlug.Thesis,
         };
         const doc5NoRelationships: DialecticProjectResourceRow = {
             id: 'resource-doc-5',
@@ -1825,7 +1825,7 @@ describe('planComplexStage', () => {
             resource_type: 'rendered_document',
             session_id: 'sess-1',
             source_contribution_id: null,
-            stage_slug: 'test-stage',
+            stage_slug: DialecticStageSlug.Thesis,
         };
 
         mockProjectResources = [doc1Resource, doc2Missing, doc3Null, doc4Empty, doc5NoRelationships];
@@ -1874,7 +1874,7 @@ describe('planComplexStage', () => {
             resource_type: 'rendered_document',
             session_id: 'sess-1',
             source_contribution_id: null,
-            stage_slug: 'test-stage',
+            stage_slug: DialecticStageSlug.Thesis,
         };
         const doc2Resource: DialecticProjectResourceRow = {
             id: 'resource-doc-2',
@@ -1896,7 +1896,7 @@ describe('planComplexStage', () => {
             resource_type: 'rendered_document',
             session_id: 'sess-1',
             source_contribution_id: null,
-            stage_slug: 'test-stage',
+            stage_slug: DialecticStageSlug.Thesis,
         };
         mockProjectResources = [doc1Resource, doc2Resource];
 

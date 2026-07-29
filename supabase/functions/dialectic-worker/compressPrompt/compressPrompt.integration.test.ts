@@ -44,7 +44,7 @@ import {
   import { EmbeddingClient } from "../../_shared/services/indexing_service.ts";
   import { getMockAiProviderAdapter } from "../../_shared/ai_service/ai_provider.mock.ts";
   import type { AiModelExtendedConfig, ChatApiRequest, ResourceDocuments } from "../../_shared/types.ts";
-  import { FileType, type PathContext } from "../../_shared/types/file_manager.types.ts";
+  import { DialecticStageSlug, FileType, type PathContext } from "../../_shared/types/file_manager.types.ts";
   import { constructStoragePath } from "../../_shared/utils/path_constructor.ts";
   import { ContextWindowError } from "../../_shared/utils/errors.ts";
   import { buildExtendedModelConfig } from "../../_shared/ai_service/ai_provider.mock.ts";
@@ -318,7 +318,7 @@ import {
         fileType: FileType.HeaderContext,
         sessionId: testSessionId,
         iteration: 1,
-        stageSlug: "thesis",
+        stageSlug: DialecticStageSlug.Thesis,
         modelSlug: MOCK_MODEL_CONFIG.api_identifier,
         attemptCount: 1,
         documentKey: FileType.HeaderContext,

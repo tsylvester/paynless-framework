@@ -8,7 +8,7 @@ Deno.test(
   "Contract: BuildUploadContextParams requires all fields as specified",
   async (t) => {
     const restOfCanonicalPathParams: Omit<CanonicalPathParams, "contributionType"> = {
-      stageSlug: "thesis",
+      stageSlug: DialecticStageSlug.Thesis,
     };
 
     await t.step("all keys present with typed values", () => {
@@ -20,7 +20,7 @@ Deno.test(
         modelSlug: "gpt-4",
         attemptCount: 0,
         restOfCanonicalPathParams,
-        documentKey: "business_case",
+        documentKey: FileType.business_case,
         contributionType: "thesis",
         isContinuationForStorage: false,
         continuationCount: 1,
@@ -85,7 +85,7 @@ Deno.test(
           modelSlug: "gpt-4",
           attemptCount: 0,
           restOfCanonicalPathParams,
-          documentKey: "business_case",
+          documentKey: FileType.business_case,
           contributionType: undefined,
           isContinuationForStorage: false,
           continuationCount: undefined,

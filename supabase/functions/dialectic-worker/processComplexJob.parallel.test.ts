@@ -26,7 +26,7 @@ import { MockRagService } from '../_shared/services/rag_service.mock.ts';
 import { MockFileManagerService } from '../_shared/services/file_manager.mock.ts';
 import { describe, it, beforeEach } from 'https://deno.land/std@0.170.0/testing/bdd.ts';
 import { mockNotificationService } from '../_shared/utils/notification.service.mock.ts';
-import { FileType } from '../_shared/types/file_manager.types.ts';
+import { FileType, DialecticStageSlug } from '../_shared/types/file_manager.types.ts';
 import { isModelContributionFileType } from '../_shared/utils/type-guards/type_guards.file_manager.ts';
 import { DialecticStageRecipeStep, IJobProcessors } from '../dialectic-service/dialectic.interface.ts';
 import { IPlanJobContext } from './createJobContext/JobContext.interface.ts';
@@ -293,7 +293,7 @@ describe('processComplexJob with Cloned Recipe Instance', () => {
         const mockPayload: DialecticPlanJobPayload = {
             sessionId: 'session-id-cloned',
             projectId: 'project-id-cloned',
-            stageSlug: 'antithesis',
+            stageSlug: DialecticStageSlug.Antithesis,
             model_id: 'model-id-cloned',
             walletId: 'wallet-id-cloned',
             user_jwt: 'user-jwt-cloned',
@@ -356,7 +356,7 @@ describe('processComplexJob with Cloned Recipe Instance', () => {
             output_type: firstClonedStep.output_type,
             projectId: 'project-id-cloned',
             sessionId: 'session-id-cloned',
-            stageSlug: 'antithesis',
+            stageSlug: DialecticStageSlug.Antithesis,
             model_id: 'model-id-cloned',
             iterationNumber: 1,
             continueUntilComplete: false,
@@ -364,7 +364,7 @@ describe('processComplexJob with Cloned Recipe Instance', () => {
             user_jwt: 'user-jwt-cloned',
             canonicalPathParams: {
                 contributionType: 'thesis',
-                stageSlug: 'antithesis',
+                stageSlug: DialecticStageSlug.Antithesis,
             },
             planner_metadata: {
                 recipe_step_id: firstClonedStep.id,
@@ -425,7 +425,7 @@ describe('processComplexJob with Cloned Recipe Instance', () => {
                 output_type: step.output_type,
                 projectId: 'project-id-cloned',
                 sessionId: 'session-id-cloned',
-                stageSlug: 'antithesis',
+                stageSlug: DialecticStageSlug.Antithesis,
                 model_id: 'model-id-cloned',
                 iterationNumber: 1,
                 continueUntilComplete: false,
@@ -433,7 +433,7 @@ describe('processComplexJob with Cloned Recipe Instance', () => {
                 user_jwt: 'user-jwt-cloned',
                 canonicalPathParams: {
                     contributionType: 'thesis',
-                    stageSlug: 'antithesis',
+                    stageSlug: DialecticStageSlug.Antithesis,
                 },
                 planner_metadata: {
                     recipe_step_id: step.id,
@@ -574,7 +574,7 @@ describe('processComplexJob with Cloned Recipe Instance', () => {
             output_type: step1.output_type,
             projectId: 'project-id-cloned',
             sessionId: 'session-id-cloned',
-            stageSlug: 'antithesis',
+            stageSlug: DialecticStageSlug.Antithesis,
             model_id: 'model-id-cloned',
             iterationNumber: 1,
             continueUntilComplete: false,
@@ -582,7 +582,7 @@ describe('processComplexJob with Cloned Recipe Instance', () => {
             user_jwt: 'user-jwt-cloned',
             canonicalPathParams: {
                 contributionType: 'thesis',
-                stageSlug: 'antithesis',
+                stageSlug: DialecticStageSlug.Antithesis,
             },
             planner_metadata: {
                 recipe_step_id: step1.id,
@@ -673,7 +673,7 @@ describe('processComplexJob with Parallel Recipe Graph', () => {
         const mockPayload: DialecticPlanJobPayload = {
             sessionId: 'session-id-parallel',
             projectId: 'project-id-parallel',
-            stageSlug: 'antithesis',
+            stageSlug: DialecticStageSlug.Antithesis,
             model_id: 'model-id-parallel',
             walletId: 'wallet-id-parallel',
             user_jwt: 'user-jwt-parallel',
@@ -728,7 +728,7 @@ describe('processComplexJob with Parallel Recipe Graph', () => {
             output_type: step1.output_type,
             projectId: 'project-id-parallel',
             sessionId: 'session-id-parallel',
-            stageSlug: 'antithesis',
+            stageSlug: DialecticStageSlug.Antithesis,
             model_id: 'model-id-parallel',
             iterationNumber: 1,
             continueUntilComplete: false,
@@ -736,7 +736,7 @@ describe('processComplexJob with Parallel Recipe Graph', () => {
             user_jwt: 'user-jwt-parallel',
             canonicalPathParams: {
                 contributionType: 'thesis',
-                stageSlug: 'antithesis',
+                stageSlug: DialecticStageSlug.Antithesis,
             },
             planner_metadata: {
                 recipe_step_id: step1.id,
@@ -789,7 +789,7 @@ describe('processComplexJob with Parallel Recipe Graph', () => {
                 output_type: step.output_type,
                 projectId: 'project-id-parallel',
                 sessionId: 'session-id-parallel',
-                stageSlug: 'antithesis',
+                stageSlug: DialecticStageSlug.Antithesis,
                 model_id: 'model-id-parallel',
                 iterationNumber: 1,
                 continueUntilComplete: false,
@@ -797,7 +797,7 @@ describe('processComplexJob with Parallel Recipe Graph', () => {
                 user_jwt: 'user-jwt-parallel',
                 canonicalPathParams: {
                     contributionType: 'thesis',
-                    stageSlug: 'antithesis',
+                    stageSlug: DialecticStageSlug.Antithesis,
                 },
                 planner_metadata: {
                     recipe_step_id: step.id,
@@ -867,7 +867,7 @@ describe('processComplexJob with Parallel Recipe Graph', () => {
                 output_type: step.output_type,
                 projectId: 'project-id-parallel',
                 sessionId: 'session-id-parallel',
-                stageSlug: 'antithesis',
+                stageSlug: DialecticStageSlug.Antithesis,
                 model_id: 'model-id-parallel',
                 iterationNumber: 1,
                 continueUntilComplete: false,
@@ -875,7 +875,7 @@ describe('processComplexJob with Parallel Recipe Graph', () => {
                 user_jwt: 'user-jwt-parallel',
                 canonicalPathParams: {
                     contributionType: 'thesis',
-                    stageSlug: 'antithesis',
+                    stageSlug: DialecticStageSlug.Antithesis,
                 },
                 planner_metadata: {
                     recipe_step_id: step.id,
@@ -1128,7 +1128,7 @@ describe('processComplexJob with Cloned Parallel Recipe Graph', () => {
         const mockPayload: DialecticPlanJobPayload = {
             sessionId: 'session-id-cloned-parallel',
             projectId: 'project-id-cloned-parallel',
-            stageSlug: 'antithesis',
+            stageSlug: DialecticStageSlug.Antithesis,
             model_id: 'model-id-cloned-parallel',
             walletId: 'wallet-id-cloned-parallel',
             user_jwt: 'user-jwt-cloned-parallel',
@@ -1182,7 +1182,7 @@ describe('processComplexJob with Cloned Parallel Recipe Graph', () => {
             output_type: step1.output_type,
             projectId: 'project-id-cloned-parallel',
             sessionId: 'session-id-cloned-parallel',
-            stageSlug: 'antithesis',
+            stageSlug: DialecticStageSlug.Antithesis,
             model_id: 'model-id-cloned-parallel',
             iterationNumber: 1,
             continueUntilComplete: false,
@@ -1190,7 +1190,7 @@ describe('processComplexJob with Cloned Parallel Recipe Graph', () => {
             user_jwt: 'user-jwt-cloned-parallel',
             canonicalPathParams: {
                 contributionType: 'thesis',
-                stageSlug: 'antithesis',
+                stageSlug: DialecticStageSlug.Antithesis,
             },
             planner_metadata: {
                 recipe_step_id: step1.id,
@@ -1239,7 +1239,7 @@ describe('processComplexJob with Cloned Parallel Recipe Graph', () => {
                 output_type: step.output_type,
                 projectId: 'project-id-cloned-parallel',
                 sessionId: 'session-id-cloned-parallel',
-                stageSlug: 'antithesis',
+                stageSlug: DialecticStageSlug.Antithesis,
                 model_id: 'model-id-cloned-parallel',
                 iterationNumber: 1,
                 continueUntilComplete: false,
@@ -1247,7 +1247,7 @@ describe('processComplexJob with Cloned Parallel Recipe Graph', () => {
                 user_jwt: 'user-jwt-cloned-parallel',
                 canonicalPathParams: {
                     contributionType: 'thesis',
-                    stageSlug: 'antithesis',
+                    stageSlug: DialecticStageSlug.Antithesis,
                 },
                 planner_metadata: {
                     recipe_step_id: step.id,
@@ -1315,7 +1315,7 @@ describe('processComplexJob with Cloned Parallel Recipe Graph', () => {
             output_type: step.output_type,
             projectId: 'project-id-cloned-parallel',
             sessionId: 'session-id-cloned-parallel',
-            stageSlug: 'antithesis',
+            stageSlug: DialecticStageSlug.Antithesis,
             model_id: 'model-id-cloned-parallel',
             iterationNumber: 1,
             continueUntilComplete: false,
@@ -1323,7 +1323,7 @@ describe('processComplexJob with Cloned Parallel Recipe Graph', () => {
             user_jwt: 'user-jwt-cloned-parallel',
             canonicalPathParams: {
                 contributionType: 'thesis',
-                stageSlug: 'antithesis',
+                stageSlug: DialecticStageSlug.Antithesis,
             },
             planner_metadata: {
                 recipe_step_id: step.id,

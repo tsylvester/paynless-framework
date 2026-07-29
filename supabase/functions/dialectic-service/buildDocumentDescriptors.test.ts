@@ -10,9 +10,10 @@ import type {
 import { FileType } from "../_shared/types/file_manager.types.ts";
 import { buildDocumentDescriptors } from "./buildDocumentDescriptors.ts";
 import { isJson } from "../_shared/utils/type-guards/type_guards.common.ts";
+import { DialecticStageSlug } from "../_shared/types/file_manager.types.ts";
 
 const SESSION_ID = "session-1";
-const STAGE_SLUG = "thesis";
+const STAGE_SLUG = DialecticStageSlug.Thesis;
 const USER_ID = "user-1";
 const ITERATION = 1;
 const WALLET_ID = "wallet-1";

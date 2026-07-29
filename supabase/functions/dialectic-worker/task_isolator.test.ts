@@ -29,7 +29,7 @@ import { planComplexStage } from './task_isolator.ts';
 import { findSourceDocuments } from './findSourceDocuments.ts';
 import { createMockSupabaseClient } from '../_shared/supabase.mock.ts';
 import { mockNotificationService } from '../_shared/utils/notification.service.mock.ts';
-import { FileType } from '../_shared/types/file_manager.types.ts';
+import { DialecticStageSlug, FileType } from '../_shared/types/file_manager.types.ts';
 import { DownloadStorageResult } from '../_shared/supabase_storage_utils.ts';
 import { isDialecticExecuteJobPayload } from '../_shared/utils/type_guards.ts';
 import { MockFileManagerService } from '../_shared/services/file_manager.mock.ts';
@@ -70,11 +70,11 @@ describe('planComplexStage - Source Document Filtering', () => {
             target_contribution_id: null,
             is_test_job: false,
             job_type: 'PLAN',
-            stage_slug: 'test-stage',
+            stage_slug: DialecticStageSlug.Thesis,
             payload: {
                 projectId: 'proj-1',
                 sessionId: 'sess-1',
-                stageSlug: 'test-stage',
+                stageSlug: DialecticStageSlug.Thesis,
                 iterationNumber: 1,
                 walletId: 'wallet-1',
                 user_jwt: 'user-jwt-123',
@@ -114,7 +114,7 @@ describe('planComplexStage - Source Document Filtering', () => {
             return sourceDocs.map((doc): DialecticExecuteJobPayload => ({
                 projectId: 'proj-1',
                 sessionId: 'sess-1',
-                stageSlug: 'test-stage',
+                stageSlug: DialecticStageSlug.Thesis,
                 iterationNumber: 1,
                 walletId: 'wallet-1',
                 user_jwt: 'user-jwt-123',
@@ -123,7 +123,7 @@ describe('planComplexStage - Source Document Filtering', () => {
                 output_type: FileType.business_case,
                 canonicalPathParams: {
                     contributionType: 'thesis',
-                    stageSlug: 'test-stage',
+                    stageSlug: DialecticStageSlug.Thesis,
                 },
                 inputs: {},
                 document_relationships: doc.document_relationships ?? null,

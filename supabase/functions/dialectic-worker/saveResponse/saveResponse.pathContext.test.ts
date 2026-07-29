@@ -31,7 +31,7 @@ import {
 } from "../../_shared/utils/notification.service.mock.ts";
 import { isJson, isRecord } from "../../_shared/utils/type_guards.ts";
 import { isModelContributionContext } from "../../_shared/utils/type-guards/type_guards.file_manager.ts";
-import { FileType } from "../../_shared/types/file_manager.types.ts";
+import { DialecticStageSlug, FileType } from "../../_shared/types/file_manager.types.ts";
 import type {
   SaveResponseDeps,
   SaveResponseErrorReturn,
@@ -629,10 +629,10 @@ Deno.test(
     const payload: DialecticExecuteJobPayload = {
       ...saveResponseTestPayload,
       output_type: FileType.HeaderContext,
-      stageSlug: "antithesis",
+      stageSlug: DialecticStageSlug.Antithesis,
       canonicalPathParams: {
         contributionType: "header_context",
-        stageSlug: "antithesis",
+        stageSlug: DialecticStageSlug.Antithesis,
         sourceAnchorModelSlug: "gpt-4",
         sourceAnchorType: "thesis",
       },
@@ -723,7 +723,7 @@ Deno.test(
       output_type: FileType.HeaderContext,
       canonicalPathParams: {
         contributionType: "header_context",
-        stageSlug: "thesis",
+        stageSlug: DialecticStageSlug.Thesis,
       },
     };
     if (!isJson(payload)) {
@@ -944,13 +944,13 @@ Deno.test(
     const deps: SaveResponseDeps = depsWithFinishReason("stop", { fileManager });
     const payload: DialecticExecuteJobPayload = {
       ...saveResponseTestPayloadDocumentArtifact,
-      stageSlug: "antithesis",
+      stageSlug: DialecticStageSlug.Antithesis,
       document_relationships: {
         source_group: "550e8400-e29b-41d4-a716-446655440000",
       },
       canonicalPathParams: {
         contributionType: "antithesis",
-        stageSlug: "antithesis",
+        stageSlug: DialecticStageSlug.Antithesis,
         sourceAnchorModelSlug: "gpt-4",
       },
     };
@@ -995,10 +995,10 @@ Deno.test(
     const payload: DialecticExecuteJobPayload = {
       ...saveResponseTestPayload,
       output_type: FileType.HeaderContext,
-      stageSlug: "antithesis",
+      stageSlug: DialecticStageSlug.Antithesis,
       canonicalPathParams: {
         contributionType: "antithesis",
-        stageSlug: "antithesis",
+        stageSlug: DialecticStageSlug.Antithesis,
         sourceAnchorModelSlug: "gpt-4",
       },
       document_relationships: {

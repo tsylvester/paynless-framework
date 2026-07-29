@@ -22,11 +22,9 @@ import { logger } from '../_shared/logger.ts';
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import type { DownloadStorageResult } from '../_shared/supabase_storage_utils.ts';
 import { ContextWindowError } from '../_shared/utils/errors.ts';
-import { MockRagService } from '../_shared/services/rag_service.mock.ts';
-import { MockFileManagerService } from '../_shared/services/file_manager.mock.ts';
 import { describe, it, beforeEach } from 'https://deno.land/std@0.170.0/testing/bdd.ts';
 import { mockNotificationService, resetMockNotificationService } from '../_shared/utils/notification.service.mock.ts';
-import { FileType } from '../_shared/types/file_manager.types.ts';
+import { FileType, DialecticStageSlug } from '../_shared/types/file_manager.types.ts';
 import {
     isDialecticStageRecipeStep,
 } from '../_shared/utils/type-guards/type_guards.dialectic.recipe.ts';
@@ -159,7 +157,7 @@ describe('processComplexJob', () => {
         const mockPayload: DialecticPlanJobPayload = {
             sessionId: 'session-id-complex',
             projectId: 'project-id-complex',
-            stageSlug: 'antithesis',
+            stageSlug: DialecticStageSlug.Antithesis,
             model_id: 'model-id-complex',
             walletId: 'wallet-id-complex',
             user_jwt: 'user-jwt-complex',
@@ -569,7 +567,7 @@ describe('processComplexJob', () => {
             output_type: FileType.business_case,
             projectId: 'project-id-complex',
             sessionId: 'session-id-complex',
-            stageSlug: 'antithesis',
+            stageSlug: DialecticStageSlug.Antithesis,
             model_id: 'model-id-complex',
             iterationNumber: 1,
             continueUntilComplete: false,
@@ -578,7 +576,7 @@ describe('processComplexJob', () => {
             idempotencyKey: 'idem-step-1-complete',
             canonicalPathParams: {
                 contributionType: 'thesis',
-                stageSlug: 'antithesis',
+                stageSlug: DialecticStageSlug.Antithesis,
             },
             planner_metadata: {
                 recipe_step_id: firstStep.id,
@@ -644,7 +642,7 @@ describe('processComplexJob', () => {
                 output_type: step.output_type,
                 projectId: 'project-id-complex',
                 sessionId: 'session-id-complex',
-                stageSlug: 'antithesis',
+                stageSlug: DialecticStageSlug.Antithesis,
                 model_id: 'model-id-complex',
                 iterationNumber: 1,
                 continueUntilComplete: false,
@@ -653,7 +651,7 @@ describe('processComplexJob', () => {
                 idempotencyKey: `idem-all-steps-${step.id}`,
                 canonicalPathParams: {
                     contributionType: 'thesis',
-                    stageSlug: 'antithesis',
+                    stageSlug: DialecticStageSlug.Antithesis,
                 },
                 planner_metadata: {
                     recipe_step_id: step.id,
@@ -774,7 +772,7 @@ describe('processComplexJob', () => {
             output_type: FileType.HeaderContext,
             projectId: 'project-id-complex',
             sessionId: 'session-id-complex',
-            stageSlug: 'antithesis',
+            stageSlug: DialecticStageSlug.Antithesis,
             model_id: 'model-id-complex',
             iterationNumber: 1,
             continueUntilComplete: false,
@@ -783,7 +781,7 @@ describe('processComplexJob', () => {
             idempotencyKey: 'idem-header-context-track',
             canonicalPathParams: {
                 contributionType: 'thesis',
-                stageSlug: 'antithesis',
+                stageSlug: DialecticStageSlug.Antithesis,
             },
             planner_metadata: {
                 recipe_step_id: 'header-context-step-id',
@@ -925,7 +923,7 @@ describe('processComplexJob', () => {
             output_type: FileType.HeaderContext,
             projectId: 'project-id-complex',
             sessionId: 'session-id-complex',
-            stageSlug: 'antithesis',
+            stageSlug: DialecticStageSlug.Antithesis,
             model_id: 'model-id-complex',
             iterationNumber: 1,
             continueUntilComplete: false,
@@ -934,7 +932,7 @@ describe('processComplexJob', () => {
             idempotencyKey: 'idem-build-stage-header',
             canonicalPathParams: {
                 contributionType: 'thesis',
-                stageSlug: 'antithesis',
+                stageSlug: DialecticStageSlug.Antithesis,
             },
             planner_metadata: {
                 recipe_step_id: 'build-stage-header-step-id',
@@ -1015,7 +1013,7 @@ describe('processComplexJob', () => {
                 output_type: step.output_type,
                 projectId: 'project-id-complex',
                 sessionId: 'session-id-complex',
-                stageSlug: 'antithesis',
+                stageSlug: DialecticStageSlug.Antithesis,
                 model_id: 'model-id-complex',
                 iterationNumber: 1,
                 continueUntilComplete: false,
@@ -1024,7 +1022,7 @@ describe('processComplexJob', () => {
                 idempotencyKey: `idem-complete-all-${step.id}`,
                 canonicalPathParams: {
                     contributionType: 'thesis',
-                    stageSlug: 'antithesis',
+                    stageSlug: DialecticStageSlug.Antithesis,
                 },
                 planner_metadata: {
                     recipe_step_id: step.id,
@@ -1102,7 +1100,7 @@ describe('processComplexJob', () => {
             output_type: firstStep.output_type,
             projectId: 'project-id-complex',
             sessionId: 'session-id-complex',
-            stageSlug: 'antithesis',
+            stageSlug: DialecticStageSlug.Antithesis,
             model_id: 'model-id-complex',
             iterationNumber: 1,
             continueUntilComplete: false,
@@ -1111,7 +1109,7 @@ describe('processComplexJob', () => {
             idempotencyKey: 'idem-mismatch',
             canonicalPathParams: {
                 contributionType: 'thesis',
-                stageSlug: 'antithesis',
+                stageSlug: DialecticStageSlug.Antithesis,
             },
             planner_metadata: {
                 recipe_step_id: 'non-existent-step-id',
@@ -1184,7 +1182,7 @@ describe('processComplexJob', () => {
                 output_type: step.output_type,
                 projectId: 'project-id-complex',
                 sessionId: 'session-id-complex',
-                stageSlug: 'antithesis',
+                stageSlug: DialecticStageSlug.Antithesis,
                 model_id: 'model-id-complex',
                 iterationNumber: 1,
                 continueUntilComplete: false,
@@ -1193,7 +1191,7 @@ describe('processComplexJob', () => {
                 idempotencyKey: `idem-final-${step.id}`,
                 canonicalPathParams: {
                     contributionType: 'thesis',
-                    stageSlug: 'antithesis',
+                    stageSlug: DialecticStageSlug.Antithesis,
                 },
                 planner_metadata: {
                     recipe_step_id: step.id,
@@ -1277,7 +1275,7 @@ describe('processComplexJob', () => {
             walletId: mockParentJob.payload.walletId,
             user_jwt: 'user-jwt-123',
             idempotencyKey: 'idem-exec-derivation-test',
-            canonicalPathParams: { contributionType: 'thesis', stageSlug: 'antithesis' },
+            canonicalPathParams: { contributionType: 'thesis', stageSlug: DialecticStageSlug.Antithesis },
             planner_metadata: { recipe_step_id: firstStep.id, recipe_template_id: 'template-uuid-1' },
         };
         if (!isJson(execPayload)) {
@@ -1336,7 +1334,7 @@ describe('processComplexJob', () => {
             walletId: mockParentJob.payload.walletId,
             user_jwt: 'user-jwt-123',
             idempotencyKey: idemKey,
-            canonicalPathParams: { contributionType: 'thesis', stageSlug: 'antithesis' },
+            canonicalPathParams: { contributionType: 'thesis', stageSlug: DialecticStageSlug.Antithesis },
             planner_metadata: { recipe_step_id: firstStep.id, recipe_template_id: 'template-uuid-1' },
         };
         if (!isJson(execPayload23505)) {

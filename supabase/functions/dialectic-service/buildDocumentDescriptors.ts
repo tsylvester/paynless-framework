@@ -6,6 +6,8 @@ import type {
 } from "./dialectic.interface.ts";
 import { isPlannerMetadata } from "../_shared/utils/type-guards/type_guards.dialectic.ts";
 import { isRecord } from "../_shared/utils/type-guards/type_guards.common.ts";
+import { DialecticStageSlug } from "../_shared/types/file_manager.types.ts";
+import { isDialecticStageSlug } from "../_shared/utils/type-guards/type_guards.file_manager.ts";
 
 function resolveStepKeyForRenderJob(
 	job: DialecticJobRow,
@@ -90,10 +92,10 @@ export function buildDocumentDescriptors(
 		}
 
 		const stageSlugUnknown: unknown = job.stage_slug;
-		if (typeof stageSlugUnknown !== "string" || stageSlugUnknown.length === 0) {
+		if (!isDialecticStageSlug(stageSlugUnknown)) {
 			throw new Error(`RENDER job stage_slug is null or invalid for job: ${job.id}`);
 		}
-		const stageSlug: string = stageSlugUnknown;
+		const stageSlug: DialecticStageSlug = stageSlugUnknown;
 
 		const descriptor: StageDocumentDescriptorDto = {
 			documentKey,

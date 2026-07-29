@@ -67,10 +67,9 @@ import type {
   EnqueueRenderJobPayload,
 } from "../enqueueRenderJob/enqueueRenderJob.interface.ts";
 import {
-  isDialecticStageSlug,
   isEnqueueRenderJobSuccessReturn,
 } from "../enqueueRenderJob/enqueueRenderJob.guards.ts";
-import { isModelContributionContext } from "../../_shared/utils/type-guards/type_guards.file_manager.ts"
+import { isModelContributionContext, isDialecticStageSlug } from "../../_shared/utils/type-guards/type_guards.file_manager.ts"
 import { BuildUploadContextFn } from "../createJobContext/JobContext.interface.ts";
 
 function readOptionalPreflightInputTokens(payload: unknown): number {
@@ -476,7 +475,7 @@ export async function saveResponse(
       : undefined;
 
   const stageSlugCanon: unknown = canonicalUnknown.stageSlug;
-  if (typeof stageSlugCanon !== 'string' || stageSlugCanon.trim() === '') {
+  if (!isDialecticStageSlug(stageSlugCanon)) {
     const err: Error = new Error('canonicalPathParams.stageSlug is required');
     const out: SaveResponseErrorReturn = { error: err, retriable: false };
     return out;
@@ -697,12 +696,12 @@ export async function saveResponse(
   const documentKeyUnknown: unknown = isRecord(jobPayloadUnknown)
     ? jobPayloadUnknown.document_key
     : undefined;
-  if (typeof documentKeyUnknown !== 'string' || documentKeyUnknown.trim() === '') {
+  if (!isFileType(documentKeyUnknown)) {
     const err: Error = new Error('document_key is required');
     const out: SaveResponseErrorReturn = { error: err, retriable: false };
     return out;
   }
-  const documentKey: string = documentKeyUnknown;
+  const documentKey: FileType = documentKeyUnknown;
 
   const payloadProjectIdStr: string = jobProjectId;
 
