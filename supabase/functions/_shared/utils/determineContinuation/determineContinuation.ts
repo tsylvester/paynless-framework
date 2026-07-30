@@ -10,7 +10,7 @@ export function determineContinuation(
 ): DetermineContinuationResult {
     let shouldContinue: boolean = params.finishReasonContinue;
 
-    if (!shouldContinue && params.wasStructurallyFixed && params.continueUntilComplete) {
+    if (!shouldContinue && params.wasStructurallyFixed) {
         shouldContinue = true;
     }
 
@@ -30,10 +30,9 @@ export function determineContinuation(
 
     if (
         !shouldContinue &&
-        isRecord(parsedContent) &&
-        params.continueUntilComplete
+        isRecord(parsedContent)
     ) {
-        const contextDocsUnknown: ContextForDocument[] | null | undefined =
+        const contextDocsUnknown: ContextForDocument[] | undefined =
             params.contextForDocuments;
         if (
             Array.isArray(contextDocsUnknown) &&
@@ -62,6 +61,24 @@ export function determineContinuation(
                     shouldContinue = true;
                 }
             }
+        }
+    }
+
+    if (
+        !shouldContinue &&
+        isRecord(parsedContent) &&
+        isRecord(params.sourceObject)
+    ) {
+        const sourceKeys: string[] = Object.keys(params.sourceObject);
+        const missingSourceKeys: string[] = [];
+        for (let srcIdx = 0; srcIdx < sourceKeys.length; srcIdx++) {
+            const sourceKey: string = sourceKeys[srcIdx];
+            if (!(sourceKey in parsedContent)) {
+                missingSourceKeys.push(sourceKey);
+            }
+        }
+        if (missingSourceKeys.length > 0) {
+            shouldContinue = true;
         }
     }
 

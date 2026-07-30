@@ -121,6 +121,14 @@ export async function myFunction(
 The guard is the single source of truth for validity. The function body consumes
 it and never re-implements shape-checking by hand.
 
+A failed guard **returns the function's error arm — it never throws**. The `unknown`
+parameter plus the guard is what moves the validation boundary inside the function,
+where a bad payload is a handled return value instead of an exception the caller cannot
+catch. `unknown` does not retire the payload type: `MyFunctionPayload` is the guard's
+narrowing target, still defined, mocked, and guard-tested. Guard once, here — downstream
+functions receive the narrowed type in the trusted form and never re-guard it (see
+[composition](composition.md#the-validating-form--what-changes-what-does-not)).
+
 ## Forbidden substitutes
 
 If the code matches any of these, the guard is wrong — even if it compiles, even

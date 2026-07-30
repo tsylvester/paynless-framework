@@ -24,6 +24,8 @@ import type {
     JobType,
     PromptType,
     GranularityStrategy,
+    ContextForDocument,
+    ContentToInclude,
 } from '../dialectic-service/dialectic.interface.ts';
 import { FileType } from './types/file_manager.types.ts';
 
@@ -235,6 +237,29 @@ export function createMockProcessJob(): {
     };
 }
 
+// --- ContextForDocument Factory ---
+
+export type ContextForDocumentOverrides = Partial<ContextForDocument>;
+
+export function buildContextForDocument(
+    overrides?: ContextForDocumentOverrides,
+): ContextForDocument {
+    const content: ContentToInclude = { field: "" };
+    const base: ContextForDocument = {
+        document_key: FileType.business_case,
+        content_to_include: content,
+    };
+    return overrides ? { ...base, ...overrides } : base;
+}
+
+export type ContextForDocumentCorruptions = { [K in keyof ContextForDocument]?: unknown };
+
+export function invalidateContextForDocument(
+    corruptions: ContextForDocumentCorruptions,
+): unknown {
+    return { ...buildContextForDocument(), ...corruptions };
+}
+
 // --- Recipe Step / Rule Factories ---
 
 export function buildInputRule(
@@ -279,13 +304,7 @@ export function buildOutputRule(
             file_type: 'json',
         },
         context_for_documents: [
-            {
-                document_key: FileType.business_case,
-                content_to_include: {
-                    focus: 'target schema relevance',
-                    reasoning_chain: true,
-                },
-            },
+            buildContextForDocument({ content_to_include: { focus: 'target schema relevance', reasoning_chain: true } }),
         ],
         documents: [
             {

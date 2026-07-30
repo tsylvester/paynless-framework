@@ -1,7 +1,7 @@
 import type { ContextForDocument } from "../../../dialectic-service/dialectic.interface.ts";
 
 /**
- * Inputs for continuation decision (EMCAS triggers 1 pass-through and 2–4).
+ * Inputs for continuation decision (EMCAS triggers 1 pass-through and 2–4, plus the source-object trigger alongside 4).
  * All values are precomputed at the call site; this module performs no I/O.
  */
 export interface DetermineContinuationParams {
@@ -14,9 +14,11 @@ export interface DetermineContinuationParams {
     /** From `job.payload.continueUntilComplete`. */
     continueUntilComplete: boolean;
     /** From `job.payload.document_key` (trigger 4 matches against `contextForDocuments`). */
-    documentKey: string | null | undefined;
+    documentKey: string | undefined;
     /** From `job.payload.context_for_documents` (trigger 4 missing-keys check). */
-    contextForDocuments: ContextForDocument[] | null | undefined;
+    contextForDocuments: ContextForDocument[] | undefined;
+    /** Parsed source object a COMPRESS job was sent, from its payload's `content`; `undefined` for an EXECUTE job. */
+    sourceObject: unknown;
 }
 
 /**

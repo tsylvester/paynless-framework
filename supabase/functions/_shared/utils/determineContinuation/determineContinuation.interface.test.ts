@@ -7,7 +7,7 @@ import type {
 } from "./determineContinuation.interface.ts";
 
 Deno.test(
-    "Contract: DetermineContinuationParams requires all six fields",
+    "Contract: DetermineContinuationParams requires all seven fields",
     async (t) => {
         const contextDoc: ContextForDocument = {
             document_key: FileType.business_case,
@@ -22,6 +22,7 @@ Deno.test(
                 continueUntilComplete: true,
                 documentKey: "business_case",
                 contextForDocuments: [contextDoc],
+                sourceObject: { field: "" },
             };
             assertEquals("finishReasonContinue" in params, true);
             assertEquals("wasStructurallyFixed" in params, true);
@@ -29,6 +30,7 @@ Deno.test(
             assertEquals("continueUntilComplete" in params, true);
             assertEquals("documentKey" in params, true);
             assertEquals("contextForDocuments" in params, true);
+            assertEquals("sourceObject" in params, true);
             assertEquals(typeof params.finishReasonContinue, "boolean");
             assertEquals(typeof params.wasStructurallyFixed, "boolean");
             assertEquals(typeof params.continueUntilComplete, "boolean");
@@ -42,9 +44,35 @@ Deno.test(
                 continueUntilComplete: false,
                 documentKey: undefined,
                 contextForDocuments: undefined,
+                sourceObject: undefined,
             };
             assertEquals(params.documentKey, undefined);
             assertEquals(params.contextForDocuments, undefined);
+        });
+
+        await t.step("sourceObject may be undefined", () => {
+            const params: DetermineContinuationParams = {
+                finishReasonContinue: false,
+                wasStructurallyFixed: false,
+                parsedContent: null,
+                continueUntilComplete: false,
+                documentKey: undefined,
+                contextForDocuments: undefined,
+                sourceObject: undefined,
+            };
+            assertEquals(params.sourceObject, undefined);
+        });
+
+        await t.step("sourceObject accepts an arbitrary record", () => {
+            const params: DetermineContinuationParams = {
+                finishReasonContinue: false,
+                wasStructurallyFixed: false,
+                parsedContent: null,
+                continueUntilComplete: false,
+                documentKey: undefined,
+                contextForDocuments: undefined,
+                sourceObject: { a: 1, b: "x" },
+            };
         });
     },
 );

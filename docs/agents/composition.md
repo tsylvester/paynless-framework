@@ -9,11 +9,24 @@ by all Process topics.
 
 ## The signature
 
+The payload slot has two forms, chosen by the function's role; deps and params never
+vary between them.
+
 ```ts
+// TRUSTED form — payload arrives already narrowed, from an in-TS caller
 myFunction: MyFunctionFn {
   deps:    MyFunctionDeps
   params:  MyFunctionParams
   payload: MyFunctionPayload
+}: MyFunctionReturn = MyFunctionSuccessReturn | MyFunctionErrorReturn
+
+// VALIDATING form — payload arrives as untrusted data from a runtime boundary
+// (queue, JSON, API, DB row). Typed `unknown`, guarded on the first line, narrowed
+// to MyFunctionPayload for the whole body. Mechanics: guards.md#guard-on-entry.
+myFunction: MyFunctionFn {
+  deps:    MyFunctionDeps
+  params:  MyFunctionParams
+  payload: unknown
 }: MyFunctionReturn = MyFunctionSuccessReturn | MyFunctionErrorReturn
 ```
 
@@ -21,7 +34,8 @@ myFunction: MyFunctionFn {
 - a signature type ending in `Fn`
 - a typed `deps` object — injected collaborators
 - a typed `params` object — per-invocation control values
-- a typed `payload` object — the data the function operates on
+- a typed `payload` object — the data the function operates on; typed `unknown` in the
+  validating form (see [parameter jurisdiction](#parameter-jurisdiction--what-is-trusted-vs-proven))
 - a return that is a discriminated union of a named success and a named error
 
 Rules:
@@ -82,8 +96,39 @@ they are typed:
 The rule the agent cannot fumble: **does this value arrive as data from outside the
 type system?** Yes → `unknown` + guard. No → strong type, trust it.
 
+### The validating form — what changes, what does not
+
+`payload: unknown` is the entry annotation only, and only for the one function that
+validates untrusted input. Four things follow; none is optional.
+
+- **The payload type is not retired — it is the guard's target.** `MyFunctionPayload`
+  is still defined in the interface, guarded by `isMyFunctionPayload`, built by the
+  mock, and exercised by the guard test. The first line narrows `unknown` back to
+  `MyFunctionPayload` and the whole body runs on the strong type. `unknown` never
+  means "no payload type" — it means the type is proven at entry instead of assumed.
+- **Guard once, at the boundary; downstream trusts.** Only the validating function
+  takes `unknown`. Every function it calls receives the already-narrowed
+  `MyFunctionPayload` in the trusted form. The same payload is `unknown` in the
+  boundary signature and `MyFunctionPayload` everywhere downstream — do not spread
+  `unknown` inward, and do not re-guard what the boundary already proved.
+- **A failed guard returns the error arm — it never throws.** `if (!isMyFunctionPayload(payload)) return <MyFunctionErrorReturn>`. This is why the
+  return is always the union (a validating function structurally always has a failure
+  arm) and why the boundary is pulled inside the function: the error becomes a handled
+  return value, not an exception leaked to a caller who cannot catch it. See
+  [errors-and-returns](errors-and-returns.md).
+- **The payload contract is proven by the unit and guard tests, not the interface
+  test.** `Parameters<MyFunctionFn>[payload]` is `unknown`, so an interface-test
+  assignment to it proves nothing — everything is assignable to `unknown`. "Rejects an
+  invalid payload with an error return" is a unit test over an `invalidate`d payload,
+  backed by the guard test. See [tests](tests.md).
+
+Deps and params never take this form. A params field that originates outside the type
+system is payload-natured and moves to payload; params itself is never `unknown`.
+
 ## Precedence
 
 This topic outranks the workplan. A node step that puts deps inside params, blobs
-params and payload, returns only the success type, or hosts two functions in one
-file is defective — comply with this topic and report the discrepancy.
+params and payload, returns only the success type, hosts two functions in one file,
+types an untrusted payload strong instead of `unknown` + guard, or throws on an
+invalid payload instead of returning the error arm is defective — comply with this
+topic and report the discrepancy.

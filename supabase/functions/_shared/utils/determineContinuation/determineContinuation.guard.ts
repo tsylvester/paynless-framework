@@ -6,7 +6,7 @@ import { isContextForDocumentArray } from "../type-guards/type_guards.dialectic.
 import { isRecord } from "../type-guards/type_guards.common.ts";
 
 /**
- * Validates that `value` satisfies `DetermineContinuationParams`: all six fields present with correct types.
+ * Validates that `value` satisfies `DetermineContinuationParams`: all seven fields present with correct types.
  */
 export function isDetermineContinuationParams(
     value: unknown,
@@ -48,6 +48,9 @@ export function isDetermineContinuationParams(
         contextForDocuments !== undefined &&
         !isContextForDocumentArray(contextForDocuments)
     ) {
+        return false;
+    }
+    if (!("sourceObject" in value)) {
         return false;
     }
     return true;
