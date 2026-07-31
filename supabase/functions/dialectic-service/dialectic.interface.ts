@@ -1387,6 +1387,7 @@ export type DocumentRelationships = {
  */
 export interface DialecticExecuteJobPayload extends DialecticBaseJobPayload {
 	prompt_template_id: string;
+	prompt_template_name?: string; // Written by the planners from the recipe step's own member and carried forward on continuation
 	output_type: ModelContributionFileTypes; // The type of artifact this job will produce
 	canonicalPathParams: CanonicalPathParams; // The new formal contract for path context
 	inputs: {

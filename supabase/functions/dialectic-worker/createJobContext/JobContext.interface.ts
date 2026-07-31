@@ -20,6 +20,7 @@ import {
     FailedAttemptError,
     UnifiedAIResponse,
     DialecticContributionRow,
+    DialecticProjectResourceRow,
     DialecticJobRow,
     DialecticPlanJobPayload,
     DialecticRecipeStep,
@@ -61,7 +62,7 @@ export type ContinueJobFn = (
     dbClient: SupabaseClient<Database>,
     job: Database['public']['Tables']['dialectic_generation_jobs']['Row'],
     aiResponse: UnifiedAIResponse,
-    savedContribution: DialecticContributionRow,
+    savedOutput: DialecticContributionRow | DialecticProjectResourceRow,
     projectOwnerUserId: string
 ) => Promise<IContinueJobResult>;
 

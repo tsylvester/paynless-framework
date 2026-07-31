@@ -87,6 +87,64 @@ export function buildMyObject(overrides?: MyObjectOverrides): MyObject {
 Every property has a default. Builders exactly match production types and names;
 they never invent shapes and never produce invalid objects.
 
+### Nested object composition
+
+When an object property is another object type, compose the parent builder from
+that nested object's builder. This rule applies recursively at every depth. An
+owned nested type uses its builder in the same mock file; an imported nested type
+uses the builder from its home package. Do not duplicate the nested type's
+defaults, create a shallow placeholder, or wrap another interface's mock.
+
+```ts
+export interface Address {
+  street: string;
+  city: string;
+}
+
+export interface User {
+  id: string;
+  address: Address;
+}
+
+export type AddressOverrides = Partial<Address>;
+
+export function buildAddress(overrides?: AddressOverrides): Address {
+  const base: Address = {
+    street: "1 Main Street",
+    city: "Springfield",
+  };
+  return overrides ? { ...base, ...overrides } : base;
+}
+
+export type UserOverrides = Partial<User>;
+
+export function buildUser(overrides?: UserOverrides): User {
+  const base: User = {
+    id: "user-1",
+    address: buildAddress(),
+  };
+  return overrides ? { ...base, ...overrides } : base;
+}
+```
+
+Override a nested object with a complete value from its own builder, rather than
+passing a partial nested object:
+
+```ts
+const user = buildUser({
+  address: buildAddress({ city: "Chicago" }),
+});
+```
+
+Invalid nested data composes through the per-type invalidators. The nested
+invalidator produces `unknown`, which the parent invalidator accepts as
+corruption; no cast or specialized invalid mock is needed:
+
+```ts
+const invalidAddress: unknown = invalidateAddress({ city: null });
+const invalidUser: unknown = invalidateUser({ address: invalidAddress });
+```
+
 ### Missing-field corruption
 
 To test a missing required field, rest-destructure the builder output — honestly

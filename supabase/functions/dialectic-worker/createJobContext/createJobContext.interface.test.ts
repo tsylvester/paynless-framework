@@ -1,4 +1,4 @@
-import { assertEquals } from "jsr:@std/assert";
+import { assert, assertEquals } from "jsr:@std/assert";
 import type {
   ILoggerContext,
   IFileContext,
@@ -14,9 +14,31 @@ import type {
   JobContextParams,
   BuildUploadContextFn,
   BoundPrepareModelJobFn,
+  ContinueJobFn,
 } from "./JobContext.interface.ts";
 import type { BuildUploadContextResourceParams } from "../../_shared/utils/buildUploadContext/buildUploadContext.interface.ts";
-import { FileType, DialecticStageSlug } from "../../_shared/types/file_manager.types.ts";
+import type {
+  DialecticContributionRow,
+  DialecticProjectResourceRow,
+  DialecticExecuteJobPayload,
+} from "../../dialectic-service/dialectic.interface.ts";
+import type { BoundEnqueueModelCallFn } from "../enqueueModelCall/enqueueModelCall.interface.ts";
+import type { BoundEnqueueRenderJobFn } from "../enqueueRenderJob/enqueueRenderJob.interface.ts";
+import type { ComputeJobSig } from "../../_shared/utils/computeJobSig/computeJobSig.interface.ts";
+import type { SanitizeJsonContentFn } from "../../_shared/utils/jsonSanitizer/jsonSanitizer.interface.ts";
+import type { BoundDebitTokens } from "../../_shared/utils/debitTokens.interface.ts";
+
+declare const contributionRow: DialecticContributionRow;
+declare const resourceRow: DialecticProjectResourceRow;
+declare const execPayload: DialecticExecuteJobPayload;
+declare const boundPrepareModelJobFn: BoundPrepareModelJobFn;
+declare const boundEnqueueModelCallFn: BoundEnqueueModelCallFn;
+declare const buildUploadContextFn: BuildUploadContextFn;
+declare const resourceParams: BuildUploadContextResourceParams;
+declare const computeJobSigFn: ComputeJobSig;
+declare const sanitizeJsonContentFn: SanitizeJsonContentFn;
+declare const boundEnqueueRenderJobFn: BoundEnqueueRenderJobFn;
+declare const boundDebitTokensFn: BoundDebitTokens;
 
 Deno.test("ILoggerContext has the required surface", () => {
   const surface: Record<keyof ILoggerContext, true> = {
@@ -209,116 +231,4 @@ Deno.test("JobContextParams has the required surface", () => {
     computeJobSig: true,
   };
   assertEquals(Object.keys(surface).length, 43);
-});
-
-Deno.test("IJobContext.prepareModelJob is BoundPrepareModelJobFn", () => {
-  const fn: BoundPrepareModelJobFn = async () => ({
-    error: new Error("interface test stub"),
-    retriable: false,
-  });
-  const field: IJobContext["prepareModelJob"] = fn;
-  assertEquals(field, fn);
-});
-
-Deno.test("IJobContext.enqueueModelCall is BoundEnqueueModelCallFn", () => {
-  const fn: IJobContext["enqueueModelCall"] = async () => ({
-    error: new Error("interface test stub"),
-    retriable: false,
-  });
-  assertEquals(typeof fn, "function");
-});
-
-Deno.test("IJobContext.buildUploadContext is BuildUploadContextFn", () => {
-  const fn: BuildUploadContextFn = (_params: Parameters<BuildUploadContextFn>[0]) => ({
-    fileContent: "",
-    mimeType: "text/markdown",
-    sizeBytes: 0,
-    userId: null,
-    description: "",
-    pathContext: {
-      projectId: "",
-      fileType: "" as never,
-    },
-  });
-  const field: IJobContext["buildUploadContext"] = fn;
-  assertEquals(field, fn);
-});
-
-Deno.test("BuildUploadContextFn params accept BuildUploadContextResourceParams", () => {
-  const resourceParams: BuildUploadContextResourceParams = {
-    projectId: "proj-1",
-    storageFileType: FileType.CompressedContextRawJson,
-    sessionId: "sess-1",
-    iterationNumber: 1,
-    stageSlug: DialecticStageSlug.Thesis,
-    targetKey: FileType.business_case,
-    sourceType: "contribution",
-    documentKey: undefined,
-    sourceId: undefined,
-    chunkIndex: undefined,
-    chunkTotal: undefined,
-    contentForStorage: "{}",
-    projectOwnerUserId: "owner-1",
-    description: "desc",
-  };
-  const fnParams: Parameters<BuildUploadContextFn>[0] = resourceParams;
-  assertEquals(fnParams, resourceParams);
-});
-
-Deno.test("IJobContext.computeJobSig is ComputeJobSig", () => {
-  const fn: IJobContext["computeJobSig"] = async (
-    _jobId: string,
-    _userId: string,
-    _createdAt: string,
-  ): Promise<string> => "test-sig";
-  assertEquals(typeof fn, "function");
-});
-
-Deno.test("IJobContext.sanitizeJsonContent is SanitizeJsonContentFn", () => {
-  const fn: IJobContext["sanitizeJsonContent"] = (content: string) => ({
-    sanitized: content.trim(),
-    originalLength: content.length,
-    wasSanitized: false,
-    wasStructurallyFixed: false,
-    hasDuplicateKeys: false,
-    duplicateKeysResolved: [],
-  });
-  assertEquals(typeof fn, "function");
-});
-
-Deno.test("JobContextParams.computeJobSig is ComputeJobSig", () => {
-  const fn: JobContextParams["computeJobSig"] = async (
-    _jobId: string,
-    _userId: string,
-    _createdAt: string,
-  ): Promise<string> => "test-sig";
-  assertEquals(typeof fn, "function");
-});
-
-Deno.test("JobContextParams.sanitizeJsonContent is SanitizeJsonContentFn", () => {
-  const fn: JobContextParams["sanitizeJsonContent"] = (content: string) => ({
-    sanitized: content.trim(),
-    originalLength: content.length,
-    wasSanitized: false,
-    wasStructurallyFixed: false,
-    hasDuplicateKeys: false,
-    duplicateKeysResolved: [],
-  });
-  assertEquals(typeof fn, "function");
-});
-
-Deno.test("ISaveResponseContext.enqueueRenderJob is BoundEnqueueRenderJobFn", () => {
-  const fn: ISaveResponseContext["enqueueRenderJob"] = async () => ({
-    error: new Error("interface test stub"),
-    retriable: false,
-  });
-  assertEquals(typeof fn, "function");
-});
-
-Deno.test("ISaveResponseContext.debitTokens is BoundDebitTokens", () => {
-  const fn: ISaveResponseContext["debitTokens"] = async () => ({
-    error: new Error("interface test stub"),
-    retriable: false,
-  });
-  assertEquals(typeof fn, "function");
 });

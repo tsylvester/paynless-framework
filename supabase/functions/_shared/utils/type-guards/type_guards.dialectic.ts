@@ -1007,6 +1007,7 @@ export function isDialecticExecuteJobPayload(payload: unknown): payload is Diale
     if (('sourceContributionId' in payload) && payload.sourceContributionId !== null && typeof payload.sourceContributionId !== 'string') throw new Error('Invalid sourceContributionId.');
     if (('model_slug' in payload) && typeof payload.model_slug !== 'string') throw new Error('Invalid model_slug.');
     if (('maxOutputTokens' in payload) && typeof payload.maxOutputTokens !== 'number') throw new Error('Invalid maxOutputTokens.');
+    if (('is_test_job' in payload) && typeof payload.is_test_job !== 'boolean') throw new Error('Invalid is_test_job.');
 
     // Legacy property check
     if ('originalFileName' in payload) throw new Error('Legacy property originalFileName is not allowed.');

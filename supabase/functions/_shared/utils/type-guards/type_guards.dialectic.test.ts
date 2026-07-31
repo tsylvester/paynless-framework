@@ -92,21 +92,69 @@ import {
 import { DialecticStageSlug, FileType } from '../../types/file_manager.types.ts';
 import { ContinueReason, FinishReason } from '../../types.ts';
 import { buildDialecticCompressJobPayload } from '../../../dialectic-worker/enqueueCompressJobs/enqueueCompressJobs.mock.ts';
+import {
+    buildGitHubRepoSettings,
+    invalidateGitHubRepoSettings,
+    buildDialecticStageRecipeStep,
+    invalidateDialecticStageRecipeStep,
+    buildDialecticContributionRow,
+    invalidateDialecticContributionRow,
+    buildDialecticExecuteJobPayload,
+    invalidateDialecticExecuteJobPayload,
+    buildDialecticJobRow,
+    invalidateDialecticJobRow,
+    buildDialecticPlanJobPayload,
+    invalidateDialecticPlanJobPayload,
+    buildDialecticSkeletonJobPayload,
+    invalidateDialecticSkeletonJobPayload,
+    buildFailedAttemptError,
+    invalidateFailedAttemptError,
+    buildStageWithRecipeSteps,
+    invalidateStageWithRecipeSteps,
+    buildDatabaseRecipeSteps,
+    invalidateDatabaseRecipeSteps,
+    buildHeaderContext,
+    invalidateHeaderContext,
+    buildInputRule,
+    invalidateInputRule,
+    buildRelevanceRule,
+    invalidateRelevanceRule,
+    buildOutputRule,
+    invalidateOutputRule,
+    buildSystemMaterials,
+    invalidateSystemMaterials,
+    buildHeaderContextArtifact,
+    invalidateHeaderContextArtifact,
+    buildContextForDocument,
+    invalidateContextForDocument,
+    buildReviewMetadata,
+    buildAssembledJsonArtifact,
+    invalidateAssembledJsonArtifact,
+    buildRenderedDocumentArtifact,
+    invalidateRenderedDocumentArtifact,
+    buildEditedDocumentResource,
+    invalidateEditedDocumentResource,
+    buildDialecticProjectResourceRow,
+    invalidateDialecticProjectResourceRow,
+    buildDialecticRenderJobPayload,
+    invalidateDialecticRenderJobPayload,
+    buildSourceDocument,
+    invalidateSourceDocument,
+    buildSelectAnchorResultNoAnchorRequired,
+    buildSelectAnchorResultDeriveFromHeaderContext,
+    buildSelectAnchorResultAnchorFound,
+    buildSelectAnchorResultAnchorNotFound,
+    buildSyncMapEntry,
+    buildSyncToGitHubPayload,
+    buildSyncToGitHubResponse,
+} from '../../dialectic.mock.ts';
 
 Deno.test('Type Guard: isGitHubRepoSettings', async (t) => {
-    const valid: GitHubRepoSettings = {
-        provider: 'github',
-        owner: 'octocat',
-        repo: 'repo',
-        branch: 'main',
-        folder: 'docs',
-        last_sync_at: null,
-    };
     await t.step('returns true for valid GitHubRepoSettings', () => {
-        assert(isGitHubRepoSettings(valid));
+        assert(isGitHubRepoSettings(buildGitHubRepoSettings()));
     });
     await t.step('returns true when last_sync_at is string', () => {
-        assert(isGitHubRepoSettings({ ...valid, last_sync_at: '2025-01-01T00:00:00Z' }));
+        assert(isGitHubRepoSettings(buildGitHubRepoSettings({ last_sync_at: '2025-01-01T00:00:00Z' })));
     });
     await t.step('returns false for null', () => {
         assert(!isGitHubRepoSettings(null));
@@ -115,13 +163,13 @@ Deno.test('Type Guard: isGitHubRepoSettings', async (t) => {
         assert(!isGitHubRepoSettings('string'));
     });
     await t.step('returns false when provider is not "github"', () => {
-        assert(!isGitHubRepoSettings({ ...valid, provider: 'gitlab' }));
+        assert(!isGitHubRepoSettings(invalidateGitHubRepoSettings({ provider: 'gitlab' })));
     });
     await t.step('returns false when owner is not string', () => {
-        assert(!isGitHubRepoSettings({ ...valid, owner: 1 }));
+        assert(!isGitHubRepoSettings(invalidateGitHubRepoSettings({ owner: 1 })));
     });
     await t.step('returns false when last_sync_at is not string or null', () => {
-        assert(!isGitHubRepoSettings({ ...valid, last_sync_at: 123 }));
+        assert(!isGitHubRepoSettings(invalidateGitHubRepoSettings({ last_sync_at: 123 })));
     });
 });
 
@@ -218,88 +266,30 @@ Deno.test('Type Guard: hasModelResultWithContributionId', async (t) => {
 
 Deno.test('Type Guard: hasProcessingStrategy', async (t) => {
     await t.step('should return true for a stage whose recipe step has a valid job_type', () => {
-        const step: Tables<'dialectic_stage_recipe_steps'> = {
-            id: 'step-1',
-            job_type: 'PLAN',
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-            step_key: 'key',
-            step_slug: 'slug',
-            step_name: 'name',
-            output_type: 'system_architecture',
-            granularity_strategy: 'per_source_document',
-            inputs_required: {},
-            inputs_relevance: {},
-            outputs_required: {},
-            branch_key: null,
-            parallel_group: null,
-            prompt_template_id: null,
-            step_description: null,
-            prompt_type: 'Turn',
-            config_override: {},
-            execution_order: 1,
-            instance_id: 'inst-1',
-            is_skipped: false,
-            object_filter: {},
-            output_overrides: {},
-            template_step_id: null,
-        };
-        assert(hasProcessingStrategy(step));
+        assert(hasProcessingStrategy(buildDialecticStageRecipeStep({ job_type: 'PLAN' })));
     });
 
     await t.step('should return false if the recipe step has an invalid job_type', () => {
-        const step: Tables<'dialectic_stage_recipe_steps'> = {
-            id: 'step-2',
-            job_type: 'INVALID_JOB_TYPE',
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-            step_key: 'key',
-            step_slug: 'slug',
-            step_name: 'name',
-            output_type: 'business_case',
-            granularity_strategy: 'per_source_document',
-            inputs_required: {},
-            inputs_relevance: {},
-            outputs_required: {},
-            branch_key: null,
-            parallel_group: null,
-            prompt_template_id: null,
-            step_description: null,
-            prompt_type: 'Turn',
-            config_override: {},
-            execution_order: 1,
-            instance_id: 'inst-2',
-            is_skipped: false,
-            object_filter: {},
-            output_overrides: {},
-            template_step_id: null,
-        };
-        assert(!hasProcessingStrategy(step));
+        assert(!hasProcessingStrategy(invalidateDialecticStageRecipeStep({ job_type: 'INVALID_JOB_TYPE' })));
     });
 
     await t.step('should return false if job_type is not a valid enum value', () => {
-        const step = {
-            id: 'step-invalid',
-            job_type: 'INVALID_JOB_TYPE',
-        };
-        assert(!hasProcessingStrategy(step as unknown as Tables<'dialectic_stage_recipe_steps'>));
+        assert(!hasProcessingStrategy(invalidateDialecticStageRecipeStep({ job_type: 'INVALID_JOB_TYPE' })));
     });
 
     await t.step('should return false if job_type is missing', () => {
-        const step = { id: 'step-no-job-type' };
-        assert(!hasProcessingStrategy(step as unknown as Tables<'dialectic_stage_recipe_steps'>));
+        const { job_type: _omit, ...rest } = buildDialecticStageRecipeStep()!;
+        assert(!hasProcessingStrategy(rest));
     });
 
     await t.step('should return false for a non-object', () => {
-        assert(!hasProcessingStrategy(null as unknown as Tables<'dialectic_stage_recipe_steps'>));
-        assert(!hasProcessingStrategy('a string' as unknown as Tables<'dialectic_stage_recipe_steps'>));
+        assert(!hasProcessingStrategy(null));
+        assert(!hasProcessingStrategy('a string'));
     });
 
     await t.step('should return false if the recipe step is missing job_type', () => {
-        const stage: Partial<StageWithRecipeSteps> = {
-            dialectic_stage_recipe_steps: [{ id: 'step-3' } as DialecticStageRecipeStep]
-        };
-        assert(!hasProcessingStrategy(stage as unknown as Tables<'dialectic_stage_recipe_steps'>));
+        const { job_type: _omit, ...rest } = buildDialecticStageRecipeStep()!;
+        assert(!hasProcessingStrategy(rest));
     });
 });
 
@@ -451,141 +441,37 @@ Deno.test('Type Guard: isDialecticChunkMetadata', async (t) => {
 
 Deno.test('Type Guard: isDialecticContribution', async (t) => {
     await t.step('should return true for a valid contribution object', () => {
-        const contribution: DialecticContributionRow = {
-            id: 'c1',
-            created_at: new Date().toISOString(),
-            session_id: 's1',
-            stage: 'thesis',
-            iteration_number: 1,
-            model_id: 'm1',
-            is_latest_edit: true,
-            edit_version: 1,
-            contribution_type: 'model_generated',
-            error: null,
-            citations: null,
-            file_name: 'file.md',
-            mime_type: 'text/markdown',
-            storage_bucket: 'bucket',
-            storage_path: 'path',
-            target_contribution_id: null,
-            user_id: 'u1',
-            model_name: 'Test Model',
-            processing_time_ms: 1000,
-            tokens_used_input: 10,
-            tokens_used_output: 20,
-            original_model_contribution_id: null,
-            prompt_template_id_used: null,
-            raw_response_storage_path: null,
-            seed_prompt_url: null,
-            size_bytes: 123,
-            updated_at: new Date().toISOString(),
-            document_relationships: null,
-            is_header: false,
-            source_prompt_resource_id: 'prompt-resource-id-1'
-        };
-        assert(isDialecticContribution(contribution));
+        assert(isDialecticContribution(buildDialecticContributionRow()));
     });
 
     await t.step('should return true for a contribution with valid document_relationships', () => {
-        const contribution: DialecticContributionRow = {
-            id: 'c-with-rels',
-            created_at: new Date().toISOString(),
-            session_id: 's1',
-            stage: 'synthesis',
-            iteration_number: 1,
-            model_id: 'm1',
-            is_latest_edit: true,
-            edit_version: 1,
-            contribution_type: 'model_generated',
-            error: null,
-            citations: null,
-            file_name: 'file.md',
-            mime_type: 'text/markdown',
-            storage_bucket: 'bucket',
-            storage_path: 'path',
-            target_contribution_id: null,
-            user_id: 'u1',
-            model_name: 'Test Model',
-            processing_time_ms: 1000,
-            tokens_used_input: 10,
-            tokens_used_output: 20,
-            original_model_contribution_id: null,
-            prompt_template_id_used: null,
-            raw_response_storage_path: null,
-            seed_prompt_url: null,
-            size_bytes: 123,
-            updated_at: new Date().toISOString(),
-            document_relationships: { thesis: 'thesis-id-123' },
-            is_header: false,
-            source_prompt_resource_id: 'prompt-resource-id-1'
-        };
-        assert(isDialecticContribution(contribution));
+        assert(isDialecticContribution(buildDialecticContributionRow({ document_relationships: { thesis: 'thesis-id-123' } })));
     });
 
     await t.step('should return true for a contribution with a null model_id', () => {
-        const contribution: DialecticContributionRow = {
-            id: 'c2',
-            created_at: new Date().toISOString(),
-            session_id: 's2',
-            stage: 'feedback',
-            iteration_number: 1,
+        assert(isDialecticContribution(buildDialecticContributionRow({
             model_id: null,
-            is_latest_edit: true,
-            edit_version: 1,
-            contribution_type: 'user_feedback',
-            error: null,
-            citations: null,
-            file_name: 'feedback.md',
-            mime_type: 'text/markdown',
-            storage_bucket: 'bucket',
-            storage_path: 'path',
-            target_contribution_id: null,
-            user_id: 'u2',
             model_name: null,
             processing_time_ms: null,
             tokens_used_input: null,
             tokens_used_output: null,
-            original_model_contribution_id: null,
-            prompt_template_id_used: null,
-            raw_response_storage_path: null,
-            seed_prompt_url: null,
-            size_bytes: 456,
-            updated_at: new Date().toISOString(),
-            document_relationships: null,
+            contribution_type: 'user_feedback',
             is_header: true,
-            source_prompt_resource_id: null
-        };
-        assert(isDialecticContribution(contribution));
+            source_prompt_resource_id: null,
+        })));
     });
 
     await t.step('should return false for an object missing a required field (is_header)', () => {
-        const invalidContribution = {
-            id: 'c3',
-            created_at: new Date().toISOString(),
-            session_id: 's1',
-            stage: 'thesis',
-            iteration_number: 1,
-            model_id: 'm1',
-            source_prompt_resource_id: 'prompt-resource-id-1'
-        };
-        assert(!isDialecticContribution(invalidContribution));
+        const { is_header: _omit, ...rest } = buildDialecticContributionRow();
+        assert(!isDialecticContribution(rest));
     });
 
     await t.step('should return false for an object with incorrect type (iteration_number)', () => {
-        const invalidContribution = {
-            id: 'c4',
-            created_at: new Date().toISOString(),
-            session_id: 's4',
-            stage: 'thesis',
-            iteration_number: 'one',
-            model_id: 'm1'
-        };
-        assert(!isDialecticContribution(invalidContribution));
+        assert(!isDialecticContribution(invalidateDialecticContributionRow({ iteration_number: 'one' })));
     });
 
     await t.step('should return false for a plain object', () => {
-        const obj = { foo: 'bar' };
-        assert(!isDialecticContribution(obj));
+        assert(!isDialecticContribution({ foo: 'bar' }));
     });
 
     await t.step('should return false for null', () => {
@@ -594,280 +480,257 @@ Deno.test('Type Guard: isDialecticContribution', async (t) => {
 });
 
 Deno.test('Type Guard: isDialecticExecuteJobPayload', async (t) => {
-    const basePayload: DialecticExecuteJobPayload = {
-        sessionId: 'test-session',
-        projectId: 'test-project',
-        model_id: 'model-123',
-        walletId: 'wallet-abc',
-        stageSlug: 'thesis',
-        iterationNumber: 1,
-        idempotencyKey: 'test-idempotency-key',
-        output_type: FileType.business_case,
-        canonicalPathParams: {
-            contributionType: 'thesis',
-            stageSlug: DialecticStageSlug.Thesis,
-        },
-        inputs: {
-            seed_prompt: 'resource-id-1',
-        },
-        prompt_template_id: 'prompt-template-123',
-        user_jwt: 'some-jwt',
-    };
-
     await t.step('should return true for a valid payload and not throw', () => {
-        assert(isDialecticExecuteJobPayload(basePayload));
+        assert(isDialecticExecuteJobPayload(buildDialecticExecuteJobPayload()));
     });
 
     // Test each optional property individually for valid cases
     await t.step('should pass with a valid optional document_key', () => {
-        const p = { ...basePayload, document_key: FileType.business_case };
-        assert(isDialecticExecuteJobPayload(p));
+        assert(isDialecticExecuteJobPayload(buildDialecticExecuteJobPayload({ document_key: FileType.business_case })));
     });
     await t.step('should pass with a null optional document_key', () => {
-        const p = { ...basePayload, document_key: null };
-        assert(isDialecticExecuteJobPayload(p));
+        assert(isDialecticExecuteJobPayload(buildDialecticExecuteJobPayload({ document_key: null })));
     });
     await t.step('should pass with a valid optional branch_key', () => {
-        const p = { ...basePayload, branch_key: BranchKey.business_case };
-        assert(isDialecticExecuteJobPayload(p));
+        assert(isDialecticExecuteJobPayload(buildDialecticExecuteJobPayload({ branch_key: BranchKey.business_case })));
     });
     await t.step('should pass with a null optional branch_key', () => {
-        const p = { ...basePayload, branch_key: null };
-        assert(isDialecticExecuteJobPayload(p));
+        assert(isDialecticExecuteJobPayload(buildDialecticExecuteJobPayload({ branch_key: null })));
     });
     await t.step('should pass with a valid optional parallel_group', () => {
-        const p = { ...basePayload, parallel_group: 1 };
-        assert(isDialecticExecuteJobPayload(p));
+        assert(isDialecticExecuteJobPayload(buildDialecticExecuteJobPayload({ parallel_group: 1 })));
     });
     await t.step('should pass with a null optional parallel_group', () => {
-        const p = { ...basePayload, parallel_group: null };
-        assert(isDialecticExecuteJobPayload(p));
+        assert(isDialecticExecuteJobPayload(buildDialecticExecuteJobPayload({ parallel_group: null })));
     });
     await t.step('should pass with valid optional planner_metadata', () => {
-        const p = { ...basePayload, planner_metadata: { dependencies: ['root'] } };
-        assert(isDialecticExecuteJobPayload(p));
+        assert(isDialecticExecuteJobPayload(buildDialecticExecuteJobPayload({ planner_metadata: { dependencies: ['root'] } })));
     });
     await t.step('should pass with null optional planner_metadata', () => {
-        const p = { ...basePayload, planner_metadata: null };
-        assert(isDialecticExecuteJobPayload(p));
+        assert(isDialecticExecuteJobPayload(buildDialecticExecuteJobPayload({ planner_metadata: null })));
     });
     await t.step('should pass with valid optional document_relationships', () => {
-        const p = { ...basePayload, document_relationships: { thesis: 'some-id' } };
-        assert(isDialecticExecuteJobPayload(p));
+        assert(isDialecticExecuteJobPayload(buildDialecticExecuteJobPayload({ document_relationships: { thesis: 'some-id' } })));
     });
     await t.step('should pass with null optional document_relationships', () => {
-        const p = { ...basePayload, document_relationships: null };
-        assert(isDialecticExecuteJobPayload(p));
+        assert(isDialecticExecuteJobPayload(buildDialecticExecuteJobPayload({ document_relationships: null })));
     });
     await t.step('should pass with a valid optional isIntermediate', () => {
-        const p = { ...basePayload, isIntermediate: true };
-        assert(isDialecticExecuteJobPayload(p));
+        assert(isDialecticExecuteJobPayload(buildDialecticExecuteJobPayload({ isIntermediate: true })));
     });
     await t.step('should pass with a valid optional user_jwt', () => {
-        const p = { ...basePayload, user_jwt: 'some-jwt' };
-        assert(isDialecticExecuteJobPayload(p));
+        assert(isDialecticExecuteJobPayload(buildDialecticExecuteJobPayload({ user_jwt: 'some-jwt' })));
     });
     await t.step('should pass with a valid optional target_contribution_id', () => {
-        const p = { ...basePayload, target_contribution_id: 'target-id' };
-        assert(isDialecticExecuteJobPayload(p));
+        assert(isDialecticExecuteJobPayload(buildDialecticExecuteJobPayload({ target_contribution_id: 'target-id' })));
     });
     await t.step('should pass with a valid optional sourceContributionId from DialecticBaseJobPayload', () => {
-        const p = { ...basePayload, sourceContributionId: 'contrib-1' };
-        assert(isDialecticExecuteJobPayload(p));
+        assert(isDialecticExecuteJobPayload(buildDialecticExecuteJobPayload({ sourceContributionId: 'contrib-1' })));
     });
     await t.step('should pass with a null optional sourceContributionId from DialecticBaseJobPayload', () => {
-        const p = { ...basePayload, sourceContributionId: null };
-        assert(isDialecticExecuteJobPayload(p));
+        assert(isDialecticExecuteJobPayload(buildDialecticExecuteJobPayload({ sourceContributionId: null })));
     });
 
     // Base job payload extras should be permitted on execute payloads
     await t.step('should pass when base payload fields are present', () => {
-        const p = {
-            ...basePayload,
+        assert(isDialecticExecuteJobPayload(buildDialecticExecuteJobPayload({
             continueUntilComplete: true,
             maxRetries: 3,
             continuation_count: 1,
             model_slug: 'test-model-slug',
-        };
-        assert(isDialecticExecuteJobPayload(p));
+        })));
     });
     await t.step('should pass with a valid optional model_slug from DialecticBaseJobPayload', () => {
-        const p = { ...basePayload, model_slug: 'test-model-slug' };
-        assert(isDialecticExecuteJobPayload(p));
+        assert(isDialecticExecuteJobPayload(buildDialecticExecuteJobPayload({ model_slug: 'test-model-slug' })));
     });
 
     // Test inherited properties from DialecticBaseJobPayload
     await t.step('should throw if sessionId is missing', () => {
-        const p = { ...basePayload }; delete (p as Partial<DialecticExecuteJobPayload>).sessionId;
-        assertThrows(() => isDialecticExecuteJobPayload(p), Error, 'Missing or invalid sessionId.');
+        const { sessionId: _omit, ...rest } = buildDialecticExecuteJobPayload();
+        assertThrows(() => isDialecticExecuteJobPayload(rest), Error, 'Missing or invalid sessionId.');
     });
     await t.step('should throw if projectId is missing', () => {
-        const p = { ...basePayload }; delete (p as Partial<DialecticExecuteJobPayload>).projectId;
-        assertThrows(() => isDialecticExecuteJobPayload(p), Error, 'Missing or invalid projectId.');
+        const { projectId: _omit, ...rest } = buildDialecticExecuteJobPayload();
+        assertThrows(() => isDialecticExecuteJobPayload(rest), Error, 'Missing or invalid projectId.');
     });
     await t.step('should throw if model_id is missing', () => {
-        const p = { ...basePayload }; delete (p as Partial<DialecticExecuteJobPayload>).model_id;
-        assertThrows(() => isDialecticExecuteJobPayload(p), Error, 'Missing or invalid model_id.');
+        const { model_id: _omit, ...rest } = buildDialecticExecuteJobPayload();
+        assertThrows(() => isDialecticExecuteJobPayload(rest), Error, 'Missing or invalid model_id.');
     });
     await t.step('should throw if walletId is missing', () => {
-        const p = { ...basePayload }; delete (p as Partial<DialecticExecuteJobPayload>).walletId;
-        assertThrows(() => isDialecticExecuteJobPayload(p), Error, 'Missing or invalid walletId.');
+        const { walletId: _omit, ...rest } = buildDialecticExecuteJobPayload();
+        assertThrows(() => isDialecticExecuteJobPayload(rest), Error, 'Missing or invalid walletId.');
     });
 
     // Test required properties of DialecticExecuteJobPayload
     await t.step('should throw if output_type is missing or invalid', () => {
-        const p = { ...basePayload, output_type: 'invalid-type' as any };
-        assertThrows(() => isDialecticExecuteJobPayload(p), Error, 'Missing or invalid output_type.');
+        assertThrows(() => isDialecticExecuteJobPayload(invalidateDialecticExecuteJobPayload({ output_type: 'invalid-type' })), Error, 'Missing or invalid output_type.');
     });
     await t.step('should throw if canonicalPathParams is missing or invalid', () => {
-        const p = { ...basePayload, canonicalPathParams: {} as any };
-        assertThrows(() => isDialecticExecuteJobPayload(p), Error, 'Missing or invalid canonicalPathParams.');
+        assertThrows(() => isDialecticExecuteJobPayload(invalidateDialecticExecuteJobPayload({ canonicalPathParams: {} })), Error, 'Missing or invalid canonicalPathParams.');
     });
     await t.step('should throw if inputs is missing or not a record', () => {
-        const p = { ...basePayload, inputs: 'invalid' as any };
-        assertThrows(() => isDialecticExecuteJobPayload(p), Error, 'Missing or invalid inputs.');
+        assertThrows(() => isDialecticExecuteJobPayload(invalidateDialecticExecuteJobPayload({ inputs: 'invalid' })), Error, 'Missing or invalid inputs.');
     });
     await t.step('should throw if prompt_template_id is missing', () => {
-        const p = { ...basePayload }; delete (p as Partial<DialecticExecuteJobPayload>).prompt_template_id;
-        assertThrows(() => isDialecticExecuteJobPayload(p), Error, 'Missing or invalid prompt_template_id.');
+        const { prompt_template_id: _omit, ...rest } = buildDialecticExecuteJobPayload();
+        assertThrows(() => isDialecticExecuteJobPayload(rest), Error, 'Missing or invalid prompt_template_id.');
     });
     await t.step('should throw if prompt_template_id is null', () => {
-        const p = { ...basePayload, prompt_template_id: null as any };
-        assertThrows(() => isDialecticExecuteJobPayload(p), Error, 'Missing or invalid prompt_template_id.');
+        assertThrows(() => isDialecticExecuteJobPayload(invalidateDialecticExecuteJobPayload({ prompt_template_id: null })), Error, 'Missing or invalid prompt_template_id.');
     });
     await t.step('should throw if prompt_template_id is undefined', () => {
-        const p = { ...basePayload, prompt_template_id: undefined as any };
-        assertThrows(() => isDialecticExecuteJobPayload(p), Error, 'Missing or invalid prompt_template_id.');
+        assertThrows(() => isDialecticExecuteJobPayload(invalidateDialecticExecuteJobPayload({ prompt_template_id: undefined })), Error, 'Missing or invalid prompt_template_id.');
     });
     await t.step('should throw if prompt_template_id is empty string', () => {
-        const p = { ...basePayload, prompt_template_id: '' };
-        assertThrows(() => isDialecticExecuteJobPayload(p), Error, 'Missing or invalid prompt_template_id.');
+        assertThrows(() => isDialecticExecuteJobPayload(buildDialecticExecuteJobPayload({ prompt_template_id: '' })), Error, 'Missing or invalid prompt_template_id.');
     });
 
     // Test optional/nullable properties of DialecticExecuteJobPayload
     await t.step('should throw if prompt_template_name is of wrong type', () => {
-        const p = { ...basePayload, prompt_template_name: 123 as any };
-        assertThrows(() => isDialecticExecuteJobPayload(p), Error, 'Invalid prompt_template_name.');
+        assertThrows(() => isDialecticExecuteJobPayload(invalidateDialecticExecuteJobPayload({ prompt_template_name: 123 })), Error, 'Invalid prompt_template_name.');
     });
     await t.step('should throw if document_key is of wrong type', () => {
-        const p = { ...basePayload, document_key: 123 as any };
-        assertThrows(() => isDialecticExecuteJobPayload(p), Error, 'Invalid document_key.');
+        assertThrows(() => isDialecticExecuteJobPayload(invalidateDialecticExecuteJobPayload({ document_key: 123 })), Error, 'Invalid document_key.');
     });
     await t.step('should throw if branch_key is of wrong type', () => {
-        const p = { ...basePayload, branch_key: 123 as any };
-        assertThrows(() => isDialecticExecuteJobPayload(p), Error, 'Invalid branch_key.');
+        assertThrows(() => isDialecticExecuteJobPayload(invalidateDialecticExecuteJobPayload({ branch_key: 123 })), Error, 'Invalid branch_key.');
     });
     await t.step('should throw if parallel_group is of wrong type', () => {
-        const p = { ...basePayload, parallel_group: 'invalid' as any };
-        assertThrows(() => isDialecticExecuteJobPayload(p), Error, 'Invalid parallel_group.');
+        assertThrows(() => isDialecticExecuteJobPayload(invalidateDialecticExecuteJobPayload({ parallel_group: 'invalid' })), Error, 'Invalid parallel_group.');
     });
     await t.step('should throw if planner_metadata is of wrong type', () => {
-        const p = { ...basePayload, planner_metadata: 'invalid' as any };
-        assertThrows(() => isDialecticExecuteJobPayload(p), Error, 'Invalid planner_metadata.');
+        assertThrows(() => isDialecticExecuteJobPayload(invalidateDialecticExecuteJobPayload({ planner_metadata: 'invalid' })), Error, 'Invalid planner_metadata.');
     });
     await t.step('should throw if document_relationships is of wrong type', () => {
-        const p = { ...basePayload, document_relationships: 'invalid' as any };
-        assertThrows(() => isDialecticExecuteJobPayload(p), Error, 'Invalid document_relationships.');
+        assertThrows(() => isDialecticExecuteJobPayload(invalidateDialecticExecuteJobPayload({ document_relationships: 'invalid' })), Error, 'Invalid document_relationships.');
     });
     await t.step('should throw if isIntermediate is of wrong type', () => {
-        const p = { ...basePayload, isIntermediate: 'invalid' as any };
-        assertThrows(() => isDialecticExecuteJobPayload(p), Error, 'Invalid isIntermediate flag.');
+        assertThrows(() => isDialecticExecuteJobPayload(invalidateDialecticExecuteJobPayload({ isIntermediate: 'invalid' })), Error, 'Invalid isIntermediate flag.');
     });
     await t.step('should throw if user_jwt is of wrong type', () => {
-        const p = { ...basePayload, user_jwt: 123 as any };
-        assertThrows(() => isDialecticExecuteJobPayload(p), Error, 'Missing or invalid user_jwt.');
+        assertThrows(() => isDialecticExecuteJobPayload(invalidateDialecticExecuteJobPayload({ user_jwt: 123 })), Error, 'Missing or invalid user_jwt.');
     });
-    
+
     // Test optional inherited properties
     await t.step('should throw if stageSlug is of wrong type', () => {
-        const p = { ...basePayload, stageSlug: 123 as any };
-        assertThrows(() => isDialecticExecuteJobPayload(p), Error, 'Invalid stageSlug.');
+        assertThrows(() => isDialecticExecuteJobPayload(invalidateDialecticExecuteJobPayload({ stageSlug: 123 })), Error, 'Invalid stageSlug.');
     });
     await t.step('should throw if iterationNumber is of wrong type', () => {
-        const p = { ...basePayload, iterationNumber: '1' as any };
-        assertThrows(() => isDialecticExecuteJobPayload(p), Error, 'Invalid iterationNumber.');
+        assertThrows(() => isDialecticExecuteJobPayload(invalidateDialecticExecuteJobPayload({ iterationNumber: '1' })), Error, 'Invalid iterationNumber.');
     });
     await t.step('should throw if target_contribution_id is of wrong type', () => {
-        const p = { ...basePayload, target_contribution_id: 123 as any };
-        assertThrows(() => isDialecticExecuteJobPayload(p), Error, 'Invalid target_contribution_id.');
+        assertThrows(() => isDialecticExecuteJobPayload(invalidateDialecticExecuteJobPayload({ target_contribution_id: 123 })), Error, 'Invalid target_contribution_id.');
     });
     await t.step('should throw if model_slug is of wrong type', () => {
-        const p = { ...basePayload, model_slug: 123 as any };
-        assertThrows(() => isDialecticExecuteJobPayload(p), Error, 'Invalid model_slug.');
+        assertThrows(() => isDialecticExecuteJobPayload(invalidateDialecticExecuteJobPayload({ model_slug: 123 })), Error, 'Invalid model_slug.');
     });
     await t.step('should pass with a valid optional prompt_template_name', () => {
-        const p = { ...basePayload, prompt_template_name: 'test-template-name' };
-        assert(isDialecticExecuteJobPayload(p));
+        assert(isDialecticExecuteJobPayload(buildDialecticExecuteJobPayload({ prompt_template_name: 'test-template-name' })));
     });
     await t.step('should pass with a valid optional context_for_documents array', () => {
-        const contextForDocs: ContextForDocument[] = [
-            {
+        assert(isDialecticExecuteJobPayload(buildDialecticExecuteJobPayload({
+            context_for_documents: [{
                 document_key: FileType.business_case,
-                content_to_include: { section: '' }
-            }
-        ];
-        const p = { ...basePayload, context_for_documents: contextForDocs };
-        assert(isDialecticExecuteJobPayload(p));
+                content_to_include: { section: '' },
+            }],
+        })));
     });
     await t.step('should pass with a null optional context_for_documents', () => {
-        const p = { ...basePayload, context_for_documents: null };
-        assert(isDialecticExecuteJobPayload(p));
+        assert(isDialecticExecuteJobPayload(buildDialecticExecuteJobPayload({ context_for_documents: null })));
     });
     await t.step('should throw if context_for_documents is of wrong type', () => {
-        const p = { ...basePayload, context_for_documents: 'invalid' as any };
-        assertThrows(() => isDialecticExecuteJobPayload(p), Error);
+        assertThrows(() => isDialecticExecuteJobPayload(invalidateDialecticExecuteJobPayload({ context_for_documents: 'invalid' })), Error);
     });
 
     // Test legacy property
     await t.step('should throw for legacy originalFileName property', () => {
-        const invalidPayload = { ...basePayload, originalFileName: 'legacy.txt' };
         assertThrows(
-            () => isDialecticExecuteJobPayload(invalidPayload),
+            () => isDialecticExecuteJobPayload({ ...buildDialecticExecuteJobPayload(), originalFileName: 'legacy.txt' }),
             Error,
             'Legacy property originalFileName is not allowed.'
         );
     });
 
     await t.step('should throw for an unknown/extraneous property', () => {
-        const pollutedPayload = { ...basePayload, step_info: 'some-orchestrator-context' };
         assertThrows(
-            () => isDialecticExecuteJobPayload(pollutedPayload),
+            () => isDialecticExecuteJobPayload({ ...buildDialecticExecuteJobPayload(), step_info: 'some-orchestrator-context' }),
             Error,
             'Payload contains unknown properties: step_info'
         );
     });
 
     await t.step('should throw error when user_jwt is missing from execute job payload', () => {
-        const payloadWithoutUserJwt = { ...basePayload };
-        delete (payloadWithoutUserJwt as Partial<typeof basePayload>).user_jwt;
+        const { user_jwt: _omit, ...rest } = buildDialecticExecuteJobPayload();
         assertThrows(
-            () => isDialecticExecuteJobPayload(payloadWithoutUserJwt),
+            () => isDialecticExecuteJobPayload(rest),
             Error,
             'Missing or invalid user_jwt.'
         );
     });
 
     await t.step('should throw error when user_jwt is empty string in execute job payload', () => {
-        const payloadWithEmptyUserJwt = { ...basePayload, user_jwt: '' };
         assertThrows(
-            () => isDialecticExecuteJobPayload(payloadWithEmptyUserJwt),
+            () => isDialecticExecuteJobPayload(buildDialecticExecuteJobPayload({ user_jwt: '' })),
             Error,
             'Missing or invalid user_jwt.'
         );
     });
 
     await t.step('should pass with a valid optional maxOutputTokens from GenerateContributionsPayload', () => {
-        const p: DialecticExecuteJobPayload = { ...basePayload, maxOutputTokens: 8192 };
-        assert(isDialecticExecuteJobPayload(p));
+        assert(isDialecticExecuteJobPayload(buildDialecticExecuteJobPayload({ maxOutputTokens: 8192 })));
     });
 
     await t.step('should throw when maxOutputTokens is a string', () => {
-        const p: Record<string, unknown> = { ...basePayload, maxOutputTokens: 'string' };
         assertThrows(
-            () => isDialecticExecuteJobPayload(p),
+            () => isDialecticExecuteJobPayload(invalidateDialecticExecuteJobPayload({ maxOutputTokens: 'string' })),
             Error,
             'Invalid maxOutputTokens.',
         );
+    });
+
+    // prompt_template_name optionality
+    await t.step('should pass with a valid optional prompt_template_name', () => {
+        const p = buildDialecticExecuteJobPayload({ prompt_template_name: 'thesis_business_case' });
+        assert(isDialecticExecuteJobPayload(p));
+    });
+    await t.step('should pass with prompt_template_name absent', () => {
+        const p = buildDialecticExecuteJobPayload();
+        assert(isDialecticExecuteJobPayload(p));
+    });
+    await t.step('should throw if prompt_template_name is a number', () => {
+        const p = invalidateDialecticExecuteJobPayload({ prompt_template_name: 123 });
+        assertThrows(() => isDialecticExecuteJobPayload(p), Error, 'Invalid prompt_template_name.');
+    });
+    await t.step('should throw if prompt_template_name is null', () => {
+        const p = invalidateDialecticExecuteJobPayload({ prompt_template_name: null });
+        assertThrows(() => isDialecticExecuteJobPayload(p), Error, 'Invalid prompt_template_name.');
+    });
+
+    // is_test_job optionality
+    await t.step('should pass with is_test_job true', () => {
+        const p = buildDialecticExecuteJobPayload({ is_test_job: true });
+        assert(isDialecticExecuteJobPayload(p));
+    });
+    await t.step('should pass with is_test_job false', () => {
+        const p = buildDialecticExecuteJobPayload({ is_test_job: false });
+        assert(isDialecticExecuteJobPayload(p));
+    });
+    await t.step('should pass with is_test_job absent', () => {
+        const p = buildDialecticExecuteJobPayload();
+        assert(isDialecticExecuteJobPayload(p));
+    });
+    await t.step('should throw if is_test_job is a string', () => {
+        const p = invalidateDialecticExecuteJobPayload({ is_test_job: 'yes' });
+        assertThrows(() => isDialecticExecuteJobPayload(p), Error, 'Invalid is_test_job.');
+    });
+    await t.step('should throw if is_test_job is a number', () => {
+        const p = invalidateDialecticExecuteJobPayload({ is_test_job: 1 });
+        assertThrows(() => isDialecticExecuteJobPayload(p), Error, 'Invalid is_test_job.');
+    });
+    await t.step('should throw if is_test_job is null', () => {
+        const p = invalidateDialecticExecuteJobPayload({ is_test_job: null });
+        assertThrows(() => isDialecticExecuteJobPayload(p), Error, 'Invalid is_test_job.');
     });
 });
 
@@ -1030,132 +893,31 @@ Deno.test('Type Guard: isDialecticJobPayload', async (t) => {
 
 Deno.test('Type Guard: isDialecticJobRow', async (t) => {
     await t.step('should return true for a valid job row object', () => {
-        const job: DialecticJobRow = {
-            id: 'j1',
-            session_id: 's1',
-            user_id: 'u1',
-            stage_slug: 'thesis',
-            iteration_number: 1,
-            payload: { model_id: 'm1', projectId: 'p1', sessionId: 's1' },
-            status: 'pending',
-            attempt_count: 0,
-            max_retries: 3,
-            created_at: new Date().toISOString(),
-            started_at: null,
-            completed_at: null,
-            results: null,
-            error_details: null,
-            parent_job_id: null,
-            target_contribution_id: null,
-            prerequisite_job_id: null,
-            is_test_job: false,
-            job_type: 'PLAN',
-            idempotency_key: 'test-idempotency-key',
-        };
-        assert(isDialecticJobRow(job));
+        assert(isDialecticJobRow(buildDialecticJobRow()));
     });
 
     await t.step('should return false if a required field is missing (e.g., created_at)', () => {
-        const job = {
-            id: 'j-missing-created_at',
-            session_id: 's1',
-            user_id: 'u1',
-            stage_slug: 'thesis',
-            iteration_number: 1,
-            payload: { model_id: 'm1', projectId: 'p1', sessionId: 's1' },
-            status: 'pending',
-            attempt_count: 0,
-            max_retries: 3,
-            // created_at is missing
-            started_at: null,
-            completed_at: null,
-            results: null,
-            error_details: null,
-            parent_job_id: null,
-            target_contribution_id: null,
-            prerequisite_job_id: null,
-            is_test_job: false,
-            job_type: 'PLAN' as Database["public"]["Enums"]["dialectic_job_type_enum"],
-            idempotency_key: 'test-idempotency-key',
-        };
-        assert(!isDialecticJobRow(job));
+        const { created_at: _omit, ...rest } = buildDialecticJobRow();
+        assert(!isDialecticJobRow(rest));
     });
 
     await t.step('should return false if a required field is missing (e.g., status)', () => {
-        const job = {
-            id: 'j2',
-            session_id: 's1',
-            user_id: 'u1',
-            stage_slug: 'thesis',
-            iteration_number: 1,
-            payload: {},
-            is_test_job: false,
-            job_type: 'PLAN',
-        };
-        assert(!isDialecticJobRow(job));
+        const { status: _omit, ...rest } = buildDialecticJobRow();
+        assert(!isDialecticJobRow(rest));
     });
 
     await t.step('should return false if job_type is missing', () => {
-        const job = {
-            id: 'j-missing-type',
-            session_id: 's1',
-            user_id: 'u1',
-            stage_slug: 'thesis',
-            iteration_number: 1,
-            payload: { model_id: 'm1', projectId: 'p1', sessionId: 's1' },
-            status: 'pending',
-            attempt_count: 0,
-            max_retries: 3,
-            created_at: new Date().toISOString(),
-            started_at: null,
-            completed_at: null,
-            results: null,
-            error_details: null,
-            parent_job_id: null,
-            target_contribution_id: null,
-            prerequisite_job_id: null,
-            is_test_job: false,
-        };
-        assert(!isDialecticJobRow(job));
+        const { job_type: _omit, ...rest } = buildDialecticJobRow();
+        assert(!isDialecticJobRow(rest));
     });
 
     await t.step('should return false if is_test_job is missing', () => {
-        const job = {
-            id: 'j-missing-test-flag',
-            session_id: 's1',
-            user_id: 'u1',
-            stage_slug: 'thesis',
-            iteration_number: 1,
-            payload: { model_id: 'm1', projectId: 'p1', sessionId: 's1' },
-            status: 'pending',
-            attempt_count: 0,
-            max_retries: 3,
-            created_at: new Date().toISOString(),
-            started_at: null,
-            completed_at: null,
-            results: null,
-            error_details: null,
-            parent_job_id: null,
-            target_contribution_id: null,
-            prerequisite_job_id: null,
-            job_type: 'PLAN',
-        };
-        assert(!isDialecticJobRow(job));
+        const { is_test_job: _omit, ...rest } = buildDialecticJobRow();
+        assert(!isDialecticJobRow(rest));
     });
 
     await t.step('should return false if payload is not an object', () => {
-        const job = {
-            id: 'j3',
-            session_id: 's1',
-            user_id: 'u1',
-            stage_slug: 'thesis',
-            iteration_number: 1,
-            payload: 'a string',
-            status: 'pending',
-            is_test_job: true,
-            job_type: 'PLAN',
-        };
-        assert(!isDialecticJobRow(job));
+        assert(!isDialecticJobRow(invalidateDialecticJobRow({ payload: 'a string' })));
     });
 
     await t.step('should return false for a non-object', () => {
@@ -1166,53 +928,10 @@ Deno.test('Type Guard: isDialecticJobRow', async (t) => {
 
 Deno.test('Type Guard: isDialecticJobRowArray', async (t) => {
     await t.step('should return true for valid array of DialecticJobRow objects', () => {
-        const jobs: DialecticJobRow[] = [
-            {
-                id: 'job-1',
-                session_id: 'session-1',
-                user_id: 'user-1',
-                stage_slug: 'thesis',
-                iteration_number: 1,
-                payload: { sessionId: 'session-1', projectId: 'project-1', selectedModels: [{ id: 'model-1', displayName: 'Model One' }] },
-                status: 'pending',
-                attempt_count: 0,
-                max_retries: 3,
-                created_at: new Date().toISOString(),
-                started_at: null,
-                completed_at: null,
-                results: null,
-                error_details: null,
-                parent_job_id: null,
-                target_contribution_id: null,
-                prerequisite_job_id: null,
-                is_test_job: false,
-                job_type: 'PLAN',
-                idempotency_key: 'test-idempotency-key',
-            },
-            {
-                id: 'job-2',
-                session_id: 'session-2',
-                user_id: 'user-2',
-                stage_slug: 'antithesis',
-                iteration_number: 1,
-                payload: { sessionId: 'session-2', projectId: 'project-2', selectedModels: [{ id: 'model-2', displayName: 'Model Two' }] },
-                status: 'completed',
-                attempt_count: 1,
-                max_retries: 3,
-                created_at: new Date().toISOString(),
-                started_at: new Date().toISOString(),
-                completed_at: new Date().toISOString(),
-                results: { success: true },
-                error_details: null,
-                parent_job_id: 'parent-job-1',
-                target_contribution_id: null,
-                prerequisite_job_id: null,
-                is_test_job: false,
-                job_type: 'EXECUTE',
-                idempotency_key: 'test-idempotency-key',
-            },
-        ];
-        assert(isDialecticJobRowArray(jobs));
+        assert(isDialecticJobRowArray([
+            buildDialecticJobRow(),
+            buildDialecticJobRow({ id: 'job-2', status: 'completed', job_type: 'EXECUTE' }),
+        ]));
     });
 
     await t.step('should return true for empty array', () => {
@@ -1220,69 +939,25 @@ Deno.test('Type Guard: isDialecticJobRowArray', async (t) => {
     });
 
     await t.step('should return true for array with single valid job', () => {
-        const jobs = [{
-            id: 'job-single',
-            session_id: 'session-single',
-            user_id: 'user-single',
-            stage_slug: 'synthesis',
-            iteration_number: 2,
-            payload: { test: 'data' },
-            status: 'processing',
-            attempt_count: 0,
-            max_retries: 5,
-            created_at: new Date().toISOString(),
-            started_at: null,
-            completed_at: null,
-            results: null,
-            error_details: null,
-            parent_job_id: null,
-            idempotency_key: 'test-idempotency-key',
-        }];
-        assert(isDialecticJobRowArray(jobs));
+        assert(isDialecticJobRowArray([buildDialecticJobRow()]));
     });
 
     await t.step('should return false when array contains object missing required field (id)', () => {
-        const invalidJobs = [{
-            // Missing id
-            session_id: 'session-1',
-            user_id: 'user-1',
-            stage_slug: 'thesis',
-        }];
-        assert(!isDialecticJobRowArray(invalidJobs));
+        const { id: _omit, ...rest } = buildDialecticJobRow();
+        assert(!isDialecticJobRowArray([rest]));
     });
 
     await t.step('should return false when array contains object missing required field (session_id)', () => {
-        const invalidJobs = [{
-            id: 'job-1',
-            // Missing session_id
-            user_id: 'user-1',
-            stage_slug: 'thesis',
-        }];
-        assert(!isDialecticJobRowArray(invalidJobs));
+        const { session_id: _omit, ...rest } = buildDialecticJobRow();
+        assert(!isDialecticJobRowArray([rest]));
     });
 
     await t.step('should return false when array contains null', () => {
-        const invalidJobs = [
-            {
-                id: 'job-1',
-                session_id: 'session-1',
-                user_id: 'user-1',
-            },
-            null, // Invalid: null in array
-        ];
-        assert(!isDialecticJobRowArray(invalidJobs));
+        assert(!isDialecticJobRowArray([buildDialecticJobRow(), null]));
     });
 
     await t.step('should return false when array contains non-object', () => {
-        const invalidJobs = [
-            {
-                id: 'job-1',
-                session_id: 'session-1',
-                user_id: 'user-1',
-            },
-            'not an object', // Invalid: string in array
-        ];
-        assert(!isDialecticJobRowArray(invalidJobs));
+        assert(!isDialecticJobRowArray([buildDialecticJobRow(), 'not an object']));
     });
 
     await t.step('should return false for non-array input', () => {
@@ -1293,77 +968,41 @@ Deno.test('Type Guard: isDialecticJobRowArray', async (t) => {
     });
 
     await t.step('should return false when array contains objects without both id and session_id', () => {
-        const invalidJobs = [
-            { id: 'job-1' }, // Missing session_id
-            { session_id: 'session-1' }, // Missing id
-        ];
-        assert(!isDialecticJobRowArray(invalidJobs));
+        const { session_id: _omit1, ...rest1 } = buildDialecticJobRow();
+        const { id: _omit2, ...rest2 } = buildDialecticJobRow();
+        assert(!isDialecticJobRowArray([rest1, rest2]));
     });
 });
 
 Deno.test('Type Guard: isDialecticPlanJobPayload', async (t) => {
     await t.step('should return true for a valid plan job payload', () => {
-        const payload: DialecticPlanJobPayload = {
-            // Properties from GenerateContributionsPayload
-            sessionId: 'test-session',
-            projectId: 'test-project',
-            stageSlug: 'thesis',
-            iterationNumber: 1,
-            walletId: 'wallet-abc',
+        assert(isDialecticPlanJobPayload(buildDialecticPlanJobPayload({
             continueUntilComplete: true,
             maxRetries: 3,
             continuation_count: 1,
             target_contribution_id: 'target-id',
-            user_jwt: 'test-jwt',
             is_test_job: false,
             model_slug: 'test-model-slug',
-            idempotencyKey: 'test-idempotency-key',
-            // Properties from DialecticBaseJobPayload
-            model_id: 'model-123',
             sourceContributionId: 'source-id',
-
-            // Properties from DialecticPlanJobPayload
             context_for_documents: [{
                 document_key: FileType.business_case,
-                content_to_include: { "field1": "value1" }
+                content_to_include: { field1: 'value1' },
             }],
-        };
-        assert(isDialecticPlanJobPayload(payload));
+        })));
     });
     await t.step('should return false when planner_metadata is present on plan job payload', () => {
-        const payload: Record<string, unknown> = {
-            sessionId: 'test-session',
-            projectId: 'test-project',
-            stageSlug: 'thesis',
-            iterationNumber: 1,
-            walletId: 'wallet-abc',
-            user_jwt: 'test-jwt',
-            model_id: 'model-123',
-            planner_metadata: {
-                recipe_step_id: 'step-123',
-            },
-        };
-        assert(!isDialecticPlanJobPayload(payload));
+        assert(!isDialecticPlanJobPayload({ ...buildDialecticPlanJobPayload(), planner_metadata: { recipe_step_id: 'step-123' } }));
     });
     await t.step('should return true for a valid plan job payload with base payload fields including model_slug', () => {
-        const payload: DialecticPlanJobPayload = {
-            sessionId: 'test-session',
-            projectId: 'test-project',
-            model_id: 'model-123',
-            walletId: 'wallet-abc',
-            stageSlug: 'thesis',
-            iterationNumber: 1,
+        assert(isDialecticPlanJobPayload(buildDialecticPlanJobPayload({
             model_slug: 'test-model-slug',
-            user_jwt: 'test-jwt',
             continueUntilComplete: true,
             maxRetries: 3,
             continuation_count: 1,
             target_contribution_id: 'target-id',
             is_test_job: false,
             sourceContributionId: 'source-id',
-            idempotencyKey: 'test-idempotency-key',
-        };
-        assert(isDialecticPlanJobPayload(payload));
+        })));
     });
 
     await t.step('should return false for non-object payloads', () => {
@@ -1373,134 +1012,44 @@ Deno.test('Type Guard: isDialecticPlanJobPayload', async (t) => {
     });
 
     await t.step('should return false when user_jwt is missing from plan job payload', () => {
-        const payload = {
-            sessionId: 'test-session',
-            projectId: 'test-project',
-            model_id: 'model-123',
-            walletId: 'wallet-abc',
-            stageSlug: 'thesis',
-            iterationNumber: 1,
-        };
-        assert(!isDialecticPlanJobPayload(payload));
+        const { user_jwt: _omit, ...rest } = buildDialecticPlanJobPayload();
+        assert(!isDialecticPlanJobPayload(rest));
     });
 
     await t.step('should return false when user_jwt is empty string in plan job payload', () => {
-        const payload = {
-            sessionId: 'test-session',
-            projectId: 'test-project',
-            model_id: 'model-123',
-            walletId: 'wallet-abc',
-            stageSlug: 'thesis',
-            iterationNumber: 1,
-            user_jwt: '',
-        };
-        assert(!isDialecticPlanJobPayload(payload));
+        assert(!isDialecticPlanJobPayload(buildDialecticPlanJobPayload({ user_jwt: '' })));
     });
 
     await t.step('should return true when maxOutputTokens is present on plan job payload', () => {
-        const payload: DialecticPlanJobPayload = {
-            sessionId: 'test-session',
-            projectId: 'test-project',
-            model_id: 'model-123',
-            walletId: 'wallet-abc',
-            user_jwt: 'test-jwt',
-            idempotencyKey: 'test-idempotency-key',
-            maxOutputTokens: 8192,
-        };
-        assert(isDialecticPlanJobPayload(payload));
+        assert(isDialecticPlanJobPayload(buildDialecticPlanJobPayload({ maxOutputTokens: 8192 })));
     });
 
     await t.step('should return false when maxOutputTokens is not a number on plan job payload', () => {
-        const payload: Record<string, unknown> = {
-            sessionId: 'test-session',
-            projectId: 'test-project',
-            model_id: 'model-123',
-            walletId: 'wallet-abc',
-            user_jwt: 'test-jwt',
-            maxOutputTokens: 'not a number',
-        };
-        assert(!isDialecticPlanJobPayload(payload));
+        assert(!isDialecticPlanJobPayload(invalidateDialecticPlanJobPayload({ maxOutputTokens: 'not a number' })));
     });
 });
 
 Deno.test('Type Guard: isDialecticSkeletonJobPayload', async (t) => {
     await t.step('should return true when step_info is present and planner_metadata.recipe_step_id is a non-empty string', () => {
-        const payload: DialecticSkeletonJobPayload = {
-            projectId: 'test-project',
-            sessionId: 'test-session',
-            model_id: 'model-123',
-            walletId: 'wallet-abc',
-            user_jwt: 'test-jwt',
-            stageSlug: 'thesis',
-            iterationNumber: 1,
-            planner_metadata: {
-                recipe_step_id: 'step-123',
-            },
-            step_info: {
-                current_step: 1,
-                total_steps: 1,
-            },
-            idempotencyKey: 'test-idempotency-key',
-        };
-        assert(isDialecticSkeletonJobPayload(payload));
+        assert(isDialecticSkeletonJobPayload(buildDialecticSkeletonJobPayload({
+            planner_metadata: { recipe_step_id: 'step-123', recipe_template_id: 'template-1' },
+            step_info: { current_step: 1, total_steps: 1 },
+        })));
     });
 
     await t.step('should return false when step_info is missing', () => {
-        const payload: Record<string, unknown> = {
-            projectId: 'test-project',
-            sessionId: 'test-session',
-            model_id: 'model-123',
-            walletId: 'wallet-abc',
-            user_jwt: 'test-jwt',
-            stageSlug: 'thesis',
-            iterationNumber: 1,
-            planner_metadata: {
-                recipe_step_id: 'step-123',
-            },
-        };
-        assert(!isDialecticSkeletonJobPayload(payload));
+        const { step_info: _omit, ...rest } = buildDialecticSkeletonJobPayload();
+        assert(!isDialecticSkeletonJobPayload(rest));
     });
 
     await t.step('should return false when planner_metadata.recipe_step_id is an empty string', () => {
-        const payload: Record<string, unknown> = {
-            projectId: 'test-project',
-            sessionId: 'test-session',
-            model_id: 'model-123',
-            walletId: 'wallet-abc',
-            user_jwt: 'test-jwt',
-            stageSlug: 'thesis',
-            iterationNumber: 1,
-            planner_metadata: {
-                recipe_step_id: '',
-            },
-            step_info: {
-                current_step: 1,
-                total_steps: 1,
-            },
-        };
-        assert(!isDialecticSkeletonJobPayload(payload));
+        assert(!isDialecticSkeletonJobPayload(buildDialecticSkeletonJobPayload({
+            planner_metadata: { recipe_step_id: '', recipe_template_id: 'template-1' },
+        })));
     });
 
     await t.step('should return true when maxOutputTokens is present on skeleton job payload', () => {
-        const payload: DialecticSkeletonJobPayload = {
-            projectId: 'test-project',
-            sessionId: 'test-session',
-            model_id: 'model-123',
-            walletId: 'wallet-abc',
-            user_jwt: 'test-jwt',
-            stageSlug: 'thesis',
-            iterationNumber: 1,
-            planner_metadata: {
-                recipe_step_id: 'step-123',
-            },
-            step_info: {
-                current_step: 1,
-                total_steps: 1,
-            },
-            idempotencyKey: 'test-idempotency-key',
-            maxOutputTokens: 8192,
-        };
-        assert(isDialecticSkeletonJobPayload(payload));
+        assert(isDialecticSkeletonJobPayload(buildDialecticSkeletonJobPayload({ maxOutputTokens: 8192 })));
     });
 });
 
@@ -1547,45 +1096,26 @@ Deno.test('Type Guard: isDocumentRelationships', async (t) => {
 
 Deno.test('Type Guard: isFailedAttemptError', async (t) => {
     await t.step('should return true for a valid FailedAttemptError object', () => {
-        const validError: FailedAttemptError = {
-            error: 'Something went wrong',
-            modelId: 'model-123',
-            api_identifier: 'api-xyz',
-        };
-        assert(isFailedAttemptError(validError));
+        assert(isFailedAttemptError(buildFailedAttemptError()));
     });
 
     await t.step('should return false if error property is missing', () => {
-        const invalidError = {
-            modelId: 'model-123',
-            api_identifier: 'api-xyz',
-        };
-        assert(!isFailedAttemptError(invalidError));
+        const { error: _omit, ...rest } = buildFailedAttemptError();
+        assert(!isFailedAttemptError(rest));
     });
-    
+
     await t.step('should return false if modelId property is missing', () => {
-        const invalidError = {
-            error: 'Something went wrong',
-            api_identifier: 'api-xyz',
-        };
-        assert(!isFailedAttemptError(invalidError));
+        const { modelId: _omit, ...rest } = buildFailedAttemptError();
+        assert(!isFailedAttemptError(rest));
     });
 
     await t.step('should return false if api_identifier property is missing', () => {
-        const invalidError = {
-            error: 'Something went wrong',
-            modelId: 'model-123',
-        };
-        assert(!isFailedAttemptError(invalidError));
+        const { api_identifier: _omit, ...rest } = buildFailedAttemptError();
+        assert(!isFailedAttemptError(rest));
     });
 
     await t.step('should return false if a property has the wrong type', () => {
-        const invalidError = {
-            error: 'Something went wrong',
-            modelId: 123, // should be a string
-            api_identifier: 'api-xyz',
-        };
-        assert(!isFailedAttemptError(invalidError));
+        assert(!isFailedAttemptError(invalidateFailedAttemptError({ modelId: 123 })));
     });
 
     await t.step('should return false for non-object inputs', () => {
@@ -1598,11 +1128,10 @@ Deno.test('Type Guard: isFailedAttemptError', async (t) => {
 
 Deno.test('Type Guard: isFailedAttemptErrorArray', async (t) => {
     await t.step('should return true for a valid array of FailedAttemptError objects', () => {
-        const validArray: FailedAttemptError[] = [
-            { error: 'Error 1', modelId: 'model-1', api_identifier: 'api-1' },
-            { error: 'Error 2', modelId: 'model-2', api_identifier: 'api-2' },
-        ];
-        assert(isFailedAttemptErrorArray(validArray));
+        assert(isFailedAttemptErrorArray([
+            buildFailedAttemptError(),
+            buildFailedAttemptError({ error: 'Error 2', modelId: 'model-2', api_identifier: 'api-2' }),
+        ]));
     });
 
     await t.step('should return true for an empty array', () => {
@@ -1610,23 +1139,16 @@ Deno.test('Type Guard: isFailedAttemptErrorArray', async (t) => {
     });
 
     await t.step('should return false if the array contains an invalid object', () => {
-        const invalidArray = [
-            { error: 'Error 1', modelId: 'model-1', api_identifier: 'api-1' },
-            { modelId: 'model-2', api_identifier: 'api-2' }, // Missing 'error' property
-        ];
-        assert(!isFailedAttemptErrorArray(invalidArray));
+        const { error: _omit, ...rest } = buildFailedAttemptError();
+        assert(!isFailedAttemptErrorArray([buildFailedAttemptError(), rest]));
     });
 
     await t.step('should return false if the array contains non-objects', () => {
-        const invalidArray = [
-            { error: 'Error 1', modelId: 'model-1', api_identifier: 'api-1' },
-            null,
-        ];
-        assert(!isFailedAttemptErrorArray(invalidArray));
+        assert(!isFailedAttemptErrorArray([buildFailedAttemptError(), null]));
     });
 
     await t.step('should return false for a non-array input', () => {
-        assert(!isFailedAttemptErrorArray({ error: 'Error 1', modelId: 'model-1', api_identifier: 'api-1' }));
+        assert(!isFailedAttemptErrorArray(buildFailedAttemptError()));
         assert(!isFailedAttemptErrorArray('a string'));
         assert(!isFailedAttemptErrorArray(null));
     });
@@ -1696,195 +1218,51 @@ Deno.test('Type Guard: isJobInsert', async (t) => {
 });
 
 Deno.test('Type Guard: isStageWithRecipeSteps', async (t) => {
-    const mockRecipeStep: DialecticStageRecipeStep = {
-        branch_key: null,
-        config_override: {},
-        created_at: '2025-11-05T12:00:00.000Z',
-        execution_order: 1,
-        granularity_strategy: 'all_to_one',
-        id: 'step-1',
-        inputs_relevance: [],
-        inputs_required: [],
-        instance_id: 'instance-1',
-        is_skipped: false,
-        job_type: 'PLAN',
-        object_filter: {},
-        output_overrides: {},
-        output_type: FileType.HeaderContext,
-        outputs_required: {
-            system_materials: {
-                stage_rationale: "rationale",
-                agent_notes_to_self: "summary",
-                input_artifacts_summary: "inputs",
-                progress_update: "progress",
-                validation_checkpoint: ["check"],
-                quality_standards: ["standard"],
-                diversity_rubric: { prefer: "standards" },
-            },
-        },
-        parallel_group: null,
-        prompt_template_id: 'template-planner-a',
-        prompt_type: 'Planner',
-        step_description: 'First step',
-        step_key: 'planner_a',
-        step_name: 'Planner A',
-        step_slug: 'planner_a',
-        template_step_id: null,
-        updated_at: '2025-11-05T12:00:00.000Z',
-      };
-
-      const mockStageData: Tables<'dialectic_stages'> = {
-        active_recipe_instance_id: 'instance-1',
-        created_at: '2025-11-05T11:58:00.000Z',
-        default_system_prompt_id: 'default-prompt',
-        description: 'Synthesizes thesis and antithesis.',
-        display_name: 'Synthesis',
-        expected_output_template_ids: [],
-        id: 'stage-1',
-        recipe_template_id: 'template-1',
-        slug: 'synthesis',
-        minimum_balance: 0,
-    };
-
-    const mockInstanceData: Tables<'dialectic_stage_recipe_instances'> = {
-        cloned_at: null,
-        created_at: '2025-11-05T11:59:00.000Z',
-        id: 'instance-1',
-        is_cloned: false,
-        stage_id: 'stage-1',
-        template_id: 'template-1',
-        updated_at: '2025-11-05T11:59:00.000Z',
-    };
-
     await t.step('should return true for a valid StageWithRecipeSteps object', () => {
-        const validObject: StageWithRecipeSteps = {
-            dialectic_stage: mockStageData,
-            dialectic_stage_recipe_instances: mockInstanceData,
-            dialectic_stage_recipe_steps: [mockRecipeStep],
-        };
-        assert(isStageWithRecipeSteps(validObject));
+        assert(isStageWithRecipeSteps(buildStageWithRecipeSteps()));
     });
 
     await t.step('should return false if dialectic_stage is missing', () => {
-        const invalidObject = {
-            dialectic_stage_recipe_instances: mockInstanceData,
-            dialectic_stage_recipe_steps: [mockRecipeStep],
-        };
-        assert(!isStageWithRecipeSteps(invalidObject));
+        const { dialectic_stage: _omit, ...rest } = buildStageWithRecipeSteps();
+        assert(!isStageWithRecipeSteps(rest));
     });
 
     await t.step('should return false if dialectic_stage_recipe_instances is not an object', () => {
-        const invalidObject = {
-            dialectic_stage: mockStageData,
-            dialectic_stage_recipe_instances: [], // Should be an object, not an array
-            dialectic_stage_recipe_steps: [mockRecipeStep],
-        };
-        assert(!isStageWithRecipeSteps(invalidObject));
+        assert(!isStageWithRecipeSteps(invalidateStageWithRecipeSteps({ dialectic_stage_recipe_instances: [] })));
     });
 
     await t.step('should return false if dialectic_stage_recipe_steps is not an array', () => {
-        const invalidObject = {
-            dialectic_stage: mockStageData,
-            dialectic_stage_recipe_instances: mockInstanceData,
-            dialectic_stage_recipe_steps: {}, // Should be an array
-        };
-        assert(!isStageWithRecipeSteps(invalidObject));
+        assert(!isStageWithRecipeSteps(invalidateStageWithRecipeSteps({ dialectic_stage_recipe_steps: {} })));
     });
 });
 
 Deno.test('Type Guard: isDatabaseRecipeSteps', async (t) => {
-    const mockRecipeStep: Tables<'dialectic_stage_recipe_steps'> = {
-        branch_key: null,
-        config_override: {},
-        created_at: '2025-11-05T12:00:00.000Z',
-        execution_order: 1,
-        granularity_strategy: 'all_to_one',
-        id: 'step-1',
-        inputs_relevance: {},
-        inputs_required: {},
-        instance_id: 'instance-1',
-        is_skipped: false,
-        job_type: 'PLAN',
-        object_filter: {},
-        output_overrides: {},
-        output_type: 'HeaderContext',
-        outputs_required: {},
-        parallel_group: null,
-        prompt_template_id: 'template-planner-a',
-        prompt_type: 'Planner',
-        step_description: 'First step',
-        step_key: 'planner_a',
-        step_name: 'Planner A',
-        step_slug: 'planner_a',
-        template_step_id: null,
-        updated_at: '2025-11-05T12:00:00.000Z',
-      };
-
-      const mockStageData: Tables<'dialectic_stages'> = {
-        active_recipe_instance_id: 'instance-1',
-        created_at: '2025-11-05T11:58:00.000Z',
-        default_system_prompt_id: 'default-prompt',
-        description: 'Synthesizes thesis and antithesis.',
-        display_name: 'Synthesis',
-        expected_output_template_ids: [],
-        id: 'stage-1',
-        recipe_template_id: 'template-1',
-        slug: 'synthesis',
-        minimum_balance: 0,
-    };
-
-    const mockInstanceData: Tables<'dialectic_stage_recipe_instances'> = {
-        cloned_at: null,
-        created_at: '2025-11-05T11:59:00.000Z',
-        id: 'instance-1',
-        is_cloned: false,
-        stage_id: 'stage-1',
-        template_id: 'template-1',
-        updated_at: '2025-11-05T11:59:00.000Z',
-    };
-
     await t.step('should return true for a valid DatabaseRecipeSteps object', () => {
-        const validObject: DatabaseRecipeSteps = {
-            ...mockStageData,
-            dialectic_stage_recipe_instances: [
-              {
-                ...mockInstanceData,
-                dialectic_stage_recipe_steps: [mockRecipeStep],
-              },
-            ],
-          };
-        assert(isDatabaseRecipeSteps(validObject));
+        assert(isDatabaseRecipeSteps(buildDatabaseRecipeSteps()));
     });
 
     await t.step('should return false if dialectic_stage_recipe_instances is not an array', () => {
-        const invalidObject = {
-            ...mockStageData,
-            dialectic_stage_recipe_instances: {},
-        };
-        assert(!isDatabaseRecipeSteps(invalidObject));
+        assert(!isDatabaseRecipeSteps(invalidateDatabaseRecipeSteps({ dialectic_stage_recipe_instances: {} })));
     });
 
     await t.step('should return false if a nested instance is missing dialectic_stage_recipe_steps', () => {
-        const invalidObject = {
-            ...mockStageData,
-            dialectic_stage_recipe_instances: [
-                { ...mockInstanceData },
-            ],
-        };
-        assert(!isDatabaseRecipeSteps(invalidObject));
+        const built = buildDatabaseRecipeSteps();
+        const instance = built.dialectic_stage_recipe_instances[0];
+        const { dialectic_stage_recipe_steps: _omit, ...restInstance } = instance;
+        assert(!isDatabaseRecipeSteps({
+            ...built,
+            dialectic_stage_recipe_instances: [restInstance],
+        }));
     });
 
     await t.step('should return false if nested dialectic_stage_recipe_steps is not an array', () => {
-        const invalidObject = {
-            ...mockStageData,
+        const built = buildDatabaseRecipeSteps();
+        assert(!isDatabaseRecipeSteps({
+            ...built,
             dialectic_stage_recipe_instances: [
-              {
-                ...mockInstanceData,
-                dialectic_stage_recipe_steps: {},
-              },
+                { ...built.dialectic_stage_recipe_instances[0], dialectic_stage_recipe_steps: {} },
             ],
-          };
-        assert(!isDatabaseRecipeSteps(invalidObject));
+        }));
     });
 });
 
@@ -2050,196 +1428,93 @@ Deno.test('Type Guard: validatePayload', async (t) => {
 });
 
 Deno.test('Type Guard: isHeaderContext', async (t) => {
-    const baseContext: HeaderContext = {
-        system_materials: {
-            stage_rationale: 'why',
-            agent_notes_to_self: 'summary',
-            input_artifacts_summary: 'inputs',
-            validation_checkpoint: ['a'],
-            quality_standards: ['b'],
-            diversity_rubric: { rule: 'value' }
-        },
-        header_context_artifact: {
-            type: 'header_context',
-            document_key: FileType.HeaderContext,
-            artifact_class: 'header_context',
-            file_type: 'json'
-        },
-        context_for_documents: [
-            {
-                document_key: FileType.business_case,
-                content_to_include: { section: '' }
-            }
-        ]
-    };
-
     await t.step('should return true for a valid header context payload', () => {
-        assert(isHeaderContext(baseContext));
+        assert(isHeaderContext(buildHeaderContext()));
     });
 
     await t.step('should return false when system_materials is missing required keys', () => {
-        const invalid = {
-            ...baseContext,
-            system_materials: {
-                agent_notes_to_self: 'summary'
-            }
-        };
-        assert(!isHeaderContext(invalid));
+        assert(!isHeaderContext(invalidateHeaderContext({
+            system_materials: { agent_notes_to_self: 'summary' },
+        })));
     });
 
     await t.step('should return false when context_for_documents contains invalid items', () => {
-        const invalid = {
-            ...baseContext,
-            context_for_documents: [
-                {
-                    document_key: 'not-a-file-type',
-                    content_to_include: { section: '' }
-                }
-            ]
-        };
-        assert(!isHeaderContext(invalid));
+        assert(!isHeaderContext(invalidateHeaderContext({
+            context_for_documents: [{
+                document_key: 'not-a-file-type',
+                content_to_include: { section: '' },
+            }],
+        })));
     });
 
     await t.step('should return false for an object that has files_to_generate property', () => {
-        const invalid = {
-            ...baseContext,
-            files_to_generate: [
-                {
-                    template_filename: 'test.md',
-                    from_document_key: FileType.business_case
-                }
-            ]
-        };
-        assert(!isHeaderContext(invalid));
+        assert(!isHeaderContext({
+            ...buildHeaderContext(),
+            files_to_generate: [{ template_filename: 'test.md', from_document_key: FileType.business_case }],
+        }));
     });
 
     await t.step('should return false for an object missing system_materials', () => {
-        const invalid = {
-            header_context_artifact: baseContext.header_context_artifact,
-            context_for_documents: baseContext.context_for_documents
-        };
-        assert(!isHeaderContext(invalid));
+        const { system_materials: _omit, ...rest } = buildHeaderContext();
+        assert(!isHeaderContext(rest));
     });
 
     await t.step('should return false for an object missing header_context_artifact', () => {
-        const invalid = {
-            system_materials: baseContext.system_materials,
-            context_for_documents: baseContext.context_for_documents
-        };
-        assert(!isHeaderContext(invalid));
+        const { header_context_artifact: _omit, ...rest } = buildHeaderContext();
+        assert(!isHeaderContext(rest));
     });
 
     await t.step('should return false for an object missing context_for_documents', () => {
-        const invalid = {
-            system_materials: baseContext.system_materials,
-            header_context_artifact: baseContext.header_context_artifact
-        };
-        assert(!isHeaderContext(invalid));
+        const { context_for_documents: _omit, ...rest } = buildHeaderContext();
+        assert(!isHeaderContext(rest));
     });
 
     await t.step('should return false for an object where context_for_documents is not an array', () => {
-        const invalid = {
-            ...baseContext,
-            context_for_documents: 'not-an-array'
-        };
-        assert(!isHeaderContext(invalid));
+        assert(!isHeaderContext(invalidateHeaderContext({ context_for_documents: 'not-an-array' })));
     });
 
     await t.step('should return false for an object where context_for_documents contains invalid entries (missing document_key)', () => {
-        const invalid = {
-            ...baseContext,
-            context_for_documents: [
-                {
-                    content_to_include: { section: '' }
-                }
-            ]
-        };
-        assert(!isHeaderContext(invalid));
+        assert(!isHeaderContext(invalidateHeaderContext({
+            context_for_documents: [{ content_to_include: { section: '' } }],
+        })));
     });
 
     await t.step('should return false for an object where context_for_documents contains invalid entries (missing content_to_include)', () => {
-        const invalid = {
-            ...baseContext,
-            context_for_documents: [
-                {
-                    document_key: FileType.business_case
-                }
-            ]
-        };
-        assert(!isHeaderContext(invalid));
+        assert(!isHeaderContext(invalidateHeaderContext({
+            context_for_documents: [{ document_key: FileType.business_case }],
+        })));
     });
 
     await t.step('should return false for an object where context_for_documents contains invalid entries (invalid content_to_include structure - array at top level)', () => {
-        const invalid = {
-            ...baseContext,
-            context_for_documents: [
-                {
-                    document_key: FileType.business_case,
-                    content_to_include: ['string1', 'string2'] // Invalid: array at top level, must be object
-                }
-            ]
-        };
-        assert(!isHeaderContext(invalid));
+        assert(!isHeaderContext(invalidateHeaderContext({
+            context_for_documents: [{
+                document_key: FileType.business_case,
+                content_to_include: ['string1', 'string2'],
+            }],
+        })));
     });
 
     await t.step('should return true when review_metadata is present and valid', () => {
-        const withReviewMetadata = {
-            ...baseContext,
-            review_metadata: {
-                proposal_identifier: {
-                    lineage_key: 'test-lineage',
-                    source_model_slug: 'test-model'
-                },
-                proposal_summary: 'Test proposal summary',
-                review_focus: ['feasibility', 'risk'],
-                user_constraints: ['constraint1'],
-                normalization_guidance: {
-                    scoring_scale: '1-5',
-                    required_dimensions: ['feasibility', 'complexity']
-                }
-            }
-        };
-        assert(isHeaderContext(withReviewMetadata));
+        assert(isHeaderContext({ ...buildHeaderContext(), review_metadata: buildReviewMetadata() }));
     });
 
     await t.step('should return true when review_metadata is omitted', () => {
-        const withoutReviewMetadata = { ...baseContext };
-        assert(isHeaderContext(withoutReviewMetadata));
+        assert(isHeaderContext(buildHeaderContext()));
     });
 
     await t.step('should return false when review_metadata is present but invalid (missing proposal_identifier)', () => {
-        const invalid = {
-            ...baseContext,
-            review_metadata: {
-                proposal_summary: 'Test proposal summary',
-                review_focus: ['feasibility'],
-                user_constraints: [],
-                normalization_guidance: {
-                    scoring_scale: '1-5',
-                    required_dimensions: ['feasibility']
-                }
-            }
-        };
-        assert(!isHeaderContext(invalid));
+        const { proposal_identifier: _omit, ...restReviewMetadata } = buildReviewMetadata();
+        assert(!isHeaderContext({ ...buildHeaderContext(), review_metadata: restReviewMetadata }));
     });
 
     await t.step('should return false when review_metadata is present but invalid (wrong type)', () => {
-        const invalid = {
-            ...baseContext,
-            review_metadata: 'not-an-object'
-        };
-        assert(!isHeaderContext(invalid));
+        assert(!isHeaderContext(invalidateHeaderContext({ review_metadata: 'not-an-object' })));
     });
 
     await t.step('should return true when system_materials.progress_update is null', () => {
-        const withNullProgress = {
-            ...baseContext,
-            system_materials: {
-                ...baseContext.system_materials,
-                progress_update: null
-            }
-        };
-        assert(isHeaderContext(withNullProgress));
+        assert(isHeaderContext(buildHeaderContext({
+            system_materials: { ...buildSystemMaterials(), progress_update: null },
+        })));
     });
 });
 
@@ -2320,120 +1595,77 @@ Deno.test('Type Guard: isGranularityStrategy', async (t) => {
 });
 
 Deno.test('Type Guard: isInputRule and isInputRuleArray', async (t) => {
-    const validInputRule: InputRule = {
-        type: 'document',
-        slug: 'thesis', // Corrected: Use a stage slug, not a document key
-        document_key: FileType.business_case,
-        required: true,
-    };
-
     await t.step('isInputRule: should return true for a valid InputRule object', () => {
-        assert(isInputRule(validInputRule));
+        assert(isInputRule(buildInputRule()));
     });
 
     await t.step('isInputRule: should return true for type "seed_prompt"', () => {
-        const rule: InputRule = { ...validInputRule, type: 'seed_prompt', slug: 'thesis', document_key: FileType.SeedPrompt };
-        assert(isInputRule(rule));
+        assert(isInputRule(buildInputRule({ type: 'seed_prompt', slug: 'thesis', document_key: FileType.SeedPrompt })));
     });
 
     await t.step('isInputRule: should return true for type "header_context"', () => {
-        const rule: InputRule = { ...validInputRule, type: 'header_context', slug: 'synthesis', document_key: FileType.HeaderContext };
-        assert(isInputRule(rule));
+        assert(isInputRule(buildInputRule({ type: 'header_context', slug: 'synthesis', document_key: FileType.HeaderContext })));
     });
 
     await t.step('isInputRule: should return true for type "feedback"', () => {
-        const rule: InputRule = { ...validInputRule, type: 'feedback', slug: 'antithesis', document_key: FileType.business_case_critique };
-        assert(isInputRule(rule));
+        assert(isInputRule(buildInputRule({ type: 'feedback', slug: 'antithesis', document_key: FileType.business_case_critique })));
     });
 
     await t.step('isInputRule: should return true for type "project_resource"', () => {
-        const rule: InputRule = { ...validInputRule, type: 'project_resource', slug: 'paralysis', document_key: FileType.InitialUserPrompt };
-        assert(isInputRule(rule));
+        assert(isInputRule(buildInputRule({ type: 'project_resource', slug: 'paralysis', document_key: FileType.InitialUserPrompt })));
     });
 
     await t.step('isInputRule: should return true for type "contribution"', () => {
-        const rule: InputRule = { 
-            ...validInputRule, 
-            type: 'contribution', 
-            slug: 'antithesis', 
-            document_key: FileType.comparison_vector 
-        };
-        assert(isInputRule(rule));
+        assert(isInputRule(buildInputRule({ type: 'contribution', slug: 'antithesis', document_key: FileType.comparison_vector })));
     });
 
     await t.step('isInputRule: should return true when required is missing (defaults to false)', () => {
-        const ruleWithoutRequired = { 
-            type: 'document',
-            slug: 'thesis',
-            document_key: FileType.business_case,
-        };
-        assert(isInputRule(ruleWithoutRequired));
+        const { required: _omit, ...rest } = buildInputRule();
+        assert(isInputRule(rest));
     });
 
     await t.step('isInputRule: should return false if type is invalid', () => {
-        const invalidRule = { ...validInputRule, type: 'invalid_type' };
-        assert(!isInputRule(invalidRule));
+        assert(!isInputRule(invalidateInputRule({ type: 'invalid_type' })));
     });
 
     await t.step('isInputRule: should return false if document_key is an empty string', () => {
-        const invalidRule = { ...validInputRule, document_key: '' };
-        assert(!isInputRule(invalidRule));
+        assert(!isInputRule(invalidateInputRule({ document_key: '' })));
     });
 
     await t.step('isInputRule: should return true for document keys introduced by recipes', () => {
-        const dynamicDocumentRule = {
-            type: 'document',
-            slug: 'synthesis',
-            document_key: 'synthesis_pairwise_feature_spec',
-            required: true,
-        };
-        assert(isInputRule(dynamicDocumentRule));
+        assert(isInputRule(invalidateInputRule({ document_key: 'synthesis_pairwise_feature_spec' })));
     });
 
     await t.step('isInputRuleArray: should return true for arrays containing dynamic recipe document keys', () => {
-        const dynamicRuleArray = [{
-            type: 'document',
-            slug: 'synthesis',
-            document_key: 'synthesis_pairwise_business_case',
-            required: true,
-        }];
-        assert(isInputRuleArray(dynamicRuleArray));
+        assert(isInputRuleArray([invalidateInputRule({ document_key: 'synthesis_pairwise_business_case' })]));
     });
 
     await t.step('isInputRule: should return false if slug is missing', () => {
-        const invalidRule = { ...validInputRule };
-        delete (invalidRule as Partial<InputRule>).slug;
-        assert(!isInputRule(invalidRule));
+        const { slug: _omit, ...rest } = buildInputRule();
+        assert(!isInputRule(rest));
     });
 
     await t.step('isInputRule: should return false if slug is not a string', () => {
-        const invalidRule = { ...validInputRule, slug: 123 };
-        assert(!isInputRule(invalidRule));
+        assert(!isInputRule(invalidateInputRule({ slug: 123 })));
     });
 
     await t.step('isInputRule: should return false if required is present but not a boolean', () => {
-        const invalidRule = { ...validInputRule, required: 'true' };
-        assert(!isInputRule(invalidRule));
+        assert(!isInputRule(invalidateInputRule({ required: 'true' })));
     });
 
     await t.step('isInputRule: should return true for a valid InputRule with the optional multiple property', () => {
-        const ruleWithMultiple = { ...validInputRule, multiple: true };
-        assert(isInputRule(ruleWithMultiple));
+        assert(isInputRule(buildInputRule({ multiple: true })));
     });
 
     await t.step('isInputRule: should return false if multiple is present but not a boolean', () => {
-        const invalidRule = { ...validInputRule, multiple: 'yes' };
-        assert(!isInputRule(invalidRule));
+        assert(!isInputRule(invalidateInputRule({ multiple: 'yes' })));
     });
 
     await t.step('isInputRuleArray: should return true for a valid array of InputRule objects', () => {
-        assert(isInputRuleArray([validInputRule, { 
-            type: 'document', 
-            slug: 'synthesis', 
-            document_key: FileType.system_architecture, 
-            required: false, 
-            multiple: true 
-        }]));
+        assert(isInputRuleArray([
+            buildInputRule(),
+            buildInputRule({ slug: 'synthesis', document_key: FileType.system_architecture, required: false, multiple: true }),
+        ]));
     });
 
     await t.step('isInputRuleArray: should return true for an empty array', () => {
@@ -2441,76 +1673,57 @@ Deno.test('Type Guard: isInputRule and isInputRuleArray', async (t) => {
     });
 
     await t.step('isInputRuleArray: should return false for an array with invalid items', () => {
-        const invalidArray = [validInputRule, { document_key: 'invalid' }];
-        assert(!isInputRuleArray(invalidArray));
+        assert(!isInputRuleArray([buildInputRule(), invalidateInputRule({ document_key: '' })]));
     });
 });
 
 Deno.test('Type Guard: isRelevanceRule and isRelevanceRuleArray', async (t) => {
-    const validRelevanceRule: RelevanceRule = {
-        document_key: FileType.business_case,
-        relevance: 0.8,
-    };
-
     await t.step('isRelevanceRule: should return true for a valid RelevanceRule object without optional properties', () => {
-        assert(isRelevanceRule(validRelevanceRule));
+        assert(isRelevanceRule(buildRelevanceRule()));
     });
 
     await t.step('isRelevanceRule: should return true for a valid RelevanceRule object with a type property', () => {
-        const ruleWithType = { ...validRelevanceRule, type: 'document' };
-        assert(isRelevanceRule(ruleWithType));
+        assert(isRelevanceRule(buildRelevanceRule({ type: 'document' })));
     });
 
     await t.step('isRelevanceRule: should return true for a valid RelevanceRule object with a slug property', () => {
-        const ruleWithSlug = { ...validRelevanceRule, slug: 'thesis' };
-        assert(isRelevanceRule(ruleWithSlug));
+        assert(isRelevanceRule(buildRelevanceRule({ slug: 'thesis' })));
     });
 
     await t.step('isRelevanceRule: should return true for a valid RelevanceRule object with all optional properties', () => {
-        const ruleWithAllOptionals = {
-            ...validRelevanceRule,
-            type: 'document',
-            slug: 'thesis',
-        };
-        assert(isRelevanceRule(ruleWithAllOptionals));
+        assert(isRelevanceRule(buildRelevanceRule({ type: 'document', slug: 'thesis' })));
     });
 
     await t.step('isRelevanceRule: should return false if document_key is an empty string', () => {
-        const invalidRule = { ...validRelevanceRule, document_key: '' };
-        assert(!isRelevanceRule(invalidRule));
+        assert(!isRelevanceRule(invalidateRelevanceRule({ document_key: '' })));
     });
 
     await t.step('isRelevanceRule: should return false if relevance is missing', () => {
-        const invalidRule = { document_key: FileType.business_case };
-        assert(!isRelevanceRule(invalidRule));
+        const { relevance: _omit, ...rest } = buildRelevanceRule();
+        assert(!isRelevanceRule(rest));
     });
 
     await t.step('isRelevanceRule: should return false if relevance is not a number', () => {
-        const invalidRule = { ...validRelevanceRule, relevance: 'high' };
-        assert(!isRelevanceRule(invalidRule));
+        assert(!isRelevanceRule(invalidateRelevanceRule({ relevance: 'high' })));
     });
 
     await t.step('isRelevanceRule: should return true for dynamic document keys emitted by recipes', () => {
-        const dynamicRelevanceRule = {
-            document_key: 'synthesis_pairwise_feature_spec',
-            relevance: 0.9,
-            slug: 'synthesis',
-        };
-        assert(isRelevanceRule(dynamicRelevanceRule));
+        assert(isRelevanceRule(invalidateRelevanceRule({ document_key: 'synthesis_pairwise_feature_spec', relevance: 0.9, slug: 'synthesis' })));
     });
 
     await t.step('isRelevanceRule: should return false if type is present but not a string', () => {
-        const invalidRule = { ...validRelevanceRule, type: 123 };
-        assert(!isRelevanceRule(invalidRule));
+        assert(!isRelevanceRule(invalidateRelevanceRule({ type: 123 })));
     });
-    
+
     await t.step('isRelevanceRule: should return false if slug is present but not a string', () => {
-        const invalidRule = { ...validRelevanceRule, slug: 123 };
-        assert(!isRelevanceRule(invalidRule));
+        assert(!isRelevanceRule(invalidateRelevanceRule({ slug: 123 })));
     });
 
     await t.step('isRelevanceRuleArray: should return true for a valid array', () => {
-        assert(isRelevanceRuleArray([validRelevanceRule, { document_key: FileType.system_architecture, type: 'document', relevance: 0.5, slug: 'synthesis' }]));
+        assert(isRelevanceRuleArray([
+            buildRelevanceRule(),
+            buildRelevanceRule({ document_key: FileType.system_architecture, type: 'document', relevance: 0.5, slug: 'synthesis' }),
+        ]));
     });
 
     await t.step('isRelevanceRuleArray: should return true for an empty array', () => {
@@ -2518,127 +1731,64 @@ Deno.test('Type Guard: isRelevanceRule and isRelevanceRuleArray', async (t) => {
     });
 
     await t.step('isRelevanceRuleArray: should return true for arrays containing dynamic recipe document keys', () => {
-        const dynamicRelevanceArray = [{
-            document_key: 'final_business_case',
-            relevance: 1,
-            slug: 'synthesis',
-            type: 'document',
-        }];
-        assert(isRelevanceRuleArray(dynamicRelevanceArray));
+        assert(isRelevanceRuleArray([invalidateRelevanceRule({ document_key: 'final_business_case', relevance: 1, slug: 'synthesis', type: 'document' })]));
     });
 
     await t.step('isRelevanceRuleArray: should return false for an array with invalid items', () => {
-        const invalidArray = [validRelevanceRule, { document_key: '', relevance: 0.5 }];
-        assert(!isRelevanceRuleArray(invalidArray));
+        assert(!isRelevanceRuleArray([buildRelevanceRule(), invalidateRelevanceRule({ document_key: '', relevance: 0.5 })]));
     });
 
     await t.step('isRelevanceRule: should return true when optional type is null', () => {
-        const ruleWithNullType = { ...validRelevanceRule, type: null };
-        assert(isRelevanceRule(ruleWithNullType));
+        assert(isRelevanceRule(invalidateRelevanceRule({ type: null })));
     });
 
     await t.step('isRelevanceRule: should return true when optional slug is null', () => {
-        const ruleWithNullSlug = { ...validRelevanceRule, slug: null };
-        assert(isRelevanceRule(ruleWithNullSlug));
+        assert(isRelevanceRule(invalidateRelevanceRule({ slug: null })));
     });
 });
 
 Deno.test('Type Guard: isOutputRule', async (t) => {
     await t.step('should return true for a valid "PLAN" output rule', () => {
-        const planOutputRule: OutputRule = {
-            system_materials: {
-                stage_rationale: "Test rationale for planning.",
-                agent_notes_to_self: "Plan summary.",
-                input_artifacts_summary: "Summary of inputs for the plan.",
-                progress_update: "Planning is starting.",
-                validation_checkpoint: ["Plan validation"],
-                quality_standards: ["High quality plan"],
-                diversity_rubric: { plan: "diverse" }
-            },
-            header_context_artifact: {
-                type: 'header_context',
-                document_key: FileType.HeaderContext,
-                artifact_class: 'header_context',
-                file_type: 'json'
-            },
-            context_for_documents: [{
-                document_key: FileType.business_case,
-                content_to_include: { "section_a": "details" }
-            }]
-        };
-        assert(isOutputRule(planOutputRule));
+        assert(isOutputRule(buildOutputRule()));
     });
 
     await t.step('should return true for a valid "PLAN" output rule with files_to_generate', () => {
-        const planOutputRule: OutputRule = {
-            system_materials: {
-                stage_rationale: "Test rationale for planning.",
-                agent_notes_to_self: "Plan summary.",
-                input_artifacts_summary: "Summary of inputs for the plan.",
-                progress_update: "Planning is starting.",
-                validation_checkpoint: ["Plan validation"],
-                quality_standards: ["High quality plan"],
-                diversity_rubric: { plan: "diverse" }
-            },
-            header_context_artifact: {
-                type: 'header_context',
-                document_key: FileType.HeaderContext,
-                artifact_class: 'header_context',
-                file_type: 'json'
-            },
-            context_for_documents: [{
-                document_key: FileType.business_case,
-                content_to_include: { "section_a": "details" }
-            }],
-            files_to_generate: [{
-                from_document_key: FileType.business_case,
-                template_filename: "business_case_template.md"
-            }]
-        };
-        assert(isOutputRule(planOutputRule));
+        assert(isOutputRule(buildOutputRule({
+            files_to_generate: [{ from_document_key: FileType.business_case, template_filename: 'business_case_template.md' }],
+        })));
     });
 
     await t.step('should return true for a valid "EXECUTE" output rule', () => {
-        const executeOutputRule: OutputRule = {
+        assert(isOutputRule(buildOutputRule({
+            system_materials: undefined,
+            header_context_artifact: undefined,
+            context_for_documents: undefined,
             documents: [{
                 document_key: FileType.business_case,
                 template_filename: 'business_case_template.md',
                 artifact_class: 'rendered_document',
                 file_type: 'markdown',
-                content_to_include: {
-                  "executive_summary": "",
-                }
+                content_to_include: { executive_summary: '' },
             }],
-            files_to_generate: [{ 
-                from_document_key: FileType.business_case, 
-                template_filename: "business_case_template.md" 
-            }],
-        };
-        assert(isOutputRule(executeOutputRule));
+            files_to_generate: [{ from_document_key: FileType.business_case, template_filename: 'business_case_template.md' }],
+        })));
     });
 
     await t.step('should return true for a valid "EXECUTE" output rule with both documents and assembled_json', () => {
-        const executeOutputRule: OutputRule = {
+        assert(isOutputRule(buildOutputRule({
+            system_materials: undefined,
+            header_context_artifact: undefined,
+            context_for_documents: undefined,
             documents: [{
                 document_key: FileType.technical_requirements,
                 template_filename: 'parenthesis_technical_requirements.md',
                 artifact_class: 'rendered_document',
                 file_type: 'markdown',
-                content_to_include: {
-                  "executive_summary": "",
-                }
+                content_to_include: { executive_summary: '' },
             }],
-            files_to_generate: [{ 
-                from_document_key: FileType.technical_requirements, 
-                template_filename: "parenthesis_technical_requirements.md" 
-            }],
-            assembled_json: [{
-                document_key: FileType.technical_requirements,
-                artifact_class: 'assembled_document_json',
-                fields: ["subsystems[].name", "subsystems[].objective"],
-            }],
-        };
-        assert(isOutputRule(executeOutputRule));
+            files_to_generate: [{ from_document_key: FileType.technical_requirements, template_filename: 'parenthesis_technical_requirements.md' }],
+            assembled_json: [buildAssembledJsonArtifact()],
+        })));
     });
 
     await t.step('should return true for an empty OutputRule object', () => {
@@ -2646,211 +1796,101 @@ Deno.test('Type Guard: isOutputRule', async (t) => {
     });
 
     await t.step('should return false if system_materials contains non-string prose', () => {
-        const invalidRule = {
-            system_materials: {
-                stage_rationale: 123,
-            }
-        };
-        assert(!isOutputRule(invalidRule));
+        assert(!isOutputRule(invalidateOutputRule({ system_materials: { stage_rationale: 123 } })));
     });
 
     await t.step('should return false if header_context_artifact is invalid', () => {
-        const invalidRule = { header_context_artifact: { type: 'wrong' } };
-        assert(!isOutputRule(invalidRule));
+        assert(!isOutputRule(invalidateOutputRule({ header_context_artifact: { type: 'wrong' } })));
     });
 
     await t.step('should return false if documents is not an array', () => {
-        const invalidRule = { documents: {} };
-        assert(!isOutputRule(invalidRule));
+        assert(!isOutputRule(invalidateOutputRule({ documents: {} })));
     });
 
     await t.step('should return false if assembled_json is not an array', () => {
-        const invalidRule = { assembled_json: {} };
-        assert(!isOutputRule(invalidRule));
+        assert(!isOutputRule(invalidateOutputRule({ assembled_json: {} })));
     });
 
     await t.step('should return true for a valid "EXECUTE" output rule with complex content_to_include', () => {
-        const executeOutputRule: OutputRule = {
+        assert(isOutputRule(buildOutputRule({
+            system_materials: undefined,
+            header_context_artifact: undefined,
             documents: [{
                 artifact_class: 'rendered_document',
                 file_type: 'markdown',
                 document_key: FileType.business_case,
                 template_filename: 'business_case_template.md',
                 content_to_include: {
-                    "executive_summary": "",
-                    "market_opportunity": "",
-                    "user_problem_validation": "",
-                  }
+                    executive_summary: '',
+                    market_opportunity: '',
+                    user_problem_validation: '',
+                },
             }],
             context_for_documents: [
                 {
                     document_key: FileType.feature_spec,
                     content_to_include: {
-                        features: [
-                            {
-                                feature_name: "Test Feature",
-                                user_stories: [
-                                    "As a user, I can do X.",
-                                    "As an admin, I can do Y."
-                                ]
-                            }
-                        ]
-                    }
+                        features: [{ feature_name: 'Test Feature', user_stories: ['As a user, I can do X.', 'As an admin, I can do Y.'] }],
+                    },
                 },
                 {
                     document_key: FileType.technical_approach,
                     content_to_include: {
-                        overview: "Technical overview",
-                        components: [
-                            { name: "Component A", technology: "React" },
-                            { name: "Component B", technology: "Node.js" }
-                        ]
-                    }
-                }
-            ]
-        };
-        assert(isOutputRule(executeOutputRule));
+                        overview: 'Technical overview',
+                        components: [{ name: 'Component A', technology: 'React' }, { name: 'Component B', technology: 'Node.js' }],
+                    },
+                },
+            ],
+        })));
     });
 
     await t.step('should return true for a valid output rule with assembled_json', () => {
-        const assembledJsonOutputRule: OutputRule = {
-            assembled_json: [{
-                artifact_class: 'assembled_document_json',
-                document_key: FileType.technical_requirements,
-                fields: ["subsystems[].name", "subsystems[].objective"],
-            }],
-        };
-        assert(isOutputRule(assembledJsonOutputRule));
+        assert(isOutputRule(buildOutputRule({
+            system_materials: undefined,
+            header_context_artifact: undefined,
+            context_for_documents: undefined,
+            documents: undefined,
+            assembled_json: [buildAssembledJsonArtifact()],
+        })));
     });
 
     await t.step('should return true for a valid "PLAN" output rule with files_to_generate and review_metadata', () => {
-        const planOutputRule: OutputRule = {
-            system_materials: {
-                stage_rationale: "Test rationale for planning.",
-                agent_notes_to_self: "Plan summary.",
-                input_artifacts_summary: "Summary of inputs for the plan.",
-                progress_update: "Planning is starting.",
-                validation_checkpoint: ["Plan validation"],
-                quality_standards: ["High quality plan"],
-                diversity_rubric: { plan: "diverse" }
-            },
-            header_context_artifact: {
-                type: 'header_context',
-                document_key: FileType.HeaderContext,
-                artifact_class: 'header_context',
-                file_type: 'json'
-            },
-            context_for_documents: [{
-                document_key: FileType.business_case,
-                content_to_include: { "section_a": "details" }
-            }],
-            review_metadata: {
-                proposal_identifier: { lineage_key: "test", source_model_slug: "test" },
-                proposal_summary: "Test summary",
-                review_focus: ["feasibility"],
-                user_constraints: [],
-                normalization_guidance: { scoring_scale: "1-5", required_dimensions: ["feasibility"] }
-            }
-        };
-        assert(isOutputRule(planOutputRule));
+        assert(isOutputRule(buildOutputRule({
+            files_to_generate: [{ from_document_key: FileType.business_case, template_filename: 'business_case_template.md' }],
+            review_metadata: buildReviewMetadata(),
+        })));
     });
 
     await t.step('should return true for a valid "EXECUTE" output rule where a document is an AssembledJsonArtifact', () => {
-        const executeOutputRule: OutputRule = {
+        assert(isOutputRule(buildOutputRule({
+            system_materials: undefined,
+            header_context_artifact: undefined,
+            context_for_documents: undefined,
             documents: [{
                 document_key: FileType.comparison_vector,
                 template_filename: 'antithesis_comparison_vector.json',
                 artifact_class: 'assembled_document_json',
                 file_type: 'json',
-                content_to_include: {
-                  "proposal": {
-                    "lineage_key": "",
-                    "source_model_slug": ""
-                  }
-                }
+                content_to_include: { proposal: { lineage_key: '', source_model_slug: '' } },
             }],
-            files_to_generate: [{ 
-                from_document_key: FileType.comparison_vector, 
-                template_filename: "antithesis_comparison_vector.json" 
-            }],
-        };
-        assert(isOutputRule(executeOutputRule));
+            files_to_generate: [{ from_document_key: FileType.comparison_vector, template_filename: 'antithesis_comparison_vector.json' }],
+        })));
     });
 });
 
 Deno.test('Type Guard: isDialecticStageRecipeStep', async (t) => {
-    const validStep: DialecticStageRecipeStep = {
-        id: 'step-1',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        instance_id: 'inst-1',
-        step_key: 'key',
-        step_slug: 'slug',
-        step_name: 'name',
-        step_description: 'description',
-        execution_order: 1,
-        job_type: 'PLAN',
-        prompt_type: 'Planner',
-        granularity_strategy: 'all_to_one',
-        output_type: FileType.system_architecture,
-        inputs_required: [{ type: 'document', slug: 'thesis', document_key: FileType.business_case, required: true }],
-        inputs_relevance: [{ document_key: FileType.system_architecture, slug: 'thesis', relevance: 0.5 }],
-        outputs_required: {
-            system_materials: {
-                stage_rationale: "rationale",
-                agent_notes_to_self: "summary",
-                input_artifacts_summary: "inputs",
-                progress_update: "progress",
-                validation_checkpoint: ["check"],
-                quality_standards: ["standard"],
-                diversity_rubric: { prefer: "standards" },
-            },
-            header_context_artifact: {
-                type: "header_context",
-                document_key: FileType.HeaderContext,
-                artifact_class: "header_context",
-                file_type: "json",
-            },
-            context_for_documents: [
-                {
-                    document_key: FileType.business_case,
-                    content_to_include: {},
-                },
-            ],
-        },
-        prompt_template_id: 'prompt-1',
-        is_skipped: false,
-        branch_key: null,
-        parallel_group: null,
-        object_filter: null,
-        config_override: null,
-        output_overrides: null,
-        template_step_id: null,
-    };
-
     await t.step('should return true for a complete and valid DialecticStageRecipeStep object', () => {
-        assert(isDialecticStageRecipeStep(validStep));
+        assert(isDialecticStageRecipeStep(buildDialecticStageRecipeStep()));
     });
 
     await t.step('should return false if job_type is invalid', () => {
-        const invalidStep = { ...validStep, job_type: 'INVALID' as JobType };
-        assert(!isDialecticStageRecipeStep(invalidStep));
+        assert(!isDialecticStageRecipeStep(invalidateDialecticStageRecipeStep({ job_type: 'INVALID' })));
     });
 
     await t.step('should return true when recipe steps use dynamic document keys', () => {
-        const dynamicDocumentStep = {
-            ...validStep,
-            inputs_required: [{
-                type: 'document',
-                slug: 'synthesis',
-                document_key: 'synthesis_pairwise_feature_spec',
-                required: true,
-            }],
-            inputs_relevance: [{
-                document_key: 'synthesis_pairwise_feature_spec',
-                relevance: 1,
-                slug: 'synthesis',
-            }],
+        assert(isDialecticStageRecipeStep(invalidateDialecticStageRecipeStep({
+            inputs_required: [{ type: 'document', slug: 'synthesis', document_key: 'synthesis_pairwise_feature_spec', required: true }],
+            inputs_relevance: [{ document_key: 'synthesis_pairwise_feature_spec', relevance: 1, slug: 'synthesis' }],
             outputs_required: {
                 documents: [{
                     document_key: 'final_feature_spec',
@@ -2864,96 +1904,80 @@ Deno.test('Type Guard: isDialecticStageRecipeStep', async (t) => {
                     content_to_include: {},
                 }],
             },
-        };
-        assert(isDialecticStageRecipeStep(dynamicDocumentStep));
+        })));
     });
 
     await t.step('should return false if prompt_type is invalid', () => {
-        const invalidStep = { ...validStep, prompt_type: 'INVALID' as PromptType };
-        assert(!isDialecticStageRecipeStep(invalidStep));
+        assert(!isDialecticStageRecipeStep(invalidateDialecticStageRecipeStep({ prompt_type: 'INVALID' })));
     });
 
     await t.step('should return false if inputs_required is not a valid InputRule array', () => {
-        const invalidStep = { ...validStep, inputs_required: [{ document_key: 'invalid' } as unknown as InputRule] };
-        assert(!isDialecticStageRecipeStep(invalidStep));
+        assert(!isDialecticStageRecipeStep(invalidateDialecticStageRecipeStep({
+            inputs_required: [{ document_key: 'invalid' }],
+        })));
     });
 
     await t.step('should return false if a required property is missing (e.g., step_key)', () => {
-        const invalidStep = { ...validStep };
-        delete (invalidStep as Partial<DialecticStageRecipeStep>).step_key;
-        assert(!isDialecticStageRecipeStep(invalidStep));
+        const { step_key: _omit, ...rest } = buildDialecticStageRecipeStep()!;
+        assert(!isDialecticStageRecipeStep(rest));
     });
 
     await t.step('should return false when inputs_required is null', () => {
-        const stepWithNullInputs = { ...validStep, inputs_required: null };
-        assert(!isDialecticStageRecipeStep(stepWithNullInputs));
+        assert(!isDialecticStageRecipeStep(invalidateDialecticStageRecipeStep({ inputs_required: null })));
     });
 
     await t.step('should return false when inputs_relevance is null', () => {
-        const stepWithNullRelevance = { ...validStep, inputs_relevance: null };
-        assert(!isDialecticStageRecipeStep(stepWithNullRelevance));
+        assert(!isDialecticStageRecipeStep(invalidateDialecticStageRecipeStep({ inputs_relevance: null })));
     });
 
     await t.step('should return false when outputs_required is null', () => {
-        const stepWithNullOutputs = { ...validStep, outputs_required: null };
-        assert(!isDialecticStageRecipeStep(stepWithNullOutputs));
+        assert(!isDialecticStageRecipeStep(invalidateDialecticStageRecipeStep({ outputs_required: null })));
     });
 
     await t.step('should return false when id is missing', () => {
-        const stepWithoutId = { ...validStep };
-        delete (stepWithoutId as Partial<DialecticStageRecipeStep>).id;
-        assert(!isDialecticStageRecipeStep(stepWithoutId));
+        const { id: _omit, ...rest } = buildDialecticStageRecipeStep()!;
+        assert(!isDialecticStageRecipeStep(rest));
     });
 });
 
 Deno.test('Type Guard: isSystemMaterials', async (t) => {
-    const validSystemMaterials: SystemMaterials = {
-        stage_rationale: 'Test rationale',
-        agent_notes_to_self: 'Test summary',
-        input_artifacts_summary: 'Test input summary',
-        progress_update: 'Test progress update',
-        diversity_rubric: { key: 'value' },
-        quality_standards: ['standard1'],
-        validation_checkpoint: ['checkpoint1'],
-    };
-
-    const comprehensiveSystemMaterials: SystemMaterials = {
-        ...validSystemMaterials,
-        decision_criteria: ['criteria1', 'criteria2'],
-        milestones: ['M1', 'M2'],
-        dependency_rules: ['rule1'],
-        status_preservation_rules: { completed_status: '[✅]' },
-        generation_limits: { max_steps: 100 },
-        document_order: ['doc1', 'doc2'],
-        current_document: 'doc1',
-        iteration_metadata: { iteration_number: 1 },
-        exhaustiveness_requirement: 'high',
-        technical_requirements_outline_inputs: { subsystems: [] },
-    };
-
     await t.step('should return true for a valid SystemMaterials object', () => {
-        assert(isSystemMaterials(validSystemMaterials));
+        assert(isSystemMaterials(buildSystemMaterials({
+            progress_update: 'Test progress update',
+            diversity_rubric: { key: 'value' },
+            quality_standards: ['standard1'],
+            validation_checkpoint: ['checkpoint1'],
+        })));
     });
 
     await t.step('should return true for a comprehensive SystemMaterials object with all optional fields', () => {
-        assert(isSystemMaterials(comprehensiveSystemMaterials));
+        assert(isSystemMaterials(buildSystemMaterials({
+            progress_update: 'Test progress update',
+            diversity_rubric: { key: 'value' },
+            quality_standards: ['standard1'],
+            validation_checkpoint: ['checkpoint1'],
+            decision_criteria: ['criteria1', 'criteria2'],
+            milestones: ['M1', 'M2'],
+            dependency_rules: ['rule1'],
+            status_preservation_rules: { completed_status: '[✅]' },
+            generation_limits: { max_steps: 100 },
+            document_order: ['doc1', 'doc2'],
+            current_document: 'doc1',
+            iteration_metadata: { iteration_number: 1 },
+            exhaustiveness_requirement: 'high',
+            technical_requirements_outline_inputs: { subsystems: [] },
+        })));
     });
 
     await t.step('should return true for an object with only required fields', () => {
-        const minimalSystemMaterials: SystemMaterials = {
-            stage_rationale: 'Minimal rationale',
-            agent_notes_to_self: 'Minimal summary',
-            input_artifacts_summary: 'Minimal input summary',
-            progress_update: 'Minimal progress update',
-            diversity_rubric: {},
-            quality_standards: [],
-            validation_checkpoint: [],
-        };
-        assert(isSystemMaterials(minimalSystemMaterials));
+        const { document_order: _omit1, current_document: _omit2, ...rest } = buildSystemMaterials();
+        assert(isSystemMaterials(rest));
     });
 
     await t.step('should return true for planner payload without prose fields', () => {
-        const plannerOnlySystemMaterials: SystemMaterials = {
+        assert(isSystemMaterials(buildSystemMaterials({
+            document_order: undefined,
+            current_document: undefined,
             milestones: [],
             dependency_rules: [],
             status_preservation_rules: {
@@ -2964,296 +1988,170 @@ Deno.test('Type Guard: isSystemMaterials', async (t) => {
             technical_requirements_outline_inputs: {
                 subsystems: [],
             },
-            stage_rationale: 'Test rationale',
-            agent_notes_to_self: 'Test summary',
-            input_artifacts_summary: 'Test input summary',
-        };
-        assert(isSystemMaterials(plannerOnlySystemMaterials));
+        })));
     });
 
     await t.step('should return false if stage_rationale is present but not a string', () => {
-        const invalid = { ...validSystemMaterials, stage_rationale: 123 };
-        assert(!isSystemMaterials(invalid));
+        assert(!isSystemMaterials(invalidateSystemMaterials({ stage_rationale: 123 })));
     });
 
     await t.step('should return false if a required string property has the wrong type', () => {
-        const invalid = { ...validSystemMaterials, agent_notes_to_self: 123 };
-        assert(!isSystemMaterials(invalid));
+        assert(!isSystemMaterials(invalidateSystemMaterials({ agent_notes_to_self: 123 })));
     });
 
     await t.step('should return false if an array property has the wrong type', () => {
-        const invalid = { ...validSystemMaterials, quality_standards: 'not-an-array' };
-        assert(!isSystemMaterials(invalid));
+        assert(!isSystemMaterials(invalidateSystemMaterials({ quality_standards: 'not-an-array' })));
     });
 
     await t.step('should return false if an object property has the wrong type', () => {
-        const invalid = { ...validSystemMaterials, diversity_rubric: 'not-an-object' };
-        assert(!isSystemMaterials(invalid));
+        assert(!isSystemMaterials(invalidateSystemMaterials({ diversity_rubric: 'not-an-object' })));
     });
 
     await t.step('should return false if files_to_generate contains invalid items', () => {
-        const invalid = { ...validSystemMaterials, files_to_generate: [{ invalid_key: 'value' }] };
-        assert(!isSystemMaterials(invalid));
+        assert(!isSystemMaterials({ ...buildSystemMaterials(), files_to_generate: [{ invalid_key: 'value' }] }));
     });
 
     await t.step('should return true when progress_update is null', () => {
-        const withNullProgress: SystemMaterials = {
-            stage_rationale: 'Test rationale',
-            agent_notes_to_self: 'Test summary',
-            input_artifacts_summary: 'Test input summary',
-            progress_update: null,
-        };
-        assert(isSystemMaterials(withNullProgress));
+        assert(isSystemMaterials(buildSystemMaterials({ progress_update: null })));
     });
 
     await t.step('should return true when progress_update is omitted', () => {
-        const withoutProgress: SystemMaterials = {
-            stage_rationale: 'Test rationale',
-            agent_notes_to_self: 'Test summary',
-            input_artifacts_summary: 'Test input summary',
-        };
-        assert(isSystemMaterials(withoutProgress));
+        assert(isSystemMaterials(buildSystemMaterials()));
     });
 
     await t.step('should return false when progress_update has invalid type (number)', () => {
-        const invalid = { ...validSystemMaterials, progress_update: 123 };
-        assert(!isSystemMaterials(invalid));
+        assert(!isSystemMaterials(invalidateSystemMaterials({ progress_update: 123 })));
     });
 });
 
 Deno.test('Type Guard: isHeaderContextArtifact', async (t) => {
     await t.step('should return true for a valid HeaderContextArtifact object with FileType enum', () => {
-        const validArtifact: HeaderContextArtifact = {
-            type: 'header_context',
-            document_key: FileType.HeaderContext,
-            artifact_class: 'header_context',
-            file_type: 'json',
-        };
-        assert(isHeaderContextArtifact(validArtifact));
+        assert(isHeaderContextArtifact(buildHeaderContextArtifact({ document_key: FileType.HeaderContext })));
     });
 
     await t.step('should return true for a valid HeaderContextArtifact with document_key: header_context_pairwise', () => {
-        const validArtifact: HeaderContextArtifact = {
-            type: 'header_context',
-            document_key: 'header_context_pairwise',
-            artifact_class: 'header_context',
-            file_type: 'json',
-        };
-        assert(isHeaderContextArtifact(validArtifact));
+        assert(isHeaderContextArtifact(invalidateHeaderContextArtifact({ document_key: 'header_context_pairwise' })));
     });
 
     await t.step('should return true for a valid HeaderContextArtifact with document_key: synthesis_header_context', () => {
-        const validArtifact: HeaderContextArtifact = {
-            type: 'header_context',
-            document_key: 'synthesis_header_context',
-            artifact_class: 'header_context',
-            file_type: 'json',
-        };
-        assert(isHeaderContextArtifact(validArtifact));
+        assert(isHeaderContextArtifact(invalidateHeaderContextArtifact({ document_key: 'synthesis_header_context' })));
     });
 
     await t.step('should return false for an invalid document_key', () => {
-        const invalidArtifact = {
-            type: 'header_context',
-            document_key: 'invalid_document_key',
-            artifact_class: 'header_context',
-            file_type: 'json',
-        };
-        assert(!isHeaderContextArtifact(invalidArtifact));
+        assert(!isHeaderContextArtifact(invalidateHeaderContextArtifact({ document_key: 'invalid_document_key' })));
     });
 
     await t.step('should return false if type is not "header_context"', () => {
-        const invalidArtifact = {
-            type: 'wrong_type',
-            document_key: FileType.HeaderContext,
-            artifact_class: 'header_context',
-            file_type: 'json',
-        };
-        assert(!isHeaderContextArtifact(invalidArtifact));
+        assert(!isHeaderContextArtifact(invalidateHeaderContextArtifact({ type: 'wrong_type' })));
     });
 
     await t.step('should return false if artifact_class is not "header_context"', () => {
-        const invalidArtifact = {
-            type: 'header_context',
-            document_key: FileType.HeaderContext,
-            artifact_class: 'wrong_class',
-            file_type: 'json',
-        };
-        assert(!isHeaderContextArtifact(invalidArtifact));
+        assert(!isHeaderContextArtifact(invalidateHeaderContextArtifact({ artifact_class: 'wrong_class' })));
     });
 
     await t.step('should return false if file_type is not "json"', () => {
-        const invalidArtifact = {
-            type: 'header_context',
-            document_key: FileType.HeaderContext,
-            artifact_class: 'header_context',
-            file_type: 'txt',
-        };
-        assert(!isHeaderContextArtifact(invalidArtifact));
+        assert(!isHeaderContextArtifact(invalidateHeaderContextArtifact({ file_type: 'txt' })));
     });
 });
 
 Deno.test('Type Guard: isContextForDocument', async (t) => {
-    const validContext: ContextForDocument = {
-        document_key: FileType.business_case,
-        content_to_include: { some: 'data' },
-    };
-
     await t.step('should return true for a valid ContextForDocument object', () => {
-        assert(isContextForDocument(validContext));
+        assert(isContextForDocument(buildContextForDocument({ content_to_include: { some: 'data' } })));
     });
 
     await t.step('should return true when content_to_include contains an array of objects', () => {
-        const contextWithArray: ContextForDocument = {
+        assert(isContextForDocument(buildContextForDocument({
             document_key: FileType.feature_spec,
-            content_to_include: {
-                features: [{ feature_name: "", user_stories: [] }]
-            },
-        };
-        assert(isContextForDocument(contextWithArray));
+            content_to_include: { features: [{ feature_name: '', user_stories: [] }] },
+        })));
     });
 
     await t.step('should return false if document_key is missing', () => {
-        const invalid = { ...validContext };
-        delete (invalid as Partial<ContextForDocument>).document_key;
-        assert(!isContextForDocument(invalid));
+        const { document_key: _omit, ...rest } = buildContextForDocument();
+        assert(!isContextForDocument(rest));
     });
 
     await t.step('should return false if content_to_include is missing', () => {
-        const invalid = { ...validContext };
-        delete (invalid as Partial<ContextForDocument>).content_to_include;
-        assert(!isContextForDocument(invalid));
+        const { content_to_include: _omit, ...rest } = buildContextForDocument();
+        assert(!isContextForDocument(rest));
     });
 
     await t.step('should return true when document_key is a dynamic recipe string', () => {
-        const dynamicContext = {
+        assert(isContextForDocument(invalidateContextForDocument({
             document_key: 'synthesis_pairwise_feature_spec',
             content_to_include: { strengths: [], weaknesses: [] },
-        };
-        assert(isContextForDocument(dynamicContext));
+        })));
     });
 });
 
 Deno.test('Type Guard: isRenderedDocumentArtifact', async (t) => {
-    const validArtifact: RenderedDocumentArtifact = {
-        document_key: FileType.business_case,
-        template_filename: 'template.txt',
-        artifact_class: 'rendered_document',
-        file_type: 'markdown',
-        content_to_include: { summary: "This is a summary." }
-    };
-
     await t.step('should return true when content_to_include is missing', () => {
-        const artifactWithoutContentToInclude: Omit<RenderedDocumentArtifact, 'content_to_include'> = {
-            document_key: FileType.business_case,
-            template_filename: 'template.txt',
-            artifact_class: 'rendered_document',
-            file_type: 'markdown',
-        };
-        assert(isRenderedDocumentArtifact(artifactWithoutContentToInclude));
+        const { content_to_include: _omit, ...rest } = buildRenderedDocumentArtifact();
+        assert(isRenderedDocumentArtifact(rest));
     });
 
     await t.step('should return true for a valid RenderedDocumentArtifact object', () => {
-        assert(isRenderedDocumentArtifact(validArtifact));
+        assert(isRenderedDocumentArtifact(buildRenderedDocumentArtifact({ content_to_include: { summary: 'This is a summary.' } })));
     });
 
     await t.step('should return true for a valid RenderedDocumentArtifact with optional properties', () => {
-        const artifactWithOptionals: RenderedDocumentArtifact = {
-            ...validArtifact,
+        assert(isRenderedDocumentArtifact(buildRenderedDocumentArtifact({
+            content_to_include: { summary: 'This is a summary.' },
             lineage_key: 'lineage-abc',
             source_model_slug: 'model-xyz',
-        };
-        assert(isRenderedDocumentArtifact(artifactWithOptionals));
+        })));
     });
 
     await t.step('should return true when content_to_include is an array', () => {
-        const artifactWithArrayContent: RenderedDocumentArtifact = {
+        assert(isRenderedDocumentArtifact(buildRenderedDocumentArtifact({
             document_key: FileType.risk_register,
             template_filename: 'template.txt',
-            artifact_class: 'rendered_document',
-            file_type: 'markdown',
-            content_to_include: [
-                {
-                    risk: "some risk",
-                    impact: "high",
-                    likelihood: "medium",
-                    mitigation: "do something"
-                }
-            ]
-        };
-        assert(isRenderedDocumentArtifact(artifactWithArrayContent));
+            content_to_include: [{ risk: 'some risk', impact: 'high', likelihood: 'medium', mitigation: 'do something' }],
+        })));
     });
 
     await t.step('should return false if artifact_class is not "rendered_document"', () => {
-        const invalid = { ...validArtifact, artifact_class: 'wrong_type' };
-        assert(!isRenderedDocumentArtifact(invalid));
+        assert(!isRenderedDocumentArtifact(invalidateRenderedDocumentArtifact({ artifact_class: 'wrong_type' })));
     });
 
     await t.step('should return false if document_key is missing', () => {
-        const invalid = { ...validArtifact };
-        delete (invalid as Partial<RenderedDocumentArtifact>).document_key;
-        assert(!isRenderedDocumentArtifact(invalid));
+        const { document_key: _omit, ...rest } = buildRenderedDocumentArtifact();
+        assert(!isRenderedDocumentArtifact(rest));
     });
 
     await t.step('should return false if template_filename is missing', () => {
-        const invalid = { ...validArtifact };
-        delete (invalid as Partial<RenderedDocumentArtifact>).template_filename;
-        assert(!isRenderedDocumentArtifact(invalid));
+        const { template_filename: _omit, ...rest } = buildRenderedDocumentArtifact();
+        assert(!isRenderedDocumentArtifact(rest));
     });
 
     await t.step('should return false if document_key is of the wrong type', () => {
-        const invalid = { ...validArtifact, document_key: 123 };
-        assert(!isRenderedDocumentArtifact(invalid));
+        assert(!isRenderedDocumentArtifact(invalidateRenderedDocumentArtifact({ document_key: 123 })));
     });
 
     await t.step('should return false if template_filename is of the wrong type', () => {
-        const invalid = { ...validArtifact, template_filename: 123 };
-        assert(!isRenderedDocumentArtifact(invalid));
+        assert(!isRenderedDocumentArtifact(invalidateRenderedDocumentArtifact({ template_filename: 123 })));
     });
 
     await t.step('should return false if content_to_include is not an object or array', () => {
-        const invalid = { ...validArtifact, content_to_include: "a string" };
-        assert(!isRenderedDocumentArtifact(invalid));
+        assert(!isRenderedDocumentArtifact(invalidateRenderedDocumentArtifact({ content_to_include: 'a string' })));
     });
 
     await t.step('should return true for artifacts that use dynamic document keys', () => {
-        const dynamicDocumentArtifact = {
+        assert(isRenderedDocumentArtifact(invalidateRenderedDocumentArtifact({
             document_key: 'final_business_case',
             template_filename: 'final_business_case.md',
-            artifact_class: 'rendered_document',
-            file_type: 'markdown',
             content_to_include: { executive_summary: '', next_steps: '' },
-        };
-        assert(isRenderedDocumentArtifact(dynamicDocumentArtifact));
+        })));
     });
 });
 
 Deno.test('Type Guard: isEditedDocumentResource', async (t) => {
-    const baseResource: EditedDocumentResource = {
-        id: 'resource-1',
-        resource_type: 'rendered_document',
-        project_id: 'project-1',
-        session_id: 'session-1',
-        stage_slug: 'thesis',
-        iteration_number: 1,
-        document_key: FileType.business_case,
-        source_contribution_id: 'contrib-1',
-        storage_bucket: 'dialectic_project_resources',
-        storage_path: 'project-1/session_ABC/stage',
-        file_name: 'thesis_business_case.md',
-        mime_type: 'text/markdown',
-        size_bytes: 1024,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-    };
-
     await t.step('should return true for a fully-populated resource', () => {
-        assert(isEditedDocumentResource(baseResource));
+        assert(isEditedDocumentResource(buildEditedDocumentResource()));
     });
 
     await t.step('should return true when optional fields are null', () => {
-        const nullableResource: EditedDocumentResource = {
-            ...baseResource,
+        assert(isEditedDocumentResource(buildEditedDocumentResource({
             resource_type: null,
             project_id: null,
             session_id: null,
@@ -3261,49 +2159,30 @@ Deno.test('Type Guard: isEditedDocumentResource', async (t) => {
             iteration_number: null,
             document_key: null,
             source_contribution_id: null,
-        };
-        assert(isEditedDocumentResource(nullableResource));
+        })));
     });
 
     await t.step('should return false when a required string field is missing', () => {
-        const invalid = { ...baseResource };
-        delete (invalid as Partial<EditedDocumentResource>).file_name;
-        assert(!isEditedDocumentResource(invalid));
+        const { file_name: _omit, ...rest } = buildEditedDocumentResource();
+        assert(!isEditedDocumentResource(rest));
     });
 
     await t.step('should return false when a required number field has the wrong type', () => {
-        const invalid = { ...baseResource, size_bytes: 'big' as unknown as number };
-        assert(!isEditedDocumentResource(invalid));
+        assert(!isEditedDocumentResource(invalidateEditedDocumentResource({ size_bytes: 'big' })));
     });
 });
 
 Deno.test('Type Guard: isDialecticProjectResourceRow', async (t) => {
-    const baseResource = {
-        id: 'res-1',
-        project_id: 'proj-1',
-        user_id: 'user-1',
-        file_name: 'resource.md',
-        storage_bucket: 'dialectic_project_resources',
-        storage_path: 'proj-1/resource.md',
-        mime_type: 'text/markdown',
-        size_bytes: 1024,
-        resource_description: { type: 'general_resource' },
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        iteration_number: null,
-        resource_type: 'general_resource',
-        session_id: null,
-        source_contribution_id: 'contrib-123',
-        stage_slug: null,
-    };
-
     await t.step('should return true for a fully populated resource row', () => {
-        assert(isDialecticProjectResourceRow(baseResource));
+        assert(isDialecticProjectResourceRow(buildDialecticProjectResourceRow({
+            resource_description: { type: 'general_resource' },
+            resource_type: 'general_resource',
+            source_contribution_id: 'contrib-123',
+        })));
     });
 
     await t.step('should return true when optional nullable properties are null', () => {
-        const nullableResource = {
-            ...baseResource,
+        assert(isDialecticProjectResourceRow(invalidateDialecticProjectResourceRow({
             user_id: null,
             file_name: null,
             resource_type: null,
@@ -3312,19 +2191,16 @@ Deno.test('Type Guard: isDialecticProjectResourceRow', async (t) => {
             iteration_number: null,
             size_bytes: null,
             source_contribution_id: null,
-        };
-        assert(isDialecticProjectResourceRow(nullableResource));
+        })));
     });
 
     await t.step('should return false when a required string property is missing', () => {
-        const invalidResource = { ...baseResource };
-        delete (invalidResource as Partial<typeof baseResource>).project_id;
-        assert(!isDialecticProjectResourceRow(invalidResource));
+        const { project_id: _omit, ...rest } = buildDialecticProjectResourceRow();
+        assert(!isDialecticProjectResourceRow(rest));
     });
 
     await t.step('should return false when a numeric field has the wrong type', () => {
-        const invalidResource = { ...baseResource, size_bytes: 'large' };
-        assert(!isDialecticProjectResourceRow(invalidResource));
+        assert(!isDialecticProjectResourceRow(invalidateDialecticProjectResourceRow({ size_bytes: 'large' })));
     });
 });
 
@@ -3368,126 +2244,87 @@ Deno.test('Type Guard: isArrayWithOptionalId', async (t) => {
 });
 
 Deno.test('Type Guard: isSaveContributionEditSuccessResponse', async (t) => {
-    const resource: EditedDocumentResource = {
-        id: 'resource-2',
-        resource_type: 'rendered_document',
-        project_id: 'project-2',
-        session_id: 'session-2',
-        stage_slug: 'synthesis',
-        iteration_number: 2,
-        document_key: FileType.synthesis_document_business_case,
-        source_contribution_id: 'contrib-2',
-        storage_bucket: 'dialectic_project_resources',
-        storage_path: 'project-2/session_DEF/stage',
-        file_name: 'synthesis_business_case.md',
-        mime_type: 'text/markdown',
-        size_bytes: 2048,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-    };
-
     await t.step('should return true for a valid success response', () => {
-        const response = {
+        assert(isSaveContributionEditSuccessResponse({
             sourceContributionId: 'contrib-2',
-            resource,
-        };
-        assert(isSaveContributionEditSuccessResponse(response));
+            resource: buildEditedDocumentResource({
+                document_key: FileType.synthesis_document_business_case,
+                source_contribution_id: 'contrib-2',
+            }),
+        }));
     });
 
     await t.step('should return false when sourceContributionId is missing', () => {
-        const response = {
-            resource,
-        };
-        assert(!isSaveContributionEditSuccessResponse(response));
+        assert(!isSaveContributionEditSuccessResponse({
+            resource: buildEditedDocumentResource(),
+        }));
     });
 
     await t.step('should return false when resource is invalid', () => {
-        const response = {
+        assert(!isSaveContributionEditSuccessResponse({
             sourceContributionId: 'contrib-2',
-            resource: {
-                ...resource,
-                file_name: 123,
-            },
-        };
-        assert(!isSaveContributionEditSuccessResponse(response));
+            resource: invalidateEditedDocumentResource({ file_name: 123 }),
+        }));
     });
 });
 
 Deno.test('Type Guard: isAssembledJsonArtifact', async (t) => {
-    const validArtifactWithFields: AssembledJsonArtifact = {
-        document_key: FileType.technical_requirements,
-        artifact_class: 'assembled_document_json',
-        fields: [
-            "subsystems[].name",
-            "subsystems[].objective",
-        ],
-    };
-
-    const validArtifactAsDocument: AssembledJsonArtifact = {
-        document_key: FileType.synthesis_document_business_case,
-        artifact_class: 'assembled_json',
-        template_filename: 'synthesis_document_business_case_template.json',
-        file_type: 'json',
-        content_to_include: {
-            "executive_summary": "",
-            "synthesis_of_key_points": "",
-            "final_recommendation": ""
-        }
-    };
-
     await t.step('should return true for a valid artifact with a fields property', () => {
-        assert(isAssembledJsonArtifact(validArtifactWithFields));
+        assert(isAssembledJsonArtifact(buildAssembledJsonArtifact()));
     });
 
     await t.step('should return true for a valid artifact structured as a document', () => {
-        assert(isAssembledJsonArtifact(validArtifactAsDocument));
+        const { fields: _omit, ...rest } = buildAssembledJsonArtifact({
+            document_key: FileType.synthesis_document_business_case,
+            artifact_class: 'assembled_json',
+            template_filename: 'synthesis_document_business_case_template.json',
+            file_type: 'json',
+            content_to_include: {
+                executive_summary: '',
+                synthesis_of_key_points: '',
+                final_recommendation: '',
+            },
+        });
+        assert(isAssembledJsonArtifact(rest));
     });
-    
+
     await t.step('should return true for an artifact with optional properties', () => {
-        const artifactWithOptionals: AssembledJsonArtifact = {
-            ...validArtifactWithFields,
+        assert(isAssembledJsonArtifact(invalidateAssembledJsonArtifact({
             lineage_key: 'lineage-abc',
             source_model_slug: 'model-xyz',
-        };
-        assert(isAssembledJsonArtifact(artifactWithOptionals));
+        })));
     });
 
     await t.step('should return true for artifact with class "assembled_json"', () => {
-        const artifactWithClass = { ...validArtifactWithFields, artifact_class: 'assembled_json' };
-        assert(isAssembledJsonArtifact(artifactWithClass));
+        assert(isAssembledJsonArtifact(invalidateAssembledJsonArtifact({ artifact_class: 'assembled_json' })));
     });
 
     await t.step('should return false if artifact_class is invalid', () => {
-        const invalid = { ...validArtifactWithFields, artifact_class: 'wrong_type' };
-        assert(!isAssembledJsonArtifact(invalid));
+        assert(!isAssembledJsonArtifact(invalidateAssembledJsonArtifact({ artifact_class: 'wrong_type' })));
     });
 
     await t.step('should return false if document_key is missing', () => {
-        const invalid = { ...validArtifactWithFields };
-        delete (invalid as Partial<AssembledJsonArtifact>).document_key;
-        assert(!isAssembledJsonArtifact(invalid));
+        const { document_key: _omit, ...rest } = buildAssembledJsonArtifact();
+        assert(!isAssembledJsonArtifact(rest));
     });
 
     await t.step('should return false if fields array contains non-string values', () => {
-        const invalid = {
-            ...validArtifactWithFields,
-            fields: ['valid_field', 123],
-        };
-        assert(!isAssembledJsonArtifact(invalid));
+        assert(!isAssembledJsonArtifact(invalidateAssembledJsonArtifact({ fields: ['valid_field', 123] })));
     });
 
     await t.step('should return false if it has both fields and template_filename', () => {
-        const invalid = {
-            ...validArtifactWithFields,
-            template_filename: 'some_template.json',
-        };
-        assert(!isAssembledJsonArtifact(invalid));
+        assert(!isAssembledJsonArtifact(invalidateAssembledJsonArtifact({ template_filename: 'some_template.json' })));
     });
 
     await t.step('should return false if document structure is missing template_filename', () => {
-        const invalid = { ...validArtifactAsDocument };
-        delete (invalid as Partial<AssembledJsonArtifact>).template_filename;
-        assert(!isAssembledJsonArtifact(invalid));
+        const { template_filename: _omit, ...rest } = buildAssembledJsonArtifact({
+            document_key: FileType.synthesis_document_business_case,
+            artifact_class: 'assembled_json',
+            template_filename: 'synthesis_document_business_case_template.json',
+            file_type: 'json',
+            content_to_include: { executive_summary: '' },
+        });
+        assert(!isAssembledJsonArtifact(rest));
     });
 });
 
@@ -3616,235 +2453,180 @@ Deno.test('Type Guard: isContentToInclude', async (t) => {
 });
 
 Deno.test('Type Guard: isDialecticRenderJobPayload', async (t) => {
-    const basePayload: DialecticRenderJobPayload = {
-        sessionId: 'test-session',
-        projectId: 'test-project',
-        model_id: 'model-123',
-        walletId: 'wallet-abc',
-        stageSlug: 'thesis',
-        iterationNumber: 1,
-        user_jwt: 'test-jwt-token',
-        documentIdentity: 'document-identity-123',
-        documentKey: FileType.business_case,
-        sourceContributionId: 'source-contribution-123',
-        template_filename: 'thesis_business_case.md',
-        idempotencyKey: 'test-idempotency-key',
-    };
-
     await t.step('should return true for a valid render job payload with all required fields', () => {
-        assert(isDialecticRenderJobPayload(basePayload));
+        assert(isDialecticRenderJobPayload(buildDialecticRenderJobPayload()));
     });
 
     await t.step('should return true for a valid render job payload with optional base payload fields', () => {
-        const p: DialecticRenderJobPayload = {
-            ...basePayload,
+        assert(isDialecticRenderJobPayload(buildDialecticRenderJobPayload({
             continueUntilComplete: true,
             maxRetries: 3,
             continuation_count: 1,
             target_contribution_id: 'target-id',
             model_slug: 'test-model-slug',
             is_test_job: false,
-        };
-        assert(isDialecticRenderJobPayload(p));
+        })));
     });
 
     await t.step('should return true when sourceContributionId is provided (required in RenderJobPayload)', () => {
-        const p: DialecticRenderJobPayload = {
-            ...basePayload,
+        assert(isDialecticRenderJobPayload(buildDialecticRenderJobPayload({
             sourceContributionId: 'required-contribution-id',
-        };
-        assert(isDialecticRenderJobPayload(p));
+        })));
     });
 
     await t.step('should throw error when sessionId is missing', () => {
-        const p = { ...basePayload }; delete (p as Partial<DialecticRenderJobPayload>).sessionId;
-        assertThrows(() => isDialecticRenderJobPayload(p), Error, 'Missing or invalid sessionId.');
+        const { sessionId: _omit, ...rest } = buildDialecticRenderJobPayload();
+        assertThrows(() => isDialecticRenderJobPayload(rest), Error, 'Missing or invalid sessionId.');
     });
 
     await t.step('should throw error when sessionId is not a string', () => {
-        const p = { ...basePayload, sessionId: 123 as any };
-        assertThrows(() => isDialecticRenderJobPayload(p), Error, 'Missing or invalid sessionId.');
+        assertThrows(() => isDialecticRenderJobPayload(invalidateDialecticRenderJobPayload({ sessionId: 123 })), Error, 'Missing or invalid sessionId.');
     });
 
     await t.step('should throw error when projectId is missing', () => {
-        const p = { ...basePayload }; delete (p as Partial<DialecticRenderJobPayload>).projectId;
-        assertThrows(() => isDialecticRenderJobPayload(p), Error, 'Missing or invalid projectId.');
+        const { projectId: _omit, ...rest } = buildDialecticRenderJobPayload();
+        assertThrows(() => isDialecticRenderJobPayload(rest), Error, 'Missing or invalid projectId.');
     });
 
     await t.step('should throw error when projectId is not a string', () => {
-        const p = { ...basePayload, projectId: 123 as any };
-        assertThrows(() => isDialecticRenderJobPayload(p), Error, 'Missing or invalid projectId.');
+        assertThrows(() => isDialecticRenderJobPayload(invalidateDialecticRenderJobPayload({ projectId: 123 })), Error, 'Missing or invalid projectId.');
     });
 
     await t.step('should throw error when model_id is missing', () => {
-        const p = { ...basePayload }; delete (p as Partial<DialecticRenderJobPayload>).model_id;
-        assertThrows(() => isDialecticRenderJobPayload(p), Error, 'Missing or invalid model_id.');
+        const { model_id: _omit, ...rest } = buildDialecticRenderJobPayload();
+        assertThrows(() => isDialecticRenderJobPayload(rest), Error, 'Missing or invalid model_id.');
     });
 
     await t.step('should throw error when model_id is not a string', () => {
-        const p = { ...basePayload, model_id: 123 as any };
-        assertThrows(() => isDialecticRenderJobPayload(p), Error, 'Missing or invalid model_id.');
+        assertThrows(() => isDialecticRenderJobPayload(invalidateDialecticRenderJobPayload({ model_id: 123 })), Error, 'Missing or invalid model_id.');
     });
 
     await t.step('should throw error when walletId is missing', () => {
-        const p = { ...basePayload }; delete (p as Partial<DialecticRenderJobPayload>).walletId;
-        assertThrows(() => isDialecticRenderJobPayload(p), Error, 'Missing or invalid walletId.');
+        const { walletId: _omit, ...rest } = buildDialecticRenderJobPayload();
+        assertThrows(() => isDialecticRenderJobPayload(rest), Error, 'Missing or invalid walletId.');
     });
 
     await t.step('should throw error when walletId is not a string', () => {
-        const p = { ...basePayload, walletId: 123 as any };
-        assertThrows(() => isDialecticRenderJobPayload(p), Error, 'Missing or invalid walletId.');
+        assertThrows(() => isDialecticRenderJobPayload(invalidateDialecticRenderJobPayload({ walletId: 123 })), Error, 'Missing or invalid walletId.');
     });
 
     await t.step('should throw error when user_jwt is missing', () => {
-        const p = { ...basePayload }; delete (p as Partial<DialecticRenderJobPayload>).user_jwt;
-        assertThrows(() => isDialecticRenderJobPayload(p), Error, 'Missing or invalid user_jwt.');
+        const { user_jwt: _omit, ...rest } = buildDialecticRenderJobPayload();
+        assertThrows(() => isDialecticRenderJobPayload(rest), Error, 'Missing or invalid user_jwt.');
     });
 
     await t.step('should throw error when user_jwt is empty string', () => {
-        const p = { ...basePayload, user_jwt: '' };
-        assertThrows(() => isDialecticRenderJobPayload(p), Error, 'Missing or invalid user_jwt.');
+        assertThrows(() => isDialecticRenderJobPayload(buildDialecticRenderJobPayload({ user_jwt: '' })), Error, 'Missing or invalid user_jwt.');
     });
 
     await t.step('should throw error when user_jwt is not a string', () => {
-        const p = { ...basePayload, user_jwt: 123 as any };
-        assertThrows(() => isDialecticRenderJobPayload(p), Error, 'Missing or invalid user_jwt.');
+        assertThrows(() => isDialecticRenderJobPayload(invalidateDialecticRenderJobPayload({ user_jwt: 123 })), Error, 'Missing or invalid user_jwt.');
     });
 
     await t.step('should throw error when documentIdentity is missing', () => {
-        const p = { ...basePayload }; delete (p as Partial<DialecticRenderJobPayload>).documentIdentity;
-        assertThrows(() => isDialecticRenderJobPayload(p), Error, 'Missing or invalid documentIdentity.');
+        const { documentIdentity: _omit, ...rest } = buildDialecticRenderJobPayload();
+        assertThrows(() => isDialecticRenderJobPayload(rest), Error, 'Missing or invalid documentIdentity.');
     });
 
     await t.step('should throw error when documentIdentity is not a string', () => {
-        const p = { ...basePayload, documentIdentity: 123 as any };
-        assertThrows(() => isDialecticRenderJobPayload(p), Error, 'Missing or invalid documentIdentity.');
+        assertThrows(() => isDialecticRenderJobPayload(invalidateDialecticRenderJobPayload({ documentIdentity: 123 })), Error, 'Missing or invalid documentIdentity.');
     });
 
     await t.step('should throw error when documentIdentity is empty string', () => {
-        const p = { ...basePayload, documentIdentity: '' };
-        assertThrows(() => isDialecticRenderJobPayload(p), Error, 'Missing or invalid documentIdentity.');
+        assertThrows(() => isDialecticRenderJobPayload(buildDialecticRenderJobPayload({ documentIdentity: '' })), Error, 'Missing or invalid documentIdentity.');
     });
 
     await t.step('should throw error when documentKey is missing', () => {
-        const p = { ...basePayload }; delete (p as Partial<DialecticRenderJobPayload>).documentKey;
-        assertThrows(() => isDialecticRenderJobPayload(p), Error, 'Missing or invalid documentKey.');
+        const { documentKey: _omit, ...rest } = buildDialecticRenderJobPayload();
+        assertThrows(() => isDialecticRenderJobPayload(rest), Error, 'Missing or invalid documentKey.');
     });
 
     await t.step('should throw error when documentKey is not a valid FileType', () => {
-        const p = { ...basePayload, documentKey: 'invalid-file-type' as any };
-        assertThrows(() => isDialecticRenderJobPayload(p), Error, 'Missing or invalid documentKey.');
+        assertThrows(() => isDialecticRenderJobPayload(invalidateDialecticRenderJobPayload({ documentKey: 'invalid-file-type' })), Error, 'Missing or invalid documentKey.');
     });
 
     await t.step('should throw error when sourceContributionId is missing', () => {
-        const p = { ...basePayload }; delete (p as Partial<DialecticRenderJobPayload>).sourceContributionId;
-        assertThrows(() => isDialecticRenderJobPayload(p), Error, 'Missing or invalid sourceContributionId.');
+        const { sourceContributionId: _omit, ...rest } = buildDialecticRenderJobPayload();
+        assertThrows(() => isDialecticRenderJobPayload(rest), Error, 'Missing or invalid sourceContributionId.');
     });
 
     await t.step('should throw error when sourceContributionId is not a string', () => {
-        const p = { ...basePayload, sourceContributionId: 123 as any };
-        assertThrows(() => isDialecticRenderJobPayload(p), Error, 'Missing or invalid sourceContributionId.');
+        assertThrows(() => isDialecticRenderJobPayload(invalidateDialecticRenderJobPayload({ sourceContributionId: 123 })), Error, 'Missing or invalid sourceContributionId.');
     });
 
     await t.step('should throw error when sourceContributionId is empty string', () => {
-        const p = { ...basePayload, sourceContributionId: '' };
-        assertThrows(() => isDialecticRenderJobPayload(p), Error, 'Missing or invalid sourceContributionId.');
+        assertThrows(() => isDialecticRenderJobPayload(buildDialecticRenderJobPayload({ sourceContributionId: '' })), Error, 'Missing or invalid sourceContributionId.');
     });
 
     await t.step('should pass when stageSlug is provided (optional)', () => {
-        const p: DialecticRenderJobPayload = {
-            ...basePayload,
-            stageSlug: 'thesis',
-        };
-        assert(isDialecticRenderJobPayload(p));
+        assert(isDialecticRenderJobPayload(buildDialecticRenderJobPayload({ stageSlug: 'thesis' })));
     });
 
     await t.step('should pass when stageSlug is missing (optional)', () => {
-        const p = { ...basePayload }; delete (p as Partial<DialecticRenderJobPayload>).stageSlug;
-        assert(isDialecticRenderJobPayload(p));
+        const { stageSlug: _omit, ...rest } = buildDialecticRenderJobPayload();
+        assert(isDialecticRenderJobPayload(rest));
     });
 
     await t.step('should throw error when stageSlug is not a string (if provided)', () => {
-        const p = { ...basePayload, stageSlug: 123 as any };
-        assertThrows(() => isDialecticRenderJobPayload(p), Error, 'Invalid stageSlug.');
+        assertThrows(() => isDialecticRenderJobPayload(invalidateDialecticRenderJobPayload({ stageSlug: 123 })), Error, 'Invalid stageSlug.');
     });
 
     await t.step('should pass when iterationNumber is provided (optional)', () => {
-        const p: DialecticRenderJobPayload = {
-            ...basePayload,
-            iterationNumber: 2,
-        };
-        assert(isDialecticRenderJobPayload(p));
+        assert(isDialecticRenderJobPayload(buildDialecticRenderJobPayload({ iterationNumber: 2 })));
     });
 
     await t.step('should pass when iterationNumber is missing (optional)', () => {
-        const p = { ...basePayload }; delete (p as Partial<DialecticRenderJobPayload>).iterationNumber;
-        assert(isDialecticRenderJobPayload(p));
+        const { iterationNumber: _omit, ...rest } = buildDialecticRenderJobPayload();
+        assert(isDialecticRenderJobPayload(rest));
     });
 
     await t.step('should throw error when iterationNumber is not a number (if provided)', () => {
-        const p = { ...basePayload, iterationNumber: '1' as any };
-        assertThrows(() => isDialecticRenderJobPayload(p), Error, 'Invalid iterationNumber.');
+        assertThrows(() => isDialecticRenderJobPayload(invalidateDialecticRenderJobPayload({ iterationNumber: '1' })), Error, 'Invalid iterationNumber.');
     });
 
     await t.step('should throw error for non-object payloads', () => {
         assertThrows(() => isDialecticRenderJobPayload(null), Error, 'Payload must be a non-null object.');
-        assertThrows(() => isDialecticRenderJobPayload('string' as any), Error, 'Payload must be a non-null object.');
-        assertThrows(() => isDialecticRenderJobPayload(123 as any), Error, 'Payload must be a non-null object.');
-        assertThrows(() => isDialecticRenderJobPayload([] as any), Error, 'Payload must be a non-null object.');
+        assertThrows(() => isDialecticRenderJobPayload('string'), Error, 'Payload must be a non-null object.');
+        assertThrows(() => isDialecticRenderJobPayload(123), Error, 'Payload must be a non-null object.');
+        assertThrows(() => isDialecticRenderJobPayload([]), Error, 'Payload must be a non-null object.');
     });
 
     await t.step('should throw error when payload contains unknown properties', () => {
-        const pollutedPayload = { ...basePayload, unknown_property: 'some-value' };
         assertThrows(
-            () => isDialecticRenderJobPayload(pollutedPayload),
+            () => isDialecticRenderJobPayload({ ...buildDialecticRenderJobPayload(), unknown_property: 'some-value' }),
             Error,
             'Payload contains unknown properties: unknown_property'
         );
     });
 
     await t.step('should return true for valid render job payload with template_filename', () => {
-        const p: DialecticRenderJobPayload = {
-            ...basePayload,
-            template_filename: 'antithesis_business_case_critique.md',
-        };
-        // This test must initially FAIL because type guard doesn't validate template_filename yet
-        assert(isDialecticRenderJobPayload(p));
+        assert(isDialecticRenderJobPayload(buildDialecticRenderJobPayload({ template_filename: 'antithesis_business_case_critique.md' })));
     });
 
     await t.step('should throw error when template_filename is missing', () => {
-        const p = { ...basePayload }; delete (p as Partial<DialecticRenderJobPayload>).template_filename;
-        // This test must initially FAIL because type guard doesn't validate template_filename yet
-        assertThrows(() => isDialecticRenderJobPayload(p), Error, 'Missing or invalid template_filename.');
+        const { template_filename: _omit, ...rest } = buildDialecticRenderJobPayload();
+        assertThrows(() => isDialecticRenderJobPayload(rest), Error, 'Missing or invalid template_filename.');
     });
 
     await t.step('should throw error when template_filename is not a string', () => {
-        const p = { ...basePayload, template_filename: 123 as any };
-        // This test must initially FAIL because type guard doesn't validate template_filename yet
-        assertThrows(() => isDialecticRenderJobPayload(p), Error, 'Missing or invalid template_filename.');
+        assertThrows(() => isDialecticRenderJobPayload(invalidateDialecticRenderJobPayload({ template_filename: 123 })), Error, 'Missing or invalid template_filename.');
     });
 
     await t.step('should throw error when template_filename is empty string', () => {
-        const p = { ...basePayload, template_filename: '' };
-        // This test must initially FAIL because type guard doesn't validate template_filename yet
-        assertThrows(() => isDialecticRenderJobPayload(p), Error, 'Missing or invalid template_filename.');
+        assertThrows(() => isDialecticRenderJobPayload(buildDialecticRenderJobPayload({ template_filename: '' })), Error, 'Missing or invalid template_filename.');
     });
 
     await t.step('should throw error when template_filename is whitespace-only string', () => {
-        const p = { ...basePayload, template_filename: '   ' };
-        // This test must initially FAIL because type guard doesn't validate template_filename yet
-        assertThrows(() => isDialecticRenderJobPayload(p), Error, 'Missing or invalid template_filename.');
+        assertThrows(() => isDialecticRenderJobPayload(buildDialecticRenderJobPayload({ template_filename: '   ' })), Error, 'Missing or invalid template_filename.');
     });
 
     await t.step('should pass with a valid optional maxOutputTokens from GenerateContributionsPayload', () => {
-        const p: DialecticRenderJobPayload = { ...basePayload, maxOutputTokens: 8192 };
-        assert(isDialecticRenderJobPayload(p));
+        assert(isDialecticRenderJobPayload(buildDialecticRenderJobPayload({ maxOutputTokens: 8192 })));
     });
 
     await t.step('should throw when maxOutputTokens is a string', () => {
-        const p: Record<string, unknown> = { ...basePayload, maxOutputTokens: 'string' };
         assertThrows(
-            () => isDialecticRenderJobPayload(p),
+            () => isDialecticRenderJobPayload(invalidateDialecticRenderJobPayload({ maxOutputTokens: 'string' })),
             Error,
             'Invalid maxOutputTokens.',
         );
@@ -3853,130 +2635,51 @@ Deno.test('Type Guard: isDialecticRenderJobPayload', async (t) => {
 
 Deno.test('Type Guard: isSelectAnchorResult', async (t) => {
     await t.step('should return true for status "no_anchor_required"', () => {
-        const result: SelectAnchorResult = {
-            status: 'no_anchor_required',
-        };
-        assert(isSelectAnchorResult(result));
+        assert(isSelectAnchorResult(buildSelectAnchorResultNoAnchorRequired()));
     });
 
     await t.step('should return true for status "derive_from_header_context"', () => {
-        const result: SelectAnchorResult = {
-            status: 'derive_from_header_context',
-        };
-        assert(isSelectAnchorResult(result));
+        assert(isSelectAnchorResult(buildSelectAnchorResultDeriveFromHeaderContext()));
     });
 
     await t.step('should return true for status "anchor_found" with valid document', () => {
-        const sourceDoc: SourceDocument = {
-            id: 'doc-1',
-            session_id: 'session-1',
-            user_id: 'user-1',
-            contribution_type: 'thesis',
-            stage: 'thesis',
-            iteration_number: 1,
-            edit_version: 1,
-            is_latest_edit: true,
-            created_at: '2024-01-01T00:00:00Z',
-            updated_at: '2024-01-01T00:00:00Z',
-            file_name: 'test.md',
-            storage_bucket: 'bucket',
-            storage_path: 'path',
-            model_id: 'model-1',
-            model_name: 'Model 1',
-            prompt_template_id_used: 'template-1',
-            seed_prompt_url: null,
-            original_model_contribution_id: null,
-            raw_response_storage_path: null,
-            tokens_used_input: 100,
-            tokens_used_output: 200,
-            processing_time_ms: 500,
-            error: null,
-            citations: null,
-            size_bytes: 1024,
-            mime_type: 'text/markdown',
-            target_contribution_id: null,
-            is_header: false,
-            source_prompt_resource_id: null,
-            content: 'Test content',
-            document_key: 'business_case',
-            attempt_count: 1,
-        };
-        const result: SelectAnchorResult = {
-            status: 'anchor_found',
-            document: sourceDoc,
-        };
-        assert(isSelectAnchorResult(result));
+        assert(isSelectAnchorResult(buildSelectAnchorResultAnchorFound()));
     });
 
     await t.step('should return true for status "anchor_not_found" with targetSlug and targetDocumentKey', () => {
-        const result: SelectAnchorResult = {
-            status: 'anchor_not_found',
-            targetSlug: 'thesis',
-            targetDocumentKey: 'business_case',
-        };
-        assert(isSelectAnchorResult(result));
+        assert(isSelectAnchorResult(buildSelectAnchorResultAnchorNotFound()));
     });
 
     await t.step('should return true for status "anchor_not_found" with targetSlug and undefined targetDocumentKey', () => {
-        const result: SelectAnchorResult = {
-            status: 'anchor_not_found',
-            targetSlug: 'thesis',
-            targetDocumentKey: undefined,
-        };
-        assert(isSelectAnchorResult(result));
+        assert(isSelectAnchorResult({ ...buildSelectAnchorResultAnchorNotFound(), targetDocumentKey: undefined }));
     });
 
     await t.step('should return false when status is invalid', () => {
-        const result = {
-            status: 'invalid_status',
-        };
-        assert(!isSelectAnchorResult(result));
+        assert(!isSelectAnchorResult({ status: 'invalid_status' }));
     });
 
     await t.step('should return false when status is missing', () => {
-        const result = {};
-        assert(!isSelectAnchorResult(result));
+        assert(!isSelectAnchorResult({}));
     });
 
     await t.step('should return false when status is "anchor_found" but document is missing', () => {
-        const result = {
-            status: 'anchor_found',
-        };
-        assert(!isSelectAnchorResult(result));
+        assert(!isSelectAnchorResult({ status: 'anchor_found' }));
     });
 
     await t.step('should return false when status is "anchor_found" but document is invalid', () => {
-        const result = {
-            status: 'anchor_found',
-            document: 'not-a-document',
-        };
-        assert(!isSelectAnchorResult(result));
+        assert(!isSelectAnchorResult({ status: 'anchor_found', document: 'not-a-document' }));
     });
 
     await t.step('should return false when status is "anchor_not_found" but targetSlug is missing', () => {
-        const result = {
-            status: 'anchor_not_found',
-            targetDocumentKey: 'business_case',
-        };
-        assert(!isSelectAnchorResult(result));
+        assert(!isSelectAnchorResult({ status: 'anchor_not_found', targetDocumentKey: 'business_case' }));
     });
 
     await t.step('should return false when status is "anchor_not_found" but targetSlug is not a string', () => {
-        const result = {
-            status: 'anchor_not_found',
-            targetSlug: 123,
-            targetDocumentKey: 'business_case',
-        };
-        assert(!isSelectAnchorResult(result));
+        assert(!isSelectAnchorResult({ status: 'anchor_not_found', targetSlug: 123, targetDocumentKey: 'business_case' }));
     });
 
     await t.step('should return false when status is "anchor_not_found" and targetDocumentKey is not a string or undefined', () => {
-        const result = {
-            status: 'anchor_not_found',
-            targetSlug: 'thesis',
-            targetDocumentKey: 123,
-        };
-        assert(!isSelectAnchorResult(result));
+        assert(!isSelectAnchorResult({ status: 'anchor_not_found', targetSlug: 'thesis', targetDocumentKey: 123 }));
     });
 
     await t.step('should return false for null', () => {
@@ -3991,25 +2694,16 @@ Deno.test('Type Guard: isSelectAnchorResult', async (t) => {
     });
 
     await t.step('should return false when object has unknown properties with valid status', () => {
-        const result = {
-            status: 'no_anchor_required',
-            unknownProperty: 'value',
-        };
-        assert(!isSelectAnchorResult(result));
+        assert(!isSelectAnchorResult({ ...buildSelectAnchorResultNoAnchorRequired(), unknownProperty: 'value' }));
     });
 });
 
 Deno.test('Type contract: SyncMapEntry', async (t) => {
-    const validWithAudience: SyncMapEntry = {
-        documentKey: 'business_case',
+    const validWithAudience = buildSyncMapEntry({
         friendlyName: 'business_case',
         stageGroup: 'proposal',
-        layer: 'research',
         audience: 'leadership',
-        sortOrder: 1,
-        available: true,
-        updatedSinceLastSync: false,
-    };
+    });
     await t.step('has required shape with all fields including audience', () => {
         assert(typeof validWithAudience.documentKey === 'string');
         assert(typeof validWithAudience.friendlyName === 'string');
@@ -4021,10 +2715,7 @@ Deno.test('Type contract: SyncMapEntry', async (t) => {
         assert(typeof validWithAudience.updatedSinceLastSync === 'boolean');
     });
     await t.step('allows nullable audience', () => {
-        const withNullAudience: SyncMapEntry = {
-            ...validWithAudience,
-            audience: null,
-        };
+        const withNullAudience = buildSyncMapEntry({ audience: null });
         assert(withNullAudience.audience === null);
         assert(typeof withNullAudience.available === 'boolean');
         assert(typeof withNullAudience.updatedSinceLastSync === 'boolean');
@@ -4032,12 +2723,12 @@ Deno.test('Type contract: SyncMapEntry', async (t) => {
 });
 
 Deno.test('Type contract: SyncToGitHubPayload', async (t) => {
-    const valid: SyncToGitHubPayload = {
+    const valid = buildSyncToGitHubPayload({
         projectId: 'proj-1',
         selectedModelIds: ['model-a'],
         selectedDocumentKeys: ['business_case', 'feature_spec'],
         includeRulesFile: true,
-    };
+    });
     await t.step('requires projectId, selectedModelIds, selectedDocumentKeys, includeRulesFile', () => {
         assert(typeof valid.projectId === 'string');
         assert(Array.isArray(valid.selectedModelIds));
@@ -4050,13 +2741,13 @@ Deno.test('Type contract: SyncToGitHubPayload', async (t) => {
 
 Deno.test('Type contract: SyncToGitHubResponse', async (t) => {
     await t.step('requires commitSha (nullable string), filesUpdated, syncedAt, syncedDocumentKeys, skippedDocumentKeys', () => {
-        const withNullSha: SyncToGitHubResponse = {
+        const withNullSha = buildSyncToGitHubResponse({
             commitSha: null,
             filesUpdated: 0,
             syncedAt: '2025-01-01T00:00:00Z',
             syncedDocumentKeys: [],
             skippedDocumentKeys: ['doc-a'],
-        };
+        });
         assert(withNullSha.commitSha === null);
         assert(typeof withNullSha.filesUpdated === 'number');
         assert(typeof withNullSha.syncedAt === 'string');
@@ -4064,13 +2755,13 @@ Deno.test('Type contract: SyncToGitHubResponse', async (t) => {
         assert(Array.isArray(withNullSha.skippedDocumentKeys));
     });
     await t.step('allows commitSha as string', () => {
-        const withSha: SyncToGitHubResponse = {
+        const withSha = buildSyncToGitHubResponse({
             commitSha: 'abc123',
             filesUpdated: 2,
             syncedAt: '2025-01-01T00:00:00Z',
             syncedDocumentKeys: ['business_case', 'feature_spec'],
             skippedDocumentKeys: [],
-        };
+        });
         assert(typeof withSha.commitSha === 'string');
         assert(withSha.syncedDocumentKeys.length === 2);
         assert(withSha.skippedDocumentKeys.length === 0);

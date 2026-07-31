@@ -9,7 +9,6 @@ import type {
     ProcessCompressJobReturn,
     ProcessCompressJobSuccessReturn,
 } from "./processCompressJob.interface.ts";
-import { FileType, DialecticStageSlug } from "../../_shared/types/file_manager.types.ts";
 
 Deno.test(
     "Contract: ProcessCompressJobDeps declares seven dependency keys",
@@ -41,26 +40,32 @@ Deno.test(
 );
 
 Deno.test(
-    "Contract: ProcessCompressJobPayload type-checks from this interface file",
+    "Contract: ProcessCompressJobPayload has the required surface",
     () => {
-        const payload: ProcessCompressJobPayload = {
-            job_type: "COMPRESS",
-            sessionId: "session-1",
-            projectId: "project-1",
-            stageSlug: DialecticStageSlug.Thesis,
-            targetKey: FileType.business_case,
-            iterationNumber: 1,
-            model_id: "model-1",
-            mode: "text",
-            content: "some content",
-            sourceType: "contribution",
-            documentKey: FileType.business_case,
-            walletId: "wallet-1",
-            user_id: "user-1",
+        const surface: Record<keyof ProcessCompressJobPayload, true> = {
+            job_type: true,
+            sessionId: true,
+            projectId: true,
+            stageSlug: true,
+            targetKey: true,
+            iterationNumber: true,
+            model_id: true,
+            model_slug: true,
+            mode: true,
+            content: true,
+            sourceType: true,
+            sourceId: true,
+            role: true,
+            documentKey: true,
+            docType: true,
+            sourceStageSlug: true,
+            chunk_index: true,
+            chunk_total: true,
+            continuation_count: true,
+            walletId: true,
+            user_id: true,
         };
-        assertEquals(payload.job_type, "COMPRESS");
-        assertEquals(payload.mode, "text");
-        assertEquals(typeof payload.iterationNumber, "number");
+        assertEquals(Object.keys(surface).length, 21);
     },
 );
 
@@ -101,33 +106,47 @@ Deno.test(
 );
 
 Deno.test(
-    "Contract: ProcessCompressJobFn signature",
+    "Contract: ProcessCompressJobFn resolves to its declared success type",
     () => {
-        const fn: ProcessCompressJobFn = async (
-            _deps: ProcessCompressJobDeps,
-            _params: ProcessCompressJobParams,
-            _payload: ProcessCompressJobPayload,
-        ): Promise<ProcessCompressJobReturn> => {
-            const ok: ProcessCompressJobSuccessReturn = { queued: true };
-            return ok;
-        };
-        assertEquals(typeof fn, "function");
+        const success: ProcessCompressJobSuccessReturn = { queued: true };
+        const returned: ReturnType<ProcessCompressJobFn> = Promise.resolve(success);
+        const declared: Promise<ProcessCompressJobReturn> = returned;
+        assertEquals(declared instanceof Promise, true);
     },
 );
 
 Deno.test(
-    "Contract: BoundProcessCompressJobFn signature",
+    "Contract: ProcessCompressJobFn resolves to its declared error type",
     () => {
-        const bound: BoundProcessCompressJobFn = async (
-            _params: ProcessCompressJobParams,
-            _payload: ProcessCompressJobPayload,
-        ): Promise<ProcessCompressJobReturn> => {
-            const err: ProcessCompressJobErrorReturn = {
-                error: new Error("x"),
-                retriable: false,
-            };
-            return err;
+        const error: ProcessCompressJobErrorReturn = {
+            error: new Error("x"),
+            retriable: false,
         };
-        assertEquals(typeof bound, "function");
+        const returned: ReturnType<ProcessCompressJobFn> = Promise.resolve(error);
+        const declared: Promise<ProcessCompressJobReturn> = returned;
+        assertEquals(declared instanceof Promise, true);
+    },
+);
+
+Deno.test(
+    "Contract: BoundProcessCompressJobFn resolves to its declared success type",
+    () => {
+        const success: ProcessCompressJobSuccessReturn = { queued: true };
+        const returned: ReturnType<BoundProcessCompressJobFn> = Promise.resolve(success);
+        const declared: Promise<ProcessCompressJobReturn> = returned;
+        assertEquals(declared instanceof Promise, true);
+    },
+);
+
+Deno.test(
+    "Contract: BoundProcessCompressJobFn resolves to its declared error type",
+    () => {
+        const error: ProcessCompressJobErrorReturn = {
+            error: new Error("x"),
+            retriable: false,
+        };
+        const returned: ReturnType<BoundProcessCompressJobFn> = Promise.resolve(error);
+        const declared: Promise<ProcessCompressJobReturn> = returned;
+        assertEquals(declared instanceof Promise, true);
     },
 );

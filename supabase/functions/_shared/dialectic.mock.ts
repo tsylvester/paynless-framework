@@ -7,10 +7,10 @@ import type {
     AiProvidersRow,
     DomainOverlayDescriptor,
     DialecticProjectResource,
-    GenerateContributionsPayload, 
-    GenerateContributionsSuccessResponse, 
-    SubmitStageResponsesPayload, 
-    SubmitStageResponsesResponse, 
+    GenerateContributionsPayload,
+    GenerateContributionsSuccessResponse,
+    SubmitStageResponsesPayload,
+    SubmitStageResponsesResponse,
     SaveContributionEditPayload,
     DialecticContribution,
     UpdateProjectDomainPayload,
@@ -18,6 +18,7 @@ import type {
     GetProjectResourceContentResponse,
     DialecticStage,
     DialecticStageRecipeStep,
+    DialecticRecipeTemplateStep,
     InputRule,
     OutputRule,
     RelevanceRule,
@@ -26,8 +27,39 @@ import type {
     GranularityStrategy,
     ContextForDocument,
     ContentToInclude,
+    FailedAttemptError,
+    StageWithRecipeSteps,
+    DatabaseRecipeSteps,
+    DialecticStepPlannerMetadata,
+    DialecticExecuteJobPayload,
+    DialecticPlanJobPayload,
+    DialecticSkeletonJobPayload,
+    DialecticRenderJobPayload,
+    SystemMaterials,
+    HeaderContextArtifact,
+    RenderedDocumentArtifact,
+    AssembledJsonArtifact,
+    EditedDocumentResource,
+    SelectAnchorResult,
+    SourceDocument,
+    HeaderContext,
+    GitHubRepoSettings,
+    SyncMapEntry,
+    SyncToGitHubPayload,
+    SyncToGitHubResponse,
+    DialecticContributionRow,
+    DialecticJobRow,
+    DialecticProjectResourceRow,
+    ReviewMetadata,
+    DocumentRelationships,
+    JobInsert,
+    PlanJobInsert,
+    DialecticSimpleJobPayload,
+    SelectedModels,
+    UnifiedAIResponse,
 } from '../dialectic-service/dialectic.interface.ts';
-import { FileType } from './types/file_manager.types.ts';
+import { FileType, DialecticStageSlug } from './types/file_manager.types.ts';
+import type { Messages, FinishReason } from './types.ts';
 
 // 1. Define Function Signature Types
 type CreateProjectFn = (payload: FormData | CreateProjectPayload) => Promise<DialecticProject>;
@@ -351,4 +383,875 @@ export function buildDialecticStageRecipeStep(
         execution_order: 1,
     };
     return { ...base, ...overrides };
-} 
+}
+
+export type DialecticRecipeTemplateStepOverrides = Partial<DialecticRecipeTemplateStep>;
+
+export function buildDialecticRecipeTemplateStep(
+    overrides?: DialecticRecipeTemplateStepOverrides,
+): DialecticRecipeTemplateStep {
+    const base: DialecticRecipeTemplateStep = {
+        id: 'a000000c-0000-4000-a000-00000000000c',
+        template_id: 'a000000a-0000-4000-a000-00000000000a',
+        created_at: '2025-01-01T00:00:00.000Z',
+        updated_at: '2025-01-01T00:00:00.000Z',
+        step_number: 1,
+        step_key: 'compress_consuming',
+        step_slug: 'compress',
+        step_name: 'Compression Consuming Step',
+        step_description: 'Compress context for downstream document generation.',
+        job_type: 'EXECUTE',
+        prompt_type: 'Turn',
+        output_type: FileType.ModelContributionRawJson,
+        granularity_strategy: 'per_source_document',
+        inputs_required: [buildInputRule()],
+        inputs_relevance: [buildRelevanceRule()],
+        outputs_required: buildOutputRule(),
+        prompt_template_id: null,
+        branch_key: null,
+        parallel_group: null,
+    };
+    return { ...base, ...overrides };
+}
+
+export type DialecticRecipeTemplateStepCorruptions = { [K in keyof DialecticRecipeTemplateStep]?: unknown };
+
+export function invalidateDialecticRecipeTemplateStep(corruptions: DialecticRecipeTemplateStepCorruptions): unknown {
+    return { ...buildDialecticRecipeTemplateStep(), ...corruptions };
+}
+
+export type InputRuleCorruptions = { [K in keyof InputRule]?: unknown };
+
+export function invalidateInputRule(corruptions: InputRuleCorruptions): unknown {
+    return { ...buildInputRule(), ...corruptions };
+}
+
+export type RelevanceRuleCorruptions = { [K in keyof RelevanceRule]?: unknown };
+
+export function invalidateRelevanceRule(corruptions: RelevanceRuleCorruptions): unknown {
+    return { ...buildRelevanceRule(), ...corruptions };
+}
+
+export type OutputRuleCorruptions = { [K in keyof OutputRule]?: unknown };
+
+export function invalidateOutputRule(corruptions: OutputRuleCorruptions): unknown {
+    return { ...buildOutputRule(), ...corruptions };
+}
+
+export type DialecticStageRecipeStepCorruptions = { [K in keyof DialecticStageRecipeStep]?: unknown };
+
+export function invalidateDialecticStageRecipeStep(corruptions: DialecticStageRecipeStepCorruptions): unknown {
+    const builder = buildDialecticStageRecipeStep();
+    if (builder === null) return null;
+    return { ...builder, ...corruptions };
+}
+
+// --- FailedAttemptError ---
+
+export type FailedAttemptErrorOverrides = Partial<FailedAttemptError>;
+
+export function buildFailedAttemptError(overrides?: FailedAttemptErrorOverrides): FailedAttemptError {
+    const base: FailedAttemptError = {
+        modelId: 'test-model-id',
+        error: 'Test error',
+        api_identifier: 'test-api-identifier',
+    };
+    return { ...base, ...overrides };
+}
+
+export type FailedAttemptErrorCorruptions = { [K in keyof FailedAttemptError]?: unknown };
+
+export function invalidateFailedAttemptError(corruptions: FailedAttemptErrorCorruptions): unknown {
+    return { ...buildFailedAttemptError(), ...corruptions };
+}
+
+// --- SystemMaterials ---
+
+export type SystemMaterialsOverrides = Partial<SystemMaterials>;
+
+export function buildSystemMaterials(overrides?: SystemMaterialsOverrides): SystemMaterials {
+    const base: SystemMaterials = {
+        stage_rationale: 'Test stage rationale',
+        agent_notes_to_self: 'Test agent notes',
+        input_artifacts_summary: 'Test input artifacts summary',
+        document_order: ['business_case'],
+        current_document: 'business_case',
+    };
+    return { ...base, ...overrides };
+}
+
+export type SystemMaterialsCorruptions = { [K in keyof SystemMaterials]?: unknown };
+
+export function invalidateSystemMaterials(corruptions: SystemMaterialsCorruptions): unknown {
+    return { ...buildSystemMaterials(), ...corruptions };
+}
+
+// --- HeaderContextArtifact ---
+
+export type HeaderContextArtifactOverrides = Partial<HeaderContextArtifact>;
+
+export function buildHeaderContextArtifact(overrides?: HeaderContextArtifactOverrides): HeaderContextArtifact {
+    const base: HeaderContextArtifact = {
+        type: 'header_context',
+        document_key: 'header_context',
+        artifact_class: 'header_context',
+        file_type: 'json',
+    };
+    return { ...base, ...overrides };
+}
+
+export type HeaderContextArtifactCorruptions = { [K in keyof HeaderContextArtifact]?: unknown };
+
+export function invalidateHeaderContextArtifact(corruptions: HeaderContextArtifactCorruptions): unknown {
+    return { ...buildHeaderContextArtifact(), ...corruptions };
+}
+
+// --- RenderedDocumentArtifact ---
+
+export type RenderedDocumentArtifactOverrides = Partial<RenderedDocumentArtifact>;
+
+export function buildRenderedDocumentArtifact(overrides?: RenderedDocumentArtifactOverrides): RenderedDocumentArtifact {
+    const base: RenderedDocumentArtifact = {
+        artifact_class: 'rendered_document',
+        file_type: 'markdown',
+        document_key: FileType.business_case,
+        template_filename: 'business_case.md',
+    };
+    return { ...base, ...overrides };
+}
+
+export type RenderedDocumentArtifactCorruptions = { [K in keyof RenderedDocumentArtifact]?: unknown };
+
+export function invalidateRenderedDocumentArtifact(corruptions: RenderedDocumentArtifactCorruptions): unknown {
+    return { ...buildRenderedDocumentArtifact(), ...corruptions };
+}
+
+// --- AssembledJsonArtifact ---
+
+export type AssembledJsonArtifactOverrides = {
+    artifact_class?: "assembled_document_json" | "assembled_json";
+    document_key?: FileType;
+    lineage_key?: string;
+    source_model_slug?: string;
+    fields?: string[];
+    template_filename?: string;
+    content_to_include?: Record<string, unknown> | Record<string, unknown>[];
+    file_type?: "json";
+};
+
+export function buildAssembledJsonArtifact(overrides?: AssembledJsonArtifactOverrides): AssembledJsonArtifact {
+    if (overrides && 'template_filename' in overrides) {
+        return {
+            artifact_class: overrides.artifact_class ?? 'assembled_document_json',
+            document_key: overrides.document_key ?? FileType.business_case,
+            lineage_key: overrides.lineage_key,
+            source_model_slug: overrides.source_model_slug,
+            template_filename: overrides.template_filename ?? 'template.json',
+            content_to_include: overrides.content_to_include ?? {},
+            file_type: overrides.file_type ?? 'json',
+        };
+    }
+    return {
+        artifact_class: overrides?.artifact_class ?? 'assembled_document_json',
+        document_key: overrides?.document_key ?? FileType.business_case,
+        lineage_key: overrides?.lineage_key,
+        source_model_slug: overrides?.source_model_slug,
+        fields: overrides?.fields ?? ['field1', 'field2'],
+    };
+}
+
+export type AssembledJsonArtifactCorruptions = { [K in keyof AssembledJsonArtifact]?: unknown };
+
+export function invalidateAssembledJsonArtifact(corruptions: AssembledJsonArtifactCorruptions): unknown {
+    return { ...buildAssembledJsonArtifact(), ...corruptions };
+}
+
+// --- EditedDocumentResource ---
+
+export type EditedDocumentResourceOverrides = Partial<EditedDocumentResource>;
+
+export function buildEditedDocumentResource(overrides?: EditedDocumentResourceOverrides): EditedDocumentResource {
+    const base: EditedDocumentResource = {
+        id: 'a000000f-0000-4000-a000-00000000000f',
+        resource_type: 'edited_document',
+        project_id: 'test-project-id',
+        session_id: 'test-session-id',
+        stage_slug: 'thesis',
+        iteration_number: 1,
+        document_key: FileType.business_case,
+        source_contribution_id: 'test-contribution-id',
+        storage_bucket: 'test-bucket',
+        storage_path: 'test/path',
+        file_name: 'test-file.md',
+        mime_type: 'text/markdown',
+        size_bytes: 100,
+        created_at: '2025-01-01T00:00:00.000Z',
+        updated_at: '2025-01-01T00:00:00.000Z',
+    };
+    return { ...base, ...overrides };
+}
+
+export type EditedDocumentResourceCorruptions = { [K in keyof EditedDocumentResource]?: unknown };
+
+export function invalidateEditedDocumentResource(corruptions: EditedDocumentResourceCorruptions): unknown {
+    return { ...buildEditedDocumentResource(), ...corruptions };
+}
+
+// --- HeaderContext ---
+
+export type HeaderContextOverrides = Partial<HeaderContext>;
+
+export function buildHeaderContext(overrides?: HeaderContextOverrides): HeaderContext {
+    const base: HeaderContext = {
+        system_materials: buildSystemMaterials(),
+        header_context_artifact: buildHeaderContextArtifact(),
+        context_for_documents: [buildContextForDocument()],
+    };
+    return { ...base, ...overrides };
+}
+
+export type HeaderContextCorruptions = { [K in keyof HeaderContext]?: unknown };
+
+export function invalidateHeaderContext(corruptions: HeaderContextCorruptions): unknown {
+    return { ...buildHeaderContext(), ...corruptions };
+}
+
+// --- DialecticStepPlannerMetadata ---
+
+export type DialecticStepPlannerMetadataOverrides = Partial<DialecticStepPlannerMetadata>;
+
+export function buildDialecticStepPlannerMetadata(overrides?: DialecticStepPlannerMetadataOverrides): DialecticStepPlannerMetadata {
+    const base: DialecticStepPlannerMetadata = {
+        recipe_template_id: 'test-template-id',
+        recipe_step_id: 'test-step-id',
+        stage_slug: 'thesis',
+        description: 'Test step description',
+        dependencies: [],
+        parallel_successors: [],
+    };
+    return { ...base, ...overrides };
+}
+
+export type DialecticStepPlannerMetadataCorruptions = { [K in keyof DialecticStepPlannerMetadata]?: unknown };
+
+export function invalidateDialecticStepPlannerMetadata(corruptions: DialecticStepPlannerMetadataCorruptions): unknown {
+    return { ...buildDialecticStepPlannerMetadata(), ...corruptions };
+}
+
+// --- GitHubRepoSettings ---
+
+export type GitHubRepoSettingsOverrides = Partial<GitHubRepoSettings>;
+
+export function buildGitHubRepoSettings(overrides?: GitHubRepoSettingsOverrides): GitHubRepoSettings {
+    const base: GitHubRepoSettings = {
+        provider: 'github',
+        owner: 'test-owner',
+        repo: 'test-repo',
+        branch: 'main',
+        folder: 'docs',
+        last_sync_at: null,
+    };
+    return { ...base, ...overrides };
+}
+
+export type GitHubRepoSettingsCorruptions = { [K in keyof GitHubRepoSettings]?: unknown };
+
+export function invalidateGitHubRepoSettings(corruptions: GitHubRepoSettingsCorruptions): unknown {
+    return { ...buildGitHubRepoSettings(), ...corruptions };
+}
+
+// --- SyncMapEntry ---
+
+export type SyncMapEntryOverrides = Partial<SyncMapEntry>;
+
+export function buildSyncMapEntry(overrides?: SyncMapEntryOverrides): SyncMapEntry {
+    const base: SyncMapEntry = {
+        documentKey: 'business_case',
+        friendlyName: 'Business Case',
+        stageGroup: 'thesis',
+        layer: 'research',
+        audience: null,
+        sortOrder: 1,
+        available: true,
+        updatedSinceLastSync: false,
+    };
+    return { ...base, ...overrides };
+}
+
+export type SyncMapEntryCorruptions = { [K in keyof SyncMapEntry]?: unknown };
+
+export function invalidateSyncMapEntry(corruptions: SyncMapEntryCorruptions): unknown {
+    return { ...buildSyncMapEntry(), ...corruptions };
+}
+
+// --- SyncToGitHubPayload ---
+
+export type SyncToGitHubPayloadOverrides = Partial<SyncToGitHubPayload>;
+
+export function buildSyncToGitHubPayload(overrides?: SyncToGitHubPayloadOverrides): SyncToGitHubPayload {
+    const base: SyncToGitHubPayload = {
+        projectId: 'test-project-id',
+        selectedModelIds: ['model-1'],
+        selectedDocumentKeys: ['business_case'],
+        includeRulesFile: false,
+    };
+    return { ...base, ...overrides };
+}
+
+export type SyncToGitHubPayloadCorruptions = { [K in keyof SyncToGitHubPayload]?: unknown };
+
+export function invalidateSyncToGitHubPayload(corruptions: SyncToGitHubPayloadCorruptions): unknown {
+    return { ...buildSyncToGitHubPayload(), ...corruptions };
+}
+
+// --- SyncToGitHubResponse ---
+
+export type SyncToGitHubResponseOverrides = Partial<SyncToGitHubResponse>;
+
+export function buildSyncToGitHubResponse(overrides?: SyncToGitHubResponseOverrides): SyncToGitHubResponse {
+    const base: SyncToGitHubResponse = {
+        commitSha: null,
+        filesUpdated: 0,
+        syncedAt: '2025-01-01T00:00:00.000Z',
+        syncedDocumentKeys: [],
+        skippedDocumentKeys: [],
+    };
+    return { ...base, ...overrides };
+}
+
+export type SyncToGitHubResponseCorruptions = { [K in keyof SyncToGitHubResponse]?: unknown };
+
+export function invalidateSyncToGitHubResponse(corruptions: SyncToGitHubResponseCorruptions): unknown {
+    return { ...buildSyncToGitHubResponse(), ...corruptions };
+}
+
+// --- DialecticContributionRow (DB row) ---
+
+export type DialecticContributionRowOverrides = Partial<DialecticContributionRow>;
+
+export function buildDialecticContributionRow(overrides?: DialecticContributionRowOverrides): DialecticContributionRow {
+    const base: DialecticContributionRow = {
+        id: 'a0000001-0000-4000-a000-000000000001',
+        session_id: 'test-session-id',
+        user_id: 'test-user-id',
+        stage: 'thesis',
+        iteration_number: 1,
+        model_id: 'test-model-id',
+        model_name: 'Test Model',
+        prompt_template_id_used: 'test-template-id',
+        seed_prompt_url: null,
+        edit_version: 0,
+        is_latest_edit: true,
+        original_model_contribution_id: null,
+        raw_response_storage_path: null,
+        target_contribution_id: null,
+        tokens_used_input: 100,
+        tokens_used_output: 200,
+        processing_time_ms: 500,
+        error: null,
+        citations: null,
+        created_at: '2025-01-01T00:00:00.000Z',
+        updated_at: '2025-01-01T00:00:00.000Z',
+        contribution_type: 'thesis',
+        file_name: 'test-contribution.md',
+        storage_bucket: 'test-bucket',
+        storage_path: 'test/path',
+        size_bytes: 1000,
+        mime_type: 'text/markdown',
+        document_relationships: null,
+        is_header: false,
+        source_prompt_resource_id: null,
+    };
+    return { ...base, ...overrides };
+}
+
+export type DialecticContributionRowCorruptions = { [K in keyof DialecticContributionRow]?: unknown };
+
+export function invalidateDialecticContributionRow(corruptions: DialecticContributionRowCorruptions): unknown {
+    return { ...buildDialecticContributionRow(), ...corruptions };
+}
+
+// --- DialecticJobRow (DB row) ---
+
+export type DialecticJobRowOverrides = Partial<DialecticJobRow>;
+
+export function buildDialecticJobRow(overrides?: DialecticJobRowOverrides): DialecticJobRow {
+    const base: DialecticJobRow = {
+        id: 'a0000002-0000-4000-a000-000000000002',
+        session_id: 'test-session-id',
+        user_id: 'test-user-id',
+        job_type: 'EXECUTE',
+        status: 'pending',
+        payload: {},
+        iteration_number: 1,
+        stage_slug: 'thesis',
+        attempt_count: 0,
+        max_retries: 3,
+        parent_job_id: null,
+        prerequisite_job_id: null,
+        idempotency_key: 'test-idempotency-key',
+        is_test_job: false,
+        started_at: null,
+        completed_at: null,
+        error_details: null,
+        results: null,
+        target_contribution_id: null,
+        created_at: '2025-01-01T00:00:00.000Z',
+    };
+    return { ...base, ...overrides };
+}
+
+export type DialecticJobRowCorruptions = { [K in keyof DialecticJobRow]?: unknown };
+
+export function invalidateDialecticJobRow(corruptions: DialecticJobRowCorruptions): unknown {
+    return { ...buildDialecticJobRow(), ...corruptions };
+}
+
+// --- DialecticProjectResourceRow (DB row) ---
+
+export type DialecticProjectResourceRowOverrides = Partial<DialecticProjectResourceRow>;
+
+export function buildDialecticProjectResourceRow(overrides?: DialecticProjectResourceRowOverrides): DialecticProjectResourceRow {
+    const base: DialecticProjectResourceRow = {
+        id: 'a0000003-0000-4000-a000-000000000003',
+        project_id: 'test-project-id',
+        user_id: 'test-user-id',
+        file_name: 'test-resource.md',
+        storage_bucket: 'test-bucket',
+        storage_path: 'test/path',
+        mime_type: 'text/markdown',
+        size_bytes: 1000,
+        resource_description: null,
+        resource_type: null,
+        session_id: null,
+        stage_slug: null,
+        iteration_number: null,
+        source_contribution_id: null,
+        created_at: '2025-01-01T00:00:00.000Z',
+        updated_at: '2025-01-01T00:00:00.000Z',
+    };
+    return { ...base, ...overrides };
+}
+
+export type DialecticProjectResourceRowCorruptions = { [K in keyof DialecticProjectResourceRow]?: unknown };
+
+export function invalidateDialecticProjectResourceRow(corruptions: DialecticProjectResourceRowCorruptions): unknown {
+    return { ...buildDialecticProjectResourceRow(), ...corruptions };
+}
+
+// --- DialecticExecuteJobPayload ---
+
+export type DialecticExecuteJobPayloadOverrides = Partial<DialecticExecuteJobPayload>;
+
+export function buildDialecticExecuteJobPayload(overrides?: DialecticExecuteJobPayloadOverrides): DialecticExecuteJobPayload {
+    const base: DialecticExecuteJobPayload = {
+        sessionId: 'test-session-id',
+        projectId: 'test-project-id',
+        stageSlug: 'thesis',
+        iterationNumber: 1,
+        walletId: 'test-wallet-id',
+        user_jwt: 'test-jwt',
+        idempotencyKey: 'test-idempotency-key',
+        model_id: 'test-model-id',
+        prompt_template_id: 'test-template-id',
+        output_type: FileType.ModelContributionRawJson,
+        canonicalPathParams: {
+            contributionType: 'thesis',
+            stageSlug: DialecticStageSlug.Thesis,
+        },
+        inputs: {},
+    };
+    return { ...base, ...overrides };
+}
+
+export type DialecticExecuteJobPayloadCorruptions = { [K in keyof DialecticExecuteJobPayload]?: unknown };
+
+export function invalidateDialecticExecuteJobPayload(corruptions: DialecticExecuteJobPayloadCorruptions): unknown {
+    return { ...buildDialecticExecuteJobPayload(), ...corruptions };
+}
+
+// --- DialecticPlanJobPayload ---
+
+export type DialecticPlanJobPayloadOverrides = Partial<DialecticPlanJobPayload>;
+
+export function buildDialecticPlanJobPayload(overrides?: DialecticPlanJobPayloadOverrides): DialecticPlanJobPayload {
+    const base: DialecticPlanJobPayload = {
+        sessionId: 'test-session-id',
+        projectId: 'test-project-id',
+        stageSlug: 'thesis',
+        iterationNumber: 1,
+        walletId: 'test-wallet-id',
+        user_jwt: 'test-jwt',
+        idempotencyKey: 'test-idempotency-key',
+        model_id: 'test-model-id',
+    };
+    return { ...base, ...overrides };
+}
+
+export type DialecticPlanJobPayloadCorruptions = { [K in keyof DialecticPlanJobPayload]?: unknown };
+
+export function invalidateDialecticPlanJobPayload(corruptions: DialecticPlanJobPayloadCorruptions): unknown {
+    return { ...buildDialecticPlanJobPayload(), ...corruptions };
+}
+
+// --- DialecticSkeletonJobPayload ---
+
+export type DialecticSkeletonJobPayloadOverrides = Partial<DialecticSkeletonJobPayload>;
+
+export function buildDialecticSkeletonJobPayload(overrides?: DialecticSkeletonJobPayloadOverrides): DialecticSkeletonJobPayload {
+    const base: DialecticSkeletonJobPayload = {
+        ...buildDialecticPlanJobPayload(),
+        projectId: 'test-project-id',
+        sessionId: 'test-session-id',
+        model_id: 'test-model-id',
+        walletId: 'test-wallet-id',
+        user_jwt: 'test-jwt',
+        stageSlug: 'thesis',
+        iterationNumber: 1,
+        planner_metadata: buildDialecticStepPlannerMetadata(),
+        step_info: {},
+    };
+    return { ...base, ...overrides };
+}
+
+export type DialecticSkeletonJobPayloadCorruptions = { [K in keyof DialecticSkeletonJobPayload]?: unknown };
+
+export function invalidateDialecticSkeletonJobPayload(corruptions: DialecticSkeletonJobPayloadCorruptions): unknown {
+    return { ...buildDialecticSkeletonJobPayload(), ...corruptions };
+}
+
+// --- DialecticRenderJobPayload ---
+
+export type DialecticRenderJobPayloadOverrides = Partial<DialecticRenderJobPayload>;
+
+export function buildDialecticRenderJobPayload(overrides?: DialecticRenderJobPayloadOverrides): DialecticRenderJobPayload {
+    const base: DialecticRenderJobPayload = {
+        sessionId: 'test-session-id',
+        projectId: 'test-project-id',
+        stageSlug: 'thesis',
+        iterationNumber: 1,
+        walletId: 'test-wallet-id',
+        user_jwt: 'test-jwt',
+        idempotencyKey: 'test-idempotency-key',
+        model_id: 'test-model-id',
+        documentIdentity: 'test-document-identity',
+        documentKey: FileType.business_case,
+        sourceContributionId: 'test-contribution-id',
+        template_filename: 'business_case.md',
+    };
+    return { ...base, ...overrides };
+}
+
+export type DialecticRenderJobPayloadCorruptions = { [K in keyof DialecticRenderJobPayload]?: unknown };
+
+export function invalidateDialecticRenderJobPayload(corruptions: DialecticRenderJobPayloadCorruptions): unknown {
+    return { ...buildDialecticRenderJobPayload(), ...corruptions };
+}
+
+// --- StageWithRecipeSteps ---
+
+export type StageWithRecipeStepsOverrides = Partial<StageWithRecipeSteps>;
+
+export function buildStageWithRecipeSteps(overrides?: StageWithRecipeStepsOverrides): StageWithRecipeSteps {
+    const step = buildDialecticStageRecipeStep();
+    const base: StageWithRecipeSteps = {
+        dialectic_stage: {
+            id: 'a0000004-0000-4000-a000-000000000004',
+            slug: 'thesis',
+            display_name: 'Thesis',
+            description: 'Thesis stage',
+            created_at: '2025-01-01T00:00:00.000Z',
+            default_system_prompt_id: null,
+            recipe_template_id: null,
+            active_recipe_instance_id: null,
+            expected_output_template_ids: [],
+            minimum_balance: 0,
+        },
+        dialectic_stage_recipe_instances: {
+            id: 'a000000d-0000-4000-a000-00000000000d',
+            stage_id: 'a0000004-0000-4000-a000-000000000004',
+            template_id: 'test-template-id',
+            is_cloned: false,
+            cloned_at: null,
+            created_at: '2025-01-01T00:00:00.000Z',
+            updated_at: '2025-01-01T00:00:00.000Z',
+        },
+        dialectic_stage_recipe_steps: step ? [step] : [],
+    };
+    return { ...base, ...overrides };
+}
+
+export type StageWithRecipeStepsCorruptions = { [K in keyof StageWithRecipeSteps]?: unknown };
+
+export function invalidateStageWithRecipeSteps(corruptions: StageWithRecipeStepsCorruptions): unknown {
+    return { ...buildStageWithRecipeSteps(), ...corruptions };
+}
+
+// --- DatabaseRecipeSteps ---
+
+export type DatabaseRecipeStepsOverrides = Partial<DatabaseRecipeSteps>;
+
+export function buildDatabaseRecipeSteps(overrides?: DatabaseRecipeStepsOverrides): DatabaseRecipeSteps {
+    const base: DatabaseRecipeSteps = {
+        id: 'a0000004-0000-4000-a000-000000000004',
+        slug: 'thesis',
+        display_name: 'Thesis',
+        description: 'Thesis stage',
+        created_at: '2025-01-01T00:00:00.000Z',
+        default_system_prompt_id: null,
+        recipe_template_id: null,
+        active_recipe_instance_id: null,
+        expected_output_template_ids: [],
+        minimum_balance: 0,
+        dialectic_stage_recipe_instances: [{
+            id: 'a000000d-0000-4000-a000-00000000000d',
+            stage_id: 'a0000004-0000-4000-a000-000000000004',
+            template_id: 'test-template-id',
+            is_cloned: false,
+            cloned_at: null,
+            created_at: '2025-01-01T00:00:00.000Z',
+            updated_at: '2025-01-01T00:00:00.000Z',
+            dialectic_stage_recipe_steps: [],
+        }],
+    };
+    return { ...base, ...overrides };
+}
+
+export type DatabaseRecipeStepsCorruptions = { [K in keyof DatabaseRecipeSteps]?: unknown };
+
+export function invalidateDatabaseRecipeSteps(corruptions: DatabaseRecipeStepsCorruptions): unknown {
+    return { ...buildDatabaseRecipeSteps(), ...corruptions };
+}
+
+// --- SourceDocument ---
+
+export type SourceDocumentOverrides = Partial<SourceDocument>;
+
+export function buildSourceDocument(overrides?: SourceDocumentOverrides): SourceDocument {
+    const { document_relationships: _omit, ...row } = buildDialecticContributionRow();
+    const base: SourceDocument = {
+        ...row,
+        content: 'Test content',
+        document_relationships: null,
+        attempt_count: 1,
+        document_key: 'business_case',
+        type: 'thesis',
+        stage_slug: 'thesis',
+    };
+    return { ...base, ...overrides };
+}
+
+export type SourceDocumentCorruptions = { [K in keyof SourceDocument]?: unknown };
+
+export function invalidateSourceDocument(corruptions: SourceDocumentCorruptions): unknown {
+    return { ...buildSourceDocument(), ...corruptions };
+}
+
+// --- SelectAnchorResult ---
+
+export function buildSelectAnchorResultNoAnchorRequired(): SelectAnchorResult {
+    return { status: 'no_anchor_required' };
+}
+
+export function buildSelectAnchorResultDeriveFromHeaderContext(): SelectAnchorResult {
+    return { status: 'derive_from_header_context' };
+}
+
+export function buildSelectAnchorResultAnchorFound(document?: SourceDocument): SelectAnchorResult {
+    return { status: 'anchor_found', document: document ?? buildSourceDocument() };
+}
+
+export function buildSelectAnchorResultAnchorNotFound(): SelectAnchorResult {
+    return { status: 'anchor_not_found', targetSlug: 'thesis', targetDocumentKey: 'business_case' };
+}
+
+// --- ReviewMetadata ---
+
+export type ReviewMetadataOverrides = Partial<ReviewMetadata>;
+
+export function buildReviewMetadata(overrides?: ReviewMetadataOverrides): ReviewMetadata {
+    const base: ReviewMetadata = {
+        proposal_identifier: {
+            lineage_key: 'business_case',
+            source_model_slug: 'test-model-slug',
+        },
+        proposal_summary: 'Test proposal summary',
+        review_focus: ['feasibility'],
+        user_constraints: ['Must be under budget'],
+        normalization_guidance: {
+            scoring_scale: '1-10',
+            required_dimensions: ['feasibility', 'cost'],
+        },
+    };
+    return { ...base, ...overrides };
+}
+
+export type ReviewMetadataCorruptions = { [K in keyof ReviewMetadata]?: unknown };
+
+export function invalidateReviewMetadata(corruptions: ReviewMetadataCorruptions): unknown {
+    return { ...buildReviewMetadata(), ...corruptions };
+}
+
+// --- ContentToInclude ---
+
+export type ContentToIncludeOverrides = ContentToInclude;
+
+export function buildContentToInclude(overrides?: ContentToIncludeOverrides): ContentToInclude {
+    const base: ContentToInclude = { field: "" };
+    return { ...base, ...overrides };
+}
+
+export type ContentToIncludeCorruptions = { [K in keyof ContentToInclude]?: unknown };
+
+export function invalidateContentToInclude(corruptions: ContentToIncludeCorruptions): unknown {
+    return { ...buildContentToInclude(), ...corruptions };
+}
+
+// --- SelectedModels ---
+
+export type SelectedModelsOverrides = Partial<SelectedModels>;
+
+export function buildSelectedModels(overrides?: SelectedModelsOverrides): SelectedModels {
+    const base: SelectedModels = {
+        id: 'test-model-id',
+        displayName: 'Test Model',
+    };
+    return { ...base, ...overrides };
+}
+
+export type SelectedModelsCorruptions = { [K in keyof SelectedModels]?: unknown };
+
+export function invalidateSelectedModels(corruptions: SelectedModelsCorruptions): unknown {
+    return { ...buildSelectedModels(), ...corruptions };
+}
+
+// --- DocumentRelationships ---
+
+export type DocumentRelationshipsOverrides = Partial<DocumentRelationships>;
+
+export function buildDocumentRelationships(overrides?: DocumentRelationshipsOverrides): DocumentRelationships {
+    const base: DocumentRelationships = {
+        thesis: 'test-contribution-id',
+    };
+    return { ...base, ...overrides };
+}
+
+export type DocumentRelationshipsCorruptions = { [K in keyof DocumentRelationships]?: unknown };
+
+export function invalidateDocumentRelationships(corruptions: DocumentRelationshipsCorruptions): unknown {
+    return { ...buildDocumentRelationships(), ...corruptions };
+}
+
+// --- DialecticSimpleJobPayload ---
+
+export type DialecticSimpleJobPayloadOverrides = Partial<DialecticSimpleJobPayload>;
+
+export function buildDialecticSimpleJobPayload(overrides?: DialecticSimpleJobPayloadOverrides): DialecticSimpleJobPayload {
+    const base: DialecticSimpleJobPayload = {
+        sessionId: 'test-session-id',
+        projectId: 'test-project-id',
+        stageSlug: 'thesis',
+        iterationNumber: 1,
+        walletId: 'test-wallet-id',
+        user_jwt: 'test-jwt',
+        idempotencyKey: 'test-idempotency-key',
+        model_id: 'test-model-id',
+        job_type: 'simple',
+    };
+    return { ...base, ...overrides };
+}
+
+export type DialecticSimpleJobPayloadCorruptions = { [K in keyof DialecticSimpleJobPayload]?: unknown };
+
+export function invalidateDialecticSimpleJobPayload(corruptions: DialecticSimpleJobPayloadCorruptions): unknown {
+    return { ...buildDialecticSimpleJobPayload(), ...corruptions };
+}
+
+// --- JobInsert ---
+
+export type JobInsertOverrides = Partial<JobInsert>;
+
+export function buildJobInsert(overrides?: JobInsertOverrides): JobInsert {
+    const base: JobInsert = {
+        session_id: 'test-session-id',
+        user_id: 'test-user-id',
+        stage_slug: 'thesis',
+        iteration_number: 1,
+        payload: { model_id: 'test-model-id' },
+        job_type: 'PLAN',
+        is_test_job: false,
+    };
+    return { ...base, ...overrides };
+}
+
+export type JobInsertCorruptions = { [K in keyof JobInsert]?: unknown };
+
+export function invalidateJobInsert(corruptions: JobInsertCorruptions): unknown {
+    return { ...buildJobInsert(), ...corruptions };
+}
+
+// --- PlanJobInsert ---
+
+export type PlanJobInsertOverrides = Partial<PlanJobInsert>;
+
+export function buildPlanJobInsert(overrides?: PlanJobInsertOverrides): PlanJobInsert {
+    const base: PlanJobInsert = {
+        session_id: 'test-session-id',
+        user_id: 'test-user-id',
+        stage_slug: 'thesis',
+        iteration_number: 1,
+        payload: {
+            model_id: 'test-model-id',
+            sessionId: 'test-session-id',
+            projectId: 'test-project-id',
+            walletId: 'test-wallet-id',
+            user_jwt: 'test-jwt',
+            job_type: 'PLAN',
+        },
+        job_type: 'PLAN',
+        is_test_job: false,
+    };
+    return { ...base, ...overrides };
+}
+
+export type PlanJobInsertCorruptions = { [K in keyof PlanJobInsert]?: unknown };
+
+export function invalidatePlanJobInsert(corruptions: PlanJobInsertCorruptions): unknown {
+    return { ...buildPlanJobInsert(), ...corruptions };
+}
+
+// --- UnifiedAIResponse ---
+
+export type UnifiedAIResponseOverrides = Partial<UnifiedAIResponse>;
+
+export function buildUnifiedAIResponse(overrides?: UnifiedAIResponseOverrides): UnifiedAIResponse {
+    const base: UnifiedAIResponse = {
+        content: 'Test AI response content',
+        finish_reason: 'stop',
+    };
+    return { ...base, ...overrides };
+}
+
+export type UnifiedAIResponseCorruptions = { [K in keyof UnifiedAIResponse]?: unknown };
+
+export function invalidateUnifiedAIResponse(corruptions: UnifiedAIResponseCorruptions): unknown {
+    return { ...buildUnifiedAIResponse(), ...corruptions };
+}
+
+// --- Messages ---
+
+export type MessagesOverrides = Partial<Messages>;
+
+export function buildMessages(overrides?: MessagesOverrides): Messages {
+    const base: Messages = {
+        role: 'user',
+        content: 'Test message content',
+    };
+    return { ...base, ...overrides };
+}
+
+export type MessagesCorruptions = { [K in keyof Messages]?: unknown };
+
+export function invalidateMessages(corruptions: MessagesCorruptions): unknown {
+    return { ...buildMessages(), ...corruptions };
+}

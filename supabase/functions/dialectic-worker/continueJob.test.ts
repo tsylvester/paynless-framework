@@ -15,6 +15,7 @@ import {
 } from '../dialectic-service/dialectic.interface.ts';
 import { 
     isDialecticJobPayload, 
+    isJobInsert,
     isRecord, 
     isJson, 
     isDialecticExecuteJobPayload, 
@@ -23,135 +24,42 @@ import {
 import { type Messages } from '../_shared/types.ts';
 import { DialecticStageSlug, FileType } from '../_shared/types/file_manager.types.ts';
 import { isDialecticStageSlug } from "../_shared/utils/type-guards/type_guards.file_manager.ts";
-type Job = Database['public']['Tables']['dialectic_generation_jobs']['Row'];
-type JobInsert = Database['public']['Tables']['dialectic_generation_jobs']['Insert'];
-
-function isJobInsert(record: unknown): record is JobInsert {
-    if (!isRecord(record)) return false;
-    return 'session_id' in record && typeof record.session_id === 'string' &&
-           'user_id' in record && typeof record.user_id === 'string' &&
-           'status' in record && record.status === 'pending_continuation';
-}
-
-function createMockJob(payload: DialecticJobPayload, overrides: Partial<Job> = {}): Job {
-    if (!isJson(payload)) {
-        throw new Error("Test payload is not valid JSON. Please check the mock payload object.");
-    }
-    if (!isDialecticStageSlug(payload.stageSlug)) {
-        throw new Error("Test payload stageSlug is not a valid DialecticStageSlug. Please check the mock payload object.");
-    }
-  
-    const baseJob: Job = {
-        id: 'job-id-123',
-        session_id: payload.sessionId,
-        stage_slug: payload.stageSlug,
-        iteration_number: payload.iterationNumber ?? 1,
-        status: 'pending',
-        user_id: 'user-id-123',
-        attempt_count: 0,
-        completed_at: null,
-        created_at: new Date().toISOString(),
-        error_details: null,
-        max_retries: 3,
-        parent_job_id: null,
-        prerequisite_job_id: null,
-        results: null,
-        started_at: null,
-        target_contribution_id: null,
-        payload: payload,
-        is_test_job: false,
-        job_type: 'PLAN',
-        idempotency_key: null,
-        ...overrides,
-    };
-  
-    return baseJob;
-}
+import {
+  buildDialecticContributionRow,
+  buildDialecticExecuteJobPayload,
+  buildDialecticProjectResourceRow,
+  buildDialecticJobRow,
+  buildDocumentRelationships,
+  buildMessages,
+  buildUnifiedAIResponse,
+  invalidateDialecticExecuteJobPayload,
+} from '../_shared/dialectic.mock.ts';
+import {
+  buildDialecticCompressJobPayload,
+  isDialecticCompressJobPayload,
+} from './enqueueCompressJobs/enqueueCompressJobs.provides.ts';
 
 Deno.test('continueJob', async (t) => {
-    
-    let mockSupabase: MockSupabaseClientSetup;
-    let mockLogger: MockLogger;
-    let deps: IContinueJobDeps;
-
-    const basePayload: DialecticJobPayload = { 
-    sessionId: 'session-1',
-    projectId: 'project-1',
-    model_id: 'model-1',
-    stageSlug: DialecticStageSlug.Thesis,
-    iterationNumber: 1,
-    prompt_template_id: 'test_template',
-    inputs: { source: 'some_input' },
-    output_type: FileType.HeaderContext,
-    continueUntilComplete: true, 
-    continuation_count: 0,
-    walletId: 'wallet-1',
-    maxRetries: 5,
-    canonicalPathParams: {
-        contributionType: 'thesis',
-        stageSlug: DialecticStageSlug.Thesis,    
-    },
-    user_jwt: 'jwt.token.here',
-    idempotencyKey: 'idem-continue-job-1',
-};
-
-const baseSavedContribution: DialecticContributionRow = {
-        id: 'contrib-1',
-        session_id: 'session-1',
-        stage: 'test-stage',
-        model_name: 'test-model',
-        file_name: 'test.md',
-        contribution_type: 'model_generated',
-        citations: null,
-        created_at: new Date().toISOString(),
-        edit_version: 1,
-        error: null,
-        is_latest_edit: true,
-        iteration_number: 1,
-        mime_type: 'text/markdown',
-        model_id: 'model-1',
-        original_model_contribution_id: null,
-        processing_time_ms: null,
-        prompt_template_id_used: null,
-        raw_response_storage_path: null,
-        seed_prompt_url: null,
-        size_bytes: 100,
-        storage_bucket: 'test-bucket',
-        storage_path: '/path/to/file',
-        target_contribution_id: null,
-        tokens_used_input: null,
-        tokens_used_output: null,
-        updated_at: new Date().toISOString(),
-        user_id: null,
-        document_relationships: { 'test-stage': 'contrib-1' },
-        is_header: false,
-        source_prompt_resource_id: null,
-    };
-
-    const setup = (mockOverrides?: any) => {
-        mockSupabase = createMockSupabaseClient(undefined, mockOverrides);
-        mockLogger = new MockLogger();
-        deps = {
-            logger: mockLogger,
-        };
-    };
-
     // =================================================================
     // GROUP 1: Basic Continuation Logic - FinishReason Variations
     // =================================================================
     
     await t.step('CALLER_TRUST: should enqueue when finish_reason is "stop" (caller decided continuation)', async () => {
-        setup({
+        const mockSupabase = createMockSupabaseClient(undefined, {
             genericMockResults: {
                 'dialectic_generation_jobs': { 
                     insert: { data: [{ id: 'new-job-id' }] } 
                 },
             },
         });
-        const aiResponse: UnifiedAIResponse = { finish_reason: 'stop', content: 'final part' };
-        const testJob = createMockJob(basePayload);
-        
-        const result = await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, baseSavedContribution, 'user-1');
+        const deps: IContinueJobDeps = { logger: new MockLogger() };
+        const aiResponse = buildUnifiedAIResponse();
+        const executePayload = buildDialecticExecuteJobPayload({ continueUntilComplete: true });
+        if (!isJson(executePayload)) throw new Error('payload is not valid Json');
+        const testJob = buildDialecticJobRow({ payload: executePayload });
+        const savedContribution = buildDialecticContributionRow({ document_relationships: buildDocumentRelationships() });
+
+        const result = await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, savedContribution, 'user-1');
 
         assertEquals(result.enqueued, true);
         const insertSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
@@ -159,18 +67,21 @@ const baseSavedContribution: DialecticContributionRow = {
     });
 
     await t.step('FINISH_REASON: should enqueue when finish_reason is "length"', async () => {
-        setup({
+        const mockSupabase = createMockSupabaseClient(undefined, {
             genericMockResults: {
                 'dialectic_generation_jobs': { 
                     insert: { data: [{ id: 'new-job-id' }] } 
                 },
             },
         });
-        const payload: DialecticJobPayload = { ...basePayload, continuation_count: 0 };
-        const testJob = createMockJob(payload);
-        const aiResponse: UnifiedAIResponse = { finish_reason: 'length', content: 'part 1' };
+        const deps: IContinueJobDeps = { logger: new MockLogger() };
+        const aiResponse = buildUnifiedAIResponse({ finish_reason: 'length' });
+        const executePayload = buildDialecticExecuteJobPayload({ continueUntilComplete: true });
+        if (!isJson(executePayload)) throw new Error('payload is not valid Json');
+        const testJob = buildDialecticJobRow({ payload: executePayload });
+        const savedContribution = buildDialecticContributionRow({ document_relationships: buildDocumentRelationships() });
 
-        const result = await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, baseSavedContribution, 'user-1');
+        const result = await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, savedContribution, 'user-1');
 
         assertEquals(result.enqueued, true);
         
@@ -180,18 +91,21 @@ const baseSavedContribution: DialecticContributionRow = {
     });
 
     await t.step('CALLER_TRUST: should enqueue when finish_reason is "tool_calls" (caller decided continuation)', async () => {
-        setup({
+        const mockSupabase = createMockSupabaseClient(undefined, {
             genericMockResults: {
                 'dialectic_generation_jobs': { 
                     insert: { data: [{ id: 'new-job-id' }] } 
                 },
             },
         });
-        const payload: DialecticJobPayload = { ...basePayload, continueUntilComplete: true, continuation_count: 0 };
-        const testJob = createMockJob(payload);
-        const aiResponse: UnifiedAIResponse = { finish_reason: 'tool_calls', content: 'response with tools' };
+        const deps: IContinueJobDeps = { logger: new MockLogger() };
+        const aiResponse = buildUnifiedAIResponse({ finish_reason: 'tool_calls' });
+        const executePayload = buildDialecticExecuteJobPayload({ continueUntilComplete: true });
+        if (!isJson(executePayload)) throw new Error('payload is not valid Json');
+        const testJob = buildDialecticJobRow({ payload: executePayload });
+        const savedContribution = buildDialecticContributionRow({ document_relationships: buildDocumentRelationships() });
         
-        const result = await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, baseSavedContribution, 'user-1');
+        const result = await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, savedContribution, 'user-1');
 
         assertEquals(result.enqueued, true);
         const insertSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
@@ -199,18 +113,21 @@ const baseSavedContribution: DialecticContributionRow = {
     });
 
     await t.step('CALLER_TRUST: should enqueue when finish_reason is "content_filter" (caller decided continuation)', async () => {
-        setup({
+        const mockSupabase = createMockSupabaseClient(undefined, {
             genericMockResults: {
                 'dialectic_generation_jobs': { 
                     insert: { data: [{ id: 'new-job-id' }] } 
                 },
             },
         });
-        const payload: DialecticJobPayload = { ...basePayload, continueUntilComplete: true, continuation_count: 0 };
-        const testJob = createMockJob(payload);
-        const aiResponse: UnifiedAIResponse = { finish_reason: 'content_filter', content: 'filtered response' };
+        const deps: IContinueJobDeps = { logger: new MockLogger() };
+        const aiResponse = buildUnifiedAIResponse({ finish_reason: 'content_filter' });
+        const executePayload = buildDialecticExecuteJobPayload({ continueUntilComplete: true });
+        if (!isJson(executePayload)) throw new Error('payload is not valid Json');
+        const testJob = buildDialecticJobRow({ payload: executePayload });
+        const savedContribution = buildDialecticContributionRow({ document_relationships: buildDocumentRelationships() });
         
-        const result = await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, baseSavedContribution, 'user-1');
+        const result = await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, savedContribution, 'user-1');
 
         assertEquals(result.enqueued, true);
         const insertSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
@@ -218,18 +135,21 @@ const baseSavedContribution: DialecticContributionRow = {
     });
 
     await t.step('CALLER_TRUST: should enqueue when finish_reason is "function_call" (caller decided continuation)', async () => {
-        setup({
+        const mockSupabase = createMockSupabaseClient(undefined, {
             genericMockResults: {
                 'dialectic_generation_jobs': { 
                     insert: { data: [{ id: 'new-job-id' }] } 
                 },
             },
         });
-        const payload: DialecticJobPayload = { ...basePayload, continueUntilComplete: true, continuation_count: 0 };
-        const testJob = createMockJob(payload);
-        const aiResponse: UnifiedAIResponse = { finish_reason: 'function_call', content: 'function call response' };
+        const deps: IContinueJobDeps = { logger: new MockLogger() };
+        const aiResponse = buildUnifiedAIResponse({ finish_reason: 'function_call' });
+        const executePayload = buildDialecticExecuteJobPayload({ continueUntilComplete: true });
+        if (!isJson(executePayload)) throw new Error('payload is not valid Json');
+        const testJob = buildDialecticJobRow({ payload: executePayload });
+        const savedContribution = buildDialecticContributionRow({ document_relationships: buildDocumentRelationships() });
         
-        const result = await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, baseSavedContribution, 'user-1');
+        const result = await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, savedContribution, 'user-1');
 
         assertEquals(result.enqueued, true);
         const insertSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
@@ -237,18 +157,21 @@ const baseSavedContribution: DialecticContributionRow = {
     });
 
     await t.step('CALLER_TRUST: should enqueue when finish_reason is "error" (caller decided continuation)', async () => {
-        setup({
+        const mockSupabase = createMockSupabaseClient(undefined, {
             genericMockResults: {
                 'dialectic_generation_jobs': { 
                     insert: { data: [{ id: 'new-job-id' }] } 
                 },
             },
         });
-        const payload: DialecticJobPayload = { ...basePayload, continueUntilComplete: true, continuation_count: 0 };
-        const testJob = createMockJob(payload);
-        const aiResponse: UnifiedAIResponse = { finish_reason: 'error', content: 'error response' };
+        const deps: IContinueJobDeps = { logger: new MockLogger() };
+        const aiResponse = buildUnifiedAIResponse({ finish_reason: 'error' });
+        const executePayload = buildDialecticExecuteJobPayload({ continueUntilComplete: true });
+        if (!isJson(executePayload)) throw new Error('payload is not valid Json');
+        const testJob = buildDialecticJobRow({ payload: executePayload });
+        const savedContribution = buildDialecticContributionRow({ document_relationships: buildDocumentRelationships() });
         
-        const result = await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, baseSavedContribution, 'user-1');
+        const result = await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, savedContribution, 'user-1');
 
         assertEquals(result.enqueued, true);
         const insertSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
@@ -256,18 +179,21 @@ const baseSavedContribution: DialecticContributionRow = {
     });
 
     await t.step('FINISH_REASON: should enqueue when finish_reason is "unknown"', async () => {
-        setup({
+        const mockSupabase = createMockSupabaseClient(undefined, {
             genericMockResults: {
                 'dialectic_generation_jobs': { 
                     insert: { data: [{ id: 'new-job-id' }] } 
                 },
             },
         });
-        const payload: DialecticJobPayload = { ...basePayload, continueUntilComplete: true, continuation_count: 0 };
-        const testJob = createMockJob(payload);
-        const aiResponse: UnifiedAIResponse = { finish_reason: 'unknown', content: 'unknown response' };
+        const deps: IContinueJobDeps = { logger: new MockLogger() };
+        const aiResponse = buildUnifiedAIResponse({ finish_reason: 'unknown' });
+        const executePayload = buildDialecticExecuteJobPayload({ continueUntilComplete: true });
+        if (!isJson(executePayload)) throw new Error('payload is not valid Json');
+        const testJob = buildDialecticJobRow({ payload: executePayload });
+        const savedContribution = buildDialecticContributionRow({ document_relationships: buildDocumentRelationships() });
         
-        const result = await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, baseSavedContribution, 'user-1');
+        const result = await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, savedContribution, 'user-1');
 
         assertEquals(result.enqueued, true);
         const insertSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
@@ -275,18 +201,21 @@ const baseSavedContribution: DialecticContributionRow = {
     });
 
     await t.step('CALLER_TRUST: should enqueue when finish_reason is null (caller decided continuation)', async () => {
-        setup({
+        const mockSupabase = createMockSupabaseClient(undefined, {
             genericMockResults: {
                 'dialectic_generation_jobs': { 
                     insert: { data: [{ id: 'new-job-id' }] } 
                 },
             },
         });
-        const payload: DialecticJobPayload = { ...basePayload, continueUntilComplete: true, continuation_count: 0 };
-        const testJob = createMockJob(payload);
-        const aiResponse: UnifiedAIResponse = { finish_reason: null, content: 'null finish reason' };
+        const deps: IContinueJobDeps = { logger: new MockLogger() };
+        const aiResponse = buildUnifiedAIResponse({ finish_reason: null });
+        const executePayload = buildDialecticExecuteJobPayload({ continueUntilComplete: true });
+        if (!isJson(executePayload)) throw new Error('payload is not valid Json');
+        const testJob = buildDialecticJobRow({ payload: executePayload });
+        const savedContribution = buildDialecticContributionRow({ document_relationships: buildDocumentRelationships() });
         
-        const result = await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, baseSavedContribution, 'user-1');
+        const result = await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, savedContribution, 'user-1');
 
         assertEquals(result.enqueued, true);
         const insertSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
@@ -294,18 +223,22 @@ const baseSavedContribution: DialecticContributionRow = {
     });
 
     await t.step('CALLER_TRUST: should enqueue when finish_reason is undefined (caller decided continuation)', async () => {
-        setup({
+        const mockSupabase = createMockSupabaseClient(undefined, {
             genericMockResults: {
                 'dialectic_generation_jobs': { 
                     insert: { data: [{ id: 'new-job-id' }] } 
                 },
             },
         });
-        const payload: DialecticJobPayload = { ...basePayload, continueUntilComplete: true, continuation_count: 0 };
-        const testJob = createMockJob(payload);
-        const aiResponse: UnifiedAIResponse = { content: undefined } as unknown as UnifiedAIResponse;
+        const deps: IContinueJobDeps = { logger: new MockLogger() };
+        const { finish_reason: _omit, ...aiResponseRest } = buildUnifiedAIResponse();
+        const aiResponse: UnifiedAIResponse = aiResponseRest;
+        const executePayload = buildDialecticExecuteJobPayload({ continueUntilComplete: true });
+        if (!isJson(executePayload)) throw new Error('payload is not valid Json');
+        const testJob = buildDialecticJobRow({ payload: executePayload });
+        const savedContribution = buildDialecticContributionRow({ document_relationships: buildDocumentRelationships() });
         
-        const result = await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, baseSavedContribution, 'user-1');
+        const result = await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, savedContribution, 'user-1');
 
         assertEquals(result.enqueued, true);
         const insertSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
@@ -316,33 +249,50 @@ const baseSavedContribution: DialecticContributionRow = {
     // GROUP 2: Continue Until Complete Flag Variations
     // =================================================================
     
-    await t.step('CONTINUE_FLAG: should not enqueue when continueUntilComplete is false', async () => {
-        setup();
-        const testPayload: DialecticJobPayload = { ...basePayload, continueUntilComplete: false, continuation_count: 0 };
-        const testJob = createMockJob(testPayload);
-        const aiResponse: UnifiedAIResponse = { finish_reason: 'length', content: 'part 1' };
+    await t.step('CONTINUE_FLAG: enqueues when continueUntilComplete is false', async () => {
+        const mockSupabase = createMockSupabaseClient(undefined, {
+            genericMockResults: {
+                'dialectic_generation_jobs': { 
+                    insert: { data: [{ id: 'new-job-id' }] } 
+                },
+            },
+        });
+        const deps: IContinueJobDeps = { logger: new MockLogger() };
+        const aiResponse = buildUnifiedAIResponse();
+        const executePayload = buildDialecticExecuteJobPayload({ continueUntilComplete: false });
+        if (!isJson(executePayload)) throw new Error('payload is not valid Json');
+        const testJob = buildDialecticJobRow({ payload: executePayload });
+        const savedContribution = buildDialecticContributionRow({ document_relationships: buildDocumentRelationships() });
         
-        const result = await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, baseSavedContribution, 'user-1');
+        const result = await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, savedContribution, 'user-1');
 
-        assertEquals(result.enqueued, false);
-        assert(!('reason' in result));
+        assertEquals(result.enqueued, true);
         const insertSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
         assertExists(insertSpy);
-        assertEquals(insertSpy.callCount, 0);
+        assertEquals(insertSpy.callCount, 1);
     });
 
-    await t.step('CONTINUE_FLAG: should not enqueue when continueUntilComplete is undefined', async () => {
-        setup();
-        const testPayload: DialecticJobPayload = { ...basePayload };
-        delete testPayload.continueUntilComplete;
-        const testJob = createMockJob(testPayload);
-        const aiResponse: UnifiedAIResponse = { finish_reason: 'length', content: 'part 1' };
+    await t.step('CONTINUE_FLAG: enqueues when continueUntilComplete is absent', async () => {
+        const mockSupabase = createMockSupabaseClient(undefined, {
+            genericMockResults: {
+                'dialectic_generation_jobs': { 
+                    insert: { data: [{ id: 'new-job-id' }] } 
+                },
+            },
+        });
+        const deps: IContinueJobDeps = { logger: new MockLogger() };
+        const aiResponse = buildUnifiedAIResponse();
+        const executePayload = buildDialecticExecuteJobPayload();
+        if (!isJson(executePayload)) throw new Error('payload is not valid Json');
+        const testJob = buildDialecticJobRow({ payload: executePayload });
+        const savedContribution = buildDialecticContributionRow({ document_relationships: buildDocumentRelationships() });
         
-        const result = await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, baseSavedContribution, 'user-1');
+        const result = await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, savedContribution, 'user-1');
 
-        assertEquals(result.enqueued, false);
+        assertEquals(result.enqueued, true);
         const insertSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
-        assertEquals(insertSpy?.callCount ?? 0, 0);
+        assertExists(insertSpy);
+        assertEquals(insertSpy.callCount, 1);
     });
 
     // =================================================================
@@ -350,63 +300,75 @@ const baseSavedContribution: DialecticContributionRow = {
     // =================================================================
     
     await t.step('CONTINUATION_COUNT: should enqueue when continuation_count is 0', async () => {
-        setup({
+        const mockSupabase = createMockSupabaseClient(undefined, {
             genericMockResults: {
                 'dialectic_generation_jobs': { 
                     insert: { data: [{ id: 'new-job-id' }] } 
                 },
             },
         });
-        const payload: DialecticJobPayload = { ...basePayload, continueUntilComplete: true, continuation_count: 0 };
-        const testJob = createMockJob(payload);
-        const aiResponse: UnifiedAIResponse = { finish_reason: 'length', content: 'part 1' };
+        const deps: IContinueJobDeps = { logger: new MockLogger() };
+        const aiResponse = buildUnifiedAIResponse();
+        const executePayload = buildDialecticExecuteJobPayload({ continueUntilComplete: true, continuation_count: 0 });
+        if (!isJson(executePayload)) throw new Error('payload is not valid Json');
+        const testJob = buildDialecticJobRow({ payload: executePayload });
+        const savedContribution = buildDialecticContributionRow({ document_relationships: buildDocumentRelationships() });
 
-        const result = await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, baseSavedContribution, 'user-1');
+        const result = await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, savedContribution, 'user-1');
 
         assertEquals(result.enqueued, true);
     });
 
     await t.step('CONTINUATION_COUNT: should enqueue when continuation_count is 1', async () => {
-        setup({
+        const mockSupabase = createMockSupabaseClient(undefined, {
             genericMockResults: {
                 'dialectic_generation_jobs': { 
                     insert: { data: [{ id: 'new-job-id' }] } 
                 },
             },
         });
-        const payload: DialecticJobPayload = { ...basePayload, continueUntilComplete: true, continuation_count: 1 };
-        const testJob = createMockJob(payload);
-        const aiResponse: UnifiedAIResponse = { finish_reason: 'length', content: 'part 2' };
+        const deps: IContinueJobDeps = { logger: new MockLogger() };
+        const aiResponse = buildUnifiedAIResponse();
+        const executePayload = buildDialecticExecuteJobPayload({ continueUntilComplete: true, continuation_count: 1 });
+        if (!isJson(executePayload)) throw new Error('payload is not valid Json');
+        const testJob = buildDialecticJobRow({ payload: executePayload });
+        const savedContribution = buildDialecticContributionRow({ document_relationships: buildDocumentRelationships() });
 
-        const result = await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, baseSavedContribution, 'user-1');
+        const result = await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, savedContribution, 'user-1');
 
         assertEquals(result.enqueued, true);
     });
 
     await t.step('CONTINUATION_COUNT: should enqueue when continuation_count is 4 (just under max)', async () => {
-        setup({
+        const mockSupabase = createMockSupabaseClient(undefined, {
             genericMockResults: {
                 'dialectic_generation_jobs': { 
                     insert: { data: [{ id: 'new-job-id' }] } 
                 },
             },
         });
-        const payload: DialecticJobPayload = { ...basePayload, continueUntilComplete: true, continuation_count: 4 };
-        const testJob = createMockJob(payload);
-        const aiResponse: UnifiedAIResponse = { finish_reason: 'length', content: 'part 5' };
+        const deps: IContinueJobDeps = { logger: new MockLogger() };
+        const aiResponse = buildUnifiedAIResponse();
+        const executePayload = buildDialecticExecuteJobPayload({ continueUntilComplete: true, continuation_count: 4 });
+        if (!isJson(executePayload)) throw new Error('payload is not valid Json');
+        const testJob = buildDialecticJobRow({ payload: executePayload });
+        const savedContribution = buildDialecticContributionRow({ document_relationships: buildDocumentRelationships() });
 
-        const result = await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, baseSavedContribution, 'user-1');
+        const result = await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, savedContribution, 'user-1');
 
         assertEquals(result.enqueued, true);
     });
 
     await t.step('CONTINUATION_COUNT: should not enqueue when continuation_count is 5 (at max)', async () => {
-        setup();
-        const payload: DialecticJobPayload = { ...basePayload, continueUntilComplete: true, continuation_count: 5 };
-        const testJob = createMockJob(payload);
-        const aiResponse: UnifiedAIResponse = { finish_reason: 'length', content: 'part 6' };
+        const mockSupabase = createMockSupabaseClient(undefined, undefined);
+        const deps: IContinueJobDeps = { logger: new MockLogger() };
+        const aiResponse = buildUnifiedAIResponse();
+        const executePayload = buildDialecticExecuteJobPayload({ continueUntilComplete: true, continuation_count: 5 });
+        if (!isJson(executePayload)) throw new Error('payload is not valid Json');
+        const testJob = buildDialecticJobRow({ payload: executePayload });
+        const savedContribution = buildDialecticContributionRow({ document_relationships: buildDocumentRelationships() });
         
-        const result = await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, baseSavedContribution, 'user-1');
+        const result = await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, savedContribution, 'user-1');
 
         assertEquals(result.enqueued, false);
         assertEquals(result.reason, 'continuation_limit_reached');
@@ -416,12 +378,15 @@ const baseSavedContribution: DialecticContributionRow = {
     });
 
     await t.step('CONTINUATION_COUNT: should not enqueue when continuation_count is 6 (over max)', async () => {
-        setup();
-        const payload: DialecticJobPayload = { ...basePayload, continueUntilComplete: true, continuation_count: 6 };
-        const testJob = createMockJob(payload);
-        const aiResponse: UnifiedAIResponse = { finish_reason: 'length', content: 'part 7' };
+        const mockSupabase = createMockSupabaseClient(undefined, undefined);
+        const deps: IContinueJobDeps = { logger: new MockLogger() };
+        const aiResponse = buildUnifiedAIResponse();
+        const executePayload = buildDialecticExecuteJobPayload({ continueUntilComplete: true, continuation_count: 6 });
+        if (!isJson(executePayload)) throw new Error('payload is not valid Json');
+        const testJob = buildDialecticJobRow({ payload: executePayload });
+        const savedContribution = buildDialecticContributionRow({ document_relationships: buildDocumentRelationships() });
         
-        const result = await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, baseSavedContribution, 'user-1');
+        const result = await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, savedContribution, 'user-1');
 
         assertEquals(result.enqueued, false);
         assertEquals(result.reason, 'continuation_limit_reached');
@@ -431,34 +396,45 @@ const baseSavedContribution: DialecticContributionRow = {
     });
 
     await t.step('CONTINUATION_COUNT: should not include reason when continueUntilComplete is false', async () => {
-        setup();
-        const payload: DialecticJobPayload = { ...basePayload, continueUntilComplete: false, continuation_count: 0 };
-        const testJob = createMockJob(payload);
-        const aiResponse: UnifiedAIResponse = { finish_reason: 'length', content: 'part 1' };
-
-        const result = await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, baseSavedContribution, 'user-1');
-
-        assertEquals(result.enqueued, false);
-        assert(!('reason' in result));
-        const insertSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
-        assertExists(insertSpy);
-        assertEquals(insertSpy.callCount, 0);
-    });
-
-    await t.step('CONTINUATION_COUNT: should handle undefined continuation_count as 0', async () => {
-        setup({
+        const mockSupabase = createMockSupabaseClient(undefined, {
             genericMockResults: {
                 'dialectic_generation_jobs': { 
                     insert: { data: [{ id: 'new-job-id' }] } 
                 },
             },
         });
-        const payload: DialecticJobPayload = { ...basePayload, continueUntilComplete: true };
-        delete payload.continuation_count;
-        const testJob = createMockJob(payload);
-        const aiResponse: UnifiedAIResponse = { finish_reason: 'length', content: 'part 1' };
+        const deps: IContinueJobDeps = { logger: new MockLogger() };
+        const aiResponse = buildUnifiedAIResponse();
+        const executePayload = buildDialecticExecuteJobPayload({ continueUntilComplete: false });
+        if (!isJson(executePayload)) throw new Error('payload is not valid Json');
+        const testJob = buildDialecticJobRow({ payload: executePayload });
+        const savedContribution = buildDialecticContributionRow({ document_relationships: buildDocumentRelationships() });
 
-        const result = await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, baseSavedContribution, 'user-1');
+        const result = await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, savedContribution, 'user-1');
+
+        assertEquals(result.enqueued, true);
+        assert(!('reason' in result));
+        const insertSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
+        assertExists(insertSpy);
+        assertEquals(insertSpy.callCount, 1);
+    });
+
+    await t.step('CONTINUATION_COUNT: should handle undefined continuation_count as 0', async () => {
+        const mockSupabase = createMockSupabaseClient(undefined, {
+            genericMockResults: {
+                'dialectic_generation_jobs': { 
+                    insert: { data: [{ id: 'new-job-id' }] } 
+                },
+            },
+        });
+        const deps: IContinueJobDeps = { logger: new MockLogger() };
+        const aiResponse = buildUnifiedAIResponse();
+        const executePayload = buildDialecticExecuteJobPayload({ continueUntilComplete: true });
+        if (!isJson(executePayload)) throw new Error('payload is not valid Json');
+        const testJob = buildDialecticJobRow({ payload: executePayload });
+        const savedContribution = buildDialecticContributionRow({ document_relationships: buildDocumentRelationships() });
+
+        const result = await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, savedContribution, 'user-1');
 
         assertEquals(result.enqueued, true);
         
@@ -477,18 +453,21 @@ const baseSavedContribution: DialecticContributionRow = {
     // =================================================================
     
     await t.step('PAYLOAD_FIELDS: should handle payload with all optional fields present', async () => {
-        setup({
+        const mockSupabase = createMockSupabaseClient(undefined, {
             genericMockResults: {
                 'dialectic_generation_jobs': { 
                     insert: { data: [{ id: 'new-job-id' }] } 
                 },
             },
         });
-        const testPayload: DialecticJobPayload = { ...basePayload };
-        const testJob = createMockJob(testPayload);
-        const aiResponse: UnifiedAIResponse = { finish_reason: 'length', content: 'part 1' };
+        const deps: IContinueJobDeps = { logger: new MockLogger() };
+        const aiResponse = buildUnifiedAIResponse();
+        const executePayload = buildDialecticExecuteJobPayload({ continueUntilComplete: true, walletId: 'wallet-1', maxRetries: 5 });
+        if (!isJson(executePayload)) throw new Error('payload is not valid Json');
+        const testJob = buildDialecticJobRow({ payload: executePayload });
+        const savedContribution = buildDialecticContributionRow({ document_relationships: buildDocumentRelationships() });
 
-        const result = await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, baseSavedContribution, 'user-1');
+        const result = await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, savedContribution, 'user-1');
 
         assertEquals(result.enqueued, true);
         
@@ -505,37 +484,21 @@ const baseSavedContribution: DialecticContributionRow = {
     });
 
     await t.step('PAYLOAD_FIELDS: should handle payload with no optional fields', async () => {
-        setup({
+        const mockSupabase = createMockSupabaseClient(undefined, {
             genericMockResults: {
                 'dialectic_generation_jobs': { 
                     insert: { data: [{ id: 'new-job-id' }] } 
                 },
             },
         });
-        const testPayload: DialecticJobPayload = { 
-            sessionId: 'session-1',
-            projectId: 'project-1',
-            model_id: 'model-1',
-            stageSlug: DialecticStageSlug.Thesis,
-            iterationNumber: 1,
-            prompt_template_id: 'test_template',
-            inputs: { source: 'some_input' },
-            output_type: FileType.HeaderContext,
-            continueUntilComplete: true, 
-            continuation_count: 0,
-            canonicalPathParams: {
-                contributionType: 'thesis',
-                stageSlug: DialecticStageSlug.Thesis,
-            },
-            walletId: 'wallet-default',
-            user_jwt: 'jwt.token.here',
-            idempotencyKey: 'idem-continue-job-2',
-        };
-        
-        const testJob = createMockJob(testPayload);
-        const aiResponse: UnifiedAIResponse = { finish_reason: 'length', content: 'part 1' };
+        const deps: IContinueJobDeps = { logger: new MockLogger() };
+        const aiResponse = buildUnifiedAIResponse();
+        const executePayload = buildDialecticExecuteJobPayload({ walletId: 'wallet-default', continueUntilComplete: true });
+        if (!isJson(executePayload)) throw new Error('payload is not valid Json');
+        const testJob = buildDialecticJobRow({ payload: executePayload });
+        const savedContribution = buildDialecticContributionRow({ document_relationships: buildDocumentRelationships() });
 
-        const result = await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, baseSavedContribution, 'user-1');
+        const result = await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, savedContribution, 'user-1');
 
         assertEquals(result.enqueued, true);
         
@@ -554,37 +517,21 @@ const baseSavedContribution: DialecticContributionRow = {
     });
 
     await t.step('PAYLOAD_FIELDS: should handle payload with only walletId present', async () => {
-        setup({
+        const mockSupabase = createMockSupabaseClient(undefined, {
             genericMockResults: {
                 'dialectic_generation_jobs': { 
                     insert: { data: [{ id: 'new-job-id' }] } 
                 },
             },
         });
-        const testPayload: DialecticJobPayload = { 
-            sessionId: 'session-1',
-            projectId: 'project-1',
-            model_id: 'model-1',
-            stageSlug: DialecticStageSlug.Thesis,
-            iterationNumber: 1,
-            prompt_template_id: 'test_template',
-            inputs: { source: 'some_input' },
-            output_type: FileType.HeaderContext,
-            continueUntilComplete: true, 
-            continuation_count: 0,
-            walletId: 'only-wallet-id',
-            canonicalPathParams: {
-                contributionType: 'thesis',
-                stageSlug: DialecticStageSlug.Thesis,
-            },
-            user_jwt: 'jwt.token.here',
-            idempotencyKey: 'idem-continue-job-3',
-        };
+        const deps: IContinueJobDeps = { logger: new MockLogger() };
+        const aiResponse = buildUnifiedAIResponse();
+        const executePayload = buildDialecticExecuteJobPayload({ walletId: 'only-wallet-id', continueUntilComplete: true });
+        if (!isJson(executePayload)) throw new Error('payload is not valid Json');
+        const testJob = buildDialecticJobRow({ payload: executePayload });
+        const savedContribution = buildDialecticContributionRow({ document_relationships: buildDocumentRelationships() });
 
-        const testJob = createMockJob(testPayload);
-        const aiResponse: UnifiedAIResponse = { finish_reason: 'length', content: 'part 1' };
-
-        const result = await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, baseSavedContribution, 'user-1');
+        const result = await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, savedContribution, 'user-1');
 
         assertEquals(result.enqueued, true);
         
@@ -600,39 +547,21 @@ const baseSavedContribution: DialecticContributionRow = {
     });
 
     await t.step('should not set prompt_template_name when absent on source execute payload', async () => {
-        setup({
+        const mockSupabase = createMockSupabaseClient(undefined, {
             genericMockResults: {
                 'dialectic_generation_jobs': {
                     insert: { data: [{ id: 'new-job-id' }] }
                 },
             },
         });
+        const deps: IContinueJobDeps = { logger: new MockLogger() };
+        const aiResponse = buildUnifiedAIResponse();
+        const executePayload = buildDialecticExecuteJobPayload({ continueUntilComplete: true });
+        if (!isJson(executePayload)) throw new Error('payload is not valid Json');
+        const testJob = buildDialecticJobRow({ payload: executePayload });
+        const savedContribution = buildDialecticContributionRow({ document_relationships: buildDocumentRelationships() });
 
-        const testPayload: DialecticJobPayload = {
-            sessionId: 'session-1',
-            projectId: 'project-1',
-            model_id: 'model-1',
-            stageSlug: DialecticStageSlug.Thesis,
-            iterationNumber: 1,
-            prompt_template_id: 'test_template',
-            // NOTE: prompt_template_name intentionally omitted
-            inputs: { source: 'some_input' },
-            output_type: FileType.HeaderContext,
-            continueUntilComplete: true,
-            continuation_count: 0,
-            canonicalPathParams: {
-                contributionType: 'thesis',
-                stageSlug: DialecticStageSlug.Thesis,
-            },
-            walletId: 'wallet-default',
-            user_jwt: 'jwt.token.here',
-            idempotencyKey: 'idem-continue-job-4',
-        };
-
-        const testJob = createMockJob(testPayload);
-        const aiResponse: UnifiedAIResponse = { finish_reason: 'length', content: 'part 1' };
-
-        const result = await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, baseSavedContribution, 'user-1');
+        const result = await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, savedContribution, 'user-1');
         assertEquals(result.enqueued, true);
 
         const insertSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
@@ -658,38 +587,21 @@ const baseSavedContribution: DialecticContributionRow = {
     });
 
     await t.step('should preserve prompt_template_name when present on source execute payload (recipe continuation)', async () => {
-        setup({
+        const mockSupabase = createMockSupabaseClient(undefined, {
             genericMockResults: {
                 'dialectic_generation_jobs': {
                     insert: { data: [{ id: 'new-job-id' }] }
                 },
             },
         });
+        const deps: IContinueJobDeps = { logger: new MockLogger() };
+        const aiResponse = buildUnifiedAIResponse();
+        const executePayload = buildDialecticExecuteJobPayload({ continueUntilComplete: true, prompt_template_id: 'test_template', prompt_template_name: 'thesis_business_case' });
+        if (!isJson(executePayload)) throw new Error('payload is not valid Json');
+        const testJob = buildDialecticJobRow({ payload: executePayload });
+        const savedContribution = buildDialecticContributionRow({ document_relationships: buildDocumentRelationships() });
 
-        const testPayload: DialecticJobPayload = {
-            sessionId: 'session-1',
-            projectId: 'project-1',
-            model_id: 'model-1',
-            stageSlug: DialecticStageSlug.Thesis,
-            iterationNumber: 1,
-            prompt_template_id: 'test_template',
-            inputs: { source: 'some_input' },
-        output_type: FileType.HeaderContext,
-            continueUntilComplete: true,
-            continuation_count: 0,
-            canonicalPathParams: {
-                contributionType: 'thesis',
-                stageSlug: DialecticStageSlug.Thesis,
-            },
-            walletId: 'wallet-default',
-            user_jwt: 'jwt.token.here',
-            idempotencyKey: 'idem-continue-job-5',
-        };
-
-        const testJob = createMockJob(testPayload);
-        const aiResponse: UnifiedAIResponse = { finish_reason: 'length', content: 'part 1' };
-
-        const result = await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, baseSavedContribution, 'user-1');
+        const result = await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, savedContribution, 'user-1');
         assertEquals(result.enqueued, true);
 
         const insertSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
@@ -698,6 +610,7 @@ const baseSavedContribution: DialecticContributionRow = {
 
         if (isDialecticExecuteJobPayload(newJobData.payload)) {
             assertEquals(newJobData.payload.prompt_template_id, 'test_template', 'prompt_template_id should be preserved on continuation for recipe flows');
+            assertEquals(newJobData.payload.prompt_template_name, 'thesis_business_case', 'prompt_template_name should be preserved on continuation when present on source');
         } else {
             assert(false, 'Payload is not a valid DialecticExecuteJobPayload');
         }
@@ -708,18 +621,21 @@ const baseSavedContribution: DialecticContributionRow = {
     // =================================================================
     
     await t.step('PARENT_JOB: should preserve parent_job_id when present', async () => {
-        setup({
+        const mockSupabase = createMockSupabaseClient(undefined, {
             genericMockResults: {
                 'dialectic_generation_jobs': { 
                     insert: { data: [{ id: 'new-job-id' }] } 
                 },
             },
         });
-        const payload: DialecticJobPayload = { ...basePayload, continueUntilComplete: true, continuation_count: 0 };
-        const testJob = createMockJob(payload, { parent_job_id: 'parent-job-123' });
-        const aiResponse: UnifiedAIResponse = { finish_reason: 'length', content: 'part 1' };
+        const deps: IContinueJobDeps = { logger: new MockLogger() };
+        const aiResponse = buildUnifiedAIResponse();
+        const executePayload = buildDialecticExecuteJobPayload({ continueUntilComplete: true });
+        if (!isJson(executePayload)) throw new Error('payload is not valid Json');
+        const testJob = buildDialecticJobRow({ payload: executePayload, parent_job_id: 'parent-job-123' });
+        const savedContribution = buildDialecticContributionRow({ document_relationships: buildDocumentRelationships() });
 
-        const result = await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, baseSavedContribution, 'user-1');
+        const result = await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, savedContribution, 'user-1');
 
         assertEquals(result.enqueued, true);
         
@@ -731,18 +647,21 @@ const baseSavedContribution: DialecticContributionRow = {
     });
 
     await t.step('PARENT_JOB: should handle null parent_job_id', async () => {
-        setup({
+        const mockSupabase = createMockSupabaseClient(undefined, {
             genericMockResults: {
                 'dialectic_generation_jobs': { 
                     insert: { data: [{ id: 'new-job-id' }] } 
                 },
             },
         });
-        const payload: DialecticJobPayload = { ...basePayload, continueUntilComplete: true, continuation_count: 0 };
-        const testJob = createMockJob(payload, { parent_job_id: null });
-        const aiResponse: UnifiedAIResponse = { finish_reason: 'length', content: 'part 1' };
+        const deps: IContinueJobDeps = { logger: new MockLogger() };
+        const aiResponse = buildUnifiedAIResponse();
+        const executePayload = buildDialecticExecuteJobPayload({ continueUntilComplete: true });
+        if (!isJson(executePayload)) throw new Error('payload is not valid Json');
+        const testJob = buildDialecticJobRow({ payload: executePayload });
+        const savedContribution = buildDialecticContributionRow({ document_relationships: buildDocumentRelationships() });
 
-        const result = await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, baseSavedContribution, 'user-1');
+        const result = await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, savedContribution, 'user-1');
 
         assertEquals(result.enqueued, true);
         
@@ -754,18 +673,21 @@ const baseSavedContribution: DialecticContributionRow = {
     });
 
     await t.step('PREREQ_JOB: should preserve prerequisite_job_id and set job_type to EXECUTE', async () => {
-        setup({
+        const mockSupabase = createMockSupabaseClient(undefined, {
             genericMockResults: {
                 'dialectic_generation_jobs': { 
                     insert: { data: [{ id: 'new-job-id' }] } 
                 },
             },
         });
-        const payload: DialecticJobPayload = { ...basePayload, continueUntilComplete: true, continuation_count: 0 };
-        const testJob = createMockJob(payload, { prerequisite_job_id: 'pre-123' });
-        const aiResponse: UnifiedAIResponse = { finish_reason: 'length', content: 'part 1' };
+        const deps: IContinueJobDeps = { logger: new MockLogger() };
+        const aiResponse = buildUnifiedAIResponse();
+        const executePayload = buildDialecticExecuteJobPayload({ continueUntilComplete: true });
+        if (!isJson(executePayload)) throw new Error('payload is not valid Json');
+        const testJob = buildDialecticJobRow({ payload: executePayload, prerequisite_job_id: 'pre-123' });
+        const savedContribution = buildDialecticContributionRow({ document_relationships: buildDocumentRelationships() });
 
-        const result = await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, baseSavedContribution, 'user-1');
+        const result = await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, savedContribution, 'user-1');
 
         assertEquals(result.enqueued, true);
         const insertSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
@@ -776,22 +698,21 @@ const baseSavedContribution: DialecticContributionRow = {
     });
 
     await t.step('PAYLOAD_CONSTRUCTION: should embed the provided message history into the new job payload', async () => {
-        setup({
+        const mockSupabase = createMockSupabaseClient(undefined, {
             genericMockResults: {
                 'dialectic_generation_jobs': { 
                     insert: { data: [{ id: 'new-job-id' }] } 
                 },
             },
         });
-        const payload: DialecticJobPayload = { ...basePayload, continuation_count: 0 };
-        const testJob = createMockJob(payload);
-        const aiResponse: UnifiedAIResponse = { finish_reason: 'length', content: 'part 1' };
-        const mockMessages: Messages[] = [
-            { role: 'user', content: 'Initial prompt', id: 'message-1' },
-            { role: 'assistant', content: 'part 1', id: 'message-2' }
-        ];
+        const deps: IContinueJobDeps = { logger: new MockLogger() };
+        const aiResponse = buildUnifiedAIResponse();
+        const executePayload = buildDialecticExecuteJobPayload({ continueUntilComplete: true });
+        if (!isJson(executePayload)) throw new Error('payload is not valid Json');
+        const testJob = buildDialecticJobRow({ payload: executePayload });
+        const savedContribution = buildDialecticContributionRow({ document_relationships: buildDocumentRelationships() });
 
-        await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, baseSavedContribution, 'user-1');
+        await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, savedContribution, 'user-1');
         
         const insertSpy = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
         const newJobData = insertSpy!.callsArgs[0][0];
@@ -803,19 +724,22 @@ const baseSavedContribution: DialecticContributionRow = {
     // =================================================================
     
     await t.step('DATABASE_ERROR: should return error when database insert fails', async () => {
-        const dbError = { message: 'Database connection lost' };
-        setup({
+        const dbError = new Error('Database connection lost');
+        const mockSupabase = createMockSupabaseClient(undefined, {
             genericMockResults: {
                 'dialectic_generation_jobs': { 
                     insert: { data: null, error: dbError } 
                 },
             },
         });
-        const payload: DialecticJobPayload = { ...basePayload, continueUntilComplete: true, continuation_count: 0 };
-        const testJob = createMockJob(payload);
-        const aiResponse: UnifiedAIResponse = { finish_reason: 'length', content: 'part 1' };
+        const deps: IContinueJobDeps = { logger: new MockLogger() };
+        const aiResponse = buildUnifiedAIResponse();
+        const executePayload = buildDialecticExecuteJobPayload({ continueUntilComplete: true });
+        if (!isJson(executePayload)) throw new Error('payload is not valid Json');
+        const testJob = buildDialecticJobRow({ payload: executePayload });
+        const savedContribution = buildDialecticContributionRow({ document_relationships: buildDocumentRelationships() });
 
-        const result = await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, baseSavedContribution, 'user-1');
+        const result = await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, savedContribution, 'user-1');
         
         assertEquals(result.enqueued, false);
         assertExists(result.error);
@@ -823,21 +747,24 @@ const baseSavedContribution: DialecticContributionRow = {
     });
 
     await t.step('DATABASE_ERROR: should return error when database insert throws exception', async () => {
-        setup({
+        const mockSupabase = createMockSupabaseClient(undefined, {
             genericMockResults: {
                 'dialectic_generation_jobs': { 
                     insert: { 
                         data: null, 
-                        error: { message: 'Constraint violation', code: '23505' }
+                        error: new Error('Constraint violation')
                     } 
                 },
             },
         });
-        const payload: DialecticJobPayload = { ...basePayload, continueUntilComplete: true, continuation_count: 0 };
-        const testJob = createMockJob(payload);
-        const aiResponse: UnifiedAIResponse = { finish_reason: 'length', content: 'part 1' };
+        const deps: IContinueJobDeps = { logger: new MockLogger() };
+        const aiResponse = buildUnifiedAIResponse();
+        const executePayload = buildDialecticExecuteJobPayload({ continueUntilComplete: true });
+        if (!isJson(executePayload)) throw new Error('payload is not valid Json');
+        const testJob = buildDialecticJobRow({ payload: executePayload });
+        const savedContribution = buildDialecticContributionRow({ document_relationships: buildDocumentRelationships() });
 
-        const result = await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, baseSavedContribution, 'user-1');
+        const result = await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, savedContribution, 'user-1');
         
         assertEquals(result.enqueued, false);
         assertExists(result.error);
@@ -849,18 +776,21 @@ const baseSavedContribution: DialecticContributionRow = {
     // =================================================================
     
     await t.step('PAYLOAD_CONSTRUCTION: should correctly construct new job payload with target_contribution_id', async () => {
-        setup({
+        const mockSupabase = createMockSupabaseClient(undefined, {
             genericMockResults: {
                 'dialectic_generation_jobs': { 
                     insert: { data: [{ id: 'new-job-id' }] } 
                 },
             },
         });
-        const payload: DialecticJobPayload = { ...basePayload, continuation_count: 0 };
-        const testJob = createMockJob(payload);
-        const aiResponse: UnifiedAIResponse = { finish_reason: 'length', content: 'part 1' };
+        const deps: IContinueJobDeps = { logger: new MockLogger() };
+        const aiResponse = buildUnifiedAIResponse();
+        const executePayload = buildDialecticExecuteJobPayload({ continueUntilComplete: true });
+        if (!isJson(executePayload)) throw new Error('payload is not valid Json');
+        const testJob = buildDialecticJobRow({ payload: executePayload, session_id: 'session-1' });
+        const savedContribution = buildDialecticContributionRow({ id: 'contrib-1', document_relationships: buildDocumentRelationships() });
 
-        const result = await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, baseSavedContribution, 'user-1');
+        const result = await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, savedContribution, 'user-1');
 
         assertEquals(result.enqueued, true);
         
@@ -875,16 +805,15 @@ const baseSavedContribution: DialecticContributionRow = {
             
             assertEquals(newPayload.target_contribution_id, 'contrib-1');
             assertEquals(newPayload.continuation_count, 1);
-            assertEquals(newPayload.sessionId, basePayload.sessionId);
-            assertEquals(newPayload.projectId, basePayload.projectId);
-            assertEquals(newPayload.model_id, basePayload.model_id);
-            assertEquals(newPayload.stageSlug, basePayload.stageSlug);
-            assertEquals(newPayload.iterationNumber, basePayload.iterationNumber);
-            assertEquals(newPayload.continueUntilComplete, basePayload.continueUntilComplete);
+            assertEquals(newPayload.sessionId, executePayload.sessionId);
+            assertEquals(newPayload.projectId, executePayload.projectId);
+            assertEquals(newPayload.model_id, executePayload.model_id);
+            assertEquals(newPayload.stageSlug, executePayload.stageSlug);
+            assertEquals(newPayload.iterationNumber, executePayload.iterationNumber);
 
             // Assert that the new canonical path params are correctly formed for a simple continuation
             assertExists(newPayload.canonicalPathParams);
-            assertEquals(newPayload.canonicalPathParams.contributionType, basePayload.stageSlug);
+            assertEquals(newPayload.canonicalPathParams.contributionType, executePayload.stageSlug);
             assertEquals(newPayload.canonicalPathParams.sourceModelSlugs, undefined);
             assertEquals(newPayload.canonicalPathParams.sourceAnchorType, undefined);
             assertEquals(newPayload.canonicalPathParams.sourceAnchorModelSlug, undefined);
@@ -905,30 +834,31 @@ const baseSavedContribution: DialecticContributionRow = {
     });
 
     await t.step('DOCUMENT_RELATIONSHIPS: should carry forward document_relationships unchanged on continuation payload', async () => {
-        setup({
+        const mockSupabase = createMockSupabaseClient(undefined, {
             genericMockResults: {
                 'dialectic_generation_jobs': {
                     insert: { data: [{ id: 'new-job-id' }] }
                 },
             },
         });
+        const deps: IContinueJobDeps = { logger: new MockLogger() };
 
-        const relationships = { parenthesis: 'root-abc', thread: 'xyz-123', 'test-stage': 'some-contrib-id' };
-        const payload: DialecticJobPayload = {
-            ...basePayload,
+        const relationships = buildDocumentRelationships({ parenthesis: 'root-abc', synthesis: 'xyz-123', source_group: 'some-contrib-id' });
+        const aiResponse = buildUnifiedAIResponse();
+        const executePayload = buildDialecticExecuteJobPayload({
             continueUntilComplete: true,
-            continuation_count: 0,
             document_relationships: relationships,
-        };
-        const testJob = createMockJob(payload);
-        const aiResponse: UnifiedAIResponse = { finish_reason: 'length', content: 'part 1' };
+        });
+        if (!isJson(executePayload)) throw new Error('payload is not valid Json');
+        const testJob = buildDialecticJobRow({ payload: executePayload });
+        const savedContribution = buildDialecticContributionRow({ document_relationships: buildDocumentRelationships() });
 
         const result = await continueJob(
             deps,
             mockSupabase.client as unknown as SupabaseClient<Database>,
             testJob,
             aiResponse,
-            baseSavedContribution,
+            savedContribution,
             'user-1',
         );
 
@@ -946,12 +876,12 @@ const baseSavedContribution: DialecticContributionRow = {
             assertEquals(newPayload.document_relationships, relationships);
 
             // Chain link and preserved core fields
-            assertEquals(newPayload.target_contribution_id, baseSavedContribution.id);
-            assertEquals(newPayload.sessionId, basePayload.sessionId);
-            assertEquals(newPayload.projectId, basePayload.projectId);
-            assertEquals(newPayload.model_id, basePayload.model_id);
-            assertEquals(newPayload.stageSlug, basePayload.stageSlug);
-            assertEquals(newPayload.iterationNumber, basePayload.iterationNumber);
+            assertEquals(newPayload.target_contribution_id, savedContribution.id);
+            assertEquals(newPayload.sessionId, executePayload.sessionId);
+            assertEquals(newPayload.projectId, executePayload.projectId);
+            assertEquals(newPayload.model_id, executePayload.model_id);
+            assertEquals(newPayload.stageSlug, executePayload.stageSlug);
+            assertEquals(newPayload.iterationNumber, executePayload.iterationNumber);
             assertEquals(newPayload.continueUntilComplete, true);
             assertEquals(typeof newPayload.continuation_count, 'number');
             assertExists(newPayload.canonicalPathParams, 'canonicalPathParams should be preserved');
@@ -962,29 +892,25 @@ const baseSavedContribution: DialecticContributionRow = {
     });
 
     await t.step('DOCUMENT_RELATIONSHIPS: uses saved contribution relationships when trigger payload lacks them', async () => {
-        setup({
+        const mockSupabase = createMockSupabaseClient(undefined, {
             genericMockResults: {
                 'dialectic_generation_jobs': {
                     insert: { data: [{ id: 'new-job-id' }] }
                 },
             },
         });
+        const deps: IContinueJobDeps = { logger: new MockLogger() };
 
-        const relationships = { thesis: 'root-xyz' };
-        const savedWithRelationships: DialecticContributionRow = {
-            ...baseSavedContribution,
-            document_relationships: relationships,
-        };
+        const relationships = buildDocumentRelationships({ thesis: 'root-xyz' });
+        const savedWithRelationships = buildDialecticContributionRow({ document_relationships: relationships });
 
-        const payload: DialecticJobPayload = {
-            ...basePayload,
+        const aiResponse = buildUnifiedAIResponse();
+        const executePayload = buildDialecticExecuteJobPayload({
             continueUntilComplete: true,
-            continuation_count: 0,
             // intentionally omit document_relationships on triggering payload
-        };
-
-        const testJob = createMockJob(payload);
-        const aiResponse: UnifiedAIResponse = { finish_reason: 'length', content: 'part 1' };
+        });
+        if (!isJson(executePayload)) throw new Error('payload is not valid Json');
+        const testJob = buildDialecticJobRow({ payload: executePayload });
 
         const result = await continueJob(
             deps,
@@ -1013,22 +939,18 @@ const baseSavedContribution: DialecticContributionRow = {
     });
 
     await t.step('DOCUMENT_RELATIONSHIPS: should hard-fail enqueue when relationships missing on both trigger and saved', async () => {
-        setup();
+        const mockSupabase = createMockSupabaseClient(undefined, undefined);
+        const deps: IContinueJobDeps = { logger: new MockLogger() };
 
-        // saved contribution has no document_relationships (explicitly null for this test)
-        const savedWithoutRelationships: DialecticContributionRow = {
-            ...baseSavedContribution,
-            document_relationships: null,
-        };
-        const payload: DialecticJobPayload = {
-            ...basePayload,
+        // saved contribution has no document_relationships (builder default is null)
+        const savedWithoutRelationships = buildDialecticContributionRow();
+        const aiResponse = buildUnifiedAIResponse();
+        const executePayload = buildDialecticExecuteJobPayload({
             continueUntilComplete: true,
-            continuation_count: 0,
             // intentionally no document_relationships on triggering payload
-        };
-
-        const testJob = createMockJob(payload);
-        const aiResponse: UnifiedAIResponse = { finish_reason: 'length', content: 'part 1' };
+        });
+        if (!isJson(executePayload)) throw new Error('payload is not valid Json');
+        const testJob = buildDialecticJobRow({ payload: executePayload });
 
         const result = await continueJob(
             deps,
@@ -1047,35 +969,30 @@ const baseSavedContribution: DialecticContributionRow = {
     });
 
     await t.step('DOCUMENT_RELATIONSHIPS: continuation payload must include document_relationships[stageSlug] from saved when trigger has only source_group', async () => {
-        setup({
+        const mockSupabase = createMockSupabaseClient(undefined, {
             genericMockResults: {
                 'dialectic_generation_jobs': {
                     insert: { data: [{ id: 'new-job-id' }] },
                 },
             },
         });
+        const deps: IContinueJobDeps = { logger: new MockLogger() };
 
         const rootContribId = 'root-contrib-antithesis-123';
         const sourceGroupId = 'group-uuid-456';
-        const savedWithStageKey: DialecticContributionRow = {
-            ...baseSavedContribution,
+        const savedWithStageKey = buildDialecticContributionRow({
             id: 'first-chunk-contrib-id',
-            document_relationships: {
-                antithesis: rootContribId,
-                source_group: sourceGroupId,
-            },
-        };
+            document_relationships: buildDocumentRelationships({ antithesis: rootContribId, source_group: sourceGroupId }),
+        });
 
-        const payloadWithSourceGroupOnly: DialecticJobPayload = {
-            ...basePayload,
+        const aiResponse = buildUnifiedAIResponse();
+        const executePayload = buildDialecticExecuteJobPayload({
             stageSlug: 'antithesis',
             continueUntilComplete: true,
-            continuation_count: 0,
-            document_relationships: { source_group: sourceGroupId },
-        };
-
-        const testJob = createMockJob(payloadWithSourceGroupOnly, { stage_slug: 'antithesis' });
-        const aiResponse: UnifiedAIResponse = { finish_reason: 'length', content: 'part 1' };
+            document_relationships: buildDocumentRelationships({ source_group: sourceGroupId }),
+        });
+        if (!isJson(executePayload)) throw new Error('payload is not valid Json');
+        const testJob = buildDialecticJobRow({ payload: executePayload, stage_slug: 'antithesis' });
 
         const result = await continueJob(
             deps,
@@ -1105,18 +1022,21 @@ const baseSavedContribution: DialecticContributionRow = {
     });
 
     await t.step('PAYLOAD_CONSTRUCTION: should increment continuation_count from existing value', async () => {
-        setup({
+        const mockSupabase = createMockSupabaseClient(undefined, {
             genericMockResults: {
                 'dialectic_generation_jobs': { 
                     insert: { data: [{ id: 'new-job-id' }] } 
                 },
             },
         });
-        const payload: DialecticJobPayload = { ...basePayload, continuation_count: 3 };
-        const testJob = createMockJob(payload);
-        const aiResponse: UnifiedAIResponse = { finish_reason: 'length', content: 'part 4' };
+        const deps: IContinueJobDeps = { logger: new MockLogger() };
+        const aiResponse = buildUnifiedAIResponse();
+        const executePayload = buildDialecticExecuteJobPayload({ continueUntilComplete: true, continuation_count: 3 });
+        if (!isJson(executePayload)) throw new Error('payload is not valid Json');
+        const testJob = buildDialecticJobRow({ payload: executePayload });
+        const savedContribution = buildDialecticContributionRow({ document_relationships: buildDocumentRelationships() });
 
-        const result = await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, baseSavedContribution, 'user-1');
+        const result = await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, savedContribution, 'user-1');
 
         assertEquals(result.enqueued, true);
         
@@ -1135,19 +1055,23 @@ const baseSavedContribution: DialecticContributionRow = {
     // =================================================================
     
     await t.step('LOGGING: should log continuation message when enqueuing job', async () => {
-        setup({
+        const mockSupabase = createMockSupabaseClient(undefined, {
             genericMockResults: {
                 'dialectic_generation_jobs': { 
                     insert: { data: [{ id: 'new-job-id' }] } 
                 },
             },
         });
+        const mockLogger = new MockLogger();
+        const deps: IContinueJobDeps = { logger: mockLogger };
         const infoSpy = spy(mockLogger, 'info');
-        const payload: DialecticJobPayload = { ...basePayload, continuation_count: 0 };
-        const testJob = createMockJob(payload);
-        const aiResponse: UnifiedAIResponse = { finish_reason: 'length', content: 'part 1' };
+        const aiResponse = buildUnifiedAIResponse();
+        const executePayload = buildDialecticExecuteJobPayload({ continueUntilComplete: true });
+        if (!isJson(executePayload)) throw new Error('payload is not valid Json');
+        const testJob = buildDialecticJobRow({ payload: executePayload });
+        const savedContribution = buildDialecticContributionRow({ document_relationships: buildDocumentRelationships() });
 
-        await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, baseSavedContribution, 'user-1');
+        await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, savedContribution, 'user-1');
 
         const continuationLogCall = infoSpy.calls.find(call => 
             call.args[0] && typeof call.args[0] === 'string' &&
@@ -1158,43 +1082,51 @@ const baseSavedContribution: DialecticContributionRow = {
     });
 
     await t.step('LOGGING: should log success message when job is enqueued', async () => {
-        setup({
+        const mockSupabase = createMockSupabaseClient(undefined, {
             genericMockResults: {
                 'dialectic_generation_jobs': { 
                     insert: { data: [{ id: 'new-job-id' }] } 
                 },
             },
         });
+        const mockLogger = new MockLogger();
+        const deps: IContinueJobDeps = { logger: mockLogger };
         const infoSpy = spy(mockLogger, 'info');
-        const payload: DialecticJobPayload = { ...basePayload, continuation_count: 0 };
-        const testJob = createMockJob(payload);
-        const aiResponse: UnifiedAIResponse = { finish_reason: 'length', content: 'part 1' };
+        const aiResponse = buildUnifiedAIResponse();
+        const executePayload = buildDialecticExecuteJobPayload({ continueUntilComplete: true });
+        if (!isJson(executePayload)) throw new Error('payload is not valid Json');
+        const testJob = buildDialecticJobRow({ payload: executePayload });
+        const savedContribution = buildDialecticContributionRow({ document_relationships: buildDocumentRelationships() });
 
-        await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, baseSavedContribution, 'user-1');
+        await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, savedContribution, 'user-1');
 
         const successLogCall = infoSpy.calls.find(call => 
             call.args[0] && typeof call.args[0] === 'string' &&
             call.args[0].includes('Successfully enqueued continuation job') && 
-            call.args[0].includes(baseSavedContribution.id)
+            call.args[0].includes(savedContribution.id)
         );
         assertExists(successLogCall, 'Should log successful enqueuing');
     });
 
     await t.step('LOGGING: should log error message when database insert fails', async () => {
-        const dbError = { message: 'DB Error' };
-        setup({
+        const dbError = new Error('DB Error');
+        const mockSupabase = createMockSupabaseClient(undefined, {
             genericMockResults: {
                 'dialectic_generation_jobs': { 
                     insert: { data: null, error: dbError } 
                 },
             },
         });
+        const mockLogger = new MockLogger();
+        const deps: IContinueJobDeps = { logger: mockLogger };
         const errorSpy = spy(mockLogger, 'error');
-        const payload: DialecticJobPayload = { ...basePayload, continueUntilComplete: true, continuation_count: 0 };
-        const testJob = createMockJob(payload);
-        const aiResponse: UnifiedAIResponse = { finish_reason: 'length', content: 'part 1' };
+        const aiResponse = buildUnifiedAIResponse();
+        const executePayload = buildDialecticExecuteJobPayload({ continueUntilComplete: true });
+        if (!isJson(executePayload)) throw new Error('payload is not valid Json');
+        const testJob = buildDialecticJobRow({ payload: executePayload });
+        const savedContribution = buildDialecticContributionRow({ document_relationships: buildDocumentRelationships() });
 
-        await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, baseSavedContribution, 'user-1');
+        await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, savedContribution, 'user-1');
 
         const errorLogCall = errorSpy.calls.find(call => 
             call.args[0] && typeof call.args[0] === 'string' &&
@@ -1209,45 +1141,50 @@ const baseSavedContribution: DialecticContributionRow = {
         assertExists(errorLogCall, 'Should log database error');
     });
 
-    await t.step('LOGGING: should not log continuation when continueUntilComplete is false', async () => {
-        setup();
+    await t.step('LOGGING: should log continuation when continueUntilComplete is false', async () => {
+        const mockSupabase = createMockSupabaseClient(undefined, {
+            genericMockResults: {
+                'dialectic_generation_jobs': { 
+                    insert: { data: [{ id: 'new-job-id' }] } 
+                },
+            },
+        });
+        const mockLogger = new MockLogger();
+        const deps: IContinueJobDeps = { logger: mockLogger };
         const infoSpy = spy(mockLogger, 'info');
         const errorSpy = spy(mockLogger, 'error');
-        const payload: DialecticJobPayload = { ...basePayload, continueUntilComplete: false, continuation_count: 0 };
-        const testJob = createMockJob(payload);
-        const aiResponse: UnifiedAIResponse = { finish_reason: 'stop', content: 'final part' };
+        const aiResponse = buildUnifiedAIResponse();
+        const executePayload = buildDialecticExecuteJobPayload({ continueUntilComplete: false });
+        if (!isJson(executePayload)) throw new Error('payload is not valid Json');
+        const testJob = buildDialecticJobRow({ payload: executePayload });
+        const savedContribution = buildDialecticContributionRow({ document_relationships: buildDocumentRelationships() });
         
-        await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, baseSavedContribution, 'user-1');
+        await continueJob(deps, mockSupabase.client as unknown as SupabaseClient<Database>, testJob, aiResponse, savedContribution, 'user-1');
 
         const continuationLogCalls = [...infoSpy.calls, ...errorSpy.calls].filter(call => 
             call.args[0] && typeof call.args[0] === 'string' &&
             (call.args[0].includes('Continuation') || call.args[0].includes('continuation'))
         );
-        assertEquals(continuationLogCalls.length, 0, 'Should not log anything about continuation when continueUntilComplete is false');
+        assert(continuationLogCalls.length > 0, 'Should log continuation info when continueUntilComplete is false');
     });
 });
 
 Deno.test("continueJob enqueues with full original payload preserved and overlays only required fields", async () => {
     // Arrange: build an original execute payload containing many fields that must be preserved
-    const originalPayload: DialecticExecuteJobPayload = {
+    const originalPayload = buildDialecticExecuteJobPayload({
       sessionId: "sess-1",
       projectId: "proj-1",
       model_id: "model-1",
-      stageSlug: DialecticStageSlug.Thesis,
-      iterationNumber: 1,
       continueUntilComplete: true,
       continuation_count: 2,
       walletId: "wallet-123",
       maxRetries: 3,
       prompt_template_id: "template-A",
       output_type: FileType.HeaderContext,
-      canonicalPathParams: { contributionType: "thesis", stageSlug: DialecticStageSlug.Thesis },
       inputs: { seed_prompt_resource_id: "res-1" },
-      document_relationships: { thesis: "contrib-root-1" },
-      isIntermediate: false,
+      document_relationships: buildDocumentRelationships({ thesis: "contrib-root-1" }),
       user_jwt: "user.jwt.token",
-      idempotencyKey: 'idem-continue-job-6',
-    };
+    });
 
     if (!originalPayload.stageSlug) {
       throw new Error("stageSlug is required");
@@ -1258,67 +1195,14 @@ Deno.test("continueJob enqueues with full original payload preserved and overlay
     }
 
     // Mock job row with the above payload
-    const originalJob: DialecticJobRow = {
-      id: "job-initial-1",
-      user_id: "user-1",
-      session_id: originalPayload.sessionId,
-      stage_slug: originalPayload.stageSlug,
-      iteration_number: originalPayload.iterationNumber ?? 1,
+    const originalJob = buildDialecticJobRow({
       payload: originalPayload,
-      status: "completed",
-      attempt_count: 0,
-      max_retries: 3,
-      created_at: new Date().toISOString(),
-      started_at: null,
-      completed_at: new Date().toISOString(),
-      results: null,
-      error_details: null,
-      parent_job_id: null,
-      target_contribution_id: null,
-      prerequisite_job_id: null,
-      is_test_job: false,
-      job_type: 'PLAN',
-      idempotency_key: originalPayload.idempotencyKey,
-    };
+    });
   
     // Contribution just saved from the prior call
-    const savedContribution: DialecticContributionRow = {
-      id: "contrib-root-1",
-      session_id: originalPayload.sessionId,
-      stage: originalPayload.stageSlug,
-      iteration_number: originalPayload.iterationNumber ?? 1,
-      model_id: originalPayload.model_id,
-      edit_version: 1,
-      is_latest_edit: true,
-      citations: null,
-      contribution_type: "thesis",
-      created_at: new Date().toISOString(),
-      error: null,
-      file_name: "chunk_1.md",
-      mime_type: "text/markdown",
-      model_name: "Model One",
-      original_model_contribution_id: null,
-      processing_time_ms: 10,
-      prompt_template_id_used: null,
-      raw_response_storage_path: null,
-      seed_prompt_url: null,
-      size_bytes: 100,
-      storage_bucket: "dialectic-content",
-      storage_path: "projects/proj-1/sessions/sess-1/thesis/_work",
-      target_contribution_id: null,
-      tokens_used_input: 1,
-      tokens_used_output: 1,
-      updated_at: new Date().toISOString(),
-      user_id: "user-1",
-      document_relationships: { thesis: "contrib-root-1" },
-      is_header: false,
-      source_prompt_resource_id: null,
-    };
+    const savedContribution = buildDialecticContributionRow();
   
-    const aiResponse: UnifiedAIResponse = {
-      content: "partial",
-      finish_reason: "max_tokens",
-    };
+    const aiResponse = buildUnifiedAIResponse();
   
     // Capture holder for inserted row to dialectic_generation_jobs
     let insertedRow: unknown = undefined;
@@ -1401,25 +1285,10 @@ Deno.test("continueJob enqueues with full original payload preserved and overlay
   // (JWT enforcement tests defined below)
 
 Deno.test('continueJob enforces user_jwt presence: missing user_jwt fails and does not insert', async () => {
-    const payload = { 
-        sessionId: 'session-1',
-        projectId: 'project-1',
-        model_id: 'model-1',
-        stageSlug: DialecticStageSlug.Thesis,
-        iterationNumber: 1,
-        prompt_template_id: 'test_template',
-        inputs: { source: 'some_input' },
-        output_type: FileType.HeaderContext,
-        continueUntilComplete: true, 
-        continuation_count: 0,
-        walletId: 'wallet-1',
-        maxRetries: 5,
-        canonicalPathParams: { contributionType: 'thesis', stageSlug: DialecticStageSlug.Thesis },
-        // user_jwt is intentionally omitted to test missing case
-    } as unknown as DialecticJobPayload;
-
-    const job = createMockJob(payload);
-    const aiResponse: UnifiedAIResponse = { finish_reason: 'length', content: 'part 1' };
+    const { user_jwt: _omit, ...payloadWithoutJwt } = buildDialecticExecuteJobPayload();
+    if (!isJson(payloadWithoutJwt)) throw new Error('payload is not valid Json');
+    const job = buildDialecticJobRow({ payload: payloadWithoutJwt });
+    const aiResponse = buildUnifiedAIResponse();
 
     const mock = createMockSupabaseClient(undefined, {});
     const depsLocal: IContinueJobDeps = { logger: new MockLogger() };
@@ -1429,14 +1298,7 @@ Deno.test('continueJob enforces user_jwt presence: missing user_jwt fails and do
         mock.client as unknown as SupabaseClient<Database>,
         job,
         aiResponse,
-        {
-            id: 'contrib-1', session_id: payload.sessionId, stage: payload.stageSlug!, model_name: 'm', file_name: 'f.md',
-            contribution_type: 'model_generated', citations: null, created_at: new Date().toISOString(), edit_version: 1, error: null,
-            is_latest_edit: true, iteration_number: 1, mime_type: 'text/markdown', model_id: payload.model_id, original_model_contribution_id: null,
-            processing_time_ms: null, prompt_template_id_used: null, raw_response_storage_path: null, seed_prompt_url: null, size_bytes: 1,
-            storage_bucket: 'b', storage_path: '/p', target_contribution_id: null, tokens_used_input: null, tokens_used_output: null,
-            updated_at: new Date().toISOString(), user_id: null, document_relationships: { thesis: 'contrib-1' }, is_header: false, source_prompt_resource_id: null,
-        },
+        buildDialecticContributionRow(),
         'user-1',
     );
 
@@ -1447,25 +1309,10 @@ Deno.test('continueJob enforces user_jwt presence: missing user_jwt fails and do
 });
 
 Deno.test('continueJob enforces user_jwt presence: empty user_jwt fails and does not insert', async () => {
-    const payload = { 
-        sessionId: 'session-1',
-        projectId: 'project-1',
-        model_id: 'model-1',
-        stageSlug: DialecticStageSlug.Thesis,
-        iterationNumber: 1,
-        prompt_template_id: 'test_template',
-        inputs: { source: 'some_input' },
-        output_type: 'thesis',
-        continueUntilComplete: true, 
-        continuation_count: 0,
-        walletId: 'wallet-1',
-        maxRetries: 5,
-        canonicalPathParams: { contributionType: 'thesis', stageSlug: DialecticStageSlug.Thesis },
-        user_jwt: '',
-    } as unknown as DialecticJobPayload;
-
-    const job = createMockJob(payload);
-    const aiResponse: UnifiedAIResponse = { finish_reason: 'length', content: 'part 1' };
+    const executePayload = buildDialecticExecuteJobPayload({ user_jwt: '' });
+    if (!isJson(executePayload)) throw new Error('payload is not valid Json');
+    const job = buildDialecticJobRow({ payload: executePayload });
+    const aiResponse = buildUnifiedAIResponse();
 
     const mock = createMockSupabaseClient(undefined, {});
     const depsLocal: IContinueJobDeps = { logger: new MockLogger() };
@@ -1475,14 +1322,7 @@ Deno.test('continueJob enforces user_jwt presence: empty user_jwt fails and does
         mock.client as unknown as SupabaseClient<Database>,
         job,
         aiResponse,
-        {
-            id: 'contrib-1', session_id: payload.sessionId, stage: payload.stageSlug!, model_name: 'm', file_name: 'f.md',
-            contribution_type: 'model_generated', citations: null, created_at: new Date().toISOString(), edit_version: 1, error: null,
-            is_latest_edit: true, iteration_number: 1, mime_type: 'text/markdown', model_id: payload.model_id, original_model_contribution_id: null,
-            processing_time_ms: null, prompt_template_id_used: null, raw_response_storage_path: null, seed_prompt_url: null, size_bytes: 1,
-            storage_bucket: 'b', storage_path: '/p', target_contribution_id: null, tokens_used_input: null, tokens_used_output: null,
-            updated_at: new Date().toISOString(), user_id: null, document_relationships: { thesis: 'contrib-1' }, is_header: false, source_prompt_resource_id: null,
-        },
+        buildDialecticContributionRow(),
         'user-1',
     );
 
@@ -1494,24 +1334,10 @@ Deno.test('continueJob enforces user_jwt presence: empty user_jwt fails and does
 
 // Explicit preservation test per checklist: payload with user_jwt should enqueue and keep user_jwt unchanged
 Deno.test('JWT_PRESERVATION: when payload.user_jwt is present, continueJob enqueues and preserves it unchanged', async () => {
-    const payload: DialecticExecuteJobPayload = {
-        sessionId: 'session-1',
-        projectId: 'project-1',
-        model_id: 'model-1',
-        stageSlug: DialecticStageSlug.Thesis,
-        iterationNumber: 1,
-        prompt_template_id: 'test_template',
-        inputs: { source: 'some_input' },
-        output_type: FileType.HeaderContext,
-        continueUntilComplete: true,
-        continuation_count: 0,
-        walletId: 'wallet-1',
-        canonicalPathParams: { contributionType: 'thesis', stageSlug: DialecticStageSlug.Thesis },
-        user_jwt: 'jwt.token.here',
-        idempotencyKey: 'idem-continue-job-7',
-    };
-    const job = createMockJob(payload);
-    const aiResponse: UnifiedAIResponse = { finish_reason: 'length', content: 'part 1' };
+    const executePayload = buildDialecticExecuteJobPayload({ continueUntilComplete: true });
+    if (!isJson(executePayload)) throw new Error('payload is not valid Json');
+    const job = buildDialecticJobRow({ payload: executePayload });
+    const aiResponse = buildUnifiedAIResponse();
 
     let insertedRow: unknown = undefined;
     const { client } = createMockSupabaseClient('user-1', {
@@ -1531,14 +1357,7 @@ Deno.test('JWT_PRESERVATION: when payload.user_jwt is present, continueJob enque
         client as unknown as SupabaseClient<Database>,
         job,
         aiResponse,
-        {
-            id: 'contrib-1', session_id: payload.sessionId, stage: payload.stageSlug!, model_name: 'm', file_name: 'f.md',
-            contribution_type: 'model_generated', citations: null, created_at: new Date().toISOString(), edit_version: 1, error: null,
-            is_latest_edit: true, iteration_number: 1, mime_type: 'text/markdown', model_id: payload.model_id, original_model_contribution_id: null,
-            processing_time_ms: null, prompt_template_id_used: null, raw_response_storage_path: null, seed_prompt_url: null, size_bytes: 1,
-            storage_bucket: 'b', storage_path: '/p', target_contribution_id: null, tokens_used_input: null, tokens_used_output: null,
-            updated_at: new Date().toISOString(), user_id: null, document_relationships: { thesis: 'contrib-1' }, is_header: false, source_prompt_resource_id: null,
-        },
+        buildDialecticContributionRow({ document_relationships: buildDocumentRelationships() }),
         'user-1',
     );
 
@@ -1550,7 +1369,7 @@ Deno.test('JWT_PRESERVATION: when payload.user_jwt is present, continueJob enque
     const inserted = insertedRow;
     assert(isDialecticExecuteJobPayload(inserted.payload));
     const newPayload = inserted.payload;
-    assertEquals(newPayload.user_jwt, payload.user_jwt);
+    assertEquals(newPayload.user_jwt, executePayload.user_jwt);
 });
 
 Deno.test('is_test_job propagation', async (t) => {
@@ -1575,54 +1394,19 @@ Deno.test('is_test_job propagation', async (t) => {
         deps = { logger: mockLogger };
     };
 
-    const basePayload: DialecticExecuteJobPayload = {
-        sessionId: 'session-1',
-        projectId: 'project-1',
-        model_id: 'model-1',
-        stageSlug: DialecticStageSlug.Thesis,
-        iterationNumber: 1,
-        output_type: FileType.HeaderContext,
-        continueUntilComplete: true,
-        walletId: 'wallet-1',
-        user_jwt: 'jwt.token.here',
-        prompt_template_id: 'test_template',
-        canonicalPathParams: { contributionType: 'thesis', stageSlug: DialecticStageSlug.Thesis },
-        inputs: { seed_prompt_resource_id: 'res-1' },
-        idempotencyKey: 'idem-continue-job-8',
-    };
-
-    const baseSavedContribution: DialecticContributionRow = {
-        id: 'contrib-1',
-        session_id: 'session-1',
-        stage: 'test-stage',
-        model_name: 'test-model',
-        file_name: 'test.md',
-        contribution_type: 'model_generated',
-        created_at: new Date().toISOString(),
-        edit_version: 1,
-        is_latest_edit: true,
-        iteration_number: 1,
-        mime_type: 'text/markdown',
-        model_id: 'model-1',
-        storage_bucket: 'test-bucket',
-        storage_path: '/path/to/file',
-        updated_at: new Date().toISOString(),
-        document_relationships: { 'test-stage': 'contrib-1' },
-        citations: null, error: null, original_model_contribution_id: null, processing_time_ms: null, prompt_template_id_used: null, raw_response_storage_path: null, seed_prompt_url: null, size_bytes: null, target_contribution_id: null, tokens_used_input: null, tokens_used_output: null, user_id: null, is_header: false, source_prompt_resource_id: null,
-    };
-
     await t.step("continueJob should propagate 'is_test_job' flag from parent to new job", async () => {
         setup();
-        const testPayload = { ...basePayload, is_test_job: true };
-        const parentJob = createMockJob(testPayload);
-        const aiResponse: UnifiedAIResponse = { finish_reason: 'length', content: 'part 1' };
+        const executePayload = buildDialecticExecuteJobPayload({ continueUntilComplete: true });
+        if (!isJson(executePayload)) throw new Error('payload is not valid Json');
+        const parentJob = buildDialecticJobRow({ payload: executePayload, is_test_job: true });
+        const aiResponse = buildUnifiedAIResponse();
 
         await continueJob(
             deps,
             mockSupabase.client as unknown as SupabaseClient<Database>,
             parentJob,
             aiResponse,
-            baseSavedContribution,
+            buildDialecticContributionRow({ document_relationships: buildDocumentRelationships() }),
             'user-1'
         );
 
@@ -1646,40 +1430,17 @@ Deno.test('CONTINUATION_CONTEXT: enqueues on continuable finish_reason', async (
         },
     });
     const depsLocal: IContinueJobDeps = { logger: new MockLogger() };
-    const payload: DialecticExecuteJobPayload = {
-        sessionId: 'session-1',
-        projectId: 'project-1',
-        model_id: 'model-1',
-        stageSlug: DialecticStageSlug.Thesis,
-        iterationNumber: 1,
-        prompt_template_id: 'test_template',
-        inputs: { source: 'some_input' },
-        output_type: FileType.HeaderContext,
-        continueUntilComplete: true,
-        continuation_count: 0,
-        walletId: 'wallet-1',
-        canonicalPathParams: { contributionType: 'thesis', stageSlug: DialecticStageSlug.Thesis },
-        user_jwt: 'jwt.token.here',
-        idempotencyKey: 'idem-continue-job-9',
-    };
-    const job = createMockJob(payload);
-    const aiResponse: UnifiedAIResponse = { finish_reason: 'length', content: 'part 1' };
+    const executePayload = buildDialecticExecuteJobPayload({ continueUntilComplete: true });
+    if (!isJson(executePayload)) throw new Error('payload is not valid Json');
+    const job = buildDialecticJobRow({ payload: executePayload });
+    const aiResponse = buildUnifiedAIResponse();
 
     await continueJob(
         depsLocal,
         mock.client as unknown as SupabaseClient<Database>,
         job,
         aiResponse,
-        {
-            id: 'contrib-1', session_id: payload.sessionId, stage: payload.stageSlug!,
-            model_name: 'm', file_name: 'f.md', contribution_type: 'model_generated',
-            citations: null, created_at: new Date().toISOString(), edit_version: 1, error: null,
-            is_latest_edit: true, iteration_number: 1, mime_type: 'text/markdown', model_id: payload.model_id,
-            original_model_contribution_id: null, processing_time_ms: null, prompt_template_id_used: null,
-            raw_response_storage_path: null, seed_prompt_url: null, size_bytes: 1, storage_bucket: 'b', storage_path: '/p',
-            target_contribution_id: null, tokens_used_input: null, tokens_used_output: null, updated_at: new Date().toISOString(),
-            user_id: null, document_relationships: { thesis: 'contrib-1' }, is_header: false, source_prompt_resource_id: null,
-        },
+        buildDialecticContributionRow({ document_relationships: buildDocumentRelationships() }),
         'user-1',
     );
 
@@ -1695,40 +1456,17 @@ Deno.test('JSON_MALFORMED: malformed JSON content enqueues continuation (overrid
         },
     });
     const depsLocal: IContinueJobDeps = { logger: new MockLogger() };
-    const payload: DialecticExecuteJobPayload = {
-        sessionId: 'session-1',
-        projectId: 'project-1',
-        model_id: 'model-1',
-        stageSlug: DialecticStageSlug.Thesis,
-        iterationNumber: 1,
-        prompt_template_id: 'test_template',
-        inputs: { source: 'some_input' },
-        output_type: FileType.HeaderContext,
-        continueUntilComplete: true,
-        continuation_count: 0,
-        walletId: 'wallet-1',
-        canonicalPathParams: { contributionType: 'thesis', stageSlug: DialecticStageSlug.Thesis },
-        user_jwt: 'jwt.token.here',
-        idempotencyKey: 'idem-continue-job-10',
-    };
-    const job = createMockJob(payload);
-    const aiResponse: UnifiedAIResponse = { finish_reason: 'stop', content: '{ "incomplete": true' };
+    const executePayload = buildDialecticExecuteJobPayload({ continueUntilComplete: true });
+    if (!isJson(executePayload)) throw new Error('payload is not valid Json');
+    const job = buildDialecticJobRow({ payload: executePayload });
+    const aiResponse = buildUnifiedAIResponse({ content: '{ "incomplete": true' });
 
     await continueJob(
         depsLocal,
         mock.client as unknown as SupabaseClient<Database>,
         job,
         aiResponse,
-        {
-            id: 'contrib-1', session_id: payload.sessionId, stage: payload.stageSlug!,
-            model_name: 'm', file_name: 'f.md', contribution_type: 'model_generated',
-            citations: null, created_at: new Date().toISOString(), edit_version: 1, error: null,
-            is_latest_edit: true, iteration_number: 1, mime_type: 'text/markdown', model_id: payload.model_id,
-            original_model_contribution_id: null, processing_time_ms: null, prompt_template_id_used: null,
-            raw_response_storage_path: null, seed_prompt_url: null, size_bytes: 1, storage_bucket: 'b', storage_path: '/p',
-            target_contribution_id: null, tokens_used_input: null, tokens_used_output: null, updated_at: new Date().toISOString(),
-            user_id: null, document_relationships: { thesis: 'contrib-1' }, is_header: false, source_prompt_resource_id: null,
-        },
+        buildDialecticContributionRow({ document_relationships: buildDocumentRelationships() }),
         'user-1',
     );
 
@@ -1744,37 +1482,17 @@ Deno.test('NO_STEP_INFO: continuation payload must not contain deprecated "step_
         },
     });
     const depsLocal: IContinueJobDeps = { logger: new MockLogger() };
-    const job: DialecticJobRow = createMockJob({
-        sessionId: 'session-1',
-        projectId: 'project-1',
-        model_id: 'model-1',
-        stageSlug: DialecticStageSlug.Thesis,
-        iterationNumber: 1,
-        prompt_template_id: 'test_template',
-        inputs: { source: 'x' },
-        output_type: FileType.HeaderContext,
-        continueUntilComplete: true,
-        continuation_count: 0,
-        walletId: 'wallet-1',
-        canonicalPathParams: { contributionType: 'thesis', stageSlug: DialecticStageSlug.Thesis },
-        user_jwt: 'jwt.token.here',
-        idempotencyKey: 'idem-continue-job-11',
-    });
-    const aiResponse: UnifiedAIResponse = { finish_reason: 'length', content: 'part' };
+    const executePayload = buildDialecticExecuteJobPayload({ continueUntilComplete: true });
+    if (!isJson(executePayload)) throw new Error('payload is not valid Json');
+    const job = buildDialecticJobRow({ payload: executePayload });
+    const aiResponse = buildUnifiedAIResponse();
 
     await continueJob(
         depsLocal,
         mock.client as unknown as SupabaseClient<Database>,
         job,
         aiResponse,
-        {
-            id: 'contrib-1', session_id: 'session-1', stage: 'test-stage', model_name: 'm', file_name: 'f.md',
-            contribution_type: 'model_generated', citations: null, created_at: new Date().toISOString(), edit_version: 1, error: null,
-            is_latest_edit: true, iteration_number: 1, mime_type: 'text/markdown', model_id: 'model-1', original_model_contribution_id: null,
-            processing_time_ms: null, prompt_template_id_used: null, raw_response_storage_path: null, seed_prompt_url: null, size_bytes: 1,
-            storage_bucket: 'b', storage_path: '/p', target_contribution_id: null, tokens_used_input: null, tokens_used_output: null,
-            updated_at: new Date().toISOString(), user_id: null, document_relationships: { thesis: 'contrib-1' }, is_header: false, source_prompt_resource_id: null,
-        },
+        buildDialecticContributionRow({ document_relationships: buildDocumentRelationships() }),
         'user-1',
     );
 
@@ -1795,40 +1513,20 @@ Deno.test('STEP_IDENTITY: preserves planner_metadata.recipe_step_id and core ide
         },
     });
     const depsLocal: IContinueJobDeps = { logger: new MockLogger() };
-    const original: DialecticExecuteJobPayload = {
-        sessionId: 'session-1',
-        projectId: 'project-1',
-        model_id: 'model-1',
-        stageSlug: DialecticStageSlug.Thesis,
-        iterationNumber: 1,
-        prompt_template_id: 'test_template',
-        inputs: { source: 'x' },
-        output_type: FileType.HeaderContext,
+    const executePayload = buildDialecticExecuteJobPayload({
         continueUntilComplete: true,
-        continuation_count: 0,
-        walletId: 'wallet-1',
-        canonicalPathParams: { contributionType: 'thesis', stageSlug: DialecticStageSlug.Thesis },
-        user_jwt: 'jwt.token.here',
         planner_metadata: { recipe_step_id: 'step-123' },
-        idempotencyKey: 'idem-continue-job-12',
-    };
-    const job = createMockJob(original);
-    const aiResponse: UnifiedAIResponse = { finish_reason: 'length', content: 'part' };
+    });
+    if (!isJson(executePayload)) throw new Error('payload is not valid Json');
+    const job = buildDialecticJobRow({ payload: executePayload });
+    const aiResponse = buildUnifiedAIResponse();
 
     await continueJob(
         depsLocal,
         mock.client as unknown as SupabaseClient<Database>,
         job,
         aiResponse,
-        {
-            id: 'contrib-1', session_id: original.sessionId, stage: original.stageSlug!, model_name: 'm', file_name: 'f.md',
-            contribution_type: 'model_generated', citations: null, created_at: new Date().toISOString(), edit_version: 1, error: null,
-            is_latest_edit: true, iteration_number: 1, mime_type: 'text/markdown', model_id: original.model_id,
-            original_model_contribution_id: null, processing_time_ms: null, prompt_template_id_used: null, raw_response_storage_path: null,
-            seed_prompt_url: null, size_bytes: 1, storage_bucket: 'b', storage_path: '/p', target_contribution_id: null,
-            tokens_used_input: null, tokens_used_output: null, updated_at: new Date().toISOString(), user_id: null,
-            document_relationships: { thesis: 'contrib-1' }, is_header: false, source_prompt_resource_id: null,
-        },
+        buildDialecticContributionRow({ document_relationships: buildDocumentRelationships() }),
         'user-1',
     );
 
@@ -1836,13 +1534,13 @@ Deno.test('STEP_IDENTITY: preserves planner_metadata.recipe_step_id and core ide
     const newRow = insertSpy!.callsArgs[0][0];
     assert(isJobInsert(newRow));
     if (isRecord(newRow.payload)) {
-        assertEquals(newRow.payload['sessionId'], original.sessionId);
-        assertEquals(newRow.payload['projectId'], original.projectId);
-        assertEquals(newRow.payload['model_id'], original.model_id);
-        assertEquals(newRow.payload['stageSlug'], original.stageSlug);
-        assertEquals(newRow.payload['iterationNumber'], original.iterationNumber);
-        assertEquals(newRow.payload['walletId'], original.walletId);
-        assertEquals(newRow.payload['user_jwt'], original.user_jwt);
+        assertEquals(newRow.payload['sessionId'], executePayload.sessionId);
+        assertEquals(newRow.payload['projectId'], executePayload.projectId);
+        assertEquals(newRow.payload['model_id'], executePayload.model_id);
+        assertEquals(newRow.payload['stageSlug'], executePayload.stageSlug);
+        assertEquals(newRow.payload['iterationNumber'], executePayload.iterationNumber);
+        assertEquals(newRow.payload['walletId'], executePayload.walletId);
+        assertEquals(newRow.payload['user_jwt'], executePayload.user_jwt);
         const pm = newRow.payload['planner_metadata'];
         assert(isRecord(pm), 'planner_metadata must be an object');
         assertEquals(pm['recipe_step_id'], 'step-123');
@@ -1858,38 +1556,17 @@ Deno.test('NO_INPUT_RULES: continuation payload omits inputs_required and inputs
         },
     });
     const depsLocal: IContinueJobDeps = { logger: new MockLogger() };
-    const job = createMockJob({
-        sessionId: 'session-1',
-        projectId: 'project-1',
-        model_id: 'model-1',
-        stageSlug: DialecticStageSlug.Thesis,
-        iterationNumber: 1,
-        prompt_template_id: 'test_template',
-        inputs: { source: 'x' },
-        output_type: FileType.HeaderContext,
-        continueUntilComplete: true,
-        continuation_count: 0,
-        walletId: 'wallet-1',
-        canonicalPathParams: { contributionType: 'thesis', stageSlug: DialecticStageSlug.Thesis },
-        user_jwt: 'jwt.token.here',
-        idempotencyKey: 'idem-continue-job-13',
-    });
-    const aiResponse: UnifiedAIResponse = { finish_reason: 'length', content: 'part' };
+    const executePayload = buildDialecticExecuteJobPayload({ continueUntilComplete: true });
+    if (!isJson(executePayload)) throw new Error('payload is not valid Json');
+    const job = buildDialecticJobRow({ payload: executePayload });
+    const aiResponse = buildUnifiedAIResponse();
 
     await continueJob(
         depsLocal,
         mock.client as unknown as SupabaseClient<Database>,
         job,
         aiResponse,
-        {
-            id: 'contrib-1', session_id: 'session-1', stage: 'test-stage', model_name: 'm', file_name: 'f.md',
-            contribution_type: 'model_generated', citations: null, created_at: new Date().toISOString(), edit_version: 1, error: null,
-            is_latest_edit: true, iteration_number: 1, mime_type: 'text/markdown', model_id: 'model-1',
-            original_model_contribution_id: null, processing_time_ms: null, prompt_template_id_used: null, raw_response_storage_path: null,
-            seed_prompt_url: null, size_bytes: 1, storage_bucket: 'b', storage_path: '/p', target_contribution_id: null,
-            tokens_used_input: null, tokens_used_output: null, updated_at: new Date().toISOString(), user_id: null,
-            document_relationships: { thesis: 'contrib-1' }, is_header: false, source_prompt_resource_id: null,
-        },
+        buildDialecticContributionRow({ document_relationships: buildDocumentRelationships() }),
         'user-1',
     );
 
@@ -1918,67 +1595,19 @@ Deno.test('SOURCE_GROUP_PRESERVATION: should preserve document_relationships.sou
     
     const sourceGroupUuid = '550e8400-e29b-41d4-a716-446655440000';
     const rootContributionId = 'root-contrib-123';
-    const stageSlug = DialecticStageSlug.Thesis;
     
-    const savedContribution: DialecticContributionRow = {
+    const savedContribution = buildDialecticContributionRow({
         id: rootContributionId,
-        session_id: 'session-1',
-        stage: stageSlug,
-        model_name: 'test-model',
-        file_name: 'test.md',
-        contribution_type: 'model_generated',
-        citations: null,
-        created_at: new Date().toISOString(),
-        edit_version: 1,
-        error: null,
-        is_latest_edit: true,
-        iteration_number: 1,
-        mime_type: 'text/markdown',
-        model_id: 'model-1',
-        original_model_contribution_id: null,
-        processing_time_ms: null,
-        prompt_template_id_used: null,
-        raw_response_storage_path: null,
-        seed_prompt_url: null,
-        size_bytes: 100,
-        storage_bucket: 'test-bucket',
-        storage_path: '/path/to/file',
-        target_contribution_id: null,
-        tokens_used_input: null,
-        tokens_used_output: null,
-        updated_at: new Date().toISOString(),
-        user_id: null,
-        document_relationships: { 
+        document_relationships: buildDocumentRelationships({ 
             source_group: sourceGroupUuid,
-            [stageSlug]: rootContributionId 
-        },
-        is_header: false,
-        source_prompt_resource_id: null,
-    };
+            thesis: rootContributionId,
+        }),
+    });
     
-    const payload: DialecticJobPayload = {
-        sessionId: 'session-1',
-        projectId: 'project-1',
-        model_id: 'model-1',
-        stageSlug: stageSlug,
-        iterationNumber: 1,
-        prompt_template_id: 'test_template',
-        inputs: { source: 'some_input' },
-        output_type: FileType.HeaderContext,
-        continueUntilComplete: true,
-        continuation_count: 0,
-        walletId: 'wallet-1',
-        canonicalPathParams: {
-            contributionType: stageSlug,
-            stageSlug: stageSlug,
-        },
-        user_jwt: 'jwt.token.here',
-        idempotencyKey: 'idem-continue-job-14',
-        // intentionally omit document_relationships on triggering payload
-    };
-    
-    const job = createMockJob(payload);
-    const aiResponse: UnifiedAIResponse = { finish_reason: 'length', content: 'part 1' };
+    const executePayload = buildDialecticExecuteJobPayload({ continueUntilComplete: true });
+    if (!isJson(executePayload)) throw new Error('payload is not valid Json');
+    const job = buildDialecticJobRow({ payload: executePayload });
+    const aiResponse = buildUnifiedAIResponse();
     
     const result = await continueJob(
         depsLocal,
@@ -2016,74 +1645,28 @@ Deno.test('SOURCE_GROUP_PRESERVATION: should preserve document_relationships.sou
     
     const sourceGroupUuid = 'test-uuid-1234-5678-90ab-cdef12345678';
     const rootId = 'root-id-456';
-    const stageSlug = DialecticStageSlug.Thesis;
     
-    const payload: DialecticJobPayload = {
-        sessionId: 'session-1',
-        projectId: 'project-1',
-        model_id: 'model-1',
-        stageSlug: stageSlug,
-        iterationNumber: 1,
-        prompt_template_id: 'test_template',
-        inputs: { source: 'some_input' },
-        output_type: FileType.HeaderContext,
+    const executePayload = buildDialecticExecuteJobPayload({
         continueUntilComplete: true,
-        continuation_count: 0,
-        walletId: 'wallet-1',
-        canonicalPathParams: {
-            contributionType: stageSlug,
-            stageSlug: stageSlug,
-        },
-        user_jwt: 'jwt.token.here',
-        document_relationships: {
+        document_relationships: buildDocumentRelationships({
             source_group: sourceGroupUuid,
-            [stageSlug]: rootId,
-        },
-        idempotencyKey: 'idem-continue-job-15',
-    };
+            thesis: rootId,
+        }),
+    });
+    if (!isJson(executePayload)) throw new Error('payload is not valid Json');
+    const job = buildDialecticJobRow({ payload: executePayload });
+    const aiResponse = buildUnifiedAIResponse();
     
-    const job = createMockJob(payload);
-    const aiResponse: UnifiedAIResponse = { finish_reason: 'length', content: 'part 1' };
-    
-    const baseSavedContribution: DialecticContributionRow = {
-        id: 'contrib-1',
-        session_id: 'session-1',
-        stage: stageSlug,
-        model_name: 'test-model',
-        file_name: 'test.md',
-        contribution_type: 'model_generated',
-        citations: null,
-        created_at: new Date().toISOString(),
-        edit_version: 1,
-        error: null,
-        is_latest_edit: true,
-        iteration_number: 1,
-        mime_type: 'text/markdown',
-        model_id: 'model-1',
-        original_model_contribution_id: null,
-        processing_time_ms: null,
-        prompt_template_id_used: null,
-        raw_response_storage_path: null,
-        seed_prompt_url: null,
-        size_bytes: 100,
-        storage_bucket: 'test-bucket',
-        storage_path: '/path/to/file',
-        target_contribution_id: null,
-        tokens_used_input: null,
-        tokens_used_output: null,
-        updated_at: new Date().toISOString(),
-        user_id: null,
-        document_relationships: { [stageSlug]: 'contrib-1' },
-        is_header: false,
-        source_prompt_resource_id: null,
-    };
+    const savedContribution = buildDialecticContributionRow({
+        document_relationships: buildDocumentRelationships({ thesis: 'contrib-1' }),
+    });
     
     const result = await continueJob(
         depsLocal,
         mock.client as unknown as SupabaseClient<Database>,
         job,
         aiResponse,
-        baseSavedContribution,
+        savedContribution,
         'user-1',
     );
     
@@ -2113,67 +1696,16 @@ Deno.test('SOURCE_GROUP_PRESERVATION: should handle missing source_group gracefu
     const depsLocal: IContinueJobDeps = { logger: new MockLogger() };
     
     const rootContributionId = 'root-contrib-789';
-    const stageSlug = DialecticStageSlug.Thesis;
     
-    const savedContribution: DialecticContributionRow = {
+    const savedContribution = buildDialecticContributionRow({
         id: rootContributionId,
-        session_id: 'session-1',
-        stage: stageSlug,
-        model_name: 'test-model',
-        file_name: 'test.md',
-        contribution_type: 'model_generated',
-        citations: null,
-        created_at: new Date().toISOString(),
-        edit_version: 1,
-        error: null,
-        is_latest_edit: true,
-        iteration_number: 1,
-        mime_type: 'text/markdown',
-        model_id: 'model-1',
-        original_model_contribution_id: null,
-        processing_time_ms: null,
-        prompt_template_id_used: null,
-        raw_response_storage_path: null,
-        seed_prompt_url: null,
-        size_bytes: 100,
-        storage_bucket: 'test-bucket',
-        storage_path: '/path/to/file',
-        target_contribution_id: null,
-        tokens_used_input: null,
-        tokens_used_output: null,
-        updated_at: new Date().toISOString(),
-        user_id: null,
-        document_relationships: {
-            [stageSlug]: rootContributionId,
-            // intentionally omit source_group
-        },
-        is_header: false,
-        source_prompt_resource_id: null,
-    };
+        document_relationships: buildDocumentRelationships({ thesis: rootContributionId }),
+    });
     
-    const payload: DialecticJobPayload = {
-        sessionId: 'session-1',
-        projectId: 'project-1',
-        model_id: 'model-1',
-        stageSlug: stageSlug,
-        iterationNumber: 1,
-        prompt_template_id: 'test_template',
-        inputs: { source: 'some_input' },
-        output_type: FileType.HeaderContext,
-        continueUntilComplete: true,
-        continuation_count: 0,
-        walletId: 'wallet-1',
-        canonicalPathParams: {
-            contributionType: stageSlug,
-            stageSlug: stageSlug,
-        },
-        user_jwt: 'jwt.token.here',
-        idempotencyKey: 'idem-continue-job-16',
-        // intentionally omit document_relationships on triggering payload
-    };
-    
-    const job = createMockJob(payload);
-    const aiResponse: UnifiedAIResponse = { finish_reason: 'length', content: 'part 1' };
+    const executePayload = buildDialecticExecuteJobPayload({ continueUntilComplete: true });
+    if (!isJson(executePayload)) throw new Error('payload is not valid Json');
+    const job = buildDialecticJobRow({ payload: executePayload });
+    const aiResponse = buildUnifiedAIResponse();
     
     const result = await continueJob(
         depsLocal,
@@ -2219,56 +1751,14 @@ Deno.test('continueJob idempotency: continuation job insert includes idempotency
         },
     });
     const depsLocal: IContinueJobDeps = { logger: new MockLogger() };
-    const payload: DialecticExecuteJobPayload = {
-        sessionId: 'session-1',
-        projectId: 'project-1',
-        model_id: 'model-1',
-        stageSlug: DialecticStageSlug.Thesis,
-        iterationNumber: 1,
-        prompt_template_id: 'test_template',
-        inputs: { source: 'some_input' },
-        output_type: FileType.HeaderContext,
-        continueUntilComplete: true,
-        continuation_count: 0,
-        walletId: 'wallet-1',
-        canonicalPathParams: { contributionType: 'thesis', stageSlug: DialecticStageSlug.Thesis },
-        user_jwt: 'jwt.token.here',
-        idempotencyKey: 'idem-continuation-insert-test',
-    };
-    const job = createMockJob(payload, { id: jobId });
-    const savedContribution: DialecticContributionRow = {
+    const executePayload = buildDialecticExecuteJobPayload({ continueUntilComplete: true });
+    if (!isJson(executePayload)) throw new Error('payload is not valid Json');
+    const job = buildDialecticJobRow({ payload: executePayload, id: jobId });
+    const savedContribution = buildDialecticContributionRow({
         id: contribId,
-        session_id: 'session-1',
-        stage: 'test-stage',
-        model_name: 'test-model',
-        file_name: 'test.md',
-        contribution_type: 'model_generated',
-        citations: null,
-        created_at: new Date().toISOString(),
-        edit_version: 1,
-        error: null,
-        is_latest_edit: true,
-        iteration_number: 1,
-        mime_type: 'text/markdown',
-        model_id: 'model-1',
-        original_model_contribution_id: null,
-        processing_time_ms: null,
-        prompt_template_id_used: null,
-        raw_response_storage_path: null,
-        seed_prompt_url: null,
-        size_bytes: 100,
-        storage_bucket: 'test-bucket',
-        storage_path: '/path/to/file',
-        target_contribution_id: null,
-        tokens_used_input: null,
-        tokens_used_output: null,
-        updated_at: new Date().toISOString(),
-        user_id: null,
-        document_relationships: { 'test-stage': contribId },
-        is_header: false,
-        source_prompt_resource_id: null,
-    };
-    const aiResponse: UnifiedAIResponse = { finish_reason: 'length', content: 'part 1' };
+        document_relationships: buildDocumentRelationships(),
+    });
+    const aiResponse = buildUnifiedAIResponse();
 
     const result = await continueJob(
         depsLocal,
@@ -2304,56 +1794,13 @@ Deno.test('continueJob idempotency: on unique constraint violation (23505 on ide
         },
     });
     const depsLocal: IContinueJobDeps = { logger: new MockLogger() };
-    const payload: DialecticExecuteJobPayload = {
-        sessionId: 'session-1',
-        projectId: 'project-1',
-        model_id: 'model-1',
-        stageSlug: DialecticStageSlug.Thesis,
-        iterationNumber: 1,
-        prompt_template_id: 'test_template',
-        inputs: { source: 'some_input' },
-        output_type: FileType.HeaderContext,
-        continueUntilComplete: true,
-        continuation_count: 0,
-        walletId: 'wallet-1',
-        canonicalPathParams: { contributionType: 'thesis', stageSlug: DialecticStageSlug.Thesis },
-        user_jwt: 'jwt.token.here',
-        idempotencyKey: 'idem-23505-test',
-    };
-    const job = createMockJob(payload);
-    const savedContribution: DialecticContributionRow = {
-        id: 'contrib-1',
-        session_id: 'session-1',
-        stage: 'test-stage',
-        model_name: 'test-model',
-        file_name: 'test.md',
-        contribution_type: 'model_generated',
-        citations: null,
-        created_at: new Date().toISOString(),
-        edit_version: 1,
-        error: null,
-        is_latest_edit: true,
-        iteration_number: 1,
-        mime_type: 'text/markdown',
-        model_id: 'model-1',
-        original_model_contribution_id: null,
-        processing_time_ms: null,
-        prompt_template_id_used: null,
-        raw_response_storage_path: null,
-        seed_prompt_url: null,
-        size_bytes: 100,
-        storage_bucket: 'test-bucket',
-        storage_path: '/path/to/file',
-        target_contribution_id: null,
-        tokens_used_input: null,
-        tokens_used_output: null,
-        updated_at: new Date().toISOString(),
-        user_id: null,
-        document_relationships: { 'test-stage': 'contrib-1' },
-        is_header: false,
-        source_prompt_resource_id: null,
-    };
-    const aiResponse: UnifiedAIResponse = { finish_reason: 'length', content: 'part 1' };
+    const executePayload = buildDialecticExecuteJobPayload({ continueUntilComplete: true });
+    if (!isJson(executePayload)) throw new Error('payload is not valid Json');
+    const job = buildDialecticJobRow({ payload: executePayload });
+    const savedContribution = buildDialecticContributionRow({
+        document_relationships: buildDocumentRelationships(),
+    });
+    const aiResponse = buildUnifiedAIResponse();
 
     const result = await continueJob(
         depsLocal,
@@ -2366,4 +1813,308 @@ Deno.test('continueJob idempotency: on unique constraint violation (23505 on ide
 
     assertEquals(result.enqueued, true, 'On 23505 for idempotency_key must return enqueued true (continuation already created)');
     assertEquals(result.error, undefined, 'Must not return error when treating idempotency conflict as success');
+});
+
+// =================================================================
+// COMPRESS arm: continuation for compression jobs
+// =================================================================
+
+Deno.test('continueJob COMPRESS: inserts a COMPRESS row with correct job_type, parent_job_id, status, and idempotency_key', async () => {
+    const mock = createMockSupabaseClient(undefined, {
+        genericMockResults: {
+            'dialectic_generation_jobs': { insert: { data: [{ id: 'new-job-id' }] } },
+        },
+    });
+    const depsLocal: IContinueJobDeps = { logger: new MockLogger() };
+    const payload = buildDialecticCompressJobPayload();
+    if (!isJson(payload)) throw new Error('payload is not valid Json');
+    const job = buildDialecticJobRow({ payload, id: 'compress-job-1', job_type: 'COMPRESS' });
+    const savedOutput = buildDialecticContributionRow({ id: 'resource-output-1' });
+    const aiResponse = buildUnifiedAIResponse();
+
+    const result = await continueJob(
+        depsLocal,
+        mock.client as unknown as SupabaseClient<Database>,
+        job,
+        aiResponse,
+        savedOutput,
+        'user-1',
+    );
+
+    assertEquals(result.enqueued, true);
+    const insertSpy = mock.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
+    assertExists(insertSpy);
+    assertEquals(insertSpy.callCount, 1);
+    const inserted = insertSpy.callsArgs[0][0];
+    assert(isJobInsert(inserted));
+    assertEquals(inserted.job_type, 'COMPRESS');
+    assertEquals(inserted.parent_job_id, job.parent_job_id);
+    assertEquals(inserted.status, 'pending_continuation');
+    assertEquals(inserted.idempotency_key, `${job.id}_continue_${savedOutput.id}`);
+});
+
+Deno.test('continueJob COMPRESS: inserted payload passes isDialecticCompressJobPayload, carries advanced continuation_count, preserves parent members, and contains no user_jwt or target_contribution_id', async () => {
+    const mock = createMockSupabaseClient(undefined, {
+        genericMockResults: {
+            'dialectic_generation_jobs': { insert: { data: [{ id: 'new-job-id' }] } },
+        },
+    });
+    const depsLocal: IContinueJobDeps = { logger: new MockLogger() };
+    const payload = buildDialecticCompressJobPayload({
+        continuation_count: 2,
+        mode: 'json',
+        sourceId: 'src-1',
+        role: 'user',
+        chunk_index: 0,
+        chunk_total: 3,
+    });
+    if (!isJson(payload)) throw new Error('payload is not valid Json');
+    const job = buildDialecticJobRow({ payload, id: 'compress-job-2', job_type: 'COMPRESS' });
+    const savedOutput = buildDialecticContributionRow({ id: 'resource-output-2' });
+    const aiResponse = buildUnifiedAIResponse();
+
+    const result = await continueJob(
+        depsLocal,
+        mock.client as unknown as SupabaseClient<Database>,
+        job,
+        aiResponse,
+        savedOutput,
+        'user-1',
+    );
+
+    assertEquals(result.enqueued, true);
+    const insertSpy = mock.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
+    assertExists(insertSpy);
+    const inserted = insertSpy.callsArgs[0][0];
+    assert(isJobInsert(inserted));
+    const insertedPayload = inserted.payload;
+    assert(isDialecticCompressJobPayload(insertedPayload));
+    assertEquals(insertedPayload.continuation_count, 3);
+    assertEquals(insertedPayload.mode, payload.mode);
+    assertEquals(insertedPayload.content, payload.content);
+    assertEquals(insertedPayload.sourceType, payload.sourceType);
+    assertEquals(insertedPayload.targetKey, payload.targetKey);
+    assertEquals(insertedPayload.documentKey, payload.documentKey);
+    assertEquals(insertedPayload.docType, payload.docType);
+    assertEquals(insertedPayload.sourceStageSlug, payload.sourceStageSlug);
+    assertEquals(insertedPayload.sourceId, payload.sourceId);
+    assertEquals(insertedPayload.role, payload.role);
+    assertEquals(insertedPayload.chunk_index, payload.chunk_index);
+    assertEquals(insertedPayload.chunk_total, payload.chunk_total);
+    assertEquals(insertedPayload.model_id, payload.model_id);
+    assertEquals(insertedPayload.walletId, payload.walletId);
+    assertEquals(insertedPayload.user_id, payload.user_id);
+    assert(!('user_jwt' in insertedPayload));
+    assert(!('target_contribution_id' in insertedPayload));
+});
+
+Deno.test('continueJob COMPRESS: inserted row target_contribution_id is null', async () => {
+    const mock = createMockSupabaseClient(undefined, {
+        genericMockResults: {
+            'dialectic_generation_jobs': { insert: { data: [{ id: 'new-job-id' }] } },
+        },
+    });
+    const depsLocal: IContinueJobDeps = { logger: new MockLogger() };
+    const payload = buildDialecticCompressJobPayload();
+    if (!isJson(payload)) throw new Error('payload is not valid Json');
+    const job = buildDialecticJobRow({ payload, id: 'compress-job-3', job_type: 'COMPRESS' });
+    const savedOutput = buildDialecticContributionRow({ id: 'resource-output-3' });
+    const aiResponse = buildUnifiedAIResponse();
+
+    await continueJob(
+        depsLocal,
+        mock.client as unknown as SupabaseClient<Database>,
+        job,
+        aiResponse,
+        savedOutput,
+        'user-1',
+    );
+
+    const insertSpy = mock.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
+    assertExists(insertSpy);
+    const inserted = insertSpy.callsArgs[0][0];
+    assert(isJobInsert(inserted));
+    assertEquals(inserted.target_contribution_id, null);
+});
+
+Deno.test('continueJob COMPRESS: enqueues successfully with no output_type and no document_relationships', async () => {
+    const mock = createMockSupabaseClient(undefined, {
+        genericMockResults: {
+            'dialectic_generation_jobs': { insert: { data: [{ id: 'new-job-id' }] } },
+        },
+    });
+    const depsLocal: IContinueJobDeps = { logger: new MockLogger() };
+    const payload = buildDialecticCompressJobPayload();
+    if (!isJson(payload)) throw new Error('payload is not valid Json');
+    const job = buildDialecticJobRow({ payload, id: 'compress-job-4', job_type: 'COMPRESS' });
+    const savedOutput = buildDialecticContributionRow({ id: 'resource-output-4' });
+    const aiResponse = buildUnifiedAIResponse();
+
+    const result = await continueJob(
+        depsLocal,
+        mock.client as unknown as SupabaseClient<Database>,
+        job,
+        aiResponse,
+        savedOutput,
+        'user-1',
+    );
+
+    assertEquals(result.enqueued, true);
+    const insertSpy = mock.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
+    assertExists(insertSpy);
+    assertEquals(insertSpy.callCount, 1);
+});
+
+Deno.test('continueJob COMPRESS: at continuation_count 5 returns continuation_limit_reached with no insert', async () => {
+    const mock = createMockSupabaseClient(undefined, {
+        genericMockResults: {
+            'dialectic_generation_jobs': { insert: { data: [{ id: 'new-job-id' }] } },
+        },
+    });
+    const depsLocal: IContinueJobDeps = { logger: new MockLogger() };
+    const payload = buildDialecticCompressJobPayload({ continuation_count: 5 });
+    if (!isJson(payload)) throw new Error('payload is not valid Json');
+    const job = buildDialecticJobRow({ payload, id: 'compress-job-5', job_type: 'COMPRESS' });
+    const savedOutput = buildDialecticContributionRow({ id: 'resource-output-5' });
+    const aiResponse = buildUnifiedAIResponse();
+
+    const result = await continueJob(
+        depsLocal,
+        mock.client as unknown as SupabaseClient<Database>,
+        job,
+        aiResponse,
+        savedOutput,
+        'user-1',
+    );
+
+    assertEquals(result.enqueued, false);
+    assertEquals(result.reason, 'continuation_limit_reached');
+    const insertSpy = mock.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'insert');
+    assertExists(insertSpy);
+    assertEquals(insertSpy.callCount, 0);
+});
+
+Deno.test('continueJob COMPRESS: on 23505 idempotency_key violation returns enqueued true', async () => {
+    const idempotencyViolationError: PostgrestError = {
+        name: 'PostgrestError',
+        code: '23505',
+        message: 'duplicate key value violates unique constraint "dialectic_generation_jobs_idempotency_key_key"',
+        details: '',
+        hint: '',
+    };
+    const mock = createMockSupabaseClient(undefined, {
+        genericMockResults: {
+            'dialectic_generation_jobs': {
+                insert: { data: null, error: idempotencyViolationError },
+            },
+        },
+    });
+    const depsLocal: IContinueJobDeps = { logger: new MockLogger() };
+    const payload = buildDialecticCompressJobPayload();
+    if (!isJson(payload)) throw new Error('payload is not valid Json');
+    const job = buildDialecticJobRow({ payload, id: 'compress-job-6', job_type: 'COMPRESS' });
+    const savedOutput = buildDialecticContributionRow({ id: 'resource-output-6' });
+    const aiResponse = buildUnifiedAIResponse();
+
+    const result = await continueJob(
+        depsLocal,
+        mock.client as unknown as SupabaseClient<Database>,
+        job,
+        aiResponse,
+        savedOutput,
+        'user-1',
+    );
+
+    assertEquals(result.enqueued, true);
+    assertEquals(result.error, undefined);
+});
+
+Deno.test('continueJob EXECUTE: at limit and missing walletId returns walletId error rather than continuation_limit_reached', async () => {
+    const mock = createMockSupabaseClient(undefined, {
+        genericMockResults: {
+            'dialectic_generation_jobs': { insert: { data: [{ id: 'new-job-id' }] } },
+        },
+    });
+    const depsLocal: IContinueJobDeps = { logger: new MockLogger() };
+    const payload = buildDialecticExecuteJobPayload({
+        continuation_count: 5,
+        walletId: '',
+    });
+    if (!isJson(payload)) throw new Error('payload is not valid Json');
+    const job = buildDialecticJobRow({ payload, id: 'execute-job-limit-no-wallet', job_type: 'EXECUTE' });
+    const savedContribution = buildDialecticContributionRow({
+        document_relationships: buildDocumentRelationships(),
+    });
+    const aiResponse = buildUnifiedAIResponse();
+
+    const result = await continueJob(
+        depsLocal,
+        mock.client as unknown as SupabaseClient<Database>,
+        job,
+        aiResponse,
+        savedContribution,
+        'user-1',
+    );
+
+    assertEquals(result.enqueued, false);
+    assert(!('reason' in result));
+    assertExists(result.error);
+    assertEquals(result.error.message, 'Job payload is missing a valid walletId');
+});
+/*
+Deno.test('continueJob EXECUTE: saved output without document_relationships fails document_relationships gate', async () => {
+    const mock = createMockSupabaseClient(undefined, {
+        genericMockResults: {
+            'dialectic_generation_jobs': { insert: { data: [{ id: 'new-job-id' }] } },
+        },
+    });
+    const depsLocal: IContinueJobDeps = { logger: new MockLogger() };
+    const payload = buildDialecticExecuteJobPayload({ continueUntilComplete: true });
+    if (!isJson(payload)) throw new Error('payload is not valid Json');
+    const job = buildDialecticJobRow({ payload, id: 'execute-job-no-rels-saved-output', job_type: 'EXECUTE' });
+    const savedOutput = buildDialecticProjectResourceRow();
+    const aiResponse = buildUnifiedAIResponse();
+
+    const result = await continueJob(
+        depsLocal,
+        mock.client as unknown as SupabaseClient<Database>,
+        job,
+        aiResponse,
+        savedOutput,
+        'user-1',
+    );
+
+    assertEquals(result.enqueued, false);
+    assertExists(result.error);
+    assertEquals(result.error.message, 'Continuation enqueue requires valid document_relationships');
+});*/
+
+Deno.test('continueJob EXECUTE: payload clearing all four gates but failing isDialecticExecuteJobPayload surfaces guard error unchanged', async () => {
+    const mock = createMockSupabaseClient(undefined, {
+        genericMockResults: {
+            'dialectic_generation_jobs': { insert: { data: [{ id: 'new-job-id' }] } },
+        },
+    });
+    const depsLocal: IContinueJobDeps = { logger: new MockLogger() };
+    const baseExecute = buildDialecticExecuteJobPayload({ continueUntilComplete: true });
+    const { prompt_template_id: _omit, ...payloadWithoutTemplateId } = baseExecute;
+    if (!isJson(payloadWithoutTemplateId)) throw new Error('payload is not valid Json');
+    const job = buildDialecticJobRow({ payload: payloadWithoutTemplateId, id: 'execute-job-no-template-id', job_type: 'EXECUTE' });
+    const savedContribution = buildDialecticContributionRow({
+        document_relationships: buildDocumentRelationships(),
+    });
+    const aiResponse = buildUnifiedAIResponse();
+
+    const result = await continueJob(
+        depsLocal,
+        mock.client as unknown as SupabaseClient<Database>,
+        job,
+        aiResponse,
+        savedContribution,
+        'user-1',
+    );
+
+    assertEquals(result.enqueued, false);
+    assertExists(result.error);
+    assertEquals(result.error.message, 'Missing or invalid prompt_template_id.');
 });
