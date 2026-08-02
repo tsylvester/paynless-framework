@@ -1,5 +1,13 @@
 import { isJson, isRecord } from "../../utils/type-guards/type_guards.common.ts";
-import { isCompressionMode } from "../../utils/type-guards/type_guards.file_manager.ts";
+import {
+	isCompressionHistoryRole,
+	isCompressionMode,
+	isCompressionSourceType,
+	isDialecticStageSlug,
+	isFileManagerError,
+	isFileType,
+	isModelContributionFileType,
+} from "../../utils/type-guards/type_guards.file_manager.ts";
 import {
 	AssembleCompressionPromptDeps,
 	AssembleCompressionPromptErrorReturn,
@@ -7,6 +15,14 @@ import {
 	AssembleCompressionPromptPayload,
 	AssembleCompressionPromptSuccessReturn,
 } from "./assembleCompressionPrompt.interface.ts";
+
+function isNonEmptyString(value: unknown): value is string {
+	return typeof value === "string" && value.trim().length > 0;
+}
+
+function isNonNegativeInteger(value: unknown): value is number {
+	return typeof value === "number" && Number.isInteger(value) && value >= 0;
+}
 
 export function isAssembleCompressionPromptDeps(
 	value: unknown,
@@ -24,6 +40,14 @@ export function isAssembleCompressionPromptDeps(
 	}
 
 	if (!isRecord(value.logger)) {
+		return false;
+	}
+
+	if (typeof value.fileManager !== "object" || value.fileManager === null) {
+		return false;
+	}
+
+	if (typeof value.constructStoragePath !== "function") {
 		return false;
 	}
 
@@ -58,6 +82,58 @@ export function isAssembleCompressionPromptParams(
 		typeof consumingStep.step_description !== "string" ||
 		consumingStep.step_description.trim().length === 0
 	) {
+		return false;
+	}
+
+	if (!isNonEmptyString(value.projectId)) {
+		return false;
+	}
+
+	if (!isNonEmptyString(value.sessionId)) {
+		return false;
+	}
+
+	if (!isNonNegativeInteger(value.iterationNumber)) {
+		return false;
+	}
+
+	if (!isDialecticStageSlug(value.stageSlug)) {
+		return false;
+	}
+
+	if (!isModelContributionFileType(value.targetKey)) {
+		return false;
+	}
+
+	if (!isCompressionSourceType(value.sourceType)) {
+		return false;
+	}
+
+	if (!isNonEmptyString(value.modelSlug)) {
+		return false;
+	}
+
+	if (!isNonNegativeInteger(value.attemptCount)) {
+		return false;
+	}
+
+	if (!isNonEmptyString(value.userId)) {
+		return false;
+	}
+
+	// Per-sourceType branch — never an OR-fallback
+	if (value.sourceType === "contribution" || value.sourceType === "resource" || value.sourceType === "feedback") {
+		if (!isFileType(value.documentKey)) {
+			return false;
+		}
+	} else if (value.sourceType === "history") {
+		if (!isNonEmptyString(value.sourceId)) {
+			return false;
+		}
+		if (!isCompressionHistoryRole(value.role)) {
+			return false;
+		}
+	} else {
 		return false;
 	}
 
@@ -102,11 +178,16 @@ export function isAssembleCompressionPromptSuccessReturn(
 		return false;
 	}
 
-	if (!("prompt" in value)) {
+	if (!("promptContent" in value)) {
 		return false;
 	}
 
-	return typeof value.prompt === "string";
+	if (!("source_prompt_resource_id" in value)) {
+		return false;
+	}
+
+	return typeof value.promptContent === "string" &&
+		typeof value.source_prompt_resource_id === "string";
 }
 
 export function isAssembleCompressionPromptErrorReturn(
@@ -116,7 +197,7 @@ export function isAssembleCompressionPromptErrorReturn(
 		return false;
 	}
 
-	if ("prompt" in value) {
+	if ("promptContent" in value) {
 		return false;
 	}
 
@@ -128,7 +209,7 @@ export function isAssembleCompressionPromptErrorReturn(
 		return false;
 	}
 
-	if (!(value.error instanceof Error)) {
+	if (!(value.error instanceof Error) && !isFileManagerError(value.error)) {
 		return false;
 	}
 

@@ -19,6 +19,7 @@ import type {
     DialecticStage,
     DialecticStageRecipeStep,
     DialecticRecipeTemplateStep,
+    SeedPromptRecipeStep,
     InputRule,
     OutputRule,
     RelevanceRule,
@@ -420,6 +421,35 @@ export function invalidateDialecticRecipeTemplateStep(corruptions: DialecticReci
     return { ...buildDialecticRecipeTemplateStep(), ...corruptions };
 }
 
+export type SeedPromptRecipeStepOverrides = Partial<SeedPromptRecipeStep>;
+
+export function buildSeedPromptRecipeStep(
+    overrides?: SeedPromptRecipeStepOverrides,
+): SeedPromptRecipeStep {
+    const base: SeedPromptRecipeStep = {
+        prompt_type: 'Seed',
+        step_number: 1,
+        step_name: 'Assemble Seed Prompt',
+        granularity_strategy: null,
+        branch_key: null,
+        parallel_group: null,
+        output_type: 'seed_prompt',
+        description: 'Assemble the seed prompt for the session.',
+        inputs_required: [],
+        outputs_required: [],
+        inputs_relevance: [],
+        prompt_template_id: null,
+        job_type: null,
+    };
+    return overrides ? { ...base, ...overrides } : base;
+}
+
+export type SeedPromptRecipeStepCorruptions = { [K in keyof SeedPromptRecipeStep]?: unknown };
+
+export function invalidateSeedPromptRecipeStep(corruptions: SeedPromptRecipeStepCorruptions): unknown {
+    return { ...buildSeedPromptRecipeStep(), ...corruptions };
+}
+
 export type InputRuleCorruptions = { [K in keyof InputRule]?: unknown };
 
 export function invalidateInputRule(corruptions: InputRuleCorruptions): unknown {
@@ -729,6 +759,12 @@ export function invalidateSyncToGitHubResponse(corruptions: SyncToGitHubResponse
 
 export type DialecticContributionRowOverrides = Partial<DialecticContributionRow>;
 
+// WARNING: The default id is hardcoded. When multiple contributions are created
+// without overriding id, they all share the same key in mock lookup tables, and
+// the last write wins. If the surviving row has a target_contribution_id that
+// points back to that same id, the root-resolution loop in
+// assembleContinuationPrompt will never break, causing an infinite loop / OOM.
+// Always pass a unique id override when creating more than one contribution.
 export function buildDialecticContributionRow(overrides?: DialecticContributionRowOverrides): DialecticContributionRow {
     const base: DialecticContributionRow = {
         id: 'a0000001-0000-4000-a000-000000000001',
@@ -853,6 +889,7 @@ export function buildDialecticExecuteJobPayload(overrides?: DialecticExecuteJobP
         user_jwt: 'test-jwt',
         idempotencyKey: 'test-idempotency-key',
         model_id: 'test-model-id',
+        model_slug: 'test-model-slug',
         prompt_template_id: 'test-template-id',
         output_type: FileType.ModelContributionRawJson,
         canonicalPathParams: {
@@ -860,6 +897,7 @@ export function buildDialecticExecuteJobPayload(overrides?: DialecticExecuteJobP
             stageSlug: DialecticStageSlug.Thesis,
         },
         inputs: {},
+        document_key: FileType.business_case,
     };
     return { ...base, ...overrides };
 }
@@ -875,7 +913,7 @@ export function invalidateDialecticExecuteJobPayload(corruptions: DialecticExecu
 export type DialecticPlanJobPayloadOverrides = Partial<DialecticPlanJobPayload>;
 
 export function buildDialecticPlanJobPayload(overrides?: DialecticPlanJobPayloadOverrides): DialecticPlanJobPayload {
-    const base: DialecticPlanJobPayload = {
+    const base = {
         sessionId: 'test-session-id',
         projectId: 'test-project-id',
         stageSlug: 'thesis',
@@ -884,6 +922,8 @@ export function buildDialecticPlanJobPayload(overrides?: DialecticPlanJobPayload
         user_jwt: 'test-jwt',
         idempotencyKey: 'test-idempotency-key',
         model_id: 'test-model-id',
+        model_slug: 'test-model-slug',
+        document_key: FileType.business_case,
     };
     return { ...base, ...overrides };
 }

@@ -52,6 +52,42 @@ Rules:
   function to a file → stop, report, propose the node, halt (see
   [discovery-halt](discovery-halt.md)).
 
+## Classes — two admitted roles, and how the signature maps
+
+"One function per file" governs **exported standalone functions**. A class holding
+several methods is not an exception to that rule and not a way around it; it is a
+different kind of symbol, admitted in exactly two roles:
+
+1. **An adapter at the boundary** — it implements a repo-owned interface and wraps
+   an external dependency, so the rest of the repo depends on the interface rather
+   than the vendor (see [dependency-injection](dependency-injection.md)).
+2. **An owned value or error type** the code constructs — a domain entity, a value
+   object, a typed error.
+
+Anything that is neither is a function, and takes the signature above. Tempted to
+write a class for a third reason → stop, report, propose the node, halt.
+
+**One class per file, one file per class** — the same rule, one level up. A class
+file hosts no standalone exported functions beside the class.
+
+The four-slot signature maps onto an adapter without changing:
+
+- the **constructor** takes the deps slot, as one typed constructor-params object —
+  its collaborators and configuration, supplied once at the composition root, never
+  per call;
+- each **method** takes its own named `params` and `payload` types and returns its
+  own `Success | Error` union, exactly as a standalone function does.
+
+A method is the adapter's surface, not an independent exported function, so it does
+not claim a file of its own — but every method's function type is **named in the
+interface** (an inline function type at a property is an inline type definition; see
+[types](types.md)). A value or error class declares only the constructor-params
+object; its members follow [types](types.md) and, for errors,
+[errors-and-returns](errors-and-returns.md).
+
+How each role is mocked is owned by [mocks](mocks.md#classes--decompose-never-mock-the-class);
+how each is guarded is owned by [guards](guards.md#classes--instanceof-for-owned-classes-shape-for-their-params).
+
 ## Everything emitted is fully typed and composable
 
 Any object the function constructs or emits has a defined type. If the type is

@@ -97,3 +97,11 @@ export function createAssembleChunksMock(options?: {
 
     return { assembleChunks, calls };
 }
+
+export const mockAssembleChunks: AssembleChunksSignature = async (
+  _deps,
+  _params,
+  _payload,
+) => {
+  return createMockAssembleChunksSuccess();
+};

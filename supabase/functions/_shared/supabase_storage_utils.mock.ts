@@ -81,3 +81,29 @@ export function createMockDownloadFromStorage(
   };
   return mockDownloadFn;
 }
+
+export type DownloadStorageResultOverrides = Partial<DownloadStorageResult>;
+
+export function buildDownloadStorageResult(overrides?: DownloadStorageResultOverrides): DownloadStorageResult {
+  const base: DownloadStorageResult = {
+    data: new ArrayBuffer(0),
+    error: null,
+  };
+  return overrides ? { ...base, ...overrides } : base;
+}
+
+export type DownloadStorageResultCorruptions = { [K in keyof DownloadStorageResult]?: unknown };
+
+export function invalidateDownloadStorageResult(corruptions: DownloadStorageResultCorruptions): unknown {
+  return { ...buildDownloadStorageResult(), ...corruptions };
+}
+
+export const mockDownloadFromStorageTwoArg: (
+  bucket: string,
+  path: string,
+) => Promise<DownloadStorageResult> = async (
+  _bucket,
+  _path,
+) => {
+  return buildDownloadStorageResult();
+};

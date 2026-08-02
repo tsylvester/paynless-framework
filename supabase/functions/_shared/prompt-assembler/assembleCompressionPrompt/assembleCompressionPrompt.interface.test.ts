@@ -1,4 +1,5 @@
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
+import { FileType, DialecticStageSlug } from "../../types/file_manager.types.ts";
 import type {
   AssembleCompressionPromptDeps,
   AssembleCompressionPromptErrorReturn,
@@ -12,14 +13,16 @@ import type {
 } from "./assembleCompressionPrompt.interface.ts";
 
 Deno.test(
-  "Contract: AssembleCompressionPromptDeps declares exactly dbClient, renderPromptFn, and logger",
+  "Contract: AssembleCompressionPromptDeps declares exactly dbClient, renderPromptFn, logger, fileManager, and constructStoragePath",
   () => {
     const surface: Record<keyof AssembleCompressionPromptDeps, true> = {
       dbClient: true,
       renderPromptFn: true,
       logger: true,
+      fileManager: true,
+      constructStoragePath: true,
     };
-    assertEquals(Object.keys(surface).length, 3);
+    assertEquals(Object.keys(surface).length, 5);
   },
 );
 
@@ -37,12 +40,24 @@ Deno.test(
 );
 
 Deno.test(
-  "Contract: AssembleCompressionPromptParams declares exactly consumingStep",
+  "Contract: AssembleCompressionPromptParams declares exactly the thirteen expected members",
   () => {
     const surface: Record<keyof AssembleCompressionPromptParams, true> = {
       consumingStep: true,
+      projectId: true,
+      sessionId: true,
+      iterationNumber: true,
+      stageSlug: true,
+      targetKey: true,
+      sourceType: true,
+      documentKey: true,
+      sourceId: true,
+      role: true,
+      modelSlug: true,
+      attemptCount: true,
+      userId: true,
     };
-    assertEquals(Object.keys(surface).length, 1);
+    assertEquals(Object.keys(surface).length, 13);
   },
 );
 
@@ -76,8 +91,75 @@ Deno.test(
       outputs_required: {},
       step_description: "Compress context for downstream document generation.",
     };
-    const params: AssembleCompressionPromptParams = { consumingStep: target };
+    const params: AssembleCompressionPromptParams = {
+      consumingStep: target,
+      projectId: "project-123",
+      sessionId: "session-123",
+      iterationNumber: 1,
+      stageSlug: DialecticStageSlug.Thesis,
+      targetKey: FileType.business_case,
+      sourceType: "resource",
+      documentKey: FileType.business_case,
+      modelSlug: "claude-3-opus",
+      attemptCount: 0,
+      userId: "user-123",
+    };
     assertEquals(params.consumingStep.step_description, target.step_description);
+  },
+);
+
+Deno.test(
+  "Contract: AssembleCompressionPromptParams accepts a 'resource' victim with documentKey and no sourceId/role",
+  () => {
+    const target: CompressionTargetStep = {
+      outputs_required: {},
+      step_description: "Compress the source for the next agent.",
+    };
+    const params: AssembleCompressionPromptParams = {
+      consumingStep: target,
+      projectId: "project-123",
+      sessionId: "session-123",
+      iterationNumber: 1,
+      stageSlug: DialecticStageSlug.Thesis,
+      targetKey: FileType.business_case,
+      sourceType: "resource",
+      documentKey: FileType.business_case,
+      modelSlug: "claude-3-opus",
+      attemptCount: 0,
+      userId: "user-123",
+    };
+    assertEquals(params.sourceType, "resource");
+    assertEquals("documentKey" in params, true);
+    assertEquals("sourceId" in params, false);
+    assertEquals("role" in params, false);
+  },
+);
+
+Deno.test(
+  "Contract: AssembleCompressionPromptParams accepts a 'history' victim with sourceId and role and no documentKey",
+  () => {
+    const target: CompressionTargetStep = {
+      outputs_required: {},
+      step_description: "Compress the source for the next agent.",
+    };
+    const params: AssembleCompressionPromptParams = {
+      consumingStep: target,
+      projectId: "project-123",
+      sessionId: "session-123",
+      iterationNumber: 1,
+      stageSlug: DialecticStageSlug.Thesis,
+      targetKey: FileType.business_case,
+      sourceType: "history",
+      sourceId: "msg-123",
+      role: "user",
+      modelSlug: "claude-3-opus",
+      attemptCount: 0,
+      userId: "user-123",
+    };
+    assertEquals(params.sourceType, "history");
+    assertEquals("sourceId" in params, true);
+    assertEquals("role" in params, true);
+    assertEquals("documentKey" in params, false);
   },
 );
 
@@ -113,18 +195,23 @@ Deno.test(
 );
 
 Deno.test(
-  "Contract: AssembleCompressionPromptSuccessReturn is { prompt: string }",
+  "Contract: AssembleCompressionPromptSuccessReturn is { promptContent: string; source_prompt_resource_id: string }",
   () => {
     const success: AssembleCompressionPromptSuccessReturn = {
-      prompt: "compressed prompt",
+      promptContent: "compressed prompt",
+      source_prompt_resource_id: "resource-123",
     };
-    assertEquals("prompt" in success, true);
-    assertEquals(typeof success.prompt, "string");
+    const ret: AssembleCompressionPromptReturn = success;
+    if ("error" in ret) {
+      throw new Error("expected success branch");
+    }
+    assertEquals(ret.promptContent, "compressed prompt");
+    assertEquals(ret.source_prompt_resource_id, "resource-123");
   },
 );
 
 Deno.test(
-  "Contract: AssembleCompressionPromptErrorReturn is { error: Error; retriable: boolean }",
+  "Contract: AssembleCompressionPromptErrorReturn is { error: Error | FileManagerError; retriable: boolean }",
   () => {
     const error: AssembleCompressionPromptErrorReturn = {
       error: new Error("failed"),
@@ -142,18 +229,33 @@ Deno.test(
   async (t) => {
     await t.step("success branch is assignable", () => {
       const success: AssembleCompressionPromptSuccessReturn = {
-        prompt: "compressed prompt",
+        promptContent: "compressed prompt",
+        source_prompt_resource_id: "resource-123",
       };
       const ret: AssembleCompressionPromptReturn = success;
       if ("error" in ret) {
         throw new Error("expected success branch");
       }
-      assertEquals(ret.prompt, "compressed prompt");
+      assertEquals(ret.promptContent, "compressed prompt");
+      assertEquals(ret.source_prompt_resource_id, "resource-123");
     });
 
-    await t.step("error branch is assignable", () => {
+    await t.step("error branch is assignable with an Error", () => {
       const error: AssembleCompressionPromptErrorReturn = {
         error: new Error("failed"),
+        retriable: true,
+      };
+      const ret: AssembleCompressionPromptReturn = error;
+      if ("error" in ret) {
+        assertEquals(ret.retriable, true);
+      } else {
+        throw new Error("expected error branch");
+      }
+    });
+
+    await t.step("error branch is assignable with a FileManagerError", () => {
+      const error: AssembleCompressionPromptErrorReturn = {
+        error: { message: "db down" },
         retriable: true,
       };
       const ret: AssembleCompressionPromptReturn = error;
@@ -175,7 +277,8 @@ Deno.test(
       _payload,
     ) => {
       const success: AssembleCompressionPromptSuccessReturn = {
-        prompt: "compressed prompt",
+        promptContent: "compressed prompt",
+        source_prompt_resource_id: "resource-123",
       };
       return success;
     };
@@ -191,7 +294,8 @@ Deno.test(
       _payload,
     ) => {
       const success: AssembleCompressionPromptSuccessReturn = {
-        prompt: "compressed prompt",
+        promptContent: "compressed prompt",
+        source_prompt_resource_id: "resource-123",
       };
       return success;
     };

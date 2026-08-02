@@ -223,7 +223,7 @@ export function isOutputType(value: ModelContributionFileTypes): value is Output
     return Object.prototype.hasOwnProperty.call(OUTPUT_TYPES_MAP, value);
 }
 
-// Build a compile-time enforced map of document key file types (subset of FileType)
+// Build a compile-time enforced map of document key file types (subset of ModelContributionFileTypes)
 const DOCUMENT_KEY_MAP: { [K in DocumentKey]: true } = {
     [FileType.business_case]: true,
     [FileType.feature_spec]: true,
@@ -238,12 +238,6 @@ const DOCUMENT_KEY_MAP: { [K in DocumentKey]: true } = {
     [FileType.product_requirements]: true,
     [FileType.system_architecture]: true,
     [FileType.tech_stack]: true,
-    [FileType.technical_requirements]: true,
-    [FileType.master_plan]: true,
-    [FileType.milestone_schema]: true,
-    [FileType.updated_master_plan]: true,
-    [FileType.actionable_checklist]: true,
-    [FileType.advisor_recommendations]: true,
     [FileType.synthesis_pairwise_business_case]: true,
     [FileType.synthesis_pairwise_feature_spec]: true,
     [FileType.synthesis_pairwise_technical_approach]: true,
@@ -252,9 +246,18 @@ const DOCUMENT_KEY_MAP: { [K in DocumentKey]: true } = {
     [FileType.synthesis_document_feature_spec]: true,
     [FileType.synthesis_document_technical_approach]: true,
     [FileType.synthesis_document_success_metrics]: true,
+    [FileType.technical_requirements]: true,
+    [FileType.master_plan]: true,
+    [FileType.milestone_schema]: true,
+    [FileType.updated_master_plan]: true,
+    [FileType.actionable_checklist]: true,
+    [FileType.advisor_recommendations]: true,
 };
 
-export function isDocumentKey(value: FileType): value is DocumentKey {
+export function isDocumentKey(value: unknown): value is DocumentKey {
+    if (typeof value !== 'string') {
+        return false;
+    }
     return Object.prototype.hasOwnProperty.call(DOCUMENT_KEY_MAP, value);
 }
 
@@ -288,4 +291,14 @@ export function isServiceError(error: FileManagerError): error is ServiceError {
     'message' in error && 
     !isPostgrestError(error) && 
     !isStorageError(error);
+}
+
+export function isFileManagerError(value: unknown): value is FileManagerError {
+  if (isPostgrestError(value)) {
+    return true;
+  }
+  return isRecord(value) &&
+    'message' in value &&
+    typeof value.message === 'string' &&
+    value.message.length > 0;
 }

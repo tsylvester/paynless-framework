@@ -129,6 +129,41 @@ narrowing target, still defined, mocked, and guard-tested. Guard once, here — 
 functions receive the narrowed type in the trusted form and never re-guard it (see
 [composition](composition.md#the-validating-form--what-changes-what-does-not)).
 
+## Classes — `instanceof` for owned classes, shape for their params
+
+"Guard everything" applies to classes, but the guard **body** follows the role the
+class plays (the two admitted roles are owned by
+[composition](composition.md#classes--two-admitted-roles-and-how-the-signature-maps)).
+
+**An injected adapter** is guarded through the interface it implements, never
+through the class. That interface is a deps/behavior type, so its guard is the
+presence-of-method check described above — `typeof value.warn === "function"` — and
+nothing deeper.
+
+**An owned class the code constructs** is guarded by `instanceof`:
+
+```ts
+export function isCompressionKey(value: unknown): value is CompressionKey {
+  return value instanceof CompressionKey;
+}
+```
+
+This is the complete check, not a shortcut. The constructor is the type's only
+producer, so membership is nominal: if it was constructed, it is valid, and if it
+was not, no property-by-property inspection can make it a member. A hand-rolled
+shape check for an owned class is the re-authoring defect below — it duplicates the
+class definition and drifts from it the moment a field changes.
+
+**The shape check belongs on the constructor params.** That object type is where
+untrusted data actually enters, and it takes a full data guard —
+`isCompressionKeyConstructorParams` — checking presence, invariants, and the type of
+every property, per the per-property procedure above.
+
+A class instance is never a boundary type. Nothing arrives from a queue, JSON body,
+or DB row as an instance — serialization yields a plain object, which is
+params-shaped, not an instance. If you believe you are receiving an instance across
+a runtime boundary, you are receiving its params: guard those, then construct.
+
 ## Forbidden substitutes
 
 If the code matches any of these, the guard is wrong — even if it compiles, even
@@ -144,10 +179,15 @@ if (!isNonEmptyString(value.someObject.field)) return false;
 ```ts
 if (!("someObject" in value)) return false;                     // 3 — presence-only / vacuous check
 ```
+```ts
+if (!isRecord(value)) return false;                             // 4 — shape check for an owned class
+if (!isNonEmptyString(value.bucket)) return false;              //     (use instanceof)
+```
 
 Re-authoring drifts from the owner's definition; inlining is the same violation
 with the function name deleted; a vacuous `isRecord` where the type has structure
-is omission.
+is omission; a shape check for an owned class duplicates its constructor and
+accepts plain objects the constructor never produced.
 
 ## Missing guard → halt
 

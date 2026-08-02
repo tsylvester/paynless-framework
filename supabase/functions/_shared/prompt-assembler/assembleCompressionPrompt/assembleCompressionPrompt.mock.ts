@@ -1,16 +1,17 @@
 import { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { Database, Tables } from "../../../types_db.ts";
-import { CompressionMode, FileType } from "../../types/file_manager.types.ts";
+import { CompressionMode, DialecticStageSlug, FileType } from "../../types/file_manager.types.ts";
 import { createMockSupabaseClient } from "../../supabase.mock.ts";
 import { MockLogger } from "../../logger.mock.ts";
+import { MockFileManagerService } from "../../services/file_manager.mock.ts";
 import { renderPrompt } from "../../prompt-renderer.ts";
+import { constructStoragePath } from "../../utils/path_constructor.ts";
 import {
   AssembleCompressionPromptDeps,
   AssembleCompressionPromptParams,
   AssembleCompressionPromptPayload,
   AssembleCompressionPromptSuccessReturn,
   AssembleCompressionPromptErrorReturn,
-  AssembleCompressionPromptReturn,
   AssembleCompressionPromptFn,
   BoundAssembleCompressionPromptFn,
   CompressionTargetStep,
@@ -76,18 +77,16 @@ export function buildAssembleCompressionPromptDeps(
     dbClient: client as unknown as SupabaseClient<Database>,
     renderPromptFn: renderPrompt,
     logger: new MockLogger(),
+    fileManager: new MockFileManagerService(),
+    constructStoragePath: constructStoragePath,
   };
 
   return { ...deps, ...overrides };
 }
 
 export function buildCompressionTargetStep(
-  overrides?: Partial<CompressionTargetStep> | null,
-): CompressionTargetStep | null {
-  if (overrides === null) {
-    return null;
-  }
-
+  overrides?: Partial<CompressionTargetStep>,
+): CompressionTargetStep {
   const step: CompressionTargetStep = {
     outputs_required: {
       documents: [{
@@ -104,33 +103,28 @@ export function buildCompressionTargetStep(
 }
 
 export function buildAssembleCompressionPromptParams(
-  overrides?: Partial<AssembleCompressionPromptParams> | null,
-): AssembleCompressionPromptParams | null {
-  if (overrides === null) {
-    return null;
-  }
-
-  const consumingStep = buildCompressionTargetStep();
-  if (consumingStep === null) {
-    throw new Error(
-      "buildCompressionTargetStep returned null for a default request",
-    );
-  }
-
+  overrides?: Partial<AssembleCompressionPromptParams>,
+): AssembleCompressionPromptParams {
   const params: AssembleCompressionPromptParams = {
-    consumingStep,
+    consumingStep: buildCompressionTargetStep(),
+    projectId: "project-123",
+    sessionId: "session-123",
+    iterationNumber: 1,
+    stageSlug: DialecticStageSlug.Thesis,
+    targetKey: FileType.business_case,
+    sourceType: "resource",
+    documentKey: FileType.business_case_critique,
+    modelSlug: "claude-3-opus",
+    attemptCount: 0,
+    userId: "user-123",
   };
 
   return { ...params, ...overrides };
 }
 
 export function buildAssembleCompressionPromptPayload(
-  overrides?: Partial<AssembleCompressionPromptPayload> | null,
-): AssembleCompressionPromptPayload | null {
-  if (overrides === null) {
-    return null;
-  }
-
+  overrides?: Partial<AssembleCompressionPromptPayload>,
+): AssembleCompressionPromptPayload {
   const payload: AssembleCompressionPromptPayload = {
     mode: "text",
     content: "Source content to compress.",
@@ -140,14 +134,11 @@ export function buildAssembleCompressionPromptPayload(
 }
 
 export function buildAssembleCompressionPromptSuccessReturn(
-  overrides?: Partial<AssembleCompressionPromptSuccessReturn> | null,
-): AssembleCompressionPromptSuccessReturn | null {
-  if (overrides === null) {
-    return null;
-  }
-
+  overrides?: Partial<AssembleCompressionPromptSuccessReturn>,
+): AssembleCompressionPromptSuccessReturn {
   const success: AssembleCompressionPromptSuccessReturn = {
-    prompt: "Rendered compression prompt.",
+    promptContent: "Rendered compression prompt.",
+    source_prompt_resource_id: "mock-compression-resource-id",
   };
 
   return { ...success, ...overrides };
@@ -164,62 +155,22 @@ export function buildAssembleCompressionPromptErrorReturn(
   return { ...errorReturn, ...overrides };
 }
 
-export function createAssembleCompressionPromptMock(options?: {
-  handler?: AssembleCompressionPromptFn;
-  result?: AssembleCompressionPromptReturn;
-}): {
-  assembleCompressionPrompt: AssembleCompressionPromptFn;
-  calls: {
-    deps: AssembleCompressionPromptDeps;
-    params: AssembleCompressionPromptParams;
-    payload: AssembleCompressionPromptPayload;
-  }[];
-} {
-  const calls: {
-    deps: AssembleCompressionPromptDeps;
-    params: AssembleCompressionPromptParams;
-    payload: AssembleCompressionPromptPayload;
-  }[] = [];
+export type AssembleCompressionPromptParamsCorruptions = { [K in keyof AssembleCompressionPromptParams]?: unknown };
 
-  const assembleCompressionPrompt: AssembleCompressionPromptFn = async (
-    deps,
-    params,
-    payload,
-  ) => {
-    calls.push({ deps, params, payload });
-
-    if (options?.handler !== undefined) {
-      return await options.handler(deps, params, payload);
-    }
-
-    if (options?.result !== undefined) {
-      return options.result;
-    }
-
-    const success = buildAssembleCompressionPromptSuccessReturn();
-    if (success === null) {
-      return buildAssembleCompressionPromptErrorReturn({
-        error: new Error("Fallback success return was null"),
-        retriable: false,
-      });
-    }
-
-    return success;
-  };
-
-  return { assembleCompressionPrompt, calls };
+export function invalidateAssembleCompressionPromptParams(corruptions: AssembleCompressionPromptParamsCorruptions): unknown {
+  return { ...buildAssembleCompressionPromptParams(), ...corruptions };
 }
 
-export function buildBoundAssembleCompressionPromptFn(
-  depsOverrides?: Partial<AssembleCompressionPromptDeps>,
-): BoundAssembleCompressionPromptFn {
-  const deps = buildAssembleCompressionPromptDeps(depsOverrides);
+export type AssembleCompressionPromptPayloadCorruptions = { [K in keyof AssembleCompressionPromptPayload]?: unknown };
 
-  return async (params, payload) => {
-    return buildAssembleCompressionPromptSuccessReturn() ??
-      buildAssembleCompressionPromptErrorReturn({
-        error: new Error("assembleCompressionPrompt not yet implemented"),
-        retriable: false,
-      });
-  };
+export function invalidateAssembleCompressionPromptPayload(corruptions: AssembleCompressionPromptPayloadCorruptions): unknown {
+  return { ...buildAssembleCompressionPromptPayload(), ...corruptions };
 }
+
+export const mockAssembleCompressionPrompt: AssembleCompressionPromptFn = async () => {
+  return buildAssembleCompressionPromptSuccessReturn();
+};
+
+export const mockBoundAssembleCompressionPrompt: BoundAssembleCompressionPromptFn = async () => {
+  return buildAssembleCompressionPromptSuccessReturn();
+};

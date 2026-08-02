@@ -4,7 +4,7 @@ import { createMockSupabaseClient, type MockSupabaseClientSetup } from '../_shar
 import { createMockFileManagerService, MockFileManagerService } from '../_shared/services/file_manager.mock.ts';
 import { constructStoragePath, generateShortId } from '../_shared/utils/path_constructor.ts';
 import { deconstructStoragePath } from '../_shared/utils/path_deconstructor.ts';
-import { FileType } from '../_shared/types/file_manager.types.ts';
+import { DialecticStageSlug, FileType } from '../_shared/types/file_manager.types.ts';
 import { saveContributionEdit } from './saveContributionEdit.ts';
 import { describe, it, beforeEach } from 'https://deno.land/std@0.208.0/testing/bdd.ts';
 import { Database } from '../types_db.ts';
@@ -28,7 +28,7 @@ describe('Dialectic Service Action: saveContributionEdit', () => {
     it('saves a user edit as a rendered document resource using canonical paths', async () => {
       const projectId = 'proj-uuid-1234';
       const sessionId = 'sess-uuid-9999';
-      const stage = { id: 'stage-thesis-uuid', slug: 'thesis', display_name: 'Thesis', description: null, created_at: new Date().toISOString(), expected_output_artifacts: null, input_artifact_rules: null, default_system_prompt_id: null };
+      const stage = { id: 'stage-thesis-uuid', slug: DialecticStageSlug.Thesis, display_name: 'Thesis', description: null, created_at: new Date().toISOString(), expected_output_artifacts: null, input_artifact_rules: null, default_system_prompt_id: null };
       const originalContributionId = 'contr-orig-0001';
       const iterationNumber = 1;
       const modelId = 'ai_model_id_opus';
@@ -46,7 +46,7 @@ describe('Dialectic Service Action: saveContributionEdit', () => {
         attemptCount,
         contributionType: 'thesis',
         originalFileName: `${modelName}_${attemptCount}_thesis.md`,
-        documentKey: 'business_case',
+        documentKey: FileType.business_case,
       });
 
       const shortSessionId = generateShortId(sessionId);

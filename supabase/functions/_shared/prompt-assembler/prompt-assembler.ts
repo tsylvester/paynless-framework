@@ -39,6 +39,7 @@ import { isRecord } from "../utils/type_guards.ts";
 import { RenderFn } from "./prompt-assembler.interface.ts";
 import { render } from "./render/render.ts";
 import { assembleChunks } from "../utils/assembleChunks/assembleChunks.ts";
+import { constructStoragePath } from "../utils/path_constructor.ts"
 
 /**
  * PromptAssembler holds references to prompt-assembly collaborators (e.g. `gatherContinuationInputs`)
@@ -114,7 +115,8 @@ export class PromptAssembler implements IPromptAssembler {
                     assembleChunks,
                     gatherContinuationInputs: this.gatherContinuationInputsFn,
                     downloadFromStorage: this.downloadFromStorageFn,
-                    sourceContributionId
+                    sourceContributionId,
+                    constructStoragePath
                 });
             } 
             

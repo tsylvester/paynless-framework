@@ -1,12 +1,12 @@
 export { assembleCompressionPrompt } from "./assembleCompressionPrompt.ts";
 export type {
 	AssembleCompressionPromptDeps,
+	AssembleCompressionPromptError,
 	AssembleCompressionPromptErrorReturn,
 	AssembleCompressionPromptFn,
 	AssembleCompressionPromptParams,
 	AssembleCompressionPromptPayload,
 	AssembleCompressionPromptReturn,
-	AssembleCompressionPromptSuccessReturn,
 	BoundAssembleCompressionPromptFn,
 	CompressionTargetStep,
 	RenderCompressionPromptFn,
@@ -16,14 +16,14 @@ export {
 	isAssembleCompressionPromptErrorReturn,
 	isAssembleCompressionPromptParams,
 	isAssembleCompressionPromptPayload,
-	isAssembleCompressionPromptSuccessReturn,
 } from "./assembleCompressionPrompt.guards.ts";
 export {
 	buildAssembleCompressionPromptDeps,
 	buildAssembleCompressionPromptErrorReturn,
 	buildAssembleCompressionPromptParams,
 	buildAssembleCompressionPromptPayload,
-	buildAssembleCompressionPromptSuccessReturn,
-	buildBoundAssembleCompressionPromptFn,
-	createAssembleCompressionPromptMock,
+	invalidateAssembleCompressionPromptParams,
+	invalidateAssembleCompressionPromptPayload,
+	mockAssembleCompressionPrompt,
+	mockBoundAssembleCompressionPrompt,
 } from "./assembleCompressionPrompt.mock.ts";

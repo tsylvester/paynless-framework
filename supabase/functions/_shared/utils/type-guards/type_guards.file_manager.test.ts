@@ -17,6 +17,7 @@ import {
   isCompressionMode,
   isCompressionHistoryRole,
   isDialecticStageSlug,
+  isFileManagerError
 } from './type_guards.file_manager.ts'
 import {
   CanonicalPathParams,
@@ -532,5 +533,23 @@ Deno.test('Type Guard: isDialecticStageSlug', async (t) => {
         assert(!isDialecticStageSlug(123));
         assert(!isDialecticStageSlug({}));
         assert(!isDialecticStageSlug([]));
+    });
+});
+
+Deno.test('Type Guard: isFileManagerError', async (t) => {
+    await t.step('returns true for a PostgrestError-shaped value, a { message } service error, and an Error read as a StorageError', () => {
+        assert(isFileManagerError({ code: '23505', message: 'duplicate key', details: null, hint: null }));
+        assert(isFileManagerError({ message: 'x' }));
+        assert(isFileManagerError(new Error('x')));
+    });
+
+    await t.step('returns false for empty object, empty/non-string message, null, undefined, string, and array', () => {
+        assert(!isFileManagerError({}));
+        assert(!isFileManagerError({ message: '' }));
+        assert(!isFileManagerError({ message: 7 }));
+        assert(!isFileManagerError(null));
+        assert(!isFileManagerError(undefined));
+        assert(!isFileManagerError('x'));
+        assert(!isFileManagerError([]));
     });
 });

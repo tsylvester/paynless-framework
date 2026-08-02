@@ -11,6 +11,7 @@ import {
 import { FileManagerResponse, FileRecord, FileType, UploadContext } from '../_shared/types/file_manager.types.ts';
 import { DeconstructedPathInfo } from '../_shared/utils/path_deconstructor.types.ts';
 import { Json } from '../types_db.ts';
+import { isDialecticStageSlug } from "../_shared/utils/type-guards/type_guards.file_manager.ts";
 
 export async function saveContributionEdit(
   payload: SaveContributionEditPayload,
@@ -184,12 +185,16 @@ export async function saveContributionEdit(
         original_contribution_id: originalContributionIdToEdit,
     };
 
+    const stageSlug = deconstructed.stageSlug; 
+    if(!isDialecticStageSlug(stageSlug)) {
+        throw new Error ("invalid stage slug")
+    }
     const uploadContext: UploadContext = {
         pathContext: {
             projectId: deconstructed.originalProjectId,
             sessionId: typedOriginalContribution.session_id,
             iteration: deconstructed.iteration,
-            stageSlug: deconstructed.stageSlug,
+            stageSlug: stageSlug,
             fileType: fileTypeForRenderedDocument,
             modelSlug: deconstructed.modelSlug,
             attemptCount: deconstructed.attemptCount,

@@ -48,6 +48,10 @@ For each symbol the interface owns, ask what it is:
 4. An **enum, primitive/string-literal alias, or constant** → nothing. It is used
    directly by its production value or type.
 5. A **guard** → nothing here; guards are their own element (see [guards](guards.md)).
+6. A **class** → never mocked as a class. It decomposes by who constructs it:
+   injected → mock the interface it implements (step 1); constructed by the code
+   itself → a builder returning a real instance, plus the four symbols on its
+   constructor-params object type (see [Classes](#classes--decompose-never-mock-the-class)).
 
 If a symbol is none of these, it does not belong to this interface — do not mock it.
 
@@ -215,6 +219,136 @@ No call-recording in mocks — no `calls` arrays, counters, captured args,
 wraps any function and records invocations; recording is applied by the test
 author at the call site, never baked into the mock.
 
+## Classes — decompose, never mock the class
+
+A class breaks all three mechanisms above. Spreading an instance returns a plain
+object with no prototype, so the builder's override spread destroys the very thing
+it was meant to produce; the invalidator's spread destroys it the same way; and a
+class carrying `private` or `protected` members is nominal, so no object literal
+can inhabit it without a cast, which [types](types.md) forbids.
+
+So **there is no class mock and no constructor mock.** A class decomposes into
+symbols the rules above already cover. Ask one question: **who constructs it in
+production?**
+
+### Injected at the composition root → mock the interface, never the class
+
+Adapters, clients, and services are constructed at the application boundary and
+injected (see [dependency-injection](dependency-injection.md)). The dep's type is
+the interface the class implements — the class name never appears in a signature,
+so nothing about the class is ever mocked. That interface is an owned object type:
+it takes the ordinary builder and invalidator, and each method property defaults to
+this file's function mock for that method, exactly as a nested object property
+defaults to its own builder.
+
+Each method's function type is **named in the interface**; an inline function type
+at a property is an inline type definition (see [types](types.md)).
+
+```ts
+export interface LoggerAdapter {
+  warn: LoggerAdapterWarn;
+  error: LoggerAdapterError;
+}
+```
+
+```ts
+export type LoggerAdapterOverrides = Partial<LoggerAdapter>;
+
+export function buildLoggerAdapter(overrides?: LoggerAdapterOverrides): LoggerAdapter {
+  const base: LoggerAdapter = {
+    warn: mockLoggerAdapterWarn,
+    error: mockLoggerAdapterError,
+  };
+  return overrides ? { ...base, ...overrides } : base;
+}
+```
+
+An external class reaches this rule already resolved: DI mandates a repo-owned
+adapter interface for every external dependency, and external services are never
+mocked (see *Ownership* above). You mock the adapter interface, never the vendor's
+class.
+
+### Constructed by the code itself → build a real instance
+
+Errors, value objects, and domain entities are constructed by the code under test,
+not injected. The mock returns a **real instance**, and the override surface moves
+from the instance to the constructor:
+
+- the constructor takes exactly **one typed params object**, owned by the interface
+  — the same discipline `deps` / `params` / `payload` imposes on functions (see
+  [composition](composition.md));
+- that params type is an ordinary owned object type and takes the full four
+  symbols;
+- `buildClassName` accepts the params overrides, composes the params builder, and
+  returns `new ClassName(...)` — prototype intact, private members real,
+  `instanceof` true, no spread, no cast.
+
+```ts
+export interface CompressionKeyConstructorParams {
+  bucket: string;
+  documentKey: string;
+}
+```
+
+```ts
+export type CompressionKeyConstructorParamsOverrides =
+  Partial<CompressionKeyConstructorParams>;
+
+export function buildCompressionKeyConstructorParams(
+  overrides?: CompressionKeyConstructorParamsOverrides,
+): CompressionKeyConstructorParams {
+  const base: CompressionKeyConstructorParams = {
+    bucket: "documents",
+    documentKey: "doc-1",
+  };
+  return overrides ? { ...base, ...overrides } : base;
+}
+
+export type CompressionKeyConstructorParamsCorruptions = {
+  [K in keyof CompressionKeyConstructorParams]?: unknown;
+};
+
+export function invalidateCompressionKeyConstructorParams(
+  corruptions: CompressionKeyConstructorParamsCorruptions,
+): unknown {
+  return { ...buildCompressionKeyConstructorParams(), ...corruptions };
+}
+
+export function buildCompressionKey(
+  overrides?: CompressionKeyConstructorParamsOverrides,
+): CompressionKey {
+  return new CompressionKey(buildCompressionKeyConstructorParams(overrides));
+}
+```
+
+**There is no `invalidateCompressionKey`.** Corrupt data cannot exist as an
+instance — the constructor either accepted the params or rejected them. Corruption
+belongs where untrusted data actually enters, which is the constructor params, and
+`invalidateCompressionKeyConstructorParams` is its invalidator.
+
+**There is no `mockCompressionKey`.** If a call site must defer construction, the
+seam is a named factory function type declared in the interface — already a
+function, already covered above: `mockCreateCompressionKey` returns
+`buildCompressionKey()`. `new` then appears only in the adapter or the composition
+root.
+
+### Naming — per owned class
+
+`buildClassName`, plus the four standard symbols on `ClassNameConstructorParams`
+(`ClassNameConstructorParamsOverrides`, `buildClassNameConstructorParams`,
+`ClassNameConstructorParamsCorruptions`,
+`invalidateClassNameConstructorParams`). Do not invent `ClassNameOverrides`,
+`invalidateClassName`, or `mockClassName`.
+
+### Forbidden — class-specific
+
+spreading a class instance in a builder or invalidator (`{ ...instance,
+...overrides }` returns a prototype-less object, not the type it claims) · casting
+an object literal to a class type to satisfy `private` members · typing a dep by
+the class instead of the interface it implements · a constructor taking positional
+arguments instead of one typed params object · a builder that returns a hand-rolled
+object in place of a real instance.
+
 ## Litmus
 
 Every export in the mock file is typed by a name from the interface file —
@@ -244,7 +378,10 @@ modify or widen production types · invent shapes or type names · `as` ·
 `satisfies` · overloads · type aliases that weaken checking · generic merge
 helpers · specialized mock variants instead of overrides · wrap one mock with
 another · duplicate builders · mock imported symbols / databases / repositories /
-external services · generic or shared invalidators.
+external services · generic or shared invalidators · spread a class instance ·
+cast an object literal to a class type · type a dep by a class instead of the
+interface it implements · a positional-argument constructor · a class instance
+invalidator or a constructor mock.
 
 ## Architecture
 

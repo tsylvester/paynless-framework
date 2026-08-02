@@ -3,6 +3,8 @@ import {
 	isAssembleCompressionPromptParams,
 	isAssembleCompressionPromptPayload,
 } from "./assembleCompressionPrompt.guards.ts";
+import { FileType } from "../../types/file_manager.types.ts";
+import type { ResourceUploadContext } from "../../types/file_manager.types.ts";
 
 export const assembleCompressionPrompt: AssembleCompressionPromptFn = async (
 	deps,
@@ -82,5 +84,49 @@ export const assembleCompressionPrompt: AssembleCompressionPromptFn = async (
 		null,
 	);
 
-	return { prompt };
+	let pathContext: ResourceUploadContext['pathContext'];
+	try {
+		pathContext = {
+			fileType: FileType.CompressionPrompt,
+			projectId: params.projectId,
+			sessionId: params.sessionId,
+			iteration: params.iterationNumber,
+			stageSlug: params.stageSlug,
+			targetKey: params.targetKey,
+			sourceType: params.sourceType,
+			modelSlug: params.modelSlug,
+			attemptCount: params.attemptCount,
+			...(params.sourceType === "history"
+				? { sourceId: params.sourceId, role: params.role }
+				: { documentKey: params.documentKey }),
+			...(payload.chunk_index !== undefined && payload.chunk_total !== undefined
+				? { chunkIndex: payload.chunk_index, chunkTotal: payload.chunk_total }
+				: {}),
+		};
+		deps.constructStoragePath(pathContext);
+	} catch (err) {
+		return {
+			error: err instanceof Error
+				? err
+				: new Error(`Failed to construct compression prompt storage path: ${String(err)}`),
+			retriable: false,
+		};
+	}
+
+	const uploadContext: ResourceUploadContext = {
+		pathContext,
+		fileContent: prompt,
+		mimeType: "text/markdown",
+		sizeBytes: new TextEncoder().encode(prompt).length,
+		userId: params.userId,
+		description: `Compression prompt for ${params.sourceType} source compressed for ${params.targetKey}`,
+	};
+
+	const response = await deps.fileManager.uploadAndRegisterFile(uploadContext);
+
+	if (response.error) {
+		return { error: response.error, retriable: true };
+	}
+
+	return { promptContent: prompt, source_prompt_resource_id: response.record.id };
 };

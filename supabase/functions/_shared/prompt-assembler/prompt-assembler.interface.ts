@@ -19,6 +19,7 @@ import {
 import { Json } from "../../types_db.ts";
 import { InputRule } from "../../dialectic-service/dialectic.interface.ts";
 import { Messages } from "../types.ts";
+import { ConstructStoragePathFn } from "../utils/path_constructor.types.ts";
 
 export type RenderFn = (
   renderPromptFn: RenderPromptFunctionType,
@@ -58,6 +59,7 @@ export interface AssembleContinuationPromptDeps {
     path: string,
   ) => Promise<DownloadStorageResult>;
   sourceContributionId?: string | null;
+  constructStoragePath: ConstructStoragePathFn
 }
 export interface AssemblePlannerPromptDeps {
   dbClient: SupabaseClient<Database>;
