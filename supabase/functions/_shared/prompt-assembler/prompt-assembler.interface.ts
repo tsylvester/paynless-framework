@@ -44,22 +44,31 @@ export interface AssembleTurnPromptParams {
   sourceContributionId?: string | null;
 }
 
+export type BoundAssembleContinuationPromptFn = (job: DialecticJobRow) => Promise<AssembledPrompt>;
+
 export interface AssembleContinuationPromptDeps {
   dbClient: SupabaseClient<Database>;
   fileManager: IFileManager;
   job: DialecticJobRow;
-  project: ProjectContext;
-  session: SessionContext;
-  stage: StageContext;
-  gatherContext: GatherContextFn;
-  assembleChunks: AssembleChunksSignature;
-  gatherContinuationInputs: GatherContinuationInputsSignature;
+  /** REQUIRED for a contribution continuation; unread by a COMPRESS one. */
+  project?: ProjectContext;
+  /** REQUIRED for a contribution continuation; unread by a COMPRESS one. */
+  session?: SessionContext;
+  /** REQUIRED for a contribution continuation; unread by a COMPRESS one. */
+  stage?: StageContext;
+  /** REQUIRED for a contribution continuation; unread by a COMPRESS one. */
+  gatherContext?: GatherContextFn;
+  /** REQUIRED for a contribution continuation; unread by a COMPRESS one. */
+  assembleChunks?: AssembleChunksSignature;
+  /** REQUIRED for a contribution continuation; unread by a COMPRESS one. */
+  gatherContinuationInputs?: GatherContinuationInputsSignature;
   downloadFromStorage: (
     bucket: string,
     path: string,
   ) => Promise<DownloadStorageResult>;
   sourceContributionId?: string | null;
-  constructStoragePath: ConstructStoragePathFn
+  /** Addressing collaborator for the COMPRESS branch's two canonical reads. */
+  constructStoragePath: ConstructStoragePathFn;
 }
 export interface AssemblePlannerPromptDeps {
   dbClient: SupabaseClient<Database>;

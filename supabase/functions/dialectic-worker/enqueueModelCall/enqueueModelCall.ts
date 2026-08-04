@@ -2,6 +2,7 @@ import type { AiModelExtendedConfig } from '../../_shared/types.ts';
 import { isAiModelExtendedConfig } from '../../_shared/utils/type-guards/type_guards.chat.ts';
 import {
   isCompressedContextFileType,
+  isCompressedContextRawJsonFileType,
   isModelContributionFileType,
 } from '../../_shared/utils/type-guards/type_guards.file_manager.ts';
 import type {
@@ -21,7 +22,7 @@ export const enqueueModelCall: EnqueueModelCallFn = async (
   params: EnqueueModelCallParams,
   payload: EnqueueModelCallPayload,
 ): Promise<EnqueueModelCallReturn> => {
-  if (!isModelContributionFileType(params.output_type) && !isCompressedContextFileType(params.output_type)) {
+  if (!isModelContributionFileType(params.output_type) && !isCompressedContextFileType(params.output_type) && !isCompressedContextRawJsonFileType(params.output_type)) {
     deps.logger.error('enqueueModelCall: invalid output_type', { output_type: params.output_type });
     return {
       error: new Error(`Invalid output_type: ${params.output_type}`),

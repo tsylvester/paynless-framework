@@ -2,17 +2,23 @@ import { assert, assertEquals, assertExists, assertNotEquals } from "https://den
 import { spy } from "https://deno.land/std@0.224.0/testing/mock.ts";
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { FileType } from "../../_shared/types/file_manager.types.ts";
+import type { ModelContributionFileTypes } from "../../_shared/types/file_manager.types.ts";
 import { isRecord } from "../../_shared/utils/type_guards.ts";
 import { createMockSupabaseClient } from "../../_shared/supabase.mock.ts";
 import { buildDialecticCompressJobPayload } from "../enqueueCompressJobs/enqueueCompressJobs.mock.ts";
+import { buildAssembledPrompt } from "../../_shared/prompt-assembler/prompt-assembler.mock.ts";
+import { mockBoundAssembleContinuationPrompt } from "../../_shared/prompt-assembler/assembleContinuationPrompt/assembleContinuationPrompt.mock.ts";
+import { buildMockProvider, buildExtendedModelConfig } from "../../_shared/ai_service/ai_provider.mock.ts";
+import {
+    buildDialecticStageRecipeStep,
+    buildDialecticRecipeTemplateStep,
+    buildOutputRule,
+} from "../../_shared/dialectic.mock.ts";
 import type { EnqueueModelCallParams, EnqueueModelCallPayload, EnqueueModelCallReturn } from "../enqueueModelCall/enqueueModelCall.interface.ts";
 import type { AssembleCompressionPromptParams, AssembleCompressionPromptPayload, AssembleCompressionPromptReturn } from "../../_shared/prompt-assembler/assembleCompressionPrompt/assembleCompressionPrompt.interface.ts";
+import type { AssembledPrompt, BoundAssembleContinuationPromptFn } from "../../_shared/prompt-assembler/prompt-assembler.interface.ts";
 import type { CountTokensDeps, CountableChatPayload } from "../../_shared/types/tokenizer.types.ts";
 import type { AiModelExtendedConfig } from "../../_shared/types.ts";
-import type {
-    DialecticRecipeTemplateStep,
-    DialecticStageRecipeStep,
-} from "../../dialectic-service/dialectic.interface.ts";
 import { processCompressJob } from "./processCompressJob.ts";
 import {
     buildProcessCompressJobDeps,
@@ -129,11 +135,11 @@ Deno.test("processCompressJob: invalid provider config returns non-retriable err
             },
             ai_providers: {
                 select: {
-                    data: [{
+                    data: [buildMockProvider({
                         id: payload.model_id,
                         api_identifier: "gpt-4",
-                        config: { invalid: true },
-                    }],
+                        config: { invalid: true } as unknown as AiModelExtendedConfig,
+                    })],
                     error: null,
                 },
             },
@@ -160,15 +166,15 @@ Deno.test("processCompressJob: config missing provider_max_input_tokens returns 
             },
             ai_providers: {
                 select: {
-                    data: [{
+                    data: [buildMockProvider({
                         id: payload.model_id,
                         api_identifier: "gpt-4",
-                        config: {
+                        config: buildExtendedModelConfig({
                             api_identifier: "gpt-4",
-                            tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: "cl100k_base" },
+                            provider_max_input_tokens: undefined,
                             provider_max_output_tokens: 500,
-                        },
-                    }],
+                        }),
+                    })],
                     error: null,
                 },
             },
@@ -203,15 +209,15 @@ Deno.test("processCompressJob: config missing provider_max_output_tokens returns
             },
             ai_providers: {
                 select: {
-                    data: [{
+                    data: [buildMockProvider({
                         id: payload.model_id,
                         api_identifier: "gpt-4",
-                        config: {
+                        config: buildExtendedModelConfig({
                             api_identifier: "gpt-4",
-                            tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: "cl100k_base" },
                             provider_max_input_tokens: 1000,
-                        },
-                    }],
+                            provider_max_output_tokens: undefined,
+                        }),
+                    })],
                     error: null,
                 },
             },
@@ -246,18 +252,15 @@ Deno.test("processCompressJob: missing active_recipe_instance_id returns non-ret
             },
             ai_providers: {
                 select: {
-                    data: [{
+                    data: [buildMockProvider({
                         id: payload.model_id,
                         api_identifier: "gpt-4",
-                        config: {
+                        config: buildExtendedModelConfig({
                             api_identifier: "gpt-4",
-                            input_token_cost_rate: 0.01,
-                            output_token_cost_rate: 0.02,
-                            tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: "cl100k_base" },
                             provider_max_input_tokens: 1000,
                             provider_max_output_tokens: 500,
-                        },
-                    }],
+                        }),
+                    })],
                     error: null,
                 },
             },
@@ -283,32 +286,14 @@ Deno.test("processCompressJob: missing active_recipe_instance_id returns non-ret
 
 Deno.test("processCompressJob: no recipe step matching targetKey returns non-retriable error", async () => {
     const payload = buildDialecticCompressJobPayload();
-    const mockStep: DialecticStageRecipeStep = {
-        id: "step-1",
-        instance_id: "instance-1",
-        template_step_id: null,
-        created_at: "2024-01-01T00:00:00Z",
-        updated_at: "2024-01-01T00:00:00Z",
+    const mockStep = buildDialecticStageRecipeStep({
         step_key: "other",
         step_slug: "other",
         step_name: "Other",
-        job_type: "EXECUTE",
-        prompt_type: "Turn",
         output_type: FileType.PendingFile,
-        granularity_strategy: "per_source_document",
-        config_override: {},
-        is_skipped: false,
-        object_filter: {},
-        output_overrides: {},
-        inputs_required: [],
-        inputs_relevance: [],
-        outputs_required: { files_to_generate: [] },
-        parallel_group: null,
-        branch_key: null,
-        prompt_template_id: null,
-        execution_order: null,
         step_description: "other step",
-    };
+        outputs_required: buildOutputRule({ files_to_generate: [] }),
+    })!;
     const mockSetup = createMockSupabaseClient("process-compress-job", {
         genericMockResults: {
             dialectic_project_resources: {
@@ -316,18 +301,15 @@ Deno.test("processCompressJob: no recipe step matching targetKey returns non-ret
             },
             ai_providers: {
                 select: {
-                    data: [{
+                    data: [buildMockProvider({
                         id: payload.model_id,
                         api_identifier: "gpt-4",
-                        config: {
+                        config: buildExtendedModelConfig({
                             api_identifier: "gpt-4",
-                            input_token_cost_rate: 0.01,
-                            output_token_cost_rate: 0.02,
-                            tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: "cl100k_base" },
                             provider_max_input_tokens: 1000,
                             provider_max_output_tokens: 500,
-                        },
-                    }],
+                        }),
+                    })],
                     error: null,
                 },
             },
@@ -365,32 +347,16 @@ Deno.test("processCompressJob: no recipe step matching targetKey returns non-ret
 
 Deno.test("processCompressJob: cloned recipe instance resolves consuming step", async () => {
     const payload = buildDialecticCompressJobPayload();
-    const mockStep: DialecticStageRecipeStep = {
-        id: "step-1",
-        instance_id: "instance-1",
-        template_step_id: null,
-        created_at: "2024-01-01T00:00:00Z",
-        updated_at: "2024-01-01T00:00:00Z",
+    const mockStep = buildDialecticStageRecipeStep({
         step_key: "compress",
         step_slug: "compress",
         step_name: "Compress",
-        job_type: "EXECUTE",
-        prompt_type: "Turn",
         output_type: FileType.business_case,
-        granularity_strategy: "per_source_document",
-        config_override: {},
-        is_skipped: false,
-        object_filter: {},
-        output_overrides: {},
-        inputs_required: [],
-        inputs_relevance: [],
-        outputs_required: { files_to_generate: [{ from_document_key: payload.targetKey, template_filename: "template.md" }] },
-        parallel_group: null,
-        branch_key: null,
-        prompt_template_id: null,
-        execution_order: null,
         step_description: "compress the contribution",
-    };
+        outputs_required: buildOutputRule({
+            files_to_generate: [{ from_document_key: payload.targetKey, template_filename: "template.md" }],
+        }),
+    })!;
     const mockSetup = createMockSupabaseClient("process-compress-job", {
         genericMockResults: {
             dialectic_project_resources: {
@@ -398,18 +364,15 @@ Deno.test("processCompressJob: cloned recipe instance resolves consuming step", 
             },
             ai_providers: {
                 select: {
-                    data: [{
+                    data: [buildMockProvider({
                         id: payload.model_id,
                         api_identifier: "gpt-4",
-                        config: {
+                        config: buildExtendedModelConfig({
                             api_identifier: "gpt-4",
-                            input_token_cost_rate: 0.01,
-                            output_token_cost_rate: 0.02,
-                            tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: "cl100k_base" },
                             provider_max_input_tokens: 1000,
                             provider_max_output_tokens: 500,
-                        },
-                    }],
+                        }),
+                    })],
                     error: null,
                 },
             },
@@ -432,7 +395,7 @@ Deno.test("processCompressJob: cloned recipe instance resolves consuming step", 
     });
     const dbClient = mockSetup.client as unknown as SupabaseClient;
     const params = buildProcessCompressJobParams({ dbClient });
-    const assembleCompressionPromptSpy = spy(async (_params: AssembleCompressionPromptParams, _payload: AssembleCompressionPromptPayload): Promise<AssembleCompressionPromptReturn> => ({ prompt: "assembled-prompt" }));
+    const assembleCompressionPromptSpy = spy(async (_params: AssembleCompressionPromptParams, _payload: AssembleCompressionPromptPayload): Promise<AssembleCompressionPromptReturn> => buildAssembledPrompt());
     const enqueueModelCallSpy = spy(async (_params: EnqueueModelCallParams, _payload: EnqueueModelCallPayload): Promise<EnqueueModelCallReturn> => ({ queued: true }));
     const countTokensSpy = spy((_deps: CountTokensDeps, _payload: CountableChatPayload, _config: AiModelExtendedConfig): number => 10);
     const deps = buildProcessCompressJobDeps({
@@ -458,27 +421,16 @@ Deno.test("processCompressJob: cloned recipe instance resolves consuming step", 
 
 Deno.test("processCompressJob: template recipe instance resolves consuming step", async () => {
     const payload = buildDialecticCompressJobPayload();
-    const mockStep: DialecticRecipeTemplateStep = {
-        id: "step-template-1",
-        template_id: "template-1",
-        created_at: "2024-01-01T00:00:00Z",
-        updated_at: "2024-01-01T00:00:00Z",
-        step_number: 1,
+    const mockStep = buildDialecticRecipeTemplateStep({
         step_key: "compress",
         step_slug: "compress",
         step_name: "Compress",
-        job_type: "EXECUTE",
-        prompt_type: "Turn",
         output_type: FileType.business_case,
-        granularity_strategy: "per_source_document",
-        inputs_required: [],
-        inputs_relevance: [],
-        outputs_required: { files_to_generate: [{ from_document_key: payload.targetKey, template_filename: "template.md" }] },
-        prompt_template_id: null,
-        branch_key: null,
-        parallel_group: null,
         step_description: "compress via template",
-    };
+        outputs_required: buildOutputRule({
+            files_to_generate: [{ from_document_key: payload.targetKey, template_filename: "template.md" }],
+        }),
+    });
     const mockSetup = createMockSupabaseClient("process-compress-job", {
         genericMockResults: {
             dialectic_project_resources: {
@@ -486,18 +438,15 @@ Deno.test("processCompressJob: template recipe instance resolves consuming step"
             },
             ai_providers: {
                 select: {
-                    data: [{
+                    data: [buildMockProvider({
                         id: payload.model_id,
                         api_identifier: "gpt-4",
-                        config: {
+                        config: buildExtendedModelConfig({
                             api_identifier: "gpt-4",
-                            input_token_cost_rate: 0.01,
-                            output_token_cost_rate: 0.02,
-                            tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: "cl100k_base" },
                             provider_max_input_tokens: 1000,
                             provider_max_output_tokens: 500,
-                        },
-                    }],
+                        }),
+                    })],
                     error: null,
                 },
             },
@@ -520,7 +469,7 @@ Deno.test("processCompressJob: template recipe instance resolves consuming step"
     });
     const dbClient = mockSetup.client as unknown as SupabaseClient;
     const params = buildProcessCompressJobParams({ dbClient });
-    const assembleCompressionPromptSpy = spy(async (_params: AssembleCompressionPromptParams, _payload: AssembleCompressionPromptPayload): Promise<AssembleCompressionPromptReturn> => ({ prompt: "assembled-prompt" }));
+    const assembleCompressionPromptSpy = spy(async (_params: AssembleCompressionPromptParams, _payload: AssembleCompressionPromptPayload): Promise<AssembleCompressionPromptReturn> => buildAssembledPrompt());
     const enqueueModelCallSpy = spy(async (_params: EnqueueModelCallParams, _payload: EnqueueModelCallPayload): Promise<EnqueueModelCallReturn> => ({ queued: true }));
     const countTokensSpy = spy((_deps: CountTokensDeps, _payload: CountableChatPayload, _config: AiModelExtendedConfig): number => 10);
     const deps = buildProcessCompressJobDeps({
@@ -542,32 +491,14 @@ Deno.test("processCompressJob: template recipe instance resolves consuming step"
 
 Deno.test("processCompressJob: assembleCompressionPrompt error propagates", async () => {
     const payload = buildDialecticCompressJobPayload();
-    const mockStep: DialecticStageRecipeStep = {
-        id: "step-1",
-        instance_id: "instance-1",
-        template_step_id: null,
-        created_at: "2024-01-01T00:00:00Z",
-        updated_at: "2024-01-01T00:00:00Z",
+    const mockStep = buildDialecticStageRecipeStep({
         step_key: "compress",
         step_slug: "compress",
         step_name: "Compress",
-        job_type: "EXECUTE",
-        prompt_type: "Turn",
         output_type: FileType.business_case,
-        granularity_strategy: "per_source_document",
-        config_override: {},
-        is_skipped: false,
-        object_filter: {},
-        output_overrides: {},
-        inputs_required: [],
-        inputs_relevance: [],
-        outputs_required: { files_to_generate: [] },
-        parallel_group: null,
-        branch_key: null,
-        prompt_template_id: null,
-        execution_order: null,
         step_description: "compress step",
-    };
+        outputs_required: buildOutputRule({ files_to_generate: [] }),
+    })!;
     const mockSetup = createMockSupabaseClient("process-compress-job", {
         genericMockResults: {
             dialectic_project_resources: {
@@ -575,18 +506,15 @@ Deno.test("processCompressJob: assembleCompressionPrompt error propagates", asyn
             },
             ai_providers: {
                 select: {
-                    data: [{
+                    data: [buildMockProvider({
                         id: payload.model_id,
                         api_identifier: "gpt-4",
-                        config: {
+                        config: buildExtendedModelConfig({
                             api_identifier: "gpt-4",
-                            input_token_cost_rate: 0.01,
-                            output_token_cost_rate: 0.02,
-                            tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: "cl100k_base" },
                             provider_max_input_tokens: 1000,
                             provider_max_output_tokens: 500,
-                        },
-                    }],
+                        }),
+                    })],
                     error: null,
                 },
             },
@@ -632,32 +560,14 @@ Deno.test("processCompressJob: assembleCompressionPrompt error propagates", asyn
 
 Deno.test("processCompressJob: assembled prompt exceeds budget returns non-retriable error", async () => {
     const payload = buildDialecticCompressJobPayload();
-    const mockStep: DialecticStageRecipeStep = {
-        id: "step-1",
-        instance_id: "instance-1",
-        template_step_id: null,
-        created_at: "2024-01-01T00:00:00Z",
-        updated_at: "2024-01-01T00:00:00Z",
+    const mockStep = buildDialecticStageRecipeStep({
         step_key: "compress",
         step_slug: "compress",
         step_name: "Compress",
-        job_type: "EXECUTE",
-        prompt_type: "Turn",
         output_type: FileType.business_case,
-        granularity_strategy: "per_source_document",
-        config_override: {},
-        is_skipped: false,
-        object_filter: {},
-        output_overrides: {},
-        inputs_required: [],
-        inputs_relevance: [],
-        outputs_required: { files_to_generate: [] },
-        parallel_group: null,
-        branch_key: null,
-        prompt_template_id: null,
-        execution_order: null,
         step_description: "compress step",
-    };
+        outputs_required: buildOutputRule({ files_to_generate: [] }),
+    })!;
     const mockSetup = createMockSupabaseClient("process-compress-job", {
         genericMockResults: {
             dialectic_project_resources: {
@@ -665,18 +575,15 @@ Deno.test("processCompressJob: assembled prompt exceeds budget returns non-retri
             },
             ai_providers: {
                 select: {
-                    data: [{
+                    data: [buildMockProvider({
                         id: payload.model_id,
                         api_identifier: "gpt-4",
-                        config: {
+                        config: buildExtendedModelConfig({
                             api_identifier: "gpt-4",
-                            input_token_cost_rate: 0.01,
-                            output_token_cost_rate: 0.02,
-                            tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: "cl100k_base" },
                             provider_max_input_tokens: 1000,
                             provider_max_output_tokens: 500,
-                        },
-                    }],
+                        }),
+                    })],
                     error: null,
                 },
             },
@@ -702,7 +609,7 @@ Deno.test("processCompressJob: assembled prompt exceeds budget returns non-retri
     });
     const dbClient = mockSetup.client as unknown as SupabaseClient;
     const params = buildProcessCompressJobParams({ dbClient });
-    const assembleCompressionPromptSpy = spy(async (_params: AssembleCompressionPromptParams, _payload: AssembleCompressionPromptPayload): Promise<AssembleCompressionPromptReturn> => ({ prompt: "a very long prompt" }));
+    const assembleCompressionPromptSpy = spy(async (_params: AssembleCompressionPromptParams, _payload: AssembleCompressionPromptPayload): Promise<AssembleCompressionPromptReturn> => buildAssembledPrompt({ promptContent: "a very long prompt" }));
     const enqueueModelCallSpy = spy(async (_params: EnqueueModelCallParams, _payload: EnqueueModelCallPayload): Promise<EnqueueModelCallReturn> => ({ queued: true }));
     const countTokensSpy = spy((_deps: CountTokensDeps, _payload: CountableChatPayload, _config: AiModelExtendedConfig): number => 2000);
     const deps = buildProcessCompressJobDeps({
@@ -722,44 +629,25 @@ Deno.test("processCompressJob: assembled prompt exceeds budget returns non-retri
 
 Deno.test("processCompressJob: happy path enqueues model call", async () => {
     const payload = buildDialecticCompressJobPayload();
-    const mockStep: DialecticStageRecipeStep = {
-        id: "step-1",
-        instance_id: "instance-1",
-        template_step_id: null,
-        created_at: "2024-01-01T00:00:00Z",
-        updated_at: "2024-01-01T00:00:00Z",
+    const mockStep = buildDialecticStageRecipeStep({
         step_key: "compress",
         step_slug: "compress",
         step_name: "Compress",
-        job_type: "EXECUTE",
-        prompt_type: "Turn",
         output_type: FileType.business_case,
-        granularity_strategy: "per_source_document",
-        config_override: {},
-        is_skipped: false,
-        object_filter: {},
-        output_overrides: {},
-        inputs_required: [],
-        inputs_relevance: [],
-        outputs_required: { files_to_generate: [{ from_document_key: payload.targetKey, template_filename: "template.md" }] },
-        parallel_group: null,
-        branch_key: null,
-        prompt_template_id: null,
-        execution_order: null,
         step_description: "compress step",
-    };
-    const providerRow = {
+        outputs_required: buildOutputRule({
+            files_to_generate: [{ from_document_key: payload.targetKey, template_filename: "template.md" }],
+        }),
+    })!;
+    const providerRow = buildMockProvider({
         id: payload.model_id,
         api_identifier: "gpt-4",
-        config: {
+        config: buildExtendedModelConfig({
             api_identifier: "gpt-4",
-            input_token_cost_rate: 0.01,
-            output_token_cost_rate: 0.02,
-            tokenization_strategy: { type: "tiktoken", tiktoken_encoding_name: "cl100k_base" },
             provider_max_input_tokens: 1000,
             provider_max_output_tokens: 500,
-        },
-    };
+        }),
+    });
     const mockSetup = createMockSupabaseClient("process-compress-job", {
         genericMockResults: {
             dialectic_project_resources: {
@@ -787,9 +675,9 @@ Deno.test("processCompressJob: happy path enqueues model call", async () => {
     });
     const dbClient = mockSetup.client as unknown as SupabaseClient;
     const params = buildProcessCompressJobParams({ dbClient });
-    const assembledPrompt = "assembled-prompt";
+    const assembledPrompt: AssembledPrompt = buildAssembledPrompt({ promptContent: "assembled-prompt" });
     const tokenCount = 10;
-    const assembleCompressionPromptSpy = spy(async (_params: AssembleCompressionPromptParams, _payload: AssembleCompressionPromptPayload): Promise<AssembleCompressionPromptReturn> => ({ prompt: assembledPrompt }));
+    const assembleCompressionPromptSpy = spy(async (_params: AssembleCompressionPromptParams, _payload: AssembleCompressionPromptPayload): Promise<AssembleCompressionPromptReturn> => assembledPrompt);
     const enqueueModelCallSpy = spy(async (_params: EnqueueModelCallParams, _payload: EnqueueModelCallPayload): Promise<EnqueueModelCallReturn> => ({ queued: true }));
     const countTokensSpy = spy((_deps: CountTokensDeps, _payload: CountableChatPayload, _config: AiModelExtendedConfig): number => tokenCount);
     const deps = buildProcessCompressJobDeps({
@@ -807,7 +695,7 @@ Deno.test("processCompressJob: happy path enqueues model call", async () => {
     assert(isRecord(enqueueParams));
     assert(enqueueParams["job"] === params.job);
     assert(enqueueParams["dbClient"] === params.dbClient);
-    assertEquals(enqueueParams["output_type"], FileType.CompressedContext);
+    assertEquals(enqueueParams["output_type"], FileType.CompressedContextRawJson);
     assertEquals(enqueueParams["userAuthToken"], params.authToken);
     const userConfig = enqueueParams["userConfig"];
     assert(isRecord(userConfig));
@@ -817,10 +705,10 @@ Deno.test("processCompressJob: happy path enqueues model call", async () => {
     assertEquals(enqueuePayload["preflightInputTokens"], tokenCount);
     const chatApiRequest = enqueuePayload["chatApiRequest"];
     assert(isRecord(chatApiRequest));
-    assertEquals(chatApiRequest["message"], assembledPrompt);
+    assertEquals(chatApiRequest["message"], assembledPrompt.promptContent);
     assertEquals(chatApiRequest["providerId"], payload.model_id);
     assertEquals(chatApiRequest["promptId"], "__none__");
-    assertEquals(chatApiRequest["max_tokens_to_generate"], providerRow.config.provider_max_output_tokens);
+    assertEquals(chatApiRequest["max_tokens_to_generate"], buildExtendedModelConfig({ provider_max_output_tokens: 500 }).provider_max_output_tokens);
     const completedUpdates = mockSetup.spies.getHistoricQueryBuilderSpies("dialectic_generation_jobs", "update");
     if (completedUpdates) {
         completedUpdates.callsArgs.forEach((call) => {
@@ -830,4 +718,324 @@ Deno.test("processCompressJob: happy path enqueues model call", async () => {
             }
         });
     }
+});
+
+// ── New tests for continuation routing, census, history victim, provenance write ──
+
+function buildCompressMockStep(payload: { targetKey: ModelContributionFileTypes }, filesToGenerate: { from_document_key: string; template_filename: string }[] = []) {
+    return buildDialecticStageRecipeStep({
+        step_key: "compress",
+        step_slug: "compress",
+        step_name: "Compress",
+        output_type: FileType.business_case,
+        step_description: "compress step",
+        outputs_required: buildOutputRule({ files_to_generate: filesToGenerate.length > 0 ? filesToGenerate : [{ from_document_key: payload.targetKey, template_filename: "template.md" }] }),
+    })!;
+}
+
+function buildCompressMockSetup(payload: { model_id: string; stageSlug: string; targetKey: ModelContributionFileTypes }, isCloned = true) {
+    return createMockSupabaseClient("process-compress-job", {
+        genericMockResults: {
+            dialectic_project_resources: { select: { data: [], error: null } },
+            ai_providers: { select: { data: [buildMockProvider({
+                id: payload.model_id,
+                api_identifier: "gpt-4",
+                config: buildExtendedModelConfig({
+                    api_identifier: "gpt-4",
+                    provider_max_input_tokens: 1000,
+                    provider_max_output_tokens: 500,
+                }),
+            })], error: null } },
+            dialectic_stages: { select: { data: [{ slug: payload.stageSlug, active_recipe_instance_id: "instance-1" }], error: null } },
+            dialectic_stage_recipe_instances: { select: { data: [{ id: "instance-1", is_cloned: isCloned, template_id: null }], error: null } },
+            dialectic_stage_recipe_steps: { select: { data: [buildCompressMockStep(payload)], error: null } },
+        },
+    });
+}
+
+Deno.test("processCompressJob: payload with continuation_count >= 1 calls assembleContinuationPrompt and never assembleCompressionPrompt", async () => {
+    const payload = buildDialecticCompressJobPayload({ continuation_count: 1 });
+    const mockSetup = buildCompressMockSetup(payload);
+    const dbClient = mockSetup.client as unknown as SupabaseClient;
+    const params = buildProcessCompressJobParams({ dbClient });
+    const continuationSpy = spy(mockBoundAssembleContinuationPrompt);
+    const compressionSpy = spy(async (_p: AssembleCompressionPromptParams, _pl: AssembleCompressionPromptPayload): Promise<AssembleCompressionPromptReturn> => buildAssembledPrompt());
+    const enqueueSpy = spy(async (_p: EnqueueModelCallParams, _pl: EnqueueModelCallPayload): Promise<EnqueueModelCallReturn> => ({ queued: true }));
+    const countTokensSpy = spy((_d: CountTokensDeps, _p: CountableChatPayload, _c: AiModelExtendedConfig): number => 10);
+    const deps = buildProcessCompressJobDeps({
+        assembleContinuationPrompt: continuationSpy,
+        assembleCompressionPrompt: compressionSpy,
+        enqueueModelCall: enqueueSpy,
+        countTokens: countTokensSpy,
+    });
+
+    const result: ProcessCompressJobReturn = await processCompressJob(deps, params, payload);
+
+    assertEquals(result, { queued: true });
+    assertEquals(continuationSpy.calls.length, 1);
+    assertEquals(compressionSpy.calls.length, 0);
+    const enqueuePayload = enqueueSpy.calls[0].args[1];
+    assert(isRecord(enqueuePayload));
+    const chatApiRequest = enqueuePayload["chatApiRequest"];
+    assert(isRecord(chatApiRequest));
+    const expectedContinuation = await mockBoundAssembleContinuationPrompt(params.job);
+    assertEquals(chatApiRequest["message"], expectedContinuation.promptContent);
+});
+
+Deno.test("processCompressJob: payload with continuation_count 0 calls assembleCompressionPrompt and never assembleContinuationPrompt", async () => {
+    const payload = buildDialecticCompressJobPayload({ continuation_count: 0 });
+    const mockSetup = buildCompressMockSetup(payload);
+    const dbClient = mockSetup.client as unknown as SupabaseClient;
+    const params = buildProcessCompressJobParams({ dbClient });
+    const continuationSpy = spy(mockBoundAssembleContinuationPrompt);
+    const compressionSpy = spy(async (_p: AssembleCompressionPromptParams, _pl: AssembleCompressionPromptPayload): Promise<AssembleCompressionPromptReturn> => buildAssembledPrompt());
+    const enqueueSpy = spy(async (_p: EnqueueModelCallParams, _pl: EnqueueModelCallPayload): Promise<EnqueueModelCallReturn> => ({ queued: true }));
+    const countTokensSpy = spy((_d: CountTokensDeps, _p: CountableChatPayload, _c: AiModelExtendedConfig): number => 10);
+    const deps = buildProcessCompressJobDeps({
+        assembleContinuationPrompt: continuationSpy,
+        assembleCompressionPrompt: compressionSpy,
+        enqueueModelCall: enqueueSpy,
+        countTokens: countTokensSpy,
+    });
+
+    await processCompressJob(deps, params, payload);
+
+    assertEquals(compressionSpy.calls.length, 1);
+    assertEquals(continuationSpy.calls.length, 0);
+});
+
+Deno.test("processCompressJob: payload omitting continuation_count calls assembleCompressionPrompt and never assembleContinuationPrompt", async () => {
+    const payload = buildDialecticCompressJobPayload();
+    const mockSetup = buildCompressMockSetup(payload);
+    const dbClient = mockSetup.client as unknown as SupabaseClient;
+    const params = buildProcessCompressJobParams({ dbClient });
+    const continuationSpy = spy(mockBoundAssembleContinuationPrompt);
+    const compressionSpy = spy(async (_p: AssembleCompressionPromptParams, _pl: AssembleCompressionPromptPayload): Promise<AssembleCompressionPromptReturn> => buildAssembledPrompt());
+    const enqueueSpy = spy(async (_p: EnqueueModelCallParams, _pl: EnqueueModelCallPayload): Promise<EnqueueModelCallReturn> => ({ queued: true }));
+    const countTokensSpy = spy((_d: CountTokensDeps, _p: CountableChatPayload, _c: AiModelExtendedConfig): number => 10);
+    const deps = buildProcessCompressJobDeps({
+        assembleContinuationPrompt: continuationSpy,
+        assembleCompressionPrompt: compressionSpy,
+        enqueueModelCall: enqueueSpy,
+        countTokens: countTokensSpy,
+    });
+
+    await processCompressJob(deps, params, payload);
+
+    assertEquals(compressionSpy.calls.length, 1);
+    assertEquals(continuationSpy.calls.length, 0);
+});
+
+Deno.test("processCompressJob: continuation whose assembled prompt exceeds budget returns non-retriable error and enqueues nothing", async () => {
+    const payload = buildDialecticCompressJobPayload({ continuation_count: 1 });
+    const mockSetup = buildCompressMockSetup(payload);
+    const dbClient = mockSetup.client as unknown as SupabaseClient;
+    const params = buildProcessCompressJobParams({ dbClient });
+    const continuationFn: BoundAssembleContinuationPromptFn = async (_job) => buildAssembledPrompt({ promptContent: "a very long prompt" });
+    const continuationSpy = spy(continuationFn);
+    const compressionSpy = spy(async (_p: AssembleCompressionPromptParams, _pl: AssembleCompressionPromptPayload): Promise<AssembleCompressionPromptReturn> => buildAssembledPrompt());
+    const enqueueSpy = spy(async (_p: EnqueueModelCallParams, _pl: EnqueueModelCallPayload): Promise<EnqueueModelCallReturn> => ({ queued: true }));
+    const countTokensSpy = spy((_d: CountTokensDeps, _p: CountableChatPayload, _c: AiModelExtendedConfig): number => 2000);
+    const deps = buildProcessCompressJobDeps({
+        assembleContinuationPrompt: continuationSpy,
+        assembleCompressionPrompt: compressionSpy,
+        enqueueModelCall: enqueueSpy,
+        countTokens: countTokensSpy,
+    });
+
+    const result: ProcessCompressJobReturn = await processCompressJob(deps, params, payload);
+
+    assertEquals(enqueueSpy.calls.length, 0);
+    assertEquals("error" in result, true);
+    if ("error" in result) {
+        assertEquals(result.retriable, false);
+    }
+});
+
+Deno.test("processCompressJob: first-pass call passes the full params census to assembleCompressionPrompt", async () => {
+    const payload = buildDialecticCompressJobPayload();
+    const mockSetup = buildCompressMockSetup(payload);
+    const dbClient = mockSetup.client as unknown as SupabaseClient;
+    const params = buildProcessCompressJobParams({ dbClient });
+    const compressionSpy = spy(async (_p: AssembleCompressionPromptParams, _pl: AssembleCompressionPromptPayload): Promise<AssembleCompressionPromptReturn> => buildAssembledPrompt());
+    const enqueueSpy = spy(async (_p: EnqueueModelCallParams, _pl: EnqueueModelCallPayload): Promise<EnqueueModelCallReturn> => ({ queued: true }));
+    const countTokensSpy = spy((_d: CountTokensDeps, _p: CountableChatPayload, _c: AiModelExtendedConfig): number => 10);
+    const deps = buildProcessCompressJobDeps({
+        assembleCompressionPrompt: compressionSpy,
+        enqueueModelCall: enqueueSpy,
+        countTokens: countTokensSpy,
+    });
+
+    await processCompressJob(deps, params, payload);
+
+    assertEquals(compressionSpy.calls.length, 1);
+    const assembleParams = compressionSpy.calls[0].args[0];
+    assert(isRecord(assembleParams));
+    assertEquals(assembleParams["projectId"], payload.projectId);
+    assertEquals(assembleParams["sessionId"], payload.sessionId);
+    assertEquals(assembleParams["iterationNumber"], payload.iterationNumber);
+    assertEquals(assembleParams["stageSlug"], payload.stageSlug);
+    assertEquals(assembleParams["targetKey"], payload.targetKey);
+    assertEquals(assembleParams["sourceType"], payload.sourceType);
+    assertEquals(assembleParams["documentKey"], payload.documentKey);
+    assertEquals(assembleParams["modelSlug"], payload.model_slug);
+    assertEquals(assembleParams["userId"], payload.user_id);
+    assertEquals(assembleParams["attemptCount"], params.job.attempt_count);
+});
+
+Deno.test("processCompressJob: history payload reaches dedup layer 2 without throwing and proceeds to assembly", async () => {
+    const payload = buildDialecticCompressJobPayload({ sourceType: "history", sourceId: "history-1", role: "assistant", documentKey: undefined });
+    const mockSetup = buildCompressMockSetup(payload);
+    const dbClient = mockSetup.client as unknown as SupabaseClient;
+    const params = buildProcessCompressJobParams({ dbClient });
+    const baseDeps = buildProcessCompressJobDeps();
+    const constructStoragePathSpy = spy(baseDeps.constructStoragePath);
+    const compressionSpy = spy(async (_p: AssembleCompressionPromptParams, _pl: AssembleCompressionPromptPayload): Promise<AssembleCompressionPromptReturn> => buildAssembledPrompt());
+    const enqueueSpy = spy(async (_p: EnqueueModelCallParams, _pl: EnqueueModelCallPayload): Promise<EnqueueModelCallReturn> => ({ queued: true }));
+    const countTokensSpy = spy((_d: CountTokensDeps, _p: CountableChatPayload, _c: AiModelExtendedConfig): number => 10);
+    const deps = buildProcessCompressJobDeps({
+        constructStoragePath: constructStoragePathSpy,
+        assembleCompressionPrompt: compressionSpy,
+        enqueueModelCall: enqueueSpy,
+        countTokens: countTokensSpy,
+    });
+
+    await processCompressJob(deps, params, payload);
+
+    assertEquals(compressionSpy.calls.length, 1);
+    assertEquals(constructStoragePathSpy.calls.length, 1);
+    const storageCtx = constructStoragePathSpy.calls[0].args[0];
+    assert(isRecord(storageCtx));
+    assertEquals(storageCtx["sourceId"], "history-1");
+    assertEquals(storageCtx["role"], "assistant");
+    assert(!("documentKey" in storageCtx) || storageCtx["documentKey"] === undefined);
+});
+
+Deno.test("processCompressJob: successful assembly updates job row payload with source_prompt_resource_id before enqueue", async () => {
+    const payload = buildDialecticCompressJobPayload();
+    const mockSetup = createMockSupabaseClient("process-compress-job", {
+        genericMockResults: {
+            dialectic_project_resources: { select: { data: [], error: null } },
+            ai_providers: { select: { data: [buildMockProvider({
+                id: payload.model_id,
+                api_identifier: "gpt-4",
+                config: buildExtendedModelConfig({
+                    api_identifier: "gpt-4",
+                    provider_max_input_tokens: 1000,
+                    provider_max_output_tokens: 500,
+                }),
+            })], error: null } },
+            dialectic_stages: { select: { data: [{ slug: payload.stageSlug, active_recipe_instance_id: "instance-1" }], error: null } },
+            dialectic_stage_recipe_instances: { select: { data: [{ id: "instance-1", is_cloned: true, template_id: null }], error: null } },
+            dialectic_stage_recipe_steps: { select: { data: [buildCompressMockStep(payload)], error: null } },
+            dialectic_generation_jobs: { update: { data: [], error: null } },
+        },
+    });
+    const dbClient = mockSetup.client as unknown as SupabaseClient;
+    const params = buildProcessCompressJobParams({ dbClient });
+    const assembled = buildAssembledPrompt({ source_prompt_resource_id: "assembler-returned-id" });
+    const compressionSpy = spy(async (_p: AssembleCompressionPromptParams, _pl: AssembleCompressionPromptPayload): Promise<AssembleCompressionPromptReturn> => assembled);
+    const enqueueSpy = spy(async (_p: EnqueueModelCallParams, _pl: EnqueueModelCallPayload): Promise<EnqueueModelCallReturn> => {
+        const updateCalls = mockSetup.spies.getHistoricQueryBuilderSpies("dialectic_generation_jobs", "update");
+        assertExists(updateCalls);
+        assertEquals(updateCalls.callCount, 1);
+        return { queued: true };
+    });
+    const countTokensSpy = spy((_d: CountTokensDeps, _p: CountableChatPayload, _c: AiModelExtendedConfig): number => 10);
+    const deps = buildProcessCompressJobDeps({
+        assembleCompressionPrompt: compressionSpy,
+        enqueueModelCall: enqueueSpy,
+        countTokens: countTokensSpy,
+    });
+
+    const result: ProcessCompressJobReturn = await processCompressJob(deps, params, payload);
+
+    assertEquals(result, { queued: true });
+    const updateCalls = mockSetup.spies.getHistoricQueryBuilderSpies("dialectic_generation_jobs", "update");
+    assertExists(updateCalls);
+    assertEquals(updateCalls.callCount, 1);
+    const updateData = updateCalls.callsArgs[0][0];
+    assert(isRecord(updateData));
+    const updatePayload = updateData["payload"];
+    assert(isRecord(updatePayload));
+    assertEquals(updatePayload["source_prompt_resource_id"], "assembler-returned-id");
+    const jobEqCalls = mockSetup.spies.getHistoricQueryBuilderSpies("dialectic_generation_jobs", "eq");
+    assertExists(jobEqCalls);
+    const idEqCall = jobEqCalls.callsArgs.find((c) => c[0] === "id");
+    assertExists(idEqCall);
+    assertEquals(idEqCall[1], params.job.id);
+});
+
+Deno.test("processCompressJob: failing payload update returns retriable error and enqueues nothing", async () => {
+    const payload = buildDialecticCompressJobPayload();
+    const mockSetup = createMockSupabaseClient("process-compress-job", {
+        genericMockResults: {
+            dialectic_project_resources: { select: { data: [], error: null } },
+            ai_providers: { select: { data: [buildMockProvider({
+                id: payload.model_id,
+                api_identifier: "gpt-4",
+                config: buildExtendedModelConfig({
+                    api_identifier: "gpt-4",
+                    provider_max_input_tokens: 1000,
+                    provider_max_output_tokens: 500,
+                }),
+            })], error: null } },
+            dialectic_stages: { select: { data: [{ slug: payload.stageSlug, active_recipe_instance_id: "instance-1" }], error: null } },
+            dialectic_stage_recipe_instances: { select: { data: [{ id: "instance-1", is_cloned: true, template_id: null }], error: null } },
+            dialectic_stage_recipe_steps: { select: { data: [buildCompressMockStep(payload)], error: null } },
+            dialectic_generation_jobs: { update: { data: null, error: new Error("payload update failed") } },
+        },
+    });
+    const dbClient = mockSetup.client as unknown as SupabaseClient;
+    const params = buildProcessCompressJobParams({ dbClient });
+    const compressionSpy = spy(async (_p: AssembleCompressionPromptParams, _pl: AssembleCompressionPromptPayload): Promise<AssembleCompressionPromptReturn> => buildAssembledPrompt());
+    const enqueueSpy = spy(async (_p: EnqueueModelCallParams, _pl: EnqueueModelCallPayload): Promise<EnqueueModelCallReturn> => ({ queued: true }));
+    const countTokensSpy = spy((_d: CountTokensDeps, _p: CountableChatPayload, _c: AiModelExtendedConfig): number => 10);
+    const deps = buildProcessCompressJobDeps({
+        assembleCompressionPrompt: compressionSpy,
+        enqueueModelCall: enqueueSpy,
+        countTokens: countTokensSpy,
+    });
+
+    const result: ProcessCompressJobReturn = await processCompressJob(deps, params, payload);
+
+    assertEquals(enqueueSpy.calls.length, 0);
+    assertEquals("error" in result, true);
+    if ("error" in result) {
+        assertEquals(result.retriable, true);
+    }
+});
+
+Deno.test("processCompressJob: dedup-hit path performs no payload update and calls neither assembler", async () => {
+    const payload = buildDialecticCompressJobPayload();
+    const mockSetup = createMockSupabaseClient("process-compress-job", {
+        genericMockResults: {
+            dialectic_project_resources: { select: { data: [{ id: "existing-resource" }], error: null } },
+            dialectic_generation_jobs: { update: { data: [], error: null } },
+        },
+    });
+    const dbClient = mockSetup.client as unknown as SupabaseClient;
+    const params = buildProcessCompressJobParams({ dbClient });
+    const compressionSpy = spy(async (_p: AssembleCompressionPromptParams, _pl: AssembleCompressionPromptPayload): Promise<AssembleCompressionPromptReturn> => buildAssembledPrompt());
+    const continuationSpy = spy(mockBoundAssembleContinuationPrompt);
+    const enqueueSpy = spy(async (_p: EnqueueModelCallParams, _pl: EnqueueModelCallPayload): Promise<EnqueueModelCallReturn> => ({ queued: true }));
+    const deps = buildProcessCompressJobDeps({
+        assembleCompressionPrompt: compressionSpy,
+        assembleContinuationPrompt: continuationSpy,
+        enqueueModelCall: enqueueSpy,
+    });
+
+    const result: ProcessCompressJobReturn = await processCompressJob(deps, params, payload);
+
+    assertEquals(result, { queued: false });
+    assertEquals(compressionSpy.calls.length, 0);
+    assertEquals(continuationSpy.calls.length, 0);
+    assertEquals(enqueueSpy.calls.length, 0);
+    const updateCalls = mockSetup.spies.getHistoricQueryBuilderSpies("dialectic_generation_jobs", "update");
+    assertExists(updateCalls);
+    assertEquals(updateCalls.callCount, 1);
+    const updateData = updateCalls.callsArgs[0][0];
+    assert(isRecord(updateData));
+    assertEquals(updateData["status"], "completed");
+    assert(!("payload" in updateData) || updateData["payload"] === undefined);
 });

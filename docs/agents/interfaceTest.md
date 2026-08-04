@@ -162,7 +162,7 @@ Report them verbatim and stop. That is success, not a halt.
   interface that does not exist in its home — a dependency-ordering violation. Report
   and halt (see [discovery-halt](discovery-halt.md)).
 
-Forbidden: importing an implementation, defining types locally ("temporary, I'll move it later"); silencing the
+Forbidden: running any terminal commands, importing an implementation, defining types locally ("temporary, I'll move it later"); silencing the
 compiler (`@ts-expect-error`, `as`, `satisfies`, `unknown`); importing mocks,
 builders, or guards; constructing a value of an imported type — a hand-rolled literal
 or its builder — instead of a type-only surface assertion; using `declare const` in an

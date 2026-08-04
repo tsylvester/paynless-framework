@@ -4,11 +4,12 @@ import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { getEncoding } from "npm:js-tiktoken@1.0.7";
 import { countTokens as countTokensAnthropicLib } from "npm:@anthropic-ai/tokenizer@0.0.4";
 import type { Database, Tables } from "../../types_db.ts";
-import type { AiModelExtendedConfig } from "../../_shared/types.ts";
+import type { AiModelExtendedConfig, Messages } from "../../_shared/types.ts";
 import type { CountTokensDeps } from "../../_shared/types/tokenizer.types.ts";
 import { MockLogger } from "../../_shared/logger.mock.ts";
 import { createMockSupabaseClient, type MockQueryBuilderState } from "../../_shared/supabase.mock.ts";
 import { FileType, DialecticStageSlug } from "../../_shared/types/file_manager.types.ts";
+import type { CompressionSourceType, ModelContributionFileTypes, IFileManager } from "../../_shared/types/file_manager.types.ts";
 import { isRecord } from "../../_shared/utils/type_guards.ts";
 import { isChatApiRequest, isKnownTiktokenEncoding } from "../../_shared/utils/type-guards/type_guards.chat.ts";
 import { renderPrompt } from "../../_shared/prompt-renderer.ts";
@@ -18,6 +19,7 @@ import { enqueueCompressJobs } from "../enqueueCompressJobs/enqueueCompressJobs.
 import { isDialecticCompressJobPayload } from "../enqueueCompressJobs/enqueueCompressJobs.guard.ts";
 import type { DialecticCompressJobPayload } from "../enqueueCompressJobs/enqueueCompressJobs.interface.ts";
 import { assembleCompressionPrompt } from "../../_shared/prompt-assembler/assembleCompressionPrompt/assembleCompressionPrompt.ts";
+import { assembleContinuationPrompt, MOCK_CONTINUATION_INSTRUCTION_INCOMPLETE_JSON } from "../../_shared/prompt-assembler/assembleContinuationPrompt/assembleContinuationPrompt.ts";
 import { enqueueModelCall } from "../enqueueModelCall/enqueueModelCall.ts";
 import { processCompressJob } from "./processCompressJob.ts";
 import {
@@ -50,10 +52,16 @@ import type {
   BoundAssembleCompressionPromptFn,
 } from "../../_shared/prompt-assembler/assembleCompressionPrompt/assembleCompressionPrompt.interface.ts";
 import type {
+  AssembleContinuationPromptDeps,
+  BoundAssembleContinuationPromptFn,
+} from "../../_shared/prompt-assembler/prompt-assembler.interface.ts";
+import type {
   ProcessCompressJobDeps,
 } from "./processCompressJob.interface.ts";
 import { isModelContributionFileType } from "../../_shared/utils/type-guards/type_guards.file_manager.ts";
 import { isJson } from "../../_shared/utils/type-guards/type_guards.common.ts";
+import { createMockFileManagerService, buildFileRecord } from "../../_shared/services/file_manager.mock.ts";
+import type { DownloadStorageResult } from "../../_shared/supabase_storage_utils.ts";
 
 const computeJobSig = await createComputeJobSig("integration-secret");
 
@@ -169,19 +177,42 @@ const baseProviderRow: Tables<"ai_providers"> = {
 
 function buildIntegrationProcessDeps(
   dbClient: SupabaseClient<Database>,
+  continuationDeps?: {
+    fileManager: IFileManager;
+    downloadFromStorage: (bucket: string, path: string) => Promise<DownloadStorageResult>;
+  },
 ): {
   deps: ProcessCompressJobDeps;
   enqueueCalls: { params: EnqueueModelCallParams; payload: EnqueueModelCallPayload }[];
 } {
   const enqueueCalls: { params: EnqueueModelCallParams; payload: EnqueueModelCallPayload }[] = [];
 
+  const compressionFileManager = createMockFileManagerService();
+  compressionFileManager.setUploadAndRegisterFileResponse(buildFileRecord({ id: "compression-prompt-resource-id" }), null);
+
   const assembleDeps: AssembleCompressionPromptDeps = {
     dbClient,
     renderPromptFn: renderPrompt,
     logger: new MockLogger(),
+    fileManager: compressionFileManager,
+    constructStoragePath,
   };
   const boundAssemble: BoundAssembleCompressionPromptFn = (params, payload) =>
     assembleCompressionPrompt(assembleDeps, params, payload);
+
+  const boundContinuation: BoundAssembleContinuationPromptFn = (job) => {
+    if (!continuationDeps) {
+      throw new Error("continuationDeps not provided to buildIntegrationProcessDeps");
+    }
+    const fullDeps: AssembleContinuationPromptDeps = {
+      dbClient,
+      fileManager: continuationDeps.fileManager,
+      job,
+      downloadFromStorage: continuationDeps.downloadFromStorage,
+      constructStoragePath,
+    };
+    return assembleContinuationPrompt(fullDeps);
+  };
 
   const enqueueModelCallDeps: EnqueueModelCallDeps = {
     logger: new MockLogger(),
@@ -197,6 +228,7 @@ function buildIntegrationProcessDeps(
 
   const deps = buildProcessCompressJobDeps({
     assembleCompressionPrompt: boundAssemble,
+    assembleContinuationPrompt: boundContinuation,
     enqueueModelCall: boundEnqueue,
     countTokens,
     getEncoding: tokenizerDeps.getEncoding,
@@ -268,8 +300,22 @@ function buildMockSupabaseForFullChain(
 
 async function runSpawnProcessSeam(
   mockSetup: ReturnType<typeof createMockSupabaseClient>,
-  victimPayload: { mode: "json" | "text"; content: string; sourceType: "contribution" | "resource" | "history"; documentKey: string; docType?: string; sourceStageSlug?: string },
+  victimPayload: {
+    mode: "json" | "text";
+    content: string;
+    sourceType: CompressionSourceType;
+    sourceId?: string;
+    role?: Messages['role'];
+    documentKey?: FileType;
+    docType?: ModelContributionFileTypes;
+    sourceStageSlug?: DialecticStageSlug;
+    continuation_count?: number;
+  },
   targetKey = FileType.business_case,
+  continuationDeps?: {
+    fileManager: IFileManager;
+    downloadFromStorage: (bucket: string, path: string) => Promise<DownloadStorageResult>;
+  },
 ): Promise<{
   enqueueResult: Awaited<ReturnType<typeof enqueueCompressJobs>>;
   capturedPayload: DialecticCompressJobPayload;
@@ -283,6 +329,7 @@ async function runSpawnProcessSeam(
   {
     throw new Error("Target key must be a model contribution file type");
   }
+  const { continuation_count, ...victimForEnqueue } = victimPayload;
   const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
   const enqueueParams = buildenqueueCompressJobsParams({
     dbClient,
@@ -295,7 +342,7 @@ async function runSpawnProcessSeam(
   const enqueueResult = await enqueueCompressJobs(
     buildenqueueCompressJobsDeps({ countTokens }),
     enqueueParams,
-    { victim: victimPayload },
+    { victim: victimForEnqueue },
   );
 
   assert("createdCount" in enqueueResult, "enqueueCompressJobs returned an error");
@@ -314,7 +361,10 @@ async function runSpawnProcessSeam(
   const row = insertRows[0];
   assert(isRecord(row));
   assert(isDialecticCompressJobPayload(row.payload));
-  const capturedPayload = row.payload;
+  const basePayload = row.payload;
+  const capturedPayload: DialecticCompressJobPayload = continuation_count !== undefined
+    ? { ...basePayload, continuation_count }
+    : basePayload;
 
   const processJob = createMockJobRow(
     capturedPayload,
@@ -332,28 +382,30 @@ async function runSpawnProcessSeam(
     authToken: "auth-token-1",
   });
 
-  const { deps, enqueueCalls } = buildIntegrationProcessDeps(dbClient);
+  const { deps, enqueueCalls } = buildIntegrationProcessDeps(dbClient, continuationDeps);
 
   const fetchStub = stub(globalThis, "fetch", () =>
     Promise.resolve(new Response("{}", { status: 200 }))
   );
 
-  const processResult = await processCompressJob(deps, processParams, capturedPayload);
+  try {
+    const processResult = await processCompressJob(deps, processParams, capturedPayload);
 
-  assertEquals(enqueueCalls.length, 1);
-  const capturedEnqueuePayload = enqueueCalls[0].payload;
-  const capturedEnqueueParams = enqueueCalls[0].params;
+    assertEquals(enqueueCalls.length, 1);
+    const capturedEnqueuePayload = enqueueCalls[0].payload;
+    const capturedEnqueueParams = enqueueCalls[0].params;
 
-  fetchStub.restore();
-
-  return {
-    enqueueResult,
-    capturedPayload,
-    processResult,
-    capturedEnqueuePayload,
-    capturedEnqueueParams,
-    processJob,
-  };
+    return {
+      enqueueResult,
+      capturedPayload,
+      processResult,
+      capturedEnqueuePayload,
+      capturedEnqueueParams,
+      processJob,
+    };
+  } finally {
+    fetchStub.restore();
+  }
 }
 
 Deno.test("processCompressJob integration: spawn->process seam with a real json victim under budget", async () => {
@@ -374,7 +426,7 @@ Deno.test("processCompressJob integration: spawn->process seam with a real json 
     content: victimContent,
     sourceType: "contribution",
     documentKey: FileType.business_case,
-    docType: "business_case",
+    docType: FileType.business_case,
     sourceStageSlug: DialecticStageSlug.Thesis,
   });
 
@@ -390,7 +442,7 @@ Deno.test("processCompressJob integration: spawn->process seam with a real json 
   assert(prompt.includes("Return EXACTLY the same JSON structure"), "json_mode instruction present");
   assert(!prompt.includes("Return ONLY the compressed document text"), "text_mode instruction absent");
 
-  assertEquals(capturedEnqueueParams.output_type, FileType.CompressedContext);
+  assertEquals(capturedEnqueueParams.output_type, FileType.CompressedContextRawJson);
   assert(capturedEnqueueParams.job === processJob, "captured job should be reference-equal to fed job");
 
   const independentlyCounted = countTokens(
@@ -404,34 +456,36 @@ Deno.test("processCompressJob integration: spawn->process seam with a real json 
     Promise.resolve(new Response("{}", { status: 200 }))
   );
 
-  await enqueueModelCall(
-    {
-      logger: new MockLogger(),
-      computeJobSig,
-      netlifyQueueUrl: NETLIFY_QUEUE_URL,
-      netlifyApiKey: NETLIFY_API_KEY,
-      apiKeyForProvider: () => "integration-provider-api-key",
-    },
-    capturedEnqueueParams,
-    capturedEnqueuePayload,
-  );
+  try {
+    await enqueueModelCall(
+      {
+        logger: new MockLogger(),
+        computeJobSig,
+        netlifyQueueUrl: NETLIFY_QUEUE_URL,
+        netlifyApiKey: NETLIFY_API_KEY,
+        apiKeyForProvider: () => "integration-provider-api-key",
+      },
+      capturedEnqueueParams,
+      capturedEnqueuePayload,
+    );
 
-  assertEquals(fetchStub.calls.length, 1);
-  const [, init] = fetchStub.calls[0].args;
-  assert(isRecord(init) && typeof init.body === "string");
-  const posted = JSON.parse(init.body);
-  assert(isRecord(posted));
-  assertEquals(posted.eventName, "ai-stream-background");
-  assert(isRecord(posted.data));
-  const postedData = posted.data;
-  const chatApiRequest = postedData.chat_api_request;
-  if(!isChatApiRequest(chatApiRequest)){
-    throw new Error("")
+    assertEquals(fetchStub.calls.length, 1);
+    const [, init] = fetchStub.calls[0].args;
+    assert(isRecord(init) && typeof init.body === "string");
+    const posted = JSON.parse(init.body);
+    assert(isRecord(posted));
+    assertEquals(posted.eventName, "ai-stream-background");
+    assert(isRecord(posted.data));
+    const postedData = posted.data;
+    const chatApiRequest = postedData.chat_api_request;
+    if(!isChatApiRequest(chatApiRequest)){
+      throw new Error("")
+    }
+    assert(typeof chatApiRequest.message === "string");
+    assertEquals(chatApiRequest.message, prompt);
+  } finally {
+    fetchStub.restore();
   }
-  assert(typeof chatApiRequest.message === "string");
-  assertEquals(chatApiRequest.message, prompt);
-
-  fetchStub.restore();
 });
 
 Deno.test("processCompressJob integration: dedup coherence across layers", async () => {
@@ -490,7 +544,7 @@ Deno.test("processCompressJob integration: dedup coherence across layers", async
         mode: "text",
         content: "compress me",
         sourceType: "contribution",
-        documentKey: "business_case",
+        documentKey: FileType.business_case,
       },
     },
   );
@@ -575,7 +629,7 @@ Deno.test("processCompressJob integration: chunked seam produces text chunks and
         content: justOver,
         sourceType: "contribution",
         documentKey: FileType.business_case,
-        docType: "business_case",
+        docType: FileType.business_case,
         sourceStageSlug: DialecticStageSlug.Thesis,
       },
     },
@@ -622,8 +676,12 @@ Deno.test("processCompressJob integration: chunked seam produces text chunks and
   const fetchStub = stub(globalThis, "fetch", () =>
     Promise.resolve(new Response("{}", { status: 200 }))
   );
-  const processResult = await processCompressJob(deps, processParams, chunkPayload);
-  fetchStub.restore();
+  let processResult;
+  try {
+    processResult = await processCompressJob(deps, processParams, chunkPayload);
+  } finally {
+    fetchStub.restore();
+  }
 
   assert("queued" in processResult && processResult.queued === true, "expected chunk to queue");
   assertEquals(enqueueCalls.length, 1);
@@ -662,13 +720,13 @@ Deno.test("processCompressJob integration: is_cloned=true branch runs spawn->pro
       mode: "text",
       content: "stage clone source content",
       sourceType: "contribution",
-      documentKey: "business_case",
+      documentKey: FileType.business_case,
     },
     FileType.business_case,
   );
 
   assert("queued" in processResult && processResult.queued === true, "expected queued=true");
-  assertEquals(capturedEnqueueParams.output_type, FileType.CompressedContext);
+  assertEquals(capturedEnqueueParams.output_type, FileType.CompressedContextRawJson);
   assert(capturedEnqueueParams.job === processJob);
 
   const prompt = capturedEnqueuePayload.chatApiRequest.message;
@@ -697,13 +755,13 @@ Deno.test("processCompressJob integration: is_cloned=false branch runs spawn->pr
       mode: "text",
       content: "template source content",
       sourceType: "contribution",
-      documentKey: "business_case",
+      documentKey: FileType.business_case,
     },
     FileType.business_case,
   );
 
   assert("queued" in processResult && processResult.queued === true, "expected queued=true");
-  assertEquals(capturedEnqueueParams.output_type, FileType.CompressedContext);
+  assertEquals(capturedEnqueueParams.output_type, FileType.CompressedContextRawJson);
   assert(capturedEnqueueParams.job === processJob);
 
   const prompt = capturedEnqueuePayload.chatApiRequest.message;
@@ -713,4 +771,151 @@ Deno.test("processCompressJob integration: is_cloned=false branch runs spawn->pr
     prompt.includes("compress the contribution from template"),
     "prompt should contain the template step_description",
   );
+});
+
+Deno.test("processCompressJob integration: history victim runs end to end through dedup layer 2, assembly and enqueue", async () => {
+  const mockSetup = buildMockSupabaseForFullChain(
+    undefined as unknown as SupabaseClient<Database>,
+    false,
+  );
+
+  const {
+    processResult,
+    capturedEnqueueParams,
+    capturedEnqueuePayload,
+  } = await runSpawnProcessSeam(
+    mockSetup,
+    {
+      mode: "text",
+      content: "history content to compress",
+      sourceType: "history",
+      sourceId: "history-1",
+      role: "assistant",
+    },
+    FileType.business_case,
+  );
+
+  assert("queued" in processResult && processResult.queued === true, "expected queued=true");
+  assertEquals(capturedEnqueueParams.output_type, FileType.CompressedContextRawJson);
+
+  const prompt = capturedEnqueuePayload.chatApiRequest.message;
+  assert(prompt.includes("history content to compress"), "prompt should contain the victim content");
+});
+
+Deno.test("processCompressJob integration: continuation victim reaches enqueue with continuation assembler prompt and CompressedContextRawJson output_type", async () => {
+  const firstPassPromptText = "You are compressing a source. Source: compress me";
+  const partialResponseText = '{"product": "widget", "price":';
+
+  const stageWithSteps = buildStageWithRecipeSteps();
+  const stageRow = { ...stageWithSteps.dialectic_stage, active_recipe_instance_id: "instance-1" };
+  const instanceRow = { ...stageWithSteps.dialectic_stage_recipe_instances, id: "instance-1", is_cloned: false };
+
+  const mockSetup = createMockSupabaseClient("user-789", {
+    genericMockResults: {
+      dialectic_project_resources: {
+        select: (state: MockQueryBuilderState) => {
+          const storagePathFilter = state.filters.find(
+            (f) => f.type === "eq" && f.column === "storage_path",
+          );
+          if (storagePathFilter && typeof storagePathFilter.value === "string") {
+            if (storagePathFilter.value.includes("_work/prompts")) {
+              return Promise.resolve({
+                data: [buildFileRecord({
+                  storage_bucket: "content",
+                  storage_path: storagePathFilter.value,
+                })],
+                error: null,
+              });
+            }
+            if (storagePathFilter.value.includes("_work/raw_responses")) {
+              return Promise.resolve({
+                data: [buildFileRecord({
+                  storage_bucket: "content",
+                  storage_path: storagePathFilter.value,
+                })],
+                error: null,
+              });
+            }
+          }
+          return Promise.resolve({ data: [], error: null });
+        },
+      },
+      dialectic_generation_jobs: {
+        insert: { data: [], error: null },
+        update: { data: [{}], error: null },
+      },
+      dialectic_stages: {
+        select: { data: [stageRow], error: null },
+      },
+      dialectic_stage_recipe_instances: {
+        select: { data: [instanceRow], error: null },
+      },
+      dialectic_stage_recipe_steps: {
+        select: { data: [], error: null },
+      },
+      dialectic_recipe_template_steps: {
+        select: { data: [buildDialecticRecipeTemplateStep({
+          step_description: "compress the contribution from template",
+          output_type: FileType.business_case,
+          outputs_required: buildOutputRule({
+            files_to_generate: [{
+              from_document_key: "business_case",
+              template_filename: "business_case.md",
+            }],
+          }),
+        })], error: null },
+      },
+      ai_providers: {
+        select: { data: [baseProviderRow], error: null },
+      },
+      system_prompts: {
+        select: { data: [baseSystemPrompt], error: null },
+      },
+    },
+  });
+
+  const downloadFromStorage = async (_bucket: string, path: string): Promise<DownloadStorageResult> => {
+    if (path.includes("/prompts/")) {
+      const encoded = new TextEncoder().encode(firstPassPromptText);
+      const buffer = new ArrayBuffer(encoded.byteLength);
+      new Uint8Array(buffer).set(encoded);
+      return { data: buffer, error: null };
+    }
+    if (path.includes("/raw_responses/")) {
+      const encoded = new TextEncoder().encode(partialResponseText);
+      const buffer = new ArrayBuffer(encoded.byteLength);
+      new Uint8Array(buffer).set(encoded);
+      return { data: buffer, error: null };
+    }
+    return { data: null, error: new Error("Unexpected download path") };
+  };
+
+  const fileManager = createMockFileManagerService();
+  fileManager.setUploadAndRegisterFileResponse(buildFileRecord({ id: "continuation-prompt-resource-id" }), null);
+
+  const {
+    processResult,
+    capturedEnqueueParams,
+    capturedEnqueuePayload,
+  } = await runSpawnProcessSeam(
+    mockSetup,
+    {
+      mode: "text",
+      content: "compress me",
+      sourceType: "contribution",
+      documentKey: FileType.business_case,
+      docType: FileType.business_case,
+      sourceStageSlug: DialecticStageSlug.Thesis,
+      continuation_count: 1,
+    },
+    FileType.business_case,
+    { fileManager, downloadFromStorage },
+  );
+
+  assert("queued" in processResult && processResult.queued === true, "expected queued=true");
+  assertEquals(capturedEnqueueParams.output_type, FileType.CompressedContextRawJson);
+
+  const prompt = capturedEnqueuePayload.chatApiRequest.message;
+  assert(prompt.includes(MOCK_CONTINUATION_INSTRUCTION_INCOMPLETE_JSON), "prompt should contain the continuation instruction");
+  assert(prompt.includes(partialResponseText), "prompt should contain the partial response");
 });

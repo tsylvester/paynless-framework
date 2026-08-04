@@ -6,6 +6,7 @@ import type {
   CountTokensDeps,
   CountTokensFn,
 } from "../types/tokenizer.types.ts";
+import { MockLogger } from "../logger.mock.ts";
 
 export type MockCountTokensOverrides = {
   countTokens?: CountTokensFn;
@@ -25,4 +26,27 @@ export function createMockCountTokens(
   return overrides.countTokens !== undefined
     ? overrides.countTokens
     : defaultCountTokens;
+}
+
+export type CountTokensDepsOverrides = Partial<CountTokensDeps>;
+
+export function buildCountTokensDeps(
+  overrides?: CountTokensDepsOverrides,
+): CountTokensDeps {
+  const base: CountTokensDeps = {
+    getEncoding: (_name: string) => ({
+      encode: (input: string) => Array.from(input, (_ch, index: number) => index),
+    }),
+    countTokensAnthropic: (text: string) => text.length,
+    logger: new MockLogger(),
+  };
+  return overrides ? { ...base, ...overrides } : base;
+}
+
+export type CountTokensDepsCorruptions = { [K in keyof CountTokensDeps]?: unknown };
+
+export function invalidateCountTokensDeps(
+  corruptions: CountTokensDepsCorruptions,
+): unknown {
+  return { ...buildCountTokensDeps(), ...corruptions };
 }

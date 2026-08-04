@@ -7,7 +7,7 @@ import { MockIndexingService } from '../../_shared/services/indexing_service.moc
 import { createMockAdminTokenWalletService } from '../../_shared/services/tokenwallet/admin/adminTokenWalletService.mock.ts';
 import { createMockUserTokenWalletService } from '../../_shared/services/tokenwallet/client/userTokenWalletService.mock.ts';
 import { buildIDocumentRenderer } from '../../_shared/services/document_renderer/renderDocument/renderDocument.mock.ts';
-import { MockPromptAssembler } from '../../_shared/prompt-assembler/prompt-assembler.mock.ts';
+import { buildIPromptAssembler } from '../../_shared/prompt-assembler/prompt-assembler.mock.ts';
 import { mockNotificationService } from '../../_shared/utils/notification.service.mock.ts';
 import { MockLogger } from '../../_shared/logger.mock.ts';
 import { createMockDownloadFromStorage } from '../../_shared/supabase_storage_utils.mock.ts';
@@ -167,7 +167,7 @@ export function createMockJobContextParams(overrides?: JobContextParamsOverrides
     const adminTokenWalletService = createMockAdminTokenWalletService().instance;
     const userTokenWalletService = createMockUserTokenWalletService().instance;
     const documentRenderer = buildIDocumentRenderer();
-    const promptAssembler = new MockPromptAssembler();
+    const promptAssembler = buildIPromptAssembler();
     const logger = new MockLogger();
     const mockDownloadFn = createMockDownloadFromStorage({ mode: 'success', data: new ArrayBuffer(0) });
     const findSourceDocuments = createMockFindSourceDocuments({ mode: 'empty' });

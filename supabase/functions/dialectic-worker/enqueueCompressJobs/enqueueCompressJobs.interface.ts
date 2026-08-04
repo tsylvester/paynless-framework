@@ -33,6 +33,7 @@ export interface DialecticCompressJobPayload {
   chunk_index?: number;
   chunk_total?: number;
   continuation_count?: number; // present only on a continuation row, written by continueJob
+  source_prompt_resource_id?: string; // written onto the job row by processCompressJob after assembly, read by saveResponse
   walletId: string;
   user_id: string;
 }

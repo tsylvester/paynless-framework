@@ -15,7 +15,11 @@ import {
   buildProcessCompressJobErrorReturn,
   buildProcessCompressJobParams,
   buildProcessCompressJobSuccessReturn,
-  createProcessCompressJobMock,
+  invalidateProcessCompressJobDeps,
+  invalidateProcessCompressJobErrorReturn,
+  invalidateProcessCompressJobParams,
+  invalidateProcessCompressJobSuccessReturn,
+  mockProcessCompressJobFn,
 } from "./processCompressJob.mock.ts";
 
 Deno.test("isProcessCompressJobDeps accepts full deps", () => {
@@ -42,7 +46,7 @@ Deno.test(
 Deno.test("isProcessCompressJobDeps rejects null enqueueModelCall", () => {
   assertEquals(
     isProcessCompressJobDeps(
-      buildProcessCompressJobDeps({ enqueueModelCall: null }),
+      invalidateProcessCompressJobDeps({ enqueueModelCall: null }),
     ),
     false,
   );
@@ -60,7 +64,7 @@ Deno.test("isProcessCompressJobDeps rejects undefined countTokens", () => {
 Deno.test("isProcessCompressJobDeps rejects null constructStoragePath", () => {
   assertEquals(
     isProcessCompressJobDeps(
-      buildProcessCompressJobDeps({ constructStoragePath: null }),
+      invalidateProcessCompressJobDeps({ constructStoragePath: null }),
     ),
     false,
   );
@@ -82,10 +86,30 @@ Deno.test("isProcessCompressJobDeps rejects undefined getEncoding", () => {
 
 Deno.test("isProcessCompressJobDeps rejects null countTokensAnthropic", () => {
   assertEquals(
-    isProcessCompressJobDeps(buildProcessCompressJobDeps({ countTokensAnthropic: null })),
+    isProcessCompressJobDeps(invalidateProcessCompressJobDeps({ countTokensAnthropic: null })),
     false,
   );
 });
+
+Deno.test(
+  "isProcessCompressJobDeps rejects omitted assembleContinuationPrompt",
+  () => {
+    const { assembleContinuationPrompt: _omit, ...missing } = buildProcessCompressJobDeps();
+    assertEquals(isProcessCompressJobDeps(missing), false);
+  },
+);
+
+Deno.test(
+  "isProcessCompressJobDeps rejects non-function assembleContinuationPrompt",
+  () => {
+    assertEquals(
+      isProcessCompressJobDeps(
+        invalidateProcessCompressJobDeps({ assembleContinuationPrompt: "not-a-function" }),
+      ),
+      false,
+    );
+  },
+);
 
 Deno.test("isProcessCompressJobParams accepts full params", () => {
   assertEquals(isProcessCompressJobParams(buildProcessCompressJobParams()), true);
@@ -98,7 +122,7 @@ Deno.test("isProcessCompressJobParams rejects non-record roots", () => {
 
 Deno.test("isProcessCompressJobParams rejects null dbClient", () => {
   assertEquals(
-    isProcessCompressJobParams(buildProcessCompressJobParams({ dbClient: null })),
+    isProcessCompressJobParams(invalidateProcessCompressJobParams({ dbClient: null })),
     false,
   );
 });
@@ -113,7 +137,7 @@ Deno.test("isProcessCompressJobParams rejects undefined jobId", () => {
 Deno.test("isProcessCompressJobParams rejects null projectOwnerUserId", () => {
   assertEquals(
     isProcessCompressJobParams(
-      buildProcessCompressJobParams({ projectOwnerUserId: null }),
+      invalidateProcessCompressJobParams({ projectOwnerUserId: null }),
     ),
     false,
   );
@@ -160,7 +184,7 @@ Deno.test("isProcessCompressJobReturn rejects non-record roots", () => {
 });
 
 Deno.test("isProcessCompressJobFn accepts full fn", () => {
-  assertEquals(isProcessCompressJobFn(createProcessCompressJobMock()), true);
+  assertEquals(isProcessCompressJobFn(mockProcessCompressJobFn), true);
 });
 
 Deno.test("isProcessCompressJobFn rejects non-function roots", () => {
@@ -170,7 +194,7 @@ Deno.test("isProcessCompressJobFn rejects non-function roots", () => {
 
 Deno.test("isBoundProcessCompressJobFn accepts full fn", () => {
   assertEquals(
-    isBoundProcessCompressJobFn(createProcessCompressJobMock()),
+    isBoundProcessCompressJobFn(mockProcessCompressJobFn),
     true,
   );
 });
@@ -207,7 +231,7 @@ Deno.test(
 Deno.test("isProcessCompressJobSuccessReturn rejects null queued", () => {
   assertEquals(
     isProcessCompressJobSuccessReturn(
-      buildProcessCompressJobSuccessReturn({ queued: null }),
+      invalidateProcessCompressJobSuccessReturn({ queued: null }),
     ),
     false,
   );
@@ -250,7 +274,7 @@ Deno.test(
 Deno.test("isProcessCompressJobErrorReturn rejects null error", () => {
   assertEquals(
     isProcessCompressJobErrorReturn(
-      buildProcessCompressJobErrorReturn({ error: null }),
+      invalidateProcessCompressJobErrorReturn({ error: null }),
     ),
     false,
   );
@@ -271,7 +295,7 @@ Deno.test(
 Deno.test("isProcessCompressJobErrorReturn rejects null retriable", () => {
   assertEquals(
     isProcessCompressJobErrorReturn(
-      buildProcessCompressJobErrorReturn({ retriable: null }),
+      invalidateProcessCompressJobErrorReturn({ retriable: null }),
     ),
     false,
   );

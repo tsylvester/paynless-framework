@@ -4,10 +4,12 @@ import {
 	AssemblePromptOptions,
 	AssembledPrompt,
 	AssembleSeedPromptDeps,
+	AssembleSeedPromptFn,
 	AssemblePlannerPromptDeps,
 	AssembleTurnPromptDeps,
 	AssembleTurnPromptParams,
 	AssembleContinuationPromptDeps,
+	IPromptAssembler,
 	ProjectContext,
 	SessionContext,
 	StageContext,
@@ -23,6 +25,7 @@ import { mockConstructStoragePath } from '../utils/path_constructor.mock.ts';
 import { mockDownloadFromStorageTwoArg, createMockDownloadFromStorage } from '../supabase_storage_utils.mock.ts';
 import { gatherInputsForStage } from './gatherInputsForStage/gatherInputsForStage.ts';
 import {
+	AssembleCompressionPromptFn,
 	AssembleCompressionPromptReturn,
 } from "./assembleCompressionPrompt/assembleCompressionPrompt.interface.ts";
 import { createMockSupabaseClient } from "../supabase.mock.ts";
@@ -355,4 +358,51 @@ export type AssembleTurnPromptParamsCorruptions = { [K in keyof AssembleTurnProm
 
 export function invalidateAssembleTurnPromptParams(corruptions: AssembleTurnPromptParamsCorruptions): unknown {
     return { ...buildAssembleTurnPromptParams(), ...corruptions };
+}
+
+// ---------------------------------------------------------------------------
+// IPromptAssembler — injected service interface (see dependency-injection).
+// Per mocks.md "Classes — decompose, never mock the class", the class
+// PromptAssembler is never mocked; the owned object type IPromptAssembler gets
+// the four standard symbols, and each method defaults to its function mock.
+// ---------------------------------------------------------------------------
+
+export const mockAssemble: (options: AssemblePromptOptions) => Promise<AssembledPrompt> =
+    async () => MOCK_ASSEMBLED_PROMPT;
+
+export const mockAssembleSeedPrompt: AssembleSeedPromptFn =
+    async () => MOCK_ASSEMBLED_SEED_PROMPT;
+
+export const mockAssemblePlannerPrompt: (deps: AssemblePlannerPromptDeps) => Promise<AssembledPrompt> =
+    async () => MOCK_ASSEMBLED_PLANNER_PROMPT;
+
+export const mockAssembleTurnPrompt: (
+    deps: AssembleTurnPromptDeps,
+    params: AssembleTurnPromptParams,
+) => Promise<AssembledPrompt> = async () => MOCK_ASSEMBLED_TURN_PROMPT;
+
+export const mockAssembleContinuationPrompt: (deps: AssembleContinuationPromptDeps) => Promise<AssembledPrompt> =
+    async () => MOCK_ASSEMBLED_CONTINUATION_PROMPT;
+
+export const mockAssembleCompressionPrompt: AssembleCompressionPromptFn =
+    async () => MOCK_ASSEMBLED_COMPRESSION_PROMPT;
+
+export type IPromptAssemblerOverrides = Partial<IPromptAssembler>;
+
+export function buildIPromptAssembler(overrides?: IPromptAssemblerOverrides): IPromptAssembler {
+    const base: IPromptAssembler = {
+        assemble: mockAssemble,
+        assembleSeedPrompt: mockAssembleSeedPrompt,
+        assemblePlannerPrompt: mockAssemblePlannerPrompt,
+        assembleTurnPrompt: mockAssembleTurnPrompt,
+        assembleContinuationPrompt: mockAssembleContinuationPrompt,
+        assembleCompressionPrompt: mockAssembleCompressionPrompt,
+    };
+    return overrides ? { ...base, ...overrides } : base;
+}
+
+export type IPromptAssemblerCorruptions = { [K in keyof IPromptAssembler]?: unknown };
+
+export function invalidateIPromptAssembler(corruptions: IPromptAssemblerCorruptions): unknown {
+    return { ...buildIPromptAssembler(), ...corruptions };
 }

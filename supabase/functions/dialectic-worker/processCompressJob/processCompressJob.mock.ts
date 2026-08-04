@@ -2,18 +2,19 @@ import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import type { Database } from "../../types_db.ts";
 import { MockLogger } from "../../_shared/logger.mock.ts";
 import { createMockSupabaseClient } from "../../_shared/supabase.mock.ts";
-import { createMockCountTokens } from "../../_shared/utils/tokenizer_utils.mock.ts";
+import { createMockCountTokens, buildCountTokensDeps } from "../../_shared/utils/tokenizer_utils.mock.ts";
 import { constructStoragePath } from "../../_shared/utils/path_constructor.ts";
-import { buildBoundAssembleCompressionPromptFn } from "../../_shared/prompt-assembler/assembleCompressionPrompt/assembleCompressionPrompt.mock.ts";
-import { createMockEnqueueModelCallSuccessReturn } from "../enqueueModelCall/enqueueModelCall.mock.ts";
+import { mockBoundAssembleCompressionPrompt } from "../../_shared/prompt-assembler/assembleCompressionPrompt/assembleCompressionPrompt.mock.ts";
+import { mockBoundAssembleContinuationPrompt } from "../../_shared/prompt-assembler/assembleContinuationPrompt/assembleContinuationPrompt.mock.ts";
+import { mockBoundEnqueueModelCallFn } from "../enqueueModelCall/enqueueModelCall.mock.ts";
 import { isJson } from "../../_shared/utils/type_guards.ts";
 import { mockJob } from "../processSimpleJob.mock.ts";
 import { buildDialecticCompressJobPayload } from "../enqueueCompressJobs/enqueueCompressJobs.mock.ts";
+import {
+    ProcessCompressJobError,
+} from "./processCompressJob.interface.ts";
 import type {
-    BoundEnqueueModelCallFn,
-    EnqueueModelCallReturn,
-} from "../enqueueModelCall/enqueueModelCall.interface.ts";
-import type {
+    BoundProcessCompressJobFn,
     ProcessCompressJobDeps,
     ProcessCompressJobErrorReturn,
     ProcessCompressJobFn,
@@ -23,109 +24,38 @@ import type {
     ProcessCompressJobSuccessReturn,
 } from "./processCompressJob.interface.ts";
 
-export type ProcessCompressJobDepsOverrides = {
-    [K in keyof ProcessCompressJobDeps]?: ProcessCompressJobDeps[K] | null;
-};
+// ── ProcessCompressJobDeps ───────────────────────────────────────────────────
 
-export type ProcessCompressJobParamsOverrides = {
-    [K in keyof ProcessCompressJobParams]?: ProcessCompressJobParams[K] | null;
-};
-
-export type ProcessCompressJobSuccessReturnOverrides = {
-    [K in keyof ProcessCompressJobSuccessReturn]?:
-        | ProcessCompressJobSuccessReturn[K]
-        | null;
-};
-
-export type ProcessCompressJobErrorReturnOverrides = {
-    [K in keyof ProcessCompressJobErrorReturn]?:
-        | ProcessCompressJobErrorReturn[K]
-        | null;
-};
-
-export function createProcessCompressJobMock(options?: {
-    result?: ProcessCompressJobReturn;
-    handler?: ProcessCompressJobFn;
-}): ProcessCompressJobFn {
-    const processCompressJob: ProcessCompressJobFn = async (
-        deps: ProcessCompressJobDeps,
-        params: ProcessCompressJobParams,
-        payload: ProcessCompressJobPayload,
-    ): Promise<ProcessCompressJobReturn> => {
-        if (options?.handler !== undefined) {
-            return await options.handler(deps, params, payload);
-        }
-
-        if (options?.result !== undefined) {
-            return options.result;
-        }
-
-        return buildProcessCompressJobSuccessReturn();
-    };
-
-    return processCompressJob;
-}
+export type ProcessCompressJobDepsOverrides = Partial<ProcessCompressJobDeps>;
 
 export function buildProcessCompressJobDeps(
     overrides?: ProcessCompressJobDepsOverrides,
 ): ProcessCompressJobDeps {
-    const defaultEnqueueModelCall: BoundEnqueueModelCallFn = async (
-        _params,
-        _payload,
-    ): Promise<EnqueueModelCallReturn> => {
-        return createMockEnqueueModelCallSuccessReturn();
-    };
-
-    const defaultGetEncoding = (_name: string) => ({
-        encode: (input: string) => Array.from({ length: input.length }, (_, i) => i),
-    });
-    const defaultCountTokensAnthropic = (text: string) => text.length;
-
+    const tokenizerDeps = buildCountTokensDeps();
     const base: ProcessCompressJobDeps = {
-        assembleCompressionPrompt: buildBoundAssembleCompressionPromptFn(),
-        enqueueModelCall: defaultEnqueueModelCall,
+        assembleCompressionPrompt: mockBoundAssembleCompressionPrompt,
+        assembleContinuationPrompt: mockBoundAssembleContinuationPrompt,
+        enqueueModelCall: mockBoundEnqueueModelCallFn,
         countTokens: createMockCountTokens(),
-        getEncoding: defaultGetEncoding,
-        countTokensAnthropic: defaultCountTokensAnthropic,
+        getEncoding: tokenizerDeps.getEncoding,
+        countTokensAnthropic: tokenizerDeps.countTokensAnthropic,
         constructStoragePath: constructStoragePath,
         logger: new MockLogger(),
     };
-
-    if (!overrides) {
-        return base;
-    }
-
-    return {
-        assembleCompressionPrompt:
-            overrides !== undefined && "assembleCompressionPrompt" in overrides
-                ? overrides.assembleCompressionPrompt!
-                : base.assembleCompressionPrompt,
-        enqueueModelCall:
-            overrides !== undefined && "enqueueModelCall" in overrides
-                ? overrides.enqueueModelCall!
-                : base.enqueueModelCall,
-        countTokens:
-            overrides !== undefined && "countTokens" in overrides
-                ? overrides.countTokens!
-                : base.countTokens,
-        getEncoding:
-            overrides !== undefined && "getEncoding" in overrides
-                ? overrides.getEncoding!
-                : base.getEncoding,
-        countTokensAnthropic:
-            overrides !== undefined && "countTokensAnthropic" in overrides
-                ? overrides.countTokensAnthropic!
-                : base.countTokensAnthropic,
-        constructStoragePath:
-            overrides !== undefined && "constructStoragePath" in overrides
-                ? overrides.constructStoragePath!
-                : base.constructStoragePath,
-        logger:
-            overrides !== undefined && "logger" in overrides
-                ? overrides.logger!
-                : base.logger,
-    };
+    return overrides ? { ...base, ...overrides } : base;
 }
+
+export type ProcessCompressJobDepsCorruptions = { [K in keyof ProcessCompressJobDeps]?: unknown };
+
+export function invalidateProcessCompressJobDeps(
+    corruptions: ProcessCompressJobDepsCorruptions,
+): unknown {
+    return { ...buildProcessCompressJobDeps(), ...corruptions };
+}
+
+// ── ProcessCompressJobParams ─────────────────────────────────────────────────
+
+export type ProcessCompressJobParamsOverrides = Partial<ProcessCompressJobParams>;
 
 export function buildProcessCompressJobParams(
     overrides?: ProcessCompressJobParamsOverrides,
@@ -152,68 +82,94 @@ export function buildProcessCompressJobParams(
         projectOwnerUserId: "user-1",
         authToken: "mock-user-jwt",
     };
-
-    if (!overrides) {
-        return base;
-    }
-
-    return {
-        dbClient:
-            overrides !== undefined && "dbClient" in overrides
-                ? overrides.dbClient!
-                : base.dbClient,
-        job:
-            overrides !== undefined && "job" in overrides
-                ? overrides.job!
-                : base.job,
-        projectOwnerUserId:
-            overrides !== undefined && "projectOwnerUserId" in overrides
-                ? overrides.projectOwnerUserId!
-                : base.projectOwnerUserId,
-        authToken:
-            overrides !== undefined && "authToken" in overrides
-                ? overrides.authToken!
-                : base.authToken,
-    };
+    return overrides ? { ...base, ...overrides } : base;
 }
+
+export type ProcessCompressJobParamsCorruptions = { [K in keyof ProcessCompressJobParams]?: unknown };
+
+export function invalidateProcessCompressJobParams(
+    corruptions: ProcessCompressJobParamsCorruptions,
+): unknown {
+    return { ...buildProcessCompressJobParams(), ...corruptions };
+}
+
+// ── ProcessCompressJobError (owned class) ────────────────────────────────────
+
+export type ProcessCompressJobErrorOverrides = Partial<ProcessCompressJobError>;
+
+export function buildProcessCompressJobError(
+    overrides?: ProcessCompressJobErrorOverrides,
+): ProcessCompressJobError {
+    const message = overrides?.message !== undefined
+        ? overrides.message
+        : "mock-process-compress-job-error";
+    const error = new ProcessCompressJobError(message);
+    if (overrides?.name !== undefined) {
+        error.name = overrides.name;
+    }
+    if (overrides?.stack !== undefined) {
+        error.stack = overrides.stack;
+    }
+    if (overrides?.cause !== undefined) {
+        error.cause = overrides.cause;
+    }
+    return error;
+}
+
+// ── ProcessCompressJobSuccessReturn ──────────────────────────────────────────
+
+export type ProcessCompressJobSuccessReturnOverrides = Partial<ProcessCompressJobSuccessReturn>;
 
 export function buildProcessCompressJobSuccessReturn(
     overrides?: ProcessCompressJobSuccessReturnOverrides,
 ): ProcessCompressJobSuccessReturn {
     const base: ProcessCompressJobSuccessReturn = { queued: false };
-
-    if (!overrides) {
-        return base;
-    }
-
-    return {
-        queued:
-            overrides !== undefined && "queued" in overrides
-                ? overrides.queued!
-                : base.queued,
-    };
+    return overrides ? { ...base, ...overrides } : base;
 }
+
+export type ProcessCompressJobSuccessReturnCorruptions = { [K in keyof ProcessCompressJobSuccessReturn]?: unknown };
+
+export function invalidateProcessCompressJobSuccessReturn(
+    corruptions: ProcessCompressJobSuccessReturnCorruptions,
+): unknown {
+    return { ...buildProcessCompressJobSuccessReturn(), ...corruptions };
+}
+
+// ── ProcessCompressJobErrorReturn ────────────────────────────────────────────
+
+export type ProcessCompressJobErrorReturnOverrides = Partial<ProcessCompressJobErrorReturn>;
 
 export function buildProcessCompressJobErrorReturn(
     overrides?: ProcessCompressJobErrorReturnOverrides,
 ): ProcessCompressJobErrorReturn {
     const base: ProcessCompressJobErrorReturn = {
-        error: new Error("mock-process-compress-job-error"),
+        error: buildProcessCompressJobError(),
         retriable: false,
     };
-
-    if (!overrides) {
-        return base;
-    }
-
-    return {
-        error:
-            overrides !== undefined && "error" in overrides
-                ? overrides.error!
-                : base.error,
-        retriable:
-            overrides !== undefined && "retriable" in overrides
-                ? overrides.retriable!
-                : base.retriable,
-    };
+    return overrides ? { ...base, ...overrides } : base;
 }
+
+export type ProcessCompressJobErrorReturnCorruptions = { [K in keyof ProcessCompressJobErrorReturn]?: unknown };
+
+export function invalidateProcessCompressJobErrorReturn(
+    corruptions: ProcessCompressJobErrorReturnCorruptions,
+): unknown {
+    return { ...buildProcessCompressJobErrorReturn(), ...corruptions };
+}
+
+// ── ProcessCompressJobFn / BoundProcessCompressJobFn (owned functions) ───────
+
+export const mockProcessCompressJobFn: ProcessCompressJobFn = async (
+    _deps,
+    _params,
+    _payload,
+): Promise<ProcessCompressJobReturn> => {
+    return buildProcessCompressJobSuccessReturn();
+};
+
+export const mockBoundProcessCompressJobFn: BoundProcessCompressJobFn = async (
+    _params,
+    _payload,
+): Promise<ProcessCompressJobReturn> => {
+    return buildProcessCompressJobSuccessReturn();
+};

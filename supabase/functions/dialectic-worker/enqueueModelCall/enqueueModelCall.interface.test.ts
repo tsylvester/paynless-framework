@@ -10,6 +10,7 @@ import type {
     EnqueueModelCallReturn,
     EnqueueModelCallSuccessReturn,
 } from "./enqueueModelCall.interface.ts";
+import { FileType } from "../../_shared/types/file_manager.types.ts";
 
 Deno.test(
     "Contract: EnqueueModelCallDeps declares five dependency keys",
@@ -198,5 +199,17 @@ Deno.test(
         };
         assertEquals(paramsUserConfig.tier_output_cap_tokens, null);
         assertEquals(eventUserConfig.tier_output_cap_tokens, null);
+    },
+);
+
+Deno.test(
+    "Contract: EnqueueModelCallParams.output_type is FileType",
+    () => {
+        const compressionOutput: EnqueueModelCallParams["output_type"] =
+            FileType.CompressedContextRawJson;
+        const contributionOutput: EnqueueModelCallParams["output_type"] =
+            FileType.HeaderContext;
+        assertEquals(compressionOutput, FileType.CompressedContextRawJson);
+        assertEquals(contributionOutput, FileType.HeaderContext);
     },
 );

@@ -20,7 +20,7 @@ import {
   isPrepareModelJobParams,
   isPrepareModelJobPayload,
 } from './prepareModelJob/prepareModelJob.guard.ts';
-import { MockPromptAssembler } from '../_shared/prompt-assembler/prompt-assembler.mock.ts';
+import { mockAssemble } from '../_shared/prompt-assembler/prompt-assembler.mock.ts';
 import { FileType } from '../_shared/types/file_manager.types.ts';
 import { createJobContext } from './createJobContext/createJobContext.ts';
 import { IJobContext, JobContextParams } from './createJobContext/JobContext.interface.ts';
@@ -481,7 +481,7 @@ export const mockClient = (configOverrides: Record<string, unknown> = {}) => {
 
 export const mockDeps = (
   overrideParams?: Partial<JobContextParams>,
-): { promptAssembler: MockPromptAssembler; fileManager: MockFileManagerService; rootCtx: IJobContext } => {
+): { promptAssembler: IPromptAssembler; fileManager: MockFileManagerService; rootCtx: IJobContext } => {
   const baseParams: JobContextParams = createMockJobContextParams({
     prepareModelJob: async () => mockPrepareModelJobSuccessReturn(),
   });
@@ -492,16 +492,16 @@ export const mockDeps = (
   const promptAssemblerCandidate: IPromptAssembler = finalParams.promptAssembler;
   const fileManagerCandidate: IFileManager = finalParams.fileManager;
 
-  if (!(promptAssemblerCandidate instanceof MockPromptAssembler)) {
+  if (promptAssemblerCandidate.assemble !== mockAssemble) {
     throw new Error(
-      'processSimpleJob tests require promptAssembler to be MockPromptAssembler (subclass or proxy of it).',
+      'processSimpleJob tests require promptAssembler to be the unmodified buildIPromptAssembler() mock.',
     );
   }
   if (!(fileManagerCandidate instanceof MockFileManagerService)) {
     throw new Error('processSimpleJob tests require fileManager to be MockFileManagerService.');
   }
 
-  const promptAssembler: MockPromptAssembler = promptAssemblerCandidate;
+  const promptAssembler: IPromptAssembler = promptAssemblerCandidate;
   const fileManager: MockFileManagerService = fileManagerCandidate;
 
   return { promptAssembler, fileManager, rootCtx };

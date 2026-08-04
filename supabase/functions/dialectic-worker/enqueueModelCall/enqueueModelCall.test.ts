@@ -146,7 +146,7 @@ Deno.test(
             const result: EnqueueModelCallReturn = await enqueueModelCall(
                 createMockEnqueueModelCallDeps(),
                 createMockEnqueueModelCallParams({
-                    output_type: "___invalid_model_contribution_output___",
+                    output_type: FileType.UserFeedback,
                     userConfig: { tier_output_cap_tokens: null },
                 }, { mockSetup }),
                 createMockEnqueueModelCallPayload(),
@@ -839,6 +839,50 @@ Deno.test(
                 createMockEnqueueModelCallDeps(),
                 createMockEnqueueModelCallParams({
                     output_type: FileType.CompressedContext,
+                    userConfig: { tier_output_cap_tokens: null },
+                }, { mockSetup }),
+                createMockEnqueueModelCallPayload(),
+            );
+            assert("queued" in result);
+            assertEquals(result.queued, true);
+            assertEquals(fetchStub.calls.length, 1);
+
+            const updateSpy = mockSetup.spies.getHistoricQueryBuilderSpies(
+                "dialectic_generation_jobs",
+                "update",
+            );
+            assertExists(updateSpy);
+            assert(updateSpy.callCount >= 1);
+            const updatePayload = updateSpy.callsArgs[0][0];
+            assert(isRecord(updatePayload));
+            assertEquals(updatePayload.status, "queued");
+        } finally {
+            fetchStub.restore();
+        }
+    },
+);
+
+Deno.test(
+    "enqueueModelCall accepts FileType.CompressedContextRawJson and proceeds to fetch",
+    async () => {
+        const mockSetup = createMockSupabaseClient(undefined, {
+            genericMockResults: {
+                dialectic_generation_jobs: {
+                    update: { data: [{}], error: null },
+                },
+            },
+        });
+        const fetchStub = stub(
+            globalThis,
+            "fetch",
+            (): Promise<Response> =>
+                Promise.resolve(new Response("{}", { status: 200 })),
+        );
+        try {
+            const result: EnqueueModelCallReturn = await enqueueModelCall(
+                createMockEnqueueModelCallDeps(),
+                createMockEnqueueModelCallParams({
+                    output_type: FileType.CompressedContextRawJson,
                     userConfig: { tier_output_cap_tokens: null },
                 }, { mockSetup }),
                 createMockEnqueueModelCallPayload(),

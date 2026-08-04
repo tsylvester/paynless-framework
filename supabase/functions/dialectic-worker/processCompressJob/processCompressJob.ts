@@ -17,6 +17,7 @@ import type {
     AssembleCompressionPromptPayload,
     CompressionTargetStep,
 } from "../../_shared/prompt-assembler/assembleCompressionPrompt/assembleCompressionPrompt.interface.ts";
+import type { AssembledPrompt } from "../../_shared/prompt-assembler/prompt-assembler.interface.ts";
 import type {
     CountTokensDeps,
     CountableChatPayload,
@@ -26,6 +27,7 @@ import type {
     EnqueueModelCallPayload,
 } from "../enqueueModelCall/enqueueModelCall.interface.ts";
 import type { UserConfig } from "../calculateAffordability/calculateAffordability.interface.ts";
+import type { DialecticCompressJobPayload } from "../enqueueCompressJobs/enqueueCompressJobs.interface.ts";
 import {
     ProcessCompressJobError,
     ProcessCompressJobFn,
@@ -50,6 +52,7 @@ export const processCompressJob: ProcessCompressJobFn = async (
             sourceType: payload.sourceType,
             documentKey: payload.documentKey,
             sourceId: payload.sourceId,
+            role: payload.role,
         };
         const constructed: ConstructedPath = deps.constructStoragePath(pathContext);
         storagePath = constructed.storagePath;
@@ -312,24 +315,65 @@ export const processCompressJob: ProcessCompressJobFn = async (
         assemblePayload.chunk_total = payload.chunk_total;
     }
 
-    const assembleParams: AssembleCompressionPromptParams = { consumingStep };
-    const assembled = await deps.assembleCompressionPrompt(
-        assembleParams,
-        assemblePayload,
-    );
+    const assembleParams: AssembleCompressionPromptParams = {
+        consumingStep,
+        projectId: payload.projectId,
+        sessionId: payload.sessionId,
+        iterationNumber: payload.iterationNumber,
+        stageSlug: payload.stageSlug,
+        targetKey: payload.targetKey,
+        sourceType: payload.sourceType,
+        documentKey: payload.documentKey,
+        sourceId: payload.sourceId,
+        role: payload.role,
+        modelSlug: payload.model_slug,
+        userId: payload.user_id,
+        attemptCount: params.job.attempt_count,
+    };
 
-    if ("error" in assembled) {
-        return { error: assembled.error, retriable: assembled.retriable };
+    let assembled: AssembledPrompt;
+    if (typeof payload.continuation_count === "number" && payload.continuation_count >= 1) {
+        assembled = await deps.assembleContinuationPrompt(params.job);
+    } else {
+        const compressionResult = await deps.assembleCompressionPrompt(
+            assembleParams,
+            assemblePayload,
+        );
+        if ("error" in compressionResult) {
+            return { error: compressionResult.error, retriable: compressionResult.retriable };
+        }
+        assembled = compressionResult;
     }
 
-    // Step 5 — recursion guard
+    // Step 5 — provenance write
+    const updatedPayload: DialecticCompressJobPayload = {
+        ...payload,
+        source_prompt_resource_id: assembled.source_prompt_resource_id,
+    };
+
+    if(!isJson(updatedPayload)){
+        throw new Error ("DialecticCompressJobPayload just be Json compatible")
+    }
+    const provenanceUpdate: TablesUpdate<"dialectic_generation_jobs"> = {
+        payload: updatedPayload,
+    };
+    const { error: provenanceError } = await params.dbClient
+        .from("dialectic_generation_jobs")
+        .update(provenanceUpdate)
+        .eq("id", params.job.id);
+
+    if (provenanceError) {
+        return { error: provenanceError, retriable: true };
+    }
+
+    // Step 6 — recursion guard
     const tokenizerDeps: CountTokensDeps = {
         getEncoding: deps.getEncoding,
         countTokensAnthropic: deps.countTokensAnthropic,
         logger: deps.logger,
     };
 
-    const countablePayload: CountableChatPayload = { message: assembled.prompt };
+    const countablePayload: CountableChatPayload = { message: assembled.promptContent };
     const preflightInputTokens = deps.countTokens(
         tokenizerDeps,
         countablePayload,
@@ -347,7 +391,7 @@ export const processCompressJob: ProcessCompressJobFn = async (
 
     // Step 6 — enqueue model call
     const chatApiRequest: ChatApiRequest = {
-        message: assembled.prompt,
+        message: assembled.promptContent,
         providerId: payload.model_id,
         promptId: "__none__",
         max_tokens_to_generate: maxOutputTokens,
@@ -359,7 +403,7 @@ export const processCompressJob: ProcessCompressJobFn = async (
         job: params.job,
         providerRow,
         userAuthToken: params.authToken,
-        output_type: FileType.CompressedContext,
+        output_type: FileType.CompressedContextRawJson,
         userConfig: userConfigObject,
     };
     const enqueuePayload: EnqueueModelCallPayload = {

@@ -67,21 +67,7 @@
     let mockFileManager: ReturnType<typeof createMockFileManagerService>;
   
     const setup = (config: MockSupabaseDataConfig = {}) => {
-      mockSupabaseSetup = createMockSupabaseClient(undefined, {
-        ...config,
-        genericMockResults: {
-          ai_providers: {
-            select: {
-              data: [{ name: 'Test Model' }],
-              error: null,
-              count: 1,
-              status: 200,
-              statusText: 'OK',
-            },
-          },
-          ...config.genericMockResults,
-        },
-      });
+      mockSupabaseSetup = createMockSupabaseClient(undefined, config);
       mockFileManager = createMockFileManagerService();
       const client = mockSupabaseSetup.client as unknown as SupabaseClient<Database>;
       return {

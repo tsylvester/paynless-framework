@@ -20,6 +20,7 @@ export function isProcessCompressJobDeps(
 
     const requiredKeys: (keyof ProcessCompressJobDeps)[] = [
         "assembleCompressionPrompt",
+        "assembleContinuationPrompt",
         "enqueueModelCall",
         "countTokens",
         "getEncoding",
@@ -34,6 +35,9 @@ export function isProcessCompressJobDeps(
     }
 
     if (typeof value.assembleCompressionPrompt !== "function") {
+        return false;
+    }
+    if (typeof value.assembleContinuationPrompt !== "function") {
         return false;
     }
     if (typeof value.enqueueModelCall !== "function") {

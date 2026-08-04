@@ -21,3 +21,4 @@ Written **before** the implementation (TDD). Validates behavior.
 - Focus on correct transformations and branching logic. Do **not** re-test type
   shape (interface test) or guard correctness (guard test).
 - One behavior per test.
+- Never run any terminal commands. 

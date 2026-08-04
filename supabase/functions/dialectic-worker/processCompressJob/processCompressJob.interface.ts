@@ -3,13 +3,15 @@ import type { Database } from "../../types_db.ts";
 import type { ILogger } from "../../_shared/types.ts";
 import type { CountTokensDeps, CountTokensFn } from "../../_shared/types/tokenizer.types.ts";
 import type { ConstructStoragePathFn } from "../../_shared/utils/path_constructor.types.ts";
-import type { BoundAssembleCompressionPromptFn } from "../../_shared/prompt-assembler/assembleCompressionPrompt/assembleCompressionPrompt.interface.ts";
+import type { BoundAssembleCompressionPromptFn, AssembleCompressionPromptError } from "../../_shared/prompt-assembler/assembleCompressionPrompt/assembleCompressionPrompt.interface.ts";
+import type { BoundAssembleContinuationPromptFn } from "../../_shared/prompt-assembler/prompt-assembler.interface.ts";
 import type { BoundEnqueueModelCallFn } from "../enqueueModelCall/enqueueModelCall.interface.ts";
 import type { DialecticCompressJobPayload } from "../enqueueCompressJobs/enqueueCompressJobs.interface.ts";
 import type { DialecticJobRow } from "../../dialectic-service/dialectic.interface.ts";
 
 export interface ProcessCompressJobDeps {
     assembleCompressionPrompt: BoundAssembleCompressionPromptFn;
+    assembleContinuationPrompt: BoundAssembleContinuationPromptFn;
     enqueueModelCall: BoundEnqueueModelCallFn;
     countTokens: CountTokensFn;
     getEncoding: CountTokensDeps["getEncoding"];
@@ -39,7 +41,7 @@ export interface ProcessCompressJobSuccessReturn {
 }
 
 export interface ProcessCompressJobErrorReturn {
-    error: Error;
+    error: AssembleCompressionPromptError;
     retriable: boolean;
 }
 

@@ -15,8 +15,10 @@ import {
 import type {
     AiStreamEventBody,
     AiStreamEventData,
+    BoundEnqueueModelCallFn,
     EnqueueModelCallDeps,
     EnqueueModelCallErrorReturn,
+    EnqueueModelCallFn,
     EnqueueModelCallParams,
     EnqueueModelCallPayload,
     EnqueueModelCallSuccessReturn,
@@ -58,28 +60,42 @@ function createDefaultEnqueueJobRow(): DialecticJobRow {
     return job;
 }
 
-export type EnqueueModelCallDepsOverrides = {
-    [K in keyof EnqueueModelCallDeps]?: EnqueueModelCallDeps[K] | null;
+export type EnqueueModelCallDepsOverrides = Partial<EnqueueModelCallDeps>;
+
+export type EnqueueModelCallParamsOverrides = Partial<EnqueueModelCallParams>;
+
+export type EnqueueModelCallPayloadOverrides = Partial<EnqueueModelCallPayload>;
+
+export type EnqueueModelCallSuccessReturnOverrides = Partial<EnqueueModelCallSuccessReturn>;
+
+export type EnqueueModelCallErrorReturnOverrides = Partial<EnqueueModelCallErrorReturn>;
+
+export type EnqueueModelCallDepsCorruptions = {
+    [K in keyof EnqueueModelCallDeps]?: unknown;
 };
 
-export type EnqueueModelCallParamsOverrides = {
-    [K in keyof EnqueueModelCallParams]?: EnqueueModelCallParams[K] | null;
+export type EnqueueModelCallParamsCorruptions = {
+    [K in keyof EnqueueModelCallParams]?: unknown;
 };
 
-export type EnqueueModelCallPayloadOverrides = {
-    [K in keyof EnqueueModelCallPayload]?: EnqueueModelCallPayload[K] | null;
+export type EnqueueModelCallPayloadCorruptions = {
+    [K in keyof EnqueueModelCallPayload]?: unknown;
 };
 
-export type EnqueueModelCallSuccessReturnOverrides = {
-    [K in keyof EnqueueModelCallSuccessReturn]?:
-        | EnqueueModelCallSuccessReturn[K]
-        | null;
+export type EnqueueModelCallSuccessReturnCorruptions = {
+    [K in keyof EnqueueModelCallSuccessReturn]?: unknown;
 };
 
-export type EnqueueModelCallErrorReturnOverrides = {
-    [K in keyof EnqueueModelCallErrorReturn]?:
-        | EnqueueModelCallErrorReturn[K]
-        | null;
+export type EnqueueModelCallErrorReturnCorruptions = {
+    [K in keyof EnqueueModelCallErrorReturn]?: unknown;
+};
+
+export type AiStreamEventDataCorruptions = {
+    [K in keyof AiStreamEventData]?: unknown;
+};
+
+export type AiStreamEventBodyCorruptions = {
+    [K in keyof AiStreamEventBody]?: unknown;
 };
 
 export type CreateMockEnqueueModelCallParamsOptions = {
@@ -111,34 +127,13 @@ export function createMockEnqueueModelCallDeps(
         apiKeyForProvider: defaultApiKeyForProvider,
         computeJobSig: mockComputeJobSig,
     };
-    if (!overrides) {
-        return base;
-    }
-    return {
-        logger: overrides.logger !== undefined && overrides.logger !== null
-            ? overrides.logger
-            : base.logger,
-        netlifyQueueUrl:
-            overrides.netlifyQueueUrl !== undefined &&
-                overrides.netlifyQueueUrl !== null
-            ? overrides.netlifyQueueUrl
-            : base.netlifyQueueUrl,
-        netlifyApiKey:
-            overrides.netlifyApiKey !== undefined &&
-                overrides.netlifyApiKey !== null
-            ? overrides.netlifyApiKey
-            : base.netlifyApiKey,
-        apiKeyForProvider:
-            overrides.apiKeyForProvider !== undefined &&
-                overrides.apiKeyForProvider !== null
-            ? overrides.apiKeyForProvider
-            : base.apiKeyForProvider,
-        computeJobSig:
-            overrides.computeJobSig !== undefined &&
-                overrides.computeJobSig !== null
-            ? overrides.computeJobSig
-            : base.computeJobSig,
-    };
+    return overrides ? { ...base, ...overrides } : base;
+}
+
+export function invalidateEnqueueModelCallDeps(
+    corruptions: EnqueueModelCallDepsCorruptions,
+): unknown {
+    return { ...createMockEnqueueModelCallDeps(), ...corruptions };
 }
 
 export function createMockEnqueueModelCallParams(
@@ -173,35 +168,13 @@ export function createMockEnqueueModelCallParams(
         userConfig: { tier_output_cap_tokens: null },
     };
 
-    if (!overrides) {
-        return base;
-    }
+    return overrides ? { ...base, ...overrides } : base;
+}
 
-    return {
-        dbClient: overrides.dbClient !== undefined && overrides.dbClient !== null
-            ? overrides.dbClient
-            : base.dbClient,
-        job: overrides.job !== undefined && overrides.job !== null
-            ? overrides.job
-            : base.job,
-        providerRow:
-            overrides.providerRow !== undefined && overrides.providerRow !== null
-            ? overrides.providerRow
-            : base.providerRow,
-        userAuthToken:
-            overrides.userAuthToken !== undefined &&
-                overrides.userAuthToken !== null
-            ? overrides.userAuthToken
-            : base.userAuthToken,
-        output_type:
-            overrides.output_type !== undefined && overrides.output_type !== null
-            ? overrides.output_type
-            : base.output_type,
-        userConfig:
-            overrides.userConfig !== undefined && overrides.userConfig !== null
-                ? overrides.userConfig
-                : base.userConfig,
-    };
+export function invalidateEnqueueModelCallParams(
+    corruptions: EnqueueModelCallParamsCorruptions,
+): unknown {
+    return { ...createMockEnqueueModelCallParams(), ...corruptions };
 }
 
 export function createMockEnqueueModelCallPayload(
@@ -215,35 +188,26 @@ export function createMockEnqueueModelCallPayload(
         },
         preflightInputTokens: 0,
     };
-    if (!overrides) {
-        return base;
-    }
-    return {
-        chatApiRequest:
-            overrides.chatApiRequest !== undefined &&
-                overrides.chatApiRequest !== null
-            ? overrides.chatApiRequest
-            : base.chatApiRequest,
-        preflightInputTokens:
-            overrides.preflightInputTokens !== undefined &&
-                overrides.preflightInputTokens !== null
-            ? overrides.preflightInputTokens
-            : base.preflightInputTokens,
-    };
+    return overrides ? { ...base, ...overrides } : base;
+}
+
+export function invalidateEnqueueModelCallPayload(
+    corruptions: EnqueueModelCallPayloadCorruptions,
+): unknown {
+    return { ...createMockEnqueueModelCallPayload(), ...corruptions };
 }
 
 export function createMockEnqueueModelCallSuccessReturn(
     overrides?: EnqueueModelCallSuccessReturnOverrides,
 ): EnqueueModelCallSuccessReturn {
     const base: EnqueueModelCallSuccessReturn = { queued: true };
-    if (!overrides) {
-        return base;
-    }
-    return {
-        queued: overrides.queued !== undefined && overrides.queued !== null
-            ? overrides.queued
-            : base.queued,
-    };
+    return overrides ? { ...base, ...overrides } : base;
+}
+
+export function invalidateEnqueueModelCallSuccessReturn(
+    corruptions: EnqueueModelCallSuccessReturnCorruptions,
+): unknown {
+    return { ...createMockEnqueueModelCallSuccessReturn(), ...corruptions };
 }
 
 export function createMockEnqueueModelCallErrorReturn(
@@ -253,27 +217,18 @@ export function createMockEnqueueModelCallErrorReturn(
         error: new Error("mock-enqueue-model-call-error"),
         retriable: false,
     };
-    if (!overrides) {
-        return base;
-    }
-    return {
-        error: overrides.error !== undefined && overrides.error !== null
-            ? overrides.error
-            : base.error,
-        retriable:
-            overrides.retriable !== undefined && overrides.retriable !== null
-            ? overrides.retriable
-            : base.retriable,
-    };
+    return overrides ? { ...base, ...overrides } : base;
 }
 
-export type AiStreamEventDataOverrides = {
-    [K in keyof AiStreamEventData]?: AiStreamEventData[K] | null;
-};
+export function invalidateEnqueueModelCallErrorReturn(
+    corruptions: EnqueueModelCallErrorReturnCorruptions,
+): unknown {
+    return { ...createMockEnqueueModelCallErrorReturn(), ...corruptions };
+}
 
-export type AiStreamEventBodyOverrides = {
-    [K in keyof AiStreamEventBody]?: AiStreamEventBody[K] | null;
-};
+export type AiStreamEventDataOverrides = Partial<AiStreamEventData>;
+
+export type AiStreamEventBodyOverrides = Partial<AiStreamEventBody>;
 
 const defaultAiStreamEventModelConfig: AiModelExtendedConfig = {
     api_identifier: "mock-ai-v1",
@@ -302,36 +257,13 @@ export function createMockAiStreamEventData(
         sig: "mock-sig",
         user_config: { tier_output_cap_tokens: null },
     };
-    if (!overrides) {
-        return base;
-    }
-    return {
-        job_id: overrides.job_id !== undefined && overrides.job_id !== null
-            ? overrides.job_id
-            : base.job_id,
-        api_identifier:
-            overrides.api_identifier !== undefined &&
-                overrides.api_identifier !== null
-            ? overrides.api_identifier
-            : base.api_identifier,
-        model_config:
-            overrides.model_config !== undefined &&
-                overrides.model_config !== null
-            ? overrides.model_config
-            : base.model_config,
-        chat_api_request:
-            overrides.chat_api_request !== undefined &&
-                overrides.chat_api_request !== null
-            ? overrides.chat_api_request
-            : base.chat_api_request,
-        sig: overrides.sig !== undefined && overrides.sig !== null
-            ? overrides.sig
-            : base.sig,
-        user_config:
-            overrides.user_config !== undefined && overrides.user_config !== null
-                ? overrides.user_config
-                : base.user_config,
-    };
+    return overrides ? { ...base, ...overrides } : base;
+}
+
+export function invalidateAiStreamEventData(
+    corruptions: AiStreamEventDataCorruptions,
+): unknown {
+    return { ...createMockAiStreamEventData(), ...corruptions };
 }
 
 export function createMockAiStreamEventBody(
@@ -341,13 +273,26 @@ export function createMockAiStreamEventBody(
         eventName: "ai-stream-background",
         data: createMockAiStreamEventData(),
     };
-    if (!overrides) {
-        return base;
-    }
-    return {
-        eventName: "ai-stream-background",
-        data: overrides.data !== undefined && overrides.data !== null
-            ? overrides.data
-            : base.data,
-    };
+    return overrides ? { ...base, ...overrides } : base;
 }
+
+export function invalidateAiStreamEventBody(
+    corruptions: AiStreamEventBodyCorruptions,
+): unknown {
+    return { ...createMockAiStreamEventBody(), ...corruptions };
+}
+
+export const mockEnqueueModelCallFn: EnqueueModelCallFn = async (
+    _deps: EnqueueModelCallDeps,
+    _params: EnqueueModelCallParams,
+    _payload: EnqueueModelCallPayload,
+): Promise<EnqueueModelCallSuccessReturn | EnqueueModelCallErrorReturn> => {
+    return createMockEnqueueModelCallSuccessReturn();
+};
+
+export const mockBoundEnqueueModelCallFn: BoundEnqueueModelCallFn = async (
+    _params: EnqueueModelCallParams,
+    _payload: EnqueueModelCallPayload,
+): Promise<EnqueueModelCallSuccessReturn | EnqueueModelCallErrorReturn> => {
+    return createMockEnqueueModelCallSuccessReturn();
+};

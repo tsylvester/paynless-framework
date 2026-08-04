@@ -9,12 +9,15 @@ import type {
     ProcessCompressJobReturn,
     ProcessCompressJobSuccessReturn,
 } from "./processCompressJob.interface.ts";
+import type { AssembleCompressionPromptError } from "../../_shared/prompt-assembler/assembleCompressionPrompt/assembleCompressionPrompt.interface.ts";
+import type { FileManagerError } from "../../_shared/types/file_manager.types.ts";
 
 Deno.test(
-    "Contract: ProcessCompressJobDeps declares seven dependency keys",
+    "Contract: ProcessCompressJobDeps declares eight dependency keys",
     () => {
         const surface: Record<keyof ProcessCompressJobDeps, true> = {
             assembleCompressionPrompt: true,
+            assembleContinuationPrompt: true,
             enqueueModelCall: true,
             countTokens: true,
             getEncoding: true,
@@ -22,7 +25,7 @@ Deno.test(
             constructStoragePath: true,
             logger: true,
         };
-        assertEquals(Object.keys(surface).length, 7);
+        assertEquals(Object.keys(surface).length, 8);
     },
 );
 
@@ -62,10 +65,11 @@ Deno.test(
             chunk_index: true,
             chunk_total: true,
             continuation_count: true,
+            source_prompt_resource_id: true,
             walletId: true,
             user_id: true,
         };
-        assertEquals(Object.keys(surface).length, 21);
+        assertEquals(Object.keys(surface).length, 22);
     },
 );
 
@@ -85,6 +89,23 @@ Deno.test(
             retriable: false,
         };
         assertEquals(err.error instanceof Error, true);
+        assertEquals(typeof err.retriable, "boolean");
+    },
+);
+
+Deno.test(
+    "Contract: ProcessCompressJobErrorReturn.error admits AssembleCompressionPromptError without conversion",
+    () => {
+        const fileManagerError: FileManagerError = {
+            message: "storage failure",
+            statusCode: "500",
+        };
+        const assembleError: AssembleCompressionPromptError = fileManagerError;
+        const err: ProcessCompressJobErrorReturn = {
+            error: assembleError,
+            retriable: true,
+        };
+        assertEquals(typeof err.error, "object");
         assertEquals(typeof err.retriable, "boolean");
     },
 );
