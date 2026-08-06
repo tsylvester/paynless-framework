@@ -1,4 +1,7 @@
 import { isRecord } from "../../_shared/utils/type-guards/type_guards.common.ts";
+import { isFileType } from "../../_shared/utils/type-guards/type_guards.file_manager.ts";
+import { isAiModelExtendedConfig, isChatApiRequest } from "../../_shared/utils/type-guards/type_guards.chat.ts";
+import { isUserConfig } from "../calculateAffordability/calculateAffordability.provides.ts";
 import type {
   AiStreamEventBody,
   AiStreamEventData,
@@ -78,7 +81,7 @@ export function isEnqueueModelCallParams(
   if (typeof v.userAuthToken !== "string") {
     return false;
   }
-  if (typeof v.output_type !== "string") {
+  if (!isFileType(v.output_type)) {
     return false;
   }
   if (!isRecord(v.userConfig)) {
@@ -145,22 +148,16 @@ export function isAiStreamEventData(v: unknown): v is AiStreamEventData {
   if (!("api_identifier" in v) || typeof v.api_identifier !== "string") {
     return false;
   }
-  if (!("model_config" in v) || !isRecord(v.model_config)) {
+  if (!("model_config" in v) || !isAiModelExtendedConfig(v.model_config)) {
     return false;
   }
-  if (!("chat_api_request" in v) || !isRecord(v.chat_api_request)) {
+  if (!("chat_api_request" in v) || !isChatApiRequest(v.chat_api_request)) {
     return false;
   }
   if (!("sig" in v) || typeof v.sig !== "string") {
     return false;
   }
-  if (!("user_config" in v) || !isRecord(v.user_config)) {
-    return false;
-  }
-  if (
-    typeof v.user_config.tier_output_cap_tokens !== "number" &&
-    v.user_config.tier_output_cap_tokens !== null
-  ) {
+  if (!("user_config" in v) || !isUserConfig(v.user_config)) {
     return false;
   }
   return true;
@@ -170,10 +167,10 @@ export function isAiStreamEventBody(v: unknown): v is AiStreamEventBody {
   if (!isRecord(v)) {
     return false;
   }
-  if (!("eventName" in v) || v.eventName !== "ai-stream") {
+  if (!("eventName" in v) || v.eventName !== "ai-stream-background") {
     return false;
   }
-  if (!("data" in v) || !isRecord(v.data)) {
+  if (!("data" in v) || !isAiStreamEventData(v.data)) {
     return false;
   }
   return true;

@@ -7,8 +7,7 @@ import { applyInputsRequiredScope } from "../../_shared/utils/applyInputsRequire
 import { validateWalletBalance } from "../../_shared/utils/validateWalletBalance.ts";
 import { validateModelCostRates } from "../../_shared/utils/validateModelCostRates.ts";
 import { mockCompressionStrategy } from "../../_shared/utils/vector_utils.mock.ts";
-import { buildExtendedModelConfig } from "../../_shared/ai_service/ai_provider.mock.ts";
-import type { AiModelExtendedConfig } from "../../_shared/types.ts";
+import { buildExtendedModelConfig, buildMockProvider } from "../../_shared/ai_service/ai_provider.mock.ts";
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import type { Database, Tables } from "../../types_db.ts";
 import { createMockSupabaseClient } from "../../_shared/supabase.mock.ts";
@@ -124,70 +123,6 @@ export function mockDialecticSessionRow(
     updated_at: new Date().toISOString(),
     viewing_stage_id: null,
     idempotency_key: "session-contract-idem",
-  };
-  return { ...base, ...overrides };
-}
-
-export type MockAiProvidersRowOverrides = {
-  [K in keyof Tables<"ai_providers">]?: Tables<"ai_providers">[K];
-};
-
-export function mockAiProvidersRow(
-  overrides?: MockAiProvidersRowOverrides,
-): Tables<"ai_providers"> {
-  const config = buildExtendedModelConfig();
-  const base: Tables<"ai_providers"> = {
-    id: "model-contract",
-    provider: "contract-provider",
-    name: "Contract AI",
-    api_identifier: config.api_identifier,
-    config: {
-      tokenization_strategy: config.tokenization_strategy,
-      context_window_tokens: config.context_window_tokens,
-      input_token_cost_rate: config.input_token_cost_rate,
-      output_token_cost_rate: config.output_token_cost_rate,
-      provider_max_input_tokens: config.provider_max_input_tokens,
-      provider_max_output_tokens: config.provider_max_output_tokens,
-      api_identifier: config.api_identifier,
-    },
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-    description: null,
-    is_active: true,
-    is_default_embedding: false,
-    is_default_generation: false,
-    is_enabled: true,
-    min_plan_tier_level: 0,
-  };
-  return { ...base, ...overrides };
-}
-
-export function mockAiProvidersRowFromConfig(
-  config: AiModelExtendedConfig,
-  overrides?: Omit<MockAiProvidersRowOverrides, "config">,
-): Tables<"ai_providers"> {
-  const base: Tables<"ai_providers"> = {
-    id: "model-contract",
-    provider: "contract-provider",
-    name: "Contract AI",
-    api_identifier: config.api_identifier,
-    config: {
-      tokenization_strategy: config.tokenization_strategy,
-      context_window_tokens: config.context_window_tokens,
-      input_token_cost_rate: config.input_token_cost_rate,
-      output_token_cost_rate: config.output_token_cost_rate,
-      provider_max_input_tokens: config.provider_max_input_tokens,
-      provider_max_output_tokens: config.provider_max_output_tokens,
-      api_identifier: config.api_identifier,
-    },
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-    description: null,
-    is_active: true,
-    is_default_embedding: false,
-    is_default_generation: false,
-    is_enabled: true,
-    min_plan_tier_level: 0,
   };
   return { ...base, ...overrides };
 }
@@ -337,7 +272,7 @@ export function mockPrepareModelJobParams(
     authToken: "token-contract",
     job: mockDialecticJobRow(),
     projectOwnerUserId: "owner-contract",
-    providerRow: mockAiProvidersRow(),
+    providerRow: buildMockProvider(),
     sessionData: mockDialecticSessionRow(),
   };
   return { ...base, ...overrides };

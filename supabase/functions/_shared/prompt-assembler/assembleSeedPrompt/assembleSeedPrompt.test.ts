@@ -1,5 +1,5 @@
 import { assertEquals, assertRejects, assert } from "jsr:@std/assert@0.225.3";
-import { spy, stub, Spy } from "jsr:@std/testing@0.225.1/mock";
+import { spy, stub, Spy, assertSpyCalls } from "jsr:@std/testing@0.225.1/mock";
 import { assembleSeedPrompt } from "../assembleSeedPrompt/assembleSeedPrompt.ts";
 import {
   ProjectContext,
@@ -7,809 +7,554 @@ import {
   StageContext,
   DynamicContextVariables,
   AssembledPrompt,
+  RenderPromptFunctionType,
 } from "../prompt-assembler.interface.ts";
 import {
   createMockSupabaseClient,
   type MockSupabaseDataConfig,
-  type MockSupabaseClientSetup,
 } from "../../supabase.mock.ts";
 import { isRecord } from "../../utils/type_guards.ts";
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import type { Json, Database } from "../../../types_db.ts";
-import { downloadFromStorage } from "../../supabase_storage_utils.ts";
-import { renderPrompt } from "../../prompt-renderer.ts";
-import { gatherInputsForStage } from "../gatherInputsForStage/gatherInputsForStage.ts";
-import { createMockFileManagerService } from "../../services/file_manager.mock.ts";
+import type { GatherInputsForStageFn } from "../gatherInputsForStage/gatherInputsForStage.ts";
+import { createMockFileManagerService, buildFileRecord } from "../../services/file_manager.mock.ts";
 import { DialecticStageSlug, FileType } from "../../types/file_manager.types.ts";
 import { FileRecord } from "../../types/file_manager.types.ts";
+import { mockDownloadFromStorageTwoArg } from "../../supabase_storage_utils.mock.ts";
 import {
-  SeedPromptRecipeStep,
-} from "../../../dialectic-service/dialectic.interface.ts";
+  buildProjectContext,
+  buildSessionContext,
+  buildStageContext,
+  buildGatheredRecipeContext,
+  mockRenderPromptFn,
+} from "../prompt-assembler.mock.ts";
+import { buildSeedPromptRecipeStep } from "../../dialectic.mock.ts";
 
-// Define a type for the mock implementation of renderPrompt
-type RenderPromptMock = (
-  _basePromptText: string,
-  _dynamicContextVariables: DynamicContextVariables,
-  _systemDefaultOverlayValues?: Json,
-  _userProjectOverlayValues?: Json,
-) => string;
-
-Deno.test("assembleSeedPrompt", async (t) => {
-  let mockSupabaseSetup: MockSupabaseClientSetup | null = null;
-  let denoEnvStub: any = null;
-  const consoleSpies: { error?: Spy<Console>; warn?: Spy<Console> } = {};
-  const mockFileManager = createMockFileManagerService();
-
-  const setup = (
-    config: MockSupabaseDataConfig = {},
-  ) => {
-    denoEnvStub = stub(Deno.env, "get", (key: string) => {
-      if (key === "SB_CONTENT_STORAGE_BUCKET") {
-        return "test-bucket";
-      }
-      return undefined;
-    });
-
-    mockSupabaseSetup = createMockSupabaseClient(undefined, config);
-
-    consoleSpies.error = spy(console, "error");
-    consoleSpies.warn = spy(console, "warn");
-
-    return {
-      client: mockSupabaseSetup.client as unknown as SupabaseClient<Database>,
-      spies: mockSupabaseSetup.spies,
-      fileManager: mockFileManager,
-    };
-  };
-
-  const teardown = () => {
-    denoEnvStub?.restore();
-    consoleSpies.error?.restore();
-    consoleSpies.warn?.restore();
-    if (mockSupabaseSetup) {
-      mockSupabaseSetup.clearAllStubs?.();
-    }
-  };
-
-  const defaultProject: ProjectContext = {
-    id: "proj-123",
-    user_id: "user-123",
-    project_name: "Test Project Objective",
-    initial_user_prompt: "This is the initial user prompt content.",
-    initial_prompt_resource_id: null,
-    selected_domain_id: "domain-123",
-    dialectic_domains: { name: "Software Development Domain" },
-    process_template_id: "pt-123",
-    selected_domain_overlay_id: null,
-    user_domain_overlay_values: null,
-    repo_url: null,
-    status: "active",
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-    idempotency_key: null,
-  };
-
-  const defaultSession: SessionContext = {
-    id: "sess-123",
-    project_id: "proj-123",
-    selected_model_ids: ["model-1", "model-2"],
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-    current_stage_id: "stage-123",
-    iteration_count: 1,
-    session_description: "Test session",
-    status: "pending_thesis",
-    associated_chat_id: null,
-    user_input_reference_url: null,
-    idempotency_key: null,
-    viewing_stage_id: null,
-  };
-
-  const stageSystemPromptText = "System prompt for {user_objective} in {domain}.";
-  const stageOverlayValues: Json = { style: "formal" };
-  const mockSimpleRecipeStep: SeedPromptRecipeStep = {
-    prompt_type: "Seed",
-    step_number: 1,
-    step_name: "Assemble Seed Prompt",
-    output_type: "seed_prompt",
-  };
-
-  const mockStageRecipeStep: SeedPromptRecipeStep = {
-    output_type: "seed_prompt",
-    step_name: "Assemble Seed Prompt",
-    step_number: 1,
-    prompt_type: "Seed",
-  };
-
-  const defaultStage: StageContext = {
-    id: "stage-123",
-    system_prompts: { prompt_text: stageSystemPromptText },
-    domain_specific_prompt_overlays: [{ overlay_values: stageOverlayValues }],
-    slug: DialecticStageSlug.Thesis,
-    display_name: "Initial hypothesis",
-    description: "Initial hypothesis stage",
-    created_at: new Date().toISOString(),
-    default_system_prompt_id: null,
-    recipe_step: mockSimpleRecipeStep,
-    active_recipe_instance_id: null,
-    expected_output_template_ids: [],
-    recipe_template_id: null,
-    minimum_balance: 0,
-  };
-
-  await t.step(
-    "should include sourceContributionId when provided",
-    async () => {
-      const { client, fileManager } = setup();
+Deno.test("assembleSeedPrompt", async (t) => {  
+  await t.step("should include sourceContributionId when provided", async () => {
+      /**
+       * Contract: when sourceContributionId is provided as a dep,
+       *   assembleSeedPrompt forwards it to the upload path context.
+       * Arrange: a file manager returning a registered file record;
+       *   a mock gatherInputsForStageFn returning a built GatheredRecipeContext;
+       *   a mock renderPromptFn returning a string; a sourceContributionId
+       *   of "contrib-123".
+       * Act:     assembleSeedPrompt with the assembled deps.
+       * Assert:  upload called once; upload path context sourceContributionId
+       *   equals the provided value.
+       */
+      // Arrange
       const sourceContributionId = "contrib-123";
-      fileManager.setUploadAndRegisterFileResponse({
-        id: "seed-resource-id",
-        storage_path: "path/to/seed/",
-        storage_bucket: "test-bucket",
-        file_name: "seed-prompt.md",
-        iteration_number: 1,
-        mime_type: "text/markdown",
-        created_at: new Date().toISOString(),
-        project_id: defaultProject.id,
-        resource_description: { test: "seed" },
-        resource_type: "seed_prompt",
-        size_bytes: 42,
-        user_id: defaultProject.user_id,
-        session_id: defaultSession.id,
-        source_contribution_id: "existing-source",
-        stage_slug: defaultStage.slug,
-        updated_at: new Date().toISOString(),
-      }, null);
-      const downloadFn = (bucket: string, path: string) =>
-        downloadFromStorage(client, bucket, path);
 
-      try {
-        await assembleSeedPrompt({
-          dbClient: client,
-          downloadFromStorageFn: downloadFn,
-          gatherInputsForStageFn: gatherInputsForStage,
-          renderPromptFn: renderPrompt,
-          fileManager,
-          project: defaultProject,
-          session: defaultSession,
-          stage: defaultStage,
-          projectInitialUserPrompt: defaultProject.initial_user_prompt,
-          iterationNumber: 1,
-          sourceContributionId,
-        });
+      const mockSupabaseSetup = createMockSupabaseClient();
+      const client = mockSupabaseSetup.client as unknown as SupabaseClient<Database>;
+      const fileManager = createMockFileManagerService();
 
-        assert(
-          fileManager.uploadAndRegisterFile.calls.length === 1,
-          "uploadAndRegisterFile should be called once",
-        );
-        const uploadContext = fileManager.uploadAndRegisterFile.calls[0].args[0];
-        assertEquals(
-          uploadContext.pathContext.sourceContributionId,
-          sourceContributionId,
-        );
-      } finally {
-        teardown();
-      }
+      const gatherInputsForStageFn: GatherInputsForStageFn = async () =>
+        buildGatheredRecipeContext();
+
+      fileManager.setUploadAndRegisterFileResponse(buildFileRecord(), null);
+      const uploadSpy = fileManager.uploadAndRegisterFile;
+
+      // Act
+      await assembleSeedPrompt({
+        dbClient: client,
+        downloadFromStorageFn: mockDownloadFromStorageTwoArg,
+        gatherInputsForStageFn,
+        renderPromptFn: mockRenderPromptFn,
+        fileManager,
+        project: buildProjectContext(),
+        session: buildSessionContext(),
+        stage: buildStageContext(),
+        projectInitialUserPrompt: "resolved prompt from storage",
+        iterationNumber: 1,
+        sourceContributionId,
+      });
+
+      // Assert
+      assertSpyCalls(uploadSpy, 1);
+      const uploadContext = uploadSpy.calls[0].args[0];
+      assertEquals(
+        uploadContext.pathContext.sourceContributionId,
+        sourceContributionId,
+      );
+
+      mockSupabaseSetup.clearAllStubs?.();
     },
   );
 
   await t.step("should correctly assemble, persist, and render a prompt for the initial stage", async () => {
-      const expectedRenderedPrompt = "Mocked Rendered Prompt Output";
-      const mockFileRecord: FileRecord = {
-        id: "mock-resource-id-123",
-        storage_path: "path/to/mock/",
-        storage_bucket: "test-bucket",
-        file_name: "mock-file.md",
-        iteration_number: 1,
-        mime_type: "text/markdown",
-        created_at: new Date().toISOString(),
-        project_id: "mock-project-id",
-        resource_description: { test: "test" },
-        resource_type: "test",
-        size_bytes: 100,
-        user_id: "mock-user-id",
-        session_id: "mock-session-id",
-        source_contribution_id: "mock-source-contribution-id",
-        stage_slug: "mock-stage-slug",
-        updated_at: new Date().toISOString(),
-      };
+    /**
+     * Contract: assembleSeedPrompt gathers context, renders the prompt with
+     *   the stage's system prompt text and overlays, uploads the result with
+     *   fileType SeedPrompt, and returns the rendered content and file record id.
+     * Arrange: a stage with a specific system prompt text and a single overlay;
+     *   a project with user_domain_overlay_values null; a mock
+     *   gatherInputsForStageFn returning a GatheredRecipeContext with empty
+     *   sourceDocuments and a seed recipe step (no outputs_required injection);
+     *   a spy on renderPromptFn returning a known string; a file manager
+     *   returning a built file record.
+     * Act:     assembleSeedPrompt with the assembled deps.
+     * Assert:  result.promptContent equals the rendered string;
+     *   result.source_prompt_resource_id equals the file record id;
+     *   render called once with the stage's prompt text, the expected
+     *   DynamicContextVariables, the stage's overlay values, and null user overlays;
+     *   upload called once with fileType SeedPrompt and the rendered content.
+     */
+    // Arrange
+    const expectedRenderedPrompt = "Mocked Rendered Prompt Output";
+    const stagePromptText = "System prompt for {user_objective} in {domain}.";
+    const stageOverlayValues: Json = { style: "formal" };
 
-      let renderPromptCallCount = 0;
-      let lastRenderPromptArgs: [
-        string,
-        Record<string, unknown>,
-        Json | undefined,
-        Json | undefined,
-      ] | null = null;
+    const project = buildProjectContext();
+    const session = buildSessionContext();
+    const stage = buildStageContext({
+      system_prompts: { prompt_text: stagePromptText },
+      domain_specific_prompt_overlays: [{ overlay_values: stageOverlayValues }],
+    });
 
-      const renderPromptMockFn: RenderPromptMock = (
-        base,
-        vars,
-        sysOverlays,
-        userOverlays,
-      ) => {
-        renderPromptCallCount++;
-        lastRenderPromptArgs = [base, vars, sysOverlays, userOverlays];
-        return expectedRenderedPrompt;
-      };
+    const gatheredContext = buildGatheredRecipeContext({
+      sourceDocuments: [],
+      recipeStep: buildSeedPromptRecipeStep(),
+    });
 
-      const config: MockSupabaseDataConfig = {
-        genericMockResults: {
-          dialectic_stages: {
-            select: () => Promise.resolve({ data: [], error: null }),
-          },
-          dialectic_contributions: {
-            select: () => Promise.resolve({ data: [], error: null }),
-          },
-          dialectic_feedback: {
-            select: () =>
-              Promise.resolve({
-                data: [{
-                  storage_bucket: "test-bucket",
-                  storage_path: "path/to/feedback",
-                  file_name: "user_feedback.md",
-                }],
-                error: null,
-              }),
-          },
-        },
-      };
+    const gatherInputsForStageFn: GatherInputsForStageFn = async () => gatheredContext;
 
-      const { client, fileManager } = setup(config);
-      fileManager.setUploadAndRegisterFileResponse(mockFileRecord, null);
-      const downloadFn = (bucket: string, path: string) =>
-        downloadFromStorage(client, bucket, path);
+    const renderPromptFn: Spy<RenderPromptFunctionType> = spy(() => expectedRenderedPrompt);
 
-      try {
-        const result: AssembledPrompt = await assembleSeedPrompt({
-          dbClient: client,
-          downloadFromStorageFn: downloadFn,
-          gatherInputsForStageFn: gatherInputsForStage,
-          renderPromptFn: renderPromptMockFn,
-          fileManager,
-          project: defaultProject,
-          session: defaultSession,
-          stage: defaultStage,
-          projectInitialUserPrompt: defaultProject.initial_user_prompt,
-          iterationNumber: 1,
-        });
+    const mockSupabaseSetup = createMockSupabaseClient();
+    const client = mockSupabaseSetup.client as unknown as SupabaseClient<Database>;
+    const fileManager = createMockFileManagerService();
+    const mockFileRecord = buildFileRecord();
+    fileManager.setUploadAndRegisterFileResponse(mockFileRecord, null);
+    const uploadSpy = fileManager.uploadAndRegisterFile;
 
-        assertEquals(result.promptContent, expectedRenderedPrompt);
-        assertEquals(result.source_prompt_resource_id, mockFileRecord.id);
-        assertEquals(renderPromptCallCount, 1);
-        
-        assert(fileManager.uploadAndRegisterFile.calls.length === 1, "uploadAndRegisterFile should be called once");
-        const uploadContext = fileManager.uploadAndRegisterFile.calls[0].args[0];
-        assertEquals(uploadContext.pathContext.fileType, FileType.SeedPrompt);
-        assertEquals(uploadContext.fileContent, expectedRenderedPrompt);
+    // Act
+    const result: AssembledPrompt = await assembleSeedPrompt({
+      dbClient: client,
+      downloadFromStorageFn: mockDownloadFromStorageTwoArg,
+      gatherInputsForStageFn,
+      renderPromptFn,
+      fileManager,
+      project,
+      session,
+      stage,
+      projectInitialUserPrompt: project.initial_user_prompt,
+      iterationNumber: 1,
+    });
 
+    // Assert
+    assertEquals(result.promptContent, expectedRenderedPrompt);
+    assertEquals(result.source_prompt_resource_id, mockFileRecord.id);
+    assertSpyCalls(renderPromptFn, 1);
 
-        const renderArgs = lastRenderPromptArgs;
-        assertEquals(renderArgs?.[0], stageSystemPromptText);
+    assertSpyCalls(uploadSpy, 1);
+    const uploadContext = uploadSpy.calls[0].args[0];
+    assertEquals(uploadContext.pathContext.fileType, FileType.SeedPrompt);
+    assertEquals(uploadContext.fileContent, expectedRenderedPrompt);
 
-        const expectedDynamicVars: DynamicContextVariables = {
-          user_objective: "Test Project Objective",
-          domain: "Software Development Domain",
-          context_description: "This is the initial user prompt content.",
-          original_user_request: "This is the initial user prompt content.",
-          recipeStep: defaultStage.recipe_step,
-          sourceDocuments: [],
-        };
-        assertEquals(renderArgs?.[1], expectedDynamicVars);
-        assertEquals(renderArgs?.[2], stageOverlayValues);
-        assertEquals(renderArgs?.[3], null);
-      } finally {
-        teardown();
-      }
-    },
-  );
+    const renderArgs = renderPromptFn.calls[0].args;
+    assertEquals(renderArgs[0], stagePromptText);
+
+    const expectedDynamicVars: DynamicContextVariables = {
+      user_objective: project.project_name,
+      domain: project.dialectic_domains.name,
+      context_description: project.initial_user_prompt,
+      original_user_request: project.initial_user_prompt,
+      recipeStep: gatheredContext.recipeStep,
+      sourceDocuments: [],
+    };
+    assertEquals(renderArgs[1], expectedDynamicVars);
+    assertEquals(renderArgs[2], stageOverlayValues);
+    assertEquals(renderArgs[3], null);
+
+    mockSupabaseSetup.clearAllStubs?.();
+  });
 
   await t.step("correctly handles recipe_step with an empty outputs_required array", async () => {
-      let capturedSysOverlay: Json | undefined;
-      const renderPromptMockFn: RenderPromptMock = (
-        _base,
-        _vars,
-        sysOverlays,
-      ) => {
+    /**
+     * Contract: when the gathered recipe step has an empty outputs_required
+     *   array, render does NOT inject outputs_required into the system
+     *   default overlay values passed to renderPromptFn.
+     * Arrange: a mock gatherInputsForStageFn returning a GatheredRecipeContext
+     *   whose recipeStep has outputs_required: []; a spy on renderPromptFn
+     *   capturing the system overlay arg; a file manager returning a built
+     *   file record.
+     * Act:     assembleSeedPrompt with the assembled deps.
+     * Assert:  result.promptContent equals the rendered string; the captured
+     *   system overlay does not contain an outputs_required key.
+     */
+    // Arrange
+    const stageOverlayValues: Json = { style: "formal" };
+
+    const stage = buildStageContext({
+      domain_specific_prompt_overlays: [{ overlay_values: stageOverlayValues }],
+    });
+
+    const gatheredContext = buildGatheredRecipeContext({
+      sourceDocuments: [],
+      recipeStep: buildSeedPromptRecipeStep({ outputs_required: [] }),
+    });
+
+    const gatherInputsForStageFn: GatherInputsForStageFn = async () => gatheredContext;
+
+    let capturedSysOverlay: Json | undefined;
+    const renderPromptFn: Spy<RenderPromptFunctionType> = spy(
+      (_base, _vars, sysOverlays) => {
         capturedSysOverlay = sysOverlays;
         return "ok";
-      };
+      },
+    );
 
-      const stageWithEmptyArtifacts: StageContext = {
-        ...defaultStage,
-        recipe_step: {
-          ...mockStageRecipeStep,
-          outputs_required: [], // Conforms to the SeedPromptRecipeStep type
-        },
-      };
+    const mockSupabaseSetup = createMockSupabaseClient();
+    const client = mockSupabaseSetup.client as unknown as SupabaseClient<Database>;
+    const fileManager = createMockFileManagerService();
+    fileManager.setUploadAndRegisterFileResponse(buildFileRecord(), null);
 
-      const { client, fileManager } = setup({});
-      fileManager.setUploadAndRegisterFileResponse({
-        id: "mock-id",
-        created_at: new Date().toISOString(),
-        file_name: "mock-file.md",
-        iteration_number: 1,
-        mime_type: "text/markdown",
-        project_id: "mock-project-id",
-        resource_description: { test: "test" },
-        resource_type: "test",
-        size_bytes: 100,
-        storage_bucket: "test-bucket",
-        storage_path: "path/to/mock/",
-        user_id: "mock-user-id",
-        session_id: "mock-session-id",
-        source_contribution_id: "mock-source-contribution-id",
-        stage_slug: "mock-stage-slug",
-        updated_at: new Date().toISOString(),
-      }, null);
+    // Act
+    const result = await assembleSeedPrompt({
+      dbClient: client,
+      downloadFromStorageFn: mockDownloadFromStorageTwoArg,
+      gatherInputsForStageFn,
+      renderPromptFn,
+      fileManager,
+      project: buildProjectContext(),
+      session: buildSessionContext(),
+      stage,
+      projectInitialUserPrompt: "resolved prompt from storage",
+      iterationNumber: 1,
+    });
 
-      const downloadFn = (bucket: string, path: string) =>
-        downloadFromStorage(client, bucket, path);
+    // Assert
+    assertEquals(result.promptContent, "ok");
 
-      try {
-        const result = await assembleSeedPrompt({
-          dbClient: client,
-          downloadFromStorageFn: downloadFn,
-          gatherInputsForStageFn: gatherInputsForStage,
-          renderPromptFn: renderPromptMockFn,
-          fileManager,
-          project: defaultProject,
-          session: defaultSession,
-          stage: stageWithEmptyArtifacts,
-          projectInitialUserPrompt: defaultProject.initial_user_prompt,
-          iterationNumber: 1,
-        });
-        assertEquals(result.promptContent, "ok");
+    if (capturedSysOverlay && isRecord(capturedSysOverlay)) {
+      assert(
+        !("outputs_required" in capturedSysOverlay),
+        "outputs_required should NOT be passed to the renderer for a seed prompt",
+      );
+    }
 
-        if (capturedSysOverlay && isRecord(capturedSysOverlay)) {
-          assert(
-            !("outputs_required" in capturedSysOverlay),
-            "outputs_required should NOT be passed to the renderer for a seed prompt",
-          );
-        }
-      } finally {
-        teardown();
-      }
-    },
-  );
+    mockSupabaseSetup.clearAllStubs?.();
+  });
 
   await t.step("should correctly assemble for a subsequent stage with prior inputs", async () => {
-      const stageSlug = DialecticStageSlug.Thesis;
-      const contribContent = "AI contribution content.";
-      const feedbackContent = "User feedback content.";
+    /**
+     * Contract: assembleSeedPrompt works correctly for a non-initial stage
+     *   (e.g., Antithesis), forwarding the gathered context to render and
+     *   uploading the rendered content with fileType SeedPrompt.
+     * Arrange: a stage with slug Antithesis; a mock gatherInputsForStageFn
+     *   returning a GatheredRecipeContext with empty sourceDocuments (no
+     *   prior inputs gathered for a seed prompt); a spy on renderPromptFn
+     *   returning a known string; a file manager returning a built file record.
+     * Act:     assembleSeedPrompt with the assembled deps.
+     * Assert:  result.promptContent equals the rendered string; render called
+     *   once with the gathered dynamic context variables.
+     */
+    // Arrange
+    const expectedRenderedPrompt = "Mocked Subsequent Stage Output";
 
-      const config: MockSupabaseDataConfig = {
-        genericMockResults: {
-          dialectic_stages: {
-            select: () =>
-              Promise.resolve({
-                data: [{ slug: stageSlug, display_name: "Previous Stage" }],
-                error: null,
-              }),
-          },
-          dialectic_contributions: {
-            select: () =>
-              Promise.resolve({
-                data: [{
-                  id: "c1",
-                  storage_path: "path/to/contrib.md",
-                  storage_bucket: "test-bucket",
-                  model_name: "Test Model",
-                }],
-                error: null,
-              }),
-          },
-          dialectic_feedback: {
-            select: () =>
-              Promise.resolve({
-                data: [{
-                  storage_bucket: "test-bucket",
-                  storage_path: "path/to/feedback",
-                  file_name: "user_feedback.md",
-                }],
-                error: null,
-              }),
-          },
-        },
-        storageMock: {
-          downloadResult: (bucket, path) => {
-            if (path.includes("contrib.md")) {
-              return Promise.resolve({
-                data: new Blob([contribContent]),
-                error: null,
-              });
-            }
-            if (path.includes("user_feedback")) {
-              return Promise.resolve({
-                data: new Blob([feedbackContent]),
-                error: null,
-              });
-            }
-            return Promise.resolve({
-              data: null,
-              error: new Error("File not found in mock"),
-            });
-          },
-        },
-      };
+    const stage = buildStageContext({
+      slug: DialecticStageSlug.Antithesis,
+    });
 
-      const expectedRenderedPrompt = "Mocked Subsequent Stage Output";
-      let capturedDynamicVars: DynamicContextVariables | undefined;
-      const renderPromptMockFn: RenderPromptMock = (_b, vars) => {
-        capturedDynamicVars = vars;
-        return expectedRenderedPrompt;
-      };
+    const gatheredContext = buildGatheredRecipeContext({
+      sourceDocuments: [],
+      recipeStep: buildSeedPromptRecipeStep(),
+    });
 
-      const { client, spies, fileManager } = setup(config);
-      fileManager.setUploadAndRegisterFileResponse({
-        id: "mock-id",
-        created_at: new Date().toISOString(),
-        file_name: "mock-file.md",
-        iteration_number: 1,
-        mime_type: "text/markdown",
-        project_id: "mock-project-id",
-        resource_description: { test: "test" },
-        resource_type: "test",
-        size_bytes: 100,
-        storage_bucket: "test-bucket",
-        storage_path: "path/to/mock/",
-        user_id: "mock-user-id",
-        session_id: "mock-session-id",
-        source_contribution_id: "mock-source-contribution-id",
-        stage_slug: "mock-stage-slug",
-        updated_at: new Date().toISOString(),
-      }, null);
+    const gatherInputsForStageFn: GatherInputsForStageFn = async () => gatheredContext;
 
-      const downloadFn = (bucket: string, path: string) =>
-        downloadFromStorage(client, bucket, path);
+    const renderPromptFn: Spy<RenderPromptFunctionType> = spy(() => expectedRenderedPrompt);
 
-      try {
-        const subsequentStage: StageContext = {
-          ...defaultStage,
-          id: "stage-subsequent",
-          slug: DialecticStageSlug.Antithesis,
-          recipe_step: {
-            ...mockStageRecipeStep,
-            inputs_required: [], // Conforms to the SeedPromptRecipeStep type
-          },
-        };
+    const mockSupabaseSetup = createMockSupabaseClient();
+    const client = mockSupabaseSetup.client as unknown as SupabaseClient<Database>;
+    const fileManager = createMockFileManagerService();
+    fileManager.setUploadAndRegisterFileResponse(buildFileRecord(), null);
 
-        const result = await assembleSeedPrompt({
+    // Act
+    const result = await assembleSeedPrompt({
+      dbClient: client,
+      downloadFromStorageFn: mockDownloadFromStorageTwoArg,
+      gatherInputsForStageFn,
+      renderPromptFn,
+      fileManager,
+      project: buildProjectContext(),
+      session: buildSessionContext(),
+      stage,
+      projectInitialUserPrompt: "resolved prompt from storage",
+      iterationNumber: 1,
+    });
+
+    // Assert
+    assertEquals(result.promptContent, expectedRenderedPrompt);
+    assertSpyCalls(renderPromptFn, 1);
+
+    const renderArgs = renderPromptFn.calls[0].args;
+    const dynamicVars = renderArgs[1] as DynamicContextVariables;
+    assert(
+      dynamicVars,
+      "Dynamic variables were not passed to the renderer",
+    );
+    assertEquals(dynamicVars.sourceDocuments, []);
+
+    mockSupabaseSetup.clearAllStubs?.();
+  });
+
+  await t.step("should propagate errors from the general input gathering stage", async () => {
+    /**
+     * Contract: when gatherInputsForStageFn throws, assembleSeedPrompt
+     *   propagates the error without catching it.
+     * Arrange: a mock gatherInputsForStageFn that rejects with a known
+     *   error message; a mock renderPromptFn (should never be called);
+     *   a file manager returning a built file record.
+     * Act:     assembleSeedPrompt via assertRejects.
+     * Assert:  rejects with Error matching the gather error message.
+     */
+    // Arrange
+    const errorMessage = "Database query failed";
+
+    const gatherInputsForStageFn: GatherInputsForStageFn = async () => {
+      throw new Error(errorMessage);
+    };
+
+    const renderPromptFn: Spy<RenderPromptFunctionType> = spy(() => "irrelevant");
+
+    const mockSupabaseSetup = createMockSupabaseClient();
+    const client = mockSupabaseSetup.client as unknown as SupabaseClient<Database>;
+    const fileManager = createMockFileManagerService();
+    fileManager.setUploadAndRegisterFileResponse(buildFileRecord(), null);
+
+    // Act + Assert
+    await assertRejects(
+      () =>
+        assembleSeedPrompt({
           dbClient: client,
-          downloadFromStorageFn: downloadFn,
-          gatherInputsForStageFn: gatherInputsForStage,
-          renderPromptFn: renderPromptMockFn,
+          downloadFromStorageFn: mockDownloadFromStorageTwoArg,
+          gatherInputsForStageFn,
+          renderPromptFn,
           fileManager,
-          project: defaultProject,
-          session: defaultSession,
-          stage: subsequentStage,
-          projectInitialUserPrompt: defaultProject.initial_user_prompt,
+          project: buildProjectContext(),
+          session: buildSessionContext(),
+          stage: buildStageContext(),
+          projectInitialUserPrompt: "resolved prompt from storage",
           iterationNumber: 1,
-        });
+        }),
+      Error,
+      errorMessage,
+      "assembleSeedPrompt must propagate errors from gatherInputsForStageFn",
+    );
 
-        assertEquals(result.promptContent, expectedRenderedPrompt);
-
-        const downloadSpy = spies.storage.from("test-bucket").downloadSpy;
-        assert(
-          !downloadSpy.calls.some((call) =>
-            call.args[0].includes("user_feedback")
-          ),
-          "Download SHOULD NOT be called for feedback file in a seed prompt",
-        );
-        assert(
-          !downloadSpy.calls.some((call) => call.args[0].includes("contrib.md")),
-          "Download SHOULD NOT be called for contribution file in a seed prompt",
-        );
-
-        assert(
-          capturedDynamicVars,
-          "Dynamic variables were not passed to the renderer",
-        );
-      } finally {
-        teardown();
-      }
-    },
-  );
-
-  await t.step(
-    "should propagate errors from the general input gathering stage",
-    async () => {
-      const stageSlug = DialecticStageSlug.Thesis;
-      const errorMessage = "Database query failed";
-      const config: MockSupabaseDataConfig = {
-        genericMockResults: {
-          dialectic_stages: {
-            select: () =>
-              Promise.resolve({
-                data: [{ slug: stageSlug, display_name: "Previous Stage" }],
-                error: null,
-              }),
-          },
-          dialectic_contributions: {
-            select: () =>
-              Promise.resolve({
-                data: null,
-                error: new Error(errorMessage),
-              }),
-          },
-        },
-      };
-
-      const { client, fileManager } = setup(config);
-      fileManager.setUploadAndRegisterFileResponse({ 
-        id: "mock-id", 
-        created_at: new Date().toISOString(), 
-        file_name: "mock-file.md", 
-        iteration_number: 1, 
-        mime_type: "text/markdown", 
-        project_id: "mock-project-id", 
-        resource_description: { test: "test" }, 
-        resource_type: "test", 
-        size_bytes: 100, 
-        storage_bucket: "mock-bucket", 
-        storage_path: "mock-path", 
-        user_id: "mock-user-id",
-        session_id: "mock-session-id",
-        source_contribution_id: "mock-source-contribution-id",
-        stage_slug: "mock-stage-slug",
-        updated_at: new Date().toISOString(),
-      }, null);
-
-      const downloadFn = (bucket: string, path: string) =>
-        downloadFromStorage(client, bucket, path);
-
-      try {
-        const subsequentStage: StageContext = {
-          ...defaultStage,
-          recipe_step: {
-            ...mockStageRecipeStep,
-            inputs_required: [], // Conforms to the SeedPromptRecipeStep type
-          },
-        };
-
-        // This test now asserts that the function SUCCEEDS because it should
-        // never attempt to query for contributions and trigger the mocked error.
-        await assembleSeedPrompt({
-          dbClient: client,
-          downloadFromStorageFn: downloadFn,
-          gatherInputsForStageFn: gatherInputsForStage,
-          renderPromptFn: renderPrompt,
-          fileManager,
-          project: defaultProject,
-          session: defaultSession,
-          stage: subsequentStage,
-          projectInitialUserPrompt: defaultProject.initial_user_prompt,
-          iterationNumber: 1,
-        });
-      } finally {
-        teardown();
-      }
-    },
-  );
+    mockSupabaseSetup.clearAllStubs?.();
+  });
 
   await t.step("should correctly merge and pass user-specific overlay values to the renderer", async () => {
-      let capturedUserOverlay: Json | null | undefined = undefined;
-      const renderPromptMockFn: RenderPromptMock = (
-        _base,
-        _vars,
-        _sysOverlays,
-        userOverlays,
-      ) => {
-        capturedUserOverlay = userOverlays;
-        return "ok";
-      };
+    /**
+     * Contract: assembleSeedPrompt forwards project.user_domain_overlay_values
+     *   to renderPromptFn as the userProjectOverlayValues argument.
+     * Arrange: a project with user_domain_overlay_values set to a known
+     *   overlay object; a mock gatherInputsForStageFn returning a built
+     *   GatheredRecipeContext; a spy on renderPromptFn capturing the user
+     *   overlay arg; a file manager returning a built file record.
+     * Act:     assembleSeedPrompt with the assembled deps.
+     * Assert:  render's 4th arg equals the project's user_domain_overlay_values.
+     */
+    // Arrange
+    const userOverlay: Json = { custom_instruction: "Be concise" };
 
-      const userOverlay = { "custom_instruction": "Be concise" };
-      const projectWithUserOverlay: ProjectContext = {
-        ...defaultProject,
-        user_domain_overlay_values: userOverlay,
-      };
+    const project = buildProjectContext({
+      user_domain_overlay_values: userOverlay,
+    });
 
-      const { client, fileManager } = setup({});
-      fileManager.setUploadAndRegisterFileResponse({ 
-        id: "mock-id", 
-        created_at: new Date().toISOString(), 
-        file_name: "mock-file.md", 
-        iteration_number: 1, 
-        mime_type: "text/markdown", 
-        project_id: "mock-project-id", 
-        resource_description: { test: "test" }, 
-        resource_type: "test", 
-        size_bytes: 100, 
-        storage_bucket: "mock-bucket", 
-        storage_path: "mock-path", 
-        user_id: "mock-user-id",
-        session_id: "mock-session-id",
-        source_contribution_id: "mock-source-contribution-id",
-        stage_slug: "mock-stage-slug",
-        updated_at: new Date().toISOString(),
-      }, null);
+    const gatherInputsForStageFn: GatherInputsForStageFn = async () =>
+      buildGatheredRecipeContext();
 
-      const downloadFn = (bucket: string, path: string) =>
-        downloadFromStorage(client, bucket, path);
+    const renderPromptFn: Spy<RenderPromptFunctionType> = spy(() => "ok");
 
-      try {
-        await assembleSeedPrompt({
-          dbClient: client,
-          downloadFromStorageFn: downloadFn,
-          gatherInputsForStageFn: gatherInputsForStage,
-          renderPromptFn: renderPromptMockFn,
-          fileManager,
-          project: projectWithUserOverlay,
-          session: defaultSession,
-          stage: defaultStage,
-          projectInitialUserPrompt: projectWithUserOverlay.initial_user_prompt,
-          iterationNumber: 1,
-        });
-        assertEquals(capturedUserOverlay, userOverlay);
-      } finally {
-        teardown();
-      }
-    },
-  );
+    const mockSupabaseSetup = createMockSupabaseClient();
+    const client = mockSupabaseSetup.client as unknown as SupabaseClient<Database>;
+    const fileManager = createMockFileManagerService();
+    fileManager.setUploadAndRegisterFileResponse(buildFileRecord(), null);
+
+    // Act
+    await assembleSeedPrompt({
+      dbClient: client,
+      downloadFromStorageFn: mockDownloadFromStorageTwoArg,
+      gatherInputsForStageFn,
+      renderPromptFn,
+      fileManager,
+      project,
+      session: buildSessionContext(),
+      stage: buildStageContext(),
+      projectInitialUserPrompt: project.initial_user_prompt,
+      iterationNumber: 1,
+    });
+
+    // Assert
+    assertSpyCalls(renderPromptFn, 1);
+    const renderArgs = renderPromptFn.calls[0].args;
+    assertEquals(renderArgs[3], userOverlay);
+
+    mockSupabaseSetup.clearAllStubs?.();
+  });
 
   await t.step("should throw an error if stage is missing system prompt", async () => {
-    const { client, fileManager } = setup();
-    fileManager.setUploadAndRegisterFileResponse({ 
-      id: "mock-id", 
-      created_at: new Date().toISOString(), 
-      file_name: "mock-file.md", 
-      iteration_number: 1, 
-      mime_type: "text/markdown", 
-      project_id: "mock-project-id", 
-      resource_description: { test: "test" }, 
-      resource_type: "test", 
-      size_bytes: 100, 
-      storage_bucket: "mock-bucket", 
-      storage_path: "mock-path", 
-      user_id: "mock-user-id",
-      session_id: "mock-session-id",
-      source_contribution_id: "mock-source-contribution-id",
-      stage_slug: "mock-stage-slug",
-      updated_at: new Date().toISOString(),
-    }, null);
-    const downloadFn = (bucket: string, path: string) =>
-      downloadFromStorage(client, bucket, path);
+    /**
+     * Contract: when stage.system_prompts is null, assembleSeedPrompt throws
+     *   a RENDER_PRECONDITION_FAILED error mentioning the missing system
+     *   prompt text for the stage slug.
+     * Arrange: a stage with system_prompts set to null; a mock
+     *   gatherInputsForStageFn returning a built GatheredRecipeContext;
+     *   a mock renderPromptFn (should never be called); a file manager
+     *   returning a built file record.
+     * Act:     assembleSeedPrompt via assertRejects.
+     * Assert:  rejects with Error matching the missing-system-prompt message.
+     */
+    // Arrange
+    const stage = buildStageContext({
+      system_prompts: null,
+    });
 
-    try {
-      const stageWithMissingPrompt: StageContext = {
-        ...defaultStage,
-        system_prompts: null,
-      };
+    const gatherInputsForStageFn: GatherInputsForStageFn = async () =>
+      buildGatheredRecipeContext();
 
-      await assertRejects(
-        async () => {
-          await assembleSeedPrompt({
-            dbClient: client,
-            downloadFromStorageFn: downloadFn,
-            gatherInputsForStageFn: gatherInputsForStage,
-            renderPromptFn: renderPrompt,
-            fileManager,
-            project: defaultProject,
-            session: defaultSession,
-            stage: stageWithMissingPrompt,
-            projectInitialUserPrompt: defaultProject.initial_user_prompt,
-            iterationNumber: 1,
-          });
-        },
-        Error,
-        `RENDER_PRECONDITION_FAILED: missing system prompt text for stage ${stageWithMissingPrompt.slug}`,
-      );
-    } finally {
-      teardown();
-    }
+    const renderPromptFn: Spy<RenderPromptFunctionType> = spy(() => "irrelevant");
+
+    const mockSupabaseSetup = createMockSupabaseClient();
+    const client = mockSupabaseSetup.client as unknown as SupabaseClient<Database>;
+    const fileManager = createMockFileManagerService();
+    fileManager.setUploadAndRegisterFileResponse(buildFileRecord(), null);
+
+    // Act + Assert
+    await assertRejects(
+      () =>
+        assembleSeedPrompt({
+          dbClient: client,
+          downloadFromStorageFn: mockDownloadFromStorageTwoArg,
+          gatherInputsForStageFn,
+          renderPromptFn,
+          fileManager,
+          project: buildProjectContext(),
+          session: buildSessionContext(),
+          stage,
+          projectInitialUserPrompt: "resolved prompt from storage",
+          iterationNumber: 1,
+        }),
+      Error,
+      `RENDER_PRECONDITION_FAILED: missing system prompt text for stage ${stage.slug}`,
+    );
+
+    mockSupabaseSetup.clearAllStubs?.();
   });
 
   await t.step("should throw if prompt requires 'style_guide_markdown' but it is not provided", async () => {
-    const { client, fileManager } = setup();
-    fileManager.setUploadAndRegisterFileResponse({ 
-      id: "mock-id",
-      created_at: new Date().toISOString(),
-      file_name: "mock-file.md",
-      iteration_number: 1,
-      mime_type: "text/markdown",
-      project_id: "mock-project-id",
-      resource_description: { test: "test" },
-      resource_type: "test",  
-      size_bytes: 100,
-      storage_bucket: "test-bucket",
-      storage_path: "path/to/mock/",
-      user_id: "mock-user-id",
-      session_id: "mock-session-id",
-      source_contribution_id: "mock-source-contribution-id",
-      stage_slug: "mock-stage-slug",
-      updated_at: new Date().toISOString(),
-    }, null);
+    /**
+     * Contract: when the stage's system prompt text contains
+     *   {{#section:style_guide_markdown}} but the stage overlays do not
+     *   include a valid style_guide_markdown string, assembleSeedPrompt
+     *   throws a RENDER_PRECONDITION_FAILED error.
+     * Arrange: a stage with prompt text containing the style guide marker
+     *   and empty domain_specific_prompt_overlays; a mock
+     *   gatherInputsForStageFn returning a built GatheredRecipeContext;
+     *   a mock renderPromptFn (should never be called); a file manager
+     *   returning a built file record.
+     * Act:     assembleSeedPrompt via assertRejects.
+     * Assert:  rejects with Error matching the missing-style-guide message.
+     */
+    // Arrange
+    const stage = buildStageContext({
+      system_prompts: {
+        prompt_text: "This prompt requires a {{#section:style_guide_markdown}}.",
+      },
+      domain_specific_prompt_overlays: [],
+    });
 
-    const downloadFn = (bucket: string, path: string) =>
-      downloadFromStorage(client, bucket, path);
+    const gatherInputsForStageFn: GatherInputsForStageFn = async () =>
+      buildGatheredRecipeContext();
 
-    try {
-      const stageWithStyleGuidePrompt: StageContext = {
-        ...defaultStage,
-        system_prompts: {
-          prompt_text: "This prompt requires a {{#section:style_guide_markdown}}.",
-        },
-        domain_specific_prompt_overlays: [],
-      };
+    const renderPromptFn: Spy<RenderPromptFunctionType> = spy(() => "irrelevant");
 
-      await assertRejects(
-        async () => {
-          await assembleSeedPrompt({
-            dbClient: client,
-            downloadFromStorageFn: downloadFn,
-            gatherInputsForStageFn: gatherInputsForStage,
-            renderPromptFn: renderPrompt,
-            fileManager,
-            project: defaultProject,
-            session: defaultSession,
-            stage: stageWithStyleGuidePrompt,
-            projectInitialUserPrompt: defaultProject.initial_user_prompt,
-            iterationNumber: 1,
-          });
-        },
-        Error,
-        `RENDER_PRECONDITION_FAILED: missing style_guide_markdown for stage ${stageWithStyleGuidePrompt.slug}`,
-      );
-    } finally {
-      teardown();
-    }
+    const mockSupabaseSetup = createMockSupabaseClient();
+    const client = mockSupabaseSetup.client as unknown as SupabaseClient<Database>;
+    const fileManager = createMockFileManagerService();
+    fileManager.setUploadAndRegisterFileResponse(buildFileRecord(), null);
+
+    // Act + Assert
+    await assertRejects(
+      () =>
+        assembleSeedPrompt({
+          dbClient: client,
+          downloadFromStorageFn: mockDownloadFromStorageTwoArg,
+          gatherInputsForStageFn,
+          renderPromptFn,
+          fileManager,
+          project: buildProjectContext(),
+          session: buildSessionContext(),
+          stage,
+          projectInitialUserPrompt: "resolved prompt from storage",
+          iterationNumber: 1,
+        }),
+      Error,
+      `RENDER_PRECONDITION_FAILED: missing style_guide_markdown for stage ${stage.slug}`,
+    );
+
+    mockSupabaseSetup.clearAllStubs?.();
   });
 
   await t.step("should throw if prompt requires 'outputs_required' but it is not provided", async () => {
-    const { client, fileManager } = setup();
-    fileManager.setUploadAndRegisterFileResponse({ 
-      id: "mock-id",
-      created_at: new Date().toISOString(),
-      file_name: "mock-file.md",
-      iteration_number: 1,
-      mime_type: "text/markdown",
-      project_id: "mock-project-id",
-      resource_description: { test: "test" },
-      resource_type: "test",
-      size_bytes: 100,
-      storage_bucket: "test-bucket",
-      storage_path: "path/to/mock/",
-      user_id: "mock-user-id",
-      session_id: "mock-session-id",
-      source_contribution_id: "mock-source-contribution-id",
-      stage_slug: "mock-stage-slug",
-      updated_at: new Date().toISOString(),
-    }, null);
+    /**
+     * Contract: when the stage's system prompt text contains
+     *   {{outputs_required}} but the gathered recipe step has an empty
+     *   outputs_required array, assembleSeedPrompt throws a
+     *   RENDER_PRECONDITION_FAILED error.
+     * Arrange: a stage with prompt text containing {{outputs_required}} and
+     *   empty domain_specific_prompt_overlays; a mock gatherInputsForStageFn
+     *   returning a GatheredRecipeContext whose recipeStep has
+     *   outputs_required: []; a mock renderPromptFn (should never be called);
+     *   a file manager returning a built file record.
+     * Act:     assembleSeedPrompt via assertRejects.
+     * Assert:  rejects with Error matching the missing-outputs_required message.
+     */
+    // Arrange
+    const stage = buildStageContext({
+      system_prompts: {
+        prompt_text: "This prompt requires a {{outputs_required}}.",
+      },
+      domain_specific_prompt_overlays: [],
+    });
 
-    const downloadFn = (bucket: string, path: string) =>
-      downloadFromStorage(client, bucket, path);
+    const gatheredContext = buildGatheredRecipeContext({
+      recipeStep: buildSeedPromptRecipeStep({ outputs_required: [] }),
+    });
 
-    try {
-      const stageWithArtifactsPrompt: StageContext = {
-        ...defaultStage,
-        system_prompts: {
-          prompt_text:
-            "This prompt requires a {{outputs_required}}.",
-        },
-        recipe_step: { ...mockStageRecipeStep, outputs_required: [] },
-      };
+    const gatherInputsForStageFn: GatherInputsForStageFn = async () => gatheredContext;
 
-      await assertRejects(
-        async () => {
-          await assembleSeedPrompt({
-            dbClient: client,
-            downloadFromStorageFn: downloadFn,
-            gatherInputsForStageFn: gatherInputsForStage,
-            renderPromptFn: renderPrompt,
-            fileManager,
-            project: defaultProject,
-            session: defaultSession,
-            stage: stageWithArtifactsPrompt,
-            projectInitialUserPrompt: defaultProject.initial_user_prompt,
-            iterationNumber: 1,
-          });
-        },
-        Error,
-        `RENDER_PRECONDITION_FAILED: missing outputs_required for stage ${stageWithArtifactsPrompt.slug}`,
-      );
-    } finally {
-      teardown();
-    }
+    const renderPromptFn: Spy<RenderPromptFunctionType> = spy(() => "irrelevant");
+
+    const mockSupabaseSetup = createMockSupabaseClient();
+    const client = mockSupabaseSetup.client as unknown as SupabaseClient<Database>;
+    const fileManager = createMockFileManagerService();
+    fileManager.setUploadAndRegisterFileResponse(buildFileRecord(), null);
+
+    // Act + Assert
+    await assertRejects(
+      () =>
+        assembleSeedPrompt({
+          dbClient: client,
+          downloadFromStorageFn: mockDownloadFromStorageTwoArg,
+          gatherInputsForStageFn,
+          renderPromptFn,
+          fileManager,
+          project: buildProjectContext(),
+          session: buildSessionContext(),
+          stage,
+          projectInitialUserPrompt: "resolved prompt from storage",
+          iterationNumber: 1,
+        }),
+      Error,
+      `RENDER_PRECONDITION_FAILED: missing outputs_required for stage ${stage.slug}`,
+    );
+
+    mockSupabaseSetup.clearAllStubs?.();
   });
 });

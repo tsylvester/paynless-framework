@@ -22,7 +22,7 @@ import { isTokenUsage } from "../utils/type_guards.ts";
 import { Tables } from "../../types_db.ts";
 import { isJson } from "../utils/type_guards.ts"; 
 import { ILogger } from "../types.ts";
-import { MOCK_PROVIDER } from "./ai_provider.mock.ts";
+import { buildExtendedModelConfig, buildMockProvider } from "./ai_provider.mock.ts";
 import { isAiModelExtendedConfig } from "../utils/type_guards.ts";
 /**
  * This test file uses the generic `testAdapterContract` to ensure the
@@ -30,10 +30,10 @@ import { isAiModelExtendedConfig } from "../utils/type_guards.ts";
  * a specific test to verify the dummy's unique tokenization behavior.
  */
 
-if(!isJson(MOCK_PROVIDER.config) || !isAiModelExtendedConfig(MOCK_PROVIDER.config)) {
-  throw new Error('MOCK_PROVIDER.config is not a valid JSON object');
+if(!isJson(buildMockProvider().config) || !isAiModelExtendedConfig(buildMockProvider().config)) {
+  throw new Error('buildMockProvider().config is not a valid JSON object');
 }
-  const MOCK_MODEL_CONFIG: AiModelExtendedConfig = MOCK_PROVIDER.config;
+  const MOCK_MODEL_CONFIG: AiModelExtendedConfig = buildExtendedModelConfig();
 
 // For the contract test, the mock API should replicate the dummy's simple logic
 // without instantiating the real adapter to avoid infinite recursion with the stub.
@@ -100,7 +100,7 @@ Deno.test("DummyAdapter: Contract Compliance", async (t) => {
     
     // The contract test will spy on mockDummyApi. When it instantiates a real
     // DummyAdapter, our stubs will intercept the calls and redirect them to the mock.
-    await testAdapterContract(t, DummyAdapter, mockDummyApi, MOCK_PROVIDER);
+    await testAdapterContract(t, DummyAdapter, mockDummyApi, buildMockProvider());
     
     await t.step("Teardown: Restore stubs", () => {
         sendMessageStub.restore();
@@ -111,7 +111,7 @@ Deno.test("DummyAdapter: Contract Compliance", async (t) => {
 // The specific behavior test validates the REAL adapter's implementation.
 Deno.test("[DummyAdapter] Specific Behavior - Correctly calculates token usage", async () => {
     // Arrange
-    const adapter = new DummyAdapter(MOCK_PROVIDER, 'dummy-key', new MockLogger());
+    const adapter = new DummyAdapter(buildMockProvider(), 'dummy-key', new MockLogger());
     const request: ChatApiRequest = {
         message: "Hello, this is a test.", // This is 6 tokens with cl100k_base
         providerId: 'dummy-provider',
@@ -151,7 +151,7 @@ Deno.test("[DummyAdapter] Specific Behavior - Correctly calculates token usage",
 
 Deno.test("[FAILING TEST] DummyAdapter should throw an error when prompt contains SIMULATE_ERROR", async () => {
   // Arrange
-  const adapter = new DummyAdapter(MOCK_PROVIDER, 'dummy-key', new MockLogger());
+  const adapter = new DummyAdapter(buildMockProvider(), 'dummy-key', new MockLogger());
   const request: ChatApiRequest = {
     message: "This is a test prompt with SIMULATE_ERROR.",
     providerId: 'dummy-provider',
@@ -178,7 +178,7 @@ Deno.test("[FAILING TEST] DummyAdapter should throw an error when prompt contain
 
 Deno.test("[FAILING TEST] DummyAdapter should return a partial response for SIMULATE_MAX_TOKENS", async () => {
   // Arrange
-  const adapter = new DummyAdapter(MOCK_PROVIDER, 'dummy-key', new MockLogger());
+  const adapter = new DummyAdapter(buildMockProvider(), 'dummy-key', new MockLogger());
   const request: ChatApiRequest = {
     message: "This is a test prompt with SIMULATE_MAX_TOKENS.",
     providerId: 'dummy-provider',
@@ -197,7 +197,18 @@ Deno.test("[FAILING TEST] DummyAdapter should return a partial response for SIMU
 
 Deno.test("[FAILING TEST] DummyAdapter should generate a large response for SIMULATE_LARGE_OUTPUT_KB", async () => {
     // Arrange
-    const adapter = new DummyAdapter(MOCK_PROVIDER, 'dummy-key', new MockLogger());
+    const LARGE_OUTPUT_CONFIG: AiModelExtendedConfig = {
+        ...MOCK_MODEL_CONFIG,
+        hard_cap_output_tokens: 4096,
+        provider_max_output_tokens: 4096,
+    };
+
+    if (!isJson(LARGE_OUTPUT_CONFIG)) throw new Error('LARGE_OUTPUT_CONFIG must be JSON');
+    const LARGE_OUTPUT_PROVIDER: Tables<'ai_providers'> = {
+        ...buildMockProvider(),
+        config: LARGE_OUTPUT_CONFIG,
+    };
+    const adapter = new DummyAdapter(LARGE_OUTPUT_PROVIDER, 'dummy-key', new MockLogger());
     const targetKb = 2; // Request a 2KB response
     const request: ChatApiRequest = {
         message: `This is the base text. SIMULATE_LARGE_OUTPUT_KB=${targetKb}`,
@@ -228,7 +239,7 @@ Deno.test("DummyAdapter respects client-provided max_tokens_to_generate and yiel
   };
   if (!isJson(CONFIG_WITH_COSTS)) throw new Error('CONFIG_WITH_COSTS must be JSON');
   const PROVIDER_WITH_COSTS: Tables<'ai_providers'> = {
-    ...MOCK_PROVIDER,
+    ...buildMockProvider(),
     config: CONFIG_WITH_COSTS,
   };
 
@@ -262,7 +273,7 @@ Deno.test("DummyAdapter respects model hard_cap_output_tokens when client cap is
   };
   if (!isJson(CONFIG_WITH_HARD_CAP)) throw new Error('CONFIG_WITH_HARD_CAP must be JSON');
   const PROVIDER_WITH_HARD_CAP: Tables<'ai_providers'> = {
-    ...MOCK_PROVIDER,
+    ...buildMockProvider(),
     config: CONFIG_WITH_HARD_CAP,
   };
 
@@ -291,7 +302,7 @@ Deno.test("DummyAdapter handles oversized input by throwing ContextWindowError (
   };
   if (!isJson(CONFIG_SMALL_WINDOW)) throw new Error('CONFIG_SMALL_WINDOW must be JSON');
   const PROVIDER_SMALL_WINDOW: Tables<'ai_providers'> = {
-    ...MOCK_PROVIDER,
+    ...buildMockProvider(),
     config: CONFIG_SMALL_WINDOW,
   };
 
@@ -315,7 +326,7 @@ Deno.test("DummyAdapter handles oversized input by throwing ContextWindowError (
 
 Deno.test("[DummyAdapter] Specific Behavior - should handle continuation prompts", async () => {
     // Arrange
-    const adapter = new DummyAdapter(MOCK_PROVIDER, 'dummy-key', new MockLogger());
+    const adapter = new DummyAdapter(buildMockProvider(), 'dummy-key', new MockLogger());
     const continuationPrompt = "Partial echo due to max_tokens from dummy-model-v1: This is the first part.";
     const request: ChatApiRequest = {
         message: continuationPrompt,
@@ -339,7 +350,7 @@ Deno.test("[DummyAdapter] Specific Behavior - should use the correct provider ID
     // Arrange
     const specificProviderId = "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"; // A valid UUID
     const providerWithId: Tables<'ai_providers'> = {
-        ...MOCK_PROVIDER,
+        ...buildMockProvider(),
         id: specificProviderId,
     };
     const adapter = new DummyAdapter(providerWithId, 'dummy-key', new MockLogger());
@@ -542,7 +553,7 @@ async function collectAdapterStreamChunks(
 }
 
 Deno.test("[DummyAdapter] sendMessageStream yields text_delta, usage, and done with finish_reason stop for normal echo", async () => {
-  const adapter = new DummyAdapter(MOCK_PROVIDER, "dummy-key", new MockLogger());
+  const adapter = new DummyAdapter(buildMockProvider(), "dummy-key", new MockLogger());
   const request: ChatApiRequest = {
     message: "Hello, stream.",
     providerId: "dummy-provider",
@@ -592,7 +603,7 @@ Deno.test("[DummyAdapter] sendMessageStream yields text_delta, usage, and done w
 });
 
 Deno.test("[DummyAdapter] sendMessageStream yields done with finish_reason max_tokens when message contains SIMULATE_MAX_TOKENS", async () => {
-  const adapter = new DummyAdapter(MOCK_PROVIDER, "dummy-key", new MockLogger());
+  const adapter = new DummyAdapter(buildMockProvider(), "dummy-key", new MockLogger());
   const request: ChatApiRequest = {
     message: "Hello SIMULATE_MAX_TOKENS",
     providerId: "dummy-provider",
@@ -620,7 +631,7 @@ Deno.test("[DummyAdapter] sendMessageStream yields done with finish_reason max_t
 });
 
 Deno.test("[DummyAdapter] sendMessageStream throws when message contains SIMULATE_ERROR", async () => {
-  const adapter = new DummyAdapter(MOCK_PROVIDER, "dummy-key", new MockLogger());
+  const adapter = new DummyAdapter(buildMockProvider(), "dummy-key", new MockLogger());
   const request: ChatApiRequest = {
     message: "SIMULATE_ERROR",
     providerId: "dummy-provider",

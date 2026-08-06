@@ -34,8 +34,7 @@ Do **not** mock:
 - objects owned by another interface
 - wrappers around another interface's mock
 
-Imported types are mocked by their own home package — locate and use those (search
-for `buildSomeType`); if none exists, halt and report per [discovery-halt](discovery-halt.md).
+Imported types are mocked by their own home package — locate and use existing mocks. Never assume you know the name of the mock, the type declaration of the mock is the invariant that locates them; if no mock for the type exists, halt and report per [discovery-halt](discovery-halt.md).
 
 ## Which mock does an owned symbol get?
 
@@ -90,6 +89,13 @@ export function buildMyObject(overrides?: MyObjectOverrides): MyObject {
 
 Every property has a default. Builders exactly match production types and names;
 they never invent shapes and never produce invalid objects.
+
+A builder is **called directly at each use site**, with only the overrides that caller
+needs — never staged in a local variable and spread, wrapped in a helper, or reassembled
+field-by-field by hand. Each of those defeats the builder and is forbidden; the full
+catalog of misuses lives with the consumer, in
+[tests](tests.md#fixtures-call-the-builder-directly). The same applies to invalidators —
+`invalidateX({ … })` directly, never staged or spread.
 
 ### Nested object composition
 

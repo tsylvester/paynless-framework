@@ -14,6 +14,7 @@ import { isDialecticCompressJobPayload } from './enqueueCompressJobs/enqueueComp
 import type { ProcessCompressJobDeps, ProcessCompressJobParams } from './processCompressJob/processCompressJob.interface.ts';
 import { isProcessCompressJobErrorReturn } from './processCompressJob/processCompressJob.guard.ts';
 import type { BoundAssembleCompressionPromptFn } from '../_shared/prompt-assembler/assembleCompressionPrompt/assembleCompressionPrompt.interface.ts';
+import type { BoundAssembleContinuationPromptFn } from '../_shared/prompt-assembler/prompt-assembler.interface.ts';
 import { renderPrompt } from '../_shared/prompt-renderer.ts';
 import { constructStoragePath } from '../_shared/utils/path_constructor.ts';
 import { isKnownTiktokenEncoding } from '../_shared/utils/type-guards/type_guards.chat.ts';
@@ -86,13 +87,23 @@ export async function processJob(
 
       const boundAssembleCompressionPrompt: BoundAssembleCompressionPromptFn = (assembleParams, assemblePayload) =>
         ctx.promptAssembler.assembleCompressionPrompt(
-          { dbClient, renderPromptFn: renderPrompt, logger: ctx.logger },
+          { dbClient, renderPromptFn: renderPrompt, logger: ctx.logger, fileManager: ctx.fileManager, constructStoragePath },
           assembleParams,
           assemblePayload,
         );
 
+      const boundAssembleContinuationPrompt: BoundAssembleContinuationPromptFn = (continuationJob) =>
+        ctx.promptAssembler.assembleContinuationPrompt({
+          dbClient,
+          fileManager: ctx.fileManager,
+          job: continuationJob,
+          downloadFromStorage: (bucket, path) => ctx.downloadFromStorage(dbClient, bucket, path),
+          constructStoragePath,
+        });
+
       const compressDeps: ProcessCompressJobDeps = {
         assembleCompressionPrompt: boundAssembleCompressionPrompt,
+        assembleContinuationPrompt: boundAssembleContinuationPrompt,
         enqueueModelCall: ctx.enqueueModelCall,
         countTokens: ctx.countTokens,
         getEncoding: (encodingName: string) => {

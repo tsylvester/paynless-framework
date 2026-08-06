@@ -1,4 +1,4 @@
-Write the unit test for the current node's function, exactly as the node describes.
+Write the unit test for the description you have been given, exactly as described.
 
 Validate transformations and branching — not type shape or guard correctness. The
 implementation not yet existing is the RED deliverable: never create or edit the

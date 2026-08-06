@@ -7,9 +7,38 @@ import type {
   CalculateAffordabilityDeps,
   CalculateAffordabilityDirectReturn,
   CalculateAffordabilityErrorReturn,
+  CalculateAffordabilityFn,
   CalculateAffordabilityParams,
   CalculateAffordabilityPayload,
+  GetMaxOutputTokensFn,
+  TierOutputCapTokens,
+  UserConfig,
 } from "./calculateAffordability.interface.ts";
+
+export function isTierOutputCapTokens(value: unknown): value is TierOutputCapTokens {
+  return typeof value === "number" || value === null;
+}
+
+export function isUserConfig(value: unknown): value is UserConfig {
+  if (!isRecord(value)) {
+    return false;
+  }
+  if (!("tier_output_cap_tokens" in value)) {
+    return false;
+  }
+  if (!isTierOutputCapTokens(value.tier_output_cap_tokens)) {
+    return false;
+  }
+  return true;
+}
+
+export function isGetMaxOutputTokensFn(value: unknown): value is GetMaxOutputTokensFn {
+  return typeof value === "function";
+}
+
+export function isCalculateAffordabilityFn(value: unknown): value is CalculateAffordabilityFn {
+  return typeof value === "function";
+}
 
 export function isCalculateAffordabilityDeps(value: unknown): value is CalculateAffordabilityDeps {
   if (!isRecord(value)) {
@@ -24,7 +53,7 @@ export function isCalculateAffordabilityDeps(value: unknown): value is Calculate
   if (!("compressPrompt" in value) || typeof value.compressPrompt !== "function") {
     return false;
   }
-  if (!("getMaxOutputTokens" in value) || typeof value.getMaxOutputTokens !== "function") {
+  if (!("getMaxOutputTokens" in value) || !isGetMaxOutputTokensFn(value.getMaxOutputTokens)) {
     return false;
   }
   return true;
@@ -72,13 +101,7 @@ export function isCalculateAffordabilityParams(value: unknown): value is Calcula
       return false;
     }
   }
-  if (!("userConfig" in value) || !isRecord(value.userConfig)) {
-    return false;
-  }
-  if (
-    typeof value.userConfig.tier_output_cap_tokens !== "number" &&
-    value.userConfig.tier_output_cap_tokens !== null
-  ) {
+  if (!("userConfig" in value) || !isUserConfig(value.userConfig)) {
     return false;
   }
   return true;

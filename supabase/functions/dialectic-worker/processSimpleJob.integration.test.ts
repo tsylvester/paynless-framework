@@ -1,9 +1,9 @@
 import { assertEquals, assertExists, assert } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { spy, type Spy } from "https://deno.land/std@0.224.0/testing/mock.ts";
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
-import type { Database, Tables } from "../types_db.ts";
+import type { Database } from "../types_db.ts";
 import { FileType, DialecticStageSlug } from "../_shared/types/file_manager.types.ts";
-import type { AiModelExtendedConfig, ChatApiRequest, OutboundDocument, ResourceDocument } from "../_shared/types.ts";
+import type { ChatApiRequest, OutboundDocument, ResourceDocument } from "../_shared/types.ts";
 import { MockLogger } from "../_shared/logger.mock.ts";
 import { MockRagService } from "../_shared/services/rag_service.mock.ts";
 import { AdminTokenWalletService } from "../_shared/services/tokenwallet/admin/adminTokenWalletService.ts";
@@ -30,7 +30,6 @@ import type {
 import {
   gatherArtifacts,
   buildDialecticContributionRow,
-  buildDialecticProjectResourceRow,
   buildSelectHandler,
 } from "./gatherArtifacts/gatherArtifacts.provides.ts";
 import { createMockDownloadFromStorage } from "../_shared/supabase_storage_utils.mock.ts";
@@ -41,29 +40,25 @@ import type { BoundPrepareModelJobFn } from "./createJobContext/JobContext.inter
 import { prepareModelJob } from "./prepareModelJob/prepareModelJob.ts";
 import type { PrepareModelJobPayload } from "./prepareModelJob/prepareModelJob.interface.ts";
 import { isPrepareModelJobPayload } from "./prepareModelJob/prepareModelJob.guard.ts";
-import { buildExtendedModelConfig } from "../_shared/ai_service/ai_provider.mock.ts";
-import {
-  mockAiProvidersRowFromConfig,
-  mockTokenWalletRow,
-} from "./prepareModelJob/prepareModelJob.mock.ts";
+import { buildExtendedModelConfig, buildMockProvider } from "../_shared/ai_service/ai_provider.mock.ts";
 import { processSimpleJob } from "./processSimpleJob.ts";
-import {
-  defaultStepSlug,
-  mockClient,
-  mockExecutePayload,
-  mockJob,
-  mockPayload,
-  stageInputsRequired,
-  stageInputsRelevance,
-  stageOutputsRequired,
-} from "./processSimpleJob.mock.ts";
 import type {
-  DialecticJobRow,
   DialecticStageRecipeStep,
   InputRule,
 } from "../dialectic-service/dialectic.interface.ts";
 import { isRecord } from "../_shared/utils/type_guards.ts";
-
+import { createMockSupabaseClient } from "../_shared/supabase.mock.ts";
+import {
+  buildDialecticProjectResourceRow,
+  buildDialecticJobRow,
+  buildDialecticExecuteJobPayload,
+  buildDialecticStageRecipeStep,
+  buildTokenWalletRow,
+  buildDialecticSessionRow,
+  buildDialecticProjectRow,
+  buildDialecticStage,
+  buildInputRule,
+} from "../_shared/dialectic.mock.ts";
 // --- Real-DB integration test imports ---
 import {
   initializeTestDeps,
@@ -72,15 +67,10 @@ import {
   coreCleanupTestResources,
   coreUpsertTestProviders,
   registerUndoAction,
-  supabaseAdminClient,
-  testLogger,
-  findProcessedResource,
 } from "../_shared/_integration.test.utils.ts";
 import { uploadToStorage, downloadFromStorage } from "../_shared/supabase_storage_utils.ts";
 import { constructStoragePath } from "../_shared/utils/path_constructor.ts";
 import { pickLatest } from "../_shared/utils/pickLatest.ts";
-import { MockPromptAssembler } from "../_shared/prompt-assembler/prompt-assembler.mock.ts";
-import { MockFileManagerService } from "../_shared/services/file_manager.mock.ts";
 import { isDialecticStageRecipeStep } from "../_shared/utils/type-guards/type_guards.dialectic.recipe.ts";
 import { isDialecticStageSlug, isModelContributionFileType } from "../_shared/utils/type-guards/type_guards.file_manager.ts";
 import { isAiModelExtendedConfig } from "../_shared/utils/type-guards/type_guards.chat.ts";
@@ -105,130 +95,149 @@ Deno.test(
       "0".repeat(10_000);
     const downloadBuffer: ArrayBuffer = toArrayBuffer(storageDownloadBody);
 
-    const plannerMeta = mockPayload.planner_metadata;
+    const plannerMeta = buildDialecticExecuteJobPayload({
+      planner_metadata: { recipe_step_id: "step-1" },
+    }).planner_metadata;
     if (
       plannerMeta === null ||
       plannerMeta === undefined ||
       typeof plannerMeta.recipe_step_id !== "string" ||
       plannerMeta.recipe_step_id.length === 0
     ) {
-      throw new Error("integration test requires mockPayload.planner_metadata.recipe_step_id");
+      throw new Error("integration test requires planner_metadata.recipe_step_id");
     }
     const integrationRecipeStepId: string = plannerMeta.recipe_step_id;
 
-    const dialecticStageRecipeStepRow: DialecticStageRecipeStep = {
+    const dialecticStageRecipeStepRow = buildDialecticStageRecipeStep({
       id: integrationRecipeStepId,
-      instance_id: "instance-1",
-      template_step_id: "step-1",
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      step_key: defaultStepSlug,
-      step_slug: defaultStepSlug,
-      step_name: "Doc-centric execution step",
-      step_description: "Generate the main business case document.",
       job_type: "EXECUTE",
-      prompt_type: "Turn",
-      output_type: FileType.business_case,
-      granularity_strategy: "per_source_document",
-      inputs_required: stageInputsRequired,
-      inputs_relevance: stageInputsRelevance,
-      outputs_required: stageOutputsRequired,
-      config_override: { temperature: 0.2 },
-      object_filter: { branch_key: "business_case" },
-      output_overrides: { document_key: FileType.business_case },
-      is_skipped: false,
-      parallel_group: null,
-      branch_key: null,
-      prompt_template_id: "prompt-123",
-      execution_order: 1,
-    };
+      inputs_required: [
+        buildInputRule({ type: "document", slug: "thesis", document_key: FileType.business_case }),
+        buildInputRule({ type: "document", slug: "thesis", document_key: FileType.feature_spec }),
+        buildInputRule({ type: "header_context", slug: "thesis", document_key: FileType.HeaderContext }),
+      ],
+    });
+    if (dialecticStageRecipeStepRow === null) {
+      throw new Error("buildDialecticStageRecipeStep returned null");
+    }
 
     const compressionContextWindowTokens: number = 200;
 
-    const mockSetup = mockClient({
-      dialectic_stage_recipe_steps: {
-        select: (state: unknown) => {
-          if (!isRecord(state)) {
-            return Promise.resolve({ data: [], error: null });
-          }
-          const filtersUnknown: unknown = state["filters"];
-          const filters: unknown[] = Array.isArray(filtersUnknown) ? filtersUnknown : [];
-          const matchesIntegrationId: boolean = filters.some((f) => {
-            if (!isRecord(f)) {
-              return false;
+    const mockSetup = createMockSupabaseClient(undefined, {
+      genericMockResults: {
+        dialectic_stage_recipe_steps: {
+          select: (state: unknown) => {
+            if (!isRecord(state)) {
+              return Promise.resolve({ data: [], error: null });
             }
-            return (
-              f["type"] === "eq" &&
-              f["column"] === "id" &&
-              f["value"] === integrationRecipeStepId
-            );
-          });
-          if (matchesIntegrationId) {
-            return Promise.resolve({ data: [dialecticStageRecipeStepRow], error: null });
-          }
-          return Promise.resolve({ data: [], error: null });
+            const filtersUnknown: unknown = state["filters"];
+            const filters: unknown[] = Array.isArray(filtersUnknown) ? filtersUnknown : [];
+            const matchesIntegrationId: boolean = filters.some((f) => {
+              if (!isRecord(f)) {
+                return false;
+              }
+              return (
+                f["type"] === "eq" &&
+                f["column"] === "id" &&
+                f["value"] === integrationRecipeStepId
+              );
+            });
+            if (matchesIntegrationId) {
+              return Promise.resolve({ data: [dialecticStageRecipeStepRow], error: null });
+            }
+            return Promise.resolve({ data: [], error: null });
+          },
         },
-      },
-      dialectic_project_resources: {
-        select: buildSelectHandler([
-          buildDialecticProjectResourceRow({
-            id: "psi-resource-bc",
-            project_id: mockPayload.projectId,
-            session_id: mockPayload.sessionId,
-            iteration_number: mockPayload.iterationNumber,
-            stage_slug: defaultStepSlug,
-          }),
-          buildDialecticProjectResourceRow({
-            id: "psi-resource-fs",
-            project_id: mockPayload.projectId,
-            session_id: mockPayload.sessionId,
-            iteration_number: mockPayload.iterationNumber,
-            stage_slug: defaultStepSlug,
-            file_name: "model-collect_1_feature_spec.md",
-          }),
-        ]),
-      },
-      dialectic_memory: {
-        select: () => Promise.resolve({ data: [], error: null }),
-      },
-      dialectic_contributions: {
-        select: () =>
-          Promise.resolve({
-            data: [
-              buildDialecticContributionRow({
-                id: "psi-contrib-hc",
-                session_id: mockPayload.sessionId,
-                iteration_number: mockPayload.iterationNumber,
-                stage: defaultStepSlug,
-              }),
-            ],
-            error: null,
-          }),
-      },
-      ai_providers: {
-        select: () => {
-          const extendedFixture: AiModelExtendedConfig = {
-            ...buildExtendedModelConfig(),
-            context_window_tokens: compressionContextWindowTokens,
-            provider_max_input_tokens: 400,
-            hard_cap_output_tokens: 100,
-          };
-          const providerRow: Tables<"ai_providers"> = {
-            ...mockAiProvidersRowFromConfig(extendedFixture),
-            id: "model-def",
-          };
-          return Promise.resolve({ data: [providerRow], error: null });
+        dialectic_sessions: {
+          select: () =>
+            Promise.resolve({
+              data: [buildDialecticSessionRow()],
+              error: null,
+            }),
         },
-      },
-      token_wallets: {
-        select: (state: unknown) => {
-          if (isRecord(state) && state["selectColumns"] === "balance::text") {
-            return Promise.resolve({ data: [{ balance: "100000" }], error: null });
-          }
-          return Promise.resolve({
-            data: [mockTokenWalletRow({ wallet_id: mockPayload.walletId })],
-            error: null,
-          });
+        dialectic_projects: {
+          select: () =>
+            Promise.resolve({
+              data: [{
+                ...buildDialecticProjectRow(),
+                dialectic_domains: { id: 'test-domain-id', name: 'test domain', description: 'test domain description' },
+              }],
+              error: null,
+            }),
+        },
+        dialectic_stages: {
+          select: () =>
+            Promise.resolve({
+              data: [{
+                ...buildDialecticStage(),
+                system_prompts: { id: 'test-system-prompt-id', prompt_text: 'test system prompt' },
+              }],
+              error: null,
+            }),
+        },
+        domain_specific_prompt_overlays: {
+          select: () =>
+            Promise.resolve({
+              data: [{ overlay_values: {} }],
+              error: null,
+            }),
+        },
+        dialectic_project_resources: {
+          select: buildSelectHandler([
+            buildDialecticProjectResourceRow({
+              id: "psi-resource-bc",
+              stage_slug: "thesis",
+              resource_type: "rendered_document",
+              storage_path: "test-project-id/session_test-session-id/iteration_1/1_thesis/documents",
+              file_name: "integration-test-model_0_business_case.md",
+            }),
+            buildDialecticProjectResourceRow({
+              id: "psi-resource-fs",
+              stage_slug: "thesis",
+              resource_type: "rendered_document",
+              storage_path: "test-project-id/session_test-session-id/iteration_1/1_thesis/documents",
+              file_name: "integration-test-model_0_feature_spec.md",
+            }),
+          ]),
+        },
+        dialectic_memory: {
+          select: () => Promise.resolve({ data: [], error: null }),
+        },
+        dialectic_contributions: {
+          select: () =>
+            Promise.resolve({
+              data: [
+                buildDialecticContributionRow({
+                  id: "psi-contrib-hc",
+                }),
+              ],
+              error: null,
+            }),
+        },
+        ai_providers: {
+          select: () => {
+            const extendedFixture = buildExtendedModelConfig({
+              context_window_tokens: compressionContextWindowTokens,
+            });
+            if (!isJson(extendedFixture)) {
+              throw new Error("extendedFixture is not Json-compatible");
+            }
+            const providerRow = buildMockProvider({
+              config: extendedFixture,
+            });
+            return Promise.resolve({ data: [providerRow], error: null });
+          },
+        },
+        token_wallets: {
+          select: (state: unknown) => {
+            if (isRecord(state) && state["selectColumns"] === "balance::text") {
+              return Promise.resolve({ data: [{ balance: "100000" }], error: null });
+            }
+            return Promise.resolve({
+              data: [buildTokenWalletRow({ wallet_id: buildDialecticExecuteJobPayload().walletId })],
+              error: null,
+            });
+          },
         },
       },
     });
@@ -335,7 +344,15 @@ Deno.test(
       prepareModelJob: boundPrepare,
     });
 
-    const executeJob: DialecticJobRow = { ...mockJob(), job_type: "EXECUTE" };
+    const executeJobPayload = buildDialecticExecuteJobPayload({
+      planner_metadata: { recipe_step_id: "step-1", recipe_template_id: "test-template-id" },
+    });
+    if (!isJson(executeJobPayload)) {
+      throw new Error("executeJobPayload is not Json-compatible");
+    }
+    const executeJob = buildDialecticJobRow({
+      payload: executeJobPayload,
+    });
 
     try {
       await processSimpleJob(
@@ -390,7 +407,7 @@ Deno.test(
       }
       const enqueueParams: EnqueueModelCallParams = enqueueParamsUnknown;
       const enqueuePayload: EnqueueModelCallPayload = enqueuePayloadUnknown;
-      assertEquals(enqueueParams.job.id, mockJob().id);
+      assertEquals(enqueueParams.job.id, executeJob.id);
 
       const chatApiRequest: ChatApiRequest = enqueuePayload.chatApiRequest;
       assertExists(chatApiRequest.resourceDocuments);
@@ -1091,7 +1108,7 @@ Deno.test({
         );
       }
 
-      const jobPayload = mockExecutePayload({
+      const jobPayload = buildDialecticExecuteJobPayload({
         projectId: testProjectId,
         sessionId: testSessionId,
         stageSlug: stage.slug,
@@ -1110,16 +1127,14 @@ Deno.test({
         throw new Error("jobPayload is not valid JSON");
       }
 
-      const testJob: DialecticJobRow = {
-        ...mockJob(),
+      const testJob = buildDialecticJobRow({
         id: crypto.randomUUID(),
         session_id: testSessionId,
         user_id: primaryUserId,
         stage_slug: stage.slug,
         iteration_number: testIterationNumber,
-        job_type: "EXECUTE",
         payload: jobPayload,
-      };
+      });
 
       // ---------------------------------------------------------------------
       // 7. Execute the pipeline

@@ -17,38 +17,10 @@ import type { AdapterResponsePayload, AdapterStreamChunk, ChatApiRequest, Provid
 import { MockLogger } from "../logger.mock.ts";
 import { Tables } from "../../types_db.ts";
 import { isJson } from "../utils/type_guards.ts";
-
+import { buildExtendedModelConfig, buildMockProvider } from "./ai_provider.mock.ts";
 import { Page } from 'npm:openai/pagination';
 
-// --- Mock Data & Helpers ---
-
-const MOCK_MODEL_CONFIG: AiModelExtendedConfig = {
-    api_identifier: 'openai-gpt-4o',
-    input_token_cost_rate: 2.5,
-    output_token_cost_rate: 10.0,
-    tokenization_strategy: { type: 'tiktoken', tiktoken_encoding_name: 'cl100k_base' },
-};
 const mockLogger = new MockLogger();
-
-if(!isJson(MOCK_MODEL_CONFIG)) {
-    throw new Error('MOCK_MODEL_CONFIG is not a valid JSON object');
-}
-
-const MOCK_PROVIDER: Tables<'ai_providers'> = {
-    id: "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a12", // Unique mock ID
-    provider: "openai",
-    api_identifier: "openai-gpt-4o",
-    name: "OpenAI GPT-4o",
-    description: "A mock OpenAI model for testing.",
-    is_active: true,
-    is_default_embedding: false,
-    is_default_generation: false,
-    is_enabled: true,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-    config: MOCK_MODEL_CONFIG,
-    min_plan_tier_level: 0,
-};
 
 /** Trimmed assistant text matching the legacy batch mock (`General Kenobi!`). */
 const MOCK_OPENAI_ASSISTANT_TEXT: string = 'General Kenobi!';
@@ -245,7 +217,7 @@ const mockOpenAiApi: MockApi = {
             api_identifier: `openai-${m.id}`,
             name: `OpenAI ${m.id}`,
             description: `Owned by: ${m.owned_by}`,
-            config: MOCK_MODEL_CONFIG,
+            config: buildExtendedModelConfig(),
         }));
     }
 };
@@ -261,7 +233,7 @@ Deno.test("OpenAI Adapter: Contract Compliance", async (t) => {
         listModelsStub = stub(OpenAiAdapter.prototype, "listModels", () => mockOpenAiApi.listModels());
     });
     
-    await testAdapterContract(t, OpenAiAdapter, mockOpenAiApi, MOCK_PROVIDER);
+    await testAdapterContract(t, OpenAiAdapter, mockOpenAiApi, buildMockProvider());
     
     await t.step("Teardown: Restore stubs", () => {
         sendMessageStub.restore();
@@ -275,7 +247,7 @@ Deno.test("OpenAiAdapter - Specific Tests: getEmbedding", async () => {
     const MOCK_EMBEDDING_MODEL_CONFIG: AiModelExtendedConfig = {
         api_identifier: 'openai-text-embedding-3-small',
         input_token_cost_rate: 0,
-        output_token_cost_rate: 0,
+        output_token_cost_rate: 1,
         tokenization_strategy: { type: 'tiktoken', tiktoken_encoding_name: 'cl100k_base', is_chatml_model: false },
     };
 
@@ -284,7 +256,7 @@ Deno.test("OpenAiAdapter - Specific Tests: getEmbedding", async () => {
     }
 
     const MOCK_EMBEDDING_PROVIDER: Tables<'ai_providers'> = {
-        ...MOCK_PROVIDER,
+        ...buildMockProvider(),
         id: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a13', // Unique mock ID
         api_identifier: 'openai-text-embedding-3-small',
         config: MOCK_EMBEDDING_MODEL_CONFIG,
@@ -319,7 +291,7 @@ Deno.test("OpenAiAdapter - Specific Tests: getEmbedding", async () => {
 });
 
 Deno.test("OpenAiAdapter - Specific Tests: uses max_completion_tokens for o-series", async () => {
-    const adapter = new OpenAiAdapter(MOCK_PROVIDER, 'sk-test-key', mockLogger);
+    const adapter = new OpenAiAdapter(buildMockProvider(), 'sk-test-key', mockLogger);
     const chatCreateStub = stub(OpenAI.Chat.Completions.prototype, "create", () => createMockStreamCompletionPromise(DEFAULT_OPENAI_STREAM_CHUNKS));
 
     try {
@@ -331,7 +303,7 @@ Deno.test("OpenAiAdapter - Specific Tests: uses max_completion_tokens for o-seri
             max_tokens_to_generate: 123,
         };
 
-        await adapter.sendMessage(request, MOCK_PROVIDER.api_identifier);
+        await adapter.sendMessage(request, buildMockProvider().api_identifier);
 
         assertEquals(chatCreateStub.calls.length, 1);
         assertStreamCreatePayload(chatCreateStub);
@@ -352,12 +324,18 @@ Deno.test("OpenAiAdapter - Specific Tests: uses max_completion_tokens for o-seri
 
 Deno.test("OpenAiAdapter - Specific Tests: uses max_tokens for legacy chat models", async () => {
 
-    const LEGACY_PROVIDER: Tables<'ai_providers'> = {
-        ...MOCK_PROVIDER,
-        api_identifier: 'openai-gpt-3.5-turbo',
-        config: Object.assign({}, MOCK_MODEL_CONFIG, {
+    const legacyConfig = Object.assign({}, buildExtendedModelConfig(), {
             api_identifier: 'openai-gpt-3.5-turbo',
-        }),
+          });
+
+          if(!isJson(legacyConfig)){
+            throw new Error("legacyConfig is not JSON")
+          }
+
+    const LEGACY_PROVIDER: Tables<'ai_providers'> = {
+        ...buildMockProvider(),
+        api_identifier: 'openai-gpt-3.5-turbo',
+        config: legacyConfig,
     };
 
     const adapter = new OpenAiAdapter(LEGACY_PROVIDER, 'sk-test-key', mockLogger);
@@ -397,7 +375,7 @@ Deno.test("OpenAiAdapter - resourceDocuments: when present appear as text in mes
     const chatCreateStub = stub(OpenAI.Chat.Completions.prototype, "create", () => createMockStreamCompletionPromise(DEFAULT_OPENAI_STREAM_CHUNKS));
 
     try {
-        const adapter = new OpenAiAdapter(MOCK_PROVIDER, 'sk-test-key', mockLogger);
+        const adapter = new OpenAiAdapter(buildMockProvider(), 'sk-test-key', mockLogger);
         const request: ChatApiRequest = {
             message: 'User prompt',
             providerId: 'test-provider',
@@ -408,7 +386,7 @@ Deno.test("OpenAiAdapter - resourceDocuments: when present appear as text in mes
             ],
         };
 
-        await adapter.sendMessage(request, MOCK_PROVIDER.api_identifier);
+        await adapter.sendMessage(request, buildMockProvider().api_identifier);
 
         assertEquals(chatCreateStub.calls.length, 1);
         assertStreamCreatePayload(chatCreateStub);
@@ -427,7 +405,7 @@ Deno.test("OpenAiAdapter - resourceDocuments: document labels are present in mes
     const chatCreateStub = stub(OpenAI.Chat.Completions.prototype, "create", () => createMockStreamCompletionPromise(DEFAULT_OPENAI_STREAM_CHUNKS));
 
     try {
-        const adapter = new OpenAiAdapter(MOCK_PROVIDER, 'sk-test-key', mockLogger);
+        const adapter = new OpenAiAdapter(buildMockProvider(), 'sk-test-key', mockLogger);
         const request: ChatApiRequest = {
             message: 'User prompt',
             providerId: 'test-provider',
@@ -437,7 +415,7 @@ Deno.test("OpenAiAdapter - resourceDocuments: document labels are present in mes
             ],
         };
 
-        await adapter.sendMessage(request, MOCK_PROVIDER.api_identifier);
+        await adapter.sendMessage(request, buildMockProvider().api_identifier);
 
         assertEquals(chatCreateStub.calls.length, 1);
         assertStreamCreatePayload(chatCreateStub);
@@ -456,7 +434,7 @@ Deno.test("OpenAiAdapter - resourceDocuments: empty resourceDocuments does not a
     const chatCreateStub = stub(OpenAI.Chat.Completions.prototype, "create", () => createMockStreamCompletionPromise(DEFAULT_OPENAI_STREAM_CHUNKS));
 
     try {
-        const adapter = new OpenAiAdapter(MOCK_PROVIDER, 'sk-test-key', mockLogger);
+        const adapter = new OpenAiAdapter(buildMockProvider(), 'sk-test-key', mockLogger);
         const request: ChatApiRequest = {
             message: 'User prompt',
             providerId: 'test-provider',
@@ -464,7 +442,7 @@ Deno.test("OpenAiAdapter - resourceDocuments: empty resourceDocuments does not a
             resourceDocuments: [],
         };
 
-        await adapter.sendMessage(request, MOCK_PROVIDER.api_identifier);
+        await adapter.sendMessage(request, buildMockProvider().api_identifier);
 
         assertEquals(chatCreateStub.calls.length, 1);
         assertStreamCreatePayload(chatCreateStub);
@@ -491,7 +469,7 @@ Deno.test("OpenAiAdapter - Specific Tests: listModels returns clean config (does
     }
 
     const DIRTY_PROVIDER: Tables<'ai_providers'> = {
-        ...MOCK_PROVIDER,
+        ...buildMockProvider(),
         id: 'dirty-provider-id',
         config: DIRTY_MODEL_CONFIG,
     };
@@ -541,7 +519,7 @@ Deno.test("OpenAiAdapter - Specific Tests: uses max_completion_tokens for gpt-5.
     }
 
     const GPT5_PROVIDER: Tables<'ai_providers'> = {
-        ...MOCK_PROVIDER,
+        ...buildMockProvider(),
         api_identifier: 'openai-gpt-5.2',
         config: GPT5_CONFIG,
     };
@@ -590,7 +568,7 @@ Deno.test("OpenAiAdapter - Specific Tests: uses max_completion_tokens for gpt-5.
     }
 
     const GPT5_MINI_PROVIDER: Tables<'ai_providers'> = {
-        ...MOCK_PROVIDER,
+        ...buildMockProvider(),
         api_identifier: 'openai-gpt-5.2-mini',
         config: GPT5_MINI_CONFIG,
     };
@@ -639,7 +617,7 @@ Deno.test("OpenAiAdapter - Specific Tests: uses max_completion_tokens for o1 mod
     }
 
     const O1_PROVIDER: Tables<'ai_providers'> = {
-        ...MOCK_PROVIDER,
+        ...buildMockProvider(),
         api_identifier: 'openai-o1',
         config: O1_CONFIG,
     };
@@ -688,7 +666,7 @@ Deno.test("OpenAiAdapter - Specific Tests: uses max_tokens for gpt-4-turbo", asy
     }
 
     const GPT4_TURBO_PROVIDER: Tables<'ai_providers'> = {
-        ...MOCK_PROVIDER,
+        ...buildMockProvider(),
         api_identifier: 'openai-gpt-4-turbo',
         config: GPT4_TURBO_CONFIG,
     };
@@ -730,7 +708,7 @@ Deno.test("OpenAiAdapter - resourceDocuments: throws when document_key is empty"
     const chatCreateStub = stub(OpenAI.Chat.Completions.prototype, "create", () => createMockStreamCompletionPromise(DEFAULT_OPENAI_STREAM_CHUNKS));
 
     try {
-        const adapter = new OpenAiAdapter(MOCK_PROVIDER, 'sk-test-key', mockLogger);
+        const adapter = new OpenAiAdapter(buildMockProvider(), 'sk-test-key', mockLogger);
         const request: ChatApiRequest = {
             message: 'User prompt',
             providerId: 'test-provider',
@@ -741,7 +719,7 @@ Deno.test("OpenAiAdapter - resourceDocuments: throws when document_key is empty"
         };
 
         await assertRejects(
-            () => adapter.sendMessage(request, MOCK_PROVIDER.api_identifier),
+            () => adapter.sendMessage(request, buildMockProvider().api_identifier),
             Error,
             'document_key',
         );
@@ -754,7 +732,7 @@ Deno.test("OpenAiAdapter - resourceDocuments: throws when stage_slug is empty", 
     const chatCreateStub = stub(OpenAI.Chat.Completions.prototype, "create", () => createMockStreamCompletionPromise(DEFAULT_OPENAI_STREAM_CHUNKS));
 
     try {
-        const adapter = new OpenAiAdapter(MOCK_PROVIDER, 'sk-test-key', mockLogger);
+        const adapter = new OpenAiAdapter(buildMockProvider(), 'sk-test-key', mockLogger);
         const request: ChatApiRequest = {
             message: 'User prompt',
             providerId: 'test-provider',
@@ -765,7 +743,7 @@ Deno.test("OpenAiAdapter - resourceDocuments: throws when stage_slug is empty", 
         };
 
         await assertRejects(
-            () => adapter.sendMessage(request, MOCK_PROVIDER.api_identifier),
+            () => adapter.sendMessage(request, buildMockProvider().api_identifier),
             Error,
             'stage_slug',
         );
@@ -799,7 +777,7 @@ Deno.test("OpenAiAdapter - stream: content is concatenation of multiple delta.co
   );
 
   try {
-    const adapter = new OpenAiAdapter(MOCK_PROVIDER, 'sk-test-key', mockLogger);
+    const adapter = new OpenAiAdapter(buildMockProvider(), 'sk-test-key', mockLogger);
     const request: ChatApiRequest = {
       message: 'Hello',
       providerId: 'provider-uuid-test',
@@ -807,7 +785,7 @@ Deno.test("OpenAiAdapter - stream: content is concatenation of multiple delta.co
       messages: [{ role: 'user', content: 'Hi' }],
     };
 
-    const result: AdapterResponsePayload = await adapter.sendMessage(request, MOCK_PROVIDER.api_identifier);
+    const result: AdapterResponsePayload = await adapter.sendMessage(request, buildMockProvider().api_identifier);
 
     assertEquals(chatCreateStub.calls.length, 1);
     assertStreamCreatePayload(chatCreateStub);
@@ -823,7 +801,7 @@ Deno.test("OpenAiAdapter - stream: token_usage is taken from final chunk usage f
   );
 
   try {
-    const adapter = new OpenAiAdapter(MOCK_PROVIDER, 'sk-test-key', mockLogger);
+    const adapter = new OpenAiAdapter(buildMockProvider(), 'sk-test-key', mockLogger);
     const request: ChatApiRequest = {
       message: 'Hello',
       providerId: 'provider-uuid-test',
@@ -831,7 +809,7 @@ Deno.test("OpenAiAdapter - stream: token_usage is taken from final chunk usage f
       messages: [{ role: 'user', content: 'Hi' }],
     };
 
-    const result: AdapterResponsePayload = await adapter.sendMessage(request, MOCK_PROVIDER.api_identifier);
+    const result: AdapterResponsePayload = await adapter.sendMessage(request, buildMockProvider().api_identifier);
 
     assertExists(result.token_usage);
     if (typeof result.token_usage !== 'object' || result.token_usage === null) {
@@ -855,7 +833,7 @@ Deno.test("OpenAiAdapter - stream: maps finish_reason stop from streamed chunks"
   );
 
   try {
-    const adapter = new OpenAiAdapter(MOCK_PROVIDER, 'sk-test-key', mockLogger);
+    const adapter = new OpenAiAdapter(buildMockProvider(), 'sk-test-key', mockLogger);
     const request: ChatApiRequest = {
       message: 'Hello',
       providerId: 'provider-uuid-test',
@@ -863,7 +841,7 @@ Deno.test("OpenAiAdapter - stream: maps finish_reason stop from streamed chunks"
       messages: [{ role: 'user', content: 'Hi' }],
     };
 
-    const result: AdapterResponsePayload = await adapter.sendMessage(request, MOCK_PROVIDER.api_identifier);
+    const result: AdapterResponsePayload = await adapter.sendMessage(request, buildMockProvider().api_identifier);
 
     assertEquals(result.finish_reason, 'stop');
   } finally {
@@ -888,7 +866,7 @@ Deno.test("OpenAiAdapter - stream: maps finish_reason length from streamed chunk
   );
 
   try {
-    const adapter = new OpenAiAdapter(MOCK_PROVIDER, 'sk-test-key', mockLogger);
+    const adapter = new OpenAiAdapter(buildMockProvider(), 'sk-test-key', mockLogger);
     const request: ChatApiRequest = {
       message: 'Hello',
       providerId: 'provider-uuid-test',
@@ -896,7 +874,7 @@ Deno.test("OpenAiAdapter - stream: maps finish_reason length from streamed chunk
       messages: [{ role: 'user', content: 'Hi' }],
     };
 
-    const result: AdapterResponsePayload = await adapter.sendMessage(request, MOCK_PROVIDER.api_identifier);
+    const result: AdapterResponsePayload = await adapter.sendMessage(request, buildMockProvider().api_identifier);
 
     assertEquals(result.finish_reason, 'length');
   } finally {
@@ -921,7 +899,7 @@ Deno.test("OpenAiAdapter - stream: maps finish_reason content_filter from stream
   );
 
   try {
-    const adapter = new OpenAiAdapter(MOCK_PROVIDER, 'sk-test-key', mockLogger);
+    const adapter = new OpenAiAdapter(buildMockProvider(), 'sk-test-key', mockLogger);
     const request: ChatApiRequest = {
       message: 'Hello',
       providerId: 'provider-uuid-test',
@@ -929,7 +907,7 @@ Deno.test("OpenAiAdapter - stream: maps finish_reason content_filter from stream
       messages: [{ role: 'user', content: 'Hi' }],
     };
 
-    const result: AdapterResponsePayload = await adapter.sendMessage(request, MOCK_PROVIDER.api_identifier);
+    const result: AdapterResponsePayload = await adapter.sendMessage(request, buildMockProvider().api_identifier);
 
     assertEquals(result.finish_reason, 'content_filter');
   } finally {
@@ -958,7 +936,7 @@ Deno.test("OpenAiAdapter - stream: chunks with null delta.content are skipped wi
   );
 
   try {
-    const adapter = new OpenAiAdapter(MOCK_PROVIDER, 'sk-test-key', mockLogger);
+    const adapter = new OpenAiAdapter(buildMockProvider(), 'sk-test-key', mockLogger);
     const request: ChatApiRequest = {
       message: 'Hello',
       providerId: 'provider-uuid-test',
@@ -966,7 +944,7 @@ Deno.test("OpenAiAdapter - stream: chunks with null delta.content are skipped wi
       messages: [{ role: 'user', content: 'Hi' }],
     };
 
-    const result: AdapterResponsePayload = await adapter.sendMessage(request, MOCK_PROVIDER.api_identifier);
+    const result: AdapterResponsePayload = await adapter.sendMessage(request, buildMockProvider().api_identifier);
 
     assertEquals(result.content.trim(), 'hello');
   } finally {
@@ -987,7 +965,7 @@ Deno.test("OpenAiAdapter - stream: empty text stream throws descriptive error", 
   );
 
   try {
-    const adapter = new OpenAiAdapter(MOCK_PROVIDER, 'sk-test-key', mockLogger);
+    const adapter = new OpenAiAdapter(buildMockProvider(), 'sk-test-key', mockLogger);
     const request: ChatApiRequest = {
       message: 'Hello',
       providerId: 'provider-uuid-test',
@@ -996,7 +974,7 @@ Deno.test("OpenAiAdapter - stream: empty text stream throws descriptive error", 
     };
 
     await assertRejects(
-      () => adapter.sendMessage(request, MOCK_PROVIDER.api_identifier),
+      () => adapter.sendMessage(request, buildMockProvider().api_identifier),
       Error,
       'empty',
     );
@@ -1011,7 +989,7 @@ Deno.test("OpenAiAdapter - stream: error during stream iteration propagates", as
   );
 
   try {
-    const adapter = new OpenAiAdapter(MOCK_PROVIDER, 'sk-test-key', mockLogger);
+    const adapter = new OpenAiAdapter(buildMockProvider(), 'sk-test-key', mockLogger);
     const request: ChatApiRequest = {
       message: 'Hello',
       providerId: 'provider-uuid-test',
@@ -1020,7 +998,7 @@ Deno.test("OpenAiAdapter - stream: error during stream iteration propagates", as
     };
 
     await assertRejects(
-      () => adapter.sendMessage(request, MOCK_PROVIDER.api_identifier),
+      () => adapter.sendMessage(request, buildMockProvider().api_identifier),
       Error,
       'simulated stream failure',
     );
@@ -1047,7 +1025,7 @@ Deno.test("OpenAiAdapter - sendMessageStream: yields text_delta chunks for each 
   );
 
   try {
-    const adapter = new OpenAiAdapter(MOCK_PROVIDER, 'sk-test-key', mockLogger);
+    const adapter = new OpenAiAdapter(buildMockProvider(), 'sk-test-key', mockLogger);
     const request: ChatApiRequest = {
       message: 'Hello',
       providerId: 'provider-uuid-test',
@@ -1055,7 +1033,7 @@ Deno.test("OpenAiAdapter - sendMessageStream: yields text_delta chunks for each 
       messages: [{ role: 'user', content: 'Hi' }],
     };
     const chunks: AdapterStreamChunk[] = await collectAdapterStreamChunks(
-      adapter.sendMessageStream(request, MOCK_PROVIDER.api_identifier),
+      adapter.sendMessageStream(request, buildMockProvider().api_identifier),
     );
     const textDeltas: string[] = [];
     for (const c of chunks) {
@@ -1075,7 +1053,7 @@ Deno.test("OpenAiAdapter - sendMessageStream: yields usage chunk from stream chu
   );
 
   try {
-    const adapter = new OpenAiAdapter(MOCK_PROVIDER, 'sk-test-key', mockLogger);
+    const adapter = new OpenAiAdapter(buildMockProvider(), 'sk-test-key', mockLogger);
     const request: ChatApiRequest = {
       message: 'Hello',
       providerId: 'provider-uuid-test',
@@ -1083,7 +1061,7 @@ Deno.test("OpenAiAdapter - sendMessageStream: yields usage chunk from stream chu
       messages: [{ role: 'user', content: 'Hi' }],
     };
     const chunks: AdapterStreamChunk[] = await collectAdapterStreamChunks(
-      adapter.sendMessageStream(request, MOCK_PROVIDER.api_identifier),
+      adapter.sendMessageStream(request, buildMockProvider().api_identifier),
     );
     const usageIdx: number = chunks.findIndex((c) => c.type === 'usage');
     const doneIdx: number = chunks.findIndex((c) => c.type === 'done');
@@ -1109,7 +1087,7 @@ Deno.test("OpenAiAdapter - sendMessageStream: yields done with finish_reason sto
   );
 
   try {
-    const adapter = new OpenAiAdapter(MOCK_PROVIDER, 'sk-test-key', mockLogger);
+    const adapter = new OpenAiAdapter(buildMockProvider(), 'sk-test-key', mockLogger);
     const request: ChatApiRequest = {
       message: 'Hello',
       providerId: 'provider-uuid-test',
@@ -1117,7 +1095,7 @@ Deno.test("OpenAiAdapter - sendMessageStream: yields done with finish_reason sto
       messages: [{ role: 'user', content: 'Hi' }],
     };
     const chunks: AdapterStreamChunk[] = await collectAdapterStreamChunks(
-      adapter.sendMessageStream(request, MOCK_PROVIDER.api_identifier),
+      adapter.sendMessageStream(request, buildMockProvider().api_identifier),
     );
     const doneChunk: AdapterStreamChunk | undefined = chunks.find((c) => c.type === 'done');
     assertExists(doneChunk);
@@ -1145,7 +1123,7 @@ Deno.test("OpenAiAdapter - sendMessageStream: yields done with finish_reason len
   );
 
   try {
-    const adapter = new OpenAiAdapter(MOCK_PROVIDER, 'sk-test-key', mockLogger);
+    const adapter = new OpenAiAdapter(buildMockProvider(), 'sk-test-key', mockLogger);
     const request: ChatApiRequest = {
       message: 'Hello',
       providerId: 'provider-uuid-test',
@@ -1153,7 +1131,7 @@ Deno.test("OpenAiAdapter - sendMessageStream: yields done with finish_reason len
       messages: [{ role: 'user', content: 'Hi' }],
     };
     const chunks: AdapterStreamChunk[] = await collectAdapterStreamChunks(
-      adapter.sendMessageStream(request, MOCK_PROVIDER.api_identifier),
+      adapter.sendMessageStream(request, buildMockProvider().api_identifier),
     );
     const doneChunk: AdapterStreamChunk | undefined = chunks.find((c) => c.type === 'done');
     assertExists(doneChunk);
@@ -1181,7 +1159,7 @@ Deno.test("OpenAiAdapter - sendMessageStream: yields done with finish_reason con
   );
 
   try {
-    const adapter = new OpenAiAdapter(MOCK_PROVIDER, 'sk-test-key', mockLogger);
+    const adapter = new OpenAiAdapter(buildMockProvider(), 'sk-test-key', mockLogger);
     const request: ChatApiRequest = {
       message: 'Hello',
       providerId: 'provider-uuid-test',
@@ -1189,7 +1167,7 @@ Deno.test("OpenAiAdapter - sendMessageStream: yields done with finish_reason con
       messages: [{ role: 'user', content: 'Hi' }],
     };
     const chunks: AdapterStreamChunk[] = await collectAdapterStreamChunks(
-      adapter.sendMessageStream(request, MOCK_PROVIDER.api_identifier),
+      adapter.sendMessageStream(request, buildMockProvider().api_identifier),
     );
     const doneChunk: AdapterStreamChunk | undefined = chunks.find((c) => c.type === 'done');
     assertExists(doneChunk);
@@ -1223,7 +1201,7 @@ Deno.test("OpenAiAdapter - sendMessageStream: yields done with finish_reason unk
   );
 
   try {
-    const adapter = new OpenAiAdapter(MOCK_PROVIDER, 'sk-test-key', mockLogger);
+    const adapter = new OpenAiAdapter(buildMockProvider(), 'sk-test-key', mockLogger);
     const request: ChatApiRequest = {
       message: 'Hello',
       providerId: 'provider-uuid-test',
@@ -1231,7 +1209,7 @@ Deno.test("OpenAiAdapter - sendMessageStream: yields done with finish_reason unk
       messages: [{ role: 'user', content: 'Hi' }],
     };
     const chunks: AdapterStreamChunk[] = await collectAdapterStreamChunks(
-      adapter.sendMessageStream(request, MOCK_PROVIDER.api_identifier),
+      adapter.sendMessageStream(request, buildMockProvider().api_identifier),
     );
     const doneChunk: AdapterStreamChunk | undefined = chunks.find((c) => c.type === 'done');
     assertExists(doneChunk);
@@ -1248,7 +1226,7 @@ Deno.test("OpenAiAdapter - sendMessageStream: OpenAI APIError becomes wrapped Er
   );
 
   try {
-    const adapter = new OpenAiAdapter(MOCK_PROVIDER, 'sk-test-key', mockLogger);
+    const adapter = new OpenAiAdapter(buildMockProvider(), 'sk-test-key', mockLogger);
     const request: ChatApiRequest = {
       message: 'Hello',
       providerId: 'provider-uuid-test',
@@ -1257,7 +1235,7 @@ Deno.test("OpenAiAdapter - sendMessageStream: OpenAI APIError becomes wrapped Er
     };
     await assertRejects(
       async () => {
-        for await (const _ of adapter.sendMessageStream(request, MOCK_PROVIDER.api_identifier)) {
+        for await (const _ of adapter.sendMessageStream(request, buildMockProvider().api_identifier)) {
           // drain
         }
       },
@@ -1270,12 +1248,16 @@ Deno.test("OpenAiAdapter - sendMessageStream: OpenAI APIError becomes wrapped Er
 });
 
 Deno.test("OpenAiAdapter - sendMessageStream: same chat.completions.create payload as sendMessage (model strip, resource docs, max_tokens vs max_completion_tokens)", async () => {
-  const LEGACY_PROVIDER: Tables<'ai_providers'> = {
-    ...MOCK_PROVIDER,
+  const legacyConfig = Object.assign({}, buildExtendedModelConfig(), {
     api_identifier: 'openai-gpt-3.5-turbo',
-    config: Object.assign({}, MOCK_MODEL_CONFIG, {
-      api_identifier: 'openai-gpt-3.5-turbo',
-    }),
+  });
+  if(!isJson(legacyConfig)){
+    throw new Error("legacyConfig is not JSON");
+  }
+  const LEGACY_PROVIDER: Tables<'ai_providers'> = {
+    ...buildMockProvider(),
+    api_identifier: 'openai-gpt-3.5-turbo',
+    config: legacyConfig,
   };
 
   const chatCreateStub = stub(OpenAI.Chat.Completions.prototype, "create", () =>
@@ -1321,7 +1303,7 @@ Deno.test("OpenAiAdapter - sendMessageStream: throws when no stream chunk includ
   );
 
   try {
-    const adapter = new OpenAiAdapter(MOCK_PROVIDER, 'sk-test-key', mockLogger);
+    const adapter = new OpenAiAdapter(buildMockProvider(), 'sk-test-key', mockLogger);
     const request: ChatApiRequest = {
       message: 'Hello',
       providerId: 'provider-uuid-test',
@@ -1330,7 +1312,7 @@ Deno.test("OpenAiAdapter - sendMessageStream: throws when no stream chunk includ
     };
     await assertRejects(
       async () => {
-        for await (const _ of adapter.sendMessageStream(request, MOCK_PROVIDER.api_identifier)) {
+        for await (const _ of adapter.sendMessageStream(request, buildMockProvider().api_identifier)) {
           // drain
         }
       },

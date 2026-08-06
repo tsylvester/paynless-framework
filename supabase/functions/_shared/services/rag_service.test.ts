@@ -28,7 +28,7 @@ import { RagServiceError } from '../utils/errors.ts';
 import { PostgrestError } from 'npm:@supabase/postgrest-js@1.15.5';
 import { EmbeddingClient } from './indexing_service.ts';
 import { DummyAdapter } from '../ai_service/dummy_adapter.ts';
-import { MOCK_PROVIDER } from '../ai_service/ai_provider.mock.ts';
+import { buildMockProvider() } from '../ai_service/ai_provider.mock.ts';
 import { createMockAdminTokenWalletService } from './tokenwallet/admin/adminTokenWalletService.mock.ts';
 import { FileType } from '../types/file_manager.types.ts';
 
@@ -75,7 +75,7 @@ describe('RagService', () => {
         indexDocument: () => Promise.resolve({ success: true, tokensUsed: 0 }),
     };
     // Use real EmbeddingClient with DummyAdapter
-    const dummyAdapter = new DummyAdapter(MOCK_PROVIDER, 'dummy-key', new MockLogger());
+    const dummyAdapter = new DummyAdapter(buildMockProvider(), 'dummy-key', new MockLogger());
     mockEmbeddingClient = new EmbeddingClient(dummyAdapter);
 
     deps = {
@@ -393,7 +393,7 @@ describe('RagService', () => {
 
 Deno.test("RagService issues RPC with 3072-d query embedding and returns non-empty context", async () => {
   const logger = new MockLogger();
-  const dummyAdapter = new DummyAdapter(MOCK_PROVIDER, "dummy-key", logger);
+  const dummyAdapter = new DummyAdapter(buildMockProvider(), "dummy-key", logger);
   const embeddingClient = new EmbeddingClient(dummyAdapter);
   const chunkRowId = crypto.randomUUID();
   const emptyInputsRelevance: RelevanceRule[] = [];

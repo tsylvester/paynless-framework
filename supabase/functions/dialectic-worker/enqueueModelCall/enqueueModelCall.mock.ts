@@ -24,34 +24,7 @@ import type {
     EnqueueModelCallSuccessReturn,
 } from "./enqueueModelCall.interface.ts";
 import { mockComputeJobSig } from "../../_shared/utils/computeJobSig/computeJobSig.mock.ts";
-function createDefaultEnqueueAiProviderRow(): Tables<"ai_providers"> {
-    const row: Tables<"ai_providers"> = {
-        id: "model-def",
-        provider: "mock-provider",
-        name: "Mock AI",
-        api_identifier: "mock-ai-v1",
-        config: {
-            tokenization_strategy: {
-                type: "rough_char_count",
-            },
-            context_window_tokens: 10000,
-            input_token_cost_rate: 0.001,
-            output_token_cost_rate: 0.002,
-            provider_max_input_tokens: 100,
-            provider_max_output_tokens: 50,
-            api_identifier: "mock-ai-v1",
-        },
-        created_at: new Date().toISOString(),
-        description: null,
-        is_active: true,
-        is_enabled: true,
-        is_default_embedding: false,
-        is_default_generation: false,
-        updated_at: new Date().toISOString(),
-        min_plan_tier_level: 0,
-    };
-    return row;
-}
+import { buildMockProvider } from "../../_shared/ai_service/ai_provider.mock.ts";
 
 function createDefaultEnqueueJobRow(): DialecticJobRow {
     const job: DialecticJobRow = createMockJobRow(
@@ -162,7 +135,7 @@ export function createMockEnqueueModelCallParams(
     const base: EnqueueModelCallParams = {
         dbClient,
         job: createDefaultEnqueueJobRow(),
-        providerRow: createDefaultEnqueueAiProviderRow(),
+        providerRow: buildMockProvider(),
         userAuthToken: "mock-user-jwt",
         output_type: FileType.HeaderContext,
         userConfig: { tier_output_cap_tokens: null },

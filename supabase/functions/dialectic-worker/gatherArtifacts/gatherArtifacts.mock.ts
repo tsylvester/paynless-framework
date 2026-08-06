@@ -144,31 +144,6 @@ export function buildHeaderContextRule(
   };
 }
 
-export function buildDialecticProjectResourceRow(
-  overrides?: Partial<DialecticProjectResourceRow>,
-): DialecticProjectResourceRow {
-  const now = new Date().toISOString();
-  return {
-    id: "resource-1",
-    project_id: "project-abc",
-    session_id: "session-456",
-    iteration_number: 1,
-    stage_slug: "thesis",
-    resource_type: "rendered_document",
-    storage_bucket: "dialectic-contributions",
-    storage_path: "project-abc/session_session-456/iteration_1/thesis/documents",
-    file_name: "model-collect_1_business_case.md",
-    mime_type: "text/markdown",
-    size_bytes: 100,
-    user_id: "user-1",
-    source_contribution_id: null,
-    resource_description: null,
-    created_at: now,
-    updated_at: now,
-    ...overrides,
-  };
-}
-
 export function buildDialecticFeedbackRow(
   overrides?: Partial<DialecticFeedbackRow>,
 ): DialecticFeedbackRow {

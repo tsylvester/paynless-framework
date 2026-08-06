@@ -5,7 +5,7 @@ import { ILogger } from "../types.ts";
 import { CreateEmbeddingResponse } from "npm:openai/resources/embeddings";
 import { AdapterResponsePayload, EmbeddingResponse, ProviderModelInfo } from "../types.ts";
 import { ChatApiRequest } from "../types.ts";
-import { MOCK_PROVIDER } from "./ai_provider.mock.ts";
+import { buildMockProvider } from "./ai_provider.mock.ts";
 import { MockLogger } from "../logger.mock.ts";
 /**
  * A mock of the OpenAiAdapter that spies on its methods and returns canned data.
@@ -13,7 +13,7 @@ import { MockLogger } from "../logger.mock.ts";
  */
 class MockOpenAiAdapter extends OpenAiAdapter {
     constructor() {
-        super(MOCK_PROVIDER, "sk-mock-key", new MockLogger());
+        super(buildMockProvider(), "sk-mock-key", new MockLogger());
     }
 
     // We override the original methods to provide predictable, mock implementations.

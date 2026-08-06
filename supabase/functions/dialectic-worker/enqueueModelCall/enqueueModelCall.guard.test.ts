@@ -1,11 +1,17 @@
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import type { EnqueueModelCallDeps } from "./enqueueModelCall.interface.ts";
+import { FileType } from "../../_shared/types/file_manager.types.ts";
 import {
+    createMockAiStreamEventBody,
+    createMockAiStreamEventData,
     createMockEnqueueModelCallDeps,
     createMockEnqueueModelCallErrorReturn,
     createMockEnqueueModelCallParams,
     createMockEnqueueModelCallPayload,
     createMockEnqueueModelCallSuccessReturn,
+    invalidateAiStreamEventBody,
+    invalidateAiStreamEventData,
+    invalidateEnqueueModelCallParams,
 } from "./enqueueModelCall.mock.ts";
 import {
     isAiStreamEventBody,
@@ -197,6 +203,47 @@ Deno.test(
 );
 
 Deno.test(
+    "Type Guard: isEnqueueModelCallParams returns false when output_type is not a FileType",
+    () => {
+        assertEquals(
+            isEnqueueModelCallParams(
+                invalidateEnqueueModelCallParams({ output_type: "___not_a_file_type___" }),
+            ),
+            false,
+        );
+    },
+);
+
+Deno.test(
+    "Type Guard: isEnqueueModelCallParams accepts every model-call output type",
+    () => {
+        const full = createMockEnqueueModelCallParams();
+        assertEquals(
+            isEnqueueModelCallParams({
+                dbClient: full.dbClient,
+                job: full.job,
+                providerRow: full.providerRow,
+                userAuthToken: full.userAuthToken,
+                output_type: FileType.CompressedContextRawJson,
+                userConfig: full.userConfig,
+            }),
+            true,
+        );
+        assertEquals(
+            isEnqueueModelCallParams({
+                dbClient: full.dbClient,
+                job: full.job,
+                providerRow: full.providerRow,
+                userAuthToken: full.userAuthToken,
+                output_type: FileType.CompressedContext,
+                userConfig: full.userConfig,
+            }),
+            true,
+        );
+    },
+);
+
+Deno.test(
     "Type Guard: isEnqueueModelCallPayload returns true for full mock payload",
     () => {
         assertEquals(
@@ -330,14 +377,7 @@ Deno.test(
     "Type Guard: isAiStreamEventData returns true for valid object with sig field",
     () => {
         assertEquals(
-            isAiStreamEventData({
-                job_id: "job-1",
-                api_identifier: "api-id",
-                model_config: { api_identifier: "api-id" },
-                chat_api_request: { message: "m", providerId: "p", promptId: "q" },
-                sig: "mock-sig",
-                user_config: { tier_output_cap_tokens: null },
-            }),
+            isAiStreamEventData(createMockAiStreamEventData()),
             true,
         );
     },
@@ -346,80 +386,40 @@ Deno.test(
 Deno.test(
     "Type Guard: isAiStreamEventData returns false when job_id is missing",
     () => {
-        assertEquals(
-            isAiStreamEventData({
-                api_identifier: "api-id",
-                model_config: { api_identifier: "api-id" },
-                chat_api_request: { message: "m", providerId: "p", promptId: "q" },
-                user_jwt: "jwt-token",
-                user_config: { tier_output_cap_tokens: null },
-            }),
-            false,
-        );
+        const { job_id: _job_id, ...rest } = createMockAiStreamEventData();
+        assertEquals(isAiStreamEventData(rest), false);
     },
 );
 
 Deno.test(
     "Type Guard: isAiStreamEventData returns false when api_identifier is missing",
     () => {
-        assertEquals(
-            isAiStreamEventData({
-                job_id: "job-1",
-                model_config: { api_identifier: "api-id" },
-                chat_api_request: { message: "m", providerId: "p", promptId: "q" },
-                user_jwt: "jwt-token",
-                user_config: { tier_output_cap_tokens: null },
-            }),
-            false,
-        );
+        const { api_identifier: _api_identifier, ...rest } = createMockAiStreamEventData();
+        assertEquals(isAiStreamEventData(rest), false);
     },
 );
 
 Deno.test(
     "Type Guard: isAiStreamEventData returns false when model_config is missing",
     () => {
-        assertEquals(
-            isAiStreamEventData({
-                job_id: "job-1",
-                api_identifier: "api-id",
-                chat_api_request: { message: "m", providerId: "p", promptId: "q" },
-                user_jwt: "jwt-token",
-                user_config: { tier_output_cap_tokens: null },
-            }),
-            false,
-        );
+        const { model_config: _model_config, ...rest } = createMockAiStreamEventData();
+        assertEquals(isAiStreamEventData(rest), false);
     },
 );
 
 Deno.test(
     "Type Guard: isAiStreamEventData returns false when chat_api_request is missing",
     () => {
-        assertEquals(
-            isAiStreamEventData({
-                job_id: "job-1",
-                api_identifier: "api-id",
-                model_config: { api_identifier: "api-id" },
-                user_jwt: "jwt-token",
-                user_config: { tier_output_cap_tokens: null },
-            }),
-            false,
-        );
+        const { chat_api_request: _chat_api_request, ...rest } = createMockAiStreamEventData();
+        assertEquals(isAiStreamEventData(rest), false);
     },
 );
 
 Deno.test(
     "Type Guard: isAiStreamEventData returns false when sig is missing",
     () => {
-        assertEquals(
-            isAiStreamEventData({
-                job_id: "job-1",
-                api_identifier: "api-id",
-                model_config: { api_identifier: "api-id" },
-                chat_api_request: { message: "m", providerId: "p", promptId: "q" },
-                user_config: { tier_output_cap_tokens: null },
-            }),
-            false,
-        );
+        const { sig: _sig, ...rest } = createMockAiStreamEventData();
+        assertEquals(isAiStreamEventData(rest), false);
     },
 );
 
@@ -435,17 +435,7 @@ Deno.test(
     "Type Guard: isAiStreamEventBody returns true for valid object with eventName and data",
     () => {
         assertEquals(
-            isAiStreamEventBody({
-                eventName: "ai-stream",
-                data: {
-                    job_id: "job-1",
-                    api_identifier: "api-id",
-                    model_config: { api_identifier: "api-id" },
-                    chat_api_request: { message: "m", providerId: "p", promptId: "q" },
-                    user_jwt: "jwt-token",
-                    tier_output_cap_tokens: null,
-                },
-            }),
+            isAiStreamEventBody(createMockAiStreamEventBody()),
             true,
         );
     },
@@ -454,37 +444,18 @@ Deno.test(
 Deno.test(
     "Type Guard: isAiStreamEventBody returns false when eventName is missing",
     () => {
-        assertEquals(
-            isAiStreamEventBody({
-                data: {
-                    job_id: "job-1",
-                    api_identifier: "api-id",
-                    model_config: { api_identifier: "api-id" },
-                    chat_api_request: { message: "m", providerId: "p", promptId: "q" },
-                    user_jwt: "jwt-token",
-                    tier_output_cap_tokens: null,
-                },
-            }),
-            false,
-        );
+        const { eventName: _eventName, ...rest } = createMockAiStreamEventBody();
+        assertEquals(isAiStreamEventBody(rest), false);
     },
 );
 
 Deno.test(
-    "Type Guard: isAiStreamEventBody returns false when eventName is not ai-stream",
+    "Type Guard: isAiStreamEventBody returns false when eventName is not ai-stream-background",
     () => {
         assertEquals(
-            isAiStreamEventBody({
-                eventName: "other-event",
-                data: {
-                    job_id: "job-1",
-                    api_identifier: "api-id",
-                    model_config: { api_identifier: "api-id" },
-                    chat_api_request: { message: "m", providerId: "p", promptId: "q" },
-                    user_jwt: "jwt-token",
-                    tier_output_cap_tokens: null,
-                },
-            }),
+            isAiStreamEventBody(
+                invalidateAiStreamEventBody({ eventName: "ai-stream" }),
+            ),
             false,
         );
     },
@@ -493,10 +464,19 @@ Deno.test(
 Deno.test(
     "Type Guard: isAiStreamEventBody returns false when data is missing",
     () => {
+        const { data: _data, ...rest } = createMockAiStreamEventBody();
+        assertEquals(isAiStreamEventBody(rest), false);
+    },
+);
+
+Deno.test(
+    "Type Guard: isAiStreamEventBody returns false when data is present but malformed",
+    () => {
+        const { sig: _sig, ...malformedData } = createMockAiStreamEventData();
         assertEquals(
-            isAiStreamEventBody({
-                eventName: "ai-stream",
-            }),
+            isAiStreamEventBody(
+                invalidateAiStreamEventBody({ data: malformedData }),
+            ),
             false,
         );
     },
@@ -546,15 +526,11 @@ Deno.test(
 Deno.test(
     "Type Guard: isAiStreamEventData returns false when user_jwt is present instead of sig",
     () => {
+        const { sig: _sig, ...rest } = createMockAiStreamEventData({
+            user_config: { tier_output_cap_tokens: null },
+        });
         assertEquals(
-            isAiStreamEventData({
-                job_id: "job-1",
-                api_identifier: "api-id",
-                model_config: { api_identifier: "api-id" },
-                chat_api_request: { message: "m", providerId: "p", promptId: "q" },
-                user_jwt: "jwt-token",
-                tier_output_cap_tokens: null,
-            }),
+            isAiStreamEventData({ ...rest, user_jwt: "jwt-token" }),
             false,
         );
     },
@@ -564,14 +540,11 @@ Deno.test(
     "Type Guard: isAiStreamEventData returns true when tier_output_cap_tokens is null",
     () => {
         assertEquals(
-            isAiStreamEventData({
-                job_id: "job-1",
-                api_identifier: "api-id",
-                model_config: { api_identifier: "api-id" },
-                chat_api_request: { message: "m", providerId: "p", promptId: "q" },
-                sig: "mock-sig",
-                user_config: { tier_output_cap_tokens: null },
-            }),
+            isAiStreamEventData(
+                createMockAiStreamEventData({
+                    user_config: { tier_output_cap_tokens: null },
+                }),
+            ),
             true,
         );
     },
@@ -581,14 +554,11 @@ Deno.test(
     "Type Guard: isAiStreamEventData returns true when tier_output_cap_tokens is 32768",
     () => {
         assertEquals(
-            isAiStreamEventData({
-                job_id: "job-1",
-                api_identifier: "api-id",
-                model_config: { api_identifier: "api-id" },
-                chat_api_request: { message: "m", providerId: "p", promptId: "q" },
-                sig: "mock-sig",
-                user_config: { tier_output_cap_tokens: 32768 },
-            }),
+            isAiStreamEventData(
+                createMockAiStreamEventData({
+                    user_config: { tier_output_cap_tokens: 32768 },
+                }),
+            ),
             true,
         );
     },
@@ -598,13 +568,33 @@ Deno.test(
     "Type Guard: isAiStreamEventData returns false when tier_output_cap_tokens is missing",
     () => {
         assertEquals(
-            isAiStreamEventData({
-                job_id: "job-1",
-                api_identifier: "api-id",
-                model_config: { api_identifier: "api-id" },
-                chat_api_request: { message: "m", providerId: "p", promptId: "q" },
-                sig: "mock-sig",
-            }),
+            isAiStreamEventData(
+                invalidateAiStreamEventData({ user_config: {} }),
+            ),
+            false,
+        );
+    },
+);
+
+Deno.test(
+    "Type Guard: isAiStreamEventData returns false when model_config is not an AiModelExtendedConfig",
+    () => {
+        assertEquals(
+            isAiStreamEventData(
+                invalidateAiStreamEventData({ model_config: {} }),
+            ),
+            false,
+        );
+    },
+);
+
+Deno.test(
+    "Type Guard: isAiStreamEventData returns false when chat_api_request is not a ChatApiRequest",
+    () => {
+        assertEquals(
+            isAiStreamEventData(
+                invalidateAiStreamEventData({ chat_api_request: {} }),
+            ),
             false,
         );
     },

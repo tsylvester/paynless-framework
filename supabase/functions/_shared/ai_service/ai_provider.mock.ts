@@ -8,75 +8,41 @@ import type {
     AdapterStreamChunk,
   } from '../types.ts';
 import { isTokenUsage } from '../utils/type_guards.ts';
-import { Tables } from '../../types_db.ts';
 import { isJson } from '../utils/type_guards.ts';
+import { Tables } from '../../types_db.ts';
 
-const MOCK_MODEL_CONFIG: AiModelExtendedConfig = {
-  api_identifier: "dummy-model-v1",
-  input_token_cost_rate: 1,
-  output_token_cost_rate: 1,
-  tokenization_strategy: { 
-      type: 'tiktoken', 
-      tiktoken_encoding_name: 'cl100k_base' 
-  },
-};
-
-if(!isJson(MOCK_MODEL_CONFIG)) {
-  throw new Error('MOCK_MODEL_CONFIG is not a valid JSON object');
-}
-
-export const MOCK_PROVIDER: Tables<'ai_providers'> = {
-  id: "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11",
-  provider: "dummy",
-  api_identifier: "dummy-model-v1",
-  name: "Dummy Model",
-  description: "A dummy AI model for testing purposes.",
-  is_active: true,
-  is_default_embedding: false,
-  is_default_generation: false,
-  is_enabled: true,
-  created_at: new Date().toISOString(),
-  updated_at: new Date().toISOString(),
-  config: MOCK_MODEL_CONFIG,
-  min_plan_tier_level: 0,
-};
-
-export type MockProviderOverrides = {
-  id?: string;
-  provider?: string;
-  api_identifier?: string;
-  name?: string;
-  description?: string;
-  is_active?: boolean;
-  is_default_embedding?: boolean;
-  is_default_generation?: boolean;  
-  is_enabled?: boolean;
-  created_at?: string;
-  updated_at?: string;
-  config?: AiModelExtendedConfig;
-  min_plan_tier_level?: number;
-};
+export type MockProviderOverrides = Partial<Tables<'ai_providers'>>;
 
 export function buildMockProvider(overrides?: MockProviderOverrides): Tables<'ai_providers'> {
+  const config = buildExtendedModelConfig();
+  if (!isJson(config)) {
+    throw new Error('buildExtendedModelConfig did not produce a Json-compatible value');
+  }
   const base: Tables<'ai_providers'> = {
-    id: overrides?.id !== undefined ? overrides.id : MOCK_PROVIDER.id,
-    provider: overrides?.provider !== undefined ? overrides.provider : MOCK_PROVIDER.provider,
-    api_identifier: overrides?.api_identifier !== undefined ? overrides.api_identifier : MOCK_PROVIDER.api_identifier,
-    name: overrides?.name !== undefined ? overrides.name : MOCK_PROVIDER.name,
-    description: overrides?.description !== undefined ? overrides.description : MOCK_PROVIDER.description,
-    is_active: overrides?.is_active !== undefined ? overrides.is_active : MOCK_PROVIDER.is_active,
-    is_default_embedding: overrides?.is_default_embedding !== undefined ? overrides.is_default_embedding : MOCK_PROVIDER.is_default_embedding,
-    is_default_generation: overrides?.is_default_generation !== undefined ? overrides.is_default_generation : MOCK_PROVIDER.is_default_generation,
-    is_enabled: overrides?.is_enabled !== undefined ? overrides.is_enabled : MOCK_PROVIDER.is_enabled,
-    created_at: overrides?.created_at !== undefined ? overrides.created_at : MOCK_PROVIDER.created_at,
-    updated_at: overrides?.updated_at !== undefined ? overrides.updated_at : MOCK_PROVIDER.updated_at,
-    config: overrides?.config !== undefined ? isJson(overrides.config) ? overrides.config : JSON.stringify(overrides.config) : MOCK_PROVIDER.config,
-    min_plan_tier_level: overrides?.min_plan_tier_level !== undefined ? overrides.min_plan_tier_level : MOCK_PROVIDER.min_plan_tier_level,
+    id: "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11",
+    provider: "dummy",
+    api_identifier: "dummy-model-v1",
+    name: "Dummy Model",
+    description: "A dummy AI model for testing purposes.",
+    is_active: true,
+    is_default_embedding: false,
+    is_default_generation: false,
+    is_enabled: true,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    config,
+    min_plan_tier_level: 0,
   };
-  return base;
+  return overrides ? { ...base, ...overrides } : base;
 }
 
-  /**
+export type MockProviderCorruptions = { [K in keyof Tables<'ai_providers'>]?: unknown };
+
+export function invalidateMockProvider(corruptions: MockProviderCorruptions): unknown {
+  return { ...buildMockProvider(), ...corruptions };
+}
+
+/**
    * Defines the test-only control methods for the mock adapter.
    */
   export type MockAiProviderAdapterControls = {
@@ -165,7 +131,7 @@ export function buildMockProvider(overrides?: MockProviderOverrides): Tables<'ai
     overrides?: BuildExtendedModelConfigOverrides,
   ): AiModelExtendedConfig {
     const base: AiModelExtendedConfig = {
-      api_identifier: "contract-api-v1",
+      api_identifier: "dummy-model-v1",
       input_token_cost_rate: 0.01,
       output_token_cost_rate: 0.01,
       tokenization_strategy: {

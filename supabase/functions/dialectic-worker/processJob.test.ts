@@ -1,25 +1,34 @@
 
 import { assert, assertEquals, assertStrictEquals } from 'https://deno.land/std@0.170.0/testing/asserts.ts';
+import { spy } from 'https://deno.land/std@0.224.0/testing/mock.ts';
 import { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import { Database } from '../types_db.ts';
 import { createMockSupabaseClient } from '../_shared/supabase.mock.ts';
 import { processJob } from './processJob.ts';
-import { 
-    DialecticJobPayload, 
-    DialecticPlanJobPayload 
+import {
+    DialecticJobPayload,
+    DialecticJobRow,
+    DialecticPlanJobPayload
 } from '../dialectic-service/dialectic.interface.ts';
 import { isJson } from '../_shared/utils/type_guards.ts';
 import { createMockJobProcessors } from '../_shared/dialectic.mock.ts';
-import { 
-    createJobContext, 
-    createPlanJobContext, 
-    createRenderJobContext 
+import {
+    createJobContext,
+    createPlanJobContext,
+    createRenderJobContext
 } from './createJobContext/createJobContext.ts';
 import { IJobContext } from './createJobContext/JobContext.interface.ts';
-import { createMockJobContextParams } from './createJobContext/JobContext.mock.ts';
+import { createMockJobContextParams, createMockRootContext } from './createJobContext/JobContext.mock.ts';
 import { buildDialecticCompressJobPayload } from './enqueueCompressJobs/enqueueCompressJobs.mock.ts';
 import { createMockJobRow } from './saveResponse/saveResponse.mock.ts';
 import { ProcessCompressJobError, ProcessCompressJobReturn } from './processCompressJob/processCompressJob.interface.ts';
+import { isProcessCompressJobDeps } from './processCompressJob/processCompressJob.guard.ts';
+import {
+    buildAssembleCompressionPromptParams,
+    buildAssembleCompressionPromptPayload,
+} from '../_shared/prompt-assembler/assembleCompressionPrompt/assembleCompressionPrompt.mock.ts';
+import { buildIPromptAssembler } from '../_shared/prompt-assembler/prompt-assembler.mock.ts';
+import type { DownloadFromStorageFn } from '../_shared/supabase_storage_utils.ts';
 
 type MockJob = Database['public']['Tables']['dialectic_generation_jobs']['Row'];
 
@@ -983,6 +992,116 @@ Deno.test('processJob - COMPRESS does not update dialectic_generation_jobs on su
     } finally {
         const updateResult = mockSupabase.spies.getHistoricQueryBuilderSpies('dialectic_generation_jobs', 'update');
         assertEquals(updateResult?.callCount, 0, 'processJob should not update dialectic_generation_jobs on success');
+        spies.processCompressJob.restore();
+        spies.processSimpleJob.restore();
+        spies.processComplexJob.restore();
+        spies.processRenderJob.restore();
+        mockSupabase.clearAllStubs?.();
+    }
+});
+
+// COMPRESS deps literal carries all eight members; both closures route to ctx.promptAssembler with the correct deps.
+Deno.test('processJob - COMPRESS deps satisfy isProcessCompressJobDeps and both closures route to ctx.promptAssembler with the correct deps', async () => {
+    const { processors, spies } = createMockJobProcessors();
+
+    const payload = buildDialecticCompressJobPayload();
+    if (!isJson(payload)) throw new Error('Test setup failed: payload not Json');
+
+    const rowJob = createMockJobRow(payload, {
+        id: 'job-id-compress-deps',
+        user_id: 'user-id',
+        session_id: payload.sessionId,
+        stage_slug: payload.stageSlug,
+        status: 'pending',
+        job_type: 'COMPRESS',
+        idempotency_key: 'idempotency-key-1',
+    });
+    const jobArg: DialecticJobRow & { payload: DialecticJobPayload } = { ...rowJob, payload };
+
+    const mockSupabase = createMockSupabaseClient();
+    const dbClient = mockSupabase.client as unknown as SupabaseClient<Database>;
+
+    // Production-typed DownloadFromStorageFn declared in the test, wrapped by the runner's spy so the
+    // adapter's three-argument call is recorded at the call site (no mock configured).
+    const downloadFromStorage: DownloadFromStorageFn = async (
+        _supabase,
+        _bucket,
+        _path,
+    ) => ({ data: new ArrayBuffer(0), error: null });
+    const downloadFromStorageSpy = spy(downloadFromStorage);
+
+    // Spy the two assembler methods on a fresh IPromptAssembler so the closures' routing is observable.
+    const promptAssembler = buildIPromptAssembler();
+    const assembleCompressionPromptSpy = spy(promptAssembler, 'assembleCompressionPrompt');
+    const assembleContinuationPromptSpy = spy(promptAssembler, 'assembleContinuationPrompt');
+
+    const caseCtx: IJobContext = createMockRootContext({
+        downloadFromStorage: downloadFromStorageSpy,
+        promptAssembler,
+    });
+
+    try {
+        await processJob(
+            dbClient,
+            jobArg,
+            'user-id',
+            processors,
+            caseCtx,
+            'mock-token',
+        );
+
+        // The deps object handed to processors.processCompressJob satisfies isProcessCompressJobDeps.
+        // RED until the literal carries assembleContinuationPrompt (the guard requires it).
+        assertEquals(spies.processCompressJob.calls.length, 1, 'processCompressJob must be called once');
+        const capturedDeps = spies.processCompressJob.calls[0].args[0];
+        assert(isProcessCompressJobDeps(capturedDeps), 'compressDeps must satisfy isProcessCompressJobDeps');
+
+        // Compression closure routes to ctx.promptAssembler.assembleCompressionPrompt with the five-member deps.
+        const compressParams = buildAssembleCompressionPromptParams();
+        const compressPayload = buildAssembleCompressionPromptPayload();
+        await capturedDeps.assembleCompressionPrompt(compressParams, compressPayload);
+
+        assertEquals(assembleCompressionPromptSpy.calls.length, 1, 'assembleCompressionPrompt must be called once');
+        const compressCallArgs = assembleCompressionPromptSpy.calls[0].args;
+        const compressDepsArg = compressCallArgs[0];
+        assertStrictEquals(compressDepsArg.dbClient, dbClient, 'compression closure must pass the router dbClient');
+        assertStrictEquals(compressDepsArg.logger, caseCtx.logger, 'compression closure must pass ctx.logger');
+        assertStrictEquals(compressDepsArg.fileManager, caseCtx.fileManager, 'compression closure must pass ctx.fileManager');
+        assertEquals(typeof compressDepsArg.constructStoragePath, 'function', 'compression closure must pass constructStoragePath');
+        assertStrictEquals(compressCallArgs[1], compressParams, 'compression closure must forward params unchanged');
+        assertStrictEquals(compressCallArgs[2], compressPayload, 'compression closure must forward payload unchanged');
+
+        // Continuation closure routes to ctx.promptAssembler.assembleContinuationPrompt with the five-member deps.
+        await capturedDeps.assembleContinuationPrompt(jobArg);
+
+        assertEquals(assembleContinuationPromptSpy.calls.length, 1, 'assembleContinuationPrompt must be called once');
+        const continuationDepsArg = assembleContinuationPromptSpy.calls[0].args[0];
+        assertStrictEquals(continuationDepsArg.dbClient, dbClient, 'continuation closure must pass the router dbClient');
+        assertStrictEquals(continuationDepsArg.fileManager, caseCtx.fileManager, 'continuation closure must pass ctx.fileManager');
+        assertStrictEquals(continuationDepsArg.job, jobArg, 'continuation closure must pass the job it was given');
+        assertEquals(typeof continuationDepsArg.constructStoragePath, 'function', 'continuation closure must pass constructStoragePath');
+
+        // None of the six recipe-stage members are supplied — the COMPRESS branch reads none of them.
+        assert(!('project' in continuationDepsArg), 'continuation closure must not supply project');
+        assert(!('session' in continuationDepsArg), 'continuation closure must not supply session');
+        assert(!('stage' in continuationDepsArg), 'continuation closure must not supply stage');
+        assert(!('gatherContext' in continuationDepsArg), 'continuation closure must not supply gatherContext');
+        assert(!('assembleChunks' in continuationDepsArg), 'continuation closure must not supply assembleChunks');
+        assert(!('gatherContinuationInputs' in continuationDepsArg), 'continuation closure must not supply gatherContinuationInputs');
+
+        // The downloadFromStorage adapter takes two arguments and calls ctx.downloadFromStorage with the
+        // router's own dbClient prepended, followed by the bucket and path.
+        assertEquals(typeof continuationDepsArg.downloadFromStorage, 'function', 'continuation closure must supply downloadFromStorage');
+        await continuationDepsArg.downloadFromStorage('my-bucket', 'my/path.md');
+        assertEquals(downloadFromStorageSpy.calls.length, 1, 'ctx.downloadFromStorage must be called once by the adapter');
+        const dlArgs = downloadFromStorageSpy.calls[0].args;
+        assertEquals(dlArgs.length, 3, 'adapter must call ctx.downloadFromStorage with three arguments');
+        assertStrictEquals(dlArgs[0] as unknown as SupabaseClient<Database>, dbClient, 'adapter must prepend the router dbClient');
+        assertStrictEquals(dlArgs[1], 'my-bucket', 'adapter must forward the bucket');
+        assertStrictEquals(dlArgs[2], 'my/path.md', 'adapter must forward the path');
+    } finally {
+        assembleCompressionPromptSpy.restore();
+        assembleContinuationPromptSpy.restore();
         spies.processCompressJob.restore();
         spies.processSimpleJob.restore();
         spies.processComplexJob.restore();

@@ -101,6 +101,21 @@ export function buildCalculateAffordabilityDeps(
   return { logger, countTokens, compressPrompt, getMaxOutputTokens: getMaxOutputTokensDep };
 }
 
+export type UserConfigOverrides = Partial<UserConfig>;
+
+export function buildUserConfig(overrides?: UserConfigOverrides): UserConfig {
+  const base: UserConfig = {
+    tier_output_cap_tokens: null,
+  };
+  return overrides ? { ...base, ...overrides } : base;
+}
+
+export type UserConfigCorruptions = { [K in keyof UserConfig]?: unknown };
+
+export function invalidateUserConfig(corruptions: UserConfigCorruptions): unknown {
+  return { ...buildUserConfig(), ...corruptions };
+}
+
 export function buildCalculateAffordabilityParams(
   dbClient: SupabaseClient<Database>,
   overrides?: CalculateAffordabilityParamsOverrides,
@@ -124,9 +139,7 @@ export function buildCalculateAffordabilityParams(
     isContinuationFlowInitial: overrides?.isContinuationFlowInitial !== undefined
       ? overrides.isContinuationFlowInitial
       : false,
-    userConfig: {
-      tier_output_cap_tokens: overrides?.userConfig !== undefined ? overrides.userConfig.tier_output_cap_tokens : null,
-    },
+    userConfig: overrides?.userConfig !== undefined ? overrides.userConfig : buildUserConfig(),
   };
   if (overrides?.inputsRelevance !== undefined) {
     return { ...base, inputsRelevance: overrides.inputsRelevance };

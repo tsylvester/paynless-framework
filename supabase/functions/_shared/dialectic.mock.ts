@@ -51,6 +51,8 @@ import type {
     DialecticContributionRow,
     DialecticJobRow,
     DialecticProjectResourceRow,
+    DialecticSessionRow,
+    DialecticProjectRow,
     ReviewMetadata,
     DocumentRelationships,
     JobInsert,
@@ -61,6 +63,7 @@ import type {
 } from '../dialectic-service/dialectic.interface.ts';
 import { FileType, DialecticStageSlug } from './types/file_manager.types.ts';
 import type { Messages, FinishReason } from './types.ts';
+import type { Tables } from '../types_db.ts';
 
 // 1. Define Function Signature Types
 type CreateProjectFn = (payload: FormData | CreateProjectPayload) => Promise<DialecticProject>;
@@ -886,7 +889,7 @@ export function buildDialecticExecuteJobPayload(overrides?: DialecticExecuteJobP
         projectId: 'test-project-id',
         stageSlug: 'thesis',
         iterationNumber: 1,
-        walletId: 'test-wallet-id',
+        walletId: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a12',
         user_jwt: 'test-jwt',
         idempotencyKey: 'test-idempotency-key',
         model_id: 'test-model-id',
@@ -919,7 +922,7 @@ export function buildDialecticPlanJobPayload(overrides?: DialecticPlanJobPayload
         projectId: 'test-project-id',
         stageSlug: 'thesis',
         iterationNumber: 1,
-        walletId: 'test-wallet-id',
+        walletId: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a12',
         user_jwt: 'test-jwt',
         idempotencyKey: 'test-idempotency-key',
         model_id: 'test-model-id',
@@ -945,7 +948,7 @@ export function buildDialecticSkeletonJobPayload(overrides?: DialecticSkeletonJo
         projectId: 'test-project-id',
         sessionId: 'test-session-id',
         model_id: 'test-model-id',
-        walletId: 'test-wallet-id',
+        walletId: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a12',
         user_jwt: 'test-jwt',
         stageSlug: 'thesis',
         iterationNumber: 1,
@@ -971,7 +974,7 @@ export function buildDialecticRenderJobPayload(overrides?: DialecticRenderJobPay
         projectId: 'test-project-id',
         stageSlug: 'thesis',
         iterationNumber: 1,
-        walletId: 'test-wallet-id',
+        walletId: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a12',
         user_jwt: 'test-jwt',
         idempotencyKey: 'test-idempotency-key',
         model_id: 'test-model-id',
@@ -1193,7 +1196,7 @@ export function buildDialecticSimpleJobPayload(overrides?: DialecticSimpleJobPay
         projectId: 'test-project-id',
         stageSlug: 'thesis',
         iterationNumber: 1,
-        walletId: 'test-wallet-id',
+        walletId: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a12',
         user_jwt: 'test-jwt',
         idempotencyKey: 'test-idempotency-key',
         model_id: 'test-model-id',
@@ -1245,7 +1248,7 @@ export function buildPlanJobInsert(overrides?: PlanJobInsertOverrides): PlanJobI
             model_id: 'test-model-id',
             sessionId: 'test-session-id',
             projectId: 'test-project-id',
-            walletId: 'test-wallet-id',
+            walletId: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a12',
             user_jwt: 'test-jwt',
             job_type: 'PLAN',
         },
@@ -1295,4 +1298,116 @@ export type MessagesCorruptions = { [K in keyof Messages]?: unknown };
 
 export function invalidateMessages(corruptions: MessagesCorruptions): unknown {
     return { ...buildMessages(), ...corruptions };
+}
+
+// --- TokenWalletRow (DB row) ---
+
+export type TokenWalletRowOverrides = Partial<Tables<'token_wallets'>>;
+
+export function buildTokenWalletRow(overrides?: TokenWalletRowOverrides): Tables<'token_wallets'> {
+    const now = new Date().toISOString();
+    const base: Tables<'token_wallets'> = {
+        wallet_id: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a12',
+        user_id: 'a1eebc99-9c0b-4ef8-bb6d-6bb9bd380a12',
+        organization_id: null,
+        balance: 1000,
+        currency: 'credits',
+        created_at: now,
+        updated_at: now,
+    };
+    return { ...base, ...overrides };
+}
+
+export type TokenWalletRowCorruptions = { [K in keyof Tables<'token_wallets'>]?: unknown };
+
+export function invalidateTokenWalletRow(corruptions: TokenWalletRowCorruptions): unknown {
+    return { ...buildTokenWalletRow(), ...corruptions };
+}
+
+// --- DialecticSessionRow (DB row) ---
+
+export type DialecticSessionRowOverrides = Partial<DialecticSessionRow>;
+
+export function buildDialecticSessionRow(overrides?: DialecticSessionRowOverrides): DialecticSessionRow {
+    const now = new Date().toISOString();
+    const base: DialecticSessionRow = {
+        id: 'test-session-id',
+        project_id: 'test-project-id',
+        session_description: 'test session',
+        user_input_reference_url: null,
+        iteration_count: 1,
+        selected_model_ids: ['test-model-id'],
+        status: 'in-progress',
+        associated_chat_id: null,
+        current_stage_id: 'test-stage-id',
+        created_at: now,
+        updated_at: now,
+        viewing_stage_id: null,
+        idempotency_key: 'test-session-idempotency-key',
+    };
+    return { ...base, ...overrides };
+}
+
+export type DialecticSessionRowCorruptions = { [K in keyof DialecticSessionRow]?: unknown };
+
+export function invalidateDialecticSessionRow(corruptions: DialecticSessionRowCorruptions): unknown {
+    return { ...buildDialecticSessionRow(), ...corruptions };
+}
+
+// --- DialecticProjectRow (DB row) ---
+
+export type DialecticProjectRowOverrides = Partial<DialecticProjectRow>;
+
+export function buildDialecticProjectRow(overrides?: DialecticProjectRowOverrides): DialecticProjectRow {
+    const now = new Date().toISOString();
+    const base: DialecticProjectRow = {
+        id: 'test-project-id',
+        project_name: 'test project',
+        initial_user_prompt: 'test initial prompt',
+        selected_domain_id: 'test-domain-id',
+        selected_domain_overlay_id: null,
+        user_id: 'test-user-id',
+        status: 'active',
+        repo_url: null,
+        user_domain_overlay_values: null,
+        initial_prompt_resource_id: null,
+        process_template_id: null,
+        idempotency_key: null,
+        created_at: now,
+        updated_at: now,
+    };
+    return { ...base, ...overrides };
+}
+
+export type DialecticProjectRowCorruptions = { [K in keyof DialecticProjectRow]?: unknown };
+
+export function invalidateDialecticProjectRow(corruptions: DialecticProjectRowCorruptions): unknown {
+    return { ...buildDialecticProjectRow(), ...corruptions };
+}
+
+// --- DialecticStage (DB row) ---
+
+export type DialecticStageOverrides = Partial<DialecticStage>;
+
+export function buildDialecticStage(overrides?: DialecticStageOverrides): DialecticStage {
+    const now = new Date().toISOString();
+    const base: DialecticStage = {
+        id: 'test-stage-id',
+        slug: 'thesis',
+        display_name: 'Thesis',
+        description: 'Thesis stage',
+        minimum_balance: 0,
+        expected_output_template_ids: [],
+        default_system_prompt_id: 'test-system-prompt-id',
+        active_recipe_instance_id: null,
+        recipe_template_id: null,
+        created_at: now,
+    };
+    return { ...base, ...overrides };
+}
+
+export type DialecticStageCorruptions = { [K in keyof DialecticStage]?: unknown };
+
+export function invalidateDialecticStage(corruptions: DialecticStageCorruptions): unknown {
+    return { ...buildDialecticStage(), ...corruptions };
 }

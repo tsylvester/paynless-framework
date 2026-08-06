@@ -14,10 +14,13 @@ import {
 	SessionContext,
 	StageContext,
 	DynamicContextVariables,
+	AssemblerSourceDocument,
+	GatheredRecipeContext,
 	RenderFn,
 	RenderPromptFunctionType,
 } from './prompt-assembler.interface.ts';
 import { buildDialecticRecipeTemplateStep, buildDialecticJobRow } from '../dialectic.mock.ts';
+import { FileType } from '../types/file_manager.types.ts';
 import { mockGatherContext } from './gatherContext/gatherContext.mock.ts';
 import { mockGatherContinuationInputs } from './gatherContinuationInputs/gatherContinuationInputs.mock.ts';
 import { mockAssembleChunks } from '../utils/assembleChunks/assembleChunks.mock.ts';
@@ -208,6 +211,57 @@ export type DynamicContextVariablesCorruptions = { [K in keyof DynamicContextVar
 
 export function invalidateDynamicContextVariables(corruptions: DynamicContextVariablesCorruptions): unknown {
     return { ...buildDynamicContextVariables(), ...corruptions };
+}
+
+// --- AssemblerSourceDocument ---
+
+export type AssemblerSourceDocumentOverrides = Partial<AssemblerSourceDocument> & {
+    metadata?: Partial<AssemblerSourceDocument['metadata']>;
+};
+
+export function buildAssemblerSourceDocument(overrides?: AssemblerSourceDocumentOverrides): AssemblerSourceDocument {
+    const base: AssemblerSourceDocument = {
+        id: 'source-doc-001',
+        type: 'document',
+        content: 'Test source document content.',
+        metadata: {
+            displayName: 'Test Source Document',
+            header: 'Thesis Documents',
+            modelName: 'claude-3-opus',
+            documentKey: FileType.business_case,
+        },
+    };
+    if (!overrides) return base;
+    const { metadata: metaOverrides, ...rest } = overrides;
+    return {
+        ...base,
+        ...rest,
+        metadata: { ...base.metadata, ...metaOverrides },
+    };
+}
+
+export type AssemblerSourceDocumentCorruptions = { [K in keyof AssemblerSourceDocument]?: unknown };
+
+export function invalidateAssemblerSourceDocument(corruptions: AssemblerSourceDocumentCorruptions): unknown {
+    return { ...buildAssemblerSourceDocument(), ...corruptions };
+}
+
+// --- GatheredRecipeContext ---
+
+export type GatheredRecipeContextOverrides = Partial<GatheredRecipeContext>;
+
+export function buildGatheredRecipeContext(overrides?: GatheredRecipeContextOverrides): GatheredRecipeContext {
+    const base: GatheredRecipeContext = {
+        sourceDocuments: [buildAssemblerSourceDocument()],
+        recipeStep: buildDialecticRecipeTemplateStep(),
+    };
+    return overrides ? { ...base, ...overrides } : base;
+}
+
+export type GatheredRecipeContextCorruptions = { [K in keyof GatheredRecipeContext]?: unknown };
+
+export function invalidateGatheredRecipeContext(corruptions: GatheredRecipeContextCorruptions): unknown {
+    return { ...buildGatheredRecipeContext(), ...corruptions };
 }
 
 export type AssembleContinuationPromptDepsOverrides = Partial<AssembleContinuationPromptDeps>;

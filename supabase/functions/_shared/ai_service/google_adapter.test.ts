@@ -18,7 +18,6 @@ import type {
     AdapterStreamChunk,
     ChatApiRequest,
     ProviderModelInfo,
-    AiModelExtendedConfig,
     GeminiSendMessagePart,
     GoogleGetGenerativeModelStubReturn,
     GoogleGenerationConfigCapture,
@@ -26,22 +25,7 @@ import type {
     GoogleStartChatStubReturn,
 } from "../types.ts";
 import { MockLogger } from "../logger.mock.ts";
-import { Tables } from "../../types_db.ts";
-import { isJson } from "../utils/type_guards.ts";
-
-// --- Mock Data & Helpers ---
-
-const MOCK_MODEL_CONFIG: AiModelExtendedConfig = {
-    api_identifier: 'gemini-1.5-pro-latest',
-    input_token_cost_rate: 0,
-    output_token_cost_rate: 0,
-    tokenization_strategy: { type: 'google_gemini_tokenizer' },
-};
-const mockLogger = new MockLogger();
-
-if(!isJson(MOCK_MODEL_CONFIG)) {
-    throw new Error('MOCK_MODEL_CONFIG is not a valid JSON object');
-}
+import { buildExtendedModelConfig, buildMockProvider } from "./ai_provider.mock.ts";
 
 function isGeminiPartsArray(val: unknown): val is GeminiSendMessagePart[] {
     if (!Array.isArray(val)) return false;
@@ -96,22 +80,6 @@ function makeEnhancedResponse(
     return response;
 }
 
-const MOCK_PROVIDER: Tables<'ai_providers'> = {
-    id: "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a15", // Unique mock ID
-    provider: "google",
-    api_identifier: "google-gemini-1.5-pro-latest",
-    name: "Google Gemini 1.5 Pro",
-    description: "A mock Google model for testing.",
-    is_active: true,
-    is_default_embedding: false,
-    is_default_generation: false,
-    is_enabled: true,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-    config: MOCK_MODEL_CONFIG,
-    min_plan_tier_level: 0,
-};
-
 // This is the mock API that the test contract will spy on.
 const mockGoogleApi: MockApi = {
     sendMessage: async (request: ChatApiRequest): Promise<AdapterResponsePayload> => {
@@ -141,7 +109,7 @@ Deno.test("GoogleAdapter: Contract Compliance", async (t) => {
         listModelsStub = stub(GoogleAdapter.prototype, "listModels", () => mockGoogleApi.listModels());
     });
 
-    await testAdapterContract(t, GoogleAdapter, mockGoogleApi, MOCK_PROVIDER);
+    await testAdapterContract(t, GoogleAdapter, mockGoogleApi, buildMockProvider());
 
     await t.step("Teardown: Restore stubs", () => {
         sendMessageStub.restore();
@@ -184,7 +152,7 @@ Deno.test("GoogleAdapter - Specific: forwards client cap to generationConfig.max
     });
 
     try {
-        const adapter = new GoogleAdapter(MOCK_PROVIDER, 'sk-google-test', new MockLogger());
+        const adapter = new GoogleAdapter(buildMockProvider(), 'sk-google-test', new MockLogger());
         const request: ChatApiRequest = {
             message: 'hi',
             providerId: 'prov',
@@ -193,7 +161,7 @@ Deno.test("GoogleAdapter - Specific: forwards client cap to generationConfig.max
             messages: [ { role: 'user', content: 'hello' } ],
         };
 
-        await adapter.sendMessage(request, MOCK_MODEL_CONFIG.api_identifier);
+        await adapter.sendMessage(request, buildExtendedModelConfig().api_identifier);
 
         if (capturedGenerationConfig === undefined) throw new Error('expected generationConfig to be captured');
         if (!isGoogleGenerationConfigCapture(capturedGenerationConfig)) throw new Error('captured value must be GoogleGenerationConfigCapture');
@@ -236,7 +204,7 @@ Deno.test("GoogleAdapter - resourceDocuments: when present appear as inlineData 
     });
 
     try {
-        const adapter = new GoogleAdapter(MOCK_PROVIDER, 'sk-google-test', new MockLogger());
+        const adapter = new GoogleAdapter(buildMockProvider(), 'sk-google-test', new MockLogger());
         const request: ChatApiRequest = {
             message: 'User prompt',
             providerId: 'test-provider',
@@ -247,7 +215,7 @@ Deno.test("GoogleAdapter - resourceDocuments: when present appear as inlineData 
             ],
         };
 
-        await adapter.sendMessage(request, MOCK_MODEL_CONFIG.api_identifier);
+        await adapter.sendMessage(request, buildExtendedModelConfig().api_identifier);
 
         assertExists(captured.current, 'sendMessageStream must be called with parts');
         if (!isGeminiPartsArray(captured.current)) throw new Error('sendMessageStream parts must be GeminiSendMessagePart[]');
@@ -271,7 +239,7 @@ Deno.test("GoogleAdapter - resourceDocuments: mime_type is text/plain", async ()
     });
 
     try {
-        const adapter = new GoogleAdapter(MOCK_PROVIDER, 'sk-google-test', new MockLogger());
+        const adapter = new GoogleAdapter(buildMockProvider(), 'sk-google-test', new MockLogger());
         const request: ChatApiRequest = {
             message: 'User prompt',
             providerId: 'test-provider',
@@ -279,7 +247,7 @@ Deno.test("GoogleAdapter - resourceDocuments: mime_type is text/plain", async ()
             resourceDocuments: [{ id: 'd1', content: 'Doc content', document_key: 'key', stage_slug: 'thesis', type: 'rendered_document' }],
         };
 
-        await adapter.sendMessage(request, MOCK_MODEL_CONFIG.api_identifier);
+        await adapter.sendMessage(request, buildExtendedModelConfig().api_identifier);
 
         if (!isGeminiPartsArray(captured.current)) throw new Error('sendMessageStream parts must be GeminiSendMessagePart[]');
         const parts: GeminiSendMessagePart[] = captured.current;
@@ -299,7 +267,7 @@ Deno.test("GoogleAdapter - resourceDocuments: document label text precedes each 
     });
 
     try {
-        const adapter = new GoogleAdapter(MOCK_PROVIDER, 'sk-google-test', new MockLogger());
+        const adapter = new GoogleAdapter(buildMockProvider(), 'sk-google-test', new MockLogger());
         const request: ChatApiRequest = {
             message: 'User prompt',
             providerId: 'test-provider',
@@ -307,7 +275,7 @@ Deno.test("GoogleAdapter - resourceDocuments: document label text precedes each 
             resourceDocuments: [{ id: 'd1', content: 'Doc content', document_key: 'key', stage_slug: 'thesis', type: 'rendered_document' }],
         };
 
-        await adapter.sendMessage(request, MOCK_MODEL_CONFIG.api_identifier);
+        await adapter.sendMessage(request, buildExtendedModelConfig().api_identifier);
 
         if (!isGeminiPartsArray(captured.current)) throw new Error('sendMessageStream parts must be GeminiSendMessagePart[]');
         const parts: GeminiSendMessagePart[] = captured.current;
@@ -332,7 +300,7 @@ Deno.test("GoogleAdapter - resourceDocuments: empty resourceDocuments does not a
     });
 
     try {
-        const adapter = new GoogleAdapter(MOCK_PROVIDER, 'sk-google-test', new MockLogger());
+        const adapter = new GoogleAdapter(buildMockProvider(), 'sk-google-test', new MockLogger());
         const request: ChatApiRequest = {
             message: 'User prompt',
             providerId: 'test-provider',
@@ -340,7 +308,7 @@ Deno.test("GoogleAdapter - resourceDocuments: empty resourceDocuments does not a
             resourceDocuments: [],
         };
 
-        await adapter.sendMessage(request, MOCK_MODEL_CONFIG.api_identifier);
+        await adapter.sendMessage(request, buildExtendedModelConfig().api_identifier);
 
         if (!isGeminiPartsArray(captured.current)) throw new Error('sendMessageStream parts must be GeminiSendMessagePart[]');
         const parts: GeminiSendMessagePart[] = captured.current;
@@ -374,14 +342,14 @@ Deno.test("GoogleAdapter - stream-to-buffer: content is assembled from multiple 
     });
 
     try {
-        const adapter = new GoogleAdapter(MOCK_PROVIDER, 'sk-google-test', new MockLogger());
+        const adapter = new GoogleAdapter(buildMockProvider(), 'sk-google-test', new MockLogger());
         const request: ChatApiRequest = {
             message: 'hi',
             providerId: 'prov',
             promptId: '__none__',
             messages: [ { role: 'user', content: 'hello' } ],
         };
-        const result: AdapterResponsePayload = await adapter.sendMessage(request, MOCK_MODEL_CONFIG.api_identifier);
+        const result: AdapterResponsePayload = await adapter.sendMessage(request, buildExtendedModelConfig().api_identifier);
         assertEquals(result.content, 'Hello');
     } finally {
         getModelStub.restore();
@@ -407,14 +375,14 @@ Deno.test("GoogleAdapter - stream-to-buffer: token_usage from final response usa
     });
 
     try {
-        const adapter = new GoogleAdapter(MOCK_PROVIDER, 'sk-google-test', new MockLogger());
+        const adapter = new GoogleAdapter(buildMockProvider(), 'sk-google-test', new MockLogger());
         const request: ChatApiRequest = {
             message: 'hi',
             providerId: 'prov',
             promptId: '__none__',
             messages: [ { role: 'user', content: 'hello' } ],
         };
-        const result: AdapterResponsePayload = await adapter.sendMessage(request, MOCK_MODEL_CONFIG.api_identifier);
+        const result: AdapterResponsePayload = await adapter.sendMessage(request, buildExtendedModelConfig().api_identifier);
         const rawUsage: unknown = result.token_usage;
         assertExists(rawUsage);
         if (typeof rawUsage !== 'object' || rawUsage === null || Array.isArray(rawUsage)) {
@@ -449,14 +417,14 @@ Deno.test("GoogleAdapter - stream-to-buffer: finish_reason STOP maps to stop", a
     });
 
     try {
-        const adapter = new GoogleAdapter(MOCK_PROVIDER, 'sk-google-test', new MockLogger());
+        const adapter = new GoogleAdapter(buildMockProvider(), 'sk-google-test', new MockLogger());
         const request: ChatApiRequest = {
             message: 'hi',
             providerId: 'prov',
             promptId: '__none__',
             messages: [ { role: 'user', content: 'hello' } ],
         };
-        const result: AdapterResponsePayload = await adapter.sendMessage(request, MOCK_MODEL_CONFIG.api_identifier);
+        const result: AdapterResponsePayload = await adapter.sendMessage(request, buildExtendedModelConfig().api_identifier);
         assertEquals(result.finish_reason, 'stop');
     } finally {
         getModelStub.restore();
@@ -481,14 +449,14 @@ Deno.test("GoogleAdapter - stream-to-buffer: finish_reason MAX_TOKENS maps to le
     });
 
     try {
-        const adapter = new GoogleAdapter(MOCK_PROVIDER, 'sk-google-test', new MockLogger());
+        const adapter = new GoogleAdapter(buildMockProvider(), 'sk-google-test', new MockLogger());
         const request: ChatApiRequest = {
             message: 'hi',
             providerId: 'prov',
             promptId: '__none__',
             messages: [ { role: 'user', content: 'hello' } ],
         };
-        const result: AdapterResponsePayload = await adapter.sendMessage(request, MOCK_MODEL_CONFIG.api_identifier);
+        const result: AdapterResponsePayload = await adapter.sendMessage(request, buildExtendedModelConfig().api_identifier);
         assertEquals(result.finish_reason, 'length');
     } finally {
         getModelStub.restore();
@@ -513,14 +481,14 @@ Deno.test("GoogleAdapter - stream-to-buffer: finish_reason SAFETY maps to conten
     });
 
     try {
-        const adapter = new GoogleAdapter(MOCK_PROVIDER, 'sk-google-test', new MockLogger());
+        const adapter = new GoogleAdapter(buildMockProvider(), 'sk-google-test', new MockLogger());
         const request: ChatApiRequest = {
             message: 'hi',
             providerId: 'prov',
             promptId: '__none__',
             messages: [ { role: 'user', content: 'hello' } ],
         };
-        const result: AdapterResponsePayload = await adapter.sendMessage(request, MOCK_MODEL_CONFIG.api_identifier);
+        const result: AdapterResponsePayload = await adapter.sendMessage(request, buildExtendedModelConfig().api_identifier);
         assertEquals(result.finish_reason, 'content_filter');
     } finally {
         getModelStub.restore();
@@ -549,7 +517,7 @@ Deno.test("GoogleAdapter - stream-to-buffer: empty stream throws descriptive err
     });
 
     try {
-        const adapter = new GoogleAdapter(MOCK_PROVIDER, 'sk-google-test', new MockLogger());
+        const adapter = new GoogleAdapter(buildMockProvider(), 'sk-google-test', new MockLogger());
         const request: ChatApiRequest = {
             message: 'hi',
             providerId: 'prov',
@@ -558,7 +526,7 @@ Deno.test("GoogleAdapter - stream-to-buffer: empty stream throws descriptive err
         };
         await assertRejects(
             async () => {
-                await adapter.sendMessage(request, MOCK_MODEL_CONFIG.api_identifier);
+                await adapter.sendMessage(request, buildExtendedModelConfig().api_identifier);
             },
             Error,
             undefined,
@@ -588,7 +556,7 @@ Deno.test("GoogleAdapter - stream-to-buffer: stream error mid-response propagate
     });
 
     try {
-        const adapter = new GoogleAdapter(MOCK_PROVIDER, 'sk-google-test', new MockLogger());
+        const adapter = new GoogleAdapter(buildMockProvider(), 'sk-google-test', new MockLogger());
         const request: ChatApiRequest = {
             message: 'hi',
             providerId: 'prov',
@@ -597,7 +565,7 @@ Deno.test("GoogleAdapter - stream-to-buffer: stream error mid-response propagate
         };
         await assertRejects(
             async () => {
-                await adapter.sendMessage(request, MOCK_MODEL_CONFIG.api_identifier);
+                await adapter.sendMessage(request, buildExtendedModelConfig().api_identifier);
             },
             Error,
             'simulated stream failure',
@@ -661,7 +629,7 @@ Deno.test("GoogleAdapter - sendMessageStream: yields text_delta chunks for strea
     });
 
     try {
-        const adapter = new GoogleAdapter(MOCK_PROVIDER, 'sk-google-test', new MockLogger());
+        const adapter = new GoogleAdapter(buildMockProvider(), 'sk-google-test', new MockLogger());
         const request: ChatApiRequest = {
             message: 'hi',
             providerId: 'prov',
@@ -669,7 +637,7 @@ Deno.test("GoogleAdapter - sendMessageStream: yields text_delta chunks for strea
             messages: [{ role: 'user', content: 'hello' }],
         };
         const chunks: AdapterStreamChunk[] = await collectAdapterStreamChunks(
-            adapter.sendMessageStream(request, MOCK_MODEL_CONFIG.api_identifier),
+            adapter.sendMessageStream(request, buildExtendedModelConfig().api_identifier),
         );
         const textDeltas: string[] = [];
         for (const c of chunks) {
@@ -692,7 +660,7 @@ Deno.test("GoogleAdapter - sendMessageStream: yields usage chunk from response.u
     });
 
     try {
-        const adapter = new GoogleAdapter(MOCK_PROVIDER, 'sk-google-test', new MockLogger());
+        const adapter = new GoogleAdapter(buildMockProvider(), 'sk-google-test', new MockLogger());
         const request: ChatApiRequest = {
             message: 'hi',
             providerId: 'prov',
@@ -700,7 +668,7 @@ Deno.test("GoogleAdapter - sendMessageStream: yields usage chunk from response.u
             messages: [{ role: 'user', content: 'hello' }],
         };
         const chunks: AdapterStreamChunk[] = await collectAdapterStreamChunks(
-            adapter.sendMessageStream(request, MOCK_MODEL_CONFIG.api_identifier),
+            adapter.sendMessageStream(request, buildExtendedModelConfig().api_identifier),
         );
         const usageIdx: number = chunks.findIndex((c) => c.type === 'usage');
         const doneIdx: number = chunks.findIndex((c) => c.type === 'done');
@@ -728,7 +696,7 @@ Deno.test("GoogleAdapter - sendMessageStream: yields done with finish_reason sto
     });
 
     try {
-        const adapter = new GoogleAdapter(MOCK_PROVIDER, 'sk-google-test', new MockLogger());
+        const adapter = new GoogleAdapter(buildMockProvider(), 'sk-google-test', new MockLogger());
         const request: ChatApiRequest = {
             message: 'hi',
             providerId: 'prov',
@@ -736,7 +704,7 @@ Deno.test("GoogleAdapter - sendMessageStream: yields done with finish_reason sto
             messages: [{ role: 'user', content: 'hello' }],
         };
         const chunks: AdapterStreamChunk[] = await collectAdapterStreamChunks(
-            adapter.sendMessageStream(request, MOCK_MODEL_CONFIG.api_identifier),
+            adapter.sendMessageStream(request, buildExtendedModelConfig().api_identifier),
         );
         const doneChunk: AdapterStreamChunk | undefined = chunks.find((c) => c.type === 'done');
         assertExists(doneChunk);
@@ -755,7 +723,7 @@ Deno.test("GoogleAdapter - sendMessageStream: yields done with finish_reason len
     });
 
     try {
-        const adapter = new GoogleAdapter(MOCK_PROVIDER, 'sk-google-test', new MockLogger());
+        const adapter = new GoogleAdapter(buildMockProvider(), 'sk-google-test', new MockLogger());
         const request: ChatApiRequest = {
             message: 'hi',
             providerId: 'prov',
@@ -763,7 +731,7 @@ Deno.test("GoogleAdapter - sendMessageStream: yields done with finish_reason len
             messages: [{ role: 'user', content: 'hello' }],
         };
         const chunks: AdapterStreamChunk[] = await collectAdapterStreamChunks(
-            adapter.sendMessageStream(request, MOCK_MODEL_CONFIG.api_identifier),
+            adapter.sendMessageStream(request, buildExtendedModelConfig().api_identifier),
         );
         const doneChunk: AdapterStreamChunk | undefined = chunks.find((c) => c.type === 'done');
         assertExists(doneChunk);
@@ -782,7 +750,7 @@ Deno.test("GoogleAdapter - sendMessageStream: yields done with finish_reason con
     });
 
     try {
-        const adapter = new GoogleAdapter(MOCK_PROVIDER, 'sk-google-test', new MockLogger());
+        const adapter = new GoogleAdapter(buildMockProvider(), 'sk-google-test', new MockLogger());
         const request: ChatApiRequest = {
             message: 'hi',
             providerId: 'prov',
@@ -790,7 +758,7 @@ Deno.test("GoogleAdapter - sendMessageStream: yields done with finish_reason con
             messages: [{ role: 'user', content: 'hello' }],
         };
         const chunks: AdapterStreamChunk[] = await collectAdapterStreamChunks(
-            adapter.sendMessageStream(request, MOCK_MODEL_CONFIG.api_identifier),
+            adapter.sendMessageStream(request, buildExtendedModelConfig().api_identifier),
         );
         const doneChunk: AdapterStreamChunk | undefined = chunks.find((c) => c.type === 'done');
         assertExists(doneChunk);
@@ -809,7 +777,7 @@ Deno.test("GoogleAdapter - sendMessageStream: yields done with finish_reason con
     });
 
     try {
-        const adapter = new GoogleAdapter(MOCK_PROVIDER, 'sk-google-test', new MockLogger());
+        const adapter = new GoogleAdapter(buildMockProvider(), 'sk-google-test', new MockLogger());
         const request: ChatApiRequest = {
             message: 'hi',
             providerId: 'prov',
@@ -817,7 +785,7 @@ Deno.test("GoogleAdapter - sendMessageStream: yields done with finish_reason con
             messages: [{ role: 'user', content: 'hello' }],
         };
         const chunks: AdapterStreamChunk[] = await collectAdapterStreamChunks(
-            adapter.sendMessageStream(request, MOCK_MODEL_CONFIG.api_identifier),
+            adapter.sendMessageStream(request, buildExtendedModelConfig().api_identifier),
         );
         const doneChunk: AdapterStreamChunk | undefined = chunks.find((c) => c.type === 'done');
         assertExists(doneChunk);
@@ -836,7 +804,7 @@ Deno.test("GoogleAdapter - sendMessageStream: yields done with finish_reason unk
     });
 
     try {
-        const adapter = new GoogleAdapter(MOCK_PROVIDER, 'sk-google-test', new MockLogger());
+        const adapter = new GoogleAdapter(buildMockProvider(), 'sk-google-test', new MockLogger());
         const request: ChatApiRequest = {
             message: 'hi',
             providerId: 'prov',
@@ -844,7 +812,7 @@ Deno.test("GoogleAdapter - sendMessageStream: yields done with finish_reason unk
             messages: [{ role: 'user', content: 'hello' }],
         };
         const chunks: AdapterStreamChunk[] = await collectAdapterStreamChunks(
-            adapter.sendMessageStream(request, MOCK_MODEL_CONFIG.api_identifier),
+            adapter.sendMessageStream(request, buildExtendedModelConfig().api_identifier),
         );
         const doneChunk: AdapterStreamChunk | undefined = chunks.find((c) => c.type === 'done');
         assertExists(doneChunk);
@@ -863,7 +831,7 @@ Deno.test("GoogleAdapter - sendMessageStream: throws when message history does n
     });
 
     try {
-        const adapter = new GoogleAdapter(MOCK_PROVIDER, 'sk-google-test', new MockLogger());
+        const adapter = new GoogleAdapter(buildMockProvider(), 'sk-google-test', new MockLogger());
         const request: ChatApiRequest = {
             message: '',
             providerId: 'prov',
@@ -875,7 +843,7 @@ Deno.test("GoogleAdapter - sendMessageStream: throws when message history does n
         };
         await assertRejects(
             async () => {
-                for await (const _ of adapter.sendMessageStream(request, MOCK_MODEL_CONFIG.api_identifier)) {
+                for await (const _ of adapter.sendMessageStream(request, buildExtendedModelConfig().api_identifier)) {
                     // drain
                 }
             },
@@ -909,7 +877,7 @@ Deno.test("GoogleAdapter - sendMessageStream: stream error during iteration prop
     });
 
     try {
-        const adapter = new GoogleAdapter(MOCK_PROVIDER, 'sk-google-test', new MockLogger());
+        const adapter = new GoogleAdapter(buildMockProvider(), 'sk-google-test', new MockLogger());
         const request: ChatApiRequest = {
             message: 'hi',
             providerId: 'prov',
@@ -918,7 +886,7 @@ Deno.test("GoogleAdapter - sendMessageStream: stream error during iteration prop
         };
         await assertRejects(
             async () => {
-                for await (const _ of adapter.sendMessageStream(request, MOCK_MODEL_CONFIG.api_identifier)) {
+                for await (const _ of adapter.sendMessageStream(request, buildExtendedModelConfig().api_identifier)) {
                     // drain
                 }
             },
@@ -943,7 +911,7 @@ Deno.test("GoogleAdapter - sendMessageStream: same startChat and sendMessageStre
     });
 
     try {
-        const adapter = new GoogleAdapter(MOCK_PROVIDER, 'sk-google-test', new MockLogger());
+        const adapter = new GoogleAdapter(buildMockProvider(), 'sk-google-test', new MockLogger());
         const request: ChatApiRequest = {
             message: 'User prompt',
             providerId: 'test-provider',
@@ -955,7 +923,7 @@ Deno.test("GoogleAdapter - sendMessageStream: same startChat and sendMessageStre
             ],
         };
 
-        await adapter.sendMessage(request, MOCK_MODEL_CONFIG.api_identifier);
+        await adapter.sendMessage(request, buildExtendedModelConfig().api_identifier);
     } finally {
         getModelStubSend.restore();
     }
@@ -966,7 +934,7 @@ Deno.test("GoogleAdapter - sendMessageStream: same startChat and sendMessageStre
     });
 
     try {
-        const adapter = new GoogleAdapter(MOCK_PROVIDER, 'sk-google-test', new MockLogger());
+        const adapter = new GoogleAdapter(buildMockProvider(), 'sk-google-test', new MockLogger());
         const request: ChatApiRequest = {
             message: 'User prompt',
             providerId: 'test-provider',
@@ -978,7 +946,7 @@ Deno.test("GoogleAdapter - sendMessageStream: same startChat and sendMessageStre
             ],
         };
 
-        await collectAdapterStreamChunks(adapter.sendMessageStream(request, MOCK_MODEL_CONFIG.api_identifier));
+        await collectAdapterStreamChunks(adapter.sendMessageStream(request, buildExtendedModelConfig().api_identifier));
 
         assertEquals(capturedSend.startChatOpts.length, 1);
         assertEquals(capturedStream.startChatOpts.length, 1);

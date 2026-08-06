@@ -11,7 +11,7 @@ import { createMockSupabaseClient } from '../supabase.mock.ts';
 import { mockOpenAiAdapter, mockGetEmbeddingSpy } from '../ai_service/openai_adapter.mock.ts';
 import { type Database } from '../../../functions/types_db.ts';
 import { DummyAdapter } from "../ai_service/dummy_adapter.ts";
-import { MOCK_PROVIDER } from "../ai_service/ai_provider.mock.ts";
+import { buildMockProvider() } from "../ai_service/ai_provider.mock.ts";
 import { assertExists, assert } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { createMockAdminTokenWalletService } from "./tokenwallet/admin/adminTokenWalletService.mock.ts";
 import { MockLogger } from '../logger.mock.ts';
@@ -71,7 +71,7 @@ Deno.test("EmbeddingClient should be instantiable with any valid AiProviderAdapt
     // adapter and can be instantiated with any class that conforms to the
     // AiProviderAdapterInstance interface.
     
-    const dummyAdapter = new DummyAdapter(MOCK_PROVIDER, "dummy-key", new MockLogger());
+    const dummyAdapter = new DummyAdapter(buildMockProvider(), "dummy-key", new MockLogger());
 
     // This line should now compile without error.
     const client = new EmbeddingClient(dummyAdapter);
@@ -86,7 +86,7 @@ Deno.test('IndexingService uses DummyAdapter embeddings (deterministic vector, n
   const logger = new MockLogger();
   const textSplitter = new MockTextSplitter(); // yields 2 chunks
   const mockWallet = createMockAdminTokenWalletService();
-  const dummyAdapter = new DummyAdapter(MOCK_PROVIDER, 'dummy-key', logger);
+  const dummyAdapter = new DummyAdapter(buildMockProvider(), 'dummy-key', logger);
   const getEmbeddingSpy = spy(dummyAdapter, 'getEmbedding');
   const embeddingClient = new EmbeddingClient(dummyAdapter);
   const service = new IndexingService(
@@ -191,7 +191,7 @@ Deno.test('IndexingService bills embeddings 1:1 per chunk with idempotent keys',
   const logger = new MockLogger();
   const textSplitter = new MockTextSplitter(); // splits into 2 chunks
 
-  const dummyAdapter = new DummyAdapter(MOCK_PROVIDER, 'dummy-key', logger);
+  const dummyAdapter = new DummyAdapter(buildMockProvider(), 'dummy-key', logger);
   const embeddingClient = new EmbeddingClient(dummyAdapter);
 
   // Prepare mock wallet service and capture debits
