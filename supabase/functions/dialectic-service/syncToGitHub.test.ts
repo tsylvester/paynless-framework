@@ -48,20 +48,20 @@ import {
 	type MockQueryBuilderState,
 } from "../_shared/supabase.mock.ts";
 import { constructStoragePath } from "../_shared/utils/path_constructor.ts";
-import { FileType, type PathContext } from "../_shared/types/file_manager.types.ts";
+import { DialecticStageSlug, FileType, type PathContext } from "../_shared/types/file_manager.types.ts";
 
 const TEST_USER_ID = "user-sync-456";
 const OTHER_USER_ID = "other-user-789";
 const PROJECT_ID = "project-sync-123";
 const INSTALLATION_ID = 999;
 const BUCKET = "project-docs";
-const STAGE_SLUG = "thesis";
+const STAGE_SLUG = DialecticStageSlug.Thesis;
 const TEMPLATE_ID = "template-uuid";
 const STAGE_ID = "stage-uuid";
 const SESSION_ID = "session-uuid";
 const MODEL_ID = "model-uuid";
 const MODEL_SLUG = "gpt-4";
-const DOC_KEY = "business_case";
+const DOC_KEY = FileType.business_case;
 const FRIENDLY_NAME = "business_case";
 
 const DEFAULT_REPO_SETTINGS: GitHubRepoSettings = {
@@ -88,11 +88,11 @@ const DEFAULT_PAYLOAD: SyncToGitHubPayload = {
 function buildRenderedDocumentPath(params: {
 	projectId: string;
 	sessionId: string;
-	stageSlug: string;
+	stageSlug: DialecticStageSlug;
 	iteration: number;
 	modelSlug: string;
 	attemptCount: number;
-	documentKey: string;
+	documentKey: FileType;
 }): { storagePath: string; fileName: string } {
 	const context: PathContext = {
 		projectId: params.projectId,
@@ -513,7 +513,7 @@ describe("syncToGitHub", () => {
 			iteration: 1,
 			modelSlug: MODEL_SLUG,
 			attemptCount: 1,
-			documentKey: "other_doc",
+			documentKey: FileType.GeneralResource,
 		});
 		const resourceRowDoc = {
 			storage_bucket: BUCKET,
@@ -818,8 +818,21 @@ describe("syncToGitHub", () => {
 	});
 
 	it("pre-completion sync — user selects 10 docs but only 5 are rendered; response has filesUpdated: 5, syncedDocumentKeys with 5 entries, skippedDocumentKeys with 5 entries", async () => {
-		const fiveKeys = ["a", "b", "c", "d", "e"];
-		const tenKeys = [...fiveKeys, "f", "g", "h", "i", "j"];
+		const fiveKeys: FileType[] = [
+			FileType.business_case,
+			FileType.feature_spec,
+			FileType.technical_approach,
+			FileType.success_metrics,
+			FileType.business_case_critique,
+		];
+		const tenKeys: FileType[] = [
+			...fiveKeys,
+			FileType.technical_feasibility_assessment,
+			FileType.risk_register,
+			FileType.non_functional_requirements,
+			FileType.dependency_map,
+			FileType.comparison_vector,
+		];
 		const fiveResources = fiveKeys.map((k, i) => {
 			const path = buildRenderedDocumentPath({
 				projectId: PROJECT_ID,

@@ -12,10 +12,10 @@ import type { StartSessionPayload, StartSessionDeps, DialecticSessionInsert } fr
 import type { Database } from "../types_db.ts";
 import { type SupabaseClient, type User } from "npm:@supabase/supabase-js@2";
 import { createMockSupabaseClient, type MockSupabaseDataConfig, type MockQueryBuilderState, type PostgresError } from "../_shared/supabase.mock.ts";
-import { MockPromptAssembler } from "../_shared/prompt-assembler/prompt-assembler.mock.ts";
+import { buildIPromptAssembler } from "../_shared/prompt-assembler/prompt-assembler.mock.ts";
 import { MockFileManagerService } from "../_shared/services/file_manager.mock.ts";
 import { MockLogger } from "../_shared/logger.mock.ts";
-import { AssembledPrompt } from "../_shared/prompt-assembler/prompt-assembler.interface.ts";
+import { AssembledPrompt, AssembleSeedPromptDeps } from "../_shared/prompt-assembler/prompt-assembler.interface.ts";
 
 const MOCK_FILE_MANAGER = new MockFileManagerService();
 
@@ -282,7 +282,7 @@ Deno.test("startSession - Error: Database error on session insertion", async () 
         mockUser: MOCK_USER,
     });
     const mockLogger = new MockLogger();
-    const mockAssembler = new MockPromptAssembler();
+    const mockAssembler = buildIPromptAssembler();
     const result = await startSession(
         MOCK_USER,
         mockAdminDbClientSetup.client as unknown as SupabaseClient<Database>,
@@ -300,12 +300,11 @@ Deno.test("startSession - Error: Fails to assemble seed prompt and cleans up ses
     const mockNewSessionId = "session-to-be-deleted-on-assembly-failure";
     const payload: StartSessionPayload = { projectId: mockProjectId, selectedModels: [{ id: "model-abc", displayName: "Model ABC" }], idempotencyKey: IDEM_KEY_ERRORS_TEST };
     
-    const mockAssembler = new MockPromptAssembler();
-    
     // For this test, we are going to throw an error when assemble is called
-    mockAssembler.assembleSeedPrompt = spy(() => {
+    const assembleSeedPrompt = spy((_deps: AssembleSeedPromptDeps) => {
         throw new Error("Assembly failed!");
     });
+    const mockAssembler = buildIPromptAssembler({ assembleSeedPrompt });
 
     const spiedSessionDeleteFn = spy(async () => ({ data: null, error: null, status: 204, statusText: 'no content' }));
 
@@ -384,8 +383,8 @@ Deno.test("startSession - Error: Fails to assemble seed prompt and cleans up ses
     
     assertEquals(spiedSessionDeleteFn.calls.length, 1, "Session delete should have been called once for cleanup.");
     
-    assertEquals(mockAssembler.assembleSeedPrompt.calls.length, 1, "assembler.assembleSeedPrompt should have been called once in error case.");
-    const assembleArgs = mockAssembler.assembleSeedPrompt.calls[0].args[0];
+    assertEquals(assembleSeedPrompt.calls.length, 1, "assembler.assembleSeedPrompt should have been called once in error case.");
+    const assembleArgs = assembleSeedPrompt.calls[0].args[0];
     assertExists(assembleArgs.dbClient, "The options object should have a dbClient in error case.");
     assertExists(assembleArgs.fileManager, "The options object should have a fileManager in error case.");
     assertExists(assembleArgs.project, "The options object should have a project in error case.");
@@ -430,7 +429,7 @@ Deno.test("startSession - Error: Missing overlays should fail fast", async () =>
     });
 
     const mockLogger = new MockLogger();
-    const assembler = new MockPromptAssembler();
+    const assembler = buildIPromptAssembler();
 
     const result = await startSession(
         MOCK_USER,
@@ -580,8 +579,8 @@ Deno.test("startSession - includes idempotency_key in the insert call to dialect
         mockUser: MOCK_USER,
     };
     const payload: StartSessionPayload = { projectId: mockProjectId, selectedModels: [{ id: "model-abc", displayName: "Model ABC" }], idempotencyKey: mockIdempotencyKey };
-    const mockAssembler = new MockPromptAssembler();
-    mockAssembler.assembleSeedPrompt = spy(() => Promise.resolve(mockAssembledPrompt));
+    const assembleSeedPrompt = spy((_deps: AssembleSeedPromptDeps) => Promise.resolve(mockAssembledPrompt));
+    const mockAssembler = buildIPromptAssembler({ assembleSeedPrompt });
     const { client: mockAdminClient } = createMockSupabaseClient(MOCK_USER.id, mockConfig);
     const mockUserTierClientSetup = createMockSupabaseClient(MOCK_USER.id, {
         rpcResults: {
@@ -696,8 +695,8 @@ Deno.test("startSession - on unique constraint violation (23505 on idempotency_k
         mockUser: MOCK_USER,
     };
     const payload: StartSessionPayload = { projectId: mockProjectId, selectedModels: [{ id: "model-abc", displayName: "Model ABC" }], idempotencyKey: mockIdempotencyKey };
-    const mockAssembler = new MockPromptAssembler();
-    mockAssembler.assembleSeedPrompt = spy(() => Promise.resolve(mockAssembledPrompt));
+    const assembleSeedPrompt = spy((_deps: AssembleSeedPromptDeps) => Promise.resolve(mockAssembledPrompt));
+    const mockAssembler = buildIPromptAssembler({ assembleSeedPrompt });
     const { client: mockAdminClient } = createMockSupabaseClient(MOCK_USER.id, mockConfig);
     const mockUserTierClientSetup = createMockSupabaseClient(MOCK_USER.id, {
         rpcResults: {
@@ -733,7 +732,7 @@ Deno.test("startSession - Error: returns MODEL_TIER_DISALLOWED when tier validat
         selectedModels: [{ id: "model-disallowed", displayName: "Model Disallowed" }],
         idempotencyKey: IDEM_KEY_ERRORS_TEST,
     };
-    const mockAssembler = new MockPromptAssembler();
+    const mockAssembler = buildIPromptAssembler();
     const mockAdminDbClientSetup = createMockSupabaseClient(MOCK_USER.id, {
         genericMockResults: {
             dialectic_projects: {
@@ -824,7 +823,7 @@ Deno.test("startSession - Error: returns MODEL_LIMIT_EXCEEDED when tier validati
         ],
         idempotencyKey: IDEM_KEY_ERRORS_TEST,
     };
-    const mockAssembler = new MockPromptAssembler();
+    const mockAssembler = buildIPromptAssembler();
     const mockAdminDbClientSetup = createMockSupabaseClient(MOCK_USER.id, {
         genericMockResults: {
             dialectic_projects: {
@@ -912,7 +911,7 @@ Deno.test("startSession - Error: returns TIER_VALIDATION_FAILED when model tier 
         selectedModels: [{ id: "model-abc", displayName: "Model ABC" }],
         idempotencyKey: IDEM_KEY_ERRORS_TEST,
     };
-    const mockAssembler = new MockPromptAssembler();
+    const mockAssembler = buildIPromptAssembler();
     const mockAdminDbClientSetup = createMockSupabaseClient(MOCK_USER.id, {
         genericMockResults: {
             dialectic_projects: {

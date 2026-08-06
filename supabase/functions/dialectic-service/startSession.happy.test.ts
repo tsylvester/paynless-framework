@@ -6,7 +6,7 @@ import type { StartSessionPayload, StartSessionSuccessResponse, DialecticProject
 import type { Database } from "../types_db.ts";
 import { type SupabaseClient, type User } from "npm:@supabase/supabase-js@2";
 import { createMockSupabaseClient } from "../_shared/supabase.mock.ts";
-import { MockPromptAssembler } from "../_shared/prompt-assembler/prompt-assembler.mock.ts";
+import { buildIPromptAssembler } from "../_shared/prompt-assembler/prompt-assembler.mock.ts";
 import { MockFileManagerService } from "../_shared/services/file_manager.mock.ts";
 import { MockLogger } from "../_shared/logger.mock.ts";
 import { AiProviderAdapterInstance, FactoryDependencies } from "../_shared/types.ts";
@@ -14,6 +14,7 @@ import { DummyAdapter } from "../_shared/ai_service/dummy_adapter.ts";
 import type { AiModelExtendedConfig } from "../_shared/types.ts";
 import {
     AssembledPrompt,
+    AssembleSeedPromptDeps,
 } from "../_shared/prompt-assembler/prompt-assembler.interface.ts";
 
 Deno.test("startSession - Happy Path (with explicit sessionDescription)", async () => {
@@ -47,8 +48,8 @@ Deno.test("startSession - Happy Path (with explicit sessionDescription)", async 
         promptContent: "This is the assembled seed prompt.",
         source_prompt_resource_id: "new-prompt-resource-id",
     };
-    const mockAssembler = new MockPromptAssembler();
-    mockAssembler.assembleSeedPrompt = spy(() => Promise.resolve(mockAssembledPrompt));
+    const assembleSeedPrompt = spy((_deps: AssembleSeedPromptDeps) => Promise.resolve(mockAssembledPrompt));
+    const mockAssembler = buildIPromptAssembler({ assembleSeedPrompt });
 
     const mockFileManager = new MockFileManagerService();
 
@@ -155,7 +156,7 @@ Deno.test("startSession - Happy Path (with explicit sessionDescription)", async 
     assertEquals(result.data.seedPrompt, mockAssembledPrompt, "The returned seedPrompt should match the assembled prompt.");
 
     assertEquals(
-        mockAssembler.assembleSeedPrompt.calls.length,
+        assembleSeedPrompt.calls.length,
         1,
         "assembleSeedPrompt should have been called once.",
     );
@@ -166,7 +167,7 @@ Deno.test("startSession - Happy Path (with explicit sessionDescription)", async 
         stage,
         projectInitialUserPrompt,
         iterationNumber,
-    } = mockAssembler.assembleSeedPrompt.calls[0].args[0];
+    } = assembleSeedPrompt.calls[0].args[0];
 
     assertExists(project, "The project context should have been provided.");
     assertExists(session, "The session context should have been provided.");
@@ -218,8 +219,8 @@ Deno.test("startSession - Happy Path (without explicit sessionDescription, defau
         promptContent: "This is the assembled seed prompt for default case.",
         source_prompt_resource_id: "default-case-resource-id",
     };
-    const mockAssembler = new MockPromptAssembler();
-    mockAssembler.assembleSeedPrompt = spy(() => Promise.resolve(mockAssembledPrompt));
+    const assembleSeedPrompt = spy((_deps: AssembleSeedPromptDeps) => Promise.resolve(mockAssembledPrompt));
+    const mockAssembler = buildIPromptAssembler({ assembleSeedPrompt });
 
     const mockFileManager = new MockFileManagerService();
 
@@ -338,7 +339,7 @@ Deno.test("startSession - Happy Path (without explicit sessionDescription, defau
 
     // Assert that assembler.assembleSeedPrompt was called correctly for the default case
     assertEquals(
-        mockAssembler.assembleSeedPrompt.calls.length,
+        assembleSeedPrompt.calls.length,
         1,
         "assembler.assembleSeedPrompt should have been called once for default case.",
     );
@@ -348,7 +349,7 @@ Deno.test("startSession - Happy Path (without explicit sessionDescription, defau
         stage,
         projectInitialUserPrompt,
         iterationNumber,
-    } = mockAssembler.assembleSeedPrompt.calls[0].args[0];
+    } = assembleSeedPrompt.calls[0].args[0];
 
     assertExists(
         project,
@@ -404,8 +405,8 @@ Deno.test("startSession - Happy Path (with initial prompt from file resource)", 
         promptContent: "This is the assembled seed prompt from file.",
         source_prompt_resource_id: "file-resource-id",
     };
-    const mockAssembler = new MockPromptAssembler();
-    mockAssembler.assembleSeedPrompt = spy(() => Promise.resolve(mockAssembledPrompt));
+    const assembleSeedPrompt = spy((_deps: AssembleSeedPromptDeps) => Promise.resolve(mockAssembledPrompt));
+    const mockAssembler = buildIPromptAssembler({ assembleSeedPrompt });
 
     const mockInitialPromptResource: DialecticProjectResource = {
         id: mockResourceId,
@@ -544,7 +545,7 @@ Deno.test("startSession - Happy Path (with initial prompt from file resource)", 
     assertEquals(result.data.seedPrompt, mockAssembledPrompt, "The returned seedPrompt should match the assembled prompt in the file prompt case.");
 
     assertEquals(
-        mockAssembler.assembleSeedPrompt.calls.length,
+        assembleSeedPrompt.calls.length,
         1,
         "assembler.assembleSeedPrompt should have been called once for file case.",
     );
@@ -554,7 +555,7 @@ Deno.test("startSession - Happy Path (with initial prompt from file resource)", 
         stage,
         projectInitialUserPrompt,
         iterationNumber,
-    } = mockAssembler.assembleSeedPrompt.calls[0].args[0];
+    } = assembleSeedPrompt.calls[0].args[0];
 
     // Check that the prompt content from the file was passed to the assembler
     assertEquals(
@@ -603,8 +604,8 @@ Deno.test("startSession - selects DummyAdapter for embedding when default provid
         promptContent: "This is the assembled seed prompt for dummy case.",
         source_prompt_resource_id: "dummy-resource-id",
     };
-    const mockAssembler = new MockPromptAssembler();
-    mockAssembler.assembleSeedPrompt = spy(() => Promise.resolve(mockAssembledPrompt));
+    const assembleSeedPrompt = spy((_deps: AssembleSeedPromptDeps) => Promise.resolve(mockAssembledPrompt));
+    const mockAssembler = buildIPromptAssembler({ assembleSeedPrompt });
     const mockFileManager = new MockFileManagerService();
 
     const dummyConfig: AiModelExtendedConfig = {
@@ -680,7 +681,7 @@ Deno.test("startSession - selects DummyAdapter for embedding when default provid
         "File manager upload should not be called from startSession for dummy case.",
     );
     assertEquals(
-        mockAssembler.assembleSeedPrompt.calls.length,
+        assembleSeedPrompt.calls.length,
         1,
         "assembleSeedPrompt should have been called once for dummy case.",
     );
@@ -716,8 +717,8 @@ Deno.test("startSession - Happy Path calls validate_model_tier_access before ins
         promptContent: "This is the assembled seed prompt for tier validation happy path.",
         source_prompt_resource_id: "tier-validation-happy-resource-id",
     };
-    const mockAssembler = new MockPromptAssembler();
-    mockAssembler.assembleSeedPrompt = spy(() => Promise.resolve(mockAssembledPrompt));
+    const assembleSeedPrompt = spy((_deps: AssembleSeedPromptDeps) => Promise.resolve(mockAssembledPrompt));
+    const mockAssembler = buildIPromptAssembler({ assembleSeedPrompt });
     const mockFileManager = new MockFileManagerService();
 
     const mockAdminDbClientSetup = createMockSupabaseClient(mockUser.id, {
@@ -896,8 +897,8 @@ Deno.test("startSession - Happy Path calls validate_model_tier_access with an em
         promptContent: "This is the assembled seed prompt for the empty model path.",
         source_prompt_resource_id: "tier-validation-empty-resource-id",
     };
-    const mockAssembler = new MockPromptAssembler();
-    mockAssembler.assembleSeedPrompt = spy(() => Promise.resolve(mockAssembledPrompt));
+    const assembleSeedPrompt = spy((_deps: AssembleSeedPromptDeps) => Promise.resolve(mockAssembledPrompt));
+    const mockAssembler = buildIPromptAssembler({ assembleSeedPrompt });
     const mockFileManager = new MockFileManagerService();
 
     const mockAdminDbClientSetup = createMockSupabaseClient(mockUser.id, {
