@@ -3,7 +3,7 @@ import { Database } from '../types_db.ts';
 import { DialecticJobRow, DialecticPlanJobPayload, DialecticRecipeStep } from '../dialectic-service/dialectic.interface.ts';
 import { DialecticContributionRow, DialecticProjectResourceRow, DialecticFeedbackRow } from '../dialectic-service/dialectic.interface.ts';
 import { SourceDocument } from '../dialectic-service/dialectic.interface.ts';
-import { isDocumentRelationships } from '../_shared/utils/type_guards.ts';
+import { isDocumentRelationships, isFileType } from '../_shared/utils/type_guards.ts';
 import { deconstructStoragePath } from '../_shared/utils/path_deconstructor.ts';
 import { isRecord } from '../_shared/utils/type_guards.ts';
 
@@ -29,6 +29,9 @@ function mapContributionToSourceDocument(row: DialecticContributionRow): SourceD
     const deconstructedPath = deconstructStoragePath({ storageDir: row.storage_path!, fileName: row.file_name! });
     if (deconstructedPath.attemptCount == null) {
         throw new Error(`deconstructStoragePath failed to extract attemptCount for contribution ${row.id} (storage_path: ${row.storage_path}, file_name: ${row.file_name})`);
+    }
+    if(!isFileType(deconstructedPath.documentKey)){
+        throw new Error("storage path document_key must be a member of fileType")
     }
     return { ...rest, content: '', document_relationships: docRels, attempt_count: deconstructedPath.attemptCount, document_key: deconstructedPath.documentKey };
 }

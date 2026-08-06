@@ -18,6 +18,7 @@ import type {
   FileManagerResponse,
 } from '../types/file_manager.types.ts';
 import type { ContextForDocument, ContributionType } from '../../dialectic-service/dialectic.interface.ts';
+import { buildDialecticProjectResourceRow } from '../dialectic.mock.ts';
 
 export type FileRecordOverrides = Partial<Database['public']['Tables']['dialectic_project_resources']['Row']>;
 
@@ -25,26 +26,12 @@ export type FileRecordCorruptions = {
   [K in keyof Database['public']['Tables']['dialectic_project_resources']['Row']]?: unknown;
 };
 
+
 export function buildFileRecord(overrides?: FileRecordOverrides): FileRecord {
-  const now = new Date().toISOString();
-  const base: Database['public']['Tables']['dialectic_project_resources']['Row'] = {
-    id: 'resource-id-1',
-    project_id: 'project_123',
-    session_id: 'session_abc',
-    user_id: 'user_123',
-    stage_slug: 'thesis',
-    iteration_number: 1,
+  const base = buildDialecticProjectResourceRow({
     resource_type: FileType.RenderedDocument,
-    file_name: 'rendered_document.md',
-    mime_type: 'text/markdown',
-    size_bytes: 100,
-    storage_bucket: 'content',
-    storage_path: 'project_123/session_abc/iteration_1/thesis/documents',
     resource_description: { type: FileType.RenderedDocument },
-    source_contribution_id: null,
-    created_at: now,
-    updated_at: now,
-  };
+  });
   return { ...base, ...overrides };
 }
 

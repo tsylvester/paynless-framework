@@ -1351,6 +1351,7 @@ export interface DialecticSimpleJobPayload extends DialecticBaseJobPayload {
  */
 export interface DialecticPlanJobPayload extends DialecticBaseJobPayload {
 	context_for_documents?: ContextForDocument[];
+	document_relationships?: DocumentRelationships | null;
 }
 
 export interface DialecticSkeletonJobPayload extends DialecticPlanJobPayload {
@@ -1887,9 +1888,9 @@ export type SourceDocument = Omit<
 	content: string;
 	document_relationships?: DocumentRelationships | null;
 	attempt_count?: number; // The attempt_count of the source document itself, derived from its filename
-	document_key?: string;
+	document_key?: FileType;
 	type?: string;
-	stage_slug?: string;
+	stage_slug?: DialecticStageSlug;
 };
 
 export type SelectAnchorResult =

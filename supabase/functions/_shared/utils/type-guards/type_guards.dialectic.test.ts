@@ -1027,6 +1027,22 @@ Deno.test('Type Guard: isDialecticPlanJobPayload', async (t) => {
     await t.step('should return false when maxOutputTokens is not a number on plan job payload', () => {
         assert(!isDialecticPlanJobPayload(invalidateDialecticPlanJobPayload({ maxOutputTokens: 'not a number' })));
     });
+
+    await t.step('should return true when document_relationships is null on plan job payload', () => {
+        assert(isDialecticPlanJobPayload(buildDialecticPlanJobPayload({ document_relationships: null })));
+    });
+
+    await t.step('should return true when document_relationships is a valid DocumentRelationships on plan job payload', () => {
+        assert(isDialecticPlanJobPayload(buildDialecticPlanJobPayload({ document_relationships: { thesis: 'thesis-id-123' } })));
+    });
+
+    await t.step('should return false when document_relationships is a string on plan job payload', () => {
+        assert(!isDialecticPlanJobPayload(invalidateDialecticPlanJobPayload({ document_relationships: 'invalid' })));
+    });
+
+    await t.step('should return false when an extraneous property is present on plan job payload', () => {
+        assert(!isDialecticPlanJobPayload({ ...buildDialecticPlanJobPayload(), step_info: { recipe_step_id: 'orchestrator-step-id' } }));
+    });
 });
 
 Deno.test('Type Guard: isDialecticSkeletonJobPayload', async (t) => {
@@ -2178,6 +2194,7 @@ Deno.test('Type Guard: isDialecticProjectResourceRow', async (t) => {
             resource_description: { type: 'general_resource' },
             resource_type: 'general_resource',
             source_contribution_id: 'contrib-123',
+            source_prompt_resource_id: 'prompt-resource-123',
         })));
     });
 
@@ -2191,6 +2208,7 @@ Deno.test('Type Guard: isDialecticProjectResourceRow', async (t) => {
             iteration_number: null,
             size_bytes: null,
             source_contribution_id: null,
+            source_prompt_resource_id: null,
         })));
     });
 
@@ -2201,6 +2219,10 @@ Deno.test('Type Guard: isDialecticProjectResourceRow', async (t) => {
 
     await t.step('should return false when a numeric field has the wrong type', () => {
         assert(!isDialecticProjectResourceRow(invalidateDialecticProjectResourceRow({ size_bytes: 'large' })));
+    });
+
+    await t.step('should return false when source_prompt_resource_id is neither a string nor null', () => {
+        assert(!isDialecticProjectResourceRow(invalidateDialecticProjectResourceRow({ source_prompt_resource_id: 42 })));
     });
 });
 

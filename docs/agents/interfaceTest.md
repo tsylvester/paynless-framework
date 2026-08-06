@@ -10,8 +10,8 @@ view (interfaceTest prompt). Governed by all Process topics.
 Written **before** the interface (TDD). Proves the interface's contract by typed
 assignment.
 
-- Contains only type/interface imports, type-only assertions, test blocks,
-  and typed assertions — nothing else.
+- Contains only type/interface imports, contract headers, type-only assertions, test
+  blocks, and typed assertions — nothing else.
 - Every type and symbol is imported from the interface file by its production name.
 - Never relies on implementation details.
 - Contract is proven by typed assignment — a value annotated with the imported type,
@@ -24,18 +24,34 @@ import type {
   EnqueuedReturn,
 } from "./myFunction.interface.ts";
 
+/** Contract: MyFunctionSuccessReturn is a member of MyFunctionReturn. */
 test("MyFunctionSuccessReturn is a member of MyFunctionReturn", () => {
   const success: MyFunctionSuccessReturn = { createdCount: 1 };  // typed literal, never a builder
   const result: MyFunctionReturn = success;   // compiles only if membership holds
   assert(result === success);
 });
 
+/** Contract: EnqueuedReturn is a flavor of the MyFunctionSuccessReturn arm. */
 test("EnqueuedReturn is a member of MyFunctionSuccessReturn", () => {
   const enqueued: EnqueuedReturn = { enqueued: true, jobId: "job-1" };  // typed literal
   const success: MyFunctionSuccessReturn = enqueued;   // flavor membership (see errors-and-returns)
   assert(success === enqueued);
 });
 ```
+
+### The contract header here
+
+This scope collapses to a **one-line `Contract` header** naming the membership or surface
+the block proves. The remaining three fields are invariant for every block in the scope —
+arrange a typed literal or a `Record<keyof …, true>` surface, act by assigning it to the
+wider type, assert the identity that only compiles if the contract holds — so they are
+stated once, here, and never repeated per block. There are no inline markers: each
+statement is already its own section (see
+[tests](tests.md#every-test-states-its-contract)).
+
+**There is no action in this scope, and none is invented.** The assignment is the act. If
+an `Act` field tempts you to write a call, a function value, or a body so there is
+"something to act on," stop — that is implementing, and the contract is proven by types.
 
 Prove **flavor membership** too: each flavor of an arm is assignable to its arm,
 which is assignable to `Return` (see [errors-and-returns](errors-and-returns.md#either-arm-may-be-a-union-of-flavors)).
@@ -57,6 +73,7 @@ self-comparison.
 ```ts
 import type { MyObject } from "./myObject.interface.ts";
 
+/** Contract: MyObject's required key surface is exactly arg1 and arg2. */
 test("MyObject has the required surface", () => {
   const surface: Record<keyof MyObject, true> = {
     arg1: true,
@@ -84,6 +101,7 @@ import type {
   MyFunction,
 } from "./myFunction.interface.ts";
 
+/** Contract: MyFunction's deps parameter requires exactly dep1 and dep2. */
 test("MyFunction has the required deps surface", () => {
   const surface: Record<keyof Parameters<MyFunction>[0], true> = {
     dep1: true,
@@ -92,6 +110,7 @@ test("MyFunction has the required deps surface", () => {
   assert(Object.keys(surface).length === 2);
 });
 
+/** Contract: MyFunction's params parameter requires exactly arg1 and arg2. */
 test("MyFunction has the required params surface", () => {
   const surface: Record<keyof Parameters<MyFunction>[1], true> = {
     arg1: true,
@@ -113,6 +132,7 @@ import type {
 } from "./myFunction.interface.ts";
 
 // SYNC — MyFunction returns MyFunctionReturn
+/** Contract: MyFunction's declared return admits its success arm. */
 test("MyFunction returns its declared success type", () => {
   const success: MyFunctionSuccessReturn = { createdCount: 1 };
   const returned: ReturnType<MyFunction> = success;
@@ -120,6 +140,7 @@ test("MyFunction returns its declared success type", () => {
   assert(declared === success);
 });
 
+/** Contract: MyFunction's declared return admits its error arm. */
 test("MyFunction returns its declared error type", () => {
   const error: MyFunctionErrorReturn = { error: "failed" };
   const returned: ReturnType<MyFunction> = error;
@@ -128,6 +149,7 @@ test("MyFunction returns its declared error type", () => {
 });
 
 // ASYNC — MyFunction returns Promise<MyFunctionReturn>
+/** Contract: MyFunction's declared Promise return admits its success arm. */
 test("MyFunction resolves to its declared success type", () => {
   const success: MyFunctionSuccessReturn = { createdCount: 1 };
   const returned: ReturnType<MyFunction> = Promise.resolve(success);
@@ -135,6 +157,7 @@ test("MyFunction resolves to its declared success type", () => {
   assert(declared instanceof Promise);
 });
 
+/** Contract: MyFunction's declared Promise return admits its error arm. */
 test("MyFunction resolves to its declared error type", () => {
   const error: MyFunctionErrorReturn = { error: "failed" };
   const returned: ReturnType<MyFunction> = Promise.resolve(error);

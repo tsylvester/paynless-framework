@@ -24,7 +24,8 @@ import {
     MockQueryBuilderState 
 } from '../_shared/supabase.mock.ts';
 import { FileType } from '../_shared/types/file_manager.types.ts';
-import { isRecord } from '../_shared/utils/type_guards.ts';
+import { isRecord, isJson } from '../_shared/utils/type_guards.ts';
+import { buildDialecticProjectResourceRow, buildDialecticContributionRow, buildDialecticJobRow, buildDialecticPlanJobPayload } from '../_shared/dialectic.mock.ts';
 
 describe('findSourceDocuments', () => {
     let mockSupabase: ReturnType<typeof createMockSupabaseClient>;
@@ -32,40 +33,21 @@ describe('findSourceDocuments', () => {
     let mockDownloadFromStorage: (bucket: string, path: string) => Promise<{ data: ArrayBuffer | null; error: Error | null; }>;
 
     beforeEach(() => {
+        const planPayload: DialecticPlanJobPayload = buildDialecticPlanJobPayload({
+            model_id: 'model-1',
+            projectId: 'proj-1',
+            sessionId: 'sess-1',
+            stageSlug: 'test-stage',
+        });
+        if (!isJson(planPayload)) throw new Error('Test setup failed: planPayload not Json');
         mockParentJob = {
-            id: 'parent-job-123',
-            status: 'pending',
-            payload: {
+            ...buildDialecticJobRow({
+                id: 'parent-job-123',
+                session_id: 'sess-1',
                 job_type: 'PLAN',
-                model_id: 'model-1',
-                projectId: 'proj-1',
-                sessionId: 'sess-1',
-                stageSlug: 'test-stage',
-                iterationNumber: 1,
-                walletId: 'wallet-1',
-                continueUntilComplete: false,
-                maxRetries: 3,
-                continuation_count: 0,
-                user_jwt: 'parent-jwt-default',
-                idempotencyKey: "idempotency-key-1",
-            },
-            created_at: new Date().toISOString(),
-            user_id: 'user-123',
-            attempt_count: 0,
-            max_retries: 3,
-            completed_at: null,
-            error_details: null,
-            iteration_number: 1,
-            parent_job_id: null,
-            prerequisite_job_id: null,
-            results: null,
-            session_id: 'sess-1',
-            started_at: null,
-            stage_slug: 'test-stage',
-            target_contribution_id: null,
-            is_test_job: false,
-            job_type: 'PLAN',
-            idempotency_key: "idempotency-key-1",
+                stage_slug: 'test-stage',
+            }),
+            payload: planPayload,
         };
 
         mockDownloadFromStorage = () => {
@@ -81,24 +63,13 @@ describe('findSourceDocuments', () => {
         // Target: seed_prompt is project-level (file_name always seed_prompt.md, resource_type seed_prompt);
         // query must NOT filter by stage_slug so the single project seed_prompt is always found.
         const rule: InputRule[] = [{ type: 'seed_prompt', slug: 'thesis', document_key: FileType.SeedPrompt, required: true }];
-        const mockSeedPromptResource: DialecticProjectResourceRow = {
+        const mockSeedPromptResource: DialecticProjectResourceRow = buildDialecticProjectResourceRow({
             id: 'seed-prompt-resource-id',
             project_id: 'proj-1',
-            user_id: 'user-123',
             file_name: 'seed_prompt.md',
-            storage_bucket: 'test-bucket',
-            storage_path: 'projects/proj-1/resources',
-            mime_type: 'text/plain',
-            size_bytes: 123,
             resource_description: { "description": "A test seed prompt", type: 'seed_prompt', document_key: 'seed_prompt' },
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-            iteration_number: null,
             resource_type: 'seed_prompt',
-            session_id: null,
-            source_contribution_id: null,
-            stage_slug: null,
-        };
+        });
 
         mockSupabase = createMockSupabaseClient(undefined, {
             genericMockResults: {
@@ -206,38 +177,17 @@ describe('findSourceDocuments', () => {
 
     it("successfully returns a 'header_context' from dialectic_contributions", async () => {
         const rule: InputRule[] = [{ type: 'header_context', slug: 'test-stage' }];
-        const mockHeaderContextContribution: DialecticContributionRow = {
+        const mockHeaderContextContribution: DialecticContributionRow = buildDialecticContributionRow({
             id: 'header-context-contribution-id',
             session_id: 'sess-1',
-            user_id: 'user-123',
             stage: 'test-stage',
-            iteration_number: 1,
             model_id: 'model-1',
-            model_name: 'Test Model',
-            prompt_template_id_used: 'prompt-1',
-            seed_prompt_url: null,
-            edit_version: 1,
-            is_latest_edit: true,
-            original_model_contribution_id: null,
-            raw_response_storage_path: null,
-            target_contribution_id: null,
-            tokens_used_input: 10,
-            tokens_used_output: 20,
-            processing_time_ms: 100,
-            error: null,
-            citations: null,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
             contribution_type: 'header_context',
             file_name: 'model-1_0_header_context.json',
-            storage_bucket: 'test-bucket',
             storage_path: 'proj-1/session_sess-1/iteration_1/test-stage/_work/context',
-            size_bytes: 80,
             mime_type: 'application/json',
-            document_relationships: null,
             is_header: true,
-            source_prompt_resource_id: null,
-        };
+        });
 
         mockSupabase = createMockSupabaseClient(undefined, {
             genericMockResults: {
@@ -363,54 +313,33 @@ describe('findSourceDocuments', () => {
 
         const rule: InputRule[] = [{ type: 'header_context', slug: 'thesis' }];
 
-        const mockHeaderContextModelA: DialecticContributionRow = {
+        const mockHeaderContextModelA: DialecticContributionRow = buildDialecticContributionRow({
             id: 'header-context-model-A',
             session_id: 'sess-1',
-            user_id: 'user-123',
-            stage: 'thesis',
-            iteration_number: 1,
             model_id: 'model-A',
             model_name: 'Model A',
-            prompt_template_id_used: 'prompt-1',
-            seed_prompt_url: null,
-            edit_version: 1,
-            is_latest_edit: true,
-            original_model_contribution_id: null,
-            raw_response_storage_path: null,
-            target_contribution_id: null,
-            tokens_used_input: 10,
-            tokens_used_output: 20,
-            processing_time_ms: 100,
-            error: null,
-            citations: null,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
             contribution_type: 'header_context',
             file_name: 'model-A_0_header_context.json',
-            storage_bucket: 'test-bucket',
             storage_path: 'proj-1/session_sess-1/iteration_1/1_thesis/_work/context',
-            size_bytes: 80,
             mime_type: 'application/json',
-            document_relationships: null,
             is_header: true,
-            source_prompt_resource_id: null,
-        };
+        });
 
-        const mockHeaderContextModelB: DialecticContributionRow = {
+        const mockHeaderContextModelB: DialecticContributionRow = buildDialecticContributionRow({
             ...mockHeaderContextModelA,
             id: 'header-context-model-B',
             model_id: 'model-B',
             model_name: 'Model B',
             file_name: 'model-B_0_header_context.json',
-        };
+        });
 
-        const mockHeaderContextModelC: DialecticContributionRow = {
+        const mockHeaderContextModelC: DialecticContributionRow = buildDialecticContributionRow({
             ...mockHeaderContextModelA,
             id: 'header-context-model-C',
             model_id: 'model-C',
             model_name: 'Model C',
             file_name: 'model-C_0_header_context.json',
-        };
+        });
 
         // Set parent job to model-A
         mockParentJob.payload.model_id = 'model-A';
@@ -480,24 +409,16 @@ describe('findSourceDocuments', () => {
 
     it("successfully returns a document from resources using the 'slug' property", async () => {
         const rule: InputRule[] = [{ type: 'document', slug: 'thesis' }];
-        const mockThesisResource: DialecticProjectResourceRow = {
+        const mockThesisResource: DialecticProjectResourceRow = buildDialecticProjectResourceRow({
             id: 'doc-1-thesis',
             project_id: 'proj-1',
-            user_id: 'user-123',
             file_name: 'doc1.txt',
-            storage_bucket: 'test-bucket',
-            storage_path: 'projects/proj-1/resources',
-            mime_type: 'text/plain',
-            size_bytes: 123,
             resource_description: { type: 'document', document_key: 'thesis' },
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
             iteration_number: 1,
             resource_type: 'rendered_document',
             session_id: 'sess-1',
-            source_contribution_id: null,
             stage_slug: 'thesis',
-        };
+        });
 
         mockSupabase = createMockSupabaseClient(undefined, {
             genericMockResults: {
@@ -586,24 +507,17 @@ describe('findSourceDocuments', () => {
             document_key: FileType.technical_approach,
         }];
 
-        const resourceRow: DialecticProjectResourceRow = {
+        const resourceRow: DialecticProjectResourceRow = buildDialecticProjectResourceRow({
             id: 'resource-technical-approach',
             project_id: 'proj-1',
-            user_id: 'user-123',
             file_name: 'sess-1_thesis_technical_approach_v1.md',
-            storage_bucket: 'test-bucket',
-            storage_path: 'projects/proj-1/resources',
-            mime_type: 'text/markdown',
             size_bytes: 4096,
             resource_description: { type: 'document', document_key: FileType.technical_approach },
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
             iteration_number: 1,
             resource_type: 'rendered_document',
             session_id: 'sess-1',
-            source_contribution_id: null,
             stage_slug: 'thesis',
-        };
+        });
 
         mockSupabase = createMockSupabaseClient(undefined, {
             genericMockResults: {
@@ -647,33 +561,22 @@ describe('findSourceDocuments', () => {
             { type: 'document', slug: 'test-stage', document_key: FileType.success_metrics },
         ];
 
-        const projectResource1: DialecticProjectResourceRow = {
+        const projectResource1: DialecticProjectResourceRow = buildDialecticProjectResourceRow({
             id: 'resource-success-metrics-1',
             project_id: 'proj-1',
-            user_id: 'user-123',
             file_name: 'sess-1_thesis_success_metrics_v1.md',
-            storage_bucket: 'test-bucket',
-            storage_path: 'projects/proj-1/resources',
-            mime_type: 'text/markdown',
             size_bytes: 5120,
             resource_description: { type: 'document', document_key: FileType.success_metrics },
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
             iteration_number: 1,
             resource_type: 'rendered_document',
             session_id: 'sess-1',
-            source_contribution_id: null,
             stage_slug: 'test-stage',
-        };
+        });
 
-        const projectResource2: DialecticProjectResourceRow = {
+        const projectResource2: DialecticProjectResourceRow = buildDialecticProjectResourceRow({
             id: 'resource-success-metrics-2',
             project_id: 'proj-1',
-            user_id: 'user-123',
             file_name: 'sess-1_thesis_success_metrics_v2.md',
-            storage_bucket: 'test-bucket',
-            storage_path: 'projects/proj-1/resources',
-            mime_type: 'text/markdown',
             size_bytes: 5121,
             resource_description: { type: 'document', document_key: FileType.success_metrics },
             created_at: new Date(Date.now() + 1000).toISOString(),
@@ -681,9 +584,8 @@ describe('findSourceDocuments', () => {
             iteration_number: 1,
             resource_type: 'rendered_document',
             session_id: 'sess-1',
-            source_contribution_id: null,
             stage_slug: 'test-stage',
-        };
+        });
 
         mockSupabase = createMockSupabaseClient(undefined, {
             genericMockResults: {
@@ -721,77 +623,85 @@ describe('findSourceDocuments', () => {
         assertEquals(ids, ['resource-success-metrics-1', 'resource-success-metrics-2']);
     });
 
+    it('returns the combined set of distinct documents when multiple distinct rules require different documents (join step)', async () => {
+        // Purpose: Proves the convergence of parallel branches — when a single step has
+        // multiple DISTINCT inputs_required rules (e.g., one requiring a thesis-stage
+        // business_case and one requiring an antithesis-stage risk_register), findSourceDocuments
+        // iterates every rule and returns the complete, combined, deduplicated list of documents.
+        // This is the "join" objective: the planner receives every distinct input the step declared.
+        //
+        // Existing multi-rule tests (lines 558, 626, 1009) repeat the SAME rule twice; this test
+        // covers the distinct-rules case they do not.
+
+        // Arrange:
+        // 1. Define two DISTINCT InputRules — different slug AND different document_key — so each
+        //    rule resolves to a different document. Use buildInputRule for each, overriding type,
+        //    slug, and document_key so the two rules do not overlap.
+        //    Rule A: { type: 'document', slug: 'thesis',      document_key: FileType.business_case }
+        //    Rule B: { type: 'document', slug: 'antithesis',  document_key: FileType.risk_register }
+
+        // 2. Seed two DISTINCT valid DialecticProjectResourceRow fixtures, one matching each rule:
+        //    - resourceA: stage_slug 'thesis',     resource_description.document_key 'business_case'
+        //    - resourceB: stage_slug 'antithesis', resource_description.document_key 'risk_register'
+        //    Use buildDialecticProjectResourceRow for each, with project_id/session_id/iteration_number
+        //    matching mockParentJob.payload.
+
+        // 3. Seed at least one INVALID candidate per rule to prove selection, not just presence
+        //    (per the filtering note: pass valid AND invalid candidates):
+        //    - a resource with the right slug but the WRONG document_key (should not satisfy either rule),
+        //    - a resource with the right document_key but the WRONG slug (should not satisfy either rule).
+        //    These prove the rules filter, not that any document is returned.
+
+        // 4. Configure createMockSupabaseClient so dialectic_project_resources.select applies the
+        //    chained .eq() filters (resource_type, project_id, session_id, stage_slug, iteration_number)
+        //    against the seeded rows — the same pattern used at line 1054
+        //    ('enforces column predicates and rejects JSON-path filters for rendered document resources').
+        //    Wire dialectic_contributions.select to return an error so a fallback to contributions
+        //    would fail loud (the 'document' branch uses resources exclusively when found).
+
+        // Act:
+        // 1. Call findSourceDocuments with the two distinct rules and mockParentJob.
+
+        // Assert:
+        // 1. documents.length === 2 — exactly the two valid candidates, one per rule.
+        // 2. The returned ids are exactly { resourceA.id, resourceB.id } — neither invalid candidate
+        //    is present, proving each rule selected its own match and filtered the rest.
+        // 3. (Optional) assert each returned doc carries the document_key its rule requested, to prove
+        //    the join preserved per-rule identity rather than collapsing the two into one.
+    });
+
     it('returns multiple header_context contributions when multiple rules require them', async () => {
         const rules: InputRule[] = [
             { type: 'header_context', slug: 'test-stage', document_key: FileType.HeaderContext },
             { type: 'header_context', slug: 'test-stage', document_key: FileType.HeaderContext },
         ];
 
-        const contribution1: DialecticContributionRow = {
+        const contribution1: DialecticContributionRow = buildDialecticContributionRow({
             id: 'header-context-contribution-1',
             session_id: 'sess-1',
-            user_id: 'user-123',
             stage: 'test-stage',
-            iteration_number: 1,
             model_id: 'model-3',
             model_name: 'Planner Model',
-            prompt_template_id_used: 'prompt-planner',
-            seed_prompt_url: null,
-            edit_version: 1,
-            is_latest_edit: true,
-            original_model_contribution_id: null,
-            raw_response_storage_path: null,
-            target_contribution_id: null,
-            tokens_used_input: 100,
-            tokens_used_output: 200,
-            processing_time_ms: 180,
-            error: null,
-            citations: null,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
             contribution_type: 'header_context',
             file_name: 'model-3_0_header_context.json',
-            storage_bucket: 'test-bucket',
             storage_path: 'proj-1/session_sess-1/iteration_1/test-stage/_work/context',
-            size_bytes: 2048,
             mime_type: 'application/json',
-            document_relationships: null,
             is_header: true,
-            source_prompt_resource_id: null,
-        };
+        });
 
-        const contribution2: DialecticContributionRow = {
+        const contribution2: DialecticContributionRow = buildDialecticContributionRow({
             id: 'header-context-contribution-2',
             session_id: 'sess-1',
-            user_id: 'user-123',
             stage: 'test-stage',
-            iteration_number: 1,
             model_id: 'model-3',
             model_name: 'Planner Model',
-            prompt_template_id_used: 'prompt-planner',
-            seed_prompt_url: null,
             edit_version: 2,
-            is_latest_edit: true,
-            original_model_contribution_id: null,
-            raw_response_storage_path: null,
-            target_contribution_id: null,
-            tokens_used_input: 100,
-            tokens_used_output: 200,
-            processing_time_ms: 180,
-            error: null,
-            citations: null,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
             contribution_type: 'header_context',
             file_name: 'model-3_1_header_context.json',
-            storage_bucket: 'test-bucket',
             storage_path: 'proj-1/session_sess-1/iteration_1/test-stage/_work/context',
-            size_bytes: 2049,
             mime_type: 'application/json',
-            document_relationships: null,
             is_header: true,
-            source_prompt_resource_id: null,
-        };
+        });
 
         mockSupabase = createMockSupabaseClient(undefined, {
             genericMockResults: {
@@ -850,24 +760,16 @@ describe('findSourceDocuments', () => {
         const rule: InputRule[] = [{ type: 'seed_prompt', slug: 'test-stage' }];
 
         // Seed prompt created at iteration 0 (session start)
-        const seedPromptAtStart: DialecticProjectResourceRow = {
+        const seedPromptAtStart: DialecticProjectResourceRow = buildDialecticProjectResourceRow({
             id: 'seed-prompt-iter-0',
             project_id: 'proj-1',
-            user_id: 'user-123',
             file_name: 'seed-iter-0.txt',
-            storage_bucket: 'test-bucket',
-            storage_path: 'projects/proj-1/resources',
-            mime_type: 'text/plain',
-            size_bytes: 123,
             resource_description: { "description": "Seed prompt at session start", type: 'seed_prompt' },
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
             iteration_number: 0,
             resource_type: 'seed_prompt',
             session_id: 'sess-1',
-            source_contribution_id: null,
             stage_slug: 'test-stage',
-        };
+        });
 
         mockSupabase = createMockSupabaseClient(undefined, {
             genericMockResults: {
@@ -917,71 +819,30 @@ describe('findSourceDocuments', () => {
 
     it("filters header_context contributions by iteration_number", async () => {
         const rule: InputRule[] = [{ type: 'header_context', slug: 'test-stage' }];
-        const iteration1HeaderContext: DialecticContributionRow = {
+        const iteration1HeaderContext: DialecticContributionRow = buildDialecticContributionRow({
             id: 'header-context-iter-1',
             session_id: 'sess-1',
-            user_id: 'user-123',
             stage: 'test-stage',
-            iteration_number: 1,
             model_id: 'model-1',
-            model_name: 'Test Model',
-            prompt_template_id_used: 'prompt-1',
-            seed_prompt_url: null,
-            edit_version: 1,
-            is_latest_edit: true,
-            original_model_contribution_id: null,
-            raw_response_storage_path: null,
-            target_contribution_id: null,
-            tokens_used_input: 10,
-            tokens_used_output: 20,
-            processing_time_ms: 100,
-            error: null,
-            citations: null,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
             contribution_type: 'header_context',
             file_name: 'model-1_0_header_context.json',
-            storage_bucket: 'test-bucket',
             storage_path: 'proj-1/session_sess-1/iteration_1/test-stage/_work/context',
-            size_bytes: 80,
             mime_type: 'application/json',
-            document_relationships: null,
             is_header: true,
-            source_prompt_resource_id: null,
-        };
+        });
 
-        const iteration2HeaderContext: DialecticContributionRow = {
+        const iteration2HeaderContext: DialecticContributionRow = buildDialecticContributionRow({
             id: 'header-context-iter-2',
             session_id: 'sess-1',
-            user_id: 'user-123',
             stage: 'test-stage',
             iteration_number: 2,
             model_id: 'model-1',
-            model_name: 'Test Model',
-            prompt_template_id_used: 'prompt-1',
-            seed_prompt_url: null,
-            edit_version: 1,
-            is_latest_edit: true,
-            original_model_contribution_id: null,
-            raw_response_storage_path: null,
-            target_contribution_id: null,
-            tokens_used_input: 10,
-            tokens_used_output: 20,
-            processing_time_ms: 100,
-            error: null,
-            citations: null,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
             contribution_type: 'header_context',
             file_name: 'model-1_0_header_context_iter2.json',
-            storage_bucket: 'test-bucket',
             storage_path: 'proj-1/session_sess-1/iteration_2/test-stage/_work/context',
-            size_bytes: 81,
             mime_type: 'application/json',
-            document_relationships: null,
             is_header: true,
-            source_prompt_resource_id: null,
-        };
+        });
 
         mockSupabase = createMockSupabaseClient(undefined, {
             genericMockResults: {
@@ -1043,24 +904,15 @@ describe('findSourceDocuments', () => {
         const rule: InputRule[] = [{ type: 'project_resource', slug: 'test-stage', document_key: FileType.GeneralResource }];
 
         // Project resource created before dialectic starts (iteration null or 0)
-        const projectResourceAtStart: DialecticProjectResourceRow = {
+        const projectResourceAtStart: DialecticProjectResourceRow = buildDialecticProjectResourceRow({
             id: 'project-resource-iter-null',
             project_id: 'proj-1',
-            user_id: 'user-123',
             file_name: 'initial_user_prompt.md',
-            storage_bucket: 'test-bucket',
-            storage_path: 'projects/proj-1/resources',
-            mime_type: 'text/markdown',
             size_bytes: 3072,
             resource_description: { type: 'project_resource', document_key: FileType.GeneralResource },
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-            iteration_number: null,
             resource_type: 'project_resource',
-            session_id: null,
-            source_contribution_id: null,
             stage_slug: 'test-stage',
-        };
+        });
 
         mockSupabase = createMockSupabaseClient(undefined, {
             genericMockResults: {
@@ -1111,24 +963,15 @@ describe('findSourceDocuments', () => {
     it("returns the expected 'project_resource' row when available", async () => {
         const rules: InputRule[] = [{ type: 'project_resource', slug: 'test-stage', document_key: FileType.GeneralResource }];
 
-        const projectResource: DialecticProjectResourceRow = {
+        const projectResource: DialecticProjectResourceRow = buildDialecticProjectResourceRow({
             id: 'general-resource-id',
             project_id: 'proj-1',
-            user_id: 'user-123',
             file_name: 'general_resource.md',
-            storage_bucket: 'test-bucket',
-            storage_path: 'projects/proj-1/resources',
-            mime_type: 'text/markdown',
             size_bytes: 3072,
             resource_description: { type: 'project_resource', document_key: FileType.GeneralResource },
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-            iteration_number: null,
             resource_type: 'project_resource',
-            session_id: null,
-            source_contribution_id: null,
             stage_slug: 'test-stage',
-        };
+        });
 
         mockSupabase = createMockSupabaseClient(undefined, {
             genericMockResults: {
@@ -1219,24 +1062,15 @@ describe('findSourceDocuments', () => {
             { type: 'project_resource', slug: 'test-stage', document_key: FileType.GeneralResource },
         ];
 
-        const projectResource: DialecticProjectResourceRow = {
+        const projectResource: DialecticProjectResourceRow = buildDialecticProjectResourceRow({
             id: 'general-resource-shared',
             project_id: 'proj-1',
-            user_id: 'user-123',
             file_name: 'general_resource.md',
-            storage_bucket: 'test-bucket',
-            storage_path: 'projects/proj-1/resources',
-            mime_type: 'text/markdown',
             size_bytes: 3072,
             resource_description: { type: 'project_resource', document_key: FileType.GeneralResource },
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-            iteration_number: null,
             resource_type: 'project_resource',
-            session_id: null,
-            source_contribution_id: null,
             stage_slug: 'test-stage',
-        };
+        });
 
         mockSupabase = createMockSupabaseClient(undefined, {
             genericMockResults: {
@@ -1273,27 +1107,21 @@ describe('findSourceDocuments', () => {
             },
         ];
 
-        const projectResource: DialecticProjectResourceRow = {
+        const projectResource: DialecticProjectResourceRow = buildDialecticProjectResourceRow({
             id: 'rendered-document-resource-id',
             project_id: 'proj-1',
-            user_id: 'user-123',
             file_name: 'sess-1_test-stage_technical_approach_v1.md',
-            storage_bucket: 'test-bucket',
-            storage_path: 'projects/proj-1/resources',
-            mime_type: 'text/markdown',
             size_bytes: 4096,
             resource_description: {
                 type: 'rendered_document',
                 document_key: FileType.technical_approach,
             },
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
             iteration_number: 1,
             resource_type: 'rendered_document',
             session_id: 'sess-1',
             source_contribution_id: 'contrib-123',
             stage_slug: 'test-stage',
-        };
+        });
 
         type SelectResultRendered = {
             data: object[] | null;
@@ -1389,90 +1217,67 @@ describe('findSourceDocuments', () => {
             },
         ];
 
+        const iteration2Payload: DialecticPlanJobPayload = buildDialecticPlanJobPayload({
+            model_id: 'model-1',
+            projectId: 'proj-1',
+            sessionId: 'sess-1',
+            stageSlug: 'test-stage',
+            iterationNumber: 2,
+        });
+        if (!isJson(iteration2Payload)) throw new Error('Test setup failed: iteration2Payload not Json');
         const iteration2ParentJob: DialecticJobRow & { payload: DialecticPlanJobPayload } = {
             ...mockParentJob,
-            payload: {
-                job_type: 'PLAN',
-                model_id: 'model-1',
-                projectId: 'proj-1',
-                sessionId: 'sess-1',
-                stageSlug: 'test-stage',
-                iterationNumber: 2,
-                walletId: 'wallet-1',
-                continueUntilComplete: false,
-                maxRetries: 3,
-                continuation_count: 0,
-                user_jwt: 'parent-jwt-default',
-                idempotencyKey: "idempotency-key-1",
-            },
+            payload: iteration2Payload,
             iteration_number: 2,
         };
 
-        const iteration1Document: DialecticProjectResourceRow = {
+        const iteration1Document: DialecticProjectResourceRow = buildDialecticProjectResourceRow({
             id: 'rendered-doc-iter-1',
             project_id: 'proj-1',
-            user_id: 'user-123',
             file_name: 'sess-1_test-stage_technical_approach_iter1.md',
-            storage_bucket: 'test-bucket',
-            storage_path: 'projects/proj-1/resources',
-            mime_type: 'text/markdown',
             size_bytes: 4096,
             resource_description: {
                 type: 'rendered_document',
                 document_key: FileType.technical_approach,
             },
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
             iteration_number: 1,
             resource_type: 'rendered_document',
             session_id: 'sess-1',
             source_contribution_id: 'contrib-iter-1',
             stage_slug: 'test-stage',
-        };
+        });
 
-        const iteration2Document: DialecticProjectResourceRow = {
+        const iteration2Document: DialecticProjectResourceRow = buildDialecticProjectResourceRow({
             id: 'rendered-doc-iter-2',
             project_id: 'proj-1',
-            user_id: 'user-123',
             file_name: 'sess-1_test-stage_technical_approach_iter2.md',
-            storage_bucket: 'test-bucket',
-            storage_path: 'projects/proj-1/resources',
-            mime_type: 'text/markdown',
             size_bytes: 4097,
             resource_description: {
                 type: 'rendered_document',
                 document_key: FileType.technical_approach,
             },
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
             iteration_number: 2,
             resource_type: 'rendered_document',
             session_id: 'sess-1',
             source_contribution_id: 'contrib-iter-2',
             stage_slug: 'test-stage',
-        };
+        });
 
-        const iteration3Document: DialecticProjectResourceRow = {
+        const iteration3Document: DialecticProjectResourceRow = buildDialecticProjectResourceRow({
             id: 'rendered-doc-iter-3',
             project_id: 'proj-1',
-            user_id: 'user-123',
             file_name: 'sess-1_test-stage_technical_approach_iter3.md',
-            storage_bucket: 'test-bucket',
-            storage_path: 'projects/proj-1/resources',
-            mime_type: 'text/markdown',
             size_bytes: 4098,
             resource_description: {
                 type: 'rendered_document',
                 document_key: FileType.technical_approach,
             },
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
             iteration_number: 3,
             resource_type: 'rendered_document',
             session_id: 'sess-1',
             source_contribution_id: 'contrib-iter-3',
             stage_slug: 'test-stage',
-        };
+        });
 
         mockSupabase = createMockSupabaseClient(undefined, {
             genericMockResults: {
@@ -1538,27 +1343,18 @@ describe('findSourceDocuments', () => {
             },
         ];
 
-        const projectResource: DialecticProjectResourceRow = {
+        const projectResource: DialecticProjectResourceRow = buildDialecticProjectResourceRow({
             id: 'unlinked-project-resource-id',
             project_id: 'proj-1',
-            user_id: 'user-123',
             file_name: 'general_resource_unlinked.md',
-            storage_bucket: 'test-bucket',
-            storage_path: 'projects/proj-1/resources',
-            mime_type: 'text/markdown',
             size_bytes: 2048,
             resource_description: {
                 type: 'project_resource',
                 document_key: FileType.GeneralResource,
             },
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-            iteration_number: null,
             resource_type: 'project_resource',
-            session_id: null,
-            source_contribution_id: null,
             stage_slug: 'test-stage',
-        };
+        });
 
         type SelectResultUnlinked = {
             data: object[] | null;
@@ -1629,24 +1425,16 @@ describe('findSourceDocuments', () => {
 
     it('does not call downloadFromStorage even when it would throw an error', async () => {
         const rule: InputRule[] = [{ type: 'document', slug: 'test-stage' }];
-        const mockResource: DialecticProjectResourceRow = {
+        const mockResource: DialecticProjectResourceRow = buildDialecticProjectResourceRow({
             id: 'doc-1',
             project_id: 'proj-1',
-            user_id: 'user-123',
             file_name: 'doc1.md',
-            storage_bucket: 'test-bucket',
-            storage_path: 'projects/proj-1/resources',
-            mime_type: 'text/markdown',
-            size_bytes: 123,
             resource_description: { type: 'document', document_key: 'business_case' },
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
             iteration_number: 1,
             resource_type: 'rendered_document',
             session_id: 'sess-1',
-            source_contribution_id: null,
             stage_slug: 'test-stage',
-        };
+        });
 
         let downloadFromStorageCalled = false;
         const failingDownloadFromStorage = () => {
@@ -1696,24 +1484,17 @@ describe('findSourceDocuments', () => {
 
     it('returns SourceDocument objects with all required metadata but empty content', async () => {
         const rule: InputRule[] = [{ type: 'document', slug: 'test-stage', document_key: FileType.business_case }];
-        const mockResource: DialecticProjectResourceRow = {
+        const mockResource: DialecticProjectResourceRow = buildDialecticProjectResourceRow({
             id: 'doc-metadata-test',
             project_id: 'proj-1',
-            user_id: 'user-123',
             file_name: 'business_case.md',
-            storage_bucket: 'test-bucket',
             storage_path: 'projects/proj-1/resources',
-            mime_type: 'text/markdown',
-            size_bytes: 123,
             resource_description: { type: 'document', document_key: FileType.business_case },
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
             iteration_number: 1,
             resource_type: 'rendered_document',
             session_id: 'sess-1',
-            source_contribution_id: null,
             stage_slug: 'test-stage',
-        };
+        });
 
         let downloadFromStorageCallCount = 0;
         const trackDownloadFromStorage = () => {
@@ -1775,57 +1556,28 @@ describe('findSourceDocuments', () => {
             { type: 'feedback', slug: 'test-stage' },
         ];
 
-        const mockDocumentResource: DialecticProjectResourceRow = {
+        const mockDocumentResource: DialecticProjectResourceRow = buildDialecticProjectResourceRow({
             id: 'doc-all-types',
             project_id: 'proj-1',
-            user_id: 'user-123',
             file_name: 'business_case.md',
-            storage_bucket: 'test-bucket',
-            storage_path: 'projects/proj-1/resources',
-            mime_type: 'text/markdown',
-            size_bytes: 123,
             resource_description: { type: 'document', document_key: FileType.business_case },
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
             iteration_number: 1,
             resource_type: 'rendered_document',
             session_id: 'sess-1',
-            source_contribution_id: null,
             stage_slug: 'test-stage',
-        };
+        });
 
-        const mockHeaderContext: DialecticContributionRow = {
+        const mockHeaderContext: DialecticContributionRow = buildDialecticContributionRow({
             id: 'header-all-types',
             session_id: 'sess-1',
-            user_id: 'user-123',
             stage: 'test-stage',
-            iteration_number: 1,
             model_id: 'model-1',
-            model_name: 'Test Model',
-            prompt_template_id_used: 'prompt-1',
-            seed_prompt_url: null,
-            edit_version: 1,
-            is_latest_edit: true,
-            original_model_contribution_id: null,
-            raw_response_storage_path: null,
-            target_contribution_id: null,
-            tokens_used_input: 10,
-            tokens_used_output: 20,
-            processing_time_ms: 100,
-            error: null,
-            citations: null,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
             contribution_type: 'header_context',
             file_name: 'model-1_0_header_context.json',
-            storage_bucket: 'test-bucket',
             storage_path: 'proj-1/session_sess-1/iteration_1/test-stage/_work/context',
-            size_bytes: 80,
             mime_type: 'application/json',
-            document_relationships: null,
             is_header: true,
-            source_prompt_resource_id: null,
-        };
+        });
 
         const mockFeedback: DialecticFeedbackRow = {
             id: 'feedback-all-types',
@@ -1936,47 +1688,24 @@ describe('findSourceDocuments', () => {
 
     it("successfully returns a 'contribution' input type from dialectic_contributions", async () => {
         const rule: InputRule[] = [{ type: 'contribution', slug: 'test-stage', document_key: FileType.comparison_vector }];
-        const mockContribution: DialecticContributionRow = {
+        const mockContribution: DialecticContributionRow = buildDialecticContributionRow({
             id: 'contribution-id',
             session_id: 'sess-1',
-            user_id: 'user-123',
             stage: 'test-stage',
-            iteration_number: 1,
-            model_id: 'model-1',
-            model_name: 'Test Model',
-            prompt_template_id_used: 'prompt-1',
-            seed_prompt_url: null,
-            edit_version: 1,
-            is_latest_edit: true,
-            original_model_contribution_id: null,
-            raw_response_storage_path: null,
-            target_contribution_id: null,
-            tokens_used_input: 10,
-            tokens_used_output: 20,
-            processing_time_ms: 100,
-            error: null,
-            citations: null,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
             contribution_type: 'comparison_vector',
             file_name: 'model-1_1_comparison_vector_raw.json',
-            storage_bucket: 'test-bucket',
             storage_path: 'proj-1/session_sess-1/iteration_1/test-stage/raw_responses',
-            size_bytes: 80,
             mime_type: 'application/json',
-            document_relationships: null,
-            is_header: false,
-            source_prompt_resource_id: null,
-        };
+        });
 
         // A record whose file_name contains 'comparison_vector' as a substring but
         // deconstructs to a DIFFERENT documentKey — must be excluded by exact matching.
-        const substringFalsePositive: DialecticContributionRow = {
+        const substringFalsePositive: DialecticContributionRow = buildDialecticContributionRow({
             ...mockContribution,
             id: 'false-positive-id',
             contribution_type: 'comparison_vector_detailed',
             file_name: 'model-1_1_comparison_vector_detailed_raw.json',
-        };
+        });
 
         mockSupabase = createMockSupabaseClient(undefined, {
             genericMockResults: {
@@ -2056,24 +1785,17 @@ describe('findSourceDocuments', () => {
             document_key: FileType.business_case,
         }];
 
-        const mockResource: DialecticProjectResourceRow = {
+        const mockResource: DialecticProjectResourceRow = buildDialecticProjectResourceRow({
             id: 'resource-54b-i',
             project_id: 'proj-1',
-            user_id: 'user-123',
             file_name: 'sess-1_test-stage_business_case_v1.md',
-            storage_bucket: 'test-bucket',
-            storage_path: 'projects/proj-1/resources',
-            mime_type: 'text/markdown',
             size_bytes: 4096,
             resource_description: { type: 'document', document_key: FileType.business_case },
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
             iteration_number: 1,
             resource_type: 'rendered_document',
             session_id: 'sess-1',
-            source_contribution_id: null,
             stage_slug: 'test-stage',
-        };
+        });
 
         let contributionsQueryCalled = false;
 
@@ -2157,57 +1879,26 @@ describe('findSourceDocuments', () => {
             document_key: FileType.business_case,
         }];
 
-        const mockResource: DialecticProjectResourceRow = {
+        const mockResource: DialecticProjectResourceRow = buildDialecticProjectResourceRow({
             id: 'resource-54b-ii',
             project_id: 'proj-1',
-            user_id: 'user-123',
             file_name: 'sess-1_test-stage_business_case_v1.md',
-            storage_bucket: 'test-bucket',
-            storage_path: 'projects/proj-1/resources',
-            mime_type: 'text/markdown',
             size_bytes: 4096,
             resource_description: { type: 'document', document_key: FileType.business_case },
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
             iteration_number: 1,
             resource_type: 'rendered_document',
             session_id: 'sess-1',
-            source_contribution_id: null,
             stage_slug: 'test-stage',
-        };
+        });
 
-        const mockContribution: DialecticContributionRow = {
+        const mockContribution: DialecticContributionRow = buildDialecticContributionRow({
             id: 'contribution-54b-ii',
             session_id: 'sess-1',
-            user_id: 'user-123',
             stage: 'test-stage',
-            iteration_number: 1,
-            model_id: 'model-1',
-            model_name: 'Test Model',
-            prompt_template_id_used: 'prompt-1',
-            seed_prompt_url: null,
-            edit_version: 1,
-            is_latest_edit: true,
-            original_model_contribution_id: null,
-            raw_response_storage_path: null,
-            target_contribution_id: null,
-            tokens_used_input: 10,
-            tokens_used_output: 20,
-            processing_time_ms: 100,
-            error: null,
-            citations: null,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
             contribution_type: 'business_case',
             file_name: 'sess-1_test-stage_business_case_v1.md',
-            storage_bucket: 'test-bucket',
             storage_path: 'projects/proj-1/sessions/sess-1/iteration_1/test-stage',
-            size_bytes: 123,
-            mime_type: 'text/markdown',
-            document_relationships: null,
-            is_header: false,
-            source_prompt_resource_id: null,
-        };
+        });
 
         let contributionsQueryCalled = false;
 
@@ -2305,6 +1996,46 @@ describe('findSourceDocuments', () => {
         assertEquals(contributionsQueryCalled, false, 'contributions should NOT be queried when resources are missing');
     });
 
+    it('throws when one required input of a multi-rule join step is missing even though other rules are satisfied', async () => {
+        // Purpose: Proves the multi-rule missing-required-input contract that the single-rule tests
+        // above (lines 457, 1946) do not cover. In a join step with multiple DISTINCT inputs_required
+        // rules, findSourceDocuments must fail loud when ANY one required rule has no matching document
+        // — it must NOT silently succeed by returning only the documents that satisfied the other rules.
+        // This is the "join step with a missing branch" objective decommissioned from
+        // task_isolator.parallel.test.ts (it was a remnant from before findSourceDocuments was extracted).
+
+        // Arrange:
+        // 1. Define two DISTINCT required InputRules, each with required: true (or omitted, since
+        //    required defaults to true for non-feedback rules):
+        //    Rule A: { type: 'document', slug: 'thesis',     document_key: FileType.business_case, required: true }
+        //    Rule B: { type: 'document', slug: 'antithesis', document_key: FileType.risk_register, required: true }
+
+        // 2. Seed a valid DialecticProjectResourceRow that satisfies Rule A ONLY:
+        //    - stage_slug 'thesis', resource_description.document_key 'business_case',
+        //    - project_id/session_id/iteration_number matching mockParentJob.payload.
+        //    Do NOT seed any resource matching Rule B (antithesis/risk_register) — that is the missing input.
+
+        // 3. Seed at least one INVALID candidate to prove the failure is from absence, not from a
+        //    wrong match leaking through (per the filtering note): a resource with slug 'antithesis'
+        //    but the WRONG document_key (e.g., 'business_case') should not satisfy Rule B and must not
+        //    be returned as a substitute. This proves Rule B fails on genuine absence, not on a filter
+        //    that let a wrong doc through.
+
+        // 4. Configure createMockSupabaseClient so dialectic_project_resources.select applies the
+        //    chained .eq() filters against the seeded rows (same pattern as line 1054 and line 1946).
+        //    Wire dialectic_contributions.select to return an error so a fallback to contributions
+        //    would fail loud rather than silently satisfying Rule B from the contributions table.
+
+        // Act & Assert:
+        // 1. Use assertRejects to call findSourceDocuments with the two rules and mockParentJob.
+        // 2. Assert the rejected error message includes 'Required rendered document' (the exact
+        //    message thrown by findSourceDocuments.ts for a missing required 'document' input),
+        //    naming the missing rule's stage and document_key so the failure is attributable to
+        //    Rule B specifically — not to Rule A, which was satisfied.
+        // 3. (Optional) Assert the error does NOT mention Rule A's stage/document_key, proving the
+        //    throw identified the genuinely missing input rather than the satisfied one.
+    });
+
     // Step 54.b.iv: Test that header_context still queries contributions (should pass)
     it('continues to query contributions for header_context type inputs', async () => {
         const rule: InputRule[] = [{
@@ -2313,38 +2044,16 @@ describe('findSourceDocuments', () => {
             document_key: FileType.HeaderContext,
         }];
 
-        const mockHeaderContext: DialecticContributionRow = {
+        const mockHeaderContext: DialecticContributionRow = buildDialecticContributionRow({
             id: 'header-54b-iv',
             session_id: 'sess-1',
-            user_id: 'user-123',
             stage: 'test-stage',
-            iteration_number: 1,
-            model_id: 'model-1',
-            model_name: 'Test Model',
-            prompt_template_id_used: 'prompt-1',
-            seed_prompt_url: null,
-            edit_version: 1,
-            is_latest_edit: true,
-            original_model_contribution_id: null,
-            raw_response_storage_path: null,
-            target_contribution_id: null,
-            tokens_used_input: 10,
-            tokens_used_output: 20,
-            processing_time_ms: 100,
-            error: null,
-            citations: null,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
             contribution_type: 'header_context',
             file_name: 'model-1_0_header_context.json',
-            storage_bucket: 'test-bucket',
             storage_path: 'proj-1/session_sess-1/iteration_1/test-stage/_work/context',
-            size_bytes: 80,
             mime_type: 'application/json',
-            document_relationships: null,
             is_header: true,
-            source_prompt_resource_id: null,
-        };
+        });
 
         let contributionsQueryCalled = false;
         let resourcesQueryCalled = false;
@@ -2419,57 +2128,29 @@ describe('findSourceDocuments', () => {
         const sourceContributionId = 'contrib-with-doc-rels';
         const expectedSourceGroup = 'lineage-group-abc';
 
-        const mockResource: DialecticProjectResourceRow = {
+        const mockResource: DialecticProjectResourceRow = buildDialecticProjectResourceRow({
             id: 'rendered-doc-with-lineage',
             project_id: 'proj-1',
-            user_id: 'user-123',
             file_name: 'sess-1_thesis_business_case_v1.md',
-            storage_bucket: 'test-bucket',
-            storage_path: 'projects/proj-1/resources',
-            mime_type: 'text/markdown',
             size_bytes: 4096,
             resource_description: { type: 'document', document_key: FileType.business_case },
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
             iteration_number: 1,
             resource_type: 'rendered_document',
             session_id: 'sess-1',
             source_contribution_id: sourceContributionId,
             stage_slug: 'thesis',
-        };
+        });
 
-        const mockSourceContribution: DialecticContributionRow = {
+        const mockSourceContribution: DialecticContributionRow = buildDialecticContributionRow({
             id: sourceContributionId,
             session_id: 'sess-1',
-            user_id: 'user-123',
             stage: 'thesis',
-            iteration_number: 1,
-            model_id: 'model-1',
-            model_name: 'Test Model',
-            prompt_template_id_used: 'prompt-1',
-            seed_prompt_url: null,
-            edit_version: 1,
-            is_latest_edit: true,
-            original_model_contribution_id: null,
-            raw_response_storage_path: null,
-            target_contribution_id: null,
-            tokens_used_input: 10,
-            tokens_used_output: 20,
-            processing_time_ms: 100,
-            error: null,
-            citations: null,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
             contribution_type: 'thesis',
             file_name: 'sess-1_thesis_business_case_v1.json',
-            storage_bucket: 'test-bucket',
             storage_path: 'projects/proj-1/sessions/sess-1/iteration_1/thesis',
-            size_bytes: 123,
             mime_type: 'application/json',
             document_relationships: { source_group: expectedSourceGroup, thesis: 'anchor-id-123' },
-            is_header: false,
-            source_prompt_resource_id: null,
-        };
+        });
 
         let contributionQueryCalled = false;
         let queriedContributionIds: string[] = [];
@@ -2597,89 +2278,74 @@ describe('findSourceDocuments', () => {
         ];
 
         // Three business_case documents from three different models/lineages
-        const mockResource1: DialecticProjectResourceRow = {
+        const mockResource1: DialecticProjectResourceRow = buildDialecticProjectResourceRow({
             id: 'business-case-model-a',
             project_id: 'proj-1',
-            user_id: 'user-123',
             file_name: 'model-a_0_business_case_lineage1.md',
-            storage_bucket: 'test-bucket',
             storage_path: 'projects/proj-1/sessions/sess-1/iteration_1/thesis/documents',
-            mime_type: 'text/markdown',
             size_bytes: 1000,
             resource_description: { document_key: 'business_case' },
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
             iteration_number: 1,
             resource_type: 'rendered_document',
             session_id: 'sess-1',
             source_contribution_id: 'contrib-model-a',
             stage_slug: 'thesis',
-        };
+        });
 
-        const mockResource2: DialecticProjectResourceRow = {
+        const mockResource2: DialecticProjectResourceRow = buildDialecticProjectResourceRow({
             id: 'business-case-model-b',
             project_id: 'proj-1',
-            user_id: 'user-123',
             file_name: 'model-b_0_business_case_lineage2.md',
-            storage_bucket: 'test-bucket',
             storage_path: 'projects/proj-1/sessions/sess-1/iteration_1/thesis/documents',
-            mime_type: 'text/markdown',
             size_bytes: 1100,
             resource_description: { document_key: 'business_case' },
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
             iteration_number: 1,
             resource_type: 'rendered_document',
             session_id: 'sess-1',
             source_contribution_id: 'contrib-model-b',
             stage_slug: 'thesis',
-        };
+        });
 
-        const mockResource3: DialecticProjectResourceRow = {
+        const mockResource3: DialecticProjectResourceRow = buildDialecticProjectResourceRow({
             id: 'business-case-model-c',
             project_id: 'proj-1',
-            user_id: 'user-123',
             file_name: 'model-c_0_business_case_lineage3.md',
-            storage_bucket: 'test-bucket',
             storage_path: 'projects/proj-1/sessions/sess-1/iteration_1/thesis/documents',
-            mime_type: 'text/markdown',
             size_bytes: 1200,
             resource_description: { document_key: 'business_case' },
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
             iteration_number: 1,
             resource_type: 'rendered_document',
             session_id: 'sess-1',
             source_contribution_id: 'contrib-model-c',
             stage_slug: 'thesis',
-        };
+        });
 
         // Mock contributions to provide document_relationships for each
         const mockContributions = [
-            {
+            buildDialecticContributionRow({
                 id: 'contrib-model-a',
                 document_relationships: {
                     source_group: 'lineage-group-a',
                     source_document: 'contrib-model-a',
                     thesis: 'contrib-model-a',
                 },
-            },
-            {
+            }),
+            buildDialecticContributionRow({
                 id: 'contrib-model-b',
                 document_relationships: {
                     source_group: 'lineage-group-b',
                     source_document: 'contrib-model-b',
                     thesis: 'contrib-model-b',
                 },
-            },
-            {
+            }),
+            buildDialecticContributionRow({
                 id: 'contrib-model-c',
                 document_relationships: {
                     source_group: 'lineage-group-c',
                     source_document: 'contrib-model-c',
                     thesis: 'contrib-model-c',
                 },
-            },
+            }),
         ];
 
         mockSupabase = createMockSupabaseClient(undefined, {
@@ -2787,84 +2453,46 @@ describe('findSourceDocuments', () => {
             required: true,
         }];
 
-        const mockHeaderContextContribution: DialecticContributionRow = {
+        const mockHeaderContextContribution: DialecticContributionRow = buildDialecticContributionRow({
             id: '91155b5f-d710-4325-9ee3-836a385d09f9',
             session_id: '30e8c9f9-8264-40aa-a66f-a8d12553ba70',
             user_id: '5bb9ec3e-2e8d-43d9-9d98-3a6029ea9168',
             stage: 'synthesis',
-            iteration_number: 1,
             model_id: '77afe5e0-a0d8-4a01-974f-f74f9f89a4ef',
             model_name: 'Full DAG Test Model B',
-            prompt_template_id_used: 'prompt-1',
-            seed_prompt_url: null,
-            edit_version: 1,
-            is_latest_edit: true,
-            original_model_contribution_id: null,
-            raw_response_storage_path: null,
-            target_contribution_id: null,
-            tokens_used_input: 100,
-            tokens_used_output: 200,
-            processing_time_ms: 500,
-            error: null,
-            citations: null,
-            created_at: '2026-01-19T22:44:07.900Z',
-            updated_at: '2026-01-19T22:44:07.900Z',
             contribution_type: 'header_context',
             file_name: 'full-dag-test-model-b_0_0b39478c_header_context_pairwise.json',
             storage_bucket: 'dialectic-project-resources',
             storage_path: '2afbba8d-80e9-4c87-82bb-582cb51ef7dc/session_30e8c9f9/iteration_1/3_synthesis/_work/context',
-            size_bytes: 2271,
             mime_type: 'application/json',
             document_relationships: { source_group: '0b39478c-5936-4f93-b176-842b642b56ac' },
-            is_header: false,
-            source_prompt_resource_id: null,
-        };
+        });
 
+        const modelBPayload: DialecticPlanJobPayload = buildDialecticPlanJobPayload({
+            model_id: '77afe5e0-a0d8-4a01-974f-f74f9f89a4ef',
+            projectId: '2afbba8d-80e9-4c87-82bb-582cb51ef7dc',
+            sessionId: '30e8c9f9-8264-40aa-a66f-a8d12553ba70',
+            stageSlug: 'synthesis',
+        });
+        if (!isJson(modelBPayload)) throw new Error('Test setup failed: modelBPayload not Json');
         const parentJobWithModelB: DialecticJobRow & { payload: DialecticPlanJobPayload } = {
-            id: 'parent-job-123',
-            status: 'pending',
-            payload: {
-                idempotencyKey: "idempotency-key-1",
+            ...buildDialecticJobRow({
+                id: 'parent-job-123',
+                session_id: '30e8c9f9-8264-40aa-a66f-a8d12553ba70',
                 job_type: 'PLAN',
-                model_id: '77afe5e0-a0d8-4a01-974f-f74f9f89a4ef',
-                projectId: '2afbba8d-80e9-4c87-82bb-582cb51ef7dc',
-                sessionId: '30e8c9f9-8264-40aa-a66f-a8d12553ba70',
-                stageSlug: 'synthesis',
-                iterationNumber: 1,
-                walletId: 'wallet-1',
-                continueUntilComplete: false,
-                maxRetries: 3,
-                continuation_count: 0,
-                user_jwt: 'parent-jwt-default',
-                idempotency_key: "idempotency-key-1",
-            },
-            created_at: new Date().toISOString(),
-            user_id: 'user-123',
-            attempt_count: 0,
-            max_retries: 3,
-            completed_at: null,
-            error_details: null,
-            iteration_number: 1,
-            parent_job_id: null,
-            prerequisite_job_id: null,
-            results: null,
-            session_id: '30e8c9f9-8264-40aa-a66f-a8d12553ba70',
-            started_at: null,
-            stage_slug: 'synthesis',
-            target_contribution_id: null,
-            is_test_job: false,
-            job_type: 'PLAN',
-            idempotency_key: "idempotency-key-1",
+                stage_slug: 'synthesis',
+            }),
+            payload: modelBPayload,
         };
 
         // A header_context contribution whose documentKey is 'header_context' (not 'header_context_pairwise').
         // With exact matching via deconstructStoragePath, requesting 'header_context_pairwise' must NOT
         // return a record whose documentKey is 'header_context'.
-        const nonMatchingHeaderContext: DialecticContributionRow = {
+        const nonMatchingHeaderContext: DialecticContributionRow = buildDialecticContributionRow({
             ...mockHeaderContextContribution,
             id: 'non-matching-header-context',
             file_name: 'full-dag-test-model-b_0_0b39478c_header_context.json',
-        };
+        });
 
         mockSupabase = createMockSupabaseClient(undefined, {
             genericMockResults: {
@@ -2973,25 +2601,16 @@ describe('findSourceDocuments', () => {
         // So this MUST be found via dialectic_project_resources.resource_type === 'initial_user_prompt', not via file_name ILIKE.
         const rule: InputRule[] = [{ type: 'project_resource', slug: 'project', document_key: FileType.InitialUserPrompt }];
 
-        const projectWideResource: DialecticProjectResourceRow = {
+        const projectWideResource: DialecticProjectResourceRow = buildDialecticProjectResourceRow({
             id: 'initial-user-prompt-id',
             project_id: 'proj-1',
-            user_id: 'user-123',
             file_name: 'initial_prompt_1.md',
-            storage_bucket: 'test-bucket',
             // FileManagerService stores InitialUserPrompt at the project root (storage_path === projectId)
             storage_path: 'proj-1',
-            mime_type: 'text/markdown',
             size_bytes: 2048,
             resource_description: null,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-            iteration_number: null,
             resource_type: FileType.InitialUserPrompt,
-            session_id: null,
-            source_contribution_id: null,
-            stage_slug: null,
-        };
+        });
 
         mockSupabase = createMockSupabaseClient(undefined, {
             genericMockResults: {
@@ -3429,10 +3048,9 @@ describe('findSourceDocuments', () => {
         const sourceGroup = 'lineage-group-uuid-123';
         
         // Create a rendered document with a source_group
-        const businessCaseDoc: DialecticProjectResourceRow = {
+        const businessCaseDoc: DialecticProjectResourceRow = buildDialecticProjectResourceRow({
             id: 'doc-1',
             project_id: 'proj-1',
-            user_id: 'user-123',
             session_id: 'sess-1',
             stage_slug: 'thesis',
             iteration_number: 1,
@@ -3440,47 +3058,22 @@ describe('findSourceDocuments', () => {
             file_name: 'google-gemini-2.5-flash_0_business_case.md',
             storage_bucket: 'dialectic-contributions',
             storage_path: 'projects/proj-1/sessions/sess-1/iteration_1/thesis',
-            mime_type: 'text/markdown',
             size_bytes: 1000,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
             source_contribution_id: 'contrib-1',
             resource_description: { document_key: FileType.business_case },
-        };
+        });
         
         // Create a contribution with document_relationships containing source_group
-        const businessCaseContribution: DialecticContributionRow = {
+        const businessCaseContribution: DialecticContributionRow = buildDialecticContributionRow({
             id: 'contrib-1',
             session_id: 'sess-1',
-            user_id: 'user-123',
             stage: 'thesis',
-            iteration_number: 1,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
             contribution_type: 'business_case',
             file_name: 'google-gemini-2.5-flash_0_business_case.md',
             storage_bucket: 'dialectic-contributions',
             storage_path: 'projects/proj-1/sessions/sess-1/iteration_1/thesis',
-            size_bytes: 1000,
-            mime_type: 'text/markdown',
-            model_id: 'model-1',
-            model_name: 'Gemini 2.5 Flash',
-            prompt_template_id_used: 'prompt-1',
-            seed_prompt_url: null,
-            edit_version: 1,
-            is_latest_edit: true,
-            original_model_contribution_id: null,
-            raw_response_storage_path: null,
-            target_contribution_id: null,
-            tokens_used_input: 100,
-            tokens_used_output: 200,
-            processing_time_ms: 1000,
-            error: null,
-            citations: null,
             document_relationships: { source_group: sourceGroup },
-            is_header: false,
-            source_prompt_resource_id: null,
-        };
+        });
         
         // Create a feedback document with matching base filename but NO source_group
         const feedbackDoc: DialecticFeedbackRow = {
@@ -3565,24 +3158,16 @@ describe('findSourceDocuments', () => {
             document_key: FileType.InitialUserPrompt,
             required: true,
         }];
-        const mockResource: DialecticProjectResourceRow = {
+        const mockResource: DialecticProjectResourceRow = buildDialecticProjectResourceRow({
             id: 'initial-prompt-resource-id',
             project_id: 'proj-1',
-            user_id: 'user-123',
             file_name: 'initial_user_prompt.txt',
-            storage_bucket: 'test-bucket',
             storage_path: 'projects/proj-1/resources/initial_user_prompt.txt',
             mime_type: 'text/plain',
             size_bytes: 100,
             resource_description: { description: 'Initial user prompt', type: FileType.InitialUserPrompt },
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-            iteration_number: null,
             resource_type: 'initial_user_prompt',
-            session_id: null,
-            source_contribution_id: null,
-            stage_slug: null,
-        };
+        });
 
         mockSupabase = createMockSupabaseClient(undefined, {
             genericMockResults: {
@@ -3649,5 +3234,92 @@ describe('findSourceDocuments', () => {
 
         assertEquals(documents.length, 1);
         assertEquals(documents[0].id, 'initial-prompt-resource-id');
+    });
+
+    // Purpose: Proves findSourceDocuments' own error-handling contract for Supabase fetch
+    // failures. When a Supabase query returns an error object (not null data — that is a
+    // distinct null-data path), findSourceDocuments throws an Error whose message names the
+    // failing input type and includes the underlying Supabase error message. This is
+    // findSourceDocuments' logic — the throw originates here, not in any caller.
+    //
+    // The implementation has three fetch-failure throw sites, one per data source:
+    //   - feedback (line 281): `Failed to fetch source documents for type '${rule.type}': ${feedbackError.message}`
+    //   - contributions (line 367): `Failed to fetch source documents for type '${rule.type}' from contributions: ${headerError.message}`
+    //   - project_resources (line 316, 401, 467): same pattern, message varies by branch
+    //
+    // Each throw is guarded by `if (error)` — a non-null error object triggers it. A null
+    // data response without an error triggers a separate null-data throw (lines 285, 373).
+    // This skeleton targets the feedback branch (line 281) as the canonical case; the
+    // contributions and project_resources branches follow the same pattern and can be
+    // covered by analogous tests if desired.
+    it('throws when a Supabase query for a required input returns an error', async () => {
+        // Arrange:
+        // 1. Build a parent job and an InputRule with type 'feedback' and required: true.
+        //    Use the same mockParentJob and rule shape used by the feedback tests above
+        //    (e.g., line 2729 'feedback query includes .eq("iteration_number", ...) filter').
+        //    The rule must be required so the throw is not masked by optional-missing logic.
+
+        // 2. Configure createMockSupabaseClient so dialectic_feedback.select returns a
+        //    non-null error object (e.g., { data: null, error: new Error('supabase connection refused'), count: 0, status: 500, statusText: 'Failure' }).
+        //    All other tables (dialectic_contributions, dialectic_project_resources) should
+        //    return their own sentinel errors if queried, to prove the throw identifies the
+        //    feedback branch specifically and does not fall through to another data source.
+
+        // Act & Assert:
+        // 1. Use assertRejects to call findSourceDocuments with the rule and mockParentJob.
+        // 2. Assert the rejected error is an Error whose message includes:
+        //    - 'Failed to fetch source documents for type' (the canonical prefix),
+        //    - the rule.type ('feedback'),
+        //    - the underlying Supabase error message ('supabase connection refused').
+        // 3. Assert the error does NOT mention 'from contributions' or 'project_resources',
+        //    proving the throw identified the feedback branch and did not fall through.
+    });
+
+    // Purpose: Proves findSourceDocuments' own ensureRecordsHaveStorage guard rejects
+    // records missing any one of the three required storage fields. The guard is a single
+    // if condition with ||-joined checks (line 213):
+    //
+    //   if (!record.file_name || !record.storage_bucket || !record.storage_path)
+    //       throw new Error(`Contribution ${record.id} is missing required storage information ...`);
+    //
+    // Although the guard is one condition, each field must be proven individually so that
+    // weakening the guard (e.g., dropping the file_name check) is caught by the corresponding
+    // test while the other two still pass. Three sub-tests, one per field, each seeding a
+    // record with exactly one field null/empty and the other two valid.
+    //
+    // The guard is called five times inside findSourceDocuments (lines 287, 324, 375, 409,
+    // 438, 475) — once per data-source branch and once at the end (line 512). These sub-tests
+    // target the contributions branch (header_context, line 375) as the canonical call site;
+    // the other branches invoke the same guard and need not be re-tested per branch.
+    it('throws via ensureRecordsHaveStorage when a contribution record is missing any required storage field', async () => {
+        // Arrange (shared):
+        // 1. Build a parent job and an InputRule with type 'header_context', required: true,
+        //    and a slug matching a seeded contribution. Use the same mockParentJob and rule
+        //    shape used by the header_context tests above (e.g., line 178 'successfully
+        //    returns a header_context from dialectic_contributions').
+        // 2. Configure createMockSupabaseClient so dialectic_contributions.select returns
+        //    a single record with all three storage fields valid EXCEPT the one under test.
+        //    Use three distinct mock configurations — one per sub-test — so each isolates
+        //    exactly one missing field. The record must have a valid id so the error message
+        //    is attributable.
+
+        // Act & Assert (three sub-cases, each proven individually):
+        //
+        // Sub-case A — missing file_name:
+        //   Seed a record with file_name: null (or ''), storage_bucket: 'test-bucket',
+        //   storage_path: 'test/path'. Assert findSourceDocuments rejects with an Error
+        //   whose message includes 'missing required storage information' and the record id.
+        //
+        // Sub-case B — missing storage_bucket:
+        //   Seed a record with file_name: 'test.md', storage_bucket: null (or ''),
+        //   storage_path: 'test/path'. Assert the same rejection and message.
+        //
+        // Sub-case C — missing storage_path:
+        //   Seed a record with file_name: 'test.md', storage_bucket: 'test-bucket',
+        //   storage_path: null (or ''). Assert the same rejection and message.
+        //
+        // Each sub-case must fail independently: if the guard drops the file_name check,
+        //   sub-case A passes (no throw) while B and C still throw — proving the tests
+        //   name distinct defects, not a shared condition.
     });
 });

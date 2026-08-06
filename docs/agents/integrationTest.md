@@ -15,3 +15,18 @@ adapter).
 - For an integration covering `f(x) → … → f(z)` where `f(x)` consumes `f(a)` and
   `f(z)` calls `f(b)`: mock `f(a)` and `f(b)`, run the real `f(x) … f(z)`.
 - Integration fixtures are built from the mock file's builders (see [mocks](mocks.md)).
+
+### The contract header here
+
+This scope takes the **full four-field header and the inline markers** (see
+[tests](tests.md#every-test-states-its-contract)), plus two fields the other scopes do not
+have:
+
+- **Boundary** — the approved boundary this test crosses, and the chain of real functions
+  it runs.
+- **Mocked** — what is mocked at the outer edge, and therefore what this test does **not**
+  prove.
+
+Naming what is mocked is what lets an audit catch a test that proves a mock instead of the
+integrated chain — an asserted value that originated in a mock and was only relayed is a
+tautological pass (see [tests](tests.md#audit)).

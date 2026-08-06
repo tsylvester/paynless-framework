@@ -9,7 +9,7 @@ view (guardTest prompt). Governed by all Process topics.
 The interface and mock file exist and compile. The guard file may not export the
 guard yet. Proves the guard has no false positives and no false negatives.
 
-- Only type/interface imports, test blocks, and assertions. Guards imported by production name
+- Only type/interface imports, contract headers, test blocks, and assertions. Guards imported by production name
   (`isObjectName`); fixtures from builders and invalidators.
 - The compiler reports missing exports from the **guard file and nothing else** —
   interface and mock imports resolve cleanly. An error elsewhere means the test is
@@ -34,29 +34,43 @@ For `isOwnedObject`:
 5. Each required property omitted (rest-destructure the builder output) → `false`
 6. Each optional property absent → `true`; present but corrupted → `false`
 
+### The contract header here
+
+The checklist **is** the contract, so this scope collapses to a **one-line `Contract`
+header** naming the case the block proves. The remaining three fields are invariant for
+every block in the scope — arrange a builder or invalidator, act by passing it to the
+guard, assert `true` or `false` — so they are stated once, here, and never repeated per
+block. There are no inline markers: the block is a single expression, with no sections to
+separate (see [tests](tests.md#every-test-states-its-contract)).
+
 Rendered — copy this shape, one test file per owned guard:
 
 ```ts
 import { isOwnedObject } from "./myInterface.guard.ts";
 import { buildOwnedObject, invalidateOwnedObject } from "./myInterface.mock.ts";
 
+/** Contract: case 1 — the builder's valid default is accepted. */
 test("isOwnedObject accepts the valid default", () => {
   assert(isOwnedObject(buildOwnedObject()));
 });
 
+/** Contract: case 2 — valid overrides are accepted. */
 test("isOwnedObject accepts valid overrides", () => {
   assert(isOwnedObject(buildOwnedObject({ foo: someValidFoo })));
 });
 
+/** Contract: case 3 — null, undefined, primitives, and arrays are rejected. */
 test("isOwnedObject rejects non-objects", () => {
   for (const x of [null, undefined, 7, "x", []]) assert(!isOwnedObject(x));
 });
 
+/** Contract: case 4 — each property, corrupted in turn, is rejected. */
 test("isOwnedObject rejects each corrupted property", () => {
   assert(!isOwnedObject(invalidateOwnedObject({ foo: null })));
   assert(!isOwnedObject(invalidateOwnedObject({ bar: 42 })));
 });
 
+/** Contract: case 5 — each required property, omitted in turn, is rejected. */
 test("isOwnedObject rejects each omitted required property", () => {
   const { foo: _f, ...missingFoo } = buildOwnedObject();
   assert(!isOwnedObject(missingFoo));

@@ -36,7 +36,7 @@ to this index.
 - [dependency-injection](dependency-injection.md) — DI at the boundary, context factory
 - [mocks](mocks.md) — builders, invalidators, function mocks
 - [guards](guards.md) — guard everything, authorship, boundary litmus
-- [tests](tests.md) — test authoring; anchors `#interface` `#guard` `#unit` `#integration` `#e2e`
+- [tests](tests.md) — test authoring, contract headers, derangement audit; anchors `#interface` `#guard` `#unit` `#integration` `#e2e` `#audit`
 - [errors-and-returns](errors-and-returns.md) — `Success | Error` handling
 - [boundaries](boundaries.md) — provides / barrels, directionality
 

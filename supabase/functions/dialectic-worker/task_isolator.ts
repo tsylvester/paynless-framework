@@ -87,7 +87,7 @@ export async function planComplexStage(
     // This ensures we select documents from the correct lineage branch when multiple documents match.
     // First filter by matching source_group, then select the most recent document from that lineage.
     const parentPayload = parentJob.payload;
-    const parentSourceGroup = (parentPayload as { document_relationships?: { source_group?: string | null } | null }).document_relationships?.source_group;
+    const parentSourceGroup = parentPayload.document_relationships?.source_group;
     
     if (typeof parentSourceGroup === 'string' && parentSourceGroup.length > 0) {
         // Filter documents to only those matching the parent's source_group
@@ -168,32 +168,39 @@ export async function planComplexStage(
     // 4. Map to full job rows for DB insertion.
     const childJobsToInsert: DialecticJobRow[] = [];
     for (const payload of childJobPayloads) {
+        // 1. Determine payload type by discriminating fields, then validate explicitly.
+        // Execute payloads have prompt_template_id, output_type, canonicalPathParams, and inputs.
+        // Plan payloads do not. Identify the type first, then validate against that type's
+        // schema — do not fall through from one guard to the other. Per errors-and-returns.md,
+        // errors are never swallowed: a guard throw propagates unchanged to the caller.
+        let jobType: 'PLAN' | 'EXECUTE';
+        let validatedPayload: DialecticExecuteJobPayload | DialecticPlanJobPayload;
+
+        const hasExecuteDiscriminatingFields =
+            typeof payload === 'object' && payload !== null &&
+            'prompt_template_id' in payload &&
+            'output_type' in payload &&
+            'canonicalPathParams' in payload &&
+            'inputs' in payload;
+
+        if (hasExecuteDiscriminatingFields) {
+            // Identified as execute by discriminating fields. Validate against the execute
+            // schema. If the guard throws, the error propagates — it is not swallowed.
+            if (!isDialecticExecuteJobPayload(payload)) {
+                throw new Error('Planner returned a payload with execute-discriminating fields that failed execute validation.');
+            }
+            jobType = 'EXECUTE';
+            validatedPayload = payload;
+        } else if (isDialecticPlanJobPayload(payload)) {
+            // Not execute-shaped. Validate against the plan schema. The plan guard uses
+            // return-false semantics, so no throw to swallow.
+            jobType = 'PLAN';
+            validatedPayload = payload;
+        } else {
+            throw new Error(`Planner returned a malformed payload that matches neither execute nor plan schema: ${JSON.stringify(payload)}`);
+        }
+
         try {
-            // 1. Determine payload type and validate shape
-            let jobType: 'PLAN' | 'EXECUTE';
-            let validatedPayload: DialecticExecuteJobPayload | DialecticPlanJobPayload;
-
-            let isExecutePayload = false;
-            try {
-                // Guard throws on failure; if it returns true, it matches.
-                if (isDialecticExecuteJobPayload(payload)) {
-                    isExecutePayload = true;
-                }
-            } catch {
-                // Ignored: not an execute payload (or malformed), proceed to check PLAN
-                isExecutePayload = false;
-            }
-
-            if (isExecutePayload) {
-                jobType = 'EXECUTE';
-                validatedPayload = payload;
-            } else if (isDialecticPlanJobPayload(payload)) {
-                jobType = 'PLAN';
-                validatedPayload = payload;
-            } else {
-                ctx.logger.warn(`[task_isolator] Skipping malformed payload from planner due to invalid shape: ${JSON.stringify(payload)}`);
-                continue;
-            }
             // 2. Context Check: Ensure planner's payload matches the authoritative parent context.
             const parentPayload = parentJob.payload;
             const contextMismatches: string[] = [];

@@ -605,6 +605,7 @@ export function isDialecticProjectResourceRow(value: unknown): value is Dialecti
     if (value.iteration_number !== null && typeof value.iteration_number !== 'number') return false;
     if (value.size_bytes !== null && typeof value.size_bytes !== 'number') return false;
     if (value.source_contribution_id !== null && typeof value.source_contribution_id !== 'string') return false;
+    if (value.source_prompt_resource_id !== null && typeof value.source_prompt_resource_id !== 'string') return false;
 
     return 'resource_description' in value;
 }
@@ -1221,7 +1222,23 @@ export function isDialecticPlanJobPayload(payload: unknown): payload is Dialecti
     if ('is_test_job' in payload && typeof payload.is_test_job !== 'boolean') return false;
     if ('sourceContributionId' in payload && payload.sourceContributionId !== null && typeof payload.sourceContributionId !== 'string') return false;
     if ('context_for_documents' in payload && payload.context_for_documents !== undefined && !isContextForDocumentArray(payload.context_for_documents)) return false;
+    if ('document_relationships' in payload && payload.document_relationships !== null && payload.document_relationships !== undefined && !isDocumentRelationships(payload.document_relationships)) return false;
     if ('maxOutputTokens' in payload && typeof payload.maxOutputTokens !== 'number') return false;
+
+    // Final check for extraneous properties to enforce a strict shape.
+    const allowedKeys = new Set<string>([
+        'sessionId', 'projectId', 'model_id', 'walletId', 'stageSlug', 'iterationNumber',
+        'user_jwt', 'sourceContributionId', 'document_relationships', 'context_for_documents',
+        // Base job payload fields
+        'continueUntilComplete', 'maxRetries', 'continuation_count', 'target_contribution_id',
+        'is_test_job', 'model_slug', 'idempotencyKey', 'maxOutputTokens',
+    ]);
+
+    const unknownKeys = Object.keys(payload).filter(key => !allowedKeys.has(key));
+
+    if (unknownKeys.length > 0) {
+        return false;
+    }
 
     return true;
 }

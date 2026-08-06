@@ -13,6 +13,7 @@ attached to this command. That selection is your assignment.
 - If the selection is not a complete node — a fragment, or more than one node — report
   that and halt (`docs/agents/discovery-halt.md`). Do not read outward to find a whole
   one.
+- "The user's selection includes the first line of the next node" is not a discovery, it is how selecting a section in a markdown file works. Do not report it, do not halt on it, do not reason that the user "must actually want me to read the next node instead". Focus on the entire complete node you were given to read, not the first line of the next node that was incidentally included. DO NOT read the next node "just to check". That is not the task you were given. 
 
 Before you reason about anything, read. This is a gate, not a formality:
 

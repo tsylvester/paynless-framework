@@ -863,10 +863,11 @@ export function buildDialecticProjectResourceRow(overrides?: DialecticProjectRes
         stage_slug: null,
         iteration_number: null,
         source_contribution_id: null,
+        source_prompt_resource_id: null,
         created_at: '2025-01-01T00:00:00.000Z',
         updated_at: '2025-01-01T00:00:00.000Z',
     };
-    return { ...base, ...overrides };
+    return overrides ? { ...base, ...overrides } : base;
 }
 
 export type DialecticProjectResourceRowCorruptions = { [K in keyof DialecticProjectResourceRow]?: unknown };
@@ -923,7 +924,7 @@ export function buildDialecticPlanJobPayload(overrides?: DialecticPlanJobPayload
         idempotencyKey: 'test-idempotency-key',
         model_id: 'test-model-id',
         model_slug: 'test-model-slug',
-        document_key: FileType.business_case,
+        document_relationships: null,
     };
     return { ...base, ...overrides };
 }
@@ -1074,9 +1075,9 @@ export function buildSourceDocument(overrides?: SourceDocumentOverrides): Source
         content: 'Test content',
         document_relationships: null,
         attempt_count: 1,
-        document_key: 'business_case',
+        document_key: FileType.business_case,
         type: 'thesis',
-        stage_slug: 'thesis',
+        stage_slug: DialecticStageSlug.Thesis,
     };
     return { ...base, ...overrides };
 }
