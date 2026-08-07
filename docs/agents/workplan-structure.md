@@ -6,6 +6,10 @@ workplan, and the correct/incorrect node constructions.
 [tdd-ordering](tdd-ordering.md) owns the RED→GREEN cycle and element order the node
 carries; this topic owns the container.
 
+The node is this repo's unit of scope, so every rule below is an application of
+[scope](scope.md): the node is where a boundary is drawn, and the author drawing it
+decides what falls inside so the implementer never has to.
+
 Cited by: construction view (the workplan author builds nodes) and, for handling
 rules, every turn. Governed by all Process topics.
 
@@ -21,6 +25,12 @@ rules, every turn. Governed by all Process topics.
   sequential nodes that edit the same set of files.
 - Files that have no types and no tests (e.g. a database migration) are the only
   ones exempt from the full support-file structure.
+
+A node names **elements**, not the symbols inside them. That is not an omission to be
+corrected by longer nodes — the symbols are a fact on disk, read from the interface's
+export surface, and a node that tries to enumerate them dates the moment the interface
+changes. What the node owes is the boundary; what the standards owe is completeness
+within it (see [scope](scope.md)).
 
 ## New packages vs. existing files
 
@@ -135,6 +145,57 @@ implementer must do now belongs in the node. Tests follow the same rule (see
   The integration test is an obligate inclusion in the last node of that chain; never
   strand integration tests or commits in a node of their own. The agent never runs the
   commit itself (see [environment](environment.md)).
+
+## The To-Do list — debt the workplan has not scheduled
+
+A workplan carries a **To-Do list** alongside its nodes. It holds work that has been
+*found* but deliberately not *scheduled*: non-compliance an agent met while doing something
+else, and correctly did not stop for.
+
+Its only supplier is the first of the three locate-before-create outcomes (see
+[tdd-ordering](tdd-ordering.md#three-outcomes-and-only-one-of-them-is-create-it)) — a
+resource found and usable, but non-compliant in ways that do not block the task. A builder
+under the wrong name, a mock in the wrong folder, a guard owned by an interface that should
+not own it. The work proceeds using what exists, and the defect is recorded rather than
+fixed in passing, because fixing legacy opportunistically in the middle of another task is
+how one file's work becomes four.
+
+### It is not a way to defer a halt
+
+**If a topic tells you to stop, you stop.** An untyped value ([types](types.md)), a missing
+producer, a function that needs refactoring to proceed
+([dependency-injection](dependency-injection.md)), a guard that does not check what you need
+([guards](guards.md)) — every one of these is a halt, and none becomes a To-Do entry because
+writing it down felt more productive than stopping. The To-Do list receives only what no
+topic required you to stop for.
+
+An entry that would have been a halt is a halt that was skipped, and the file it was skipped
+in is already wrong.
+
+### An entry is not a node
+
+Entries are prose, not node structure. They are not dependency-ordered, carry no elements,
+and are never numbered ([Identity and ordering](#identity-and-ordering) applies here as
+everywhere). Each states four things:
+
+- **What was found** — the actual symbol or file, not a category.
+- **Where** — the real path.
+- **What resolving it would take** — the shape of the work, not a plan for it.
+
+When an entry is scheduled, it becomes a node and is authored through the ordinary path — by
+the workplan author, in the template, dependency-ordered. Nothing is implemented straight
+from a To-Do entry; the entry is a record that work exists, never an instruction to do it.
+
+### The agent reports entries; it does not write them
+
+Recording debt is not an exemption from anything. The agent does not edit the workplan
+without instruction (above), does not write to files it was not directed to write
+([output](output.md)), and edits one file per turn ([loop](loop.md)) — and the file it is
+editing is not the workplan.
+
+So the agent **reports the entry in its final response**, in the four-part form above, ready
+to be placed. Recording it is the user's action, exactly as with a proposed node. An agent
+that appends to the workplan mid-task has edited a second file to avoid mentioning something.
 
 ## Canaries
 

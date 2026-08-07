@@ -17,6 +17,7 @@ to this index.
 ## Process topics — govern every turn
 
 - [precedence](precedence.md) — authority order, single-turn completeness, rejection-attribution
+- [scope](scope.md) — what a scope is; drawing, respecting, and stating it in full
 - [loop](loop.md) — Read → Analyze → Explain → Propose → (Edit → Lint) → Halt; one file per turn
 - [discovery-halt](discovery-halt.md) — multi-file / underspecified → report, propose node, halt
 - [modes](modes.md) — Builder vs Reviewer; EO&D review
@@ -24,6 +25,7 @@ to this index.
 - [output](output.md) — no code in chat, no unbidden writes, safe edit boundaries
 - [fidelity](fidelity.md) — no whole-file rewrites, preserve behavior on refactor, no unrequested renames
 - [environment](environment.md) — tools / MCPs, language-server, worktrees, never run tests
+- [terminal-policy](terminal-policy.md) — terminal denied by default; two-gate allowlist; per-env enforcement
 - [linting-proof](linting-proof.md) — lint after edit, no silencing, linter error = RED proof
 - [logging](logging.md) — debug by logging, believe failures literally
 

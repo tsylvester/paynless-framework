@@ -67,6 +67,48 @@ assuming it does not exist, proposing its creation, or creating it inline. If a
 required resource is genuinely missing, that is a discovery: report and halt (see
 [discovery-halt](discovery-halt.md)).
 
+### Search the invariant, never the convention
+
+The standards in this repo describe where the codebase is **going**. They do not describe
+the code you are searching. A resource that predates a standard, or was written against an
+older one, is still the resource — and it will not answer to the name, the file, or the
+folder the standard would give it today.
+
+So never search on a convention. Do not search for what a symbol would be **called**, or
+look only where it would **live**. Both are guesses, and a guess that returns nothing
+produces a confident "it does not exist" about something that does.
+
+Search on the **structural invariant** — the property that makes a thing what it is,
+whatever it was named and wherever it was put. Each topic names the invariant for its own
+resource: the type predicate `is SomeType` for a guard (see [guards](guards.md)), the
+declared type for a mock (see [mocks](mocks.md)). Search the repo on that, not a folder.
+
+When the invariant search comes up empty, existing **call sites** are the last fact
+available: if anything already consumes the resource, it imports it from wherever it truly
+lives. Follow the consumer to the definition.
+
+### Three outcomes, and only one of them is "create it"
+
+**Found and usable.** Use it. If it is non-compliant in ways that do not block you — wrong
+name, wrong folder, owned by an interface that should not own it — **use it anyway and
+record the debt** in the workplan's To-Do list (see
+[workplan-structure](workplan-structure.md)). Writing a second, compliant copy beside it is
+duplication, and the duplicate is a worse defect than the non-compliance it was meant to
+avoid. Legacy is closed incrementally, by scheduled work, never opportunistically in the
+middle of another task.
+
+**Found, but missing what this task needs.** The builder exists but doesn't accept overrides, the invalidator does not exist, the guard exists but does not cover the property you need. Completing it means editing
+a file you were not given, which is a discovery: report and halt with the node that adds it.
+
+**Not found.** Report and halt — and the report carries the **exact patterns searched and
+the paths searched**. A halt report without search evidence is a guess (see
+[guards](guards.md), [discovery-halt](discovery-halt.md)).
+
+**Two candidates.** Where the search returns more than one — the one the repo actually
+imports, and another nearer the interface that should own it — report both and let the user
+choose. Picking silently entrenches whichever you picked, and if you picked the wrong one
+the next agent finds three.
+
 ## Types and interfaces are test-exempt
 
 Types and interfaces are exempt from RED/GREEN unit testing — their contract is

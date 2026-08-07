@@ -1,18 +1,15 @@
 Begin the work loop against the section of the workplan highlighted in the editor and
 attached to this command. That selection is your assignment.
 
-**The selection is the node, and it is the whole scope.**
+**The selection is the node, and it is the whole scope.** How a delivered selection is
+treated — that it is the user's instruction and not ambient context, that it bounds the
+work, and what to do when it cannot support the instruction — is governed by
+`docs/agents/scope.md`, "Context the user hands you". Read it there.
 
-- The highlighted range delivered with this command is a direct user instruction, not
-  ambient editor context. The rule that incidental on-screen state means nothing
-  (`docs/agents/precedence.md`) does not apply to it — the user selected it deliberately
-  and handed it to you.
-- It is the complete and only scope. Do not read workplan content above or below it, do
-  not scan the file for a step, and do not treat its last line as a position to continue
-  from.
-- If the selection is not a complete node — a fragment, or more than one node — report
-  that and halt (`docs/agents/discovery-halt.md`). Do not read outward to find a whole
-  one.
+Specific to this command:
+
+- The selection is a node. If it is a fragment of one, or spans more than one, report that
+  and halt (`docs/agents/discovery-halt.md`).
 - "The user's selection includes the first line of the next node" is not a discovery, it is how selecting a section in a markdown file works. Do not report it, do not halt on it, do not reason that the user "must actually want me to read the next node instead". Focus on the entire complete node you were given to read, not the first line of the next node that was incidentally included. DO NOT read the next node "just to check". That is not the task you were given. 
 
 Before you reason about anything, read. This is a gate, not a formality:
@@ -51,3 +48,5 @@ Then, every turn:
 
 Do not edit any file unless the user explicitly tells you to edit it. Do not output code
 in chat.
+
+Follow `docs/agents/loop.md`, `docs/agents/scope.md`, and `docs/agents/precedence.md`.

@@ -12,3 +12,5 @@ TDD) a test that fails now and passes once the defect is fixed (`docs/agents/tes
 manufacture non-issues to look productive, and do not return "verify if" / "check that"
 placeholders — this is verification, so perform it now. Do not edit files, run tests, or
 use the terminal (`docs/agents/environment.md`). Explain, propose, halt.
+
+Follow `docs/agents/loop.md`, `docs/agents/scope.md`, and `docs/agents/precedence.md`.

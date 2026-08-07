@@ -54,11 +54,18 @@ never a licence to skip ahead.
 
 ## One file per turn
 
+This is the turn-level enforcement of a boundary [scope](scope.md) owns; that topic
+defines what the boundary is and what it does not bound.
+
 - Edit exactly one file per turn. Never touch a file you were not explicitly
   instructed to modify.
 - After editing, the file's exact change is already confirmed by the edit result —
   do not re-read to "verify."
 - Halt after linting that one file and wait. The user will tell you what to do next. 
+
+One file does not mean part of a file. The rule bounds *how many* files you touch, never
+*how completely* you finish the one you were given — a half-done element is not a smaller
+scope, it is an unfinished one (see [scope](scope.md)).
 
 ## Dependencies mean halt, not expansion
 
@@ -72,3 +79,7 @@ is the discovery.
 Do not assume paths or file names. Search with the information you have and narrow
 from there. If a search finds nothing, **loosen** the parameters — do not narrow
 them further.
+
+Search on what a thing structurally **is**, never on what convention says it would be
+called or where it would live — the procedure and its outcomes are owned by
+[tdd-ordering](tdd-ordering.md#search-the-invariant-never-the-convention).

@@ -6,8 +6,6 @@ assumed.
 Applies whenever a file is edited. This is a Process topic — it governs all other
 work.
 
-The agent uses its own linter tool and never runs a terminal command for any reason. 
-
 ## Lint every edit
 
 - After each edit, lint the touched file and resolve every warning and error.

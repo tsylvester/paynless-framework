@@ -18,3 +18,5 @@ For each node:
 Edit the workplan only on explicit permission, one node at a time
 (`docs/agents/precedence.md`, `docs/agents/workplan-structure.md`). Explain this
 procedure back to me, list the scope, and identify the first file group.
+
+Follow `docs/agents/loop.md`, `docs/agents/scope.md`, and `docs/agents/precedence.md`.

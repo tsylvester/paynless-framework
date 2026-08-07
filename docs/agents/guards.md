@@ -99,6 +99,33 @@ Only if all four return nothing may you report no guard exists, and the halt rep
 must include the exact patterns you searched and where. A halt report without search
 evidence is a guess.
 
+Step 2 is a fast path, not a boundary. The owning folder is where the guard *should* be, so
+it is worth trying first — but a miss there proves nothing, and step 3 is not optional
+after it. The general rule is owned by
+[tdd-ordering](tdd-ordering.md#search-the-invariant-never-the-convention): search the
+structural invariant, never the name or the placement, because those describe where the
+codebase is going and not the code you are searching.
+
+### What the search finds is not always a whole guard
+
+The four steps end in one of three states, and only the last is "no guard exists" (see
+[tdd-ordering](tdd-ordering.md#three-outcomes-and-only-one-of-them-is-create-it)).
+
+**A guard that checks what you need.** Import it and call it. If it is non-compliant in
+ways that do not weaken the check — an unexpected name, an unexpected file — use it and
+record the debt. Do not write a second guard for a type that already has one.
+
+**A guard that exists but does not check what you need** — vacuous where the type has
+structure, or silent on the property you are guarding. Calling it does not make your object
+safe, and strengthening it means editing a file you were not given. Report and halt with the
+node that strengthens it, naming the property left unchecked. Do not compensate by inlining
+the missing check at your call site: that is the *inlining foreign structure* substitute
+below, and it drifts from the owner's definition the moment the type changes.
+
+**More than one guard for the same type.** Report both — the one the repo imports and the
+one nearer the owning interface — and let the user choose. Calling the wrong one silently
+entrenches it.
+
 ## Guard on entry — validating functions take `unknown`
 
 A function that runtime-validates a parameter and can return an error for invalid

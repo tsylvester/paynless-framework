@@ -1,5 +1,7 @@
 Audit **one** test block — a single `Deno.test`, `t.step`, `it`, or equivalent. The block
-highlighted in the editor and attached to this command is your scope.
+highlighted in the editor and attached to this command is your scope. How a delivered
+selection is treated — that it is the user's instruction and not ambient context, and that
+it bounds the work — is governed by `docs/agents/scope.md`, "Context the user hands you".
 
 **One block, never a file.** A whole-file pass produces a summary, not an audit: the probes
 in `docs/agents/tests.md#audit` are per-block, and each one needs that block's arrangement
@@ -54,6 +56,25 @@ verification, so perform it now (`docs/agents/precedence.md`).
 This is not `check`. That reviews a completed node against the workplan; this judges one
 test block on its own terms, with no node in scope. Do not go looking for one.
 
-Conforms to: `docs/agents/tests.md#audit`, `docs/agents/modes.md`.
+**Name the successor.** A remedy is applied in a later, separately instructed step
+(`docs/agents/tests.md#applying-a-remedy`), so a finding that does not say where it goes
+dead-ends. Close every finding with the command that executes it:
+
+- **Incidental, tautological, contract–assertion mismatch** — corrected in place, in this
+  block, by the command owning this block's scope: `unitTest`, `guardTest`,
+  `interfaceTest`, or `integrate`. Name which.
+- **Layer misplacement** — the property moves to the scope that owns it. Name that scope's
+  command, and say where the property is already covered if it is.
+- **Subject misplacement** — the block belongs to another function, so it is placed against
+  that function's node by `plan`, not rewritten here.
+
+Carry the remedy forward with the finding: the reconstructed contract, the probe result,
+and the block's location. The successor command has no node and no `interaction.spec` to
+work from — what you hand it is the whole of its input.
+
+Conforms to: `docs/agents/tests.md#audit`, `docs/agents/tests.md#applying-a-remedy`,
+`docs/agents/modes.md`.
 
 Explain, propose, halt. Do not edit (`docs/agents/output.md`, `docs/agents/discovery-halt.md`).
+
+Follow `docs/agents/loop.md`, `docs/agents/scope.md`, and `docs/agents/precedence.md`.

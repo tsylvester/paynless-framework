@@ -7,4 +7,4 @@ Conforms to: `docs/agents/composition.md`, `docs/agents/dependency-injection.md`
 `docs/agents/types.md`, `docs/agents/errors-and-returns.md`, `docs/agents/guards.md`,
 `docs/agents/logging.md`.
 
-Do only the implementation. Follow `docs/agents/loop.md` and `docs/agents/precedence.md`.
+Do only the implementation. Follow `docs/agents/loop.md`, `docs/agents/scope.md`, and `docs/agents/precedence.md`.

@@ -158,8 +158,6 @@ documented, domain-approved defaults inside builders and factories (see
   wherever every imported symbol is a type, so type elision is explicit.
 - Never import an entire library with `*`.
 - Never alias imports.
-- Import another module's symbols from its `provides` barrel, never from an internal
-  file of that module (see [boundaries](boundaries.md)).
 - Reexporting is permitted only in barrel files (see [boundaries](boundaries.md)).
 
 ## Precedence

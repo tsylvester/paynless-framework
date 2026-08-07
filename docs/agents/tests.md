@@ -283,6 +283,42 @@ probe result is not a finding.
 
 The audit reports and halts; it does not edit ([discovery-halt](discovery-halt.md)).
 
+## Applying a remedy
+
+A **block remedy** is an instruction to correct one existing test block. It is the input a
+test-authoring step takes when there is no workplan node — the block exists, the code it
+covers exists, and what is wrong is the block.
+
+Two things produce one, and they are not interchangeable:
+
+- **An audit** ([Test derangements](#audit)) — the block passes but could not have failed,
+  or its header and body disagree. The evidence is the probe result.
+- **A failure diagnosis** — the block fails, and the root cause is the block rather than
+  the source: a stale expectation after a requirements change, or an assertion that never
+  matched the contract. The evidence is the failure output and the requirement the block is
+  wrong about.
+
+A remedy from either producer carries the same three things forward, because the step that
+applies it has nothing else to work from: **the block's location**, **the contract it
+should prove**, and **what must change** for it to prove it. A remedy missing any of the
+three is not actionable, and the receiving step halts rather than inventing the difference
+(see [discovery-halt](discovery-halt.md)).
+
+Neither producer edits. A remedy is applied in a later, separately instructed step, and two
+rules govern that step.
+
+**A corrected block is fixed where it sits.** A defect *in* a block is remedied by
+rewriting that block in place. Do not append a corrected copy to the end of the file. The
+shared standard that new tests are appended (see
+[Shared standards](#shared-standards-all-test-files)) governs tests that did not exist
+before, not corrections to tests that did — appending a correction leaves the original
+sitting above it, still wrong, which is the defect now duplicated.
+
+**A misplaced test moves; it is not rewritten.** Layer misplacement and subject
+misplacement are not corrected in place at all. The block's property belongs to another
+scope, or to another function, and the remedy relocates it there as those sections state.
+Rewriting a misplaced block where it sits preserves the misplacement.
+
 ## Precedence
 
 This topic outranks the workplan. A node step that silences a RED compiler error,

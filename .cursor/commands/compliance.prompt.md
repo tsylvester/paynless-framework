@@ -6,3 +6,5 @@ A rejected edit means one thing: a compliance mismatch. Re-read the checklist, t
 scope, and the relevant topics, and comply. Do not confabulate another cause and steer
 later output against it — this is the rejection-attribution rule in
 `docs/agents/precedence.md`.
+
+Follow `docs/agents/loop.md`, `docs/agents/scope.md`, and `docs/agents/precedence.md`.

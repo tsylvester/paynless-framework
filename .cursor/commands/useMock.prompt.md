@@ -20,3 +20,5 @@ Conforms to: `docs/agents/tests.md` (Fixtures: call the builder directly),
 `docs/agents/mocks.md`. Follow the work loop (`docs/agents/loop.md`) and precedence
 (`docs/agents/precedence.md`) — read before you reason, and produce the read manifest
 first.
+
+Follow `docs/agents/loop.md`, `docs/agents/scope.md`, and `docs/agents/precedence.md`.

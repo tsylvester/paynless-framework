@@ -39,6 +39,38 @@ test("EnqueuedReturn is a member of MyFunctionSuccessReturn", () => {
 });
 ```
 
+### Every exported symbol is proven
+
+The interface's export surface is the checklist. **Every symbol the interface exports has
+at least one block proving it** — not the symbols the node happened to enumerate, and not
+the ones whose proof is convenient. A node lists elements, not symbols, and its silence on
+a symbol has not excluded it (see
+[scope](scope.md#node-silence-is-not-exclusion)).
+
+Enumerate the export surface from the interface file before writing, and prove each symbol
+by the form its kind takes — every form below is already documented in this topic:
+
+- **Object type** — the required-key surface record, `Record<keyof MyObject, true>`.
+- **Function type** — a surface record per parameter object from `Parameters<MyFunction>[n]`,
+  plus the declared-return assertions in the sync or async form.
+- **Union type** — membership by typed assignment, one block per member, plus flavor
+  membership where an arm has flavors.
+- **Enum or string-literal alias** — a typed literal assigned to the alias, one block
+  covering its admitted values.
+- **Class** — the surface record for its `ConstructorParams` object type. The class itself
+  is proven by construction elsewhere, never by a literal here.
+
+If a kind is not listed, it is not a kind this interface should export — report it and halt
+([discovery-halt](discovery-halt.md)) rather than inventing a proof form.
+
+The interface is the only source for this list. A symbol absent from the interface file is
+not proven here on the strength of the node mentioning it, and a symbol present in the
+interface file is proven here whether the node mentioned it or not.
+
+**Report the enumeration** — the symbols the interface exports and each one's block — per
+the coverage canary ([scope](scope.md#coverage-canary)). A test file
+proving fewer symbols than the interface exports is incomplete, not minimal.
+
 ### The contract header here
 
 This scope collapses to a **one-line `Contract` header** naming the membership or surface

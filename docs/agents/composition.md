@@ -88,7 +88,7 @@ object; its members follow [types](types.md) and, for errors,
 How each role is mocked is owned by [mocks](mocks.md#classes--decompose-never-mock-the-class);
 how each is guarded is owned by [guards](guards.md#classes--instanceof-for-owned-classes-shape-for-their-params).
 
-## Everything emitted is fully typed and composable
+## Everything constructed or emitted is fully typed and composable
 
 Any object the function constructs or emits has a defined type. If the type is
 nested, every layer is defined, typed, and composable, recursing until a primitive
@@ -112,6 +112,49 @@ Emitting an untyped object is prohibited. Even primitives are typed so the
 receiving function knows exactly what it is given. Any object passed into the
 function must have a type defined in the interface of its owner (wherever the
 object originates). See [types](types.md) for locating and narrowing types.
+
+### Which shapes this interface owns
+
+The signature is not the whole surface. A function also builds objects on the way to
+its return, and those need types as much as the return does. The interface declares
+them — which means deciding, per object, whether this interface owns its type at all.
+
+Two questions, in order:
+
+1. **Does a named type already describe this shape?** Locate before you create (see
+   [tdd-ordering](tdd-ordering.md)). If one exists, use it; it belongs to whoever
+   declared it, and this interface declares nothing.
+2. **Did this function originate the shape?** Only then does this interface own it.
+
+What originates a shape: the success and error arms and their flavors; an intermediate
+assembled during the operation whose shape no named type describes; a value derived from
+an input that is a **different shape** from that input.
+
+### Two things that are not construction
+
+**Modifying an object you were handed.** A function that receives a `PipelineObject`,
+changes it, and returns or passes it on is still working with a `PipelineObject` — same
+shape, same type, same owner, nothing to declare here. The discriminator is the shape,
+not the values in it: changing what a field holds does not produce a new kind of thing.
+Only a genuinely different shape does.
+
+**Building a value for a collaborator.** A dependency's signature already declares its own
+`params` and `payload` types, so a function assembling one is constructing a *value* of a
+type that dependency's interface owns — not a new type of its own. The type lives with the
+receiver, not the builder.
+
+If the dependency declares no type for what it receives, that is a defect in **that**
+interface. Report it and halt (see [discovery-halt](discovery-halt.md)). Declaring the
+missing type here puts it in the wrong file, where the owner cannot maintain it and every
+other caller will mint its own.
+
+**Resolve this at the interface, not in the body.** An object first noticed while writing
+the implementation is a type discovered at the worst moment — the element that should have
+declared it is closed, and the quick exits are all prohibited: typing it inline, widening
+it to `unknown`, or minting a union at the use site (see [types](types.md)). The node's
+`interaction.spec` (see [workplan-structure](workplan-structure.md)) states per branch what
+is decided, called, and returned, which is where these objects are visible while the
+interface is still open.
 
 ## Parameter jurisdiction — what is trusted vs. proven
 

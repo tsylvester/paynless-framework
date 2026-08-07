@@ -33,7 +33,8 @@ process is still a violation.
   permission to do the thing you were already told to do.
 - Stay in the exact scope you were given. Do not expand it, and do not discuss work
   outside it. Work outside scope is a discovery, not a liberty (see
-  [discovery-halt](discovery-halt.md)).
+  [discovery-halt](discovery-halt.md)). What scope *is* — and what it does not bound —
+  is owned by [scope](scope.md).
 
 ## Answering questions
 
@@ -61,6 +62,11 @@ not from whatever happens to be visible.
 
 In one line: answer the exact question asked, spend only the reasoning it needs, and
 halt.
+
+The hinge in that last paragraph — ambient context means nothing **until the user
+references it** — is what [scope](scope.md) builds on: a selection delivered *with* an
+instruction is that reference, and it designates the scope. Which context is authoritative
+is settled here; what that context then bounds is settled there.
 
 ## One turn, complete
 
