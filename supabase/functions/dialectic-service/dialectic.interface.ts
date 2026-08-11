@@ -1337,14 +1337,13 @@ export interface DialecticBaseJobPayload
 	extends Omit<GenerateContributionsPayload, "chatId"> {
 	model_id: string; // Individual model ID for this specific job
 	sourceContributionId?: string | null;
+	source_prompt_resource_id?: string;
 }
 
 /**
  * The payload for a simple, single-call job.
  */
-export interface DialecticSimpleJobPayload extends DialecticBaseJobPayload {
-	job_type?: "simple";
-}
+export interface DialecticSimpleJobPayload extends DialecticBaseJobPayload {}
 
 /**
  * The payload for a parent job that plans steps based on a recipe.

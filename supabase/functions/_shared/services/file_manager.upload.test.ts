@@ -40,6 +40,16 @@ import {
 import { MockLogger } from '../logger.mock.ts'
 import type { Messages } from '../types.ts'
 import { createAssembleChunksMock } from '../utils/assembleChunks/assembleChunks.mock.ts'
+import {
+  buildPathContext,
+  buildResourceUploadContext,
+  buildResourcePathContext,
+  buildModelContributionUploadContext,
+  buildModelContributionPathContext,
+  buildUserFeedbackUploadContext,
+  buildUserFeedbackPathContext,
+  buildContributionMetadata,
+} from './file_manager.mock.ts'
 
 const assembleChunksMock = createAssembleChunksMock()
 
@@ -77,20 +87,9 @@ Deno.test('FileManagerService', async (t) => {
     }
   }
 
-  const baseUploadContext: UploadContext = {
-    pathContext: {
-      fileType: FileType.InitialUserPrompt,
-      projectId: 'project-uuid-123',
-      sessionId: 'session-uuid-456',
-      iteration: 1,
-      originalFileName: 'test.pdf',
-    },
-    fileContent: 'test content',
-    mimeType: 'application/pdf',
-    sizeBytes: 12345,
-    userId: 'user-uuid-789',
-    description: 'test description',
-  }
+  const baseUploadContext: UploadContext = buildResourceUploadContext(
+    buildResourcePathContext({ fileType: FileType.InitialUserPrompt }),
+  );
 
   await t.step('constructor should throw if bucket environment variable is not set',
     () => {
@@ -124,20 +123,12 @@ Deno.test('FileManagerService', async (t) => {
   await t.step('uploadAndRegisterFile returns structured error and cleans up on DB insert failure (project_export_zip)',
     async () => {
       try {
-        const projectId = 'project-uuid-err';
-        const originalZipName = 'Fail Export.zip';
-        const context: UploadContext = {
-          ...baseUploadContext,
-          pathContext: {
+        const context: UploadContext = buildResourceUploadContext(
+          buildResourcePathContext({
             fileType: FileType.ProjectExportZip,
-            projectId,
-            originalFileName: originalZipName,
-          },
-          fileContent: 'zip-bytes',
-          mimeType: 'application/zip',
-          sizeBytes: 9999,
-          description: 'Project export archive (should fail insert)',
-        };
+            originalFileName: 'Fail Export.zip',
+          }),
+        );
 
         const expectedPathParts = constructStoragePath(context.pathContext);
         const expectedFullPath = `${expectedPathParts.storagePath}/${expectedPathParts.fileName}`;
@@ -220,35 +211,28 @@ Deno.test('FileManagerService', async (t) => {
         const config: MockSupabaseDataConfig = {
           genericMockResults: {
             dialectic_project_resources: {
-              upsert: { data: [{ 
-                id: 'resource-123', 
-                project_id: 'project-uuid-123', 
-                user_id: 'user-uuid-789', 
-                file_name: resourceFileName, 
-                mime_type: 'application/pdf', 
-                size_bytes: 12345, 
-                storage_bucket: 'test-bucket', 
+              upsert: { data: [{
+                id: 'resource-123',
+                project_id: 'project-uuid-123',
+                user_id: 'user-uuid-789',
+                file_name: resourceFileName,
+                mime_type: 'application/pdf',
+                size_bytes: 12345,
+                storage_bucket: 'test-bucket',
                 storage_path: resourceContextPath, // This is the directory path
-                resource_description: 'A test PDF file.' 
+                resource_description: 'A test PDF file.'
               }], error: null },
             },
           },
         }
         beforeEach(config)
 
-        const context: UploadContext = {
-          ...baseUploadContext,
-          pathContext: {
+        const context: UploadContext = buildResourceUploadContext(
+          buildResourcePathContext({
             fileType: FileType.GeneralResource,
-            projectId: 'project-uuid-123',
             originalFileName: resourceFileName,
-            // sessionId and iteration are not strictly used by 'general_resource' path construction 
-            // but are part of baseUploadContext.pathContext, let's keep them for consistency of the mock context
-            sessionId: 'session-for-proj-res',
-            iteration: 0,
-          },
-          description: 'A test PDF file.',
-        }
+          }),
+        );
 
         const { record, error } = await fileManager.uploadAndRegisterFile(context)
 
@@ -294,23 +278,13 @@ Deno.test('FileManagerService', async (t) => {
       };
       beforeEach(config);
 
-      const seedPromptPathContext: ResourceUploadContext['pathContext'] = {
-        projectId: 'project-seed-contract',
-        sessionId: 'session-seed-contract',
-        iteration: 2,
-        stageSlug: DialecticStageSlug.Thesis,
+      const seedPromptPathContext = buildResourcePathContext({
         fileType: FileType.SeedPrompt,
-        // sourceContributionId should be null for this test case
-      };
+      });
 
-      const seedPromptContext: ResourceUploadContext = {
-        ...baseUploadContext,
-        pathContext: seedPromptPathContext,
-        fileContent: '# Seed prompt content',
-        mimeType: 'text/markdown',
-        description: 'Seed prompt for thesis stage',
+      const seedPromptContext: ResourceUploadContext = buildResourceUploadContext(seedPromptPathContext, {
         resourceTypeForDb: 'seed_prompt',
-      };
+      });
 
       const { record, error } = await fileManager.uploadAndRegisterFile(seedPromptContext);
 
@@ -334,14 +308,10 @@ Deno.test('FileManagerService', async (t) => {
   });
 
   await t.step('uploadAndRegisterFile should register a CompressedContext resource for contribution and history sources', async () => {
-    const baseCompressedPathContext = {
-      projectId: 'project-compressed-contract',
-      sessionId: 'session-compressed-contract',
-      iteration: 2,
-      stageSlug: DialecticStageSlug.Thesis,
+    const baseCompressedPathContext = buildResourcePathContext({
       fileType: FileType.CompressedContext,
       targetKey: FileType.business_case,
-    };
+    });
 
     const runCase = async (
       fileType: FileType.CompressedContext | FileType.CompressedContextRawJson,
@@ -350,14 +320,14 @@ Deno.test('FileManagerService', async (t) => {
       sourceId: string | undefined,
       role: Messages['role'] | undefined,
     ) => {
-      const pathContext: ResourceUploadContext['pathContext'] = {
+      const pathContext = buildResourcePathContext({
         ...baseCompressedPathContext,
         fileType,
         sourceType,
         ...(documentKey ? { documentKey } : {}),
         ...(sourceId ? { sourceId } : {}),
         ...(role ? { role } : {}),
-      };
+      });
 
       const expectedPathParts = constructStoragePath(pathContext);
 
@@ -371,14 +341,7 @@ Deno.test('FileManagerService', async (t) => {
       beforeEach(config);
 
       try {
-        const isRawJson = fileType === FileType.CompressedContextRawJson;
-        const context: ResourceUploadContext = {
-          ...baseUploadContext,
-          pathContext,
-          fileContent: isRawJson ? '{"executive_summary":"compressed"}' : '# Compressed context content',
-          mimeType: isRawJson ? 'application/json' : 'text/markdown',
-          description: 'Compressed context for target',
-        };
+        const context: ResourceUploadContext = buildResourceUploadContext(pathContext);
 
         const { record, error } = await fileManager.uploadAndRegisterFile(context);
 
@@ -418,19 +381,14 @@ Deno.test('FileManagerService', async (t) => {
     async () => {
       try {
         const projectId = 'project-uuid-zip';
-        const originalZipName = 'My Export.zip';
-        const zipContext: UploadContext = {
-          ...baseUploadContext,
-          pathContext: {
+        const zipContext: UploadContext = buildResourceUploadContext(
+          buildResourcePathContext({
             fileType: FileType.ProjectExportZip,
             projectId,
-            originalFileName: originalZipName,
-          },
-          fileContent: 'zip-bytes',
-          mimeType: 'application/zip',
-          sizeBytes: 45678,
-          description: 'Project export archive',
-        };
+            originalFileName: 'My Export.zip',
+          }),
+          { mimeType: 'application/zip' },
+        );
 
         const expectedPathParts = constructStoragePath(zipContext.pathContext);
         const expectedFullPath = `${expectedPathParts.storagePath}/${expectedPathParts.fileName}`;
@@ -492,35 +450,28 @@ Deno.test('FileManagerService', async (t) => {
         const config: MockSupabaseDataConfig = {
           genericMockResults: {
             dialectic_project_resources: {
-              upsert: { data: [{ 
-                id: 'resource-123', 
-                project_id: 'project-uuid-123', 
-                user_id: 'user-uuid-789', 
-                file_name: resourceFileName, 
-                mime_type: 'application/pdf', 
-                size_bytes: 12345, 
-                storage_bucket: 'test-bucket', 
+              upsert: { data: [{
+                id: 'resource-123',
+                project_id: 'project-uuid-123',
+                user_id: 'user-uuid-789',
+                file_name: resourceFileName,
+                mime_type: 'application/pdf',
+                size_bytes: 12345,
+                storage_bucket: 'test-bucket',
                 storage_path: resourceContextPath, // This is the directory path
-                resource_description: 'A test PDF file.' 
+                resource_description: 'A test PDF file.'
               }], error: null },
             },
           },
         }
         beforeEach(config)
 
-        const context: UploadContext = {
-          ...baseUploadContext,
-          pathContext: {
+        const context: UploadContext = buildResourceUploadContext(
+          buildResourcePathContext({
             fileType: FileType.GeneralResource,
-            projectId: 'project-uuid-123',
             originalFileName: resourceFileName,
-            // sessionId and iteration are not strictly used by 'general_resource' path construction 
-            // but are part of baseUploadContext.pathContext, let's keep them for consistency of the mock context
-            sessionId: 'session-for-proj-res',
-            iteration: 0,
-          },
-          description: 'A test PDF file.',
-        }
+          }),
+        );
 
         const { record, error } = await fileManager.uploadAndRegisterFile(context)
 
@@ -550,19 +501,14 @@ Deno.test('FileManagerService', async (t) => {
     async () => {
       try {
         const projectId = 'project-uuid-zip';
-        const originalZipName = 'My Export.zip';
-        const zipContext: UploadContext = {
-          ...baseUploadContext,
-          pathContext: {
+        const zipContext: UploadContext = buildResourceUploadContext(
+          buildResourcePathContext({
             fileType: FileType.ProjectExportZip,
             projectId,
-            originalFileName: originalZipName,
-          },
-          fileContent: 'zip-bytes',
-          mimeType: 'application/zip',
-          sizeBytes: 45678,
-          description: 'Project export archive',
-        };
+            originalFileName: 'My Export.zip',
+          }),
+          { mimeType: 'application/zip' },
+        );
 
         const expectedPathParts = constructStoragePath(zipContext.pathContext);
         const expectedFullPath = `${expectedPathParts.storagePath}/${expectedPathParts.fileName}`;
@@ -618,16 +564,9 @@ Deno.test('FileManagerService', async (t) => {
   await t.step('uploadAndRegisterFile for business_case should register a contribution correctly (no collision)',
     async () => {
       try {
-        const pathContextAttempt0: ModelContributionUploadContext['pathContext'] = {
-            fileType: FileType.business_case,
-            projectId: 'project-uuid-123',
-            sessionId: 'session-uuid-456',
-            iteration: 2,
-            stageSlug: DialecticStageSlug.Antithesis,
-            modelSlug: 'claude-3-sonnet',
-            attemptCount: 0,
-            documentKey: FileType.business_case,
-        };
+        const pathContextAttempt0 = buildModelContributionPathContext({
+          stageSlug: DialecticStageSlug.Antithesis,
+        });
         const expectedPathPartsAttempt0 = constructStoragePath(pathContextAttempt0);
         const expectedFullUploadPathAttempt0 = `${expectedPathPartsAttempt0.storagePath}/${expectedPathPartsAttempt0.fileName}`;
 
@@ -644,21 +583,9 @@ Deno.test('FileManagerService', async (t) => {
         }
         beforeEach(config)
 
-        const contributionMetadata: ContributionMetadata = {
-          iterationNumber: 2,
-          modelIdUsed: 'model-id-sonnet',
-          modelNameDisplay: 'Claude 3 Sonnet',
-          sessionId: 'session-uuid-456',
-          stageSlug: '2_antithesis',
-        };
-
-        const context: ModelContributionUploadContext = {
-          ...baseUploadContext,
-          pathContext: pathContextAttempt0,
-          fileContent: '# Business Case Content',
-          mimeType: 'text/markdown',
-          contributionMetadata,
-        }
+        const context: ModelContributionUploadContext = buildModelContributionUploadContext(pathContextAttempt0, {
+          contributionMetadata: buildContributionMetadata({ stageSlug: DialecticStageSlug.Antithesis }),
+        });
 
         const { record, error } = await fileManager.uploadAndRegisterFile(context)
 
@@ -688,19 +615,12 @@ Deno.test('FileManagerService', async (t) => {
   await t.step('uploadAndRegisterFile should place intermediate files in a _work directory',
     async () => {
       try {
-        const pathContext: ModelContributionUploadContext['pathContext'] = {
+        const pathContext = buildModelContributionPathContext({
           fileType: FileType.PairwiseSynthesisChunk,
-          projectId: 'project-intermediate',
-          sessionId: 'session-intermediate',
-          iteration: 1,
-          stageSlug: DialecticStageSlug.Synthesis,
-          modelSlug: 'test-model',
-          sourceModelSlugs: ['model-a', 'model-b'],
           sourceAnchorType: 'thesis',
           sourceAnchorModelSlug: 'model-a',
           pairedModelSlug: 'model-b',
-          attemptCount: 0,
-        };
+        });
         const expectedPathParts = constructStoragePath(pathContext);
         const contributionDataMock = { id: 'contrib-intermediate-123', file_name: expectedPathParts.fileName };
         const config: MockSupabaseDataConfig = {
@@ -715,20 +635,7 @@ Deno.test('FileManagerService', async (t) => {
         const storageBucket = setup.spies.storage.from('test-bucket');
         const uploadSpy = storageBucket.uploadSpy;
 
-        const contributionMetadata: ContributionMetadata = {
-          iterationNumber: 1,
-          modelIdUsed: 'model-id-123',
-          modelNameDisplay: 'Test Model',
-          sessionId: 'session-intermediate',
-          stageSlug: DialecticStageSlug.Synthesis,
-          document_relationships: { derived_from: ['id-a', 'id-b'] },
-        };
-
-        const context: UploadContext = {
-          ...baseUploadContext,
-          pathContext,
-          contributionMetadata,
-        };
+        const context: ModelContributionUploadContext = buildModelContributionUploadContext(pathContext);
         
         const expectedFullPath = `${expectedPathParts.storagePath}/${expectedPathParts.fileName}`;
 
@@ -749,28 +656,12 @@ Deno.test('FileManagerService', async (t) => {
   await t.step('uploadAndRegisterFile for business_case should handle filename collision and retry',
     async () => {
       try {
-        const baseRetryPathContext: ModelContributionUploadContext['pathContext'] = {
-          fileType: FileType.business_case,
-          projectId: 'project-retry-proj',
-          sessionId: 'session-retry-sess',
-          iteration: 1,
-          stageSlug: DialecticStageSlug.Thesis,
-          modelSlug: 'claude-opus',
-          documentKey: FileType.business_case,
-        };
+        const baseRetryPathContext = buildModelContributionPathContext();
 
-        const failedAttempt0PathContext: ModelContributionUploadContext['pathContext'] = {
-          ...baseRetryPathContext,
-          attemptCount: 0,
-        };
-        const expectedFailedPathParts0 = constructStoragePath(failedAttempt0PathContext);
+        const expectedFailedPathParts0 = constructStoragePath({ ...baseRetryPathContext, attemptCount: 0 });
         const expectedFullFailedPath0 = `${expectedFailedPathParts0.storagePath}/${expectedFailedPathParts0.fileName}`;
 
-        const successAttempt1PathContext: ModelContributionUploadContext['pathContext'] = {
-          ...baseRetryPathContext,
-          attemptCount: 1,
-        };
-        const expectedSuccessfulPathParts1 = constructStoragePath(successAttempt1PathContext);
+        const expectedSuccessfulPathParts1 = constructStoragePath({ ...baseRetryPathContext, attemptCount: 1 });
         const expectedFullSuccessfulMainPath1 = `${expectedSuccessfulPathParts1.storagePath}/${expectedSuccessfulPathParts1.fileName}`;
         const expectedSuccessfulMainFileName1 = expectedSuccessfulPathParts1.fileName;
 
@@ -804,22 +695,7 @@ Deno.test('FileManagerService', async (t) => {
           return bucket;
         };
 
-        const contributionMetadata: ContributionMetadata = {
-          iterationNumber: 1,
-          modelIdUsed: 'model-id-opus',
-          modelNameDisplay: 'Claude Opus',
-          sessionId: 'session-retry-sess',
-          stageSlug: DialecticStageSlug.Thesis,
-        };
-
-        const context: ModelContributionUploadContext = {
-          ...baseUploadContext,
-          pathContext: baseRetryPathContext, // Use the base for the initial call, attemptCount is handled internally by FileManagerService
-          mimeType: 'text/markdown',
-          fileContent: '# continuation without link',
-          contributionMetadata,
-          userId: 'user-missing-link',
-        };
+        const context: ModelContributionUploadContext = buildModelContributionUploadContext(baseRetryPathContext);
 
         const { record, error } = await fileManager.uploadAndRegisterFile(context);
 
@@ -853,43 +729,18 @@ Deno.test('FileManagerService', async (t) => {
     async () => {
       try {
         const feedbackDataMock = { id: 'feedback-123', project_id: 'project-feedback-proj' };
-        const projectId = 'project-feedback-proj';
-        const sessionId = 'session-feedback-sess';
-        const iteration = 3;
-        const stageSlug = DialecticStageSlug.Synthesis;
-        const sourceDocPathContext: PathContext = {
-          projectId,
-          sessionId,
-          iteration,
-          stageSlug,
-          modelSlug: 'claude-3-opus',
-          attemptCount: 0,
-          documentKey: FileType.business_case,
-          fileType: FileType.business_case,
-        };
+        const sourceDocPathContext = buildPathContext();
         const sourceDocPath = constructStoragePath(sourceDocPathContext);
         const originalStoragePath = sourceDocPath.storagePath;
         const originalBaseName = sourceDocPath.fileName.endsWith('.md') ? sourceDocPath.fileName.slice(0, -3) : sourceDocPath.fileName;
-        const pathContext: PathContext & { fileType: FileType.UserFeedback } = {
-          fileType: FileType.UserFeedback,
-          projectId,
-          sessionId,
-          iteration,
-          stageSlug,
+        const pathContext = buildUserFeedbackPathContext({
           originalStoragePath,
           originalBaseName,
-          documentKey: FileType.business_case,
-          modelSlug: 'claude-3-opus',
-        };
-        const context: UserFeedbackUploadContext = {
-          ...baseUploadContext,
-          pathContext,
-          mimeType: 'text/markdown',
-          fileContent: '# My Feedback Content',
-          userId: 'user-feedback-user-id',
+        });
+        const context: UserFeedbackUploadContext = buildUserFeedbackUploadContext(pathContext, {
           feedbackTypeForDb: 'some-feedback-type',
-          resourceDescriptionForDb: { description: "A test feedback resource" }
-        };
+          resourceDescriptionForDb: { description: "A test feedback resource" },
+        });
         const expectedPath = constructStoragePath(context.pathContext);
         const config: MockSupabaseDataConfig = {
           genericMockResults: {
@@ -942,43 +793,17 @@ Deno.test('FileManagerService', async (t) => {
         const documentKey = FileType.business_case;
         const modelId = 'model-abc-123';
         const newRow = { id: 'new-feedback-id', project_id: 'proj-upsert', session_id: 'sess-upsert' };
-        const projectId = 'proj-upsert';
-        const sessionId = 'sess-upsert';
-        const iteration = 2;
-        const stageSlug = DialecticStageSlug.Synthesis;
-        const sourceDocPathContext: PathContext = {
-          projectId,
-          sessionId,
-          iteration,
-          stageSlug,
-          modelSlug: 'model-abc',
-          attemptCount: 0,
-          documentKey,
-          fileType: FileType.synthesis_document_business_case,
-        };
+        const sourceDocPathContext = buildPathContext();
         const sourceDocPath = constructStoragePath(sourceDocPathContext);
         const originalStoragePath = sourceDocPath.storagePath;
         const originalBaseName = sourceDocPath.fileName.endsWith('.md') ? sourceDocPath.fileName.slice(0, -3) : sourceDocPath.fileName;
-        const pathContext: PathContext & { fileType: FileType.UserFeedback } = {
-          fileType: FileType.UserFeedback,
-          projectId,
-          sessionId,
-          iteration,
-          stageSlug,
+        const pathContext = buildUserFeedbackPathContext({
           originalStoragePath,
           originalBaseName,
-          documentKey,
-          modelSlug: modelId,
-        };
-        const context: UserFeedbackUploadContext = {
-          ...baseUploadContext,
-          pathContext,
-          mimeType: 'text/markdown',
-          fileContent: '# New feedback',
-          userId: 'user-upsert',
-          feedbackTypeForDb: 'general-feedback',
+        });
+        const context: UserFeedbackUploadContext = buildUserFeedbackUploadContext(pathContext, {
           resourceDescriptionForDb: { document_key: documentKey, model_id: modelId },
-        };
+        });
         const expectedPath = constructStoragePath(context.pathContext);
         const config: MockSupabaseDataConfig = {
           genericMockResults: {
@@ -1016,43 +841,17 @@ Deno.test('FileManagerService', async (t) => {
         const modelId = 'model-existing';
         const existingId = 'existing-feedback-uuid';
         const updatedRow = { id: existingId, project_id: 'proj-upd', session_id: 'sess-upd', file_name: 'updated_feedback.md' };
-        const projectId = 'proj-upd';
-        const sessionId = 'sess-upd';
-        const iteration = 1;
-        const stageSlug = DialecticStageSlug.Thesis;
-        const sourceDocPathContext: PathContext = {
-          projectId,
-          sessionId,
-          iteration,
-          stageSlug,
-          modelSlug: 'model-upd',
-          attemptCount: 0,
-          documentKey,
-          fileType: FileType.business_case,
-        };
+        const sourceDocPathContext = buildPathContext();
         const sourceDocPath = constructStoragePath(sourceDocPathContext);
         const originalStoragePath = sourceDocPath.storagePath;
         const originalBaseName = sourceDocPath.fileName.endsWith('.md') ? sourceDocPath.fileName.slice(0, -3) : sourceDocPath.fileName;
-        const pathContext: PathContext & { fileType: FileType.UserFeedback } = {
-          fileType: FileType.UserFeedback,
-          projectId,
-          sessionId,
-          iteration,
-          stageSlug,
+        const pathContext = buildUserFeedbackPathContext({
           originalStoragePath,
           originalBaseName,
-          documentKey,
-          modelSlug: modelId,
-        };
-        const context: UserFeedbackUploadContext = {
-          ...baseUploadContext,
-          pathContext,
-          mimeType: 'text/markdown',
-          fileContent: '# Updated feedback content',
-          userId: 'user-upd',
-          feedbackTypeForDb: 'general-feedback',
+        });
+        const context: UserFeedbackUploadContext = buildUserFeedbackUploadContext(pathContext, {
           resourceDescriptionForDb: { document_key: documentKey, model_id: modelId },
-        };
+        });
         const expectedPath = constructStoragePath(context.pathContext);
         const config: MockSupabaseDataConfig = {
           genericMockResults: {
@@ -1089,43 +888,19 @@ Deno.test('FileManagerService', async (t) => {
       try {
         const documentKey = FileType.feature_spec;
         const modelId = 'model-filter-test';
-        const projectId = 'p';
-        const sessionId = 's';
-        const iteration = 1;
-        const stageSlug = DialecticStageSlug.Thesis;
-        const sourceDocPathContext: PathContext = {
-          projectId,
-          sessionId,
-          iteration,
-          stageSlug,
-          modelSlug: 'model-f',
-          attemptCount: 0,
-          documentKey,
-          fileType: FileType.feature_spec,
-        };
+        const sourceDocPathContext = buildPathContext();
         const sourceDocPath = constructStoragePath(sourceDocPathContext);
         const originalStoragePath = sourceDocPath.storagePath;
         const originalBaseName = sourceDocPath.fileName.endsWith('.md') ? sourceDocPath.fileName.slice(0, -3) : sourceDocPath.fileName;
-        const pathContext: PathContext & { fileType: FileType.UserFeedback } = {
-          fileType: FileType.UserFeedback,
-          projectId,
-          sessionId,
-          iteration,
-          stageSlug,
+        const pathContext = buildUserFeedbackPathContext({
           originalStoragePath,
           originalBaseName,
           documentKey,
           modelSlug: modelId,
-        };
-        const context: UserFeedbackUploadContext = {
-          ...baseUploadContext,
-          pathContext,
-          mimeType: 'text/markdown',
-          fileContent: '# Feedback',
-          userId: 'u',
-          feedbackTypeForDb: 'general-feedback',
+        });
+        const context: UserFeedbackUploadContext = buildUserFeedbackUploadContext(pathContext, {
           resourceDescriptionForDb: { document_key: documentKey, model_id: modelId },
-        };
+        });
         const expectedPath = constructStoragePath(context.pathContext);
         const config: MockSupabaseDataConfig = {
           genericMockResults: {
@@ -1172,43 +947,15 @@ Deno.test('FileManagerService', async (t) => {
   await t.step('uploadAndRegisterFile user_feedback storage upload uses existing deterministic path from constructStoragePath',
     async () => {
       try {
-        const projectId = 'path-proj';
-        const sessionId = 'path-sess';
-        const iteration = 2;
-        const stageSlug = DialecticStageSlug.Synthesis;
-        const sourceDocPathContext: PathContext = {
-          projectId,
-          sessionId,
-          iteration,
-          stageSlug,
-          modelSlug: 'path-model',
-          attemptCount: 0,
-          documentKey: FileType.feature_spec,
-          fileType: FileType.synthesis_document_feature_spec,
-        };
+        const sourceDocPathContext = buildPathContext();
         const sourceDocPath = constructStoragePath(sourceDocPathContext);
         const originalStoragePath = sourceDocPath.storagePath;
         const originalBaseName = sourceDocPath.fileName.endsWith('.md') ? sourceDocPath.fileName.slice(0, -3) : sourceDocPath.fileName;
-        const pathContext: PathContext & { fileType: FileType.UserFeedback } = {
-          fileType: FileType.UserFeedback,
-          projectId,
-          sessionId,
-          iteration,
-          stageSlug,
+        const pathContext = buildUserFeedbackPathContext({
           originalStoragePath,
           originalBaseName,
-          documentKey: FileType.synthesis_document_feature_spec,
-          modelSlug: 'path-model',
-        };
-        const context: UserFeedbackUploadContext = {
-          ...baseUploadContext,
-          pathContext,
-          mimeType: 'text/markdown',
-          fileContent: '# Path test',
-          userId: 'path-user',
-          feedbackTypeForDb: 'general-feedback',
-          resourceDescriptionForDb: { document_key: 'synthesis_document_feature_spec', model_id: 'path-model' },
-        };
+        });
+        const context: UserFeedbackUploadContext = buildUserFeedbackUploadContext(pathContext);
         const expectedPath = constructStoragePath(context.pathContext);
         const config: MockSupabaseDataConfig = {
           genericMockResults: {
@@ -1278,15 +1025,11 @@ Deno.test('FileManagerService', async (t) => {
   await t.step('uploadAndRegisterFile should handle DB insert errors and attempt cleanup',
     async () => {
       try {
-        const dbErrorContext: UploadContext = {
-          ...baseUploadContext,
-          pathContext: { // Using simpler initial_user_prompt for this DB error test
+        const dbErrorContext: UploadContext = buildResourceUploadContext(
+          buildResourcePathContext({
             fileType: FileType.InitialUserPrompt,
-            projectId: 'project-db-error',
-            originalFileName: 'db_error_test.txt',
-          },
-          description: "DB error test",
-        };
+          }),
+        );
 
         const expectedPathParts = constructStoragePath(dbErrorContext.pathContext);
         const expectedFullPath = `${expectedPathParts.storagePath}/${expectedPathParts.fileName}`;
@@ -1310,15 +1053,11 @@ Deno.test('FileManagerService', async (t) => {
         const listSpy = storageBucket.listSpy;
         const removeSpy = storageBucket.removeSpy;
 
-        const context: UploadContext = {
-          ...baseUploadContext,
-          pathContext: {
+        const context: UploadContext = buildResourceUploadContext(
+          buildResourcePathContext({
             fileType: FileType.InitialUserPrompt,
-            projectId: 'project-db-error',
-            originalFileName: 'db_error_test.txt',
-          },
-          description: "DB error test",
-        };
+          }),
+        );
 
         const { record, error } = await fileManager.uploadAndRegisterFile(context);
 
@@ -1349,18 +1088,10 @@ Deno.test('FileManagerService', async (t) => {
   await t.step('uploadAndRegisterFile should use pathContext.isContinuation to determine continuation status and reject when target_contribution_id is missing',
     async () => {
       try {
-        const pathContext: ModelContributionUploadContext['pathContext'] = {
-          fileType: FileType.business_case,
-          projectId: 'project-missing-link',
-          sessionId: 'session-missing-link',
-          iteration: 1,
-          stageSlug: DialecticStageSlug.Thesis,
-          modelSlug: 'test-model',
-          attemptCount: 0,
-          documentKey: FileType.business_case,
+        const pathContext = buildModelContributionPathContext({
           isContinuation: true,
           turnIndex: 1,
-        };
+        });
 
         const config: MockSupabaseDataConfig = {
           storageMock: {
@@ -1375,24 +1106,13 @@ Deno.test('FileManagerService', async (t) => {
         const constructStoragePathSpy = spy(constructStoragePath);
         fileManager = new FileManagerService(setup.client as unknown as SupabaseClient<Database>, { constructStoragePath: constructStoragePathSpy, logger, assembleChunks: assembleChunksMock.assembleChunks });
 
-        const contributionMetadata: ContributionMetadata = {
-          iterationNumber: 1,
-          modelIdUsed: 'model-id-test',
-          modelNameDisplay: 'Test Model',
-          sessionId: 'session-missing-link',
-          stageSlug: DialecticStageSlug.Thesis,
-        };
-        
+        const contributionMetadata = buildContributionMetadata();
+
         assertEquals(contributionMetadata.isContinuation, undefined);
 
-        const missingLinkContext: UploadContext = {
-          ...baseUploadContext,
-          pathContext,
-          mimeType: 'text/markdown',
-          fileContent: '# continuation without link',
+        const missingLinkContext: UploadContext = buildModelContributionUploadContext(pathContext, {
           contributionMetadata,
-          userId: 'user-missing-link',
-        };
+        });
 
         const { record, error } = await fileManager.uploadAndRegisterFile(missingLinkContext);
 
@@ -1436,47 +1156,25 @@ Deno.test('FileManagerService', async (t) => {
       };
 
       // 2. Setup: Create the context for the fileManager call
-        const contributionMetadata: ContributionMetadata = {
+        const contributionMetadata = buildContributionMetadata({
           target_contribution_id: 'anchor-contrib-id-123',
-          iterationNumber: 1,
-          modelIdUsed: 'model-id-opus',
-          modelNameDisplay: 'Claude Opus',
-          sessionId: 'session-chunk-test',
-          stageSlug: '1_thesis',
-          contributionType: 'thesis',
-        };
-      const continuationContext: UploadContext = {
-        ...baseUploadContext,
-        fileContent: 'This is the new content.',
-        pathContext: { // This context is for metadata, the path logic is what we test
-          fileType: FileType.business_case,
-          projectId: 'project-chunk-test',
-          sessionId: 'session-chunk-test',
-          stageSlug: DialecticStageSlug.Thesis,
-          iteration: 1,
-          modelSlug: 'Claude Opus', // Correctly provide modelSlug in the base path context
-          contributionType: 'thesis', // Correctly provide contributionType in the base path context
-          documentKey: FileType.business_case,
+        });
+      const continuationContext: UploadContext = buildModelContributionUploadContext(
+        buildModelContributionPathContext({
           isContinuation: true,
           turnIndex: 1,
+        }),
+        {
+          contributionMetadata,
         },
-        contributionMetadata,
-        userId: 'user-chunk-test-id'
-      };
+      );
 
       // 3. Setup: Define the expected path for the continuation chunk file.
-      const expectedChunkPathContext: ModelContributionUploadContext['pathContext'] = {
-        fileType: FileType.business_case,
-        projectId: 'project-chunk-test',
-        sessionId: 'session-chunk-test',
-        iteration: 1,
-        stageSlug: DialecticStageSlug.Thesis,
+      const expectedChunkPathContext = buildModelContributionPathContext({
         modelSlug: contributionMetadata.modelNameDisplay,
-        attemptCount: 0,
-        documentKey: FileType.business_case,
         isContinuation: true,
         turnIndex: 1,
-      };
+      });
       const expectedPathParts = constructStoragePath({
         ...expectedChunkPathContext,
         contributionType: contributionMetadata.contributionType,
@@ -1547,17 +1245,10 @@ Deno.test('FileManagerService', async (t) => {
       if (!fileType) {
         throw new Error('fileType is null');
       }
-      const stepName = 'generate_plan';
-      const plannerPathContext: ResourceUploadContext['pathContext'] = {
+      const plannerPathContext = buildResourcePathContext({
         fileType: FileType.PlannerPrompt,
-        projectId: 'project-doc-centric',
-        sessionId: 'session-doc-centric',
-        iteration: 1,
-        stageSlug: DialecticStageSlug.Thesis,
-        modelSlug: 'test-model',
-        stepName,
         sourceContributionId: 'planner-source-contrib-123',
-      };
+      });
 
       const expectedPathParts = {
         storagePath: `projects/project-doc-centric/sessions/session-doc-centric/iteration_1/1_thesis`,
@@ -1591,25 +1282,9 @@ Deno.test('FileManagerService', async (t) => {
         assembleChunks: assembleChunksMock.assembleChunks,
       });
 
-      const contributionMetadata: ContributionMetadata = {
-        iterationNumber: 1,
-        modelIdUsed: 'model-id-123',
-        modelNameDisplay: 'Test Model',
-        sessionId: 'session-doc-centric',
-        stageSlug: DialecticStageSlug.Thesis,
-      };
-
-      const plannerContext: ResourceUploadContext = {
-        ...baseUploadContext,
-        pathContext: {
-          ...plannerPathContext,
-          fileType: FileType.PlannerPrompt,
-        },
-        fileContent: '{}',
-        mimeType: 'application/json',
-        description: `Test for ${fileType}`,
+      const plannerContext: ResourceUploadContext = buildResourceUploadContext(plannerPathContext, {
         resourceTypeForDb: 'planner_prompt',
-      };
+      });
 
       const { record, error } = await fileManager.uploadAndRegisterFile(plannerContext);
 
@@ -1642,16 +1317,9 @@ Deno.test('FileManagerService', async (t) => {
   await t.step('should handle TurnPrompt correctly', async () => {
     try {
       const fileType = FileType.TurnPrompt;
-      const documentKey = FileType.business_case;
-      const pathContext: ResourceUploadContext['pathContext'] = {
+      const pathContext = buildResourcePathContext({
         fileType,
-        projectId: 'project-doc-centric',
-        sessionId: 'session-doc-centric',
-        iteration: 1,
-        stageSlug: DialecticStageSlug.Thesis,
-        modelSlug: 'test-model',
-        documentKey,
-      };
+      });
   
       const expectedPathParts = {
         storagePath: `projects/project-doc-centric/sessions/session-doc-centric/iteration_1/1_thesis`,
@@ -1685,24 +1353,7 @@ Deno.test('FileManagerService', async (t) => {
         assembleChunks: assembleChunksMock.assembleChunks,
       });
 
-      const contributionMetadata: ContributionMetadata = {
-        iterationNumber: 1,
-        modelIdUsed: 'model-id-123',
-        modelNameDisplay: 'Test Model',
-        sessionId: 'session-doc-centric',
-        stageSlug: DialecticStageSlug.Thesis,
-      };
-
-      const turnContext: ResourceUploadContext = {
-        ...baseUploadContext,
-        pathContext: {
-          ...pathContext,
-          fileType: FileType.TurnPrompt,
-        },
-        fileContent: '{}',
-        mimeType: 'application/json',
-        description: `Test for ${fileType}`,
-      };
+      const turnContext: ResourceUploadContext = buildResourceUploadContext(pathContext);
   
       const { record, error } = await fileManager.uploadAndRegisterFile(turnContext);
   
@@ -1721,14 +1372,9 @@ Deno.test('FileManagerService', async (t) => {
   await t.step('should handle HeaderContext correctly', async () => {
     try {
       const fileType = FileType.HeaderContext;
-      const pathContext: ModelContributionUploadContext['pathContext'] = {
+      const pathContext = buildModelContributionPathContext({
         fileType,
-        projectId: 'project-doc-centric',
-        sessionId: 'session-doc-centric',
-        iteration: 1,
-        stageSlug: DialecticStageSlug.Thesis,
-        modelSlug: 'test-model',
-      };
+      });
   
       const expectedPathParts = {
         storagePath: `projects/project-doc-centric/sessions/session-doc-centric/iteration_1/1_thesis/_work`,
@@ -1761,25 +1407,7 @@ Deno.test('FileManagerService', async (t) => {
         assembleChunks: assembleChunksMock.assembleChunks,
         });
   
-      const contributionMetadata: ContributionMetadata = {
-        iterationNumber: 1,
-        modelIdUsed: 'model-id-123',
-        modelNameDisplay: 'Test Model',
-        sessionId: 'session-doc-centric',
-        stageSlug: DialecticStageSlug.Thesis,
-      };
-
-      const headerContext: ModelContributionUploadContext = {
-        ...baseUploadContext,
-        pathContext: {
-          ...pathContext,
-          fileType: FileType.HeaderContext,
-        },
-        fileContent: '{}',
-        mimeType: 'application/json',
-        description: `Test for ${fileType}`,
-        contributionMetadata,
-      };
+      const headerContext: ModelContributionUploadContext = buildModelContributionUploadContext(pathContext);
   
       const { record, error } = await fileManager.uploadAndRegisterFile(headerContext);
   
@@ -1798,16 +1426,9 @@ Deno.test('FileManagerService', async (t) => {
   await t.step('should handle AssembledDocumentJson correctly', async () => {
     try {
       const fileType = FileType.AssembledDocumentJson;
-      const documentKey = FileType.feature_spec;
-      const pathContext: ResourceUploadContext['pathContext'] = {
+      const pathContext = buildResourcePathContext({
         fileType,
-        projectId: 'project-doc-centric',
-        sessionId: 'session-doc-centric',
-        iteration: 1,
-        stageSlug: DialecticStageSlug.Thesis,
-        modelSlug: 'test-model',
-        documentKey,
-      };
+      });
   
       const expectedPathParts = {
         storagePath: `projects/project-doc-centric/sessions/session-doc-centric/iteration_1/1_thesis/_work`,
@@ -1840,24 +1461,7 @@ Deno.test('FileManagerService', async (t) => {
         assembleChunks: assembleChunksMock.assembleChunks,
       });
   
-      const contributionMetadata: ContributionMetadata = {
-        iterationNumber: 1,
-        modelIdUsed: 'model-id-123',
-        modelNameDisplay: 'Test Model',
-        sessionId: 'session-doc-centric',
-        stageSlug: DialecticStageSlug.Thesis,
-      };
-
-      const assembledJsonContext: ResourceUploadContext = {
-        ...baseUploadContext,
-        pathContext: {
-          ...pathContext,
-          fileType: FileType.AssembledDocumentJson,
-        },
-        fileContent: '{}',
-        mimeType: 'application/json',
-        description: `Test for ${fileType}`,
-      };
+      const assembledJsonContext: ResourceUploadContext = buildResourceUploadContext(pathContext);
   
       const { record, error } = await fileManager.uploadAndRegisterFile(assembledJsonContext);
   
@@ -1876,16 +1480,7 @@ Deno.test('FileManagerService', async (t) => {
   await t.step('should handle RenderedDocument correctly', async () => {
     try {
       const fileType = FileType.RenderedDocument;
-      const documentKey = FileType.technical_approach;
-      const pathContext: ResourceUploadContext['pathContext'] = {
-        fileType,
-        projectId: 'project-doc-centric',
-        sessionId: 'session-doc-centric',
-        iteration: 1,
-        stageSlug: DialecticStageSlug.Thesis,
-        modelSlug: 'test-model',
-        documentKey,
-      };
+      const pathContext = buildResourcePathContext();
   
       const expectedPathParts = {
         storagePath: `projects/project-doc-centric/sessions/session-doc-centric/iteration_1/1_thesis`,
@@ -1918,24 +1513,7 @@ Deno.test('FileManagerService', async (t) => {
         assembleChunks: assembleChunksMock.assembleChunks,
       });
   
-      const contributionMetadata: ContributionMetadata = {
-        iterationNumber: 1,
-        modelIdUsed: 'model-id-123',
-        modelNameDisplay: 'Test Model',
-        sessionId: 'session-doc-centric',
-        stageSlug: DialecticStageSlug.Thesis,
-      };
-
-      const renderedDocContext: ResourceUploadContext = {
-        ...baseUploadContext,
-        pathContext: {
-          ...pathContext,
-          fileType: FileType.RenderedDocument,
-        },
-        fileContent: '{}',
-        mimeType: 'application/json',
-        description: `Test for ${fileType}`,
-      };
+      const renderedDocContext: ResourceUploadContext = buildResourceUploadContext(pathContext);
   
       const { record, error } = await fileManager.uploadAndRegisterFile(renderedDocContext);
   
@@ -1964,33 +1542,16 @@ Deno.test('FileManagerService', async (t) => {
       };
       beforeEach(config);
 
-      const contributionMetadata: ContributionMetadata = {
+      const contributionMetadata = buildContributionMetadata({
         target_contribution_id: parentId,
-        iterationNumber: 1,
-        modelIdUsed: 'model-id-final',
-        modelNameDisplay: 'Final Model',
-        sessionId: 'sess-final-ctn',
-        stageSlug: DialecticStageSlug.Thesis,
-        contributionType: 'thesis',
-      };
+      });
 
-      const finalContinuationContext: ModelContributionUploadContext = {
-        ...baseUploadContext,
-        fileContent: 'final continuation content',
-        pathContext: {
-          fileType: FileType.business_case,
-          projectId: 'proj-final-ctn',
-          sessionId: 'sess-final-ctn',
-          iteration: 1,
-          stageSlug: DialecticStageSlug.Thesis,
-          modelSlug: 'final-model',
-          attemptCount: 0,
-          documentKey: FileType.business_case,
+      const finalContinuationContext: ModelContributionUploadContext = buildModelContributionUploadContext(
+        buildModelContributionPathContext(),
+        {
+          contributionMetadata,
         },
-        contributionMetadata,
-        mimeType: 'text/markdown',
-        userId: 'user-final-ctn',
-      };
+      );
 
       await fileManager.uploadAndRegisterFile(finalContinuationContext);
 
@@ -2047,35 +1608,24 @@ Deno.test('FileManagerService', async (t) => {
       });
 
       // 1. Base context with FRESH turn-specific data in pathContext
-      const basePathContext: ModelContributionUploadContext['pathContext'] = {
-        fileType: FileType.business_case,
-        projectId: 'project-merge-test',
-        sessionId: 'session-merge-test',
-        stageSlug: DialecticStageSlug.Thesis,
-        iteration: 1,
+      const basePathContext = buildModelContributionPathContext({
         modelSlug: 'base-model-slug', // This should be PRESERVED
         contributionType: 'thesis', // This should be PRESERVED. Use a valid enum member.
         isContinuation: true, // Fresh value in pathContext
         turnIndex: 1,         // Fresh value in pathContext
         attemptCount: 5,       // Stale value
-      };
+      });
 
-      const contributionMetadata: ContributionMetadata = {
+      const contributionMetadata = buildContributionMetadata({
         modelNameDisplay: 'metadata-model-slug', // This should NOT be used to overwrite the base
         stageSlug: 'metadata-stage-slug',         // This should NOT be used
         contributionType: 'synthesis', // This should NOT be used. Use a valid enum member.
-        iterationNumber: 1,
-        modelIdUsed: 'model-id-123',
-        sessionId: 'session-merge-test',
-      };
+      });
 
       // 2. UploadContext with FRESH turn-specific data in metadata
-      const mergeContext: UploadContext = {
-        ...baseUploadContext,
-        pathContext: basePathContext,
+      const mergeContext: UploadContext = buildModelContributionUploadContext(basePathContext, {
         contributionMetadata,
-        userId: 'user-merge-test',
-      };
+      });
 
       // 4. Call the function
       await fileManager.uploadAndRegisterFile(mergeContext);
@@ -2132,27 +1682,13 @@ Deno.test('FileManagerService', async (t) => {
       };
       beforeEach(config);
 
-      const contributionMetadata: ContributionMetadata = {
-        iterationNumber: 1,
-        modelIdUsed: 'model-id-123',
-        modelNameDisplay: 'Test Model',
-        sessionId: 'session-deprecation-test',
-        stageSlug: 'test-stage',
-        // Include the new property
-        source_prompt_resource_id: 'new-resource-uuid-123',
-      };
+      const contributionMetadata = buildContributionMetadata();
 
       const context = {
-        ...baseUploadContext,
-        pathContext: {
-          fileType: FileType.business_case,
-          projectId: 'project-deprecation-test',
-          sessionId: 'session-deprecation-test',
-          iteration: 1,
-          stageSlug: DialecticStageSlug.Thesis,
-          modelSlug: 'test-model',
-          documentKey: FileType.business_case,
-        },
+        ...buildModelContributionUploadContext(
+          buildModelContributionPathContext(),
+          { contributionMetadata },
+        ),
         contributionMetadata: {
           ...contributionMetadata,
           ['seedPromptStoragePath']: 'path/to/a/',
@@ -2178,16 +1714,10 @@ Deno.test('FileManagerService', async (t) => {
 
   await t.step('uploadAndRegisterFile should upload fileContent as raw JSON with FileType.ModelContributionRawJson and mimeType application/json', async () => {
     try {
-      const pathContext: ModelContributionUploadContext['pathContext'] = {
+      const pathContext = buildModelContributionPathContext({
         fileType: FileType.ModelContributionRawJson,
-        projectId: 'project-raw-json-test',
-        sessionId: 'session-raw-json-test',
-        iteration: 1,
-        stageSlug: DialecticStageSlug.Thesis,
         modelSlug: 'claude-3-sonnet',
-        attemptCount: 0,
-        documentKey: FileType.business_case,
-      };
+      });
       const expectedPathParts = constructStoragePath(pathContext);
       const expectedFullPath = `${expectedPathParts.storagePath}/${expectedPathParts.fileName}`;
 
@@ -2225,21 +1755,10 @@ Deno.test('FileManagerService', async (t) => {
         return bucket;
       };
 
-      const contributionMetadata: ContributionMetadata = {
-        iterationNumber: 1,
-        modelIdUsed: 'model-id-sonnet',
-        modelNameDisplay: 'Claude 3 Sonnet',
-        sessionId: 'session-raw-json-test',
-        stageSlug: DialecticStageSlug.Thesis,
-      };
-
-      const context: ModelContributionUploadContext = {
-        ...baseUploadContext,
-        pathContext,
+      const context: ModelContributionUploadContext = buildModelContributionUploadContext(pathContext, {
         fileContent: validatedJsonString,
         mimeType: 'application/json',
-        contributionMetadata,
-      };
+      });
 
       const { record, error } = await fileManager.uploadAndRegisterFile(context);
 
@@ -2288,17 +1807,11 @@ Deno.test('FileManagerService', async (t) => {
 
   await t.step('uploadAndRegisterFile should handle continuation paths correctly with FileType.ModelContributionRawJson', async () => {
     try {
-      const pathContext: ModelContributionUploadContext['pathContext'] = {
+      const pathContext = buildModelContributionPathContext({
         fileType: FileType.ModelContributionRawJson,
-        projectId: 'project-continuation-raw-json',
-        sessionId: 'session-continuation-raw-json',
-        iteration: 1,
-        stageSlug: DialecticStageSlug.Thesis,
-        modelSlug: 'claude-3-sonnet',
-        documentKey: FileType.business_case,
         isContinuation: true,
         turnIndex: 2,
-      };
+      });
       const expectedPathParts = constructStoragePath({
         ...pathContext,
         isContinuation: true,
@@ -2306,8 +1819,6 @@ Deno.test('FileManagerService', async (t) => {
         attemptCount: 0,
       });
       const expectedFullPath = `${expectedPathParts.storagePath}/${expectedPathParts.fileName}`;
-
-      const validatedJsonString = '{"content": "# Business Case Continuation\\n\\nMore content."}';
 
       const contributionDataMock = { id: 'contrib-continuation-raw-json-123', file_name: expectedPathParts.fileName };
       const config: MockSupabaseDataConfig = {
@@ -2335,22 +1846,13 @@ Deno.test('FileManagerService', async (t) => {
         return bucket;
       };
 
-      const contributionMetadata: ContributionMetadata = {
-        iterationNumber: 1,
-        modelIdUsed: 'model-id-sonnet',
-        modelNameDisplay: 'Claude 3 Sonnet',
-        sessionId: 'session-continuation-raw-json',
-        stageSlug: DialecticStageSlug.Thesis,
+      const contributionMetadata = buildContributionMetadata({
         target_contribution_id: 'parent-contrib-id-123',
-      };
+      });
 
-      const context: ModelContributionUploadContext = {
-        ...baseUploadContext,
-        pathContext,
-        fileContent: validatedJsonString,
-        mimeType: 'application/json',
+      const context: ModelContributionUploadContext = buildModelContributionUploadContext(pathContext, {
         contributionMetadata,
-      };
+      });
 
       const { record, error } = await fileManager.uploadAndRegisterFile(context);
 
@@ -2395,33 +1897,15 @@ Deno.test('FileManagerService', async (t) => {
 
   await t.step('uploadAndRegisterFile should return error when fileContent is missing for model contribution', async () => {
     try {
-      const pathContext: ModelContributionUploadContext['pathContext'] = {
+      const pathContext = buildModelContributionPathContext({
         fileType: FileType.ModelContributionRawJson,
-        projectId: 'project-missing-content',
-        sessionId: 'session-missing-content',
-        iteration: 1,
-        stageSlug: DialecticStageSlug.Thesis,
-        modelSlug: 'claude-3-sonnet',
-        documentKey: FileType.business_case,
-      };
+      });
 
       beforeEach();
 
-      const contributionMetadata: ContributionMetadata = {
-        iterationNumber: 1,
-        modelIdUsed: 'model-id-sonnet',
-        modelNameDisplay: 'Claude 3 Sonnet',
-        sessionId: 'session-missing-content',
-        stageSlug: DialecticStageSlug.Thesis,
-      };
-
-      const context: ModelContributionUploadContext = {
-        ...baseUploadContext,
-        pathContext,
+      const context: ModelContributionUploadContext = buildModelContributionUploadContext(pathContext, {
         fileContent: '', // Missing fileContent
-        mimeType: 'application/json',
-        contributionMetadata,
-      };
+      });
 
       const { record, error } = await fileManager.uploadAndRegisterFile(context);
 
@@ -2437,20 +1921,11 @@ Deno.test('FileManagerService', async (t) => {
 
   await t.step('uploadAndRegisterFile should NOT execute separate raw JSON upload block when fileContent is present', async () => {
     try {
-      const pathContext: ModelContributionUploadContext['pathContext'] = {
+      const pathContext = buildModelContributionPathContext({
         fileType: FileType.ModelContributionRawJson,
-        projectId: 'project-no-separate-upload',
-        sessionId: 'session-no-separate-upload',
-        iteration: 1,
-        stageSlug: DialecticStageSlug.Thesis,
-        modelSlug: 'claude-3-sonnet',
-        attemptCount: 0,
-        documentKey: FileType.business_case,
-      };
+      });
       const expectedPathParts = constructStoragePath(pathContext);
       const expectedFullPath = `${expectedPathParts.storagePath}/${expectedPathParts.fileName}`;
-
-      const validatedJsonString = '{"content": "# Business Case\\n\\nContent."}';
 
       const contributionDataMock = { id: 'contrib-no-separate-123', file_name: expectedPathParts.fileName };
       const config: MockSupabaseDataConfig = {
@@ -2480,22 +1955,7 @@ Deno.test('FileManagerService', async (t) => {
         return bucket;
       };
 
-      const contributionMetadata: ContributionMetadata = {
-        iterationNumber: 1,
-        modelIdUsed: 'model-id-sonnet',
-        modelNameDisplay: 'Claude 3 Sonnet',
-        sessionId: 'session-no-separate-upload',
-        stageSlug: DialecticStageSlug.Thesis,
-        // Include rawJsonResponseContent to test that separate upload block is NOT executed
-      };
-
-      const context: ModelContributionUploadContext = {
-        ...baseUploadContext,
-        pathContext,
-        fileContent: validatedJsonString, // fileContent IS the raw JSON
-        mimeType: 'application/json',
-        contributionMetadata,
-      };
+      const context: ModelContributionUploadContext = buildModelContributionUploadContext(pathContext);
 
       const { record, error } = await fileManager.uploadAndRegisterFile(context);
 
@@ -2523,20 +1983,9 @@ Deno.test('FileManagerService', async (t) => {
 
   await t.step('PostgrestError case returns PostgrestError directly', async () => {
     try {
-      const context: ResourceUploadContext = {
-        pathContext: {
-          fileType: FileType.GeneralResource,
-          projectId: 'project-uuid-test',
-          sessionId: 'session-uuid-test',
-          iteration: 1,
-          originalFileName: 'test-resource.txt',
-        },
-        fileContent: 'test content',
-        mimeType: 'text/plain',
-        sizeBytes: 100,
-        userId: 'user-uuid-test',
-        description: 'test resource',
-      };
+      const context: ResourceUploadContext = buildResourceUploadContext(
+        buildResourcePathContext({ fileType: FileType.GeneralResource }),
+      );
 
       const expectedPathParts = constructStoragePath(context.pathContext);
       const expectedFullPath = `${expectedPathParts.storagePath}/${expectedPathParts.fileName}`;
@@ -2597,20 +2046,9 @@ Deno.test('FileManagerService', async (t) => {
 
   await t.step('PostgrestError with code and details returns PostgrestError directly', async () => {
     try {
-      const context: ResourceUploadContext = {
-        pathContext: {
-          fileType: FileType.GeneralResource,
-          projectId: 'project-uuid-test',
-          sessionId: 'session-uuid-test',
-          iteration: 1,
-          originalFileName: 'test-resource.txt',
-        },
-        fileContent: 'test content',
-        mimeType: 'text/plain',
-        sizeBytes: 100,
-        userId: 'user-uuid-test',
-        description: 'test resource',
-      };
+      const context: ResourceUploadContext = buildResourceUploadContext(
+        buildResourcePathContext({ fileType: FileType.GeneralResource }),
+      );
 
       const expectedPathParts = constructStoragePath(context.pathContext);
       const expectedFullPath = `${expectedPathParts.storagePath}/${expectedPathParts.fileName}`;
@@ -2663,20 +2101,9 @@ Deno.test('FileManagerService', async (t) => {
 
   await t.step('PostgrestError without code and details returns PostgrestError directly', async () => {
     try {
-      const context: ResourceUploadContext = {
-        pathContext: {
-          fileType: FileType.GeneralResource,
-          projectId: 'project-uuid-test',
-          sessionId: 'session-uuid-test',
-          iteration: 1,
-          originalFileName: 'test-resource.txt',
-        },
-        fileContent: 'test content',
-        mimeType: 'text/plain',
-        sizeBytes: 100,
-        userId: 'user-uuid-test',
-        description: 'test resource',
-      };
+      const context: ResourceUploadContext = buildResourceUploadContext(
+        buildResourcePathContext({ fileType: FileType.GeneralResource }),
+      );
 
       const expectedPathParts = constructStoragePath(context.pathContext);
       const expectedFullPath = `${expectedPathParts.storagePath}/${expectedPathParts.fileName}`;
@@ -2729,20 +2156,9 @@ Deno.test('FileManagerService', async (t) => {
 
   await t.step('Error instance returns ServiceError with wrapped message', async () => {
     try {
-      const context: ResourceUploadContext = {
-        pathContext: {
-          fileType: FileType.GeneralResource,
-          projectId: 'project-uuid-test',
-          sessionId: 'session-uuid-test',
-          iteration: 1,
-          originalFileName: 'test-resource.txt',
-        },
-        fileContent: 'test content',
-        mimeType: 'text/plain',
-        sizeBytes: 100,
-        userId: 'user-uuid-test',
-        description: 'test resource',
-      };
+      const context: ResourceUploadContext = buildResourceUploadContext(
+        buildResourcePathContext({ fileType: FileType.GeneralResource }),
+      );
 
       const expectedPathParts = constructStoragePath(context.pathContext);
       const expectedFullPath = `${expectedPathParts.storagePath}/${expectedPathParts.fileName}`;
@@ -2786,33 +2202,18 @@ Deno.test('FileManagerService', async (t) => {
       const continuationContent = '{"content":"\\n\\n## Continuation"}';
 
       // Setup root chunk path context
-      const rootPathContext: ModelContributionUploadContext['pathContext'] = {
+      const rootPathContext = buildModelContributionPathContext({
         fileType: FileType.ModelContributionRawJson,
-        projectId: 'project-corruption-test',
-        sessionId: 'session-corruption-test',
-        iteration: 1,
-        stageSlug: DialecticStageSlug.Thesis,
-        modelSlug: 'claude-3-sonnet',
-        attemptCount: 0,
-        documentKey: FileType.business_case,
-        isContinuation: false,
-        turnIndex: undefined,
-      };
+      });
       const rootPathParts = constructStoragePath(rootPathContext);
       const rootFullPath = `${rootPathParts.storagePath}/${rootPathParts.fileName}`;
 
       // Setup continuation chunk path context
-      const continuationPathContext: ModelContributionUploadContext['pathContext'] = {
+      const continuationPathContext = buildModelContributionPathContext({
         fileType: FileType.ModelContributionRawJson,
-        projectId: 'project-corruption-test',
-        sessionId: 'session-corruption-test',
-        iteration: 1,
-        stageSlug: DialecticStageSlug.Thesis,
-        modelSlug: 'claude-3-sonnet',
-        documentKey: FileType.business_case,
         isContinuation: true,
         turnIndex: 1,
-      };
+      });
       const continuationPathParts = constructStoragePath({
         ...continuationPathContext,
         attemptCount: 0,
@@ -2863,21 +2264,9 @@ Deno.test('FileManagerService', async (t) => {
       };
 
       // 1. Create and upload root chunk
-      const rootContributionMetadata: ContributionMetadata = {
-        iterationNumber: 1,
-        modelIdUsed: 'model-id-sonnet',
-        modelNameDisplay: 'Claude 3 Sonnet',
-        sessionId: 'session-corruption-test',
-        stageSlug: DialecticStageSlug.Thesis,
-      };
-
-      const rootContext: ModelContributionUploadContext = {
-        ...baseUploadContext,
-        pathContext: rootPathContext,
+      const rootContext: ModelContributionUploadContext = buildModelContributionUploadContext(rootPathContext, {
         fileContent: rootContent,
-        mimeType: 'application/json',
-        contributionMetadata: rootContributionMetadata,
-      };
+      });
 
       const rootResult = await fileManager.uploadAndRegisterFile(rootContext);
       assertEquals(rootResult.error, null);
@@ -2897,22 +2286,14 @@ Deno.test('FileManagerService', async (t) => {
       assertExists(rootStoragePath);
 
       // 2. Create and upload continuation chunk
-      const continuationContributionMetadata: ContributionMetadata = {
+      const continuationContributionMetadata = buildContributionMetadata({
         target_contribution_id: rootContributionId,
-        iterationNumber: 1,
-        modelIdUsed: 'model-id-sonnet',
-        modelNameDisplay: 'Claude 3 Sonnet',
-        sessionId: 'session-corruption-test',
-        stageSlug: DialecticStageSlug.Thesis,
-      };
+      });
 
-      const continuationContext: ModelContributionUploadContext = {
-        ...baseUploadContext,
-        pathContext: continuationPathContext,
+      const continuationContext: ModelContributionUploadContext = buildModelContributionUploadContext(continuationPathContext, {
         fileContent: continuationContent,
-        mimeType: 'application/json',
         contributionMetadata: continuationContributionMetadata,
-      };
+      });
 
       const continuationResult = await fileManager.uploadAndRegisterFile(continuationContext);
       assertEquals(continuationResult.error, null);
@@ -2974,30 +2355,15 @@ Deno.test('FileManagerService', async (t) => {
         const rootContent = '{"content":"# Root Chunk"}';
         const continuationContent = '{"content":"\\n\\n## Continuation"}';
 
-        const rootPathContext: ModelContributionUploadContext['pathContext'] = {
+        const rootPathContext = buildModelContributionPathContext({
           fileType: FileType.ModelContributionRawJson,
-          projectId: 'project-logging-test',
-          sessionId: 'session-logging-test',
-          iteration: 1,
-          stageSlug: DialecticStageSlug.Thesis,
-          modelSlug: 'claude-3-sonnet',
-          attemptCount: 0,
-          documentKey: FileType.business_case,
-          isContinuation: false,
-          turnIndex: undefined,
-        };
+        });
 
-        const continuationPathContext: ModelContributionUploadContext['pathContext'] = {
+        const continuationPathContext = buildModelContributionPathContext({
           fileType: FileType.ModelContributionRawJson,
-          projectId: 'project-logging-test',
-          sessionId: 'session-logging-test',
-          iteration: 1,
-          stageSlug: DialecticStageSlug.Thesis,
-          modelSlug: 'claude-3-sonnet',
-          documentKey: FileType.business_case,
           isContinuation: true,
           turnIndex: 1,
-        };
+        });
 
         const rootContributionId = 'root-contrib-logging-123';
         const continuationContributionId = 'continuation-contrib-logging-456';
@@ -3021,41 +2387,24 @@ Deno.test('FileManagerService', async (t) => {
         beforeEach(config);
 
         // 1. Create and upload root chunk
-        const rootContributionMetadata: ContributionMetadata = {
-          iterationNumber: 1,
-          modelIdUsed: 'model-id-sonnet',
-          modelNameDisplay: 'Claude 3 Sonnet',
-          sessionId: 'session-logging-test',
-          stageSlug: DialecticStageSlug.Thesis,
-        };
+        const rootContributionMetadata = buildContributionMetadata();
 
-        const rootContext: ModelContributionUploadContext = {
-          ...baseUploadContext,
-          pathContext: rootPathContext,
+        const rootContext: ModelContributionUploadContext = buildModelContributionUploadContext(rootPathContext, {
           fileContent: rootContent,
-          mimeType: 'application/json',
           contributionMetadata: rootContributionMetadata,
-        };
+        });
 
         await fileManager.uploadAndRegisterFile(rootContext);
 
         // 2. Create and upload continuation chunk
-        const continuationContributionMetadata: ContributionMetadata = {
+        const continuationContributionMetadata = buildContributionMetadata({
           target_contribution_id: rootContributionId,
-          iterationNumber: 1,
-          modelIdUsed: 'model-id-sonnet',
-          modelNameDisplay: 'Claude 3 Sonnet',
-          sessionId: 'session-logging-test',
-          stageSlug: DialecticStageSlug.Thesis,
-        };
+        });
 
-        const continuationContext: ModelContributionUploadContext = {
-          ...baseUploadContext,
-          pathContext: continuationPathContext,
+        const continuationContext: ModelContributionUploadContext = buildModelContributionUploadContext(continuationPathContext, {
           fileContent: continuationContent,
-          mimeType: 'application/json',
           contributionMetadata: continuationContributionMetadata,
-        };
+        });
 
         await fileManager.uploadAndRegisterFile(continuationContext);
 
@@ -3108,32 +2457,17 @@ Deno.test('FileManagerService', async (t) => {
       const rootContent = '{"content":"# Root Chunk"}';
       const continuationContent = '{"content":"\\n\\n## Continuation"}';
 
-      const rootPathContext: ModelContributionUploadContext['pathContext'] = {
+      const rootPathContext = buildModelContributionPathContext({
         fileType: FileType.ModelContributionRawJson,
-        projectId: 'project-collision-test',
-        sessionId: 'session-collision-test',
-        iteration: 1,
-        stageSlug: DialecticStageSlug.Thesis,
-        modelSlug: 'claude-3-sonnet',
-        attemptCount: 0,
-        documentKey: FileType.business_case,
-        isContinuation: false,
-        turnIndex: undefined,
-      };
+      });
       const rootPathParts = constructStoragePath(rootPathContext);
       const rootFullPath = `${rootPathParts.storagePath}/${rootPathParts.fileName}`;
 
-      const continuationPathContext: ModelContributionUploadContext['pathContext'] = {
+      const continuationPathContext = buildModelContributionPathContext({
         fileType: FileType.ModelContributionRawJson,
-        projectId: 'project-collision-test',
-        sessionId: 'session-collision-test',
-        iteration: 1,
-        stageSlug: DialecticStageSlug.Thesis,
-        modelSlug: 'claude-3-sonnet',
-        documentKey: FileType.business_case,
         isContinuation: true,
         turnIndex: 1,
-      };
+      });
 
       // Calculate paths for attempt 0 (collision) and attempt 1 (success)
       const continuationPathParts0 = constructStoragePath({
@@ -3210,21 +2544,12 @@ Deno.test('FileManagerService', async (t) => {
       };
 
       // 1. Create and upload root chunk
-      const rootContributionMetadata: ContributionMetadata = {
-        iterationNumber: 1,
-        modelIdUsed: 'model-id-sonnet',
-        modelNameDisplay: 'Claude 3 Sonnet',
-        sessionId: 'session-collision-test',
-        stageSlug: DialecticStageSlug.Thesis,
-      };
+      const rootContributionMetadata = buildContributionMetadata();
 
-      const rootContext: ModelContributionUploadContext = {
-        ...baseUploadContext,
-        pathContext: rootPathContext,
+      const rootContext: ModelContributionUploadContext = buildModelContributionUploadContext(rootPathContext, {
         fileContent: rootContent,
-        mimeType: 'application/json',
         contributionMetadata: rootContributionMetadata,
-      };
+      });
 
       const rootResult = await fileManager.uploadAndRegisterFile(rootContext);
       assertEquals(rootResult.error, null);
@@ -3243,22 +2568,14 @@ Deno.test('FileManagerService', async (t) => {
       assertExists(rootStoragePath);
 
       // 2. Create and upload continuation chunk (will trigger collision retry)
-      const continuationContributionMetadata: ContributionMetadata = {
+      const continuationContributionMetadata = buildContributionMetadata({
         target_contribution_id: rootContributionId,
-        iterationNumber: 1,
-        modelIdUsed: 'model-id-sonnet',
-        modelNameDisplay: 'Claude 3 Sonnet',
-        sessionId: 'session-collision-test',
-        stageSlug: DialecticStageSlug.Thesis,
-      };
+      });
 
-      const continuationContext: ModelContributionUploadContext = {
-        ...baseUploadContext,
-        pathContext: continuationPathContext,
+      const continuationContext: ModelContributionUploadContext = buildModelContributionUploadContext(continuationPathContext, {
         fileContent: continuationContent,
-        mimeType: 'application/json',
         contributionMetadata: continuationContributionMetadata,
-      };
+      });
 
       const continuationResult = await fileManager.uploadAndRegisterFile(continuationContext);
       assertEquals(continuationResult.error, null);
@@ -3327,25 +2644,8 @@ Deno.test('FileManagerService', async (t) => {
 
     try {
 
-      const pathContext: ResourceUploadContext['pathContext'] = {
-        fileType: FileType.RenderedDocument,
-        projectId: 'project-uuid-123',
-        sessionId: 'session-uuid-456',
-        iteration: 1,
-        stageSlug: DialecticStageSlug.Thesis,
-        documentKey: FileType.business_case,
-        modelSlug: 'test-model',
-        attemptCount: 0,
-      };
-      const resourceContext: ResourceUploadContext = {
-        pathContext: pathContext,
-        fileContent: 'test content',
-        mimeType: 'text/markdown',
-        sizeBytes: 12,
-        userId: 'user-uuid-789',
-        description: 'A rendered document',
-        resourceTypeForDb: FileType.RenderedDocument,
-      };
+      const pathContext = buildResourcePathContext();
+      const resourceContext: ResourceUploadContext = buildResourceUploadContext(pathContext);
 
       const expectedPathParts = constructStoragePath(resourceContext.pathContext);
 
@@ -3357,7 +2657,7 @@ Deno.test('FileManagerService', async (t) => {
       const upsertSpy = setup.spies.getLatestQueryBuilderSpies('dialectic_project_resources')?.upsert;
       assertExists(upsertSpy, "Upsert spy for 'dialectic_project_resources' should exist");
       assertEquals(upsertSpy.calls.length, 1, "Upsert should have been called once");
-      
+
       const upsertArg = upsertSpy.calls[0].args[0];
       assert(isRecord(upsertArg), "Upsert argument should be a record object");
 
@@ -3389,23 +2689,12 @@ Deno.test('FileManagerService', async (t) => {
       };
       const resourceDescriptionForDb: Json = extraFields;
 
-      const pathContext: ResourceUploadContext['pathContext'] = {
-        fileType: FileType.RenderedDocument,
-        projectId: 'project-uuid-123',
-        sessionId: 'session-uuid-456',
-        iteration: 1,
-        stageSlug: DialecticStageSlug.Thesis,
-        documentKey: FileType.feature_spec,
-        modelSlug: 'test-model',
-        attemptCount: 0,
-      };
+      const pathContext = buildResourcePathContext({ documentKey: FileType.feature_spec });
 
-      const context: ResourceUploadContext = {
-        ...baseUploadContext,
-        pathContext,
+      const context: ResourceUploadContext = buildResourceUploadContext(pathContext, {
         description: 'Rendered document for feature spec',
         resourceDescriptionForDb,
-      };
+      });
 
       const { record, error } = await fileManager.uploadAndRegisterFile(context);
 
@@ -3423,6 +2712,167 @@ Deno.test('FileManagerService', async (t) => {
       assertEquals(desc.originalDescription, context.description, 'resource_description must preserve originalDescription');
       assertEquals(desc.documentKey, extraFields.documentKey, 'resource_description must include merged resourceDescriptionForDb.documentKey');
       assertEquals(desc.sourceContributionId, extraFields.sourceContributionId, 'resource_description must include merged resourceDescriptionForDb.sourceContributionId');
+    } finally {
+      afterEach();
+    }
+  });
+
+  /**
+   * Contract: a ResourceUploadContext carrying sourcePromptResourceId type-checks,
+   *   and one omitting it type-checks too — the member is optional on the context.
+   */
+  await t.step('ResourceUploadContext accepts an optional sourcePromptResourceId member', () => {
+    const resourcePath = buildResourcePathContext({ fileType: FileType.GeneralResource });
+    const withMember: ResourceUploadContext = buildResourceUploadContext(resourcePath, {
+      sourcePromptResourceId: 'prompt-res-typed',
+    });
+    const withoutMember: ResourceUploadContext = buildResourceUploadContext(resourcePath);
+    assertEquals(withMember.sourcePromptResourceId, 'prompt-res-typed');
+    assertEquals(withoutMember.sourcePromptResourceId, undefined);
+  });
+
+  /**
+   * Contract: given a ResourceUploadContext carrying sourcePromptResourceId, the
+   *   dialectic_project_resources upsert payload records that value under
+   *   source_prompt_resource_id.
+   * Arrange: a resource context from buildResourceUploadContext with
+   *   sourcePromptResourceId overridden; mock upsert returns a row.
+   * Act:     uploadAndRegisterFile over the resource context.
+   * Assert:  the captured upsert payload's source_prompt_resource_id equals the
+   *   overridden value.
+   */
+  await t.step('uploadAndRegisterFile records sourcePromptResourceId on a resource upload', async () => {
+    try {
+      const config: MockSupabaseDataConfig = {
+        genericMockResults: {
+          dialectic_project_resources: {
+            upsert: { data: [{ id: 'resource-provenance-1' }], error: null },
+          },
+        },
+      };
+      beforeEach(config);
+
+      const resourcePath = buildResourcePathContext({ fileType: FileType.GeneralResource });
+      const context: ResourceUploadContext = buildResourceUploadContext(resourcePath, {
+        sourcePromptResourceId: 'prompt-res-abc',
+      });
+
+      const { error } = await fileManager.uploadAndRegisterFile(context);
+      assertEquals(error, null);
+
+      const upsertSpy = setup.spies.getLatestQueryBuilderSpies('dialectic_project_resources')?.upsert;
+      assertExists(upsertSpy);
+      const upsertPayload = upsertSpy.calls[0].args[0];
+      assertEquals(upsertPayload.source_prompt_resource_id, 'prompt-res-abc');
+    } finally {
+      afterEach();
+    }
+  });
+
+  /**
+   * Contract: given a ResourceUploadContext omitting sourcePromptResourceId, the
+   *   dialectic_project_resources upsert payload records null under
+   *   source_prompt_resource_id.
+   * Arrange: a resource context from buildResourceUploadContext with no
+   *   sourcePromptResourceId override; mock upsert returns a row.
+   * Act:     uploadAndRegisterFile over the resource context.
+   * Assert:  the captured upsert payload's source_prompt_resource_id is null.
+   */
+  await t.step('uploadAndRegisterFile records null source_prompt_resource_id when a resource upload omits it', async () => {
+    try {
+      const config: MockSupabaseDataConfig = {
+        genericMockResults: {
+          dialectic_project_resources: {
+            upsert: { data: [{ id: 'resource-provenance-2' }], error: null },
+          },
+        },
+      };
+      beforeEach(config);
+
+      const resourcePath = buildResourcePathContext({ fileType: FileType.GeneralResource });
+      const context: ResourceUploadContext = buildResourceUploadContext(resourcePath);
+
+      const { error } = await fileManager.uploadAndRegisterFile(context);
+      assertEquals(error, null);
+
+      const upsertSpy = setup.spies.getLatestQueryBuilderSpies('dialectic_project_resources')?.upsert;
+      assertExists(upsertSpy);
+      const upsertPayload = upsertSpy.calls[0].args[0];
+      assertEquals(upsertPayload.source_prompt_resource_id, null);
+    } finally {
+      afterEach();
+    }
+  });
+
+  /**
+   * Contract: given a ContributionMetadata carrying source_prompt_resource_id, the
+   *   dialectic_contributions insert payload records that value under
+   *   source_prompt_resource_id.
+   * Arrange: a contribution context from buildModelContributionUploadContext with
+   *   contributionMetadata overridden via buildContributionMetadata to carry
+   *   source_prompt_resource_id; mock insert returns a row.
+   * Act:     uploadAndRegisterFile over the contribution context.
+   * Assert:  the captured insert payload's source_prompt_resource_id equals the
+   *   overridden value.
+   */
+  await t.step('uploadAndRegisterFile records source_prompt_resource_id on a contribution upload', async () => {
+    try {
+      const config: MockSupabaseDataConfig = {
+        genericMockResults: {
+          dialectic_contributions: {
+            insert: { data: [{ id: 'contrib-provenance-1' }], error: null },
+          },
+        },
+      };
+      beforeEach(config);
+
+      const contributionPath = buildModelContributionPathContext();
+      const context: ModelContributionUploadContext = buildModelContributionUploadContext(contributionPath, {
+        contributionMetadata: buildContributionMetadata({ source_prompt_resource_id: 'prompt-res-xyz' }),
+      });
+
+      const { error } = await fileManager.uploadAndRegisterFile(context);
+      assertEquals(error, null);
+
+      const insertSpy = setup.spies.getLatestQueryBuilderSpies('dialectic_contributions')?.insert;
+      assertExists(insertSpy);
+      const insertPayload = insertSpy.calls[0].args[0];
+      assertEquals(insertPayload.source_prompt_resource_id, 'prompt-res-xyz');
+    } finally {
+      afterEach();
+    }
+  });
+
+  /**
+   * Contract: given a ContributionMetadata omitting source_prompt_resource_id, the
+   *   dialectic_contributions insert payload records null under
+   *   source_prompt_resource_id.
+   * Arrange: a contribution context from buildModelContributionUploadContext with
+   *   no source_prompt_resource_id on its metadata; mock insert returns a row.
+   * Act:     uploadAndRegisterFile over the contribution context.
+   * Assert:  the captured insert payload's source_prompt_resource_id is null.
+   */
+  await t.step('uploadAndRegisterFile records null source_prompt_resource_id when a contribution upload omits it', async () => {
+    try {
+      const config: MockSupabaseDataConfig = {
+        genericMockResults: {
+          dialectic_contributions: {
+            insert: { data: [{ id: 'contrib-provenance-2' }], error: null },
+          },
+        },
+      };
+      beforeEach(config);
+
+      const contributionPath = buildModelContributionPathContext();
+      const context: ModelContributionUploadContext = buildModelContributionUploadContext(contributionPath);
+
+      const { error } = await fileManager.uploadAndRegisterFile(context);
+      assertEquals(error, null);
+
+      const insertSpy = setup.spies.getLatestQueryBuilderSpies('dialectic_contributions')?.insert;
+      assertExists(insertSpy);
+      const insertPayload = insertSpy.calls[0].args[0];
+      assertEquals(insertPayload.source_prompt_resource_id, null);
     } finally {
       afterEach();
     }

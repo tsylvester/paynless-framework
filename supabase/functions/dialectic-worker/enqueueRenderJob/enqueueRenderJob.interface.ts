@@ -6,6 +6,7 @@ import type { RenderJobEnqueueError, RenderJobValidationError } from '../../_sha
 import type { BoundResolveTemplateFilenameFn } from '../../_shared/utils/resolveTemplateFilename/resolveTemplateFilename.interface.ts';
 import type { TemplateResolutionError } from '../../_shared/utils/resolveTemplateFilename/resolveTemplateFilename.ts';
 import type { FileType, ModelContributionFileTypes, DialecticStageSlug, CompressionSourceType } from '../../_shared/types/file_manager.types.ts';
+import type { DialecticBaseJobPayload } from '../../dialectic-service/dialectic.interface.ts';
 
 export interface EnqueueRenderJobDeps {
   dbClient: SupabaseClient<Database>;
@@ -58,28 +59,26 @@ export interface EnqueueRenderCompressedContextPayload {
   targetKey: ModelContributionFileTypes;
 }
 
-export interface DialecticRenderCompressedContextJobPayload {
-  idempotencyKey: string;
-  projectId: string;
-  sessionId: string;
-  iterationNumber: number;
-  stageSlug: DialecticStageSlug;
+export interface DialecticRenderCompressedContextJobPayload extends DialecticBaseJobPayload {
   targetKey: ModelContributionFileTypes;
   sourceType: CompressionSourceType;
   documentKey: FileType;
   template_filename: string;
-  user_jwt: string;
-  model_id: string;
-  walletId: string;
+  stageSlug: DialecticStageSlug; // narrowed from optional on the base to required
+  iterationNumber: number; // narrowed from optional on the base to required
 }
+
+export type EnqueueRenderJobCallPayload =
+  | EnqueueRenderJobPayload
+  | EnqueueRenderCompressedContextPayload;
 
 export type EnqueueRenderJobFn = (
   deps: EnqueueRenderJobDeps,
   params: EnqueueRenderJobParams,
-  payload: EnqueueRenderJobPayload | EnqueueRenderCompressedContextPayload,
+  payload: EnqueueRenderJobCallPayload,
 ) => Promise<EnqueueRenderJobReturn>;
 
 export type BoundEnqueueRenderJobFn = (
   params: EnqueueRenderJobParams,
-  payload: EnqueueRenderJobPayload | EnqueueRenderCompressedContextPayload,
+  payload: EnqueueRenderJobCallPayload,
 ) => Promise<EnqueueRenderJobReturn>;

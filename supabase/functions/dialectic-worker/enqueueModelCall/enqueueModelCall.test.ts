@@ -9,7 +9,6 @@ import type { AiModelExtendedConfig } from "../../_shared/types.ts";
 import { mockNotificationService, resetMockNotificationService } from "../../_shared/utils/notification.service.mock.ts";
 import { isAiModelExtendedConfig } from "../../_shared/utils/type-guards/type_guards.chat.ts";
 import { isRecord } from "../../_shared/utils/type-guards/type_guards.common.ts";
-import { FileType } from "../../_shared/types/file_manager.types.ts";
 import type { DialecticJobRow } from "../../dialectic-service/dialectic.interface.ts";
 import type {
     EnqueueModelCallErrorReturn,
@@ -125,41 +124,6 @@ Deno.test(
             const idFilter = state.filters.find((f) => f.column === "id");
             assertExists(idFilter);
             assertEquals(idFilter.value, params.job.id);
-        } finally {
-            fetchStub.restore();
-        }
-    },
-);
-
-Deno.test(
-    "enqueueModelCall returns retriable false when output_type is invalid",
-    async () => {
-        const mockSetup = createMockSupabaseClient(undefined, {
-            genericMockResults: {
-                dialectic_generation_jobs: {
-                    update: { data: [{}], error: null },
-                },
-            },
-        });
-        const fetchStub = stub(globalThis, "fetch");
-        try {
-            const result: EnqueueModelCallReturn = await enqueueModelCall(
-                createMockEnqueueModelCallDeps(),
-                createMockEnqueueModelCallParams({
-                    output_type: FileType.UserFeedback,
-                    userConfig: { tier_output_cap_tokens: null },
-                }, { mockSetup }),
-                createMockEnqueueModelCallPayload(),
-            );
-            assert("error" in result);
-            const err: EnqueueModelCallErrorReturn = result;
-            assertEquals(err.retriable, false);
-            assertEquals(fetchStub.calls.length, 0);
-            const updateSpy = mockSetup.spies.getHistoricQueryBuilderSpies(
-                "dialectic_generation_jobs",
-                "update",
-            );
-            assertEquals(updateSpy?.callCount ?? 0, 0);
         } finally {
             fetchStub.restore();
         }
@@ -812,94 +776,6 @@ Deno.test(
             assertEquals("user_config" in parsed.data, true);
             assert(isRecord(parsed.data.user_config));
             assertEquals(parsed.data.user_config.tier_output_cap_tokens, null);
-        } finally {
-            fetchStub.restore();
-        }
-    },
-);
-
-Deno.test(
-    "enqueueModelCall accepts FileType.CompressedContext and proceeds to fetch",
-    async () => {
-        const mockSetup = createMockSupabaseClient(undefined, {
-            genericMockResults: {
-                dialectic_generation_jobs: {
-                    update: { data: [{}], error: null },
-                },
-            },
-        });
-        const fetchStub = stub(
-            globalThis,
-            "fetch",
-            (): Promise<Response> =>
-                Promise.resolve(new Response("{}", { status: 200 })),
-        );
-        try {
-            const result: EnqueueModelCallReturn = await enqueueModelCall(
-                createMockEnqueueModelCallDeps(),
-                createMockEnqueueModelCallParams({
-                    output_type: FileType.CompressedContext,
-                    userConfig: { tier_output_cap_tokens: null },
-                }, { mockSetup }),
-                createMockEnqueueModelCallPayload(),
-            );
-            assert("queued" in result);
-            assertEquals(result.queued, true);
-            assertEquals(fetchStub.calls.length, 1);
-
-            const updateSpy = mockSetup.spies.getHistoricQueryBuilderSpies(
-                "dialectic_generation_jobs",
-                "update",
-            );
-            assertExists(updateSpy);
-            assert(updateSpy.callCount >= 1);
-            const updatePayload = updateSpy.callsArgs[0][0];
-            assert(isRecord(updatePayload));
-            assertEquals(updatePayload.status, "queued");
-        } finally {
-            fetchStub.restore();
-        }
-    },
-);
-
-Deno.test(
-    "enqueueModelCall accepts FileType.CompressedContextRawJson and proceeds to fetch",
-    async () => {
-        const mockSetup = createMockSupabaseClient(undefined, {
-            genericMockResults: {
-                dialectic_generation_jobs: {
-                    update: { data: [{}], error: null },
-                },
-            },
-        });
-        const fetchStub = stub(
-            globalThis,
-            "fetch",
-            (): Promise<Response> =>
-                Promise.resolve(new Response("{}", { status: 200 })),
-        );
-        try {
-            const result: EnqueueModelCallReturn = await enqueueModelCall(
-                createMockEnqueueModelCallDeps(),
-                createMockEnqueueModelCallParams({
-                    output_type: FileType.CompressedContextRawJson,
-                    userConfig: { tier_output_cap_tokens: null },
-                }, { mockSetup }),
-                createMockEnqueueModelCallPayload(),
-            );
-            assert("queued" in result);
-            assertEquals(result.queued, true);
-            assertEquals(fetchStub.calls.length, 1);
-
-            const updateSpy = mockSetup.spies.getHistoricQueryBuilderSpies(
-                "dialectic_generation_jobs",
-                "update",
-            );
-            assertExists(updateSpy);
-            assert(updateSpy.callCount >= 1);
-            const updatePayload = updateSpy.callsArgs[0][0];
-            assert(isRecord(updatePayload));
-            assertEquals(updatePayload.status, "queued");
         } finally {
             fetchStub.restore();
         }

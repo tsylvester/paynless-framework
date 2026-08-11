@@ -40,6 +40,7 @@ import {
   buildEnqueueRenderJobPayload,
 } from "./enqueueRenderJob.mock.ts";
 import { isDialecticRenderCompressedContextJobPayload } from "./enqueueRenderJob.guards.ts";
+import { buildDialecticJobRow } from "../../_shared/dialectic.mock.ts";
 import { mockStageRow, mockTemplateStepRow, recipeChainConfig } from "../../_shared/utils/resolveTemplateFilename/resolveTemplateFilename.mock.ts";
 
 function setupMockClient(
@@ -50,32 +51,6 @@ function setupMockClient(
       ...configOverrides,
     },
   });
-}
-
-function mockRenderJobRow(overrides: Partial<Tables<"dialectic_generation_jobs">> = {}): Tables<"dialectic_generation_jobs"> {
-  const base: Tables<"dialectic_generation_jobs"> = {
-    id: "render-job-new",
-    idempotency_key: "exec-job-1_render",
-    job_type: "RENDER",
-    status: "pending",
-    session_id: "session-1",
-    stage_slug: DialecticStageSlug.Thesis,
-    iteration_number: 1,
-    parent_job_id: "exec-job-1",
-    payload: {},
-    is_test_job: false,
-    user_id: "owner-1",
-    created_at: new Date().toISOString(),
-    started_at: null,
-    completed_at: null,
-    results: null,
-    attempt_count: 0,
-    max_retries: 3,
-    prerequisite_job_id: null,
-    target_contribution_id: null,
-    error_details: null,
-  };
-  return { ...base, ...overrides };
 }
 
 Deno.test(
@@ -177,7 +152,7 @@ Deno.test(
         reason: "is_markdown",
       }),
     );
-    const insertedRow = mockRenderJobRow({ id: "render-inserted-id" });
+    const insertedRow = buildDialecticJobRow({ id: "render-inserted-id" });
     const mockSetup = setupMockClient({
       ...recipeChainConfig(false),
       dialectic_generation_jobs: {
@@ -208,7 +183,7 @@ Deno.test(
         reason: "is_markdown",
       }),
     );
-    const insertedRow = mockRenderJobRow({ id: "render-shape-id" });
+    const insertedRow = buildDialecticJobRow({ id: "render-shape-id" });
     const mockSetup = setupMockClient({
       ...recipeChainConfig(false),
       dialectic_generation_jobs: {
@@ -248,7 +223,7 @@ Deno.test(
         reason: "is_markdown",
       }),
     );
-    const recovered = mockRenderJobRow({
+    const recovered = buildDialecticJobRow({
       id: "recovered-render-id",
       idempotency_key: "exec-job-1_render",
     });
@@ -497,7 +472,7 @@ Deno.test(
         reason: "is_markdown",
       }),
     );
-    const insertedRow = mockRenderJobRow({ id: "render-cloned" });
+    const insertedRow = buildDialecticJobRow({ id: "render-cloned" });
     const mockSetup = setupMockClient({
       ...recipeChainConfig(true),
       dialectic_generation_jobs: {
@@ -530,7 +505,7 @@ Deno.test(
         reason: "is_markdown",
       }),
     );
-    const insertedRow = mockRenderJobRow({ id: "render-template" });
+    const insertedRow = buildDialecticJobRow({ id: "render-template" });
     const mockSetup = setupMockClient({
       ...recipeChainConfig(false),
       dialectic_generation_jobs: {
@@ -604,7 +579,7 @@ Deno.test(
         reason: "is_markdown",
       }),
     );
-    const insertedRow = mockRenderJobRow({ id: "render-payload-check" });
+    const insertedRow = buildDialecticJobRow({ id: "render-payload-check" });
     const mockSetup = setupMockClient({
       ...recipeChainConfig(false),
       dialectic_generation_jobs: {
@@ -647,7 +622,7 @@ Deno.test(
         reason: "is_markdown",
       }),
     );
-    const insertedRow = mockRenderJobRow({
+    const insertedRow = buildDialecticJobRow({
       id: "render-job-456",
       idempotency_key: "job-id-123_render",
       parent_job_id: "job-id-123",
@@ -754,7 +729,7 @@ Deno.test(
         reason: "is_markdown",
       }),
     );
-    const insertedRow = mockRenderJobRow({
+    const insertedRow = buildDialecticJobRow({
       id: "render-job-123",
       idempotency_key: "job-id-123_render",
       parent_job_id: "job-id-123",
@@ -896,7 +871,7 @@ Deno.test("RENDER insert payload includes documentKey from payload.documentKey",
         reason: "is_markdown",
       }),
     );
-    const insertedRow = mockRenderJobRow({ id: "render-doc-key" });
+    const insertedRow = buildDialecticJobRow({ id: "render-doc-key" });
     const mockSetup = setupMockClient({
       ...recipeChainConfig(false),
       dialectic_generation_jobs: {
@@ -939,7 +914,7 @@ Deno.test("RENDER insert payload contains all required DialecticRenderJobPayload
         reason: "is_markdown",
       }),
     );
-    const insertedRow = mockRenderJobRow({ id: "render-all-fields" });
+    const insertedRow = buildDialecticJobRow({ id: "render-all-fields" });
     const mockSetup = setupMockClient({
       ...recipeChainConfig(false),
       dialectic_generation_jobs: {
@@ -1038,7 +1013,7 @@ Deno.test("sourceContributionId is actual contribution id, not semantic document
         reason: "is_markdown",
       }),
     );
-    const insertedRow = mockRenderJobRow({ id: "render-source-id" });
+    const insertedRow = buildDialecticJobRow({ id: "render-source-id" });
     const mockSetup = setupMockClient({
       ...recipeChainConfig(false),
       dialectic_generation_jobs: {
@@ -1088,7 +1063,7 @@ Deno.test("root and continuation final chunks each enqueue RENDER with distinct 
         reason: "is_markdown",
       }),
     );
-    const insertedRow = mockRenderJobRow({ id: "render-root-cont" });
+    const insertedRow = buildDialecticJobRow({ id: "render-root-cont" });
     const mockSetup = setupMockClient({
       ...recipeChainConfig(false),
       dialectic_generation_jobs: {
@@ -1169,7 +1144,7 @@ Deno.test("RENDER payload includes user_jwt and all renderer identity fields",
         reason: "is_markdown",
       }),
     );
-    const insertedRow = mockRenderJobRow({ id: "render-jwt-9" });
+    const insertedRow = buildDialecticJobRow({ id: "render-jwt-9" });
     const mockSetup = setupMockClient({
       ...recipeChainConfig(false),
       dialectic_generation_jobs: {
@@ -1263,7 +1238,7 @@ Deno.test("user_jwt on RENDER payload matches params.userAuthToken exactly",
         reason: "is_markdown",
       }),
     );
-    const insertedRow = mockRenderJobRow({ id: "render-jwt-11" });
+    const insertedRow = buildDialecticJobRow({ id: "render-jwt-11" });
     const mockSetup = setupMockClient({
       ...recipeChainConfig(false),
       dialectic_generation_jobs: {
@@ -1306,7 +1281,7 @@ Deno.test("documentIdentity matches stageRelationshipForStage for root-equivalen
         reason: "is_markdown",
       }),
     );
-    const insertedRow = mockRenderJobRow({ id: "render-12" });
+    const insertedRow = buildDialecticJobRow({ id: "render-12" });
     const mockSetup = setupMockClient({
       ...recipeChainConfig(false),
       dialectic_generation_jobs: {
@@ -1354,7 +1329,7 @@ Deno.test("continuation chunk — documentIdentity is chain root, sourceContribu
         reason: "is_markdown",
       }),
     );
-    const insertedRow = mockRenderJobRow({ id: "render-13" });
+    const insertedRow = buildDialecticJobRow({ id: "render-13" });
     const mockSetup = setupMockClient({
       ...recipeChainConfig(false),
       dialectic_generation_jobs: {
@@ -1404,7 +1379,7 @@ Deno.test("documentIdentity is caller-provided stageRelationshipForStage (single
         reason: "is_markdown",
       }),
     );
-    const insertedRow = mockRenderJobRow({ id: "render-14" });
+    const insertedRow = buildDialecticJobRow({ id: "render-14" });
     const mockSetup = setupMockClient({
       ...recipeChainConfig(false),
       dialectic_generation_jobs: {
@@ -1585,7 +1560,7 @@ Deno.test("template_filename on insert payload comes from recipe step files_to_g
         select: { data: [customTemplateRow], error: null },
       },
       dialectic_generation_jobs: {
-        insert: { data: [mockRenderJobRow({ id: "render-19" })], error: null },
+        insert: { data: [buildDialecticJobRow({ id: "render-19" })], error: null },
       },
     });
     const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
@@ -1620,7 +1595,7 @@ Deno.test("23505 on idempotency_key recovers existing render job id",
         reason: "is_markdown",
       }),
     );
-    const recovered = mockRenderJobRow({
+    const recovered = buildDialecticJobRow({
       id: "recovered-render-20",
       idempotency_key: "exec-job-20_render",
     });
@@ -1750,7 +1725,7 @@ Deno.test(
     const resolveTemplateFilename = spy(
       async () => ({ templateFilename: "thesis_business_case.md" }),
     );
-    const insertedRow = mockRenderJobRow({ id: "compress-render-1" });
+    const insertedRow = buildDialecticJobRow({ id: "compress-render-1" });
     const mockSetup = setupMockClient({
       dialectic_generation_jobs: {
         insert: { data: [insertedRow], error: null },
@@ -1927,7 +1902,7 @@ Deno.test(
     const params = buildEnqueueRenderJobParams();
     const payload = buildEnqueueRenderCompressedContextPayload();
     const expectedIdempotencyKey = `${params.sessionId}_${params.iterationNumber}_${params.stageSlug}_compress_render_${payload.sourceType}_${payload.documentKey}_${payload.targetKey}`;
-    const recovered = mockRenderJobRow({
+    const recovered = buildDialecticJobRow({
       id: "recovered-compress-render",
       idempotency_key: expectedIdempotencyKey,
     });
@@ -1981,7 +1956,7 @@ Deno.test(
     const resolveTemplateFilename = spy(
       async () => ({ templateFilename: "thesis_business_case.md" }),
     );
-    const insertedRow = mockRenderJobRow({ id: "render-discrimination" });
+    const insertedRow = buildDialecticJobRow({ id: "render-discrimination" });
     const mockSetup = setupMockClient({
       ...recipeChainConfig(false),
       dialectic_generation_jobs: {
@@ -2018,5 +1993,155 @@ Deno.test(
     assertEquals(compressArgs[1]["outputType"], compressPayload.docType);
     assertEquals(compressArgs[1]["stageSlug"], compressPayload.sourceStageSlug);
     assert(compressArgs[1]["stageSlug"] !== params.stageSlug);
+  },
+);
+
+/**
+ * Contract: given a COMPRESS-dispatch call, the inserted DialecticRenderCompressedContextJobPayload
+ *   carries user_jwt from params.userAuthToken, model_id from params.modelId and walletId from
+ *   params.walletId — the members that moved from local declaration to inheritance and must still
+ *   be written.
+ * Arrange: params with specific userAuthToken, modelId and walletId; a built compressed context
+ *   payload; a mock client that accepts the insert.
+ * Act:     enqueueRenderJob with the compressed branch.
+ * Assert:  the inserted payload's user_jwt equals params.userAuthToken, model_id equals
+ *   params.modelId, and walletId equals params.walletId.
+ */
+Deno.test(
+  "COMPRESS-dispatch: inserted payload carries user_jwt, model_id and walletId from params (inherited members still written)",
+  async () => {
+    // Arrange
+    const shouldEnqueueRenderJob = spy(
+      async (): Promise<ShouldEnqueueRenderJobResult> => ({
+        shouldRender: true,
+        reason: "is_markdown",
+      }),
+    );
+    const resolveTemplateFilename = spy(
+      async () => ({ templateFilename: "thesis_business_case.md" }),
+    );
+    const insertedRow = buildDialecticJobRow({ id: "compress-inherited-1" });
+    const mockSetup = setupMockClient({
+      dialectic_generation_jobs: {
+        insert: { data: [insertedRow], error: null },
+      },
+    });
+    const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
+    const deps = buildEnqueueRenderJobDeps({
+      dbClient,
+      shouldEnqueueRenderJob,
+      resolveTemplateFilename,
+    });
+    const params = buildEnqueueRenderJobParams({
+      userAuthToken: "specific-jwt-token",
+      modelId: "specific-model-id",
+      walletId: "specific-wallet-id",
+    });
+    const payload = buildEnqueueRenderCompressedContextPayload();
+
+    // Act
+    await enqueueRenderJob(deps, params, payload);
+
+    // Assert
+    const insertCalls = mockSetup.spies.getHistoricQueryBuilderSpies("dialectic_generation_jobs", "insert");
+    assertExists(insertCalls);
+    assertEquals(insertCalls.callCount, 1);
+    const insertedArg = insertCalls.callsArgs[0][0];
+    let inserted: unknown = insertedArg;
+    if (Array.isArray(insertedArg)) {
+      inserted = insertedArg[0];
+    }
+    assert(isRecord(inserted));
+    const pl: unknown = inserted["payload"];
+    assert(isDialecticRenderCompressedContextJobPayload(pl));
+    assertEquals(pl.user_jwt, params.userAuthToken);
+    assertEquals(pl.model_id, params.modelId);
+    assertEquals(pl.walletId, params.walletId);
+  },
+);
+
+/**
+ * Contract: given a RENDER insert on either branch, the inserted row's idempotency_key equals
+ *   the inserted payload's own idempotencyKey, pinning that per-branch row construction did not
+ *   drift.
+ * Arrange: params, a contribution payload and a compressed context payload; a mock client per
+ *   branch that accepts the insert.
+ * Act:     enqueueRenderJob once per branch.
+ * Assert:  on each branch, the inserted row's idempotency_key equals the inserted payload's
+ *   idempotencyKey.
+ */
+Deno.test(
+  "enqueueRenderJob: inserted row idempotency_key equals the payload's own idempotencyKey on both branches",
+  async () => {
+    // Arrange — contribution branch
+    const shouldEnqueueRenderJob = spy(
+      async (): Promise<ShouldEnqueueRenderJobResult> => ({
+        shouldRender: true,
+        reason: "is_markdown",
+      }),
+    );
+    const resolveTemplateFilename = spy(
+      async () => ({ templateFilename: "thesis_business_case.md" }),
+    );
+    const insertedRowContrib = buildDialecticJobRow({ id: "contrib-idem-check" });
+    const mockSetupContrib = setupMockClient({
+      ...recipeChainConfig(false),
+      dialectic_generation_jobs: {
+        insert: { data: [insertedRowContrib], error: null },
+      },
+    });
+    const dbClientContrib: SupabaseClient<Database> = mockSetupContrib.client as unknown as SupabaseClient<Database>;
+    const depsContrib = buildEnqueueRenderJobDeps({
+      dbClient: dbClientContrib,
+      shouldEnqueueRenderJob,
+      resolveTemplateFilename,
+    });
+    const params = buildEnqueueRenderJobParams();
+
+    // Act — contribution branch
+    await enqueueRenderJob(depsContrib, params, buildEnqueueRenderJobPayload());
+
+    // Assert — contribution branch
+    const insertCallsContrib = mockSetupContrib.spies.getHistoricQueryBuilderSpies("dialectic_generation_jobs", "insert");
+    assertExists(insertCallsContrib);
+    assertEquals(insertCallsContrib.callCount, 1);
+    let insertedContrib: unknown = insertCallsContrib.callsArgs[0][0];
+    if (Array.isArray(insertedContrib)) {
+      insertedContrib = insertedContrib[0];
+    }
+    assert(isRecord(insertedContrib));
+    const plContrib: unknown = insertedContrib["payload"];
+    assert(isRecord(plContrib));
+    assertEquals(insertedContrib["idempotency_key"], plContrib["idempotencyKey"]);
+
+    // Arrange — compressed branch
+    const insertedRowCompress = buildDialecticJobRow({ id: "compress-idem-check" });
+    const mockSetupCompress = setupMockClient({
+      dialectic_generation_jobs: {
+        insert: { data: [insertedRowCompress], error: null },
+      },
+    });
+    const dbClientCompress: SupabaseClient<Database> = mockSetupCompress.client as unknown as SupabaseClient<Database>;
+    const depsCompress = buildEnqueueRenderJobDeps({
+      dbClient: dbClientCompress,
+      shouldEnqueueRenderJob,
+      resolveTemplateFilename,
+    });
+
+    // Act — compressed branch
+    await enqueueRenderJob(depsCompress, params, buildEnqueueRenderCompressedContextPayload());
+
+    // Assert — compressed branch
+    const insertCallsCompress = mockSetupCompress.spies.getHistoricQueryBuilderSpies("dialectic_generation_jobs", "insert");
+    assertExists(insertCallsCompress);
+    assertEquals(insertCallsCompress.callCount, 1);
+    let insertedCompress: unknown = insertCallsCompress.callsArgs[0][0];
+    if (Array.isArray(insertedCompress)) {
+      insertedCompress = insertedCompress[0];
+    }
+    assert(isRecord(insertedCompress));
+    const plCompress: unknown = insertedCompress["payload"];
+    assert(isDialecticRenderCompressedContextJobPayload(plCompress));
+    assertEquals(insertedCompress["idempotency_key"], plCompress["idempotencyKey"]);
   },
 );

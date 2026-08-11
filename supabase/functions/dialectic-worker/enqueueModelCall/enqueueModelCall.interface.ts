@@ -9,7 +9,6 @@ import type {
 import type { DialecticJobRow } from '../../dialectic-service/dialectic.interface.ts';
 import type { ComputeJobSig } from "../../_shared/utils/computeJobSig/computeJobSig.interface.ts";
 import type { UserConfig } from '../calculateAffordability/calculateAffordability.interface.ts';
-import type { FileType } from '../../_shared/types/file_manager.types.ts';
 export interface EnqueueModelCallDeps {
   logger: ILogger;
   netlifyQueueUrl: string;
@@ -23,7 +22,6 @@ export interface EnqueueModelCallParams {
   job: DialecticJobRow;
   providerRow: Tables<'ai_providers'>;
   userAuthToken: string;
-  output_type: FileType;
   userConfig: UserConfig;
 }
 

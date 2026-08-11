@@ -1,5 +1,4 @@
 import { isRecord } from "../../_shared/utils/type-guards/type_guards.common.ts";
-import { isFileType } from "../../_shared/utils/type-guards/type_guards.file_manager.ts";
 import { isAiModelExtendedConfig, isChatApiRequest } from "../../_shared/utils/type-guards/type_guards.chat.ts";
 import { isUserConfig } from "../calculateAffordability/calculateAffordability.provides.ts";
 import type {
@@ -60,7 +59,6 @@ export function isEnqueueModelCallParams(
     "job",
     "providerRow",
     "userAuthToken",
-    "output_type",
     "userConfig",
   ];
   for (let i = 0; i < keys.length; i++) {
@@ -79,9 +77,6 @@ export function isEnqueueModelCallParams(
     return false;
   }
   if (typeof v.userAuthToken !== "string") {
-    return false;
-  }
-  if (!isFileType(v.output_type)) {
     return false;
   }
   if (!isRecord(v.userConfig)) {

@@ -18,7 +18,7 @@ import type { BoundDebitTokens } from '../_shared/utils/debitTokens.interface.ts
 import type { BoundEnqueueRenderJobFn } from './enqueueRenderJob/enqueueRenderJob.interface.ts';
 import { enqueueRenderJob } from './enqueueRenderJob/enqueueRenderJob.ts';
 import { shouldEnqueueRenderJob } from '../_shared/utils/shouldEnqueueRenderJob.ts';
-import { continueJob } from './continueJob.ts';
+import { continueJob } from './continueJob/continueJob.ts';
 import { retryJob } from './retryJob.ts';
 import { resolveFinishReason } from '../_shared/utils/resolveFinishReason.ts';
 import { isIntermediateChunk } from '../_shared/utils/isIntermediateChunk.ts';

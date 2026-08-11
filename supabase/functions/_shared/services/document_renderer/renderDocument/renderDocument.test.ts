@@ -6,6 +6,7 @@ import { createMockSupabaseClient } from "../../../supabase.mock.ts";
 import { FileType } from "../../../types/file_manager.types.ts";
 import type { ServiceError } from "../../../types.ts";
 import { constructStoragePath } from "../../../utils/path_constructor.ts";
+import { isResourceContext } from "../../../utils/type-guards/type_guards.file_manager.ts";
 import { createMockDownloadFromStorage } from "../../../supabase_storage_utils.mock.ts";
 import type { DownloadFromStorageFn } from "../../../supabase_storage_utils.ts";
 
@@ -774,6 +775,8 @@ Deno.test("renderDocument - COMPRESS happy path", async (t) => {
     assertEquals(uploadArg.pathContext.documentKey, compressParams.documentKey);
     assertEquals(uploadArg.mimeType, "text/markdown");
     assertEquals(uploadArg.userId, deps.notifyUserId);
+    assert(isResourceContext(uploadArg), "upload context should be a ResourceUploadContext");
+    assertEquals(uploadArg.sourcePromptResourceId, undefined);
   });
 
   await t.step("never calls sendJobNotificationEvent", async () => {

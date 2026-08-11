@@ -9,6 +9,8 @@ import {
 	AssembleTurnPromptDeps,
 	AssembleTurnPromptParams,
 	AssembleContinuationPromptDeps,
+	AssembleContinuationPromptErrorReturn,
+	AssembleContinuationPromptReturn,
 	IPromptAssembler,
 	ProjectContext,
 	SessionContext,
@@ -290,6 +292,22 @@ export function invalidateAssembleContinuationPromptDeps(corruptions: AssembleCo
     return { ...buildAssembleContinuationPromptDeps(), ...corruptions };
 }
 
+export type AssembleContinuationPromptErrorReturnOverrides = Partial<AssembleContinuationPromptErrorReturn>;
+
+export function buildAssembleContinuationPromptErrorReturn(overrides?: AssembleContinuationPromptErrorReturnOverrides): AssembleContinuationPromptErrorReturn {
+    const base: AssembleContinuationPromptErrorReturn = {
+        error: new Error("mock-assemble-continuation-prompt-error"),
+        retriable: false,
+    };
+    return overrides ? { ...base, ...overrides } : base;
+}
+
+export type AssembleContinuationPromptErrorReturnCorruptions = { [K in keyof AssembleContinuationPromptErrorReturn]?: unknown };
+
+export function invalidateAssembleContinuationPromptErrorReturn(corruptions: AssembleContinuationPromptErrorReturnCorruptions): unknown {
+    return { ...buildAssembleContinuationPromptErrorReturn(), ...corruptions };
+}
+
 export type AssembledPromptOverrides = Partial<AssembledPrompt>;
 
 export function buildAssembledPrompt(overrides?: AssembledPromptOverrides): AssembledPrompt {
@@ -435,7 +453,7 @@ export const mockAssembleTurnPrompt: (
     params: AssembleTurnPromptParams,
 ) => Promise<AssembledPrompt> = async () => MOCK_ASSEMBLED_TURN_PROMPT;
 
-export const mockAssembleContinuationPrompt: (deps: AssembleContinuationPromptDeps) => Promise<AssembledPrompt> =
+export const mockAssembleContinuationPrompt: (deps: AssembleContinuationPromptDeps) => Promise<AssembleContinuationPromptReturn> =
     async () => MOCK_ASSEMBLED_CONTINUATION_PROMPT;
 
 export const mockAssembleCompressionPrompt: AssembleCompressionPromptFn =

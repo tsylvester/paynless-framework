@@ -8,13 +8,12 @@ import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import type { AiModelExtendedConfig, ApiKeyForProviderFn } from "../../_shared/types.ts";
 import { MockLogger } from "../../_shared/logger.mock.ts";
 import { createMockSupabaseClient } from "../../_shared/supabase.mock.ts";
-import { FileType } from "../../_shared/types/file_manager.types.ts";
 import type { Database, Tables } from "../../types_db.ts";
 import { isRecord } from "../../_shared/utils/type-guards/type_guards.common.ts";
 import {
     createMockDialecticExecuteJobPayload,
     createMockJobRow,
-} from "../saveResponse/saveResponse.mock.ts";
+} from "../saveResponse/saveResponse.provides.ts";
 import type {
     EnqueueModelCallDeps,
     EnqueueModelCallParams,
@@ -81,7 +80,6 @@ Deno.test(
             job,
             providerRow: integrationProviderRow,
             userAuthToken: "integration-user-jwt",
-            output_type: FileType.HeaderContext,
             userConfig: { tier_output_cap_tokens: null },
         };
 
@@ -179,7 +177,6 @@ Deno.test(
             job,
             providerRow: integrationProviderRow,
             userAuthToken: "integration-user-jwt",
-            output_type: FileType.HeaderContext,
             userConfig: { tier_output_cap_tokens: null },
         };
 
@@ -251,7 +248,6 @@ Deno.test(
             job,
             providerRow: integrationProviderRow,
             userAuthToken: "integration-user-jwt",
-            output_type: FileType.HeaderContext,
             userConfig: { tier_output_cap_tokens: tierCap },
         };
 

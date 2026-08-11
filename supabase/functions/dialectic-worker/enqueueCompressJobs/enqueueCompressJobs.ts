@@ -221,7 +221,6 @@ export const enqueueCompressJobs: enqueueCompressJobsFn = async (
     const isChunked = chunks.length > 1;
 
     const childPayload: DialecticCompressJobPayload = {
-      job_type: "COMPRESS",
       sessionId: params.sessionId,
       projectId: params.projectId,
       stageSlug: params.stageSlug,
@@ -233,7 +232,8 @@ export const enqueueCompressJobs: enqueueCompressJobsFn = async (
       content: chunk,
       sourceType: victim.sourceType,
       walletId: params.walletId,
-      user_id: params.parentJob.user_id,
+      user_jwt: params.userJwt,
+      idempotencyKey: baseIdempotencyKey,
     };
 
     if (victim.sourceId !== undefined) {
@@ -252,12 +252,10 @@ export const enqueueCompressJobs: enqueueCompressJobsFn = async (
       childPayload.sourceStageSlug = victim.sourceStageSlug;
     }
 
-    let idempotencyKey = baseIdempotencyKey;
-
     if (isChunked) {
       childPayload.chunk_index = index + 1;
       childPayload.chunk_total = chunks.length;
-      idempotencyKey = `${baseIdempotencyKey}_chunk_${childPayload.chunk_index}of${childPayload.chunk_total}`;
+      childPayload.idempotencyKey = `${baseIdempotencyKey}_chunk_${childPayload.chunk_index}of${childPayload.chunk_total}`;
     }
 
     if (!isJson(childPayload)) {
@@ -278,7 +276,7 @@ export const enqueueCompressJobs: enqueueCompressJobsFn = async (
       user_id: params.parentJob.user_id,
       is_test_job: params.parentJob.is_test_job,
       status: "pending",
-      idempotency_key: idempotencyKey,
+      idempotency_key: childPayload.idempotencyKey,
       payload: childPayload,
     });
   }

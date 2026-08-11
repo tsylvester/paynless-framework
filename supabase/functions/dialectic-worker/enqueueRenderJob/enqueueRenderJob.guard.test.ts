@@ -1,7 +1,8 @@
 // supabase/functions/dialectic-worker/enqueueRenderJob/enqueueRenderJob.guard.test.ts
 
-import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
+import { assertEquals, assertThrows } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { TemplateResolutionError } from "../../_shared/utils/resolveTemplateFilename/resolveTemplateFilename.ts";
+import { buildDialecticRenderJobPayload } from "../../_shared/dialectic.mock.ts";
 import {
   buildDialecticRenderCompressedContextJobPayload,
   buildEnqueueRenderCompressedContextPayload,
@@ -19,6 +20,7 @@ import {
   invalidateEnqueueRenderJobSuccessReturn,
 } from "./enqueueRenderJob.mock.ts";
 import {
+  isCompressedRenderPayloadShape,
   isDialecticRenderCompressedContextJobPayload,
   isEnqueueRenderCompressedContextPayload,
   isEnqueueRenderJobDeps,
@@ -414,92 +416,119 @@ Deno.test("isEnqueueRenderCompressedContextPayload rejects corrupted properties"
   );
 });
 
+/** Contract: case 1 — the builder's valid default is accepted. */
 Deno.test("isDialecticRenderCompressedContextJobPayload accepts a valid built object", () => {
   assertEquals(isDialecticRenderCompressedContextJobPayload(buildDialecticRenderCompressedContextJobPayload()), true);
 });
 
-Deno.test("isDialecticRenderCompressedContextJobPayload rejects non-records", () => {
-  assertEquals(isDialecticRenderCompressedContextJobPayload(null), false);
-  assertEquals(isDialecticRenderCompressedContextJobPayload(undefined), false);
-  assertEquals(isDialecticRenderCompressedContextJobPayload(42), false);
-  assertEquals(isDialecticRenderCompressedContextJobPayload("string"), false);
-  assertEquals(isDialecticRenderCompressedContextJobPayload([]), false);
+/** Contract: case 3 — non-record roots throw the base guard's non-null-object diagnostic. */
+Deno.test("isDialecticRenderCompressedContextJobPayload throws on non-records", () => {
+  assertThrows(() => isDialecticRenderCompressedContextJobPayload(null), Error, "Payload must be a non-null object.");
+  assertThrows(() => isDialecticRenderCompressedContextJobPayload(undefined), Error, "Payload must be a non-null object.");
+  assertThrows(() => isDialecticRenderCompressedContextJobPayload(42), Error, "Payload must be a non-null object.");
+  assertThrows(() => isDialecticRenderCompressedContextJobPayload("string"), Error, "Payload must be a non-null object.");
+  assertThrows(() => isDialecticRenderCompressedContextJobPayload([]), Error, "Payload must be a non-null object.");
 });
 
-Deno.test("isDialecticRenderCompressedContextJobPayload rejects missing required properties", () => {
-  const keys: (keyof ReturnType<typeof buildDialecticRenderCompressedContextJobPayload>)[] = [
-    "idempotencyKey",
-    "projectId",
-    "sessionId",
-    "iterationNumber",
-    "stageSlug",
-    "targetKey",
-    "sourceType",
-    "documentKey",
-    "template_filename",
-    "user_jwt",
-    "model_id",
-    "walletId",
-  ];
-  for (const key of keys) {
-    const base = buildDialecticRenderCompressedContextJobPayload();
-    const { [key]: _omit, ...rest } = base;
-    assertEquals(isDialecticRenderCompressedContextJobPayload(rest), false);
-  }
+/** Contract: case 5 — each own declared member, omitted in turn, throws a per-member diagnostic. */
+Deno.test("isDialecticRenderCompressedContextJobPayload throws when an own member is absent", () => {
+  const { targetKey: _omitTarget, ...missingTarget } = buildDialecticRenderCompressedContextJobPayload();
+  assertThrows(() => isDialecticRenderCompressedContextJobPayload(missingTarget), Error, "Missing or invalid targetKey.");
+
+  const { sourceType: _omitSource, ...missingSource } = buildDialecticRenderCompressedContextJobPayload();
+  assertThrows(() => isDialecticRenderCompressedContextJobPayload(missingSource), Error, "Missing or invalid sourceType.");
+
+  const { documentKey: _omitDocKey, ...missingDocKey } = buildDialecticRenderCompressedContextJobPayload();
+  assertThrows(() => isDialecticRenderCompressedContextJobPayload(missingDocKey), Error, "Missing or invalid documentKey.");
+
+  const { template_filename: _omitTemplate, ...missingTemplate } = buildDialecticRenderCompressedContextJobPayload();
+  assertThrows(() => isDialecticRenderCompressedContextJobPayload(missingTemplate), Error, "Missing or invalid template_filename.");
+
+  const { stageSlug: _omitStage, ...missingStage } = buildDialecticRenderCompressedContextJobPayload();
+  assertThrows(() => isDialecticRenderCompressedContextJobPayload(missingStage), Error, "Missing or invalid stageSlug.");
+
+  const { iterationNumber: _omitIter, ...missingIter } = buildDialecticRenderCompressedContextJobPayload();
+  assertThrows(() => isDialecticRenderCompressedContextJobPayload(missingIter), Error, "Missing or invalid iterationNumber.");
 });
 
-Deno.test("isDialecticRenderCompressedContextJobPayload rejects corrupted properties", () => {
-  assertEquals(
-    isDialecticRenderCompressedContextJobPayload(
-      invalidateDialecticRenderCompressedContextJobPayload({ idempotencyKey: 42 }),
-    ),
-    false,
+/** Contract: case 4 — each own declared member, corrupted in turn, throws a per-member diagnostic. */
+Deno.test("isDialecticRenderCompressedContextJobPayload throws when an own member is wrong-typed", () => {
+  assertThrows(
+    () => isDialecticRenderCompressedContextJobPayload(invalidateDialecticRenderCompressedContextJobPayload({ targetKey: 42 })),
+    Error, "Missing or invalid targetKey.",
   );
-  assertEquals(
-    isDialecticRenderCompressedContextJobPayload(
-      invalidateDialecticRenderCompressedContextJobPayload({ projectId: 42 }),
-    ),
-    false,
+  assertThrows(
+    () => isDialecticRenderCompressedContextJobPayload(invalidateDialecticRenderCompressedContextJobPayload({ sourceType: 123 })),
+    Error, "Missing or invalid sourceType.",
   );
-  assertEquals(
-    isDialecticRenderCompressedContextJobPayload(
-      invalidateDialecticRenderCompressedContextJobPayload({ sessionId: 42 }),
-    ),
-    false,
+  assertThrows(
+    () => isDialecticRenderCompressedContextJobPayload(invalidateDialecticRenderCompressedContextJobPayload({ documentKey: 42 })),
+    Error, "Missing or invalid documentKey.",
   );
-  assertEquals(
-    isDialecticRenderCompressedContextJobPayload(
-      invalidateDialecticRenderCompressedContextJobPayload({ template_filename: 42 }),
-    ),
-    false,
+  assertThrows(
+    () => isDialecticRenderCompressedContextJobPayload(invalidateDialecticRenderCompressedContextJobPayload({ template_filename: 42 })),
+    Error, "Missing or invalid template_filename.",
   );
-  assertEquals(
-    isDialecticRenderCompressedContextJobPayload(
-      invalidateDialecticRenderCompressedContextJobPayload({ user_jwt: 42 }),
-    ),
-    false,
+  assertThrows(
+    () => isDialecticRenderCompressedContextJobPayload(invalidateDialecticRenderCompressedContextJobPayload({ stageSlug: "not-a-stage" })),
+    Error, "Missing or invalid stageSlug.",
   );
-  assertEquals(
-    isDialecticRenderCompressedContextJobPayload(
-      invalidateDialecticRenderCompressedContextJobPayload({ model_id: 42 }),
-    ),
-    false,
-  );
-  assertEquals(
-    isDialecticRenderCompressedContextJobPayload(
-      invalidateDialecticRenderCompressedContextJobPayload({ walletId: 42 }),
-    ),
-    false,
-  );
-  assertEquals(
-    isDialecticRenderCompressedContextJobPayload(
-      invalidateDialecticRenderCompressedContextJobPayload({ iterationNumber: "not-a-number" }),
-    ),
-    false,
+  assertThrows(
+    () => isDialecticRenderCompressedContextJobPayload(invalidateDialecticRenderCompressedContextJobPayload({ iterationNumber: "not-a-number" })),
+    Error, "Invalid iterationNumber.",
   );
 });
 
-Deno.test("isDialecticRenderCompressedContextJobPayload rejects a DialecticRenderJobPayload-shaped record (no cross-match)", () => {
+/** Contract: case 4 — template_filename empty string throws the per-member diagnostic. */
+Deno.test("isDialecticRenderCompressedContextJobPayload throws when template_filename is empty", () => {
+  assertThrows(
+    () => isDialecticRenderCompressedContextJobPayload(invalidateDialecticRenderCompressedContextJobPayload({ template_filename: "" })),
+    Error, "Missing or invalid template_filename.",
+  );
+});
+
+/** Contract: case 4 — a valid CompressionSourceType outside 'contribution' | 'resource' throws the per-member diagnostic. */
+Deno.test("isDialecticRenderCompressedContextJobPayload throws when sourceType is a valid CompressionSourceType outside the render restriction", () => {
+  assertThrows(
+    () => isDialecticRenderCompressedContextJobPayload(invalidateDialecticRenderCompressedContextJobPayload({ sourceType: "feedback" })),
+    Error, "Missing or invalid sourceType.",
+  );
+  assertThrows(
+    () => isDialecticRenderCompressedContextJobPayload(invalidateDialecticRenderCompressedContextJobPayload({ sourceType: "history" })),
+    Error, "Missing or invalid sourceType.",
+  );
+});
+
+/** Contract: delegation — each inherited member, corrupted in turn, throws the base guard's own diagnostic unchanged and uncaught. */
+Deno.test("isDialecticRenderCompressedContextJobPayload delegates inherited member corruption to the base guard", () => {
+  assertThrows(
+    () => isDialecticRenderCompressedContextJobPayload(invalidateDialecticRenderCompressedContextJobPayload({ sessionId: 42 })),
+    Error, "Missing or invalid sessionId.",
+  );
+  assertThrows(
+    () => isDialecticRenderCompressedContextJobPayload(invalidateDialecticRenderCompressedContextJobPayload({ projectId: 42 })),
+    Error, "Missing or invalid projectId.",
+  );
+  assertThrows(
+    () => isDialecticRenderCompressedContextJobPayload(invalidateDialecticRenderCompressedContextJobPayload({ model_id: 42 })),
+    Error, "Missing or invalid model_id.",
+  );
+  assertThrows(
+    () => isDialecticRenderCompressedContextJobPayload(invalidateDialecticRenderCompressedContextJobPayload({ walletId: 42 })),
+    Error, "Missing or invalid walletId.",
+  );
+  assertThrows(
+    () => isDialecticRenderCompressedContextJobPayload(invalidateDialecticRenderCompressedContextJobPayload({ user_jwt: 42 })),
+    Error, "Missing or invalid user_jwt.",
+  );
+  assertThrows(
+    () => isDialecticRenderCompressedContextJobPayload(invalidateDialecticRenderCompressedContextJobPayload({ idempotencyKey: 42 })),
+    Error, "Missing or invalid idempotencyKey.",
+  );
+});
+
+/** Contract: case 4 — a DialecticRenderJobPayload-shaped record lacks targetKey and throws the per-member diagnostic. */
+Deno.test("isDialecticRenderCompressedContextJobPayload throws on a DialecticRenderJobPayload-shaped record (no cross-match)", () => {
   const renderJobPayloadShaped: Record<string, unknown> = {
     idempotencyKey: "job-1_render",
     projectId: "project-1",
@@ -514,20 +543,48 @@ Deno.test("isDialecticRenderCompressedContextJobPayload rejects a DialecticRende
     model_id: "model-1",
     walletId: "wallet-1",
   };
-  assertEquals(isDialecticRenderCompressedContextJobPayload(renderJobPayloadShaped), false);
+  assertThrows(() => isDialecticRenderCompressedContextJobPayload(renderJobPayloadShaped), Error, "Missing or invalid targetKey.");
 });
 
-Deno.test("isDialecticRenderCompressedContextJobPayload rejects text-mode sourceTypes (feedback and history are never rendered)", () => {
-  assertEquals(
-    isDialecticRenderCompressedContextJobPayload(
-      invalidateDialecticRenderCompressedContextJobPayload({ sourceType: "feedback" }),
-    ),
-    false,
-  );
-  assertEquals(
-    isDialecticRenderCompressedContextJobPayload(
-      invalidateDialecticRenderCompressedContextJobPayload({ sourceType: "history" }),
-    ),
-    false,
-  );
+/** Contract: case 1 — a built compressed row payload is recognised as the compressed shape. */
+Deno.test("isCompressedRenderPayloadShape accepts a built compressed row payload", () => {
+  assertEquals(isCompressedRenderPayloadShape(buildDialecticRenderCompressedContextJobPayload()), true);
+});
+
+/** Contract: case 4 — a built DialecticRenderJobPayload is rejected, which is the discrimination the predicate exists to make. */
+Deno.test("isCompressedRenderPayloadShape rejects a built DialecticRenderJobPayload", () => {
+  assertEquals(isCompressedRenderPayloadShape(buildDialecticRenderJobPayload()), false);
+});
+
+/** Contract: case 4 — a record carrying targetKey without sourceType is rejected. */
+Deno.test("isCompressedRenderPayloadShape rejects targetKey without sourceType", () => {
+  const { sourceType: _omit, ...rest } = buildDialecticRenderCompressedContextJobPayload();
+  assertEquals(isCompressedRenderPayloadShape(rest), false);
+});
+
+/** Contract: case 4 — a record carrying sourceType without targetKey is rejected. */
+Deno.test("isCompressedRenderPayloadShape rejects sourceType without targetKey", () => {
+  const { targetKey: _omit, ...rest } = buildDialecticRenderCompressedContextJobPayload();
+  assertEquals(isCompressedRenderPayloadShape(rest), false);
+});
+
+/** Contract: case 4 — a record carrying both targetKey and sourceType alongside documentIdentity is rejected. */
+Deno.test("isCompressedRenderPayloadShape rejects both markers alongside documentIdentity", () => {
+  const withDocIdentity = { ...buildDialecticRenderCompressedContextJobPayload(), documentIdentity: "doc-1" };
+  assertEquals(isCompressedRenderPayloadShape(withDocIdentity), false);
+});
+
+/** Contract: case 4 — a record carrying both targetKey and sourceType alongside sourceContributionId is rejected. */
+Deno.test("isCompressedRenderPayloadShape rejects both markers alongside sourceContributionId", () => {
+  const withSourceContrib = { ...buildDialecticRenderCompressedContextJobPayload(), sourceContributionId: "contrib-1" };
+  assertEquals(isCompressedRenderPayloadShape(withSourceContrib), false);
+});
+
+/** Contract: case 3 — non-record roots are rejected. */
+Deno.test("isCompressedRenderPayloadShape rejects non-records", () => {
+  assertEquals(isCompressedRenderPayloadShape(null), false);
+  assertEquals(isCompressedRenderPayloadShape(undefined), false);
+  assertEquals(isCompressedRenderPayloadShape(42), false);
+  assertEquals(isCompressedRenderPayloadShape("string"), false);
+  assertEquals(isCompressedRenderPayloadShape([]), false);
 });

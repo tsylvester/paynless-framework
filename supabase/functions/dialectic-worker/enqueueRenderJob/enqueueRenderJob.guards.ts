@@ -6,7 +6,8 @@ import { DialecticStageSlug } from '../../_shared/types/file_manager.types.ts';
 import { RenderJobEnqueueError, RenderJobValidationError } from '../../_shared/utils/errors.ts';
 import { TemplateResolutionError } from '../../_shared/utils/resolveTemplateFilename/resolveTemplateFilename.ts';
 import { isCompressionSourceType, isFileType, isModelContributionFileType, isDialecticStageSlug } from '../../_shared/utils/type-guards/type_guards.file_manager.ts';
-import { isRecord, isLoggerShape, isSupabaseClientShape } from '../../_shared/utils/type-guards/type_guards.common.ts';
+import { isRecord, isLoggerShape, isSupabaseClientShape, isNonNegativeInteger, isNonEmptyString } from '../../_shared/utils/type-guards/type_guards.common.ts';
+import { isDialecticBaseJobPayload, dialecticBaseJobPayloadAllowedKeys } from '../../_shared/utils/type-guards/type_guards.dialectic.ts';
 import type {
   DialecticRenderCompressedContextJobPayload,
   EnqueueRenderCompressedContextPayload,
@@ -214,76 +215,45 @@ export function isEnqueueRenderCompressedContextPayload(value: unknown): value i
 
 export function isDialecticRenderCompressedContextJobPayload(value: unknown): value is DialecticRenderCompressedContextJobPayload {
   if (!isRecord(value)) {
+    throw new Error('Payload must be a non-null object.');
+  }
+
+  // Base Payload Checks (delegated — does not catch)
+  isDialecticBaseJobPayload(value);
+
+  // Narrowing checks: required where the base leaves optional
+  if (!('stageSlug' in value) || !isDialecticStageSlug(value.stageSlug)) throw new Error('Missing or invalid stageSlug.');
+  if (!('iterationNumber' in value) || !isNonNegativeInteger(value.iterationNumber)) throw new Error('Missing or invalid iterationNumber.');
+
+  // Arm-specific required members
+  if (!('targetKey' in value) || !isModelContributionFileType(value.targetKey)) throw new Error('Missing or invalid targetKey.');
+  if (!('sourceType' in value) || !isCompressionSourceType(value.sourceType) || (value.sourceType !== 'contribution' && value.sourceType !== 'resource')) throw new Error('Missing or invalid sourceType.');
+  if (!('documentKey' in value) || !isFileType(value.documentKey)) throw new Error('Missing or invalid documentKey.');
+  if (!('template_filename' in value) || !isNonEmptyString(value.template_filename)) throw new Error('Missing or invalid template_filename.');
+
+  // Final check for extraneous properties to enforce a strict shape.
+  const allowedKeys = new Set<string>([
+    ...dialecticBaseJobPayloadAllowedKeys,
+    'targetKey', 'sourceType', 'documentKey', 'template_filename',
+  ]);
+
+  const unknownKeys = Object.keys(value).filter(key => !allowedKeys.has(key));
+
+  if (unknownKeys.length > 0) {
+    throw new Error(`Payload contains unknown properties: ${unknownKeys.join(', ')}`);
+  }
+
+  return true;
+}
+
+export function isCompressedRenderPayloadShape(value: unknown): boolean {
+  if (!isRecord(value)) {
     return false;
   }
-  const keys: (keyof DialecticRenderCompressedContextJobPayload)[] = [
-    'idempotencyKey',
-    'projectId',
-    'sessionId',
-    'iterationNumber',
-    'stageSlug',
-    'targetKey',
-    'sourceType',
-    'documentKey',
-    'template_filename',
-    'user_jwt',
-    'model_id',
-    'walletId',
-  ];
-  for (const key of keys) {
-    if (!(key in value)) {
-      return false;
-    }
-  }
-  const idempotencyKey = value.idempotencyKey;
-  const projectId = value.projectId;
-  const sessionId = value.sessionId;
-  const iterationNumber = value.iterationNumber;
-  const stageSlug = value.stageSlug;
-  const targetKey = value.targetKey;
-  const sourceType = value.sourceType;
-  const documentKey = value.documentKey;
-  const templateFilename = value.template_filename;
-  const userJwt = value.user_jwt;
-  const modelId = value.model_id;
-  const walletId = value.walletId;
-  if (typeof idempotencyKey !== 'string' || idempotencyKey === '') {
+  if (!('targetKey' in value) || !('sourceType' in value)) {
     return false;
   }
-  if (typeof projectId !== 'string' || projectId === '') {
-    return false;
-  }
-  if (typeof sessionId !== 'string' || sessionId === '') {
-    return false;
-  }
-  if (typeof iterationNumber !== 'number' || !Number.isInteger(iterationNumber) || iterationNumber < 0) {
-    return false;
-  }
-  if (!isDialecticStageSlug(stageSlug)) {
-    return false;
-  }
-  if (!isModelContributionFileType(targetKey)) {
-    return false;
-  }
-  if (!isCompressionSourceType(sourceType)) {
-    return false;
-  }
-  if (sourceType !== 'contribution' && sourceType !== 'resource') {
-    return false;
-  }
-  if (!isFileType(documentKey)) {
-    return false;
-  }
-  if (typeof templateFilename !== 'string' || templateFilename === '') {
-    return false;
-  }
-  if (typeof userJwt !== 'string' || userJwt === '') {
-    return false;
-  }
-  if (typeof modelId !== 'string' || modelId === '') {
-    return false;
-  }
-  if (typeof walletId !== 'string' || walletId === '') {
+  if ('documentIdentity' in value || 'sourceContributionId' in value) {
     return false;
   }
   return true;

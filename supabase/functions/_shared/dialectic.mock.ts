@@ -58,6 +58,7 @@ import type {
     JobInsert,
     PlanJobInsert,
     DialecticSimpleJobPayload,
+    DialecticBaseJobPayload,
     SelectedModels,
     UnifiedAIResponse,
 } from '../dialectic-service/dialectic.interface.ts';
@@ -879,12 +880,12 @@ export function invalidateDialecticProjectResourceRow(corruptions: DialecticProj
     return { ...buildDialecticProjectResourceRow(), ...corruptions };
 }
 
-// --- DialecticExecuteJobPayload ---
+// --- DialecticBaseJobPayload ---
 
-export type DialecticExecuteJobPayloadOverrides = Partial<DialecticExecuteJobPayload>;
+export type DialecticBaseJobPayloadOverrides = Partial<DialecticBaseJobPayload>;
 
-export function buildDialecticExecuteJobPayload(overrides?: DialecticExecuteJobPayloadOverrides): DialecticExecuteJobPayload {
-    const base: DialecticExecuteJobPayload = {
+export function buildDialecticBaseJobPayload(overrides?: DialecticBaseJobPayloadOverrides): DialecticBaseJobPayload {
+    const base: DialecticBaseJobPayload = {
         sessionId: 'test-session-id',
         projectId: 'test-project-id',
         stageSlug: 'thesis',
@@ -894,6 +895,23 @@ export function buildDialecticExecuteJobPayload(overrides?: DialecticExecuteJobP
         idempotencyKey: 'test-idempotency-key',
         model_id: 'test-model-id',
         model_slug: 'test-model-slug',
+    };
+    return { ...base, ...overrides };
+}
+
+export type DialecticBaseJobPayloadCorruptions = { [K in keyof DialecticBaseJobPayload]?: unknown };
+
+export function invalidateDialecticBaseJobPayload(corruptions: DialecticBaseJobPayloadCorruptions): unknown {
+    return { ...buildDialecticBaseJobPayload(), ...corruptions };
+}
+
+// --- DialecticExecuteJobPayload ---
+
+export type DialecticExecuteJobPayloadOverrides = Partial<DialecticExecuteJobPayload>;
+
+export function buildDialecticExecuteJobPayload(overrides?: DialecticExecuteJobPayloadOverrides): DialecticExecuteJobPayload {
+    const base: DialecticExecuteJobPayload = {
+        ...buildDialecticBaseJobPayload(),
         prompt_template_id: 'test-template-id',
         output_type: FileType.ModelContributionRawJson,
         canonicalPathParams: {
@@ -917,16 +935,8 @@ export function invalidateDialecticExecuteJobPayload(corruptions: DialecticExecu
 export type DialecticPlanJobPayloadOverrides = Partial<DialecticPlanJobPayload>;
 
 export function buildDialecticPlanJobPayload(overrides?: DialecticPlanJobPayloadOverrides): DialecticPlanJobPayload {
-    const base = {
-        sessionId: 'test-session-id',
-        projectId: 'test-project-id',
-        stageSlug: 'thesis',
-        iterationNumber: 1,
-        walletId: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a12',
-        user_jwt: 'test-jwt',
-        idempotencyKey: 'test-idempotency-key',
-        model_id: 'test-model-id',
-        model_slug: 'test-model-slug',
+    const base: DialecticPlanJobPayload = {
+        ...buildDialecticBaseJobPayload(),
         document_relationships: null,
     };
     return { ...base, ...overrides };
@@ -970,14 +980,7 @@ export type DialecticRenderJobPayloadOverrides = Partial<DialecticRenderJobPaylo
 
 export function buildDialecticRenderJobPayload(overrides?: DialecticRenderJobPayloadOverrides): DialecticRenderJobPayload {
     const base: DialecticRenderJobPayload = {
-        sessionId: 'test-session-id',
-        projectId: 'test-project-id',
-        stageSlug: 'thesis',
-        iterationNumber: 1,
-        walletId: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a12',
-        user_jwt: 'test-jwt',
-        idempotencyKey: 'test-idempotency-key',
-        model_id: 'test-model-id',
+        ...buildDialecticBaseJobPayload(),
         documentIdentity: 'test-document-identity',
         documentKey: FileType.business_case,
         sourceContributionId: 'test-contribution-id',
@@ -1192,15 +1195,7 @@ export type DialecticSimpleJobPayloadOverrides = Partial<DialecticSimpleJobPaylo
 
 export function buildDialecticSimpleJobPayload(overrides?: DialecticSimpleJobPayloadOverrides): DialecticSimpleJobPayload {
     const base: DialecticSimpleJobPayload = {
-        sessionId: 'test-session-id',
-        projectId: 'test-project-id',
-        stageSlug: 'thesis',
-        iterationNumber: 1,
-        walletId: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a12',
-        user_jwt: 'test-jwt',
-        idempotencyKey: 'test-idempotency-key',
-        model_id: 'test-model-id',
-        job_type: 'simple',
+        ...buildDialecticBaseJobPayload(),
     };
     return { ...base, ...overrides };
 }

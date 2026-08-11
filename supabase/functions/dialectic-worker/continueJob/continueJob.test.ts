@@ -1,10 +1,10 @@
-import { continueJob } from './continueJob.ts';
+import { continueJob } from '../continueJob/continueJob.ts';
 import { assert, assertEquals, assertExists, assertObjectMatch } from 'https://deno.land/std@0.224.0/assert/mod.ts';
 import { spy } from 'https://deno.land/std@0.224.0/testing/mock.ts';
 import { type PostgrestError, type SupabaseClient } from 'npm:@supabase/supabase-js@2';
-import { MockLogger } from '../_shared/logger.mock.ts';
-import { createMockSupabaseClient, type MockSupabaseClientSetup, type MockQueryBuilderState } from '../_shared/supabase.mock.ts';
-import type { Database, Json } from '../types_db.ts';
+import { MockLogger } from '../../_shared/logger.mock.ts';
+import { createMockSupabaseClient, type MockSupabaseClientSetup, type MockQueryBuilderState } from '../../_shared/supabase.mock.ts';
+import type { Database, Json } from '../../types_db.ts';
 import {
   type UnifiedAIResponse,
   type DialecticContributionRow,
@@ -12,7 +12,7 @@ import {
   type IContinueJobDeps,
   type DialecticExecuteJobPayload,
   type DialecticJobRow,
-} from '../dialectic-service/dialectic.interface.ts';
+} from '../../dialectic-service/dialectic.interface.ts';
 import { 
     isDialecticJobPayload, 
     isJobInsert,
@@ -20,10 +20,10 @@ import {
     isJson, 
     isDialecticExecuteJobPayload, 
     isDialecticJobRow 
-} from '../_shared/utils/type_guards.ts';
-import { type Messages } from '../_shared/types.ts';
-import { DialecticStageSlug, FileType } from '../_shared/types/file_manager.types.ts';
-import { isDialecticStageSlug } from "../_shared/utils/type-guards/type_guards.file_manager.ts";
+} from '../../_shared/utils/type_guards.ts';
+import { type Messages } from '../../_shared/types.ts';
+import { DialecticStageSlug, FileType } from '../../_shared/types/file_manager.types.ts';
+import { isDialecticStageSlug } from "../../_shared/utils/type-guards/type_guards.file_manager.ts";
 import {
   buildDialecticContributionRow,
   buildDialecticExecuteJobPayload,
@@ -33,11 +33,11 @@ import {
   buildMessages,
   buildUnifiedAIResponse,
   invalidateDialecticExecuteJobPayload,
-} from '../_shared/dialectic.mock.ts';
+} from '../../_shared/dialectic.mock.ts';
 import {
   buildDialecticCompressJobPayload,
   isDialecticCompressJobPayload,
-} from './enqueueCompressJobs/enqueueCompressJobs.provides.ts';
+} from '../enqueueCompressJobs/enqueueCompressJobs.provides.ts';
 
 Deno.test('continueJob', async (t) => {
     // =================================================================

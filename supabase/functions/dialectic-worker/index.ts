@@ -12,7 +12,7 @@ import { processSimpleJob } from './processSimpleJob.ts';
 import { processComplexJob } from './processComplexJob.ts';
 import { planComplexStage } from './task_isolator.ts';
 import { getSeedPromptForStage } from '../_shared/utils/dialectic_utils.ts';
-import { continueJob } from './continueJob.ts';
+import { continueJob } from './continueJob/continueJob.ts';
 import { retryJob } from './retryJob.ts';
 import {
   downloadFromStorage,

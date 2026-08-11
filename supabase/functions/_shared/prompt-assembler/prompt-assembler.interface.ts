@@ -44,7 +44,7 @@ export interface AssembleTurnPromptParams {
   sourceContributionId?: string | null;
 }
 
-export type BoundAssembleContinuationPromptFn = (job: DialecticJobRow) => Promise<AssembledPrompt>;
+export type BoundAssembleContinuationPromptFn = (job: DialecticJobRow) => Promise<AssembleContinuationPromptReturn>;
 
 export interface AssembleContinuationPromptDeps {
   dbClient: SupabaseClient<Database>;
@@ -70,6 +70,26 @@ export interface AssembleContinuationPromptDeps {
   /** Addressing collaborator for the COMPRESS branch's two canonical reads. */
   constructStoragePath: ConstructStoragePathFn;
 }
+
+export type AssembleContinuationPromptError = Error;
+
+export interface AssembleContinuationPromptErrorReturn {
+  error: AssembleContinuationPromptError;
+  retriable: boolean;
+}
+
+export type AssembleContinuationPromptReturn =
+  | AssembledPrompt
+  | AssembleContinuationPromptErrorReturn;
+
+export interface ReadArtifactSuccessReturn {
+  content: string;
+}
+
+export type ReadArtifactReturn =
+  | ReadArtifactSuccessReturn
+  | AssembleContinuationPromptErrorReturn;
+
 export interface AssemblePlannerPromptDeps {
   dbClient: SupabaseClient<Database>;
   fileManager: IFileManager;
@@ -118,7 +138,7 @@ export interface IPromptAssembler {
     ): Promise<AssembledPrompt>;
     assembleContinuationPrompt(
         deps: AssembleContinuationPromptDeps,
-    ): Promise<AssembledPrompt>;
+    ): Promise<AssembleContinuationPromptReturn>;
     assembleCompressionPrompt(
         deps: AssembleCompressionPromptDeps,
         params: AssembleCompressionPromptParams,

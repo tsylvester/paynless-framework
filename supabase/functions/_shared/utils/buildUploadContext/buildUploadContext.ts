@@ -74,5 +74,6 @@ export function buildUploadContext(
     sizeBytes: params.contentForStorage.length,
     userId: params.projectOwnerUserId,
     description: params.description,
+    sourcePromptResourceId: params.sourcePromptResourceId,
   };
 }

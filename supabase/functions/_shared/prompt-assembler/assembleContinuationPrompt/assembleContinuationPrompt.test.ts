@@ -1,13 +1,14 @@
   // Helper function to create header context contribution mocks
-  import { assertEquals, assertRejects, assert } from "jsr:@std/assert@0.225.3";
+  import { assertEquals, assertStringIncludes, assert } from "jsr:@std/assert@0.225.3";
   import { spy, type Spy } from "jsr:@std/testing@0.225.1/mock";
   import {
     assembleContinuationPrompt,
     MOCK_CONTINUATION_INSTRUCTION_INCOMPLETE_JSON,
   } from "../assembleContinuationPrompt/assembleContinuationPrompt.ts";
   import {
-    AssembledPrompt,
+    AssembleContinuationPromptReturn,
   } from "../prompt-assembler.interface.ts";
+  import { isAssembleContinuationPromptErrorReturn } from "../prompt-assembler.guard.ts";
   import {
     createMockSupabaseClient,
     type MockSupabaseDataConfig,
@@ -50,6 +51,7 @@
     buildDialecticJobRow,
     buildDialecticExecuteJobPayload,
     buildDialecticPlanJobPayload,
+    invalidateDialecticPlanJobPayload,
     buildDialecticContributionRow,
     buildDialecticRecipeTemplateStep,
     buildHeaderContext,
@@ -200,6 +202,7 @@
                   downloadFromStorage,
                 }),
               );
+              assert(!isAssembleContinuationPromptErrorReturn(result));
 
           // 3. Assert:
           //    - Verify the storage download was called for the header context contribution.
@@ -278,6 +281,7 @@
                   downloadFromStorage,
                 }),
               );
+              assert(!isAssembleContinuationPromptErrorReturn(result));
 
           // 3. Assert:
           //    - Verify the final prompt contains a specific "continue JSON" instruction and the exact partial JSON.
@@ -349,6 +353,7 @@
                   downloadFromStorage,
                 }),
               );
+              assert(!isAssembleContinuationPromptErrorReturn(result));
 
           // 3. Assert:
           //    - Verify a simple "please continue" prompt is built.
@@ -427,7 +432,7 @@
 
             try {
           // 2. Execute:
-              await assembleContinuationPrompt(
+              const result = await assembleContinuationPrompt(
                 buildAssembleContinuationPromptDeps({
                   dbClient: client,
                   fileManager,
@@ -436,6 +441,7 @@
                   downloadFromStorage,
                 }),
               );
+              assert(!isAssembleContinuationPromptErrorReturn(result));
 
           // 3. Assert:
               assertSpyCall(fileManager.uploadAndRegisterFile, 0);
@@ -513,6 +519,7 @@
                 downloadFromStorage,
               }),
             );
+            assert(!isAssembleContinuationPromptErrorReturn(result));
 
           // 3. Assert:
           //    - Verify the prompt contains a specific CORRECTIVE instruction to COMPLETE the JSON.
@@ -591,6 +598,7 @@
                 downloadFromStorage,
               }),
             );
+            assert(!isAssembleContinuationPromptErrorReturn(result));
 
           // 3. Assert:
           //    - Verify the prompt includes both the HeaderContext AND the CORRECTIVE instruction to COMPLETE the JSON.
@@ -663,6 +671,7 @@
                   downloadFromStorage,
                 }),
               );
+              assert(!isAssembleContinuationPromptErrorReturn(result));
 
             // 3. Assert:
             //    - Verify `fileManager.uploadAndRegisterFile` was called with `FileType.ContinuationPrompt`.
@@ -733,6 +742,7 @@
                 downloadFromStorage,
               }),
             );
+            assert(!isAssembleContinuationPromptErrorReturn(result));
 
           // 3. Assert:
           //    - Verify `fileManager.uploadAndRegisterFile` was called with `FileType.ContinuationPrompt`.
@@ -808,6 +818,7 @@
                 downloadFromStorage,
               }),
             );
+            assert(!isAssembleContinuationPromptErrorReturn(result));
 
           // 3. Assert:
           //    - Verify the prompt includes both the HeaderContext  to FIX the JSON syntax.
@@ -879,6 +890,7 @@
                 downloadFromStorage,
               }),
             );
+            assert(!isAssembleContinuationPromptErrorReturn(result));
 
           // 3. Assert:
           //    - Verify `fileManager.uploadAndRegisterFile` was called with `FileType.ContinuationPrompt`.
@@ -947,6 +959,7 @@
                   downloadFromStorage,
                 }),
               );
+              assert(!isAssembleContinuationPromptErrorReturn(result));
 
           // 3. Assert:
           //    - Verify the next prompt is assembled with the correct stateless logic (e.g., still a simple "please continue" instruction).
@@ -1021,6 +1034,7 @@
                   downloadFromStorage,
                 }),
               );
+              assert(!isAssembleContinuationPromptErrorReturn(result));
 
           // 3. Assert:
           //    - Verify the prior output content is present in the resulting prompt.
@@ -1093,6 +1107,7 @@
                   downloadFromStorage,
                 }),
               );
+              assert(!isAssembleContinuationPromptErrorReturn(result));
 
               // 3. Assert:
               //    - Verify the prior output content is present in the resulting prompt.
@@ -1166,6 +1181,7 @@
                   downloadFromStorage,
                 }),
               );
+              assert(!isAssembleContinuationPromptErrorReturn(result));
 
           // 3. Assert:
           //    - Verify the resulting prompt is another CORRECTIVE prompt, asking the model to try again.
@@ -1183,40 +1199,37 @@
       async (t) => {
         // These tests prove the function's fundamental robustness.
     
-        await t.step("D.1: should throw an error if target_contribution_id is not provided in the job payload",
+        await t.step("D.1: should return error arm if target_contribution_id is not provided in the job payload",
           async () => {
             // 1. Execute & Assert:
             //    - Call `assembleContinuationPrompt` with a job missing `target_contribution_id`.
-            //    - Verify `assertRejects` with a "PRECONDITION_FAILED" error message.
+            //    - Verify error arm with a "PRECONDITION_FAILED" error message and retriable: false.
             const config: MockSupabaseDataConfig = {
               genericMockResults: {
               },
             };
             const { client, fileManager, downloadFromStorage } = setup(config);
-            const executePayload = buildDialecticExecuteJobPayload({
-              target_contribution_id: undefined,
-            });
+            const executePayload = buildDialecticExecuteJobPayload();
             if (!isJson(executePayload)) throw new Error("Test setup: execute payload is not Json");
             const jobWithoutTarget = buildDialecticJobRow({
               payload: executePayload,
             });
 
-            await assertRejects(
-              () => assembleContinuationPrompt(
-                buildAssembleContinuationPromptDeps({
-                  dbClient: client,
-                  fileManager,
-                  job: jobWithoutTarget,
-                  downloadFromStorage,
-                }),
-              ),
-              Error,
-              "PRECONDITION_FAILED"
+            const result: AssembleContinuationPromptReturn = await assembleContinuationPrompt(
+              buildAssembleContinuationPromptDeps({
+                dbClient: client,
+                fileManager,
+                job: jobWithoutTarget,
+                downloadFromStorage,
+              }),
             );
+            assert(isAssembleContinuationPromptErrorReturn(result));
+            assertStringIncludes(result.error.message, "PRECONDITION_FAILED");
+            assertEquals(result.retriable, false);
           },
         );
   
-        await t.step("D.2: should throw an error if a HeaderContext is required (TurnPrompt) but cannot be fetched",
+        await t.step("D.2: should return error arm if a HeaderContext is required (TurnPrompt) but cannot be fetched",
           async () => {
             // 1. Setup:
             //    - Configure a mock 'Turn' job with header_context_id AND target_contribution_id.
@@ -1255,24 +1268,22 @@
             const { client, fileManager, downloadFromStorage } = setup(config);
 
             // 2. Execute & Assert:
-            //    - Verify `assertRejects` with an error message indicating the download failed.
-            await assertRejects(
-              () =>
-                assembleContinuationPrompt(
-                  buildAssembleContinuationPromptDeps({
-                    dbClient: client,
-                    fileManager,
-                    job: mockTurnJob,
-                    downloadFromStorage,
-                  }),
-                ),
-              Error,
-              "Failed to download header context file from storage",
+            //    - Verify error arm with an error message indicating the download failed and retriable: true.
+            const result: AssembleContinuationPromptReturn = await assembleContinuationPrompt(
+              buildAssembleContinuationPromptDeps({
+                dbClient: client,
+                fileManager,
+                job: mockTurnJob,
+                downloadFromStorage,
+              }),
             );
+            assert(isAssembleContinuationPromptErrorReturn(result));
+            assertStringIncludes(result.error.message, "Failed to download header context file from storage");
+            assertEquals(result.retriable, true);
           },
         );
   
-        await t.step("D.3: should NOT throw for missing HeaderContext when not required (Planner/Seed)",
+        await t.step("D.3: should NOT return error arm for missing HeaderContext when not required (Planner/Seed)",
           async () => {
             // 1. Setup:
             //    - Configure a mock 'PLAN' job.
@@ -1315,7 +1326,7 @@
             try {
               // 2. Execute:
               //    - Call `assembleContinuationPrompt`.
-              await assembleContinuationPrompt(
+              const result = await assembleContinuationPrompt(
                 buildAssembleContinuationPromptDeps({
                   dbClient: client,
                   fileManager,
@@ -1325,7 +1336,7 @@
               );
               // 3. Assert:
               //    - The call completes successfully, proving it did not attempt to download a non-existent context.
-              //    - (No assertion needed, success is the test)
+              assert(!isAssembleContinuationPromptErrorReturn(result));
             } finally {
               teardown();
             }
@@ -1373,24 +1384,22 @@
             fileManager.setUploadAndRegisterFileResponse(null, fileManagerError);
 
             // 2. Execute & Assert:
-            //    - Verify `assertRejects` with the exact error from the mock.
-            await assertRejects(
-              () =>
-                assembleContinuationPrompt(
-                  buildAssembleContinuationPromptDeps({
-                    dbClient: client,
-                    fileManager,
-                    job: mockPlannerJob,
-                    downloadFromStorage,
-                  }),
-                ),
-              Error,
-              fileManagerError.message,
+            //    - Verify error arm with the exact error from the mock and retriable: true.
+            const result: AssembleContinuationPromptReturn = await assembleContinuationPrompt(
+              buildAssembleContinuationPromptDeps({
+                dbClient: client,
+                fileManager,
+                job: mockPlannerJob,
+                downloadFromStorage,
+              }),
             );
+            assert(isAssembleContinuationPromptErrorReturn(result));
+            assertStringIncludes(result.error.message, fileManagerError.message);
+            assertEquals(result.retriable, true);
           },
         );
   
-        await t.step("D.5: should throw an error if the session has no selected models",
+        await t.step("D.5: should return error arm if the session has no selected models",
           async () => {
             // 1. Setup:
             //    - Provide a mock `SessionContext` with an empty `selected_model_ids` array.
@@ -1405,21 +1414,19 @@
             });
 
             // 2. Execute & Assert:
-            //    - Verify `assertRejects` with the "no selected model" error message.
-            await assertRejects(
-              () =>
-                assembleContinuationPrompt(
-                  buildAssembleContinuationPromptDeps({
-                    dbClient: client,
-                    fileManager,
-                    job: jobWithModelId,
-                    session: sessionWithNoModels,
-                    downloadFromStorage,
-                  }),
-                ),
-              Error,
-              "Session has no selected models",
+            //    - Verify error arm with the "no selected model" error message and retriable: false.
+            const result: AssembleContinuationPromptReturn = await assembleContinuationPrompt(
+              buildAssembleContinuationPromptDeps({
+                dbClient: client,
+                fileManager,
+                job: jobWithModelId,
+                session: sessionWithNoModels,
+                downloadFromStorage,
+              }),
             );
+            assert(isAssembleContinuationPromptErrorReturn(result));
+            assertStringIncludes(result.error.message, "Session has no selected models");
+            assertEquals(result.retriable, false);
           },
         );
   
@@ -1461,7 +1468,7 @@
             fileManager.setUploadAndRegisterFileResponse(buildFileRecord(), null);
 
             try {
-              await assembleContinuationPrompt(
+              const result = await assembleContinuationPrompt(
                 buildAssembleContinuationPromptDeps({
                   dbClient: client,
                   fileManager,
@@ -1470,6 +1477,7 @@
                   downloadFromStorage,
                 }),
               );
+              assert(!isAssembleContinuationPromptErrorReturn(result));
 
               assertSpyCall(fileManager.uploadAndRegisterFile, 0);
               const uploadArgs =
@@ -1572,6 +1580,7 @@
                   downloadFromStorage,
                 }),
               );
+              assert(!isAssembleContinuationPromptErrorReturn(result));
 
               assertSpyCall(downloadSpy, 0); // At least one call to this bucket
 
@@ -1646,6 +1655,7 @@
                   downloadFromStorage,
                 }),
               );
+              assert(!isAssembleContinuationPromptErrorReturn(result));
 
               assert(!result.promptContent.includes(headerContext.system_materials.agent_notes_to_self));
               assert(result.promptContent.endsWith(partialContent));
@@ -1656,7 +1666,7 @@
         );
   
         await t.step(
-          "10.b.iii: should throw an error when inputs.header_context_id is provided but contribution is not found",
+          "10.b.iii: should return error arm when inputs.header_context_id is provided but contribution is not found",
           async () => {
             const priorContribution = buildDialecticContributionRow({ contribution_type: "antithesis" });
 
@@ -1685,19 +1695,17 @@
             const { client, fileManager, downloadFromStorage } = setup(config);
 
             try {
-              await assertRejects(
-                () =>
-                  assembleContinuationPrompt(
-                    buildAssembleContinuationPromptDeps({
-                      dbClient: client,
-                      fileManager,
-                      job: mockTurnJob,
-                      downloadFromStorage,
-                    }),
-                  ),
-                Error,
-                "contribution",
+              const result: AssembleContinuationPromptReturn = await assembleContinuationPrompt(
+                buildAssembleContinuationPromptDeps({
+                  dbClient: client,
+                  fileManager,
+                  job: mockTurnJob,
+                  downloadFromStorage,
+                }),
               );
+              assert(isAssembleContinuationPromptErrorReturn(result));
+              assertStringIncludes(result.error.message, "contribution");
+              assertEquals(result.retriable, true);
             } finally {
               teardown();
             }
@@ -1780,6 +1788,7 @@
                   downloadFromStorage,
                 }),
               );
+              assert(!isAssembleContinuationPromptErrorReturn(result));
 
               assertSpyCall(downloadSpy, 0);
               assertEquals(downloadSpy.calls[0].args[0], fullHeaderPath);
@@ -1857,6 +1866,7 @@
                   downloadFromStorage,
                 }),
               );
+              assert(!isAssembleContinuationPromptErrorReturn(result));
               assertEquals(result.messages, chainMessages);
               assert(result.promptContent.includes("Please continue from the assistant output."));
               assert(!result.promptContent.includes("Seed prompt."));
@@ -1924,6 +1934,7 @@
                   downloadFromStorage,
                 }),
               );
+              assert(!isAssembleContinuationPromptErrorReturn(result));
               assertEquals(result.messages, singleFragmentMessages);
               assert(result.promptContent.includes("Third user continuation line."));
               assert(!result.promptContent.includes("Initial user prompt."));
@@ -2003,7 +2014,7 @@
             fileManager.setUploadAndRegisterFileResponse(buildFileRecord(), null);
 
             try {
-              await assembleContinuationPrompt(
+              const result = await assembleContinuationPrompt(
                 buildAssembleContinuationPromptDeps({
                   dbClient: client,
                   fileManager,
@@ -2012,6 +2023,7 @@
                   downloadFromStorage,
                 }),
               );
+              assert(!isAssembleContinuationPromptErrorReturn(result));
               assertSpyCall(gatherSpy, 0);
               const gatherParams: GatherContinuationInputsParams = gatherSpy.calls[0].args[1];
               assertEquals(gatherParams.chunkId, rootContribution.id);
@@ -2089,6 +2101,7 @@
                   downloadFromStorage,
                 }),
               );
+              assert(!isAssembleContinuationPromptErrorReturn(result));
               assert(result.promptContent.includes(headerContext.system_materials.agent_notes_to_self));
               assert(result.promptContent.includes("Continuation after header."));
               assert(!result.promptContent.includes("User prompt."));
@@ -2148,7 +2161,7 @@
             fileManager.setUploadAndRegisterFileResponse(fileRecord, null);
 
             try {
-              await assembleContinuationPrompt(
+              const result = await assembleContinuationPrompt(
                 buildAssembleContinuationPromptDeps({
                   dbClient: client,
                   fileManager,
@@ -2157,6 +2170,7 @@
                   downloadFromStorage,
                 }),
               );
+              assert(!isAssembleContinuationPromptErrorReturn(result));
               assertSpyCall(fileManager.uploadAndRegisterFile, 0);
               const uploadArg = fileManager.uploadAndRegisterFile.calls[0].args[0];
               const savedContent: string =
@@ -2216,21 +2230,18 @@
             fileManager.setUploadAndRegisterFileResponse(buildFileRecord(), null);
 
             try {
-              await assertRejects(
-                async () => {
-                  await assembleContinuationPrompt(
-                    buildAssembleContinuationPromptDeps({
-                      dbClient: client,
-                      fileManager,
-                      job,
-                      gatherContinuationInputs: gatherMock,
-                      downloadFromStorage,
-                    }),
-                  );
-                },
-                Error,
-                gatherErrorMessage,
+              const result: AssembleContinuationPromptReturn = await assembleContinuationPrompt(
+                buildAssembleContinuationPromptDeps({
+                  dbClient: client,
+                  fileManager,
+                  job,
+                  gatherContinuationInputs: gatherMock,
+                  downloadFromStorage,
+                }),
               );
+              assert(isAssembleContinuationPromptErrorReturn(result));
+              assertStringIncludes(result.error.message, gatherErrorMessage);
+              assertEquals(result.retriable, false);
             } finally {
               teardown();
             }
@@ -2330,7 +2341,7 @@
             fileManager.setUploadAndRegisterFileResponse(buildFileRecord(), null);
 
             try {
-              const result: AssembledPrompt = await assembleContinuationPrompt(
+              const result: AssembleContinuationPromptReturn = await assembleContinuationPrompt(
                 buildAssembleContinuationPromptDeps({
                   dbClient: client,
                   fileManager,
@@ -2339,6 +2350,7 @@
                   downloadFromStorage,
                 }),
               );
+              assert(!isAssembleContinuationPromptErrorReturn(result));
               assertEquals(result.messages, three);
             } finally {
               teardown();
@@ -2403,7 +2415,7 @@
             fileManager.setUploadAndRegisterFileResponse(buildFileRecord(), null);
 
             try {
-              const result: AssembledPrompt = await assembleContinuationPrompt(
+              const result: AssembleContinuationPromptReturn = await assembleContinuationPrompt(
                 buildAssembleContinuationPromptDeps({
                   dbClient: client,
                   fileManager,
@@ -2412,6 +2424,7 @@
                   downloadFromStorage,
                 }),
               );
+              assert(!isAssembleContinuationPromptErrorReturn(result));
               assert(result.promptContent.includes("THIRD_ONLY_IN_PROMPT"));
               assert(result.promptContent.includes(headerContext.system_materials.agent_notes_to_self));
               assert(!result.promptContent.includes("NOT_IN_PROMPT_BODY"));
@@ -2434,21 +2447,18 @@
             fileManager.setUploadAndRegisterFileResponse(buildFileRecord(), null);
 
             try {
-              await assertRejects(
-                async () => {
-                  await assembleContinuationPrompt(
-                    buildAssembleContinuationPromptDeps({
-                      dbClient: client,
-                      fileManager,
-                      job: checklistJob,
-                      gatherContinuationInputs: gatherMock,
-                      downloadFromStorage,
-                    }),
-                  );
-                },
-                Error,
-                errText,
+              const result: AssembleContinuationPromptReturn = await assembleContinuationPrompt(
+                buildAssembleContinuationPromptDeps({
+                  dbClient: client,
+                  fileManager,
+                  job: checklistJob,
+                  gatherContinuationInputs: gatherMock,
+                  downloadFromStorage,
+                }),
               );
+              assert(isAssembleContinuationPromptErrorReturn(result));
+              assertStringIncludes(result.error.message, errText);
+              assertEquals(result.retriable, false);
             } finally {
               teardown();
             }
@@ -2472,7 +2482,7 @@
             fileManager.setUploadAndRegisterFileResponse(fileRecord, null);
 
             try {
-              const result: AssembledPrompt = await assembleContinuationPrompt(
+              const result: AssembleContinuationPromptReturn = await assembleContinuationPrompt(
                 buildAssembleContinuationPromptDeps({
                   dbClient: client,
                   fileManager,
@@ -2481,6 +2491,7 @@
                   downloadFromStorage,
                 }),
               );
+              assert(!isAssembleContinuationPromptErrorReturn(result));
               assertSpyCall(fileManager.uploadAndRegisterFile, 0);
               const uploadArg = fileManager.uploadAndRegisterFile.calls[0].args[0];
               assert(typeof uploadArg.fileContent === "string");
@@ -2561,6 +2572,7 @@
                   constructStoragePath: constructStoragePathSpy,
                 }),
               );
+              assert(!isAssembleContinuationPromptErrorReturn(result));
 
               // Assert messages shape
               assertEquals(result.messages?.length, 3);
@@ -2626,7 +2638,7 @@
             fileManager.setUploadAndRegisterFileResponse(buildFileRecord(), null);
 
             try {
-              await assembleContinuationPrompt(
+              const result = await assembleContinuationPrompt(
                 buildAssembleContinuationPromptDeps({
                   dbClient: client,
                   fileManager,
@@ -2635,6 +2647,7 @@
                   constructStoragePath: constructStoragePathSpy,
                 }),
               );
+              assert(!isAssembleContinuationPromptErrorReturn(result));
 
               assertSpyCall(fileManager.uploadAndRegisterFile, 0);
               const uploadContext = fileManager.uploadAndRegisterFile.calls[0].args[0];
@@ -2693,7 +2706,7 @@
             fileManager.setUploadAndRegisterFileResponse(buildFileRecord(), null);
 
             try {
-              await assembleContinuationPrompt(
+              const result = await assembleContinuationPrompt(
                 buildAssembleContinuationPromptDeps({
                   dbClient: client,
                   fileManager,
@@ -2702,6 +2715,7 @@
                   constructStoragePath: constructStoragePathSpy,
                 }),
               );
+              assert(!isAssembleContinuationPromptErrorReturn(result));
 
               // Assert two calls to constructStoragePath
               assertEquals(constructStoragePathSpy.calls.length, 2);
@@ -2760,19 +2774,18 @@
             fileManager.setUploadAndRegisterFileResponse(buildFileRecord(), null);
 
             try {
-              await assertRejects(
-                () => assembleContinuationPrompt(
-                  buildAssembleContinuationPromptDeps({
-                    dbClient: client,
-                    fileManager,
-                    job: compressJob,
-                    downloadFromStorage,
-                    constructStoragePath: constructStoragePathSpy,
-                  }),
-                ),
-                Error,
-                "First-pass compression prompt not found",
+              const result: AssembleContinuationPromptReturn = await assembleContinuationPrompt(
+                buildAssembleContinuationPromptDeps({
+                  dbClient: client,
+                  fileManager,
+                  job: compressJob,
+                  downloadFromStorage,
+                  constructStoragePath: constructStoragePathSpy,
+                }),
               );
+              assert(isAssembleContinuationPromptErrorReturn(result));
+              assertStringIncludes(result.error.message, "First-pass compression prompt not found");
+              assertEquals(result.retriable, true);
             } finally {
               teardown();
             }
@@ -2818,36 +2831,28 @@
             fileManager.setUploadAndRegisterFileResponse(buildFileRecord(), null);
 
             try {
-              await assertRejects(
-                () => assembleContinuationPrompt(
-                  buildAssembleContinuationPromptDeps({
-                    dbClient: client,
-                    fileManager,
-                    job: compressJob,
-                    downloadFromStorage,
-                    constructStoragePath: constructStoragePathSpy,
-                  }),
-                ),
-                Error,
-                "Prior compression output not found",
+              const result: AssembleContinuationPromptReturn = await assembleContinuationPrompt(
+                buildAssembleContinuationPromptDeps({
+                  dbClient: client,
+                  fileManager,
+                  job: compressJob,
+                  downloadFromStorage,
+                  constructStoragePath: constructStoragePathSpy,
+                }),
               );
+              assert(isAssembleContinuationPromptErrorReturn(result));
+              assertStringIncludes(result.error.message, "Prior compression output not found");
+              assertEquals(result.retriable, true);
             } finally {
               teardown();
             }
           },
         );
 
-        // G.5: Rejected payload takes contribution branch, fails on target_contribution_id
+        // G.5: Selection by job_type column — non-COMPRESS takes contribution branch, COMPRESS with bad payload reports guard diagnostic
         await t.step(
-          "G.5: payload rejected by isDialecticCompressJobPayload takes contribution branch and fails on target_contribution_id",
+          "G.5: a non-COMPRESS row takes the contribution branch (target_contribution_id precondition on error arm); a COMPRESS row with bad payload reports the guard diagnostic on the error arm",
           async () => {
-            const rejectedPayload = invalidateDialecticCompressJobPayload({ targetKey: null });
-            if (!isJson(rejectedPayload)) throw new Error("Test setup: rejected payload is not Json");
-            const rejectedJob = buildDialecticJobRow({
-              job_type: "COMPRESS",
-              payload: rejectedPayload,
-            });
-
             const constructStoragePathSpy = spy(() =>
               ({ storagePath: "mock", fileName: "mock.json" })
             ) as unknown as Spy<ConstructStoragePathFn>;
@@ -2858,20 +2863,49 @@
             const { client, fileManager, downloadFromStorage } = setup(config);
 
             try {
-              await assertRejects(
-                () => assembleContinuationPrompt(
-                  buildAssembleContinuationPromptDeps({
-                    dbClient: client,
-                    fileManager,
-                    job: rejectedJob,
-                    downloadFromStorage,
-                    constructStoragePath: constructStoragePathSpy,
-                  }),
-                ),
-                Error,
-                "PRECONDITION_FAILED",
+              // Row 1: non-COMPRESS row takes the contribution branch and fails on target_contribution_id
+              const executePayload = buildDialecticExecuteJobPayload();
+              if (!isJson(executePayload)) throw new Error("Test setup: execute payload is not Json");
+              const nonCompressJob = buildDialecticJobRow({
+                job_type: "EXECUTE",
+                payload: executePayload,
+              });
+
+              const nonCompressResult: AssembleContinuationPromptReturn = await assembleContinuationPrompt(
+                buildAssembleContinuationPromptDeps({
+                  dbClient: client,
+                  fileManager,
+                  job: nonCompressJob,
+                  downloadFromStorage,
+                  constructStoragePath: constructStoragePathSpy,
+                }),
               );
-              // constructStoragePath was never called — the contribution branch never reaches it
+              assert(isAssembleContinuationPromptErrorReturn(nonCompressResult));
+              assertStringIncludes(nonCompressResult.error.message, "PRECONDITION_FAILED");
+              assertEquals(nonCompressResult.retriable, false);
+
+              // Row 2: COMPRESS row with bad payload reports the guard's per-member diagnostic
+              const rejectedPayload = invalidateDialecticCompressJobPayload({ targetKey: null });
+              if (!isJson(rejectedPayload)) throw new Error("Test setup: rejected payload is not Json");
+              const rejectedJob = buildDialecticJobRow({
+                job_type: "COMPRESS",
+                payload: rejectedPayload,
+              });
+
+              const rejectedResult: AssembleContinuationPromptReturn = await assembleContinuationPrompt(
+                buildAssembleContinuationPromptDeps({
+                  dbClient: client,
+                  fileManager,
+                  job: rejectedJob,
+                  downloadFromStorage,
+                  constructStoragePath: constructStoragePathSpy,
+                }),
+              );
+              assert(isAssembleContinuationPromptErrorReturn(rejectedResult));
+              assertStringIncludes(rejectedResult.error.message, "targetKey");
+              assertEquals(rejectedResult.retriable, false);
+
+              // constructStoragePath was never called — neither arm reaches it
               assertEquals(constructStoragePathSpy.calls.length, 0);
             } finally {
               teardown();
@@ -2927,6 +2961,7 @@
                   constructStoragePath: constructStoragePathSpy,
                 }),
               );
+              assert(!isAssembleContinuationPromptErrorReturn(result));
               assert(typeof result.promptContent === "string");
             } finally {
               teardown();
@@ -2987,6 +3022,7 @@
                   gatherContinuationInputs: undefined,
                 }),
               );
+              assert(!isAssembleContinuationPromptErrorReturn(result));
               assert(typeof result.promptContent === "string");
               assert(typeof result.source_prompt_resource_id === "string");
             } finally {
@@ -3042,7 +3078,7 @@
             fileManager.setUploadAndRegisterFileResponse(buildFileRecord(), null);
 
             try {
-              await assembleContinuationPrompt(
+              const result = await assembleContinuationPrompt(
                 buildAssembleContinuationPromptDeps({
                   dbClient: client,
                   fileManager,
@@ -3052,11 +3088,72 @@
                   gatherContinuationInputs: gatherContinuationInputsSpy,
                 }),
               );
+              assert(!isAssembleContinuationPromptErrorReturn(result));
 
               // gatherContinuationInputs was never called
               assertEquals(gatherContinuationInputsSpy.calls.length, 0);
               // dialectic_contributions was never queried
               assertEquals(dialecticContributionsCalled, false);
+            } finally {
+              teardown();
+            }
+          },
+        );
+
+        // G.9: COMPRESS upload context carries userId from job.user_id
+        await t.step(
+          "G.9: COMPRESS upload context carries userId from job.user_id",
+          async () => {
+            const compressPayload = buildDialecticCompressJobPayload({ mode: "json" });
+            if (!isJson(compressPayload)) throw new Error("Test setup: compress payload is not Json");
+            const compressJob = buildDialecticJobRow({
+              job_type: "COMPRESS",
+              payload: compressPayload,
+              user_id: "compress-user-123",
+            });
+
+            const firstPassResource = buildDialecticProjectResourceRow({ storage_path: "compress/prompt", file_name: "prompt.json" });
+            const partialResource = buildDialecticProjectResourceRow({ storage_path: "compress/output", file_name: "output.json" });
+            const firstPassKey = `${firstPassResource.storage_path}/${firstPassResource.file_name}`;
+            const partialKey = `${partialResource.storage_path}/${partialResource.file_name}`;
+
+            const constructStoragePathSpy = spy((ctx: Parameters<ConstructStoragePathFn>[0]) => {
+              if (ctx.fileType === FileType.CompressionPrompt) {
+                return { storagePath: firstPassResource.storage_path, fileName: firstPassResource.file_name };
+              }
+              return { storagePath: partialResource.storage_path, fileName: partialResource.file_name };
+            }) as unknown as Spy<ConstructStoragePathFn>;
+
+            const config: MockSupabaseDataConfig = {
+              genericMockResults: {
+                dialectic_project_resources: createProjectResourcesMock({
+                  [firstPassKey]: firstPassResource,
+                  [partialKey]: partialResource,
+                }),
+              },
+              storageMock: {
+                downloadResult: () =>
+                  Promise.resolve({ data: new Blob(["content"]), error: null }),
+              },
+            };
+            const { client, fileManager, downloadFromStorage } = setup(config);
+            fileManager.setUploadAndRegisterFileResponse(buildFileRecord(), null);
+
+            try {
+              const result = await assembleContinuationPrompt(
+                buildAssembleContinuationPromptDeps({
+                  dbClient: client,
+                  fileManager,
+                  job: compressJob,
+                  downloadFromStorage,
+                  constructStoragePath: constructStoragePathSpy,
+                }),
+              );
+              assert(!isAssembleContinuationPromptErrorReturn(result));
+
+              assertSpyCall(fileManager.uploadAndRegisterFile, 0);
+              const uploadContext = fileManager.uploadAndRegisterFile.calls[0].args[0];
+              assertEquals(uploadContext.userId, "compress-user-123");
             } finally {
               teardown();
             }
@@ -3113,6 +3210,7 @@
                   downloadFromStorage,
                 }),
               );
+              assert(!isAssembleContinuationPromptErrorReturn(result));
               assert(typeof result.promptContent === "string");
             } finally {
               teardown();
@@ -3120,9 +3218,9 @@
           },
         );
 
-        // H.2: Contribution call omitting session throws PRECONDITION_FAILED naming session
+        // H.2: Contribution call omitting session returns error arm with PRECONDITION_FAILED naming session
         await t.step(
-          "H.2: contribution call omitting session throws PRECONDITION_FAILED naming session",
+          "H.2: contribution call omitting session returns error arm with PRECONDITION_FAILED naming session",
           async () => {
             const priorContribution = buildDialecticContributionRow({ contribution_type: "antithesis" });
             const plannerPayload = buildDialecticPlanJobPayload({
@@ -3144,28 +3242,27 @@
             const { client, fileManager, downloadFromStorage } = setup(config);
 
             try {
-              await assertRejects(
-                () => assembleContinuationPrompt(
-                  buildAssembleContinuationPromptDeps({
-                    dbClient: client,
-                    fileManager,
-                    job: mockPlannerJob,
-                    session: undefined,
-                    downloadFromStorage,
-                  }),
-                ),
-                Error,
-                "PRECONDITION_FAILED",
+              const result: AssembleContinuationPromptReturn = await assembleContinuationPrompt(
+                buildAssembleContinuationPromptDeps({
+                  dbClient: client,
+                  fileManager,
+                  job: mockPlannerJob,
+                  session: undefined,
+                  downloadFromStorage,
+                }),
               );
+              assert(isAssembleContinuationPromptErrorReturn(result));
+              assertStringIncludes(result.error.message, "PRECONDITION_FAILED");
+              assertEquals(result.retriable, false);
             } finally {
               teardown();
             }
           },
         );
 
-        // H.3: Contribution call omitting gatherContinuationInputs throws PRECONDITION_FAILED naming it
+        // H.3: Contribution call omitting gatherContinuationInputs returns error arm with PRECONDITION_FAILED naming it
         await t.step(
-          "H.3: contribution call omitting gatherContinuationInputs throws PRECONDITION_FAILED naming gatherContinuationInputs",
+          "H.3: contribution call omitting gatherContinuationInputs returns error arm with PRECONDITION_FAILED naming gatherContinuationInputs",
           async () => {
             const priorContribution = buildDialecticContributionRow({ contribution_type: "antithesis" });
             const fullPriorPath = `${priorContribution.storage_path}/${priorContribution.file_name}`;
@@ -3199,19 +3296,181 @@
             const { client, fileManager, downloadFromStorage } = setup(config);
 
             try {
-              await assertRejects(
-                () => assembleContinuationPrompt(
-                  buildAssembleContinuationPromptDeps({
-                    dbClient: client,
-                    fileManager,
-                    job: mockPlannerJob,
-                    gatherContinuationInputs: undefined,
-                    downloadFromStorage,
-                  }),
-                ),
-                Error,
-                "PRECONDITION_FAILED",
+              const result: AssembleContinuationPromptReturn = await assembleContinuationPrompt(
+                buildAssembleContinuationPromptDeps({
+                  dbClient: client,
+                  fileManager,
+                  job: mockPlannerJob,
+                  gatherContinuationInputs: undefined,
+                  downloadFromStorage,
+                }),
               );
+              assert(isAssembleContinuationPromptErrorReturn(result));
+              assertStringIncludes(result.error.message, "PRECONDITION_FAILED");
+              assertEquals(result.retriable, false);
+            } finally {
+              teardown();
+            }
+          },
+        );
+      },
+    );
+
+    await t.step("Category I: Contribution arm gate selection and retriable partition",
+      async (t) => {
+        /**
+         * Contract: a PLAN row whose payload isDialecticPlanJobPayload rejects returns the plan gate
+         *   message on the error arm with retriable: false; a PLAN row carrying a built plan payload
+         *   passes the gate and reaches its own first precondition (target_contribution_id) instead.
+         *   Both rows arranged in the one case so neither assertion can hold if the plan gate were
+         *   replaced by the execute guard.
+         * Arrange: Row 1 — a PLAN row with sessionId null (plan guard returns false). Row 2 — a PLAN
+         *   row with a built plan payload (no target_contribution_id, plan guard returns true).
+         * Act:     assembleContinuationPrompt on each row.
+         * Assert:  Row 1 — error arm, "PRECONDITION_FAILED: Job payload is not a valid plan job
+         *   payload.", retriable: false. Row 2 — error arm, "PRECONDITION_FAILED:
+         *   target_contribution_id is required", retriable: false. constructStoragePath never called.
+         */
+        await t.step(
+          "I.1: a PLAN row whose payload isDialecticPlanJobPayload rejects returns the plan gate message; a PLAN row with a built plan payload passes the gate and reaches its own first precondition",
+          async () => {
+            // Arrange
+            const constructStoragePathSpy = spy(() =>
+              ({ storagePath: "mock", fileName: "mock.json" })
+            ) as unknown as Spy<ConstructStoragePathFn>;
+
+            const config: MockSupabaseDataConfig = {
+              genericMockResults: {},
+            };
+            const { client, fileManager, downloadFromStorage } = setup(config);
+
+            try {
+              // Row 1: PLAN row with a rejected plan payload — plan guard returns false
+              const rejectedPlanPayload = invalidateDialecticPlanJobPayload({ sessionId: null });
+              if (!isJson(rejectedPlanPayload)) throw new Error("Test setup: rejected plan payload is not Json");
+              const rejectedPlanJob = buildDialecticJobRow({
+                job_type: "PLAN",
+                payload: rejectedPlanPayload,
+              });
+
+              // Act
+              const rejectedResult: AssembleContinuationPromptReturn = await assembleContinuationPrompt(
+                buildAssembleContinuationPromptDeps({
+                  dbClient: client,
+                  fileManager,
+                  job: rejectedPlanJob,
+                  downloadFromStorage,
+                  constructStoragePath: constructStoragePathSpy,
+                }),
+              );
+
+              // Assert
+              assert(isAssembleContinuationPromptErrorReturn(rejectedResult));
+              assertStringIncludes(rejectedResult.error.message, "PRECONDITION_FAILED: Job payload is not a valid plan job payload.");
+              assertEquals(rejectedResult.retriable, false);
+
+              // Row 2: PLAN row with a built plan payload — passes the gate, reaches target_contribution_id precondition
+              const builtPlanPayload = buildDialecticPlanJobPayload();
+              if (!isJson(builtPlanPayload)) throw new Error("Test setup: built plan payload is not Json");
+              const builtPlanJob = buildDialecticJobRow({
+                job_type: "PLAN",
+                payload: builtPlanPayload,
+              });
+
+              // Act
+              const builtResult: AssembleContinuationPromptReturn = await assembleContinuationPrompt(
+                buildAssembleContinuationPromptDeps({
+                  dbClient: client,
+                  fileManager,
+                  job: builtPlanJob,
+                  downloadFromStorage,
+                  constructStoragePath: constructStoragePathSpy,
+                }),
+              );
+
+              // Assert
+              assert(isAssembleContinuationPromptErrorReturn(builtResult));
+              assertStringIncludes(builtResult.error.message, "PRECONDITION_FAILED: target_contribution_id is required");
+              assertEquals(builtResult.retriable, false);
+
+              // constructStoragePath was never called — neither row reaches it
+              assertEquals(constructStoragePathSpy.calls.length, 0);
+            } finally {
+              teardown();
+            }
+          },
+        );
+
+        /**
+         * Contract: the root-contribution walk's row read returns the error arm with retriable: true
+         *   (a database read that could differ on a later attempt), while a precondition failure
+         *   returns retriable: false — the partition is proven by both rows in the one case.
+         * Arrange: Row 1 — an EXECUTE row with target_contribution_id undefined (reaches the
+         *   precondition, retriable: false). Row 2 — an EXECUTE row with a valid
+         *   target_contribution_id that the contributions mock does not know (reaches the
+         *   root-contribution walk, row read fails, retriable: true).
+         * Act:     assembleContinuationPrompt on each row.
+         * Assert:  Row 1 — error arm, "PRECONDITION_FAILED: target_contribution_id is required",
+         *   retriable: false. Row 2 — error arm, "Failed to resolve prior contribution",
+         *   retriable: true.
+         */
+        await t.step(
+          "I.2: root-contribution walk row read returns error arm with retriable: true, arranged beside a precondition case asserting retriable: false",
+          async () => {
+            // Arrange
+            const config: MockSupabaseDataConfig = {
+              genericMockResults: {
+                dialectic_contributions: createContributionsMock({}),
+              },
+            };
+            const { client, fileManager, downloadFromStorage } = setup(config);
+
+            try {
+              // Row 1: precondition failure — target_contribution_id missing
+              const preconditionPayload = buildDialecticExecuteJobPayload();
+              if (!isJson(preconditionPayload)) throw new Error("Test setup: precondition payload is not Json");
+              const preconditionJob = buildDialecticJobRow({
+                payload: preconditionPayload,
+              });
+
+              // Act
+              const preconditionResult: AssembleContinuationPromptReturn = await assembleContinuationPrompt(
+                buildAssembleContinuationPromptDeps({
+                  dbClient: client,
+                  fileManager,
+                  job: preconditionJob,
+                  downloadFromStorage,
+                }),
+              );
+
+              // Assert
+              assert(isAssembleContinuationPromptErrorReturn(preconditionResult));
+              assertStringIncludes(preconditionResult.error.message, "PRECONDITION_FAILED: target_contribution_id is required");
+              assertEquals(preconditionResult.retriable, false);
+
+              // Row 2: root-contribution walk failure — valid target_contribution_id not in mock
+              const walkPayload = buildDialecticExecuteJobPayload({
+                target_contribution_id: "nonexistent-contribution-id",
+              });
+              if (!isJson(walkPayload)) throw new Error("Test setup: walk payload is not Json");
+              const walkJob = buildDialecticJobRow({
+                payload: walkPayload,
+              });
+
+              // Act
+              const walkResult: AssembleContinuationPromptReturn = await assembleContinuationPrompt(
+                buildAssembleContinuationPromptDeps({
+                  dbClient: client,
+                  fileManager,
+                  job: walkJob,
+                  downloadFromStorage,
+                }),
+              );
+
+              // Assert
+              assert(isAssembleContinuationPromptErrorReturn(walkResult));
+              assertStringIncludes(walkResult.error.message, "Failed to resolve prior contribution");
+              assertEquals(walkResult.retriable, true);
             } finally {
               teardown();
             }

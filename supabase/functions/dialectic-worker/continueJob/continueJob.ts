@@ -1,21 +1,21 @@
-import type { Database } from '../types_db.ts';
-import type { DialecticExecuteJobPayload } from '../dialectic-service/dialectic.interface.ts';
+import type { Database } from '../../types_db.ts';
+import type { DialecticExecuteJobPayload } from '../../dialectic-service/dialectic.interface.ts';
 import {
   isContinuablePayload,
   isDialecticExecuteJobPayload,
   isJson,
   isDocumentRelationships,
-} from '../_shared/utils/type_guards.ts';
+} from '../../_shared/utils/type_guards.ts';
 import {
   isDialecticStageSlug,
   isModelContributionFileType,
-} from '../_shared/utils/type-guards/type_guards.file_manager.ts';
-import type { CanonicalPathParams } from '../_shared/types/file_manager.types.ts';
-import type { ContinueJobFn } from './createJobContext/JobContext.interface.ts';
+} from '../../_shared/utils/type-guards/type_guards.file_manager.ts';
+import type { CanonicalPathParams } from '../../_shared/types/file_manager.types.ts';
+import type { ContinueJobFn } from '../createJobContext/JobContext.interface.ts';
 import {
   isDialecticCompressJobPayload,
   type DialecticCompressJobPayload,
-} from './enqueueCompressJobs/enqueueCompressJobs.provides.ts';
+} from '../enqueueCompressJobs/enqueueCompressJobs.provides.ts';
 
 type JobInsert = Database['public']['Tables']['dialectic_generation_jobs']['Insert'];
 

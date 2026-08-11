@@ -742,6 +742,7 @@ export type Database = {
           session_id: string | null
           size_bytes: number
           source_contribution_id: string | null
+          source_prompt_resource_id: string | null
           stage_slug: string | null
           storage_bucket: string
           storage_path: string
@@ -760,6 +761,7 @@ export type Database = {
           session_id?: string | null
           size_bytes: number
           source_contribution_id?: string | null
+          source_prompt_resource_id?: string | null
           stage_slug?: string | null
           storage_bucket?: string
           storage_path: string
@@ -778,6 +780,7 @@ export type Database = {
           session_id?: string | null
           size_bytes?: number
           source_contribution_id?: string | null
+          source_prompt_resource_id?: string | null
           stage_slug?: string | null
           storage_bucket?: string
           storage_path?: string
@@ -790,6 +793,13 @@ export type Database = {
             columns: ["project_id"]
             isOneToOne: false
             referencedRelation: "dialectic_projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fk_project_resources_source_prompt_resource_id"
+            columns: ["source_prompt_resource_id"]
+            isOneToOne: false
+            referencedRelation: "dialectic_project_resources"
             referencedColumns: ["id"]
           },
           {

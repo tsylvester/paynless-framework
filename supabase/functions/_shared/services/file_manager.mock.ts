@@ -76,6 +76,7 @@ export function buildPathContext(
     stageSlug: DialecticStageSlug.Thesis,
     modelSlug: 'mock-model',
     attemptCount: 0,
+    documentKey: FileType.business_case,
   };
   return overrides ? { ...base, ...overrides } : base;
 }
@@ -88,6 +89,62 @@ export function invalidatePathContext(
   corruptions: PathContextCorruptions,
 ): unknown {
   return { ...buildPathContext(), ...corruptions };
+}
+
+export type ResourcePathContextOverrides = Partial<ResourceUploadContext['pathContext']>;
+
+export function buildResourcePathContext(
+  overrides?: ResourcePathContextOverrides,
+): ResourceUploadContext['pathContext'] {
+  const base: ResourceUploadContext['pathContext'] = {
+    projectId: 'project-uuid-123',
+    fileType: FileType.RenderedDocument,
+    sessionId: 'session-uuid-456',
+    iteration: 1,
+    stageSlug: DialecticStageSlug.Thesis,
+    modelSlug: 'mock-model',
+    attemptCount: 0,
+    originalFileName: 'mock-resource.txt',
+    documentKey: FileType.business_case,
+  };
+  return overrides ? { ...base, ...overrides } : base;
+}
+
+export type ModelContributionPathContextOverrides = Partial<ModelContributionUploadContext['pathContext']>;
+
+export function buildModelContributionPathContext(
+  overrides?: ModelContributionPathContextOverrides,
+): ModelContributionUploadContext['pathContext'] {
+  const base: ModelContributionUploadContext['pathContext'] = {
+    projectId: 'project-uuid-123',
+    fileType: FileType.business_case,
+    sessionId: 'session-uuid-456',
+    iteration: 1,
+    stageSlug: DialecticStageSlug.Thesis,
+    modelSlug: 'mock-model',
+    attemptCount: 0,
+    documentKey: FileType.business_case,
+  };
+  return overrides ? { ...base, ...overrides } : base;
+}
+
+export type UserFeedbackPathContextOverrides = Partial<UserFeedbackUploadContext['pathContext']>;
+
+export function buildUserFeedbackPathContext(
+  overrides?: UserFeedbackPathContextOverrides,
+): UserFeedbackUploadContext['pathContext'] {
+  const base: UserFeedbackUploadContext['pathContext'] = {
+    projectId: 'project-uuid-123',
+    fileType: FileType.UserFeedback,
+    sessionId: 'session-uuid-456',
+    iteration: 1,
+    stageSlug: DialecticStageSlug.Thesis,
+    modelSlug: 'mock-model',
+    documentKey: FileType.business_case,
+    originalStoragePath: 'projects/project-uuid-123/sessions/session-uuid-456/iteration_1/1_thesis',
+    originalBaseName: 'mock-resource',
+  };
+  return overrides ? { ...base, ...overrides } : base;
 }
 
 export type ContributionMetadataOverrides = Partial<ContributionMetadata>;

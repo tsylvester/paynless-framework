@@ -288,6 +288,16 @@ export function isBuildUploadContextResourceParams(
   if (!("description" in value) || typeof value.description !== "string") {
     return false;
   }
+  if (!("sourcePromptResourceId" in value)) {
+    return false;
+  }
+  const sourcePromptResourceId: unknown = value.sourcePromptResourceId;
+  if (
+    sourcePromptResourceId !== undefined &&
+    typeof sourcePromptResourceId !== "string"
+  ) {
+    return false;
+  }
 
   const sourceType: unknown = value.sourceType;
   if (sourceType === "contribution" || sourceType === "resource" || sourceType === "feedback") {

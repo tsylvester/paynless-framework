@@ -10,7 +10,6 @@ import type {
     EnqueueModelCallReturn,
     EnqueueModelCallSuccessReturn,
 } from "./enqueueModelCall.interface.ts";
-import { FileType } from "../../_shared/types/file_manager.types.ts";
 
 Deno.test(
     "Contract: EnqueueModelCallDeps declares five dependency keys",
@@ -27,17 +26,16 @@ Deno.test(
 );
 
 Deno.test(
-    "Contract: EnqueueModelCallParams declares six fields",
+    "Contract: EnqueueModelCallParams declares five fields",
     () => {
         const surface: Record<keyof EnqueueModelCallParams, true> = {
             dbClient: true,
             job: true,
             providerRow: true,
             userAuthToken: true,
-            output_type: true,
             userConfig: true,
         };
-        assertEquals(Object.keys(surface).length, 6);
+        assertEquals(Object.keys(surface).length, 5);
     },
 );
 
@@ -199,17 +197,5 @@ Deno.test(
         };
         assertEquals(paramsUserConfig.tier_output_cap_tokens, null);
         assertEquals(eventUserConfig.tier_output_cap_tokens, null);
-    },
-);
-
-Deno.test(
-    "Contract: EnqueueModelCallParams.output_type is FileType",
-    () => {
-        const compressionOutput: EnqueueModelCallParams["output_type"] =
-            FileType.CompressedContextRawJson;
-        const contributionOutput: EnqueueModelCallParams["output_type"] =
-            FileType.HeaderContext;
-        assertEquals(compressionOutput, FileType.CompressedContextRawJson);
-        assertEquals(contributionOutput, FileType.HeaderContext);
     },
 );

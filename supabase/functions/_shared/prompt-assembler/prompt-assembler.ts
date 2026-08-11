@@ -14,7 +14,8 @@ import {
     AssemblePlannerPromptDeps,
     AssembleTurnPromptDeps,
     AssembleTurnPromptParams,
-    AssembleContinuationPromptDeps
+    AssembleContinuationPromptDeps,
+    AssembleContinuationPromptReturn
 } from "./prompt-assembler.interface.ts";
 import type { DownloadStorageResult } from "../supabase_storage_utils.ts";
 import type { IPromptAssembler } from "./prompt-assembler.interface.ts";
@@ -40,6 +41,7 @@ import { RenderFn } from "./prompt-assembler.interface.ts";
 import { render } from "./render/render.ts";
 import { assembleChunks } from "../utils/assembleChunks/assembleChunks.ts";
 import { constructStoragePath } from "../utils/path_constructor.ts"
+import { isAssembleContinuationPromptErrorReturn } from "./prompt-assembler.guard.ts"
 
 /**
  * PromptAssembler holds references to prompt-assembly collaborators (e.g. `gatherContinuationInputs`)
@@ -56,7 +58,7 @@ export class PromptAssembler implements IPromptAssembler {
     private assembleSeedPromptFn: (deps: AssembleSeedPromptDeps) => Promise<AssembledPrompt>;
     private assemblePlannerPromptFn: (deps: AssemblePlannerPromptDeps) => Promise<AssembledPrompt>;
     private assembleTurnPromptFn: (deps: AssembleTurnPromptDeps, params: AssembleTurnPromptParams) => Promise<AssembledPrompt>;
-    private assembleContinuationPromptFn: (deps: AssembleContinuationPromptDeps) => Promise<AssembledPrompt>;
+    private assembleContinuationPromptFn: (deps: AssembleContinuationPromptDeps) => Promise<AssembleContinuationPromptReturn>;
     private assembleCompressionPromptFn: AssembleCompressionPromptFn;
     private gatherContextFn: GatherContextFn;
     private renderFn: RenderFn;
@@ -71,7 +73,7 @@ export class PromptAssembler implements IPromptAssembler {
         assembleSeedPromptFn?: (deps: AssembleSeedPromptDeps) => Promise<AssembledPrompt>,
         assemblePlannerPromptFn?: (deps: AssemblePlannerPromptDeps) => Promise<AssembledPrompt>,
         assembleTurnPromptFn?: (deps: AssembleTurnPromptDeps, params: AssembleTurnPromptParams) => Promise<AssembledPrompt>,
-        assembleContinuationPromptFn?: (deps: AssembleContinuationPromptDeps) => Promise<AssembledPrompt>,
+        assembleContinuationPromptFn?: (deps: AssembleContinuationPromptDeps) => Promise<AssembleContinuationPromptReturn>,
         gatherContextFn?: GatherContextFn,
         renderFn?: RenderFn,
         gatherInputsForStageFn?: GatherInputsForStageFn,
@@ -104,7 +106,7 @@ export class PromptAssembler implements IPromptAssembler {
 
         if (options.job) {
             if (typeof options.job.target_contribution_id === 'string' && options.job.target_contribution_id.length > 0) {
-                return this.assembleContinuationPrompt({
+                const continuationResult = await this.assembleContinuationPrompt({
                     dbClient: this.dbClient,
                     fileManager: this.fileManager,
                     job: options.job,
@@ -118,7 +120,11 @@ export class PromptAssembler implements IPromptAssembler {
                     sourceContributionId,
                     constructStoragePath
                 });
-            } 
+                if (isAssembleContinuationPromptErrorReturn(continuationResult)) {
+                    throw continuationResult.error;
+                }
+                return continuationResult;
+            }
             
             if (options.stage.recipe_step.job_type === 'PLAN') {
                 return this.assemblePlannerPrompt({
@@ -189,7 +195,7 @@ export class PromptAssembler implements IPromptAssembler {
 
     assembleContinuationPrompt(
         deps: AssembleContinuationPromptDeps
-    ): Promise<AssembledPrompt> {
+    ): Promise<AssembleContinuationPromptReturn> {
         return this.assembleContinuationPromptFn(deps);
     }
 

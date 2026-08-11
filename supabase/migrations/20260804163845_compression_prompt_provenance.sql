@@ -1,0 +1,3 @@
+ALTER TABLE public.dialectic_project_resources
+ADD COLUMN source_prompt_resource_id UUID,
+ADD CONSTRAINT fk_project_resources_source_prompt_resource_id FOREIGN KEY (source_prompt_resource_id) REFERENCES public.dialectic_project_resources(id);

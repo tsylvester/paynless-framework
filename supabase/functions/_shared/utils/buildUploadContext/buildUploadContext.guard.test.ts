@@ -416,6 +416,11 @@ Deno.test("isBuildUploadContextResourceParams rejects each corrupted property", 
       invalidateBuildUploadContextResourceParams({ description: 123 }),
     ),
   );
+  assertFalse(
+    isBuildUploadContextResourceParams(
+      invalidateBuildUploadContextResourceParams({ sourcePromptResourceId: 123 }),
+    ),
+  );
 });
 
 Deno.test("isBuildUploadContextResourceParams rejects each omitted required property", () => {
@@ -448,6 +453,9 @@ Deno.test("isBuildUploadContextResourceParams rejects each omitted required prop
 
   const { description: _de, ...missingDescription } = buildBuildUploadContextResourceParams();
   assertFalse(isBuildUploadContextResourceParams(missingDescription));
+
+  const { sourcePromptResourceId: _spr, ...missingSourcePromptResourceId } = buildBuildUploadContextResourceParams();
+  assertFalse(isBuildUploadContextResourceParams(missingSourcePromptResourceId));
 });
 
 Deno.test("isBuildUploadContextResourceParams rejects sourceType 'contribution' without documentKey", () => {
@@ -543,6 +551,24 @@ Deno.test("isBuildUploadContextResourceParams rejects chunkTotal present without
         chunkIndex: undefined,
         chunkTotal: 2,
       }),
+    ),
+  );
+});
+
+/** Contract: case — sourcePromptResourceId present as a string is accepted. */
+Deno.test("isBuildUploadContextResourceParams accepts sourcePromptResourceId as a string", () => {
+  assert(
+    isBuildUploadContextResourceParams(
+      buildBuildUploadContextResourceParams({ sourcePromptResourceId: "spr-1" }),
+    ),
+  );
+});
+
+/** Contract: case — sourcePromptResourceId present as undefined is accepted. */
+Deno.test("isBuildUploadContextResourceParams accepts sourcePromptResourceId as undefined", () => {
+  assert(
+    isBuildUploadContextResourceParams(
+      buildBuildUploadContextResourceParams({ sourcePromptResourceId: undefined }),
     ),
   );
 });

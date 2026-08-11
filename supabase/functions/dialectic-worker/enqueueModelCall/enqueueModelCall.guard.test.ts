@@ -1,6 +1,5 @@
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import type { EnqueueModelCallDeps } from "./enqueueModelCall.interface.ts";
-import { FileType } from "../../_shared/types/file_manager.types.ts";
 import {
     createMockAiStreamEventBody,
     createMockAiStreamEventData,
@@ -11,7 +10,6 @@ import {
     createMockEnqueueModelCallSuccessReturn,
     invalidateAiStreamEventBody,
     invalidateAiStreamEventData,
-    invalidateEnqueueModelCallParams,
 } from "./enqueueModelCall.mock.ts";
 import {
     isAiStreamEventBody,
@@ -118,7 +116,6 @@ Deno.test(
                 job: full.job,
                 providerRow: full.providerRow,
                 userAuthToken: full.userAuthToken,
-                output_type: full.output_type,
                 userConfig: { tier_output_cap_tokens: null },
             }),
             false,
@@ -135,7 +132,6 @@ Deno.test(
                 dbClient: full.dbClient,
                 providerRow: full.providerRow,
                 userAuthToken: full.userAuthToken,
-                output_type: full.output_type,
                 userConfig: { tier_output_cap_tokens: null },
             }),
             false,
@@ -152,7 +148,6 @@ Deno.test(
                 dbClient: full.dbClient,
                 job: full.job,
                 userAuthToken: full.userAuthToken,
-                output_type: full.output_type,
                 userConfig: { tier_output_cap_tokens: null },
             }),
             false,
@@ -169,24 +164,6 @@ Deno.test(
                 dbClient: full.dbClient,
                 job: full.job,
                 providerRow: full.providerRow,
-                output_type: full.output_type,
-                userConfig: { tier_output_cap_tokens: null },
-            }),
-            false,
-        );
-    },
-);
-
-Deno.test(
-    "Type Guard: isEnqueueModelCallParams returns false when output_type is missing",
-    () => {
-        const full = createMockEnqueueModelCallParams();
-        assertEquals(
-            isEnqueueModelCallParams({
-                dbClient: full.dbClient,
-                job: full.job,
-                providerRow: full.providerRow,
-                userAuthToken: full.userAuthToken,
                 userConfig: { tier_output_cap_tokens: null },
             }),
             false,
@@ -203,43 +180,11 @@ Deno.test(
 );
 
 Deno.test(
-    "Type Guard: isEnqueueModelCallParams returns false when output_type is not a FileType",
+    "Type Guard: isEnqueueModelCallParams returns true for params with a stray output_type key",
     () => {
-        assertEquals(
-            isEnqueueModelCallParams(
-                invalidateEnqueueModelCallParams({ output_type: "___not_a_file_type___" }),
-            ),
-            false,
-        );
-    },
-);
-
-Deno.test(
-    "Type Guard: isEnqueueModelCallParams accepts every model-call output type",
-    () => {
-        const full = createMockEnqueueModelCallParams();
-        assertEquals(
-            isEnqueueModelCallParams({
-                dbClient: full.dbClient,
-                job: full.job,
-                providerRow: full.providerRow,
-                userAuthToken: full.userAuthToken,
-                output_type: FileType.CompressedContextRawJson,
-                userConfig: full.userConfig,
-            }),
-            true,
-        );
-        assertEquals(
-            isEnqueueModelCallParams({
-                dbClient: full.dbClient,
-                job: full.job,
-                providerRow: full.providerRow,
-                userAuthToken: full.userAuthToken,
-                output_type: FileType.CompressedContext,
-                userConfig: full.userConfig,
-            }),
-            true,
-        );
+        const params = createMockEnqueueModelCallParams();
+        const withStray = { ...params, output_type: "stray" };
+        assertEquals(isEnqueueModelCallParams(withStray), true);
     },
 );
 

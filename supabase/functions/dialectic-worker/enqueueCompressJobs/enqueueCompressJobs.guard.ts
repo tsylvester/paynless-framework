@@ -13,6 +13,7 @@ import {
   isSupabaseClientShape,
 } from "../../_shared/utils/type-guards/type_guards.common.ts";
 import { isDialecticStageSlug } from "../../_shared/utils/type-guards/type_guards.file_manager.ts";
+import { isDialecticBaseJobPayload, dialecticBaseJobPayloadAllowedKeys } from "../../_shared/utils/type-guards/type_guards.dialectic.ts";
 import {
   CompressJobEnqueueError,
   CompressJobValidationError,
@@ -26,101 +27,56 @@ import {
 
 export function isDialecticCompressJobPayload(value: unknown): value is DialecticCompressJobPayload {
   if (!isRecord(value)) {
-    return false;
+    throw new Error('Payload must be a non-null object.');
   }
 
-  const requiredKeys: (keyof DialecticCompressJobPayload)[] = [
-    "job_type",
-    "sessionId",
-    "projectId",
-    "stageSlug",
-    "targetKey",
-    "iterationNumber",
-    "model_id",
-    "model_slug",
-    "mode",
-    "content",
-    "sourceType",
-    "walletId",
-    "user_id",
-  ];
-  for (const key of requiredKeys) {
-    if (!(key in value)) {
-      return false;
-    }
+  // Base Payload Checks (delegated — does not catch)
+  isDialecticBaseJobPayload(value);
+
+  // Narrowing checks: required where the base leaves optional
+  if (!('stageSlug' in value) || !isDialecticStageSlug(value.stageSlug)) throw new Error('Missing or invalid stageSlug.');
+  if (!('iterationNumber' in value) || !isNonNegativeInteger(value.iterationNumber)) throw new Error('Missing or invalid iterationNumber.');
+  if (!('model_slug' in value) || !isNonEmptyString(value.model_slug)) throw new Error('Missing or invalid model_slug.');
+
+  // Arm-specific required members
+  if (!('targetKey' in value) || !isModelContributionFileType(value.targetKey)) throw new Error('Missing or invalid targetKey.');
+  if (!('mode' in value) || !isCompressionMode(value.mode)) throw new Error('Missing or invalid mode.');
+  if (!('content' in value) || !isNonEmptyString(value.content)) throw new Error('Missing or invalid content.');
+  if (!('sourceType' in value) || !isCompressionSourceType(value.sourceType)) throw new Error('Missing or invalid sourceType.');
+
+  // Per-sourceType identity members
+  if (value.sourceType === 'contribution' || value.sourceType === 'resource' || value.sourceType === 'feedback') {
+    if (!('documentKey' in value) || !isFileType(value.documentKey)) throw new Error('Missing or invalid documentKey.');
+  } else if (value.sourceType === 'history') {
+    if (!('sourceId' in value) || !isNonEmptyString(value.sourceId)) throw new Error('Missing or invalid sourceId.');
+    if (!('role' in value) || !isCompressionHistoryRole(value.role)) throw new Error('Missing or invalid role.');
   }
 
-  if (value.job_type !== "COMPRESS") {
-    return false;
-  }
-  if (!isNonEmptyString(value.sessionId)) {
-    return false;
-  }
-  if (!isNonEmptyString(value.projectId)) {
-    return false;
-  }
-  if (!isDialecticStageSlug(value.stageSlug)) {
-    return false;
-  }
-  if (!isModelContributionFileType(value.targetKey)) {
-    return false;
-  }
-  if (!isNonNegativeInteger(value.iterationNumber)) {
-    return false;
-  }
-  if (!isNonEmptyString(value.model_id)) {
-    return false;
-  }
-  if (!isNonEmptyString(value.model_slug)) {
-    return false;
-  }
-  if (!isCompressionMode(value.mode)) {
-    return false;
-  }
-  if (!isNonEmptyString(value.content)) {
-    return false;
-  }
-  if (!isCompressionSourceType(value.sourceType)) {
-    return false;
-  }
-  if (!isNonEmptyString(value.walletId)) {
-    return false;
-  }
-  if (!isNonEmptyString(value.user_id)) {
-    return false;
+  // Json-mode trio
+  if (value.mode === 'json') {
+    if (!('documentKey' in value) || !isFileType(value.documentKey)) throw new Error('Missing or invalid documentKey.');
+    if (!('docType' in value) || !isModelContributionFileType(value.docType)) throw new Error('Missing or invalid docType.');
+    if (!('sourceStageSlug' in value) || !isDialecticStageSlug(value.sourceStageSlug)) throw new Error('Missing or invalid sourceStageSlug.');
   }
 
-  if (value.sourceType === "contribution" || value.sourceType === "resource" || value.sourceType === "feedback") {
-    if (!isFileType(value.documentKey)) {
-      return false;
-    }
-  } else if (value.sourceType === "history") {
-    if (!isNonEmptyString(value.sourceId)) {
-      return false;
-    }
-    if (!isCompressionHistoryRole(value.role)) {
-      return false;
-    }
-  }
+  // Optional arm members
+  if ('documentKey' in value && value.documentKey !== undefined && !isFileType(value.documentKey)) throw new Error('Invalid documentKey.');
+  if ('docType' in value && value.docType !== undefined && !isModelContributionFileType(value.docType)) throw new Error('Invalid docType.');
+  if ('sourceStageSlug' in value && value.sourceStageSlug !== undefined && !isDialecticStageSlug(value.sourceStageSlug)) throw new Error('Invalid sourceStageSlug.');
+  if ('chunk_index' in value && value.chunk_index !== undefined && !isNonNegativeInteger(value.chunk_index)) throw new Error('Invalid chunk_index.');
+  if ('chunk_total' in value && value.chunk_total !== undefined && !isNonNegativeInteger(value.chunk_total)) throw new Error('Invalid chunk_total.');
 
-  if (value.mode === "json") {
-    if (
-      !isFileType(value.documentKey) ||
-      !isModelContributionFileType(value.docType) ||
-      !isDialecticStageSlug(value.sourceStageSlug)
-    ) {
-      return false;
-    }
-  }
+  // Final check for extraneous properties to enforce a strict shape.
+  const allowedKeys = new Set<string>([
+    ...dialecticBaseJobPayloadAllowedKeys,
+    'targetKey', 'mode', 'content', 'sourceType', 'sourceId', 'role',
+    'documentKey', 'docType', 'sourceStageSlug', 'chunk_index', 'chunk_total',
+  ]);
 
-  if (value.chunk_index !== undefined && !isNonNegativeInteger(value.chunk_index)) {
-    return false;
-  }
-  if (value.chunk_total !== undefined && !isNonNegativeInteger(value.chunk_total)) {
-    return false;
-  }
-  if (value.continuation_count !== undefined && !isNonNegativeInteger(value.continuation_count)) {
-    return false;
+  const unknownKeys = Object.keys(value).filter(key => !allowedKeys.has(key));
+
+  if (unknownKeys.length > 0) {
+    throw new Error(`Payload contains unknown properties: ${unknownKeys.join(', ')}`);
   }
 
   return true;
@@ -214,6 +170,7 @@ export function isenqueueCompressJobsParams(value: unknown): value is enqueueCom
     "iterationNumber",
     "modelId",
     "modelSlug",
+    "userJwt",
     "walletId",
     "modelConfig",
     "tokenizerDeps",
@@ -257,6 +214,9 @@ export function isenqueueCompressJobsParams(value: unknown): value is enqueueCom
     return false;
   }
   if (!isNonEmptyString(value.modelSlug)) {
+    return false;
+  }
+  if (!isNonEmptyString(value.userJwt)) {
     return false;
   }
   if (!isNonEmptyString(value.walletId)) {

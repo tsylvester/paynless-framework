@@ -89,4 +89,6 @@ export interface BuildUploadContextResourceParams {
   projectOwnerUserId: string;
   /** Human-readable description for the resource record. */
   description: string;
+  /** The `CompressionPrompt` resource whose model call produced this artifact. */
+  sourcePromptResourceId: string | undefined;
 }

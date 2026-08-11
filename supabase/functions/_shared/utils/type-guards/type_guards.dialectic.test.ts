@@ -15,6 +15,7 @@ import {
     validatePayload,
     isDialecticPlanJobPayload,
     isDialecticSkeletonJobPayload,
+    isDialecticBaseJobPayload,
     isDialecticExecuteJobPayload,
     isDialecticRenderJobPayload,
     isContinuablePayload,
@@ -101,6 +102,8 @@ import {
     invalidateDialecticContributionRow,
     buildDialecticExecuteJobPayload,
     invalidateDialecticExecuteJobPayload,
+    buildDialecticBaseJobPayload,
+    invalidateDialecticBaseJobPayload,
     buildDialecticJobRow,
     invalidateDialecticJobRow,
     buildDialecticPlanJobPayload,
@@ -476,6 +479,147 @@ Deno.test('Type Guard: isDialecticContribution', async (t) => {
 
     await t.step('should return false for null', () => {
         assert(!isDialecticContribution(null));
+    });
+});
+
+Deno.test('Type Guard: isDialecticBaseJobPayload', async (t) => {
+    await t.step('should return true for a full base payload and not throw', () => {
+        assert(isDialecticBaseJobPayload(buildDialecticBaseJobPayload()));
+    });
+
+    // Required members — absent
+    await t.step('should throw if sessionId is missing', () => {
+        const { sessionId: _omit, ...rest } = buildDialecticBaseJobPayload();
+        assertThrows(() => isDialecticBaseJobPayload(rest), Error, 'Missing or invalid sessionId.');
+    });
+    await t.step('should throw if projectId is missing', () => {
+        const { projectId: _omit, ...rest } = buildDialecticBaseJobPayload();
+        assertThrows(() => isDialecticBaseJobPayload(rest), Error, 'Missing or invalid projectId.');
+    });
+    await t.step('should throw if model_id is missing', () => {
+        const { model_id: _omit, ...rest } = buildDialecticBaseJobPayload();
+        assertThrows(() => isDialecticBaseJobPayload(rest), Error, 'Missing or invalid model_id.');
+    });
+    await t.step('should throw if walletId is missing', () => {
+        const { walletId: _omit, ...rest } = buildDialecticBaseJobPayload();
+        assertThrows(() => isDialecticBaseJobPayload(rest), Error, 'Missing or invalid walletId.');
+    });
+    await t.step('should throw if user_jwt is missing', () => {
+        const { user_jwt: _omit, ...rest } = buildDialecticBaseJobPayload();
+        assertThrows(() => isDialecticBaseJobPayload(rest), Error, 'Missing or invalid user_jwt.');
+    });
+    await t.step('should throw if idempotencyKey is missing', () => {
+        const { idempotencyKey: _omit, ...rest } = buildDialecticBaseJobPayload();
+        assertThrows(() => isDialecticBaseJobPayload(rest), Error, 'Missing or invalid idempotencyKey.');
+    });
+
+    // Required members — present but wrong-typed
+    await t.step('should throw if sessionId is wrong-typed', () => {
+        assertThrows(() => isDialecticBaseJobPayload(invalidateDialecticBaseJobPayload({ sessionId: 123 })), Error, 'Missing or invalid sessionId.');
+    });
+    await t.step('should throw if projectId is wrong-typed', () => {
+        assertThrows(() => isDialecticBaseJobPayload(invalidateDialecticBaseJobPayload({ projectId: 123 })), Error, 'Missing or invalid projectId.');
+    });
+    await t.step('should throw if model_id is wrong-typed', () => {
+        assertThrows(() => isDialecticBaseJobPayload(invalidateDialecticBaseJobPayload({ model_id: 123 })), Error, 'Missing or invalid model_id.');
+    });
+    await t.step('should throw if walletId is wrong-typed', () => {
+        assertThrows(() => isDialecticBaseJobPayload(invalidateDialecticBaseJobPayload({ walletId: 123 })), Error, 'Missing or invalid walletId.');
+    });
+    await t.step('should throw if user_jwt is wrong-typed', () => {
+        assertThrows(() => isDialecticBaseJobPayload(invalidateDialecticBaseJobPayload({ user_jwt: 123 })), Error, 'Missing or invalid user_jwt.');
+    });
+    await t.step('should throw if user_jwt is empty string', () => {
+        assertThrows(() => isDialecticBaseJobPayload(buildDialecticBaseJobPayload({ user_jwt: '' })), Error, 'Missing or invalid user_jwt.');
+    });
+    await t.step('should throw if idempotencyKey is wrong-typed', () => {
+        assertThrows(() => isDialecticBaseJobPayload(invalidateDialecticBaseJobPayload({ idempotencyKey: 123 })), Error, 'Missing or invalid idempotencyKey.');
+    });
+
+    // Optional members — present and wrong-typed
+    await t.step('should throw if stageSlug is wrong-typed', () => {
+        assertThrows(() => isDialecticBaseJobPayload(invalidateDialecticBaseJobPayload({ stageSlug: 123 })), Error, 'Invalid stageSlug.');
+    });
+    await t.step('should throw if iterationNumber is wrong-typed', () => {
+        assertThrows(() => isDialecticBaseJobPayload(invalidateDialecticBaseJobPayload({ iterationNumber: '1' })), Error, 'Invalid iterationNumber.');
+    });
+    await t.step('should throw if continueUntilComplete is wrong-typed', () => {
+        assertThrows(() => isDialecticBaseJobPayload(invalidateDialecticBaseJobPayload({ continueUntilComplete: 'yes' })), Error, 'Invalid continueUntilComplete.');
+    });
+    await t.step('should throw if maxRetries is wrong-typed', () => {
+        assertThrows(() => isDialecticBaseJobPayload(invalidateDialecticBaseJobPayload({ maxRetries: '3' })), Error, 'Invalid maxRetries.');
+    });
+    await t.step('should throw if continuation_count is wrong-typed', () => {
+        assertThrows(() => isDialecticBaseJobPayload(invalidateDialecticBaseJobPayload({ continuation_count: '1' })), Error, 'Invalid continuation_count.');
+    });
+    await t.step('should throw if target_contribution_id is wrong-typed', () => {
+        assertThrows(() => isDialecticBaseJobPayload(invalidateDialecticBaseJobPayload({ target_contribution_id: 123 })), Error, 'Invalid target_contribution_id.');
+    });
+    await t.step('should throw if is_test_job is wrong-typed', () => {
+        assertThrows(() => isDialecticBaseJobPayload(invalidateDialecticBaseJobPayload({ is_test_job: 'yes' })), Error, 'Invalid is_test_job.');
+    });
+    await t.step('should throw if model_slug is wrong-typed', () => {
+        assertThrows(() => isDialecticBaseJobPayload(invalidateDialecticBaseJobPayload({ model_slug: 123 })), Error, 'Invalid model_slug.');
+    });
+    await t.step('should throw if maxOutputTokens is wrong-typed', () => {
+        assertThrows(() => isDialecticBaseJobPayload(invalidateDialecticBaseJobPayload({ maxOutputTokens: '8192' })), Error, 'Invalid maxOutputTokens.');
+    });
+    await t.step('should throw if sourceContributionId is wrong-typed', () => {
+        assertThrows(() => isDialecticBaseJobPayload(invalidateDialecticBaseJobPayload({ sourceContributionId: 123 })), Error, 'Invalid sourceContributionId.');
+    });
+    await t.step('should throw if source_prompt_resource_id is wrong-typed', () => {
+        assertThrows(() => isDialecticBaseJobPayload(invalidateDialecticBaseJobPayload({ source_prompt_resource_id: 123 })), Error, 'Invalid source_prompt_resource_id.');
+    });
+
+    // Optional members — absent (base builder omits them by default)
+    await t.step('should pass with stageSlug absent', () => {
+        const { stageSlug: _omit, ...rest } = buildDialecticBaseJobPayload();
+        assert(isDialecticBaseJobPayload(rest));
+    });
+    await t.step('should pass with iterationNumber absent', () => {
+        const { iterationNumber: _omit, ...rest } = buildDialecticBaseJobPayload();
+        assert(isDialecticBaseJobPayload(rest));
+    });
+    await t.step('should pass with continueUntilComplete absent', () => {
+        assert(isDialecticBaseJobPayload(buildDialecticBaseJobPayload()));
+    });
+    await t.step('should pass with maxRetries absent', () => {
+        assert(isDialecticBaseJobPayload(buildDialecticBaseJobPayload()));
+    });
+    await t.step('should pass with continuation_count absent', () => {
+        assert(isDialecticBaseJobPayload(buildDialecticBaseJobPayload()));
+    });
+    await t.step('should pass with target_contribution_id absent', () => {
+        assert(isDialecticBaseJobPayload(buildDialecticBaseJobPayload()));
+    });
+    await t.step('should pass with is_test_job absent', () => {
+        assert(isDialecticBaseJobPayload(buildDialecticBaseJobPayload()));
+    });
+    await t.step('should pass with model_slug absent', () => {
+        const { model_slug: _omit, ...rest } = buildDialecticBaseJobPayload();
+        assert(isDialecticBaseJobPayload(rest));
+    });
+    await t.step('should pass with maxOutputTokens absent', () => {
+        assert(isDialecticBaseJobPayload(buildDialecticBaseJobPayload()));
+    });
+    await t.step('should pass with sourceContributionId absent', () => {
+        assert(isDialecticBaseJobPayload(buildDialecticBaseJobPayload()));
+    });
+    await t.step('should pass with source_prompt_resource_id absent', () => {
+        assert(isDialecticBaseJobPayload(buildDialecticBaseJobPayload()));
+    });
+
+    // source_prompt_resource_id is admitted by the base allowed-key set
+    await t.step('should admit source_prompt_resource_id rather than reporting it as unknown', () => {
+        assert(isDialecticBaseJobPayload(buildDialecticBaseJobPayload({ source_prompt_resource_id: 'resource-1' })));
+    });
+
+    // Non-record root
+    await t.step('should throw for a non-record root', () => {
+        assertThrows(() => isDialecticBaseJobPayload(null), Error, 'Payload must be a non-null object.');
+        assertThrows(() => isDialecticBaseJobPayload(undefined), Error, 'Payload must be a non-null object.');
+        assertThrows(() => isDialecticBaseJobPayload(42), Error, 'Payload must be a non-null object.');
+        assertThrows(() => isDialecticBaseJobPayload('string'), Error, 'Payload must be a non-null object.');
     });
 });
 
@@ -2573,7 +2717,7 @@ Deno.test('Type Guard: isDialecticRenderJobPayload', async (t) => {
     });
 
     await t.step('should throw error when sourceContributionId is not a string', () => {
-        assertThrows(() => isDialecticRenderJobPayload(invalidateDialecticRenderJobPayload({ sourceContributionId: 123 })), Error, 'Missing or invalid sourceContributionId.');
+        assertThrows(() => isDialecticRenderJobPayload(invalidateDialecticRenderJobPayload({ sourceContributionId: 123 })), Error, 'Invalid sourceContributionId.');
     });
 
     await t.step('should throw error when sourceContributionId is empty string', () => {

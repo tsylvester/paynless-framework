@@ -652,7 +652,9 @@ Deno.test("enqueueCompressJobs integration: inserted rows carry the downstream i
     );
     assertEquals(row.payload.model_id, params.modelId);
     assertEquals(row.payload.walletId, params.walletId);
-    assertEquals(row.payload.user_id, params.parentJob.user_id);
+    assertEquals(row.payload.user_jwt, params.userJwt);
+    assertEquals(row.payload.idempotencyKey, row.idempotency_key);
+    assertEquals("job_type" in row.payload, false);
     assertEquals(row.payload.sessionId, params.sessionId);
     assertEquals(row.payload.projectId, params.projectId);
     assertEquals(row.payload.stageSlug, params.stageSlug);

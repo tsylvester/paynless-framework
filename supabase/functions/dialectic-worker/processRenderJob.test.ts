@@ -19,6 +19,7 @@ import { IRenderJobContext } from "./createJobContext/JobContext.interface.ts";
 import { createRenderJobContext } from "./createJobContext/createJobContext.ts";
 import { buildIJobContext } from "./createJobContext/JobContext.mock.ts";
 import type { DialecticRenderCompressedContextJobPayload } from "./enqueueRenderJob/enqueueRenderJob.interface.ts";
+import { invalidateDialecticRenderCompressedContextJobPayload } from "./enqueueRenderJob/enqueueRenderJob.mock.ts";
 
 // Helpers
 type MockJob = Database['public']['Tables']['dialectic_generation_jobs']['Row'];
@@ -1918,6 +1919,184 @@ Deno.test("processRenderJob - a contribution payload never selects the compresse
     (c) => c.args[0] && typeof c.args[0] === "object" && (c.args[0]).type === "render_started",
   );
   assertEquals(startedCalls.length, 1, "render_started must still fire for a contribution payload");
+
+  renderDocumentStub.restore();
+  clearAllStubs?.();
+});
+
+/**
+ * Contract: given a contribution RENDER row (no targetKey/sourceType) alongside a
+ *   compressed RENDER row, the contribution row routes to the contribution arm and
+ *   completes rather than raising at the selector — the assertion cannot hold if the
+ *   selection reverts to the throwing guard-as-predicate, because the contribution row
+ *   raises uncaught before the renderer is reached.
+ * Arrange: a contribution row via makeRenderJob and a compressed row via
+ *   makeCompressedRenderJob; a renderDocument stub returning a contribution pathContext
+ *   for RenderDocumentParams.
+ * Act:     processRenderJob on the contribution row.
+ * Assert:  renderer called once with RenderDocumentParams (documentIdentity present,
+ *   no targetKey); one completed update recorded.
+ */
+Deno.test("processRenderJob - a contribution RENDER row routes to the contribution arm and completes rather than raising at the selector", async () => {
+  // Arrange
+  const { client: dbClient, spies, clearAllStubs } = createMockSupabaseClient();
+  const contributionJob = makeRenderJob();
+  const compressedJob = makeCompressedRenderJob();
+  const ownerId = contributionJob.user_id;
+  assertExists(ownerId, "Expected job.user_id to be defined for test setup");
+  const rootCtx = buildIJobContext();
+  const renderCtx: IRenderJobContext = createRenderJobContext(rootCtx);
+  const renderDocumentStub = stub(
+    rootCtx.documentRenderer,
+    "renderDocument",
+    async (_dbc, _deps, params) => {
+      if (!("documentIdentity" in params)) throw new Error("expected RenderDocumentParams");
+      return {
+        pathContext: {
+          projectId: params.projectId,
+          fileType: FileType.RenderedDocument,
+          sessionId: params.sessionId,
+          iteration: params.iterationNumber,
+          stageSlug: params.stageSlug,
+          documentKey: params.documentKey,
+          modelSlug: "mock-model",
+          sourceContributionId: params.sourceContributionId,
+        },
+        renderedBytes: new Uint8Array(),
+      };
+    },
+  );
+
+  // Act
+  await processRenderJob(
+    dbClient as unknown as SupabaseClient<Database>,
+    contributionJob,
+    ownerId,
+    renderCtx,
+    "auth-token",
+  );
+
+  // Assert
+  assertEquals(renderDocumentStub.calls.length, 1, "renderer must be called once for the contribution row");
+  const params = renderDocumentStub.calls[0].args[2];
+  if (!("documentIdentity" in params)) throw new Error("expected RenderDocumentParams");
+  assert(!("targetKey" in params), "contribution params must not carry targetKey");
+  assertEquals(params.documentIdentity, "doc-root-1");
+
+  const updates = spies.getHistoricQueryBuilderSpies("dialectic_generation_jobs", "update");
+  assertExists(updates);
+  assertEquals(updates.callCount, 1);
+  const [updatePayload] = updates.callsArgs[0];
+  assert(isRecord(updatePayload) && "status" in updatePayload);
+  assertEquals(updatePayload.status, "completed");
+
+  // compressedJob is arranged to establish both forms are in scope; it must remain a
+  // valid compressed row so the selector faces two distinct forms.
+  assert(isRecord(compressedJob.payload) && "targetKey" in compressedJob.payload);
+
+  renderDocumentStub.restore();
+  clearAllStubs?.();
+});
+
+/**
+ * Contract: given a compressed row whose payload is malformed (targetKey corrupted via
+ *   invalidateDialecticRenderCompressedContextJobPayload), the row is marked failed with
+ *   the guard's own per-member diagnostic in error_details and sendJobNotificationEvent
+ *   is never called for it — compression being invisible infrastructure.
+ * Arrange: a compressed row whose payload is invalidateDialecticRenderCompressedContextJobPayload
+ *   with targetKey set to a non-FileType number.
+ * Act:     processRenderJob on the malformed compressed row.
+ * Assert:  one failed update whose error_details includes "Missing or invalid targetKey.";
+ *   sendJobNotificationEvent has zero calls.
+ */
+Deno.test("processRenderJob - a malformed compressed row is marked failed with the guard diagnostic and sends no notification", async () => {
+  // Arrange
+  const { client: dbClient, spies, clearAllStubs } = createMockSupabaseClient();
+  const job = makeCompressedRenderJob();
+  const malformedPayload = invalidateDialecticRenderCompressedContextJobPayload({ targetKey: 42 });
+  if (!isJson(malformedPayload)) throw new Error("invalidator must return a JSON value");
+  job.payload = malformedPayload;
+  const ownerId = job.user_id;
+  assertExists(ownerId, "Expected job.user_id to be defined for test setup");
+  resetMockNotificationService();
+  const rootCtx = buildIJobContext();
+  const renderCtx: IRenderJobContext = createRenderJobContext(rootCtx);
+  const renderDocumentStub = stub(rootCtx.documentRenderer, "renderDocument", async () => {
+    throw new Error("renderer must not be reached for a malformed compressed row");
+  });
+
+  // Act
+  await processRenderJob(
+    dbClient as unknown as SupabaseClient<Database>,
+    job,
+    ownerId,
+    renderCtx,
+    "auth-token",
+  );
+
+  // Assert
+  assertEquals(renderDocumentStub.calls.length, 0, "renderer must not be reached when narrowing fails");
+  const updates = spies.getHistoricQueryBuilderSpies("dialectic_generation_jobs", "update");
+  assertExists(updates);
+  assertEquals(updates.callCount, 1);
+  const [updatePayload] = updates.callsArgs[0];
+  assert(isRecord(updatePayload) && "status" in updatePayload && "error_details" in updatePayload);
+  assertEquals(updatePayload.status, "failed");
+  const errorDetails = updatePayload.error_details;
+  assert(typeof errorDetails === "string" && errorDetails.includes("Missing or invalid targetKey."));
+  assertEquals(
+    mockNotificationService.sendJobNotificationEvent.calls.length,
+    0,
+    "sendJobNotificationEvent must have ZERO calls for a malformed compressed row",
+  );
+
+  renderDocumentStub.restore();
+  clearAllStubs?.();
+});
+
+/**
+ * Contract: given a contribution row whose payload is malformed (projectId empty), the
+ *   row is marked failed AND its job_failed notification is sent — pinning that the
+ *   catch's notification skip is scoped to the compressed form.
+ * Arrange: a contribution row via makeRenderJob with projectId set to an empty string.
+ * Act:     processRenderJob on the malformed contribution row.
+ * Assert:  one failed update; sendJobNotificationEvent called with a job_failed event.
+ */
+Deno.test("processRenderJob - a malformed contribution row still marks failed and still sends its job_failed notification", async () => {
+  // Arrange
+  const { client: dbClient, spies, clearAllStubs } = createMockSupabaseClient();
+  const job = makeRenderJob({ projectId: "" });
+  const ownerId = job.user_id;
+  assertExists(ownerId, "Expected job.user_id to be defined for test setup");
+  resetMockNotificationService();
+  const rootCtx = buildIJobContext();
+  const renderCtx: IRenderJobContext = createRenderJobContext(rootCtx);
+  const renderDocumentStub = stub(rootCtx.documentRenderer, "renderDocument", async () => {
+    throw new Error("renderer must not be reached for a malformed contribution row");
+  });
+
+  // Act
+  await processRenderJob(
+    dbClient as unknown as SupabaseClient<Database>,
+    job,
+    ownerId,
+    renderCtx,
+    "auth-token",
+  );
+
+  // Assert
+  assertEquals(renderDocumentStub.calls.length, 0, "renderer must not be reached when contribution validation fails");
+  const updates = spies.getHistoricQueryBuilderSpies("dialectic_generation_jobs", "update");
+  assertExists(updates);
+  assertEquals(updates.callCount, 1);
+  const [updatePayload] = updates.callsArgs[0];
+  assert(isRecord(updatePayload) && "status" in updatePayload);
+  assertEquals(updatePayload.status, "failed");
+
+  const failedCalls = mockNotificationService.sendJobNotificationEvent.calls.filter(
+    (c) => c.args[0] && typeof c.args[0] === "object" && (c.args[0]).type === "job_failed",
+  );
+  assertEquals(failedCalls.length, 1, "job_failed notification must still fire for a malformed contribution row");
 
   renderDocumentStub.restore();
   clearAllStubs?.();

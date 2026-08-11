@@ -11,7 +11,7 @@ import type {
   JobFailedPayload,
 } from '../_shared/types/notification.service.types.ts';
 import { isDialecticStageSlug } from "../_shared/utils/type-guards/type_guards.file_manager.ts";
-import { isDialecticRenderCompressedContextJobPayload } from './enqueueRenderJob/enqueueRenderJob.guards.ts';
+import { isDialecticRenderCompressedContextJobPayload, isCompressedRenderPayloadShape } from './enqueueRenderJob/enqueueRenderJob.guards.ts';
 import type { DialecticRenderCompressedContextJobPayload } from './enqueueRenderJob/enqueueRenderJob.interface.ts';
 
 export async function processRenderJob(
@@ -23,11 +23,16 @@ export async function processRenderJob(
 ): Promise<void> {
   const { id: jobId } = job;
 
-  if (isRecord(job.payload) && isDialecticRenderCompressedContextJobPayload(job.payload)) {
-    return await processCompressedRenderJob(dbClient, job, ctx, job.payload, projectOwnerUserId);
-  }
-
   try {
+    // Compressed arm: select by the non-throwing predicate, narrow with the throwing guard.
+    if (isCompressedRenderPayloadShape(job.payload)) {
+      if (!isDialecticRenderCompressedContextJobPayload(job.payload)) {
+        throw new Error('Invalid compressed payload');
+      }
+      return await processCompressedRenderJob(dbClient, job, ctx, job.payload, projectOwnerUserId);
+    }
+
+    // Contribution arm
     // Normalize payload (Supabase may return JSON as string)
     if (!isRecord(job.payload) || !isDialecticRenderJobPayload(job.payload)) {
       throw new Error('Invalid payload');
@@ -198,7 +203,7 @@ export async function processRenderJob(
 
     // Do not retry; deterministic render errors should bubble or be recorded as failed per plan
 
-    if (typeof ctx.notificationService.sendJobNotificationEvent === 'function' && projectOwnerUserId && isRecord(job.payload)) {
+    if (typeof ctx.notificationService.sendJobNotificationEvent === 'function' && projectOwnerUserId && isRecord(job.payload) && !isCompressedRenderPayloadShape(job.payload)) {
       const p = job.payload;
       const failedSessionId: string = typeof p.sessionId === 'string' ? p.sessionId : job.session_id;
       const failedStageSlug: string = typeof p.stageSlug === 'string' ? p.stageSlug : job.stage_slug;

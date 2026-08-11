@@ -1,4 +1,4 @@
-import { assert, assertThrows, assertEquals } from "jsr:@std/assert@0.225.3";
+import { assert, assertThrows, assertEquals, assertRejects } from "jsr:@std/assert@0.225.3";
 import { spy, assertSpyCalls } from "jsr:@std/testing@0.225.1/mock";
 import { PromptAssembler } from "./prompt-assembler.ts";
 import { createMockSupabaseClient } from "../supabase.mock.ts";
@@ -14,6 +14,7 @@ import type {
   AssembleTurnPromptDeps,
   AssembleTurnPromptParams,
   AssembleContinuationPromptDeps,
+  AssembleContinuationPromptReturn,
 } from "./prompt-assembler.interface.ts";
 import type { GatherContextFn } from "./gatherContext/gatherContext.ts";
 import type { GatherInputsForStageFn } from "./gatherInputsForStage/gatherInputsForStage.ts";
@@ -34,7 +35,9 @@ import {
   buildAssembleTurnPromptDeps,
   buildAssembleTurnPromptParams,
   buildAssembleContinuationPromptDeps,
+  buildAssembleContinuationPromptErrorReturn,
 } from "./prompt-assembler.mock.ts";
+import { isAssembleContinuationPromptErrorReturn } from "./prompt-assembler.guard.ts";
 import {
   buildAssembleCompressionPromptDeps,
   buildAssembleCompressionPromptParams,
@@ -146,6 +149,87 @@ Deno.test("PromptAssembler", async (t) => {
       const result = await assembler.assembleContinuationPrompt(deps);
       assertSpyCalls(continuationSpy, 1);
       assertEquals(result, buildAssembledPrompt());
+    },
+  );
+
+  await t.step(
+    "assembleContinuationPrompt relays the error arm unchanged",
+    async () => {
+      /**
+       * Contract: assembleContinuationPrompt(deps) delegates to the injected function and
+       *   returns its value unchanged, either arm — here the error arm.
+       * Arrange: an injected continuation function returning buildAssembleContinuationPromptErrorReturn().
+       * Act:     assembler.assembleContinuationPrompt(deps).
+       * Assert:  the returned value is the exact error return, narrowed by guard, with the
+       *   same error identity and retriable flag, and no throw.
+       */
+      // Arrange
+      const client = createMockSupabaseClient().client as unknown as SupabaseClient<
+        Database
+      >;
+      const fm = new MockFileManagerService();
+      const errorReturn = buildAssembleContinuationPromptErrorReturn();
+      const continuationFn = async (
+        _deps: AssembleContinuationPromptDeps,
+      ): Promise<AssembleContinuationPromptReturn> => errorReturn;
+      const continuationSpy = spy(continuationFn);
+      const assembler = withEnv({ SB_CONTENT_STORAGE_BUCKET: TEST_STORAGE_BUCKET }, () =>
+        new PromptAssembler(
+          client, fm,
+          undefined, undefined, undefined, undefined, undefined, continuationSpy,
+        ),
+      );
+      const deps = buildAssembleContinuationPromptDeps();
+
+      // Act
+      const result = await assembler.assembleContinuationPrompt(deps);
+
+      // Assert
+      assertSpyCalls(continuationSpy, 1);
+      assertEquals(result, errorReturn);
+      assert(isAssembleContinuationPromptErrorReturn(result));
+      assertEquals(result.error, errorReturn.error);
+      assertEquals(result.retriable, errorReturn.retriable);
+    },
+  );
+
+  await t.step(
+    "assemble rejects with the error arm's own Error when the continuation assembler reports failure",
+    async () => {
+      /**
+       * Contract: assemble()'s continuation branch narrows the member's return; when
+       *   isAssembleContinuationPromptErrorReturn is true, it throws that arm's error, so
+       *   assemble()'s own callers see the same Error they see today.
+       * Arrange: an injected continuation function returning buildAssembleContinuationPromptErrorReturn();
+       *   options routing to the continuation branch (job with a non-empty target_contribution_id).
+       * Act:     assembler.assemble(options).
+       * Assert:  the call rejects with the error arm's own error instance.
+       */
+      // Arrange
+      const client = createMockSupabaseClient().client as unknown as SupabaseClient<
+        Database
+      >;
+      const fm = new MockFileManagerService();
+      const errorReturn = buildAssembleContinuationPromptErrorReturn();
+      const continuationFn = async (
+        _deps: AssembleContinuationPromptDeps,
+      ): Promise<AssembleContinuationPromptReturn> => errorReturn;
+      const continuationSpy = spy(continuationFn);
+      const assembler = withEnv({ SB_CONTENT_STORAGE_BUCKET: TEST_STORAGE_BUCKET }, () =>
+        new PromptAssembler(
+          client, fm,
+          undefined, undefined, undefined, undefined, undefined, continuationSpy,
+        ),
+      );
+      const options = buildAssemblePromptOptions({
+        job: buildDialecticJobRow({ target_contribution_id: "contrib-123" }),
+      });
+
+      // Act
+      const caught = await assertRejects(() => assembler.assemble(options));
+
+      // Assert
+      assert(caught === errorReturn.error);
     },
   );
 

@@ -12,6 +12,7 @@ import type {
   BoundEnqueueRenderJobFn,
   DialecticRenderCompressedContextJobPayload,
   EnqueueRenderCompressedContextPayload,
+  EnqueueRenderJobCallPayload,
   EnqueueRenderJobDeps,
   EnqueueRenderJobErrorReturn,
   EnqueueRenderJobFn,
@@ -20,6 +21,7 @@ import type {
   EnqueueRenderJobReturn,
   EnqueueRenderJobSuccessReturn,
 } from "./enqueueRenderJob.interface.ts";
+import type { DialecticBaseJobPayload } from "../../dialectic-service/dialectic.interface.ts";
 
 Deno.test("EnqueueRenderJobDeps declares the expected dependency keys", () => {
   const surface: Record<keyof EnqueueRenderJobDeps, true> = {
@@ -167,34 +169,107 @@ Deno.test(
   },
 );
 
+/** Contract: DialecticRenderCompressedContextJobPayload declares targetKey, sourceType, documentKey and template_filename. */
 Deno.test(
-  "DialecticRenderCompressedContextJobPayload declares all twelve keys",
+  "DialecticRenderCompressedContextJobPayload declares its four own members by typed literal",
   () => {
-    const surface: Record<
-      keyof DialecticRenderCompressedContextJobPayload,
-      true
-    > = {
-      idempotencyKey: true,
-      projectId: true,
-      sessionId: true,
-      iterationNumber: true,
-      stageSlug: true,
-      targetKey: true,
-      sourceType: true,
-      documentKey: true,
-      template_filename: true,
-      user_jwt: true,
-      model_id: true,
-      walletId: true,
+    const payload: DialecticRenderCompressedContextJobPayload = {
+      idempotencyKey: "idem-1",
+      projectId: "project-1",
+      sessionId: "session-1",
+      iterationNumber: 1,
+      stageSlug: DialecticStageSlug.Thesis,
+      model_id: "model-1",
+      walletId: "wallet-1",
+      user_jwt: "jwt-1",
+      targetKey: FileType.technical_approach,
+      sourceType: "contribution",
+      documentKey: FileType.business_case,
+      template_filename: "template.md",
     };
-    assertEquals(Object.keys(surface).length, 12);
+    assertEquals(payload.targetKey, FileType.technical_approach);
+    assertEquals(payload.sourceType, "contribution");
+    assertEquals(payload.documentKey, FileType.business_case);
+    assertEquals(payload.template_filename, "template.md");
   },
 );
 
+/** Contract: DialecticRenderCompressedContextJobPayload is assignable to DialecticBaseJobPayload. */
 Deno.test(
-  "EnqueueRenderCompressedContextPayload assigns to EnqueueRenderJobFn and BoundEnqueueRenderJobFn payload parameters",
+  "DialecticRenderCompressedContextJobPayload is a member of DialecticBaseJobPayload",
   () => {
-    const payload: EnqueueRenderCompressedContextPayload = {
+    const payload: DialecticRenderCompressedContextJobPayload = {
+      idempotencyKey: "idem-1",
+      projectId: "project-1",
+      sessionId: "session-1",
+      iterationNumber: 1,
+      stageSlug: DialecticStageSlug.Thesis,
+      model_id: "model-1",
+      walletId: "wallet-1",
+      user_jwt: "jwt-1",
+      targetKey: FileType.technical_approach,
+      sourceType: "contribution",
+      documentKey: FileType.business_case,
+      template_filename: "template.md",
+    };
+    const base: DialecticBaseJobPayload = payload;
+    assertEquals(base, payload);
+  },
+);
+
+/** Contract: stageSlug and iterationNumber are required on DialecticRenderCompressedContextJobPayload where DialecticBaseJobPayload declares them optional, and idempotencyKey, projectId, sessionId, user_jwt, model_id and walletId remain required through inheritance. */
+Deno.test(
+  "DialecticRenderCompressedContextJobPayload narrows stageSlug and iterationNumber to required and keeps the six inherited members required",
+  () => {
+    const base: DialecticBaseJobPayload = {
+      sessionId: "session-1",
+      projectId: "project-1",
+      walletId: "wallet-1",
+      user_jwt: "jwt-1",
+      idempotencyKey: "idem-1",
+      model_id: "model-1",
+    };
+    assertEquals(base.stageSlug, undefined);
+    assertEquals(base.iterationNumber, undefined);
+
+    const payload: DialecticRenderCompressedContextJobPayload = {
+      idempotencyKey: "idem-1",
+      projectId: "project-1",
+      sessionId: "session-1",
+      iterationNumber: 1,
+      stageSlug: DialecticStageSlug.Thesis,
+      model_id: "model-1",
+      walletId: "wallet-1",
+      user_jwt: "jwt-1",
+      targetKey: FileType.technical_approach,
+      sourceType: "contribution",
+      documentKey: FileType.business_case,
+      template_filename: "template.md",
+    };
+    assertEquals(payload.stageSlug, DialecticStageSlug.Thesis);
+    assertEquals(payload.iterationNumber, 1);
+    assertEquals(payload.idempotencyKey, "idem-1");
+    assertEquals(payload.projectId, "project-1");
+    assertEquals(payload.sessionId, "session-1");
+    assertEquals(payload.user_jwt, "jwt-1");
+    assertEquals(payload.model_id, "model-1");
+    assertEquals(payload.walletId, "wallet-1");
+  },
+);
+
+/** Contract: EnqueueRenderJobCallPayload is the declared payload parameter of EnqueueRenderJobFn and BoundEnqueueRenderJobFn, and each member assigns to it. */
+Deno.test(
+  "EnqueueRenderJobCallPayload is the declared payload parameter of both function types",
+  () => {
+    const contribution: EnqueueRenderJobPayload = {
+      contributionId: "contrib-1",
+      needsContinuation: false,
+      documentKey: FileType.business_case,
+      stageRelationshipForStage: "rel-1",
+      fileType: FileType.business_case,
+      storageFileType: FileType.ModelContributionRawJson,
+    };
+    const compressed: EnqueueRenderCompressedContextPayload = {
       sourceType: "contribution",
       documentKey: FileType.business_case,
       docType: FileType.business_case,
@@ -202,10 +277,22 @@ Deno.test(
       targetKey: FileType.technical_approach,
     };
 
-    const fnParam: Parameters<EnqueueRenderJobFn>[2] = payload;
-    const boundParam: Parameters<BoundEnqueueRenderJobFn>[1] = payload;
+    const callPayload: EnqueueRenderJobCallPayload = contribution;
 
-    assertEquals(fnParam, payload);
-    assertEquals(boundParam, payload);
+    const fnParam: Parameters<EnqueueRenderJobFn>[2] = callPayload;
+    const boundParam: Parameters<BoundEnqueueRenderJobFn>[1] = callPayload;
+
+    assertEquals(fnParam, callPayload);
+    assertEquals(boundParam, callPayload);
+
+    const fnFromContribution: Parameters<EnqueueRenderJobFn>[2] = contribution;
+    const fnFromCompressed: Parameters<EnqueueRenderJobFn>[2] = compressed;
+    const boundFromContribution: Parameters<BoundEnqueueRenderJobFn>[1] = contribution;
+    const boundFromCompressed: Parameters<BoundEnqueueRenderJobFn>[1] = compressed;
+
+    assertEquals(fnFromContribution, contribution);
+    assertEquals(fnFromCompressed, compressed);
+    assertEquals(boundFromContribution, contribution);
+    assertEquals(boundFromCompressed, compressed);
   },
 );

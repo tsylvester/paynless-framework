@@ -130,6 +130,7 @@ Deno.test(
         contentForStorage: '{"compressed":true}',
         projectOwnerUserId: "owner-1",
         description: "compressed_context_raw_json for stage 'thesis' target 'business_case'",
+        sourcePromptResourceId: "spr-1",
       };
 
       assertEquals("projectId" in params, true);
@@ -146,6 +147,7 @@ Deno.test(
       assertEquals("contentForStorage" in params, true);
       assertEquals("projectOwnerUserId" in params, true);
       assertEquals("description" in params, true);
+      assertEquals("sourcePromptResourceId" in params, true);
 
       assertEquals(typeof params.projectId, "string");
       assertEquals(typeof params.storageFileType, "string");
@@ -161,6 +163,7 @@ Deno.test(
       assertEquals(typeof params.contentForStorage, "string");
       assertEquals(typeof params.projectOwnerUserId, "string");
       assertEquals(typeof params.description, "string");
+      assertEquals(typeof params.sourcePromptResourceId, "string");
     });
 
     await t.step(
@@ -181,10 +184,12 @@ Deno.test(
           contentForStorage: "compressed text content",
           projectOwnerUserId: "owner-1",
           description: "compressed_context for stage 'thesis'",
+          sourcePromptResourceId: undefined,
         };
         assertEquals(params.documentKey, undefined);
         assertEquals(params.chunkIndex, undefined);
         assertEquals(params.chunkTotal, undefined);
+        assertEquals(params.sourcePromptResourceId, undefined);
       },
     );
 
@@ -206,6 +211,7 @@ Deno.test(
           contentForStorage: "{}",
           projectOwnerUserId: "owner-1",
           description: "desc",
+          sourcePromptResourceId: undefined,
         };
         const fnParams: Parameters<BuildUploadContextFn>[0] = resourceParams;
         assertEquals(fnParams, resourceParams);
@@ -233,6 +239,7 @@ Deno.test(
       contentForStorage: '{"compressed":true}',
       projectOwnerUserId: "owner-1",
       description: "compressed_context_raw_json for stage 'thesis' history artifact",
+      sourcePromptResourceId: undefined,
     };
     assertEquals(params.role, "assistant");
   },
@@ -256,6 +263,7 @@ Deno.test(
       contentForStorage: '{"compressed":true}',
       projectOwnerUserId: "owner-1",
       description: "compressed_context_raw_json for stage 'thesis' feedback artifact",
+      sourcePromptResourceId: undefined,
     };
     assertEquals(params.sourceType, "feedback");
     assertEquals(params.documentKey, FileType.business_case_critique);
@@ -280,8 +288,24 @@ Deno.test(
       contentForStorage: '{"compressed":true}',
       projectOwnerUserId: "owner-1",
       description: "compressed_context_raw_json for stage 'thesis' contribution",
+      sourcePromptResourceId: undefined,
     };
     assertEquals(params.sourceType, "contribution");
     assertEquals("role" in params, false);
+  },
+);
+
+Deno.test(
+  "Contract: BuildUploadContextParams and BuildUploadContextResourceParams declare sourcePromptResourceId under the same name and the same type",
+  () => {
+    const fromContribution: BuildUploadContextParams["sourcePromptResourceId"] = "spr-1";
+    const onResource: BuildUploadContextResourceParams["sourcePromptResourceId"] = fromContribution;
+    const backToContribution: BuildUploadContextParams["sourcePromptResourceId"] = onResource;
+    assertEquals(backToContribution, fromContribution);
+
+    const fromContributionUndefined: BuildUploadContextParams["sourcePromptResourceId"] = undefined;
+    const onResourceUndefined: BuildUploadContextResourceParams["sourcePromptResourceId"] = fromContributionUndefined;
+    const backToContributionUndefined: BuildUploadContextParams["sourcePromptResourceId"] = onResourceUndefined;
+    assertEquals(backToContributionUndefined, undefined);
   },
 );

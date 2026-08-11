@@ -282,6 +282,7 @@ export type ResourceUploadContext = UploadContextBase & {
   };
   resourceTypeForDb?: string; // To directly populate dialectic_project_resources.resource_type
   resourceDescriptionForDb?: Json | null;
+  sourcePromptResourceId?: string
 };
 
 export type UploadContext = ModelContributionUploadContext | UserFeedbackUploadContext | ResourceUploadContext;

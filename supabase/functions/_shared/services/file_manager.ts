@@ -413,6 +413,7 @@ export class FileManagerService implements IFileManager {
           storage_path: finalMainContentFilePath,
           resource_description: resourceDescriptionForDb,
           source_contribution_id: pathContextForStorage.sourceContributionId ?? null,
+          source_prompt_resource_id: resourceContext.sourcePromptResourceId ?? null,
         };
         // Use upsert for all project resources to handle duplicate storage paths gracefully
         // The unique constraint on (storage_bucket, storage_path, file_name) will be respected
@@ -485,6 +486,7 @@ export class FileManagerService implements IFileManager {
           edit_version: meta.editVersion ?? 1,
           is_latest_edit: meta.isLatestEdit ?? true,
           original_model_contribution_id: meta.originalModelContributionId,
+          source_prompt_resource_id: meta.source_prompt_resource_id ?? null,
         }
         let insertResult: ContributionInsertResult = { data: null, error: null };
         for (let transientAttempt = 0; transientAttempt <= MAX_TRANSIENT_RETRIES; transientAttempt++) {

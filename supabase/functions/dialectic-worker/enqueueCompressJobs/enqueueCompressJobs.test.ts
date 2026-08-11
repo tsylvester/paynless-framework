@@ -732,3 +732,177 @@ Deno.test("enqueueCompressJobs: inserted payload model_slug equals params.modelS
     );
   },
 );
+
+Deno.test("enqueueCompressJobs: inserted child payload carries user_jwt equal to params.userJwt",
+  async () => {
+    const mockSetup = createMockSupabaseClient("user-1", {
+      genericMockResults: {
+        dialectic_project_resources: {
+          select: { data: [], error: null },
+        },
+        dialectic_generation_jobs: {
+          insert: { data: [], error: null },
+        },
+      },
+    });
+    const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
+    const deps = buildenqueueCompressJobsDeps();
+    const params = buildenqueueCompressJobsParams({ dbClient });
+    const payload = buildenqueueCompressJobsPayload();
+
+    const result = await enqueueCompressJobs(deps, params, payload);
+
+    assertEquals("createdCount" in result, true);
+    if ("createdCount" in result) {
+      assertEquals(result.createdCount, 1);
+    }
+
+    const insertCalls = mockSetup.spies.getHistoricQueryBuilderSpies(
+      "dialectic_generation_jobs",
+      "insert",
+    );
+    assertExists(insertCalls);
+    assertEquals(insertCalls.callCount, 1);
+    assertExists(insertCalls.callsArgs[0]);
+
+    const insertedRows = insertCalls.callsArgs[0][0];
+    assert(Array.isArray(insertedRows));
+    assertEquals(insertedRows.length, 1);
+
+    const firstRow = insertedRows[0];
+    assert(isRecord(firstRow));
+    assert(isRecord(firstRow.payload));
+    assertEquals(firstRow.payload.user_jwt, params.userJwt);
+  },
+);
+
+Deno.test("enqueueCompressJobs: child payload idempotencyKey equals row idempotency_key for fitting and chunked victims",
+  async () => {
+    const splitText = spy(async (_text: string) => ["chunk1", "chunk2", "chunk3"]);
+    const countTokens = spy(() => 1000);
+
+    // Fitting (single-row) victim
+    const mockSetupSingle = createMockSupabaseClient("user-1", {
+      genericMockResults: {
+        dialectic_project_resources: {
+          select: { data: [], error: null },
+        },
+        dialectic_generation_jobs: {
+          insert: { data: [], error: null },
+        },
+      },
+    });
+    const dbClientSingle = mockSetupSingle.client as unknown as SupabaseClient<Database>;
+    const depsSingle = buildenqueueCompressJobsDeps();
+    const paramsSingle = buildenqueueCompressJobsParams({ dbClient: dbClientSingle });
+    const payloadSingle = buildenqueueCompressJobsPayload();
+
+    await enqueueCompressJobs(depsSingle, paramsSingle, payloadSingle);
+
+    const insertCallsSingle = mockSetupSingle.spies.getHistoricQueryBuilderSpies(
+      "dialectic_generation_jobs",
+      "insert",
+    );
+    assertExists(insertCallsSingle);
+    assertExists(insertCallsSingle.callsArgs[0]);
+
+    const singleRows = insertCallsSingle.callsArgs[0][0];
+    assert(Array.isArray(singleRows));
+    assertEquals(singleRows.length, 1);
+    const singleRow = singleRows[0];
+    assert(isRecord(singleRow));
+    assert(isRecord(singleRow.payload));
+    assertEquals(singleRow.payload.idempotencyKey, singleRow.idempotency_key);
+
+    // Chunked (split) victim
+    const mockSetupChunked = createMockSupabaseClient("user-1", {
+      genericMockResults: {
+        dialectic_project_resources: {
+          select: { data: [], error: null },
+        },
+        dialectic_generation_jobs: {
+          insert: { data: [], error: null },
+        },
+      },
+    });
+    const dbClientChunked = mockSetupChunked.client as unknown as SupabaseClient<Database>;
+    const depsChunked = buildenqueueCompressJobsDeps({
+      countTokens,
+      textSplitter: { splitText },
+    });
+    const paramsChunked = buildenqueueCompressJobsParams({ dbClient: dbClientChunked });
+    const payloadChunked = buildenqueueCompressJobsPayload({
+      victim: {
+        mode: "json",
+        content: "some content that is over budget",
+        sourceType: "contribution",
+      },
+    });
+
+    await enqueueCompressJobs(depsChunked, paramsChunked, payloadChunked);
+
+    const insertCallsChunked = mockSetupChunked.spies.getHistoricQueryBuilderSpies(
+      "dialectic_generation_jobs",
+      "insert",
+    );
+    assertExists(insertCallsChunked);
+    assertExists(insertCallsChunked.callsArgs[0]);
+
+    const chunkedRows = insertCallsChunked.callsArgs[0][0];
+    assert(Array.isArray(chunkedRows));
+    assertEquals(chunkedRows.length, 3);
+
+    for (let i = 0; i < 3; i += 1) {
+      const row = chunkedRows[i];
+      assert(isRecord(row));
+      assert(isRecord(row.payload));
+      assertEquals(row.payload.idempotencyKey, row.idempotency_key);
+    }
+  },
+);
+
+Deno.test("enqueueCompressJobs: child payload carries neither job_type nor user_id, and the row carries both",
+  async () => {
+    const mockSetup = createMockSupabaseClient("user-1", {
+      genericMockResults: {
+        dialectic_project_resources: {
+          select: { data: [], error: null },
+        },
+        dialectic_generation_jobs: {
+          insert: { data: [], error: null },
+        },
+      },
+    });
+    const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
+    const deps = buildenqueueCompressJobsDeps();
+    const params = buildenqueueCompressJobsParams({ dbClient });
+    const payload = buildenqueueCompressJobsPayload();
+
+    const result = await enqueueCompressJobs(deps, params, payload);
+
+    assertEquals("createdCount" in result, true);
+    if ("createdCount" in result) {
+      assertEquals(result.createdCount, 1);
+    }
+
+    const insertCalls = mockSetup.spies.getHistoricQueryBuilderSpies(
+      "dialectic_generation_jobs",
+      "insert",
+    );
+    assertExists(insertCalls);
+    assertEquals(insertCalls.callCount, 1);
+    assertExists(insertCalls.callsArgs[0]);
+
+    const insertedRows = insertCalls.callsArgs[0][0];
+    assert(Array.isArray(insertedRows));
+    assertEquals(insertedRows.length, 1);
+
+    const firstRow = insertedRows[0];
+    assert(isRecord(firstRow));
+    assert(isRecord(firstRow.payload));
+    assertEquals("job_type" in firstRow.payload, false);
+    assertEquals("user_id" in firstRow.payload, false);
+    assertEquals(firstRow.job_type, "COMPRESS");
+    assertEquals(firstRow.user_id, params.parentJob.user_id);
+  },
+);

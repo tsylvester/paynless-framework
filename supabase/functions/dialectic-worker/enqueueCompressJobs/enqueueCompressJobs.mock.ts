@@ -15,6 +15,7 @@ import {
   createMockDialecticExecuteJobPayload,
   createMockJobRow,
 } from "../saveResponse/saveResponse.mock.ts";
+import { buildDialecticBaseJobPayload } from "../../_shared/dialectic.mock.ts";
 import {
   BoundenqueueCompressJobsFn,
   CompressJobEnqueueError,
@@ -78,6 +79,7 @@ export function buildenqueueCompressJobsParams(
     iterationNumber: 1,
     modelId: "model-1",
     modelSlug: "gpt-4o",
+    userJwt: "jwt-1",
     walletId: "wallet-1",
     modelConfig: { ...MOCK_MODEL_CONFIG, provider_max_input_tokens: 1000 },
     tokenizerDeps,
@@ -112,22 +114,17 @@ export function buildDialecticCompressJobPayload(
   overrides?: DialecticCompressJobPayloadOverrides,
 ): DialecticCompressJobPayload {
   const base: DialecticCompressJobPayload = {
-    job_type: "COMPRESS",
-    sessionId: "session-1",
-    projectId: "project-1",
+    ...buildDialecticBaseJobPayload(),
     stageSlug: DialecticStageSlug.Thesis,
-    targetKey: FileType.business_case,
     iterationNumber: 1,
-    model_id: "model-1",
     model_slug: "gpt-4o",
+    targetKey: FileType.business_case,
     mode: "text",
     content: "some content",
     sourceType: "contribution",
     documentKey: FileType.business_case,
     docType: FileType.business_case,
     sourceStageSlug: DialecticStageSlug.Thesis,
-    walletId: "wallet-1",
-    user_id: "user-1",
   };
   return overrides ? { ...base, ...overrides } : base;
 }

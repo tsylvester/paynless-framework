@@ -6,12 +6,11 @@ import {
     createMockSupabaseClient,
     type MockSupabaseClientSetup,
 } from "../../_shared/supabase.mock.ts";
-import { FileType } from "../../_shared/types/file_manager.types.ts";
 import type { DialecticJobRow } from "../../dialectic-service/dialectic.interface.ts";
 import {
     createMockDialecticExecuteJobPayload,
     createMockJobRow,
-} from "../saveResponse/saveResponse.mock.ts";
+} from "../saveResponse/saveResponse.provides.ts";
 import type {
     AiStreamEventBody,
     AiStreamEventData,
@@ -137,7 +136,6 @@ export function createMockEnqueueModelCallParams(
         job: createDefaultEnqueueJobRow(),
         providerRow: buildMockProvider(),
         userAuthToken: "mock-user-jwt",
-        output_type: FileType.HeaderContext,
         userConfig: { tier_output_cap_tokens: null },
     };
 

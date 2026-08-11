@@ -119,6 +119,7 @@ export function buildBuildUploadContextResourceParams(
     contentForStorage: '{"compressed":true}',
     projectOwnerUserId: "owner-1",
     description: "compressed_context_raw_json for stage 'thesis' target 'business_case'",
+    sourcePromptResourceId: undefined,
   };
   return overrides ? { ...base, ...overrides } : base;
 }

@@ -1,8 +1,13 @@
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import type {
   AssembleContinuationPromptDeps,
+  AssembleContinuationPromptError,
+  AssembleContinuationPromptErrorReturn,
+  AssembleContinuationPromptReturn,
   AssembledPrompt,
   BoundAssembleContinuationPromptFn,
+  ReadArtifactReturn,
+  ReadArtifactSuccessReturn,
 } from "../prompt-assembler.interface.ts";
 
 Deno.test(
@@ -55,14 +60,54 @@ Deno.test(
 );
 
 Deno.test(
-  "Contract: BoundAssembleContinuationPromptFn resolves to Promise<AssembledPrompt> — the injection shape processJob supplies and processCompressJob declares",
-  () => {
+  "Contract: BoundAssembleContinuationPromptFn's awaited return is AssembleContinuationPromptReturn, which admits AssembledPrompt and AssembleContinuationPromptErrorReturn",
+  async () => {
     const success: AssembledPrompt = {
       promptContent: "continuation prompt",
       source_prompt_resource_id: "resource-1",
     };
-    const returned: ReturnType<BoundAssembleContinuationPromptFn> = Promise.resolve(success);
-    const declared: Promise<AssembledPrompt> = returned;
-    assertEquals(declared instanceof Promise, true);
+    const errorArm: AssembleContinuationPromptErrorReturn = {
+      error: new Error("continuation failed"),
+      retriable: false,
+    };
+    const fromSuccess: AssembleContinuationPromptReturn = success;
+    const fromError: AssembleContinuationPromptReturn = errorArm;
+    const returned: ReturnType<BoundAssembleContinuationPromptFn> = Promise.resolve(fromSuccess);
+    const awaited: Awaited<ReturnType<BoundAssembleContinuationPromptFn>> = await returned;
+    const asUnion: AssembleContinuationPromptReturn = awaited;
+    assertEquals(fromSuccess === success, true);
+    assertEquals(fromError === errorArm, true);
+    assertEquals(asUnion === success, true);
+  },
+);
+
+Deno.test(
+  "Contract: AssembleContinuationPromptErrorReturn is { error: AssembleContinuationPromptError; retriable: boolean } — neither promptContent nor source_prompt_resource_id is a member",
+  () => {
+    const err: AssembleContinuationPromptError = new Error("continuation failed");
+    const retriable: boolean = false;
+    const errorArm: AssembleContinuationPromptErrorReturn = { error: err, retriable };
+    const surface: Record<keyof AssembleContinuationPromptErrorReturn, true> = {
+      error: true,
+      retriable: true,
+    };
+    assertEquals(errorArm.error instanceof Error, true);
+    assertEquals(typeof errorArm.retriable, "boolean");
+    assertEquals(Object.keys(surface).length, 2);
+  },
+);
+
+Deno.test(
+  "Contract: ReadArtifactReturn admits ReadArtifactSuccessReturn and AssembleContinuationPromptErrorReturn — the helper's error arm is this function's own error type, not a second shape",
+  () => {
+    const success: ReadArtifactSuccessReturn = { content: "decoded artifact text" };
+    const fromSuccess: ReadArtifactReturn = success;
+    const errorArm: AssembleContinuationPromptErrorReturn = {
+      error: new Error("artifact read failed"),
+      retriable: true,
+    };
+    const fromError: ReadArtifactReturn = errorArm;
+    assertEquals(fromSuccess === success, true);
+    assertEquals(fromError === errorArm, true);
   },
 );

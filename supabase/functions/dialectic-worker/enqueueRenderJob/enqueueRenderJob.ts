@@ -10,10 +10,9 @@ import { sanitizeForPath } from "../../_shared/utils/path_constructor.ts";
 import type { TablesInsert } from "../../types_db.ts";
 import type {
   DialecticRenderCompressedContextJobPayload,
-  EnqueueRenderCompressedContextPayload,
+  EnqueueRenderJobCallPayload,
   EnqueueRenderJobDeps,
   EnqueueRenderJobParams,
-  EnqueueRenderJobPayload,
   EnqueueRenderJobReturn,
 } from "./enqueueRenderJob.interface.ts";
 import {
@@ -33,7 +32,7 @@ const RENDER_DECISION_QUERY_FAILURE_REASONS: readonly string[] = [
 export async function enqueueRenderJob(
   deps: EnqueueRenderJobDeps,
   params: EnqueueRenderJobParams,
-  payload: EnqueueRenderJobPayload | EnqueueRenderCompressedContextPayload,
+  payload: EnqueueRenderJobCallPayload,
 ): Promise<EnqueueRenderJobReturn> {
   const { dbClient, logger, shouldEnqueueRenderJob, resolveTemplateFilename } = deps;
   const {
@@ -50,8 +49,8 @@ export async function enqueueRenderJob(
     isTestJob,
   } = params;
 
-  let renderPayload: DialecticRenderJobPayload | DialecticRenderCompressedContextJobPayload;
   let idempotencyKey: string;
+  let insertObj: TablesInsert<"dialectic_generation_jobs">;
 
   if (isEnqueueRenderCompressedContextPayload(payload)) {
     const renderDecision = await shouldEnqueueRenderJob(
@@ -113,7 +112,7 @@ export async function enqueueRenderJob(
 
     idempotencyKey = `${sessionId}_${iterationNumber}_${stageSlug}_compress_render_${payload.sourceType}_${payload.documentKey}_${sanitizeForPath(payload.targetKey)}`;
 
-    renderPayload = {
+    const renderPayload: DialecticRenderCompressedContextJobPayload = {
       idempotencyKey,
       projectId,
       sessionId,
@@ -141,6 +140,19 @@ export async function enqueueRenderJob(
       );
       return { error: validationErr, retriable: false };
     }
+
+    insertObj = {
+      job_type: "RENDER",
+      session_id: sessionId,
+      stage_slug: stageSlug,
+      iteration_number: iterationNumber,
+      parent_job_id: jobId,
+      payload: renderPayload,
+      is_test_job: isTestJob,
+      status: "pending",
+      user_id: projectOwnerUserId,
+      idempotency_key: idempotencyKey,
+    };
   } else {
     if (payload.needsContinuation) {
       return { renderJobId: null };
@@ -191,7 +203,7 @@ export async function enqueueRenderJob(
       documentKey: payload.documentKey,
     });
 
-    const documentIdentityValue: string | undefined = payload.stageRelationshipForStage;
+    const documentIdentityValue = payload.stageRelationshipForStage;
     if (typeof documentIdentityValue !== "string" || documentIdentityValue.trim() === "") {
       logger.error("[enqueueRenderJob] Cannot enqueue RENDER job: documentIdentity is missing or invalid", {
         jobId,
@@ -204,7 +216,7 @@ export async function enqueueRenderJob(
     }
     const documentIdentityStrict: string = documentIdentityValue;
 
-    const documentKeyRaw: FileType | undefined = payload.documentKey;
+    const documentKeyRaw = payload.documentKey;
     if (!documentKeyRaw || typeof documentKeyRaw !== "string" || documentKeyRaw.trim() === "") {
       logger.error("[enqueueRenderJob] Cannot enqueue RENDER job: documentKey is missing or invalid", {
         jobId,
@@ -245,7 +257,7 @@ export async function enqueueRenderJob(
 
     idempotencyKey = `${jobId}_render`;
 
-    renderPayload = {
+    const renderPayload: DialecticRenderJobPayload = {
       idempotencyKey,
       projectId,
       sessionId,
@@ -273,20 +285,20 @@ export async function enqueueRenderJob(
       );
       return { error: validationErr, retriable: false };
     }
-  }
 
-  const insertObj: TablesInsert<"dialectic_generation_jobs"> = {
-    job_type: "RENDER",
-    session_id: sessionId,
-    stage_slug: stageSlug,
-    iteration_number: iterationNumber,
-    parent_job_id: jobId,
-    payload: renderPayload,
-    is_test_job: isTestJob,
-    status: "pending",
-    user_id: projectOwnerUserId,
-    idempotency_key: idempotencyKey,
-  };
+    insertObj = {
+      job_type: "RENDER",
+      session_id: sessionId,
+      stage_slug: stageSlug,
+      iteration_number: iterationNumber,
+      parent_job_id: jobId,
+      payload: renderPayload,
+      is_test_job: isTestJob,
+      status: "pending",
+      user_id: projectOwnerUserId,
+      idempotency_key: idempotencyKey,
+    };
+  }
 
   const { data: renderInsertData, error: renderInsertError } = await dbClient
     .from("dialectic_generation_jobs")

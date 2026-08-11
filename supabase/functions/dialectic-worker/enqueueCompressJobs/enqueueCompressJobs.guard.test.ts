@@ -1,4 +1,4 @@
-import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
+import { assertEquals, assertThrows } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
   isDialecticCompressJobPayload,
   isenqueueCompressJobsDeps,
@@ -42,32 +42,32 @@ Deno.test("isDialecticCompressJobPayload accepts full history payload", () => {
 });
 
 Deno.test("isDialecticCompressJobPayload rejects contribution missing documentKey", () => {
-  assertEquals(isDialecticCompressJobPayload(invalidateDialecticCompressJobPayload({ documentKey: null })), false);
+  assertThrows(() => isDialecticCompressJobPayload(invalidateDialecticCompressJobPayload({ documentKey: null })), Error, 'Missing or invalid documentKey.');
 });
 
 Deno.test("isDialecticCompressJobPayload rejects resource missing documentKey", () => {
-  assertEquals(isDialecticCompressJobPayload(invalidateDialecticCompressJobPayload({ sourceType: "resource", documentKey: null })), false);
+  assertThrows(() => isDialecticCompressJobPayload(invalidateDialecticCompressJobPayload({ sourceType: "resource", documentKey: null })), Error, 'Missing or invalid documentKey.');
 });
 
 Deno.test("isDialecticCompressJobPayload rejects feedback missing documentKey", () => {
-  assertEquals(isDialecticCompressJobPayload(invalidateDialecticCompressJobPayload({ sourceType: "feedback", documentKey: null })), false);
+  assertThrows(() => isDialecticCompressJobPayload(invalidateDialecticCompressJobPayload({ sourceType: "feedback", documentKey: null })), Error, 'Missing or invalid documentKey.');
 });
 
 Deno.test("isDialecticCompressJobPayload rejects history missing sourceId", () => {
-  assertEquals(isDialecticCompressJobPayload(invalidateDialecticCompressJobPayload({ sourceType: "history", role: "assistant" })), false);
+  assertThrows(() => isDialecticCompressJobPayload(invalidateDialecticCompressJobPayload({ sourceType: "history", role: "assistant" })), Error, 'Missing or invalid sourceId.');
 });
 
 Deno.test("isDialecticCompressJobPayload rejects history missing role", () => {
-  assertEquals(isDialecticCompressJobPayload(invalidateDialecticCompressJobPayload({ sourceType: "history", sourceId: "history-1" })), false);
+  assertThrows(() => isDialecticCompressJobPayload(invalidateDialecticCompressJobPayload({ sourceType: "history", sourceId: "history-1" })), Error, 'Missing or invalid role.');
 });
 
 Deno.test("isDialecticCompressJobPayload rejects history with a role outside Messages", () => {
-  assertEquals(isDialecticCompressJobPayload(invalidateDialecticCompressJobPayload({ sourceType: "history", sourceId: "history-1", role: "model" })), false);
+  assertThrows(() => isDialecticCompressJobPayload(invalidateDialecticCompressJobPayload({ sourceType: "history", sourceId: "history-1", role: "model" })), Error, 'Missing or invalid role.');
 });
 
 Deno.test("isDialecticCompressJobPayload rejects a missing model_slug", () => {
-  assertEquals(isDialecticCompressJobPayload(invalidateDialecticCompressJobPayload({ model_slug: undefined })), false);
-  assertEquals(isDialecticCompressJobPayload(invalidateDialecticCompressJobPayload({ model_slug: "" })), false);
+  assertThrows(() => isDialecticCompressJobPayload(invalidateDialecticCompressJobPayload({ model_slug: undefined })), Error, 'Invalid model_slug.');
+  assertThrows(() => isDialecticCompressJobPayload(invalidateDialecticCompressJobPayload({ model_slug: "" })), Error, 'Missing or invalid model_slug.');
 });
 
 Deno.test("isDialecticCompressJobPayload accepts a continuation payload", () => {
@@ -79,28 +79,40 @@ Deno.test("isDialecticCompressJobPayload accepts a payload with continuation_cou
 });
 
 Deno.test("isDialecticCompressJobPayload rejects a non-integer continuation_count", () => {
-  assertEquals(isDialecticCompressJobPayload(invalidateDialecticCompressJobPayload({ continuation_count: "one" })), false);
-  assertEquals(isDialecticCompressJobPayload(invalidateDialecticCompressJobPayload({ continuation_count: -1 })), false);
+  assertThrows(() => isDialecticCompressJobPayload(invalidateDialecticCompressJobPayload({ continuation_count: "one" })), Error, 'Invalid continuation_count.');
+  assertThrows(() => isDialecticCompressJobPayload(invalidateDialecticCompressJobPayload({ continuation_count: -1 })), Error, 'Invalid continuation_count.');
 });
 
 Deno.test("isDialecticCompressJobPayload rejects unknown sourceType", () => {
-  assertEquals(isDialecticCompressJobPayload(invalidateDialecticCompressJobPayload({ sourceType: "unknown" })), false);
+  assertThrows(() => isDialecticCompressJobPayload(invalidateDialecticCompressJobPayload({ sourceType: "unknown" })), Error, 'Missing or invalid sourceType.');
 });
 
-Deno.test("isDialecticCompressJobPayload rejects missing job_type", () => {
-  assertEquals(isDialecticCompressJobPayload(invalidateDialecticCompressJobPayload({ job_type: "RENDER" })), false);
+Deno.test("isDialecticCompressJobPayload rejects a corrupted mode", () => {
+  assertThrows(() => isDialecticCompressJobPayload(invalidateDialecticCompressJobPayload({ mode: "invalid" })), Error, 'Missing or invalid mode.');
+});
+
+Deno.test("isDialecticCompressJobPayload rejects a corrupted sourceType", () => {
+  assertThrows(() => isDialecticCompressJobPayload(invalidateDialecticCompressJobPayload({ sourceType: 123 })), Error, 'Missing or invalid sourceType.');
+});
+
+Deno.test("isDialecticCompressJobPayload rejects corrupted content", () => {
+  assertThrows(() => isDialecticCompressJobPayload(invalidateDialecticCompressJobPayload({ content: 123 })), Error, 'Missing or invalid content.');
+});
+
+Deno.test("isDialecticCompressJobPayload rejects a corrupted targetKey", () => {
+  assertThrows(() => isDialecticCompressJobPayload(invalidateDialecticCompressJobPayload({ targetKey: 123 })), Error, 'Missing or invalid targetKey.');
 });
 
 Deno.test("isDialecticCompressJobPayload rejects json mode missing documentKey", () => {
-  assertEquals(isDialecticCompressJobPayload(invalidateDialecticCompressJobPayload({ mode: "json", documentKey: null })), false);
+  assertThrows(() => isDialecticCompressJobPayload(invalidateDialecticCompressJobPayload({ mode: "json", documentKey: null })), Error, 'Missing or invalid documentKey.');
 });
 
 Deno.test("isDialecticCompressJobPayload rejects json mode missing docType", () => {
-  assertEquals(isDialecticCompressJobPayload(invalidateDialecticCompressJobPayload({ mode: "json", docType: null })), false);
+  assertThrows(() => isDialecticCompressJobPayload(invalidateDialecticCompressJobPayload({ mode: "json", docType: null })), Error, 'Missing or invalid docType.');
 });
 
 Deno.test("isDialecticCompressJobPayload rejects json mode missing sourceStageSlug", () => {
-  assertEquals(isDialecticCompressJobPayload(invalidateDialecticCompressJobPayload({ mode: "json", sourceStageSlug: null })), false);
+  assertThrows(() => isDialecticCompressJobPayload(invalidateDialecticCompressJobPayload({ mode: "json", sourceStageSlug: null })), Error, 'Missing or invalid sourceStageSlug.');
 });
 
 Deno.test("isDialecticCompressJobPayload accepts text mode without docType or sourceStageSlug", () => {
@@ -109,14 +121,32 @@ Deno.test("isDialecticCompressJobPayload accepts text mode without docType or so
 });
 
 Deno.test("isDialecticCompressJobPayload rejects empty content", () => {
-  assertEquals(isDialecticCompressJobPayload(invalidateDialecticCompressJobPayload({ content: "" })), false);
+  assertThrows(() => isDialecticCompressJobPayload(invalidateDialecticCompressJobPayload({ content: "" })), Error, 'Missing or invalid content.');
 });
 
 Deno.test("isDialecticCompressJobPayload rejects non-record roots", () => {
-  assertEquals(isDialecticCompressJobPayload(null), false);
-  assertEquals(isDialecticCompressJobPayload(undefined), false);
-  assertEquals(isDialecticCompressJobPayload(42), false);
-  assertEquals(isDialecticCompressJobPayload([]), false);
+  assertThrows(() => isDialecticCompressJobPayload(null), Error, 'Payload must be a non-null object.');
+  assertThrows(() => isDialecticCompressJobPayload(undefined), Error, 'Payload must be a non-null object.');
+  assertThrows(() => isDialecticCompressJobPayload(42), Error, 'Payload must be a non-null object.');
+  assertThrows(() => isDialecticCompressJobPayload([]), Error, 'Payload must be a non-null object.');
+});
+
+Deno.test("isDialecticCompressJobPayload rejects a payload missing user_jwt", () => {
+  const { user_jwt: _omit, ...rest } = buildDialecticCompressJobPayload();
+  assertThrows(() => isDialecticCompressJobPayload(rest), Error, 'Missing or invalid user_jwt.');
+});
+
+Deno.test("isDialecticCompressJobPayload rejects a payload missing idempotencyKey", () => {
+  const { idempotencyKey: _omit, ...rest } = buildDialecticCompressJobPayload();
+  assertThrows(() => isDialecticCompressJobPayload(rest), Error, 'Missing or invalid idempotencyKey.');
+});
+
+Deno.test("isDialecticCompressJobPayload rejects a payload carrying job_type", () => {
+  assertThrows(() => isDialecticCompressJobPayload({ ...buildDialecticCompressJobPayload(), job_type: "COMPRESS" }), Error, 'Payload contains unknown properties: job_type');
+});
+
+Deno.test("isDialecticCompressJobPayload rejects a payload carrying user_id", () => {
+  assertThrows(() => isDialecticCompressJobPayload({ ...buildDialecticCompressJobPayload(), user_id: "user-1" }), Error, 'Payload contains unknown properties: user_id');
 });
 
 const basePayload = buildenqueueCompressJobsPayload();
@@ -287,6 +317,12 @@ Deno.test("isenqueueCompressJobsParams rejects a missing modelSlug", () => {
   assertEquals(isenqueueCompressJobsParams(invalidateEnqueueCompressJobsParams({ modelSlug: "" })), false);
 });
 
+Deno.test("isenqueueCompressJobsParams rejects an absent or empty userJwt", () => {
+  const { userJwt: _, ...withoutUserJwt } = baseParams;
+  assertEquals(isenqueueCompressJobsParams(withoutUserJwt), false);
+  assertEquals(isenqueueCompressJobsParams(invalidateEnqueueCompressJobsParams({ userJwt: "" })), false);
+});
+
 Deno.test("isenqueueCompressJobsParams rejects missing walletId", () => {
   const { walletId: _, ...withoutWalletId } = baseParams;
   assertEquals(isenqueueCompressJobsParams(withoutWalletId), false);
@@ -359,23 +395,23 @@ Deno.test("isenqueueCompressJobsErrorReturn rejects non-record roots", () => {
 });
 
 Deno.test("isDialecticCompressJobPayload rejects documentKey that is not a FileType", () => {
-  assertEquals(isDialecticCompressJobPayload(invalidateDialecticCompressJobPayload({ documentKey: "not-a-file-type" })), false);
+  assertThrows(() => isDialecticCompressJobPayload(invalidateDialecticCompressJobPayload({ documentKey: "not-a-file-type" })), Error, 'Missing or invalid documentKey.');
 });
 
 Deno.test("isDialecticCompressJobPayload rejects docType that is not a ModelContributionFileType", () => {
-  assertEquals(isDialecticCompressJobPayload(invalidateDialecticCompressJobPayload({ mode: "json", docType: "not-a-model-contribution" })), false);
+  assertThrows(() => isDialecticCompressJobPayload(invalidateDialecticCompressJobPayload({ mode: "json", docType: "not-a-model-contribution" })), Error, 'Missing or invalid docType.');
 });
 
 Deno.test("isDialecticCompressJobPayload rejects targetKey that is not a ModelContributionFileType", () => {
-  assertEquals(isDialecticCompressJobPayload(invalidateDialecticCompressJobPayload({ targetKey: "not-a-model-contribution" })), false);
+  assertThrows(() => isDialecticCompressJobPayload(invalidateDialecticCompressJobPayload({ targetKey: "not-a-model-contribution" })), Error, 'Missing or invalid targetKey.');
 });
 
 Deno.test("isDialecticCompressJobPayload rejects stageSlug that is not a DialecticStageSlug", () => {
-  assertEquals(isDialecticCompressJobPayload(invalidateDialecticCompressJobPayload({ stageSlug: "not-a-stage" })), false);
+  assertThrows(() => isDialecticCompressJobPayload(invalidateDialecticCompressJobPayload({ stageSlug: "not-a-stage" })), Error, 'Missing or invalid stageSlug.');
 });
 
 Deno.test("isDialecticCompressJobPayload rejects sourceStageSlug that is not a DialecticStageSlug", () => {
-  assertEquals(isDialecticCompressJobPayload(invalidateDialecticCompressJobPayload({ mode: "json", sourceStageSlug: "not-a-stage" })), false);
+  assertThrows(() => isDialecticCompressJobPayload(invalidateDialecticCompressJobPayload({ mode: "json", sourceStageSlug: "not-a-stage" })), Error, 'Missing or invalid sourceStageSlug.');
 });
 
 Deno.test("isenqueueCompressJobsParams rejects stageSlug that is not a DialecticStageSlug", () => {

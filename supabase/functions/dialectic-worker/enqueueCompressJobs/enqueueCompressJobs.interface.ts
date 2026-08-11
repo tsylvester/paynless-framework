@@ -11,17 +11,10 @@ import type {
 import type { CountTokensDeps, CountTokensFn } from "../../_shared/types/tokenizer.types.ts";
 import type { ConstructStoragePathFn } from "../../_shared/utils/path_constructor.types.ts";
 import type { ITextSplitter } from "../../_shared/utils/text_splitter.interface.ts";
-import type { DialecticJobRow } from "../../dialectic-service/dialectic.interface.ts";
+import type { DialecticBaseJobPayload, DialecticJobRow } from "../../dialectic-service/dialectic.interface.ts";
 
-export interface DialecticCompressJobPayload {
-  job_type: "COMPRESS";
-  sessionId: string;
-  projectId: string;
-  stageSlug: DialecticStageSlug;
+export interface DialecticCompressJobPayload extends DialecticBaseJobPayload {
   targetKey: ModelContributionFileTypes;
-  iterationNumber: number;
-  model_id: string;
-  model_slug: string; // parent EXECUTE payload's own slug, so prompt assemblers can name a CompressionPrompt without a provider lookup
   mode: CompressionMode;
   content: string;
   sourceType: CompressionSourceType;
@@ -32,10 +25,9 @@ export interface DialecticCompressJobPayload {
   sourceStageSlug?: DialecticStageSlug;
   chunk_index?: number;
   chunk_total?: number;
-  continuation_count?: number; // present only on a continuation row, written by continueJob
-  source_prompt_resource_id?: string; // written onto the job row by processCompressJob after assembly, read by saveResponse
-  walletId: string;
-  user_id: string;
+  stageSlug: DialecticStageSlug; // narrowed from optional on the base to required
+  iterationNumber: number; // narrowed from optional on the base to required
+  model_slug: string; // narrowed from optional on the base to required; parent EXECUTE payload's own slug, so prompt assemblers can name a CompressionPrompt without a provider lookup
 }
 
 export interface enqueueCompressJobsDeps {
@@ -55,6 +47,7 @@ export interface enqueueCompressJobsParams {
   iterationNumber: number;
   modelId: string;
   modelSlug: string; // parent EXECUTE payload's own slug, so prompt assemblers can name a CompressionPrompt without a provider lookup
+  userJwt: string;
   walletId: string;
   modelConfig: AiModelExtendedConfig;
   tokenizerDeps: CountTokensDeps;

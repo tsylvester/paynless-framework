@@ -146,6 +146,7 @@ export async function renderDocument(
       contentForStorage: rendered,
       projectOwnerUserId: deps.notifyUserId,
       description: `Compressed context for ${stageSlug}:${String(targetKey)}`,
+      sourcePromptResourceId: undefined,
     });
 
     if (!isResourceContext(context)) {

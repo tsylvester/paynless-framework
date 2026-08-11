@@ -11,9 +11,11 @@ import {
 import type { ShouldEnqueueRenderJobFn } from "../../_shared/types/shouldEnqueueRenderJob.interface.ts";
 import type { BoundResolveTemplateFilenameFn } from "../../_shared/utils/resolveTemplateFilename/resolveTemplateFilename.interface.ts";
 import { RenderJobValidationError } from "../../_shared/utils/errors.ts";
+import { buildDialecticBaseJobPayload } from "../../_shared/dialectic.mock.ts";
 import type {
   DialecticRenderCompressedContextJobPayload,
   EnqueueRenderCompressedContextPayload,
+  EnqueueRenderJobCallPayload,
   EnqueueRenderJobDeps,
   EnqueueRenderJobErrorReturn,
   EnqueueRenderJobFn,
@@ -188,18 +190,13 @@ export function buildDialecticRenderCompressedContextJobPayload(
   overrides?: DialecticRenderCompressedContextJobPayloadOverrides,
 ): DialecticRenderCompressedContextJobPayload {
   const base: DialecticRenderCompressedContextJobPayload = {
-    idempotencyKey: "session-1_1_thesis_compress_render_contribution_business_case_technical_approach",
-    projectId: "project-1",
-    sessionId: "session-1",
-    iterationNumber: 1,
+    ...buildDialecticBaseJobPayload(),
     stageSlug: DialecticStageSlug.Thesis,
+    iterationNumber: 1,
     targetKey: FileType.technical_approach,
     sourceType: "contribution",
     documentKey: FileType.business_case,
     template_filename: "thesis_business_case.md",
-    user_jwt: "jwt-token",
-    model_id: "model-1",
-    walletId: "wallet-1",
   };
   return overrides ? { ...base, ...overrides } : base;
 }
@@ -219,7 +216,7 @@ export function invalidateDialecticRenderCompressedContextJobPayload(
 export const mockEnqueueRenderJob: EnqueueRenderJobFn = async (
   _deps: EnqueueRenderJobDeps,
   _params: EnqueueRenderJobParams,
-  _payload: EnqueueRenderJobPayload | EnqueueRenderCompressedContextPayload,
+  _payload: EnqueueRenderJobCallPayload,
 ): Promise<EnqueueRenderJobSuccessReturn> => {
   return buildEnqueueRenderJobSuccessReturn();
 };
