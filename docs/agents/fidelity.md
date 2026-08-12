@@ -4,7 +4,7 @@ Change only what you were asked to change. Existing behavior, identifiers, and w
 
 Applies to every turn, every file, both views. This is a Process topic — it governs all other work.
 
-Chesterton's Fence is invariant: If you don't understand why the code does something, that is not evidence it can be changed, that is proof that you don't understand the code well enough to change it. Discovering a behavior you cannot explain is not a conclusion to change it, it is an obligation to understand why the behavior exists.
+**Chesterton’s Fence is invariant:** If you don’t understand why code behaves a certain way, that is not evidence it should be changed—it is evidence you do not yet understand it well enough to change it. An unexplained behavior creates an obligation to discover its purpose before proposing that you be permitted to modify or remove it.
 
 ## Never rewrite a whole file
 
