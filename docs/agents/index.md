@@ -1,18 +1,11 @@
 # Agent Instruction Index
 
-Single source of truth for how agents work in this repo. Every rule lives in
-exactly one topic file below (DRY / SSOT / SRP). Nothing here is duplicated into
-a harness's native path — each harness entry file (`CLAUDE.md`, `AGENTS.md`,
-`.github/copilot-instructions.md`, `.cursor/rules/rules.mdc`) is a thin pointer
-to this index.
+Single source of truth for how agents work in this repo. Every rule lives in exactly one topic file below (DRY / SSOT / SRP). Nothing here is duplicated into a harness's native path — each harness entry file (`CLAUDE.md`, `AGENTS.md`, `.github/copilot-instructions.md`, `.cursor/rules/rules.mdc`) is a thin pointer to this index.
 
 ## How to use this index
 
-- **Process topics** govern every turn regardless of which file you touch. Read
-  them first, every turn.
-- **Standards topics** govern the content of one file/element. A workplan node
-  element and its implementer prompt cite the **same** standards topic(s) — the
-  two views never diverge.
+- **Process topics** govern every turn regardless of which file you touch. Read them first, every turn.
+- **Standards topics** govern the content of one file/element. A workplan node element and its implementer prompt cite the **same** standards topic(s) — the two views never diverge.
 
 ## Process topics — govern every turn
 
@@ -44,16 +37,12 @@ to this index.
 
 ## Views
 
-- **Construction view** (workplan author): the [workplan-structure](workplan-structure.md)
-  node template names, per element, the standards topic(s) that element must conform to.
-- **Implementation view** (file author): each element prompt points at the same
-  standards topic(s) as its node element, plus all Process topics.
+- **Construction view** (workplan author): the [workplan-structure](workplan-structure.md) node template names, per element, the standards topic(s) that element must conform to.
+- **Implementation view** (file author): each element prompt points at the same standards topic(s) as its node element, plus all Process topics.
 
 ## Implementation routing
 
-A map from the file you are building to the topic that governs it, the template or
-example to copy, and its most common halt trigger. Every element is also governed by
-all Process topics.
+A map from the file you are building to the topic that governs it, the template or example to copy, and its most common halt trigger. Every element is also governed by all Process topics.
 
 | Building | Conforms to | Copy from | Halt if |
 |---|---|---|---|
@@ -66,3 +55,4 @@ all Process topics.
 | implementation | [composition](composition.md), [dependency-injection](dependency-injection.md), [types](types.md), [errors-and-returns](errors-and-returns.md), [guards](guards.md), [logging](logging.md) | guard-on-entry skeleton ([guards](guards.md)); body from the branch contract | an undeclared dependency or a missing guard is required |
 | provides | [boundaries](boundaries.md) | export-surface example ([boundaries](boundaries.md)) | a symbol a consumer needs is not available to export |
 | integration test | [tests](tests.md#integration) | boundary-mocking example ([tests#integration](tests.md#integration)) | a function in the integrated chain is not built yet |
+
