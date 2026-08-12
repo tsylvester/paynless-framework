@@ -59,6 +59,7 @@ import {
     buildMockCalculateAffordabilityFn,
 } from '../calculateAffordability/calculateAffordability.mock.ts';
 import { createJobContext } from './createJobContext.ts';
+import { mockContinueJob } from '../continueJob/continueJob.provides.ts';
 import { sanitizeJsonContent } from '../../_shared/utils/jsonSanitizer/jsonSanitizer.ts';
 import { mockAssembleContributionChain } from '../../_shared/services/document_renderer/assembleContributionChain/assembleContributionChain.mock.ts';
 import { mockLoadDocumentTemplate } from '../../_shared/services/document_renderer/loadDocumentTemplate/loadDocumentTemplate.mock.ts';
@@ -236,7 +237,7 @@ export function createMockJobContextParams(overrides?: JobContextParamsOverrides
         assembleContributionChain: mockAssembleContributionChain,
         loadDocumentTemplate: mockLoadDocumentTemplate,
         mergeChunkContent: mockMergeChunkContent,
-        continueJob: async () => ({ enqueued: false }),
+        continueJob: mockContinueJob,
         retryJob: async () => ({}),
         prepareModelJob: prepareModelJob,
         debitTokens: debitTokens,

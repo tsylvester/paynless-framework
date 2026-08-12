@@ -140,7 +140,7 @@ export function createMockSaveResponseDeps(
         logger,
         fileManager: new MockFileManagerService(),
         notificationService: mockNotificationService,
-        continueJob: async () => ({ enqueued: false }),
+        continueJob: async () => ({ enqueued: false, reason: "continuation_limit_reached" }),
         retryJob: async () => ({}),
         resolveFinishReason,
         isIntermediateChunk,

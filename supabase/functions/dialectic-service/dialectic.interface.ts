@@ -1867,16 +1867,6 @@ export type SeedPromptData = {
 	fileName: string;
 };
 
-export interface IContinueJobDeps {
-	logger: ILogger;
-}
-
-export interface IContinueJobResult {
-	enqueued: boolean;
-	error?: Error;
-	reason?: string;
-}
-
 export type Job =
 	Database["public"]["Tables"]["dialectic_generation_jobs"]["Row"];
 

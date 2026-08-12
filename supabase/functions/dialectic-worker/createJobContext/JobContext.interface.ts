@@ -15,12 +15,8 @@ import { CountTokensFn } from '../../_shared/types/tokenizer.types.ts';
 import {
     GetSeedPromptForStageFn,
     PlanComplexStageFn,
-    IContinueJobDeps,
-    IContinueJobResult,
     FailedAttemptError,
     UnifiedAIResponse,
-    DialecticContributionRow,
-    DialecticProjectResourceRow,
     DialecticJobRow,
     DialecticPlanJobPayload,
     DialecticRecipeStep,
@@ -53,19 +49,7 @@ import { PrepareModelJobParams, PrepareModelJobPayload, PrepareModelJobReturn } 
 import { GatherArtifactsParams, GatherArtifactsPayload, GatherArtifactsReturn } from '../gatherArtifacts/gatherArtifacts.interface.ts';
 import { SanitizeJsonContentFn } from '../../_shared/utils/jsonSanitizer/jsonSanitizer.interface.ts';
 import type { ComputeJobSig } from "../../_shared/utils/computeJobSig/computeJobSig.interface.ts";
-/**
- * Function type for continueJob orchestration utility.
- * Continues processing a job by creating and enqueueing follow-up jobs.
- */
-export type ContinueJobFn = (
-    deps: IContinueJobDeps,
-    dbClient: SupabaseClient<Database>,
-    job: Database['public']['Tables']['dialectic_generation_jobs']['Row'],
-    aiResponse: UnifiedAIResponse,
-    savedOutput: DialecticContributionRow | DialecticProjectResourceRow,
-    projectOwnerUserId: string
-) => Promise<IContinueJobResult>;
-
+import { ContinueJobFn } from '../continueJob/continueJob.provides.ts';
 /**
  * Function type for retryJob orchestration utility.
  * Retries a failed job by resetting its status and re-enqueueing it.

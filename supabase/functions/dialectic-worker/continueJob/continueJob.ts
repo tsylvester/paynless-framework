@@ -11,7 +11,11 @@ import {
   isModelContributionFileType,
 } from '../../_shared/utils/type-guards/type_guards.file_manager.ts';
 import type { CanonicalPathParams } from '../../_shared/types/file_manager.types.ts';
-import type { ContinueJobFn } from '../createJobContext/JobContext.interface.ts';
+import {
+  ContinueJobEnqueueError,
+  ContinueJobValidationError,
+  type ContinueJobFn,
+} from './continueJob.interface.ts';
 import {
   isDialecticCompressJobPayload,
   type DialecticCompressJobPayload,
@@ -21,20 +25,22 @@ type JobInsert = Database['public']['Tables']['dialectic_generation_jobs']['Inse
 
 export const continueJob: ContinueJobFn = async (
   deps,
-  dbClient,
-  job,
-  aiResponse,
-  savedOutput,
-  projectOwnerUserId,
+  params,
+  payload,
 ) => {
+  const { job, savedOutput } = payload;
+  const { dbClient, projectOwnerUserId } = params;
+
   if (!isContinuablePayload(job.payload)) {
-    const error = new Error('Invalid or non-continuable job payload');
+    const error = new ContinueJobValidationError('Invalid or non-continuable job payload');
     deps.logger.error('Cannot continue job due to invalid payload.', { jobId: job.id, payload: job.payload, error: error.message });
-    return { enqueued: false, error };
+    return { error, retriable: false };
   }
 
   const currentContinuationCount: number = job.payload.continuation_count ?? 0;
   const newContinuationCount: number = currentContinuationCount + 1;
+  // Computed once above both arms; read by the COMPRESS payload member and the row column alike.
+  const idempotencyKey = `${job.id}_continue_${savedOutput.id}`;
 
   // Both arms feed the shared tail: the payload they built, the row's job type, its
   // target contribution and its test flag.
@@ -43,9 +49,24 @@ export const continueJob: ContinueJobFn = async (
   let continuationTargetContributionId: JobInsert['target_contribution_id'];
   let continuationIsTestJob: boolean;
 
-  if (isDialecticCompressJobPayload(job.payload)) {
+  if (job.job_type === 'COMPRESS') {
+    // Narrowing step: the guard throws a per-member diagnostic on failure; surface it unchanged.
+    try {
+      if (!isDialecticCompressJobPayload(job.payload)) {
+        // Unreachable: the guard throws rather than returns false.
+        const error = new ContinueJobValidationError(`Job ${job.id} cannot be continued because its payload is not a valid compress job payload.`);
+        deps.logger.error(error.message, { jobId: job.id });
+        return { error, retriable: false };
+      }
+    } catch (thrown) {
+      if (!(thrown instanceof Error)) {
+        throw thrown;
+      }
+      deps.logger.error('[dialectic-worker] [continueJob] Compress continuation payload failed validation.', { jobId: job.id, error: thrown.message });
+      return { error: thrown, retriable: false };
+    }
+
     const compressPayload: DialecticCompressJobPayload = {
-      job_type: 'COMPRESS',
       sessionId: job.payload.sessionId,
       projectId: job.payload.projectId,
       stageSlug: job.payload.stageSlug,
@@ -57,7 +78,8 @@ export const continueJob: ContinueJobFn = async (
       content: job.payload.content,
       sourceType: job.payload.sourceType,
       walletId: job.payload.walletId,
-      user_id: job.payload.user_id,
+      user_jwt: job.payload.user_jwt,
+      idempotencyKey: idempotencyKey,
       continuation_count: newContinuationCount,
     };
 
@@ -84,9 +106,9 @@ export const continueJob: ContinueJobFn = async (
     }
 
     if (!isJson(compressPayload)) {
-      const error = new Error('Constructed payload is not valid JSON.');
+      const error = new ContinueJobValidationError('Constructed payload is not valid JSON.');
       deps.logger.error('Failed to create valid JSON payload for continuation.', { jobId: job.id, newPayload: compressPayload });
-      return { enqueued: false, error };
+      return { error, retriable: false };
     }
 
     continuationPayload = compressPayload;
@@ -96,22 +118,22 @@ export const continueJob: ContinueJobFn = async (
   } else {
     // A continuation job MUST have a valid model-generated output_type to continue.
     if (!('output_type' in job.payload) || typeof job.payload.output_type !== 'string' || !isModelContributionFileType(job.payload.output_type)) {
-      const error = new Error(`Job ${job.id} cannot be continued because its payload is missing a valid model-generated 'output_type'.`);
+      const error = new ContinueJobValidationError(`Job ${job.id} cannot be continued because its payload is missing a valid model-generated 'output_type'.`);
       deps.logger.error(error.message, { jobId: job.id, payload: job.payload });
-      return { enqueued: false, error };
+      return { error, retriable: false };
     }
 
     // Enforce presence of user_jwt in the triggering payload (no healing/injection allowed)
     if (!('user_jwt' in job.payload) || typeof job.payload.user_jwt !== 'string' || job.payload.user_jwt.length === 0) {
-      const error = new Error('payload.user_jwt required');
+      const error = new ContinueJobValidationError('payload.user_jwt required');
       deps.logger.error('[dialectic-worker] [continueJob] Missing or empty user_jwt on triggering payload.', { jobId: job.id });
-      return { enqueued: false, error };
+      return { error, retriable: false };
     }
 
     if (!job.payload.walletId) {
-      const error = new Error('Job payload is missing a valid walletId');
+      const error = new ContinueJobValidationError('Job payload is missing a valid walletId');
       deps.logger.error('Cannot continue job due to invalid walletId.', { jobId: job.id, payload: job.payload, error: error.message });
-      return { enqueued: false, error };
+      return { error, retriable: false };
     }
 
     // Document relationships: start from the trigger's. When the trigger has valid
@@ -141,35 +163,35 @@ export const continueJob: ContinueJobFn = async (
     // Invariant: Continuation enqueue requires valid document_relationships from either the triggering payload
     // or the saved output. Do not enqueue if missing.
     if (!isDocumentRelationships(resolvedRelationships)) {
-      const error = new Error('Continuation enqueue requires valid document_relationships');
+      const error = new ContinueJobValidationError('Continuation enqueue requires valid document_relationships');
       deps.logger.error('[dialectic-worker] [continueJob] Missing document_relationships for continuation.', {
         jobId: job.id,
         payloadHasRelationships: isDocumentRelationships(triggerRels),
         savedHasRelationships: isDocumentRelationships(savedRels),
       });
-      return { enqueued: false, error };
+      return { error, retriable: false };
     }
 
     // Last gate of the arm: narrow the parent payload the continuation literal is built from.
     // The guard throws a named Error per failed member; surface it unchanged.
     try {
       if (!isDialecticExecuteJobPayload(job.payload)) {
-        const error = new Error(`Job ${job.id} cannot be continued because its payload is not a valid execute job payload.`);
+        const error = new ContinueJobValidationError(`Job ${job.id} cannot be continued because its payload is not a valid execute job payload.`);
         deps.logger.error(error.message, { jobId: job.id });
-        return { enqueued: false, error };
+        return { error, retriable: false };
       }
     } catch (thrown) {
       if (!(thrown instanceof Error)) {
         throw thrown;
       }
       deps.logger.error('[dialectic-worker] [continueJob] Execute continuation payload failed validation.', { jobId: job.id, error: thrown.message });
-      return { enqueued: false, error: thrown };
+      return { error: thrown, retriable: false };
     }
 
     if (!isDialecticStageSlug(job.payload.stageSlug)) {
-      const error = new Error(`Job ${job.id} cannot be continued because its payload stageSlug is not a dialectic stage slug.`);
+      const error = new ContinueJobValidationError(`Job ${job.id} cannot be continued because its payload stageSlug is not a dialectic stage slug.`);
       deps.logger.error(error.message, { jobId: job.id, stageSlug: job.payload.stageSlug });
-      return { enqueued: false, error };
+      return { error, retriable: false };
     }
 
     // Canonical path params: preserve the parent's, set contributionType to stageSlug (tests expect stageSlug here)
@@ -241,9 +263,9 @@ export const continueJob: ContinueJobFn = async (
     }
 
     if (!isJson(executePayload)) {
-      const error = new Error('Constructed payload is not valid JSON.');
+      const error = new ContinueJobValidationError('Constructed payload is not valid JSON.');
       deps.logger.error('Failed to create valid JSON payload for continuation.', { jobId: job.id, newPayload: executePayload });
-      return { enqueued: false, error };
+      return { error, retriable: false };
     }
 
     continuationPayload = executePayload;
@@ -285,12 +307,12 @@ export const continueJob: ContinueJobFn = async (
     error_details: null,
     // Align row-level target with payload target for traceability
     target_contribution_id: continuationTargetContributionId,
-    idempotency_key: `${job.id}_continue_${savedOutput.id}`,
+    idempotency_key: idempotencyKey,
   };
 
   // The type of `newJobToInsert` is compatible with the `insert` method's expected type.
   const { error: insertError } = await dbClient.from('dialectic_generation_jobs').insert(newJobToInsert);
-  
+
   if (insertError) {
     const isUniqueViolationOnIdempotencyKey =
       insertError.code === '23505' &&
@@ -302,8 +324,8 @@ export const continueJob: ContinueJobFn = async (
     }
     deps.logger.error(`[dialectic-worker] [continueJob] Failed to enqueue continuation job.`, { error: insertError });
     return {
-        enqueued: false,
-        error: new Error(`Failed to enqueue continuation job: ${insertError.message}`)
+        error: new ContinueJobEnqueueError(`Failed to enqueue continuation job: ${insertError.message}`),
+        retriable: true,
     };
   }
 

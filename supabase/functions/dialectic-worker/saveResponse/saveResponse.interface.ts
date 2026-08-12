@@ -7,13 +7,13 @@ import type { BoundDebitTokens } from '../../_shared/utils/debitTokens.interface
 import type { SanitizeJsonContentFn } from '../../_shared/utils/jsonSanitizer/jsonSanitizer.interface.ts';
 import type {
   BuildUploadContextFn,
-  ContinueJobFn,
   DetermineContinuationFn,
   IsIntermediateChunkFn,
   ResolveFinishReasonFn,
   RetryJobFn,
 } from '../createJobContext/JobContext.interface.ts';
 import type { BoundEnqueueRenderJobFn } from '../enqueueRenderJob/enqueueRenderJob.interface.ts';
+import type { ContinueJobFn } from '../continueJob/continueJob.provides.ts';
 
 export interface NodeTokenUsage {
   prompt_tokens: number;

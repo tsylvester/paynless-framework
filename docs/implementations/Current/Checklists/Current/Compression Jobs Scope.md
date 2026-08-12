@@ -19,9 +19,9 @@ flowchart TD
     M --> N
     L -->|yes| O
     J -->|no| N["score candidates<br/>tokens x importance<br/>skip existing artifacts<br/>select ONE victim"]
-    N --> O["enqueueCompressJobs<br/>dedup layer one"]
+    N --> O["enqueueCompressJobs<br/>dedup at enqueue"]
     O --> P["COMPRESS child rows<br/>parent set waiting_for_children"]
-    P --> Q["processCompressJob<br/>dedup layer two"]
+    P --> Q["processCompressJob<br/>dedup at claim"]
     Q --> R["assembleCompressionPrompt<br/>or assembleContinuationPrompt"]
     R --> D
     F --> S["stream callback"]
@@ -35,7 +35,7 @@ flowchart TD
     V --> W{"shouldContinue<br/>from prepareResponseContent"}
     W -->|yes| X["continueJob<br/>ordinary continuation path"]
     X --> Q
-    W -->|no| Y["persist CompressedContextRawJson<br/>dedup layer three"]
+    W -->|no| Y["persist CompressedContextRawJson<br/>dedup at persist"]
     Y --> Z{"source mode"}
     Z -->|json, renderable| AA["dispatch RENDER job<br/>COMPRESS job waiting_for_children"]
     Z -->|text| AB["extract compressed string<br/>persist CompressedContext<br/>complete"]
@@ -52,12 +52,12 @@ flowchart TD
   `compressPrompt`: score candidates (resource documents + the compressible history window) by
   `tokens × (1 − relevanceWeight)`; exclude candidates whose `CompressedContext` artifact for THIS
   compression target already exists; select the ONE victim with the lowest score.
-* `enqueueCompressJobs`: dedup layer one — skip if the canonical artifact exists. Contribution
+* `enqueueCompressJobs`: dedup at enqueue — skip if the canonical artifact exists. Contribution
   victims resolve their completed source JSON and take `mode:'json'`; feedback and history victims
   take `mode:'text'`. Victim plus prompt envelope fits the window → ONE COMPRESS child; else split →
   N chunk children. The caller sets the parent `status='waiting_for_children'` and returns a pending
   SUCCESS; the existing DB completion trigger wakes it. Deferral is success, not error.
-* `processCompressJob` per child: validate the payload; dedup layer two — re-check the canonical
+* `processCompressJob` per child: validate the payload; dedup at claim — re-check the canonical
   artifact and complete without spending if it appeared; assemble via `assembleCompressionPrompt`, or
   `assembleContinuationPrompt` when the payload carries a continuation count; call `prepareModelJob`
   with that prompt and the parent's model. The dispatcher's `job_type` branch is the recursion guard:
@@ -70,7 +70,7 @@ flowchart TD
   row's `job_type`, and the COMPRESS arm CONSUMES that completeness verdict rather than computing
   one — incomplete continues through the ordinary continuation path
   and is not a failure. On a complete result persist `CompressedContextRawJson` at the canonical
-  `_work/raw_responses` path, idempotently (dedup layer three). A renderable json-mode source
+  `_work/raw_responses` path, idempotently (dedup at persist). A renderable json-mode source
   dispatches a RENDER job and sets the COMPRESS job `waiting_for_children`; a text-mode source has
   the compressed string extracted and persisted as `CompressedContext`, dispatches no RENDER job, and
   completes. `saveResponse` holds no renderer dependency and sends no notification.
@@ -162,26 +162,33 @@ is already gone. A contribution back half — canonical identity, upload, relati
 render dispatch, notifications, continuation, final status — is anchored on `dialectic_contributions`
 end to end and is what a COMPRESS response has no use for.
 
-`dialectic-worker/index.ts` is the composition root for this function. Each module is bound in the factory into a `Bound<Module>Fn`, and a composing module receives bound closures, never another module's deps to pass down. An orchestrator that receives one wide deps object and hands each sub-module
+`dialectic-worker/index.ts` is the composition root for this function, and the worker's deps factory
+is its single assembler. `saveResponse` is a `dialectic-worker` module, so its graph is the worker's
+graph. Each module is bound in the factory into a `Bound<Module>Fn`, and a composing module receives bound closures, never another module's deps to pass down. An orchestrator that receives one wide deps object and hands each sub-module
 a subset of it is prop drilling and a second assembler; it also carries the monolith's coupling forward under the name of narrowing.
 
 A module's deps are exactly the collaborators its `interaction.spec` branches invoke, checked against
 that spec. A member no branch invokes is inherited coupling and is removed. `dbClient` is a
 per-invocation param, never a dep.
 
-| Module | Deps | Params carry |
+| Module | Deps | Per-invocation values |
 |---|---|---|
 | `retryJob` | `logger`, `notificationService` | `dbClient`, job row, attempt, failed attempts, owner id |
-| `assembleAiResponse` | — | `processingTimeMs`, `preflightInputTokens` |
-| `loadJobContext` | — | `dbClient` |
-| `prepareResponseContent` | `logger`, `resolveFinishReason`, `isIntermediateChunk`, `sanitizeJsonContent`, `determineContinuation` | `continueUntilComplete`, `documentKey`, `contextForDocuments`, `sourceObject` |
-| `debitForResponse` | `debitTokens` | `dbClient`, wallet id, provider row, model config, owner id |
+| `assembleAiResponse` | bound `countTokens` | `processingTimeMs`, `preflightInputTokens`, `modelConfig`, assembled content, stream token usage, stream finish reason |
+| `loadJobContext` | — | `dbClient`, job id |
+| `prepareResponseContent` | `logger`, `resolveFinishReason`, `isIntermediateChunk`, `sanitizeJsonContent`, `determineContinuation` | `jobId`, `mode`, `continueUntilComplete`, `documentKey`, `contextForDocuments`, `sourceObject`, the assembled response |
+| `debitForResponse` | `debitTokens` | `dbClient`, job id, wallet id, provider row, model config, owner id, the assembled response |
 | `resolveContributionIdentity` | `logger` | `dbClient`, job row, provider row |
-| `persistContributionRelationships` | — | `dbClient`, contribution, stage slug |
-| `finalizeContributionJob` | `logger`, `notificationService`, `fileManager`, `continueJob`, `enqueueRenderJob` | `dbClient`, job row, contribution, owner id |
+| `persistContributionRelationships` | — | `dbClient`, contribution, stage slug, file type, the continuation flag, the payload's relationships |
+| `finalizeContributionJob` | `logger`, `notificationService`, `fileManager`, bound `continueJob`, bound `enqueueRenderJob` | `dbClient`, job row, contribution, owner id, the narrowed payload, the resolved identity, the continuation verdict, the resolved finish reason, the intermediate flag |
 | `saveContributionResponse` | `fileManager`, `buildUploadContext`, bound `resolveContributionIdentity`, bound `persistContributionRelationships`, bound `finalizeContributionJob` | `dbClient`, resolved context |
 | `saveCompressedResponse` | `fileManager`, `buildUploadContext`, `enqueueRenderJob` | `dbClient`, narrowed payload |
 | `saveResponse` | `logger`, `retryJob`, bound `loadJobContext`, bound `assembleAiResponse`, bound `debitForResponse`, bound `prepareResponseContent`, bound `saveContributionResponse`, bound `saveCompressedResponse` | `dbClient`, `job_id` |
+
+The third column lists every per-invocation value a module takes, not one slot. Each node splits that
+column into `params` and `payload` on the signature rule — the data the function operates on is the
+payload, the control values are params — and a module supplies both slots whichever way the split
+falls.
 
 `SaveResponseDeps` is shrunk to the actual deps for the orchestrator, and none of the deps for the extracted functions. 
 
@@ -211,10 +218,10 @@ Strict node order: `retryJob` → `assembleAiResponse` → `loadJobContext` → 
 `finalizeContributionJob` → `saveContributionResponse` → `saveCompressedResponse` → `saveResponse` →
 `netlifyResponse/index.ts`. The shared modules precede both arms; the contribution modules precede the
 arm that composes them; both arms precede the orchestrator that routes to them; and
-`netlifyResponse/index.ts` closes the seam because it is the root that binds every module in this
-workstream and is the only file that can retire the inline literal it builds today. The worker root is not touched here:
-`saveResponse` does not run in the worker, and the worker's factory does not reach its final shape
-until the cutover.
+`netlifyResponse/index.ts` closes the seam because it consumes every module above and a consumer
+follows its producers. It assembles no deps: every module reaches it already bound from the worker's
+deps factory, so the graph is constructed once, in one shape. The worker's factory gains each module
+as that module lands and does not reach its final shape until the cutover.
 
 * `supabase/functions/dialectic-worker/retryJob/retryJob.ts`
 * `supabase/functions/dialectic-worker/assembleAiResponse/assembleAiResponse.ts`
@@ -227,8 +234,8 @@ until the cutover.
 * `supabase/functions/dialectic-worker/saveContributionResponse/saveContributionResponse.ts`
 * `supabase/functions/dialectic-worker/saveCompressedResponse/saveCompressedResponse.ts`
 * `supabase/functions/dialectic-worker/saveResponse.ts` — the relocation node.
-* `supabase/functions/netlifyResponse/index.ts` — the root binds every module above into its
-  `Bound<Module>Fn` and stops building a wide deps literal for the orchestrator to subset.
+* `supabase/functions/netlifyResponse/index.ts` — assembles no deps; every module above reaches it
+  already bound from the worker's deps factory.
 * **COMMIT**
 
 ---
@@ -253,14 +260,15 @@ deletions close this workstream rather than trailing it.
 Every deps object in the WORKER is assembled at its boundary by the context factory. No call site
 inside the worker constructs one inline: for that process the factory is the single assembler, the
 worker root supplies unbound implementations to it, and the graph is constructed once, in one shape.
-The factory's reach is its own process — `netlifyResponse` is a separate function and assembles at
-its own root, per the workstream above. Params remain per-invocation and are constructed by the
+The factory's reach is every consumer of a worker module — `netlifyResponse` is a separate function,
+but the modules it calls are the worker's, so it takes their deps already bound from that factory and
+assembles none of its own, per the workstream above. Params remain per-invocation and are constructed by the
 caller, which is why the consumers holding params literals share this seam with the contracts they
 name.
 
 Every production tokenizer becomes real. A character-indexing encoder and a `text.length` token count
 make a preflight read high and misclassify affordable requests as unaffordable; the epic does not ship
-with known-broken token accounting at any of the three sites.
+with known-broken token accounting at any site that produces a token count.
 
 Strict node order: `applyCompressionOverlay` → `gatherArtifacts` → `vector_utils` → `compressPrompt`
 → `calculateAffordability` → `StreamChat` → `streamRewind` → `prepareModelJob` → `processCompressJob`
