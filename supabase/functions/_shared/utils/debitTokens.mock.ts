@@ -5,8 +5,11 @@ import type {
   DebitTokensParams,
   DebitTokensPayload,
   DebitTokensReturn,
+  DebitTokensSuccess,
+  DebitTokensError,
   BoundDebitTokens,
 } from "./debitTokens.interface.ts";
+import { buildChatMessageRow } from "../dialectic.mock.ts";
 
 interface DebitTokensMockHolder {
   debitTokens: DebitTokens;
@@ -89,4 +92,43 @@ export function createMockBoundDebitTokens(override?: BoundDebitTokens): BoundDe
     error: new Error('mock bound debitTokens not implemented'),
     retriable: false,
   });
+}
+
+// --- DebitTokensSuccess ---
+
+export type DebitTokensSuccessOverrides = Partial<DebitTokensSuccess>;
+
+export function buildDebitTokensSuccess(overrides?: DebitTokensSuccessOverrides): DebitTokensSuccess {
+  const base: DebitTokensSuccess = {
+    result: {
+      userMessage: buildChatMessageRow(),
+      assistantMessage: buildChatMessageRow(),
+    },
+    transactionRecordedSuccessfully: true,
+  };
+  return overrides ? { ...base, ...overrides } : base;
+}
+
+export type DebitTokensSuccessCorruptions = { [K in keyof DebitTokensSuccess]?: unknown };
+
+export function invalidateDebitTokensSuccess(corruptions: DebitTokensSuccessCorruptions): unknown {
+  return { ...buildDebitTokensSuccess(), ...corruptions };
+}
+
+// --- DebitTokensError ---
+
+export type DebitTokensErrorOverrides = Partial<DebitTokensError>;
+
+export function buildDebitTokensError(overrides?: DebitTokensErrorOverrides): DebitTokensError {
+  const base: DebitTokensError = {
+    error: new Error('debit tokens error'),
+    retriable: false,
+  };
+  return overrides ? { ...base, ...overrides } : base;
+}
+
+export type DebitTokensErrorCorruptions = { [K in keyof DebitTokensError]?: unknown };
+
+export function invalidateDebitTokensError(corruptions: DebitTokensErrorCorruptions): unknown {
+  return { ...buildDebitTokensError(), ...corruptions };
 }

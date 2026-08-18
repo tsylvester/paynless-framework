@@ -1168,17 +1168,19 @@ export interface CallUnifiedAIModelOptions {
 	currentStageSystemPromptId?: string | null;
 }
 
+export interface UnifiedAIResponseTokenUsage {
+	prompt_tokens: number;
+	completion_tokens: number;
+	total_tokens?: number;
+}
+
 export interface UnifiedAIResponse {
 	content: string | null;
 	error?: string | null;
 	errorCode?: string | null; // e.g., 'MODEL_QUOTA_EXCEEDED', 'API_ERROR', 'TIMEOUT'
 	inputTokens?: number;
 	outputTokens?: number;
-	tokenUsage?: {
-		prompt_tokens: number;
-		completion_tokens: number;
-		total_tokens?: number;
-	} | null;
+	tokenUsage?: UnifiedAIResponseTokenUsage | null;
 	processingTimeMs?: number;
 	contentType?: string; // Added to specify the MIME type of the content
 	rawProviderResponse?: Record<string, unknown>;
@@ -1394,7 +1396,7 @@ export interface DialecticExecuteJobPayload extends DialecticBaseJobPayload {
 		// Key-value store for resource_ids needed by the prompt
 		[key: string]: string | string[];
 	};
-	document_key?: string | null;
+	document_key?: FileType | null;
 	branch_key?: BranchKey | null;
 	parallel_group?: number | null;
 	planner_metadata?: DialecticStepPlannerMetadata | null;

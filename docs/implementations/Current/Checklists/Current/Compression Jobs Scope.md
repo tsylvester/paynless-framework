@@ -26,7 +26,7 @@ flowchart TD
     R --> D
     F --> S["stream callback"]
     S --> AE{"prepareResponseContent<br/>usable response?"}
-    AE -->|no| AF["retryJob<br/>row set retrying"]
+    AE -->|no| AF["retry-required flavor<br/>saveResponse dispatches retryJob<br/>row set retrying"]
     AF --> A
     AE -->|yes| AG["sanitize, parse, determineContinuation<br/>completeness decided here"]
     AG --> T{"saveResponse<br/>route on job_type"}
@@ -117,9 +117,16 @@ share one `job_type`, the arm is selected by a named non-throwing structural pre
 payload's own module. A selection predicate answers a question and returns a boolean; a guard proves
 a type and throws, and the two are never the same symbol.
 
-No payload redeclares a base member, and no payload carries a fact the job row already owns — the
-job's type is the row's column and the owner is the row's `user_id`. What a payload does carry is
-`user_jwt`, which moves a call across the gateway and is derivable from nothing else.
+A payload redeclares a base member only to narrow an optional base member to required on the arm
+that requires it; it never redeclares one to change its type or to restate it unchanged. No payload
+carries a fact the job row already owns — the job's type is the row's column and the owner is the
+row's `user_id`. What a payload does carry is `user_jwt`, which moves a call across the gateway and
+is derivable from nothing else.
+
+`preflight_input_tokens`, `document_key` and `context_for_documents` are members of
+`DialecticBaseJobPayload`, optional there and required on the arms that require them, because the
+shared front half reads all three before any arm is selected. `document_key` is a `FileType`, so no
+consumer re-narrows it and no reader reaches it through a property descriptor.
 
 continueJob is lifted into its own module and provided its full support system. The function is made compliant to the repo standard and all callers are updated to call the corrected file. 
 
@@ -158,7 +165,8 @@ The cut follows the axis the data flow already has. A shared front half — job 
 resolution, response assembly, debit, content preparation — is job-type agnostic and serves both
 arms; the debit precedes content preparation because the spend it records precedes everything the
 function can still decide, and because `saveResponse` runs on the stream callback, where the money
-is already gone. A contribution back half — canonical identity, upload, relationship persistence,
+is already gone. The assistant message records the raw assembled content: the spend is real whether
+or not the response is usable, and the application does not subsidize an incomplete model response. A contribution back half — canonical identity, upload, relationship persistence,
 render dispatch, notifications, continuation, final status — is anchored on `dialectic_contributions`
 end to end and is what a COMPRESS response has no use for.
 
@@ -171,24 +179,38 @@ A module's deps are exactly the collaborators its `interaction.spec` branches in
 that spec. A member no branch invokes is inherited coupling and is removed. `dbClient` is a
 per-invocation param, never a dep.
 
-| Module | Deps | Per-invocation values |
-|---|---|---|
-| `retryJob` | `logger`, `notificationService` | `dbClient`, job row, attempt, failed attempts, owner id |
-| `assembleAiResponse` | bound `countTokens` | `processingTimeMs`, `preflightInputTokens`, `modelConfig`, assembled content, stream token usage, stream finish reason |
-| `loadJobContext` | — | `dbClient`, job id |
-| `prepareResponseContent` | `logger`, `resolveFinishReason`, `isIntermediateChunk`, `sanitizeJsonContent`, `determineContinuation` | `jobId`, `mode`, `continueUntilComplete`, `documentKey`, `contextForDocuments`, `sourceObject`, the assembled response |
-| `debitForResponse` | `debitTokens` | `dbClient`, job id, wallet id, provider row, model config, owner id, the assembled response |
-| `resolveContributionIdentity` | `logger` | `dbClient`, job row, provider row |
-| `persistContributionRelationships` | — | `dbClient`, contribution, stage slug, file type, the continuation flag, the payload's relationships |
-| `finalizeContributionJob` | `logger`, `notificationService`, `fileManager`, bound `continueJob`, bound `enqueueRenderJob` | `dbClient`, job row, contribution, owner id, the narrowed payload, the resolved identity, the continuation verdict, the resolved finish reason, the intermediate flag |
-| `saveContributionResponse` | `fileManager`, `buildUploadContext`, bound `resolveContributionIdentity`, bound `persistContributionRelationships`, bound `finalizeContributionJob` | `dbClient`, resolved context |
-| `saveCompressedResponse` | `fileManager`, `buildUploadContext`, `enqueueRenderJob` | `dbClient`, narrowed payload |
-| `saveResponse` | `logger`, `retryJob`, bound `loadJobContext`, bound `assembleAiResponse`, bound `debitForResponse`, bound `prepareResponseContent`, bound `saveContributionResponse`, bound `saveCompressedResponse` | `dbClient`, `job_id` |
+Params carry only what the payload cannot: the `dbClient` handle, `job_id`, rows fetched this
+invocation, and values an earlier module produced this invocation. The payload is the job payload,
+whole, and each module reads what it needs from it at the point of use — no payload member is ever
+hoisted into params. The orchestrator selects the arm on the job row's `job_type` column and proves
+the payload once with that arm's guard; every module below receives the proven object and re-guards
+nothing. A payload slot is typed at the level its module reads: `DialecticBaseJobPayload` for a
+module that reads base members, the arm type for a module that reads arm members. No function slot
+is typed `DialecticJobPayload` — that union types the job row's column, the only place an arm is
+still undetermined.
 
-The third column lists every per-invocation value a module takes, not one slot. Each node splits that
-column into `params` and `payload` on the signature rule — the data the function operates on is the
-payload, the control values are params — and a module supplies both slots whichever way the split
-falls.
+| Module | Deps | Params | Payload |
+|---|---|---|---|
+| `retryJob` | `logger`, `notificationService` | `dbClient`, job row | the failed attempts |
+| `assembleAiResponse` | bound `countTokens` | `processingTimeMs`, model config, the stream result | `DialecticBaseJobPayload` |
+| `loadJobContext` | — | `dbClient`, `job_id` | `{}` |
+| `prepareResponseContent` | `logger`, `resolveFinishReason`, `isIntermediateChunk`, `sanitizeJsonContent`, `determineContinuation` | `job_id`, the assembled response | `DialecticBaseJobPayload` |
+| `debitForResponse` | bound `debitTokens` | `dbClient`, job row, provider row, model config, the assembled response | `DialecticBaseJobPayload` |
+| `resolveContributionIdentity` | `logger` | `dbClient`, job row, provider row | `DialecticExecuteJobPayload` |
+| `persistContributionRelationships` | — | `dbClient`, job row, the contribution | `DialecticExecuteJobPayload` |
+| `finalizeContributionJob` | `logger`, `notificationService`, `fileManager`, bound `continueJob`, bound `enqueueRenderJob` | `dbClient`, job row, the contribution, the assembled response, the prepared content result, the storage file type | `DialecticExecuteJobPayload` |
+| `saveContributionResponse` | `fileManager`, `buildUploadContext`, bound `resolveContributionIdentity`, bound `persistContributionRelationships`, bound `finalizeContributionJob` | `dbClient`, job row, provider row, model config, the assembled response, the prepared content result | `DialecticExecuteJobPayload` |
+| `saveCompressedResponse` | `fileManager`, `buildUploadContext`, bound `enqueueRenderJob` | `dbClient`, job row, provider row, the assembled response, the prepared content result | `DialecticCompressJobPayload` |
+| `saveResponse` | `logger`, bound `retryJob`, bound `loadJobContext`, bound `assembleAiResponse`, bound `debitForResponse`, bound `prepareResponseContent`, bound `saveContributionResponse`, bound `saveCompressedResponse` | `dbClient`, `job_id` | the stream result |
+
+`resolveContributionIdentity` returns only what it derives — the assembled `restOfCanonicalPathParams`,
+`storageFileType`, `sourceGroupFragment`, `isContinuationForStorage`, `targetContributionId` and
+`description`. It re-emits no payload member; a consumer needing `document_key`, `contributionType`,
+`stageSlug` or `document_relationships` reads it from the payload.
+
+The payload is the payload, you DO NOT FUCK WITH THE GOD DAMNED PAYLOAD. You determine the payload type from job_type and prove it with the guard. You READ FROM THE PAYLOAD WHAT YOU NEED TO DO YOUR WORK. Then you PASS THE PAYLOAD ALONG WITHOUT FUCKING WITH IT! 
+
+There are VERY FEW reasons to mutate the payload, and every mutation reason is ALREADY ESTABLISHED IN THE CODE. You DO NOT remove mutations unless you can Chesterton's Fence them and get approval. You do NOT ADD mutations. YOU DO NOT pack the payload into params, or wrap the payload into the payload again. TAKE IT, READ IT, PASS IT ALONG! 
 
 `SaveResponseDeps` is shrunk to the actual deps for the orchestrator, and none of the deps for the extracted functions. 
 
@@ -216,7 +238,10 @@ legacy file is retired by the last consumer to switch, in the cutover.
 Strict node order: `retryJob` → `assembleAiResponse` → `loadJobContext` → `prepareResponseContent` →
 `debitForResponse` → `resolveContributionIdentity` → `persistContributionRelationships` →
 `finalizeContributionJob` → `saveContributionResponse` → `saveCompressedResponse` → `saveResponse` →
-`netlifyResponse/index.ts`. The shared modules precede both arms; the contribution modules precede the
+`netlifyResponse/index.ts`. This is the authoring order — producers before consumers — and it is not
+the order the orchestrator calls them in at runtime. `debitForResponse` and `prepareResponseContent`
+depend on neither each other nor each other's output, which is what lets the debit run first at
+runtime while either may be authored first. The shared modules precede both arms; the contribution modules precede the
 arm that composes them; both arms precede the orchestrator that routes to them; and
 `netlifyResponse/index.ts` closes the seam because it consumes every module above and a consumer
 follows its producers. It assembles no deps: every module reaches it already bound from the worker's

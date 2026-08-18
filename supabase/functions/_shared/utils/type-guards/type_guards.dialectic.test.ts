@@ -52,6 +52,8 @@ import {
     isGitHubRepoSettings,
     isDialecticProjectUpdate,
     isRepoUrlWithLastSyncAt,
+    isUnifiedAIResponseTokenUsage,
+    isUnifiedAIResponse,
 } from './type_guards.dialectic.ts';
 import { 
     BranchKey, 
@@ -150,6 +152,10 @@ import {
     buildSyncMapEntry,
     buildSyncToGitHubPayload,
     buildSyncToGitHubResponse,
+    buildUnifiedAIResponseTokenUsage,
+    invalidateUnifiedAIResponseTokenUsage,
+    buildUnifiedAIResponse,
+    invalidateUnifiedAIResponse,
 } from '../../dialectic.mock.ts';
 
 Deno.test('Type Guard: isGitHubRepoSettings', async (t) => {
@@ -2931,5 +2937,130 @@ Deno.test('Type contract: SyncToGitHubResponse', async (t) => {
         assert(typeof withSha.commitSha === 'string');
         assert(withSha.syncedDocumentKeys.length === 2);
         assert(withSha.skippedDocumentKeys.length === 0);
+    });
+});
+
+Deno.test('Type Guard: isUnifiedAIResponseTokenUsage', async (t) => {
+    await t.step('accepts the valid default', () => {
+        assert(isUnifiedAIResponseTokenUsage(buildUnifiedAIResponseTokenUsage()));
+    });
+
+    await t.step('accepts one omitting the optional total_tokens', () => {
+        const { total_tokens: _omit, ...rest } = buildUnifiedAIResponseTokenUsage();
+        assert(isUnifiedAIResponseTokenUsage(rest));
+    });
+
+    await t.step('rejects prompt_tokens absent', () => {
+        const { prompt_tokens: _omit, ...rest } = buildUnifiedAIResponseTokenUsage();
+        assert(!isUnifiedAIResponseTokenUsage(rest));
+    });
+
+    await t.step('rejects prompt_tokens non-numeric', () => {
+        assert(!isUnifiedAIResponseTokenUsage(invalidateUnifiedAIResponseTokenUsage({ prompt_tokens: 'ten' })));
+    });
+
+    await t.step('rejects completion_tokens absent', () => {
+        const { completion_tokens: _omit, ...rest } = buildUnifiedAIResponseTokenUsage();
+        assert(!isUnifiedAIResponseTokenUsage(rest));
+    });
+
+    await t.step('rejects completion_tokens non-numeric', () => {
+        assert(!isUnifiedAIResponseTokenUsage(invalidateUnifiedAIResponseTokenUsage({ completion_tokens: 'twenty' })));
+    });
+
+    await t.step('rejects total_tokens present and non-numeric', () => {
+        assert(!isUnifiedAIResponseTokenUsage(invalidateUnifiedAIResponseTokenUsage({ total_tokens: 'thirty' })));
+    });
+
+    await t.step('rejects null', () => {
+        assert(!isUnifiedAIResponseTokenUsage(null));
+    });
+
+    await t.step('rejects a primitive', () => {
+        assert(!isUnifiedAIResponseTokenUsage('not-an-object'));
+    });
+
+    await t.step('rejects an array', () => {
+        assert(!isUnifiedAIResponseTokenUsage([1, 2, 3]));
+    });
+});
+
+Deno.test('Type Guard: isUnifiedAIResponse', async (t) => {
+    await t.step('accepts buildUnifiedAIResponse()', () => {
+        assert(isUnifiedAIResponse(buildUnifiedAIResponse()));
+    });
+
+    await t.step('accepts one whose only member is content', () => {
+        const { tokenUsage: _omit1, finish_reason: _omit2, ...rest } = buildUnifiedAIResponse();
+        assert(isUnifiedAIResponse(rest));
+    });
+
+    await t.step('accepts content set to null', () => {
+        assert(isUnifiedAIResponse(buildUnifiedAIResponse({ content: null })));
+    });
+
+    await t.step('rejects content absent', () => {
+        const { content: _omit, ...rest } = buildUnifiedAIResponse();
+        assert(!isUnifiedAIResponse(rest));
+    });
+
+    await t.step('rejects content corrupted', () => {
+        assert(!isUnifiedAIResponse(invalidateUnifiedAIResponse({ content: 123 })));
+    });
+
+    await t.step('rejects inputTokens corrupted', () => {
+        assert(!isUnifiedAIResponse(invalidateUnifiedAIResponse({ inputTokens: 'ten' })));
+    });
+
+    await t.step('rejects outputTokens corrupted', () => {
+        assert(!isUnifiedAIResponse(invalidateUnifiedAIResponse({ outputTokens: 'twenty' })));
+    });
+
+    await t.step('rejects processingTimeMs corrupted', () => {
+        assert(!isUnifiedAIResponse(invalidateUnifiedAIResponse({ processingTimeMs: 'fast' })));
+    });
+
+    await t.step('rejects contentType corrupted', () => {
+        assert(!isUnifiedAIResponse(invalidateUnifiedAIResponse({ contentType: 123 })));
+    });
+
+    await t.step('rejects error corrupted', () => {
+        assert(!isUnifiedAIResponse(invalidateUnifiedAIResponse({ error: 123 })));
+    });
+
+    await t.step('rejects errorCode corrupted', () => {
+        assert(!isUnifiedAIResponse(invalidateUnifiedAIResponse({ errorCode: 123 })));
+    });
+
+    await t.step('rejects finish_reason corrupted (delegation)', () => {
+        assert(!isUnifiedAIResponse(invalidateUnifiedAIResponse({ finish_reason: 123 })));
+    });
+
+    await t.step('rejects tokenUsage corrupted (delegation)', () => {
+        assert(!isUnifiedAIResponse(invalidateUnifiedAIResponse({ tokenUsage: 'not-a-usage' })));
+    });
+
+    await t.step('rejects rawProviderResponse corrupted', () => {
+        assert(!isUnifiedAIResponse(invalidateUnifiedAIResponse({ rawProviderResponse: 'not-a-record' })));
+    });
+
+    await t.step('accepts tokenUsage null', () => {
+        assert(isUnifiedAIResponse(buildUnifiedAIResponse({ tokenUsage: null })));
+    });
+
+    await t.step('rejects null', () => {
+        assert(!isUnifiedAIResponse(null));
+    });
+
+    await t.step('rejects a primitive', () => {
+        assert(!isUnifiedAIResponse('not-an-object'));
+    });
+
+    await t.step('rejects an array', () => {
+        assert(!isUnifiedAIResponse([1, 2, 3]));
+    });
+
+    await t.step('accepts inputTokens and outputTokens undefined', () => {
+        assert(isUnifiedAIResponse(buildUnifiedAIResponse({ content: null, tokenUsage: null, inputTokens: undefined, outputTokens: undefined })));
     });
 });

@@ -61,9 +61,10 @@ import type {
     DialecticBaseJobPayload,
     SelectedModels,
     UnifiedAIResponse,
+    UnifiedAIResponseTokenUsage,
 } from '../dialectic-service/dialectic.interface.ts';
 import { FileType, DialecticStageSlug } from './types/file_manager.types.ts';
-import type { Messages, FinishReason } from './types.ts';
+import type { Messages, FinishReason, TokenUsage, ChatMessageRow } from './types.ts';
 import type { Tables } from '../types_db.ts';
 
 // 1. Define Function Signature Types
@@ -1259,6 +1260,25 @@ export function invalidatePlanJobInsert(corruptions: PlanJobInsertCorruptions): 
     return { ...buildPlanJobInsert(), ...corruptions };
 }
 
+// --- UnifiedAIResponseTokenUsage ---
+
+export type UnifiedAIResponseTokenUsageOverrides = Partial<UnifiedAIResponseTokenUsage>;
+
+export function buildUnifiedAIResponseTokenUsage(overrides?: UnifiedAIResponseTokenUsageOverrides): UnifiedAIResponseTokenUsage {
+    const base: UnifiedAIResponseTokenUsage = {
+        prompt_tokens: 10,
+        completion_tokens: 20,
+        total_tokens: 30,
+    };
+    return overrides ? { ...base, ...overrides } : base;
+}
+
+export type UnifiedAIResponseTokenUsageCorruptions = { [K in keyof UnifiedAIResponseTokenUsage]?: unknown };
+
+export function invalidateUnifiedAIResponseTokenUsage(corruptions: UnifiedAIResponseTokenUsageCorruptions): unknown {
+    return { ...buildUnifiedAIResponseTokenUsage(), ...corruptions };
+}
+
 // --- UnifiedAIResponse ---
 
 export type UnifiedAIResponseOverrides = Partial<UnifiedAIResponse>;
@@ -1266,6 +1286,7 @@ export type UnifiedAIResponseOverrides = Partial<UnifiedAIResponse>;
 export function buildUnifiedAIResponse(overrides?: UnifiedAIResponseOverrides): UnifiedAIResponse {
     const base: UnifiedAIResponse = {
         content: 'Test AI response content',
+        tokenUsage: buildUnifiedAIResponseTokenUsage(),
         finish_reason: 'stop',
     };
     return { ...base, ...overrides };
@@ -1295,6 +1316,25 @@ export function invalidateMessages(corruptions: MessagesCorruptions): unknown {
     return { ...buildMessages(), ...corruptions };
 }
 
+// --- TokenUsage ---
+
+export type TokenUsageOverrides = Partial<TokenUsage>;
+
+export function buildTokenUsage(overrides?: TokenUsageOverrides): TokenUsage {
+    const base: TokenUsage = {
+        prompt_tokens: 10,
+        completion_tokens: 20,
+        total_tokens: 30,
+    };
+    return overrides ? { ...base, ...overrides } : base;
+}
+
+export type TokenUsageCorruptions = { [K in keyof TokenUsage]?: unknown };
+
+export function invalidateTokenUsage(corruptions: TokenUsageCorruptions): unknown {
+    return { ...buildTokenUsage(), ...corruptions };
+}
+
 // --- TokenWalletRow (DB row) ---
 
 export type TokenWalletRowOverrides = Partial<Tables<'token_wallets'>>;
@@ -1306,7 +1346,7 @@ export function buildTokenWalletRow(overrides?: TokenWalletRowOverrides): Tables
         user_id: 'a1eebc99-9c0b-4ef8-bb6d-6bb9bd380a12',
         organization_id: null,
         balance: 1000,
-        currency: 'credits',
+        currency: 'AI_TOKEN',
         created_at: now,
         updated_at: now,
     };
@@ -1405,4 +1445,34 @@ export type DialecticStageCorruptions = { [K in keyof DialecticStage]?: unknown 
 
 export function invalidateDialecticStage(corruptions: DialecticStageCorruptions): unknown {
     return { ...buildDialecticStage(), ...corruptions };
+}
+
+// --- ChatMessageRow (DB row) ---
+
+export type ChatMessageRowOverrides = Partial<ChatMessageRow>;
+
+export function buildChatMessageRow(overrides?: ChatMessageRowOverrides): ChatMessageRow {
+    const now: string = new Date().toISOString();
+    const base: ChatMessageRow = {
+        id: 'd0eebc99-9c0b-4ef8-bb6d-6bb9bd380a13',
+        chat_id: null,
+        user_id: 'b1eebc99-9c0b-4ef8-bb6d-6bb9bd380a12',
+        role: 'assistant',
+        content: 'mock chat message content',
+        created_at: now,
+        updated_at: now,
+        is_active_in_thread: true,
+        token_usage: null,
+        ai_provider_id: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
+        system_prompt_id: null,
+        error_type: null,
+        response_to_message_id: null,
+    };
+    return { ...base, ...overrides };
+}
+
+export type ChatMessageRowCorruptions = { [K in keyof ChatMessageRow]?: unknown };
+
+export function invalidateChatMessageRow(corruptions: ChatMessageRowCorruptions): unknown {
+    return { ...buildChatMessageRow(), ...corruptions };
 }

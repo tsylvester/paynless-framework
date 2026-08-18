@@ -48,11 +48,13 @@ import {
     SyncMapEntry,
     SyncToGitHubPayload,
     SyncToGitHubResponse,
+    UnifiedAIResponse,
+    UnifiedAIResponseTokenUsage,
 } from "../../../dialectic-service/dialectic.interface.ts";
 import { isNonNegativeInteger, isPlainObject, isRecord } from './type_guards.common.ts';
 import { isFileType } from './type_guards.file_manager.ts';
 import { ContinueReason } from "../../types.ts";
-import { isContinueReason } from './type_guards.chat.ts';
+import { isContinueReason, isFinishReason } from './type_guards.chat.ts';
 
 // Helper type for the citations array
 export type Citation = {
@@ -1589,4 +1591,28 @@ export function isSelectAnchorResult(value: unknown): value is SelectAnchorResul
     }
 
     return false;
+}
+
+export function isUnifiedAIResponseTokenUsage(value: unknown): value is UnifiedAIResponseTokenUsage {
+    if (!isRecord(value)) return false;
+    if (typeof value.prompt_tokens !== 'number') return false;
+    if (typeof value.completion_tokens !== 'number') return false;
+    if ('total_tokens' in value && typeof value.total_tokens !== 'number') return false;
+    return true;
+}
+
+export function isUnifiedAIResponse(value: unknown): value is UnifiedAIResponse {
+    if (!isRecord(value)) return false;
+    if (!('content' in value)) return false;
+    if (typeof value.content !== 'string' && value.content !== null) return false;
+    if ('error' in value && typeof value.error !== 'string' && value.error !== null) return false;
+    if ('errorCode' in value && typeof value.errorCode !== 'string' && value.errorCode !== null) return false;
+    if (value.inputTokens !== undefined && typeof value.inputTokens !== 'number') return false;
+    if (value.outputTokens !== undefined && typeof value.outputTokens !== 'number') return false;
+    if ('tokenUsage' in value && value.tokenUsage !== null && !isUnifiedAIResponseTokenUsage(value.tokenUsage)) return false;
+    if ('processingTimeMs' in value && typeof value.processingTimeMs !== 'number') return false;
+    if ('contentType' in value && typeof value.contentType !== 'string') return false;
+    if ('rawProviderResponse' in value && !isRecord(value.rawProviderResponse)) return false;
+    if ('finish_reason' in value && !isFinishReason(value.finish_reason)) return false;
+    return true;
 }

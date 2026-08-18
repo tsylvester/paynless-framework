@@ -18,3 +18,8 @@ export type CountTokensDeps = {
     payload: CountableChatPayload,
     modelConfig: AiModelExtendedConfig
   ) => number;
+
+  export type BoundCountTokensFn = (
+    payload: CountableChatPayload,
+    modelConfig: AiModelExtendedConfig
+  ) => number;

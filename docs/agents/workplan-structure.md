@@ -15,6 +15,12 @@ Cited by: construction view (the workplan author builds nodes) and, for handling
 
 A node names **elements**, not the symbols inside them. That is not an omission to be corrected by longer nodes — the symbols are a fact on disk, read from the interface's export surface, and a node that tries to enumerate them dates the moment the interface changes. What the node owes is the boundary; what the standards owe is completeness within it (see [scope](scope.md)).
 
+## Authoring gate
+
+Before writing any element of a node, read every topic that element's row in the [routing matrix](index.md) names — in full. A node element written from memory of a topic's contents rather than from a current reading of it is the same defect the implementer's read gate prevents, one stage earlier. The author validates each element against its governing topics and against the [wrong-construction table](#node-constructions--wrong-vs-right) before the node reaches an implementer.
+
+The implementer's remedy — comply with the topic and report the discrepancy — exists because defective nodes reach them despite this gate. It is a fallback, not the primary mechanism. The author catching the defect here costs one re-read; the implementer catching it costs a halt, a report, a round-trip, and a node revision.
+
 ## New packages vs. existing files
 
 - A **new** package's node adheres to the entire node template — omit no element — so new work is born aligned to current standards.
@@ -45,7 +51,7 @@ Every branch ends in a member of the return union; none falls through untyped. W
 - **Guards and guard tests are never separated** from the interface that uses them; they are steps in the consuming source file's node.
 - **A commit is never its own node.** The commit step is the last step of the last node in a completed set of work (see Handling → Commits).
 
-A single node **may** edit several interfaces and guards to provide for its one implementation file. Many producers, one implementation, per node.
+A single node **may** edit several interfaces and guards to provide for its one implementation file. Many producers, one implementation, per node. Each such producer is its own element at its own nesting level in the fixed order — interface test before interface before mock before guard test before guard, all before the implementation they serve (see [tdd-ordering](tdd-ordering.md)). Two files in one element bullet, or a producer element placed after the implementation element it serves, are both malformed.
 
 ## Identity and ordering
 
@@ -62,7 +68,7 @@ A single node **may** edit several interfaces and guards to provide for its one 
 
 ## The workplan states what is, never what it was
 
-A node is an instruction to the implementer, not a change log. It states the current requirement as fact. It does not litigate the file's history, and it carries no `AMENDED` / `CORRECTED` / `REVISED` / `RATIFIED` / `UPDATED` / `RESOLVED` markers, dated amendments, or "was X, now Y" narration.
+A node is an instruction to the implementer, not a change log, and not a commentary on the author's decisions. It contains only what the implementer acts on — the element, its file, and its requirements. Everything else is excluded: version-history markers (`AMENDED` / `CORRECTED` / `REVISED` / `RATIFIED` / `UPDATED` / `RESOLVED`), dated amendments, "was X, now Y" narration, and placement rationale (`RIDES WITH` / `RIDES HERE` / `included because` / `lands here since` or any other explanation of why the author placed an element in this node rather than another). The node states what to build; it does not explain why it is here.
 
 When a requirement changes, revise the node **in place** so it reads as the single current instruction — the superseded wording is deleted, not annotated. What the author once thought and later corrected is irrelevant to the implementer; only what the implementer must do now belongs in the node. Tests follow the same rule (see [tests](tests.md)).
 
@@ -137,6 +143,14 @@ The author does the thinking so the implementer does not. Every node must be gro
 | A node step that says "no change required" | Omit it. No-op inclusions are noise |
 | A node carrying `AMENDED:` / `REVISED:` / "was X, now Y" history | State the current instruction as fact; delete superseded wording rather than annotate it |
 | Numbering sprints, epics, phases, or workstreams | Everything is addressed relationally by dependency — no ordinals at any level, not just on nodes |
+| Two files addressed in a single element bullet | Each file is its own element at its own nesting level in the fixed order |
+| A producer element (interface, guard, mock change) placed after the implementation element that consumes it | Producers precede consumers in the immutable element order; all interface/guard/mock elements precede the implementation |
+| Placement rationale in the node (`RIDES WITH`, `RIDES HERE`, `included because`) | The node contains only the instruction the implementer acts on; the author's placement reasoning is omitted |
+| An integration test element that tests a single function with no chain across a boundary | An integration test exercises a chain of real functions across an approved boundary; a single function tested alone is a unit test |
+| An interface test element advising `Parameters<MyFunction>[n]` as proof of an exported parameter-object symbol | The interface test proves each exported symbol by name; `Parameters<>[n]` is a derived projection and is never a substitute (see [interfaceTest](interfaceTest.md)) |
+| Author-reasoning commentary about why something is in this node or what state the work is in | State the current requirement as fact; the node is not a commentary on the author's process |
+
+The table above is illustrative, not exhaustive. Every element must also conform to every topic its row in the [routing matrix](index.md) names. A construction absent from this table is not thereby permitted — it is permitted only if no governing topic prohibits it.
 
 ## Precedence
 

@@ -4,7 +4,7 @@ Part of the [Tests](tests.md) topic; the [shared standards](tests.md#shared-stan
 
 Cited by: construction view (workplan node `integration.test` element) and implementation view (integrate prompt). Governed by all Process topics.
 
-Exercises real code across an approved boundary (API, service, repository, external adapter).
+Exercises real code across an approved boundary (API, service, repository, external adapter). A function tested alone, with no chain of real functions crossing a boundary, is a unit test — regardless of whether it calls real guards. Guard invocation is the guard test's concern; invoking a guard does not make a test an integration test.
 
 - Mock **only** at the outer boundary of the integrated scope. Use the **real** implementation for every function being integrated — never mocks, mock factories, or utilities for those.
 - For an integration covering `f(x) → … → f(z)` where `f(x)` consumes `f(a)` and `f(z)` calls `f(b)`: mock `f(a)` and `f(b)`, run the real `f(x) … f(z)`.

@@ -21,6 +21,7 @@ Single source of truth for how agents work in this repo. Every rule lives in exa
 - [terminal-policy](terminal-policy.md) — terminal denied by default; two-gate allowlist; per-env enforcement
 - [linting-proof](linting-proof.md) — lint after edit, no silencing, linter error = RED proof
 - [logging](logging.md) — debug by logging, believe failures literally
+- [insanity-loop](insanity-loop.md) — break repetitive failure and recover by starting over
 
 ## Standards topics — govern file content
 
@@ -54,5 +55,5 @@ A map from the file you are building to the topic that governs it, the template 
 | unit test | [tests](tests.md#unit), [errors-and-returns](errors-and-returns.md), [composition](composition.md) | no positive template — the branch contract (§5) and the forbidden catalog | the implementation's producer does not exist yet |
 | implementation | [composition](composition.md), [dependency-injection](dependency-injection.md), [types](types.md), [errors-and-returns](errors-and-returns.md), [guards](guards.md), [logging](logging.md) | guard-on-entry skeleton ([guards](guards.md)); body from the branch contract | an undeclared dependency or a missing guard is required |
 | provides | [boundaries](boundaries.md) | export-surface example ([boundaries](boundaries.md)) | a symbol a consumer needs is not available to export |
-| integration test | [tests](tests.md#integration) | boundary-mocking example ([tests#integration](tests.md#integration)) | a function in the integrated chain is not built yet |
+| integration test | [tests](tests.md#integration) | boundary-mocking example ([tests#integration](tests.md#integration)) | a function in the integrated chain is not built yet; or there is no chain — a single function tested alone is a unit test, not an integration test |
 

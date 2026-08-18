@@ -20,7 +20,6 @@ import {
   isFileManagerError
 } from './type_guards.file_manager.ts'
 import {
-  CanonicalPathParams,
   FileType,
   ModelContributionUploadContext,
   ResourceUploadContext,
@@ -28,6 +27,7 @@ import {
   DialecticStageSlug,
 } from '../../types/file_manager.types.ts'
 import { Buffer } from 'https://deno.land/std@0.177.0/node/buffer.ts'
+import { buildCanonicalPathParams, invalidateCanonicalPathParams } from '../../services/file_manager.mock.ts'
 
 // --- Mocks ---
 
@@ -84,41 +84,75 @@ const mockResourceContext: ResourceUploadContext = {
 }
 
 Deno.test('Type Guard: isCanonicalPathParams', async (t) => {
-  await t.step('should return true for a valid CanonicalPathParams object', () => {
-    const params: CanonicalPathParams = {
-            contributionType: 'thesis',
+    /** Contract: case 1 — the builder's valid default (optionals absent) is accepted. */
+    await t.step('accepts the builder default', () => {
+        assert(isCanonicalPathParams(buildCanonicalPathParams()));
+    });
+
+    /** Contract: case 2 — valid overrides supplying every optional member are accepted. */
+    await t.step('accepts all optional members supplied', () => {
+        assert(isCanonicalPathParams(buildCanonicalPathParams({
             sourceModelSlugs: ['model-1', 'model-2'],
-            stageSlug: DialecticStageSlug.Thesis,
-        };
-        assert(isCanonicalPathParams(params));
+            sourceAnchorType: 'thesis',
+            sourceAnchorModelSlug: 'claude-3-opus',
+            sourceAttemptCount: 1,
+            pairedModelSlug: 'gemini-1.5-pro',
+        })));
     });
 
-    await t.step('should return true for a minimal CanonicalPathParams object', () => {
-        const params: CanonicalPathParams = {
-            contributionType: 'synthesis',
-            stageSlug: DialecticStageSlug.Thesis,
-        };
-        assert(isCanonicalPathParams(params));
-    });
-
-    await t.step('should return false if contributionType is missing', () => {
-        const params = {
-            sourceModelSlugs: ['model-1'],
-        };
-        assert(!isCanonicalPathParams(params));
-    });
-
-    await t.step('should return false if contributionType is not a string', () => {
-        const params = {
-            contributionType: 123,
-        };
-        assert(!isCanonicalPathParams(params));
-    });
-
-    await t.step('should return false for non-object inputs', () => {
+    /** Contract: case 3 — null, undefined, a primitive, and an array are rejected. */
+    await t.step('rejects non-objects', () => {
         assert(!isCanonicalPathParams(null));
+        assert(!isCanonicalPathParams(undefined));
         assert(!isCanonicalPathParams('a string'));
         assert(!isCanonicalPathParams([]));
+    });
+
+    /** Contract: case 4 — contributionType corrupted is rejected. */
+    await t.step('rejects contributionType corrupted', () => {
+        assert(!isCanonicalPathParams(invalidateCanonicalPathParams({ contributionType: 123 })));
+    });
+
+    /** Contract: case 4 — stageSlug corrupted is rejected. */
+    await t.step('rejects stageSlug corrupted', () => {
+        assert(!isCanonicalPathParams(invalidateCanonicalPathParams({ stageSlug: 42 })));
+    });
+
+    /** Contract: case 4 — sourceModelSlugs corrupted is rejected. */
+    await t.step('rejects sourceModelSlugs corrupted', () => {
+        assert(!isCanonicalPathParams(invalidateCanonicalPathParams({ sourceModelSlugs: 'not-an-array' })));
+    });
+
+    /** Contract: case 4 — sourceAnchorType corrupted is rejected. */
+    await t.step('rejects sourceAnchorType corrupted', () => {
+        assert(!isCanonicalPathParams(invalidateCanonicalPathParams({ sourceAnchorType: 7 })));
+    });
+
+    /** Contract: case 4 — sourceAnchorModelSlug corrupted is rejected. */
+    await t.step('rejects sourceAnchorModelSlug corrupted', () => {
+        assert(!isCanonicalPathParams(invalidateCanonicalPathParams({ sourceAnchorModelSlug: false })));
+    });
+
+    /** Contract: case 4 — sourceAttemptCount corrupted is rejected. */
+    await t.step('rejects sourceAttemptCount corrupted', () => {
+        assert(!isCanonicalPathParams(invalidateCanonicalPathParams({ sourceAttemptCount: 'not-a-number' })));
+    });
+
+    /** Contract: case 4 — pairedModelSlug corrupted is rejected. */
+    await t.step('rejects pairedModelSlug corrupted', () => {
+        assert(!isCanonicalPathParams(invalidateCanonicalPathParams({ pairedModelSlug: 99 })));
+    });
+
+    /** Contract: case 5 — contributionType omitted (rest-destructured away) is rejected. */
+    await t.step('rejects contributionType omitted', () => {
+        const { contributionType: _omit, ...missing } = buildCanonicalPathParams();
+        assert(!isCanonicalPathParams(missing));
+    });
+
+    /** Contract: case 5 — stageSlug omitted (rest-destructured away) is rejected. */
+    await t.step('rejects stageSlug omitted', () => {
+        const { stageSlug: _omit, ...missing } = buildCanonicalPathParams();
+        assert(!isCanonicalPathParams(missing));
     });
 });
 

@@ -1,23 +1,31 @@
-Begin the work loop against the section of the workplan highlighted in the editor and attached to this command. That selection is your assignment.
+In your next turn, you are going to begin the work loop against the section of the workplan the user will provide in the next message. That selection is your assignment.
 
 **The selection is the node, and it is the whole scope.** How a delivered selection is treated — that it is the user's instruction and not ambient context, that it bounds the work, and what to do when it cannot support the instruction — is governed by `docs/agents/scope.md`, "Context the user hands you". Read it there.
 
+In **this turn**, read `docs/agents/index.md` and all of the Process elements so you understand the basic rules of procedure for this repo. 
+
 Specific to this command:
 
-- The selection is a node. If it is a fragment of one, or spans more than one, report that and halt (`docs/agents/discovery-halt.md`).
+- The selection you will be given is a node. If it is a fragment of one, or spans more than one, report that and halt (`docs/agents/discovery-halt.md`).
 - "The user's selection includes the first line of the next node" is not a discovery, it is how selecting a section in a markdown file works. Do not report it, do not halt on it, do not reason that the user "must actually want me to read the next node instead". Focus on the entire complete node you were given to read, not the first line of the next node that was incidentally included. DO NOT read the next node "just to check". That is not the task you were given.
 
 Before you reason about anything, read. This is a gate, not a formality:
 
 1. Read the selection in full. It names the element you are building.
-2. Read `docs/agents/index.md`. Find that element's row in the Implementation routing matrix, and read every Process topic and every Standards topic that row names. "Read the rules" means all of them — not the first file you open.
-3. Read every existing file the node references, from disk.
+2. In `docs/agents/index.md`, find that element's row in the Implementation routing matrix, and read every Process topic and every Standards topic that row names. "Read the rules" means **all** of them — not the first file you open.
+3. You cannot move to the next step until you've read all rules relevant to the element you were given. 
+4. Next, read every existing file the node references, from disk.
+5. You cannot move to the next step until you've read all files referenced by the node.
+6. Produce a **read manifest** — a short list of exactly what you read — before any analysis. Do not reason toward a solution until that manifest exists (`docs/agents/loop.md`).
 
-Then produce a **read manifest** — a short list of exactly what you read — before any analysis. Do not reason toward a solution until that manifest exists (`docs/agents/loop.md`).
+You cannot begin to reason against the task you've been given until **after** you've read every rule, every file, and produced your read manifest to prove it. 
 
-Then, every turn:
+This is a canary: If you start to reason **before** you read every rule and every relevant file, the user will see your violation and be forced to restart. The only way to avoid being halted is to follow the procedure you've been given. Every user-initiated-halt here is a *failure*, and it is **YOUR** failure, for not complying with the required procedure. 
 
-- Determine what is unstarted from the **files on disk**, never from the checkboxes. A `[✅]` is a claim about state; the file is the fact. Walk the node's elements in order, read the files each one names, and judge it against the topics that govern it (`docs/agents/linting-proof.md`, `docs/agents/modes.md`). The first element not satisfied on disk is your step.
+Then, to complete your turn:
+
+- Determine what is unstarted from the **files on disk**, never from the checkboxes. A `[✅]` is a claim about state; the file is the fact. `docs/agents/modes.md` explains that all prior reasoning is untrusted. Take nothing verbatim. You must verify every claim on your own before beginning any reasoning or work. 
+- Walk the node's elements in order, read the files each one names, and judge it against the topics that govern it (`docs/agents/linting-proof.md`, `docs/agents/modes.md`). The first element not satisfied on disk is your step.
 - Where a marker and the disk disagree — ticked but unsatisfied, or unticked but already satisfied — report the discrepancy and halt (`docs/agents/discovery-halt.md`). Do not silently redo work the plan calls done, and do not silently skip work it calls pending. You do not edit node status (`docs/agents/workplan-structure.md`).
 - Only when every element in the selection is satisfied **on disk** is the node complete. Say so, and give the evidence that establishes it. "The boxes are ticked" is not evidence.
 - Take that step as the subject of the work loop — Read → Analyze → Explain → Propose → (Edit → Lint) → Halt (`docs/agents/loop.md`). Absent an explicit instruction to edit, the loop terminates at Propose.

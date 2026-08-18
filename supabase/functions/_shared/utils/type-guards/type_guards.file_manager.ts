@@ -18,6 +18,7 @@ import { OutputType } from '../../../dialectic-service/dialectic.interface.ts'
 import { StorageError } from '../../../dialectic-service/dialectic.interface.ts'
 import { ServiceError, Messages } from '../../types.ts'
 import { isRecord, isPostgrestError } from './type_guards.common.ts'
+import { isContributionType } from '../type_guards.ts'
 
 export function isModelContributionContext(
   context: unknown,
@@ -94,11 +95,31 @@ export function isResourceFileType(value: unknown): value is ResourceFileTypes {
 export function isCanonicalPathParams(obj: unknown): obj is CanonicalPathParams {
     if (!isRecord(obj)) return false;
 
-    if (!('contributionType' in obj) || typeof obj.contributionType !== 'string') {
-        return false;
+    if (!('contributionType' in obj) || typeof obj.contributionType !== 'string') return false;
+    if (!isContributionType(obj.contributionType)) return false;
+
+    if (!('stageSlug' in obj) || !isDialecticStageSlug(obj.stageSlug)) return false;
+
+    if ('sourceModelSlugs' in obj && obj.sourceModelSlugs !== undefined) {
+        if (!Array.isArray(obj.sourceModelSlugs) || !obj.sourceModelSlugs.every((s) => typeof s === 'string')) return false;
     }
-    // This guard can be expanded to check for other required properties if needed,
-    // but for now, ensuring the core required property is present is sufficient.
+
+    if ('sourceAnchorType' in obj && obj.sourceAnchorType !== undefined) {
+        if (typeof obj.sourceAnchorType !== 'string') return false;
+    }
+
+    if ('sourceAnchorModelSlug' in obj && obj.sourceAnchorModelSlug !== undefined) {
+        if (typeof obj.sourceAnchorModelSlug !== 'string') return false;
+    }
+
+    if ('sourceAttemptCount' in obj && obj.sourceAttemptCount !== undefined) {
+        if (typeof obj.sourceAttemptCount !== 'number') return false;
+    }
+
+    if ('pairedModelSlug' in obj && obj.pairedModelSlug !== undefined) {
+        if (typeof obj.pairedModelSlug !== 'string') return false;
+    }
+
     return true;
 }
 
