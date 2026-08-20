@@ -20,7 +20,6 @@ import { gatherArtifacts } from "./gatherArtifacts.ts";
 import {
   buildDialecticContributionRow,
   buildDialecticFeedbackRow,
-  buildDialecticProjectResourceRow,
   buildDocumentRule,
   buildFeedbackRule,
   buildGatherArtifactsDeps,
@@ -31,6 +30,7 @@ import {
   buildSeedPromptRule,
   buildSelectHandler,
 } from "./gatherArtifacts.mock.ts";
+import { buildDialecticProjectResourceRow } from "../../_shared/dialectic.mock.ts"
 
 Deno.test("document rule queries project resources rendered_document and returns document artifact", async () => {
   const { client: dbClient, spies } = createMockSupabaseClient(undefined, {

@@ -50,7 +50,7 @@ Deno.test(
             sessionId: true,
             projectId: true,
             stageSlug: true,
-            targetKey: true,
+            output_type: true,
             iterationNumber: true,
             model_id: true,
             model_slug: true,

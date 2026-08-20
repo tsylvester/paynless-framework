@@ -331,7 +331,7 @@ describe("cloneProject", () => {
         assertEquals(firstCallArgs.pathContext.iteration, undefined, "Iteration should be undefined for simple resource1");
         assertEquals(firstCallArgs.pathContext.stageSlug, undefined, "StageSlug should be undefined for simple resource1");
         assertEquals(firstCallArgs.pathContext.modelSlug, undefined, "ModelSlug should be undefined for simple resource1");
-        assertEquals(firstCallArgs.pathContext.targetKey, undefined, "targetKey should be undefined for simple resource1");
+        assertEquals(firstCallArgs.pathContext.output_type, undefined, "output_type should be undefined for simple resource1");
         assertEquals(firstCallArgs.pathContext.sourceType, undefined, "sourceType should be undefined for simple resource1");
         assertEquals(firstCallArgs.pathContext.sourceId, undefined, "sourceId should be undefined for simple resource1");
         assertEquals(firstCallArgs.pathContext.role, undefined, "role should be undefined for simple resource1");
@@ -1631,7 +1631,7 @@ describe("cloneProject", () => {
                 sessionId: originalSessionId,
                 iteration: 1,
                 stageSlug: DialecticStageSlug.Synthesis,
-                targetKey: FileType.business_case,
+                output_type: FileType.business_case,
                 fileType: identity.fileType,
                 sourceType: identity.sourceType,
                 documentKey: identity.documentKey,
@@ -1754,7 +1754,7 @@ describe("cloneProject", () => {
 
             assertEquals(callArgs.pathContext.projectId, compNewProjectId, `Row ${i + 1}: projectId should be the clone's new project id`);
             assertEquals(callArgs.pathContext.sessionId, compNewSessionId, `Row ${i + 1}: sessionId should be the clone's new session id`);
-            assertEquals(callArgs.pathContext.targetKey, "business_case", `Row ${i + 1}: targetKey should be preserved`);
+            assertEquals(callArgs.pathContext.output_type, "business_case", `Row ${i + 1}: output_type should be preserved`);
             assertEquals(callArgs.pathContext.sourceType, identity.sourceType, `Row ${i + 1}: sourceType should be preserved`);
             assertEquals(callArgs.pathContext.documentKey, identity.documentKey, `Row ${i + 1}: documentKey should be preserved`);
             assertEquals(callArgs.pathContext.sourceId, identity.sourceId, `Row ${i + 1}: sourceId should be preserved`);
@@ -1773,7 +1773,7 @@ describe("cloneProject", () => {
                 sessionId: compNewSessionId,
                 iteration: 1,
                 stageSlug: DialecticStageSlug.Synthesis,
-                targetKey: FileType.business_case,
+                output_type: FileType.business_case,
                 fileType: identity.fileType,
                 sourceType: identity.sourceType,
                 documentKey: identity.documentKey,
@@ -1807,7 +1807,7 @@ describe("cloneProject", () => {
         const row1Result = await fmCalls[0].returned;
         const row2Result = await fmCalls[1].returned;
         assert(row1Result?.record && row2Result?.record, "Rows 1 and 2: expected records");
-        assert(row1Result.record.file_name !== row2Result.record.file_name, "Rows 1 and 2 should clone to different file names despite sharing documentKey and targetKey");
+        assert(row1Result.record.file_name !== row2Result.record.file_name, "Rows 1 and 2 should clone to different file names despite sharing documentKey and output_type");
     });
 
 });

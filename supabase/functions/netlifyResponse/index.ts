@@ -8,7 +8,7 @@ import { NotificationService } from '../_shared/utils/notification.service.ts';
 import { AdminTokenWalletService } from '../_shared/services/tokenwallet/admin/adminTokenWalletService.ts';
 import { constructStoragePath } from '../_shared/utils/path_constructor.ts';
 import { assembleChunks } from '../_shared/utils/assembleChunks/assembleChunks.ts';
-import { continueJob } from '../dialectic-worker/continueJob.ts';
+import { continueJob } from '../dialectic-worker/continueJob/continueJob.ts';
 import { retryJob } from '../dialectic-worker/retryJob.ts';
 import { resolveFinishReason } from '../_shared/utils/resolveFinishReason.ts';
 import { isIntermediateChunk } from '../_shared/utils/isIntermediateChunk.ts';

@@ -48,7 +48,7 @@ export const processCompressJob: ProcessCompressJobFn = async (
             sessionId: payload.sessionId,
             iteration: payload.iterationNumber,
             stageSlug: payload.stageSlug,
-            targetKey: payload.targetKey,
+            output_type: payload.output_type,
             sourceType: payload.sourceType,
             documentKey: payload.documentKey,
             sourceId: payload.sourceId,
@@ -257,12 +257,12 @@ export const processCompressJob: ProcessCompressJobFn = async (
         };
     }
 
-    const matchingStep = steps.find((step) => step.output_type === payload.targetKey);
+    const matchingStep = steps.find((step) => step.output_type === payload.output_type);
 
     if (!matchingStep) {
         return {
             error: new ProcessCompressJobError(
-                `No recipe step with output_type '${payload.targetKey}'`,
+                `No recipe step with output_type '${payload.output_type}'`,
             ),
             retriable: false,
         };
@@ -274,7 +274,7 @@ export const processCompressJob: ProcessCompressJobFn = async (
     ) {
         return {
             error: new ProcessCompressJobError(
-                `Recipe step with output_type '${payload.targetKey}' is not a valid compress recipe step`,
+                `Recipe step with output_type '${payload.output_type}' is not a valid compress recipe step`,
             ),
             retriable: false,
         };
@@ -288,7 +288,7 @@ export const processCompressJob: ProcessCompressJobFn = async (
     ) {
         return {
             error: new ProcessCompressJobError(
-                `Recipe step with output_type '${payload.targetKey}' has missing or invalid outputs_required`,
+                `Recipe step with output_type '${payload.output_type}' has missing or invalid outputs_required`,
             ),
             retriable: false,
         };
@@ -321,7 +321,7 @@ export const processCompressJob: ProcessCompressJobFn = async (
         sessionId: payload.sessionId,
         iterationNumber: payload.iterationNumber,
         stageSlug: payload.stageSlug,
-        targetKey: payload.targetKey,
+        output_type: payload.output_type,
         sourceType: payload.sourceType,
         documentKey: payload.documentKey,
         sourceId: payload.sourceId,

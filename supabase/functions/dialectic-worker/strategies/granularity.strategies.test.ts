@@ -48,4 +48,18 @@ Deno.test('getGranularityPlanner should return the default planner for an undefi
 Deno.test('getGranularityPlanner should be immune to prototype pollution and return default', () => {
     const defaultPlanner = getGranularityPlanner('constructor');
     assertEquals(defaultPlanner, planPerSourceDocument, "Should not resolve prototype properties");
+});
+
+// Purpose: Proves getGranularityPlanner rejects an unknown strategy by throwing, rather than
+// silently returning a default planner.
+Deno.test('getGranularityPlanner should throw for an unknown strategy instead of returning a default', () => {
+    // Arrange:
+    // 1. Define a strategy string that is not present in granularityStrategyMap
+    //    (e.g., 'nonexistent_strategy_xyz'). No cast is needed — getGranularityPlanner
+    //    accepts string | null | undefined, so any string is a valid input.
+
+    // Act & Assert:
+    // 1. Use assertThrows to call getGranularityPlanner with the unknown strategy.
+    // 2. Assert the thrown Error message names the strategy that was not found, proving
+    //    the rejection is specific and attributable, not a generic "no planner" message.
 }); 

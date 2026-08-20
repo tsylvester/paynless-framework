@@ -11,7 +11,6 @@ import { isGatherArtifactsSuccessReturn } from "./gatherArtifacts.guard.ts";
 import {
   buildDialecticContributionRow,
   buildDialecticFeedbackRow,
-  buildDialecticProjectResourceRow,
   buildDocumentRule,
   buildFeedbackRule,
   buildGatherArtifactsParams,
@@ -21,6 +20,7 @@ import {
   buildSeedPromptRule,
   buildSelectHandler,
 } from "./gatherArtifacts.mock.ts";
+import { buildDialecticProjectResourceRow } from "../../_shared/dialectic.mock.ts"
 
 function toArrayBuffer(content: string): ArrayBuffer {
   const encoded = new TextEncoder().encode(content);

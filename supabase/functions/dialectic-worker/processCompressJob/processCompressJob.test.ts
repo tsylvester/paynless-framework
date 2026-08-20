@@ -35,7 +35,7 @@ Deno.test("processCompressJob: dedup hit marks job completed and returns { queue
         sessionId: payload.sessionId,
         iteration: payload.iterationNumber,
         stageSlug: payload.stageSlug,
-        targetKey: payload.targetKey,
+        output_type: payload.output_type,
         sourceType: payload.sourceType,
         documentKey: payload.documentKey,
         sourceId: payload.sourceId,
@@ -284,7 +284,7 @@ Deno.test("processCompressJob: missing active_recipe_instance_id returns non-ret
     }
 });
 
-Deno.test("processCompressJob: no recipe step matching targetKey returns non-retriable error", async () => {
+Deno.test("processCompressJob: no recipe step matching output_type returns non-retriable error", async () => {
     const payload = buildDialecticCompressJobPayload();
     const mockStep = buildDialecticStageRecipeStep({
         step_key: "other",
@@ -354,7 +354,7 @@ Deno.test("processCompressJob: cloned recipe instance resolves consuming step", 
         output_type: FileType.business_case,
         step_description: "compress the contribution",
         outputs_required: buildOutputRule({
-            files_to_generate: [{ from_document_key: payload.targetKey, template_filename: "template.md" }],
+            files_to_generate: [{ from_document_key: payload.output_type, template_filename: "template.md" }],
         }),
     })!;
     const mockSetup = createMockSupabaseClient("process-compress-job", {
@@ -428,7 +428,7 @@ Deno.test("processCompressJob: template recipe instance resolves consuming step"
         output_type: FileType.business_case,
         step_description: "compress via template",
         outputs_required: buildOutputRule({
-            files_to_generate: [{ from_document_key: payload.targetKey, template_filename: "template.md" }],
+            files_to_generate: [{ from_document_key: payload.output_type, template_filename: "template.md" }],
         }),
     });
     const mockSetup = createMockSupabaseClient("process-compress-job", {
@@ -636,7 +636,7 @@ Deno.test("processCompressJob: happy path enqueues model call", async () => {
         output_type: FileType.business_case,
         step_description: "compress step",
         outputs_required: buildOutputRule({
-            files_to_generate: [{ from_document_key: payload.targetKey, template_filename: "template.md" }],
+            files_to_generate: [{ from_document_key: payload.output_type, template_filename: "template.md" }],
         }),
     })!;
     const providerRow = buildMockProvider({
@@ -722,18 +722,18 @@ Deno.test("processCompressJob: happy path enqueues model call", async () => {
 
 // ── New tests for continuation routing, census, history victim, provenance write ──
 
-function buildCompressMockStep(payload: { targetKey: ModelContributionFileTypes }, filesToGenerate: { from_document_key: string; template_filename: string }[] = []) {
+function buildCompressMockStep(payload: { output_type: ModelContributionFileTypes }, filesToGenerate: { from_document_key: string; template_filename: string }[] = []) {
     return buildDialecticStageRecipeStep({
         step_key: "compress",
         step_slug: "compress",
         step_name: "Compress",
         output_type: FileType.business_case,
         step_description: "compress step",
-        outputs_required: buildOutputRule({ files_to_generate: filesToGenerate.length > 0 ? filesToGenerate : [{ from_document_key: payload.targetKey, template_filename: "template.md" }] }),
+        outputs_required: buildOutputRule({ files_to_generate: filesToGenerate.length > 0 ? filesToGenerate : [{ from_document_key: payload.output_type, template_filename: "template.md" }] }),
     })!;
 }
 
-function buildCompressMockSetup(payload: { model_id: string; stageSlug: string; targetKey: ModelContributionFileTypes }, isCloned = true) {
+function buildCompressMockSetup(payload: { model_id: string; stageSlug: string; output_type: ModelContributionFileTypes }, isCloned = true) {
     return createMockSupabaseClient("process-compress-job", {
         genericMockResults: {
             dialectic_project_resources: { select: { data: [], error: null } },
@@ -875,7 +875,7 @@ Deno.test("processCompressJob: first-pass call passes the full params census to 
     assertEquals(assembleParams["sessionId"], payload.sessionId);
     assertEquals(assembleParams["iterationNumber"], payload.iterationNumber);
     assertEquals(assembleParams["stageSlug"], payload.stageSlug);
-    assertEquals(assembleParams["targetKey"], payload.targetKey);
+    assertEquals(assembleParams["output_type"], payload.output_type);
     assertEquals(assembleParams["sourceType"], payload.sourceType);
     assertEquals(assembleParams["documentKey"], payload.documentKey);
     assertEquals(assembleParams["modelSlug"], payload.model_slug);

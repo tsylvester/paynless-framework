@@ -17,7 +17,7 @@ import { isIntermediateChunk } from "../../_shared/utils/isIntermediateChunk.ts"
 import { determineContinuation } from "../../_shared/utils/determineContinuation/determineContinuation.ts";
 import { buildUploadContext } from "../../_shared/utils/buildUploadContext/buildUploadContext.ts";
 import { retryJob } from "../retryJob.ts";
-import { continueJob } from "../continueJob.ts";
+import { continueJob } from "../continueJob/continueJob.ts";
 import { saveResponse } from "./saveResponse.ts";
 import type {
   SaveResponseDeps,

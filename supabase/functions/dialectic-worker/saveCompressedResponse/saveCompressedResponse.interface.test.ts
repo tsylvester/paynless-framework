@@ -72,7 +72,7 @@ Deno.test("SaveCompressedResponseSuccessReturn.status discriminates the three te
 /** Contract: SaveCompressedResponsePayload and DialecticCompressJobPayload are assignable in both directions — an owned literal annotated as SaveCompressedResponsePayload round-trips through a DialecticCompressJobPayload binding and back, proving equivalence rather than a one-way widening. */
 Deno.test("SaveCompressedResponsePayload is equivalent to DialecticCompressJobPayload in both directions", () => {
 	const payload: SaveCompressedResponsePayload = {
-		targetKey: FileType.HeaderContext,
+		output_type: FileType.HeaderContext,
 		mode: "json",
 		content: "compressed content",
 		sourceType: "contribution",

@@ -353,7 +353,7 @@ export async function cloneProject(
                 pairedModelSlug: deconstructed.pairedModelSlug,
                 isContinuation: deconstructed.isContinuation,
                 turnIndex: deconstructed.turnIndex,
-                targetKey: (deconstructed.targetKey && isFileType(deconstructed.targetKey)) ? deconstructed.targetKey : undefined,
+                output_type: (deconstructed.output_type && isFileType(deconstructed.output_type)) ? deconstructed.output_type : undefined,
                 sourceType: deconstructed.sourceType,
                 sourceId: deconstructed.sourceId,
                 role: deconstructed.role,

@@ -311,7 +311,7 @@ async function runSpawnProcessSeam(
     sourceStageSlug?: DialecticStageSlug;
     continuation_count?: number;
   },
-  targetKey = FileType.business_case,
+  output_type = FileType.business_case,
   continuationDeps?: {
     fileManager: IFileManager;
     downloadFromStorage: (bucket: string, path: string) => Promise<DownloadStorageResult>;
@@ -325,7 +325,7 @@ async function runSpawnProcessSeam(
   processJob: ReturnType<typeof createMockJobRow>;
 }> {
 
-  if(!isModelContributionFileType(targetKey))
+  if(!isModelContributionFileType(output_type))
   {
     throw new Error("Target key must be a model contribution file type");
   }
@@ -337,7 +337,7 @@ async function runSpawnProcessSeam(
     projectId: "project-xyz",
     modelConfig: realModelConfig,
     tokenizerDeps,
-    targetKey,
+    output_type,
   });
   const enqueueResult = await enqueueCompressJobs(
     buildenqueueCompressJobsDeps({ countTokens }),
@@ -509,7 +509,7 @@ Deno.test("processCompressJob integration: dedup coherence across layers", async
                   sessionId: "session-abc",
                   iteration: 1,
                   stageSlug: DialecticStageSlug.Thesis,
-                  targetKey: FileType.business_case,
+                  output_type: FileType.business_case,
                   sourceType: "contribution",
                   documentKey: FileType.business_case,
                 }).storagePath,
@@ -537,7 +537,7 @@ Deno.test("processCompressJob integration: dedup coherence across layers", async
       projectId: "project-xyz",
       modelConfig: realModelConfig,
       tokenizerDeps,
-      targetKey: FileType.business_case,
+      output_type: FileType.business_case,
     }),
     {
       victim: {
@@ -564,7 +564,7 @@ Deno.test("processCompressJob integration: dedup coherence across layers", async
     sessionId: "session-abc",
     projectId: "project-xyz",
     stageSlug: DialecticStageSlug.Thesis,
-    targetKey: FileType.business_case,
+    output_type: FileType.business_case,
     iterationNumber: 1,
     model_id: "model-1",
     mode: "text",
@@ -621,7 +621,7 @@ Deno.test("processCompressJob integration: chunked seam produces text chunks and
       projectId: "project-xyz",
       modelConfig: realModelConfig,
       tokenizerDeps,
-      targetKey: FileType.business_case,
+      output_type: FileType.business_case,
     }),
     {
       victim: {

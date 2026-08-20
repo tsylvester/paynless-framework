@@ -86,7 +86,7 @@ export function createMockDialecticContributionRow(
     prompt_template_id: 'test-prompt',
     inputs: {},
     output_type: FileType.HeaderContext,
-    document_key: 'header_context',
+    document_key: FileType.HeaderContext,
     projectId: 'project-abc',
     sessionId: 'session-456',
     stageSlug: 'thesis',
@@ -367,7 +367,7 @@ export const saveResponseTestPayload: DialecticExecuteJobPayload = {
     prompt_template_id: "test-prompt",
     inputs: {},
     output_type: FileType.HeaderContext,
-    document_key: "header_context",
+    document_key: FileType.HeaderContext,
     projectId: "project-abc",
     sessionId: "session-456",
     stageSlug: "thesis",
@@ -386,7 +386,7 @@ export const saveResponseTestPayload: DialecticExecuteJobPayload = {
 export const saveResponseTestPayloadDocumentArtifact: DialecticExecuteJobPayload = {
     ...saveResponseTestPayload,
     output_type: FileType.business_case,
-    document_key: "business_case",
+    document_key: FileType.business_case,
     document_relationships: {
         thesis: "contrib-test-1",
         source_group: "00000000-0000-4000-8000-000000000002",
