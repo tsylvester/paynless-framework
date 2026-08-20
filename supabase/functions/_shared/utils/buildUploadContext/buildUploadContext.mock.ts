@@ -110,7 +110,7 @@ export function buildBuildUploadContextResourceParams(
     sessionId: "sess-1",
     iterationNumber: 1,
     stageSlug: DialecticStageSlug.Thesis,
-    targetKey: FileType.business_case,
+    output_type: FileType.business_case,
     sourceType: "contribution",
     documentKey: FileType.feature_spec,
     sourceId: undefined,

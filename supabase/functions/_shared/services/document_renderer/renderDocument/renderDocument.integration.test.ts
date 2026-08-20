@@ -1362,7 +1362,7 @@ Deno.test("DocumentRenderer - COMPRESS end-to-end", async (t) => {
       sessionId: compressParams.sessionId,
       iteration: compressParams.iterationNumber,
       stageSlug: compressParams.stageSlug,
-      targetKey: compressParams.targetKey,
+      output_type: compressParams.output_type,
       sourceType: compressParams.sourceType,
       documentKey: compressParams.documentKey,
     });
@@ -1373,7 +1373,7 @@ Deno.test("DocumentRenderer - COMPRESS end-to-end", async (t) => {
       sessionId: compressParams.sessionId,
       iteration: compressParams.iterationNumber,
       stageSlug: compressParams.stageSlug,
-      targetKey: compressParams.targetKey,
+      output_type: compressParams.output_type,
       sourceType: compressParams.sourceType,
       documentKey: compressParams.documentKey,
     });
@@ -1458,12 +1458,12 @@ Deno.test("DocumentRenderer - COMPRESS end-to-end", async (t) => {
     assertEquals(uploadArg.pathContext.sessionId, compressParams.sessionId);
     assertEquals(uploadArg.pathContext.iteration, compressParams.iterationNumber);
     assertEquals(uploadArg.pathContext.stageSlug, compressParams.stageSlug);
-    assertEquals(uploadArg.pathContext.targetKey, compressParams.targetKey);
+    assertEquals(uploadArg.pathContext.output_type, compressParams.output_type);
     assertEquals(uploadArg.pathContext.sourceType, compressParams.sourceType);
     assertEquals(uploadArg.pathContext.documentKey, compressParams.documentKey);
 
     assert(compressedArtifact.storagePath.endsWith("/_work"), "compressed artifact storagePath should end with /_work");
-    assert(compressedArtifact.fileName.endsWith(`_compressed_for_${compressParams.targetKey}.md`), "compressed artifact fileName should end with _compressed_for_<targetKey>.md");
+    assert(compressedArtifact.fileName.endsWith(`_compressed_for_${compressParams.output_type}.md`), "compressed artifact fileName should end with _compressed_for_<output_type>.md");
 
     const rendered = new TextDecoder().decode(result.renderedBytes);
     assert(rendered.includes("# Executive Summary"), "rendered output should contain Executive Summary section");

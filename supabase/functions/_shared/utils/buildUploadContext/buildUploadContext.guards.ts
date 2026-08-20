@@ -270,7 +270,7 @@ export function isBuildUploadContextResourceParams(
   if (!("stageSlug" in value) || !isDialecticStageSlug(value.stageSlug)) {
     return false;
   }
-  if (!("targetKey" in value) || !isModelContributionFileType(value.targetKey)) {
+  if (!("output_type" in value) || !isModelContributionFileType(value.output_type)) {
     return false;
   }
   if (!("sourceType" in value) || !isCompressionSourceType(value.sourceType)) {

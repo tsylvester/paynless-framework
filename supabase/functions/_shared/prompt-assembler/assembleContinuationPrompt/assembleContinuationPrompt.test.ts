@@ -2663,11 +2663,11 @@
 
         // G.3: constructStoragePath spy received correct contexts
         await t.step(
-          "G.3: constructStoragePath received one CompressionPrompt (no isContinuation) and one CompressedContextRawJson, both with payload's targetKey/sourceType/documentKey",
+          "G.3: constructStoragePath received one CompressionPrompt (no isContinuation) and one CompressedContextRawJson, both with payload's output_type/sourceType/documentKey",
           async () => {
             const compressPayload = buildDialecticCompressJobPayload({
               mode: "json",
-              targetKey: FileType.technical_approach,
+              output_type: FileType.technical_approach,
               sourceType: "resource",
               documentKey: FileType.feature_spec,
             });
@@ -2725,13 +2725,13 @@
               // First call: CompressionPrompt, no isContinuation
               assertEquals(ctx1.fileType, FileType.CompressionPrompt);
               assert(ctx1.isContinuation === undefined || ctx1.isContinuation === false);
-              assertEquals(ctx1.targetKey, FileType.technical_approach);
+              assertEquals(ctx1.output_type, FileType.technical_approach);
               assertEquals(ctx1.sourceType, "resource");
               assertEquals(ctx1.documentKey, FileType.feature_spec);
 
               // Second call: CompressedContextRawJson
               assertEquals(ctx2.fileType, FileType.CompressedContextRawJson);
-              assertEquals(ctx2.targetKey, FileType.technical_approach);
+              assertEquals(ctx2.output_type, FileType.technical_approach);
               assertEquals(ctx2.sourceType, "resource");
               assertEquals(ctx2.documentKey, FileType.feature_spec);
             } finally {
@@ -2885,7 +2885,7 @@
               assertEquals(nonCompressResult.retriable, false);
 
               // Row 2: COMPRESS row with bad payload reports the guard's per-member diagnostic
-              const rejectedPayload = invalidateDialecticCompressJobPayload({ targetKey: null });
+              const rejectedPayload = invalidateDialecticCompressJobPayload({ output_type: null });
               if (!isJson(rejectedPayload)) throw new Error("Test setup: rejected payload is not Json");
               const rejectedJob = buildDialecticJobRow({
                 job_type: "COMPRESS",
@@ -2902,7 +2902,7 @@
                 }),
               );
               assert(isAssembleContinuationPromptErrorReturn(rejectedResult));
-              assertStringIncludes(rejectedResult.error.message, "targetKey");
+              assertStringIncludes(rejectedResult.error.message, "output_type");
               assertEquals(rejectedResult.retriable, false);
 
               // constructStoragePath was never called — neither arm reaches it

@@ -42,7 +42,7 @@ export type RenderCompressedContextParams = {
   sessionId: string;
   iterationNumber: number;
   stageSlug: DialecticStageSlug;
-  targetKey: ModelContributionFileTypes;
+  output_type: ModelContributionFileTypes;
   sourceType: CompressionSourceType;
   documentKey: FileType;
   template_filename: string;

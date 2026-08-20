@@ -142,7 +142,7 @@ export interface PathContext {
   isContinuation?: boolean;
   turnIndex?: number;
   sourceContributionId?: string | null;
-  targetKey?: FileType; // the compression target schema/document key
+  output_type?: FileType; // the compression target schema/document key
   sourceType?: CompressionSourceType; // the explicit discriminator: 'contribution'|'resource' REQUIRE documentKey; 'feedback'|'history' REQUIRE sourceId
   sourceId?: string; // the victim's originating row id, REQUIRED when sourceType is 'feedback'/'history'; deliberately a NEW field, not a reuse of sourceContributionId
   role?: Messages['role']; // REQUIRED when sourceType is 'history'; the message role that becomes the path identity prefix

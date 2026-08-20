@@ -118,7 +118,7 @@ export async function assembleContinuationPrompt(
       fileType: FileType.CompressionPrompt,
       modelSlug: compressPayload.model_slug,
       attemptCount: job.attempt_count,
-      targetKey: compressPayload.targetKey,
+      output_type: compressPayload.output_type,
       sourceType: compressPayload.sourceType,
       documentKey: compressPayload.documentKey,
     };
@@ -128,7 +128,7 @@ export async function assembleContinuationPrompt(
       iteration: compressPayload.iterationNumber,
       stageSlug: compressPayload.stageSlug,
       fileType: FileType.CompressedContextRawJson,
-      targetKey: compressPayload.targetKey,
+      output_type: compressPayload.output_type,
       sourceType: compressPayload.sourceType,
       documentKey: compressPayload.documentKey,
     };
@@ -151,7 +151,7 @@ export async function assembleContinuationPrompt(
         fileType: FileType.CompressionPrompt,
         modelSlug: compressPayload.model_slug,
         attemptCount: job.attempt_count,
-        targetKey: compressPayload.targetKey,
+        output_type: compressPayload.output_type,
         sourceType: compressPayload.sourceType,
         documentKey: compressPayload.documentKey,
         isContinuation: true,

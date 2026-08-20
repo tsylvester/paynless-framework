@@ -163,13 +163,13 @@ Deno.test(
       documentKey: true,
       docType: true,
       sourceStageSlug: true,
-      targetKey: true,
+      output_type: true,
     };
     assertEquals(Object.keys(surface).length, 5);
   },
 );
 
-/** Contract: DialecticRenderCompressedContextJobPayload declares targetKey, sourceType, documentKey and template_filename. */
+/** Contract: DialecticRenderCompressedContextJobPayload declares output_type, sourceType, documentKey and template_filename. */
 Deno.test(
   "DialecticRenderCompressedContextJobPayload declares its four own members by typed literal",
   () => {
@@ -182,12 +182,12 @@ Deno.test(
       model_id: "model-1",
       walletId: "wallet-1",
       user_jwt: "jwt-1",
-      targetKey: FileType.technical_approach,
+      output_type: FileType.technical_approach,
       sourceType: "contribution",
       documentKey: FileType.business_case,
       template_filename: "template.md",
     };
-    assertEquals(payload.targetKey, FileType.technical_approach);
+    assertEquals(payload.output_type, FileType.technical_approach);
     assertEquals(payload.sourceType, "contribution");
     assertEquals(payload.documentKey, FileType.business_case);
     assertEquals(payload.template_filename, "template.md");
@@ -207,7 +207,7 @@ Deno.test(
       model_id: "model-1",
       walletId: "wallet-1",
       user_jwt: "jwt-1",
-      targetKey: FileType.technical_approach,
+      output_type: FileType.technical_approach,
       sourceType: "contribution",
       documentKey: FileType.business_case,
       template_filename: "template.md",
@@ -241,7 +241,7 @@ Deno.test(
       model_id: "model-1",
       walletId: "wallet-1",
       user_jwt: "jwt-1",
-      targetKey: FileType.technical_approach,
+      output_type: FileType.technical_approach,
       sourceType: "contribution",
       documentKey: FileType.business_case,
       template_filename: "template.md",
@@ -274,7 +274,7 @@ Deno.test(
       documentKey: FileType.business_case,
       docType: FileType.business_case,
       sourceStageSlug: DialecticStageSlug.Thesis,
-      targetKey: FileType.technical_approach,
+      output_type: FileType.technical_approach,
     };
 
     const callPayload: EnqueueRenderJobCallPayload = contribution;

@@ -112,7 +112,7 @@ export const enqueueCompressJobs: enqueueCompressJobsFn = async (
     sessionId: params.sessionId,
     iteration: params.iterationNumber,
     stageSlug: params.stageSlug,
-    targetKey: params.targetKey,
+    output_type: params.output_type,
     sourceType: victim.sourceType,
     documentKey: victim.documentKey,
     sourceId: victim.sourceId,
@@ -212,7 +212,7 @@ export const enqueueCompressJobs: enqueueCompressJobsFn = async (
 
   // 7. Build child payload(s) + idempotency keys
   const baseIdempotencyKey =
-    `${params.parentJob.id}_compress_${victim.sourceType}_${identity}_${sanitizeForPath(params.targetKey)}`;
+    `${params.parentJob.id}_compress_${victim.sourceType}_${identity}_${sanitizeForPath(params.output_type)}`;
 
   const insertRows: TablesInsert<"dialectic_generation_jobs">[] = [];
 
@@ -224,7 +224,7 @@ export const enqueueCompressJobs: enqueueCompressJobsFn = async (
       sessionId: params.sessionId,
       projectId: params.projectId,
       stageSlug: params.stageSlug,
-      targetKey: params.targetKey,
+      output_type: params.output_type,
       iterationNumber: params.iterationNumber,
       model_id: params.modelId,
       model_slug: params.modelSlug,

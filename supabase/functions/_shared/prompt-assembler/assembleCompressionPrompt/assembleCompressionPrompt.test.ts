@@ -239,7 +239,7 @@ Deno.test("assembleCompressionPrompt addresses the write through constructStorag
 
 	assertSpyCalls(constructStoragePathSpy, 1);
 	const ctx = constructStoragePathSpy.calls[0].args[0] as Record<string, unknown>;
-	assertEquals(ctx.targetKey, params.targetKey);
+	assertEquals(ctx.output_type, params.output_type);
 	assertEquals(ctx.sourceType, params.sourceType);
 	assertEquals(ctx.documentKey, params.documentKey);
 	assertEquals(ctx.modelSlug, params.modelSlug);

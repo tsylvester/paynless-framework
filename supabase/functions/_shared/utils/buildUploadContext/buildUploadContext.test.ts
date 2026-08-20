@@ -442,15 +442,15 @@ Deno.test(
  
 /**
  * Contract: given a resource params object, the path context assembles projectId, fileType,
- *   sessionId, iteration, stageSlug, targetKey, sourceType and documentKey from the corresponding
+ *   sessionId, iteration, stageSlug, output_type, sourceType and documentKey from the corresponding
  *   params fields.
  * Arrange: buildBuildUploadContextResourceParams overriding projectId, storageFileType, sessionId,
- *   iterationNumber, stageSlug, targetKey, sourceType and documentKey to non-default values.
+ *   iterationNumber, stageSlug, output_type, sourceType and documentKey to non-default values.
  * Act:     buildUploadContext over the resource params.
  * Assert:  each pathContext field equals the overridden value.
  */
 Deno.test(
-  "resource arm: pathContext maps projectId/fileType/sessionId/iteration/stageSlug/targetKey/sourceType/documentKey from params",
+  "resource arm: pathContext maps projectId/fileType/sessionId/iteration/stageSlug/output_type/sourceType/documentKey from params",
   () => {
     // Arrange
     const params: BuildUploadContextResourceParams = buildBuildUploadContextResourceParams({
@@ -459,7 +459,7 @@ Deno.test(
       sessionId: "sess-rc",
       iterationNumber: 3,
       stageSlug: DialecticStageSlug.Synthesis,
-      targetKey: FileType.technical_approach,
+      output_type: FileType.technical_approach,
       sourceType: "contribution",
       documentKey: FileType.business_case,
     });
@@ -476,7 +476,7 @@ Deno.test(
     assertEquals(result.pathContext.sessionId, "sess-rc");
     assertEquals(result.pathContext.iteration, 3);
     assertEquals(result.pathContext.stageSlug, DialecticStageSlug.Synthesis);
-    assertEquals(result.pathContext.targetKey, FileType.technical_approach);
+    assertEquals(result.pathContext.output_type, FileType.technical_approach);
     assertEquals(result.pathContext.sourceType, "contribution");
     assertEquals(result.pathContext.documentKey, FileType.business_case);
   },

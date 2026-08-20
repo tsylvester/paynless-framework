@@ -393,10 +393,9 @@ const constructDeconstructTestCases: Array<{
       iteration: 3,
       stageSlug: DialecticStageSlug.Parenthesis,
       modelSlug: 'GPT-X Alpha',
-      contributionType: 'parenthesis', // Corrected: Match the stage slug
     }),
-    checkFields: ['shortSessionId', 'iteration', 'stageDirName', 'stageSlug', 'modelSlug', 'attemptCount', 'contributionType'],
-    expectedFixedFileNameInPath: 'gpt-x_alpha_0_parenthesis_raw.json'
+    checkFields: ['shortSessionId', 'iteration', 'stageDirName', 'stageSlug', 'modelSlug', 'attemptCount'],
+    expectedFixedFileNameInPath: 'gpt-x_alpha_0_business_case_raw.json'
   },
   {
     name: 'pairwise_synthesis_chunk',
@@ -655,7 +654,7 @@ const deconstructReconstructTestCases: DeconstructReconstructTestCase[] = [
   },
   {
     name: 'model_contribution_raw_json',
-    samplePath: 'proj_theta/session_sess004/iteration_1/4_parenthesis/raw_responses/gpt_4_turbo_1_parenthesis_raw.json',
+    samplePath: 'proj_theta/session_sess004/iteration_1/4_parenthesis/raw_responses/gpt_4_turbo_1_business_case_raw.json',
     expectedFileType: FileType.ModelContributionRawJson,
     expectedContextParts: {
       originalProjectId: 'proj_theta',
@@ -1083,8 +1082,8 @@ Deno.test('[path_deconstructor] direct - compressed_context round-trips', async 
   const iteration = 2;
   const stageSlug = DialecticStageSlug.Synthesis;
   const mappedStageDir = mapStageSlugToDirName(stageSlug);
-  const targetKey = FileType.business_case;
-  const targetKeySanitized = sanitizeForPath(targetKey);
+  const output_type = FileType.business_case;
+  const output_typeSanitized = sanitizeForPath(output_type);
   const baseDir = `${projectId}/session_${shortSessionId}/iteration_${iteration}/${mappedStageDir}/_work`;
 
   await t.step('round-trips documentKey-sourced final artifact', () => {
@@ -1092,7 +1091,7 @@ Deno.test('[path_deconstructor] direct - compressed_context round-trips', async 
     const context = buildPathContext({
       projectId, sessionId, iteration, stageSlug,
       fileType: FileType.CompressedContext,
-      targetKey, sourceType: 'contribution', documentKey,
+      output_type, sourceType: 'contribution', documentKey,
     });
     const { storagePath, fileName } = constructStoragePath(context);
     const info = deconstructStoragePath({ storageDir: storagePath, fileName });
@@ -1104,7 +1103,7 @@ Deno.test('[path_deconstructor] direct - compressed_context round-trips', async 
     assertEquals(info.stageDirName, mappedStageDir);
     assertEquals(info.stageSlug, stageSlug);
     assertEquals(info.documentKey, sanitizeForPath(documentKey));
-    assertEquals(info.targetKey, targetKeySanitized);
+    assertEquals(info.output_type, output_typeSanitized);
     assertEquals(info.chunkIndex, undefined);
     assertEquals(info.chunkTotal, undefined);
     assertEquals(info.fileTypeGuess, FileType.CompressedContext);
@@ -1118,7 +1117,7 @@ Deno.test('[path_deconstructor] direct - compressed_context round-trips', async 
     const context = buildPathContext({
       projectId, sessionId, iteration, stageSlug,
       fileType: FileType.CompressedContext,
-      targetKey, sourceType: 'history', sourceId, role: 'assistant',
+      output_type, sourceType: 'history', sourceId, role: 'assistant',
     });
     const { storagePath, fileName } = constructStoragePath(context);
     const info = deconstructStoragePath({ storageDir: storagePath, fileName });
@@ -1133,11 +1132,11 @@ Deno.test('[path_deconstructor] direct - compressed_context round-trips', async 
     assertEquals(info.sourceId, sourceId);
     assertEquals(info.role, 'assistant');
     assertEquals(info.documentKey, undefined);
-    assertEquals(info.targetKey, targetKeySanitized);
+    assertEquals(info.output_type, output_typeSanitized);
     assertEquals(info.chunkIndex, undefined);
     assertEquals(info.chunkTotal, undefined);
     assertEquals(info.fileTypeGuess, FileType.CompressedContext);
-    assertEquals(info.parsedFileNameFromPath, `message_assistant_${sourceId}_compressed_for_${targetKeySanitized}.md`);
+    assertEquals(info.parsedFileNameFromPath, `message_assistant_${sourceId}_compressed_for_${output_typeSanitized}.md`);
   });
 
   await t.step('round-trips chunked documentKey-sourced artifact', () => {
@@ -1147,7 +1146,7 @@ Deno.test('[path_deconstructor] direct - compressed_context round-trips', async 
     const context = buildPathContext({
       projectId, sessionId, iteration, stageSlug,
       fileType: FileType.CompressedContext,
-      targetKey, sourceType: 'contribution', documentKey, chunkIndex, chunkTotal,
+      output_type, sourceType: 'contribution', documentKey, chunkIndex, chunkTotal,
     });
     const { storagePath, fileName } = constructStoragePath(context);
     const info = deconstructStoragePath({ storageDir: storagePath, fileName });
@@ -1159,11 +1158,11 @@ Deno.test('[path_deconstructor] direct - compressed_context round-trips', async 
     assertEquals(info.stageDirName, mappedStageDir);
     assertEquals(info.stageSlug, stageSlug);
     assertEquals(info.documentKey, sanitizeForPath(documentKey));
-    assertEquals(info.targetKey, targetKeySanitized);
+    assertEquals(info.output_type, output_typeSanitized);
     assertEquals(info.chunkIndex, chunkIndex);
     assertEquals(info.chunkTotal, chunkTotal);
     assertEquals(info.fileTypeGuess, FileType.CompressedContext);
-    assertEquals(info.parsedFileNameFromPath, `${sanitizeForPath(documentKey)}_compressed_for_${targetKeySanitized}_chunk_${chunkIndex}of${chunkTotal}.md`);
+    assertEquals(info.parsedFileNameFromPath, `${sanitizeForPath(documentKey)}_compressed_for_${output_typeSanitized}_chunk_${chunkIndex}of${chunkTotal}.md`);
     assertEquals(info.sourceType, 'resource');
     assertEquals(info.sourceId, undefined);
     assertEquals(info.role, undefined);
@@ -1174,7 +1173,7 @@ Deno.test('[path_deconstructor] direct - compressed_context round-trips', async 
     const context = buildPathContext({
       projectId, sessionId, iteration, stageSlug,
       fileType: FileType.CompressedContextRawJson,
-      targetKey, sourceType: 'contribution', documentKey,
+      output_type, sourceType: 'contribution', documentKey,
     });
     const { storagePath, fileName } = constructStoragePath(context);
     const info = deconstructStoragePath({ storageDir: storagePath, fileName });
@@ -1186,7 +1185,7 @@ Deno.test('[path_deconstructor] direct - compressed_context round-trips', async 
     assertEquals(info.stageDirName, mappedStageDir);
     assertEquals(info.stageSlug, stageSlug);
     assertEquals(info.documentKey, sanitizeForPath(documentKey));
-    assertEquals(info.targetKey, targetKeySanitized);
+    assertEquals(info.output_type, output_typeSanitized);
     assertEquals(info.chunkIndex, undefined);
     assertEquals(info.chunkTotal, undefined);
     assertEquals(info.fileTypeGuess, FileType.CompressedContextRawJson);
@@ -1200,7 +1199,7 @@ Deno.test('[path_deconstructor] direct - compressed_context round-trips', async 
     const context = buildPathContext({
       projectId, sessionId, iteration, stageSlug,
       fileType: FileType.CompressedContextRawJson,
-      targetKey, sourceType: 'history', sourceId, role: 'assistant',
+      output_type, sourceType: 'history', sourceId, role: 'assistant',
     });
     const { storagePath, fileName } = constructStoragePath(context);
     const info = deconstructStoragePath({ storageDir: storagePath, fileName });
@@ -1215,11 +1214,11 @@ Deno.test('[path_deconstructor] direct - compressed_context round-trips', async 
     assertEquals(info.sourceId, sourceId);
     assertEquals(info.role, 'assistant');
     assertEquals(info.documentKey, undefined);
-    assertEquals(info.targetKey, targetKeySanitized);
+    assertEquals(info.output_type, output_typeSanitized);
     assertEquals(info.chunkIndex, undefined);
     assertEquals(info.chunkTotal, undefined);
     assertEquals(info.fileTypeGuess, FileType.CompressedContextRawJson);
-    assertEquals(info.parsedFileNameFromPath, `message_assistant_${sourceId}_compressed_for_${targetKeySanitized}_raw.json`);
+    assertEquals(info.parsedFileNameFromPath, `message_assistant_${sourceId}_compressed_for_${output_typeSanitized}_raw.json`);
   });
 
   await t.step('round-trips chunked documentKey-sourced raw JSON artifact', () => {
@@ -1229,7 +1228,7 @@ Deno.test('[path_deconstructor] direct - compressed_context round-trips', async 
     const context = buildPathContext({
       projectId, sessionId, iteration, stageSlug,
       fileType: FileType.CompressedContextRawJson,
-      targetKey, sourceType: 'contribution', documentKey, chunkIndex, chunkTotal,
+      output_type, sourceType: 'contribution', documentKey, chunkIndex, chunkTotal,
     });
     const { storagePath, fileName } = constructStoragePath(context);
     const info = deconstructStoragePath({ storageDir: storagePath, fileName });
@@ -1241,11 +1240,11 @@ Deno.test('[path_deconstructor] direct - compressed_context round-trips', async 
     assertEquals(info.stageDirName, mappedStageDir);
     assertEquals(info.stageSlug, stageSlug);
     assertEquals(info.documentKey, sanitizeForPath(documentKey));
-    assertEquals(info.targetKey, targetKeySanitized);
+    assertEquals(info.output_type, output_typeSanitized);
     assertEquals(info.chunkIndex, chunkIndex);
     assertEquals(info.chunkTotal, chunkTotal);
     assertEquals(info.fileTypeGuess, FileType.CompressedContextRawJson);
-    assertEquals(info.parsedFileNameFromPath, `${sanitizeForPath(documentKey)}_compressed_for_${targetKeySanitized}_chunk_${chunkIndex}of${chunkTotal}_raw.json`);
+    assertEquals(info.parsedFileNameFromPath, `${sanitizeForPath(documentKey)}_compressed_for_${output_typeSanitized}_chunk_${chunkIndex}of${chunkTotal}_raw.json`);
     assertEquals(info.sourceType, 'resource');
     assertEquals(info.sourceId, undefined);
     assertEquals(info.role, undefined);
@@ -1256,7 +1255,7 @@ Deno.test('[path_deconstructor] direct - compressed_context round-trips', async 
     const context = buildPathContext({
       projectId, sessionId, iteration, stageSlug,
       fileType: FileType.CompressedContext,
-      targetKey, sourceType: 'feedback', documentKey,
+      output_type, sourceType: 'feedback', documentKey,
     });
     const { storagePath, fileName } = constructStoragePath(context);
     const info = deconstructStoragePath({ storageDir: storagePath, fileName });
@@ -1271,11 +1270,11 @@ Deno.test('[path_deconstructor] direct - compressed_context round-trips', async 
     assertEquals(info.documentKey, documentKey);
     assertEquals(info.sourceId, undefined);
     assertEquals(info.role, undefined);
-    assertEquals(info.targetKey, targetKeySanitized);
+    assertEquals(info.output_type, output_typeSanitized);
     assertEquals(info.chunkIndex, undefined);
     assertEquals(info.chunkTotal, undefined);
     assertEquals(info.fileTypeGuess, FileType.CompressedContext);
-    assertEquals(info.parsedFileNameFromPath, `${documentKey}_feedback_compressed_for_${targetKeySanitized}.md`);
+    assertEquals(info.parsedFileNameFromPath, `${documentKey}_feedback_compressed_for_${output_typeSanitized}.md`);
   });
 
   await t.step('round-trips a feedback-sourced raw JSON artifact', () => {
@@ -1283,7 +1282,7 @@ Deno.test('[path_deconstructor] direct - compressed_context round-trips', async 
     const context = buildPathContext({
       projectId, sessionId, iteration, stageSlug,
       fileType: FileType.CompressedContextRawJson,
-      targetKey, sourceType: 'feedback', documentKey,
+      output_type, sourceType: 'feedback', documentKey,
     });
     const { storagePath, fileName } = constructStoragePath(context);
     const info = deconstructStoragePath({ storageDir: storagePath, fileName });
@@ -1298,11 +1297,11 @@ Deno.test('[path_deconstructor] direct - compressed_context round-trips', async 
     assertEquals(info.documentKey, documentKey);
     assertEquals(info.sourceId, undefined);
     assertEquals(info.role, undefined);
-    assertEquals(info.targetKey, targetKeySanitized);
+    assertEquals(info.output_type, output_typeSanitized);
     assertEquals(info.chunkIndex, undefined);
     assertEquals(info.chunkTotal, undefined);
     assertEquals(info.fileTypeGuess, FileType.CompressedContextRawJson);
-    assertEquals(info.parsedFileNameFromPath, `${documentKey}_feedback_compressed_for_${targetKeySanitized}_raw.json`);
+    assertEquals(info.parsedFileNameFromPath, `${documentKey}_feedback_compressed_for_${output_typeSanitized}_raw.json`);
   });
 
   await t.step('round-trips a chunked history-sourced artifact', () => {
@@ -1312,7 +1311,7 @@ Deno.test('[path_deconstructor] direct - compressed_context round-trips', async 
     const context = buildPathContext({
       projectId, sessionId, iteration, stageSlug,
       fileType: FileType.CompressedContext,
-      targetKey, sourceType: 'history', sourceId, role: 'user', chunkIndex, chunkTotal,
+      output_type, sourceType: 'history', sourceId, role: 'user', chunkIndex, chunkTotal,
     });
     const { storagePath, fileName } = constructStoragePath(context);
     const info = deconstructStoragePath({ storageDir: storagePath, fileName });
@@ -1327,7 +1326,7 @@ Deno.test('[path_deconstructor] direct - compressed_context round-trips', async 
     assertEquals(info.sourceId, sourceId);
     assertEquals(info.role, 'user');
     assertEquals(info.documentKey, undefined);
-    assertEquals(info.targetKey, targetKeySanitized);
+    assertEquals(info.output_type, output_typeSanitized);
     assertEquals(info.chunkIndex, chunkIndex);
     assertEquals(info.chunkTotal, chunkTotal);
     assertEquals(info.fileTypeGuess, FileType.CompressedContext);
@@ -1338,12 +1337,12 @@ Deno.test('[path_deconstructor] direct - compressed_context round-trips', async 
     const resourceContext = buildPathContext({
       projectId, sessionId, iteration, stageSlug,
       fileType: FileType.CompressedContext,
-      targetKey, sourceType: 'resource', documentKey,
+      output_type, sourceType: 'resource', documentKey,
     });
     const feedbackContext = buildPathContext({
       projectId, sessionId, iteration, stageSlug,
       fileType: FileType.CompressedContext,
-      targetKey, sourceType: 'feedback', documentKey,
+      output_type, sourceType: 'feedback', documentKey,
     });
     const resourceResult = constructStoragePath(resourceContext);
     const feedbackResult = constructStoragePath(feedbackContext);
@@ -1370,7 +1369,7 @@ Deno.test('[path_deconstructor] direct - compressed_context round-trips', async 
       const context = buildPathContext({
         projectId, sessionId, iteration, stageSlug,
         fileType: FileType.CompressionPrompt,
-        targetKey, sourceType: 'resource', documentKey: promptDocumentKey,
+        output_type, sourceType: 'resource', documentKey: promptDocumentKey,
         modelSlug: promptModelSlug,
       });
       const { storagePath, fileName } = constructStoragePath(context);
@@ -1380,7 +1379,7 @@ Deno.test('[path_deconstructor] direct - compressed_context round-trips', async 
       assertEquals(info.fileTypeGuess, FileType.CompressionPrompt);
       assertEquals(info.modelSlug, promptModelSlugSanitized);
       assertEquals(info.attemptCount, 0);
-      assertEquals(info.targetKey, targetKeySanitized);
+      assertEquals(info.output_type, output_typeSanitized);
       assertEquals(info.sourceType, 'resource');
       assertEquals(info.documentKey, sanitizeForPath(promptDocumentKey));
       assertEquals(info.sourceId, undefined);
@@ -1396,7 +1395,7 @@ Deno.test('[path_deconstructor] direct - compressed_context round-trips', async 
       const context = buildPathContext({
         projectId, sessionId, iteration, stageSlug,
         fileType: FileType.CompressionPrompt,
-        targetKey, sourceType: 'feedback', documentKey: promptFeedbackDocumentKey,
+        output_type, sourceType: 'feedback', documentKey: promptFeedbackDocumentKey,
         modelSlug: promptModelSlug,
       });
       const { storagePath, fileName } = constructStoragePath(context);
@@ -1406,7 +1405,7 @@ Deno.test('[path_deconstructor] direct - compressed_context round-trips', async 
       assertEquals(info.fileTypeGuess, FileType.CompressionPrompt);
       assertEquals(info.modelSlug, promptModelSlugSanitized);
       assertEquals(info.attemptCount, 0);
-      assertEquals(info.targetKey, targetKeySanitized);
+      assertEquals(info.output_type, output_typeSanitized);
       assertEquals(info.sourceType, 'feedback');
       assertEquals(info.documentKey, promptFeedbackDocumentKey);
       assertEquals(info.sourceId, undefined);
@@ -1422,7 +1421,7 @@ Deno.test('[path_deconstructor] direct - compressed_context round-trips', async 
       const context = buildPathContext({
         projectId, sessionId, iteration, stageSlug,
         fileType: FileType.CompressionPrompt,
-        targetKey, sourceType: 'history', sourceId: promptSourceId, role: 'assistant',
+        output_type, sourceType: 'history', sourceId: promptSourceId, role: 'assistant',
         modelSlug: promptModelSlug,
       });
       const { storagePath, fileName } = constructStoragePath(context);
@@ -1432,7 +1431,7 @@ Deno.test('[path_deconstructor] direct - compressed_context round-trips', async 
       assertEquals(info.fileTypeGuess, FileType.CompressionPrompt);
       assertEquals(info.modelSlug, promptModelSlugSanitized);
       assertEquals(info.attemptCount, 0);
-      assertEquals(info.targetKey, targetKeySanitized);
+      assertEquals(info.output_type, output_typeSanitized);
       assertEquals(info.sourceType, 'history');
       assertEquals(info.sourceId, promptSourceId);
       assertEquals(info.role, 'assistant');
@@ -1448,7 +1447,7 @@ Deno.test('[path_deconstructor] direct - compressed_context round-trips', async 
       const context = buildPathContext({
         projectId, sessionId, iteration, stageSlug,
         fileType: FileType.CompressionPrompt,
-        targetKey, sourceType: 'resource', documentKey: promptDocumentKey,
+        output_type, sourceType: 'resource', documentKey: promptDocumentKey,
         modelSlug: promptModelSlug, chunkIndex: 1, chunkTotal: 3,
       });
       const { storagePath, fileName } = constructStoragePath(context);
@@ -1458,7 +1457,7 @@ Deno.test('[path_deconstructor] direct - compressed_context round-trips', async 
       assertEquals(info.fileTypeGuess, FileType.CompressionPrompt);
       assertEquals(info.modelSlug, promptModelSlugSanitized);
       assertEquals(info.attemptCount, 0);
-      assertEquals(info.targetKey, targetKeySanitized);
+      assertEquals(info.output_type, output_typeSanitized);
       assertEquals(info.sourceType, 'resource');
       assertEquals(info.documentKey, sanitizeForPath(promptDocumentKey));
       assertEquals(info.sourceId, undefined);
@@ -1474,7 +1473,7 @@ Deno.test('[path_deconstructor] direct - compressed_context round-trips', async 
       const context = buildPathContext({
         projectId, sessionId, iteration, stageSlug,
         fileType: FileType.CompressionPrompt,
-        targetKey, sourceType: 'history', sourceId: promptSourceId, role: 'assistant',
+        output_type, sourceType: 'history', sourceId: promptSourceId, role: 'assistant',
         modelSlug: promptModelSlug, isContinuation: true, turnIndex: 2,
       });
       const { storagePath, fileName } = constructStoragePath(context);
@@ -1484,7 +1483,7 @@ Deno.test('[path_deconstructor] direct - compressed_context round-trips', async 
       assertEquals(info.fileTypeGuess, FileType.CompressionPrompt);
       assertEquals(info.modelSlug, promptModelSlugSanitized);
       assertEquals(info.attemptCount, 0);
-      assertEquals(info.targetKey, targetKeySanitized);
+      assertEquals(info.output_type, output_typeSanitized);
       assertEquals(info.sourceType, 'history');
       assertEquals(info.sourceId, promptSourceId);
       assertEquals(info.role, 'assistant');
@@ -1504,7 +1503,7 @@ Deno.test('[path_deconstructor] direct - compressed_context round-trips', async 
     const promptContext = buildPathContext({
       projectId, sessionId, iteration, stageSlug,
       fileType: FileType.CompressionPrompt,
-      targetKey, sourceType: 'resource', documentKey: promptDocumentKey,
+      output_type, sourceType: 'resource', documentKey: promptDocumentKey,
       modelSlug: promptModelSlug,
     });
     const promptResult = constructStoragePath(promptContext);
@@ -1513,7 +1512,7 @@ Deno.test('[path_deconstructor] direct - compressed_context round-trips', async 
     assertEquals(promptInfo.error, undefined);
     assertEquals(promptInfo.fileTypeGuess, FileType.CompressionPrompt);
     assertEquals(promptInfo.documentKey?.includes('_compressed_for_'), false);
-    assertEquals(promptInfo.targetKey?.endsWith('_prompt'), false);
+    assertEquals(promptInfo.output_type?.endsWith('_prompt'), false);
 
     // A real turn prompt still deconstructs as a turn prompt
     const turnPromptContext = buildPathContext({
@@ -1531,7 +1530,7 @@ Deno.test('[path_deconstructor] direct - compressed_context round-trips', async 
     const compressedContext = buildPathContext({
       projectId, sessionId, iteration, stageSlug,
       fileType: FileType.CompressedContext,
-      targetKey, sourceType: 'resource', documentKey: promptDocumentKey,
+      output_type, sourceType: 'resource', documentKey: promptDocumentKey,
     });
     const compressedResult = constructStoragePath(compressedContext);
     const compressedInfo = deconstructStoragePath({ storageDir: compressedResult.storagePath, fileName: compressedResult.fileName });
@@ -1548,12 +1547,12 @@ Deno.test('[path_deconstructor] direct - compressed_context round-trips', async 
     const chunkTotal = 3;
 
     const contexts: PathContext[] = [
-      buildPathContext({ projectId, sessionId, iteration, stageSlug, fileType: FileType.CompressedContext, targetKey, sourceType: 'resource', documentKey }),
-      buildPathContext({ projectId, sessionId, iteration, stageSlug, fileType: FileType.CompressedContext, targetKey, sourceType: 'feedback', documentKey: feedbackDocumentKey }),
-      buildPathContext({ projectId, sessionId, iteration, stageSlug, fileType: FileType.CompressedContext, targetKey, sourceType: 'history', sourceId, role: 'assistant' }),
-      buildPathContext({ projectId, sessionId, iteration, stageSlug, fileType: FileType.CompressedContextRawJson, targetKey, sourceType: 'resource', documentKey }),
-      buildPathContext({ projectId, sessionId, iteration, stageSlug, fileType: FileType.CompressedContextRawJson, targetKey, sourceType: 'feedback', documentKey: feedbackDocumentKey }),
-      buildPathContext({ projectId, sessionId, iteration, stageSlug, fileType: FileType.CompressedContext, targetKey, sourceType: 'history', sourceId, role: 'user', chunkIndex, chunkTotal }),
+      buildPathContext({ projectId, sessionId, iteration, stageSlug, fileType: FileType.CompressedContext, output_type, sourceType: 'resource', documentKey }),
+      buildPathContext({ projectId, sessionId, iteration, stageSlug, fileType: FileType.CompressedContext, output_type, sourceType: 'feedback', documentKey: feedbackDocumentKey }),
+      buildPathContext({ projectId, sessionId, iteration, stageSlug, fileType: FileType.CompressedContext, output_type, sourceType: 'history', sourceId, role: 'assistant' }),
+      buildPathContext({ projectId, sessionId, iteration, stageSlug, fileType: FileType.CompressedContextRawJson, output_type, sourceType: 'resource', documentKey }),
+      buildPathContext({ projectId, sessionId, iteration, stageSlug, fileType: FileType.CompressedContextRawJson, output_type, sourceType: 'feedback', documentKey: feedbackDocumentKey }),
+      buildPathContext({ projectId, sessionId, iteration, stageSlug, fileType: FileType.CompressedContext, output_type, sourceType: 'history', sourceId, role: 'user', chunkIndex, chunkTotal }),
     ];
 
     for (const ctx of contexts) {
@@ -1565,7 +1564,7 @@ Deno.test('[path_deconstructor] direct - compressed_context round-trips', async 
       const rebuilt = buildPathContext({
         projectId, sessionId, iteration, stageSlug,
         fileType: info.fileTypeGuess!,
-        targetKey: isFileType(info.targetKey) ? info.targetKey : undefined,
+        output_type: isFileType(info.output_type) ? info.output_type : undefined,
         sourceType: info.sourceType,
         documentKey: isFileType(info.documentKey) ? info.documentKey : undefined,
         sourceId: info.sourceId,

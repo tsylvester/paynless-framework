@@ -72,7 +72,7 @@ export function constructStoragePath(context: PathContext): ConstructedPath {
     sourceGroupFragment,
     originalStoragePath,
     originalBaseName,
-    targetKey,
+    output_type,
     sourceType,
     sourceId,
     role,
@@ -306,7 +306,7 @@ export function constructStoragePath(context: PathContext): ConstructedPath {
     case FileType.CompressionPrompt: {
       const missingFields: string[] = [];
       if (!stageRootPath) missingFields.push('stageRootPath (projectId, sessionId, iteration, stageSlug)');
-      if (!targetKey) missingFields.push('targetKey');
+      if (!output_type) missingFields.push('output_type');
       if (!sourceType) missingFields.push('sourceType');
       if (fileType === FileType.CompressionPrompt) {
         if (!modelSlugSanitized) missingFields.push('modelSlug');
@@ -347,7 +347,7 @@ export function constructStoragePath(context: PathContext): ConstructedPath {
         throw new Error(`chunkIndex must be >= 1 and chunkTotal must be >= chunkIndex for ${fileType}.`);
       }
 
-      const targetKeySanitized = sanitizeForPath(targetKey!);
+      const output_typeSanitized = sanitizeForPath(output_type!);
       const chunkSuffix = chunkIndex !== undefined ? `_chunk_${chunkIndex}of${chunkTotal}` : '';
 
       if (fileType === FileType.CompressionPrompt) {
@@ -357,14 +357,14 @@ export function constructStoragePath(context: PathContext): ConstructedPath {
           }
         }
         const continuationSuffix = isContinuation ? `_continuation_${turnIndex}` : '';
-        const fileName = `${modelSlugSanitized}_${attemptCount}_${sourceBasename}_compressed_for_${targetKeySanitized}${chunkSuffix}${continuationSuffix}_prompt.md`;
+        const fileName = `${modelSlugSanitized}_${attemptCount}_${sourceBasename}_compressed_for_${output_typeSanitized}${chunkSuffix}${continuationSuffix}_prompt.md`;
         return { storagePath: `${stageRootPath}/_work/prompts`, fileName };
       }
 
       if (fileType === FileType.CompressedContextRawJson) {
-        return { storagePath: `${stageRootPath}/_work/raw_responses`, fileName: `${sourceBasename}_compressed_for_${targetKeySanitized}${chunkSuffix}_raw.json` };
+        return { storagePath: `${stageRootPath}/_work/raw_responses`, fileName: `${sourceBasename}_compressed_for_${output_typeSanitized}${chunkSuffix}_raw.json` };
       }
-      return { storagePath: `${stageRootPath}/_work`, fileName: `${sourceBasename}_compressed_for_${targetKeySanitized}${chunkSuffix}.md` };
+      return { storagePath: `${stageRootPath}/_work`, fileName: `${sourceBasename}_compressed_for_${output_typeSanitized}${chunkSuffix}.md` };
     }
 
     // --- All Model Contributions (Main, Raw, and Intermediate Types) ---
@@ -554,7 +554,7 @@ export function constructStoragePath(context: PathContext): ConstructedPath {
       } else {
         if (fileType === FileType.ModelContributionRawJson) {
           storagePath = `${stageRootPath}/raw_responses`;
-        } else if (isDocumentKey(fileType) || documentKey) {
+        } else if (isDocumentKey(fileType)) {
           storagePath = `${stageRootPath}/documents`;
         } else {
           storagePath = stageRootPath;

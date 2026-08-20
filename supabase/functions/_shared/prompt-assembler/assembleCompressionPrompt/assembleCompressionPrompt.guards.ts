@@ -101,7 +101,7 @@ export function isAssembleCompressionPromptParams(
 		return false;
 	}
 
-	if (!isModelContributionFileType(value.targetKey)) {
+	if (!isModelContributionFileType(value.output_type)) {
 		return false;
 	}
 

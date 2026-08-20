@@ -71,11 +71,11 @@ function buildRealDeps(): enqueueCompressJobsDeps {
 
 function buildRealParams(
   dbClient: SupabaseClient<Database>,
-  overrides?: { targetKey?: ModelContributionFileTypes },
+  overrides?: { output_type?: ModelContributionFileTypes },
 ): enqueueCompressJobsParams {
   return buildenqueueCompressJobsParams({
     dbClient,
-    ...(overrides?.targetKey !== undefined ? { targetKey: overrides.targetKey } : {}),
+    ...(overrides?.output_type !== undefined ? { output_type: overrides.output_type } : {}),
     modelConfig: realModelConfig,
     tokenizerDeps: buildRealTokenizerDeps(),
   });
@@ -118,7 +118,7 @@ Deno.test("enqueueCompressJobs integration: dedup existence query filters on the
     });
     const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
     const deps = buildRealDeps();
-    const params = buildRealParams(dbClient, { targetKey: FileType.success_metrics });
+    const params = buildRealParams(dbClient, { output_type: FileType.success_metrics });
     const payload: enqueueCompressJobsPayload = {
       victim: {
         mode: "text",
@@ -148,7 +148,7 @@ Deno.test("enqueueCompressJobs integration: dedup existence query filters on the
       sessionId: params.sessionId,
       iteration: params.iterationNumber,
       stageSlug: params.stageSlug,
-      targetKey: params.targetKey,
+      output_type: params.output_type,
       sourceType: payload.victim.sourceType,
       documentKey: payload.victim.documentKey,
     });
@@ -187,7 +187,7 @@ Deno.test("enqueueCompressJobs integration: dedup existence query filters on the
     });
     const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
     const deps = buildRealDeps();
-    const params = buildRealParams(dbClient, { targetKey: FileType.success_metrics });
+    const params = buildRealParams(dbClient, { output_type: FileType.success_metrics });
     const payload: enqueueCompressJobsPayload = {
       victim: {
         mode: "text",
@@ -218,7 +218,7 @@ Deno.test("enqueueCompressJobs integration: dedup existence query filters on the
       sessionId: params.sessionId,
       iteration: params.iterationNumber,
       stageSlug: params.stageSlug,
-      targetKey: params.targetKey,
+      output_type: params.output_type,
       sourceType: payload.victim.sourceType,
       sourceId,
       role: "assistant",
@@ -257,7 +257,7 @@ Deno.test("enqueueCompressJobs integration: dedup existence query filters on the
     });
     const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
     const deps = buildRealDeps();
-    const params = buildRealParams(dbClient, { targetKey: FileType.success_metrics });
+    const params = buildRealParams(dbClient, { output_type: FileType.success_metrics });
     const payload: enqueueCompressJobsPayload = {
       victim: {
         mode: "text",
@@ -287,7 +287,7 @@ Deno.test("enqueueCompressJobs integration: dedup existence query filters on the
       sessionId: params.sessionId,
       iteration: params.iterationNumber,
       stageSlug: params.stageSlug,
-      targetKey: params.targetKey,
+      output_type: params.output_type,
       sourceType: payload.victim.sourceType,
       documentKey: payload.victim.documentKey,
     });
@@ -314,7 +314,7 @@ Deno.test("enqueueCompressJobs integration: dedup existence query filters on the
 Deno.test("enqueueCompressJobs integration: a row existing only at the CHUNK path does not satisfy the final-artifact dedup check",
   async () => {
     const documentKey = FileType.business_case;
-    const targetKey = FileType.success_metrics;
+    const output_type = FileType.success_metrics;
 
     const paramsTemplate = buildenqueueCompressJobsParams();
     const chunkPath = constructStoragePath({
@@ -323,7 +323,7 @@ Deno.test("enqueueCompressJobs integration: a row existing only at the CHUNK pat
       sessionId: paramsTemplate.sessionId,
       iteration: paramsTemplate.iterationNumber,
       stageSlug: paramsTemplate.stageSlug,
-      targetKey,
+      output_type,
       sourceType: "contribution",
       documentKey,
       chunkIndex: 1,
@@ -355,7 +355,7 @@ Deno.test("enqueueCompressJobs integration: a row existing only at the CHUNK pat
     });
     const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
     const deps = buildRealDeps();
-    const params = buildRealParams(dbClient, { targetKey: FileType.success_metrics });
+    const params = buildRealParams(dbClient, { output_type: FileType.success_metrics });
     const payload: enqueueCompressJobsPayload = {
       victim: {
         mode: "text",
@@ -658,7 +658,7 @@ Deno.test("enqueueCompressJobs integration: inserted rows carry the downstream i
     assertEquals(row.payload.sessionId, params.sessionId);
     assertEquals(row.payload.projectId, params.projectId);
     assertEquals(row.payload.stageSlug, params.stageSlug);
-    assertEquals(row.payload.targetKey, params.targetKey);
+    assertEquals(row.payload.output_type, params.output_type);
     assertEquals(row.payload.iterationNumber, params.iterationNumber);
   },
 );

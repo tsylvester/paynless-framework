@@ -1767,7 +1767,7 @@ Deno.test(
     assertEquals(inserted["job_type"], "RENDER");
     assertEquals(inserted["parent_job_id"], params.jobId);
     assertEquals(inserted["stage_slug"], params.stageSlug);
-    const expectedIdempotencyKey = `${params.sessionId}_${params.iterationNumber}_${params.stageSlug}_compress_render_${payload.sourceType}_${payload.documentKey}_${payload.targetKey}`;
+    const expectedIdempotencyKey = `${params.sessionId}_${params.iterationNumber}_${params.stageSlug}_compress_render_${payload.sourceType}_${payload.documentKey}_${payload.output_type}`;
     assertEquals(inserted["idempotency_key"], expectedIdempotencyKey);
 
     const pl: unknown = inserted["payload"];
@@ -1901,7 +1901,7 @@ Deno.test(
     );
     const params = buildEnqueueRenderJobParams();
     const payload = buildEnqueueRenderCompressedContextPayload();
-    const expectedIdempotencyKey = `${params.sessionId}_${params.iterationNumber}_${params.stageSlug}_compress_render_${payload.sourceType}_${payload.documentKey}_${payload.targetKey}`;
+    const expectedIdempotencyKey = `${params.sessionId}_${params.iterationNumber}_${params.stageSlug}_compress_render_${payload.sourceType}_${payload.documentKey}_${payload.output_type}`;
     const recovered = buildDialecticJobRow({
       id: "recovered-compress-render",
       idempotency_key: expectedIdempotencyKey,

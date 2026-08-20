@@ -218,7 +218,7 @@ export function deconstructStoragePath(
     return info;
   }
 
-  // Path: .../_work/prompts/{modelSlug}_{attemptCount}_{sourceBasename}_compressed_for_{targetKey}[_chunk_{i}of{n}][_continuation_{n}]_prompt.md
+  // Path: .../_work/prompts/{modelSlug}_{attemptCount}_{sourceBasename}_compressed_for_{output_type}[_chunk_{i}of{n}][_continuation_{n}]_prompt.md
   matches = fullPath.match(new RegExp(compressionPromptPatternString));
   if (matches) {
     info.originalProjectId = matches[1];
@@ -229,7 +229,7 @@ export function deconstructStoragePath(
     info.modelSlug = matches[5];
     info.attemptCount = parseInt(matches[6], 10);
     interpretCompressionSourceBasename(matches[7], info);
-    info.targetKey = matches[8];
+    info.output_type = matches[8];
     if (matches[9]) {
       info.chunkIndex = parseInt(matches[9], 10);
       info.chunkTotal = parseInt(matches[10], 10);
@@ -680,7 +680,7 @@ export function deconstructStoragePath(
     return info;
   }
 
-  // Path: .../_work/{sourceBasename}_compressed_for_{targetKey}[_chunk_{chunkIndex}of{chunkTotal}].md
+  // Path: .../_work/{sourceBasename}_compressed_for_{output_type}[_chunk_{chunkIndex}of{chunkTotal}].md
   matches = fullPath.match(new RegExp(compressedContentPatternString));
   if (matches) {
     info.originalProjectId = matches[1];
@@ -689,7 +689,7 @@ export function deconstructStoragePath(
     info.stageDirName = matches[4];
     info.stageSlug = mapDirNameToStageSlug(info.stageDirName);
     interpretCompressionSourceBasename(matches[5], info);
-    info.targetKey = matches[6];
+    info.output_type = matches[6];
     if (matches[7]) {
       info.chunkIndex = parseInt(matches[7], 10);
       info.chunkTotal = parseInt(matches[8], 10);

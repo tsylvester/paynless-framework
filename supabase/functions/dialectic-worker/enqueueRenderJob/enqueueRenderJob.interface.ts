@@ -56,11 +56,11 @@ export interface EnqueueRenderCompressedContextPayload {
   documentKey: FileType;
   docType: ModelContributionFileTypes;
   sourceStageSlug: DialecticStageSlug;
-  targetKey: ModelContributionFileTypes;
+  output_type: ModelContributionFileTypes;
 }
 
 export interface DialecticRenderCompressedContextJobPayload extends DialecticBaseJobPayload {
-  targetKey: ModelContributionFileTypes;
+  output_type: ModelContributionFileTypes;
   sourceType: CompressionSourceType;
   documentKey: FileType;
   template_filename: string;

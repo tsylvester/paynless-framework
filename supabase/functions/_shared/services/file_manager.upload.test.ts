@@ -310,7 +310,7 @@ Deno.test('FileManagerService', async (t) => {
   await t.step('uploadAndRegisterFile should register a CompressedContext resource for contribution and history sources', async () => {
     const baseCompressedPathContext = buildResourcePathContext({
       fileType: FileType.CompressedContext,
-      targetKey: FileType.business_case,
+      output_type: FileType.business_case,
     });
 
     const runCase = async (

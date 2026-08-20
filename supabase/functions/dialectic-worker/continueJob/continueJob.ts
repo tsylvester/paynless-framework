@@ -70,7 +70,7 @@ export const continueJob: ContinueJobFn = async (
       sessionId: job.payload.sessionId,
       projectId: job.payload.projectId,
       stageSlug: job.payload.stageSlug,
-      targetKey: job.payload.targetKey,
+      output_type: job.payload.output_type,
       iterationNumber: job.payload.iterationNumber,
       model_id: job.payload.model_id,
       model_slug: job.payload.model_slug,

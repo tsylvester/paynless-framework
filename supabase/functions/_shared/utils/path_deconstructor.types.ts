@@ -25,7 +25,7 @@ export interface DeconstructedPathInfo {
   documentKey?: string;          // The document key for document-centric artifacts
   stepName?: string;             // The step name for planner prompts
   sourceGroupFragment?: string;  // First 8 characters of source_group UUID (sanitized) extracted from filename for disambiguation
-  targetKey?: string;             // The target document key for documents being compressed by chunk
+  output_type?: string;             // The target document key for documents being compressed by chunk
   sourceType?: CompressionSourceType; // The recovered compression source discriminator
   sourceId?: string;                  // The victim's originating row id, recovered in full for a 'history' source
   role?: Messages['role'];            // Recovered for a 'history' source only

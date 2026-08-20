@@ -14,7 +14,7 @@ import type { ITextSplitter } from "../../_shared/utils/text_splitter.interface.
 import type { DialecticBaseJobPayload, DialecticJobRow } from "../../dialectic-service/dialectic.interface.ts";
 
 export interface DialecticCompressJobPayload extends DialecticBaseJobPayload {
-  targetKey: ModelContributionFileTypes;
+  output_type: ModelContributionFileTypes;
   mode: CompressionMode;
   content: string;
   sourceType: CompressionSourceType;
@@ -43,7 +43,7 @@ export interface enqueueCompressJobsParams {
   sessionId: string;
   projectId: string;
   stageSlug: DialecticStageSlug;
-  targetKey: ModelContributionFileTypes;
+  output_type: ModelContributionFileTypes;
   iterationNumber: number;
   modelId: string;
   modelSlug: string; // parent EXECUTE payload's own slug, so prompt assemblers can name a CompressionPrompt without a provider lookup

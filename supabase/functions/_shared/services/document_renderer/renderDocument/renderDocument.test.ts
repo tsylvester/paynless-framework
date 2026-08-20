@@ -605,7 +605,7 @@ const rawJsonArtifact = constructStoragePath({
   sessionId: compressParams.sessionId,
   iteration: compressParams.iterationNumber,
   stageSlug: compressParams.stageSlug,
-  targetKey: compressParams.targetKey,
+  output_type: compressParams.output_type,
   sourceType: compressParams.sourceType,
   documentKey: compressParams.documentKey,
 });
@@ -770,7 +770,7 @@ Deno.test("renderDocument - COMPRESS happy path", async (t) => {
     assertEquals(uploadArg.pathContext.sessionId, compressParams.sessionId);
     assertEquals(uploadArg.pathContext.iteration, compressParams.iterationNumber);
     assertEquals(uploadArg.pathContext.stageSlug, compressParams.stageSlug);
-    assertEquals(uploadArg.pathContext.targetKey, compressParams.targetKey);
+    assertEquals(uploadArg.pathContext.output_type, compressParams.output_type);
     assertEquals(uploadArg.pathContext.sourceType, compressParams.sourceType);
     assertEquals(uploadArg.pathContext.documentKey, compressParams.documentKey);
     assertEquals(uploadArg.mimeType, "text/markdown");

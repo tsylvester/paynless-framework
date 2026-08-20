@@ -2135,7 +2135,7 @@ Deno.test('continueJob COMPRESS: inserted payload passes isDialecticCompressJobP
     assertEquals(insertedPayload.mode, compressPayload.mode);
     assertEquals(insertedPayload.content, compressPayload.content);
     assertEquals(insertedPayload.sourceType, compressPayload.sourceType);
-    assertEquals(insertedPayload.targetKey, compressPayload.targetKey);
+    assertEquals(insertedPayload.output_type, compressPayload.output_type);
     assertEquals(insertedPayload.documentKey, compressPayload.documentKey);
     assertEquals(insertedPayload.docType, compressPayload.docType);
     assertEquals(insertedPayload.sourceStageSlug, compressPayload.sourceStageSlug);

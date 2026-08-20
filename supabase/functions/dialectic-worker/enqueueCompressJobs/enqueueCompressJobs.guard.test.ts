@@ -99,8 +99,8 @@ Deno.test("isDialecticCompressJobPayload rejects corrupted content", () => {
   assertThrows(() => isDialecticCompressJobPayload(invalidateDialecticCompressJobPayload({ content: 123 })), Error, 'Missing or invalid content.');
 });
 
-Deno.test("isDialecticCompressJobPayload rejects a corrupted targetKey", () => {
-  assertThrows(() => isDialecticCompressJobPayload(invalidateDialecticCompressJobPayload({ targetKey: 123 })), Error, 'Missing or invalid targetKey.');
+Deno.test("isDialecticCompressJobPayload rejects a corrupted output_type", () => {
+  assertThrows(() => isDialecticCompressJobPayload(invalidateDialecticCompressJobPayload({ output_type: 123 })), Error, 'Missing or invalid output_type.');
 });
 
 Deno.test("isDialecticCompressJobPayload rejects json mode missing documentKey", () => {
@@ -298,9 +298,9 @@ Deno.test("isenqueueCompressJobsParams rejects missing stageSlug", () => {
   assertEquals(isenqueueCompressJobsParams(withoutStageSlug), false);
 });
 
-Deno.test("isenqueueCompressJobsParams rejects missing targetKey", () => {
-  const { targetKey: _, ...withoutTargetKey } = baseParams;
-  assertEquals(isenqueueCompressJobsParams(withoutTargetKey), false);
+Deno.test("isenqueueCompressJobsParams rejects missing output_type", () => {
+  const { output_type: _, ...withoutoutput_type } = baseParams;
+  assertEquals(isenqueueCompressJobsParams(withoutoutput_type), false);
 });
 
 Deno.test("isenqueueCompressJobsParams rejects negative iterationNumber", () => {
@@ -402,8 +402,8 @@ Deno.test("isDialecticCompressJobPayload rejects docType that is not a ModelCont
   assertThrows(() => isDialecticCompressJobPayload(invalidateDialecticCompressJobPayload({ mode: "json", docType: "not-a-model-contribution" })), Error, 'Missing or invalid docType.');
 });
 
-Deno.test("isDialecticCompressJobPayload rejects targetKey that is not a ModelContributionFileType", () => {
-  assertThrows(() => isDialecticCompressJobPayload(invalidateDialecticCompressJobPayload({ targetKey: "not-a-model-contribution" })), Error, 'Missing or invalid targetKey.');
+Deno.test("isDialecticCompressJobPayload rejects output_type that is not a ModelContributionFileType", () => {
+  assertThrows(() => isDialecticCompressJobPayload(invalidateDialecticCompressJobPayload({ output_type: "not-a-model-contribution" })), Error, 'Missing or invalid output_type.');
 });
 
 Deno.test("isDialecticCompressJobPayload rejects stageSlug that is not a DialecticStageSlug", () => {
@@ -418,6 +418,6 @@ Deno.test("isenqueueCompressJobsParams rejects stageSlug that is not a Dialectic
   assertEquals(isenqueueCompressJobsParams(invalidateEnqueueCompressJobsParams({ stageSlug: "not-a-stage" })), false);
 });
 
-Deno.test("isenqueueCompressJobsParams rejects targetKey that is not a ModelContributionFileType", () => {
-  assertEquals(isenqueueCompressJobsParams(invalidateEnqueueCompressJobsParams({ targetKey: "not-a-model-contribution" })), false);
+Deno.test("isenqueueCompressJobsParams rejects output_type that is not a ModelContributionFileType", () => {
+  assertEquals(isenqueueCompressJobsParams(invalidateEnqueueCompressJobsParams({ output_type: "not-a-model-contribution" })), false);
 });

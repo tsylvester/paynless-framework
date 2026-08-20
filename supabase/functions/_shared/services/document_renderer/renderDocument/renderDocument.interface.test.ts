@@ -166,7 +166,7 @@ Deno.test("RenderCompressedContextParams has the required surface", () => {
     sessionId: true,
     iterationNumber: true,
     stageSlug: true,
-    targetKey: true,
+    output_type: true,
     sourceType: true,
     documentKey: true,
     template_filename: true,
@@ -180,7 +180,7 @@ Deno.test("RenderCompressedContextParams accepts a full literal and round-trips 
     sessionId: "session-1",
     iterationNumber: 1,
     stageSlug: DialecticStageSlug.Thesis,
-    targetKey: FileType.business_case,
+    output_type: FileType.business_case,
     sourceType: "contribution",
     documentKey: FileType.business_case,
     template_filename: "thesis_business_case.md",
@@ -189,7 +189,7 @@ Deno.test("RenderCompressedContextParams accepts a full literal and round-trips 
   assertEquals(params.sessionId, "session-1");
   assertEquals(params.iterationNumber, 1);
   assertEquals(params.stageSlug, DialecticStageSlug.Thesis);
-  assertEquals(params.targetKey, FileType.business_case);
+  assertEquals(params.output_type, FileType.business_case);
   assertEquals(params.sourceType, "contribution");
   assertEquals(params.documentKey, FileType.business_case);
   assertEquals(params.template_filename, "thesis_business_case.md");
@@ -201,7 +201,7 @@ Deno.test("RenderCompressedContextParams is assignable to Parameters<RenderDocum
     sessionId: "session-1",
     iterationNumber: 1,
     stageSlug: DialecticStageSlug.Thesis,
-    targetKey: FileType.business_case,
+    output_type: FileType.business_case,
     sourceType: "contribution",
     documentKey: FileType.business_case,
     template_filename: "thesis_business_case.md",

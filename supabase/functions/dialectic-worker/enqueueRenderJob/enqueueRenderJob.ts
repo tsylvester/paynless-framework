@@ -96,7 +96,7 @@ export async function enqueueRenderJob(
       documentKey: payload.documentKey,
       docType: payload.docType,
       sourceStageSlug: payload.sourceStageSlug,
-      targetKey: payload.targetKey,
+      output_type: payload.output_type,
     });
 
     const templateResult = await resolveTemplateFilename(
@@ -110,7 +110,7 @@ export async function enqueueRenderJob(
 
     const { templateFilename } = templateResult;
 
-    idempotencyKey = `${sessionId}_${iterationNumber}_${stageSlug}_compress_render_${payload.sourceType}_${payload.documentKey}_${sanitizeForPath(payload.targetKey)}`;
+    idempotencyKey = `${sessionId}_${iterationNumber}_${stageSlug}_compress_render_${payload.sourceType}_${payload.documentKey}_${sanitizeForPath(payload.output_type)}`;
 
     const renderPayload: DialecticRenderCompressedContextJobPayload = {
       idempotencyKey,
@@ -118,7 +118,7 @@ export async function enqueueRenderJob(
       sessionId,
       iterationNumber,
       stageSlug,
-      targetKey: payload.targetKey,
+      output_type: payload.output_type,
       sourceType: payload.sourceType,
       documentKey: payload.documentKey,
       template_filename: templateFilename,

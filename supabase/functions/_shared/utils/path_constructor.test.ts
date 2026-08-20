@@ -669,20 +669,20 @@ Deno.test('constructStoragePath', async (t) => {
     const thesisRawContext = buildPathContext({ projectId, sessionId, modelSlug, sourceModelSlugs, sourceAnchorModelSlug: 'claude-3-opus', contributionType: DialecticStageSlug.Thesis, fileType: FileType.ModelContributionRawJson });
     const antithesisRawContext = buildPathContext({ projectId, sessionId, modelSlug, sourceModelSlugs: ['claude-3-opus'], sourceAnchorModelSlug: 'claude-3-opus', sourceAnchorType: 'thesis', stageSlug: DialecticStageSlug.Antithesis, contributionType: 'antithesis', fileType: FileType.ModelContributionRawJson, sourceAttemptCount: 0 });
     const pairwiseRawContext = buildPathContext({ projectId, sessionId, modelSlug, sourceModelSlugs, sourceAnchorModelSlug: 'claude-3-opus', stageSlug: DialecticStageSlug.Synthesis, contributionType: FileType.PairwiseSynthesisChunk, fileType: FileType.ModelContributionRawJson });
-    const reducedRawContext = buildPathContext({ projectId, sessionId, modelSlug, sourceModelSlugs, sourceAnchorModelSlug: 'claude-3-opus', sourceAnchorType: 'thesis', stageSlug: DialecticStageSlug.Synthesis, contributionType: 'reduced_synthesis', fileType: FileType.ModelContributionRawJson });
+    const reducedRawContext = buildPathContext({ projectId, sessionId, modelSlug, sourceModelSlugs, sourceAnchorModelSlug: 'claude-3-opus', sourceAnchorType: 'thesis', stageSlug: DialecticStageSlug.Synthesis, contributionType: 'reduced_synthesis', fileType: FileType.ModelContributionRawJson, documentKey: undefined });
     const parenthesisRawContext = buildPathContext({ projectId, sessionId, modelSlug, sourceModelSlugs, sourceAnchorModelSlug: 'claude-3-opus', stageSlug: DialecticStageSlug.Parenthesis, contributionType: 'parenthesis', fileType: FileType.ModelContributionRawJson });
     const paralysisRawContext = buildPathContext({ projectId, sessionId, modelSlug, sourceModelSlugs, sourceAnchorModelSlug: 'claude-3-opus', stageSlug: DialecticStageSlug.Paralysis, contributionType: 'paralysis', fileType: FileType.ModelContributionRawJson });
 
     await t.step('constructs raw path for simple contributions (thesis)', () => {
       const { storagePath, fileName } = constructStoragePath(thesisRawContext);
       assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/1_thesis/raw_responses`);
-      assertEquals(fileName, 'gpt-4-turbo_0_thesis_raw.json');
+      assertEquals(fileName, 'gpt-4-turbo_0_business_case_raw.json');
     });
 
     await t.step('constructs raw path for antithesis', () => {
         const { storagePath, fileName } = constructStoragePath(antithesisRawContext);
         assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/2_antithesis/raw_responses`);
-        assertEquals(fileName, `gpt-4-turbo_critiquing_(claude-3-opus's_thesis_0)_0_antithesis_raw.json`);
+        assertEquals(fileName, `gpt-4-turbo_critiquing_(claude-3-opus's_thesis_0)_0_business_case_raw.json`);
     });
 
     await t.step('ModelContributionRawJson with stageSlug=antithesis and sourceAnchorModelSlug should use simple critiquing pattern', () => {
@@ -704,11 +704,12 @@ Deno.test('constructStoragePath', async (t) => {
     });
 
     await t.step('constructs raw path for PairwiseSynthesisChunk', () => {
-        const pairwiseRawContext = buildPathContext({ 
-          projectId, sessionId, modelSlug, 
-          stageSlug: DialecticStageSlug.Synthesis, 
-          contributionType: FileType.PairwiseSynthesisChunk, 
+        const pairwiseRawContext = buildPathContext({
+          projectId, sessionId, modelSlug,
+          stageSlug: DialecticStageSlug.Synthesis,
+          contributionType: FileType.PairwiseSynthesisChunk,
           fileType: FileType.ModelContributionRawJson,
+          documentKey: undefined,
           sourceModelSlugs: ['claude-3-opus', 'gemini-1.5-pro'].sort(),
           sourceAnchorModelSlug: 'claude-3-opus',
           sourceAnchorType: 'thesis',
@@ -728,13 +729,13 @@ Deno.test('constructStoragePath', async (t) => {
     await t.step('constructs raw path for parenthesis', () => {
         const { storagePath, fileName } = constructStoragePath(parenthesisRawContext);
         assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/4_parenthesis/raw_responses`);
-        assertEquals(fileName, 'gpt-4-turbo_0_parenthesis_raw.json');
+        assertEquals(fileName, 'gpt-4-turbo_0_business_case_raw.json');
     });
 
     await t.step('constructs raw path for paralysis', () => {
         const { storagePath, fileName } = constructStoragePath(paralysisRawContext);
         assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/5_paralysis/raw_responses`);
-        assertEquals(fileName, 'gpt-4-turbo_0_paralysis_raw.json');
+        assertEquals(fileName, 'gpt-4-turbo_0_business_case_raw.json');
     });
   });
 
@@ -770,17 +771,17 @@ Deno.test('constructStoragePath', async (t) => {
     });
 
     await t.step('constructs path for compressed_context (contribution)', () => {
-      const targetKey = FileType.business_case;
-      const context = buildPathContext({ projectId, sessionId, modelSlug, stageSlug: DialecticStageSlug.Synthesis, fileType: FileType.CompressedContext, targetKey, sourceType: 'contribution', documentKey: FileType.feature_spec });
+      const output_type = FileType.business_case;
+      const context = buildPathContext({ projectId, sessionId, modelSlug, stageSlug: DialecticStageSlug.Synthesis, fileType: FileType.CompressedContext, output_type, sourceType: 'contribution', documentKey: FileType.feature_spec });
       const { storagePath, fileName } = constructStoragePath(context);
       assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/3_synthesis/_work`);
       assertEquals(fileName, 'feature_spec_compressed_for_business_case.md');
     });
 
     await t.step('constructs path for compressed_context (history)', () => {
-      const targetKey = FileType.business_case;
+      const output_type = FileType.business_case;
       const sourceId = '550e8400-e29b-41d4-a716-446655440000';
-      const context = buildPathContext({ projectId, sessionId, modelSlug, stageSlug: DialecticStageSlug.Synthesis, fileType: FileType.CompressedContext, targetKey, sourceType: 'history', sourceId, role: 'assistant' });
+      const context = buildPathContext({ projectId, sessionId, modelSlug, stageSlug: DialecticStageSlug.Synthesis, fileType: FileType.CompressedContext, output_type, sourceType: 'history', sourceId, role: 'assistant' });
       const { fileName } = constructStoragePath(context);
       assertEquals(fileName, 'message_assistant_550e8400-e29b-41d4-a716-446655440000_compressed_for_business_case.md');
       assert(fileName.includes(sourceId));
@@ -788,17 +789,17 @@ Deno.test('constructStoragePath', async (t) => {
     });
 
     await t.step('constructs path for compressed_context (feedback)', () => {
-      const targetKey = FileType.business_case;
-      const context = buildPathContext({ projectId, sessionId, modelSlug, stageSlug: DialecticStageSlug.Synthesis, fileType: FileType.CompressedContext, targetKey, sourceType: 'feedback', documentKey: FileType.business_case_critique });
+      const output_type = FileType.business_case;
+      const context = buildPathContext({ projectId, sessionId, modelSlug, stageSlug: DialecticStageSlug.Synthesis, fileType: FileType.CompressedContext, output_type, sourceType: 'feedback', documentKey: FileType.business_case_critique });
       const { storagePath, fileName } = constructStoragePath(context);
       assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/3_synthesis/_work`);
       assertEquals(fileName, 'business_case_critique_feedback_compressed_for_business_case.md');
     });
 
     await t.step('a document and its own feedback never collide in one working set', () => {
-      const targetKey = FileType.business_case;
-      const resourceContext = buildPathContext({ projectId, sessionId, modelSlug, stageSlug: DialecticStageSlug.Synthesis, fileType: FileType.CompressedContext, targetKey, sourceType: 'resource', documentKey: FileType.business_case_critique });
-      const feedbackContext = buildPathContext({ projectId, sessionId, modelSlug, stageSlug: DialecticStageSlug.Synthesis, fileType: FileType.CompressedContext, targetKey, sourceType: 'feedback', documentKey: FileType.business_case_critique });
+      const output_type = FileType.business_case;
+      const resourceContext = buildPathContext({ projectId, sessionId, modelSlug, stageSlug: DialecticStageSlug.Synthesis, fileType: FileType.CompressedContext, output_type, sourceType: 'resource', documentKey: FileType.business_case_critique });
+      const feedbackContext = buildPathContext({ projectId, sessionId, modelSlug, stageSlug: DialecticStageSlug.Synthesis, fileType: FileType.CompressedContext, output_type, sourceType: 'feedback', documentKey: FileType.business_case_critique });
       const { fileName: resourceFileName } = constructStoragePath(resourceContext);
       const { fileName: feedbackFileName } = constructStoragePath(feedbackContext);
       assertNotEquals(resourceFileName, feedbackFileName);
@@ -806,32 +807,32 @@ Deno.test('constructStoragePath', async (t) => {
     });
 
     await t.step('constructs chunked path for compressed_context (history)', () => {
-      const targetKey = FileType.business_case;
+      const output_type = FileType.business_case;
       const sourceId = '550e8400-e29b-41d4-a716-446655440000';
-      const context = buildPathContext({ projectId, sessionId, modelSlug, stageSlug: DialecticStageSlug.Synthesis, fileType: FileType.CompressedContext, targetKey, sourceType: 'history', sourceId, role: 'user', chunkIndex: 2, chunkTotal: 3 });
+      const context = buildPathContext({ projectId, sessionId, modelSlug, stageSlug: DialecticStageSlug.Synthesis, fileType: FileType.CompressedContext, output_type, sourceType: 'history', sourceId, role: 'user', chunkIndex: 2, chunkTotal: 3 });
       const { fileName } = constructStoragePath(context);
       assertEquals(fileName, 'message_user_550e8400-e29b-41d4-a716-446655440000_compressed_for_business_case_chunk_2of3.md');
     });
 
     await t.step('constructs path for compressed_context with chunk suffix', () => {
-      const targetKey = FileType.business_case;
-      const context = buildPathContext({ projectId, sessionId, modelSlug, stageSlug: DialecticStageSlug.Synthesis, fileType: FileType.CompressedContext, targetKey, sourceType: 'contribution', documentKey: FileType.feature_spec, chunkIndex: 1, chunkTotal: 3 });
+      const output_type = FileType.business_case;
+      const context = buildPathContext({ projectId, sessionId, modelSlug, stageSlug: DialecticStageSlug.Synthesis, fileType: FileType.CompressedContext, output_type, sourceType: 'contribution', documentKey: FileType.feature_spec, chunkIndex: 1, chunkTotal: 3 });
       const { storagePath, fileName } = constructStoragePath(context);
       assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/3_synthesis/_work`);
       assertEquals(fileName, 'feature_spec_compressed_for_business_case_chunk_1of3.md');
     });
 
     await t.step('constructs path for compressed_context_raw_json (contribution)', () => {
-      const targetKey = FileType.business_case;
-      const context = buildPathContext({ projectId, sessionId, modelSlug, stageSlug: DialecticStageSlug.Synthesis, fileType: FileType.CompressedContextRawJson, targetKey, sourceType: 'contribution', documentKey: FileType.feature_spec });
+      const output_type = FileType.business_case;
+      const context = buildPathContext({ projectId, sessionId, modelSlug, stageSlug: DialecticStageSlug.Synthesis, fileType: FileType.CompressedContextRawJson, output_type, sourceType: 'contribution', documentKey: FileType.feature_spec });
       const { storagePath, fileName } = constructStoragePath(context);
       assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/3_synthesis/_work/raw_responses`);
       assertEquals(fileName, 'feature_spec_compressed_for_business_case_raw.json');
     });
 
     await t.step('compressed_context and compressed_context_raw_json share identity stem', () => {
-      const targetKey = FileType.business_case;
-      const baseCompressedContext = buildPathContext({ projectId, sessionId, modelSlug, stageSlug: DialecticStageSlug.Synthesis, fileType: FileType.CompressedContext, targetKey, sourceType: 'contribution', documentKey: FileType.feature_spec });
+      const output_type = FileType.business_case;
+      const baseCompressedContext = buildPathContext({ projectId, sessionId, modelSlug, stageSlug: DialecticStageSlug.Synthesis, fileType: FileType.CompressedContext, output_type, sourceType: 'contribution', documentKey: FileType.feature_spec });
       const rawJsonContext = buildPathContext({ ...baseCompressedContext, fileType: FileType.CompressedContextRawJson });
       const md = constructStoragePath(baseCompressedContext);
       const raw = constructStoragePath(rawJsonContext);
@@ -843,7 +844,7 @@ Deno.test('constructStoragePath', async (t) => {
       assert(md.fileName.endsWith('.md'));
       assert(raw.fileName.endsWith('_raw.json'));
 
-      const feedbackMdContext = buildPathContext({ projectId, sessionId, modelSlug, stageSlug: DialecticStageSlug.Synthesis, fileType: FileType.CompressedContext, targetKey, sourceType: 'feedback', documentKey: FileType.business_case_critique });
+      const feedbackMdContext = buildPathContext({ projectId, sessionId, modelSlug, stageSlug: DialecticStageSlug.Synthesis, fileType: FileType.CompressedContext, output_type, sourceType: 'feedback', documentKey: FileType.business_case_critique });
       const feedbackRawContext = buildPathContext({ ...feedbackMdContext, fileType: FileType.CompressedContextRawJson });
       const feedbackMd = constructStoragePath(feedbackMdContext);
       const feedbackRaw = constructStoragePath(feedbackRawContext);
@@ -851,7 +852,7 @@ Deno.test('constructStoragePath', async (t) => {
       const feedbackRawStem = feedbackRaw.fileName.replace(/_raw\.json$/, '');
       assertEquals(feedbackMdStem, feedbackRawStem);
 
-      const historyMdContext = buildPathContext({ projectId, sessionId, modelSlug, stageSlug: DialecticStageSlug.Synthesis, fileType: FileType.CompressedContext, targetKey, sourceType: 'history', sourceId: '550e8400-e29b-41d4-a716-446655440000', role: 'assistant' });
+      const historyMdContext = buildPathContext({ projectId, sessionId, modelSlug, stageSlug: DialecticStageSlug.Synthesis, fileType: FileType.CompressedContext, output_type, sourceType: 'history', sourceId: '550e8400-e29b-41d4-a716-446655440000', role: 'assistant' });
       const historyRawContext = buildPathContext({ ...historyMdContext, fileType: FileType.CompressedContextRawJson });
       const historyMd = constructStoragePath(historyMdContext);
       const historyRaw = constructStoragePath(historyRawContext);
@@ -861,42 +862,42 @@ Deno.test('constructStoragePath', async (t) => {
     });
 
     await t.step('constructs path for compressed_context_raw_json with chunk suffix', () => {
-      const targetKey = FileType.business_case;
-      const context = buildPathContext({ projectId, sessionId, modelSlug, stageSlug: DialecticStageSlug.Synthesis, fileType: FileType.CompressedContextRawJson, targetKey, sourceType: 'contribution', documentKey: FileType.feature_spec, chunkIndex: 1, chunkTotal: 3 });
+      const output_type = FileType.business_case;
+      const context = buildPathContext({ projectId, sessionId, modelSlug, stageSlug: DialecticStageSlug.Synthesis, fileType: FileType.CompressedContextRawJson, output_type, sourceType: 'contribution', documentKey: FileType.feature_spec, chunkIndex: 1, chunkTotal: 3 });
       const { storagePath, fileName } = constructStoragePath(context);
       assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/3_synthesis/_work/raw_responses`);
       assertEquals(fileName, 'feature_spec_compressed_for_business_case_chunk_1of3_raw.json');
     });
 
     await t.step('constructs path for compressed_context_raw_json (history)', () => {
-      const targetKey = FileType.business_case;
+      const output_type = FileType.business_case;
       const sourceId = '550e8400-e29b-41d4-a716-446655440000';
-      const context = buildPathContext({ projectId, sessionId, modelSlug, stageSlug: DialecticStageSlug.Synthesis, fileType: FileType.CompressedContextRawJson, targetKey, sourceType: 'history', sourceId, role: 'assistant' });
+      const context = buildPathContext({ projectId, sessionId, modelSlug, stageSlug: DialecticStageSlug.Synthesis, fileType: FileType.CompressedContextRawJson, output_type, sourceType: 'history', sourceId, role: 'assistant' });
       const { storagePath, fileName } = constructStoragePath(context);
       assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/3_synthesis/_work/raw_responses`);
       assertEquals(fileName, 'message_assistant_550e8400-e29b-41d4-a716-446655440000_compressed_for_business_case_raw.json');
     });
 
     await t.step('constructs path for compressed_context_raw_json (feedback)', () => {
-      const targetKey = FileType.business_case;
-      const context = buildPathContext({ projectId, sessionId, modelSlug, stageSlug: DialecticStageSlug.Synthesis, fileType: FileType.CompressedContextRawJson, targetKey, sourceType: 'feedback', documentKey: FileType.business_case_critique });
+      const output_type = FileType.business_case;
+      const context = buildPathContext({ projectId, sessionId, modelSlug, stageSlug: DialecticStageSlug.Synthesis, fileType: FileType.CompressedContextRawJson, output_type, sourceType: 'feedback', documentKey: FileType.business_case_critique });
       const { storagePath, fileName } = constructStoragePath(context);
       assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/3_synthesis/_work/raw_responses`);
       assertEquals(fileName, 'business_case_critique_feedback_compressed_for_business_case_raw.json');
     });
 
     await t.step('constructs path for compression_prompt (resource)', () => {
-      const targetKey = FileType.business_case;
-      const context = buildPathContext({ projectId, sessionId, stageSlug: DialecticStageSlug.Synthesis, fileType: FileType.CompressionPrompt, targetKey, sourceType: 'resource', documentKey: FileType.business_case_critique, modelSlug: 'gpt-4o' });
+      const output_type = FileType.business_case;
+      const context = buildPathContext({ projectId, sessionId, stageSlug: DialecticStageSlug.Synthesis, fileType: FileType.CompressionPrompt, output_type, sourceType: 'resource', documentKey: FileType.business_case_critique, modelSlug: 'gpt-4o' });
       const { storagePath, fileName } = constructStoragePath(context);
       assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/3_synthesis/_work/prompts`);
       assertEquals(fileName, 'gpt-4o_0_business_case_critique_compressed_for_business_case_prompt.md');
     });
 
     await t.step('constructs path for compression_prompt (feedback)', () => {
-      const targetKey = FileType.business_case;
-      const resourceContext = buildPathContext({ projectId, sessionId, stageSlug: DialecticStageSlug.Synthesis, fileType: FileType.CompressionPrompt, targetKey, sourceType: 'resource', documentKey: FileType.business_case_critique, modelSlug: 'gpt-4o' });
-      const feedbackContext = buildPathContext({ projectId, sessionId, stageSlug: DialecticStageSlug.Synthesis, fileType: FileType.CompressionPrompt, targetKey, sourceType: 'feedback', documentKey: FileType.business_case_critique, modelSlug: 'gpt-4o' });
+      const output_type = FileType.business_case;
+      const resourceContext = buildPathContext({ projectId, sessionId, stageSlug: DialecticStageSlug.Synthesis, fileType: FileType.CompressionPrompt, output_type, sourceType: 'resource', documentKey: FileType.business_case_critique, modelSlug: 'gpt-4o' });
+      const feedbackContext = buildPathContext({ projectId, sessionId, stageSlug: DialecticStageSlug.Synthesis, fileType: FileType.CompressionPrompt, output_type, sourceType: 'feedback', documentKey: FileType.business_case_critique, modelSlug: 'gpt-4o' });
       const { fileName: resourceFileName } = constructStoragePath(resourceContext);
       const { storagePath, fileName } = constructStoragePath(feedbackContext);
       assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/3_synthesis/_work/prompts`);
@@ -905,9 +906,9 @@ Deno.test('constructStoragePath', async (t) => {
     });
 
     await t.step('constructs path for compression_prompt (history)', () => {
-      const targetKey = FileType.business_case;
+      const output_type = FileType.business_case;
       const sourceId = '550e8400-e29b-41d4-a716-446655440000';
-      const context = buildPathContext({ projectId, sessionId, stageSlug: DialecticStageSlug.Synthesis, fileType: FileType.CompressionPrompt, targetKey, sourceType: 'history', sourceId, role: 'assistant', modelSlug: 'gpt-4o' });
+      const context = buildPathContext({ projectId, sessionId, stageSlug: DialecticStageSlug.Synthesis, fileType: FileType.CompressionPrompt, output_type, sourceType: 'history', sourceId, role: 'assistant', modelSlug: 'gpt-4o' });
       const { storagePath, fileName } = constructStoragePath(context);
       assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/3_synthesis/_work/prompts`);
       assertEquals(fileName, 'gpt-4o_0_message_assistant_550e8400-e29b-41d4-a716-446655440000_compressed_for_business_case_prompt.md');
@@ -915,16 +916,16 @@ Deno.test('constructStoragePath', async (t) => {
     });
 
     await t.step('constructs continuation path for compression_prompt', () => {
-      const targetKey = FileType.business_case;
-      const context = buildPathContext({ projectId, sessionId, stageSlug: DialecticStageSlug.Synthesis, fileType: FileType.CompressionPrompt, targetKey, sourceType: 'resource', documentKey: FileType.business_case_critique, modelSlug: 'gpt-4o', isContinuation: true, turnIndex: 2 });
+      const output_type = FileType.business_case;
+      const context = buildPathContext({ projectId, sessionId, stageSlug: DialecticStageSlug.Synthesis, fileType: FileType.CompressionPrompt, output_type, sourceType: 'resource', documentKey: FileType.business_case_critique, modelSlug: 'gpt-4o', isContinuation: true, turnIndex: 2 });
       const { storagePath, fileName } = constructStoragePath(context);
       assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/3_synthesis/_work/prompts`);
       assertEquals(fileName, 'gpt-4o_0_business_case_critique_compressed_for_business_case_continuation_2_prompt.md');
     });
 
     await t.step('constructs chunked path for compression_prompt', () => {
-      const targetKey = FileType.business_case;
-      const context = buildPathContext({ projectId, sessionId, stageSlug: DialecticStageSlug.Synthesis, fileType: FileType.CompressionPrompt, targetKey, sourceType: 'resource', documentKey: FileType.business_case_critique, modelSlug: 'gpt-4o', chunkIndex: 2, chunkTotal: 3 });
+      const output_type = FileType.business_case;
+      const context = buildPathContext({ projectId, sessionId, stageSlug: DialecticStageSlug.Synthesis, fileType: FileType.CompressionPrompt, output_type, sourceType: 'resource', documentKey: FileType.business_case_critique, modelSlug: 'gpt-4o', chunkIndex: 2, chunkTotal: 3 });
       const { storagePath, fileName } = constructStoragePath(context);
       assertEquals(storagePath, `${projectId}/session_${shortSessionId}/iteration_1/3_synthesis/_work/prompts`);
       assertEquals(fileName, 'gpt-4o_0_business_case_critique_compressed_for_business_case_chunk_2of3_prompt.md');
@@ -935,9 +936,9 @@ Deno.test('constructStoragePath', async (t) => {
     });
 
     await t.step('a compression prompt and its artifact share the identity stem', () => {
-      const targetKey = FileType.business_case;
-      const promptContext = buildPathContext({ projectId, sessionId, stageSlug: DialecticStageSlug.Synthesis, fileType: FileType.CompressionPrompt, targetKey, sourceType: 'resource', documentKey: FileType.business_case_critique, modelSlug: 'gpt-4o' });
-      const artifactContext = buildPathContext({ projectId, sessionId, modelSlug, stageSlug: DialecticStageSlug.Synthesis, fileType: FileType.CompressedContext, targetKey, sourceType: 'resource', documentKey: FileType.business_case_critique });
+      const output_type = FileType.business_case;
+      const promptContext = buildPathContext({ projectId, sessionId, stageSlug: DialecticStageSlug.Synthesis, fileType: FileType.CompressionPrompt, output_type, sourceType: 'resource', documentKey: FileType.business_case_critique, modelSlug: 'gpt-4o' });
+      const artifactContext = buildPathContext({ projectId, sessionId, modelSlug, stageSlug: DialecticStageSlug.Synthesis, fileType: FileType.CompressedContext, output_type, sourceType: 'resource', documentKey: FileType.business_case_critique });
       const { fileName: promptFileName } = constructStoragePath(promptContext);
       const { fileName: artifactFileName } = constructStoragePath(artifactContext);
       const promptStem = promptFileName.replace(/_prompt\.md$/, '');
@@ -987,10 +988,10 @@ Deno.test('constructStoragePath', async (t) => {
     });
 
     await t.step('throws if required context is missing for compressed_context', () => {
-        const targetKey = FileType.business_case;
-        const validContext = buildPathContext({ projectId, sessionId, modelSlug, stageSlug: DialecticStageSlug.Synthesis, fileType: FileType.CompressedContext, targetKey, sourceType: 'contribution', documentKey: FileType.feature_spec });
+        const output_type = FileType.business_case;
+        const validContext = buildPathContext({ projectId, sessionId, modelSlug, stageSlug: DialecticStageSlug.Synthesis, fileType: FileType.CompressedContext, output_type, sourceType: 'contribution', documentKey: FileType.feature_spec });
 
-        assertThrows(() => constructStoragePath({ ...validContext, targetKey: undefined }), Error, 'targetKey');
+        assertThrows(() => constructStoragePath({ ...validContext, output_type: undefined }), Error, 'output_type');
         assertThrows(() => constructStoragePath({ ...validContext, sourceType: undefined }), Error, 'sourceType');
         assertThrows(() => constructStoragePath({ ...validContext, sourceType: 'resource', sourceId: 'some-id', documentKey: undefined }), Error, 'documentKey');
         assertThrows(() => constructStoragePath({ ...validContext, sourceType: 'history', sourceId: undefined }), Error, 'sourceId');
@@ -1001,12 +1002,12 @@ Deno.test('constructStoragePath', async (t) => {
     });
 
     await t.step('throws if required context is missing for compression_prompt', () => {
-        const targetKey = FileType.business_case;
-        const validPromptContext = buildPathContext({ projectId, sessionId, stageSlug: DialecticStageSlug.Synthesis, fileType: FileType.CompressionPrompt, targetKey, sourceType: 'resource', documentKey: FileType.business_case_critique, modelSlug: 'gpt-4o' });
+        const output_type = FileType.business_case;
+        const validPromptContext = buildPathContext({ projectId, sessionId, stageSlug: DialecticStageSlug.Synthesis, fileType: FileType.CompressionPrompt, output_type, sourceType: 'resource', documentKey: FileType.business_case_critique, modelSlug: 'gpt-4o' });
 
         assertThrows(() => constructStoragePath({ ...validPromptContext, modelSlug: undefined }), Error, 'modelSlug');
         assertThrows(() => constructStoragePath({ ...validPromptContext, attemptCount: undefined }), Error, 'attemptCount');
-        assertThrows(() => constructStoragePath({ ...validPromptContext, targetKey: undefined }), Error, 'targetKey');
+        assertThrows(() => constructStoragePath({ ...validPromptContext, output_type: undefined }), Error, 'output_type');
         assertThrows(() => constructStoragePath({ ...validPromptContext, sourceType: 'feedback', documentKey: undefined, sourceId: 'some-id' }), Error, 'documentKey');
         assertThrows(() => constructStoragePath({ ...validPromptContext, sourceType: 'history', sourceId: 'some-id', role: undefined, documentKey: undefined }), Error, 'role');
         assertThrows(() => constructStoragePath({ ...validPromptContext, isContinuation: true, turnIndex: undefined }), Error, 'turnIndex');

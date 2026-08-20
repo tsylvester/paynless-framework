@@ -77,7 +77,7 @@ const makeCompressedRenderJob = (payloadOverrides: Partial<DialecticRenderCompre
     sessionId: "session_abc",
     iterationNumber: 1,
     stageSlug: DialecticStageSlug.Thesis,
-    targetKey: FileType.business_case,
+    output_type: FileType.business_case,
     sourceType: "contribution",
     documentKey: FileType.business_case,
     template_filename: "thesis_business_case.md",
@@ -1651,7 +1651,7 @@ Deno.test("processRenderJob - renders a compressed row through documentRenderer 
     rootCtx.documentRenderer,
     "renderDocument",
     async (_dbc, _deps, params) => {
-      if (!("targetKey" in params)) throw new Error("expected RenderCompressedContextParams");
+      if (!("output_type" in params)) throw new Error("expected RenderCompressedContextParams");
       return {
         pathContext: {
           projectId: params.projectId,
@@ -1660,7 +1660,7 @@ Deno.test("processRenderJob - renders a compressed row through documentRenderer 
           iteration: params.iterationNumber,
           stageSlug: params.stageSlug,
           documentKey: params.documentKey,
-          targetKey: params.targetKey,
+          output_type: params.output_type,
           sourceType: params.sourceType,
         },
         renderedBytes: new Uint8Array(),
@@ -1678,12 +1678,12 @@ Deno.test("processRenderJob - renders a compressed row through documentRenderer 
 
   assertEquals(renderDocumentStub.calls.length, 1);
   const params = renderDocumentStub.calls[0].args[2];
-  if (!("targetKey" in params)) throw new Error("expected RenderCompressedContextParams");
+  if (!("output_type" in params)) throw new Error("expected RenderCompressedContextParams");
   assertEquals(params.projectId, "project_123");
   assertEquals(params.sessionId, "session_abc");
   assertEquals(params.iterationNumber, 1);
   assertEquals(params.stageSlug, "thesis");
-  assertEquals(params.targetKey, FileType.business_case);
+  assertEquals(params.output_type, FileType.business_case);
   assertEquals(params.sourceType, "contribution");
   assertEquals(params.documentKey, FileType.business_case);
   assertEquals(params.template_filename, "thesis_business_case.md");
@@ -1699,7 +1699,7 @@ Deno.test("processRenderJob - renders a compressed row through documentRenderer 
   assert(isRecord(results) && "pathContext" in results);
   const pathContext = results["pathContext"];
   assert(isRecord(pathContext));
-  assert("targetKey" in pathContext, "pathContext should carry targetKey");
+  assert("output_type" in pathContext, "pathContext should carry output_type");
   assert("sourceType" in pathContext, "pathContext should carry sourceType");
   assert("documentKey" in pathContext, "pathContext should carry documentKey");
   assert("fileType" in pathContext, "pathContext should carry fileType");
@@ -1719,7 +1719,7 @@ Deno.test("processRenderJob - sends no notification on any compressed-row outcom
     rootCtx.documentRenderer,
     "renderDocument",
     async (_dbc, _deps, params) => {
-      if (!("targetKey" in params)) throw new Error("expected RenderCompressedContextParams");
+      if (!("output_type" in params)) throw new Error("expected RenderCompressedContextParams");
       return {
         pathContext: {
           projectId: params.projectId,
@@ -1728,7 +1728,7 @@ Deno.test("processRenderJob - sends no notification on any compressed-row outcom
           iteration: params.iterationNumber,
           stageSlug: params.stageSlug,
           documentKey: params.documentKey,
-          targetKey: params.targetKey,
+          output_type: params.output_type,
           sourceType: params.sourceType,
         },
         renderedBytes: new Uint8Array(),
@@ -1824,7 +1824,7 @@ Deno.test("processRenderJob - a compressed payload never reaches the contributio
     rootCtx.documentRenderer,
     "renderDocument",
     async (_dbc, _deps, params) => {
-      if (!("targetKey" in params)) throw new Error("expected RenderCompressedContextParams");
+      if (!("output_type" in params)) throw new Error("expected RenderCompressedContextParams");
       return {
         pathContext: {
           projectId: params.projectId,
@@ -1833,7 +1833,7 @@ Deno.test("processRenderJob - a compressed payload never reaches the contributio
           iteration: params.iterationNumber,
           stageSlug: params.stageSlug,
           documentKey: params.documentKey,
-          targetKey: params.targetKey,
+          output_type: params.output_type,
           sourceType: params.sourceType,
         },
         renderedBytes: new Uint8Array(),
@@ -1912,7 +1912,7 @@ Deno.test("processRenderJob - a contribution payload never selects the compresse
   if (!("documentIdentity" in params)) throw new Error("expected RenderDocumentParams");
   assertEquals(params.documentIdentity, "doc-root-1");
   assertEquals(params.sourceContributionId, "doc-root-1");
-  assert(!("targetKey" in params), "contribution params must not carry targetKey");
+  assert(!("output_type" in params), "contribution params must not carry output_type");
   assert(!("sourceType" in params), "contribution params must not carry sourceType");
 
   const startedCalls = mockNotificationService.sendJobNotificationEvent.calls.filter(
@@ -1925,7 +1925,7 @@ Deno.test("processRenderJob - a contribution payload never selects the compresse
 });
 
 /**
- * Contract: given a contribution RENDER row (no targetKey/sourceType) alongside a
+ * Contract: given a contribution RENDER row (no output_type/sourceType) alongside a
  *   compressed RENDER row, the contribution row routes to the contribution arm and
  *   completes rather than raising at the selector — the assertion cannot hold if the
  *   selection reverts to the throwing guard-as-predicate, because the contribution row
@@ -1935,7 +1935,7 @@ Deno.test("processRenderJob - a contribution payload never selects the compresse
  *   for RenderDocumentParams.
  * Act:     processRenderJob on the contribution row.
  * Assert:  renderer called once with RenderDocumentParams (documentIdentity present,
- *   no targetKey); one completed update recorded.
+ *   no output_type); one completed update recorded.
  */
 Deno.test("processRenderJob - a contribution RENDER row routes to the contribution arm and completes rather than raising at the selector", async () => {
   // Arrange
@@ -1980,7 +1980,7 @@ Deno.test("processRenderJob - a contribution RENDER row routes to the contributi
   assertEquals(renderDocumentStub.calls.length, 1, "renderer must be called once for the contribution row");
   const params = renderDocumentStub.calls[0].args[2];
   if (!("documentIdentity" in params)) throw new Error("expected RenderDocumentParams");
-  assert(!("targetKey" in params), "contribution params must not carry targetKey");
+  assert(!("output_type" in params), "contribution params must not carry output_type");
   assertEquals(params.documentIdentity, "doc-root-1");
 
   const updates = spies.getHistoricQueryBuilderSpies("dialectic_generation_jobs", "update");
@@ -1992,28 +1992,28 @@ Deno.test("processRenderJob - a contribution RENDER row routes to the contributi
 
   // compressedJob is arranged to establish both forms are in scope; it must remain a
   // valid compressed row so the selector faces two distinct forms.
-  assert(isRecord(compressedJob.payload) && "targetKey" in compressedJob.payload);
+  assert(isRecord(compressedJob.payload) && "output_type" in compressedJob.payload);
 
   renderDocumentStub.restore();
   clearAllStubs?.();
 });
 
 /**
- * Contract: given a compressed row whose payload is malformed (targetKey corrupted via
+ * Contract: given a compressed row whose payload is malformed (output_type corrupted via
  *   invalidateDialecticRenderCompressedContextJobPayload), the row is marked failed with
  *   the guard's own per-member diagnostic in error_details and sendJobNotificationEvent
  *   is never called for it — compression being invisible infrastructure.
  * Arrange: a compressed row whose payload is invalidateDialecticRenderCompressedContextJobPayload
- *   with targetKey set to a non-FileType number.
+ *   with output_type set to a non-FileType number.
  * Act:     processRenderJob on the malformed compressed row.
- * Assert:  one failed update whose error_details includes "Missing or invalid targetKey.";
+ * Assert:  one failed update whose error_details includes "Missing or invalid output_type.";
  *   sendJobNotificationEvent has zero calls.
  */
 Deno.test("processRenderJob - a malformed compressed row is marked failed with the guard diagnostic and sends no notification", async () => {
   // Arrange
   const { client: dbClient, spies, clearAllStubs } = createMockSupabaseClient();
   const job = makeCompressedRenderJob();
-  const malformedPayload = invalidateDialecticRenderCompressedContextJobPayload({ targetKey: 42 });
+  const malformedPayload = invalidateDialecticRenderCompressedContextJobPayload({ output_type: 42 });
   if (!isJson(malformedPayload)) throw new Error("invalidator must return a JSON value");
   job.payload = malformedPayload;
   const ownerId = job.user_id;
@@ -2043,7 +2043,7 @@ Deno.test("processRenderJob - a malformed compressed row is marked failed with t
   assert(isRecord(updatePayload) && "status" in updatePayload && "error_details" in updatePayload);
   assertEquals(updatePayload.status, "failed");
   const errorDetails = updatePayload.error_details;
-  assert(typeof errorDetails === "string" && errorDetails.includes("Missing or invalid targetKey."));
+  assert(typeof errorDetails === "string" && errorDetails.includes("Missing or invalid output_type."));
   assertEquals(
     mockNotificationService.sendJobNotificationEvent.calls.length,
     0,

@@ -69,7 +69,7 @@ Deno.test("isAssembleCompressionPromptParams rejects each new member corrupted",
 	assert(!isAssembleCompressionPromptParams(invalidateAssembleCompressionPromptParams({ sessionId: null })));
 	assert(!isAssembleCompressionPromptParams(invalidateAssembleCompressionPromptParams({ iterationNumber: null })));
 	assert(!isAssembleCompressionPromptParams(invalidateAssembleCompressionPromptParams({ stageSlug: null })));
-	assert(!isAssembleCompressionPromptParams(invalidateAssembleCompressionPromptParams({ targetKey: null })));
+	assert(!isAssembleCompressionPromptParams(invalidateAssembleCompressionPromptParams({ output_type: null })));
 	assert(!isAssembleCompressionPromptParams(invalidateAssembleCompressionPromptParams({ sourceType: null })));
 	assert(!isAssembleCompressionPromptParams(invalidateAssembleCompressionPromptParams({ modelSlug: null })));
 	assert(!isAssembleCompressionPromptParams(invalidateAssembleCompressionPromptParams({ attemptCount: null })));
@@ -89,8 +89,8 @@ Deno.test("isAssembleCompressionPromptParams rejects each required member omitte
 	const { stageSlug: _st, ...missingStageSlug } = buildAssembleCompressionPromptParams();
 	assert(!isAssembleCompressionPromptParams(missingStageSlug));
 
-	const { targetKey: _t, ...missingTargetKey } = buildAssembleCompressionPromptParams();
-	assert(!isAssembleCompressionPromptParams(missingTargetKey));
+	const { output_type: _t, ...missingoutput_type } = buildAssembleCompressionPromptParams();
+	assert(!isAssembleCompressionPromptParams(missingoutput_type));
 
 	const { sourceType: _sr, ...missingSourceType } = buildAssembleCompressionPromptParams();
 	assert(!isAssembleCompressionPromptParams(missingSourceType));

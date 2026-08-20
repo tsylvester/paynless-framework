@@ -56,7 +56,7 @@ export function buildUploadContext(
     sessionId: params.sessionId,
     iteration: params.iterationNumber,
     stageSlug: params.stageSlug,
-    targetKey: params.targetKey,
+    output_type: params.output_type,
     sourceType: params.sourceType,
     documentKey: params.documentKey,
     sourceId: params.sourceId,

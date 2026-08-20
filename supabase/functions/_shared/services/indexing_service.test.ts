@@ -11,7 +11,7 @@ import { createMockSupabaseClient } from '../supabase.mock.ts';
 import { mockOpenAiAdapter, mockGetEmbeddingSpy } from '../ai_service/openai_adapter.mock.ts';
 import { type Database } from '../../../functions/types_db.ts';
 import { DummyAdapter } from "../ai_service/dummy_adapter.ts";
-import { buildMockProvider() } from "../ai_service/ai_provider.mock.ts";
+import { buildMockProvider } from "../ai_service/ai_provider.mock.ts";
 import { assertExists, assert } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { createMockAdminTokenWalletService } from "./tokenwallet/admin/adminTokenWalletService.mock.ts";
 import { MockLogger } from '../logger.mock.ts';

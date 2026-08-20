@@ -121,7 +121,7 @@ Deno.test(
         sessionId: "sess-1",
         iterationNumber: 1,
         stageSlug: DialecticStageSlug.Thesis,
-        targetKey: FileType.business_case,
+        output_type: FileType.business_case,
         sourceType: "contribution",
         documentKey: FileType.feature_spec,
         sourceId: undefined,
@@ -138,7 +138,7 @@ Deno.test(
       assertEquals("sessionId" in params, true);
       assertEquals("iterationNumber" in params, true);
       assertEquals("stageSlug" in params, true);
-      assertEquals("targetKey" in params, true);
+      assertEquals("output_type" in params, true);
       assertEquals("sourceType" in params, true);
       assertEquals("documentKey" in params, true);
       assertEquals("sourceId" in params, true);
@@ -154,7 +154,7 @@ Deno.test(
       assertEquals(typeof params.sessionId, "string");
       assertEquals(typeof params.iterationNumber, "number");
       assertEquals(typeof params.stageSlug, "string");
-      assertEquals(typeof params.targetKey, "string");
+      assertEquals(typeof params.output_type, "string");
       assertEquals(typeof params.sourceType, "string");
       assertEquals(typeof params.documentKey, "string");
       assertEquals(params.sourceId, undefined);
@@ -175,7 +175,7 @@ Deno.test(
           sessionId: "sess-1",
           iterationNumber: 1,
           stageSlug: DialecticStageSlug.Thesis,
-          targetKey: FileType.business_case,
+          output_type: FileType.business_case,
           sourceType: "history",
           documentKey: undefined,
           sourceId: "src-1",
@@ -202,7 +202,7 @@ Deno.test(
           sessionId: "sess-1",
           iterationNumber: 1,
           stageSlug: DialecticStageSlug.Thesis,
-          targetKey: FileType.business_case,
+          output_type: FileType.business_case,
           sourceType: "contribution",
           documentKey: undefined,
           sourceId: undefined,
@@ -229,7 +229,7 @@ Deno.test(
       sessionId: "sess-1",
       iterationNumber: 1,
       stageSlug: DialecticStageSlug.Thesis,
-      targetKey: FileType.business_case,
+      output_type: FileType.business_case,
       sourceType: "history",
       documentKey: undefined,
       sourceId: "src-1",
@@ -254,7 +254,7 @@ Deno.test(
       sessionId: "sess-1",
       iterationNumber: 1,
       stageSlug: DialecticStageSlug.Thesis,
-      targetKey: FileType.business_case,
+      output_type: FileType.business_case,
       sourceType: "feedback",
       documentKey: FileType.business_case_critique,
       sourceId: undefined,
@@ -279,7 +279,7 @@ Deno.test(
       sessionId: "sess-1",
       iterationNumber: 1,
       stageSlug: DialecticStageSlug.Thesis,
-      targetKey: FileType.business_case,
+      output_type: FileType.business_case,
       sourceType: "contribution",
       documentKey: FileType.feature_spec,
       sourceId: undefined,

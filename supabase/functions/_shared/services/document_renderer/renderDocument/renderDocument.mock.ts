@@ -96,7 +96,7 @@ export function buildRenderCompressedContextParams(
     sessionId: "session-abc",
     iterationNumber: 1,
     stageSlug: DialecticStageSlug.Thesis,
-    targetKey: FileType.business_case,
+    output_type: FileType.business_case,
     sourceType: "contribution",
     documentKey: FileType.business_case,
     template_filename: "thesis_business_case.md",

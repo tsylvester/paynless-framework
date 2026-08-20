@@ -28,7 +28,7 @@ export async function renderDocument(
       sessionId,
       iterationNumber,
       stageSlug,
-      targetKey,
+      output_type,
       sourceType,
       documentKey,
       template_filename,
@@ -41,7 +41,7 @@ export async function renderDocument(
       sessionId,
       iteration: iterationNumber,
       stageSlug,
-      targetKey,
+      output_type,
       sourceType,
       documentKey,
     });
@@ -137,7 +137,7 @@ export async function renderDocument(
       sessionId,
       iterationNumber,
       stageSlug,
-      targetKey,
+      output_type,
       sourceType,
       documentKey,
       sourceId: undefined,
@@ -145,7 +145,7 @@ export async function renderDocument(
       chunkTotal: undefined,
       contentForStorage: rendered,
       projectOwnerUserId: deps.notifyUserId,
-      description: `Compressed context for ${stageSlug}:${String(targetKey)}`,
+      description: `Compressed context for ${stageSlug}:${String(output_type)}`,
       sourcePromptResourceId: undefined,
     });
 

@@ -373,7 +373,7 @@ Deno.test("isBuildUploadContextResourceParams rejects each corrupted property", 
   );
   assertFalse(
     isBuildUploadContextResourceParams(
-      invalidateBuildUploadContextResourceParams({ targetKey: 123 }),
+      invalidateBuildUploadContextResourceParams({ output_type: 123 }),
     ),
   );
   assertFalse(
@@ -439,8 +439,8 @@ Deno.test("isBuildUploadContextResourceParams rejects each omitted required prop
   const { stageSlug: _st, ...missingStageSlug } = buildBuildUploadContextResourceParams();
   assertFalse(isBuildUploadContextResourceParams(missingStageSlug));
 
-  const { targetKey: _t, ...missingTargetKey } = buildBuildUploadContextResourceParams();
-  assertFalse(isBuildUploadContextResourceParams(missingTargetKey));
+  const { output_type: _t, ...missingoutput_type } = buildBuildUploadContextResourceParams();
+  assertFalse(isBuildUploadContextResourceParams(missingoutput_type));
 
   const { sourceType: _so, ...missingSourceType } = buildBuildUploadContextResourceParams();
   assertFalse(isBuildUploadContextResourceParams(missingSourceType));

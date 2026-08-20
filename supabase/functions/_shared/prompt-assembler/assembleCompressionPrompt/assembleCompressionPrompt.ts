@@ -92,7 +92,7 @@ export const assembleCompressionPrompt: AssembleCompressionPromptFn = async (
 			sessionId: params.sessionId,
 			iteration: params.iterationNumber,
 			stageSlug: params.stageSlug,
-			targetKey: params.targetKey,
+			output_type: params.output_type,
 			sourceType: params.sourceType,
 			modelSlug: params.modelSlug,
 			attemptCount: params.attemptCount,
@@ -119,7 +119,7 @@ export const assembleCompressionPrompt: AssembleCompressionPromptFn = async (
 		mimeType: "text/markdown",
 		sizeBytes: new TextEncoder().encode(prompt).length,
 		userId: params.userId,
-		description: `Compression prompt for ${params.sourceType} source compressed for ${params.targetKey}`,
+		description: `Compression prompt for ${params.sourceType} source compressed for ${params.output_type}`,
 	};
 
 	const response = await deps.fileManager.uploadAndRegisterFile(uploadContext);

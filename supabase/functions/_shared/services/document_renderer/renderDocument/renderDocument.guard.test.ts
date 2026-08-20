@@ -55,10 +55,10 @@ Deno.test("isRenderCompressedContextParams rejects when each key is absent", () 
   assertEquals(isRenderCompressedContextParams(missingStageSlug), false);
 
   const {
-    targetKey: _targetKey,
-    ...missingTargetKey
+    output_type: _output_type,
+    ...missingoutput_type
   } = buildRenderCompressedContextParams();
-  assertEquals(isRenderCompressedContextParams(missingTargetKey), false);
+  assertEquals(isRenderCompressedContextParams(missingoutput_type), false);
 
   const {
     sourceType: _sourceType,
@@ -114,9 +114,9 @@ Deno.test("isRenderCompressedContextParams rejects stageSlug failing isDialectic
   );
 });
 
-Deno.test("isRenderCompressedContextParams rejects targetKey failing isModelContributionFileType", () => {
+Deno.test("isRenderCompressedContextParams rejects output_type failing isModelContributionFileType", () => {
   assertEquals(
-    isRenderCompressedContextParams(invalidateRenderCompressedContextParams({ targetKey: "not-a-model-contribution-file-type" })),
+    isRenderCompressedContextParams(invalidateRenderCompressedContextParams({ output_type: "not-a-model-contribution-file-type" })),
     false,
   );
 });

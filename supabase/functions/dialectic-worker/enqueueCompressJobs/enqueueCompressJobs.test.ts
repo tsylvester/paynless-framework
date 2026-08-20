@@ -296,7 +296,7 @@ Deno.test("enqueueCompressJobs: idempotency keys are deterministic and match the
     const documentKey = payload.victim.documentKey;
     assert(documentKey);
     const baseKey =
-      `${params.parentJob.id}_compress_${payload.victim.sourceType}_${documentKey}_${sanitizeForPath(params.targetKey)}`;
+      `${params.parentJob.id}_compress_${payload.victim.sourceType}_${documentKey}_${sanitizeForPath(params.output_type)}`;
 
     for (let i = 0; i < firstRows.length; i += 1) {
       const firstRow = firstRows[i];

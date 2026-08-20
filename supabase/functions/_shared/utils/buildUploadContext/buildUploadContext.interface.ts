@@ -70,7 +70,7 @@ export interface BuildUploadContextResourceParams {
   /** Stage slug for path construction (e.g., 'thesis', 'synthesis'). */
   stageSlug: DialecticStageSlug;
   /** The compression target's document key / file type (e.g., FileType.business_case). */
-  targetKey: ModelContributionFileTypes;
+  output_type: ModelContributionFileTypes;
   /** The victim's source discriminator: 'contribution' | 'resource' | 'feedback' | 'history'. */
   sourceType: CompressionSourceType;
   /** Required when sourceType is 'contribution', 'resource' or 'feedback'; undefined otherwise. */

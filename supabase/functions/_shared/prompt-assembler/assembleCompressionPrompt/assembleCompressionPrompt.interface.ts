@@ -39,7 +39,7 @@ export interface AssembleCompressionPromptParams {
   sessionId: string;
   iterationNumber: number;
   stageSlug: DialecticStageSlug;
-  targetKey: ModelContributionFileTypes;
+  output_type: ModelContributionFileTypes;
   sourceType: CompressionSourceType;
   documentKey?: FileType; // Required when sourceType is 'contribution', 'resource', or 'feedback'
   sourceId?: string; // Required when sourceType is 'history'

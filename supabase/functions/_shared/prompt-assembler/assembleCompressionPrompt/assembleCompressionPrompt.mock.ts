@@ -111,7 +111,7 @@ export function buildAssembleCompressionPromptParams(
     sessionId: "session-123",
     iterationNumber: 1,
     stageSlug: DialecticStageSlug.Thesis,
-    targetKey: FileType.business_case,
+    output_type: FileType.business_case,
     sourceType: "resource",
     documentKey: FileType.business_case_critique,
     modelSlug: "claude-3-opus",

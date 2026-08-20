@@ -181,7 +181,7 @@ export function buildEnqueueRenderCompressedContextPayload(
     documentKey: FileType.business_case,
     docType: FileType.business_case,
     sourceStageSlug: DialecticStageSlug.Thesis,
-    targetKey: FileType.technical_approach,
+    output_type: FileType.technical_approach,
   };
   return overrides ? { ...base, ...overrides } : base;
 }
@@ -193,7 +193,7 @@ export function buildDialecticRenderCompressedContextJobPayload(
     ...buildDialecticBaseJobPayload(),
     stageSlug: DialecticStageSlug.Thesis,
     iterationNumber: 1,
-    targetKey: FileType.technical_approach,
+    output_type: FileType.technical_approach,
     sourceType: "contribution",
     documentKey: FileType.business_case,
     template_filename: "thesis_business_case.md",

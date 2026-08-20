@@ -39,7 +39,7 @@ export function isDialecticCompressJobPayload(value: unknown): value is Dialecti
   if (!('model_slug' in value) || !isNonEmptyString(value.model_slug)) throw new Error('Missing or invalid model_slug.');
 
   // Arm-specific required members
-  if (!('targetKey' in value) || !isModelContributionFileType(value.targetKey)) throw new Error('Missing or invalid targetKey.');
+  if (!('output_type' in value) || !isModelContributionFileType(value.output_type)) throw new Error('Missing or invalid output_type.');
   if (!('mode' in value) || !isCompressionMode(value.mode)) throw new Error('Missing or invalid mode.');
   if (!('content' in value) || !isNonEmptyString(value.content)) throw new Error('Missing or invalid content.');
   if (!('sourceType' in value) || !isCompressionSourceType(value.sourceType)) throw new Error('Missing or invalid sourceType.');
@@ -69,7 +69,7 @@ export function isDialecticCompressJobPayload(value: unknown): value is Dialecti
   // Final check for extraneous properties to enforce a strict shape.
   const allowedKeys = new Set<string>([
     ...dialecticBaseJobPayloadAllowedKeys,
-    'targetKey', 'mode', 'content', 'sourceType', 'sourceId', 'role',
+    'output_type', 'mode', 'content', 'sourceType', 'sourceId', 'role',
     'documentKey', 'docType', 'sourceStageSlug', 'chunk_index', 'chunk_total',
   ]);
 
@@ -166,7 +166,7 @@ export function isenqueueCompressJobsParams(value: unknown): value is enqueueCom
     "sessionId",
     "projectId",
     "stageSlug",
-    "targetKey",
+    "output_type",
     "iterationNumber",
     "modelId",
     "modelSlug",
@@ -204,7 +204,7 @@ export function isenqueueCompressJobsParams(value: unknown): value is enqueueCom
   if (!isDialecticStageSlug(value.stageSlug)) {
     return false;
   }
-  if (!isModelContributionFileType(value.targetKey)) {
+  if (!isModelContributionFileType(value.output_type)) {
     return false;
   }
   if (!isNonNegativeInteger(value.iterationNumber)) {

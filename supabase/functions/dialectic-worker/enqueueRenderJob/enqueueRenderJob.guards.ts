@@ -188,7 +188,7 @@ export function isEnqueueRenderCompressedContextPayload(value: unknown): value i
     !('documentKey' in value) ||
     !('docType' in value) ||
     !('sourceStageSlug' in value) ||
-    !('targetKey' in value)
+    !('output_type' in value)
   ) {
     return false;
   }
@@ -204,7 +204,7 @@ export function isEnqueueRenderCompressedContextPayload(value: unknown): value i
   if (!isModelContributionFileType(value.docType)) {
     return false;
   }
-  if (!isModelContributionFileType(value.targetKey)) {
+  if (!isModelContributionFileType(value.output_type)) {
     return false;
   }
   if (!isDialecticStageSlug(value.sourceStageSlug)) {
@@ -226,7 +226,7 @@ export function isDialecticRenderCompressedContextJobPayload(value: unknown): va
   if (!('iterationNumber' in value) || !isNonNegativeInteger(value.iterationNumber)) throw new Error('Missing or invalid iterationNumber.');
 
   // Arm-specific required members
-  if (!('targetKey' in value) || !isModelContributionFileType(value.targetKey)) throw new Error('Missing or invalid targetKey.');
+  if (!('output_type' in value) || !isModelContributionFileType(value.output_type)) throw new Error('Missing or invalid output_type.');
   if (!('sourceType' in value) || !isCompressionSourceType(value.sourceType) || (value.sourceType !== 'contribution' && value.sourceType !== 'resource')) throw new Error('Missing or invalid sourceType.');
   if (!('documentKey' in value) || !isFileType(value.documentKey)) throw new Error('Missing or invalid documentKey.');
   if (!('template_filename' in value) || !isNonEmptyString(value.template_filename)) throw new Error('Missing or invalid template_filename.');
@@ -234,7 +234,7 @@ export function isDialecticRenderCompressedContextJobPayload(value: unknown): va
   // Final check for extraneous properties to enforce a strict shape.
   const allowedKeys = new Set<string>([
     ...dialecticBaseJobPayloadAllowedKeys,
-    'targetKey', 'sourceType', 'documentKey', 'template_filename',
+    'output_type', 'sourceType', 'documentKey', 'template_filename',
   ]);
 
   const unknownKeys = Object.keys(value).filter(key => !allowedKeys.has(key));
@@ -250,7 +250,7 @@ export function isCompressedRenderPayloadShape(value: unknown): boolean {
   if (!isRecord(value)) {
     return false;
   }
-  if (!('targetKey' in value) || !('sourceType' in value)) {
+  if (!('output_type' in value) || !('sourceType' in value)) {
     return false;
   }
   if ('documentIdentity' in value || 'sourceContributionId' in value) {

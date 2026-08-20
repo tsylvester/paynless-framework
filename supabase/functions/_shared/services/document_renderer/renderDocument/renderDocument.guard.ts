@@ -25,7 +25,7 @@ export function isRenderCompressedContextParams(
   if (!isDialecticStageSlug(value.stageSlug)) {
     return false;
   }
-  if (!isModelContributionFileType(value.targetKey)) {
+  if (!isModelContributionFileType(value.output_type)) {
     return false;
   }
   if (!isCompressionSourceType(value.sourceType)) {

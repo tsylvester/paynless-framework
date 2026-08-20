@@ -108,7 +108,7 @@ interface RenderTestEnv {
   stageSlug: DialecticStageSlug;
   documentKey: FileType;
   outputType: ModelContributionFileTypes;
-  targetKey: ModelContributionFileTypes;
+  output_type: ModelContributionFileTypes;
 }
 
 async function setupRenderTestEnv(): Promise<RenderTestEnv> {
@@ -276,7 +276,7 @@ async function setupRenderTestEnv(): Promise<RenderTestEnv> {
     stageSlug: DialecticStageSlug.Thesis,
     documentKey: FileType.business_case,
     outputType: FileType.business_case,
-    targetKey: FileType.technical_approach,
+    output_type: FileType.technical_approach,
   };
 }
 
@@ -369,7 +369,7 @@ async function arrangeCompressedContext(env: RenderTestEnv): Promise<void> {
     sessionId: env.testSessionId,
     iteration: env.testIterationNumber,
     stageSlug: env.stageSlug,
-    targetKey: env.targetKey,
+    output_type: env.output_type,
     sourceType: "contribution",
     documentKey: env.documentKey,
   });
@@ -492,7 +492,7 @@ Deno.test({
         documentKey: env.documentKey,
         docType: env.outputType,
         sourceStageSlug: env.stageSlug,
-        targetKey: env.targetKey,
+        output_type: env.output_type,
       });
 
       // --- Contribution dispatch ---
@@ -648,7 +648,7 @@ Deno.test({
      * Arrange: a real recipe chain and IRenderJobContext; a dialectic_generation_jobs
      *   row inserted directly with a payload from
      *   invalidateDialecticRenderCompressedContextJobPayload({ template_filename: 123 }),
-     *   which carries targetKey and sourceType (so isCompressedRenderPayloadShape selects
+     *   which carries output_type and sourceType (so isCompressedRenderPayloadShape selects
      *   the compressed arm) but corrupts template_filename to a number (so
      *   isDialecticRenderCompressedContextJobPayload throws "Missing or invalid
      *   template_filename.").
@@ -794,7 +794,7 @@ Deno.test({
         documentKey: env.documentKey,
         docType: FileType.ModelContributionRawJson,
         sourceStageSlug: env.stageSlug,
-        targetKey: env.targetKey,
+        output_type: env.output_type,
       });
 
       // Act
@@ -877,7 +877,7 @@ Deno.test({
         documentKey: env.documentKey,
         docType: env.outputType,
         sourceStageSlug: env.stageSlug,
-        targetKey: env.targetKey,
+        output_type: env.output_type,
       });
 
       // Act — insert parent job to satisfy the parent_job_id foreign key constraint
