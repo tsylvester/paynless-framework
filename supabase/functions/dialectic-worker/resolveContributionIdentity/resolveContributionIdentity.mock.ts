@@ -8,6 +8,7 @@ import type {
   ResolveContributionIdentityErrorReturn,
   ResolveContributionIdentityReturn,
   ResolveContributionIdentityFn,
+  BoundResolveContributionIdentityFn,
   DocumentKeyErrorParams,
   ProviderIdentifierErrorParams,
   RelationshipsErrorParams,
@@ -402,6 +403,14 @@ export function buildResolveContributionIdentityRecipeStepReadError(
 export const mockResolveContributionIdentity: ResolveContributionIdentityFn =
   async (
     _deps,
+    _params,
+    _payload,
+  ): Promise<ResolveContributionIdentityReturn> => {
+    return buildResolveContributionIdentitySuccessReturn();
+  };
+
+export const mockBoundResolveContributionIdentity: BoundResolveContributionIdentityFn =
+  async (
     _params,
     _payload,
   ): Promise<ResolveContributionIdentityReturn> => {

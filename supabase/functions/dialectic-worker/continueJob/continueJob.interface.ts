@@ -49,6 +49,8 @@ export type ContinueJobFn = (
   payload: ContinueJobPayload,
 ) => Promise<ContinueJobReturn>;
 
+export type BoundContinueJobFn = (params: ContinueJobParams, payload: ContinueJobPayload) => Promise<ContinueJobReturn>;
+
 export class ContinueJobValidationError extends Error {
   constructor(message: string) {
     super(message);

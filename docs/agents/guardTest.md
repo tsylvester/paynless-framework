@@ -33,17 +33,17 @@ Rendered — copy this shape, one test file per owned guard:
 import { isOwnedObject } from "./myInterface.guard.ts";
 import { buildOwnedObject, invalidateOwnedObject } from "./myInterface.mock.ts";
 
-/** Contract: case 1 — the builder's valid default is accepted. */
+/** the builder's valid default is accepted. */
 test("isOwnedObject accepts the valid default", () => {
   assert(isOwnedObject(buildOwnedObject()));
 });
 
-/** Contract: case 2 — valid overrides are accepted. */
+/** valid overrides are accepted. */
 test("isOwnedObject accepts valid overrides", () => {
   assert(isOwnedObject(buildOwnedObject({ foo: someValidFoo })));
 });
 
-/** Contract: case 3 — null, undefined, primitives, and arrays are rejected. */
+/** null, undefined, primitives, and arrays are rejected. */
 test("isOwnedObject rejects non-objects", () => {
   for (const x of [null, undefined, 7, "x", []]) assert(!isOwnedObject(x));
 });
@@ -54,7 +54,7 @@ test("isOwnedObject rejects each corrupted property", () => {
   assert(!isOwnedObject(invalidateOwnedObject({ bar: 42 })));
 });
 
-/** Contract: case 5 — each required property, omitted in turn, is rejected. */
+/** each required property, omitted in turn, is rejected. */
 test("isOwnedObject rejects each omitted required property", () => {
   const { foo: _f, ...missingFoo } = buildOwnedObject();
   assert(!isOwnedObject(missingFoo));

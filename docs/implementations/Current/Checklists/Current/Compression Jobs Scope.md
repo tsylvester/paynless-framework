@@ -296,17 +296,22 @@ make a preflight read high and misclassify affordable requests as unaffordable; 
 with known-broken token accounting at any site that produces a token count.
 
 Strict node order: `applyCompressionOverlay` → `gatherArtifacts` → `vector_utils` → `compressPrompt`
-→ `calculateAffordability` → `StreamChat` → `streamRewind` → `prepareModelJob` → `processCompressJob`
-→ `createJobContext` → `processSimpleJob` → `processJob` → `dialectic-worker/index.ts` → RAG
-deletions → RAG-removal migration. The overlay precedes `gatherArtifacts` because that function
-injects it and constructs its params, and its literal comparisons compile against the untightened
-type; `gatherArtifacts` is the sole producer of the tightened `ResourceDocument.type` and lands it
-before any consumer assumes a conformant value; the scorer precedes the loop that invokes it; the loop
-precedes the dispatcher that composes it; the dispatcher precedes its two callers; the factory
-precedes every consumer that reads a member off the context it assembles; the consumer chain then runs
-producers first, `processSimpleJob` before `processJob`; the worker root follows the chain it wires,
-because a root closes a graph rather than opening one; and the deletions follow the severing of their
-last references.
+→ `calculateAffordability` → `StreamChat` → `streamRewind` → `streamRequest` → `chat/index.ts` →
+`prepareModelJob` → `processCompressJob` → `createJobContext` → `processSimpleJob` → `processJob` →
+`dialectic-worker/index.ts` → RAG deletions → RAG-removal migration. The overlay precedes
+`gatherArtifacts` because that function injects it and constructs its params, and its literal
+comparisons compile against the untightened type; `gatherArtifacts` is the sole producer of the
+tightened `ResourceDocument.type` and lands it before any consumer assumes a conformant value; the
+scorer precedes the loop that invokes it; the loop precedes the dispatcher that composes it; the
+dispatcher precedes its two callers; the factory precedes every consumer that reads a member off the
+context it assembles; the consumer chain then runs producers first, `processSimpleJob` before
+`processJob`; the worker root follows the chain it wires, because a root closes a graph rather than
+opening one; and the deletions follow the severing of their last references. `StreamChat` and
+`streamRewind` both narrow `CountTokensFn` to `BoundCountTokensFn`, eliminating their inline fake
+tokenizer constructions; `streamRequest` is a pure pass-through that narrows its own
+`StreamRequestDeps.countTokens` to match; `chat/index.ts` is the composition root where the real
+`countTokens` is bound with real `CountTokensDeps` and the bound function is assigned to `ChatDeps`,
+so the binding happens once at the top and every consumer below receives the bound version.
 
 A node's position is fixed by the dependency graph, never by which test it carries. The full-chain
 compression test rides the worker root, the node that closes the chain it exercises.
@@ -318,6 +323,11 @@ compression test rides the worker root, the node that closes the chain it exerci
 * `supabase/functions/dialectic-worker/calculateAffordability/calculateAffordability.ts`
 * `supabase/functions/chat/streamChat/StreamChat.ts`
 * `supabase/functions/chat/streamRewind/streamRewind.ts`
+* `supabase/functions/chat/streamRequest/streamRequest.ts` — narrows
+  `StreamRequestDeps.countTokens` from `CountTokensFn` to `BoundCountTokensFn`; pure pass-through,
+  no implementation change.
+* `supabase/functions/chat/index.ts` — the chat composition root; binds real `countTokens` with real
+  `CountTokensDeps` and assigns the `BoundCountTokensFn` to `ChatDeps.countTokens`.
 * `supabase/functions/dialectic-worker/prepareModelJob/prepareModelJob.ts`
 * `supabase/functions/dialectic-worker/processCompressJob/processCompressJob.ts`
 * `supabase/functions/dialectic-worker/createJobContext/createJobContext.ts` — the single assembler

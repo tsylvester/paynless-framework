@@ -13,6 +13,8 @@ Cited by: construction view (the workplan author builds nodes) and, for handling
 - All changes to a source file and its support live in **that file's one node**. Do not split a single source file across multiple nodes, and do not create multiple sequential nodes that edit the same set of files.
 - Files that have no types and no tests (e.g. a database migration) are the only ones exempt from the full support-file structure.
 
+If you ever begin to write a second file path and name inside the node element of another file, YOU ARE WRONG! YOU ARE WRONG! STOP IMMEDIATELY! THIS IS NOT VALID! EVERY FILE IS ITS OWN ELEMENT IN THE NODE! YOU DO NOT NEST ADDITIONAL FILES INSIDE ANOTHER FILES' ELEMENT! Discovering you need to touch another file means YOU MUST EVALUATE IF THE ADDITIONAL FILE IS A VALID MEMBER OF THE NODE, AND EVALUATE WHAT THE DEPENDENCY ORDER IS FOR AUTHORING THE FILES! ***DO NOT CRAM MULTIPLE FILES INTO A SINGLE NODE ELEMENT!*** 
+
 A node names **elements**, not the symbols inside them. That is not an omission to be corrected by longer nodes — the symbols are a fact on disk, read from the interface's export surface, and a node that tries to enumerate them dates the moment the interface changes. What the node owes is the boundary; what the standards owe is completeness within it (see [scope](scope.md)).
 
 ## Authoring gate

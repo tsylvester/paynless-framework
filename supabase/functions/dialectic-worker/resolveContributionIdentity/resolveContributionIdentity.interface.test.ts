@@ -9,6 +9,7 @@ import type {
   ResolveContributionIdentityErrorReturn,
   ResolveContributionIdentityReturn,
   ResolveContributionIdentityFn,
+  BoundResolveContributionIdentityFn,
   DocumentKeyErrorParams,
   ProviderIdentifierErrorParams,
   RelationshipsErrorParams,
@@ -180,6 +181,35 @@ Deno.test("ResolveContributionIdentityFn resolves to its declared error type", (
     retriable: false,
   };
   const returned: ReturnType<ResolveContributionIdentityFn> = Promise.resolve(errorReturn);
+  const declared: Promise<ResolveContributionIdentityReturn> = returned;
+  assert(declared instanceof Promise);
+});
+
+// --- BoundResolveContributionIdentityFn — asynchronous signature ---
+
+/** Contract: BoundResolveContributionIdentityFn's declared Promise return admits its success arm, proving the bound signature is asynchronous. */
+Deno.test("BoundResolveContributionIdentityFn resolves to its declared success type", () => {
+  const success: ResolveContributionIdentitySuccessReturn = {
+    restOfCanonicalPathParams: {
+      contributionType: "thesis",
+      stageSlug: DialecticStageSlug.Thesis,
+    },
+    storageFileType: FileType.ModelContributionRawJson,
+    isContinuationForStorage: false,
+    description: "test",
+  };
+  const returned: ReturnType<BoundResolveContributionIdentityFn> = Promise.resolve(success);
+  const declared: Promise<ResolveContributionIdentityReturn> = returned;
+  assert(declared instanceof Promise);
+});
+
+/** Contract: BoundResolveContributionIdentityFn's declared Promise return admits its error arm, proving the bound signature is asynchronous. */
+Deno.test("BoundResolveContributionIdentityFn resolves to its declared error type", () => {
+  const errorReturn: ResolveContributionIdentityErrorReturn = {
+    error: new Error("test"),
+    retriable: false,
+  };
+  const returned: ReturnType<BoundResolveContributionIdentityFn> = Promise.resolve(errorReturn);
   const declared: Promise<ResolveContributionIdentityReturn> = returned;
   assert(declared instanceof Promise);
 });

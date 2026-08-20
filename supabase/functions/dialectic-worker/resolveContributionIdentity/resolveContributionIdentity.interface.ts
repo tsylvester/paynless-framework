@@ -49,6 +49,11 @@ export type ResolveContributionIdentityFn = (
   payload: ResolveContributionIdentityPayload,
 ) => Promise<ResolveContributionIdentityReturn>;
 
+export type BoundResolveContributionIdentityFn = (
+  params: ResolveContributionIdentityParams,
+  payload: ResolveContributionIdentityPayload,
+) => Promise<ResolveContributionIdentityReturn>;
+
 export interface DocumentKeyErrorParams {
   jobId: string;
 }
