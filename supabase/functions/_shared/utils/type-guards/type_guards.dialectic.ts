@@ -983,6 +983,7 @@ export const dialecticBaseJobPayloadAllowedKeys: Set<string> = new Set<string>([
     'stageSlug', 'iterationNumber', 'continueUntilComplete', 'maxRetries',
     'continuation_count', 'target_contribution_id', 'is_test_job', 'model_slug',
     'maxOutputTokens', 'sourceContributionId', 'source_prompt_resource_id',
+    'preflight_input_tokens',
 ]);
 
 export function isDialecticBaseJobPayload(payload: unknown): payload is DialecticBaseJobPayload {
@@ -1010,6 +1011,7 @@ export function isDialecticBaseJobPayload(payload: unknown): payload is Dialecti
     if (('maxOutputTokens' in payload) && typeof payload.maxOutputTokens !== 'number') throw new Error('Invalid maxOutputTokens.');
     if (('sourceContributionId' in payload) && payload.sourceContributionId !== null && typeof payload.sourceContributionId !== 'string') throw new Error('Invalid sourceContributionId.');
     if (('source_prompt_resource_id' in payload) && typeof payload.source_prompt_resource_id !== 'string') throw new Error('Invalid source_prompt_resource_id.');
+    if (('preflight_input_tokens' in payload) && typeof payload.preflight_input_tokens !== 'number') throw new Error('Invalid preflight_input_tokens.');
 
     return true;
 }

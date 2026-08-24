@@ -22,9 +22,9 @@ export interface PrepareResponseContentDeps {
 
 export interface PrepareResponseContentParams {
   jobId: string;
-  mode: CompressionMode;
+  mode?: CompressionMode;
   continueUntilComplete: boolean;
-  documentKey: string | undefined;
+  documentKey: string | null | undefined;
   contextForDocuments: ContextForDocument[] | undefined;
   sourceObject: ContentToInclude | undefined;
 }
@@ -94,6 +94,11 @@ export type PrepareResponseContentReturn =
 
 export type PrepareResponseContentFn = (
   deps: PrepareResponseContentDeps,
+  params: PrepareResponseContentParams,
+  payload: PrepareResponseContentPayload,
+) => PrepareResponseContentReturn;
+
+export type BoundPrepareResponseContentFn = (
   params: PrepareResponseContentParams,
   payload: PrepareResponseContentPayload,
 ) => PrepareResponseContentReturn;

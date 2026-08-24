@@ -12,10 +12,11 @@ import {
   DialecticStageSlug,
 } from "../../_shared/types/file_manager.types.ts";
 import {
-  createMockDialecticExecuteJobPayload,
-  createMockJobRow,
-} from "../saveResponse/saveResponse.mock.ts";
-import { buildDialecticBaseJobPayload } from "../../_shared/dialectic.mock.ts";
+  buildDialecticBaseJobPayload,
+  buildDialecticExecuteJobPayload,
+  buildDialecticJobRow,
+} from "../../_shared/dialectic.mock.ts";
+import { isJson } from "../../_shared/utils/type_guards.ts";
 import {
   BoundenqueueCompressJobsFn,
   CompressJobEnqueueError,
@@ -61,7 +62,9 @@ export function buildenqueueCompressJobsParams(
 ): enqueueCompressJobsParams {
   const mockSetup = createMockSupabaseClient("enqueue-compress-jobs");
   const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
-  const parentJob = createMockJobRow(createMockDialecticExecuteJobPayload());
+  const executePayload = buildDialecticExecuteJobPayload();
+  if (!isJson(executePayload)) throw new Error("payload is not valid Json");
+  const parentJob = buildDialecticJobRow({ payload: executePayload });
 
   const tokenizerDeps: CountTokensDeps = {
     getEncoding: () => ({ encode: () => [] }),

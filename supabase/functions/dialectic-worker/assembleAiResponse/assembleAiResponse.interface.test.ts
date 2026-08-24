@@ -8,6 +8,7 @@ import type {
   AssembleAiResponseErrorReturn,
   AssembleAiResponseReturn,
   AssembleAiResponseFn,
+  AssembleAiResponseMissingPreflightErrorConstructorParams,
   AssembleAiResponseTokenCountErrorConstructorParams,
 } from "./assembleAiResponse.interface.ts";
 
@@ -93,4 +94,22 @@ Deno.test("AssembleAiResponseFn resolves to its declared return type", () => {
   const returned: ReturnType<AssembleAiResponseFn> = errorReturn;
   const declared: AssembleAiResponseReturn = returned;
   assertEquals(declared, errorReturn);
+});
+
+/** Contract: AssembleAiResponseParams.preflightInputTokens admits undefined, proving the count is optional. */
+Deno.test("AssembleAiResponseParams.preflightInputTokens admits undefined", () => {
+  const preflightInputTokens: AssembleAiResponseParams["preflightInputTokens"] =
+    undefined;
+  assertEquals(preflightInputTokens, undefined);
+});
+
+/** Contract: AssembleAiResponseMissingPreflightErrorConstructorParams' required key surface is exactly apiIdentifier. */
+Deno.test("AssembleAiResponseMissingPreflightErrorConstructorParams has the required surface", () => {
+  const surface: Record<
+    keyof AssembleAiResponseMissingPreflightErrorConstructorParams,
+    true
+  > = {
+    apiIdentifier: true,
+  };
+  assertEquals(Object.keys(surface).length, 1);
 });

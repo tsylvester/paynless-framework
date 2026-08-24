@@ -1,19 +1,13 @@
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import type { Database } from '../../types_db.ts';
 import type { ILogger } from '../../_shared/types.ts';
-import type { IFileManager } from '../../_shared/types/file_manager.types.ts';
-import type { NotificationServiceType } from '../../_shared/types/notification.service.types.ts';
-import type { BoundDebitTokens } from '../../_shared/utils/debitTokens.interface.ts';
-import type { SanitizeJsonContentFn } from '../../_shared/utils/jsonSanitizer/jsonSanitizer.interface.ts';
-import type {
-  BuildUploadContextFn,
-  DetermineContinuationFn,
-  IsIntermediateChunkFn,
-  ResolveFinishReasonFn,
-  RetryJobFn,
-} from '../createJobContext/JobContext.interface.ts';
-import type { BoundEnqueueRenderJobFn } from '../enqueueRenderJob/enqueueRenderJob.interface.ts';
-import type { ContinueJobFn } from '../continueJob/continueJob.provides.ts';
+import type { BoundRetryJobFn } from '../retryJob/retryJob.interface.ts';
+import type { BoundLoadJobContextFn } from '../loadJobContext/loadJobContext.interface.ts';
+import type { BoundAssembleAiResponseFn } from '../assembleAiResponse/assembleAiResponse.interface.ts';
+import type { BoundDebitForResponseFn } from '../debitForResponse/debitForResponse.interface.ts';
+import type { BoundPrepareResponseContentFn } from '../prepareResponseContent/prepareResponseContent.interface.ts';
+import type { BoundSaveContributionResponseFn } from '../saveContributionResponse/saveContributionResponse.interface.ts';
+import type { BoundSaveCompressedResponseFn } from '../saveCompressedResponse/saveCompressedResponse.interface.ts';
 
 export interface NodeTokenUsage {
   prompt_tokens: number;
@@ -30,6 +24,7 @@ export interface SaveResponsePayload {
   assembled_content: string;
   token_usage: NodeTokenUsage | null;
   finish_reason: string | null;
+  processingTimeMs: number;
 }
 
 export interface SaveResponseRequestBody {
@@ -41,21 +36,17 @@ export interface SaveResponseRequestBody {
 
 export interface SaveResponseDeps {
   logger: ILogger;
-  fileManager: IFileManager;
-  notificationService: NotificationServiceType;
-  continueJob: ContinueJobFn;
-  retryJob: RetryJobFn;
-  resolveFinishReason: ResolveFinishReasonFn;
-  isIntermediateChunk: IsIntermediateChunkFn;
-  determineContinuation: DetermineContinuationFn;
-  buildUploadContext: BuildUploadContextFn;
-  debitTokens: BoundDebitTokens;
-  sanitizeJsonContent: SanitizeJsonContentFn;
-  enqueueRenderJob: BoundEnqueueRenderJobFn;
+  retryJob: BoundRetryJobFn;
+  loadJobContext: BoundLoadJobContextFn;
+  assembleAiResponse: BoundAssembleAiResponseFn;
+  debitForResponse: BoundDebitForResponseFn;
+  prepareResponseContent: BoundPrepareResponseContentFn;
+  saveContributionResponse: BoundSaveContributionResponseFn;
+  saveCompressedResponse: BoundSaveCompressedResponseFn;
 }
 
 export type SaveResponseSuccessReturn = {
-  status: 'completed' | 'needs_continuation' | 'continuation_limit_reached';
+  status: 'completed' | 'needs_continuation' | 'continuation_limit_reached' | 'waiting_for_children';
 };
 
 export type SaveResponseErrorReturn = {
@@ -67,6 +58,11 @@ export type SaveResponseReturn = SaveResponseSuccessReturn | SaveResponseErrorRe
 
 export type SaveResponseFn = (
   deps: SaveResponseDeps,
+  params: SaveResponseParams,
+  payload: SaveResponsePayload,
+) => Promise<SaveResponseReturn>;
+
+export type BoundSaveResponseFn = (
   params: SaveResponseParams,
   payload: SaveResponsePayload,
 ) => Promise<SaveResponseReturn>;

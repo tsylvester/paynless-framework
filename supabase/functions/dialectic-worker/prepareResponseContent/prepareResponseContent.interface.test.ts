@@ -162,3 +162,28 @@ Deno.test("PrepareResponseContentFn returns its declared error type", () => {
   const declared: PrepareResponseContentReturn = returned;
   assertEquals(declared, errorReturn);
 });
+
+/** Contract: PrepareResponseContentParams may omit mode, an EXECUTE response carrying no compression mode. */
+Deno.test("PrepareResponseContentParams may omit mode", () => {
+  const params: PrepareResponseContentParams = {
+    jobId: "job-1",
+    continueUntilComplete: false,
+    documentKey: undefined,
+    contextForDocuments: undefined,
+    sourceObject: undefined,
+  };
+  assertEquals("mode" in params, false);
+});
+
+/** Contract: PrepareResponseContentParams.documentKey may be null, matching DialecticExecuteJobPayload.document_key. */
+Deno.test("PrepareResponseContentParams.documentKey may be null", () => {
+  const params: PrepareResponseContentParams = {
+    jobId: "job-1",
+    mode: "json",
+    continueUntilComplete: false,
+    documentKey: null,
+    contextForDocuments: undefined,
+    sourceObject: undefined,
+  };
+  assertEquals(params.documentKey, null);
+});

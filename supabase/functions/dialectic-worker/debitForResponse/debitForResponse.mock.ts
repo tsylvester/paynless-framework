@@ -5,6 +5,7 @@ import type {
   DebitForResponseSuccessReturn,
   DebitForResponseErrorReturn,
   DebitForResponseFn,
+  BoundDebitForResponseFn,
   DebitForResponseWalletReadErrorConstructorParams,
   DebitForResponseWalletNotFoundErrorConstructorParams,
   DebitForResponseWalletCurrencyErrorConstructorParams,
@@ -346,6 +347,15 @@ export function invalidateDebitForResponseErrorReturn(
 
 export const mockDebitForResponse: DebitForResponseFn = async (
   _deps,
+  _params,
+  _payload,
+) => {
+  return buildDebitForResponseSuccessReturn();
+};
+
+// --- BoundDebitForResponseFn (function mock — no configuration) ---
+
+export const mockBoundDebitForResponseFn: BoundDebitForResponseFn = async (
   _params,
   _payload,
 ) => {

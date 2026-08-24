@@ -1,11 +1,14 @@
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import type {
+    BoundSaveResponseFn,
     NodeTokenUsage,
     SaveResponseDeps,
     SaveResponseErrorReturn,
+    SaveResponseFn,
     SaveResponseParams,
     SaveResponsePayload,
     SaveResponseRequestBody,
+    SaveResponseReturn,
     SaveResponseSuccessReturn,
 } from "./saveResponse.interface.ts";
 
@@ -35,39 +38,15 @@ Deno.test(
 );
 
 Deno.test(
-    "Contract: SaveResponsePayload with token_usage and finish_reason stop",
+    "Contract: SaveResponsePayload has the required surface of four keys",
     () => {
-        const usage: NodeTokenUsage = {
-            prompt_tokens: 1,
-            completion_tokens: 2,
-            total_tokens: 3,
+        const surface: Record<keyof SaveResponsePayload, true> = {
+            assembled_content: true,
+            token_usage: true,
+            finish_reason: true,
+            processingTimeMs: true,
         };
-        const payload: SaveResponsePayload = {
-            assembled_content: "assembled",
-            token_usage: usage,
-            finish_reason: "stop",
-        };
-        assertEquals(typeof payload.assembled_content, "string");
-        assertEquals(typeof payload.finish_reason, "string");
-        if (payload.token_usage !== null) {
-            assertEquals(typeof payload.token_usage.prompt_tokens, "number");
-            assertEquals(typeof payload.token_usage.completion_tokens, "number");
-            assertEquals(typeof payload.token_usage.total_tokens, "number");
-        }
-    },
-);
-
-Deno.test(
-    "Contract: SaveResponsePayload allows null token_usage and null finish_reason",
-    () => {
-        const payload: SaveResponsePayload = {
-            assembled_content: "assembled",
-            token_usage: null,
-            finish_reason: null,
-        };
-        assertEquals(payload.token_usage === null, true);
-        assertEquals(payload.finish_reason === null, true);
-        assertEquals(typeof payload.assembled_content, "string");
+        assertEquals(Object.keys(surface).length, 4);
     },
 );
 
@@ -110,28 +89,24 @@ Deno.test(
 );
 
 Deno.test(
-    "Contract: SaveResponseDeps declares twelve dependency keys",
+    "Contract: SaveResponseDeps declares eight dependency keys",
     () => {
         const surface: Record<keyof SaveResponseDeps, true> = {
             logger: true,
-            fileManager: true,
-            notificationService: true,
-            continueJob: true,
             retryJob: true,
-            resolveFinishReason: true,
-            isIntermediateChunk: true,
-            determineContinuation: true,
-            buildUploadContext: true,
-            debitTokens: true,
-            sanitizeJsonContent: true,
-            enqueueRenderJob: true,
+            loadJobContext: true,
+            assembleAiResponse: true,
+            debitForResponse: true,
+            prepareResponseContent: true,
+            saveContributionResponse: true,
+            saveCompressedResponse: true,
         };
-        assertEquals(Object.keys(surface).length, 12);
+        assertEquals(Object.keys(surface).length, 8);
     },
 );
 
 Deno.test(
-    "Contract: SaveResponseSuccessReturn each status member",
+    "Contract: SaveResponseSuccessReturn.status discriminates four terminal states",
     async (t) => {
         await t.step("completed", () => {
             const r: SaveResponseSuccessReturn = { status: "completed" };
@@ -149,6 +124,12 @@ Deno.test(
             };
             assertEquals(r.status, "continuation_limit_reached");
         });
+        await t.step("waiting_for_children", () => {
+            const r: SaveResponseSuccessReturn = {
+                status: "waiting_for_children",
+            };
+            assertEquals(r.status, "waiting_for_children");
+        });
     },
 );
 
@@ -163,5 +144,54 @@ Deno.test(
         assertEquals(typeof err.retriable, "boolean");
         assertEquals("error" in err, true);
         assertEquals("retriable" in err, true);
+    },
+);
+
+Deno.test(
+    "Contract: SaveResponseReturn has exactly two arms — success and error",
+    () => {
+        const success: SaveResponseSuccessReturn = { status: "completed" };
+        const asReturn: SaveResponseReturn = success;
+        assertEquals(asReturn === success, true);
+        const error: SaveResponseErrorReturn = {
+            error: new Error("x"),
+            retriable: false,
+        };
+        const asReturnErr: SaveResponseReturn = error;
+        assertEquals(asReturnErr === error, true);
+    },
+);
+
+Deno.test(
+    "Contract: SaveResponseFn resolves to its declared Promise<SaveResponseReturn>",
+    () => {
+        const success: SaveResponseSuccessReturn = { status: "completed" };
+        const returned: ReturnType<SaveResponseFn> = Promise.resolve(success);
+        const declared: Promise<SaveResponseReturn> = returned;
+        assertEquals(declared instanceof Promise, true);
+        const error: SaveResponseErrorReturn = {
+            error: new Error("x"),
+            retriable: false,
+        };
+        const returnedErr: ReturnType<SaveResponseFn> = Promise.resolve(error);
+        const declaredErr: Promise<SaveResponseReturn> = returnedErr;
+        assertEquals(declaredErr instanceof Promise, true);
+    },
+);
+
+Deno.test(
+    "Contract: BoundSaveResponseFn drops deps and resolves to Promise<SaveResponseReturn>",
+    () => {
+        const success: SaveResponseSuccessReturn = { status: "completed" };
+        const returned: ReturnType<BoundSaveResponseFn> = Promise.resolve(success);
+        const declared: Promise<SaveResponseReturn> = returned;
+        assertEquals(declared instanceof Promise, true);
+        const error: SaveResponseErrorReturn = {
+            error: new Error("x"),
+            retriable: false,
+        };
+        const returnedErr: ReturnType<BoundSaveResponseFn> = Promise.resolve(error);
+        const declaredErr: Promise<SaveResponseReturn> = returnedErr;
+        assertEquals(declaredErr instanceof Promise, true);
     },
 );

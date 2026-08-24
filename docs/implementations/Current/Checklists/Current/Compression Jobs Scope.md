@@ -98,10 +98,13 @@ across a seam. Workstreams are addressed by name and by what they depend on, nev
 | Workstream | Depends on | Commit seam (app builds + runs + tests green) |
 |---|---|---|
 | Payload, transport & provenance | nothing in the compression machinery | every job payload inherits one base with one guard family; arms are selected by the job row's column and narrowed inside the arm; the prompt's resource id is recorded in one column on both artifact tables |
-| saveResponse decomposition | Payload, transport & provenance | `retryJob` canonical and surfacing both its failures; `saveResponse` is a thin orchestrator over the modules it routes to, each holding only the collaborators its own branches invoke. Each element of the decomposition is built by the deps factory in `dialectic-worker` and supplied in the worker's handler; `netlifyResponse` does not bind any deps for decomposed collaborators; a COMPRESS response persists, continues when incomplete, dispatches its render for a renderable source and writes its extracted artifact for a text source |
-| Compression cutover | saveResponse decomposition | compression loop live; one function dispatches every model call, so one tier cap, one wallet read and one affordability preflight govern compression and contribution alike; RAG core gone; every deps object assembled at the boundary by the context factory; every production tokenizer real; full-chain test green |
+| saveResponse decomposition | Payload, transport & provenance | `retryJob` canonical and surfacing both its failures; `saveResponse` is a thin orchestrator over the modules it routes to, each holding only the collaborators its own branches invoke. `netlifyResponse/index.ts` is the composition root for every module the orchestrator routes to and assembles each one's deps itself; a COMPRESS response persists, continues when incomplete, dispatches its render for a renderable source and writes its extracted artifact for a text source |
+| Compression cutover | saveResponse decomposition | compression loop live; one function dispatches every model call, so one tier cap, one wallet read and one affordability preflight govern compression and contribution alike; RAG core gone; every deps object in the worker assembled at its boundary by the context factory, which produces nothing for a function outside that process; every production tokenizer real; full-chain test green |
 
-Every file in this epic takes exactly ONE node. A file whose contract and whose consumers would
+Every file in this epic takes exactly ONE node, with one exception the seam rule itself forces:
+`processRenderJob.ts` takes a node in the first seam for its payload selection and a node in the
+cutover for its outcome contract, because the runner that reads that outcome does not exist until the
+cutover and the two cannot close together. A file whose contract and whose consumers would
 otherwise straddle a seam is placed in the seam that closes both.
 
 ---
@@ -124,15 +127,19 @@ row's `user_id`. What a payload does carry is `user_jwt`, which moves a call acr
 is derivable from nothing else.
 
 `preflight_input_tokens`, `document_key` and `context_for_documents` are members of
-`DialecticBaseJobPayload`, optional there and required on the arms that require them, because the
-shared front half reads all three before any arm is selected. `document_key` is a `FileType`, so no
+`DialecticBaseJobPayload`, optional on all arms, because the object must be initialized and handled
+before any of the three holds a value. `preflight_input_tokens` is written onto the job payload by
+`enqueueModelCall`, in the update that sets `status: 'queued'`, from the count the dispatcher
+computed for the affordability preflight; a reader that needs the count and does not find it returns
+its error arm, and no reader supplies a default. `document_key` is a `FileType`, so no
 consumer re-narrows it and no reader reaches it through a property descriptor.
 
 continueJob is lifted into its own module and provided its full support system. The function is made compliant to the repo standard and all callers are updated to call the corrected file. 
 
 The prompt's resource id is written once onto the job row's own
 payload and recorded in one column of one name on both artifact tables. Every function this
-workstream touches returns a discriminated `Success | Error` union.
+workstream touches returns a discriminated `Success | Error` union, except `processRenderJob`, whose
+outcome contract closes in the cutover alongside the runner that reads it.
 
 Strict node order: `enqueueCompressJobs` → `enqueueRenderJob` → `processRenderJob` →
 provenance migration → `file_manager` → `buildUploadContext` →
@@ -162,17 +169,21 @@ every responsibility in a straight line. The COMPRESS tail is a module beside th
 rather than a branch inside it, so the two persistence models are never interleaved.
 
 The cut follows the axis the data flow already has. A shared front half — job and provider
-resolution, response assembly, debit, content preparation — is job-type agnostic and serves both
-arms; the debit precedes content preparation because the spend it records precedes everything the
+resolution, response assembly, debit, content preparation — serves both arms. Job and provider
+resolution, response assembly and debit are job-type agnostic; content preparation reads arm
+members, so the arm is selected and its payload proven before it runs.
+The debit precedes content preparation because the spend it records precedes everything the
 function can still decide, and because `saveResponse` runs on the stream callback, where the money
 is already gone. The assistant message records the raw assembled content: the spend is real whether
 or not the response is usable, and the application does not subsidize an incomplete model response. A contribution back half — canonical identity, upload, relationship persistence,
 render dispatch, notifications, continuation, final status — is anchored on `dialectic_contributions`
 end to end and is what a COMPRESS response has no use for.
 
-`dialectic-worker/index.ts` is the composition root for this function, and the worker's deps factory
-is its single assembler. `saveResponse` is a `dialectic-worker` module, so its graph is the worker's
-graph. Each module is bound in the factory into a `Bound<Module>Fn`, and a composing module receives bound closures, never another module's deps to pass down. An orchestrator that receives one wide deps object and hands each sub-module
+`netlifyResponse/index.ts` is the composition root for this function and the single assembler of its
+graph. `saveResponse` runs in the `netlifyResponse` process, on the stream callback, so its graph is
+that function's graph; a factory inside `dialectic-worker` producing deps for a separate Edge
+Function is a layer violation, and the worker's context factory therefore assembles nothing here.
+Each module is bound at that root into a `Bound<Module>Fn`, and a composing module receives bound closures, never another module's deps to pass down. An orchestrator that receives one wide deps object and hands each sub-module
 a subset of it is prop drilling and a second assembler; it also carries the monolith's coupling forward under the name of narrowing.
 
 A module's deps are exactly the collaborators its `interaction.spec` branches invoke, checked against
@@ -194,7 +205,7 @@ still undetermined.
 | `retryJob` | `logger`, `notificationService` | `dbClient`, job row | the failed attempts |
 | `assembleAiResponse` | bound `countTokens` | `processingTimeMs`, model config, the stream result | `DialecticBaseJobPayload` |
 | `loadJobContext` | — | `dbClient`, `job_id` | `{}` |
-| `prepareResponseContent` | `logger`, `resolveFinishReason`, `isIntermediateChunk`, `sanitizeJsonContent`, `determineContinuation` | `job_id`, the assembled response | `DialecticBaseJobPayload` |
+| `prepareResponseContent` | `logger`, `resolveFinishReason`, `isIntermediateChunk`, `sanitizeJsonContent`, `determineContinuation` | `job_id`, and the continuation inputs each arm derives from its own proven payload | the assembled response |
 | `debitForResponse` | bound `debitTokens` | `dbClient`, job row, provider row, model config, the assembled response | `DialecticBaseJobPayload` |
 | `resolveContributionIdentity` | `logger` | `dbClient`, job row, provider row | `DialecticExecuteJobPayload` |
 | `persistContributionRelationships` | — | `dbClient`, job row, the contribution | `DialecticExecuteJobPayload` |
@@ -224,16 +235,20 @@ refactoring node at the end removes the functions that were extracted and replac
 regression oracle, pinned to the unchanged public signature, then retained IN FULL as the
 orchestrator's integration tier. The suites are renamed to integration tests and no case is deleted. The repo does compiles continually because the decomposition does not touch the existing implementation until all collaborators can be called; every module is authored and tested against its own copy.
 
-`retryJob` mutates job lifecycle state — it sets the row `retrying`, advances `attempt_count`, writes
-`error_details` and notifies. No branch of preparing a response's content invokes it. Every retry
+`retryJob` mutates job lifecycle state — it sets the row `retrying`, advances `attempt_count` from
+the row's own value to that value plus one, writes `error_details` and notifies. Advancing the count
+is the executor's job, never the caller's: no caller computes an attempt number, and `RetryJobParams`
+carries no slot for one. No branch of preparing a response's content invokes it. Every retry
 condition resolves instead to ONE retry-required success flavor carrying the condition's
 reason and no content members, and the orchestrator — which holds the provider row — builds the
 `FailedAttemptError[]` around that reason and dispatches. One retry call site in the workstream.
 
 The orchestrator consumes `retryJob`'s return, and a producer precedes its consumer.
 It lands as a new function-folder module at `dialectic-worker/retryJob/`, so the legacy
-`dialectic-worker/retryJob.ts` is untouched here and every current consumer keeps compiling. That
-legacy file is retired by the last consumer to switch, in the cutover.
+`dialectic-worker/retryJob.ts` is untouched here and every current consumer keeps compiling.
+`netlifyResponse/index.ts` binds the canonical module when it assembles this graph; the worker root
+is the last consumer to switch, and retires the legacy file in the cutover. Only the file retires —
+the capability does not. A job queue that cannot retry is not a job queue.
 
 Strict node order: `retryJob` → `assembleAiResponse` → `loadJobContext` → `prepareResponseContent` →
 `debitForResponse` → `resolveContributionIdentity` → `persistContributionRelationships` →
@@ -244,9 +259,9 @@ depend on neither each other nor each other's output, which is what lets the deb
 runtime while either may be authored first. The shared modules precede both arms; the contribution modules precede the
 arm that composes them; both arms precede the orchestrator that routes to them; and
 `netlifyResponse/index.ts` closes the seam because it consumes every module above and a consumer
-follows its producers. It assembles no deps: every module reaches it already bound from the worker's
-deps factory, so the graph is constructed once, in one shape. The worker's factory gains each module
-as that module lands and does not reach its final shape until the cutover.
+follows its producers. It is the sole assembler of that graph: it binds each module's deps itself, in
+one place, so the graph is constructed once, in one shape. It gains each module as that module lands
+and reaches its final shape when the last of them is authored.
 
 * `supabase/functions/dialectic-worker/retryJob/retryJob.ts`
 * `supabase/functions/dialectic-worker/assembleAiResponse/assembleAiResponse.ts`
@@ -259,8 +274,8 @@ as that module lands and does not reach its final shape until the cutover.
 * `supabase/functions/dialectic-worker/saveContributionResponse/saveContributionResponse.ts`
 * `supabase/functions/dialectic-worker/saveCompressedResponse/saveCompressedResponse.ts`
 * `supabase/functions/dialectic-worker/saveResponse.ts` — the relocation node.
-* `supabase/functions/netlifyResponse/index.ts` — assembles no deps; every module above reaches it
-  already bound from the worker's deps factory.
+* `supabase/functions/netlifyResponse/index.ts` — the composition root for this process; binds the
+  deps of every module above.
 * **COMMIT**
 
 ---
@@ -285,11 +300,38 @@ deletions close this workstream rather than trailing it.
 Every deps object in the WORKER is assembled at its boundary by the context factory. No call site
 inside the worker constructs one inline: for that process the factory is the single assembler, the
 worker root supplies unbound implementations to it, and the graph is constructed once, in one shape.
-The factory's reach is every consumer of a worker module — `netlifyResponse` is a separate function,
-but the modules it calls are the worker's, so it takes their deps already bound from that factory and
-assembles none of its own, per the workstream above. Params remain per-invocation and are constructed by the
+The factory's reach stops at the worker process. `netlifyResponse` is a separate function and
+assembles its own graph, per the workstream above, so the factory produces nothing for it:
+`createSaveResponseContext` and `ISaveResponseContext` retire, and every member the context carries
+solely for `saveResponse` — `continueJob`, `resolveFinishReason`, `isIntermediateChunk`,
+`determineContinuation`, `buildUploadContext`, `sanitizeJsonContent`, `debitTokens` and
+`computeJobSig` — leaves `IJobContext`, `JobContextParams` and the context guard with them.
+`fileManager` and `retryJob` stay: worker code reads both. Params remain per-invocation and are constructed by the
 caller, which is why the consumers holding params literals share this seam with the contracts they
 name.
+
+Retry becomes the runner's, once, for every job type. `handleJob` in `dialectic-worker/index.ts`
+already claims the job and writes its terminal failure; it gains the branch between them —
+`attempt_count < max_retries` dispatches `retryJob`, otherwise the row fails terminally — so the
+`max_retries` and `attempt_count` columns govern PLAN, EXECUTE, RENDER and COMPRESS alike instead of
+EXECUTE alone. No processor writes a terminal or retrying status: `processSimpleJob` loses its
+`retryJob` call, its `failed` write and its `retry_loop_failed` write; `processComplexJob` loses its
+six `failed` writes and keeps every `waiting_for_children`, `waiting_for_prerequisite` and
+`completed` write, those being a planner's own outcomes rather than a failure verdict;
+`processRenderJob` loses its two `failed` writes; and `processJob` stops writing `failed` for its
+COMPRESS arm. Each reports its outcome on a `Success | Error` return, so `IJobProcessors` carries one
+outcome shape and the runner reads a value instead of catching a throw. 
+
+Dispatching a retry means constructing its payload, and the runner cannot construct the one it has.
+`RetryJobPayload.failedAttempts` is a non-empty `FailedAttemptError[]` whose every element carries a
+required `api_identifier`; the runner's present `failedAttempts: []` fails `isRetryJobPayload` on the
+emptiness check alone, and `api_identifier` lives on the provider row, not the job row. So `handleJob`
+resolves `ai_providers` from the job payload's `model_id` — a required member of
+`DialecticBaseJobPayload`, and therefore present for every job type, planning and rendering included —
+and builds a one-element array from that row, the model id and the failure's message. The provider
+read happens on the failure path only. `RetryJobPayload` itself does not change: it is already landed
+and already satisfied by the response process's dispatcher, which holds a provider row for reasons of
+its own, and reopening a committed contract to spare one caller a query is the worse trade.
 
 Every production tokenizer becomes real. A character-indexing encoder and a `text.length` token count
 make a preflight read high and misclassify affordable requests as unaffordable; the epic does not ship
@@ -297,15 +339,16 @@ with known-broken token accounting at any site that produces a token count.
 
 Strict node order: `applyCompressionOverlay` → `gatherArtifacts` → `vector_utils` → `compressPrompt`
 → `calculateAffordability` → `StreamChat` → `streamRewind` → `streamRequest` → `chat/index.ts` →
-`prepareModelJob` → `processCompressJob` → `createJobContext` → `processSimpleJob` → `processJob` →
-`dialectic-worker/index.ts` → RAG deletions → RAG-removal migration. The overlay precedes
+`prepareModelJob` → `processCompressJob` → `createJobContext` → `processSimpleJob` →
+`processComplexJob` → `processRenderJob` → `processJob` → `dialectic-worker/index.ts` → RAG
+deletions → RAG-removal migration. The overlay precedes
 `gatherArtifacts` because that function injects it and constructs its params, and its literal
 comparisons compile against the untightened type; `gatherArtifacts` is the sole producer of the
 tightened `ResourceDocument.type` and lands it before any consumer assumes a conformant value; the
 scorer precedes the loop that invokes it; the loop precedes the dispatcher that composes it; the
 dispatcher precedes its two callers; the factory precedes every consumer that reads a member off the
-context it assembles; the consumer chain then runs producers first, `processSimpleJob` before
-`processJob`; the worker root follows the chain it wires, because a root closes a graph rather than
+context it assembles; the consumer chain then runs producers first, every processor before the
+`processJob` that dispatches it; the worker root follows the chain it wires, because a root closes a graph rather than
 opening one; and the deletions follow the severing of their last references. `StreamChat` and
 `streamRewind` both narrow `CountTokensFn` to `BoundCountTokensFn`, eliminating their inline fake
 tokenizer constructions; `streamRequest` is a pure pass-through that narrows its own
@@ -319,6 +362,7 @@ compression test rides the worker root, the node that closes the chain it exerci
 * `supabase/functions/dialectic-worker/applyCompressionOverlay/applyCompressionOverlay.ts`
 * `supabase/functions/dialectic-worker/gatherArtifacts/gatherArtifacts.ts`
 * `supabase/functions/_shared/utils/vector_utils.ts`
+* `supabase/functions/dialectic-worker/enqueueCompressJobs/enqueueCompressJobs.ts`
 * `supabase/functions/dialectic-worker/compressPrompt/compressPrompt.ts`
 * `supabase/functions/dialectic-worker/calculateAffordability/calculateAffordability.ts`
 * `supabase/functions/chat/streamChat/StreamChat.ts`
@@ -328,19 +372,27 @@ compression test rides the worker root, the node that closes the chain it exerci
   no implementation change.
 * `supabase/functions/chat/index.ts` — the chat composition root; binds real `countTokens` with real
   `CountTokensDeps` and assigns the `BoundCountTokensFn` to `ChatDeps.countTokens`.
+* `supabase/functions/dialectic-worker/retryJob/retryJob.ts`
 * `supabase/functions/dialectic-worker/prepareModelJob/prepareModelJob.ts`
 * `supabase/functions/dialectic-worker/processCompressJob/processCompressJob.ts`
 * `supabase/functions/dialectic-worker/createJobContext/createJobContext.ts` — the single assembler
   of every deps object the WORKER constructs.
 * `supabase/functions/dialectic-worker/processSimpleJob.ts` — supplies the dispatcher its narrowed
-  params and payload, `gatherArtifacts` its two overlay params, and narrows the dispatcher's and the
-  retry dispatcher's returns.
+  params and payload, `gatherArtifacts` its two overlay params, narrows the dispatcher's return, and
+  reports its outcome rather than writing a retrying, failed or terminal status.
+* `supabase/functions/dialectic-worker/processComplexJob.ts` — reports its outcome rather than
+  writing a failed status, keeping every deferral and completion write it owns.
+* `supabase/functions/dialectic-worker/processRenderJob.ts` — returns a discriminated
+  `Success | Error` union in place of `Promise<void>` and reports its outcome rather than writing a
+  failed status, on its contribution arm and its compressed arm alike.
 * `supabase/functions/dialectic-worker/processJob.ts` — stops constructing `ProcessCompressJobDeps`
-  inline.
+  inline and stops writing a failed status for its COMPRESS arm.
 * `supabase/functions/dialectic-worker/index.ts` — the root supplies unbound implementations and
-  composes nothing, retires the legacy `dialectic-worker/retryJob.ts` and its suite as the last
-  consumer to switch off it, and carries the full-chain compression integration test: real internals,
-  only true external boundaries mocked, no repo-owned function mocked.
+  composes nothing; `handleJob` gains the retry branch between its claim and its terminal write and
+  becomes the worker process's sole retry dispatcher; the root retires the legacy
+  `dialectic-worker/retryJob.ts` and its suite as the last consumer to switch off it, and carries
+  the full-chain compression integration test: real internals, only true external boundaries mocked,
+  no repo-owned function mocked.
 * **COMMIT**
 
 ## Remove RAG Machinery 

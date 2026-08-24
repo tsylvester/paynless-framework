@@ -48,7 +48,7 @@ test("isOwnedObject rejects non-objects", () => {
   for (const x of [null, undefined, 7, "x", []]) assert(!isOwnedObject(x));
 });
 
-/** Contract: case 4 — each property, corrupted in turn, is rejected. */
+/** each property, corrupted in turn, is rejected. */
 test("isOwnedObject rejects each corrupted property", () => {
   assert(!isOwnedObject(invalidateOwnedObject({ foo: null })));
   assert(!isOwnedObject(invalidateOwnedObject({ bar: 42 })));

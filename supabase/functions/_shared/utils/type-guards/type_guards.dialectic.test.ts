@@ -95,6 +95,7 @@ import {
 import { DialecticStageSlug, FileType } from '../../types/file_manager.types.ts';
 import { ContinueReason, FinishReason } from '../../types.ts';
 import { buildDialecticCompressJobPayload } from '../../../dialectic-worker/enqueueCompressJobs/enqueueCompressJobs.mock.ts';
+import { isDialecticCompressJobPayload } from '../../../dialectic-worker/enqueueCompressJobs/enqueueCompressJobs.guard.ts';
 import {
     buildGitHubRepoSettings,
     invalidateGitHubRepoSettings,
@@ -627,6 +628,27 @@ Deno.test('Type Guard: isDialecticBaseJobPayload', async (t) => {
         assertThrows(() => isDialecticBaseJobPayload(42), Error, 'Payload must be a non-null object.');
         assertThrows(() => isDialecticBaseJobPayload('string'), Error, 'Payload must be a non-null object.');
     });
+
+    // preflight_input_tokens — optional member
+    /** Contract: isDialecticBaseJobPayload accepts the builder default with preflight_input_tokens absent. */
+    await t.step('should accept buildDialecticBaseJobPayload() with preflight_input_tokens absent', () => {
+        assert(isDialecticBaseJobPayload(buildDialecticBaseJobPayload()));
+    });
+
+    /** Contract: isDialecticBaseJobPayload accepts a numeric preflight_input_tokens. */
+    await t.step('should accept buildDialecticBaseJobPayload({ preflight_input_tokens: 128 })', () => {
+        assert(isDialecticBaseJobPayload(buildDialecticBaseJobPayload({ preflight_input_tokens: 128 })));
+    });
+
+    /** Contract: isDialecticBaseJobPayload throws Invalid preflight_input_tokens. when the member is a string. */
+    await t.step("should throw Invalid preflight_input_tokens. on invalidateDialecticBaseJobPayload({ preflight_input_tokens: 'x' })", () => {
+        assertThrows(() => isDialecticBaseJobPayload(invalidateDialecticBaseJobPayload({ preflight_input_tokens: 'x' })), Error, 'Invalid preflight_input_tokens.');
+    });
+
+    /** Contract: isDialecticBaseJobPayload throws Invalid preflight_input_tokens. when the member is null. */
+    await t.step('should throw Invalid preflight_input_tokens. on invalidateDialecticBaseJobPayload({ preflight_input_tokens: null })', () => {
+        assertThrows(() => isDialecticBaseJobPayload(invalidateDialecticBaseJobPayload({ preflight_input_tokens: null })), Error, 'Invalid preflight_input_tokens.');
+    });
 });
 
 Deno.test('Type Guard: isDialecticExecuteJobPayload', async (t) => {
@@ -881,6 +903,11 @@ Deno.test('Type Guard: isDialecticExecuteJobPayload', async (t) => {
     await t.step('should throw if is_test_job is null', () => {
         const p = invalidateDialecticExecuteJobPayload({ is_test_job: null });
         assertThrows(() => isDialecticExecuteJobPayload(p), Error, 'Invalid is_test_job.');
+    });
+
+    /** Contract: isDialecticExecuteJobPayload admits preflight_input_tokens via the base allowed-key set. */
+    await t.step('should accept buildDialecticExecuteJobPayload({ preflight_input_tokens: 128 })', () => {
+        assert(isDialecticExecuteJobPayload(buildDialecticExecuteJobPayload({ preflight_input_tokens: 128 })));
     });
 });
 
@@ -3062,5 +3089,12 @@ Deno.test('Type Guard: isUnifiedAIResponse', async (t) => {
 
     await t.step('accepts inputTokens and outputTokens undefined', () => {
         assert(isUnifiedAIResponse(buildUnifiedAIResponse({ content: null, tokenUsage: null, inputTokens: undefined, outputTokens: undefined })));
+    });
+});
+
+Deno.test('Type Guard: isDialecticCompressJobPayload admits preflight_input_tokens', async (t) => {
+    /** Contract: isDialecticCompressJobPayload accepts a compress payload carrying a numeric preflight_input_tokens. */
+    await t.step('should accept buildDialecticCompressJobPayload({ preflight_input_tokens: 128 })', () => {
+        assert(isDialecticCompressJobPayload(buildDialecticCompressJobPayload({ preflight_input_tokens: 128 })));
     });
 });

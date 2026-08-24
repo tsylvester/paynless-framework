@@ -6,6 +6,7 @@ import {
   isAssembleAiResponseSuccessReturn,
   isAssembleAiResponseErrorReturn,
   isAssembleAiResponseTokenCountError,
+  isAssembleAiResponseMissingPreflightError,
 } from "./assembleAiResponse.guard.ts";
 import {
   buildAssembleAiResponseDeps,
@@ -15,9 +16,10 @@ import {
 import { isDialecticContinueReason } from "../../_shared/utils/type-guards/type_guards.dialectic.ts";
 
 /**
- * Contract: given a payload whose tokenUsage is not null, the response carries
- *   those counts unchanged and the counter is never invoked.
- * Arrange: payload with tokenUsage { 10, 20, 30 }; deps whose countTokens returns 999.
+ * Contract: given a payload whose tokenUsage is not null and no preflight count, the response
+ *   carries those counts unchanged and the counter is never invoked.
+ * Arrange: payload with tokenUsage { 10, 20, 30 }; params with preflightInputTokens omitted;
+ *   deps whose countTokens returns 999.
  * Act:     assembleAiResponse over the reported-usage payload.
  * Assert:  success arm; tokenUsage is { 10, 20, 30 }; countTokens spy has zero calls.
  */
@@ -26,12 +28,13 @@ Deno.test("reported usage is used as given — counter never invoked", () => {
   const countTokensFn: BoundCountTokensFn = (_payload, _modelConfig) => 999;
   const countTokens = spy(countTokensFn);
   const deps = buildAssembleAiResponseDeps({ countTokens });
+  const { preflightInputTokens: _omit, ...params } = buildAssembleAiResponseParams();
   const payload = buildAssembleAiResponsePayload({
     tokenUsage: { prompt_tokens: 10, completion_tokens: 20, total_tokens: 30 },
   });
 
   // Act
-  const result = assembleAiResponse(deps, buildAssembleAiResponseParams(), payload);
+  const result = assembleAiResponse(deps, params, payload);
 
   // Assert
   assert(isAssembleAiResponseSuccessReturn(result));
@@ -129,10 +132,11 @@ Deno.test("counter is called with the trimmed content and the params' config", (
 });
 
 /**
- * Contract: given a payload whose tokenUsage is null and whose content is whitespace,
- *   the response's content is null, tokenUsage is null, inputTokens and outputTokens
- *   are absent, and the counter is never invoked.
- * Arrange: payload with tokenUsage null, content "   " (whitespace); deps with a countTokens spy.
+ * Contract: given a payload whose tokenUsage is null and whose content is whitespace, with no
+ *   preflight count, the response's content is null, tokenUsage is null, inputTokens and
+ *   outputTokens are absent, and the counter is never invoked.
+ * Arrange: payload with tokenUsage null, content "   " (whitespace); params with
+ *   preflightInputTokens omitted; deps with a countTokens spy.
  * Act:     assembleAiResponse over the empty-content payload.
  * Assert:  success arm; content is null; tokenUsage is null; inputTokens and outputTokens are undefined;
  *   countTokens spy has zero calls.
@@ -142,13 +146,14 @@ Deno.test("empty content suppresses synthesis — null content, null usage, no c
   const countTokensFn: BoundCountTokensFn = (_payload, _modelConfig) => 999;
   const countTokens = spy(countTokensFn);
   const deps = buildAssembleAiResponseDeps({ countTokens });
+  const { preflightInputTokens: _omit, ...params } = buildAssembleAiResponseParams();
   const payload = buildAssembleAiResponsePayload({
     assembledContent: "   ",
     tokenUsage: null,
   });
 
   // Act
-  const result = assembleAiResponse(deps, buildAssembleAiResponseParams(), payload);
+  const result = assembleAiResponse(deps, params, payload);
 
   // Assert
   assert(isAssembleAiResponseSuccessReturn(result));
@@ -397,4 +402,65 @@ Deno.test("purity — params and payload are not mutated", () => {
   assertEquals(payload.assembledContent, "  purity test  ");
   assertEquals(payload.tokenUsage, null);
   assertEquals(payload.finishReason, null);
+});
+
+/**
+ * Contract: given no provider usage, non-empty content, and no preflight count, the return is
+ *   the error arm carrying AssembleAiResponseMissingPreflightError with retriable false, and
+ *   the counter is never invoked.
+ * Arrange: payload with tokenUsage null, content "content that would synthesize"; params with
+ *   preflightInputTokens omitted; deps with a countTokens spy.
+ * Act:     assembleAiResponse over the no-count synthesis payload.
+ * Assert:  error arm; error is AssembleAiResponseMissingPreflightError; retriable is false;
+ *   countTokens spy has zero calls.
+ */
+Deno.test("no preflight count — error arm with AssembleAiResponseMissingPreflightError", () => {
+  // Arrange
+  const countTokensFn: BoundCountTokensFn = (_payload, _modelConfig) => 999;
+  const countTokens = spy(countTokensFn);
+  const deps = buildAssembleAiResponseDeps({ countTokens });
+  const { preflightInputTokens: _omit, ...params } = buildAssembleAiResponseParams();
+  const payload = buildAssembleAiResponsePayload({
+    assembledContent: "content that would synthesize",
+    tokenUsage: null,
+  });
+
+  // Act
+  const result = assembleAiResponse(deps, params, payload);
+
+  // Assert
+  assert(isAssembleAiResponseErrorReturn(result));
+  if (isAssembleAiResponseErrorReturn(result)) {
+    assert(isAssembleAiResponseMissingPreflightError(result.error));
+    assertEquals(result.retriable, false);
+  }
+  assertEquals(countTokens.calls.length, 0);
+});
+
+/**
+ * Contract: the missing-preflight error's apiIdentifier is the params' modelConfig.api_identifier,
+ *   asserted against an independent literal.
+ * Arrange: payload with tokenUsage null, non-empty content; params with preflightInputTokens
+ *   omitted and the default modelConfig (api_identifier "dummy-model-v1").
+ * Act:     assembleAiResponse over the no-count synthesis payload.
+ * Assert:  error arm; error's apiIdentifier is "dummy-model-v1".
+ */
+Deno.test("missing-preflight error's apiIdentifier is the params' modelConfig.api_identifier", () => {
+  // Arrange
+  const deps = buildAssembleAiResponseDeps();
+  const { preflightInputTokens: _omit, ...params } = buildAssembleAiResponseParams();
+  const payload = buildAssembleAiResponsePayload({
+    assembledContent: "content that would synthesize",
+    tokenUsage: null,
+  });
+
+  // Act
+  const result = assembleAiResponse(deps, params, payload);
+
+  // Assert
+  assert(isAssembleAiResponseErrorReturn(result));
+  if (isAssembleAiResponseErrorReturn(result)) {
+    assert(isAssembleAiResponseMissingPreflightError(result.error));
+    assertEquals(result.error.apiIdentifier, "dummy-model-v1");
+  }
 });

@@ -119,3 +119,8 @@ export type LoadJobContextFn = (
   params: LoadJobContextParams,
   payload: LoadJobContextPayload,
 ) => Promise<LoadJobContextReturn>;
+
+export type BoundLoadJobContextFn = (
+  params: LoadJobContextParams,
+  payload: LoadJobContextPayload,
+) => Promise<LoadJobContextReturn>;

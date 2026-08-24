@@ -10,13 +10,22 @@ import {
   resetMockNotificationService,
 } from "../../_shared/utils/notification.service.mock.ts";
 import { MockLogger } from "../../_shared/logger.mock.ts";
-import { MockFileManagerService } from "../../_shared/services/file_manager.mock.ts";
+import { createMockFileManagerService } from "../../_shared/services/file_manager.mock.ts";
 import { sanitizeJsonContent } from "../../_shared/utils/jsonSanitizer/jsonSanitizer.ts";
 import { resolveFinishReason } from "../../_shared/utils/resolveFinishReason.ts";
 import { isIntermediateChunk } from "../../_shared/utils/isIntermediateChunk.ts";
 import { determineContinuation } from "../../_shared/utils/determineContinuation/determineContinuation.ts";
 import { buildUploadContext } from "../../_shared/utils/buildUploadContext/buildUploadContext.ts";
-import { retryJob } from "../retryJob.ts";
+import { loadJobContext } from "../loadJobContext/loadJobContext.ts";
+import { assembleAiResponse } from "../assembleAiResponse/assembleAiResponse.ts";
+import { debitForResponse } from "../debitForResponse/debitForResponse.ts";
+import { prepareResponseContent } from "../prepareResponseContent/prepareResponseContent.ts";
+import { retryJob } from "../retryJob/retryJob.ts";
+import { saveContributionResponse } from "../saveContributionResponse/saveContributionResponse.ts";
+import { saveCompressedResponse } from "../saveCompressedResponse/saveCompressedResponse.ts";
+import { resolveContributionIdentity } from "../resolveContributionIdentity/resolveContributionIdentity.ts";
+import { persistContributionRelationships } from "../persistContributionRelationships/persistContributionRelationships.ts";
+import { finalizeContributionJob } from "../finalizeContributionJob/finalizeContributionJob.ts";
 import { continueJob } from "../continueJob/continueJob.ts";
 import { saveResponse } from "./saveResponse.ts";
 import type {
@@ -25,170 +34,90 @@ import type {
   SaveResponsePayload,
   SaveResponseReturn,
   SaveResponseSuccessReturn,
-  SaveResponseErrorReturn,
 } from "./saveResponse.interface.ts";
-import {
-  createMockContributionRow,
-  createMockFileManager,
-  saveResponseTestPayload,
-  saveResponseTestPayloadDocumentArtifact,
-} from "./saveResponse.mock.ts";
-import type { DialecticExecuteJobPayload } from "../../dialectic-service/dialectic.interface.ts";
-import { isJson } from "../../_shared/utils/type_guards.ts";
+import type { BoundLoadJobContextFn } from "../loadJobContext/loadJobContext.interface.ts";
+import type { BoundAssembleAiResponseFn } from "../assembleAiResponse/assembleAiResponse.interface.ts";
+import type { BoundDebitForResponseFn } from "../debitForResponse/debitForResponse.interface.ts";
+import type { BoundPrepareResponseContentFn } from "../prepareResponseContent/prepareResponseContent.interface.ts";
+import type { BoundRetryJobFn } from "../retryJob/retryJob.interface.ts";
+import type { BoundSaveContributionResponseFn } from "../saveContributionResponse/saveContributionResponse.interface.ts";
+import type { BoundSaveCompressedResponseFn } from "../saveCompressedResponse/saveCompressedResponse.interface.ts";
+import type { BoundResolveContributionIdentityFn } from "../resolveContributionIdentity/resolveContributionIdentity.interface.ts";
+import type { BoundPersistContributionRelationshipsFn } from "../persistContributionRelationships/persistContributionRelationships.interface.ts";
+import type { BoundFinalizeContributionJobFn } from "../finalizeContributionJob/finalizeContributionJob.interface.ts";
+import type { BoundContinueJobFn } from "../continueJob/continueJob.interface.ts";
 import type { BoundEnqueueRenderJobFn } from "../enqueueRenderJob/enqueueRenderJob.interface.ts";
-import { isSaveResponseSuccessReturn, isSaveResponseErrorReturn } from "./saveResponse.guard.ts";
-
+import type { DialecticJobRow } from "../../dialectic-service/dialectic.interface.ts";
+import {
+  buildDialecticJobRow,
+  buildDialecticContributionRow,
+  buildDialecticExecuteJobPayload,
+  buildTokenWalletRow,
+  buildDialecticSessionRow,
+  buildDocumentRelationships,
+  buildContentToInclude,
+} from "../../_shared/dialectic.mock.ts";
+import { buildDialecticCompressJobPayload } from "../enqueueCompressJobs/enqueueCompressJobs.mock.ts";
+import { buildMockProvider } from "../../_shared/ai_service/ai_provider.mock.ts";
+import { buildAssembleAiResponseDeps } from "../assembleAiResponse/assembleAiResponse.mock.ts";
+import { buildDebitForResponseDeps } from "../debitForResponse/debitForResponse.mock.ts";
+import { buildPrepareResponseContentDeps } from "../prepareResponseContent/prepareResponseContent.mock.ts";
+import { buildSaveContributionResponseDeps } from "../saveContributionResponse/saveContributionResponse.mock.ts";
+import { buildSaveCompressedResponseDeps } from "../saveCompressedResponse/saveCompressedResponse.mock.ts";
+import { buildFinalizeContributionJobDeps } from "../finalizeContributionJob/finalizeContributionJob.mock.ts";
+import { buildEnqueueRenderJobSuccessReturn } from "../enqueueRenderJob/enqueueRenderJob.mock.ts";
+import { isSaveResponseSuccessReturn } from "./saveResponse.guard.ts";
+import { isJson } from "../../_shared/utils/type-guards/type_guards.common.ts"
 // ---------------------------------------------------------------------------
-// Helpers
+// Shared real-bound consts — real implementations bound with real sub-deps.
+// Sub-deps that are boundary mocks use the mock deps builders, whose defaults
+// are themselves built from builders (buildDebitTokensSuccess, etc.).
 // ---------------------------------------------------------------------------
 
-function makeJobRow(payload: DialecticExecuteJobPayload, overrides?: Record<string, unknown>) {
-  if (!isJson(payload)) {
-    throw new Error("Test payload is not valid JSON.");
-  }
-  return {
-    id: "job-id-123",
-    session_id: "session-456",
-    stage_slug: "thesis",
-    iteration_number: 1,
-    status: "queued",
-    user_id: "user-789",
-    attempt_count: 0,
-    completed_at: null,
-    created_at: new Date().toISOString(),
-    error_details: null,
-    max_retries: 3,
-    parent_job_id: null,
-    prerequisite_job_id: null,
-    results: null,
-    started_at: null,
-    target_contribution_id: null,
+const integrationLogger = new MockLogger();
+
+const realBoundLoadJobContext: BoundLoadJobContextFn = (params, payload) =>
+  loadJobContext({}, params, payload);
+
+const realBoundAssembleAiResponse: BoundAssembleAiResponseFn = (params, payload) =>
+  assembleAiResponse(buildAssembleAiResponseDeps(), params, payload);
+
+const realBoundDebitForResponse: BoundDebitForResponseFn = (params, payload) =>
+  debitForResponse(buildDebitForResponseDeps(), params, payload);
+
+const realBoundPrepareResponseContent: BoundPrepareResponseContentFn = (params, payload) =>
+  prepareResponseContent(
+    buildPrepareResponseContentDeps({
+      logger: integrationLogger,
+      resolveFinishReason,
+      isIntermediateChunk,
+      sanitizeJsonContent,
+      determineContinuation,
+    }),
+    params,
     payload,
-    is_test_job: false,
-    job_type: "EXECUTE",
-    idempotency_key: null,
-    ...overrides,
-  };
-}
+  );
 
-function makeProviderRow() {
-  return {
-    id: "model-def",
-    provider: "mock-provider",
-    name: "Mock AI",
-    api_identifier: "mock-ai-v1",
-    config: {
-      tokenization_strategy: { type: "rough_char_count" },
-      context_window_tokens: 10000,
-      input_token_cost_rate: 0.001,
-      output_token_cost_rate: 0.002,
-      provider_max_input_tokens: 100,
-      provider_max_output_tokens: 50,
-      api_identifier: "mock-ai-v1",
-    },
-    created_at: new Date().toISOString(),
-    description: null,
-    is_active: true,
-    is_enabled: true,
-    is_default_embedding: false,
-    is_default_generation: false,
-    updated_at: new Date().toISOString(),
-  };
-}
+const realBoundRetryJob: BoundRetryJobFn = (params, payload) =>
+  retryJob({ logger: integrationLogger, notificationService: mockNotificationService }, params, payload);
 
-function makeSessionRow() {
-  return {
-    id: "session-456",
-    project_id: "project-abc",
-    session_description: "A mock session",
-    user_input_reference_url: null,
-    iteration_count: 1,
-    selected_model_ids: ["model-def"],
-    status: "in-progress",
-    associated_chat_id: "chat-789",
-    current_stage_id: "stage-1",
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-    idempotency_key: "session-456_render",
-    viewing_stage_id: null,
-  };
-}
+const realBoundResolveContributionIdentity: BoundResolveContributionIdentityFn = (params, payload) =>
+  resolveContributionIdentity({ logger: integrationLogger }, params, payload);
 
-function makeWalletRow() {
-  return {
-    wallet_id: "wallet-ghi",
-    user_id: "user-789",
-    organization_id: null,
-    balance: 10000,
-    currency: "AI_TOKEN",
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  };
-}
+const realBoundPersistContributionRelationships: BoundPersistContributionRelationshipsFn = (params, payload) =>
+  persistContributionRelationships({}, params, payload);
+
+const realBoundContinueJob: BoundContinueJobFn = (params, payload) =>
+  continueJob({ logger: integrationLogger }, params, payload);
+
+const realBuildUploadContext = buildUploadContext;
 
 /**
- * Build deps with REAL retryJob & continueJob (within the application boundary).
- * Mock only at external boundaries: fileManager, notificationService, debitTokens.
+ * Wire the mock Supabase client with DB row data from builders. Only the
+ * jobRow varies per test; provider, wallet, and session rows use builder
+ * defaults.
  */
-function buildIntegrationDeps(overrides?: Partial<SaveResponseDeps>): SaveResponseDeps {
-  const logger = new MockLogger();
-  const base: SaveResponseDeps = {
-    logger,
-    fileManager: new MockFileManagerService(),
-    notificationService: mockNotificationService,
-    continueJob,
-    retryJob,
-    resolveFinishReason,
-    isIntermediateChunk,
-    determineContinuation,
-    buildUploadContext,
-    debitTokens: async () => ({
-      result: {
-        userMessage: {
-          id: crypto.randomUUID(),
-          chat_id: null,
-          user_id: null,
-          role: "user",
-          content: "mock-user-message",
-          ai_provider_id: null,
-          system_prompt_id: null,
-          token_usage: null,
-          is_active_in_thread: true,
-          error_type: null,
-          response_to_message_id: null,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        },
-        assistantMessage: {
-          id: crypto.randomUUID(),
-          chat_id: null,
-          user_id: null,
-          role: "assistant",
-          content: "mock-assistant-message",
-          ai_provider_id: null,
-          system_prompt_id: null,
-          token_usage: null,
-          is_active_in_thread: true,
-          error_type: null,
-          response_to_message_id: null,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        },
-      },
-      transactionRecordedSuccessfully: true,
-    }),
-    sanitizeJsonContent,
-    enqueueRenderJob: async () => ({ renderJobId: null }),
-  };
-  if (!overrides) return base;
-  return { ...base, ...overrides };
-}
-
-function buildMockSupabase(
-  jobPayload: DialecticExecuteJobPayload,
-  jobRowOverrides?: Record<string, unknown>,
-) {
-  const jobRow = makeJobRow(jobPayload, jobRowOverrides);
+function buildMockSupabase(jobRow: DialecticJobRow) {
   return createMockSupabaseClient("integration-test", {
     genericMockResults: {
       dialectic_generation_jobs: {
@@ -197,13 +126,13 @@ function buildMockSupabase(
         insert: { data: null, error: null },
       },
       ai_providers: {
-        select: { data: [makeProviderRow()], error: null },
-      },
-      dialectic_sessions: {
-        select: { data: [makeSessionRow()], error: null },
+        select: { data: [buildMockProvider()], error: null },
       },
       token_wallets: {
-        select: { data: [makeWalletRow()], error: null },
+        select: { data: [buildTokenWalletRow()], error: null },
+      },
+      dialectic_sessions: {
+        select: { data: [buildDialecticSessionRow()], error: null },
       },
       dialectic_contributions: {
         update: { data: null, error: null },
@@ -216,33 +145,95 @@ function buildMockSupabase(
 }
 
 // ---------------------------------------------------------------------------
-// Tests
+// EXECUTE tests — exercise the contribution arm through the full chain
 // ---------------------------------------------------------------------------
 
-Deno.test("Integration: saveResponse terminal success updates job to completed and fires execute_completed notification", async () => {
+/**
+ * Contract: an EXECUTE job_type with valid content and finish_reason "stop"
+ *   routes through the contribution arm and returns status "completed".
+ * Arrange: a document-artifact EXECUTE payload; a file manager configured to
+ *   return a valid contribution record on upload.
+ * Act: saveResponse over the arranged deps, params, payload.
+ * Assert: the result is the success arm with status "completed".
+ * Boundary: DB, file manager, notification service, debitTokens, countTokens,
+ *   enqueueRenderJob — the chain run real is saveResponse → loadJobContext →
+ *   assembleAiResponse → debitForResponse → prepareResponseContent →
+ *   saveContributionResponse → resolveContributionIdentity →
+ *   persistContributionRelationships → finalizeContributionJob.
+ * Mocked: createMockSupabaseClient, MockFileManagerService,
+ *   mockNotificationService, debitTokens, countTokens, enqueueRenderJob.
+ */
+Deno.test("Integration: EXECUTE terminal success returns completed", async () => {
+  // Arrange
   resetMockNotificationService();
-  // Use document-artifact payload so isDocumentRelated(fileType) is true and execute_completed fires
-  const contribution = createMockContributionRow({
-    id: "contrib-integration-1",
-    document_relationships: {
-      thesis: "contrib-integration-1",
-      source_group: "00000000-0000-4000-8000-000000000002",
-    },
+  const executePayload = buildDialecticExecuteJobPayload({
+    document_relationships: buildDocumentRelationships({ source_group: "sg-terminal-success" }),
   });
-  const fm = createMockFileManager({ outcome: "success", contribution });
-  const deps = buildIntegrationDeps({ fileManager: fm });
-  const mockSetup = buildMockSupabase(saveResponseTestPayloadDocumentArtifact);
+  if(!isJson(executePayload)){
+    throw new Error ("Payload must be json compatible")
+  }
+  const jobRow = buildDialecticJobRow({ payload: executePayload });
+  const fm = createMockFileManagerService();
+  fm.setUploadAndRegisterFileResponse(buildDialecticContributionRow(), null);
+  const enqueueRenderJobStub: BoundEnqueueRenderJobFn = async () =>
+    buildEnqueueRenderJobSuccessReturn({ renderJobId: null });
+  const boundFinalize: BoundFinalizeContributionJobFn = (params, payload) =>
+    finalizeContributionJob(
+      buildFinalizeContributionJobDeps({
+        logger: integrationLogger,
+        notificationService: mockNotificationService,
+        fileManager: fm,
+        continueJob: realBoundContinueJob,
+        enqueueRenderJob: enqueueRenderJobStub,
+      }),
+      params,
+      payload,
+    );
+  const boundSaveContribution: BoundSaveContributionResponseFn = (params, payload) =>
+    saveContributionResponse(
+      buildSaveContributionResponseDeps({
+        fileManager: fm,
+        buildUploadContext: realBuildUploadContext,
+        resolveContributionIdentity: realBoundResolveContributionIdentity,
+        persistContributionRelationships: realBoundPersistContributionRelationships,
+        finalizeContributionJob: boundFinalize,
+      }),
+      params,
+      payload,
+    );
+  const deps: SaveResponseDeps = {
+    logger: integrationLogger,
+    retryJob: realBoundRetryJob,
+    loadJobContext: realBoundLoadJobContext,
+    assembleAiResponse: realBoundAssembleAiResponse,
+    debitForResponse: realBoundDebitForResponse,
+    prepareResponseContent: realBoundPrepareResponseContent,
+    saveContributionResponse: boundSaveContribution,
+    saveCompressedResponse: (params, payload) =>
+      saveCompressedResponse(
+        buildSaveCompressedResponseDeps({
+          fileManager: fm,
+          buildUploadContext: realBuildUploadContext,
+          enqueueRenderJob: enqueueRenderJobStub,
+        }),
+        params,
+        payload,
+      ),
+  };
+  const mockSetup = buildMockSupabase(jobRow);
   const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
-  const params: SaveResponseParams = { job_id: "job-id-123", dbClient };
+  const params: SaveResponseParams = { job_id: jobRow.id, dbClient };
   const payload: SaveResponsePayload = {
     assembled_content: JSON.stringify({ result: "valid json content" }),
     token_usage: { prompt_tokens: 10, completion_tokens: 20, total_tokens: 30 },
     finish_reason: "stop",
+    processingTimeMs: 100,
   };
 
+  // Act
   const result: SaveResponseReturn = await saveResponse(deps, params, payload);
 
-  // Assert success
+  // Assert
   if (isSaveResponseSuccessReturn(result)) {
     const successResult: SaveResponseSuccessReturn = result;
     assertEquals(successResult.status, "completed");
@@ -251,187 +242,534 @@ Deno.test("Integration: saveResponse terminal success updates job to completed a
   }
 });
 
-Deno.test("Integration: saveResponse with empty AI content triggers real retryJob which updates job to retrying", async () => {
+/**
+ * Contract: an EXECUTE job_type with empty AI content triggers the retry path
+ *   through the real retryJob, which updates the job to "retrying" and returns
+ *   status "completed".
+ * Arrange: a document-artifact EXECUTE payload; assembled_content is empty
+ *   string so prepareResponseContent returns retryRequired.
+ * Act: saveResponse over the arranged deps, params, payload.
+ * Assert: the result is the success arm with status "completed"; retryJob
+ *   updated the job via DB update; retry notification was sent.
+ * Boundary: DB, file manager, notification service, debitTokens, countTokens,
+ *   enqueueRenderJob — the chain run real is saveResponse → loadJobContext →
+ *   assembleAiResponse → debitForResponse → prepareResponseContent → retryJob.
+ * Mocked: createMockSupabaseClient, MockFileManagerService,
+ *   mockNotificationService, debitTokens, countTokens, enqueueRenderJob.
+ */
+Deno.test("Integration: EXECUTE empty content triggers real retryJob and returns completed", async () => {
+  // Arrange
   resetMockNotificationService();
-  const deps = buildIntegrationDeps();
-  const mockSetup = buildMockSupabase(saveResponseTestPayload);
+  const executePayload = buildDialecticExecuteJobPayload({
+    document_relationships: buildDocumentRelationships({ source_group: "sg-empty-content" }),
+  });
+  if(!isJson(executePayload)){
+    throw new Error ("Payload must be json compatible")
+  }
+  const jobRow = buildDialecticJobRow({ payload: executePayload });
+  const fm = createMockFileManagerService();
+  fm.setUploadAndRegisterFileResponse(buildDialecticContributionRow(), null);
+  const enqueueRenderJobStub: BoundEnqueueRenderJobFn = async () =>
+    buildEnqueueRenderJobSuccessReturn({ renderJobId: null });
+  const boundFinalize: BoundFinalizeContributionJobFn = (params, payload) =>
+    finalizeContributionJob(
+      buildFinalizeContributionJobDeps({
+        logger: integrationLogger,
+        notificationService: mockNotificationService,
+        fileManager: fm,
+        continueJob: realBoundContinueJob,
+        enqueueRenderJob: enqueueRenderJobStub,
+      }),
+      params,
+      payload,
+    );
+  const boundSaveContribution: BoundSaveContributionResponseFn = (params, payload) =>
+    saveContributionResponse(
+      buildSaveContributionResponseDeps({
+        fileManager: fm,
+        buildUploadContext: realBuildUploadContext,
+        resolveContributionIdentity: realBoundResolveContributionIdentity,
+        persistContributionRelationships: realBoundPersistContributionRelationships,
+        finalizeContributionJob: boundFinalize,
+      }),
+      params,
+      payload,
+    );
+  const deps: SaveResponseDeps = {
+    logger: integrationLogger,
+    retryJob: realBoundRetryJob,
+    loadJobContext: realBoundLoadJobContext,
+    assembleAiResponse: realBoundAssembleAiResponse,
+    debitForResponse: realBoundDebitForResponse,
+    prepareResponseContent: realBoundPrepareResponseContent,
+    saveContributionResponse: boundSaveContribution,
+    saveCompressedResponse: (params, payload) =>
+      saveCompressedResponse(
+        buildSaveCompressedResponseDeps({
+          fileManager: fm,
+          buildUploadContext: realBuildUploadContext,
+          enqueueRenderJob: enqueueRenderJobStub,
+        }),
+        params,
+        payload,
+      ),
+  };
+  const mockSetup = buildMockSupabase(jobRow);
   const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
-  const params: SaveResponseParams = { job_id: "job-id-123", dbClient };
+  const params: SaveResponseParams = { job_id: jobRow.id, dbClient };
   const payload: SaveResponsePayload = {
     assembled_content: "",
     token_usage: null,
     finish_reason: null,
+    processingTimeMs: 100,
   };
-// Assert success return from retry path
+
+  // Act
   const result: SaveResponseReturn = await saveResponse(deps, params, payload);
+
+  // Assert
   if (!isSaveResponseSuccessReturn(result)) {
     throw new Error("Expected success return from retry path");
   }
   const successResult: SaveResponseSuccessReturn = result;
   assertEquals(successResult.status, "completed");
-  // Assert retryJob updated the job status to 'retrying' in the DB
   const jobUpdateSpies = mockSetup.spies.getHistoricQueryBuilderSpies("dialectic_generation_jobs", "update");
   assertExists(jobUpdateSpies);
   assertEquals(jobUpdateSpies.callCount > 0, true, "retryJob should update job status via DB update");
-
-  // Assert retry notification sent
   const retryCalls = mockNotificationService.sendContributionRetryingEvent.calls;
   assertEquals(retryCalls.length > 0, true, "retryJob should send contribution_generation_retrying notification");
 });
 
-Deno.test("Integration: saveResponse continuation path triggers real continueJob which enqueues new job", async () => {
+/**
+ * Contract: an EXECUTE job_type with finish_reason "length" and
+ *   continueUntilComplete triggers the continuation path through the real
+ *   continueJob, which enqueues a new job and returns status
+ *   "needs_continuation".
+ * Arrange: a document-artifact EXECUTE payload with continueUntilComplete; a
+ *   file manager configured to return a valid contribution record.
+ * Act: saveResponse over the arranged deps, params, payload.
+ * Assert: the result is the success arm with status "needs_continuation";
+ *   continueJob inserted a new job into the DB; continuation notification was
+ *   sent.
+ * Boundary: DB, file manager, notification service, debitTokens, countTokens,
+ *   enqueueRenderJob — the chain run real is saveResponse → loadJobContext →
+ *   assembleAiResponse → debitForResponse → prepareResponseContent →
+ *   saveContributionResponse → resolveContributionIdentity →
+ *   persistContributionRelationships → finalizeContributionJob → continueJob.
+ * Mocked: createMockSupabaseClient, MockFileManagerService,
+ *   mockNotificationService, debitTokens, countTokens, enqueueRenderJob.
+ */
+Deno.test("Integration: EXECUTE continuation path triggers real continueJob and returns needs_continuation", async () => {
+  // Arrange
   resetMockNotificationService();
-
-  const continuationPayload: DialecticExecuteJobPayload = {
-    ...saveResponseTestPayloadDocumentArtifact,
+  const continuationPayload = buildDialecticExecuteJobPayload({
     continueUntilComplete: true,
-    user_jwt: "jwt.token.here",
-  };
-
-  const contribution = createMockContributionRow({
-    id: "contrib-continuation-1",
-    document_relationships: {
-      thesis: "contrib-continuation-1",
-      source_group: "00000000-0000-4000-8000-000000000002",
-    },
+    document_relationships: buildDocumentRelationships({ source_group: "sg-continuation" }),
   });
-  const fm = createMockFileManager({ outcome: "success", contribution });
-  const deps = buildIntegrationDeps({ fileManager: fm });
-  const mockSetup = buildMockSupabase(continuationPayload);
+  if(!isJson(continuationPayload)){
+    throw new Error ("Payload must be json compatible")
+  }
+  const jobRow = buildDialecticJobRow({ payload: continuationPayload });
+  const fm = createMockFileManagerService();
+  fm.setUploadAndRegisterFileResponse(buildDialecticContributionRow(), null);
+  const enqueueRenderJobStub: BoundEnqueueRenderJobFn = async () =>
+    buildEnqueueRenderJobSuccessReturn({ renderJobId: null });
+  const boundFinalize: BoundFinalizeContributionJobFn = (params, payload) =>
+    finalizeContributionJob(
+      buildFinalizeContributionJobDeps({
+        logger: integrationLogger,
+        notificationService: mockNotificationService,
+        fileManager: fm,
+        continueJob: realBoundContinueJob,
+        enqueueRenderJob: enqueueRenderJobStub,
+      }),
+      params,
+      payload,
+    );
+  const boundSaveContribution: BoundSaveContributionResponseFn = (params, payload) =>
+    saveContributionResponse(
+      buildSaveContributionResponseDeps({
+        fileManager: fm,
+        buildUploadContext: realBuildUploadContext,
+        resolveContributionIdentity: realBoundResolveContributionIdentity,
+        persistContributionRelationships: realBoundPersistContributionRelationships,
+        finalizeContributionJob: boundFinalize,
+      }),
+      params,
+      payload,
+    );
+  const deps: SaveResponseDeps = {
+    logger: integrationLogger,
+    retryJob: realBoundRetryJob,
+    loadJobContext: realBoundLoadJobContext,
+    assembleAiResponse: realBoundAssembleAiResponse,
+    debitForResponse: realBoundDebitForResponse,
+    prepareResponseContent: realBoundPrepareResponseContent,
+    saveContributionResponse: boundSaveContribution,
+    saveCompressedResponse: (params, payload) =>
+      saveCompressedResponse(
+        buildSaveCompressedResponseDeps({
+          fileManager: fm,
+          buildUploadContext: realBuildUploadContext,
+          enqueueRenderJob: enqueueRenderJobStub,
+        }),
+        params,
+        payload,
+      ),
+  };
+  const mockSetup = buildMockSupabase(jobRow);
   const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
-  const params: SaveResponseParams = { job_id: "job-id-123", dbClient };
-  // finish_reason "length" is narrowed to FinishReason, triggers continuation via isDialecticContinueReason
+  const params: SaveResponseParams = { job_id: jobRow.id, dbClient };
   const payload: SaveResponsePayload = {
     assembled_content: JSON.stringify({ partial: "data" }),
     token_usage: { prompt_tokens: 10, completion_tokens: 20, total_tokens: 30 },
     finish_reason: "length",
+    processingTimeMs: 100,
   };
 
+  // Act
   const result: SaveResponseReturn = await saveResponse(deps, params, payload);
 
-  // Assert continuation status
+  // Assert
   if (isSaveResponseSuccessReturn(result)) {
     const successResult: SaveResponseSuccessReturn = result;
     assertEquals(successResult.status, "needs_continuation");
   } else {
     throw new Error("Result is not a success return");
   }
-
-  // Assert continueJob inserted a new job into the DB
   const jobInsertSpies = mockSetup.spies.getHistoricQueryBuilderSpies("dialectic_generation_jobs", "insert");
   assertExists(jobInsertSpies);
   assertEquals(jobInsertSpies.callCount > 0, true, "continueJob should insert a new continuation job");
-
-  // Assert continuation notification sent
   const continuedCalls = mockNotificationService.sendContributionGenerationContinuedEvent.calls;
   assertEquals(continuedCalls.length > 0, true, "continuation should send contribution_generation_continued notification");
 });
 
-Deno.test("Integration: saveResponse continuation limit reached triggers assembly and correct status", async () => {
+/**
+ * Contract: an EXECUTE job_type with continuation_count 5 and
+ *   continueUntilComplete reaches the continuation limit, triggers assembly,
+ *   and returns status "continuation_limit_reached".
+ * Arrange: a document-artifact EXECUTE payload with continueUntilComplete,
+ *   continuation_count 5, and target_contribution_id set; a file manager
+ *   configured to return a valid contribution record whose thesis points to
+ *   the root.
+ * Act: saveResponse over the arranged deps, params, payload.
+ * Assert: the result is the success arm with status
+ *   "continuation_limit_reached"; continuation notification still fires.
+ * Boundary: DB, file manager, notification service, debitTokens, countTokens,
+ *   enqueueRenderJob — the chain run real is saveResponse → loadJobContext →
+ *   assembleAiResponse → debitForResponse → prepareResponseContent →
+ *   saveContributionResponse → resolveContributionIdentity →
+ *   persistContributionRelationships → finalizeContributionJob → continueJob.
+ * Mocked: createMockSupabaseClient, MockFileManagerService,
+ *   mockNotificationService, debitTokens, countTokens, enqueueRenderJob.
+ */
+Deno.test("Integration: EXECUTE continuation limit reached returns continuation_limit_reached", async () => {
+  // Arrange
   resetMockNotificationService();
-
-  const limitPayload: DialecticExecuteJobPayload = {
-    ...saveResponseTestPayloadDocumentArtifact,
+  const rootContributionId = "root-contrib-id";
+  const limitPayload = buildDialecticExecuteJobPayload({
     continueUntilComplete: true,
     continuation_count: 5,
-    target_contribution_id: "root-contrib-id",
-    user_jwt: "jwt.token.here",
-  };
-
-  const contribution = createMockContributionRow({
-    id: "contrib-limit-1",
+    target_contribution_id: rootContributionId,
     document_relationships: {
-      thesis: "root-contrib-id",
+      thesis: rootContributionId,
       source_group: "00000000-0000-4000-8000-000000000002",
     },
   });
-  const fm = createMockFileManager({ outcome: "success", contribution });
-  const deps = buildIntegrationDeps({ fileManager: fm });
-  const mockSetup = buildMockSupabase(limitPayload, {
-    target_contribution_id: "root-contrib-id",
+  if(!isJson(limitPayload)){
+    throw new Error ("Payload must be json compatible")
+  }
+  const jobRow = buildDialecticJobRow({
+    payload: limitPayload,
+    target_contribution_id: rootContributionId,
   });
+  const fm = createMockFileManagerService();
+  fm.setUploadAndRegisterFileResponse(
+    buildDialecticContributionRow({
+      document_relationships: {
+        thesis: rootContributionId,
+        source_group: "00000000-0000-4000-8000-000000000002",
+      },
+    }),
+    null,
+  );
+  const enqueueRenderJobStub: BoundEnqueueRenderJobFn = async () =>
+    buildEnqueueRenderJobSuccessReturn({ renderJobId: null });
+  const boundFinalize: BoundFinalizeContributionJobFn = (params, payload) =>
+    finalizeContributionJob(
+      buildFinalizeContributionJobDeps({
+        logger: integrationLogger,
+        notificationService: mockNotificationService,
+        fileManager: fm,
+        continueJob: realBoundContinueJob,
+        enqueueRenderJob: enqueueRenderJobStub,
+      }),
+      params,
+      payload,
+    );
+  const boundSaveContribution: BoundSaveContributionResponseFn = (params, payload) =>
+    saveContributionResponse(
+      buildSaveContributionResponseDeps({
+        fileManager: fm,
+        buildUploadContext: realBuildUploadContext,
+        resolveContributionIdentity: realBoundResolveContributionIdentity,
+        persistContributionRelationships: realBoundPersistContributionRelationships,
+        finalizeContributionJob: boundFinalize,
+      }),
+      params,
+      payload,
+    );
+  const deps: SaveResponseDeps = {
+    logger: integrationLogger,
+    retryJob: realBoundRetryJob,
+    loadJobContext: realBoundLoadJobContext,
+    assembleAiResponse: realBoundAssembleAiResponse,
+    debitForResponse: realBoundDebitForResponse,
+    prepareResponseContent: realBoundPrepareResponseContent,
+    saveContributionResponse: boundSaveContribution,
+    saveCompressedResponse: (params, payload) =>
+      saveCompressedResponse(
+        buildSaveCompressedResponseDeps({
+          fileManager: fm,
+          buildUploadContext: realBuildUploadContext,
+          enqueueRenderJob: enqueueRenderJobStub,
+        }),
+        params,
+        payload,
+      ),
+  };
+  const mockSetup = buildMockSupabase(jobRow);
   const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
-  const params: SaveResponseParams = { job_id: "job-id-123", dbClient };
+  const params: SaveResponseParams = { job_id: jobRow.id, dbClient };
   const payload: SaveResponsePayload = {
     assembled_content: JSON.stringify({ partial: "final chunk" }),
     token_usage: { prompt_tokens: 10, completion_tokens: 20, total_tokens: 30 },
     finish_reason: "length",
+    processingTimeMs: 100,
   };
 
+  // Act
   const result: SaveResponseReturn = await saveResponse(deps, params, payload);
 
-  // Assert continuation_limit_reached status
+  // Assert
   if (isSaveResponseSuccessReturn(result)) {
     const successResult: SaveResponseSuccessReturn = result;
     assertEquals(successResult.status, "continuation_limit_reached");
   } else {
     throw new Error("Result is not a success return");
   }
-
-  // continueJob should NOT insert a new job (limit was reached)
-  // Instead it returns { enqueued: false, reason: 'continuation_limit_reached' }
-  // The contribution_generation_continued notification still fires for the current chunk
   const continuedCalls = mockNotificationService.sendContributionGenerationContinuedEvent.calls;
   assertEquals(continuedCalls.length > 0, true, "continuation notification should fire even at limit");
 });
 
-Deno.test("Integration: saveResponse with malformed JSON triggers real retryJob", async () => {
+/**
+ * Contract: an EXECUTE job_type with malformed JSON content triggers the retry
+ *   path through the real retryJob and returns status "completed".
+ * Arrange: a document-artifact EXECUTE payload; assembled_content is malformed
+ *   JSON so prepareResponseContent returns retryRequired after sanitization
+ *   failure.
+ * Act: saveResponse over the arranged deps, params, payload.
+ * Assert: the result is the success arm with status "completed"; retryJob
+ *   updated the job via DB update; retry notification was sent.
+ * Boundary: DB, file manager, notification service, debitTokens, countTokens,
+ *   enqueueRenderJob — the chain run real is saveResponse → loadJobContext →
+ *   assembleAiResponse → debitForResponse → prepareResponseContent → retryJob.
+ * Mocked: createMockSupabaseClient, MockFileManagerService,
+ *   mockNotificationService, debitTokens, countTokens, enqueueRenderJob.
+ */
+Deno.test("Integration: EXECUTE malformed JSON triggers real retryJob and returns completed", async () => {
+  // Arrange
   resetMockNotificationService();
-  const deps = buildIntegrationDeps();
-  const mockSetup = buildMockSupabase(saveResponseTestPayload);
+  const executePayload = buildDialecticExecuteJobPayload({
+    document_relationships: buildDocumentRelationships({ source_group: "sg-malformed-json" }),
+  });
+  if(!isJson(executePayload)){
+    throw new Error ("Payload must be json compatible")
+  }
+  const jobRow = buildDialecticJobRow({ payload: executePayload });
+  const fm = createMockFileManagerService();
+  fm.setUploadAndRegisterFileResponse(buildDialecticContributionRow(), null);
+  const enqueueRenderJobStub: BoundEnqueueRenderJobFn = async () =>
+    buildEnqueueRenderJobSuccessReturn({ renderJobId: null });
+  const boundFinalize: BoundFinalizeContributionJobFn = (params, payload) =>
+    finalizeContributionJob(
+      buildFinalizeContributionJobDeps({
+        logger: integrationLogger,
+        notificationService: mockNotificationService,
+        fileManager: fm,
+        continueJob: realBoundContinueJob,
+        enqueueRenderJob: enqueueRenderJobStub,
+      }),
+      params,
+      payload,
+    );
+  const boundSaveContribution: BoundSaveContributionResponseFn = (params, payload) =>
+    saveContributionResponse(
+      buildSaveContributionResponseDeps({
+        fileManager: fm,
+        buildUploadContext: realBuildUploadContext,
+        resolveContributionIdentity: realBoundResolveContributionIdentity,
+        persistContributionRelationships: realBoundPersistContributionRelationships,
+        finalizeContributionJob: boundFinalize,
+      }),
+      params,
+      payload,
+    );
+  const deps: SaveResponseDeps = {
+    logger: integrationLogger,
+    retryJob: realBoundRetryJob,
+    loadJobContext: realBoundLoadJobContext,
+    assembleAiResponse: realBoundAssembleAiResponse,
+    debitForResponse: realBoundDebitForResponse,
+    prepareResponseContent: realBoundPrepareResponseContent,
+    saveContributionResponse: boundSaveContribution,
+    saveCompressedResponse: (params, payload) =>
+      saveCompressedResponse(
+        buildSaveCompressedResponseDeps({
+          fileManager: fm,
+          buildUploadContext: realBuildUploadContext,
+          enqueueRenderJob: enqueueRenderJobStub,
+        }),
+        params,
+        payload,
+      ),
+  };
+  const mockSetup = buildMockSupabase(jobRow);
   const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
-  const params: SaveResponseParams = { job_id: "job-id-123", dbClient };
+  const params: SaveResponseParams = { job_id: jobRow.id, dbClient };
   const payload: SaveResponsePayload = {
     assembled_content: "this is not valid JSON {{{",
     token_usage: { prompt_tokens: 10, completion_tokens: 20, total_tokens: 30 },
     finish_reason: "stop",
+    processingTimeMs: 100,
   };
 
+  // Act
   const result: SaveResponseReturn = await saveResponse(deps, params, payload);
 
-  // Assert success return from retry path
+  // Assert
   if (!isSaveResponseSuccessReturn(result)) {
     throw new Error("Expected success return from retry path");
   }
   const successResult: SaveResponseSuccessReturn = result;
   assertEquals(successResult.status, "completed");
-  // Assert retryJob was invoked (DB update happened)
   const jobUpdateSpies = mockSetup.spies.getHistoricQueryBuilderSpies("dialectic_generation_jobs", "update");
   assertExists(jobUpdateSpies);
   assertEquals(jobUpdateSpies.callCount > 0, true, "retryJob should update job via DB on malformed JSON");
-
-  // Assert retry notification
   const retryCalls = mockNotificationService.sendContributionRetryingEvent.calls;
   assertEquals(retryCalls.length > 0, true, "retryJob should send retry notification on malformed JSON");
 });
 
-Deno.test("Integration: saveResponse calls enqueueRenderJob exactly once on terminal completion for document output", async () => {
+/**
+ * Contract: an EXECUTE job_type with finish_reason "stop" on a continuation
+ *   chain (target_contribution_id set, document_relationships.thesis points to
+ *   root) calls enqueueRenderJob exactly once on terminal completion.
+ * Arrange: a document-artifact EXECUTE payload with target_contribution_id and
+ *   continuation_count 1; a file manager configured to return a valid
+ *   contribution; an enqueueRenderJob spy counting calls.
+ * Act: saveResponse over the arranged deps, params, payload.
+ * Assert: the result is the success arm with status "completed";
+ *   enqueueRenderJob was called exactly once.
+ * Boundary: DB, file manager, notification service, debitTokens, countTokens,
+ *   enqueueRenderJob — the chain run real is saveResponse → loadJobContext →
+ *   assembleAiResponse → debitForResponse → prepareResponseContent →
+ *   saveContributionResponse → resolveContributionIdentity →
+ *   persistContributionRelationships → finalizeContributionJob.
+ * Mocked: createMockSupabaseClient, MockFileManagerService,
+ *   mockNotificationService, debitTokens, countTokens, enqueueRenderJob.
+ */
+Deno.test("Integration: EXECUTE terminal completion calls enqueueRenderJob exactly once", async () => {
+  // Arrange
   resetMockNotificationService();
-  const contribution = createMockContributionRow({
-    id: "contrib-render-dispatch-1",
+  const rootContributionId = "root-contrib-render-test";
+  const executePayload = buildDialecticExecuteJobPayload({
+    continueUntilComplete: true,
+    continuation_count: 1,
+    target_contribution_id: rootContributionId,
     document_relationships: {
-      thesis: "contrib-render-dispatch-1",
+      thesis: rootContributionId,
       source_group: "00000000-0000-4000-8000-000000000002",
     },
   });
-  const fm = createMockFileManager({ outcome: "success", contribution });
+  if(!isJson(executePayload)){
+    throw new Error ("Payload must be json compatible")
+  }
+  const jobRow = buildDialecticJobRow({
+    payload: executePayload,
+    target_contribution_id: rootContributionId,
+  });
+  const fm = createMockFileManagerService();
+  fm.setUploadAndRegisterFileResponse(
+    buildDialecticContributionRow({
+      document_relationships: {
+        thesis: rootContributionId,
+        source_group: "00000000-0000-4000-8000-000000000002",
+      },
+    }),
+    null,
+  );
   let enqueueRenderJobCallCount = 0;
-  const enqueueRenderJobSpy: BoundEnqueueRenderJobFn = async (_params, _payload) => {
+  const enqueueRenderJobSpy: BoundEnqueueRenderJobFn = async () => {
     enqueueRenderJobCallCount++;
-    return { renderJobId: null };
+    return buildEnqueueRenderJobSuccessReturn({ renderJobId: null });
   };
-  const deps = buildIntegrationDeps({ fileManager: fm, enqueueRenderJob: enqueueRenderJobSpy });
-  const mockSetup = buildMockSupabase(saveResponseTestPayloadDocumentArtifact);
+  const boundFinalize: BoundFinalizeContributionJobFn = (params, payload) =>
+    finalizeContributionJob(
+      buildFinalizeContributionJobDeps({
+        logger: integrationLogger,
+        notificationService: mockNotificationService,
+        fileManager: fm,
+        continueJob: realBoundContinueJob,
+        enqueueRenderJob: enqueueRenderJobSpy,
+      }),
+      params,
+      payload,
+    );
+  const boundSaveContribution: BoundSaveContributionResponseFn = (params, payload) =>
+    saveContributionResponse(
+      buildSaveContributionResponseDeps({
+        fileManager: fm,
+        buildUploadContext: realBuildUploadContext,
+        resolveContributionIdentity: realBoundResolveContributionIdentity,
+        persistContributionRelationships: realBoundPersistContributionRelationships,
+        finalizeContributionJob: boundFinalize,
+      }),
+      params,
+      payload,
+    );
+  const deps: SaveResponseDeps = {
+    logger: integrationLogger,
+    retryJob: realBoundRetryJob,
+    loadJobContext: realBoundLoadJobContext,
+    assembleAiResponse: realBoundAssembleAiResponse,
+    debitForResponse: realBoundDebitForResponse,
+    prepareResponseContent: realBoundPrepareResponseContent,
+    saveContributionResponse: boundSaveContribution,
+    saveCompressedResponse: (params, payload) =>
+      saveCompressedResponse(
+        buildSaveCompressedResponseDeps({
+          fileManager: fm,
+          buildUploadContext: realBuildUploadContext,
+          enqueueRenderJob: enqueueRenderJobSpy,
+        }),
+        params,
+        payload,
+      ),
+  };
+  const mockSetup = buildMockSupabase(jobRow);
   const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
-  const params: SaveResponseParams = { job_id: "job-id-123", dbClient };
+  const params: SaveResponseParams = { job_id: jobRow.id, dbClient };
   const payload: SaveResponsePayload = {
-    assembled_content: JSON.stringify({ result: "valid json content" }),
+    assembled_content: JSON.stringify({ result: "final chunk content" }),
     token_usage: { prompt_tokens: 10, completion_tokens: 20, total_tokens: 30 },
     finish_reason: "stop",
+    processingTimeMs: 100,
   };
 
+  // Act
   const result: SaveResponseReturn = await saveResponse(deps, params, payload);
 
+  // Assert
   if (isSaveResponseSuccessReturn(result)) {
     const successResult: SaveResponseSuccessReturn = result;
     assertEquals(successResult.status, "completed");
@@ -441,51 +779,114 @@ Deno.test("Integration: saveResponse calls enqueueRenderJob exactly once on term
   assertEquals(enqueueRenderJobCallCount, 1, "enqueueRenderJob should be called exactly once on terminal completion");
 });
 
-Deno.test("Integration: saveResponse assembleAndSaveFinalDocument NOT called when enqueueRenderJob dispatches render job", async () => {
+/**
+ * Contract: an EXECUTE job_type with finish_reason "stop" on a continuation
+ *   chain where enqueueRenderJob dispatches a render job (renderJobId non-null)
+ *   does NOT call assembleAndSaveFinalDocument.
+ * Arrange: a document-artifact EXECUTE payload with target_contribution_id,
+ *   continuation_count 1, and document_relationships.thesis pointing to root;
+ *   a file manager configured to return a valid contribution; an
+ *   enqueueRenderJob stub returning a non-null renderJobId.
+ * Act: saveResponse over the arranged deps, params, payload.
+ * Assert: the result is the success arm with status "completed";
+ *   assembleAndSaveFinalDocument was not called.
+ * Boundary: DB, file manager, notification service, debitTokens, countTokens,
+ *   enqueueRenderJob — the chain run real is saveResponse → loadJobContext →
+ *   assembleAiResponse → debitForResponse → prepareResponseContent →
+ *   saveContributionResponse → resolveContributionIdentity →
+ *   persistContributionRelationships → finalizeContributionJob.
+ * Mocked: createMockSupabaseClient, MockFileManagerService,
+ *   mockNotificationService, debitTokens, countTokens, enqueueRenderJob.
+ */
+Deno.test("Integration: EXECUTE with render dispatch does NOT call assembleAndSaveFinalDocument", async () => {
+  // Arrange
   resetMockNotificationService();
-  // Final chunk of a multi-chunk sequence: target_contribution_id set, finish_reason stop.
-  // contribution.document_relationships.thesis points to the root (different from contribution.id),
-  // so assembleAndSaveFinalDocument would normally be triggered — but enqueueRenderJob returning
-  // a non-null renderJobId sets shouldRender=true, gating the inline assembly.
-  const finalContinuationPayload: DialecticExecuteJobPayload = {
-    ...saveResponseTestPayloadDocumentArtifact,
-    target_contribution_id: "root-contrib-render-test",
+  const rootContributionId = "root-contrib-render-test";
+  const executePayload = buildDialecticExecuteJobPayload({
     continueUntilComplete: true,
     continuation_count: 1,
+    target_contribution_id: rootContributionId,
     document_relationships: {
-      thesis: "root-contrib-render-test",
+      thesis: rootContributionId,
       source_group: "00000000-0000-4000-8000-000000000002",
     },
+  });
+  if(!isJson(executePayload)){
+    throw new Error ("Payload must be json compatible")
+  }
+  const jobRow = buildDialecticJobRow({
+    payload: executePayload,
+    target_contribution_id: rootContributionId,
+  });
+  const fm = createMockFileManagerService();
+  fm.setUploadAndRegisterFileResponse(
+    buildDialecticContributionRow({
+      document_relationships: {
+        thesis: rootContributionId,
+        source_group: "00000000-0000-4000-8000-000000000002",
+      },
+    }),
+    null,
+  );
+  const enqueueRenderJobWithDispatch: BoundEnqueueRenderJobFn = async () =>
+    buildEnqueueRenderJobSuccessReturn({ renderJobId: "render-job-1" });
+  const boundFinalize: BoundFinalizeContributionJobFn = (params, payload) =>
+    finalizeContributionJob(
+      buildFinalizeContributionJobDeps({
+        logger: integrationLogger,
+        notificationService: mockNotificationService,
+        fileManager: fm,
+        continueJob: realBoundContinueJob,
+        enqueueRenderJob: enqueueRenderJobWithDispatch,
+      }),
+      params,
+      payload,
+    );
+  const boundSaveContribution: BoundSaveContributionResponseFn = (params, payload) =>
+    saveContributionResponse(
+      buildSaveContributionResponseDeps({
+        fileManager: fm,
+        buildUploadContext: realBuildUploadContext,
+        resolveContributionIdentity: realBoundResolveContributionIdentity,
+        persistContributionRelationships: realBoundPersistContributionRelationships,
+        finalizeContributionJob: boundFinalize,
+      }),
+      params,
+      payload,
+    );
+  const deps: SaveResponseDeps = {
+    logger: integrationLogger,
+    retryJob: realBoundRetryJob,
+    loadJobContext: realBoundLoadJobContext,
+    assembleAiResponse: realBoundAssembleAiResponse,
+    debitForResponse: realBoundDebitForResponse,
+    prepareResponseContent: realBoundPrepareResponseContent,
+    saveContributionResponse: boundSaveContribution,
+    saveCompressedResponse: (params, payload) =>
+      saveCompressedResponse(
+        buildSaveCompressedResponseDeps({
+          fileManager: fm,
+          buildUploadContext: realBuildUploadContext,
+          enqueueRenderJob: enqueueRenderJobWithDispatch,
+        }),
+        params,
+        payload,
+      ),
   };
-  const contribution = createMockContributionRow({
-    id: "contrib-final-chunk",
-    document_relationships: {
-      thesis: "root-contrib-render-test",
-      source_group: "00000000-0000-4000-8000-000000000002",
-    },
-    target_contribution_id: "root-contrib-render-test",
-  });
-  const fm = createMockFileManager({ outcome: "success", contribution });
-  const enqueueRenderJobWithDispatch: BoundEnqueueRenderJobFn = async (_params, _payload) => ({
-    renderJobId: "render-job-1",
-  });
-  const deps = buildIntegrationDeps({
-    fileManager: fm,
-    enqueueRenderJob: enqueueRenderJobWithDispatch,
-  });
-  const mockSetup = buildMockSupabase(finalContinuationPayload, {
-    target_contribution_id: "root-contrib-render-test",
-  });
+  const mockSetup = buildMockSupabase(jobRow);
   const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
-  const params: SaveResponseParams = { job_id: "job-id-123", dbClient };
+  const params: SaveResponseParams = { job_id: jobRow.id, dbClient };
   const payload: SaveResponsePayload = {
     assembled_content: JSON.stringify({ result: "final chunk content" }),
     token_usage: { prompt_tokens: 10, completion_tokens: 20, total_tokens: 30 },
     finish_reason: "stop",
+    processingTimeMs: 100,
   };
 
+  // Act
   const result: SaveResponseReturn = await saveResponse(deps, params, payload);
 
+  // Assert
   if (isSaveResponseSuccessReturn(result)) {
     const successResult: SaveResponseSuccessReturn = result;
     assertEquals(successResult.status, "completed");
@@ -495,43 +896,102 @@ Deno.test("Integration: saveResponse assembleAndSaveFinalDocument NOT called whe
   assertEquals(
     fm.assembleAndSaveFinalDocument.calls.length,
     0,
-    "assembleAndSaveFinalDocument should NOT be called when enqueueRenderJob dispatches a render job (shouldRender=true gates inline assembly)",
+    "assembleAndSaveFinalDocument should NOT be called when enqueueRenderJob dispatches a render job",
   );
 });
 
-Deno.test("Integration: saveResponse does NOT call enqueueRenderJob on continuation path", async () => {
+/**
+ * Contract: an EXECUTE job_type on the continuation path (finish_reason
+ *   "length") does NOT call enqueueRenderJob.
+ * Arrange: a document-artifact EXECUTE payload with continueUntilComplete;
+ *   a file manager configured to return a valid contribution; an
+ *   enqueueRenderJob spy counting calls.
+ * Act: saveResponse over the arranged deps, params, payload.
+ * Assert: the result is the success arm with status "needs_continuation";
+ *   enqueueRenderJob was not called.
+ * Boundary: DB, file manager, notification service, debitTokens, countTokens,
+ *   enqueueRenderJob — the chain run real is saveResponse → loadJobContext →
+ *   assembleAiResponse → debitForResponse → prepareResponseContent →
+ *   saveContributionResponse → resolveContributionIdentity →
+ *   persistContributionRelationships → finalizeContributionJob → continueJob.
+ * Mocked: createMockSupabaseClient, MockFileManagerService,
+ *   mockNotificationService, debitTokens, countTokens, enqueueRenderJob.
+ */
+Deno.test("Integration: EXECUTE continuation path does NOT call enqueueRenderJob", async () => {
+  // Arrange
   resetMockNotificationService();
-  const continuationPayload: DialecticExecuteJobPayload = {
-    ...saveResponseTestPayloadDocumentArtifact,
+  const continuationPayload = buildDialecticExecuteJobPayload({
     continueUntilComplete: true,
-    user_jwt: "jwt.token.here",
-  };
-  const contribution = createMockContributionRow({
-    id: "contrib-continuation-render-1",
-    document_relationships: {
-      thesis: "contrib-continuation-render-1",
-      source_group: "00000000-0000-4000-8000-000000000002",
-    },
+    document_relationships: buildDocumentRelationships({ source_group: "sg-continuation" }),
   });
-  const fm = createMockFileManager({ outcome: "success", contribution });
+  if(!isJson(continuationPayload)){
+    throw new Error ("Payload must be json compatible")
+  }
+  const jobRow = buildDialecticJobRow({ payload: continuationPayload });
+  const fm = createMockFileManagerService();
+  fm.setUploadAndRegisterFileResponse(buildDialecticContributionRow(), null);
   let enqueueRenderJobCallCount = 0;
-  const enqueueRenderJobSpy: BoundEnqueueRenderJobFn = async (_params, _payload) => {
+  const enqueueRenderJobSpy: BoundEnqueueRenderJobFn = async () => {
     enqueueRenderJobCallCount++;
-    return { renderJobId: null };
+    return buildEnqueueRenderJobSuccessReturn({ renderJobId: null });
   };
-  const deps = buildIntegrationDeps({ fileManager: fm, enqueueRenderJob: enqueueRenderJobSpy });
-  const mockSetup = buildMockSupabase(continuationPayload);
+  const boundFinalize: BoundFinalizeContributionJobFn = (params, payload) =>
+    finalizeContributionJob(
+      buildFinalizeContributionJobDeps({
+        logger: integrationLogger,
+        notificationService: mockNotificationService,
+        fileManager: fm,
+        continueJob: realBoundContinueJob,
+        enqueueRenderJob: enqueueRenderJobSpy,
+      }),
+      params,
+      payload,
+    );
+  const boundSaveContribution: BoundSaveContributionResponseFn = (params, payload) =>
+    saveContributionResponse(
+      buildSaveContributionResponseDeps({
+        fileManager: fm,
+        buildUploadContext: realBuildUploadContext,
+        resolveContributionIdentity: realBoundResolveContributionIdentity,
+        persistContributionRelationships: realBoundPersistContributionRelationships,
+        finalizeContributionJob: boundFinalize,
+      }),
+      params,
+      payload,
+    );
+  const deps: SaveResponseDeps = {
+    logger: integrationLogger,
+    retryJob: realBoundRetryJob,
+    loadJobContext: realBoundLoadJobContext,
+    assembleAiResponse: realBoundAssembleAiResponse,
+    debitForResponse: realBoundDebitForResponse,
+    prepareResponseContent: realBoundPrepareResponseContent,
+    saveContributionResponse: boundSaveContribution,
+    saveCompressedResponse: (params, payload) =>
+      saveCompressedResponse(
+        buildSaveCompressedResponseDeps({
+          fileManager: fm,
+          buildUploadContext: realBuildUploadContext,
+          enqueueRenderJob: enqueueRenderJobSpy,
+        }),
+        params,
+        payload,
+      ),
+  };
+  const mockSetup = buildMockSupabase(jobRow);
   const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
-  const params: SaveResponseParams = { job_id: "job-id-123", dbClient };
-  // finish_reason "length" narrows to a DialecticContinueReason, triggering the continuation path
+  const params: SaveResponseParams = { job_id: jobRow.id, dbClient };
   const payload: SaveResponsePayload = {
     assembled_content: JSON.stringify({ partial: "data" }),
     token_usage: { prompt_tokens: 10, completion_tokens: 20, total_tokens: 30 },
     finish_reason: "length",
+    processingTimeMs: 100,
   };
 
+  // Act
   const result: SaveResponseReturn = await saveResponse(deps, params, payload);
 
+  // Assert
   if (isSaveResponseSuccessReturn(result)) {
     const successResult: SaveResponseSuccessReturn = result;
     assertEquals(successResult.status, "needs_continuation");
@@ -539,4 +999,206 @@ Deno.test("Integration: saveResponse does NOT call enqueueRenderJob on continuat
     throw new Error("Result is not a success return");
   }
   assertEquals(enqueueRenderJobCallCount, 0, "enqueueRenderJob should NOT be called on continuation path");
+});
+
+// ---------------------------------------------------------------------------
+// COMPRESS tests — exercise the compressed arm through the full chain
+// ---------------------------------------------------------------------------
+
+/**
+ * Contract: a COMPRESS job_type with mode "text" and finish_reason "stop"
+ *   routes through the compressed arm and returns status "completed".
+ * Arrange: a text-mode COMPRESS payload with valid content; a file manager
+ *   configured to return a valid resource record on upload.
+ * Act: saveResponse over the arranged deps, params, payload.
+ * Assert: the result is the success arm with status "completed".
+ * Boundary: DB, file manager, notification service, debitTokens, countTokens,
+ *   enqueueRenderJob — the chain run real is saveResponse → loadJobContext →
+ *   assembleAiResponse → debitForResponse → prepareResponseContent →
+ *   saveCompressedResponse.
+ * Mocked: createMockSupabaseClient, MockFileManagerService,
+ *   mockNotificationService, debitTokens, countTokens, enqueueRenderJob.
+ */
+Deno.test("Integration: COMPRESS text mode returns completed", async () => {
+  // Arrange
+  resetMockNotificationService();
+  const compressPayload = buildDialecticCompressJobPayload({
+    content: JSON.stringify(buildContentToInclude()),
+  });
+  if(!isJson(compressPayload)){
+    throw new Error ("Payload must be json compatible")
+  }
+  const jobRow = buildDialecticJobRow({
+    payload: compressPayload,
+    job_type: "COMPRESS",
+  });
+  const fm = createMockFileManagerService();
+  fm.setUploadAndRegisterFileResponse(buildDialecticContributionRow(), null);
+  const enqueueRenderJobStub: BoundEnqueueRenderJobFn = async () =>
+    buildEnqueueRenderJobSuccessReturn({ renderJobId: null });
+  const fmForContribution = createMockFileManagerService();
+  fmForContribution.setUploadAndRegisterFileResponse(buildDialecticContributionRow(), null);
+  const boundFinalize: BoundFinalizeContributionJobFn = (params, payload) =>
+    finalizeContributionJob(
+      buildFinalizeContributionJobDeps({
+        logger: integrationLogger,
+        notificationService: mockNotificationService,
+        fileManager: fmForContribution,
+        continueJob: realBoundContinueJob,
+        enqueueRenderJob: enqueueRenderJobStub,
+      }),
+      params,
+      payload,
+    );
+  const boundSaveContribution: BoundSaveContributionResponseFn = (params, payload) =>
+    saveContributionResponse(
+      buildSaveContributionResponseDeps({
+        fileManager: fmForContribution,
+        buildUploadContext: realBuildUploadContext,
+        resolveContributionIdentity: realBoundResolveContributionIdentity,
+        persistContributionRelationships: realBoundPersistContributionRelationships,
+        finalizeContributionJob: boundFinalize,
+      }),
+      params,
+      payload,
+    );
+  const deps: SaveResponseDeps = {
+    logger: integrationLogger,
+    retryJob: realBoundRetryJob,
+    loadJobContext: realBoundLoadJobContext,
+    assembleAiResponse: realBoundAssembleAiResponse,
+    debitForResponse: realBoundDebitForResponse,
+    prepareResponseContent: realBoundPrepareResponseContent,
+    saveContributionResponse: boundSaveContribution,
+    saveCompressedResponse: (params, payload) =>
+      saveCompressedResponse(
+        buildSaveCompressedResponseDeps({
+          fileManager: fm,
+          buildUploadContext: realBuildUploadContext,
+          enqueueRenderJob: enqueueRenderJobStub,
+        }),
+        params,
+        payload,
+      ),
+  };
+  const mockSetup = buildMockSupabase(jobRow);
+  const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
+  const params: SaveResponseParams = { job_id: jobRow.id, dbClient };
+  const payload: SaveResponsePayload = {
+    assembled_content: "compressed text content",
+    token_usage: { prompt_tokens: 10, completion_tokens: 20, total_tokens: 30 },
+    finish_reason: "stop",
+    processingTimeMs: 100,
+  };
+
+  // Act
+  const result: SaveResponseReturn = await saveResponse(deps, params, payload);
+
+  // Assert
+  if (isSaveResponseSuccessReturn(result)) {
+    const successResult: SaveResponseSuccessReturn = result;
+    assertEquals(successResult.status, "completed");
+  } else {
+    throw new Error("Result is not a success return");
+  }
+});
+
+/**
+ * Contract: a COMPRESS job_type with mode "json" and finish_reason "stop"
+ *   routes through the compressed arm, calls enqueueRenderJob, updates the job
+ *   to "waiting_for_children", and returns status "waiting_for_children".
+ * Arrange: a json-mode COMPRESS payload with valid JSON content; a file
+ *   manager configured to return a valid resource record on upload.
+ * Act: saveResponse over the arranged deps, params, payload.
+ * Assert: the result is the success arm with status "waiting_for_children".
+ * Boundary: DB, file manager, notification service, debitTokens, countTokens,
+ *   enqueueRenderJob — the chain run real is saveResponse → loadJobContext →
+ *   assembleAiResponse → debitForResponse → prepareResponseContent →
+ *   saveCompressedResponse.
+ * Mocked: createMockSupabaseClient, MockFileManagerService,
+ *   mockNotificationService, debitTokens, countTokens, enqueueRenderJob.
+ */
+Deno.test("Integration: COMPRESS json mode returns waiting_for_children", async () => {
+  // Arrange
+  resetMockNotificationService();
+  const compressPayload = buildDialecticCompressJobPayload({
+    mode: "json",
+    content: JSON.stringify(buildContentToInclude()),
+  });
+  if(!isJson(compressPayload)){
+    throw new Error ("Payload must be json compatible")
+  }
+  const jobRow = buildDialecticJobRow({
+    payload: compressPayload,
+    job_type: "COMPRESS",
+  });
+  const fm = createMockFileManagerService();
+  fm.setUploadAndRegisterFileResponse(buildDialecticContributionRow(), null);
+  const enqueueRenderJobStub: BoundEnqueueRenderJobFn = async () =>
+    buildEnqueueRenderJobSuccessReturn({ renderJobId: null });
+  const fmForContribution = createMockFileManagerService();
+  fmForContribution.setUploadAndRegisterFileResponse(buildDialecticContributionRow(), null);
+  const boundFinalize: BoundFinalizeContributionJobFn = (params, payload) =>
+    finalizeContributionJob(
+      buildFinalizeContributionJobDeps({
+        logger: integrationLogger,
+        notificationService: mockNotificationService,
+        fileManager: fmForContribution,
+        continueJob: realBoundContinueJob,
+        enqueueRenderJob: enqueueRenderJobStub,
+      }),
+      params,
+      payload,
+    );
+  const boundSaveContribution: BoundSaveContributionResponseFn = (params, payload) =>
+    saveContributionResponse(
+      buildSaveContributionResponseDeps({
+        fileManager: fmForContribution,
+        buildUploadContext: realBuildUploadContext,
+        resolveContributionIdentity: realBoundResolveContributionIdentity,
+        persistContributionRelationships: realBoundPersistContributionRelationships,
+        finalizeContributionJob: boundFinalize,
+      }),
+      params,
+      payload,
+    );
+  const deps: SaveResponseDeps = {
+    logger: integrationLogger,
+    retryJob: realBoundRetryJob,
+    loadJobContext: realBoundLoadJobContext,
+    assembleAiResponse: realBoundAssembleAiResponse,
+    debitForResponse: realBoundDebitForResponse,
+    prepareResponseContent: realBoundPrepareResponseContent,
+    saveContributionResponse: boundSaveContribution,
+    saveCompressedResponse: (params, payload) =>
+      saveCompressedResponse(
+        buildSaveCompressedResponseDeps({
+          fileManager: fm,
+          buildUploadContext: realBuildUploadContext,
+          enqueueRenderJob: enqueueRenderJobStub,
+        }),
+        params,
+        payload,
+      ),
+  };
+  const mockSetup = buildMockSupabase(jobRow);
+  const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
+  const params: SaveResponseParams = { job_id: jobRow.id, dbClient };
+  const payload: SaveResponsePayload = {
+    assembled_content: JSON.stringify(buildContentToInclude()),
+    token_usage: { prompt_tokens: 10, completion_tokens: 20, total_tokens: 30 },
+    finish_reason: "stop",
+    processingTimeMs: 100,
+  };
+
+  // Act
+  const result: SaveResponseReturn = await saveResponse(deps, params, payload);
+
+  // Assert
+  if (isSaveResponseSuccessReturn(result)) {
+    const successResult: SaveResponseSuccessReturn = result;
+    assertEquals(successResult.status, "waiting_for_children");
+  } else {
+    throw new Error("Result is not a success return");
+  }
 });

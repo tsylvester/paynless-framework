@@ -50,6 +50,19 @@ Deno.test(
             assertEquals(params.contextForDocuments, undefined);
         });
 
+        await t.step("documentKey may be null, matching DialecticExecuteJobPayload.document_key", () => {
+            const params: DetermineContinuationParams = {
+                finishReasonContinue: false,
+                wasStructurallyFixed: false,
+                parsedContent: null,
+                continueUntilComplete: false,
+                documentKey: null,
+                contextForDocuments: undefined,
+                sourceObject: undefined,
+            };
+            assertEquals(params.documentKey, null);
+        });
+
         await t.step("sourceObject may be undefined", () => {
             const params: DetermineContinuationParams = {
                 finishReasonContinue: false,

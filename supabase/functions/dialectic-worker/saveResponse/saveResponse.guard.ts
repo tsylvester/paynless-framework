@@ -1,4 +1,5 @@
 import type {
+  NodeTokenUsage,
   SaveResponseDeps,
   SaveResponseErrorReturn,
   SaveResponseParams,
@@ -8,7 +9,7 @@ import type {
 } from './saveResponse.interface.ts';
 import { isRecord } from '../../_shared/utils/type-guards/type_guards.common.ts';
 
-function isNodeTokenUsageShape(value: unknown): boolean {
+export function isNodeTokenUsage(value: unknown): value is NodeTokenUsage {
   if (!isRecord(value)) {
     return false;
   }
@@ -23,7 +24,7 @@ function isTokenUsageOrNull(value: unknown): boolean {
   if (value === null) {
     return true;
   }
-  return isNodeTokenUsageShape(value);
+  return isNodeTokenUsage(value);
 }
 
 export function isSaveResponseRequestBody(
@@ -93,6 +94,9 @@ export function isSaveResponsePayload(v: unknown): v is SaveResponsePayload {
   if (v.finish_reason !== null && typeof v.finish_reason !== 'string') {
     return false;
   }
+  if (!('processingTimeMs' in v) || typeof v.processingTimeMs !== 'number') {
+    return false;
+  }
   return true;
 }
 
@@ -102,17 +106,13 @@ export function isSaveResponseDeps(v: unknown): v is SaveResponseDeps {
   }
   const keys: (keyof SaveResponseDeps)[] = [
     'logger',
-    'fileManager',
-    'notificationService',
-    'continueJob',
     'retryJob',
-    'resolveFinishReason',
-    'isIntermediateChunk',
-    'determineContinuation',
-    'buildUploadContext',
-    'debitTokens',
-    'sanitizeJsonContent',
-    'enqueueRenderJob',
+    'loadJobContext',
+    'assembleAiResponse',
+    'debitForResponse',
+    'prepareResponseContent',
+    'saveContributionResponse',
+    'saveCompressedResponse',
   ];
   for (let i = 0; i < keys.length; i++) {
     const key: keyof SaveResponseDeps = keys[i];
@@ -127,45 +127,25 @@ export function isSaveResponseDeps(v: unknown): v is SaveResponseDeps {
   ) {
     return false;
   }
-  if (
-    typeof v.fileManager !== 'object' ||
-    v.fileManager === null ||
-    Array.isArray(v.fileManager)
-  ) {
-    return false;
-  }
-  if (
-    typeof v.notificationService !== 'object' ||
-    v.notificationService === null ||
-    Array.isArray(v.notificationService)
-  ) {
-    return false;
-  }
-  if (typeof v.continueJob !== 'function') {
-    return false;
-  }
   if (typeof v.retryJob !== 'function') {
     return false;
   }
-  if (typeof v.resolveFinishReason !== 'function') {
+  if (typeof v.loadJobContext !== 'function') {
     return false;
   }
-  if (typeof v.isIntermediateChunk !== 'function') {
+  if (typeof v.assembleAiResponse !== 'function') {
     return false;
   }
-  if (typeof v.determineContinuation !== 'function') {
+  if (typeof v.debitForResponse !== 'function') {
     return false;
   }
-  if (typeof v.buildUploadContext !== 'function') {
+  if (typeof v.prepareResponseContent !== 'function') {
     return false;
   }
-  if (typeof v.debitTokens !== 'function') {
+  if (typeof v.saveContributionResponse !== 'function') {
     return false;
   }
-  if (typeof v.sanitizeJsonContent !== 'function') {
-    return false;
-  }
-  if (typeof v.enqueueRenderJob !== 'function') {
+  if (typeof v.saveCompressedResponse !== 'function') {
     return false;
   }
   return true;
@@ -183,7 +163,8 @@ export function isSaveResponseSuccessReturn(
   if (
     v.status !== 'completed' &&
     v.status !== 'needs_continuation' &&
-    v.status !== 'continuation_limit_reached'
+    v.status !== 'continuation_limit_reached' &&
+    v.status !== 'waiting_for_children'
   ) {
     return false;
   }

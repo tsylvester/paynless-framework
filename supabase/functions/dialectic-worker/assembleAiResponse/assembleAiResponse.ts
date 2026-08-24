@@ -6,7 +6,7 @@ import type {
   AssembleAiResponseSuccessReturn,
   AssembleAiResponseErrorReturn,
 } from "./assembleAiResponse.interface.ts";
-import { AssembleAiResponseTokenCountError } from "./assembleAiResponse.interface.ts";
+import { AssembleAiResponseTokenCountError, AssembleAiResponseMissingPreflightError } from "./assembleAiResponse.interface.ts";
 import type { TokenUsage, FinishReason } from "../../_shared/types.ts";
 import type { UnifiedAIResponse } from "../../dialectic-service/dialectic.interface.ts";
 import type { CountableChatPayload } from "../../_shared/types/tokenizer.types.ts";
@@ -36,13 +36,21 @@ export const assembleAiResponse: AssembleAiResponseFn = (
     };
   }
   if (effectiveTokenUsage === null && contentString !== null) {
+    if (params.preflightInputTokens === undefined) {
+      const error: AssembleAiResponseMissingPreflightError = new AssembleAiResponseMissingPreflightError({
+        apiIdentifier: params.modelConfig.api_identifier,
+      });
+      const errorReturn: AssembleAiResponseErrorReturn = { error, retriable: false };
+      return errorReturn;
+    }
+    const preflightInputTokens: number = params.preflightInputTokens;
     const countablePayload: CountableChatPayload = { message: contentString };
     try {
       const completionTokens: number = deps.countTokens(countablePayload, params.modelConfig);
       effectiveTokenUsage = {
-        prompt_tokens: params.preflightInputTokens,
+        prompt_tokens: preflightInputTokens,
         completion_tokens: completionTokens,
-        total_tokens: params.preflightInputTokens + completionTokens,
+        total_tokens: preflightInputTokens + completionTokens,
       };
     } catch (thrownValue: unknown) {
       const error: AssembleAiResponseTokenCountError = new AssembleAiResponseTokenCountError({

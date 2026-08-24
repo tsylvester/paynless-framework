@@ -16,6 +16,7 @@ import {
   RetryJobErrorReturn,
   RetryJobReturn,
   RetryJobFn,
+  BoundRetryJobFn,
   RetryJobUpdateError,
   RetryJobUpdateErrorConstructorParams,
   RetryJobNotificationError,
@@ -242,5 +243,14 @@ export const mockRetryJob: RetryJobFn = async (
   _params,
   _payload,
 ): Promise<RetryJobReturn> => {
+  return buildRetryJobNotifiedReturn();
+};
+
+// --- BoundRetryJobFn (function mock — no configuration) ---
+
+export const mockBoundRetryJobFn: BoundRetryJobFn = async (
+  _params,
+  _payload,
+) => {
   return buildRetryJobNotifiedReturn();
 };

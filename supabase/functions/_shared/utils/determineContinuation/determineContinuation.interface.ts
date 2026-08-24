@@ -14,7 +14,7 @@ export interface DetermineContinuationParams {
     /** From `job.payload.continueUntilComplete`. */
     continueUntilComplete: boolean;
     /** From `job.payload.document_key` (trigger 4 matches against `contextForDocuments`). */
-    documentKey: string | undefined;
+    documentKey: string | null | undefined;
     /** From `job.payload.context_for_documents` (trigger 4 missing-keys check). */
     contextForDocuments: ContextForDocument[] | undefined;
     /** Parsed source object a COMPRESS job was sent, from its payload's `content`; `undefined` for an EXECUTE job. */

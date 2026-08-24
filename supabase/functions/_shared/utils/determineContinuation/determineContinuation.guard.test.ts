@@ -1,49 +1,167 @@
-import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { isDetermineContinuationParams } from "./determineContinuation.guard.ts";
+import { assert } from "https://deno.land/std@0.224.0/assert/mod.ts";
+import {
+    isDetermineContinuationParams,
+    isDetermineContinuationResult,
+} from "./determineContinuation.guard.ts";
 import {
     buildDetermineContinuationParams,
     invalidateDetermineContinuationParams,
+    buildDetermineContinuationResult,
+    invalidateDetermineContinuationResult,
 } from "./determineContinuation.mock.ts";
 
-Deno.test(
-    "Guard: isDetermineContinuationParams validates sourceObject presence",
-    async (t) => {
-        await t.step("accepts the valid default", () => {
-            assertEquals(isDetermineContinuationParams(buildDetermineContinuationParams()), true);
-        });
+/* ------------------------------------------------------------------ */
+/*  isDetermineContinuationParams                                      */
+/* ------------------------------------------------------------------ */
 
-        await t.step("accepts sourceObject undefined", () => {
-            const params = buildDetermineContinuationParams({ sourceObject: undefined });
-            assertEquals(isDetermineContinuationParams(params), true);
-        });
+/** the builder's valid default is accepted. */
+Deno.test("isDetermineContinuationParams accepts the valid default", () => {
+    assert(isDetermineContinuationParams(buildDetermineContinuationParams()));
+});
 
-        await t.step("accepts sourceObject as a string", () => {
-            const params = buildDetermineContinuationParams({ sourceObject: "not-a-record" });
-            assertEquals(isDetermineContinuationParams(params), true);
-        });
+/** valid overrides are accepted, including documentKey null and undefined. */
+Deno.test("isDetermineContinuationParams accepts valid overrides", () => {
+    assert(isDetermineContinuationParams(
+        buildDetermineContinuationParams({ finishReasonContinue: true }),
+    ));
+    assert(isDetermineContinuationParams(
+        buildDetermineContinuationParams({ wasStructurallyFixed: true }),
+    ));
+    assert(isDetermineContinuationParams(
+        buildDetermineContinuationParams({ continueUntilComplete: true }),
+    ));
+    assert(isDetermineContinuationParams(
+        buildDetermineContinuationParams({ documentKey: "business_case" }),
+    ));
+    assert(isDetermineContinuationParams(
+        buildDetermineContinuationParams({ documentKey: null }),
+    ));
+    assert(isDetermineContinuationParams(
+        buildDetermineContinuationParams({ documentKey: undefined }),
+    ));
+    assert(isDetermineContinuationParams(
+        buildDetermineContinuationParams({ contextForDocuments: undefined }),
+    ));
+    assert(isDetermineContinuationParams(
+        buildDetermineContinuationParams({ sourceObject: undefined }),
+    ));
+    assert(isDetermineContinuationParams(
+        buildDetermineContinuationParams({ parsedContent: null }),
+    ));
+    assert(isDetermineContinuationParams(
+        buildDetermineContinuationParams({ parsedContent: "string" }),
+    ));
+    assert(isDetermineContinuationParams(
+        buildDetermineContinuationParams({ sourceObject: "string" }),
+    ));
+    assert(isDetermineContinuationParams(
+        buildDetermineContinuationParams({ sourceObject: [1, 2, 3] }),
+    ));
+});
 
-        await t.step("accepts sourceObject as an array", () => {
-            const params = buildDetermineContinuationParams({ sourceObject: [1, 2, 3] });
-            assertEquals(isDetermineContinuationParams(params), true);
-        });
+/** null, undefined, primitives, and arrays are rejected. */
+Deno.test("isDetermineContinuationParams rejects non-objects", () => {
+    assert(!isDetermineContinuationParams(null));
+    assert(!isDetermineContinuationParams(undefined));
+    assert(!isDetermineContinuationParams(7));
+    assert(!isDetermineContinuationParams("x"));
+    assert(!isDetermineContinuationParams([]));
+});
 
-        await t.step("accepts sourceObject as null", () => {
-            const params = buildDetermineContinuationParams({ sourceObject: null });
-            assertEquals(isDetermineContinuationParams(params), true);
-        });
+/** each typed property, corrupted in turn, is rejected. */
+Deno.test("isDetermineContinuationParams rejects each corrupted typed property", () => {
+    assert(!isDetermineContinuationParams(
+        invalidateDetermineContinuationParams({ finishReasonContinue: "not-boolean" }),
+    ));
+    assert(!isDetermineContinuationParams(
+        invalidateDetermineContinuationParams({ wasStructurallyFixed: "not-boolean" }),
+    ));
+    assert(!isDetermineContinuationParams(
+        invalidateDetermineContinuationParams({ continueUntilComplete: "not-boolean" }),
+    ));
+    assert(!isDetermineContinuationParams(
+        invalidateDetermineContinuationParams({ documentKey: 42 }),
+    ));
+    assert(!isDetermineContinuationParams(
+        invalidateDetermineContinuationParams({ contextForDocuments: "not-an-array" }),
+    ));
+});
 
-        await t.step("rejects the omission of sourceObject", () => {
-            const { sourceObject: _omit, ...missingSourceObject } = buildDetermineContinuationParams();
-            assertEquals(isDetermineContinuationParams(missingSourceObject), false);
-        });
+/** each required property, omitted in turn, is rejected. */
+Deno.test("isDetermineContinuationParams rejects each omitted required property", () => {
+    {
+        const { finishReasonContinue: _o, ...rest } = buildDetermineContinuationParams();
+        assert(!isDetermineContinuationParams(rest));
+    }
+    {
+        const { wasStructurallyFixed: _o, ...rest } = buildDetermineContinuationParams();
+        assert(!isDetermineContinuationParams(rest));
+    }
+    {
+        const { parsedContent: _o, ...rest } = buildDetermineContinuationParams();
+        assert(!isDetermineContinuationParams(rest));
+    }
+    {
+        const { continueUntilComplete: _o, ...rest } = buildDetermineContinuationParams();
+        assert(!isDetermineContinuationParams(rest));
+    }
+    {
+        const { documentKey: _o, ...rest } = buildDetermineContinuationParams();
+        assert(!isDetermineContinuationParams(rest));
+    }
+    {
+        const { contextForDocuments: _o, ...rest } = buildDetermineContinuationParams();
+        assert(!isDetermineContinuationParams(rest));
+    }
+    {
+        const { sourceObject: _o, ...rest } = buildDetermineContinuationParams();
+        assert(!isDetermineContinuationParams(rest));
+    }
+});
 
-        await t.step("accepts the invalidator's corrupted sourceObject", () => {
-            assertEquals(
-                isDetermineContinuationParams(
-                    invalidateDetermineContinuationParams({ sourceObject: 42 }),
-                ),
-                true,
-            );
-        });
-    },
-);
+/* ------------------------------------------------------------------ */
+/*  isDetermineContinuationResult                                      */
+/* ------------------------------------------------------------------ */
+
+/** the builder's valid default is accepted. */
+Deno.test("isDetermineContinuationResult accepts the valid default", () => {
+    assert(isDetermineContinuationResult(buildDetermineContinuationResult()));
+});
+
+/** valid overrides are accepted. */
+Deno.test("isDetermineContinuationResult accepts valid overrides", () => {
+    assert(isDetermineContinuationResult(
+        buildDetermineContinuationResult({ shouldContinue: true }),
+    ));
+    assert(isDetermineContinuationResult(
+        buildDetermineContinuationResult({ shouldContinue: false }),
+    ));
+});
+
+/** null, undefined, primitives, and arrays are rejected. */
+Deno.test("isDetermineContinuationResult rejects non-objects", () => {
+    assert(!isDetermineContinuationResult(null));
+    assert(!isDetermineContinuationResult(undefined));
+    assert(!isDetermineContinuationResult(7));
+    assert(!isDetermineContinuationResult("x"));
+    assert(!isDetermineContinuationResult([]));
+});
+
+/** shouldContinue corrupted to a non-boolean is rejected. */
+Deno.test("isDetermineContinuationResult rejects corrupted shouldContinue", () => {
+    assert(!isDetermineContinuationResult(
+        invalidateDetermineContinuationResult({ shouldContinue: "not-boolean" }),
+    ));
+});
+
+/** shouldContinue omitted is rejected. */
+Deno.test("isDetermineContinuationResult rejects omitted shouldContinue", () => {
+    const { shouldContinue: _o, ...rest } = buildDetermineContinuationResult();
+    assert(!isDetermineContinuationResult(rest));
+});
+
+/** a record with shouldContinue plus an extra key is rejected, the guard requiring exactly one key. */
+Deno.test("isDetermineContinuationResult rejects extra keys", () => {
+    const withExtra = { ...buildDetermineContinuationResult(), extra: "field" };
+    assert(!isDetermineContinuationResult(withExtra));
+});

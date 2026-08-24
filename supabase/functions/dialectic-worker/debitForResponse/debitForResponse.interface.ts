@@ -41,6 +41,11 @@ export type DebitForResponseFn = (
   payload: DebitForResponsePayload,
 ) => Promise<DebitForResponseReturn>;
 
+export type BoundDebitForResponseFn = (
+  params: DebitForResponseParams,
+  payload: DebitForResponsePayload,
+) => Promise<DebitForResponseReturn>;
+
 export interface DebitForResponseWalletReadErrorConstructorParams {
   walletId: string;
   driverMessage: string;

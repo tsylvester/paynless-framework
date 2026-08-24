@@ -1340,6 +1340,7 @@ export interface DialecticBaseJobPayload
 	model_id: string; // Individual model ID for this specific job
 	sourceContributionId?: string | null;
 	source_prompt_resource_id?: string;
+	preflight_input_tokens?: number;
 }
 
 /**

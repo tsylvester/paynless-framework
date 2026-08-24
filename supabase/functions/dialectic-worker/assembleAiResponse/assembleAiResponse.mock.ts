@@ -2,14 +2,17 @@ import type {
   AssembleAiResponseDeps,
   AssembleAiResponseParams,
   AssembleAiResponsePayload,
+  AssembleAiResponseMissingPreflightErrorConstructorParams,
   AssembleAiResponseTokenCountErrorConstructorParams,
-  AssembleAiResponseTokenCountError,
   AssembleAiResponseSuccessReturn,
   AssembleAiResponseErrorReturn,
   AssembleAiResponseFn,
   BoundAssembleAiResponseFn,
 } from "./assembleAiResponse.interface.ts";
-import { AssembleAiResponseTokenCountError as AssembleAiResponseTokenCountErrorClass } from "./assembleAiResponse.interface.ts";
+import {
+  AssembleAiResponseTokenCountError,
+  AssembleAiResponseMissingPreflightError,
+} from "./assembleAiResponse.interface.ts";
 import type { BoundCountTokensFn } from "../../_shared/types/tokenizer.types.ts";
 import { buildExtendedModelConfig } from "../../_shared/ai_service/ai_provider.mock.ts";
 import { buildTokenUsage } from "../../_shared/dialectic.mock.ts";
@@ -123,8 +126,45 @@ export function invalidateAssembleAiResponseTokenCountErrorConstructorParams(
 export function buildAssembleAiResponseTokenCountError(
   overrides?: AssembleAiResponseTokenCountErrorConstructorParamsOverrides,
 ): AssembleAiResponseTokenCountError {
-  return new AssembleAiResponseTokenCountErrorClass(
+  return new AssembleAiResponseTokenCountError(
     buildAssembleAiResponseTokenCountErrorConstructorParams(overrides),
+  );
+}
+
+// --- AssembleAiResponseMissingPreflightErrorConstructorParams ---
+
+export type AssembleAiResponseMissingPreflightErrorConstructorParamsOverrides =
+  Partial<AssembleAiResponseMissingPreflightErrorConstructorParams>;
+
+export function buildAssembleAiResponseMissingPreflightErrorConstructorParams(
+  overrides?: AssembleAiResponseMissingPreflightErrorConstructorParamsOverrides,
+): AssembleAiResponseMissingPreflightErrorConstructorParams {
+  const base: AssembleAiResponseMissingPreflightErrorConstructorParams = {
+    apiIdentifier: "test-api-identifier",
+  };
+  return overrides ? { ...base, ...overrides } : base;
+}
+
+export type AssembleAiResponseMissingPreflightErrorConstructorParamsCorruptions = {
+  [K in keyof AssembleAiResponseMissingPreflightErrorConstructorParams]?: unknown;
+};
+
+export function invalidateAssembleAiResponseMissingPreflightErrorConstructorParams(
+  corruptions: AssembleAiResponseMissingPreflightErrorConstructorParamsCorruptions,
+): unknown {
+  return {
+    ...buildAssembleAiResponseMissingPreflightErrorConstructorParams(),
+    ...corruptions,
+  };
+}
+
+// --- AssembleAiResponseMissingPreflightError ---
+
+export function buildAssembleAiResponseMissingPreflightError(
+  overrides?: AssembleAiResponseMissingPreflightErrorConstructorParamsOverrides,
+): AssembleAiResponseMissingPreflightError {
+  return new AssembleAiResponseMissingPreflightError(
+    buildAssembleAiResponseMissingPreflightErrorConstructorParams(overrides),
   );
 }
 

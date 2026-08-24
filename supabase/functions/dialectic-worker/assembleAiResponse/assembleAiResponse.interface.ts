@@ -8,7 +8,7 @@ export interface AssembleAiResponseDeps {
 
 export interface AssembleAiResponseParams {
   processingTimeMs: number;
-  preflightInputTokens: number;
+  preflightInputTokens?: number;
   modelConfig: AiModelExtendedConfig;
 }
 
@@ -34,10 +34,23 @@ export class AssembleAiResponseTokenCountError extends Error {
   }
 }
 
+export interface AssembleAiResponseMissingPreflightErrorConstructorParams {
+  apiIdentifier: string;
+}
+
+export class AssembleAiResponseMissingPreflightError extends Error {
+  readonly apiIdentifier: string;
+  constructor(params: AssembleAiResponseMissingPreflightErrorConstructorParams) {
+    super(`apiIdentifier: ${params.apiIdentifier}`);
+    this.name = "AssembleAiResponseMissingPreflightError";
+    this.apiIdentifier = params.apiIdentifier;
+  }
+}
+
 export type AssembleAiResponseSuccessReturn = { aiResponse: UnifiedAIResponse };
 
 export type AssembleAiResponseErrorReturn = {
-  error: AssembleAiResponseTokenCountError;
+  error: AssembleAiResponseTokenCountError | AssembleAiResponseMissingPreflightError;
   retriable: boolean;
 };
 

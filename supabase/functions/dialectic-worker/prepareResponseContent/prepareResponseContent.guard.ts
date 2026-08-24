@@ -37,9 +37,13 @@ export function isPrepareResponseContentParams(
   if (!isRecord(value)) return false;
   if (typeof value.jobId !== "string") return false;
   if (value.jobId.trim() === "") return false;
-  if (!isCompressionMode(value.mode)) return false;
+  if (value.mode !== undefined && !isCompressionMode(value.mode)) return false;
   if (typeof value.continueUntilComplete !== "boolean") return false;
-  if (value.documentKey !== undefined && typeof value.documentKey !== "string") {
+  if (
+    value.documentKey !== undefined &&
+    value.documentKey !== null &&
+    typeof value.documentKey !== "string"
+  ) {
     return false;
   }
   if (value.contextForDocuments !== undefined) {

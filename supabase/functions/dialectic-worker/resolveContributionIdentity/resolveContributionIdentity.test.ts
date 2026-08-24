@@ -9,7 +9,12 @@ import { FileType, DialecticStageSlug } from "../../_shared/types/file_manager.t
 import { MockLogger } from "../../_shared/logger.mock.ts";
 import { createMockSupabaseClient } from "../../_shared/supabase.mock.ts";
 import { buildMockProvider } from "../../_shared/ai_service/ai_provider.mock.ts";
-import { buildUnifiedAIResponse } from "../../_shared/dialectic.mock.ts";
+import {
+  buildDialecticExecuteJobPayload,
+  buildDialecticJobRow,
+  buildUnifiedAIResponse,
+} from "../../_shared/dialectic.mock.ts";
+import { isJson } from "../../_shared/utils/type_guards.ts";
 import { resolveContributionIdentity } from "./resolveContributionIdentity.ts";
 import {
   isResolveContributionIdentitySuccessReturn,
@@ -22,10 +27,6 @@ import {
   isResolveContributionIdentitySourceGroupError,
   isResolveContributionIdentityRecipeStepReadError,
 } from "./resolveContributionIdentity.guard.ts";
-import {
-  createMockJobRow,
-  saveResponseTestPayloadDocumentArtifact,
-} from "../saveResponse/saveResponse.mock.ts";
 import {
   buildResolveContributionIdentityDeps,
   buildResolveContributionIdentityParams,
@@ -200,9 +201,17 @@ Deno.test("anchor log does not fire when sourceAnchorModelSlug is absent", async
  */
 Deno.test("target precedence: payload value wins over row value", async () => {
   // Arrange
+  const documentArtifactPayload = buildDialecticExecuteJobPayload({
+    output_type: FileType.business_case,
+    document_relationships: {
+      thesis: "contrib-test-1",
+      source_group: "00000000-0000-4000-8000-000000000002",
+    },
+  });
+  if (!isJson(documentArtifactPayload)) throw new Error("payload is not valid Json");
   const deps = buildResolveContributionIdentityDeps();
   const params = buildResolveContributionIdentityParams({
-    job: createMockJobRow(saveResponseTestPayloadDocumentArtifact, { target_contribution_id: "from-row" }),
+    job: buildDialecticJobRow({ payload: documentArtifactPayload, target_contribution_id: "from-row" }),
   });
   const payload = buildResolveContributionIdentityPayload({
     target_contribution_id: "from-payload",
@@ -230,9 +239,17 @@ Deno.test("target precedence: payload value wins over row value", async () => {
  */
 Deno.test("target precedence: row value used when payload absent", async () => {
   // Arrange
+  const documentArtifactPayload = buildDialecticExecuteJobPayload({
+    output_type: FileType.business_case,
+    document_relationships: {
+      thesis: "contrib-test-1",
+      source_group: "00000000-0000-4000-8000-000000000002",
+    },
+  });
+  if (!isJson(documentArtifactPayload)) throw new Error("payload is not valid Json");
   const deps = buildResolveContributionIdentityDeps();
   const params = buildResolveContributionIdentityParams({
-    job: createMockJobRow(saveResponseTestPayloadDocumentArtifact, { target_contribution_id: "from-row" }),
+    job: buildDialecticJobRow({ payload: documentArtifactPayload, target_contribution_id: "from-row" }),
   });
   const payload = buildResolveContributionIdentityPayload({
     document_relationships: { thesis: "contrib-1" },

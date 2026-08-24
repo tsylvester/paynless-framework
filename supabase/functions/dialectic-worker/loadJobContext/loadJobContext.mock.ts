@@ -17,6 +17,7 @@ import type {
   LoadJobContextSuccessReturn,
   LoadJobContextErrorReturn,
   LoadJobContextFn,
+  BoundLoadJobContextFn,
 } from "./loadJobContext.interface.ts";
 import {
   LoadJobContextJobReadError as LoadJobContextJobReadErrorClass,
@@ -382,6 +383,15 @@ export function invalidateLoadJobContextErrorReturn(
 
 export const mockLoadJobContext: LoadJobContextFn = async (
   _deps,
+  _params,
+  _payload,
+) => {
+  return buildLoadJobContextSuccessReturn();
+};
+
+// --- BoundLoadJobContextFn (function mock — no configuration) ---
+
+export const mockBoundLoadJobContextFn: BoundLoadJobContextFn = async (
   _params,
   _payload,
 ) => {

@@ -11,6 +11,7 @@ import {
     buildAssembleAiResponseErrorReturn,
     invalidateAssembleAiResponseErrorReturn,
     buildAssembleAiResponseTokenCountError,
+    buildAssembleAiResponseMissingPreflightError,
 } from "./assembleAiResponse.mock.ts";
 import { invalidateTokenUsage, invalidateUnifiedAIResponse } from "../../_shared/dialectic.mock.ts";
 import {
@@ -20,6 +21,7 @@ import {
     isAssembleAiResponseSuccessReturn,
     isAssembleAiResponseErrorReturn,
     isAssembleAiResponseTokenCountError,
+    isAssembleAiResponseMissingPreflightError,
 } from "./assembleAiResponse.guard.ts";
 
 Deno.test("Type Guard: isAssembleAiResponseDeps", async (t) => {
@@ -70,9 +72,9 @@ Deno.test("Type Guard: isAssembleAiResponseParams", async (t) => {
         assert(!isAssembleAiResponseParams(invalidateAssembleAiResponseParams({ processingTimeMs: -1 })));
     });
 
-    await t.step("rejects preflightInputTokens absent", () => {
+    await t.step("accepts preflightInputTokens absent", () => {
         const { preflightInputTokens: _omit, ...rest } = buildAssembleAiResponseParams();
-        assert(!isAssembleAiResponseParams(rest));
+        assert(isAssembleAiResponseParams(rest));
     });
 
     await t.step("rejects preflightInputTokens non-numeric", () => {
@@ -86,6 +88,10 @@ Deno.test("Type Guard: isAssembleAiResponseParams", async (t) => {
 
     await t.step("rejects preflightInputTokens negative", () => {
         assert(!isAssembleAiResponseParams(invalidateAssembleAiResponseParams({ preflightInputTokens: -1 })));
+    });
+
+    await t.step("rejects preflightInputTokens null", () => {
+        assert(!isAssembleAiResponseParams(invalidateAssembleAiResponseParams({ preflightInputTokens: null })));
     });
 
     await t.step("rejects modelConfig absent", () => {
@@ -176,6 +182,10 @@ Deno.test("Type Guard: isAssembleAiResponseErrorReturn", async (t) => {
         assert(isAssembleAiResponseErrorReturn(buildAssembleAiResponseErrorReturn()));
     });
 
+    await t.step("accepts an error return built with buildAssembleAiResponseMissingPreflightError", () => {
+        assert(isAssembleAiResponseErrorReturn(buildAssembleAiResponseErrorReturn({ error: buildAssembleAiResponseMissingPreflightError() })));
+    });
+
     await t.step("rejects error absent", () => {
         const { error: _omit, ...rest } = buildAssembleAiResponseErrorReturn();
         assert(!isAssembleAiResponseErrorReturn(rest));
@@ -231,5 +241,23 @@ Deno.test("Type Guard: isAssembleAiResponseTokenCountError", async (t) => {
 
     await t.step("rejects a primitive", () => {
         assert(!isAssembleAiResponseTokenCountError("string"));
+    });
+});
+
+Deno.test("Type Guard: isAssembleAiResponseMissingPreflightError", async (t) => {
+    await t.step("accepts its builder's instance", () => {
+        assert(isAssembleAiResponseMissingPreflightError(buildAssembleAiResponseMissingPreflightError()));
+    });
+
+    await t.step("rejects a buildAssembleAiResponseTokenCountError instance", () => {
+        assert(!isAssembleAiResponseMissingPreflightError(buildAssembleAiResponseTokenCountError()));
+    });
+
+    await t.step("rejects a plain Error", () => {
+        assert(!isAssembleAiResponseMissingPreflightError(new Error("plain")));
+    });
+
+    await t.step("rejects a non-object", () => {
+        assert(!isAssembleAiResponseMissingPreflightError(null));
     });
 });

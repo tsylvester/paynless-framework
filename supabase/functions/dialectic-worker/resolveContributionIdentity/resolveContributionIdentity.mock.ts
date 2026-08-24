@@ -29,14 +29,14 @@ import {
 import { MockLogger } from "../../_shared/logger.mock.ts";
 import { createMockSupabaseClient } from "../../_shared/supabase.mock.ts";
 import { buildMockProvider } from "../../_shared/ai_service/ai_provider.mock.ts";
-import { buildUnifiedAIResponse } from "../../_shared/dialectic.mock.ts";
-import { buildCanonicalPathParams } from "../../_shared/services/file_manager.mock.ts";
 import {
-  createMockDialecticExecuteJobPayload,
-  createMockJobRow,
-  saveResponseTestPayloadDocumentArtifact,
-} from "../saveResponse/saveResponse.mock.ts";
+  buildDialecticExecuteJobPayload,
+  buildDialecticJobRow,
+  buildUnifiedAIResponse,
+} from "../../_shared/dialectic.mock.ts";
+import { buildCanonicalPathParams } from "../../_shared/services/file_manager.mock.ts";
 import { FileType } from "../../_shared/types/file_manager.types.ts";
+import { isJson } from "../../_shared/utils/type_guards.ts";
 
 // --- ResolveContributionIdentityDeps ---
 
@@ -71,9 +71,19 @@ export function buildResolveContributionIdentityParams(
   overrides?: ResolveContributionIdentityParamsOverrides,
 ): ResolveContributionIdentityParams {
   const mockSetup = createMockSupabaseClient();
+  const documentArtifactPayload = buildDialecticExecuteJobPayload({
+    output_type: FileType.business_case,
+    document_relationships: {
+      thesis: "contrib-test-1",
+      source_group: "00000000-0000-4000-8000-000000000002",
+    },
+  });
+  if (!isJson(documentArtifactPayload)) {
+    throw new Error("payload is not valid Json");
+  }
   const base: ResolveContributionIdentityParams = {
     dbClient: mockSetup.client as unknown as SupabaseClient<Database>,
-    job: createMockJobRow(saveResponseTestPayloadDocumentArtifact),
+    job: buildDialecticJobRow({ payload: documentArtifactPayload }),
     providerRow: buildMockProvider(),
     aiResponse: buildUnifiedAIResponse({
       rawProviderResponse: { token_usage: null, finish_reason: "stop" },
@@ -101,7 +111,10 @@ export function buildResolveContributionIdentityPayload(
   overrides?: ResolveContributionIdentityPayloadOverrides,
 ): ResolveContributionIdentityPayload {
   const base: ResolveContributionIdentityPayload = {
-    ...createMockDialecticExecuteJobPayload(),
+    ...buildDialecticExecuteJobPayload({
+      output_type: FileType.HeaderContext,
+      document_key: FileType.HeaderContext,
+    }),
     canonicalPathParams: buildCanonicalPathParams(),
   };
   return overrides ? { ...base, ...overrides } : base;

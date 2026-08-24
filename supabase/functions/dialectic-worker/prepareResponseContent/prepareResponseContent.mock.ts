@@ -6,6 +6,7 @@ import type {
   PrepareResponseContentPreparedReturn,
   PrepareResponseContentErrorReturn,
   PrepareResponseContentFn,
+  BoundPrepareResponseContentFn,
   PrepareResponseContentSanitizeErrorConstructorParams,
   PrepareResponseContentSanitizeError,
   PrepareResponseContentContinuationErrorConstructorParams,
@@ -304,6 +305,15 @@ export function invalidatePrepareResponseContentErrorReturn(
 
 export const mockPrepareResponseContent: PrepareResponseContentFn = (
   _deps,
+  _params,
+  _payload,
+) => {
+  return buildPrepareResponseContentPreparedReturn();
+};
+
+// --- BoundPrepareResponseContentFn (function mock — no configuration) ---
+
+export const mockBoundPrepareResponseContentFn: BoundPrepareResponseContentFn = (
   _params,
   _payload,
 ) => {

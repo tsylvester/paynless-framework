@@ -42,6 +42,11 @@ export type RetryJobFn = (
   payload: RetryJobPayload,
 ) => Promise<RetryJobReturn>;
 
+export type BoundRetryJobFn = (
+  params: RetryJobParams,
+  payload: RetryJobPayload,
+) => Promise<RetryJobReturn>;
+
 export interface RetryJobUpdateErrorConstructorParams {
   jobId: string;
   attemptedStatus: string;

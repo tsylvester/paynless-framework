@@ -141,6 +141,15 @@ Deno.test("Type Guard: isPrepareResponseContentParams", async (t) => {
     );
   });
 
+  /** Contract: documentKey null is accepted, matching DialecticExecuteJobPayload.document_key. */
+  await t.step("accepts documentKey null", () => {
+    assert(
+      isPrepareResponseContentParams(
+        buildPrepareResponseContentParams({ documentKey: null }),
+      ),
+    );
+  });
+
   /** Contract: contextForDocuments undefined is accepted, it being a declared absent state. */
   await t.step("accepts contextForDocuments undefined", () => {
     assert(
@@ -183,10 +192,10 @@ Deno.test("Type Guard: isPrepareResponseContentParams", async (t) => {
     );
   });
 
-  /** Contract: mode absent is rejected. */
-  await t.step("rejects mode absent", () => {
+  /** Contract: mode absent is accepted, it being an optional field an EXECUTE response omits. */
+  await t.step("accepts mode absent", () => {
     const { mode: _omit, ...rest } = buildPrepareResponseContentParams();
-    assert(!isPrepareResponseContentParams(rest));
+    assert(isPrepareResponseContentParams(rest));
   });
 
   /** Contract: mode outside CompressionMode is rejected. */

@@ -791,7 +791,7 @@ Oversized model inputs compress incrementally until the preflight fits: the pare
       * `[✅]`   The chain of `saveContributionResponse → real resolveContributionIdentity → real buildUploadContext` produces a valid `ModelContributionUploadContext` — integration test.
       * `[✅]`   An identity-resolution failure in the real `resolveContributionIdentity` propagates through `saveContributionResponse` — integration test.
 
-* `[ ]`   supabase/functions/dialectic-worker/saveCompressedResponse/saveCompressedResponse.ts **[BE] The COMPRESS arm: a continuation gate on `shouldContinue` alone for both modes, idempotent `CompressedContextRawJson` persistence, a RENDER dispatch plus `waiting_for_children` for a renderable source, and the extracted `CompressedContext` write for a text source**
+* `[✅]`   supabase/functions/dialectic-worker/saveCompressedResponse/saveCompressedResponse.ts **[BE] The COMPRESS arm: a continuation gate on `shouldContinue` alone for both modes, idempotent `CompressedContextRawJson` persistence, a RENDER dispatch plus `waiting_for_children` for a renderable source, and the extracted `CompressedContext` write for a text source**
 
    * `[✅]`   `objective`
       * `[✅]`   The COMPRESS tail does not exist as a separate module. The scope's target architecture routes `saveResponse` on `job_type`, and the COMPRESS arm is a distinct persistence model from the contribution arm: it persists resource artifacts (`CompressedContextRawJson`, `CompressedContext`) at canonical `_work` paths, uses `ResourceUploadContext` rather than `ModelContributionUploadContext`, dispatches RENDER for renderable sources only, and sets `waiting_for_children` instead of running a finalization sequence. No contribution row is created, no relationships are persisted, and no notifications are sent. The continuation decision is a single gate on `shouldContinue` from `prepareResponseContent` — no `continueUntilComplete` conjunction, no mode-specific completeness logic.
@@ -929,12 +929,12 @@ Oversized model inputs compress incrementally until the preflight fits: the pare
       * `[✅]`   Branch: CompressedContextRawJson upload fails.
          * `[✅]`   Condition: `rawJsonResult.error`.
          * `[✅]`   Decision: error field check on the upload result.
-         * `[✅]`   Dependency call: `deps.buildUploadContext(rawJsonResourceParams)` then `deps.fileManager.uploadAndRegisterFile(rawJsonContext)`. The `rawJsonResourceParams` is a `BuildUploadContextResourceParams` with `storageFileType: FileType.CompressedContextRawJson`, identity fields read from the payload (`projectId`, `sessionId`, `iterationNumber`, `stageSlug`, `targetKey`, `sourceType`, `documentKey`, `sourceId`, `role`, `chunk_index` as `chunkIndex`, `chunk_total` as `chunkTotal`), `contentForStorage` from `preparedContentResult.contentForStorage`, `projectOwnerUserId` from `job.user_id`, `sourcePromptResourceId` from `payload.source_prompt_resource_id`, and a constructed `description`.
+         * `[✅]`   Dependency call: `deps.buildUploadContext(rawJsonResourceParams)` then `deps.fileManager.uploadAndRegisterFile(rawJsonContext)`. The `rawJsonResourceParams` is a `BuildUploadContextResourceParams` with `storageFileType: FileType.CompressedContextRawJson`, identity fields read from the payload (`projectId`, `sessionId`, `iterationNumber`, `stageSlug`, `output_type`, `sourceType`, `documentKey`, `sourceId`, `role`, `chunk_index` as `chunkIndex`, `chunk_total` as `chunkTotal`), `contentForStorage` from `preparedContentResult.contentForStorage`, `projectOwnerUserId` from `job.user_id`, `sourcePromptResourceId` from `payload.source_prompt_resource_id`, and a constructed `description`.
          * `[✅]`   Outcome: error arm, `SaveCompressedResponseRawJsonUploadError`, `retriable: false`.
       * `[✅]`   Branch: json mode — RENDER dispatch fails.
          * `[✅]`   Condition: `payload.mode === 'json'` and `'error' in renderResult`.
          * `[✅]`   Decision: error-arm check on the `enqueueRenderJob` return.
-         * `[✅]`   Dependency call: `deps.enqueueRenderJob(renderParams, renderPayload)`. `renderParams` is an `EnqueueRenderJobParams` built from the payload (`sessionId`, `stageSlug`, `iterationNumber`, `projectId`, `walletId`) and params (`job.id` as `jobId`, `job.user_id` as `projectOwnerUserId`, `payload.user_jwt` as `userAuthToken`, `providerRow.id` as `modelId`, `job.is_test_job` as `isTestJob`, `payload.output_type` as `outputType`). `renderPayload` is an `EnqueueRenderCompressedContextPayload` built from the payload (`sourceType`, `documentKey`, `docType`, `sourceStageSlug`, `targetKey`).
+         * `[✅]`   Dependency call: `deps.enqueueRenderJob(renderParams, renderPayload)`. `renderParams` is an `EnqueueRenderJobParams` built from the payload (`sessionId`, `stageSlug`, `iterationNumber`, `projectId`, `walletId`) and params (`job.id` as `jobId`, `job.user_id` as `projectOwnerUserId`, `payload.user_jwt` as `userAuthToken`, `providerRow.id` as `modelId`, `job.is_test_job` as `isTestJob`, `payload.output_type` as `outputType`). `renderPayload` is an `EnqueueRenderCompressedContextPayload` built from the payload (`sourceType`, `documentKey`, `docType`, `sourceStageSlug`, `output_type`).
          * `[✅]`   Outcome: propagate `renderResult` unchanged on this module's error arm.
       * `[✅]`   Branch: json mode — waiting_for_children DB update fails.
          * `[✅]`   Condition: `payload.mode === 'json'` and `updateError`.
@@ -974,350 +974,610 @@ Oversized model inputs compress incrementally until the preflight fits: the pare
       * `[✅]`   `isSaveCompressedResponseParams`: a valid params object passes; removing each of the five keys in turn fails; a non-object fails.
       * `[✅]`   Every block carries the extended header: `Contract`, `Arrange`, `Act`, `Assert`, `Boundary`, `Mocked`.
 
-   * `[ ]`   `saveCompressedResponse.guard.ts`
-      * `[ ]`   `isSaveCompressedResponseDeps` — checks `fileManager` has `uploadAndRegisterFile` method, `buildUploadContext` is a function, and `enqueueRenderJob` is a function.
-      * `[ ]`   `isSaveCompressedResponseParams` — checks `dbClient` is an object, `job` is a record, `providerRow` is a record, `assembledResponse` is a record, `preparedContentResult` is a record with `retryRequired: false`.
+   * `[✅]`   `saveCompressedResponse.guard.ts`
+      * `[✅]`   `isSaveCompressedResponseDeps` — checks `fileManager` has `uploadAndRegisterFile` method, `buildUploadContext` is a function, and `enqueueRenderJob` is a function.
+      * `[✅]`   `isSaveCompressedResponseParams` — checks `dbClient` is an object, `job` is a record, `providerRow` is a record, `assembledResponse` is a record, `preparedContentResult` is a record with `retryRequired: false`.
 
-   * `[ ]`   `saveCompressedResponse.test.ts`
-      * `[ ]`   Guards on entry: deps invalid returns error arm with `retriable: false`, params invalid returns error arm with `retriable: false`.
-      * `[ ]`   Continuation gate: `shouldContinue` true returns `{ status: 'needs_continuation' }` — no upload, no render dispatch, no DB update.
-      * `[ ]`   `shouldContinue` false, `CompressedContextRawJson` upload error → returns `SaveCompressedResponseRawJsonUploadError` with `retriable: false`.
-      * `[ ]`   Json mode, raw JSON uploaded, `enqueueRenderJob` returns error → propagated unchanged on this module's error arm.
-      * `[ ]`   Json mode, RENDER dispatched, `waiting_for_children` DB update error → returns `SaveCompressedResponseJobUpdateError` with `retriable: true`.
-      * `[ ]`   Json mode, all succeed → returns `{ status: 'waiting_for_children' }`.
-      * `[ ]`   Text mode, raw JSON uploaded, `CompressedContext` upload error → returns `SaveCompressedResponseExtractedUploadError` with `retriable: false`.
-      * `[ ]`   Text mode, both uploads succeed → returns `{ status: 'completed' }`.
-      * `[ ]`   The `buildUploadContext` call for `CompressedContextRawJson` receives `storageFileType: FileType.CompressedContextRawJson` and the payload's identity fields (`projectId`, `sessionId`, `iterationNumber`, `stageSlug`, `targetKey`, `sourceType`, `documentKey`, `sourceId`, `role`, `chunk_index`, `chunk_total`), `preparedContentResult.contentForStorage` as `contentForStorage`, `job.user_id` as `projectOwnerUserId`, and `payload.source_prompt_resource_id` as `sourcePromptResourceId`.
-      * `[ ]`   The `buildUploadContext` call for `CompressedContext` (text mode) receives `storageFileType: FileType.CompressedContext` with the same identity fields and content.
-      * `[ ]`   The `EnqueueRenderJobParams` receives `job.id` as `jobId`, `payload.sessionId`, `payload.stageSlug`, `payload.iterationNumber`, the payload's `output_type` as `outputType`, `payload.projectId`, `job.user_id` as `projectOwnerUserId`, `payload.user_jwt` as `userAuthToken`, `providerRow.id` as `modelId`, `payload.walletId`, `job.is_test_job` as `isTestJob`.
-      * `[ ]`   The `EnqueueRenderCompressedContextPayload` receives `payload.sourceType`, `payload.documentKey`, `payload.docType`, `payload.sourceStageSlug`, `payload.targetKey`.
-      * `[ ]`   `enqueueRenderJob` is not called in text mode.
-      * `[ ]`   The DB update to `waiting_for_children` is not performed in text mode.
-      * `[ ]`   Neither `params` nor `payload` is mutated — verified by deep-equality snapshot before and after.
-      * `[ ]`   Every block carries the extended header: `Contract`, `Arrange`, `Act`, `Assert`, `Boundary`, `Mocked`.
+   * `[✅]`   `saveCompressedResponse.test.ts`
+      * `[✅]`   Guards on entry: deps invalid returns error arm with `retriable: false`, params invalid returns error arm with `retriable: false`.
+      * `[✅]`   Continuation gate: `shouldContinue` true returns `{ status: 'needs_continuation' }` — no upload, no render dispatch, no DB update.
+      * `[✅]`   `shouldContinue` false, `CompressedContextRawJson` upload error → returns `SaveCompressedResponseRawJsonUploadError` with `retriable: false`.
+      * `[✅]`   Json mode, raw JSON uploaded, `enqueueRenderJob` returns error → propagated unchanged on this module's error arm.
+      * `[✅]`   Json mode, RENDER dispatched, `waiting_for_children` DB update error → returns `SaveCompressedResponseJobUpdateError` with `retriable: true`.
+      * `[✅]`   Json mode, all succeed → returns `{ status: 'waiting_for_children' }`.
+      * `[✅]`   Text mode, raw JSON uploaded, `CompressedContext` upload error → returns `SaveCompressedResponseExtractedUploadError` with `retriable: false`.
+      * `[✅]`   Text mode, both uploads succeed → returns `{ status: 'completed' }`.
+      * `[✅]`   The `buildUploadContext` call for `CompressedContextRawJson` receives `storageFileType: FileType.CompressedContextRawJson` and the payload's identity fields (`projectId`, `sessionId`, `iterationNumber`, `stageSlug`, `output_type`, `sourceType`, `documentKey`, `sourceId`, `role`, `chunk_index`, `chunk_total`), `preparedContentResult.contentForStorage` as `contentForStorage`, `job.user_id` as `projectOwnerUserId`, and `payload.source_prompt_resource_id` as `sourcePromptResourceId`.
+      * `[✅]`   The `buildUploadContext` call for `CompressedContext` (text mode) receives `storageFileType: FileType.CompressedContext` with the same identity fields and content.
+      * `[✅]`   The `EnqueueRenderJobParams` receives `job.id` as `jobId`, `payload.sessionId`, `payload.stageSlug`, `payload.iterationNumber`, the payload's `output_type` as `outputType`, `payload.projectId`, `job.user_id` as `projectOwnerUserId`, `payload.user_jwt` as `userAuthToken`, `providerRow.id` as `modelId`, `payload.walletId`, `job.is_test_job` as `isTestJob`.
+      * `[✅]`   The `EnqueueRenderCompressedContextPayload` receives `payload.sourceType`, `payload.documentKey`, `payload.docType`, `payload.sourceStageSlug`, `payload.output_type`.
+      * `[✅]`   `enqueueRenderJob` is not called in text mode.
+      * `[✅]`   The DB update to `waiting_for_children` is not performed in text mode.
+      * `[✅]`   Neither `params` nor `payload` is mutated — verified by deep-equality snapshot before and after.
+      * `[✅]`   Every block carries the extended header: `Contract`, `Arrange`, `Act`, `Assert`, `Boundary`, `Mocked`.
 
-   * `[ ]`   `construction`
-      * `[ ]`   The module exports `saveCompressedResponse` as a standalone function with the full `(deps, params, payload)` signature. The orchestrator binds deps at context-creation time to produce a `BoundSaveCompressedResponseFn`.
-      * `[ ]`   No factory, no class, no partially constructed instance. The function is the module.
+   * `[✅]`   `construction`
+      * `[✅]`   The module exports `saveCompressedResponse` as a standalone function with the full `(deps, params, payload)` signature. The orchestrator binds deps at context-creation time to produce a `BoundSaveCompressedResponseFn`.
+      * `[✅]`   No factory, no class, no partially constructed instance. The function is the module.
 
-   * `[ ]`   `saveCompressedResponse.ts`
-      * `[ ]`   One exported function, typed `SaveCompressedResponseFn`, implementing the interaction spec in its stated order: deps guard, params guard, continuation gate, `CompressedContextRawJson` resource params assembly, `buildUploadContext`, `uploadAndRegisterFile`, mode branch (json: render params assembly, `enqueueRenderJob`, `waiting_for_children` update, return; text: `CompressedContext` resource params assembly, `buildUploadContext`, `uploadAndRegisterFile`, return).
-      * `[ ]`   Every collaborator call and every DB call is awaited. Every error returns this module's error arm — no error is logged and continued.
-      * `[ ]`   The `BuildUploadContextResourceParams` for `CompressedContextRawJson` is assembled from: `storageFileType: FileType.CompressedContextRawJson`, payload fields (`projectId`, `sessionId`, `iterationNumber`, `stageSlug`, `targetKey`, `sourceType`, `documentKey`, `sourceId`, `role`, `chunk_index` as `chunkIndex`, `chunk_total` as `chunkTotal`, `source_prompt_resource_id` as `sourcePromptResourceId`), `preparedContentResult.contentForStorage` as `contentForStorage`, `job.user_id` as `projectOwnerUserId`, and a constructed `description`.
-      * `[ ]`   The `BuildUploadContextResourceParams` for `CompressedContext` (text mode) uses `storageFileType: FileType.CompressedContext` with the same identity fields and `preparedContentResult.contentForStorage` as `contentForStorage`.
-      * `[ ]`   The `EnqueueRenderJobParams` is assembled from: `job.id` as `jobId`, `payload.sessionId`, `payload.stageSlug`, `payload.iterationNumber`, `payload.output_type` as `outputType`, `payload.projectId`, `job.user_id` as `projectOwnerUserId`, `payload.user_jwt` as `userAuthToken`, `providerRow.id` as `modelId`, `payload.walletId`, `job.is_test_job ?? false` as `isTestJob`.
-      * `[ ]`   The `EnqueueRenderCompressedContextPayload` is assembled from: `payload.sourceType`, `payload.documentKey`, `payload.docType`, `payload.sourceStageSlug`, `payload.targetKey`.
-      * `[ ]`   Every return is one of the two arms; no path falls through, no fallback expression substitutes for a stated branch, and no failure is swallowed or converted.
+   * `[✅]`   `saveCompressedResponse.ts`
+      * `[✅]`   One exported function, typed `SaveCompressedResponseFn`, implementing the interaction spec in its stated order: deps guard, params guard, continuation gate, `CompressedContextRawJson` resource params assembly, `buildUploadContext`, `uploadAndRegisterFile`, mode branch (json: render params assembly, `enqueueRenderJob`, `waiting_for_children` update, return; text: `CompressedContext` resource params assembly, `buildUploadContext`, `uploadAndRegisterFile`, return).
+      * `[✅]`   Every collaborator call and every DB call is awaited. Every error returns this module's error arm — no error is logged and continued.
+      * `[✅]`   The `BuildUploadContextResourceParams` for `CompressedContextRawJson` is assembled from: `storageFileType: FileType.CompressedContextRawJson`, payload fields (`projectId`, `sessionId`, `iterationNumber`, `stageSlug`, `output_type`, `sourceType`, `documentKey`, `sourceId`, `role`, `chunk_index` as `chunkIndex`, `chunk_total` as `chunkTotal`, `source_prompt_resource_id` as `sourcePromptResourceId`), `preparedContentResult.contentForStorage` as `contentForStorage`, `job.user_id` as `projectOwnerUserId`, and a constructed `description`.
+      * `[✅]`   The `BuildUploadContextResourceParams` for `CompressedContext` (text mode) uses `storageFileType: FileType.CompressedContext` with the same identity fields and `preparedContentResult.contentForStorage` as `contentForStorage`.
+      * `[✅]`   The `EnqueueRenderJobParams` is assembled from: `job.id` as `jobId`, `payload.sessionId`, `payload.stageSlug`, `payload.iterationNumber`, `payload.output_type` as `outputType`, `payload.projectId`, `job.user_id` as `projectOwnerUserId`, `payload.user_jwt` as `userAuthToken`, `providerRow.id` as `modelId`, `payload.walletId`, `job.is_test_job ?? false` as `isTestJob`.
+      * `[✅]`   The `EnqueueRenderCompressedContextPayload` is assembled from: `payload.sourceType`, `payload.documentKey`, `payload.docType`, `payload.sourceStageSlug`, `payload.output_type`.
+      * `[✅]`   Every return is one of the two arms; no path falls through, no fallback expression substitutes for a stated branch, and no failure is swallowed or converted.
 
-   * `[ ]`   `saveCompressedResponse.provides.ts`
-      * `[ ]`   `export *` from the implementation, the interface, the guard and the mock, so a consumer and its tests reach the module — including every owned error and both arm guards — through one import point.
+   * `[✅]`   `saveCompressedResponse.provides.ts`
+      * `[✅]`   `export *` from the implementation, the interface, the guard and the mock, so a consumer and its tests reach the module — including every owned error and both arm guards — through one import point.
 
-   * `[ ]`   `saveCompressedResponse.integration.test.ts`
-      * `[ ]`   Chain: `saveCompressedResponse` → real `buildUploadContext` → real `enqueueRenderJob`. The real `buildUploadContext` is the production function. The real `enqueueRenderJob` is constructed with its own real deps (a real `shouldEnqueueRenderJob`, a real `resolveTemplateFilename`, a real logger, a stubbed `dbClient`) and bound. The boundary is the database and the file manager: `dbClient` (stubbed to return the rows the render dispatch queries), `fileManager` (mock returning a valid resource record).
-      * `[ ]`   The integration proves that the `BuildUploadContextResourceParams` this module constructs from its payload are accepted by the real `buildUploadContext`, that the `EnqueueRenderJobParams` and `EnqueueRenderCompressedContextPayload` this module constructs are accepted by the real `enqueueRenderJob`, and that the chain produces the expected result — rather than a type error or a structural mismatch masked by a mock.
-      * `[ ]`   Mock at the outer boundary only: the `dbClient` (shared between saveCompressedResponse and the real enqueueRenderJob), `fileManager`. Every function inside the integrated chain — `buildUploadContext`, `enqueueRenderJob`, `shouldEnqueueRenderJob`, `resolveTemplateFilename` — is real.
-      * `[ ]`   A case arranges a json-mode payload with `shouldContinue: false`, a `fileManager` returning a valid resource record, and a `dbClient` stubbed for the `waiting_for_children` update, and asserts that the chain produces `{ status: 'waiting_for_children' }` and the real `enqueueRenderJob` received the params this module built.
-      * `[ ]`   A case arranges a text-mode payload with `shouldContinue: false`, a `fileManager` returning a valid resource record for both uploads, and asserts that the chain produces `{ status: 'completed' }` and `enqueueRenderJob` was not called.
-      * `[ ]`   Every block carries the extended header: `Contract`, `Arrange`, `Act`, `Assert`, `Boundary`, `Mocked`.
+   * `[✅]`   `saveCompressedResponse.integration.test.ts`
+      * `[✅]`   Chain: `saveCompressedResponse` → real `buildUploadContext` → real `enqueueRenderJob`. The real `buildUploadContext` is the production function. The real `enqueueRenderJob` is constructed with its own real deps (a real `shouldEnqueueRenderJob`, a real `resolveTemplateFilename`, a real logger, a stubbed `dbClient`) and bound. The boundary is the database and the file manager: `dbClient` (stubbed to return the rows the render dispatch queries), `fileManager` (mock returning a valid resource record).
+      * `[✅]`   The integration proves that the `BuildUploadContextResourceParams` this module constructs from its payload are accepted by the real `buildUploadContext`, that the `EnqueueRenderJobParams` and `EnqueueRenderCompressedContextPayload` this module constructs are accepted by the real `enqueueRenderJob`, and that the chain produces the expected result — rather than a type error or a structural mismatch masked by a mock.
+      * `[✅]`   Mock at the outer boundary only: the `dbClient` (shared between saveCompressedResponse and the real enqueueRenderJob), `fileManager`. Every function inside the integrated chain — `buildUploadContext`, `enqueueRenderJob`, `shouldEnqueueRenderJob`, `resolveTemplateFilename` — is real.
+      * `[✅]`   A case arranges a json-mode payload with `shouldContinue: false`, a `fileManager` returning a valid resource record, and a `dbClient` stubbed for the `waiting_for_children` update, and asserts that the chain produces `{ status: 'waiting_for_children' }` and the real `enqueueRenderJob` received the params this module built.
+      * `[✅]`   A case arranges a text-mode payload with `shouldContinue: false`, a `fileManager` returning a valid resource record for both uploads, and asserts that the chain produces `{ status: 'completed' }` and `enqueueRenderJob` was not called.
+      * `[✅]`   Every block carries the extended header: `Contract`, `Arrange`, `Act`, `Assert`, `Boundary`, `Mocked`.
 
-   * `[ ]`   `directionality`
-      * `[ ]`   Deps face inward: the module imports contracts from `_shared`, `dialectic-service`, sibling module interfaces (`enqueueRenderJob`, `enqueueCompressJobs`, `prepareResponseContent`, `createJobContext`), `buildUploadContext`, and `types_db.ts`, and exports only through its own provides.
-      * `[ ]`   No cycle: none of those providers imports this module, and this module imports nothing from `saveResponse/`, which is its consumer.
-      * `[ ]`   No reverse dependency: this node edits no file outside its own folder.
+   * `[✅]`   `directionality`
+      * `[✅]`   Deps face inward: the module imports contracts from `_shared`, `dialectic-service`, sibling module interfaces (`enqueueRenderJob`, `enqueueCompressJobs`, `prepareResponseContent`, `createJobContext`), `buildUploadContext`, and `types_db.ts`, and exports only through its own provides.
+      * `[✅]`   No cycle: none of those providers imports this module, and this module imports nothing from `saveResponse/`, which is its consumer.
+      * `[✅]`   No reverse dependency: this node edits no file outside its own folder.
 
-   * `[ ]`   `requirements`
-      * `[ ]`   The return union has exactly two arms — interface test.
-      * `[ ]`   `SaveCompressedResponseDeps` declares exactly three deps — interface test.
-      * `[ ]`   `SaveCompressedResponseParams` declares exactly five per-invocation fields — interface test.
-      * `[ ]`   `SaveCompressedResponsePayload` is declared equivalent to `DialecticCompressJobPayload` — interface test.
-      * `[ ]`   `SaveCompressedResponseSuccessReturn.status` discriminates the three terminal states — interface test.
-      * `[ ]`   `BoundSaveCompressedResponseFn` accepts `(params, payload)` — interface test.
-      * `[ ]`   Invalid deps returns error arm with `retriable: false` — unit test.
-      * `[ ]`   Invalid params returns error arm with `retriable: false` — unit test.
-      * `[ ]`   `shouldContinue` true returns `needs_continuation` with no side effects — unit test.
-      * `[ ]`   `CompressedContextRawJson` upload error returns `SaveCompressedResponseRawJsonUploadError` — unit test.
-      * `[ ]`   Json mode: `enqueueRenderJob` error propagated unchanged — unit test.
-      * `[ ]`   Json mode: `waiting_for_children` DB update error returns `SaveCompressedResponseJobUpdateError` with `retriable: true` — unit test.
-      * `[ ]`   Json mode: all succeed returns `waiting_for_children` — unit test.
-      * `[ ]`   Text mode: `CompressedContext` upload error returns `SaveCompressedResponseExtractedUploadError` — unit test.
-      * `[ ]`   Text mode: both uploads succeed returns `completed` — unit test.
-      * `[ ]`   `enqueueRenderJob` not called in text mode — unit test.
-      * `[ ]`   `waiting_for_children` update not performed in text mode — unit test.
-      * `[ ]`   `buildUploadContext` receives correct identity fields from payload — unit test.
-      * `[ ]`   Neither `params` nor `payload` is mutated — unit test.
-      * `[ ]`   The chain of `saveCompressedResponse → real buildUploadContext → real enqueueRenderJob` produces a RENDER dispatch result consistent with the real modules' contracts — integration test.
-      * `[ ]`   Text-mode chain produces `completed` without calling `enqueueRenderJob` — integration test.
+   * `[✅]`   `requirements`
+      * `[✅]`   The return union has exactly two arms — interface test.
+      * `[✅]`   `SaveCompressedResponseDeps` declares exactly three deps — interface test.
+      * `[✅]`   `SaveCompressedResponseParams` declares exactly five per-invocation fields — interface test.
+      * `[✅]`   `SaveCompressedResponsePayload` is declared equivalent to `DialecticCompressJobPayload` — interface test.
+      * `[✅]`   `SaveCompressedResponseSuccessReturn.status` discriminates the three terminal states — interface test.
+      * `[✅]`   `BoundSaveCompressedResponseFn` accepts `(params, payload)` — interface test.
+      * `[✅]`   Invalid deps returns error arm with `retriable: false` — unit test.
+      * `[✅]`   Invalid params returns error arm with `retriable: false` — unit test.
+      * `[✅]`   `shouldContinue` true returns `needs_continuation` with no side effects — unit test.
+      * `[✅]`   `CompressedContextRawJson` upload error returns `SaveCompressedResponseRawJsonUploadError` — unit test.
+      * `[✅]`   Json mode: `enqueueRenderJob` error propagated unchanged — unit test.
+      * `[✅]`   Json mode: `waiting_for_children` DB update error returns `SaveCompressedResponseJobUpdateError` with `retriable: true` — unit test.
+      * `[✅]`   Json mode: all succeed returns `waiting_for_children` — unit test.
+      * `[✅]`   Text mode: `CompressedContext` upload error returns `SaveCompressedResponseExtractedUploadError` — unit test.
+      * `[✅]`   Text mode: both uploads succeed returns `completed` — unit test.
+      * `[✅]`   `enqueueRenderJob` not called in text mode — unit test.
+      * `[✅]`   `waiting_for_children` update not performed in text mode — unit test.
+      * `[✅]`   `buildUploadContext` receives correct identity fields from payload — unit test.
+      * `[✅]`   Neither `params` nor `payload` is mutated — unit test.
+      * `[✅]`   The chain of `saveCompressedResponse → real buildUploadContext → real enqueueRenderJob` produces a RENDER dispatch result consistent with the real modules' contracts — integration test.
+      * `[✅]`   Text-mode chain produces `completed` without calling `enqueueRenderJob` — integration test.
 
-* `[ ]`   supabase/functions/dialectic-worker/saveResponse/saveResponse.ts **[BE] The relocation node: a thin orchestrator routing on the row's `job_type` with `SaveResponseDeps` unchanged, `SaveResponseSuccessReturn['status']` gaining `waiting_for_children`, and the monolith body deleted**
+* `[✅]`   supabase/functions/dialectic-worker/enqueueModelCall/enqueueModelCall.ts **[BE] Persists the dispatcher's preflight input-token count onto the job row's payload in the update that queues the job**
 
-   * `[ ]`   `objective`
-      * `[ ]`   The monolith `saveResponse.ts` (1284 lines) performs every responsibility in a straight line: job and provider resolution, response assembly, debit, content preparation, contribution identity, upload, relationship persistence, render dispatch, continuation, notification, and final-status update. The scope's target architecture replaces the body with a thin orchestrator that routes on the job row's `job_type` column — EXECUTE to `saveContributionResponse`, COMPRESS to `saveCompressedResponse` — each module already landed and tested in its own node. The shared front half (job/provider resolution, response assembly, debit, content preparation) is delegated to the extracted modules (`loadJobContext`, `assembleAiResponse`, `debitForResponse`, `prepareResponseContent`), each already bound through `SaveResponseDeps`. The retry path is a single call site: the orchestrator builds the `FailedAttemptError[]` from the retry-required flavor and dispatches `retryJob`. The monolith body is deleted.
-      * `[ ]`   Functional goals:
-         * `[ ]`   `SaveResponseDeps` is narrowed to the orchestrator's actual deps: `logger` (`ILogger`), `retryJob` (`BoundRetryJobFn`), `loadJobContext` (`BoundLoadJobContextFn`), `assembleAiResponse` (`BoundAssembleAiResponseFn`), `debitForResponse` (`BoundDebitForResponseFn`), `prepareResponseContent` (`BoundPrepareResponseContentFn`), `saveContributionResponse` (`BoundSaveContributionResponseFn`), `saveCompressedResponse` (`BoundSaveCompressedResponseFn`). Eight deps, each a bound closure — no `fileManager`, `notificationService`, `continueJob`, `resolveFinishReason`, `isIntermediateChunk`, `determineContinuation`, `buildUploadContext`, `debitTokens`, `sanitizeJsonContent`, or `enqueueRenderJob`.
-         * `[ ]`   `SaveResponseParams` is narrowed to `dbClient` and `job_id`. The params carry what the payload cannot: the database handle and the job identifier.
-         * `[ ]`   `SaveResponsePayload` changes to the stream result: `assembled_content` (`string`), `token_usage` (`NodeTokenUsage | null`), `finish_reason` (`string | null`), `processingTimeMs` (`number`). The payload is the stream callback's output; it is not a job payload and is not proven by a job-type guard.
-         * `[ ]`   `SaveResponseSuccessReturn['status']` gains `'waiting_for_children'` — the new union is `'completed' | 'needs_continuation' | 'continuation_limit_reached' | 'waiting_for_children'`.
-         * `[ ]`   `SaveResponseErrorReturn` is unchanged: `{ error: Error; retriable: boolean }`.
-         * `[ ]`   The orchestrator calls `loadJobContext` to obtain the `job`, `providerRow`, `modelConfig`, `walletId`, and `projectId`. Then `assembleAiResponse` to assemble the `UnifiedAIResponse`. Then `debitForResponse` to debit the spend. Then `prepareResponseContent` to determine completeness. On a retry-required result from `prepareResponseContent`, the orchestrator builds a `FailedAttemptError[]` from the retry reason and dispatches `retryJob`, returning `{ status: 'completed' }`. On a prepared result, the orchestrator reads `job.job_type` to route: `'EXECUTE'` dispatches `saveContributionResponse`, `'COMPRESS'` dispatches `saveCompressedResponse`, and any other value returns the error arm with `retriable: false`.
-         * `[ ]`   The job payload is read from the job row. The orchestrator proves the payload for the selected arm: EXECUTE proves `DialecticExecuteJobPayload` with the existing `isDialecticExecuteJobPayload` guard, COMPRESS proves `DialecticCompressJobPayload` with the existing `isDialecticCompressJobPayload` guard. Each guard is imported from its payload's owning module.
-         * `[ ]`   Each arm module's return is propagated: success returns are forwarded directly on this module's success arm, error returns are forwarded directly on this module's error arm. The orchestrator adds no wrapping.
-         * `[ ]`   `BoundRetryJobFn`, `BoundLoadJobContextFn`, `BoundDebitForResponseFn`, and `BoundPrepareResponseContentFn` are declared in their respective module interfaces. `BoundSaveContributionResponseFn` and `BoundSaveCompressedResponseFn` are declared in their respective module interfaces.
-         * `[ ]`   `NodeTokenUsage`, `SaveResponseRequestBody`, `isSaveResponseRequestBody` are retained — they are consumed by `netlifyResponse` and the request-body guard.
-         * `[ ]`   The legacy helper functions `readOptionalPreflightInputTokens` and `readOptionalContinuationCount` are deleted — their work was relocated into the extracted modules.
-         * `[ ]`   The existing test suites (`saveResponse.test.ts`, `saveResponse.continue.test.ts`, `saveResponse.pathContext.test.ts`, `saveResponse.rawJsonOnly.test.ts`, `saveResponse.notifications.test.ts`, `saveResponse.assembleDocument.test.ts`, `saveResponse.planValidation.test.ts`) are retained in full as the orchestrator's integration tier. Per the scope: "The existing test suites are the regression oracle, pinned to the unchanged public signature, then retained IN FULL as the orchestrator's integration tier. The suites are renamed to integration tests and no case is deleted."
-      * `[ ]`   Non-functional constraints:
-         * `[ ]`   No file outside `dialectic-worker/saveResponse/` is edited. The extracted modules are already landed; `netlifyResponse/index.ts` is a separate node.
-         * `[ ]`   Every path the monolith takes today, the orchestrator + modules take unchanged. The orchestrator is assembly — it does not invent logic, it dispatches. Every retry condition, every status, every error message survives in the arm module that inherited it.
-         * `[ ]`   The payload is read, not mutated. The job payload from the job row is proven once with the arm's guard and passed through unchanged.
-         * `[ ]`   Each goal is proven by a named case in this node's interface test, guard test, unit test, or one of the retained integration-tier suites.
+   * `[✅]`   `objective`
+      * `[✅]`   The dispatchers compute the input-token count for the affordability preflight and hand it to `enqueueModelCall` on `EnqueueModelCallPayload.preflightInputTokens` — `prepareModelJob` from `affordResult.resolvedInputTokenCount`, `processCompressJob` from its own `countTokens` call on the assembled prompt. `enqueueModelCall` receives the member and reads it nowhere: it is absent from the `dialectic_generation_jobs` update and absent from `AiStreamEventData`. `assembleAiResponse` reads `preflight_input_tokens` off the job payload when the provider returns no `token_usage`, finds nothing, and the synthesized usage bills zero input tokens. This node persists the count where the reader looks for it.
+      * `[✅]`   Functional goals:
+         * `[✅]`   `DialecticBaseJobPayload` declares `preflight_input_tokens?: number`. No arm redeclares it.
+         * `[✅]`   `dialecticBaseJobPayloadAllowedKeys` admits `preflight_input_tokens`, so a payload carrying it passes the arm guards' extraneous-property check.
+         * `[✅]`   `isDialecticBaseJobPayload` throws `Invalid preflight_input_tokens.` when the member is present and not a number.
+         * `[✅]`   `enqueueModelCall` proves `params.job.payload` with `isDialecticBaseJobPayload`, composes a `DialecticBaseJobPayload` carrying `preflight_input_tokens: payload.preflightInputTokens`, and writes it alongside `status: 'queued'` in the update it already issues.
+         * `[✅]`   A job payload that fails the base guard returns the error arm with `retriable: false`, carrying the guard's thrown `Error` unchanged.
+         * `[✅]`   `AiStreamEventData` is unchanged and carries no token count.
+      * `[✅]`   Non-functional constraints:
+         * `[✅]`   The write rides the existing update statement. No second query, no additional round trip.
+         * `[✅]`   The proving and the write both precede the queue POST.
+         * `[✅]`   No default is supplied anywhere. A payload that cannot be proven produces an error, never a zero.
+         * `[✅]`   Every member of the row's payload other than `preflight_input_tokens` is written back unchanged.
 
-   * `[ ]`   `role`
-      * `[ ]`   Node role is an app-layer orchestrator: given a `job_id` and stream output, load context, assemble, debit, prepare, and route to the arm module that owns the persistence model for the job's type.
-      * `[ ]`   The role is correct because every decision below the routing point is owned by the arm module, and every decision above it is owned by the shared front-half modules. The orchestrator connects, it does not decide.
-      * `[ ]`   Out-of-scope responsibilities:
-         * `[ ]`   Do not persist contributions, resources, or artifacts. The arm modules do that.
-         * `[ ]`   Do not dispatch RENDER. The arm modules do that.
-         * `[ ]`   Do not send notifications. The arm modules do that (contribution arm only).
-         * `[ ]`   Do not dispatch continuation. The arm modules return the status and the orchestrator forwards it.
-         * `[ ]`   Do not resolve contribution identity, persist relationships, or finalize. Those are internal to `saveContributionResponse`.
-         * `[ ]`   Do not assemble upload contexts. The arm modules do that.
-         * `[ ]`   Do not resolve the finish reason, sanitize content, or determine continuation. `prepareResponseContent` does that.
-         * `[ ]`   Do not debit tokens. `debitForResponse` does that.
-         * `[ ]`   Do not assemble the `UnifiedAIResponse`. `assembleAiResponse` does that.
-         * `[ ]`   Do not load the job or provider row. `loadJobContext` does that.
+   * `[✅]`   `role`
+      * `[✅]`   Infra adapter at the dispatch boundary: it queues the model call and records what the dispatch was preflighted at.
+      * `[✅]`   Out-of-scope responsibilities:
+         * `[✅]`   Do not compute a token count. The dispatchers compute it and pass it in.
+         * `[✅]`   Do not read or write any payload member other than `preflight_input_tokens`.
+         * `[✅]`   Do not alter the event body, the size check, or the queue POST.
+         * `[✅]`   Do not notify, retry, or write any job status other than the existing `queued`.
 
-   * `[ ]`   `module`
-      * `[ ]`   Bounded context is `supabase/functions/dialectic-worker/saveResponse` — orchestrating the stream callback's persistence path by routing on `job_type` to the arm module that owns the job type's persistence model.
+   * `[✅]`   `module`
+      * `[✅]`   Bounded context is `supabase/functions/dialectic-worker/enqueueModelCall` — turning a claimed job into a queued model call, and recording the dispatch facts the response path reads back.
 
-   * `[ ]`   `deps`
-      * `[ ]`   Provider: `retryJob/retryJob.interface.ts` (`RetryJobFn`, `RetryJobDeps`, `RetryJobParams`, `RetryJobPayload`, `RetryJobReturn`, `BoundRetryJobFn`).
-         * `[ ]`   Layer classification: sibling module contract.
-         * `[ ]`   Direction: inbound from sibling.
-         * `[ ]`   Purpose: dispatch retry on a retry-required prepareResponseContent result. `BoundRetryJobFn = (params, payload) => Promise<RetryJobReturn>` — deps pre-injected at bind time.
-      * `[ ]`   Provider: `loadJobContext/loadJobContext.interface.ts` (`LoadJobContextFn`, `LoadJobContextReturn`, `LoadJobContextSuccessReturn`, `BoundLoadJobContextFn`).
-         * `[ ]`   Layer classification: sibling module contract.
-         * `[ ]`   Direction: inbound from sibling.
-         * `[ ]`   Purpose: load the job row, provider row, model config, walletId, and projectId from the database. `BoundLoadJobContextFn = (params, payload) => Promise<LoadJobContextReturn>` — deps pre-injected at bind time.
-      * `[ ]`   Provider: `assembleAiResponse/assembleAiResponse.interface.ts` (`AssembleAiResponseReturn`, `AssembleAiResponseSuccessReturn`, `BoundAssembleAiResponseFn`).
-         * `[ ]`   Layer classification: sibling module contract.
-         * `[ ]`   Direction: inbound from sibling.
-         * `[ ]`   Purpose: assemble the `UnifiedAIResponse` from the stream payload. `BoundAssembleAiResponseFn = (params, payload) => AssembleAiResponseReturn` — deps pre-injected at bind time. Synchronous (no `Promise`).
-      * `[ ]`   Provider: `debitForResponse/debitForResponse.interface.ts` (`DebitForResponseReturn`, `BoundDebitForResponseFn`).
-         * `[ ]`   Layer classification: sibling module contract.
-         * `[ ]`   Direction: inbound from sibling.
-         * `[ ]`   Purpose: debit the wallet for the spend. `BoundDebitForResponseFn = (params, payload) => Promise<DebitForResponseReturn>` — deps pre-injected at bind time.
-      * `[ ]`   Provider: `prepareResponseContent/prepareResponseContent.interface.ts` (`PrepareResponseContentReturn`, `PrepareResponseContentSuccessReturn`, `PrepareResponseContentPreparedReturn`, `PrepareResponseContentRetryRequiredReturn`, `BoundPrepareResponseContentFn`).
-         * `[ ]`   Layer classification: sibling module contract.
-         * `[ ]`   Direction: inbound from sibling.
-         * `[ ]`   Purpose: sanitize, parse, determine continuation, and decide completeness. `BoundPrepareResponseContentFn = (params, payload) => PrepareResponseContentReturn` — deps pre-injected at bind time. Synchronous (no `Promise`).
-      * `[ ]`   Provider: `saveContributionResponse/saveContributionResponse.interface.ts` (`SaveContributionResponseReturn`, `BoundSaveContributionResponseFn`).
-         * `[ ]`   Layer classification: sibling module contract.
-         * `[ ]`   Direction: inbound from sibling.
-         * `[ ]`   Purpose: the EXECUTE arm — contribution persistence, relationship persistence, finalization. `BoundSaveContributionResponseFn = (params, payload) => Promise<SaveContributionResponseReturn>` — deps pre-injected at bind time.
-      * `[ ]`   Provider: `saveCompressedResponse/saveCompressedResponse.interface.ts` (`SaveCompressedResponseReturn`, `BoundSaveCompressedResponseFn`).
-         * `[ ]`   Layer classification: sibling module contract.
-         * `[ ]`   Direction: inbound from sibling.
-         * `[ ]`   Purpose: the COMPRESS arm — resource artifact persistence, RENDER dispatch, waiting_for_children. `BoundSaveCompressedResponseFn = (params, payload) => Promise<SaveCompressedResponseReturn>` — deps pre-injected at bind time.
-      * `[ ]`   Provider: `_shared/types.ts` (`ILogger`).
-         * `[ ]`   Layer classification: shared interface.
-         * `[ ]`   Direction: inbound.
-         * `[ ]`   Purpose: logging.
-      * `[ ]`   Provider: `dialectic-service/dialectic.interface.ts` (`DialecticJobRow`, `AiProvidersRow`, `UnifiedAIResponse`, `FailedAttemptError`).
-         * `[ ]`   Layer classification: service-layer contract hub.
-         * `[ ]`   Direction: inbound.
-         * `[ ]`   Purpose: the job row, provider row, assembled response, and failed-attempt error types.
-      * `[ ]`   Provider: `enqueueCompressJobs/enqueueCompressJobs.interface.ts` (`DialecticCompressJobPayload`), with guard `isDialecticCompressJobPayload`.
-         * `[ ]`   Layer classification: sibling module contract.
-         * `[ ]`   Direction: inbound.
-         * `[ ]`   Purpose: the COMPRESS arm's payload type and its proving guard.
-      * `[ ]`   Provider: `dialectic-service/dialectic.interface.ts` (`DialecticExecuteJobPayload`), with guard `isDialecticExecuteJobPayload` from its owning guard file.
-         * `[ ]`   Layer classification: service-layer contract hub.
-         * `[ ]`   Direction: inbound.
-         * `[ ]`   Purpose: the EXECUTE arm's payload type and its proving guard.
-      * `[ ]`   Provider: `types_db.ts` (`Database`).
-         * `[ ]`   Layer classification: generated database type surface.
-         * `[ ]`   Direction: inbound.
-         * `[ ]`   Purpose: type the `dbClient` param.
-      * `[ ]`   Confirm:
-         * `[ ]`   `SaveResponseDeps` declares exactly eight deps: `logger`, `retryJob`, `loadJobContext`, `assembleAiResponse`, `debitForResponse`, `prepareResponseContent`, `saveContributionResponse`, `saveCompressedResponse`. Every dep a bound closure except `logger`.
-         * `[ ]`   No dep from the old `SaveResponseDeps` that was a collaborator of an arm module survives: `fileManager`, `notificationService`, `continueJob`, `resolveFinishReason`, `isIntermediateChunk`, `determineContinuation`, `buildUploadContext`, `debitTokens`, `sanitizeJsonContent`, `enqueueRenderJob` are all removed.
-         * `[ ]`   No reverse dependency: nothing in `_shared`, `dialectic-service`, or any sibling module imports from `saveResponse/`. `saveResponse/` imports contracts from its sibling modules, never their implementations.
-      * `[ ]`   `context_slice`
-         * `[ ]`   From `retryJob/retryJob.interface.ts`: `BoundRetryJobFn`, `RetryJobReturn`, imported with `import type`.
-         * `[ ]`   From `loadJobContext/loadJobContext.interface.ts`: `BoundLoadJobContextFn`, `LoadJobContextSuccessReturn`, imported with `import type`.
-         * `[ ]`   From `assembleAiResponse/assembleAiResponse.interface.ts`: `BoundAssembleAiResponseFn`, `AssembleAiResponseSuccessReturn`, imported with `import type`.
-         * `[ ]`   From `debitForResponse/debitForResponse.interface.ts`: `BoundDebitForResponseFn`, imported with `import type`.
-         * `[ ]`   From `prepareResponseContent/prepareResponseContent.interface.ts`: `BoundPrepareResponseContentFn`, `PrepareResponseContentPreparedReturn`, `PrepareResponseContentRetryRequiredReturn`, imported with `import type`.
-         * `[ ]`   From `saveContributionResponse/saveContributionResponse.interface.ts`: `BoundSaveContributionResponseFn`, imported with `import type`.
-         * `[ ]`   From `saveCompressedResponse/saveCompressedResponse.interface.ts`: `BoundSaveCompressedResponseFn`, imported with `import type`.
-         * `[ ]`   From `dialectic-service/dialectic.interface.ts`: `DialecticJobRow`, `FailedAttemptError`, `DialecticExecuteJobPayload`, `DialecticCompressJobPayload`, imported with `import type`.
-         * `[ ]`   From `_shared/types.ts`: `ILogger`, imported with `import type`.
-         * `[ ]`   From `types_db.ts`: `Database`, imported with `import type`.
-         * `[ ]`   From `enqueueCompressJobs/enqueueCompressJobs.interface.ts`: `DialecticCompressJobPayload`, imported with `import type`.
-         * `[ ]`   Guard imports (`isDialecticExecuteJobPayload`, `isDialecticCompressJobPayload`) are value imports from their owning guard files.
+   * `[✅]`   `deps`
+      * `[✅]`   Provider: `_shared/utils/type-guards/type_guards.dialectic.ts` (`isDialecticBaseJobPayload`).
+         * `[✅]`   Layer classification: shared type-guard package.
+         * `[✅]`   Direction: inbound.
+         * `[✅]`   Purpose: prove the job row's `Json` payload before composing the write. Called, never injected.
+      * `[✅]`   Provider: `dialectic-service/dialectic.interface.ts` (`DialecticBaseJobPayload`).
+         * `[✅]`   Layer classification: service-layer contract hub.
+         * `[✅]`   Direction: inbound.
+         * `[✅]`   Purpose: type the composed payload written to the row.
+      * `[✅]`   Confirm:
+         * `[✅]`   `EnqueueModelCallDeps` is unchanged: `logger`, `netlifyQueueUrl`, `netlifyApiKey`, `apiKeyForProvider`, `computeJobSig`.
+         * `[✅]`   `EnqueueModelCallParams` and `EnqueueModelCallPayload` are unchanged.
+         * `[✅]`   No reverse dependency: `_shared` and `dialectic-service` do not import from `enqueueModelCall/`.
+      * `[✅]`   `context_slice`
+         * `[✅]`   From `dialectic-service/dialectic.interface.ts`: `DialecticBaseJobPayload`, imported with `import type`.
+         * `[✅]`   From `_shared/utils/type-guards/type_guards.dialectic.ts`: `isDialecticBaseJobPayload`, a value import.
 
-   * `[ ]`   `saveResponse.interface.test.ts`
-      * `[ ]`   Typed assignments only.
-      * `[ ]`   A case proves the deps surface exhaustively: `Record<keyof SaveResponseDeps, true>` over the eight dep keys, asserting eight.
-      * `[ ]`   A case proves the params surface exhaustively: `Record<keyof SaveResponseParams, true>` over `dbClient` and `job_id`, asserting two.
-      * `[ ]`   A case proves the payload surface exhaustively: `Record<keyof SaveResponsePayload, true>` over `assembled_content`, `token_usage`, `finish_reason`, and `processingTimeMs`, asserting four.
-      * `[ ]`   A case proves the return union has exactly two arms by assigning a success literal and an error literal to `SaveResponseReturn`.
-      * `[ ]`   A case proves `SaveResponseSuccessReturn.status` discriminates `'completed'`, `'needs_continuation'`, `'continuation_limit_reached'`, and `'waiting_for_children'` by assigning each to the status field.
-      * `[ ]`   A case proves `NodeTokenUsage` has `prompt_tokens`, `completion_tokens`, and `total_tokens`.
-      * `[ ]`   A case proves `SaveResponseFn` accepts `(deps, params, payload)` and returns `Promise<SaveResponseReturn>`.
+   * `[✅]`   `supabase/functions/dialectic-service/dialectic.interface.ts`
+      * `[✅]`   `DialecticBaseJobPayload` gains `preflight_input_tokens?: number`, declared beside `source_prompt_resource_id`.
+      * `[✅]`   No arm payload redeclares the member.
 
-   * `[ ]`   `saveResponse.interface.ts`
-      * `[ ]`   `SaveResponseDeps` narrowed to eight deps: `logger: ILogger`, `retryJob: BoundRetryJobFn`, `loadJobContext: BoundLoadJobContextFn`, `assembleAiResponse: BoundAssembleAiResponseFn`, `debitForResponse: BoundDebitForResponseFn`, `prepareResponseContent: BoundPrepareResponseContentFn`, `saveContributionResponse: BoundSaveContributionResponseFn`, `saveCompressedResponse: BoundSaveCompressedResponseFn`.
-      * `[ ]`   `SaveResponseParams` narrowed to `dbClient: SupabaseClient<Database>` and `job_id: string`.
-      * `[ ]`   `SaveResponsePayload` carries `assembled_content: string`, `token_usage: NodeTokenUsage | null`, `finish_reason: string | null`, `processingTimeMs: number`.
-      * `[ ]`   `SaveResponseSuccessReturn` with `status: 'completed' | 'needs_continuation' | 'continuation_limit_reached' | 'waiting_for_children'`.
-      * `[ ]`   `SaveResponseErrorReturn` unchanged: `{ error: Error; retriable: boolean }`.
-      * `[ ]`   `SaveResponseReturn` as the union.
-      * `[ ]`   `SaveResponseFn` typed `(deps, params, payload) => Promise<SaveResponseReturn>`.
-      * `[ ]`   `NodeTokenUsage` retained.
-      * `[ ]`   `SaveResponseRequestBody` retained.
+   * `[✅]`   `enqueueModelCall.interaction.spec`
+      * `[✅]`   Branch: job payload fails the base guard.
+         * `[✅]`   Condition: `isDialecticBaseJobPayload(params.job.payload)` throws.
+         * `[✅]`   Decision: the base payload guard, called inside a `try`.
+         * `[✅]`   Dependency call: none.
+         * `[✅]`   Outcome: error arm, the thrown `Error` surfaced unchanged, `retriable: false`. No update is issued and no fetch is made.
+      * `[✅]`   Branch: job payload proves.
+         * `[✅]`   Condition: the guard returns.
+         * `[✅]`   Decision: none.
+         * `[✅]`   Dependency call: the existing `params.dbClient.from('dialectic_generation_jobs').update(...).eq('id', params.job.id)`, its argument now carrying both `status: 'queued'` and the composed payload.
+         * `[✅]`   Outcome: falls through to the existing DB-error branch, which is unchanged.
+      * `[✅]`   Ordering: the guard runs after the `params.job.user_id` check and after `deps.computeJobSig`, immediately before the update. The event body assembly, the 500 KB size check and the queue POST follow the update unchanged.
+      * `[✅]`   Side effects: one `dialectic_generation_jobs` update, then one queue POST.
 
-   * `[ ]`   `saveResponse.interaction.spec`
-      * `[ ]`   Branch: deps guard fails.
-         * `[ ]`   Condition: `!isSaveResponseDeps(deps)`.
-         * `[ ]`   Decision: deps guard.
-         * `[ ]`   Dependency call: none.
-         * `[ ]`   Outcome: error arm, `new Error('Invalid SaveResponseDeps')`, `retriable: false`.
-      * `[ ]`   Branch: params guard fails.
-         * `[ ]`   Condition: `!isSaveResponseParams(params)`.
-         * `[ ]`   Decision: params guard.
-         * `[ ]`   Dependency call: none.
-         * `[ ]`   Outcome: error arm, `new Error('Invalid SaveResponseParams')`, `retriable: false`.
-      * `[ ]`   Branch: payload guard fails.
-         * `[ ]`   Condition: `!isSaveResponsePayload(payload)`.
-         * `[ ]`   Decision: payload guard.
-         * `[ ]`   Dependency call: none.
-         * `[ ]`   Outcome: error arm, `new Error('Invalid SaveResponsePayload')`, `retriable: false`.
-      * `[ ]`   Branch: loadJobContext fails.
-         * `[ ]`   Condition: `'error' in loadJobContextResult`.
-         * `[ ]`   Decision: error-arm check on the return.
-         * `[ ]`   Dependency call: `deps.loadJobContext({ dbClient: params.dbClient, job_id: params.job_id }, {})`.
-         * `[ ]`   Outcome: propagate the error arm unchanged.
-      * `[ ]`   Branch: assembleAiResponse fails.
-         * `[ ]`   Condition: `'error' in assembleResult`.
-         * `[ ]`   Decision: error-arm check on the return.
-         * `[ ]`   Dependency call: `deps.assembleAiResponse(assembleParams, assemblePayload)` — `assembleParams` carries `processingTimeMs` from the payload and the `modelConfig` from `loadJobContext`; `assemblePayload` carries `assembled_content`, `token_usage`, `finish_reason` from the payload.
-         * `[ ]`   Outcome: propagate the error arm unchanged.
-      * `[ ]`   Branch: debitForResponse fails.
-         * `[ ]`   Condition: `'error' in debitResult`.
-         * `[ ]`   Decision: error-arm check on the return.
-         * `[ ]`   Dependency call: `deps.debitForResponse(debitParams, debitPayload)` — `debitParams` carries `dbClient`, job row, provider row, model config, wallet, assembled response; `debitPayload` is `{}`.
-         * `[ ]`   Outcome: propagate the error arm unchanged.
-      * `[ ]`   Branch: prepareResponseContent returns retry-required.
-         * `[ ]`   Condition: `prepareResult.retryRequired === true`.
-         * `[ ]`   Decision: discriminant check on `retryRequired`.
-         * `[ ]`   Dependency call: `deps.prepareResponseContent(prepareParams, preparePayload)`, then `deps.retryJob(retryParams, retryPayload)`. The orchestrator builds a `FailedAttemptError[]` from the retry reason and the provider row, and dispatches `retryJob` with the job row and `dbClient`.
-         * `[ ]`   Outcome: success arm, `{ status: 'completed' }` — retry is not a failure of `saveResponse`.
-      * `[ ]`   Branch: prepareResponseContent returns error.
-         * `[ ]`   Condition: `'error' in prepareResult`.
-         * `[ ]`   Decision: error-arm check on the return.
-         * `[ ]`   Dependency call: `deps.prepareResponseContent(prepareParams, preparePayload)`.
-         * `[ ]`   Outcome: propagate the error arm unchanged.
-      * `[ ]`   Branch: job_type is EXECUTE, payload guard fails.
-         * `[ ]`   Condition: `job.job_type === 'EXECUTE'` and `!isDialecticExecuteJobPayload(jobPayload)`.
-         * `[ ]`   Decision: payload proving guard.
-         * `[ ]`   Dependency call: none.
-         * `[ ]`   Outcome: error arm, `new Error('Invalid DialecticExecuteJobPayload')`, `retriable: false`.
-      * `[ ]`   Branch: job_type is EXECUTE, saveContributionResponse fails.
-         * `[ ]`   Condition: `'error' in contributionResult`.
-         * `[ ]`   Decision: error-arm check on the return.
-         * `[ ]`   Dependency call: `deps.saveContributionResponse(contributionParams, contributionPayload)`.
-         * `[ ]`   Outcome: propagate the error arm unchanged.
-      * `[ ]`   Branch: job_type is EXECUTE, saveContributionResponse succeeds.
-         * `[ ]`   Condition: success arm.
-         * `[ ]`   Decision: none — fall-through.
-         * `[ ]`   Dependency call: none additional.
-         * `[ ]`   Outcome: success arm, forwarding the arm module's `status`.
-      * `[ ]`   Branch: job_type is COMPRESS, payload guard fails.
-         * `[ ]`   Condition: `job.job_type === 'COMPRESS'` and `!isDialecticCompressJobPayload(jobPayload)`.
-         * `[ ]`   Decision: payload proving guard.
-         * `[ ]`   Dependency call: none.
-         * `[ ]`   Outcome: error arm, `new Error('Invalid DialecticCompressJobPayload')`, `retriable: false`.
-      * `[ ]`   Branch: job_type is COMPRESS, saveCompressedResponse fails.
-         * `[ ]`   Condition: `'error' in compressedResult`.
-         * `[ ]`   Decision: error-arm check on the return.
-         * `[ ]`   Dependency call: `deps.saveCompressedResponse(compressedParams, compressedPayload)`.
-         * `[ ]`   Outcome: propagate the error arm unchanged.
-      * `[ ]`   Branch: job_type is COMPRESS, saveCompressedResponse succeeds.
-         * `[ ]`   Condition: success arm.
-         * `[ ]`   Decision: none — fall-through.
-         * `[ ]`   Dependency call: none additional.
-         * `[ ]`   Outcome: success arm, forwarding the arm module's `status`.
-      * `[ ]`   Branch: job_type is unknown.
-         * `[ ]`   Condition: `job.job_type` is neither `'EXECUTE'` nor `'COMPRESS'`.
-         * `[ ]`   Decision: exhaustiveness guard.
-         * `[ ]`   Dependency call: none.
-         * `[ ]`   Outcome: error arm, `new Error('Unknown job_type: ${job.job_type}')`, `retriable: false`.
-      * `[ ]`   Side effects: DB reads via `loadJobContext`, wallet debit via `debitForResponse`, retry dispatch via `retryJob` (on retry-required path), and all side effects delegated to the arm modules.
-      * `[ ]`   Ordering: strictly sequential — loadJobContext → assembleAiResponse → debitForResponse → prepareResponseContent → routing → arm module dispatch.
+   * `[✅]`   `supabase/functions/_shared/utils/type-guards/type_guards.dialectic.test.ts`
+      * `[✅]`   `isDialecticBaseJobPayload` accepts `buildDialecticBaseJobPayload()` with the member absent.
+      * `[✅]`   `isDialecticBaseJobPayload` accepts `buildDialecticBaseJobPayload({ preflight_input_tokens: 128 })`.
+      * `[✅]`   `isDialecticBaseJobPayload` throws `Invalid preflight_input_tokens.` on `invalidateDialecticBaseJobPayload({ preflight_input_tokens: 'x' })`.
+      * `[✅]`   `isDialecticBaseJobPayload` throws `Invalid preflight_input_tokens.` on `invalidateDialecticBaseJobPayload({ preflight_input_tokens: null })`.
+      * `[✅]`   `isDialecticExecuteJobPayload` accepts `buildDialecticExecuteJobPayload({ preflight_input_tokens: 128 })`, proving the allowed-key set admits the member.
+      * `[✅]`   `isDialecticCompressJobPayload` accepts a compress payload carrying `preflight_input_tokens: 128`.
 
-   * `[ ]`   `saveResponse.mock.ts`
-      * `[ ]`   The existing mock file is rewritten to match the narrowed deps surface.
-      * `[ ]`   `createMockSaveResponseDeps` — builder returning a valid `SaveResponseDeps` with a mock logger, stubs for the seven bound functions each returning a success.
-      * `[ ]`   `invalidateSaveResponseDeps` — invalidator that removes each dep key in turn.
-      * `[ ]`   `createMockSaveResponseParams` — builder returning a valid `SaveResponseParams` with a mock `dbClient` and a `job_id`.
-      * `[ ]`   `invalidateSaveResponseParams` — invalidator removing each param key in turn.
-      * `[ ]`   `createMockSaveResponsePayload` — builder returning a valid `SaveResponsePayload` with `assembled_content`, `token_usage`, `finish_reason`, and `processingTimeMs`.
-      * `[ ]`   `invalidateSaveResponsePayload` — invalidator removing each payload key in turn.
-      * `[ ]`   `createMockSaveResponseSuccessReturn` — builder returning `{ status: 'completed' }`.
-      * `[ ]`   `createMockSaveResponseErrorReturn` — builder returning `{ error: new Error('...'), retriable: false }`.
-      * `[ ]`   `mockSaveResponseFn` — function mock returning the success builder's output, typed as `SaveResponseFn`.
-      * `[ ]`   The existing `createMockSaveResponseParamsWithQueuedJob`, `createMockJobRow`, `createMockContributionRow`, `createMockDialecticContributionRow`, `createMockFileManager`, `createValidHeaderContext`, `testPayload`, `saveResponseTestPayload`, `saveResponseTestPayloadDocumentArtifact`, `createMockDialecticExecuteJobPayload` are retained — they are consumed by the integration-tier test suites.
+   * `[✅]`   `supabase/functions/_shared/utils/type-guards/type_guards.dialectic.ts`
+      * `[✅]`   `dialecticBaseJobPayloadAllowedKeys` gains `'preflight_input_tokens'`.
+      * `[✅]`   `isDialecticBaseJobPayload` gains, in its optional-member section, a check throwing `Invalid preflight_input_tokens.` when the member is present and `typeof` is not `number`.
 
-   * `[ ]`   `saveResponse.guard.test.ts`
-      * `[ ]`   `isSaveResponseDeps`: a valid deps object (eight keys) passes; removing each of the eight keys in turn fails; a non-object fails.
-      * `[ ]`   `isSaveResponseParams`: a valid params object (two keys) passes; removing each of the two keys in turn fails; a non-object fails.
-      * `[ ]`   `isSaveResponsePayload`: a valid payload object (four keys) passes; removing each of the four keys in turn fails; a non-object fails.
-      * `[ ]`   `isSaveResponseRequestBody`: retained — the existing cases are unchanged.
-      * `[ ]`   `isSaveResponseSuccessReturn`: updated to accept `'waiting_for_children'` in addition to the existing three statuses.
-      * `[ ]`   Every block carries the extended header: `Contract`, `Arrange`, `Act`, `Assert`, `Boundary`, `Mocked`.
+   * `[✅]`   `supabase/functions/dialectic-worker/enqueueModelCall/enqueueModelCall.test.ts`
+      * `[✅]`   The update argument carries `preflight_input_tokens` equal to the `preflightInputTokens` supplied on the payload, asserted against an independent literal — unit test.
+      * `[✅]`   The update argument still carries `status: 'queued'` — unit test.
+      * `[✅]`   Every other member of the job row's payload appears in the update argument with its original value — unit test.
+      * `[✅]`   A job row whose payload fails `isDialecticBaseJobPayload` returns the error arm with `retriable: false` and the guard's message, with no update issued and no fetch made — unit test.
+      * `[✅]`   The posted `AiStreamEventData` carries no token count — unit test.
+      * `[✅]`   Every block carries the four-field header and the inline section markers.
 
-   * `[ ]`   `saveResponse.guard.ts`
-      * `[ ]`   `isSaveResponseDeps` — updated to check the eight new dep keys: `logger` is an object, `retryJob`/`loadJobContext`/`assembleAiResponse`/`debitForResponse`/`prepareResponseContent`/`saveContributionResponse`/`saveCompressedResponse` are functions.
-      * `[ ]`   `isSaveResponseParams` — checks `dbClient` is an object and `job_id` is a string.
-      * `[ ]`   `isSaveResponsePayload` — checks `assembled_content` is a string, `token_usage` is `NodeTokenUsage | null`, `finish_reason` is `string | null`, `processingTimeMs` is a number.
-      * `[ ]`   `isSaveResponseSuccessReturn` — updated to accept `'waiting_for_children'` as a valid status.
-      * `[ ]`   `isSaveResponseRequestBody` — unchanged.
-      * `[ ]`   `isSaveResponseErrorReturn` — unchanged.
+   * `[✅]`   `supabase/functions/dialectic-worker/enqueueModelCall/enqueueModelCall.ts`
+      * `[✅]`   Import `DialecticBaseJobPayload` and `isDialecticBaseJobPayload`.
+      * `[✅]`   Between the `computeJobSig` block and the update, prove `params.job.payload` inside a `try`; the `catch` returns the error arm with the thrown `Error` and `retriable: false`.
+      * `[✅]`   Compose the written payload as a `DialecticBaseJobPayload` spreading the proven payload and setting `preflight_input_tokens` from `payload.preflightInputTokens`.
+      * `[✅]`   Pass both `status: 'queued'` and the composed payload to the existing `.update(...)`.
+      * `[✅]`   Leave the event data, the size check and the fetch untouched.
 
-   * `[ ]`   `saveResponse.test.ts`
-      * `[ ]`   The existing unit test file is rewritten to test the orchestrator's branching, not the monolith's.
-      * `[ ]`   Guards on entry: deps invalid, params invalid, payload invalid — each returns error arm with `retriable: false`.
-      * `[ ]`   `loadJobContext` returns error → propagated unchanged.
-      * `[ ]`   `assembleAiResponse` returns error → propagated unchanged.
-      * `[ ]`   `debitForResponse` returns error → propagated unchanged.
-      * `[ ]`   `prepareResponseContent` returns retry-required → `retryJob` called with a `FailedAttemptError[]`, returns `{ status: 'completed' }`.
-      * `[ ]`   `prepareResponseContent` returns error → propagated unchanged.
-      * `[ ]`   `job_type` is `'EXECUTE'`, payload guard fails → error arm.
-      * `[ ]`   `job_type` is `'EXECUTE'`, `saveContributionResponse` returns error → propagated unchanged.
-      * `[ ]`   `job_type` is `'EXECUTE'`, `saveContributionResponse` returns `{ status: 'completed' }` → forwarded.
-      * `[ ]`   `job_type` is `'EXECUTE'`, `saveContributionResponse` returns `{ status: 'needs_continuation' }` → forwarded.
-      * `[ ]`   `job_type` is `'EXECUTE'`, `saveContributionResponse` returns `{ status: 'continuation_limit_reached' }` → forwarded.
-      * `[ ]`   `job_type` is `'COMPRESS'`, payload guard fails → error arm.
-      * `[ ]`   `job_type` is `'COMPRESS'`, `saveCompressedResponse` returns error → propagated unchanged.
-      * `[ ]`   `job_type` is `'COMPRESS'`, `saveCompressedResponse` returns `{ status: 'completed' }` → forwarded.
-      * `[ ]`   `job_type` is `'COMPRESS'`, `saveCompressedResponse` returns `{ status: 'waiting_for_children' }` → forwarded.
-      * `[ ]`   `job_type` is `'COMPRESS'`, `saveCompressedResponse` returns `{ status: 'needs_continuation' }` → forwarded.
-      * `[ ]`   `job_type` is unknown string → error arm, `retriable: false`.
-      * `[ ]`   `retryJob` is not called when `prepareResponseContent` returns a prepared result.
-      * `[ ]`   `saveContributionResponse` is not called when `job_type` is `'COMPRESS'`.
-      * `[ ]`   `saveCompressedResponse` is not called when `job_type` is `'EXECUTE'`.
-      * `[ ]`   Neither `params` nor `payload` is mutated — verified by deep-equality snapshot.
-      * `[ ]`   Every block carries the extended header: `Contract`, `Arrange`, `Act`, `Assert`, `Boundary`, `Mocked`.
+   * `[✅]`   `requirements`
+      * `[✅]`   `DialecticBaseJobPayload` declares `preflight_input_tokens` as an optional number — guard test.
+      * `[✅]`   A base payload carrying a numeric count passes the base guard and both arm guards — guard test.
+      * `[✅]`   A base payload carrying a non-numeric count is rejected with the named diagnostic — guard test.
+      * `[✅]`   The queueing update writes the count supplied on the payload — unit test.
+      * `[✅]`   The queueing update preserves `status: 'queued'` and every other payload member — unit test.
+      * `[✅]`   An unprovable job payload returns the error arm and performs no side effect — unit test.
+      * `[✅]`   The stream event carries no token count — unit test.
 
-   * `[ ]`   `saveResponse.continue.test.ts`
-      * `[ ]`   Retained in full as integration tier. No case is deleted. The file is renamed conceptually to integration (the describe block label changes, the file stays).
+* `[✅]`   supabase/functions/dialectic-worker/assembleAiResponse/assembleAiResponse.ts **[BE] The preflight input-token count becomes optional, and a synthesized usage that has no count returns the error arm instead of billing zero**
 
-   * `[ ]`   `saveResponse.pathContext.test.ts`
-      * `[ ]`   Retained in full as integration tier. No case is deleted.
+   * `[✅]`   `objective`
+      * `[✅]`   `AssembleAiResponseParams.preflightInputTokens` is a required `number`, but the count does not exist until `enqueueModelCall` writes it at dispatch, so the orchestrator reads `number | undefined` off the job payload and has nothing compliant to pass when the member is absent. The one branch that reads it — provider returned no `token_usage` and the content is non-empty — synthesizes `prompt_tokens` and `total_tokens` from it, and those figures are what the wallet is debited against. A fabricated zero there is indistinguishable from a measured zero and silently bills no input tokens. This node makes the count optional and makes its absence a typed failure at the one place it matters.
+      * `[✅]`   Functional goals:
+         * `[✅]`   `AssembleAiResponseParams.preflightInputTokens` becomes `preflightInputTokens?: number`. `keyof` still admits the member, so the existing params surface case is unchanged.
+         * `[✅]`   `AssembleAiResponseMissingPreflightErrorConstructorParams` declares `apiIdentifier: string`.
+         * `[✅]`   `AssembleAiResponseMissingPreflightError` extends `Error`, holds `apiIdentifier` readonly, sets `name` to its own class name, and builds its message as `apiIdentifier: ${params.apiIdentifier}`.
+         * `[✅]`   `AssembleAiResponseErrorReturn.error` becomes `AssembleAiResponseTokenCountError | AssembleAiResponseMissingPreflightError`, declared in the interface.
+         * `[✅]`   The synthesize branch returns the error arm carrying `AssembleAiResponseMissingPreflightError` with `retriable: false` when `params.preflightInputTokens` is absent, before `deps.countTokens` is called.
+         * `[✅]`   Every other branch is unchanged: a provider-supplied `tokenUsage` is relayed and the count is never read; empty content leaves `tokenUsage` null and reaches no synthesis.
+      * `[✅]`   Non-functional constraints:
+         * `[✅]`   No default is supplied for an absent count anywhere in this module.
+         * `[✅]`   `AssembleAiResponseDeps`, `AssembleAiResponsePayload`, `AssembleAiResponseSuccessReturn` and the `UnifiedAIResponse` assembly are untouched.
+         * `[✅]`   The function stays synchronous and performs no IO.
 
-   * `[ ]`   `saveResponse.rawJsonOnly.test.ts`
-      * `[ ]`   Retained in full as integration tier. No case is deleted.
+   * `[✅]`   `role`
+      * `[✅]`   App-layer transform: it turns the stream result and the caller's per-invocation measurements into a `UnifiedAIResponse`.
+      * `[✅]`   Out-of-scope responsibilities:
+         * `[✅]`   Do not read the job row or the job payload. The orchestrator reads the count and passes it.
+         * `[✅]`   Do not compute or estimate an input-token count when none was supplied.
+         * `[✅]`   Do not debit, log a failure and continue, or convert either error into the other.
+
+   * `[✅]`   `module`
+      * `[✅]`   Bounded context is `supabase/functions/dialectic-worker/assembleAiResponse` — assembling the unified response from a completed stream call.
+
+   * `[✅]`   `assembleAiResponse.interface.test.ts`
+      * `[✅]`   Every existing block stays byte-for-byte. Nothing is renamed, reordered, deleted or re-asserted. The two new blocks are appended to the end of the file.
+      * `[✅]`   The existing block `AssembleAiResponseParams has the required surface` keeps all three keys and keeps `assertEquals(Object.keys(surface).length, 3)`. `keyof` admits an optional member, so making `preflightInputTokens` optional leaves that record correct. Do not edit that block.
+      * `[✅]`   Add `AssembleAiResponseMissingPreflightErrorConstructorParams` to the existing `import type { … }` block from `./assembleAiResponse.interface.ts`. Add no other import, and add nothing to the value import on the file's second line.
+      * `[✅]`   Append the block `AssembleAiResponseParams.preflightInputTokens admits undefined`. Its body is one typed assignment and one assertion: a `const` annotated `AssembleAiResponseParams["preflightInputTokens"]` assigned `undefined`, then `assertEquals` of that const to `undefined`. The indexed access names the exported symbol, needs no `modelConfig`, and compiles only while the member admits `undefined`.
+      * `[✅]`   Append the block `AssembleAiResponseMissingPreflightErrorConstructorParams has the required surface`. Copy the shape of the existing `AssembleAiResponseTokenCountErrorConstructorParams has the required surface` block: a `const surface` annotated `Record<keyof AssembleAiResponseMissingPreflightErrorConstructorParams, true>` with `apiIdentifier: true`, then `assertEquals(Object.keys(surface).length, 1)`.
+      * `[✅]`   Both new blocks take the collapsed header — the one-line `Contract` comment alone, no `Arrange` / `Act` / `Assert` fields and no inline markers.
+      * `[✅]`   Do not construct an `AssembleAiResponseMissingPreflightError`, do not construct an `AssembleAiResponseParams` object literal, and do not import or call any builder, mock or guard. The class is proven by its constructor-params surface here; that the error arm admits it is proven by `isAssembleAiResponseErrorReturn` in the guard test.
+      * `[✅]`   Do not use `Parameters<AssembleAiResponseFn>[n]` in either block.
+      * `[✅]`   RED for this element is the compiler reporting that `AssembleAiResponseMissingPreflightErrorConstructorParams` is not exported and that `undefined` is not assignable to `AssembleAiResponseParams["preflightInputTokens"]`. Report both verbatim and stop; do not create or edit `assembleAiResponse.interface.ts` from this element.
+
+   * `[✅]`   `assembleAiResponse.interface.ts`
+      * `[✅]`   `AssembleAiResponseParams.preflightInputTokens` becomes optional.
+      * `[✅]`   `AssembleAiResponseMissingPreflightErrorConstructorParams` is declared with `apiIdentifier: string`.
+      * `[✅]`   `AssembleAiResponseMissingPreflightError` is declared beside `AssembleAiResponseTokenCountError`, following that class's shape.
+      * `[✅]`   `AssembleAiResponseErrorReturn.error` is widened to the two-class union.
+
+   * `[✅]`   `assembleAiResponse.interaction.spec`
+      * `[✅]`   Branch: provider supplied a token usage.
+         * `[✅]`   Condition: `payload.tokenUsage !== null`.
+         * `[✅]`   Decision: null check on the payload member.
+         * `[✅]`   Dependency call: none.
+         * `[✅]`   Outcome: the usage is relayed; `params.preflightInputTokens` is never read; success arm.
+      * `[✅]`   Branch: no usage, no content.
+         * `[✅]`   Condition: `effectiveTokenUsage === null` and `contentString === null`.
+         * `[✅]`   Decision: null checks.
+         * `[✅]`   Dependency call: none.
+         * `[✅]`   Outcome: `tokenUsage` stays null; success arm; the count is never read.
+      * `[✅]`   Branch: no usage, content present, no count.
+         * `[✅]`   Condition: `effectiveTokenUsage === null`, `contentString !== null`, `params.preflightInputTokens === undefined`.
+         * `[✅]`   Decision: presence check on the params member.
+         * `[✅]`   Dependency call: none — `deps.countTokens` is not reached.
+         * `[✅]`   Outcome: error arm, `new AssembleAiResponseMissingPreflightError({ apiIdentifier: params.modelConfig.api_identifier })`, `retriable: false`.
+      * `[✅]`   Branch: no usage, content present, count supplied, counting throws.
+         * `[✅]`   Condition: `deps.countTokens` throws.
+         * `[✅]`   Decision: `try`/`catch` around the call.
+         * `[✅]`   Dependency call: `deps.countTokens`.
+         * `[✅]`   Outcome: error arm, the existing `AssembleAiResponseTokenCountError`, `retriable: false`.
+      * `[✅]`   Branch: no usage, content present, count supplied, counting returns.
+         * `[✅]`   Condition: the call returns a number.
+         * `[✅]`   Decision: none.
+         * `[✅]`   Dependency call: `deps.countTokens`.
+         * `[✅]`   Outcome: usage synthesized with `prompt_tokens` the supplied count, `completion_tokens` the returned count, `total_tokens` their sum; success arm.
+      * `[✅]`   Ordering: the presence check precedes the counting call, so a missing count never spends a tokenizer pass and never masks its own failure behind a thrown counting error.
+
+   * `[✅]`   `assembleAiResponse.mock.ts`
+      * `[✅]`   `buildAssembleAiResponseParams` keeps `preflightInputTokens: 200`; the builder produces a valid object and the absent state is reached by omission at the call site.
+      * `[✅]`   `AssembleAiResponseMissingPreflightErrorConstructorParamsOverrides`, `buildAssembleAiResponseMissingPreflightErrorConstructorParams`, `AssembleAiResponseMissingPreflightErrorConstructorParamsCorruptions` and `invalidateAssembleAiResponseMissingPreflightErrorConstructorParams` are added, following the `TokenCountError` constructor-params block.
+      * `[✅]`   `buildAssembleAiResponseMissingPreflightError` returns a real instance composed from that params builder.
+
+   * `[✅]`   `assembleAiResponse.guard.test.ts`
+      * `[✅]`   `isAssembleAiResponseParams` accepts `buildAssembleAiResponseParams()`.
+      * `[✅]`   `isAssembleAiResponseParams` accepts a params object with `preflightInputTokens` rest-destructured away.
+      * `[✅]`   `isAssembleAiResponseParams` rejects `invalidateAssembleAiResponseParams({ preflightInputTokens: 'x' })`.
+      * `[✅]`   `isAssembleAiResponseParams` rejects `invalidateAssembleAiResponseParams({ preflightInputTokens: -1 })`.
+      * `[✅]`   `isAssembleAiResponseParams` rejects `invalidateAssembleAiResponseParams({ preflightInputTokens: Number.NaN })`.
+      * `[✅]`   `isAssembleAiResponseParams` rejects `invalidateAssembleAiResponseParams({ preflightInputTokens: null })`.
+      * `[✅]`   `isAssembleAiResponseErrorReturn` accepts an error return built with `buildAssembleAiResponseMissingPreflightError`.
+      * `[✅]`   `isAssembleAiResponseMissingPreflightError` accepts the built instance and rejects a `buildAssembleAiResponseTokenCountError` instance, a bare `Error`, and a non-object.
+      * `[✅]`   The existing cases for the other guards are retained unchanged.
+
+   * `[✅]`   `assembleAiResponse.guard.ts`
+      * `[✅]`   `isAssembleAiResponseParams` checks `preflightInputTokens` only when the member is present, keeping the finite and non-negative conditions.
+      * `[✅]`   `isAssembleAiResponseErrorReturn` accepts either owned error class.
+      * `[✅]`   `isAssembleAiResponseMissingPreflightError` is added as an `instanceof` guard beside `isAssembleAiResponseTokenCountError`.
+
+   * `[✅]`   `assembleAiResponse.test.ts`
+      * `[✅]`   A provider-supplied usage is relayed unchanged when no count is supplied, and `deps.countTokens` is not called — unit test.
+      * `[✅]`   Empty assembled content with no provider usage and no count returns success with `tokenUsage` null — unit test.
+      * `[✅]`   No provider usage, content present, no count returns the error arm carrying `AssembleAiResponseMissingPreflightError` with `retriable: false`, and `deps.countTokens` is not called — unit test.
+      * `[✅]`   The error's `apiIdentifier` is the `modelConfig.api_identifier` supplied in params, asserted against an independent literal — unit test.
+      * `[✅]`   No provider usage, content present, count supplied yields `prompt_tokens` equal to the supplied count and `total_tokens` equal to that count plus the counted completion, both asserted against independent literals — unit test.
+      * `[✅]`   A throwing `deps.countTokens` with a count supplied still returns `AssembleAiResponseTokenCountError` — unit test.
+      * `[✅]`   Every block carries the four-field header and the inline section markers.
+
+   * `[✅]`   `assembleAiResponse.ts`
+      * `[✅]`   Import the new error class from the interface.
+      * `[✅]`   Inside the `effectiveTokenUsage === null && contentString !== null` branch, before the `try`, return the error arm when `params.preflightInputTokens` is `undefined`.
+      * `[✅]`   Hold the proven count in a `number` and use it for both `prompt_tokens` and the `total_tokens` sum.
+      * `[✅]`   Leave the content derivation, the finish-reason resolution, the provider-usage relay and the `UnifiedAIResponse` assembly untouched.
+
+   * `[✅]`   `requirements`
+      * `[✅]`   `preflightInputTokens` is optional on `AssembleAiResponseParams` — interface test.
+      * `[✅]`   `AssembleAiResponseMissingPreflightError` is admitted by the error arm of the return union — interface test.
+      * `[✅]`   A params object without the count passes its guard — guard test.
+      * `[✅]`   A non-numeric, negative, NaN or null count fails its guard — guard test.
+      * `[✅]`   Synthesis without a count returns the typed error and spends no tokenizer pass — unit test.
+      * `[✅]`   Synthesis with a count produces `prompt_tokens` and `total_tokens` from it — unit test.
+      * `[✅]`   A relayed provider usage and an empty-content response both succeed without a count — unit test.
+
+* `[ ]`   supabase/functions/dialectic-worker/saveResponse/saveResponse.ts **[BE] The relocation node: a thin orchestrator routing on the row's `job_type`, with `SaveResponseDeps` narrowed to eight bound collaborators, `SaveResponseSuccessReturn['status']` gaining `waiting_for_children`, and the monolith body deleted**
+
+   * `[✅]`   `objective`
+      * `[✅]`   The monolith `saveResponse.ts` (1284 lines) performs every responsibility in a straight line: job and provider resolution, response assembly, debit, content preparation, contribution identity, upload, relationship persistence, render dispatch, continuation, notification, and final-status update. The scope's target architecture replaces the body with a thin orchestrator that routes on the job row's `job_type` column — EXECUTE to `saveContributionResponse`, COMPRESS to `saveCompressedResponse` — each module already landed and tested in its own node. The shared front half (job/provider resolution, response assembly, debit, content preparation) is delegated to the extracted modules (`loadJobContext`, `assembleAiResponse`, `debitForResponse`, `prepareResponseContent`), each already bound through `SaveResponseDeps`. The retry path is a single call site: the orchestrator builds the `FailedAttemptError[]` from the retry-required flavor and dispatches `retryJob`. The monolith body is deleted.
+      * `[✅]`   Functional goals:
+         * `[✅]`   `SaveResponseDeps` is narrowed to the orchestrator's actual deps: `logger` (`ILogger`), `retryJob` (`BoundRetryJobFn`), `loadJobContext` (`BoundLoadJobContextFn`), `assembleAiResponse` (`BoundAssembleAiResponseFn`), `debitForResponse` (`BoundDebitForResponseFn`), `prepareResponseContent` (`BoundPrepareResponseContentFn`), `saveContributionResponse` (`BoundSaveContributionResponseFn`), `saveCompressedResponse` (`BoundSaveCompressedResponseFn`). Eight deps, each a bound closure — no `fileManager`, `notificationService`, `continueJob`, `resolveFinishReason`, `isIntermediateChunk`, `determineContinuation`, `buildUploadContext`, `debitTokens`, `sanitizeJsonContent`, or `enqueueRenderJob`.
+         * `[✅]`   `SaveResponseParams` is narrowed to `dbClient` and `job_id`. The params carry what the payload cannot: the database handle and the job identifier.
+         * `[✅]`   `SaveResponsePayload` changes to the stream result: `assembled_content` (`string`), `token_usage` (`NodeTokenUsage | null`), `finish_reason` (`string | null`), `processingTimeMs` (`number`). The payload is the stream callback's output; it is not a job payload and is not proven by a job-type guard.
+         * `[✅]`   `SaveResponseSuccessReturn['status']` gains `'waiting_for_children'` — the new union is `'completed' | 'needs_continuation' | 'continuation_limit_reached' | 'waiting_for_children'`.
+         * `[✅]`   `SaveResponseErrorReturn` is unchanged: `{ error: Error; retriable: boolean }`.
+         * `[✅]`   The orchestrator calls `loadJobContext` to obtain the `job`, `providerRow`, `modelConfig`, `walletId`, and `projectId`. It then selects the arm on `job.job_type` and proves the row's payload for that arm, before any further collaborator runs. Then `assembleAiResponse` to assemble the `UnifiedAIResponse`. Then `debitForResponse` to debit the spend. Then `prepareResponseContent` to determine completeness. On a retry-required result from `prepareResponseContent`, the orchestrator builds a `FailedAttemptError[]` from the retry reason and dispatches `retryJob`, returning `{ status: 'completed' }`. On a prepared result the orchestrator dispatches the arm module it already selected: `'EXECUTE'` dispatches `saveContributionResponse`, `'COMPRESS'` dispatches `saveCompressedResponse`.
+         * `[✅]`   The job payload is read from the job row and proven immediately after `loadJobContext`, because `prepareResponseContent` takes arm-specific params and cannot be called before the arm is known. `'EXECUTE'` proves `DialecticExecuteJobPayload` with `isDialecticExecuteJobPayload`, `'COMPRESS'` proves `DialecticCompressJobPayload` with `isDialecticCompressJobPayload`, and any other `job_type` returns the error arm with `retriable: false`. Each guard is imported from its payload's owning module. Both guards throw a per-member diagnostic rather than returning `false`, so each call sits in a `try` whose `catch` returns the thrown `Error` unchanged on the error arm with `retriable: false`. The proven payload is what supplies `prepareResponseContent`'s params and what the arm module receives.
+         * `[✅]`   `prepareResponseContent` receives `jobId` from `params.job_id` and `continueUntilComplete` from the proven payload's base member; its remaining params are arm-derived. EXECUTE supplies `documentKey` from `document_key` and `contextForDocuments` from `context_for_documents`, omits `mode`, and passes `sourceObject: undefined`. COMPRESS supplies `documentKey` from `documentKey` and `mode` from `mode`, passes `contextForDocuments: undefined`, and supplies `sourceObject` by `JSON.parse` of `content` narrowed with `isContentToInclude`; content that does not parse or does not narrow returns the error arm with `retriable: false`.
+         * `[✅]`   `assembleAiResponse` receives `preflightInputTokens` from the proven payload's `preflight_input_tokens`, passed through absent when the member is absent. The orchestrator supplies no substitute value.
+         * `[✅]`   Each arm module's return is propagated: success returns are forwarded directly on this module's success arm, error returns are forwarded directly on this module's error arm. The orchestrator adds no wrapping.
+         * `[✅]`   `BoundRetryJobFn`, `BoundLoadJobContextFn`, `BoundDebitForResponseFn`, and `BoundPrepareResponseContentFn` are declared in their respective module interfaces. `BoundSaveContributionResponseFn` and `BoundSaveCompressedResponseFn` are declared in their respective module interfaces.
+         * `[✅]`   `NodeTokenUsage`, `SaveResponseRequestBody`, `isSaveResponseRequestBody` are retained — they are consumed by `netlifyResponse` and the request-body guard.
+         * `[✅]`   The legacy helper functions `readOptionalPreflightInputTokens` and `readOptionalContinuationCount` are deleted — their work was relocated into the extracted modules.
+         * `[✅]`   The existing test suites (`saveResponse.test.ts`, `saveResponse.continue.test.ts`, `saveResponse.pathContext.test.ts`, `saveResponse.rawJsonOnly.test.ts`, `saveResponse.notifications.test.ts`, `saveResponse.assembleDocument.test.ts`, `saveResponse.planValidation.test.ts`) are retained in full as the orchestrator's integration tier. Per the scope: "The existing test suites are the regression oracle, pinned to the unchanged public signature, then retained IN FULL as the orchestrator's integration tier. The suites are renamed to integration tests and no case is deleted."
+      * `[✅]`   Non-functional constraints:
+         * `[✅]`   No file outside `dialectic-worker/saveResponse/` is edited. The extracted modules are already landed; `netlifyResponse/index.ts` is a separate node.
+         * `[✅]`   Every path the monolith takes today, the orchestrator + modules take unchanged. The orchestrator is assembly — it does not invent logic, it dispatches. Every retry condition, every status, every error message survives in the arm module that inherited it.
+         * `[✅]`   The payload is read, not mutated. The job payload from the job row is proven once with the arm's guard and passed through unchanged.
+         * `[✅]`   Each goal is proven by a named case in this node's interface test, guard test, unit test, or one of the retained integration-tier suites.
+
+   * `[✅]`   `role`
+      * `[✅]`   Node role is an app-layer orchestrator: given a `job_id` and stream output, load context, assemble, debit, prepare, and route to the arm module that owns the persistence model for the job's type.
+      * `[✅]`   The role is correct because every decision below the routing point is owned by the arm module, and every decision above it is owned by the shared front-half modules. The orchestrator connects, it does not decide.
+      * `[✅]`   Out-of-scope responsibilities:
+         * `[✅]`   Do not persist contributions, resources, or artifacts. The arm modules do that.
+         * `[✅]`   Do not dispatch RENDER. The arm modules do that.
+         * `[✅]`   Do not send notifications. The arm modules do that (contribution arm only).
+         * `[✅]`   Do not dispatch continuation. The arm modules return the status and the orchestrator forwards it.
+         * `[✅]`   Do not resolve contribution identity, persist relationships, or finalize. Those are internal to `saveContributionResponse`.
+         * `[✅]`   Do not assemble upload contexts. The arm modules do that.
+         * `[✅]`   Do not resolve the finish reason, sanitize content, or determine continuation. `prepareResponseContent` does that.
+         * `[✅]`   Do not debit tokens. `debitForResponse` does that.
+         * `[✅]`   Do not assemble the `UnifiedAIResponse`. `assembleAiResponse` does that.
+         * `[✅]`   Do not load the job or provider row. `loadJobContext` does that.
+
+   * `[✅]`   `module`
+      * `[✅]`   Bounded context is `supabase/functions/dialectic-worker/saveResponse` — orchestrating the stream callback's persistence path by routing on `job_type` to the arm module that owns the job type's persistence model.
+
+   * `[✅]`   `deps`
+      * `[✅]`   Provider: `retryJob/retryJob.interface.ts` (`RetryJobFn`, `RetryJobDeps`, `RetryJobParams`, `RetryJobPayload`, `RetryJobReturn`, `BoundRetryJobFn`).
+         * `[✅]`   Layer classification: sibling module contract.
+         * `[✅]`   Direction: inbound from sibling.
+         * `[✅]`   Purpose: dispatch retry on a retry-required prepareResponseContent result. `BoundRetryJobFn = (params, payload) => Promise<RetryJobReturn>` — deps pre-injected at bind time.
+      * `[✅]`   Provider: `loadJobContext/loadJobContext.interface.ts` (`LoadJobContextFn`, `LoadJobContextReturn`, `LoadJobContextSuccessReturn`, `BoundLoadJobContextFn`).
+         * `[✅]`   Layer classification: sibling module contract.
+         * `[✅]`   Direction: inbound from sibling.
+         * `[✅]`   Purpose: load the job row, provider row, model config, walletId, and projectId from the database. `BoundLoadJobContextFn = (params, payload) => Promise<LoadJobContextReturn>` — deps pre-injected at bind time.
+      * `[✅]`   Provider: `assembleAiResponse/assembleAiResponse.interface.ts` (`AssembleAiResponseReturn`, `AssembleAiResponseSuccessReturn`, `BoundAssembleAiResponseFn`).
+         * `[✅]`   Layer classification: sibling module contract.
+         * `[✅]`   Direction: inbound from sibling.
+         * `[✅]`   Purpose: assemble the `UnifiedAIResponse` from the stream payload. `BoundAssembleAiResponseFn = (params, payload) => AssembleAiResponseReturn` — deps pre-injected at bind time. Synchronous (no `Promise`).
+      * `[✅]`   Provider: `debitForResponse/debitForResponse.interface.ts` (`DebitForResponseReturn`, `BoundDebitForResponseFn`).
+         * `[✅]`   Layer classification: sibling module contract.
+         * `[✅]`   Direction: inbound from sibling.
+         * `[✅]`   Purpose: debit the wallet for the spend. `BoundDebitForResponseFn = (params, payload) => Promise<DebitForResponseReturn>` — deps pre-injected at bind time.
+      * `[✅]`   Provider: `prepareResponseContent/prepareResponseContent.interface.ts` (`PrepareResponseContentReturn`, `PrepareResponseContentSuccessReturn`, `PrepareResponseContentPreparedReturn`, `PrepareResponseContentRetryRequiredReturn`, `BoundPrepareResponseContentFn`).
+         * `[✅]`   Layer classification: sibling module contract.
+         * `[✅]`   Direction: inbound from sibling.
+         * `[✅]`   Purpose: sanitize, parse, determine continuation, and decide completeness. `BoundPrepareResponseContentFn = (params, payload) => PrepareResponseContentReturn` — deps pre-injected at bind time. Synchronous (no `Promise`).
+      * `[✅]`   Provider: `saveContributionResponse/saveContributionResponse.interface.ts` (`SaveContributionResponseReturn`, `BoundSaveContributionResponseFn`).
+         * `[✅]`   Layer classification: sibling module contract.
+         * `[✅]`   Direction: inbound from sibling.
+         * `[✅]`   Purpose: the EXECUTE arm — contribution persistence, relationship persistence, finalization. `BoundSaveContributionResponseFn = (params, payload) => Promise<SaveContributionResponseReturn>` — deps pre-injected at bind time.
+      * `[✅]`   Provider: `saveCompressedResponse/saveCompressedResponse.interface.ts` (`SaveCompressedResponseReturn`, `BoundSaveCompressedResponseFn`).
+         * `[✅]`   Layer classification: sibling module contract.
+         * `[✅]`   Direction: inbound from sibling.
+         * `[✅]`   Purpose: the COMPRESS arm — resource artifact persistence, RENDER dispatch, waiting_for_children. `BoundSaveCompressedResponseFn = (params, payload) => Promise<SaveCompressedResponseReturn>` — deps pre-injected at bind time.
+      * `[✅]`   Provider: `_shared/types.ts` (`ILogger`).
+         * `[✅]`   Layer classification: shared interface.
+         * `[✅]`   Direction: inbound.
+         * `[✅]`   Purpose: logging.
+      * `[✅]`   Provider: `dialectic-service/dialectic.interface.ts` (`DialecticJobRow`, `AiProvidersRow`, `UnifiedAIResponse`, `FailedAttemptError`).
+         * `[✅]`   Layer classification: service-layer contract hub.
+         * `[✅]`   Direction: inbound.
+         * `[✅]`   Purpose: the job row, provider row, assembled response, and failed-attempt error types.
+      * `[✅]`   Provider: `enqueueCompressJobs/enqueueCompressJobs.interface.ts` (`DialecticCompressJobPayload`), with guard `isDialecticCompressJobPayload`.
+         * `[✅]`   Layer classification: sibling module contract.
+         * `[✅]`   Direction: inbound.
+         * `[✅]`   Purpose: the COMPRESS arm's payload type and its proving guard.
+      * `[✅]`   Provider: `dialectic-service/dialectic.interface.ts` (`DialecticExecuteJobPayload`), with guard `isDialecticExecuteJobPayload` from its owning guard file.
+         * `[✅]`   Layer classification: service-layer contract hub.
+         * `[✅]`   Direction: inbound.
+         * `[✅]`   Purpose: the EXECUTE arm's payload type and its proving guard.
+      * `[✅]`   Provider: `types_db.ts` (`Database`).
+         * `[✅]`   Layer classification: generated database type surface.
+         * `[✅]`   Direction: inbound.
+         * `[✅]`   Purpose: type the `dbClient` param.
+      * `[✅]`   Provider: `_shared/utils/determineContinuation/determineContinuation.interface.ts` (`DetermineContinuationParams`).
+         * `[✅]`   Layer classification: shared utility contract.
+         * `[✅]`   Direction: inbound.
+         * `[✅]`   Purpose: the continuation-input contract `PrepareResponseContentParams` mirrors; its `documentKey` member is aligned by this node.
+      * `[✅]`   Provider: `_shared/utils/type-guards/type_guards.dialectic.ts` (`isContentToInclude`).
+         * `[✅]`   Layer classification: shared type-guard package.
+         * `[✅]`   Direction: inbound.
+         * `[✅]`   Purpose: narrow the parsed COMPRESS `content` to `ContentToInclude` for `sourceObject`. Called, never injected.
+      * `[✅]`   Confirm:
+         * `[✅]`   `SaveResponseDeps` declares exactly eight deps: `logger`, `retryJob`, `loadJobContext`, `assembleAiResponse`, `debitForResponse`, `prepareResponseContent`, `saveContributionResponse`, `saveCompressedResponse`. Every dep a bound closure except `logger`.
+         * `[✅]`   No dep from the old `SaveResponseDeps` that was a collaborator of an arm module survives: `fileManager`, `notificationService`, `continueJob`, `resolveFinishReason`, `isIntermediateChunk`, `determineContinuation`, `buildUploadContext`, `debitTokens`, `sanitizeJsonContent`, `enqueueRenderJob` are all removed.
+         * `[✅]`   No reverse dependency: nothing in `_shared`, `dialectic-service`, or any sibling module imports from `saveResponse/`. `saveResponse/` imports contracts from its sibling modules, never their implementations.
+      * `[✅]`   `context_slice`
+         * `[✅]`   From `retryJob/retryJob.interface.ts`: `BoundRetryJobFn`, `RetryJobReturn`, imported with `import type`.
+         * `[✅]`   From `loadJobContext/loadJobContext.interface.ts`: `BoundLoadJobContextFn`, `LoadJobContextSuccessReturn`, imported with `import type`.
+         * `[✅]`   From `assembleAiResponse/assembleAiResponse.interface.ts`: `BoundAssembleAiResponseFn`, `AssembleAiResponseSuccessReturn`, imported with `import type`.
+         * `[✅]`   From `debitForResponse/debitForResponse.interface.ts`: `BoundDebitForResponseFn`, imported with `import type`.
+         * `[✅]`   From `prepareResponseContent/prepareResponseContent.interface.ts`: `BoundPrepareResponseContentFn`, `PrepareResponseContentPreparedReturn`, `PrepareResponseContentRetryRequiredReturn`, imported with `import type`.
+         * `[✅]`   From `saveContributionResponse/saveContributionResponse.interface.ts`: `BoundSaveContributionResponseFn`, imported with `import type`.
+         * `[✅]`   From `saveCompressedResponse/saveCompressedResponse.interface.ts`: `BoundSaveCompressedResponseFn`, imported with `import type`.
+         * `[✅]`   From `dialectic-service/dialectic.interface.ts`: `DialecticJobRow`, `FailedAttemptError`, `DialecticExecuteJobPayload`, `DialecticCompressJobPayload`, imported with `import type`.
+         * `[✅]`   From `_shared/types.ts`: `ILogger`, imported with `import type`.
+         * `[✅]`   From `types_db.ts`: `Database`, imported with `import type`.
+         * `[✅]`   From `enqueueCompressJobs/enqueueCompressJobs.interface.ts`: `DialecticCompressJobPayload`, imported with `import type`.
+         * `[✅]`   Guard imports (`isDialecticExecuteJobPayload`, `isDialecticCompressJobPayload`, `isContentToInclude`) are value imports from their owning guard files.
+         * `[✅]`   From `prepareResponseContent/prepareResponseContent.interface.ts`: `PrepareResponseContentParams`, imported with `import type`.
+
+   * `[✅]`   `supabase/functions/_shared/utils/determineContinuation/determineContinuation.interface.ts`
+      * `[✅]`   `DetermineContinuationParams.documentKey` becomes `string | null | undefined`, matching the producer member `DialecticExecuteJobPayload.document_key`, so no caller converts one absent representation into the other. The body's `typeof params.documentKey === "string"` gate already admits both absent states and is unchanged.
+
+   * `[✅]`   `supabase/functions/dialectic-worker/prepareResponseContent/prepareResponseContent.interface.ts`
+      * `[✅]`   `PrepareResponseContentParams.mode` becomes `mode?: CompressionMode`. An EXECUTE response omits it; `params.mode === 'text'` is false when absent, which is the structured-content branch.
+      * `[✅]`   `PrepareResponseContentParams.documentKey` becomes `string | null | undefined`.
+
+   * `[✅]`   `supabase/functions/dialectic-worker/prepareResponseContent/prepareResponseContent.mock.ts`
+      * `[✅]`   `buildPrepareResponseContentParams` keeps its valid defaults; the absent `mode` and the null `documentKey` are reached by override and omission at the call site.
+
+   * `[✅]`   `supabase/functions/dialectic-worker/prepareResponseContent/prepareResponseContent.guard.test.ts`
+      * `[✅]`   `isPrepareResponseContentParams` accepts a params object with `mode` rest-destructured away.
+      * `[✅]`   `isPrepareResponseContentParams` accepts `documentKey` set to `null`.
+      * `[✅]`   `isPrepareResponseContentParams` rejects a `mode` that is present and is not a `CompressionMode`.
+      * `[✅]`   `isPrepareResponseContentParams` rejects a `documentKey` that is present, not null, and not a string.
+
+   * `[✅]`   `supabase/functions/dialectic-worker/prepareResponseContent/prepareResponseContent.guard.ts`
+      * `[✅]`   `isPrepareResponseContentParams` calls `isCompressionMode` only when `mode` is present.
+      * `[✅]`   `isPrepareResponseContentParams` admits `documentKey` null alongside undefined and string.
+
+   * `[✅]`   `saveResponse.interface.test.ts`
+      * `[✅]`   Typed assignments only.
+      * `[✅]`   A case proves the deps surface exhaustively: `Record<keyof SaveResponseDeps, true>` over the eight dep keys, asserting eight.
+      * `[✅]`   A case proves the params surface exhaustively: `Record<keyof SaveResponseParams, true>` over `dbClient` and `job_id`, asserting two.
+      * `[✅]`   A case proves the payload surface exhaustively: `Record<keyof SaveResponsePayload, true>` over `assembled_content`, `token_usage`, `finish_reason`, and `processingTimeMs`, asserting four.
+      * `[✅]`   A case proves the return union has exactly two arms by assigning a success literal and an error literal to `SaveResponseReturn`.
+      * `[✅]`   A case proves `SaveResponseSuccessReturn.status` discriminates `'completed'`, `'needs_continuation'`, `'continuation_limit_reached'`, and `'waiting_for_children'` by assigning each to the status field.
+      * `[✅]`   A case proves `NodeTokenUsage` has `prompt_tokens`, `completion_tokens`, and `total_tokens`.
+      * `[✅]`   A case proves `SaveResponseFn` accepts `(deps, params, payload)` and returns `Promise<SaveResponseReturn>`.
+
+   * `[✅]`   `saveResponse.interface.ts`
+      * `[✅]`   `SaveResponseDeps` narrowed to eight deps: `logger: ILogger`, `retryJob: BoundRetryJobFn`, `loadJobContext: BoundLoadJobContextFn`, `assembleAiResponse: BoundAssembleAiResponseFn`, `debitForResponse: BoundDebitForResponseFn`, `prepareResponseContent: BoundPrepareResponseContentFn`, `saveContributionResponse: BoundSaveContributionResponseFn`, `saveCompressedResponse: BoundSaveCompressedResponseFn`.
+      * `[✅]`   `SaveResponseParams` narrowed to `dbClient: SupabaseClient<Database>` and `job_id: string`.
+      * `[✅]`   `SaveResponsePayload` carries `assembled_content: string`, `token_usage: NodeTokenUsage | null`, `finish_reason: string | null`, `processingTimeMs: number`.
+      * `[✅]`   `SaveResponseSuccessReturn` with `status: 'completed' | 'needs_continuation' | 'continuation_limit_reached' | 'waiting_for_children'`.
+      * `[✅]`   `SaveResponseErrorReturn` unchanged: `{ error: Error; retriable: boolean }`.
+      * `[✅]`   `SaveResponseReturn` as the union.
+      * `[✅]`   `SaveResponseFn` typed `(deps, params, payload) => Promise<SaveResponseReturn>`.
+      * `[✅]`   `NodeTokenUsage` retained.
+      * `[✅]`   `SaveResponseRequestBody` retained.
+
+   * `[✅]`   `saveResponse.interaction.spec`
+      * `[✅]`   Branch: deps guard fails.
+         * `[✅]`   Condition: `!isSaveResponseDeps(deps)`.
+         * `[✅]`   Decision: deps guard.
+         * `[✅]`   Dependency call: none.
+         * `[✅]`   Outcome: error arm, `new Error('Invalid SaveResponseDeps')`, `retriable: false`.
+      * `[✅]`   Branch: params guard fails.
+         * `[✅]`   Condition: `!isSaveResponseParams(params)`.
+         * `[✅]`   Decision: params guard.
+         * `[✅]`   Dependency call: none.
+         * `[✅]`   Outcome: error arm, `new Error('Invalid SaveResponseParams')`, `retriable: false`.
+      * `[✅]`   Branch: payload guard fails.
+         * `[✅]`   Condition: `!isSaveResponsePayload(payload)`.
+         * `[✅]`   Decision: payload guard.
+         * `[✅]`   Dependency call: none.
+         * `[✅]`   Outcome: error arm, `new Error('Invalid SaveResponsePayload')`, `retriable: false`.
+      * `[✅]`   Branch: loadJobContext fails.
+         * `[✅]`   Condition: `'error' in loadJobContextResult`.
+         * `[✅]`   Decision: error-arm check on the return.
+         * `[✅]`   Dependency call: `deps.loadJobContext({ dbClient: params.dbClient, job_id: params.job_id }, {})`.
+         * `[✅]`   Outcome: propagate the error arm unchanged.
+      * `[✅]`   Branch: job_type is unknown.
+         * `[✅]`   Condition: `job.job_type` is neither `'EXECUTE'` nor `'COMPRESS'`.
+         * `[✅]`   Decision: exhaustiveness check on the row's column.
+         * `[✅]`   Dependency call: none.
+         * `[✅]`   Outcome: error arm, `new Error('Unknown job_type: ${job.job_type}')`, `retriable: false`.
+      * `[✅]`   Branch: job_type is EXECUTE, the payload guard throws.
+         * `[✅]`   Condition: `isDialecticExecuteJobPayload(job.payload)` throws.
+         * `[✅]`   Decision: the arm's proving guard, called inside a `try`.
+         * `[✅]`   Dependency call: none.
+         * `[✅]`   Outcome: error arm, the thrown `Error` surfaced unchanged, `retriable: false`.
+      * `[✅]`   Branch: job_type is COMPRESS, the payload guard throws.
+         * `[✅]`   Condition: `isDialecticCompressJobPayload(job.payload)` throws.
+         * `[✅]`   Decision: the arm's proving guard, called inside a `try`.
+         * `[✅]`   Dependency call: none.
+         * `[✅]`   Outcome: error arm, the thrown `Error` surfaced unchanged, `retriable: false`.
+      * `[✅]`   Branch: job_type is COMPRESS, the payload's content does not yield a source object.
+         * `[✅]`   Condition: `JSON.parse` of the proven payload's `content` throws, or `isContentToInclude` returns false for the parsed value.
+         * `[✅]`   Decision: the parse inside a `try`, then the imported guard.
+         * `[✅]`   Dependency call: none.
+         * `[✅]`   Outcome: error arm, `new Error('COMPRESS payload content is not a source object')`, `retriable: false`.
+      * `[✅]`   Branch: assembleAiResponse fails.
+         * `[✅]`   Condition: `'error' in assembleResult`.
+         * `[✅]`   Decision: error-arm check on the return.
+         * `[✅]`   Dependency call: `deps.assembleAiResponse(assembleParams, assemblePayload)` — `assembleParams` carries `processingTimeMs` from the payload, the `modelConfig` from `loadJobContext`, and `preflightInputTokens` from the proven job payload's `preflight_input_tokens`, omitted when that member is absent; `assemblePayload` carries `assembled_content`, `token_usage`, `finish_reason` from the payload.
+         * `[✅]`   Outcome: propagate the error arm unchanged.
+      * `[✅]`   Branch: debitForResponse fails.
+         * `[✅]`   Condition: `'error' in debitResult`.
+         * `[✅]`   Decision: error-arm check on the return.
+         * `[✅]`   Dependency call: `deps.debitForResponse(debitParams, debitPayload)` — `debitParams` carries `dbClient`, job row, provider row, model config, wallet, assembled response; `debitPayload` is `{}`.
+         * `[✅]`   Outcome: propagate the error arm unchanged.
+      * `[✅]`   Branch: prepareResponseContent returns retry-required.
+         * `[✅]`   Condition: `prepareResult.retryRequired === true`.
+         * `[✅]`   Decision: discriminant check on `retryRequired`.
+         * `[✅]`   Dependency call: `deps.prepareResponseContent(prepareParams, preparePayload)`, then `deps.retryJob(retryParams, retryPayload)`. The orchestrator builds a `FailedAttemptError[]` from the retry reason and the provider row, and dispatches `retryJob` with the job row and `dbClient`.
+         * `[✅]`   Outcome: success arm, `{ status: 'completed' }` — retry is not a failure of `saveResponse`.
+      * `[✅]`   Branch: prepareResponseContent returns error.
+         * `[✅]`   Condition: `'error' in prepareResult`.
+         * `[✅]`   Decision: error-arm check on the return.
+         * `[✅]`   Dependency call: `deps.prepareResponseContent(prepareParams, preparePayload)`.
+         * `[✅]`   Outcome: propagate the error arm unchanged.
+      * `[✅]`   Branch: job_type is EXECUTE, saveContributionResponse fails.
+         * `[✅]`   Condition: `'error' in contributionResult`.
+         * `[✅]`   Decision: error-arm check on the return.
+         * `[✅]`   Dependency call: `deps.saveContributionResponse(contributionParams, contributionPayload)`.
+         * `[✅]`   Outcome: propagate the error arm unchanged.
+      * `[✅]`   Branch: job_type is EXECUTE, saveContributionResponse succeeds.
+         * `[✅]`   Condition: success arm.
+         * `[✅]`   Decision: none — fall-through.
+         * `[✅]`   Dependency call: none additional.
+         * `[✅]`   Outcome: success arm, forwarding the arm module's `status`.
+      * `[✅]`   Branch: job_type is COMPRESS, saveCompressedResponse fails.
+         * `[✅]`   Condition: `'error' in compressedResult`.
+         * `[✅]`   Decision: error-arm check on the return.
+         * `[✅]`   Dependency call: `deps.saveCompressedResponse(compressedParams, compressedPayload)`.
+         * `[✅]`   Outcome: propagate the error arm unchanged.
+      * `[✅]`   Branch: job_type is COMPRESS, saveCompressedResponse succeeds.
+         * `[✅]`   Condition: success arm.
+         * `[✅]`   Decision: none — fall-through.
+         * `[✅]`   Dependency call: none additional.
+         * `[✅]`   Outcome: success arm, forwarding the arm module's `status`.
+      * `[✅]`   Side effects: DB reads via `loadJobContext`, wallet debit via `debitForResponse`, retry dispatch via `retryJob` (on retry-required path), and all side effects delegated to the arm modules.
+      * `[✅]`   Ordering: strictly sequential — loadJobContext → arm selection and payload proving → assembleAiResponse → debitForResponse → prepareResponseContent → arm module dispatch. `prepareParams` is composed from the proven payload immediately before the `prepareResponseContent` call, on the arm's own branch.
+
+   * `[✅]`   `saveResponse.mock.ts`
+      * `[✅]`   The existing mock file is rewritten to match the narrowed deps surface.
+      * `[✅]`   `createMockSaveResponseDeps` — builder returning a valid `SaveResponseDeps` with a mock logger, stubs for the seven bound functions each returning a success.
+      * `[✅]`   `invalidateSaveResponseDeps` — invalidator that removes each dep key in turn.
+      * `[✅]`   `createMockSaveResponseParams` — builder returning a valid `SaveResponseParams` with a mock `dbClient` and a `job_id`.
+      * `[✅]`   `invalidateSaveResponseParams` — invalidator removing each param key in turn.
+      * `[✅]`   `createMockSaveResponsePayload` — builder returning a valid `SaveResponsePayload` with `assembled_content`, `token_usage`, `finish_reason`, and `processingTimeMs`.
+      * `[✅]`   `invalidateSaveResponsePayload` — invalidator removing each payload key in turn.
+      * `[✅]`   `createMockSaveResponseSuccessReturn` — builder returning `{ status: 'completed' }`.
+      * `[✅]`   `createMockSaveResponseErrorReturn` — builder returning `{ error: new Error('...'), retriable: false }`.
+      * `[✅]`   `mockSaveResponseFn` — function mock returning the success builder's output, typed as `SaveResponseFn`.
+      * `[✅]`   The existing `createMockSaveResponseParamsWithQueuedJob`, `createMockJobRow`, `createMockContributionRow`, `createMockDialecticContributionRow`, `createMockFileManager`, `createValidHeaderContext`, `testPayload`, `saveResponseTestPayload`, `saveResponseTestPayloadDocumentArtifact`, `createMockDialecticExecuteJobPayload` are retained — they are consumed by the integration-tier test suites.
+
+   * `[✅]`   `saveResponse.guard.test.ts`
+      * `[✅]`   `isSaveResponseDeps`: a valid deps object (eight keys) passes; removing each of the eight keys in turn fails; a non-object fails.
+      * `[✅]`   `isSaveResponseParams`: a valid params object (two keys) passes; removing each of the two keys in turn fails; a non-object fails.
+      * `[✅]`   `isSaveResponsePayload`: a valid payload object (four keys) passes; removing each of the four keys in turn fails; a non-object fails.
+      * `[✅]`   `isSaveResponseRequestBody`: retained — the existing cases are unchanged.
+      * `[✅]`   `isSaveResponseSuccessReturn`: updated to accept `'waiting_for_children'` in addition to the existing three statuses.
+      * `[✅]`   Every block carries the extended header: `Contract`, `Arrange`, `Act`, `Assert`, `Boundary`, `Mocked`.
+
+   * `[✅]`   `saveResponse.guard.ts`
+      * `[✅]`   `isSaveResponseDeps` — updated to check the eight new dep keys: `logger` is an object, `retryJob`/`loadJobContext`/`assembleAiResponse`/`debitForResponse`/`prepareResponseContent`/`saveContributionResponse`/`saveCompressedResponse` are functions.
+      * `[✅]`   `isSaveResponseParams` — checks `dbClient` is an object and `job_id` is a string.
+      * `[✅]`   `isSaveResponsePayload` — checks `assembled_content` is a string, `token_usage` is `NodeTokenUsage | null`, `finish_reason` is `string | null`, `processingTimeMs` is a number.
+      * `[✅]`   `isSaveResponseSuccessReturn` — updated to accept `'waiting_for_children'` as a valid status.
+      * `[✅]`   `isSaveResponseRequestBody` — unchanged.
+      * `[✅]`   `isSaveResponseErrorReturn` — unchanged.
+
+   * `[✅]`   `saveResponse.test.ts`
+      * `[✅]`   The existing unit test file is rewritten to test the orchestrator's branching, not the monolith's.
+      * `[✅]`   Guards on entry: deps invalid, params invalid, payload invalid — each returns error arm with `retriable: false`.
+      * `[✅]`   `loadJobContext` returns error → propagated unchanged.
+      * `[✅]`   `assembleAiResponse` returns error → propagated unchanged.
+      * `[✅]`   `debitForResponse` returns error → propagated unchanged.
+      * `[✅]`   `prepareResponseContent` returns retry-required → `retryJob` called with a `FailedAttemptError[]`, returns `{ status: 'completed' }`.
+      * `[✅]`   `prepareResponseContent` returns error → propagated unchanged.
+      * `[✅]`   `job_type` is `'EXECUTE'`, payload guard fails → error arm.
+      * `[✅]`   `job_type` is `'EXECUTE'`, `saveContributionResponse` returns error → propagated unchanged.
+      * `[✅]`   `job_type` is `'EXECUTE'`, `saveContributionResponse` returns `{ status: 'completed' }` → forwarded.
+      * `[✅]`   `job_type` is `'EXECUTE'`, `saveContributionResponse` returns `{ status: 'needs_continuation' }` → forwarded.
+      * `[✅]`   `job_type` is `'EXECUTE'`, `saveContributionResponse` returns `{ status: 'continuation_limit_reached' }` → forwarded.
+      * `[✅]`   `job_type` is `'COMPRESS'`, payload guard fails → error arm.
+      * `[✅]`   `job_type` is `'COMPRESS'`, `saveCompressedResponse` returns error → propagated unchanged.
+      * `[✅]`   `job_type` is `'COMPRESS'`, `saveCompressedResponse` returns `{ status: 'completed' }` → forwarded.
+      * `[✅]`   `job_type` is `'COMPRESS'`, `saveCompressedResponse` returns `{ status: 'waiting_for_children' }` → forwarded.
+      * `[✅]`   `job_type` is `'COMPRESS'`, `saveCompressedResponse` returns `{ status: 'needs_continuation' }` → forwarded.
+      * `[✅]`   `job_type` is unknown string → error arm, `retriable: false`.
+      * `[✅]`   `retryJob` is not called when `prepareResponseContent` returns a prepared result.
+      * `[✅]`   `saveContributionResponse` is not called when `job_type` is `'COMPRESS'`.
+      * `[✅]`   `saveCompressedResponse` is not called when `job_type` is `'EXECUTE'`.
+      * `[✅]`   `job_type` is unknown → error arm, and `assembleAiResponse`, `debitForResponse` and `prepareResponseContent` are all uncalled.
+      * `[✅]`   An EXECUTE payload whose guard throws → the thrown message is the returned error's message, and no collaborator after `loadJobContext` is called.
+      * `[✅]`   A COMPRESS payload whose guard throws → the thrown message is the returned error's message, and no collaborator after `loadJobContext` is called.
+      * `[✅]`   A COMPRESS payload whose `content` is not parseable JSON → error arm, `retriable: false`.
+      * `[✅]`   A COMPRESS payload whose parsed `content` fails `isContentToInclude` → error arm, `retriable: false`.
+      * `[✅]`   EXECUTE composes `prepareParams` with `documentKey` from `document_key`, `contextForDocuments` from `context_for_documents`, no `mode`, and `sourceObject` undefined.
+      * `[✅]`   COMPRESS composes `prepareParams` with `documentKey` from `documentKey`, `mode` from `mode`, `contextForDocuments` undefined, and `sourceObject` equal to the parsed `content`.
+      * `[✅]`   `assembleAiResponse` receives `preflightInputTokens` equal to the payload's `preflight_input_tokens`, asserted against an independent literal.
+      * `[✅]`   A payload with no `preflight_input_tokens` reaches `assembleAiResponse` with the member absent, and the orchestrator substitutes no value.
+      * `[✅]`   Neither `params` nor `payload` is mutated — verified by deep-equality snapshot.
+      * `[✅]`   Every block carries the extended header: `Contract`, `Arrange`, `Act`, `Assert`, `Boundary`, `Mocked`.
+
+   * `[✅]`   `saveResponse.continue.test.ts`
+      * `[✅]`   Retained in full as integration tier. No case is deleted. The file is renamed conceptually to integration (the describe block label changes, the file stays).
+
+   * `[✅]`   `saveResponse.pathContext.test.ts`
+      * `[✅]`   Retained in full as integration tier. No case is deleted.
+
+   * `[✅]`   `saveResponse.rawJsonOnly.test.ts`
+      * `[✅]`   Retained in full as integration tier. No case is deleted.
 
    * `[ ]`   `saveResponse.notifications.test.ts`
       * `[ ]`   Retained in full as integration tier. No case is deleted.
@@ -1328,54 +1588,59 @@ Oversized model inputs compress incrementally until the preflight fits: the pare
    * `[ ]`   `saveResponse.planValidation.test.ts`
       * `[ ]`   Retained in full as integration tier. No case is deleted.
 
-   * `[ ]`   `construction`
-      * `[ ]`   The module exports `saveResponse` as a standalone function with the full `(deps, params, payload)` signature. The composition root (`dialectic-worker/index.ts` or the deps factory) binds deps at context-creation time. No factory, no class.
+   * `[✅]`   `construction`
+      * `[✅]`   The module exports `saveResponse` as a standalone function with the full `(deps, params, payload)` signature. The composition root (`dialectic-worker/index.ts` or the deps factory) binds deps at context-creation time. No factory, no class.
 
-   * `[ ]`   `saveResponse.ts`
-      * `[ ]`   The monolith body is deleted. The two legacy helper functions (`readOptionalPreflightInputTokens`, `readOptionalContinuationCount`) are deleted. All imports that served only the deleted body are removed.
-      * `[ ]`   One exported function, typed `SaveResponseFn`, implementing the interaction spec in its stated order: deps guard → params guard → payload guard → `loadJobContext` → `assembleAiResponse` → error/empty check and retry → `debitForResponse` → `prepareResponseContent` → retry-required check and `retryJob` dispatch → `job_type` routing → payload proving guard → arm module dispatch → status forwarding.
-      * `[ ]`   The retry path builds a `FailedAttemptError[]` carrying the provider's `id` and `api_identifier`, the error string from the retry-required reason, and `processingTimeMs` from the assembled response.
-      * `[ ]`   The EXECUTE arm calls `deps.saveContributionResponse` with params built from the `loadJobContext` result and the `prepareResponseContent` result, and the proven `DialecticExecuteJobPayload`.
-      * `[ ]`   The COMPRESS arm calls `deps.saveCompressedResponse` with params built from the `loadJobContext` result and the `prepareResponseContent` result, and the proven `DialecticCompressJobPayload`.
-      * `[ ]`   Every collaborator call is awaited (where async). Every error returns this module's error arm. No error is logged and continued.
+   * `[✅]`   `saveResponse.ts`
+      * `[✅]`   The monolith body is deleted. The two legacy helper functions (`readOptionalPreflightInputTokens`, `readOptionalContinuationCount`) are deleted. All imports that served only the deleted body are removed.
+      * `[✅]`   One exported function, typed `SaveResponseFn`, implementing the interaction spec in its stated order: deps guard → params guard → payload guard → `loadJobContext` → `job_type` selection and arm payload proving → `assembleAiResponse` → `debitForResponse` → `prepareResponseContent` with the arm's composed params → retry-required check and `retryJob` dispatch → arm module dispatch → status forwarding.
+      * `[✅]`   The retry path builds a `FailedAttemptError[]` carrying the provider's `id` and `api_identifier`, the error string from the retry-required reason, and `processingTimeMs` from the assembled response.
+      * `[✅]`   The EXECUTE arm calls `deps.saveContributionResponse` with params built from the `loadJobContext` result and the `prepareResponseContent` result, and the proven `DialecticExecuteJobPayload`.
+      * `[✅]`   The COMPRESS arm calls `deps.saveCompressedResponse` with params built from the `loadJobContext` result and the `prepareResponseContent` result, and the proven `DialecticCompressJobPayload`.
+      * `[✅]`   Every collaborator call is awaited (where async). Every error returns this module's error arm. No error is logged and continued.
 
-   * `[ ]`   `saveResponse.provides.ts`
-      * `[ ]`   `export *` from the implementation, the interface, the guard and the mock, so a consumer and its tests reach the module through one import point.
+   * `[✅]`   `saveResponse.provides.ts`
+      * `[✅]`   `export *` from the implementation, the interface, the guard and the mock, so a consumer and its tests reach the module through one import point.
 
-   * `[ ]`   `saveResponse.integration.test.ts`
-      * `[ ]`   The existing integration test file plus every retained suite file (`saveResponse.continue.test.ts`, `saveResponse.pathContext.test.ts`, `saveResponse.rawJsonOnly.test.ts`, `saveResponse.notifications.test.ts`, `saveResponse.assembleDocument.test.ts`, `saveResponse.planValidation.test.ts`) constitute the integration tier. They exercise the orchestrator through the production `saveResponse` function with real arm modules and stubbed external boundaries (DB, file manager). No case is deleted. The existing `saveResponse.integration.test.ts` is updated to exercise the orchestrator's routing: an EXECUTE job_type exercises the contribution arm, a COMPRESS job_type exercises the compressed arm, and the shared front half (load → assemble → debit → prepare) is proven by every case that reaches an arm.
+   * `[✅]`   `saveResponse.integration.test.ts`
+      * `[✅]`   The existing integration test file plus every retained suite file (`saveResponse.continue.test.ts`, `saveResponse.pathContext.test.ts`, `saveResponse.rawJsonOnly.test.ts`, `saveResponse.notifications.test.ts`, `saveResponse.assembleDocument.test.ts`, `saveResponse.planValidation.test.ts`) constitute the integration tier. They exercise the orchestrator through the production `saveResponse` function with real arm modules and stubbed external boundaries (DB, file manager). No case is deleted. The existing `saveResponse.integration.test.ts` is updated to exercise the orchestrator's routing: an EXECUTE job_type exercises the contribution arm, a COMPRESS job_type exercises the compressed arm, and the shared front half (load → assemble → debit → prepare) is proven by every case that reaches an arm.
 
-   * `[ ]`   `directionality`
-      * `[ ]`   Deps face inward: the module imports contracts from `_shared`, `dialectic-service`, and the seven sibling module interfaces (`retryJob`, `loadJobContext`, `assembleAiResponse`, `debitForResponse`, `prepareResponseContent`, `saveContributionResponse`, `saveCompressedResponse`), plus the payload guard files from `enqueueCompressJobs` and the execute payload's guard file.
-      * `[ ]`   No cycle: none of the sibling modules imports from `saveResponse/`. `saveResponse` is the consumer of every module in this workstream.
-      * `[ ]`   No reverse dependency: this node edits no file outside `dialectic-worker/saveResponse/`.
+   * `[✅]`   `directionality`
+      * `[✅]`   Deps face inward: the module imports contracts from `_shared`, `dialectic-service`, and the seven sibling module interfaces (`retryJob`, `loadJobContext`, `assembleAiResponse`, `debitForResponse`, `prepareResponseContent`, `saveContributionResponse`, `saveCompressedResponse`), plus the payload guard files from `enqueueCompressJobs` and the execute payload's guard file.
+      * `[✅]`   No cycle: none of the sibling modules imports from `saveResponse/`. `saveResponse` is the consumer of every module in this workstream.
+      * `[✅]`   No reverse dependency: this node edits no file outside `dialectic-worker/saveResponse/`.
 
-   * `[ ]`   `requirements`
-      * `[ ]`   The return union has exactly two arms — interface test.
-      * `[ ]`   `SaveResponseDeps` declares exactly eight deps — interface test.
-      * `[ ]`   `SaveResponseParams` declares exactly two per-invocation fields — interface test.
-      * `[ ]`   `SaveResponsePayload` declares exactly four fields — interface test.
-      * `[ ]`   `SaveResponseSuccessReturn.status` discriminates four terminal states — interface test.
-      * `[ ]`   Invalid deps returns error arm with `retriable: false` — unit test.
-      * `[ ]`   Invalid params returns error arm with `retriable: false` — unit test.
-      * `[ ]`   Invalid payload returns error arm with `retriable: false` — unit test.
-      * `[ ]`   `loadJobContext` error propagated unchanged — unit test.
-      * `[ ]`   `assembleAiResponse` error propagated unchanged — unit test.
-      * `[ ]`   `debitForResponse` error propagated unchanged — unit test.
-      * `[ ]`   Retry-required result dispatches `retryJob` and returns `{ status: 'completed' }` — unit test.
-      * `[ ]`   `prepareResponseContent` error propagated unchanged — unit test.
-      * `[ ]`   EXECUTE payload guard failure returns error arm — unit test.
-      * `[ ]`   EXECUTE `saveContributionResponse` error propagated unchanged — unit test.
-      * `[ ]`   EXECUTE success status forwarded for each of the three contribution statuses — unit test.
-      * `[ ]`   COMPRESS payload guard failure returns error arm — unit test.
-      * `[ ]`   COMPRESS `saveCompressedResponse` error propagated unchanged — unit test.
-      * `[ ]`   COMPRESS success status forwarded for each of the three compressed statuses — unit test.
-      * `[ ]`   Unknown `job_type` returns error arm with `retriable: false` — unit test.
-      * `[ ]`   `retryJob` not called when `prepareResponseContent` returns prepared — unit test.
-      * `[ ]`   `saveContributionResponse` not called for COMPRESS — unit test.
-      * `[ ]`   `saveCompressedResponse` not called for EXECUTE — unit test.
-      * `[ ]`   Neither `params` nor `payload` is mutated — unit test.
-      * `[ ]`   The retained test suites prove every path the monolith took — integration tier (no case deleted).
+   * `[✅]`   `requirements`
+      * `[✅]`   The return union has exactly two arms — interface test.
+      * `[✅]`   `SaveResponseDeps` declares exactly eight deps — interface test.
+      * `[✅]`   `SaveResponseParams` declares exactly two per-invocation fields — interface test.
+      * `[✅]`   `SaveResponsePayload` declares exactly four fields — interface test.
+      * `[✅]`   `SaveResponseSuccessReturn.status` discriminates four terminal states — interface test.
+      * `[✅]`   Invalid deps returns error arm with `retriable: false` — unit test.
+      * `[✅]`   Invalid params returns error arm with `retriable: false` — unit test.
+      * `[✅]`   Invalid payload returns error arm with `retriable: false` — unit test.
+      * `[✅]`   `loadJobContext` error propagated unchanged — unit test.
+      * `[✅]`   `assembleAiResponse` error propagated unchanged — unit test.
+      * `[✅]`   `debitForResponse` error propagated unchanged — unit test.
+      * `[✅]`   Retry-required result dispatches `retryJob` and returns `{ status: 'completed' }` — unit test.
+      * `[✅]`   `prepareResponseContent` error propagated unchanged — unit test.
+      * `[✅]`   EXECUTE payload guard failure returns error arm — unit test.
+      * `[✅]`   EXECUTE `saveContributionResponse` error propagated unchanged — unit test.
+      * `[✅]`   EXECUTE success status forwarded for each of the three contribution statuses — unit test.
+      * `[✅]`   COMPRESS payload guard failure returns error arm — unit test.
+      * `[✅]`   COMPRESS `saveCompressedResponse` error propagated unchanged — unit test.
+      * `[✅]`   COMPRESS success status forwarded for each of the three compressed statuses — unit test.
+      * `[✅]`   Unknown `job_type` returns error arm with `retriable: false`, before any collaborator past `loadJobContext` runs — unit test.
+      * `[✅]`   `PrepareResponseContentParams.mode` is optional and `documentKey` admits null — guard test.
+      * `[✅]`   `DetermineContinuationParams.documentKey` admits null — guard test.
+      * `[✅]`   Each arm composes `prepareResponseContent`'s params from its own proven payload — unit test.
+      * `[✅]`   A COMPRESS payload whose `content` does not parse or does not narrow returns the error arm — unit test.
+      * `[✅]`   `preflightInputTokens` reaches `assembleAiResponse` from the payload, and is absent rather than substituted when the payload lacks it — unit test.
+      * `[✅]`   `retryJob` not called when `prepareResponseContent` returns prepared — unit test.
+      * `[✅]`   `saveContributionResponse` not called for COMPRESS — unit test.
+      * `[✅]`   `saveCompressedResponse` not called for EXECUTE — unit test.
+      * `[✅]`   Neither `params` nor `payload` is mutated — unit test.
+      * `[✅]`   The retained test suites prove every path the monolith took — integration tier (no case deleted).
 
    * `[ ]`   **Commit** `refactor(dialectic-worker) replace saveResponse monolith with thin orchestrator routing on job_type`
       * `[ ]`   `SaveResponseDeps` narrowed from twelve deps to eight bound closures.
@@ -1384,146 +1649,223 @@ Oversized model inputs compress incrementally until the preflight fits: the pare
       * `[ ]`   The 1284-line monolith body is replaced by a ~100-line orchestrator dispatching to `saveContributionResponse` and `saveCompressedResponse`.
       * `[ ]`   The seven existing test suite files are retained as the integration tier.
 
-* `[ ]`   supabase/functions/netlifyResponse/index.ts **[BE] Assemble no deps: delete the inline `SaveResponseDeps` literal and take every module of this workstream already bound from the worker's deps factory**
+* `[ ]`   supabase/functions/netlifyResponse/netlifyResponseHandler.ts **[BE] Receive `saveResponse` as a bound closure and call it with params and payload alone; `NetlifyResponseDeps` drops the deps object it was passing through**
 
    * `[ ]`   `objective`
-      * `[ ]`   `netlifyResponse/index.ts` is currently a second assembler. It constructs `FileManagerService`, `NotificationService`, `AdminTokenWalletService`, binds `debitTokens` and `enqueueRenderJob`, and builds the 12-member `SaveResponseDeps` literal inline — duplicating assembly work that belongs in the worker's deps factory. After the `saveResponse` relocation, `SaveResponseDeps` has eight bound closures and the worker's deps factory is the single assembler. This file must stop assembling deps and receive `saveResponse` already bound.
+      * `[ ]`   Solve a handler that carries another function's deps so it can hand them back to it. `NetlifyResponseDeps` declares `saveResponse: SaveResponseFn` beside `saveResponseDeps: SaveResponseDeps`, and the call site reads `deps.saveResponse(deps.saveResponseDeps, srParams, srPayload)` — the handler holds a collaborator's dependency graph, invokes none of it, and exists only to pass it along. That is the prop-drilling shape a bound closure removes: the composition root binds the deps once, and every caller below invokes two arguments.
       * `[ ]`   Functional goals:
-         * `[ ]`   `NetlifyResponseDeps` is narrowed from four keys to three: `computeJobSig` (`ComputeJobSig`), `adminClient` (`SupabaseClient<Database>`), `saveResponse` (`BoundSaveResponseFn`). The `saveResponseDeps` key is removed — the function no longer passes a deps object because `saveResponse` arrives already bound.
-         * `[ ]`   `BoundSaveResponseFn` is `(params: SaveResponseParams, payload: SaveResponsePayload) => Promise<SaveResponseReturn>`. It is declared in `saveResponse.interface.ts` by the `saveResponse` node; this node imports it with `import type`.
-         * `[ ]`   The `index.ts` module-level block deletes every import and every construction that existed solely to feed the `SaveResponseDeps` literal: `FileManagerService`, `NotificationService`, `AdminTokenWalletService`, `constructStoragePath`, `assembleChunks`, `continueJob`, `retryJob`, `resolveFinishReason`, `isIntermediateChunk`, `determineContinuation`, `buildUploadContext`, `sanitizeJsonContent`, `debitTokens`, `BoundDebitTokens`, `enqueueRenderJob`, `BoundEnqueueRenderJobFn`, `shouldEnqueueRenderJob`, `resolveTemplateFilename`, `BoundResolveTemplateFilenameFn`, and the `SaveResponseDeps` type import. The `saveResponseDeps` literal, the `boundDebitTokens` closure, the `boundResolveTemplateFilename` closure, the `boundEnqueueRenderJob` closure, the `adminTokenWalletService` construction, the `fileManager` construction, and the `notificationService` construction are all deleted.
-         * `[ ]`   The remaining imports are: `serve` from `std/http/server.ts`, `createSupabaseAdminClient` from `_shared/auth.ts`, `saveResponse` from `dialectic-worker/saveResponse/saveResponse.ts`, `SaveResponseDeps` (the narrowed type, for the bind), `BoundSaveResponseFn` and `SaveResponseFn` from `saveResponse.interface.ts`, `createComputeJobSig` from `computeJobSig.ts`, `ComputeJobSig` from `computeJobSig.interface.ts`, `NetlifyResponseDeps` from `netlifyResponse.interface.ts`, `netlifyResponseHandler` from `netlifyResponseHandler.ts`, `logger` from `_shared/logger.ts`, `SupabaseClient` and `Database` from their providers. The exact set depends on what `netlifyResponseHandler` needs to assemble its `SaveResponseParams` (which uses `adminClient`).
-         * `[ ]`   The `index.ts` module-level block constructs one bound closure: `const boundSaveResponse: BoundSaveResponseFn = (params, payload) => saveResponse(saveResponseDeps, params, payload)` — where `saveResponseDeps` is assembled from the worker's deps factory. Since `netlifyResponse` is a separate Edge Function, not the worker, the deps factory is not available at the module boundary. The binding is done inline using the imports the worker's factory would use — but only the eight deps the narrowed `SaveResponseDeps` requires, each imported from the module that owns it.
-         * `[ ]`   The `NetlifyResponseDeps` literal becomes `{ computeJobSig, adminClient, saveResponse: boundSaveResponse }` — three keys, no `saveResponseDeps`.
-         * `[ ]`   `netlifyResponseHandler.ts` is updated: the `saveResponse` call changes from `deps.saveResponse(deps.saveResponseDeps, srParams, srPayload)` to `deps.saveResponse(srParams, srPayload)` — two arguments, not three.
-         * `[ ]`   `NetlifyResponseBody` is unchanged — it carries `job_id`, `assembled_content`, `token_usage`, `finish_reason`, `sig`.
-         * `[ ]`   `NetlifyResponseHandlerFn` is unchanged in shape — `(deps, req) => Promise<Response>` — but the `deps` it receives has one fewer key.
+         * `[ ]`   `NetlifyResponseDeps` declares `computeJobSig`, `adminClient` and `saveResponse: BoundSaveResponseFn`, and no `saveResponseDeps`.
+         * `[ ]`   The `saveResponse` call site passes `srParams` and `srPayload` only.
+         * `[ ]`   `NetlifyResponseBody` carries `processingTimeMs: number` — the elapsed time of the model call, known only to the workload that made it — and the `SaveResponsePayload` this handler constructs supplies its fourth member from it. This handler is that member's only producer.
+         * `[ ]`   `netlifyResponse.mock.ts` carries the four symbols owed to each owned object type and one function mock per owned function type, in the forms `mocks.md` prescribes.
       * `[ ]`   Non-functional constraints:
-         * `[ ]`   No file outside `netlifyResponse/` is edited. The `saveResponse` node has already landed the narrowed `SaveResponseDeps` and the `BoundSaveResponseFn` type.
-         * `[ ]`   The HMAC verification, TTL check, request parsing, and response mapping in `netlifyResponseHandler.ts` are unchanged.
-         * `[ ]`   Each goal is proven by a named case in this node's interface test, guard test, or unit test.
+         * `[ ]`   The HMAC verification, its constant-time comparison, the TTL check, the POST check, the body parse, the body guard, the job lookup and the three response mappings keep their current behavior, status codes and messages.
+         * `[ ]`   `NetlifyResponseBody` keeps `job_id`, `assembled_content`, `token_usage`, `finish_reason` and `sig` exactly as they stand. The signature is computed over job-row fields, not body content, so the added member changes nothing about verification.
+         * `[ ]`   `NetlifyResponseHandlerFn` keeps its `(deps, req) => Promise<Response>` shape.
+         * `[ ]`   No file outside `netlifyResponse/` is edited. `saveResponse.interface.ts` already declares `BoundSaveResponseFn` and the eight-member `SaveResponseDeps`.
+      * `[ ]`   Each goal is proven by a named case in this node's interface test, guard test or unit test.
 
    * `[ ]`   `role`
-      * `[ ]`   Node role is an infra-layer composition root for the `netlifyResponse` Edge Function: wires the bound `saveResponse` and the HMAC verifier, then delegates to `netlifyResponseHandler`.
-      * `[ ]`   The role is correct because the module is the `serve()` entry point — it constructs deps and passes them to the handler. It owns no business logic.
+      * `[ ]`   Node role is app-layer request handling for the `netlifyResponse` Edge Function: prove the request is a well-formed, authentic, unexpired callback, then hand its content to the bound response saver and map the outcome onto a status code.
+      * `[ ]`   The role is correct because authenticity and freshness are properties of the request, and only the function that receives the request can judge them.
       * `[ ]`   Out-of-scope responsibilities:
-         * `[ ]`   Do not assemble `SaveResponseDeps`. The worker's deps factory or the inline binding does that.
-         * `[ ]`   Do not verify signatures, parse requests, or map responses. The handler does that.
-         * `[ ]`   Do not construct services (`FileManagerService`, `NotificationService`, etc.) for deps that are now bound inside `saveResponse`. Those constructions belong to the composition root that binds `saveResponse` — currently the worker's factory, or the inline bind in this file.
+         * `[ ]`   Do not construct or assemble any deps; the composition root does that.
+         * `[ ]`   Do not persist, debit, retry or render; `saveResponse` owns the whole tail behind one bound call.
+         * `[ ]`   Do not edit `index.ts`; it has its own node.
 
    * `[ ]`   `module`
-      * `[ ]`   Bounded context is `supabase/functions/netlifyResponse` — the Edge Function entry point that receives the stream callback, verifies the HMAC, and dispatches to `saveResponse`.
+      * `[ ]`   Bounded context is `supabase/functions/netlifyResponse` — the Edge Function that receives the stream callback, proves it, and dispatches it.
+      * `[ ]`   Inside boundary:
+         * `[ ]`   What makes a callback acceptable: shape, signature, freshness.
+         * `[ ]`   Which status code each outcome maps to.
+         * `[ ]`   `NetlifyResponseBody`, `NetlifyResponseDeps`, `NetlifyResponseHandlerFn` and their guards and mocks.
+      * `[ ]`   Outside boundary:
+         * `[ ]`   `SaveResponseParams`, `SaveResponsePayload`, `SaveResponseReturn` and `BoundSaveResponseFn`, owned by `dialectic-worker/saveResponse/saveResponse.interface.ts`.
+         * `[ ]`   `ComputeJobSig`, owned by `_shared/utils/computeJobSig/computeJobSig.interface.ts`.
+         * `[ ]`   Where the bound closure came from and what it does once called.
 
    * `[ ]`   `deps`
+      * `[ ]`   Provider: `dialectic-worker/saveResponse/saveResponse.interface.ts` (`BoundSaveResponseFn`, `SaveResponseParams`, `SaveResponsePayload`).
+         * `[ ]`   Layer classification: worker module contract, consumed across the process boundary.
+         * `[ ]`   Direction: inbound; this file already imports the two parameter types, so no new direction is opened.
+         * `[ ]`   Purpose: type the bound closure and the two objects this handler constructs for it.
+      * `[ ]`   Removed provider: `dialectic-worker/saveResponse/saveResponse.interface.ts` (`SaveResponseFn`, `SaveResponseDeps`), both in the interface and at the call site, with the member they typed.
       * `[ ]`   Provider: `_shared/utils/computeJobSig/computeJobSig.interface.ts` (`ComputeJobSig`).
          * `[ ]`   Layer classification: shared utility contract.
          * `[ ]`   Direction: inbound.
-         * `[ ]`   Purpose: HMAC verification for the stream callback.
-      * `[ ]`   Provider: `dialectic-worker/saveResponse/saveResponse.interface.ts` (`SaveResponseFn`, `BoundSaveResponseFn`, `SaveResponseParams`, `SaveResponsePayload`, `SaveResponseDeps`).
-         * `[ ]`   Layer classification: sibling worker module contract.
-         * `[ ]`   Direction: inbound.
-         * `[ ]`   Purpose: the bound `saveResponse` function and the types needed to construct its params/payload. `SaveResponseDeps` is imported only for the inline bind — it is not re-exported or stored.
-      * `[ ]`   Provider: each of the eight modules whose implementations are needed to assemble `SaveResponseDeps` for the inline bind: `retryJob/retryJob.ts`, `loadJobContext/loadJobContext.ts`, `assembleAiResponse/assembleAiResponse.ts`, `debitForResponse/debitForResponse.ts`, `prepareResponseContent/prepareResponseContent.ts`, `saveContributionResponse/saveContributionResponse.ts`, `saveCompressedResponse/saveCompressedResponse.ts`, plus `_shared/logger.ts` for `logger`. Each module's deps in turn require their own collaborators — `fileManager`, `notificationService`, `buildUploadContext`, `enqueueRenderJob`, `continueJob`, etc. — which must be constructed and bound in this file's module-level block, since this Edge Function has no access to the worker's `createJobContext` factory.
-         * `[ ]`   Layer classification: sibling worker modules and shared utilities.
-         * `[ ]`   Direction: inbound.
-         * `[ ]`   Purpose: assembling the eight-member `SaveResponseDeps` and binding `saveResponse` at the module boundary.
-      * `[ ]`   Provider: `netlifyResponse/netlifyResponse.interface.ts` (`NetlifyResponseDeps`, `NetlifyResponseHandlerFn`).
-         * `[ ]`   Layer classification: own module contract.
-         * `[ ]`   Direction: internal.
-         * `[ ]`   Purpose: the deps shape for the handler.
-      * `[ ]`   Provider: `netlifyResponse/netlifyResponseHandler.ts` (`netlifyResponseHandler`).
-         * `[ ]`   Layer classification: own module implementation.
-         * `[ ]`   Direction: internal.
-         * `[ ]`   Purpose: the handler that receives deps and a request.
-      * `[ ]`   Provider: `types_db.ts` (`Database`), `npm:@supabase/supabase-js@2` (`SupabaseClient`).
-         * `[ ]`   Layer classification: generated/external types.
-         * `[ ]`   Direction: inbound.
-         * `[ ]`   Purpose: the admin client type.
+         * `[ ]`   Purpose: recompute the expected signature for the claimed job.
       * `[ ]`   Confirm:
-         * `[ ]`   `NetlifyResponseDeps` declares exactly three keys: `computeJobSig`, `adminClient`, `saveResponse`. No `saveResponseDeps`.
-         * `[ ]`   No reverse dependency: nothing in `dialectic-worker/saveResponse/` or any sibling module imports from `netlifyResponse/`.
+         * `[ ]`   No reverse dependency: nothing under `dialectic-worker/` imports from `netlifyResponse/`.
+         * `[ ]`   `deps.adminClient` keeps both its uses — the job lookup and `SaveResponseParams.dbClient`.
       * `[ ]`   `context_slice`
-         * `[ ]`   From `dialectic-worker/saveResponse/saveResponse.interface.ts`: `BoundSaveResponseFn`, `SaveResponseDeps`, `SaveResponseParams`, `SaveResponsePayload`, imported with `import type`.
-         * `[ ]`   From `dialectic-worker/saveResponse/saveResponse.ts`: `saveResponse`, value import.
-         * `[ ]`   From `_shared/utils/computeJobSig/computeJobSig.interface.ts`: `ComputeJobSig`, imported with `import type`.
-         * `[ ]`   From `_shared/utils/computeJobSig/computeJobSig.ts`: `createComputeJobSig`, value import.
-         * `[ ]`   From `netlifyResponse/netlifyResponse.interface.ts`: `NetlifyResponseDeps`, imported with `import type`.
-         * `[ ]`   From `netlifyResponse/netlifyResponseHandler.ts`: `netlifyResponseHandler`, value import.
+         * `[ ]`   From `saveResponse.interface.ts`: `BoundSaveResponseFn`, `SaveResponseParams` and `SaveResponsePayload`, imported with `import type`.
+         * `[ ]`   From `computeJobSig.interface.ts`: `ComputeJobSig`, imported with `import type`.
 
    * `[ ]`   `netlifyResponse.interface.test.ts`
-      * `[ ]`   Typed assignments only.
-      * `[ ]`   A case proves the `NetlifyResponseDeps` surface exhaustively: `Record<keyof NetlifyResponseDeps, true>` over `computeJobSig`, `adminClient`, `saveResponse`, asserting three.
-      * `[ ]`   A case proves `NetlifyResponseBody` surface unchanged: five keys.
+      * `[ ]`   A case proves the `NetlifyResponseDeps` surface exhaustively by typed assignment: `Record<keyof NetlifyResponseDeps, true>` over `computeJobSig`, `adminClient` and `saveResponse`, asserting three — exhaustive in both directions, which is the proof `saveResponseDeps` is gone.
+      * `[ ]`   A case proves `NetlifyResponseDeps.saveResponse` accepts a `BoundSaveResponseFn` value and rejects nothing else by assigning a two-parameter function typed `BoundSaveResponseFn` to it.
+      * `[ ]`   A case proves the `NetlifyResponseBody` surface the same way over `job_id`, `assembled_content`, `token_usage`, `finish_reason`, `sig` and `processingTimeMs`, asserting six.
       * `[ ]`   A case proves `NetlifyResponseHandlerFn` accepts `(deps, req)` and returns `Promise<Response>`.
-      * `[ ]`   The existing `saveResponseDeps` key assertion (`assertEquals(Object.keys(surface).length, 4)`) is updated to `3`.
 
    * `[ ]`   `netlifyResponse.interface.ts`
-      * `[ ]`   `NetlifyResponseDeps` narrowed to three keys: `computeJobSig: ComputeJobSig`, `adminClient: SupabaseClient<Database>`, `saveResponse: BoundSaveResponseFn`. The `saveResponseDeps: SaveResponseDeps` key is deleted. The `SaveResponseDeps` and `SaveResponseFn` type imports are replaced by `BoundSaveResponseFn`.
-      * `[ ]`   `NetlifyResponseBody` unchanged.
-      * `[ ]`   `NetlifyResponseHandlerFn` unchanged in shape.
-      * `[ ]`   `NodeTokenUsage` import retained — it is used by `NetlifyResponseBody.token_usage`.
+      * `[ ]`   `NetlifyResponseDeps` drops `saveResponseDeps` and retypes `saveResponse` from `SaveResponseFn` to `BoundSaveResponseFn`; the `SaveResponseFn` and `SaveResponseDeps` type imports are replaced by `BoundSaveResponseFn`.
+      * `[ ]`   `NetlifyResponseBody` gains `processingTimeMs: number`; its five existing members, `NetlifyResponseHandlerFn` and the `NodeTokenUsage` import are unchanged.
 
    * `[ ]`   `netlifyResponse.interaction.spec`
-      * `[ ]`   This node has no function with branching logic of its own. The `index.ts` is a module-level composition root (`serve()` call), not a function. The handler (`netlifyResponseHandler.ts`) has its own branching but its interaction spec is not changed by this node — the only change is the call-site arity: `deps.saveResponse(srParams, srPayload)` instead of `deps.saveResponse(deps.saveResponseDeps, srParams, srPayload)`.
-      * `[ ]`   The handler's branches are unchanged: POST check → body parse → body guard → job lookup → HMAC verify → TTL check → saveResponse dispatch → result mapping.
+      * `[ ]`   Branch: dispatch to the bound saver.
+         * `[ ]`   Condition: the body parsed, guarded, matched a job row, matched its signature and fell inside the TTL.
+         * `[ ]`   Decision: none — every gate above has already returned.
+         * `[ ]`   Dependency call: `deps.saveResponse(srParams, srPayload)`, two arguments, `srPayload` carrying `assembled_content`, `token_usage`, `finish_reason` and `processingTimeMs`, each read from the guarded body.
+         * `[ ]`   Outcome: the awaited `SaveResponseReturn`, mapped by the branches below.
+      * `[ ]`   Every other branch keeps its condition, decision, dependency call and outcome: a non-POST request returns 405; an unparseable body returns 400; a body failing `isNetlifyResponseBody` returns 400; a missing job row returns 404; a signature mismatch returns 401; an expired `created_at` returns 401; a success arm returns 200 carrying `status`; an error arm with `retriable` true returns 503 and with `retriable` false returns 500, each carrying `error.message`.
+      * `[ ]`   Ordering and side effects: one job lookup, one signature computation and at most one `saveResponse` call per request; the handler writes no row and sends no notification.
 
    * `[ ]`   `netlifyResponse.mock.ts`
-      * `[ ]`   `createMockNetlifyResponseDeps` updated: the `saveResponseDeps` override is removed; the `saveResponse` override type changes to `BoundSaveResponseFn` (two args, not three); the default `saveResponse` mock becomes `async (params, payload) => ({ status: 'completed' })`.
-      * `[ ]`   `CreateMockNetlifyResponseDepsOverrides` updated: `saveResponseDeps?: SaveResponseDeps` is removed; `saveResponse?` is typed `BoundSaveResponseFn`.
-      * `[ ]`   `mockNetlifyResponseHandler` unchanged in shape.
-      * `[ ]`   The `createMockSaveResponseDeps` import from `saveResponse.provides.ts` is deleted — it was only used to provide a default `saveResponseDeps`.
+      * `[ ]`   `NetlifyResponseDepsOverrides` / `buildNetlifyResponseDeps` / `NetlifyResponseDepsCorruptions` / `invalidateNetlifyResponseDeps`, and the same quartet for `NetlifyResponseBody`. Overrides types are `Partial<T>`, corruption types are `{ [K in keyof T]?: unknown }`, invalidators return `unknown`.
+      * `[ ]`   `buildNetlifyResponseDeps` defaults `saveResponse` to this file's `mockBoundSaveResponse`, `adminClient` to `createMockSupabaseClient().client` and `computeJobSig` to a `ComputeJobSig`-typed function returning a fixed signature string.
+      * `[ ]`   One function mock per owned function type: `mockNetlifyResponseHandler: NetlifyResponseHandlerFn` returning a 200 `Response`, and `mockBoundSaveResponse: BoundSaveResponseFn` returning `{ status: 'completed' }`. Identical signatures, no options, no recording.
+      * `[ ]`   Deleted: `createMockNetlifyResponseDeps` and `CreateMockNetlifyResponseDepsOverrides`, a configurable factory with an options bag, and the `createMockSaveResponseDeps` import that supplied its `saveResponseDeps` default. A test needing another outcome declares its own `BoundSaveResponseFn` composed from these builders.
 
    * `[ ]`   `netlifyResponse.guard.test.ts`
-      * `[ ]`   `isNetlifyResponseDeps`: updated to check three keys instead of four; the `saveResponseDeps` key check is removed.
-      * `[ ]`   `isNetlifyResponseBody`: unchanged.
-      * `[ ]`   Every block carries the extended header: `Contract`, `Arrange`, `Act`, `Assert`, `Boundary`, `Mocked`.
+      * `[ ]`   Every block carries the collapsed header — the `Contract` line alone, no inline section markers.
+      * `[ ]`   `isNetlifyResponseDeps` case checklist over `computeJobSig`, `adminClient` and `saveResponse`, each absent and each wrong-typed, fixtures from `invalidateNetlifyResponseDeps`; a case asserts a deps object carrying no `saveResponseDeps` is accepted.
+      * `[ ]`   `isNetlifyResponseBody` case checklist extends to `processingTimeMs`, rejected absent, non-numeric, non-finite and negative; its five existing member cases are unchanged.
 
    * `[ ]`   `netlifyResponse.guard.ts`
-      * `[ ]`   `isNetlifyResponseDeps` updated: checks `computeJobSig` is a function, `adminClient` is present, `saveResponse` is a function. The `saveResponseDeps` check is removed.
-      * `[ ]`   `isNetlifyResponseBody` unchanged.
+      * `[ ]`   `isNetlifyResponseDeps` drops the `saveResponseDeps` check and keeps its `computeJobSig`, `adminClient` and `saveResponse` checks.
+      * `[ ]`   `isNetlifyResponseBody` gains a `processingTimeMs` check — present, numeric, finite and not negative — beside its five existing checks, matching what `isAssembleAiResponseParams` enforces on the same value downstream.
 
    * `[ ]`   `netlifyResponseHandler.test.ts`
-      * `[ ]`   Every existing test case is updated: the `saveResponse` mock changes from a three-arg function to a two-arg function; the `deps` literal drops `saveResponseDeps`.
-      * `[ ]`   The test cases themselves are unchanged in what they prove — POST validation, HMAC verification, TTL check, saveResponse success/retriable-error/non-retriable-error response mapping.
-
-   * `[ ]`   `construction`
-      * `[ ]`   The `index.ts` module-level block is the composition root. It constructs the `adminClient`, binds `saveResponse` with its eight-member deps, constructs `computeJobSig`, assembles `NetlifyResponseDeps`, and passes it to `serve()` via `netlifyResponseHandler`. No factory, no class.
+      * `[ ]`   Every case builds deps through `buildNetlifyResponseDeps`, overriding only the member it asserts on; no case constructs a `saveResponseDeps` value.
+      * `[ ]`   A case proves `deps.saveResponse` receives exactly two arguments, the first matching the `SaveResponseParams` the handler assembled and the second the `SaveResponsePayload`, captured at the call site.
+      * `[ ]`   Every existing case keeps its arrangement and assertions: the non-POST 405, the unparseable-body 400, the failed-guard 400, the missing-job 404, the signature-mismatch 401, the expired-TTL 401, the success 200, the retriable-error 503 and the non-retriable-error 500.
 
    * `[ ]`   `netlifyResponseHandler.ts`
-      * `[ ]`   The `saveResponse` call site changes from `deps.saveResponse(deps.saveResponseDeps, srParams, srPayload)` to `deps.saveResponse(srParams, srPayload)`.
-      * `[ ]`   The `SaveResponseDeps` import is removed (no longer used).
-      * `[ ]`   Every other line is unchanged.
-
-   * `[ ]`   `index.ts`
-      * `[ ]`   The 12-member `SaveResponseDeps` inline literal and all its supporting constructions (`FileManagerService`, `NotificationService`, `AdminTokenWalletService`, `boundDebitTokens`, `boundResolveTemplateFilename`, `boundEnqueueRenderJob`, and every import that fed them) are deleted.
-      * `[ ]`   A new inline bind assembles the eight-member `SaveResponseDeps` from the same modules the worker's factory uses, binds `saveResponse`, and exposes it as `boundSaveResponse: BoundSaveResponseFn`.
-      * `[ ]`   The `NetlifyResponseDeps` literal becomes `{ computeJobSig, adminClient, saveResponse: boundSaveResponse }`.
-      * `[ ]`   The `HMAC_SECRET` env check, `computeJobSig` construction, and `adminClient` construction are unchanged.
-      * `[ ]`   The `serve()` call is unchanged.
+      * `[ ]`   The `saveResponse` call becomes `deps.saveResponse(srParams, srPayload)`, and the `srPayload` literal gains `processingTimeMs: body.processingTimeMs`.
+      * `[ ]`   The `SaveResponseDeps` import is deleted.
+      * `[ ]`   Nothing else in the file changes: every gate, every status code, every message and both `deps.adminClient` reads are left exactly as they stand.
 
    * `[ ]`   `directionality`
-      * `[ ]`   Deps face inward: `netlifyResponse/` imports from `dialectic-worker/saveResponse/`, `_shared/utils/computeJobSig/`, `_shared/auth.ts`, `_shared/logger.ts`, and the modules needed to assemble the eight `SaveResponseDeps` members.
-      * `[ ]`   No cycle: nothing in `dialectic-worker/` imports from `netlifyResponse/`.
-      * `[ ]`   No reverse dependency: this node edits no file outside `netlifyResponse/`.
+      * `[ ]`   Deps face inward: this module imports contracts from `dialectic-worker/saveResponse/` and `_shared/utils/computeJobSig/` and exports nothing to either.
+      * `[ ]`   No cycle: nothing under `dialectic-worker/` imports from `netlifyResponse/`.
 
    * `[ ]`   `requirements`
-      * `[ ]`   `NetlifyResponseDeps` declares exactly three keys — interface test.
-      * `[ ]`   `NetlifyResponseBody` declares exactly five keys — interface test.
-      * `[ ]`   `saveResponse` is called with two arguments (params, payload), not three — handler unit test.
-      * `[ ]`   The `saveResponseDeps` key does not exist on `NetlifyResponseDeps` — interface test.
-      * `[ ]`   The inline `SaveResponseDeps` literal in `index.ts` is deleted — the file no longer constructs `FileManagerService`, `NotificationService`, or `AdminTokenWalletService` — verified by reading the file.
-      * `[ ]`   `isNetlifyResponseDeps` rejects an object missing `saveResponse` — guard test.
-      * `[ ]`   `isNetlifyResponseDeps` does not check for `saveResponseDeps` — guard test.
-      * `[ ]`   POST + valid sig + unexpired job → `saveResponse` called with two args → 200 — handler unit test.
-      * `[ ]`   POST + valid sig + unexpired job + retriable error → 503 — handler unit test.
-      * `[ ]`   POST + valid sig + unexpired job + non-retriable error → 500 — handler unit test.
-      * `[ ]`   The integration test exercises the handler with real `computeJobSig` and a mock bound `saveResponse` — integration test.
+      * `[ ]`   `NetlifyResponseDeps` declares exactly three members and `saveResponseDeps` is absent — interface test, exhaustive key record.
+      * `[ ]`   `NetlifyResponseDeps.saveResponse` is a `BoundSaveResponseFn` — interface test, typed assignment.
+      * `[ ]`   `NetlifyResponseBody` declares exactly six members — interface test, exhaustive key record.
+      * `[ ]`   `saveResponse` is called with two arguments carrying the assembled params and payload — unit test, captured-argument assertions.
+      * `[ ]`   The `SaveResponsePayload` reaching `saveResponse` carries `processingTimeMs` equal to the body's value, not a default — unit test, captured-argument assertion over a body built with a distinct number.
+      * `[ ]`   A body whose `processingTimeMs` is absent, non-numeric, non-finite or negative returns 400 — unit test.
+      * `[ ]`   `isNetlifyResponseDeps` rejects each of the three members absent and each wrong-typed, and accepts a deps object carrying no `saveResponseDeps` — guard test.
+      * `[ ]`   Every owned object type has a `Partial<T>`-overrides builder and an `unknown`-returning invalidator, and no mock carries an options bag, a call-recording array or a configurable factory — guard test, whose fixtures are drawn from them.
+      * `[ ]`   Every request gate returns the status code it returns now — unit test, existing cases unchanged.
 
-   * `[ ]`   **Commit** `refactor(saveResponse-decomposition) delete inline SaveResponseDeps literal in netlifyResponse; take saveResponse already bound`
-      * `[ ]`   `NetlifyResponseDeps` narrowed from four keys to three; `saveResponseDeps` removed.
-      * `[ ]`   `saveResponse` call site in handler changed from three-arg to two-arg.
-      * `[ ]`   The 12-member inline `SaveResponseDeps` literal and all its supporting service constructions deleted from `index.ts`.
-      * `[ ]`   All test files updated for the narrowed deps shape.
+* `[ ]`   supabase/functions/netlifyResponse/index.ts **[BE] Become this Edge Function's composition root: assemble the eight-member `SaveResponseDeps` and every collaborator each bound module declares, bind `saveResponse` once, and hand the handler a three-member deps object**
+
+   * `[ ]`   `objective`
+      * `[ ]`   Solve a root that assembles the wrong graph. This file builds a twelve-member `SaveResponseDeps` literal against the monolith's surface — `fileManager`, `notificationService`, `continueJob`, `retryJob`, `resolveFinishReason`, `isIntermediateChunk`, `determineContinuation`, `buildUploadContext`, `sanitizeJsonContent`, `debitTokens`, `enqueueRenderJob` and `logger` — and hands both the function and its deps to the handler to pass back. The decomposition replaced that surface with eight bound closures, and `retryJob` now resolves to the canonical module rather than the legacy file. `saveResponse` runs in this process, on the stream callback, so this file is its composition root and the sole assembler of its graph; the worker's `createJobContext` assembles nothing here, a factory inside `dialectic-worker` producing deps for a separate Edge Function being a layer violation.
+      * `[ ]`   Functional goals:
+         * `[ ]`   The `SaveResponseDeps` literal carries `logger`, `retryJob`, `loadJobContext`, `assembleAiResponse`, `debitForResponse`, `prepareResponseContent`, `saveContributionResponse` and `saveCompressedResponse`, every member but `logger` a bound closure.
+         * `[ ]`   `retryJob` is bound from `dialectic-worker/retryJob/retryJob.ts` with `{ logger, notificationService }`; the legacy `dialectic-worker/retryJob.ts` import is deleted.
+         * `[ ]`   `loadJobContext` is bound with `{}`, the empty deps object its interface declares.
+         * `[ ]`   `assembleAiResponse` is bound with `{ countTokens }`, where `countTokens` is a `BoundCountTokensFn` built from the real tokenizer imports.
+         * `[ ]`   `debitForResponse` is bound with `{ debitTokens }`, where `debitTokens` is a `BoundDebitTokens` built from `{ logger, tokenWalletService: adminTokenWalletService }`.
+         * `[ ]`   `prepareResponseContent` is bound with `{ logger, resolveFinishReason, isIntermediateChunk, sanitizeJsonContent, determineContinuation }`.
+         * `[ ]`   `saveContributionResponse` is bound with `{ fileManager, buildUploadContext, resolveContributionIdentity, persistContributionRelationships, finalizeContributionJob }`, the last three themselves bound closures.
+         * `[ ]`   `saveCompressedResponse` is bound with `{ fileManager, buildUploadContext, enqueueRenderJob }`, `enqueueRenderJob` itself a bound closure.
+         * `[ ]`   `boundSaveResponse: BoundSaveResponseFn` closes over that literal and is the only `saveResponse` reference the `NetlifyResponseDeps` literal carries.
+         * `[ ]`   The `NetlifyResponseDeps` literal carries `computeJobSig`, `adminClient` and `saveResponse: boundSaveResponse`.
+      * `[ ]`   Non-functional constraints:
+         * `[ ]`   `FileManagerService`, `NotificationService` and `AdminTokenWalletService` are constructed here and keep their current constructor arguments — the bound modules below require all three, so none of the three constructions is deleted, and `constructStoragePath` and `assembleChunks` stay imported for the file manager.
+         * `[ ]`   The `HMAC_SECRET` env check and its throw, the `createComputeJobSig` construction, the `createSupabaseAdminClient` construction and the `serve()` call are unchanged.
+         * `[ ]`   Every collaborator is imported from the module that owns it and bound exactly once; no closure is rebuilt per request.
+         * `[ ]`   No file outside `netlifyResponse/` is edited. Each module this file binds already exports its implementation, its deps type and its bound function type.
+      * `[ ]`   Each goal is proven by a named case in this node's integration test.
+
+   * `[ ]`   `role`
+      * `[ ]`   Node role is the infra-layer composition root for the `netlifyResponse` Edge Function: construct the services, bind every module the response tail needs, and start the server.
+      * `[ ]`   The role is correct because a composition root is the one place allowed to name concrete implementations, and this process has exactly one entry point. The graph is constructed once here, at module scope, so every request reuses the same closures.
+      * `[ ]`   Out-of-scope responsibilities:
+         * `[ ]`   Do not import, call or reference `createJobContext`; the worker's factory belongs to the worker process.
+         * `[ ]`   Do not verify signatures, parse requests or map responses; the handler owns all of it.
+         * `[ ]`   Do not edit `netlifyResponseHandler.ts` or `netlifyResponse.interface.ts`; both land in the node ahead of this one.
+         * `[ ]`   Do not pass any deps object to `deps.saveResponse`; it arrives bound.
+
+   * `[ ]`   `module`
+      * `[ ]`   Bounded context is `supabase/functions/netlifyResponse/index.ts` — service construction, module binding and server start for this Edge Function.
+      * `[ ]`   Inside boundary:
+         * `[ ]`   Which concrete implementation fills each declared dependency.
+         * `[ ]`   The order and depth of binding, producers bound before the closures that close over them.
+      * `[ ]`   Outside boundary:
+         * `[ ]`   Every module's own behavior and every deps contract it declares.
+         * `[ ]`   The worker process's graph, assembled by `createJobContext` from the worker root.
+
+   * `[ ]`   `deps`
+      * `[ ]`   Provider: `dialectic-worker/saveResponse/saveResponse.provides.ts` (`saveResponse`, `SaveResponseDeps`, `BoundSaveResponseFn`).
+         * `[ ]`   Layer classification: worker module, consumed across the process boundary through its public surface.
+         * `[ ]`   Direction: inbound.
+         * `[ ]`   Purpose: the function this root binds and the deps type it assembles.
+      * `[ ]`   Provider: the seven modules whose bound closures fill that deps object, each through its own `provides` file — `retryJob/`, `loadJobContext/`, `assembleAiResponse/`, `debitForResponse/`, `prepareResponseContent/`, `saveContributionResponse/`, `saveCompressedResponse/`.
+         * `[ ]`   Layer classification: worker modules, consumed across the process boundary.
+         * `[ ]`   Direction: inbound; each exports an implementation and a bound function type and imports nothing from here.
+         * `[ ]`   Purpose: the eight members of `SaveResponseDeps`.
+      * `[ ]`   Provider: the collaborators those modules declare — `resolveContributionIdentity/`, `persistContributionRelationships/`, `finalizeContributionJob/`, `enqueueRenderJob/`, `continueJob/`, `_shared/utils/buildUploadContext/`, `_shared/utils/debitTokens.ts`, `_shared/utils/resolveFinishReason.ts`, `_shared/utils/isIntermediateChunk.ts`, `_shared/utils/determineContinuation/`, `_shared/utils/jsonSanitizer/`, `_shared/utils/shouldEnqueueRenderJob.ts`, `_shared/utils/resolveTemplateFilename/`, `_shared/utils/countTokens`.
+         * `[ ]`   Layer classification: worker modules and shared utilities.
+         * `[ ]`   Direction: inbound.
+         * `[ ]`   Purpose: filling the deps of the modules this root binds, at every depth the graph reaches.
+      * `[ ]`   Provider: `_shared/services/file_manager.ts` (`FileManagerService`), `_shared/utils/notification.service.ts` (`NotificationService`), `_shared/services/tokenwallet/admin/adminTokenWalletService.ts` (`AdminTokenWalletService`), `_shared/auth.ts` (`createSupabaseAdminClient`), `_shared/logger.ts` (`logger`), `_shared/utils/path_constructor.ts` (`constructStoragePath`), `_shared/utils/assembleChunks/assembleChunks.ts` (`assembleChunks`).
+         * `[ ]`   Layer classification: shared services and utilities.
+         * `[ ]`   Direction: inbound.
+         * `[ ]`   Purpose: the concrete services the bound modules require.
+      * `[ ]`   Removed provider: `dialectic-worker/retryJob.ts` (`retryJob`), replaced by the canonical module. This file stops being a consumer of the legacy file.
+      * `[ ]`   Confirm:
+         * `[ ]`   No member of `SaveResponseDeps` is constructed twice, and no closure is constructed inside the request path.
+         * `[ ]`   `createJobContext` is not imported here, and no worker-process deps object is read.
+         * `[ ]`   No reverse dependency: no module this root binds imports from `netlifyResponse/`.
+      * `[ ]`   `context_slice`
+         * `[ ]`   From each bound module's `provides` file: its implementation, its deps type and its bound function type only.
+         * `[ ]`   From `saveResponse.provides.ts`: `saveResponse`, `SaveResponseDeps` and `BoundSaveResponseFn` only.
+
+   * `[ ]`   `construction`
+      * `[ ]`   The module-level block is the composition root and runs once at cold start: construct `adminClient`, `logger`, `fileManager`, `notificationService` and `adminTokenWalletService`; bind the leaf closures each module declares; bind the seven modules; assemble `SaveResponseDeps`; bind `saveResponse`; assemble `NetlifyResponseDeps`; call `serve()`.
+      * `[ ]`   Producers are bound before the closures that close over them, so no binding reads a `const` declared below it.
+      * `[ ]`   No factory and no class: the root is a sequence of `const` declarations. Nothing is partially constructed — every deps object is complete at its declaration site.
+
+   * `[ ]`   `index.ts`
+      * `[ ]`   The twelve-member `SaveResponseDeps` literal is replaced by the eight-member literal, each member a bound closure but `logger`.
+      * `[ ]`   The `boundResolveTemplateFilename`, `boundEnqueueRenderJob` and `boundDebitTokens` closures stay and are consumed by the modules that declare them rather than by the deps literal directly.
+      * `[ ]`   New bound closures are added for `retryJob`, `loadJobContext`, `assembleAiResponse`, `debitForResponse`, `prepareResponseContent`, `saveContributionResponse` and `saveCompressedResponse`, plus the `resolveContributionIdentity`, `persistContributionRelationships`, `finalizeContributionJob` and `countTokens` closures those four require.
+      * `[ ]`   The `retryJob` import moves from `../dialectic-worker/retryJob.ts` to the canonical module's `provides` file; the `continueJob`, `resolveFinishReason`, `isIntermediateChunk`, `determineContinuation`, `buildUploadContext` and `sanitizeJsonContent` imports stay and feed the modules that declare them.
+      * `[ ]`   `boundSaveResponse: BoundSaveResponseFn` is declared and the `NetlifyResponseDeps` literal becomes `{ computeJobSig, adminClient, saveResponse: boundSaveResponse }`.
+      * `[ ]`   The `HMAC_SECRET` check, the `computeJobSig` construction, the `adminClient` construction, the three service constructions and the `serve()` call are left exactly as they stand.
+
+   * `[ ]`   `netlifyResponse.integration.test.ts`
+      * `[ ]`   The integrated chain is real end to end: `netlifyResponseHandler` → the bound `saveResponse` → the arm module the job row's `job_type` selects → that module's own collaborators. No function in that chain is mocked, stubbed or replaced by a builder.
+      * `[ ]`   Mocked at the outer edge only: the Supabase client, the storage adapter and the queue POST.
+      * `[ ]`   A case drives an EXECUTE row through the chain: the request passes every gate, `saveContributionResponse` runs, and the handler returns 200 carrying the status that arm produced.
+      * `[ ]`   A case drives a COMPRESS row through the chain: `saveCompressedResponse` runs and the handler returns 200 carrying its status.
+      * `[ ]`   A case proves the graph is bound once: two requests reach the same closure identities.
+      * `[ ]`   A case proves an error arm maps by its flag: a retriable error returns 503 and a non-retriable error returns 500, each carrying the error's message.
+
+   * `[ ]`   `directionality`
+      * `[ ]`   Deps face inward: this root imports implementations and contracts from `dialectic-worker/` modules and `_shared/`, and exports nothing.
+      * `[ ]`   No cycle: no module this root binds imports from `netlifyResponse/`.
+      * `[ ]`   The graph is directed and acyclic at every binding depth: each closure closes only over values declared above it.
+
+   * `[ ]`   `requirements`
+      * `[ ]`   `SaveResponseDeps` is assembled with exactly its eight declared members — integration test, captured-argument assertions on the deps object reaching `saveResponse`.
+      * `[ ]`   Each bound module receives exactly the deps object its own interface declares — integration test, captured-argument assertions.
+      * `[ ]`   `retryJob` resolves to the canonical module and the legacy `dialectic-worker/retryJob.ts` is not imported — integration test, and the import is absent from the file.
+      * `[ ]`   `createJobContext` is not imported and no worker-process deps object is read — the import is absent from the file.
+      * `[ ]`   `NetlifyResponseDeps` is assembled with three members and `saveResponse` is the bound closure — integration test.
+      * `[ ]`   The graph is constructed once, so two requests reach the same closure identities — integration test.
+      * `[ ]`   An EXECUTE row reaches `saveContributionResponse` and a COMPRESS row reaches `saveCompressedResponse`, each returning 200 — integration test.
+      * `[ ]`   A retriable error returns 503 and a non-retriable error returns 500 — integration test.
+
+   * `[ ]`   **Commit** `refactor(dialectic) netlifyResponse assembles its own graph and binds saveResponse once`
+      * `[ ]`   Structural: `NetlifyResponseDeps` drops `saveResponseDeps` and retypes `saveResponse` to `BoundSaveResponseFn`; the twelve-member `SaveResponseDeps` literal becomes the eight-member decomposed one.
+      * `[ ]`   Behavioral: the handler calls `saveResponse` with two arguments; the response tail runs through the decomposed modules; `retryJob` resolves to the canonical module.
+      * `[ ]`   Contract: `netlifyResponse.mock.ts` replaces its configurable factory with the four standard symbols per owned object type and one function mock per owned function type.
 
 ## Compression Cutover
 
@@ -1533,8 +1875,8 @@ Oversized model inputs compress incrementally until the preflight fits: the pare
       * `[ ]`   After `gatherArtifacts` returns, the gathered resource documents and conversation history reach `prepareModelJob` with their original, uncompressed content. If any of those candidates were previously compressed — a `CompressedContext` artifact persisted at the candidate's canonical `_work` path — the model call pays for content that a cheaper, smaller version already replaced. There is no overlay pass between gathering and dispatch: compression results are invisible to every subsequent resume cycle, and the same victim is re-compressed every time.
       * `[ ]`   Functional goals:
          * `[ ]`   A new function-folder module `dialectic-worker/applyCompressionOverlay/` declares the canonical `(deps, params, payload)` shape and returns a two-arm `ApplyCompressionOverlayReturn`.
-         * `[ ]`   For each resource document in the payload, the function builds the candidate's canonical `CompressedContext` path using `constructStoragePath` with `FileType.CompressedContext`, the candidate's `document_key` as both `documentKey` and source identity, the candidate's `type` mapped to a `sourceType` (`'document'` → `'contribution'`, `'feedback'` → `'feedback'`, `'project_resource'` → `'resource'`), and the `stageSlug` and `targetKey` from params. It then performs one existence read via `deps.downloadFromStorage`. If the artifact exists, the document's `content` is replaced with the downloaded compressed content in a new object; if not, the document passes through unchanged. The returned `resourceDocuments` array is a new array of new objects — no input object is mutated.
-         * `[ ]`   For each history message in the payload whose `id` is defined and whose `role` is `'user'` or `'assistant'`, the function builds the candidate's canonical `CompressedContext` path using `constructStoragePath` with `FileType.CompressedContext`, `sourceType: 'history'`, `sourceId` set to the message's `id`, `role` set to the message's `role`, and the `stageSlug` and `targetKey` from params. It performs one existence read via `deps.downloadFromStorage`. If the artifact exists, the message's `content` is replaced with the downloaded compressed content in a new object; if not, the message passes through unchanged. Messages with no `id` or with `role` `'system'` or `'function'` pass through unconditionally. The returned `conversationHistory` array is a new array of new objects — no input object is mutated.
+         * `[ ]`   For each resource document in the payload, the function builds the candidate's canonical `CompressedContext` path using `constructStoragePath` with `FileType.CompressedContext`, the candidate's `document_key` as both `documentKey` and source identity, the candidate's `type` mapped to a `sourceType` (`'document'` → `'contribution'`, `'feedback'` → `'feedback'`, `'project_resource'` → `'resource'`), and the `stageSlug` and `output_type` from params. It then performs one existence read via `deps.downloadFromStorage`. If the artifact exists, the document's `content` is replaced with the downloaded compressed content in a new object; if not, the document passes through unchanged. The returned `resourceDocuments` array is a new array of new objects — no input object is mutated.
+         * `[ ]`   For each history message in the payload whose `id` is defined and whose `role` is `'user'` or `'assistant'`, the function builds the candidate's canonical `CompressedContext` path using `constructStoragePath` with `FileType.CompressedContext`, `sourceType: 'history'`, `sourceId` set to the message's `id`, `role` set to the message's `role`, and the `stageSlug` and `output_type` from params. It performs one existence read via `deps.downloadFromStorage`. If the artifact exists, the message's `content` is replaced with the downloaded compressed content in a new object; if not, the message passes through unchanged. Messages with no `id` or with `role` `'system'` or `'function'` pass through unconditionally. The returned `conversationHistory` array is a new array of new objects — no input object is mutated.
          * `[ ]`   The success arm carries the overlaid `resourceDocuments` and `conversationHistory`, plus an `overlaidCount` reporting how many candidates were swapped.
          * `[ ]`   Every storage download failure is a non-fatal miss — the candidate passes through with its original content. Only a failure in `constructStoragePath` (a thrown `Error` from missing required fields) returns the error arm.
          * `[ ]`   The function has no `deconstructStoragePath` dependency. Lookup is forward: each candidate carries its own identity (`document_key`, `stage_slug`, `type` for documents; `id`, `role` for messages), so the overlay builds the canonical path from the candidate's own fields and never reverse-parses a stored path.
@@ -1565,7 +1907,7 @@ Oversized model inputs compress incrementally until the preflight fits: the pare
          * `[ ]`   `DownloadFromStorageFn`, owned by `_shared/supabase_storage_utils.ts`.
          * `[ ]`   `ILogger`, owned by `_shared/types.ts`.
          * `[ ]`   `SupabaseClient<Database>`, owned by `npm:@supabase/supabase-js` and `types_db.ts`.
-         * `[ ]`   Who calls this function, who supplies `stageSlug` and `targetKey`, and what happens after the overlaid arrays reach the dispatcher.
+         * `[ ]`   Who calls this function, who supplies `stageSlug` and `output_type`, and what happens after the overlaid arrays reach the dispatcher.
 
    * `[ ]`   `deps`
       * `[ ]`   Provider: `_shared/supabase_storage_utils.ts` (`downloadFromStorage` via `DownloadFromStorageFn`).
@@ -1608,7 +1950,7 @@ Oversized model inputs compress incrementally until the preflight fits: the pare
    * `[ ]`   applyCompressionOverlay/`applyCompressionOverlay.interface.ts`
       * `[ ]`   Declare the function signature: `ApplyCompressionOverlayFn(deps: ApplyCompressionOverlayDeps, params: ApplyCompressionOverlayParams, payload: ApplyCompressionOverlayPayload): Promise<ApplyCompressionOverlayReturn>`.
       * `[ ]`   `ApplyCompressionOverlayDeps`: `{ logger: ILogger; downloadFromStorage: DownloadFromStorageFn }`.
-      * `[ ]`   `ApplyCompressionOverlayParams`: `{ dbClient: SupabaseClient<Database>; projectId: string; sessionId: string; iterationNumber: number; stageSlug: string; targetKey: string }` — the six values `constructStoragePath` requires for the `CompressedContext` case plus the `dbClient` for the storage read.
+      * `[ ]`   `ApplyCompressionOverlayParams`: `{ dbClient: SupabaseClient<Database>; projectId: string; sessionId: string; iterationNumber: number; stageSlug: string; output_type: string }` — the six values `constructStoragePath` requires for the `CompressedContext` case plus the `dbClient` for the storage read.
       * `[ ]`   `ApplyCompressionOverlayPayload`: `{ resourceDocuments: ResourceDocument[]; conversationHistory: Messages[] }` — the two candidate arrays whose content may be swapped.
       * `[ ]`   `ApplyCompressionOverlaySuccessReturn`: `{ resourceDocuments: ResourceDocument[]; conversationHistory: Messages[]; overlaidCount: number }`.
       * `[ ]`   `ApplyCompressionOverlayErrorReturn`: `{ error: Error; retriable: boolean }`.
@@ -1660,7 +2002,7 @@ Oversized model inputs compress incrementally until the preflight fits: the pare
    * `[ ]`   applyCompressionOverlay/`applyCompressionOverlay.mock.ts`
       * `[ ]`   Provide the builders, invalidators, and function mock this interface owns: `buildApplyCompressionOverlayDeps`, `ApplyCompressionOverlayDepsOverrides`, `buildApplyCompressionOverlayParams`, `ApplyCompressionOverlayParamsOverrides`, `buildApplyCompressionOverlayPayload`, `ApplyCompressionOverlayPayloadOverrides`, `invalidateApplyCompressionOverlayPayload`, `ApplyCompressionOverlayPayloadCorruptions`, `buildApplyCompressionOverlaySuccessReturn`, `ApplyCompressionOverlaySuccessReturnOverrides`, `invalidateApplyCompressionOverlaySuccessReturn`, `ApplyCompressionOverlaySuccessReturnCorruptions`, `buildApplyCompressionOverlayErrorReturn`, `ApplyCompressionOverlayErrorReturnOverrides`, `invalidateApplyCompressionOverlayErrorReturn`, `ApplyCompressionOverlayErrorReturnCorruptions`, `mockApplyCompressionOverlay`.
       * `[ ]`   `buildApplyCompressionOverlayDeps` composes `MockLogger` for `logger` and `createMockDownloadFromStorage({ mode: 'success', data: <encoded 'compressed-content'> })` for `downloadFromStorage`.
-      * `[ ]`   `buildApplyCompressionOverlayParams` requires `dbClient` as a positional argument (same pattern as `buildGatherArtifactsParams`), with defaults for `projectId`, `sessionId`, `iterationNumber`, `stageSlug`, and `targetKey`.
+      * `[ ]`   `buildApplyCompressionOverlayParams` requires `dbClient` as a positional argument (same pattern as `buildGatherArtifactsParams`), with defaults for `projectId`, `sessionId`, `iterationNumber`, `stageSlug`, and `output_type`.
       * `[ ]`   `buildApplyCompressionOverlayPayload` defaults `resourceDocuments` to an empty array and `conversationHistory` to an empty array.
 
    * `[ ]`   applyCompressionOverlay/`applyCompressionOverlay.guard.test.ts`
@@ -1688,8 +2030,8 @@ Oversized model inputs compress incrementally until the preflight fits: the pare
 
    * `[ ]`   applyCompressionOverlay/`applyCompressionOverlay.ts`
       * `[ ]`   Implement the behavior from the interaction spec:
-         * `[ ]`   Iterate `payload.resourceDocuments`. For each: map `type` to `sourceType` (`'document'` → `'contribution'`, `'feedback'` → `'feedback'`, `'project_resource'` → `'resource'`); if unmapped, pass through unchanged. Build the canonical path via `constructStoragePath({ projectId: params.projectId, fileType: FileType.CompressedContext, sessionId: params.sessionId, iteration: params.iterationNumber, stageSlug: params.stageSlug, targetKey: params.targetKey, sourceType, documentKey: doc.document_key })`. Call `deps.downloadFromStorage(params.dbClient, 'dialectic-contributions', `${path.storagePath}/${path.fileName}`)`. If data is non-null and no error, decode and create a new `ResourceDocument` with the compressed content; otherwise pass through.
-         * `[ ]`   Iterate `payload.conversationHistory`. For each: if no `id` or `role` is `'system'` or `'function'`, pass through. Build the canonical path via `constructStoragePath({ projectId: params.projectId, fileType: FileType.CompressedContext, sessionId: params.sessionId, iteration: params.iterationNumber, stageSlug: params.stageSlug, targetKey: params.targetKey, sourceType: 'history', sourceId: message.id, role: message.role })`. Call `deps.downloadFromStorage`. If data is non-null and no error, decode and create a new `Messages` with the compressed content; otherwise pass through.
+         * `[ ]`   Iterate `payload.resourceDocuments`. For each: map `type` to `sourceType` (`'document'` → `'contribution'`, `'feedback'` → `'feedback'`, `'project_resource'` → `'resource'`); if unmapped, pass through unchanged. Build the canonical path via `constructStoragePath({ projectId: params.projectId, fileType: FileType.CompressedContext, sessionId: params.sessionId, iteration: params.iterationNumber, stageSlug: params.stageSlug, output_type: params.output_type, sourceType, documentKey: doc.document_key })`. Call `deps.downloadFromStorage(params.dbClient, 'dialectic-contributions', `${path.storagePath}/${path.fileName}`)`. If data is non-null and no error, decode and create a new `ResourceDocument` with the compressed content; otherwise pass through.
+         * `[ ]`   Iterate `payload.conversationHistory`. For each: if no `id` or `role` is `'system'` or `'function'`, pass through. Build the canonical path via `constructStoragePath({ projectId: params.projectId, fileType: FileType.CompressedContext, sessionId: params.sessionId, iteration: params.iterationNumber, stageSlug: params.stageSlug, output_type: params.output_type, sourceType: 'history', sourceId: message.id, role: message.role })`. Call `deps.downloadFromStorage`. If data is non-null and no error, decode and create a new `Messages` with the compressed content; otherwise pass through.
          * `[ ]`   Wrap the entire loop in a try/catch for `constructStoragePath` throws. On catch, return `ApplyCompressionOverlayErrorReturn` with the thrown error and `retriable: false`.
          * `[ ]`   Return `ApplyCompressionOverlaySuccessReturn` with the overlaid arrays and the count.
       * `[ ]`   Introduce no undeclared dependencies; bypass no guards or contracts.
@@ -1716,7 +2058,7 @@ Oversized model inputs compress incrementally until the preflight fits: the pare
       * `[ ]`   No input object is mutated on any path.
       * `[ ]`   `constructStoragePath` throwing returns `ApplyCompressionOverlayErrorReturn` with `retriable: false`.
 
-* `[ ]`   supabase/functions/dialectic-worker/gatherArtifacts/gatherArtifacts.ts **[BE] Inject `applyCompressionOverlay` post-gather with the `stageSlug` and `targetKey` its lookup requires, and tighten `ResourceDocument.type` to `'resource' | 'feedback' | 'system'` across all five push sites**
+* `[ ]`   supabase/functions/dialectic-worker/gatherArtifacts/gatherArtifacts.ts **[BE] Inject `applyCompressionOverlay` post-gather with the `stageSlug` and `output_type` its lookup requires, and tighten `ResourceDocument.type` to `'resource' | 'feedback' | 'system'` across all five push sites**
 
    * `[ ]`   `objective`
       * `[ ]`   `gatherArtifacts` pushes a free-form `type: string` into every `ResourceDocument` it produces — each of the five rule-type branches writes a different string literal (`"document"`, `"feedback"`, `"seed_prompt"`, `"project_resource"`, or the passthrough `rType` for `header_context`/`contribution`/fallback). Downstream consumers (`vector_utils`, `applyCompressionOverlay`) must match on these values, but no union constrains them and a typo compiles silently. Separately, after dedup the gathered artifacts are returned directly without passing through the compression overlay, so every resume cycle pays full token cost for candidates that already have a persisted `CompressedContext` artifact.
@@ -1724,10 +2066,10 @@ Oversized model inputs compress incrementally until the preflight fits: the pare
          * `[ ]`   Declare `ResourceDocumentType = 'resource' | 'feedback' | 'system'` in `_shared/types.ts` and tighten `ResourceDocument.type` from `string` to `ResourceDocumentType`.
          * `[ ]`   Update each of the five push sites in `gatherArtifacts.ts` to emit the tightened literal: `"document"` → `"resource"`, `"feedback"` → `"feedback"` (unchanged), `"seed_prompt"` → `"system"`, `"project_resource"` → `"resource"`, `header_context`/`contribution`/fallback → `"resource"`.
          * `[ ]`   Add `applyCompressionOverlay: BoundApplyCompressionOverlayFn` to `GatherArtifactsDeps`.
-         * `[ ]`   Add `stageSlug: string` and `targetKey: string` to `GatherArtifactsParams`.
+         * `[ ]`   Add `stageSlug: string` and `output_type: string` to `GatherArtifactsParams`.
          * `[ ]`   After the dedup loop and before the success return, call `deps.applyCompressionOverlay(params, { resourceDocuments: deduped })` and, on success, return its overlaid `resourceDocuments` as the artifacts array; on error, return the error arm.
       * `[ ]`   Non-functional constraints:
-         * `[ ]`   No file outside `gatherArtifacts/` and `_shared/types.ts` is edited. The caller that supplies `stageSlug`, `targetKey`, and the bound overlay is `processSimpleJob`, addressed in its own node.
+         * `[ ]`   No file outside `gatherArtifacts/` and `_shared/types.ts` is edited. The caller that supplies `stageSlug`, `output_type`, and the bound overlay is `processSimpleJob`, addressed in its own node.
          * `[ ]`   Each goal is proven by a named case in this node's interface test, guard test, or unit test.
 
    * `[ ]`   `role`
@@ -1747,7 +2089,7 @@ Oversized model inputs compress incrementally until the preflight fits: the pare
          * `[ ]`   `ResourceDocumentType` and `ResourceDocument`, owned by `_shared/types.ts`.
          * `[ ]`   `BoundApplyCompressionOverlayFn`, `ApplyCompressionOverlayParams`, `ApplyCompressionOverlayPayload`, `ApplyCompressionOverlayReturn`, owned by `applyCompressionOverlay/applyCompressionOverlay.interface.ts`.
          * `[ ]`   `ILogger`, `DownloadFromStorageFn`, `PickLatestFn`, `SupabaseClient<Database>`, `InputRule` — all owned by their respective `_shared` or `dialectic-service` modules.
-         * `[ ]`   Who calls this function, who supplies `stageSlug`/`targetKey`/`applyCompressionOverlay`, and what happens after the overlaid artifacts reach the dispatcher.
+         * `[ ]`   Who calls this function, who supplies `stageSlug`/`output_type`/`applyCompressionOverlay`, and what happens after the overlaid artifacts reach the dispatcher.
 
    * `[ ]`   `deps`
       * `[ ]`   Surviving providers (unchanged):
@@ -1763,7 +2105,7 @@ Oversized model inputs compress incrementally until the preflight fits: the pare
 
    * `[ ]`   `context_slice`
       * `[ ]`   `GatherArtifactsDeps` adds `applyCompressionOverlay: BoundApplyCompressionOverlayFn` alongside the existing `logger`, `pickLatest`, `downloadFromStorage`.
-      * `[ ]`   `GatherArtifactsParams` adds `stageSlug: string` and `targetKey: string` alongside the existing `dbClient`, `projectId`, `sessionId`, `iterationNumber`.
+      * `[ ]`   `GatherArtifactsParams` adds `stageSlug: string` and `output_type: string` alongside the existing `dbClient`, `projectId`, `sessionId`, `iterationNumber`.
 
    * `[ ]`   _shared/`types.ts`
       * `[ ]`   Declare `export type ResourceDocumentType = 'resource' | 'feedback' | 'system';` immediately above `ResourceDocument`.
@@ -1771,7 +2113,7 @@ Oversized model inputs compress incrementally until the preflight fits: the pare
 
    * `[ ]`   gatherArtifacts/`gatherArtifacts.interface.test.ts`
       * `[ ]`   Add key-record proof for `GatherArtifactsDeps`: typed assignment `const _depsKeys: Record<keyof GatherArtifactsDeps, true> = { logger: true, pickLatest: true, downloadFromStorage: true, applyCompressionOverlay: true };`.
-      * `[ ]`   Add key-record proof for `GatherArtifactsParams`: typed assignment `const _paramsKeys: Record<keyof GatherArtifactsParams, true> = { dbClient: true, projectId: true, sessionId: true, iterationNumber: true, stageSlug: true, targetKey: true };`.
+      * `[ ]`   Add key-record proof for `GatherArtifactsParams`: typed assignment `const _paramsKeys: Record<keyof GatherArtifactsParams, true> = { dbClient: true, projectId: true, sessionId: true, iterationNumber: true, stageSlug: true, output_type: true };`.
       * `[ ]`   Add `ResourceDocumentType` membership proof: typed assignment `const _resource: ResourceDocumentType = 'resource'; const _feedback: ResourceDocumentType = 'feedback'; const _system: ResourceDocumentType = 'system';`.
       * `[ ]`   Replace every `createGatherArtifactsMock` call with `mockGatherArtifacts` — the mock function is called directly with `(deps, params, payload)` and its return is configured by the test's `buildGatherArtifactsSuccessReturn` or `buildGatherArtifactsErrorReturn`, not by an options bag. Remove `createGatherArtifactsMock` and `GatherArtifactsMockCall` from imports.
 
@@ -1779,7 +2121,7 @@ Oversized model inputs compress incrementally until the preflight fits: the pare
       * `[ ]`   Add import: `import type { BoundApplyCompressionOverlayFn } from "../applyCompressionOverlay/applyCompressionOverlay.interface.ts";`.
       * `[ ]`   Add import: `import type { ResourceDocumentType } from "../../_shared/types.ts";`.
       * `[ ]`   `GatherArtifactsDeps`: add `applyCompressionOverlay: BoundApplyCompressionOverlayFn;`.
-      * `[ ]`   `GatherArtifactsParams`: add `stageSlug: string;` and `targetKey: string;`.
+      * `[ ]`   `GatherArtifactsParams`: add `stageSlug: string;` and `output_type: string;`.
       * `[ ]`   `GatherArtifactsSuccessReturn.artifacts`: tighten element type — each artifact's `type` is now `ResourceDocumentType` via the tightened `ResourceDocument`.
 
    * `[ ]`   `gatherArtifacts.interaction.spec`
@@ -1811,7 +2153,7 @@ Oversized model inputs compress incrementally until the preflight fits: the pare
       * `[ ]`   Branch: post-dedup overlay — overlay returns success.
          * `[ ]`   Condition: dedup loop completes and `deps.applyCompressionOverlay` returns a success arm.
          * `[ ]`   Decision: `isApplyCompressionOverlaySuccessReturn(overlayResult)`.
-         * `[ ]`   Dependency call: `deps.applyCompressionOverlay({ dbClient: params.dbClient, projectId: params.projectId, sessionId: params.sessionId, iterationNumber: params.iterationNumber, stageSlug: params.stageSlug, targetKey: params.targetKey }, { resourceDocuments: deduped })`.
+         * `[ ]`   Dependency call: `deps.applyCompressionOverlay({ dbClient: params.dbClient, projectId: params.projectId, sessionId: params.sessionId, iterationNumber: params.iterationNumber, stageSlug: params.stageSlug, output_type: params.output_type }, { resourceDocuments: deduped })`.
          * `[ ]`   Outcome: `GatherArtifactsSuccessReturn` with `artifacts` set to `overlayResult.resourceDocuments`.
       * `[ ]`   Branch: post-dedup overlay — overlay returns error.
          * `[ ]`   Condition: `deps.applyCompressionOverlay` returns an error arm.
@@ -1822,7 +2164,7 @@ Oversized model inputs compress incrementally until the preflight fits: the pare
    * `[ ]`   gatherArtifacts/`gatherArtifacts.mock.ts`
       * `[ ]`   Replace `createGatherArtifactsMock` (options bag + calls recorder) with `mockGatherArtifacts: GatherArtifactsFn` — a production-typed function that returns `buildGatherArtifactsSuccessReturn()`. Remove `CreateGatherArtifactsMockOptions`, `GatherArtifactsMockCall`.
       * `[ ]`   `buildGatherArtifactsDeps`: add `applyCompressionOverlay` default that returns `buildApplyCompressionOverlaySuccessReturn()`. Import `BoundApplyCompressionOverlayFn` and `buildApplyCompressionOverlaySuccessReturn` from the overlay module's provides.
-      * `[ ]`   `buildGatherArtifactsParams`: change signature from `(dbClient, overrides?)` to `(overrides?: Partial<GatherArtifactsParams>)` with `dbClient` defaulting to `createMockSupabaseClient().client`. Add `stageSlug: 'thesis'` and `targetKey: 'business_case'` defaults.
+      * `[ ]`   `buildGatherArtifactsParams`: change signature from `(dbClient, overrides?)` to `(overrides?: Partial<GatherArtifactsParams>)` with `dbClient` defaulting to `createMockSupabaseClient().client`. Add `stageSlug: 'thesis'` and `output_type: 'business_case'` defaults.
       * `[ ]`   `buildGatherArtifact`: change default `type` from `'document'` to `'resource'` to match the tightened literal.
 
    * `[ ]`   gatherArtifacts/`gatherArtifacts.guard.test.ts`
@@ -1830,13 +2172,13 @@ Oversized model inputs compress incrementally until the preflight fits: the pare
       * `[ ]`   `isGatherArtifactsDeps` — add case: `applyCompressionOverlay: 'not-a-function'` rejects.
       * `[ ]`   `isGatherArtifactsParams` — add case: missing `stageSlug` rejects.
       * `[ ]`   `isGatherArtifactsParams` — add case: `stageSlug: ''` (empty string) rejects.
-      * `[ ]`   `isGatherArtifactsParams` — add case: missing `targetKey` rejects.
-      * `[ ]`   `isGatherArtifactsParams` — add case: `targetKey: ''` (empty string) rejects.
+      * `[ ]`   `isGatherArtifactsParams` — add case: missing `output_type` rejects.
+      * `[ ]`   `isGatherArtifactsParams` — add case: `output_type: ''` (empty string) rejects.
       * `[ ]`   Update `buildGatherArtifactsParams` calls: change from `buildGatherArtifactsParams(dbClient)` to `buildGatherArtifactsParams()` (overrides-only form).
 
    * `[ ]`   gatherArtifacts/`gatherArtifacts.guard.ts`
       * `[ ]`   `isGatherArtifactsDeps`: add check — `'applyCompressionOverlay' in value && typeof value.applyCompressionOverlay === 'function'`.
-      * `[ ]`   `isGatherArtifactsParams`: add checks — `'stageSlug' in value && typeof value.stageSlug === 'string' && value.stageSlug !== ''` and `'targetKey' in value && typeof value.targetKey === 'string' && value.targetKey !== ''`.
+      * `[ ]`   `isGatherArtifactsParams`: add checks — `'stageSlug' in value && typeof value.stageSlug === 'string' && value.stageSlug !== ''` and `'output_type' in value && typeof value.output_type === 'string' && value.output_type !== ''`.
 
    * `[ ]`   gatherArtifacts/`gatherArtifacts.test.ts`
       * `[ ]`   Update all five rule-type assertion blocks: `type: 'document'` → `'resource'`, `type: 'feedback'` → `'feedback'` (unchanged), `type: 'seed_prompt'` → `'system'`, `type: 'project_resource'` → `'resource'`, `type: rType` passthrough assertions → `'resource'`.
@@ -1844,7 +2186,7 @@ Oversized model inputs compress incrementally until the preflight fits: the pare
       * `[ ]`   Add overlay test cases:
          * `[ ]`   Overlay returns success — `gatherArtifacts` returns `GatherArtifactsSuccessReturn` with the overlay's `resourceDocuments` as `artifacts`.
          * `[ ]`   Overlay returns error — `gatherArtifacts` returns `GatherArtifactsErrorReturn` with the overlay's `error` and `retriable`.
-         * `[ ]`   Overlay is called with the correct params shape: `{ dbClient, projectId, sessionId, iterationNumber, stageSlug, targetKey }` and `{ resourceDocuments: <deduped> }`.
+         * `[ ]`   Overlay is called with the correct params shape: `{ dbClient, projectId, sessionId, iterationNumber, stageSlug, output_type }` and `{ resourceDocuments: <deduped> }`.
       * `[ ]`   Replace any remaining `createGatherArtifactsMock` usage with direct mock construction via `mockGatherArtifacts` or spy patterns.
 
    * `[ ]`   `construction`
@@ -1858,7 +2200,7 @@ Oversized model inputs compress incrementally until the preflight fits: the pare
       * `[ ]`   Line 355: change `type: "project_resource"` to `type: "resource"`.
       * `[ ]`   Line 449: change `type: rType` to `type: "resource" as const`.
       * `[ ]`   After the dedup loop (after line 469), insert overlay call:
-         * `[ ]`   `const overlayResult = await deps.applyCompressionOverlay({ dbClient: params.dbClient, projectId: params.projectId, sessionId: params.sessionId, iterationNumber: params.iterationNumber, stageSlug: params.stageSlug, targetKey: params.targetKey }, { resourceDocuments: Array.from(uniqueById.values()) });`
+         * `[ ]`   `const overlayResult = await deps.applyCompressionOverlay({ dbClient: params.dbClient, projectId: params.projectId, sessionId: params.sessionId, iterationNumber: params.iterationNumber, stageSlug: params.stageSlug, output_type: params.output_type }, { resourceDocuments: Array.from(uniqueById.values()) });`
          * `[ ]`   `if (!isApplyCompressionOverlaySuccessReturn(overlayResult)) { return { error: overlayResult.error, retriable: overlayResult.retriable }; }`
          * `[ ]`   Change the success return to use `overlayResult.resourceDocuments` as the artifacts array.
       * `[ ]`   Introduce no undeclared dependencies; bypass no guards or contracts.
@@ -1885,7 +2227,7 @@ Oversized model inputs compress incrementally until the preflight fits: the pare
       * `[ ]`   A project_resource-rule artifact has `type: 'resource'`.
       * `[ ]`   A header_context/contribution/fallback-rule artifact has `type: 'resource'`.
       * `[ ]`   `GatherArtifactsDeps` includes `applyCompressionOverlay: BoundApplyCompressionOverlayFn`.
-      * `[ ]`   `GatherArtifactsParams` includes `stageSlug: string` and `targetKey: string`.
+      * `[ ]`   `GatherArtifactsParams` includes `stageSlug: string` and `output_type: string`.
       * `[ ]`   After dedup, `deps.applyCompressionOverlay` is called and its success result's `resourceDocuments` become the returned `artifacts`.
       * `[ ]`   If the overlay returns an error arm, `gatherArtifacts` returns `GatherArtifactsErrorReturn` with the overlay's `error` and `retriable`.
       * `[ ]`   `createGatherArtifactsMock` is replaced by `mockGatherArtifacts: GatherArtifactsFn`.
@@ -2130,48 +2472,6 @@ Oversized model inputs compress incrementally until the preflight fits: the pare
       * `[ ]`   `CompressionCandidate` carries `tokenCount: number`.
       * `[ ]`   Head/tail anchor logic in `scoreHistory` is preserved.
       * `[ ]`   `mockCompressionStrategy` is replaced by `mockGetSortedCompressionCandidates: GetSortedCompressionCandidatesFn`.
-
-## Remove RAG Machinery
-
-Every live functional reference into the RAG core is severed; this closes it out by deleting it. No full nodes — deletions and reference cleanup only.
-
-### DELETE (whole file)
-* `[ ]`   `supabase/functions/_shared/services/rag_service.ts`
-* `[ ]`   `supabase/functions/_shared/services/rag_service.interface.ts`
-* `[ ]`   `supabase/functions/_shared/services/rag_service.mock.ts`
-* `[ ]`   `supabase/functions/_shared/services/rag_service.test.ts`
-* `[ ]`   `supabase/functions/_shared/services/indexing_service.ts`
-* `[ ]`   `supabase/functions/_shared/services/indexing_service.interface.ts`
-* `[ ]`   `supabase/functions/_shared/services/indexing_service.mock.ts`
-* `[ ]`   `supabase/functions/_shared/services/indexing_service.test.ts`
-
-### EDIT (remove dead `RagService`/`IndexingService`/`EmbeddingClient` construction, imports, and fields — `listCodeUsages` at implementation time to catch anything missed below)
-* `[ ]`   `supabase/functions/dialectic-worker/index.ts` — the epic's SECOND and FINAL touch to this file. Remove: imports (`:32-33`); `embeddingClient`/`textSplitter`/`indexingService`/`ragService` construction (`:103-108`); their inclusion in whatever deps object passes them onward (`:172-174`); rewrite the bound `compressPrompt` closure (`:193`, currently `compressPrompt({ logger, ragService, embeddingClient, tokenWalletService: adminTokenWalletService, countTokens }, ...)`) to the shape `compressPrompt.ts`'s node already established (`applyCompressionOverlay`, `enqueueCompressJobs`, `fileManager`, `constructStoragePath`, `downloadFromStorage`, `countTokens`, `logger` — no `ragService`/`embeddingClient`/`tokenWalletService`).
-* `[ ]`   `supabase/functions/dialectic-worker/createJobContext/JobContext.interface.ts` — remove the `IRagService`/`IIndexingService`/`IEmbeddingClient` import (`:7-9`) and the `ragService`/`indexingService`/`embeddingClient` fields from every interface that carries them (`:184-186`, `:222-223`, `:296-298`, `:335-337`).
-* `[ ]`   `supabase/functions/dialectic-worker/createJobContext/JobContext.mock.ts` — remove the corresponding mock field construction.
-* `[ ]`   `supabase/functions/dialectic-worker/createJobContext/JobContext.guard.test.ts` — remove assertions on the deleted fields.
-* `[ ]`   `supabase/functions/dialectic-worker/createJobContext/createJobContext.interface.test.ts` — remove fixture fields/stubs for the deleted interface members.
-* `[ ]`   `supabase/functions/dialectic-service/dialectic.interface.ts` — remove the `IEmbeddingClient`/`IIndexingService` import (`:10-12`) and the `indexingService`/`embeddingClient` fields (`:1791-1792`).
-* `[ ]`   `supabase/functions/_shared/utils/errors.ts` — remove the now-dead `RagServiceError` class (`:16-19`).
-* `[ ]`   `supabase/functions/dialectic-worker/index.test.ts` — remove any fixture/mock construction of the deleted services.
-* `[ ]`   `supabase/functions/dialectic-worker/processComplexJob.happy.test.ts`, `processComplexJob.errors.test.ts`, `processComplexJob.parallel.test.ts` — remove `ragService`/`embeddingClient`/`indexingService` from any `IJobContext`-shaped fixture they construct.
-* `[ ]`   `supabase/functions/dialectic-worker/ARCHITECTURE.md`, `supabase/functions/dialectic-worker/dialectic-worker.md` — remove or update prose referencing the RAG compression path.
-* `[ ]`   Every test file already rewritten by an earlier WS-D node (`compressPrompt.test.ts`/`.integration.test.ts`, `calculateAffordability.integration.test.ts`, `prepareModelJob.test.ts`/`.integration.test.ts`, `vector_utils.test.ts`, `dialectic.interface.ts`'s `compressPrompt.interface.ts`/`.mock.ts`) is NOT touched again here — those nodes already removed their own `ragService`/`embeddingClient`/`IEmbeddingClient` references; re-verify only, do not re-edit.
-
-### Migration
-* `[ ]`   New migration `supabase/migrations/<ts>_compression_jobs_remove_rag.sql` — the epic's REMOVE migration (paired with the WS-0 ADD migration; exactly two migrations for the whole epic):
-  ```sql
-  drop function if exists public.match_dialectic_chunks(vector, double precision, integer, uuid);
-  drop table if exists public.dialectic_memory;
-  ```
-  (confirm the exact `match_dialectic_chunks` argument signature against its defining migration before writing the `drop function` line — Postgres requires the exact signature to resolve overloads).
-* `[ ]`   Regenerate `supabase/functions/types_db.ts` — by this point in the sprint nothing references `dialectic_memory` or `match_dialectic_chunks` (WS-D's `vector_utils.ts` node already deleted the last live query against `dialectic_memory`), so the regeneration is a pure drop with no compile fallout.
-
-### Commit
-* `[ ]`   **Commit** `feat(dialectic): job-driven schema-targeted compression replaces synchronous RAG`
-  * Structural: `COMPRESS` job type + compression prompt template (WS-0); `CompressedContext` artifact identity + path support (WS-C); COMPRESS routing, spawn, and dedup machinery (WS-R); renderer module extraction, relocation and RENDER dispatch (WS-B, WS-N); compression source identity (WS-I); COMPRESS continuation and prompt provenance (WS-P); one job-payload base and one model-call dispatcher (WS-J); `saveResponse` decomposed with COMPRESS persistence (WS-S); compression orchestration cutover in `gatherArtifacts`/`compressPrompt`/`calculateAffordability`/`prepareModelJob`/`processSimpleJob` (WS-D); `rag_service`/`indexing_service`/`dialectic_memory`/`match_dialectic_chunks` deleted (WS-X).
-  * Behavioral: oversized model-call inputs compress incrementally via job-driven COMPRESS children instead of a synchronous embedding-based RAG call; compressed artifacts persist with real wallet attribution and are reused across sibling jobs targeting the same schema; no synchronous model or embedding call remains anywhere in Supabase.
-  * Contract: `ResourceDocument.type`/`CompressionSourceType`/`CompressionMode` govern all compression-artifact identity; `CalculateAffordabilityReturn`/`PrepareModelJobReturn` each gained a `Pending` variant that propagates a paused job cleanly to `processSimpleJob`.
 
 # To-Do List
 

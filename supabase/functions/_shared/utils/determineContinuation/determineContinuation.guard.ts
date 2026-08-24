@@ -37,7 +37,11 @@ export function isDetermineContinuationParams(
         return false;
     }
     const documentKey: unknown = value.documentKey;
-    if (documentKey !== undefined && typeof documentKey !== "string") {
+    if (
+        documentKey !== undefined &&
+        documentKey !== null &&
+        typeof documentKey !== "string"
+    ) {
         return false;
     }
     if (!("contextForDocuments" in value)) {

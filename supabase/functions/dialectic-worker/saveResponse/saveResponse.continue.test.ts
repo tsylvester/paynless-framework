@@ -41,7 +41,19 @@ import {
   mockNotificationService,
   resetMockNotificationService,
 } from "../../_shared/utils/notification.service.mock.ts";
-import type { RetryJobFn } from "../createJobContext/JobContext.interface.ts";
+import type { BoundRetryJobFn } from "../retryJob/retryJob.interface.ts";
+import type { BoundLoadJobContextFn } from "../loadJobContext/loadJobContext.interface.ts";
+import type { BoundAssembleAiResponseFn } from "../assembleAiResponse/assembleAiResponse.interface.ts";
+import type { BoundDebitForResponseFn } from "../debitForResponse/debitForResponse.interface.ts";
+import type { BoundPrepareResponseContentFn } from "../prepareResponseContent/prepareResponseContent.interface.ts";
+import type { BoundSaveContributionResponseFn } from "../saveContributionResponse/saveContributionResponse.interface.ts";
+import type { BoundSaveCompressedResponseFn } from "../saveCompressedResponse/saveCompressedResponse.interface.ts";
+import type { BoundFinalizeContributionJobFn } from "../finalizeContributionJob/finalizeContributionJob.interface.ts";
+import type { BoundContinueJobFn, ContinueJobEnqueuedReturn, ContinueJobLimitReachedReturn } from "../continueJob/continueJob.interface.ts";
+import { buildContinueJobEnqueuedReturn, buildContinueJobLimitReachedReturn } from "../continueJob/continueJob.mock.ts";
+import type { BoundResolveContributionIdentityFn } from "../resolveContributionIdentity/resolveContributionIdentity.interface.ts";
+import type { BoundPersistContributionRelationshipsFn } from "../persistContributionRelationships/persistContributionRelationships.interface.ts";
+import type { BoundEnqueueRenderJobFn } from "../enqueueRenderJob/enqueueRenderJob.interface.ts";
 import type {
   SaveResponseDeps,
   SaveResponseReturn,
@@ -50,30 +62,202 @@ import {
   isSaveResponseErrorReturn,
   isSaveResponseSuccessReturn,
 } from "./saveResponse.guard.ts";
-import {
-  createMockContributionRow,
-  createMockFileManager,
-  createMockSaveResponseDeps,
-  createMockSaveResponseParamsWithQueuedJob,
-  createMockSaveResponsePayload,
-  saveResponseTestPayload,
-} from "./saveResponse.mock.ts";
+import { buildSaveResponsePayload, buildSaveResponseDeps } from "./saveResponse.mock.ts";
 import { saveResponse } from "./saveResponse.ts";
+import { loadJobContext } from "../loadJobContext/loadJobContext.ts";
+import { assembleAiResponse } from "../assembleAiResponse/assembleAiResponse.ts";
+import { debitForResponse } from "../debitForResponse/debitForResponse.ts";
+import { prepareResponseContent } from "../prepareResponseContent/prepareResponseContent.ts";
+import { retryJob } from "../retryJob/retryJob.ts";
+import { saveContributionResponse } from "../saveContributionResponse/saveContributionResponse.ts";
+import { saveCompressedResponse } from "../saveCompressedResponse/saveCompressedResponse.ts";
+import { resolveContributionIdentity } from "../resolveContributionIdentity/resolveContributionIdentity.ts";
+import { persistContributionRelationships } from "../persistContributionRelationships/persistContributionRelationships.ts";
+import { finalizeContributionJob } from "../finalizeContributionJob/finalizeContributionJob.ts";
+import { continueJob } from "../continueJob/continueJob.ts";
+import { resolveFinishReason } from "../../_shared/utils/resolveFinishReason.ts";
+import { isIntermediateChunk } from "../../_shared/utils/isIntermediateChunk.ts";
+import { sanitizeJsonContent } from "../../_shared/utils/jsonSanitizer/jsonSanitizer.ts";
+import { determineContinuation } from "../../_shared/utils/determineContinuation/determineContinuation.ts";
+import { buildUploadContext } from "../../_shared/utils/buildUploadContext/buildUploadContext.ts";
+import { buildSaveContributionResponseDeps } from "../saveContributionResponse/saveContributionResponse.mock.ts";
+import { buildFinalizeContributionJobDeps } from "../finalizeContributionJob/finalizeContributionJob.mock.ts";
+import { buildPrepareResponseContentDeps } from "../prepareResponseContent/prepareResponseContent.mock.ts";
+import { buildEnqueueRenderJobSuccessReturn } from "../enqueueRenderJob/enqueueRenderJob.mock.ts";
+import { createMockSupabaseClient } from "../../_shared/supabase.mock.ts";
+import { MockLogger } from "../../_shared/logger.mock.ts";
+import { createMockFileManagerService } from "../../_shared/services/file_manager.mock.ts";
+import {
+  buildDialecticContributionRow,
+  buildDialecticJobRow,
+  buildDialecticExecuteJobPayload,
+  buildTokenWalletRow,
+  buildDialecticSessionRow,
+  buildDocumentRelationships,
+} from "../../_shared/dialectic.mock.ts";
+import { buildMockProvider } from "../../_shared/ai_service/ai_provider.mock.ts";
+import type { DialecticJobRow } from "../../dialectic-service/dialectic.interface.ts";
+import { buildAssembleAiResponseDeps } from "../assembleAiResponse/assembleAiResponse.mock.ts";
+import { buildDebitForResponseDeps } from "../debitForResponse/debitForResponse.mock.ts";
+import { buildSaveCompressedResponseDeps } from "../saveCompressedResponse/saveCompressedResponse.mock.ts";
+import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
+import type { Database } from "../../types_db.ts";
+import type { SaveResponseParams } from "./saveResponse.interface.ts";
+
+// ---------------------------------------------------------------------------
+// Shared real-bound consts — real implementations bound with real sub-deps,
+// mirroring saveResponse.integration.test.ts. Sub-deps that are boundary mocks
+// use the mock deps builders.
+// ---------------------------------------------------------------------------
+
+const integrationLogger = new MockLogger();
+
+const realBoundLoadJobContext: BoundLoadJobContextFn = (params, payload) =>
+  loadJobContext({}, params, payload);
+
+const realBoundAssembleAiResponse: BoundAssembleAiResponseFn = (params, payload) =>
+  assembleAiResponse(buildAssembleAiResponseDeps(), params, payload);
+
+const realBoundDebitForResponse: BoundDebitForResponseFn = (params, payload) =>
+  debitForResponse(buildDebitForResponseDeps(), params, payload);
+
+const realBoundRetryJob: BoundRetryJobFn = (params, payload) =>
+  retryJob({ logger: integrationLogger, notificationService: mockNotificationService }, params, payload);
+
+const realBoundResolveContributionIdentity: BoundResolveContributionIdentityFn = (params, payload) =>
+  resolveContributionIdentity({ logger: integrationLogger }, params, payload);
+
+const realBoundPersistContributionRelationships: BoundPersistContributionRelationshipsFn = (params, payload) =>
+  persistContributionRelationships({}, params, payload);
+
+const realBoundContinueJob: BoundContinueJobFn = (params, payload) =>
+  continueJob({ logger: integrationLogger }, params, payload);
+
+const realBuildUploadContext = buildUploadContext;
+
+const enqueueRenderJobStub: BoundEnqueueRenderJobFn = async () =>
+  buildEnqueueRenderJobSuccessReturn({ renderJobId: null });
+
+const saveResponseTestPayload: DialecticExecuteJobPayload = buildDialecticExecuteJobPayload({
+  document_relationships: buildDocumentRelationships({ source_group: "sg-continue-test" }),
+});
+
+/**
+ * Build a mock Supabase client wired to a job row constructed from the given
+ * payload. Mirrors saveResponse.integration.test.ts's buildMockSupabase.
+ */
+function buildMockSupabaseFromPayload(
+  payload: DialecticExecuteJobPayload,
+  jobRowOverrides: Partial<DialecticJobRow>,
+) {
+  if (!isJson(payload)) {
+    throw new Error("test fixture: payload must be Json-compatible");
+  }
+  const jobRow = buildDialecticJobRow({
+    ...jobRowOverrides,
+    payload,
+  });
+  const mockSetup = createMockSupabaseClient("continue-test", {
+    genericMockResults: {
+      dialectic_generation_jobs: {
+        select: { data: [jobRow], error: null },
+        update: { data: null, error: null },
+        insert: { data: null, error: null },
+      },
+      ai_providers: {
+        select: { data: [buildMockProvider()], error: null },
+      },
+      token_wallets: {
+        select: { data: [buildTokenWalletRow()], error: null },
+      },
+      dialectic_sessions: {
+        select: { data: [buildDialecticSessionRow()], error: null },
+      },
+      dialectic_contributions: {
+        update: { data: null, error: null },
+      },
+      dialectic_project_resources: {
+        update: { data: null, error: null },
+      },
+    },
+  });
+  return { mockSetup, jobRow };
+}
+
 
 /**
  * Build a SaveResponseDeps that simulates a particular model finish reason.
  * Mirrors the EMCAS `adapterWithStream({ finishReason })` helper — but for
- * saveResponse the reason is produced by `resolveFinishReason`, not by
- * reading a stream.
+ * saveResponse the reason is produced by `resolveFinishReason` (now wired
+ * through prepareResponseContent's deps), not by reading a stream.
+ * fileManager and continueJob are routed through saveContributionResponse's
+ * and finalizeContributionJob's sub-deps, not placed directly on SaveResponseDeps.
  */
 function depsWithFinishReason(
   finishReason: FinishReason,
-  overrides?: Partial<SaveResponseDeps>,
+  fileManager: MockFileManagerService,
+  continueJobFn: BoundContinueJobFn,
+  retryJobFn: BoundRetryJobFn,
 ): SaveResponseDeps {
-  return createMockSaveResponseDeps({
-    resolveFinishReason: (_ai: UnifiedAIResponse) => finishReason,
-    ...(overrides ?? {}),
-  });
+  const fm = fileManager;
+  const boundFinalize: BoundFinalizeContributionJobFn = (params, payload) =>
+    finalizeContributionJob(
+      buildFinalizeContributionJobDeps({
+        logger: integrationLogger,
+        notificationService: mockNotificationService,
+        fileManager: fm,
+        continueJob: continueJobFn,
+        enqueueRenderJob: enqueueRenderJobStub,
+      }),
+      params,
+      payload,
+    );
+  const boundSaveContribution: BoundSaveContributionResponseFn = (params, payload) =>
+    saveContributionResponse(
+      buildSaveContributionResponseDeps({
+        fileManager: fm,
+        buildUploadContext: realBuildUploadContext,
+        resolveContributionIdentity: realBoundResolveContributionIdentity,
+        persistContributionRelationships: realBoundPersistContributionRelationships,
+        finalizeContributionJob: boundFinalize,
+      }),
+      params,
+      payload,
+    );
+  const boundPrepare: BoundPrepareResponseContentFn = (params, payload) =>
+    prepareResponseContent(
+      buildPrepareResponseContentDeps({
+        logger: integrationLogger,
+        resolveFinishReason: (_ai: UnifiedAIResponse) => finishReason,
+        isIntermediateChunk,
+        sanitizeJsonContent,
+        determineContinuation,
+      }),
+      params,
+      payload,
+    );
+  const boundSaveCompressed: BoundSaveCompressedResponseFn = (params, payload) =>
+    saveCompressedResponse(
+      buildSaveCompressedResponseDeps({
+        fileManager: fm,
+        buildUploadContext: realBuildUploadContext,
+        enqueueRenderJob: enqueueRenderJobStub,
+      }),
+      params,
+      payload,
+    );
+  const base = buildSaveResponseDeps();
+  return {
+    ...base,
+    logger: integrationLogger,
+    loadJobContext: realBoundLoadJobContext,
+    assembleAiResponse: realBoundAssembleAiResponse,
+    debitForResponse: realBoundDebitForResponse,
+    prepareResponseContent: boundPrepare,
+    saveContributionResponse: boundSaveContribution,
+    saveCompressedResponse: boundSaveCompressed,
+    retryJob: retryJobFn,
+  };
 }
 
 /* ------------------------------------------------------------------ */
@@ -82,18 +266,13 @@ function depsWithFinishReason(
 
 Deno.test("saveResponse - Continuation Enqueued", async (t) => {
   await t.step("should enqueue a continuation job", async () => {
-    const continueJobStub = spy(async () => ({ enqueued: true }));
-    const fileManager: MockFileManagerService = createMockFileManager({
-      outcome: "success",
-      contribution: createMockContributionRow({
-        id: "contrib-cont-1",
-        target_contribution_id: "parent-contrib-1",
-      }),
-    });
-    const deps: SaveResponseDeps = depsWithFinishReason("length", {
-      continueJob: continueJobStub,
-      fileManager,
-    });
+    const continueJobStub = spy(async (): Promise<ContinueJobEnqueuedReturn> => (buildContinueJobEnqueuedReturn()));
+    const fileManager: MockFileManagerService = createMockFileManagerService();
+    fileManager.setUploadAndRegisterFileResponse(buildDialecticContributionRow({
+      id: "contrib-cont-1",
+      target_contribution_id: "parent-contrib-1",
+    }), null);
+    const deps: SaveResponseDeps = depsWithFinishReason("length", fileManager, continueJobStub, realBoundRetryJob);
     const continuationPayload: DialecticExecuteJobPayload = {
       ...saveResponseTestPayload,
       continueUntilComplete: true,
@@ -101,13 +280,13 @@ Deno.test("saveResponse - Continuation Enqueued", async (t) => {
     if (!isJson(continuationPayload)) {
       throw new Error("test fixture: continuation payload must be Json");
     }
-    const { params, mockSetup } = createMockSaveResponseParamsWithQueuedJob(
-      continuationPayload,
-    );
+    const { mockSetup, jobRow } = buildMockSupabaseFromPayload(continuationPayload, {});
+    const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
+    const params: SaveResponseParams = { job_id: jobRow.id, dbClient };
     const result: SaveResponseReturn = await saveResponse(
       deps,
       params,
-      createMockSaveResponsePayload({
+      buildSaveResponsePayload({
         assembled_content: '{"content": "Partial content"}',
       }),
     );
@@ -143,13 +322,9 @@ Deno.test("saveResponse - Continuation Handling", async (t) => {
   await t.step(
     "should save the first chunk correctly when a job is continued by the model",
     async () => {
-      const fileManagerRoot: MockFileManagerService = createMockFileManager({
-        outcome: "success",
-        contribution: createMockContributionRow(),
-      });
-      const deps: SaveResponseDeps = depsWithFinishReason("max_tokens", {
-        fileManager: fileManagerRoot,
-      });
+      const fileManagerRoot: MockFileManagerService = createMockFileManagerService();
+      fileManagerRoot.setUploadAndRegisterFileResponse(buildDialecticContributionRow(), null);
+      const deps: SaveResponseDeps = depsWithFinishReason("max_tokens", fileManagerRoot, realBoundContinueJob, realBoundRetryJob);
       const rootPayload: DialecticExecuteJobPayload = {
         ...saveResponseTestPayload,
         walletId: "wallet-ghi",
@@ -157,11 +332,13 @@ Deno.test("saveResponse - Continuation Handling", async (t) => {
       if (!isJson(rootPayload)) {
         throw new Error("test fixture: root payload must be Json");
       }
-      const { params } = createMockSaveResponseParamsWithQueuedJob(rootPayload);
+    const { mockSetup, jobRow } = buildMockSupabaseFromPayload(rootPayload, {});
+    const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
+    const params: SaveResponseParams = { job_id: jobRow.id, dbClient };
       const result: SaveResponseReturn = await saveResponse(
         deps,
         params,
-        createMockSaveResponsePayload({
+        buildSaveResponsePayload({
           assembled_content: '{"content": "Partial AI response content"}',
         }),
       );
@@ -198,14 +375,10 @@ Deno.test("saveResponse - Continuation Handling", async (t) => {
     "for a continuation job, should save only the new chunk and link it to the previous one",
     async () => {
       const newChunkContribution: DialecticContributionRow =
-        createMockContributionRow({ id: "new-chunk-id-456" });
-      const fileManager: MockFileManagerService = createMockFileManager({
-        outcome: "success",
-        contribution: newChunkContribution,
-      });
-      const deps: SaveResponseDeps = depsWithFinishReason("max_tokens", {
-        fileManager,
-      });
+        buildDialecticContributionRow({ id: "new-chunk-id-456" });
+      const fileManager: MockFileManagerService = createMockFileManagerService();
+      fileManager.setUploadAndRegisterFileResponse(newChunkContribution, null);
+      const deps: SaveResponseDeps = depsWithFinishReason("max_tokens", fileManager, realBoundContinueJob, realBoundRetryJob);
       const stageSlug: DialecticStageSlug = DialecticStageSlug.Thesis;
       const documentRelationship: DocumentRelationships = {
         [stageSlug]: "thesis-id-abc",
@@ -221,7 +394,7 @@ Deno.test("saveResponse - Continuation Handling", async (t) => {
         user_jwt: "jwt.token.here",
         prompt_template_id: "test-prompt",
         output_type: FileType.HeaderContext,
-        document_key: "header_context",
+        document_key: FileType.HeaderContext,
         inputs: {},
         canonicalPathParams: {
           contributionType: "thesis",
@@ -234,7 +407,7 @@ Deno.test("saveResponse - Continuation Handling", async (t) => {
       if (!isJson(continuationPayload)) {
         throw new Error("test fixture: continuation payload must be Json");
       }
-      const { params } = createMockSaveResponseParamsWithQueuedJob(
+      const { mockSetup, jobRow } = buildMockSupabaseFromPayload(
         continuationPayload,
         {
           id: "job-id-456",
@@ -242,10 +415,12 @@ Deno.test("saveResponse - Continuation Handling", async (t) => {
           target_contribution_id: "prev-chunk-id-123",
         },
       );
+      const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
+      const params: SaveResponseParams = { job_id: jobRow.id, dbClient };
       await saveResponse(
         deps,
         params,
-        createMockSaveResponsePayload({
+        buildSaveResponsePayload({
           assembled_content: '{"content": "This is the new chunk."}',
         }),
       );
@@ -285,31 +460,27 @@ Deno.test("saveResponse - Continuation Handling", async (t) => {
       const stageSlug: DialecticStageSlug = DialecticStageSlug.Thesis;
       const rootId: string = "thesis-id-abc";
       const newChunkContribution: DialecticContributionRow =
-        createMockContributionRow({
+        buildDialecticContributionRow({
           id: "final-chunk-id-789",
           stage: stageSlug,
-          document_relationships: { [stageSlug]: rootId },
+          document_relationships: { [stageSlug]: rootId, source_group: "sg-final-cont" },
         });
-      const fileManager: MockFileManagerService = createMockFileManager({
-        outcome: "success",
-        contribution: newChunkContribution,
-      });
-      const deps: SaveResponseDeps = depsWithFinishReason("stop", {
-        fileManager,
-      });
+      const fileManager: MockFileManagerService = createMockFileManagerService();
+      fileManager.setUploadAndRegisterFileResponse(newChunkContribution, null);
+      const deps: SaveResponseDeps = depsWithFinishReason("stop", fileManager, realBoundContinueJob, realBoundRetryJob);
       const mockFinalContinuationPayload: DialecticExecuteJobPayload = {
         ...saveResponseTestPayload,
         stageSlug,
         continuation_count: 2,
         target_contribution_id: "prev-chunk-id-456",
-        document_relationships: { [stageSlug]: rootId },
+        document_relationships: { [stageSlug]: rootId, source_group: "sg-final-cont" },
       };
       if (!isJson(mockFinalContinuationPayload)) {
         throw new Error(
           "test fixture: mockFinalContinuationPayload must be Json",
         );
       }
-      const { params } = createMockSaveResponseParamsWithQueuedJob(
+      const { mockSetup, jobRow } = buildMockSupabaseFromPayload(
         mockFinalContinuationPayload,
         {
           id: "job-id-789",
@@ -318,10 +489,12 @@ Deno.test("saveResponse - Continuation Handling", async (t) => {
           stage_slug: DialecticStageSlug.Thesis,
         },
       );
+      const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
+      const params: SaveResponseParams = { job_id: jobRow.id, dbClient };
       await saveResponse(
         deps,
         params,
-        createMockSaveResponsePayload({
+        buildSaveResponsePayload({
           assembled_content: '{"content": "This is the final chunk."}',
         }),
       );
@@ -346,14 +519,12 @@ Deno.test("saveResponse - Continuation Handling", async (t) => {
 Deno.test(
   "saveResponse - forwards target_contribution_id and preserves metadata on continuation save",
   async () => {
-    const fileManager: MockFileManagerService = createMockFileManager({
-      outcome: "success",
-      contribution: createMockContributionRow(),
-    });
-    const deps: SaveResponseDeps = depsWithFinishReason("stop", { fileManager });
+    const fileManager: MockFileManagerService = createMockFileManagerService();
+    fileManager.setUploadAndRegisterFileResponse(buildDialecticContributionRow(), null);
+    const deps: SaveResponseDeps = depsWithFinishReason("stop", fileManager, realBoundContinueJob, realBoundRetryJob);
     const stageSlug: DialecticStageSlug = DialecticStageSlug.Thesis;
     const rootId: string = "root-abc";
-    const rel: DocumentRelationships = { [stageSlug]: rootId };
+    const rel: DocumentRelationships = { [stageSlug]: rootId, source_group: "sg-rel" };
     const jobPayload: DialecticExecuteJobPayload = {
       ...saveResponseTestPayload,
       stageSlug,
@@ -363,13 +534,15 @@ Deno.test(
     if (!isJson(jobPayload)) {
       throw new Error("test fixture: job payload must be Json");
     }
-    const { params } = createMockSaveResponseParamsWithQueuedJob(jobPayload, {
+    const { mockSetup, jobRow } = buildMockSupabaseFromPayload(jobPayload, {
       target_contribution_id: rootId,
     });
+    const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
+    const params: SaveResponseParams = { job_id: jobRow.id, dbClient };
     await saveResponse(
       deps,
       params,
-      createMockSaveResponsePayload({
+      buildSaveResponsePayload({
         assembled_content: '{"content":"x"}',
       }),
     );
@@ -400,7 +573,7 @@ Deno.test(
     );
     assertEquals(
       uploadContextUnknown.contributionMetadata.modelIdUsed,
-      "model-def",
+      "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11",
       "modelIdUsed should be taken from the provider row resolved for the job",
     );
   },
@@ -413,15 +586,10 @@ Deno.test(
 Deno.test(
   "saveResponse - first chunk saved as non-continuation; continuation enqueued; job completed",
   async () => {
-    const fileManager: MockFileManagerService = createMockFileManager({
-      outcome: "success",
-      contribution: createMockContributionRow(),
-    });
-    const continueSpy = spy(async () => ({ enqueued: true }));
-    const deps: SaveResponseDeps = depsWithFinishReason("max_tokens", {
-      fileManager,
-      continueJob: continueSpy,
-    });
+    const fileManager: MockFileManagerService = createMockFileManagerService();
+    fileManager.setUploadAndRegisterFileResponse(buildDialecticContributionRow(), null);
+    const continueSpy = spy(async (): Promise<ContinueJobEnqueuedReturn> => (buildContinueJobEnqueuedReturn()));
+    const deps: SaveResponseDeps = depsWithFinishReason("max_tokens", fileManager, continueSpy, realBoundRetryJob);
     const continuationPayload: DialecticExecuteJobPayload = {
       ...saveResponseTestPayload,
       continueUntilComplete: true,
@@ -429,13 +597,13 @@ Deno.test(
     if (!isJson(continuationPayload)) {
       throw new Error("test fixture: continuation payload must be Json");
     }
-    const { params } = createMockSaveResponseParamsWithQueuedJob(
-      continuationPayload,
-    );
+    const { mockSetup, jobRow } = buildMockSupabaseFromPayload(continuationPayload, {});
+    const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
+    const params: SaveResponseParams = { job_id: jobRow.id, dbClient };
     await saveResponse(
       deps,
       params,
-      createMockSaveResponsePayload({
+      buildSaveResponsePayload({
         assembled_content: '{"content": "Partial content."}',
       }),
     );
@@ -481,16 +649,14 @@ Deno.test(
   async (t) => {
     const stageSlug: DialecticStageSlug = DialecticStageSlug.Thesis;
     const rootId: string = "root-xyz";
-    const relSaved: DocumentRelationships = { [stageSlug]: rootId };
-    const fileManager: MockFileManagerService = createMockFileManager({
-      outcome: "success",
-      contribution: createMockContributionRow({
-        id: "final-contrib-id",
-        stage: stageSlug,
-        document_relationships: relSaved,
-      }),
-    });
-    const deps: SaveResponseDeps = depsWithFinishReason("stop", { fileManager });
+    const relSaved: DocumentRelationships = { [stageSlug]: rootId, source_group: "sg-rel-saved" };
+    const fileManager: MockFileManagerService = createMockFileManagerService();
+    fileManager.setUploadAndRegisterFileResponse(buildDialecticContributionRow({
+      id: "final-contrib-id",
+      stage: stageSlug,
+      document_relationships: relSaved,
+    }), null);
+    const deps: SaveResponseDeps = depsWithFinishReason("stop", fileManager, realBoundContinueJob, realBoundRetryJob);
     await t.step(
       "should call assembleAndSaveFinalDocument with root id from SAVED record",
       async () => {
@@ -504,11 +670,13 @@ Deno.test(
         if (!isJson(jobPayload)) {
           throw new Error("test fixture: job payload must be Json");
         }
-        const { params } = createMockSaveResponseParamsWithQueuedJob(jobPayload);
+        const { mockSetup, jobRow } = buildMockSupabaseFromPayload(jobPayload, {});
+      const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
+      const params: SaveResponseParams = { job_id: jobRow.id, dbClient };
         await saveResponse(
           deps,
           params,
-          createMockSaveResponsePayload({
+          buildSaveResponsePayload({
             assembled_content: '{"content": "Final chunk"}',
           }),
         );
@@ -537,16 +705,14 @@ Deno.test(
   async (t) => {
     const stageSlug: DialecticStageSlug = DialecticStageSlug.Parenthesis;
     const savedId: string = "contrib-parenthesis-1";
-    const fileManager: MockFileManagerService = createMockFileManager({
-      outcome: "success",
-      contribution: createMockContributionRow({
-        id: savedId,
-        stage: stageSlug,
-        contribution_type: "thesis",
-        document_relationships: null,
-      }),
-    });
-    const deps: SaveResponseDeps = depsWithFinishReason("stop", { fileManager });
+    const fileManager: MockFileManagerService = createMockFileManagerService();
+    fileManager.setUploadAndRegisterFileResponse(buildDialecticContributionRow({
+      id: savedId,
+      stage: stageSlug,
+      contribution_type: "thesis",
+      document_relationships: null,
+    }), null);
+    const deps: SaveResponseDeps = depsWithFinishReason("stop", fileManager, realBoundContinueJob, realBoundRetryJob);
     await t.step(
       "should update dialectic_contributions with { [stageSlug]: contribution.id }",
       async () => {
@@ -566,13 +732,13 @@ Deno.test(
         if (!isJson(docPayload)) {
           throw new Error("test fixture: doc payload must be Json");
         }
-        const { params, mockSetup } = createMockSaveResponseParamsWithQueuedJob(
-          docPayload,
-        );
+        const { mockSetup, jobRow } = buildMockSupabaseFromPayload(docPayload, {});
+        const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
+        const params: SaveResponseParams = { job_id: jobRow.id, dbClient };
         await saveResponse(
           deps,
           params,
-          createMockSaveResponsePayload({
+          buildSaveResponsePayload({
             assembled_content: '{"content":"doc"}',
           }),
         );
@@ -621,16 +787,14 @@ Deno.test(
       [stageSlug]: parentId,
       source_group: "sg-1",
     };
-    const fileManager: MockFileManagerService = createMockFileManager({
-      outcome: "success",
-      contribution: createMockContributionRow({
-        id: "contrib-123",
-        stage: stageSlug,
-        document_relationships: null,
-        target_contribution_id: parentId,
-      }),
-    });
-    const deps: SaveResponseDeps = depsWithFinishReason("stop", { fileManager });
+    const fileManager: MockFileManagerService = createMockFileManagerService();
+    fileManager.setUploadAndRegisterFileResponse(buildDialecticContributionRow({
+      id: "contrib-123",
+      stage: stageSlug,
+      document_relationships: null,
+      target_contribution_id: parentId,
+    }), null);
+    const deps: SaveResponseDeps = depsWithFinishReason("stop", fileManager, realBoundContinueJob, realBoundRetryJob);
     await t.step(
       "should persist the exact payload relationships on continuation save",
       async () => {
@@ -643,14 +807,13 @@ Deno.test(
         if (!isJson(jobPayload)) {
           throw new Error("test fixture: job payload must be Json");
         }
-        const { params, mockSetup } = createMockSaveResponseParamsWithQueuedJob(
-          jobPayload,
-          { target_contribution_id: parentId },
-        );
+        const { mockSetup, jobRow } = buildMockSupabaseFromPayload(jobPayload, { target_contribution_id: parentId });
+        const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
+        const params: SaveResponseParams = { job_id: jobRow.id, dbClient };
         await saveResponse(
           deps,
           params,
-          createMockSaveResponsePayload({
+          buildSaveResponsePayload({
             assembled_content: '{"content":"c"}',
           }),
         );
@@ -713,14 +876,12 @@ Deno.test(
   async () => {
     const stageSlug: DialecticStageSlug = DialecticStageSlug.Thesis;
     const rootId: string = "root-id-123";
-    const relationships: DocumentRelationships = { [stageSlug]: rootId };
-    const fileManager: MockFileManagerService = createMockFileManager({
-      outcome: "success",
-      contribution: createMockContributionRow({
-        document_relationships: relationships,
-      }),
-    });
-    const deps: SaveResponseDeps = depsWithFinishReason("stop", { fileManager });
+    const relationships: DocumentRelationships = { [stageSlug]: rootId, source_group: "sg-relationships-879" };
+    const fileManager: MockFileManagerService = createMockFileManagerService();
+    fileManager.setUploadAndRegisterFileResponse(buildDialecticContributionRow({
+      document_relationships: relationships,
+    }), null);
+    const deps: SaveResponseDeps = depsWithFinishReason("stop", fileManager, realBoundContinueJob, realBoundRetryJob);
     const finalContinuationJobPayload: DialecticExecuteJobPayload = {
       ...saveResponseTestPayload,
       stageSlug,
@@ -732,14 +893,16 @@ Deno.test(
         "test fixture: final continuation job payload must be Json",
       );
     }
-    const { params } = createMockSaveResponseParamsWithQueuedJob(
+    const { mockSetup, jobRow } = buildMockSupabaseFromPayload(
       finalContinuationJobPayload,
       { target_contribution_id: "previous-chunk-id-456" },
     );
+    const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
+    const params: SaveResponseParams = { job_id: jobRow.id, dbClient };
     await saveResponse(
       deps,
       params,
-      createMockSaveResponsePayload({
+      buildSaveResponsePayload({
         assembled_content: '{"content":"final"}',
       }),
     );
@@ -763,13 +926,9 @@ Deno.test(
 Deno.test(
   "saveResponse - rejects continuation without relationships (pre-upload validation)",
   async () => {
-    const fileManager: MockFileManagerService = createMockFileManager({
-      outcome: "success",
-      contribution: createMockContributionRow(),
-    });
-    const deps: SaveResponseDeps = depsWithFinishReason("max_tokens", {
-      fileManager,
-    });
+    const fileManager: MockFileManagerService = createMockFileManagerService();
+    fileManager.setUploadAndRegisterFileResponse(buildDialecticContributionRow(), null);
+    const deps: SaveResponseDeps = depsWithFinishReason("max_tokens", fileManager, realBoundContinueJob, realBoundRetryJob);
     const stageSlug: DialecticStageSlug = DialecticStageSlug.Thesis;
     const rootId: string = "prev-id-123";
     const jobPayload: DialecticExecuteJobPayload = {
@@ -780,13 +939,15 @@ Deno.test(
     if (!isJson(jobPayload)) {
       throw new Error("test fixture: job payload must be Json");
     }
-    const { params } = createMockSaveResponseParamsWithQueuedJob(jobPayload, {
+    const { mockSetup, jobRow } = buildMockSupabaseFromPayload(jobPayload, {
       target_contribution_id: rootId,
     });
+    const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
+    const params: SaveResponseParams = { job_id: jobRow.id, dbClient };
     const result: SaveResponseReturn = await saveResponse(
       deps,
       params,
-      createMockSaveResponsePayload({
+      buildSaveResponsePayload({
         assembled_content: '{"content": "cont-chunk"}',
       }),
     );
@@ -813,7 +974,7 @@ Deno.test(
     const rootId: string = "root-thesis-001";
     const cont1Id: string = "cont-001";
     const cont2Id: string = "cont-002";
-    const relationships: DocumentRelationships = { [stageSlug]: rootId };
+    const relationships: DocumentRelationships = { [stageSlug]: rootId, source_group: "sg-relationships-977" };
     const expectedRoot: string = '{"content":"ROOT."}';
     const expectedC1: string = '{"content":"CHUNK1."}';
     const expectedC2: string = '{"content":"CHUNK2."}';
@@ -826,25 +987,39 @@ Deno.test(
           error: { message: "Test expected ModelContributionUploadContext" },
         };
       }
-      const content: string = String(context.fileContent ?? "");
+      const content: string = String(context.fileContent);
       uploadedContents.push(content);
-      const id: string = content === expectedRoot
-        ? rootId
-        : content === expectedC1
-        ? cont1Id
-        : content === expectedC2
-        ? cont2Id
-        : crypto.randomUUID();
+      let id: string;
+      if (content === expectedRoot) {
+        id = rootId;
+      } else if (content === expectedC1) {
+        id = cont1Id;
+      } else if (content === expectedC2) {
+        id = cont2Id;
+      } else {
+        id = crypto.randomUUID();
+      }
       const metaRelsUnknown: unknown =
         context.contributionMetadata?.document_relationships;
-      const relationshipsFromCtx: DocumentRelationships | null =
+      let relationshipsFromCtx: DocumentRelationships;
+      if (
         metaRelsUnknown !== undefined && metaRelsUnknown !== null &&
-          isDocumentRelationships(metaRelsUnknown)
-          ? metaRelsUnknown
-          : null;
-      const targetContributionId: string | null =
-        context.contributionMetadata?.target_contribution_id ?? null;
-      const rec: DialecticContributionRow = createMockContributionRow({
+        isDocumentRelationships(metaRelsUnknown)
+      ) {
+        relationshipsFromCtx = metaRelsUnknown;
+      } else {
+        relationshipsFromCtx = buildDocumentRelationships();
+      }
+      let targetContributionId: string | null;
+      if (
+        context.contributionMetadata !== undefined &&
+        context.contributionMetadata.target_contribution_id !== undefined
+      ) {
+        targetContributionId = context.contributionMetadata.target_contribution_id;
+      } else {
+        targetContributionId = null;
+      }
+      const rec: DialecticContributionRow = buildDialecticContributionRow({
         id,
         stage: stageSlug,
         document_relationships: relationshipsFromCtx,
@@ -862,16 +1037,17 @@ Deno.test(
     if (!isJson(rootPayload)) {
       throw new Error("test fixture: rootPayload must be Json");
     }
-    const { params: rootParams } = createMockSaveResponseParamsWithQueuedJob(
+    const { mockSetup: _rootMockSetup, jobRow: rootJobRow } = buildMockSupabaseFromPayload(
       rootPayload,
+      {},
     );
-    const rootDeps: SaveResponseDeps = depsWithFinishReason("max_tokens", {
-      fileManager,
-    });
+    const rootDbClient = _rootMockSetup.client as unknown as SupabaseClient<Database>;
+    const rootParams: SaveResponseParams = { job_id: rootJobRow.id, dbClient: rootDbClient };
+    const rootDeps: SaveResponseDeps = depsWithFinishReason("max_tokens", fileManager, realBoundContinueJob, realBoundRetryJob);
     await saveResponse(
       rootDeps,
       rootParams,
-      createMockSaveResponsePayload({ assembled_content: expectedRoot }),
+      buildSaveResponsePayload({ assembled_content: expectedRoot }),
     );
 
     // Chunk 2 — continuation 1
@@ -884,17 +1060,17 @@ Deno.test(
     if (!isJson(cont1Payload)) {
       throw new Error("test fixture: cont1Payload must be Json");
     }
-    const { params: cont1Params } = createMockSaveResponseParamsWithQueuedJob(
+    const { mockSetup: _cont1MockSetup, jobRow: cont1JobRow } = buildMockSupabaseFromPayload(
       cont1Payload,
       { target_contribution_id: rootId },
     );
-    const cont1Deps: SaveResponseDeps = depsWithFinishReason("max_tokens", {
-      fileManager,
-    });
+    const cont1DbClient = _cont1MockSetup.client as unknown as SupabaseClient<Database>;
+    const cont1Params: SaveResponseParams = { job_id: cont1JobRow.id, dbClient: cont1DbClient };
+    const cont1Deps: SaveResponseDeps = depsWithFinishReason("max_tokens", fileManager, realBoundContinueJob, realBoundRetryJob);
     await saveResponse(
       cont1Deps,
       cont1Params,
-      createMockSaveResponsePayload({ assembled_content: expectedC1 }),
+      buildSaveResponsePayload({ assembled_content: expectedC1 }),
     );
 
     // Chunk 3 — continuation 2, final (stop)
@@ -907,17 +1083,17 @@ Deno.test(
     if (!isJson(cont2Payload)) {
       throw new Error("test fixture: cont2Payload must be Json");
     }
-    const { params: cont2Params } = createMockSaveResponseParamsWithQueuedJob(
+    const { mockSetup: _cont2MockSetup, jobRow: cont2JobRow } = buildMockSupabaseFromPayload(
       cont2Payload,
       { target_contribution_id: cont1Id },
     );
-    const cont2Deps: SaveResponseDeps = depsWithFinishReason("stop", {
-      fileManager,
-    });
+    const cont2DbClient = _cont2MockSetup.client as unknown as SupabaseClient<Database>;
+    const cont2Params: SaveResponseParams = { job_id: cont2JobRow.id, dbClient: cont2DbClient };
+    const cont2Deps: SaveResponseDeps = depsWithFinishReason("stop", fileManager, realBoundContinueJob, realBoundRetryJob);
     await saveResponse(
       cont2Deps,
       cont2Params,
-      createMockSaveResponsePayload({ assembled_content: expectedC2 }),
+      buildSaveResponsePayload({ assembled_content: expectedC2 }),
     );
 
     assertEquals(
@@ -973,13 +1149,12 @@ Deno.test(
 Deno.test(
   "saveResponse - continuation jobs should populate pathContext with continuation flags",
   async () => {
-    const fileManager: MockFileManagerService = createMockFileManager({
-      outcome: "success",
-      contribution: createMockContributionRow(),
-    });
-    const deps: SaveResponseDeps = depsWithFinishReason("stop", { fileManager });
+    const fileManager: MockFileManagerService = createMockFileManagerService();
+    fileManager.setUploadAndRegisterFileResponse(buildDialecticContributionRow(), null);
+    const deps: SaveResponseDeps = depsWithFinishReason("stop", fileManager, realBoundContinueJob, realBoundRetryJob);
     const continuationDocumentRelationships: DocumentRelationships = {
       [DialecticStageSlug.Thesis]: "contrib-123",
+      source_group: "sg-continuation-flags",
     };
     const continuationPayload: DialecticExecuteJobPayload = {
       ...saveResponseTestPayload,
@@ -990,14 +1165,16 @@ Deno.test(
     if (!isJson(continuationPayload)) {
       throw new Error("test fixture: continuation payload must be Json");
     }
-    const { params } = createMockSaveResponseParamsWithQueuedJob(
+    const { mockSetup, jobRow } = buildMockSupabaseFromPayload(
       continuationPayload,
       { target_contribution_id: "existing-contrib-id" },
     );
+    const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
+    const params: SaveResponseParams = { job_id: jobRow.id, dbClient };
     await saveResponse(
       deps,
       params,
-      createMockSaveResponsePayload({
+      buildSaveResponsePayload({
         assembled_content: '{"content":"x"}',
       }),
     );
@@ -1033,18 +1210,13 @@ Deno.test(
 Deno.test(
   'saveResponse - should continue when content contains continuation_needed: true, even if finish_reason is stop',
   async () => {
-    const continueJobSpy = spy(async () => ({ enqueued: true }));
-    const fileManager: MockFileManagerService = createMockFileManager({
-      outcome: "success",
-      contribution: createMockContributionRow({
-        id: "contrib-cont-1",
-        target_contribution_id: "parent-contrib-1",
-      }),
-    });
-    const deps: SaveResponseDeps = depsWithFinishReason("stop", {
-      continueJob: continueJobSpy,
-      fileManager,
-    });
+    const continueJobSpy = spy(async (): Promise<ContinueJobEnqueuedReturn> => (buildContinueJobEnqueuedReturn()));
+    const fileManager: MockFileManagerService = createMockFileManagerService();
+    fileManager.setUploadAndRegisterFileResponse(buildDialecticContributionRow({
+      id: "contrib-cont-1",
+      target_contribution_id: "parent-contrib-1",
+    }), null);
+    const deps: SaveResponseDeps = depsWithFinishReason("stop", fileManager, continueJobSpy, realBoundRetryJob);
     const payloadWithContinuation: DialecticExecuteJobPayload = {
       ...saveResponseTestPayload,
       continueUntilComplete: true,
@@ -1052,13 +1224,13 @@ Deno.test(
     if (!isJson(payloadWithContinuation)) {
       throw new Error("test fixture: payload with continuation must be Json");
     }
-    const { params } = createMockSaveResponseParamsWithQueuedJob(
-      payloadWithContinuation,
-    );
+    const { mockSetup, jobRow } = buildMockSupabaseFromPayload(payloadWithContinuation, {});
+    const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
+    const params: SaveResponseParams = { job_id: jobRow.id, dbClient };
     await saveResponse(
       deps,
       params,
-      createMockSaveResponsePayload({
+      buildSaveResponsePayload({
         assembled_content:
           '{"continuation_needed": true, "stop_reason": "next_document"}',
       }),
@@ -1078,50 +1250,67 @@ Deno.test(
 Deno.test("saveResponse - comprehensive continuation triggers", async (t) => {
   type ContinueTestCase = {
     name: string;
-    response: { content?: string; finish_reason?: FinishReason };
-    continueUntilComplete?: boolean;
+    response: { content: string; finish_reason: FinishReason };
+    continueUntilComplete: boolean;
     shouldContinue: boolean;
+    expectedCalls: number;
   };
   const testCases: ContinueTestCase[] = [
     {
       name: 'should continue when finish_reason is "length"',
-      response: { finish_reason: "length" },
+      response: { content: '{"content": "Default AI response"}', finish_reason: "length" },
+      continueUntilComplete: true,
       shouldContinue: true,
+      expectedCalls: 1,
     },
     {
       name: 'should continue when finish_reason is "max_tokens"',
-      response: { finish_reason: "max_tokens" },
+      response: { content: '{"content": "Default AI response"}', finish_reason: "max_tokens" },
+      continueUntilComplete: true,
       shouldContinue: true,
+      expectedCalls: 1,
     },
     {
       name: 'should continue when finish_reason is "content_truncated"',
-      response: { finish_reason: "content_truncated" },
+      response: { content: '{"content": "Default AI response"}', finish_reason: "content_truncated" },
+      continueUntilComplete: true,
       shouldContinue: true,
+      expectedCalls: 1,
     },
     {
       name: 'should continue when finish_reason is "next_document"',
-      response: { finish_reason: "next_document" },
+      response: { content: '{"content": "Default AI response"}', finish_reason: "next_document" },
+      continueUntilComplete: true,
       shouldContinue: true,
+      expectedCalls: 1,
     },
     {
       name: 'should continue when finish_reason is "unknown"',
-      response: { finish_reason: "unknown" },
+      response: { content: '{"content": "Default AI response"}', finish_reason: "unknown" },
+      continueUntilComplete: true,
       shouldContinue: true,
+      expectedCalls: 1,
     },
     {
       name: 'should continue when finish_reason is "tool_calls"',
-      response: { finish_reason: "tool_calls" },
+      response: { content: '{"content": "Default AI response"}', finish_reason: "tool_calls" },
+      continueUntilComplete: true,
       shouldContinue: true,
+      expectedCalls: 1,
     },
     {
       name: 'should continue when finish_reason is "function_call"',
-      response: { finish_reason: "function_call" },
+      response: { content: '{"content": "Default AI response"}', finish_reason: "function_call" },
+      continueUntilComplete: true,
       shouldContinue: true,
+      expectedCalls: 1,
     },
     {
       name: 'should continue when finish_reason is "content_filter"',
-      response: { finish_reason: "content_filter" },
+      response: { content: '{"content": "Default AI response"}', finish_reason: "content_filter" },
+      continueUntilComplete: true,
       shouldContinue: true,
+      expectedCalls: 1,
     },
     {
       name: 'should continue when content contains "continuation_needed": true',
@@ -1129,7 +1318,9 @@ Deno.test("saveResponse - comprehensive continuation triggers", async (t) => {
         content: '{"continuation_needed": true}',
         finish_reason: "stop",
       },
+      continueUntilComplete: true,
       shouldContinue: true,
+      expectedCalls: 1,
     },
     {
       name: 'should continue when content contains "stop_reason": "continuation"',
@@ -1137,7 +1328,9 @@ Deno.test("saveResponse - comprehensive continuation triggers", async (t) => {
         content: '{"stop_reason": "continuation"}',
         finish_reason: "stop",
       },
+      continueUntilComplete: true,
       shouldContinue: true,
+      expectedCalls: 1,
     },
     {
       name: 'should continue when content contains "stop_reason": "token_limit"',
@@ -1145,7 +1338,9 @@ Deno.test("saveResponse - comprehensive continuation triggers", async (t) => {
         content: '{"stop_reason": "token_limit"}',
         finish_reason: "stop",
       },
+      continueUntilComplete: true,
       shouldContinue: true,
+      expectedCalls: 1,
     },
     {
       name: 'should continue when content contains non-empty "resume_cursor"',
@@ -1153,7 +1348,9 @@ Deno.test("saveResponse - comprehensive continuation triggers", async (t) => {
         content: '{"resume_cursor": "feasibility_insights"}',
         finish_reason: "stop",
       },
+      continueUntilComplete: true,
       shouldContinue: true,
+      expectedCalls: 1,
     },
     {
       name: 'should NOT continue when content contains empty "resume_cursor"',
@@ -1161,7 +1358,9 @@ Deno.test("saveResponse - comprehensive continuation triggers", async (t) => {
         content: '{"resume_cursor": ""}',
         finish_reason: "stop",
       },
+      continueUntilComplete: true,
       shouldContinue: false,
+      expectedCalls: 0,
     },
     {
       name: 'should NOT continue for normal "stop" reason with no flags',
@@ -1169,46 +1368,45 @@ Deno.test("saveResponse - comprehensive continuation triggers", async (t) => {
         content: '{"result": "complete"}',
         finish_reason: "stop",
       },
+      continueUntilComplete: true,
       shouldContinue: false,
+      expectedCalls: 0,
     },
     {
       name: "should NOT continue if continueUntilComplete is false, even with a continue reason",
-      response: { finish_reason: "length" },
+      response: { content: '{"content": "Default AI response"}', finish_reason: "length" },
       continueUntilComplete: false,
       shouldContinue: false,
+      expectedCalls: 0,
     },
   ];
   for (const tc of testCases) {
     await t.step(tc.name, async () => {
-      const continueJobSpy = spy(async () => ({ enqueued: true }));
-      const content: string = tc.response.content ??
-        '{"content": "Default AI response"}';
-      const finish: FinishReason = tc.response.finish_reason ?? "stop";
-      const fileManager: MockFileManagerService = createMockFileManager({
-        outcome: "success",
-        contribution: createMockContributionRow({
-          id: "contrib-cont-1",
-          target_contribution_id: "parent-contrib-1",
-        }),
-      });
-      const deps: SaveResponseDeps = depsWithFinishReason(finish, {
-        continueJob: continueJobSpy,
-        fileManager,
-      });
+      const continueJobSpy = spy(async (): Promise<ContinueJobEnqueuedReturn> => (buildContinueJobEnqueuedReturn()));
+      const content: string = tc.response.content;
+      const finish: FinishReason = tc.response.finish_reason;
+      const fileManager: MockFileManagerService = createMockFileManagerService();
+      fileManager.setUploadAndRegisterFileResponse(buildDialecticContributionRow({
+        id: "contrib-cont-1",
+        target_contribution_id: "parent-contrib-1",
+      }), null);
+      const deps: SaveResponseDeps = depsWithFinishReason(finish, fileManager, continueJobSpy, realBoundRetryJob);
       const jobPayload: DialecticExecuteJobPayload = {
         ...saveResponseTestPayload,
-        continueUntilComplete: tc.continueUntilComplete !== false,
+        continueUntilComplete: tc.continueUntilComplete,
       };
       if (!isJson(jobPayload)) {
         throw new Error("test fixture: job payload must be Json");
       }
-      const { params } = createMockSaveResponseParamsWithQueuedJob(jobPayload);
+      const { mockSetup, jobRow } = buildMockSupabaseFromPayload(jobPayload, {});
+      const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
+      const params: SaveResponseParams = { job_id: jobRow.id, dbClient };
       await saveResponse(
         deps,
         params,
-        createMockSaveResponsePayload({ assembled_content: content }),
+        buildSaveResponsePayload({ assembled_content: content }),
       );
-      const expectedCalls: number = tc.shouldContinue ? 1 : 0;
+      const expectedCalls: number = tc.expectedCalls;
       assertEquals(
         continueJobSpy.calls.length,
         expectedCalls,
@@ -1225,56 +1423,58 @@ Deno.test("saveResponse - comprehensive continuation triggers", async (t) => {
 Deno.test("saveResponse - comprehensive retry triggers", async (t) => {
   type RetryTestCase = {
     name: string;
-    response: { content?: string; finish_reason?: FinishReason };
+    response: { content: string; finish_reason: FinishReason };
     shouldRetry: boolean;
+    expectedRetryCalls: number;
     expectedUploadCalls: number;
+    assertionMessage: string;
   };
   const testCases: RetryTestCase[] = [
     {
       name: "incomplete JSON may be repaired by the sanitizer (no parse retry)",
       response: { content: '{"bad json:', finish_reason: "stop" },
       shouldRetry: false,
+      expectedRetryCalls: 0,
       expectedUploadCalls: 1,
+      assertionMessage: "uploadAndRegisterFile should run when sanitization yields parseable JSON",
     },
     {
       name: 'should trigger retry when finish_reason is "error"',
-      response: { finish_reason: "error" },
+      response: { content: '{"content": "Default AI response"}', finish_reason: "error" },
       shouldRetry: true,
+      expectedRetryCalls: 1,
       expectedUploadCalls: 0,
+      assertionMessage: "uploadAndRegisterFile should not be called when retrying for provider error",
     },
   ];
   for (const tc of testCases) {
     await t.step(tc.name, async () => {
       const retrySpy = spy(async () => ({}));
-      const retryJob: RetryJobFn = async (_d, _c, _j, _a, _f, _o) => {
+      const retryJobFn: BoundRetryJobFn = async (_params, _payload) => {
         await retrySpy();
-        return {};
+        return { notified: true };
       };
-      const content: string = tc.response.content ??
-        '{"content": "Default AI response"}';
-      const finish: FinishReason = tc.response.finish_reason ?? "stop";
-      const fileManager: MockFileManagerService = createMockFileManager({
-        outcome: "success",
-        contribution: createMockContributionRow(),
-      });
-      const deps: SaveResponseDeps = depsWithFinishReason(finish, {
-        retryJob,
-        fileManager,
-      });
-      const continueJobSpy = spy(deps, "continueJob");
+      const content: string = tc.response.content;
+      const finish: FinishReason = tc.response.finish_reason;
+      const fileManager: MockFileManagerService = createMockFileManagerService();
+      fileManager.setUploadAndRegisterFileResponse(buildDialecticContributionRow(), null);
+      const continueJobSpy = spy(async (): Promise<ContinueJobEnqueuedReturn> => (buildContinueJobEnqueuedReturn()));
+      const deps: SaveResponseDeps = depsWithFinishReason(finish, fileManager, continueJobSpy, retryJobFn);
       const jobPayload: DialecticExecuteJobPayload = {
         ...saveResponseTestPayload,
       };
       if (!isJson(jobPayload)) {
         throw new Error("test fixture: job payload must be Json");
       }
-      const { params } = createMockSaveResponseParamsWithQueuedJob(jobPayload);
+      const { mockSetup, jobRow } = buildMockSupabaseFromPayload(jobPayload, {});
+      const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
+      const params: SaveResponseParams = { job_id: jobRow.id, dbClient };
       await saveResponse(
         deps,
         params,
-        createMockSaveResponsePayload({ assembled_content: content }),
+        buildSaveResponsePayload({ assembled_content: content }),
       );
-      const expectedRetryCalls: number = tc.shouldRetry ? 1 : 0;
+      const expectedRetryCalls: number = tc.expectedRetryCalls;
       assertEquals(
         retrySpy.calls.length,
         expectedRetryCalls,
@@ -1288,9 +1488,7 @@ Deno.test("saveResponse - comprehensive retry triggers", async (t) => {
       assertEquals(
         fileManager.uploadAndRegisterFile.calls.length,
         tc.expectedUploadCalls,
-        tc.shouldRetry
-          ? "uploadAndRegisterFile should not be called when retrying for provider error"
-          : "uploadAndRegisterFile should run when sanitization yields parseable JSON",
+        tc.assertionMessage,
       );
     });
   }
@@ -1308,15 +1506,10 @@ Deno.test(
     await t.step(
       "Fix 3.4.i: when wasStructurallyFixed === true and continueUntilComplete === true, shouldContinue is set to true",
       async () => {
-        const fileManager: MockFileManagerService = createMockFileManager({
-          outcome: "success",
-          contribution: createMockContributionRow(),
-        });
-        const continueJobSpy = spy(async () => ({ enqueued: true }));
-        const deps: SaveResponseDeps = depsWithFinishReason("stop", {
-          fileManager,
-          continueJob: continueJobSpy,
-        });
+        const fileManager: MockFileManagerService = createMockFileManagerService();
+        fileManager.setUploadAndRegisterFileResponse(buildDialecticContributionRow(), null);
+        const continueJobSpy = spy(async (): Promise<ContinueJobEnqueuedReturn> => (buildContinueJobEnqueuedReturn()));
+        const deps: SaveResponseDeps = depsWithFinishReason("stop", fileManager, continueJobSpy, realBoundRetryJob);
         const payload: DialecticExecuteJobPayload = {
           ...saveResponseTestPayload,
           continueUntilComplete: true,
@@ -1324,11 +1517,13 @@ Deno.test(
         if (!isJson(payload)) {
           throw new Error("test fixture: payload must be Json");
         }
-        const { params } = createMockSaveResponseParamsWithQueuedJob(payload);
+        const { mockSetup, jobRow } = buildMockSupabaseFromPayload(payload, {});
+        const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
+        const params: SaveResponseParams = { job_id: jobRow.id, dbClient };
         await saveResponse(
           deps,
           params,
-          createMockSaveResponsePayload({
+          buildSaveResponsePayload({
             assembled_content: structurallyTruncatedContent,
           }),
         );
@@ -1342,15 +1537,10 @@ Deno.test(
     await t.step(
       "Fix 3.4.ii: when wasStructurallyFixed === true but continueUntilComplete === false, shouldContinue is NOT overridden",
       async () => {
-        const fileManager: MockFileManagerService = createMockFileManager({
-          outcome: "success",
-          contribution: createMockContributionRow(),
-        });
-        const continueJobSpy = spy(async () => ({ enqueued: true }));
-        const deps: SaveResponseDeps = depsWithFinishReason("stop", {
-          fileManager,
-          continueJob: continueJobSpy,
-        });
+        const fileManager: MockFileManagerService = createMockFileManagerService();
+        fileManager.setUploadAndRegisterFileResponse(buildDialecticContributionRow(), null);
+        const continueJobSpy = spy(async (): Promise<ContinueJobEnqueuedReturn> => (buildContinueJobEnqueuedReturn()));
+        const deps: SaveResponseDeps = depsWithFinishReason("stop", fileManager, continueJobSpy, realBoundRetryJob);
         const payload: DialecticExecuteJobPayload = {
           ...saveResponseTestPayload,
           continueUntilComplete: false,
@@ -1358,11 +1548,13 @@ Deno.test(
         if (!isJson(payload)) {
           throw new Error("test fixture: payload must be Json");
         }
-        const { params } = createMockSaveResponseParamsWithQueuedJob(payload);
+        const { mockSetup, jobRow } = buildMockSupabaseFromPayload(payload, {});
+        const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
+        const params: SaveResponseParams = { job_id: jobRow.id, dbClient };
         await saveResponse(
           deps,
           params,
-          createMockSaveResponsePayload({
+          buildSaveResponsePayload({
             assembled_content: structurallyTruncatedContent,
           }),
         );
@@ -1376,15 +1568,10 @@ Deno.test(
     await t.step(
       "Fix 3.4.iii: when wasStructurallyFixed === false and continueUntilComplete === true, shouldContinue is not changed by structural fix check",
       async () => {
-        const fileManager: MockFileManagerService = createMockFileManager({
-          outcome: "success",
-          contribution: createMockContributionRow(),
-        });
-        const continueJobSpy = spy(async () => ({ enqueued: true }));
-        const deps: SaveResponseDeps = depsWithFinishReason("stop", {
-          fileManager,
-          continueJob: continueJobSpy,
-        });
+        const fileManager: MockFileManagerService = createMockFileManagerService();
+        fileManager.setUploadAndRegisterFileResponse(buildDialecticContributionRow(), null);
+        const continueJobSpy = spy(async (): Promise<ContinueJobEnqueuedReturn> => (buildContinueJobEnqueuedReturn()));
+        const deps: SaveResponseDeps = depsWithFinishReason("stop", fileManager, continueJobSpy, realBoundRetryJob);
         const payload: DialecticExecuteJobPayload = {
           ...saveResponseTestPayload,
           continueUntilComplete: true,
@@ -1392,11 +1579,13 @@ Deno.test(
         if (!isJson(payload)) {
           throw new Error("test fixture: payload must be Json");
         }
-        const { params } = createMockSaveResponseParamsWithQueuedJob(payload);
+        const { mockSetup, jobRow } = buildMockSupabaseFromPayload(payload, {});
+        const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
+        const params: SaveResponseParams = { job_id: jobRow.id, dbClient };
         await saveResponse(
           deps,
           params,
-          createMockSaveResponsePayload({
+          buildSaveResponsePayload({
             assembled_content: '{"result": "complete content"}',
           }),
         );
@@ -1428,15 +1617,10 @@ Deno.test(
     await t.step(
       "Fix 3.5.i: when finish_reason is stop, no content flags, but parsed object is missing keys from context_for_documents, shouldContinue is true",
       async () => {
-        const fileManager: MockFileManagerService = createMockFileManager({
-          outcome: "success",
-          contribution: createMockContributionRow(),
-        });
-        const continueJobSpy = spy(async () => ({ enqueued: true }));
-        const deps: SaveResponseDeps = depsWithFinishReason("stop", {
-          fileManager,
-          continueJob: continueJobSpy,
-        });
+        const fileManager: MockFileManagerService = createMockFileManagerService();
+        fileManager.setUploadAndRegisterFileResponse(buildDialecticContributionRow(), null);
+        const continueJobSpy = spy(async (): Promise<ContinueJobEnqueuedReturn> => (buildContinueJobEnqueuedReturn()));
+        const deps: SaveResponseDeps = depsWithFinishReason("stop", fileManager, continueJobSpy, realBoundRetryJob);
         const payload: DialecticExecuteJobPayload = {
           ...saveResponseTestPayload,
           output_type: FileType.business_case,
@@ -1450,11 +1634,13 @@ Deno.test(
         if (!isJson(payload)) {
           throw new Error("test fixture: payload must be Json");
         }
-        const { params } = createMockSaveResponseParamsWithQueuedJob(payload);
+        const { mockSetup, jobRow } = buildMockSupabaseFromPayload(payload, {});
+        const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
+        const params: SaveResponseParams = { job_id: jobRow.id, dbClient };
         await saveResponse(
           deps,
           params,
-          createMockSaveResponsePayload({
+          buildSaveResponsePayload({
             assembled_content:
               '{"executive_summary": "We have a great product"}',
           }),
@@ -1469,15 +1655,10 @@ Deno.test(
     await t.step(
       "Fix 3.5.ii: when finish_reason is stop, no content flags, and parsed object has all keys from context_for_documents, shouldContinue remains false",
       async () => {
-        const fileManager: MockFileManagerService = createMockFileManager({
-          outcome: "success",
-          contribution: createMockContributionRow(),
-        });
-        const continueJobSpy = spy(async () => ({ enqueued: true }));
-        const deps: SaveResponseDeps = depsWithFinishReason("stop", {
-          fileManager,
-          continueJob: continueJobSpy,
-        });
+        const fileManager: MockFileManagerService = createMockFileManagerService();
+        fileManager.setUploadAndRegisterFileResponse(buildDialecticContributionRow(), null);
+        const continueJobSpy = spy(async (): Promise<ContinueJobEnqueuedReturn> => (buildContinueJobEnqueuedReturn()));
+        const deps: SaveResponseDeps = depsWithFinishReason("stop", fileManager, continueJobSpy, realBoundRetryJob);
         const payload: DialecticExecuteJobPayload = {
           ...saveResponseTestPayload,
           output_type: FileType.business_case,
@@ -1491,11 +1672,13 @@ Deno.test(
         if (!isJson(payload)) {
           throw new Error("test fixture: payload must be Json");
         }
-        const { params } = createMockSaveResponseParamsWithQueuedJob(payload);
+        const { mockSetup, jobRow } = buildMockSupabaseFromPayload(payload, {});
+        const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
+        const params: SaveResponseParams = { job_id: jobRow.id, dbClient };
         await saveResponse(
           deps,
           params,
-          createMockSaveResponsePayload({
+          buildSaveResponsePayload({
             assembled_content:
               '{"executive_summary": "Great product", "market_analysis": "Growing market", "financial_projections": "Profitable in Y2"}',
           }),
@@ -1510,15 +1693,10 @@ Deno.test(
     await t.step(
       "Fix 3.5.iii: when context_for_documents is not present in job payload, missing-key check is skipped",
       async () => {
-        const fileManager: MockFileManagerService = createMockFileManager({
-          outcome: "success",
-          contribution: createMockContributionRow(),
-        });
-        const continueJobSpy = spy(async () => ({ enqueued: true }));
-        const deps: SaveResponseDeps = depsWithFinishReason("stop", {
-          fileManager,
-          continueJob: continueJobSpy,
-        });
+        const fileManager: MockFileManagerService = createMockFileManagerService();
+        fileManager.setUploadAndRegisterFileResponse(buildDialecticContributionRow(), null);
+        const continueJobSpy = spy(async (): Promise<ContinueJobEnqueuedReturn> => (buildContinueJobEnqueuedReturn()));
+        const deps: SaveResponseDeps = depsWithFinishReason("stop", fileManager, continueJobSpy, realBoundRetryJob);
         const payload: DialecticExecuteJobPayload = {
           ...saveResponseTestPayload,
           continueUntilComplete: true,
@@ -1526,11 +1704,13 @@ Deno.test(
         if (!isJson(payload)) {
           throw new Error("test fixture: payload must be Json");
         }
-        const { params } = createMockSaveResponseParamsWithQueuedJob(payload);
+        const { mockSetup, jobRow } = buildMockSupabaseFromPayload(payload, {});
+        const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
+        const params: SaveResponseParams = { job_id: jobRow.id, dbClient };
         await saveResponse(
           deps,
           params,
-          createMockSaveResponsePayload({
+          buildSaveResponsePayload({
             assembled_content: '{"executive_summary": "Great product"}',
           }),
         );
@@ -1544,15 +1724,10 @@ Deno.test(
     await t.step(
       "Fix 3.5.iv: when finish_reason is stop and content-level flags ARE present, shouldContinue is already true from flag check",
       async () => {
-        const fileManager: MockFileManagerService = createMockFileManager({
-          outcome: "success",
-          contribution: createMockContributionRow(),
-        });
-        const continueJobSpy = spy(async () => ({ enqueued: true }));
-        const deps: SaveResponseDeps = depsWithFinishReason("stop", {
-          fileManager,
-          continueJob: continueJobSpy,
-        });
+        const fileManager: MockFileManagerService = createMockFileManagerService();
+        fileManager.setUploadAndRegisterFileResponse(buildDialecticContributionRow(), null);
+        const continueJobSpy = spy(async (): Promise<ContinueJobEnqueuedReturn> => (buildContinueJobEnqueuedReturn()));
+        const deps: SaveResponseDeps = depsWithFinishReason("stop", fileManager, continueJobSpy, realBoundRetryJob);
         const payload: DialecticExecuteJobPayload = {
           ...saveResponseTestPayload,
           output_type: FileType.business_case,
@@ -1566,11 +1741,13 @@ Deno.test(
         if (!isJson(payload)) {
           throw new Error("test fixture: payload must be Json");
         }
-        const { params } = createMockSaveResponseParamsWithQueuedJob(payload);
+        const { mockSetup, jobRow } = buildMockSupabaseFromPayload(payload, {});
+        const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
+        const params: SaveResponseParams = { job_id: jobRow.id, dbClient };
         await saveResponse(
           deps,
           params,
-          createMockSaveResponsePayload({
+          buildSaveResponsePayload({
             assembled_content:
               '{"continuation_needed": true, "executive_summary": "Partial"}',
           }),
@@ -1589,8 +1766,9 @@ Deno.test(
 /*  Step 12.b — continuation_count requirement                        */
 /* ------------------------------------------------------------------ */
 
-const continuationCountInvalidMessage: string =
-  "continuation_count is required and must be a number > 0 for continuation chunks";
+const continuationCountGuardMessage: string = "Invalid continuation_count.";
+const continuationCountZeroMessage: string =
+  "jobId: a0000002-0000-4000-a000-000000000002, targetContributionId: contrib-root-123";
 
 Deno.test(
   "saveResponse - Step 12.b: requires continuation_count for continuation chunks",
@@ -1601,13 +1779,9 @@ Deno.test(
     await t.step(
       "12.b.i: root chunk (no target_contribution_id) has isContinuation: false and turnIndex: undefined",
       async () => {
-        const fileManager: MockFileManagerService = createMockFileManager({
-          outcome: "success",
-          contribution: createMockContributionRow(),
-        });
-        const deps: SaveResponseDeps = depsWithFinishReason("stop", {
-          fileManager,
-        });
+        const fileManager: MockFileManagerService = createMockFileManagerService();
+        fileManager.setUploadAndRegisterFileResponse(buildDialecticContributionRow(), null);
+        const deps: SaveResponseDeps = depsWithFinishReason("stop", fileManager, realBoundContinueJob, realBoundRetryJob);
         const rootPayload: DialecticExecuteJobPayload = {
           ...saveResponseTestPayload,
           output_type: documentKey,
@@ -1624,14 +1798,16 @@ Deno.test(
         if (!isJson(rootPayload)) {
           throw new Error("test fixture: root payload must be Json");
         }
-        const { params } = createMockSaveResponseParamsWithQueuedJob(
+        const { mockSetup, jobRow } = buildMockSupabaseFromPayload(
           rootPayload,
           { target_contribution_id: null },
         );
+        const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
+        const params: SaveResponseParams = { job_id: jobRow.id, dbClient };
         const result: SaveResponseReturn = await saveResponse(
           deps,
           params,
-          createMockSaveResponsePayload({ assembled_content: '{"content":"x"}' }),
+          buildSaveResponsePayload({ assembled_content: '{"content":"x"}' }),
         );
         assert(isSaveResponseSuccessReturn(result), "Expected success return");
         assert(
@@ -1653,13 +1829,9 @@ Deno.test(
     await t.step(
       "12.b.ii: continuation chunk with continuation_count: 1 has isContinuation: true and turnIndex: 1",
       async () => {
-        const fileManager: MockFileManagerService = createMockFileManager({
-          outcome: "success",
-          contribution: createMockContributionRow(),
-        });
-        const deps: SaveResponseDeps = depsWithFinishReason("stop", {
-          fileManager,
-        });
+        const fileManager: MockFileManagerService = createMockFileManagerService();
+        fileManager.setUploadAndRegisterFileResponse(buildDialecticContributionRow(), null);
+        const deps: SaveResponseDeps = depsWithFinishReason("stop", fileManager, realBoundContinueJob, realBoundRetryJob);
         const continuationPayload: DialecticExecuteJobPayload = {
           ...saveResponseTestPayload,
           output_type: documentKey,
@@ -1679,14 +1851,16 @@ Deno.test(
         if (!isJson(continuationPayload)) {
           throw new Error("test fixture: continuation payload must be Json");
         }
-        const { params } = createMockSaveResponseParamsWithQueuedJob(
+        const { mockSetup, jobRow } = buildMockSupabaseFromPayload(
           continuationPayload,
           { target_contribution_id: "contrib-root-123" },
         );
+        const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
+        const params: SaveResponseParams = { job_id: jobRow.id, dbClient };
         const result: SaveResponseReturn = await saveResponse(
           deps,
           params,
-          createMockSaveResponsePayload({ assembled_content: '{"content":"x"}' }),
+          buildSaveResponsePayload({ assembled_content: '{"content":"x"}' }),
         );
         assert(isSaveResponseSuccessReturn(result), "Expected success return");
         assert(
@@ -1708,13 +1882,9 @@ Deno.test(
     await t.step(
       "12.b.iii: continuation chunk with continuation_count: 2 has isContinuation: true and turnIndex: 2",
       async () => {
-        const fileManager: MockFileManagerService = createMockFileManager({
-          outcome: "success",
-          contribution: createMockContributionRow(),
-        });
-        const deps: SaveResponseDeps = depsWithFinishReason("stop", {
-          fileManager,
-        });
+        const fileManager: MockFileManagerService = createMockFileManagerService();
+        fileManager.setUploadAndRegisterFileResponse(buildDialecticContributionRow(), null);
+        const deps: SaveResponseDeps = depsWithFinishReason("stop", fileManager, realBoundContinueJob, realBoundRetryJob);
         const continuationPayload: DialecticExecuteJobPayload = {
           ...saveResponseTestPayload,
           output_type: documentKey,
@@ -1734,14 +1904,16 @@ Deno.test(
         if (!isJson(continuationPayload)) {
           throw new Error("test fixture: continuation payload must be Json");
         }
-        const { params } = createMockSaveResponseParamsWithQueuedJob(
+        const { mockSetup, jobRow } = buildMockSupabaseFromPayload(
           continuationPayload,
           { target_contribution_id: "contrib-root-123" },
         );
+        const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
+        const params: SaveResponseParams = { job_id: jobRow.id, dbClient };
         const result: SaveResponseReturn = await saveResponse(
           deps,
           params,
-          createMockSaveResponsePayload({ assembled_content: '{"content":"x"}' }),
+          buildSaveResponsePayload({ assembled_content: '{"content":"x"}' }),
         );
         assert(isSaveResponseSuccessReturn(result), "Expected success return");
         assert(
@@ -1763,13 +1935,9 @@ Deno.test(
     await t.step(
       "12.b.iv: continuation chunk with undefined continuation_count returns error",
       async () => {
-        const fileManager: MockFileManagerService = createMockFileManager({
-          outcome: "success",
-          contribution: createMockContributionRow(),
-        });
-        const deps: SaveResponseDeps = depsWithFinishReason("stop", {
-          fileManager,
-        });
+        const fileManager: MockFileManagerService = createMockFileManagerService();
+        fileManager.setUploadAndRegisterFileResponse(buildDialecticContributionRow(), null);
+        const deps: SaveResponseDeps = depsWithFinishReason("stop", fileManager, realBoundContinueJob, realBoundRetryJob);
         const continuationPayload: DialecticExecuteJobPayload = {
           ...saveResponseTestPayload,
           output_type: documentKey,
@@ -1789,17 +1957,19 @@ Deno.test(
         if (!isJson(continuationPayload)) {
           throw new Error("test fixture: continuation payload must be Json");
         }
-        const { params } = createMockSaveResponseParamsWithQueuedJob(
+        const { mockSetup, jobRow } = buildMockSupabaseFromPayload(
           continuationPayload,
           { target_contribution_id: "contrib-root-123" },
         );
+        const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
+        const params: SaveResponseParams = { job_id: jobRow.id, dbClient };
         const result: SaveResponseReturn = await saveResponse(
           deps,
           params,
-          createMockSaveResponsePayload({ assembled_content: '{"content":"x"}' }),
+          buildSaveResponsePayload({ assembled_content: '{"content":"x"}' }),
         );
         assert(isSaveResponseErrorReturn(result), "Expected error return");
-        assertEquals(result.error.message, continuationCountInvalidMessage);
+        assertEquals(result.error.message, continuationCountGuardMessage);
         assertEquals(fileManager.uploadAndRegisterFile.calls.length, 0);
       },
     );
@@ -1807,13 +1977,9 @@ Deno.test(
     await t.step(
       "12.b.v: continuation chunk with continuation_count: 0 returns error",
       async () => {
-        const fileManager: MockFileManagerService = createMockFileManager({
-          outcome: "success",
-          contribution: createMockContributionRow(),
-        });
-        const deps: SaveResponseDeps = depsWithFinishReason("stop", {
-          fileManager,
-        });
+        const fileManager: MockFileManagerService = createMockFileManagerService();
+        fileManager.setUploadAndRegisterFileResponse(buildDialecticContributionRow(), null);
+        const deps: SaveResponseDeps = depsWithFinishReason("stop", fileManager, realBoundContinueJob, realBoundRetryJob);
         const continuationPayload: DialecticExecuteJobPayload = {
           ...saveResponseTestPayload,
           output_type: documentKey,
@@ -1833,17 +1999,19 @@ Deno.test(
         if (!isJson(continuationPayload)) {
           throw new Error("test fixture: continuation payload must be Json");
         }
-        const { params } = createMockSaveResponseParamsWithQueuedJob(
+        const { mockSetup, jobRow } = buildMockSupabaseFromPayload(
           continuationPayload,
           { target_contribution_id: "contrib-root-123" },
         );
+        const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
+        const params: SaveResponseParams = { job_id: jobRow.id, dbClient };
         const result: SaveResponseReturn = await saveResponse(
           deps,
           params,
-          createMockSaveResponsePayload({ assembled_content: '{"content":"x"}' }),
+          buildSaveResponsePayload({ assembled_content: '{"content":"x"}' }),
         );
         assert(isSaveResponseErrorReturn(result), "Expected error return");
-        assertEquals(result.error.message, continuationCountInvalidMessage);
+        assertEquals(result.error.message, continuationCountZeroMessage);
         assertEquals(fileManager.uploadAndRegisterFile.calls.length, 0);
       },
     );
@@ -1851,13 +2019,9 @@ Deno.test(
     await t.step(
       "12.b.vi: continuation chunk with continuation_count: -1 returns error",
       async () => {
-        const fileManager: MockFileManagerService = createMockFileManager({
-          outcome: "success",
-          contribution: createMockContributionRow(),
-        });
-        const deps: SaveResponseDeps = depsWithFinishReason("stop", {
-          fileManager,
-        });
+        const fileManager: MockFileManagerService = createMockFileManagerService();
+        fileManager.setUploadAndRegisterFileResponse(buildDialecticContributionRow(), null);
+        const deps: SaveResponseDeps = depsWithFinishReason("stop", fileManager, realBoundContinueJob, realBoundRetryJob);
         const continuationPayload: DialecticExecuteJobPayload = {
           ...saveResponseTestPayload,
           output_type: documentKey,
@@ -1877,17 +2041,19 @@ Deno.test(
         if (!isJson(continuationPayload)) {
           throw new Error("test fixture: continuation payload must be Json");
         }
-        const { params } = createMockSaveResponseParamsWithQueuedJob(
+        const { mockSetup, jobRow } = buildMockSupabaseFromPayload(
           continuationPayload,
           { target_contribution_id: "contrib-root-123" },
         );
+        const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
+        const params: SaveResponseParams = { job_id: jobRow.id, dbClient };
         const result: SaveResponseReturn = await saveResponse(
           deps,
           params,
-          createMockSaveResponsePayload({ assembled_content: '{"content":"x"}' }),
+          buildSaveResponsePayload({ assembled_content: '{"content":"x"}' }),
         );
         assert(isSaveResponseErrorReturn(result), "Expected error return");
-        assertEquals(result.error.message, continuationCountInvalidMessage);
+        assertEquals(result.error.message, continuationCountGuardMessage);
         assertEquals(fileManager.uploadAndRegisterFile.calls.length, 0);
       },
     );
@@ -1895,13 +2061,9 @@ Deno.test(
     await t.step(
       "12.b.vii: continuation chunk with non-number continuation_count returns error",
       async () => {
-        const fileManager: MockFileManagerService = createMockFileManager({
-          outcome: "success",
-          contribution: createMockContributionRow(),
-        });
-        const deps: SaveResponseDeps = depsWithFinishReason("stop", {
-          fileManager,
-        });
+        const fileManager: MockFileManagerService = createMockFileManagerService();
+        fileManager.setUploadAndRegisterFileResponse(buildDialecticContributionRow(), null);
+        const deps: SaveResponseDeps = depsWithFinishReason("stop", fileManager, realBoundContinueJob, realBoundRetryJob);
         const continuationPayload: DialecticExecuteJobPayload = {
           ...saveResponseTestPayload,
           output_type: documentKey,
@@ -1922,17 +2084,19 @@ Deno.test(
           throw new Error("test fixture: continuation payload must be Json");
         }
         Reflect.set(continuationPayload, "continuation_count", "invalid");
-        const { params } = createMockSaveResponseParamsWithQueuedJob(
+        const { mockSetup, jobRow } = buildMockSupabaseFromPayload(
           continuationPayload,
           { target_contribution_id: "contrib-root-123" },
         );
+        const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
+        const params: SaveResponseParams = { job_id: jobRow.id, dbClient };
         const result: SaveResponseReturn = await saveResponse(
           deps,
           params,
-          createMockSaveResponsePayload({ assembled_content: '{"content":"x"}' }),
+          buildSaveResponsePayload({ assembled_content: '{"content":"x"}' }),
         );
         assert(isSaveResponseErrorReturn(result), "Expected error return");
-        assertEquals(result.error.message, continuationCountInvalidMessage);
+        assertEquals(result.error.message, continuationCountGuardMessage);
         assertEquals(fileManager.uploadAndRegisterFile.calls.length, 0);
       },
     );
@@ -1962,18 +2126,10 @@ Deno.test(
     await t.step(
       "Fix 2.i: when continueResult.reason === continuation_limit_reached, modelProcessingResult.status is continuation_limit_reached",
       async () => {
-        const fileManager: MockFileManagerService = createMockFileManager({
-          outcome: "success",
-          contribution: createMockContributionRow(),
-        });
-        const continueJobSpy = spy(async () => ({
-          enqueued: false,
-          reason: "continuation_limit_reached",
-        }));
-        const deps: SaveResponseDeps = depsWithFinishReason("max_tokens", {
-          fileManager,
-          continueJob: continueJobSpy,
-        });
+        const fileManager: MockFileManagerService = createMockFileManagerService();
+        fileManager.setUploadAndRegisterFileResponse(buildDialecticContributionRow(), null);
+        const continueJobSpy = spy(async (): Promise<ContinueJobLimitReachedReturn> => (buildContinueJobLimitReachedReturn()));
+        const deps: SaveResponseDeps = depsWithFinishReason("max_tokens", fileManager, continueJobSpy, realBoundRetryJob);
         const continuationPayload: DialecticExecuteJobPayload = {
           ...saveResponseTestPayload,
           output_type: documentKey,
@@ -1995,14 +2151,16 @@ Deno.test(
         if (!isJson(continuationPayload)) {
           throw new Error("test fixture: continuation payload must be Json");
         }
-        const { params, mockSetup } = createMockSaveResponseParamsWithQueuedJob(
+        const { mockSetup, jobRow } = buildMockSupabaseFromPayload(
           continuationPayload,
           { target_contribution_id: rootId },
         );
+        const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
+        const params: SaveResponseParams = { job_id: jobRow.id, dbClient };
         const result: SaveResponseReturn = await saveResponse(
           deps,
           params,
-          createMockSaveResponsePayload({
+          buildSaveResponsePayload({
             assembled_content: '{"content": "Partial content from model"}',
           }),
         );
@@ -2031,21 +2189,13 @@ Deno.test(
       "Fix 2.ii: when continueResult.reason === continuation_limit_reached, assembleAndSaveFinalDocument is called with rootIdFromSaved and expectedSchema",
       async () => {
         const contributionWithRelationships: DialecticContributionRow =
-          createMockContributionRow({
-            document_relationships: { [stageSlug]: rootId },
+          buildDialecticContributionRow({
+            document_relationships: { [stageSlug]: rootId, source_group: "sg-final-cont" },
           });
-        const fileManager: MockFileManagerService = createMockFileManager({
-          outcome: "success",
-          contribution: contributionWithRelationships,
-        });
-        const continueJobSpy = spy(async () => ({
-          enqueued: false,
-          reason: "continuation_limit_reached",
-        }));
-        const deps: SaveResponseDeps = depsWithFinishReason("max_tokens", {
-          fileManager,
-          continueJob: continueJobSpy,
-        });
+        const fileManager: MockFileManagerService = createMockFileManagerService();
+        fileManager.setUploadAndRegisterFileResponse(contributionWithRelationships, null);
+        const continueJobSpy = spy(async (): Promise<ContinueJobLimitReachedReturn> => (buildContinueJobLimitReachedReturn()));
+        const deps: SaveResponseDeps = depsWithFinishReason("max_tokens", fileManager, continueJobSpy, realBoundRetryJob);
         const continuationPayload: DialecticExecuteJobPayload = {
           ...saveResponseTestPayload,
           output_type: documentKey,
@@ -2067,14 +2217,16 @@ Deno.test(
         if (!isJson(continuationPayload)) {
           throw new Error("test fixture: continuation payload must be Json");
         }
-        const { params } = createMockSaveResponseParamsWithQueuedJob(
+        const { mockSetup, jobRow } = buildMockSupabaseFromPayload(
           continuationPayload,
           { target_contribution_id: rootId },
         );
+        const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
+        const params: SaveResponseParams = { job_id: jobRow.id, dbClient };
         const result: SaveResponseReturn = await saveResponse(
           deps,
           params,
-          createMockSaveResponsePayload({
+          buildSaveResponsePayload({
             assembled_content: '{"content": "Partial content from model"}',
           }),
         );
@@ -2099,22 +2251,14 @@ Deno.test(
       "Fix 2.iii: when continuation_limit_reached but rootIdFromSaved equals contribution.id (single chunk), assembleAndSaveFinalDocument is NOT called",
       async () => {
         const singleChunkContribution: DialecticContributionRow =
-          createMockContributionRow({
+          buildDialecticContributionRow({
             id: "single-chunk-contrib",
             document_relationships: { [stageSlug]: "single-chunk-contrib" },
           });
-        const fileManager: MockFileManagerService = createMockFileManager({
-          outcome: "success",
-          contribution: singleChunkContribution,
-        });
-        const continueJobSpy = spy(async () => ({
-          enqueued: false,
-          reason: "continuation_limit_reached",
-        }));
-        const deps: SaveResponseDeps = depsWithFinishReason("max_tokens", {
-          fileManager,
-          continueJob: continueJobSpy,
-        });
+        const fileManager: MockFileManagerService = createMockFileManagerService();
+        fileManager.setUploadAndRegisterFileResponse(singleChunkContribution, null);
+        const continueJobSpy = spy(async (): Promise<ContinueJobLimitReachedReturn> => (buildContinueJobLimitReachedReturn()));
+        const deps: SaveResponseDeps = depsWithFinishReason("max_tokens", fileManager, continueJobSpy, realBoundRetryJob);
         const continuationPayload: DialecticExecuteJobPayload = {
           ...saveResponseTestPayload,
           output_type: documentKey,
@@ -2136,14 +2280,16 @@ Deno.test(
         if (!isJson(continuationPayload)) {
           throw new Error("test fixture: continuation payload must be Json");
         }
-        const { params } = createMockSaveResponseParamsWithQueuedJob(
+        const { mockSetup, jobRow } = buildMockSupabaseFromPayload(
           continuationPayload,
           { target_contribution_id: "single-chunk-contrib" },
         );
+        const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
+        const params: SaveResponseParams = { job_id: jobRow.id, dbClient };
         const result: SaveResponseReturn = await saveResponse(
           deps,
           params,
-          createMockSaveResponsePayload({
+          buildSaveResponsePayload({
             assembled_content: '{"content": "Partial content"}',
           }),
         );
@@ -2156,18 +2302,13 @@ Deno.test(
       "Fix 2.iv: when continueResult.enqueued === true (normal continuation), assembleAndSaveFinalDocument is NOT called and status is needs_continuation",
       async () => {
         const contributionWithRelationships: DialecticContributionRow =
-          createMockContributionRow({
-            document_relationships: { [stageSlug]: rootId },
+          buildDialecticContributionRow({
+            document_relationships: { [stageSlug]: rootId, source_group: "sg-final-cont" },
           });
-        const fileManager: MockFileManagerService = createMockFileManager({
-          outcome: "success",
-          contribution: contributionWithRelationships,
-        });
-        const continueJobSpy = spy(async () => ({ enqueued: true }));
-        const deps: SaveResponseDeps = depsWithFinishReason("max_tokens", {
-          fileManager,
-          continueJob: continueJobSpy,
-        });
+        const fileManager: MockFileManagerService = createMockFileManagerService();
+        fileManager.setUploadAndRegisterFileResponse(contributionWithRelationships, null);
+        const continueJobSpy = spy(async (): Promise<ContinueJobEnqueuedReturn> => (buildContinueJobEnqueuedReturn()));
+        const deps: SaveResponseDeps = depsWithFinishReason("max_tokens", fileManager, continueJobSpy, realBoundRetryJob);
         const continuationPayload: DialecticExecuteJobPayload = {
           ...saveResponseTestPayload,
           output_type: documentKey,
@@ -2189,14 +2330,16 @@ Deno.test(
         if (!isJson(continuationPayload)) {
           throw new Error("test fixture: continuation payload must be Json");
         }
-        const { params, mockSetup } = createMockSaveResponseParamsWithQueuedJob(
+        const { mockSetup, jobRow } = buildMockSupabaseFromPayload(
           continuationPayload,
           { target_contribution_id: rootId },
         );
+        const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
+        const params: SaveResponseParams = { job_id: jobRow.id, dbClient };
         const result: SaveResponseReturn = await saveResponse(
           deps,
           params,
-          createMockSaveResponsePayload({
+          buildSaveResponsePayload({
             assembled_content: '{"content": "Partial content from model"}',
           }),
         );
@@ -2225,13 +2368,9 @@ Deno.test(
     await t.step(
       "Fix 2.v: when continueUntilComplete is false and finish_reason is stop, assembleAndSaveFinalDocument is NOT called and status is completed",
       async () => {
-        const fileManager: MockFileManagerService = createMockFileManager({
-          outcome: "success",
-          contribution: createMockContributionRow(),
-        });
-        const deps: SaveResponseDeps = depsWithFinishReason("stop", {
-          fileManager,
-        });
+        const fileManager: MockFileManagerService = createMockFileManagerService();
+        fileManager.setUploadAndRegisterFileResponse(buildDialecticContributionRow(), null);
+        const deps: SaveResponseDeps = depsWithFinishReason("stop", fileManager, realBoundContinueJob, realBoundRetryJob);
         const nonContinuationPayload: DialecticExecuteJobPayload = {
           ...saveResponseTestPayload,
           output_type: documentKey,
@@ -2251,13 +2390,16 @@ Deno.test(
             "test fixture: non-continuation payload must be Json",
           );
         }
-        const { params, mockSetup } = createMockSaveResponseParamsWithQueuedJob(
+        const { mockSetup, jobRow } = buildMockSupabaseFromPayload(
           nonContinuationPayload,
+          {},
         );
+        const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
+        const params: SaveResponseParams = { job_id: jobRow.id, dbClient };
         const result: SaveResponseReturn = await saveResponse(
           deps,
           params,
-          createMockSaveResponsePayload({
+          buildSaveResponsePayload({
             assembled_content: '{"content": "Complete content"}',
           }),
         );
@@ -2305,28 +2447,29 @@ Deno.test(
         [stageSlug]: invalidStageValue,
       },
     };
-    const savedContribution: DialecticContributionRow = createMockContributionRow({
+    const savedContribution: DialecticContributionRow = buildDialecticContributionRow({
       id: newContributionId,
       document_relationships: {
         source_group: sourceGroupId,
         [stageSlug]: invalidStageValue,
       },
     });
-    const fileManager: MockFileManagerService = createMockFileManager({
-      outcome: "success",
-      contribution: savedContribution,
-    });
-    const deps: SaveResponseDeps = depsWithFinishReason("stop", { fileManager });
+    const fileManager: MockFileManagerService = createMockFileManagerService();
+    fileManager.setUploadAndRegisterFileResponse(savedContribution, null);
+    const deps: SaveResponseDeps = depsWithFinishReason("stop", fileManager, realBoundContinueJob, realBoundRetryJob);
     if (!isJson(headerContextPayload)) {
       throw new Error("test fixture: header context payload must be Json");
     }
-    const { params, mockSetup } = createMockSaveResponseParamsWithQueuedJob(
+    const { mockSetup, jobRow } = buildMockSupabaseFromPayload(
       headerContextPayload,
+      {},
     );
+    const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
+    const params: SaveResponseParams = { job_id: jobRow.id, dbClient };
     const result: SaveResponseReturn = await saveResponse(
       deps,
       params,
-      createMockSaveResponsePayload({
+      buildSaveResponsePayload({
         assembled_content: '{"header": "context data"}',
       }),
     );
@@ -2400,35 +2543,36 @@ Deno.test(
     const businessCasePayload: DialecticExecuteJobPayload = {
       ...saveResponseTestPayload,
       output_type: FileType.business_case,
-      document_key: "business_case",
+      document_key: FileType.business_case,
       stageSlug,
       document_relationships: {
         source_group: sourceGroupId,
         [stageSlug]: invalidStageValue,
       },
     };
-    const savedContribution: DialecticContributionRow = createMockContributionRow({
+    const savedContribution: DialecticContributionRow = buildDialecticContributionRow({
       id: newContributionId,
       document_relationships: {
         source_group: sourceGroupId,
         [stageSlug]: invalidStageValue,
       },
     });
-    const fileManager: MockFileManagerService = createMockFileManager({
-      outcome: "success",
-      contribution: savedContribution,
-    });
-    const deps: SaveResponseDeps = depsWithFinishReason("stop", { fileManager });
+    const fileManager: MockFileManagerService = createMockFileManagerService();
+    fileManager.setUploadAndRegisterFileResponse(savedContribution, null);
+    const deps: SaveResponseDeps = depsWithFinishReason("stop", fileManager, realBoundContinueJob, realBoundRetryJob);
     if (!isJson(businessCasePayload)) {
       throw new Error("test fixture: business case payload must be Json");
     }
-    const { params, mockSetup } = createMockSaveResponseParamsWithQueuedJob(
+    const { mockSetup, jobRow } = buildMockSupabaseFromPayload(
       businessCasePayload,
+      {},
     );
+    const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
+    const params: SaveResponseParams = { job_id: jobRow.id, dbClient };
     const result: SaveResponseReturn = await saveResponse(
       deps,
       params,
-      createMockSaveResponsePayload({
+      buildSaveResponsePayload({
         assembled_content: '{"content": "Business case content"}',
       }),
     );
@@ -2495,7 +2639,7 @@ Deno.test(
     const continuationPayload: DialecticExecuteJobPayload = {
       ...saveResponseTestPayload,
       output_type: FileType.business_case,
-      document_key: "business_case",
+      document_key: FileType.business_case,
       stageSlug,
       target_contribution_id: targetContributionId,
       continuation_count: 1,
@@ -2504,7 +2648,7 @@ Deno.test(
         [stageSlug]: rootContributionId,
       },
     };
-    const savedContribution: DialecticContributionRow = createMockContributionRow({
+    const savedContribution: DialecticContributionRow = buildDialecticContributionRow({
       id: continuationContributionId,
       target_contribution_id: targetContributionId,
       document_relationships: {
@@ -2512,22 +2656,22 @@ Deno.test(
         [stageSlug]: rootContributionId,
       },
     });
-    const fileManager: MockFileManagerService = createMockFileManager({
-      outcome: "success",
-      contribution: savedContribution,
-    });
-    const deps: SaveResponseDeps = depsWithFinishReason("stop", { fileManager });
+    const fileManager: MockFileManagerService = createMockFileManagerService();
+    fileManager.setUploadAndRegisterFileResponse(savedContribution, null);
+    const deps: SaveResponseDeps = depsWithFinishReason("stop", fileManager, realBoundContinueJob, realBoundRetryJob);
     if (!isJson(continuationPayload)) {
       throw new Error("test fixture: continuation payload must be Json");
     }
-    const { params, mockSetup } = createMockSaveResponseParamsWithQueuedJob(
+    const { mockSetup, jobRow } = buildMockSupabaseFromPayload(
       continuationPayload,
       { target_contribution_id: targetContributionId },
     );
+    const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
+    const params: SaveResponseParams = { job_id: jobRow.id, dbClient };
     const result: SaveResponseReturn = await saveResponse(
       deps,
       params,
-      createMockSaveResponsePayload({
+      buildSaveResponsePayload({
         assembled_content: '{"content": "Continuation content"}',
       }),
     );
