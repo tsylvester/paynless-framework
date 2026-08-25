@@ -25,7 +25,7 @@ For `isOwnedObject`:
 
 ### The contract header here
 
-The checklist **is** the contract, so this scope collapses to a **one-line `Contract` header** naming the case the block proves. The remaining three fields are invariant for every block in the scope — arrange a builder or invalidator, act by passing it to the guard, assert `true` or `false` — so they are stated once, here, and never repeated per block. There are no inline markers: the block is a single expression, with no sections to separate (see [tests](tests.md#every-test-states-its-contract)).
+The checklist **is** the contract, so this scope collapses to providing an accurate title for the test. The remaining three fields are invariant for every block in the scope — arrange a builder or invalidator, act by passing it to the guard, assert `true` or `false` — so they are stated once, here, and never repeated per block. There are no inline markers: the block is a single expression, with no sections to separate (see [tests](tests.md#every-test-states-its-contract)).
 
 Rendered — copy this shape, one test file per owned guard:
 

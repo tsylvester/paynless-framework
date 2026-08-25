@@ -8,7 +8,10 @@ export function isNetlifyResponseBody(value: unknown): value is NetlifyResponseB
         typeof v['assembled_content'] === 'string' &&
         (v['token_usage'] === null || (typeof v['token_usage'] === 'object' && v['token_usage'] !== null)) &&
         (v['finish_reason'] === null || typeof v['finish_reason'] === 'string') &&
-        typeof v['sig'] === 'string'
+        typeof v['sig'] === 'string' &&
+        typeof v['processingTimeMs'] === 'number' &&
+        Number.isFinite(v['processingTimeMs']) &&
+        v['processingTimeMs'] >= 0
     );
 }
 
@@ -17,8 +20,7 @@ export function isNetlifyResponseDeps(value: unknown): value is NetlifyResponseD
     const v = value as Record<string, unknown>;
     return (
         typeof v['computeJobSig'] === 'function' &&
-        v['adminClient'] !== null && v['adminClient'] !== undefined &&
-        typeof v['saveResponse'] === 'function' &&
-        v['saveResponseDeps'] !== null && v['saveResponseDeps'] !== undefined
+        typeof v['adminClient'] === 'object' && v['adminClient'] !== null &&
+        typeof v['saveResponse'] === 'function'
     );
 }

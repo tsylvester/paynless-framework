@@ -9,7 +9,22 @@ import { AdminTokenWalletService } from '../_shared/services/tokenwallet/admin/a
 import { constructStoragePath } from '../_shared/utils/path_constructor.ts';
 import { assembleChunks } from '../_shared/utils/assembleChunks/assembleChunks.ts';
 import { continueJob } from '../dialectic-worker/continueJob/continueJob.ts';
-import { retryJob } from '../dialectic-worker/retryJob.ts';
+import { retryJob, type BoundRetryJobFn } from '../dialectic-worker/retryJob/retryJob.provides.ts';
+import { loadJobContext, type BoundLoadJobContextFn } from '../dialectic-worker/loadJobContext/loadJobContext.provides.ts';
+import { assembleAiResponse, type BoundAssembleAiResponseFn } from '../dialectic-worker/assembleAiResponse/assembleAiResponse.provides.ts';
+import { debitForResponse, type BoundDebitForResponseFn } from '../dialectic-worker/debitForResponse/debitForResponse.provides.ts';
+import { prepareResponseContent, type BoundPrepareResponseContentFn } from '../dialectic-worker/prepareResponseContent/prepareResponseContent.provides.ts';
+import { saveContributionResponse, type BoundSaveContributionResponseFn } from '../dialectic-worker/saveContributionResponse/saveContributionResponse.provides.ts';
+import { saveCompressedResponse, type BoundSaveCompressedResponseFn } from '../dialectic-worker/saveCompressedResponse/saveCompressedResponse.provides.ts';
+import { resolveContributionIdentity, type BoundResolveContributionIdentityFn } from '../dialectic-worker/resolveContributionIdentity/resolveContributionIdentity.provides.ts';
+import { persistContributionRelationships, type BoundPersistContributionRelationshipsFn } from '../dialectic-worker/persistContributionRelationships/persistContributionRelationships.provides.ts';
+import { finalizeContributionJob, type BoundFinalizeContributionJobFn } from '../dialectic-worker/finalizeContributionJob/finalizeContributionJob.provides.ts';
+import { countTokens } from '../_shared/utils/tokenizer_utils.ts';
+import type { BoundCountTokensFn, CountTokensDeps } from '../_shared/types/tokenizer.types.ts';
+import type { BoundContinueJobFn } from '../dialectic-worker/continueJob/continueJob.interface.ts';
+import { getEncoding as rawGetEncoding } from 'npm:js-tiktoken@1.0.7';
+import { countTokens as countTokensAnthropic } from 'npm:@anthropic-ai/tokenizer@0.0.4';
+import { isKnownTiktokenEncoding } from '../_shared/utils/type-guards/type_guards.chat.ts';
 import { resolveFinishReason } from '../_shared/utils/resolveFinishReason.ts';
 import { isIntermediateChunk } from '../_shared/utils/isIntermediateChunk.ts';
 import { determineContinuation } from '../_shared/utils/determineContinuation/determineContinuation.ts';
@@ -22,8 +37,7 @@ import type { BoundEnqueueRenderJobFn } from '../dialectic-worker/enqueueRenderJ
 import { shouldEnqueueRenderJob } from '../_shared/utils/shouldEnqueueRenderJob.ts';
 import { resolveTemplateFilename } from '../_shared/utils/resolveTemplateFilename/resolveTemplateFilename.ts';
 import type { BoundResolveTemplateFilenameFn } from '../_shared/utils/resolveTemplateFilename/resolveTemplateFilename.interface.ts';
-import { saveResponse } from '../dialectic-worker/saveResponse/saveResponse.ts';
-import type { SaveResponseDeps } from '../dialectic-worker/saveResponse/saveResponse.interface.ts';
+import { saveResponse, type SaveResponseDeps, type BoundSaveResponseFn } from '../dialectic-worker/saveResponse/saveResponse.provides.ts';
 import { createComputeJobSig } from '../_shared/utils/computeJobSig/computeJobSig.ts';
 import type { ComputeJobSig } from '../_shared/utils/computeJobSig/computeJobSig.interface.ts';
 import type { NetlifyResponseDeps } from './netlifyResponse.interface.ts';
@@ -50,26 +64,71 @@ const boundResolveTemplateFilename: BoundResolveTemplateFilenameFn = (params, pa
 const boundEnqueueRenderJob: BoundEnqueueRenderJobFn = (params, payload) =>
     enqueueRenderJob({ dbClient: adminClient, logger, shouldEnqueueRenderJob, resolveTemplateFilename: boundResolveTemplateFilename }, params, payload);
 
+const countTokensDeps: CountTokensDeps = {
+    getEncoding: (encodingName: string) => {
+        if (!isKnownTiktokenEncoding(encodingName)) {
+            throw new Error(`Unsupported tiktoken encoding: ${encodingName}`);
+        }
+        return rawGetEncoding(encodingName);
+    },
+    countTokensAnthropic,
+    logger,
+};
+
+const boundCountTokens: BoundCountTokensFn = (payload, modelConfig) =>
+    countTokens(countTokensDeps, payload, modelConfig);
+
+const boundRetryJob: BoundRetryJobFn = (params, payload) =>
+    retryJob({ logger, notificationService }, params, payload);
+
+const boundLoadJobContext: BoundLoadJobContextFn = (params, payload) =>
+    loadJobContext({}, params, payload);
+
+const boundContinueJob: BoundContinueJobFn = (params, payload) =>
+    continueJob({ logger }, params, payload);
+
+const boundAssembleAiResponse: BoundAssembleAiResponseFn = (params, payload) =>
+    assembleAiResponse({ countTokens: boundCountTokens }, params, payload);
+
+const boundDebitForResponse: BoundDebitForResponseFn = (params, payload) =>
+    debitForResponse({ debitTokens: boundDebitTokens }, params, payload);
+
+const boundPrepareResponseContent: BoundPrepareResponseContentFn = (params, payload) =>
+    prepareResponseContent({ logger, resolveFinishReason, isIntermediateChunk, sanitizeJsonContent, determineContinuation }, params, payload);
+
+const boundResolveContributionIdentity: BoundResolveContributionIdentityFn = (params, payload) =>
+    resolveContributionIdentity({ logger }, params, payload);
+
+const boundPersistContributionRelationships: BoundPersistContributionRelationshipsFn = (params, payload) =>
+    persistContributionRelationships({}, params, payload);
+
+const boundFinalizeContributionJob: BoundFinalizeContributionJobFn = (params, payload) =>
+    finalizeContributionJob({ logger, notificationService, fileManager, continueJob: boundContinueJob, enqueueRenderJob: boundEnqueueRenderJob }, params, payload);
+
+const boundSaveContributionResponse: BoundSaveContributionResponseFn = (params, payload) =>
+    saveContributionResponse({ fileManager, buildUploadContext, resolveContributionIdentity: boundResolveContributionIdentity, persistContributionRelationships: boundPersistContributionRelationships, finalizeContributionJob: boundFinalizeContributionJob }, params, payload);
+
+const boundSaveCompressedResponse: BoundSaveCompressedResponseFn = (params, payload) =>
+    saveCompressedResponse({ fileManager, buildUploadContext, enqueueRenderJob: boundEnqueueRenderJob }, params, payload);
+
 const saveResponseDeps: SaveResponseDeps = {
     logger,
-    fileManager,
-    notificationService,
-    continueJob,
-    retryJob,
-    resolveFinishReason,
-    isIntermediateChunk,
-    determineContinuation,
-    buildUploadContext,
-    sanitizeJsonContent,
-    debitTokens: boundDebitTokens,
-    enqueueRenderJob: boundEnqueueRenderJob,
+    retryJob: boundRetryJob,
+    loadJobContext: boundLoadJobContext,
+    assembleAiResponse: boundAssembleAiResponse,
+    debitForResponse: boundDebitForResponse,
+    prepareResponseContent: boundPrepareResponseContent,
+    saveContributionResponse: boundSaveContributionResponse,
+    saveCompressedResponse: boundSaveCompressedResponse,
 };
+
+const boundSaveResponse: BoundSaveResponseFn = (params, payload) =>
+    saveResponse(saveResponseDeps, params, payload);
 
 const deps: NetlifyResponseDeps = {
     computeJobSig,
     adminClient,
-    saveResponse,
-    saveResponseDeps,
+    saveResponse: boundSaveResponse,
 };
 
 serve((req: Request) => netlifyResponseHandler(deps, req));

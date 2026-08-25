@@ -4,17 +4,18 @@ import type {
     NetlifyResponseDeps,
     NetlifyResponseHandlerFn,
 } from "./netlifyResponse.interface.ts";
-import type { NodeTokenUsage } from "../dialectic-worker/saveResponse/saveResponse.interface.ts";
+import type { BoundSaveResponseFn, NodeTokenUsage } from "../dialectic-worker/saveResponse/saveResponse.interface.ts";
 
-Deno.test("Contract: NetlifyResponseBody surface declares five required fields", () => {
+Deno.test("Contract: NetlifyResponseBody surface declares six required fields", () => {
     const surface: Record<keyof NetlifyResponseBody, true> = {
         job_id: true,
         assembled_content: true,
         token_usage: true,
         finish_reason: true,
         sig: true,
+        processingTimeMs: true,
     };
-    assertEquals(Object.keys(surface).length, 5);
+    assertEquals(Object.keys(surface).length, 6);
 });
 
 Deno.test("Contract: NetlifyResponseBody valid — all fields with NodeTokenUsage", () => {
@@ -29,6 +30,7 @@ Deno.test("Contract: NetlifyResponseBody valid — all fields with NodeTokenUsag
         token_usage: usage,
         finish_reason: "stop",
         sig: "deadbeef",
+        processingTimeMs: 100,
     };
     assertEquals(typeof body.job_id, "string");
     assertEquals(typeof body.assembled_content, "string");
@@ -44,6 +46,7 @@ Deno.test("Contract: NetlifyResponseBody valid — token_usage and finish_reason
         token_usage: null,
         finish_reason: null,
         sig: "deadbeef",
+        processingTimeMs: 0,
     };
     assertEquals(body.token_usage === null, true);
     assertEquals(body.finish_reason === null, true);
@@ -51,20 +54,11 @@ Deno.test("Contract: NetlifyResponseBody valid — token_usage and finish_reason
     assertEquals(typeof body.sig, "string");
 });
 
-Deno.test("Contract: NetlifyResponseDeps surface declares four dependency keys", () => {
+Deno.test("Contract: NetlifyResponseDeps surface declares three dependency keys", () => {
     const surface: Record<keyof NetlifyResponseDeps, true> = {
         computeJobSig: true,
         adminClient: true,
         saveResponse: true,
-        saveResponseDeps: true,
     };
-    assertEquals(Object.keys(surface).length, 4);
-});
-
-Deno.test("Contract: NetlifyResponseHandlerFn is a two-arg async function returning Response", () => {
-    const fn: NetlifyResponseHandlerFn = async (
-        _deps: NetlifyResponseDeps,
-        _req: Request,
-    ): Promise<Response> => new Response(null, { status: 200 });
-    assertEquals(typeof fn, "function");
+    assertEquals(Object.keys(surface).length, 3);
 });

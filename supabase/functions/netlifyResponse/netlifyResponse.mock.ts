@@ -3,61 +3,54 @@ import type { Database } from '../types_db.ts';
 import type {
     NetlifyResponseDeps,
     NetlifyResponseHandlerFn,
+    NetlifyResponseBody,
 } from './netlifyResponse.interface.ts';
-import type { ComputeJobSig } from '../_shared/utils/computeJobSig/computeJobSig.interface.ts';
-import type {
-    SaveResponseDeps,
-    SaveResponseFn,
-    SaveResponseSuccessReturn,
-} from '../dialectic-worker/saveResponse/saveResponse.interface.ts';
 import { mockComputeJobSig } from '../_shared/utils/computeJobSig/computeJobSig.mock.ts';
-import { createMockSaveResponseDeps } from '../dialectic-worker/saveResponse/saveResponse.provides.ts';
+import { mockBoundSaveResponseFn } from '../dialectic-worker/saveResponse/saveResponse.provides.ts';
 import { createMockSupabaseClient } from '../_shared/supabase.mock.ts';
 
-export type MockJobRow = {
-    id: string;
-    user_id: string;
-    created_at: string;
-};
+export type NetlifyResponseBodyOverrides = Partial<NetlifyResponseBody>;
+export type NetlifyResponseBodyCorruptions = { [K in keyof NetlifyResponseBody]?: unknown };
 
-export type CreateMockNetlifyResponseDepsOverrides = {
-    computeJobSig?: ComputeJobSig;
-    jobRow?: MockJobRow | null;
-    saveResponse?: SaveResponseFn;
-    saveResponseDeps?: SaveResponseDeps;
-};
+export function buildNetlifyResponseBody(
+    overrides?: NetlifyResponseBodyOverrides,
+): NetlifyResponseBody {
+    const base: NetlifyResponseBody = {
+        job_id: 'job-1',
+        assembled_content: 'assembled text',
+        token_usage: null,
+        finish_reason: null,
+        sig: 'mock-sig',
+        processingTimeMs: 100,
+    };
+    return overrides ? { ...base, ...overrides } : base;
+}
 
-export function createMockNetlifyResponseDeps(
-    overrides: CreateMockNetlifyResponseDepsOverrides = {},
+export function invalidateNetlifyResponseBody(
+    corruptions: NetlifyResponseBodyCorruptions,
+): unknown {
+    return { ...buildNetlifyResponseBody(), ...corruptions };
+}
+
+export type NetlifyResponseDepsOverrides = Partial<NetlifyResponseDeps>;
+export type NetlifyResponseDepsCorruptions = { [K in keyof NetlifyResponseDeps]?: unknown };
+
+export function buildNetlifyResponseDeps(
+    overrides?: NetlifyResponseDepsOverrides,
 ): NetlifyResponseDeps {
-    const defaultJobRow: MockJobRow = {
-        id: 'mock-job-id',
-        user_id: 'mock-user-id',
-        created_at: new Date().toISOString(),
+    const { client } = createMockSupabaseClient();
+    const base: NetlifyResponseDeps = {
+        computeJobSig: mockComputeJobSig,
+        adminClient: client as unknown as SupabaseClient<Database>,
+        saveResponse: mockBoundSaveResponseFn,
     };
-    const jobRow: MockJobRow | null = 'jobRow' in overrides
-        ? (overrides.jobRow ?? null)
-        : defaultJobRow;
-    const { client } = createMockSupabaseClient(undefined, {
-        genericMockResults: {
-            'dialectic_generation_jobs': {
-                select: { data: jobRow ? [jobRow] : [], error: null },
-            },
-        },
-    });
-    const adminClient = client as unknown as SupabaseClient<Database>;
+    return overrides ? { ...base, ...overrides } : base;
+}
 
-    const defaultSaveResponse: SaveResponseFn = async () => {
-        const result: SaveResponseSuccessReturn = { status: 'completed' };
-        return result;
-    };
-
-    return {
-        computeJobSig: overrides.computeJobSig ?? mockComputeJobSig,
-        adminClient,
-        saveResponse: overrides.saveResponse ?? defaultSaveResponse,
-        saveResponseDeps: overrides.saveResponseDeps ?? createMockSaveResponseDeps(),
-    };
+export function invalidateNetlifyResponseDeps(
+    corruptions: NetlifyResponseDepsCorruptions,
+): unknown {
+    return { ...buildNetlifyResponseDeps(), ...corruptions };
 }
 
 export const mockNetlifyResponseHandler: NetlifyResponseHandlerFn = async (

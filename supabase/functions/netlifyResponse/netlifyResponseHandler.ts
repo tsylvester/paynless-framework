@@ -64,9 +64,10 @@ export const netlifyResponseHandler: NetlifyResponseHandlerFn = async (
         assembled_content: body.assembled_content,
         token_usage: body.token_usage,
         finish_reason: body.finish_reason,
+        processingTimeMs: body.processingTimeMs,
     };
 
-    const result = await deps.saveResponse(deps.saveResponseDeps, srParams, srPayload);
+    const result = await deps.saveResponse(srParams, srPayload);
 
     if ('status' in result) {
         return new Response(JSON.stringify({ status: result.status }), { status: 200 });

@@ -1263,7 +1263,7 @@ Oversized model inputs compress incrementally until the preflight fits: the pare
       * `[✅]`   Synthesis with a count produces `prompt_tokens` and `total_tokens` from it — unit test.
       * `[✅]`   A relayed provider usage and an empty-content response both succeed without a count — unit test.
 
-* `[ ]`   supabase/functions/dialectic-worker/saveResponse/saveResponse.ts **[BE] The relocation node: a thin orchestrator routing on the row's `job_type`, with `SaveResponseDeps` narrowed to eight bound collaborators, `SaveResponseSuccessReturn['status']` gaining `waiting_for_children`, and the monolith body deleted**
+* `[✅]`   supabase/functions/dialectic-worker/saveResponse/saveResponse.ts **[BE] The relocation node: a thin orchestrator routing on the row's `job_type`, with `SaveResponseDeps` narrowed to eight bound collaborators, `SaveResponseSuccessReturn['status']` gaining `waiting_for_children`, and the monolith body deleted**
 
    * `[✅]`   `objective`
       * `[✅]`   The monolith `saveResponse.ts` (1284 lines) performs every responsibility in a straight line: job and provider resolution, response assembly, debit, content preparation, contribution identity, upload, relationship persistence, render dispatch, continuation, notification, and final-status update. The scope's target architecture replaces the body with a thin orchestrator that routes on the job row's `job_type` column — EXECUTE to `saveContributionResponse`, COMPRESS to `saveCompressedResponse` — each module already landed and tested in its own node. The shared front half (job/provider resolution, response assembly, debit, content preparation) is delegated to the extracted modules (`loadJobContext`, `assembleAiResponse`, `debitForResponse`, `prepareResponseContent`), each already bound through `SaveResponseDeps`. The retry path is a single call site: the orchestrator builds the `FailedAttemptError[]` from the retry-required flavor and dispatches `retryJob`. The monolith body is deleted.
@@ -1579,14 +1579,14 @@ Oversized model inputs compress incrementally until the preflight fits: the pare
    * `[✅]`   `saveResponse.rawJsonOnly.test.ts`
       * `[✅]`   Retained in full as integration tier. No case is deleted.
 
-   * `[ ]`   `saveResponse.notifications.test.ts`
-      * `[ ]`   Retained in full as integration tier. No case is deleted.
+   * `[✅]`   `saveResponse.notifications.test.ts`
+      * `[✅]`   Retained in full as integration tier. No case is deleted.
 
-   * `[ ]`   `saveResponse.assembleDocument.test.ts`
-      * `[ ]`   Retained in full as integration tier. No case is deleted.
+   * `[✅]`   `saveResponse.assembleDocument.test.ts`
+      * `[✅]`   Retained in full as integration tier. No case is deleted.
 
-   * `[ ]`   `saveResponse.planValidation.test.ts`
-      * `[ ]`   Retained in full as integration tier. No case is deleted.
+   * `[✅]`   `saveResponse.planValidation.test.ts`
+      * `[✅]`   Retained in full as integration tier. No case is deleted.
 
    * `[✅]`   `construction`
       * `[✅]`   The module exports `saveResponse` as a standalone function with the full `(deps, params, payload)` signature. The composition root (`dialectic-worker/index.ts` or the deps factory) binds deps at context-creation time. No factory, no class.
@@ -1642,225 +1642,224 @@ Oversized model inputs compress incrementally until the preflight fits: the pare
       * `[✅]`   Neither `params` nor `payload` is mutated — unit test.
       * `[✅]`   The retained test suites prove every path the monolith took — integration tier (no case deleted).
 
-   * `[ ]`   **Commit** `refactor(dialectic-worker) replace saveResponse monolith with thin orchestrator routing on job_type`
-      * `[ ]`   `SaveResponseDeps` narrowed from twelve deps to eight bound closures.
-      * `[ ]`   `SaveResponseSuccessReturn.status` gains `'waiting_for_children'`.
-      * `[ ]`   `SaveResponsePayload` gains `processingTimeMs`.
-      * `[ ]`   The 1284-line monolith body is replaced by a ~100-line orchestrator dispatching to `saveContributionResponse` and `saveCompressedResponse`.
-      * `[ ]`   The seven existing test suite files are retained as the integration tier.
+   * `[✅]`   **Commit** `refactor(dialectic-worker) replace saveResponse monolith with thin orchestrator routing on job_type`
+      * `[✅]`   `SaveResponseDeps` narrowed from twelve deps to eight bound closures.
+      * `[✅]`   `SaveResponseSuccessReturn.status` gains `'waiting_for_children'`.
+      * `[✅]`   `SaveResponsePayload` gains `processingTimeMs`.
+      * `[✅]`   The 1284-line monolith body is replaced by a ~100-line orchestrator dispatching to `saveContributionResponse` and `saveCompressedResponse`.
+      * `[✅]`   The seven existing test suite files are retained as the integration tier.
 
-* `[ ]`   supabase/functions/netlifyResponse/netlifyResponseHandler.ts **[BE] Receive `saveResponse` as a bound closure and call it with params and payload alone; `NetlifyResponseDeps` drops the deps object it was passing through**
+* `[✅]`   supabase/functions/netlifyResponse/netlifyResponseHandler.ts **[BE] Receive `saveResponse` as a bound closure and call it with params and payload alone; `NetlifyResponseDeps` drops the deps object it was passing through**
 
-   * `[ ]`   `objective`
-      * `[ ]`   Solve a handler that carries another function's deps so it can hand them back to it. `NetlifyResponseDeps` declares `saveResponse: SaveResponseFn` beside `saveResponseDeps: SaveResponseDeps`, and the call site reads `deps.saveResponse(deps.saveResponseDeps, srParams, srPayload)` — the handler holds a collaborator's dependency graph, invokes none of it, and exists only to pass it along. That is the prop-drilling shape a bound closure removes: the composition root binds the deps once, and every caller below invokes two arguments.
-      * `[ ]`   Functional goals:
-         * `[ ]`   `NetlifyResponseDeps` declares `computeJobSig`, `adminClient` and `saveResponse: BoundSaveResponseFn`, and no `saveResponseDeps`.
-         * `[ ]`   The `saveResponse` call site passes `srParams` and `srPayload` only.
-         * `[ ]`   `NetlifyResponseBody` carries `processingTimeMs: number` — the elapsed time of the model call, known only to the workload that made it — and the `SaveResponsePayload` this handler constructs supplies its fourth member from it. This handler is that member's only producer.
-         * `[ ]`   `netlifyResponse.mock.ts` carries the four symbols owed to each owned object type and one function mock per owned function type, in the forms `mocks.md` prescribes.
-      * `[ ]`   Non-functional constraints:
-         * `[ ]`   The HMAC verification, its constant-time comparison, the TTL check, the POST check, the body parse, the body guard, the job lookup and the three response mappings keep their current behavior, status codes and messages.
-         * `[ ]`   `NetlifyResponseBody` keeps `job_id`, `assembled_content`, `token_usage`, `finish_reason` and `sig` exactly as they stand. The signature is computed over job-row fields, not body content, so the added member changes nothing about verification.
-         * `[ ]`   `NetlifyResponseHandlerFn` keeps its `(deps, req) => Promise<Response>` shape.
-         * `[ ]`   No file outside `netlifyResponse/` is edited. `saveResponse.interface.ts` already declares `BoundSaveResponseFn` and the eight-member `SaveResponseDeps`.
-      * `[ ]`   Each goal is proven by a named case in this node's interface test, guard test or unit test.
+   * `[✅]`   `objective`
+      * `[✅]`   Solve a handler that carries another function's deps so it can hand them back to it. `NetlifyResponseDeps` declares `saveResponse: SaveResponseFn` beside `saveResponseDeps: SaveResponseDeps`, and the call site reads `deps.saveResponse(deps.saveResponseDeps, srParams, srPayload)` — the handler holds a collaborator's dependency graph, invokes none of it, and exists only to pass it along. That is the prop-drilling shape a bound closure removes: the composition root binds the deps once, and every caller below invokes two arguments.
+      * `[✅]`   Functional goals:
+         * `[✅]`   `NetlifyResponseDeps` declares `computeJobSig`, `adminClient` and `saveResponse: BoundSaveResponseFn`, and no `saveResponseDeps`.
+         * `[✅]`   The `saveResponse` call site passes `srParams` and `srPayload` only.
+         * `[✅]`   `NetlifyResponseBody` carries `processingTimeMs: number` — the elapsed time of the model call, known only to the workload that made it — and the `SaveResponsePayload` this handler constructs supplies its fourth member from it. This handler is that member's only producer.
+         * `[✅]`   `netlifyResponse.mock.ts` carries the four symbols owed to each owned object type and one function mock per owned function type, in the forms `mocks.md` prescribes.
+      * `[✅]`   Non-functional constraints:
+         * `[✅]`   The HMAC verification, its constant-time comparison, the TTL check, the POST check, the body parse, the body guard, the job lookup and the three response mappings keep their current behavior, status codes and messages.
+         * `[✅]`   `NetlifyResponseBody` keeps `job_id`, `assembled_content`, `token_usage`, `finish_reason` and `sig` exactly as they stand. The signature is computed over job-row fields, not body content, so the added member changes nothing about verification.
+         * `[✅]`   `NetlifyResponseHandlerFn` keeps its `(deps, req) => Promise<Response>` shape.
+         * `[✅]`   No file outside `netlifyResponse/` is edited. `saveResponse.interface.ts` already declares `BoundSaveResponseFn` and the eight-member `SaveResponseDeps`.
+      * `[✅]`   Each goal is proven by a named case in this node's interface test, guard test or unit test.
 
-   * `[ ]`   `role`
-      * `[ ]`   Node role is app-layer request handling for the `netlifyResponse` Edge Function: prove the request is a well-formed, authentic, unexpired callback, then hand its content to the bound response saver and map the outcome onto a status code.
-      * `[ ]`   The role is correct because authenticity and freshness are properties of the request, and only the function that receives the request can judge them.
-      * `[ ]`   Out-of-scope responsibilities:
-         * `[ ]`   Do not construct or assemble any deps; the composition root does that.
-         * `[ ]`   Do not persist, debit, retry or render; `saveResponse` owns the whole tail behind one bound call.
-         * `[ ]`   Do not edit `index.ts`; it has its own node.
+   * `[✅]`   `role`
+      * `[✅]`   Node role is app-layer request handling for the `netlifyResponse` Edge Function: prove the request is a well-formed, authentic, unexpired callback, then hand its content to the bound response saver and map the outcome onto a status code.
+      * `[✅]`   The role is correct because authenticity and freshness are properties of the request, and only the function that receives the request can judge them.
+      * `[✅]`   Out-of-scope responsibilities:
+         * `[✅]`   Do not construct or assemble any deps; the composition root does that.
+         * `[✅]`   Do not persist, debit, retry or render; `saveResponse` owns the whole tail behind one bound call.
+         * `[✅]`   Do not edit `index.ts`; it has its own node.
 
-   * `[ ]`   `module`
-      * `[ ]`   Bounded context is `supabase/functions/netlifyResponse` — the Edge Function that receives the stream callback, proves it, and dispatches it.
-      * `[ ]`   Inside boundary:
-         * `[ ]`   What makes a callback acceptable: shape, signature, freshness.
-         * `[ ]`   Which status code each outcome maps to.
-         * `[ ]`   `NetlifyResponseBody`, `NetlifyResponseDeps`, `NetlifyResponseHandlerFn` and their guards and mocks.
-      * `[ ]`   Outside boundary:
-         * `[ ]`   `SaveResponseParams`, `SaveResponsePayload`, `SaveResponseReturn` and `BoundSaveResponseFn`, owned by `dialectic-worker/saveResponse/saveResponse.interface.ts`.
-         * `[ ]`   `ComputeJobSig`, owned by `_shared/utils/computeJobSig/computeJobSig.interface.ts`.
-         * `[ ]`   Where the bound closure came from and what it does once called.
+   * `[✅]`   `module`
+      * `[✅]`   Bounded context is `supabase/functions/netlifyResponse` — the Edge Function that receives the stream callback, proves it, and dispatches it.
+      * `[✅]`   Inside boundary:
+         * `[✅]`   What makes a callback acceptable: shape, signature, freshness.
+         * `[✅]`   Which status code each outcome maps to.
+         * `[✅]`   `NetlifyResponseBody`, `NetlifyResponseDeps`, `NetlifyResponseHandlerFn` and their guards and mocks.
+      * `[✅]`   Outside boundary:
+         * `[✅]`   `SaveResponseParams`, `SaveResponsePayload`, `SaveResponseReturn` and `BoundSaveResponseFn`, owned by `dialectic-worker/saveResponse/saveResponse.interface.ts`.
+         * `[✅]`   `ComputeJobSig`, owned by `_shared/utils/computeJobSig/computeJobSig.interface.ts`.
+         * `[✅]`   Where the bound closure came from and what it does once called.
 
-   * `[ ]`   `deps`
-      * `[ ]`   Provider: `dialectic-worker/saveResponse/saveResponse.interface.ts` (`BoundSaveResponseFn`, `SaveResponseParams`, `SaveResponsePayload`).
-         * `[ ]`   Layer classification: worker module contract, consumed across the process boundary.
-         * `[ ]`   Direction: inbound; this file already imports the two parameter types, so no new direction is opened.
-         * `[ ]`   Purpose: type the bound closure and the two objects this handler constructs for it.
-      * `[ ]`   Removed provider: `dialectic-worker/saveResponse/saveResponse.interface.ts` (`SaveResponseFn`, `SaveResponseDeps`), both in the interface and at the call site, with the member they typed.
-      * `[ ]`   Provider: `_shared/utils/computeJobSig/computeJobSig.interface.ts` (`ComputeJobSig`).
-         * `[ ]`   Layer classification: shared utility contract.
-         * `[ ]`   Direction: inbound.
-         * `[ ]`   Purpose: recompute the expected signature for the claimed job.
-      * `[ ]`   Confirm:
-         * `[ ]`   No reverse dependency: nothing under `dialectic-worker/` imports from `netlifyResponse/`.
-         * `[ ]`   `deps.adminClient` keeps both its uses — the job lookup and `SaveResponseParams.dbClient`.
-      * `[ ]`   `context_slice`
-         * `[ ]`   From `saveResponse.interface.ts`: `BoundSaveResponseFn`, `SaveResponseParams` and `SaveResponsePayload`, imported with `import type`.
-         * `[ ]`   From `computeJobSig.interface.ts`: `ComputeJobSig`, imported with `import type`.
+   * `[✅]`   `deps`
+      * `[✅]`   Provider: `dialectic-worker/saveResponse/saveResponse.interface.ts` (`BoundSaveResponseFn`, `SaveResponseParams`, `SaveResponsePayload`).
+         * `[✅]`   Layer classification: worker module contract, consumed across the process boundary.
+         * `[✅]`   Direction: inbound; this file already imports the two parameter types, so no new direction is opened.
+         * `[✅]`   Purpose: type the bound closure and the two objects this handler constructs for it.
+      * `[✅]`   Removed provider: `dialectic-worker/saveResponse/saveResponse.interface.ts` (`SaveResponseFn`, `SaveResponseDeps`), both in the interface and at the call site, with the member they typed.
+      * `[✅]`   Provider: `_shared/utils/computeJobSig/computeJobSig.interface.ts` (`ComputeJobSig`).
+         * `[✅]`   Layer classification: shared utility contract.
+         * `[✅]`   Direction: inbound.
+         * `[✅]`   Purpose: recompute the expected signature for the claimed job.
+      * `[✅]`   Confirm:
+         * `[✅]`   No reverse dependency: nothing under `dialectic-worker/` imports from `netlifyResponse/`.
+         * `[✅]`   `deps.adminClient` keeps both its uses — the job lookup and `SaveResponseParams.dbClient`.
+      * `[✅]`   `context_slice`
+         * `[✅]`   From `saveResponse.interface.ts`: `BoundSaveResponseFn`, `SaveResponseParams` and `SaveResponsePayload`, imported with `import type`.
+         * `[✅]`   From `computeJobSig.interface.ts`: `ComputeJobSig`, imported with `import type`.
 
-   * `[ ]`   `netlifyResponse.interface.test.ts`
-      * `[ ]`   A case proves the `NetlifyResponseDeps` surface exhaustively by typed assignment: `Record<keyof NetlifyResponseDeps, true>` over `computeJobSig`, `adminClient` and `saveResponse`, asserting three — exhaustive in both directions, which is the proof `saveResponseDeps` is gone.
-      * `[ ]`   A case proves `NetlifyResponseDeps.saveResponse` accepts a `BoundSaveResponseFn` value and rejects nothing else by assigning a two-parameter function typed `BoundSaveResponseFn` to it.
-      * `[ ]`   A case proves the `NetlifyResponseBody` surface the same way over `job_id`, `assembled_content`, `token_usage`, `finish_reason`, `sig` and `processingTimeMs`, asserting six.
-      * `[ ]`   A case proves `NetlifyResponseHandlerFn` accepts `(deps, req)` and returns `Promise<Response>`.
+   * `[✅]`   `netlifyResponse.interface.test.ts`
+      * `[✅]`   A case proves the `NetlifyResponseDeps` surface exhaustively by typed assignment: `Record<keyof NetlifyResponseDeps, true>` over `computeJobSig`, `adminClient` and `saveResponse`, asserting three — exhaustive in both directions, which is the proof `saveResponseDeps` is gone.
+      * `[✅]`   A case proves `NetlifyResponseDeps.saveResponse` accepts a `BoundSaveResponseFn` value and rejects nothing else by assigning a two-parameter function typed `BoundSaveResponseFn` to it.
+      * `[✅]`   A case proves the `NetlifyResponseBody` surface the same way over `job_id`, `assembled_content`, `token_usage`, `finish_reason`, `sig` and `processingTimeMs`, asserting six.
+      * `[✅]`   A case proves `NetlifyResponseHandlerFn` accepts `(deps, req)` and returns `Promise<Response>`.
 
-   * `[ ]`   `netlifyResponse.interface.ts`
-      * `[ ]`   `NetlifyResponseDeps` drops `saveResponseDeps` and retypes `saveResponse` from `SaveResponseFn` to `BoundSaveResponseFn`; the `SaveResponseFn` and `SaveResponseDeps` type imports are replaced by `BoundSaveResponseFn`.
-      * `[ ]`   `NetlifyResponseBody` gains `processingTimeMs: number`; its five existing members, `NetlifyResponseHandlerFn` and the `NodeTokenUsage` import are unchanged.
+   * `[✅]`   `netlifyResponse.interface.ts`
+      * `[✅]`   `NetlifyResponseDeps` drops `saveResponseDeps` and retypes `saveResponse` from `SaveResponseFn` to `BoundSaveResponseFn`; the `SaveResponseFn` and `SaveResponseDeps` type imports are replaced by `BoundSaveResponseFn`.
+      * `[✅]`   `NetlifyResponseBody` gains `processingTimeMs: number`; its five existing members, `NetlifyResponseHandlerFn` and the `NodeTokenUsage` import are unchanged.
 
-   * `[ ]`   `netlifyResponse.interaction.spec`
-      * `[ ]`   Branch: dispatch to the bound saver.
-         * `[ ]`   Condition: the body parsed, guarded, matched a job row, matched its signature and fell inside the TTL.
-         * `[ ]`   Decision: none — every gate above has already returned.
-         * `[ ]`   Dependency call: `deps.saveResponse(srParams, srPayload)`, two arguments, `srPayload` carrying `assembled_content`, `token_usage`, `finish_reason` and `processingTimeMs`, each read from the guarded body.
-         * `[ ]`   Outcome: the awaited `SaveResponseReturn`, mapped by the branches below.
-      * `[ ]`   Every other branch keeps its condition, decision, dependency call and outcome: a non-POST request returns 405; an unparseable body returns 400; a body failing `isNetlifyResponseBody` returns 400; a missing job row returns 404; a signature mismatch returns 401; an expired `created_at` returns 401; a success arm returns 200 carrying `status`; an error arm with `retriable` true returns 503 and with `retriable` false returns 500, each carrying `error.message`.
-      * `[ ]`   Ordering and side effects: one job lookup, one signature computation and at most one `saveResponse` call per request; the handler writes no row and sends no notification.
+   * `[✅]`   `netlifyResponse.interaction.spec`
+      * `[✅]`   Branch: dispatch to the bound saver.
+         * `[✅]`   Condition: the body parsed, guarded, matched a job row, matched its signature and fell inside the TTL.
+         * `[✅]`   Decision: none — every gate above has already returned.
+         * `[✅]`   Dependency call: `deps.saveResponse(srParams, srPayload)`, two arguments, `srPayload` carrying `assembled_content`, `token_usage`, `finish_reason` and `processingTimeMs`, each read from the guarded body.
+         * `[✅]`   Outcome: the awaited `SaveResponseReturn`, mapped by the branches below.
+      * `[✅]`   Every other branch keeps its condition, decision, dependency call and outcome: a non-POST request returns 405; an unparseable body returns 400; a body failing `isNetlifyResponseBody` returns 400; a missing job row returns 404; a signature mismatch returns 401; an expired `created_at` returns 401; a success arm returns 200 carrying `status`; an error arm with `retriable` true returns 503 and with `retriable` false returns 500, each carrying `error.message`.
+      * `[✅]`   Ordering and side effects: one job lookup, one signature computation and at most one `saveResponse` call per request; the handler writes no row and sends no notification.
 
-   * `[ ]`   `netlifyResponse.mock.ts`
-      * `[ ]`   `NetlifyResponseDepsOverrides` / `buildNetlifyResponseDeps` / `NetlifyResponseDepsCorruptions` / `invalidateNetlifyResponseDeps`, and the same quartet for `NetlifyResponseBody`. Overrides types are `Partial<T>`, corruption types are `{ [K in keyof T]?: unknown }`, invalidators return `unknown`.
-      * `[ ]`   `buildNetlifyResponseDeps` defaults `saveResponse` to this file's `mockBoundSaveResponse`, `adminClient` to `createMockSupabaseClient().client` and `computeJobSig` to a `ComputeJobSig`-typed function returning a fixed signature string.
-      * `[ ]`   One function mock per owned function type: `mockNetlifyResponseHandler: NetlifyResponseHandlerFn` returning a 200 `Response`, and `mockBoundSaveResponse: BoundSaveResponseFn` returning `{ status: 'completed' }`. Identical signatures, no options, no recording.
-      * `[ ]`   Deleted: `createMockNetlifyResponseDeps` and `CreateMockNetlifyResponseDepsOverrides`, a configurable factory with an options bag, and the `createMockSaveResponseDeps` import that supplied its `saveResponseDeps` default. A test needing another outcome declares its own `BoundSaveResponseFn` composed from these builders.
+   * `[✅]`   `netlifyResponse.mock.ts`
+      * `[✅]`   `NetlifyResponseDepsOverrides` / `buildNetlifyResponseDeps` / `NetlifyResponseDepsCorruptions` / `invalidateNetlifyResponseDeps`, and the same quartet for `NetlifyResponseBody`. Overrides types are `Partial<T>`, corruption types are `{ [K in keyof T]?: unknown }`, invalidators return `unknown`.
+      * `[✅]`   `buildNetlifyResponseDeps` defaults `saveResponse` to this file's `mockBoundSaveResponse`, `adminClient` to `createMockSupabaseClient().client` and `computeJobSig` to a `ComputeJobSig`-typed function returning a fixed signature string.
+      * `[✅]`   One function mock per owned function type: `mockNetlifyResponseHandler: NetlifyResponseHandlerFn` returning a 200 `Response`, and `mockBoundSaveResponse: BoundSaveResponseFn` returning `{ status: 'completed' }`. Identical signatures, no options, no recording.
+      * `[✅]`   Deleted: `createMockNetlifyResponseDeps` and `CreateMockNetlifyResponseDepsOverrides`, a configurable factory with an options bag, and the `createMockSaveResponseDeps` import that supplied its `saveResponseDeps` default. A test needing another outcome declares its own `BoundSaveResponseFn` composed from these builders.
 
-   * `[ ]`   `netlifyResponse.guard.test.ts`
-      * `[ ]`   Every block carries the collapsed header — the `Contract` line alone, no inline section markers.
-      * `[ ]`   `isNetlifyResponseDeps` case checklist over `computeJobSig`, `adminClient` and `saveResponse`, each absent and each wrong-typed, fixtures from `invalidateNetlifyResponseDeps`; a case asserts a deps object carrying no `saveResponseDeps` is accepted.
-      * `[ ]`   `isNetlifyResponseBody` case checklist extends to `processingTimeMs`, rejected absent, non-numeric, non-finite and negative; its five existing member cases are unchanged.
+   * `[✅]`   `netlifyResponse.guard.test.ts`
+      * `[✅]`   `isNetlifyResponseDeps` case checklist over `computeJobSig`, `adminClient` and `saveResponse`, each absent and each wrong-typed, fixtures from `invalidateNetlifyResponseDeps`; a case asserts a deps object carrying no `saveResponseDeps` is accepted.
+      * `[✅]`   `isNetlifyResponseBody` case checklist extends to `processingTimeMs`, rejected absent, non-numeric, non-finite and negative; its five existing member cases are unchanged.
 
-   * `[ ]`   `netlifyResponse.guard.ts`
-      * `[ ]`   `isNetlifyResponseDeps` drops the `saveResponseDeps` check and keeps its `computeJobSig`, `adminClient` and `saveResponse` checks.
-      * `[ ]`   `isNetlifyResponseBody` gains a `processingTimeMs` check — present, numeric, finite and not negative — beside its five existing checks, matching what `isAssembleAiResponseParams` enforces on the same value downstream.
+   * `[✅]`   `netlifyResponse.guard.ts`
+      * `[✅]`   `isNetlifyResponseDeps` drops the `saveResponseDeps` check and keeps its `computeJobSig`, `adminClient` and `saveResponse` checks.
+      * `[✅]`   `isNetlifyResponseBody` gains a `processingTimeMs` check — present, numeric, finite and not negative — beside its five existing checks, matching what `isAssembleAiResponseParams` enforces on the same value downstream.
 
-   * `[ ]`   `netlifyResponseHandler.test.ts`
-      * `[ ]`   Every case builds deps through `buildNetlifyResponseDeps`, overriding only the member it asserts on; no case constructs a `saveResponseDeps` value.
-      * `[ ]`   A case proves `deps.saveResponse` receives exactly two arguments, the first matching the `SaveResponseParams` the handler assembled and the second the `SaveResponsePayload`, captured at the call site.
-      * `[ ]`   Every existing case keeps its arrangement and assertions: the non-POST 405, the unparseable-body 400, the failed-guard 400, the missing-job 404, the signature-mismatch 401, the expired-TTL 401, the success 200, the retriable-error 503 and the non-retriable-error 500.
+   * `[✅]`   `netlifyResponseHandler.test.ts`
+      * `[✅]`   Every case builds deps through `buildNetlifyResponseDeps`, overriding only the member it asserts on; no case constructs a `saveResponseDeps` value.
+      * `[✅]`   A case proves `deps.saveResponse` receives exactly two arguments, the first matching the `SaveResponseParams` the handler assembled and the second the `SaveResponsePayload`, captured at the call site.
+      * `[✅]`   Every existing case keeps its arrangement and assertions: the non-POST 405, the unparseable-body 400, the failed-guard 400, the missing-job 404, the signature-mismatch 401, the expired-TTL 401, the success 200, the retriable-error 503 and the non-retriable-error 500.
 
-   * `[ ]`   `netlifyResponseHandler.ts`
-      * `[ ]`   The `saveResponse` call becomes `deps.saveResponse(srParams, srPayload)`, and the `srPayload` literal gains `processingTimeMs: body.processingTimeMs`.
-      * `[ ]`   The `SaveResponseDeps` import is deleted.
-      * `[ ]`   Nothing else in the file changes: every gate, every status code, every message and both `deps.adminClient` reads are left exactly as they stand.
+   * `[✅]`   `netlifyResponseHandler.ts`
+      * `[✅]`   The `saveResponse` call becomes `deps.saveResponse(srParams, srPayload)`, and the `srPayload` literal gains `processingTimeMs: body.processingTimeMs`.
+      * `[✅]`   The `SaveResponseDeps` import is deleted.
+      * `[✅]`   Nothing else in the file changes: every gate, every status code, every message and both `deps.adminClient` reads are left exactly as they stand.
 
-   * `[ ]`   `directionality`
-      * `[ ]`   Deps face inward: this module imports contracts from `dialectic-worker/saveResponse/` and `_shared/utils/computeJobSig/` and exports nothing to either.
-      * `[ ]`   No cycle: nothing under `dialectic-worker/` imports from `netlifyResponse/`.
+   * `[✅]`   `directionality`
+      * `[✅]`   Deps face inward: this module imports contracts from `dialectic-worker/saveResponse/` and `_shared/utils/computeJobSig/` and exports nothing to either.
+      * `[✅]`   No cycle: nothing under `dialectic-worker/` imports from `netlifyResponse/`.
 
-   * `[ ]`   `requirements`
-      * `[ ]`   `NetlifyResponseDeps` declares exactly three members and `saveResponseDeps` is absent — interface test, exhaustive key record.
-      * `[ ]`   `NetlifyResponseDeps.saveResponse` is a `BoundSaveResponseFn` — interface test, typed assignment.
-      * `[ ]`   `NetlifyResponseBody` declares exactly six members — interface test, exhaustive key record.
-      * `[ ]`   `saveResponse` is called with two arguments carrying the assembled params and payload — unit test, captured-argument assertions.
-      * `[ ]`   The `SaveResponsePayload` reaching `saveResponse` carries `processingTimeMs` equal to the body's value, not a default — unit test, captured-argument assertion over a body built with a distinct number.
-      * `[ ]`   A body whose `processingTimeMs` is absent, non-numeric, non-finite or negative returns 400 — unit test.
-      * `[ ]`   `isNetlifyResponseDeps` rejects each of the three members absent and each wrong-typed, and accepts a deps object carrying no `saveResponseDeps` — guard test.
-      * `[ ]`   Every owned object type has a `Partial<T>`-overrides builder and an `unknown`-returning invalidator, and no mock carries an options bag, a call-recording array or a configurable factory — guard test, whose fixtures are drawn from them.
-      * `[ ]`   Every request gate returns the status code it returns now — unit test, existing cases unchanged.
+   * `[✅]`   `requirements`
+      * `[✅]`   `NetlifyResponseDeps` declares exactly three members and `saveResponseDeps` is absent — interface test, exhaustive key record.
+      * `[✅]`   `NetlifyResponseDeps.saveResponse` is a `BoundSaveResponseFn` — interface test, typed assignment.
+      * `[✅]`   `NetlifyResponseBody` declares exactly six members — interface test, exhaustive key record.
+      * `[✅]`   `saveResponse` is called with two arguments carrying the assembled params and payload — unit test, captured-argument assertions.
+      * `[✅]`   The `SaveResponsePayload` reaching `saveResponse` carries `processingTimeMs` equal to the body's value, not a default — unit test, captured-argument assertion over a body built with a distinct number.
+      * `[✅]`   A body whose `processingTimeMs` is absent, non-numeric, non-finite or negative returns 400 — unit test.
+      * `[✅]`   `isNetlifyResponseDeps` rejects each of the three members absent and each wrong-typed, and accepts a deps object carrying no `saveResponseDeps` — guard test.
+      * `[✅]`   Every owned object type has a `Partial<T>`-overrides builder and an `unknown`-returning invalidator, and no mock carries an options bag, a call-recording array or a configurable factory — guard test, whose fixtures are drawn from them.
+      * `[✅]`   Every request gate returns the status code it returns now — unit test, existing cases unchanged.
 
 * `[ ]`   supabase/functions/netlifyResponse/index.ts **[BE] Become this Edge Function's composition root: assemble the eight-member `SaveResponseDeps` and every collaborator each bound module declares, bind `saveResponse` once, and hand the handler a three-member deps object**
 
-   * `[ ]`   `objective`
-      * `[ ]`   Solve a root that assembles the wrong graph. This file builds a twelve-member `SaveResponseDeps` literal against the monolith's surface — `fileManager`, `notificationService`, `continueJob`, `retryJob`, `resolveFinishReason`, `isIntermediateChunk`, `determineContinuation`, `buildUploadContext`, `sanitizeJsonContent`, `debitTokens`, `enqueueRenderJob` and `logger` — and hands both the function and its deps to the handler to pass back. The decomposition replaced that surface with eight bound closures, and `retryJob` now resolves to the canonical module rather than the legacy file. `saveResponse` runs in this process, on the stream callback, so this file is its composition root and the sole assembler of its graph; the worker's `createJobContext` assembles nothing here, a factory inside `dialectic-worker` producing deps for a separate Edge Function being a layer violation.
-      * `[ ]`   Functional goals:
-         * `[ ]`   The `SaveResponseDeps` literal carries `logger`, `retryJob`, `loadJobContext`, `assembleAiResponse`, `debitForResponse`, `prepareResponseContent`, `saveContributionResponse` and `saveCompressedResponse`, every member but `logger` a bound closure.
-         * `[ ]`   `retryJob` is bound from `dialectic-worker/retryJob/retryJob.ts` with `{ logger, notificationService }`; the legacy `dialectic-worker/retryJob.ts` import is deleted.
-         * `[ ]`   `loadJobContext` is bound with `{}`, the empty deps object its interface declares.
-         * `[ ]`   `assembleAiResponse` is bound with `{ countTokens }`, where `countTokens` is a `BoundCountTokensFn` built from the real tokenizer imports.
-         * `[ ]`   `debitForResponse` is bound with `{ debitTokens }`, where `debitTokens` is a `BoundDebitTokens` built from `{ logger, tokenWalletService: adminTokenWalletService }`.
-         * `[ ]`   `prepareResponseContent` is bound with `{ logger, resolveFinishReason, isIntermediateChunk, sanitizeJsonContent, determineContinuation }`.
-         * `[ ]`   `saveContributionResponse` is bound with `{ fileManager, buildUploadContext, resolveContributionIdentity, persistContributionRelationships, finalizeContributionJob }`, the last three themselves bound closures.
-         * `[ ]`   `saveCompressedResponse` is bound with `{ fileManager, buildUploadContext, enqueueRenderJob }`, `enqueueRenderJob` itself a bound closure.
-         * `[ ]`   `boundSaveResponse: BoundSaveResponseFn` closes over that literal and is the only `saveResponse` reference the `NetlifyResponseDeps` literal carries.
-         * `[ ]`   The `NetlifyResponseDeps` literal carries `computeJobSig`, `adminClient` and `saveResponse: boundSaveResponse`.
-      * `[ ]`   Non-functional constraints:
-         * `[ ]`   `FileManagerService`, `NotificationService` and `AdminTokenWalletService` are constructed here and keep their current constructor arguments — the bound modules below require all three, so none of the three constructions is deleted, and `constructStoragePath` and `assembleChunks` stay imported for the file manager.
-         * `[ ]`   The `HMAC_SECRET` env check and its throw, the `createComputeJobSig` construction, the `createSupabaseAdminClient` construction and the `serve()` call are unchanged.
-         * `[ ]`   Every collaborator is imported from the module that owns it and bound exactly once; no closure is rebuilt per request.
-         * `[ ]`   No file outside `netlifyResponse/` is edited. Each module this file binds already exports its implementation, its deps type and its bound function type.
-      * `[ ]`   Each goal is proven by a named case in this node's integration test.
+   * `[✅]`   `objective`
+      * `[✅]`   Solve a root that assembles the wrong graph. This file builds a twelve-member `SaveResponseDeps` literal against the monolith's surface — `fileManager`, `notificationService`, `continueJob`, `retryJob`, `resolveFinishReason`, `isIntermediateChunk`, `determineContinuation`, `buildUploadContext`, `sanitizeJsonContent`, `debitTokens`, `enqueueRenderJob` and `logger` — and hands both the function and its deps to the handler to pass back. The decomposition replaced that surface with eight bound closures, and `retryJob` now resolves to the canonical module rather than the legacy file. `saveResponse` runs in this process, on the stream callback, so this file is its composition root and the sole assembler of its graph; the worker's `createJobContext` assembles nothing here, a factory inside `dialectic-worker` producing deps for a separate Edge Function being a layer violation.
+      * `[✅]`   Functional goals:
+         * `[✅]`   The `SaveResponseDeps` literal carries `logger`, `retryJob`, `loadJobContext`, `assembleAiResponse`, `debitForResponse`, `prepareResponseContent`, `saveContributionResponse` and `saveCompressedResponse`, every member but `logger` a bound closure.
+         * `[✅]`   `retryJob` is bound from `dialectic-worker/retryJob/retryJob.ts` with `{ logger, notificationService }`; the legacy `dialectic-worker/retryJob.ts` import is deleted.
+         * `[✅]`   `loadJobContext` is bound with `{}`, the empty deps object its interface declares.
+         * `[✅]`   `assembleAiResponse` is bound with `{ countTokens }`, where `countTokens` is a `BoundCountTokensFn` built from the real tokenizer imports.
+         * `[✅]`   `debitForResponse` is bound with `{ debitTokens }`, where `debitTokens` is a `BoundDebitTokens` built from `{ logger, tokenWalletService: adminTokenWalletService }`.
+         * `[✅]`   `prepareResponseContent` is bound with `{ logger, resolveFinishReason, isIntermediateChunk, sanitizeJsonContent, determineContinuation }`.
+         * `[✅]`   `saveContributionResponse` is bound with `{ fileManager, buildUploadContext, resolveContributionIdentity, persistContributionRelationships, finalizeContributionJob }`, the last three themselves bound closures.
+         * `[✅]`   `saveCompressedResponse` is bound with `{ fileManager, buildUploadContext, enqueueRenderJob }`, `enqueueRenderJob` itself a bound closure.
+         * `[✅]`   `boundSaveResponse: BoundSaveResponseFn` closes over that literal and is the only `saveResponse` reference the `NetlifyResponseDeps` literal carries.
+         * `[✅]`   The `NetlifyResponseDeps` literal carries `computeJobSig`, `adminClient` and `saveResponse: boundSaveResponse`.
+      * `[✅]`   Non-functional constraints:
+         * `[✅]`   `FileManagerService`, `NotificationService` and `AdminTokenWalletService` are constructed here and keep their current constructor arguments — the bound modules below require all three, so none of the three constructions is deleted, and `constructStoragePath` and `assembleChunks` stay imported for the file manager.
+         * `[✅]`   The `HMAC_SECRET` env check and its throw, the `createComputeJobSig` construction, the `createSupabaseAdminClient` construction and the `serve()` call are unchanged.
+         * `[✅]`   Every collaborator is imported from the module that owns it and bound exactly once; no closure is rebuilt per request.
+         * `[✅]`   No file outside `netlifyResponse/` is edited. Each module this file binds already exports its implementation, its deps type and its bound function type.
+      * `[✅]`   Each goal is proven by a named case in this node's integration test.
 
-   * `[ ]`   `role`
-      * `[ ]`   Node role is the infra-layer composition root for the `netlifyResponse` Edge Function: construct the services, bind every module the response tail needs, and start the server.
-      * `[ ]`   The role is correct because a composition root is the one place allowed to name concrete implementations, and this process has exactly one entry point. The graph is constructed once here, at module scope, so every request reuses the same closures.
-      * `[ ]`   Out-of-scope responsibilities:
-         * `[ ]`   Do not import, call or reference `createJobContext`; the worker's factory belongs to the worker process.
-         * `[ ]`   Do not verify signatures, parse requests or map responses; the handler owns all of it.
-         * `[ ]`   Do not edit `netlifyResponseHandler.ts` or `netlifyResponse.interface.ts`; both land in the node ahead of this one.
-         * `[ ]`   Do not pass any deps object to `deps.saveResponse`; it arrives bound.
+   * `[✅]`   `role`
+      * `[✅]`   Node role is the infra-layer composition root for the `netlifyResponse` Edge Function: construct the services, bind every module the response tail needs, and start the server.
+      * `[✅]`   The role is correct because a composition root is the one place allowed to name concrete implementations, and this process has exactly one entry point. The graph is constructed once here, at module scope, so every request reuses the same closures.
+      * `[✅]`   Out-of-scope responsibilities:
+         * `[✅]`   Do not import, call or reference `createJobContext`; the worker's factory belongs to the worker process.
+         * `[✅]`   Do not verify signatures, parse requests or map responses; the handler owns all of it.
+         * `[✅]`   Do not edit `netlifyResponseHandler.ts` or `netlifyResponse.interface.ts`; both land in the node ahead of this one.
+         * `[✅]`   Do not pass any deps object to `deps.saveResponse`; it arrives bound.
 
-   * `[ ]`   `module`
-      * `[ ]`   Bounded context is `supabase/functions/netlifyResponse/index.ts` — service construction, module binding and server start for this Edge Function.
-      * `[ ]`   Inside boundary:
-         * `[ ]`   Which concrete implementation fills each declared dependency.
-         * `[ ]`   The order and depth of binding, producers bound before the closures that close over them.
-      * `[ ]`   Outside boundary:
-         * `[ ]`   Every module's own behavior and every deps contract it declares.
-         * `[ ]`   The worker process's graph, assembled by `createJobContext` from the worker root.
+   * `[✅]`   `module`
+      * `[✅]`   Bounded context is `supabase/functions/netlifyResponse/index.ts` — service construction, module binding and server start for this Edge Function.
+      * `[✅]`   Inside boundary:
+         * `[✅]`   Which concrete implementation fills each declared dependency.
+         * `[✅]`   The order and depth of binding, producers bound before the closures that close over them.
+      * `[✅]`   Outside boundary:
+         * `[✅]`   Every module's own behavior and every deps contract it declares.
+         * `[✅]`   The worker process's graph, assembled by `createJobContext` from the worker root.
 
-   * `[ ]`   `deps`
-      * `[ ]`   Provider: `dialectic-worker/saveResponse/saveResponse.provides.ts` (`saveResponse`, `SaveResponseDeps`, `BoundSaveResponseFn`).
-         * `[ ]`   Layer classification: worker module, consumed across the process boundary through its public surface.
-         * `[ ]`   Direction: inbound.
-         * `[ ]`   Purpose: the function this root binds and the deps type it assembles.
-      * `[ ]`   Provider: the seven modules whose bound closures fill that deps object, each through its own `provides` file — `retryJob/`, `loadJobContext/`, `assembleAiResponse/`, `debitForResponse/`, `prepareResponseContent/`, `saveContributionResponse/`, `saveCompressedResponse/`.
-         * `[ ]`   Layer classification: worker modules, consumed across the process boundary.
-         * `[ ]`   Direction: inbound; each exports an implementation and a bound function type and imports nothing from here.
-         * `[ ]`   Purpose: the eight members of `SaveResponseDeps`.
-      * `[ ]`   Provider: the collaborators those modules declare — `resolveContributionIdentity/`, `persistContributionRelationships/`, `finalizeContributionJob/`, `enqueueRenderJob/`, `continueJob/`, `_shared/utils/buildUploadContext/`, `_shared/utils/debitTokens.ts`, `_shared/utils/resolveFinishReason.ts`, `_shared/utils/isIntermediateChunk.ts`, `_shared/utils/determineContinuation/`, `_shared/utils/jsonSanitizer/`, `_shared/utils/shouldEnqueueRenderJob.ts`, `_shared/utils/resolveTemplateFilename/`, `_shared/utils/countTokens`.
-         * `[ ]`   Layer classification: worker modules and shared utilities.
-         * `[ ]`   Direction: inbound.
-         * `[ ]`   Purpose: filling the deps of the modules this root binds, at every depth the graph reaches.
-      * `[ ]`   Provider: `_shared/services/file_manager.ts` (`FileManagerService`), `_shared/utils/notification.service.ts` (`NotificationService`), `_shared/services/tokenwallet/admin/adminTokenWalletService.ts` (`AdminTokenWalletService`), `_shared/auth.ts` (`createSupabaseAdminClient`), `_shared/logger.ts` (`logger`), `_shared/utils/path_constructor.ts` (`constructStoragePath`), `_shared/utils/assembleChunks/assembleChunks.ts` (`assembleChunks`).
-         * `[ ]`   Layer classification: shared services and utilities.
-         * `[ ]`   Direction: inbound.
-         * `[ ]`   Purpose: the concrete services the bound modules require.
-      * `[ ]`   Removed provider: `dialectic-worker/retryJob.ts` (`retryJob`), replaced by the canonical module. This file stops being a consumer of the legacy file.
-      * `[ ]`   Confirm:
-         * `[ ]`   No member of `SaveResponseDeps` is constructed twice, and no closure is constructed inside the request path.
-         * `[ ]`   `createJobContext` is not imported here, and no worker-process deps object is read.
-         * `[ ]`   No reverse dependency: no module this root binds imports from `netlifyResponse/`.
-      * `[ ]`   `context_slice`
-         * `[ ]`   From each bound module's `provides` file: its implementation, its deps type and its bound function type only.
-         * `[ ]`   From `saveResponse.provides.ts`: `saveResponse`, `SaveResponseDeps` and `BoundSaveResponseFn` only.
+   * `[✅]`   `deps`
+      * `[✅]`   Provider: `dialectic-worker/saveResponse/saveResponse.provides.ts` (`saveResponse`, `SaveResponseDeps`, `BoundSaveResponseFn`).
+         * `[✅]`   Layer classification: worker module, consumed across the process boundary through its public surface.
+         * `[✅]`   Direction: inbound.
+         * `[✅]`   Purpose: the function this root binds and the deps type it assembles.
+      * `[✅]`   Provider: the seven modules whose bound closures fill that deps object, each through its own `provides` file — `retryJob/`, `loadJobContext/`, `assembleAiResponse/`, `debitForResponse/`, `prepareResponseContent/`, `saveContributionResponse/`, `saveCompressedResponse/`.
+         * `[✅]`   Layer classification: worker modules, consumed across the process boundary.
+         * `[✅]`   Direction: inbound; each exports an implementation and a bound function type and imports nothing from here.
+         * `[✅]`   Purpose: the eight members of `SaveResponseDeps`.
+      * `[✅]`   Provider: the collaborators those modules declare — `resolveContributionIdentity/`, `persistContributionRelationships/`, `finalizeContributionJob/`, `enqueueRenderJob/`, `continueJob/`, `_shared/utils/buildUploadContext/`, `_shared/utils/debitTokens.ts`, `_shared/utils/resolveFinishReason.ts`, `_shared/utils/isIntermediateChunk.ts`, `_shared/utils/determineContinuation/`, `_shared/utils/jsonSanitizer/`, `_shared/utils/shouldEnqueueRenderJob.ts`, `_shared/utils/resolveTemplateFilename/`, `_shared/utils/countTokens`.
+         * `[✅]`   Layer classification: worker modules and shared utilities.
+         * `[✅]`   Direction: inbound.
+         * `[✅]`   Purpose: filling the deps of the modules this root binds, at every depth the graph reaches.
+      * `[✅]`   Provider: `_shared/services/file_manager.ts` (`FileManagerService`), `_shared/utils/notification.service.ts` (`NotificationService`), `_shared/services/tokenwallet/admin/adminTokenWalletService.ts` (`AdminTokenWalletService`), `_shared/auth.ts` (`createSupabaseAdminClient`), `_shared/logger.ts` (`logger`), `_shared/utils/path_constructor.ts` (`constructStoragePath`), `_shared/utils/assembleChunks/assembleChunks.ts` (`assembleChunks`).
+         * `[✅]`   Layer classification: shared services and utilities.
+         * `[✅]`   Direction: inbound.
+         * `[✅]`   Purpose: the concrete services the bound modules require.
+      * `[✅]`   Removed provider: `dialectic-worker/retryJob.ts` (`retryJob`), replaced by the canonical module. This file stops being a consumer of the legacy file.
+      * `[✅]`   Confirm:
+         * `[✅]`   No member of `SaveResponseDeps` is constructed twice, and no closure is constructed inside the request path.
+         * `[✅]`   `createJobContext` is not imported here, and no worker-process deps object is read.
+         * `[✅]`   No reverse dependency: no module this root binds imports from `netlifyResponse/`.
+      * `[✅]`   `context_slice`
+         * `[✅]`   From each bound module's `provides` file: its implementation, its deps type and its bound function type only.
+         * `[✅]`   From `saveResponse.provides.ts`: `saveResponse`, `SaveResponseDeps` and `BoundSaveResponseFn` only.
 
-   * `[ ]`   `construction`
-      * `[ ]`   The module-level block is the composition root and runs once at cold start: construct `adminClient`, `logger`, `fileManager`, `notificationService` and `adminTokenWalletService`; bind the leaf closures each module declares; bind the seven modules; assemble `SaveResponseDeps`; bind `saveResponse`; assemble `NetlifyResponseDeps`; call `serve()`.
-      * `[ ]`   Producers are bound before the closures that close over them, so no binding reads a `const` declared below it.
-      * `[ ]`   No factory and no class: the root is a sequence of `const` declarations. Nothing is partially constructed — every deps object is complete at its declaration site.
+   * `[✅]`   `construction`
+      * `[✅]`   The module-level block is the composition root and runs once at cold start: construct `adminClient`, `logger`, `fileManager`, `notificationService` and `adminTokenWalletService`; bind the leaf closures each module declares; bind the seven modules; assemble `SaveResponseDeps`; bind `saveResponse`; assemble `NetlifyResponseDeps`; call `serve()`.
+      * `[✅]`   Producers are bound before the closures that close over them, so no binding reads a `const` declared below it.
+      * `[✅]`   No factory and no class: the root is a sequence of `const` declarations. Nothing is partially constructed — every deps object is complete at its declaration site.
 
-   * `[ ]`   `index.ts`
-      * `[ ]`   The twelve-member `SaveResponseDeps` literal is replaced by the eight-member literal, each member a bound closure but `logger`.
-      * `[ ]`   The `boundResolveTemplateFilename`, `boundEnqueueRenderJob` and `boundDebitTokens` closures stay and are consumed by the modules that declare them rather than by the deps literal directly.
-      * `[ ]`   New bound closures are added for `retryJob`, `loadJobContext`, `assembleAiResponse`, `debitForResponse`, `prepareResponseContent`, `saveContributionResponse` and `saveCompressedResponse`, plus the `resolveContributionIdentity`, `persistContributionRelationships`, `finalizeContributionJob` and `countTokens` closures those four require.
-      * `[ ]`   The `retryJob` import moves from `../dialectic-worker/retryJob.ts` to the canonical module's `provides` file; the `continueJob`, `resolveFinishReason`, `isIntermediateChunk`, `determineContinuation`, `buildUploadContext` and `sanitizeJsonContent` imports stay and feed the modules that declare them.
-      * `[ ]`   `boundSaveResponse: BoundSaveResponseFn` is declared and the `NetlifyResponseDeps` literal becomes `{ computeJobSig, adminClient, saveResponse: boundSaveResponse }`.
-      * `[ ]`   The `HMAC_SECRET` check, the `computeJobSig` construction, the `adminClient` construction, the three service constructions and the `serve()` call are left exactly as they stand.
+   * `[✅]`   `index.ts`
+      * `[✅]`   The twelve-member `SaveResponseDeps` literal is replaced by the eight-member literal, each member a bound closure but `logger`.
+      * `[✅]`   The `boundResolveTemplateFilename`, `boundEnqueueRenderJob` and `boundDebitTokens` closures stay and are consumed by the modules that declare them rather than by the deps literal directly.
+      * `[✅]`   New bound closures are added for `retryJob`, `loadJobContext`, `assembleAiResponse`, `debitForResponse`, `prepareResponseContent`, `saveContributionResponse` and `saveCompressedResponse`, plus the `resolveContributionIdentity`, `persistContributionRelationships`, `finalizeContributionJob` and `countTokens` closures those four require.
+      * `[✅]`   The `retryJob` import moves from `../dialectic-worker/retryJob.ts` to the canonical module's `provides` file; the `continueJob`, `resolveFinishReason`, `isIntermediateChunk`, `determineContinuation`, `buildUploadContext` and `sanitizeJsonContent` imports stay and feed the modules that declare them.
+      * `[✅]`   `boundSaveResponse: BoundSaveResponseFn` is declared and the `NetlifyResponseDeps` literal becomes `{ computeJobSig, adminClient, saveResponse: boundSaveResponse }`.
+      * `[✅]`   The `HMAC_SECRET` check, the `computeJobSig` construction, the `adminClient` construction, the three service constructions and the `serve()` call are left exactly as they stand.
 
-   * `[ ]`   `netlifyResponse.integration.test.ts`
-      * `[ ]`   The integrated chain is real end to end: `netlifyResponseHandler` → the bound `saveResponse` → the arm module the job row's `job_type` selects → that module's own collaborators. No function in that chain is mocked, stubbed or replaced by a builder.
-      * `[ ]`   Mocked at the outer edge only: the Supabase client, the storage adapter and the queue POST.
-      * `[ ]`   A case drives an EXECUTE row through the chain: the request passes every gate, `saveContributionResponse` runs, and the handler returns 200 carrying the status that arm produced.
-      * `[ ]`   A case drives a COMPRESS row through the chain: `saveCompressedResponse` runs and the handler returns 200 carrying its status.
-      * `[ ]`   A case proves the graph is bound once: two requests reach the same closure identities.
-      * `[ ]`   A case proves an error arm maps by its flag: a retriable error returns 503 and a non-retriable error returns 500, each carrying the error's message.
+   * `[✅]`   `netlifyResponse.integration.test.ts`
+      * `[✅]`   The integrated chain is real end to end: `netlifyResponseHandler` → the bound `saveResponse` → the arm module the job row's `job_type` selects → that module's own collaborators. No function in that chain is mocked, stubbed or replaced by a builder.
+      * `[✅]`   Mocked at the outer edge only: the Supabase client, the storage adapter and the queue POST.
+      * `[✅]`   A case drives an EXECUTE row through the chain: the request passes every gate, `saveContributionResponse` runs, and the handler returns 200 carrying the status that arm produced.
+      * `[✅]`   A case drives a COMPRESS row through the chain: `saveCompressedResponse` runs and the handler returns 200 carrying its status.
+      * `[✅]`   A case proves the graph is bound once: two requests reach the same closure identities.
+      * `[✅]`   A case proves an error arm maps by its flag: a retriable error returns 503 and a non-retriable error returns 500, each carrying the error's message.
 
-   * `[ ]`   `directionality`
-      * `[ ]`   Deps face inward: this root imports implementations and contracts from `dialectic-worker/` modules and `_shared/`, and exports nothing.
-      * `[ ]`   No cycle: no module this root binds imports from `netlifyResponse/`.
-      * `[ ]`   The graph is directed and acyclic at every binding depth: each closure closes only over values declared above it.
+   * `[✅]`   `directionality`
+      * `[✅]`   Deps face inward: this root imports implementations and contracts from `dialectic-worker/` modules and `_shared/`, and exports nothing.
+      * `[✅]`   No cycle: no module this root binds imports from `netlifyResponse/`.
+      * `[✅]`   The graph is directed and acyclic at every binding depth: each closure closes only over values declared above it.
 
-   * `[ ]`   `requirements`
-      * `[ ]`   `SaveResponseDeps` is assembled with exactly its eight declared members — integration test, captured-argument assertions on the deps object reaching `saveResponse`.
-      * `[ ]`   Each bound module receives exactly the deps object its own interface declares — integration test, captured-argument assertions.
-      * `[ ]`   `retryJob` resolves to the canonical module and the legacy `dialectic-worker/retryJob.ts` is not imported — integration test, and the import is absent from the file.
-      * `[ ]`   `createJobContext` is not imported and no worker-process deps object is read — the import is absent from the file.
-      * `[ ]`   `NetlifyResponseDeps` is assembled with three members and `saveResponse` is the bound closure — integration test.
-      * `[ ]`   The graph is constructed once, so two requests reach the same closure identities — integration test.
-      * `[ ]`   An EXECUTE row reaches `saveContributionResponse` and a COMPRESS row reaches `saveCompressedResponse`, each returning 200 — integration test.
-      * `[ ]`   A retriable error returns 503 and a non-retriable error returns 500 — integration test.
+   * `[✅]`   `requirements`
+      * `[✅]`   `SaveResponseDeps` is assembled with exactly its eight declared members — integration test, captured-argument assertions on the deps object reaching `saveResponse`.
+      * `[✅]`   Each bound module receives exactly the deps object its own interface declares — integration test, captured-argument assertions.
+      * `[✅]`   `retryJob` resolves to the canonical module and the legacy `dialectic-worker/retryJob.ts` is not imported — integration test, and the import is absent from the file.
+      * `[✅]`   `createJobContext` is not imported and no worker-process deps object is read — the import is absent from the file.
+      * `[✅]`   `NetlifyResponseDeps` is assembled with three members and `saveResponse` is the bound closure — integration test.
+      * `[✅]`   The graph is constructed once, so two requests reach the same closure identities — integration test.
+      * `[✅]`   An EXECUTE row reaches `saveContributionResponse` and a COMPRESS row reaches `saveCompressedResponse`, each returning 200 — integration test.
+      * `[✅]`   A retriable error returns 503 and a non-retriable error returns 500 — integration test.
 
    * `[ ]`   **Commit** `refactor(dialectic) netlifyResponse assembles its own graph and binds saveResponse once`
       * `[ ]`   Structural: `NetlifyResponseDeps` drops `saveResponseDeps` and retypes `saveResponse` to `BoundSaveResponseFn`; the twelve-member `SaveResponseDeps` literal becomes the eight-member decomposed one.
