@@ -3,7 +3,7 @@ import type { ChatCompletionChunk, ChatCompletionMessageParam } from 'npm:openai
 import type { ProviderModelInfo, ChatApiRequest, AdapterResponsePayload, AdapterStreamChunk, FinishReason, ILogger, AiModelExtendedConfig, EmbeddingResponse } from '../types.ts';
 import type { Tables } from '../../types_db.ts';
 import { isJson, isAiModelExtendedConfig } from '../utils/type_guards.ts';
-import { isResourceDocument } from '../utils/type-guards/type_guards.chat.ts';
+import { isResourceDocument } from '../utils/resolveCompressionSource/resolveCompressionSource.guard.ts';
 
 
 /**

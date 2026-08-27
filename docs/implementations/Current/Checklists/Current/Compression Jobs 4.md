@@ -1759,7 +1759,7 @@ Oversized model inputs compress incrementally until the preflight fits: the pare
       * `[✅]`   Every owned object type has a `Partial<T>`-overrides builder and an `unknown`-returning invalidator, and no mock carries an options bag, a call-recording array or a configurable factory — guard test, whose fixtures are drawn from them.
       * `[✅]`   Every request gate returns the status code it returns now — unit test, existing cases unchanged.
 
-* `[ ]`   supabase/functions/netlifyResponse/index.ts **[BE] Become this Edge Function's composition root: assemble the eight-member `SaveResponseDeps` and every collaborator each bound module declares, bind `saveResponse` once, and hand the handler a three-member deps object**
+* `[✅]`   supabase/functions/netlifyResponse/index.ts **[BE] Become this Edge Function's composition root: assemble the eight-member `SaveResponseDeps` and every collaborator each bound module declares, bind `saveResponse` once, and hand the handler a three-member deps object**
 
    * `[✅]`   `objective`
       * `[✅]`   Solve a root that assembles the wrong graph. This file builds a twelve-member `SaveResponseDeps` literal against the monolith's surface — `fileManager`, `notificationService`, `continueJob`, `retryJob`, `resolveFinishReason`, `isIntermediateChunk`, `determineContinuation`, `buildUploadContext`, `sanitizeJsonContent`, `debitTokens`, `enqueueRenderJob` and `logger` — and hands both the function and its deps to the handler to pass back. The decomposition replaced that surface with eight bound closures, and `retryJob` now resolves to the canonical module rather than the legacy file. `saveResponse` runs in this process, on the stream callback, so this file is its composition root and the sole assembler of its graph; the worker's `createJobContext` assembles nothing here, a factory inside `dialectic-worker` producing deps for a separate Edge Function being a layer violation.
@@ -1861,419 +1861,698 @@ Oversized model inputs compress incrementally until the preflight fits: the pare
       * `[✅]`   An EXECUTE row reaches `saveContributionResponse` and a COMPRESS row reaches `saveCompressedResponse`, each returning 200 — integration test.
       * `[✅]`   A retriable error returns 503 and a non-retriable error returns 500 — integration test.
 
-   * `[ ]`   **Commit** `refactor(dialectic) netlifyResponse assembles its own graph and binds saveResponse once`
-      * `[ ]`   Structural: `NetlifyResponseDeps` drops `saveResponseDeps` and retypes `saveResponse` to `BoundSaveResponseFn`; the twelve-member `SaveResponseDeps` literal becomes the eight-member decomposed one.
-      * `[ ]`   Behavioral: the handler calls `saveResponse` with two arguments; the response tail runs through the decomposed modules; `retryJob` resolves to the canonical module.
-      * `[ ]`   Contract: `netlifyResponse.mock.ts` replaces its configurable factory with the four standard symbols per owned object type and one function mock per owned function type.
+   * `[✅]`   **Commit** `refactor(dialectic) netlifyResponse assembles its own graph and binds saveResponse once`
+      * `[✅]`   Structural: `NetlifyResponseDeps` drops `saveResponseDeps` and retypes `saveResponse` to `BoundSaveResponseFn`; the twelve-member `SaveResponseDeps` literal becomes the eight-member decomposed one.
+      * `[✅]`   Behavioral: the handler calls `saveResponse` with two arguments; the response tail runs through the decomposed modules; `retryJob` resolves to the canonical module.
+      * `[✅]`   Contract: `netlifyResponse.mock.ts` replaces its configurable factory with the four standard symbols per owned object type and one function mock per owned function type.
 
 ## Compression Cutover
 
-* `[ ]`   supabase/functions/dialectic-worker/applyCompressionOverlay/applyCompressionOverlay.ts **[BE] Forward canonical-path lookup per candidate, swapping compressed content into resource documents and history messages without mutating inputs and without a deconstructor dep**
+* `[✅]`   supabase/functions/_shared/utils/resolveCompressionSource/resolveCompressionSource.ts **[BE] Take sole ownership of `ResourceDocument` — its definition, guard and mock — and resolve a document to its `CompressionSourceType` and `documentKey`, or to a not-compressible outcome**
+
+   * `[✅]`   `objective`
+      * `[✅]`   `ResourceDocument` is spread across four locations and owned by none. Its declaration sits in `_shared/types.ts` with `type: string` and `document_key: string`; its guard `isResourceDocument` sits in `_shared/utils/type-guards/type_guards.chat.ts` and checks `typeof value.type === 'string'`, which admits any string; and two builders for it live in packages that do not own it — `buildResourceDocument` in `dialectic-worker/compressPrompt/compressPrompt.mock.ts` and `buildGatherArtifact` in `dialectic-worker/gatherArtifacts/gatherArtifacts.mock.ts`. The type has no module because it originates in the database rather than from a named function; that is the technical debt these blobs are made of, and it is not resolved here. What is resolved is the scatter: one module owns the definition, the guard and the mock together.
+      * `[✅]`   The declaration's looseness is what forces per-call-site translation. `ResourceDocument.type` is the `InputRule.type` that selected the document — `gatherArtifacts` writes exactly that at each of its five push sites, `applyInputsRequiredScope` joins `scopeRule.type === d.type` against an `InputRule` and drops what does not match, and `getSortedCompressionCandidates` keys its relevance map `${rule.type}:${rule.document_key}[:${rule.slug}]` from `RelevanceRule` and reads it back off the document. Because the vocabulary is undeclared, every consumer that needs a storage class writes its own mapping: `applyCompressionOverlay` hard-codes a three-literal skip test and an if-chain to `CompressionSourceType`, and each further consumer would write another. Two of the values such a mapping must handle — `seed_prompt` and `header_context` — must never be admitted to compression at all, and today they are excluded only by falling off the end of a literal list rather than by contract.
+      * `[✅]`   Functional goals:
+         * `[✅]`   `ResourceDocument` and `ResourceDocuments` are declared in `resolveCompressionSource.interface.ts` and removed from `_shared/types.ts`.
+         * `[✅]`   `ResourceDocument.type` is `InputRule['type']` and `ResourceDocument.document_key` is `FileType`. Both are narrowings at the definition; no literal written by any producer changes, because those are the values producers already emit.
+         * `[✅]`   `isResourceDocument` is declared in `resolveCompressionSource.guard.ts` and removed from `type_guards.chat.ts`, and checks `type` against the union instead of `typeof value.type === 'string'`.
+         * `[✅]`   `buildResourceDocument` and its three companion symbols are declared in `resolveCompressionSource.mock.ts`, and become the single source the `gatherArtifacts` and `compressPrompt` nodes repoint their own mock files at.
+         * `[✅]`   `CompressibleInputRuleType` is `'document' | 'feedback' | 'project_resource'`. `'seed_prompt'`, `'header_context'` and `'contribution'` are excluded by contract — the seed prompt is the instruction envelope, `header_context` is the planner's structured JSON context object, and `'contribution'` is a deprecated selector no live recipe declares.
+         * `[✅]`   The admitted-type-to-source-class map is a module-internal `Record<CompressibleInputRuleType, CompressionSourceType>` — `'document'` → `'resource'`, `'project_resource'` → `'resource'`, `'feedback'` → `'feedback'`. It is not exported: consumers call the function and never read a table.
+         * `[✅]`   `resolveCompressionSource` takes one `ResourceDocument` and returns a two-arm union whose success arm carries two flavors — a compressible outcome carrying the resolved `sourceType` and the document's `documentKey`, and a not-compressible outcome. A not-compressible document is a correct result, not a failure.
+      * `[✅]`   Non-functional constraints:
+         * `[✅]`   The files this node edits are `_shared/utils/resolveCompressionSource/` (new), `_shared/types.ts`, `_shared/types/file_manager.types.ts`, and `_shared/utils/type-guards/type_guards.chat.ts` with its test. Consumer import paths are resolved by the toolchain and are not enumerated as work.
+         * `[✅]`   The consumers that inject this function — `applyCompressionOverlay`, `vector_utils`, `compressPrompt` — are addressed in their own nodes, as are the two mock files that repoint at this module's builder.
+         * `[✅]`   `_shared/types/file_manager.types.ts` gains no symbol. `CompressionSourceType` stays where its `PathContext` consumers are; this module imports it.
+         * `[✅]`   `ResolveCompressionSourceErrorReturn` is declared because the return is always the two-arm union, and no branch returns it: with `type` and `document_key` both narrowed at the definition and the payload arriving already narrowed from an in-TS caller, neither failure the loose declaration used to permit can occur. Do not invent a branch to populate the arm.
+         * `[✅]`   Each goal is proven by a named case in this node's interface test, guard test, or unit test.
+
+   * `[✅]`   `role`
+      * `[✅]`   Node role is a shared domain module: it owns the prompt-input document type and answers one question about it — may this document be compressed, and if so how is its artifact addressed — with no I/O, no DB access, and no storage access.
+      * `[✅]`   The role is correct because three consumers in two processes need that answer. `applyCompressionOverlay` and `compressPrompt` live in `dialectic-worker`; `getSortedCompressionCandidates` lives in `_shared/utils`. A module in `dialectic-worker` could not serve the third without a reverse dependency, so the module lives in `_shared`.
+      * `[✅]`   Out-of-scope responsibilities:
+         * `[✅]`   Do not build storage paths — `constructStoragePath` owns that.
+         * `[✅]`   Do not read or write storage, and take no `dbClient`.
+         * `[✅]`   Do not score, select, or enqueue compression victims.
+         * `[✅]`   Do not resolve history messages. A history message is not rule-selected and its `sourceType` is unconditionally `'history'`; there is no policy to resolve, and admitting it would carry a union through the payload for no decision.
+         * `[✅]`   Do not move `OutboundDocument`. It is the thin chat-boundary shape `chat/zodSchema.ts` validates, and it stays in `_shared/types.ts`.
+         * `[✅]`   Do not mutate the input document.
+
+   * `[✅]`   `module`
+      * `[✅]`   Bounded context is `supabase/functions/_shared/utils/resolveCompressionSource` — the prompt-input document type with its guard and mock, plus the compression admission policy and the mapping from an admitted selecting-rule type to its storage source class.
+      * `[✅]`   Inside boundary:
+         * `[✅]`   `ResourceDocument`, `ResourceDocuments`, `isResourceDocument`, and the four `ResourceDocument` mock symbols.
+         * `[✅]`   `CompressibleInputRuleType`, the internal source-class record, the admission decision, and composition of the returned arms.
+         * `[✅]`   `ResolveCompressionSourceDeps`, `ResolveCompressionSourceParams`, `ResolveCompressionSourcePayload`, `CompressibleSourceReturn`, `NotCompressibleSourceReturn`, `ResolveCompressionSourceSuccessReturn`, `ResolveCompressionSourceErrorReturn`, `ResolveCompressionSourceReturn`, `ResolveCompressionSourceFn`, `BoundResolveCompressionSourceFn`.
+      * `[✅]`   Outside boundary:
+         * `[✅]`   `OutboundDocument` and `ILogger`, owned by `_shared/types.ts`.
+         * `[✅]`   `InputRule`, owned by `dialectic-service/dialectic.interface.ts`.
+         * `[✅]`   `CompressionSourceType` and `FileType`, owned by `_shared/types/file_manager.types.ts`.
+         * `[✅]`   `isFileType` and `isCompressionSourceType`, owned by `_shared/utils/type-guards/type_guards.file_manager.ts`.
+         * `[✅]`   `isRecord`, owned by `_shared/utils/type-guards/type_guards.common.ts`.
+         * `[✅]`   `MockLogger`, owned by `_shared/logger.mock.ts`.
+         * `[✅]`   Who injects this function, how the resolved `sourceType` is used to build a path, and which document is selected as a victim.
+
+   * `[✅]`   `deps`
+      * `[✅]`   Provider: `_shared/types.ts` (`ILogger`, via `deps.logger`).
+         * `[✅]`   Layer classification: shared type surface.
+         * `[✅]`   Direction: inbound from `_shared`.
+         * `[✅]`   Purpose: log the admission decision per document for observability.
+      * `[✅]`   Called, not injected: `isFileType`, `isCompressionSourceType` and `isRecord` are pure type guards. Type guards are not dependencies.
+      * `[✅]`   Confirm: no reverse dependencies and no lateral layer violations. Every dep is inward from `_shared`, and the one import from `dialectic-service` is the type-only `InputRule`.
+
+   * `[✅]`   `context_slice`
+      * `[✅]`   `ResolveCompressionSourceDeps`: `{ logger: ILogger }`.
+      * `[✅]`   `ResolveCompressionSourceParams` carries no member — the function has no per-invocation control value. The slot is declared because it is part of the contract.
+
+   * `[✅]`   _shared/`types.ts`
+      * `[✅]`   Delete the `ResourceDocument` interface declaration and the `ResourceDocuments` type alias.
+      * `[✅]`   Add `import type { ResourceDocuments } from './utils/resolveCompressionSource/resolveCompressionSource.interface.ts';` so `ChatApiRequest.resourceDocuments` keeps its declared type.
+      * `[✅]`   Leave `OutboundDocument` and every other declaration in the file unchanged, including the `ChatApiRequest.resourceDocuments` member itself.
+
+   * `[✅]`   _shared/types/`file_manager.types.ts`
+      * `[✅]`   Correct the `PathContext.sourceType` trailing comment. It reads `'contribution'|'resource' REQUIRE documentKey; 'feedback'|'history' REQUIRE sourceId`; `constructStoragePath` requires `documentKey` for `'contribution'`, `'resource'` and `'feedback'`, and `sourceId` plus `role` for `'history'`. Comment only — no type, no symbol, and no other line changes.
+
+   * `[✅]`   _shared/utils/type-guards/`type_guards.chat.test.ts`
+      * `[✅]`   Delete the `Deno.test('Type Guard: isResourceDocument')` block in full. Its cases move to `resolveCompressionSource.guard.test.ts`; do not leave a copy behind.
+      * `[✅]`   Remove `isResourceDocument` from the import list from `./type_guards.chat.ts`, and remove the `ResourceDocument` type import if no remaining block in the file consumes it.
+
+   * `[✅]`   _shared/utils/type-guards/`type_guards.chat.ts`
+      * `[✅]`   Delete the `isResourceDocument` function and remove `ResourceDocument` from this file's type imports. `isOutboundDocument` and every other guard in the file are unchanged.
+
+   * `[✅]`   resolveCompressionSource/`resolveCompressionSource.interface.test.ts`
+      * `[✅]`   Prove `ResourceDocument`'s required key surface: `const surface: Record<keyof ResourceDocument, true> = { id: true, content: true, document_key: true, stage_slug: true, type: true };` and assert five keys.
+      * `[✅]`   Prove `ResourceDocument.type` admits each member of `InputRule['type']`: one typed assignment per value for `'document'`, `'feedback'`, `'header_context'`, `'seed_prompt'`, `'project_resource'`, `'contribution'`.
+      * `[✅]`   Prove `ResourceDocument.document_key` is `FileType`: a typed assignment of `FileType.business_case`.
+      * `[✅]`   Prove `ResourceDocuments` is the array of that type: `const documents: ResourceDocuments = [document];`.
+      * `[✅]`   Prove `CompressibleInputRuleType` membership: typed assignment of `'document'`, `'feedback'` and `'project_resource'`, one block per member.
+      * `[✅]`   Prove the deps surface: `const surface: Record<keyof ResolveCompressionSourceDeps, true> = { logger: true };`.
+      * `[✅]`   Prove the params surface carries no member: `const surface: Record<keyof ResolveCompressionSourceParams, true> = {};` and assert `Object.keys(surface).length === 0`.
+      * `[✅]`   Prove the payload surface: `const surface: Record<keyof ResolveCompressionSourcePayload, true> = { document: true };`.
+      * `[✅]`   Prove the compressible flavor's surface: `const surface: Record<keyof CompressibleSourceReturn, true> = { compressible: true, sourceType: true, documentKey: true };`.
+      * `[✅]`   Prove the not-compressible flavor's surface: `const surface: Record<keyof NotCompressibleSourceReturn, true> = { compressible: true };`.
+      * `[✅]`   Prove the error arm's surface: `const surface: Record<keyof ResolveCompressionSourceErrorReturn, true> = { error: true, retriable: true };`.
+      * `[✅]`   Prove flavor membership: a `CompressibleSourceReturn` literal is assignable to `ResolveCompressionSourceSuccessReturn`, and a `NotCompressibleSourceReturn` literal is assignable to `ResolveCompressionSourceSuccessReturn`.
+      * `[✅]`   Prove arm membership: a `ResolveCompressionSourceSuccessReturn` value is assignable to `ResolveCompressionSourceReturn`, and a `ResolveCompressionSourceErrorReturn` value is assignable to `ResolveCompressionSourceReturn`.
+      * `[✅]`   Prove the declared return, sync form: `const returned: ReturnType<ResolveCompressionSourceFn> = success; const declared: ResolveCompressionSourceReturn = returned;` for the success arm, and the same for the error arm.
+      * `[✅]`   Prove `BoundResolveCompressionSourceFn`'s declared return by typed assignment, in the same sync form as the unbound type: `const returned: ReturnType<BoundResolveCompressionSourceFn> = success; const declared: ResolveCompressionSourceReturn = returned;` for the success arm, and the same for the error arm.
+      * `[✅]`   Use typed literals only. Import no builder, no guard, and no implementation. Every imported symbol is consumed by a proof block, and every symbol the interface exports is imported.
+
+   * `[✅]`   resolveCompressionSource/`resolveCompressionSource.interface.ts`
+      * `[✅]`   Add imports: `import type { InputRule } from "../../../dialectic-service/dialectic.interface.ts";`, `import type { ILogger, OutboundDocument } from "../../types.ts";`, `import type { CompressionSourceType, FileType } from "../../types/file_manager.types.ts";`.
+      * `[✅]`   Declare `ResourceDocument extends OutboundDocument`: `{ document_key: FileType; stage_slug: string; type: InputRule['type'] }`. The member order and the `OutboundDocument` base match the declaration this replaces.
+      * `[✅]`   Declare `export type ResourceDocuments = ResourceDocument[];`.
+      * `[✅]`   Declare `export type CompressibleInputRuleType = 'document' | 'feedback' | 'project_resource';`. Every member is a member of `InputRule['type']`.
+      * `[✅]`   Declare `ResolveCompressionSourceDeps`: `{ logger: ILogger }`.
+      * `[✅]`   Declare `export type ResolveCompressionSourceParams = Record<string, never>;`. A type alias, not an empty interface.
+      * `[✅]`   Declare `ResolveCompressionSourcePayload`: `{ document: ResourceDocument }`.
+      * `[✅]`   Declare `CompressibleSourceReturn`: `{ compressible: true; sourceType: CompressionSourceType; documentKey: FileType }`.
+      * `[✅]`   Declare `NotCompressibleSourceReturn`: `{ compressible: false }`.
+      * `[✅]`   Declare `export type ResolveCompressionSourceSuccessReturn = CompressibleSourceReturn | NotCompressibleSourceReturn;`.
+      * `[✅]`   Declare `ResolveCompressionSourceErrorReturn`: `{ error: Error; retriable: boolean }`.
+      * `[✅]`   Declare `export type ResolveCompressionSourceReturn = ResolveCompressionSourceSuccessReturn | ResolveCompressionSourceErrorReturn;` — exactly two arms.
+      * `[✅]`   Declare `ResolveCompressionSourceFn`: `(deps: ResolveCompressionSourceDeps, params: ResolveCompressionSourceParams, payload: ResolveCompressionSourcePayload) => ResolveCompressionSourceReturn`. Synchronous — the function performs no I/O.
+      * `[✅]`   Declare `BoundResolveCompressionSourceFn`: `(params: ResolveCompressionSourceParams, payload: ResolveCompressionSourcePayload) => ResolveCompressionSourceReturn`.
+
+   * `[✅]`   `resolveCompressionSource.interaction.spec`
+      * `[✅]`   Branch: document-rule document is admitted.
+         * `[✅]`   Condition: `payload.document.type === 'document'`.
+         * `[✅]`   Decision: `isCompressibleInputRuleType(payload.document.type)` returns true.
+         * `[✅]`   Dependency call: `deps.logger.debug` recording the document id, its type, and the resolved source class.
+         * `[✅]`   Outcome: `CompressibleSourceReturn` with `compressible: true`, `sourceType: 'resource'`, and `documentKey` set to the document's `document_key`.
+      * `[✅]`   Branch: project_resource-rule document is admitted.
+         * `[✅]`   Condition: `payload.document.type === 'project_resource'`.
+         * `[✅]`   Decision: `isCompressibleInputRuleType` returns true.
+         * `[✅]`   Dependency call: `deps.logger.debug`.
+         * `[✅]`   Outcome: `CompressibleSourceReturn` with `sourceType: 'resource'` and the document's `document_key`.
+      * `[✅]`   Branch: feedback-rule document is admitted.
+         * `[✅]`   Condition: `payload.document.type === 'feedback'`.
+         * `[✅]`   Decision: `isCompressibleInputRuleType` returns true.
+         * `[✅]`   Dependency call: `deps.logger.debug`.
+         * `[✅]`   Outcome: `CompressibleSourceReturn` with `sourceType: 'feedback'` and the document's `document_key`.
+      * `[✅]`   Branch: seed prompt is excluded.
+         * `[✅]`   Condition: `payload.document.type === 'seed_prompt'`.
+         * `[✅]`   Decision: `isCompressibleInputRuleType` returns false.
+         * `[✅]`   Dependency call: `deps.logger.debug` recording the exclusion.
+         * `[✅]`   Outcome: `NotCompressibleSourceReturn` with `compressible: false`.
+      * `[✅]`   Branch: header context is excluded.
+         * `[✅]`   Condition: `payload.document.type === 'header_context'`.
+         * `[✅]`   Decision: `isCompressibleInputRuleType` returns false.
+         * `[✅]`   Dependency call: `deps.logger.debug`.
+         * `[✅]`   Outcome: `NotCompressibleSourceReturn`.
+      * `[✅]`   Branch: deprecated contribution selector is excluded.
+         * `[✅]`   Condition: `payload.document.type === 'contribution'`.
+         * `[✅]`   Decision: `isCompressibleInputRuleType` returns false.
+         * `[✅]`   Dependency call: `deps.logger.debug`.
+         * `[✅]`   Outcome: `NotCompressibleSourceReturn`.
+      * `[✅]`   Side effects and ordering: none beyond logging. `payload.document` is read and never written. No branch returns the error arm.
+
+   * `[✅]`   resolveCompressionSource/`resolveCompressionSource.mock.ts`
+      * `[✅]`   `ResourceDocumentOverrides`, `buildResourceDocument`, `ResourceDocumentCorruptions`, `invalidateResourceDocument`. `buildResourceDocument` defaults: `id: 'doc-1'`, `content: 'document content'`, `document_key: FileType.business_case`, `stage_slug: 'thesis'`, `type: 'document'`. Every property has a default and the return type is `ResourceDocument`.
+      * `[✅]`   `ResolveCompressionSourceDepsOverrides`, `buildResolveCompressionSourceDeps` — `logger` defaults to `MockLogger` from `_shared/logger.mock.ts`. `ResolveCompressionSourceDepsCorruptions`, `invalidateResolveCompressionSourceDeps`.
+      * `[✅]`   `ResolveCompressionSourceParamsOverrides`, `buildResolveCompressionSourceParams` — returns the empty object. `ResolveCompressionSourceParamsCorruptions`, `invalidateResolveCompressionSourceParams` — corrupts by adding an unexpected key.
+      * `[✅]`   `ResolveCompressionSourcePayloadOverrides`, `buildResolveCompressionSourcePayload` — `document` defaults to `buildResourceDocument()`. `ResolveCompressionSourcePayloadCorruptions`, `invalidateResolveCompressionSourcePayload` — composes `invalidateResourceDocument` for a corrupt `document`.
+      * `[✅]`   `CompressibleSourceReturnOverrides`, `buildCompressibleSourceReturn` — defaults `compressible: true`, `sourceType: 'resource'`, `documentKey: FileType.business_case`. `CompressibleSourceReturnCorruptions`, `invalidateCompressibleSourceReturn`.
+      * `[✅]`   `NotCompressibleSourceReturnOverrides`, `buildNotCompressibleSourceReturn` — defaults `compressible: false`. `NotCompressibleSourceReturnCorruptions`, `invalidateNotCompressibleSourceReturn`.
+      * `[✅]`   `ResolveCompressionSourceErrorReturnOverrides`, `buildResolveCompressionSourceErrorReturn` — defaults `error: new Error('resolveCompressionSource failed')`, `retriable: false`. `ResolveCompressionSourceErrorReturnCorruptions`, `invalidateResolveCompressionSourceErrorReturn`.
+      * `[✅]`   `mockResolveCompressionSource: ResolveCompressionSourceFn` — returns `buildCompressibleSourceReturn()`. No options bag, no call recording, no factory.
+      * `[✅]`   `mockBoundResolveCompressionSource: BoundResolveCompressionSourceFn` — returns `buildCompressibleSourceReturn()`. The interface owns both function types, so each has its own mock; consumers that hold the bound form inject this one.
+      * `[✅]`   `CompressibleInputRuleType` is a string-literal union alias and takes no mock; its members are used directly. `ResourceDocuments` is an array alias and takes no builder of its own. `ResolveCompressionSourceSuccessReturn` is a union and takes no builder of its own; each flavor has one above.
+
+   * `[✅]`   dialectic-service/`dialectic.interface.ts`
+      * `[✅]`   Declare `export type InputRuleType = InputRule['type'];` immediately below `InputRule`.
+      * `[✅]`   Declare `export const InputRuleTypes: readonly InputRuleType[] = ["document", "feedback", "header_context", "seed_prompt", "project_resource", "contribution"];`, in the form `PromptTypes` and `GranularityStrategies` already take in this file.
+
+   * `[✅]`   _shared/utils/type-guards/`type_guards.dialectic.test.ts`
+      * `[✅]`   `isInputRuleType` — accepts every member of `InputRuleTypes`; rejects a string outside the union, `null`, `undefined`, a number, an empty string and an array.
+      * `[✅]`   The existing `isInputRule` and `isInputRuleArray` blocks are unchanged.
+
+   * `[✅]`   _shared/utils/type-guards/`type_guards.dialectic.ts`
+      * `[✅]`   Add the import `import { InputRuleTypes } from "../../../dialectic-service/dialectic.interface.ts";` and the type import of `InputRuleType` from the same file.
+      * `[✅]`   Add `isInputRuleType(value: unknown): value is InputRuleType` — `typeof value === 'string'` then `InputRuleTypes.some(v => v === value)`, in the form `isPromptType` and `isGranularityStrategy` already take in this file.
+      * `[✅]`   `isInputRule` calls `isInputRuleType(value.type)` in place of its inline six-literal array.
+
+   * `[✅]`   resolveCompressionSource/`resolveCompressionSource.guard.test.ts`
+      * `[✅]`   `isResourceDocument` — accepts `buildResourceDocument()`; accepts a valid override for each member of `InputRule['type']`; rejects a plain `OutboundDocument` literal `{ id, content }` for missing identity fields; rejects each required property omitted in turn by rest-destructure; rejects `invalidateResourceDocument` corrupting `document_key`, `stage_slug` and `type` in turn; rejects a `type` that is a string outside the union; rejects `null`, `undefined`, a primitive and an array.
+      * `[✅]`   `isCompressibleInputRuleType` — accepts `'document'`, `'feedback'`, `'project_resource'`; rejects `'seed_prompt'`, `'header_context'`, `'contribution'`; rejects `null`, `undefined`, a number, an empty string, and an array.
+      * `[✅]`   `isResolveCompressionSourceDeps` — accepts the builder's default; rejects `null`, `undefined`, a primitive, an array; rejects a missing `logger` by rest-destructure; rejects `invalidateResolveCompressionSourceDeps({ logger: 'not-a-logger' })`.
+      * `[✅]`   `isResolveCompressionSourceParams` — accepts the builder's empty default; rejects `null`, `undefined`, a primitive, an array; rejects `invalidateResolveCompressionSourceParams({ unexpected: 1 })`.
+      * `[✅]`   `isResolveCompressionSourcePayload` — accepts the builder's default; rejects `null`, `undefined`, a primitive, an array; rejects a missing `document` by rest-destructure; rejects `invalidateResolveCompressionSourcePayload({ document: null })`.
+      * `[✅]`   `isCompressibleSourceReturn` — accepts the builder's default; rejects each property corrupted in turn (`compressible: false`, `sourceType: 'nope'`, `documentKey: 'not-a-file-type'`); rejects each required property omitted in turn.
+      * `[✅]`   `isNotCompressibleSourceReturn` — accepts the builder's default; rejects `compressible: true`; rejects the omitted property.
+      * `[✅]`   `isResolveCompressionSourceSuccessReturn` — accepts both flavor builders; rejects the error-return builder.
+      * `[✅]`   `isResolveCompressionSourceErrorReturn` — accepts the builder's default; rejects `error: 'a string'`; rejects `retriable: 'no'`; rejects each required property omitted in turn.
+      * `[✅]`   Import no implementation. Every fixture comes from a builder or an invalidator.
+
+   * `[✅]`   resolveCompressionSource/`resolveCompressionSource.guard.ts`
+      * `[✅]`   Delete the local `INPUT_RULE_TYPES` array and import `isInputRuleType` from `../type-guards/type_guards.dialectic.ts`.
+      * `[✅]`   `isResourceDocument(value: unknown): value is ResourceDocument` — `isRecord`, then `typeof value.id === 'string'`, `typeof value.content === 'string'`, `isFileType(value.document_key)`, `typeof value.stage_slug === 'string'`, and `isInputRuleType(value.type)`.
+      * `[✅]`   `isCompressibleInputRuleType(value: unknown): value is CompressibleInputRuleType` — returns true for exactly `'document'`, `'feedback'` and `'project_resource'`.
+      * `[✅]`   `isResolveCompressionSourceDeps` — `isRecord`, then `'logger' in value` and the logger's `debug`, `info`, `warn` and `error` members are functions.
+      * `[✅]`   `isResolveCompressionSourceParams` — `isRecord`, then the value has no own enumerable key.
+      * `[✅]`   `isResolveCompressionSourcePayload` — `isRecord`, then `'document' in value` and `isResourceDocument(value.document)`.
+      * `[✅]`   `isCompressibleSourceReturn` — `isRecord`, then `value.compressible === true`, `isCompressionSourceType(value.sourceType)`, and `isFileType(value.documentKey)`.
+      * `[✅]`   `isNotCompressibleSourceReturn` — `isRecord`, then `value.compressible === false`.
+      * `[✅]`   `isResolveCompressionSourceSuccessReturn` — true when either flavor guard is true.
+      * `[✅]`   `isResolveCompressionSourceErrorReturn` — `isRecord`, then `value.error instanceof Error` and `typeof value.retriable === 'boolean'`.
+
+   * `[✅]`   resolveCompressionSource/`resolveCompressionSource.test.ts`
+      * `[✅]`   A `'document'`-typed document returns `compressible: true` with `sourceType: 'resource'`.
+      * `[✅]`   A `'project_resource'`-typed document returns `compressible: true` with `sourceType: 'resource'`.
+      * `[✅]`   A `'feedback'`-typed document returns `compressible: true` with `sourceType: 'feedback'`.
+      * `[✅]`   A `'seed_prompt'`-typed document returns `compressible: false`.
+      * `[✅]`   A `'header_context'`-typed document returns `compressible: false`.
+      * `[✅]`   A `'contribution'`-typed document returns `compressible: false`.
+      * `[✅]`   `documentKey` is the document's own `document_key`: arrange a document overriding `document_key` to `FileType.technical_approach` while the builder's default is `FileType.business_case`, and assert the returned `documentKey` is the overridden value.
+      * `[✅]`   `payload.document` is unchanged after the call, asserted by deep equality against a separately built copy.
+      * `[✅]`   Each case builds its fixture with one direct `buildResolveCompressionSourcePayload({ document: buildResourceDocument({ … }) })` call, overriding only the members the case depends on.
+
+   * `[✅]`   `construction`
+      * `[✅]`   `resolveCompressionSource` is a stateless exported synchronous function — no constructor, no class, no factory. `isFileType`, `isCompressionSourceType`, `isRecord` and the module's own guards are direct imports and are called, not injected. The source-class record is a module-level `const` typed `Record<CompressibleInputRuleType, CompressionSourceType>`, declared once and not exported.
+
+   * `[✅]`   resolveCompressionSource/`resolveCompressionSource.ts`
+      * `[✅]`   Add imports: `isCompressibleInputRuleType` from `./resolveCompressionSource.guard.ts`; the interface's types from `./resolveCompressionSource.interface.ts`; `CompressionSourceType` from `../../types/file_manager.types.ts`.
+      * `[✅]`   Declare the module-internal `const COMPRESSION_SOURCE_BY_RULE_TYPE: Record<CompressibleInputRuleType, CompressionSourceType> = { document: 'resource', project_resource: 'resource', feedback: 'feedback' };`. Do not export it.
+      * `[✅]`   If `isCompressibleInputRuleType(payload.document.type)` is false, log the exclusion and return `NotCompressibleSourceReturn`.
+      * `[✅]`   Otherwise read `COMPRESSION_SOURCE_BY_RULE_TYPE[payload.document.type]`, log the admission, and return `CompressibleSourceReturn` carrying that value and `payload.document.document_key`.
+      * `[✅]`   Every branch returns a member of the return union; no path falls through, no ternary supplies a default, and no value is cast.
+      * `[✅]`   Introduce no undeclared dependencies; bypass no guards or contracts.
+
+   * `[✅]`   resolveCompressionSource/`resolveCompressionSource.provides.ts`
+      * `[✅]`   `export * from "./resolveCompressionSource.ts";`
+      * `[✅]`   `export * from "./resolveCompressionSource.interface.ts";`
+      * `[✅]`   `export * from "./resolveCompressionSource.guard.ts";`
+      * `[✅]`   `export * from "./resolveCompressionSource.mock.ts";`
+
+   * `[✅]`   `directionality`
+      * `[✅]`   Layer: shared module (`_shared/utils/resolveCompressionSource`). Deps are inward — `OutboundDocument` and `ILogger` from `_shared/types.ts`, `CompressionSourceType` and `FileType` from `_shared/types/file_manager.types.ts`, `isFileType` and `isCompressionSourceType` from `_shared/utils/type-guards/type_guards.file_manager.ts`, `isRecord` from `_shared/utils/type-guards/type_guards.common.ts`, `InputRule` from `dialectic-service/dialectic.interface.ts`. Provides outward to `applyCompressionOverlay`, `vector_utils` and `compressPrompt`, each of which injects the function.
+      * `[✅]`   `_shared/types.ts` imports `ResourceDocuments` from this module for `ChatApiRequest`, and this module imports `OutboundDocument` and `ILogger` from `_shared/types.ts`. That cycle is type-only and is the same shape as the type-only cycle `_shared/types.ts` already carries with `dialectic-service/dialectic.interface.ts`. It is recorded here, not designed around.
+      * `[✅]`   `_shared/types/file_manager.types.ts` gains no symbol and no import, so no cycle is introduced on that edge.
+      * `[✅]`   No reverse dependencies and no lateral layer violations.
+
+   * `[✅]`   `requirements`
+      * `[✅]`   `ResourceDocument` and `ResourceDocuments` are declared in `resolveCompressionSource.interface.ts` and absent from `_shared/types.ts` — the declarations are in the one file and not the other.
+      * `[✅]`   `ResourceDocument.type` is `InputRule['type']` — interface test, typed assignment of each of the six members.
+      * `[✅]`   `ResourceDocument.document_key` is `FileType` — interface test, typed assignment of `FileType.business_case`.
+      * `[✅]`   `isResourceDocument` is declared in `resolveCompressionSource.guard.ts` and absent from `type_guards.chat.ts`, and rejects a `type` outside the union — guard test.
+      * `[✅]`   `buildResourceDocument` and its three companion symbols are declared in `resolveCompressionSource.mock.ts` — consumed by this module's own guard test and unit test.
+      * `[✅]`   `CompressibleInputRuleType` admits exactly `'document'`, `'feedback'` and `'project_resource'` — interface test membership blocks and guard test rejection cases.
+      * `[✅]`   `'seed_prompt'`, `'header_context'` and `'contribution'` each resolve to `compressible: false` — one unit test case per value.
+      * `[✅]`   `'document'` and `'project_resource'` resolve to `sourceType: 'resource'`; `'feedback'` resolves to `sourceType: 'feedback'` — one unit test case per value.
+      * `[✅]`   The returned `documentKey` is the document's own `document_key` — unit test with an overridden key distinct from the builder's default.
+      * `[✅]`   The source-class record is not exported — absent from `resolveCompressionSource.provides.ts` and from the interface file.
+      * `[✅]`   `payload.document` is not mutated — unit test, deep-equality assertion.
+      * `[✅]`   `_shared/types/file_manager.types.ts` exports the same symbols it exported before this node — its export list is unchanged.
+
+* `[✅]`   supabase/functions/dialectic-worker/applyCompressionOverlay/applyCompressionOverlay.ts **[BE] Resolve each document's compression source class through the injected `resolveCompressionSource`, and build the canonical path from what it returns**
+
+   * `[✅]`   `objective`
+      * `[✅]`   After `gatherArtifacts` returns, the gathered resource documents and conversation history reach `prepareModelJob` with their original, uncompressed content. If any of those candidates were previously compressed — a `CompressedContext` artifact persisted at the candidate's canonical `_work` path — the model call pays for content that a cheaper, smaller version already replaced. There is no overlay pass between gathering and dispatch: compression results are invisible to every subsequent resume cycle, and the same victim is re-compressed every time.
+      * `[✅]`   The overlay decides two things it does not own. It carries its own literal admission test — `doc.type !== "document" && doc.type !== "feedback" && doc.type !== "project_resource"` — and its own if-chain from `type` to `CompressionSourceType`. That chain resolves `'document'` to `'contribution'`, while a `'document'`-rule artifact is a `dialectic_project_resources` row whose source class is `'resource'`; and the admission test excludes `'seed_prompt'` and `'header_context'` only by their absence from a literal list, so a value added to the list later is admitted silently. `resolveCompressionSource` owns both decisions for every consumer, and the overlay reads its answer.
+      * `[✅]`   `ResourceDocument.document_key` is `FileType`, so the `isFileType(doc.document_key)` re-narrow and the silent skip it guards are dead code standing between a document and its lookup.
+      * `[✅]`   Functional goals:
+         * `[✅]`   `ApplyCompressionOverlayDeps` carries `resolveCompressionSource: BoundResolveCompressionSourceFn`, and the function calls it once per resource document.
+         * `[✅]`   For each resource document in the payload, the function calls `deps.resolveCompressionSource` and acts on the arm it returns. On the compressible flavor it builds the candidate's canonical `CompressedContext` path using `constructStoragePath` with `FileType.CompressedContext`, the returned `sourceType`, the returned `documentKey`, and the `stageSlug` and `output_type` from params, then performs one existence read via `deps.downloadFromStorage`. If the artifact exists, the document's `content` is replaced with the downloaded compressed content in a new object; if not, the document passes through unchanged. On the not-compressible flavor the document passes through unchanged with no path built and no read. On the error arm the function returns its own error arm carrying that error unchanged. The returned `resourceDocuments` array is a new array of new objects — no input object is mutated.
+         * `[✅]`   For each history message in the payload whose `id` is defined and whose `role` is `'user'` or `'assistant'`, the function builds the candidate's canonical `CompressedContext` path using `constructStoragePath` with `FileType.CompressedContext`, `sourceType: 'history'`, `sourceId` set to the message's `id`, `role` set to the message's `role`, and the `stageSlug` and `output_type` from params. It performs one existence read via `deps.downloadFromStorage`. If the artifact exists, the message's `content` is replaced with the downloaded compressed content in a new object; if not, the message passes through unchanged. Messages with no `id` or with `role` `'system'` or `'function'` pass through unconditionally. A history message is not rule-selected, so `deps.resolveCompressionSource` is not called for one. The returned `conversationHistory` array is a new array of new objects — no input object is mutated.
+         * `[✅]`   The success arm carries the overlaid `resourceDocuments` and `conversationHistory`, plus an `overlaidCount` reporting how many candidates were swapped.
+         * `[✅]`   Every storage download failure is a non-fatal miss — the candidate passes through with its original content. A failure in `constructStoragePath` (a thrown `Error` from missing required fields) and an error arm from `deps.resolveCompressionSource` each return the error arm.
+         * `[✅]`   The function has no `deconstructStoragePath` dependency. Lookup is forward: each candidate carries its own identity (`document_key`, `stage_slug`, `type` for documents; `id`, `role` for messages), so the overlay builds the canonical path from the candidate's own fields and never reverse-parses a stored path.
+         * `[✅]`   The function holds no literal drawn from `InputRule['type']` and no mapping to `CompressionSourceType`.
+      * `[✅]`   Non-functional constraints:
+         * `[✅]`   `gatherArtifacts.ts`, `gatherArtifacts.interface.ts`, `processSimpleJob.ts` and every other file outside `dialectic-worker/applyCompressionOverlay/` are not edited. The consumer that calls this function and supplies its params is stated in the `gatherArtifacts` node, not here.
+         * `[✅]`   No file outside `dialectic-worker/applyCompressionOverlay/` is edited.
+         * `[✅]`   The composition root that binds `resolveCompressionSource` into this module's deps is `createJobContext`, addressed in its own node.
+         * `[✅]`   Each goal is proven by a named case in this node's interface test or unit test.
+
+   * `[✅]`   `role`
+      * `[✅]`   Node role is an app-layer content overlay: given gathered resource documents and conversation history, check each candidate for a persisted compressed artifact and swap the content of those that have one.
+      * `[✅]`   The role is correct because the function performs a pure content-replacement pass over two candidate arrays, using only forward canonical-path construction and storage reads.
+      * `[✅]`   Out-of-scope responsibilities:
+         * `[✅]`   Do not gather artifacts — `gatherArtifacts` owns that.
+         * `[✅]`   Do not decide whether a document may be compressed, and do not map a document's `type` to a `CompressionSourceType` — `resolveCompressionSource` owns both.
+         * `[✅]`   Do not score, select, or enqueue compression victims — `compressPrompt` and `enqueueCompressJobs` own those.
+         * `[✅]`   Do not persist artifacts — `saveCompressedResponse` and the RENDER job own that.
+         * `[✅]`   Do not count tokens, check affordability, or dispatch model calls.
+         * `[✅]`   Do not mutate any input object — return new arrays of new objects.
+
+   * `[✅]`   `module`
+      * `[✅]`   Bounded context is `supabase/functions/dialectic-worker/applyCompressionOverlay` — replacing candidate content with persisted compressed artifacts via forward canonical-path lookup.
+      * `[✅]`   Inside boundary:
+         * `[✅]`   The per-candidate canonical-path construction, the existence read, the content swap, the overlaid-count tally, and the composition of the returned arrays.
+         * `[✅]`   `ApplyCompressionOverlayDeps`, `ApplyCompressionOverlayParams`, `ApplyCompressionOverlayPayload`, `ApplyCompressionOverlaySuccessReturn`, `ApplyCompressionOverlayErrorReturn`, `ApplyCompressionOverlayReturn`, `ApplyCompressionOverlayFn`, `BoundApplyCompressionOverlayFn`.
+      * `[✅]`   Outside boundary:
+         * `[✅]`   `ResourceDocument`, `BoundResolveCompressionSourceFn`, `CompressibleSourceReturn`, `isCompressibleSourceReturn` and `isResolveCompressionSourceErrorReturn`, owned by `_shared/utils/resolveCompressionSource/`.
+         * `[✅]`   `Messages` and `ILogger`, owned by `_shared/types.ts`.
+         * `[✅]`   `FileType`, `DialecticStageSlug`, `PathContext`, owned by `_shared/types/file_manager.types.ts`.
+         * `[✅]`   `ConstructedPath` and `constructStoragePath`, owned by `_shared/utils/path_constructor.ts`.
+         * `[✅]`   `DownloadFromStorageFn`, owned by `_shared/supabase_storage_utils.ts`.
+         * `[✅]`   `SupabaseClient<Database>`, owned by `npm:@supabase/supabase-js` and `types_db.ts`.
+         * `[✅]`   Which rule types are compressible and which `CompressionSourceType` each resolves to.
+         * `[✅]`   Who calls this function, who supplies `stageSlug` and `output_type`, and what happens after the overlaid arrays reach the dispatcher.
+
+   * `[✅]`   `deps`
+      * `[✅]`   Provider: `_shared/utils/resolveCompressionSource/resolveCompressionSource.provides.ts` (`resolveCompressionSource` via `BoundResolveCompressionSourceFn`).
+         * `[✅]`   Layer classification: shared domain module.
+         * `[✅]`   Direction: inbound from `_shared`.
+         * `[✅]`   Purpose: resolve each resource document to its `CompressionSourceType` and `documentKey`, or to a not-compressible outcome. Called once per resource document and never for a history message.
+      * `[✅]`   Provider: `_shared/supabase_storage_utils.ts` (`downloadFromStorage` via `DownloadFromStorageFn`).
+         * `[✅]`   Layer classification: shared storage utility.
+         * `[✅]`   Direction: inbound from `_shared`.
+         * `[✅]`   Purpose: existence read for the `CompressedContext` artifact at the canonical path. A `null` data result or an error result is a miss, not a failure.
+      * `[✅]`   Provider: `_shared/types.ts` (`ILogger`).
+         * `[✅]`   Layer classification: shared type surface.
+         * `[✅]`   Direction: inbound from `_shared`.
+         * `[✅]`   Purpose: log each overlay hit and miss for observability.
+      * `[✅]`   Provider: `_shared/utils/path_constructor.ts` (`constructStoragePath`).
+         * `[✅]`   Layer classification: shared utility, pure function.
+         * `[✅]`   Direction: inbound from `_shared`.
+         * `[✅]`   Purpose: build the canonical `CompressedContext` path for each candidate. Called, not injected — it is a pure function, not a dependency.
+      * `[✅]`   Provider: `_shared/types/file_manager.types.ts` (`FileType`, `DialecticStageSlug`).
+         * `[✅]`   Layer classification: shared type surface.
+         * `[✅]`   Direction: inbound from `_shared`.
+         * `[✅]`   Purpose: `FileType.CompressedContext` is the `fileType` argument to `constructStoragePath`; `FileType` and `DialecticStageSlug` type the `output_type` and `stageSlug` params.
+      * `[✅]`   Provider: `_shared/utils/resolveCompressionSource/resolveCompressionSource.provides.ts` (`ResourceDocument`); `_shared/types.ts` (`Messages`).
+         * `[✅]`   Layer classification: shared type surfaces.
+         * `[✅]`   Direction: inbound from `_shared`.
+         * `[✅]`   Purpose: the two candidate array element types the function iterates.
+      * `[✅]`   Provider: `types_db.ts` (`Database`).
+         * `[✅]`   Layer classification: generated database type surface.
+         * `[✅]`   Direction: inbound.
+         * `[✅]`   Purpose: type the `SupabaseClient` passed to `downloadFromStorage`.
+      * `[✅]`   Provider: `_shared/supabase_storage_utils.mock.ts` (`createMockDownloadFromStorage`); `_shared/logger.mock.ts` (`MockLogger`); `_shared/utils/resolveCompressionSource/resolveCompressionSource.provides.ts` (`mockBoundResolveCompressionSource`, `buildCompressibleSourceReturn`, `buildNotCompressibleSourceReturn`, `buildResolveCompressionSourceErrorReturn`, `buildResourceDocument`).
+         * `[✅]`   Layer classification: shared test fixture surfaces.
+         * `[✅]`   Direction: inbound, test-time only.
+         * `[✅]`   Purpose: configure the storage download per outcome, provide the logger mock, supply the resolver's default and its per-case outcomes, and build the resource-document fixtures.
+      * `[✅]`   Confirm: no reverse dependencies, no lateral layer violations. All deps are inward from `_shared` or generated types.
+
+   * `[✅]`   `context_slice`
+      * `[✅]`   `ApplyCompressionOverlayDeps`: `{ logger: ILogger; downloadFromStorage: DownloadFromStorageFn; resolveCompressionSource: BoundResolveCompressionSourceFn }`.
+      * `[✅]`   `constructStoragePath` is called directly (pure function import), not injected. `isCompressibleSourceReturn` and `isResolveCompressionSourceErrorReturn` are imported from the resolver's provides and called, not injected.
+
+   * `[✅]`   applyCompressionOverlay/`applyCompressionOverlay.interface.test.ts`
+      * `[✅]`   Prove the deps surface: `const surface: Record<keyof ApplyCompressionOverlayDeps, true> = { logger: true, downloadFromStorage: true, resolveCompressionSource: true };` and assert three keys.
+      * `[✅]`   Prove the params surface: `const surface: Record<keyof ApplyCompressionOverlayParams, true> = { dbClient: true, projectId: true, sessionId: true, iterationNumber: true, stageSlug: true, output_type: true };` and assert six keys.
+      * `[✅]`   Prove the payload surface: `const surface: Record<keyof ApplyCompressionOverlayPayload, true> = { resourceDocuments: true, conversationHistory: true };`.
+      * `[✅]`   Prove the success arm's surface: `const surface: Record<keyof ApplyCompressionOverlaySuccessReturn, true> = { resourceDocuments: true, conversationHistory: true, overlaidCount: true };`.
+      * `[✅]`   Prove the error arm's surface: `const surface: Record<keyof ApplyCompressionOverlayErrorReturn, true> = { error: true, retriable: true };`.
+      * `[✅]`   Prove arm membership: an `ApplyCompressionOverlaySuccessReturn` value is assignable to `ApplyCompressionOverlayReturn`, and an `ApplyCompressionOverlayErrorReturn` value is assignable to `ApplyCompressionOverlayReturn`.
+      * `[✅]`   Prove the declared return in the async form for `ApplyCompressionOverlayFn`: `const returned: ReturnType<ApplyCompressionOverlayFn> = Promise.resolve(success); const declared: Promise<ApplyCompressionOverlayReturn> = returned;` for the success arm, and the same for the error arm. Do not unwrap the `Promise`.
+      * `[✅]`   Prove `BoundApplyCompressionOverlayFn`'s declared return in the same async form, for each arm.
+      * `[✅]`   Use typed literals only. Import no builder, no guard, and no implementation. Every imported symbol is consumed by a proof block, and every symbol the interface exports is imported.
+
+   * `[✅]`   applyCompressionOverlay/`applyCompressionOverlay.interface.ts`
+      * `[✅]`   Change the `ResourceDocument` import: it is imported from `../../_shared/utils/resolveCompressionSource/resolveCompressionSource.interface.ts`, and `../../_shared/types.ts` supplies `ILogger` and `Messages` only.
+      * `[✅]`   Add `import type { BoundResolveCompressionSourceFn } from "../../_shared/utils/resolveCompressionSource/resolveCompressionSource.interface.ts";`.
+      * `[✅]`   `ApplyCompressionOverlayDeps`: add `resolveCompressionSource: BoundResolveCompressionSourceFn;` alongside `logger` and `downloadFromStorage`.
+      * `[✅]`   `ApplyCompressionOverlayParams`, `ApplyCompressionOverlayPayload`, `ApplyCompressionOverlaySuccessReturn`, `ApplyCompressionOverlayErrorReturn`, `ApplyCompressionOverlayReturn`, `ApplyCompressionOverlayFn` and `BoundApplyCompressionOverlayFn` keep their declarations.
+
+   * `[✅]`   `applyCompressionOverlay.interaction.spec`
+      * `[✅]`   Branch: empty inputs — both `resourceDocuments` and `conversationHistory` are empty arrays.
+         * `[✅]`   Condition: `resourceDocuments.length === 0 && conversationHistory.length === 0`.
+         * `[✅]`   Decision: none.
+         * `[✅]`   Dependency call: none.
+         * `[✅]`   Outcome: `ApplyCompressionOverlaySuccessReturn` with empty arrays and `overlaidCount: 0`.
+      * `[✅]`   Branch: resource document is compressible and its compressed artifact exists.
+         * `[✅]`   Condition: `deps.resolveCompressionSource` returns the compressible flavor and `deps.downloadFromStorage` returns `{ data: <ArrayBuffer>, error: null }`.
+         * `[✅]`   Decision: `isCompressibleSourceReturn(resolved)`, then `data !== null && error === null`.
+         * `[✅]`   Dependency call: `deps.resolveCompressionSource({}, { document: doc })`, then `deps.downloadFromStorage(params.dbClient, 'dialectic-contributions', <canonicalPath>)` where the path is built with `sourceType` and `documentKey` taken from the resolved value.
+         * `[✅]`   Outcome: the document appears in the returned `resourceDocuments` with its `content` replaced by the decoded download; `overlaidCount` increments by 1.
+      * `[✅]`   Branch: resource document is compressible and no compressed artifact exists (download miss).
+         * `[✅]`   Condition: `deps.resolveCompressionSource` returns the compressible flavor and `deps.downloadFromStorage` returns `{ data: null, error: ... }` or `{ data: null, error: null }`.
+         * `[✅]`   Decision: `isCompressibleSourceReturn(resolved)`, then `data === null`.
+         * `[✅]`   Dependency call: `deps.resolveCompressionSource({}, { document: doc })`, then `deps.downloadFromStorage(params.dbClient, 'dialectic-contributions', <canonicalPath>)`.
+         * `[✅]`   Outcome: the document passes through with its original `content` unchanged; `overlaidCount` does not increment.
+      * `[✅]`   Branch: resource document is not compressible.
+         * `[✅]`   Condition: `deps.resolveCompressionSource` returns the not-compressible flavor.
+         * `[✅]`   Decision: `!isCompressibleSourceReturn(resolved) && !isResolveCompressionSourceErrorReturn(resolved)`.
+         * `[✅]`   Dependency call: `deps.resolveCompressionSource({}, { document: doc })` only. No `constructStoragePath` call and no `deps.downloadFromStorage` call.
+         * `[✅]`   Outcome: the document passes through unchanged; `overlaidCount` does not increment.
+      * `[✅]`   Branch: the resolver returns its error arm.
+         * `[✅]`   Condition: `deps.resolveCompressionSource` returns `ResolveCompressionSourceErrorReturn`.
+         * `[✅]`   Decision: `isResolveCompressionSourceErrorReturn(resolved)`.
+         * `[✅]`   Dependency call: `deps.resolveCompressionSource({}, { document: doc })` only. Iteration stops at this document; no further document or message is processed.
+         * `[✅]`   Outcome: `ApplyCompressionOverlayErrorReturn` carrying the resolver's `error` and `retriable` unchanged.
+      * `[✅]`   Branch: history message with existing compressed artifact.
+         * `[✅]`   Condition: message has a defined `id`, `role` is `'user'` or `'assistant'`, and `deps.downloadFromStorage` returns `{ data: <ArrayBuffer>, error: null }`.
+         * `[✅]`   Decision: `data !== null && error === null`.
+         * `[✅]`   Dependency call: `deps.downloadFromStorage(params.dbClient, 'dialectic-contributions', <canonicalPath>)`. `deps.resolveCompressionSource` is not called.
+         * `[✅]`   Outcome: the message appears in the returned `conversationHistory` with its `content` replaced by the decoded download; `overlaidCount` increments by 1.
+      * `[✅]`   Branch: history message with no compressed artifact (download miss).
+         * `[✅]`   Condition: message has a defined `id`, `role` is `'user'` or `'assistant'`, and `deps.downloadFromStorage` returns `{ data: null, ... }`.
+         * `[✅]`   Decision: `data === null`.
+         * `[✅]`   Dependency call: `deps.downloadFromStorage(params.dbClient, 'dialectic-contributions', <canonicalPath>)`.
+         * `[✅]`   Outcome: the message passes through with its original `content` unchanged; `overlaidCount` does not increment.
+      * `[✅]`   Branch: history message that is ineligible for overlay.
+         * `[✅]`   Condition: message has no `id`, or `role` is `'system'` or `'function'`.
+         * `[✅]`   Decision: skip — no `constructStoragePath` call.
+         * `[✅]`   Dependency call: none.
+         * `[✅]`   Outcome: the message passes through unchanged; `overlaidCount` does not increment.
+      * `[✅]`   Branch: `constructStoragePath` throws.
+         * `[✅]`   Condition: `constructStoragePath` raises an `Error` from missing required fields.
+         * `[✅]`   Decision: catch.
+         * `[✅]`   Dependency call: none.
+         * `[✅]`   Outcome: `ApplyCompressionOverlayErrorReturn` with the thrown error and `retriable: false`.
+      * `[✅]`   Side effects and ordering: resource documents are processed before history messages, and the returned arrays preserve input order. No input object is written.
+
+   * `[✅]`   applyCompressionOverlay/`applyCompressionOverlay.mock.ts`
+      * `[✅]`   Change the `ResourceDocument` import: it is imported from `../../_shared/utils/resolveCompressionSource/resolveCompressionSource.provides.ts`, and `../../_shared/types.ts` supplies `Messages` only.
+      * `[✅]`   `buildApplyCompressionOverlayDeps` gains a `resolveCompressionSource` default of `mockBoundResolveCompressionSource`, imported from `../../_shared/utils/resolveCompressionSource/resolveCompressionSource.provides.ts`. Do not declare a bound resolver mock in this file.
+      * `[✅]`   `buildApplyCompressionOverlayDeps` keeps `MockLogger` for `logger` and `createMockDownloadFromStorage({ mode: 'success', data: <encoded 'compressed-content'> })` for `downloadFromStorage`.
+      * `[✅]`   `buildApplyCompressionOverlayParams` takes one optional `ApplyCompressionOverlayParamsOverrides` argument and no positional argument. `dbClient` defaults to `createMockSupabaseClient("apply-compression-overlay").client`, imported from `../../_shared/supabase.mock.ts` and narrowed to `SupabaseClient<Database>` — the construction `buildenqueueCompressJobsParams` uses. `projectId`, `sessionId`, `iterationNumber`, `stageSlug` and `output_type` keep their defaults, so every property has one.
+      * `[✅]`   `invalidateApplyCompressionOverlayParams` composes `{ ...buildApplyCompressionOverlayParams(), ...corruptions }`. The `{} as unknown as SupabaseClient<Database>` argument it passes today is deleted with the positional parameter.
+      * `[✅]`   `buildApplyCompressionOverlayPayload` keeps `resourceDocuments` and `conversationHistory` defaulting to empty arrays.
+      * `[✅]`   `ApplyCompressionOverlayDepsOverrides`, `invalidateApplyCompressionOverlayDeps`, `ApplyCompressionOverlayDepsCorruptions`, `ApplyCompressionOverlayParamsOverrides`, `invalidateApplyCompressionOverlayParams`, `ApplyCompressionOverlayParamsCorruptions`, `ApplyCompressionOverlayPayloadOverrides`, `invalidateApplyCompressionOverlayPayload`, `ApplyCompressionOverlayPayloadCorruptions`, `buildApplyCompressionOverlaySuccessReturn`, `ApplyCompressionOverlaySuccessReturnOverrides`, `invalidateApplyCompressionOverlaySuccessReturn`, `ApplyCompressionOverlaySuccessReturnCorruptions`, `buildApplyCompressionOverlayErrorReturn`, `ApplyCompressionOverlayErrorReturnOverrides`, `invalidateApplyCompressionOverlayErrorReturn`, `ApplyCompressionOverlayErrorReturnCorruptions` and `mockApplyCompressionOverlay` keep their declarations.
+      * `[✅]`   Add `mockBoundApplyCompressionOverlay: BoundApplyCompressionOverlayFn`, returning `buildApplyCompressionOverlaySuccessReturn()`. The interface owns both function types, so each has its own mock; `gatherArtifacts` holds the bound form and injects this one.
+
+   * `[✅]`   applyCompressionOverlay/`applyCompressionOverlay.test.ts`
+      * `[✅]`   Import `buildResourceDocument`, `buildCompressibleSourceReturn`, `buildNotCompressibleSourceReturn` and `buildResolveCompressionSourceErrorReturn` from `../../_shared/utils/resolveCompressionSource/resolveCompressionSource.provides.ts`. Every fixture is one direct builder call overriding only what its case depends on; hand-rolled document literals are replaced by `buildResourceDocument`.
+      * `[✅]`   A case supplying its own `BoundResolveCompressionSourceFn` returns a chosen outcome: declare a production-typed function inside the test composed from those builders. Do not configure `mockBoundResolveCompressionSource`.
+      * `[✅]`   Update every `buildApplyCompressionOverlayParams(dbClient)` call to `buildApplyCompressionOverlayParams({ dbClient })`, or to `buildApplyCompressionOverlayParams()` where the case does not depend on the client.
+      * `[✅]`   Empty inputs returns empty arrays and `overlaidCount: 0`.
+      * `[✅]`   A compressible document with a matching artifact gets its content replaced; `overlaidCount` is 1.
+      * `[✅]`   A compressible document with no artifact passes through with original content; `overlaidCount` is 0.
+      * `[✅]`   The path is built from the resolver's returned values: arrange a resolver returning `sourceType: 'feedback'` and `documentKey: FileType.technical_approach` while the document's own `document_key` is `FileType.business_case`, and assert the path passed to `deps.downloadFromStorage` carries the returned `documentKey` and the `_feedback` basename suffix.
+      * `[✅]`   A not-compressible document passes through unchanged, `overlaidCount` is 0, and `deps.downloadFromStorage` is not called for it.
+      * `[✅]`   A resolver error arm returns `ApplyCompressionOverlayErrorReturn` carrying that same `Error` instance and its `retriable` value, and `deps.downloadFromStorage` is not called.
+      * `[✅]`   A history message with a matching artifact gets its content replaced; `overlaidCount` is 1.
+      * `[✅]`   A history message with no artifact passes through unchanged; `overlaidCount` is 0.
+      * `[✅]`   A history message with no `id` passes through unconditionally.
+      * `[✅]`   A history message with `role: 'system'` passes through unconditionally.
+      * `[✅]`   `deps.resolveCompressionSource` is not called for any history message: arrange a payload of history messages only and assert the resolver recorded no invocation.
+      * `[✅]`   A mixed payload with some hits and some misses returns the correct `overlaidCount` and only the hit documents/messages have swapped content.
+      * `[✅]`   No input object is mutated — assert the original arrays and objects are unchanged after the call.
+      * `[✅]`   `constructStoragePath` throwing returns the error arm with `retriable: false`.
+
+   * `[✅]`   `construction`
+      * `[✅]`   `applyCompressionOverlay` is a stateless exported async function — no constructor, no class, no factory. `constructStoragePath`, `isCompressibleSourceReturn` and `isResolveCompressionSourceErrorReturn` are direct imports and are called, not injected. `downloadFromStorage` and `resolveCompressionSource` are injected via `deps`, the latter already bound by its composition root.
+
+   * `[✅]`   applyCompressionOverlay/`applyCompressionOverlay.ts`
+      * `[✅]`   Change the `ResourceDocument` import: it is imported from `../../_shared/utils/resolveCompressionSource/resolveCompressionSource.provides.ts`, and `../../_shared/types.ts` supplies `Messages` only.
+      * `[✅]`   Add `import { isCompressibleSourceReturn, isResolveCompressionSourceErrorReturn } from "../../_shared/utils/resolveCompressionSource/resolveCompressionSource.provides.ts";`.
+      * `[✅]`   Delete the `isFileType` import and the `CompressionSourceType` type import; both are unreferenced once the mapping is removed.
+      * `[✅]`   Implement the behavior from the interaction spec:
+         * `[✅]`   Iterate `payload.resourceDocuments`. For each: call `const resolved = deps.resolveCompressionSource({}, { document: doc });`. If `isResolveCompressionSourceErrorReturn(resolved)`, return `{ error: resolved.error, retriable: resolved.retriable }`. If `!isCompressibleSourceReturn(resolved)`, push a copy of the document and continue. Otherwise build the canonical path via `constructStoragePath({ projectId: params.projectId, fileType: FileType.CompressedContext, sessionId: params.sessionId, iteration: params.iterationNumber, stageSlug: params.stageSlug, output_type: params.output_type, sourceType: resolved.sourceType, documentKey: resolved.documentKey })`. Call `deps.downloadFromStorage(params.dbClient, 'dialectic-contributions', `${path.storagePath}/${path.fileName}`)`. If data is non-null and no error, decode and create a new `ResourceDocument` with the compressed content; otherwise pass through.
+         * `[✅]`   Delete the literal admission test on `doc.type`, the `sourceType` if-chain, and the `isFileType(doc.document_key)` skip. The function reads no member of `InputRule['type']`.
+         * `[✅]`   Iterate `payload.conversationHistory`. For each: if no `id` or `role` is `'system'` or `'function'`, pass through. Build the canonical path via `constructStoragePath({ projectId: params.projectId, fileType: FileType.CompressedContext, sessionId: params.sessionId, iteration: params.iterationNumber, stageSlug: params.stageSlug, output_type: params.output_type, sourceType: 'history', sourceId: message.id, role: message.role })`. Call `deps.downloadFromStorage`. If data is non-null and no error, decode and create a new `Messages` with the compressed content; otherwise pass through.
+         * `[✅]`   Wrap the entire loop in a try/catch for `constructStoragePath` throws. On catch, return `ApplyCompressionOverlayErrorReturn` with the thrown error and `retriable: false`.
+         * `[✅]`   Return `ApplyCompressionOverlaySuccessReturn` with the overlaid arrays and the count.
+      * `[✅]`   Introduce no undeclared dependencies; bypass no guards or contracts.
+
+   * `[✅]`   `directionality`
+      * `[✅]`   Layer: worker-internal module (`dialectic-worker/applyCompressionOverlay`). Deps are inward — `ILogger` and `Messages` from `_shared/types.ts`; `ResourceDocument`, `BoundResolveCompressionSourceFn`, `isCompressibleSourceReturn` and `isResolveCompressionSourceErrorReturn` from `_shared/utils/resolveCompressionSource`; `DownloadFromStorageFn` from `_shared/supabase_storage_utils.ts`; `constructStoragePath` from `_shared/utils/path_constructor.ts`; `FileType` and `DialecticStageSlug` from `_shared/types/file_manager.types.ts`; `Database` from generated types. Provides outward to `gatherArtifacts` (the consumer that injects it post-gather).
+      * `[✅]`   Every import from `_shared/utils/resolveCompressionSource` is taken from that module's `provides` file, never from one of its internal files.
+      * `[✅]`   No reverse dependencies, no lateral layer violations, no cycles.
+
+   * `[✅]`   `requirements`
+      * `[✅]`   `ApplyCompressionOverlayDeps` includes `resolveCompressionSource: BoundResolveCompressionSourceFn` — interface test deps surface record.
+      * `[✅]`   Given an empty `resourceDocuments` and empty `conversationHistory`, returns success with empty arrays and `overlaidCount: 0`.
+      * `[✅]`   Given a compressible resource document whose canonical `CompressedContext` artifact exists in storage, returns that document with its content replaced by the artifact's content.
+      * `[✅]`   Given a compressible resource document whose canonical artifact does not exist, returns that document with its original content.
+      * `[✅]`   The canonical path is built from the `sourceType` and `documentKey` the resolver returned, not from any member of the document — unit test with a returned `documentKey` distinct from the document's own `document_key`.
+      * `[✅]`   Given a document the resolver reports not compressible, returns that document unchanged and performs no storage read.
+      * `[✅]`   Given a resolver error arm, returns `ApplyCompressionOverlayErrorReturn` carrying that error unchanged and performs no storage read.
+      * `[✅]`   Given a history message whose canonical `CompressedContext` artifact exists, returns that message with its content replaced.
+      * `[✅]`   Given a history message whose artifact does not exist, returns that message unchanged.
+      * `[✅]`   Given a history message with no `id` or with `role: 'system'`/`'function'`, returns it unchanged without attempting a lookup.
+      * `[✅]`   `deps.resolveCompressionSource` is never called for a history message — unit test over a history-only payload.
+      * `[✅]`   `applyCompressionOverlay.ts` contains no `InputRule['type']` literal and no mapping to `CompressionSourceType`.
+      * `[✅]`   No input object is mutated on any path.
+      * `[✅]`   `constructStoragePath` throwing returns `ApplyCompressionOverlayErrorReturn` with `retriable: false`.
+
+* `[✅]`   supabase/functions/dialectic-worker/gatherArtifacts/gatherArtifacts.ts **[BE] Inject `applyCompressionOverlay` post-gather with the `stageSlug` and `output_type` its lookup requires, and repoint the module at the owning module's `ResourceDocument` surface**
+
+   * `[✅]`   `objective`
+      * `[✅]`   After dedup the gathered artifacts are returned directly, without passing through the compression overlay, so every resume cycle pays full token cost for candidates that already have a persisted `CompressedContext` artifact. The overlay exists and has no caller.
+      * `[✅]`   `ResourceDocument` is owned by `_shared/utils/resolveCompressionSource`, and this module still reaches for it through `_shared/types.ts` and still carries `buildGatherArtifact`, a second builder for a type it does not own. `gatherArtifacts.mock.ts` also exports `createGatherArtifactsMock`, an options-bag factory with a `calls` recorder, and no production-typed function mock.
+      * `[✅]`   Functional goals:
+         * `[✅]`   `GatherArtifactsDeps` carries `applyCompressionOverlay: BoundApplyCompressionOverlayFn`.
+         * `[✅]`   `GatherArtifactsParams` carries `stageSlug: DialecticStageSlug` and `output_type: FileType` — the types `ApplyCompressionOverlayParams` declares for the two members this function forwards to it.
+         * `[✅]`   After the dedup loop and before the success return, `deps.applyCompressionOverlay` is called with the deduped array and, on its success arm, its overlaid `resourceDocuments` become the returned artifacts; on its error arm the error and `retriable` are returned unchanged.
+         * `[✅]`   The five rule-type push sites emit the literals they emit today. `ResourceDocument.type` is the `InputRule.type` that selected the document, and these five sites are what write it.
+         * `[✅]`   `ResourceDocument` and `ResourceDocuments` are imported from `_shared/utils/resolveCompressionSource`, and `buildGatherArtifact` is deleted in favour of that module's `buildResourceDocument`.
+         * `[✅]`   `createGatherArtifactsMock` is replaced by `mockGatherArtifacts: GatherArtifactsFn`.
+      * `[✅]`   Non-functional constraints:
+         * `[✅]`   No file outside `gatherArtifacts/` is edited. The caller that supplies `stageSlug`, `output_type` and the bound overlay is `processSimpleJob`, addressed in its own node; the composition root that binds the overlay is `createJobContext`, addressed in its own node.
+         * `[✅]`   No literal written into a gathered artifact's `type` changes, and no push site is edited.
+         * `[✅]`   `createGatherArtifactsMock`, `buildGatherArtifact`, `buildGatherArtifactsSuccessReturn` and `buildGatherArtifactsErrorReturn` are consumed only by `gatherArtifacts.mock.ts`, `gatherArtifacts.interface.test.ts` and `gatherArtifacts.guard.test.ts`, all inside this module.
+         * `[✅]`   Each goal is proven by a named case in this node's interface test, guard test, unit test or integration test.
+
+   * `[✅]`   `role`
+      * `[✅]`   Node role is app-layer artifact gatherer: query DB rows per input rule, download content from storage, record the selecting rule's type on each artifact, dedup, delegate the compression overlay, and return the unified array.
+      * `[✅]`   The role is correct because the function already performs all gathering and dedup; this node adds the overlay call, a content-replacement pass delegated to an injected collaborator.
+      * `[✅]`   Out-of-scope responsibilities:
+         * `[✅]`   Do not implement the overlay — `applyCompressionOverlay` owns that.
+         * `[✅]`   Do not decide whether an artifact may be compressed, and do not map its `type` to a `CompressionSourceType` — `resolveCompressionSource` owns both, and this function never asks.
+         * `[✅]`   Do not wire the new deps and params into the caller — `processSimpleJob` owns that.
+         * `[✅]`   Do not score, select, or enqueue compression victims.
+
+   * `[✅]`   `module`
+      * `[✅]`   Bounded context is `supabase/functions/dialectic-worker/gatherArtifacts` — gathering input-rule artifacts, deduplicating them, and delegating overlay application.
+      * `[✅]`   Inside boundary:
+         * `[✅]`   The five rule-type branches, the dedup pass, the overlay invocation post-dedup, and composition of the returned success or error arm.
+         * `[✅]`   `GatherArtifactsDeps`, `GatherArtifactsParams`, `GatherArtifactsPayload`, `GatherArtifactsSuccessReturn`, `GatherArtifactsErrorReturn`, `GatherArtifactsReturn`, `GatherArtifactsFn`, `BoundGatherArtifactsFn`.
+      * `[✅]`   Outside boundary:
+         * `[✅]`   `ResourceDocument`, `ResourceDocuments` and `buildResourceDocument`, owned by `_shared/utils/resolveCompressionSource`.
+         * `[✅]`   `BoundApplyCompressionOverlayFn`, `isApplyCompressionOverlaySuccessReturn` and `buildApplyCompressionOverlaySuccessReturn`, owned by `applyCompressionOverlay/`.
+         * `[✅]`   `DialecticStageSlug` and `FileType`, owned by `_shared/types/file_manager.types.ts`.
+         * `[✅]`   `isDialecticStageSlug` and `isFileType`, owned by `_shared/utils/type-guards/type_guards.file_manager.ts`.
+         * `[✅]`   `ILogger`, `DownloadFromStorageFn`, `PickLatestFn`, `SupabaseClient<Database>`, `InputRule` — all owned by their respective `_shared`, `createJobContext` or `dialectic-service` modules.
+         * `[✅]`   Which artifacts are compressible and where a compressed artifact is stored.
+         * `[✅]`   Who calls this function, who supplies `stageSlug`/`output_type`/`applyCompressionOverlay`, and what happens after the overlaid artifacts reach the dispatcher.
+
+   * `[✅]`   `deps`
+      * `[✅]`   Surviving providers:
+         * `[✅]`   `_shared/types.ts` → `ILogger` (via `deps.logger`): logging.
+         * `[✅]`   `createJobContext/JobContext.interface.ts` → `PickLatestFn` (via `deps.pickLatest`): row selection.
+         * `[✅]`   `_shared/supabase_storage_utils.ts` → `DownloadFromStorageFn` (via `deps.downloadFromStorage`): content download.
+      * `[✅]`   New provider:
+         * `[✅]`   `applyCompressionOverlay/applyCompressionOverlay.provides.ts` → `BoundApplyCompressionOverlayFn` (via `deps.applyCompressionOverlay`).
+            * `[✅]`   Layer classification: sibling worker module.
+            * `[✅]`   Direction: inbound from peer module within `dialectic-worker`.
+            * `[✅]`   Purpose: overlay compressed content onto gathered artifacts post-dedup. Called once, after the dedup loop, with the deduped array.
+      * `[✅]`   Called, not injected: `isApplyCompressionOverlaySuccessReturn`, `isDialecticStageSlug` and `isFileType` are pure type guards. Type guards are not dependencies.
+      * `[✅]`   Confirm: no reverse dependencies, no lateral layer violations. `applyCompressionOverlay` is a peer within `dialectic-worker`; all other deps are inward from `_shared` or generated types.
+
+   * `[✅]`   `context_slice`
+      * `[✅]`   `GatherArtifactsDeps` adds `applyCompressionOverlay: BoundApplyCompressionOverlayFn` alongside the existing `logger`, `pickLatest`, `downloadFromStorage`.
+      * `[✅]`   `GatherArtifactsParams` adds `stageSlug: DialecticStageSlug` and `output_type: FileType` alongside the existing `dbClient`, `projectId`, `sessionId`, `iterationNumber`.
+
+   * `[✅]`   gatherArtifacts/`gatherArtifacts.interface.test.ts`
+      * `[✅]`   Add the deps surface proof: `const surface: Record<keyof GatherArtifactsDeps, true> = { logger: true, pickLatest: true, downloadFromStorage: true, applyCompressionOverlay: true };` and assert four keys.
+      * `[✅]`   Add the params surface proof: `const surface: Record<keyof GatherArtifactsParams, true> = { dbClient: true, projectId: true, sessionId: true, iterationNumber: true, stageSlug: true, output_type: true };` and assert six keys.
+      * `[✅]`   Prove `GatherArtifactsParams.stageSlug` is `DialecticStageSlug` and `output_type` is `FileType` by typed assignment of `DialecticStageSlug.Thesis` and `FileType.business_case` to those members.
+      * `[✅]`   Replace every `createGatherArtifactsMock` call with `mockGatherArtifacts`, called directly with `(deps, params, payload)`. Remove `createGatherArtifactsMock` and `GatherArtifactsMockCall` from the imports.
+      * `[✅]`   Update every `buildGatherArtifactsParams(dbClient)` call to `buildGatherArtifactsParams({ dbClient })`, or to `buildGatherArtifactsParams()` where the block does not depend on the client.
+
+   * `[✅]`   gatherArtifacts/`gatherArtifacts.interface.ts`
+      * `[✅]`   Change the `ResourceDocuments` import: it is imported from `../../_shared/utils/resolveCompressionSource/resolveCompressionSource.interface.ts`, and `../../_shared/types.ts` supplies `ILogger` only.
+      * `[✅]`   Add import: `import type { BoundApplyCompressionOverlayFn } from "../applyCompressionOverlay/applyCompressionOverlay.interface.ts";`.
+      * `[✅]`   Add import: `import type { DialecticStageSlug, FileType } from "../../_shared/types/file_manager.types.ts";`.
+      * `[✅]`   `GatherArtifactsDeps`: add `applyCompressionOverlay: BoundApplyCompressionOverlayFn;`.
+      * `[✅]`   `GatherArtifactsParams`: add `stageSlug: DialecticStageSlug;` and `output_type: FileType;`.
+      * `[✅]`   `GatherArtifactsPayload`, `GatherArtifactsSuccessReturn`, `GatherArtifactsErrorReturn`, `GatherArtifactsReturn`, `GatherArtifactsFn` and `BoundGatherArtifactsFn` keep their declarations.
+
+   * `[✅]`   `gatherArtifacts.interaction.spec`
+      * `[✅]`   Branch: no input rules.
+         * `[✅]`   Condition: `payload.inputsRequired` is absent or empty.
+         * `[✅]`   Decision: `rules.length === 0`.
+         * `[✅]`   Dependency call: none. `deps.applyCompressionOverlay` is not called.
+         * `[✅]`   Outcome: `GatherArtifactsSuccessReturn` with `artifacts: []`, returned before the gather loop.
+      * `[✅]`   Branch: post-dedup overlay — overlay returns success.
+         * `[✅]`   Condition: the gather loop and dedup loop complete and `deps.applyCompressionOverlay` returns a success arm.
+         * `[✅]`   Decision: `isApplyCompressionOverlaySuccessReturn(overlayResult)`.
+         * `[✅]`   Dependency call: `deps.applyCompressionOverlay({ dbClient: params.dbClient, projectId: params.projectId, sessionId: params.sessionId, iterationNumber: params.iterationNumber, stageSlug: params.stageSlug, output_type: params.output_type }, { resourceDocuments: <deduped>, conversationHistory: [] })`.
+         * `[✅]`   Outcome: `GatherArtifactsSuccessReturn` with `artifacts` set to `overlayResult.resourceDocuments`.
+      * `[✅]`   Branch: post-dedup overlay — overlay returns error.
+         * `[✅]`   Condition: `deps.applyCompressionOverlay` returns an error arm.
+         * `[✅]`   Decision: `!isApplyCompressionOverlaySuccessReturn(overlayResult)`.
+         * `[✅]`   Dependency call: same as the success branch.
+         * `[✅]`   Outcome: `GatherArtifactsErrorReturn` with `error: overlayResult.error` and `retriable: overlayResult.retriable`.
+      * `[✅]`   Side effects and ordering: the overlay is called exactly once per invocation, after dedup, and never inside the rule loop. This function passes an empty `conversationHistory` because it gathers no history; the overlay returns that array untouched and it is discarded.
+
+   * `[✅]`   _shared/`dialectic.mock.ts`
+      * `[✅]`   Declare the four symbols for `DialecticFeedbackRow`, the `dialectic-service` row type this file does not yet build: `DialecticFeedbackRowOverrides` as `Partial<DialecticFeedbackRow>`, `buildDialecticFeedbackRow` taking one optional overrides argument, `DialecticFeedbackRowCorruptions` as `{ [K in keyof DialecticFeedbackRow]?: unknown }`, and `invalidateDialecticFeedbackRow` returning `unknown` as `{ ...buildDialecticFeedbackRow(), ...corruptions }`.
+      * `[✅]`   `buildDialecticFeedbackRow` carries the defaults the `gatherArtifacts` copy carries today, including the two `constructStoragePath` calls that derive `storage_path` and `file_name` from the original document's path, so every property has a default.
+      * `[✅]`   Place it beside `buildInputRule` and `buildDialecticContributionRow`, which already build sibling `dialectic-service` row types in this file. Every other declaration in the file is unchanged.
+
+   * `[✅]`   gatherArtifacts/`gatherArtifacts.mock.ts`
+      * `[✅]`   Change the `ResourceDocuments` import: it is imported from `../../_shared/utils/resolveCompressionSource/resolveCompressionSource.provides.ts`.
+      * `[✅]`   Delete `buildGatherArtifact`. Import `buildResourceDocument` from `../../_shared/utils/resolveCompressionSource/resolveCompressionSource.provides.ts` and use it wherever `buildGatherArtifact` was composed.
+      * `[✅]`   Replace `createGatherArtifactsMock` with `mockGatherArtifacts: GatherArtifactsFn` — a production-typed function returning `buildGatherArtifactsSuccessReturn()`, with no options bag, no call recording and no factory. Delete `CreateGatherArtifactsMockOptions` and `GatherArtifactsMockCall`.
+      * `[✅]`   Add `mockBoundGatherArtifacts: BoundGatherArtifactsFn`, returning `buildGatherArtifactsSuccessReturn()`. The interface owns both function types, so each has its own mock.
+      * `[✅]`   Every owned object type carries its four symbols, production-named: `GatherArtifactsDeps`, `GatherArtifactsParams`, `GatherArtifactsPayload`, `GatherArtifactsSuccessReturn` and `GatherArtifactsErrorReturn` each get `…Overrides` as `Partial<T>`, `build…` taking one optional overrides argument, `…Corruptions` as `{ [K in keyof T]?: unknown }`, and `invalidate…` returning `unknown` as `{ ...buildX(), ...corruptions }`. Declare the symbols absent today: `GatherArtifactsDepsCorruptions`, `invalidateGatherArtifactsDeps`, `GatherArtifactsParamsOverrides`, `GatherArtifactsParamsCorruptions`, `invalidateGatherArtifactsParams`, `GatherArtifactsPayloadOverrides`, `GatherArtifactsPayloadCorruptions`, `invalidateGatherArtifactsPayload`, `GatherArtifactsSuccessReturnOverrides`, `GatherArtifactsSuccessReturnCorruptions`, `invalidateGatherArtifactsSuccessReturn`, `GatherArtifactsErrorReturnOverrides`, `GatherArtifactsErrorReturnCorruptions`, `invalidateGatherArtifactsErrorReturn`.
+      * `[✅]`   `buildGatherArtifactsDeps`: add an `applyCompressionOverlay` default of `mockBoundApplyCompressionOverlay`, imported from `../applyCompressionOverlay/applyCompressionOverlay.provides.ts`. Do not declare a bound overlay mock in this file.
+      * `[✅]`   `buildGatherArtifactsParams` takes one optional `GatherArtifactsParamsOverrides` argument and no positional argument. `dbClient` defaults to `createMockSupabaseClient("gather-artifacts").client`, imported from `../../_shared/supabase.mock.ts` and narrowed to `SupabaseClient<Database>` — the construction `buildenqueueCompressJobsParams` uses. `projectId`, `sessionId` and `iterationNumber` keep their defaults, and `stageSlug` defaults to `DialecticStageSlug.Thesis` and `output_type` to `FileType.business_case`, so every property has one.
+      * `[✅]`   `buildGatherArtifactsPayload` takes one optional `GatherArtifactsPayloadOverrides` argument in place of its positional `inputsRequired`, defaulting `inputsRequired` to an empty array.
+      * `[✅]`   `buildGatherArtifactsSuccessReturn` takes one optional `GatherArtifactsSuccessReturnOverrides` argument in place of its positional `artifacts`, defaulting `artifacts` to `[buildResourceDocument()]`.
+      * `[✅]`   `buildGatherArtifactsErrorReturn` takes one optional `GatherArtifactsErrorReturnOverrides` argument in place of its positional `error` and `retriable`, defaulting `error` to `new Error("gatherArtifacts failed")` and `retriable` to `false`.
+      * `[✅]`   Delete `buildDocumentRule`, `buildFeedbackRule`, `buildSeedPromptRule`, `buildProjectResourceRule` and `buildHeaderContextRule`. `InputRule` is owned by `dialectic-service` and its builder is `buildInputRule` in `../../_shared/dialectic.mock.ts`; import that and give each former call site one `buildInputRule({ … })` call carrying that rule's `type`, `slug`, `document_key` and `required`.
+      * `[✅]`   Delete the local `buildDialecticContributionRow`. Import `buildDialecticContributionRow` and `DialecticContributionRowOverrides` from `../../_shared/dialectic.mock.ts`, and pass this module's row values as overrides at each call site.
+      * `[✅]`   Delete the local `buildDialecticFeedbackRow`. Import `buildDialecticFeedbackRow` and `DialecticFeedbackRowOverrides` from `../../_shared/dialectic.mock.ts`, and pass this module's row values as overrides at each call site. The `constructStoragePath` import this file holds solely for that builder goes with it.
+      * `[✅]`   `buildSelectResult` and `buildSelectHandler` keep their declarations.
+
+   * `[✅]`   gatherArtifacts/`gatherArtifacts.guard.test.ts`
+      * `[✅]`   Every fixture is a direct call to a builder or an invalidator from `gatherArtifacts.mock.ts`; no case hand-rolls an object or casts one.
+      * `[✅]`   Update every `buildGatherArtifactsParams(dbClient)` call to `buildGatherArtifactsParams({ dbClient })`, or to `buildGatherArtifactsParams()` where the case does not depend on the client.
+      * `[✅]`   `isGatherArtifactsDeps` — add case: `applyCompressionOverlay` omitted by rest-destructure of `buildGatherArtifactsDeps()` rejects.
+      * `[✅]`   `isGatherArtifactsDeps` — add case: `invalidateGatherArtifactsDeps({ applyCompressionOverlay: 'not-a-function' })` rejects.
+      * `[✅]`   `isGatherArtifactsParams` — add case: `stageSlug` omitted by rest-destructure of `buildGatherArtifactsParams()` rejects.
+      * `[✅]`   `isGatherArtifactsParams` — add case: `invalidateGatherArtifactsParams({ stageSlug: 'not-a-stage' })` rejects.
+      * `[✅]`   `isGatherArtifactsParams` — add case: `output_type` omitted by rest-destructure of `buildGatherArtifactsParams()` rejects.
+      * `[✅]`   `isGatherArtifactsParams` — add case: `invalidateGatherArtifactsParams({ output_type: 'not-a-file-type' })` rejects.
+      * `[✅]`   `isGatherArtifactsParams` — add case: `buildGatherArtifactsParams()`, carrying `DialecticStageSlug.Thesis` and `FileType.business_case`, is accepted.
+
+   * `[✅]`   gatherArtifacts/`gatherArtifacts.guard.ts`
+      * `[✅]`   Add import: `import { isDialecticStageSlug, isFileType } from "../../_shared/utils/type-guards/type_guards.file_manager.ts";`.
+      * `[✅]`   `isGatherArtifactsDeps`: add the check `!("applyCompressionOverlay" in value) || typeof value.applyCompressionOverlay !== "function"` returns false, in the same form as the existing `pickLatest` check.
+      * `[✅]`   `isGatherArtifactsParams`: add the checks `!("stageSlug" in value) || !isDialecticStageSlug(value.stageSlug)` returns false, and `!("output_type" in value) || !isFileType(value.output_type)` returns false. Delegate to the owning guards; do not inline a string check.
+
+   * `[✅]`   gatherArtifacts/`gatherArtifacts.test.ts`
+      * `[✅]`   Every existing rule-type assertion block keeps the literal it asserts: `'document'`, `'feedback'`, `'seed_prompt'`, `'project_resource'`, and the `rType` passthrough.
+      * `[✅]`   Add `applyCompressionOverlay` to the deps in each existing case via `buildGatherArtifactsDeps()`, whose default returns the overlay's success arm carrying the documents it was given.
+      * `[✅]`   Add case: the overlay's success arm supplies the result — declare a `BoundApplyCompressionOverlayFn` inside the test that returns `buildApplyCompressionOverlaySuccessReturn({ resourceDocuments: [buildResourceDocument({ id: 'overlaid-1', content: 'compressed' })] })`, and assert the returned `artifacts` are that array and not the gathered one.
+      * `[✅]`   Add case: the overlay's error arm propagates — declare a `BoundApplyCompressionOverlayFn` returning `buildApplyCompressionOverlayErrorReturn()`, and assert `gatherArtifacts` returns that same `Error` instance and its `retriable` value.
+      * `[✅]`   Add case: the overlay receives the deduped array and the params it needs — capture the arguments with the test framework's spy facility at the call site, and assert the params carry `dbClient`, `projectId`, `sessionId`, `iterationNumber`, `stageSlug` and `output_type` from `params`, and that the payload's `resourceDocuments` is the post-dedup array.
+      * `[✅]`   Add case: an empty `inputsRequired` returns `artifacts: []` and the overlay is not called.
+      * `[✅]`   Update every `buildGatherArtifactsParams(dbClient)` call to `buildGatherArtifactsParams({ dbClient })`, every `buildGatherArtifactsSuccessReturn(artifacts)` call to `buildGatherArtifactsSuccessReturn({ artifacts })`, every `buildGatherArtifactsErrorReturn(error, retriable)` call to `buildGatherArtifactsErrorReturn({ error, retriable })`, and every `buildGatherArtifactsPayload(inputsRequired)` call to `buildGatherArtifactsPayload({ inputsRequired })`.
+      * `[✅]`   Every fixture is one direct builder call. Replace hand-rolled artifact literals with `buildResourceDocument`, and any remaining `createGatherArtifactsMock` usage with `mockGatherArtifacts` or a production-typed function declared in the test.
+
+   * `[✅]`   `construction`
+      * `[✅]`   `gatherArtifacts` remains a stateless exported async function typed `GatherArtifactsFn`. `applyCompressionOverlay` is injected via `deps` as a `BoundApplyCompressionOverlayFn`, already bound by its composition root. `isApplyCompressionOverlaySuccessReturn` is a direct import and is called, not injected. No constructor, no class, no factory.
+
+   * `[✅]`   gatherArtifacts/`gatherArtifacts.ts`
+      * `[✅]`   Change the `ResourceDocuments` import: it is imported from `../../_shared/utils/resolveCompressionSource/resolveCompressionSource.provides.ts`.
+      * `[✅]`   Add import: `import { isApplyCompressionOverlaySuccessReturn } from "../applyCompressionOverlay/applyCompressionOverlay.provides.ts";`.
+      * `[✅]`   Destructure `stageSlug` and `output_type` from `params` alongside the existing `dbClient`, `projectId`, `sessionId` and `iterationNumber`.
+      * `[✅]`   Leave every `gathered.push({ … })` call unchanged, including each `type` literal and the `type: rType` passthrough.
+      * `[✅]`   Leave the early return for `rules.length === 0` where it is, before the gather loop, so the overlay is not called when nothing was gathered.
+      * `[✅]`   After the dedup loop, before composing the success return, call `deps.applyCompressionOverlay` with the params object named in the interaction spec and `{ resourceDocuments: Array.from(uniqueById.values()), conversationHistory: [] }`.
+      * `[✅]`   If `!isApplyCompressionOverlaySuccessReturn(overlayResult)`, return `{ error: overlayResult.error, retriable: overlayResult.retriable }`.
+      * `[✅]`   Compose the success return with `overlayResult.resourceDocuments` as `artifacts`.
+      * `[✅]`   Introduce no undeclared dependencies; bypass no guards or contracts.
+
+   * `[✅]`   gatherArtifacts/`gatherArtifacts.integration.test.ts`
+      * `[✅]`   Every existing type assertion keeps the literal it asserts: `'document'`, `'feedback'`, `'seed_prompt'`, `'project_resource'`, `'header_context'` and `'contribution'`.
+      * `[✅]`   Bind the real `applyCompressionOverlay` for `deps.applyCompressionOverlay`, composed with the real `resolveCompressionSource` and the real `constructStoragePath`. Mock only at the outer edge: `downloadFromStorage` and the Supabase client. Do not substitute a pass-through function for the overlay — the chain under test is `gatherArtifacts` → `applyCompressionOverlay` → `resolveCompressionSource`.
+      * `[✅]`   Add case: a gathered `'document'`-rule artifact whose canonical `CompressedContext` object the mocked storage returns comes back with the compressed content, proving the chain resolved its source class and built the path from it.
+      * `[✅]`   Add case: a gathered `'seed_prompt'`-rule artifact comes back with its original content and no storage read is issued for it, proving the chain excluded it.
+      * `[✅]`   Each test's contract header names the boundary it crosses and what is mocked at that edge.
+
+   * `[✅]`   `directionality`
+      * `[✅]`   Layer: worker-internal module (`dialectic-worker/gatherArtifacts`). Deps are inward — `ILogger` from `_shared/types.ts`; `ResourceDocuments` and `buildResourceDocument` from `_shared/utils/resolveCompressionSource`; `PickLatestFn` from `createJobContext`; `DownloadFromStorageFn` from `_shared/supabase_storage_utils.ts`; `DialecticStageSlug`, `FileType`, `isDialecticStageSlug` and `isFileType` from `_shared`; `InputRule` from `dialectic-service`; `SupabaseClient<Database>` from generated types — plus one lateral peer, `applyCompressionOverlay`, within `dialectic-worker`. Provides outward to `processSimpleJob`.
+      * `[✅]`   Every import from `applyCompressionOverlay` and from `resolveCompressionSource` is taken from that module's `provides` file, never from one of its internal files.
+      * `[✅]`   No reverse dependencies, no lateral layer violations, no cycles.
+
+   * `[✅]`   `requirements`
+      * `[✅]`   `GatherArtifactsDeps` includes `applyCompressionOverlay: BoundApplyCompressionOverlayFn` — interface test deps surface record.
+      * `[✅]`   `GatherArtifactsParams` includes `stageSlug: DialecticStageSlug` and `output_type: FileType` — interface test params surface record and typed assignments.
+      * `[✅]`   `isGatherArtifactsParams` rejects a `stageSlug` outside `DialecticStageSlug` and an `output_type` outside `FileType` — guard test.
+      * `[✅]`   `isGatherArtifactsDeps` rejects a missing or non-function `applyCompressionOverlay` — guard test.
+      * `[✅]`   After dedup, `deps.applyCompressionOverlay` is called once with the deduped array and the six params, and its success arm's `resourceDocuments` become the returned `artifacts` — unit test.
+      * `[✅]`   If the overlay returns its error arm, `gatherArtifacts` returns that error and `retriable` unchanged — unit test.
+      * `[✅]`   An empty `inputsRequired` returns `artifacts: []` without calling the overlay — unit test.
+      * `[✅]`   Each of the five push sites emits the same `type` literal it emits today — existing unit and integration assertions, unchanged.
+      * `[✅]`   `gatherArtifacts.mock.ts` exports no `buildGatherArtifact`, no `createGatherArtifactsMock`, no `CreateGatherArtifactsMockOptions` and no `GatherArtifactsMockCall`, and exports `mockGatherArtifacts: GatherArtifactsFn`.
+      * `[✅]`   Every builder in `gatherArtifacts.mock.ts` takes one optional overrides object and no positional argument, and every property it sets has a default — `buildGatherArtifactsParams()`, `buildGatherArtifactsPayload()`, `buildGatherArtifactsSuccessReturn()` and `buildGatherArtifactsErrorReturn()` each return a valid object called with no arguments.
+      * `[✅]`   Each of `GatherArtifactsDeps`, `GatherArtifactsParams`, `GatherArtifactsPayload`, `GatherArtifactsSuccessReturn` and `GatherArtifactsErrorReturn` has its four symbols — the overrides type, the builder, the corruptions type and the invalidator — and each invalidator returns `unknown`, so no guard-test fixture needs a cast.
+      * `[✅]`   The interface's two function types each have their mock: `mockGatherArtifacts: GatherArtifactsFn` and `mockBoundGatherArtifacts: BoundGatherArtifactsFn`.
+      * `[✅]`   `gatherArtifacts.mock.ts` declares no builder for a type another package owns — no `buildDocumentRule`, `buildFeedbackRule`, `buildSeedPromptRule`, `buildProjectResourceRule`, `buildHeaderContextRule`, `buildDialecticContributionRow` or `buildDialecticFeedbackRow`; all three home builders are imported from `_shared/dialectic.mock.ts`.
+      * `[✅]`   `_shared/dialectic.mock.ts` exports `DialecticFeedbackRowOverrides`, `buildDialecticFeedbackRow`, `DialecticFeedbackRowCorruptions` and `invalidateDialecticFeedbackRow`, and `buildDialecticFeedbackRow()` called with no arguments returns a valid row.
+      * `[✅]`   `ResourceDocument` and `ResourceDocuments` are imported from `_shared/utils/resolveCompressionSource` in every file of this module, and from `_shared/types.ts` in none.
+      * `[✅]`   The integration test runs the real `applyCompressionOverlay` and the real `resolveCompressionSource`, mocking only storage and the Supabase client — a compressed `'document'` artifact returns swapped content and a `'seed_prompt'` artifact triggers no storage read.
+      * `[✅]`   All existing gathering, dedup, optional-skip, required-fail and download-error behaviors are preserved.
+
+* `[ ]`   supabase/functions/_shared/utils/vector_utils.ts **[BE] Embedding-free selection: `effectiveScore = candidateTokens × importance`, candidate admission delegated to `resolveCompressionSource`, `getEmbedding`/`embeddingClient`/`cosineSimilarity` and this file's `dialectic_memory` query deleted, and the `ICompressionStrategy` seam retired in favour of `GetSortedCompressionCandidatesFn`**
 
    * `[ ]`   `objective`
-      * `[ ]`   After `gatherArtifacts` returns, the gathered resource documents and conversation history reach `prepareModelJob` with their original, uncompressed content. If any of those candidates were previously compressed — a `CompressedContext` artifact persisted at the candidate's canonical `_work` path — the model call pays for content that a cheaper, smaller version already replaced. There is no overlay pass between gathering and dispatch: compression results are invisible to every subsequent resume cycle, and the same victim is re-compressed every time.
+      * `[ ]`   `getSortedCompressionCandidates` scores document candidates through `deps.embeddingClient.getEmbedding` and `cosineSimilarity` — one embedding round trip per document plus one for `payload.currentUserPrompt` — and weights them by `relevanceWeight × (1 - similarity)`, coupling compressibility to embedding distance. `CompressionStrategyDeps.dbClient` exists solely to run the `dialectic_memory` query whose result is discarded on the next line. `scoreHistory` assigns a positional `valueScore` with no token weighting, so a long message and a short one at the same position score identically and the scorer cannot rank by what compression would actually recover. Nothing admits or rejects a document: a `seed_prompt` or `header_context` document is scored like any other and can be returned as a compression victim. `CompressionCandidate.sourceType` is `'history' | 'document'`, a vocabulary matching neither the `InputRule['type']` a `ResourceDocument` carries nor the `CompressionSourceType` that `enqueueCompressJobs` requires, so the selected victim's source class cannot be carried to the enqueuer. `CompressionCandidate` is declared in `vector_utils.ts` and imported by `vector_utils.interface.ts`, inverting the interface-to-implementation direction. The `console.log` at line 276 prints every candidate on every invocation.
       * `[ ]`   Functional goals:
-         * `[ ]`   A new function-folder module `dialectic-worker/applyCompressionOverlay/` declares the canonical `(deps, params, payload)` shape and returns a two-arm `ApplyCompressionOverlayReturn`.
-         * `[ ]`   For each resource document in the payload, the function builds the candidate's canonical `CompressedContext` path using `constructStoragePath` with `FileType.CompressedContext`, the candidate's `document_key` as both `documentKey` and source identity, the candidate's `type` mapped to a `sourceType` (`'document'` → `'contribution'`, `'feedback'` → `'feedback'`, `'project_resource'` → `'resource'`), and the `stageSlug` and `output_type` from params. It then performs one existence read via `deps.downloadFromStorage`. If the artifact exists, the document's `content` is replaced with the downloaded compressed content in a new object; if not, the document passes through unchanged. The returned `resourceDocuments` array is a new array of new objects — no input object is mutated.
-         * `[ ]`   For each history message in the payload whose `id` is defined and whose `role` is `'user'` or `'assistant'`, the function builds the candidate's canonical `CompressedContext` path using `constructStoragePath` with `FileType.CompressedContext`, `sourceType: 'history'`, `sourceId` set to the message's `id`, `role` set to the message's `role`, and the `stageSlug` and `output_type` from params. It performs one existence read via `deps.downloadFromStorage`. If the artifact exists, the message's `content` is replaced with the downloaded compressed content in a new object; if not, the message passes through unchanged. Messages with no `id` or with `role` `'system'` or `'function'` pass through unconditionally. The returned `conversationHistory` array is a new array of new objects — no input object is mutated.
-         * `[ ]`   The success arm carries the overlaid `resourceDocuments` and `conversationHistory`, plus an `overlaidCount` reporting how many candidates were swapped.
-         * `[ ]`   Every storage download failure is a non-fatal miss — the candidate passes through with its original content. Only a failure in `constructStoragePath` (a thrown `Error` from missing required fields) returns the error arm.
-         * `[ ]`   The function has no `deconstructStoragePath` dependency. Lookup is forward: each candidate carries its own identity (`document_key`, `stage_slug`, `type` for documents; `id`, `role` for messages), so the overlay builds the canonical path from the candidate's own fields and never reverse-parses a stored path.
+         * `[ ]`   Replace `CompressionStrategyDeps` / `CompressionStrategyParams` / `CompressionStrategyPayload` / `ICompressionStrategy` with `GetSortedCompressionCandidatesDeps` / `GetSortedCompressionCandidatesParams` / `GetSortedCompressionCandidatesPayload` / `GetSortedCompressionCandidatesFn`, and return the two-arm `GetSortedCompressionCandidatesReturn` in place of a bare `CompressionCandidate[]`.
+         * `[ ]`   Admit or reject each document by one `deps.resolveCompressionSource({}, { document: doc })` call. The compressible arm supplies the candidate's `sourceType` and `documentKey`; the not-compressible arm drops the document before scoring; the error arm is propagated unchanged on this function's error arm.
+         * `[ ]`   Score each admitted document `effectiveScore = candidateTokens × importance`, where `candidateTokens = deps.countTokens({ resourceDocuments: [{ id: doc.id, content: doc.content }] }, params.modelConfig)` and `importance` is the clamped `relevance` of the matching `params.inputsRelevance` rule, defaulting to `1` when no rule matches. Sorted ascending, so the cheapest and least important candidate compresses first.
+         * `[ ]`   Score each compressible history message `effectiveScore = candidateTokens × valueScore`, where `candidateTokens = deps.countTokens({ messages: [message] }, params.modelConfig)`. The positional `valueScore` from oldest (0) to newest (1) and the immutable head and tail anchors are preserved exactly.
+         * `[ ]`   Move `CompressionCandidate` from `vector_utils.ts` into `vector_utils.interface.ts`, type its `sourceType` as `CompressionSourceType`, and add `tokenCount: number`.
+         * `[ ]`   `tokenizer_utils.mock.ts` supplies `mockBoundCountTokens: BoundCountTokensFn`, the real `countTokens` bound to `buildCountTokensDeps()`, so this node's deps builder consumes the home package's mock rather than declaring its own.
+         * `[ ]`   Delete `scoreResourceDocuments`, `cosineSimilarity`, `dotProduct`, `magnitude`, the `dialectic_memory` query block with its `candidateIds` array, and the `console.log` diagnostic.
       * `[ ]`   Non-functional constraints:
-         * `[ ]`   `gatherArtifacts.ts`, `gatherArtifacts.interface.ts`, `processSimpleJob.ts` and every other file outside `dialectic-worker/applyCompressionOverlay/` are not edited. The consumer that calls this function and supplies its params is stated in the `gatherArtifacts` node, not here.
-         * `[ ]`   No file outside `dialectic-worker/applyCompressionOverlay/` is edited.
+         * `[ ]`   No file outside `_shared/utils/tokenizer_utils.mock.ts`, `_shared/utils/vector_utils.interface.test.ts`, `_shared/utils/vector_utils.interface.ts`, `_shared/utils/vector_utils.mock.ts`, `_shared/utils/vector_utils.guard.test.ts`, `_shared/utils/vector_utils.guard.ts`, `_shared/utils/vector_utils.test.ts`, `_shared/utils/vector_utils.ts` and `_shared/utils/vector_utils.provides.ts` is edited. Consumers of the retired `ICompressionStrategy` / `CompressionStrategyDeps` / `CompressionStrategyParams` / `CompressionStrategyPayload` — `compressPrompt`, `calculateAffordability`, `processSimpleJob`, `createJobContext` and their test, mock and guard files — are addressed in their own nodes.
          * `[ ]`   Each goal is proven by a named case in this node's interface test, guard test, or unit test.
 
    * `[ ]`   `role`
-      * `[ ]`   Node role is an app-layer content overlay: given gathered resource documents and conversation history, check each candidate for a persisted compressed artifact and swap the content of those that have one.
-      * `[ ]`   The role is correct because the function performs a pure content-replacement pass over two candidate arrays, using only forward canonical-path construction and storage reads.
+      * `[ ]`   Node role is shared-utility scorer: given resource documents and conversation history, delegate admission to `resolveCompressionSource`, compute `candidateTokens × importance` for each admitted document and `candidateTokens × valueScore` for each compressible history message, and return the candidates sorted ascending by `effectiveScore`.
+      * `[ ]`   The role is correct because the function is a scoring and sorting pass over two input arrays using only injected token counting, an injected admission resolver and a static relevance lookup — no DB access, no embedding, no storage, no mutation of its inputs.
       * `[ ]`   Out-of-scope responsibilities:
-         * `[ ]`   Do not gather artifacts — `gatherArtifacts` owns that.
-         * `[ ]`   Do not score, select, or enqueue compression victims — `compressPrompt` and `enqueueCompressJobs` own those.
-         * `[ ]`   Do not persist artifacts — `saveCompressedResponse` and the RENDER job own that.
-         * `[ ]`   Do not count tokens, check affordability, or dispatch model calls.
-         * `[ ]`   Do not mutate any input object — return new arrays of new objects.
-
-   * `[ ]`   `module`
-      * `[ ]`   Bounded context is `supabase/functions/dialectic-worker/applyCompressionOverlay` — replacing candidate content with persisted compressed artifacts via forward canonical-path lookup.
-      * `[ ]`   Inside boundary:
-         * `[ ]`   The per-candidate canonical-path construction, the existence read, the content swap, the overlaid-count tally, and the composition of the returned arrays.
-         * `[ ]`   `ApplyCompressionOverlayDeps`, `ApplyCompressionOverlayParams`, `ApplyCompressionOverlayPayload`, `ApplyCompressionOverlaySuccessReturn`, `ApplyCompressionOverlayErrorReturn`, `ApplyCompressionOverlayReturn`, `ApplyCompressionOverlayFn`, and each owned error and its constructor params.
-      * `[ ]`   Outside boundary:
-         * `[ ]`   `ResourceDocument` and `Messages`, owned by `_shared/types.ts`.
-         * `[ ]`   `FileType`, `PathContext`, owned by `_shared/types/file_manager.types.ts`.
-         * `[ ]`   `ConstructedPath` and `constructStoragePath`, owned by `_shared/utils/path_constructor.ts`.
-         * `[ ]`   `DownloadFromStorageFn`, owned by `_shared/supabase_storage_utils.ts`.
-         * `[ ]`   `ILogger`, owned by `_shared/types.ts`.
-         * `[ ]`   `SupabaseClient<Database>`, owned by `npm:@supabase/supabase-js` and `types_db.ts`.
-         * `[ ]`   Who calls this function, who supplies `stageSlug` and `output_type`, and what happens after the overlaid arrays reach the dispatcher.
-
-   * `[ ]`   `deps`
-      * `[ ]`   Provider: `_shared/supabase_storage_utils.ts` (`downloadFromStorage` via `DownloadFromStorageFn`).
-         * `[ ]`   Layer classification: shared storage utility.
-         * `[ ]`   Direction: inbound from `_shared`.
-         * `[ ]`   Purpose: existence read for the `CompressedContext` artifact at the canonical path. A `null` data result or an error result is a miss, not a failure.
-      * `[ ]`   Provider: `_shared/types.ts` (`ILogger`).
-         * `[ ]`   Layer classification: shared type surface.
-         * `[ ]`   Direction: inbound from `_shared`.
-         * `[ ]`   Purpose: log each overlay hit and miss for observability.
-      * `[ ]`   Provider: `_shared/utils/path_constructor.ts` (`constructStoragePath`).
-         * `[ ]`   Layer classification: shared utility, pure function.
-         * `[ ]`   Direction: inbound from `_shared`.
-         * `[ ]`   Purpose: build the canonical `CompressedContext` path for each candidate. Called, not injected — it is a pure function, not a dependency.
-      * `[ ]`   Provider: `_shared/types/file_manager.types.ts` (`FileType`).
-         * `[ ]`   Layer classification: shared type surface.
-         * `[ ]`   Direction: inbound from `_shared`.
-         * `[ ]`   Purpose: `FileType.CompressedContext` is the `fileType` argument to `constructStoragePath`.
-      * `[ ]`   Provider: `_shared/types.ts` (`ResourceDocument`, `Messages`).
-         * `[ ]`   Layer classification: shared type surface.
-         * `[ ]`   Direction: inbound from `_shared`.
-         * `[ ]`   Purpose: the two candidate array element types the function iterates.
-      * `[ ]`   Provider: `types_db.ts` (`Database`).
-         * `[ ]`   Layer classification: generated database type surface.
-         * `[ ]`   Direction: inbound.
-         * `[ ]`   Purpose: type the `SupabaseClient` passed to `downloadFromStorage`.
-      * `[ ]`   Provider: `_shared/supabase_storage_utils.mock.ts` (`createMockDownloadFromStorage`); `_shared/logger.mock.ts` (`MockLogger`).
-         * `[ ]`   Layer classification: shared test fixture surfaces.
-         * `[ ]`   Direction: inbound, test-time only.
-         * `[ ]`   Purpose: configure the storage download per outcome and provide the logger mock.
-      * `[ ]`   Confirm: no reverse dependencies, no lateral layer violations. All deps are inward from `_shared` or generated types.
-
-   * `[ ]`   `context_slice`
-      * `[ ]`   `ApplyCompressionOverlayDeps`: `{ logger: ILogger; downloadFromStorage: DownloadFromStorageFn }`.
-      * `[ ]`   `constructStoragePath` is called directly (pure function import), not injected.
-
-   * `[ ]`   applyCompressionOverlay/`applyCompressionOverlay.interface.test.ts`
-      * `[ ]`   Prove the contract for this work: type membership for all owned types, return-union arms, the surface of each parameter object.
-
-   * `[ ]`   applyCompressionOverlay/`applyCompressionOverlay.interface.ts`
-      * `[ ]`   Declare the function signature: `ApplyCompressionOverlayFn(deps: ApplyCompressionOverlayDeps, params: ApplyCompressionOverlayParams, payload: ApplyCompressionOverlayPayload): Promise<ApplyCompressionOverlayReturn>`.
-      * `[ ]`   `ApplyCompressionOverlayDeps`: `{ logger: ILogger; downloadFromStorage: DownloadFromStorageFn }`.
-      * `[ ]`   `ApplyCompressionOverlayParams`: `{ dbClient: SupabaseClient<Database>; projectId: string; sessionId: string; iterationNumber: number; stageSlug: string; output_type: string }` — the six values `constructStoragePath` requires for the `CompressedContext` case plus the `dbClient` for the storage read.
-      * `[ ]`   `ApplyCompressionOverlayPayload`: `{ resourceDocuments: ResourceDocument[]; conversationHistory: Messages[] }` — the two candidate arrays whose content may be swapped.
-      * `[ ]`   `ApplyCompressionOverlaySuccessReturn`: `{ resourceDocuments: ResourceDocument[]; conversationHistory: Messages[]; overlaidCount: number }`.
-      * `[ ]`   `ApplyCompressionOverlayErrorReturn`: `{ error: Error; retriable: boolean }`.
-      * `[ ]`   `ApplyCompressionOverlayReturn`: `ApplyCompressionOverlaySuccessReturn | ApplyCompressionOverlayErrorReturn`.
-      * `[ ]`   `BoundApplyCompressionOverlayFn`: `(params: ApplyCompressionOverlayParams, payload: ApplyCompressionOverlayPayload) => Promise<ApplyCompressionOverlayReturn>` — the bound form the consumer receives.
-
-   * `[ ]`   `applyCompressionOverlay.interaction.spec`
-      * `[ ]`   Branch: empty inputs — both `resourceDocuments` and `conversationHistory` are empty arrays.
-         * `[ ]`   Condition: `resourceDocuments.length === 0 && conversationHistory.length === 0`.
-         * `[ ]`   Decision: none.
-         * `[ ]`   Dependency call: none.
-         * `[ ]`   Outcome: `ApplyCompressionOverlaySuccessReturn` with empty arrays and `overlaidCount: 0`.
-      * `[ ]`   Branch: resource document with existing compressed artifact.
-         * `[ ]`   Condition: `constructStoragePath` returns a valid path and `deps.downloadFromStorage` returns `{ data: <ArrayBuffer>, error: null }`.
-         * `[ ]`   Decision: `data !== null && error === null`.
-         * `[ ]`   Dependency call: `deps.downloadFromStorage(params.dbClient, 'dialectic-contributions', <canonicalPath>)`.
-         * `[ ]`   Outcome: the document appears in the returned `resourceDocuments` with its `content` replaced by the decoded download; `overlaidCount` increments by 1.
-      * `[ ]`   Branch: resource document with no compressed artifact (download miss).
-         * `[ ]`   Condition: `deps.downloadFromStorage` returns `{ data: null, error: ... }` or `{ data: null, error: null }`.
-         * `[ ]`   Decision: `data === null`.
-         * `[ ]`   Dependency call: `deps.downloadFromStorage(params.dbClient, 'dialectic-contributions', <canonicalPath>)`.
-         * `[ ]`   Outcome: the document passes through with its original `content` unchanged; `overlaidCount` does not increment.
-      * `[ ]`   Branch: resource document whose `type` does not map to a known `sourceType` (`'seed_prompt'`, `'header_context'`, or any future value not in the `'document'`/`'feedback'`/`'project_resource'` set).
-         * `[ ]`   Condition: `type` is not `'document'`, `'feedback'`, or `'project_resource'`.
-         * `[ ]`   Decision: skip — no `constructStoragePath` call.
-         * `[ ]`   Dependency call: none.
-         * `[ ]`   Outcome: the document passes through unchanged; `overlaidCount` does not increment.
-      * `[ ]`   Branch: history message with existing compressed artifact.
-         * `[ ]`   Condition: message has a defined `id`, `role` is `'user'` or `'assistant'`, and `deps.downloadFromStorage` returns `{ data: <ArrayBuffer>, error: null }`.
-         * `[ ]`   Decision: `data !== null && error === null`.
-         * `[ ]`   Dependency call: `deps.downloadFromStorage(params.dbClient, 'dialectic-contributions', <canonicalPath>)`.
-         * `[ ]`   Outcome: the message appears in the returned `conversationHistory` with its `content` replaced by the decoded download; `overlaidCount` increments by 1.
-      * `[ ]`   Branch: history message with no compressed artifact (download miss).
-         * `[ ]`   Condition: message has a defined `id`, `role` is `'user'` or `'assistant'`, and `deps.downloadFromStorage` returns `{ data: null, ... }`.
-         * `[ ]`   Decision: `data === null`.
-         * `[ ]`   Dependency call: `deps.downloadFromStorage(params.dbClient, 'dialectic-contributions', <canonicalPath>)`.
-         * `[ ]`   Outcome: the message passes through with its original `content` unchanged; `overlaidCount` does not increment.
-      * `[ ]`   Branch: history message that is ineligible for overlay.
-         * `[ ]`   Condition: message has no `id`, or `role` is `'system'` or `'function'`.
-         * `[ ]`   Decision: skip — no `constructStoragePath` call.
-         * `[ ]`   Dependency call: none.
-         * `[ ]`   Outcome: the message passes through unchanged; `overlaidCount` does not increment.
-      * `[ ]`   Branch: `constructStoragePath` throws.
-         * `[ ]`   Condition: `constructStoragePath` raises an `Error` from missing required fields.
-         * `[ ]`   Decision: catch.
-         * `[ ]`   Dependency call: none.
-         * `[ ]`   Outcome: `ApplyCompressionOverlayErrorReturn` with the thrown error and `retriable: false`.
-
-   * `[ ]`   applyCompressionOverlay/`applyCompressionOverlay.mock.ts`
-      * `[ ]`   Provide the builders, invalidators, and function mock this interface owns: `buildApplyCompressionOverlayDeps`, `ApplyCompressionOverlayDepsOverrides`, `buildApplyCompressionOverlayParams`, `ApplyCompressionOverlayParamsOverrides`, `buildApplyCompressionOverlayPayload`, `ApplyCompressionOverlayPayloadOverrides`, `invalidateApplyCompressionOverlayPayload`, `ApplyCompressionOverlayPayloadCorruptions`, `buildApplyCompressionOverlaySuccessReturn`, `ApplyCompressionOverlaySuccessReturnOverrides`, `invalidateApplyCompressionOverlaySuccessReturn`, `ApplyCompressionOverlaySuccessReturnCorruptions`, `buildApplyCompressionOverlayErrorReturn`, `ApplyCompressionOverlayErrorReturnOverrides`, `invalidateApplyCompressionOverlayErrorReturn`, `ApplyCompressionOverlayErrorReturnCorruptions`, `mockApplyCompressionOverlay`.
-      * `[ ]`   `buildApplyCompressionOverlayDeps` composes `MockLogger` for `logger` and `createMockDownloadFromStorage({ mode: 'success', data: <encoded 'compressed-content'> })` for `downloadFromStorage`.
-      * `[ ]`   `buildApplyCompressionOverlayParams` requires `dbClient` as a positional argument (same pattern as `buildGatherArtifactsParams`), with defaults for `projectId`, `sessionId`, `iterationNumber`, `stageSlug`, and `output_type`.
-      * `[ ]`   `buildApplyCompressionOverlayPayload` defaults `resourceDocuments` to an empty array and `conversationHistory` to an empty array.
-
-   * `[ ]`   applyCompressionOverlay/`applyCompressionOverlay.guard.test.ts`
-      * `[ ]`   Prove each owned guard per the case checklist: `isApplyCompressionOverlaySuccessReturn`, `isApplyCompressionOverlayErrorReturn`.
-
-   * `[ ]`   applyCompressionOverlay/`applyCompressionOverlay.guard.ts`
-      * `[ ]`   Implement `isApplyCompressionOverlaySuccessReturn` and `isApplyCompressionOverlayErrorReturn`. `isApplyCompressionOverlaySuccessReturn` checks for `resourceDocuments` (array), `conversationHistory` (array), and `overlaidCount` (number). `isApplyCompressionOverlayErrorReturn` checks for `error` (instance of `Error`) and `retriable` (boolean).
-
-   * `[ ]`   applyCompressionOverlay/`applyCompressionOverlay.test.ts`
-      * `[ ]`   Validate transformations and branching against the interaction spec:
-         * `[ ]`   Empty inputs returns empty arrays and `overlaidCount: 0`.
-         * `[ ]`   A document with a matching artifact gets its content replaced; `overlaidCount` is 1.
-         * `[ ]`   A document with no artifact passes through with original content; `overlaidCount` is 0.
-         * `[ ]`   A document with unmapped `type` (e.g. `'seed_prompt'`) passes through; `overlaidCount` is 0.
-         * `[ ]`   A history message with a matching artifact gets its content replaced; `overlaidCount` is 1.
-         * `[ ]`   A history message with no artifact passes through unchanged; `overlaidCount` is 0.
-         * `[ ]`   A history message with no `id` passes through unconditionally.
-         * `[ ]`   A history message with `role: 'system'` passes through unconditionally.
-         * `[ ]`   A mixed payload with some hits and some misses returns the correct `overlaidCount` and only the hit documents/messages have swapped content.
-         * `[ ]`   No input object is mutated — assert the original arrays and objects are unchanged after the call.
-         * `[ ]`   `constructStoragePath` throwing returns the error arm with `retriable: false`.
-
-   * `[ ]`   `construction`
-      * `[ ]`   `applyCompressionOverlay` is a stateless exported async function — no constructor, no class, no factory. `constructStoragePath` is a direct import (pure function), not injected. `downloadFromStorage` is injected via `deps`.
-
-   * `[ ]`   applyCompressionOverlay/`applyCompressionOverlay.ts`
-      * `[ ]`   Implement the behavior from the interaction spec:
-         * `[ ]`   Iterate `payload.resourceDocuments`. For each: map `type` to `sourceType` (`'document'` → `'contribution'`, `'feedback'` → `'feedback'`, `'project_resource'` → `'resource'`); if unmapped, pass through unchanged. Build the canonical path via `constructStoragePath({ projectId: params.projectId, fileType: FileType.CompressedContext, sessionId: params.sessionId, iteration: params.iterationNumber, stageSlug: params.stageSlug, output_type: params.output_type, sourceType, documentKey: doc.document_key })`. Call `deps.downloadFromStorage(params.dbClient, 'dialectic-contributions', `${path.storagePath}/${path.fileName}`)`. If data is non-null and no error, decode and create a new `ResourceDocument` with the compressed content; otherwise pass through.
-         * `[ ]`   Iterate `payload.conversationHistory`. For each: if no `id` or `role` is `'system'` or `'function'`, pass through. Build the canonical path via `constructStoragePath({ projectId: params.projectId, fileType: FileType.CompressedContext, sessionId: params.sessionId, iteration: params.iterationNumber, stageSlug: params.stageSlug, output_type: params.output_type, sourceType: 'history', sourceId: message.id, role: message.role })`. Call `deps.downloadFromStorage`. If data is non-null and no error, decode and create a new `Messages` with the compressed content; otherwise pass through.
-         * `[ ]`   Wrap the entire loop in a try/catch for `constructStoragePath` throws. On catch, return `ApplyCompressionOverlayErrorReturn` with the thrown error and `retriable: false`.
-         * `[ ]`   Return `ApplyCompressionOverlaySuccessReturn` with the overlaid arrays and the count.
-      * `[ ]`   Introduce no undeclared dependencies; bypass no guards or contracts.
-
-   * `[ ]`   applyCompressionOverlay/`applyCompressionOverlay.provides.ts`
-      * `[ ]`   Export the public surface:
-         * `[ ]`   `export * from "./applyCompressionOverlay.ts";`
-         * `[ ]`   `export * from "./applyCompressionOverlay.interface.ts";`
-         * `[ ]`   `export * from "./applyCompressionOverlay.guard.ts";`
-         * `[ ]`   `export * from "./applyCompressionOverlay.mock.ts";`
-
-   * `[ ]`   `directionality`
-      * `[ ]`   Layer: worker-internal module (`dialectic-worker/applyCompressionOverlay`). Deps are inward (`ILogger`, `DownloadFromStorageFn` from `_shared`; `constructStoragePath` from `_shared/utils`; `FileType` from `_shared/types`; `ResourceDocument`, `Messages` from `_shared/types.ts`; `Database` from generated types). Provides outward to `gatherArtifacts` (the consumer that injects it post-gather).
-      * `[ ]`   No reverse dependencies, no lateral layer violations, no cycles.
-
-   * `[ ]`   `requirements`
-      * `[ ]`   Given an empty `resourceDocuments` and empty `conversationHistory`, returns success with empty arrays and `overlaidCount: 0`.
-      * `[ ]`   Given a resource document whose canonical `CompressedContext` artifact exists in storage, returns that document with its content replaced by the artifact's content.
-      * `[ ]`   Given a resource document whose canonical artifact does not exist, returns that document with its original content.
-      * `[ ]`   Given a resource document with a `type` that has no `sourceType` mapping, returns that document unchanged.
-      * `[ ]`   Given a history message whose canonical `CompressedContext` artifact exists, returns that message with its content replaced.
-      * `[ ]`   Given a history message whose artifact does not exist, returns that message unchanged.
-      * `[ ]`   Given a history message with no `id` or with `role: 'system'`/`'function'`, returns it unchanged without attempting a lookup.
-      * `[ ]`   No input object is mutated on any path.
-      * `[ ]`   `constructStoragePath` throwing returns `ApplyCompressionOverlayErrorReturn` with `retriable: false`.
-
-* `[ ]`   supabase/functions/dialectic-worker/gatherArtifacts/gatherArtifacts.ts **[BE] Inject `applyCompressionOverlay` post-gather with the `stageSlug` and `output_type` its lookup requires, and tighten `ResourceDocument.type` to `'resource' | 'feedback' | 'system'` across all five push sites**
-
-   * `[ ]`   `objective`
-      * `[ ]`   `gatherArtifacts` pushes a free-form `type: string` into every `ResourceDocument` it produces — each of the five rule-type branches writes a different string literal (`"document"`, `"feedback"`, `"seed_prompt"`, `"project_resource"`, or the passthrough `rType` for `header_context`/`contribution`/fallback). Downstream consumers (`vector_utils`, `applyCompressionOverlay`) must match on these values, but no union constrains them and a typo compiles silently. Separately, after dedup the gathered artifacts are returned directly without passing through the compression overlay, so every resume cycle pays full token cost for candidates that already have a persisted `CompressedContext` artifact.
-      * `[ ]`   Functional goals:
-         * `[ ]`   Declare `ResourceDocumentType = 'resource' | 'feedback' | 'system'` in `_shared/types.ts` and tighten `ResourceDocument.type` from `string` to `ResourceDocumentType`.
-         * `[ ]`   Update each of the five push sites in `gatherArtifacts.ts` to emit the tightened literal: `"document"` → `"resource"`, `"feedback"` → `"feedback"` (unchanged), `"seed_prompt"` → `"system"`, `"project_resource"` → `"resource"`, `header_context`/`contribution`/fallback → `"resource"`.
-         * `[ ]`   Add `applyCompressionOverlay: BoundApplyCompressionOverlayFn` to `GatherArtifactsDeps`.
-         * `[ ]`   Add `stageSlug: string` and `output_type: string` to `GatherArtifactsParams`.
-         * `[ ]`   After the dedup loop and before the success return, call `deps.applyCompressionOverlay(params, { resourceDocuments: deduped })` and, on success, return its overlaid `resourceDocuments` as the artifacts array; on error, return the error arm.
-      * `[ ]`   Non-functional constraints:
-         * `[ ]`   No file outside `gatherArtifacts/` and `_shared/types.ts` is edited. The caller that supplies `stageSlug`, `output_type`, and the bound overlay is `processSimpleJob`, addressed in its own node.
-         * `[ ]`   Each goal is proven by a named case in this node's interface test, guard test, or unit test.
-
-   * `[ ]`   `role`
-      * `[ ]`   Node role is app-layer artifact gatherer: query DB rows per input rule, download content from storage, assign a tightened `ResourceDocumentType` literal per rule type, dedup, apply the compression overlay, and return the unified array.
-      * `[ ]`   The role is correct because the function already performs all gathering and dedup; this node adds the type tightening (a data-normalization concern belonging to the producer) and the overlay call (a content-replacement pass delegated to an injected collaborator).
-      * `[ ]`   Out-of-scope responsibilities:
-         * `[ ]`   Do not implement the overlay — `applyCompressionOverlay` owns that.
-         * `[ ]`   Do not wire the new deps/params into the caller — `processSimpleJob` owns that.
-         * `[ ]`   Do not score, select, or enqueue compression victims.
-
-   * `[ ]`   `module`
-      * `[ ]`   Bounded context is `supabase/functions/dialectic-worker/gatherArtifacts` — gathering input-rule artifacts, normalizing their type to `ResourceDocumentType`, deduplicating, and delegating overlay application.
-      * `[ ]`   Inside boundary:
-         * `[ ]`   The five rule-type branches and their type literals, the dedup pass, the overlay invocation post-dedup, and composition of the returned success or error arm.
-         * `[ ]`   `GatherArtifactsDeps`, `GatherArtifactsParams`, `GatherArtifactsPayload`, `GatherArtifactsSuccessReturn`, `GatherArtifactsErrorReturn`, `GatherArtifactsReturn`, `GatherArtifactsFn`, `BoundGatherArtifactsFn`.
-      * `[ ]`   Outside boundary:
-         * `[ ]`   `ResourceDocumentType` and `ResourceDocument`, owned by `_shared/types.ts`.
-         * `[ ]`   `BoundApplyCompressionOverlayFn`, `ApplyCompressionOverlayParams`, `ApplyCompressionOverlayPayload`, `ApplyCompressionOverlayReturn`, owned by `applyCompressionOverlay/applyCompressionOverlay.interface.ts`.
-         * `[ ]`   `ILogger`, `DownloadFromStorageFn`, `PickLatestFn`, `SupabaseClient<Database>`, `InputRule` — all owned by their respective `_shared` or `dialectic-service` modules.
-         * `[ ]`   Who calls this function, who supplies `stageSlug`/`output_type`/`applyCompressionOverlay`, and what happens after the overlaid artifacts reach the dispatcher.
-
-   * `[ ]`   `deps`
-      * `[ ]`   Surviving providers (unchanged):
-         * `[ ]`   `_shared/types.ts` → `ILogger` (via `deps.logger`): logging.
-         * `[ ]`   `createJobContext/JobContext.interface.ts` → `PickLatestFn` (via `deps.pickLatest`): row selection.
-         * `[ ]`   `_shared/supabase_storage_utils.ts` → `DownloadFromStorageFn` (via `deps.downloadFromStorage`): content download.
-      * `[ ]`   New provider:
-         * `[ ]`   `applyCompressionOverlay/applyCompressionOverlay.interface.ts` → `BoundApplyCompressionOverlayFn` (via `deps.applyCompressionOverlay`).
-            * `[ ]`   Layer classification: sibling worker module.
-            * `[ ]`   Direction: inbound from peer module within `dialectic-worker`.
-            * `[ ]`   Purpose: overlay compressed content onto gathered artifacts post-dedup. Called with `(params, { resourceDocuments: deduped })`.
-      * `[ ]`   Confirm: no reverse dependencies, no lateral layer violations. `applyCompressionOverlay` is a peer within `dialectic-worker`; all other deps are inward from `_shared` or generated types.
-
-   * `[ ]`   `context_slice`
-      * `[ ]`   `GatherArtifactsDeps` adds `applyCompressionOverlay: BoundApplyCompressionOverlayFn` alongside the existing `logger`, `pickLatest`, `downloadFromStorage`.
-      * `[ ]`   `GatherArtifactsParams` adds `stageSlug: string` and `output_type: string` alongside the existing `dbClient`, `projectId`, `sessionId`, `iterationNumber`.
-
-   * `[ ]`   _shared/`types.ts`
-      * `[ ]`   Declare `export type ResourceDocumentType = 'resource' | 'feedback' | 'system';` immediately above `ResourceDocument`.
-      * `[ ]`   Tighten `ResourceDocument.type` from `string` to `ResourceDocumentType`.
-
-   * `[ ]`   gatherArtifacts/`gatherArtifacts.interface.test.ts`
-      * `[ ]`   Add key-record proof for `GatherArtifactsDeps`: typed assignment `const _depsKeys: Record<keyof GatherArtifactsDeps, true> = { logger: true, pickLatest: true, downloadFromStorage: true, applyCompressionOverlay: true };`.
-      * `[ ]`   Add key-record proof for `GatherArtifactsParams`: typed assignment `const _paramsKeys: Record<keyof GatherArtifactsParams, true> = { dbClient: true, projectId: true, sessionId: true, iterationNumber: true, stageSlug: true, output_type: true };`.
-      * `[ ]`   Add `ResourceDocumentType` membership proof: typed assignment `const _resource: ResourceDocumentType = 'resource'; const _feedback: ResourceDocumentType = 'feedback'; const _system: ResourceDocumentType = 'system';`.
-      * `[ ]`   Replace every `createGatherArtifactsMock` call with `mockGatherArtifacts` — the mock function is called directly with `(deps, params, payload)` and its return is configured by the test's `buildGatherArtifactsSuccessReturn` or `buildGatherArtifactsErrorReturn`, not by an options bag. Remove `createGatherArtifactsMock` and `GatherArtifactsMockCall` from imports.
-
-   * `[ ]`   gatherArtifacts/`gatherArtifacts.interface.ts`
-      * `[ ]`   Add import: `import type { BoundApplyCompressionOverlayFn } from "../applyCompressionOverlay/applyCompressionOverlay.interface.ts";`.
-      * `[ ]`   Add import: `import type { ResourceDocumentType } from "../../_shared/types.ts";`.
-      * `[ ]`   `GatherArtifactsDeps`: add `applyCompressionOverlay: BoundApplyCompressionOverlayFn;`.
-      * `[ ]`   `GatherArtifactsParams`: add `stageSlug: string;` and `output_type: string;`.
-      * `[ ]`   `GatherArtifactsSuccessReturn.artifacts`: tighten element type — each artifact's `type` is now `ResourceDocumentType` via the tightened `ResourceDocument`.
-
-   * `[ ]`   `gatherArtifacts.interaction.spec`
-      * `[ ]`   Branch: document rule produces `type: 'resource'`.
-         * `[ ]`   Condition: `rType === 'document'`.
-         * `[ ]`   Decision: the existing document-rule branch executes.
-         * `[ ]`   Dependency call: DB query on `dialectic_project_resources`, then `deps.downloadFromStorage`.
-         * `[ ]`   Outcome: gathered artifact is pushed with `type: 'resource'` (was `'document'`).
-      * `[ ]`   Branch: feedback rule produces `type: 'feedback'`.
-         * `[ ]`   Condition: `rType === 'feedback'`.
-         * `[ ]`   Decision: the existing feedback-rule branch executes.
-         * `[ ]`   Dependency call: DB query on `dialectic_feedback`, then `deps.downloadFromStorage`.
-         * `[ ]`   Outcome: gathered artifact is pushed with `type: 'feedback'` (unchanged).
-      * `[ ]`   Branch: seed_prompt rule produces `type: 'system'`.
-         * `[ ]`   Condition: `rType === 'seed_prompt'`.
-         * `[ ]`   Decision: the existing seed_prompt-rule branch executes.
-         * `[ ]`   Dependency call: DB query on `dialectic_project_resources`, then `deps.downloadFromStorage`.
-         * `[ ]`   Outcome: gathered artifact is pushed with `type: 'system'` (was `'seed_prompt'`).
-      * `[ ]`   Branch: project_resource rule produces `type: 'resource'`.
-         * `[ ]`   Condition: `rType === 'project_resource'`.
-         * `[ ]`   Decision: the existing project_resource-rule branch executes.
-         * `[ ]`   Dependency call: DB query on `dialectic_project_resources`, then `deps.downloadFromStorage`.
-         * `[ ]`   Outcome: gathered artifact is pushed with `type: 'resource'` (was `'project_resource'`).
-      * `[ ]`   Branch: header_context / contribution / fallback rule produces `type: 'resource'`.
-         * `[ ]`   Condition: `rType === 'header_context'` or (`rType` is not `'document'`, `'feedback'`, or `'seed_prompt'`).
-         * `[ ]`   Decision: the existing header_context/contribution/fallback branch executes.
-         * `[ ]`   Dependency call: DB query on `dialectic_contributions`, then `deps.downloadFromStorage`.
-         * `[ ]`   Outcome: gathered artifact is pushed with `type: 'resource'` (was `rType` passthrough).
-      * `[ ]`   Branch: post-dedup overlay — overlay returns success.
-         * `[ ]`   Condition: dedup loop completes and `deps.applyCompressionOverlay` returns a success arm.
-         * `[ ]`   Decision: `isApplyCompressionOverlaySuccessReturn(overlayResult)`.
-         * `[ ]`   Dependency call: `deps.applyCompressionOverlay({ dbClient: params.dbClient, projectId: params.projectId, sessionId: params.sessionId, iterationNumber: params.iterationNumber, stageSlug: params.stageSlug, output_type: params.output_type }, { resourceDocuments: deduped })`.
-         * `[ ]`   Outcome: `GatherArtifactsSuccessReturn` with `artifacts` set to `overlayResult.resourceDocuments`.
-      * `[ ]`   Branch: post-dedup overlay — overlay returns error.
-         * `[ ]`   Condition: `deps.applyCompressionOverlay` returns an error arm.
-         * `[ ]`   Decision: `!isApplyCompressionOverlaySuccessReturn(overlayResult)`.
-         * `[ ]`   Dependency call: same as success branch.
-         * `[ ]`   Outcome: `GatherArtifactsErrorReturn` with `error: overlayResult.error` and `retriable: overlayResult.retriable`.
-
-   * `[ ]`   gatherArtifacts/`gatherArtifacts.mock.ts`
-      * `[ ]`   Replace `createGatherArtifactsMock` (options bag + calls recorder) with `mockGatherArtifacts: GatherArtifactsFn` — a production-typed function that returns `buildGatherArtifactsSuccessReturn()`. Remove `CreateGatherArtifactsMockOptions`, `GatherArtifactsMockCall`.
-      * `[ ]`   `buildGatherArtifactsDeps`: add `applyCompressionOverlay` default that returns `buildApplyCompressionOverlaySuccessReturn()`. Import `BoundApplyCompressionOverlayFn` and `buildApplyCompressionOverlaySuccessReturn` from the overlay module's provides.
-      * `[ ]`   `buildGatherArtifactsParams`: change signature from `(dbClient, overrides?)` to `(overrides?: Partial<GatherArtifactsParams>)` with `dbClient` defaulting to `createMockSupabaseClient().client`. Add `stageSlug: 'thesis'` and `output_type: 'business_case'` defaults.
-      * `[ ]`   `buildGatherArtifact`: change default `type` from `'document'` to `'resource'` to match the tightened literal.
-
-   * `[ ]`   gatherArtifacts/`gatherArtifacts.guard.test.ts`
-      * `[ ]`   `isGatherArtifactsDeps` — add case: missing `applyCompressionOverlay` rejects.
-      * `[ ]`   `isGatherArtifactsDeps` — add case: `applyCompressionOverlay: 'not-a-function'` rejects.
-      * `[ ]`   `isGatherArtifactsParams` — add case: missing `stageSlug` rejects.
-      * `[ ]`   `isGatherArtifactsParams` — add case: `stageSlug: ''` (empty string) rejects.
-      * `[ ]`   `isGatherArtifactsParams` — add case: missing `output_type` rejects.
-      * `[ ]`   `isGatherArtifactsParams` — add case: `output_type: ''` (empty string) rejects.
-      * `[ ]`   Update `buildGatherArtifactsParams` calls: change from `buildGatherArtifactsParams(dbClient)` to `buildGatherArtifactsParams()` (overrides-only form).
-
-   * `[ ]`   gatherArtifacts/`gatherArtifacts.guard.ts`
-      * `[ ]`   `isGatherArtifactsDeps`: add check — `'applyCompressionOverlay' in value && typeof value.applyCompressionOverlay === 'function'`.
-      * `[ ]`   `isGatherArtifactsParams`: add checks — `'stageSlug' in value && typeof value.stageSlug === 'string' && value.stageSlug !== ''` and `'output_type' in value && typeof value.output_type === 'string' && value.output_type !== ''`.
-
-   * `[ ]`   gatherArtifacts/`gatherArtifacts.test.ts`
-      * `[ ]`   Update all five rule-type assertion blocks: `type: 'document'` → `'resource'`, `type: 'feedback'` → `'feedback'` (unchanged), `type: 'seed_prompt'` → `'system'`, `type: 'project_resource'` → `'resource'`, `type: rType` passthrough assertions → `'resource'`.
-      * `[ ]`   Update `buildGatherArtifactsParams` calls: change from `buildGatherArtifactsParams(dbClient)` to `buildGatherArtifactsParams({ dbClient })`.
-      * `[ ]`   Add overlay test cases:
-         * `[ ]`   Overlay returns success — `gatherArtifacts` returns `GatherArtifactsSuccessReturn` with the overlay's `resourceDocuments` as `artifacts`.
-         * `[ ]`   Overlay returns error — `gatherArtifacts` returns `GatherArtifactsErrorReturn` with the overlay's `error` and `retriable`.
-         * `[ ]`   Overlay is called with the correct params shape: `{ dbClient, projectId, sessionId, iterationNumber, stageSlug, output_type }` and `{ resourceDocuments: <deduped> }`.
-      * `[ ]`   Replace any remaining `createGatherArtifactsMock` usage with direct mock construction via `mockGatherArtifacts` or spy patterns.
-
-   * `[ ]`   `construction`
-      * `[ ]`   `gatherArtifacts` remains a stateless exported async function. `applyCompressionOverlay` is injected via `deps` as a `BoundApplyCompressionOverlayFn` — the caller binds it before passing. No constructor, no class, no factory.
-
-   * `[ ]`   gatherArtifacts/`gatherArtifacts.ts`
-      * `[ ]`   Add import: `import { isApplyCompressionOverlaySuccessReturn } from "../applyCompressionOverlay/applyCompressionOverlay.guard.ts";`.
-      * `[ ]`   Line 139: change `type: "document"` to `type: "resource"`.
-      * `[ ]`   Line 236: `type: "feedback"` — no change.
-      * `[ ]`   Line 295: change `type: "seed_prompt"` to `type: "system"`.
-      * `[ ]`   Line 355: change `type: "project_resource"` to `type: "resource"`.
-      * `[ ]`   Line 449: change `type: rType` to `type: "resource" as const`.
-      * `[ ]`   After the dedup loop (after line 469), insert overlay call:
-         * `[ ]`   `const overlayResult = await deps.applyCompressionOverlay({ dbClient: params.dbClient, projectId: params.projectId, sessionId: params.sessionId, iterationNumber: params.iterationNumber, stageSlug: params.stageSlug, output_type: params.output_type }, { resourceDocuments: Array.from(uniqueById.values()) });`
-         * `[ ]`   `if (!isApplyCompressionOverlaySuccessReturn(overlayResult)) { return { error: overlayResult.error, retriable: overlayResult.retriable }; }`
-         * `[ ]`   Change the success return to use `overlayResult.resourceDocuments` as the artifacts array.
-      * `[ ]`   Introduce no undeclared dependencies; bypass no guards or contracts.
-
-   * `[ ]`   gatherArtifacts/`gatherArtifacts.provides.ts`
-      * `[ ]`   No change — re-exports all module files and the new deps/params types flow through the existing `export type * from "./gatherArtifacts.interface.ts"`.
-
-   * `[ ]`   gatherArtifacts/`gatherArtifacts.integration.test.ts`
-      * `[ ]`   Update all type assertions: `type: 'document'` → `'resource'`, `type: 'seed_prompt'` → `'system'`, `type: 'project_resource'` → `'resource'`, `type: 'header_context'` → `'resource'`, `type: 'contribution'` → `'resource'`. `type: 'feedback'` unchanged.
-      * `[ ]`   Update `buildGatherArtifactsParams` calls: change from `buildGatherArtifactsParams(dbClient)` to `buildGatherArtifactsParams({ dbClient })`.
-      * `[ ]`   Add `applyCompressionOverlay` to `deps` in each test — a pass-through overlay that returns its input unchanged: `applyCompressionOverlay: async (_params, payload) => ({ resourceDocuments: payload.resourceDocuments, conversationHistory: [], overlaidCount: 0 })`.
-      * `[ ]`   Add integration case: overlay replaces content — supply an `applyCompressionOverlay` that swaps content for a known string, assert the returned artifacts carry the swapped content.
-
-   * `[ ]`   `directionality`
-      * `[ ]`   Layer: worker-internal module (`dialectic-worker/gatherArtifacts`). Deps are inward (`ILogger`, `PickLatestFn`, `DownloadFromStorageFn` from `_shared`; `InputRule` from `dialectic-service`; `SupabaseClient<Database>` from generated types) plus one lateral peer (`BoundApplyCompressionOverlayFn` from `applyCompressionOverlay`). Provides outward to `processSimpleJob` (the consumer that calls `gatherArtifacts` with the new params).
-      * `[ ]`   `_shared/types.ts` gains `ResourceDocumentType` — an addition to a shared type surface, consumed inward by `gatherArtifacts` and every module that reads `ResourceDocument.type`.
-      * `[ ]`   No reverse dependencies, no lateral layer violations, no cycles.
-
-   * `[ ]`   `requirements`
-      * `[ ]`   `ResourceDocumentType` is declared in `_shared/types.ts` as `'resource' | 'feedback' | 'system'` and `ResourceDocument.type` uses it.
-      * `[ ]`   A document-rule artifact has `type: 'resource'`.
-      * `[ ]`   A feedback-rule artifact has `type: 'feedback'`.
-      * `[ ]`   A seed_prompt-rule artifact has `type: 'system'`.
-      * `[ ]`   A project_resource-rule artifact has `type: 'resource'`.
-      * `[ ]`   A header_context/contribution/fallback-rule artifact has `type: 'resource'`.
-      * `[ ]`   `GatherArtifactsDeps` includes `applyCompressionOverlay: BoundApplyCompressionOverlayFn`.
-      * `[ ]`   `GatherArtifactsParams` includes `stageSlug: string` and `output_type: string`.
-      * `[ ]`   After dedup, `deps.applyCompressionOverlay` is called and its success result's `resourceDocuments` become the returned `artifacts`.
-      * `[ ]`   If the overlay returns an error arm, `gatherArtifacts` returns `GatherArtifactsErrorReturn` with the overlay's `error` and `retriable`.
-      * `[ ]`   `createGatherArtifactsMock` is replaced by `mockGatherArtifacts: GatherArtifactsFn`.
-      * `[ ]`   `buildGatherArtifactsParams` takes an overrides-only bag (no positional `dbClient`).
-      * `[ ]`   All existing gathering, dedup, optional-skip, required-fail, and download-error behaviors are preserved.
-
-* `[ ]`   supabase/functions/_shared/utils/vector_utils.ts **[BE] Embedding-free selection: `effectiveScore = candidateTokens × importance`, system-typed documents excluded from the candidate pool, `getEmbedding`/`embeddingClient`/`cosineSimilarity` and this file's `dialectic_memory` query deleted, and the `ICompressionStrategy` seam retired with `CompressionStrategyDeps`/`Params`/`Payload` in favour of `GetSortedCompressionCandidatesFn`**
-
-   * `[ ]`   `objective`
-      * `[ ]`   `getSortedCompressionCandidates` scores document candidates via `embeddingClient.getEmbedding` and `cosineSimilarity`, consuming a full embedding round-trip per candidate and per prompt. It requires `CompressionStrategyDeps.dbClient` and `CompressionStrategyDeps.embeddingClient` — the DB client only to execute a diagnostic-only `dialectic_memory` query whose result is unused, and the embedding client to compute cosine similarity that the new formula replaces. The scoring formula for documents is `relevanceWeight × (1 - similarity)`, which couples value to embedding distance. History candidates receive a positional `valueScore` with no token-size weighting. The pluggable `ICompressionStrategy` seam exists only to make the embedding-based strategy swappable, a concern that retires with the embeddings themselves.
-      * `[ ]`   Functional goals:
-         * `[ ]`   Replace `CompressionStrategyDeps` / `CompressionStrategyParams` / `CompressionStrategyPayload` / `ICompressionStrategy` with `GetSortedCompressionCandidatesDeps` / `GetSortedCompressionCandidatesParams` / `GetSortedCompressionCandidatesPayload` / `GetSortedCompressionCandidatesFn`. The new deps carry only `logger: ILogger` and `countTokens: BoundCountTokensFn`. The new params carry `inputsRelevance?: RelevanceRule[]` and `modelConfig: AiModelExtendedConfig`. The new payload carries `documents: ResourceDocuments` and `history: Messages[]` — no `currentUserPrompt`.
-         * `[ ]`   Replace the document-scoring formula: for each document candidate, `effectiveScore = candidateTokens × importance`, where `candidateTokens = deps.countTokens({ resourceDocuments: [{ id: doc.id, content: doc.content }] }, params.modelConfig)` and `importance` is looked up from `params.inputsRelevance` by `document_key` + `type` (+ optional `slug` for stage-specific rules), defaulting to `1` when no rule matches. Higher `effectiveScore` means more token-expensive and more important — sorted ascending so the lowest-scoring (cheapest, least important) candidates compress first.
-         * `[ ]`   Exclude system-typed documents from the candidate pool: any document whose `type === 'system'` (per the tightened `ResourceDocumentType`) is filtered out before scoring and does not appear in the returned candidates.
-         * `[ ]`   History scoring (`scoreHistory`) is unchanged in logic — positional `valueScore` from oldest (0) to newest (1), head/tail anchors preserved. `effectiveScore` for history candidates becomes `candidateTokens × valueScore`, where `candidateTokens = deps.countTokens({ messages: [message] }, params.modelConfig)`.
-         * `[ ]`   Delete `scoreResourceDocuments` (embedding-based), `cosineSimilarity`, `dotProduct`, `magnitude`, and the `dialectic_memory` query block from `getSortedCompressionCandidates`.
-         * `[ ]`   Delete `CompressionCandidate.sourceType`'s `'document'` variant and replace with the `ResourceDocumentType` union member the candidate carries, or `'history'` for history candidates. `CompressionCandidate.sourceType` becomes `ResourceDocumentType | 'history'`.
-      * `[ ]`   Non-functional constraints:
-         * `[ ]`   No file outside `_shared/utils/vector_utils.ts`, `_shared/utils/vector_utils.interface.ts`, `_shared/utils/vector_utils.mock.ts`, and `_shared/utils/vector_utils.test.ts` is edited. Consumers of the retired `ICompressionStrategy` / `CompressionStrategyDeps` / `CompressionStrategyParams` / `CompressionStrategyPayload` (`compressPrompt`, `calculateAffordability`, `processSimpleJob`, `createJobContext`, and their test/mock/guard files) are addressed in their own nodes.
-         * `[ ]`   Each goal is proven by a named case in this node's interface test, guard test, or unit test.
-
-   * `[ ]`   `role`
-      * `[ ]`   Node role is shared utility scorer: given resource documents and conversation history, exclude system-typed documents, compute `candidateTokens × importance` for each eligible document and `candidateTokens × valueScore` for each eligible history message, and return a sorted candidate list, lowest `effectiveScore` first.
-      * `[ ]`   The role is correct because the function is a pure scoring and sorting pass over two input arrays, using only injected token counting and a static relevance lookup — no DB access, no embedding, no side effects.
-      * `[ ]`   Out-of-scope responsibilities:
+         * `[ ]`   Do not decide which document types are compressible — `resolveCompressionSource` owns that policy.
          * `[ ]`   Do not gather artifacts — `gatherArtifacts` owns that.
          * `[ ]`   Do not overlay compressed content — `applyCompressionOverlay` owns that.
-         * `[ ]`   Do not select, enqueue, or compress victims — `compressPrompt` owns that.
+         * `[ ]`   Do not select, enqueue or compress victims — `compressPrompt` and `enqueueCompressJobs` own those.
          * `[ ]`   Do not count tokens directly — the injected `BoundCountTokensFn` does that.
          * `[ ]`   Do not update any consumer of the retired interface — each consumer's own node does that.
 
    * `[ ]`   `module`
-      * `[ ]`   Bounded context is `supabase/functions/_shared/utils/vector_utils` — scoring compression candidates by token cost and importance, excluding system-typed documents, and returning a sorted list.
+      * `[ ]`   Bounded context is `supabase/functions/_shared/utils/vector_utils` — scoring compression candidates by token cost and importance and returning them sorted.
       * `[ ]`   Inside boundary:
-         * `[ ]`   The system-type filter, the per-document `candidateTokens × importance` formula, the per-history `candidateTokens × valueScore` formula, the relevance-map lookup, the ascending sort, the `scoreHistory` anchor logic.
-         * `[ ]`   `GetSortedCompressionCandidatesDeps`, `GetSortedCompressionCandidatesParams`, `GetSortedCompressionCandidatesPayload`, `GetSortedCompressionCandidatesSuccessReturn`, `GetSortedCompressionCandidatesErrorReturn`, `GetSortedCompressionCandidatesReturn`, `GetSortedCompressionCandidatesFn`, `BoundGetSortedCompressionCandidatesFn`, `CompressionCandidate`.
+         * `[ ]`   The per-document `candidateTokens × importance` formula, the per-history `candidateTokens × valueScore` formula, the relevance-map construction and lookup, the ascending sort, and the `scoreHistory` head and tail anchor logic.
+         * `[ ]`   `CompressionCandidate`, `GetSortedCompressionCandidatesDeps`, `GetSortedCompressionCandidatesParams`, `GetSortedCompressionCandidatesPayload`, `GetSortedCompressionCandidatesSuccessReturn`, `GetSortedCompressionCandidatesErrorReturn`, `GetSortedCompressionCandidatesReturn`, `GetSortedCompressionCandidatesFn`, `BoundGetSortedCompressionCandidatesFn`.
       * `[ ]`   Outside boundary:
-         * `[ ]`   `ResourceDocument`, `ResourceDocuments`, `ResourceDocumentType`, `Messages`, `ILogger`, owned by `_shared/types.ts`.
+         * `[ ]`   `ResourceDocument`, `ResourceDocuments`, `BoundResolveCompressionSourceFn`, `isCompressibleSourceReturn`, `isResolveCompressionSourceErrorReturn`, owned by `_shared/utils/resolveCompressionSource`.
+         * `[ ]`   `CompressionSourceType`, owned by `_shared/types/file_manager.types.ts`.
          * `[ ]`   `BoundCountTokensFn`, `CountableChatPayload`, owned by `_shared/types/tokenizer.types.ts`.
-         * `[ ]`   `AiModelExtendedConfig`, owned by `_shared/types.ts`.
+         * `[ ]`   `ILogger`, `Messages`, `AiModelExtendedConfig`, owned by `_shared/types.ts`.
          * `[ ]`   `RelevanceRule`, owned by `dialectic-service/dialectic.interface.ts`.
-         * `[ ]`   Who calls this function, who supplies `modelConfig` and the bound `countTokens`, and what happens after the sorted candidates reach the consumer.
+         * `[ ]`   Which document types are compressible and what source class each maps to.
+         * `[ ]`   Who calls this function, who supplies `modelConfig` and the bound collaborators, and what happens after the sorted candidates reach the consumer.
 
    * `[ ]`   `deps`
-      * `[ ]`   Surviving providers (kept, type changed):
+      * `[ ]`   Surviving providers:
+         * `[ ]`   `_shared/types.ts` → `ILogger` (via `deps.logger`): logging.
          * `[ ]`   `dialectic-service/dialectic.interface.ts` → `RelevanceRule` (via `params.inputsRelevance`): relevance weights for the importance lookup.
       * `[ ]`   New providers:
+         * `[ ]`   `_shared/utils/resolveCompressionSource/resolveCompressionSource.provides.ts` → `BoundResolveCompressionSourceFn` (via `deps.resolveCompressionSource`).
+            * `[ ]`   Layer classification: sibling shared-utility module.
+            * `[ ]`   Direction: inbound from a peer module within `_shared/utils`.
+            * `[ ]`   Purpose: admit or reject each document and supply the admitted document's `sourceType` and `documentKey`. Called as `deps.resolveCompressionSource({}, { document: doc })`.
          * `[ ]`   `_shared/types/tokenizer.types.ts` → `BoundCountTokensFn` (via `deps.countTokens`).
             * `[ ]`   Layer classification: shared type surface.
             * `[ ]`   Direction: inbound from `_shared`.
@@ -2281,42 +2560,55 @@ Oversized model inputs compress incrementally until the preflight fits: the pare
          * `[ ]`   `_shared/types.ts` → `AiModelExtendedConfig` (via `params.modelConfig`).
             * `[ ]`   Layer classification: shared type surface.
             * `[ ]`   Direction: inbound from `_shared`.
-            * `[ ]`   Purpose: the model configuration passed to `countTokens`.
-         * `[ ]`   `_shared/types.ts` → `ResourceDocumentType` (via the `'system'` filter).
+            * `[ ]`   Purpose: the model configuration passed to `deps.countTokens`.
+         * `[ ]`   `_shared/types/file_manager.types.ts` → `CompressionSourceType` (via `CompressionCandidate.sourceType`).
             * `[ ]`   Layer classification: shared type surface.
             * `[ ]`   Direction: inbound from `_shared`.
-            * `[ ]`   Purpose: the tightened type union that identifies system-typed documents to exclude.
+            * `[ ]`   Purpose: the source-class vocabulary the candidate carries to `enqueueCompressJobs`.
       * `[ ]`   Removed providers:
          * `[ ]`   `_shared/services/indexing_service.interface.ts` → `IEmbeddingClient` (was `CompressionStrategyDeps.embeddingClient`). Deleted — no embeddings.
-         * `[ ]`   `npm:@supabase/supabase-js@2` → `SupabaseClient<Database>` (was `CompressionStrategyDeps.dbClient`). Deleted — no `dialectic_memory` query.
-      * `[ ]`   Confirm: no reverse dependencies, no lateral layer violations. All deps are inward from `_shared` or `dialectic-service`.
+         * `[ ]`   `npm:@supabase/supabase-js@2` and `types_db.ts` → `SupabaseClient<Database>` (was `CompressionStrategyDeps.dbClient`). Deleted — no `dialectic_memory` query.
+      * `[ ]`   Confirm: no reverse dependencies, no lateral layer violations. `resolveCompressionSource` is a peer within `_shared/utils` consumed through its `provides`; every other dep is inward from `_shared` or `dialectic-service`.
 
    * `[ ]`   `context_slice`
-      * `[ ]`   `GetSortedCompressionCandidatesDeps`: `{ logger: ILogger; countTokens: BoundCountTokensFn }`.
+      * `[ ]`   `GetSortedCompressionCandidatesDeps`: `{ logger: ILogger; countTokens: BoundCountTokensFn; resolveCompressionSource: BoundResolveCompressionSourceFn }`.
       * `[ ]`   `GetSortedCompressionCandidatesParams`: `{ inputsRelevance?: RelevanceRule[]; modelConfig: AiModelExtendedConfig }`.
-      * `[ ]`   `GetSortedCompressionCandidatesPayload`: `{ documents: ResourceDocuments; history: Messages[] }` — no `currentUserPrompt`.
+      * `[ ]`   `GetSortedCompressionCandidatesPayload`: `{ documents: ResourceDocuments; history: Messages[] }`.
 
    * `[ ]`   _shared/utils/`vector_utils.interface.test.ts`
-      * `[ ]`   Add key-record proof for `GetSortedCompressionCandidatesDeps`: typed assignment `const _depsKeys: Record<keyof GetSortedCompressionCandidatesDeps, true> = { logger: true, countTokens: true };`.
-      * `[ ]`   Add key-record proof for `GetSortedCompressionCandidatesParams`: typed assignment `const _paramsKeys: Record<keyof GetSortedCompressionCandidatesParams, true> = { inputsRelevance: true, modelConfig: true };`.
-      * `[ ]`   Add key-record proof for `GetSortedCompressionCandidatesPayload`: typed assignment `const _payloadKeys: Record<keyof GetSortedCompressionCandidatesPayload, true> = { documents: true, history: true };`.
-      * `[ ]`   Prove `CompressionCandidate.sourceType` union membership: `const _resource: CompressionCandidate['sourceType'] = 'resource'; const _feedback: CompressionCandidate['sourceType'] = 'feedback'; const _system: CompressionCandidate['sourceType'] = 'system'; const _history: CompressionCandidate['sourceType'] = 'history';`.
-      * `[ ]`   Prove return-union arm discrimination: `GetSortedCompressionCandidatesSuccessReturn` has `candidates` (array), `GetSortedCompressionCandidatesErrorReturn` has `error` (Error) and `retriable` (boolean).
-      * `[ ]`   Prove `GetSortedCompressionCandidatesFn` and `BoundGetSortedCompressionCandidatesFn` assignability.
-      * `[ ]`   No references to `CompressionStrategyDeps`, `CompressionStrategyParams`, `CompressionStrategyPayload`, `ICompressionStrategy`, `IEmbeddingClient`, or `currentUserPrompt`.
+      * `[ ]`   Create this file.
+      * `[ ]`   Prove `CompressionCandidate`'s required key surface: `const _candidateKeys: Record<keyof CompressionCandidate, true> = { id: true, content: true, sourceType: true, originalIndex: true, valueScore: true, effectiveScore: true, tokenCount: true };`.
+      * `[ ]`   Prove `CompressionCandidate['sourceType']` admits every `CompressionSourceType` member by typed assignment of `'contribution'`, `'resource'`, `'feedback'` and `'history'`.
+      * `[ ]`   Prove `GetSortedCompressionCandidatesDeps`'s required key surface: `const _depsKeys: Record<keyof GetSortedCompressionCandidatesDeps, true> = { logger: true, countTokens: true, resolveCompressionSource: true };`.
+      * `[ ]`   Prove `GetSortedCompressionCandidatesParams`'s required key surface: `const _paramsKeys: Record<keyof GetSortedCompressionCandidatesParams, true> = { inputsRelevance: true, modelConfig: true };`.
+      * `[ ]`   Prove `GetSortedCompressionCandidatesPayload`'s required key surface: `const _payloadKeys: Record<keyof GetSortedCompressionCandidatesPayload, true> = { documents: true, history: true };`.
+      * `[ ]`   Prove `GetSortedCompressionCandidatesSuccessReturn`'s required key surface, and its membership in `GetSortedCompressionCandidatesReturn` by typed assignment.
+      * `[ ]`   Prove `GetSortedCompressionCandidatesErrorReturn`'s required key surface, and its membership in `GetSortedCompressionCandidatesReturn` by typed assignment.
+      * `[ ]`   Prove `GetSortedCompressionCandidatesFn`'s declared return in the async form: `const returned: ReturnType<GetSortedCompressionCandidatesFn> = Promise.resolve(success);` then `const declared: Promise<GetSortedCompressionCandidatesReturn> = returned;`, and the same for the error arm.
+      * `[ ]`   Prove `BoundGetSortedCompressionCandidatesFn`'s declared return in the same async form.
+      * `[ ]`   Imports are type-only and every symbol imported is consumed by a proof block; no reference to `CompressionStrategyDeps`, `CompressionStrategyParams`, `CompressionStrategyPayload`, `ICompressionStrategy`, `IEmbeddingClient` or `currentUserPrompt`.
 
    * `[ ]`   _shared/utils/`vector_utils.interface.ts`
-      * `[ ]`   Delete `CompressionStrategyDeps`, `CompressionStrategyParams`, `CompressionStrategyPayload`, `ICompressionStrategy`.
-      * `[ ]`   Delete imports: `SupabaseClient` from `npm:@supabase/supabase-js@2`, `Database` from `types_db.ts`, `IEmbeddingClient` from `indexing_service.interface.ts`, `CompressionCandidate` from `vector_utils.ts`.
-      * `[ ]`   Declare `GetSortedCompressionCandidatesDeps`: `{ logger: ILogger; countTokens: BoundCountTokensFn }`.
+      * `[ ]`   Delete `CompressionStrategyDeps`, `CompressionStrategyParams`, `CompressionStrategyPayload` and `ICompressionStrategy`.
+      * `[ ]`   Delete the `SupabaseClient` import from `npm:@supabase/supabase-js@2`.
+      * `[ ]`   Delete the `Database` import from `../../types_db.ts`.
+      * `[ ]`   Delete the `IEmbeddingClient` import from `../services/indexing_service.interface.ts`.
+      * `[ ]`   Delete the `CompressionCandidate` import from `./vector_utils.ts`.
+      * `[ ]`   Delete the `ResourceDocuments` import from `./resolveCompressionSource/resolveCompressionSource.interface.ts`.
+      * `[ ]`   Add the `ILogger`, `Messages` and `AiModelExtendedConfig` type imports from `../types.ts`.
+      * `[ ]`   Add the `BoundCountTokensFn` type import from `../types/tokenizer.types.ts`.
+      * `[ ]`   Add the `CompressionSourceType` type import from `../types/file_manager.types.ts`.
+      * `[ ]`   Add the `ResourceDocuments` and `BoundResolveCompressionSourceFn` type imports from `./resolveCompressionSource/resolveCompressionSource.provides.ts`.
+      * `[ ]`   Add the `RelevanceRule` type import from `../../dialectic-service/dialectic.interface.ts`.
+      * `[ ]`   Declare `CompressionCandidate`: `{ id: string; content: string; sourceType: CompressionSourceType; originalIndex: number; valueScore: number; effectiveScore: number; tokenCount: number }`.
+      * `[ ]`   Declare `GetSortedCompressionCandidatesDeps`: `{ logger: ILogger; countTokens: BoundCountTokensFn; resolveCompressionSource: BoundResolveCompressionSourceFn }`.
       * `[ ]`   Declare `GetSortedCompressionCandidatesParams`: `{ inputsRelevance?: RelevanceRule[]; modelConfig: AiModelExtendedConfig }`.
       * `[ ]`   Declare `GetSortedCompressionCandidatesPayload`: `{ documents: ResourceDocuments; history: Messages[] }`.
       * `[ ]`   Declare `GetSortedCompressionCandidatesSuccessReturn`: `{ candidates: CompressionCandidate[] }`.
       * `[ ]`   Declare `GetSortedCompressionCandidatesErrorReturn`: `{ error: Error; retriable: boolean }`.
       * `[ ]`   Declare `GetSortedCompressionCandidatesReturn`: `GetSortedCompressionCandidatesSuccessReturn | GetSortedCompressionCandidatesErrorReturn`.
-      * `[ ]`   Declare `GetSortedCompressionCandidatesFn`: `(deps, params, payload) => Promise<GetSortedCompressionCandidatesReturn>`.
-      * `[ ]`   Declare `BoundGetSortedCompressionCandidatesFn`: `(params, payload) => Promise<GetSortedCompressionCandidatesReturn>`.
-      * `[ ]`   Add imports: `ILogger`, `Messages`, `ResourceDocuments`, `AiModelExtendedConfig` from `../types.ts`; `BoundCountTokensFn` from `../types/tokenizer.types.ts`; `RelevanceRule` from `../../dialectic-service/dialectic.interface.ts`; `CompressionCandidate` from `./vector_utils.ts`.
+      * `[ ]`   Declare `GetSortedCompressionCandidatesFn`: `(deps: GetSortedCompressionCandidatesDeps, params: GetSortedCompressionCandidatesParams, payload: GetSortedCompressionCandidatesPayload) => Promise<GetSortedCompressionCandidatesReturn>`.
+      * `[ ]`   Declare `BoundGetSortedCompressionCandidatesFn`: `(params: GetSortedCompressionCandidatesParams, payload: GetSortedCompressionCandidatesPayload) => Promise<GetSortedCompressionCandidatesReturn>`.
 
    * `[ ]`   `vector_utils.interaction.spec`
       * `[ ]`   Branch: empty documents and empty history.
@@ -2324,153 +2616,165 @@ Oversized model inputs compress incrementally until the preflight fits: the pare
          * `[ ]`   Decision: none.
          * `[ ]`   Dependency call: none.
          * `[ ]`   Outcome: `GetSortedCompressionCandidatesSuccessReturn` with `candidates: []`.
-      * `[ ]`   Branch: system-typed document excluded.
-         * `[ ]`   Condition: `doc.type === 'system'`.
-         * `[ ]`   Decision: filter out before scoring.
-         * `[ ]`   Dependency call: none.
-         * `[ ]`   Outcome: the document does not appear in the returned candidates.
-      * `[ ]`   Branch: eligible document scored.
-         * `[ ]`   Condition: `doc.type !== 'system'` (i.e. `'resource'` or `'feedback'`).
-         * `[ ]`   Decision: compute `candidateTokens × importance`.
-         * `[ ]`   Dependency call: `deps.countTokens({ resourceDocuments: [{ id: doc.id, content: doc.content }] }, params.modelConfig)` to get `candidateTokens`.
-         * `[ ]`   Outcome: a `CompressionCandidate` with `sourceType` set to the document's `type`, `effectiveScore = candidateTokens × importance`, pushed into the candidate array.
+      * `[ ]`   Branch: document rejected by the admission resolver.
+         * `[ ]`   Condition: `deps.resolveCompressionSource` returns the not-compressible arm for that document.
+         * `[ ]`   Decision: `!isCompressibleSourceReturn(resolved)` and `!isResolveCompressionSourceErrorReturn(resolved)`.
+         * `[ ]`   Dependency call: `deps.resolveCompressionSource({}, { document: doc })`.
+         * `[ ]`   Outcome: the document is dropped before scoring, `deps.countTokens` is not called for it, and it does not appear in the returned candidates.
+      * `[ ]`   Branch: admission resolver returns its error arm.
+         * `[ ]`   Condition: `deps.resolveCompressionSource` returns the error arm for any document.
+         * `[ ]`   Decision: `isResolveCompressionSourceErrorReturn(resolved)`.
+         * `[ ]`   Dependency call: `deps.resolveCompressionSource({}, { document: doc })`.
+         * `[ ]`   Outcome: `GetSortedCompressionCandidatesErrorReturn` carrying that arm's `error` and `retriable` unchanged; no further document is resolved or scored.
+      * `[ ]`   Branch: document admitted and scored.
+         * `[ ]`   Condition: `deps.resolveCompressionSource` returns the compressible arm for that document.
+         * `[ ]`   Decision: `isCompressibleSourceReturn(resolved)`.
+         * `[ ]`   Dependency call: `deps.countTokens({ resourceDocuments: [{ id: doc.id, content: doc.content }] }, params.modelConfig)`.
+         * `[ ]`   Outcome: a `CompressionCandidate` with `id` and `content` from the document, `sourceType` from `resolved.sourceType`, `originalIndex` set to the document's index in `payload.documents`, `tokenCount` set to `candidateTokens`, `valueScore` set to `importance`, and `effectiveScore = candidateTokens × importance`.
       * `[ ]`   Branch: importance lookup — stage-specific rule match.
-         * `[ ]`   Condition: `inputsRelevance` contains a rule whose `document_key`, `type`, and `slug` all match the document's `document_key`, `type`, and `stage_slug`.
-         * `[ ]`   Decision: use that rule's `relevance` as `importance`.
+         * `[ ]`   Condition: `params.inputsRelevance` contains a rule whose `slug` is set and whose `` `${rule.type}:${rule.document_key}:${rule.slug}` `` key equals the document's `` `${doc.type}:${doc.document_key}:${doc.stage_slug}` ``.
+         * `[ ]`   Decision: read that key from the relevance map.
          * `[ ]`   Dependency call: none.
-         * `[ ]`   Outcome: `importance` is the matched rule's `relevance`, clamped `[0, 1]`.
-      * `[ ]`   Branch: importance lookup — general rule match (no slug).
-         * `[ ]`   Condition: no stage-specific rule matches, but a rule with matching `document_key` and `type` (no `slug`) exists.
-         * `[ ]`   Decision: use that rule's `relevance` as `importance`.
+         * `[ ]`   Outcome: `importance` is that rule's `relevance` clamped by `Math.max(0, Math.min(1, rule.relevance))`, with duplicate keys resolved to the maximum.
+      * `[ ]`   Branch: importance lookup — general rule match.
+         * `[ ]`   Condition: no stage-specific key matches and `params.inputsRelevance` contains a rule whose `` `${rule.type}:${rule.document_key}` `` key equals the document's `` `${doc.type}:${doc.document_key}` ``.
+         * `[ ]`   Decision: read that key from the relevance map.
          * `[ ]`   Dependency call: none.
-         * `[ ]`   Outcome: `importance` is the matched rule's `relevance`, clamped `[0, 1]`.
+         * `[ ]`   Outcome: `importance` is that rule's clamped `relevance`.
       * `[ ]`   Branch: importance lookup — no rule match.
-         * `[ ]`   Condition: no matching rule in `inputsRelevance`.
-         * `[ ]`   Decision: default `importance` to `1`.
+         * `[ ]`   Condition: `params.inputsRelevance` is absent, empty, or contains no rule matching either key.
+         * `[ ]`   Decision: no map entry found.
          * `[ ]`   Dependency call: none.
-         * `[ ]`   Outcome: `importance = 1`, so `effectiveScore = candidateTokens × 1 = candidateTokens`.
-      * `[ ]`   Branch: history message in compressible middle.
-         * `[ ]`   Condition: message index is between immutable head count and `history.length - immutableTailCount`.
-         * `[ ]`   Decision: compute `candidateTokens × valueScore`.
-         * `[ ]`   Dependency call: `deps.countTokens({ messages: [message] }, params.modelConfig)` to get `candidateTokens`.
-         * `[ ]`   Outcome: a `CompressionCandidate` with `sourceType: 'history'`, `effectiveScore = candidateTokens × valueScore`.
-      * `[ ]`   Branch: history message in immutable head or tail.
-         * `[ ]`   Condition: message index is within immutable head or tail range.
-         * `[ ]`   Decision: skip — not a candidate.
+         * `[ ]`   Outcome: `importance = 1`, so `effectiveScore = candidateTokens`.
+      * `[ ]`   Branch: history message in the compressible middle.
+         * `[ ]`   Condition: the message index is at or after the immutable head count and before `history.length - 4`.
+         * `[ ]`   Decision: the index is a candidate index.
+         * `[ ]`   Dependency call: `deps.countTokens({ messages: [message] }, params.modelConfig)`.
+         * `[ ]`   Outcome: a `CompressionCandidate` with `sourceType: 'history'`, `originalIndex` set to the message's index in `payload.history`, `tokenCount` set to `candidateTokens`, `valueScore` set to the positional score, and `effectiveScore = candidateTokens × valueScore`.
+      * `[ ]`   Branch: history message in the immutable head or tail.
+         * `[ ]`   Condition: the message index is below the immutable head count (3 when `history[0].role === 'system'`, otherwise 2) or at or after `history.length - 4`.
+         * `[ ]`   Decision: the index is not a candidate index.
          * `[ ]`   Dependency call: none.
-         * `[ ]`   Outcome: the message does not appear in the returned candidates.
+         * `[ ]`   Outcome: the message is not scored, `deps.countTokens` is not called for it, and it does not appear in the returned candidates.
+      * `[ ]`   Branch: history too short to yield candidates.
+         * `[ ]`   Condition: `history.length <= immutableHeadCount + 4`.
+         * `[ ]`   Decision: no candidate indices.
+         * `[ ]`   Dependency call: none.
+         * `[ ]`   Outcome: no history candidate is produced.
       * `[ ]`   Branch: final sort and return.
-         * `[ ]`   Condition: all candidates scored.
+         * `[ ]`   Condition: every document has been resolved and every candidate scored.
          * `[ ]`   Decision: sort ascending by `effectiveScore`.
          * `[ ]`   Dependency call: none.
-         * `[ ]`   Outcome: `GetSortedCompressionCandidatesSuccessReturn` with `candidates` in ascending `effectiveScore` order.
+         * `[ ]`   Outcome: `GetSortedCompressionCandidatesSuccessReturn` whose `candidates` are in ascending `effectiveScore` order; neither `payload.documents` nor `payload.history` is mutated.
+
+   * `[ ]`   _shared/utils/`tokenizer_utils.mock.ts`
+      * `[ ]`   Add the value import of `countTokens` from `./tokenizer_utils.ts`.
+      * `[ ]`   Add the type import of `BoundCountTokensFn` from `../types/tokenizer.types.ts`.
+      * `[ ]`   Add `export const mockBoundCountTokens: BoundCountTokensFn = (payload, modelConfig) => countTokens(buildCountTokensDeps(), payload, modelConfig);`, declared below `buildCountTokensDeps`. It takes no options bag and records no calls.
 
    * `[ ]`   _shared/utils/`vector_utils.mock.ts`
-      * `[ ]`   Delete `mockCompressionStrategy: ICompressionStrategy`.
-      * `[ ]`   Add `mockGetSortedCompressionCandidates: GetSortedCompressionCandidatesFn` — returns `{ candidates: [] }`.
-      * `[ ]`   Add `GetSortedCompressionCandidatesDepsOverrides`, `buildGetSortedCompressionCandidatesDeps` — defaults: `logger` from `MockLogger`, `countTokens` from `buildMockCountTokensFn()` (returns content length as token count).
-      * `[ ]`   Add `GetSortedCompressionCandidatesParamsOverrides`, `buildGetSortedCompressionCandidatesParams` — defaults: `inputsRelevance: []`, `modelConfig` from `buildAiModelExtendedConfig()` (locate existing builder).
-      * `[ ]`   Add `GetSortedCompressionCandidatesPayloadOverrides`, `buildGetSortedCompressionCandidatesPayload` — defaults: `documents: []`, `history: []`.
-      * `[ ]`   Add `GetSortedCompressionCandidatesSuccessReturnOverrides`, `buildGetSortedCompressionCandidatesSuccessReturn` — defaults: `candidates: []`.
-      * `[ ]`   Add `GetSortedCompressionCandidatesErrorReturnOverrides`, `buildGetSortedCompressionCandidatesErrorReturn` — defaults: `error: new Error('getSortedCompressionCandidates failed')`, `retriable: false`.
-      * `[ ]`   Update `buildCompressionCandidate`: change `sourceType` default from `'document'` to `'resource'`; add `tokenCount: 10` default.
-      * `[ ]`   Update `CompressionCandidateCorruptions` and `invalidateCompressionCandidate` to match updated `CompressionCandidate`.
-      * `[ ]`   Remove imports: `ICompressionStrategy` from `vector_utils.interface.ts`.
+      * `[ ]`   Delete `mockCompressionStrategy` and its `ICompressionStrategy` import.
+      * `[ ]`   Add the `CompressionCandidate` and `GetSortedCompressionCandidates*` type imports from `./vector_utils.interface.ts`.
+      * `[ ]`   Add the `MockLogger` import from `../logger.mock.ts`.
+      * `[ ]`   Add the `mockBoundCountTokens` import from `./tokenizer_utils.mock.ts`.
+      * `[ ]`   Add the `buildExtendedModelConfig` import from `../ai_service/ai_provider.mock.ts`.
+      * `[ ]`   Add the `buildResourceDocument` and `mockBoundResolveCompressionSource` imports from `./resolveCompressionSource/resolveCompressionSource.provides.ts`.
+      * `[ ]`   Update `buildCompressionCandidate`: `sourceType` default `'resource'`, `tokenCount` default `10`.
+      * `[ ]`   Update `CompressionCandidateCorruptions` to key off the extended `CompressionCandidate`.
+      * `[ ]`   Add `GetSortedCompressionCandidatesDepsOverrides`, `buildGetSortedCompressionCandidatesDeps`, `GetSortedCompressionCandidatesDepsCorruptions`, `invalidateGetSortedCompressionCandidatesDeps`. Defaults: `logger` is `new MockLogger()`; `countTokens` is `mockBoundCountTokens`; `resolveCompressionSource` is `mockBoundResolveCompressionSource`.
+      * `[ ]`   Add `GetSortedCompressionCandidatesParamsOverrides`, `buildGetSortedCompressionCandidatesParams`, `GetSortedCompressionCandidatesParamsCorruptions`, `invalidateGetSortedCompressionCandidatesParams`. Defaults: `inputsRelevance: []`, `modelConfig: buildExtendedModelConfig()`.
+      * `[ ]`   Add `GetSortedCompressionCandidatesPayloadOverrides`, `buildGetSortedCompressionCandidatesPayload`, `GetSortedCompressionCandidatesPayloadCorruptions`, `invalidateGetSortedCompressionCandidatesPayload`. Defaults: `documents: []`, `history: []`.
+      * `[ ]`   Add `GetSortedCompressionCandidatesSuccessReturnOverrides`, `buildGetSortedCompressionCandidatesSuccessReturn`, `GetSortedCompressionCandidatesSuccessReturnCorruptions`, `invalidateGetSortedCompressionCandidatesSuccessReturn`. Default: `candidates: []`.
+      * `[ ]`   Add `GetSortedCompressionCandidatesErrorReturnOverrides`, `buildGetSortedCompressionCandidatesErrorReturn`, `GetSortedCompressionCandidatesErrorReturnCorruptions`, `invalidateGetSortedCompressionCandidatesErrorReturn`. Defaults: `error: new Error('getSortedCompressionCandidates failed')`, `retriable: false`.
+      * `[ ]`   Add `mockGetSortedCompressionCandidates: GetSortedCompressionCandidatesFn` and `mockBoundGetSortedCompressionCandidates: BoundGetSortedCompressionCandidatesFn`, each returning `buildGetSortedCompressionCandidatesSuccessReturn()`. Neither takes an options bag and neither records calls.
 
    * `[ ]`   _shared/utils/`vector_utils.guard.test.ts`
       * `[ ]`   Create this file.
-      * `[ ]`   `isGetSortedCompressionCandidatesDeps` — accepts valid deps, rejects: null, missing `logger`, missing `countTokens`, `countTokens: 'not-a-function'`.
-      * `[ ]`   `isGetSortedCompressionCandidatesParams` — accepts valid params, rejects: null, missing `modelConfig`, `modelConfig: 'not-an-object'`.
-      * `[ ]`   `isGetSortedCompressionCandidatesPayload` — accepts valid payload, rejects: null, missing `documents`, `documents: 'not-an-array'`, missing `history`, `history: 'not-an-array'`.
-      * `[ ]`   `isGetSortedCompressionCandidatesSuccessReturn` — accepts valid success, rejects: null, missing `candidates`, `candidates: 'not-an-array'`, presence of `error`.
-      * `[ ]`   `isGetSortedCompressionCandidatesErrorReturn` — accepts valid error, rejects: null, `error: 'not-Error'`, `retriable: 'not-boolean'`, presence of `candidates`.
+      * `[ ]`   `isCompressionCandidate`: accepts `buildCompressionCandidate()`; accepts valid overrides; rejects `null`, `undefined`, a number, a string and an array; rejects each property corrupted in turn through `invalidateCompressionCandidate`; rejects each required property omitted in turn by rest-destructuring `buildCompressionCandidate()`.
+      * `[ ]`   `isGetSortedCompressionCandidatesDeps`: the same six-case checklist over `buildGetSortedCompressionCandidatesDeps` and `invalidateGetSortedCompressionCandidatesDeps`.
+      * `[ ]`   `isGetSortedCompressionCandidatesParams`: the same checklist over its builder and invalidator, plus a case proving the optional `inputsRelevance` is accepted when absent and rejected when present and corrupted.
+      * `[ ]`   `isGetSortedCompressionCandidatesPayload`: the same checklist over its builder and invalidator.
+      * `[ ]`   `isGetSortedCompressionCandidatesSuccessReturn`: the same checklist, plus a case proving `buildGetSortedCompressionCandidatesErrorReturn()` is rejected.
+      * `[ ]`   `isGetSortedCompressionCandidatesErrorReturn`: the same checklist, plus a case proving `buildGetSortedCompressionCandidatesSuccessReturn()` is rejected.
 
    * `[ ]`   _shared/utils/`vector_utils.guard.ts`
       * `[ ]`   Create this file.
-      * `[ ]`   Implement `isGetSortedCompressionCandidatesDeps`: checks `logger` (logger shape) and `countTokens` (function).
-      * `[ ]`   Implement `isGetSortedCompressionCandidatesParams`: checks `modelConfig` (object with `tokenization_strategy`). `inputsRelevance` is optional — accepted when absent or when array.
-      * `[ ]`   Implement `isGetSortedCompressionCandidatesPayload`: checks `documents` (array) and `history` (array).
-      * `[ ]`   Implement `isGetSortedCompressionCandidatesSuccessReturn`: checks `candidates` (array), rejects if `error` present.
-      * `[ ]`   Implement `isGetSortedCompressionCandidatesErrorReturn`: checks `error` (instanceof Error), `retriable` (boolean), rejects if `candidates` present.
+      * `[ ]`   Implement `isCompressionCandidate`, checking every property of `CompressionCandidate` and delegating `sourceType` to `isCompressionSourceType` imported from `../utils/type-guards/type_guards.file_manager.ts`.
+      * `[ ]`   Implement `isGetSortedCompressionCandidatesDeps`, checking `logger` by method presence and `countTokens` and `resolveCompressionSource` by `typeof === 'function'`.
+      * `[ ]`   Implement `isGetSortedCompressionCandidatesParams`, checking `modelConfig` with `isAiModelExtendedConfig` imported from `./type_guards.ts` and accepting `inputsRelevance` when absent or an array.
+      * `[ ]`   Implement `isGetSortedCompressionCandidatesPayload`, checking `documents` is an array whose every element satisfies `isResourceDocument` imported from `./resolveCompressionSource/resolveCompressionSource.provides.ts`.
+      * `[ ]`   `isGetSortedCompressionCandidatesPayload` also checks `history` is an array whose every element satisfies `isMessages` imported from `./type-guards/type_guards.chat.ts`.
+      * `[ ]`   Implement `isGetSortedCompressionCandidatesSuccessReturn`, checking `candidates` is an array whose every element satisfies `isCompressionCandidate`, and rejecting a value carrying `error`.
+      * `[ ]`   Implement `isGetSortedCompressionCandidatesErrorReturn`, checking `error instanceof Error` and `typeof retriable === 'boolean'`, and rejecting a value carrying `candidates`.
 
    * `[ ]`   _shared/utils/`vector_utils.test.ts`
-      * `[ ]`   Delete all `cosineSimilarity` tests (10 test cases).
-      * `[ ]`   Delete all `scoreResourceDocuments` tests (embedding-based).
-      * `[ ]`   Delete `mockEmbeddingClient` and `mockSourceDocument` fixtures.
-      * `[ ]`   Delete all `ICompressionStrategy` usage and `CompressionStrategyDeps` references.
-      * `[ ]`   Delete `dialectic_memory` mock setup from all `getSortedCompressionCandidates` tests.
-      * `[ ]`   Update `scoreHistory` tests: unchanged logic, but add `deps` and `params.modelConfig` for the token-weighted `effectiveScore`. Assert `effectiveScore = candidateTokens × valueScore`.
-      * `[ ]`   Add tests for `getSortedCompressionCandidates`:
-         * `[ ]`   Empty documents and empty history returns `{ candidates: [] }`.
-         * `[ ]`   System-typed document (`type: 'system'`) is excluded from candidates.
-         * `[ ]`   Resource-typed document is scored with `candidateTokens × importance` where `importance` comes from matching `inputsRelevance` rule.
-         * `[ ]`   Feedback-typed document is scored with `candidateTokens × importance`.
-         * `[ ]`   Document with no matching relevance rule gets `importance = 1`.
-         * `[ ]`   Stage-specific relevance rule takes precedence over general rule for the same `document_key` + `type`.
-         * `[ ]`   History candidates scored with `candidateTokens × valueScore` — oldest gets lowest score.
-         * `[ ]`   Mixed documents and history sorted ascending by `effectiveScore`.
-         * `[ ]`   `deps.countTokens` is called once per eligible candidate (not for system-typed documents, not for immutable head/tail history).
-      * `[ ]`   Remove all imports: `cosineSimilarity`, `scoreResourceDocuments`, `ICompressionStrategy`, `IEmbeddingClient`, `EmbeddingResponse`, `SourceDocument`, `SupabaseClient`, `Database`, `createMockSupabaseClient`, `stub`.
-      * `[ ]`   Add imports: `GetSortedCompressionCandidatesDeps`, `GetSortedCompressionCandidatesParams`, `GetSortedCompressionCandidatesPayload` from `vector_utils.interface.ts`; builders from `vector_utils.mock.ts`.
+      * `[ ]`   Delete the `cosineSimilarity` tests, the `scoreResourceDocuments` tests, the `mockEmbeddingClient` and `mockSourceDocument` fixtures, every `ICompressionStrategy` and `CompressionStrategyDeps` reference, and the `dialectic_memory` mock setup in every `getSortedCompressionCandidates` test.
+      * `[ ]`   Remove imports: `cosineSimilarity`, `scoreResourceDocuments`, `ICompressionStrategy`, `IEmbeddingClient`, `EmbeddingResponse`, `SourceDocument`, `SupabaseClient`, `Database`, `createMockSupabaseClient`, `stub`.
+      * `[ ]`   Add the `getSortedCompressionCandidates` and `scoreHistory` imports from `./vector_utils.ts`.
+      * `[ ]`   Add the builder imports from `./vector_utils.mock.ts`.
+      * `[ ]`   Add the `buildResourceDocument` and `buildCompressibleSourceReturn` imports from `./resolveCompressionSource/resolveCompressionSource.provides.ts`.
+      * `[ ]`   Rewrite the existing `scoreHistory` blocks in place to pass `deps` and `params` and to assert `effectiveScore === candidateTokens * valueScore`; the head and tail anchor assertions are preserved.
+      * `[ ]`   A document the resolver rejects is absent from `candidates` while an admitted document in the same call is present, and `countTokens` is not called for the rejected one.
+      * `[ ]`   The resolver's error arm returns `GetSortedCompressionCandidatesErrorReturn` carrying that same `error` reference and `retriable`.
+      * `[ ]`   An admitted document carries the `sourceType` the resolver returned, asserted against a resolver override returning `'feedback'` where the builder default would give `'resource'`.
+      * `[ ]`   An admitted document's `effectiveScore` equals `candidateTokens * importance` for a matching general rule, with `countTokens` overridden to a content-sensitive counter and `relevance` stated as an independent literal.
+      * `[ ]`   A stage-specific rule wins over a general rule for the same `document_key` and `type`, asserted by the two rules carrying different `relevance` values.
+      * `[ ]`   A document with no matching rule scores `effectiveScore === candidateTokens`.
+      * `[ ]`   A `relevance` above 1 and a `relevance` below 0 are clamped to 1 and 0.
+      * `[ ]`   Two rules on the same key resolve to the higher `relevance`.
+      * `[ ]`   `originalIndex` on an admitted document is its index in `payload.documents`, asserted with a rejected document ahead of it in the array.
+      * `[ ]`   A mixed payload of documents and history returns candidates in ascending `effectiveScore` order, arranged so document and history candidates interleave.
+      * `[ ]`   Empty `documents` and empty `history` return `{ candidates: [] }` and call neither collaborator.
+      * `[ ]`   Neither `payload.documents` nor `payload.history` is mutated, asserted by deep equality against a snapshot taken before the call.
 
    * `[ ]`   `construction`
-      * `[ ]`   `getSortedCompressionCandidates` remains a stateless exported async function. `countTokens` is injected via `deps` as a `BoundCountTokensFn`. `scoreHistory` remains a pure exported function but now receives `deps` and `params` for token counting. No constructor, no class, no factory.
+      * `[ ]`   `getSortedCompressionCandidates` remains a stateless exported async function typed `GetSortedCompressionCandidatesFn`. `countTokens` and `resolveCompressionSource` arrive already bound through `deps`; this file binds nothing and constructs no dependency. No constructor, no class, no factory.
 
    * `[ ]`   _shared/utils/`vector_utils.ts`
-      * `[ ]`   Delete `dotProduct`, `magnitude`, `cosineSimilarity` functions.
-      * `[ ]`   Delete `scoreResourceDocuments` function.
-      * `[ ]`   Delete `CompressionStrategyDeps`, `CompressionStrategyParams`, `CompressionStrategyPayload` imports from `vector_utils.interface.ts`.
-      * `[ ]`   Delete the `dialectic_memory` query block (lines 244–250) and the `candidateIds` array it uses (line 239).
-      * `[ ]`   Update `CompressionCandidate.sourceType` from `'history' | 'document'` to `ResourceDocumentType | 'history'`.
-      * `[ ]`   Add `tokenCount: number` to `CompressionCandidate`.
-      * `[ ]`   Replace `getSortedCompressionCandidates` signature: `(deps: GetSortedCompressionCandidatesDeps, params: GetSortedCompressionCandidatesParams, payload: GetSortedCompressionCandidatesPayload): Promise<GetSortedCompressionCandidatesReturn>`.
-      * `[ ]`   In `getSortedCompressionCandidates`, before scoring documents:
-         * `[ ]`   Filter out system-typed documents: `const eligibleDocuments = payload.documents.filter(doc => doc.type !== 'system');`.
-      * `[ ]`   Score each eligible document:
-         * `[ ]`   `const candidateTokens = deps.countTokens({ resourceDocuments: [{ id: doc.id, content: doc.content }] }, params.modelConfig);`.
-         * `[ ]`   Look up `importance` from `params.inputsRelevance` by `document_key` + `type` (stage-specific first, then general), defaulting to `1`.
-         * `[ ]`   `effectiveScore = candidateTokens × importance`.
-         * `[ ]`   `sourceType` set to the document's `type` (a `ResourceDocumentType` value).
-         * `[ ]`   `tokenCount` set to `candidateTokens`.
-      * `[ ]`   Update `scoreHistory` to accept `deps` and `params` and compute `candidateTokens` per history candidate:
-         * `[ ]`   `const candidateTokens = deps.countTokens({ messages: [message] }, params.modelConfig);`.
-         * `[ ]`   `effectiveScore = candidateTokens × valueScore`.
-         * `[ ]`   `tokenCount` set to `candidateTokens`.
-      * `[ ]`   Merge document candidates and history candidates, sort ascending by `effectiveScore`.
-      * `[ ]`   Return `{ candidates: sortedCandidates }`.
-      * `[ ]`   Delete the debug `console.log` at line 275.
-      * `[ ]`   Add imports: `GetSortedCompressionCandidatesDeps`, `GetSortedCompressionCandidatesParams`, `GetSortedCompressionCandidatesPayload`, `GetSortedCompressionCandidatesReturn` from `vector_utils.interface.ts`; `ResourceDocumentType` from `../types.ts`.
+      * `[ ]`   Delete `dotProduct`, `magnitude`, `cosineSimilarity` and `scoreResourceDocuments`.
+      * `[ ]`   Delete the `CompressionCandidate` declaration; import it from `./vector_utils.interface.ts` instead.
+      * `[ ]`   Delete the `CompressionStrategyDeps`, `CompressionStrategyParams` and `CompressionStrategyPayload` imports from `./vector_utils.interface.ts`.
+      * `[ ]`   Delete the `ResourceDocument` and `ResourceDocuments` imports from `../types.ts`.
+      * `[ ]`   Delete the `candidateIds` array, the `dialectic_memory` query block with its error log, and the `console.log` diagnostic.
+      * `[ ]`   Add the `GetSortedCompressionCandidates*` and `CompressionCandidate` type imports from `./vector_utils.interface.ts`.
+      * `[ ]`   Add the `isCompressibleSourceReturn` and `isResolveCompressionSourceErrorReturn` imports from `./resolveCompressionSource/resolveCompressionSource.provides.ts`.
+      * `[ ]`   Retype `getSortedCompressionCandidates` as `GetSortedCompressionCandidatesFn`.
+      * `[ ]`   Build the relevance map exactly as it is built now — stage-specific key when `rule.slug` is present, general key otherwise, values clamped by `Math.max(0, Math.min(1, rule.relevance))` and duplicate keys resolved to the maximum.
+      * `[ ]`   Resolve each entry of `payload.documents` with `deps.resolveCompressionSource({}, { document: doc })`, returning this function's error arm on the resolver's error arm, skipping the document on the not-compressible arm, and scoring it on the compressible arm per the interaction spec.
+      * `[ ]`   Retype `scoreHistory` as `(deps: GetSortedCompressionCandidatesDeps, params: GetSortedCompressionCandidatesParams, history: Messages[]) => CompressionCandidate[]`, preserving its immutable head and tail arithmetic and its positional `valueScore`, and setting `tokenCount` and `effectiveScore` from `deps.countTokens({ messages: [message] }, params.modelConfig)`.
+      * `[ ]`   Concatenate the document and history candidates, sort ascending by `effectiveScore`, and return `GetSortedCompressionCandidatesSuccessReturn`.
       * `[ ]`   Introduce no undeclared dependencies; bypass no guards or contracts.
 
    * `[ ]`   _shared/utils/`vector_utils.provides.ts`
       * `[ ]`   Create this file.
       * `[ ]`   `export * from "./vector_utils.ts";`
-      * `[ ]`   `export type * from "./vector_utils.interface.ts";`
+      * `[ ]`   `export * from "./vector_utils.interface.ts";`
       * `[ ]`   `export * from "./vector_utils.guard.ts";`
-      * `[ ]`   `export type * from "./vector_utils.mock.ts";`
       * `[ ]`   `export * from "./vector_utils.mock.ts";`
 
    * `[ ]`   `directionality`
-      * `[ ]`   Layer: shared utility module (`_shared/utils/vector_utils`). Deps are inward: `ILogger`, `ResourceDocuments`, `ResourceDocumentType`, `Messages`, `AiModelExtendedConfig` from `_shared/types.ts`; `BoundCountTokensFn` from `_shared/types/tokenizer.types.ts`; `RelevanceRule` from `dialectic-service/dialectic.interface.ts`. Provides outward to `compressPrompt` (the consumer that calls the scorer).
-      * `[ ]`   Removed deps: `IEmbeddingClient` from `_shared/services/indexing_service.interface.ts`; `SupabaseClient<Database>` from `npm:@supabase/supabase-js@2` + `types_db.ts`.
-      * `[ ]`   No reverse dependencies, no lateral layer violations, no cycles.
+      * `[ ]`   Layer: shared utility module (`_shared/utils/vector_utils`). Deps are inward — `ILogger`, `Messages`, `AiModelExtendedConfig` from `_shared/types.ts`; `BoundCountTokensFn` from `_shared/types/tokenizer.types.ts`; `CompressionSourceType` from `_shared/types/file_manager.types.ts`; `RelevanceRule` from `dialectic-service/dialectic.interface.ts` — plus one peer, `_shared/utils/resolveCompressionSource`, consumed through its `provides`. Provides outward to `compressPrompt`.
+      * `[ ]`   Removed deps: `IEmbeddingClient` from `_shared/services/indexing_service.interface.ts`; `SupabaseClient<Database>` from `npm:@supabase/supabase-js@2` and `types_db.ts`.
+      * `[ ]`   No reverse dependencies, no lateral layer violations, no cycles: `vector_utils.interface.ts` no longer imports from `vector_utils.ts`.
 
    * `[ ]`   `requirements`
-      * `[ ]`   `CompressionStrategyDeps`, `CompressionStrategyParams`, `CompressionStrategyPayload`, `ICompressionStrategy` are deleted and replaced by `GetSortedCompressionCandidatesDeps`, `GetSortedCompressionCandidatesParams`, `GetSortedCompressionCandidatesPayload`, `GetSortedCompressionCandidatesFn`.
-      * `[ ]`   `GetSortedCompressionCandidatesDeps` has `logger: ILogger` and `countTokens: BoundCountTokensFn` — no `dbClient`, no `embeddingClient`.
-      * `[ ]`   `GetSortedCompressionCandidatesPayload` has `documents` and `history` — no `currentUserPrompt`.
-      * `[ ]`   A document with `type === 'system'` is excluded from the candidate pool.
-      * `[ ]`   A document with `type === 'resource'` or `type === 'feedback'` is scored with `effectiveScore = candidateTokens × importance`.
-      * `[ ]`   `importance` is looked up from `inputsRelevance` by `document_key` + `type` (stage-specific slug first, then general), defaulting to `1`.
-      * `[ ]`   A history candidate in the compressible middle is scored with `effectiveScore = candidateTokens × valueScore`.
-      * `[ ]`   `candidateTokens` is computed via `deps.countTokens` for every scored candidate.
-      * `[ ]`   Candidates are sorted ascending by `effectiveScore` — lowest first compresses first.
-      * `[ ]`   `cosineSimilarity`, `dotProduct`, `magnitude`, `scoreResourceDocuments` are deleted.
-      * `[ ]`   The `dialectic_memory` query is deleted.
-      * `[ ]`   `CompressionCandidate.sourceType` is `ResourceDocumentType | 'history'`.
-      * `[ ]`   `CompressionCandidate` carries `tokenCount: number`.
-      * `[ ]`   Head/tail anchor logic in `scoreHistory` is preserved.
-      * `[ ]`   `mockCompressionStrategy` is replaced by `mockGetSortedCompressionCandidates: GetSortedCompressionCandidatesFn`.
+      * `[ ]`   `CompressionStrategyDeps`, `CompressionStrategyParams`, `CompressionStrategyPayload` and `ICompressionStrategy` no longer exist, and `GetSortedCompressionCandidatesFn` types the exported function.
+      * `[ ]`   `GetSortedCompressionCandidatesDeps` carries `logger`, `countTokens` and `resolveCompressionSource`, and no `dbClient` or `embeddingClient`.
+      * `[ ]`   `GetSortedCompressionCandidatesPayload` carries `documents` and `history`, and no `currentUserPrompt`.
+      * `[ ]`   `CompressionCandidate` is declared in `vector_utils.interface.ts`, its `sourceType` is `CompressionSourceType`, and it carries `tokenCount: number`.
+      * `[ ]`   A document the resolver rejects is absent from the returned candidates and is never passed to `deps.countTokens`.
+      * `[ ]`   The resolver's error arm is returned as this function's error arm with its `error` and `retriable` unchanged.
+      * `[ ]`   An admitted document's candidate carries the `sourceType` the resolver returned.
+      * `[ ]`   An admitted document's `effectiveScore` is `candidateTokens × importance`, with `importance` the clamped `relevance` of the matching stage-specific rule, else the matching general rule, else `1`.
+      * `[ ]`   A compressible history candidate's `effectiveScore` is `candidateTokens × valueScore`, and the immutable head and tail anchors are preserved.
+      * `[ ]`   `originalIndex` is the candidate's index in the payload array it came from.
+      * `[ ]`   Candidates are returned sorted ascending by `effectiveScore`.
+      * `[ ]`   `cosineSimilarity`, `dotProduct`, `magnitude`, `scoreResourceDocuments`, the `dialectic_memory` query and the `console.log` diagnostic are deleted.
+      * `[ ]`   Neither payload array is mutated.
+      * `[ ]`   `tokenizer_utils.mock.ts` exports `mockBoundCountTokens` typed `BoundCountTokensFn`, and two payloads of different length return different counts through it.
+      * `[ ]`   `buildGetSortedCompressionCandidatesDeps` defaults `countTokens` to `mockBoundCountTokens` and declares no local `BoundCountTokensFn` of its own.
+      * `[ ]`   `mockCompressionStrategy` no longer exists; `mockGetSortedCompressionCandidates` and `mockBoundGetSortedCompressionCandidates` take no options bag and record no calls.
+      * `[ ]`   Every symbol `vector_utils.interface.ts` exports is proven by a block in `vector_utils.interface.test.ts`, and every owned type has a guard in `vector_utils.guard.ts` proven by its case checklist.
 
 # To-Do List
 

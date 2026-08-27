@@ -14,7 +14,7 @@ import {
     isFinishReason,
     isContinueReason,
     isOutboundDocument,
-    isResourceDocument,
+    isMessages,
 } from './type_guards.chat.ts';
 import type {
     AiModelExtendedConfig,
@@ -23,8 +23,10 @@ import type {
     ChatApiRequest,
     FinishReason,
     OutboundDocument,
-    ResourceDocument,
+    Messages,
 } from '../../types.ts';
+import type { ResourceDocument } from '../resolveCompressionSource/resolveCompressionSource.interface.ts';
+import { FileType } from "../../types/file_manager.types.ts";
 
 Deno.test('Type Guard: isAiModelExtendedConfig', async (t) => {
     await t.step('should return true for a valid config with tiktoken strategy', () => {
@@ -575,7 +577,7 @@ Deno.test('Type Guard: isOutboundDocument', async (t) => {
     });
 
     await t.step('should return true for a ResourceDocument (superset)', () => {
-        const doc: ResourceDocument = { id: 'doc-1', content: 'Hello', document_key: 'key', stage_slug: 'thesis', type: 'rendered_document' };
+        const doc: ResourceDocument = { id: 'doc-1', content: 'Hello', document_key: FileType.business_case, stage_slug: 'thesis', type: 'document' };
         assert(isOutboundDocument(doc));
     });
 
@@ -595,40 +597,63 @@ Deno.test('Type Guard: isOutboundDocument', async (t) => {
     });
 });
 
-Deno.test('Type Guard: isResourceDocument', async (t) => {
-    await t.step('should return true for a valid ResourceDocument', () => {
-        const doc: ResourceDocument = { id: 'doc-1', content: 'Hello', document_key: 'business_case', stage_slug: 'thesis', type: 'rendered_document' };
-        assert(isResourceDocument(doc));
+Deno.test('Type Guard: isMessages', async (t) => {
+    await t.step('should return true for a valid Messages with all fields', () => {
+        const msg: Messages = { id: 'msg-1', role: 'user', content: 'Hello', name: 'caller' };
+        assert(isMessages(msg));
     });
 
-    await t.step('should return false for a plain OutboundDocument (missing identity fields)', () => {
-        const doc: OutboundDocument = { id: 'doc-1', content: 'Hello' };
-        assert(!isResourceDocument(doc));
+    await t.step('should return true for a valid Messages with only required fields', () => {
+        const msg: Messages = { role: 'assistant', content: 'Reply' };
+        assert(isMessages(msg));
     });
 
-    await t.step('should return false if document_key is missing', () => {
-        assert(!isResourceDocument({ id: 'doc-1', content: 'Hello', stage_slug: 'thesis', type: 'rendered_document' }));
+    await t.step('should return true when content is null', () => {
+        const msg: Messages = { role: 'function', content: null };
+        assert(isMessages(msg));
     });
 
-    await t.step('should return false if stage_slug is missing', () => {
-        assert(!isResourceDocument({ id: 'doc-1', content: 'Hello', document_key: 'key', type: 'rendered_document' }));
+    await t.step('should return true for each valid role', () => {
+        for (const role of ['system', 'user', 'assistant', 'function'] as const) {
+            assert(isMessages({ role, content: 'text' }));
+        }
     });
 
-    await t.step('should return false if type is missing', () => {
-        assert(!isResourceDocument({ id: 'doc-1', content: 'Hello', document_key: 'key', stage_slug: 'thesis' }));
+    await t.step('should return false if role is missing', () => {
+        assert(!isMessages({ content: 'Hello' }));
     });
 
-    await t.step('should return false if identity fields are non-string', () => {
-        assert(!isResourceDocument({ id: 'doc-1', content: 'Hello', document_key: 123, stage_slug: 'thesis', type: 'rendered_document' }));
-        assert(!isResourceDocument({ id: 'doc-1', content: 'Hello', document_key: 'key', stage_slug: null, type: 'rendered_document' }));
-        assert(!isResourceDocument({ id: 'doc-1', content: 'Hello', document_key: 'key', stage_slug: 'thesis', type: true }));
+    await t.step('should return false if content is missing', () => {
+        assert(!isMessages({ role: 'user' }));
+    });
+
+    await t.step('should return false if role is not a valid role string', () => {
+        assert(!isMessages({ role: 'admin', content: 'Hello' }));
+        assert(!isMessages({ role: 123, content: 'Hello' }));
+        assert(!isMessages({ role: null, content: 'Hello' }));
+    });
+
+    await t.step('should return false if content is not string or null', () => {
+        assert(!isMessages({ role: 'user', content: 123 }));
+        assert(!isMessages({ role: 'user', content: undefined }));
+        assert(!isMessages({ role: 'user', content: {} }));
+    });
+
+    await t.step('should return false if optional id is not a string', () => {
+        assert(!isMessages({ id: 123, role: 'user', content: 'Hello' }));
+        assert(!isMessages({ id: null, role: 'user', content: 'Hello' }));
+    });
+
+    await t.step('should return false if optional name is not a string', () => {
+        assert(!isMessages({ role: 'user', content: 'Hello', name: 123 }));
+        assert(!isMessages({ role: 'user', content: 'Hello', name: null }));
     });
 
     await t.step('should return false for non-object inputs', () => {
-        assert(!isResourceDocument(null));
-        assert(!isResourceDocument('a string'));
-        assert(!isResourceDocument(123));
-        assert(!isResourceDocument([]));
+        assert(!isMessages(null));
+        assert(!isMessages('a string'));
+        assert(!isMessages(123));
+        assert(!isMessages([]));
     });
 });
 

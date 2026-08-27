@@ -49,6 +49,7 @@ import type {
     SyncToGitHubPayload,
     SyncToGitHubResponse,
     DialecticContributionRow,
+    DialecticFeedbackRow,
     DialecticJobRow,
     DialecticProjectResourceRow,
     DialecticSessionRow,
@@ -66,6 +67,7 @@ import type {
 import { FileType, DialecticStageSlug } from './types/file_manager.types.ts';
 import type { Messages, FinishReason, TokenUsage, ChatMessageRow } from './types.ts';
 import type { Tables } from '../types_db.ts';
+import { constructStoragePath } from './utils/path_constructor.ts';
 
 // 1. Define Function Signature Types
 type CreateProjectFn = (payload: FormData | CreateProjectPayload) => Promise<DialecticProject>;
@@ -810,6 +812,57 @@ export type DialecticContributionRowCorruptions = { [K in keyof DialecticContrib
 
 export function invalidateDialecticContributionRow(corruptions: DialecticContributionRowCorruptions): unknown {
     return { ...buildDialecticContributionRow(), ...corruptions };
+}
+
+// --- DialecticFeedbackRow (DB row) ---
+
+export type DialecticFeedbackRowOverrides = Partial<DialecticFeedbackRow>;
+
+export function buildDialecticFeedbackRow(overrides?: DialecticFeedbackRowOverrides): DialecticFeedbackRow {
+    const now = new Date().toISOString();
+    // Build the original document path first (feedback is always alongside a document)
+    const docPath = constructStoragePath({
+        projectId: 'project-abc',
+        fileType: FileType.RenderedDocument,
+        sessionId: 'session-456',
+        iteration: 1,
+        stageSlug: DialecticStageSlug.Thesis,
+        modelSlug: 'model-collect',
+        attemptCount: 1,
+        documentKey: FileType.business_case,
+    });
+    // Build the feedback path from the original document
+    const feedbackPath = constructStoragePath({
+        projectId: 'project-abc',
+        fileType: FileType.UserFeedback,
+        originalStoragePath: docPath.storagePath,
+        originalBaseName: docPath.fileName.replace('.md', ''),
+    });
+    const base: DialecticFeedbackRow = {
+        id: 'feedback-1',
+        project_id: 'project-abc',
+        session_id: 'session-456',
+        iteration_number: 1,
+        stage_slug: 'thesis',
+        feedback_type: 'user_feedback',
+        storage_bucket: 'dialectic-contributions',
+        storage_path: feedbackPath.storagePath,
+        file_name: feedbackPath.fileName,
+        mime_type: 'text/markdown',
+        size_bytes: 80,
+        user_id: 'user-1',
+        target_contribution_id: null,
+        resource_description: null,
+        created_at: now,
+        updated_at: now,
+    };
+    return overrides ? { ...base, ...overrides } : base;
+}
+
+export type DialecticFeedbackRowCorruptions = { [K in keyof DialecticFeedbackRow]?: unknown };
+
+export function invalidateDialecticFeedbackRow(corruptions: DialecticFeedbackRowCorruptions): unknown {
+    return { ...buildDialecticFeedbackRow(), ...corruptions };
 }
 
 // --- DialecticJobRow (DB row) ---

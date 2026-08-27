@@ -143,7 +143,7 @@ export interface PathContext {
   turnIndex?: number;
   sourceContributionId?: string | null;
   output_type?: FileType; // the compression target schema/document key
-  sourceType?: CompressionSourceType; // the explicit discriminator: 'contribution'|'resource' REQUIRE documentKey; 'feedback'|'history' REQUIRE sourceId
+  sourceType?: CompressionSourceType; // the explicit discriminator: 'contribution'|'resource'|'feedback' REQUIRE documentKey; 'history' REQUIRE sourceId plus role
   sourceId?: string; // the victim's originating row id, REQUIRED when sourceType is 'feedback'/'history'; deliberately a NEW field, not a reuse of sourceContributionId
   role?: Messages['role']; // REQUIRED when sourceType is 'history'; the message role that becomes the path identity prefix
   chunkIndex?: number; // map-reduce chunk lineage; both-or-neither; 1-based

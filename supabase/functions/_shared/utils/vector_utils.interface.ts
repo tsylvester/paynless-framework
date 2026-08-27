@@ -1,9 +1,10 @@
 import { RelevanceRule } from '../../dialectic-service/dialectic.interface.ts';
-import { ILogger, Messages, ResourceDocuments } from '../types.ts';
+import { ILogger, Messages } from '../types.ts';
 import { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import { Database } from '../../types_db.ts';
 import { IEmbeddingClient } from '../services/indexing_service.interface.ts';
 import { CompressionCandidate } from './vector_utils.ts';
+import { ResourceDocuments } from './resolveCompressionSource/resolveCompressionSource.interface.ts'
 
 export interface CompressionStrategyDeps {
     dbClient: SupabaseClient<Database>;

@@ -10,7 +10,6 @@ import {
     ChatApiRequest,
     Messages,
     OutboundDocument,
-    ResourceDocument,
 } from "../../types.ts";
 import { isRecord } from "./type_guards.common.ts";
 type SelectedAiProviderRow = Database['public']['Tables']['ai_providers']['Row'];
@@ -223,15 +222,14 @@ export function isOutboundDocument(obj: unknown): obj is OutboundDocument {
     return typeof obj.id === 'string' && typeof obj.content === 'string';
 }
 
-export function isResourceDocument(obj: unknown): obj is ResourceDocument {
-    if (!isRecord(obj)) return false;
-    return (
-        typeof obj.id === 'string' &&
-        typeof obj.content === 'string' &&
-        typeof obj.document_key === 'string' &&
-        typeof obj.stage_slug === 'string' &&
-        typeof obj.type === 'string'
-    );
+export function isMessages(value: unknown): value is Messages {
+    if (!isRecord(value)) return false;
+    if (!('role' in value) || typeof value.role !== 'string') return false;
+    if (value.role !== 'system' && value.role !== 'user' && value.role !== 'assistant' && value.role !== 'function') return false;
+    if (!('content' in value) || (typeof value.content !== 'string' && value.content !== null)) return false;
+    if ('id' in value && typeof value.id !== 'string') return false;
+    if ('name' in value && typeof value.name !== 'string') return false;
+    return true;
 }
 
 export function isTokenUsage(obj: unknown): obj is TokenUsage {

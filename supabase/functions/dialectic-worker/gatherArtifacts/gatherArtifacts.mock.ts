@@ -1,39 +1,22 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import type { Database } from "../../types_db.ts";
 import { MockLogger } from "../../_shared/logger.mock.ts";
-import type { ResourceDocuments } from "../../_shared/types.ts";
+import { buildResourceDocument } from "../../_shared/utils/resolveCompressionSource/resolveCompressionSource.provides.ts";
 import { createMockDownloadFromStorage } from "../../_shared/supabase_storage_utils.mock.ts";
+import { createMockSupabaseClient } from "../../_shared/supabase.mock.ts";
 import { DialecticStageSlug, FileType } from "../../_shared/types/file_manager.types.ts";
-import { constructStoragePath } from "../../_shared/utils/path_constructor.ts";
-import type {
-  DialecticContributionRow,
-  DialecticFeedbackRow,
-  DialecticProjectResourceRow,
-  InputRule,
-} from "../../dialectic-service/dialectic.interface.ts";
+import { mockBoundApplyCompressionOverlay } from "../applyCompressionOverlay/applyCompressionOverlay.provides.ts";
 import type {
   GatherArtifactsDeps,
   GatherArtifactsErrorReturn,
   GatherArtifactsFn,
   GatherArtifactsParams,
   GatherArtifactsPayload,
-  GatherArtifactsReturn,
   GatherArtifactsSuccessReturn,
+  BoundGatherArtifactsFn,
 } from "./gatherArtifacts.interface.ts";
 
-export type GatherArtifactsMockCall = {
-  deps: GatherArtifactsDeps;
-  params: GatherArtifactsParams;
-  payload: GatherArtifactsPayload;
-};
-
-export type CreateGatherArtifactsMockOptions = {
-  handler?: GatherArtifactsFn;
-  result?: GatherArtifactsReturn;
-  successArtifacts?: Required<ResourceDocuments[number]>[];
-  error?: Error;
-  retriable?: boolean;
-};
+// --- GatherArtifactsDeps ---
 
 export type GatherArtifactsDepsOverrides = Partial<GatherArtifactsDeps>;
 
@@ -51,6 +34,7 @@ export function buildGatherArtifactsDeps(
       mode: "success",
       data: contentBuffer,
     }),
+    applyCompressionOverlay: mockBoundApplyCompressionOverlay,
   };
 
   return {
@@ -59,206 +43,116 @@ export function buildGatherArtifactsDeps(
   };
 }
 
+export type GatherArtifactsDepsCorruptions = { [K in keyof GatherArtifactsDeps]?: unknown };
+
+export function invalidateGatherArtifactsDeps(corruptions: GatherArtifactsDepsCorruptions): unknown {
+  return { ...buildGatherArtifactsDeps(), ...corruptions };
+}
+
+// --- GatherArtifactsParams ---
+
+export type GatherArtifactsParamsOverrides = Partial<GatherArtifactsParams>;
+
 export function buildGatherArtifactsParams(
-  dbClient: SupabaseClient<Database>,
-  overrides?: Partial<GatherArtifactsParams>,
+  overrides?: GatherArtifactsParamsOverrides,
 ): GatherArtifactsParams {
+  const { client } = createMockSupabaseClient("gather-artifacts");
+  const dbClient = client as unknown as SupabaseClient<Database>;
   const base: GatherArtifactsParams = {
     dbClient,
     projectId: "project-abc",
     sessionId: "session-456",
     iterationNumber: 1,
+    stageSlug: DialecticStageSlug.Thesis,
+    output_type: FileType.business_case,
   };
-
-  return {
-    ...base,
-    ...overrides,
-  };
+  return overrides ? { ...base, ...overrides } : base;
 }
+
+export type GatherArtifactsParamsCorruptions = { [K in keyof GatherArtifactsParams]?: unknown };
+
+export function invalidateGatherArtifactsParams(corruptions: GatherArtifactsParamsCorruptions): unknown {
+  return { ...buildGatherArtifactsParams(), ...corruptions };
+}
+
+// --- GatherArtifactsPayload ---
+
+export type GatherArtifactsPayloadOverrides = Partial<GatherArtifactsPayload>;
 
 export function buildGatherArtifactsPayload(
-  inputsRequired?: InputRule[],
+  overrides?: GatherArtifactsPayloadOverrides,
 ): GatherArtifactsPayload {
-  return {
-    inputsRequired: inputsRequired ?? [],
+  const base: GatherArtifactsPayload = {
+    inputsRequired: [],
   };
+  return overrides ? { ...base, ...overrides } : base;
 }
 
-export function buildDocumentRule(
-  overrides?: Partial<InputRule>,
-): InputRule {
-  return {
-    type: "document",
-    slug: "thesis",
-    document_key: FileType.business_case,
-    required: true,
-    ...overrides,
-  };
+export type GatherArtifactsPayloadCorruptions = { [K in keyof GatherArtifactsPayload]?: unknown };
+
+export function invalidateGatherArtifactsPayload(corruptions: GatherArtifactsPayloadCorruptions): unknown {
+  return { ...buildGatherArtifactsPayload(), ...corruptions };
 }
 
-export function buildFeedbackRule(
-  overrides?: Partial<InputRule>,
-): InputRule {
-  return {
-    type: "feedback",
-    slug: "thesis",
-    document_key: FileType.business_case,
-    required: true,
-    ...overrides,
-  };
-}
+// --- GatherArtifactsSuccessReturn ---
 
-export function buildSeedPromptRule(
-  overrides?: Partial<InputRule>,
-): InputRule {
-  return {
-    type: "seed_prompt",
-    slug: "thesis",
-    document_key: FileType.SeedPrompt,
-    required: true,
-    ...overrides,
-  };
-}
-
-export function buildProjectResourceRule(
-  overrides?: Partial<InputRule>,
-): InputRule {
-  return {
-    type: "project_resource",
-    slug: "project",
-    document_key: FileType.InitialUserPrompt,
-    required: true,
-    ...overrides,
-  };
-}
-
-export function buildHeaderContextRule(
-  overrides?: Partial<InputRule>,
-): InputRule {
-  return {
-    type: "header_context",
-    slug: "thesis",
-    document_key: FileType.HeaderContext,
-    required: true,
-    ...overrides,
-  };
-}
-
-export function buildDialecticFeedbackRow(
-  overrides?: Partial<DialecticFeedbackRow>,
-): DialecticFeedbackRow {
-  const now = new Date().toISOString();
-  // Build the original document path first (feedback is always alongside a document)
-  const docPath = constructStoragePath({
-    projectId: "project-abc",
-    fileType: FileType.RenderedDocument,
-    sessionId: "session-456",
-    iteration: 1,
-    stageSlug: DialecticStageSlug.Thesis,
-    modelSlug: "model-collect",
-    attemptCount: 1,
-    documentKey: FileType.business_case,
-  });
-  // Build the feedback path from the original document
-  const feedbackPath = constructStoragePath({
-    projectId: "project-abc",
-    fileType: FileType.UserFeedback,
-    sessionId: "session-456",
-    iteration: 1,
-    stageSlug: DialecticStageSlug.Thesis,
-    originalStoragePath: docPath.storagePath,
-    originalBaseName: docPath.fileName.replace(".md", ""),
-  });
-  return {
-    id: "feedback-1",
-    project_id: "project-abc",
-    session_id: "session-456",
-    iteration_number: 1,
-    stage_slug: "thesis",
-    feedback_type: "user_feedback",
-    storage_bucket: "dialectic-contributions",
-    storage_path: feedbackPath.storagePath,
-    file_name: feedbackPath.fileName,
-    mime_type: "text/markdown",
-    size_bytes: 80,
-    user_id: "user-1",
-    target_contribution_id: null,
-    resource_description: null,
-    created_at: now,
-    updated_at: now,
-    ...overrides,
-  };
-}
-
-export function buildDialecticContributionRow(
-  overrides?: Partial<DialecticContributionRow>,
-): DialecticContributionRow {
-  const now = new Date().toISOString();
-  return {
-    id: "contribution-1",
-    session_id: "session-456",
-    stage: "thesis",
-    iteration_number: 1,
-    model_id: "model-1",
-    edit_version: 1,
-    is_latest_edit: true,
-    citations: null,
-    contribution_type: "model_contribution_main",
-    created_at: now,
-    error: null,
-    file_name: "model-collect_1_header_context.json",
-    mime_type: "application/json",
-    model_name: "Model 1",
-    original_model_contribution_id: null,
-    processing_time_ms: 10,
-    prompt_template_id_used: null,
-    raw_response_storage_path: null,
-    seed_prompt_url: null,
-    size_bytes: 120,
-    storage_bucket: "dialectic-contributions",
-    storage_path: "project-abc/session_session-456/iteration_1/thesis/documents",
-    target_contribution_id: null,
-    tokens_used_input: 5,
-    tokens_used_output: 10,
-    updated_at: now,
-    user_id: "user-1",
-    document_relationships: null,
-    is_header: false,
-    source_prompt_resource_id: null,
-    ...overrides,
-  };
-}
-
-export function buildGatherArtifact(
-  overrides?: Partial<Required<ResourceDocuments[number]>>,
-): Required<ResourceDocuments[number]> {
-  return {
-    id: "artifact-1",
-    content: "artifact-content",
-    document_key: FileType.HeaderContext,
-    stage_slug: "thesis",
-    type: "document",
-    ...overrides,
-  };
-}
+export type GatherArtifactsSuccessReturnOverrides = Partial<GatherArtifactsSuccessReturn>;
 
 export function buildGatherArtifactsSuccessReturn(
-  artifacts?: Required<ResourceDocuments[number]>[],
+  overrides?: GatherArtifactsSuccessReturnOverrides,
 ): GatherArtifactsSuccessReturn {
-  return {
-    artifacts: artifacts ?? [buildGatherArtifact()],
+  const base: GatherArtifactsSuccessReturn = {
+    artifacts: [buildResourceDocument()],
   };
+  return overrides ? { ...base, ...overrides } : base;
 }
 
-export function buildGatherArtifactsErrorReturn(
-  error?: Error,
-  retriable?: boolean,
-): GatherArtifactsErrorReturn {
-  return {
-    error: error ?? new Error("gatherArtifacts failed"),
-    retriable: retriable ?? false,
-  };
+export type GatherArtifactsSuccessReturnCorruptions = { [K in keyof GatherArtifactsSuccessReturn]?: unknown };
+
+export function invalidateGatherArtifactsSuccessReturn(corruptions: GatherArtifactsSuccessReturnCorruptions): unknown {
+  return { ...buildGatherArtifactsSuccessReturn(), ...corruptions };
 }
+
+// --- GatherArtifactsErrorReturn ---
+
+export type GatherArtifactsErrorReturnOverrides = Partial<GatherArtifactsErrorReturn>;
+
+export function buildGatherArtifactsErrorReturn(
+  overrides?: GatherArtifactsErrorReturnOverrides,
+): GatherArtifactsErrorReturn {
+  const base: GatherArtifactsErrorReturn = {
+    error: new Error("gatherArtifacts failed"),
+    retriable: false,
+  };
+  return overrides ? { ...base, ...overrides } : base;
+}
+
+export type GatherArtifactsErrorReturnCorruptions = { [K in keyof GatherArtifactsErrorReturn]?: unknown };
+
+export function invalidateGatherArtifactsErrorReturn(corruptions: GatherArtifactsErrorReturnCorruptions): unknown {
+  return { ...buildGatherArtifactsErrorReturn(), ...corruptions };
+}
+
+// --- GatherArtifactsFn ---
+
+export const mockGatherArtifacts: GatherArtifactsFn = async (
+  _deps,
+  _params,
+  _payload,
+) => {
+  return buildGatherArtifactsSuccessReturn();
+};
+
+// --- BoundGatherArtifactsFn ---
+
+export const mockBoundGatherArtifacts: BoundGatherArtifactsFn = async (
+  _params,
+  _payload,
+) => {
+  return buildGatherArtifactsSuccessReturn();
+};
+
+// --- Select helpers ---
 
 export function buildSelectResult(
   data: object[] | null,
@@ -314,38 +208,4 @@ export function buildSelectHandler(
   statusText: string;
 }> {
   return () => Promise.resolve(buildSelectResult(data, error));
-}
-
-export function createGatherArtifactsMock(
-  options?: CreateGatherArtifactsMockOptions,
-): {
-  gatherArtifacts: GatherArtifactsFn;
-  calls: GatherArtifactsMockCall[];
-} {
-  const calls: GatherArtifactsMockCall[] = [];
-
-  const gatherArtifactsMock: GatherArtifactsFn = async (
-    deps: GatherArtifactsDeps,
-    params: GatherArtifactsParams,
-    payload: GatherArtifactsPayload,
-  ): Promise<GatherArtifactsReturn> => {
-    calls.push({ deps, params, payload });
-
-    if (options?.handler) {
-      return options.handler(deps, params, payload);
-    }
-    if (options?.result) {
-      return options.result;
-    }
-    if (options?.error) {
-      return buildGatherArtifactsErrorReturn(options.error, options.retriable);
-    }
-
-    return buildGatherArtifactsSuccessReturn(options?.successArtifacts);
-  };
-
-  return {
-    gatherArtifacts: gatherArtifactsMock,
-    calls,
-  };
 }

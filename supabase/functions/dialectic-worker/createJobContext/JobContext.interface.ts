@@ -1,6 +1,7 @@
 // supabase/functions/dialectic-worker/JobContext.interface.ts
 
-import { FinishReason, GetAiProviderAdapterFn, ILogger, ResourceDocument } from '../../_shared/types.ts';
+import { FinishReason, GetAiProviderAdapterFn, ILogger } from '../../_shared/types.ts';
+import { ResourceDocument } from '../../_shared/utils/resolveCompressionSource/resolveCompressionSource.interface.ts'
 import { IFileManager, ModelContributionUploadContext, ResourceUploadContext } from '../../_shared/types/file_manager.types.ts';
 import { DownloadFromStorageFn } from '../../_shared/supabase_storage_utils.ts';
 import { DeleteFromStorageFn } from '../../_shared/supabase_storage_utils.ts';

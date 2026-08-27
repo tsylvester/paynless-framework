@@ -1,5 +1,6 @@
 import { isInputRuleArray } from "../../_shared/utils/type-guards/type_guards.dialectic.ts";
-import { isRecord } from "../../_shared/utils/type-guards/type_guards.common.ts";
+import { isRecord, isLoggerShape, isSupabaseClientShape } from "../../_shared/utils/type-guards/type_guards.common.ts";
+import { isDialecticStageSlug, isFileType } from "../../_shared/utils/type-guards/type_guards.file_manager.ts";
 import type {
   GatherArtifactsDeps,
   GatherArtifactsErrorReturn,
@@ -8,24 +9,6 @@ import type {
   GatherArtifactsSuccessReturn,
 } from "./gatherArtifacts.interface.ts";
 
-function isLoggerShape(value: unknown): boolean {
-  if (!isRecord(value)) {
-    return false;
-  }
-  return (
-    typeof value.debug === "function" &&
-    typeof value.info === "function" &&
-    typeof value.warn === "function" &&
-    typeof value.error === "function"
-  );
-}
-
-function isSupabaseClientShape(value: unknown): boolean {
-  if (!isRecord(value)) {
-    return false;
-  }
-  return typeof value.from === "function";
-}
 
 export function isGatherArtifactsDeps(value: unknown): value is GatherArtifactsDeps {
   if (!isRecord(value)) {
@@ -40,6 +23,12 @@ export function isGatherArtifactsDeps(value: unknown): value is GatherArtifactsD
   if (
     !("downloadFromStorage" in value) ||
     typeof value.downloadFromStorage !== "function"
+  ) {
+    return false;
+  }
+  if (
+    !("applyCompressionOverlay" in value) ||
+    typeof value.applyCompressionOverlay !== "function"
   ) {
     return false;
   }
@@ -60,6 +49,12 @@ export function isGatherArtifactsParams(value: unknown): value is GatherArtifact
     return false;
   }
   if (!("iterationNumber" in value) || typeof value.iterationNumber !== "number") {
+    return false;
+  }
+  if (!("stageSlug" in value) || !isDialecticStageSlug(value.stageSlug)) {
+    return false;
+  }
+  if (!("output_type" in value) || !isFileType(value.output_type)) {
     return false;
   }
   return true;

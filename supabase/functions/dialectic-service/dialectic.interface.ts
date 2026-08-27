@@ -41,8 +41,8 @@ import type {
 	ILogger,
 	Messages,
 	ServiceError,
-	ResourceDocuments,
 } from "../_shared/types.ts";
+import { ResourceDocuments } from '../_shared/utils/resolveCompressionSource/resolveCompressionSource.interface.ts'
 import type {
 	DeconstructedPathInfo,
 	DeconstructStoragePathFn,
@@ -1991,6 +1991,16 @@ export interface InputRule {
 	/** Whether multiple artifacts of this type can be provided. */
 	multiple?: boolean;
 }
+
+export type InputRuleType = InputRule['type'];
+export const InputRuleTypes: readonly InputRuleType[] = [
+	"document",
+	"feedback",
+	"header_context",
+	"seed_prompt",
+	"project_resource",
+	"contribution",
+];
 
 /**
  * Defines the structure for an item in the `inputs_relevance` JSONB array, used to

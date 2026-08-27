@@ -101,12 +101,6 @@ across a seam. Workstreams are addressed by name and by what they depend on, nev
 | saveResponse decomposition | Payload, transport & provenance | `retryJob` canonical and surfacing both its failures; `saveResponse` is a thin orchestrator over the modules it routes to, each holding only the collaborators its own branches invoke. `netlifyResponse/index.ts` is the composition root for every module the orchestrator routes to and assembles each one's deps itself; a COMPRESS response persists, continues when incomplete, dispatches its render for a renderable source and writes its extracted artifact for a text source |
 | Compression cutover | saveResponse decomposition | compression loop live; one function dispatches every model call, so one tier cap, one wallet read and one affordability preflight govern compression and contribution alike; RAG core gone; every deps object in the worker assembled at its boundary by the context factory, which produces nothing for a function outside that process; every production tokenizer real; full-chain test green |
 
-Every file in this epic takes exactly ONE node, with one exception the seam rule itself forces:
-`processRenderJob.ts` takes a node in the first seam for its payload selection and a node in the
-cutover for its outcome contract, because the runner that reads that outcome does not exist until the
-cutover and the two cannot close together. A file whose contract and whose consumers would
-otherwise straddle a seam is placed in the seam that closes both.
-
 ---
 
 ## PAYLOAD, TRANSPORT & PROVENANCE (depends on nothing in the compression machinery)
@@ -337,17 +331,19 @@ Every production tokenizer becomes real. A character-indexing encoder and a `tex
 make a preflight read high and misclassify affordable requests as unaffordable; the epic does not ship
 with known-broken token accounting at any site that produces a token count.
 
-Strict node order: `applyCompressionOverlay` → `gatherArtifacts` → `vector_utils` → `compressPrompt`
-→ `calculateAffordability` → `StreamChat` → `streamRewind` → `streamRequest` → `chat/index.ts` →
-`prepareModelJob` → `processCompressJob` → `createJobContext` → `processSimpleJob` →
-`processComplexJob` → `processRenderJob` → `processJob` → `dialectic-worker/index.ts` → RAG
-deletions → RAG-removal migration. The overlay precedes
+Strict node order: `applyCompressionOverlay` → `gatherArtifacts` → `vector_utils` →
+`enqueueCompressJobs` → `compressPrompt` → `calculateAffordability` → `StreamChat` →
+`streamRewind` → `streamRequest` → `chat/index.ts` → `retryJob` → `prepareModelJob` →
+`processCompressJob` → `createJobContext` → `processSimpleJob` → `processComplexJob` →
+`processRenderJob` → `processJob` → `dialectic-worker/index.ts` → RAG deletions → RAG-removal
+migration. The overlay precedes
 `gatherArtifacts` because that function injects it and constructs its params, and its literal
 comparisons compile against the untightened type; `gatherArtifacts` is the sole producer of the
 tightened `ResourceDocument.type` and lands it before any consumer assumes a conformant value; the
-scorer precedes the loop that invokes it; the loop precedes the dispatcher that composes it; the
-dispatcher precedes its two callers; the factory precedes every consumer that reads a member off the
-context it assembles; the consumer chain then runs producers first, every processor before the
+scorer and the enqueuer both precede the loop that invokes them; the loop precedes the dispatcher
+that composes it; the dispatcher precedes its two callers; the canonical retry module precedes the
+runner that becomes its sole dispatcher; the factory precedes every consumer that reads a member off
+the context it assembles; the consumer chain then runs producers first, every processor before the
 `processJob` that dispatches it; the worker root follows the chain it wires, because a root closes a graph rather than
 opening one; and the deletions follow the severing of their last references. `StreamChat` and
 `streamRewind` both narrow `CountTokensFn` to `BoundCountTokensFn`, eliminating their inline fake

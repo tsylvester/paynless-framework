@@ -7,8 +7,8 @@ import type {
   ChatApiRequest,
   ILogger,
   Messages,
-  ResourceDocuments,
 } from "../../_shared/types.ts";
+import { ResourceDocuments } from '../../_shared/utils/resolveCompressionSource/resolveCompressionSource.interface.ts'
 import type { CountTokensDeps, CountTokensFn } from "../../_shared/types/tokenizer.types.ts";
 import type { IEmbeddingClient } from "../../_shared/services/indexing_service.interface.ts";
 import type { IRagService } from "../../_shared/services/rag_service.interface.ts";

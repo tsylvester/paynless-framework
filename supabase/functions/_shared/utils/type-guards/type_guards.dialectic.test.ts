@@ -34,6 +34,7 @@ import {
     isGranularityStrategy,
     isInputRule,
     isInputRuleArray,
+    isInputRuleType,
     isRelevanceRule,
     isRelevanceRuleArray,
     isOutputRule,
@@ -72,6 +73,7 @@ import {
     GranularityStrategy,
     GranularityStrategies,
     InputRule,
+    InputRuleTypes,
     RelevanceRule,
     OutputRule,
     DialecticStageRecipeStep,
@@ -3097,4 +3099,21 @@ Deno.test('Type Guard: isDialecticCompressJobPayload admits preflight_input_toke
     await t.step('should accept buildDialecticCompressJobPayload({ preflight_input_tokens: 128 })', () => {
         assert(isDialecticCompressJobPayload(buildDialecticCompressJobPayload({ preflight_input_tokens: 128 })));
     });
+});
+
+/** each member of InputRuleTypes is accepted. */
+Deno.test("isInputRuleType accepts every member of InputRuleTypes", () => {
+    for (const type of InputRuleTypes) {
+        assert(isInputRuleType(type));
+    }
+});
+
+/** a string outside the union, null, undefined, a number, an empty string, and an array are rejected. */
+Deno.test("isInputRuleType rejects non-members", () => {
+    assert(!isInputRuleType("not-a-rule-type"));
+    assert(!isInputRuleType(null));
+    assert(!isInputRuleType(undefined));
+    assert(!isInputRuleType(7));
+    assert(!isInputRuleType(""));
+    assert(!isInputRuleType([]));
 });

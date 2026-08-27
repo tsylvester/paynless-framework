@@ -4,27 +4,21 @@ import type {
   DialecticProjectResourceRow,
   InputRule,
 } from "../../dialectic-service/dialectic.interface.ts";
-import type { ResourceDocuments } from "../../_shared/types.ts";
+import type { ResourceDocuments } from "../../_shared/utils/resolveCompressionSource/resolveCompressionSource.provides.ts";
 import { deconstructStoragePath } from "../../_shared/utils/path_deconstructor.ts";
 import type {
   GatherArtifactsErrorReturn,
   GatherArtifactsFn,
   GatherArtifactsSuccessReturn,
 } from "./gatherArtifacts.interface.ts";
-
-function toErrorReturn(error: unknown): GatherArtifactsErrorReturn {
-  if (error instanceof Error) {
-    return { error, retriable: false };
-  }
-  return { error: new Error(String(error)), retriable: false };
-}
+import { isApplyCompressionOverlaySuccessReturn } from "../applyCompressionOverlay/applyCompressionOverlay.provides.ts";
 
 export const gatherArtifacts: GatherArtifactsFn = async (
   deps,
   params,
   payload,
 ) => {
-  const { dbClient, projectId, sessionId, iterationNumber } = params;
+  const { dbClient, projectId, sessionId, iterationNumber, stageSlug, output_type } = params;
   const rules: InputRule[] = payload.inputsRequired ?? [];
 
   if (rules.length === 0) {
@@ -39,14 +33,10 @@ export const gatherArtifacts: GatherArtifactsFn = async (
       continue;
     }
 
-    const rType: InputRule["type"] = rule.type;
-    const rStage: string = rule.slug;
-    const rKey: string = rule.document_key;
-
     try {
-      if (rType === "document") {
+      if (rule.type === "document") {
         deps.logger.info(
-          `[gatherArtifacts] Querying dialectic_project_resources for document input rule: type='${rType}', stage='${rStage}', document_key='${rKey}'`,
+          `[gatherArtifacts] Querying dialectic_project_resources for document input rule: type='${rule.type}', stage='${rule.slug}', document_key='${rule.document_key}'`,
         );
         const { data, error } = await dbClient
           .from("dialectic_project_resources")
@@ -54,42 +44,39 @@ export const gatherArtifacts: GatherArtifactsFn = async (
           .eq("project_id", projectId)
           .eq("session_id", sessionId)
           .eq("iteration_number", iterationNumber)
-          .eq("stage_slug", rStage)
+          .eq("stage_slug", rule.slug)
           .eq("resource_type", "rendered_document");
 
         if (error) {
           deps.logger.error(
-            `[gatherArtifacts] Error querying dialectic_project_resources for document input rule: type='${rType}', stage='${rStage}', document_key='${rKey}'`,
+            `[gatherArtifacts] Error querying dialectic_project_resources for document input rule: type='${rule.type}', stage='${rule.slug}', document_key='${rule.document_key}'`,
             { error },
           );
           if (rule.required === false) {
             deps.logger.info(
-              `[gatherArtifacts] Error querying optional document input rule: type='${rType}', stage='${rStage}', document_key='${rKey}'. Skipping optional input.`,
+              `[gatherArtifacts] Error querying optional document input rule: type='${rule.type}', stage='${rule.slug}', document_key='${rule.document_key}'. Skipping optional input.`,
             );
             continue;
           }
-          return toErrorReturn(
-            new Error(
-              `Required rendered document for input rule type 'document' with stage '${rStage}' and document_key '${rKey}' was not found in dialectic_project_resources. This indicates the document was not rendered or the rendering step failed.`,
-            ),
-          );
+          return { error, retriable: false };
         }
 
         if (!Array.isArray(data) || data.length === 0) {
           deps.logger.warn(
-            `[gatherArtifacts] No resources found in dialectic_project_resources for document input rule: type='${rType}', stage='${rStage}', document_key='${rKey}'`,
+            `[gatherArtifacts] No resources found in dialectic_project_resources for document input rule: type='${rule.type}', stage='${rule.slug}', document_key='${rule.document_key}'`,
           );
           if (rule.required === false) {
             deps.logger.info(
-              `[gatherArtifacts] No rendered documents found for optional input rule type 'document' with stage '${rStage}' and document_key '${rKey}'. Skipping optional input.`,
+              `[gatherArtifacts] No rendered documents found for optional input rule type 'document' with stage '${rule.slug}' and document_key '${rule.document_key}'. Skipping optional input.`,
             );
             continue;
           }
-          return toErrorReturn(
-            new Error(
-              `Required rendered document for input rule type 'document' with stage '${rStage}' and document_key '${rKey}' was not found in dialectic_project_resources. This indicates the document was not rendered or the rendering step failed.`,
+          return {
+            error: new Error(
+              `Required rendered document for input rule type 'document' with stage '${rule.slug}' and document_key '${rule.document_key}' was not found in dialectic_project_resources. This indicates the document was not rendered or the rendering step failed.`,
             ),
-          );
+            retriable: false,
+          };
         }
 
         const filtered: DialecticProjectResourceRow[] = data.filter(
@@ -99,7 +86,7 @@ export const gatherArtifacts: GatherArtifactsFn = async (
               fileName: row.file_name,
               dbOriginalFileName: row.file_name,
             });
-            return row.stage_slug === rStage && parsed.documentKey === rKey;
+            return row.stage_slug === rule.slug && parsed.documentKey === rule.document_key;
           },
         );
 
@@ -107,11 +94,12 @@ export const gatherArtifacts: GatherArtifactsFn = async (
           if (rule.required === false) {
             continue;
           }
-          return toErrorReturn(
-            new Error(
-              `Required rendered document for input rule type 'document' with stage '${rStage}' and document_key '${rKey}' was not found in dialectic_project_resources.`,
+          return {
+            error: new Error(
+              `Required rendered document for input rule type 'document' with stage '${rule.slug}' and document_key '${rule.document_key}' was not found in dialectic_project_resources.`,
             ),
-          );
+            retriable: false,
+          };
         }
 
         const latest: DialecticProjectResourceRow = deps.pickLatest(filtered);
@@ -120,29 +108,36 @@ export const gatherArtifacts: GatherArtifactsFn = async (
           latest.storage_bucket,
           `${latest.storage_path}/${latest.file_name}`,
         );
-        if (downloadResult.error || !downloadResult.data) {
+        if (downloadResult.error) {
           if (rule.required === false) {
             continue;
           }
-          return toErrorReturn(
-            new Error(
+          return { error: downloadResult.error, retriable: false };
+        }
+        if (!downloadResult.data) {
+          if (rule.required === false) {
+            continue;
+          }
+          return {
+            error: new Error(
               `Failed to download content from storage: bucket='${latest.storage_bucket}', path='${latest.storage_path}/${latest.file_name}'`,
             ),
-          );
+            retriable: false,
+          };
         }
         const content: string = new TextDecoder().decode(downloadResult.data);
         gathered.push({
           id: latest.id,
           content,
-          document_key: rKey,
-          stage_slug: rStage,
+          document_key: rule.document_key,
+          stage_slug: rule.slug,
           type: "document",
         });
       }
 
-      if (rType === "feedback") {
+      if (rule.type === "feedback") {
         deps.logger.info(
-          `[gatherArtifacts] Querying dialectic_feedback for feedback input rule: stage='${rStage}', document_key='${rKey}'`,
+          `[gatherArtifacts] Querying dialectic_feedback for feedback input rule: stage='${rule.slug}', document_key='${rule.document_key}'`,
         );
         const { data, error } = await dbClient
           .from("dialectic_feedback")
@@ -150,35 +145,30 @@ export const gatherArtifacts: GatherArtifactsFn = async (
           .eq("project_id", projectId)
           .eq("session_id", sessionId)
           .eq("iteration_number", iterationNumber)
-          .eq("stage_slug", rStage);
+          .eq("stage_slug", rule.slug);
 
         if (error) {
           if (rule.required === false) {
             continue;
           }
-          return toErrorReturn(
-            new Error(
-              `Required feedback for stage '${rStage}' and document_key '${rKey}' query failed.`,
-            ),
-          );
+          return { error, retriable: false };
         }
 
         if (!Array.isArray(data) || data.length === 0) {
           if (rule.required === false) {
             continue;
           }
-          return toErrorReturn(
-            new Error(
-              `Required feedback for stage '${rStage}' and document_key '${rKey}' was not found in dialectic_feedback.`,
+          return {
+            error: new Error(
+              `Required feedback for stage '${rule.slug}' and document_key '${rule.document_key}' was not found in dialectic_feedback.`,
             ),
-          );
+            retriable: false,
+          };
         }
 
         const filtered: DialecticFeedbackRow[] = data.filter(
           (row: DialecticFeedbackRow) => {
-            if (row.stage_slug !== rStage) return false;
-            // Feedback files are named {modelSlug}_{attemptCount}_{documentKey}_feedback.md
-            // Deconstruct the underlying document name to extract the documentKey
+            if (row.stage_slug !== rule.slug) return false;
             const feedbackSuffix = "_feedback.md";
             if (row.file_name.endsWith(feedbackSuffix)) {
               const baseName = row.file_name.slice(0, -feedbackSuffix.length) + ".md";
@@ -187,15 +177,9 @@ export const gatherArtifacts: GatherArtifactsFn = async (
                 fileName: baseName,
                 dbOriginalFileName: baseName,
               });
-              return parsed.documentKey === rKey;
+              return parsed.documentKey === rule.document_key;
             }
-            // Fallback: try direct deconstruction
-            const parsed = deconstructStoragePath({
-              storageDir: row.storage_path,
-              fileName: row.file_name,
-              dbOriginalFileName: row.file_name,
-            });
-            return parsed.documentKey === rKey;
+            return false;
           },
         );
 
@@ -203,11 +187,12 @@ export const gatherArtifacts: GatherArtifactsFn = async (
           if (rule.required === false) {
             continue;
           }
-          return toErrorReturn(
-            new Error(
-              `Required feedback for stage '${rStage}' and document_key '${rKey}' was not found in dialectic_feedback.`,
+          return {
+            error: new Error(
+              `Required feedback for stage '${rule.slug}' and document_key '${rule.document_key}' was not found in dialectic_feedback.`,
             ),
-          );
+            retriable: false,
+          };
         }
 
         const latest: DialecticFeedbackRow = deps.pickLatest(filtered);
@@ -216,57 +201,61 @@ export const gatherArtifacts: GatherArtifactsFn = async (
           latest.storage_bucket,
           `${latest.storage_path}/${latest.file_name}`,
         );
-        if (downloadResult.error || !downloadResult.data) {
+        if (downloadResult.error) {
           if (rule.required === false) {
             continue;
           }
-          return toErrorReturn(
-            new Error(
+          return { error: downloadResult.error, retriable: false };
+        }
+        if (!downloadResult.data) {
+          if (rule.required === false) {
+            continue;
+          }
+          return {
+            error: new Error(
               `Failed to download feedback content from storage: bucket='${latest.storage_bucket}', path='${latest.storage_path}/${latest.file_name}'`,
             ),
-          );
+            retriable: false,
+          };
         }
 
         const content: string = new TextDecoder().decode(downloadResult.data);
         gathered.push({
           id: latest.id,
           content,
-          document_key: rKey,
+          document_key: rule.document_key,
           stage_slug: latest.stage_slug,
           type: "feedback",
         });
       }
 
-      if (rType === "seed_prompt") {
+      if (rule.type === "seed_prompt") {
         const { data, error } = await dbClient
           .from("dialectic_project_resources")
           .select("*")
           .eq("project_id", projectId)
           .eq("session_id", sessionId)
           .eq("iteration_number", iterationNumber)
-          .eq("stage_slug", rStage)
+          .eq("stage_slug", rule.slug)
           .eq("resource_type", "seed_prompt");
 
         if (error) {
           if (rule.required === false) {
             continue;
           }
-          return toErrorReturn(
-            new Error(
-              `Required seed_prompt for stage '${rStage}' and document_key '${rKey}' query failed.`,
-            ),
-          );
+          return { error, retriable: false };
         }
 
         if (!Array.isArray(data) || data.length === 0) {
           if (rule.required === false) {
             continue;
           }
-          return toErrorReturn(
-            new Error(
-              `Required seed_prompt for stage '${rStage}' and document_key '${rKey}' was not found in dialectic_project_resources.`,
+          return {
+            error: new Error(
+              `Required seed_prompt for stage '${rule.slug}' and document_key '${rule.document_key}' was not found in dialectic_project_resources.`,
             ),
-          );
+            retriable: false,
+          };
         }
 
         const latest: DialecticProjectResourceRow = deps.pickLatest(data);
@@ -275,58 +264,58 @@ export const gatherArtifacts: GatherArtifactsFn = async (
           latest.storage_bucket,
           `${latest.storage_path}/${latest.file_name}`,
         );
-        if (downloadResult.error || !downloadResult.data) {
+        if (downloadResult.error) {
           if (rule.required === false) {
             continue;
           }
-          return toErrorReturn(
-            new Error(
+          return { error: downloadResult.error, retriable: false };
+        }
+        if (!downloadResult.data) {
+          if (rule.required === false) {
+            continue;
+          }
+          return {
+            error: new Error(
               `Failed to download seed_prompt content from storage: bucket='${latest.storage_bucket}', path='${latest.storage_path}/${latest.file_name}'`,
             ),
-          );
+            retriable: false,
+          };
         }
 
         const content: string = new TextDecoder().decode(downloadResult.data);
         gathered.push({
           id: latest.id,
           content,
-          document_key: rKey,
-          stage_slug: rStage,
+          document_key: rule.document_key,
+          stage_slug: rule.slug,
           type: "seed_prompt",
         });
       }
 
-      if (rType === "project_resource") {
-        const isInitialUserPrompt: boolean = rKey === "initial_user_prompt";
-        const resourceTypeForQuery: string = isInitialUserPrompt
-          ? "initial_user_prompt"
-          : "project_resource";
+      if (rule.type === "project_resource") {
         const { data, error } = await dbClient
           .from("dialectic_project_resources")
           .select("*")
           .eq("project_id", projectId)
-          .eq("resource_type", resourceTypeForQuery);
+          .eq("resource_type", rule.document_key);
 
         if (error) {
           if (rule.required === false) {
             continue;
           }
-          return toErrorReturn(
-            new Error(
-              `Required project_resource for document_key '${rKey}' query failed.`,
-            ),
-          );
+          return { error, retriable: false };
         }
 
         if (!Array.isArray(data) || data.length === 0) {
           if (rule.required === false) {
             continue;
           }
-          return toErrorReturn(
-            new Error(
-              `Required project_resource for document_key '${rKey}' was not found in dialectic_project_resources.`,
+          return {
+            error: new Error(
+              `Required project_resource for document_key '${rule.document_key}' was not found in dialectic_project_resources.`,
             ),
-          );
+            retriable: false,
+          };
         }
 
         const latest: DialecticProjectResourceRow = deps.pickLatest(data);
@@ -335,56 +324,60 @@ export const gatherArtifacts: GatherArtifactsFn = async (
           latest.storage_bucket,
           `${latest.storage_path}/${latest.file_name}`,
         );
-        if (downloadResult.error || !downloadResult.data) {
+        if (downloadResult.error) {
           if (rule.required === false) {
             continue;
           }
-          return toErrorReturn(
-            new Error(
+          return { error: downloadResult.error, retriable: false };
+        }
+        if (!downloadResult.data) {
+          if (rule.required === false) {
+            continue;
+          }
+          return {
+            error: new Error(
               `Failed to download project_resource content from storage: bucket='${latest.storage_bucket}', path='${latest.storage_path}/${latest.file_name}'`,
             ),
-          );
+            retriable: false,
+          };
         }
 
         const content: string = new TextDecoder().decode(downloadResult.data);
         gathered.push({
           id: latest.id,
           content,
-          document_key: rKey,
-          stage_slug: rStage,
+          document_key: rule.document_key,
+          stage_slug: rule.slug,
           type: "project_resource",
         });
       } else if (
-        rType === "header_context" ||
-        (rType !== "document" && rType !== "feedback" && rType !== "seed_prompt")
+        rule.type === "header_context" ||
+        (rule.type !== "document" && rule.type !== "feedback" && rule.type !== "seed_prompt")
       ) {
         const { data, error } = await dbClient
           .from("dialectic_contributions")
           .select("*")
           .eq("session_id", sessionId)
           .eq("iteration_number", iterationNumber)
-          .eq("stage", rStage);
+          .eq("stage", rule.slug);
 
         if (error) {
           if (rule.required === false) {
             continue;
           }
-          return toErrorReturn(
-            new Error(
-              `Required ${rType} for stage '${rStage}' and document_key '${rKey}' query failed.`,
-            ),
-          );
+          return { error, retriable: false };
         }
 
         if (!Array.isArray(data) || data.length === 0) {
           if (rule.required === false) {
             continue;
           }
-          return toErrorReturn(
-            new Error(
-              `Required ${rType} for stage '${rStage}' and document_key '${rKey}' was not found in dialectic_contributions.`,
+          return {
+            error: new Error(
+              `Required ${rule.type} for stage '${rule.slug}' and document_key '${rule.document_key}' was not found in dialectic_contributions.`,
             ),
-          );
+            retriable: false,
+          };
         }
 
         const filtered: DialecticContributionRow[] = data.filter(
@@ -397,7 +390,7 @@ export const gatherArtifacts: GatherArtifactsFn = async (
               fileName: row.file_name,
               dbOriginalFileName: row.file_name,
             });
-            return row.stage === rStage && parsed.documentKey === rKey;
+            return row.stage === rule.slug && parsed.documentKey === rule.document_key;
           },
         );
 
@@ -405,11 +398,12 @@ export const gatherArtifacts: GatherArtifactsFn = async (
           if (rule.required === false) {
             continue;
           }
-          return toErrorReturn(
-            new Error(
-              `Required ${rType} for stage '${rStage}' and document_key '${rKey}' was not found in dialectic_contributions.`,
+          return {
+            error: new Error(
+              `Required ${rule.type} for stage '${rule.slug}' and document_key '${rule.document_key}' was not found in dialectic_contributions.`,
             ),
-          );
+            retriable: false,
+          };
         }
 
         const latest: DialecticContributionRow = deps.pickLatest(filtered);
@@ -417,11 +411,12 @@ export const gatherArtifacts: GatherArtifactsFn = async (
           if (rule.required === false) {
             continue;
           }
-          return toErrorReturn(
-            new Error(
+          return {
+            error: new Error(
               `Contribution row '${latest.id}' has null file_name — data integrity violation.`,
             ),
-          );
+            retriable: false,
+          };
         }
 
         const downloadResult = await deps.downloadFromStorage(
@@ -429,35 +424,45 @@ export const gatherArtifacts: GatherArtifactsFn = async (
           latest.storage_bucket,
           `${latest.storage_path}/${latest.file_name}`,
         );
-        if (downloadResult.error || !downloadResult.data) {
+        if (downloadResult.error) {
           if (rule.required === false) {
             continue;
           }
-          return toErrorReturn(
-            new Error(
-              `Failed to download ${rType} content from storage: bucket='${latest.storage_bucket}', path='${latest.storage_path}/${latest.file_name}'`,
+          return { error: downloadResult.error, retriable: false };
+        }
+        if (!downloadResult.data) {
+          if (rule.required === false) {
+            continue;
+          }
+          return {
+            error: new Error(
+              `Failed to download ${rule.type} content from storage: bucket='${latest.storage_bucket}', path='${latest.storage_path}/${latest.file_name}'`,
             ),
-          );
+            retriable: false,
+          };
         }
 
         const content: string = new TextDecoder().decode(downloadResult.data);
         gathered.push({
           id: latest.id,
           content,
-          document_key: rKey,
+          document_key: rule.document_key,
           stage_slug: latest.stage,
-          type: rType,
+          type: rule.type,
         });
       }
     } catch (error) {
       if (rule.required === false) {
         deps.logger.info(
-          `[gatherArtifacts] Error processing optional input rule type='${rType}', stage='${rStage}', document_key='${rKey}'. Skipping.`,
+          `[gatherArtifacts] Error processing optional input rule type='${rule.type}', stage='${rule.slug}', document_key='${rule.document_key}'. Skipping.`,
           { error },
         );
         continue;
       }
-      return toErrorReturn(error);
+      return {
+        error: error instanceof Error ? error : new Error(String(error)),
+        retriable: false,
+      };
     }
   }
 
@@ -468,8 +473,16 @@ export const gatherArtifacts: GatherArtifactsFn = async (
     }
   }
 
+  const overlayResult = await deps.applyCompressionOverlay(
+    params,
+    { resourceDocuments: Array.from(uniqueById.values()), conversationHistory: [] },
+  );
+  if (!isApplyCompressionOverlaySuccessReturn(overlayResult)) {
+    return { error: overlayResult.error, retriable: overlayResult.retriable };
+  }
+
   const success: GatherArtifactsSuccessReturn = {
-    artifacts: Array.from(uniqueById.values()),
+    artifacts: overlayResult.resourceDocuments,
   };
   return success;
 };

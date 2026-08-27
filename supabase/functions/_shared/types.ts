@@ -7,6 +7,7 @@ import { createClient, User } from "npm:@supabase/supabase-js";
 import { GenerateContentResponse } from "npm:@google/generative-ai";
 import { Tables } from '../types_db.ts';
 import { SystemInstruction } from '../dialectic-service/dialectic.interface.ts';
+import type { ResourceDocuments } from './utils/resolveCompressionSource/resolveCompressionSource.interface.ts';
 
 export type GetAiProviderAdapterFn = (
   deps: FactoryDependencies
@@ -162,13 +163,6 @@ export interface OutboundDocument {
   id: string;
   content: string;
 }
-export interface ResourceDocument extends OutboundDocument {
-  document_key: string;
-  stage_slug: string;
-  type: string;
-}
-
-export type ResourceDocuments = ResourceDocument[];
 
 /** Shape of a single part passed to Gemini sendMessage (text or inlineData). Used by GoogleAdapter tests. */
 export interface GeminiSendMessagePart {

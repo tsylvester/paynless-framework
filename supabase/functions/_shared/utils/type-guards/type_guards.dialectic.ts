@@ -26,6 +26,8 @@ import {
     GranularityStrategy,
     GranularityStrategies,
     InputRule,
+    InputRuleType,
+    InputRuleTypes,
     RelevanceRule,
     OutputRule,
     DialecticStageRecipeStep,
@@ -501,11 +503,16 @@ export function isGranularityStrategy(value: unknown): value is GranularityStrat
     return GranularityStrategies.some(v => v === value);
 }
 
+export function isInputRuleType(value: unknown): value is InputRuleType {
+    if (typeof value !== 'string') return false;
+    return InputRuleTypes.some(v => v === value);
+}
+
 export function isInputRule(value: unknown): value is InputRule {
     if (!isRecord(value)) return false;
 
     if (typeof value.slug !== 'string') return false;
-    if (typeof value.type !== 'string' || !['document', 'feedback', 'header_context', 'seed_prompt', 'project_resource', 'contribution'].includes(value.type)) return false;
+    if (!isInputRuleType(value.type)) return false;
 
     if ('document_key' in value) {
         // Recipe documents can introduce new keys at runtime; ensure we only enforce non-empty strings.

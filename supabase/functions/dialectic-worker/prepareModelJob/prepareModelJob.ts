@@ -8,9 +8,9 @@ import {
   AiModelExtendedConfig,
   ChatApiRequest,
   Messages,
-  ResourceDocuments,
 } from '../../_shared/types.ts';
-import { isResourceDocument } from '../../_shared/utils/type-guards/type_guards.chat.ts';
+import { ResourceDocuments } from '../../_shared/utils/resolveCompressionSource/resolveCompressionSource.interface.ts';
+import { isResourceDocument } from '../../_shared/utils/resolveCompressionSource/resolveCompressionSource.guard.ts';
 import {
   isCalculateAffordabilityErrorReturn,
   isCalculateAffordabilityCompressedReturn,
@@ -347,7 +347,6 @@ export async function prepareModelJob(
       job,
       providerRow,
       userAuthToken: userAuthTokenStrict,
-      output_type,
       userConfig: userConfig,
     };
 

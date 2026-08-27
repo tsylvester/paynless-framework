@@ -5,7 +5,8 @@ import {
     CompressionStrategyParams,
     CompressionStrategyPayload,
 } from './vector_utils.interface.ts';
-import { type Messages, type ResourceDocument, type ResourceDocuments } from '../types.ts';
+import { Messages } from '../types.ts';
+import { ResourceDocument, ResourceDocuments } from './resolveCompressionSource/resolveCompressionSource.interface.ts'
 
 /**
  * Calculates the dot product of two vectors.

@@ -7,8 +7,8 @@ import type {
   ChatApiRequest,
   ILogger,
   Messages,
-  ResourceDocuments,
 } from "../../_shared/types.ts";
+import { ResourceDocuments } from '../../_shared/utils/resolveCompressionSource/resolveCompressionSource.interface.ts'
 import type { CountTokensFn } from "../../_shared/types/tokenizer.types.ts";
 import type { RelevanceRule } from "../../dialectic-service/dialectic.interface.ts";
 import type { ICompressionStrategy } from "../../_shared/utils/vector_utils.interface.ts";
