@@ -1,310 +1,162 @@
 // supabase/functions/dialectic-worker/compressPrompt/compressPrompt.mock.ts
 
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
-import type {
-  AiModelExtendedConfig,
-  ChatApiRequest,
-  ILogger,
-  Messages,
-  ResourceDocument,
-  ResourceDocuments,
-} from "../../_shared/types.ts";
-import type {
-  CountTokensDeps,
-  CountTokensFn,
-} from "../../_shared/types/tokenizer.types.ts";
-import type { IEmbeddingClient } from "../../_shared/services/indexing_service.interface.ts";
-import { EmbeddingClient } from "../../_shared/services/indexing_service.ts";
-import { mockOpenAiAdapter } from "../../_shared/ai_service/openai_adapter.mock.ts";
-import type { IAdminTokenWalletService } from "../../_shared/services/tokenwallet/admin/adminTokenWalletService.interface.ts";
-import type { IRagService } from "../../_shared/services/rag_service.interface.ts";
-import { MockLogger } from "../../_shared/logger.mock.ts";
-import { MockRagService } from "../../_shared/services/rag_service.mock.ts";
-import { createMockAdminTokenWalletService } from "../../_shared/services/tokenwallet/admin/adminTokenWalletService.mock.ts";
-import { FileType } from "../../_shared/types/file_manager.types.ts";
-import type { RelevanceRule } from "../../dialectic-service/dialectic.interface.ts";
-import type { ICompressionStrategy } from "../../_shared/utils/vector_utils.interface.ts";
-import { buildExtendedModelConfig } from "../../_shared/ai_service/ai_provider.mock.ts";
-import { IMockSupabaseClient } from "../../_shared/supabase.mock.ts";
 import type { Database } from "../../types_db.ts";
 import type {
   BoundCompressPromptFn,
   CompressPromptDeps,
   CompressPromptErrorReturn,
+  CompressPromptFitsReturn,
+  CompressPromptFn,
   CompressPromptParams,
   CompressPromptPayload,
-  CompressPromptReturn,
-  CompressPromptSuccessReturn,
+  CompressPromptPendingReturn,
 } from "./compressPrompt.interface.ts";
-import { compressPrompt } from "./compressPrompt.ts";
-import { isCompressPromptErrorReturn } from "./compressPrompt.guard.ts";
+import { MockLogger } from "../../_shared/logger.mock.ts";
 import { createMockCountTokens } from "../../_shared/utils/tokenizer_utils.mock.ts";
+import { createMockSupabaseClient } from "../../_shared/supabase.mock.ts";
+import { buildDialecticJobRow, buildDialecticExecuteJobPayload } from "../../_shared/dialectic.mock.ts";
+import { isJson } from "../../_shared/utils/type-guards/type_guards.common.ts";
+import { buildExtendedModelConfig } from "../../_shared/ai_service/ai_provider.mock.ts";
+import {
+  buildResourceDocument,
+  mockBoundResolveCompressionSource,
+} from "../../_shared/utils/resolveCompressionSource/resolveCompressionSource.provides.ts";
+import { mockBoundGetSortedCompressionCandidates } from "../../_shared/utils/vector_utils/vector_utils.provides.ts";
+import { mockBoundenqueueCompressJobsFn } from "../enqueueCompressJobs/enqueueCompressJobs.provides.ts";
+import type { ConstructStoragePathFn } from "../../_shared/utils/path_constructor.types.ts";
+import type { ConstructedPath } from "../../_shared/utils/path_constructor.ts";
+import type { DownloadFromStorageFn } from "../../_shared/supabase_storage_utils.ts";
 
-export type CompressPromptParamsOverrides = {
-  extendedModelConfig?: AiModelExtendedConfig;
-  inputsRelevance?: RelevanceRule[];
-  jobId?: string;
-  projectOwnerUserId?: string;
-  sessionId?: string;
-  stageSlug?: string;
-  walletId?: string;
-  inputRate?: number;
-  outputRate?: number;
-  isContinuationFlowInitial?: boolean;
-  finalTargetThreshold?: number;
-  balanceAfterCompression?: number;
-  walletBalance?: number;
-};
-
-export function buildResourceDocument(
-  overrides?: Partial<ResourceDocument>,
-): ResourceDocument {
-  const base: ResourceDocument = {
-    id: "contract-resource-1",
-    content: "contract original body",
-    document_key: "header_context",
-    stage_slug: "thesis",
-    type: "document",
-  };
-  return { ...base, ...overrides };
-}
-
-export function buildChatApiRequest(
-  resourceDocuments: ResourceDocuments,
-  currentUserPrompt: string,
-  overrides?: Partial<ChatApiRequest>,
-): ChatApiRequest {
-  const base: ChatApiRequest = {
-    message: currentUserPrompt,
-    providerId: "00000000-0000-4000-8000-000000000001",
-    promptId: "__none__",
-    walletId: "00000000-0000-4000-8000-000000000002",
-    resourceDocuments,
-    messages: [{ role: "user", content: "contract history turn" }],
-    systemInstruction: "contract system instruction",
-  };
-  return { ...base, ...overrides };
-}
-
-export function buildTokenizerDeps(): CountTokensDeps {
+const defaultConstructStoragePath: ConstructStoragePathFn = (_context): ConstructedPath => {
   return {
-    getEncoding: (_name: string) => ({
-      encode: (input: string) =>
-        Array.from(input ?? "", (_ch, index: number) => index),
-    }),
-    countTokensAnthropic: (text: string) => (text ?? "").length,
-    logger: {
-      warn: (_message: string) => {
-        return;
-      },
-      error: (_message: string) => {
-        return;
-      },
-    },
+    storagePath: "mock/storage/path",
+    fileName: "mock-file.md",
   };
-}
-
-const defaultCompressionStrategy: ICompressionStrategy = async () => {
-  return [];
 };
 
-export function DbClient(client: IMockSupabaseClient): SupabaseClient<Database> {
-  return client as unknown as SupabaseClient<Database>;
-}
-
-export function buildCompressPromptParams(
-  dbClient: SupabaseClient<Database>,
-  overrides?: CompressPromptParamsOverrides,
-): CompressPromptParams {
-  const extendedModelConfig: AiModelExtendedConfig = overrides?.extendedModelConfig !== undefined
-    ? overrides.extendedModelConfig
-    : buildExtendedModelConfig();
-  const inputsRelevance: RelevanceRule[] = overrides?.inputsRelevance !== undefined
-    ? overrides.inputsRelevance
-    : [{ document_key: FileType.HeaderContext, relevance: 1 }];
+const defaultDownloadFromStorage: DownloadFromStorageFn = async (_supabase, _bucket, _path) => {
   return {
-    dbClient,
-    jobId: overrides?.jobId !== undefined ? overrides.jobId : "contract-job-id",
-    projectOwnerUserId: overrides?.projectOwnerUserId !== undefined
-      ? overrides.projectOwnerUserId
-      : "-owner-id",
-    sessionId: overrides?.sessionId !== undefined ? overrides.sessionId : "contract-session-id",
-    stageSlug: overrides?.stageSlug !== undefined ? overrides.stageSlug : "thesis",
-    walletId: overrides?.walletId !== undefined ? overrides.walletId : "contract-wallet-id",
-    extendedModelConfig,
-    inputsRelevance,
-    inputRate: overrides?.inputRate !== undefined ? overrides.inputRate : 0.01,
-    outputRate: overrides?.outputRate !== undefined ? overrides.outputRate : 0.01,
-    isContinuationFlowInitial: overrides?.isContinuationFlowInitial !== undefined
-      ? overrides.isContinuationFlowInitial
-      : false,
-    finalTargetThreshold: overrides?.finalTargetThreshold !== undefined
-      ? overrides.finalTargetThreshold
-      : 50000,
-    balanceAfterCompression: overrides?.balanceAfterCompression !== undefined
-      ? overrides.balanceAfterCompression
-      : 900000,
-    walletBalance: overrides?.walletBalance !== undefined ? overrides.walletBalance : 1_000_000,
+    data: null,
+    error: null,
   };
-}
-
-export type CompressPromptPayloadOverrides = {
-  compressionStrategy?: ICompressionStrategy;
-  resourceDocuments?: ResourceDocuments;
-  conversationHistory?: Messages[];
-  currentUserPrompt?: string;
-  chatApiRequest?: ChatApiRequest;
-  tokenizerDeps?: CountTokensDeps;
 };
 
-export function buildCompressPromptPayload(
-  overrides?: CompressPromptPayloadOverrides,
-): CompressPromptPayload {
-  const resourceDocuments: ResourceDocuments = overrides?.resourceDocuments !== undefined
-    ? overrides.resourceDocuments
-    : [buildResourceDocument()];
-  const currentUserPrompt: string = overrides?.currentUserPrompt !== undefined
-    ? overrides.currentUserPrompt
-    : "contract user prompt text";
-  const chatApiRequest: ChatApiRequest = overrides?.chatApiRequest !== undefined
-    ? overrides.chatApiRequest
-    : buildChatApiRequest(resourceDocuments, currentUserPrompt);
-  const tokenizerDeps: CountTokensDeps = overrides?.tokenizerDeps !== undefined
-    ? overrides.tokenizerDeps
-    : buildTokenizerDeps();
-  const compressionStrategy: ICompressionStrategy = overrides?.compressionStrategy !== undefined
-    ? overrides.compressionStrategy
-    : defaultCompressionStrategy;
-  const conversationHistory: Messages[] = overrides?.conversationHistory !== undefined
-    ? overrides.conversationHistory
-    : [];
-  return {
-    compressionStrategy,
-    resourceDocuments,
-    conversationHistory,
-    currentUserPrompt,
-    chatApiRequest,
-    tokenizerDeps,
+export type CompressPromptDepsOverrides = Partial<CompressPromptDeps>;
+
+export type CompressPromptDepsCorruptions = { [K in keyof CompressPromptDeps]?: unknown };
+
+export function buildCompressPromptDeps(overrides?: CompressPromptDepsOverrides): CompressPromptDeps {
+  const base: CompressPromptDeps = {
+    logger: new MockLogger(),
+    getSortedCompressionCandidates: mockBoundGetSortedCompressionCandidates,
+    enqueueCompressJobs: mockBoundenqueueCompressJobsFn,
+    resolveCompressionSource: mockBoundResolveCompressionSource,
+    constructStoragePath: defaultConstructStoragePath,
+    downloadFromStorage: defaultDownloadFromStorage,
+    countTokens: createMockCountTokens(),
   };
+  return overrides ? { ...base, ...overrides } : base;
 }
 
-export function buildCompressPromptSuccessReturn(
-  value: CompressPromptSuccessReturn,
-): CompressPromptSuccessReturn {
-  return {
-    chatApiRequest: value.chatApiRequest,
-    resolvedInputTokenCount: value.resolvedInputTokenCount,
-    resourceDocuments: value.resourceDocuments,
+export function invalidateCompressPromptDeps(corruptions: CompressPromptDepsCorruptions): unknown {
+  return { ...buildCompressPromptDeps(), ...corruptions };
+}
+
+export type CompressPromptParamsOverrides = Partial<CompressPromptParams>;
+
+export type CompressPromptParamsCorruptions = { [K in keyof CompressPromptParams]?: unknown };
+
+export function buildCompressPromptParams(overrides?: CompressPromptParamsOverrides): CompressPromptParams {
+  const base: CompressPromptParams = {
+    dbClient: createMockSupabaseClient().client as unknown as SupabaseClient<Database>,
+    isContinuationFlowInitial: false,
+    finalTargetThreshold: 50000,
+    balanceAfterCompression: 900000,
+    walletBalance: 1_000_000,
   };
+  return overrides ? { ...base, ...overrides } : base;
 }
 
-export function buildCompressPromptErrorReturn(
-  error: Error,
-  retriable: boolean,
-): CompressPromptErrorReturn {
-  return { error, retriable };
+export function invalidateCompressPromptParams(corruptions: CompressPromptParamsCorruptions): unknown {
+  return { ...buildCompressPromptParams(), ...corruptions };
 }
 
-export type CompressPromptDepsOverrides = {
-  logger?: ILogger;
-  ragService?: IRagService;
-  embeddingClient?: IEmbeddingClient;
-  tokenWalletService?: IAdminTokenWalletService;
-  countTokens?: CountTokensFn;
+export type CompressPromptPayloadOverrides = Partial<CompressPromptPayload>;
+
+export type CompressPromptPayloadCorruptions = { [K in keyof CompressPromptPayload]?: unknown };
+
+export function buildCompressPromptPayload(overrides?: CompressPromptPayloadOverrides): CompressPromptPayload {
+  const executeJobPayload = buildDialecticExecuteJobPayload();
+  if (!isJson(executeJobPayload)) throw new Error("buildDialecticExecuteJobPayload must produce a Json-compatible value");
+  const base: CompressPromptPayload = {
+    parentJob: buildDialecticJobRow({ payload: executeJobPayload }),
+    extendedModelConfig: buildExtendedModelConfig(),
+    inputsRelevance: [],
+    resourceDocuments: [buildResourceDocument()],
+    conversationHistory: [],
+    currentUserPrompt: "mock user prompt",
+  };
+  return overrides ? { ...base, ...overrides } : base;
+}
+
+export function invalidateCompressPromptPayload(corruptions: CompressPromptPayloadCorruptions): unknown {
+  return { ...buildCompressPromptPayload(), ...corruptions };
+}
+
+export type CompressPromptFitsReturnOverrides = Partial<CompressPromptFitsReturn>;
+
+export type CompressPromptFitsReturnCorruptions = { [K in keyof CompressPromptFitsReturn]?: unknown };
+
+export function buildCompressPromptFitsReturn(overrides?: CompressPromptFitsReturnOverrides): CompressPromptFitsReturn {
+  const base: CompressPromptFitsReturn = {
+    fits: true,
+    resourceDocuments: [buildResourceDocument()],
+    conversationHistory: [],
+    resolvedInputTokenCount: 0,
+  };
+  return overrides ? { ...base, ...overrides } : base;
+}
+
+export function invalidateCompressPromptFitsReturn(corruptions: CompressPromptFitsReturnCorruptions): unknown {
+  return { ...buildCompressPromptFitsReturn(), ...corruptions };
+}
+
+export type CompressPromptPendingReturnOverrides = Partial<CompressPromptPendingReturn>;
+
+export type CompressPromptPendingReturnCorruptions = { [K in keyof CompressPromptPendingReturn]?: unknown };
+
+export function buildCompressPromptPendingReturn(overrides?: CompressPromptPendingReturnOverrides): CompressPromptPendingReturn {
+  const base: CompressPromptPendingReturn = {
+    fits: false,
+  };
+  return overrides ? { ...base, ...overrides } : base;
+}
+
+export function invalidateCompressPromptPendingReturn(corruptions: CompressPromptPendingReturnCorruptions): unknown {
+  return { ...buildCompressPromptPendingReturn(), ...corruptions };
+}
+
+export type CompressPromptErrorReturnOverrides = Partial<CompressPromptErrorReturn>;
+
+export type CompressPromptErrorReturnCorruptions = { [K in keyof CompressPromptErrorReturn]?: unknown };
+
+export function buildCompressPromptErrorReturn(overrides?: CompressPromptErrorReturnOverrides): CompressPromptErrorReturn {
+  const base: CompressPromptErrorReturn = {
+    error: new Error("mock-compress-prompt-error"),
+    retriable: false,
+  };
+  return overrides ? { ...base, ...overrides } : base;
+}
+
+export function invalidateCompressPromptErrorReturn(corruptions: CompressPromptErrorReturnCorruptions): unknown {
+  return { ...buildCompressPromptErrorReturn(), ...corruptions };
+}
+
+export const mockCompressPrompt: CompressPromptFn = async (_deps, _params, _payload) => {
+  return buildCompressPromptFitsReturn();
 };
 
-export function buildCompressPromptDeps(
-  overrides?: CompressPromptDepsOverrides,
-): CompressPromptDeps {
-  const logger: ILogger = overrides?.logger !== undefined
-    ? overrides.logger
-    : new MockLogger();
-  const ragService: IRagService = overrides?.ragService !== undefined
-    ? overrides.ragService
-    : new MockRagService();
-  const embeddingClient: IEmbeddingClient = overrides?.embeddingClient !== undefined
-    ? overrides.embeddingClient
-    : new EmbeddingClient(mockOpenAiAdapter);
-  const tokenWalletService: IAdminTokenWalletService = overrides?.tokenWalletService !== undefined
-    ? overrides.tokenWalletService
-    : createMockAdminTokenWalletService().instance;
-  const countTokens: CountTokensFn = overrides?.countTokens !== undefined
-    ? overrides.countTokens
-    : createMockCountTokens();
-  return {
-    logger,
-    ragService,
-    embeddingClient,
-    tokenWalletService,
-    countTokens,
-  };
-}
-
-export type CreateCompressPromptMockOptions = {
-  handler?: BoundCompressPromptFn;
-  result?: CompressPromptReturn;
+export const mockBoundCompressPrompt: BoundCompressPromptFn = async (_params, _payload) => {
+  return buildCompressPromptFitsReturn();
 };
-
-export type CompressPromptMockCall = {
-  params: CompressPromptParams;
-  payload: CompressPromptPayload;
-};
-
-export function createCompressPromptMock(
-  options: CreateCompressPromptMockOptions,
-): {
-  compressPrompt: BoundCompressPromptFn;
-  calls: CompressPromptMockCall[];
-} {
-  const calls: CompressPromptMockCall[] = [];
-  const compressPrompt: BoundCompressPromptFn = async (
-    params: CompressPromptParams,
-    payload: CompressPromptPayload,
-  ): Promise<CompressPromptReturn> => {
-    calls.push({ params, payload });
-    if (options.handler !== undefined) {
-      return options.handler(params, payload);
-    }
-    if (options.result !== undefined) {
-      return options.result;
-    }
-    const fallbackPayload: CompressPromptPayload = payload;
-    const fallbackSuccess: CompressPromptSuccessReturn = {
-      chatApiRequest: fallbackPayload.chatApiRequest,
-      resolvedInputTokenCount: 0,
-      resourceDocuments: fallbackPayload.resourceDocuments,
-    };
-    return fallbackSuccess;
-  };
-  return { compressPrompt, calls };
-}
-
-/** Bound `compressPrompt` with `buildCompressPromptDeps(overrides)` — for wiring tests without a second builder surface. */
-export function buildBoundCompressPromptFn(
-  depsOverrides?: CompressPromptDepsOverrides,
-): BoundCompressPromptFn {
-  const deps: CompressPromptDeps = buildCompressPromptDeps(depsOverrides);
-  return async (
-    params: CompressPromptParams,
-    payload: CompressPromptPayload,
-  ): Promise<CompressPromptReturn> => {
-    return compressPrompt(deps, params, payload);
-  };
-}
-
-export function describeCompressPromptReturnForTestFailure(value: unknown): string {
-  if (isCompressPromptErrorReturn(value)) {
-    return `CompressPromptErrorReturn: ${value.error.message} (retriable=${value.retriable})`;
-  }
-  if (value === undefined) {
-    return "value is undefined";
-  }
-  if (value === null) {
-    return "value is null";
-  }
-  if (typeof value !== "object") {
-    return `value is ${typeof value}`;
-  }
-  const keys: string[] = Object.keys(value);
-  return `unexpected shape (keys=${keys.join(",")})`;
-}

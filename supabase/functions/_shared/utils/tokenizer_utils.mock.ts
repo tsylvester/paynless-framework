@@ -5,8 +5,10 @@ import type {
   CountableChatPayload,
   CountTokensDeps,
   CountTokensFn,
+  BoundCountTokensFn,
 } from "../types/tokenizer.types.ts";
 import { MockLogger } from "../logger.mock.ts";
+import { countTokens } from "./tokenizer_utils.ts";
 
 export type MockCountTokensOverrides = {
   countTokens?: CountTokensFn;
@@ -50,3 +52,8 @@ export function invalidateCountTokensDeps(
 ): unknown {
   return { ...buildCountTokensDeps(), ...corruptions };
 }
+
+export const mockBoundCountTokens: BoundCountTokensFn = (
+  payload,
+  modelConfig,
+) => countTokens(buildCountTokensDeps(), payload, modelConfig);

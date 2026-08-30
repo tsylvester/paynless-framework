@@ -9,7 +9,7 @@
     // We only want to emit declarations, actual JS might not be needed if it's just types
     // but tsc might require it with composite.
     "emitDeclarationOnly": false, // Set to true if types_db.ts TRULY has no runtime code
-    "module": "ESNext", // Or "CommonJS" depending on expected output, ESNext is modern
+    "module": "nodenext", // Or "CommonJS" depending on expected output, ESNext is modern
     "target": "ESNext"
   },
   "include": [

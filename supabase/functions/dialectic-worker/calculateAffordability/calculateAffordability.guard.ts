@@ -1,15 +1,16 @@
 // supabase/functions/dialectic-worker/calculateAffordability/calculateAffordability.guard.ts
 
 import { isRecord } from "../../_shared/utils/type-guards/type_guards.common.ts";
+import { isAiModelExtendedConfig } from "../../_shared/utils/type-guards/type_guards.chat.ts";
 import type {
   BoundCalculateAffordabilityFn,
-  CalculateAffordabilityCompressedReturn,
   CalculateAffordabilityDeps,
-  CalculateAffordabilityDirectReturn,
   CalculateAffordabilityErrorReturn,
   CalculateAffordabilityFn,
+  CalculateAffordabilityOverBudgetReturn,
   CalculateAffordabilityParams,
   CalculateAffordabilityPayload,
+  CalculateAffordabilityWithinBudgetReturn,
   GetMaxOutputTokensFn,
   TierOutputCapTokens,
   UserConfig,
@@ -50,9 +51,6 @@ export function isCalculateAffordabilityDeps(value: unknown): value is Calculate
   if (!("countTokens" in value) || typeof value.countTokens !== "function") {
     return false;
   }
-  if (!("compressPrompt" in value) || typeof value.compressPrompt !== "function") {
-    return false;
-  }
   if (!("getMaxOutputTokens" in value) || !isGetMaxOutputTokensFn(value.getMaxOutputTokens)) {
     return false;
   }
@@ -63,43 +61,8 @@ export function isCalculateAffordabilityParams(value: unknown): value is Calcula
   if (!isRecord(value)) {
     return false;
   }
-  if (!("dbClient" in value) || !isRecord(value.dbClient)) {
-    return false;
-  }
-  if (!("jobId" in value) || typeof value.jobId !== "string") {
-    return false;
-  }
-  if (!("projectOwnerUserId" in value) || typeof value.projectOwnerUserId !== "string") {
-    return false;
-  }
-  if (!("sessionId" in value) || typeof value.sessionId !== "string") {
-    return false;
-  }
-  if (!("stageSlug" in value) || typeof value.stageSlug !== "string") {
-    return false;
-  }
-  if (!("walletId" in value) || typeof value.walletId !== "string") {
-    return false;
-  }
   if (!("walletBalance" in value) || typeof value.walletBalance !== "number") {
     return false;
-  }
-  if (!("extendedModelConfig" in value) || !isRecord(value.extendedModelConfig)) {
-    return false;
-  }
-  if (!("inputRate" in value) || typeof value.inputRate !== "number") {
-    return false;
-  }
-  if (!("outputRate" in value) || typeof value.outputRate !== "number") {
-    return false;
-  }
-  if (!("isContinuationFlowInitial" in value) || typeof value.isContinuationFlowInitial !== "boolean") {
-    return false;
-  }
-  if ("inputsRelevance" in value) {
-    if (!Array.isArray(value.inputsRelevance)) {
-      return false;
-    }
   }
   if (!("userConfig" in value) || !isUserConfig(value.userConfig)) {
     return false;
@@ -111,7 +74,7 @@ export function isCalculateAffordabilityPayload(value: unknown): value is Calcul
   if (!isRecord(value)) {
     return false;
   }
-  if (!("compressionStrategy" in value) || typeof value.compressionStrategy !== "function") {
+  if (!("extendedModelConfig" in value) || !isAiModelExtendedConfig(value.extendedModelConfig)) {
     return false;
   }
   if (!("resourceDocuments" in value) || !Array.isArray(value.resourceDocuments)) {
@@ -126,19 +89,16 @@ export function isCalculateAffordabilityPayload(value: unknown): value is Calcul
   if (!("systemInstruction" in value) || typeof value.systemInstruction !== "string") {
     return false;
   }
-  if (!("chatApiRequest" in value) || !isRecord(value.chatApiRequest)) {
-    return false;
-  }
   return true;
 }
 
-export function isCalculateAffordabilityDirectReturn(
+export function isCalculateAffordabilityWithinBudgetReturn(
   value: unknown,
-): value is CalculateAffordabilityDirectReturn {
+): value is CalculateAffordabilityWithinBudgetReturn {
   if (!isRecord(value)) {
     return false;
   }
-  if (!("wasCompressed" in value) || value.wasCompressed !== false) {
+  if (!("overBudget" in value) || value.overBudget !== false) {
     return false;
   }
   if (!("maxOutputTokens" in value) || typeof value.maxOutputTokens !== "number") {
@@ -150,28 +110,28 @@ export function isCalculateAffordabilityDirectReturn(
   if ("error" in value || "retriable" in value) {
     return false;
   }
-  if ("chatApiRequest" in value) {
+  if ("finalTargetThreshold" in value || "balanceAfterCompression" in value) {
     return false;
   }
   return true;
 }
 
-export function isCalculateAffordabilityCompressedReturn(
+export function isCalculateAffordabilityOverBudgetReturn(
   value: unknown,
-): value is CalculateAffordabilityCompressedReturn {
+): value is CalculateAffordabilityOverBudgetReturn {
   if (!isRecord(value)) {
     return false;
   }
-  if (!("wasCompressed" in value) || value.wasCompressed !== true) {
-    return false;
-  }
-  if (!("chatApiRequest" in value) || !isRecord(value.chatApiRequest)) {
+  if (!("overBudget" in value) || value.overBudget !== true) {
     return false;
   }
   if (!("resolvedInputTokenCount" in value) || typeof value.resolvedInputTokenCount !== "number") {
     return false;
   }
-  if (!("resourceDocuments" in value) || !Array.isArray(value.resourceDocuments)) {
+  if (!("finalTargetThreshold" in value) || typeof value.finalTargetThreshold !== "number") {
+    return false;
+  }
+  if (!("balanceAfterCompression" in value) || typeof value.balanceAfterCompression !== "number") {
     return false;
   }
   if ("error" in value || "retriable" in value) {
@@ -195,10 +155,10 @@ export function isCalculateAffordabilityErrorReturn(
   if (!("retriable" in value) || typeof value.retriable !== "boolean") {
     return false;
   }
-  if ("wasCompressed" in value || "maxOutputTokens" in value) {
+  if ("overBudget" in value || "maxOutputTokens" in value) {
     return false;
   }
-  if ("chatApiRequest" in value || "resolvedInputTokenCount" in value || "resourceDocuments" in value) {
+  if ("resolvedInputTokenCount" in value || "finalTargetThreshold" in value || "balanceAfterCompression" in value) {
     return false;
   }
   return true;

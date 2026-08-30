@@ -2503,278 +2503,283 @@ Oversized model inputs compress incrementally until the preflight fits: the pare
       * `[✅]`   The integration test runs the real `applyCompressionOverlay` and the real `resolveCompressionSource`, mocking only storage and the Supabase client — a compressed `'document'` artifact returns swapped content and a `'seed_prompt'` artifact triggers no storage read.
       * `[✅]`   All existing gathering, dedup, optional-skip, required-fail and download-error behaviors are preserved.
 
-* `[ ]`   supabase/functions/_shared/utils/vector_utils.ts **[BE] Embedding-free selection: `effectiveScore = candidateTokens × importance`, candidate admission delegated to `resolveCompressionSource`, `getEmbedding`/`embeddingClient`/`cosineSimilarity` and this file's `dialectic_memory` query deleted, and the `ICompressionStrategy` seam retired in favour of `GetSortedCompressionCandidatesFn`**
+* `[✅]`   supabase/functions/_shared/utils/vector_utils.ts **[BE] Embedding-free selection: `effectiveScore = candidateTokens × importance`, candidate admission delegated to `resolveCompressionSource`, `getEmbedding`/`embeddingClient`/`cosineSimilarity` and this file's `dialectic_memory` query deleted, and the `ICompressionStrategy` seam retired in favour of `GetSortedCompressionCandidatesFn`**
 
-   * `[ ]`   `objective`
-      * `[ ]`   `getSortedCompressionCandidates` scores document candidates through `deps.embeddingClient.getEmbedding` and `cosineSimilarity` — one embedding round trip per document plus one for `payload.currentUserPrompt` — and weights them by `relevanceWeight × (1 - similarity)`, coupling compressibility to embedding distance. `CompressionStrategyDeps.dbClient` exists solely to run the `dialectic_memory` query whose result is discarded on the next line. `scoreHistory` assigns a positional `valueScore` with no token weighting, so a long message and a short one at the same position score identically and the scorer cannot rank by what compression would actually recover. Nothing admits or rejects a document: a `seed_prompt` or `header_context` document is scored like any other and can be returned as a compression victim. `CompressionCandidate.sourceType` is `'history' | 'document'`, a vocabulary matching neither the `InputRule['type']` a `ResourceDocument` carries nor the `CompressionSourceType` that `enqueueCompressJobs` requires, so the selected victim's source class cannot be carried to the enqueuer. `CompressionCandidate` is declared in `vector_utils.ts` and imported by `vector_utils.interface.ts`, inverting the interface-to-implementation direction. The `console.log` at line 276 prints every candidate on every invocation.
-      * `[ ]`   Functional goals:
-         * `[ ]`   Replace `CompressionStrategyDeps` / `CompressionStrategyParams` / `CompressionStrategyPayload` / `ICompressionStrategy` with `GetSortedCompressionCandidatesDeps` / `GetSortedCompressionCandidatesParams` / `GetSortedCompressionCandidatesPayload` / `GetSortedCompressionCandidatesFn`, and return the two-arm `GetSortedCompressionCandidatesReturn` in place of a bare `CompressionCandidate[]`.
-         * `[ ]`   Admit or reject each document by one `deps.resolveCompressionSource({}, { document: doc })` call. The compressible arm supplies the candidate's `sourceType` and `documentKey`; the not-compressible arm drops the document before scoring; the error arm is propagated unchanged on this function's error arm.
-         * `[ ]`   Score each admitted document `effectiveScore = candidateTokens × importance`, where `candidateTokens = deps.countTokens({ resourceDocuments: [{ id: doc.id, content: doc.content }] }, params.modelConfig)` and `importance` is the clamped `relevance` of the matching `params.inputsRelevance` rule, defaulting to `1` when no rule matches. Sorted ascending, so the cheapest and least important candidate compresses first.
-         * `[ ]`   Score each compressible history message `effectiveScore = candidateTokens × valueScore`, where `candidateTokens = deps.countTokens({ messages: [message] }, params.modelConfig)`. The positional `valueScore` from oldest (0) to newest (1) and the immutable head and tail anchors are preserved exactly.
-         * `[ ]`   Move `CompressionCandidate` from `vector_utils.ts` into `vector_utils.interface.ts`, type its `sourceType` as `CompressionSourceType`, and add `tokenCount: number`.
-         * `[ ]`   `tokenizer_utils.mock.ts` supplies `mockBoundCountTokens: BoundCountTokensFn`, the real `countTokens` bound to `buildCountTokensDeps()`, so this node's deps builder consumes the home package's mock rather than declaring its own.
-         * `[ ]`   Delete `scoreResourceDocuments`, `cosineSimilarity`, `dotProduct`, `magnitude`, the `dialectic_memory` query block with its `candidateIds` array, and the `console.log` diagnostic.
-      * `[ ]`   Non-functional constraints:
-         * `[ ]`   No file outside `_shared/utils/tokenizer_utils.mock.ts`, `_shared/utils/vector_utils.interface.test.ts`, `_shared/utils/vector_utils.interface.ts`, `_shared/utils/vector_utils.mock.ts`, `_shared/utils/vector_utils.guard.test.ts`, `_shared/utils/vector_utils.guard.ts`, `_shared/utils/vector_utils.test.ts`, `_shared/utils/vector_utils.ts` and `_shared/utils/vector_utils.provides.ts` is edited. Consumers of the retired `ICompressionStrategy` / `CompressionStrategyDeps` / `CompressionStrategyParams` / `CompressionStrategyPayload` — `compressPrompt`, `calculateAffordability`, `processSimpleJob`, `createJobContext` and their test, mock and guard files — are addressed in their own nodes.
-         * `[ ]`   Each goal is proven by a named case in this node's interface test, guard test, or unit test.
+   * `[✅]`   `objective`
+      * `[✅]`   `getSortedCompressionCandidates` scores document candidates through `deps.embeddingClient.getEmbedding` and `cosineSimilarity` — one embedding round trip per document plus one for `payload.currentUserPrompt` — and weights them by `relevanceWeight × (1 - similarity)`, coupling compressibility to embedding distance. `CompressionStrategyDeps.dbClient` exists solely to run the `dialectic_memory` query whose result is discarded on the next line. `scoreHistory` assigns a positional `valueScore` with no token weighting, so a long message and a short one at the same position score identically and the scorer cannot rank by what compression would actually recover. Nothing admits or rejects a document: a `seed_prompt` or `header_context` document is scored like any other and can be returned as a compression victim. `CompressionCandidate.sourceType` is `'history' | 'document'`, a vocabulary matching neither the `InputRule['type']` a `ResourceDocument` carries nor the `CompressionSourceType` that `enqueueCompressJobs` requires, so the selected victim's source class cannot be carried to the enqueuer. `CompressionCandidate` is declared in `vector_utils.ts` and imported by `vector_utils.interface.ts`, inverting the interface-to-implementation direction. The `console.log` at line 276 prints every candidate on every invocation.
+      * `[✅]`   Functional goals:
+         * `[✅]`   Replace `CompressionStrategyDeps` / `CompressionStrategyParams` / `CompressionStrategyPayload` / `ICompressionStrategy` with `GetSortedCompressionCandidatesDeps` / `GetSortedCompressionCandidatesParams` / `GetSortedCompressionCandidatesPayload` / `GetSortedCompressionCandidatesFn`, and return the two-arm `GetSortedCompressionCandidatesReturn` in place of a bare `CompressionCandidate[]`.
+         * `[✅]`   Admit or reject each document by one `deps.resolveCompressionSource({}, { document: doc })` call. The compressible arm supplies the candidate's `sourceType` and `documentKey`; the not-compressible arm drops the document before scoring; the error arm is propagated unchanged on this function's error arm.
+         * `[✅]`   Score each admitted document `effectiveScore = candidateTokens × importance`, where `candidateTokens = deps.countTokens({ resourceDocuments: [{ id: doc.id, content: doc.content }] }, params.modelConfig)` and `importance` is determined by a two-pass lookup: (1) pass one resolves each admitted document against the relevance map and collects the clamped `relevance` values of all matched documents; (2) pass two scores each document — a document whose key matched gets its clamped `relevance`, a document whose key did not match when at least one other document did match gets `avg(matched relevances) / 2` (below the group average, proportional to it, never a fixed floor), and a document when no document in the payload matched any rule gets `1` (a uniform scalar across the array so pure token-cost ordering applies — the value is arithmetically arbitrary as long as it is non-zero and uniform, and `1` makes `effectiveScore = candidateTokens` directly readable). Sorted ascending, so the cheapest and least important candidate compresses first.
+         * `[✅]`   Score each compressible history message `effectiveScore = candidateTokens × valueScore`, where `candidateTokens = deps.countTokens({ messages: [message] }, params.modelConfig)`. The positional `valueScore` from oldest (0) to newest (1) and the immutable head and tail anchors are preserved exactly.
+         * `[✅]`   Move `CompressionCandidate` from `vector_utils.ts` into `vector_utils.interface.ts`, type its `sourceType` as `CompressionSourceType`, and add `tokenCount: number`.
+         * `[✅]`   `tokenizer_utils.mock.ts` supplies `mockBoundCountTokens: BoundCountTokensFn`, the real `countTokens` bound to `buildCountTokensDeps()`, so this node's deps builder consumes the home package's mock rather than declaring its own.
+         * `[✅]`   Delete `scoreResourceDocuments`, `cosineSimilarity`, `dotProduct`, `magnitude`, the `dialectic_memory` query block with its `candidateIds` array, and the `console.log` diagnostic.
+      * `[✅]`   Non-functional constraints:
+         * `[✅]`   No file outside `_shared/utils/tokenizer_utils.mock.ts`, `_shared/utils/vector_utils.interface.test.ts`, `_shared/utils/vector_utils.interface.ts`, `_shared/utils/vector_utils.mock.ts`, `_shared/utils/vector_utils.guard.test.ts`, `_shared/utils/vector_utils.guard.ts`, `_shared/utils/vector_utils.test.ts`, `_shared/utils/vector_utils.ts` and `_shared/utils/vector_utils.provides.ts` is edited. Consumers of the retired `ICompressionStrategy` / `CompressionStrategyDeps` / `CompressionStrategyParams` / `CompressionStrategyPayload` — `compressPrompt`, `calculateAffordability`, `processSimpleJob`, `createJobContext` and their test, mock and guard files — are addressed in their own nodes.
+         * `[✅]`   Each goal is proven by a named case in this node's interface test, guard test, or unit test.
 
-   * `[ ]`   `role`
-      * `[ ]`   Node role is shared-utility scorer: given resource documents and conversation history, delegate admission to `resolveCompressionSource`, compute `candidateTokens × importance` for each admitted document and `candidateTokens × valueScore` for each compressible history message, and return the candidates sorted ascending by `effectiveScore`.
-      * `[ ]`   The role is correct because the function is a scoring and sorting pass over two input arrays using only injected token counting, an injected admission resolver and a static relevance lookup — no DB access, no embedding, no storage, no mutation of its inputs.
-      * `[ ]`   Out-of-scope responsibilities:
-         * `[ ]`   Do not decide which document types are compressible — `resolveCompressionSource` owns that policy.
-         * `[ ]`   Do not gather artifacts — `gatherArtifacts` owns that.
-         * `[ ]`   Do not overlay compressed content — `applyCompressionOverlay` owns that.
-         * `[ ]`   Do not select, enqueue or compress victims — `compressPrompt` and `enqueueCompressJobs` own those.
-         * `[ ]`   Do not count tokens directly — the injected `BoundCountTokensFn` does that.
-         * `[ ]`   Do not update any consumer of the retired interface — each consumer's own node does that.
+   * `[✅]`   `role`
+      * `[✅]`   Node role is shared-utility scorer: given resource documents and conversation history, delegate admission to `resolveCompressionSource`, compute `candidateTokens × importance` for each admitted document and `candidateTokens × valueScore` for each compressible history message, and return the candidates sorted ascending by `effectiveScore`.
+      * `[✅]`   The role is correct because the function is a scoring and sorting pass over two input arrays using only injected token counting, an injected admission resolver and a static relevance lookup — no DB access, no embedding, no storage, no mutation of its inputs.
+      * `[✅]`   Out-of-scope responsibilities:
+         * `[✅]`   Do not decide which document types are compressible — `resolveCompressionSource` owns that policy.
+         * `[✅]`   Do not gather artifacts — `gatherArtifacts` owns that.
+         * `[✅]`   Do not overlay compressed content — `applyCompressionOverlay` owns that.
+         * `[✅]`   Do not select, enqueue or compress victims — `compressPrompt` and `enqueueCompressJobs` own those.
+         * `[✅]`   Do not count tokens directly — the injected `BoundCountTokensFn` does that.
+         * `[✅]`   Do not update any consumer of the retired interface — each consumer's own node does that.
 
-   * `[ ]`   `module`
-      * `[ ]`   Bounded context is `supabase/functions/_shared/utils/vector_utils` — scoring compression candidates by token cost and importance and returning them sorted.
-      * `[ ]`   Inside boundary:
-         * `[ ]`   The per-document `candidateTokens × importance` formula, the per-history `candidateTokens × valueScore` formula, the relevance-map construction and lookup, the ascending sort, and the `scoreHistory` head and tail anchor logic.
-         * `[ ]`   `CompressionCandidate`, `GetSortedCompressionCandidatesDeps`, `GetSortedCompressionCandidatesParams`, `GetSortedCompressionCandidatesPayload`, `GetSortedCompressionCandidatesSuccessReturn`, `GetSortedCompressionCandidatesErrorReturn`, `GetSortedCompressionCandidatesReturn`, `GetSortedCompressionCandidatesFn`, `BoundGetSortedCompressionCandidatesFn`.
-      * `[ ]`   Outside boundary:
-         * `[ ]`   `ResourceDocument`, `ResourceDocuments`, `BoundResolveCompressionSourceFn`, `isCompressibleSourceReturn`, `isResolveCompressionSourceErrorReturn`, owned by `_shared/utils/resolveCompressionSource`.
-         * `[ ]`   `CompressionSourceType`, owned by `_shared/types/file_manager.types.ts`.
-         * `[ ]`   `BoundCountTokensFn`, `CountableChatPayload`, owned by `_shared/types/tokenizer.types.ts`.
-         * `[ ]`   `ILogger`, `Messages`, `AiModelExtendedConfig`, owned by `_shared/types.ts`.
-         * `[ ]`   `RelevanceRule`, owned by `dialectic-service/dialectic.interface.ts`.
-         * `[ ]`   Which document types are compressible and what source class each maps to.
-         * `[ ]`   Who calls this function, who supplies `modelConfig` and the bound collaborators, and what happens after the sorted candidates reach the consumer.
+   * `[✅]`   `module`
+      * `[✅]`   Bounded context is `supabase/functions/_shared/utils/vector_utils` — scoring compression candidates by token cost and importance and returning them sorted.
+      * `[✅]`   Inside boundary:
+         * `[✅]`   The per-document `candidateTokens × importance` formula, the per-history `candidateTokens × valueScore` formula, the relevance-map construction and lookup, the ascending sort, and the `scoreHistory` head and tail anchor logic.
+         * `[✅]`   `CompressionCandidate`, `GetSortedCompressionCandidatesDeps`, `GetSortedCompressionCandidatesParams`, `GetSortedCompressionCandidatesPayload`, `GetSortedCompressionCandidatesSuccessReturn`, `GetSortedCompressionCandidatesErrorReturn`, `GetSortedCompressionCandidatesReturn`, `GetSortedCompressionCandidatesFn`, `BoundGetSortedCompressionCandidatesFn`.
+      * `[✅]`   Outside boundary:
+         * `[✅]`   `ResourceDocument`, `ResourceDocuments`, `BoundResolveCompressionSourceFn`, `isCompressibleSourceReturn`, `isResolveCompressionSourceErrorReturn`, owned by `_shared/utils/resolveCompressionSource`.
+         * `[✅]`   `CompressionSourceType`, owned by `_shared/types/file_manager.types.ts`.
+         * `[✅]`   `BoundCountTokensFn`, `CountableChatPayload`, owned by `_shared/types/tokenizer.types.ts`.
+         * `[✅]`   `ILogger`, `Messages`, `AiModelExtendedConfig`, owned by `_shared/types.ts`.
+         * `[✅]`   `RelevanceRule`, owned by `dialectic-service/dialectic.interface.ts`.
+         * `[✅]`   Which document types are compressible and what source class each maps to.
+         * `[✅]`   Who calls this function, who supplies `modelConfig` and the bound collaborators, and what happens after the sorted candidates reach the consumer.
 
-   * `[ ]`   `deps`
-      * `[ ]`   Surviving providers:
-         * `[ ]`   `_shared/types.ts` → `ILogger` (via `deps.logger`): logging.
-         * `[ ]`   `dialectic-service/dialectic.interface.ts` → `RelevanceRule` (via `params.inputsRelevance`): relevance weights for the importance lookup.
-      * `[ ]`   New providers:
-         * `[ ]`   `_shared/utils/resolveCompressionSource/resolveCompressionSource.provides.ts` → `BoundResolveCompressionSourceFn` (via `deps.resolveCompressionSource`).
-            * `[ ]`   Layer classification: sibling shared-utility module.
-            * `[ ]`   Direction: inbound from a peer module within `_shared/utils`.
-            * `[ ]`   Purpose: admit or reject each document and supply the admitted document's `sourceType` and `documentKey`. Called as `deps.resolveCompressionSource({}, { document: doc })`.
-         * `[ ]`   `_shared/types/tokenizer.types.ts` → `BoundCountTokensFn` (via `deps.countTokens`).
-            * `[ ]`   Layer classification: shared type surface.
-            * `[ ]`   Direction: inbound from `_shared`.
-            * `[ ]`   Purpose: count tokens for each candidate's content to produce `candidateTokens`.
-         * `[ ]`   `_shared/types.ts` → `AiModelExtendedConfig` (via `params.modelConfig`).
-            * `[ ]`   Layer classification: shared type surface.
-            * `[ ]`   Direction: inbound from `_shared`.
-            * `[ ]`   Purpose: the model configuration passed to `deps.countTokens`.
-         * `[ ]`   `_shared/types/file_manager.types.ts` → `CompressionSourceType` (via `CompressionCandidate.sourceType`).
-            * `[ ]`   Layer classification: shared type surface.
-            * `[ ]`   Direction: inbound from `_shared`.
-            * `[ ]`   Purpose: the source-class vocabulary the candidate carries to `enqueueCompressJobs`.
-      * `[ ]`   Removed providers:
-         * `[ ]`   `_shared/services/indexing_service.interface.ts` → `IEmbeddingClient` (was `CompressionStrategyDeps.embeddingClient`). Deleted — no embeddings.
-         * `[ ]`   `npm:@supabase/supabase-js@2` and `types_db.ts` → `SupabaseClient<Database>` (was `CompressionStrategyDeps.dbClient`). Deleted — no `dialectic_memory` query.
-      * `[ ]`   Confirm: no reverse dependencies, no lateral layer violations. `resolveCompressionSource` is a peer within `_shared/utils` consumed through its `provides`; every other dep is inward from `_shared` or `dialectic-service`.
+   * `[✅]`   `deps`
+      * `[✅]`   Surviving providers:
+         * `[✅]`   `_shared/types.ts` → `ILogger` (via `deps.logger`): logging.
+         * `[✅]`   `dialectic-service/dialectic.interface.ts` → `RelevanceRule` (via `params.inputsRelevance`): relevance weights for the importance lookup.
+      * `[✅]`   New providers:
+         * `[✅]`   `_shared/utils/resolveCompressionSource/resolveCompressionSource.provides.ts` → `BoundResolveCompressionSourceFn` (via `deps.resolveCompressionSource`).
+            * `[✅]`   Layer classification: sibling shared-utility module.
+            * `[✅]`   Direction: inbound from a peer module within `_shared/utils`.
+            * `[✅]`   Purpose: admit or reject each document and supply the admitted document's `sourceType` and `documentKey`. Called as `deps.resolveCompressionSource({}, { document: doc })`.
+         * `[✅]`   `_shared/types/tokenizer.types.ts` → `BoundCountTokensFn` (via `deps.countTokens`).
+            * `[✅]`   Layer classification: shared type surface.
+            * `[✅]`   Direction: inbound from `_shared`.
+            * `[✅]`   Purpose: count tokens for each candidate's content to produce `candidateTokens`.
+         * `[✅]`   `_shared/types.ts` → `AiModelExtendedConfig` (via `params.modelConfig`).
+            * `[✅]`   Layer classification: shared type surface.
+            * `[✅]`   Direction: inbound from `_shared`.
+            * `[✅]`   Purpose: the model configuration passed to `deps.countTokens`.
+         * `[✅]`   `_shared/types/file_manager.types.ts` → `CompressionSourceType` (via `CompressionCandidate.sourceType`).
+            * `[✅]`   Layer classification: shared type surface.
+            * `[✅]`   Direction: inbound from `_shared`.
+            * `[✅]`   Purpose: the source-class vocabulary the candidate carries to `enqueueCompressJobs`.
+      * `[✅]`   Removed providers:
+         * `[✅]`   `_shared/services/indexing_service.interface.ts` → `IEmbeddingClient` (was `CompressionStrategyDeps.embeddingClient`). Deleted — no embeddings.
+         * `[✅]`   `npm:@supabase/supabase-js@2` and `types_db.ts` → `SupabaseClient<Database>` (was `CompressionStrategyDeps.dbClient`). Deleted — no `dialectic_memory` query.
+      * `[✅]`   Confirm: no reverse dependencies, no lateral layer violations. `resolveCompressionSource` is a peer within `_shared/utils` consumed through its `provides`; every other dep is inward from `_shared` or `dialectic-service`.
 
-   * `[ ]`   `context_slice`
-      * `[ ]`   `GetSortedCompressionCandidatesDeps`: `{ logger: ILogger; countTokens: BoundCountTokensFn; resolveCompressionSource: BoundResolveCompressionSourceFn }`.
-      * `[ ]`   `GetSortedCompressionCandidatesParams`: `{ inputsRelevance?: RelevanceRule[]; modelConfig: AiModelExtendedConfig }`.
-      * `[ ]`   `GetSortedCompressionCandidatesPayload`: `{ documents: ResourceDocuments; history: Messages[] }`.
+   * `[✅]`   `context_slice`
+      * `[✅]`   `GetSortedCompressionCandidatesDeps`: `{ logger: ILogger; countTokens: BoundCountTokensFn; resolveCompressionSource: BoundResolveCompressionSourceFn }`.
+      * `[✅]`   `GetSortedCompressionCandidatesParams`: `{ inputsRelevance?: RelevanceRule[]; modelConfig: AiModelExtendedConfig }`.
+      * `[✅]`   `GetSortedCompressionCandidatesPayload`: `{ documents: ResourceDocuments; history: Messages[] }`.
 
-   * `[ ]`   _shared/utils/`vector_utils.interface.test.ts`
-      * `[ ]`   Create this file.
-      * `[ ]`   Prove `CompressionCandidate`'s required key surface: `const _candidateKeys: Record<keyof CompressionCandidate, true> = { id: true, content: true, sourceType: true, originalIndex: true, valueScore: true, effectiveScore: true, tokenCount: true };`.
-      * `[ ]`   Prove `CompressionCandidate['sourceType']` admits every `CompressionSourceType` member by typed assignment of `'contribution'`, `'resource'`, `'feedback'` and `'history'`.
-      * `[ ]`   Prove `GetSortedCompressionCandidatesDeps`'s required key surface: `const _depsKeys: Record<keyof GetSortedCompressionCandidatesDeps, true> = { logger: true, countTokens: true, resolveCompressionSource: true };`.
-      * `[ ]`   Prove `GetSortedCompressionCandidatesParams`'s required key surface: `const _paramsKeys: Record<keyof GetSortedCompressionCandidatesParams, true> = { inputsRelevance: true, modelConfig: true };`.
-      * `[ ]`   Prove `GetSortedCompressionCandidatesPayload`'s required key surface: `const _payloadKeys: Record<keyof GetSortedCompressionCandidatesPayload, true> = { documents: true, history: true };`.
-      * `[ ]`   Prove `GetSortedCompressionCandidatesSuccessReturn`'s required key surface, and its membership in `GetSortedCompressionCandidatesReturn` by typed assignment.
-      * `[ ]`   Prove `GetSortedCompressionCandidatesErrorReturn`'s required key surface, and its membership in `GetSortedCompressionCandidatesReturn` by typed assignment.
-      * `[ ]`   Prove `GetSortedCompressionCandidatesFn`'s declared return in the async form: `const returned: ReturnType<GetSortedCompressionCandidatesFn> = Promise.resolve(success);` then `const declared: Promise<GetSortedCompressionCandidatesReturn> = returned;`, and the same for the error arm.
-      * `[ ]`   Prove `BoundGetSortedCompressionCandidatesFn`'s declared return in the same async form.
-      * `[ ]`   Imports are type-only and every symbol imported is consumed by a proof block; no reference to `CompressionStrategyDeps`, `CompressionStrategyParams`, `CompressionStrategyPayload`, `ICompressionStrategy`, `IEmbeddingClient` or `currentUserPrompt`.
+   * `[✅]`   _shared/utils/`vector_utils.interface.test.ts`
+      * `[✅]`   Create this file.
+      * `[✅]`   Prove `CompressionCandidate`'s required key surface: `const _candidateKeys: Record<keyof CompressionCandidate, true> = { id: true, content: true, sourceType: true, originalIndex: true, valueScore: true, effectiveScore: true, tokenCount: true };`.
+      * `[✅]`   Prove `CompressionCandidate['sourceType']` admits every `CompressionSourceType` member by typed assignment of `'contribution'`, `'resource'`, `'feedback'` and `'history'`.
+      * `[✅]`   Prove `GetSortedCompressionCandidatesDeps`'s required key surface: `const _depsKeys: Record<keyof GetSortedCompressionCandidatesDeps, true> = { logger: true, countTokens: true, resolveCompressionSource: true };`.
+      * `[✅]`   Prove `GetSortedCompressionCandidatesParams`'s required key surface: `const _paramsKeys: Record<keyof GetSortedCompressionCandidatesParams, true> = { inputsRelevance: true, modelConfig: true };`.
+      * `[✅]`   Prove `GetSortedCompressionCandidatesPayload`'s required key surface: `const _payloadKeys: Record<keyof GetSortedCompressionCandidatesPayload, true> = { documents: true, history: true };`.
+      * `[✅]`   Prove `GetSortedCompressionCandidatesSuccessReturn`'s required key surface, and its membership in `GetSortedCompressionCandidatesReturn` by typed assignment.
+      * `[✅]`   Prove `GetSortedCompressionCandidatesErrorReturn`'s required key surface, and its membership in `GetSortedCompressionCandidatesReturn` by typed assignment.
+      * `[✅]`   Prove `GetSortedCompressionCandidatesFn`'s declared return in the async form: `const returned: ReturnType<GetSortedCompressionCandidatesFn> = Promise.resolve(success);` then `const declared: Promise<GetSortedCompressionCandidatesReturn> = returned;`, and the same for the error arm.
+      * `[✅]`   Prove `BoundGetSortedCompressionCandidatesFn`'s declared return in the same async form.
+      * `[✅]`   Imports are type-only and every symbol imported is consumed by a proof block; no reference to `CompressionStrategyDeps`, `CompressionStrategyParams`, `CompressionStrategyPayload`, `ICompressionStrategy`, `IEmbeddingClient` or `currentUserPrompt`.
 
-   * `[ ]`   _shared/utils/`vector_utils.interface.ts`
-      * `[ ]`   Delete `CompressionStrategyDeps`, `CompressionStrategyParams`, `CompressionStrategyPayload` and `ICompressionStrategy`.
-      * `[ ]`   Delete the `SupabaseClient` import from `npm:@supabase/supabase-js@2`.
-      * `[ ]`   Delete the `Database` import from `../../types_db.ts`.
-      * `[ ]`   Delete the `IEmbeddingClient` import from `../services/indexing_service.interface.ts`.
-      * `[ ]`   Delete the `CompressionCandidate` import from `./vector_utils.ts`.
-      * `[ ]`   Delete the `ResourceDocuments` import from `./resolveCompressionSource/resolveCompressionSource.interface.ts`.
-      * `[ ]`   Add the `ILogger`, `Messages` and `AiModelExtendedConfig` type imports from `../types.ts`.
-      * `[ ]`   Add the `BoundCountTokensFn` type import from `../types/tokenizer.types.ts`.
-      * `[ ]`   Add the `CompressionSourceType` type import from `../types/file_manager.types.ts`.
-      * `[ ]`   Add the `ResourceDocuments` and `BoundResolveCompressionSourceFn` type imports from `./resolveCompressionSource/resolveCompressionSource.provides.ts`.
-      * `[ ]`   Add the `RelevanceRule` type import from `../../dialectic-service/dialectic.interface.ts`.
-      * `[ ]`   Declare `CompressionCandidate`: `{ id: string; content: string; sourceType: CompressionSourceType; originalIndex: number; valueScore: number; effectiveScore: number; tokenCount: number }`.
-      * `[ ]`   Declare `GetSortedCompressionCandidatesDeps`: `{ logger: ILogger; countTokens: BoundCountTokensFn; resolveCompressionSource: BoundResolveCompressionSourceFn }`.
-      * `[ ]`   Declare `GetSortedCompressionCandidatesParams`: `{ inputsRelevance?: RelevanceRule[]; modelConfig: AiModelExtendedConfig }`.
-      * `[ ]`   Declare `GetSortedCompressionCandidatesPayload`: `{ documents: ResourceDocuments; history: Messages[] }`.
-      * `[ ]`   Declare `GetSortedCompressionCandidatesSuccessReturn`: `{ candidates: CompressionCandidate[] }`.
-      * `[ ]`   Declare `GetSortedCompressionCandidatesErrorReturn`: `{ error: Error; retriable: boolean }`.
-      * `[ ]`   Declare `GetSortedCompressionCandidatesReturn`: `GetSortedCompressionCandidatesSuccessReturn | GetSortedCompressionCandidatesErrorReturn`.
-      * `[ ]`   Declare `GetSortedCompressionCandidatesFn`: `(deps: GetSortedCompressionCandidatesDeps, params: GetSortedCompressionCandidatesParams, payload: GetSortedCompressionCandidatesPayload) => Promise<GetSortedCompressionCandidatesReturn>`.
-      * `[ ]`   Declare `BoundGetSortedCompressionCandidatesFn`: `(params: GetSortedCompressionCandidatesParams, payload: GetSortedCompressionCandidatesPayload) => Promise<GetSortedCompressionCandidatesReturn>`.
+   * `[✅]`   _shared/utils/`vector_utils.interface.ts`
+      * `[✅]`   Delete `CompressionStrategyDeps`, `CompressionStrategyParams`, `CompressionStrategyPayload` and `ICompressionStrategy`.
+      * `[✅]`   Delete the `SupabaseClient` import from `npm:@supabase/supabase-js@2`.
+      * `[✅]`   Delete the `Database` import from `../../types_db.ts`.
+      * `[✅]`   Delete the `IEmbeddingClient` import from `../services/indexing_service.interface.ts`.
+      * `[✅]`   Delete the `CompressionCandidate` import from `./vector_utils.ts`.
+      * `[✅]`   Delete the `ResourceDocuments` import from `./resolveCompressionSource/resolveCompressionSource.interface.ts`.
+      * `[✅]`   Add the `ILogger`, `Messages` and `AiModelExtendedConfig` type imports from `../types.ts`.
+      * `[✅]`   Add the `BoundCountTokensFn` type import from `../types/tokenizer.types.ts`.
+      * `[✅]`   Add the `CompressionSourceType` type import from `../types/file_manager.types.ts`.
+      * `[✅]`   Add the `ResourceDocuments` and `BoundResolveCompressionSourceFn` type imports from `./resolveCompressionSource/resolveCompressionSource.provides.ts`.
+      * `[✅]`   Add the `RelevanceRule` type import from `../../dialectic-service/dialectic.interface.ts`.
+      * `[✅]`   Declare `CompressionCandidate`: `{ id: string; content: string; sourceType: CompressionSourceType; originalIndex: number; valueScore: number; effectiveScore: number; tokenCount: number }`.
+      * `[✅]`   Declare `GetSortedCompressionCandidatesDeps`: `{ logger: ILogger; countTokens: BoundCountTokensFn; resolveCompressionSource: BoundResolveCompressionSourceFn }`.
+      * `[✅]`   Declare `GetSortedCompressionCandidatesParams`: `{ inputsRelevance?: RelevanceRule[]; modelConfig: AiModelExtendedConfig }`.
+      * `[✅]`   Declare `GetSortedCompressionCandidatesPayload`: `{ documents: ResourceDocuments; history: Messages[] }`.
+      * `[✅]`   Declare `GetSortedCompressionCandidatesSuccessReturn`: `{ candidates: CompressionCandidate[] }`.
+      * `[✅]`   Declare `GetSortedCompressionCandidatesErrorReturn`: `{ error: Error; retriable: boolean }`.
+      * `[✅]`   Declare `GetSortedCompressionCandidatesReturn`: `GetSortedCompressionCandidatesSuccessReturn | GetSortedCompressionCandidatesErrorReturn`.
+      * `[✅]`   Declare `GetSortedCompressionCandidatesFn`: `(deps: GetSortedCompressionCandidatesDeps, params: GetSortedCompressionCandidatesParams, payload: GetSortedCompressionCandidatesPayload) => Promise<GetSortedCompressionCandidatesReturn>`.
+      * `[✅]`   Declare `BoundGetSortedCompressionCandidatesFn`: `(params: GetSortedCompressionCandidatesParams, payload: GetSortedCompressionCandidatesPayload) => Promise<GetSortedCompressionCandidatesReturn>`.
 
-   * `[ ]`   `vector_utils.interaction.spec`
-      * `[ ]`   Branch: empty documents and empty history.
-         * `[ ]`   Condition: `payload.documents.length === 0 && payload.history.length === 0`.
-         * `[ ]`   Decision: none.
-         * `[ ]`   Dependency call: none.
-         * `[ ]`   Outcome: `GetSortedCompressionCandidatesSuccessReturn` with `candidates: []`.
-      * `[ ]`   Branch: document rejected by the admission resolver.
-         * `[ ]`   Condition: `deps.resolveCompressionSource` returns the not-compressible arm for that document.
-         * `[ ]`   Decision: `!isCompressibleSourceReturn(resolved)` and `!isResolveCompressionSourceErrorReturn(resolved)`.
-         * `[ ]`   Dependency call: `deps.resolveCompressionSource({}, { document: doc })`.
-         * `[ ]`   Outcome: the document is dropped before scoring, `deps.countTokens` is not called for it, and it does not appear in the returned candidates.
-      * `[ ]`   Branch: admission resolver returns its error arm.
-         * `[ ]`   Condition: `deps.resolveCompressionSource` returns the error arm for any document.
-         * `[ ]`   Decision: `isResolveCompressionSourceErrorReturn(resolved)`.
-         * `[ ]`   Dependency call: `deps.resolveCompressionSource({}, { document: doc })`.
-         * `[ ]`   Outcome: `GetSortedCompressionCandidatesErrorReturn` carrying that arm's `error` and `retriable` unchanged; no further document is resolved or scored.
-      * `[ ]`   Branch: document admitted and scored.
-         * `[ ]`   Condition: `deps.resolveCompressionSource` returns the compressible arm for that document.
-         * `[ ]`   Decision: `isCompressibleSourceReturn(resolved)`.
-         * `[ ]`   Dependency call: `deps.countTokens({ resourceDocuments: [{ id: doc.id, content: doc.content }] }, params.modelConfig)`.
-         * `[ ]`   Outcome: a `CompressionCandidate` with `id` and `content` from the document, `sourceType` from `resolved.sourceType`, `originalIndex` set to the document's index in `payload.documents`, `tokenCount` set to `candidateTokens`, `valueScore` set to `importance`, and `effectiveScore = candidateTokens × importance`.
-      * `[ ]`   Branch: importance lookup — stage-specific rule match.
-         * `[ ]`   Condition: `params.inputsRelevance` contains a rule whose `slug` is set and whose `` `${rule.type}:${rule.document_key}:${rule.slug}` `` key equals the document's `` `${doc.type}:${doc.document_key}:${doc.stage_slug}` ``.
-         * `[ ]`   Decision: read that key from the relevance map.
-         * `[ ]`   Dependency call: none.
-         * `[ ]`   Outcome: `importance` is that rule's `relevance` clamped by `Math.max(0, Math.min(1, rule.relevance))`, with duplicate keys resolved to the maximum.
-      * `[ ]`   Branch: importance lookup — general rule match.
-         * `[ ]`   Condition: no stage-specific key matches and `params.inputsRelevance` contains a rule whose `` `${rule.type}:${rule.document_key}` `` key equals the document's `` `${doc.type}:${doc.document_key}` ``.
-         * `[ ]`   Decision: read that key from the relevance map.
-         * `[ ]`   Dependency call: none.
-         * `[ ]`   Outcome: `importance` is that rule's clamped `relevance`.
-      * `[ ]`   Branch: importance lookup — no rule match.
-         * `[ ]`   Condition: `params.inputsRelevance` is absent, empty, or contains no rule matching either key.
-         * `[ ]`   Decision: no map entry found.
-         * `[ ]`   Dependency call: none.
-         * `[ ]`   Outcome: `importance = 1`, so `effectiveScore = candidateTokens`.
-      * `[ ]`   Branch: history message in the compressible middle.
-         * `[ ]`   Condition: the message index is at or after the immutable head count and before `history.length - 4`.
-         * `[ ]`   Decision: the index is a candidate index.
-         * `[ ]`   Dependency call: `deps.countTokens({ messages: [message] }, params.modelConfig)`.
-         * `[ ]`   Outcome: a `CompressionCandidate` with `sourceType: 'history'`, `originalIndex` set to the message's index in `payload.history`, `tokenCount` set to `candidateTokens`, `valueScore` set to the positional score, and `effectiveScore = candidateTokens × valueScore`.
-      * `[ ]`   Branch: history message in the immutable head or tail.
-         * `[ ]`   Condition: the message index is below the immutable head count (3 when `history[0].role === 'system'`, otherwise 2) or at or after `history.length - 4`.
-         * `[ ]`   Decision: the index is not a candidate index.
-         * `[ ]`   Dependency call: none.
-         * `[ ]`   Outcome: the message is not scored, `deps.countTokens` is not called for it, and it does not appear in the returned candidates.
-      * `[ ]`   Branch: history too short to yield candidates.
-         * `[ ]`   Condition: `history.length <= immutableHeadCount + 4`.
-         * `[ ]`   Decision: no candidate indices.
-         * `[ ]`   Dependency call: none.
-         * `[ ]`   Outcome: no history candidate is produced.
-      * `[ ]`   Branch: final sort and return.
-         * `[ ]`   Condition: every document has been resolved and every candidate scored.
-         * `[ ]`   Decision: sort ascending by `effectiveScore`.
-         * `[ ]`   Dependency call: none.
-         * `[ ]`   Outcome: `GetSortedCompressionCandidatesSuccessReturn` whose `candidates` are in ascending `effectiveScore` order; neither `payload.documents` nor `payload.history` is mutated.
+   * `[✅]`   `vector_utils.interaction.spec`
+      * `[✅]`   Branch: empty documents and empty history.
+         * `[✅]`   Condition: `payload.documents.length === 0 && payload.history.length === 0`.
+         * `[✅]`   Decision: none.
+         * `[✅]`   Dependency call: none.
+         * `[✅]`   Outcome: `GetSortedCompressionCandidatesSuccessReturn` with `candidates: []`.
+      * `[✅]`   Branch: document rejected by the admission resolver.
+         * `[✅]`   Condition: `deps.resolveCompressionSource` returns the not-compressible arm for that document.
+         * `[✅]`   Decision: `!isCompressibleSourceReturn(resolved)` and `!isResolveCompressionSourceErrorReturn(resolved)`.
+         * `[✅]`   Dependency call: `deps.resolveCompressionSource({}, { document: doc })`.
+         * `[✅]`   Outcome: the document is dropped before scoring, `deps.countTokens` is not called for it, and it does not appear in the returned candidates.
+      * `[✅]`   Branch: admission resolver returns its error arm.
+         * `[✅]`   Condition: `deps.resolveCompressionSource` returns the error arm for any document.
+         * `[✅]`   Decision: `isResolveCompressionSourceErrorReturn(resolved)`.
+         * `[✅]`   Dependency call: `deps.resolveCompressionSource({}, { document: doc })`.
+         * `[✅]`   Outcome: `GetSortedCompressionCandidatesErrorReturn` carrying that arm's `error` and `retriable` unchanged; no further document is resolved or scored.
+      * `[✅]`   Branch: document admitted and scored.
+         * `[✅]`   Condition: `deps.resolveCompressionSource` returns the compressible arm for that document.
+         * `[✅]`   Decision: `isCompressibleSourceReturn(resolved)`.
+         * `[✅]`   Dependency call: `deps.countTokens({ resourceDocuments: [{ id: doc.id, content: doc.content }] }, params.modelConfig)`.
+         * `[✅]`   Outcome: a `CompressionCandidate` with `id` and `content` from the document, `sourceType` from `resolved.sourceType`, `originalIndex` set to the document's index in `payload.documents`, `tokenCount` set to `candidateTokens`, `valueScore` set to `importance`, and `effectiveScore = candidateTokens × importance`. `importance` is determined by a two-pass lookup: pass one collects clamped `relevance` values from all matched documents; pass two scores each document per the three importance branches below.
+      * `[✅]`   Branch: importance lookup — stage-specific rule match.
+         * `[✅]`   Condition: `params.inputsRelevance` contains a rule whose `slug` is set and whose `` `${rule.type}:${rule.document_key}:${rule.slug}` `` key equals the document's `` `${doc.type}:${doc.document_key}:${doc.stage_slug}` ``.
+         * `[✅]`   Decision: read that key from the relevance map.
+         * `[✅]`   Dependency call: none.
+         * `[✅]`   Outcome: `importance` is that rule's `relevance` clamped by `Math.max(0, Math.min(1, rule.relevance))`, with duplicate keys resolved to the maximum.
+      * `[✅]`   Branch: importance lookup — general rule match.
+         * `[✅]`   Condition: no stage-specific key matches and `params.inputsRelevance` contains a rule whose `` `${rule.type}:${rule.document_key}` `` key equals the document's `` `${doc.type}:${doc.document_key}` ``.
+         * `[✅]`   Decision: read that key from the relevance map.
+         * `[✅]`   Dependency call: none.
+         * `[✅]`   Outcome: `importance` is that rule's clamped `relevance`.
+      * `[✅]`   Branch: importance lookup — no rule match for this document, at least one other document matched.
+         * `[✅]`   Condition: neither the stage-specific key nor the general key for this document is in the relevance map, and pass one collected at least one matched `relevance` value from another document.
+         * `[✅]`   Decision: compute `importance = avg(matched relevances) / 2`.
+         * `[✅]`   Dependency call: none.
+         * `[✅]`   Outcome: `importance` is below the group average of matched relevances, proportional to it, and never a fixed floor — so an unrated document compresses before the average rated document but not as aggressively as the lowest-rated document. `effectiveScore = candidateTokens × (avg(matched relevances) / 2)`.
+      * `[✅]`   Branch: importance lookup — no rule match for any document in the payload.
+         * `[✅]`   Condition: `params.inputsRelevance` is absent, empty, or contains no rule matching either key for any admitted document, so pass one collected zero matched `relevance` values.
+         * `[✅]`   Decision: `importance = 1` as a uniform scalar across all documents.
+         * `[✅]`   Dependency call: none.
+         * `[✅]`   Outcome: `importance = 1` for every document, so `effectiveScore = candidateTokens` and ranking is by token cost alone. The value `1` is not a default — it is a uniform non-zero multiplier that preserves pure token-cost ordering; any uniform non-zero value produces the same ordering, and `1` makes `effectiveScore = candidateTokens` directly readable.
+      * `[✅]`   Branch: history message in the compressible middle.
+         * `[✅]`   Condition: the message index is at or after the immutable head count and before `history.length - 4`.
+         * `[✅]`   Decision: the index is a candidate index.
+         * `[✅]`   Dependency call: `deps.countTokens({ messages: [message] }, params.modelConfig)`.
+         * `[✅]`   Outcome: a `CompressionCandidate` with `sourceType: 'history'`, `originalIndex` set to the message's index in `payload.history`, `tokenCount` set to `candidateTokens`, `valueScore` set to the positional score, and `effectiveScore = candidateTokens × valueScore`.
+      * `[✅]`   Branch: history message in the immutable head or tail.
+         * `[✅]`   Condition: the message index is below the immutable head count (3 when `history[0].role === 'system'`, otherwise 2) or at or after `history.length - 4`.
+         * `[✅]`   Decision: the index is not a candidate index.
+         * `[✅]`   Dependency call: none.
+         * `[✅]`   Outcome: the message is not scored, `deps.countTokens` is not called for it, and it does not appear in the returned candidates.
+      * `[✅]`   Branch: history too short to yield candidates.
+         * `[✅]`   Condition: `history.length <= immutableHeadCount + 4`.
+         * `[✅]`   Decision: no candidate indices.
+         * `[✅]`   Dependency call: none.
+         * `[✅]`   Outcome: no history candidate is produced.
+      * `[✅]`   Branch: final sort and return.
+         * `[✅]`   Condition: every document has been resolved and every candidate scored.
+         * `[✅]`   Decision: sort ascending by `effectiveScore`.
+         * `[✅]`   Dependency call: none.
+         * `[✅]`   Outcome: `GetSortedCompressionCandidatesSuccessReturn` whose `candidates` are in ascending `effectiveScore` order; neither `payload.documents` nor `payload.history` is mutated.
 
-   * `[ ]`   _shared/utils/`tokenizer_utils.mock.ts`
-      * `[ ]`   Add the value import of `countTokens` from `./tokenizer_utils.ts`.
-      * `[ ]`   Add the type import of `BoundCountTokensFn` from `../types/tokenizer.types.ts`.
-      * `[ ]`   Add `export const mockBoundCountTokens: BoundCountTokensFn = (payload, modelConfig) => countTokens(buildCountTokensDeps(), payload, modelConfig);`, declared below `buildCountTokensDeps`. It takes no options bag and records no calls.
+   * `[✅]`   _shared/utils/`tokenizer_utils.mock.ts`
+      * `[✅]`   Add the value import of `countTokens` from `./tokenizer_utils.ts`.
+      * `[✅]`   Add the type import of `BoundCountTokensFn` from `../types/tokenizer.types.ts`.
+      * `[✅]`   Add `export const mockBoundCountTokens: BoundCountTokensFn = (payload, modelConfig) => countTokens(buildCountTokensDeps(), payload, modelConfig);`, declared below `buildCountTokensDeps`. It takes no options bag and records no calls.
 
-   * `[ ]`   _shared/utils/`vector_utils.mock.ts`
-      * `[ ]`   Delete `mockCompressionStrategy` and its `ICompressionStrategy` import.
-      * `[ ]`   Add the `CompressionCandidate` and `GetSortedCompressionCandidates*` type imports from `./vector_utils.interface.ts`.
-      * `[ ]`   Add the `MockLogger` import from `../logger.mock.ts`.
-      * `[ ]`   Add the `mockBoundCountTokens` import from `./tokenizer_utils.mock.ts`.
-      * `[ ]`   Add the `buildExtendedModelConfig` import from `../ai_service/ai_provider.mock.ts`.
-      * `[ ]`   Add the `buildResourceDocument` and `mockBoundResolveCompressionSource` imports from `./resolveCompressionSource/resolveCompressionSource.provides.ts`.
-      * `[ ]`   Update `buildCompressionCandidate`: `sourceType` default `'resource'`, `tokenCount` default `10`.
-      * `[ ]`   Update `CompressionCandidateCorruptions` to key off the extended `CompressionCandidate`.
-      * `[ ]`   Add `GetSortedCompressionCandidatesDepsOverrides`, `buildGetSortedCompressionCandidatesDeps`, `GetSortedCompressionCandidatesDepsCorruptions`, `invalidateGetSortedCompressionCandidatesDeps`. Defaults: `logger` is `new MockLogger()`; `countTokens` is `mockBoundCountTokens`; `resolveCompressionSource` is `mockBoundResolveCompressionSource`.
-      * `[ ]`   Add `GetSortedCompressionCandidatesParamsOverrides`, `buildGetSortedCompressionCandidatesParams`, `GetSortedCompressionCandidatesParamsCorruptions`, `invalidateGetSortedCompressionCandidatesParams`. Defaults: `inputsRelevance: []`, `modelConfig: buildExtendedModelConfig()`.
-      * `[ ]`   Add `GetSortedCompressionCandidatesPayloadOverrides`, `buildGetSortedCompressionCandidatesPayload`, `GetSortedCompressionCandidatesPayloadCorruptions`, `invalidateGetSortedCompressionCandidatesPayload`. Defaults: `documents: []`, `history: []`.
-      * `[ ]`   Add `GetSortedCompressionCandidatesSuccessReturnOverrides`, `buildGetSortedCompressionCandidatesSuccessReturn`, `GetSortedCompressionCandidatesSuccessReturnCorruptions`, `invalidateGetSortedCompressionCandidatesSuccessReturn`. Default: `candidates: []`.
-      * `[ ]`   Add `GetSortedCompressionCandidatesErrorReturnOverrides`, `buildGetSortedCompressionCandidatesErrorReturn`, `GetSortedCompressionCandidatesErrorReturnCorruptions`, `invalidateGetSortedCompressionCandidatesErrorReturn`. Defaults: `error: new Error('getSortedCompressionCandidates failed')`, `retriable: false`.
-      * `[ ]`   Add `mockGetSortedCompressionCandidates: GetSortedCompressionCandidatesFn` and `mockBoundGetSortedCompressionCandidates: BoundGetSortedCompressionCandidatesFn`, each returning `buildGetSortedCompressionCandidatesSuccessReturn()`. Neither takes an options bag and neither records calls.
+   * `[✅]`   _shared/utils/`vector_utils.mock.ts`
+      * `[✅]`   Delete `mockCompressionStrategy` and its `ICompressionStrategy` import.
+      * `[✅]`   Add the `CompressionCandidate` and `GetSortedCompressionCandidates*` type imports from `./vector_utils.interface.ts`.
+      * `[✅]`   Add the `MockLogger` import from `../logger.mock.ts`.
+      * `[✅]`   Add the `mockBoundCountTokens` import from `./tokenizer_utils.mock.ts`.
+      * `[✅]`   Add the `buildExtendedModelConfig` import from `../ai_service/ai_provider.mock.ts`.
+      * `[✅]`   Add the `buildResourceDocument` and `mockBoundResolveCompressionSource` imports from `./resolveCompressionSource/resolveCompressionSource.provides.ts`.
+      * `[✅]`   Update `buildCompressionCandidate`: `sourceType` default `'resource'`, `tokenCount` default `10`.
+      * `[✅]`   Update `CompressionCandidateCorruptions` to key off the extended `CompressionCandidate`.
+      * `[✅]`   Add `GetSortedCompressionCandidatesDepsOverrides`, `buildGetSortedCompressionCandidatesDeps`, `GetSortedCompressionCandidatesDepsCorruptions`, `invalidateGetSortedCompressionCandidatesDeps`. Defaults: `logger` is `new MockLogger()`; `countTokens` is `mockBoundCountTokens`; `resolveCompressionSource` is `mockBoundResolveCompressionSource`.
+      * `[✅]`   Add `GetSortedCompressionCandidatesParamsOverrides`, `buildGetSortedCompressionCandidatesParams`, `GetSortedCompressionCandidatesParamsCorruptions`, `invalidateGetSortedCompressionCandidatesParams`. Defaults: `inputsRelevance: []`, `modelConfig: buildExtendedModelConfig()`.
+      * `[✅]`   Add `GetSortedCompressionCandidatesPayloadOverrides`, `buildGetSortedCompressionCandidatesPayload`, `GetSortedCompressionCandidatesPayloadCorruptions`, `invalidateGetSortedCompressionCandidatesPayload`. Defaults: `documents: []`, `history: []`.
+      * `[✅]`   Add `GetSortedCompressionCandidatesSuccessReturnOverrides`, `buildGetSortedCompressionCandidatesSuccessReturn`, `GetSortedCompressionCandidatesSuccessReturnCorruptions`, `invalidateGetSortedCompressionCandidatesSuccessReturn`. Default: `candidates: []`.
+      * `[✅]`   Add `GetSortedCompressionCandidatesErrorReturnOverrides`, `buildGetSortedCompressionCandidatesErrorReturn`, `GetSortedCompressionCandidatesErrorReturnCorruptions`, `invalidateGetSortedCompressionCandidatesErrorReturn`. Defaults: `error: new Error('getSortedCompressionCandidates failed')`, `retriable: false`.
+      * `[✅]`   Add `mockGetSortedCompressionCandidates: GetSortedCompressionCandidatesFn` and `mockBoundGetSortedCompressionCandidates: BoundGetSortedCompressionCandidatesFn`, each returning `buildGetSortedCompressionCandidatesSuccessReturn()`. Neither takes an options bag and neither records calls.
 
-   * `[ ]`   _shared/utils/`vector_utils.guard.test.ts`
-      * `[ ]`   Create this file.
-      * `[ ]`   `isCompressionCandidate`: accepts `buildCompressionCandidate()`; accepts valid overrides; rejects `null`, `undefined`, a number, a string and an array; rejects each property corrupted in turn through `invalidateCompressionCandidate`; rejects each required property omitted in turn by rest-destructuring `buildCompressionCandidate()`.
-      * `[ ]`   `isGetSortedCompressionCandidatesDeps`: the same six-case checklist over `buildGetSortedCompressionCandidatesDeps` and `invalidateGetSortedCompressionCandidatesDeps`.
-      * `[ ]`   `isGetSortedCompressionCandidatesParams`: the same checklist over its builder and invalidator, plus a case proving the optional `inputsRelevance` is accepted when absent and rejected when present and corrupted.
-      * `[ ]`   `isGetSortedCompressionCandidatesPayload`: the same checklist over its builder and invalidator.
-      * `[ ]`   `isGetSortedCompressionCandidatesSuccessReturn`: the same checklist, plus a case proving `buildGetSortedCompressionCandidatesErrorReturn()` is rejected.
-      * `[ ]`   `isGetSortedCompressionCandidatesErrorReturn`: the same checklist, plus a case proving `buildGetSortedCompressionCandidatesSuccessReturn()` is rejected.
+   * `[✅]`   _shared/utils/`vector_utils.guard.test.ts`
+      * `[✅]`   Create this file.
+      * `[✅]`   `isCompressionCandidate`: accepts `buildCompressionCandidate()`; accepts valid overrides; rejects `null`, `undefined`, a number, a string and an array; rejects each property corrupted in turn through `invalidateCompressionCandidate`; rejects each required property omitted in turn by rest-destructuring `buildCompressionCandidate()`.
+      * `[✅]`   `isGetSortedCompressionCandidatesDeps`: the same six-case checklist over `buildGetSortedCompressionCandidatesDeps` and `invalidateGetSortedCompressionCandidatesDeps`.
+      * `[✅]`   `isGetSortedCompressionCandidatesParams`: the same checklist over its builder and invalidator, plus a case proving the optional `inputsRelevance` is accepted when absent and rejected when present and corrupted.
+      * `[✅]`   `isGetSortedCompressionCandidatesPayload`: the same checklist over its builder and invalidator.
+      * `[✅]`   `isGetSortedCompressionCandidatesSuccessReturn`: the same checklist, plus a case proving `buildGetSortedCompressionCandidatesErrorReturn()` is rejected.
+      * `[✅]`   `isGetSortedCompressionCandidatesErrorReturn`: the same checklist, plus a case proving `buildGetSortedCompressionCandidatesSuccessReturn()` is rejected.
 
-   * `[ ]`   _shared/utils/`vector_utils.guard.ts`
-      * `[ ]`   Create this file.
-      * `[ ]`   Implement `isCompressionCandidate`, checking every property of `CompressionCandidate` and delegating `sourceType` to `isCompressionSourceType` imported from `../utils/type-guards/type_guards.file_manager.ts`.
-      * `[ ]`   Implement `isGetSortedCompressionCandidatesDeps`, checking `logger` by method presence and `countTokens` and `resolveCompressionSource` by `typeof === 'function'`.
-      * `[ ]`   Implement `isGetSortedCompressionCandidatesParams`, checking `modelConfig` with `isAiModelExtendedConfig` imported from `./type_guards.ts` and accepting `inputsRelevance` when absent or an array.
-      * `[ ]`   Implement `isGetSortedCompressionCandidatesPayload`, checking `documents` is an array whose every element satisfies `isResourceDocument` imported from `./resolveCompressionSource/resolveCompressionSource.provides.ts`.
-      * `[ ]`   `isGetSortedCompressionCandidatesPayload` also checks `history` is an array whose every element satisfies `isMessages` imported from `./type-guards/type_guards.chat.ts`.
-      * `[ ]`   Implement `isGetSortedCompressionCandidatesSuccessReturn`, checking `candidates` is an array whose every element satisfies `isCompressionCandidate`, and rejecting a value carrying `error`.
-      * `[ ]`   Implement `isGetSortedCompressionCandidatesErrorReturn`, checking `error instanceof Error` and `typeof retriable === 'boolean'`, and rejecting a value carrying `candidates`.
+   * `[✅]`   _shared/utils/`vector_utils.guard.ts`
+      * `[✅]`   Create this file.
+      * `[✅]`   Implement `isCompressionCandidate`, checking every property of `CompressionCandidate` and delegating `sourceType` to `isCompressionSourceType` imported from `../utils/type-guards/type_guards.file_manager.ts`.
+      * `[✅]`   Implement `isGetSortedCompressionCandidatesDeps`, checking `logger` by method presence and `countTokens` and `resolveCompressionSource` by `typeof === 'function'`.
+      * `[✅]`   Implement `isGetSortedCompressionCandidatesParams`, checking `modelConfig` with `isAiModelExtendedConfig` imported from `./type_guards.ts` and accepting `inputsRelevance` when absent or an array.
+      * `[✅]`   Implement `isGetSortedCompressionCandidatesPayload`, checking `documents` is an array whose every element satisfies `isResourceDocument` imported from `./resolveCompressionSource/resolveCompressionSource.provides.ts`.
+      * `[✅]`   `isGetSortedCompressionCandidatesPayload` also checks `history` is an array whose every element satisfies `isMessages` imported from `./type-guards/type_guards.chat.ts`.
+      * `[✅]`   Implement `isGetSortedCompressionCandidatesSuccessReturn`, checking `candidates` is an array whose every element satisfies `isCompressionCandidate`, and rejecting a value carrying `error`.
+      * `[✅]`   Implement `isGetSortedCompressionCandidatesErrorReturn`, checking `error instanceof Error` and `typeof retriable === 'boolean'`, and rejecting a value carrying `candidates`.
 
-   * `[ ]`   _shared/utils/`vector_utils.test.ts`
-      * `[ ]`   Delete the `cosineSimilarity` tests, the `scoreResourceDocuments` tests, the `mockEmbeddingClient` and `mockSourceDocument` fixtures, every `ICompressionStrategy` and `CompressionStrategyDeps` reference, and the `dialectic_memory` mock setup in every `getSortedCompressionCandidates` test.
-      * `[ ]`   Remove imports: `cosineSimilarity`, `scoreResourceDocuments`, `ICompressionStrategy`, `IEmbeddingClient`, `EmbeddingResponse`, `SourceDocument`, `SupabaseClient`, `Database`, `createMockSupabaseClient`, `stub`.
-      * `[ ]`   Add the `getSortedCompressionCandidates` and `scoreHistory` imports from `./vector_utils.ts`.
-      * `[ ]`   Add the builder imports from `./vector_utils.mock.ts`.
-      * `[ ]`   Add the `buildResourceDocument` and `buildCompressibleSourceReturn` imports from `./resolveCompressionSource/resolveCompressionSource.provides.ts`.
-      * `[ ]`   Rewrite the existing `scoreHistory` blocks in place to pass `deps` and `params` and to assert `effectiveScore === candidateTokens * valueScore`; the head and tail anchor assertions are preserved.
-      * `[ ]`   A document the resolver rejects is absent from `candidates` while an admitted document in the same call is present, and `countTokens` is not called for the rejected one.
-      * `[ ]`   The resolver's error arm returns `GetSortedCompressionCandidatesErrorReturn` carrying that same `error` reference and `retriable`.
-      * `[ ]`   An admitted document carries the `sourceType` the resolver returned, asserted against a resolver override returning `'feedback'` where the builder default would give `'resource'`.
-      * `[ ]`   An admitted document's `effectiveScore` equals `candidateTokens * importance` for a matching general rule, with `countTokens` overridden to a content-sensitive counter and `relevance` stated as an independent literal.
-      * `[ ]`   A stage-specific rule wins over a general rule for the same `document_key` and `type`, asserted by the two rules carrying different `relevance` values.
-      * `[ ]`   A document with no matching rule scores `effectiveScore === candidateTokens`.
-      * `[ ]`   A `relevance` above 1 and a `relevance` below 0 are clamped to 1 and 0.
-      * `[ ]`   Two rules on the same key resolve to the higher `relevance`.
-      * `[ ]`   `originalIndex` on an admitted document is its index in `payload.documents`, asserted with a rejected document ahead of it in the array.
-      * `[ ]`   A mixed payload of documents and history returns candidates in ascending `effectiveScore` order, arranged so document and history candidates interleave.
-      * `[ ]`   Empty `documents` and empty `history` return `{ candidates: [] }` and call neither collaborator.
-      * `[ ]`   Neither `payload.documents` nor `payload.history` is mutated, asserted by deep equality against a snapshot taken before the call.
+   * `[✅]`   _shared/utils/`vector_utils.test.ts`
+      * `[✅]`   Delete the `cosineSimilarity` tests, the `scoreResourceDocuments` tests, the `mockEmbeddingClient` and `mockSourceDocument` fixtures, every `ICompressionStrategy` and `CompressionStrategyDeps` reference, and the `dialectic_memory` mock setup in every `getSortedCompressionCandidates` test.
+      * `[✅]`   Remove imports: `cosineSimilarity`, `scoreResourceDocuments`, `ICompressionStrategy`, `IEmbeddingClient`, `EmbeddingResponse`, `SourceDocument`, `SupabaseClient`, `Database`, `createMockSupabaseClient`, `stub`.
+      * `[✅]`   Add the `getSortedCompressionCandidates` and `scoreHistory` imports from `./vector_utils.ts`.
+      * `[✅]`   Add the builder imports from `./vector_utils.mock.ts`.
+      * `[✅]`   Add the `buildResourceDocument` and `buildCompressibleSourceReturn` imports from `./resolveCompressionSource/resolveCompressionSource.provides.ts`.
+      * `[✅]`   Rewrite the existing `scoreHistory` blocks in place to pass `deps` and `params` and to assert `effectiveScore === candidateTokens * valueScore`; the head and tail anchor assertions are preserved.
+      * `[✅]`   A document the resolver rejects is absent from `candidates` while an admitted document in the same call is present, and `countTokens` is not called for the rejected one.
+      * `[✅]`   The resolver's error arm returns `GetSortedCompressionCandidatesErrorReturn` carrying that same `error` reference and `retriable`.
+      * `[✅]`   An admitted document carries the `sourceType` the resolver returned, asserted against a resolver override returning `'feedback'` where the builder default would give `'resource'`.
+      * `[✅]`   An admitted document's `effectiveScore` equals `candidateTokens * importance` for a matching general rule, with `countTokens` overridden to a content-sensitive counter and `relevance` stated as an independent literal.
+      * `[✅]`   A stage-specific rule wins over a general rule for the same `document_key` and `type`, asserted by the two rules carrying different `relevance` values.
+      * `[✅]`   A document with no matching rule scores `effectiveScore === candidateTokens`.
+      * `[✅]`   A `relevance` above 1 and a `relevance` below 0 are clamped to 1 and 0.
+      * `[✅]`   Two rules on the same key resolve to the higher `relevance`.
+      * `[✅]`   `originalIndex` on an admitted document is its index in `payload.documents`, asserted with a rejected document ahead of it in the array.
+      * `[✅]`   A mixed payload of documents and history returns candidates in ascending `effectiveScore` order, arranged so document and history candidates interleave.
+      * `[✅]`   Empty `documents` and empty `history` return `{ candidates: [] }` and call neither collaborator.
+      * `[✅]`   Neither `payload.documents` nor `payload.history` is mutated, asserted by deep equality against a snapshot taken before the call.
 
-   * `[ ]`   `construction`
-      * `[ ]`   `getSortedCompressionCandidates` remains a stateless exported async function typed `GetSortedCompressionCandidatesFn`. `countTokens` and `resolveCompressionSource` arrive already bound through `deps`; this file binds nothing and constructs no dependency. No constructor, no class, no factory.
+   * `[✅]`   `construction`
+      * `[✅]`   `getSortedCompressionCandidates` remains a stateless exported async function typed `GetSortedCompressionCandidatesFn`. `countTokens` and `resolveCompressionSource` arrive already bound through `deps`; this file binds nothing and constructs no dependency. No constructor, no class, no factory.
 
-   * `[ ]`   _shared/utils/`vector_utils.ts`
-      * `[ ]`   Delete `dotProduct`, `magnitude`, `cosineSimilarity` and `scoreResourceDocuments`.
-      * `[ ]`   Delete the `CompressionCandidate` declaration; import it from `./vector_utils.interface.ts` instead.
-      * `[ ]`   Delete the `CompressionStrategyDeps`, `CompressionStrategyParams` and `CompressionStrategyPayload` imports from `./vector_utils.interface.ts`.
-      * `[ ]`   Delete the `ResourceDocument` and `ResourceDocuments` imports from `../types.ts`.
-      * `[ ]`   Delete the `candidateIds` array, the `dialectic_memory` query block with its error log, and the `console.log` diagnostic.
-      * `[ ]`   Add the `GetSortedCompressionCandidates*` and `CompressionCandidate` type imports from `./vector_utils.interface.ts`.
-      * `[ ]`   Add the `isCompressibleSourceReturn` and `isResolveCompressionSourceErrorReturn` imports from `./resolveCompressionSource/resolveCompressionSource.provides.ts`.
-      * `[ ]`   Retype `getSortedCompressionCandidates` as `GetSortedCompressionCandidatesFn`.
-      * `[ ]`   Build the relevance map exactly as it is built now — stage-specific key when `rule.slug` is present, general key otherwise, values clamped by `Math.max(0, Math.min(1, rule.relevance))` and duplicate keys resolved to the maximum.
-      * `[ ]`   Resolve each entry of `payload.documents` with `deps.resolveCompressionSource({}, { document: doc })`, returning this function's error arm on the resolver's error arm, skipping the document on the not-compressible arm, and scoring it on the compressible arm per the interaction spec.
-      * `[ ]`   Retype `scoreHistory` as `(deps: GetSortedCompressionCandidatesDeps, params: GetSortedCompressionCandidatesParams, history: Messages[]) => CompressionCandidate[]`, preserving its immutable head and tail arithmetic and its positional `valueScore`, and setting `tokenCount` and `effectiveScore` from `deps.countTokens({ messages: [message] }, params.modelConfig)`.
-      * `[ ]`   Concatenate the document and history candidates, sort ascending by `effectiveScore`, and return `GetSortedCompressionCandidatesSuccessReturn`.
-      * `[ ]`   Introduce no undeclared dependencies; bypass no guards or contracts.
+   * `[✅]`   _shared/utils/`vector_utils.ts`
+      * `[✅]`   Delete `dotProduct`, `magnitude`, `cosineSimilarity` and `scoreResourceDocuments`.
+      * `[✅]`   Delete the `CompressionCandidate` declaration; import it from `./vector_utils.interface.ts` instead.
+      * `[✅]`   Delete the `CompressionStrategyDeps`, `CompressionStrategyParams` and `CompressionStrategyPayload` imports from `./vector_utils.interface.ts`.
+      * `[✅]`   Delete the `ResourceDocument` and `ResourceDocuments` imports from `../types.ts`.
+      * `[✅]`   Delete the `candidateIds` array, the `dialectic_memory` query block with its error log, and the `console.log` diagnostic.
+      * `[✅]`   Add the `GetSortedCompressionCandidates*` and `CompressionCandidate` type imports from `./vector_utils.interface.ts`.
+      * `[✅]`   Add the `isCompressibleSourceReturn` and `isResolveCompressionSourceErrorReturn` imports from `./resolveCompressionSource/resolveCompressionSource.provides.ts`.
+      * `[✅]`   Retype `getSortedCompressionCandidates` as `GetSortedCompressionCandidatesFn`.
+      * `[✅]`   Build the relevance map exactly as it is built now — stage-specific key when `rule.slug` is present, general key otherwise, values clamped by `Math.max(0, Math.min(1, rule.relevance))` and duplicate keys resolved to the maximum.
+      * `[✅]`   Resolve each entry of `payload.documents` with `deps.resolveCompressionSource({}, { document: doc })`, returning this function's error arm on the resolver's error arm, skipping the document on the not-compressible arm, and scoring it on the compressible arm per the interaction spec.
+      * `[✅]`   Retype `scoreHistory` as `(deps: GetSortedCompressionCandidatesDeps, params: GetSortedCompressionCandidatesParams, history: Messages[]) => CompressionCandidate[]`, preserving its immutable head and tail arithmetic and its positional `valueScore`, and setting `tokenCount` and `effectiveScore` from `deps.countTokens({ messages: [message] }, params.modelConfig)`.
+      * `[✅]`   Concatenate the document and history candidates, sort ascending by `effectiveScore`, and return `GetSortedCompressionCandidatesSuccessReturn`.
+      * `[✅]`   Introduce no undeclared dependencies; bypass no guards or contracts.
 
-   * `[ ]`   _shared/utils/`vector_utils.provides.ts`
-      * `[ ]`   Create this file.
-      * `[ ]`   `export * from "./vector_utils.ts";`
-      * `[ ]`   `export * from "./vector_utils.interface.ts";`
-      * `[ ]`   `export * from "./vector_utils.guard.ts";`
-      * `[ ]`   `export * from "./vector_utils.mock.ts";`
+   * `[✅]`   _shared/utils/`vector_utils.provides.ts`
+      * `[✅]`   Create this file.
+      * `[✅]`   `export * from "./vector_utils.ts";`
+      * `[✅]`   `export * from "./vector_utils.interface.ts";`
+      * `[✅]`   `export * from "./vector_utils.guard.ts";`
+      * `[✅]`   `export * from "./vector_utils.mock.ts";`
 
-   * `[ ]`   `directionality`
-      * `[ ]`   Layer: shared utility module (`_shared/utils/vector_utils`). Deps are inward — `ILogger`, `Messages`, `AiModelExtendedConfig` from `_shared/types.ts`; `BoundCountTokensFn` from `_shared/types/tokenizer.types.ts`; `CompressionSourceType` from `_shared/types/file_manager.types.ts`; `RelevanceRule` from `dialectic-service/dialectic.interface.ts` — plus one peer, `_shared/utils/resolveCompressionSource`, consumed through its `provides`. Provides outward to `compressPrompt`.
-      * `[ ]`   Removed deps: `IEmbeddingClient` from `_shared/services/indexing_service.interface.ts`; `SupabaseClient<Database>` from `npm:@supabase/supabase-js@2` and `types_db.ts`.
-      * `[ ]`   No reverse dependencies, no lateral layer violations, no cycles: `vector_utils.interface.ts` no longer imports from `vector_utils.ts`.
+   * `[✅]`   `directionality`
+      * `[✅]`   Layer: shared utility module (`_shared/utils/vector_utils`). Deps are inward — `ILogger`, `Messages`, `AiModelExtendedConfig` from `_shared/types.ts`; `BoundCountTokensFn` from `_shared/types/tokenizer.types.ts`; `CompressionSourceType` from `_shared/types/file_manager.types.ts`; `RelevanceRule` from `dialectic-service/dialectic.interface.ts` — plus one peer, `_shared/utils/resolveCompressionSource`, consumed through its `provides`. Provides outward to `compressPrompt`.
+      * `[✅]`   Removed deps: `IEmbeddingClient` from `_shared/services/indexing_service.interface.ts`; `SupabaseClient<Database>` from `npm:@supabase/supabase-js@2` and `types_db.ts`.
+      * `[✅]`   No reverse dependencies, no lateral layer violations, no cycles: `vector_utils.interface.ts` no longer imports from `vector_utils.ts`.
 
-   * `[ ]`   `requirements`
-      * `[ ]`   `CompressionStrategyDeps`, `CompressionStrategyParams`, `CompressionStrategyPayload` and `ICompressionStrategy` no longer exist, and `GetSortedCompressionCandidatesFn` types the exported function.
-      * `[ ]`   `GetSortedCompressionCandidatesDeps` carries `logger`, `countTokens` and `resolveCompressionSource`, and no `dbClient` or `embeddingClient`.
-      * `[ ]`   `GetSortedCompressionCandidatesPayload` carries `documents` and `history`, and no `currentUserPrompt`.
-      * `[ ]`   `CompressionCandidate` is declared in `vector_utils.interface.ts`, its `sourceType` is `CompressionSourceType`, and it carries `tokenCount: number`.
-      * `[ ]`   A document the resolver rejects is absent from the returned candidates and is never passed to `deps.countTokens`.
-      * `[ ]`   The resolver's error arm is returned as this function's error arm with its `error` and `retriable` unchanged.
-      * `[ ]`   An admitted document's candidate carries the `sourceType` the resolver returned.
-      * `[ ]`   An admitted document's `effectiveScore` is `candidateTokens × importance`, with `importance` the clamped `relevance` of the matching stage-specific rule, else the matching general rule, else `1`.
-      * `[ ]`   A compressible history candidate's `effectiveScore` is `candidateTokens × valueScore`, and the immutable head and tail anchors are preserved.
-      * `[ ]`   `originalIndex` is the candidate's index in the payload array it came from.
-      * `[ ]`   Candidates are returned sorted ascending by `effectiveScore`.
-      * `[ ]`   `cosineSimilarity`, `dotProduct`, `magnitude`, `scoreResourceDocuments`, the `dialectic_memory` query and the `console.log` diagnostic are deleted.
-      * `[ ]`   Neither payload array is mutated.
-      * `[ ]`   `tokenizer_utils.mock.ts` exports `mockBoundCountTokens` typed `BoundCountTokensFn`, and two payloads of different length return different counts through it.
-      * `[ ]`   `buildGetSortedCompressionCandidatesDeps` defaults `countTokens` to `mockBoundCountTokens` and declares no local `BoundCountTokensFn` of its own.
-      * `[ ]`   `mockCompressionStrategy` no longer exists; `mockGetSortedCompressionCandidates` and `mockBoundGetSortedCompressionCandidates` take no options bag and record no calls.
-      * `[ ]`   Every symbol `vector_utils.interface.ts` exports is proven by a block in `vector_utils.interface.test.ts`, and every owned type has a guard in `vector_utils.guard.ts` proven by its case checklist.
+   * `[✅]`   `requirements`
+      * `[✅]`   `CompressionStrategyDeps`, `CompressionStrategyParams`, `CompressionStrategyPayload` and `ICompressionStrategy` no longer exist, and `GetSortedCompressionCandidatesFn` types the exported function.
+      * `[✅]`   `GetSortedCompressionCandidatesDeps` carries `logger`, `countTokens` and `resolveCompressionSource`, and no `dbClient` or `embeddingClient`.
+      * `[✅]`   `GetSortedCompressionCandidatesPayload` carries `documents` and `history`, and no `currentUserPrompt`.
+      * `[✅]`   `CompressionCandidate` is declared in `vector_utils.interface.ts`, its `sourceType` is `CompressionSourceType`, and it carries `tokenCount: number`.
+      * `[✅]`   A document the resolver rejects is absent from the returned candidates and is never passed to `deps.countTokens`.
+      * `[✅]`   The resolver's error arm is returned as this function's error arm with its `error` and `retriable` unchanged.
+      * `[✅]`   An admitted document's candidate carries the `sourceType` the resolver returned.
+      * `[✅]`   An admitted document's `effectiveScore` is `candidateTokens × importance`, with `importance` the clamped `relevance` of the matching stage-specific rule, else the matching general rule, else `1`.
+      * `[✅]`   A compressible history candidate's `effectiveScore` is `candidateTokens × valueScore`, and the immutable head and tail anchors are preserved.
+      * `[✅]`   `originalIndex` is the candidate's index in the payload array it came from.
+      * `[✅]`   Candidates are returned sorted ascending by `effectiveScore`.
+      * `[✅]`   `cosineSimilarity`, `dotProduct`, `magnitude`, `scoreResourceDocuments`, the `dialectic_memory` query and the `console.log` diagnostic are deleted.
+      * `[✅]`   Neither payload array is mutated.
+      * `[✅]`   `tokenizer_utils.mock.ts` exports `mockBoundCountTokens` typed `BoundCountTokensFn`, and two payloads of different length return different counts through it.
+      * `[✅]`   `buildGetSortedCompressionCandidatesDeps` defaults `countTokens` to `mockBoundCountTokens` and declares no local `BoundCountTokensFn` of its own.
+      * `[✅]`   `mockCompressionStrategy` no longer exists; `mockGetSortedCompressionCandidates` and `mockBoundGetSortedCompressionCandidates` take no options bag and record no calls.
+      * `[✅]`   Every symbol `vector_utils.interface.ts` exports is proven by a block in `vector_utils.interface.test.ts`, and every owned type has a guard in `vector_utils.guard.ts` proven by its case checklist.
 
 # To-Do List
 

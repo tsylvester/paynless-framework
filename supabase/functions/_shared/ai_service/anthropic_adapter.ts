@@ -4,7 +4,7 @@ import type { MessageParam } from 'npm:@anthropic-ai/sdk/resources/messages';
 import type { AdapterResponsePayload, AdapterStreamChunk, ChatApiRequest, ILogger, ProviderModelInfo, AiModelExtendedConfig } from '../types.ts';
 import type { Tables, Database } from '../../types_db.ts';
 import { isJson, isAiModelExtendedConfig } from '../utils/type_guards.ts';
-import { isResourceDocument } from '../utils/type-guards/type_guards.chat.ts';
+import { isResourceDocument } from '../utils/resolveCompressionSource/resolveCompressionSource.guard.ts';
 
 
 // Anthropic API constants

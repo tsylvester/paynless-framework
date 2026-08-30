@@ -13,7 +13,8 @@ import {
   isSupabaseClientShape,
 } from "../../_shared/utils/type-guards/type_guards.common.ts";
 import { isDialecticStageSlug } from "../../_shared/utils/type-guards/type_guards.file_manager.ts";
-import { isDialecticBaseJobPayload, dialecticBaseJobPayloadAllowedKeys } from "../../_shared/utils/type-guards/type_guards.dialectic.ts";
+import { isDialecticBaseJobPayload, dialecticBaseJobPayloadAllowedKeys, isDialecticJobRow } from "../../_shared/utils/type-guards/type_guards.dialectic.ts";
+import { isAiModelExtendedConfig } from "../../_shared/utils/type-guards/type_guards.chat.ts";
 import {
   CompressJobEnqueueError,
   CompressJobValidationError,
@@ -22,6 +23,9 @@ import {
   enqueueCompressJobsParams,
   enqueueCompressJobsPayload,
   enqueueCompressJobsSuccessReturn,
+  enqueueCompressJobsVictim,
+  CompressJobValidationErrorConstructorParams,
+  CompressJobEnqueueErrorConstructorParams,
   type DialecticCompressJobPayload,
 } from "./enqueueCompressJobs.interface.ts";
 
@@ -82,50 +86,62 @@ export function isDialecticCompressJobPayload(value: unknown): value is Dialecti
   return true;
 }
 
-export function isenqueueCompressJobsPayload(value: unknown): value is enqueueCompressJobsPayload {
-  if (!isRecord(value) || !("victim" in value)) {
+export function isenqueueCompressJobsVictim(value: unknown): value is enqueueCompressJobsVictim {
+  if (!isRecord(value)) {
     return false;
   }
-  const victim = value.victim;
-  if (!isRecord(victim)) {
+  if (!("mode" in value) || !("content" in value) || !("sourceType" in value)) {
     return false;
   }
-  if (!("mode" in victim) || !("content" in victim) || !("sourceType" in victim)) {
+  if (!isCompressionMode(value.mode)) {
     return false;
   }
-  if (!isCompressionMode(victim.mode)) {
+  if (!isNonEmptyString(value.content)) {
     return false;
   }
-  if (!isNonEmptyString(victim.content)) {
-    return false;
-  }
-  if (!isCompressionSourceType(victim.sourceType)) {
+  if (!isCompressionSourceType(value.sourceType)) {
     return false;
   }
 
-  if (victim.sourceType === "contribution" || victim.sourceType === "resource" || victim.sourceType === "feedback") {
-    if (!isFileType(victim.documentKey)) {
+  if (value.sourceType === "contribution" || value.sourceType === "resource" || value.sourceType === "feedback") {
+    if (!isFileType(value.documentKey)) {
       return false;
     }
-  } else if (victim.sourceType === "history") {
-    if (!isNonEmptyString(victim.sourceId)) {
+  } else if (value.sourceType === "history") {
+    if (!isNonEmptyString(value.sourceId)) {
       return false;
     }
-    if (!isCompressionHistoryRole(victim.role)) {
+    if (!isCompressionHistoryRole(value.role)) {
       return false;
     }
   }
 
-  if (victim.mode === "json") {
+  if (value.mode === "json") {
     if (
-      !isFileType(victim.documentKey) ||
-      !isModelContributionFileType(victim.docType) ||
-      !isDialecticStageSlug(victim.sourceStageSlug)
+      !isFileType(value.documentKey) ||
+      !isModelContributionFileType(value.docType) ||
+      !isDialecticStageSlug(value.sourceStageSlug)
     ) {
       return false;
     }
   }
 
+  return true;
+}
+
+export function isenqueueCompressJobsPayload(value: unknown): value is enqueueCompressJobsPayload {
+  if (!isRecord(value)) {
+    return false;
+  }
+  if (!("victim" in value) || !isenqueueCompressJobsVictim(value.victim)) {
+    return false;
+  }
+  if (!("parentJob" in value) || !isDialecticJobRow(value.parentJob)) {
+    return false;
+  }
+  if (!("modelConfig" in value) || !isAiModelExtendedConfig(value.modelConfig)) {
+    return false;
+  }
   return true;
 }
 
@@ -160,85 +176,38 @@ export function isenqueueCompressJobsParams(value: unknown): value is enqueueCom
   if (!isRecord(value)) {
     return false;
   }
-  const requiredKeys: (keyof enqueueCompressJobsParams)[] = [
-    "dbClient",
-    "parentJob",
-    "sessionId",
-    "projectId",
-    "stageSlug",
-    "output_type",
-    "iterationNumber",
-    "modelId",
-    "modelSlug",
-    "userJwt",
-    "walletId",
-    "modelConfig",
-    "tokenizerDeps",
-  ];
-  for (const key of requiredKeys) {
-    if (!(key in value)) {
-      return false;
-    }
-  }
-
-  if (!isSupabaseClientShape(value.dbClient)) {
+  if (!("dbClient" in value) || !isSupabaseClientShape(value.dbClient)) {
     return false;
   }
-
-  const parentJob = value.parentJob;
-  if (
-    !isRecord(parentJob) ||
-    !isNonEmptyString(parentJob.id) ||
-    !isNonEmptyString(parentJob.user_id) ||
-    typeof parentJob.is_test_job !== "boolean"
-  ) {
-    return false;
-  }
-
-  if (!isNonEmptyString(value.sessionId)) {
-    return false;
-  }
-  if (!isNonEmptyString(value.projectId)) {
-    return false;
-  }
-  if (!isDialecticStageSlug(value.stageSlug)) {
-    return false;
-  }
-  if (!isModelContributionFileType(value.output_type)) {
-    return false;
-  }
-  if (!isNonNegativeInteger(value.iterationNumber)) {
-    return false;
-  }
-  if (!isNonEmptyString(value.modelId)) {
-    return false;
-  }
-  if (!isNonEmptyString(value.modelSlug)) {
-    return false;
-  }
-  if (!isNonEmptyString(value.userJwt)) {
-    return false;
-  }
-  if (!isNonEmptyString(value.walletId)) {
-    return false;
-  }
-  if (!isRecord(value.modelConfig)) {
-    return false;
-  }
-
-  const tokenizerDeps = value.tokenizerDeps;
-  if (
-    !isRecord(tokenizerDeps) ||
-    typeof tokenizerDeps.getEncoding !== "function" ||
-    typeof tokenizerDeps.countTokensAnthropic !== "function" ||
-    !isRecord(tokenizerDeps.logger) ||
-    typeof tokenizerDeps.logger.warn !== "function" ||
-    typeof tokenizerDeps.logger.error !== "function"
-  ) {
-    return false;
-  }
-
   return true;
+}
+
+export function isCompressJobValidationErrorConstructorParams(value: unknown): value is CompressJobValidationErrorConstructorParams {
+  if (!isRecord(value)) {
+    return false;
+  }
+  if (!("message" in value) || !isNonEmptyString(value.message)) {
+    return false;
+  }
+  return true;
+}
+
+export function isCompressJobValidationError(value: unknown): value is CompressJobValidationError {
+  return value instanceof CompressJobValidationError;
+}
+
+export function isCompressJobEnqueueErrorConstructorParams(value: unknown): value is CompressJobEnqueueErrorConstructorParams {
+  if (!isRecord(value)) {
+    return false;
+  }
+  if (!("message" in value) || !isNonEmptyString(value.message)) {
+    return false;
+  }
+  return true;
+}
+
+export function isCompressJobEnqueueError(value: unknown): value is CompressJobEnqueueError {
+  return value instanceof CompressJobEnqueueError;
 }
 
 export function isenqueueCompressJobsSuccessReturn(value: unknown): value is enqueueCompressJobsSuccessReturn {

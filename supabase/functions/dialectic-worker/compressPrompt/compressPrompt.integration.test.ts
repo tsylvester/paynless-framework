@@ -1,9 +1,9 @@
 /**
- * Integration tests for `compressPrompt`: real `compressPrompt`, real `countTokens` with
- * `buildTokenizerDeps` from `compressPrompt.mock.ts`, real `TokenWalletService`, real admin
- * `SupabaseClient` for `dialectic_memory` batch lookup.
- * Boundary-only fakes: `MockRagService` (external RAG), `EmbeddingClient` built from
- * `getMockAiProviderAdapter` (external provider API).
+ * Integration tests for `compressPrompt`: real `compressPrompt`, real `countTokens`,
+ * real `constructStoragePath`, real `downloadFromStorage` against real Supabase storage.
+ * Boundary-only fakes: `getSortedCompressionCandidates`, `enqueueCompressJobs`,
+ * `resolveCompressionSource` — the scorer, enqueue and resolver collaborators this
+ * function dispatches to but does not own.
  */
 import {
     afterAll,
@@ -34,30 +34,50 @@ import {
   } from "./compressPrompt.interface.ts";
   import {
     isCompressPromptErrorReturn,
-    isCompressPromptSuccessReturn,
-    } from "./compressPrompt.guard.ts";
+    isCompressPromptFitsReturn,
+    isCompressPromptPendingReturn,
+  } from "./compressPrompt.guard.ts";
   import { countTokens } from "../../_shared/utils/tokenizer_utils.ts";
-  import type { CountTokensDeps } from "../../_shared/types/tokenizer.types.ts";
-  import { UserTokenWalletService } from "../../_shared/services/tokenwallet/client/userTokenWalletService.ts";
-  import { AdminTokenWalletService } from "../../_shared/services/tokenwallet/admin/adminTokenWalletService.ts";
-  import { MockRagService } from "../../_shared/services/rag_service.mock.ts";
-  import { EmbeddingClient } from "../../_shared/services/indexing_service.ts";
-  import { getMockAiProviderAdapter } from "../../_shared/ai_service/ai_provider.mock.ts";
-  import type { AiModelExtendedConfig, ChatApiRequest, ResourceDocuments } from "../../_shared/types.ts";
-  import { DialecticStageSlug, FileType, type PathContext } from "../../_shared/types/file_manager.types.ts";
   import { constructStoragePath } from "../../_shared/utils/path_constructor.ts";
+  import { downloadFromStorage } from "../../_shared/supabase_storage_utils.ts";
   import { ContextWindowError } from "../../_shared/utils/errors.ts";
   import { buildExtendedModelConfig } from "../../_shared/ai_service/ai_provider.mock.ts";
   import { createProject } from "../../dialectic-service/createProject.ts";
   import { startSession } from "../../dialectic-service/startSession.ts";
   import type {
     DialecticProject,
-    RelevanceRule,
     StartSessionPayload,
   } from "../../dialectic-service/dialectic.interface.ts";
-  import type { ICompressionStrategy } from "../../_shared/utils/vector_utils.interface.ts";
-  import type { CompressionCandidate } from "../../_shared/utils/vector_utils.ts";
-  import { buildTokenizerDeps } from "./compressPrompt.mock.ts";
+  import type { DialecticJobRow } from "../../dialectic-service/dialectic.interface.ts";
+  import {
+    buildDialecticJobRow,
+    buildDialecticExecuteJobPayload,
+  } from "../../_shared/dialectic.mock.ts";
+  import { isJson } from "../../_shared/utils/type-guards/type_guards.common.ts";
+  import {
+    buildResourceDocument,
+  } from "../../_shared/utils/resolveCompressionSource/resolveCompressionSource.provides.ts";
+  import type { ResourceDocuments } from "../../_shared/utils/resolveCompressionSource/resolveCompressionSource.interface.ts";
+  import type {
+    BoundGetSortedCompressionCandidatesFn,
+  } from "../../_shared/utils/vector_utils/vector_utils.provides.ts";
+  import type {
+    BoundenqueueCompressJobsFn,
+  } from "../enqueueCompressJobs/enqueueCompressJobs.provides.ts";
+  import type {
+    BoundResolveCompressionSourceFn,
+  } from "../../_shared/utils/resolveCompressionSource/resolveCompressionSource.provides.ts";
+  import {
+    buildCompressionCandidate,
+    buildGetSortedCompressionCandidatesSuccessReturn,
+  } from "../../_shared/utils/vector_utils/vector_utils.provides.ts";
+  import {
+    buildenqueueCompressJobsSuccessReturn,
+  } from "../enqueueCompressJobs/enqueueCompressJobs.provides.ts";
+  import {
+    buildCompressibleSourceReturn,
+  } from "../../_shared/utils/resolveCompressionSource/resolveCompressionSource.provides.ts";
+  import { FileType } from "../../_shared/types/file_manager.types.ts";
 
   describe("compressPrompt integration (real DB client, real tokenizer, boundary mocks)", () => {
     let adminClient: SupabaseClient<Database>;
@@ -66,38 +86,26 @@ import {
     let testProject: DialecticProject;
     let testSessionId: string;
     let testModelId: string;
-    let tokenizerDeps: CountTokensDeps;
-    let userWalletService: UserTokenWalletService;
-    let adminWalletService: AdminTokenWalletService;
-    let testWalletId: string;
-  
+
     beforeAll(async () => {
       initializeTestDeps();
       adminClient = initializeSupabaseAdminClient();
       setSharedAdminClient(adminClient);
-      tokenizerDeps = buildTokenizerDeps();
-  
+
       const { userId, jwt, userClient } = await coreCreateAndSetupTestUser();
       const { data: { user } } = await userClient.auth.getUser();
       assertExists(user, "Test user could not be created");
       testUser = user;
       testUserId = userId;
       void jwt;
-  
+
       await coreEnsureTestUserAndWallet(testUserId, 1_000_000, "local");
-      userWalletService = new UserTokenWalletService(adminClient);
-      adminWalletService = new AdminTokenWalletService(adminClient);
-      const walletForSuite = await userWalletService.getWalletForContext(testUserId);
-      if (walletForSuite === null) {
-        throw new Error("Personal wallet must exist after coreEnsureTestUserAndWallet");
-      }
-      testWalletId = walletForSuite.walletId;
-  
+
       const formData = new FormData();
       formData.append("projectName", "compressPrompt integration project");
       formData.append("initialUserPromptText", "integration seed prompt");
       formData.append("idempotencyKey", crypto.randomUUID());
-  
+
       const { data: domain, error: domainError } = await adminClient
         .from("dialectic_domains")
         .select("id")
@@ -128,7 +136,7 @@ import {
         throw new Error(`createProject failed: ${projectResult.error?.message}`);
       }
       testProject = projectResult.data;
-  
+
       const { data: existingModel, error: fetchError } = await adminClient
         .from("ai_providers")
         .select("id")
@@ -136,7 +144,7 @@ import {
         .eq("is_active", true)
         .eq("is_enabled", true)
         .maybeSingle();
-  
+
       let model = existingModel;
       if (!model && !fetchError) {
         const { data: newModel, error: insertError } = await adminClient
@@ -172,7 +180,7 @@ import {
         throw new Error("Model id missing for startSession");
       }
       testModelId = model.id;
-  
+
       const sessionPayload: StartSessionPayload = {
         projectId: testProject.id,
         selectedModels: [{ id: testModelId, displayName: "Mock Model" }],
@@ -185,379 +193,254 @@ import {
       }
       testSessionId = sessionResult.data.id;
     });
-  
+
     afterAll(async () => {
       await coreCleanupTestResources("all");
     });
-  
-    it("full compression loop: success with content replacement, resolved count, max_tokens_to_generate", async () => {
-      const modelConfig: AiModelExtendedConfig = buildExtendedModelConfig({
+
+    it("fits path: small working set with no artifacts returns fits arm with real token count", async () => {
+      const modelConfig = buildExtendedModelConfig({
         input_token_cost_rate: 0.0001,
         output_token_cost_rate: 0.0001,
         hard_cap_output_tokens: 100_000,
         provider_max_output_tokens: 100_000,
       });
-  
-      const longBody: string = "word ".repeat(200_000);
-      const docId: string = crypto.randomUUID();
-      const resourceDocuments: ResourceDocuments = [
-        {
-          id: docId,
-          content: longBody,
-          document_key: FileType.HeaderContext,
-          stage_slug: "thesis",
-          type: "document",
-        },
-      ];
-      const integrationHistory: NonNullable<ChatApiRequest["messages"]> = [
-        { role: "user", content: "history" },
-      ];
-      const chatApiRequest: ChatApiRequest = {
-        message: "integration user message",
-        providerId: testModelId,
-        promptId: "__none__",
-        walletId: testWalletId,
-        resourceDocuments,
-        messages: integrationHistory,
-        systemInstruction: "sys",
-      };
-  
-      const inputsRelevance: RelevanceRule[] = [
-        { document_key: FileType.HeaderContext, relevance: 1 },
-      ];
-  
-      const candidate: CompressionCandidate = {
-        id: docId,
-        content: longBody,
-        sourceType: "document",
-        originalIndex: 0,
-        valueScore: 1,
-        effectiveScore: 1,
-      };
-      const compressionStrategy: ICompressionStrategy = async () => [candidate];
-  
-      const mockRag: MockRagService = new MockRagService();
-      mockRag.setConfig({
-        mockContextResult: "INTEGRATION_RAG_REPLACEMENT_BODY",
-        mockTokensUsed: 0,
+
+      const doc = buildResourceDocument({
+        content: "short content",
+        document_key: FileType.HeaderContext,
+        stage_slug: "thesis",
+        type: "document",
       });
-  
-      const { instance: mockAdapter } = getMockAiProviderAdapter(testLogger, {
-        ...MOCK_MODEL_CONFIG,
-        output_token_cost_rate: 0.0001,
+      const resourceDocuments: ResourceDocuments = [doc];
+
+      const executeJobPayload = buildDialecticExecuteJobPayload({
+        projectId: testProject.id,
+        sessionId: testSessionId,
+        model_id: testModelId,
       });
-      const adapterWithEmbedding = {
-        ...mockAdapter,
-        getEmbedding: async (_text: string) => ({
-          embedding: Array(1536).fill(0.01),
-          usage: { prompt_tokens: 1, total_tokens: 1 },
-        }),
-      };
-      const embeddingClient = new EmbeddingClient(adapterWithEmbedding);
-  
+      if (!isJson(executeJobPayload)) throw new Error("executeJobPayload must be Json-compatible");
+      const parentJob: DialecticJobRow = buildDialecticJobRow({
+        payload: executeJobPayload,
+        session_id: testSessionId,
+        user_id: testUserId,
+      });
+
       const deps: CompressPromptDeps = {
         logger: testLogger,
-        ragService: mockRag,
-        embeddingClient,
-        tokenWalletService: adminWalletService,
+        getSortedCompressionCandidates: async () => buildGetSortedCompressionCandidatesSuccessReturn({ candidates: [] }),
+        enqueueCompressJobs: async () => buildenqueueCompressJobsSuccessReturn(),
+        resolveCompressionSource: () => buildCompressibleSourceReturn({ sourceType: "resource", documentKey: FileType.business_case }),
+        constructStoragePath,
+        downloadFromStorage,
         countTokens,
       };
-  
+
       const params: CompressPromptParams = {
         dbClient: adminClient,
-        jobId: crypto.randomUUID(),
-        projectOwnerUserId: testUserId,
-        sessionId: testSessionId,
-        stageSlug: "thesis",
-        walletId: testWalletId,
-        extendedModelConfig: modelConfig,
-        inputsRelevance,
-        inputRate: 0.0001,
-        outputRate: 0.0001,
         isContinuationFlowInitial: false,
         finalTargetThreshold: 50_000,
         balanceAfterCompression: 50_000_000,
         walletBalance: 50_000_000,
       };
-  
+
       const payload: CompressPromptPayload = {
-        compressionStrategy,
+        parentJob,
+        extendedModelConfig: modelConfig,
+        inputsRelevance: [{ document_key: FileType.HeaderContext, relevance: 1 }],
         resourceDocuments,
         conversationHistory: [],
         currentUserPrompt: "integration user message",
-        chatApiRequest,
-        tokenizerDeps,
       };
-  
+
       const result = await compressPrompt(deps, params, payload);
-      assertEquals(isCompressPromptSuccessReturn(result), true);
-      if (!isCompressPromptSuccessReturn(result)) {
-        throw new Error("expected success branch");
+      assertEquals(isCompressPromptFitsReturn(result), true);
+      if (!isCompressPromptFitsReturn(result)) {
+        throw new Error("expected fits branch");
       }
-      assertEquals(result.resourceDocuments[0].content, "INTEGRATION_RAG_REPLACEMENT_BODY");
       assertEquals(typeof result.resolvedInputTokenCount, "number");
       assertEquals(result.resolvedInputTokenCount > 0, true);
-      const maxOut = result.chatApiRequest.max_tokens_to_generate;
-      assertEquals(typeof maxOut, "number");
-      if (typeof maxOut === "number") {
-        assertEquals(maxOut > 0, true);
-      }
+      assertEquals(result.resourceDocuments[0].content, "short content");
     });
-  
-    it("dialectic_memory batch: indexed candidate skips RAG (getContextForModel not called)", async () => {
-      const modelConfig: AiModelExtendedConfig = buildExtendedModelConfig({
+
+    it("over-budget path: large working set enqueues one child and returns pending with parent status updated", async () => {
+      const modelConfig = buildExtendedModelConfig({
         input_token_cost_rate: 0.0001,
         output_token_cost_rate: 0.0001,
+        hard_cap_output_tokens: 100_000,
+        provider_max_output_tokens: 100_000,
       });
-  
-      const longBody: string = "chunk ".repeat(200_000);
-      const indexedDocId: string = crypto.randomUUID();
-  
-      const indexedPathContext: PathContext = {
+
+      const longBody: string = "word ".repeat(200_000);
+      const docId: string = crypto.randomUUID();
+      const doc = buildResourceDocument({
+        id: docId,
+        content: longBody,
+        document_key: FileType.HeaderContext,
+        stage_slug: "thesis",
+        type: "document",
+      });
+      const resourceDocuments: ResourceDocuments = [doc];
+
+      const candidate = buildCompressionCandidate({
+        id: docId,
+        content: longBody,
+        sourceType: "resource",
+      });
+
+      const executeJobPayload = buildDialecticExecuteJobPayload({
         projectId: testProject.id,
-        fileType: FileType.HeaderContext,
         sessionId: testSessionId,
-        iteration: 1,
-        stageSlug: DialecticStageSlug.Thesis,
-        modelSlug: MOCK_MODEL_CONFIG.api_identifier,
-        attemptCount: 1,
-        documentKey: FileType.HeaderContext,
-      };
-      const indexedConstructed = constructStoragePath(indexedPathContext);
-  
-      const { error: contribErr } = await adminClient
-        .from("dialectic_contributions")
-        .insert({
-          id: indexedDocId,
-          session_id: testSessionId,
-          stage: "thesis",
-          storage_bucket: "dialectic-contributions",
-          storage_path: indexedConstructed.storagePath,
-          file_name: indexedConstructed.fileName,
-          mime_type: "text/plain",
-          size_bytes: 10,
-          user_id: testUserId,
-          iteration_number: 1,
-          model_id: testModelId,
-        });
-      if (contribErr) {
-        throw new Error(`Failed to insert contribution: ${contribErr.message}`);
-      }
-      registerUndoAction({
-        type: "DELETE_CREATED_ROW",
-        tableName: "dialectic_contributions",
-        criteria: { id: indexedDocId },
-        scope: "local",
+        model_id: testModelId,
       });
-  
-      const { data: memRow, error: memErr } = await adminClient
-        .from("dialectic_memory")
+      if (!isJson(executeJobPayload)) throw new Error("executeJobPayload must be Json-compatible");
+      const parentJob: DialecticJobRow = buildDialecticJobRow({
+        payload: executeJobPayload,
+        session_id: testSessionId,
+        user_id: testUserId,
+      });
+
+      const { data: insertedJob, error: insertJobErr } = await adminClient
+        .from("dialectic_generation_jobs")
         .insert({
+          id: parentJob.id,
           session_id: testSessionId,
-          content: "indexed memory row for integration",
-          source_contribution_id: indexedDocId,
+          user_id: testUserId,
+          job_type: "EXECUTE",
+          status: "processing",
+          payload: executeJobPayload,
+          iteration_number: 1,
+          stage_slug: "thesis",
+          attempt_count: 0,
+          max_retries: 3,
+          idempotency_key: parentJob.idempotency_key,
+          is_test_job: false,
         })
         .select("id")
         .single();
-      if (memErr || !memRow) {
-        throw new Error(`Failed to insert dialectic_memory: ${memErr?.message}`);
+      if (insertJobErr || !insertedJob) {
+        throw new Error(`Failed to insert parent job: ${insertJobErr?.message}`);
       }
       registerUndoAction({
         type: "DELETE_CREATED_ROW",
-        tableName: "dialectic_memory",
-        criteria: { id: memRow.id },
+        tableName: "dialectic_generation_jobs",
+        criteria: { id: parentJob.id },
         scope: "local",
       });
-  
-      const resourceDocuments: ResourceDocuments = [
-        {
-          id: indexedDocId,
-          content: longBody,
-          document_key: FileType.HeaderContext,
-          stage_slug: "thesis",
-          type: "document",
-        },
-      ];
-      const indexedHistory: NonNullable<ChatApiRequest["messages"]> = [
-        { role: "user", content: "h" },
-      ];
-      const chatApiRequest: ChatApiRequest = {
-        message: "m",
-        providerId: testModelId,
-        promptId: "__none__",
-        walletId: testWalletId,
-        resourceDocuments,
-        messages: indexedHistory,
-        systemInstruction: "s",
+
+      const fns: {
+        scorer: BoundGetSortedCompressionCandidatesFn;
+        enqueue: BoundenqueueCompressJobsFn;
+        resolver: BoundResolveCompressionSourceFn;
+      } = {
+        scorer: async () => buildGetSortedCompressionCandidatesSuccessReturn({ candidates: [candidate] }),
+        enqueue: async () => buildenqueueCompressJobsSuccessReturn(),
+        resolver: () => buildCompressibleSourceReturn({ sourceType: "resource", documentKey: FileType.HeaderContext }),
       };
-  
-      const candidate: CompressionCandidate = {
-        id: indexedDocId,
-        content: longBody,
-        sourceType: "document",
-        originalIndex: 0,
-        valueScore: 1,
-        effectiveScore: 1,
-      };
-      const compressionStrategy: ICompressionStrategy = async () => [candidate];
-  
-      const mockRag: MockRagService = new MockRagService();
-      mockRag.setConfig({ mockContextResult: "should-not-run", mockTokensUsed: 0 });
-      const ragSpy = spy(mockRag, "getContextForModel");
-  
-      const { instance: mockAdapter } = getMockAiProviderAdapter(testLogger, MOCK_MODEL_CONFIG);
-      const embeddingClient = new EmbeddingClient({
-        ...mockAdapter,
-        getEmbedding: async (_t: string) => ({
-          embedding: Array(1536).fill(0.01),
-          usage: { prompt_tokens: 1, total_tokens: 1 },
-        }),
-      });
-  
+      const enqueueSpy = spy(fns, "enqueue");
+
       const deps: CompressPromptDeps = {
         logger: testLogger,
-        ragService: mockRag,
-        embeddingClient,
-        tokenWalletService: adminWalletService,
+        getSortedCompressionCandidates: fns.scorer,
+        enqueueCompressJobs: fns.enqueue,
+        resolveCompressionSource: fns.resolver,
+        constructStoragePath,
+        downloadFromStorage,
         countTokens,
       };
-  
+
       const params: CompressPromptParams = {
         dbClient: adminClient,
-        jobId: crypto.randomUUID(),
-        projectOwnerUserId: testUserId,
-        sessionId: testSessionId,
-        stageSlug: "thesis",
-        walletId: testWalletId,
-        extendedModelConfig: modelConfig,
-        inputsRelevance: [{ document_key: FileType.HeaderContext, relevance: 1 }],
-        inputRate: 0.0001,
-        outputRate: 0.0001,
         isContinuationFlowInitial: false,
-        finalTargetThreshold: 50_000,
+        finalTargetThreshold: 500,
         balanceAfterCompression: 50_000_000,
         walletBalance: 50_000_000,
       };
-  
+
       const payload: CompressPromptPayload = {
-        compressionStrategy,
-        resourceDocuments,
-        conversationHistory: [],
-        currentUserPrompt: "m",
-        chatApiRequest,
-        tokenizerDeps,
-      };
-  
-      const result = await compressPrompt(deps, params, payload);
-      assertEquals(ragSpy.calls.length, 0);
-      assertEquals(isCompressPromptErrorReturn(result), true);
-      if (!isCompressPromptErrorReturn(result)) {
-        throw new Error("expected error when only indexed candidate leaves prompt oversized");
-      }
-      assertEquals(result.error instanceof ContextWindowError, true);
-    });
-  
-    it("post-compression affordability: NSF when estimated total exceeds walletBalance", async () => {
-      const modelConfig: AiModelExtendedConfig = buildExtendedModelConfig({
-        input_token_cost_rate: 1,
-        output_token_cost_rate: 1,
-        hard_cap_output_tokens: 100_000,
-        provider_max_output_tokens: 100_000,
-        context_window_tokens: 128000,
-        provider_max_input_tokens: 128000,
-      });
-  
-      const body: string = "z".repeat(80_000);
-      const docId: string = crypto.randomUUID();
-      const resourceDocuments: ResourceDocuments = [
-        {
-          id: docId,
-          content: body,
-          document_key: FileType.HeaderContext,
-          stage_slug: "thesis",
-          type: "document",
-        },
-      ];
-      const emptyHistory: NonNullable<ChatApiRequest["messages"]> = [];
-      const chatApiRequest: ChatApiRequest = {
-        message: "u",
-        providerId: testModelId,
-        promptId: "__none__",
-        walletId: testWalletId,
-        resourceDocuments,
-        messages: emptyHistory,
-        systemInstruction: "s",
-      };
-  
-      const candidate: CompressionCandidate = {
-        id: docId,
-        content: body,
-        sourceType: "document",
-        originalIndex: 0,
-        valueScore: 1,
-        effectiveScore: 1,
-      };
-      const compressionStrategy: ICompressionStrategy = async () => [candidate];
-  
-      const mockRag: MockRagService = new MockRagService();
-      mockRag.setConfig({
-        mockContextResult: "short",
-        mockTokensUsed: 0,
-      });
-  
-      const { instance: mockAdapter } = getMockAiProviderAdapter(testLogger, MOCK_MODEL_CONFIG);
-      const embeddingClient = new EmbeddingClient({
-        ...mockAdapter,
-        getEmbedding: async (_t: string) => ({
-          embedding: Array(1536).fill(0.01),
-          usage: { prompt_tokens: 1, total_tokens: 1 },
-        }),
-      });
-  
-      const deps: CompressPromptDeps = {
-        logger: testLogger,
-        ragService: mockRag,
-        embeddingClient,
-        tokenWalletService: adminWalletService,
-        countTokens,
-      };
-  
-      const params: CompressPromptParams = {
-        dbClient: adminClient,
-        jobId: crypto.randomUUID(),
-        projectOwnerUserId: testUserId,
-        sessionId: testSessionId,
-        stageSlug: "thesis",
-        walletId: testWalletId,
+        parentJob,
         extendedModelConfig: modelConfig,
         inputsRelevance: [{ document_key: FileType.HeaderContext, relevance: 1 }],
-        inputRate: 1,
-        outputRate: 1,
-        isContinuationFlowInitial: false,
-        finalTargetThreshold: 500,
-        balanceAfterCompression: 1_000_000,
-        walletBalance: 1,
-      };
-  
-      const payload: CompressPromptPayload = {
-        compressionStrategy,
         resourceDocuments,
         conversationHistory: [],
-        currentUserPrompt: "u",
-        chatApiRequest,
-        tokenizerDeps,
+        currentUserPrompt: "integration user message",
       };
-  
+
+      const result = await compressPrompt(deps, params, payload);
+      assertEquals(isCompressPromptPendingReturn(result), true);
+      assertEquals(enqueueSpy.calls.length, 1);
+
+      const { data: updatedJob, error: fetchJobErr } = await adminClient
+        .from("dialectic_generation_jobs")
+        .select("status")
+        .eq("id", parentJob.id)
+        .single();
+      if (fetchJobErr || !updatedJob) {
+        throw new Error(`Failed to fetch updated parent job: ${fetchJobErr?.message}`);
+      }
+      assertEquals(updatedJob.status, "waiting_for_children");
+    });
+
+    it("over-budget path with no eligible candidates returns ContextWindowError", async () => {
+      const modelConfig = buildExtendedModelConfig({
+        input_token_cost_rate: 0.0001,
+        output_token_cost_rate: 0.0001,
+      });
+
+      const longBody: string = "word ".repeat(200_000);
+      const doc = buildResourceDocument({
+        content: longBody,
+        document_key: FileType.HeaderContext,
+        stage_slug: "thesis",
+        type: "document",
+      });
+      const resourceDocuments: ResourceDocuments = [doc];
+
+      const executeJobPayload = buildDialecticExecuteJobPayload({
+        projectId: testProject.id,
+        sessionId: testSessionId,
+        model_id: testModelId,
+      });
+      if (!isJson(executeJobPayload)) throw new Error("executeJobPayload must be Json-compatible");
+      const parentJob: DialecticJobRow = buildDialecticJobRow({
+        payload: executeJobPayload,
+        session_id: testSessionId,
+        user_id: testUserId,
+      });
+
+      const deps: CompressPromptDeps = {
+        logger: testLogger,
+        getSortedCompressionCandidates: async () => buildGetSortedCompressionCandidatesSuccessReturn({ candidates: [] }),
+        enqueueCompressJobs: async () => buildenqueueCompressJobsSuccessReturn(),
+        resolveCompressionSource: () => buildCompressibleSourceReturn({ sourceType: "resource", documentKey: FileType.business_case }),
+        constructStoragePath,
+        downloadFromStorage,
+        countTokens,
+      };
+
+      const params: CompressPromptParams = {
+        dbClient: adminClient,
+        isContinuationFlowInitial: false,
+        finalTargetThreshold: 500,
+        balanceAfterCompression: 50_000_000,
+        walletBalance: 50_000_000,
+      };
+
+      const payload: CompressPromptPayload = {
+        parentJob,
+        extendedModelConfig: modelConfig,
+        inputsRelevance: [{ document_key: FileType.HeaderContext, relevance: 1 }],
+        resourceDocuments,
+        conversationHistory: [],
+        currentUserPrompt: "integration user message",
+      };
+
       const result = await compressPrompt(deps, params, payload);
       assertEquals(isCompressPromptErrorReturn(result), true);
       if (!isCompressPromptErrorReturn(result)) {
-        throw new Error("expected NSF error branch");
+        throw new Error("expected error branch");
       }
+      assertEquals(result.error instanceof ContextWindowError, true);
       assertEquals(result.retriable, false);
-      assertEquals(
-        result.error.message.includes("Insufficient funds"),
-        true,
-      );
     });
   });
-  

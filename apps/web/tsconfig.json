@@ -19,7 +19,6 @@
     "noEmit": true,
     "jsx": "react-jsx",
     "types": ["vite/client", "node", "vitest/globals"],
-    "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"],
       "@paynless/platform": ["../../packages/platform/src/index.ts"],

@@ -1,18 +1,13 @@
 // supabase/functions/dialectic-worker/calculateAffordability/calculateAffordability.interface.ts
 
-import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
-import type { Database, Tables } from "../../types_db.ts";
+import type { Tables } from "../../types_db.ts";
 import type {
   AiModelExtendedConfig,
-  ChatApiRequest,
   ILogger,
   Messages,
 } from "../../_shared/types.ts";
 import { ResourceDocuments } from '../../_shared/utils/resolveCompressionSource/resolveCompressionSource.interface.ts'
 import type { CountTokensFn } from "../../_shared/types/tokenizer.types.ts";
-import type { RelevanceRule } from "../../dialectic-service/dialectic.interface.ts";
-import type { ICompressionStrategy } from "../../_shared/utils/vector_utils.interface.ts";
-import type { BoundCompressPromptFn } from "../compressPrompt/compressPrompt.interface.ts";
 
 export type TierOutputCapTokens = Tables<'tier_definitions'>['output_cap_tokens'];
 
@@ -32,46 +27,37 @@ export type GetMaxOutputTokensFn = (
 export interface CalculateAffordabilityDeps {
   logger: ILogger;
   countTokens: CountTokensFn;
-  compressPrompt: BoundCompressPromptFn;
   getMaxOutputTokens: GetMaxOutputTokensFn;
 }
 export interface CalculateAffordabilityParams {
-  dbClient: SupabaseClient<Database>;
-  jobId: string;
-  projectOwnerUserId: string;
-  sessionId: string;
-  stageSlug: string;
-  walletId: string;
   walletBalance: number;
-  extendedModelConfig: AiModelExtendedConfig;
-  inputRate: number;
-  outputRate: number;
-  isContinuationFlowInitial: boolean;
-  inputsRelevance?: RelevanceRule[];
   userConfig: UserConfig;
 }
 
 export interface CalculateAffordabilityPayload {
-  compressionStrategy: ICompressionStrategy;
+  extendedModelConfig: AiModelExtendedConfig;
   resourceDocuments: ResourceDocuments;
   conversationHistory: Messages[];
   currentUserPrompt: string;
   systemInstruction: string;
-  chatApiRequest: ChatApiRequest;
 }
 
-export interface CalculateAffordabilityDirectReturn {
-  wasCompressed: false;
+export interface CalculateAffordabilityWithinBudgetReturn {
+  overBudget: false;
   maxOutputTokens: number;
   resolvedInputTokenCount: number;
 }
 
-export interface CalculateAffordabilityCompressedReturn {
-  wasCompressed: true;
-  chatApiRequest: ChatApiRequest;
+export interface CalculateAffordabilityOverBudgetReturn {
+  overBudget: true;
   resolvedInputTokenCount: number;
-  resourceDocuments: ResourceDocuments;
+  finalTargetThreshold: number;
+  balanceAfterCompression: number;
 }
+
+export type CalculateAffordabilitySuccessReturn =
+  | CalculateAffordabilityWithinBudgetReturn
+  | CalculateAffordabilityOverBudgetReturn;
 
 export interface CalculateAffordabilityErrorReturn {
   error: Error;
@@ -79,8 +65,8 @@ export interface CalculateAffordabilityErrorReturn {
 }
 
 export type CalculateAffordabilityReturn =
-  (CalculateAffordabilityDirectReturn | CalculateAffordabilityCompressedReturn)
-    | CalculateAffordabilityErrorReturn;
+  | CalculateAffordabilitySuccessReturn
+  | CalculateAffordabilityErrorReturn;
 
 export type CalculateAffordabilityFn = (
   deps: CalculateAffordabilityDeps,

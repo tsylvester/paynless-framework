@@ -1,365 +1,264 @@
 // supabase/functions/dialectic-worker/compressPrompt/compressPrompt.ts
 
-import { isApiChatMessage } from "../../_shared/utils/type_guards.ts";
-import type { ChatApiRequest, Messages, ResourceDocuments } from "../../_shared/types.ts";
-import type { CountableChatPayload } from "../../_shared/types/tokenizer.types.ts";
-import { CompressionCandidate } from "../../_shared/utils/vector_utils.ts";
+import type { Messages } from "../../_shared/types.ts";
+import type { CountableChatPayload, CountTokensDeps } from "../../_shared/types/tokenizer.types.ts";
+import type { ResourceDocument } from "../../_shared/utils/resolveCompressionSource/resolveCompressionSource.interface.ts";
 import { ContextWindowError } from "../../_shared/utils/errors.ts";
-import { getMaxOutputTokens } from "../../_shared/utils/affordability_utils.ts";
+import { isDialecticStageSlug, isModelContributionFileType } from "../../_shared/utils/type-guards/type_guards.file_manager.ts";
+import { FileType } from "../../_shared/types/file_manager.types.ts";
+import type { CompressionSourceType, PathContext } from "../../_shared/types/file_manager.types.ts";
+import { isGetSortedCompressionCandidatesErrorReturn } from "../../_shared/utils/vector_utils/vector_utils.guard.ts";
+import {
+  isCompressibleSourceReturn,
+  isResolveCompressionSourceErrorReturn,
+} from "../../_shared/utils/resolveCompressionSource/resolveCompressionSource.guard.ts";
+import { isenqueueCompressJobsErrorReturn } from "../enqueueCompressJobs/enqueueCompressJobs.guard.ts";
+import { isDialecticExecuteJobPayload } from "../../_shared/utils/type-guards/type_guards.dialectic.ts";
+import type { DialecticExecuteJobPayload } from "../../dialectic-service/dialectic.interface.ts";
 import type {
   CompressPromptDeps,
   CompressPromptParams,
   CompressPromptPayload,
   CompressPromptReturn,
 } from "./compressPrompt.interface.ts";
+import type {
+  enqueueCompressJobsParams,
+  enqueueCompressJobsPayload,
+  enqueueCompressJobsVictim,
+} from "../enqueueCompressJobs/enqueueCompressJobs.interface.ts";
+import type { CompressionCandidate } from "../../_shared/utils/vector_utils/vector_utils.interface.ts";
 
 export async function compressPrompt(
   deps: CompressPromptDeps,
   params: CompressPromptParams,
   payload: CompressPromptPayload,
 ): Promise<CompressPromptReturn> {
-  for (const doc of payload.resourceDocuments) {
-      const hasDocKey: boolean = typeof doc.document_key === "string" && doc.document_key !== "";
-      const hasType: boolean = typeof doc.type === "string" && doc.type !== "";
-      const hasStage: boolean = typeof doc.stage_slug === "string" && doc.stage_slug !== "";
-      if (!(hasDocKey && hasType && hasStage)) {
-        return {
-          error: new Error(
-            "Compression requires document identity: document_key, type, and stage_slug must be present.",
-          ),
-          retriable: false,
-        };
-      }
-    }
+  const tokenizerDeps: CountTokensDeps = {
+    getEncoding: (_name: string) => ({
+      encode: (input: string) => Array.from(input ?? "", (_ch, index: number) => index),
+    }),
+    countTokensAnthropic: (text: string) => (text ?? "").length,
+    logger: deps.logger,
+  };
 
-    const modelConfig = params.extendedModelConfig;
-    const contextWindowTokens = modelConfig.context_window_tokens;
-    if (
-      contextWindowTokens === null ||
-      contextWindowTokens === undefined ||
-      typeof contextWindowTokens !== "number" ||
-      !Number.isFinite(contextWindowTokens)
-    ) {
+  let parentJobPayload: DialecticExecuteJobPayload;
+  try {
+    if (!isDialecticExecuteJobPayload(payload.parentJob.payload)) {
       return {
-        error: new Error("context_window_tokens is not defined"),
+        error: new ContextWindowError("parentJob.payload is not a valid DialecticExecuteJobPayload"),
         retriable: false,
       };
     }
-    const maxTokens: number = contextWindowTokens;
-
-    if (modelConfig.provider_max_input_tokens === undefined) {
-      return {
-        error: new Error("Provider max input tokens is not defined"),
-        retriable: false,
-      };
-    }
-    const providerMaxInputTokens: number = modelConfig.provider_max_input_tokens;
-
-    const resourceDocuments: ResourceDocuments = payload.resourceDocuments.map((d) => ({ ...d }));
-    const workingHistory: Messages[] = [...payload.conversationHistory];
-
-    let chatApiRequest: ChatApiRequest = {
-      ...payload.chatApiRequest,
-      resourceDocuments,
-    };
-
-    const initialCountable: CountableChatPayload = {
-      systemInstruction: chatApiRequest.systemInstruction,
-      message: chatApiRequest.message,
-      messages: chatApiRequest.messages,
-      resourceDocuments: chatApiRequest.resourceDocuments,
-    };
-    let currentTokenCount: number = deps.countTokens(
-      payload.tokenizerDeps,
-      initialCountable,
-      modelConfig,
-    );
-
-    const seedMessages: Messages[] = chatApiRequest.messages === undefined ? [] : [...chatApiRequest.messages];
-    let currentAssembledMessages: Messages[] = seedMessages;
-
-    let currentBalanceTokens: number = params.balanceAfterCompression;
-
-    const candidates: CompressionCandidate[] = [
-      ...await payload.compressionStrategy(
-        { dbClient: params.dbClient, embeddingClient: deps.embeddingClient, logger: deps.logger },
-        { inputsRelevance: params.inputsRelevance },
-        { documents: resourceDocuments, history: workingHistory, currentUserPrompt: payload.currentUserPrompt },
-      ),
-    ];
-
-    deps.logger.info(`[compressPrompt] Number of compression candidates found: ${candidates.length}`);
-
-    const idsToCheck: string[] = candidates
-      .map((c: CompressionCandidate) => c.id)
-      .filter((id: unknown): id is string => typeof id === "string" && id.length > 0);
-
-    let indexedIds: Set<string> = new Set<string>();
-    if (idsToCheck.length > 0) {
-      const { data: indexedRows, error: indexedErr } = await params.dbClient
-        .from("dialectic_memory")
-        .select("source_contribution_id")
-        .in("source_contribution_id", idsToCheck);
-
-      if (!indexedErr && Array.isArray(indexedRows)) {
-        indexedIds = new Set(
-          indexedRows
-            .map((r) =>
-              r && typeof r["source_contribution_id"] === "string" ? r["source_contribution_id"] : undefined,
-            )
-            .filter((v): v is string => typeof v === "string"),
-        );
-      }
-    }
-
-    const finalTargetThreshold: number = params.finalTargetThreshold;
-    const inputRate: number = params.inputRate;
-    const jobId: string = params.jobId;
-    const sessionId: string = params.sessionId;
-    const stageSlug: string = params.stageSlug;
-    const walletId: string = params.walletId;
-    const projectOwnerUserId: string = params.projectOwnerUserId;
-    const isContinuationFlowInitial: boolean = params.isContinuationFlowInitial;
-    const tokenizerDeps = payload.tokenizerDeps;
-
-    while (candidates.length > 0) {
-      if (!(currentTokenCount > finalTargetThreshold)) {
-        break;
-      }
-      const victim: CompressionCandidate | undefined = candidates.shift();
-      if (!victim) {
-        break;
-      }
-
-      if (typeof victim.id === "string" && indexedIds.has(victim.id)) {
-        continue;
-      }
-
-      const ragResult = await deps.ragService.getContextForModel(
-        [{ id: victim.id, content: victim.content }],
-        modelConfig,
-        sessionId,
-        stageSlug,
-        params.inputsRelevance,
-      );
-
-      if (ragResult.error !== undefined) {
-        return { error: ragResult.error, retriable: false };
-      }
-
-      const tokensUsed: number = ragResult.tokensUsedForIndexing || 0;
-      deps.logger.info("[compressPrompt] RAG tokensUsedForIndexing observed in-loop", {
-        jobId,
-        candidateId: victim.id,
-        tokensUsed,
-        hasWallet: Boolean(walletId),
-      });
-      if (tokensUsed > 0) {
-        const observedCompressionCost: number = tokensUsed * inputRate;
-        currentBalanceTokens = Math.max(0, currentBalanceTokens - observedCompressionCost);
-      }
-      if (tokensUsed > 0 && walletId) {
-        deps.logger.info("[compressPrompt] Debiting wallet for RAG compression", {
-          jobId,
-          candidateId: victim.id,
-          amount: tokensUsed,
-        });
-        try {
-          await deps.tokenWalletService.recordTransaction({
-            walletId: walletId,
-            type: "DEBIT_USAGE",
-            amount: tokensUsed.toString(),
-            recordedByUserId: projectOwnerUserId,
-            idempotencyKey: `rag:${jobId}:${victim.id}`,
-            relatedEntityId: victim.id,
-            relatedEntityType: "rag_compression",
-            notes: `RAG compression for job ${jobId}`,
-          });
-        } catch (error: unknown) {
-          return {
-            error: new Error(
-              `Insufficient funds for RAG operation. Cost: ${tokensUsed} tokens.`,
-              { cause: error },
-            ),
-            retriable: false,
-          };
-        }
-      }
-
-      const newContent: string | null = ragResult.context;
-      if (!newContent) {
-        return {
-          error: new Error(`RAG context is empty for candidate ${victim.id}`),
-          retriable: false,
-        };
-      }
-      if (victim.sourceType === "history") {
-        const historyIndex: number = workingHistory.findIndex((h) => h.id === victim.id);
-        if (historyIndex > -1) {
-          workingHistory[historyIndex].content = newContent;
-        }
-      } else {
-        const docIndex: number = resourceDocuments.findIndex((d) => d.id === victim.id);
-        if (docIndex > -1) {
-          resourceDocuments[docIndex].content = newContent;
-        }
-      }
-
-      const enforcedHistory: Messages[] = [];
-      if (workingHistory.length > 0) {
-        enforcedHistory.push(workingHistory[0]);
-        for (let i = 1; i < workingHistory.length; i++) {
-          const prevMsg: Messages = enforcedHistory[enforcedHistory.length - 1];
-          const currentMsg: Messages = workingHistory[i];
-          if (prevMsg.role === currentMsg.role) {
-            if (currentMsg.role === "assistant") {
-              enforcedHistory.push({ role: "user", content: "Please continue." });
-            } else {
-              enforcedHistory.push({ role: "assistant", content: "" });
-            }
-          }
-          enforcedHistory.push(currentMsg);
-        }
-      }
-
-      const loopAssembledMessages: Messages[] = [];
-      if (!isContinuationFlowInitial) {
-        loopAssembledMessages.push({ role: "user", content: payload.currentUserPrompt });
-      }
-      for (const msg of enforcedHistory) {
-        if (msg.role !== "function") {
-          loopAssembledMessages.push({ role: msg.role, content: msg.content });
-        }
-      }
-      currentAssembledMessages = loopAssembledMessages;
-
-      chatApiRequest = {
-        ...chatApiRequest,
-        message: payload.currentUserPrompt,
-        messages: currentAssembledMessages
-          .filter(isApiChatMessage)
-          .filter((m): m is { role: "user" | "assistant" | "system"; content: string } => m.content !== null),
-        resourceDocuments,
-      };
-      const loopPayload: CountableChatPayload = {
-        systemInstruction: chatApiRequest.systemInstruction,
-        message: chatApiRequest.message,
-        messages: chatApiRequest.messages,
-        resourceDocuments: chatApiRequest.resourceDocuments,
-      };
-      currentTokenCount = deps.countTokens(tokenizerDeps, loopPayload, modelConfig);
-    }
-
-    let allowedInputCheck: number;
-    try {
-      const plannedMaxOutputForCheck: number = getMaxOutputTokens(
-        currentBalanceTokens,
-        currentTokenCount,
-        modelConfig,
-        deps.logger,
-        0,
-        null,
-      );
-      const safetyBufferForCheck: number = 32;
-      allowedInputCheck = providerMaxInputTokens - (plannedMaxOutputForCheck + safetyBufferForCheck);
-    } catch (e: unknown) {
-      if (e instanceof Error) {
-        return { error: e, retriable: false };
-      }
-      throw e;
-    }
-    if (currentTokenCount > Math.min(maxTokens, allowedInputCheck)) {
-      return {
-        error: new ContextWindowError(
-          `Compressed prompt token count (${currentTokenCount}) still exceeds model limit (${maxTokens}) and allowed input (${allowedInputCheck}).`,
-        ),
-        retriable: false,
-      };
-    }
-
-    deps.logger.info(
-      `[compressPrompt] Prompt successfully compressed. New token count: ${currentTokenCount}`,
-    );
-
-    chatApiRequest = {
-      ...chatApiRequest,
-      message: payload.currentUserPrompt,
-      messages: currentAssembledMessages
-        .filter(isApiChatMessage)
-        .filter((m): m is { role: "user" | "assistant" | "system"; content: string } => m.content !== null),
-      resourceDocuments,
-    };
-    const finalPayloadAfterCompression: CountableChatPayload = {
-      systemInstruction: chatApiRequest.systemInstruction,
-      message: chatApiRequest.message,
-      messages: chatApiRequest.messages,
-      resourceDocuments: chatApiRequest.resourceDocuments,
-    };
-    const finalTokenCountAfterCompression: number = deps.countTokens(
-      tokenizerDeps,
-      finalPayloadAfterCompression,
-      modelConfig,
-    );
-
-    let plannedMaxOutputTokensPost: number;
-    try {
-      plannedMaxOutputTokensPost = getMaxOutputTokens(
-        currentBalanceTokens,
-        finalTokenCountAfterCompression,
-        modelConfig,
-        deps.logger,
-        0,
-        null,
-      );
-    } catch (e: unknown) {
-      if (e instanceof Error) {
-        return { error: e, retriable: false };
-      }
-      throw e;
-    }
-
-    const safetyBufferTokensPost: number = 32;
-    const allowedInputPost: number =
-      providerMaxInputTokens - (plannedMaxOutputTokensPost + safetyBufferTokensPost);
-
-    if (allowedInputPost !== Infinity && allowedInputPost <= 0) {
-      return {
-        error: new ContextWindowError(
-          `No input window remains after reserving output budget (${plannedMaxOutputTokensPost}) and safety buffer (${safetyBufferTokensPost}).`,
-        ),
-        retriable: false,
-      };
-    }
-
-    if (allowedInputPost !== Infinity && finalTokenCountAfterCompression > allowedInputPost) {
-      return {
-        error: new ContextWindowError(
-          `Final input tokens (${finalTokenCountAfterCompression}) exceed allowed input (${allowedInputPost}) after reserving output budget.`,
-        ),
-        retriable: false,
-      };
-    }
-
-    const estimatedInputCostPost: number = finalTokenCountAfterCompression * params.inputRate;
-    const estimatedOutputCostPost: number = plannedMaxOutputTokensPost * params.outputRate;
-    const estimatedTotalCostPost: number = estimatedInputCostPost + estimatedOutputCostPost;
-    if (estimatedTotalCostPost > params.walletBalance) {
-      return {
-        error: new Error(
-          `Insufficient funds: estimated total cost (${estimatedTotalCostPost}) exceeds wallet balance (${params.walletBalance}) after compression.`,
-        ),
-        retriable: false,
-      };
-    }
-
-    const chatApiRequestOut: ChatApiRequest = {
-      ...chatApiRequest,
-      max_tokens_to_generate: plannedMaxOutputTokensPost,
-    };
-
+    parentJobPayload = payload.parentJob.payload;
+  } catch (err) {
+    const message: string = err instanceof Error ? err.message : String(err);
     return {
-      chatApiRequest: chatApiRequestOut,
-      resolvedInputTokenCount: finalTokenCountAfterCompression,
-      resourceDocuments,
+      error: new ContextWindowError(`parentJob.payload is not a valid DialecticExecuteJobPayload: ${message}`),
+      retriable: false,
     };
+  }
+
+  const stageSlugRaw: string | undefined = parentJobPayload.stageSlug;
+  if (stageSlugRaw !== undefined && !isDialecticStageSlug(stageSlugRaw)) {
+    return {
+      error: new ContextWindowError("parentJob.payload.stageSlug is not a valid DialecticStageSlug"),
+      retriable: false,
+    };
+  }
+
+  const storageBucket: string | undefined = Deno.env.get("SB_CONTENT_STORAGE_BUCKET");
+  if (storageBucket === undefined) {
+    return {
+      error: new ContextWindowError("SB_CONTENT_STORAGE_BUCKET env var is not set"),
+      retriable: false,
+    };
+  }
+
+  const sessionPathContext: Pick<PathContext, "projectId" | "fileType" | "sessionId" | "iteration" | "stageSlug" | "output_type"> = {
+    projectId: parentJobPayload.projectId,
+    fileType: FileType.CompressedContext,
+    sessionId: parentJobPayload.sessionId,
+    iteration: parentJobPayload.iterationNumber,
+    stageSlug: stageSlugRaw,
+    output_type: parentJobPayload.output_type,
+  };
+
+  const artifactIds: Set<string> = new Set();
+
+  const overlaidDocs: ResourceDocument[] = await Promise.all(
+    payload.resourceDocuments.map(async (doc): Promise<ResourceDocument> => {
+      const sourceType: CompressionSourceType | undefined =
+        doc.type === "document" || doc.type === "project_resource" ? "resource"
+        : doc.type === "feedback" ? "feedback"
+        : undefined;
+      if (sourceType === undefined) {
+        return doc;
+      }
+      const perArtifactContext: PathContext = {
+        ...sessionPathContext,
+        sourceType,
+        documentKey: doc.document_key,
+      };
+      const constructedPath = deps.constructStoragePath(perArtifactContext);
+      const fullPath: string = `${constructedPath.storagePath}/${constructedPath.fileName}`;
+      const downloadResult = await deps.downloadFromStorage(params.dbClient, storageBucket, fullPath);
+      if (downloadResult.error !== null || downloadResult.data === null) {
+        return doc;
+      }
+      artifactIds.add(doc.id);
+      return { ...doc, content: new TextDecoder().decode(downloadResult.data) };
+    }),
+  );
+
+  const overlaidHistory: Messages[] = await Promise.all(
+    payload.conversationHistory.map(async (msg): Promise<Messages> => {
+      if (msg.id === undefined) {
+        return msg;
+      }
+      const perArtifactContext: PathContext = {
+        ...sessionPathContext,
+        sourceType: "history",
+        sourceId: msg.id,
+        role: msg.role,
+      };
+      const constructedPath = deps.constructStoragePath(perArtifactContext);
+      const fullPath: string = `${constructedPath.storagePath}/${constructedPath.fileName}`;
+      const downloadResult = await deps.downloadFromStorage(params.dbClient, storageBucket, fullPath);
+      if (downloadResult.error !== null || downloadResult.data === null) {
+        return msg;
+      }
+      artifactIds.add(msg.id);
+      return { ...msg, content: new TextDecoder().decode(downloadResult.data) };
+    }),
+  );
+
+  const countablePayload: CountableChatPayload = {
+    message: payload.currentUserPrompt,
+    messages: overlaidHistory,
+    resourceDocuments: overlaidDocs,
+  };
+  const resolvedInputTokenCount: number = deps.countTokens(
+    tokenizerDeps,
+    countablePayload,
+    payload.extendedModelConfig,
+  );
+
+  if (resolvedInputTokenCount <= params.finalTargetThreshold) {
+    return {
+      fits: true,
+      resourceDocuments: overlaidDocs,
+      conversationHistory: overlaidHistory,
+      resolvedInputTokenCount,
+    };
+  }
+
+  const scorerReturn = await deps.getSortedCompressionCandidates(
+    { inputsRelevance: payload.inputsRelevance, modelConfig: payload.extendedModelConfig },
+    { documents: payload.resourceDocuments, history: payload.conversationHistory },
+  );
+
+  if (isGetSortedCompressionCandidatesErrorReturn(scorerReturn)) {
+    return { error: scorerReturn.error, retriable: scorerReturn.retriable };
+  }
+
+  const eligibleCandidates: CompressionCandidate[] = scorerReturn.candidates.filter(
+    (c: CompressionCandidate) => !artifactIds.has(c.id),
+  );
+
+  if (eligibleCandidates.length === 0) {
+    return {
+      error: new ContextWindowError("All candidates exhausted but prompt still exceeds threshold"),
+      retriable: false,
+    };
+  }
+
+  const candidate: CompressionCandidate = eligibleCandidates[0];
+
+  let victim: enqueueCompressJobsVictim;
+
+  if (candidate.sourceType === "history") {
+    const message: Messages | undefined = payload.conversationHistory.find(
+      (m: Messages) => m.id === candidate.id,
+    );
+    if (message === undefined) {
+      return {
+        error: new ContextWindowError("Selected history candidate has no corresponding message"),
+        retriable: false,
+      };
+    }
+    victim = {
+      mode: "text",
+      content: candidate.content,
+      sourceType: "history",
+      sourceId: message.id,
+      role: message.role,
+    };
+  } else {
+    const doc: ResourceDocument | undefined = payload.resourceDocuments.find(
+      (d: ResourceDocument) => d.id === candidate.id,
+    );
+    if (doc === undefined) {
+      return {
+        error: new ContextWindowError("Selected document candidate has no corresponding resource document"),
+        retriable: false,
+      };
+    }
+
+    const resolveReturn = deps.resolveCompressionSource({}, { document: doc });
+
+    if (isResolveCompressionSourceErrorReturn(resolveReturn)) {
+      return { error: resolveReturn.error, retriable: resolveReturn.retriable };
+    }
+
+    if (!isCompressibleSourceReturn(resolveReturn)) {
+      return {
+        error: new ContextWindowError("Selected candidate is not an admissible compression source"),
+        retriable: false,
+      };
+    }
+
+    if (doc.type === "document") {
+      if (!isModelContributionFileType(doc.document_key) || !isDialecticStageSlug(doc.stage_slug)) {
+        return {
+          error: new ContextWindowError("Document victim carries an identity that cannot address a json-mode compression"),
+          retriable: false,
+        };
+      }
+      victim = {
+        mode: "json",
+        content: candidate.content,
+        sourceType: resolveReturn.sourceType,
+        documentKey: resolveReturn.documentKey,
+        docType: doc.document_key,
+        sourceStageSlug: doc.stage_slug,
+      };
+    } else {
+      victim = {
+        mode: "text",
+        content: candidate.content,
+        sourceType: resolveReturn.sourceType,
+        documentKey: resolveReturn.documentKey,
+      };
+    }
+  }
+
+  const enqueueParams: enqueueCompressJobsParams = { dbClient: params.dbClient };
+  const enqueuePayload: enqueueCompressJobsPayload = {
+    victim,
+    parentJob: payload.parentJob,
+    modelConfig: payload.extendedModelConfig,
+  };
+
+  const enqueueReturn = await deps.enqueueCompressJobs(enqueueParams, enqueuePayload);
+
+  if (isenqueueCompressJobsErrorReturn(enqueueReturn)) {
+    return { error: enqueueReturn.error, retriable: enqueueReturn.retriable };
+  }
+
+  await params.dbClient
+    .from("dialectic_generation_jobs")
+    .update({ status: "waiting_for_children" })
+    .eq("id", payload.parentJob.id);
+
+  return { fits: false };
 }

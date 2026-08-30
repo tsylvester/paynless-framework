@@ -8,7 +8,7 @@ import type {
   ModelContributionFileTypes,
   DialecticStageSlug,
 } from "../../_shared/types/file_manager.types.ts";
-import type { CountTokensDeps, CountTokensFn } from "../../_shared/types/tokenizer.types.ts";
+import type { CountTokensFn } from "../../_shared/types/tokenizer.types.ts";
 import type { ConstructStoragePathFn } from "../../_shared/utils/path_constructor.types.ts";
 import type { ITextSplitter } from "../../_shared/utils/text_splitter.interface.ts";
 import type { DialecticBaseJobPayload, DialecticJobRow } from "../../dialectic-service/dialectic.interface.ts";
@@ -39,43 +39,43 @@ export interface enqueueCompressJobsDeps {
 
 export interface enqueueCompressJobsParams {
   dbClient: SupabaseClient<Database>;
-  parentJob: DialecticJobRow;
-  sessionId: string;
-  projectId: string;
-  stageSlug: DialecticStageSlug;
-  output_type: ModelContributionFileTypes;
-  iterationNumber: number;
-  modelId: string;
-  modelSlug: string; // parent EXECUTE payload's own slug, so prompt assemblers can name a CompressionPrompt without a provider lookup
-  userJwt: string;
-  walletId: string;
-  modelConfig: AiModelExtendedConfig;
-  tokenizerDeps: CountTokensDeps;
+}
+
+export interface enqueueCompressJobsVictim {
+  mode: CompressionMode;
+  content: string;
+  sourceType: CompressionSourceType;
+  sourceId?: string;
+  role?: Messages['role']; // REQUIRED when sourceType is 'history'
+  documentKey?: FileType;
+  docType?: ModelContributionFileTypes;
+  sourceStageSlug?: DialecticStageSlug;
 }
 
 export interface enqueueCompressJobsPayload {
-  victim: {
-    mode: CompressionMode;
-    content: string;
-    sourceType: CompressionSourceType;
-    sourceId?: string;
-    role?: Messages['role']; // REQUIRED when sourceType is 'history'
-    documentKey?: FileType;
-    docType?: ModelContributionFileTypes;
-    sourceStageSlug?: DialecticStageSlug;
-  };
+  victim: enqueueCompressJobsVictim;
+  parentJob: DialecticJobRow;
+  modelConfig: AiModelExtendedConfig;
+}
+
+export interface CompressJobValidationErrorConstructorParams {
+  message: string;
 }
 
 export class CompressJobValidationError extends Error {
-  constructor(message: string) {
-    super(message);
+  constructor(params: CompressJobValidationErrorConstructorParams) {
+    super(params.message);
     this.name = "CompressJobValidationError";
   }
 }
 
+export interface CompressJobEnqueueErrorConstructorParams {
+  message: string;
+}
+
 export class CompressJobEnqueueError extends Error {
-  constructor(message: string) {
-    super(message);
+  constructor(params: CompressJobEnqueueErrorConstructorParams) {
+    super(params.message);
     this.name = "CompressJobEnqueueError";
   }
 }

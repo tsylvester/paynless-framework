@@ -1,32 +1,41 @@
 import { assertEquals, assertThrows } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
+  isCompressJobEnqueueError,
+  isCompressJobEnqueueErrorConstructorParams,
+  isCompressJobValidationError,
+  isCompressJobValidationErrorConstructorParams,
   isDialecticCompressJobPayload,
   isenqueueCompressJobsDeps,
   isenqueueCompressJobsErrorReturn,
   isenqueueCompressJobsParams,
   isenqueueCompressJobsPayload,
   isenqueueCompressJobsSuccessReturn,
+  isenqueueCompressJobsVictim,
 } from "./enqueueCompressJobs.guard.ts";
 import {
   buildCompressJobEnqueueError,
+  buildCompressJobEnqueueErrorConstructorParams,
   buildCompressJobValidationError,
+  buildCompressJobValidationErrorConstructorParams,
   buildDialecticCompressJobPayload,
   buildenqueueCompressJobsDeps,
   buildenqueueCompressJobsErrorReturn,
   buildenqueueCompressJobsParams,
   buildenqueueCompressJobsPayload,
   buildenqueueCompressJobsSuccessReturn,
+  buildenqueueCompressJobsVictim,
+  invalidateCompressJobEnqueueErrorConstructorParams,
+  invalidateCompressJobValidationErrorConstructorParams,
   invalidateDialecticCompressJobPayload,
   invalidateEnqueueCompressJobsDeps,
   invalidateEnqueueCompressJobsErrorReturn,
   invalidateEnqueueCompressJobsParams,
   invalidateEnqueueCompressJobsPayload,
+  invalidateEnqueueCompressJobsVictim,
 } from "./enqueueCompressJobs.mock.ts";
 
-const baseDialectic = buildDialecticCompressJobPayload();
-
 Deno.test("isDialecticCompressJobPayload accepts full contribution payload", () => {
-  assertEquals(isDialecticCompressJobPayload(baseDialectic), true);
+  assertEquals(isDialecticCompressJobPayload(buildDialecticCompressJobPayload()), true);
 });
 
 Deno.test("isDialecticCompressJobPayload accepts full resource payload", () => {
@@ -75,7 +84,7 @@ Deno.test("isDialecticCompressJobPayload accepts a continuation payload", () => 
 });
 
 Deno.test("isDialecticCompressJobPayload accepts a payload with continuation_count absent", () => {
-  assertEquals(isDialecticCompressJobPayload(baseDialectic), true);
+  assertEquals(isDialecticCompressJobPayload(buildDialecticCompressJobPayload()), true);
 });
 
 Deno.test("isDialecticCompressJobPayload rejects a non-integer continuation_count", () => {
@@ -116,7 +125,7 @@ Deno.test("isDialecticCompressJobPayload rejects json mode missing sourceStageSl
 });
 
 Deno.test("isDialecticCompressJobPayload accepts text mode without docType or sourceStageSlug", () => {
-  const { docType: _docType, sourceStageSlug: _sourceStageSlug, ...textOnly } = baseDialectic;
+  const { docType: _docType, sourceStageSlug: _sourceStageSlug, ...textOnly } = buildDialecticCompressJobPayload();
   assertEquals(isDialecticCompressJobPayload(textOnly), true);
 });
 
@@ -149,69 +158,67 @@ Deno.test("isDialecticCompressJobPayload rejects a payload carrying user_id", ()
   assertThrows(() => isDialecticCompressJobPayload({ ...buildDialecticCompressJobPayload(), user_id: "user-1" }), Error, 'Payload contains unknown properties: user_id');
 });
 
-const basePayload = buildenqueueCompressJobsPayload();
-const baseVictim = basePayload.victim;
 
 Deno.test("isenqueueCompressJobsPayload accepts full contribution victim", () => {
-  assertEquals(isenqueueCompressJobsPayload(basePayload), true);
+  assertEquals(isenqueueCompressJobsPayload(buildenqueueCompressJobsPayload()), true);
 });
 
 Deno.test("isenqueueCompressJobsPayload rejects missing mode", () => {
-  const { mode: _, ...withoutMode } = baseVictim;
+  const { mode: _, ...withoutMode } = buildenqueueCompressJobsVictim();
   assertEquals(isenqueueCompressJobsPayload(invalidateEnqueueCompressJobsPayload({ victim: withoutMode })), false);
 });
 
 Deno.test("isenqueueCompressJobsPayload rejects unknown sourceType", () => {
-  assertEquals(isenqueueCompressJobsPayload(invalidateEnqueueCompressJobsPayload({ victim: { ...baseVictim, sourceType: "unknown" } })), false);
+  assertEquals(isenqueueCompressJobsPayload(invalidateEnqueueCompressJobsPayload({ victim: invalidateEnqueueCompressJobsVictim({ sourceType: "unknown" }) })), false);
 });
 
 Deno.test("isenqueueCompressJobsPayload rejects missing content", () => {
-  const { content: _, ...withoutContent } = baseVictim;
+  const { content: _, ...withoutContent } = buildenqueueCompressJobsVictim();
   assertEquals(isenqueueCompressJobsPayload(invalidateEnqueueCompressJobsPayload({ victim: withoutContent })), false);
 });
 
 Deno.test("isenqueueCompressJobsPayload rejects empty content", () => {
-  assertEquals(isenqueueCompressJobsPayload(invalidateEnqueueCompressJobsPayload({ victim: { ...baseVictim, content: "" } })), false);
+  assertEquals(isenqueueCompressJobsPayload(invalidateEnqueueCompressJobsPayload({ victim: invalidateEnqueueCompressJobsVictim({ content: "" }) })), false);
 });
 
 Deno.test("isenqueueCompressJobsPayload rejects contribution missing documentKey", () => {
-  assertEquals(isenqueueCompressJobsPayload(invalidateEnqueueCompressJobsPayload({ victim: { ...baseVictim, documentKey: null } })), false);
+  assertEquals(isenqueueCompressJobsPayload(invalidateEnqueueCompressJobsPayload({ victim: invalidateEnqueueCompressJobsVictim({ documentKey: null }) })), false);
 });
 
 Deno.test("isenqueueCompressJobsPayload accepts full feedback victim", () => {
-  assertEquals(isenqueueCompressJobsPayload(buildenqueueCompressJobsPayload({ victim: { sourceType: "feedback" } })), true);
+  assertEquals(isenqueueCompressJobsPayload(buildenqueueCompressJobsPayload({ victim: buildenqueueCompressJobsVictim({ sourceType: "feedback" }) })), true);
 });
 
 Deno.test("isenqueueCompressJobsPayload accepts full history victim", () => {
-  assertEquals(isenqueueCompressJobsPayload(buildenqueueCompressJobsPayload({ victim: { sourceType: "history", sourceId: "history-1", role: "assistant" } })), true);
+  assertEquals(isenqueueCompressJobsPayload(buildenqueueCompressJobsPayload({ victim: buildenqueueCompressJobsVictim({ sourceType: "history", sourceId: "history-1", role: "assistant" }) })), true);
 });
 
 Deno.test("isenqueueCompressJobsPayload rejects feedback missing documentKey", () => {
-  assertEquals(isenqueueCompressJobsPayload(invalidateEnqueueCompressJobsPayload({ victim: { ...baseVictim, sourceType: "feedback", documentKey: null } })), false);
+  assertEquals(isenqueueCompressJobsPayload(invalidateEnqueueCompressJobsPayload({ victim: invalidateEnqueueCompressJobsVictim({ sourceType: "feedback", documentKey: null }) })), false);
 });
 
 Deno.test("isenqueueCompressJobsPayload rejects history missing sourceId", () => {
-  assertEquals(isenqueueCompressJobsPayload(invalidateEnqueueCompressJobsPayload({ victim: { ...baseVictim, sourceType: "history", role: "assistant" } })), false);
+  assertEquals(isenqueueCompressJobsPayload(invalidateEnqueueCompressJobsPayload({ victim: invalidateEnqueueCompressJobsVictim({ sourceType: "history", role: "assistant" }) })), false);
 });
 
 Deno.test("isenqueueCompressJobsPayload rejects history missing role", () => {
-  assertEquals(isenqueueCompressJobsPayload(invalidateEnqueueCompressJobsPayload({ victim: { ...baseVictim, sourceType: "history", sourceId: "history-1" } })), false);
+  assertEquals(isenqueueCompressJobsPayload(invalidateEnqueueCompressJobsPayload({ victim: invalidateEnqueueCompressJobsVictim({ sourceType: "history", sourceId: "history-1" }) })), false);
 });
 
 Deno.test("isenqueueCompressJobsPayload rejects history with a role outside Messages", () => {
-  assertEquals(isenqueueCompressJobsPayload(invalidateEnqueueCompressJobsPayload({ victim: { ...baseVictim, sourceType: "history", sourceId: "history-1", role: "model" } })), false);
+  assertEquals(isenqueueCompressJobsPayload(invalidateEnqueueCompressJobsPayload({ victim: invalidateEnqueueCompressJobsVictim({ sourceType: "history", sourceId: "history-1", role: "model" }) })), false);
 });
 
 Deno.test("isenqueueCompressJobsPayload rejects json mode missing documentKey", () => {
-  assertEquals(isenqueueCompressJobsPayload(invalidateEnqueueCompressJobsPayload({ victim: { ...baseVictim, mode: "json", documentKey: null } })), false);
+  assertEquals(isenqueueCompressJobsPayload(invalidateEnqueueCompressJobsPayload({ victim: invalidateEnqueueCompressJobsVictim({ mode: "json", documentKey: null }) })), false);
 });
 
 Deno.test("isenqueueCompressJobsPayload rejects json mode missing docType", () => {
-  assertEquals(isenqueueCompressJobsPayload(invalidateEnqueueCompressJobsPayload({ victim: { ...baseVictim, mode: "json", docType: null } })), false);
+  assertEquals(isenqueueCompressJobsPayload(invalidateEnqueueCompressJobsPayload({ victim: invalidateEnqueueCompressJobsVictim({ mode: "json", docType: null }) })), false);
 });
 
 Deno.test("isenqueueCompressJobsPayload rejects json mode missing sourceStageSlug", () => {
-  assertEquals(isenqueueCompressJobsPayload(invalidateEnqueueCompressJobsPayload({ victim: { ...baseVictim, mode: "json", sourceStageSlug: null } })), false);
+  assertEquals(isenqueueCompressJobsPayload(invalidateEnqueueCompressJobsPayload({ victim: invalidateEnqueueCompressJobsVictim({ mode: "json", sourceStageSlug: null }) })), false);
 });
 
 Deno.test("isenqueueCompressJobsPayload rejects non-record roots", () => {
@@ -221,19 +228,35 @@ Deno.test("isenqueueCompressJobsPayload rejects non-record roots", () => {
   assertEquals(isenqueueCompressJobsPayload([]), false);
 });
 
-const baseDeps = buildenqueueCompressJobsDeps();
+Deno.test("isenqueueCompressJobsPayload rejects corrupted parentJob", () => {
+  assertEquals(isenqueueCompressJobsPayload(invalidateEnqueueCompressJobsPayload({ parentJob: null })), false);
+});
+
+Deno.test("isenqueueCompressJobsPayload rejects omitted parentJob", () => {
+  const { parentJob: _, ...rest } = buildenqueueCompressJobsPayload();
+  assertEquals(isenqueueCompressJobsPayload(rest), false);
+});
+
+Deno.test("isenqueueCompressJobsPayload rejects corrupted modelConfig", () => {
+  assertEquals(isenqueueCompressJobsPayload(invalidateEnqueueCompressJobsPayload({ modelConfig: null })), false);
+});
+
+Deno.test("isenqueueCompressJobsPayload rejects omitted modelConfig", () => {
+  const { modelConfig: _, ...rest } = buildenqueueCompressJobsPayload();
+  assertEquals(isenqueueCompressJobsPayload(rest), false);
+});
 
 Deno.test("isenqueueCompressJobsDeps accepts full deps", () => {
-  assertEquals(isenqueueCompressJobsDeps(baseDeps), true);
+  assertEquals(isenqueueCompressJobsDeps(buildenqueueCompressJobsDeps()), true);
 });
 
 Deno.test("isenqueueCompressJobsDeps rejects missing logger", () => {
-  const { logger: _, ...withoutLogger } = baseDeps;
+  const { logger: _, ...withoutLogger } = buildenqueueCompressJobsDeps();
   assertEquals(isenqueueCompressJobsDeps(withoutLogger), false);
 });
 
 Deno.test("isenqueueCompressJobsDeps rejects missing textSplitter", () => {
-  const { textSplitter: _, ...withoutTextSplitter } = baseDeps;
+  const { textSplitter: _, ...withoutTextSplitter } = buildenqueueCompressJobsDeps();
   assertEquals(isenqueueCompressJobsDeps(withoutTextSplitter), false);
 });
 
@@ -242,12 +265,12 @@ Deno.test("isenqueueCompressJobsDeps rejects textSplitter without splitText", ()
 });
 
 Deno.test("isenqueueCompressJobsDeps rejects missing countTokens", () => {
-  const { countTokens: _, ...withoutCountTokens } = baseDeps;
+  const { countTokens: _, ...withoutCountTokens } = buildenqueueCompressJobsDeps();
   assertEquals(isenqueueCompressJobsDeps(withoutCountTokens), false);
 });
 
 Deno.test("isenqueueCompressJobsDeps rejects missing constructStoragePath", () => {
-  const { constructStoragePath: _, ...withoutConstructStoragePath } = baseDeps;
+  const { constructStoragePath: _, ...withoutConstructStoragePath } = buildenqueueCompressJobsDeps();
   assertEquals(isenqueueCompressJobsDeps(withoutConstructStoragePath), false);
 });
 
@@ -258,84 +281,17 @@ Deno.test("isenqueueCompressJobsDeps rejects non-record roots", () => {
   assertEquals(isenqueueCompressJobsDeps([]), false);
 });
 
-const baseParams = buildenqueueCompressJobsParams();
-
 Deno.test("isenqueueCompressJobsParams accepts full params", () => {
-  assertEquals(isenqueueCompressJobsParams(baseParams), true);
+  assertEquals(isenqueueCompressJobsParams(buildenqueueCompressJobsParams()), true);
 });
 
 Deno.test("isenqueueCompressJobsParams rejects missing dbClient", () => {
-  const { dbClient: _, ...withoutDbClient } = baseParams;
+  const { dbClient: _, ...withoutDbClient } = buildenqueueCompressJobsParams();
   assertEquals(isenqueueCompressJobsParams(withoutDbClient), false);
 });
 
 Deno.test("isenqueueCompressJobsParams rejects dbClient without from", () => {
   assertEquals(isenqueueCompressJobsParams(invalidateEnqueueCompressJobsParams({ dbClient: {} })), false);
-});
-
-Deno.test("isenqueueCompressJobsParams rejects missing parentJob", () => {
-  const { parentJob: _, ...withoutParentJob } = baseParams;
-  assertEquals(isenqueueCompressJobsParams(withoutParentJob), false);
-});
-
-Deno.test("isenqueueCompressJobsParams rejects parentJob missing id", () => {
-  const { id: _, ...withoutId } = baseParams.parentJob;
-  assertEquals(isenqueueCompressJobsParams(invalidateEnqueueCompressJobsParams({ parentJob: withoutId })), false);
-});
-
-Deno.test("isenqueueCompressJobsParams rejects missing sessionId", () => {
-  const { sessionId: _, ...withoutSessionId } = baseParams;
-  assertEquals(isenqueueCompressJobsParams(withoutSessionId), false);
-});
-
-Deno.test("isenqueueCompressJobsParams rejects missing projectId", () => {
-  const { projectId: _, ...withoutProjectId } = baseParams;
-  assertEquals(isenqueueCompressJobsParams(withoutProjectId), false);
-});
-
-Deno.test("isenqueueCompressJobsParams rejects missing stageSlug", () => {
-  const { stageSlug: _, ...withoutStageSlug } = baseParams;
-  assertEquals(isenqueueCompressJobsParams(withoutStageSlug), false);
-});
-
-Deno.test("isenqueueCompressJobsParams rejects missing output_type", () => {
-  const { output_type: _, ...withoutoutput_type } = baseParams;
-  assertEquals(isenqueueCompressJobsParams(withoutoutput_type), false);
-});
-
-Deno.test("isenqueueCompressJobsParams rejects negative iterationNumber", () => {
-  assertEquals(isenqueueCompressJobsParams(invalidateEnqueueCompressJobsParams({ iterationNumber: -1 })), false);
-});
-
-Deno.test("isenqueueCompressJobsParams rejects missing modelId", () => {
-  const { modelId: _, ...withoutModelId } = baseParams;
-  assertEquals(isenqueueCompressJobsParams(withoutModelId), false);
-});
-
-Deno.test("isenqueueCompressJobsParams rejects a missing modelSlug", () => {
-  assertEquals(isenqueueCompressJobsParams(invalidateEnqueueCompressJobsParams({ modelSlug: undefined })), false);
-  assertEquals(isenqueueCompressJobsParams(invalidateEnqueueCompressJobsParams({ modelSlug: "" })), false);
-});
-
-Deno.test("isenqueueCompressJobsParams rejects an absent or empty userJwt", () => {
-  const { userJwt: _, ...withoutUserJwt } = baseParams;
-  assertEquals(isenqueueCompressJobsParams(withoutUserJwt), false);
-  assertEquals(isenqueueCompressJobsParams(invalidateEnqueueCompressJobsParams({ userJwt: "" })), false);
-});
-
-Deno.test("isenqueueCompressJobsParams rejects missing walletId", () => {
-  const { walletId: _, ...withoutWalletId } = baseParams;
-  assertEquals(isenqueueCompressJobsParams(withoutWalletId), false);
-});
-
-Deno.test("isenqueueCompressJobsParams rejects missing modelConfig", () => {
-  const { modelConfig: _, ...withoutModelConfig } = baseParams;
-  assertEquals(isenqueueCompressJobsParams(withoutModelConfig), false);
-});
-
-Deno.test("isenqueueCompressJobsParams rejects missing tokenizerDeps", () => {
-  const { tokenizerDeps: _, ...withoutTokenizerDeps } = baseParams;
-  assertEquals(isenqueueCompressJobsParams(withoutTokenizerDeps), false);
 });
 
 Deno.test("isenqueueCompressJobsParams rejects non-record roots", () => {
@@ -414,10 +370,146 @@ Deno.test("isDialecticCompressJobPayload rejects sourceStageSlug that is not a D
   assertThrows(() => isDialecticCompressJobPayload(invalidateDialecticCompressJobPayload({ mode: "json", sourceStageSlug: "not-a-stage" })), Error, 'Missing or invalid sourceStageSlug.');
 });
 
-Deno.test("isenqueueCompressJobsParams rejects stageSlug that is not a DialecticStageSlug", () => {
-  assertEquals(isenqueueCompressJobsParams(invalidateEnqueueCompressJobsParams({ stageSlug: "not-a-stage" })), false);
+Deno.test("isenqueueCompressJobsVictim accepts full contribution victim", () => {
+  assertEquals(isenqueueCompressJobsVictim(buildenqueueCompressJobsVictim()), true);
 });
 
-Deno.test("isenqueueCompressJobsParams rejects output_type that is not a ModelContributionFileType", () => {
-  assertEquals(isenqueueCompressJobsParams(invalidateEnqueueCompressJobsParams({ output_type: "not-a-model-contribution" })), false);
+Deno.test("isenqueueCompressJobsVictim rejects missing mode", () => {
+  const { mode: _, ...withoutMode } = buildenqueueCompressJobsVictim();
+  assertEquals(isenqueueCompressJobsVictim(withoutMode), false);
+});
+
+Deno.test("isenqueueCompressJobsVictim rejects missing content", () => {
+  const { content: _, ...withoutContent } = buildenqueueCompressJobsVictim();
+  assertEquals(isenqueueCompressJobsVictim(withoutContent), false);
+});
+
+Deno.test("isenqueueCompressJobsVictim rejects missing sourceType", () => {
+  const { sourceType: _, ...withoutSourceType } = buildenqueueCompressJobsVictim();
+  assertEquals(isenqueueCompressJobsVictim(withoutSourceType), false);
+});
+
+Deno.test("isenqueueCompressJobsVictim rejects unknown sourceType", () => {
+  assertEquals(isenqueueCompressJobsVictim(invalidateEnqueueCompressJobsVictim({ sourceType: "unknown" })), false);
+});
+
+Deno.test("isenqueueCompressJobsVictim rejects empty content", () => {
+  assertEquals(isenqueueCompressJobsVictim(invalidateEnqueueCompressJobsVictim({ content: "" })), false);
+});
+
+Deno.test("isenqueueCompressJobsVictim rejects contribution missing documentKey", () => {
+  assertEquals(isenqueueCompressJobsVictim(invalidateEnqueueCompressJobsVictim({ documentKey: null })), false);
+});
+
+Deno.test("isenqueueCompressJobsVictim accepts full feedback victim", () => {
+  assertEquals(isenqueueCompressJobsVictim(buildenqueueCompressJobsVictim({ sourceType: "feedback" })), true);
+});
+
+Deno.test("isenqueueCompressJobsVictim accepts full history victim", () => {
+  assertEquals(isenqueueCompressJobsVictim(buildenqueueCompressJobsVictim({ sourceType: "history", sourceId: "history-1", role: "assistant" })), true);
+});
+
+Deno.test("isenqueueCompressJobsVictim rejects feedback missing documentKey", () => {
+  assertEquals(isenqueueCompressJobsVictim(invalidateEnqueueCompressJobsVictim({ sourceType: "feedback", documentKey: null })), false);
+});
+
+Deno.test("isenqueueCompressJobsVictim rejects history missing sourceId", () => {
+  assertEquals(isenqueueCompressJobsVictim(invalidateEnqueueCompressJobsVictim({ sourceType: "history", role: "assistant" })), false);
+});
+
+Deno.test("isenqueueCompressJobsVictim rejects history missing role", () => {
+  assertEquals(isenqueueCompressJobsVictim(invalidateEnqueueCompressJobsVictim({ sourceType: "history", sourceId: "history-1" })), false);
+});
+
+Deno.test("isenqueueCompressJobsVictim rejects history with a role outside Messages", () => {
+  assertEquals(isenqueueCompressJobsVictim(invalidateEnqueueCompressJobsVictim({ sourceType: "history", sourceId: "history-1", role: "model" })), false);
+});
+
+Deno.test("isenqueueCompressJobsVictim rejects json mode missing documentKey", () => {
+  assertEquals(isenqueueCompressJobsVictim(invalidateEnqueueCompressJobsVictim({ mode: "json", documentKey: null })), false);
+});
+
+Deno.test("isenqueueCompressJobsVictim rejects json mode missing docType", () => {
+  assertEquals(isenqueueCompressJobsVictim(invalidateEnqueueCompressJobsVictim({ mode: "json", docType: null })), false);
+});
+
+Deno.test("isenqueueCompressJobsVictim rejects json mode missing sourceStageSlug", () => {
+  assertEquals(isenqueueCompressJobsVictim(invalidateEnqueueCompressJobsVictim({ mode: "json", sourceStageSlug: null })), false);
+});
+
+Deno.test("isenqueueCompressJobsVictim rejects non-record roots", () => {
+  assertEquals(isenqueueCompressJobsVictim(null), false);
+  assertEquals(isenqueueCompressJobsVictim(undefined), false);
+  assertEquals(isenqueueCompressJobsVictim(42), false);
+  assertEquals(isenqueueCompressJobsVictim([]), false);
+});
+
+Deno.test("isCompressJobValidationErrorConstructorParams accepts valid params", () => {
+  assertEquals(isCompressJobValidationErrorConstructorParams(buildCompressJobValidationErrorConstructorParams()), true);
+});
+
+Deno.test("isCompressJobValidationErrorConstructorParams rejects missing message", () => {
+  const { message: _, ...withoutMessage } = buildCompressJobValidationErrorConstructorParams();
+  assertEquals(isCompressJobValidationErrorConstructorParams(withoutMessage), false);
+});
+
+Deno.test("isCompressJobValidationErrorConstructorParams rejects empty message", () => {
+  assertEquals(isCompressJobValidationErrorConstructorParams(invalidateCompressJobValidationErrorConstructorParams({ message: "" })), false);
+});
+
+Deno.test("isCompressJobValidationErrorConstructorParams rejects non-record roots", () => {
+  assertEquals(isCompressJobValidationErrorConstructorParams(null), false);
+  assertEquals(isCompressJobValidationErrorConstructorParams(undefined), false);
+  assertEquals(isCompressJobValidationErrorConstructorParams(42), false);
+  assertEquals(isCompressJobValidationErrorConstructorParams([]), false);
+});
+
+Deno.test("isCompressJobValidationError accepts a real instance", () => {
+  assertEquals(isCompressJobValidationError(buildCompressJobValidationError()), true);
+});
+
+Deno.test("isCompressJobValidationError rejects a plain Error", () => {
+  assertEquals(isCompressJobValidationError(new Error("plain")), false);
+});
+
+Deno.test("isCompressJobValidationError rejects non-object roots", () => {
+  assertEquals(isCompressJobValidationError(null), false);
+  assertEquals(isCompressJobValidationError(undefined), false);
+  assertEquals(isCompressJobValidationError(42), false);
+  assertEquals(isCompressJobValidationError("error"), false);
+});
+
+Deno.test("isCompressJobEnqueueErrorConstructorParams accepts valid params", () => {
+  assertEquals(isCompressJobEnqueueErrorConstructorParams(buildCompressJobEnqueueErrorConstructorParams()), true);
+});
+
+Deno.test("isCompressJobEnqueueErrorConstructorParams rejects missing message", () => {
+  const { message: _, ...withoutMessage } = buildCompressJobEnqueueErrorConstructorParams();
+  assertEquals(isCompressJobEnqueueErrorConstructorParams(withoutMessage), false);
+});
+
+Deno.test("isCompressJobEnqueueErrorConstructorParams rejects empty message", () => {
+  assertEquals(isCompressJobEnqueueErrorConstructorParams(invalidateCompressJobEnqueueErrorConstructorParams({ message: "" })), false);
+});
+
+Deno.test("isCompressJobEnqueueErrorConstructorParams rejects non-record roots", () => {
+  assertEquals(isCompressJobEnqueueErrorConstructorParams(null), false);
+  assertEquals(isCompressJobEnqueueErrorConstructorParams(undefined), false);
+  assertEquals(isCompressJobEnqueueErrorConstructorParams(42), false);
+  assertEquals(isCompressJobEnqueueErrorConstructorParams([]), false);
+});
+
+Deno.test("isCompressJobEnqueueError accepts a real instance", () => {
+  assertEquals(isCompressJobEnqueueError(buildCompressJobEnqueueError()), true);
+});
+
+Deno.test("isCompressJobEnqueueError rejects a plain Error", () => {
+  assertEquals(isCompressJobEnqueueError(new Error("plain")), false);
+});
+
+Deno.test("isCompressJobEnqueueError rejects non-object roots", () => {
+  assertEquals(isCompressJobEnqueueError(null), false);
+  assertEquals(isCompressJobEnqueueError(undefined), false);
+  assertEquals(isCompressJobEnqueueError(42), false);
+  assertEquals(isCompressJobEnqueueError("error"), false);
 });

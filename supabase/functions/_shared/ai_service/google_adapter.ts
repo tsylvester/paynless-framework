@@ -6,7 +6,7 @@ import {
     type GenerateContentStreamResult,
     type Part,
 } from "npm:@google/generative-ai";
-import { isResourceDocument } from '../utils/type-guards/type_guards.chat.ts';
+import { isResourceDocument } from '../utils/resolveCompressionSource/resolveCompressionSource.guard.ts';
 import type {
     ProviderModelInfo,
     ChatApiRequest,

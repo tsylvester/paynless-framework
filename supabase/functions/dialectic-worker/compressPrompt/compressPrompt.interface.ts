@@ -4,37 +4,46 @@ import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import type { Database } from "../../types_db.ts";
 import type {
   AiModelExtendedConfig,
-  ChatApiRequest,
   ILogger,
   Messages,
 } from "../../_shared/types.ts";
-import { ResourceDocuments } from '../../_shared/utils/resolveCompressionSource/resolveCompressionSource.interface.ts'
-import type { CountTokensDeps, CountTokensFn } from "../../_shared/types/tokenizer.types.ts";
-import type { IEmbeddingClient } from "../../_shared/services/indexing_service.interface.ts";
-import type { IRagService } from "../../_shared/services/rag_service.interface.ts";
-import type { RelevanceRule } from "../../dialectic-service/dialectic.interface.ts";
-import type { ICompressionStrategy } from "../../_shared/utils/vector_utils.interface.ts";
-import type { IAdminTokenWalletService } from "../../_shared/services/tokenwallet/admin/adminTokenWalletService.interface.ts";
+import type {
+  DialecticJobRow,
+  RelevanceRule,
+} from "../../dialectic-service/dialectic.interface.ts";
+import type {
+  BoundGetSortedCompressionCandidatesFn,
+} from "../../_shared/utils/vector_utils/vector_utils.provides.ts";
+import type {
+  BoundenqueueCompressJobsFn,
+} from "../enqueueCompressJobs/enqueueCompressJobs.provides.ts";
+import type {
+  BoundResolveCompressionSourceFn,
+  ResourceDocument,
+  ResourceDocuments,
+} from "../../_shared/utils/resolveCompressionSource/resolveCompressionSource.provides.ts";
+import type {
+  ConstructStoragePathFn,
+} from "../../_shared/utils/path_constructor.types.ts";
+import type {
+  DownloadFromStorageFn,
+} from "../../_shared/supabase_storage_utils.ts";
+import type {
+  CountTokensFn,
+} from "../../_shared/types/tokenizer.types.ts";
 
 export interface CompressPromptDeps {
   logger: ILogger;
-  ragService: IRagService;
-  embeddingClient: IEmbeddingClient;
-  tokenWalletService: IAdminTokenWalletService;
+  getSortedCompressionCandidates: BoundGetSortedCompressionCandidatesFn;
+  enqueueCompressJobs: BoundenqueueCompressJobsFn;
+  resolveCompressionSource: BoundResolveCompressionSourceFn;
+  constructStoragePath: ConstructStoragePathFn;
+  downloadFromStorage: DownloadFromStorageFn;
   countTokens: CountTokensFn;
 }
 
 export interface CompressPromptParams {
   dbClient: SupabaseClient<Database>;
-  jobId: string;
-  projectOwnerUserId: string;
-  sessionId: string;
-  stageSlug: string;
-  walletId: string;
-  extendedModelConfig: AiModelExtendedConfig;
-  inputsRelevance: RelevanceRule[];
-  inputRate: number;
-  outputRate: number;
   isContinuationFlowInitial: boolean;
   finalTargetThreshold: number;
   balanceAfterCompression: number;
@@ -42,19 +51,28 @@ export interface CompressPromptParams {
 }
 
 export interface CompressPromptPayload {
-  compressionStrategy: ICompressionStrategy;
+  parentJob: DialecticJobRow;
+  extendedModelConfig: AiModelExtendedConfig;
+  inputsRelevance: RelevanceRule[];
   resourceDocuments: ResourceDocuments;
   conversationHistory: Messages[];
   currentUserPrompt: string;
-  chatApiRequest: ChatApiRequest;
-  tokenizerDeps: CountTokensDeps;
 }
 
-export interface CompressPromptSuccessReturn {
-  chatApiRequest: ChatApiRequest;
-  resolvedInputTokenCount: number;
+export interface CompressPromptFitsReturn {
+  fits: true;
   resourceDocuments: ResourceDocuments;
+  conversationHistory: Messages[];
+  resolvedInputTokenCount: number;
 }
+
+export interface CompressPromptPendingReturn {
+  fits: false;
+}
+
+export type CompressPromptSuccessReturn =
+  | CompressPromptFitsReturn
+  | CompressPromptPendingReturn;
 
 export interface CompressPromptErrorReturn {
   error: Error;

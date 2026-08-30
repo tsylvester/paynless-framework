@@ -1,169 +1,176 @@
 // supabase/functions/dialectic-worker/calculateAffordability/calculateAffordability.interface.test.ts
 
-import { assertEquals, assertStringIncludes } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { ContextWindowError } from "../../_shared/utils/errors.ts";
+import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import type {
-  CalculateAffordabilityCompressedReturn,
+  BoundCalculateAffordabilityFn,
   CalculateAffordabilityDeps,
-  CalculateAffordabilityDirectReturn,
   CalculateAffordabilityErrorReturn,
+  CalculateAffordabilityFn,
+  CalculateAffordabilityOverBudgetReturn,
   CalculateAffordabilityParams,
+  CalculateAffordabilityPayload,
   CalculateAffordabilityReturn,
+  CalculateAffordabilitySuccessReturn,
+  CalculateAffordabilityWithinBudgetReturn,
+  GetMaxOutputTokensFn,
+  TierOutputCapTokens,
   UserConfig,
 } from "./calculateAffordability.interface.ts";
-import {
-  buildCalculateAffordabilityCompressedReturn,
-  buildCalculateAffordabilityDirectReturn,
-  buildCalculateAffordabilityErrorReturn,
-} from "./calculateAffordability.mock.ts";
 
-Deno.test("calculateAffordability contract: valid non-oversized adequate balance shape", () => {
-  const result: CalculateAffordabilityDirectReturn = buildCalculateAffordabilityDirectReturn(0);
-  assertEquals(result.wasCompressed, false);
-  assertEquals(typeof result.maxOutputTokens, "number");
-  assertEquals(result.maxOutputTokens >= 0, true);
-  assertEquals(typeof result.resolvedInputTokenCount, "number");
-  assertEquals(result.resolvedInputTokenCount >= 0, true);
-  assertEquals("error" in result, false);
+/** Contract: CalculateAffordabilityDeps requires exactly logger, countTokens, getMaxOutputTokens. */
+Deno.test("CalculateAffordabilityDeps has the required surface", () => {
+  const surface: Record<keyof CalculateAffordabilityDeps, true> = {
+    logger: true,
+    countTokens: true,
+    getMaxOutputTokens: true,
+  };
+  assertEquals(Object.keys(surface).length, 3);
 });
 
-Deno.test("calculateAffordability contract: valid oversized compress success shape", () => {
-  const result: CalculateAffordabilityCompressedReturn = buildCalculateAffordabilityCompressedReturn({
-    resolvedInputTokenCount: 0,
-  });
-  assertEquals(result.wasCompressed, true);
-  assertEquals(typeof result.chatApiRequest, "object");
-  assertEquals(typeof result.resolvedInputTokenCount, "number");
-  assertEquals(result.resolvedInputTokenCount >= 0, true);
-  assertEquals("error" in result, false);
+/** Contract: CalculateAffordabilityParams requires exactly walletBalance, userConfig. */
+Deno.test("CalculateAffordabilityParams has the required surface", () => {
+  const surface: Record<keyof CalculateAffordabilityParams, true> = {
+    walletBalance: true,
+    userConfig: true,
+  };
+  assertEquals(Object.keys(surface).length, 2);
 });
 
-Deno.test("calculateAffordability contract: invalid non-oversized NSF shape", () => {
-  const err: Error = new Error(
-    "Insufficient funds: estimated total cost (99) exceeds wallet balance (1).",
-  );
-  const result: CalculateAffordabilityErrorReturn = buildCalculateAffordabilityErrorReturn(err, false);
-  assertEquals("error" in result, true);
-  if ("error" in result) {
-    assertStringIncludes(result.error.message, "Insufficient funds");
-    assertEquals(result.retriable, false);
-    assertEquals("wasCompressed" in result, false);
-  }
+/** Contract: CalculateAffordabilityPayload requires exactly extendedModelConfig, resourceDocuments, conversationHistory, currentUserPrompt, systemInstruction. */
+Deno.test("CalculateAffordabilityPayload has the required surface", () => {
+  const surface: Record<keyof CalculateAffordabilityPayload, true> = {
+    extendedModelConfig: true,
+    resourceDocuments: true,
+    conversationHistory: true,
+    currentUserPrompt: true,
+    systemInstruction: true,
+  };
+  assertEquals(Object.keys(surface).length, 5);
 });
 
-Deno.test("calculateAffordability contract: invalid context window exhausted shape", () => {
-  const err: ContextWindowError = new ContextWindowError(
-    "No input window remains after reserving output budget.",
-  );
-  const result: CalculateAffordabilityErrorReturn = buildCalculateAffordabilityErrorReturn(err, false);
-  assertEquals("error" in result, true);
-  if ("error" in result) {
-    assertEquals(result.error instanceof ContextWindowError, true);
-    assertEquals(result.retriable, false);
-    assertEquals("wasCompressed" in result, false);
-  }
+/** Contract: CalculateAffordabilityWithinBudgetReturn requires exactly overBudget, maxOutputTokens, resolvedInputTokenCount. */
+Deno.test("CalculateAffordabilityWithinBudgetReturn has the required surface", () => {
+  const surface: Record<keyof CalculateAffordabilityWithinBudgetReturn, true> = {
+    overBudget: true,
+    maxOutputTokens: true,
+    resolvedInputTokenCount: true,
+  };
+  assertEquals(Object.keys(surface).length, 3);
 });
 
-Deno.test("calculateAffordability contract: invalid oversized NSF for entire operation including embeddings", () => {
-  const err: Error = new Error(
-    "Insufficient funds for the entire operation (including embeddings). Estimated cost: 500, Balance: 100",
-  );
-  const result: CalculateAffordabilityErrorReturn = buildCalculateAffordabilityErrorReturn(err, false);
-  assertEquals("error" in result, true);
-  if ("error" in result) {
-    assertStringIncludes(result.error.message, "Insufficient funds for the entire operation");
-    assertEquals(result.retriable, false);
-  }
+/** Contract: CalculateAffordabilityOverBudgetReturn requires exactly overBudget, resolvedInputTokenCount, finalTargetThreshold, balanceAfterCompression. */
+Deno.test("CalculateAffordabilityOverBudgetReturn has the required surface", () => {
+  const surface: Record<keyof CalculateAffordabilityOverBudgetReturn, true> = {
+    overBudget: true,
+    resolvedInputTokenCount: true,
+    finalTargetThreshold: true,
+    balanceAfterCompression: true,
+  };
+  assertEquals(Object.keys(surface).length, 4);
 });
 
-Deno.test("calculateAffordability contract: invalid oversized estimated cost exceeds 80% rationality threshold", () => {
-  const err: Error = new Error(
-    "Estimated cost (900) exceeds 80% of the user's balance (1000).",
-  );
-  const result: CalculateAffordabilityErrorReturn = buildCalculateAffordabilityErrorReturn(err, false);
-  assertEquals("error" in result, true);
-  if ("error" in result) {
-    assertEquals(result.retriable, false);
-  }
+/** Contract: CalculateAffordabilityErrorReturn requires exactly error, retriable. */
+Deno.test("CalculateAffordabilityErrorReturn has the required surface", () => {
+  const surface: Record<keyof CalculateAffordabilityErrorReturn, true> = {
+    error: true,
+    retriable: true,
+  };
+  assertEquals(Object.keys(surface).length, 2);
 });
 
-Deno.test("calculateAffordability contract: invalid oversized balanceAfterCompression <= 0 shape", () => {
-  const err: Error = new Error(
-    "Insufficient funds: compression requires 500 tokens, balance is 400.",
-  );
-  const result: CalculateAffordabilityErrorReturn = buildCalculateAffordabilityErrorReturn(err, false);
-  assertEquals("error" in result, true);
-  if ("error" in result) {
-    assertStringIncludes(result.error.message, "Insufficient funds: compression requires");
-    assertEquals(result.retriable, false);
-  }
+/** Contract: UserConfig requires exactly tier_output_cap_tokens. */
+Deno.test("UserConfig has the required surface", () => {
+  const surface: Record<keyof UserConfig, true> = {
+    tier_output_cap_tokens: true,
+  };
+  assertEquals(Object.keys(surface).length, 1);
 });
 
-Deno.test("calculateAffordability contract: invalid oversized infeasible solver target shape", () => {
-  const err: ContextWindowError = new ContextWindowError(
-    "Unable to determine a feasible input size target given current balance.",
-  );
-  const result: CalculateAffordabilityErrorReturn = buildCalculateAffordabilityErrorReturn(err, false);
-  assertEquals("error" in result, true);
-  if ("error" in result) {
-    assertEquals(result.error instanceof ContextWindowError, true);
-    assertEquals(result.retriable, false);
-  }
+/** Contract: both success flavors assign to CalculateAffordabilitySuccessReturn which assigns to CalculateAffordabilityReturn, and CalculateAffordabilityErrorReturn assigns to CalculateAffordabilityReturn — flavors nested inside the success arm. */
+Deno.test("CalculateAffordabilityReturn is a two-arm union with flavors nested in the success arm", () => {
+  const within: CalculateAffordabilityWithinBudgetReturn = {
+    overBudget: false,
+    maxOutputTokens: 100,
+    resolvedInputTokenCount: 50,
+  };
+  const successFromWithin: CalculateAffordabilitySuccessReturn = within;
+  const returnFromWithin: CalculateAffordabilityReturn = successFromWithin;
+  assertEquals(returnFromWithin === within, true);
+
+  const over: CalculateAffordabilityOverBudgetReturn = {
+    overBudget: true,
+    resolvedInputTokenCount: 50,
+    finalTargetThreshold: 30,
+    balanceAfterCompression: 200,
+  };
+  const successFromOver: CalculateAffordabilitySuccessReturn = over;
+  const returnFromOver: CalculateAffordabilityReturn = successFromOver;
+  assertEquals(returnFromOver === over, true);
+
+  const err: CalculateAffordabilityErrorReturn = {
+    error: new Error("mock-affordability-error"),
+    retriable: false,
+  };
+  const returnFromError: CalculateAffordabilityReturn = err;
+  assertEquals(returnFromError === err, true);
 });
 
-Deno.test("calculateAffordability contract: invalid oversized total estimated cost exceeds balance", () => {
-  const err: Error = new Error(
-    "Insufficient funds: total estimated cost (compression + final I/O) 900 exceeds balance 800.",
-  );
-  const result: CalculateAffordabilityErrorReturn = buildCalculateAffordabilityErrorReturn(err, false);
-  assertEquals("error" in result, true);
-  if ("error" in result) {
-    assertEquals(result.retriable, false);
-  }
+/** Contract: the within-budget flavor carries overBudget false with maxOutputTokens and resolvedInputTokenCount; the over-budget flavor carries overBudget true with resolvedInputTokenCount, finalTargetThreshold and balanceAfterCompression. */
+Deno.test("each success flavor carries its declared members by typed literal", () => {
+  const withinBudget: CalculateAffordabilityWithinBudgetReturn = {
+    overBudget: false,
+    maxOutputTokens: 256,
+    resolvedInputTokenCount: 128,
+  };
+  assertEquals(withinBudget.overBudget, false);
+  assertEquals(typeof withinBudget.maxOutputTokens, "number");
+  assertEquals(typeof withinBudget.resolvedInputTokenCount, "number");
+
+  const overBudget: CalculateAffordabilityOverBudgetReturn = {
+    overBudget: true,
+    resolvedInputTokenCount: 128,
+    finalTargetThreshold: 64,
+    balanceAfterCompression: 500,
+  };
+  assertEquals(overBudget.overBudget, true);
+  assertEquals(typeof overBudget.resolvedInputTokenCount, "number");
+  assertEquals(typeof overBudget.finalTargetThreshold, "number");
+  assertEquals(typeof overBudget.balanceAfterCompression, "number");
 });
 
-Deno.test("calculateAffordability contract: invalid oversized total estimated cost exceeds 80% rationality threshold", () => {
-  const err: Error = new Error(
-    "Estimated cost (850) exceeds 80% of the user's balance (1000).",
-  );
-  const result: CalculateAffordabilityErrorReturn = buildCalculateAffordabilityErrorReturn(err, false);
-  assertEquals("error" in result, true);
-  if ("error" in result) {
-    assertEquals(result.retriable, false);
-  }
+/** Contract: CalculateAffordabilityFn and BoundCalculateAffordabilityFn return Promise<CalculateAffordabilityReturn>. */
+Deno.test("CalculateAffordabilityFn and BoundCalculateAffordabilityFn resolve to CalculateAffordabilityReturn", () => {
+  const success: CalculateAffordabilitySuccessReturn = {
+    overBudget: false,
+    maxOutputTokens: 100,
+    resolvedInputTokenCount: 50,
+  };
+
+  const fnReturned: ReturnType<CalculateAffordabilityFn> = Promise.resolve(success);
+  const fnDeclared: Promise<CalculateAffordabilityReturn> = fnReturned;
+  assertEquals(fnDeclared instanceof Promise, true);
+
+  const boundReturned: ReturnType<BoundCalculateAffordabilityFn> = Promise.resolve(success);
+  const boundDeclared: Promise<CalculateAffordabilityReturn> = boundReturned;
+  assertEquals(boundDeclared instanceof Promise, true);
 });
 
-Deno.test("calculateAffordability contract: invalid compressPrompt error propagated shape", () => {
-  const propagated: Error = new Error("compressPrompt failure body");
-  const result: CalculateAffordabilityErrorReturn = buildCalculateAffordabilityErrorReturn(
-    propagated,
-    false,
-  );
-  assertEquals("error" in result, true);
-  if ("error" in result) {
-    assertEquals(result.error, propagated);
-    assertEquals("wasCompressed" in result, false);
-  }
+/** Contract: GetMaxOutputTokensFn returns number. */
+Deno.test("GetMaxOutputTokensFn returns number", () => {
+  const result: ReturnType<GetMaxOutputTokensFn> = 0;
+  const declared: number = result;
+  assertEquals(declared, 0);
 });
 
-Deno.test("calculateAffordability contract: union result accepts direct branch", () => {
-  const result: CalculateAffordabilityReturn = buildCalculateAffordabilityDirectReturn(10);
-  assertEquals("wasCompressed" in result && result.wasCompressed === false, true);
+/** Contract: TierOutputCapTokens admits null and number. */
+Deno.test("TierOutputCapTokens admits null and number", () => {
+  const whenNull: TierOutputCapTokens = null;
+  const whenNumber: TierOutputCapTokens = 32768;
+  assertEquals(whenNull, null);
+  assertEquals(whenNumber, 32768);
 });
 
-Deno.test("calculateAffordability contract: union result accepts compressed branch", () => {
-  const result: CalculateAffordabilityReturn = buildCalculateAffordabilityCompressedReturn();
-  assertEquals("wasCompressed" in result && result.wasCompressed === true, true);
-});
-
-Deno.test("calculateAffordability contract: union result accepts error branch", () => {
-  const result: CalculateAffordabilityReturn = buildCalculateAffordabilityErrorReturn(
-    new Error("union error"),
-    false,
-  );
-  assertEquals("error" in result, true);
-});
-
+/** Contract: UserConfig.tier_output_cap_tokens is TierOutputCapTokens, accepting null and number. */
 Deno.test("UserConfig shape has exactly tier_output_cap_tokens number | null", () => {
   const uc: UserConfig = { tier_output_cap_tokens: null };
   const uc2: UserConfig = { tier_output_cap_tokens: 32768 };
@@ -171,6 +178,7 @@ Deno.test("UserConfig shape has exactly tier_output_cap_tokens number | null", (
   assertEquals(uc2.tier_output_cap_tokens, 32768);
 });
 
+/** Contract: CalculateAffordabilityParams.userConfig is UserConfig per interface. */
 Deno.test(
   "CalculateAffordabilityParams contract: userConfig is UserConfig per interface",
   () => {
@@ -181,16 +189,19 @@ Deno.test(
   },
 );
 
+/** Contract: UserConfig with tier_output_cap_tokens null is valid. */
 Deno.test("userConfig with tier_output_cap_tokens null is valid", () => {
   const userConfig: CalculateAffordabilityParams["userConfig"] = { tier_output_cap_tokens: null };
   assertEquals(userConfig.tier_output_cap_tokens, null);
 });
 
+/** Contract: UserConfig with tier_output_cap_tokens 32768 is valid. */
 Deno.test("userConfig with tier_output_cap_tokens 32768 is valid", () => {
   const userConfig: CalculateAffordabilityParams["userConfig"] = { tier_output_cap_tokens: 32768 };
   assertEquals(userConfig.tier_output_cap_tokens, 32768);
 });
 
+/** Contract: getMaxOutputTokens is a required key of CalculateAffordabilityDeps. */
 Deno.test("CalculateAffordabilityDeps contract: getMaxOutputTokens is a required key", () => {
   const key: keyof CalculateAffordabilityDeps = "getMaxOutputTokens";
   assertEquals(key, "getMaxOutputTokens");

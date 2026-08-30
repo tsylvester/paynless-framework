@@ -1,6 +1,5 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import type { Database } from "../../types_db.ts";
-import type { CountTokensDeps } from "../../_shared/types/tokenizer.types.ts";
 import { MockLogger } from "../../_shared/logger.mock.ts";
 import { MOCK_MODEL_CONFIG } from "../../_shared/_integration.test.utils.ts";
 import { createMockCountTokens } from "../../_shared/utils/tokenizer_utils.mock.ts";
@@ -13,14 +12,14 @@ import {
 } from "../../_shared/types/file_manager.types.ts";
 import {
   buildDialecticBaseJobPayload,
-  buildDialecticExecuteJobPayload,
   buildDialecticJobRow,
 } from "../../_shared/dialectic.mock.ts";
-import { isJson } from "../../_shared/utils/type_guards.ts";
 import {
   BoundenqueueCompressJobsFn,
   CompressJobEnqueueError,
+  CompressJobEnqueueErrorConstructorParams,
   CompressJobValidationError,
+  CompressJobValidationErrorConstructorParams,
   DialecticCompressJobPayload,
   enqueueCompressJobsDeps,
   enqueueCompressJobsErrorReturn,
@@ -29,15 +28,16 @@ import {
   enqueueCompressJobsPayload,
   enqueueCompressJobsReturn,
   enqueueCompressJobsSuccessReturn,
+  enqueueCompressJobsVictim,
 } from "./enqueueCompressJobs.interface.ts";
 
 export type enqueueCompressJobsDepsOverrides = Partial<enqueueCompressJobsDeps>;
 
 export type enqueueCompressJobsParamsOverrides = Partial<enqueueCompressJobsParams>;
 
-export type enqueueCompressJobsPayloadOverrides = {
-  victim?: Partial<enqueueCompressJobsPayload["victim"]>;
-};
+export type enqueueCompressJobsPayloadOverrides = Partial<enqueueCompressJobsPayload>;
+
+export type enqueueCompressJobsVictimOverrides = Partial<enqueueCompressJobsVictim>;
 
 export type DialecticCompressJobPayloadOverrides = Partial<DialecticCompressJobPayload>;
 
@@ -62,30 +62,23 @@ export function buildenqueueCompressJobsParams(
 ): enqueueCompressJobsParams {
   const mockSetup = createMockSupabaseClient("enqueue-compress-jobs");
   const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
-  const executePayload = buildDialecticExecuteJobPayload();
-  if (!isJson(executePayload)) throw new Error("payload is not valid Json");
-  const parentJob = buildDialecticJobRow({ payload: executePayload });
-
-  const tokenizerDeps: CountTokensDeps = {
-    getEncoding: () => ({ encode: () => [] }),
-    countTokensAnthropic: () => 0,
-    logger: new MockLogger(),
-  };
 
   const base: enqueueCompressJobsParams = {
     dbClient,
-    parentJob,
-    sessionId: "session-1",
-    projectId: "project-1",
-    stageSlug: DialecticStageSlug.Thesis,
-    output_type: FileType.business_case,
-    iterationNumber: 1,
-    modelId: "model-1",
-    modelSlug: "gpt-4o",
-    userJwt: "jwt-1",
-    walletId: "wallet-1",
-    modelConfig: { ...MOCK_MODEL_CONFIG, provider_max_input_tokens: 1000 },
-    tokenizerDeps,
+  };
+  return overrides ? { ...base, ...overrides } : base;
+}
+
+export function buildenqueueCompressJobsVictim(
+  overrides?: enqueueCompressJobsVictimOverrides,
+): enqueueCompressJobsVictim {
+  const base: enqueueCompressJobsVictim = {
+    mode: "text",
+    content: "some content",
+    sourceType: "contribution",
+    documentKey: FileType.business_case,
+    docType: FileType.business_case,
+    sourceStageSlug: DialecticStageSlug.Thesis,
   };
   return overrides ? { ...base, ...overrides } : base;
 }
@@ -94,23 +87,11 @@ export function buildenqueueCompressJobsPayload(
   overrides?: enqueueCompressJobsPayloadOverrides,
 ): enqueueCompressJobsPayload {
   const base: enqueueCompressJobsPayload = {
-    victim: {
-      mode: "text",
-      content: "some content",
-      sourceType: "contribution",
-      documentKey: FileType.business_case,
-      docType: FileType.business_case,
-      sourceStageSlug: DialecticStageSlug.Thesis,
-    },
+    victim: buildenqueueCompressJobsVictim(),
+    parentJob: buildDialecticJobRow(),
+    modelConfig: { ...MOCK_MODEL_CONFIG, provider_max_input_tokens: 1000 },
   };
-  if (!overrides) {
-    return base;
-  }
-  return {
-    victim: overrides.victim !== undefined
-      ? { ...base.victim, ...overrides.victim }
-      : base.victim,
-  };
+  return overrides ? { ...base, ...overrides } : base;
 }
 
 export function buildDialecticCompressJobPayload(
@@ -139,48 +120,54 @@ export function buildenqueueCompressJobsSuccessReturn(
   return overrides ? { ...base, ...overrides } : base;
 }
 
-export type CompressJobEnqueueErrorOverrides = Partial<CompressJobEnqueueError>;
+export type CompressJobValidationErrorConstructorParamsOverrides = Partial<CompressJobValidationErrorConstructorParams>;
 
-export type CompressJobValidationErrorOverrides = Partial<CompressJobValidationError>;
+export function buildCompressJobValidationErrorConstructorParams(
+  overrides?: CompressJobValidationErrorConstructorParamsOverrides,
+): CompressJobValidationErrorConstructorParams {
+  const base: CompressJobValidationErrorConstructorParams = {
+    message: "mock-compress-job-validation-error",
+  };
+  return overrides ? { ...base, ...overrides } : base;
+}
 
-export function buildCompressJobEnqueueError(
-  overrides?: CompressJobEnqueueErrorOverrides,
-): CompressJobEnqueueError {
-  const baseMessage = "mock-compress-job-enqueue-error";
-  const message = overrides?.message !== undefined
-    ? overrides.message
-    : baseMessage;
-  const error = new CompressJobEnqueueError(message);
-  if (overrides?.name !== undefined) {
-    error.name = overrides.name;
-  }
-  if (overrides?.stack !== undefined) {
-    error.stack = overrides.stack;
-  }
-  if (overrides?.cause !== undefined) {
-    error.cause = overrides.cause;
-  }
-  return error;
+export type CompressJobValidationErrorConstructorParamsCorruptions = { [K in keyof CompressJobValidationErrorConstructorParams]?: unknown };
+
+export function invalidateCompressJobValidationErrorConstructorParams(
+  corruptions: CompressJobValidationErrorConstructorParamsCorruptions,
+): unknown {
+  return { ...buildCompressJobValidationErrorConstructorParams(), ...corruptions };
 }
 
 export function buildCompressJobValidationError(
-  overrides?: CompressJobValidationErrorOverrides,
+  overrides?: CompressJobValidationErrorConstructorParamsOverrides,
 ): CompressJobValidationError {
-  const baseMessage = "mock-compress-job-validation-error";
-  const message = overrides?.message !== undefined
-    ? overrides.message
-    : baseMessage;
-  const error = new CompressJobValidationError(message);
-  if (overrides?.name !== undefined) {
-    error.name = overrides.name;
-  }
-  if (overrides?.stack !== undefined) {
-    error.stack = overrides.stack;
-  }
-  if (overrides?.cause !== undefined) {
-    error.cause = overrides.cause;
-  }
-  return error;
+  return new CompressJobValidationError(buildCompressJobValidationErrorConstructorParams(overrides));
+}
+
+export type CompressJobEnqueueErrorConstructorParamsOverrides = Partial<CompressJobEnqueueErrorConstructorParams>;
+
+export function buildCompressJobEnqueueErrorConstructorParams(
+  overrides?: CompressJobEnqueueErrorConstructorParamsOverrides,
+): CompressJobEnqueueErrorConstructorParams {
+  const base: CompressJobEnqueueErrorConstructorParams = {
+    message: "mock-compress-job-enqueue-error",
+  };
+  return overrides ? { ...base, ...overrides } : base;
+}
+
+export type CompressJobEnqueueErrorConstructorParamsCorruptions = { [K in keyof CompressJobEnqueueErrorConstructorParams]?: unknown };
+
+export function invalidateCompressJobEnqueueErrorConstructorParams(
+  corruptions: CompressJobEnqueueErrorConstructorParamsCorruptions,
+): unknown {
+  return { ...buildCompressJobEnqueueErrorConstructorParams(), ...corruptions };
+}
+
+export function buildCompressJobEnqueueError(
+  overrides?: CompressJobEnqueueErrorConstructorParamsOverrides,
+): CompressJobEnqueueError {
+  return new CompressJobEnqueueError(buildCompressJobEnqueueErrorConstructorParams(overrides));
 }
 
 export function buildenqueueCompressJobsErrorReturn(
@@ -217,6 +204,14 @@ export function invalidateEnqueueCompressJobsPayload(
   return { ...buildenqueueCompressJobsPayload(), ...corruptions };
 }
 
+export type enqueueCompressJobsVictimCorruptions = { [K in keyof enqueueCompressJobsVictim]?: unknown };
+
+export function invalidateEnqueueCompressJobsVictim(
+  corruptions: enqueueCompressJobsVictimCorruptions,
+): unknown {
+  return { ...buildenqueueCompressJobsVictim(), ...corruptions };
+}
+
 export type DialecticCompressJobPayloadCorruptions = { [K in keyof DialecticCompressJobPayload]?: unknown };
 
 export function invalidateDialecticCompressJobPayload(
@@ -240,6 +235,15 @@ export function invalidateEnqueueCompressJobsErrorReturn(
 ): unknown {
   return { ...buildenqueueCompressJobsErrorReturn(), ...corruptions };
 }
+
+export const mockenqueueCompressJobsFn: enqueueCompressJobsFn =
+  async (
+    _deps: enqueueCompressJobsDeps,
+    _params: enqueueCompressJobsParams,
+    _payload: unknown,
+  ): Promise<enqueueCompressJobsReturn> => {
+    return buildenqueueCompressJobsSuccessReturn();
+  };
 
 export const mockBoundenqueueCompressJobsFn: BoundenqueueCompressJobsFn =
   async (

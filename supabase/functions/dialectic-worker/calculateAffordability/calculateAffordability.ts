@@ -1,6 +1,8 @@
 // supabase/functions/dialectic-worker/calculateAffordability/calculateAffordability.ts
 
-import type { AiModelExtendedConfig, Messages } from "../../_shared/types.ts";
+import { countTokens as countTokensAnthropic } from "npm:@anthropic-ai/tokenizer@0.0.4";
+import { getEncoding as rawGetEncoding } from "npm:js-tiktoken@1.0.7";
+import type { AiModelExtendedConfig, ChatMessageRole, Messages } from "../../_shared/types.ts";
 import type { CountableChatPayload, CountTokensDeps } from "../../_shared/types/tokenizer.types.ts";
 import { isApiChatMessage } from "../../_shared/utils/type_guards.ts";
 import { ContextWindowError } from "../../_shared/utils/errors.ts";
@@ -8,16 +10,14 @@ import {
   isValidInputTokenCostRate,
   isValidOutputTokenCostRate,
 } from "../../_shared/utils/type-guards/type_guards.affordability.ts";
-import { isCompressPromptErrorReturn } from "../compressPrompt/compressPrompt.guard.ts";
-import type {
-  CompressPromptParams,
-  CompressPromptPayload,
-} from "../compressPrompt/compressPrompt.interface.ts";
+import { isKnownTiktokenEncoding } from "../../_shared/utils/type-guards/type_guards.chat.ts";
 import type {
   CalculateAffordabilityDeps,
+  CalculateAffordabilityOverBudgetReturn,
   CalculateAffordabilityParams,
   CalculateAffordabilityPayload,
   CalculateAffordabilityReturn,
+  CalculateAffordabilityWithinBudgetReturn,
 } from "./calculateAffordability.interface.ts";
 
 export async function calculateAffordability(
@@ -25,26 +25,27 @@ export async function calculateAffordability(
   params: CalculateAffordabilityParams,
   payload: CalculateAffordabilityPayload,
 ): Promise<CalculateAffordabilityReturn> {
-  const extendedModelConfig: AiModelExtendedConfig = params.extendedModelConfig;
+  const extendedModelConfig: AiModelExtendedConfig = payload.extendedModelConfig;
   const walletBalance: number = params.walletBalance;
-  const inputRate: number = params.inputRate;
-  const outputRate: number = params.outputRate;
 
   const tokenizerDeps: CountTokensDeps = {
-    getEncoding: (_name: string) => ({
-      encode: (input: string) => Array.from(input ?? "", (_ch, index: number) => index),
-    }),
-    countTokensAnthropic: (text: string) => (text ?? "").length,
+    getEncoding: (encodingName: string) => {
+      if (!isKnownTiktokenEncoding(encodingName)) {
+        throw new Error(`Unsupported tiktoken encoding: ${encodingName}`);
+      }
+      return rawGetEncoding(encodingName);
+    },
+    countTokensAnthropic,
     logger: deps.logger,
   };
 
   const initialAssembledMessages: Messages[] = payload.conversationHistory
     .filter((msg) => msg.role !== "function");
 
-  const initialEffectiveMessages: { role: "system" | "user" | "assistant"; content: string }[] =
+  const initialEffectiveMessages =
     initialAssembledMessages
       .filter(isApiChatMessage)
-      .filter((m): m is { role: "system" | "user" | "assistant"; content: string } =>
+      .filter((m): m is { role: ChatMessageRole; content: string } =>
         m.content !== null
       );
 
@@ -118,6 +119,27 @@ export async function calculateAffordability(
       };
     }
 
+    if (!isValidInputTokenCostRate(extendedModelConfig.input_token_cost_rate)) {
+      return {
+        error: new Error(
+          `Model is missing a valid 'input_token_cost_rate' in its configuration and cannot be used for operations that require cost estimation.`,
+        ),
+        retriable: false,
+      };
+    }
+
+    if (!isValidOutputTokenCostRate(extendedModelConfig.output_token_cost_rate)) {
+      return {
+        error: new ContextWindowError(
+          `Model is missing a valid 'output_token_cost_rate' in its configuration and cannot be used for operations that require output budget estimation.`,
+        ),
+        retriable: false,
+      };
+    }
+
+    const inputRate = extendedModelConfig.input_token_cost_rate;
+    const outputRate = extendedModelConfig.output_token_cost_rate;
+
     const estimatedInputCost: number = initialTokenCount * inputRate;
     const estimatedOutputCost: number = plannedMaxOutputTokens * outputRate;
     const estimatedTotalCost: number = estimatedInputCost + estimatedOutputCost;
@@ -131,8 +153,8 @@ export async function calculateAffordability(
       };
     }
 
-    const out: CalculateAffordabilityReturn = {
-      wasCompressed: false,
+    const out: CalculateAffordabilityWithinBudgetReturn = {
+      overBudget: false,
       maxOutputTokens: plannedMaxOutputTokens,
       resolvedInputTokenCount: initialTokenCount,
     };
@@ -147,29 +169,6 @@ export async function calculateAffordability(
   }
 
   const maxTokensLimit: number = maxTokens;
-
-  if (params.inputsRelevance === undefined) {
-    return {
-      error: new Error("inputsRelevance is required"),
-      retriable: false,
-    };
-  }
-
-  const inputsRelevance = params.inputsRelevance;
-
-  for (const doc of payload.resourceDocuments) {
-    const hasDocKey: boolean = typeof doc.document_key === "string" && doc.document_key !== "";
-    const hasType: boolean = typeof doc.type === "string" && doc.type !== "";
-    const hasStage: boolean = typeof doc.stage_slug === "string" && doc.stage_slug !== "";
-    if (!(hasDocKey && hasType && hasStage)) {
-      return {
-        error: new Error(
-          "Compression requires document identity: document_key, type, and stage_slug must be present.",
-        ),
-        retriable: false,
-      };
-    }
-  }
 
   if (!isValidInputTokenCostRate(extendedModelConfig.input_token_cost_rate)) {
     return {
@@ -188,6 +187,9 @@ export async function calculateAffordability(
       retriable: false,
     };
   }
+
+  const inputRate = extendedModelConfig.input_token_cost_rate;
+  const outputRate = extendedModelConfig.output_token_cost_rate;
 
   const tokensToBeRemoved: number = initialTokenCount - maxTokensLimit;
 
@@ -222,7 +224,7 @@ export async function calculateAffordability(
   }
 
   deps.logger.info(
-    `Initial prompt token count (${initialTokenCount}) exceeds model limit (${maxTokensLimit}) for job ${params.jobId}. Attempting compression.`,
+    `Initial prompt token count (${initialTokenCount}) exceeds model limit (${maxTokensLimit}); returning over-budget verdict.`,
   );
 
   if (!extendedModelConfig.provider_max_input_tokens) {
@@ -318,46 +320,11 @@ export async function calculateAffordability(
     };
   }
 
-  const compressParams: CompressPromptParams = {
-    dbClient: params.dbClient,
-    jobId: params.jobId,
-    projectOwnerUserId: params.projectOwnerUserId,
-    sessionId: params.sessionId,
-    stageSlug: params.stageSlug,
-    walletId: params.walletId,
-    extendedModelConfig,
-    inputsRelevance,
-    inputRate,
-    outputRate,
-    isContinuationFlowInitial: params.isContinuationFlowInitial,
+  const verdict: CalculateAffordabilityOverBudgetReturn = {
+    overBudget: true,
+    resolvedInputTokenCount: initialTokenCount,
     finalTargetThreshold,
     balanceAfterCompression,
-    walletBalance,
   };
-
-  const compressPayload: CompressPromptPayload = {
-    compressionStrategy: payload.compressionStrategy,
-    resourceDocuments: payload.resourceDocuments,
-    conversationHistory: payload.conversationHistory,
-    currentUserPrompt: payload.currentUserPrompt,
-    chatApiRequest: payload.chatApiRequest,
-    tokenizerDeps,
-  };
-
-  const compressResult = await deps.compressPrompt(compressParams, compressPayload);
-
-  if (isCompressPromptErrorReturn(compressResult)) {
-    return {
-      error: compressResult.error,
-      retriable: compressResult.retriable,
-    };
-  }
-
-  const success: CalculateAffordabilityReturn = {
-    wasCompressed: true,
-    chatApiRequest: compressResult.chatApiRequest,
-    resolvedInputTokenCount: compressResult.resolvedInputTokenCount,
-    resourceDocuments: compressResult.resourceDocuments,
-  };
-  return success;
+  return verdict;
 }
