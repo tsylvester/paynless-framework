@@ -781,3 +781,278 @@ Deno.test(
         }
     },
 );
+
+Deno.test(
+    "enqueueModelCall writes preflight_input_tokens from payload.preflightInputTokens onto the update argument",
+    async () => {
+        /**
+         * Contract: given a proven job payload, the queueing update's argument carries
+         *   preflight_input_tokens equal to the preflightInputTokens supplied on the
+         *   function payload, asserted against an independent literal.
+         * Arrange: a mock DB whose update succeeds; a function payload with
+         *   preflightInputTokens set to an independent literal (999).
+         * Act:     enqueueModelCall.
+         * Assert:  the update argument's payload field carries preflight_input_tokens
+         *   equal to 999.
+         */
+        const mockSetup = createMockSupabaseClient(undefined, {
+            genericMockResults: {
+                dialectic_generation_jobs: {
+                    update: { data: [{}], error: null },
+                },
+            },
+        });
+        const params = createMockEnqueueModelCallParams({
+            userConfig: { tier_output_cap_tokens: null },
+        }, { mockSetup });
+        const payload = createMockEnqueueModelCallPayload({
+            preflightInputTokens: 999,
+        });
+        const fetchStub = stub(
+            globalThis,
+            "fetch",
+            (): Promise<Response> =>
+                Promise.resolve(new Response("{}", { status: 200 })),
+        );
+        try {
+            // Act
+            await enqueueModelCall(createMockEnqueueModelCallDeps(), params, payload);
+
+            // Assert
+            const updateSpy = mockSetup.spies.getHistoricQueryBuilderSpies(
+                "dialectic_generation_jobs",
+                "update",
+            );
+            assertExists(updateSpy);
+            assert(updateSpy.callCount >= 1);
+            const updatePayload = updateSpy.callsArgs[0][0];
+            assert(isRecord(updatePayload));
+            assert(isRecord(updatePayload.payload));
+            assertEquals(updatePayload.payload.preflight_input_tokens, 999);
+        } finally {
+            fetchStub.restore();
+        }
+    },
+);
+
+Deno.test(
+    "enqueueModelCall writes status queued alongside the composed payload in the update argument",
+    async () => {
+        /**
+         * Contract: given a proven job payload, the queueing update's argument still
+         *   carries status: 'queued'.
+         * Arrange: a mock DB whose update succeeds.
+         * Act:     enqueueModelCall.
+         * Assert:  the update argument's status field equals 'queued'.
+         */
+        const mockSetup = createMockSupabaseClient(undefined, {
+            genericMockResults: {
+                dialectic_generation_jobs: {
+                    update: { data: [{}], error: null },
+                },
+            },
+        });
+        const params = createMockEnqueueModelCallParams({
+            userConfig: { tier_output_cap_tokens: null },
+        }, { mockSetup });
+        const fetchStub = stub(
+            globalThis,
+            "fetch",
+            (): Promise<Response> =>
+                Promise.resolve(new Response("{}", { status: 200 })),
+        );
+        try {
+            // Act
+            await enqueueModelCall(
+                createMockEnqueueModelCallDeps(),
+                params,
+                createMockEnqueueModelCallPayload(),
+            );
+
+            // Assert
+            const updateSpy = mockSetup.spies.getHistoricQueryBuilderSpies(
+                "dialectic_generation_jobs",
+                "update",
+            );
+            assertExists(updateSpy);
+            assert(updateSpy.callCount >= 1);
+            const updatePayload = updateSpy.callsArgs[0][0];
+            assert(isRecord(updatePayload));
+            assertEquals(updatePayload.status, "queued");
+        } finally {
+            fetchStub.restore();
+        }
+    },
+);
+
+Deno.test(
+    "enqueueModelCall writes every member of the job row's payload back unchanged alongside preflight_input_tokens",
+    async () => {
+        /**
+         * Contract: given a proven job payload, the queueing update's payload field
+         *   carries every member of the job row's original payload with its original
+         *   value, in addition to preflight_input_tokens.
+         * Arrange: a mock DB whose update succeeds; a job row carrying a known
+         *   execute payload.
+         * Act:     enqueueModelCall.
+         * Assert:  for every key in the original job payload, the update argument's
+         *   payload field carries that key with the same value.
+         */
+        const mockSetup = createMockSupabaseClient(undefined, {
+            genericMockResults: {
+                dialectic_generation_jobs: {
+                    update: { data: [{}], error: null },
+                },
+            },
+        });
+        const params = createMockEnqueueModelCallParams({
+            userConfig: { tier_output_cap_tokens: null },
+        }, { mockSetup });
+        const originalPayload = params.job.payload;
+        assert(isRecord(originalPayload));
+        const fetchStub = stub(
+            globalThis,
+            "fetch",
+            (): Promise<Response> =>
+                Promise.resolve(new Response("{}", { status: 200 })),
+        );
+        try {
+            // Act
+            await enqueueModelCall(
+                createMockEnqueueModelCallDeps(),
+                params,
+                createMockEnqueueModelCallPayload({ preflightInputTokens: 128 }),
+            );
+
+            // Assert
+            const updateSpy = mockSetup.spies.getHistoricQueryBuilderSpies(
+                "dialectic_generation_jobs",
+                "update",
+            );
+            assertExists(updateSpy);
+            assert(updateSpy.callCount >= 1);
+            const updatePayload = updateSpy.callsArgs[0][0];
+            assert(isRecord(updatePayload));
+            assert(isRecord(updatePayload.payload));
+            const writtenPayload = updatePayload.payload;
+            for (const key of Object.keys(originalPayload)) {
+                assert(key in writtenPayload, `expected key ${key} in written payload`);
+                assertEquals(writtenPayload[key], (originalPayload as Record<string, unknown>)[key]);
+            }
+        } finally {
+            fetchStub.restore();
+        }
+    },
+);
+
+Deno.test(
+    "enqueueModelCall returns retriable false with the guard's message when the job payload fails isDialecticBaseJobPayload, issuing no update and no fetch",
+    async () => {
+        /**
+         * Contract: given a job row whose payload fails isDialecticBaseJobPayload, the
+         *   function returns the error arm with retriable: false and the guard's thrown
+         *   message, and performs no update and no fetch.
+         * Arrange: a mock DB whose update would succeed; a job row whose payload is an
+         *   empty object (fails the base guard on sessionId); a fetch stub that records
+         *   calls.
+         * Act:     enqueueModelCall.
+         * Assert:  the result is the error arm; retriable is false; the error message is
+         *   the guard's thrown message; no update was issued; no fetch was made.
+         */
+        const mockSetup = createMockSupabaseClient(undefined, {
+            genericMockResults: {
+                dialectic_generation_jobs: {
+                    update: { data: [{}], error: null },
+                },
+            },
+        });
+        const baseParams = createMockEnqueueModelCallParams({
+            userConfig: { tier_output_cap_tokens: null },
+        }, { mockSetup });
+        const badPayloadJob: DialecticJobRow = {
+            ...baseParams.job,
+            payload: {},
+        } as unknown as DialecticJobRow;
+        const fetchStub = stub(globalThis, "fetch");
+        try {
+            // Act
+            const result: EnqueueModelCallReturn = await enqueueModelCall(
+                createMockEnqueueModelCallDeps(),
+                createMockEnqueueModelCallParams({
+                    job: badPayloadJob,
+                    userConfig: { tier_output_cap_tokens: null },
+                }, { mockSetup }),
+                createMockEnqueueModelCallPayload(),
+            );
+
+            // Assert
+            assert("error" in result);
+            const err: EnqueueModelCallErrorReturn = result;
+            assertEquals(err.retriable, false);
+            assertEquals(err.error.message, "Missing or invalid sessionId.");
+            assertEquals(fetchStub.calls.length, 0);
+            const updateSpy = mockSetup.spies.getHistoricQueryBuilderSpies(
+                "dialectic_generation_jobs",
+                "update",
+            );
+            assertEquals(updateSpy?.callCount ?? 0, 0);
+        } finally {
+            fetchStub.restore();
+        }
+    },
+);
+
+Deno.test(
+    "enqueueModelCall posts an AiStreamEventData that carries no token count",
+    async () => {
+        /**
+         * Contract: given a proven job payload, the posted AiStreamEventData carries no
+         *   token count of any kind.
+         * Arrange: a mock DB whose update succeeds; a function payload carrying a
+         *   preflightInputTokens value (to confirm it is not leaked into the event).
+         * Act:     enqueueModelCall.
+         * Assert:  the posted event data has no preflight_input_tokens, token_usage,
+         *   prompt_tokens, completion_tokens, or total_tokens field.
+         */
+        const mockSetup = createMockSupabaseClient(undefined, {
+            genericMockResults: {
+                dialectic_generation_jobs: {
+                    update: { data: [{}], error: null },
+                },
+            },
+        });
+        const params = createMockEnqueueModelCallParams({
+            userConfig: { tier_output_cap_tokens: null },
+        }, { mockSetup });
+        const payload = createMockEnqueueModelCallPayload({
+            preflightInputTokens: 999,
+        });
+        const fetchStub = stub(
+            globalThis,
+            "fetch",
+            (): Promise<Response> =>
+                Promise.resolve(new Response("{}", { status: 200 })),
+        );
+        try {
+            // Act
+            await enqueueModelCall(createMockEnqueueModelCallDeps(), params, payload);
+
+            // Assert
+            assertEquals(fetchStub.calls.length, 1);
+            const initArg = fetchStub.calls[0].args[1];
+            assert(initArg !== undefined);
+            assert(typeof initArg.body === "string");
+            const parsed = JSON.parse(initArg.body);
+            assert(isRecord(parsed));
+            assert(isRecord(parsed.data));
+            const data = parsed.data;
+            assertEquals("preflight_input_tokens" in data, false);
+            assertEquals("token_usage" in data, false);
+            assertEquals("prompt_tokens" in data, false);
+            assertEquals("completion_tokens" in data, false);
+            assertEquals("total_tokens" in data, false);
+        } finally {
+            fetchStub.restore();
+        }
+    },
+);

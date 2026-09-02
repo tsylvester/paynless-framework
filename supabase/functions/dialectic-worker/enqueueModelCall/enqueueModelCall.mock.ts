@@ -20,6 +20,7 @@ import type {
 import { mockComputeJobSig } from "../../_shared/utils/computeJobSig/computeJobSig.mock.ts";
 import { buildMockProvider } from "../../_shared/ai_service/ai_provider.mock.ts";
 import { buildDialecticJobRow, buildDialecticExecuteJobPayload } from "../../_shared/dialectic.mock.ts";
+import { isJson } from "../../_shared/utils/type-guards/type_guards.common.ts"
 
 export type EnqueueModelCallDepsOverrides = Partial<EnqueueModelCallDeps>;
 
@@ -120,9 +121,16 @@ export function createMockEnqueueModelCallParams(
         dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
     }
 
+    const testPayload = buildDialecticExecuteJobPayload()
+    if(!isJson(testPayload)){
+        throw new Error ("Payload must be json compatible")
+    }
+    if(!testPayload){
+        throw new Error ("Payload must exist")
+    }
     const base: EnqueueModelCallParams = {
         dbClient,
-        job: buildDialecticJobRow(buildDialecticExecuteJobPayload()),
+        job: buildDialecticJobRow({ payload: testPayload }),
         providerRow: buildMockProvider(),
         userAuthToken: "mock-user-jwt",
         userConfig: { tier_output_cap_tokens: null },

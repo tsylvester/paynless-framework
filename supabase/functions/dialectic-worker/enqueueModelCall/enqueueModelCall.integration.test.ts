@@ -9,11 +9,8 @@ import type { AiModelExtendedConfig, ApiKeyForProviderFn } from "../../_shared/t
 import { MockLogger } from "../../_shared/logger.mock.ts";
 import { createMockSupabaseClient } from "../../_shared/supabase.mock.ts";
 import type { Database, Tables } from "../../types_db.ts";
-import { isRecord } from "../../_shared/utils/type-guards/type_guards.common.ts";
-import {
-    createMockDialecticExecuteJobPayload,
-    createMockJobRow,
-} from "../saveResponse/saveResponse.provides.ts";
+import { isJson, isRecord } from "../../_shared/utils/type-guards/type_guards.common.ts";
+import { buildDialecticJobRow, buildDialecticExecuteJobPayload } from "../../_shared/dialectic.mock.ts";
 import type {
     EnqueueModelCallDeps,
     EnqueueModelCallParams,
@@ -73,7 +70,9 @@ Deno.test(
             apiKeyForProvider: integrationApiKeyForProvider,
         };
 
-        const job = createMockJobRow(createMockDialecticExecuteJobPayload());
+        const executePayload = buildDialecticExecuteJobPayload();
+        if (!isJson(executePayload)) throw new Error("Payload must be JSON-compatible");
+        const job = buildDialecticJobRow({ payload: executePayload });
 
         const params: EnqueueModelCallParams = {
             dbClient,
@@ -170,7 +169,9 @@ Deno.test(
             apiKeyForProvider: integrationApiKeyForProvider,
         };
 
-        const job = createMockJobRow(createMockDialecticExecuteJobPayload());
+        const executePayload = buildDialecticExecuteJobPayload();
+        if (!isJson(executePayload)) throw new Error("Payload must be JSON-compatible");
+        const job = buildDialecticJobRow({ payload: executePayload });
 
         const params: EnqueueModelCallParams = {
             dbClient,
@@ -240,7 +241,9 @@ Deno.test(
             apiKeyForProvider: integrationApiKeyForProvider,
         };
 
-        const job = createMockJobRow(createMockDialecticExecuteJobPayload());
+        const executePayload = buildDialecticExecuteJobPayload();
+        if (!isJson(executePayload)) throw new Error("Payload must be JSON-compatible");
+        const job = buildDialecticJobRow({ payload: executePayload });
         const tierCap: number = 32768;
 
         const params: EnqueueModelCallParams = {

@@ -9,6 +9,10 @@ import type {
   EnqueueModelCallPayload,
   EnqueueModelCallReturn,
 } from './enqueueModelCall.interface.ts';
+import type { DialecticBaseJobPayload } from '../../dialectic-service/dialectic.interface.ts';
+import { isDialecticBaseJobPayload } from '../../_shared/utils/type-guards/type_guards.dialectic.ts';
+import { isJson } from '../../_shared/utils/type-guards/type_guards.common.ts';
+import type { Json } from '../../types_db.ts';
 
 const NETLIFY_MAX_EVENT_BYTES = 500 * 1024;
 
@@ -54,9 +58,35 @@ export const enqueueModelCall: EnqueueModelCallFn = async (
     };
   }
 
+  let composedPayload: Json;
+  try {
+    if (!isDialecticBaseJobPayload(params.job.payload)) {
+      throw new Error('isDialecticBaseJobPayload returned false');
+    }
+    const provenPayload: DialecticBaseJobPayload = params.job.payload;
+    const typedPayload: DialecticBaseJobPayload = {
+      ...provenPayload,
+      preflight_input_tokens: payload.preflightInputTokens,
+    };
+    if (!isJson(typedPayload)) {
+      deps.logger.error('enqueueModelCall: composed payload is not valid Json');
+      return {
+        error: new Error('Composed payload is not valid Json.'),
+        retriable: false,
+      };
+    }
+    composedPayload = typedPayload;
+  } catch (e) {
+    if (e instanceof Error) {
+      deps.logger.error('enqueueModelCall: job payload failed isDialecticBaseJobPayload', { error: e });
+      return { error: e, retriable: false };
+    }
+    throw e;
+  }
+
   const { error: dbError } = await params.dbClient
     .from('dialectic_generation_jobs')
-    .update({ status: 'queued' })
+    .update({ status: 'queued', payload: composedPayload })
     .eq('id', params.job.id);
 
   if (dbError) {
