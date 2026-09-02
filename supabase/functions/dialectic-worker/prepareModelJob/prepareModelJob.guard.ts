@@ -2,33 +2,23 @@
 import { isRecord } from '../../_shared/utils/type-guards/type_guards.common.ts';
 import {
   isDialecticJobRow,
-  isDialecticSessionRow,
   isInputRuleArray,
+  isPromptConstructionPayload,
   isRelevanceRuleArray,
 } from '../../_shared/utils/type-guards/type_guards.dialectic.ts';
+import { isSelectedAiProvider } from '../../_shared/utils/type-guards/type_guards.chat.ts';
 import type {
   PrepareModelJobDeps,
   PrepareModelJobErrorReturn,
+  PrepareModelJobFn,
   PrepareModelJobParams,
   PrepareModelJobPayload,
+  PrepareModelJobPendingReturn,
+  PrepareModelJobQueuedReturn,
+  PrepareModelJobReturn,
   PrepareModelJobSuccessReturn,
 } from './prepareModelJob.interface.ts';
-
-function isPromptConstructionPayloadShape(value: unknown): boolean {
-  if (!isRecord(value)) {
-    return false;
-  }
-  if (!('conversationHistory' in value) || !Array.isArray(value.conversationHistory)) {
-    return false;
-  }
-  if (!('resourceDocuments' in value) || !Array.isArray(value.resourceDocuments)) {
-    return false;
-  }
-  if (!('currentUserPrompt' in value) || typeof value.currentUserPrompt !== 'string') {
-    return false;
-  }
-  return true;
-}
+import { PrepareModelJobExecutionError } from './prepareModelJob.interface.ts';
 
 export function isPrepareModelJobDeps(value: unknown): value is PrepareModelJobDeps {
   if (!isRecord(value)) {
@@ -42,6 +32,7 @@ export function isPrepareModelJobDeps(value: unknown): value is PrepareModelJobD
     'validateModelCostRates',
     'calculateAffordability',
     'enqueueModelCall',
+    'compressPrompt',
   ];
   for (const key of keys) {
     if (!(key in value)) {
@@ -75,23 +66,7 @@ export function isPrepareModelJobDeps(value: unknown): value is PrepareModelJobD
   if (typeof value.enqueueModelCall !== 'function') {
     return false;
   }
-  return true;
-}
-
-function isAiProvidersRowShape(value: unknown): boolean {
-  if (!isRecord(value)) {
-    return false;
-  }
-  if (typeof value.id !== 'string' || value.id === '') {
-    return false;
-  }
-  if (typeof value.api_identifier !== 'string' || value.api_identifier === '') {
-    return false;
-  }
-  if (typeof value.name !== 'string') {
-    return false;
-  }
-  if (!('config' in value)) {
+  if (typeof value.compressPrompt !== 'function') {
     return false;
   }
   return true;
@@ -103,11 +78,6 @@ export function isPrepareModelJobParams(value: unknown): value is PrepareModelJo
   }
   const keys: (keyof PrepareModelJobParams)[] = [
     'dbClient',
-    'authToken',
-    'job',
-    'projectOwnerUserId',
-    'providerRow',
-    'sessionData',
   ];
   for (const key of keys) {
     if (!(key in value)) {
@@ -120,21 +90,6 @@ export function isPrepareModelJobParams(value: unknown): value is PrepareModelJo
   if (typeof value.dbClient !== 'object') {
     return false;
   }
-  if (typeof value.authToken !== 'string' || value.authToken === '') {
-    return false;
-  }
-  if (!isDialecticJobRow(value.job)) {
-    return false;
-  }
-  if (typeof value.projectOwnerUserId !== 'string' || value.projectOwnerUserId === '') {
-    return false;
-  }
-  if (!isAiProvidersRowShape(value.providerRow)) {
-    return false;
-  }
-  if (!isDialecticSessionRow(value.sessionData)) {
-    return false;
-  }
   return true;
 }
 
@@ -142,13 +97,13 @@ export function isPrepareModelJobPayload(value: unknown): value is PrepareModelJ
   if (!isRecord(value)) {
     return false;
   }
-  if (!('promptConstructionPayload' in value) || !('compressionStrategy' in value)) {
+  if (!('job' in value) || !isDialecticJobRow(value.job)) {
     return false;
   }
-  if (!isPromptConstructionPayloadShape(value.promptConstructionPayload)) {
+  if (!('providerRow' in value) || !isSelectedAiProvider(value.providerRow)) {
     return false;
   }
-  if (typeof value.compressionStrategy !== 'function') {
+  if (!('promptConstructionPayload' in value) || !isPromptConstructionPayload(value.promptConstructionPayload)) {
     return false;
   }
   if ('inputsRelevance' in value && value.inputsRelevance !== undefined) {
@@ -164,16 +119,46 @@ export function isPrepareModelJobPayload(value: unknown): value is PrepareModelJ
   return true;
 }
 
-export function isPrepareModelJobSuccessReturn(
+export function isPrepareModelJobQueuedReturn(
   value: unknown,
-): value is PrepareModelJobSuccessReturn {
+): value is PrepareModelJobQueuedReturn {
   if (!isRecord(value)) {
     return false;
   }
   if (!('queued' in value) || value.queued !== true) {
     return false;
   }
+  if ('waiting_for_children' in value) {
+    return false;
+  }
   return true;
+}
+
+export function isPrepareModelJobPendingReturn(
+  value: unknown,
+): value is PrepareModelJobPendingReturn {
+  if (!isRecord(value)) {
+    return false;
+  }
+  if (!('waiting_for_children' in value) || value.waiting_for_children !== true) {
+    return false;
+  }
+  if ('queued' in value) {
+    return false;
+  }
+  return true;
+}
+
+export function isPrepareModelJobSuccessReturn(
+  value: unknown,
+): value is PrepareModelJobSuccessReturn {
+  if (isPrepareModelJobQueuedReturn(value)) {
+    return true;
+  }
+  if (isPrepareModelJobPendingReturn(value)) {
+    return true;
+  }
+  return false;
 }
 
 export function isPrepareModelJobErrorReturn(
@@ -188,6 +173,12 @@ export function isPrepareModelJobErrorReturn(
   if ('contribution' in value) {
     return false;
   }
+  if ('queued' in value) {
+    return false;
+  }
+  if ('waiting_for_children' in value) {
+    return false;
+  }
   if (!(value.error instanceof Error)) {
     return false;
   }
@@ -195,4 +186,24 @@ export function isPrepareModelJobErrorReturn(
     return false;
   }
   return true;
+}
+
+export function isPrepareModelJobReturn(value: unknown): value is PrepareModelJobReturn {
+  if (isPrepareModelJobSuccessReturn(value)) {
+    return true;
+  }
+  if (isPrepareModelJobErrorReturn(value)) {
+    return true;
+  }
+  return false;
+}
+
+export function isPrepareModelJobFn(value: unknown): value is PrepareModelJobFn {
+  return typeof value === 'function';
+}
+
+export function isPrepareModelJobExecutionError(
+  value: unknown,
+): value is PrepareModelJobExecutionError {
+  return value instanceof PrepareModelJobExecutionError;
 }

@@ -11,70 +11,53 @@ import type {
 } from "./processCompressJob.interface.ts";
 import type { AssembleCompressionPromptError } from "../../_shared/prompt-assembler/assembleCompressionPrompt/assembleCompressionPrompt.interface.ts";
 import type { FileManagerError } from "../../_shared/types/file_manager.types.ts";
+import type { BoundPrepareModelJobFn } from "../createJobContext/JobContext.interface.ts";
 
 Deno.test(
-    "Contract: ProcessCompressJobDeps declares eight dependency keys",
+    "ProcessCompressJobDeps declares five dependency keys",
     () => {
         const surface: Record<keyof ProcessCompressJobDeps, true> = {
             assembleCompressionPrompt: true,
             assembleContinuationPrompt: true,
-            enqueueModelCall: true,
-            countTokens: true,
-            getEncoding: true,
-            countTokensAnthropic: true,
+            prepareModelJob: true,
             constructStoragePath: true,
             logger: true,
         };
-        assertEquals(Object.keys(surface).length, 8);
+        assertEquals(Object.keys(surface).length, 5);
     },
 );
 
 Deno.test(
-    "Contract: ProcessCompressJobParams declares four fields",
+    "ProcessCompressJobParams declares one field (dbClient only)",
     () => {
         const surface: Record<keyof ProcessCompressJobParams, true> = {
             dbClient: true,
-            job: true,
-            projectOwnerUserId: true,
-            authToken: true,
         };
-        assertEquals(Object.keys(surface).length, 4);
+        assertEquals(Object.keys(surface).length, 1);
     },
 );
 
 Deno.test(
-    "Contract: ProcessCompressJobPayload has the required surface",
+    "ProcessCompressJobPayload declares one field (job only)",
     () => {
         const surface: Record<keyof ProcessCompressJobPayload, true> = {
-            job_type: true,
-            sessionId: true,
-            projectId: true,
-            stageSlug: true,
-            output_type: true,
-            iterationNumber: true,
-            model_id: true,
-            model_slug: true,
-            mode: true,
-            content: true,
-            sourceType: true,
-            sourceId: true,
-            role: true,
-            documentKey: true,
-            docType: true,
-            sourceStageSlug: true,
-            chunk_index: true,
-            chunk_total: true,
-            continuation_count: true,
-            source_prompt_resource_id: true,
-            walletId: true,
-            user_id: true,
+            job: true,
         };
-        assertEquals(Object.keys(surface).length, 22);
+        assertEquals(Object.keys(surface).length, 1);
     },
 );
 
 Deno.test(
-    "Contract: ProcessCompressJobSuccessReturn queued boolean",
+    "ProcessCompressJobDeps['prepareModelJob'] accepts a BoundPrepareModelJobFn value",
+    () => {
+        const compatible: BoundPrepareModelJobFn extends
+            ProcessCompressJobDeps["prepareModelJob"] ? true : false = true;
+        assertEquals(compatible, true);
+    },
+);
+
+Deno.test(
+    "ProcessCompressJobSuccessReturn queued boolean",
     () => {
         const r: ProcessCompressJobSuccessReturn = { queued: false };
         assertEquals(typeof r.queued, "boolean");
@@ -82,7 +65,7 @@ Deno.test(
 );
 
 Deno.test(
-    "Contract: ProcessCompressJobErrorReturn has Error and retriable boolean",
+    "ProcessCompressJobErrorReturn has Error and retriable boolean",
     () => {
         const err: ProcessCompressJobErrorReturn = {
             error: new Error("x"),
@@ -94,7 +77,7 @@ Deno.test(
 );
 
 Deno.test(
-    "Contract: ProcessCompressJobErrorReturn.error admits AssembleCompressionPromptError without conversion",
+    "ProcessCompressJobErrorReturn.error admits AssembleCompressionPromptError without conversion",
     () => {
         const fileManagerError: FileManagerError = {
             message: "storage failure",
@@ -111,7 +94,7 @@ Deno.test(
 );
 
 Deno.test(
-    "Contract: ProcessCompressJobReturn is a union of success and error",
+    "ProcessCompressJobReturn is a union of success and error",
     () => {
         const ok: ProcessCompressJobSuccessReturn = { queued: true };
         const unionOk: ProcessCompressJobReturn = ok;
@@ -127,7 +110,7 @@ Deno.test(
 );
 
 Deno.test(
-    "Contract: ProcessCompressJobFn resolves to its declared success type",
+    "ProcessCompressJobFn resolves to its declared success type",
     () => {
         const success: ProcessCompressJobSuccessReturn = { queued: true };
         const returned: ReturnType<ProcessCompressJobFn> = Promise.resolve(success);
@@ -137,7 +120,7 @@ Deno.test(
 );
 
 Deno.test(
-    "Contract: ProcessCompressJobFn resolves to its declared error type",
+    "ProcessCompressJobFn resolves to its declared error type",
     () => {
         const error: ProcessCompressJobErrorReturn = {
             error: new Error("x"),
@@ -150,7 +133,7 @@ Deno.test(
 );
 
 Deno.test(
-    "Contract: BoundProcessCompressJobFn resolves to its declared success type",
+    "BoundProcessCompressJobFn resolves to its declared success type",
     () => {
         const success: ProcessCompressJobSuccessReturn = { queued: true };
         const returned: ReturnType<BoundProcessCompressJobFn> = Promise.resolve(success);
@@ -160,7 +143,7 @@ Deno.test(
 );
 
 Deno.test(
-    "Contract: BoundProcessCompressJobFn resolves to its declared error type",
+    "BoundProcessCompressJobFn resolves to its declared error type",
     () => {
         const error: ProcessCompressJobErrorReturn = {
             error: new Error("x"),

@@ -459,285 +459,285 @@ Oversized model inputs compress incrementally until the preflight fits: the pare
       * `[✅]`   A fixed string counted through the implementation's own `tokenizerDeps` on a `cl100k_base` model yields the tiktoken count rather than its character length — integration test.
       * `[✅]`   Every owned object type has a `Partial<T>`-overrides builder and an `unknown`-returning invalidator, and each owned function type has a function mock that is that type exactly — guard test, whose fixtures are drawn from them.
 
-* `[ ]`   supabase/functions/chat/streamChat/StreamChat.ts **[BE] Narrow `StreamChatDeps.countTokens` from `CountTokensFn` to `BoundCountTokensFn`, eliminating the inline fake tokenizer construction**
+* `[✅]`   supabase/functions/chat/streamChat/StreamChat.ts **[BE] Narrow `StreamChatDeps.countTokens` from `CountTokensFn` to `BoundCountTokensFn`, eliminating the inline fake tokenizer construction**
 
-   * `[ ]`   `objective`
-      * `[ ]`   `StreamChat.ts` constructs a `CountTokensDeps` literal at `:144-150` with two fake implementations: `getEncoding` returns a character-indexing encoder (`Array.from(input).map((_, i) => i)`), and `countTokensAnthropic` returns `text.length`. Both are character counts, not token counts. The constructed `tokenizerDeps` is passed as the first argument to `deps.countTokens(tokenizerDeps, {...}, modelConfig)` at `:176`. This makes every token estimate on the chat path read high by a factor of ~4× for English text, misclassifying affordable requests as over the window limit or triggering a false `Insufficient token balance` error.
-      * `[ ]`   Functional goals:
-         * `[ ]`   `StreamChatDeps.countTokens` changes from `CountTokensFn` (unbound, requires `CountTokensDeps` as first argument) to `BoundCountTokensFn` (deps already bound by the caller). The type is imported from `_shared/types/tokenizer.types.ts`.
-         * `[ ]`   The inline `CountTokensDeps` construction at `StreamChat.ts:144-150` is deleted. The `CountTokensDeps` import in `StreamChat.ts:7` is deleted.
-         * `[ ]`   The call site at `StreamChat.ts:176` changes from `countTokensFn(tokenizerDeps, {...}, modelConfig)` to `countTokensFn({...}, modelConfig)` — dropping the first argument.
-         * `[ ]`   No other line of the function body changes. The token-counting result, the affordability checks, the adapter call, the debit, the streaming, and every error path are preserved.
-      * `[ ]`   Non-functional constraints:
-         * `[ ]`   No file outside `chat/streamChat/` is edited. The consumer that assembles `StreamChatDeps` (`streamRequest.ts:125-133`) must update its `countTokens` field to supply a `BoundCountTokensFn`; that change belongs to `streamRequest`'s node.
-         * `[ ]`   Each goal is proven by a named case in this node's interface test or unit test.
+   * `[✅]`   `objective`
+      * `[✅]`   `StreamChat.ts` constructs a `CountTokensDeps` literal at `:144-150` with two fake implementations: `getEncoding` returns a character-indexing encoder (`Array.from(input).map((_, i) => i)`), and `countTokensAnthropic` returns `text.length`. Both are character counts, not token counts. The constructed `tokenizerDeps` is passed as the first argument to `deps.countTokens(tokenizerDeps, {...}, modelConfig)` at `:176`. This makes every token estimate on the chat path read high by a factor of ~4× for English text, misclassifying affordable requests as over the window limit or triggering a false `Insufficient token balance` error.
+      * `[✅]`   Functional goals:
+         * `[✅]`   `StreamChatDeps.countTokens` changes from `CountTokensFn` (unbound, requires `CountTokensDeps` as first argument) to `BoundCountTokensFn` (deps already bound by the caller). The type is imported from `_shared/types/tokenizer.types.ts`.
+         * `[✅]`   The inline `CountTokensDeps` construction at `StreamChat.ts:144-150` is deleted. The `CountTokensDeps` import in `StreamChat.ts:7` is deleted.
+         * `[✅]`   The call site at `StreamChat.ts:176` changes from `countTokensFn(tokenizerDeps, {...}, modelConfig)` to `countTokensFn({...}, modelConfig)` — dropping the first argument.
+         * `[✅]`   No other line of the function body changes. The token-counting result, the affordability checks, the adapter call, the debit, the streaming, and every error path are preserved.
+      * `[✅]`   Non-functional constraints:
+         * `[✅]`   No file outside `chat/streamChat/` is edited. The consumer that assembles `StreamChatDeps` (`streamRequest.ts:125-133`) must update its `countTokens` field to supply a `BoundCountTokensFn`; that change belongs to `streamRequest`'s node.
+         * `[✅]`   Each goal is proven by a named case in this node's interface test or unit test.
 
-   * `[ ]`   `role`
-      * `[ ]`   Node role is an existing app-layer chat function whose tokenizer dependency is narrowed from unbound to bound, eliminating the inline fake construction.
-      * `[ ]`   Out-of-scope responsibilities:
-         * `[ ]`   Do not change how the caller (`streamRequest`) assembles deps — that is the caller's node.
-         * `[ ]`   Do not change the affordability logic, the adapter call, the debit, the RPC, or the SSE streaming.
-         * `[ ]`   Do not refactor `StreamChat` to route through `prepareModelJob` — the chat path is separate from the worker path.
+   * `[✅]`   `role`
+      * `[✅]`   Node role is an existing app-layer chat function whose tokenizer dependency is narrowed from unbound to bound, eliminating the inline fake construction.
+      * `[✅]`   Out-of-scope responsibilities:
+         * `[✅]`   Do not change how the caller (`streamRequest`) assembles deps — that is the caller's node.
+         * `[✅]`   Do not change the affordability logic, the adapter call, the debit, the RPC, or the SSE streaming.
+         * `[✅]`   Do not refactor `StreamChat` to route through `prepareModelJob` — the chat path is separate from the worker path.
 
-   * `[ ]`   `module`
-      * `[ ]`   Bounded context is `supabase/functions/chat/streamChat` — the existing SSE chat streaming function.
-      * `[ ]`   Inside boundary: the dep type change and the deleted inline tokenizer construction.
-      * `[ ]`   Outside boundary: who binds the real tokenizer deps and how — that is the caller's responsibility (`streamRequest`).
+   * `[✅]`   `module`
+      * `[✅]`   Bounded context is `supabase/functions/chat/streamChat` — the existing SSE chat streaming function.
+      * `[✅]`   Inside boundary: the dep type change and the deleted inline tokenizer construction.
+      * `[✅]`   Outside boundary: who binds the real tokenizer deps and how — that is the caller's responsibility (`streamRequest`).
 
-   * `[ ]`   `deps`
-      * `[ ]`   Provider: `_shared/types/tokenizer.types.ts` (`BoundCountTokensFn` — replaces `CountTokensFn`).
-         * `[ ]`   Layer classification: shared type surface.
-         * `[ ]`   Direction: inbound from `_shared`.
-         * `[ ]`   Purpose: the new dep type for `countTokens`, with `CountTokensDeps` already bound by the caller.
-      * `[ ]`   All other existing deps (`logger`, `adminTokenWalletService`, `debitTokens`, `createErrorResponse`, `findOrCreateChat`, `constructMessageHistory`, `getMaxOutputTokens`) are unchanged.
-      * `[ ]`   Removed dep: `CountTokensDeps` is no longer imported in `StreamChat.ts`.
-      * `[ ]`   Confirm: no reverse dependencies, no lateral layer violations, no cycles.
+   * `[✅]`   `deps`
+      * `[✅]`   Provider: `_shared/types/tokenizer.types.ts` (`BoundCountTokensFn` — replaces `CountTokensFn`).
+         * `[✅]`   Layer classification: shared type surface.
+         * `[✅]`   Direction: inbound from `_shared`.
+         * `[✅]`   Purpose: the new dep type for `countTokens`, with `CountTokensDeps` already bound by the caller.
+      * `[✅]`   All other existing deps (`logger`, `adminTokenWalletService`, `debitTokens`, `createErrorResponse`, `findOrCreateChat`, `constructMessageHistory`, `getMaxOutputTokens`) are unchanged.
+      * `[✅]`   Removed dep: `CountTokensDeps` is no longer imported in `StreamChat.ts`.
+      * `[✅]`   Confirm: no reverse dependencies, no lateral layer violations, no cycles.
 
-   * `[ ]`   `context_slice`
-      * `[ ]`   `countTokens: BoundCountTokensFn` — `(payload: CountableChatPayload, modelConfig: AiModelExtendedConfig) => number` with the tokenizer deps already closed over by the caller.
+   * `[✅]`   `context_slice`
+      * `[✅]`   `countTokens: BoundCountTokensFn` — `(payload: CountableChatPayload, modelConfig: AiModelExtendedConfig) => number` with the tokenizer deps already closed over by the caller.
 
-   * `[ ]`   streamChat/`streamChat.interface.test.ts`
-      * `[ ]`   Add a typed-assignment test proving `BoundCountTokensFn` is assignable to `StreamChatDeps['countTokens']`: `declare const fn: BoundCountTokensFn; const check: StreamChatDeps['countTokens'] = fn;`. The existing contract tests at `:22-44` that assert `typeof deps.countTokens, "function"` remain valid and are not edited.
+   * `[✅]`   streamChat/`streamChat.interface.test.ts`
+      * `[✅]`   Add a typed-assignment test proving `BoundCountTokensFn` is assignable to `StreamChatDeps['countTokens']`: `declare const fn: BoundCountTokensFn; const check: StreamChatDeps['countTokens'] = fn;`. The existing contract tests at `:22-44` that assert `typeof deps.countTokens, "function"` remain valid and are not edited.
 
-   * `[ ]`   streamChat/`streamChat.interface.ts`
-      * `[ ]`   Replace the `CountTokensFn` import (`:5`) with `BoundCountTokensFn` from `_shared/types/tokenizer.types.ts`.
-      * `[ ]`   Change `countTokens: CountTokensFn` to `countTokens: BoundCountTokensFn` in `StreamChatDeps` (`:23`).
+   * `[✅]`   streamChat/`streamChat.interface.ts`
+      * `[✅]`   Replace the `CountTokensFn` import (`:5`) with `BoundCountTokensFn` from `_shared/types/tokenizer.types.ts`.
+      * `[✅]`   Change `countTokens: CountTokensFn` to `countTokens: BoundCountTokensFn` in `StreamChatDeps` (`:23`).
 
-   * `[ ]`   streamChat/`streamChat.mock.ts`
-      * `[ ]`   Update `buildContractStreamChatDeps` (`:43-56`) to supply a `BoundCountTokensFn` for `countTokens`. The current builder imports the unbound `countTokens` from `tokenizer_utils.ts` and passes it directly; replace with a bound closure that wraps `countTokens` with a test-appropriate `CountTokensDeps` (import `buildTokenizerDeps` from `_shared/utils/tokenizer_utils.mock.ts` if it exists, or construct inline with the mock's own fake implementations — this is a test fixture, not production code).
-      * `[ ]`   Update `buildStreamChatDepsTokenLimitExceeded` (`:388-398`) — its inline `countTokens` override currently takes `(_deps: CountTokensDeps, _payload: CountableChatPayload, _modelConfig: AiModelExtendedConfig)` (3 args); change to `(_payload: CountableChatPayload, _modelConfig: AiModelExtendedConfig)` (2 args) to match `BoundCountTokensFn`.
-      * `[ ]`   The `CountTokensDeps` import (`:24`) is removed once no builder references it.
-      * `[ ]`   The `buildStreamChatDepsMissingCountTokens` invalidator is unchanged — it omits the key regardless of type.
+   * `[✅]`   streamChat/`streamChat.mock.ts`
+      * `[✅]`   Update `buildContractStreamChatDeps` (`:43-56`) to supply a `BoundCountTokensFn` for `countTokens`. The current builder imports the unbound `countTokens` from `tokenizer_utils.ts` and passes it directly; replace with a bound closure that wraps `countTokens` with a test-appropriate `CountTokensDeps` (import `buildTokenizerDeps` from `_shared/utils/tokenizer_utils.mock.ts` if it exists, or construct inline with the mock's own fake implementations — this is a test fixture, not production code).
+      * `[✅]`   Update `buildStreamChatDepsTokenLimitExceeded` (`:388-398`) — its inline `countTokens` override currently takes `(_deps: CountTokensDeps, _payload: CountableChatPayload, _modelConfig: AiModelExtendedConfig)` (3 args); change to `(_payload: CountableChatPayload, _modelConfig: AiModelExtendedConfig)` (2 args) to match `BoundCountTokensFn`.
+      * `[✅]`   The `CountTokensDeps` import (`:24`) is removed once no builder references it.
+      * `[✅]`   The `buildStreamChatDepsMissingCountTokens` invalidator is unchanged — it omits the key regardless of type.
 
-   * `[ ]`   streamChat/`StreamChat.ts`
-      * `[ ]`   Delete the `import type { CountTokensDeps }` at `:7`.
-      * `[ ]`   Delete the inline `tokenizerDeps` construction at `:144-150` (the seven lines from `const tokenizerDeps: CountTokensDeps = {` through the closing `};`).
-      * `[ ]`   Change the `countTokensFn(tokenizerDeps, {...}, modelConfig)` call at `:176` to `countTokensFn({...}, modelConfig)` — dropping the first argument. The second and third arguments (the `CountableChatPayload` object and `modelConfig`) are unchanged.
-      * `[ ]`   No other change. All behavior, logging, error paths, and SSE streaming are preserved.
+   * `[✅]`   streamChat/`StreamChat.ts`
+      * `[✅]`   Delete the `import type { CountTokensDeps }` at `:7`.
+      * `[✅]`   Delete the inline `tokenizerDeps` construction at `:144-150` (the seven lines from `const tokenizerDeps: CountTokensDeps = {` through the closing `};`).
+      * `[✅]`   Change the `countTokensFn(tokenizerDeps, {...}, modelConfig)` call at `:176` to `countTokensFn({...}, modelConfig)` — dropping the first argument. The second and third arguments (the `CountableChatPayload` object and `modelConfig`) are unchanged.
+      * `[✅]`   No other change. All behavior, logging, error paths, and SSE streaming are preserved.
 
-   * `[ ]`   streamChat/`streamChat.integration.test.ts`
-      * `[ ]`   Update `buildStreamChatDepsForIntegration` (`:17-31`) to supply a `BoundCountTokensFn` for `countTokens`. The current function passes the unbound `countTokens` from `tokenizer_utils.ts`; wrap it with real `CountTokensDeps` bound from the same module (import `buildTokenizerDeps` or inline the construction). The existing integration test cases are unchanged in structure — only the deps builder changes.
+   * `[✅]`   streamChat/`streamChat.integration.test.ts`
+      * `[✅]`   Update `buildStreamChatDepsForIntegration` (`:17-31`) to supply a `BoundCountTokensFn` for `countTokens`. The current function passes the unbound `countTokens` from `tokenizer_utils.ts`; wrap it with real `CountTokensDeps` bound from the same module (import `buildTokenizerDeps` or inline the construction). The existing integration test cases are unchanged in structure — only the deps builder changes.
 
-   * `[ ]`   `directionality`
-      * `[ ]`   Layer: app-layer chat module (`chat/streamChat`). Deps inward: `BoundCountTokensFn` from `_shared/types/tokenizer.types.ts` replaces `CountTokensFn`; all other deps unchanged. Provides outward to `streamRequest` (the consumer that assembles `StreamChatDeps`).
-      * `[ ]`   No reverse dependencies, no lateral layer violations, no cycles.
+   * `[✅]`   `directionality`
+      * `[✅]`   Layer: app-layer chat module (`chat/streamChat`). Deps inward: `BoundCountTokensFn` from `_shared/types/tokenizer.types.ts` replaces `CountTokensFn`; all other deps unchanged. Provides outward to `streamRequest` (the consumer that assembles `StreamChatDeps`).
+      * `[✅]`   No reverse dependencies, no lateral layer violations, no cycles.
 
-   * `[ ]`   `requirements`
-      * `[ ]`   `StreamChatDeps.countTokens` is typed `BoundCountTokensFn`, not `CountTokensFn`.
-      * `[ ]`   No inline `CountTokensDeps` construction exists in `StreamChat.ts`.
-      * `[ ]`   The `countTokens` call site passes two arguments (`payload`, `modelConfig`), not three.
-      * `[ ]`   All existing unit test cases pass with the updated mock builders.
-      * `[ ]`   All existing integration test cases pass with the updated bound tokenizer.
-      * `[ ]`   The guard is unchanged — `typeof` check is type-invariant.
+   * `[✅]`   `requirements`
+      * `[✅]`   `StreamChatDeps.countTokens` is typed `BoundCountTokensFn`, not `CountTokensFn`.
+      * `[✅]`   No inline `CountTokensDeps` construction exists in `StreamChat.ts`.
+      * `[✅]`   The `countTokens` call site passes two arguments (`payload`, `modelConfig`), not three.
+      * `[✅]`   All existing unit test cases pass with the updated mock builders.
+      * `[✅]`   All existing integration test cases pass with the updated bound tokenizer.
+      * `[✅]`   The guard is unchanged — `typeof` check is type-invariant.
 
 
-* `[ ]`   supabase/functions/chat/streamRewind/streamRewind.ts **[BE] Replace the inline fake tokenizer with a bound `BoundCountTokensFn`, so the chat rewind path uses a real token count instead of `text.length` character-counting**
+* `[✅]`   supabase/functions/chat/streamRewind/streamRewind.ts **[BE] Replace the inline fake tokenizer with a bound `BoundCountTokensFn`, so the chat rewind path uses a real token count instead of `text.length` character-counting**
 
-   * `[ ]`   `objective`
-      * `[ ]`   `streamRewind.ts` constructs `CountTokensDeps` inline at `:162-168` with two fake implementations: `getEncoding` returns a character-indexing encoder (`Array.from(input).map((_, i) => i)`), and `countTokensAnthropic` returns `text.length`. Both are character counts, not token counts. The constructed `tokenizerDeps` is passed as the first argument to `deps.countTokens(tokenizerDeps, {...}, modelConfig)` at `:183`. This makes every token estimate on the rewind path read high by a factor of ~4× for English text, misclassifying affordable requests as over the window limit (`:199-211`) or insufficient balance (`:221-231`).
-      * `[ ]`   Functional goals:
-         * `[ ]`   `StreamRewindDeps.countTokens` changes from `CountTokensFn` (unbound, requires `CountTokensDeps` as first argument) to `BoundCountTokensFn` (deps already bound by the caller). The type is imported from `_shared/types/tokenizer.types.ts`.
-         * `[ ]`   The inline `CountTokensDeps` construction at `streamRewind.ts:162-168` is deleted. The `CountTokensDeps` import in `streamRewind.ts:10` is deleted.
-         * `[ ]`   The call site at `streamRewind.ts:183` changes from `countTokensFn(tokenizerDeps, {...}, modelConfig)` to `countTokensFn({...}, modelConfig)` — dropping the first argument.
-         * `[ ]`   No other line of the function body changes. The token-counting result, the affordability checks, the adapter call, the debit, the streaming, and every error path are preserved.
-      * `[ ]`   Non-functional constraints:
-         * `[ ]`   No file outside `chat/streamRewind/` is edited. The consumer that assembles `StreamRewindDeps` (`streamRequest.ts:97-103`) must update its `countTokens` field to supply a `BoundCountTokensFn`; that change belongs to `streamRequest`'s node.
-         * `[ ]`   Each goal is proven by a named case in this node's interface test or unit test.
+   * `[✅]`   `objective`
+      * `[✅]`   `streamRewind.ts` constructs `CountTokensDeps` inline at `:162-168` with two fake implementations: `getEncoding` returns a character-indexing encoder (`Array.from(input).map((_, i) => i)`), and `countTokensAnthropic` returns `text.length`. Both are character counts, not token counts. The constructed `tokenizerDeps` is passed as the first argument to `deps.countTokens(tokenizerDeps, {...}, modelConfig)` at `:183`. This makes every token estimate on the rewind path read high by a factor of ~4× for English text, misclassifying affordable requests as over the window limit (`:199-211`) or insufficient balance (`:221-231`).
+      * `[✅]`   Functional goals:
+         * `[✅]`   `StreamRewindDeps.countTokens` changes from `CountTokensFn` (unbound, requires `CountTokensDeps` as first argument) to `BoundCountTokensFn` (deps already bound by the caller). The type is imported from `_shared/types/tokenizer.types.ts`.
+         * `[✅]`   The inline `CountTokensDeps` construction at `streamRewind.ts:162-168` is deleted. The `CountTokensDeps` import in `streamRewind.ts:10` is deleted.
+         * `[✅]`   The call site at `streamRewind.ts:183` changes from `countTokensFn(tokenizerDeps, {...}, modelConfig)` to `countTokensFn({...}, modelConfig)` — dropping the first argument.
+         * `[✅]`   No other line of the function body changes. The token-counting result, the affordability checks, the adapter call, the debit, the streaming, and every error path are preserved.
+      * `[✅]`   Non-functional constraints:
+         * `[✅]`   No file outside `chat/streamRewind/` is edited. The consumer that assembles `StreamRewindDeps` (`streamRequest.ts:97-103`) must update its `countTokens` field to supply a `BoundCountTokensFn`; that change belongs to `streamRequest`'s node.
+         * `[✅]`   Each goal is proven by a named case in this node's interface test or unit test.
 
-   * `[ ]`   `role`
-      * `[ ]`   Node role is an existing app-layer chat function whose tokenizer dependency is narrowed from unbound to bound, eliminating the inline fake construction.
-      * `[ ]`   Out-of-scope responsibilities:
-         * `[ ]`   Do not change how the caller (`streamRequest`) assembles deps — that is the caller's node.
-         * `[ ]`   Do not change the affordability logic, the adapter call, the debit, the RPC, or the SSE streaming.
-         * `[ ]`   Do not refactor `streamRewind` to route through `prepareModelJob` — the chat path is separate from the worker path.
+   * `[✅]`   `role`
+      * `[✅]`   Node role is an existing app-layer chat function whose tokenizer dependency is narrowed from unbound to bound, eliminating the inline fake construction.
+      * `[✅]`   Out-of-scope responsibilities:
+         * `[✅]`   Do not change how the caller (`streamRequest`) assembles deps — that is the caller's node.
+         * `[✅]`   Do not change the affordability logic, the adapter call, the debit, the RPC, or the SSE streaming.
+         * `[✅]`   Do not refactor `streamRewind` to route through `prepareModelJob` — the chat path is separate from the worker path.
 
-   * `[ ]`   `module`
-      * `[ ]`   Bounded context is `supabase/functions/chat/streamRewind` — the existing chat-rewind SSE function.
-      * `[ ]`   Inside boundary: the dep type change and the deleted inline tokenizer construction.
-      * `[ ]`   Outside boundary: who binds the real tokenizer deps and how — that is the caller's responsibility (`streamRequest`).
+   * `[✅]`   `module`
+      * `[✅]`   Bounded context is `supabase/functions/chat/streamRewind` — the existing chat-rewind SSE function.
+      * `[✅]`   Inside boundary: the dep type change and the deleted inline tokenizer construction.
+      * `[✅]`   Outside boundary: who binds the real tokenizer deps and how — that is the caller's responsibility (`streamRequest`).
 
-   * `[ ]`   `deps`
-      * `[ ]`   Provider: `_shared/types/tokenizer.types.ts` (`BoundCountTokensFn` — replaces `CountTokensFn`).
-         * `[ ]`   Layer classification: shared type surface.
-         * `[ ]`   Direction: inbound from `_shared`.
-         * `[ ]`   Purpose: the new dep type for `countTokens`, with `CountTokensDeps` already bound by the caller.
-      * `[ ]`   All other existing deps (`logger`, `adminTokenWalletService`, `debitTokens`, `createErrorResponse`, `getMaxOutputTokens`) are unchanged.
-      * `[ ]`   Removed dep: `CountTokensDeps` is no longer imported in `streamRewind.ts`.
-      * `[ ]`   Confirm: no reverse dependencies, no lateral layer violations, no cycles.
+   * `[✅]`   `deps`
+      * `[✅]`   Provider: `_shared/types/tokenizer.types.ts` (`BoundCountTokensFn` — replaces `CountTokensFn`).
+         * `[✅]`   Layer classification: shared type surface.
+         * `[✅]`   Direction: inbound from `_shared`.
+         * `[✅]`   Purpose: the new dep type for `countTokens`, with `CountTokensDeps` already bound by the caller.
+      * `[✅]`   All other existing deps (`logger`, `adminTokenWalletService`, `debitTokens`, `createErrorResponse`, `getMaxOutputTokens`) are unchanged.
+      * `[✅]`   Removed dep: `CountTokensDeps` is no longer imported in `streamRewind.ts`.
+      * `[✅]`   Confirm: no reverse dependencies, no lateral layer violations, no cycles.
 
-   * `[ ]`   `context_slice`
-      * `[ ]`   `countTokens: BoundCountTokensFn` — `(payload: CountableChatPayload, modelConfig: AiModelExtendedConfig) => number` with the tokenizer deps already closed over by the caller.
+   * `[✅]`   `context_slice`
+      * `[✅]`   `countTokens: BoundCountTokensFn` — `(payload: CountableChatPayload, modelConfig: AiModelExtendedConfig) => number` with the tokenizer deps already closed over by the caller.
 
-   * `[ ]`   streamRewind/`streamRewind.interface.test.ts`
-      * `[ ]`   Add a typed-assignment test proving `BoundCountTokensFn` is assignable to `StreamRewindDeps['countTokens']`: `declare const fn: BoundCountTokensFn; const check: StreamRewindDeps['countTokens'] = fn;`. The existing contract tests at `:18-39` that assert `typeof deps.countTokens, "function"` remain valid and are not edited.
+   * `[✅]`   streamRewind/`streamRewind.interface.test.ts`
+      * `[✅]`   Add a typed-assignment test proving `BoundCountTokensFn` is assignable to `StreamRewindDeps['countTokens']`: `declare const fn: BoundCountTokensFn; const check: StreamRewindDeps['countTokens'] = fn;`. The existing contract tests at `:18-39` that assert `typeof deps.countTokens, "function"` remain valid and are not edited.
 
-   * `[ ]`   streamRewind/`streamRewind.interface.ts`
-      * `[ ]`   Replace the `CountTokensFn` import (`:11`) with `BoundCountTokensFn` from `_shared/types/tokenizer.types.ts`.
-      * `[ ]`   Change `countTokens: CountTokensFn` to `countTokens: BoundCountTokensFn` in `StreamRewindDeps` (`:19`).
+   * `[✅]`   streamRewind/`streamRewind.interface.ts`
+      * `[✅]`   Replace the `CountTokensFn` import (`:11`) with `BoundCountTokensFn` from `_shared/types/tokenizer.types.ts`.
+      * `[✅]`   Change `countTokens: CountTokensFn` to `countTokens: BoundCountTokensFn` in `StreamRewindDeps` (`:19`).
 
-   * `[ ]`   streamRewind/`streamRewind.mock.ts`
-      * `[ ]`   Update `buildContractStreamRewindDeps` (`:35-46`) to supply a `BoundCountTokensFn` for `countTokens`. The current builder imports the unbound `countTokens` from `tokenizer_utils.ts` and passes it directly; replace with a bound closure that wraps `countTokens` with a test-appropriate `CountTokensDeps` (import `buildTokenizerDeps` from `_shared/utils/tokenizer_utils.mock.ts` if it exists, or construct inline with the mock's own fake implementations — this is a test fixture, not production code).
-      * `[ ]`   Update `buildStreamRewindUnitDepsWithFreshAdmin` (`:225-241`) and `buildStreamRewindDepsInsufficientBalance` (`:243-255`) — both derive from `buildContractStreamRewindDeps`, so the change propagates through the spread.
-      * `[ ]`   The `buildStreamRewindDepsMissingCountTokens` invalidator (`:79-86`) is unchanged — it omits the key regardless of type.
+   * `[✅]`   streamRewind/`streamRewind.mock.ts`
+      * `[✅]`   Update `buildContractStreamRewindDeps` (`:35-46`) to supply a `BoundCountTokensFn` for `countTokens`. The current builder imports the unbound `countTokens` from `tokenizer_utils.ts` and passes it directly; replace with a bound closure that wraps `countTokens` with a test-appropriate `CountTokensDeps` (import `buildTokenizerDeps` from `_shared/utils/tokenizer_utils.mock.ts` if it exists, or construct inline with the mock's own fake implementations — this is a test fixture, not production code).
+      * `[✅]`   Update `buildStreamRewindUnitDepsWithFreshAdmin` (`:225-241`) and `buildStreamRewindDepsInsufficientBalance` (`:243-255`) — both derive from `buildContractStreamRewindDeps`, so the change propagates through the spread.
+      * `[✅]`   The `buildStreamRewindDepsMissingCountTokens` invalidator (`:79-86`) is unchanged — it omits the key regardless of type.
 
-   * `[ ]`   streamRewind/`streamRewind.ts`
-      * `[ ]`   Delete the `import type { CountTokensDeps }` at `:10`.
-      * `[ ]`   Delete the inline `tokenizerDeps` construction at `:162-168` (the six lines from `const tokenizerDeps: CountTokensDeps = {` through the closing `};`).
-      * `[ ]`   Change the `countTokensFn(tokenizerDeps, {...}, modelConfig)` call at `:183-191` to `countTokensFn({...}, modelConfig)` — dropping the first argument. The second and third arguments (the `CountableChatPayload` object and `modelConfig`) are unchanged.
-      * `[ ]`   No other change. All behavior, logging, error paths, and SSE streaming are preserved.
+   * `[✅]`   streamRewind/`streamRewind.ts`
+      * `[✅]`   Delete the `import type { CountTokensDeps }` at `:10`.
+      * `[✅]`   Delete the inline `tokenizerDeps` construction at `:162-168` (the six lines from `const tokenizerDeps: CountTokensDeps = {` through the closing `};`).
+      * `[✅]`   Change the `countTokensFn(tokenizerDeps, {...}, modelConfig)` call at `:183-191` to `countTokensFn({...}, modelConfig)` — dropping the first argument. The second and third arguments (the `CountableChatPayload` object and `modelConfig`) are unchanged.
+      * `[✅]`   No other change. All behavior, logging, error paths, and SSE streaming are preserved.
 
-   * `[ ]`   streamRewind/`streamRewind.integration.test.ts`
-      * `[ ]`   Update `buildStreamRewindDepsForIntegration` (`:15-27`) to supply a `BoundCountTokensFn` for `countTokens`. The current function passes the unbound `countTokens` from `tokenizer_utils.ts`; wrap it with real `CountTokensDeps` bound from the same module (import `buildTokenizerDeps` or inline the construction). The three integration test cases (`:54-85`, `:87-121`, `:123-156`) are unchanged in structure — only the deps builder changes.
+   * `[✅]`   streamRewind/`streamRewind.integration.test.ts`
+      * `[✅]`   Update `buildStreamRewindDepsForIntegration` (`:15-27`) to supply a `BoundCountTokensFn` for `countTokens`. The current function passes the unbound `countTokens` from `tokenizer_utils.ts`; wrap it with real `CountTokensDeps` bound from the same module (import `buildTokenizerDeps` or inline the construction). The three integration test cases (`:54-85`, `:87-121`, `:123-156`) are unchanged in structure — only the deps builder changes.
 
-   * `[ ]`   `directionality`
-      * `[ ]`   Layer: app-layer chat module (`chat/streamRewind`). Deps inward: `BoundCountTokensFn` from `_shared/types/tokenizer.types.ts` replaces `CountTokensFn`; all other deps unchanged. Provides outward to `streamRequest` (the consumer that assembles `StreamRewindDeps`).
-      * `[ ]`   No reverse dependencies, no lateral layer violations, no cycles.
+   * `[✅]`   `directionality`
+      * `[✅]`   Layer: app-layer chat module (`chat/streamRewind`). Deps inward: `BoundCountTokensFn` from `_shared/types/tokenizer.types.ts` replaces `CountTokensFn`; all other deps unchanged. Provides outward to `streamRequest` (the consumer that assembles `StreamRewindDeps`).
+      * `[✅]`   No reverse dependencies, no lateral layer violations, no cycles.
 
-   * `[ ]`   `requirements`
-      * `[ ]`   `StreamRewindDeps.countTokens` is typed `BoundCountTokensFn`, not `CountTokensFn`.
-      * `[ ]`   No inline `CountTokensDeps` construction exists in `streamRewind.ts`.
-      * `[ ]`   The `countTokens` call site passes two arguments (`payload`, `modelConfig`), not three.
-      * `[ ]`   All existing unit test cases pass with the updated mock builders.
-      * `[ ]`   All existing integration test cases pass with the updated bound tokenizer.
-      * `[ ]`   The guard is unchanged — `typeof` check is type-invariant.
+   * `[✅]`   `requirements`
+      * `[✅]`   `StreamRewindDeps.countTokens` is typed `BoundCountTokensFn`, not `CountTokensFn`.
+      * `[✅]`   No inline `CountTokensDeps` construction exists in `streamRewind.ts`.
+      * `[✅]`   The `countTokens` call site passes two arguments (`payload`, `modelConfig`), not three.
+      * `[✅]`   All existing unit test cases pass with the updated mock builders.
+      * `[✅]`   All existing integration test cases pass with the updated bound tokenizer.
+      * `[✅]`   The guard is unchanged — `typeof` check is type-invariant.
 
-* `[ ]`   supabase/functions/chat/streamRequest/streamRequest.ts **[BE] Narrow `StreamRequestDeps.countTokens` from `CountTokensFn` to `BoundCountTokensFn`, a pure pass-through type change with no implementation edit**
+* `[✅]`   supabase/functions/chat/streamRequest/streamRequest.ts **[BE] Narrow `StreamRequestDeps.countTokens` from `CountTokensFn` to `BoundCountTokensFn`, a pure pass-through type change with no implementation edit**
 
-   * `[ ]`   `objective`
-      * `[ ]`   `streamRequest.ts` copies `deps.countTokens` into `rewindDeps.countTokens` (`:100`) and `chatDeps.countTokens` (`:128`). Both consumers — `StreamRewindDeps` and `StreamChatDeps` — have narrowed their `countTokens` member from `CountTokensFn` to `BoundCountTokensFn` in their respective nodes. `StreamRequestDeps.countTokens` still declares `CountTokensFn`, so the pass-through compiles today only because the unbound type is assignable to the bound type's call sites. The interface must narrow to match its consumers and the composition root above it (`chat/index.ts`), which will supply a `BoundCountTokensFn`.
-      * `[ ]`   Functional goals:
-         * `[ ]`   `StreamRequestDeps.countTokens` changes from `CountTokensFn` (unbound, requires `CountTokensDeps` as first argument) to `BoundCountTokensFn` (deps already bound by the composition root). The type is imported from `_shared/types/tokenizer.types.ts`.
-         * `[ ]`   No line of `streamRequest.ts` changes. The pass-through assignments at `:100` and `:128` remain valid because both consumer dep types already expect `BoundCountTokensFn`.
-      * `[ ]`   Non-functional constraints:
-         * `[ ]`   No file outside `chat/streamRequest/` is edited. The composition root (`chat/index.ts`) that assembles `StreamRequestDeps` must update its `countTokens` field to supply a `BoundCountTokensFn`; that change belongs to `chat/index.ts`'s node.
-         * `[ ]`   Each goal is proven by a named case in this node's interface test.
+   * `[✅]`   `objective`
+      * `[✅]`   `streamRequest.ts` copies `deps.countTokens` into `rewindDeps.countTokens` (`:100`) and `chatDeps.countTokens` (`:128`). Both consumers — `StreamRewindDeps` and `StreamChatDeps` — have narrowed their `countTokens` member from `CountTokensFn` to `BoundCountTokensFn` in their respective nodes. `StreamRequestDeps.countTokens` still declares `CountTokensFn`, so the pass-through compiles today only because the unbound type is assignable to the bound type's call sites. The interface must narrow to match its consumers and the composition root above it (`chat/index.ts`), which will supply a `BoundCountTokensFn`.
+      * `[✅]`   Functional goals:
+         * `[✅]`   `StreamRequestDeps.countTokens` changes from `CountTokensFn` (unbound, requires `CountTokensDeps` as first argument) to `BoundCountTokensFn` (deps already bound by the composition root). The type is imported from `_shared/types/tokenizer.types.ts`.
+         * `[✅]`   No line of `streamRequest.ts` changes. The pass-through assignments at `:100` and `:128` remain valid because both consumer dep types already expect `BoundCountTokensFn`.
+      * `[✅]`   Non-functional constraints:
+         * `[✅]`   No file outside `chat/streamRequest/` is edited. The composition root (`chat/index.ts`) that assembles `StreamRequestDeps` must update its `countTokens` field to supply a `BoundCountTokensFn`; that change belongs to `chat/index.ts`'s node.
+         * `[✅]`   Each goal is proven by a named case in this node's interface test.
 
-   * `[ ]`   `role`
-      * `[ ]`   Node role is an existing app-layer chat orchestrator whose tokenizer dependency type is narrowed from unbound to bound, aligning it with the consumers it passes through to.
-      * `[ ]`   Out-of-scope responsibilities:
-         * `[ ]`   Do not change how the composition root (`chat/index.ts`) assembles deps — that is the composition root's node.
-         * `[ ]`   Do not change any branch, error path, or pass-through logic in `streamRequest.ts`.
-         * `[ ]`   Do not edit `streamChat` or `streamRewind`; they have their own nodes.
+   * `[✅]`   `role`
+      * `[✅]`   Node role is an existing app-layer chat orchestrator whose tokenizer dependency type is narrowed from unbound to bound, aligning it with the consumers it passes through to.
+      * `[✅]`   Out-of-scope responsibilities:
+         * `[✅]`   Do not change how the composition root (`chat/index.ts`) assembles deps — that is the composition root's node.
+         * `[✅]`   Do not change any branch, error path, or pass-through logic in `streamRequest.ts`.
+         * `[✅]`   Do not edit `streamChat` or `streamRewind`; they have their own nodes.
 
-   * `[ ]`   `module`
-      * `[ ]`   Bounded context is `supabase/functions/chat/streamRequest` — the existing chat orchestrator that routes to StreamChat or StreamRewind.
-      * `[ ]`   Inside boundary: the dep type change on the interface.
-      * `[ ]`   Outside boundary: who binds the real tokenizer deps and how — that is the composition root's responsibility (`chat/index.ts`).
+   * `[✅]`   `module`
+      * `[✅]`   Bounded context is `supabase/functions/chat/streamRequest` — the existing chat orchestrator that routes to StreamChat or StreamRewind.
+      * `[✅]`   Inside boundary: the dep type change on the interface.
+      * `[✅]`   Outside boundary: who binds the real tokenizer deps and how — that is the composition root's responsibility (`chat/index.ts`).
 
-   * `[ ]`   `deps`
-      * `[ ]`   Provider: `_shared/types/tokenizer.types.ts` (`BoundCountTokensFn` — replaces `CountTokensFn`).
-         * `[ ]`   Layer classification: shared type surface.
-         * `[ ]`   Direction: inbound from `_shared`.
-         * `[ ]`   Purpose: the new dep type for `countTokens`, with `CountTokensDeps` already bound by the composition root.
-      * `[ ]`   All other existing deps (`logger`, `adminTokenWalletService`, `getAiProviderAdapter`, `prepareChatContext`, `streamChat`, `streamRewind`, `createErrorResponse`, `debitTokens`, `getMaxOutputTokens`, `findOrCreateChat`, `constructMessageHistory`) are unchanged.
-      * `[ ]`   Confirm: no reverse dependencies, no lateral layer violations, no cycles.
+   * `[✅]`   `deps`
+      * `[✅]`   Provider: `_shared/types/tokenizer.types.ts` (`BoundCountTokensFn` — replaces `CountTokensFn`).
+         * `[✅]`   Layer classification: shared type surface.
+         * `[✅]`   Direction: inbound from `_shared`.
+         * `[✅]`   Purpose: the new dep type for `countTokens`, with `CountTokensDeps` already bound by the composition root.
+      * `[✅]`   All other existing deps (`logger`, `adminTokenWalletService`, `getAiProviderAdapter`, `prepareChatContext`, `streamChat`, `streamRewind`, `createErrorResponse`, `debitTokens`, `getMaxOutputTokens`, `findOrCreateChat`, `constructMessageHistory`) are unchanged.
+      * `[✅]`   Confirm: no reverse dependencies, no lateral layer violations, no cycles.
 
-   * `[ ]`   `context_slice`
-      * `[ ]`   `countTokens: BoundCountTokensFn` — `(payload: CountableChatPayload, modelConfig: AiModelExtendedConfig) => number` with the tokenizer deps already closed over by the composition root.
+   * `[✅]`   `context_slice`
+      * `[✅]`   `countTokens: BoundCountTokensFn` — `(payload: CountableChatPayload, modelConfig: AiModelExtendedConfig) => number` with the tokenizer deps already closed over by the composition root.
 
-   * `[ ]`   streamRequest/`streamRequest.interface.test.ts`
-      * `[ ]`   Add a typed-assignment test proving `BoundCountTokensFn` is assignable to `StreamRequestDeps['countTokens']`: `declare const fn: BoundCountTokensFn; const check: StreamRequestDeps['countTokens'] = fn;`. The existing contract tests at `:30-48` that assert `typeof deps.countTokens, "function"` remain valid and are not edited.
+   * `[✅]`   streamRequest/`streamRequest.interface.test.ts`
+      * `[✅]`   Add a typed-assignment test proving `BoundCountTokensFn` is assignable to `StreamRequestDeps['countTokens']`: `declare const fn: BoundCountTokensFn; const check: StreamRequestDeps['countTokens'] = fn;`. The existing contract tests at `:30-48` that assert `typeof deps.countTokens, "function"` remain valid and are not edited.
 
-   * `[ ]`   streamRequest/`streamRequest.interface.ts`
-      * `[ ]`   Replace the `CountTokensFn` import (`:6`) with `BoundCountTokensFn` from `_shared/types/tokenizer.types.ts`.
-      * `[ ]`   Change `countTokens: CountTokensFn` to `countTokens: BoundCountTokensFn` in `StreamRequestDeps` (`:24`).
+   * `[✅]`   streamRequest/`streamRequest.interface.ts`
+      * `[✅]`   Replace the `CountTokensFn` import (`:6`) with `BoundCountTokensFn` from `_shared/types/tokenizer.types.ts`.
+      * `[✅]`   Change `countTokens: CountTokensFn` to `countTokens: BoundCountTokensFn` in `StreamRequestDeps` (`:24`).
 
-   * `[ ]`   streamRequest/`streamRequest.integration.test.ts`
-      * `[ ]`   Update the three `StreamRequestDeps` literals (`:407-420`, `:500-513`, `:585-598`) to supply a `BoundCountTokensFn` for `countTokens`. Each currently passes the unbound `countTokens` from `tokenizer_utils.ts` (imported at `:25`); wrap it with real `CountTokensDeps` bound from the same module (import `buildTokenizerDeps` or inline the construction). The three integration test cases are unchanged in structure — only the deps builder lines change.
+   * `[✅]`   streamRequest/`streamRequest.integration.test.ts`
+      * `[✅]`   Update the three `StreamRequestDeps` literals (`:407-420`, `:500-513`, `:585-598`) to supply a `BoundCountTokensFn` for `countTokens`. Each currently passes the unbound `countTokens` from `tokenizer_utils.ts` (imported at `:25`); wrap it with real `CountTokensDeps` bound from the same module (import `buildTokenizerDeps` or inline the construction). The three integration test cases are unchanged in structure — only the deps builder lines change.
 
-   * `[ ]`   `directionality`
-      * `[ ]`   Layer: app-layer chat orchestrator (`chat/streamRequest`). Deps inward: `BoundCountTokensFn` from `_shared/types/tokenizer.types.ts` replaces `CountTokensFn`; all other deps unchanged. Provides outward to `chat/index.ts` (the composition root that assembles `StreamRequestDeps`).
-      * `[ ]`   No reverse dependencies, no lateral layer violations, no cycles.
+   * `[✅]`   `directionality`
+      * `[✅]`   Layer: app-layer chat orchestrator (`chat/streamRequest`). Deps inward: `BoundCountTokensFn` from `_shared/types/tokenizer.types.ts` replaces `CountTokensFn`; all other deps unchanged. Provides outward to `chat/index.ts` (the composition root that assembles `StreamRequestDeps`).
+      * `[✅]`   No reverse dependencies, no lateral layer violations, no cycles.
 
-   * `[ ]`   `requirements`
-      * `[ ]`   `StreamRequestDeps.countTokens` is typed `BoundCountTokensFn`, not `CountTokensFn`.
-      * `[ ]`   No line of `streamRequest.ts` is changed — the pass-through is type-compatible.
-      * `[ ]`   The mock auto-follows: `buildContractStreamRequestDeps` and `buildStreamRequestDepsWithPathHandlers` both delegate `countTokens` to `buildContractStreamChatDeps()`, which already supplies `BoundCountTokensFn` after the StreamChat node.
-      * `[ ]`   All existing unit test cases pass without modification.
-      * `[ ]`   All existing integration test cases pass with the updated bound tokenizer in the deps literals.
-      * `[ ]`   The guard is unchanged — `typeof` check is type-invariant.
+   * `[✅]`   `requirements`
+      * `[✅]`   `StreamRequestDeps.countTokens` is typed `BoundCountTokensFn`, not `CountTokensFn`.
+      * `[✅]`   No line of `streamRequest.ts` is changed — the pass-through is type-compatible.
+      * `[✅]`   The mock auto-follows: `buildContractStreamRequestDeps` and `buildStreamRequestDepsWithPathHandlers` both delegate `countTokens` to `buildContractStreamChatDeps()`, which already supplies `BoundCountTokensFn` after the StreamChat node.
+      * `[✅]`   All existing unit test cases pass without modification.
+      * `[✅]`   All existing integration test cases pass with the updated bound tokenizer in the deps literals.
+      * `[✅]`   The guard is unchanged — `typeof` check is type-invariant.
 
-* `[ ]`   supabase/functions/chat/index.ts **[BE] Bind real `CountTokensDeps` at the chat composition root and narrow `ChatDeps.countTokens` from `CountTokensFn` to `BoundCountTokensFn`**
+* `[✅]`   supabase/functions/chat/index.ts **[BE] Bind real `CountTokensDeps` at the chat composition root and narrow `ChatDeps.countTokens` from `CountTokensFn` to `BoundCountTokensFn`**
 
-   * `[ ]`   `objective`
-      * `[ ]`   `chat/index.ts` is the chat composition root. Every consumer below it — `streamRequest`, `StreamRewind`, `StreamChat` — has narrowed its `countTokens` dep from `CountTokensFn` to `BoundCountTokensFn`, but the composition root still imports the unbound `countTokens` from `tokenizer_utils.ts` and passes it directly into `defaultDeps` as a `CountTokensFn`. The interface declares `ChatDeps.countTokens: CountTokensFn`, which requires every consumer to receive the unbound function and construct its own `CountTokensDeps` inline — the construction this workstream is eliminating.
-      * `[ ]`   Functional goals:
-         * `[ ]`   `ChatDeps.countTokens` changes from `CountTokensFn` to `BoundCountTokensFn`.
-         * `[ ]`   `index.ts` imports the real tokenizer packages (`countTokens as countTokensAnthropic` from `npm:@anthropic-ai/tokenizer@0.0.4`, `getEncoding as rawGetEncoding` from `npm:js-tiktoken@1.0.7`), imports `isKnownTiktokenEncoding` from `_shared/utils/type-guards/type_guards.chat.ts`, imports `countTokens` from `_shared/utils/tokenizer_utils.ts` (unchanged), and imports `CountTokensDeps` and `BoundCountTokensFn` from `_shared/types/tokenizer.types.ts`.
-         * `[ ]`   `defaultDeps.countTokens` is a `BoundCountTokensFn` closure that captures the real `CountTokensDeps` — a guarded `getEncoding` wrapper (validates encoding name with `isKnownTiktokenEncoding` before calling `rawGetEncoding`), the real `countTokensAnthropic`, and the existing `logger` — and calls the unbound `countTokens` with those deps bound as the first argument.
-         * `[ ]`   The `CountTokensFn` import is removed from `index.interface.ts`; `BoundCountTokensFn` is imported instead.
-         * `[ ]`   No line of `handler()`, `createChatServiceHandler()`, or `serve()` changes. The `streamDeps.countTokens = deps.countTokens` pass-through remains valid because `StreamRequestDeps.countTokens` already expects `BoundCountTokensFn` after the `streamRequest` node.
-      * `[ ]`   Non-functional constraints:
-         * `[ ]`   No file outside `chat/` is edited. The tokenizer packages, `tokenizer_utils.ts`, and the type-guard module are consumed as-is.
-         * `[ ]`   Each goal is proven by a named case in this node's interface test.
+   * `[✅]`   `objective`
+      * `[✅]`   `chat/index.ts` is the chat composition root. Every consumer below it — `streamRequest`, `StreamRewind`, `StreamChat` — has narrowed its `countTokens` dep from `CountTokensFn` to `BoundCountTokensFn`, but the composition root still imports the unbound `countTokens` from `tokenizer_utils.ts` and passes it directly into `defaultDeps` as a `CountTokensFn`. The interface declares `ChatDeps.countTokens: CountTokensFn`, which requires every consumer to receive the unbound function and construct its own `CountTokensDeps` inline — the construction this workstream is eliminating.
+      * `[✅]`   Functional goals:
+         * `[✅]`   `ChatDeps.countTokens` changes from `CountTokensFn` to `BoundCountTokensFn`.
+         * `[✅]`   `index.ts` imports the real tokenizer packages (`countTokens as countTokensAnthropic` from `npm:@anthropic-ai/tokenizer@0.0.4`, `getEncoding as rawGetEncoding` from `npm:js-tiktoken@1.0.7`), imports `isKnownTiktokenEncoding` from `_shared/utils/type-guards/type_guards.chat.ts`, imports `countTokens` from `_shared/utils/tokenizer_utils.ts` (unchanged), and imports `CountTokensDeps` and `BoundCountTokensFn` from `_shared/types/tokenizer.types.ts`.
+         * `[✅]`   `defaultDeps.countTokens` is a `BoundCountTokensFn` closure that captures the real `CountTokensDeps` — a guarded `getEncoding` wrapper (validates encoding name with `isKnownTiktokenEncoding` before calling `rawGetEncoding`), the real `countTokensAnthropic`, and the existing `logger` — and calls the unbound `countTokens` with those deps bound as the first argument.
+         * `[✅]`   The `CountTokensFn` import is removed from `index.interface.ts`; `BoundCountTokensFn` is imported instead.
+         * `[✅]`   No line of `handler()`, `createChatServiceHandler()`, or `serve()` changes. The `streamDeps.countTokens = deps.countTokens` pass-through remains valid because `StreamRequestDeps.countTokens` already expects `BoundCountTokensFn` after the `streamRequest` node.
+      * `[✅]`   Non-functional constraints:
+         * `[✅]`   No file outside `chat/` is edited. The tokenizer packages, `tokenizer_utils.ts`, and the type-guard module are consumed as-is.
+         * `[✅]`   Each goal is proven by a named case in this node's interface test.
 
-   * `[ ]`   `role`
-      * `[ ]`   Node role is app-layer composition root: the one place in the chat path that has access to the real external tokenizer packages and can construct the real `CountTokensDeps`, bind it once, and hand the bound function to every consumer below.
-      * `[ ]`   Out-of-scope responsibilities:
-         * `[ ]`   Do not change `streamRequest`, `StreamRewind`, `StreamChat`, or any other consumer — they have their own nodes.
-         * `[ ]`   Do not change `handler()` logic, `createChatServiceHandler()` logic, or `serve()` logic.
-         * `[ ]`   Do not change the unbound `countTokens` function in `tokenizer_utils.ts`.
+   * `[✅]`   `role`
+      * `[✅]`   Node role is app-layer composition root: the one place in the chat path that has access to the real external tokenizer packages and can construct the real `CountTokensDeps`, bind it once, and hand the bound function to every consumer below.
+      * `[✅]`   Out-of-scope responsibilities:
+         * `[✅]`   Do not change `streamRequest`, `StreamRewind`, `StreamChat`, or any other consumer — they have their own nodes.
+         * `[✅]`   Do not change `handler()` logic, `createChatServiceHandler()` logic, or `serve()` logic.
+         * `[✅]`   Do not change the unbound `countTokens` function in `tokenizer_utils.ts`.
 
-   * `[ ]`   `module`
-      * `[ ]`   Bounded context is `supabase/functions/chat` — the composition root that wires real deps and hands them to the chat orchestrator.
-      * `[ ]`   Inside boundary: the binding of real `CountTokensDeps` into a `BoundCountTokensFn` closure, and the type narrowing on `ChatDeps`.
-      * `[ ]`   Outside boundary: what `countTokens` does with those deps — that is `tokenizer_utils.ts`'s concern. What consumers do with the bound function — that is each consumer's node.
+   * `[✅]`   `module`
+      * `[✅]`   Bounded context is `supabase/functions/chat` — the composition root that wires real deps and hands them to the chat orchestrator.
+      * `[✅]`   Inside boundary: the binding of real `CountTokensDeps` into a `BoundCountTokensFn` closure, and the type narrowing on `ChatDeps`.
+      * `[✅]`   Outside boundary: what `countTokens` does with those deps — that is `tokenizer_utils.ts`'s concern. What consumers do with the bound function — that is each consumer's node.
 
-   * `[ ]`   `deps`
-      * `[ ]`   Provider: `_shared/types/tokenizer.types.ts` (`BoundCountTokensFn`, `CountTokensDeps` — replaces `CountTokensFn`).
-         * `[ ]`   Layer classification: shared type surface.
-         * `[ ]`   Direction: inbound from `_shared`.
-         * `[ ]`   Purpose: the new dep type for `ChatDeps.countTokens`, and the deps object shape needed to construct the binding.
-      * `[ ]`   Provider: `npm:@anthropic-ai/tokenizer@0.0.4` (`countTokens as countTokensAnthropic`).
-         * `[ ]`   Layer classification: external package (adapter boundary).
-         * `[ ]`   Direction: inbound.
-         * `[ ]`   Purpose: real Anthropic token counter, one of three `CountTokensDeps` members.
-      * `[ ]`   Provider: `npm:js-tiktoken@1.0.7` (`getEncoding as rawGetEncoding`).
-         * `[ ]`   Layer classification: external package (adapter boundary).
-         * `[ ]`   Direction: inbound.
-         * `[ ]`   Purpose: real tiktoken encoding factory, one of three `CountTokensDeps` members.
-      * `[ ]`   Provider: `_shared/utils/type-guards/type_guards.chat.ts` (`isKnownTiktokenEncoding`).
-         * `[ ]`   Layer classification: shared utility.
-         * `[ ]`   Direction: inbound from `_shared`.
-         * `[ ]`   Purpose: validates encoding name before passing to `rawGetEncoding`.
-      * `[ ]`   Provider: `_shared/utils/tokenizer_utils.ts` (`countTokens` — the unbound `CountTokensFn`).
-         * `[ ]`   Layer classification: shared utility.
-         * `[ ]`   Direction: inbound from `_shared`.
-         * `[ ]`   Purpose: the function whose first argument is bound by the closure.
-      * `[ ]`   All other existing deps (`logger`, `adminTokenWalletService`, `userTokenWalletService`, `streamRequest`, `handleCorsPreflightRequest`, `createSuccessResponse`, `createErrorResponse`, `prepareChatContext`, `debitTokens`, `getMaxOutputTokens`, `findOrCreateChat`, `constructMessageHistory`, `getAiProviderAdapter`) are unchanged.
-      * `[ ]`   Confirm: no reverse dependencies, no lateral layer violations, no cycles.
+   * `[✅]`   `deps`
+      * `[✅]`   Provider: `_shared/types/tokenizer.types.ts` (`BoundCountTokensFn`, `CountTokensDeps` — replaces `CountTokensFn`).
+         * `[✅]`   Layer classification: shared type surface.
+         * `[✅]`   Direction: inbound from `_shared`.
+         * `[✅]`   Purpose: the new dep type for `ChatDeps.countTokens`, and the deps object shape needed to construct the binding.
+      * `[✅]`   Provider: `npm:@anthropic-ai/tokenizer@0.0.4` (`countTokens as countTokensAnthropic`).
+         * `[✅]`   Layer classification: external package (adapter boundary).
+         * `[✅]`   Direction: inbound.
+         * `[✅]`   Purpose: real Anthropic token counter, one of three `CountTokensDeps` members.
+      * `[✅]`   Provider: `npm:js-tiktoken@1.0.7` (`getEncoding as rawGetEncoding`).
+         * `[✅]`   Layer classification: external package (adapter boundary).
+         * `[✅]`   Direction: inbound.
+         * `[✅]`   Purpose: real tiktoken encoding factory, one of three `CountTokensDeps` members.
+      * `[✅]`   Provider: `_shared/utils/type-guards/type_guards.chat.ts` (`isKnownTiktokenEncoding`).
+         * `[✅]`   Layer classification: shared utility.
+         * `[✅]`   Direction: inbound from `_shared`.
+         * `[✅]`   Purpose: validates encoding name before passing to `rawGetEncoding`.
+      * `[✅]`   Provider: `_shared/utils/tokenizer_utils.ts` (`countTokens` — the unbound `CountTokensFn`).
+         * `[✅]`   Layer classification: shared utility.
+         * `[✅]`   Direction: inbound from `_shared`.
+         * `[✅]`   Purpose: the function whose first argument is bound by the closure.
+      * `[✅]`   All other existing deps (`logger`, `adminTokenWalletService`, `userTokenWalletService`, `streamRequest`, `handleCorsPreflightRequest`, `createSuccessResponse`, `createErrorResponse`, `prepareChatContext`, `debitTokens`, `getMaxOutputTokens`, `findOrCreateChat`, `constructMessageHistory`, `getAiProviderAdapter`) are unchanged.
+      * `[✅]`   Confirm: no reverse dependencies, no lateral layer violations, no cycles.
 
-   * `[ ]`   `context_slice`
-      * `[ ]`   `countTokens: BoundCountTokensFn` — `(payload: CountableChatPayload, modelConfig: AiModelExtendedConfig) => number` with the tokenizer deps already closed over by `defaultDeps` construction.
+   * `[✅]`   `context_slice`
+      * `[✅]`   `countTokens: BoundCountTokensFn` — `(payload: CountableChatPayload, modelConfig: AiModelExtendedConfig) => number` with the tokenizer deps already closed over by `defaultDeps` construction.
 
-   * `[ ]`   chat/`index.interface.test.ts`
-      * `[ ]`   The existing interface test proves the surface and return union for `ChatDeps`, `ChatParams`, `ChatPayload`, `ChatSuccess`, `ChatError`, `ChatReturn`, `ChatFn`. The only change in this node is: the surface record for `ChatDeps` continues to list `countTokens: true` (already present), and a new typed-assignment block proves `BoundCountTokensFn` is assignable to `ChatDeps['countTokens']`.
-      * `[ ]`   Import `BoundCountTokensFn` from `_shared/types/tokenizer.types.ts` and `ChatDeps` from `./index.interface.ts`.
-      * `[ ]`   New block: `const fn: BoundCountTokensFn = (_p, _m) => 0; const check: ChatDeps['countTokens'] = fn;` — typed assignment proving the narrowed member accepts the bound type.
+   * `[✅]`   chat/`index.interface.test.ts`
+      * `[✅]`   The existing interface test proves the surface and return union for `ChatDeps`, `ChatParams`, `ChatPayload`, `ChatSuccess`, `ChatError`, `ChatReturn`, `ChatFn`. The only change in this node is: the surface record for `ChatDeps` continues to list `countTokens: true` (already present), and a new typed-assignment block proves `BoundCountTokensFn` is assignable to `ChatDeps['countTokens']`.
+      * `[✅]`   Import `BoundCountTokensFn` from `_shared/types/tokenizer.types.ts` and `ChatDeps` from `./index.interface.ts`.
+      * `[✅]`   New block: `const fn: BoundCountTokensFn = (_p, _m) => 0; const check: ChatDeps['countTokens'] = fn;` — typed assignment proving the narrowed member accepts the bound type.
 
-   * `[ ]`   chat/`index.interface.ts`
-      * `[ ]`   Replace the `CountTokensFn` import with `BoundCountTokensFn` from `_shared/types/tokenizer.types.ts`.
-      * `[ ]`   Change `countTokens: CountTokensFn` to `countTokens: BoundCountTokensFn` in `ChatDeps`.
+   * `[✅]`   chat/`index.interface.ts`
+      * `[✅]`   Replace the `CountTokensFn` import with `BoundCountTokensFn` from `_shared/types/tokenizer.types.ts`.
+      * `[✅]`   Change `countTokens: CountTokensFn` to `countTokens: BoundCountTokensFn` in `ChatDeps`.
 
-   * `[ ]`   chat/`index.mock.ts`
-      * `[ ]`   If a mock file exists, update the `countTokens` builder to supply a `BoundCountTokensFn` — `(_payload, _modelConfig) => 42` — instead of a `CountTokensFn`. If no mock file exists, the existing `defaultDeps` in `index.ts` serves as the production wiring and no new mock file is created.
+   * `[✅]`   chat/`index.mock.ts`
+      * `[✅]`   If a mock file exists, update the `countTokens` builder to supply a `BoundCountTokensFn` — `(_payload, _modelConfig) => 42` — instead of a `CountTokensFn`. If no mock file exists, the existing `defaultDeps` in `index.ts` serves as the production wiring and no new mock file is created.
 
-   * `[ ]`   `interaction.spec`
-      * `[ ]`   No branch logic changes. The only behavioral change is in `defaultDeps` construction:
-         * `[ ]`   Condition: module load (top-level `const defaultDeps`).
-         * `[ ]`   Decision: none — unconditional construction.
-         * `[ ]`   Dependency call: `countTokens` (from `tokenizer_utils.ts`) is wrapped in a closure that supplies real `CountTokensDeps` — `{ getEncoding: guardedGetEncoding, countTokensAnthropic, logger }` — as the first argument.
-         * `[ ]`   Outcome: `defaultDeps.countTokens` is a `BoundCountTokensFn`.
-      * `[ ]`   All existing branches in `handler()`, `createChatServiceHandler()`, and `serve()` are unchanged. The `deps.countTokens` pass-through into `streamDeps` carries the bound function without modification.
+   * `[✅]`   `interaction.spec`
+      * `[✅]`   No branch logic changes. The only behavioral change is in `defaultDeps` construction:
+         * `[✅]`   Condition: module load (top-level `const defaultDeps`).
+         * `[✅]`   Decision: none — unconditional construction.
+         * `[✅]`   Dependency call: `countTokens` (from `tokenizer_utils.ts`) is wrapped in a closure that supplies real `CountTokensDeps` — `{ getEncoding: guardedGetEncoding, countTokensAnthropic, logger }` — as the first argument.
+         * `[✅]`   Outcome: `defaultDeps.countTokens` is a `BoundCountTokensFn`.
+      * `[✅]`   All existing branches in `handler()`, `createChatServiceHandler()`, and `serve()` are unchanged. The `deps.countTokens` pass-through into `streamDeps` carries the bound function without modification.
 
-   * `[ ]`   chat/`index.test.ts`
-      * `[ ]`   Update any test that constructs a `ChatDeps` literal to supply a `BoundCountTokensFn` for `countTokens` instead of a `CountTokensFn`. The function mock changes from `(_deps, _payload, _modelConfig) => 0` to `(_payload, _modelConfig) => 0` — dropping the first argument.
-      * `[ ]`   No new test cases are required; the branch contract is unchanged.
+   * `[✅]`   chat/`index.test.ts`
+      * `[✅]`   Update any test that constructs a `ChatDeps` literal to supply a `BoundCountTokensFn` for `countTokens` instead of a `CountTokensFn`. The function mock changes from `(_deps, _payload, _modelConfig) => 0` to `(_payload, _modelConfig) => 0` — dropping the first argument.
+      * `[✅]`   No new test cases are required; the branch contract is unchanged.
 
-   * `[ ]`   chat/`index.ts`
-      * `[ ]`   Add imports: `import { countTokens as countTokensAnthropic } from "npm:@anthropic-ai/tokenizer@0.0.4";` and `import { getEncoding as rawGetEncoding } from "npm:js-tiktoken@1.0.7";` and `import { isKnownTiktokenEncoding } from "../_shared/utils/type-guards/type_guards.chat.ts";` and `import type { CountTokensDeps } from "../_shared/types/tokenizer.types.ts";`.
-      * `[ ]`   The existing `import { countTokens } from "../_shared/utils/tokenizer_utils.ts";` is unchanged — it is the unbound function being wrapped.
-      * `[ ]`   Construct the bound closure before `defaultDeps`:
+   * `[✅]`   chat/`index.ts`
+      * `[✅]`   Add imports: `import { countTokens as countTokensAnthropic } from "npm:@anthropic-ai/tokenizer@0.0.4";` and `import { getEncoding as rawGetEncoding } from "npm:js-tiktoken@1.0.7";` and `import { isKnownTiktokenEncoding } from "../_shared/utils/type-guards/type_guards.chat.ts";` and `import type { CountTokensDeps } from "../_shared/types/tokenizer.types.ts";`.
+      * `[✅]`   The existing `import { countTokens } from "../_shared/utils/tokenizer_utils.ts";` is unchanged — it is the unbound function being wrapped.
+      * `[✅]`   Construct the bound closure before `defaultDeps`:
          ```
          const boundCountTokens: BoundCountTokensFn = (payload, modelConfig) =>
            countTokens(
@@ -755,689 +755,711 @@ Oversized model inputs compress incrementally until the preflight fits: the pare
              modelConfig,
            );
          ```
-      * `[ ]`   Change `defaultDeps.countTokens` from `countTokens: countTokens,` to `countTokens: boundCountTokens,`.
-      * `[ ]`   Import `BoundCountTokensFn` from `_shared/types/tokenizer.types.ts` (type-only import alongside `CountTokensDeps`).
-      * `[ ]`   No other change. All behavior, error paths, CORS handling, auth, DELETE, and streaming are preserved.
-
-   * `[ ]`   chat/`index.provides.ts`
-      * `[ ]`   If a provides file exists, no change is needed — the public surface re-exports from `index.ts` and `index.interface.ts`, and the type change propagates automatically. If no provides file exists, do not create one; the composition root is consumed by `serve()` internally, not by external modules.
-
-   * `[ ]`   `directionality`
-      * `[ ]`   Layer: app-layer chat composition root (`chat/`). Deps inward: `BoundCountTokensFn` and `CountTokensDeps` from `_shared/types/tokenizer.types.ts` replace `CountTokensFn`; `countTokensAnthropic` from `npm:@anthropic-ai/tokenizer@0.0.4`; `rawGetEncoding` from `npm:js-tiktoken@1.0.7`; `isKnownTiktokenEncoding` from `_shared/utils/type-guards/type_guards.chat.ts`; `countTokens` from `_shared/utils/tokenizer_utils.ts` (existing). Provides outward: `ChatDeps.countTokens` is now `BoundCountTokensFn`, consumed by `streamRequest` via `streamDeps` assembly.
-      * `[ ]`   No reverse dependencies, no lateral layer violations, no cycles.
-
-   * `[ ]`   `requirements`
-      * `[ ]`   `ChatDeps.countTokens` is typed `BoundCountTokensFn`, not `CountTokensFn`.
-      * `[ ]`   `defaultDeps.countTokens` is a closure that binds real `CountTokensDeps` — guarded `getEncoding`, real `countTokensAnthropic`, real `logger` — and calls the unbound `countTokens` with those deps as the first argument.
-      * `[ ]`   The `CountTokensFn` import no longer appears in `index.interface.ts`.
-      * `[ ]`   No line of `handler()`, `createChatServiceHandler()`, or `serve()` is changed.
-      * `[ ]`   The `streamDeps.countTokens = deps.countTokens` pass-through compiles because `StreamRequestDeps.countTokens` is `BoundCountTokensFn`.
-      * `[ ]`   All existing unit test cases pass with the updated mock (two-argument function instead of three).
-      * `[ ]`   The binding pattern matches the existing `processJob.ts` composition root — guarded `getEncoding`, real `countTokensAnthropic`, real `logger`.
-
-* `[ ]`   supabase/functions/dialectic-worker/prepareModelJob/prepareModelJob.ts **[BE] Become the single model-call dispatcher: narrow with the base guard, compose `calculateAffordability` with `compressPrompt`, branch the recursion guard on the row's `job_type`, move `job` and `providerRow` to payload, eliminate `projectOwnerUserId` (KVP dup of `job.user_id`), drop `sessionData`/`authToken` and `compressionStrategy`, write `source_prompt_resource_id` onto the job payload before enqueue, and propagate the deferral as `PrepareModelJobPendingReturn`**
-
-   * `[ ]`   `objective`
-      * `[ ]`   Solve a dispatcher that only dispatches for one job type. Every model call the repo makes should resolve the same tier cap from `user_subscriptions`, read the same wallet balance and pass the same affordability preflight, and today only an EXECUTE job reaches that path: `processCompressJob` builds its own `ChatApiRequest`, counts its own preflight tokens and calls `enqueueModelCall` itself, so a COMPRESS call is governed by neither the tier cap nor the wallet check. Compression, affordability and dispatch are also fused — the over-budget remedy is taken inside `calculateAffordability`, which is why decision one's recursion guard has nowhere to sit except in whichever collaborator a caller withholds.
-      * `[ ]`   Functional goals:
-         * `[ ]`   `payload.job.payload` is narrowed by `isDialecticBaseJobPayload` and every member this function reads is a base member: `sessionId`, `projectId`, `model_id`, `walletId`, `stageSlug`, `iterationNumber`, `user_jwt`, `maxOutputTokens`, `continueUntilComplete` and `target_contribution_id`. No branch narrows further; `compressPrompt` reads `output_type` from the job row's own payload.
-         * `[ ]`   `PrepareModelJobParams` declares `dbClient` only. `job` and `providerRow` are data objects that belong in payload; `projectOwnerUserId` is a KVP duplicate of `payload.job.user_id`; `sessionData` and `authToken` are retired.
-         * `[ ]`   `PrepareModelJobPayload` declares `job`, `providerRow`, `promptConstructionPayload`, `inputsRelevance?` and `inputsRequired?`, and no `compressionStrategy`.
-         * `[ ]`   `PrepareModelJobDeps` gains `compressPrompt: BoundCompressPromptFn` beside `calculateAffordability`, so this function composes the two rather than letting one own the other.
-         * `[ ]`   The return has exactly two arms. `PrepareModelJobSuccessReturn` is the union of `PrepareModelJobQueuedReturn { queued: true }` and `PrepareModelJobPendingReturn { waiting_for_children: true }`; `PrepareModelJobReturn` is that arm plus `PrepareModelJobErrorReturn`.
-         * `[ ]`   On an over-budget verdict the function branches on `payload.job.job_type`: `'EXECUTE'` calls `deps.compressPrompt` and returns the pending flavor; `'COMPRESS'` returns a non-retriable error naming the recursion guard, and calls no collaborator.
-         * `[ ]`   Nothing passed to `deps.enqueueModelCall` names an artifact type, that parameter having left `EnqueueModelCallParams`.
-         * `[ ]`   After affordability resolves within budget and before the enqueue, the function writes `source_prompt_resource_id` from `payload.promptConstructionPayload` onto the job row's own payload, and omits it from `ChatApiRequest`. A failed write returns the error arm.
-         * `[ ]`   `prepareModelJob.mock.ts` carries the four symbols owed to each owned object type and one function mock per owned function type, in the forms `mocks.md` prescribes.
-      * `[ ]`   Non-functional constraints:
-         * `[ ]`   The tier-cap read, the effective-cap arithmetic over `maxOutputTokens`, the provider-config validation, the resource-document scoping and the `inputsRequired` enforcement keep their current behavior, messages and log lines.
-         * `[ ]`   The wallet read through `deps.tokenWalletService.getBalance`, `deps.validateWalletBalance` and `deps.validateModelCostRates` run exactly where and as they run now, for every job type.
-         * `[ ]`   Every existing error message, `retriable` flag and thrown-then-caught path keeps its text and classification except where this node deletes the branch that raised it.
-         * `[ ]`   The function keeps its `(deps, params, payload)` shape. `payload.job.payload` arrives as row data and is narrowed on entry by the base guard, which throws its own per-member diagnostic; the surrounding `try` converts that throw to the error arm as it already does for every other throw in this body.
-         * `[ ]`   Consumers outside this module go transiently non-compilable and are not edited here: `processSimpleJob.ts` builds the retired params and payload members, `createJobContext.ts` and `dialectic-worker/index.ts` build `PrepareModelJobDeps` without `compressPrompt`, and `JobContext.interface.ts`'s `IPrepareModelJobContext` carries the members those roots slice. Each belongs to the `processSimpleJob`, `createJobContext` or composition-root node later in this workstream.
-      * `[ ]`   Each goal is proven by a named case in this node's interface test, guard test, unit test, inputsRequired test or integration test.
-
-   * `[ ]`   `role`
-      * `[ ]`   Node role is app-layer dispatch: given a job row and an assembled prompt, resolve the caps and the money, decide what an over-budget request warrants from what kind of job it is, and hand exactly one model call to the transport.
-      * `[ ]`   The role is correct because this is the one place that holds both the job row and the assembled prompt. The row carries `job_type`, which is the authoritative record of what a job is, so the recursion guard is a branch on a fact rather than an inference from a missing collaborator — and every model call passing through one function is what makes the tier cap, the wallet read and the affordability preflight single-sourced.
-      * `[ ]`   Out-of-scope responsibilities:
-         * `[ ]`   Do not decide whether a request is affordable; `calculateAffordability` returns that verdict and this function composes it.
-         * `[ ]`   Do not select victims, size chunks, spawn COMPRESS children or set the parent's status; `compressPrompt` owns all of it, and this function propagates its outcome.
-         * `[ ]`   Do not name an artifact type at dispatch, reintroduce `output_type` in any form, or decide what the response becomes; that is `saveResponse`'s from the row's `job_type`.
-         * `[ ]`   Do not edit `processSimpleJob.ts`, `createJobContext.ts`, `JobContext.interface.ts` or `dialectic-worker/index.ts`; each has its own node.
-         * `[ ]`   Do not change the tier-cap query, the cap arithmetic, the document scoping or the `inputsRequired` rules.
-
-   * `[ ]`   `module`
-      * `[ ]`   Bounded context is `supabase/functions/dialectic-worker/prepareModelJob` — cap resolution, wallet and rate resolution, the affordability composition, the over-budget branch, the prompt-provenance write, and the single call to the model-call transport.
-      * `[ ]`   Inside boundary:
-         * `[ ]`   What every model call must satisfy before it is dispatched, for every job type.
-         * `[ ]`   What an over-budget request warrants, read from the job row's `job_type`.
-         * `[ ]`   Which prompt produced the call, recorded on the job row before the call is made.
-      * `[ ]`   Outside boundary:
-         * `[ ]`   The affordability arithmetic, owned by `calculateAffordability`.
-         * `[ ]`   The compression machine, owned by `compressPrompt`.
-         * `[ ]`   The queue POST and the row's `queued` status, owned by `enqueueModelCall`.
-         * `[ ]`   What the response becomes, owned by `saveResponse`.
-
-   * `[ ]`   `deps`
-      * `[ ]`   Provider: `../compressPrompt/compressPrompt.provides.ts` (`BoundCompressPromptFn`, `isCompressPromptErrorReturn`, and `CompressPromptParams`/`CompressPromptPayload` in the implementation) — the module's only public surface, which that node's `provides` element publishes.
-         * `[ ]`   Layer classification: sibling app-layer module.
-         * `[ ]`   Direction: inbound, and new to this file — the edge moves here from `calculateAffordability`, which closed it in the node above, so the repo gains no edge it did not have.
-         * `[ ]`   Purpose: make an over-budget EXECUTE working set fit, as a deferral this function propagates.
-      * `[ ]`   Provider: `_shared/utils/type-guards/type_guards.dialectic.ts` (`isDialecticBaseJobPayload`).
-         * `[ ]`   Layer classification: shared runtime boundary.
-         * `[ ]`   Direction: inbound from `_shared`.
-         * `[ ]`   Purpose: narrow the row's payload once, with the one guard family, and surface its per-member diagnostic on failure.
-      * `[ ]`   Removed provider: `_shared/utils/vector_utils.interface.ts` (`ICompressionStrategy`) and `dialectic-service/dialectic.interface.ts` (`DialecticSessionRow`), both in the interface, the guard and the mock, with the members they typed.
-      * `[ ]`   Confirm:
-         * `[ ]`   `calculateAffordability` stays on deps and is called on every path; `enqueueModelCall`, `tokenWalletService`, `validateWalletBalance`, `validateModelCostRates`, `applyInputsRequiredScope` and `logger` are unchanged.
-         * `[ ]`   `isDialecticExecuteJobPayload` leaves this file: the base guard replaces it, and no branch reads an EXECUTE-specific member.
-         * `[ ]`   No reverse dependency: neither `compressPrompt` nor `calculateAffordability` imports this module.
-      * `[ ]`   `context_slice`
-         * `[ ]`   From `compressPrompt`: the bound function type and its error-return guard only.
-         * `[ ]`   From the shared guard module: the base payload guard only.
-
-   * `[ ]`   `prepareModelJob.interface.test.ts`
-      * `[ ]`   A case proves the deps surface exhaustively: `Record<keyof PrepareModelJobDeps, true>` over `logger`, `applyInputsRequiredScope`, `tokenWalletService`, `validateWalletBalance`, `validateModelCostRates`, `calculateAffordability`, `enqueueModelCall`, `compressPrompt`, asserting eight.
-      * `[ ]`   A case proves the params surface the same way over `dbClient`, asserting one — exhaustive in both directions, it is the proof `job`, `projectOwnerUserId`, `providerRow`, `authToken` and `sessionData` are gone.
-      * `[ ]`   A case proves the payload surface the same way over `job`, `providerRow`, `promptConstructionPayload`, `inputsRelevance` and `inputsRequired`, asserting five — proving `compressionStrategy` is not a member and `job`/`providerRow` are here rather than on params.
-      * `[ ]`   A case proves the two-arm return by typed assignment: a `PrepareModelJobQueuedReturn` value and a `PrepareModelJobPendingReturn` value each assign to `PrepareModelJobSuccessReturn`, that assigns to `PrepareModelJobReturn`, and a `PrepareModelJobErrorReturn` value assigns to `PrepareModelJobReturn`.
-      * `[ ]`   A case proves each flavor's members by typed literal: `{ queued: true }` and `{ waiting_for_children: true }`, neither carrying the other's discriminant.
-      * `[ ]`   A case proves `PrepareModelJobFn` accepts the narrowed deps, params and payload and returns `Promise<PrepareModelJobReturn>`; the `PrepareModelJobExecutionError` case is unchanged.
-
-   * `[ ]`   `prepareModelJob.interface.ts`
-      * `[ ]`   `PrepareModelJobDeps` gains `compressPrompt: BoundCompressPromptFn`, imported from `../compressPrompt/compressPrompt.provides.ts`.
-      * `[ ]`   `PrepareModelJobParams` drops `job`, `projectOwnerUserId`, `providerRow`, `authToken` and `sessionData`, and the `DialecticJobRow`, `DialecticSessionRow` and `Tables` imports those members required. Surviving member: `dbClient: SupabaseClient<Database>`.
-      * `[ ]`   `PrepareModelJobPayload` drops `compressionStrategy` and the `ICompressionStrategy` import; gains `job: DialecticJobRow` and `providerRow: Tables<'ai_providers'>` (moved from params). `DialecticJobRow` is imported from `dialectic-service/dialectic.interface.ts`; `Tables` stays imported from `types_db.ts`.
-      * `[ ]`   `PrepareModelJobSuccessReturn` becomes the union of `PrepareModelJobQueuedReturn { queued: true }` and `PrepareModelJobPendingReturn { waiting_for_children: true }`, both declared here; `PrepareModelJobReturn` is `PrepareModelJobSuccessReturn | PrepareModelJobErrorReturn`.
-      * `[ ]`   `PrepareModelJobErrorReturn`, `PrepareModelJobFn` and `PrepareModelJobExecutionError` are unchanged.
-
-   * `[ ]`   `prepareModelJob.interaction.spec`
-      * `[ ]`   Entry: the `user_subscriptions` → `tier_definitions(output_cap_tokens)` read for `payload.job.user_id` (was `params.projectOwnerUserId`, now read from the job row). A Postgrest error → log `[prepareModelJob] Failed to load tier output cap` and return `{ error: pgErr, retriable: true }`.
-      * `[ ]`   Cap resolution, unchanged: the tier cap and `payload.job.payload.maxOutputTokens` combine by `Math.min` when both are present, the user value stands when the tier cap is null, and the result becomes `userConfig.tier_output_cap_tokens`, logged as it is now.
-      * `[ ]`   Payload narrowing: `isDialecticBaseJobPayload(payload.job.payload)`. It throws a per-member diagnostic, which the enclosing `try` converts to `{ error, retriable: false }`; the hand-thrown `Job … does not have a valid 'execute' payload.` is deleted, as is the `Object.getOwnPropertyDescriptor` read of `user_jwt` and its `payload.user_jwt required` throw — the base guard proves that member, so the narrowed value is read directly.
-      * `[ ]`   Member validations, unchanged in outcome: absent or blank `stageSlug`, `walletId`, `iterationNumber`, `projectId`, `sessionId` and `model_id` each throw their existing message and reach the error arm through the same `try`.
-      * `[ ]`   Provider config: `isAiModelExtendedConfig(payload.providerRow.config)` false → `Model … has invalid or missing configuration.`; otherwise `model_id` is stamped onto the config as it is now.
-      * `[ ]`   Document scoping, unchanged: each `payload.promptConstructionPayload.resourceDocuments` entry is checked with `isResourceDocument`, `deps.applyInputsRequiredScope` scopes them, and each required `inputsRequired` rule with a `document_key` must match a scoped document by `type`, `slug` and `document_key` or throw its existing message.
-      * `[ ]`   Wallet and rates, unchanged: `deps.tokenWalletService.getBalance(walletId)` through `deps.validateWalletBalance`, then `deps.validateModelCostRates` over the config's two rates.
-      * `[ ]`   Affordability: `deps.calculateAffordability` is called once with params `{ walletBalance, userConfig }` and payload `{ extendedModelConfig, resourceDocuments, conversationHistory, currentUserPrompt, systemInstruction }`. An error return → propagate `{ error, retriable }` unchanged.
-      * `[ ]`   Over-budget branch, selected by the affordability success flavor's `overBudget: true`, then by `payload.job.job_type`:
-         * `[ ]`   `'COMPRESS'` → return `{ error: <ProcessCompressJob-facing Error naming the recursion guard, the job id and the resolved input token count>, retriable: false }`. No collaborator is called, nothing is written, and the job fails rather than compressing, per decision one.
-         * `[ ]`   `'EXECUTE'` → build `CompressPromptParams` with `{ dbClient: params.dbClient, isContinuationFlowInitial, finalTargetThreshold: affordResult.finalTargetThreshold, balanceAfterCompression: affordResult.balanceAfterCompression, walletBalance }` and `CompressPromptPayload` with `{ parentJob: payload.job, extendedModelConfig, inputsRelevance: payload.inputsRelevance, resourceDocuments, conversationHistory, currentUserPrompt }`. No `compressionStrategy`, `chatApiRequest` or `tokenizerDeps` — the scorer is `compressPrompt`'s own dep, the base request is this function's concern after compression succeeds, and the tokenizer is built by `compressPrompt`'s own implementation. Call `deps.compressPrompt` once.
-         * `[ ]`   `isCompressPromptErrorReturn` → propagate `{ error, retriable }` unchanged.
-         * `[ ]`   Otherwise → return `{ waiting_for_children: true }`. The dispatcher enqueues nothing on this branch: the parent job is waiting on its COMPRESS children, and the completion trigger runs this function again over the overlaid working set. Nothing the compression call returns is read.
-      * `[ ]`   Within-budget branch, selected by `overBudget: false`: `chatApiRequest` is the base request plus `max_tokens_to_generate: affordResult.maxOutputTokens`, and `resolvedInputTokenCount` is the arm's own count.
-      * `[ ]`   Provenance write, on the within-budget branch only, after affordability and before the enqueue: update this job row's `payload` with `source_prompt_resource_id` from `payload.promptConstructionPayload.source_prompt_resource_id`, keyed on `payload.job.id`. A Postgrest error → `{ error, retriable: true }`. The value is not placed on `ChatApiRequest`: the provider can do nothing with it, and the thread it belongs to is internal.
-      * `[ ]`   Dispatch: build `EnqueueModelCallParams` from `params.dbClient`, `payload.job`, `payload.providerRow`, the narrowed job payload's `user_jwt` as `userAuthToken`, and `userConfig` — no artifact type — and call `deps.enqueueModelCall` with `{ chatApiRequest, preflightInputTokens: resolvedInputTokenCount }`. An error return → propagate unchanged. Otherwise → `{ queued: true }`.
-      * `[ ]`   Ordering and side effects: one tier-cap read, one wallet read, one affordability call, at most one compression call, at most one provenance write, at most one enqueue. The COMPRESS recursion guard and every validation failure write nothing. The provenance write never happens on a path that does not enqueue.
-      * `[ ]`   The enclosing `try`/`catch` keeps its shape: any throw becomes `{ error, retriable: false }`.
-
-   * `[ ]`   `prepareModelJob.mock.ts`
-      * `[ ]`   Six owned object types, four symbols each, production-named: `PrepareModelJobDepsOverrides` / `buildPrepareModelJobDeps` / `PrepareModelJobDepsCorruptions` / `invalidatePrepareModelJobDeps`, and the same quartet for `PrepareModelJobParams`, `PrepareModelJobPayload`, `PrepareModelJobQueuedReturn` and `PrepareModelJobPendingReturn`, plus `PrepareModelJobErrorReturn`. Overrides types are `Partial<T>`, corruption types are `{ [K in keyof T]?: unknown }`, invalidators return `unknown`.
-      * `[ ]`   Every builder takes one optional overrides object and returns `overrides ? { ...base, ...overrides } : base`, with a default for every property. `buildPrepareModelJobDeps` defaults `compressPrompt` to `mockBoundCompressPrompt` from the `compressPrompt` module's mock and `calculateAffordability` to `mockBoundCalculateAffordability` from that module's mock — imported builders for imported types, never re-declared here.
-      * `[ ]`   `buildPrepareModelJobParams` supplies `dbClient` only; its `job`, `projectOwnerUserId`, `providerRow`, `authToken` and `sessionData` defaults go with the members. `buildPrepareModelJobPayload` supplies `job`, `providerRow`, `promptConstructionPayload` and no `compressionStrategy`.
-      * `[ ]`   One function mock for the owned function type: `mockPrepareModelJob: PrepareModelJobFn`, returning `buildPrepareModelJobQueuedReturn()`, with an identical signature, no options and no recording.
-      * `[ ]`   Deleted: `mockPrepareModelJobFn` with `MockPrepareModelJobFnOptions` and `MockPrepareModelJobFnCall`, a configurable harness with call recording. A test needing another outcome declares its own `PrepareModelJobFn` composed from these builders.
-      * `[ ]`   Retained as they stand: `mockDialecticExecuteJobPayload`, `mockDialecticJobRow`, `mockDialecticSessionRow`, `mockPromptConstructionPayload`, `mockTokenWalletRow` and `mockDialecticContributionRow`. Every one builds a type this interface does not own; their home packages carry no builder for them, and relocating them is another module's node.
-
-   * `[ ]`   `prepareModelJob.guard.test.ts`
-      * `[ ]`   `isPrepareModelJobParams` case checklist over the one surviving member (`dbClient`), absent and wrong-typed, fixtures from `invalidatePrepareModelJobParams`; a case asserts params carrying none of the five retired members (`job`, `projectOwnerUserId`, `providerRow`, `authToken`, `sessionData`) are accepted.
-      * `[ ]`   `isPrepareModelJobPayload` case checklist over `job`, `providerRow`, `promptConstructionPayload` and both optional rule arrays; a case asserts a payload carrying no `compressionStrategy` is accepted.
-      * `[ ]`   `isPrepareModelJobDeps` gains `compressPrompt` to its checklist: absent and non-function each rejected, present and callable accepted.
-      * `[ ]`   `isPrepareModelJobSuccessReturn` becomes a checklist over both flavors: accepts `{ queued: true }`, accepts `{ waiting_for_children: true }`, rejects a built error return and rejects a record carrying neither discriminant. Per-flavor guards `isPrepareModelJobQueuedReturn` and `isPrepareModelJobPendingReturn` each accept their own flavor and reject the other.
-      * `[ ]`   `isPrepareModelJobErrorReturn` keeps its cases, its exclusion assertions extended to `waiting_for_children`.
-
-   * `[ ]`   `prepareModelJob.guard.ts`
-      * `[ ]`   `isPrepareModelJobParams` drops `job`, `projectOwnerUserId`, `providerRow`, `authToken` and `sessionData` from its key list and drops all their member checks, keeping only `dbClient` and its existing check; the `isDialecticSessionRow` import goes with the retired members.
-      * `[ ]`   `isPrepareModelJobPayload` drops `compressionStrategy` from its presence pair and drops its function check; gains `job` (record) and `providerRow` (record) checks, keeping the `isPromptConstructionPayloadShape` check and both optional rule-array checks.
-      * `[ ]`   `isPrepareModelJobDeps` gains a `compressPrompt` presence-and-function check beside `calculateAffordability`.
-      * `[ ]`   `isPrepareModelJobQueuedReturn` and `isPrepareModelJobPendingReturn` are added, each discriminating on its own literal member and rejecting the other's; `isPrepareModelJobSuccessReturn` returns true for either flavor and false otherwise.
-      * `[ ]`   `isPrepareModelJobErrorReturn` extends its exclusion list with `waiting_for_children`; every guard keeps its boolean contract.
-
-   * `[ ]`   `prepareModelJob.test.ts`
-      * `[ ]`   Every case builds deps through `buildPrepareModelJobDeps`, params with only `dbClient`, and payload with `job`, `providerRow` and `promptConstructionPayload` (no `compressionStrategy`, no `authToken`/`sessionData`/`projectOwnerUserId` anywhere); the `contractCompressionStrategy` local and its thirty-odd payload literals are deleted.
-      * `[ ]`   The affordability composition cases are restated against the new arms: a within-budget verdict enqueues with `max_tokens_to_generate` from `maxOutputTokens` and returns `{ queued: true }`; an affordability error propagates unchanged. The captured `CalculateAffordabilityParams` assertions prove the narrowed 2-member shape (`walletBalance`, `userConfig`), and the captured `CalculateAffordabilityPayload` assertions prove the narrowed 5-member shape (`extendedModelConfig`, `resourceDocuments`, `conversationHistory`, `currentUserPrompt`, `systemInstruction`). The cases that narrowed `isCalculateAffordabilityCompressedReturn` are replaced by the over-budget cases below.
-      * `[ ]`   New case: an over-budget verdict on a row whose `job_type` is `'EXECUTE'` calls `deps.compressPrompt` exactly once, with `CompressPromptParams` carrying 5 members (`dbClient`, `isContinuationFlowInitial`, `finalTargetThreshold`, `balanceAfterCompression`, `walletBalance`) and `CompressPromptPayload` carrying 6 members (`parentJob: payload.job`, `extendedModelConfig`, `inputsRelevance`, `resourceDocuments`, `conversationHistory`, `currentUserPrompt`), and returns `{ waiting_for_children: true }` without calling `deps.enqueueModelCall`. Arranged with a spy on both collaborators so the assertion fails if either call moves.
-      * `[ ]`   New case: an over-budget verdict on a row whose `job_type` is `'COMPRESS'` returns a non-retriable error, calls neither `deps.compressPrompt` nor `deps.enqueueModelCall`, and performs no write — decision one's recursion guard.
-      * `[ ]`   New case: a compression error return propagates unchanged, with the same `error` identity and `retriable` flag the collaborator returned.
-      * `[ ]`   The `EnqueueModelCallParams` assertion cases keep every member assertion they make and lose their `output_type` expectations, that member having left the type.
-      * `[ ]`   New cases for the provenance write: a within-budget dispatch updates this job row's payload with `source_prompt_resource_id` from `promptConstructionPayload` before `deps.enqueueModelCall` is called; the value does not appear on the `ChatApiRequest` handed to that call; a failed update returns `{ error, retriable: true }` and enqueues nothing; and an over-budget EXECUTE deferral performs no update at all.
-      * `[ ]`   New case: a payload failing `isDialecticBaseJobPayload` surfaces that guard's per-member diagnostic on the error arm, in place of the deleted `does not have a valid 'execute' payload` string.
-      * `[ ]`   Every existing case for the tier-cap read and its failure, the effective-cap arithmetic, the member validations, the provider-config failure, the document-identity failure, the wallet and rate resolution and the enqueue error propagation keeps its arrangement and assertions.
-
-   * `[ ]`   `prepareModelJob.inputsRequired.test.ts`
-      * `[ ]`   Its three cases drop `compressionStrategy` from their payload literals and `authToken`/`sessionData`/`projectOwnerUserId` from their params literals (params has only `dbClient`), supply `job` and `providerRow` on payload, and keep every `inputsRequired` scoping and enforcement assertion unchanged.
-
-   * `[ ]`   `prepareModelJob.ts`
-      * `[ ]`   `isDialecticExecuteJobPayload` is replaced by `isDialecticBaseJobPayload`; the hand-thrown invalid-payload message, the `Object.getOwnPropertyDescriptor` read of `user_jwt` and the `payload.user_jwt required` throw are deleted, and `userAuthToken` is read from the narrowed payload.
-      * `[ ]`   The params destructure yields only `params.dbClient`. `payload.job`, `payload.providerRow` and `payload.promptConstructionPayload` are read from payload. `payload.job.user_id` replaces every read of `projectOwnerUserId`.
-      * `[ ]`   `output_type` leaves the payload destructure and the `EnqueueModelCallParams` literal.
-      * `[ ]`   `compressionStrategy` leaves the payload destructure. The `CalculateAffordabilityParams` literal becomes `{ walletBalance, userConfig }` — the two members that interface now declares. The `CalculateAffordabilityPayload` literal becomes `{ extendedModelConfig, resourceDocuments, conversationHistory, currentUserPrompt, systemInstruction }` — the five members that interface now declares — carrying neither `compressionStrategy` nor `chatApiRequest`.
-      * `[ ]`   The `isCalculateAffordabilityCompressedReturn` narrowing is replaced by the `overBudget` branch: `isCalculateAffordabilityOverBudgetReturn` selects the compression path, and the within-budget arm supplies `maxOutputTokens` and `resolvedInputTokenCount` as it does today.
-      * `[ ]`   The over-budget path adds the `payload.job.job_type` branch, the `CompressPromptParams` literal carrying `{ dbClient: params.dbClient, isContinuationFlowInitial, finalTargetThreshold, balanceAfterCompression, walletBalance }`, the `CompressPromptPayload` literal carrying `{ parentJob: payload.job, extendedModelConfig, inputsRelevance: payload.inputsRelevance, resourceDocuments, conversationHistory, currentUserPrompt }`, the single `deps.compressPrompt` call, the `isCompressPromptErrorReturn` propagation and the `{ waiting_for_children: true }` return, plus the non-retriable recursion-guard error on the COMPRESS arm.
-      * `[ ]`   The provenance update is added between the affordability branch and the enqueue on the within-budget path, keyed on `payload.job.id`, returning the error arm on a Postgrest failure.
-      * `[ ]`   Everything else is unchanged: the tier-cap query and its logging, the cap arithmetic, every member validation and its message, the provider-config check, the document scoping and `inputsRequired` enforcement, the wallet and rate resolution, the base `ChatApiRequest` construction, the diagnostic log block, and the enclosing `try`/`catch`.
-
-   * `[ ]`   `prepareModelJob.provides.ts`
-      * `[ ]`   The file uses named exports, not `export *`. The new return-flavor types (`PrepareModelJobQueuedReturn`, `PrepareModelJobPendingReturn`) and their guards (`isPrepareModelJobQueuedReturn`, `isPrepareModelJobPendingReturn`) are added to the re-export lists from `prepareModelJob.interface.ts` and `prepareModelJob.guard.ts`.
-      * `[ ]`   The mock re-exports delete `MockPrepareModelJobFnOptions`, `MockPrepareModelJobFnCall` and `mockPrepareModelJobFn` (all deleted from the mock file) and add any new mock symbols the mock element introduces.
-      * `[ ]`   The existing re-exports of `prepareModelJob`, the interface types, and the current guards are unchanged except as the names they re-export change.
-
-   * `[ ]`   `prepareModelJob.integration.test.ts`
-      * `[ ]`   Its params literal has only `dbClient`; its payload literal carries `job`, `providerRow` and `promptConstructionPayload` (no `authToken`, `sessionData`, `projectOwnerUserId` or `compressionStrategy`), and its `buildBoundCompressPromptFn` wiring is replaced by a `BoundCompressPromptFn` the case declares, supplied on deps.
-      * `[ ]`   The chain this suite proves widens to the composition this node creates: real `calculateAffordability` plus real `compressPrompt` behind this dispatcher, with only Supabase and the queue mocked. A within-budget working set reaches `enqueueModelCall` with the cap the affordability verdict resolved and the provenance recorded on the row; an over-budget EXECUTE working set reaches `compressPrompt` and returns the deferral without enqueueing; an over-budget COMPRESS row returns the recursion-guard error having called neither.
-      * `[ ]`   The existing captured-`EnqueueModelCallParams` assertions stand, less `output_type`.
-
-   * `[ ]`   `directionality`
-      * `[ ]`   Deps face inward: this module imports `compressPrompt`'s bound function type and error guard, `calculateAffordability`'s bound function type and guards, `enqueueModelCall`'s bound function type, and the base payload guard from `_shared`; it exports nothing back to any of them.
-      * `[ ]`   The `compressPrompt` edge is a relocation, not an addition: it left `calculateAffordability` in the node above and arrives here, so the module graph gains no new dependency and no cycle.
-      * `[ ]`   `prepareModelJob.provides.ts` uses named exports and is edited above to add the new return-flavor types and guards and to delete the retired mock symbols; after that edit, consumers importing from `prepareModelJob.provides.ts` see the full new surface.
-
-   * `[ ]`   `requirements`
-      * `[ ]`   `PrepareModelJobParams` declares one member (`dbClient`) with no scalar that duplicates a field on the job row — interface test, exhaustive key record.
-      * `[ ]`   `PrepareModelJobPayload` declares five members (`job`, `providerRow`, `promptConstructionPayload`, `inputsRelevance?`, `inputsRequired?`) with `compressionStrategy` absent — interface test, exhaustive key record.
-      * `[ ]`   `PrepareModelJobDeps` declares eight members including `compressPrompt` — interface test.
-      * `[ ]`   `PrepareModelJobReturn` has two arms and both success flavors are members of `PrepareModelJobSuccessReturn` — interface test, typed assignment.
-      * `[ ]`   An over-budget EXECUTE job calls `compressPrompt` once with the corrected 5-member params and 6-member payload, enqueues nothing and returns `{ waiting_for_children: true }` — unit test and integration test.
-      * `[ ]`   An over-budget COMPRESS job returns a non-retriable error and calls no collaborator — unit test and integration test.
-      * `[ ]`   A within-budget job enqueues one model call whose params name no artifact type and whose request carries the resolved output cap — unit test and integration test.
-      * `[ ]`   `source_prompt_resource_id` is written onto the job row's payload before the enqueue and never onto `ChatApiRequest`, and a failed write returns a retriable error having enqueued nothing — unit test.
-      * `[ ]`   A malformed payload surfaces the base guard's per-member diagnostic on the error arm — unit test.
-      * `[ ]`   Every tier-cap, validation, provider-config, document, wallet and enqueue failure returns exactly what it returns now — unit test and inputsRequired test, existing cases unchanged.
-
-* `[ ]`   supabase/functions/dialectic-worker/processCompressJob/processCompressJob.ts **[BE] Compose a `PromptConstructionPayload` from the assembled prompt and call `prepareModelJob`; move `job` to payload, eliminate `projectOwnerUserId` (KVP dup of `job.user_id`), own no part of the model call, narrow `isDialecticCompressJobPayload` on entry, and narrow both assembly unions before use**
-
-   * `[ ]`   `objective`
-      * `[ ]`   Solve a second model-call path. This function validates the provider config, extracts the input and output windows, counts preflight tokens, builds a `ChatApiRequest`, a `UserConfig` and `EnqueueModelCallParams`, writes the prompt's resource id onto the job row, and calls `enqueueModelCall` itself — so a COMPRESS call reaches the model without the tier cap, the wallet read or the affordability preflight every EXECUTE call passes, and its window check is a bespoke subtraction rather than decision one's recursion guard.
-      * `[ ]`   Functional goals:
-         * `[ ]`   The function narrows `payload.job.payload` with `isDialecticCompressJobPayload` on entry; the guard throws per-member diagnostics, and the enclosing `try` converts the throw to the error arm.
-         * `[ ]`   The function composes a `PromptConstructionPayload` from the assembled prompt and calls `deps.prepareModelJob`, which is the repo's one model-call dispatcher.
-         * `[ ]`   It validates no provider config, extracts no context window, constructs no `ChatApiRequest`, no `UserConfig` and no `EnqueueModelCallParams`, counts no preflight tokens, and writes no provenance update.
-         * `[ ]`   It resolves its `ai_providers` row from the narrowed job payload's `model_id` and passes it to the dispatcher on payload as `providerRow`, exactly as `processSimpleJob` does on the EXECUTE path.
-         * `[ ]`   `ProcessCompressJobDeps` declares `assembleCompressionPrompt`, `assembleContinuationPrompt`, `prepareModelJob`, `constructStoragePath` and `logger`, and drops `enqueueModelCall`, `countTokens`, `getEncoding` and `countTokensAnthropic`.
-         * `[ ]`   `ProcessCompressJobParams` declares `dbClient` only. `job` is a data object that belongs in payload; `projectOwnerUserId` is a KVP duplicate of `payload.job.user_id`; `authToken` is retired.
-         * `[ ]`   `ProcessCompressJobPayload` declares `job: DialecticJobRow` and is no longer an alias of `DialecticCompressJobPayload`. The function narrows `payload.job.payload` with `isDialecticCompressJobPayload` internally, so the caller passes only the job row and the function handles its own content narrowing.
-         * `[ ]`   Both assembly branches narrow their returned union before use: the compression branch on `AssembleCompressionPromptReturn` as it does now, the continuation branch on `AssembleContinuationPromptReturn` through `isAssembleContinuationPromptErrorReturn`.
-         * `[ ]`   The dispatcher's return is narrowed by arm: queued → `{ queued: true }`; error → propagated unchanged; a deferral → a non-retriable error naming that a COMPRESS job is never deferred, decision one's guard having failed it instead.
-      * `[ ]`   Non-functional constraints:
-         * `[ ]`   Dedup layer two is unchanged in behavior: the `CompressedContext` path context and its construction failure, the `dialectic_project_resources` existence read, the completed-status update on a hit and its failure, and the `{ queued: false }` success that spends nothing. All identity members are now read from the narrowed `payload.job.payload`, and the job id is read from `payload.job.id`.
-         * `[ ]`   Consuming-step resolution is unchanged: the stage's active recipe instance, the cloned-versus-template step query, the step match on `output_type`, the recipe-step validation, the `outputs_required` validation and the `CompressionTargetStep` it builds, each keeping its message and `retriable` flag. The `stageSlug` and `output_type` are read from the narrowed content.
-         * `[ ]`   The compression assembler's params and payload literals carry the same values, now read from the narrowed `payload.job.payload`, including the conditional chunk pair.
-         * `[ ]`   The function still marks no job `completed` on a successful dispatch; `saveResponse` does that when the response returns.
-         * `[ ]`   `ProcessCompressJobError`, the success and error return shapes and `ProcessCompressJobFn`'s `(deps, params, payload) → return` shape keep their declarations. The params and payload types narrow.
-      * `[ ]`   Each goal is proven by a named case in this module's interface test, guard test, unit test or integration test.
-
-   * `[ ]`   `role`
-      * `[ ]`   Node role is app-layer job processing: decide whether this compression is still needed, resolve what it is compressing for, assemble its prompt, and hand the result to the dispatcher.
-      * `[ ]`   The role is correct because everything above the dispatch is compression-specific knowledge — the canonical artifact path, the consuming step, the target schema, the two assemblers — and everything below it is identical for every model call in the repo.
-      * `[ ]`   Out-of-scope responsibilities:
-         * `[ ]`   Do not validate a model config, extract a window, count tokens, or check a budget; `prepareModelJob` does all four for every job type, over the `providerRow` this function hands it.
-         * `[ ]`   Do not write `source_prompt_resource_id` onto the job row; the dispatcher writes it after affordability and before the enqueue.
-         * `[ ]`   Do not edit `prepareModelJob.ts`, `processJob.ts` or either assembler; each has its own node.
-         * `[ ]`   Do not mark the job completed on a successful dispatch, and do not send a notification on any path — COMPRESS is invisible infrastructure.
-
-   * `[ ]`   `module`
-      * `[ ]`   Bounded context is `supabase/functions/dialectic-worker/processCompressJob` — content narrowing, dedup layer two, consuming-step and target-schema resolution, assembly-branch selection, and the handoff to the dispatcher.
-      * `[ ]`   Inside boundary:
-         * `[ ]`   Whether this victim is already compressed for this target.
-         * `[ ]`   Which schema the compression targets, and which assembler builds its prompt.
-         * `[ ]`   Which provider row this job runs against, resolved from the narrowed job payload's `model_id` and handed on.
-      * `[ ]`   Outside boundary:
-         * `[ ]`   Everything a model call requires of that provider row — the tier cap, the wallet read, affordability, the window and the recursion guard — owned by `prepareModelJob`.
-         * `[ ]`   What the response becomes, owned by `saveResponse`.
-         * `[ ]`   Which arm a job row takes, decided by `processJob` before this function is reached.
-
-   * `[ ]`   `deps`
-      * `[ ]`   Provider: `../prepareModelJob/prepareModelJob.provides.ts` (`PrepareModelJobParams`, `PrepareModelJobPayload`, and the three return-arm guards `isPrepareModelJobQueuedReturn`, `isPrepareModelJobPendingReturn` and `isPrepareModelJobErrorReturn`).
-         * `[ ]`   Layer classification: sibling app-layer module, the repo's model-call dispatcher.
-         * `[ ]`   Direction: inbound; this module already imports from `enqueueModelCall`, which the dispatcher fronts, so the direction is unchanged and one edge replaces another.
-         * `[ ]`   Purpose: type the params and payload this function composes for the dispatcher, and narrow each arm of the return it hands back.
-      * `[ ]`   Provider: `../createJobContext/JobContext.interface.ts` (`BoundPrepareModelJobFn`).
-         * `[ ]`   Layer classification: the worker's dependency-injection boundary, which is where the dispatcher's bound form is declared.
-         * `[ ]`   Direction: inbound; a type-only import with no runtime edge, and `prepareModelJob.interface.ts` already imports three function types from this same file.
-         * `[ ]`   Purpose: type the `prepareModelJob` member of `ProcessCompressJobDeps`.
-      * `[ ]`   Provider: `dialectic-service/dialectic.interface.ts` (`PromptConstructionPayload`).
-         * `[ ]`   Layer classification: service-layer contract hub.
-         * `[ ]`   Direction: inbound; this module already imports `DialecticJobRow` and `DialecticRecipeStep` from it.
-         * `[ ]`   Purpose: type the object this function composes from the assembled prompt.
-      * `[ ]`   Provider: `_shared/prompt-assembler/prompt-assembler.guard.ts` (`isAssembleContinuationPromptErrorReturn`).
-         * `[ ]`   Layer classification: shared module that owns the continuation return.
-         * `[ ]`   Direction: inbound from `_shared`.
-         * `[ ]`   Purpose: narrow the continuation branch's union before its value is used.
-      * `[ ]`   Provider: `../enqueueCompressJobs/enqueueCompressJobs.provides.ts` (`DialecticCompressJobPayload`) and `_shared/utils/type-guards/type_guards.dialectic.ts` (`isDialecticCompressJobPayload`).
-         * `[ ]`   Layer classification: sibling module (payload type) and shared runtime boundary (guard).
-         * `[ ]`   Direction: inbound; this module already imports `DialecticCompressJobPayload` from the enqueue module. The guard import is new to this file, moved from the caller.
-         * `[ ]`   Purpose: narrow `payload.job.payload` on entry so every content read is typed.
-      * `[ ]`   Removed providers: `enqueueModelCall` (`BoundEnqueueModelCallFn`, `EnqueueModelCallParams`, `EnqueueModelCallPayload`), `calculateAffordability` (`UserConfig`), `_shared/types.ts` (`AiModelExtendedConfig`, `ChatApiRequest`), `_shared/types/tokenizer.types.ts` (`CountTokensDeps`, `CountableChatPayload`, `CountTokensFn`) and `type_guards.chat.ts` (`isAiModelExtendedConfig`) — every one imported solely for the config validation, the token count or the enqueue this node removes. `Tables` stays, typing the `ai_providers` row this function still resolves and the recipe-step rows it reads.
-      * `[ ]`   Confirm:
-         * `[ ]`   `constructStoragePath` and `logger` keep their roles; `logger` remains the only deps member this function does not call on the happy path.
-         * `[ ]`   `params.dbClient` remains this function's own database handle: it performs the dedup read, the provider read and the recipe-step reads through it, and hands the same client to the dispatcher.
-         * `[ ]`   No reverse dependency: `prepareModelJob` imports nothing from this module.
-      * `[ ]`   `context_slice`
-         * `[ ]`   From the dispatcher: its params and payload types and its three return-arm guards only — not its deps, which the composition root binds. The bound two-argument closure type comes from the worker's DI boundary, which declares it.
-         * `[ ]`   From the hub: the `PromptConstructionPayload` type only.
-         * `[ ]`   From the enqueue module: the `DialecticCompressJobPayload` type and its guard only.
-
-   * `[ ]`   `processCompressJob.interface.test.ts`
-      * `[ ]`   The deps key case declares `assembleCompressionPrompt`, `assembleContinuationPrompt`, `prepareModelJob`, `constructStoragePath` and `logger` and asserts five — exhaustive in both directions, it is the proof the four model-call members are gone.
-      * `[ ]`   The params key case declares `dbClient` and asserts one — exhaustive in both directions, it is the proof `job`, `projectOwnerUserId` and `authToken` are gone.
-      * `[ ]`   The payload key case declares `job` and asserts one, proving `ProcessCompressJobPayload` is no longer an alias and `job` is its only member.
-      * `[ ]`   A case proves `ProcessCompressJobDeps["prepareModelJob"]` accepts a `BoundPrepareModelJobFn` value by typed assignment.
-      * `[ ]`   The return-union cases and the signature cases are unchanged.
-
-   * `[ ]`   `processCompressJob.interface.ts`
-      * `[ ]`   `ProcessCompressJobDeps` drops `enqueueModelCall`, `countTokens`, `getEncoding` and `countTokensAnthropic`, gains `prepareModelJob: BoundPrepareModelJobFn`, and keeps `assembleCompressionPrompt`, `assembleContinuationPrompt`, `constructStoragePath` and `logger`. The `BoundEnqueueModelCallFn`, `CountTokensFn` and `CountTokensDeps` imports go with the members.
-      * `[ ]`   `ProcessCompressJobParams` drops `job`, `projectOwnerUserId` and `authToken`; declares `dbClient` only. `job` is a data object that belongs in payload; `projectOwnerUserId` is a KVP duplicate of `job.user_id`; `authToken` is retired. The `DialecticJobRow` import moves to the payload type.
-      * `[ ]`   `ProcessCompressJobPayload` is no longer a type alias of `DialecticCompressJobPayload`. It becomes an interface declaring `job: DialecticJobRow` as its only member. The `DialecticCompressJobPayload` import stays for use in the implementation's narrowing guard.
-      * `[ ]`   `ProcessCompressJobError`, both return shapes, `ProcessCompressJobReturn`, `ProcessCompressJobFn` and `BoundProcessCompressJobFn` are unchanged in declaration. The function signature keeps its `(deps, params, payload) → Promise<Return>` shape; the params and payload types narrow.
-
-   * `[ ]`   `processCompressJob.interaction.spec`
-      * `[ ]`   Entry narrowing: `isDialecticCompressJobPayload(payload.job.payload)` on entry. It throws a per-member diagnostic on any malformed member; the enclosing `try` converts the throw to `{ error, retriable: false }`. The narrowed value is held as a local and every content member (`sessionId`, `projectId`, `model_id`, `stageSlug`, `output_type`, `sourceType`, `mode`, `content`, `continuation_count`, etc.) is read from it.
-      * `[ ]`   Dedup layer two, unchanged in behavior: build the `FileType.CompressedContext` path context from the narrowed content's identity members and call `deps.constructStoragePath`. A throw → error arm, `retriable: false`. The `dialectic_project_resources` existence read failing → error arm, `retriable: true`. A row found → update this job row to `completed` with `completed_at`, keyed on `payload.job.id`; that update failing → error arm, `retriable: true`; otherwise success `{ queued: false }`, nothing else run.
-      * `[ ]`   Provider resolution, unchanged in its query and its two row outcomes: the `ai_providers` read by the narrowed content's `model_id`; a query error → error arm, `retriable: true`; no row → error arm, `Provider not found`, `retriable: true`. The row is held for the dispatcher and nothing is read off it here — the `isAiModelExtendedConfig` validation and both window extractions leave with the model-call work.
-      * `[ ]`   Consuming step, unchanged: the stage read by the narrowed content's `stageSlug`, its missing active recipe instance, the instance read, the cloned-versus-template step query, an empty step set, no step matching `output_type`, a step failing both recipe-step guards, and invalid `outputs_required` each return their existing message and flag; otherwise the `CompressionTargetStep` is built from `outputs_required` and `step_description`.
-      * `[ ]`   Assembly branch, selected on the narrowed content's `continuation_count` being a number at least one: the continuation branch calls `deps.assembleContinuationPrompt(payload.job)`; every other case calls `deps.assembleCompressionPrompt` with the existing params and payload literals, all content members read from the narrowed value.
-      * `[ ]`   Continuation branch narrowing: `isAssembleContinuationPromptErrorReturn` true → propagate `{ error, retriable }` unchanged. Otherwise the value is the assembled prompt.
-      * `[ ]`   Compression branch narrowing: an error return → propagate `{ error, retriable }` unchanged, as it does now.
-      * `[ ]`   Dispatch: compose `PromptConstructionPayload` with `currentUserPrompt` from the assembled `promptContent`, `source_prompt_resource_id` from the assembled id, and empty `conversationHistory` and `resourceDocuments` — a compression prompt is one self-contained instruction with no history and no gathered artifacts. Call `deps.prepareModelJob` with params `{ dbClient: params.dbClient }` and payload `{ job: payload.job, providerRow, promptConstructionPayload }`, supplying neither `inputsRelevance` nor `inputsRequired`, a COMPRESS job having no recipe step of its own.
-      * `[ ]`   Dispatch outcome: `isPrepareModelJobQueuedReturn` → success `{ queued: true }`. `isPrepareModelJobPendingReturn` → error arm, a `ProcessCompressJobError` stating that a COMPRESS job was deferred rather than dispatched, `retriable: false` — the dispatcher's recursion guard fails an over-budget COMPRESS job, so this arm is unreachable by design and is reported rather than treated as success. Anything else is the error arm, propagated unchanged.
-      * `[ ]`   Ordering and side effects: exactly one narrowing on entry, one read before any write; the only write on a dedup hit is the completed-status update; on the dispatch path this function writes nothing at all; no notification is sent on any path.
-
-   * `[ ]`   `processCompressJob.mock.ts`
-      * `[ ]`   `buildProcessCompressJobDeps` supplies `prepareModelJob` from the dispatcher module's own function mock and drops its `enqueueModelCall`, `countTokens`, `getEncoding` and `countTokensAnthropic` defaults; `buildProcessCompressJobParams` drops its `job`, `projectOwnerUserId` and `authToken` defaults and keeps `dbClient` only.
-      * `[ ]`   Each owned object type carries the four symbols: `Partial<T>` overrides, a builder defaulting every member, a corruption type over `keyof`, and an `unknown`-returning invalidator — for `ProcessCompressJobDeps`, `ProcessCompressJobParams`, `ProcessCompressJobPayload`, `ProcessCompressJobSuccessReturn` and `ProcessCompressJobErrorReturn`. `ProcessCompressJobPayload` is no longer an alias; `buildProcessCompressJobPayload` supplies a default `job: DialecticJobRow` built from `mockDialecticJobRow` (imported from the existing mock).
-      * `[ ]`   One function mock per owned function type: `mockProcessCompressJob: ProcessCompressJobFn` and `mockBoundProcessCompressJob: BoundProcessCompressJobFn`, each returning `buildProcessCompressJobSuccessReturn()`, with no options bag and no call recording.
-
-   * `[ ]`   `processCompressJob.guard.test.ts`
-      * `[ ]`   `isProcessCompressJobDeps` case checklist over the five surviving members, each absent and each wrong-typed, fixtures from the invalidator; a case asserts a deps object carrying none of the four removed members is accepted.
-      * `[ ]`   `isProcessCompressJobParams` case checklist over the one surviving member (`dbClient`), each absent and each wrong-typed; a case asserts params carrying none of the three retired members (`job`, `projectOwnerUserId`, `authToken`) are accepted.
-      * `[ ]`   `isProcessCompressJobPayload` case checklist over the one member (`job`), absent and wrong-typed; a case asserts a payload with a valid `job` record is accepted.
-      * `[ ]`   The `isProcessCompressJobSuccessReturn`, `isProcessCompressJobErrorReturn`, `isProcessCompressJobReturn`, `isProcessCompressJobFn` and `isBoundProcessCompressJobFn` cases keep their coverage and their boolean assertions.
-
-   * `[ ]`   `processCompressJob.guard.ts`
-      * `[ ]`   `isProcessCompressJobDeps` drops its `enqueueModelCall`, `countTokens`, `getEncoding` and `countTokensAnthropic` checks and gains a presence-and-function check for `prepareModelJob`.
-      * `[ ]`   `isProcessCompressJobParams` drops its `job`, `projectOwnerUserId` and `authToken` checks, keeping only `dbClient`.
-      * `[ ]`   `isProcessCompressJobPayload` checks that the value is a record with a `job` property that is itself a record. It no longer delegates to `isDialecticCompressJobPayload`; that narrowing happens inside the function body where the enclosing `try` converts the throw to the error arm.
-      * `[ ]`   Every other guard in the file is unchanged.
-
-   * `[ ]`   `processCompressJob.test.ts`
-      * `[ ]`   Every case builds deps without the four removed members, params with only `dbClient`, and payload with `{ job }` where `job` carries a `DialecticCompressJobPayload`-shaped `payload` field. The `DialecticCompressJobPayload` content that was passed directly as the function's payload is now on `payload.job.payload`.
-      * `[ ]`   The cases asserting `enqueueParams["output_type"]`, the provider-config validations, the `provider_max_input_tokens`/`provider_max_output_tokens` checks, the preflight token count and the budget-exceeded error are deleted with the branches they cover; the responsibilities they asserted now belong to `prepareModelJob`'s suite, where its own cases prove the cap, the wallet, the preflight and the recursion guard. The provider-lookup cases stand — the query-error and provider-not-found cases keep their messages and flags.
-      * `[ ]`   New case: a fitting job reaches `deps.prepareModelJob` exactly once with params `{ dbClient: params.dbClient }` and payload `{ job: payload.job, providerRow, promptConstructionPayload }`, the `providerRow` being the one the `ai_providers` stub returned, and the `promptConstructionPayload` carrying the assembled `promptContent` as `currentUserPrompt`, the assembled id as `source_prompt_resource_id`, and empty history and documents — and returns `{ queued: true }`.
-      * `[ ]`   New case: a dispatcher error return is propagated with the same `error` identity and `retriable` flag, and no further work is done.
-      * `[ ]`   New case: a dispatcher deferral returns the non-retriable error arm naming the COMPRESS deferral, and does not report success.
-      * `[ ]`   New case: the continuation branch narrows its union — an error return from `deps.assembleContinuationPrompt` is propagated unchanged and the dispatcher is never called.
-      * `[ ]`   The continuation-selection case stands: `continuation_count` at least one calls the continuation assembler and never the compression assembler, and zero or absent calls the compression assembler.
-      * `[ ]`   Every dedup, stage, instance, step-query, step-match, recipe-step-validation and `outputs_required` case keeps its arrangement, its message assertion and its `retriable` flag. Read sites for content members now come from `payload.job.payload` after narrowing.
-      * `[ ]`   A case asserts this function writes no job-row payload update on the dispatch path, the provenance write having moved to the dispatcher.
-      * `[ ]`   New case: a `payload.job.payload` failing `isDialecticCompressJobPayload` surfaces that guard's per-member diagnostic on the error arm.
-
-   * `[ ]`   `processCompressJob.ts`
-      * `[ ]`   Entry: `isDialecticCompressJobPayload(payload.job.payload)` narrows the job's payload content; the throw surfaces a per-member diagnostic, converted to the error arm by the enclosing `try`. The narrowed value is held as a local for all content reads.
-      * `[ ]`   All reads of `payload.xyz` for content fields (`sessionId`, `projectId`, `model_id`, `stageSlug`, `output_type`, `sourceType`, `mode`, `content`, `continuation_count`, `model_slug`, `chunk_index`, `chunk_total`, `documentKey`, `sourceId`, `role`) become reads of the narrowed local. All reads of `params.job` become `payload.job`. `params.projectOwnerUserId` is eliminated; `payload.job.user_id` replaces any read.
-      * `[ ]`   Step two keeps its `ai_providers` read (by the narrowed content's `model_id`) and both row outcomes; its `isAiModelExtendedConfig` validation, the two `provider_max_*` checks and the two window extractions are deleted, with the `isAiModelExtendedConfig` import and the `AiModelExtendedConfig` type. The row itself is held for the dispatcher.
-      * `[ ]`   Step five's provenance update — the spread payload literal, its `isJson` throw and the `dialectic_generation_jobs` update — is deleted.
-      * `[ ]`   Step six's tokenizer deps, countable payload, `deps.countTokens` call and budget comparison are deleted, with the `CountTokensDeps` and `CountableChatPayload` imports.
-      * `[ ]`   The `ChatApiRequest`, `UserConfig` and `EnqueueModelCallParams` literals, the `EnqueueModelCallPayload` literal and the `deps.enqueueModelCall` call are deleted, with their imports.
-      * `[ ]`   The continuation branch's assignment is replaced by a narrowed one: call `deps.assembleContinuationPrompt(payload.job)`, guard with `isAssembleContinuationPromptErrorReturn`, propagate the error arm, otherwise hold the assembled prompt.
-      * `[ ]`   The tail composes the `PromptConstructionPayload` and calls `deps.prepareModelJob` with params `{ dbClient: params.dbClient }` and payload `{ job: payload.job, providerRow, promptConstructionPayload }`, and returns per the arm guards.
-      * `[ ]`   Steps one and three are untouched in behavior, with all content reads moved to the narrowed local and the job id read from `payload.job.id`. Every error message, `retriable` flag and early return they carry is unchanged.
-
-   * `[ ]`   `processCompressJob.integration.test.ts`
-      * `[ ]`   Its victim-payload helper builds payload as `{ job }` with the `DialecticCompressJobPayload` content on `job.payload`. Every case drops `job`, `projectOwnerUserId` and `authToken` from params (params has only `dbClient`) and the four removed members from deps.
-      * `[ ]`   The `capturedEnqueueParams.output_type` assertions are replaced by assertions over the captured `PrepareModelJobParams` and `PrepareModelJobPayload`: params has one member (`dbClient`), payload has three members (`job`, `providerRow`, `promptConstructionPayload`) with the `promptConstructionPayload` carrying the assembled prompt and its resource id.
-      * `[ ]`   The chain this suite proves is the real one this function now owns: real `constructStoragePath`, real assemblers where it already uses them, and the dispatcher at the outer edge. A dedup hit still completes without dispatching; a continuation victim still reaches the continuation assembler.
-      * `[ ]`   Every existing dedup, stage-resolution and assembly assertion stands.
-
-   * `[ ]`   `directionality`
-      * `[ ]`   Deps face inward: this module imports the dispatcher's bound type and guards, the hub's payload type, both assemblers' contracts, the shared path constructor, and the `DialecticCompressJobPayload` type and guard for content narrowing, and exports nothing back to any of them.
-      * `[ ]`   The `enqueueModelCall` edge is replaced by the `prepareModelJob` edge, one layer up the same path, so the module graph gains no new direction.
-      * `[ ]`   The `isDialecticCompressJobPayload` guard import is new to this file but not new to the graph: `processJob` already imported it, and this function's own guard delegated to it. The narrowing responsibility moves inward, from the caller's guard to the function's own body.
-      * `[ ]`   No cycle: `prepareModelJob` imports nothing from this module, and `processJob` constructs this function's deps rather than being imported by it.
-      * `[ ]`   This module has no `provides` barrel; `processJob` imports its interface, guard and implementation directly, as it does now.
-
-   * `[ ]`   `requirements`
-      * `[ ]`   `ProcessCompressJobDeps` declares five members with the four model-call members absent — interface test, exhaustive key record.
-      * `[ ]`   `ProcessCompressJobParams` declares one member (`dbClient`) with `job`, `projectOwnerUserId` and `authToken` absent — interface test, exhaustive key record.
-      * `[ ]`   `ProcessCompressJobPayload` declares one member (`job`) and is no longer a type alias — interface test, exhaustive key record.
-      * `[ ]`   A fitting job calls `deps.prepareModelJob` exactly once with params `{ dbClient }` and payload `{ job, providerRow, promptConstructionPayload }`, and returns `{ queued: true }` — unit test and integration test.
-      * `[ ]`   The function validates no provider config, extracts no window, counts no tokens and writes no job-row payload update on the dispatch path — unit test.
-      * `[ ]`   A dedup hit completes the job row and returns `{ queued: false }` without dispatching — unit test and integration test, existing cases.
-      * `[ ]`   Both assembly branches propagate their error arm unchanged and never reach the dispatcher — unit test.
-      * `[ ]`   A dispatcher deferral returns a non-retriable error rather than success — unit test.
-      * `[ ]`   A malformed `payload.job.payload` surfaces `isDialecticCompressJobPayload`'s per-member diagnostic on the error arm — unit test.
-      * `[ ]`   Every provider-lookup, stage, instance, step and `outputs_required` failure returns exactly what it returns now — unit test, existing cases unchanged.
-
-* `[ ]`   supabase/functions/dialectic-worker/retryJob/retryJob.ts **[BE] Advance `attempt_count` to the row's value plus one, the increment this module owns and no caller can supply**
-
-   * `[ ]`   `objective`
-      * `[ ]`   Solve a retry that never advances the attempt. This module writes `attempt_count: params.job.attempt_count` — the row's own value, written back unchanged — so a job marked `retrying` re-enters the queue with the same count it left with, and `currentAttempt < max_retries` is true forever. Nothing else in the chain can compensate: `RetryJobParams` declares `dbClient` and `job` only, so no caller has a slot in which to pass an attempt number, and the legacy positional function this module replaces took one. The count is this function's to advance because this function is the attempt.
-      * `[ ]`   Functional goals:
-         * `[ ]`   The update writes `attempt_count` as `params.job.attempt_count + 1`.
-         * `[ ]`   A row entering with `attempt_count` 3 leaves with 4, and the assertion proving it states 4.
-      * `[ ]`   Non-functional constraints:
-         * `[ ]`   The notification's `error` string keeps `params.job.attempt_count` — it names the attempt that failed, which is the row's value before the advance, not the value written.
-         * `[ ]`   Every other member of the update literal is unchanged: `status: "retrying"` and `error_details.failedAttempts` mapped from the payload.
-         * `[ ]`   Both return flavors, the error arm, both error classes, the `try`/`catch` around the notification and every log line are unchanged.
-         * `[ ]`   `RetryJobDeps`, `RetryJobParams`, `RetryJobPayload`, the return union, `RetryJobFn` and `BoundRetryJobFn` are unchanged, so no consumer's call site moves.
-         * `[ ]`   No file outside `dialectic-worker/retryJob/` is edited.
-      * `[ ]`   Each goal is proven by a named case in this file's suite.
-
-   * `[ ]`   `role`
-      * `[ ]`   Node role is app-layer job-lifecycle mutation: put a failed job back in the queue by recording the failure, advancing its attempt, and telling its owner.
-      * `[ ]`   The role is correct because advancing the count is an act of the retry, not a fact about it. A caller that computed the next number would be deciding what this function did, and every caller would compute the same expression.
-      * `[ ]`   Out-of-scope responsibilities:
-         * `[ ]`   Do not decide whether to retry; the caller compares `attempt_count` against `max_retries` and calls this function only when a retry is warranted.
-         * `[ ]`   Do not read or enforce `max_retries`, and do not write a terminal status on any path.
-         * `[ ]`   Do not change the notification's message, recipient or payload.
-         * `[ ]`   Do not edit any caller; `saveResponse`, `processSimpleJob` and the worker root each have their own node.
-
-   * `[ ]`   `module`
-      * `[ ]`   Bounded context is `supabase/functions/dialectic-worker/retryJob` — the single write that moves a job from `processing` to `retrying`, and the notification that accompanies it.
-      * `[ ]`   Inside boundary:
-         * `[ ]`   What a retrying row records: its status, its attempt number, and the attempts that failed.
-         * `[ ]`   Whether the notification succeeded, reported as two distinct success flavors.
-      * `[ ]`   Outside boundary:
-         * `[ ]`   Whether a retry is warranted, owned by the caller holding `max_retries`.
-         * `[ ]`   `DialecticJobRow` and `FailedAttemptError`, owned by `dialectic-service/dialectic.interface.ts`.
-         * `[ ]`   `NotificationServiceType` and `ContributionGenerationRetryingPayload`, owned by `_shared/types/notification.service.types.ts`.
-
-   * `[ ]`   `retryJob.interaction.spec`
-      * `[ ]`   One point changes and no others. Every branch below keeps its condition, decision, dependency call and outcome except the value written for `attempt_count`.
-      * `[ ]`   Branch: the update succeeds and the notification succeeds.
-         * `[ ]`   Condition: `params.dbClient` returns no error for the update, and `deps.notificationService.sendContributionRetryingEvent` resolves.
-         * `[ ]`   Decision: the destructured `error` is falsy, and the `try` completes.
-         * `[ ]`   Dependency call: the update on `dialectic_generation_jobs` keyed on `params.job.id`, writing `status: "retrying"`, `attempt_count: params.job.attempt_count + 1` and `error_details.failedAttempts`; then the notification to `params.job.user_id`.
-         * `[ ]`   Outcome: `RetryJobNotifiedReturn` — `{ notified: true }`.
-      * `[ ]`   Branch: the update succeeds and the notification throws an `Error`.
-         * `[ ]`   Condition: the update returns no error; the notification rejects with an `Error`.
-         * `[ ]`   Decision: `caught instanceof Error`.
-         * `[ ]`   Dependency call: the same update, then `deps.logger.error`.
-         * `[ ]`   Outcome: `RetryJobNotificationFailedReturn` carrying that exact error instance.
-      * `[ ]`   Branch: the update succeeds and the notification throws a non-`Error`.
-         * `[ ]`   Condition: the update returns no error; the notification rejects with a value that is not an `Error`.
-         * `[ ]`   Decision: `caught instanceof Error` is false.
-         * `[ ]`   Dependency call: the same update, then `deps.logger.error`.
-         * `[ ]`   Outcome: `RetryJobNotificationFailedReturn` carrying a `RetryJobNotificationError` built from the job id and the stringified value.
-      * `[ ]`   Branch: the update returns a driver error.
-         * `[ ]`   Condition: the update returns an error.
-         * `[ ]`   Decision: the destructured `error` is truthy.
-         * `[ ]`   Dependency call: `deps.logger.error`; the notification is not called.
-         * `[ ]`   Outcome: `RetryJobErrorReturn` carrying a `RetryJobUpdateError` built from the job id, `"retrying"` and the driver's message, with `retriable: true`.
-      * `[ ]`   Ordering and side effects: exactly one update per invocation, at most one notification, and it never precedes the update. Neither `params` nor `payload` is mutated on any path.
-
-   * `[ ]`   `retryJob.test.ts`
-      * `[ ]`   The attempt-count case asserts `attempt_count: 4` over the row it arranges with `attempt_count: 3`, matching the contract its own header states. Its arrangement, its `status: "retrying"` assertion and its `error_details.failedAttempts` assertion are unchanged.
-      * `[ ]`   New case: a row arranged with `attempt_count: 0` writes `attempt_count: 1`, so a second arrangement proves the written value tracks the input rather than a constant.
-      * `[ ]`   Every other case keeps its arrangement and assertions unchanged: the notified flavor with its five notification-argument assertions, the `Error`-throwing notification carrying that exact instance, the non-`Error` throw carrying a `RetryJobNotificationError` with the thrown string, the driver-error arm with its three error-property assertions and its zero-notification assertion, and the no-mutation case.
-
-   * `[ ]`   `retryJob.ts`
-      * `[ ]`   The `updatePayload` literal's `attempt_count` becomes `params.job.attempt_count + 1`.
-      * `[ ]`   Nothing else in the file changes: the `status` and `error_details` members, the update call and its `.eq` filter, the driver-error branch with its `RetryJobUpdateError` construction and log line, the notification payload including its `error` string, the `try`/`catch`, both catch branches with their log lines, and every return.
-
-   * `[ ]`   `requirements`
-      * `[ ]`   A row entering with `attempt_count` 3 writes 4, and a row entering with 0 writes 1 — unit test, two arrangements, captured update-argument assertions.
-      * `[ ]`   The notification's `error` string names the row's pre-advance attempt number — unit test.
-      * `[ ]`   The update writes `status: "retrying"` and `error_details.failedAttempts` from the payload — unit test, existing case.
-      * `[ ]`   Each of the four branches returns its own flavor and no other — unit test, existing cases unchanged.
-      * `[ ]`   A driver error dispatches no notification — unit test, existing case.
-      * `[ ]`   Neither `params` nor `payload` is mutated — unit test, existing case.
-
-* `[ ]`   supabase/functions/dialectic-worker/createJobContext/createJobContext.ts **[BE] Make the factory the sole assembler of every deps object the worker constructs: `JobContextParams` carries unbound implementations and the raw collaborators they need, `createJobContext` binds the compression graph `getSortedCompressionCandidates` → `enqueueCompressJobs` → `compressPrompt` → `calculateAffordability` → `prepareModelJob` plus `applyCompressionOverlay` → `gatherArtifacts` and `enqueueModelCall`, `createPrepareModelJobContext` returns `PrepareModelJobDeps` with `IPrepareModelJobContext` deleted, and `IRagContext` retires with `ragService`, `indexingService` and `embeddingClient`**
-
-   * `[ ]`   `objective`
-      * `[ ]`   Solve a factory that assembles nothing it was built to assemble. `createJobContext` copies forty-three params onto a root object one field at a time, and every deps object the worker actually constructs is built somewhere else: `dialectic-worker/index.ts` builds `boundGatherArtifacts` from a `GatherArtifactsDeps` literal, `boundEnqueueModelCall` from an `EnqueueModelCallDeps` literal, and — inside the `prepareModelJob` params closure it hands the factory — a `CompressPromptDeps` literal, a `CalculateAffordabilityDeps` literal and a `PrepareModelJobDeps` literal, three graphs deep. `createPrepareModelJobContext`, the slicer written to do exactly that, has no production caller at all: its only callers are this module's own test files. The result is two assemblers for one process, a graph whose shape exists only inside one arrow function at the composition root, and a slice type, `IPrepareModelJobContext`, that restates `PrepareModelJobDeps` under a second name so the two drift independently.
-      * `[ ]`   Functional goals:
-         * `[ ]`   `JobContextParams` carries the unbound implementation of every function the factory binds — `prepareModelJob: PrepareModelJobFn`, `compressPrompt: CompressPromptFn`, `calculateAffordability: CalculateAffordabilityFn`, `enqueueCompressJobs: enqueueCompressJobsFn`, `getSortedCompressionCandidates: GetSortedCompressionCandidatesFn`, `applyCompressionOverlay: ApplyCompressionOverlayFn`, `gatherArtifacts: GatherArtifactsFn`, `enqueueModelCall: EnqueueModelCallFn` — and no pre-bound closure for any of them.
-         * `[ ]`   `JobContextParams` carries the raw collaborators those bindings require and the root does not otherwise supply: `textSplitter: ITextSplitter`, `constructStoragePath: ConstructStoragePathFn`, `tokenizerDeps: CountTokensDeps`, `netlifyQueueUrl: string`, `netlifyApiKey: string`, `apiKeyForProvider: ApiKeyForProviderFn`.
-         * `[ ]`   `createJobContext` constructs every deps object in one place, producers before consumers, and assigns the bound results to the `IJobContext` members that carry a bound type today: `prepareModelJob: BoundPrepareModelJobFn`, `gatherArtifacts: BoundGatherArtifactsFn`, `enqueueModelCall: BoundEnqueueModelCallFn`. Those three member types are unchanged; only their producer moves.
-         * `[ ]`   `createPrepareModelJobContext` returns `PrepareModelJobDeps`, the type its consumer owns, and takes the root plus nothing else — every implementation it binds reaches it on the root. `IPrepareModelJobContext` and `isIPrepareModelJobContext` are deleted, the slice having no shape of its own to declare.
-         * `[ ]`   `IRagContext` is deleted, and `ragService`, `indexingService` and `embeddingClient` leave `IJobContext`, `JobContextParams`, the guard, the mock and every test surface that enumerates them. `countTokens`, the fourth member of `IRagContext`, is already declared directly on `IJobContext` and stays there.
-         * `[ ]`   `JobContext.mock.ts` carries the four symbols owed to each owned object type and one function mock per owned function type, in the forms `mocks.md` prescribes, replacing the hand-rolled `createMockJobContextParams` override helper and the two recording factories.
-         * `[ ]`   `ProcessSimpleJobFn`, `ProcessComplexJobFn` and `ProcessRenderJobFn` take the canonical `(deps, params, payload)` shape and return a two-arm union, each with its `Params`, `Payload`, success flavors and error arm declared beside it, matching `ProcessCompressJobFn`, which already has that shape. The contracts land here because every processor node and the dispatcher that constructs their arguments follows this one.
-         * `[ ]`   `IJobContext.retryJob` and `JobContextParams.retryJob` carry the canonical `retryJob` module's types, and the factory binds it like every other member: `JobContextParams.retryJob` is `RetryJobFn` and `IJobContext.retryJob` is `BoundRetryJobFn`.
-         * `[ ]`   The factory produces nothing for `saveResponse`: `createSaveResponseContext` and `ISaveResponseContext` are deleted, and the seven members the root carries solely for that function — `continueJob`, `resolveFinishReason`, `isIntermediateChunk`, `determineContinuation`, `buildUploadContext`, `sanitizeJsonContent` and `debitTokens` — leave `IJobContext`, `JobContextParams`, the guard, the mock and every test surface that enumerates them.
-      * `[ ]`   Non-functional constraints:
-         * `[ ]`   Every field the factory copies today it copies unchanged. This node adds bindings, removes three RAG members and seven `saveResponse` members, and re-derives nothing else; no surviving member changes its type, its name or its source except `retryJob`, which moves from the legacy positional type to the canonical module's.
-         * `[ ]`   `computeJobSig` stays on both the root and the params: the factory supplies it to `EnqueueModelCallDeps`, so the worker reads it and it is not a `saveResponse`-only member.
-         * `[ ]`   `createPlanJobContext` and `createRenderJobContext` keep their current bodies, signatures and returns. `IPlanJobContext`, `IRenderJobContext`, `ILoggerContext`, `IFileContext`, `IModelContext`, `ITokenContext` and `INotificationContext` are unchanged.
-         * `[ ]`   `dialectic-worker/index.ts` goes transiently non-compilable and is not edited here — it supplies the retired pre-bound closures, the three RAG constructions and the seven `saveResponse` members, and it is the composition-root node that closes this workstream.
-         * `[ ]`   `netlifyResponse/index.ts` is the composition root for the `saveResponse` graph and assembles it itself; this factory binds none of those modules and carries no member for them. That node has already landed and is not edited here.
-         * `[ ]`   The three processor implementations and `processJob.ts` go transiently non-compilable against the retyped `Fn` contracts and are not edited here; each has its own node after this one.
-      * `[ ]`   Each goal is proven by a named case in this node's interface test, guard test, unit test or integration test.
-
-   * `[ ]`   `role`
-      * `[ ]`   Node role is infra-layer composition: receive every implementation and raw collaborator the worker process needs, construct each deps object exactly once in dependency order, and hand out a root context whose members are already bound.
-      * `[ ]`   The role is correct because a factory that receives implementations and returns bound closures is the only place the worker's graph has a single shape. When a call site builds a deps literal instead, that literal is the graph, and it exists once per call site with no contract holding the copies in agreement.
-      * `[ ]`   Out-of-scope responsibilities:
-         * `[ ]`   Do not import, construct or type `IRagService`, `IIndexingService`, `IEmbeddingClient`, `ICompressionStrategy` or `CompressionStrategyDeps`/`Params`/`Payload` anywhere in this module.
-         * `[ ]`   Do not read a job row, decide affordability, compress, score or enqueue. The factory calls no bound closure it constructs.
-         * `[ ]`   Do not edit `dialectic-worker/index.ts`, `processJob.ts`, `processSimpleJob.ts`, `processComplexJob.ts`, `processRenderJob.ts` or any module whose deps this factory assembles; each has its own node. This node declares the processor contracts; it does not conform any implementation to them.
-         * `[ ]`   Do not construct the adapters and services the root constructs — `FileManagerService`, `PromptAssembler`, the wallet services, the provider adapters. They arrive on `JobContextParams` already instantiated, as they do today.
-         * `[ ]`   Do not add a `provides` barrel. Consumers import this module's interface, guard and implementation directly, and changing that ripples every consumer's imports.
-         * `[ ]`   Do not narrow any processor's deps slot below the context interface it receives today. Reshaping the signature is this node's work; deciding which collaborators each processor actually invokes is not.
-
-   * `[ ]`   `module`
-      * `[ ]`   Bounded context is `supabase/functions/dialectic-worker/createJobContext` — the worker's dependency-injection boundary: the context contracts, their guards, their mock, and the factory and slicers that construct them.
-      * `[ ]`   Inside boundary:
-         * `[ ]`   Which deps object each worker module receives, and in what order those objects are constructed.
-         * `[ ]`   The shape of the root context and of each slice handed to a job-type processor.
-      * `[ ]`   Outside boundary:
-         * `[ ]`   Where an implementation or a raw collaborator comes from — an import, an environment variable, a constructed service — all resolved by the worker root before it calls this factory.
-         * `[ ]`   What any bound closure does when invoked, owned by the module that declares it.
-         * `[ ]`   The `saveResponse` graph, assembled in `netlifyResponse/index.ts`.
-
-   * `[ ]`   `deps`
-      * `[ ]`   Removed provider: `_shared/services/rag_service.interface.ts` (`IRagService`), `_shared/services/indexing_service.interface.ts` (`IIndexingService`, `IEmbeddingClient`), `_shared/services/rag_service.mock.ts` (`MockRagService`) and `_shared/services/indexing_service.mock.ts` (`MockIndexingService`).
-         * `[ ]`   Layer classification: shared service interfaces and mocks.
-         * `[ ]`   Direction: inbound, and closed by this node — no file in this module imports from `rag_service` or `indexing_service` afterwards.
-         * `[ ]`   Purpose retired: carrying retrieval and embedding collaborators down a graph in which victim selection is `candidateTokens × importance` and nothing embeds.
-      * `[ ]`   Added provider: `../compressPrompt/compressPrompt.provides.ts` (`CompressPromptFn`, `CompressPromptDeps`, `BoundCompressPromptFn`).
-         * `[ ]`   Layer classification: sibling app-layer module.
-         * `[ ]`   Direction: lateral within `dialectic-worker`.
-         * `[ ]`   Purpose: the unbound compression loop this factory binds, and the deps object it binds it with.
-      * `[ ]`   Added provider: `../enqueueCompressJobs/enqueueCompressJobs.provides.ts` (`enqueueCompressJobsFn`, `enqueueCompressJobsDeps`, `BoundenqueueCompressJobsFn`).
-         * `[ ]`   Layer classification: sibling app-layer module.
-         * `[ ]`   Direction: lateral within `dialectic-worker`.
-         * `[ ]`   Purpose: the COMPRESS child dispatcher, bound and supplied to `compressPrompt`'s deps.
-      * `[ ]`   Added provider: `_shared/utils/vector_utils.provides.ts` (`GetSortedCompressionCandidatesFn`, `GetSortedCompressionCandidatesDeps`, `BoundGetSortedCompressionCandidatesFn`).
-         * `[ ]`   Layer classification: shared utility.
-         * `[ ]`   Direction: inbound from `_shared`.
-         * `[ ]`   Purpose: the embedding-free scorer, bound and supplied to `compressPrompt`'s deps.
-      * `[ ]`   Added provider: `../applyCompressionOverlay/applyCompressionOverlay.provides.ts` (`ApplyCompressionOverlayFn`, `ApplyCompressionOverlayDeps`, `BoundApplyCompressionOverlayFn`).
-         * `[ ]`   Layer classification: sibling app-layer module.
-         * `[ ]`   Direction: lateral within `dialectic-worker`.
-         * `[ ]`   Purpose: the overlay `gatherArtifacts` invokes post-gather, bound and supplied to that function's deps.
-      * `[ ]`   Added provider: `_shared/utils/text_splitter.interface.ts` (`ITextSplitter`) and `_shared/utils/path_constructor.types.ts` (`ConstructStoragePathFn`).
-         * `[ ]`   Layer classification: shared type surfaces.
-         * `[ ]`   Direction: inbound from `_shared`.
-         * `[ ]`   Purpose: the two raw collaborators `enqueueCompressJobsDeps` and `CompressPromptDeps` require and no existing `JobContextParams` member supplies.
-      * `[ ]`   Added provider: `_shared/types/tokenizer.types.ts` (`CountTokensDeps`, `BoundCountTokensFn`, beside the already-imported `CountTokensFn`).
-         * `[ ]`   Layer classification: shared type surface.
-         * `[ ]`   Direction: inbound from `_shared`.
-         * `[ ]`   Purpose: `GetSortedCompressionCandidatesDeps.countTokens` is a `BoundCountTokensFn`, so the factory binds the root's `CountTokensFn` against the root's `CountTokensDeps` once and supplies the bound form.
-      * `[ ]`   Added provider: `../prepareModelJob/prepareModelJob.provides.ts` (`PrepareModelJobFn`, `PrepareModelJobDeps`), `../calculateAffordability/calculateAffordability.provides.ts` (`CalculateAffordabilityFn`, `CalculateAffordabilityDeps`), `../gatherArtifacts/gatherArtifacts.interface.ts` (`GatherArtifactsFn`, `GatherArtifactsDeps`) and `../enqueueModelCall/enqueueModelCall.interface.ts` (`EnqueueModelCallFn`, `EnqueueModelCallDeps`, `ApiKeyForProviderFn`).
-         * `[ ]`   Layer classification: sibling app-layer modules.
-         * `[ ]`   Direction: lateral within `dialectic-worker`; each already provides a bound type this interface imports, so no new direction is opened.
-         * `[ ]`   Purpose: the unbound implementations and the deps shapes this factory now constructs rather than receives pre-bound.
-      * `[ ]`   Added provider: `../retryJob/retryJob.provides.ts` (`RetryJobFn`, `RetryJobDeps`, `BoundRetryJobFn`).
-         * `[ ]`   Layer classification: sibling app-layer module.
-         * `[ ]`   Direction: lateral within `dialectic-worker`.
-         * `[ ]`   Purpose: the canonical retry dispatcher, bound here and read from the root by `handleJob`. It replaces the locally declared legacy `RetryJobFn`, which this node deletes.
-      * `[ ]`   Removed provider: the seven collaborators the root carried only for `saveResponse` — `continueJob/continueJob.provides.ts` (`ContinueJobFn`), `_shared/utils/resolveFinishReason.ts`, `_shared/utils/isIntermediateChunk.ts`, `_shared/utils/determineContinuation/determineContinuation.interface.ts`, `_shared/utils/buildUploadContext/buildUploadContext.interface.ts`, `_shared/utils/jsonSanitizer/jsonSanitizer.interface.ts` and `_shared/utils/debitTokens.interface.ts` — with the members they typed and the `ISaveResponseContext` slice they fed.
-         * `[ ]`   Layer classification: sibling module and shared utilities.
-         * `[ ]`   Direction: inbound, and closed by this node.
-         * `[ ]`   Purpose retired: carrying a second process's collaborators on this process's root. `netlifyResponse/index.ts` imports each of them directly.
-      * `[ ]`   Confirm:
-         * `[ ]`   No dependency is injected into the factory itself. `createJobContext` takes one `JobContextParams` object and returns one `IJobContext`; it has no deps slot, and this node adds none.
-         * `[ ]`   The processor contracts this node declares introduce no import into `dialectic-service/dialectic.interface.ts` that it does not already hold: `SupabaseClient`, `Database`, `DialecticJobRow` and the payload arms are all declared or imported there today.
-         * `[ ]`   No reverse dependency: none of `compressPrompt`, `calculateAffordability`, `enqueueCompressJobs`, `vector_utils`, `applyCompressionOverlay`, `gatherArtifacts` or `enqueueModelCall` imports this module's factory. `prepareModelJob.interface.ts` imports three function types from `JobContext.interface.ts` — `ApplyInputsRequiredScopeFn`, `ValidateWalletBalanceFn`, `ValidateModelCostRatesFn` — and this node neither adds to that set nor removes from it.
-      * `[ ]`   `context_slice`
-         * `[ ]`   From each bound module: its unbound function type and its deps type only — never its params, payload or return types, which the factory neither constructs nor reads.
-         * `[ ]`   From `retryJob/retryJob.provides.ts`: `RetryJobFn`, `RetryJobDeps` and `BoundRetryJobFn` only.
-         * `[ ]`   From `_shared`: `ITextSplitter`, `ConstructStoragePathFn`, `CountTokensDeps` and `BoundCountTokensFn` only.
-
-   * `[ ]`   `createJobContext.interface.test.ts`
-      * `[ ]`   The `IRagContext` surface case is deleted with the interface it proved.
-      * `[ ]`   The `ISaveResponseContext` surface case is deleted with the interface it proved.
-      * `[ ]`   The `IPrepareModelJobContext` surface case is deleted; a case in its place proves `createPrepareModelJobContext`'s return type is `PrepareModelJobDeps` by typed assignment of a `declare const` of that type to the slicer's declared return.
-      * `[ ]`   The `IJobContext` surface case drops `ragService`, `indexingService`, `embeddingClient`, `continueJob`, `resolveFinishReason`, `isIntermediateChunk`, `determineContinuation`, `buildUploadContext`, `sanitizeJsonContent` and `debitTokens`, and asserts twenty-nine.
-      * `[ ]`   The `JobContextParams` surface case drops the same ten members, gains `compressPrompt`, `calculateAffordability`, `enqueueCompressJobs`, `getSortedCompressionCandidates`, `applyCompressionOverlay`, `textSplitter`, `constructStoragePath`, `tokenizerDeps`, `netlifyQueueUrl`, `netlifyApiKey` and `apiKeyForProvider`, and asserts forty-five.
-      * `[ ]`   A case proves `retryJob`'s two forms by typed assignment: a `declare const` of `RetryJobFn` assigns to `JobContextParams['retryJob']`, and a `declare const` of `BoundRetryJobFn` assigns to `IJobContext['retryJob']`.
-      * `[ ]`   A case proves each processor's params surface exhaustively by typed assignment — `Record<keyof ProcessSimpleJobParams, true>` over `dbClient`, and the same for the complex and render params — each asserting one.
-      * `[ ]`   A case proves each processor's payload surface the same way over `job`, each asserting one.
-      * `[ ]`   A case proves each processor's return union by typed assignment: for the simple processor, a dispatched value and a deferred value each assign to `ProcessSimpleJobSuccessReturn`, that assigns to `ProcessSimpleJobReturn`, and an error value assigns to `ProcessSimpleJobReturn`; the complex and render processors take the same form with their single success shapes.
-      * `[ ]`   A case proves each processor's `Fn` type accepts its declared deps, params and payload and returns its own `Promise<…Return>`.
-      * `[ ]`   A case proves each retyped member by typed assignment: a `declare const` of `PrepareModelJobFn` assigns to `JobContextParams['prepareModelJob']`, of `GatherArtifactsFn` to `JobContextParams['gatherArtifacts']`, and of `EnqueueModelCallFn` to `JobContextParams['enqueueModelCall']` — proving each slot takes the unbound form.
-      * `[ ]`   A case proves the root keeps the bound forms by typed assignment: a `declare const` of `BoundPrepareModelJobFn` assigns to `IJobContext['prepareModelJob']`, of `BoundGatherArtifactsFn` to `IJobContext['gatherArtifacts']`, and of `BoundEnqueueModelCallFn` to `IJobContext['enqueueModelCall']`.
-      * `[ ]`   The `ILoggerContext`, `IFileContext`, `IModelContext`, `ITokenContext`, `INotificationContext`, `IPlanJobContext` and `IRenderJobContext` surface cases are unchanged. The file imports no builders, its fixtures being typed literals, surface records and `declare const` bindings.
-
-   * `[ ]`   dialectic-service/`dialectic.interface.ts`
-      * `[ ]`   `ProcessSimpleJobParams`, `ProcessComplexJobParams` and `ProcessRenderJobParams` each declare `dbClient: SupabaseClient<Database>` and nothing else. `dbClient` is a per-invocation handle, not a collaborator and not data.
-      * `[ ]`   `ProcessSimpleJobPayload` declares `job: DialecticJobRow & { payload: DialecticExecuteJobPayload }`; `ProcessComplexJobPayload` declares `job: DialecticJobRow & { payload: DialecticPlanJobPayload }`; `ProcessRenderJobPayload` declares `job: DialecticJobRow`. The row is the data each processor operates on, and it carries its own `user_id`, `session_id`, `iteration_number` and payload, so no processor takes `projectOwnerUserId` or `authToken` as a separate value.
-      * `[ ]`   `ProcessSimpleJobDispatchedReturn` is `{ dispatched: true }` and `ProcessSimpleJobDeferredReturn` is `{ deferred: true }`; `ProcessSimpleJobSuccessReturn` is their union; `ProcessSimpleJobErrorReturn` is `{ error: Error; retriable: boolean }`; `ProcessSimpleJobReturn` is the success arm union the error arm. The two success flavors are the dispatcher's two non-error outcomes, which that function narrows and reports rather than treating alike.
-      * `[ ]`   `ProcessComplexJobSuccessReturn` is `{ planned: true }`, `ProcessComplexJobErrorReturn` is `{ error: Error; retriable: boolean }`, and `ProcessComplexJobReturn` is their union.
-      * `[ ]`   `ProcessRenderJobSuccessReturn` is `{ rendered: true }`, `ProcessRenderJobErrorReturn` is `{ error: Error; retriable: boolean }`, and `ProcessRenderJobReturn` is their union.
-      * `[ ]`   `ProcessSimpleJobFn` becomes `(deps: IJobContext, params: ProcessSimpleJobParams, payload: ProcessSimpleJobPayload) => Promise<ProcessSimpleJobReturn>`; `ProcessComplexJobFn` takes `deps: IPlanJobContext` and its own three types; `ProcessRenderJobFn` takes `deps: IRenderJobContext` and its own three types. Each deps slot is the context interface that processor receives today, unnarrowed.
-      * `[ ]`   `IJobProcessors` keeps its five member names and their `Fn` types; `ProcessCompressJobFn` and `PlanComplexStageFn` are unchanged.
-
-   * `[ ]`   `JobContext.interface.ts`
-      * `[ ]`   `IRagContext` is deleted, with the `IRagService`, `IIndexingService` and `IEmbeddingClient` imports.
-      * `[ ]`   `IPrepareModelJobContext` is deleted. `PrepareModelJobDeps` is imported from `../prepareModelJob/prepareModelJob.interface.ts` as the slicer's return type, beside the `PrepareModelJobParams`, `PrepareModelJobPayload` and `PrepareModelJobReturn` imports already present.
-      * `[ ]`   `ISaveResponseContext` is deleted, with the `BoundEnqueueRenderJobFn` and `BoundDebitTokens` imports that typed its two members.
-      * `[ ]`   The locally declared `RetryJobFn` — the six-positional type returning `Promise<{ error?: Error }>` — is deleted, with the `FailedAttemptError` import it required. `RetryJobFn` and `BoundRetryJobFn` are imported from `../retryJob/retryJob.interface.ts` instead.
-      * `[ ]`   `IJobContext` drops `ragService`, `indexingService`, `embeddingClient`, `continueJob`, `resolveFinishReason`, `isIntermediateChunk`, `determineContinuation`, `buildUploadContext`, `sanitizeJsonContent` and `debitTokens`; retypes `retryJob` to `BoundRetryJobFn`; and keeps `countTokens`, `computeJobSig`, every other member and the bound types on `prepareModelJob`, `gatherArtifacts` and `enqueueModelCall`.
-      * `[ ]`   `JobContextParams` drops the same ten members; retypes `prepareModelJob` to `PrepareModelJobFn`, `gatherArtifacts` to `GatherArtifactsFn`, `enqueueModelCall` to `EnqueueModelCallFn` and `retryJob` to the canonical `RetryJobFn`; and gains `compressPrompt: CompressPromptFn`, `calculateAffordability: CalculateAffordabilityFn`, `enqueueCompressJobs: enqueueCompressJobsFn`, `getSortedCompressionCandidates: GetSortedCompressionCandidatesFn`, `applyCompressionOverlay: ApplyCompressionOverlayFn`, `textSplitter: ITextSplitter`, `constructStoragePath: ConstructStoragePathFn`, `tokenizerDeps: CountTokensDeps`, `netlifyQueueUrl: string`, `netlifyApiKey: string` and `apiKeyForProvider: ApiKeyForProviderFn`, with the imports each requires.
-      * `[ ]`   `FindSourceDocumentsFn`, `PickLatestFn`, `ApplyInputsRequiredScopeFn`, `ValidateWalletBalanceFn`, `ValidateModelCostRatesFn`, `BoundPrepareModelJobFn`, `BoundGatherArtifactsFn` and every surviving context interface keep their declarations.
-      * `[ ]`   `ResolveFinishReasonFn`, `IsIntermediateChunkFn`, `DetermineContinuationFn` and `BuildUploadContextFn` keep their declarations even though no member in this file references them afterwards. Nine files outside this module import them from here — `prepareResponseContent`'s interface, mock and test, `saveContributionResponse`'s interface, test and integration test, `saveCompressedResponse`'s interface and integration test, `saveResponse.ts`, and `buildUploadContext`'s own mock and interface test. Deleting them breaks the `saveResponse` graph; relocating them to the modules that own the functions they type is another node's work.
-
-   * `[ ]`   `createJobContext.interaction.spec`
-      * `[ ]`   `createJobContext` has one branch and no conditions: it constructs the bound closures in dependency order, then returns one `IJobContext` literal. Every member not named below is copied from the identically named `JobContextParams` member, exactly as it is copied today.
-      * `[ ]`   Binding order, producers first, each closure capturing `params` from the factory's own scope:
-         * `[ ]`   `boundCountTokens: BoundCountTokensFn` = `(payload, modelConfig) => params.countTokens(params.tokenizerDeps, payload, modelConfig)`.
-         * `[ ]`   `boundGetSortedCompressionCandidates: BoundGetSortedCompressionCandidatesFn` = `(p, pl) => params.getSortedCompressionCandidates({ logger: params.logger, countTokens: boundCountTokens }, p, pl)`.
-         * `[ ]`   `boundEnqueueCompressJobs: BoundenqueueCompressJobsFn` = `(p, pl) => params.enqueueCompressJobs({ logger: params.logger, textSplitter: params.textSplitter, countTokens: params.countTokens, constructStoragePath: params.constructStoragePath }, p, pl)`.
-         * `[ ]`   `boundCompressPrompt: BoundCompressPromptFn` = `(p, pl) => params.compressPrompt({ logger: params.logger, getSortedCompressionCandidates: boundGetSortedCompressionCandidates, enqueueCompressJobs: boundEnqueueCompressJobs, constructStoragePath: params.constructStoragePath, downloadFromStorage: params.downloadFromStorage, countTokens: params.countTokens }, p, pl)`.
-         * `[ ]`   `boundCalculateAffordability: BoundCalculateAffordabilityFn` = `(p, pl) => params.calculateAffordability({ logger: params.logger, countTokens: params.countTokens, getMaxOutputTokens: params.getMaxOutputTokens }, p, pl)` — three members, and `compressPrompt` is not among them.
-         * `[ ]`   `boundEnqueueModelCall: BoundEnqueueModelCallFn` = `(p, pl) => params.enqueueModelCall({ logger: params.logger, netlifyQueueUrl: params.netlifyQueueUrl, netlifyApiKey: params.netlifyApiKey, apiKeyForProvider: params.apiKeyForProvider, computeJobSig: params.computeJobSig }, p, pl)`.
-         * `[ ]`   `boundApplyCompressionOverlay: BoundApplyCompressionOverlayFn` = `(p, pl) => params.applyCompressionOverlay({ logger: params.logger, downloadFromStorage: params.downloadFromStorage }, p, pl)`.
-         * `[ ]`   `boundGatherArtifacts: BoundGatherArtifactsFn` = `(p, pl) => params.gatherArtifacts({ logger: params.logger, pickLatest: params.pickLatest, downloadFromStorage: params.downloadFromStorage, applyCompressionOverlay: boundApplyCompressionOverlay }, p, pl)`.
-         * `[ ]`   `boundRetryJob: BoundRetryJobFn` = `(p, pl) => params.retryJob({ logger: params.logger, notificationService: params.notificationService }, p, pl)`.
-         * `[ ]`   `boundPrepareModelJob: BoundPrepareModelJobFn` = `(p, pl) => params.prepareModelJob(createPrepareModelJobContext(root), p, pl)`, where `root` is the `IJobContext` this factory is returning.
-      * `[ ]`   Return: the `IJobContext` literal assigns `prepareModelJob: boundPrepareModelJob`, `gatherArtifacts: boundGatherArtifacts`, `enqueueModelCall: boundEnqueueModelCall` and `retryJob: boundRetryJob`, and copies every remaining member from its `JobContextParams` counterpart. No `ragService`, `indexingService`, `embeddingClient`, `continueJob`, `resolveFinishReason`, `isIntermediateChunk`, `determineContinuation`, `buildUploadContext`, `sanitizeJsonContent` or `debitTokens` member is assigned.
-      * `[ ]`   `createPrepareModelJobContext(root: IJobContext): PrepareModelJobDeps` returns `{ logger: root.logger, applyInputsRequiredScope: root.applyInputsRequiredScope, tokenWalletService: root.userTokenWalletService, validateWalletBalance: root.validateWalletBalance, validateModelCostRates: root.validateModelCostRates, calculateAffordability: root.calculateAffordability, enqueueModelCall: root.enqueueModelCall, compressPrompt: root.compressPrompt }` — eight members, matching `PrepareModelJobDeps` exactly. `IJobContext` gains `calculateAffordability: BoundCalculateAffordabilityFn` and `compressPrompt: BoundCompressPromptFn` so the slicer reads both from the root rather than taking them as arguments; the slicer's three retired parameters — `boundEnqueueModelCall`, `compressPromptFn`, `calculateAffordabilityFn` — go with them.
-      * `[ ]`   `createPlanJobContext` and `createRenderJobContext` keep their current bodies and signatures; no branch, no member and no argument changes. `createSaveResponseContext` is deleted with the slice type it returned.
-      * `[ ]`   Ordering and side effects: the factory performs no I/O, calls no bound closure it constructs, and returns synchronously. Each bound closure is constructed exactly once per `createJobContext` call, so every consumer of one root shares one instance.
-
-   * `[ ]`   _shared/`dialectic.mock.ts`
-      * `[ ]`   Thirteen owned object types this node declares take the four symbols each, production-named — `<Type>Overrides` as `Partial<T>`, `build<Type>`, `<Type>Corruptions` as `{ [K in keyof T]?: unknown }` and `invalidate<Type>` returning `unknown`: `ProcessSimpleJobParams`, `ProcessComplexJobParams`, `ProcessRenderJobParams`, `ProcessSimpleJobPayload`, `ProcessComplexJobPayload`, `ProcessRenderJobPayload`, `ProcessSimpleJobDispatchedReturn`, `ProcessSimpleJobDeferredReturn`, `ProcessSimpleJobErrorReturn`, `ProcessComplexJobSuccessReturn`, `ProcessComplexJobErrorReturn`, `ProcessRenderJobSuccessReturn` and `ProcessRenderJobErrorReturn`.
-      * `[ ]`   `ProcessSimpleJobSuccessReturn`, `ProcessSimpleJobReturn`, `ProcessComplexJobReturn` and `ProcessRenderJobReturn` are unions and take nothing of their own; each object-type member of each union is built by its own builder above.
-      * `[ ]`   Each params builder defaults `dbClient` to `createMockSupabaseClient(undefined, {}).client` cast to `SupabaseClient<Database>` — the external-client cast this file already makes — and declares no other member.
-      * `[ ]`   Each payload builder composes the row and payload builders this file already exports rather than a hand-rolled literal: `buildProcessSimpleJobPayload` returns `{ job: buildDialecticJobRow({ job_type: 'EXECUTE', payload: buildDialecticExecuteJobPayload() }) }`, `buildProcessComplexJobPayload` the same with `'PLAN'` and `buildDialecticPlanJobPayload()`, and `buildProcessRenderJobPayload` `{ job: buildDialecticJobRow() }`.
-      * `[ ]`   Each success-flavor builder returns its single discriminant — `{ dispatched: true }`, `{ deferred: true }`, `{ planned: true }`, `{ rendered: true }`. Each error-arm builder defaults `error` to `new Error("mock-process-simple-job-error")`, `new Error("mock-process-complex-job-error")` or `new Error("mock-process-render-job-error")` and `retriable` to `false`. The three error arms are structurally identical and each still takes its own per-type quartet; no generic or shared invalidator stands in for them.
-      * `[ ]`   Three function mocks, one per owned function type: `mockProcessSimpleJob: ProcessSimpleJobFn` returning `buildProcessSimpleJobDispatchedReturn()`, `mockProcessComplexJob: ProcessComplexJobFn` returning `buildProcessComplexJobSuccessReturn()` and `mockProcessRenderJob: ProcessRenderJobFn` returning `buildProcessRenderJobSuccessReturn()` — identical signatures, no extra parameters, no options bag, no recording.
-      * `[ ]`   `_JobProcessorsDummyImpl` assigns those three function mocks to its `processSimpleJob`, `processComplexJob` and `processRenderJob` members, so the class satisfies `IJobProcessors` under the reshaped contracts; the `(..._args: any[]): Promise<void>` declarations and the `deno-lint-ignore no-explicit-any` comments above them are deleted with the `any` they suppressed.
-      * `[ ]`   `createMockJobProcessors`, `MockJobProcessorsSpies` and the spy wiring around them are otherwise untouched; eight suites outside this module consume them.
-      * `[ ]`   Every other export in this file is unchanged.
-
-   * `[ ]`   `JobContext.mock.ts`
-      * `[ ]`   Two owned object types take the four symbols each, production-named: `JobContextParamsOverrides` as `Partial<JobContextParams>`, `buildJobContextParams`, `JobContextParamsCorruptions` as `{ [K in keyof JobContextParams]?: unknown }`, `invalidateJobContextParams` returning `unknown`; and the same quartet for `IJobContext`.
-      * `[ ]`   `buildJobContextParams` supplies a default for every member and returns `overrides ? { ...base, ...overrides } : base`. The eight unbound-implementation members default to production-typed functions returning that module's own built success value; `textSplitter` defaults to a production-typed `ITextSplitter`; `constructStoragePath` to a production-typed function returning a default `ConstructedPath`; `tokenizerDeps` to a `CountTokensDeps` whose members are the mock tokenizer closures; `netlifyQueueUrl`, `netlifyApiKey` to strings; `apiKeyForProvider` to a production-typed function. Every RAG default — `ragService`, `indexingService`, `embeddingClient` — is deleted with its member.
-      * `[ ]`   `buildIJobContext` composes `buildJobContextParams` and maps it member for member, dropping the three RAG assignments and the seven `saveResponse` assignments, keeping the bound types on `prepareModelJob`, `gatherArtifacts` and `enqueueModelCall`, and assigning `retryJob` the bound form. `buildJobContextParams` defaults `retryJob` to the canonical `mockRetryJob` imported from `retryJob.mock.ts`, and drops its `continueJob`, `resolveFinishReason`, `isIntermediateChunk`, `determineContinuation`, `buildUploadContext`, `sanitizeJsonContent` and `debitTokens` defaults with their members.
-      * `[ ]`   The imported types this file builds — the context slices — take their builders from their owners: `buildIPlanJobContext` and `buildIRenderJobContext` stay, and `buildPrepareModelJobDeps` is imported from `prepareModelJob.mock.ts` rather than re-declared here.
-      * `[ ]`   Deleted: `createMockJobContextParams` with its hand-rolled overrides type, `createMockRootContext`, `buildIPrepareModelJobContext`, `createCompressPromptFn` and `createCalculateAffordabilityFn` with their `recordedCompressDeps`, `recordedAffordabilityDeps` and `recordedAffordabilityParams` arrays, `createContractCalculateAffordabilityFnThatCallsCompressPrompt`, `createMockBoundEnqueueModelCall`, `createMockBoundEnqueueRenderJob`, `createMockBoundGatherArtifacts`, and the `MockRagService`, `MockIndexingService` and `createJobContext` imports. A test needing recorded arguments wraps a production-typed function with the runner's spy facility at its own call site.
-
-   * `[ ]`   _shared/utils/type-guards/`type_guards.dialectic.test.ts`
-      * `[ ]`   A case checklist per guard this node adds, its fixtures drawn from `dialectic.mock.ts`'s builders and invalidators and never hand-rolled: the builder's valid default accepted; valid overrides accepted; `null`, `undefined`, a primitive and an array rejected; each property corrupted in turn rejected; each required property omitted by rest-destructure rejected.
-      * `[ ]`   The seven return-flavor guards are proven to discriminate rather than merely to accept: `isProcessSimpleJobDispatchedReturn` accepts `buildProcessSimpleJobDispatchedReturn()` and rejects both `buildProcessSimpleJobDeferredReturn()` and `buildProcessSimpleJobErrorReturn()`, and each of the other six rejects every flavor but its own. Arranged in one file so a collapsed discriminant fails an assertion.
-      * `[ ]`   `isProcessSimpleJobSuccessReturn` accepts both success flavors and rejects the error arm.
-      * `[ ]`   Each payload guard is proven to reject a row carrying another arm's payload: `isProcessSimpleJobPayload` rejects a row built with `buildDialecticPlanJobPayload()`, and `isProcessComplexJobPayload` rejects one built with `buildDialecticExecuteJobPayload()`.
-      * `[ ]`   `isDialecticJobRow` takes its own checklist over `buildDialecticJobRow` and `invalidateDialecticJobRow`, one corrupted case per column it checks and one omitted case per required column.
-      * `[ ]`   No foreign guard is tested here: `isDialecticExecuteJobPayload`, `isDialecticPlanJobPayload` and `isDialecticBaseJobPayload` are exercised only indirectly, through the corrupted-property cases of the guards that delegate to them.
-      * `[ ]`   Every existing case in this file keeps its arrangement and its assertions.
-
-   * `[ ]`   _shared/utils/type-guards/`type_guards.dialectic.ts`
-      * `[ ]`   Fifteen guards are added: `isDialecticJobRow`, `isProcessSimpleJobParams`, `isProcessComplexJobParams`, `isProcessRenderJobParams`, `isProcessSimpleJobPayload`, `isProcessComplexJobPayload`, `isProcessRenderJobPayload`, `isProcessSimpleJobDispatchedReturn`, `isProcessSimpleJobDeferredReturn`, `isProcessSimpleJobSuccessReturn`, `isProcessSimpleJobErrorReturn`, `isProcessComplexJobSuccessReturn`, `isProcessComplexJobErrorReturn`, `isProcessRenderJobSuccessReturn` and `isProcessRenderJobErrorReturn` — one per type this node declares, less the three top-level `Return` unions.
-      * `[ ]`   `isDialecticJobRow` checks `isRecord` and every column of the row: `id`, `session_id`, `user_id`, `stage_slug`, `status`, `attempt_count`, `max_retries`, `iteration_number` and `created_at` present and of their declared type; `job_type`, `parent_job_id`, `prerequisite_job_id`, `target_contribution_id`, `idempotency_key`, `started_at`, `completed_at`, `error_details` and `results` present and either null or of their declared type; `payload` present. It is written here because `DialecticJobRow` is aliased in `dialectic-service/dialectic.interface.ts`, whose guards this file holds, and because the three payload guards below cannot check their row property without it.
-      * `[ ]`   Each params guard checks `isRecord` and that `dbClient` is present and an object, the same single-member check `isPrepareModelJobParams` makes.
-      * `[ ]`   Each payload guard checks `isRecord`, calls `isDialecticJobRow` on `job`, and delegates that row's `payload` to the guard that owns the arm — `isDialecticExecuteJobPayload` for the simple payload and `isDialecticPlanJobPayload` for the complex one, both already exported from this file. `isProcessRenderJobPayload` stops at `isDialecticJobRow`, its declared row carrying no narrowed arm. No arm's member checks are inlined at a delegation site.
-      * `[ ]`   Every return guard is a boolean discriminant check and throws nothing: each flavor guard tests its own literal member and rejects the others', each error guard tests that `error` is an `Error` and `retriable` a boolean, and `isProcessSimpleJobSuccessReturn` returns true for either flavor and false otherwise. These select a branch in the runner and in `processJob`, and a guard that throws cannot select a branch.
-      * `[ ]`   No guard is written for `ProcessSimpleJobReturn`, `ProcessComplexJobReturn` or `ProcessRenderJobReturn`: a consumer discriminates the two arms with the arm guards above, as it does for `PrepareModelJobReturn`, which declares no union guard either.
-      * `[ ]`   Every existing guard in this file is unchanged.
-
-   * `[ ]`   `JobContext.guard.test.ts`
-      * `[ ]`   The `isIRagContext` describe block is deleted with the guard it proved.
-      * `[ ]`   The `isIPrepareModelJobContext` describe block is deleted; the shape it checked is `PrepareModelJobDeps`, proven by `isPrepareModelJobDeps` in the `prepareModelJob` module's own guard test.
-      * `[ ]`   The `isISaveResponseContext` describe block is deleted with the guard it proved.
-      * `[ ]`   The `isIJobContext` case checklist drops its `ragService`, `indexingService`, `embeddingClient`, `continueJob`, `resolveFinishReason`, `isIntermediateChunk`, `determineContinuation`, `buildUploadContext`, `sanitizeJsonContent` and `debitTokens` cases, and gains a case asserting a root carrying none of the ten is accepted. Its remaining per-member absent and wrong-typed cases stand, `retryJob`'s among them, and its fixtures are drawn from `buildIJobContext` and `invalidateIJobContext`.
-      * `[ ]`   The `isILoggerContext`, `isIFileContext`, `isIModelContext`, `isITokenContext`, `isINotificationContext`, `isIPlanJobContext` and `isIRenderJobContext` blocks are unchanged.
-
-   * `[ ]`   `JobContext.guard.ts`
-      * `[ ]`   `isIRagContext` is deleted, with the `IRagContext` import.
-      * `[ ]`   `isIPrepareModelJobContext` is deleted, with the `IPrepareModelJobContext` import.
-      * `[ ]`   `isISaveResponseContext` is deleted, with the `ISaveResponseContext` import.
-      * `[ ]`   `isIJobContext` drops its `ragService`, `indexingService`, `embeddingClient`, `continueJob`, `resolveFinishReason`, `isIntermediateChunk`, `determineContinuation`, `buildUploadContext`, `sanitizeJsonContent` and `debitTokens` checks; its `retryJob` function check and every other check, and its delegation to `isIPlanJobContext` and `isIRenderJobContext`, are unchanged.
-      * `[ ]`   `isILoggerContext`, `isIFileContext`, `isIModelContext`, `isITokenContext`, `isINotificationContext`, `isIPlanJobContext` and `isIRenderJobContext` are unchanged.
-
-   * `[ ]`   `createJobContext.test.ts`
-      * `[ ]`   Every case builds params through `buildJobContextParams`, overriding only the members it asserts on. The `createMockJobContextParams` import is replaced.
-      * `[ ]`   The `createPrepareModelJobContext` describe blocks are restated against the one-argument slicer: a case asserts the returned object carries the eight `PrepareModelJobDeps` members mapped from the root — `logger`, `applyInputsRequiredScope`, `tokenWalletService` from `root.userTokenWalletService`, `validateWalletBalance`, `validateModelCostRates`, `calculateAffordability`, `enqueueModelCall`, `compressPrompt`; a case asserts `ragService`, `embeddingClient`, `countTokens`, `pickLatest`, `downloadFromStorage`, `fileManager`, `continueJob`, `retryJob`, `notificationService` and `prepareModelJob` are each absent from it.
-      * `[ ]`   New case: `createJobContext` returns a `prepareModelJob` that is not the `params.prepareModelJob` it was given — the factory bound it — and invoking it passes the unbound implementation a deps object carrying exactly the eight `PrepareModelJobDeps` members. Arranged with a production-typed `PrepareModelJobFn` the case declares and wraps in a spy, so the assertion fails if the factory copies instead of binds.
-      * `[ ]`   New case: invoking `root.prepareModelJob` reaches `params.calculateAffordability` with a three-member deps object carrying `logger`, `countTokens` and `getMaxOutputTokens` and no `compressPrompt`, and reaches `params.compressPrompt` with a six-member deps object carrying `logger`, `getSortedCompressionCandidates`, `enqueueCompressJobs`, `constructStoragePath`, `downloadFromStorage` and `countTokens` and no `ragService`, `embeddingClient` or `tokenWalletService`. Both collaborators are production-typed functions the case declares and spies on, asserted in one file so a collapsed binding fails an assertion.
-      * `[ ]`   New case: the deps object reaching `params.compressPrompt` carries a `getSortedCompressionCandidates` that, when invoked, calls `params.getSortedCompressionCandidates` with a deps object whose `countTokens` is the bound two-argument form — invoking it with a payload and a model config reaches `params.countTokens` with `params.tokenizerDeps` as its first argument.
-      * `[ ]`   New case: the deps object reaching `params.compressPrompt` carries an `enqueueCompressJobs` that, when invoked, calls `params.enqueueCompressJobs` with a deps object carrying `logger`, `textSplitter`, `countTokens` and `constructStoragePath`.
-      * `[ ]`   New case: `root.gatherArtifacts` is bound, not copied, and invoking it passes `params.gatherArtifacts` a deps object carrying `logger`, `pickLatest`, `downloadFromStorage` and an `applyCompressionOverlay` that delegates to `params.applyCompressionOverlay` with a `logger` and `downloadFromStorage` deps object.
-      * `[ ]`   New case: `root.enqueueModelCall` is bound, not copied, and invoking it passes `params.enqueueModelCall` a deps object carrying `logger`, `netlifyQueueUrl`, `netlifyApiKey`, `apiKeyForProvider` and `computeJobSig`.
-      * `[ ]`   New case: two calls to `root.prepareModelJob` reach `params.compressPrompt` with the same `getSortedCompressionCandidates` and `enqueueCompressJobs` function identities — the graph is constructed once per root, not once per invocation.
-      * `[ ]`   New case: `createJobContext(buildJobContextParams())` returns an object on which `'ragService' in result`, `'indexingService' in result` and `'embeddingClient' in result` are each false.
-      * `[ ]`   New case: `root.retryJob` is bound, not copied, and invoking it passes `params.retryJob` a deps object carrying `logger` and `notificationService`.
-      * `[ ]`   The existing cases for `getSeedPromptForStage`, `computeJobSig`, `isIJobContext`, `createPlanJobContext` and `createRenderJobContext` keep their arrangements and assertions, less the retired members.
-      * `[ ]`   Deleted with the behavior they proved: the `createSaveResponseContext` case, the `sanitizeJsonContent` case, the case asserting `result.prepareModelJob` equals the params override, the case asserting `result.enqueueModelCall` equals the params override, the `calculateAffordability delegates … with compressPrompt bound from root` case and its `recordedCompressDeps` assertions over `ragService`, `embeddingClient` and `tokenWalletService`, and the `TypeScript assignment fails if pickLatest or downloadFromStorage are supplied to IPrepareModelJobContext` case with its three `as unknown as` casts.
-
-   * `[ ]`   `construction`
-      * `[ ]`   `createJobContext` is the worker's single deps-object assembler: one exported factory function taking one typed `JobContextParams` and returning a fully constructed `IJobContext`. No class, no partially constructed instance, no optional field, no default value — every member is set explicitly from a params member or from a closure built in this file.
-      * `[ ]`   The three surviving slicers stay pure projections of a constructed root: each takes `root: IJobContext` and returns a narrower object, and none constructs a service, reads an environment variable or performs I/O.
-      * `[ ]`   Binding is one-shot per root. Every closure is constructed in the factory body before the return literal, so no consumer can observe a half-built graph and no call site can construct a second one.
-
-   * `[ ]`   `createJobContext.ts`
-      * `[ ]`   `createJobContext` gains the nine bound-closure constructions in the `interaction.spec`'s order ahead of its return, and its returned literal assigns `prepareModelJob`, `gatherArtifacts` and `enqueueModelCall` from those closures. The `// From IRagContext` block loses `ragService`, `indexingService` and `embeddingClient` and keeps `countTokens`; every other assignment in the literal is untouched.
-      * `[ ]`   `createPrepareModelJobContext` drops its `boundEnqueueModelCall`, `compressPromptFn` and `calculateAffordabilityFn` parameters and its two inline binding closures, takes `root: IJobContext` alone, returns `PrepareModelJobDeps`, and maps the eight members from the root.
-      * `[ ]`   Deleted imports: `IPrepareModelJobContext`, `CompressPromptFn`, `BoundCompressPromptFn`, `CalculateAffordabilityFn` and `BoundCalculateAffordabilityFn` where they served the retired parameters. Added imports: `PrepareModelJobDeps`, and the deps types and bound function types named in the `deps` element.
-      * `[ ]`   `createSaveResponseContext` is deleted, with the `ISaveResponseContext`, `BoundEnqueueRenderJobFn` and `BoundDebitTokens` imports it required. `createPlanJobContext` and `createRenderJobContext` are unchanged, statement for statement.
-
-   * `[ ]`   `createJobContext.integration.test.ts`
-      * `[ ]`   Its root-context assertion case drops the `ragService`, `indexingService` and `embeddingClient` equality assertions and the `prepareModelJob` equality assertion, which no longer holds now that the factory binds rather than copies; every other member equality assertion stands.
-      * `[ ]`   Its `createPrepareModelJobContext` cases call the one-argument slicer and assert against `PrepareModelJobDeps` rather than a deleted slice type.
-      * `[ ]`   The chain this suite proves is the real one this factory now assembles: real `createJobContext` → real `prepareModelJob` → real `calculateAffordability` and real `compressPrompt` → real `getSortedCompressionCandidates` and real `enqueueCompressJobs`, with only the Supabase client and the queue POST mocked. No repo-owned function in that chain is mocked, stubbed or replaced by a builder.
-      * `[ ]`   A case drives a within-budget working set through that chain and asserts the queue receives one POST; a case drives an over-budget EXECUTE working set and asserts COMPRESS rows are inserted and the dispatcher returns the deferral, having called no RAG collaborator because none exists to call.
-      * `[ ]`   The `getSortedCompressionCandidates` import replaces the `getSortedCompressionCandidates`-from-`vector_utils.ts` import with the `vector_utils.provides.ts` one, and the `compressPrompt`, `calculateAffordability`, `prepareModelJob` and `enqueueModelCall` implementation imports move to their modules' `provides` barrels.
-      * `[ ]`   Its existing `createPlanJobContext` and `createRenderJobContext` structural assertions are unchanged.
-
-   * `[ ]`   `directionality`
-      * `[ ]`   Deps face inward: this module imports the unbound function types and deps types of the worker modules it assembles and the shared type surfaces they require, and exports the context contracts, their guards, their mock and the factory outward to `dialectic-worker/index.ts`, `processJob.ts` and the job-type processors.
-      * `[ ]`   The RAG edges are severed here: after this node no file in this module imports from `rag_service` or `indexing_service`, which is what lets those files be deleted in the RAG-removal node without a further edit to this module.
-      * `[ ]`   No cycle: every module this factory binds is imported by it and imports nothing from it except the three pure function types `prepareModelJob.interface.ts` already takes from `JobContext.interface.ts`, which are declarations with no runtime edge.
-      * `[ ]`   This module has no `provides` barrel; consumers import its interface, guard, mock and implementation directly, as they do now.
-
-   * `[ ]`   `requirements`
-      * `[ ]`   `JobContextParams` declares forty-five members with the three RAG members and the seven `saveResponse` members absent and the eight unbound implementations present — interface test, exhaustive key record.
-      * `[ ]`   `IJobContext` declares twenty-nine members with the three RAG members and the seven `saveResponse` members absent — interface test, exhaustive key record.
-      * `[ ]`   `IRagContext`, `isIRagContext`, `IPrepareModelJobContext`, `isIPrepareModelJobContext`, `ISaveResponseContext`, `isISaveResponseContext` and `createSaveResponseContext` do not exist — interface test, guard test and unit test, by the deletion of every case that named them.
-      * `[ ]`   `JobContextParams.retryJob` is a `RetryJobFn` and `IJobContext.retryJob` is a `BoundRetryJobFn`, and no six-positional retry type is declared in this module — interface test, typed assignment.
-      * `[ ]`   `root.retryJob` is a closure the factory built, and invoking it passes `params.retryJob` a two-member deps object — unit test, identity and captured-argument assertions.
-      * `[ ]`   `ProcessSimpleJobFn`, `ProcessComplexJobFn` and `ProcessRenderJobFn` each take three arguments and return a two-arm union whose success arm carries that processor's own flavors — interface test, typed assignment and exhaustive key records over each params and payload.
-      * `[ ]`   `createPrepareModelJobContext` takes one argument and returns `PrepareModelJobDeps` carrying exactly eight members — interface test, typed assignment; unit test, membership assertions.
-      * `[ ]`   `root.prepareModelJob`, `root.gatherArtifacts` and `root.enqueueModelCall` are each a closure the factory built, not the params member it was given — unit test, identity assertions.
-      * `[ ]`   `params.compressPrompt` receives a six-member deps object carrying no `ragService`, `embeddingClient` or `tokenWalletService`, and `params.calculateAffordability` receives a three-member deps object carrying no `compressPrompt` — unit test, captured-argument assertions.
-      * `[ ]`   `params.getSortedCompressionCandidates` receives a `countTokens` in the bound two-argument form, and invoking it reaches `params.countTokens` with `params.tokenizerDeps` — unit test, captured-argument assertions.
-      * `[ ]`   `params.enqueueCompressJobs`, `params.applyCompressionOverlay` and `params.enqueueModelCall` each receive exactly the deps object their own interface declares — unit test, captured-argument assertions.
-      * `[ ]`   One root constructs each bound closure once, so two invocations reach the same function identities — unit test.
-      * `[ ]`   Every owned object type has a `Partial<T>`-overrides builder and an `unknown`-returning invalidator, and no mock carries an options bag, a call-recording array or a configurable factory — guard test, whose fixtures are drawn from them.
-      * `[ ]`   Each of the thirteen processor params, payload and return-flavor types carries its four mock symbols, each of the three processor function types carries one function mock, and no `any` remains in `_JobProcessorsDummyImpl` — proven by the compiler: every builder is annotated with its production type, every invalidator returns `unknown`, and every function mock is annotated with its production function type.
-      * `[ ]`   Every type this node declares, less the three top-level `Return` unions, has a guard, and `DialecticJobRow` has one the three payload guards call — guard test, the case checklist per guard.
-      * `[ ]`   Each return-flavor guard accepts its own flavor and rejects every other, and each throws nothing — guard test, cross-flavor rejection cases in one file.
-      * `[ ]`   Each payload guard rejects a row carrying another arm's payload, and no arm's member checks are inlined at a delegation site — guard test, cross-arm rejection cases.
-      * `[ ]`   The full graph assembles and runs end to end with only Supabase and the queue mocked — integration test.
+      * `[✅]`   Change `defaultDeps.countTokens` from `countTokens: countTokens,` to `countTokens: boundCountTokens,`.
+      * `[✅]`   Import `BoundCountTokensFn` from `_shared/types/tokenizer.types.ts` (type-only import alongside `CountTokensDeps`).
+      * `[✅]`   No other change. All behavior, error paths, CORS handling, auth, DELETE, and streaming are preserved.
+
+   * `[✅]`   chat/`index.provides.ts`
+      * `[✅]`   If a provides file exists, no change is needed — the public surface re-exports from `index.ts` and `index.interface.ts`, and the type change propagates automatically. If no provides file exists, do not create one; the composition root is consumed by `serve()` internally, not by external modules.
+
+   * `[✅]`   `directionality`
+      * `[✅]`   Layer: app-layer chat composition root (`chat/`). Deps inward: `BoundCountTokensFn` and `CountTokensDeps` from `_shared/types/tokenizer.types.ts` replace `CountTokensFn`; `countTokensAnthropic` from `npm:@anthropic-ai/tokenizer@0.0.4`; `rawGetEncoding` from `npm:js-tiktoken@1.0.7`; `isKnownTiktokenEncoding` from `_shared/utils/type-guards/type_guards.chat.ts`; `countTokens` from `_shared/utils/tokenizer_utils.ts` (existing). Provides outward: `ChatDeps.countTokens` is now `BoundCountTokensFn`, consumed by `streamRequest` via `streamDeps` assembly.
+      * `[✅]`   No reverse dependencies, no lateral layer violations, no cycles.
+
+   * `[✅]`   `requirements`
+      * `[✅]`   `ChatDeps.countTokens` is typed `BoundCountTokensFn`, not `CountTokensFn`.
+      * `[✅]`   `defaultDeps.countTokens` is a closure that binds real `CountTokensDeps` — guarded `getEncoding`, real `countTokensAnthropic`, real `logger` — and calls the unbound `countTokens` with those deps as the first argument.
+      * `[✅]`   The `CountTokensFn` import no longer appears in `index.interface.ts`.
+      * `[✅]`   No line of `handler()`, `createChatServiceHandler()`, or `serve()` is changed.
+      * `[✅]`   The `streamDeps.countTokens = deps.countTokens` pass-through compiles because `StreamRequestDeps.countTokens` is `BoundCountTokensFn`.
+      * `[✅]`   All existing unit test cases pass with the updated mock (two-argument function instead of three).
+      * `[✅]`   The binding pattern matches the existing `processJob.ts` composition root — guarded `getEncoding`, real `countTokensAnthropic`, real `logger`.
+
+* `[✅]`   supabase/functions/dialectic-worker/prepareModelJob/prepareModelJob.ts **[BE] Become the single model-call dispatcher: select the arm on the job row's `job_type` and narrow with that arm's guard, compose `calculateAffordability` with `compressPrompt`, branch the recursion guard on the same column, move `job` and `providerRow` to payload, eliminate `projectOwnerUserId` (KVP dup of `job.user_id`), drop `sessionData`/`authToken` and `compressionStrategy`, write `source_prompt_resource_id` onto the job payload before enqueue, and propagate the deferral as `PrepareModelJobPendingReturn`**
+
+   * `[✅]`   `objective`
+      * `[✅]`   Solve a dispatcher that only dispatches for one job type. Every model call the repo makes should resolve the same tier cap from `user_subscriptions`, read the same wallet balance and pass the same affordability preflight, and today only an EXECUTE job reaches that path: `processCompressJob` builds its own `ChatApiRequest`, counts its own preflight tokens and calls `enqueueModelCall` itself, so a COMPRESS call is governed by neither the tier cap nor the wallet check. Compression, affordability and dispatch are also fused — the over-budget remedy is taken inside `calculateAffordability`, which is why decision one's recursion guard has nowhere to sit except in whichever collaborator a caller withholds.
+      * `[✅]`   Solve a payload proven by the wrong guard. The function reads `sessionId`, `projectId`, `model_id`, `walletId`, `stageSlug`, `iterationNumber`, `user_jwt`, `maxOutputTokens`, `continueUntilComplete` and `target_contribution_id`, and narrowing with the base guard leaves five of them optional and admits the empty string on four more, so hand-written presence-and-blank throws stand in for the check the guard should have made.
+      * `[✅]`   Functional goals:
+         * `[✅]`   The arm is selected by the job row's `job_type` column and the payload is narrowed by that arm's guard — `isDialecticExecuteJobPayload` for `'EXECUTE'`, `isDialecticCompressJobPayload` for `'COMPRESS'` — one selection, at entry, ahead of every read.
+         * `[✅]`   `stageSlug`, `iterationNumber`, `sessionId`, `projectId`, `model_id` and `walletId` are proven by the arm guard, so the six hand-written throws that validate them are deleted and no member validation remains in the body.
+         * `[✅]`   `PrepareModelJobParams` declares `dbClient` only. `job` and `providerRow` are data objects that belong in payload; `projectOwnerUserId` is a KVP duplicate of `payload.job.user_id`; `sessionData` and `authToken` are retired.
+         * `[✅]`   `PrepareModelJobPayload` declares `job`, `providerRow`, `promptConstructionPayload`, `inputsRelevance?` and `inputsRequired?`, and no `compressionStrategy`.
+         * `[✅]`   `PrepareModelJobDeps` gains `compressPrompt: BoundCompressPromptFn` beside `calculateAffordability`, so this function composes the two rather than letting one own the other.
+         * `[✅]`   `tokenWalletService` is a required member of `PrepareModelJobDeps`, so the body performs no presence check on it.
+         * `[✅]`   The return has exactly two arms. `PrepareModelJobSuccessReturn` is the union of `PrepareModelJobQueuedReturn { queued: true }` and `PrepareModelJobPendingReturn { waiting_for_children: true }`; `PrepareModelJobReturn` is that arm plus `PrepareModelJobErrorReturn`.
+         * `[✅]`   On an over-budget verdict the function branches on `payload.job.job_type`: `'EXECUTE'` calls `deps.compressPrompt` and returns the pending flavor; `'COMPRESS'` returns a non-retriable error naming the recursion guard, and calls no collaborator.
+         * `[✅]`   Nothing passed to `deps.enqueueModelCall` names an artifact type, that parameter having left `EnqueueModelCallParams`.
+         * `[✅]`   After affordability resolves within budget and before the enqueue, the function writes `source_prompt_resource_id` from `payload.promptConstructionPayload` onto the job row's own payload, and omits it from `ChatApiRequest`. A failed write returns the error arm.
+         * `[✅]`   `prepareModelJob.mock.ts` carries the four symbols owed to each owned object type and one function mock per owned function type, in the forms `mocks.md` prescribes.
+      * `[✅]`   Non-functional constraints:
+         * `[✅]`   The tier-cap read, the effective-cap arithmetic over `maxOutputTokens`, the provider-config validation, the resource-document scoping and the `inputsRequired` enforcement keep their current behavior, messages and log lines.
+         * `[✅]`   The wallet read through `deps.tokenWalletService.getBalance`, `deps.validateWalletBalance` and `deps.validateModelCostRates` run exactly where they run now, for every job type.
+         * `[✅]`   Every existing error message, `retriable` flag and thrown-then-caught path keeps its text and classification except where this node deletes the branch that raised it.
+         * `[✅]`   The function keeps its `(deps, params, payload)` shape. `payload.job.payload` arrives as row data and is narrowed on entry by the arm guard, which throws its own per-member diagnostic; the surrounding `try` converts that throw to the error arm as it already does for every other throw in this body.
+      * `[✅]`   Each goal is proven by a named case in this node's interface test, guard test, unit test, inputsRequired test or integration test.
+
+   * `[✅]`   `role`
+      * `[✅]`   Node role is app-layer dispatch: given a job row and an assembled prompt, resolve the caps and the money, decide what an over-budget request warrants from what kind of job it is, and hand exactly one model call to the transport.
+      * `[✅]`   The role is correct because this is the one place that holds both the job row and the assembled prompt. The row carries `job_type`, which is the authoritative record of what a job is, so both the payload arm and the recursion guard are read from a fact rather than inferred from a missing collaborator — and every model call passing through one function is what makes the tier cap, the wallet read and the affordability preflight single-sourced.
+      * `[✅]`   Out-of-scope responsibilities:
+         * `[✅]`   Do not decide whether a request is affordable; `calculateAffordability` returns that verdict and this function composes it.
+         * `[✅]`   Do not select victims, size chunks, spawn COMPRESS children or set the parent's status; `compressPrompt` owns all of it, and this function propagates its outcome.
+         * `[✅]`   Do not name an artifact type at dispatch, reintroduce `output_type` in any form, or decide what the response becomes; that is `saveResponse`'s from the row's `job_type`.
+         * `[✅]`   Do not change the tier-cap query, the cap arithmetic, the document scoping or the `inputsRequired` rules.
+
+   * `[✅]`   `module`
+      * `[✅]`   Bounded context is `supabase/functions/dialectic-worker/prepareModelJob` — cap resolution, wallet and rate resolution, the affordability composition, the over-budget branch, the prompt-provenance write, and the single call to the model-call transport.
+      * `[✅]`   Inside boundary:
+         * `[✅]`   What every model call must satisfy before it is dispatched, for every job type.
+         * `[✅]`   What an over-budget request warrants, read from the job row's `job_type`.
+         * `[✅]`   Which prompt produced the call, recorded on the job row before the call is made.
+      * `[✅]`   Outside boundary:
+         * `[✅]`   The affordability arithmetic, owned by `calculateAffordability`.
+         * `[✅]`   The compression machine, owned by `compressPrompt`.
+         * `[✅]`   The queue POST and the row's `queued` status, owned by `enqueueModelCall`.
+         * `[✅]`   What the response becomes, owned by `saveResponse`.
+
+   * `[✅]`   `deps`
+      * `[✅]`   Provider: `../compressPrompt/compressPrompt.provides.ts` (`BoundCompressPromptFn`, `isCompressPromptErrorReturn`, and `CompressPromptParams`/`CompressPromptPayload` in the implementation) — the module's only public surface, which that node's `provides` element publishes.
+         * `[✅]`   Layer classification: sibling app-layer module.
+         * `[✅]`   Direction: inbound, and new to this file — the edge moves here from `calculateAffordability`, which closed it in the node above, so the repo gains no edge it did not have.
+         * `[✅]`   Purpose: make an over-budget EXECUTE working set fit, as a deferral this function propagates.
+      * `[✅]`   Provider: `_shared/utils/type-guards/type_guards.dialectic.ts` (`isDialecticExecuteJobPayload`).
+         * `[✅]`   Layer classification: shared runtime boundary.
+         * `[✅]`   Direction: inbound from `_shared`.
+         * `[✅]`   Purpose: narrow the row's payload on the EXECUTE arm and surface its per-member diagnostic on failure.
+      * `[✅]`   Provider: `../enqueueCompressJobs/enqueueCompressJobs.provides.ts` (`isDialecticCompressJobPayload`).
+         * `[✅]`   Layer classification: sibling app-layer module that owns the COMPRESS payload and its guard.
+         * `[✅]`   Direction: inbound; this module already imports `BoundCompressPromptFn` from a sibling in the same layer.
+         * `[✅]`   Purpose: narrow the row's payload on the COMPRESS arm.
+      * `[✅]`   Removed provider: `_shared/utils/vector_utils.interface.ts` (`ICompressionStrategy`) and `dialectic-service/dialectic.interface.ts` (`DialecticSessionRow`) in the interface, the guard and the implementation, with the members they typed.
+      * `[✅]`   Confirm:
+         * `[✅]`   `calculateAffordability` stays on deps and is called on every path; `enqueueModelCall`, `tokenWalletService`, `validateWalletBalance`, `validateModelCostRates`, `applyInputsRequiredScope` and `logger` are unchanged.
+         * `[✅]`   No reverse dependency: neither `compressPrompt` nor `calculateAffordability` imports this module.
+      * `[✅]`   `context_slice`
+         * `[✅]`   From `compressPrompt`: the bound function type and its error-return guard only.
+         * `[✅]`   From the shared guard module: the EXECUTE payload guard only.
+         * `[✅]`   From `enqueueCompressJobs`: the COMPRESS payload guard only.
+
+   * `[✅]`   `prepareModelJob.interface.test.ts`
+      * `[✅]`   A case proves the deps surface exhaustively: `Record<keyof PrepareModelJobDeps, true>` over `logger`, `applyInputsRequiredScope`, `tokenWalletService`, `validateWalletBalance`, `validateModelCostRates`, `calculateAffordability`, `enqueueModelCall`, `compressPrompt`, asserting eight.
+      * `[✅]`   A case proves the params surface the same way over `dbClient`, asserting one — exhaustive in both directions, it is the proof `job`, `projectOwnerUserId`, `providerRow`, `authToken` and `sessionData` are gone.
+      * `[✅]`   A case proves the payload surface the same way over `job`, `providerRow`, `promptConstructionPayload`, `inputsRelevance` and `inputsRequired`, asserting five — proving `compressionStrategy` is not a member and `job`/`providerRow` are here rather than on params.
+      * `[✅]`   A case proves the two-arm return by typed assignment: a `PrepareModelJobQueuedReturn` value and a `PrepareModelJobPendingReturn` value each assign to `PrepareModelJobSuccessReturn`, that assigns to `PrepareModelJobReturn`, and a `PrepareModelJobErrorReturn` value assigns to `PrepareModelJobReturn`.
+      * `[✅]`   A case proves each flavor's members by typed literal: `{ queued: true }` and `{ waiting_for_children: true }`, neither carrying the other's discriminant.
+      * `[✅]`   A case proves `PrepareModelJobFn` accepts the narrowed deps, params and payload and returns `Promise<PrepareModelJobReturn>`; the `PrepareModelJobExecutionError` case is unchanged.
+
+   * `[✅]`   `prepareModelJob.interface.ts`
+      * `[✅]`   `PrepareModelJobDeps` gains `compressPrompt: BoundCompressPromptFn`, imported from `../compressPrompt/compressPrompt.provides.ts`, and declares `tokenWalletService` required.
+      * `[✅]`   `PrepareModelJobParams` drops `job`, `projectOwnerUserId`, `providerRow`, `authToken` and `sessionData`, and the `DialecticJobRow`, `DialecticSessionRow` and `Tables` imports those members required. Surviving member: `dbClient: SupabaseClient<Database>`.
+      * `[✅]`   `PrepareModelJobPayload` drops `compressionStrategy` and the `ICompressionStrategy` import; gains `job: DialecticJobRow` and `providerRow: Tables<'ai_providers'>` (moved from params). `DialecticJobRow` is imported from `dialectic-service/dialectic.interface.ts`; `Tables` stays imported from `types_db.ts`.
+      * `[✅]`   `PrepareModelJobSuccessReturn` becomes the union of `PrepareModelJobQueuedReturn { queued: true }` and `PrepareModelJobPendingReturn { waiting_for_children: true }`, both declared here; `PrepareModelJobReturn` is `PrepareModelJobSuccessReturn | PrepareModelJobErrorReturn`.
+      * `[✅]`   `PrepareModelJobErrorReturn`, `PrepareModelJobFn` and `PrepareModelJobExecutionError` are unchanged.
+
+   * `[✅]`   dialectic-service/`dialectic.interface.ts`
+      * `[✅]`   `DialecticExecuteJobPayload` redeclares `stageSlug` and `iterationNumber` as required, narrowing the two members `GenerateContributionsPayload` declares optional and `DialecticBaseJobPayload` inherits, so a value narrowed by the EXECUTE guard carries both without a use-site presence test.
+
+   * `[✅]`   `prepareModelJob.interaction.spec`
+      * `[✅]`   Entry: the `user_subscriptions` → `tier_definitions(output_cap_tokens)` read for `payload.job.user_id`. A Postgrest error → log `[prepareModelJob] Failed to load tier output cap` and return `{ error: pgErr, retriable: true }`.
+      * `[✅]`   Arm selection and narrowing, on `payload.job.job_type`, ahead of every payload read. `'EXECUTE'` declares a `DialecticExecuteJobPayload` local and narrows with `isDialecticExecuteJobPayload`; `'COMPRESS'` declares a `DialecticCompressJobPayload` local and narrows with `isDialecticCompressJobPayload`. Each narrowing takes the repo's landed form — the target-typed local, a `try`, the guard inside `if (!guard(payload.job.payload))` whose body is unreachable because the guard throws, and the assignment on the line below; copy `continueJob.ts`'s COMPRESS narrowing block. The throw carries a per-member diagnostic which the enclosing `try` converts to `{ error, retriable: false }`. The hand-thrown `Job … does not have a valid 'execute' payload.` is deleted, as is the `Object.getOwnPropertyDescriptor` read of `user_jwt` and its `payload.user_jwt required` throw.
+      * `[✅]`   Cap resolution: the tier cap and the narrowed payload's `maxOutputTokens` combine by `Math.min` when both are present, the user value stands when the tier cap is null, and the result becomes `userConfig.tier_output_cap_tokens`, logged as it is now.
+      * `[✅]`   Member validation: none. `stageSlug`, `walletId`, `iterationNumber`, `projectId`, `sessionId` and `model_id` are read from the narrowed payload, their six presence-and-blank throws and the diagnostic log block that precedes them deleted with the checks they described.
+      * `[✅]`   Provider config: `isAiModelExtendedConfig(payload.providerRow.config)` false → `Model … has invalid or missing configuration.`; otherwise `model_id` is stamped onto the config as it is now.
+      * `[✅]`   Document scoping, unchanged: each `payload.promptConstructionPayload.resourceDocuments` entry is checked with `isResourceDocument`, `deps.applyInputsRequiredScope` scopes them, and each required `inputsRequired` rule with a `document_key` must match a scoped document by `type`, `slug` and `document_key` or throw its existing message.
+      * `[✅]`   Wallet and rates: `deps.tokenWalletService.getBalance(walletId)` through `deps.validateWalletBalance`, then `deps.validateModelCostRates` over the config's two rates. The `Token wallet service is required for affordability preflight` throw is deleted, the member being required on deps.
+      * `[✅]`   Affordability: `deps.calculateAffordability` is called once with params `{ walletBalance, userConfig }` and payload `{ extendedModelConfig, resourceDocuments, conversationHistory, currentUserPrompt, systemInstruction }`. An error return → propagate `{ error, retriable }` unchanged.
+      * `[✅]`   Over-budget branch, selected by the affordability success flavor's `overBudget: true`, within the arm already selected at entry:
+         * `[✅]`   `'COMPRESS'` → return `{ error: <ProcessCompressJob-facing Error naming the recursion guard, the job id and the resolved input token count>, retriable: false }`. No collaborator is called, nothing is written, and the job fails rather than compressing, per decision one.
+         * `[✅]`   `'EXECUTE'` → build `CompressPromptParams` with `{ dbClient: params.dbClient, isContinuationFlowInitial, finalTargetThreshold: affordResult.finalTargetThreshold, balanceAfterCompression: affordResult.balanceAfterCompression, walletBalance }` and `CompressPromptPayload` with `{ parentJob: payload.job, extendedModelConfig, inputsRelevance: payload.inputsRelevance, resourceDocuments, conversationHistory, currentUserPrompt }`. No `compressionStrategy`, `chatApiRequest` or `tokenizerDeps` — the scorer is `compressPrompt`'s own dep, the base request is this function's concern after compression succeeds, and the tokenizer is built by `compressPrompt`'s own implementation. Call `deps.compressPrompt` once.
+         * `[✅]`   `isCompressPromptErrorReturn` → propagate `{ error, retriable }` unchanged.
+         * `[✅]`   Otherwise → return `{ waiting_for_children: true }`. The dispatcher enqueues nothing on this branch: the parent job is waiting on its COMPRESS children, and the completion trigger runs this function again over the overlaid working set. Nothing the compression call returns is read.
+      * `[✅]`   Within-budget branch, selected by `overBudget: false`: `chatApiRequest` is the base request plus `max_tokens_to_generate: affordResult.maxOutputTokens`, and `resolvedInputTokenCount` is the arm's own count.
+      * `[✅]`   Provenance write, on the within-budget branch only, after affordability and before the enqueue: update this job row's `payload` with `source_prompt_resource_id` from `payload.promptConstructionPayload.source_prompt_resource_id`, keyed on `payload.job.id`. A Postgrest error → `{ error, retriable: true }`. The value is not placed on `ChatApiRequest`: the provider can do nothing with it, and the thread it belongs to is internal.
+      * `[✅]`   Dispatch: build `EnqueueModelCallParams` from `params.dbClient`, `payload.job`, `payload.providerRow`, the narrowed payload's `user_jwt` as `userAuthToken`, and `userConfig` — no artifact type — and call `deps.enqueueModelCall` with `{ chatApiRequest, preflightInputTokens: resolvedInputTokenCount }`. An error return → propagate unchanged. Otherwise → `{ queued: true }`.
+      * `[✅]`   Ordering and side effects: one arm selection, one tier-cap read, one wallet read, one affordability call, at most one compression call, at most one provenance write, at most one enqueue. The COMPRESS recursion guard and every validation failure write nothing. The provenance write never happens on a path that does not enqueue.
+      * `[✅]`   The enclosing `try`/`catch` keeps its shape: any throw becomes `{ error, retriable: false }`.
+
+   * `[✅]`   `prepareModelJob.mock.ts`
+      * `[✅]`   Six owned object types, four symbols each, production-named: `PrepareModelJobDepsOverrides` / `buildPrepareModelJobDeps` / `PrepareModelJobDepsCorruptions` / `invalidatePrepareModelJobDeps`, and the same quartet for `PrepareModelJobParams`, `PrepareModelJobPayload`, `PrepareModelJobQueuedReturn`, `PrepareModelJobPendingReturn` and `PrepareModelJobErrorReturn`. Overrides types are `Partial<T>`, corruption types are `{ [K in keyof T]?: unknown }`, invalidators return `unknown`.
+      * `[✅]`   Every builder takes one optional overrides object and returns `overrides ? { ...base, ...overrides } : base`, with a default for every property. `buildPrepareModelJobDeps` defaults `compressPrompt` to `mockBoundCompressPrompt` from the `compressPrompt` module's mock and `calculateAffordability` to `mockBoundCalculateAffordability` from that module's mock — imported builders for imported types, never re-declared here.
+      * `[✅]`   `buildPrepareModelJobParams` supplies `dbClient` only; its `job`, `projectOwnerUserId`, `providerRow`, `authToken` and `sessionData` defaults go with the members. `buildPrepareModelJobPayload` supplies `job`, `providerRow`, `promptConstructionPayload` and no `compressionStrategy`.
+      * `[✅]`   One function mock for the owned function type: `mockPrepareModelJob: PrepareModelJobFn`, returning `buildPrepareModelJobQueuedReturn()`, with an identical signature, no options and no recording.
+      * `[✅]`   Deleted: `mockPrepareModelJobFn` with `MockPrepareModelJobFnOptions` and `MockPrepareModelJobFnCall`, a configurable harness with call recording. A test needing another outcome declares its own `PrepareModelJobFn` composed from these builders.
+      * `[✅]`   `mockDialecticExecuteJobPayload`, `mockDialecticJobRow`, `mockDialecticSessionRow`, `mockPromptConstructionPayload`, `mockTokenWalletRow` and `mockDialecticContributionRow` are used as they stand. Every one builds a type this interface does not own, and each has live consumers.
+
+   * `[✅]`   _shared/utils/type-guards/`type_guards.dialectic.test.ts`
+      * `[✅]`   `isDialecticExecuteJobPayload` gains its checklist for the members this node makes required, fixtures from `buildDialecticExecuteJobPayload` and `invalidateDialecticExecuteJobPayload` in `_shared/dialectic.mock.ts`: each of `sessionId`, `projectId`, `model_id` and `walletId` blank rejected; `stageSlug` absent and non-slug rejected; `iterationNumber` absent, non-numeric and zero rejected; the builder's valid default accepted.
+      * `[✅]`   Every existing case in the file keeps its arrangement, its message assertion and its subject.
+
+   * `[✅]`   _shared/utils/type-guards/`type_guards.dialectic.ts`
+      * `[✅]`   `isDialecticExecuteJobPayload` requires `sessionId`, `projectId`, `model_id` and `walletId` non-empty through `isNonEmptyString`, requires `stageSlug` through `isDialecticStageSlug`, and requires `iterationNumber` to be an integer greater than zero — the members `prepareModelJob` reads and the base guard leaves optional or blank-admitting. The base delegation, the EXECUTE-specific members, the legacy-property check and the unknown-key sweep are unchanged.
+      * `[✅]`   `isDialecticBaseJobPayload` is unchanged: it is the delegate every arm guard calls, and the members tightened here are the EXECUTE arm's own requirement.
+
+   * `[✅]`   `prepareModelJob.guard.test.ts`
+      * `[✅]`   `isPrepareModelJobParams` case checklist over the one surviving member (`dbClient`), absent and wrong-typed, fixtures from `invalidatePrepareModelJobParams`; a case asserts params carrying none of the five retired members (`job`, `projectOwnerUserId`, `providerRow`, `authToken`, `sessionData`) are accepted.
+      * `[✅]`   `isPrepareModelJobPayload` case checklist over `job`, `providerRow`, `promptConstructionPayload` and both optional rule arrays; the `job` case corrupts a member `isDialecticJobRow` checks and the `providerRow` case corrupts a member `isSelectedAiProvider` checks, so each proves the delegation rather than a record test; a case asserts a payload carrying no `compressionStrategy` is accepted.
+      * `[✅]`   `isPrepareModelJobDeps` gains `compressPrompt` to its checklist: absent and non-function each rejected, present and callable accepted.
+      * `[✅]`   `isPrepareModelJobSuccessReturn` becomes a checklist over both flavors: accepts `{ queued: true }`, accepts `{ waiting_for_children: true }`, rejects a built error return and rejects a record carrying neither discriminant. Per-flavor guards `isPrepareModelJobQueuedReturn` and `isPrepareModelJobPendingReturn` each accept their own flavor and reject the other.
+      * `[✅]`   `isPrepareModelJobErrorReturn` keeps its cases, its exclusion assertions extended to `waiting_for_children`.
+
+   * `[✅]`   `prepareModelJob.guard.ts`
+      * `[✅]`   `isPrepareModelJobParams` drops `job`, `projectOwnerUserId`, `providerRow`, `authToken` and `sessionData` from its key list and drops all their member checks, keeping only `dbClient` and its existing check; the `isDialecticSessionRow` import goes with the retired members.
+      * `[✅]`   `isPrepareModelJobPayload` drops `compressionStrategy` from its presence pair and drops its function check; gains a `job` check delegating to `isDialecticJobRow` and a `providerRow` check delegating to `isSelectedAiProvider`, keeping the `isPromptConstructionPayloadShape` check and both optional rule-array checks.
+      * `[✅]`   `isPrepareModelJobDeps` gains a `compressPrompt` presence-and-function check beside `calculateAffordability`.
+      * `[✅]`   `isPrepareModelJobQueuedReturn` and `isPrepareModelJobPendingReturn` are added, each discriminating on its own literal member and rejecting the other's; `isPrepareModelJobSuccessReturn` returns true for either flavor and false otherwise.
+      * `[✅]`   `isPrepareModelJobErrorReturn` extends its exclusion list with `waiting_for_children`; every guard keeps its boolean contract.
+
+   * `[✅]`   `prepareModelJob.test.ts`
+      * `[✅]`   Every case builds deps through `buildPrepareModelJobDeps`, params with only `dbClient`, and payload with `job`, `providerRow` and `promptConstructionPayload` (no `compressionStrategy`, no `authToken`/`sessionData`/`projectOwnerUserId` anywhere); the `contractCompressionStrategy` local and its thirty-odd payload literals are deleted.
+      * `[✅]`   The affordability composition cases are restated against the new arms: a within-budget verdict enqueues with `max_tokens_to_generate` from `maxOutputTokens` and returns `{ queued: true }`; an affordability error propagates unchanged. The captured `CalculateAffordabilityParams` assertions prove the narrowed 2-member shape (`walletBalance`, `userConfig`), and the captured `CalculateAffordabilityPayload` assertions prove the narrowed 5-member shape (`extendedModelConfig`, `resourceDocuments`, `conversationHistory`, `currentUserPrompt`, `systemInstruction`). The cases that narrowed `isCalculateAffordabilityCompressedReturn` are replaced by the over-budget cases below.
+      * `[✅]`   New case: an over-budget verdict on a row whose `job_type` is `'EXECUTE'` calls `deps.compressPrompt` exactly once, with `CompressPromptParams` carrying 5 members (`dbClient`, `isContinuationFlowInitial`, `finalTargetThreshold`, `balanceAfterCompression`, `walletBalance`) and `CompressPromptPayload` carrying 6 members (`parentJob: payload.job`, `extendedModelConfig`, `inputsRelevance`, `resourceDocuments`, `conversationHistory`, `currentUserPrompt`), and returns `{ waiting_for_children: true }` without calling `deps.enqueueModelCall`. Arranged with a spy on both collaborators so the assertion fails if either call moves.
+      * `[✅]`   New case: an over-budget verdict on a row whose `job_type` is `'COMPRESS'` returns a non-retriable error, calls neither `deps.compressPrompt` nor `deps.enqueueModelCall`, and performs no write — decision one's recursion guard.
+      * `[✅]`   New case: a compression error return propagates unchanged, with the same `error` identity and `retriable` flag the collaborator returned.
+      * `[✅]`   The `EnqueueModelCallParams` assertion cases keep every member assertion they make and lose their `output_type` expectations, that member having left the type.
+      * `[✅]`   New cases for the provenance write: a within-budget dispatch updates this job row's payload with `source_prompt_resource_id` from `promptConstructionPayload` before `deps.enqueueModelCall` is called; the value does not appear on the `ChatApiRequest` handed to that call; a failed update returns `{ error, retriable: true }` and enqueues nothing; and an over-budget EXECUTE deferral performs no update at all.
+      * `[✅]`   New case: a row whose `job_type` is `'EXECUTE'` and whose payload fails `isDialecticExecuteJobPayload` surfaces that guard's per-member diagnostic on the error arm, in place of the deleted `does not have a valid 'execute' payload` string.
+      * `[✅]`   New case: a row whose `job_type` is `'COMPRESS'` and whose payload fails `isDialecticCompressJobPayload` surfaces that guard's per-member diagnostic on the error arm.
+      * `[✅]`   The six member-validation cases asserting the `is missing required …` messages for `stageSlug`, `walletId`, `iterationNumber`, `projectId`, `sessionId` and `model_id`, and the case asserting `Token wallet service is required for affordability preflight`, are deleted with the throws they cover; the arm guard's checklist in `type_guards.dialectic.test.ts` proves those members, including the `iterationNumber: 0` rejection this suite asserts today.
+      * `[✅]`   Every existing case for the tier-cap read and its failure, the effective-cap arithmetic, the provider-config failure, the document-identity failure, the wallet and rate resolution and the enqueue error propagation keeps its arrangement and assertions.
+
+   * `[✅]`   `prepareModelJob.inputsRequired.test.ts`
+      * `[✅]`   Its three cases drop `compressionStrategy` from their payload literals and `authToken`/`sessionData`/`projectOwnerUserId` from their params literals (params has only `dbClient`), supply `job` and `providerRow` on payload, and keep every `inputsRequired` scoping and enforcement assertion unchanged.
+
+   * `[✅]`   `prepareModelJob.ts`
+      * `[✅]`   The entry narrowing becomes the arm selection: branch on `payload.job.job_type`, and in each branch declare the arm-typed local and narrow with that arm's guard in the landed form. The `isDialecticExecuteJobPayload` call that stands alone today, the hand-thrown invalid-payload message, the `Object.getOwnPropertyDescriptor` read of `user_jwt` and the `payload.user_jwt required` throw are deleted, and `userAuthToken` is read from the narrowed payload.
+      * `[✅]`   The six member-validation throws for `stageSlug`, `walletId`, `iterationNumber`, `projectId`, `sessionId` and `model_id`, their `…Raw` destructure aliases and the `Validating payload fields` diagnostic log block are deleted; each member is read from the narrowed payload.
+      * `[✅]`   The `if (!deps.tokenWalletService)` presence check and its throw are deleted, the member being required on deps.
+      * `[✅]`   The params destructure yields only `params.dbClient`. `payload.job`, `payload.providerRow` and `payload.promptConstructionPayload` are read from payload. `payload.job.user_id` replaces every read of `projectOwnerUserId`.
+      * `[✅]`   `output_type` leaves the payload destructure and the `EnqueueModelCallParams` literal.
+      * `[✅]`   `compressionStrategy` leaves the payload destructure. The `CalculateAffordabilityParams` literal becomes `{ walletBalance, userConfig }` — the two members that interface now declares. The `CalculateAffordabilityPayload` literal becomes `{ extendedModelConfig, resourceDocuments, conversationHistory, currentUserPrompt, systemInstruction }` — the five members that interface now declares — carrying neither `compressionStrategy` nor `chatApiRequest`.
+      * `[✅]`   The `isCalculateAffordabilityCompressedReturn` narrowing is replaced by the `overBudget` branch: `isCalculateAffordabilityOverBudgetReturn` selects the compression path, and the within-budget arm supplies `maxOutputTokens` and `resolvedInputTokenCount` as it does today.
+      * `[✅]`   The over-budget path resolves within the arm selected at entry, adding the `CompressPromptParams` literal carrying `{ dbClient: params.dbClient, isContinuationFlowInitial, finalTargetThreshold, balanceAfterCompression, walletBalance }`, the `CompressPromptPayload` literal carrying `{ parentJob: payload.job, extendedModelConfig, inputsRelevance: payload.inputsRelevance, resourceDocuments, conversationHistory, currentUserPrompt }`, the single `deps.compressPrompt` call, the `isCompressPromptErrorReturn` propagation and the `{ waiting_for_children: true }` return, plus the non-retriable recursion-guard error on the COMPRESS arm.
+      * `[✅]`   The provenance update is added between the affordability branch and the enqueue on the within-budget path, keyed on `payload.job.id`, returning the error arm on a Postgrest failure.
+      * `[✅]`   Everything else is unchanged: the tier-cap query and its logging, the cap arithmetic, the provider-config check, the document scoping and `inputsRequired` enforcement, the wallet and rate resolution, the base `ChatApiRequest` construction, and the enclosing `try`/`catch`.
+
+   * `[✅]`   `prepareModelJob.provides.ts`
+      * `[✅]`   The file uses named exports, not `export *`. The new return-flavor types (`PrepareModelJobQueuedReturn`, `PrepareModelJobPendingReturn`) and their guards (`isPrepareModelJobQueuedReturn`, `isPrepareModelJobPendingReturn`) are added to the re-export lists from `prepareModelJob.interface.ts` and `prepareModelJob.guard.ts`.
+      * `[✅]`   The mock re-exports delete `MockPrepareModelJobFnOptions`, `MockPrepareModelJobFnCall` and `mockPrepareModelJobFn`, all deleted from the mock file, and add any new mock symbols the mock element introduces.
+      * `[✅]`   The existing re-exports of `prepareModelJob`, the interface types, and the current guards are unchanged except as the names they re-export change.
+
+   * `[✅]`   `prepareModelJob.integration.test.ts`
+      * `[✅]`   Its params literal has only `dbClient`; its payload literal carries `job`, `providerRow` and `promptConstructionPayload` (no `authToken`, `sessionData`, `projectOwnerUserId` or `compressionStrategy`), and its `buildBoundCompressPromptFn` wiring is replaced by a `BoundCompressPromptFn` the case declares, supplied on deps.
+      * `[✅]`   The chain this suite proves widens to the composition this node creates: real `calculateAffordability` plus real `compressPrompt` behind this dispatcher, with only Supabase and the queue mocked. A within-budget working set reaches `enqueueModelCall` with the cap the affordability verdict resolved and the provenance recorded on the row; an over-budget EXECUTE working set reaches `compressPrompt` and returns the deferral without enqueueing; an over-budget COMPRESS row returns the recursion-guard error having called neither.
+      * `[✅]`   The existing captured-`EnqueueModelCallParams` assertions stand, less `output_type`.
+
+   * `[✅]`   `directionality`
+      * `[✅]`   Deps face inward: this module imports `compressPrompt`'s bound function type and error guard, `calculateAffordability`'s bound function type and guards, `enqueueModelCall`'s bound function type, the EXECUTE payload guard from `_shared` and the COMPRESS payload guard from `enqueueCompressJobs`; it exports nothing back to any of them.
+      * `[✅]`   The `compressPrompt` edge is a relocation, not an addition: it left `calculateAffordability` in the node above and arrives here, so the module graph gains no new dependency and no cycle.
+      * `[✅]`   `prepareModelJob.provides.ts` uses named exports and is edited above to add the new return-flavor types and guards and to delete the retired mock symbols; after that edit, consumers importing from `prepareModelJob.provides.ts` see the full new surface.
+
+   * `[✅]`   `requirements`
+      * `[✅]`   `PrepareModelJobParams` declares one member (`dbClient`) with no scalar that duplicates a field on the job row — interface test, exhaustive key record.
+      * `[✅]`   `PrepareModelJobPayload` declares five members (`job`, `providerRow`, `promptConstructionPayload`, `inputsRelevance?`, `inputsRequired?`) with `compressionStrategy` absent — interface test, exhaustive key record.
+      * `[✅]`   `PrepareModelJobDeps` declares eight members including `compressPrompt` — interface test.
+      * `[✅]`   `PrepareModelJobReturn` has two arms and both success flavors are members of `PrepareModelJobSuccessReturn` — interface test, typed assignment.
+      * `[✅]`   `DialecticExecuteJobPayload` declares `stageSlug` and `iterationNumber` required — interface test, exhaustive key record.
+      * `[✅]`   `isDialecticExecuteJobPayload` rejects a blank `sessionId`, `projectId`, `model_id` or `walletId`, an absent or non-slug `stageSlug`, and an absent, non-numeric or zero `iterationNumber` — `type_guards.dialectic.test.ts`.
+      * `[✅]`   `prepareModelJob.ts` contains no presence or blank check for any payload member and no presence check for any deps member — unit test, the deleted-message cases absent and the guard-diagnostic cases present.
+      * `[✅]`   An over-budget EXECUTE job calls `compressPrompt` once with the corrected 5-member params and 6-member payload, enqueues nothing and returns `{ waiting_for_children: true }` — unit test and integration test.
+      * `[✅]`   An over-budget COMPRESS job returns a non-retriable error and calls no collaborator — unit test and integration test.
+      * `[✅]`   A within-budget job enqueues one model call whose params name no artifact type and whose request carries the resolved output cap — unit test and integration test.
+      * `[✅]`   `source_prompt_resource_id` is written onto the job row's payload before the enqueue and never onto `ChatApiRequest`, and a failed write returns a retriable error having enqueued nothing — unit test.
+      * `[✅]`   A malformed payload surfaces its own arm guard's per-member diagnostic on the error arm, for each arm — unit test.
+      * `[✅]`   Every tier-cap, provider-config, document, wallet and enqueue failure returns exactly what it returns now — unit test and inputsRequired test, existing cases unchanged.
+
+* `[✅]`   supabase/functions/dialectic-worker/processCompressJob/processCompressJob.ts **[BE] Compose a `PromptConstructionPayload` from the assembled prompt and call `prepareModelJob`; move `job` to payload, eliminate `projectOwnerUserId` (KVP dup of `job.user_id`), own no part of the model call, narrow `isDialecticCompressJobPayload` on entry, and narrow both assembly unions before use**
+
+   * `[✅]`   `objective`
+      * `[✅]`   Solve a second model-call path. This function validates the provider config, extracts the input and output windows, counts preflight tokens, builds a `ChatApiRequest`, a `UserConfig` and `EnqueueModelCallParams`, writes the prompt's resource id onto the job row, and calls `enqueueModelCall` itself — so a COMPRESS call reaches the model without the tier cap, the wallet read or the affordability preflight every EXECUTE call passes, and its window check is a bespoke subtraction rather than decision one's recursion guard.
+      * `[✅]`   Functional goals:
+         * `[✅]`   The function narrows `payload.job.payload` with `isDialecticCompressJobPayload` on entry; the guard throws per-member diagnostics, and the enclosing `try` converts the throw to the error arm.
+         * `[✅]`   The function composes a `PromptConstructionPayload` from the assembled prompt and calls `deps.prepareModelJob`, which is the repo's one model-call dispatcher.
+         * `[✅]`   It validates no provider config, extracts no context window, constructs no `ChatApiRequest`, no `UserConfig` and no `EnqueueModelCallParams`, counts no preflight tokens, and writes no provenance update.
+         * `[✅]`   It resolves its `ai_providers` row from the narrowed job payload's `model_id` and passes it to the dispatcher on payload as `providerRow`, exactly as `processSimpleJob` does on the EXECUTE path.
+         * `[✅]`   `ProcessCompressJobDeps` declares `assembleCompressionPrompt`, `assembleContinuationPrompt`, `prepareModelJob`, `constructStoragePath` and `logger`, and drops `enqueueModelCall`, `countTokens`, `getEncoding` and `countTokensAnthropic`.
+         * `[✅]`   `ProcessCompressJobParams` declares `dbClient` only. `job` is a data object that belongs in payload; `projectOwnerUserId` is a KVP duplicate of `payload.job.user_id`; `authToken` is retired.
+         * `[✅]`   `ProcessCompressJobPayload` declares `job: DialecticJobRow` and is no longer an alias of `DialecticCompressJobPayload`. The function narrows `payload.job.payload` with `isDialecticCompressJobPayload` internally, so the caller passes only the job row and the function handles its own content narrowing.
+         * `[✅]`   Both assembly branches narrow their returned union before use: the compression branch on `AssembleCompressionPromptReturn` as it does now, the continuation branch on `AssembleContinuationPromptReturn` through `isAssembleContinuationPromptErrorReturn`.
+         * `[✅]`   The dispatcher's return is narrowed by arm: queued → `{ queued: true }`; error → propagated unchanged; a deferral → a non-retriable error naming that a COMPRESS job is never deferred, decision one's guard having failed it instead.
+      * `[✅]`   Non-functional constraints:
+         * `[✅]`   Dedup layer two is unchanged in behavior: the `CompressedContext` path context and its construction failure, the `dialectic_project_resources` existence read, the completed-status update on a hit and its failure, and the `{ queued: false }` success that spends nothing. All identity members are now read from the narrowed `payload.job.payload`, and the job id is read from `payload.job.id`.
+         * `[✅]`   Consuming-step resolution is unchanged: the stage's active recipe instance, the cloned-versus-template step query, the step match on `output_type`, the recipe-step validation, the `outputs_required` validation and the `CompressionTargetStep` it builds, each keeping its message and `retriable` flag. The `stageSlug` and `output_type` are read from the narrowed content.
+         * `[✅]`   The compression assembler's params and payload literals carry the same values, now read from the narrowed `payload.job.payload`, including the conditional chunk pair.
+         * `[✅]`   The function still marks no job `completed` on a successful dispatch; `saveResponse` does that when the response returns.
+         * `[✅]`   `ProcessCompressJobError`, the success and error return shapes and `ProcessCompressJobFn`'s `(deps, params, payload) → return` shape keep their declarations. The params and payload types narrow.
+      * `[✅]`   Each goal is proven by a named case in this module's interface test, guard test, unit test or integration test.
+
+   * `[✅]`   `role`
+      * `[✅]`   Node role is app-layer job processing: decide whether this compression is still needed, resolve what it is compressing for, assemble its prompt, and hand the result to the dispatcher.
+      * `[✅]`   The role is correct because everything above the dispatch is compression-specific knowledge — the canonical artifact path, the consuming step, the target schema, the two assemblers — and everything below it is identical for every model call in the repo.
+      * `[✅]`   Out-of-scope responsibilities:
+         * `[✅]`   Do not validate a model config, extract a window, count tokens, or check a budget; `prepareModelJob` does all four for every job type, over the `providerRow` this function hands it.
+         * `[✅]`   Do not write `source_prompt_resource_id` onto the job row; the dispatcher writes it after affordability and before the enqueue.
+         * `[✅]`   Do not edit `prepareModelJob.ts`, `processJob.ts` or either assembler; each has its own node.
+         * `[✅]`   Do not mark the job completed on a successful dispatch, and do not send a notification on any path — COMPRESS is invisible infrastructure.
+
+   * `[✅]`   `module`
+      * `[✅]`   Bounded context is `supabase/functions/dialectic-worker/processCompressJob` — content narrowing, dedup layer two, consuming-step and target-schema resolution, assembly-branch selection, and the handoff to the dispatcher.
+      * `[✅]`   Inside boundary:
+         * `[✅]`   Whether this victim is already compressed for this target.
+         * `[✅]`   Which schema the compression targets, and which assembler builds its prompt.
+         * `[✅]`   Which provider row this job runs against, resolved from the narrowed job payload's `model_id` and handed on.
+      * `[✅]`   Outside boundary:
+         * `[✅]`   Everything a model call requires of that provider row — the tier cap, the wallet read, affordability, the window and the recursion guard — owned by `prepareModelJob`.
+         * `[✅]`   What the response becomes, owned by `saveResponse`.
+         * `[✅]`   Which arm a job row takes, decided by `processJob` before this function is reached.
+
+   * `[✅]`   `deps`
+      * `[✅]`   Provider: `../prepareModelJob/prepareModelJob.provides.ts` (`PrepareModelJobParams`, `PrepareModelJobPayload`, and the three return-arm guards `isPrepareModelJobQueuedReturn`, `isPrepareModelJobPendingReturn` and `isPrepareModelJobErrorReturn`).
+         * `[✅]`   Layer classification: sibling app-layer module, the repo's model-call dispatcher.
+         * `[✅]`   Direction: inbound; this module already imports from `enqueueModelCall`, which the dispatcher fronts, so the direction is unchanged and one edge replaces another.
+         * `[✅]`   Purpose: type the params and payload this function composes for the dispatcher, and narrow each arm of the return it hands back.
+      * `[✅]`   Provider: `../createJobContext/JobContext.interface.ts` (`BoundPrepareModelJobFn`).
+         * `[✅]`   Layer classification: the worker's dependency-injection boundary, which is where the dispatcher's bound form is declared.
+         * `[✅]`   Direction: inbound; a type-only import with no runtime edge, and `prepareModelJob.interface.ts` already imports three function types from this same file.
+         * `[✅]`   Purpose: type the `prepareModelJob` member of `ProcessCompressJobDeps`.
+      * `[✅]`   Provider: `dialectic-service/dialectic.interface.ts` (`PromptConstructionPayload`).
+         * `[✅]`   Layer classification: service-layer contract hub.
+         * `[✅]`   Direction: inbound; this module already imports `DialecticJobRow` and `DialecticRecipeStep` from it.
+         * `[✅]`   Purpose: type the object this function composes from the assembled prompt.
+      * `[✅]`   Provider: `_shared/prompt-assembler/prompt-assembler.guard.ts` (`isAssembleContinuationPromptErrorReturn`).
+         * `[✅]`   Layer classification: shared module that owns the continuation return.
+         * `[✅]`   Direction: inbound from `_shared`.
+         * `[✅]`   Purpose: narrow the continuation branch's union before its value is used.
+      * `[✅]`   Provider: `../enqueueCompressJobs/enqueueCompressJobs.provides.ts` (`DialecticCompressJobPayload`) and `_shared/utils/type-guards/type_guards.dialectic.ts` (`isDialecticCompressJobPayload`).
+         * `[✅]`   Layer classification: sibling module (payload type) and shared runtime boundary (guard).
+         * `[✅]`   Direction: inbound; this module already imports `DialecticCompressJobPayload` from the enqueue module. The guard import is new to this file, moved from the caller.
+         * `[✅]`   Purpose: narrow `payload.job.payload` on entry so every content read is typed.
+      * `[✅]`   Removed providers: `enqueueModelCall` (`BoundEnqueueModelCallFn`, `EnqueueModelCallParams`, `EnqueueModelCallPayload`), `calculateAffordability` (`UserConfig`), `_shared/types.ts` (`AiModelExtendedConfig`, `ChatApiRequest`), `_shared/types/tokenizer.types.ts` (`CountTokensDeps`, `CountableChatPayload`, `CountTokensFn`) and `type_guards.chat.ts` (`isAiModelExtendedConfig`) — every one imported solely for the config validation, the token count or the enqueue this node removes. `Tables` stays, typing the `ai_providers` row this function still resolves and the recipe-step rows it reads.
+      * `[✅]`   Confirm:
+         * `[✅]`   `constructStoragePath` and `logger` keep their roles; `logger` remains the only deps member this function does not call on the happy path.
+         * `[✅]`   `params.dbClient` remains this function's own database handle: it performs the dedup read, the provider read and the recipe-step reads through it, and hands the same client to the dispatcher.
+         * `[✅]`   No reverse dependency: `prepareModelJob` imports nothing from this module.
+      * `[✅]`   `context_slice`
+         * `[✅]`   From the dispatcher: its params and payload types and its three return-arm guards only — not its deps, which the composition root binds. The bound two-argument closure type comes from the worker's DI boundary, which declares it.
+         * `[✅]`   From the hub: the `PromptConstructionPayload` type only.
+         * `[✅]`   From the enqueue module: the `DialecticCompressJobPayload` type and its guard only.
+
+   * `[✅]`   `processCompressJob.interface.test.ts`
+      * `[✅]`   The deps key case declares `assembleCompressionPrompt`, `assembleContinuationPrompt`, `prepareModelJob`, `constructStoragePath` and `logger` and asserts five — exhaustive in both directions, it is the proof the four model-call members are gone.
+      * `[✅]`   The params key case declares `dbClient` and asserts one — exhaustive in both directions, it is the proof `job`, `projectOwnerUserId` and `authToken` are gone.
+      * `[✅]`   The payload key case declares `job` and asserts one, proving `ProcessCompressJobPayload` is no longer an alias and `job` is its only member.
+      * `[✅]`   A case proves `ProcessCompressJobDeps["prepareModelJob"]` accepts a `BoundPrepareModelJobFn` value by typed assignment.
+      * `[✅]`   The return-union cases and the signature cases are unchanged.
+
+   * `[✅]`   `processCompressJob.interface.ts`
+      * `[✅]`   `ProcessCompressJobDeps` drops `enqueueModelCall`, `countTokens`, `getEncoding` and `countTokensAnthropic`, gains `prepareModelJob: BoundPrepareModelJobFn`, and keeps `assembleCompressionPrompt`, `assembleContinuationPrompt`, `constructStoragePath` and `logger`. The `BoundEnqueueModelCallFn`, `CountTokensFn` and `CountTokensDeps` imports go with the members.
+      * `[✅]`   `ProcessCompressJobParams` drops `job`, `projectOwnerUserId` and `authToken`; declares `dbClient` only. `job` is a data object that belongs in payload; `projectOwnerUserId` is a KVP duplicate of `job.user_id`; `authToken` is retired. The `DialecticJobRow` import moves to the payload type.
+      * `[✅]`   `ProcessCompressJobPayload` is no longer a type alias of `DialecticCompressJobPayload`. It becomes an interface declaring `job: DialecticJobRow` as its only member. The `DialecticCompressJobPayload` import stays for use in the implementation's narrowing guard.
+      * `[✅]`   `ProcessCompressJobError`, both return shapes, `ProcessCompressJobReturn`, `ProcessCompressJobFn` and `BoundProcessCompressJobFn` are unchanged in declaration. The function signature keeps its `(deps, params, payload) → Promise<Return>` shape; the params and payload types narrow.
+
+   * `[✅]`   `processCompressJob.interaction.spec`
+      * `[✅]`   Entry narrowing: `isDialecticCompressJobPayload(payload.job.payload)` on entry. It throws a per-member diagnostic on any malformed member; the enclosing `try` converts the throw to `{ error, retriable: false }`. The narrowed value is held as a local and every content member (`sessionId`, `projectId`, `model_id`, `stageSlug`, `output_type`, `sourceType`, `mode`, `content`, `continuation_count`, etc.) is read from it.
+      * `[✅]`   Dedup layer two, unchanged in behavior: build the `FileType.CompressedContext` path context from the narrowed content's identity members and call `deps.constructStoragePath`. A throw → error arm, `retriable: false`. The `dialectic_project_resources` existence read failing → error arm, `retriable: true`. A row found → update this job row to `completed` with `completed_at`, keyed on `payload.job.id`; that update failing → error arm, `retriable: true`; otherwise success `{ queued: false }`, nothing else run.
+      * `[✅]`   Provider resolution, unchanged in its query and its two row outcomes: the `ai_providers` read by the narrowed content's `model_id`; a query error → error arm, `retriable: true`; no row → error arm, `Provider not found`, `retriable: true`. The row is held for the dispatcher and nothing is read off it here — the `isAiModelExtendedConfig` validation and both window extractions leave with the model-call work.
+      * `[✅]`   Consuming step, unchanged: the stage read by the narrowed content's `stageSlug`, its missing active recipe instance, the instance read, the cloned-versus-template step query, an empty step set, no step matching `output_type`, a step failing both recipe-step guards, and invalid `outputs_required` each return their existing message and flag; otherwise the `CompressionTargetStep` is built from `outputs_required` and `step_description`.
+      * `[✅]`   Assembly branch, selected on the narrowed content's `continuation_count` being a number at least one: the continuation branch calls `deps.assembleContinuationPrompt(payload.job)`; every other case calls `deps.assembleCompressionPrompt` with the existing params and payload literals, all content members read from the narrowed value.
+      * `[✅]`   Continuation branch narrowing: `isAssembleContinuationPromptErrorReturn` true → propagate `{ error, retriable }` unchanged. Otherwise the value is the assembled prompt.
+      * `[✅]`   Compression branch narrowing: an error return → propagate `{ error, retriable }` unchanged, as it does now.
+      * `[✅]`   Dispatch: compose `PromptConstructionPayload` with `currentUserPrompt` from the assembled `promptContent`, `source_prompt_resource_id` from the assembled id, and empty `conversationHistory` and `resourceDocuments` — a compression prompt is one self-contained instruction with no history and no gathered artifacts. Call `deps.prepareModelJob` with params `{ dbClient: params.dbClient }` and payload `{ job: payload.job, providerRow, promptConstructionPayload }`, supplying neither `inputsRelevance` nor `inputsRequired`, a COMPRESS job having no recipe step of its own.
+      * `[✅]`   Dispatch outcome: `isPrepareModelJobQueuedReturn` → success `{ queued: true }`. `isPrepareModelJobPendingReturn` → error arm, a `ProcessCompressJobError` stating that a COMPRESS job was deferred rather than dispatched, `retriable: false` — the dispatcher's recursion guard fails an over-budget COMPRESS job, so this arm is unreachable by design and is reported rather than treated as success. Anything else is the error arm, propagated unchanged.
+      * `[✅]`   Ordering and side effects: exactly one narrowing on entry, one read before any write; the only write on a dedup hit is the completed-status update; on the dispatch path this function writes nothing at all; no notification is sent on any path.
+
+   * `[✅]`   `processCompressJob.mock.ts`
+      * `[✅]`   `buildProcessCompressJobDeps` supplies `prepareModelJob` from the dispatcher module's own function mock and drops its `enqueueModelCall`, `countTokens`, `getEncoding` and `countTokensAnthropic` defaults; `buildProcessCompressJobParams` drops its `job`, `projectOwnerUserId` and `authToken` defaults and keeps `dbClient` only.
+      * `[✅]`   Each owned object type carries the four symbols: `Partial<T>` overrides, a builder defaulting every member, a corruption type over `keyof`, and an `unknown`-returning invalidator — for `ProcessCompressJobDeps`, `ProcessCompressJobParams`, `ProcessCompressJobPayload`, `ProcessCompressJobSuccessReturn` and `ProcessCompressJobErrorReturn`. `ProcessCompressJobPayload` is no longer an alias; `buildProcessCompressJobPayload` supplies a default `job: DialecticJobRow` built from `mockDialecticJobRow` (imported from the existing mock).
+      * `[✅]`   One function mock per owned function type: `mockProcessCompressJob: ProcessCompressJobFn` and `mockBoundProcessCompressJob: BoundProcessCompressJobFn`, each returning `buildProcessCompressJobSuccessReturn()`, with no options bag and no call recording.
+
+   * `[✅]`   `processCompressJob.guard.test.ts`
+      * `[✅]`   `isProcessCompressJobDeps` case checklist over the five surviving members, each absent and each wrong-typed, fixtures from the invalidator; a case asserts a deps object carrying none of the four removed members is accepted.
+      * `[✅]`   `isProcessCompressJobParams` case checklist over the one surviving member (`dbClient`), each absent and each wrong-typed; a case asserts params carrying none of the three retired members (`job`, `projectOwnerUserId`, `authToken`) are accepted.
+      * `[✅]`   `isProcessCompressJobPayload` case checklist over the one member (`job`), absent and wrong-typed; a case asserts a payload with a valid `job` record is accepted.
+      * `[✅]`   The `isProcessCompressJobSuccessReturn`, `isProcessCompressJobErrorReturn`, `isProcessCompressJobReturn`, `isProcessCompressJobFn` and `isBoundProcessCompressJobFn` cases keep their coverage and their boolean assertions.
+
+   * `[✅]`   `processCompressJob.guard.ts`
+      * `[✅]`   `isProcessCompressJobDeps` drops its `enqueueModelCall`, `countTokens`, `getEncoding` and `countTokensAnthropic` checks and gains a presence-and-function check for `prepareModelJob`.
+      * `[✅]`   `isProcessCompressJobParams` drops its `job`, `projectOwnerUserId` and `authToken` checks, keeping only `dbClient`.
+      * `[✅]`   `isProcessCompressJobPayload` checks that the value is a record with a `job` property that is itself a record. It no longer delegates to `isDialecticCompressJobPayload`; that narrowing happens inside the function body where the enclosing `try` converts the throw to the error arm.
+      * `[✅]`   Every other guard in the file is unchanged.
+
+   * `[✅]`   `processCompressJob.test.ts`
+      * `[✅]`   Every case builds deps without the four removed members, params with only `dbClient`, and payload with `{ job }` where `job` carries a `DialecticCompressJobPayload`-shaped `payload` field. The `DialecticCompressJobPayload` content that was passed directly as the function's payload is now on `payload.job.payload`.
+      * `[✅]`   The cases asserting `enqueueParams["output_type"]`, the provider-config validations, the `provider_max_input_tokens`/`provider_max_output_tokens` checks, the preflight token count and the budget-exceeded error are deleted with the branches they cover; the responsibilities they asserted now belong to `prepareModelJob`'s suite, where its own cases prove the cap, the wallet, the preflight and the recursion guard. The provider-lookup cases stand — the query-error and provider-not-found cases keep their messages and flags.
+      * `[✅]`   New case: a fitting job reaches `deps.prepareModelJob` exactly once with params `{ dbClient: params.dbClient }` and payload `{ job: payload.job, providerRow, promptConstructionPayload }`, the `providerRow` being the one the `ai_providers` stub returned, and the `promptConstructionPayload` carrying the assembled `promptContent` as `currentUserPrompt`, the assembled id as `source_prompt_resource_id`, and empty history and documents — and returns `{ queued: true }`.
+      * `[✅]`   New case: a dispatcher error return is propagated with the same `error` identity and `retriable` flag, and no further work is done.
+      * `[✅]`   New case: a dispatcher deferral returns the non-retriable error arm naming the COMPRESS deferral, and does not report success.
+      * `[✅]`   New case: the continuation branch narrows its union — an error return from `deps.assembleContinuationPrompt` is propagated unchanged and the dispatcher is never called.
+      * `[✅]`   The continuation-selection case stands: `continuation_count` at least one calls the continuation assembler and never the compression assembler, and zero or absent calls the compression assembler.
+      * `[✅]`   Every dedup, stage, instance, step-query, step-match, recipe-step-validation and `outputs_required` case keeps its arrangement, its message assertion and its `retriable` flag. Read sites for content members now come from `payload.job.payload` after narrowing.
+      * `[✅]`   A case asserts this function writes no job-row payload update on the dispatch path, the provenance write having moved to the dispatcher.
+      * `[✅]`   New case: a `payload.job.payload` failing `isDialecticCompressJobPayload` surfaces that guard's per-member diagnostic on the error arm.
+
+   * `[✅]`   `processCompressJob.ts`
+      * `[✅]`   Entry: `isDialecticCompressJobPayload(payload.job.payload)` narrows the job's payload content; the throw surfaces a per-member diagnostic, converted to the error arm by the enclosing `try`. The narrowed value is held as a local for all content reads.
+      * `[✅]`   All reads of `payload.xyz` for content fields (`sessionId`, `projectId`, `model_id`, `stageSlug`, `output_type`, `sourceType`, `mode`, `content`, `continuation_count`, `model_slug`, `chunk_index`, `chunk_total`, `documentKey`, `sourceId`, `role`) become reads of the narrowed local. All reads of `params.job` become `payload.job`. `params.projectOwnerUserId` is eliminated; `payload.job.user_id` replaces any read.
+      * `[✅]`   Step two keeps its `ai_providers` read (by the narrowed content's `model_id`) and both row outcomes; its `isAiModelExtendedConfig` validation, the two `provider_max_*` checks and the two window extractions are deleted, with the `isAiModelExtendedConfig` import and the `AiModelExtendedConfig` type. The row itself is held for the dispatcher.
+      * `[✅]`   Step five's provenance update — the spread payload literal, its `isJson` throw and the `dialectic_generation_jobs` update — is deleted.
+      * `[✅]`   Step six's tokenizer deps, countable payload, `deps.countTokens` call and budget comparison are deleted, with the `CountTokensDeps` and `CountableChatPayload` imports.
+      * `[✅]`   The `ChatApiRequest`, `UserConfig` and `EnqueueModelCallParams` literals, the `EnqueueModelCallPayload` literal and the `deps.enqueueModelCall` call are deleted, with their imports.
+      * `[✅]`   The continuation branch's assignment is replaced by a narrowed one: call `deps.assembleContinuationPrompt(payload.job)`, guard with `isAssembleContinuationPromptErrorReturn`, propagate the error arm, otherwise hold the assembled prompt.
+      * `[✅]`   The tail composes the `PromptConstructionPayload` and calls `deps.prepareModelJob` with params `{ dbClient: params.dbClient }` and payload `{ job: payload.job, providerRow, promptConstructionPayload }`, and returns per the arm guards.
+      * `[✅]`   Steps one and three are untouched in behavior, with all content reads moved to the narrowed local and the job id read from `payload.job.id`. Every error message, `retriable` flag and early return they carry is unchanged.
+
+   * `[✅]`   `processCompressJob.integration.test.ts`
+      * `[✅]`   Its victim-payload helper builds payload as `{ job }` with the `DialecticCompressJobPayload` content on `job.payload`. Every case drops `job`, `projectOwnerUserId` and `authToken` from params (params has only `dbClient`) and the four removed members from deps.
+      * `[✅]`   The `capturedEnqueueParams.output_type` assertions are replaced by assertions over the captured `PrepareModelJobParams` and `PrepareModelJobPayload`: params has one member (`dbClient`), payload has three members (`job`, `providerRow`, `promptConstructionPayload`) with the `promptConstructionPayload` carrying the assembled prompt and its resource id.
+      * `[✅]`   The chain this suite proves is the real one this function now owns: real `constructStoragePath`, real assemblers where it already uses them, and the dispatcher at the outer edge. A dedup hit still completes without dispatching; a continuation victim still reaches the continuation assembler.
+      * `[✅]`   Every existing dedup, stage-resolution and assembly assertion stands.
+
+   * `[✅]`   `directionality`
+      * `[✅]`   Deps face inward: this module imports the dispatcher's bound type and guards, the hub's payload type, both assemblers' contracts, the shared path constructor, and the `DialecticCompressJobPayload` type and guard for content narrowing, and exports nothing back to any of them.
+      * `[✅]`   The `enqueueModelCall` edge is replaced by the `prepareModelJob` edge, one layer up the same path, so the module graph gains no new direction.
+      * `[✅]`   The `isDialecticCompressJobPayload` guard import is new to this file but not new to the graph: `processJob` already imported it, and this function's own guard delegated to it. The narrowing responsibility moves inward, from the caller's guard to the function's own body.
+      * `[✅]`   No cycle: `prepareModelJob` imports nothing from this module, and `processJob` constructs this function's deps rather than being imported by it.
+      * `[✅]`   This module has no `provides` barrel; `processJob` imports its interface, guard and implementation directly, as it does now.
+
+   * `[✅]`   `requirements`
+      * `[✅]`   `ProcessCompressJobDeps` declares five members with the four model-call members absent — interface test, exhaustive key record.
+      * `[✅]`   `ProcessCompressJobParams` declares one member (`dbClient`) with `job`, `projectOwnerUserId` and `authToken` absent — interface test, exhaustive key record.
+      * `[✅]`   `ProcessCompressJobPayload` declares one member (`job`) and is no longer a type alias — interface test, exhaustive key record.
+      * `[✅]`   A fitting job calls `deps.prepareModelJob` exactly once with params `{ dbClient }` and payload `{ job, providerRow, promptConstructionPayload }`, and returns `{ queued: true }` — unit test and integration test.
+      * `[✅]`   The function validates no provider config, extracts no window, counts no tokens and writes no job-row payload update on the dispatch path — unit test.
+      * `[✅]`   A dedup hit completes the job row and returns `{ queued: false }` without dispatching — unit test and integration test, existing cases.
+      * `[✅]`   Both assembly branches propagate their error arm unchanged and never reach the dispatcher — unit test.
+      * `[✅]`   A dispatcher deferral returns a non-retriable error rather than success — unit test.
+      * `[✅]`   A malformed `payload.job.payload` surfaces `isDialecticCompressJobPayload`'s per-member diagnostic on the error arm — unit test.
+      * `[✅]`   Every provider-lookup, stage, instance, step and `outputs_required` failure returns exactly what it returns now — unit test, existing cases unchanged.
+
+* `[✅]`   supabase/functions/dialectic-worker/retryJob/retryJob.ts **[BE] Advance `attempt_count` to the row's value plus one, the increment this module owns and no caller can supply**
+
+   * `[✅]`   `objective`
+      * `[✅]`   Solve a retry that never advances the attempt. This module writes `attempt_count: params.job.attempt_count` — the row's own value, written back unchanged — so a job marked `retrying` re-enters the queue with the same count it left with, and `currentAttempt < max_retries` is true forever. Nothing else in the chain can compensate: `RetryJobParams` declares `dbClient` and `job` only, so no caller has a slot in which to pass an attempt number, and the legacy positional function this module replaces took one. The count is this function's to advance because this function is the attempt.
+      * `[✅]`   Functional goals:
+         * `[✅]`   The update writes `attempt_count` as `params.job.attempt_count + 1`.
+         * `[✅]`   A row entering with `attempt_count` 3 leaves with 4, and the assertion proving it states 4.
+      * `[✅]`   Non-functional constraints:
+         * `[✅]`   The notification's `error` string keeps `params.job.attempt_count` — it names the attempt that failed, which is the row's value before the advance, not the value written.
+         * `[✅]`   Every other member of the update literal is unchanged: `status: "retrying"` and `error_details.failedAttempts` mapped from the payload.
+         * `[✅]`   Both return flavors, the error arm, both error classes, the `try`/`catch` around the notification and every log line are unchanged.
+         * `[✅]`   `RetryJobDeps`, `RetryJobParams`, `RetryJobPayload`, the return union, `RetryJobFn` and `BoundRetryJobFn` are unchanged, so no consumer's call site moves.
+         * `[✅]`   No file outside `dialectic-worker/retryJob/` is edited.
+      * `[✅]`   Each goal is proven by a named case in this file's suite.
+
+   * `[✅]`   `role`
+      * `[✅]`   Node role is app-layer job-lifecycle mutation: put a failed job back in the queue by recording the failure, advancing its attempt, and telling its owner.
+      * `[✅]`   The role is correct because advancing the count is an act of the retry, not a fact about it. A caller that computed the next number would be deciding what this function did, and every caller would compute the same expression.
+      * `[✅]`   Out-of-scope responsibilities:
+         * `[✅]`   Do not decide whether to retry; the caller compares `attempt_count` against `max_retries` and calls this function only when a retry is warranted.
+         * `[✅]`   Do not read or enforce `max_retries`, and do not write a terminal status on any path.
+         * `[✅]`   Do not change the notification's message, recipient or payload.
+         * `[✅]`   Do not edit any caller; `saveResponse`, `processSimpleJob` and the worker root each have their own node.
+
+   * `[✅]`   `module`
+      * `[✅]`   Bounded context is `supabase/functions/dialectic-worker/retryJob` — the single write that moves a job from `processing` to `retrying`, and the notification that accompanies it.
+      * `[✅]`   Inside boundary:
+         * `[✅]`   What a retrying row records: its status, its attempt number, and the attempts that failed.
+         * `[✅]`   Whether the notification succeeded, reported as two distinct success flavors.
+      * `[✅]`   Outside boundary:
+         * `[✅]`   Whether a retry is warranted, owned by the caller holding `max_retries`.
+         * `[✅]`   `DialecticJobRow` and `FailedAttemptError`, owned by `dialectic-service/dialectic.interface.ts`.
+         * `[✅]`   `NotificationServiceType` and `ContributionGenerationRetryingPayload`, owned by `_shared/types/notification.service.types.ts`.
+
+   * `[✅]`   `retryJob.interaction.spec`
+      * `[✅]`   One point changes and no others. Every branch below keeps its condition, decision, dependency call and outcome except the value written for `attempt_count`.
+      * `[✅]`   Branch: the update succeeds and the notification succeeds.
+         * `[✅]`   Condition: `params.dbClient` returns no error for the update, and `deps.notificationService.sendContributionRetryingEvent` resolves.
+         * `[✅]`   Decision: the destructured `error` is falsy, and the `try` completes.
+         * `[✅]`   Dependency call: the update on `dialectic_generation_jobs` keyed on `params.job.id`, writing `status: "retrying"`, `attempt_count: params.job.attempt_count + 1` and `error_details.failedAttempts`; then the notification to `params.job.user_id`.
+         * `[✅]`   Outcome: `RetryJobNotifiedReturn` — `{ notified: true }`.
+      * `[✅]`   Branch: the update succeeds and the notification throws an `Error`.
+         * `[✅]`   Condition: the update returns no error; the notification rejects with an `Error`.
+         * `[✅]`   Decision: `caught instanceof Error`.
+         * `[✅]`   Dependency call: the same update, then `deps.logger.error`.
+         * `[✅]`   Outcome: `RetryJobNotificationFailedReturn` carrying that exact error instance.
+      * `[✅]`   Branch: the update succeeds and the notification throws a non-`Error`.
+         * `[✅]`   Condition: the update returns no error; the notification rejects with a value that is not an `Error`.
+         * `[✅]`   Decision: `caught instanceof Error` is false.
+         * `[✅]`   Dependency call: the same update, then `deps.logger.error`.
+         * `[✅]`   Outcome: `RetryJobNotificationFailedReturn` carrying a `RetryJobNotificationError` built from the job id and the stringified value.
+      * `[✅]`   Branch: the update returns a driver error.
+         * `[✅]`   Condition: the update returns an error.
+         * `[✅]`   Decision: the destructured `error` is truthy.
+         * `[✅]`   Dependency call: `deps.logger.error`; the notification is not called.
+         * `[✅]`   Outcome: `RetryJobErrorReturn` carrying a `RetryJobUpdateError` built from the job id, `"retrying"` and the driver's message, with `retriable: true`.
+      * `[✅]`   Ordering and side effects: exactly one update per invocation, at most one notification, and it never precedes the update. Neither `params` nor `payload` is mutated on any path.
+
+   * `[✅]`   `retryJob.test.ts`
+      * `[✅]`   The attempt-count case asserts `attempt_count: 4` over the row it arranges with `attempt_count: 3`, matching the contract its own header states. Its arrangement, its `status: "retrying"` assertion and its `error_details.failedAttempts` assertion are unchanged.
+      * `[✅]`   New case: a row arranged with `attempt_count: 0` writes `attempt_count: 1`, so a second arrangement proves the written value tracks the input rather than a constant.
+      * `[✅]`   Every other case keeps its arrangement and assertions unchanged: the notified flavor with its five notification-argument assertions, the `Error`-throwing notification carrying that exact instance, the non-`Error` throw carrying a `RetryJobNotificationError` with the thrown string, the driver-error arm with its three error-property assertions and its zero-notification assertion, and the no-mutation case.
+
+   * `[✅]`   `retryJob.ts`
+      * `[✅]`   The `updatePayload` literal's `attempt_count` becomes `params.job.attempt_count + 1`.
+      * `[✅]`   Nothing else in the file changes: the `status` and `error_details` members, the update call and its `.eq` filter, the driver-error branch with its `RetryJobUpdateError` construction and log line, the notification payload including its `error` string, the `try`/`catch`, both catch branches with their log lines, and every return.
+
+   * `[✅]`   `requirements`
+      * `[✅]`   A row entering with `attempt_count` 3 writes 4, and a row entering with 0 writes 1 — unit test, two arrangements, captured update-argument assertions.
+      * `[✅]`   The notification's `error` string names the row's pre-advance attempt number — unit test.
+      * `[✅]`   The update writes `status: "retrying"` and `error_details.failedAttempts` from the payload — unit test, existing case.
+      * `[✅]`   Each of the four branches returns its own flavor and no other — unit test, existing cases unchanged.
+      * `[✅]`   A driver error dispatches no notification — unit test, existing case.
+      * `[✅]`   Neither `params` nor `payload` is mutated — unit test, existing case.
+
+* `[✅]`   supabase/functions/dialectic-worker/createJobContext/createJobContext.ts **[BE] Make the factory the sole assembler of every deps object the worker constructs: `JobContextParams` carries unbound implementations and the raw collaborators they need, `createJobContext` binds the compression graph `getSortedCompressionCandidates` → `enqueueCompressJobs` → `compressPrompt` → `calculateAffordability` → `prepareModelJob` plus `applyCompressionOverlay` → `gatherArtifacts` and `enqueueModelCall`, `createPrepareModelJobContext` returns `PrepareModelJobDeps` with `IPrepareModelJobContext` deleted, and `IRagContext` retires with `ragService`, `indexingService` and `embeddingClient`**
+
+   * `[✅]`   `objective`
+      * `[✅]`   Solve a factory that assembles nothing it was built to assemble. `createJobContext` copies forty-three params onto a root object one field at a time, and every deps object the worker actually constructs is built somewhere else: `dialectic-worker/index.ts` builds `boundGatherArtifacts` from a `GatherArtifactsDeps` literal, `boundEnqueueModelCall` from an `EnqueueModelCallDeps` literal, and — inside the `prepareModelJob` params closure it hands the factory — a `CompressPromptDeps` literal, a `CalculateAffordabilityDeps` literal and a `PrepareModelJobDeps` literal, three graphs deep. `createPrepareModelJobContext`, the slicer written to do exactly that, has no production caller at all: its only callers are this module's own test files. The result is two assemblers for one process, a graph whose shape exists only inside one arrow function at the composition root, and a slice type, `IPrepareModelJobContext`, that restates `PrepareModelJobDeps` under a second name so the two drift independently.
+      * `[✅]`   Functional goals:
+         * `[✅]`   `JobContextParams` carries the unbound implementation of every function the factory binds — `prepareModelJob: PrepareModelJobFn`, `compressPrompt: CompressPromptFn`, `calculateAffordability: CalculateAffordabilityFn`, `enqueueCompressJobs: enqueueCompressJobsFn`, `getSortedCompressionCandidates: GetSortedCompressionCandidatesFn`, `applyCompressionOverlay: ApplyCompressionOverlayFn`, `gatherArtifacts: GatherArtifactsFn`, `enqueueModelCall: EnqueueModelCallFn` — and no pre-bound closure for any of them.
+         * `[✅]`   `JobContextParams` carries the raw collaborators those bindings require and the root does not otherwise supply: `textSplitter: ITextSplitter`, `constructStoragePath: ConstructStoragePathFn`, `tokenizerDeps: CountTokensDeps`, `netlifyQueueUrl: string`, `netlifyApiKey: string`, `apiKeyForProvider: ApiKeyForProviderFn`.
+         * `[✅]`   `createJobContext` constructs every deps object in one place, producers before consumers, and assigns each bound closure to the `IJobContext` member of the same name: `prepareModelJob`, `gatherArtifacts`, `enqueueModelCall`, `retryJob`, `calculateAffordability` and `compressPrompt`.
+         * `[✅]`   `createPrepareModelJobContext` returns `PrepareModelJobDeps`, the type its consumer owns, and takes the root plus nothing else — every implementation it binds reaches it on the root. `IPrepareModelJobContext` and `isIPrepareModelJobContext` are deleted, the slice having no shape of its own to declare.
+         * `[✅]`   `IRagContext` is deleted, and `ragService`, `indexingService` and `embeddingClient` leave `IJobContext`, `JobContextParams`, the guard, the mock and every test surface that enumerates them. `countTokens`, the fourth member of `IRagContext`, is already declared directly on `IJobContext` and stays there.
+         * `[✅]`   `JobContext.mock.ts` carries the four symbols owed to each owned object type and one function mock per owned function type, in the forms `mocks.md` prescribes, replacing the hand-rolled `createMockJobContextParams` override helper and the two recording factories.
+         * `[✅]`   `ProcessSimpleJobFn`, `ProcessComplexJobFn` and `ProcessRenderJobFn` take the canonical `(deps, params, payload)` shape and return a two-arm union, each with its `Params`, `Payload`, success flavors and error arm declared beside it, matching `ProcessCompressJobFn`, which already has that shape. The contracts land here because every processor node and the dispatcher that constructs their arguments follows this one.
+         * `[✅]`   `IJobContext.retryJob` and `JobContextParams.retryJob` carry the canonical `retryJob` module's types, and the factory binds it like every other member: `JobContextParams.retryJob` is `RetryJobFn` and `IJobContext.retryJob` is `BoundRetryJobFn`.
+         * `[✅]`   The factory produces nothing for `saveResponse`: `createSaveResponseContext` and `ISaveResponseContext` are deleted, and the seven members the root carries solely for that function — `continueJob`, `resolveFinishReason`, `isIntermediateChunk`, `determineContinuation`, `buildUploadContext`, `sanitizeJsonContent` and `debitTokens` — leave `IJobContext`, `JobContextParams`, the guard, the mock and every test surface that enumerates them.
+      * `[✅]`   Non-functional constraints:
+         * `[✅]`   Every field the factory copies today it copies unchanged. This node adds bindings, removes three RAG members and seven `saveResponse` members, and re-derives nothing else; no surviving member changes its type, its name or its source except `retryJob`, which moves from the legacy positional type to the canonical module's.
+         * `[✅]`   `computeJobSig` stays on both the root and the params: the factory supplies it to `EnqueueModelCallDeps`, so the worker reads it and it is not a `saveResponse`-only member.
+         * `[✅]`   `createPlanJobContext` and `createRenderJobContext` keep their current bodies, signatures and returns. `IPlanJobContext`, `IRenderJobContext`, `ILoggerContext`, `IFileContext`, `IModelContext`, `ITokenContext` and `INotificationContext` are unchanged.
+         * `[✅]`   `dialectic-worker/index.ts` goes transiently non-compilable and is not edited here — it supplies the retired pre-bound closures, the three RAG constructions and the seven `saveResponse` members, and it is the composition-root node that closes this workstream.
+         * `[✅]`   `netlifyResponse/index.ts` is the composition root for the `saveResponse` graph and assembles it itself; this factory binds none of those modules and carries no member for them. That node has already landed and is not edited here.
+         * `[✅]`   The three processor implementations and `processJob.ts` go transiently non-compilable against the retyped `Fn` contracts and are not edited here; each has its own node after this one.
+      * `[✅]`   Each goal is proven by a named case in this node's interface test, guard test, unit test or integration test.
+
+   * `[✅]`   `role`
+      * `[✅]`   Node role is infra-layer composition: receive every implementation and raw collaborator the worker process needs, construct each deps object exactly once in dependency order, and hand out a root context whose members are already bound.
+      * `[✅]`   The role is correct because a factory that receives implementations and returns bound closures is the only place the worker's graph has a single shape. When a call site builds a deps literal instead, that literal is the graph, and it exists once per call site with no contract holding the copies in agreement.
+      * `[✅]`   Out-of-scope responsibilities:
+         * `[✅]`   Do not import, construct or type `IRagService`, `IIndexingService`, `IEmbeddingClient`, `ICompressionStrategy` or `CompressionStrategyDeps`/`Params`/`Payload` anywhere in this module.
+         * `[✅]`   Do not read a job row, decide affordability, compress, score or enqueue. The factory calls no bound closure it constructs.
+         * `[✅]`   Do not edit `dialectic-worker/index.ts`, `processJob.ts`, `processSimpleJob.ts`, `processComplexJob.ts`, `processRenderJob.ts` or any module whose deps this factory assembles; each has its own node. This node declares the processor contracts; it does not conform any implementation to them.
+         * `[✅]`   Do not construct the adapters and services the root constructs — `FileManagerService`, `PromptAssembler`, the wallet services, the provider adapters. They arrive on `JobContextParams` already instantiated, as they do today.
+         * `[✅]`   Do not add a `provides` barrel. Consumers import this module's interface, guard and implementation directly, and changing that ripples every consumer's imports.
+         * `[✅]`   Do not narrow any processor's deps slot below the context interface it receives today. Reshaping the signature is this node's work; deciding which collaborators each processor actually invokes is not.
+
+   * `[✅]`   `module`
+      * `[✅]`   Bounded context is `supabase/functions/dialectic-worker/createJobContext` — the worker's dependency-injection boundary: the context contracts, their guards, their mock, and the factory and slicers that construct them.
+      * `[✅]`   Inside boundary:
+         * `[✅]`   Which deps object each worker module receives, and in what order those objects are constructed.
+         * `[✅]`   The shape of the root context and of each slice handed to a job-type processor.
+      * `[✅]`   Outside boundary:
+         * `[✅]`   Where an implementation or a raw collaborator comes from — an import, an environment variable, a constructed service — all resolved by the worker root before it calls this factory.
+         * `[✅]`   What any bound closure does when invoked, owned by the module that declares it.
+         * `[✅]`   The `saveResponse` graph, assembled in `netlifyResponse/index.ts`.
+
+   * `[✅]`   `deps`
+      * `[✅]`   Removed provider: `_shared/services/rag_service.interface.ts` (`IRagService`), `_shared/services/indexing_service.interface.ts` (`IIndexingService`, `IEmbeddingClient`), `_shared/services/rag_service.mock.ts` (`MockRagService`) and `_shared/services/indexing_service.mock.ts` (`MockIndexingService`).
+         * `[✅]`   Layer classification: shared service interfaces and mocks.
+         * `[✅]`   Direction: inbound, and closed by this node — no file in this module imports from `rag_service` or `indexing_service` afterwards.
+         * `[✅]`   Purpose retired: carrying retrieval and embedding collaborators down a graph in which victim selection is `candidateTokens × importance` and nothing embeds.
+      * `[✅]`   Added provider: `../compressPrompt/compressPrompt.provides.ts` (`CompressPromptFn`, `CompressPromptDeps`, `BoundCompressPromptFn`).
+         * `[✅]`   Layer classification: sibling app-layer module.
+         * `[✅]`   Direction: lateral within `dialectic-worker`.
+         * `[✅]`   Purpose: the unbound compression loop this factory binds, and the deps object it binds it with.
+      * `[✅]`   Added provider: `../enqueueCompressJobs/enqueueCompressJobs.provides.ts` (`enqueueCompressJobsFn`, `enqueueCompressJobsDeps`, `BoundenqueueCompressJobsFn`).
+         * `[✅]`   Layer classification: sibling app-layer module.
+         * `[✅]`   Direction: lateral within `dialectic-worker`.
+         * `[✅]`   Purpose: the COMPRESS child dispatcher, bound and supplied to `compressPrompt`'s deps.
+      * `[✅]`   Added provider: `_shared/utils/vector_utils.provides.ts` (`GetSortedCompressionCandidatesFn`, `GetSortedCompressionCandidatesDeps`, `BoundGetSortedCompressionCandidatesFn`).
+         * `[✅]`   Layer classification: shared utility.
+         * `[✅]`   Direction: inbound from `_shared`.
+         * `[✅]`   Purpose: the embedding-free scorer, bound and supplied to `compressPrompt`'s deps.
+      * `[✅]`   Added provider: `../applyCompressionOverlay/applyCompressionOverlay.provides.ts` (`ApplyCompressionOverlayFn`, `ApplyCompressionOverlayDeps`, `BoundApplyCompressionOverlayFn`).
+         * `[✅]`   Layer classification: sibling app-layer module.
+         * `[✅]`   Direction: lateral within `dialectic-worker`.
+         * `[✅]`   Purpose: the overlay `gatherArtifacts` invokes post-gather, bound and supplied to that function's deps.
+      * `[✅]`   Added provider: `_shared/utils/text_splitter.interface.ts` (`ITextSplitter`) and `_shared/utils/path_constructor.types.ts` (`ConstructStoragePathFn`).
+         * `[✅]`   Layer classification: shared type surfaces.
+         * `[✅]`   Direction: inbound from `_shared`.
+         * `[✅]`   Purpose: the two raw collaborators `enqueueCompressJobsDeps` and `CompressPromptDeps` require and no existing `JobContextParams` member supplies.
+      * `[✅]`   Added provider: `_shared/types/tokenizer.types.ts` (`CountTokensDeps`, `BoundCountTokensFn`, beside the already-imported `CountTokensFn`).
+         * `[✅]`   Layer classification: shared type surface.
+         * `[✅]`   Direction: inbound from `_shared`.
+         * `[✅]`   Purpose: `GetSortedCompressionCandidatesDeps.countTokens` is a `BoundCountTokensFn`, so the factory binds the root's `CountTokensFn` against the root's `CountTokensDeps` once and supplies the bound form.
+      * `[✅]`   Added provider: `../prepareModelJob/prepareModelJob.provides.ts` (`PrepareModelJobFn`, `PrepareModelJobDeps`), `../calculateAffordability/calculateAffordability.provides.ts` (`CalculateAffordabilityFn`, `CalculateAffordabilityDeps`, `BoundCalculateAffordabilityFn`), `../gatherArtifacts/gatherArtifacts.interface.ts` (`GatherArtifactsFn`, `GatherArtifactsDeps`) and `../enqueueModelCall/enqueueModelCall.interface.ts` (`EnqueueModelCallFn`, `EnqueueModelCallDeps`, `ApiKeyForProviderFn`).
+         * `[✅]`   Layer classification: sibling app-layer modules.
+         * `[✅]`   Direction: lateral within `dialectic-worker`; each already provides a bound type this interface imports, so no new direction is opened.
+         * `[✅]`   Purpose: the unbound implementations and the deps shapes this factory now constructs rather than receives pre-bound.
+      * `[✅]`   Added provider: `../retryJob/retryJob.provides.ts` (`RetryJobFn`, `RetryJobDeps`, `BoundRetryJobFn`).
+         * `[✅]`   Layer classification: sibling app-layer module.
+         * `[✅]`   Direction: lateral within `dialectic-worker`.
+         * `[✅]`   Purpose: the canonical retry dispatcher, bound here and read from the root by `handleJob`. It replaces the locally declared legacy `RetryJobFn`, which this node deletes.
+      * `[✅]`   Removed provider: the seven collaborators the root carried only for `saveResponse` — `continueJob/continueJob.provides.ts` (`ContinueJobFn`), `_shared/utils/resolveFinishReason.ts`, `_shared/utils/isIntermediateChunk.ts`, `_shared/utils/determineContinuation/determineContinuation.interface.ts`, `_shared/utils/buildUploadContext/buildUploadContext.interface.ts`, `_shared/utils/jsonSanitizer/jsonSanitizer.interface.ts` and `_shared/utils/debitTokens.interface.ts` — with the members they typed and the `ISaveResponseContext` slice they fed.
+         * `[✅]`   Layer classification: sibling module and shared utilities.
+         * `[✅]`   Direction: inbound, and closed by this node.
+         * `[✅]`   Purpose retired: carrying a second process's collaborators on this process's root. `netlifyResponse/index.ts` imports each of them directly.
+      * `[✅]`   Confirm:
+         * `[✅]`   No dependency is injected into the factory itself. `createJobContext` takes one `JobContextParams` object and returns one `IJobContext`; it has no deps slot, and this node adds none.
+         * `[✅]`   The processor contracts this node declares introduce no import into `dialectic-service/dialectic.interface.ts` that it does not already hold: `SupabaseClient`, `Database`, `DialecticJobRow` and the payload arms are all declared or imported there today.
+         * `[✅]`   No reverse dependency: none of `compressPrompt`, `calculateAffordability`, `enqueueCompressJobs`, `vector_utils`, `applyCompressionOverlay`, `gatherArtifacts` or `enqueueModelCall` imports this module's factory. `prepareModelJob.interface.ts` imports three function types from `JobContext.interface.ts` — `ApplyInputsRequiredScopeFn`, `ValidateWalletBalanceFn`, `ValidateModelCostRatesFn` — and this node neither adds to that set nor removes from it.
+      * `[✅]`   `context_slice`
+         * `[✅]`   From each bound module: its unbound function type and its deps type only — never its params, payload or return types, which the factory neither constructs nor reads.
+         * `[✅]`   From `retryJob/retryJob.provides.ts`: `RetryJobFn`, `RetryJobDeps` and `BoundRetryJobFn` only.
+         * `[✅]`   From `_shared`: `ITextSplitter`, `ConstructStoragePathFn`, `CountTokensDeps` and `BoundCountTokensFn` only.
+
+   * `[✅]`   `createJobContext.interface.test.ts`
+      * `[✅]`   The `IRagContext` surface case is deleted with the interface it proved.
+      * `[✅]`   The `ISaveResponseContext` surface case is deleted with the interface it proved.
+      * `[✅]`   The `IPrepareModelJobContext` surface case is deleted; a case in its place proves `createPrepareModelJobContext`'s return type is `PrepareModelJobDeps` by typed assignment of a `declare const` of that type to the slicer's declared return.
+      * `[✅]`   The `IJobContext` and `JobContextParams` surface cases each enumerate every key the `JobContext.interface.ts` element declares for that type, asserting each name. Neither asserts a member count.
+      * `[✅]`   A case proves `retryJob`'s two forms by typed assignment: a `declare const` of `RetryJobFn` assigns to `JobContextParams['retryJob']`, and a `declare const` of `BoundRetryJobFn` assigns to `IJobContext['retryJob']`.
+      * `[✅]`   A case proves each processor's params surface exhaustively by typed assignment — `Record<keyof ProcessSimpleJobParams, true>` over `dbClient`, and the same for the complex and render params — each asserting one.
+      * `[✅]`   A case proves each processor's payload surface the same way over `job`, each asserting one.
+      * `[✅]`   A case proves each processor's return union by typed assignment: for the simple processor, a dispatched value and a deferred value each assign to `ProcessSimpleJobSuccessReturn`, that assigns to `ProcessSimpleJobReturn`, and an error value assigns to `ProcessSimpleJobReturn`; the complex and render processors take the same form with their single success shapes.
+      * `[✅]`   A case proves each processor's `Fn` type accepts its declared deps, params and payload and returns its own `Promise<…Return>`.
+      * `[✅]`   A case proves each retyped member by typed assignment: a `declare const` of `PrepareModelJobFn` assigns to `JobContextParams['prepareModelJob']`, of `GatherArtifactsFn` to `JobContextParams['gatherArtifacts']`, and of `EnqueueModelCallFn` to `JobContextParams['enqueueModelCall']` — proving each slot takes the unbound form.
+      * `[✅]`   A case proves the root keeps the bound forms by typed assignment: a `declare const` of `BoundPrepareModelJobFn` assigns to `IJobContext['prepareModelJob']`, of `BoundGatherArtifactsFn` to `IJobContext['gatherArtifacts']`, and of `BoundEnqueueModelCallFn` to `IJobContext['enqueueModelCall']`.
+      * `[✅]`   The `ILoggerContext`, `IFileContext`, `IModelContext`, `ITokenContext`, `INotificationContext`, `IPlanJobContext` and `IRenderJobContext` surface cases are unchanged. The file imports no builders, its fixtures being typed literals, surface records and `declare const` bindings.
+
+   * `[✅]`   dialectic-service/`dialectic.interface.ts`
+      * `[✅]`   `ProcessSimpleJobParams`, `ProcessComplexJobParams` and `ProcessRenderJobParams` each declare `dbClient: SupabaseClient<Database>` and nothing else. `dbClient` is a per-invocation handle, not a collaborator and not data.
+      * `[✅]`   `ProcessSimpleJobPayload` declares `job: DialecticJobRow & { payload: DialecticExecuteJobPayload }`; `ProcessComplexJobPayload` declares `job: DialecticJobRow & { payload: DialecticPlanJobPayload }`; `ProcessRenderJobPayload` declares `job: DialecticJobRow`. The row is the data each processor operates on, and it carries its own `user_id`, `session_id`, `iteration_number` and payload, so no processor takes `projectOwnerUserId` or `authToken` as a separate value.
+      * `[✅]`   `ProcessSimpleJobDispatchedReturn` is `{ dispatched: true }` and `ProcessSimpleJobDeferredReturn` is `{ deferred: true }`; `ProcessSimpleJobSuccessReturn` is their union; `ProcessSimpleJobErrorReturn` is `{ error: Error; retriable: boolean }`; `ProcessSimpleJobReturn` is the success arm union the error arm. The two success flavors are the dispatcher's two non-error outcomes, which that function narrows and reports rather than treating alike.
+      * `[✅]`   `ProcessComplexJobSuccessReturn` is `{ planned: true }`, `ProcessComplexJobErrorReturn` is `{ error: Error; retriable: boolean }`, and `ProcessComplexJobReturn` is their union.
+      * `[✅]`   `ProcessRenderJobSuccessReturn` is `{ rendered: true }`, `ProcessRenderJobErrorReturn` is `{ error: Error; retriable: boolean }`, and `ProcessRenderJobReturn` is their union.
+      * `[✅]`   `ProcessSimpleJobFn` becomes `(deps: IJobContext, params: ProcessSimpleJobParams, payload: ProcessSimpleJobPayload) => Promise<ProcessSimpleJobReturn>`; `ProcessComplexJobFn` takes `deps: IPlanJobContext` and its own three types; `ProcessRenderJobFn` takes `deps: IRenderJobContext` and its own three types. Each deps slot is the context interface that processor receives today, unnarrowed.
+      * `[✅]`   `IJobProcessors` keeps its five member names and their `Fn` types; `ProcessCompressJobFn` and `PlanComplexStageFn` are unchanged.
+
+   * `[✅]`   `JobContext.interface.ts`
+      * `[✅]`   `IRagContext` is deleted, with the `IRagService`, `IIndexingService` and `IEmbeddingClient` imports.
+      * `[✅]`   `IPrepareModelJobContext` is deleted. `PrepareModelJobDeps` is imported from `../prepareModelJob/prepareModelJob.interface.ts` as the slicer's return type, beside the `PrepareModelJobParams`, `PrepareModelJobPayload` and `PrepareModelJobReturn` imports already present.
+      * `[✅]`   `ISaveResponseContext` is deleted, with the `BoundEnqueueRenderJobFn` and `BoundDebitTokens` imports that typed its two members.
+      * `[✅]`   The locally declared `RetryJobFn` — the six-positional type returning `Promise<{ error?: Error }>` — is deleted, with the `FailedAttemptError` import it required. `RetryJobFn` and `BoundRetryJobFn` are imported from `../retryJob/retryJob.interface.ts` instead.
+      * `[✅]`   `IJobContext` extends `IPlanJobContext` and `IRenderJobContext`, and declares `getAiProviderAdapter: GetAiProviderAdapterFn`, `getAiProviderConfig: GetAiProviderConfigFn`, `countTokens: CountTokensFn`, `adminTokenWalletService: IAdminTokenWalletService`, `userTokenWalletService: IUserTokenWalletService`, `pickLatest: PickLatestFn`, `applyInputsRequiredScope: ApplyInputsRequiredScopeFn`, `validateWalletBalance: ValidateWalletBalanceFn`, `validateModelCostRates: ValidateModelCostRatesFn`, `getMaxOutputTokens: GetMaxOutputTokensFn`, `promptAssembler: IPromptAssembler`, `getSeedPromptForStage: GetSeedPromptForStageFn`, `computeJobSig: ComputeJobSig`, `retryJob: BoundRetryJobFn`, `gatherArtifacts: BoundGatherArtifactsFn`, `prepareModelJob: BoundPrepareModelJobFn`, `enqueueModelCall: BoundEnqueueModelCallFn`, `calculateAffordability: BoundCalculateAffordabilityFn` and `compressPrompt: BoundCompressPromptFn`. `ragService`, `indexingService`, `embeddingClient`, `continueJob`, `resolveFinishReason`, `isIntermediateChunk`, `determineContinuation`, `buildUploadContext`, `sanitizeJsonContent` and `debitTokens` are not members of it.
+      * `[✅]`   `JobContextParams` declares `logger: ILogger`, `fileManager: IFileManager`, `downloadFromStorage: DownloadFromStorageFn`, `deleteFromStorage: DeleteFromStorageFn`, `getAiProviderAdapter: GetAiProviderAdapterFn`, `getAiProviderConfig: GetAiProviderConfigFn`, `countTokens: CountTokensFn`, `adminTokenWalletService: IAdminTokenWalletService`, `userTokenWalletService: IUserTokenWalletService`, `notificationService: NotificationServiceType`, `getSeedPromptForStage: GetSeedPromptForStageFn`, `promptAssembler: IPromptAssembler`, `getGranularityPlanner: GetGranularityPlannerFn`, `planComplexStage: PlanComplexStageFn`, `findSourceDocuments: FindSourceDocumentsFn`, `documentRenderer: IDocumentRenderer`, `assembleContributionChain: AssembleContributionChainFn`, `loadDocumentTemplate: LoadDocumentTemplateFn`, `mergeChunkContent: MergeChunkContentFn`, `pickLatest: PickLatestFn`, `applyInputsRequiredScope: ApplyInputsRequiredScopeFn`, `validateWalletBalance: ValidateWalletBalanceFn`, `validateModelCostRates: ValidateModelCostRatesFn`, `getMaxOutputTokens: GetMaxOutputTokensFn`, `computeJobSig: ComputeJobSig`, `retryJob: RetryJobFn`, `gatherArtifacts: GatherArtifactsFn`, `prepareModelJob: PrepareModelJobFn`, `enqueueModelCall: EnqueueModelCallFn`, `compressPrompt: CompressPromptFn`, `calculateAffordability: CalculateAffordabilityFn`, `enqueueCompressJobs: enqueueCompressJobsFn`, `getSortedCompressionCandidates: GetSortedCompressionCandidatesFn`, `applyCompressionOverlay: ApplyCompressionOverlayFn`, `textSplitter: ITextSplitter`, `constructStoragePath: ConstructStoragePathFn`, `tokenizerDeps: CountTokensDeps`, `netlifyQueueUrl: string`, `netlifyApiKey: string` and `apiKeyForProvider: ApiKeyForProviderFn`, with the imports each requires. `ragService`, `indexingService`, `embeddingClient`, `continueJob`, `resolveFinishReason`, `isIntermediateChunk`, `determineContinuation`, `buildUploadContext`, `sanitizeJsonContent` and `debitTokens` are not members of it.
+      * `[✅]`   `RandomUUIDFn` is declared in this file as the type of `JobContextParams.randomUUID`, the property carrying an inline function type today.
+      * `[✅]`   `FindSourceDocumentsFn`, `PickLatestFn`, `ApplyInputsRequiredScopeFn`, `ValidateWalletBalanceFn`, `ValidateModelCostRatesFn`, `BoundPrepareModelJobFn`, `BoundGatherArtifactsFn` and every surviving context interface keep their declarations.
+      * `[✅]`   `ResolveFinishReasonFn`, `IsIntermediateChunkFn`, `DetermineContinuationFn` and `BuildUploadContextFn` keep their declarations even though no member in this file references them afterwards. Nine files outside this module import them from here — `prepareResponseContent`'s interface, mock and test, `saveContributionResponse`'s interface, test and integration test, `saveCompressedResponse`'s interface and integration test, `saveResponse.ts`, and `buildUploadContext`'s own mock and interface test. Deleting them breaks the `saveResponse` graph; relocating them to the modules that own the functions they type is another node's work.
+
+   * `[✅]`   `createJobContext.interaction.spec`
+      * `[✅]`   `createJobContext` has one branch and no conditions: it constructs the bound closures in dependency order, then returns one `IJobContext` literal. Every member not named below is copied from the identically named `JobContextParams` member, exactly as it is copied today.
+      * `[✅]`   Binding order, producers first, each closure capturing `params` from the factory's own scope, and `boundPrepareModelJob` capturing the `root` binding the return literal is assigned to:
+         * `[✅]`   `boundCountTokens: BoundCountTokensFn` = `(payload, modelConfig) => params.countTokens(params.tokenizerDeps, payload, modelConfig)`.
+         * `[✅]`   `boundGetSortedCompressionCandidates: BoundGetSortedCompressionCandidatesFn` = `(p, pl) => params.getSortedCompressionCandidates({ logger: params.logger, countTokens: boundCountTokens }, p, pl)`.
+         * `[✅]`   `boundEnqueueCompressJobs: BoundenqueueCompressJobsFn` = `(p, pl) => params.enqueueCompressJobs({ logger: params.logger, textSplitter: params.textSplitter, countTokens: params.countTokens, constructStoragePath: params.constructStoragePath }, p, pl)`.
+         * `[✅]`   `boundCompressPrompt: BoundCompressPromptFn` = `(p, pl) => params.compressPrompt({ logger: params.logger, getSortedCompressionCandidates: boundGetSortedCompressionCandidates, enqueueCompressJobs: boundEnqueueCompressJobs, constructStoragePath: params.constructStoragePath, downloadFromStorage: params.downloadFromStorage, countTokens: params.countTokens }, p, pl)`.
+         * `[✅]`   `boundCalculateAffordability: BoundCalculateAffordabilityFn` = `(p, pl) => params.calculateAffordability({ logger: params.logger, countTokens: params.countTokens, getMaxOutputTokens: params.getMaxOutputTokens }, p, pl)`, carrying no `compressPrompt`.
+         * `[✅]`   `boundEnqueueModelCall: BoundEnqueueModelCallFn` = `(p, pl) => params.enqueueModelCall({ logger: params.logger, netlifyQueueUrl: params.netlifyQueueUrl, netlifyApiKey: params.netlifyApiKey, apiKeyForProvider: params.apiKeyForProvider, computeJobSig: params.computeJobSig }, p, pl)`.
+         * `[✅]`   `boundApplyCompressionOverlay: BoundApplyCompressionOverlayFn` = `(p, pl) => params.applyCompressionOverlay({ logger: params.logger, downloadFromStorage: params.downloadFromStorage }, p, pl)`.
+         * `[✅]`   `boundGatherArtifacts: BoundGatherArtifactsFn` = `(p, pl) => params.gatherArtifacts({ logger: params.logger, pickLatest: params.pickLatest, downloadFromStorage: params.downloadFromStorage, applyCompressionOverlay: boundApplyCompressionOverlay }, p, pl)`.
+         * `[✅]`   `boundRetryJob: BoundRetryJobFn` = `(p, pl) => params.retryJob({ logger: params.logger, notificationService: params.notificationService }, p, pl)`.
+         * `[✅]`   `boundPrepareModelJob: BoundPrepareModelJobFn` = `(p, pl) => params.prepareModelJob(createPrepareModelJobContext(root), p, pl)`, where `root` is the `IJobContext` this factory is returning.
+      * `[✅]`   Return: the factory assigns its `IJobContext` literal to `root` and returns it. The literal assigns `prepareModelJob: boundPrepareModelJob`, `gatherArtifacts: boundGatherArtifacts`, `enqueueModelCall: boundEnqueueModelCall`, `retryJob: boundRetryJob`, `calculateAffordability: boundCalculateAffordability` and `compressPrompt: boundCompressPrompt`, and copies every other member the `JobContext.interface.ts` element declares on `IJobContext` from the `JobContextParams` member of the same name.
+      * `[✅]`   `createPrepareModelJobContext(root: IJobContext): PrepareModelJobDeps` takes `root` and nothing else, and projects each member `PrepareModelJobDeps` declares from the root member of the same name, except `tokenWalletService`, which it reads from `root.userTokenWalletService`. The slicer's `boundEnqueueModelCall`, `compressPromptFn` and `calculateAffordabilityFn` parameters and its two inline binding closures are gone.
+      * `[✅]`   `createPlanJobContext` and `createRenderJobContext` keep their current bodies and signatures; no branch, no member and no argument changes. `createSaveResponseContext` is deleted with the slice type it returned.
+      * `[✅]`   Ordering and side effects: the factory performs no I/O, calls no bound closure it constructs, and returns synchronously. Each bound closure is constructed exactly once per `createJobContext` call, so every consumer of one root shares one instance.
+
+   * `[✅]`   _shared/`dialectic.mock.ts`
+      * `[✅]`   Thirteen owned object types this node declares take the four symbols each, production-named — `<Type>Overrides` as `Partial<T>`, `build<Type>`, `<Type>Corruptions` as `{ [K in keyof T]?: unknown }` and `invalidate<Type>` returning `unknown`: `ProcessSimpleJobParams`, `ProcessComplexJobParams`, `ProcessRenderJobParams`, `ProcessSimpleJobPayload`, `ProcessComplexJobPayload`, `ProcessRenderJobPayload`, `ProcessSimpleJobDispatchedReturn`, `ProcessSimpleJobDeferredReturn`, `ProcessSimpleJobErrorReturn`, `ProcessComplexJobSuccessReturn`, `ProcessComplexJobErrorReturn`, `ProcessRenderJobSuccessReturn` and `ProcessRenderJobErrorReturn`.
+      * `[✅]`   `ProcessSimpleJobSuccessReturn`, `ProcessSimpleJobReturn`, `ProcessComplexJobReturn` and `ProcessRenderJobReturn` are unions and take nothing of their own; each object-type member of each union is built by its own builder above.
+      * `[✅]`   Each params builder defaults `dbClient` to `createMockSupabaseClient(undefined, {}).client` cast to `SupabaseClient<Database>` — the external-client cast this file already makes — and declares no other member.
+      * `[✅]`   Each payload builder composes the row and payload builders this file already exports rather than a hand-rolled literal: `buildProcessSimpleJobPayload` returns `{ job: buildDialecticJobRow({ job_type: 'EXECUTE', payload: buildDialecticExecuteJobPayload() }) }`, `buildProcessComplexJobPayload` the same with `'PLAN'` and `buildDialecticPlanJobPayload()`, and `buildProcessRenderJobPayload` `{ job: buildDialecticJobRow() }`.
+      * `[✅]`   Each success-flavor builder returns its single discriminant — `{ dispatched: true }`, `{ deferred: true }`, `{ planned: true }`, `{ rendered: true }`. Each error-arm builder defaults `error` to `new Error("mock-process-simple-job-error")`, `new Error("mock-process-complex-job-error")` or `new Error("mock-process-render-job-error")` and `retriable` to `false`. The three error arms are structurally identical and each still takes its own per-type quartet; no generic or shared invalidator stands in for them.
+      * `[✅]`   Three function mocks, one per owned function type: `mockProcessSimpleJob: ProcessSimpleJobFn` returning `buildProcessSimpleJobDispatchedReturn()`, `mockProcessComplexJob: ProcessComplexJobFn` returning `buildProcessComplexJobSuccessReturn()` and `mockProcessRenderJob: ProcessRenderJobFn` returning `buildProcessRenderJobSuccessReturn()` — identical signatures, no extra parameters, no options bag, no recording.
+      * `[✅]`   `_JobProcessorsDummyImpl` assigns those three function mocks to its `processSimpleJob`, `processComplexJob` and `processRenderJob` members, so the class satisfies `IJobProcessors` under the reshaped contracts; the `(..._args: any[]): Promise<void>` declarations and the `deno-lint-ignore no-explicit-any` comments above them are deleted with the `any` they suppressed.
+      * `[✅]`   `createMockJobProcessors`, `MockJobProcessorsSpies` and the spy wiring around them are otherwise untouched; eight suites outside this module consume them.
+      * `[✅]`   Every other export in this file is unchanged.
+
+   * `[✅]`   `JobContext.mock.ts`
+      * `[✅]`   Two owned object types take the four symbols each, production-named: `JobContextParamsOverrides` as `Partial<JobContextParams>`, `buildJobContextParams`, `JobContextParamsCorruptions` as `{ [K in keyof JobContextParams]?: unknown }`, `invalidateJobContextParams` returning `unknown`; and the same quartet for `IJobContext`.
+      * `[✅]`   `buildJobContextParams` supplies a default for every member and returns `overrides ? { ...base, ...overrides } : base`. The eight unbound-implementation members default to production-typed functions returning that module's own built success value; `textSplitter` defaults to a production-typed `ITextSplitter`; `constructStoragePath` to a production-typed function returning a default `ConstructedPath`; `tokenizerDeps` to a `CountTokensDeps` whose members are the mock tokenizer closures; `netlifyQueueUrl`, `netlifyApiKey` to strings; `apiKeyForProvider` to a production-typed function. Every RAG default — `ragService`, `indexingService`, `embeddingClient` — is deleted with its member.
+      * `[✅]`   `buildIJobContext` composes `buildJobContextParams` and maps each member the `JobContext.interface.ts` element declares on `IJobContext` from the `JobContextParams` member of the same name, except the six the factory binds, which take this file's bound-form defaults. `buildJobContextParams` defaults `retryJob` to the canonical `mockRetryJob` imported from `retryJob.mock.ts`.
+      * `[✅]`   The imported types this file builds — the context slices — take their builders from their owners: `buildIPlanJobContext` and `buildIRenderJobContext` stay, and `buildPrepareModelJobDeps` is imported from `prepareModelJob.mock.ts` rather than re-declared here.
+      * `[✅]`   Deleted: `createMockJobContextParams` with its hand-rolled overrides type, `createMockRootContext`, `buildIPrepareModelJobContext`, `createCompressPromptFn` and `createCalculateAffordabilityFn` with their `recordedCompressDeps`, `recordedAffordabilityDeps` and `recordedAffordabilityParams` arrays, `createContractCalculateAffordabilityFnThatCallsCompressPrompt`, `createMockBoundEnqueueModelCall`, `createMockBoundEnqueueRenderJob`, `createMockBoundGatherArtifacts`, and the `MockRagService`, `MockIndexingService` and `createJobContext` imports. A test needing recorded arguments wraps a production-typed function with the runner's spy facility at its own call site.
+
+   * `[✅]`   _shared/utils/type-guards/`type_guards.dialectic.test.ts`
+      * `[✅]`   A case checklist per guard this node adds, its fixtures drawn from `dialectic.mock.ts`'s builders and invalidators and never hand-rolled: the builder's valid default accepted; valid overrides accepted; `null`, `undefined`, a primitive and an array rejected; each property corrupted in turn rejected; each required property omitted by rest-destructure rejected.
+      * `[✅]`   The seven return-flavor guards are proven to discriminate rather than merely to accept: `isProcessSimpleJobDispatchedReturn` accepts `buildProcessSimpleJobDispatchedReturn()` and rejects both `buildProcessSimpleJobDeferredReturn()` and `buildProcessSimpleJobErrorReturn()`, and each of the other six rejects every flavor but its own. Arranged in one file so a collapsed discriminant fails an assertion.
+      * `[✅]`   `isProcessSimpleJobSuccessReturn` accepts both success flavors and rejects the error arm.
+      * `[✅]`   Each payload guard is proven to reject a row carrying another arm's payload: `isProcessSimpleJobPayload` rejects a row built with `buildDialecticPlanJobPayload()`, and `isProcessComplexJobPayload` rejects one built with `buildDialecticExecuteJobPayload()`.
+      * `[✅]`   `isDialecticJobRow` takes its own checklist over `buildDialecticJobRow` and `invalidateDialecticJobRow`, one corrupted case per column it checks and one omitted case per required column.
+      * `[✅]`   No foreign guard is tested here: `isDialecticExecuteJobPayload`, `isDialecticPlanJobPayload` and `isDialecticBaseJobPayload` are exercised only indirectly, through the corrupted-property cases of the guards that delegate to them.
+      * `[✅]`   Every existing case in this file keeps its arrangement and its assertions.
+
+   * `[✅]`   _shared/utils/type-guards/`type_guards.dialectic.ts`
+      * `[✅]`   Fifteen guards are added: `isDialecticJobRow`, `isProcessSimpleJobParams`, `isProcessComplexJobParams`, `isProcessRenderJobParams`, `isProcessSimpleJobPayload`, `isProcessComplexJobPayload`, `isProcessRenderJobPayload`, `isProcessSimpleJobDispatchedReturn`, `isProcessSimpleJobDeferredReturn`, `isProcessSimpleJobSuccessReturn`, `isProcessSimpleJobErrorReturn`, `isProcessComplexJobSuccessReturn`, `isProcessComplexJobErrorReturn`, `isProcessRenderJobSuccessReturn` and `isProcessRenderJobErrorReturn` — one per type this node declares, less the three top-level `Return` unions.
+      * `[✅]`   `isDialecticJobRow` checks `isRecord` and every column of the row: `id`, `session_id`, `user_id`, `stage_slug`, `status`, `attempt_count`, `max_retries`, `iteration_number` and `created_at` present and of their declared type; `job_type`, `parent_job_id`, `prerequisite_job_id`, `target_contribution_id`, `idempotency_key`, `started_at`, `completed_at`, `error_details` and `results` present and either null or of their declared type; `payload` present. It is written here because `DialecticJobRow` is aliased in `dialectic-service/dialectic.interface.ts`, whose guards this file holds, and because the three payload guards below cannot check their row property without it.
+      * `[✅]`   Each params guard checks `isRecord` and that `dbClient` is present and an object, the same single-member check `isPrepareModelJobParams` makes.
+      * `[✅]`   Each payload guard checks `isRecord`, calls `isDialecticJobRow` on `job`, and delegates that row's `payload` to the guard that owns the arm — `isDialecticExecuteJobPayload` for the simple payload and `isDialecticPlanJobPayload` for the complex one, both already exported from this file. `isProcessRenderJobPayload` stops at `isDialecticJobRow`, its declared row carrying no narrowed arm. No arm's member checks are inlined at a delegation site.
+      * `[✅]`   Every return guard is a boolean discriminant check and throws nothing: each flavor guard tests its own literal member and rejects the others', each error guard tests that `error` is an `Error` and `retriable` a boolean, and `isProcessSimpleJobSuccessReturn` returns true for either flavor and false otherwise. These select a branch in the runner and in `processJob`, and a guard that throws cannot select a branch.
+      * `[✅]`   No guard is written for `ProcessSimpleJobReturn`, `ProcessComplexJobReturn` or `ProcessRenderJobReturn`: a consumer discriminates the two arms with the arm guards above, as it does for `PrepareModelJobReturn`, which declares no union guard either.
+      * `[✅]`   Every existing guard in this file is unchanged.
+
+   * `[✅]`   `JobContext.guard.test.ts`
+      * `[✅]`   The `isIRagContext` describe block is deleted with the guard it proved.
+      * `[✅]`   The `isIPrepareModelJobContext` describe block is deleted; the shape it checked is `PrepareModelJobDeps`, proven by `isPrepareModelJobDeps` in the `prepareModelJob` module's own guard test.
+      * `[✅]`   The `isISaveResponseContext` describe block is deleted with the guard it proved.
+      * `[✅]`   The `isIJobContext` case checklist covers every member the `JobContext.interface.ts` element declares on `IJobContext`, its fixtures drawn from `buildIJobContext` and `invalidateIJobContext`.
+      * `[✅]`   The `isILoggerContext`, `isIFileContext`, `isIModelContext`, `isITokenContext`, `isINotificationContext`, `isIPlanJobContext` and `isIRenderJobContext` blocks are unchanged.
+
+   * `[✅]`   `JobContext.guard.ts`
+      * `[✅]`   `isIRagContext` is deleted, with the `IRagContext` import.
+      * `[✅]`   `isIPrepareModelJobContext` is deleted, with the `IPrepareModelJobContext` import.
+      * `[✅]`   `isISaveResponseContext` is deleted, with the `ISaveResponseContext` import.
+      * `[✅]`   `isIJobContext` checks every member the `JobContext.interface.ts` element declares on `IJobContext`, and delegates to `isIPlanJobContext` and `isIRenderJobContext` for the surfaces those interfaces own.
+      * `[✅]`   `isILoggerContext`, `isIFileContext`, `isIModelContext`, `isITokenContext`, `isINotificationContext`, `isIPlanJobContext` and `isIRenderJobContext` are unchanged.
+
+   * `[✅]`   `createJobContext.test.ts`
+      * `[✅]`   Every case builds params through `buildJobContextParams`, overriding only the members it asserts on. The `createMockJobContextParams` import is replaced.
+      * `[✅]`   The `createPrepareModelJobContext` describe blocks are restated against the one-argument slicer: a case asserts the returned object carries each member `PrepareModelJobDeps` declares, taken from the root member of the same name and, for `tokenWalletService`, from `root.userTokenWalletService`; a case asserts that a root member `PrepareModelJobDeps` does not declare is absent from it.
+      * `[✅]`   New case: `createJobContext` returns a `prepareModelJob` that is not the `params.prepareModelJob` it was given — the factory bound it — and invoking it passes the unbound implementation a deps object carrying exactly the eight `PrepareModelJobDeps` members. Arranged with a production-typed `PrepareModelJobFn` the case declares and wraps in a spy, so the assertion fails if the factory copies instead of binds.
+      * `[✅]`   New case: invoking `root.prepareModelJob` reaches `params.calculateAffordability` with a deps object carrying `logger`, `countTokens` and `getMaxOutputTokens` and no `compressPrompt`, and reaches `params.compressPrompt` with a deps object carrying `logger`, `getSortedCompressionCandidates`, `enqueueCompressJobs`, `constructStoragePath`, `downloadFromStorage` and `countTokens` and no `ragService`, `embeddingClient` or `tokenWalletService`. Both collaborators are production-typed functions the case declares and spies on, asserted in one file so a collapsed binding fails an assertion.
+      * `[✅]`   New case: the deps object reaching `params.compressPrompt` carries a `getSortedCompressionCandidates` that, when invoked, calls `params.getSortedCompressionCandidates` with a deps object whose `countTokens` is the bound two-argument form — invoking it with a payload and a model config reaches `params.countTokens` with `params.tokenizerDeps` as its first argument.
+      * `[✅]`   New case: the deps object reaching `params.compressPrompt` carries an `enqueueCompressJobs` that, when invoked, calls `params.enqueueCompressJobs` with a deps object carrying `logger`, `textSplitter`, `countTokens` and `constructStoragePath`.
+      * `[✅]`   New case: `root.gatherArtifacts` is bound, not copied, and invoking it passes `params.gatherArtifacts` a deps object carrying `logger`, `pickLatest`, `downloadFromStorage` and an `applyCompressionOverlay` that delegates to `params.applyCompressionOverlay` with a `logger` and `downloadFromStorage` deps object.
+      * `[✅]`   New case: `root.enqueueModelCall` is bound, not copied, and invoking it passes `params.enqueueModelCall` a deps object carrying `logger`, `netlifyQueueUrl`, `netlifyApiKey`, `apiKeyForProvider` and `computeJobSig`.
+      * `[✅]`   New case: two calls to `root.prepareModelJob` reach `params.compressPrompt` with the same `getSortedCompressionCandidates` and `enqueueCompressJobs` function identities — the graph is constructed once per root, not once per invocation.
+      * `[✅]`   New case: `createJobContext(buildJobContextParams())` returns an object on which `'ragService' in result`, `'indexingService' in result` and `'embeddingClient' in result` are each false.
+      * `[✅]`   New case: `root.retryJob` is bound, not copied, and invoking it passes `params.retryJob` a deps object carrying `logger` and `notificationService`.
+      * `[✅]`   The existing cases for `getSeedPromptForStage`, `computeJobSig`, `isIJobContext`, `createPlanJobContext` and `createRenderJobContext` keep their arrangements and assertions, less the retired members.
+      * `[✅]`   Deleted with the behavior they proved: the `createSaveResponseContext` case, the `sanitizeJsonContent` case, the case asserting `result.prepareModelJob` equals the params override, the case asserting `result.enqueueModelCall` equals the params override, the `calculateAffordability delegates … with compressPrompt bound from root` case and its `recordedCompressDeps` assertions over `ragService`, `embeddingClient` and `tokenWalletService`, and the `TypeScript assignment fails if pickLatest or downloadFromStorage are supplied to IPrepareModelJobContext` case with its three `as unknown as` casts.
+
+   * `[✅]`   `construction`
+      * `[✅]`   `createJobContext` is the worker's single deps-object assembler: one exported factory function taking one typed `JobContextParams` and returning a fully constructed `IJobContext`. No class, no partially constructed instance, no optional field, no default value — every member is set explicitly from a params member or from a closure built in this file.
+      * `[✅]`   The three surviving slicers stay pure projections of a constructed root: each takes `root: IJobContext` and returns a narrower object, and none constructs a service, reads an environment variable or performs I/O.
+      * `[✅]`   Binding is one-shot per root. Every closure is constructed in the factory body before the return literal, so no consumer can observe a half-built graph and no call site can construct a second one.
+
+   * `[✅]`   `createJobContext.ts`
+      * `[✅]`   `createJobContext` constructs the bound closures in the `interaction.spec`'s order ahead of its return, and returns the literal that element specifies. The `// From IRagContext` block loses `ragService`, `indexingService` and `embeddingClient` and keeps `countTokens`.
+      * `[✅]`   `createPrepareModelJobContext` drops its `boundEnqueueModelCall`, `compressPromptFn` and `calculateAffordabilityFn` parameters and its two inline binding closures, takes `root: IJobContext` alone, returns `PrepareModelJobDeps`, and maps the eight members from the root.
+      * `[✅]`   Deleted imports: `IPrepareModelJobContext`, `CompressPromptFn` and `CalculateAffordabilityFn`, the unbound types the retired parameters carried. `BoundCompressPromptFn` and `BoundCalculateAffordabilityFn` stay, annotating the two closures this factory constructs. Added imports: `PrepareModelJobDeps`, and the deps types and bound function types named in the `deps` element.
+      * `[✅]`   `createSaveResponseContext` is deleted, with the `ISaveResponseContext`, `BoundEnqueueRenderJobFn` and `BoundDebitTokens` imports it required. `createPlanJobContext` and `createRenderJobContext` are unchanged, statement for statement.
+
+   * `[✅]`   `createJobContext.integration.test.ts`
+      * `[✅]`   Its root-context assertion case drops the `ragService`, `indexingService` and `embeddingClient` equality assertions and the `prepareModelJob` equality assertion, which no longer holds now that the factory binds rather than copies; every other member equality assertion stands.
+      * `[✅]`   Its `createPrepareModelJobContext` cases call the one-argument slicer and assert against `PrepareModelJobDeps` rather than a deleted slice type.
+      * `[✅]`   The chain this suite proves is the real one this factory now assembles: real `createJobContext` → real `prepareModelJob` → real `calculateAffordability` and real `compressPrompt` → real `getSortedCompressionCandidates` and real `enqueueCompressJobs`, with only the Supabase client and the queue POST mocked. No repo-owned function in that chain is mocked, stubbed or replaced by a builder.
+      * `[✅]`   A case drives a within-budget working set through that chain and asserts the queue receives one POST; a case drives an over-budget EXECUTE working set and asserts COMPRESS rows are inserted and the dispatcher returns the deferral, having called no RAG collaborator because none exists to call.
+      * `[✅]`   The `getSortedCompressionCandidates` import replaces the `getSortedCompressionCandidates`-from-`vector_utils.ts` import with the `vector_utils.provides.ts` one, and the `compressPrompt`, `calculateAffordability`, `prepareModelJob` and `enqueueModelCall` implementation imports move to their modules' `provides` barrels.
+      * `[✅]`   Its existing `createPlanJobContext` and `createRenderJobContext` structural assertions are unchanged.
+
+   * `[✅]`   `directionality`
+      * `[✅]`   Deps face inward: this module imports the unbound function types and deps types of the worker modules it assembles and the shared type surfaces they require, and exports the context contracts, their guards, their mock and the factory outward to `dialectic-worker/index.ts`, `processJob.ts` and the job-type processors.
+      * `[✅]`   The RAG edges are severed here: after this node no file in this module imports from `rag_service` or `indexing_service`, which is what lets those files be deleted in the RAG-removal node without a further edit to this module.
+      * `[✅]`   No cycle: every module this factory binds is imported by it and imports nothing from it except the three pure function types `prepareModelJob.interface.ts` already takes from `JobContext.interface.ts`, which are declarations with no runtime edge.
+      * `[✅]`   This module has no `provides` barrel; consumers import its interface, guard, mock and implementation directly, as they do now.
+
+   * `[✅]`   `requirements`
+      * `[✅]`   `IJobContext` and `JobContextParams` each declare exactly the members the `JobContext.interface.ts` element names for that type — interface test, exhaustive key record per type.
+      * `[✅]`   `IRagContext`, `isIRagContext`, `IPrepareModelJobContext`, `isIPrepareModelJobContext`, `ISaveResponseContext`, `isISaveResponseContext` and `createSaveResponseContext` do not exist — interface test, guard test and unit test, by the deletion of every case that named them.
+      * `[✅]`   `JobContextParams.retryJob` is a `RetryJobFn` and `IJobContext.retryJob` is a `BoundRetryJobFn`, and no six-positional retry type is declared in this module — interface test, typed assignment.
+      * `[✅]`   `root.retryJob` is a closure the factory built, and invoking it passes `params.retryJob` a two-member deps object — unit test, identity and captured-argument assertions.
+      * `[✅]`   `ProcessSimpleJobFn`, `ProcessComplexJobFn` and `ProcessRenderJobFn` each take three arguments and return a two-arm union whose success arm carries that processor's own flavors — interface test, typed assignment and exhaustive key records over each params and payload.
+      * `[✅]`   `createPrepareModelJobContext` takes one argument and returns `PrepareModelJobDeps` — interface test, typed assignment; unit test, membership assertions over the members that type declares.
+      * `[✅]`   `root.prepareModelJob`, `root.gatherArtifacts`, `root.enqueueModelCall`, `root.retryJob`, `root.calculateAffordability` and `root.compressPrompt` are each a closure the factory built, not the params member it was given — unit test, identity assertions.
+      * `[✅]`   `params.compressPrompt` and `params.calculateAffordability` each receive exactly the deps object their own interface declares — unit test, captured-argument assertions.
+      * `[✅]`   `params.getSortedCompressionCandidates` receives a `countTokens` in the bound two-argument form, and invoking it reaches `params.countTokens` with `params.tokenizerDeps` — unit test, captured-argument assertions.
+      * `[✅]`   `params.enqueueCompressJobs`, `params.applyCompressionOverlay` and `params.enqueueModelCall` each receive exactly the deps object their own interface declares — unit test, captured-argument assertions.
+      * `[✅]`   One root constructs each bound closure once, so two invocations reach the same function identities — unit test.
+      * `[✅]`   Every owned object type has a `Partial<T>`-overrides builder and an `unknown`-returning invalidator, and no mock carries an options bag, a call-recording array or a configurable factory — guard test, whose fixtures are drawn from them.
+      * `[✅]`   Each of the thirteen processor params, payload and return-flavor types carries its four mock symbols, each of the three processor function types carries one function mock, and no `any` remains in `_JobProcessorsDummyImpl` — proven by the compiler: every builder is annotated with its production type, every invalidator returns `unknown`, and every function mock is annotated with its production function type.
+      * `[✅]`   Every type this node declares, less the three top-level `Return` unions, has a guard, and `DialecticJobRow` has one the three payload guards call — guard test, the case checklist per guard.
+      * `[✅]`   Each return-flavor guard accepts its own flavor and rejects every other, and each throws nothing — guard test, cross-flavor rejection cases in one file.
+      * `[✅]`   Each payload guard rejects a row carrying another arm's payload, and no arm's member checks are inlined at a delegation site — guard test, cross-arm rejection cases.
+      * `[✅]`   The full graph assembles and runs end to end with only Supabase and the queue mocked — integration test.
 
 * `[ ]`   supabase/functions/dialectic-worker/processSimpleJob.ts **[BE] Take the canonical `(deps, params, payload)` shape and report a two-arm outcome: read the owner off the job row, supply `stageSlug` and `output_type` to `gatherArtifacts`, build the dispatcher's one-member params and five-member payload, narrow the deferral, and surrender every retry decision, `failed` write and `retry_loop_failed` write to the runner**
 

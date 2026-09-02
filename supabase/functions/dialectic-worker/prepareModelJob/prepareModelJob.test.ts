@@ -3,60 +3,58 @@ import {
   assertEquals,
   assertExists,
 } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { spy, type MethodSpy, type Spy } from "https://deno.land/std@0.224.0/testing/mock.ts";
+import { spy, type Spy } from "https://deno.land/std@0.224.0/testing/mock.ts";
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import type {
   AiModelExtendedConfig,
   ChatApiRequest,
-  LogMetadata,
   Messages,
-  ResourceDocument,
-  ResourceDocuments,
 } from "../../_shared/types.ts";
+import type {
+  ResourceDocument,
+} from "../../_shared/utils/resolveCompressionSource/resolveCompressionSource.provides.ts";
+import { isResourceDocument } from "../../_shared/utils/resolveCompressionSource/resolveCompressionSource.guard.ts";
 import type { CountableChatPayload } from "../../_shared/types/tokenizer.types.ts";
 import { isRecord } from "../../_shared/utils/type-guards/type_guards.common.ts";
+import { isJson, isDialecticExecuteJobPayload } from "../../_shared/utils/type_guards.ts";
+import { isDialecticCompressJobPayload } from "../enqueueCompressJobs/enqueueCompressJobs.guard.ts";
 import { calculateAffordability } from "../calculateAffordability/calculateAffordability.ts";
 import type {
   BoundCalculateAffordabilityFn,
   CalculateAffordabilityDeps,
   CalculateAffordabilityParams,
   CalculateAffordabilityPayload,
-  UserConfig,
 } from "../calculateAffordability/calculateAffordability.interface.ts";
 import {
   isCalculateAffordabilityParams,
   isCalculateAffordabilityPayload,
 } from "../calculateAffordability/calculateAffordability.guard.ts";
 import {
-  buildCalculateAffordabilityCompressedReturn,
-  buildCalculateAffordabilityDirectReturn,
-  buildCalculateAffordabilityErrorReturn,
   buildCalculateAffordabilityDeps,
-  buildMockBoundCalculateAffordabilityFn,
+  buildCalculateAffordabilityErrorReturn,
+  buildCalculateAffordabilityOverBudgetReturn,
+  buildCalculateAffordabilityWithinBudgetReturn,
+  mockBoundCalculateAffordability,
 } from "../calculateAffordability/calculateAffordability.mock.ts";
-import { compressPrompt } from "../compressPrompt/compressPrompt.ts";
-import type { BoundCompressPromptFn, CompressPromptDeps } from "../compressPrompt/compressPrompt.interface.ts";
-import { buildChatApiRequest, createCompressPromptMock } from "../compressPrompt/compressPrompt.mock.ts";
+import type {
+  BoundCompressPromptFn,
+  CompressPromptParams,
+  CompressPromptPayload,
+} from "../compressPrompt/compressPrompt.provides.ts";
+import {
+  buildCompressPromptErrorReturn,
+  buildCompressPromptFitsReturn,
+  isCompressPromptParams,
+  isCompressPromptPayload,
+} from "../compressPrompt/compressPrompt.provides.ts";
 import { createMockSupabaseClient } from "../../_shared/supabase.mock.ts";
 import {
   FileType,
 } from "../../_shared/types/file_manager.types.ts";
-import { isChatApiRequest, isResourceDocument } from "../../_shared/utils/type-guards/type_guards.chat.ts";
-import {
-  ContextWindowError,
-} from "../../_shared/utils/errors.ts";
-import { buildExtendedModelConfig, getMockAiProviderAdapter } from "../../_shared/ai_service/ai_provider.mock.ts";
+import { isChatApiRequest } from "../../_shared/utils/type-guards/type_guards.chat.ts";
+import { buildExtendedModelConfig, buildMockProvider } from "../../_shared/ai_service/ai_provider.mock.ts";
 import { MockLogger } from "../../_shared/logger.mock.ts";
-import { MockRagService } from "../../_shared/services/rag_service.mock.ts";
-import { EmbeddingClient } from "../../_shared/services/indexing_service.ts";
-import { createMockAdminTokenWalletService } from "../../_shared/services/tokenwallet/admin/adminTokenWalletService.mock.ts";
-import { createMockUserTokenWalletService } from "../../_shared/services/tokenwallet/client/userTokenWalletService.mock.ts";
-import type { IUserTokenWalletService } from "../../_shared/services/tokenwallet/client/userTokenWalletService.interface.ts";
-import { isJson } from "../../_shared/utils/type_guards.ts";
-import { getMaxOutputTokens } from "../../_shared/utils/affordability_utils.ts";
-import { countTokens } from "../../_shared/utils/tokenizer_utils.ts";
 import { createMockCountTokens } from "../../_shared/utils/tokenizer_utils.mock.ts";
-import { getSortedCompressionCandidates } from "../../_shared/utils/vector_utils.ts";
 import type { Database, Tables } from "../../types_db.ts";
 import type {
   DialecticExecuteJobPayload,
@@ -83,32 +81,21 @@ import type {
 } from "./prepareModelJob.interface.ts";
 import {
   isPrepareModelJobErrorReturn,
+  isPrepareModelJobPendingReturn,
+  isPrepareModelJobQueuedReturn,
   isPrepareModelJobSuccessReturn,
 } from "./prepareModelJob.guard.ts";
-import type { ICompressionStrategy } from "../../_shared/utils/vector_utils.interface.ts";
 import {
-  mockAiProvidersRow,
-  mockAiProvidersRowFromConfig,
-  mockDialecticExecuteJobPayload,
-  mockDialecticJobRow,
-  mockDialecticSessionRow,
-  mockPrepareModelJobDeps,
-  mockPromptConstructionPayload,
-  mockTokenWalletRow,
+  buildDialecticExecuteJobPayload,
+  buildDialecticJobRow,
+  buildPromptConstructionPayload,
+  buildTokenWalletRow,
+} from "../../_shared/dialectic.mock.ts";
+import {
+  buildPrepareModelJobDeps,
+  buildPrepareModelJobParams,
 } from "./prepareModelJob.mock.ts";
-
-function assertEnqueueModelCallFirstCallShape(enqueueModelCallSpy: Spy<BoundEnqueueModelCallFn>): void {
-  assertEquals(enqueueModelCallSpy.calls.length >= 1, true);
-  const first: (typeof enqueueModelCallSpy.calls)[number] = enqueueModelCallSpy.calls[0];
-  assertExists(first);
-  assertEquals(first.args.length >= 2, true);
-  const paramArg: Parameters<BoundEnqueueModelCallFn>[0] = first.args[0];
-  const payloadArg: Parameters<BoundEnqueueModelCallFn>[1] = first.args[1];
-  assertEquals(isEnqueueModelCallParams(paramArg), true);
-  assertEquals(isEnqueueModelCallPayload(payloadArg), true);
-  const tierCap: UserConfig["tier_output_cap_tokens"] = paramArg.userConfig.tier_output_cap_tokens;
-  assertEquals(typeof tierCap === "number" || tierCap === null, true);
-}
+import { buildDialecticCompressJobPayload, invalidateDialecticCompressJobPayload } from "../enqueueCompressJobs/enqueueCompressJobs.mock.ts";
 
 Deno.test(
   "prepareModelJob calls deps.enqueueModelCall with a ChatApiRequest payload after Zone A-D processing",
@@ -118,42 +105,35 @@ Deno.test(
         ai_providers: {
           select: () =>
             Promise.resolve({
-              data: [mockAiProvidersRow()],
+              data: [buildMockProvider()],
               error: null,
             }),
         },
         token_wallets: {
           select: () =>
             Promise.resolve({
-              data: [mockTokenWalletRow()],
+              data: [buildTokenWalletRow()],
               error: null,
             }),
         },
       },
     });
     const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
-    const executePayload: DialecticExecuteJobPayload = mockDialecticExecuteJobPayload();
-    const job: DialecticJobRow = mockDialecticJobRow(executePayload);
-    const params: PrepareModelJobParams = {
-      dbClient,
-      authToken: "jwt.contract",
-      job,
-      projectOwnerUserId: "owner-contract",
-      providerRow: mockAiProvidersRow(),
-      sessionData: mockDialecticSessionRow(),
-    };
-    const contractCompressionStrategy: ICompressionStrategy = async () => [];
+    const executePayload: DialecticExecuteJobPayload = buildDialecticExecuteJobPayload();
+    if (!isJson(executePayload)) throw new Error("test setup: payload is not valid Json");
+    const job: DialecticJobRow = buildDialecticJobRow({ payload: executePayload });
+    const params: PrepareModelJobParams = buildPrepareModelJobParams({ dbClient });
     const preparePayload: PrepareModelJobPayload = {
-      promptConstructionPayload: mockPromptConstructionPayload(),
-      compressionStrategy: contractCompressionStrategy,
+      job,
+      providerRow: buildMockProvider(),
+      promptConstructionPayload: buildPromptConstructionPayload(),
     };
     const enqueueModelCallSpy: Spy<BoundEnqueueModelCallFn> = spy(async () => ({ queued: true }));
-    const deps: PrepareModelJobDeps = mockPrepareModelJobDeps({
+    const deps: PrepareModelJobDeps = buildPrepareModelJobDeps({
       enqueueModelCall: enqueueModelCallSpy,
     });
     const result: unknown = await prepareModelJob(deps, params, preparePayload);
     assertEquals(isPrepareModelJobSuccessReturn(result), true);
-    assertEnqueueModelCallFirstCallShape(enqueueModelCallSpy);
     const first = enqueueModelCallSpy.calls[0];
     assertExists(first);
     const payloadArg: unknown = first.args[1];
@@ -176,41 +156,34 @@ Deno.test(
         ai_providers: {
           select: () =>
             Promise.resolve({
-              data: [mockAiProvidersRow()],
+              data: [buildMockProvider()],
               error: null,
             }),
         },
         token_wallets: {
           select: () =>
             Promise.resolve({
-              data: [mockTokenWalletRow()],
+              data: [buildTokenWalletRow()],
               error: null,
             }),
         },
       },
     });
     const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
-    const executePayload: DialecticExecuteJobPayload = mockDialecticExecuteJobPayload();
-    const job: DialecticJobRow = mockDialecticJobRow(executePayload);
-    const params: PrepareModelJobParams = {
-      dbClient,
-      authToken: "jwt.contract",
-      job,
-      projectOwnerUserId: "owner-contract",
-      providerRow: mockAiProvidersRow(),
-      sessionData: mockDialecticSessionRow(),
-    };
-    const contractCompressionStrategy: ICompressionStrategy = async () => [];
+    const executePayload: DialecticExecuteJobPayload = buildDialecticExecuteJobPayload();
+    if (!isJson(executePayload)) throw new Error("test setup: payload is not valid Json");
+    const job: DialecticJobRow = buildDialecticJobRow({ payload: executePayload });
+    const params: PrepareModelJobParams = buildPrepareModelJobParams({ dbClient });
     const preparePayload: PrepareModelJobPayload = {
-      promptConstructionPayload: mockPromptConstructionPayload(),
-      compressionStrategy: contractCompressionStrategy,
+      job,
+      providerRow: buildMockProvider(),
+      promptConstructionPayload: buildPromptConstructionPayload(),
     };
     const enqueueModelCallSpy: Spy<BoundEnqueueModelCallFn> = spy(async () => ({ queued: true}));
-    const deps: PrepareModelJobDeps = mockPrepareModelJobDeps({
+    const deps: PrepareModelJobDeps = buildPrepareModelJobDeps({
       enqueueModelCall: enqueueModelCallSpy,
     });
     await prepareModelJob(deps, params, preparePayload);
-    assertEnqueueModelCallFirstCallShape(enqueueModelCallSpy);
   },
 );
 
@@ -222,135 +195,39 @@ Deno.test(
         ai_providers: {
           select: () =>
             Promise.resolve({
-              data: [mockAiProvidersRow()],
+              data: [buildMockProvider()],
               error: null,
             }),
         },
         token_wallets: {
           select: () =>
             Promise.resolve({
-              data: [mockTokenWalletRow()],
+              data: [buildTokenWalletRow()],
               error: null,
             }),
         },
       },
     });
     const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
-    const executePayload: DialecticExecuteJobPayload = mockDialecticExecuteJobPayload();
-    const job: DialecticJobRow = mockDialecticJobRow(executePayload);
-    const params: PrepareModelJobParams = {
-      dbClient,
-      authToken: "jwt.contract",
-      job,
-      projectOwnerUserId: "owner-contract",
-      providerRow: mockAiProvidersRow(),
-      sessionData: mockDialecticSessionRow(),
-    };
-    const contractCompressionStrategy: ICompressionStrategy = async () => [];
+    const executePayload: DialecticExecuteJobPayload = buildDialecticExecuteJobPayload();
+    if (!isJson(executePayload)) throw new Error("test setup: payload is not valid Json");
+    const job: DialecticJobRow = buildDialecticJobRow({ payload: executePayload });
+    const params: PrepareModelJobParams = buildPrepareModelJobParams({ dbClient });
     const preparePayload: PrepareModelJobPayload = {
-      promptConstructionPayload: mockPromptConstructionPayload(),
-      compressionStrategy: contractCompressionStrategy,
+      job,
+      providerRow: buildMockProvider(),
+      promptConstructionPayload: buildPromptConstructionPayload(),
     };
     const enqueueModelCallSpy: Spy<BoundEnqueueModelCallFn> = spy(async () => ({ queued: true}));
-    const deps: PrepareModelJobDeps = mockPrepareModelJobDeps({
+    const deps: PrepareModelJobDeps = buildPrepareModelJobDeps({
       enqueueModelCall: enqueueModelCallSpy,
     });
     const result: unknown = await prepareModelJob(deps, params, preparePayload);
     assertEquals(isPrepareModelJobSuccessReturn(result), true);
-    if (isPrepareModelJobSuccessReturn(result)) {
+    if (isPrepareModelJobQueuedReturn(result)) {
       assertEquals(result.queued, true);
     }
     assertEquals(enqueueModelCallSpy.calls.length, 1);
-  },
-);
-
-Deno.test(
-  "prepareModelJob returns PrepareModelJobErrorReturn when job payload is missing required stageSlug",
-  async () => {
-    const mockSetup = createMockSupabaseClient("user-unit", {});
-    const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
-    const badPayload: DialecticExecuteJobPayload = mockDialecticExecuteJobPayload({ stageSlug: "" });
-    const job: DialecticJobRow = mockDialecticJobRow(badPayload);
-    const params: PrepareModelJobParams = {
-      dbClient,
-      authToken: "jwt.contract",
-      job,
-      projectOwnerUserId: "owner-contract",
-      providerRow: mockAiProvidersRow(),
-      sessionData: mockDialecticSessionRow(),
-    };
-    const contractCompressionStrategy: ICompressionStrategy = async () => [];
-    const preparePayload: PrepareModelJobPayload = {
-      promptConstructionPayload: mockPromptConstructionPayload(),
-      compressionStrategy: contractCompressionStrategy,
-    };
-    const enqueueModelCallSpy: Spy<BoundEnqueueModelCallFn> = spy(async () => ({ queued: true}));
-    const deps: PrepareModelJobDeps = mockPrepareModelJobDeps({
-      enqueueModelCall: enqueueModelCallSpy,
-    });
-    const result: unknown = await prepareModelJob(deps, params, preparePayload);
-    assertEquals(isPrepareModelJobErrorReturn(result), true);
-    assertEquals(enqueueModelCallSpy.calls.length, 0);
-  },
-);
-
-Deno.test(
-  "prepareModelJob returns PrepareModelJobErrorReturn when job payload is missing required walletId",
-  async () => {
-    const mockSetup = createMockSupabaseClient("user-unit", {});
-    const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
-    const badPayload: DialecticExecuteJobPayload = mockDialecticExecuteJobPayload({ walletId: "" });
-    const job: DialecticJobRow = mockDialecticJobRow(badPayload);
-    const params: PrepareModelJobParams = {
-      dbClient,
-      authToken: "jwt.contract",
-      job,
-      projectOwnerUserId: "owner-contract",
-      providerRow: mockAiProvidersRow(),
-      sessionData: mockDialecticSessionRow(),
-    };
-    const contractCompressionStrategy: ICompressionStrategy = async () => [];
-    const preparePayload: PrepareModelJobPayload = {
-      promptConstructionPayload: mockPromptConstructionPayload(),
-      compressionStrategy: contractCompressionStrategy,
-    };
-    const enqueueModelCallSpy: Spy<BoundEnqueueModelCallFn> = spy(async () => ({ queued: true}));
-    const deps: PrepareModelJobDeps = mockPrepareModelJobDeps({
-      enqueueModelCall: enqueueModelCallSpy,
-    });
-    const result: unknown = await prepareModelJob(deps, params, preparePayload);
-    assertEquals(isPrepareModelJobErrorReturn(result), true);
-    assertEquals(enqueueModelCallSpy.calls.length, 0);
-  },
-);
-
-Deno.test(
-  "prepareModelJob returns PrepareModelJobErrorReturn when job payload is missing required iterationNumber",
-  async () => {
-    const mockSetup = createMockSupabaseClient("user-unit", {});
-    const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
-    const badPayload: DialecticExecuteJobPayload = mockDialecticExecuteJobPayload({ iterationNumber: 0 });
-    const job: DialecticJobRow = mockDialecticJobRow(badPayload);
-    const params: PrepareModelJobParams = {
-      dbClient,
-      authToken: "jwt.contract",
-      job,
-      projectOwnerUserId: "owner-contract",
-      providerRow: mockAiProvidersRow(),
-      sessionData: mockDialecticSessionRow(),
-    };
-    const contractCompressionStrategy: ICompressionStrategy = async () => [];
-    const preparePayload: PrepareModelJobPayload = {
-      promptConstructionPayload: mockPromptConstructionPayload(),
-      compressionStrategy: contractCompressionStrategy,
-    };
-    const enqueueModelCallSpy: Spy<BoundEnqueueModelCallFn> = spy(async () => ({ queued: true}));
-    const deps: PrepareModelJobDeps = mockPrepareModelJobDeps({
-      enqueueModelCall: enqueueModelCallSpy,
-    });
-    const result: unknown = await prepareModelJob(deps, params, preparePayload);
-    assertEquals(isPrepareModelJobErrorReturn(result), true);
-    assertEquals(enqueueModelCallSpy.calls.length, 0);
   },
 );
 
@@ -359,23 +236,17 @@ Deno.test(
   async () => {
     const mockSetup = createMockSupabaseClient("user-unit", {});
     const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
-    const executePayload: DialecticExecuteJobPayload = mockDialecticExecuteJobPayload();
-    const job: DialecticJobRow = mockDialecticJobRow(executePayload);
-    const params: PrepareModelJobParams = {
-      dbClient,
-      authToken: "jwt.contract",
-      job,
-      projectOwnerUserId: "owner-contract",
-      providerRow: mockAiProvidersRow({ config: { not_valid: true } }),
-      sessionData: mockDialecticSessionRow(),
-    };
-    const contractCompressionStrategy: ICompressionStrategy = async () => [];
+    const executePayload: DialecticExecuteJobPayload = buildDialecticExecuteJobPayload();
+    if (!isJson(executePayload)) throw new Error("test setup: payload is not valid Json");
+    const job: DialecticJobRow = buildDialecticJobRow({ payload: executePayload });
+    const params: PrepareModelJobParams = buildPrepareModelJobParams({ dbClient });
     const preparePayload: PrepareModelJobPayload = {
-      promptConstructionPayload: mockPromptConstructionPayload(),
-      compressionStrategy: contractCompressionStrategy,
+      job,
+      providerRow: buildMockProvider({ config: { not_valid: true } }),
+      promptConstructionPayload: buildPromptConstructionPayload(),
     };
     const enqueueModelCallSpy: Spy<BoundEnqueueModelCallFn> = spy(async () => ({ queued: true}));
-    const deps: PrepareModelJobDeps = mockPrepareModelJobDeps({
+    const deps: PrepareModelJobDeps = buildPrepareModelJobDeps({
       enqueueModelCall: enqueueModelCallSpy,
     });
     const result: unknown = await prepareModelJob(deps, params, preparePayload);
@@ -392,41 +263,34 @@ Deno.test(
         ai_providers: {
           select: () =>
             Promise.resolve({
-              data: [mockAiProvidersRow()],
+              data: [buildMockProvider()],
               error: null,
             }),
         },
         token_wallets: {
           select: () =>
             Promise.resolve({
-              data: [mockTokenWalletRow({ balance: 100000 })],
+              data: [buildTokenWalletRow({ balance: 100000 })],
               error: null,
             }),
         },
       },
     });
     const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
-    const executePayload: DialecticExecuteJobPayload = mockDialecticExecuteJobPayload();
-    const job: DialecticJobRow = mockDialecticJobRow(executePayload);
-    const params: PrepareModelJobParams = {
-      dbClient,
-      authToken: "jwt.contract",
-      job,
-      projectOwnerUserId: "owner-contract",
-      providerRow: mockAiProvidersRow(),
-      sessionData: mockDialecticSessionRow(),
-    };
-    const contractCompressionStrategy: ICompressionStrategy = async () => [];
+    const executePayload: DialecticExecuteJobPayload = buildDialecticExecuteJobPayload();
+    if (!isJson(executePayload)) throw new Error("test setup: payload is not valid Json");
+    const job: DialecticJobRow = buildDialecticJobRow({ payload: executePayload });
+    const params: PrepareModelJobParams = buildPrepareModelJobParams({ dbClient });
     const preparePayload: PrepareModelJobPayload = {
-      promptConstructionPayload: mockPromptConstructionPayload(),
-      compressionStrategy: contractCompressionStrategy,
+      job,
+      providerRow: buildMockProvider(),
+      promptConstructionPayload: buildPromptConstructionPayload(),
     };
     const enqueueModelCallSpy: Spy<BoundEnqueueModelCallFn> = spy(async () => ({ queued: true}));
-    const deps: PrepareModelJobDeps = mockPrepareModelJobDeps({
+    const deps: PrepareModelJobDeps = buildPrepareModelJobDeps({
       enqueueModelCall: enqueueModelCallSpy,
     });
     await prepareModelJob(deps, params, preparePayload);
-    assertEnqueueModelCallFirstCallShape(enqueueModelCallSpy);
     const first = enqueueModelCallSpy.calls[0];
     assertExists(first);
     const payloadArg: unknown = first.args[1];
@@ -446,30 +310,24 @@ Deno.test(
         ai_providers: {
           select: () =>
             Promise.resolve({
-              data: [mockAiProvidersRow()],
+              data: [buildMockProvider()],
               error: null,
             }),
         },
         token_wallets: {
           select: () =>
             Promise.resolve({
-              data: [mockTokenWalletRow()],
+              data: [buildTokenWalletRow()],
               error: null,
             }),
         },
       },
     });
     const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
-    const executePayload: DialecticExecuteJobPayload = mockDialecticExecuteJobPayload();
-    const job: DialecticJobRow = mockDialecticJobRow(executePayload);
-    const params: PrepareModelJobParams = {
-      dbClient,
-      authToken: "jwt.contract",
-      job,
-      projectOwnerUserId: "owner-contract",
-      providerRow: mockAiProvidersRow(),
-      sessionData: mockDialecticSessionRow(),
-    };
+    const executePayload: DialecticExecuteJobPayload = buildDialecticExecuteJobPayload();
+    if (!isJson(executePayload)) throw new Error("test setup: payload is not valid Json");
+    const job: DialecticJobRow = buildDialecticJobRow({ payload: executePayload });
+    const params: PrepareModelJobParams = buildPrepareModelJobParams({ dbClient });
     const payloadResourceDocument: ResourceDocument = {
       id: "resource-doc-forwarded-1",
       content: "payload resource content",
@@ -478,19 +336,19 @@ Deno.test(
       type: "document",
     };
     const inputsRequired: InputRule[] = [{ type: "document", slug: "thesis", required: true, document_key: FileType.HeaderContext }];
-    const contractCompressionStrategy: ICompressionStrategy = async () => [];
     const preparePayload: PrepareModelJobPayload = {
+      job,
+      providerRow: buildMockProvider(),
       promptConstructionPayload: {
         conversationHistory: [],
         resourceDocuments: [payloadResourceDocument],
         currentUserPrompt: "contract user prompt",
         source_prompt_resource_id: "source-prompt-resource-id",
       },
-      compressionStrategy: contractCompressionStrategy,
       inputsRequired,
     };
     const enqueueModelCallSpy: Spy<BoundEnqueueModelCallFn> = spy(async () => ({ queued: true}));
-    const deps: PrepareModelJobDeps = mockPrepareModelJobDeps({
+    const deps: PrepareModelJobDeps = buildPrepareModelJobDeps({
       enqueueModelCall: enqueueModelCallSpy,
     });
     const result: unknown = await prepareModelJob(deps, params, preparePayload);
@@ -516,14 +374,14 @@ Deno.test(
         ai_providers: {
           select: () =>
             Promise.resolve({
-              data: [mockAiProvidersRow()],
+              data: [buildMockProvider()],
               error: null,
             }),
         },
         token_wallets: {
           select: () =>
             Promise.resolve({
-              data: [mockTokenWalletRow()],
+              data: [buildTokenWalletRow()],
               error: null,
             }),
         },
@@ -545,28 +403,22 @@ Deno.test(
       },
     });
     const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
-    const executePayload: DialecticExecuteJobPayload = mockDialecticExecuteJobPayload();
-    const job: DialecticJobRow = mockDialecticJobRow(executePayload);
-    const params: PrepareModelJobParams = {
-      dbClient,
-      authToken: "jwt.contract",
-      job,
-      projectOwnerUserId: "owner-contract",
-      providerRow: mockAiProvidersRow(),
-      sessionData: mockDialecticSessionRow(),
-    };
-    const contractCompressionStrategy: ICompressionStrategy = async () => [];
+    const executePayload: DialecticExecuteJobPayload = buildDialecticExecuteJobPayload();
+    if (!isJson(executePayload)) throw new Error("test setup: payload is not valid Json");
+    const job: DialecticJobRow = buildDialecticJobRow({ payload: executePayload });
+    const params: PrepareModelJobParams = buildPrepareModelJobParams({ dbClient });
     const preparePayload: PrepareModelJobPayload = {
+      job,
+      providerRow: buildMockProvider(),
       promptConstructionPayload: {
         conversationHistory: [],
         resourceDocuments: [],
         currentUserPrompt: "contract user prompt",
         source_prompt_resource_id: "source-prompt-resource-id",
       },
-      compressionStrategy: contractCompressionStrategy,
     };
     const enqueueModelCallSpy: Spy<BoundEnqueueModelCallFn> = spy(async () => ({ queued: true}));
-    const deps: PrepareModelJobDeps = mockPrepareModelJobDeps({
+    const deps: PrepareModelJobDeps = buildPrepareModelJobDeps({
       enqueueModelCall: enqueueModelCallSpy,
     });
 
@@ -583,40 +435,34 @@ Deno.test(
         ai_providers: {
           select: () =>
             Promise.resolve({
-              data: [mockAiProvidersRow()],
+              data: [buildMockProvider()],
               error: null,
             }),
         },
         token_wallets: {
           select: () =>
             Promise.resolve({
-              data: [mockTokenWalletRow()],
+              data: [buildTokenWalletRow()],
               error: null,
             }),
         },
       },
     });
     const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
-    const executePayload: DialecticExecuteJobPayload = mockDialecticExecuteJobPayload();
-    const job: DialecticJobRow = mockDialecticJobRow(executePayload);
-    const params: PrepareModelJobParams = {
-      dbClient,
-      authToken: "jwt.contract",
-      job,
-      projectOwnerUserId: "owner-contract",
-      providerRow: mockAiProvidersRow(),
-      sessionData: mockDialecticSessionRow(),
-    };
-    const contractCompressionStrategy: ICompressionStrategy = async () => [];
+    const executePayload: DialecticExecuteJobPayload = buildDialecticExecuteJobPayload();
+    if (!isJson(executePayload)) throw new Error("test setup: payload is not valid Json");
+    const job: DialecticJobRow = buildDialecticJobRow({ payload: executePayload });
+    const params: PrepareModelJobParams = buildPrepareModelJobParams({ dbClient });
     const preparePayload: PrepareModelJobPayload = {
-      promptConstructionPayload: mockPromptConstructionPayload(),
-      compressionStrategy: contractCompressionStrategy,
+      job,
+      providerRow: buildMockProvider(),
+      promptConstructionPayload: buildPromptConstructionPayload(),
     };
     const enqueueModelCallSpy: Spy<BoundEnqueueModelCallFn> = spy(async () => ({
       error: new Error("enqueue-failed"),
       retriable: false,
     }));
-    const deps: PrepareModelJobDeps = mockPrepareModelJobDeps({
+    const deps: PrepareModelJobDeps = buildPrepareModelJobDeps({
       enqueueModelCall: enqueueModelCallSpy,
     });
     const result: unknown = await prepareModelJob(deps, params, preparePayload);
@@ -633,41 +479,35 @@ Deno.test(
         ai_providers: {
           select: () =>
             Promise.resolve({
-              data: [mockAiProvidersRow()],
+              data: [buildMockProvider()],
               error: null,
             }),
         },
         token_wallets: {
           select: () =>
             Promise.resolve({
-              data: [mockTokenWalletRow()],
+              data: [buildTokenWalletRow()],
               error: null,
             }),
         },
       },
     });
     const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
-    const executePayload: DialecticExecuteJobPayload = mockDialecticExecuteJobPayload();
-    const job: DialecticJobRow = mockDialecticJobRow(executePayload);
-    const params: PrepareModelJobParams = {
-      dbClient,
-      authToken: "jwt.contract",
-      job,
-      projectOwnerUserId: "owner-contract",
-      providerRow: mockAiProvidersRow(),
-      sessionData: mockDialecticSessionRow(),
-    };
-    const contractCompressionStrategy: ICompressionStrategy = async () => [];
+    const executePayload: DialecticExecuteJobPayload = buildDialecticExecuteJobPayload();
+    if (!isJson(executePayload)) throw new Error("test setup: payload is not valid Json");
+    const job: DialecticJobRow = buildDialecticJobRow({ payload: executePayload });
+    const params: PrepareModelJobParams = buildPrepareModelJobParams({ dbClient });
     const preparePayload: PrepareModelJobPayload = {
-      promptConstructionPayload: mockPromptConstructionPayload(),
-      compressionStrategy: contractCompressionStrategy,
+      job,
+      providerRow: buildMockProvider(),
+      promptConstructionPayload: buildPromptConstructionPayload(),
     };
     const enqueueError: Error = new Error("enqueue-retriable-failure");
     const enqueueModelCallSpy: Spy<BoundEnqueueModelCallFn> = spy(async () => ({
       error: enqueueError,
       retriable: true,
     }));
-    const deps: PrepareModelJobDeps = mockPrepareModelJobDeps({
+    const deps: PrepareModelJobDeps = buildPrepareModelJobDeps({
       enqueueModelCall: enqueueModelCallSpy,
     });
     const result: unknown = await prepareModelJob(deps, params, preparePayload);
@@ -687,43 +527,36 @@ Deno.test(
         ai_providers: {
           select: () =>
             Promise.resolve({
-              data: [mockAiProvidersRow()],
+              data: [buildMockProvider()],
               error: null,
             }),
         },
         token_wallets: {
           select: () =>
             Promise.resolve({
-              data: [mockTokenWalletRow()],
+              data: [buildTokenWalletRow()],
               error: null,
             }),
         },
       },
     });
     const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
-    const executePayload: DialecticExecuteJobPayload = mockDialecticExecuteJobPayload({
+    const executePayload: DialecticExecuteJobPayload = buildDialecticExecuteJobPayload({
       prompt_template_id: "some-template-id",
     });
-    const job: DialecticJobRow = mockDialecticJobRow(executePayload);
-    const params: PrepareModelJobParams = {
-      dbClient,
-      authToken: "jwt.contract",
-      job,
-      projectOwnerUserId: "owner-contract",
-      providerRow: mockAiProvidersRow(),
-      sessionData: mockDialecticSessionRow(),
-    };
-    const contractCompressionStrategy: ICompressionStrategy = async () => [];
+    if (!isJson(executePayload)) throw new Error("test setup: payload is not valid Json");
+    const job: DialecticJobRow = buildDialecticJobRow({ payload: executePayload });
+    const params: PrepareModelJobParams = buildPrepareModelJobParams({ dbClient });
     const preparePayload: PrepareModelJobPayload = {
-      promptConstructionPayload: mockPromptConstructionPayload(),
-      compressionStrategy: contractCompressionStrategy,
+      job,
+      providerRow: buildMockProvider(),
+      promptConstructionPayload: buildPromptConstructionPayload(),
     };
     const enqueueModelCallSpy: Spy<BoundEnqueueModelCallFn> = spy(async () => ({ queued: true}));
-    const deps: PrepareModelJobDeps = mockPrepareModelJobDeps({
+    const deps: PrepareModelJobDeps = buildPrepareModelJobDeps({
       enqueueModelCall: enqueueModelCallSpy,
     });
     await prepareModelJob(deps, params, preparePayload);
-    assertEnqueueModelCallFirstCallShape(enqueueModelCallSpy);
     const firstCall = enqueueModelCallSpy.calls[0];
     assertExists(firstCall);
     const enqueuePayloadUnknown: unknown = firstCall.args[1];
@@ -744,31 +577,24 @@ Deno.test(
         ai_providers: {
           select: () =>
             Promise.resolve({
-              data: [mockAiProvidersRow()],
+              data: [buildMockProvider()],
               error: null,
             }),
         },
         token_wallets: {
           select: () =>
             Promise.resolve({
-              data: [mockTokenWalletRow()],
+              data: [buildTokenWalletRow()],
               error: null,
             }),
         },
       },
     });
     const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
-    const executePayload: DialecticExecuteJobPayload = mockDialecticExecuteJobPayload();
-    const job: DialecticJobRow = mockDialecticJobRow(executePayload);
-    const params: PrepareModelJobParams = {
-      dbClient,
-      authToken: "jwt.contract",
-      job,
-      projectOwnerUserId: "owner-contract",
-      providerRow: mockAiProvidersRow(),
-      sessionData: mockDialecticSessionRow(),
-    };
-    const contractCompressionStrategy: ICompressionStrategy = async () => [];
+    const executePayload: DialecticExecuteJobPayload = buildDialecticExecuteJobPayload();
+    if (!isJson(executePayload)) throw new Error("test setup: payload is not valid Json");
+    const job: DialecticJobRow = buildDialecticJobRow({ payload: executePayload });
+    const params: PrepareModelJobParams = buildPrepareModelJobParams({ dbClient });
     const historyMessage: Messages = {
       role: "assistant",
       content: "Previous message",
@@ -781,11 +607,12 @@ Deno.test(
       source_prompt_resource_id: "source-prompt-resource-contract",
     };
     const preparePayload: PrepareModelJobPayload = {
+      job,
+      providerRow: buildMockProvider({ id: "model-contract" }),
       promptConstructionPayload,
-      compressionStrategy: contractCompressionStrategy,
     };
     const enqueueModelCallSpy: Spy<BoundEnqueueModelCallFn> = spy(async () => ({ queued: true}));
-    const deps: PrepareModelJobDeps = mockPrepareModelJobDeps({
+    const deps: PrepareModelJobDeps = buildPrepareModelJobDeps({
       enqueueModelCall: enqueueModelCallSpy,
     });
     await prepareModelJob(deps, params, preparePayload);
@@ -815,31 +642,24 @@ Deno.test(
         ai_providers: {
           select: () =>
             Promise.resolve({
-              data: [mockAiProvidersRow()],
+              data: [buildMockProvider()],
               error: null,
             }),
         },
         token_wallets: {
           select: () =>
             Promise.resolve({
-              data: [mockTokenWalletRow()],
+              data: [buildTokenWalletRow()],
               error: null,
             }),
         },
       },
     });
     const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
-    const executePayload: DialecticExecuteJobPayload = mockDialecticExecuteJobPayload();
-    const job: DialecticJobRow = mockDialecticJobRow(executePayload);
-    const params: PrepareModelJobParams = {
-      dbClient,
-      authToken: "jwt.contract",
-      job,
-      projectOwnerUserId: "owner-contract",
-      providerRow: mockAiProvidersRow(),
-      sessionData: mockDialecticSessionRow(),
-    };
-    const contractCompressionStrategy: ICompressionStrategy = async () => [];
+    const executePayload: DialecticExecuteJobPayload = buildDialecticExecuteJobPayload();
+    if (!isJson(executePayload)) throw new Error("test setup: payload is not valid Json");
+    const job: DialecticJobRow = buildDialecticJobRow({ payload: executePayload });
+    const params: PrepareModelJobParams = buildPrepareModelJobParams({ dbClient });
     const promptConstructionPayload: PromptConstructionPayload = {
       systemInstruction: undefined,
       conversationHistory: [],
@@ -848,11 +668,12 @@ Deno.test(
       source_prompt_resource_id: "source-prompt-resource-contract",
     };
     const preparePayload: PrepareModelJobPayload = {
+      job,
+      providerRow: buildMockProvider(),
       promptConstructionPayload,
-      compressionStrategy: contractCompressionStrategy,
     };
     const enqueueModelCallSpy: Spy<BoundEnqueueModelCallFn> = spy(async () => ({ queued: true}));
-    const deps: PrepareModelJobDeps = mockPrepareModelJobDeps({
+    const deps: PrepareModelJobDeps = buildPrepareModelJobDeps({
       enqueueModelCall: enqueueModelCallSpy,
     });
     await prepareModelJob(deps, params, preparePayload);
@@ -880,30 +701,24 @@ Deno.test(
         ai_providers: {
           select: () =>
             Promise.resolve({
-              data: [mockAiProvidersRow()],
+              data: [buildMockProvider()],
               error: null,
             }),
         },
       },
     });
     const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
-    const executePayload: DialecticExecuteJobPayload = mockDialecticExecuteJobPayload({ user_jwt: "" });
-    const job: DialecticJobRow = mockDialecticJobRow(executePayload);
-    const params: PrepareModelJobParams = {
-      dbClient,
-      authToken: "external-token",
-      job,
-      projectOwnerUserId: "owner-contract",
-      providerRow: mockAiProvidersRow(),
-      sessionData: mockDialecticSessionRow(),
-    };
-    const contractCompressionStrategy: ICompressionStrategy = async () => [];
+    const executePayload: DialecticExecuteJobPayload = buildDialecticExecuteJobPayload({ user_jwt: "" });
+    if (!isJson(executePayload)) throw new Error("test setup: payload is not valid Json");
+    const job: DialecticJobRow = buildDialecticJobRow({ payload: executePayload });
+    const params: PrepareModelJobParams = buildPrepareModelJobParams({ dbClient });
     const preparePayload: PrepareModelJobPayload = {
-      promptConstructionPayload: mockPromptConstructionPayload(),
-      compressionStrategy: contractCompressionStrategy,
+      job,
+      providerRow: buildMockProvider(),
+      promptConstructionPayload: buildPromptConstructionPayload(),
     };
     const enqueueModelCallSpy: Spy<BoundEnqueueModelCallFn> = spy(async () => ({ queued: true}));
-    const deps: PrepareModelJobDeps = mockPrepareModelJobDeps({
+    const deps: PrepareModelJobDeps = buildPrepareModelJobDeps({
       enqueueModelCall: enqueueModelCallSpy,
     });
 
@@ -914,21 +729,21 @@ Deno.test(
 );
 
 Deno.test(
-  "prepareModelJob — passes payload.user_jwt to enqueueModelCall, not params.authToken",
+  "prepareModelJob — passes payload.user_jwt to enqueueModelCall",
   async () => {
     const mockSetup = createMockSupabaseClient("user-unit", {
       genericMockResults: {
         ai_providers: {
           select: () =>
             Promise.resolve({
-              data: [mockAiProvidersRow()],
+              data: [buildMockProvider()],
               error: null,
             }),
         },
         token_wallets: {
           select: () =>
             Promise.resolve({
-              data: [mockTokenWalletRow()],
+              data: [buildTokenWalletRow()],
               error: null,
             }),
         },
@@ -936,25 +751,19 @@ Deno.test(
     });
     const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
     const expectedJwt: string = "payload.jwt.value";
-    const executePayload: DialecticExecuteJobPayload = mockDialecticExecuteJobPayload({
+    const executePayload: DialecticExecuteJobPayload = buildDialecticExecuteJobPayload({
       user_jwt: expectedJwt,
     });
-    const job: DialecticJobRow = mockDialecticJobRow(executePayload);
-    const params: PrepareModelJobParams = {
-      dbClient,
-      authToken: "external-token-should-not-be-used",
-      job,
-      projectOwnerUserId: "owner-contract",
-      providerRow: mockAiProvidersRow(),
-      sessionData: mockDialecticSessionRow(),
-    };
-    const contractCompressionStrategy: ICompressionStrategy = async () => [];
+    if (!isJson(executePayload)) throw new Error("test setup: payload is not valid Json");
+    const job: DialecticJobRow = buildDialecticJobRow({ payload: executePayload });
+    const params: PrepareModelJobParams = buildPrepareModelJobParams({ dbClient });
     const preparePayload: PrepareModelJobPayload = {
-      promptConstructionPayload: mockPromptConstructionPayload(),
-      compressionStrategy: contractCompressionStrategy,
+      job,
+      providerRow: buildMockProvider(),
+      promptConstructionPayload: buildPromptConstructionPayload(),
     };
     const enqueueModelCallSpy: Spy<BoundEnqueueModelCallFn> = spy(async () => ({ queued: true}));
-    const deps: PrepareModelJobDeps = mockPrepareModelJobDeps({
+    const deps: PrepareModelJobDeps = buildPrepareModelJobDeps({
       enqueueModelCall: enqueueModelCallSpy,
     });
     await prepareModelJob(deps, params, preparePayload);
@@ -977,42 +786,35 @@ Deno.test(
         ai_providers: {
           select: () =>
             Promise.resolve({
-              data: [mockAiProvidersRow()],
+              data: [buildMockProvider()],
               error: null,
             }),
         },
         token_wallets: {
           select: () =>
             Promise.resolve({
-              data: [mockTokenWalletRow()],
+              data: [buildTokenWalletRow()],
               error: null,
             }),
         },
       },
     });
     const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
-    const executePayload: DialecticExecuteJobPayload = mockDialecticExecuteJobPayload();
-    const job: DialecticJobRow = mockDialecticJobRow(executePayload);
-    const params: PrepareModelJobParams = {
-      dbClient,
-      authToken: "jwt.contract",
-      job,
-      projectOwnerUserId: "owner-contract",
-      providerRow: mockAiProvidersRow(),
-      sessionData: mockDialecticSessionRow(),
-    };
-    const contractCompressionStrategy: ICompressionStrategy = async () => [];
+    const executePayload: DialecticExecuteJobPayload = buildDialecticExecuteJobPayload();
+    if (!isJson(executePayload)) throw new Error("test setup: payload is not valid Json");
+    const job: DialecticJobRow = buildDialecticJobRow({ payload: executePayload });
+    const params: PrepareModelJobParams = buildPrepareModelJobParams({ dbClient });
     const preparePayload: PrepareModelJobPayload = {
-      promptConstructionPayload: mockPromptConstructionPayload(),
-      compressionStrategy: contractCompressionStrategy,
+      job,
+      providerRow: buildMockProvider(),
+      promptConstructionPayload: buildPromptConstructionPayload(),
     };
     const maxOutputTokens: number = 8821;
-    const boundAffordability: BoundCalculateAffordabilityFn = buildMockBoundCalculateAffordabilityFn(
-      buildCalculateAffordabilityDirectReturn(maxOutputTokens),
+    const affordabilitySpy: Spy<BoundCalculateAffordabilityFn> = spy(async () =>
+      buildCalculateAffordabilityWithinBudgetReturn({ maxOutputTokens })
     );
-    const affordabilitySpy: Spy<BoundCalculateAffordabilityFn> = spy(boundAffordability);
     const enqueueModelCallSpy: Spy<BoundEnqueueModelCallFn> = spy(async () => ({ queued: true}));
-    const deps: PrepareModelJobDeps = mockPrepareModelJobDeps({
+    const deps: PrepareModelJobDeps = buildPrepareModelJobDeps({
       enqueueModelCall: enqueueModelCallSpy,
       calculateAffordability: affordabilitySpy,
     });
@@ -1023,11 +825,21 @@ Deno.test(
     assertExists(affordCall);
     assertEquals(affordCall.args.length, 2);
     const affordParams: unknown = affordCall.args[0];
-    if (!isRecord(affordParams) || typeof affordParams.jobId !== "string") {
-      throw new Error("expected affordability params with jobId");
+    if (!isCalculateAffordabilityParams(affordParams)) {
+      throw new Error("expected CalculateAffordabilityParams");
     }
-    assertEquals(affordParams.jobId, job.id);
-    assertEnqueueModelCallFirstCallShape(enqueueModelCallSpy);
+    // Contract: CalculateAffordabilityParams narrowed to 2 members (walletBalance, userConfig).
+    assertEquals(typeof affordParams.walletBalance, "number");
+    assertExists(affordParams.userConfig);
+    // Contract: CalculateAffordabilityPayload narrowed to 5 members.
+    const affordPayloadArg: unknown = affordCall.args[1];
+    if (!isCalculateAffordabilityPayload(affordPayloadArg)) {
+      throw new Error("expected CalculateAffordabilityPayload");
+    }
+    assertExists(affordPayloadArg.extendedModelConfig);
+    assertExists(affordPayloadArg.resourceDocuments);
+    assertExists(affordPayloadArg.conversationHistory);
+    assertEquals(typeof affordPayloadArg.currentUserPrompt, "string");
     const firstEnqueue = enqueueModelCallSpy.calls[0];
     assertExists(firstEnqueue);
     const enqueuePayloadUnknown: unknown = firstEnqueue.args[1];
@@ -1038,73 +850,195 @@ Deno.test(
   },
 );
 
+/**
+ * Contract: given an over-budget affordability verdict on an EXECUTE job,
+ *   deps.compressPrompt is called once with the narrowed 5-member params and
+ *   6-member payload, deps.enqueueModelCall is not called, and the return is
+ *   { waiting_for_children: true }.
+ * Arrange: an EXECUTE job row, an over-budget affordability spy, a compressPrompt
+ *   spy returning fits, and an enqueueModelCall spy.
+ * Act:     prepareModelJob.
+ * Assert:  compressPrompt called once with valid CompressPromptParams (5 members)
+ *   and CompressPromptPayload (6 members); enqueueModelCall not called; result is
+ *   { waiting_for_children: true }.
+ */
 Deno.test(
-  "prepareModelJob orchestration: compressed affordability return passes chatApiRequest through to enqueueModelCall unchanged",
+  "prepareModelJob over-budget EXECUTE calls deps.compressPrompt once and returns waiting_for_children",
   async () => {
-    const mockSetup = createMockSupabaseClient("user-unit", {
+    const mockSetup = createMockSupabaseClient("user-overbudget-execute", {
       genericMockResults: {
         ai_providers: {
           select: () =>
             Promise.resolve({
-              data: [mockAiProvidersRow()],
+              data: [buildMockProvider()],
               error: null,
             }),
         },
         token_wallets: {
           select: () =>
             Promise.resolve({
-              data: [mockTokenWalletRow()],
+              data: [buildTokenWalletRow()],
               error: null,
             }),
         },
       },
     });
     const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
-    const executePayload: DialecticExecuteJobPayload = mockDialecticExecuteJobPayload();
-    const job: DialecticJobRow = mockDialecticJobRow(executePayload);
-    const params: PrepareModelJobParams = {
-      dbClient,
-      authToken: "jwt.contract",
-      job,
-      projectOwnerUserId: "owner-contract",
-      providerRow: mockAiProvidersRow(),
-      sessionData: mockDialecticSessionRow(),
-    };
-    const contractCompressionStrategy: ICompressionStrategy = async () => [];
+    const executePayload: DialecticExecuteJobPayload = buildDialecticExecuteJobPayload();
+    if (!isJson(executePayload)) throw new Error("test setup: payload is not valid Json");
+    const job: DialecticJobRow = buildDialecticJobRow({ payload: executePayload });
+    const params: PrepareModelJobParams = buildPrepareModelJobParams({ dbClient });
     const preparePayload: PrepareModelJobPayload = {
-      promptConstructionPayload: mockPromptConstructionPayload(),
-      compressionStrategy: contractCompressionStrategy,
+      job,
+      providerRow: buildMockProvider(),
+      promptConstructionPayload: buildPromptConstructionPayload(),
     };
-    const resourceDocuments: ResourceDocuments = [];
-    const passThroughChat: ChatApiRequest = buildChatApiRequest(
-      resourceDocuments,
-      "ORCH_COMPRESSED_PASS_THROUGH_MSG",
+    const affordabilitySpy: Spy<BoundCalculateAffordabilityFn> = spy(async () =>
+      buildCalculateAffordabilityOverBudgetReturn()
     );
-    const boundAffordability: BoundCalculateAffordabilityFn = buildMockBoundCalculateAffordabilityFn(
-      buildCalculateAffordabilityCompressedReturn({
-        chatApiRequest: passThroughChat,
-        resourceDocuments,
-        resolvedInputTokenCount: 333,
-      }),
+    const compressPromptSpy: Spy<BoundCompressPromptFn> = spy(async () =>
+      buildCompressPromptFitsReturn()
     );
-    const affordabilitySpy: Spy<BoundCalculateAffordabilityFn> = spy(boundAffordability);
-    const enqueueModelCallSpy: Spy<BoundEnqueueModelCallFn> = spy(async () => ({ queued: true}));
-    const deps: PrepareModelJobDeps = mockPrepareModelJobDeps({
+    const enqueueModelCallSpy: Spy<BoundEnqueueModelCallFn> = spy(async () => ({ queued: true }));
+    const deps: PrepareModelJobDeps = buildPrepareModelJobDeps({
       enqueueModelCall: enqueueModelCallSpy,
       calculateAffordability: affordabilitySpy,
+      compressPrompt: compressPromptSpy,
     });
     const result: unknown = await prepareModelJob(deps, params, preparePayload);
-    assertEquals(isPrepareModelJobSuccessReturn(result), true);
-    assertEquals(affordabilitySpy.calls.length, 1);
-    assertEnqueueModelCallFirstCallShape(enqueueModelCallSpy);
-    const firstEnqueue = enqueueModelCallSpy.calls[0];
-    assertExists(firstEnqueue);
-    const enqueuePayloadUnknown: unknown = firstEnqueue.args[1];
-    if (!isEnqueueModelCallPayload(enqueuePayloadUnknown)) {
-      throw new Error("expected EnqueueModelCallPayload");
+    assertEquals(isPrepareModelJobPendingReturn(result), true);
+    assertEquals(compressPromptSpy.calls.length, 1);
+    assertEquals(enqueueModelCallSpy.calls.length, 0);
+    const compressCall = compressPromptSpy.calls[0];
+    assertExists(compressCall);
+    assertEquals(isCompressPromptParams(compressCall.args[0]), true);
+    assertEquals(isCompressPromptPayload(compressCall.args[1]), true);
+  },
+);
+
+/**
+ * Contract: given an over-budget affordability verdict on a COMPRESS job,
+ *   the function returns a non-retriable error, calls neither deps.compressPrompt
+ *   nor deps.enqueueModelCall, and performs no write.
+ * Arrange: a COMPRESS job row, an over-budget affordability spy, spies on both
+ *   collaborators.
+ * Act:     prepareModelJob.
+ * Assert:  result is PrepareModelJobErrorReturn with retriable false;
+ *   compressPrompt not called; enqueueModelCall not called.
+ */
+Deno.test(
+  "prepareModelJob over-budget COMPRESS returns non-retriable error without calling collaborators",
+  async () => {
+    const mockSetup = createMockSupabaseClient("user-overbudget-compress", {
+      genericMockResults: {
+        ai_providers: {
+          select: () =>
+            Promise.resolve({
+              data: [buildMockProvider()],
+              error: null,
+            }),
+        },
+        token_wallets: {
+          select: () =>
+            Promise.resolve({
+              data: [buildTokenWalletRow()],
+              error: null,
+            }),
+        },
+      },
+    });
+    const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
+    const compressPayload = buildDialecticCompressJobPayload();
+    if (!isJson(compressPayload)) throw new Error("test setup: payload is not valid Json");
+    const job: DialecticJobRow = buildDialecticJobRow({ payload: compressPayload, job_type: 'COMPRESS' });
+    const params: PrepareModelJobParams = buildPrepareModelJobParams({ dbClient });
+    const preparePayload: PrepareModelJobPayload = {
+      job,
+      providerRow: buildMockProvider(),
+      promptConstructionPayload: buildPromptConstructionPayload(),
+    };
+    const affordabilitySpy: Spy<BoundCalculateAffordabilityFn> = spy(async () =>
+      buildCalculateAffordabilityOverBudgetReturn()
+    );
+    const compressPromptSpy: Spy<BoundCompressPromptFn> = spy(async () =>
+      buildCompressPromptFitsReturn()
+    );
+    const enqueueModelCallSpy: Spy<BoundEnqueueModelCallFn> = spy(async () => ({ queued: true }));
+    const deps: PrepareModelJobDeps = buildPrepareModelJobDeps({
+      enqueueModelCall: enqueueModelCallSpy,
+      calculateAffordability: affordabilitySpy,
+      compressPrompt: compressPromptSpy,
+    });
+    const result: unknown = await prepareModelJob(deps, params, preparePayload);
+    assertEquals(isPrepareModelJobErrorReturn(result), true);
+    if (isPrepareModelJobErrorReturn(result)) {
+      assertEquals(result.retriable, false);
     }
-    assertEquals(enqueuePayloadUnknown.chatApiRequest.message, passThroughChat.message);
-    assertEquals(enqueuePayloadUnknown.chatApiRequest.providerId, passThroughChat.providerId);
+    assertEquals(compressPromptSpy.calls.length, 0);
+    assertEquals(enqueueModelCallSpy.calls.length, 0);
+  },
+);
+
+/**
+ * Contract: given a compressPrompt error return on the over-budget EXECUTE path,
+ *   the error propagates unchanged with the same error identity and retriable flag.
+ * Arrange: an EXECUTE job row, an over-budget affordability spy, a compressPrompt
+ *   spy returning an error return.
+ * Act:     prepareModelJob.
+ * Assert:  result is PrepareModelJobErrorReturn with the same error identity and
+ *   retriable flag; enqueueModelCall not called.
+ */
+Deno.test(
+  "prepareModelJob propagates compressPrompt error return unchanged on over-budget EXECUTE",
+  async () => {
+    const mockSetup = createMockSupabaseClient("user-compress-error", {
+      genericMockResults: {
+        ai_providers: {
+          select: () =>
+            Promise.resolve({
+              data: [buildMockProvider()],
+              error: null,
+            }),
+        },
+        token_wallets: {
+          select: () =>
+            Promise.resolve({
+              data: [buildTokenWalletRow()],
+              error: null,
+            }),
+        },
+      },
+    });
+    const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
+    const executePayload: DialecticExecuteJobPayload = buildDialecticExecuteJobPayload();
+    if (!isJson(executePayload)) throw new Error("test setup: payload is not valid Json");
+    const job: DialecticJobRow = buildDialecticJobRow({ payload: executePayload });
+    const params: PrepareModelJobParams = buildPrepareModelJobParams({ dbClient });
+    const preparePayload: PrepareModelJobPayload = {
+      job,
+      providerRow: buildMockProvider(),
+      promptConstructionPayload: buildPromptConstructionPayload(),
+    };
+    const compressError: Error = new Error("compress-prompt-failed");
+    const affordabilitySpy: Spy<BoundCalculateAffordabilityFn> = spy(async () =>
+      buildCalculateAffordabilityOverBudgetReturn()
+    );
+    const compressPromptSpy: Spy<BoundCompressPromptFn> = spy(async () =>
+      buildCompressPromptErrorReturn({ error: compressError, retriable: true })
+    );
+    const enqueueModelCallSpy: Spy<BoundEnqueueModelCallFn> = spy(async () => ({ queued: true }));
+    const deps: PrepareModelJobDeps = buildPrepareModelJobDeps({
+      enqueueModelCall: enqueueModelCallSpy,
+      calculateAffordability: affordabilitySpy,
+      compressPrompt: compressPromptSpy,
+    });
+    const result: unknown = await prepareModelJob(deps, params, preparePayload);
+    assertEquals(isPrepareModelJobErrorReturn(result), true);
+    if (isPrepareModelJobErrorReturn(result)) {
+      assertEquals(result.error, compressError);
+      assertEquals(result.retriable, true);
+    }
+    assertEquals(enqueueModelCallSpy.calls.length, 0);
   },
 );
 
@@ -1116,42 +1050,35 @@ Deno.test(
         ai_providers: {
           select: () =>
             Promise.resolve({
-              data: [mockAiProvidersRow()],
+              data: [buildMockProvider()],
               error: null,
             }),
         },
         token_wallets: {
           select: () =>
             Promise.resolve({
-              data: [mockTokenWalletRow()],
+              data: [buildTokenWalletRow()],
               error: null,
             }),
         },
       },
     });
     const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
-    const executePayload: DialecticExecuteJobPayload = mockDialecticExecuteJobPayload();
-    const job: DialecticJobRow = mockDialecticJobRow(executePayload);
-    const params: PrepareModelJobParams = {
-      dbClient,
-      authToken: "jwt.contract",
-      job,
-      projectOwnerUserId: "owner-contract",
-      providerRow: mockAiProvidersRow(),
-      sessionData: mockDialecticSessionRow(),
-    };
-    const contractCompressionStrategy: ICompressionStrategy = async () => [];
+    const executePayload: DialecticExecuteJobPayload = buildDialecticExecuteJobPayload();
+    if (!isJson(executePayload)) throw new Error("test setup: payload is not valid Json");
+    const job: DialecticJobRow = buildDialecticJobRow({ payload: executePayload });
+    const params: PrepareModelJobParams = buildPrepareModelJobParams({ dbClient });
     const preparePayload: PrepareModelJobPayload = {
-      promptConstructionPayload: mockPromptConstructionPayload(),
-      compressionStrategy: contractCompressionStrategy,
+      job,
+      providerRow: buildMockProvider(),
+      promptConstructionPayload: buildPromptConstructionPayload(),
     };
     const affordError: Error = new Error("affordability orchestration failed");
-    const boundAffordability: BoundCalculateAffordabilityFn = buildMockBoundCalculateAffordabilityFn(
-      buildCalculateAffordabilityErrorReturn(affordError, true),
+    const affordabilitySpy: Spy<BoundCalculateAffordabilityFn> = spy(async () =>
+      buildCalculateAffordabilityErrorReturn({ error: affordError, retriable: true })
     );
-    const affordabilitySpy: Spy<BoundCalculateAffordabilityFn> = spy(boundAffordability);
     const enqueueModelCallSpy: Spy<BoundEnqueueModelCallFn> = spy(async () => ({ queued: true}));
-    const deps: PrepareModelJobDeps = mockPrepareModelJobDeps({
+    const deps: PrepareModelJobDeps = buildPrepareModelJobDeps({
       enqueueModelCall: enqueueModelCallSpy,
       calculateAffordability: affordabilitySpy,
     });
@@ -1166,148 +1093,6 @@ Deno.test(
   },
 );
 
-Deno.test("prepareModelJob returns ContextWindowError when prompt exceeds token limit and compression cannot fit",
-  async (t) => {
-    await t.step("oversized resource document: RAG replacement still exceeds context_window_tokens",
-      async () => {
-        const logger: MockLogger = new MockLogger();
-        const adminTokenWalletInstance = createMockAdminTokenWalletService().instance;
-        const userTokenWalletInstance: IUserTokenWalletService = createMockUserTokenWalletService().instance;
-        const mockRagService: MockRagService = new MockRagService();
-        mockRagService.setConfig({
-          mockContextResult:
-            "This is the compressed but still oversized content that will not fit.",
-        });
-        const { instance: mockAdapter } = getMockAiProviderAdapter(
-          logger,
-          buildExtendedModelConfig({
-            tokenization_strategy: { type: "rough_char_count" },
-            context_window_tokens: 10,
-            input_token_cost_rate: 0.001,
-            output_token_cost_rate: 0.002,
-            provider_max_input_tokens: 100,
-          }),
-        );
-        const adapterWithEmbedding = {
-          ...mockAdapter,
-          getEmbedding: async (_text: string) => ({
-            embedding: Array(1536).fill(0.01),
-            usage: { prompt_tokens: 1, total_tokens: 1 },
-          }),
-        };
-        const embeddingClient: EmbeddingClient = new EmbeddingClient(adapterWithEmbedding);
-
-        const compressPromptDeps: CompressPromptDeps = {
-          logger,
-          ragService: mockRagService,
-          embeddingClient,
-          tokenWalletService: adminTokenWalletInstance,
-          countTokens,
-        };
-        const boundCompressPrompt: BoundCompressPromptFn = async (params, payload) =>
-          compressPrompt(compressPromptDeps, params, payload);
-
-        const calculateAffordabilityDeps: CalculateAffordabilityDeps = {
-          logger,
-          countTokens,
-          compressPrompt: boundCompressPrompt,
-          getMaxOutputTokens,
-        };
-        const boundCalculateAffordability: BoundCalculateAffordabilityFn = async (p, pl) =>
-          calculateAffordability(calculateAffordabilityDeps, p, pl);
-
-        const limitedConfig: AiModelExtendedConfig = {
-          ...buildExtendedModelConfig(),
-          tokenization_strategy: { type: "rough_char_count" },
-          context_window_tokens: 10,
-          input_token_cost_rate: 0.001,
-          output_token_cost_rate: 0.002,
-          provider_max_input_tokens: 100,
-        };
-        if (!isJson(limitedConfig)) {
-          throw new Error("Test setup failed: mock config is not valid Json.");
-        }
-        const limitedProviderRow: Tables<"ai_providers"> = mockAiProvidersRowFromConfig(limitedConfig);
-
-        const mockSetup = createMockSupabaseClient("user-context-window", {
-          genericMockResults: {
-            ai_providers: {
-              select: () =>
-                Promise.resolve({
-                  data: [limitedProviderRow],
-                  error: null,
-                }),
-            },
-            token_wallets: {
-              select: () =>
-                Promise.resolve({
-                  data: [mockTokenWalletRow()],
-                  error: null,
-                }),
-            },
-          },
-        });
-        const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
-
-        const oversizeContent: string = "A".repeat(2000);
-        const resourceDoc: ResourceDocument = {
-          id: "doc-oversize",
-          content: oversizeContent,
-          document_key: FileType.RenderedDocument,
-          stage_slug: "thesis",
-          type: "document",
-        };
-        const promptPayload: PromptConstructionPayload = {
-          conversationHistory: [],
-          resourceDocuments: [resourceDoc],
-          currentUserPrompt: "This is a test prompt.",
-          source_prompt_resource_id: "source-prompt-resource-contract",
-        };
-        const inputsRequired: InputRule[] = [
-          {
-            type: "document",
-            document_key: FileType.RenderedDocument,
-            required: true,
-            slug: "thesis",
-          },
-        ];
-        const executePayload: DialecticExecuteJobPayload = mockDialecticExecuteJobPayload();
-        const job: DialecticJobRow = mockDialecticJobRow(executePayload);
-        const params: PrepareModelJobParams = {
-          dbClient,
-          authToken: "jwt.contract",
-          job,
-          projectOwnerUserId: "owner-contract",
-          providerRow: limitedProviderRow,
-          sessionData: mockDialecticSessionRow(),
-        };
-        const preparePayload: PrepareModelJobPayload = {
-          promptConstructionPayload: promptPayload,
-          compressionStrategy: getSortedCompressionCandidates,
-          inputsRequired,
-          inputsRelevance: [],
-        };
-        const enqueueModelCallSpy: Spy<BoundEnqueueModelCallFn> = spy(async () => ({ queued: true}));
-        const deps: PrepareModelJobDeps = mockPrepareModelJobDeps({
-          enqueueModelCall: enqueueModelCallSpy,
-          calculateAffordability: boundCalculateAffordability,
-          tokenWalletService: userTokenWalletInstance,
-        });
-
-        const result: unknown = await prepareModelJob(deps, params, preparePayload);
-
-        assertEquals(isPrepareModelJobErrorReturn(result), true);
-        if (!isPrepareModelJobErrorReturn(result)) {
-          throw new Error("expected PrepareModelJobErrorReturn");
-        }
-        assertEquals(result.error instanceof ContextWindowError, true);
-        assertEquals(result.retriable, false);
-        assertEquals(enqueueModelCallSpy.calls.length, 0);
-      },
-    );
-  },
-);
-
 Deno.test(
   "prepareModelJob - resourceDocuments increase counts and are forwarded unchanged (distinct from messages)",
   async () => {
@@ -1316,14 +1101,14 @@ Deno.test(
         ai_providers: {
           select: () =>
             Promise.resolve({
-              data: [mockAiProvidersRow()],
+              data: [buildMockProvider()],
               error: null,
             }),
         },
         token_wallets: {
           select: () =>
             Promise.resolve({
-              data: [mockTokenWalletRow()],
+              data: [buildTokenWalletRow()],
               error: null,
             }),
         },
@@ -1342,7 +1127,6 @@ Deno.test(
     const sizingCapturedPayloads: CountableChatPayload[] = [];
 
     const affordLogger: MockLogger = new MockLogger();
-    const { compressPrompt } = createCompressPromptMock({});
     const calculateAffordabilityDeps: CalculateAffordabilityDeps = buildCalculateAffordabilityDeps({
       logger: affordLogger,
       countTokens: createMockCountTokens({
@@ -1403,22 +1187,14 @@ Deno.test(
           return captured.messages.length + captured.resourceDocuments.length;
         },
       }),
-      compressPrompt,
     });
     const boundCalculateAffordability: BoundCalculateAffordabilityFn = async (p, pl) =>
       calculateAffordability(calculateAffordabilityDeps, p, pl);
 
-    const executePayload: DialecticExecuteJobPayload = mockDialecticExecuteJobPayload();
-    const job: DialecticJobRow = mockDialecticJobRow(executePayload);
-    const params: PrepareModelJobParams = {
-      dbClient,
-      authToken: "jwt.contract",
-      job,
-      projectOwnerUserId: "owner-contract",
-      providerRow: mockAiProvidersRow(),
-      sessionData: mockDialecticSessionRow(),
-    };
-    const contractCompressionStrategy: ICompressionStrategy = async () => [];
+    const executePayload: DialecticExecuteJobPayload = buildDialecticExecuteJobPayload();
+    if (!isJson(executePayload)) throw new Error("test setup: payload is not valid Json");
+    const job: DialecticJobRow = buildDialecticJobRow({ payload: executePayload });
+    const params: PrepareModelJobParams = buildPrepareModelJobParams({ dbClient });
     const promptConstructionPayload: PromptConstructionPayload = {
       systemInstruction: "SYS",
       conversationHistory: [{ role: "user", content: "HIST" }],
@@ -1430,12 +1206,13 @@ Deno.test(
       { type: "document", document_key: FileType.RenderedDocument, required: true, slug: "thesis" },
     ];
     const preparePayload: PrepareModelJobPayload = {
+      job,
+      providerRow: buildMockProvider(),
       promptConstructionPayload,
-      compressionStrategy: contractCompressionStrategy,
       inputsRequired,
     };
     const enqueueModelCallSpy: Spy<BoundEnqueueModelCallFn> = spy(async () => ({ queued: true}));
-    const deps: PrepareModelJobDeps = mockPrepareModelJobDeps({
+    const deps: PrepareModelJobDeps = buildPrepareModelJobDeps({
       enqueueModelCall: enqueueModelCallSpy,
       calculateAffordability: boundCalculateAffordability,
     });
@@ -1466,15 +1243,16 @@ Deno.test(
     if (!isResourceDocument(sent.resourceDocuments[0])) {
       throw new Error("Resource document must be a valid ResourceDocument");
     }
+    const firstDoc = sent.resourceDocuments[0];
     assert(
       Array.isArray(sent.resourceDocuments) && sent.resourceDocuments.length === 1,
       "resourceDocuments must be forwarded to adapter",
     );
-    assertEquals(sent.resourceDocuments[0].content, "Rendered document content");
-    assertEquals(sent.resourceDocuments[0].id, "doc-r1");
-    assertEquals(sent.resourceDocuments[0].document_key, FileType.RenderedDocument);
-    assertEquals(sent.resourceDocuments[0].stage_slug, "thesis");
-    assertEquals(sent.resourceDocuments[0].type, "document");
+    assertEquals(firstDoc.content, "Rendered document content");
+    assertEquals(firstDoc.id, "doc-r1");
+    assertEquals(firstDoc.document_key, FileType.RenderedDocument);
+    assertEquals(firstDoc.stage_slug, "thesis");
+    assertEquals(firstDoc.type, "document");
     assertExists(sent.messages);
     assert(
       !sent.messages.some((m) => m.content === gatheredDoc.content),
@@ -1502,14 +1280,14 @@ Deno.test(
         ai_providers: {
           select: () =>
             Promise.resolve({
-              data: [mockAiProvidersRow()],
+              data: [buildMockProvider()],
               error: null,
             }),
         },
         token_wallets: {
           select: () =>
             Promise.resolve({
-              data: [mockTokenWalletRow()],
+              data: [buildTokenWalletRow()],
               error: null,
             }),
         },
@@ -1518,28 +1296,19 @@ Deno.test(
     const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
 
     const affordLogger: MockLogger = new MockLogger();
-    const { compressPrompt } = createCompressPromptMock({});
     const calculateAffordabilityDeps: CalculateAffordabilityDeps = buildCalculateAffordabilityDeps({
       logger: affordLogger,
       countTokens: createMockCountTokens({
         countTokens: () => 10,
       }),
-      compressPrompt,
     });
     const boundCalculateAffordability: BoundCalculateAffordabilityFn = async (p, pl) =>
       calculateAffordability(calculateAffordabilityDeps, p, pl);
 
-    const executePayload: DialecticExecuteJobPayload = mockDialecticExecuteJobPayload();
-    const job: DialecticJobRow = mockDialecticJobRow(executePayload);
-    const params: PrepareModelJobParams = {
-      dbClient,
-      authToken: "jwt.contract",
-      job,
-      projectOwnerUserId: "owner-contract",
-      providerRow: mockAiProvidersRow(),
-      sessionData: mockDialecticSessionRow(),
-    };
-    const contractCompressionStrategy: ICompressionStrategy = async () => [];
+    const executePayload: DialecticExecuteJobPayload = buildDialecticExecuteJobPayload();
+    if (!isJson(executePayload)) throw new Error("test setup: payload is not valid Json");
+    const job: DialecticJobRow = buildDialecticJobRow({ payload: executePayload });
+    const params: PrepareModelJobParams = buildPrepareModelJobParams({ dbClient });
 
     const resourceDoc: ResourceDocument = {
       id: "doc-xyz",
@@ -1559,12 +1328,13 @@ Deno.test(
       { type: "document", document_key: FileType.RenderedDocument, required: true, slug: "thesis" },
     ];
     const preparePayload: PrepareModelJobPayload = {
+      job,
+      providerRow: buildMockProvider(),
       promptConstructionPayload,
-      compressionStrategy: contractCompressionStrategy,
       inputsRequired,
     };
     const enqueueModelCallSpy: Spy<BoundEnqueueModelCallFn> = spy(async () => ({ queued: true}));
-    const deps: PrepareModelJobDeps = mockPrepareModelJobDeps({
+    const deps: PrepareModelJobDeps = buildPrepareModelJobDeps({
       enqueueModelCall: enqueueModelCallSpy,
       calculateAffordability: boundCalculateAffordability,
     });
@@ -1588,6 +1358,7 @@ Deno.test(
     if (!isResourceDocument(sent.resourceDocuments[0])) {
       throw new Error("Resource document must be a valid ResourceDocument");
     }
+    const firstDoc = sent.resourceDocuments[0];
     assert(isChatApiRequest(sent), "Adapter should receive a ChatApiRequest");
 
     assertEquals(sent.walletId, executePayload.walletId);
@@ -1596,11 +1367,11 @@ Deno.test(
     assertExists(sent.messages);
     assertExists(sent.resourceDocuments);
     assertEquals(sent.resourceDocuments.length, 1);
-    assertEquals(sent.resourceDocuments[0].content, "Full ChatApiRequest doc content");
-    assertEquals(sent.resourceDocuments[0].id, "doc-xyz");
-    assertEquals(sent.resourceDocuments[0].document_key, FileType.RenderedDocument);
-    assertEquals(sent.resourceDocuments[0].stage_slug, "thesis");
-    assertEquals(sent.resourceDocuments[0].type, "document");
+    assertEquals(firstDoc.content, "Full ChatApiRequest doc content");
+    assertEquals(firstDoc.id, "doc-xyz");
+    assertEquals(firstDoc.document_key, FileType.RenderedDocument);
+    assertEquals(firstDoc.stage_slug, "thesis");
+    assertEquals(firstDoc.type, "document");
   },
 );
 
@@ -1612,14 +1383,14 @@ Deno.test(
         ai_providers: {
           select: () =>
             Promise.resolve({
-              data: [mockAiProvidersRow()],
+              data: [buildMockProvider()],
               error: null,
             }),
         },
         token_wallets: {
           select: () =>
             Promise.resolve({
-              data: [mockTokenWalletRow()],
+              data: [buildTokenWalletRow()],
               error: null,
             }),
         },
@@ -1629,7 +1400,6 @@ Deno.test(
 
     const sizedPayloads: CountableChatPayload[] = [];
     const affordLogger: MockLogger = new MockLogger();
-    const { compressPrompt } = createCompressPromptMock({});
     const calculateAffordabilityDeps: CalculateAffordabilityDeps = buildCalculateAffordabilityDeps({
       logger: affordLogger,
       countTokens: createMockCountTokens({
@@ -1638,22 +1408,14 @@ Deno.test(
           return 5;
         },
       }),
-      compressPrompt,
     });
     const boundCalculateAffordability: BoundCalculateAffordabilityFn = async (p, pl) =>
       calculateAffordability(calculateAffordabilityDeps, p, pl);
 
-    const executePayload: DialecticExecuteJobPayload = mockDialecticExecuteJobPayload();
-    const job: DialecticJobRow = mockDialecticJobRow(executePayload);
-    const params: PrepareModelJobParams = {
-      dbClient,
-      authToken: "jwt.contract",
-      job,
-      projectOwnerUserId: "owner-contract",
-      providerRow: mockAiProvidersRow(),
-      sessionData: mockDialecticSessionRow(),
-    };
-    const contractCompressionStrategy: ICompressionStrategy = async () => [];
+    const executePayload: DialecticExecuteJobPayload = buildDialecticExecuteJobPayload();
+    if (!isJson(executePayload)) throw new Error("test setup: payload is not valid Json");
+    const job: DialecticJobRow = buildDialecticJobRow({ payload: executePayload });
+    const params: PrepareModelJobParams = buildPrepareModelJobParams({ dbClient });
 
     const promptConstructionPayload: PromptConstructionPayload = {
       systemInstruction: "SYS: identity",
@@ -1663,11 +1425,12 @@ Deno.test(
       source_prompt_resource_id: "source-prompt-resource-contract",
     };
     const preparePayload: PrepareModelJobPayload = {
+      job,
+      providerRow: buildMockProvider(),
       promptConstructionPayload,
-      compressionStrategy: contractCompressionStrategy,
     };
     const enqueueModelCallSpy: Spy<BoundEnqueueModelCallFn> = spy(async () => ({ queued: true}));
-    const deps: PrepareModelJobDeps = mockPrepareModelJobDeps({
+    const deps: PrepareModelJobDeps = buildPrepareModelJobDeps({
       enqueueModelCall: enqueueModelCallSpy,
       calculateAffordability: boundCalculateAffordability,
     });
@@ -1715,14 +1478,14 @@ Deno.test(
         ai_providers: {
           select: () =>
             Promise.resolve({
-              data: [mockAiProvidersRow()],
+              data: [buildMockProvider()],
               error: null,
             }),
         },
         token_wallets: {
           select: () =>
             Promise.resolve({
-              data: [mockTokenWalletRow()],
+              data: [buildTokenWalletRow()],
               error: null,
             }),
         },
@@ -1731,28 +1494,19 @@ Deno.test(
     const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
 
     const affordLogger: MockLogger = new MockLogger();
-    const { compressPrompt } = createCompressPromptMock({});
     const calculateAffordabilityDeps: CalculateAffordabilityDeps = buildCalculateAffordabilityDeps({
       logger: affordLogger,
       countTokens: createMockCountTokens({
         countTokens: () => 10,
       }),
-      compressPrompt,
     });
     const boundCalculateAffordability: BoundCalculateAffordabilityFn = async (p, pl) =>
       calculateAffordability(calculateAffordabilityDeps, p, pl);
 
-    const executePayload: DialecticExecuteJobPayload = mockDialecticExecuteJobPayload();
-    const job: DialecticJobRow = mockDialecticJobRow(executePayload);
-    const params: PrepareModelJobParams = {
-      dbClient,
-      authToken: "jwt.contract",
-      job,
-      projectOwnerUserId: "owner-contract",
-      providerRow: mockAiProvidersRow(),
-      sessionData: mockDialecticSessionRow(),
-    };
-    const contractCompressionStrategy: ICompressionStrategy = async () => [];
+    const executePayload: DialecticExecuteJobPayload = buildDialecticExecuteJobPayload();
+    if (!isJson(executePayload)) throw new Error("test setup: payload is not valid Json");
+    const job: DialecticJobRow = buildDialecticJobRow({ payload: executePayload });
+    const params: PrepareModelJobParams = buildPrepareModelJobParams({ dbClient });
 
     const docResource: ResourceDocument = {
       id: "r-match",
@@ -1788,13 +1542,14 @@ Deno.test(
       { type: "feedback", document_key: FileType.UserFeedback, required: false, slug: "thesis" },
     ];
     const preparePayload: PrepareModelJobPayload = {
+      job,
+      providerRow: buildMockProvider(),
       promptConstructionPayload,
-      compressionStrategy: contractCompressionStrategy,
       inputsRequired,
       inputsRelevance: [],
     };
     const enqueueModelCallSpy: Spy<BoundEnqueueModelCallFn> = spy(async () => ({ queued: true}));
-    const deps: PrepareModelJobDeps = mockPrepareModelJobDeps({
+    const deps: PrepareModelJobDeps = buildPrepareModelJobDeps({
       enqueueModelCall: enqueueModelCallSpy,
       calculateAffordability: boundCalculateAffordability,
     });
@@ -1830,243 +1585,11 @@ Deno.test(
   },
 );
 
-Deno.test(
-  "prepareModelJob returns PrepareModelJobErrorReturn when deps.tokenWalletService is missing (migrated from executeModelCallAndSave.tokens: compression path)",
-  async () => {
-    const mockSetup = createMockSupabaseClient("tokens-migration-compression", {
-      genericMockResults: {
-        ai_providers: {
-          select: () =>
-            Promise.resolve({
-              data: [
-                mockAiProvidersRowFromConfig({
-                  ...buildExtendedModelConfig(),
-                  context_window_tokens: 50,
-                }),
-              ],
-              error: null,
-            }),
-        },
-        token_wallets: {
-          select: () =>
-            Promise.resolve({
-              data: [mockTokenWalletRow()],
-              error: null,
-            }),
-        },
-      },
-    });
-    const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
-    const executePayload: DialecticExecuteJobPayload = mockDialecticExecuteJobPayload();
-    const job: DialecticJobRow = mockDialecticJobRow(executePayload);
-    const params: PrepareModelJobParams = {
-      dbClient,
-      authToken: "jwt.contract",
-      job,
-      projectOwnerUserId: "owner-contract",
-      providerRow: mockAiProvidersRowFromConfig({
-        ...buildExtendedModelConfig(),
-        context_window_tokens: 50,
-      }),
-      sessionData: mockDialecticSessionRow(),
-    };
-    const contractCompressionStrategy: ICompressionStrategy = async () => [];
-    const preparePayload: PrepareModelJobPayload = {
-      promptConstructionPayload: mockPromptConstructionPayload(),
-      compressionStrategy: contractCompressionStrategy,
-    };
-    const boundAffordability: BoundCalculateAffordabilityFn = buildMockBoundCalculateAffordabilityFn();
-    const affordabilitySpy: Spy<BoundCalculateAffordabilityFn> = spy(boundAffordability);
-    const enqueueModelCallSpy: Spy<BoundEnqueueModelCallFn> = spy(async () => ({ queued: true}));
-    const baseDeps: PrepareModelJobDeps = mockPrepareModelJobDeps({
-      enqueueModelCall: enqueueModelCallSpy,
-      calculateAffordability: affordabilitySpy,
-    });
-    const depsMissingWallet: PrepareModelJobDeps = { ...baseDeps };
-    delete (depsMissingWallet as unknown as Record<string, unknown>)["tokenWalletService"];
-    const result: unknown = await prepareModelJob(
-      depsMissingWallet,
-      params,
-      preparePayload,
-    );
-    assertEquals(isPrepareModelJobErrorReturn(result), true);
-    if (isPrepareModelJobErrorReturn(result)) {
-      assert(
-        result.error.message.includes("Token wallet service is required for affordability preflight"),
-        `Unexpected error: ${result.error.message}`,
-      );
-    }
-    assertEquals(affordabilitySpy.calls.length, 0);
-    assertEquals(enqueueModelCallSpy.calls.length, 0);
-  },
-);
-
-Deno.test(
-  "prepareModelJob returns PrepareModelJobErrorReturn when job payload is missing walletId (migrated from executeModelCallAndSave.tokens: preflight non-oversized)",
-  async () => {
-    const mockSetup = createMockSupabaseClient("tokens-migration-walletid", {});
-    const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
-    const badPayload: DialecticExecuteJobPayload = mockDialecticExecuteJobPayload({ walletId: "" });
-    const job: DialecticJobRow = mockDialecticJobRow(badPayload);
-    const params: PrepareModelJobParams = {
-      dbClient,
-      authToken: "jwt.contract",
-      job,
-      projectOwnerUserId: "owner-contract",
-      providerRow: mockAiProvidersRow(),
-      sessionData: mockDialecticSessionRow(),
-    };
-    const contractCompressionStrategy: ICompressionStrategy = async () => [];
-    const preparePayload: PrepareModelJobPayload = {
-      promptConstructionPayload: mockPromptConstructionPayload(),
-      compressionStrategy: contractCompressionStrategy,
-    };
-    const boundAffordability: BoundCalculateAffordabilityFn = buildMockBoundCalculateAffordabilityFn();
-    const affordabilitySpy: Spy<BoundCalculateAffordabilityFn> = spy(boundAffordability);
-    const enqueueModelCallSpy: Spy<BoundEnqueueModelCallFn> = spy(async () => ({ queued: true}));
-    const deps: PrepareModelJobDeps = mockPrepareModelJobDeps({
-      enqueueModelCall: enqueueModelCallSpy,
-      calculateAffordability: affordabilitySpy,
-    });
-    const result: unknown = await prepareModelJob(deps, params, preparePayload);
-    assertEquals(isPrepareModelJobErrorReturn(result), true);
-    if (isPrepareModelJobErrorReturn(result)) {
-      assert(
-        result.error.message.toLowerCase().includes("wallet"),
-        `Unexpected error: ${result.error.message}`,
-      );
-    }
-    assertEquals(affordabilitySpy.calls.length, 0);
-    assertEquals(enqueueModelCallSpy.calls.length, 0);
-  },
-);
-
-Deno.test(
-  "prepareModelJob returns PrepareModelJobErrorReturn when deps.tokenWalletService is missing (migrated from executeModelCallAndSave.tokens: non-oversized preflight)",
-  async () => {
-    const mockSetup = createMockSupabaseClient("tokens-migration-no-wallet-non-oversized", {
-      genericMockResults: {
-        ai_providers: {
-          select: () =>
-            Promise.resolve({
-              data: [mockAiProvidersRow()],
-              error: null,
-            }),
-        },
-        token_wallets: {
-          select: () =>
-            Promise.resolve({
-              data: [mockTokenWalletRow()],
-              error: null,
-            }),
-        },
-      },
-    });
-    const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
-    const executePayload: DialecticExecuteJobPayload = mockDialecticExecuteJobPayload();
-    const job: DialecticJobRow = mockDialecticJobRow(executePayload);
-    const params: PrepareModelJobParams = {
-      dbClient,
-      authToken: "jwt.contract",
-      job,
-      projectOwnerUserId: "owner-contract",
-      providerRow: mockAiProvidersRow(),
-      sessionData: mockDialecticSessionRow(),
-    };
-    const contractCompressionStrategy: ICompressionStrategy = async () => [];
-    const preparePayload: PrepareModelJobPayload = {
-      promptConstructionPayload: mockPromptConstructionPayload(),
-      compressionStrategy: contractCompressionStrategy,
-    };
-    const boundAffordability: BoundCalculateAffordabilityFn = buildMockBoundCalculateAffordabilityFn();
-    const affordabilitySpy: Spy<BoundCalculateAffordabilityFn> = spy(boundAffordability);
-    const enqueueModelCallSpy: Spy<BoundEnqueueModelCallFn> = spy(async () => ({ queued: true}));
-    const baseDeps: PrepareModelJobDeps = mockPrepareModelJobDeps({
-      enqueueModelCall: enqueueModelCallSpy,
-      calculateAffordability: affordabilitySpy,
-    });
-    const depsMissingWallet: PrepareModelJobDeps = { ...baseDeps };
-    delete (depsMissingWallet as unknown as Record<string, unknown>)["tokenWalletService"];
-    const result: unknown = await prepareModelJob(
-      depsMissingWallet as unknown as PrepareModelJobDeps,
-      params,
-      preparePayload,
-    );
-    assertEquals(isPrepareModelJobErrorReturn(result), true);
-    assertEquals(affordabilitySpy.calls.length, 0);
-    assertEquals(enqueueModelCallSpy.calls.length, 0);
-  },
-);
-
-/*Deno.test(
-  "prepareModelJob returns PrepareModelJobErrorReturn when model cost rates are invalid (migrated from executeModelCallAndSave.tokens: preflight non-oversized)",
-  async () => {
-    const mockSetup = createMockSupabaseClient("tokens-migration-invalid-rates", {
-      genericMockResults: {
-        ai_providers: {
-          select: () =>
-            Promise.resolve({
-              data: [
-                mockAiProvidersRowFromConfig({
-                  ...buildExtendedModelConfig(),
-                  output_token_cost_rate: 0,
-                }),
-              ],
-              error: null,
-            }),
-        },
-        token_wallets: {
-          select: () =>
-            Promise.resolve({
-              data: [mockTokenWalletRow()],
-              error: null,
-            }),
-        },
-      },
-    });
-    const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
-    const executePayload: DialecticExecuteJobPayload = mockDialecticExecuteJobPayload();
-    const job: DialecticJobRow = mockDialecticJobRow(executePayload);
-    const params: PrepareModelJobParams = {
-      dbClient,
-      authToken: "jwt.contract",
-      job,
-      projectOwnerUserId: "owner-contract",
-      providerRow: mockAiProvidersRowFromConfig({
-        ...buildExtendedModelConfig(),
-        output_token_cost_rate: 0,
-      }),
-      sessionData: mockDialecticSessionRow(),
-    };
-    const contractCompressionStrategy: ICompressionStrategy = async () => [];
-    const preparePayload: PrepareModelJobPayload = {
-      promptConstructionPayload: mockPromptConstructionPayload(),
-      compressionStrategy: contractCompressionStrategy,
-    };
-    const boundAffordability: BoundCalculateAffordabilityFn = buildMockBoundCalculateAffordabilityFn();
-    const affordabilitySpy: Spy<BoundCalculateAffordabilityFn> = spy(boundAffordability);
-    const enqueueModelCallSpy: Spy<BoundEnqueueModelCallFn> = spy(async () => ({ queued: true}));
-    const deps: PrepareModelJobDeps = mockPrepareModelJobDeps({
-      enqueueModelCall: enqueueModelCallSpy,
-      calculateAffordability: affordabilitySpy,
-    });
-    const result: unknown = await prepareModelJob(deps, params, preparePayload);
-    assertEquals(isPrepareModelJobErrorReturn(result), true);
-    if (isPrepareModelJobErrorReturn(result)) {
-      assert(
-        result.error.message.includes("Model configuration is missing valid token cost rates."),
-        `Unexpected error: ${result.error.message}`,
-      );
-    }
-    assertEquals(affordabilitySpy.calls.length, 0);
-    assertEquals(enqueueModelCallSpy.calls.length, 0);
-  },
-);*/
 
 Deno.test(
   "prepareModelJob deps do not include enqueueRenderJob",
   () => {
-    const deps: PrepareModelJobDeps = mockPrepareModelJobDeps();
+    const deps: PrepareModelJobDeps = buildPrepareModelJobDeps();
     assertEquals("enqueueRenderJob" in deps, false);
   },
 );
@@ -2074,7 +1597,6 @@ Deno.test(
 Deno.test(
   "prepareModelJob passes tier DB cap as userConfig.tier_output_cap_tokens when job payload omits maxOutputTokens",
   async () => {
-    const projectOwnerUserId: string = "owner-tier-output-cap-contract";
     const outputCap: Tables<"tier_definitions">["output_cap_tokens"] = 32768;
     const tierDefEmbed: Pick<Tables<"tier_definitions">, "output_cap_tokens"> = {
       output_cap_tokens: outputCap,
@@ -2087,14 +1609,14 @@ Deno.test(
         ai_providers: {
           select: () =>
             Promise.resolve({
-              data: [mockAiProvidersRow()],
+              data: [buildMockProvider()],
               error: null,
             }),
         },
         token_wallets: {
           select: () =>
             Promise.resolve({
-              data: [mockTokenWalletRow()],
+              data: [buildTokenWalletRow()],
               error: null,
             }),
         },
@@ -2108,29 +1630,23 @@ Deno.test(
       },
     });
     const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
-    const executePayload: DialecticExecuteJobPayload = mockDialecticExecuteJobPayload();
+    const executePayload: DialecticExecuteJobPayload = buildDialecticExecuteJobPayload();
     assertEquals("maxOutputTokens" in executePayload, false);
-    const job: DialecticJobRow = mockDialecticJobRow(executePayload);
-    const params: PrepareModelJobParams = {
-      dbClient,
-      authToken: "jwt.contract",
-      job,
-      projectOwnerUserId,
-      providerRow: mockAiProvidersRow(),
-      sessionData: mockDialecticSessionRow(),
-    };
+    if (!isJson(executePayload)) throw new Error("test setup: payload is not valid Json");
+    const job: DialecticJobRow = buildDialecticJobRow({ payload: executePayload });
+    const params: PrepareModelJobParams = buildPrepareModelJobParams({ dbClient });
     const preparePayload: PrepareModelJobPayload = {
-      promptConstructionPayload: mockPromptConstructionPayload(),
-      compressionStrategy: async () => [],
+      job,
+      providerRow: buildMockProvider(),
+      promptConstructionPayload: buildPromptConstructionPayload(),
       inputsRelevance: [],
       inputsRequired: [],
     };
-    const boundAffordability: BoundCalculateAffordabilityFn = buildMockBoundCalculateAffordabilityFn(
-      buildCalculateAffordabilityDirectReturn(200, 75),
+    const affordabilitySpy: Spy<BoundCalculateAffordabilityFn> = spy(async () =>
+      buildCalculateAffordabilityWithinBudgetReturn({ maxOutputTokens: 200, resolvedInputTokenCount: 75 })
     );
-    const affordabilitySpy: Spy<BoundCalculateAffordabilityFn> = spy(boundAffordability);
     const enqueueModelCallSpy: Spy<BoundEnqueueModelCallFn> = spy(async () => ({ queued: true }));
-    const deps: PrepareModelJobDeps = mockPrepareModelJobDeps({
+    const deps: PrepareModelJobDeps = buildPrepareModelJobDeps({
       enqueueModelCall: enqueueModelCallSpy,
       calculateAffordability: affordabilitySpy,
     });
@@ -2143,10 +1659,8 @@ Deno.test(
     const affordParams: CalculateAffordabilityParams = affordEntry.args[0];
     const affordPayloadArg: CalculateAffordabilityPayload = affordEntry.args[1];
     assertEquals(isCalculateAffordabilityParams(affordParams), true);
-    assertEquals(isCalculateAffordabilityParams(affordParams) && affordParams.projectOwnerUserId === projectOwnerUserId, true);
     assertEquals(isCalculateAffordabilityParams(affordParams) && affordParams.userConfig.tier_output_cap_tokens === 32768, true);
     assertEquals(isCalculateAffordabilityPayload(affordPayloadArg), true);
-    assertEnqueueModelCallFirstCallShape(enqueueModelCallSpy);
     const enqueueEntry: (typeof enqueueModelCallSpy.calls)[number] = enqueueModelCallSpy.calls[0];
     assertExists(enqueueEntry);
     const enqueueParams: EnqueueModelCallParams = enqueueEntry.args[0];
@@ -2157,7 +1671,6 @@ Deno.test(
 Deno.test(
   "prepareModelJob passes null userConfig.tier_output_cap_tokens when tier DB cap is null and job payload omits maxOutputTokens",
   async () => {
-    const projectOwnerUserId: string = "owner-tier-output-cap-null";
     const outputCap: Tables<"tier_definitions">["output_cap_tokens"] = null;
     const tierDefEmbed: Pick<Tables<"tier_definitions">, "output_cap_tokens"> = {
       output_cap_tokens: outputCap,
@@ -2170,14 +1683,14 @@ Deno.test(
         ai_providers: {
           select: () =>
             Promise.resolve({
-              data: [mockAiProvidersRow()],
+              data: [buildMockProvider()],
               error: null,
             }),
         },
         token_wallets: {
           select: () =>
             Promise.resolve({
-              data: [mockTokenWalletRow()],
+              data: [buildTokenWalletRow()],
               error: null,
             }),
         },
@@ -2191,29 +1704,23 @@ Deno.test(
       },
     });
     const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
-    const executePayload: DialecticExecuteJobPayload = mockDialecticExecuteJobPayload();
+    const executePayload: DialecticExecuteJobPayload = buildDialecticExecuteJobPayload();
     assertEquals("maxOutputTokens" in executePayload, false);
-    const job: DialecticJobRow = mockDialecticJobRow(executePayload);
-    const params: PrepareModelJobParams = {
-      dbClient,
-      authToken: "jwt.contract",
-      job,
-      projectOwnerUserId,
-      providerRow: mockAiProvidersRow(),
-      sessionData: mockDialecticSessionRow(),
-    };
+    if (!isJson(executePayload)) throw new Error("test setup: payload is not valid Json");
+    const job: DialecticJobRow = buildDialecticJobRow({ payload: executePayload });
+    const params: PrepareModelJobParams = buildPrepareModelJobParams({ dbClient });
     const preparePayload: PrepareModelJobPayload = {
-      promptConstructionPayload: mockPromptConstructionPayload(),
-      compressionStrategy: async () => [],
+      job,
+      providerRow: buildMockProvider(),
+      promptConstructionPayload: buildPromptConstructionPayload(),
       inputsRelevance: [],
       inputsRequired: [],
     };
-    const boundAffordability: BoundCalculateAffordabilityFn = buildMockBoundCalculateAffordabilityFn(
-      buildCalculateAffordabilityDirectReturn(200, 75),
+    const affordabilitySpy: Spy<BoundCalculateAffordabilityFn> = spy(async () =>
+      buildCalculateAffordabilityWithinBudgetReturn({ maxOutputTokens: 200, resolvedInputTokenCount: 75 })
     );
-    const affordabilitySpy: Spy<BoundCalculateAffordabilityFn> = spy(boundAffordability);
     const enqueueModelCallSpy: Spy<BoundEnqueueModelCallFn> = spy(async () => ({ queued: true }));
-    const deps: PrepareModelJobDeps = mockPrepareModelJobDeps({
+    const deps: PrepareModelJobDeps = buildPrepareModelJobDeps({
       enqueueModelCall: enqueueModelCallSpy,
       calculateAffordability: affordabilitySpy,
     });
@@ -2228,7 +1735,6 @@ Deno.test(
     assertEquals(isCalculateAffordabilityParams(affordParams), true);
     assertEquals(isCalculateAffordabilityParams(affordParams) && affordParams.userConfig.tier_output_cap_tokens === null, true);
     assertEquals(isCalculateAffordabilityPayload(affordPayloadArg), true);
-    assertEnqueueModelCallFirstCallShape(enqueueModelCallSpy);
     const enqueueEntry: (typeof enqueueModelCallSpy.calls)[number] = enqueueModelCallSpy.calls[0];
     assertExists(enqueueEntry);
     const enqueueParams: EnqueueModelCallParams = enqueueEntry.args[0];
@@ -2239,7 +1745,6 @@ Deno.test(
 Deno.test(
   "prepareModelJob passes user-chosen maxOutputTokens as userConfig.tier_output_cap_tokens when lower than tier DB cap",
   async () => {
-    const projectOwnerUserId: string = "owner-effective-cap-user-below-tier";
     const tierOutputCapTokens: Tables<"tier_definitions">["output_cap_tokens"] = 32768;
     const userChosenMaxOutputTokens: number = 8192;
     const tierDefEmbed: Pick<Tables<"tier_definitions">, "output_cap_tokens"> = {
@@ -2253,14 +1758,14 @@ Deno.test(
         ai_providers: {
           select: () =>
             Promise.resolve({
-              data: [mockAiProvidersRow()],
+              data: [buildMockProvider()],
               error: null,
             }),
         },
         token_wallets: {
           select: () =>
             Promise.resolve({
-              data: [mockTokenWalletRow()],
+              data: [buildTokenWalletRow()],
               error: null,
             }),
         },
@@ -2274,30 +1779,24 @@ Deno.test(
       },
     });
     const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
-    const executePayload: DialecticExecuteJobPayload = mockDialecticExecuteJobPayload({
+    const executePayload: DialecticExecuteJobPayload = buildDialecticExecuteJobPayload({
       maxOutputTokens: userChosenMaxOutputTokens,
     });
-    const job: DialecticJobRow = mockDialecticJobRow(executePayload);
-    const params: PrepareModelJobParams = {
-      dbClient,
-      authToken: "jwt.contract",
-      job,
-      projectOwnerUserId,
-      providerRow: mockAiProvidersRow(),
-      sessionData: mockDialecticSessionRow(),
-    };
+    if (!isJson(executePayload)) throw new Error("test setup: payload is not valid Json");
+    const job: DialecticJobRow = buildDialecticJobRow({ payload: executePayload });
+    const params: PrepareModelJobParams = buildPrepareModelJobParams({ dbClient });
     const preparePayload: PrepareModelJobPayload = {
-      promptConstructionPayload: mockPromptConstructionPayload(),
-      compressionStrategy: async () => [],
+      job,
+      providerRow: buildMockProvider(),
+      promptConstructionPayload: buildPromptConstructionPayload(),
       inputsRelevance: [],
       inputsRequired: [],
     };
-    const boundAffordability: BoundCalculateAffordabilityFn = buildMockBoundCalculateAffordabilityFn(
-      buildCalculateAffordabilityDirectReturn(200, 75),
+    const affordabilitySpy: Spy<BoundCalculateAffordabilityFn> = spy(async () =>
+      buildCalculateAffordabilityWithinBudgetReturn({ maxOutputTokens: 200, resolvedInputTokenCount: 75 })
     );
-    const affordabilitySpy: Spy<BoundCalculateAffordabilityFn> = spy(boundAffordability);
     const enqueueModelCallSpy: Spy<BoundEnqueueModelCallFn> = spy(async () => ({ queued: true }));
-    const deps: PrepareModelJobDeps = mockPrepareModelJobDeps({
+    const deps: PrepareModelJobDeps = buildPrepareModelJobDeps({
       enqueueModelCall: enqueueModelCallSpy,
       calculateAffordability: affordabilitySpy,
     });
@@ -2318,7 +1817,6 @@ Deno.test(
 Deno.test(
   "prepareModelJob passes tier DB cap as userConfig.tier_output_cap_tokens when maxOutputTokens exceeds tier cap",
   async () => {
-    const projectOwnerUserId: string = "owner-effective-cap-tier-wins";
     const tierOutputCapTokens: Tables<"tier_definitions">["output_cap_tokens"] = 32768;
     const userChosenMaxOutputTokens: number = 65536;
     const tierDefEmbed: Pick<Tables<"tier_definitions">, "output_cap_tokens"> = {
@@ -2332,14 +1830,14 @@ Deno.test(
         ai_providers: {
           select: () =>
             Promise.resolve({
-              data: [mockAiProvidersRow()],
+              data: [buildMockProvider()],
               error: null,
             }),
         },
         token_wallets: {
           select: () =>
             Promise.resolve({
-              data: [mockTokenWalletRow()],
+              data: [buildTokenWalletRow()],
               error: null,
             }),
         },
@@ -2353,30 +1851,24 @@ Deno.test(
       },
     });
     const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
-    const executePayload: DialecticExecuteJobPayload = mockDialecticExecuteJobPayload({
+    const executePayload: DialecticExecuteJobPayload = buildDialecticExecuteJobPayload({
       maxOutputTokens: userChosenMaxOutputTokens,
     });
-    const job: DialecticJobRow = mockDialecticJobRow(executePayload);
-    const params: PrepareModelJobParams = {
-      dbClient,
-      authToken: "jwt.contract",
-      job,
-      projectOwnerUserId,
-      providerRow: mockAiProvidersRow(),
-      sessionData: mockDialecticSessionRow(),
-    };
+    if (!isJson(executePayload)) throw new Error("test setup: payload is not valid Json");
+    const job: DialecticJobRow = buildDialecticJobRow({ payload: executePayload });
+    const params: PrepareModelJobParams = buildPrepareModelJobParams({ dbClient });
     const preparePayload: PrepareModelJobPayload = {
-      promptConstructionPayload: mockPromptConstructionPayload(),
-      compressionStrategy: async () => [],
+      job,
+      providerRow: buildMockProvider(),
+      promptConstructionPayload: buildPromptConstructionPayload(),
       inputsRelevance: [],
       inputsRequired: [],
     };
-    const boundAffordability: BoundCalculateAffordabilityFn = buildMockBoundCalculateAffordabilityFn(
-      buildCalculateAffordabilityDirectReturn(200, 75),
+    const affordabilitySpy: Spy<BoundCalculateAffordabilityFn> = spy(async () =>
+      buildCalculateAffordabilityWithinBudgetReturn({ maxOutputTokens: 200, resolvedInputTokenCount: 75 })
     );
-    const affordabilitySpy: Spy<BoundCalculateAffordabilityFn> = spy(boundAffordability);
     const enqueueModelCallSpy: Spy<BoundEnqueueModelCallFn> = spy(async () => ({ queued: true }));
-    const deps: PrepareModelJobDeps = mockPrepareModelJobDeps({
+    const deps: PrepareModelJobDeps = buildPrepareModelJobDeps({
       enqueueModelCall: enqueueModelCallSpy,
       calculateAffordability: affordabilitySpy,
     });
@@ -2397,7 +1889,6 @@ Deno.test(
 Deno.test(
   "prepareModelJob passes user-chosen maxOutputTokens as userConfig.tier_output_cap_tokens when tier DB cap is null",
   async () => {
-    const projectOwnerUserId: string = "owner-effective-cap-ultra-user-chosen";
     const userChosenMaxOutputTokens: number = 8192;
     const tierDefEmbed: Pick<Tables<"tier_definitions">, "output_cap_tokens"> = {
       output_cap_tokens: null,
@@ -2410,14 +1901,14 @@ Deno.test(
         ai_providers: {
           select: () =>
             Promise.resolve({
-              data: [mockAiProvidersRow()],
+              data: [buildMockProvider()],
               error: null,
             }),
         },
         token_wallets: {
           select: () =>
             Promise.resolve({
-              data: [mockTokenWalletRow()],
+              data: [buildTokenWalletRow()],
               error: null,
             }),
         },
@@ -2431,30 +1922,24 @@ Deno.test(
       },
     });
     const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
-    const executePayload: DialecticExecuteJobPayload = mockDialecticExecuteJobPayload({
+    const executePayload: DialecticExecuteJobPayload = buildDialecticExecuteJobPayload({
       maxOutputTokens: userChosenMaxOutputTokens,
     });
-    const job: DialecticJobRow = mockDialecticJobRow(executePayload);
-    const params: PrepareModelJobParams = {
-      dbClient,
-      authToken: "jwt.contract",
-      job,
-      projectOwnerUserId,
-      providerRow: mockAiProvidersRow(),
-      sessionData: mockDialecticSessionRow(),
-    };
+    if (!isJson(executePayload)) throw new Error("test setup: payload is not valid Json");
+    const job: DialecticJobRow = buildDialecticJobRow({ payload: executePayload });
+    const params: PrepareModelJobParams = buildPrepareModelJobParams({ dbClient });
     const preparePayload: PrepareModelJobPayload = {
-      promptConstructionPayload: mockPromptConstructionPayload(),
-      compressionStrategy: async () => [],
+      job,
+      providerRow: buildMockProvider(),
+      promptConstructionPayload: buildPromptConstructionPayload(),
       inputsRelevance: [],
       inputsRequired: [],
     };
-    const boundAffordability: BoundCalculateAffordabilityFn = buildMockBoundCalculateAffordabilityFn(
-      buildCalculateAffordabilityDirectReturn(200, 75),
+    const affordabilitySpy: Spy<BoundCalculateAffordabilityFn> = spy(async () =>
+      buildCalculateAffordabilityWithinBudgetReturn({ maxOutputTokens: 200, resolvedInputTokenCount: 75 })
     );
-    const affordabilitySpy: Spy<BoundCalculateAffordabilityFn> = spy(boundAffordability);
     const enqueueModelCallSpy: Spy<BoundEnqueueModelCallFn> = spy(async () => ({ queued: true }));
-    const deps: PrepareModelJobDeps = mockPrepareModelJobDeps({
+    const deps: PrepareModelJobDeps = buildPrepareModelJobDeps({
       enqueueModelCall: enqueueModelCallSpy,
       calculateAffordability: affordabilitySpy,
     });
@@ -2475,21 +1960,20 @@ Deno.test(
 Deno.test(
   "prepareModelJob returns retriable error and skips calculateAffordability and enqueueModelCall when tier cap DB query fails",
   async () => {
-    const projectOwnerUserId: string = "owner-tier-output-cap-db-error";
     const tierQueryError: Error = new Error("simulated tier cap query failure");
     const mockSetup = createMockSupabaseClient("user-tier-cap-db-error", {
       genericMockResults: {
         ai_providers: {
           select: () =>
             Promise.resolve({
-              data: [mockAiProvidersRow()],
+              data: [buildMockProvider()],
               error: null,
             }),
         },
         token_wallets: {
           select: () =>
             Promise.resolve({
-              data: [mockTokenWalletRow()],
+              data: [buildTokenWalletRow()],
               error: null,
             }),
         },
@@ -2503,26 +1987,20 @@ Deno.test(
       },
     });
     const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
-    const executePayload: DialecticExecuteJobPayload = mockDialecticExecuteJobPayload();
-    const job: DialecticJobRow = mockDialecticJobRow(executePayload);
-    const params: PrepareModelJobParams = {
-      dbClient,
-      authToken: "jwt.contract",
-      job,
-      projectOwnerUserId,
-      providerRow: mockAiProvidersRow(),
-      sessionData: mockDialecticSessionRow(),
-    };
+    const executePayload: DialecticExecuteJobPayload = buildDialecticExecuteJobPayload();
+    if (!isJson(executePayload)) throw new Error("test setup: payload is not valid Json");
+    const job: DialecticJobRow = buildDialecticJobRow({ payload: executePayload });
+    const params: PrepareModelJobParams = buildPrepareModelJobParams({ dbClient });
     const preparePayload: PrepareModelJobPayload = {
-      promptConstructionPayload: mockPromptConstructionPayload(),
-      compressionStrategy: async () => [],
+      job,
+      providerRow: buildMockProvider(),
+      promptConstructionPayload: buildPromptConstructionPayload(),
     };
-    const boundAffordability: BoundCalculateAffordabilityFn = buildMockBoundCalculateAffordabilityFn(
-      buildCalculateAffordabilityDirectReturn(200, 75),
+    const affordabilitySpy: Spy<BoundCalculateAffordabilityFn> = spy(async () =>
+      buildCalculateAffordabilityWithinBudgetReturn({ maxOutputTokens: 200, resolvedInputTokenCount: 75 })
     );
-    const affordabilitySpy: Spy<BoundCalculateAffordabilityFn> = spy(boundAffordability);
     const enqueueModelCallSpy: Spy<BoundEnqueueModelCallFn> = spy(async () => ({ queued: true }));
-    const deps: PrepareModelJobDeps = mockPrepareModelJobDeps({
+    const deps: PrepareModelJobDeps = buildPrepareModelJobDeps({
       enqueueModelCall: enqueueModelCallSpy,
       calculateAffordability: affordabilitySpy,
     });
@@ -2535,6 +2013,368 @@ Deno.test(
     assertEquals(errReturn.retriable, true);
     assertEquals(errReturn.error.message, tierQueryError.message);
     assertEquals(affordabilitySpy.calls.length, 0);
+    assertEquals(enqueueModelCallSpy.calls.length, 0);
+  },
+);
+
+/**
+ * Contract: given a within-budget affordability verdict on an EXECUTE job,
+ *   the job row's payload is updated with source_prompt_resource_id from
+ *   promptConstructionPayload before deps.enqueueModelCall is called.
+ * Arrange: an EXECUTE job row, a within-budget affordability spy, an
+ *   enqueueModelCall spy, and a mock supabase client with update configured
+ *   on dialectic_generation_jobs.
+ * Act:     prepareModelJob.
+ * Assert:  result is { queued: true }; the dialectic_generation_jobs table received an
+ *   update call whose data carries source_prompt_resource_id matching the
+ *   promptConstructionPayload value; enqueueModelCall was called once.
+ */
+Deno.test(
+  "prepareModelJob provenance write: within-budget dispatch updates job row payload with source_prompt_resource_id before enqueue",
+  async () => {
+    const mockSetup = createMockSupabaseClient("user-provenance-write-success", {
+      genericMockResults: {
+        ai_providers: {
+          select: () =>
+            Promise.resolve({
+              data: [buildMockProvider()],
+              error: null,
+            }),
+        },
+        token_wallets: {
+          select: () =>
+            Promise.resolve({
+              data: [buildTokenWalletRow()],
+              error: null,
+            }),
+        },
+        dialectic_generation_jobs: {
+          update: () =>
+            Promise.resolve({
+              data: [{ id: "job-provenance-write-success" }],
+              error: null,
+            }),
+        },
+      },
+    });
+    const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
+    const executePayload: DialecticExecuteJobPayload = buildDialecticExecuteJobPayload();
+    if (!isJson(executePayload)) throw new Error("test setup: payload is not valid Json");
+    const job: DialecticJobRow = buildDialecticJobRow({ payload: executePayload });
+    const params: PrepareModelJobParams = buildPrepareModelJobParams({ dbClient });
+    const sourcePromptResourceId: string = "provenance-source-prompt-resource-id";
+    const preparePayload: PrepareModelJobPayload = {
+      job,
+      providerRow: buildMockProvider(),
+      promptConstructionPayload: buildPromptConstructionPayload({
+        source_prompt_resource_id: sourcePromptResourceId,
+      }),
+    };
+    const enqueueModelCallSpy: Spy<BoundEnqueueModelCallFn> = spy(async () => ({ queued: true }));
+    const deps: PrepareModelJobDeps = buildPrepareModelJobDeps({
+      enqueueModelCall: enqueueModelCallSpy,
+    });
+    const result: unknown = await prepareModelJob(deps, params, preparePayload);
+    // Assert
+    assertEquals(isPrepareModelJobQueuedReturn(result), true);
+    assertEquals(enqueueModelCallSpy.calls.length, 1);
+    const updateSpies = mockSetup.spies.getLatestQueryBuilderSpies("dialectic_generation_jobs");
+    assertExists(updateSpies?.update);
+    assertEquals(updateSpies!.update!.calls.length >= 1, true);
+    const updateCallArg: unknown = updateSpies.update.calls[0].args[0];
+    if (!isRecord(updateCallArg)) {
+      throw new Error("expected update call data to be a record");
+    }
+    const payloadArg: unknown = updateCallArg["payload"];
+    if (!isRecord(payloadArg)) {
+      throw new Error("expected update payload to be a record");
+    }
+    assertEquals(
+      payloadArg["source_prompt_resource_id"],
+      sourcePromptResourceId,
+    );
+  },
+);
+
+/**
+ * Contract: the source_prompt_resource_id value written to the job row payload
+ *   does not appear on the ChatApiRequest handed to deps.enqueueModelCall.
+ * Arrange: an EXECUTE job row, a within-budget affordability spy, an
+ *   enqueueModelCall spy, and a mock supabase client with update configured.
+ * Act:     prepareModelJob.
+ * Assert:  result is { queued: true }; the ChatApiRequest passed to
+ *   enqueueModelCall does not carry source_prompt_resource_id as a key.
+ */
+Deno.test(
+  "prepareModelJob provenance write: source_prompt_resource_id does not appear on ChatApiRequest",
+  async () => {
+    const mockSetup = createMockSupabaseClient("user-provenance-not-on-chat", {
+      genericMockResults: {
+        ai_providers: {
+          select: () =>
+            Promise.resolve({
+              data: [buildMockProvider()],
+              error: null,
+            }),
+        },
+        token_wallets: {
+          select: () =>
+            Promise.resolve({
+              data: [buildTokenWalletRow()],
+              error: null,
+            }),
+        },
+        dialectic_generation_jobs: {
+          update: () =>
+            Promise.resolve({
+              data: [{ id: "job-provenance-not-on-chat" }],
+              error: null,
+            }),
+        },
+      },
+    });
+    const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
+    const executePayload: DialecticExecuteJobPayload = buildDialecticExecuteJobPayload();
+    if (!isJson(executePayload)) throw new Error("test setup: payload is not valid Json");
+    const job: DialecticJobRow = buildDialecticJobRow({ payload: executePayload });
+    const params: PrepareModelJobParams = buildPrepareModelJobParams({ dbClient });
+    const sourcePromptResourceId: string = "provenance-not-on-chat-resource-id";
+    const preparePayload: PrepareModelJobPayload = {
+      job,
+      providerRow: buildMockProvider(),
+      promptConstructionPayload: buildPromptConstructionPayload({
+        source_prompt_resource_id: sourcePromptResourceId,
+      }),
+    };
+    const enqueueModelCallSpy: Spy<BoundEnqueueModelCallFn> = spy(async () => ({ queued: true }));
+    const deps: PrepareModelJobDeps = buildPrepareModelJobDeps({
+      enqueueModelCall: enqueueModelCallSpy,
+    });
+    const result: unknown = await prepareModelJob(deps, params, preparePayload);
+    // Assert
+    assertEquals(isPrepareModelJobQueuedReturn(result), true);
+    assertEquals(enqueueModelCallSpy.calls.length, 1);
+    const firstCall = enqueueModelCallSpy.calls[0];
+    assertExists(firstCall);
+    const enqueuePayloadUnknown: unknown = firstCall.args[1];
+    if (!isEnqueueModelCallPayload(enqueuePayloadUnknown)) {
+      throw new Error("expected EnqueueModelCallPayload");
+    }
+    const chat: ChatApiRequest = enqueuePayloadUnknown.chatApiRequest;
+    assertEquals(isChatApiRequest(chat), true);
+    assertEquals("source_prompt_resource_id" in chat, false);
+  },
+);
+
+/**
+ * Contract: given a within-budget affordability verdict on an EXECUTE job
+ *   where the provenance write (job row payload update) fails, the function
+ *   returns { error, retriable: true } and enqueues nothing.
+ * Arrange: an EXECUTE job row, a within-budget affordability spy, an
+ *   enqueueModelCall spy, and a mock supabase client with update configured
+ *   to return an error.
+ * Act:     prepareModelJob.
+ * Assert:  result is PrepareModelJobErrorReturn with retriable true;
+ *   enqueueModelCall not called.
+ */
+Deno.test(
+  "prepareModelJob provenance write: failed update returns retriable error and enqueues nothing",
+  async () => {
+    const provenanceError: Error = new Error("provenance write failed");
+    const mockSetup = createMockSupabaseClient("user-provenance-write-failure", {
+      genericMockResults: {
+        ai_providers: {
+          select: () =>
+            Promise.resolve({
+              data: [buildMockProvider()],
+              error: null,
+            }),
+        },
+        token_wallets: {
+          select: () =>
+            Promise.resolve({
+              data: [buildTokenWalletRow()],
+              error: null,
+            }),
+        },
+        dialectic_generation_jobs: {
+          update: () =>
+            Promise.resolve({
+              data: null,
+              error: provenanceError,
+            }),
+        },
+      },
+    });
+    const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
+    const executePayload: DialecticExecuteJobPayload = buildDialecticExecuteJobPayload();
+    if (!isJson(executePayload)) throw new Error("test setup: payload is not valid Json");
+    const job: DialecticJobRow = buildDialecticJobRow({ payload: executePayload });
+    const params: PrepareModelJobParams = buildPrepareModelJobParams({ dbClient });
+    const preparePayload: PrepareModelJobPayload = {
+      job,
+      providerRow: buildMockProvider(),
+      promptConstructionPayload: buildPromptConstructionPayload(),
+    };
+    const enqueueModelCallSpy: Spy<BoundEnqueueModelCallFn> = spy(async () => ({ queued: true }));
+    const deps: PrepareModelJobDeps = buildPrepareModelJobDeps({
+      enqueueModelCall: enqueueModelCallSpy,
+    });
+    const result: unknown = await prepareModelJob(deps, params, preparePayload);
+    // Assert
+    assertEquals(isPrepareModelJobErrorReturn(result), true);
+    if (isPrepareModelJobErrorReturn(result)) {
+      assertEquals(result.retriable, true);
+    }
+    assertEquals(enqueueModelCallSpy.calls.length, 0);
+  },
+);
+
+/**
+ * Contract: given an over-budget affordability verdict on an EXECUTE job,
+ *   the function defers to compressPrompt and performs no provenance write
+ *   at all — no update on dialectic_generation_jobs.
+ * Arrange: an EXECUTE job row, an over-budget affordability spy, a
+ *   compressPrompt spy returning fits, and an enqueueModelCall spy.
+ * Act:     prepareModelJob.
+ * Assert:  result is { waiting_for_children: true }; no dialectic_generation_jobs
+ *   update call was made; enqueueModelCall not called.
+ */
+Deno.test(
+  "prepareModelJob provenance write: over-budget EXECUTE deferral performs no update",
+  async () => {
+    const mockSetup = createMockSupabaseClient("user-provenance-overbudget-execute", {
+      genericMockResults: {
+        ai_providers: {
+          select: () =>
+            Promise.resolve({
+              data: [buildMockProvider()],
+              error: null,
+            }),
+        },
+        token_wallets: {
+          select: () =>
+            Promise.resolve({
+              data: [buildTokenWalletRow()],
+              error: null,
+            }),
+        },
+        dialectic_generation_jobs: {
+          update: () => {
+            throw new Error("provenance update should not occur on over-budget EXECUTE deferral");
+          },
+        },
+      },
+    });
+    const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
+    const executePayload: DialecticExecuteJobPayload = buildDialecticExecuteJobPayload();
+    if (!isJson(executePayload)) throw new Error("test setup: payload is not valid Json");
+    const job: DialecticJobRow = buildDialecticJobRow({ payload: executePayload });
+    const params: PrepareModelJobParams = buildPrepareModelJobParams({ dbClient });
+    const preparePayload: PrepareModelJobPayload = {
+      job,
+      providerRow: buildMockProvider(),
+      promptConstructionPayload: buildPromptConstructionPayload(),
+    };
+    const affordabilitySpy: Spy<BoundCalculateAffordabilityFn> = spy(async () =>
+      buildCalculateAffordabilityOverBudgetReturn()
+    );
+    const compressPromptSpy: Spy<BoundCompressPromptFn> = spy(async () =>
+      buildCompressPromptFitsReturn()
+    );
+    const enqueueModelCallSpy: Spy<BoundEnqueueModelCallFn> = spy(async () => ({ queued: true }));
+    const deps: PrepareModelJobDeps = buildPrepareModelJobDeps({
+      enqueueModelCall: enqueueModelCallSpy,
+      calculateAffordability: affordabilitySpy,
+      compressPrompt: compressPromptSpy,
+    });
+    const result: unknown = await prepareModelJob(deps, params, preparePayload);
+    // Assert
+    assertEquals(isPrepareModelJobPendingReturn(result), true);
+    assertEquals(enqueueModelCallSpy.calls.length, 0);
+  },
+);
+
+/**
+ * Contract: given a row whose job_type is 'EXECUTE' and whose payload fails
+ *   isDialecticExecuteJobPayload, the function surfaces that guard's
+ *   per-member diagnostic on the error arm.
+ * Arrange: an EXECUTE job row with a payload that fails the execute guard
+ *   (sessionId set to empty string), an enqueueModelCall spy.
+ * Act:     prepareModelJob.
+ * Assert:  result is PrepareModelJobErrorReturn; the error message contains
+ *   the guard's per-member diagnostic for sessionId.
+ */
+Deno.test(
+  "prepareModelJob EXECUTE payload failing isDialecticExecuteJobPayload surfaces guard diagnostic",
+  async () => {
+    const mockSetup = createMockSupabaseClient("user-execute-guard-diagnostic", {});
+    const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
+    const badPayload: unknown = buildDialecticExecuteJobPayload({ sessionId: "" });
+    if (!isJson(badPayload)) throw new Error("test setup: payload is not valid Json");
+    const job: DialecticJobRow = buildDialecticJobRow({ payload: badPayload });
+    const params: PrepareModelJobParams = buildPrepareModelJobParams({ dbClient });
+    const preparePayload: PrepareModelJobPayload = {
+      job,
+      providerRow: buildMockProvider(),
+      promptConstructionPayload: buildPromptConstructionPayload(),
+    };
+    const enqueueModelCallSpy: Spy<BoundEnqueueModelCallFn> = spy(async () => ({ queued: true }));
+    const deps: PrepareModelJobDeps = buildPrepareModelJobDeps({
+      enqueueModelCall: enqueueModelCallSpy,
+    });
+    const result: unknown = await prepareModelJob(deps, params, preparePayload);
+    // Assert
+    assertEquals(isPrepareModelJobErrorReturn(result), true);
+    if (isPrepareModelJobErrorReturn(result)) {
+      assertEquals(
+        result.error.message.includes("Missing or invalid sessionId."),
+        true,
+        `Expected guard diagnostic, got: ${result.error.message}`,
+      );
+    }
+    assertEquals(enqueueModelCallSpy.calls.length, 0);
+  },
+);
+
+/**
+ * Contract: given a row whose job_type is 'COMPRESS' and whose payload fails
+ *   isDialecticCompressJobPayload, the function surfaces that guard's
+ *   per-member diagnostic on the error arm.
+ * Arrange: a COMPRESS job row with a payload that fails the compress guard
+ *   (content set to empty string), an enqueueModelCall spy.
+ * Act:     prepareModelJob.
+ * Assert:  result is PrepareModelJobErrorReturn; the error message contains
+ *   the guard's per-member diagnostic for content.
+ */
+Deno.test(
+  "prepareModelJob COMPRESS payload failing isDialecticCompressJobPayload surfaces guard diagnostic",
+  async () => {
+    const mockSetup = createMockSupabaseClient("user-compress-guard-diagnostic", {});
+    const dbClient: SupabaseClient<Database> = mockSetup.client as unknown as SupabaseClient<Database>;
+    const badCompressPayload: unknown = invalidateDialecticCompressJobPayload({ content: "" });
+    if (!isJson(badCompressPayload)) throw new Error("test setup: payload is not valid Json");
+    const job: DialecticJobRow = buildDialecticJobRow({ payload: badCompressPayload, job_type: "COMPRESS" });
+    const params: PrepareModelJobParams = buildPrepareModelJobParams({ dbClient });
+    const preparePayload: PrepareModelJobPayload = {
+      job,
+      providerRow: buildMockProvider(),
+      promptConstructionPayload: buildPromptConstructionPayload(),
+    };
+    const enqueueModelCallSpy: Spy<BoundEnqueueModelCallFn> = spy(async () => ({ queued: true }));
+    const deps: PrepareModelJobDeps = buildPrepareModelJobDeps({
+      enqueueModelCall: enqueueModelCallSpy,
+    });
+    const result: unknown = await prepareModelJob(deps, params, preparePayload);
+    // Assert
+    assertEquals(isPrepareModelJobErrorReturn(result), true);
+    if (isPrepareModelJobErrorReturn(result)) {
+      assertEquals(
+        result.error.message.includes("Missing or invalid content."),
+        true,
+        `Expected guard diagnostic, got: ${result.error.message}`,
+      );
+    }
     assertEquals(enqueueModelCallSpy.calls.length, 0);
   },
 );

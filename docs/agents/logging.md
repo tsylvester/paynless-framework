@@ -14,5 +14,5 @@ Applies whenever debugging or editing. This is a Process topic — it governs al
 
 Failing tests, linter flags, and user-reported errors are literal. Believe the stated condition and fix **that** before chasing a deeper or more interesting cause. The reported symptom is the truth to act on, not a starting point to reinterpret.
 
-If the user flags instruction noncompliance, acknowledge it, halt, and wait for direction — do not self-remediate in a way that risks a further violation (see [precedence](precedence.md), [discovery-halt](discovery-halt.md)).
+If the user flags instruction noncompliance, acknowledge it, halt, and wait for direction — do not self-remediate in a way that risks a further violation (see [insanity-loop](insanity-loop.md), [discovery-halt](discovery-halt.md)).
 

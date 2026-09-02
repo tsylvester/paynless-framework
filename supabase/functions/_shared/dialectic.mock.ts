@@ -63,11 +63,13 @@ import type {
     SelectedModels,
     UnifiedAIResponse,
     UnifiedAIResponseTokenUsage,
+    PromptConstructionPayload,
 } from '../dialectic-service/dialectic.interface.ts';
 import { FileType, DialecticStageSlug } from './types/file_manager.types.ts';
 import type { Messages, FinishReason, TokenUsage, ChatMessageRow } from './types.ts';
 import type { Tables } from '../types_db.ts';
 import { constructStoragePath } from './utils/path_constructor.ts';
+import { isJson } from './utils/type-guards/type_guards.common.ts';
 
 // 1. Define Function Signature Types
 type CreateProjectFn = (payload: FormData | CreateProjectPayload) => Promise<DialecticProject>;
@@ -205,17 +207,271 @@ export const mockSubmitStageResponsesError = (
 // --- Job Processors Mock ---
 
 // Import types for the processor functions
-import type { IJobProcessors } from '../dialectic-service/dialectic.interface.ts';
+import type {
+    IJobProcessors,
+    ProcessSimpleJobFn,
+    ProcessComplexJobFn,
+    ProcessRenderJobFn,
+    ProcessSimpleJobParams,
+    ProcessComplexJobParams,
+    ProcessRenderJobParams,
+    ProcessSimpleJobPayload,
+    ProcessComplexJobPayload,
+    ProcessRenderJobPayload,
+    ProcessSimpleJobDispatchedReturn,
+    ProcessSimpleJobDeferredReturn,
+    ProcessSimpleJobErrorReturn,
+    ProcessComplexJobSuccessReturn,
+    ProcessComplexJobErrorReturn,
+    ProcessRenderJobSuccessReturn,
+    ProcessRenderJobErrorReturn,
+} from '../dialectic-service/dialectic.interface.ts';
 import type { ProcessCompressJobReturn } from '../dialectic-worker/processCompressJob/processCompressJob.interface.ts';
+import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
+import type { Database } from '../types_db.ts';
+import { createMockSupabaseClient } from './supabase.mock.ts';
+
+// --- ProcessSimpleJobParams ---
+
+export type ProcessSimpleJobParamsOverrides = Partial<ProcessSimpleJobParams>;
+
+export function buildProcessSimpleJobParams(overrides?: ProcessSimpleJobParamsOverrides): ProcessSimpleJobParams {
+    const base: ProcessSimpleJobParams = {
+        dbClient: createMockSupabaseClient(undefined, {}).client as unknown as SupabaseClient<Database>,
+    };
+    return overrides ? { ...base, ...overrides } : base;
+}
+
+export type ProcessSimpleJobParamsCorruptions = { [K in keyof ProcessSimpleJobParams]?: unknown };
+
+export function invalidateProcessSimpleJobParams(corruptions: ProcessSimpleJobParamsCorruptions): unknown {
+    return { ...buildProcessSimpleJobParams(), ...corruptions };
+}
+
+// --- ProcessComplexJobParams ---
+
+export type ProcessComplexJobParamsOverrides = Partial<ProcessComplexJobParams>;
+
+export function buildProcessComplexJobParams(overrides?: ProcessComplexJobParamsOverrides): ProcessComplexJobParams {
+    const base: ProcessComplexJobParams = {
+        dbClient: createMockSupabaseClient(undefined, {}).client as unknown as SupabaseClient<Database>,
+    };
+    return overrides ? { ...base, ...overrides } : base;
+}
+
+export type ProcessComplexJobParamsCorruptions = { [K in keyof ProcessComplexJobParams]?: unknown };
+
+export function invalidateProcessComplexJobParams(corruptions: ProcessComplexJobParamsCorruptions): unknown {
+    return { ...buildProcessComplexJobParams(), ...corruptions };
+}
+
+// --- ProcessRenderJobParams ---
+
+export type ProcessRenderJobParamsOverrides = Partial<ProcessRenderJobParams>;
+
+export function buildProcessRenderJobParams(overrides?: ProcessRenderJobParamsOverrides): ProcessRenderJobParams {
+    const base: ProcessRenderJobParams = {
+        dbClient: createMockSupabaseClient(undefined, {}).client as unknown as SupabaseClient<Database>,
+    };
+    return overrides ? { ...base, ...overrides } : base;
+}
+
+export type ProcessRenderJobParamsCorruptions = { [K in keyof ProcessRenderJobParams]?: unknown };
+
+export function invalidateProcessRenderJobParams(corruptions: ProcessRenderJobParamsCorruptions): unknown {
+    return { ...buildProcessRenderJobParams(), ...corruptions };
+}
+
+// --- ProcessSimpleJobPayload ---
+
+export type ProcessSimpleJobPayloadOverrides = Partial<ProcessSimpleJobPayload>;
+
+export function buildProcessSimpleJobPayload(overrides?: ProcessSimpleJobPayloadOverrides): ProcessSimpleJobPayload {
+    const payload = buildDialecticExecuteJobPayload();
+    if (!isJson(payload)) throw new Error("Payload must be JSON");
+    const job = buildDialecticJobRow({ job_type: 'EXECUTE' });
+    const base: ProcessSimpleJobPayload = {
+        job: { ...job, payload },
+    };
+    return overrides ? { ...base, ...overrides } : base;
+}
+
+export type ProcessSimpleJobPayloadCorruptions = { [K in keyof ProcessSimpleJobPayload]?: unknown };
+
+export function invalidateProcessSimpleJobPayload(corruptions: ProcessSimpleJobPayloadCorruptions): unknown {
+    return { ...buildProcessSimpleJobPayload(), ...corruptions };
+}
+
+// --- ProcessComplexJobPayload ---
+
+export type ProcessComplexJobPayloadOverrides = Partial<ProcessComplexJobPayload>;
+
+export function buildProcessComplexJobPayload(overrides?: ProcessComplexJobPayloadOverrides): ProcessComplexJobPayload {
+    const payload = buildDialecticPlanJobPayload();
+    if (!isJson(payload)) throw new Error("Payload must be JSON");
+    const job = buildDialecticJobRow({ job_type: 'PLAN' });
+    const base: ProcessComplexJobPayload = {
+        job: { ...job, payload },
+    };
+    return overrides ? { ...base, ...overrides } : base;
+}
+
+export type ProcessComplexJobPayloadCorruptions = { [K in keyof ProcessComplexJobPayload]?: unknown };
+
+export function invalidateProcessComplexJobPayload(corruptions: ProcessComplexJobPayloadCorruptions): unknown {
+    return { ...buildProcessComplexJobPayload(), ...corruptions };
+}
+
+// --- ProcessRenderJobPayload ---
+
+export type ProcessRenderJobPayloadOverrides = Partial<ProcessRenderJobPayload>;
+
+export function buildProcessRenderJobPayload(overrides?: ProcessRenderJobPayloadOverrides): ProcessRenderJobPayload {
+    const base: ProcessRenderJobPayload = {
+        job: buildDialecticJobRow(),
+    };
+    return overrides ? { ...base, ...overrides } : base;
+}
+
+export type ProcessRenderJobPayloadCorruptions = { [K in keyof ProcessRenderJobPayload]?: unknown };
+
+export function invalidateProcessRenderJobPayload(corruptions: ProcessRenderJobPayloadCorruptions): unknown {
+    return { ...buildProcessRenderJobPayload(), ...corruptions };
+}
+
+// --- ProcessSimpleJobDispatchedReturn ---
+
+export type ProcessSimpleJobDispatchedReturnOverrides = Partial<ProcessSimpleJobDispatchedReturn>;
+
+export function buildProcessSimpleJobDispatchedReturn(overrides?: ProcessSimpleJobDispatchedReturnOverrides): ProcessSimpleJobDispatchedReturn {
+    const base: ProcessSimpleJobDispatchedReturn = { dispatched: true };
+    return overrides ? { ...base, ...overrides } : base;
+}
+
+export type ProcessSimpleJobDispatchedReturnCorruptions = { [K in keyof ProcessSimpleJobDispatchedReturn]?: unknown };
+
+export function invalidateProcessSimpleJobDispatchedReturn(corruptions: ProcessSimpleJobDispatchedReturnCorruptions): unknown {
+    return { ...buildProcessSimpleJobDispatchedReturn(), ...corruptions };
+}
+
+// --- ProcessSimpleJobDeferredReturn ---
+
+export type ProcessSimpleJobDeferredReturnOverrides = Partial<ProcessSimpleJobDeferredReturn>;
+
+export function buildProcessSimpleJobDeferredReturn(overrides?: ProcessSimpleJobDeferredReturnOverrides): ProcessSimpleJobDeferredReturn {
+    const base: ProcessSimpleJobDeferredReturn = { deferred: true };
+    return overrides ? { ...base, ...overrides } : base;
+}
+
+export type ProcessSimpleJobDeferredReturnCorruptions = { [K in keyof ProcessSimpleJobDeferredReturn]?: unknown };
+
+export function invalidateProcessSimpleJobDeferredReturn(corruptions: ProcessSimpleJobDeferredReturnCorruptions): unknown {
+    return { ...buildProcessSimpleJobDeferredReturn(), ...corruptions };
+}
+
+// --- ProcessSimpleJobErrorReturn ---
+
+export type ProcessSimpleJobErrorReturnOverrides = Partial<ProcessSimpleJobErrorReturn>;
+
+export function buildProcessSimpleJobErrorReturn(overrides?: ProcessSimpleJobErrorReturnOverrides): ProcessSimpleJobErrorReturn {
+    const base: ProcessSimpleJobErrorReturn = {
+        error: new Error("mock-process-simple-job-error"),
+        retriable: false,
+    };
+    return overrides ? { ...base, ...overrides } : base;
+}
+
+export type ProcessSimpleJobErrorReturnCorruptions = { [K in keyof ProcessSimpleJobErrorReturn]?: unknown };
+
+export function invalidateProcessSimpleJobErrorReturn(corruptions: ProcessSimpleJobErrorReturnCorruptions): unknown {
+    return { ...buildProcessSimpleJobErrorReturn(), ...corruptions };
+}
+
+// --- ProcessComplexJobSuccessReturn ---
+
+export type ProcessComplexJobSuccessReturnOverrides = Partial<ProcessComplexJobSuccessReturn>;
+
+export function buildProcessComplexJobSuccessReturn(overrides?: ProcessComplexJobSuccessReturnOverrides): ProcessComplexJobSuccessReturn {
+    const base: ProcessComplexJobSuccessReturn = { planned: true };
+    return overrides ? { ...base, ...overrides } : base;
+}
+
+export type ProcessComplexJobSuccessReturnCorruptions = { [K in keyof ProcessComplexJobSuccessReturn]?: unknown };
+
+export function invalidateProcessComplexJobSuccessReturn(corruptions: ProcessComplexJobSuccessReturnCorruptions): unknown {
+    return { ...buildProcessComplexJobSuccessReturn(), ...corruptions };
+}
+
+// --- ProcessComplexJobErrorReturn ---
+
+export type ProcessComplexJobErrorReturnOverrides = Partial<ProcessComplexJobErrorReturn>;
+
+export function buildProcessComplexJobErrorReturn(overrides?: ProcessComplexJobErrorReturnOverrides): ProcessComplexJobErrorReturn {
+    const base: ProcessComplexJobErrorReturn = {
+        error: new Error("mock-process-complex-job-error"),
+        retriable: false,
+    };
+    return overrides ? { ...base, ...overrides } : base;
+}
+
+export type ProcessComplexJobErrorReturnCorruptions = { [K in keyof ProcessComplexJobErrorReturn]?: unknown };
+
+export function invalidateProcessComplexJobErrorReturn(corruptions: ProcessComplexJobErrorReturnCorruptions): unknown {
+    return { ...buildProcessComplexJobErrorReturn(), ...corruptions };
+}
+
+// --- ProcessRenderJobSuccessReturn ---
+
+export type ProcessRenderJobSuccessReturnOverrides = Partial<ProcessRenderJobSuccessReturn>;
+
+export function buildProcessRenderJobSuccessReturn(overrides?: ProcessRenderJobSuccessReturnOverrides): ProcessRenderJobSuccessReturn {
+    const base: ProcessRenderJobSuccessReturn = { rendered: true };
+    return overrides ? { ...base, ...overrides } : base;
+}
+
+export type ProcessRenderJobSuccessReturnCorruptions = { [K in keyof ProcessRenderJobSuccessReturn]?: unknown };
+
+export function invalidateProcessRenderJobSuccessReturn(corruptions: ProcessRenderJobSuccessReturnCorruptions): unknown {
+    return { ...buildProcessRenderJobSuccessReturn(), ...corruptions };
+}
+
+// --- ProcessRenderJobErrorReturn ---
+
+export type ProcessRenderJobErrorReturnOverrides = Partial<ProcessRenderJobErrorReturn>;
+
+export function buildProcessRenderJobErrorReturn(overrides?: ProcessRenderJobErrorReturnOverrides): ProcessRenderJobErrorReturn {
+    const base: ProcessRenderJobErrorReturn = {
+        error: new Error("mock-process-render-job-error"),
+        retriable: false,
+    };
+    return overrides ? { ...base, ...overrides } : base;
+}
+
+export type ProcessRenderJobErrorReturnCorruptions = { [K in keyof ProcessRenderJobErrorReturn]?: unknown };
+
+export function invalidateProcessRenderJobErrorReturn(corruptions: ProcessRenderJobErrorReturnCorruptions): unknown {
+    return { ...buildProcessRenderJobErrorReturn(), ...corruptions };
+}
+
+// --- Processor function mocks ---
+
+export const mockProcessSimpleJob: ProcessSimpleJobFn = async () => {
+    return buildProcessSimpleJobDispatchedReturn();
+};
+
+export const mockProcessComplexJob: ProcessComplexJobFn = async () => {
+    return buildProcessComplexJobSuccessReturn();
+};
+
+export const mockProcessRenderJob: ProcessRenderJobFn = async () => {
+    return buildProcessRenderJobSuccessReturn();
+};
 
 // Dummy implementation class for job processors
 class _JobProcessorsDummyImpl implements IJobProcessors {
-    // deno-lint-ignore no-explicit-any
-    processSimpleJob = async (..._args: any[]): Promise<void> => { /* dummy */ }
-    // deno-lint-ignore no-explicit-any
-    processComplexJob = async (..._args: any[]): Promise<void> => { /* dummy */ }
-    // deno-lint-ignore no-explicit-any
-    processRenderJob = async (..._args: any[]): Promise<void> => { /* dummy */ }
+    processSimpleJob = mockProcessSimpleJob;
+    processComplexJob = mockProcessComplexJob;
+    processRenderJob = mockProcessRenderJob;
     // deno-lint-ignore no-explicit-any
     processCompressJob = async (..._args: any[]): Promise<ProcessCompressJobReturn> => ({ queued: false })
     // deno-lint-ignore no-explicit-any
@@ -942,7 +1198,7 @@ export function buildDialecticBaseJobPayload(overrides?: DialecticBaseJobPayload
     const base: DialecticBaseJobPayload = {
         sessionId: 'test-session-id',
         projectId: 'test-project-id',
-        stageSlug: 'thesis',
+        stageSlug: DialecticStageSlug.Thesis,
         iterationNumber: 1,
         walletId: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a12',
         user_jwt: 'test-jwt',
@@ -966,6 +1222,8 @@ export type DialecticExecuteJobPayloadOverrides = Partial<DialecticExecuteJobPay
 export function buildDialecticExecuteJobPayload(overrides?: DialecticExecuteJobPayloadOverrides): DialecticExecuteJobPayload {
     const base: DialecticExecuteJobPayload = {
         ...buildDialecticBaseJobPayload(),
+        stageSlug: DialecticStageSlug.Thesis,
+        iterationNumber: 1,
         prompt_template_id: 'test-template-id',
         output_type: FileType.ModelContributionRawJson,
         canonicalPathParams: {
@@ -1014,7 +1272,7 @@ export function buildDialecticSkeletonJobPayload(overrides?: DialecticSkeletonJo
         model_id: 'test-model-id',
         walletId: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a12',
         user_jwt: 'test-jwt',
-        stageSlug: 'thesis',
+        stageSlug: DialecticStageSlug.Thesis,
         iterationNumber: 1,
         planner_metadata: buildDialecticStepPlannerMetadata(),
         step_info: {},
@@ -1528,4 +1786,26 @@ export type ChatMessageRowCorruptions = { [K in keyof ChatMessageRow]?: unknown 
 
 export function invalidateChatMessageRow(corruptions: ChatMessageRowCorruptions): unknown {
     return { ...buildChatMessageRow(), ...corruptions };
+}
+
+// --- PromptConstructionPayload ---
+
+export type PromptConstructionPayloadOverrides = Partial<PromptConstructionPayload>;
+
+export function buildPromptConstructionPayload(overrides?: PromptConstructionPayloadOverrides): PromptConstructionPayload {
+    const base: PromptConstructionPayload = {
+        systemInstruction: undefined,
+        conversationHistory: [],
+        resourceDocuments: [],
+        currentUserPrompt: 'test current user prompt',
+        source_prompt_resource_id: 'test-source-prompt-resource-id',
+        sourceContributionId: null,
+    };
+    return { ...base, ...overrides };
+}
+
+export type PromptConstructionPayloadCorruptions = { [K in keyof PromptConstructionPayload]?: unknown };
+
+export function invalidatePromptConstructionPayload(corruptions: PromptConstructionPayloadCorruptions): unknown {
+    return { ...buildPromptConstructionPayload(), ...corruptions };
 }

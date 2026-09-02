@@ -37,7 +37,7 @@ Deno.test("Contract: a successful update over a row built with attempt_count 3 r
   if (!isRecord(updateArgs)) {
     throw new Error("updateArgs is not a record");
   }
-  assertObjectMatch(updateArgs, { status: "retrying", attempt_count: 3 });
+  assertObjectMatch(updateArgs, { status: "retrying", attempt_count: 4 });
   if (!isRecord(updateArgs.error_details)) {
     throw new Error("error_details is not a record");
   }
@@ -204,4 +204,34 @@ Deno.test("Contract: neither the params object nor the payload array is mutated 
   // Assert
   assertEquals(payload.failedAttempts.length, lengthBefore);
   assertEquals(payload.failedAttempts[0], firstRecordCopy);
+});
+
+Deno.test("Contract: a successful update over a row built with attempt_count 0 records attempt_count 1, proving the written value tracks the row's input rather than a constant", async () => {
+  // Arrange — update succeeds; row's attempt_count is 0, so the written value is 1
+  resetMockNotificationService();
+  const mockSetup = createMockSupabaseClient(undefined, {
+    genericMockResults: {
+      dialectic_generation_jobs: {
+        update: { data: [{ id: "job-1" }], error: null },
+      },
+    },
+  });
+  const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
+  const deps = buildRetryJobDeps();
+  const params = buildRetryJobParams({ dbClient, job: buildDialecticJobRow({ attempt_count: 0 }) });
+  const payload = buildRetryJobPayload();
+
+  // Act
+  const result = await retryJob(deps, params, payload);
+
+  // Assert
+  assertEquals(isRetryJobNotifiedReturn(result), true);
+  const updateSpy = mockSetup.spies.getHistoricQueryBuilderSpies("dialectic_generation_jobs", "update");
+  assertExists(updateSpy);
+  assertEquals(updateSpy.callCount, 1);
+  const updateArgs = updateSpy.callsArgs[0][0];
+  if (!isRecord(updateArgs)) {
+    throw new Error("updateArgs is not a record");
+  }
+  assertObjectMatch(updateArgs, { attempt_count: 1 });
 });

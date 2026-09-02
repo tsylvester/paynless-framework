@@ -67,29 +67,69 @@ export type DialecticStageRecipeInstance =
 	Database["public"]["Tables"]["dialectic_stage_recipe_instances"]["Row"];
 
 // Explicit function type definitions for worker processors (no implementation imports)
+export interface ProcessSimpleJobParams {
+	dbClient: SupabaseClient<Database>;
+}
+
+export interface ProcessComplexJobParams {
+	dbClient: SupabaseClient<Database>;
+}
+
+export interface ProcessRenderJobParams {
+	dbClient: SupabaseClient<Database>;
+}
+
+export interface ProcessSimpleJobPayload {
+	job: DialecticJobRow & { payload: DialecticExecuteJobPayload };
+}
+
+export interface ProcessComplexJobPayload {
+	job: DialecticJobRow & { payload: DialecticPlanJobPayload };
+}
+
+export interface ProcessRenderJobPayload {
+	job: DialecticJobRow;
+}
+
+export type ProcessSimpleJobDispatchedReturn = { dispatched: true };
+export type ProcessSimpleJobDeferredReturn = { deferred: true };
+export type ProcessSimpleJobSuccessReturn =
+	| ProcessSimpleJobDispatchedReturn
+	| ProcessSimpleJobDeferredReturn;
+export type ProcessSimpleJobErrorReturn = { error: Error; retriable: boolean };
+export type ProcessSimpleJobReturn =
+	| ProcessSimpleJobSuccessReturn
+	| ProcessSimpleJobErrorReturn;
+
+export type ProcessComplexJobSuccessReturn = { planned: true };
+export type ProcessComplexJobErrorReturn = { error: Error; retriable: boolean };
+export type ProcessComplexJobReturn =
+	| ProcessComplexJobSuccessReturn
+	| ProcessComplexJobErrorReturn;
+
+export type ProcessRenderJobSuccessReturn = { rendered: true };
+export type ProcessRenderJobErrorReturn = { error: Error; retriable: boolean };
+export type ProcessRenderJobReturn =
+	| ProcessRenderJobSuccessReturn
+	| ProcessRenderJobErrorReturn;
+
 export type ProcessSimpleJobFn = (
-	dbClient: SupabaseClient<Database>,
-	job: DialecticJobRow & { payload: DialecticExecuteJobPayload },
-	projectOwnerUserId: string,
 	deps: IJobContext,
-	authToken: string,
-) => Promise<void>;
+	params: ProcessSimpleJobParams,
+	payload: ProcessSimpleJobPayload,
+) => Promise<ProcessSimpleJobReturn>;
 
 export type ProcessComplexJobFn = (
-	dbClient: SupabaseClient<Database>,
-	job: DialecticJobRow & { payload: DialecticPlanJobPayload },
-	projectOwnerUserId: string,
 	deps: IPlanJobContext,
-	authToken: string,
-) => Promise<void>;
+	params: ProcessComplexJobParams,
+	payload: ProcessComplexJobPayload,
+) => Promise<ProcessComplexJobReturn>;
 
 export type ProcessRenderJobFn = (
-	dbClient: SupabaseClient<Database>,
-	job: DialecticJobRow,
-	projectOwnerUserId: string,
 	deps: IRenderJobContext,
-	authToken: string,
-) => Promise<void>;
+	params: ProcessRenderJobParams,
+	payload: ProcessRenderJobPayload,
+) => Promise<ProcessRenderJobReturn>;
 
 export type PlanComplexStageFn = (
 	dbClient: SupabaseClient<Database>,
@@ -1389,6 +1429,8 @@ export type DocumentRelationships = {
  * The payload for a child job that executes a single model call.
  */
 export interface DialecticExecuteJobPayload extends DialecticBaseJobPayload {
+	stageSlug: DialecticStageSlug;
+	iterationNumber: number;
 	prompt_template_id: string;
 	prompt_template_name?: string; // Written by the planners from the recipe step's own member and carried forward on continuation
 	output_type: ModelContributionFileTypes; // The type of artifact this job will produce

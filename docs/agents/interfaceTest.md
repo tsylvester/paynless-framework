@@ -115,9 +115,12 @@ test("MyObject has the required surface", () => {
     arg1: true,
     arg2: true,
   };
-  assert(Object.keys(surface).length === 2);
+  assert(surface.arg1);
+  assert(surface.arg2);
 });
 ```
+
+**The names are the specification; a count is not.** `Record<keyof MyObject, true>` fails to compile when a declared key is missing and rejects a key the type does not declare, so the enumerated names prove the surface on their own. Never assert a member count in place of them or beside them. A count restates the surface a second time, by hand, where it can disagree with the literal above it and with the interface it claims to describe; it reads its expected value off the arrangement it is checking, which is the tautological derangement (see [tests](tests.md#audit)); and it is what an author copies when a workplan element specifies a type by cardinality instead of by name (see [workplan-structure](workplan-structure.md)). Assert each name.
 
 If the interface under test accepts an imported object as a field, enumerate that field in the owning interface's surface test. Do not add a database-row fixture, import its builder, or compare the field with the same imported row type: those steps either construct the value or prove only `ImportedType extends ImportedType`.
 
@@ -136,7 +139,8 @@ test("MyFunction has the required deps surface", () => {
     dep1: true,
     dep2: true,
   };
-  assert(Object.keys(surface).length === 2);
+  assert(surface.dep1);
+  assert(surface.dep2);
 });
 
 /** Contract: MyFunctionParams requires exactly arg1 and arg2. */
@@ -145,7 +149,8 @@ test("MyFunction has the required params surface", () => {
     arg1: true,
     arg2: true,
   };
-  assert(Object.keys(surface).length === 2);
+  assert(surface.arg1);
+  assert(surface.arg2);
 });
 ```
 
@@ -203,4 +208,4 @@ Do not write a `declare const` binding for an interface test. If you begin writi
 - Never create or edit the interface file. “I'm only creating the file” is editing it.
 - Halt applies to one case only: the test needs a type owned by a **different** interface that does not exist in its home — a dependency-ordering violation. Report and halt (see [discovery-halt](discovery-halt.md)).
 
-Forbidden: running any terminal commands, importing an implementation, defining types locally (“temporary, I'll move it later”); silencing the compiler (`@ts-expect-error`, `as`, `satisfies`, `unknown`); importing mocks, builders, or guards; constructing a value of an imported type — a hand-rolled literal or its builder — instead of a type-only surface assertion; using `declare const` in an interface test; stubbing a function to inhabit its type (`const fn: MyFunction = …`); using `Record<keyof Parameters<MyFunction>[n], true>` as proof of an exported parameter-object symbol; a broad primitive where a narrow type exists; redefining an imported type locally. A file that compiles cleanly at this stage is a failed task.
+Forbidden: running any terminal commands, importing an implementation, defining types locally (“temporary, I'll move it later”); silencing the compiler (`@ts-expect-error`, `as`, `satisfies`, `unknown`); importing mocks, builders, or guards; constructing a value of an imported type — a hand-rolled literal or its builder — instead of a type-only surface assertion; using `declare const` in an interface test; stubbing a function to inhabit its type (`const fn: MyFunction = …`); using `Record<keyof Parameters<MyFunction>[n], true>` as proof of an exported parameter-object symbol; asserting a member count (`Object.keys(surface).length`) in place of the enumerated names or beside them; a broad primitive where a narrow type exists; redefining an imported type locally. A file that compiles cleanly at this stage is a failed task.

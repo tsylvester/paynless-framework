@@ -2,10 +2,8 @@ import { FileType } from "../../_shared/types/file_manager.types.ts";
 import type { PathContext } from "../../_shared/types/file_manager.types.ts";
 import type { PostgrestError } from "npm:@supabase/supabase-js@2";
 import type { Tables, TablesUpdate } from "../../types_db.ts";
-import type { DialecticRecipeStep } from "../../dialectic-service/dialectic.interface.ts";
-import type { AiModelExtendedConfig, ChatApiRequest } from "../../_shared/types.ts";
+import type { DialecticRecipeStep, PromptConstructionPayload } from "../../dialectic-service/dialectic.interface.ts";
 import type { ConstructedPath } from "../../_shared/utils/path_constructor.ts";
-import { isAiModelExtendedConfig } from "../../_shared/utils/type-guards/type_guards.chat.ts";
 import { isJson } from "../../_shared/utils/type-guards/type_guards.common.ts";
 import { isOutputRule } from "../../_shared/utils/type-guards/type_guards.dialectic.ts";
 import {
@@ -18,16 +16,10 @@ import type {
     CompressionTargetStep,
 } from "../../_shared/prompt-assembler/assembleCompressionPrompt/assembleCompressionPrompt.interface.ts";
 import type { AssembledPrompt } from "../../_shared/prompt-assembler/prompt-assembler.interface.ts";
-import type {
-    CountTokensDeps,
-    CountableChatPayload,
-} from "../../_shared/types/tokenizer.types.ts";
-import type {
-    EnqueueModelCallParams,
-    EnqueueModelCallPayload,
-} from "../enqueueModelCall/enqueueModelCall.interface.ts";
-import type { UserConfig } from "../calculateAffordability/calculateAffordability.interface.ts";
+import { isAssembleContinuationPromptErrorReturn } from "../../_shared/prompt-assembler/prompt-assembler.guard.ts";
+import { isDialecticCompressJobPayload } from "../enqueueCompressJobs/enqueueCompressJobs.guard.ts";
 import type { DialecticCompressJobPayload } from "../enqueueCompressJobs/enqueueCompressJobs.interface.ts";
+import type { PrepareModelJobParams, PrepareModelJobPayload } from "../prepareModelJob/prepareModelJob.interface.ts";
 import {
     ProcessCompressJobError,
     ProcessCompressJobFn,
@@ -38,21 +30,38 @@ export const processCompressJob: ProcessCompressJobFn = async (
     params,
     payload,
 ) => {
+    // Entry — narrow the job's payload content
+    let compressPayload: DialecticCompressJobPayload;
+    try {
+        if (!isDialecticCompressJobPayload(payload.job.payload)) {
+            return {
+                error: new ProcessCompressJobError("Invalid compress payload"),
+                retriable: false,
+            };
+        }
+        compressPayload = payload.job.payload;
+    } catch (err) {
+        const error: Error = err instanceof Error
+            ? err
+            : new ProcessCompressJobError(String(err));
+        return { error, retriable: false };
+    }
+
     // Step 1 — dedup layer 2
     let storagePath: string;
     let fileName: string;
     try {
         const pathContext: PathContext = {
             fileType: FileType.CompressedContext,
-            projectId: payload.projectId,
-            sessionId: payload.sessionId,
-            iteration: payload.iterationNumber,
-            stageSlug: payload.stageSlug,
-            output_type: payload.output_type,
-            sourceType: payload.sourceType,
-            documentKey: payload.documentKey,
-            sourceId: payload.sourceId,
-            role: payload.role,
+            projectId: compressPayload.projectId,
+            sessionId: compressPayload.sessionId,
+            iteration: compressPayload.iterationNumber,
+            stageSlug: compressPayload.stageSlug,
+            output_type: compressPayload.output_type,
+            sourceType: compressPayload.sourceType,
+            documentKey: compressPayload.documentKey,
+            sourceId: compressPayload.sourceId,
+            role: compressPayload.role,
         };
         const constructed: ConstructedPath = deps.constructStoragePath(pathContext);
         storagePath = constructed.storagePath;
@@ -86,7 +95,7 @@ export const processCompressJob: ProcessCompressJobFn = async (
         const { error: updateError } = await params.dbClient
             .from("dialectic_generation_jobs")
             .update(updatePayload)
-            .eq("id", params.job.id);
+            .eq("id", payload.job.id);
 
         if (updateError) {
             return { error: updateError, retriable: true };
@@ -95,12 +104,12 @@ export const processCompressJob: ProcessCompressJobFn = async (
         return { queued: false };
     }
 
-    // Step 2 — provider lookup and validation
+    // Step 2 — provider lookup
     const { data: providerRow, error: providerError } = await params.dbClient
         .from("ai_providers")
         .select("*")
-        .eq("id", payload.model_id)
-        .single();
+        .eq("id", compressPayload.model_id)
+        .maybeSingle();
 
     if (providerError) {
         return { error: providerError, retriable: true };
@@ -113,43 +122,11 @@ export const processCompressJob: ProcessCompressJobFn = async (
         };
     }
 
-    if (!isAiModelExtendedConfig(providerRow.config)) {
-        return {
-            error: new ProcessCompressJobError(
-                "Provider config is not a valid AiModelExtendedConfig",
-            ),
-            retriable: false,
-        };
-    }
-
-    const providerConfig: AiModelExtendedConfig = providerRow.config;
-
-    if (providerConfig.provider_max_input_tokens === undefined) {
-        return {
-            error: new ProcessCompressJobError(
-                "provider_max_input_tokens is missing",
-            ),
-            retriable: false,
-        };
-    }
-
-    if (providerConfig.provider_max_output_tokens === undefined) {
-        return {
-            error: new ProcessCompressJobError(
-                "provider_max_output_tokens is missing",
-            ),
-            retriable: false,
-        };
-    }
-
-    const maxInputTokens: number = providerConfig.provider_max_input_tokens;
-    const maxOutputTokens: number = providerConfig.provider_max_output_tokens;
-
     // Step 3 — consuming step lookup
     const { data: stage, error: stageError } = await params.dbClient
         .from("dialectic_stages")
         .select("active_recipe_instance_id")
-        .eq("slug", payload.stageSlug)
+        .eq("slug", compressPayload.stageSlug)
         .single();
 
     if (stageError) {
@@ -159,7 +136,7 @@ export const processCompressJob: ProcessCompressJobFn = async (
     if (!stage || stage.active_recipe_instance_id === null) {
         return {
             error: new ProcessCompressJobError(
-                `Stage '${payload.stageSlug}' has no active recipe instance`,
+                `Stage '${compressPayload.stageSlug}' has no active recipe instance`,
             ),
             retriable: false,
         };
@@ -257,12 +234,12 @@ export const processCompressJob: ProcessCompressJobFn = async (
         };
     }
 
-    const matchingStep = steps.find((step) => step.output_type === payload.output_type);
+    const matchingStep = steps.find((step) => step.output_type === compressPayload.output_type);
 
     if (!matchingStep) {
         return {
             error: new ProcessCompressJobError(
-                `No recipe step with output_type '${payload.output_type}'`,
+                `No recipe step with output_type '${compressPayload.output_type}'`,
             ),
             retriable: false,
         };
@@ -274,7 +251,7 @@ export const processCompressJob: ProcessCompressJobFn = async (
     ) {
         return {
             error: new ProcessCompressJobError(
-                `Recipe step with output_type '${payload.output_type}' is not a valid compress recipe step`,
+                `Recipe step with output_type '${compressPayload.output_type}' is not a valid compress recipe step`,
             ),
             retriable: false,
         };
@@ -288,7 +265,7 @@ export const processCompressJob: ProcessCompressJobFn = async (
     ) {
         return {
             error: new ProcessCompressJobError(
-                `Recipe step with output_type '${payload.output_type}' has missing or invalid outputs_required`,
+                `Recipe step with output_type '${compressPayload.output_type}' has missing or invalid outputs_required`,
             ),
             retriable: false,
         };
@@ -303,37 +280,41 @@ export const processCompressJob: ProcessCompressJobFn = async (
 
     // Step 4 — assemble compression prompt
     const assemblePayload: AssembleCompressionPromptPayload = {
-        mode: payload.mode,
-        content: payload.content,
+        mode: compressPayload.mode,
+        content: compressPayload.content,
     };
 
     if (
-        typeof payload.chunk_index === "number" &&
-        typeof payload.chunk_total === "number"
+        typeof compressPayload.chunk_index === "number" &&
+        typeof compressPayload.chunk_total === "number"
     ) {
-        assemblePayload.chunk_index = payload.chunk_index;
-        assemblePayload.chunk_total = payload.chunk_total;
+        assemblePayload.chunk_index = compressPayload.chunk_index;
+        assemblePayload.chunk_total = compressPayload.chunk_total;
     }
 
     const assembleParams: AssembleCompressionPromptParams = {
         consumingStep,
-        projectId: payload.projectId,
-        sessionId: payload.sessionId,
-        iterationNumber: payload.iterationNumber,
-        stageSlug: payload.stageSlug,
-        output_type: payload.output_type,
-        sourceType: payload.sourceType,
-        documentKey: payload.documentKey,
-        sourceId: payload.sourceId,
-        role: payload.role,
-        modelSlug: payload.model_slug,
-        userId: payload.user_id,
-        attemptCount: params.job.attempt_count,
+        projectId: compressPayload.projectId,
+        sessionId: compressPayload.sessionId,
+        iterationNumber: compressPayload.iterationNumber,
+        stageSlug: compressPayload.stageSlug,
+        output_type: compressPayload.output_type,
+        sourceType: compressPayload.sourceType,
+        documentKey: compressPayload.documentKey,
+        sourceId: compressPayload.sourceId,
+        role: compressPayload.role,
+        modelSlug: compressPayload.model_slug,
+        userId: payload.job.user_id,
+        attemptCount: payload.job.attempt_count,
     };
 
     let assembled: AssembledPrompt;
-    if (typeof payload.continuation_count === "number" && payload.continuation_count >= 1) {
-        assembled = await deps.assembleContinuationPrompt(params.job);
+    if (typeof compressPayload.continuation_count === "number" && compressPayload.continuation_count >= 1) {
+        const continuationResult = await deps.assembleContinuationPrompt(payload.job);
+        if (isAssembleContinuationPromptErrorReturn(continuationResult)) {
+            return { error: continuationResult.error, retriable: continuationResult.retriable };
+        }
+        assembled = continuationResult;
     } else {
         const compressionResult = await deps.assembleCompressionPrompt(
             assembleParams,
@@ -345,75 +326,33 @@ export const processCompressJob: ProcessCompressJobFn = async (
         assembled = compressionResult;
     }
 
-    // Step 5 — provenance write
-    const updatedPayload: DialecticCompressJobPayload = {
-        ...payload,
+    // Step 5 — dispatch to prepareModelJob
+    const promptConstructionPayload: PromptConstructionPayload = {
+        conversationHistory: [],
+        resourceDocuments: [],
+        currentUserPrompt: assembled.promptContent,
         source_prompt_resource_id: assembled.source_prompt_resource_id,
     };
 
-    if(!isJson(updatedPayload)){
-        throw new Error ("DialecticCompressJobPayload just be Json compatible")
-    }
-    const provenanceUpdate: TablesUpdate<"dialectic_generation_jobs"> = {
-        payload: updatedPayload,
+    const dispatchParams: PrepareModelJobParams = {
+        dbClient: params.dbClient,
     };
-    const { error: provenanceError } = await params.dbClient
-        .from("dialectic_generation_jobs")
-        .update(provenanceUpdate)
-        .eq("id", params.job.id);
+    const dispatchPayload: PrepareModelJobPayload = {
+        job: payload.job,
+        providerRow,
+        promptConstructionPayload,
+    };
+    const dispatchResult = await deps.prepareModelJob(dispatchParams, dispatchPayload);
 
-    if (provenanceError) {
-        return { error: provenanceError, retriable: true };
+    if ("error" in dispatchResult) {
+        return { error: dispatchResult.error, retriable: dispatchResult.retriable };
     }
 
-    // Step 6 — recursion guard
-    const tokenizerDeps: CountTokensDeps = {
-        getEncoding: deps.getEncoding,
-        countTokensAnthropic: deps.countTokensAnthropic,
-        logger: deps.logger,
-    };
-
-    const countablePayload: CountableChatPayload = { message: assembled.promptContent };
-    const preflightInputTokens = deps.countTokens(
-        tokenizerDeps,
-        countablePayload,
-        providerConfig,
-    );
-
-    if (preflightInputTokens > maxInputTokens - 32) {
+    if ("waiting_for_children" in dispatchResult) {
         return {
-            error: new ProcessCompressJobError(
-                `Assembled prompt of ${preflightInputTokens} tokens exceeds budget of ${maxInputTokens - 32}`,
-            ),
+            error: new ProcessCompressJobError("COMPRESS deferral: waiting for children"),
             retriable: false,
         };
-    }
-
-    // Step 6 — enqueue model call
-    const chatApiRequest: ChatApiRequest = {
-        message: assembled.promptContent,
-        providerId: payload.model_id,
-        promptId: "__none__",
-        max_tokens_to_generate: maxOutputTokens,
-    };
-
-    const userConfigObject: UserConfig = { tier_output_cap_tokens: null };
-    const enqueueParams: EnqueueModelCallParams = {
-        dbClient: params.dbClient,
-        job: params.job,
-        providerRow,
-        userAuthToken: params.authToken,
-        output_type: FileType.CompressedContextRawJson,
-        userConfig: userConfigObject,
-    };
-    const enqueuePayload: EnqueueModelCallPayload = {
-        chatApiRequest,
-        preflightInputTokens,
-    };
-    const enqueued = await deps.enqueueModelCall(enqueueParams, enqueuePayload);
-
-    if ("error" in enqueued) {
-        return { error: enqueued.error, retriable: enqueued.retriable };
     }
 
     return { queued: true };

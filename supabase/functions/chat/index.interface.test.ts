@@ -13,6 +13,7 @@ import { createMockUserTokenWalletService } from "../_shared/services/tokenwalle
 import { createMockSupabaseClient } from "../_shared/supabase.mock.ts";
 import { GetUserFn, GetUserFnResult } from "../_shared/types.ts";
 import { Database } from "../types_db.ts";
+import type { BoundCountTokensFn } from "../_shared/types/tokenizer.types.ts";
 import {
   buildContractStreamRequestDeps,
   createMockStreamRequest,
@@ -252,5 +253,14 @@ Deno.test(
 
     const result: ChatReturn = await contractChat(deps, params, payload);
     assertEquals(result instanceof Response, true);
+  },
+);
+
+Deno.test(
+  "Contract: BoundCountTokensFn is assignable to ChatDeps['countTokens']",
+  () => {
+    const fn: BoundCountTokensFn = (_p, _m) => 0;
+    const check: ChatDeps["countTokens"] = fn;
+    assertEquals(check, fn);
   },
 );

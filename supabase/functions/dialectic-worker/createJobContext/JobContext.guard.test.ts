@@ -2,31 +2,22 @@
 
 import { describe, it } from 'https://deno.land/std@0.170.0/testing/bdd.ts';
 import { assertEquals } from 'https://deno.land/std@0.170.0/testing/asserts.ts';
-import type { BoundDebitTokens } from '../../_shared/utils/debitTokens.interface.ts';
 import {
     isILoggerContext,
     isIFileContext,
     isIModelContext,
-    isIRagContext,
     isITokenContext,
     isINotificationContext,
-    isIPrepareModelJobContext,
     isIPlanJobContext,
     isIRenderJobContext,
     isIJobContext,
-    isISaveResponseContext,
 } from './JobContext.guard.ts';
 import {
     buildIJobContext,
     buildIPlanJobContext,
     buildIRenderJobContext,
+    invalidateIJobContext,
 } from './JobContext.mock.ts';
-import { buildMockBoundCalculateAffordabilityFn } from '../calculateAffordability/calculateAffordability.mock.ts';
-
-const mockBoundDebitTokens: BoundDebitTokens = async () => ({
-    error: new Error('guard test stub'),
-    retriable: false,
-});
 
 describe('JobContexts Type Guards', () => {
     describe('isILoggerContext', () => {
@@ -95,24 +86,6 @@ describe('JobContexts Type Guards', () => {
         });
     });
 
-    describe('isIRagContext', () => {
-        it('returns true for valid RAG context with all four fields', () => {
-            const mockRagService = { search: () => {} };
-            const mockIndexingService = { index: () => {} };
-            const mockEmbeddingClient = { embed: () => {} };
-            const mockCountTokens = () => 0;
-
-            const context = {
-                ragService: mockRagService,
-                indexingService: mockIndexingService,
-                embeddingClient: mockEmbeddingClient,
-                countTokens: mockCountTokens,
-            };
-
-            assertEquals(isIRagContext(context), true);
-        });
-    });
-
     describe('isITokenContext', () => {
         it('returns true for valid token context', () => {
             const mockAdminWallet = { debit: () => {}, credit: () => {} };
@@ -132,165 +105,6 @@ describe('JobContexts Type Guards', () => {
             const context = { notificationService: mockNotificationService };
 
             assertEquals(isINotificationContext(context), true);
-        });
-    });
-
-    describe('isIPrepareModelJobContext', () => {
-        it('returns true for valid object with all 12 IPrepareModelJobContext fields', () => {
-            const rootContext = buildIJobContext();
-            const context = {
-                logger: rootContext.logger,
-                pickLatest: rootContext.pickLatest,
-                downloadFromStorage: rootContext.downloadFromStorage,
-                applyInputsRequiredScope: rootContext.applyInputsRequiredScope,
-                countTokens: rootContext.countTokens,
-                adminTokenWalletService: rootContext.adminTokenWalletService,
-                validateWalletBalance: rootContext.validateWalletBalance,
-                validateModelCostRates: rootContext.validateModelCostRates,
-                ragService: rootContext.ragService,
-                embeddingClient: rootContext.embeddingClient,
-                enqueueModelCall: async () => ({}),
-                calculateAffordability: buildMockBoundCalculateAffordabilityFn(),
-            };
-
-            assertEquals(isIPrepareModelJobContext(context), true);
-        });
-
-        it('returns false for object missing ragService', () => {
-            const rootContext = buildIJobContext();
-            const context = {
-                logger: rootContext.logger,
-                pickLatest: rootContext.pickLatest,
-                downloadFromStorage: rootContext.downloadFromStorage,
-                applyInputsRequiredScope: rootContext.applyInputsRequiredScope,
-                countTokens: rootContext.countTokens,
-                adminTokenWalletService: rootContext.adminTokenWalletService,
-                validateWalletBalance: rootContext.validateWalletBalance,
-                validateModelCostRates: rootContext.validateModelCostRates,
-                embeddingClient: rootContext.embeddingClient,
-                enqueueModelCall: async () => ({}),
-            };
-
-            assertEquals(isIPrepareModelJobContext(context), false);
-        });
-
-        it('returns false for object missing enqueueModelCall (pre-bound)', () => {
-            const rootContext = buildIJobContext();
-            const context = {
-                logger: rootContext.logger,
-                pickLatest: rootContext.pickLatest,
-                downloadFromStorage: rootContext.downloadFromStorage,
-                applyInputsRequiredScope: rootContext.applyInputsRequiredScope,
-                countTokens: rootContext.countTokens,
-                adminTokenWalletService: rootContext.adminTokenWalletService,
-                validateWalletBalance: rootContext.validateWalletBalance,
-                validateModelCostRates: rootContext.validateModelCostRates,
-                ragService: rootContext.ragService,
-                embeddingClient: rootContext.embeddingClient,
-            };
-
-            assertEquals(isIPrepareModelJobContext(context), false);
-        });
-
-        it('returns false for object missing enqueueModelCall (pre-bound)', () => {
-            const rootContext = buildIJobContext();
-            const context = {
-                logger: rootContext.logger,
-                applyInputsRequiredScope: rootContext.applyInputsRequiredScope,
-                countTokens: rootContext.countTokens,
-                adminTokenWalletService: rootContext.adminTokenWalletService,
-                validateWalletBalance: rootContext.validateWalletBalance,
-                validateModelCostRates: rootContext.validateModelCostRates,
-                ragService: rootContext.ragService,
-                embeddingClient: rootContext.embeddingClient,
-                calculateAffordability: buildMockBoundCalculateAffordabilityFn(),
-                // enqueueModelCall intentionally absent
-            };
-
-            assertEquals(isIPrepareModelJobContext(context), false);
-        });
-
-        it('returns false for object with Zone E-G fields but missing IPrepareModelJobContext fields', () => {
-            const rootContext = buildIJobContext();
-            // Zone E-G fields: fileManager, getAiProviderAdapter, continueJob, retryJob,
-            // resolveFinishReason, isIntermediateChunk, determineContinuation, buildUploadContext, debitTokens
-            // Missing PMJ fields: applyInputsRequiredScope,
-            // countTokens, validateWalletBalance, validateModelCostRates, ragService, embeddingClient,
-            // enqueueModelCall
-            const context = {
-                logger: rootContext.logger,
-                fileManager: rootContext.fileManager,
-                getAiProviderAdapter: rootContext.getAiProviderAdapter,
-                userTokenWalletService: rootContext.userTokenWalletService,
-                notificationService: rootContext.notificationService,
-                continueJob: rootContext.continueJob,
-                retryJob: rootContext.retryJob,
-                resolveFinishReason: rootContext.resolveFinishReason,
-                isIntermediateChunk: rootContext.isIntermediateChunk,
-                determineContinuation: rootContext.determineContinuation,
-                buildUploadContext: rootContext.buildUploadContext,
-                debitTokens: mockBoundDebitTokens,
-            };
-
-            assertEquals(isIPrepareModelJobContext(context), false);
-        });
-
-        it('returns false for object missing calculateAffordability', () => {
-            const rootContext = buildIJobContext();
-            const context = {
-                logger: rootContext.logger,
-                pickLatest: rootContext.pickLatest,
-                downloadFromStorage: rootContext.downloadFromStorage,
-                applyInputsRequiredScope: rootContext.applyInputsRequiredScope,
-                countTokens: rootContext.countTokens,
-                adminTokenWalletService: rootContext.adminTokenWalletService,
-                validateWalletBalance: rootContext.validateWalletBalance,
-                validateModelCostRates: rootContext.validateModelCostRates,
-                ragService: rootContext.ragService,
-                embeddingClient: rootContext.embeddingClient,
-                enqueueModelCall: async () => ({}),
-            };
-
-            assertEquals(isIPrepareModelJobContext(context), false);
-        });
-
-        it('returns false when calculateAffordability is present but not a function', () => {
-            const rootContext = buildIJobContext();
-            const context = {
-                logger: rootContext.logger,
-                pickLatest: rootContext.pickLatest,
-                downloadFromStorage: rootContext.downloadFromStorage,
-                applyInputsRequiredScope: rootContext.applyInputsRequiredScope,
-                countTokens: rootContext.countTokens,
-                adminTokenWalletService: rootContext.adminTokenWalletService,
-                validateWalletBalance: rootContext.validateWalletBalance,
-                validateModelCostRates: rootContext.validateModelCostRates,
-                ragService: rootContext.ragService,
-                embeddingClient: rootContext.embeddingClient,
-                enqueueModelCall: async () => ({}),
-                calculateAffordability: 'not-a-function',
-            };
-
-            assertEquals(isIPrepareModelJobContext(context), false);
-        });
-
-        it('returns true for object with enqueueRenderJob absent — enqueueRenderJob not required in prepareModelJob slice', () => {
-            const rootContext = buildIJobContext();
-            const context = {
-                logger: rootContext.logger,
-                applyInputsRequiredScope: rootContext.applyInputsRequiredScope,
-                countTokens: rootContext.countTokens,
-                adminTokenWalletService: rootContext.adminTokenWalletService,
-                validateWalletBalance: rootContext.validateWalletBalance,
-                validateModelCostRates: rootContext.validateModelCostRates,
-                ragService: rootContext.ragService,
-                embeddingClient: rootContext.embeddingClient,
-                enqueueModelCall: async () => ({}),
-                calculateAffordability: buildMockBoundCalculateAffordabilityFn(),
-                // enqueueRenderJob intentionally absent — lives in back-half context slice only
-            };
-
-            assertEquals(isIPrepareModelJobContext(context), true);
         });
     });
 
@@ -391,25 +205,15 @@ describe('JobContexts Type Guards', () => {
             assertEquals(isIJobContext(contextMissingSeed), false);
         });
 
-        it('returns false for root context missing debitTokens', () => {
+        it('returns false when retryJob is missing', () => {
             const rootContext = buildIJobContext();
-            const { debitTokens, ...contextMissingDebitTokens } = rootContext;
-
-            assertEquals(isIJobContext(contextMissingDebitTokens), false);
-        });
-
-        it('returns false when sanitizeJsonContent is missing', () => {
-            const rootContext = buildIJobContext();
-            const { sanitizeJsonContent, ...contextMissing } = rootContext;
+            const { retryJob, ...contextMissing } = rootContext;
 
             assertEquals(isIJobContext(contextMissing), false);
         });
 
-        it('returns false when sanitizeJsonContent is present but not a function', () => {
-            const rootContext = buildIJobContext();
-            const context = { ...rootContext, sanitizeJsonContent: 'not-a-function' };
-
-            assertEquals(isIJobContext(context), false);
+        it('returns false when retryJob is not a function', () => {
+            assertEquals(isIJobContext(invalidateIJobContext({ retryJob: 'not-a-function' })), false);
         });
 
         it('returns false when getMaxOutputTokens is missing', () => {
@@ -432,6 +236,243 @@ describe('JobContexts Type Guards', () => {
 
             assertEquals(isIJobContext(context), false);
         });
+
+        // ── Non-objects rejected ──
+
+        it('returns false for null, undefined, primitives, and arrays', () => {
+            assertEquals(isIJobContext(null), false);
+            assertEquals(isIJobContext(undefined), false);
+            assertEquals(isIJobContext(42), false);
+            assertEquals(isIJobContext('string'), false);
+            assertEquals(isIJobContext([]), false);
+        });
+
+        // ── Each property corrupted in turn rejected ──
+
+        it('returns false when logger is corrupted', () => {
+            assertEquals(isIJobContext(invalidateIJobContext({ logger: 'not-an-object' })), false);
+        });
+
+        it('returns false when notificationService is corrupted', () => {
+            assertEquals(isIJobContext(invalidateIJobContext({ notificationService: 'not-an-object' })), false);
+        });
+
+        it('returns false when getGranularityPlanner is not a function', () => {
+            assertEquals(isIJobContext(invalidateIJobContext({ getGranularityPlanner: 'not-a-function' })), false);
+        });
+
+        it('returns false when planComplexStage is not a function', () => {
+            assertEquals(isIJobContext(invalidateIJobContext({ planComplexStage: 'not-a-function' })), false);
+        });
+
+        it('returns false when findSourceDocuments is not a function', () => {
+            assertEquals(isIJobContext(invalidateIJobContext({ findSourceDocuments: 'not-a-function' })), false);
+        });
+
+        it('returns false when fileManager is corrupted', () => {
+            assertEquals(isIJobContext(invalidateIJobContext({ fileManager: 'not-an-object' })), false);
+        });
+
+        it('returns false when downloadFromStorage is not a function', () => {
+            assertEquals(isIJobContext(invalidateIJobContext({ downloadFromStorage: 'not-a-function' })), false);
+        });
+
+        it('returns false when deleteFromStorage is not a function', () => {
+            assertEquals(isIJobContext(invalidateIJobContext({ deleteFromStorage: 'not-a-function' })), false);
+        });
+
+        it('returns false when documentRenderer is corrupted', () => {
+            assertEquals(isIJobContext(invalidateIJobContext({ documentRenderer: 'not-an-object' })), false);
+        });
+
+        it('returns false when assembleContributionChain is not a function', () => {
+            assertEquals(isIJobContext(invalidateIJobContext({ assembleContributionChain: 'not-a-function' })), false);
+        });
+
+        it('returns false when loadDocumentTemplate is not a function', () => {
+            assertEquals(isIJobContext(invalidateIJobContext({ loadDocumentTemplate: 'not-a-function' })), false);
+        });
+
+        it('returns false when mergeChunkContent is not a function', () => {
+            assertEquals(isIJobContext(invalidateIJobContext({ mergeChunkContent: 'not-a-function' })), false);
+        });
+
+        it('returns false when getAiProviderAdapter is not a function', () => {
+            assertEquals(isIJobContext(invalidateIJobContext({ getAiProviderAdapter: 'not-a-function' })), false);
+        });
+
+        it('returns false when getAiProviderConfig is not a function', () => {
+            assertEquals(isIJobContext(invalidateIJobContext({ getAiProviderConfig: 'not-a-function' })), false);
+        });
+
+        it('returns false when countTokens is not a function', () => {
+            assertEquals(isIJobContext(invalidateIJobContext({ countTokens: 'not-a-function' })), false);
+        });
+
+        it('returns false when adminTokenWalletService is corrupted', () => {
+            assertEquals(isIJobContext(invalidateIJobContext({ adminTokenWalletService: 'not-an-object' })), false);
+        });
+
+        it('returns false when userTokenWalletService is corrupted', () => {
+            assertEquals(isIJobContext(invalidateIJobContext({ userTokenWalletService: 'not-an-object' })), false);
+        });
+
+        it('returns false when pickLatest is not a function', () => {
+            assertEquals(isIJobContext(invalidateIJobContext({ pickLatest: 'not-a-function' })), false);
+        });
+
+        it('returns false when applyInputsRequiredScope is not a function', () => {
+            assertEquals(isIJobContext(invalidateIJobContext({ applyInputsRequiredScope: 'not-a-function' })), false);
+        });
+
+        it('returns false when validateWalletBalance is not a function', () => {
+            assertEquals(isIJobContext(invalidateIJobContext({ validateWalletBalance: 'not-a-function' })), false);
+        });
+
+        it('returns false when validateModelCostRates is not a function', () => {
+            assertEquals(isIJobContext(invalidateIJobContext({ validateModelCostRates: 'not-a-function' })), false);
+        });
+
+        it('returns false when promptAssembler is corrupted', () => {
+            assertEquals(isIJobContext(invalidateIJobContext({ promptAssembler: 'not-an-object' })), false);
+        });
+
+        it('returns false when getSeedPromptForStage is not a function', () => {
+            assertEquals(isIJobContext(invalidateIJobContext({ getSeedPromptForStage: 'not-a-function' })), false);
+        });
+
+        it('returns false when gatherArtifacts is not a function', () => {
+            assertEquals(isIJobContext(invalidateIJobContext({ gatherArtifacts: 'not-a-function' })), false);
+        });
+
+        it('returns false when prepareModelJob is not a function', () => {
+            assertEquals(isIJobContext(invalidateIJobContext({ prepareModelJob: 'not-a-function' })), false);
+        });
+
+        it('returns false when calculateAffordability is not a function', () => {
+            assertEquals(isIJobContext(invalidateIJobContext({ calculateAffordability: 'not-a-function' })), false);
+        });
+
+        it('returns false when compressPrompt is not a function', () => {
+            assertEquals(isIJobContext(invalidateIJobContext({ compressPrompt: 'not-a-function' })), false);
+        });
+
+        // ── Each required property omitted by rest-destructure rejected ──
+
+        it('returns false when logger is missing', () => {
+            const { logger: _omit, ...rest } = buildIJobContext();
+            assertEquals(isIJobContext(rest), false);
+        });
+
+        it('returns false when notificationService is missing', () => {
+            const { notificationService: _omit, ...rest } = buildIJobContext();
+            assertEquals(isIJobContext(rest), false);
+        });
+
+        it('returns false when getGranularityPlanner is missing', () => {
+            const { getGranularityPlanner: _omit, ...rest } = buildIJobContext();
+            assertEquals(isIJobContext(rest), false);
+        });
+
+        it('returns false when planComplexStage is missing', () => {
+            const { planComplexStage: _omit, ...rest } = buildIJobContext();
+            assertEquals(isIJobContext(rest), false);
+        });
+
+        it('returns false when findSourceDocuments is missing', () => {
+            const { findSourceDocuments: _omit, ...rest } = buildIJobContext();
+            assertEquals(isIJobContext(rest), false);
+        });
+
+        it('returns false when fileManager is missing', () => {
+            const { fileManager: _omit, ...rest } = buildIJobContext();
+            assertEquals(isIJobContext(rest), false);
+        });
+
+        it('returns false when downloadFromStorage is missing', () => {
+            const { downloadFromStorage: _omit, ...rest } = buildIJobContext();
+            assertEquals(isIJobContext(rest), false);
+        });
+
+        it('returns false when deleteFromStorage is missing', () => {
+            const { deleteFromStorage: _omit, ...rest } = buildIJobContext();
+            assertEquals(isIJobContext(rest), false);
+        });
+
+        it('returns false when documentRenderer is missing', () => {
+            const { documentRenderer: _omit, ...rest } = buildIJobContext();
+            assertEquals(isIJobContext(rest), false);
+        });
+
+        it('returns false when assembleContributionChain is missing', () => {
+            const { assembleContributionChain: _omit, ...rest } = buildIJobContext();
+            assertEquals(isIJobContext(rest), false);
+        });
+
+        it('returns false when loadDocumentTemplate is missing', () => {
+            const { loadDocumentTemplate: _omit, ...rest } = buildIJobContext();
+            assertEquals(isIJobContext(rest), false);
+        });
+
+        it('returns false when mergeChunkContent is missing', () => {
+            const { mergeChunkContent: _omit, ...rest } = buildIJobContext();
+            assertEquals(isIJobContext(rest), false);
+        });
+
+        it('returns false when countTokens is missing', () => {
+            const { countTokens: _omit, ...rest } = buildIJobContext();
+            assertEquals(isIJobContext(rest), false);
+        });
+
+        it('returns false when adminTokenWalletService is missing', () => {
+            const { adminTokenWalletService: _omit, ...rest } = buildIJobContext();
+            assertEquals(isIJobContext(rest), false);
+        });
+
+        it('returns false when userTokenWalletService is missing', () => {
+            const { userTokenWalletService: _omit, ...rest } = buildIJobContext();
+            assertEquals(isIJobContext(rest), false);
+        });
+
+        it('returns false when pickLatest is missing', () => {
+            const { pickLatest: _omit, ...rest } = buildIJobContext();
+            assertEquals(isIJobContext(rest), false);
+        });
+
+        it('returns false when applyInputsRequiredScope is missing', () => {
+            const { applyInputsRequiredScope: _omit, ...rest } = buildIJobContext();
+            assertEquals(isIJobContext(rest), false);
+        });
+
+        it('returns false when validateWalletBalance is missing', () => {
+            const { validateWalletBalance: _omit, ...rest } = buildIJobContext();
+            assertEquals(isIJobContext(rest), false);
+        });
+
+        it('returns false when validateModelCostRates is missing', () => {
+            const { validateModelCostRates: _omit, ...rest } = buildIJobContext();
+            assertEquals(isIJobContext(rest), false);
+        });
+
+        it('returns false when promptAssembler is missing', () => {
+            const { promptAssembler: _omit, ...rest } = buildIJobContext();
+            assertEquals(isIJobContext(rest), false);
+        });
+
+        it('returns false when gatherArtifacts is missing', () => {
+            const { gatherArtifacts: _omit, ...rest } = buildIJobContext();
+            assertEquals(isIJobContext(rest), false);
+        });
+
+        it('returns false when calculateAffordability is missing', () => {
+            const { calculateAffordability: _omit, ...rest } = buildIJobContext();
+            assertEquals(isIJobContext(rest), false);
+        });
+
+        it('returns false when compressPrompt is missing', () => {
+            const { compressPrompt: _omit, ...rest } = buildIJobContext();
+            assertEquals(isIJobContext(rest), false);
+        });
     });
 
     describe('isIJobContext computeJobSig', () => {
@@ -445,44 +486,6 @@ describe('JobContexts Type Guards', () => {
             const rootContext = buildIJobContext();
             const context = { ...rootContext, computeJobSig: 'not-a-function' };
             assertEquals(isIJobContext(context), false);
-        });
-    });
-
-    describe('isISaveResponseContext', () => {
-        it('returns true for valid ISaveResponseContext with enqueueRenderJob and debitTokens as functions', () => {
-            const context = {
-                enqueueRenderJob: async () => ({}),
-                debitTokens: mockBoundDebitTokens,
-            };
-
-            assertEquals(isISaveResponseContext(context), true);
-        });
-
-        it('returns false when enqueueRenderJob is absent', () => {
-            const context = {};
-
-            assertEquals(isISaveResponseContext(context), false);
-        });
-
-        it('returns false when enqueueRenderJob is not a function', () => {
-            const context = { enqueueRenderJob: 'not-a-function' };
-
-            assertEquals(isISaveResponseContext(context), false);
-        });
-
-        it('returns false when debitTokens is absent', () => {
-            const context = { enqueueRenderJob: async () => ({}) };
-
-            assertEquals(isISaveResponseContext(context), false);
-        });
-
-        it('returns false when debitTokens is not a function', () => {
-            const context = {
-                enqueueRenderJob: async () => ({}),
-                debitTokens: 'not-a-function',
-            };
-
-            assertEquals(isISaveResponseContext(context), false);
         });
     });
 });

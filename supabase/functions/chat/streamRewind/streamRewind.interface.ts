@@ -7,7 +7,7 @@ import {
   ChatApiRequest,
   ILogger,
 } from "../../_shared/types.ts";
-import { CountTokensFn } from "../../_shared/types/tokenizer.types.ts";
+import { BoundCountTokensFn } from "../../_shared/types/tokenizer.types.ts";
 import { TokenWallet } from "../../_shared/types/tokenWallet.types.ts";
 import { DebitTokens } from "../../_shared/utils/debitTokens.interface.ts";
 import { getMaxOutputTokens } from "../../_shared/utils/affordability_utils.ts";
@@ -16,7 +16,7 @@ import { Database } from "../../types_db.ts";
 export interface StreamRewindDeps {
   logger: ILogger;
   adminTokenWalletService: IAdminTokenWalletService;
-  countTokens: CountTokensFn;
+  countTokens: BoundCountTokensFn;
   debitTokens: DebitTokens;
   getMaxOutputTokens: typeof getMaxOutputTokens;
   createErrorResponse: typeof createErrorResponse;

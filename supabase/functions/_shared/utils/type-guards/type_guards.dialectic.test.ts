@@ -55,6 +55,21 @@ import {
     isRepoUrlWithLastSyncAt,
     isUnifiedAIResponseTokenUsage,
     isUnifiedAIResponse,
+    isPromptConstructionPayload,
+    isProcessSimpleJobParams,
+    isProcessComplexJobParams,
+    isProcessRenderJobParams,
+    isProcessSimpleJobPayload,
+    isProcessComplexJobPayload,
+    isProcessRenderJobPayload,
+    isProcessSimpleJobDispatchedReturn,
+    isProcessSimpleJobDeferredReturn,
+    isProcessSimpleJobSuccessReturn,
+    isProcessSimpleJobErrorReturn,
+    isProcessComplexJobSuccessReturn,
+    isProcessComplexJobErrorReturn,
+    isProcessRenderJobSuccessReturn,
+    isProcessRenderJobErrorReturn,
 } from './type_guards.dialectic.ts';
 import { 
     BranchKey, 
@@ -159,6 +174,34 @@ import {
     invalidateUnifiedAIResponseTokenUsage,
     buildUnifiedAIResponse,
     invalidateUnifiedAIResponse,
+    buildPromptConstructionPayload,
+    invalidatePromptConstructionPayload,
+    buildProcessSimpleJobParams,
+    invalidateProcessSimpleJobParams,
+    buildProcessComplexJobParams,
+    invalidateProcessComplexJobParams,
+    buildProcessRenderJobParams,
+    invalidateProcessRenderJobParams,
+    buildProcessSimpleJobPayload,
+    invalidateProcessSimpleJobPayload,
+    buildProcessComplexJobPayload,
+    invalidateProcessComplexJobPayload,
+    buildProcessRenderJobPayload,
+    invalidateProcessRenderJobPayload,
+    buildProcessSimpleJobDispatchedReturn,
+    invalidateProcessSimpleJobDispatchedReturn,
+    buildProcessSimpleJobDeferredReturn,
+    invalidateProcessSimpleJobDeferredReturn,
+    buildProcessSimpleJobErrorReturn,
+    invalidateProcessSimpleJobErrorReturn,
+    buildProcessComplexJobSuccessReturn,
+    invalidateProcessComplexJobSuccessReturn,
+    buildProcessComplexJobErrorReturn,
+    invalidateProcessComplexJobErrorReturn,
+    buildProcessRenderJobSuccessReturn,
+    invalidateProcessRenderJobSuccessReturn,
+    buildProcessRenderJobErrorReturn,
+    invalidateProcessRenderJobErrorReturn,
 } from '../../dialectic.mock.ts';
 
 Deno.test('Type Guard: isGitHubRepoSettings', async (t) => {
@@ -911,6 +954,82 @@ Deno.test('Type Guard: isDialecticExecuteJobPayload', async (t) => {
     await t.step('should accept buildDialecticExecuteJobPayload({ preflight_input_tokens: 128 })', () => {
         assert(isDialecticExecuteJobPayload(buildDialecticExecuteJobPayload({ preflight_input_tokens: 128 })));
     });
+
+    // ── Required-member checklist (stageSlug and iterationNumber narrowed from optional) ──
+
+    /** Contract: isDialecticExecuteJobPayload rejects an empty-string sessionId. */
+    await t.step('should throw when sessionId is an empty string', () => {
+        assertThrows(
+            () => isDialecticExecuteJobPayload(buildDialecticExecuteJobPayload({ sessionId: '' })),
+            Error,
+            'Missing or invalid sessionId.',
+        );
+    });
+
+    /** Contract: isDialecticExecuteJobPayload rejects an empty-string projectId. */
+    await t.step('should throw when projectId is an empty string', () => {
+        assertThrows(
+            () => isDialecticExecuteJobPayload(buildDialecticExecuteJobPayload({ projectId: '' })),
+            Error,
+            'Missing or invalid projectId.',
+        );
+    });
+
+    /** Contract: isDialecticExecuteJobPayload rejects an empty-string model_id. */
+    await t.step('should throw when model_id is an empty string', () => {
+        assertThrows(
+            () => isDialecticExecuteJobPayload(buildDialecticExecuteJobPayload({ model_id: '' })),
+            Error,
+            'Missing or invalid model_id.',
+        );
+    });
+
+    /** Contract: isDialecticExecuteJobPayload rejects an empty-string walletId. */
+    await t.step('should throw when walletId is an empty string', () => {
+        assertThrows(
+            () => isDialecticExecuteJobPayload(buildDialecticExecuteJobPayload({ walletId: '' })),
+            Error,
+            'Missing or invalid walletId.',
+        );
+    });
+
+    /** Contract: isDialecticExecuteJobPayload rejects an absent stageSlug. */
+    await t.step('should throw when stageSlug is absent', () => {
+        const { stageSlug: _omit, ...rest } = buildDialecticExecuteJobPayload();
+        assertThrows(
+            () => isDialecticExecuteJobPayload(rest),
+            Error,
+            'Missing or invalid stageSlug.',
+        );
+    });
+
+    /** Contract: isDialecticExecuteJobPayload rejects a non-DialecticStageSlug string for stageSlug. */
+    await t.step('should throw when stageSlug is a non-slug string', () => {
+        assertThrows(
+            () => isDialecticExecuteJobPayload(invalidateDialecticExecuteJobPayload({ stageSlug: 'not-a-slug' })),
+            Error,
+            'Invalid stageSlug.',
+        );
+    });
+
+    /** Contract: isDialecticExecuteJobPayload rejects an absent iterationNumber. */
+    await t.step('should throw when iterationNumber is absent', () => {
+        const { iterationNumber: _omit, ...rest } = buildDialecticExecuteJobPayload();
+        assertThrows(
+            () => isDialecticExecuteJobPayload(rest),
+            Error,
+            'Missing or invalid iterationNumber.',
+        );
+    });
+
+    /** Contract: isDialecticExecuteJobPayload rejects a zero iterationNumber. */
+    await t.step('should throw when iterationNumber is zero', () => {
+        assertThrows(
+            () => isDialecticExecuteJobPayload(buildDialecticExecuteJobPayload({ iterationNumber: 0 })),
+            Error,
+            'Invalid iterationNumber.',
+        );
+    });
 });
 
 Deno.test('Type Guard: isDialecticJobPayload', async (t) => {
@@ -1102,6 +1221,170 @@ Deno.test('Type Guard: isDialecticJobRow', async (t) => {
     await t.step('should return false for a non-object', () => {
         assert(!isDialecticJobRow(null));
         assert(!isDialecticJobRow('job'));
+    });
+
+    // ── Full column checklist: one corrupted case per column ──
+
+    /** Contract: isDialecticJobRow rejects a non-string id. */
+    await t.step('should return false when id is corrupted', () => {
+        assert(!isDialecticJobRow(invalidateDialecticJobRow({ id: 123 })));
+    });
+
+    /** Contract: isDialecticJobRow rejects a non-string session_id. */
+    await t.step('should return false when session_id is corrupted', () => {
+        assert(!isDialecticJobRow(invalidateDialecticJobRow({ session_id: 123 })));
+    });
+
+    /** Contract: isDialecticJobRow rejects a non-string user_id. */
+    await t.step('should return false when user_id is corrupted', () => {
+        assert(!isDialecticJobRow(invalidateDialecticJobRow({ user_id: 123 })));
+    });
+
+    /** Contract: isDialecticJobRow rejects a non-string stage_slug. */
+    await t.step('should return false when stage_slug is corrupted', () => {
+        assert(!isDialecticJobRow(invalidateDialecticJobRow({ stage_slug: 123 })));
+    });
+
+    /** Contract: isDialecticJobRow rejects a non-string status. */
+    await t.step('should return false when status is corrupted', () => {
+        assert(!isDialecticJobRow(invalidateDialecticJobRow({ status: 123 })));
+    });
+
+    /** Contract: isDialecticJobRow rejects a non-number attempt_count. */
+    await t.step('should return false when attempt_count is corrupted', () => {
+        assert(!isDialecticJobRow(invalidateDialecticJobRow({ attempt_count: 'zero' })));
+    });
+
+    /** Contract: isDialecticJobRow rejects a non-number max_retries. */
+    await t.step('should return false when max_retries is corrupted', () => {
+        assert(!isDialecticJobRow(invalidateDialecticJobRow({ max_retries: 'three' })));
+    });
+
+    /** Contract: isDialecticJobRow rejects a non-number iteration_number. */
+    await t.step('should return false when iteration_number is corrupted', () => {
+        assert(!isDialecticJobRow(invalidateDialecticJobRow({ iteration_number: 'one' })));
+    });
+
+    /** Contract: isDialecticJobRow rejects a non-string created_at. */
+    await t.step('should return false when created_at is corrupted', () => {
+        assert(!isDialecticJobRow(invalidateDialecticJobRow({ created_at: 123 })));
+    });
+
+    /** Contract: isDialecticJobRow rejects a non-boolean is_test_job. */
+    await t.step('should return false when is_test_job is corrupted', () => {
+        assert(!isDialecticJobRow(invalidateDialecticJobRow({ is_test_job: 'yes' })));
+    });
+
+    /** Contract: isDialecticJobRow rejects a non-string, non-null job_type. */
+    await t.step('should return false when job_type is corrupted', () => {
+        assert(!isDialecticJobRow(invalidateDialecticJobRow({ job_type: 123 })));
+    });
+
+    /** Contract: isDialecticJobRow rejects a non-string, non-null parent_job_id. */
+    await t.step('should return false when parent_job_id is corrupted', () => {
+        assert(!isDialecticJobRow(invalidateDialecticJobRow({ parent_job_id: 123 })));
+    });
+
+    /** Contract: isDialecticJobRow rejects a non-string, non-null prerequisite_job_id. */
+    await t.step('should return false when prerequisite_job_id is corrupted', () => {
+        assert(!isDialecticJobRow(invalidateDialecticJobRow({ prerequisite_job_id: 123 })));
+    });
+
+    /** Contract: isDialecticJobRow rejects a non-string, non-null target_contribution_id. */
+    await t.step('should return false when target_contribution_id is corrupted', () => {
+        assert(!isDialecticJobRow(invalidateDialecticJobRow({ target_contribution_id: 123 })));
+    });
+
+    /** Contract: isDialecticJobRow rejects a non-string, non-null idempotency_key. */
+    await t.step('should return false when idempotency_key is corrupted', () => {
+        assert(!isDialecticJobRow(invalidateDialecticJobRow({ idempotency_key: 123 })));
+    });
+
+    /** Contract: isDialecticJobRow rejects a non-string, non-null started_at. */
+    await t.step('should return false when started_at is corrupted', () => {
+        assert(!isDialecticJobRow(invalidateDialecticJobRow({ started_at: 123 })));
+    });
+
+    /** Contract: isDialecticJobRow rejects a non-string, non-null completed_at. */
+    await t.step('should return false when completed_at is corrupted', () => {
+        assert(!isDialecticJobRow(invalidateDialecticJobRow({ completed_at: 123 })));
+    });
+
+    /** Contract: isDialecticJobRow rejects a non-object, non-null error_details. */
+    await t.step('should return false when error_details is corrupted', () => {
+        assert(!isDialecticJobRow(invalidateDialecticJobRow({ error_details: 'string' })));
+    });
+
+    /** Contract: isDialecticJobRow rejects a non-object, non-null results. */
+    await t.step('should return false when results is corrupted', () => {
+        assert(!isDialecticJobRow(invalidateDialecticJobRow({ results: 'string' })));
+    });
+
+    // ── Full column checklist: one omitted case per required column ──
+
+    /** Contract: isDialecticJobRow rejects an absent id. */
+    await t.step('should return false when id is omitted', () => {
+        const { id: _omit, ...rest } = buildDialecticJobRow();
+        assert(!isDialecticJobRow(rest));
+    });
+
+    /** Contract: isDialecticJobRow rejects an absent session_id. */
+    await t.step('should return false when session_id is omitted', () => {
+        const { session_id: _omit, ...rest } = buildDialecticJobRow();
+        assert(!isDialecticJobRow(rest));
+    });
+
+    /** Contract: isDialecticJobRow rejects an absent user_id. */
+    await t.step('should return false when user_id is omitted', () => {
+        const { user_id: _omit, ...rest } = buildDialecticJobRow();
+        assert(!isDialecticJobRow(rest));
+    });
+
+    /** Contract: isDialecticJobRow rejects an absent stage_slug. */
+    await t.step('should return false when stage_slug is omitted', () => {
+        const { stage_slug: _omit, ...rest } = buildDialecticJobRow();
+        assert(!isDialecticJobRow(rest));
+    });
+
+    /** Contract: isDialecticJobRow rejects an absent iteration_number. */
+    await t.step('should return false when iteration_number is omitted', () => {
+        const { iteration_number: _omit, ...rest } = buildDialecticJobRow();
+        assert(!isDialecticJobRow(rest));
+    });
+
+    /** Contract: isDialecticJobRow rejects an absent attempt_count. */
+    await t.step('should return false when attempt_count is omitted', () => {
+        const { attempt_count: _omit, ...rest } = buildDialecticJobRow();
+        assert(!isDialecticJobRow(rest));
+    });
+
+    /** Contract: isDialecticJobRow rejects an absent max_retries. */
+    await t.step('should return false when max_retries is omitted', () => {
+        const { max_retries: _omit, ...rest } = buildDialecticJobRow();
+        assert(!isDialecticJobRow(rest));
+    });
+
+    /** Contract: isDialecticJobRow rejects an absent payload. */
+    await t.step('should return false when payload is omitted', () => {
+        const { payload: _omit, ...rest } = buildDialecticJobRow();
+        assert(!isDialecticJobRow(rest));
+    });
+
+    // ── Nullable columns accept null ──
+
+    /** Contract: isDialecticJobRow accepts null for every nullable column. */
+    await t.step('should return true when all nullable columns are null', () => {
+        assert(isDialecticJobRow(buildDialecticJobRow({
+            job_type: null,
+            parent_job_id: null,
+            prerequisite_job_id: null,
+            target_contribution_id: null,
+            idempotency_key: null,
+            started_at: null,
+            completed_at: null,
+            error_details: null,
+            results: null,
+        })));
     });
 });
 
@@ -3116,4 +3399,627 @@ Deno.test("isInputRuleType rejects non-members", () => {
     assert(!isInputRuleType(7));
     assert(!isInputRuleType(""));
     assert(!isInputRuleType([]));
+});
+
+Deno.test('Type Guard: isPromptConstructionPayload', async (t) => {
+    await t.step('accepts the builder default', () => {
+        assert(isPromptConstructionPayload(buildPromptConstructionPayload()));
+    });
+
+    await t.step('accepts valid overrides with systemInstruction and sourceContributionId', () => {
+        assert(isPromptConstructionPayload(buildPromptConstructionPayload({
+            systemInstruction: 'test system instruction',
+            sourceContributionId: 'contrib-1',
+        })));
+    });
+
+    await t.step('rejects null, undefined, primitives, and arrays', () => {
+        for (const x of [null, undefined, 7, 'x', []]) {
+            assert(!isPromptConstructionPayload(x));
+        }
+    });
+
+    await t.step('rejects conversationHistory corrupted', () => {
+        assert(!isPromptConstructionPayload(invalidatePromptConstructionPayload({ conversationHistory: 'not-an-array' })));
+    });
+
+    await t.step('rejects resourceDocuments corrupted', () => {
+        assert(!isPromptConstructionPayload(invalidatePromptConstructionPayload({ resourceDocuments: 'not-an-array' })));
+    });
+
+    await t.step('rejects currentUserPrompt corrupted', () => {
+        assert(!isPromptConstructionPayload(invalidatePromptConstructionPayload({ currentUserPrompt: 123 })));
+    });
+
+    await t.step('rejects source_prompt_resource_id corrupted', () => {
+        assert(!isPromptConstructionPayload(invalidatePromptConstructionPayload({ source_prompt_resource_id: 123 })));
+    });
+
+    await t.step('rejects systemInstruction present but corrupted', () => {
+        assert(!isPromptConstructionPayload(invalidatePromptConstructionPayload({ systemInstruction: 123 })));
+    });
+
+    await t.step('rejects sourceContributionId present but corrupted', () => {
+        assert(!isPromptConstructionPayload(invalidatePromptConstructionPayload({ sourceContributionId: 123 })));
+    });
+
+    await t.step('rejects conversationHistory omitted', () => {
+        const { conversationHistory: _omit, ...rest } = buildPromptConstructionPayload();
+        assert(!isPromptConstructionPayload(rest));
+    });
+
+    await t.step('rejects resourceDocuments omitted', () => {
+        const { resourceDocuments: _omit, ...rest } = buildPromptConstructionPayload();
+        assert(!isPromptConstructionPayload(rest));
+    });
+
+    await t.step('rejects currentUserPrompt omitted', () => {
+        const { currentUserPrompt: _omit, ...rest } = buildPromptConstructionPayload();
+        assert(!isPromptConstructionPayload(rest));
+    });
+
+    await t.step('rejects source_prompt_resource_id omitted', () => {
+        const { source_prompt_resource_id: _omit, ...rest } = buildPromptConstructionPayload();
+        assert(!isPromptConstructionPayload(rest));
+    });
+
+    await t.step('accepts systemInstruction absent', () => {
+        const { systemInstruction: _omit, ...rest } = buildPromptConstructionPayload();
+        assert(isPromptConstructionPayload(rest));
+    });
+
+    await t.step('accepts sourceContributionId absent', () => {
+        const { sourceContributionId: _omit, ...rest } = buildPromptConstructionPayload();
+        assert(isPromptConstructionPayload(rest));
+    });
+});
+
+// ── Process job guards (Compression Jobs 5 node) ──
+
+Deno.test('Type Guard: isProcessSimpleJobParams', async (t) => {
+    /** Contract: isProcessSimpleJobParams accepts the builder's valid default. */
+    await t.step('accepts the valid default', () => {
+        assert(isProcessSimpleJobParams(buildProcessSimpleJobParams()));
+    });
+
+    /** Contract: isProcessSimpleJobParams accepts valid overrides. */
+    await t.step('accepts valid overrides', () => {
+        assert(isProcessSimpleJobParams(buildProcessSimpleJobParams({})));
+    });
+
+    /** Contract: isProcessSimpleJobParams rejects null, undefined, a primitive, and an array. */
+    await t.step('rejects non-objects', () => {
+        for (const x of [null, undefined, 7, 'x', []]) {
+            assert(!isProcessSimpleJobParams(x));
+        }
+    });
+
+    /** Contract: isProcessSimpleJobParams rejects a corrupted dbClient. */
+    await t.step('rejects dbClient corrupted', () => {
+        assert(!isProcessSimpleJobParams(invalidateProcessSimpleJobParams({ dbClient: 'not-a-client' })));
+    });
+
+    /** Contract: isProcessSimpleJobParams rejects an absent dbClient. */
+    await t.step('rejects dbClient omitted', () => {
+        const { dbClient: _omit, ...rest } = buildProcessSimpleJobParams();
+        assert(!isProcessSimpleJobParams(rest));
+    });
+});
+
+Deno.test('Type Guard: isProcessComplexJobParams', async (t) => {
+    /** Contract: isProcessComplexJobParams accepts the builder's valid default. */
+    await t.step('accepts the valid default', () => {
+        assert(isProcessComplexJobParams(buildProcessComplexJobParams()));
+    });
+
+    /** Contract: isProcessComplexJobParams accepts valid overrides. */
+    await t.step('accepts valid overrides', () => {
+        assert(isProcessComplexJobParams(buildProcessComplexJobParams({})));
+    });
+
+    /** Contract: isProcessComplexJobParams rejects null, undefined, a primitive, and an array. */
+    await t.step('rejects non-objects', () => {
+        for (const x of [null, undefined, 7, 'x', []]) {
+            assert(!isProcessComplexJobParams(x));
+        }
+    });
+
+    /** Contract: isProcessComplexJobParams rejects a corrupted dbClient. */
+    await t.step('rejects dbClient corrupted', () => {
+        assert(!isProcessComplexJobParams(invalidateProcessComplexJobParams({ dbClient: 'not-a-client' })));
+    });
+
+    /** Contract: isProcessComplexJobParams rejects an absent dbClient. */
+    await t.step('rejects dbClient omitted', () => {
+        const { dbClient: _omit, ...rest } = buildProcessComplexJobParams();
+        assert(!isProcessComplexJobParams(rest));
+    });
+});
+
+Deno.test('Type Guard: isProcessRenderJobParams', async (t) => {
+    /** Contract: isProcessRenderJobParams accepts the builder's valid default. */
+    await t.step('accepts the valid default', () => {
+        assert(isProcessRenderJobParams(buildProcessRenderJobParams()));
+    });
+
+    /** Contract: isProcessRenderJobParams accepts valid overrides. */
+    await t.step('accepts valid overrides', () => {
+        assert(isProcessRenderJobParams(buildProcessRenderJobParams({})));
+    });
+
+    /** Contract: isProcessRenderJobParams rejects null, undefined, a primitive, and an array. */
+    await t.step('rejects non-objects', () => {
+        for (const x of [null, undefined, 7, 'x', []]) {
+            assert(!isProcessRenderJobParams(x));
+        }
+    });
+
+    /** Contract: isProcessRenderJobParams rejects a corrupted dbClient. */
+    await t.step('rejects dbClient corrupted', () => {
+        assert(!isProcessRenderJobParams(invalidateProcessRenderJobParams({ dbClient: 'not-a-client' })));
+    });
+
+    /** Contract: isProcessRenderJobParams rejects an absent dbClient. */
+    await t.step('rejects dbClient omitted', () => {
+        const { dbClient: _omit, ...rest } = buildProcessRenderJobParams();
+        assert(!isProcessRenderJobParams(rest));
+    });
+});
+
+Deno.test('Type Guard: isProcessSimpleJobPayload', async (t) => {
+    /** Contract: isProcessSimpleJobPayload accepts the builder's valid default. */
+    await t.step('accepts the valid default', () => {
+        assert(isProcessSimpleJobPayload(buildProcessSimpleJobPayload()));
+    });
+
+    /** Contract: isProcessSimpleJobPayload accepts valid overrides. */
+    await t.step('accepts valid overrides', () => {
+        assert(isProcessSimpleJobPayload(buildProcessSimpleJobPayload({})));
+    });
+
+    /** Contract: isProcessSimpleJobPayload rejects null, undefined, a primitive, and an array. */
+    await t.step('rejects non-objects', () => {
+        for (const x of [null, undefined, 7, 'x', []]) {
+            assert(!isProcessSimpleJobPayload(x));
+        }
+    });
+
+    /** Contract: isProcessSimpleJobPayload rejects a corrupted job. */
+    await t.step('rejects job corrupted', () => {
+        assert(!isProcessSimpleJobPayload(invalidateProcessSimpleJobPayload({ job: 'not-a-row' })));
+    });
+
+    /** Contract: isProcessSimpleJobPayload rejects an absent job. */
+    await t.step('rejects job omitted', () => {
+        const { job: _omit, ...rest } = buildProcessSimpleJobPayload();
+        assert(!isProcessSimpleJobPayload(rest));
+    });
+
+    /** Contract: isProcessSimpleJobPayload throws when the row carries a DialecticPlanJobPayload, surfacing the arm guard's reason. */
+    await t.step('throws on a row built with buildDialecticPlanJobPayload()', () => {
+        assertThrows(() => isProcessSimpleJobPayload(invalidateProcessSimpleJobPayload({
+            job: { ...buildDialecticJobRow({ job_type: 'PLAN' }), payload: buildDialecticPlanJobPayload() },
+        })));
+    });
+});
+
+Deno.test('Type Guard: isProcessComplexJobPayload', async (t) => {
+    /** Contract: isProcessComplexJobPayload accepts the builder's valid default. */
+    await t.step('accepts the valid default', () => {
+        assert(isProcessComplexJobPayload(buildProcessComplexJobPayload()));
+    });
+
+    /** Contract: isProcessComplexJobPayload accepts valid overrides. */
+    await t.step('accepts valid overrides', () => {
+        assert(isProcessComplexJobPayload(buildProcessComplexJobPayload({})));
+    });
+
+    /** Contract: isProcessComplexJobPayload rejects null, undefined, a primitive, and an array. */
+    await t.step('rejects non-objects', () => {
+        for (const x of [null, undefined, 7, 'x', []]) {
+            assert(!isProcessComplexJobPayload(x));
+        }
+    });
+
+    /** Contract: isProcessComplexJobPayload rejects a corrupted job. */
+    await t.step('rejects job corrupted', () => {
+        assert(!isProcessComplexJobPayload(invalidateProcessComplexJobPayload({ job: 'not-a-row' })));
+    });
+
+    /** Contract: isProcessComplexJobPayload rejects an absent job. */
+    await t.step('rejects job omitted', () => {
+        const { job: _omit, ...rest } = buildProcessComplexJobPayload();
+        assert(!isProcessComplexJobPayload(rest));
+    });
+
+    /** Contract: isProcessComplexJobPayload rejects a row carrying a DialecticExecuteJobPayload. */
+    await t.step('rejects a row built with buildDialecticExecuteJobPayload()', () => {
+        assert(!isProcessComplexJobPayload(invalidateProcessComplexJobPayload({
+            job: { ...buildDialecticJobRow({ job_type: 'EXECUTE' }), payload: buildDialecticExecuteJobPayload() },
+        })));
+    });
+});
+
+Deno.test('Type Guard: isProcessRenderJobPayload', async (t) => {
+    /** Contract: isProcessRenderJobPayload accepts the builder's valid default. */
+    await t.step('accepts the valid default', () => {
+        assert(isProcessRenderJobPayload(buildProcessRenderJobPayload()));
+    });
+
+    /** Contract: isProcessRenderJobPayload accepts valid overrides. */
+    await t.step('accepts valid overrides', () => {
+        assert(isProcessRenderJobPayload(buildProcessRenderJobPayload({})));
+    });
+
+    /** Contract: isProcessRenderJobPayload rejects null, undefined, a primitive, and an array. */
+    await t.step('rejects non-objects', () => {
+        for (const x of [null, undefined, 7, 'x', []]) {
+            assert(!isProcessRenderJobPayload(x));
+        }
+    });
+
+    /** Contract: isProcessRenderJobPayload rejects a corrupted job. */
+    await t.step('rejects job corrupted', () => {
+        assert(!isProcessRenderJobPayload(invalidateProcessRenderJobPayload({ job: 'not-a-row' })));
+    });
+
+    /** Contract: isProcessRenderJobPayload rejects an absent job. */
+    await t.step('rejects job omitted', () => {
+        const { job: _omit, ...rest } = buildProcessRenderJobPayload();
+        assert(!isProcessRenderJobPayload(rest));
+    });
+});
+
+// ── Return-flavor discrimination: each of the seven guards accepts its own flavor and rejects the other six. ──
+
+Deno.test('Return-flavor guards discriminate rather than merely accept', async (t) => {
+    const flavors = {
+        dispatched: buildProcessSimpleJobDispatchedReturn(),
+        deferred: buildProcessSimpleJobDeferredReturn(),
+        simpleError: buildProcessSimpleJobErrorReturn(),
+        planned: buildProcessComplexJobSuccessReturn(),
+        complexError: buildProcessComplexJobErrorReturn(),
+        rendered: buildProcessRenderJobSuccessReturn(),
+        renderError: buildProcessRenderJobErrorReturn(),
+    };
+
+    /** Contract: isProcessSimpleJobDispatchedReturn accepts dispatched and rejects every other flavor. */
+    await t.step('isProcessSimpleJobDispatchedReturn discriminates', () => {
+        assert(isProcessSimpleJobDispatchedReturn(flavors.dispatched));
+        assert(!isProcessSimpleJobDispatchedReturn(flavors.deferred));
+        assert(!isProcessSimpleJobDispatchedReturn(flavors.simpleError));
+        assert(!isProcessSimpleJobDispatchedReturn(flavors.planned));
+        assert(!isProcessSimpleJobDispatchedReturn(flavors.complexError));
+        assert(!isProcessSimpleJobDispatchedReturn(flavors.rendered));
+        assert(!isProcessSimpleJobDispatchedReturn(flavors.renderError));
+    });
+
+    /** Contract: isProcessSimpleJobDeferredReturn accepts deferred and rejects every other flavor. */
+    await t.step('isProcessSimpleJobDeferredReturn discriminates', () => {
+        assert(isProcessSimpleJobDeferredReturn(flavors.deferred));
+        assert(!isProcessSimpleJobDeferredReturn(flavors.dispatched));
+        assert(!isProcessSimpleJobDeferredReturn(flavors.simpleError));
+        assert(!isProcessSimpleJobDeferredReturn(flavors.planned));
+        assert(!isProcessSimpleJobDeferredReturn(flavors.complexError));
+        assert(!isProcessSimpleJobDeferredReturn(flavors.rendered));
+        assert(!isProcessSimpleJobDeferredReturn(flavors.renderError));
+    });
+
+    /** Contract: isProcessSimpleJobErrorReturn accepts simpleError and rejects the four success flavors; the three error types are structurally identical and cannot discriminate among themselves. */
+    await t.step('isProcessSimpleJobErrorReturn discriminates', () => {
+        assert(isProcessSimpleJobErrorReturn(flavors.simpleError));
+        assert(!isProcessSimpleJobErrorReturn(flavors.dispatched));
+        assert(!isProcessSimpleJobErrorReturn(flavors.deferred));
+        assert(!isProcessSimpleJobErrorReturn(flavors.planned));
+        assert(!isProcessSimpleJobErrorReturn(flavors.rendered));
+    });
+
+    /** Contract: isProcessComplexJobSuccessReturn accepts planned and rejects every other flavor. */
+    await t.step('isProcessComplexJobSuccessReturn discriminates', () => {
+        assert(isProcessComplexJobSuccessReturn(flavors.planned));
+        assert(!isProcessComplexJobSuccessReturn(flavors.dispatched));
+        assert(!isProcessComplexJobSuccessReturn(flavors.deferred));
+        assert(!isProcessComplexJobSuccessReturn(flavors.simpleError));
+        assert(!isProcessComplexJobSuccessReturn(flavors.complexError));
+        assert(!isProcessComplexJobSuccessReturn(flavors.rendered));
+        assert(!isProcessComplexJobSuccessReturn(flavors.renderError));
+    });
+
+    /** Contract: isProcessComplexJobErrorReturn accepts complexError and rejects the four success flavors; the three error types are structurally identical and cannot discriminate among themselves. */
+    await t.step('isProcessComplexJobErrorReturn discriminates', () => {
+        assert(isProcessComplexJobErrorReturn(flavors.complexError));
+        assert(!isProcessComplexJobErrorReturn(flavors.dispatched));
+        assert(!isProcessComplexJobErrorReturn(flavors.deferred));
+        assert(!isProcessComplexJobErrorReturn(flavors.planned));
+        assert(!isProcessComplexJobErrorReturn(flavors.rendered));
+    });
+
+    /** Contract: isProcessRenderJobSuccessReturn accepts rendered and rejects every other flavor. */
+    await t.step('isProcessRenderJobSuccessReturn discriminates', () => {
+        assert(isProcessRenderJobSuccessReturn(flavors.rendered));
+        assert(!isProcessRenderJobSuccessReturn(flavors.dispatched));
+        assert(!isProcessRenderJobSuccessReturn(flavors.deferred));
+        assert(!isProcessRenderJobSuccessReturn(flavors.simpleError));
+        assert(!isProcessRenderJobSuccessReturn(flavors.planned));
+        assert(!isProcessRenderJobSuccessReturn(flavors.complexError));
+        assert(!isProcessRenderJobSuccessReturn(flavors.renderError));
+    });
+
+    /** Contract: isProcessRenderJobErrorReturn accepts renderError and rejects the four success flavors; the three error types are structurally identical and cannot discriminate among themselves. */
+    await t.step('isProcessRenderJobErrorReturn discriminates', () => {
+        assert(isProcessRenderJobErrorReturn(flavors.renderError));
+        assert(!isProcessRenderJobErrorReturn(flavors.dispatched));
+        assert(!isProcessRenderJobErrorReturn(flavors.deferred));
+        assert(!isProcessRenderJobErrorReturn(flavors.planned));
+        assert(!isProcessRenderJobErrorReturn(flavors.rendered));
+    });
+});
+
+// ── Per-guard standard checklist for the seven return-flavor guards and the union guard. ──
+
+Deno.test('Type Guard: isProcessSimpleJobDispatchedReturn', async (t) => {
+    /** Contract: isProcessSimpleJobDispatchedReturn accepts the builder's valid default. */
+    await t.step('accepts the valid default', () => {
+        assert(isProcessSimpleJobDispatchedReturn(buildProcessSimpleJobDispatchedReturn()));
+    });
+
+    /** Contract: isProcessSimpleJobDispatchedReturn accepts valid overrides. */
+    await t.step('accepts valid overrides', () => {
+        assert(isProcessSimpleJobDispatchedReturn(buildProcessSimpleJobDispatchedReturn({})));
+    });
+
+    /** Contract: isProcessSimpleJobDispatchedReturn rejects null, undefined, a primitive, and an array. */
+    await t.step('rejects non-objects', () => {
+        for (const x of [null, undefined, 7, 'x', []]) {
+            assert(!isProcessSimpleJobDispatchedReturn(x));
+        }
+    });
+
+    /** Contract: isProcessSimpleJobDispatchedReturn rejects a corrupted dispatched. */
+    await t.step('rejects dispatched corrupted', () => {
+        assert(!isProcessSimpleJobDispatchedReturn(invalidateProcessSimpleJobDispatchedReturn({ dispatched: 'not-true' })));
+    });
+
+    /** Contract: isProcessSimpleJobDispatchedReturn rejects an absent dispatched. */
+    await t.step('rejects dispatched omitted', () => {
+        const { dispatched: _omit, ...rest } = buildProcessSimpleJobDispatchedReturn();
+        assert(!isProcessSimpleJobDispatchedReturn(rest));
+    });
+});
+
+Deno.test('Type Guard: isProcessSimpleJobDeferredReturn', async (t) => {
+    /** Contract: isProcessSimpleJobDeferredReturn accepts the builder's valid default. */
+    await t.step('accepts the valid default', () => {
+        assert(isProcessSimpleJobDeferredReturn(buildProcessSimpleJobDeferredReturn()));
+    });
+
+    /** Contract: isProcessSimpleJobDeferredReturn accepts valid overrides. */
+    await t.step('accepts valid overrides', () => {
+        assert(isProcessSimpleJobDeferredReturn(buildProcessSimpleJobDeferredReturn({})));
+    });
+
+    /** Contract: isProcessSimpleJobDeferredReturn rejects null, undefined, a primitive, and an array. */
+    await t.step('rejects non-objects', () => {
+        for (const x of [null, undefined, 7, 'x', []]) {
+            assert(!isProcessSimpleJobDeferredReturn(x));
+        }
+    });
+
+    /** Contract: isProcessSimpleJobDeferredReturn rejects a corrupted deferred. */
+    await t.step('rejects deferred corrupted', () => {
+        assert(!isProcessSimpleJobDeferredReturn(invalidateProcessSimpleJobDeferredReturn({ deferred: 'not-true' })));
+    });
+
+    /** Contract: isProcessSimpleJobDeferredReturn rejects an absent deferred. */
+    await t.step('rejects deferred omitted', () => {
+        const { deferred: _omit, ...rest } = buildProcessSimpleJobDeferredReturn();
+        assert(!isProcessSimpleJobDeferredReturn(rest));
+    });
+});
+
+Deno.test('Type Guard: isProcessSimpleJobSuccessReturn', async (t) => {
+    /** Contract: isProcessSimpleJobSuccessReturn accepts the dispatched flavor. */
+    await t.step('accepts buildProcessSimpleJobDispatchedReturn()', () => {
+        assert(isProcessSimpleJobSuccessReturn(buildProcessSimpleJobDispatchedReturn()));
+    });
+
+    /** Contract: isProcessSimpleJobSuccessReturn accepts the deferred flavor. */
+    await t.step('accepts buildProcessSimpleJobDeferredReturn()', () => {
+        assert(isProcessSimpleJobSuccessReturn(buildProcessSimpleJobDeferredReturn()));
+    });
+
+    /** Contract: isProcessSimpleJobSuccessReturn rejects the error arm. */
+    await t.step('rejects buildProcessSimpleJobErrorReturn()', () => {
+        assert(!isProcessSimpleJobSuccessReturn(buildProcessSimpleJobErrorReturn()));
+    });
+
+    /** Contract: isProcessSimpleJobSuccessReturn rejects null, undefined, a primitive, and an array. */
+    await t.step('rejects non-objects', () => {
+        for (const x of [null, undefined, 7, 'x', []]) {
+            assert(!isProcessSimpleJobSuccessReturn(x));
+        }
+    });
+});
+
+Deno.test('Type Guard: isProcessSimpleJobErrorReturn', async (t) => {
+    /** Contract: isProcessSimpleJobErrorReturn accepts the builder's valid default. */
+    await t.step('accepts the valid default', () => {
+        assert(isProcessSimpleJobErrorReturn(buildProcessSimpleJobErrorReturn()));
+    });
+
+    /** Contract: isProcessSimpleJobErrorReturn accepts valid overrides. */
+    await t.step('accepts valid overrides', () => {
+        assert(isProcessSimpleJobErrorReturn(buildProcessSimpleJobErrorReturn({})));
+    });
+
+    /** Contract: isProcessSimpleJobErrorReturn rejects null, undefined, a primitive, and an array. */
+    await t.step('rejects non-objects', () => {
+        for (const x of [null, undefined, 7, 'x', []]) {
+            assert(!isProcessSimpleJobErrorReturn(x));
+        }
+    });
+
+    /** Contract: isProcessSimpleJobErrorReturn rejects a corrupted error. */
+    await t.step('rejects error corrupted', () => {
+        assert(!isProcessSimpleJobErrorReturn(invalidateProcessSimpleJobErrorReturn({ error: 'not-an-error' })));
+    });
+
+    /** Contract: isProcessSimpleJobErrorReturn rejects a corrupted retriable. */
+    await t.step('rejects retriable corrupted', () => {
+        assert(!isProcessSimpleJobErrorReturn(invalidateProcessSimpleJobErrorReturn({ retriable: 'not-a-boolean' })));
+    });
+
+    /** Contract: isProcessSimpleJobErrorReturn rejects an absent error. */
+    await t.step('rejects error omitted', () => {
+        const { error: _omit, ...rest } = buildProcessSimpleJobErrorReturn();
+        assert(!isProcessSimpleJobErrorReturn(rest));
+    });
+
+    /** Contract: isProcessSimpleJobErrorReturn rejects an absent retriable. */
+    await t.step('rejects retriable omitted', () => {
+        const { retriable: _omit, ...rest } = buildProcessSimpleJobErrorReturn();
+        assert(!isProcessSimpleJobErrorReturn(rest));
+    });
+});
+
+Deno.test('Type Guard: isProcessComplexJobSuccessReturn', async (t) => {
+    /** Contract: isProcessComplexJobSuccessReturn accepts the builder's valid default. */
+    await t.step('accepts the valid default', () => {
+        assert(isProcessComplexJobSuccessReturn(buildProcessComplexJobSuccessReturn()));
+    });
+
+    /** Contract: isProcessComplexJobSuccessReturn accepts valid overrides. */
+    await t.step('accepts valid overrides', () => {
+        assert(isProcessComplexJobSuccessReturn(buildProcessComplexJobSuccessReturn({})));
+    });
+
+    /** Contract: isProcessComplexJobSuccessReturn rejects null, undefined, a primitive, and an array. */
+    await t.step('rejects non-objects', () => {
+        for (const x of [null, undefined, 7, 'x', []]) {
+            assert(!isProcessComplexJobSuccessReturn(x));
+        }
+    });
+
+    /** Contract: isProcessComplexJobSuccessReturn rejects a corrupted planned. */
+    await t.step('rejects planned corrupted', () => {
+        assert(!isProcessComplexJobSuccessReturn(invalidateProcessComplexJobSuccessReturn({ planned: 'not-true' })));
+    });
+
+    /** Contract: isProcessComplexJobSuccessReturn rejects an absent planned. */
+    await t.step('rejects planned omitted', () => {
+        const { planned: _omit, ...rest } = buildProcessComplexJobSuccessReturn();
+        assert(!isProcessComplexJobSuccessReturn(rest));
+    });
+});
+
+Deno.test('Type Guard: isProcessComplexJobErrorReturn', async (t) => {
+    /** Contract: isProcessComplexJobErrorReturn accepts the builder's valid default. */
+    await t.step('accepts the valid default', () => {
+        assert(isProcessComplexJobErrorReturn(buildProcessComplexJobErrorReturn()));
+    });
+
+    /** Contract: isProcessComplexJobErrorReturn accepts valid overrides. */
+    await t.step('accepts valid overrides', () => {
+        assert(isProcessComplexJobErrorReturn(buildProcessComplexJobErrorReturn({})));
+    });
+
+    /** Contract: isProcessComplexJobErrorReturn rejects null, undefined, a primitive, and an array. */
+    await t.step('rejects non-objects', () => {
+        for (const x of [null, undefined, 7, 'x', []]) {
+            assert(!isProcessComplexJobErrorReturn(x));
+        }
+    });
+
+    /** Contract: isProcessComplexJobErrorReturn rejects a corrupted error. */
+    await t.step('rejects error corrupted', () => {
+        assert(!isProcessComplexJobErrorReturn(invalidateProcessComplexJobErrorReturn({ error: 'not-an-error' })));
+    });
+
+    /** Contract: isProcessComplexJobErrorReturn rejects a corrupted retriable. */
+    await t.step('rejects retriable corrupted', () => {
+        assert(!isProcessComplexJobErrorReturn(invalidateProcessComplexJobErrorReturn({ retriable: 'not-a-boolean' })));
+    });
+
+    /** Contract: isProcessComplexJobErrorReturn rejects an absent error. */
+    await t.step('rejects error omitted', () => {
+        const { error: _omit, ...rest } = buildProcessComplexJobErrorReturn();
+        assert(!isProcessComplexJobErrorReturn(rest));
+    });
+
+    /** Contract: isProcessComplexJobErrorReturn rejects an absent retriable. */
+    await t.step('rejects retriable omitted', () => {
+        const { retriable: _omit, ...rest } = buildProcessComplexJobErrorReturn();
+        assert(!isProcessComplexJobErrorReturn(rest));
+    });
+});
+
+Deno.test('Type Guard: isProcessRenderJobSuccessReturn', async (t) => {
+    /** Contract: isProcessRenderJobSuccessReturn accepts the builder's valid default. */
+    await t.step('accepts the valid default', () => {
+        assert(isProcessRenderJobSuccessReturn(buildProcessRenderJobSuccessReturn()));
+    });
+
+    /** Contract: isProcessRenderJobSuccessReturn accepts valid overrides. */
+    await t.step('accepts valid overrides', () => {
+        assert(isProcessRenderJobSuccessReturn(buildProcessRenderJobSuccessReturn({})));
+    });
+
+    /** Contract: isProcessRenderJobSuccessReturn rejects null, undefined, a primitive, and an array. */
+    await t.step('rejects non-objects', () => {
+        for (const x of [null, undefined, 7, 'x', []]) {
+            assert(!isProcessRenderJobSuccessReturn(x));
+        }
+    });
+
+    /** Contract: isProcessRenderJobSuccessReturn rejects a corrupted rendered. */
+    await t.step('rejects rendered corrupted', () => {
+        assert(!isProcessRenderJobSuccessReturn(invalidateProcessRenderJobSuccessReturn({ rendered: 'not-true' })));
+    });
+
+    /** Contract: isProcessRenderJobSuccessReturn rejects an absent rendered. */
+    await t.step('rejects rendered omitted', () => {
+        const { rendered: _omit, ...rest } = buildProcessRenderJobSuccessReturn();
+        assert(!isProcessRenderJobSuccessReturn(rest));
+    });
+});
+
+Deno.test('Type Guard: isProcessRenderJobErrorReturn', async (t) => {
+    /** Contract: isProcessRenderJobErrorReturn accepts the builder's valid default. */
+    await t.step('accepts the valid default', () => {
+        assert(isProcessRenderJobErrorReturn(buildProcessRenderJobErrorReturn()));
+    });
+
+    /** Contract: isProcessRenderJobErrorReturn accepts valid overrides. */
+    await t.step('accepts valid overrides', () => {
+        assert(isProcessRenderJobErrorReturn(buildProcessRenderJobErrorReturn({})));
+    });
+
+    /** Contract: isProcessRenderJobErrorReturn rejects null, undefined, a primitive, and an array. */
+    await t.step('rejects non-objects', () => {
+        for (const x of [null, undefined, 7, 'x', []]) {
+            assert(!isProcessRenderJobErrorReturn(x));
+        }
+    });
+
+    /** Contract: isProcessRenderJobErrorReturn rejects a corrupted error. */
+    await t.step('rejects error corrupted', () => {
+        assert(!isProcessRenderJobErrorReturn(invalidateProcessRenderJobErrorReturn({ error: 'not-an-error' })));
+    });
+
+    /** Contract: isProcessRenderJobErrorReturn rejects a corrupted retriable. */
+    await t.step('rejects retriable corrupted', () => {
+        assert(!isProcessRenderJobErrorReturn(invalidateProcessRenderJobErrorReturn({ retriable: 'not-a-boolean' })));
+    });
+
+    /** Contract: isProcessRenderJobErrorReturn rejects an absent error. */
+    await t.step('rejects error omitted', () => {
+        const { error: _omit, ...rest } = buildProcessRenderJobErrorReturn();
+        assert(!isProcessRenderJobErrorReturn(rest));
+    });
+
+    /** Contract: isProcessRenderJobErrorReturn rejects an absent retriable. */
+    await t.step('rejects retriable omitted', () => {
+        const { retriable: _omit, ...rest } = buildProcessRenderJobErrorReturn();
+        assert(!isProcessRenderJobErrorReturn(rest));
+    });
 });

@@ -65,5 +65,5 @@ A correct halt with a complete report **is** the completed task. Producing a com
 
 Even *thinking about* how to get around the one-file boundary is itself the discovery. The instant you find yourself reasoning toward a workaround, stop and report — do not develop the workaround first.
 
-If you are corrected or realize you deviated, stop, report it, and wait for direction. Do not self-remediate in a way that risks a further violation; repeated correction means halt immediately (see [precedence](precedence.md)).
+If you are corrected or realize you deviated, stop, report it, and wait for direction. Do not self-remediate in a way that risks a further violation; repeated correction means halt immediately (see [insanity-loop](insanity-loop.md)).
 

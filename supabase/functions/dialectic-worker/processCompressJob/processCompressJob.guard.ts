@@ -1,5 +1,4 @@
-import { isNonEmptyString, isRecord } from "../../_shared/utils/type-guards/type_guards.common.ts";
-import { isDialecticCompressJobPayload } from "../enqueueCompressJobs/enqueueCompressJobs.guard.ts";
+import { isRecord } from "../../_shared/utils/type-guards/type_guards.common.ts";
 import type {
     BoundProcessCompressJobFn,
     ProcessCompressJobDeps,
@@ -21,10 +20,7 @@ export function isProcessCompressJobDeps(
     const requiredKeys: (keyof ProcessCompressJobDeps)[] = [
         "assembleCompressionPrompt",
         "assembleContinuationPrompt",
-        "enqueueModelCall",
-        "countTokens",
-        "getEncoding",
-        "countTokensAnthropic",
+        "prepareModelJob",
         "constructStoragePath",
         "logger",
     ];
@@ -40,16 +36,7 @@ export function isProcessCompressJobDeps(
     if (typeof value.assembleContinuationPrompt !== "function") {
         return false;
     }
-    if (typeof value.enqueueModelCall !== "function") {
-        return false;
-    }
-    if (typeof value.countTokens !== "function") {
-        return false;
-    }
-    if (typeof value.getEncoding !== "function") {
-        return false;
-    }
-    if (typeof value.countTokensAnthropic !== "function") {
+    if (typeof value.prepareModelJob !== "function") {
         return false;
     }
     if (typeof value.constructStoragePath !== "function") {
@@ -71,9 +58,6 @@ export function isProcessCompressJobParams(
 
     const requiredKeys: (keyof ProcessCompressJobParams)[] = [
         "dbClient",
-        "job",
-        "projectOwnerUserId",
-        "authToken",
     ];
     for (const key of requiredKeys) {
         if (!(key in value)) {
@@ -84,15 +68,6 @@ export function isProcessCompressJobParams(
     if (!isRecord(value.dbClient)) {
         return false;
     }
-    if (!isRecord(value.job)) {
-        return false;
-    }
-    if (!isNonEmptyString(value.projectOwnerUserId)) {
-        return false;
-    }
-    if (!isNonEmptyString(value.authToken)) {
-        return false;
-    }
 
     return true;
 }
@@ -100,7 +75,13 @@ export function isProcessCompressJobParams(
 export function isProcessCompressJobPayload(
     value: unknown,
 ): value is ProcessCompressJobPayload {
-    return isDialecticCompressJobPayload(value);
+    if (!isRecord(value)) {
+        return false;
+    }
+    if (!("job" in value) || !isRecord(value.job)) {
+        return false;
+    }
+    return true;
 }
 
 export function isProcessCompressJobSuccessReturn(

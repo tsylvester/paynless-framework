@@ -1,5 +1,4 @@
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { buildDialecticCompressJobPayload } from "../enqueueCompressJobs/enqueueCompressJobs.mock.ts";
 import {
   isBoundProcessCompressJobFn,
   isProcessCompressJobDeps,
@@ -14,220 +13,166 @@ import {
   buildProcessCompressJobDeps,
   buildProcessCompressJobErrorReturn,
   buildProcessCompressJobParams,
+  buildProcessCompressJobPayload,
   buildProcessCompressJobSuccessReturn,
   invalidateProcessCompressJobDeps,
   invalidateProcessCompressJobErrorReturn,
   invalidateProcessCompressJobParams,
+  invalidateProcessCompressJobPayload,
   invalidateProcessCompressJobSuccessReturn,
-  mockProcessCompressJobFn,
+  mockBoundProcessCompressJob,
+  mockProcessCompressJob,
 } from "./processCompressJob.mock.ts";
 
-Deno.test("isProcessCompressJobDeps accepts full deps", () => {
+// ── isProcessCompressJobDeps ──────────────────────────────────────────────────
+
+/** isProcessCompressJobDeps accepts the builder's valid default. */
+Deno.test("isProcessCompressJobDeps accepts valid default", () => {
   assertEquals(isProcessCompressJobDeps(buildProcessCompressJobDeps()), true);
 });
 
-Deno.test("isProcessCompressJobDeps rejects non-record roots", () => {
-  assertEquals(isProcessCompressJobDeps(null), false);
-  assertEquals(isProcessCompressJobDeps("x"), false);
-});
-
-Deno.test(
-  "isProcessCompressJobDeps rejects undefined assembleCompressionPrompt",
-  () => {
-    assertEquals(
-      isProcessCompressJobDeps(
-        buildProcessCompressJobDeps({ assembleCompressionPrompt: undefined }),
-      ),
-      false,
-    );
-  },
-);
-
-Deno.test("isProcessCompressJobDeps rejects null enqueueModelCall", () => {
+/** isProcessCompressJobDeps accepts valid overrides. */
+Deno.test("isProcessCompressJobDeps accepts valid overrides", () => {
   assertEquals(
     isProcessCompressJobDeps(
-      invalidateProcessCompressJobDeps({ enqueueModelCall: null }),
+      buildProcessCompressJobDeps({
+        prepareModelJob: async () => ({ queued: true }),
+      }),
     ),
-    false,
+    true,
   );
 });
 
-Deno.test("isProcessCompressJobDeps rejects undefined countTokens", () => {
-  assertEquals(
-    isProcessCompressJobDeps(
-      buildProcessCompressJobDeps({ countTokens: undefined }),
-    ),
-    false,
-  );
+/** isProcessCompressJobDeps rejects null, undefined, primitives, and arrays. */
+Deno.test("isProcessCompressJobDeps rejects non-objects", () => {
+  for (const x of [null, undefined, 7, "x", []]) {
+    assertEquals(isProcessCompressJobDeps(x), false);
+  }
 });
 
-Deno.test("isProcessCompressJobDeps rejects null constructStoragePath", () => {
-  assertEquals(
-    isProcessCompressJobDeps(
-      invalidateProcessCompressJobDeps({ constructStoragePath: null }),
-    ),
-    false,
-  );
+/** isProcessCompressJobDeps rejects each corrupted property. */
+Deno.test("isProcessCompressJobDeps rejects each corrupted property", () => {
+  assertEquals(isProcessCompressJobDeps(invalidateProcessCompressJobDeps({ assembleCompressionPrompt: "not-a-function" })), false);
+  assertEquals(isProcessCompressJobDeps(invalidateProcessCompressJobDeps({ assembleContinuationPrompt: 42 })), false);
+  assertEquals(isProcessCompressJobDeps(invalidateProcessCompressJobDeps({ prepareModelJob: null })), false);
+  assertEquals(isProcessCompressJobDeps(invalidateProcessCompressJobDeps({ constructStoragePath: 123 })), false);
+  assertEquals(isProcessCompressJobDeps(invalidateProcessCompressJobDeps({ logger: "not-a-logger" })), false);
 });
 
-Deno.test("isProcessCompressJobDeps rejects undefined logger", () => {
-  assertEquals(
-    isProcessCompressJobDeps(buildProcessCompressJobDeps({ logger: undefined })),
-    false,
-  );
+/** isProcessCompressJobDeps rejects each omitted required property. */
+Deno.test("isProcessCompressJobDeps rejects each omitted required property", () => {
+  const base = buildProcessCompressJobDeps();
+  const { assembleCompressionPrompt: _a, ...withoutAssembleCompression } = base;
+  assertEquals(isProcessCompressJobDeps(withoutAssembleCompression), false);
+  const { assembleContinuationPrompt: _c, ...withoutAssembleContinuation } = base;
+  assertEquals(isProcessCompressJobDeps(withoutAssembleContinuation), false);
+  const { prepareModelJob: _p, ...withoutPrepareModelJob } = base;
+  assertEquals(isProcessCompressJobDeps(withoutPrepareModelJob), false);
+  const { constructStoragePath: _s, ...withoutConstructStoragePath } = base;
+  assertEquals(isProcessCompressJobDeps(withoutConstructStoragePath), false);
+  const { logger: _l, ...withoutLogger } = base;
+  assertEquals(isProcessCompressJobDeps(withoutLogger), false);
 });
 
-Deno.test("isProcessCompressJobDeps rejects undefined getEncoding", () => {
-  assertEquals(
-    isProcessCompressJobDeps(buildProcessCompressJobDeps({ getEncoding: undefined })),
-    false,
-  );
+/** isProcessCompressJobDeps accepts a deps object carrying none of the four removed members. */
+Deno.test("isProcessCompressJobDeps accepts deps without the four removed members", () => {
+  const deps = buildProcessCompressJobDeps();
+  assertEquals("enqueueModelCall" in deps, false);
+  assertEquals("countTokens" in deps, false);
+  assertEquals("getEncoding" in deps, false);
+  assertEquals("countTokensAnthropic" in deps, false);
+  assertEquals(isProcessCompressJobDeps(deps), true);
 });
 
-Deno.test("isProcessCompressJobDeps rejects null countTokensAnthropic", () => {
-  assertEquals(
-    isProcessCompressJobDeps(invalidateProcessCompressJobDeps({ countTokensAnthropic: null })),
-    false,
-  );
-});
+// ── isProcessCompressJobParams ────────────────────────────────────────────────
 
-Deno.test(
-  "isProcessCompressJobDeps rejects omitted assembleContinuationPrompt",
-  () => {
-    const { assembleContinuationPrompt: _omit, ...missing } = buildProcessCompressJobDeps();
-    assertEquals(isProcessCompressJobDeps(missing), false);
-  },
-);
-
-Deno.test(
-  "isProcessCompressJobDeps rejects non-function assembleContinuationPrompt",
-  () => {
-    assertEquals(
-      isProcessCompressJobDeps(
-        invalidateProcessCompressJobDeps({ assembleContinuationPrompt: "not-a-function" }),
-      ),
-      false,
-    );
-  },
-);
-
-Deno.test("isProcessCompressJobParams accepts full params", () => {
+/** isProcessCompressJobParams accepts the builder's valid default. */
+Deno.test("isProcessCompressJobParams accepts valid default", () => {
   assertEquals(isProcessCompressJobParams(buildProcessCompressJobParams()), true);
 });
 
-Deno.test("isProcessCompressJobParams rejects non-record roots", () => {
-  assertEquals(isProcessCompressJobParams(null), false);
-  assertEquals(isProcessCompressJobParams("x"), false);
+/** isProcessCompressJobParams rejects null, undefined, primitives, and arrays. */
+Deno.test("isProcessCompressJobParams rejects non-objects", () => {
+  for (const x of [null, undefined, 7, "x", []]) {
+    assertEquals(isProcessCompressJobParams(x), false);
+  }
 });
 
-Deno.test("isProcessCompressJobParams rejects null dbClient", () => {
-  assertEquals(
-    isProcessCompressJobParams(invalidateProcessCompressJobParams({ dbClient: null })),
-    false,
-  );
+/** isProcessCompressJobParams rejects corrupted dbClient. */
+Deno.test("isProcessCompressJobParams rejects corrupted dbClient", () => {
+  assertEquals(isProcessCompressJobParams(invalidateProcessCompressJobParams({ dbClient: null })), false);
+  assertEquals(isProcessCompressJobParams(invalidateProcessCompressJobParams({ dbClient: "not-a-client" })), false);
 });
 
-Deno.test("isProcessCompressJobParams rejects undefined jobId", () => {
-  assertEquals(
-    isProcessCompressJobParams(buildProcessCompressJobParams({ job: undefined })),
-    false,
-  );
+/** isProcessCompressJobParams rejects omitted dbClient. */
+Deno.test("isProcessCompressJobParams rejects omitted dbClient", () => {
+  const { dbClient: _, ...withoutDbClient } = buildProcessCompressJobParams();
+  assertEquals(isProcessCompressJobParams(withoutDbClient), false);
 });
 
-Deno.test("isProcessCompressJobParams rejects null projectOwnerUserId", () => {
-  assertEquals(
-    isProcessCompressJobParams(
-      invalidateProcessCompressJobParams({ projectOwnerUserId: null }),
-    ),
-    false,
-  );
+/** isProcessCompressJobParams accepts params carrying none of the three retired members. */
+Deno.test("isProcessCompressJobParams accepts params without the three retired members", () => {
+  const params = buildProcessCompressJobParams();
+  assertEquals("job" in params, false);
+  assertEquals("projectOwnerUserId" in params, false);
+  assertEquals("authToken" in params, false);
+  assertEquals(isProcessCompressJobParams(params), true);
 });
 
-Deno.test("isProcessCompressJobParams rejects empty authToken", () => {
-  assertEquals(
-    isProcessCompressJobParams(
-      buildProcessCompressJobParams({ authToken: "" }),
-    ),
-    false,
-  );
+// ── isProcessCompressJobPayload ───────────────────────────────────────────────
+
+/** isProcessCompressJobPayload accepts a payload with a valid job record. */
+Deno.test("isProcessCompressJobPayload accepts valid default", () => {
+  assertEquals(isProcessCompressJobPayload(buildProcessCompressJobPayload()), true);
 });
 
-Deno.test("isProcessCompressJobPayload accepts full payload", () => {
-  assertEquals(
-    isProcessCompressJobPayload(buildDialecticCompressJobPayload()),
-    true,
-  );
+/** isProcessCompressJobPayload rejects null, undefined, primitives, and arrays. */
+Deno.test("isProcessCompressJobPayload rejects non-objects", () => {
+  for (const x of [null, undefined, 7, "x", []]) {
+    assertEquals(isProcessCompressJobPayload(x), false);
+  }
 });
 
-Deno.test("isProcessCompressJobPayload rejects non-record roots", () => {
-  assertEquals(isProcessCompressJobPayload(null), false);
-  assertEquals(isProcessCompressJobPayload("x"), false);
+/** isProcessCompressJobPayload rejects corrupted job. */
+Deno.test("isProcessCompressJobPayload rejects corrupted job", () => {
+  assertEquals(isProcessCompressJobPayload(invalidateProcessCompressJobPayload({ job: null })), false);
+  assertEquals(isProcessCompressJobPayload(invalidateProcessCompressJobPayload({ job: "not-a-record" })), false);
 });
 
-Deno.test("isProcessCompressJobReturn accepts full success", () => {
-  assertEquals(
-    isProcessCompressJobReturn(buildProcessCompressJobSuccessReturn()),
-    true,
-  );
+/** isProcessCompressJobPayload rejects omitted job. */
+Deno.test("isProcessCompressJobPayload rejects omitted job", () => {
+  const { job: _, ...withoutJob } = buildProcessCompressJobPayload();
+  assertEquals(isProcessCompressJobPayload(withoutJob), false);
 });
 
-Deno.test("isProcessCompressJobReturn accepts full error", () => {
-  assertEquals(
-    isProcessCompressJobReturn(buildProcessCompressJobErrorReturn()),
-    true,
-  );
-});
+// ── isProcessCompressJobSuccessReturn ─────────────────────────────────────────
 
-Deno.test("isProcessCompressJobReturn rejects non-record roots", () => {
-  assertEquals(isProcessCompressJobReturn(null), false);
-  assertEquals(isProcessCompressJobReturn("x"), false);
-});
-
-Deno.test("isProcessCompressJobFn accepts full fn", () => {
-  assertEquals(isProcessCompressJobFn(mockProcessCompressJobFn), true);
-});
-
-Deno.test("isProcessCompressJobFn rejects non-function roots", () => {
-  assertEquals(isProcessCompressJobFn(null), false);
-  assertEquals(isProcessCompressJobFn("x"), false);
-});
-
-Deno.test("isBoundProcessCompressJobFn accepts full fn", () => {
-  assertEquals(
-    isBoundProcessCompressJobFn(mockProcessCompressJobFn),
-    true,
-  );
-});
-
-Deno.test("isBoundProcessCompressJobFn rejects non-function roots", () => {
-  assertEquals(isBoundProcessCompressJobFn(null), false);
-  assertEquals(isBoundProcessCompressJobFn("x"), false);
-});
-
-Deno.test("isProcessCompressJobSuccessReturn accepts full success", () => {
+/** isProcessCompressJobSuccessReturn accepts the builder's valid default. */
+Deno.test("isProcessCompressJobSuccessReturn accepts valid default", () => {
   assertEquals(
     isProcessCompressJobSuccessReturn(buildProcessCompressJobSuccessReturn()),
     true,
   );
 });
 
-Deno.test("isProcessCompressJobSuccessReturn rejects non-record roots", () => {
-  assertEquals(isProcessCompressJobSuccessReturn(null), false);
-  assertEquals(isProcessCompressJobSuccessReturn("x"), false);
+/** isProcessCompressJobSuccessReturn rejects null, undefined, primitives, and arrays. */
+Deno.test("isProcessCompressJobSuccessReturn rejects non-objects", () => {
+  for (const x of [null, undefined, 7, "x", []]) {
+    assertEquals(isProcessCompressJobSuccessReturn(x), false);
+  }
 });
 
-Deno.test(
-  "isProcessCompressJobSuccessReturn rejects undefined queued",
-  () => {
-    assertEquals(
-      isProcessCompressJobSuccessReturn(
-        buildProcessCompressJobSuccessReturn({ queued: undefined }),
-      ),
-      false,
-    );
-  },
-);
+/** isProcessCompressJobSuccessReturn rejects undefined queued. */
+Deno.test("isProcessCompressJobSuccessReturn rejects undefined queued", () => {
+  assertEquals(
+    isProcessCompressJobSuccessReturn(
+      buildProcessCompressJobSuccessReturn({ queued: undefined }),
+    ),
+    false,
+  );
+});
 
+/** isProcessCompressJobSuccessReturn rejects null queued. */
 Deno.test("isProcessCompressJobSuccessReturn rejects null queued", () => {
   assertEquals(
     isProcessCompressJobSuccessReturn(
@@ -237,40 +182,42 @@ Deno.test("isProcessCompressJobSuccessReturn rejects null queued", () => {
   );
 });
 
-Deno.test(
-  "isProcessCompressJobSuccessReturn rejects error-present value",
-  () => {
-    assertEquals(
-      isProcessCompressJobSuccessReturn(buildProcessCompressJobErrorReturn()),
-      false,
-    );
-  },
-);
+/** isProcessCompressJobSuccessReturn rejects an error-present value. */
+Deno.test("isProcessCompressJobSuccessReturn rejects error-present value", () => {
+  assertEquals(
+    isProcessCompressJobSuccessReturn(buildProcessCompressJobErrorReturn()),
+    false,
+  );
+});
 
-Deno.test("isProcessCompressJobErrorReturn accepts full error", () => {
+// ── isProcessCompressJobErrorReturn ───────────────────────────────────────────
+
+/** isProcessCompressJobErrorReturn accepts the builder's valid default. */
+Deno.test("isProcessCompressJobErrorReturn accepts valid default", () => {
   assertEquals(
     isProcessCompressJobErrorReturn(buildProcessCompressJobErrorReturn()),
     true,
   );
 });
 
-Deno.test("isProcessCompressJobErrorReturn rejects non-record roots", () => {
-  assertEquals(isProcessCompressJobErrorReturn(null), false);
-  assertEquals(isProcessCompressJobErrorReturn("x"), false);
+/** isProcessCompressJobErrorReturn rejects null, undefined, primitives, and arrays. */
+Deno.test("isProcessCompressJobErrorReturn rejects non-objects", () => {
+  for (const x of [null, undefined, 7, "x", []]) {
+    assertEquals(isProcessCompressJobErrorReturn(x), false);
+  }
 });
 
-Deno.test(
-  "isProcessCompressJobErrorReturn rejects undefined error",
-  () => {
-    assertEquals(
-      isProcessCompressJobErrorReturn(
-        buildProcessCompressJobErrorReturn({ error: undefined }),
-      ),
-      false,
-    );
-  },
-);
+/** isProcessCompressJobErrorReturn rejects undefined error. */
+Deno.test("isProcessCompressJobErrorReturn rejects undefined error", () => {
+  assertEquals(
+    isProcessCompressJobErrorReturn(
+      buildProcessCompressJobErrorReturn({ error: undefined }),
+    ),
+    false,
+  );
+});
 
+/** isProcessCompressJobErrorReturn rejects null error. */
 Deno.test("isProcessCompressJobErrorReturn rejects null error", () => {
   assertEquals(
     isProcessCompressJobErrorReturn(
@@ -280,18 +227,17 @@ Deno.test("isProcessCompressJobErrorReturn rejects null error", () => {
   );
 });
 
-Deno.test(
-  "isProcessCompressJobErrorReturn rejects undefined retriable",
-  () => {
-    assertEquals(
-      isProcessCompressJobErrorReturn(
-        buildProcessCompressJobErrorReturn({ retriable: undefined }),
-      ),
-      false,
-    );
-  },
-);
+/** isProcessCompressJobErrorReturn rejects undefined retriable. */
+Deno.test("isProcessCompressJobErrorReturn rejects undefined retriable", () => {
+  assertEquals(
+    isProcessCompressJobErrorReturn(
+      buildProcessCompressJobErrorReturn({ retriable: undefined }),
+    ),
+    false,
+  );
+});
 
+/** isProcessCompressJobErrorReturn rejects null retriable. */
 Deno.test("isProcessCompressJobErrorReturn rejects null retriable", () => {
   assertEquals(
     isProcessCompressJobErrorReturn(
@@ -301,12 +247,63 @@ Deno.test("isProcessCompressJobErrorReturn rejects null retriable", () => {
   );
 });
 
-Deno.test(
-  "isProcessCompressJobErrorReturn rejects success-present value",
-  () => {
-    assertEquals(
-      isProcessCompressJobErrorReturn(buildProcessCompressJobSuccessReturn()),
-      false,
-    );
-  },
-);
+/** isProcessCompressJobErrorReturn rejects a success-present value. */
+Deno.test("isProcessCompressJobErrorReturn rejects success-present value", () => {
+  assertEquals(
+    isProcessCompressJobErrorReturn(buildProcessCompressJobSuccessReturn()),
+    false,
+  );
+});
+
+// ── isProcessCompressJobReturn ────────────────────────────────────────────────
+
+/** isProcessCompressJobReturn accepts a success return. */
+Deno.test("isProcessCompressJobReturn accepts success return", () => {
+  assertEquals(
+    isProcessCompressJobReturn(buildProcessCompressJobSuccessReturn()),
+    true,
+  );
+});
+
+/** isProcessCompressJobReturn accepts an error return. */
+Deno.test("isProcessCompressJobReturn accepts error return", () => {
+  assertEquals(
+    isProcessCompressJobReturn(buildProcessCompressJobErrorReturn()),
+    true,
+  );
+});
+
+/** isProcessCompressJobReturn rejects null, undefined, primitives, and arrays. */
+Deno.test("isProcessCompressJobReturn rejects non-objects", () => {
+  for (const x of [null, undefined, 7, "x", []]) {
+    assertEquals(isProcessCompressJobReturn(x), false);
+  }
+});
+
+// ── isProcessCompressJobFn ────────────────────────────────────────────────────
+
+/** isProcessCompressJobFn accepts the owned function mock. */
+Deno.test("isProcessCompressJobFn accepts full fn", () => {
+  assertEquals(isProcessCompressJobFn(mockProcessCompressJob), true);
+});
+
+/** isProcessCompressJobFn rejects non-function roots. */
+Deno.test("isProcessCompressJobFn rejects non-function roots", () => {
+  for (const x of [null, undefined, 7, "x", []]) {
+    assertEquals(isProcessCompressJobFn(x), false);
+  }
+});
+
+// ── isBoundProcessCompressJobFn ───────────────────────────────────────────────
+
+/** isBoundProcessCompressJobFn accepts the owned bound function mock. */
+Deno.test("isBoundProcessCompressJobFn accepts full fn", () => {
+  assertEquals(isBoundProcessCompressJobFn(mockBoundProcessCompressJob), true);
+});
+
+/** isBoundProcessCompressJobFn rejects non-function roots. */
+Deno.test("isBoundProcessCompressJobFn rejects non-function roots", () => {
+  for (const x of [null, undefined, 7, "x", []]) {
+    assertEquals(isBoundProcessCompressJobFn(x), false);
+  }
+});

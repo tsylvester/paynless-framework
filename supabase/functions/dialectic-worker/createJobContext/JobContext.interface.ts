@@ -1,22 +1,18 @@
 // supabase/functions/dialectic-worker/JobContext.interface.ts
 
-import { FinishReason, GetAiProviderAdapterFn, ILogger } from '../../_shared/types.ts';
-import { ResourceDocument } from '../../_shared/utils/resolveCompressionSource/resolveCompressionSource.interface.ts'
+import { ApiKeyForProviderFn, FinishReason, GetAiProviderAdapterFn, ILogger } from '../../_shared/types.ts';
+import { ResourceDocument, ResolveCompressionSourceFn } from '../../_shared/utils/resolveCompressionSource/resolveCompressionSource.interface.ts'
 import { IFileManager, ModelContributionUploadContext, ResourceUploadContext } from '../../_shared/types/file_manager.types.ts';
 import { DownloadFromStorageFn } from '../../_shared/supabase_storage_utils.ts';
 import { DeleteFromStorageFn } from '../../_shared/supabase_storage_utils.ts';
-import { IRagService } from '../../_shared/services/rag_service.interface.ts';
-import { IIndexingService } from '../../_shared/services/indexing_service.interface.ts';
-import { IEmbeddingClient } from '../../_shared/services/indexing_service.interface.ts';
 import { IAdminTokenWalletService } from '../../_shared/services/tokenwallet/admin/adminTokenWalletService.interface.ts';
 import { IUserTokenWalletService } from '../../_shared/services/tokenwallet/client/userTokenWalletService.interface.ts';
 import { NotificationServiceType } from '../../_shared/types/notification.service.types.ts';
 import { GetAiProviderConfigFn } from '../../dialectic-service/dialectic.interface.ts';
-import { CountTokensFn } from '../../_shared/types/tokenizer.types.ts';
+import { CountTokensDeps, CountTokensFn } from '../../_shared/types/tokenizer.types.ts';
 import {
     GetSeedPromptForStageFn,
     PlanComplexStageFn,
-    FailedAttemptError,
     UnifiedAIResponse,
     DialecticJobRow,
     DialecticPlanJobPayload,
@@ -41,29 +37,19 @@ import {
     DetermineContinuationResult,
 } from '../../_shared/utils/determineContinuation/determineContinuation.interface.ts';
 import { BuildUploadContextParams, BuildUploadContextResourceParams } from '../../_shared/utils/buildUploadContext/buildUploadContext.interface.ts';
-import { BoundDebitTokens, DebitTokens } from '../../_shared/utils/debitTokens.interface.ts';
-import { BoundEnqueueRenderJobFn } from '../enqueueRenderJob/enqueueRenderJob.interface.ts';
-import { BoundEnqueueModelCallFn } from '../enqueueModelCall/enqueueModelCall.interface.ts';
-import { BoundCalculateAffordabilityFn } from '../calculateAffordability/calculateAffordability.interface.ts';
+import { BoundEnqueueModelCallFn, EnqueueModelCallFn } from '../enqueueModelCall/enqueueModelCall.interface.ts';
+import { CalculateAffordabilityFn, BoundCalculateAffordabilityFn } from '../calculateAffordability/calculateAffordability.interface.ts';
 import type { GetMaxOutputTokensFn } from '../calculateAffordability/calculateAffordability.interface.ts';
-import { PrepareModelJobParams, PrepareModelJobPayload, PrepareModelJobReturn } from '../prepareModelJob/prepareModelJob.interface.ts';
-import { GatherArtifactsParams, GatherArtifactsPayload, GatherArtifactsReturn } from '../gatherArtifacts/gatherArtifacts.interface.ts';
-import { SanitizeJsonContentFn } from '../../_shared/utils/jsonSanitizer/jsonSanitizer.interface.ts';
+import { PrepareModelJobFn, BoundPrepareModelJobFn } from '../prepareModelJob/prepareModelJob.interface.ts';
+import { GatherArtifactsFn, BoundGatherArtifactsFn } from '../gatherArtifacts/gatherArtifacts.interface.ts';
 import type { ComputeJobSig } from "../../_shared/utils/computeJobSig/computeJobSig.interface.ts";
-import { ContinueJobFn } from '../continueJob/continueJob.provides.ts';
-/**
- * Function type for retryJob orchestration utility.
- * Retries a failed job by resetting its status and re-enqueueing it.
- */
-export type RetryJobFn = (
-    deps: { logger: ILogger; notificationService: NotificationServiceType },
-    dbClient: SupabaseClient<Database>,
-    job: Database['public']['Tables']['dialectic_generation_jobs']['Row'],
-    currentAttempt: number,
-    failedContributionAttempts: FailedAttemptError[],
-    projectOwnerUserId: string
-) => Promise<{ error?: Error }>;
-
+import { RetryJobFn, BoundRetryJobFn } from '../retryJob/retryJob.interface.ts';
+import { CompressPromptFn, BoundCompressPromptFn } from '../compressPrompt/compressPrompt.interface.ts';
+import { enqueueCompressJobsFn } from '../enqueueCompressJobs/enqueueCompressJobs.interface.ts';
+import { GetSortedCompressionCandidatesFn } from '../../_shared/utils/vector_utils/vector_utils.interface.ts';
+import { ApplyCompressionOverlayFn } from '../applyCompressionOverlay/applyCompressionOverlay.interface.ts';
+import { ITextSplitter } from '../../_shared/utils/text_splitter.interface.ts';
+import { ConstructStoragePathFn } from '../../_shared/utils/path_constructor.types.ts';
 /**
  * Function type for findSourceDocuments.
  * Retrieves source documents required for a PLAN step to build child job payloads.
@@ -168,17 +154,6 @@ export interface IModelContext {
 }
 
 /**
- * Base context providing RAG (Retrieval-Augmented Generation) operations.
- * Used by functions that need indexing, embeddings, or semantic search.
- */
-export interface IRagContext {
-    readonly ragService: IRagService;
-    readonly indexingService: IIndexingService;
-    readonly embeddingClient: IEmbeddingClient;
-    readonly countTokens: CountTokensFn;
-}
-
-/**
  * Base context providing token wallet operations.
  * Used by functions that need to debit/credit token wallets.
  */
@@ -193,38 +168,6 @@ export interface ITokenContext {
  */
 export interface INotificationContext {
     readonly notificationService: NotificationServiceType;
-}
-
-/**
- * Context slice for prepareModelJob (Zones A-D).
- * 11 fields, no base context extensions — cherry-picks only what Zones A-D actually call
- * plus 3 pre-bound orchestrator closures (`compressPrompt` is bound only inside the slicer, not on this slice).
- * Constructed by createPrepareModelJobContext slicer from IJobContext raw fields + pre-bound closures.
- * enqueueModelCall replaces the old executeModelCallAndSave direct invocation — the front-half
- * enqueues to Netlify rather than executing inline; enqueueRenderJob is NOT part of this slice.
- */
-export interface IPrepareModelJobContext {
-    readonly logger: ILogger;
-    readonly applyInputsRequiredScope: ApplyInputsRequiredScopeFn;
-    readonly countTokens: CountTokensFn;
-    readonly adminTokenWalletService: IAdminTokenWalletService;
-    readonly validateWalletBalance: ValidateWalletBalanceFn;
-    readonly validateModelCostRates: ValidateModelCostRatesFn;
-    readonly ragService: IRagService;
-    readonly embeddingClient: IEmbeddingClient;
-    readonly enqueueModelCall: BoundEnqueueModelCallFn;
-    readonly calculateAffordability: BoundCalculateAffordabilityFn;
-}
-
-/**
- * Context slice for the back-half of the split EMCAS architecture (saveResponse).
- * The back-half receives the completed AI response from the Netlify workload and persists it.
- * enqueueRenderJob lives here because render dispatch happens after contribution is saved,
- * not before the AI call is issued.
- */
-export interface ISaveResponseContext {
-    readonly enqueueRenderJob: BoundEnqueueRenderJobFn;
-    readonly debitTokens: BoundDebitTokens;
 }
 
 /**
@@ -256,24 +199,6 @@ export interface IRenderJobContext extends
 }
 
 /**
- * Pre-bound prepareModelJob closure type.
- * 2-arg closure constructed at composition root — deps are already bound.
- */
-export type BoundPrepareModelJobFn = (
-    params: PrepareModelJobParams,
-    payload: PrepareModelJobPayload,
-) => Promise<PrepareModelJobReturn>;
-
-/**
- * Pre-bound gatherArtifacts closure type.
- * 2-arg closure constructed at composition root — deps are already bound.
- */
-export type BoundGatherArtifactsFn = (
-    params: GatherArtifactsParams,
-    payload: GatherArtifactsPayload,
-) => Promise<GatherArtifactsReturn>;
-
-/**
  * Root context interface representing the complete dependency bundle.
  * Constructed once at application boundary and passed to processJob.
  * Extends IPlanJobContext and IRenderJobContext for plan/render fields.
@@ -287,9 +212,6 @@ export interface IJobContext extends
     // Raw fields needed by slicers (not inherited from IPlanJobContext or IRenderJobContext)
     readonly getAiProviderAdapter: GetAiProviderAdapterFn;
     readonly getAiProviderConfig: GetAiProviderConfigFn;
-    readonly ragService: IRagService;
-    readonly indexingService: IIndexingService;
-    readonly embeddingClient: IEmbeddingClient;
     readonly countTokens: CountTokensFn;
     readonly adminTokenWalletService: IAdminTokenWalletService;
     readonly userTokenWalletService: IUserTokenWalletService;
@@ -298,21 +220,16 @@ export interface IJobContext extends
     readonly validateWalletBalance: ValidateWalletBalanceFn;
     readonly validateModelCostRates: ValidateModelCostRatesFn;
     readonly getMaxOutputTokens: GetMaxOutputTokensFn;
-    readonly continueJob: ContinueJobFn;
-    readonly retryJob: RetryJobFn;
-    readonly resolveFinishReason: ResolveFinishReasonFn;
-    readonly isIntermediateChunk: IsIntermediateChunkFn;
-    readonly determineContinuation: DetermineContinuationFn;
-    readonly buildUploadContext: BuildUploadContextFn;
-    readonly debitTokens: DebitTokens;
+    readonly retryJob: BoundRetryJobFn;
     readonly promptAssembler: IPromptAssembler;
     readonly getSeedPromptForStage: GetSeedPromptForStageFn;
     readonly gatherArtifacts: BoundGatherArtifactsFn;
     // Top-level orchestration — pre-bound closure for job processing
     readonly prepareModelJob: BoundPrepareModelJobFn;
     readonly enqueueModelCall: BoundEnqueueModelCallFn;
-    readonly sanitizeJsonContent: SanitizeJsonContentFn;
     readonly computeJobSig: ComputeJobSig;
+    readonly calculateAffordability: BoundCalculateAffordabilityFn;
+    readonly compressPrompt: BoundCompressPromptFn;
 }
 
 /**
@@ -327,9 +244,6 @@ export interface JobContextParams {
     readonly deleteFromStorage: DeleteFromStorageFn;
     readonly getAiProviderAdapter: GetAiProviderAdapterFn;
     readonly getAiProviderConfig: GetAiProviderConfigFn;
-    readonly ragService: IRagService;
-    readonly indexingService: IIndexingService;
-    readonly embeddingClient: IEmbeddingClient;
     readonly countTokens: CountTokensFn;
     readonly adminTokenWalletService: IAdminTokenWalletService;
     readonly userTokenWalletService: IUserTokenWalletService;
@@ -347,21 +261,26 @@ export interface JobContextParams {
     readonly assembleContributionChain: AssembleContributionChainFn;
     readonly loadDocumentTemplate: LoadDocumentTemplateFn;
     readonly mergeChunkContent: MergeChunkContentFn;
-    readonly continueJob: ContinueJobFn;
     readonly retryJob: RetryJobFn;
-    readonly gatherArtifacts: BoundGatherArtifactsFn;
-    readonly prepareModelJob: BoundPrepareModelJobFn;
-    readonly enqueueModelCall: BoundEnqueueModelCallFn;
-    readonly debitTokens: DebitTokens;
+    readonly gatherArtifacts: GatherArtifactsFn;
+    readonly prepareModelJob: PrepareModelJobFn;
+    readonly enqueueModelCall: EnqueueModelCallFn;
     readonly pickLatest: PickLatestFn;
     readonly applyInputsRequiredScope: ApplyInputsRequiredScopeFn;
     readonly validateWalletBalance: ValidateWalletBalanceFn;
     readonly validateModelCostRates: ValidateModelCostRatesFn;
     readonly getMaxOutputTokens: GetMaxOutputTokensFn;
-    readonly resolveFinishReason: ResolveFinishReasonFn;
-    readonly isIntermediateChunk: IsIntermediateChunkFn;
-    readonly determineContinuation: DetermineContinuationFn;
-    readonly buildUploadContext: BuildUploadContextFn;
-    readonly sanitizeJsonContent: SanitizeJsonContentFn;
     readonly computeJobSig: ComputeJobSig;
+    readonly compressPrompt: CompressPromptFn;
+    readonly calculateAffordability: CalculateAffordabilityFn;
+    readonly enqueueCompressJobs: enqueueCompressJobsFn;
+    readonly getSortedCompressionCandidates: GetSortedCompressionCandidatesFn;
+    readonly applyCompressionOverlay: ApplyCompressionOverlayFn;
+    readonly textSplitter: ITextSplitter;
+    readonly constructStoragePath: ConstructStoragePathFn;
+    readonly tokenizerDeps: CountTokensDeps;
+    readonly netlifyQueueUrl: string;
+    readonly netlifyApiKey: string;
+    readonly apiKeyForProvider: ApiKeyForProviderFn;
+    readonly resolveCompressionSource: ResolveCompressionSourceFn;
 }

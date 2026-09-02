@@ -2,7 +2,7 @@ import { assertEquals } from "jsr:@std/assert@0.225.3";
 import { createErrorResponse } from "../../_shared/cors-headers.ts";
 import { MockLogger } from "../../_shared/logger.mock.ts";
 import { createMockAdminTokenWalletService } from "../../_shared/services/tokenwallet/admin/adminTokenWalletService.provides.ts";
-import { countTokens } from "../../_shared/utils/tokenizer_utils.ts";
+import { mockBoundCountTokens } from "../../_shared/utils/tokenizer_utils.mock.ts";
 import { debitTokens } from "../../_shared/utils/debitTokens.ts";
 import { getMaxOutputTokens } from "../../_shared/utils/affordability_utils.ts";
 import { StreamRewind } from "./streamRewind.ts";
@@ -19,7 +19,7 @@ function buildStreamRewindDepsForIntegration(
   return {
     logger,
     adminTokenWalletService: adminWallet,
-    countTokens,
+    countTokens: mockBoundCountTokens,
     debitTokens,
     createErrorResponse,
     getMaxOutputTokens,
@@ -95,7 +95,7 @@ Deno.test({
   const deps: StreamRewindDeps = {
     logger,
     adminTokenWalletService: adminMock.instance,
-    countTokens,
+    countTokens: mockBoundCountTokens,
     debitTokens,
     createErrorResponse,
     getMaxOutputTokens,

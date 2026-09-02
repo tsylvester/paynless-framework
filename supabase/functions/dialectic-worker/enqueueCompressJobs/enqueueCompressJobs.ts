@@ -20,7 +20,9 @@ import {
   enqueueCompressJobsParams,
   enqueueCompressJobsReturn,
 } from "./enqueueCompressJobs.interface.ts";
-import { isDialecticCompressJobPayload, isenqueueCompressJobsPayload } from "./enqueueCompressJobs.guard.ts";
+import { isenqueueCompressJobsPayload } from "./enqueueCompressJobs.guard.ts";
+import type { DialecticExecuteJobPayload } from "../../dialectic-service/dialectic.interface.ts";
+import { isDialecticExecuteJobPayload } from "../../_shared/utils/type-guards/type_guards.dialectic.ts";
 
 const TEMPLATE_OVERHEAD_TOKENS = 500;
 const SAFETY_BUFFER_TOKENS = 32;
@@ -49,14 +51,14 @@ export const enqueueCompressJobs: enqueueCompressJobsFn = async (
 
   const { victim, parentJob, modelConfig } = payload;
 
-  // Narrow parentJob.payload (Json) to DialecticCompressJobPayload via the
+  // Narrow parentJob.payload (Json) to DialecticExecuteJobPayload via the
   // existing guard. The guard throws on invalid shape; convert to a
   // validation error return for the function's contract.
-  let parentJobPayload: DialecticCompressJobPayload;
+  let parentJobPayload: DialecticExecuteJobPayload;
   try {
-    if (!isDialecticCompressJobPayload(parentJob.payload)) {
+    if (!isDialecticExecuteJobPayload(parentJob.payload)) {
       return {
-        error: new CompressJobValidationError({ message: "parentJob.payload is not a valid DialecticCompressJobPayload." }),
+        error: new CompressJobValidationError({ message: "parentJob.payload is not a valid DialecticExecuteJobPayload." }),
         retriable: false,
       };
     }
@@ -64,7 +66,17 @@ export const enqueueCompressJobs: enqueueCompressJobsFn = async (
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     return {
-      error: new CompressJobValidationError({ message: `parentJob.payload is not a valid DialecticCompressJobPayload: ${message}` }),
+      error: new CompressJobValidationError({ message: `parentJob.payload is not a valid DialecticExecuteJobPayload: ${message}` }),
+      retriable: false,
+    };
+  }
+
+  // model_slug is optional on DialecticExecuteJobPayload but required on the
+  // child DialecticCompressJobPayload. Validate it here after the guard narrows
+  // the payload, since the EXECUTE guard does not enforce model_slug.
+  if (typeof parentJobPayload.model_slug !== "string" || parentJobPayload.model_slug.length === 0) {
+    return {
+      error: new CompressJobValidationError({ message: "parentJob.payload.model_slug is required to enqueue compress jobs." }),
       retriable: false,
     };
   }

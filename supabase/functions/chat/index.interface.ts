@@ -11,7 +11,7 @@ import {
   GetUserFn,
   ILogger,
 } from "../_shared/types.ts";
-import { CountTokensFn } from "../_shared/types/tokenizer.types.ts";
+import type { BoundCountTokensFn } from "../_shared/types/tokenizer.types.ts";
 import { DebitTokens } from "../_shared/utils/debitTokens.interface.ts";
 import { getMaxOutputTokens } from "../_shared/utils/affordability_utils.ts";
 import { Database } from "../types_db.ts";
@@ -29,7 +29,7 @@ export interface ChatDeps {
   createSuccessResponse: typeof createSuccessResponse;
   createErrorResponse: typeof createErrorResponse;
   prepareChatContext: PrepareChatContext;
-  countTokens: CountTokensFn;
+  countTokens: BoundCountTokensFn;
   debitTokens: DebitTokens;
   getMaxOutputTokens: typeof getMaxOutputTokens;
   findOrCreateChat: typeof findOrCreateChat;

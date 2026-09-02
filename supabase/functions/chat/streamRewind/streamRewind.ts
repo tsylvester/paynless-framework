@@ -7,7 +7,6 @@ import {
   FinishReason,
   PerformChatRewindArgs,
 } from "../../_shared/types.ts";
-import type { CountTokensDeps } from "../../_shared/types/tokenizer.types.ts";
 import { isChatMessageRow, isChatMessageRole } from "../../_shared/utils/type_guards.ts";
 import { TokenUsageSchema } from "../zodSchema.ts";
 import {
@@ -159,14 +158,6 @@ export async function StreamRewind(
       })),
   );
 
-  const tokenizerDeps: CountTokensDeps = {
-    getEncoding: (_name: string) => ({
-      encode: (input: string) => Array.from(input).map((_, i) => i),
-    }),
-    countTokensAnthropic: (text: string) => text.length,
-    logger: logger,
-  };
-
   let maxAllowedOutputTokens: number;
   try {
     if (!modelConfig) {
@@ -181,7 +172,6 @@ export async function StreamRewind(
     }
 
     const tokensRequiredForRewind: number = await countTokensFn(
-      tokenizerDeps,
       {
         systemInstruction: actualSystemPromptText || undefined,
         message: userMessageContent,

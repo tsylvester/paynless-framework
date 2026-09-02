@@ -4,7 +4,6 @@ import {
   ChatMessageInsert,
   FinishReason,
 } from "../../_shared/types.ts";
-import type { CountTokensDeps } from "../../_shared/types/tokenizer.types.ts";
 import { isChatMessageRow } from "../../_shared/utils/type-guards/type_guards.chat.ts";
 import { isApiChatMessage } from "../../_shared/utils/type_guards.ts";
 import { TokenUsageSchema } from "../zodSchema.ts";
@@ -141,14 +140,6 @@ export async function StreamChat(
       );
     }
 
-    const tokenizerDeps: CountTokensDeps = {
-      getEncoding: (_name: string) => ({
-        encode: (input: string) => Array.from(input).map((_, i) => i),
-      }),
-      countTokensAnthropic: (text: string) => text.length,
-      logger: logger,
-    };
-
     const effectiveMessages: {
       role: "system" | "user" | "assistant";
       content: string;
@@ -173,7 +164,7 @@ export async function StreamChat(
         return failure;
       }
 
-      const tokensRequiredForStreaming = await countTokensFn(tokenizerDeps, {
+      const tokensRequiredForStreaming = await countTokensFn({
         systemInstruction: actualSystemPromptText || undefined,
         message: userMessageContent,
         messages: effectiveMessages,

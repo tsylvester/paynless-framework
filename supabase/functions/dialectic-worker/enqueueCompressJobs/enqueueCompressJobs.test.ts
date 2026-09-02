@@ -13,11 +13,11 @@ import {
   buildenqueueCompressJobsParams,
   buildenqueueCompressJobsPayload,
   buildenqueueCompressJobsVictim,
-  buildDialecticCompressJobPayload,
   invalidateEnqueueCompressJobsPayload
 } from "./enqueueCompressJobs.mock.ts";
 import {
   buildDialecticJobRow,
+  buildDialecticExecuteJobPayload,
 } from "../../_shared/dialectic.mock.ts";
 import { CompressJobValidationError } from "./enqueueCompressJobs.interface.ts";
 
@@ -39,7 +39,7 @@ Deno.test("enqueueCompressJobs: existing artifact returns createdCount 0 and doe
     const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
     const deps = buildenqueueCompressJobsDeps();
     const params = buildenqueueCompressJobsParams({ dbClient });
-    const parentJobPayload = buildDialecticCompressJobPayload();
+    const parentJobPayload = buildDialecticExecuteJobPayload();
     if (!isJson(parentJobPayload)) throw new Error("test payload must be Json");
     const payload = buildenqueueCompressJobsPayload({
       parentJob: buildDialecticJobRow({ payload: parentJobPayload }),
@@ -86,7 +86,7 @@ Deno.test("enqueueCompressJobs: existence check error returns retriable true and
     const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
     const deps = buildenqueueCompressJobsDeps();
     const params = buildenqueueCompressJobsParams({ dbClient });
-    const parentJobPayload = buildDialecticCompressJobPayload();
+    const parentJobPayload = buildDialecticExecuteJobPayload();
     if (!isJson(parentJobPayload)) throw new Error("test payload must be Json");
     const payload = buildenqueueCompressJobsPayload({
       parentJob: buildDialecticJobRow({ payload: parentJobPayload }),
@@ -123,7 +123,7 @@ Deno.test("enqueueCompressJobs: under-budget victim inserts one COMPRESS row wit
     const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
     const deps = buildenqueueCompressJobsDeps();
     const params = buildenqueueCompressJobsParams({ dbClient });
-    const parentJobPayload = buildDialecticCompressJobPayload();
+    const parentJobPayload = buildDialecticExecuteJobPayload();
     if (!isJson(parentJobPayload)) throw new Error("test payload must be Json");
     const payload = buildenqueueCompressJobsPayload({
       parentJob: buildDialecticJobRow({ payload: parentJobPayload }),
@@ -179,7 +179,7 @@ Deno.test("enqueueCompressJobs: over-budget victim splits into text-mode chunks 
       textSplitter: { splitText },
     });
     const params = buildenqueueCompressJobsParams({ dbClient });
-    const parentJobPayload = buildDialecticCompressJobPayload();
+    const parentJobPayload = buildDialecticExecuteJobPayload();
     if (!isJson(parentJobPayload)) throw new Error("test payload must be Json");
     const payload = buildenqueueCompressJobsPayload({
       victim: buildenqueueCompressJobsVictim({ mode: "json", content: "some content that is over budget", sourceType: "contribution" }),
@@ -244,7 +244,7 @@ Deno.test("enqueueCompressJobs: insert failure returns retriable false and issue
     const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
     const deps = buildenqueueCompressJobsDeps();
     const params = buildenqueueCompressJobsParams({ dbClient });
-    const parentJobPayload = buildDialecticCompressJobPayload();
+    const parentJobPayload = buildDialecticExecuteJobPayload();
     if (!isJson(parentJobPayload)) throw new Error("test payload must be Json");
     const payload = buildenqueueCompressJobsPayload({
       parentJob: buildDialecticJobRow({ payload: parentJobPayload }),
@@ -293,7 +293,7 @@ Deno.test("enqueueCompressJobs: idempotency keys are deterministic and match the
       textSplitter: { splitText },
     });
     const params = buildenqueueCompressJobsParams({ dbClient });
-    const parentJobPayload = buildDialecticCompressJobPayload();
+    const parentJobPayload = buildDialecticExecuteJobPayload();
     if (!isJson(parentJobPayload)) throw new Error("test payload must be Json");
     const payload = buildenqueueCompressJobsPayload({
       parentJob: buildDialecticJobRow({
@@ -395,7 +395,7 @@ Deno.test("enqueueCompressJobs: feedback victim with documentKey and no sourceId
     const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
     const deps = buildenqueueCompressJobsDeps();
     const params = buildenqueueCompressJobsParams({ dbClient });
-    const parentJobPayload = buildDialecticCompressJobPayload();
+    const parentJobPayload = buildDialecticExecuteJobPayload();
     if (!isJson(parentJobPayload)) throw new Error("test payload must be Json");
     const payload = buildenqueueCompressJobsPayload({
       victim: buildenqueueCompressJobsVictim({ sourceType: "feedback" }),
@@ -494,7 +494,7 @@ Deno.test("enqueueCompressJobs: history victim with sourceId and role succeeds a
       constructStoragePath: constructStoragePathSpy,
     });
     const params = buildenqueueCompressJobsParams({ dbClient });
-    const parentJobPayload = buildDialecticCompressJobPayload();
+    const parentJobPayload = buildDialecticExecuteJobPayload();
     if (!isJson(parentJobPayload)) throw new Error("test payload must be Json");
     const payload = buildenqueueCompressJobsPayload({
       victim: buildenqueueCompressJobsVictim({ sourceType: "history", sourceId: "history-1", role: "assistant" }),
@@ -651,7 +651,7 @@ Deno.test("enqueueCompressJobs: chunked history victim carries role and model_sl
       textSplitter: { splitText },
     });
     const params = buildenqueueCompressJobsParams({ dbClient });
-    const parentJobPayload = buildDialecticCompressJobPayload();
+    const parentJobPayload = buildDialecticExecuteJobPayload();
     if (!isJson(parentJobPayload)) throw new Error("test payload must be Json");
     const payload = buildenqueueCompressJobsPayload({
       victim: buildenqueueCompressJobsVictim({ mode: "text", content: "some content that is over budget", sourceType: "history", sourceId: "history-1", role: "assistant" }),
@@ -706,7 +706,7 @@ Deno.test("enqueueCompressJobs: inserted payload model_slug carries parentJob.pa
     const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
     const deps = buildenqueueCompressJobsDeps();
     const params = buildenqueueCompressJobsParams({ dbClient });
-    const parentJobPayload = buildDialecticCompressJobPayload({
+    const parentJobPayload = buildDialecticExecuteJobPayload({
       model_slug: "distinct-model-slug",
       model_id: "distinct-model-id",
     });
@@ -764,7 +764,7 @@ Deno.test("enqueueCompressJobs: inserted child payload carries user_jwt from par
     const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
     const deps = buildenqueueCompressJobsDeps();
     const params = buildenqueueCompressJobsParams({ dbClient });
-    const parentJobPayload = buildDialecticCompressJobPayload();
+    const parentJobPayload = buildDialecticExecuteJobPayload();
     if (!isJson(parentJobPayload)) throw new Error("test payload must be Json");
     const payload = buildenqueueCompressJobsPayload({
       parentJob: buildDialecticJobRow({
@@ -817,7 +817,7 @@ Deno.test("enqueueCompressJobs: child payload idempotencyKey equals row idempote
     const dbClientSingle = mockSetupSingle.client as unknown as SupabaseClient<Database>;
     const depsSingle = buildenqueueCompressJobsDeps();
     const paramsSingle = buildenqueueCompressJobsParams({ dbClient: dbClientSingle });
-    const parentJobPayloadSingle = buildDialecticCompressJobPayload();
+    const parentJobPayloadSingle = buildDialecticExecuteJobPayload();
     if (!isJson(parentJobPayloadSingle)) throw new Error("test payload must be Json");
     const payloadSingle = buildenqueueCompressJobsPayload({
       parentJob: buildDialecticJobRow({ payload: parentJobPayloadSingle }),
@@ -857,7 +857,7 @@ Deno.test("enqueueCompressJobs: child payload idempotencyKey equals row idempote
       textSplitter: { splitText },
     });
     const paramsChunked = buildenqueueCompressJobsParams({ dbClient: dbClientChunked });
-    const parentJobPayloadChunked = buildDialecticCompressJobPayload();
+    const parentJobPayloadChunked = buildDialecticExecuteJobPayload();
     if (!isJson(parentJobPayloadChunked)) throw new Error("test payload must be Json");
     const payloadChunked = buildenqueueCompressJobsPayload({
       victim: buildenqueueCompressJobsVictim({ mode: "json", content: "some content that is over budget", sourceType: "contribution" }),
@@ -901,7 +901,7 @@ Deno.test("enqueueCompressJobs: child payload carries neither job_type nor user_
     const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
     const deps = buildenqueueCompressJobsDeps();
     const params = buildenqueueCompressJobsParams({ dbClient });
-    const parentJobPayload = buildDialecticCompressJobPayload();
+    const parentJobPayload = buildDialecticExecuteJobPayload();
     if (!isJson(parentJobPayload)) throw new Error("test payload must be Json");
     const payload = buildenqueueCompressJobsPayload({
       parentJob: buildDialecticJobRow({ payload: parentJobPayload }),
@@ -933,5 +933,55 @@ Deno.test("enqueueCompressJobs: child payload carries neither job_type nor user_
     assertEquals("user_id" in firstRow.payload, false);
     assertEquals(firstRow.job_type, "COMPRESS");
     assertEquals(firstRow.user_id, payload.parentJob.user_id);
+  },
+);
+
+Deno.test("enqueueCompressJobs: EXECUTE parent job payload is accepted and inserts a COMPRESS row",
+  async () => {
+    // Contract: in production the parent job of a compression flow is always an
+    //   EXECUTE job (COMPRESS jobs cannot be compressed — recursion guard at
+    //   prepareModelJob.ts:233-236). enqueueCompressJobs reads only base +
+    //   EXECUTE-shared fields from parentJobPayload (sessionId, projectId,
+    //   stageSlug, output_type, iterationNumber, model_id, model_slug, walletId,
+    //   user_jwt); COMPRESS-specific fields (mode, content, sourceType) come from
+    //   the victim, not the parent payload. The parent payload must therefore be
+    //   guarded as DialecticExecuteJobPayload, not DialecticCompressJobPayload.
+    // Arrange: parent job carries a DialecticExecuteJobPayload (no `mode` field);
+    //   victim and modelConfig are the builder defaults; DB mock allows insert.
+    // Act:     enqueueCompressJobs(deps, params, payload).
+    // Assert:  result is the success arm with createdCount 1; one insert call.
+    const mockSetup = createMockSupabaseClient("user-1", {
+      genericMockResults: {
+        dialectic_project_resources: {
+          select: { data: [], error: null },
+        },
+        dialectic_generation_jobs: {
+          insert: { data: [], error: null },
+        },
+      },
+    });
+    const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
+    const deps = buildenqueueCompressJobsDeps();
+    const params = buildenqueueCompressJobsParams({ dbClient });
+    const executePayload = buildDialecticExecuteJobPayload();
+    if (!isJson(executePayload)) throw new Error("test payload must be Json");
+    const payload = buildenqueueCompressJobsPayload({
+      parentJob: buildDialecticJobRow({ payload: executePayload }),
+    });
+
+    const result = await enqueueCompressJobs(deps, params, payload);
+
+    assertEquals("error" in result, false);
+    assertEquals("createdCount" in result, true);
+    if ("createdCount" in result) {
+      assertEquals(result.createdCount, 1);
+    }
+
+    const insertCalls = mockSetup.spies.getHistoricQueryBuilderSpies(
+      "dialectic_generation_jobs",
+      "insert",
+    );
+    assertExists(insertCalls);
+    assertEquals(insertCalls.callCount, 1);
   },
 );

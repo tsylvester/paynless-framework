@@ -2,10 +2,8 @@ import type { SupabaseClient } from 'npm:@supabase/supabase-js@2';
 import type { Database, Tables } from '../../types_db.ts';
 import type { ILogger } from '../../_shared/types.ts';
 import type { IUserTokenWalletService } from '../../_shared/services/tokenwallet/client/userTokenWalletService.interface.ts';
-import type { ICompressionStrategy } from '../../_shared/utils/vector_utils.interface.ts';
 import type {
   DialecticJobRow,
-  DialecticSessionRow,
   InputRule,
   PromptConstructionPayload,
   RelevanceRule,
@@ -17,6 +15,7 @@ import type {
 } from '../createJobContext/JobContext.interface.ts';
 import type { BoundCalculateAffordabilityFn } from '../calculateAffordability/calculateAffordability.interface.ts';
 import type { BoundEnqueueModelCallFn } from '../enqueueModelCall/enqueueModelCall.interface.ts';
+import type { BoundCompressPromptFn } from '../compressPrompt/compressPrompt.provides.ts';
 
 export interface PrepareModelJobDeps {
   logger: ILogger;
@@ -26,27 +25,32 @@ export interface PrepareModelJobDeps {
   validateModelCostRates: ValidateModelCostRatesFn;
   calculateAffordability: BoundCalculateAffordabilityFn;
   enqueueModelCall: BoundEnqueueModelCallFn;
+  compressPrompt: BoundCompressPromptFn;
 }
 
 export interface PrepareModelJobParams {
   dbClient: SupabaseClient<Database>;
-  authToken: string;
-  job: DialecticJobRow;
-  projectOwnerUserId: string;
-  providerRow: Tables<'ai_providers'>;
-  sessionData: DialecticSessionRow;
 }
 
 export interface PrepareModelJobPayload {
+  job: DialecticJobRow;
+  providerRow: Tables<'ai_providers'>;
   promptConstructionPayload: PromptConstructionPayload;
-  compressionStrategy: ICompressionStrategy;
   inputsRelevance?: RelevanceRule[];
   inputsRequired?: InputRule[];
 }
 
-export type PrepareModelJobSuccessReturn = {
+export type PrepareModelJobQueuedReturn = {
   queued: true;
 };
+
+export type PrepareModelJobPendingReturn = {
+  waiting_for_children: true;
+};
+
+export type PrepareModelJobSuccessReturn =
+  | PrepareModelJobQueuedReturn
+  | PrepareModelJobPendingReturn;
 
 export type PrepareModelJobErrorReturn = {
   error: Error;
@@ -59,6 +63,11 @@ export type PrepareModelJobReturn =
 
 export type PrepareModelJobFn = (
   deps: PrepareModelJobDeps,
+  params: PrepareModelJobParams,
+  payload: PrepareModelJobPayload,
+) => Promise<PrepareModelJobReturn>;
+
+export type BoundPrepareModelJobFn = (
   params: PrepareModelJobParams,
   payload: PrepareModelJobPayload,
 ) => Promise<PrepareModelJobReturn>;

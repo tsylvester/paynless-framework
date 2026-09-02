@@ -1,5 +1,4 @@
 import { assert, assertEquals, assertExists } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { stub } from "https://deno.land/std@0.224.0/testing/mock.ts";
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { getEncoding } from "npm:js-tiktoken@1.0.7";
 import { countTokens as countTokensAnthropicLib } from "npm:@anthropic-ai/tokenizer@0.0.4";
@@ -11,42 +10,33 @@ import { createMockSupabaseClient, type MockQueryBuilderState } from "../../_sha
 import { FileType, DialecticStageSlug } from "../../_shared/types/file_manager.types.ts";
 import type { CompressionSourceType, ModelContributionFileTypes, IFileManager } from "../../_shared/types/file_manager.types.ts";
 import { isRecord } from "../../_shared/utils/type_guards.ts";
-import { isChatApiRequest, isKnownTiktokenEncoding } from "../../_shared/utils/type-guards/type_guards.chat.ts";
+import { isKnownTiktokenEncoding } from "../../_shared/utils/type-guards/type_guards.chat.ts";
 import { renderPrompt } from "../../_shared/prompt-renderer.ts";
 import { countTokens } from "../../_shared/utils/tokenizer_utils.ts";
 import { constructStoragePath, sanitizeForPath } from "../../_shared/utils/path_constructor.ts";
 import { enqueueCompressJobs } from "../enqueueCompressJobs/enqueueCompressJobs.ts";
 import { isDialecticCompressJobPayload } from "../enqueueCompressJobs/enqueueCompressJobs.guard.ts";
 import type { DialecticCompressJobPayload } from "../enqueueCompressJobs/enqueueCompressJobs.interface.ts";
+import { buildDialecticCompressJobPayload } from "../enqueueCompressJobs/enqueueCompressJobs.mock.ts";
+import type { DialecticJobRow } from "../../dialectic-service/dialectic.interface.ts";
 import { assembleCompressionPrompt } from "../../_shared/prompt-assembler/assembleCompressionPrompt/assembleCompressionPrompt.ts";
 import { assembleContinuationPrompt, MOCK_CONTINUATION_INSTRUCTION_INCOMPLETE_JSON } from "../../_shared/prompt-assembler/assembleContinuationPrompt/assembleContinuationPrompt.ts";
-import { enqueueModelCall } from "../enqueueModelCall/enqueueModelCall.ts";
 import { processCompressJob } from "./processCompressJob.ts";
-import {
-  createMockJobRow,
-} from "../saveResponse/saveResponse.mock.ts";
 import {
   buildenqueueCompressJobsDeps,
   buildenqueueCompressJobsParams,
 } from "../enqueueCompressJobs/enqueueCompressJobs.mock.ts";
 import {
-  buildProcessCompressJobDeps,
   buildProcessCompressJobParams,
 } from "./processCompressJob.mock.ts";
 import {
+  buildDialecticJobRow,
   buildDialecticStageRecipeStep,
   buildDialecticRecipeTemplateStep,
   buildOutputRule,
   buildStageWithRecipeSteps,
 } from "../../_shared/dialectic.mock.ts";
-import { createComputeJobSig } from "../../_shared/utils/computeJobSig/computeJobSig.ts";
 import { MOCK_MODEL_CONFIG } from "../../_shared/_integration.test.utils.ts";
-import type {
-  EnqueueModelCallDeps,
-  EnqueueModelCallParams,
-  EnqueueModelCallPayload,
-  BoundEnqueueModelCallFn,
-} from "../enqueueModelCall/enqueueModelCall.interface.ts";
 import type {
   AssembleCompressionPromptDeps,
   BoundAssembleCompressionPromptFn,
@@ -58,24 +48,23 @@ import type {
 import type {
   ProcessCompressJobDeps,
 } from "./processCompressJob.interface.ts";
+import type {
+  PrepareModelJobParams,
+  PrepareModelJobPayload,
+  BoundPrepareModelJobFn,
+} from "../prepareModelJob/prepareModelJob.interface.ts";
 import { isModelContributionFileType } from "../../_shared/utils/type-guards/type_guards.file_manager.ts";
 import { isJson } from "../../_shared/utils/type-guards/type_guards.common.ts";
 import { createMockFileManagerService, buildFileRecord } from "../../_shared/services/file_manager.mock.ts";
 import type { DownloadStorageResult } from "../../_shared/supabase_storage_utils.ts";
 
-const computeJobSig = await createComputeJobSig("integration-secret");
-
 const PROVIDER_MAX_INPUT_TOKENS = 1000;
-const PROVIDER_MAX_OUTPUT_TOKENS = 100;
 const TOKEN_BUDGET = PROVIDER_MAX_INPUT_TOKENS - 500 - 32;
-
-const NETLIFY_QUEUE_URL = "https://integration.netlify/.netlify/functions/async-workloads-router";
-const NETLIFY_API_KEY = "integration-awl-api-key";
 
 const realModelConfig: AiModelExtendedConfig = {
   ...MOCK_MODEL_CONFIG,
   provider_max_input_tokens: PROVIDER_MAX_INPUT_TOKENS,
-  provider_max_output_tokens: PROVIDER_MAX_OUTPUT_TOKENS,
+  provider_max_output_tokens: 100,
   tokenization_strategy: {
     type: "tiktoken",
     tiktoken_encoding_name: "cl100k_base",
@@ -183,9 +172,9 @@ function buildIntegrationProcessDeps(
   },
 ): {
   deps: ProcessCompressJobDeps;
-  enqueueCalls: { params: EnqueueModelCallParams; payload: EnqueueModelCallPayload }[];
+  dispatchCalls: { params: PrepareModelJobParams; payload: PrepareModelJobPayload }[];
 } {
-  const enqueueCalls: { params: EnqueueModelCallParams; payload: EnqueueModelCallPayload }[] = [];
+  const dispatchCalls: { params: PrepareModelJobParams; payload: PrepareModelJobPayload }[] = [];
 
   const compressionFileManager = createMockFileManagerService();
   compressionFileManager.setUploadAndRegisterFileResponse(buildFileRecord({ id: "compression-prompt-resource-id" }), null);
@@ -214,28 +203,20 @@ function buildIntegrationProcessDeps(
     return assembleContinuationPrompt(fullDeps);
   };
 
-  const enqueueModelCallDeps: EnqueueModelCallDeps = {
-    logger: new MockLogger(),
-    computeJobSig,
-    netlifyQueueUrl: NETLIFY_QUEUE_URL,
-    netlifyApiKey: NETLIFY_API_KEY,
-    apiKeyForProvider: (_apiIdentifier: string) => "integration-provider-api-key",
-  };
-  const boundEnqueue: BoundEnqueueModelCallFn = async (params, payload) => {
-    enqueueCalls.push({ params, payload });
-    return enqueueModelCall(enqueueModelCallDeps, params, payload);
+  const boundPrepareModelJob: BoundPrepareModelJobFn = async (params, payload) => {
+    dispatchCalls.push({ params, payload });
+    return { queued: true };
   };
 
-  const deps = buildProcessCompressJobDeps({
+  const deps: ProcessCompressJobDeps = {
     assembleCompressionPrompt: boundAssemble,
     assembleContinuationPrompt: boundContinuation,
-    enqueueModelCall: boundEnqueue,
-    countTokens,
-    getEncoding: tokenizerDeps.getEncoding,
-    countTokensAnthropic: tokenizerDeps.countTokensAnthropic,
-  });
+    prepareModelJob: boundPrepareModelJob,
+    constructStoragePath,
+    logger: new MockLogger(),
+  };
 
-  return { deps, enqueueCalls };
+  return { deps, dispatchCalls };
 }
 
 function buildMockSupabaseForFullChain(
@@ -320,9 +301,9 @@ async function runSpawnProcessSeam(
   enqueueResult: Awaited<ReturnType<typeof enqueueCompressJobs>>;
   capturedPayload: DialecticCompressJobPayload;
   processResult: Awaited<ReturnType<typeof processCompressJob>>;
-  capturedEnqueuePayload: EnqueueModelCallPayload;
-  capturedEnqueueParams: EnqueueModelCallParams;
-  processJob: ReturnType<typeof createMockJobRow>;
+  capturedDispatchPayload: PrepareModelJobPayload;
+  capturedDispatchParams: PrepareModelJobParams;
+  processJob: DialecticJobRow;
 }> {
 
   if(!isModelContributionFileType(output_type))
@@ -331,18 +312,22 @@ async function runSpawnProcessSeam(
   }
   const { continuation_count, ...victimForEnqueue } = victimPayload;
   const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
-  const enqueueParams = buildenqueueCompressJobsParams({
-    dbClient,
-    sessionId: "session-abc",
-    projectId: "project-xyz",
-    modelConfig: realModelConfig,
-    tokenizerDeps,
-    output_type,
+
+  const parentPayload = buildDialecticCompressJobPayload({ output_type });
+  if (!isJson(parentPayload)) {
+    throw new Error("Test setup failed: parent payload is not Json-compatible.");
+  }
+  const parentJob = buildDialecticJobRow({
+    job_type: "EXECUTE",
+    payload: parentPayload,
+    session_id: "session-abc",
   });
+
+  const enqueueParams = buildenqueueCompressJobsParams({ dbClient });
   const enqueueResult = await enqueueCompressJobs(
     buildenqueueCompressJobsDeps({ countTokens }),
     enqueueParams,
-    { victim: victimForEnqueue },
+    { victim: victimForEnqueue, parentJob, modelConfig: realModelConfig },
   );
 
   assert("createdCount" in enqueueResult, "enqueueCompressJobs returned an error");
@@ -366,46 +351,35 @@ async function runSpawnProcessSeam(
     ? { ...basePayload, continuation_count }
     : basePayload;
 
-  const processJob = createMockJobRow(
-    capturedPayload,
-    {
-      id: "compress-job-1",
-      created_at: "2024-01-01T00:00:00.000Z",
-      job_type: "COMPRESS",
-      status: "pending",
-    },
-  );
-  const processParams = buildProcessCompressJobParams({
-    dbClient,
-    job: processJob,
-    projectOwnerUserId: "owner-1",
-    authToken: "auth-token-1",
-  });
-
-  const { deps, enqueueCalls } = buildIntegrationProcessDeps(dbClient, continuationDeps);
-
-  const fetchStub = stub(globalThis, "fetch", () =>
-    Promise.resolve(new Response("{}", { status: 200 }))
-  );
-
-  try {
-    const processResult = await processCompressJob(deps, processParams, capturedPayload);
-
-    assertEquals(enqueueCalls.length, 1);
-    const capturedEnqueuePayload = enqueueCalls[0].payload;
-    const capturedEnqueueParams = enqueueCalls[0].params;
-
-    return {
-      enqueueResult,
-      capturedPayload,
-      processResult,
-      capturedEnqueuePayload,
-      capturedEnqueueParams,
-      processJob,
-    };
-  } finally {
-    fetchStub.restore();
+  if (!isJson(capturedPayload)) {
+    throw new Error("Test setup failed: captured payload is not Json-compatible.");
   }
+  const processJob = buildDialecticJobRow({
+    id: "compress-job-1",
+    created_at: "2024-01-01T00:00:00.000Z",
+    job_type: "COMPRESS",
+    status: "pending",
+    payload: capturedPayload,
+    session_id: "session-abc",
+  });
+  const processParams = buildProcessCompressJobParams({ dbClient });
+
+  const { deps, dispatchCalls } = buildIntegrationProcessDeps(dbClient, continuationDeps);
+
+  const processResult = await processCompressJob(deps, processParams, { job: processJob });
+
+  assertEquals(dispatchCalls.length, 1);
+  const capturedDispatchPayload = dispatchCalls[0].payload;
+  const capturedDispatchParams = dispatchCalls[0].params;
+
+  return {
+    enqueueResult,
+    capturedPayload,
+    processResult,
+    capturedDispatchPayload,
+    capturedDispatchParams,
+    processJob,
+  };
 }
 
 Deno.test("processCompressJob integration: spawn->process seam with a real json victim under budget", async () => {
@@ -417,9 +391,8 @@ Deno.test("processCompressJob integration: spawn->process seam with a real json 
 
   const {
     processResult,
-    capturedPayload,
-    capturedEnqueuePayload,
-    capturedEnqueueParams,
+    capturedDispatchPayload,
+    capturedDispatchParams,
     processJob,
   } = await runSpawnProcessSeam(mockSetup, {
     mode: "json",
@@ -432,7 +405,7 @@ Deno.test("processCompressJob integration: spawn->process seam with a real json 
 
   assert("queued" in processResult && processResult.queued === true, "expected queued=true");
 
-  const prompt = capturedEnqueuePayload.chatApiRequest.message;
+  const prompt = capturedDispatchPayload.promptConstructionPayload.currentUserPrompt;
   assert(prompt.includes(victimContent), "prompt should contain the victim content");
   const filesToGenerate = [{ from_document_key: "business_case", template_filename: "business_case.md" }];
   assert(
@@ -442,50 +415,17 @@ Deno.test("processCompressJob integration: spawn->process seam with a real json 
   assert(prompt.includes("Return EXACTLY the same JSON structure"), "json_mode instruction present");
   assert(!prompt.includes("Return ONLY the compressed document text"), "text_mode instruction absent");
 
-  assertEquals(capturedEnqueueParams.output_type, FileType.CompressedContextRawJson);
-  assert(capturedEnqueueParams.job === processJob, "captured job should be reference-equal to fed job");
-
-  const independentlyCounted = countTokens(
-    tokenizerDeps,
-    { message: prompt },
-    realModelConfig,
+  assertEquals(Object.keys(capturedDispatchParams).length, 1, "dispatch params should have only dbClient");
+  assert("dbClient" in capturedDispatchParams, "dispatch params should have dbClient");
+  assert(capturedDispatchPayload.job === processJob, "captured job should be reference-equal to fed job");
+  assertEquals(capturedDispatchPayload.providerRow, baseProviderRow, "captured providerRow should be the ai_providers row");
+  assertEquals(capturedDispatchPayload.promptConstructionPayload.conversationHistory, [], "conversationHistory should be empty");
+  assertEquals(capturedDispatchPayload.promptConstructionPayload.resourceDocuments, [], "resourceDocuments should be empty");
+  assert(
+    typeof capturedDispatchPayload.promptConstructionPayload.source_prompt_resource_id === "string"
+      && capturedDispatchPayload.promptConstructionPayload.source_prompt_resource_id.length > 0,
+    "source_prompt_resource_id should be a non-empty string",
   );
-  assertEquals(capturedEnqueuePayload.preflightInputTokens, independentlyCounted);
-
-  const fetchStub = stub(globalThis, "fetch", () =>
-    Promise.resolve(new Response("{}", { status: 200 }))
-  );
-
-  try {
-    await enqueueModelCall(
-      {
-        logger: new MockLogger(),
-        computeJobSig,
-        netlifyQueueUrl: NETLIFY_QUEUE_URL,
-        netlifyApiKey: NETLIFY_API_KEY,
-        apiKeyForProvider: () => "integration-provider-api-key",
-      },
-      capturedEnqueueParams,
-      capturedEnqueuePayload,
-    );
-
-    assertEquals(fetchStub.calls.length, 1);
-    const [, init] = fetchStub.calls[0].args;
-    assert(isRecord(init) && typeof init.body === "string");
-    const posted = JSON.parse(init.body);
-    assert(isRecord(posted));
-    assertEquals(posted.eventName, "ai-stream-background");
-    assert(isRecord(posted.data));
-    const postedData = posted.data;
-    const chatApiRequest = postedData.chat_api_request;
-    if(!isChatApiRequest(chatApiRequest)){
-      throw new Error("")
-    }
-    assert(typeof chatApiRequest.message === "string");
-    assertEquals(chatApiRequest.message, prompt);
-  } finally {
-    fetchStub.restore();
-  }
 });
 
 Deno.test("processCompressJob integration: dedup coherence across layers", async () => {
@@ -529,16 +469,19 @@ Deno.test("processCompressJob integration: dedup coherence across layers", async
   });
   const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
 
+  const parentPayload = buildDialecticCompressJobPayload({ output_type: FileType.business_case });
+  if (!isJson(parentPayload)) {
+    throw new Error("Test setup failed: parent payload is not Json-compatible.");
+  }
+  const parentJob = buildDialecticJobRow({
+    job_type: "EXECUTE",
+    payload: parentPayload,
+    session_id: "session-abc",
+  });
+
   const enqueueResult = await enqueueCompressJobs(
     buildenqueueCompressJobsDeps({ countTokens }),
-    buildenqueueCompressJobsParams({
-      dbClient,
-      sessionId: "session-abc",
-      projectId: "project-xyz",
-      modelConfig: realModelConfig,
-      tokenizerDeps,
-      output_type: FileType.business_case,
-    }),
+    buildenqueueCompressJobsParams({ dbClient }),
     {
       victim: {
         mode: "text",
@@ -546,6 +489,8 @@ Deno.test("processCompressJob integration: dedup coherence across layers", async
         sourceType: "contribution",
         documentKey: FileType.business_case,
       },
+      parentJob,
+      modelConfig: realModelConfig,
     },
   );
 
@@ -560,42 +505,30 @@ Deno.test("processCompressJob integration: dedup coherence across layers", async
   assertEquals(insertCalls.callCount, 0);
 
   const dedupPayload: DialecticCompressJobPayload = {
-    job_type: "COMPRESS",
-    sessionId: "session-abc",
-    projectId: "project-xyz",
-    stageSlug: DialecticStageSlug.Thesis,
-    output_type: FileType.business_case,
-    iterationNumber: 1,
-    model_id: "model-1",
+    ...buildDialecticCompressJobPayload({ output_type: FileType.business_case }),
     mode: "text",
     content: "compress me",
     sourceType: "contribution",
     documentKey: FileType.business_case,
-    walletId: "wallet-1",
-    user_id: "user-789",
-    model_slug: "some-model"
   };
-  const dedupJob = createMockJobRow(
-    dedupPayload,
-    {
-      id: "dedup-job-1",
-      created_at: "2024-01-01T00:00:00.000Z",
-      job_type: "COMPRESS",
-      status: "pending",
-    },
-  );
-  const processParams = buildProcessCompressJobParams({
-    dbClient,
-    job: dedupJob,
-    projectOwnerUserId: "owner-1",
-    authToken: "auth-token-1",
+  if (!isJson(dedupPayload)) {
+    throw new Error("Test setup failed: dedup payload is not Json-compatible.");
+  }
+  const dedupJob = buildDialecticJobRow({
+    id: "dedup-job-1",
+    created_at: "2024-01-01T00:00:00.000Z",
+    job_type: "COMPRESS",
+    status: "pending",
+    payload: dedupPayload,
+    session_id: "session-abc",
   });
-  const { deps, enqueueCalls } = buildIntegrationProcessDeps(dbClient);
+  const processParams = buildProcessCompressJobParams({ dbClient });
+  const { deps, dispatchCalls } = buildIntegrationProcessDeps(dbClient);
 
-  const processResult = await processCompressJob(deps, processParams, dedupPayload);
+  const processResult = await processCompressJob(deps, processParams, { job: dedupJob });
 
   assert("queued" in processResult && processResult.queued === false, "expected queued=false");
-  assertEquals(enqueueCalls.length, 0, "should not call enqueueModelCall when dedup hits");
+  assertEquals(dispatchCalls.length, 0, "should not call prepareModelJob when dedup hits");
 
   const updateCalls = mockSetup.spies.getHistoricQueryBuilderSpies(
     "dialectic_generation_jobs",
@@ -613,16 +546,20 @@ Deno.test("processCompressJob integration: chunked seam produces text chunks and
   );
 
   const dbClient = mockSetup.client as unknown as SupabaseClient<Database>;
+
+  const parentPayload = buildDialecticCompressJobPayload({ output_type: FileType.business_case });
+  if (!isJson(parentPayload)) {
+    throw new Error("Test setup failed: parent payload is not Json-compatible.");
+  }
+  const parentJob = buildDialecticJobRow({
+    job_type: "EXECUTE",
+    payload: parentPayload,
+    session_id: "session-abc",
+  });
+
   const enqueueResult = await enqueueCompressJobs(
     buildenqueueCompressJobsDeps({ countTokens }),
-    buildenqueueCompressJobsParams({
-      dbClient,
-      sessionId: "session-abc",
-      projectId: "project-xyz",
-      modelConfig: realModelConfig,
-      tokenizerDeps,
-      output_type: FileType.business_case,
-    }),
+    buildenqueueCompressJobsParams({ dbClient }),
     {
       victim: {
         mode: "json",
@@ -632,6 +569,8 @@ Deno.test("processCompressJob integration: chunked seam produces text chunks and
         docType: FileType.business_case,
         sourceStageSlug: DialecticStageSlug.Thesis,
       },
+      parentJob,
+      modelConfig: realModelConfig,
     },
   );
 
@@ -656,51 +595,33 @@ Deno.test("processCompressJob integration: chunked seam produces text chunks and
   assert(typeof chunkPayload.chunk_total === "number");
   assertEquals(chunkPayload.mode, "text", "chunk payload must be forced to text mode");
 
-  const chunkJob = createMockJobRow(
-    chunkPayload,
-    {
-      id: "chunk-job-1",
-      created_at: "2024-01-01T00:00:00.000Z",
-      job_type: "COMPRESS",
-      status: "pending",
-    },
-  );
-  const processParams = buildProcessCompressJobParams({
-    dbClient,
-    job: chunkJob,
-    projectOwnerUserId: "owner-1",
-    authToken: "auth-token-1",
-  });
-
-  const { deps, enqueueCalls } = buildIntegrationProcessDeps(dbClient);
-  const fetchStub = stub(globalThis, "fetch", () =>
-    Promise.resolve(new Response("{}", { status: 200 }))
-  );
-  let processResult;
-  try {
-    processResult = await processCompressJob(deps, processParams, chunkPayload);
-  } finally {
-    fetchStub.restore();
+  if (!isJson(chunkPayload)) {
+    throw new Error("Test setup failed: chunk payload is not Json-compatible.");
   }
+  const chunkJob = buildDialecticJobRow({
+    id: "chunk-job-1",
+    created_at: "2024-01-01T00:00:00.000Z",
+    job_type: "COMPRESS",
+    status: "pending",
+    payload: chunkPayload,
+    session_id: "session-abc",
+  });
+  const processParams = buildProcessCompressJobParams({ dbClient });
+
+  const { deps, dispatchCalls } = buildIntegrationProcessDeps(dbClient);
+  const processResult = await processCompressJob(deps, processParams, { job: chunkJob });
 
   assert("queued" in processResult && processResult.queued === true, "expected chunk to queue");
-  assertEquals(enqueueCalls.length, 1);
+  assertEquals(dispatchCalls.length, 1);
 
-  const capturedEnqueuePayload = enqueueCalls[0].payload;
-  const prompt = capturedEnqueuePayload.chatApiRequest.message;
+  const capturedDispatchPayload = dispatchCalls[0].payload;
+  const prompt = capturedDispatchPayload.promptConstructionPayload.currentUserPrompt;
   assert(prompt.includes(chunkPayload.content), "chunk prompt should contain chunk content");
   assert(
     prompt.includes(`The source is chunk ${chunkPayload.chunk_index} of ${chunkPayload.chunk_total}`),
     "chunk prompt should contain substituted chunk_context text",
   );
   assert(!prompt.includes("Return EXACTLY the same JSON structure"), "json_mode instruction absent in text chunk");
-
-  const independentlyCounted = countTokens(
-    tokenizerDeps,
-    { message: prompt },
-    realModelConfig,
-  );
-  assertEquals(capturedEnqueuePayload.preflightInputTokens, independentlyCounted);
 });
 
 Deno.test("processCompressJob integration: is_cloned=true branch runs spawn->process->POST using stage recipe steps", async () => {
@@ -711,8 +632,8 @@ Deno.test("processCompressJob integration: is_cloned=true branch runs spawn->pro
 
   const {
     processResult,
-    capturedEnqueuePayload,
-    capturedEnqueueParams,
+    capturedDispatchPayload,
+    capturedDispatchParams,
     processJob,
   } = await runSpawnProcessSeam(
     mockSetup,
@@ -726,10 +647,10 @@ Deno.test("processCompressJob integration: is_cloned=true branch runs spawn->pro
   );
 
   assert("queued" in processResult && processResult.queued === true, "expected queued=true");
-  assertEquals(capturedEnqueueParams.output_type, FileType.CompressedContextRawJson);
-  assert(capturedEnqueueParams.job === processJob);
+  assertEquals(Object.keys(capturedDispatchParams).length, 1, "dispatch params should have only dbClient");
+  assert(capturedDispatchPayload.job === processJob);
 
-  const prompt = capturedEnqueuePayload.chatApiRequest.message;
+  const prompt = capturedDispatchPayload.promptConstructionPayload.currentUserPrompt;
   const filesToGenerate = [{ from_document_key: "business_case", template_filename: "business_case.md" }];
   assert(prompt.includes(JSON.stringify(filesToGenerate)), "prompt should contain stringified files_to_generate");
   assert(
@@ -746,8 +667,8 @@ Deno.test("processCompressJob integration: is_cloned=false branch runs spawn->pr
 
   const {
     processResult,
-    capturedEnqueuePayload,
-    capturedEnqueueParams,
+    capturedDispatchPayload,
+    capturedDispatchParams,
     processJob,
   } = await runSpawnProcessSeam(
     mockSetup,
@@ -761,10 +682,10 @@ Deno.test("processCompressJob integration: is_cloned=false branch runs spawn->pr
   );
 
   assert("queued" in processResult && processResult.queued === true, "expected queued=true");
-  assertEquals(capturedEnqueueParams.output_type, FileType.CompressedContextRawJson);
-  assert(capturedEnqueueParams.job === processJob);
+  assertEquals(Object.keys(capturedDispatchParams).length, 1, "dispatch params should have only dbClient");
+  assert(capturedDispatchPayload.job === processJob);
 
-  const prompt = capturedEnqueuePayload.chatApiRequest.message;
+  const prompt = capturedDispatchPayload.promptConstructionPayload.currentUserPrompt;
   const filesToGenerate = [{ from_document_key: "business_case", template_filename: "business_case.md" }];
   assert(prompt.includes(JSON.stringify(filesToGenerate)), "prompt should contain stringified files_to_generate");
   assert(
@@ -781,8 +702,7 @@ Deno.test("processCompressJob integration: history victim runs end to end throug
 
   const {
     processResult,
-    capturedEnqueueParams,
-    capturedEnqueuePayload,
+    capturedDispatchPayload,
   } = await runSpawnProcessSeam(
     mockSetup,
     {
@@ -796,13 +716,12 @@ Deno.test("processCompressJob integration: history victim runs end to end throug
   );
 
   assert("queued" in processResult && processResult.queued === true, "expected queued=true");
-  assertEquals(capturedEnqueueParams.output_type, FileType.CompressedContextRawJson);
 
-  const prompt = capturedEnqueuePayload.chatApiRequest.message;
+  const prompt = capturedDispatchPayload.promptConstructionPayload.currentUserPrompt;
   assert(prompt.includes("history content to compress"), "prompt should contain the victim content");
 });
 
-Deno.test("processCompressJob integration: continuation victim reaches enqueue with continuation assembler prompt and CompressedContextRawJson output_type", async () => {
+Deno.test("processCompressJob integration: continuation victim reaches the continuation assembler and dispatches with the continuation prompt", async () => {
   const firstPassPromptText = "You are compressing a source. Source: compress me";
   const partialResponseText = '{"product": "widget", "price":';
 
@@ -895,8 +814,7 @@ Deno.test("processCompressJob integration: continuation victim reaches enqueue w
 
   const {
     processResult,
-    capturedEnqueueParams,
-    capturedEnqueuePayload,
+    capturedDispatchPayload,
   } = await runSpawnProcessSeam(
     mockSetup,
     {
@@ -913,9 +831,8 @@ Deno.test("processCompressJob integration: continuation victim reaches enqueue w
   );
 
   assert("queued" in processResult && processResult.queued === true, "expected queued=true");
-  assertEquals(capturedEnqueueParams.output_type, FileType.CompressedContextRawJson);
 
-  const prompt = capturedEnqueuePayload.chatApiRequest.message;
+  const prompt = capturedDispatchPayload.promptConstructionPayload.currentUserPrompt;
   assert(prompt.includes(MOCK_CONTINUATION_INSTRUCTION_INCOMPLETE_JSON), "prompt should contain the continuation instruction");
   assert(prompt.includes(partialResponseText), "prompt should contain the partial response");
 });

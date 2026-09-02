@@ -3,18 +3,21 @@
 import {
     IJobContext,
     JobContextParams,
-    IPrepareModelJobContext,
-    ISaveResponseContext,
     IPlanJobContext,
     IRenderJobContext,
 } from './JobContext.interface.ts';
 import { BoundEnqueueModelCallFn } from '../enqueueModelCall/enqueueModelCall.interface.ts';
-import { BoundEnqueueRenderJobFn } from '../enqueueRenderJob/enqueueRenderJob.interface.ts';
-import { BoundDebitTokens } from '../../_shared/utils/debitTokens.interface.ts';
-import { CompressPromptFn } from '../compressPrompt/compressPrompt.interface.ts';
 import { BoundCompressPromptFn } from '../compressPrompt/compressPrompt.interface.ts';
-import { CalculateAffordabilityFn } from '../calculateAffordability/calculateAffordability.interface.ts';
 import { BoundCalculateAffordabilityFn } from '../calculateAffordability/calculateAffordability.interface.ts';
+import { BoundPrepareModelJobFn, PrepareModelJobDeps } from '../prepareModelJob/prepareModelJob.interface.ts';
+import { BoundGatherArtifactsFn } from '../gatherArtifacts/gatherArtifacts.interface.ts';
+import { BoundRetryJobFn } from '../retryJob/retryJob.interface.ts';
+import { BoundApplyCompressionOverlayFn } from '../applyCompressionOverlay/applyCompressionOverlay.interface.ts';
+import { BoundenqueueCompressJobsFn } from '../enqueueCompressJobs/enqueueCompressJobs.interface.ts';
+import { BoundGetSortedCompressionCandidatesFn } from '../../_shared/utils/vector_utils/vector_utils.interface.ts';
+import { BoundCountTokensFn } from '../../_shared/types/tokenizer.types.ts';
+import { BoundResolveCompressionSourceFn } from '../../_shared/utils/resolveCompressionSource/resolveCompressionSource.interface.ts';
+
 /**
  * Factory function to construct IJobContext at application boundary.
  * All fields are required and must be explicitly provided.
@@ -23,7 +26,40 @@ import { BoundCalculateAffordabilityFn } from '../calculateAffordability/calcula
  * @returns Fully constructed IJobContext with all fields
  */
 export function createJobContext(params: JobContextParams): IJobContext {
-    return {
+    const boundCountTokens: BoundCountTokensFn = (payload, modelConfig) =>
+        params.countTokens(params.tokenizerDeps, payload, modelConfig);
+
+    const boundResolveCompressionSource: BoundResolveCompressionSourceFn = (p, pl) =>
+        params.resolveCompressionSource({ logger: params.logger }, p, pl);
+
+    const boundGetSortedCompressionCandidates: BoundGetSortedCompressionCandidatesFn = (p, pl) =>
+        params.getSortedCompressionCandidates({ logger: params.logger, countTokens: boundCountTokens, resolveCompressionSource: boundResolveCompressionSource }, p, pl);
+
+    const boundEnqueueCompressJobs: BoundenqueueCompressJobsFn = (p, pl) =>
+        params.enqueueCompressJobs({ logger: params.logger, textSplitter: params.textSplitter, countTokens: params.countTokens, constructStoragePath: params.constructStoragePath }, p, pl);
+
+    const boundCompressPrompt: BoundCompressPromptFn = (p, pl) =>
+        params.compressPrompt({ logger: params.logger, getSortedCompressionCandidates: boundGetSortedCompressionCandidates, enqueueCompressJobs: boundEnqueueCompressJobs, constructStoragePath: params.constructStoragePath, downloadFromStorage: params.downloadFromStorage, countTokens: params.countTokens, resolveCompressionSource: boundResolveCompressionSource }, p, pl);
+
+    const boundCalculateAffordability: BoundCalculateAffordabilityFn = (p, pl) =>
+        params.calculateAffordability({ logger: params.logger, countTokens: params.countTokens, getMaxOutputTokens: params.getMaxOutputTokens }, p, pl);
+
+    const boundEnqueueModelCall: BoundEnqueueModelCallFn = (p, pl) =>
+        params.enqueueModelCall({ logger: params.logger, netlifyQueueUrl: params.netlifyQueueUrl, netlifyApiKey: params.netlifyApiKey, apiKeyForProvider: params.apiKeyForProvider, computeJobSig: params.computeJobSig }, p, pl);
+
+    const boundApplyCompressionOverlay: BoundApplyCompressionOverlayFn = (p, pl) =>
+        params.applyCompressionOverlay({ logger: params.logger, downloadFromStorage: params.downloadFromStorage, resolveCompressionSource: boundResolveCompressionSource }, p, pl);
+
+    const boundGatherArtifacts: BoundGatherArtifactsFn = (p, pl) =>
+        params.gatherArtifacts({ logger: params.logger, pickLatest: params.pickLatest, downloadFromStorage: params.downloadFromStorage, applyCompressionOverlay: boundApplyCompressionOverlay }, p, pl);
+
+    const boundRetryJob: BoundRetryJobFn = (p, pl) =>
+        params.retryJob({ logger: params.logger, notificationService: params.notificationService }, p, pl);
+
+    const boundPrepareModelJob: BoundPrepareModelJobFn = (p, pl) =>
+        params.prepareModelJob(createPrepareModelJobContext(root), p, pl);
+
+    const root: IJobContext = {
         // From ILoggerContext
         logger: params.logger,
 
@@ -36,10 +72,6 @@ export function createJobContext(params: JobContextParams): IJobContext {
         getAiProviderAdapter: params.getAiProviderAdapter,
         getAiProviderConfig: params.getAiProviderConfig,
 
-        // From IRagContext
-        ragService: params.ragService,
-        indexingService: params.indexingService,
-        embeddingClient: params.embeddingClient,
         countTokens: params.countTokens,
 
         // From ITokenContext
@@ -51,20 +83,15 @@ export function createJobContext(params: JobContextParams): IJobContext {
 
         promptAssembler: params.promptAssembler,
         getSeedPromptForStage: params.getSeedPromptForStage,
-        gatherArtifacts: params.gatherArtifacts,
+        gatherArtifacts: boundGatherArtifacts,
 
-        continueJob: params.continueJob,
-        retryJob: params.retryJob,
+        retryJob: boundRetryJob,
 
         pickLatest: params.pickLatest,
         applyInputsRequiredScope: params.applyInputsRequiredScope,
         validateWalletBalance: params.validateWalletBalance,
         validateModelCostRates: params.validateModelCostRates,
         getMaxOutputTokens: params.getMaxOutputTokens,
-        resolveFinishReason: params.resolveFinishReason,
-        isIntermediateChunk: params.isIntermediateChunk,
-        determineContinuation: params.determineContinuation,
-        buildUploadContext: params.buildUploadContext,
 
         // From IPlanJobContext (PLAN-specific)
         getGranularityPlanner: params.getGranularityPlanner,
@@ -77,70 +104,35 @@ export function createJobContext(params: JobContextParams): IJobContext {
         loadDocumentTemplate: params.loadDocumentTemplate,
         mergeChunkContent: params.mergeChunkContent,
 
-        // From IJobContext (orchestration)
-        prepareModelJob: params.prepareModelJob,
-        enqueueModelCall: params.enqueueModelCall,
-        debitTokens: params.debitTokens,
-        sanitizeJsonContent: params.sanitizeJsonContent,
+        // From IJobContext (orchestration — bound closures)
+        prepareModelJob: boundPrepareModelJob,
+        enqueueModelCall: boundEnqueueModelCall,
         computeJobSig: params.computeJobSig,
+        calculateAffordability: boundCalculateAffordability,
+        compressPrompt: boundCompressPrompt,
     };
+
+    return root;
 }
 
 /**
- * Context slicer: Extracts IPrepareModelJobContext subset from root IJobContext.
- * Picks 8 raw fields from IJobContext and receives 2 pre-bound orchestrator closures
- * plus compressPrompt and calculateAffordability factories (bound here with root deps).
- * enqueueModelCall replaces the old enqueueRenderJob — the front-half enqueues to
- * Netlify rather than executing inline; enqueueRenderJob moves to the back-half slice.
+ * Context slicer: Extracts PrepareModelJobDeps subset from root IJobContext.
+ * Projects each PrepareModelJobDeps member from the root member of the same name,
+ * except tokenWalletService, which is read from root.userTokenWalletService.
  *
  * @param root - Complete IJobContext from application boundary
- * @param boundEnqueueModelCall - Pre-bound enqueueModelCall closure (netlifyQueueUrl and netlifyApiKey already bound)
- * @param compressPromptFn - Unbound compressPrompt implementation
- * @param calculateAffordabilityFn - Unbound calculateAffordability implementation
- * @returns IPrepareModelJobContext with only fields needed for prepareModelJob
+ * @returns PrepareModelJobDeps with only fields needed for prepareModelJob
  */
-export function createPrepareModelJobContext(
-    root: IJobContext,
-    boundEnqueueModelCall: BoundEnqueueModelCallFn,
-    compressPromptFn: CompressPromptFn,
-    calculateAffordabilityFn: CalculateAffordabilityFn,
-): IPrepareModelJobContext {
-    const boundCompressPrompt: BoundCompressPromptFn = (params, payload) =>
-        compressPromptFn(
-            {
-                logger: root.logger,
-                ragService: root.ragService,
-                embeddingClient: root.embeddingClient,
-                tokenWalletService: root.adminTokenWalletService,
-                countTokens: root.countTokens,
-            },
-            params,
-            payload,
-        );
-
-    const calculateAffordability: BoundCalculateAffordabilityFn = (params, payload) =>
-        calculateAffordabilityFn(
-            {
-                logger: root.logger,
-                countTokens: root.countTokens,
-                compressPrompt: boundCompressPrompt,
-                getMaxOutputTokens: root.getMaxOutputTokens,
-            },
-            params,
-            payload,
-        );
-
+export function createPrepareModelJobContext(root: IJobContext): PrepareModelJobDeps {
     return {
         logger: root.logger,
         applyInputsRequiredScope: root.applyInputsRequiredScope,
-        countTokens: root.countTokens,
-        adminTokenWalletService: root.adminTokenWalletService,
+        tokenWalletService: root.userTokenWalletService,
         validateWalletBalance: root.validateWalletBalance,
         validateModelCostRates: root.validateModelCostRates,
-        ragService: root.ragService,
-        embeddingClient: root.embeddingClient,
-        enqueueModelCall: boundEnqueueModelCall,
-        calculateAffordability,
+        calculateAffordability: root.calculateAffordability,
+        enqueueModelCall: root.enqueueModelCall,
+        compressPrompt: root.compressPrompt,
     };
 }
 
@@ -191,26 +183,5 @@ export function createRenderJobContext(root: IJobContext): IRenderJobContext {
         assembleContributionChain: root.assembleContributionChain,
         loadDocumentTemplate: root.loadDocumentTemplate,
         mergeChunkContent: root.mergeChunkContent,
-    };
-}
-
-/**
- * Context slicer: Constructs ISaveResponseContext (back-half) from pre-bound closures.
- * The back-half receives the completed AI response from the Netlify workload and persists it;
- * render dispatch (enqueueRenderJob) happens after the contribution is saved, not before the AI call.
- *
- * @param _root - Complete IJobContext from application boundary (reserved for future back-half fields)
- * @param boundEnqueueRenderJob - Pre-bound enqueueRenderJob closure
- * @param boundDebitTokens - Pre-bound debitTokens closure
- * @returns ISaveResponseContext with fields needed for the saveResponse back-half handler
- */
-export function createSaveResponseContext(
-    _root: IJobContext,
-    boundEnqueueRenderJob: BoundEnqueueRenderJobFn,
-    boundDebitTokens: BoundDebitTokens,
-): ISaveResponseContext {
-    return {
-        enqueueRenderJob: boundEnqueueRenderJob,
-        debitTokens: boundDebitTokens,
     };
 }

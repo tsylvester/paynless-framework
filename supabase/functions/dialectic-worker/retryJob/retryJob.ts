@@ -9,7 +9,7 @@ import {
 export const retryJob: RetryJobFn = async (deps, params, payload) => {
   const updatePayload: Database["public"]["Tables"]["dialectic_generation_jobs"]["Update"] = {
     status: "retrying",
-    attempt_count: params.job.attempt_count,
+    attempt_count: params.job.attempt_count + 1,
     error_details: {
       failedAttempts: payload.failedAttempts.map((e) => ({ ...e })),
     },

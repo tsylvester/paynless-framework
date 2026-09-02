@@ -52,11 +52,27 @@ import {
     SyncToGitHubResponse,
     UnifiedAIResponse,
     UnifiedAIResponseTokenUsage,
+    PromptConstructionPayload,
+    ProcessSimpleJobParams,
+    ProcessComplexJobParams,
+    ProcessRenderJobParams,
+    ProcessSimpleJobPayload,
+    ProcessComplexJobPayload,
+    ProcessRenderJobPayload,
+    ProcessSimpleJobDispatchedReturn,
+    ProcessSimpleJobDeferredReturn,
+    ProcessSimpleJobSuccessReturn,
+    ProcessSimpleJobErrorReturn,
+    ProcessComplexJobSuccessReturn,
+    ProcessComplexJobErrorReturn,
+    ProcessRenderJobSuccessReturn,
+    ProcessRenderJobErrorReturn,
 } from "../../../dialectic-service/dialectic.interface.ts";
-import { isNonNegativeInteger, isPlainObject, isRecord } from './type_guards.common.ts';
-import { isFileType } from './type_guards.file_manager.ts';
+import { isNonEmptyString, isNonNegativeInteger, isPlainObject, isRecord } from './type_guards.common.ts';
+import { isDialecticStageSlug, isFileType } from './type_guards.file_manager.ts';
 import { ContinueReason } from "../../types.ts";
-import { isContinueReason, isFinishReason } from './type_guards.chat.ts';
+import { isContinueReason, isFinishReason, isMessages } from './type_guards.chat.ts';
+import { isResourceDocument } from '../resolveCompressionSource/resolveCompressionSource.guard.ts';
 
 // Helper type for the citations array
 export type Citation = {
@@ -1031,6 +1047,16 @@ export function isDialecticExecuteJobPayload(payload: unknown): payload is Diale
     // Base Payload Checks (delegated)
     isDialecticBaseJobPayload(payload);
 
+    // EXECUTE-arm required members (narrowed from optional/blank-admitting on the base)
+    if (!isNonEmptyString(payload.sessionId)) throw new Error('Missing or invalid sessionId.');
+    if (!isNonEmptyString(payload.projectId)) throw new Error('Missing or invalid projectId.');
+    if (!isNonEmptyString(payload.model_id)) throw new Error('Missing or invalid model_id.');
+    if (!isNonEmptyString(payload.walletId)) throw new Error('Missing or invalid walletId.');
+    if (!('stageSlug' in payload)) throw new Error('Missing or invalid stageSlug.');
+    if (!isDialecticStageSlug(payload.stageSlug)) throw new Error('Invalid stageSlug.');
+    if (!('iterationNumber' in payload)) throw new Error('Missing or invalid iterationNumber.');
+    if (typeof payload.iterationNumber !== 'number' || !Number.isInteger(payload.iterationNumber) || payload.iterationNumber <= 0) throw new Error('Invalid iterationNumber.');
+
     // Required ExecuteJobPayload properties
     if (!('prompt_template_id' in payload) || typeof payload.prompt_template_id !== 'string' || payload.prompt_template_id.length === 0) throw new Error('Missing or invalid prompt_template_id.');
     if (!('output_type' in payload) || !isFileType(payload.output_type)) throw new Error('Missing or invalid output_type.');
@@ -1139,6 +1165,7 @@ export function isDialecticJobRow(record: unknown): record is DialecticJobRow {
       { key: 'parent_job_id', type: 'string', nullable: true },
       { key: 'prerequisite_job_id', type: 'string', nullable: true },
       { key: 'target_contribution_id', type: 'string', nullable: true },
+      { key: 'idempotency_key', type: 'string', nullable: true },
       { key: 'started_at', type: 'string', nullable: true },
       { key: 'completed_at', type: 'string', nullable: true },
       { key: 'results', type: 'object', nullable: true },
@@ -1623,5 +1650,141 @@ export function isUnifiedAIResponse(value: unknown): value is UnifiedAIResponse 
     if ('contentType' in value && typeof value.contentType !== 'string') return false;
     if ('rawProviderResponse' in value && !isRecord(value.rawProviderResponse)) return false;
     if ('finish_reason' in value && !isFinishReason(value.finish_reason)) return false;
+    return true;
+}
+
+export function isPromptConstructionPayload(value: unknown): value is PromptConstructionPayload {
+    if (!isRecord(value)) return false;
+
+    if (!('conversationHistory' in value) || !Array.isArray(value.conversationHistory) || !value.conversationHistory.every(isMessages)) {
+        return false;
+    }
+    if (!('resourceDocuments' in value) || !Array.isArray(value.resourceDocuments) || !value.resourceDocuments.every(isResourceDocument)) {
+        return false;
+    }
+    if (!('currentUserPrompt' in value) || typeof value.currentUserPrompt !== 'string') {
+        return false;
+    }
+    if (!('source_prompt_resource_id' in value) || typeof value.source_prompt_resource_id !== 'string') {
+        return false;
+    }
+    if ('systemInstruction' in value && value.systemInstruction !== undefined && typeof value.systemInstruction !== 'string') {
+        return false;
+    }
+    if ('sourceContributionId' in value && value.sourceContributionId !== null && value.sourceContributionId !== undefined && typeof value.sourceContributionId !== 'string') {
+        return false;
+    }
+
+    return true;
+}
+
+// ── Process job guards (Compression Jobs 5 node) ──
+
+export function isProcessSimpleJobParams(value: unknown): value is ProcessSimpleJobParams {
+    if (!isRecord(value)) return false;
+    if (!('dbClient' in value)) return false;
+    if (value.dbClient === null || value.dbClient === undefined) return false;
+    if (typeof value.dbClient !== 'object') return false;
+    return true;
+}
+
+export function isProcessComplexJobParams(value: unknown): value is ProcessComplexJobParams {
+    if (!isRecord(value)) return false;
+    if (!('dbClient' in value)) return false;
+    if (value.dbClient === null || value.dbClient === undefined) return false;
+    if (typeof value.dbClient !== 'object') return false;
+    return true;
+}
+
+export function isProcessRenderJobParams(value: unknown): value is ProcessRenderJobParams {
+    if (!isRecord(value)) return false;
+    if (!('dbClient' in value)) return false;
+    if (value.dbClient === null || value.dbClient === undefined) return false;
+    if (typeof value.dbClient !== 'object') return false;
+    return true;
+}
+
+export function isProcessSimpleJobPayload(value: unknown): value is ProcessSimpleJobPayload {
+    if (!isRecord(value)) return false;
+    if (!('job' in value)) return false;
+    if (!isDialecticJobRow(value.job)) return false;
+    if (!isDialecticExecuteJobPayload(value.job.payload)) return false;
+    return true;
+}
+
+export function isProcessComplexJobPayload(value: unknown): value is ProcessComplexJobPayload {
+    if (!isRecord(value)) return false;
+    if (!('job' in value)) return false;
+    if (!isDialecticJobRow(value.job)) return false;
+    if (!isDialecticPlanJobPayload(value.job.payload)) return false;
+    return true;
+}
+
+export function isProcessRenderJobPayload(value: unknown): value is ProcessRenderJobPayload {
+    if (!isRecord(value)) return false;
+    if (!('job' in value)) return false;
+    if (!isDialecticJobRow(value.job)) return false;
+    return true;
+}
+
+export function isProcessSimpleJobDispatchedReturn(value: unknown): value is ProcessSimpleJobDispatchedReturn {
+    if (!isRecord(value)) return false;
+    if (!('dispatched' in value)) return false;
+    if (value.dispatched !== true) return false;
+    return true;
+}
+
+export function isProcessSimpleJobDeferredReturn(value: unknown): value is ProcessSimpleJobDeferredReturn {
+    if (!isRecord(value)) return false;
+    if (!('deferred' in value)) return false;
+    if (value.deferred !== true) return false;
+    return true;
+}
+
+export function isProcessSimpleJobSuccessReturn(value: unknown): value is ProcessSimpleJobSuccessReturn {
+    if (!isRecord(value)) return false;
+    if ('dispatched' in value && value.dispatched === true) return true;
+    if ('deferred' in value && value.deferred === true) return true;
+    return false;
+}
+
+export function isProcessSimpleJobErrorReturn(value: unknown): value is ProcessSimpleJobErrorReturn {
+    if (!isRecord(value)) return false;
+    if (!('error' in value)) return false;
+    if (!(value.error instanceof Error)) return false;
+    if (!('retriable' in value)) return false;
+    if (typeof value.retriable !== 'boolean') return false;
+    return true;
+}
+
+export function isProcessComplexJobSuccessReturn(value: unknown): value is ProcessComplexJobSuccessReturn {
+    if (!isRecord(value)) return false;
+    if (!('planned' in value)) return false;
+    if (value.planned !== true) return false;
+    return true;
+}
+
+export function isProcessComplexJobErrorReturn(value: unknown): value is ProcessComplexJobErrorReturn {
+    if (!isRecord(value)) return false;
+    if (!('error' in value)) return false;
+    if (!(value.error instanceof Error)) return false;
+    if (!('retriable' in value)) return false;
+    if (typeof value.retriable !== 'boolean') return false;
+    return true;
+}
+
+export function isProcessRenderJobSuccessReturn(value: unknown): value is ProcessRenderJobSuccessReturn {
+    if (!isRecord(value)) return false;
+    if (!('rendered' in value)) return false;
+    if (value.rendered !== true) return false;
+    return true;
+}
+
+export function isProcessRenderJobErrorReturn(value: unknown): value is ProcessRenderJobErrorReturn {
+    if (!isRecord(value)) return false;
+    if (!('error' in value)) return false;
+    if (!(value.error instanceof Error)) return false;
+    if (!('retriable' in value)) return false;
+    if (typeof value.retriable !== 'boolean') return false;
     return true;
 }

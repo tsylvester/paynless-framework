@@ -22,7 +22,7 @@ import {
 } from "../../_shared/types.ts";
 import { debitTokens } from "../../_shared/utils/debitTokens.ts";
 import { getMaxOutputTokens } from "../../_shared/utils/affordability_utils.ts";
-import { countTokens } from "../../_shared/utils/tokenizer_utils.ts";
+import { mockBoundCountTokens } from "../../_shared/utils/tokenizer_utils.mock.ts";
 import { Database, Tables } from "../../types_db.ts";
 import { constructMessageHistory } from "../constructMessageHistory/constructMessageHistory.ts";
 import { findOrCreateChat } from "../findOrCreateChat.ts";
@@ -412,7 +412,7 @@ Deno.test({
     streamChat: StreamChat,
     streamRewind: StreamRewind,
     createErrorResponse,
-    countTokens,
+    countTokens: mockBoundCountTokens,
     debitTokens,
     getMaxOutputTokens,
     findOrCreateChat,
@@ -505,7 +505,7 @@ Deno.test({
     streamChat: StreamChat,
     streamRewind: StreamRewind,
     createErrorResponse,
-    countTokens,
+    countTokens: mockBoundCountTokens,
     debitTokens,
     getMaxOutputTokens,
     findOrCreateChat,
@@ -590,7 +590,7 @@ Deno.test({
     streamChat: StreamChat,
     streamRewind: StreamRewind,
     createErrorResponse,
-    countTokens,
+    countTokens: mockBoundCountTokens,
     debitTokens,
     getMaxOutputTokens,
     findOrCreateChat,

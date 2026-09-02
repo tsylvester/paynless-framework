@@ -6,11 +6,6 @@ import {
     createMockSupabaseClient,
     type MockSupabaseClientSetup,
 } from "../../_shared/supabase.mock.ts";
-import type { DialecticJobRow } from "../../dialectic-service/dialectic.interface.ts";
-import {
-    createMockDialecticExecuteJobPayload,
-    createMockJobRow,
-} from "../saveResponse/saveResponse.provides.ts";
 import type {
     AiStreamEventBody,
     AiStreamEventData,
@@ -24,13 +19,7 @@ import type {
 } from "./enqueueModelCall.interface.ts";
 import { mockComputeJobSig } from "../../_shared/utils/computeJobSig/computeJobSig.mock.ts";
 import { buildMockProvider } from "../../_shared/ai_service/ai_provider.mock.ts";
-
-function createDefaultEnqueueJobRow(): DialecticJobRow {
-    const job: DialecticJobRow = createMockJobRow(
-        createMockDialecticExecuteJobPayload(),
-    );
-    return job;
-}
+import { buildDialecticJobRow, buildDialecticExecuteJobPayload } from "../../_shared/dialectic.mock.ts";
 
 export type EnqueueModelCallDepsOverrides = Partial<EnqueueModelCallDeps>;
 
@@ -133,7 +122,7 @@ export function createMockEnqueueModelCallParams(
 
     const base: EnqueueModelCallParams = {
         dbClient,
-        job: createDefaultEnqueueJobRow(),
+        job: buildDialecticJobRow(buildDialecticExecuteJobPayload()),
         providerRow: buildMockProvider(),
         userAuthToken: "mock-user-jwt",
         userConfig: { tier_output_cap_tokens: null },

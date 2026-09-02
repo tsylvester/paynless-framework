@@ -23,7 +23,7 @@ import {
 import { TokenWallet } from "../../_shared/types/tokenWallet.types.ts";
 import { debitTokens } from "../../_shared/utils/debitTokens.ts";
 import { getMaxOutputTokens } from "../../_shared/utils/affordability_utils.ts";
-import { countTokens } from "../../_shared/utils/tokenizer_utils.ts";
+import { mockBoundCountTokens } from "../../_shared/utils/tokenizer_utils.mock.ts";
 import {
   StreamRewind,
   StreamRewindDeps,
@@ -38,7 +38,7 @@ export function buildContractStreamRewindDeps(): StreamRewindDeps {
   return {
     logger,
     adminTokenWalletService,
-    countTokens,
+    countTokens: mockBoundCountTokens,
     debitTokens,
     createErrorResponse,
     getMaxOutputTokens,
@@ -232,7 +232,7 @@ export function buildStreamRewindUnitDepsWithFreshAdmin(): {
   const deps: StreamRewindDeps = {
     logger,
     adminTokenWalletService: admin.instance,
-    countTokens,
+    countTokens: mockBoundCountTokens,
     debitTokens,
     createErrorResponse,
     getMaxOutputTokens,

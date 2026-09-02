@@ -3,7 +3,7 @@ import { createErrorResponse } from "../../_shared/cors-headers.ts";
 import { IAdminTokenWalletService } from "../../_shared/services/tokenwallet/admin/adminTokenWalletService.interface.ts";
 import { IUserTokenWalletService } from "../../_shared/services/tokenwallet/client/userTokenWalletService.interface.ts";
 import { GetAiProviderAdapterFn, ILogger } from "../../_shared/types.ts";
-import { CountTokensFn } from "../../_shared/types/tokenizer.types.ts";
+import { BoundCountTokensFn } from "../../_shared/types/tokenizer.types.ts";
 import { DebitTokens } from "../../_shared/utils/debitTokens.interface.ts";
 import { getMaxOutputTokens } from "../../_shared/utils/affordability_utils.ts";
 import { Database } from "../../types_db.ts";
@@ -21,7 +21,7 @@ export interface StreamRequestDeps {
   streamChat: StreamChatFn;
   streamRewind: StreamRewind;
   createErrorResponse: typeof createErrorResponse;
-  countTokens: CountTokensFn;
+  countTokens: BoundCountTokensFn;
   debitTokens: DebitTokens;
   getMaxOutputTokens: typeof getMaxOutputTokens;
   findOrCreateChat: typeof findOrCreateChat;

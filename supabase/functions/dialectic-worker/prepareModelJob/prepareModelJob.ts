@@ -2,27 +2,35 @@ import {
   isAiModelExtendedConfig,
   isDialecticExecuteJobPayload,
   isApiChatMessage,
+  isJson,
   isRecord,
 } from '../../_shared/utils/type_guards.ts';
 import {
   AiModelExtendedConfig,
   ChatApiRequest,
+  ChatMessageRole,
   Messages,
 } from '../../_shared/types.ts';
 import { ResourceDocuments } from '../../_shared/utils/resolveCompressionSource/resolveCompressionSource.interface.ts';
 import { isResourceDocument } from '../../_shared/utils/resolveCompressionSource/resolveCompressionSource.guard.ts';
 import {
   isCalculateAffordabilityErrorReturn,
-  isCalculateAffordabilityCompressedReturn,
+  isCalculateAffordabilityOverBudgetReturn,
+  isCalculateAffordabilityWithinBudgetReturn,
 } from '../calculateAffordability/calculateAffordability.guard.ts';
+import { isDialecticCompressJobPayload } from '../enqueueCompressJobs/enqueueCompressJobs.guard.ts';
+import { isCompressPromptErrorReturn } from '../compressPrompt/compressPrompt.guard.ts';
 import type {
   CalculateAffordabilityParams,
   CalculateAffordabilityPayload,
   TierOutputCapTokens,
   UserConfig,
 } from '../calculateAffordability/calculateAffordability.interface.ts';
+import type { CompressPromptParams, CompressPromptPayload } from '../compressPrompt/compressPrompt.interface.ts';
 import type { EnqueueModelCallParams } from '../enqueueModelCall/enqueueModelCall.interface.ts';
 import type { PostgrestError } from 'npm:@supabase/supabase-js@2';
+import type { DialecticExecuteJobPayload } from '../../dialectic-service/dialectic.interface.ts';
+import type { DialecticCompressJobPayload } from '../enqueueCompressJobs/enqueueCompressJobs.interface.ts';
 import type {
   PrepareModelJobDeps,
   PrepareModelJobParams,
@@ -37,7 +45,8 @@ export async function prepareModelJob(
 ): Promise<PrepareModelJobReturn> {
   try {
     const dbClient = params.dbClient;
-    const { job, projectOwnerUserId, providerRow } = params;
+    const { job, providerRow, promptConstructionPayload, inputsRelevance, inputsRequired } = payload;
+    const projectOwnerUserId = job.user_id;
 
     let tierOutputCapTokens: TierOutputCapTokens = null;
     const tierCapQueryResult = await dbClient
@@ -70,14 +79,30 @@ export async function prepareModelJob(
       }
     }
 
+    // Arm selection: branch on job_type and narrow with the arm's guard.
+    const jobType = job.job_type;
+    let armPayload: DialecticExecuteJobPayload | DialecticCompressJobPayload;
+    if (jobType === 'EXECUTE') {
+      if (!isDialecticExecuteJobPayload(job.payload)) {
+        throw new Error('unreachable: isDialecticExecuteJobPayload throws on invalid');
+      }
+      armPayload = job.payload;
+    } else if (jobType === 'COMPRESS') {
+      if (!isDialecticCompressJobPayload(job.payload)) {
+        throw new Error('unreachable: isDialecticCompressJobPayload throws on invalid');
+      }
+      armPayload = job.payload;
+    } else {
+      throw new Error(`Unsupported job_type: ${jobType}`);
+    }
+
+    const userAuthToken: string = armPayload.user_jwt;
+    const walletId: string = armPayload.walletId;
+
     let effectiveCap: TierOutputCapTokens = tierOutputCapTokens;
     let userChosenMaxOutputTokens: number | null = null;
-    if (
-      isRecord(job.payload) &&
-      'maxOutputTokens' in job.payload &&
-      typeof job.payload.maxOutputTokens === 'number'
-    ) {
-      userChosenMaxOutputTokens = job.payload.maxOutputTokens;
+    if (typeof armPayload.maxOutputTokens === 'number') {
+      userChosenMaxOutputTokens = armPayload.maxOutputTokens;
       if (tierOutputCapTokens === null) {
         effectiveCap = userChosenMaxOutputTokens;
       } else {
@@ -94,108 +119,8 @@ export async function prepareModelJob(
     });
 
     const {
-      promptConstructionPayload,
-      compressionStrategy,
-      inputsRelevance,
-      inputsRequired,
-    } = payload;
-
-    const {
       id: jobId,
     } = job;
-
-    let userAuthTokenEarly: string | undefined = undefined;
-    {
-      const desc = Object.getOwnPropertyDescriptor(job.payload, 'user_jwt');
-      if (desc) {
-        const potential = desc.value;
-        if (typeof potential === 'string' && potential.length > 0) {
-          userAuthTokenEarly = potential;
-        }
-      }
-    }
-    if (!userAuthTokenEarly) {
-      throw new Error('payload.user_jwt required');
-    }
-
-    if (!isDialecticExecuteJobPayload(job.payload)) {
-      throw new Error(`Job ${job.id} does not have a valid 'execute' payload.`);
-    }
-
-    const {
-      iterationNumber: iterationNumberRaw,
-      stageSlug: stageSlugRaw,
-      projectId: projectIdRaw,
-      model_id: model_idRaw,
-      sessionId: sessionIdRaw,
-      walletId: walletIdRaw,
-      output_type,
-    } = job.payload;
-
-    deps.logger.info('[prepareModelJob] Validating payload fields', {
-      jobId,
-      hasStageSlug: !!stageSlugRaw,
-      stageSlugType: typeof stageSlugRaw,
-      hasWalletId: !!walletIdRaw,
-      walletIdType: typeof walletIdRaw,
-      hasIterationNumber: iterationNumberRaw !== undefined,
-      iterationNumberType: typeof iterationNumberRaw,
-      hasProjectId: !!projectIdRaw,
-      projectIdType: typeof projectIdRaw,
-      hasSessionId: !!sessionIdRaw,
-      sessionIdType: typeof sessionIdRaw,
-      hasModelId: !!model_idRaw,
-      modelIdType: typeof model_idRaw,
-    });
-
-    if (!stageSlugRaw || typeof stageSlugRaw !== 'string' || stageSlugRaw.trim() === '') {
-      throw new Error(`Job ${jobId} is missing required stageSlug in its payload.`);
-    }
-    const stageSlug: string = stageSlugRaw;
-
-    if (typeof walletIdRaw !== 'string' || walletIdRaw.trim() === '') {
-      throw new Error('Wallet is required to process model calls.');
-    }
-    const walletId: string = walletIdRaw;
-
-    if (typeof iterationNumberRaw !== 'number' || iterationNumberRaw <= 0) {
-      deps.logger.error('[prepareModelJob] iterationNumber validation failed', {
-        jobId,
-        iterationNumberRaw,
-        iterationNumberType: typeof iterationNumberRaw,
-      });
-      throw new Error(`Job ${jobId} is missing required iterationNumber in its payload.`);
-    }
-
-    if (typeof projectIdRaw !== 'string' || projectIdRaw.trim() === '') {
-      deps.logger.error('[prepareModelJob] projectId validation failed', {
-        jobId,
-        projectIdRaw,
-        projectIdType: typeof projectIdRaw,
-      });
-      throw new Error(`Job ${jobId} is missing required projectId in its payload.`);
-    }
-
-    let sessionId: string;
-    if (typeof sessionIdRaw === 'string' && sessionIdRaw.trim() !== '') {
-      sessionId = sessionIdRaw;
-    } else {
-      deps.logger.error('[prepareModelJob] sessionId validation failed', {
-        jobId,
-        sessionIdRaw,
-        sessionIdType: typeof sessionIdRaw,
-      });
-      throw new Error(`Job ${jobId} is missing required sessionId in its payload.`);
-    }
-
-    if (typeof model_idRaw !== 'string' || model_idRaw.trim() === '') {
-      deps.logger.error('[prepareModelJob] model_id validation failed', {
-        jobId,
-        model_idRaw,
-        modelIdType: typeof model_idRaw,
-      });
-      throw new Error(`Job ${jobId} is missing required model_id in its payload.`);
-    }
 
     deps.logger.info(`[dialectic-worker] [prepareModelJob] Executing model call for job ID: ${jobId}`);
 
@@ -237,14 +162,10 @@ export async function prepareModelJob(
 
     const resourceDocuments: ResourceDocuments = scopedDocs;
 
-    const isContinuationFlowInitial = Boolean(job.target_contribution_id || job.payload.target_contribution_id);
+    const isContinuationFlowInitial = Boolean(job.target_contribution_id || armPayload.target_contribution_id);
 
     const initialAssembledMessages: Messages[] = conversationHistory
       .filter(msg => msg.role !== 'function');
-
-    if (!deps.tokenWalletService) {
-      throw new Error('Token wallet service is required for affordability preflight');
-    }
 
     const walletBalanceStr = await deps.tokenWalletService.getBalance(walletId);
     const walletBalance = deps.validateWalletBalance(walletBalanceStr, walletId);
@@ -258,39 +179,27 @@ export async function prepareModelJob(
       message: currentUserPrompt,
       messages: initialAssembledMessages
         .filter(isApiChatMessage)
-        .filter((m): m is { role: 'user' | 'assistant' | 'system', content: string } => m.content !== null),
+        .filter((m): m is { role: ChatMessageRole; content: string } => m.content !== null),
       providerId: providerRow.id,
       promptId: '__none__',
       systemInstruction: systemInstruction,
       walletId: walletId,
       resourceDocuments,
-      continue_until_complete: job.payload.continueUntilComplete,
+      continue_until_complete: armPayload.continueUntilComplete,
       isDialectic: true,
     };
 
     const affordParams: CalculateAffordabilityParams = {
-      dbClient,
-      jobId,
-      projectOwnerUserId,
-      sessionId,
-      stageSlug,
-      walletId,
       walletBalance,
-      extendedModelConfig,
-      inputRate,
-      outputRate,
-      isContinuationFlowInitial,
-      inputsRelevance: inputsRelevance,
       userConfig: userConfig,
     };
 
     const affordPayload: CalculateAffordabilityPayload = {
-      compressionStrategy,
+      extendedModelConfig,
       resourceDocuments,
       conversationHistory,
       currentUserPrompt,
       systemInstruction: systemInstruction ?? '',
-      chatApiRequest: baseChatApiRequest,
     };
 
     const affordResult = await deps.calculateAffordability(affordParams, affordPayload);
@@ -299,54 +208,70 @@ export async function prepareModelJob(
       return { error: affordResult.error, retriable: affordResult.retriable };
     }
 
-    let chatApiRequest: ChatApiRequest;
-    let resolvedInputTokenCount: number;
-
-    if (isCalculateAffordabilityCompressedReturn(affordResult)) {
-      chatApiRequest = affordResult.chatApiRequest;
-      resolvedInputTokenCount = affordResult.resolvedInputTokenCount;
-    } else {
-      chatApiRequest = {
-        ...baseChatApiRequest,
-        max_tokens_to_generate: affordResult.maxOutputTokens,
-      };
-      resolvedInputTokenCount = affordResult.resolvedInputTokenCount;
-    }
-
-    {
-      const p = job && job.payload;
-      let hasJwtKey = false;
-      let jwtType: string = 'undefined';
-      let jwtLen = 0;
-      if (isRecord(p) && 'user_jwt' in p) {
-        const v = p['user_jwt'];
-        jwtType = typeof v;
-        if (typeof v === 'string') {
-          jwtLen = v.length;
+    if (isCalculateAffordabilityOverBudgetReturn(affordResult)) {
+      if (jobType === 'EXECUTE') {
+        const compressParams: CompressPromptParams = {
+          dbClient: params.dbClient,
+          isContinuationFlowInitial,
+          finalTargetThreshold: affordResult.finalTargetThreshold,
+          balanceAfterCompression: affordResult.balanceAfterCompression,
+          walletBalance,
+        };
+        const compressPayload: CompressPromptPayload = {
+          parentJob: payload.job,
+          extendedModelConfig,
+          inputsRelevance: payload.inputsRelevance ?? [],
+          resourceDocuments,
+          conversationHistory,
+          currentUserPrompt,
+        };
+        const compressResult = await deps.compressPrompt(compressParams, compressPayload);
+        if (isCompressPromptErrorReturn(compressResult)) {
+          return { error: compressResult.error, retriable: compressResult.retriable };
         }
-        hasJwtKey = true;
+        return { waiting_for_children: true };
+      } else {
+        // COMPRESS arm: recursion guard — cannot compress a compression job.
+        return { error: new Error('Cannot compress a COMPRESS job (recursion guard)'), retriable: false };
       }
-      deps.logger.info('[prepareModelJob] DIAGNOSTIC: payload user_jwt presence before guard', {
-        jobId,
-        hasJwtKey,
-        jwtType,
-        jwtLen,
-        continueUntilComplete: job.payload.continueUntilComplete,
-        target_contribution_id: job.payload.target_contribution_id,
-      });
     }
-    const userAuthTokenStrict: string = userAuthTokenEarly;
+
+    if (!isCalculateAffordabilityWithinBudgetReturn(affordResult)) {
+      throw new Error('unreachable: unexpected affordability return shape');
+    }
+
+    // Within-budget path
+    const chatApiRequest: ChatApiRequest = {
+      ...baseChatApiRequest,
+      max_tokens_to_generate: affordResult.maxOutputTokens,
+    };
+    const resolvedInputTokenCount = affordResult.resolvedInputTokenCount;
 
     if (typeof promptConstructionPayload.source_prompt_resource_id !== 'string' ||
         promptConstructionPayload.source_prompt_resource_id.trim() === '') {
       throw new Error('source_prompt_resource_id is required on promptConstructionPayload');
     }
 
+    // Provenance write: update this job row's payload with source_prompt_resource_id before enqueue.
+    const updatedPayload: unknown = { ...armPayload, source_prompt_resource_id: promptConstructionPayload.source_prompt_resource_id };
+    if (!isJson(updatedPayload)) {
+      throw new Error('Updated payload is not JSON-compatible.');
+    }
+    const provenanceUpdateResult = await dbClient
+      .from('dialectic_generation_jobs')
+      .update({ payload: updatedPayload })
+      .eq('id', job.id);
+
+    if (provenanceUpdateResult.error !== null) {
+      const pgErr: PostgrestError = provenanceUpdateResult.error;
+      return { error: pgErr, retriable: true };
+    }
+
     const enqueueModelCallParams: EnqueueModelCallParams = {
       dbClient,
       job,
       providerRow,
-      userAuthToken: userAuthTokenStrict,
+      userAuthToken,
       userConfig: userConfig,
     };
 

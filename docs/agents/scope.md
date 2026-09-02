@@ -79,6 +79,12 @@ Each of these makes the reader reconstruct the scope from conversation history. 
 
 An element that owns symbols reports its enumeration: the symbols the interface exports, and each one's disposition for this element. A response with no enumeration, or one naming fewer symbols than the interface exports, is discarded (see [traceability](traceability.md)). The enumeration is checkable against the interface file at a glance, so getting it wrong is proof the surface was never read.
 
+**A count is not an enumeration.** A number stands in for the list without stating it, cannot be checked against the interface, and survives being wrong. "Twenty-nine members" names no symbol and is discarded as an absent enumeration; a number set beside a list is discarded on the same ground, the list being the whole of what was owed.
+
+**The canary binds both views, and each enumerates once.** A response enumerates in the response — that enumeration *is* the proof the surface was read, so nothing stands in for it. A workplan node enumerates in **one** element: the one that declares the surface, where the member list is that file's content rather than a description of another file's. Specifying a surface by cardinality, or by a delta against its prior state, is the malformed construction in [workplan-structure](workplan-structure.md)'s table in either view, and the node carrying it is discarded.
+
+**Every other element references that one; it does not restate it.** What the canary tests is whether the list can be checked without rebuilding it. A count cannot be checked, and a delta against an unstated prior state cannot be checked — but a reference to the element that carries the enumeration can, because you follow it and read the list. A reference is therefore not an absent enumeration. A second copy is something worse: two enumerations of one surface can disagree, and a node carrying six copies has six chances to be wrong where it needed none. Downstream elements need no list of their own, because the standard governing each already says *all of them* — every owned type guarded ([guards](guards.md)), every property defaulted ([mocks](mocks.md)), every exported symbol proven ([tests](tests.md)). An element states only what its own standard cannot derive.
+
 This is the same rule as the one above, applied to a symbol surface rather than a work scope. "No mock required" and "deliberately not exported" are dispositions; they are stated, not omitted.
 
 ## Precedence

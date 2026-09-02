@@ -22,6 +22,10 @@ import {
 } from "../_shared/types.ts";
 import { logger } from "../_shared/logger.ts";
 import { countTokens } from "../_shared/utils/tokenizer_utils.ts";
+import { countTokens as countTokensAnthropic } from "npm:@anthropic-ai/tokenizer@0.0.4";
+import { getEncoding as rawGetEncoding } from "npm:js-tiktoken@1.0.7";
+import { isKnownTiktokenEncoding } from "../_shared/utils/type-guards/type_guards.chat.ts";
+import type { BoundCountTokensFn, CountTokensDeps } from "../_shared/types/tokenizer.types.ts";
 import { debitTokens } from "../_shared/utils/debitTokens.ts";
 import { getMaxOutputTokens } from "../_shared/utils/affordability_utils.ts";
 import { Database } from "../types_db.ts";
@@ -67,6 +71,22 @@ const userClient: SupabaseClient<Database> = createClient(
     },
   },
 );
+
+const boundCountTokens: BoundCountTokensFn = (payload, modelConfig) =>
+  countTokens(
+    {
+      getEncoding: (encodingName: string) => {
+        if (!isKnownTiktokenEncoding(encodingName)) {
+          throw new Error(`Unknown tiktoken encoding: ${encodingName}`);
+        }
+        return rawGetEncoding(encodingName);
+      },
+      countTokensAnthropic,
+      logger,
+    },
+    payload,
+    modelConfig,
+  );
 
 export async function handler(
   deps: ChatDeps,
@@ -245,7 +265,7 @@ export const defaultDeps: ChatDeps = {
   createSuccessResponse,
   createErrorResponse,
   getAiProviderAdapter: defaultGetAiProviderAdapter,
-  countTokens: countTokens,
+  countTokens: boundCountTokens,
   prepareChatContext: prepareChatContext,
   debitTokens: debitTokens,
   getMaxOutputTokens: getMaxOutputTokens,
